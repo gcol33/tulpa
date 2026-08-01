@@ -14,6 +14,7 @@ tulpa_re_cov_nested(
   phi2 = NULL,
   prior_sigma = c(3, 0.05),
   eta = 2,
+  hyperprior = c("flat", "pc_lkj"),
   log_prior_theta = NULL,
   beta_prior = NULL,
   offset = NULL,
@@ -44,14 +45,22 @@ never made). A \code{phi2} supplied for any other family errors rather than bein
 ignored. It is conditioned on: the integration is over the random-effect
 covariances, not over \code{phi2}.}
 
-\item{prior_sigma, eta}{Hyperparameters of the default PC + LKJ prior (see
-\code{\link[=re_cov_pc_lkj_prior]{re_cov_pc_lkj_prior()}}): \code{prior_sigma = c(U, alpha)} with
-\code{P(sigma_i > U) = alpha} (default \code{c(3, 0.05)}) and LKJ shape \code{eta}
-(default 2). Ignored when \code{log_prior_theta} is supplied.}
+\item{prior_sigma, eta}{Hyperparameters of the PC + LKJ prior used when
+\code{hyperprior = "pc_lkj"} (see \code{\link[=re_cov_pc_lkj_prior]{re_cov_pc_lkj_prior()}}):
+\code{prior_sigma = c(U, alpha)} with \code{P(sigma_i > U) = alpha} (default
+\code{c(3, 0.05)}) and LKJ shape \code{eta} (default 2). Ignored when
+\code{hyperprior = "flat"} or \code{log_prior_theta} is supplied.}
+
+\item{hyperprior}{\code{"flat"} (default) or \code{"pc_lkj"}. \code{"flat"} integrates with
+\code{log_prior_theta} the zero function (flat in log(theta)), matching the
+nested-Laplace convention on every other scale axis in the engine.
+\code{"pc_lkj"} builds the PC + LKJ prior from \code{prior_sigma} / \code{eta} (the
+regularizer that keeps a variance component off the \code{sigma = 0} boundary
+at small G). Ignored when \code{log_prior_theta} is supplied.}
 
 \item{log_prior_theta}{Optional \verb{function(theta)} returning a scalar log
-prior density on the full stacked parameter vector. Default \code{NULL}, which
-builds the PC + LKJ prior from \code{prior_sigma} / \code{eta}.}
+prior density on the full stacked parameter vector, overriding
+\code{hyperprior} entirely. Default \code{NULL}, which defers to \code{hyperprior}.}
 
 \item{beta_prior}{Optional Gaussian prior on the fixed effects, threaded into
 every inner \code{\link[=tulpa_laplace]{tulpa_laplace()}} solve (\code{list(mean, sd)}).
@@ -184,13 +193,20 @@ Each node \code{k} contributes integration weight proportional to
 \code{Delta_k * exp(log_marginal(Sigma_k) + log_prior_theta(theta_k))}, following
 the INLA convention \verb{int ~ sum_k Delta_k pi(theta_k)}.
 
-By default \code{log_prior_theta} is the weakly-informative PC + LKJ hyperprior
-built per block by \code{\link[=re_cov_pc_lkj_prior]{re_cov_pc_lkj_prior()}} and summed over blocks (PC prior on
-each marginal SD via \code{prior_sigma}, LKJ prior on each correlated block's
-correlation matrix via \code{eta}), expressed in the same parameterization with the
-exact change-of-variables Jacobian. Supply a custom \code{log_prior_theta} function
-to override it (then \code{prior_sigma} / \code{eta} are ignored); it must act on the
-full stacked parameter vector.
+By default (\code{hyperprior = "flat"}) \code{log_prior_theta} is the zero function:
+flat in log(theta), the same convention the nested-Laplace spatial /
+temporal / RE-scale axes use (icar / rw1 / rw2 / ar1's tau / iid, none of
+which carry a hyperprior on their scale either -- see \code{vignette("priors")}).
+Set \code{hyperprior = "pc_lkj"} to use the weakly-informative PC + LKJ hyperprior
+instead, built per block by \code{\link[=re_cov_pc_lkj_prior]{re_cov_pc_lkj_prior()}} and summed over blocks
+(PC prior on each marginal SD via \code{prior_sigma}, LKJ prior on each correlated
+block's correlation matrix via \code{eta}), expressed in the same parameterization
+with the exact change-of-variables Jacobian. Supply a custom \code{log_prior_theta}
+function to override either default (then \code{prior_sigma} / \code{eta} /
+\code{hyperprior} are ignored); it must act on the full stacked parameter vector.
+\code{\link[=tulpa_eb]{tulpa_eb()}} shares this same objective and the same default, so
+\code{tulpa_eb()$theta_hat} and \code{tulpa_re_cov_nested()$theta_hat} stay the same
+estimate on the same data under either setting.
 }
 \examples{
 \donttest{

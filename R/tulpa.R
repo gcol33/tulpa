@@ -819,6 +819,7 @@
           beta_prior   = beta_prior,
           prior_sigma  = rp$prior_sigma %||% c(3, 0.05),
           eta          = rp$eta %||% 2,
+          hyperprior   = rp$hyperprior %||% "flat",
           n_quad       = as.integer(control$n_quad %||% 1L),
           estimate_phi = estimate_phi,
           # `[[` not `$`: the latter partial-matches, so `marginal_step` alone
@@ -840,6 +841,7 @@
           beta_prior  = beta_prior,
           prior_sigma = rp$prior_sigma %||% c(3, 0.05),
           eta         = rp$eta %||% 2,
+          hyperprior  = rp$hyperprior %||% "flat",
           n_quad      = n_quad,
           control     = .control_subset(control, .CONTROL_KEYS$re_cov_nested)
         )))
@@ -1274,7 +1276,8 @@
 #'   covariance block, and any accompanying `(1 | g)` term is integrated as a 1x1
 #'   block (nothing is silently conditioned at `sigma_re = 1`). `mode = "laplace"`
 #'   routes to the nested-Laplace `Sigma` integrator ([tulpa_re_cov_nested()],
-#'   CCD design + PC/LKJ prior); `control$re_cov = "gibbs"` switches to the exact
+#'   CCD design, flat-in-log hyperprior by default -- see `re_prior$hyperprior`);
+#'   `control$re_cov = "gibbs"` switches to the exact
 #'   Metropolis-within-Gibbs debias ([tulpa_re_cov_gibbs()]), and
 #'   `control$re_cov = "aghq"` keeps the nested integrator but replaces the
 #'   inner joint-Laplace marginal with adaptive Gauss-Hermite quadrature
@@ -1359,10 +1362,12 @@
 #' @param re_prior Optional `list()` of random-effect / variance-component
 #'   hyperpriors (statistical, so they live in the signature rather than in
 #'   `control`). Recognised entries, each consumed by the backend that needs it:
-#'   `prior_sigma` (PC-prior anchor `c(U, alpha)` on a free RE covariance SD,
-#'   `mode = "laplace"` random slopes), `eta` (LKJ concentration for a
-#'   correlated RE covariance), `prior_df` / `prior_scale` (inverse-Wishart on
-#'   the RE covariance, `control$re_cov = "gibbs"`), `prior_sigma_scale`
+#'   `hyperprior` (`"flat"` default or `"pc_lkj"`, `mode = "laplace"` random
+#'   slopes and `mode = "eb"` -- see [tulpa_re_cov_nested()]), `prior_sigma`
+#'   (PC-prior anchor `c(U, alpha)` on a free RE covariance SD, used when
+#'   `hyperprior = "pc_lkj"`), `eta` (LKJ concentration for a correlated RE
+#'   covariance, same condition), `prior_df` / `prior_scale` (inverse-Wishart
+#'   on the RE covariance, `control$re_cov = "gibbs"`), `prior_sigma_scale`
 #'   (half-Cauchy scale on the RE SD for `mode = "gibbs"`), and `sigma_re_scale`
 #'   (half-Cauchy scale on the RE / BYM2 SD for the ModelData samplers).
 #' @param ziformula Optional one-sided formula for the zero-inflation

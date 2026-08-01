@@ -36,7 +36,14 @@
 #' term is diagonal in log-SD coordinates, and a scalar `(1 | g)` term is the
 #' degenerate one-coefficient block. Both functions call the same outer
 #' objective and the same optimizer, so `tulpa_eb()$theta_hat` and
-#' `tulpa_re_cov_nested()$theta_hat` are the same estimate on the same data.
+#' `tulpa_re_cov_nested()$theta_hat` are the same estimate on the same data --
+#' which requires `hyperprior` to default the same way on both: `"flat"`, the
+#' zero function, matching the nested-Laplace convention on every other scale
+#' axis in the engine (icar / rw1 / rw2 / ar1's tau / iid all lack a
+#' hyperprior on their scale too; see `vignette("priors")`). Set
+#' `hyperprior = "pc_lkj"` for the weakly-informative PC + LKJ prior instead
+#' (see [re_cov_pc_lkj_prior()]) -- the regularizer that, at small G, keeps a
+#' block off the `sigma = 0` boundary this maximizer would otherwise reach.
 #'
 #' The reported fixed-effect covariance is the conditional one at `theta_hat`
 #' (`solve(H_beta)`). It does not include the hyperparameter uncertainty that
@@ -56,14 +63,22 @@
 #'   alone.
 #' @param re_terms Either a single random-effect term or a list of them; see
 #'   [tulpa_re_cov_nested()] for the per-term fields.
-#' @param prior_sigma,eta Hyperparameters of the default PC + LKJ prior (see
-#'   [re_cov_pc_lkj_prior()]). Ignored when `log_prior_theta` is supplied. The
+#' @param prior_sigma,eta Hyperparameters of the PC + LKJ prior used when
+#'   `hyperprior = "pc_lkj"` (see [re_cov_pc_lkj_prior()]). Ignored when
+#'   `hyperprior = "flat"` or `log_prior_theta` is supplied. When active, the
 #'   prior is part of the maximized objective, so it regularizes the estimate:
 #'   with few groups it is what keeps a block off the `sigma = 0` boundary.
+#' @param hyperprior `"flat"` (default) or `"pc_lkj"`. `"flat"` maximizes with
+#'   `log_prior_theta` the zero function -- an unpenalized maximum-marginal-
+#'   likelihood estimate, which can reach the `sigma = 0` boundary on small
+#'   designs (see the `"lower end of the search bracket"` warning). `"pc_lkj"`
+#'   builds the PC + LKJ prior from `prior_sigma` / `eta`, regularizing the
+#'   estimate away from that boundary. Ignored when `log_prior_theta` is
+#'   supplied. Must match `hyperprior` on the paired [tulpa_re_cov_nested()]
+#'   call for the two to share `theta_hat`.
 #' @param log_prior_theta Optional `function(theta)` returning a scalar log
-#'   prior density on the full stacked parameter vector, replacing the default.
-#'   Supply `function(theta) 0` for an unpenalized maximum-marginal-likelihood
-#'   estimate (which can collapse to `sigma = 0` on small designs).
+#'   prior density on the full stacked parameter vector, overriding
+#'   `hyperprior` entirely. Default `NULL`, which defers to `hyperprior`.
 #' @param beta_prior Optional Gaussian prior on the fixed effects, threaded into
 #'   every inner [tulpa_laplace()] solve (`list(mean, sd)`).
 #' @param offset Optional observation-level offset on the linear predictor
@@ -194,6 +209,7 @@
 tulpa_eb <- function(y, n_trials = NULL, X, re_terms,
                      family = "binomial", phi = 1.0, phi2 = NULL,
                      prior_sigma = c(3, 0.05), eta = 2,
+                     hyperprior = c("flat", "pc_lkj"),
                      log_prior_theta = NULL,
                      beta_prior = NULL, offset = NULL, n_quad = 1L,
                      marginal = FALSE,
@@ -201,6 +217,8 @@ tulpa_eb <- function(y, n_trials = NULL, X, re_terms,
                      X_zi = NULL, zi_prior_sd = 2.5,
                      control = list()) {
   tulpa_check_control(control, .CONTROL_KEYS$eb, "tulpa_eb")
+  hyperprior <- match.arg(hyperprior)
+  log_prior_theta <- .re_cov_resolve_hyperprior(hyperprior, log_prior_theta)
   max_iter    <- as.integer(control$max_iter %||% 100L)
   tol         <- control$tol %||% 1e-8
   n_threads   <- as.integer(control$n_threads %||% 1L)

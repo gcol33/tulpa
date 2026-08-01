@@ -1,5 +1,41 @@
 # tulpa NEWS
 
+## 0.0.114
+
+* **`mode = "auto"` no longer conditions a random-effect term's SD at 1 (#267).**
+  `tulpa(y ~ x + (1 | g))` on the default mode reported `sd = 1, source =
+  "conditioned"`, while the same term with a slope added (`(1 + x | g)`) had
+  its whole covariance inferred -- the richer model was handled better than the
+  plainer one. `auto_select_mode()` took no random-effect argument at all, so a
+  mixed model fell through to the same Tier-1 default a plain GLM reaches.
+
+  `auto` now routes any random-effect term -- intercept-only or slope -- to the
+  exact Metropolis-within-Gibbs covariance debias (`re_cov_gibbs`), which
+  already treats a scalar `(1 | g)` as the degenerate `c = 1` covariance block,
+  so no special-casing by term shape was needed. An explicit `mode = "laplace"`
+  / `"mala"` / ... still conditions on `sigma_re` (defaulting to 1) when the
+  caller names it directly -- only the `auto` default changes. The `message()`
+  that reported the conditioning is now a `warning()`, so a script that
+  promotes warnings sees it (same sub-issue as #265).
+
+* **One hyperprior convention for a random-effect covariance's scale, chosen
+  (#268).** The nested-Laplace path integrates every scale axis (`icar`, `rw1`,
+  `rw2`, `ar1`'s `tau`, `iid`) flat in `log(theta)`, by construction of the grid
+  and its softmax weighting; `tulpa_re_cov_nested()` / `tulpa_re_cov_gibbs()`'s
+  `Sigma` estimate carried a PC + LKJ prior by default. The two paths put
+  different priors on the same statistical object, undocumented in either
+  direction, so the RE SD from one backend was not the RE SD from the other.
+
+  `tulpa_eb()` and `tulpa_re_cov_nested()` now share a `hyperprior` argument,
+  `"flat"` (default) or `"pc_lkj"`: `"flat"` matches the nested-Laplace
+  convention everywhere else in the engine; `"pc_lkj"` opts into the
+  weakly-informative PC + LKJ prior `re_cov_pc_lkj_prior()` builds, still
+  available on request. `tulpa_re_cov_gibbs()`'s `Sigma | b` conjugate draw
+  cannot go fully flat -- an improper prior is not a valid target for that
+  step -- so it keeps its existing minimal-proper Inverse-Wishart default
+  (`prior_df = n_coefs + 1`), documented as the closest analogue. See
+  `vignette("priors")`.
+
 ## 0.0.113
 
 * **A random-effect term on the nested path has its SD integrated instead of

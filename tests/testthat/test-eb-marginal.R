@@ -53,10 +53,15 @@ test_that("H_theta matches an independently differenced Hessian", {
   f1 <- tulpa_eb(d$y, NULL, d$X, d$re, family = "poisson", marginal = TRUE)
   skip_if(is.null(f1$H_theta), "correction did not form on this seed")
 
+  # log_prior_theta = function(theta) 0, not NULL: f1 fits under tulpa_eb()'s
+  # default hyperprior = "flat" (gcol33/tulpa#268), and core must target the
+  # same objective for H_theta to match. NULL here would resolve to the
+  # PC + LKJ default .re_cov_theta_fit() falls back to on its own, which is
+  # what hyperprior = "pc_lkj" (not the default) builds.
   core <- .re_cov_theta_fit(
     y = d$y, n_trials = NULL, X = d$X, re_terms = list(d$re),
     family = "poisson", phi = 1.0, prior_sigma = c(3, 0.05), eta = 2,
-    log_prior_theta = NULL, beta_prior = NULL, n_quad = 1L,
+    log_prior_theta = function(theta) 0, beta_prior = NULL, n_quad = 1L,
     max_iter = 100L, tol = 1e-8, n_threads = 1L,
     caller = "test", need_scale = FALSE, outer_maxit = 500L, offset = NULL)
 

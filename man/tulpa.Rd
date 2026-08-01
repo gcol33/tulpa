@@ -95,10 +95,12 @@ effects.}
 \item{re_prior}{Optional \code{list()} of random-effect / variance-component
 hyperpriors (statistical, so they live in the signature rather than in
 \code{control}). Recognised entries, each consumed by the backend that needs it:
-\code{prior_sigma} (PC-prior anchor \code{c(U, alpha)} on a free RE covariance SD,
-\code{mode = "laplace"} random slopes), \code{eta} (LKJ concentration for a
-correlated RE covariance), \code{prior_df} / \code{prior_scale} (inverse-Wishart on
-the RE covariance, \code{control$re_cov = "gibbs"}), \code{prior_sigma_scale}
+\code{hyperprior} (\code{"flat"} default or \code{"pc_lkj"}, \code{mode = "laplace"} random
+slopes and \code{mode = "eb"} -- see \code{\link[=tulpa_re_cov_nested]{tulpa_re_cov_nested()}}), \code{prior_sigma}
+(PC-prior anchor \code{c(U, alpha)} on a free RE covariance SD, used when
+\code{hyperprior = "pc_lkj"}), \code{eta} (LKJ concentration for a correlated RE
+covariance, same condition), \code{prior_df} / \code{prior_scale} (inverse-Wishart
+on the RE covariance, \code{control$re_cov = "gibbs"}), \code{prior_sigma_scale}
 (half-Cauchy scale on the RE SD for \code{mode = "gibbs"}), and \code{sigma_re_scale}
 (half-Cauchy scale on the RE / BYM2 SD for the ModelData samplers).}
 
@@ -217,7 +219,8 @@ several terms together (\code{(1 + x | g) + (1 | h)}) -- each term becomes a
 covariance block, and any accompanying \code{(1 | g)} term is integrated as a 1x1
 block (nothing is silently conditioned at \code{sigma_re = 1}). \code{mode = "laplace"}
 routes to the nested-Laplace \code{Sigma} integrator (\code{\link[=tulpa_re_cov_nested]{tulpa_re_cov_nested()}},
-CCD design + PC/LKJ prior); \code{control$re_cov = "gibbs"} switches to the exact
+CCD design, flat-in-log hyperprior by default -- see \code{re_prior$hyperprior});
+\code{control$re_cov = "gibbs"} switches to the exact
 Metropolis-within-Gibbs debias (\code{\link[=tulpa_re_cov_gibbs]{tulpa_re_cov_gibbs()}}), and
 \code{control$re_cov = "aghq"} keeps the nested integrator but replaces the
 inner joint-Laplace marginal with adaptive Gauss-Hermite quadrature

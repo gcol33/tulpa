@@ -178,6 +178,11 @@ test_that("free-Sigma random-slope nested Laplace covers the correlation rho", {
   rho_true <- 0.5
   Sigma <- matrix(c(0.8^2, rho_true * 0.8 * 0.6,
                     rho_true * 0.8 * 0.6, 0.6^2), 2)
+  # hyperprior = "pc_lkj" opted in explicitly (default is "flat", gcol33/
+  # tulpa#268): the 0.75 gate was tuned against the LKJ-regularized posterior.
+  # Measured at 60 seeds: pc_lkj covers 58/60 (96.7%); flat covers 49/60
+  # (81.7%), still above the gate but with a noticeably thinner margin -- the
+  # LKJ correlation prior is doing real work on this parameter even at G = 60.
   extract <- function(seed) {
     set.seed(seed); G <- 60L; npg <- 12L; N <- G * npg
     grp <- rep(seq_len(G), each = npg); x <- rnorm(N)
@@ -185,7 +190,8 @@ test_that("free-Sigma random-slope nested Laplace covers the correlation rho", {
     u <- t(t(chol(Sigma)) %*% matrix(rnorm(2 * G), 2))
     y <- rbinom(N, 1L, plogis(as.numeric(X %*% c(-0.3, 0.7)) + rowSums(Z * u[grp, ])))
     re_term <- list(idx = grp, n_groups = G, n_coefs = 2L, Z = Z)
-    res <- tulpa_re_cov_nested(y, rep(1L, N), X, re_term, family = "binomial")
+    res <- tulpa_re_cov_nested(y, rep(1L, N), X, re_term, family = "binomial",
+                               hyperprior = "pc_lkj")
     p <- res$posterior; r <- p[p$parameter == "rho_12", ]
     c(r$ci_lo, r$ci_hi)
   }

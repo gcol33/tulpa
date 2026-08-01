@@ -17,7 +17,7 @@ ranef(object, ...)
 \value{
 Data frame with one row per random-effect coefficient: \code{term} (the
 group level, and the coefficient for a random slope), \code{estimate}, \code{sd}, and
-the 2.5\\%/97.5\\% bounds \code{conf.low} / \code{conf.high}. \code{sd} and the bounds are
+the 2.5\% / 97.5\% bounds \code{conf.low} / \code{conf.high}. \code{sd} and the bounds are
 \code{NA} on a backend that reports a point per group (see Details).
 }
 \description{

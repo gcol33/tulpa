@@ -163,7 +163,11 @@
 #' @param prior_df Inverse-Wishart prior degrees of freedom. Applied to every
 #'   correlated block (default `n_coefs + 1`, the minimal proper choice) and as
 #'   the scalar inverse-gamma shape for every diagonal block (default 2). Must
-#'   leave each block's prior proper.
+#'   leave each block's prior proper -- unlike [tulpa_re_cov_nested()] /
+#'   [tulpa_eb()] (`hyperprior = "flat"` by default, gcol33/tulpa#268), the
+#'   `Sigma_m | b_m` conjugate draw here needs a proper Inverse-Wishart to
+#'   sample from, so an improper flat prior is not an option; the minimal-`df`
+#'   default is the closest analogue this sampler can offer.
 #' @param prior_scale Inverse-Wishart prior scale matrix. Used for a block when
 #'   its dimension matches (default `diag(n_coefs)`); otherwise the per-block
 #'   default is used.

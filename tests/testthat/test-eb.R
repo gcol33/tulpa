@@ -68,8 +68,7 @@ test_that("EB recovers a known RE standard deviation across seeds", {
   }, numeric(1))
 
   expect_true(all(is.finite(est)))
-  # Mean over seeds within 0.1 of truth: the PC prior pulls the estimate down a
-  # little, so this is a bias bound, not a per-seed tolerance.
+  # Mean over seeds within 0.1 of truth: a bias bound, not a per-seed tolerance.
   expect_lt(abs(mean(est) - 0.7), 0.1)
   # No seed collapses to the sigma = 0 boundary or runs away.
   expect_true(all(est > 0.3 & est < 1.3))
@@ -161,8 +160,11 @@ test_that("EB estimates each block of a two-term model", {
 })
 
 test_that("a flat hyperprior gives the unpenalized ML-II estimate", {
+  # hyperprior defaults to "flat" (gcol33/tulpa#268); opt into "pc_lkj" for the
+  # penalized comparator, and hit the same flat objective two other ways
+  # (log_prior_theta = function(theta) 0, and simply not passing hyperprior).
   d <- sim_re_pois(7L, G = 40L, per = 10L, sigma = 0.7)
-  pen  <- eb_pois(d)
+  pen  <- eb_pois(d, hyperprior = "pc_lkj")
   flat <- eb_pois(d, log_prior_theta = function(theta) 0)
 
   # With a flat prior the objective IS the log marginal, so its maximizer must
@@ -172,6 +174,11 @@ test_that("a flat hyperprior gives the unpenalized ML-II estimate", {
   # (the PC prior shrinks sigma, its log-scale Jacobian pushes the other way).
   expect_gte(flat$log_marginal, pen$log_marginal - 1e-6)
   expect_false(isTRUE(all.equal(flat$theta_hat, pen$theta_hat, tolerance = 1e-8)))
+
+  # The default (no explicit hyperprior / log_prior_theta) resolves to the
+  # same flat objective as the explicit function(theta) 0 above.
+  default <- eb_pois(d)
+  expect_identical(default$theta_hat, flat$theta_hat)
 })
 
 

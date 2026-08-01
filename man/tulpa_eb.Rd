@@ -14,6 +14,7 @@ tulpa_eb(
   phi2 = NULL,
   prior_sigma = c(3, 0.05),
   eta = 2,
+  hyperprior = c("flat", "pc_lkj"),
   log_prior_theta = NULL,
   beta_prior = NULL,
   offset = NULL,
@@ -40,15 +41,24 @@ never made). A \code{phi2} supplied for any other family errors rather than bein
 ignored. It is conditioned on, never estimated: \code{estimate_phi} covers \code{phi}
 alone.}
 
-\item{prior_sigma, eta}{Hyperparameters of the default PC + LKJ prior (see
-\code{\link[=re_cov_pc_lkj_prior]{re_cov_pc_lkj_prior()}}). Ignored when \code{log_prior_theta} is supplied. The
+\item{prior_sigma, eta}{Hyperparameters of the PC + LKJ prior used when
+\code{hyperprior = "pc_lkj"} (see \code{\link[=re_cov_pc_lkj_prior]{re_cov_pc_lkj_prior()}}). Ignored when
+\code{hyperprior = "flat"} or \code{log_prior_theta} is supplied. When active, the
 prior is part of the maximized objective, so it regularizes the estimate:
 with few groups it is what keeps a block off the \code{sigma = 0} boundary.}
 
+\item{hyperprior}{\code{"flat"} (default) or \code{"pc_lkj"}. \code{"flat"} maximizes with
+\code{log_prior_theta} the zero function -- an unpenalized maximum-marginal-
+likelihood estimate, which can reach the \code{sigma = 0} boundary on small
+designs (see the \code{"lower end of the search bracket"} warning). \code{"pc_lkj"}
+builds the PC + LKJ prior from \code{prior_sigma} / \code{eta}, regularizing the
+estimate away from that boundary. Ignored when \code{log_prior_theta} is
+supplied. Must match \code{hyperprior} on the paired \code{\link[=tulpa_re_cov_nested]{tulpa_re_cov_nested()}}
+call for the two to share \code{theta_hat}.}
+
 \item{log_prior_theta}{Optional \verb{function(theta)} returning a scalar log
-prior density on the full stacked parameter vector, replacing the default.
-Supply \code{function(theta) 0} for an unpenalized maximum-marginal-likelihood
-estimate (which can collapse to \code{sigma = 0} on small designs).}
+prior density on the full stacked parameter vector, overriding
+\code{hyperprior} entirely. Default \code{NULL}, which defers to \code{hyperprior}.}
 
 \item{beta_prior}{Optional Gaussian prior on the fixed effects, threaded into
 every inner \code{\link[=tulpa_laplace]{tulpa_laplace()}} solve (\code{list(mean, sd)}).}
@@ -180,7 +190,14 @@ Blocks, coordinates and the default hyperprior are exactly those of
 term is diagonal in log-SD coordinates, and a scalar \code{(1 | g)} term is the
 degenerate one-coefficient block. Both functions call the same outer
 objective and the same optimizer, so \code{tulpa_eb()$theta_hat} and
-\code{tulpa_re_cov_nested()$theta_hat} are the same estimate on the same data.
+\code{tulpa_re_cov_nested()$theta_hat} are the same estimate on the same data --
+which requires \code{hyperprior} to default the same way on both: \code{"flat"}, the
+zero function, matching the nested-Laplace convention on every other scale
+axis in the engine (icar / rw1 / rw2 / ar1's tau / iid all lack a
+hyperprior on their scale too; see \code{vignette("priors")}). Set
+\code{hyperprior = "pc_lkj"} for the weakly-informative PC + LKJ prior instead
+(see \code{\link[=re_cov_pc_lkj_prior]{re_cov_pc_lkj_prior()}}) -- the regularizer that, at small G, keeps a
+block off the \code{sigma = 0} boundary this maximizer would otherwise reach.
 
 The reported fixed-effect covariance is the conditional one at \code{theta_hat}
 (\code{solve(H_beta)}). It does not include the hyperparameter uncertainty that

@@ -365,6 +365,11 @@ test_that("outer k-hat declines (NA) for a multi-block nested fit", {
 test_that("outer k-hat orders well-identified below tiny-binary RE-covariance fits", {
   skip_on_cran()
 
+  # hyperprior = "pc_lkj" opted in explicitly (default is "flat", gcol33/
+  # tulpa#268): this test calibrates the k-hat SEPARATION between a
+  # well-identified and a pathological fit, which is the PC prior's shrinkage
+  # behavior at small G, not the flat-in-log default's.
+  #
   # (a) Well-identified: 30 groups x 25 gaussian obs each, correlated random
   # slope. The Sigma posterior is near-Gaussian, so the Gaussian grid proposal
   # is correctable -> low k-hat.
@@ -376,7 +381,7 @@ test_that("outer k-hat orders well-identified below tiny-binary RE-covariance fi
     rt  <- list(idx = grp, n_groups = G, n_coefs = 2L, Z = cbind(1, x),
                 correlated = TRUE)
     tulpa_re_cov_nested(y, rep(1L, n), cbind(1, x), rt, family = "gaussian",
-                        phi = 0.25,
+                        phi = 0.25, hyperprior = "pc_lkj",
                         control = list(diagnose_k = TRUE, k_samples = 150L))$pareto_k
   }
   # (b) Tiny binary groups: 25 groups x 3 binary obs each. The variance-component
@@ -389,6 +394,7 @@ test_that("outer k-hat orders well-identified below tiny-binary RE-covariance fi
     rt  <- list(idx = grp, n_groups = G, n_coefs = 2L, Z = cbind(1, x),
                 correlated = TRUE)
     tulpa_re_cov_nested(y, rep(1L, n), cbind(1, x), rt, family = "binomial",
+                        hyperprior = "pc_lkj",
                         control = list(diagnose_k = TRUE, k_samples = 150L))$pareto_k
   }
 

@@ -335,6 +335,20 @@ on what each parameter means for that likelihood, which is the quick way to
 check whether a family even has a dispersion or a temporal slot before you try
 to set it.
 
+These five slots cover the direct / conditioning paths and the ModelData
+samplers. Two backends sit outside them and follow a different convention.
+The nested-Laplace integrator's own scale axes (`icar`, `rw1`, `rw2`, `ar1`'s
+`tau`, `iid`) carry no hyperprior at all: the grid is uniform in `log(theta)`
+and the outer weights are a plain softmax of the log marginal, so the
+effective prior is flat in log-scale, everywhere, by construction of the
+integration rather than by a `tulpa_priors()` slot. [tulpa_re_cov_nested()]
+and [tulpa_eb()] match that convention by default (`hyperprior = "flat"`);
+pass `hyperprior = "pc_lkj"` to opt into the PC + LKJ prior these two
+functions can also build via [re_cov_pc_lkj_prior()]. [tulpa_re_cov_gibbs()]
+cannot go fully flat -- its `Sigma | b` step is a conjugate Inverse-Wishart
+draw, which needs a proper prior to sample from -- so it defaults to the
+weakest proper choice (`prior_df = n_coefs + 1`) instead.
+
 ## Priors on fixed effects
 
 The engine's Laplace path takes a Gaussian prior on the fixed effects through

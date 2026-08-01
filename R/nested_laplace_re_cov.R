@@ -303,6 +303,34 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
   }
 }
 
+# Hyperprior convention on the scale of a Gaussian latent block (gcol33/tulpa#268).
+#
+# icar / rw1 / rw2 / ar1(tau) / iid, the nested-Laplace path's own scale axes
+# (build_blocks_from_spec in src/nested_laplace_multi.cpp; the single-block
+# driver in R/nested_laplace.R), carry NO hyperprior on tau / sigma: the C++
+# kernels there compute only log p(x | tau), the grid is uniform in log(theta),
+# and the outer weights are plain softmax(log_marginal) with no added term --
+# flat in log(theta). The one existing exception, ar1's rho, follows the same
+# rule: `.nl_apply_ar1_rho_prior()` defaults to Beta(1, 1), a no-op, and only
+# a caller-supplied `rho_prior` moves it off flat.
+#
+# .re_cov_theta_fit() is shared by tulpa_re_cov_nested() and tulpa_eb(), whose
+# test suites assert the two compute the SAME theta_hat from the SAME objective
+# (test-eb.R, "tulpa_eb() and tulpa_re_cov_nested() find the same theta_hat") --
+# so the two must always resolve to the same hyperprior, never one per function.
+# `hyperprior = "flat"` (the default for both) makes that objective match the
+# nested-Laplace convention above: the zero function, unless the caller already
+# supplied a `log_prior_theta` of their own. `hyperprior = "pc_lkj"` opts into
+# the weakly-informative PC + LKJ prior built from `prior_sigma` / `eta`
+# (re_cov_pc_lkj_prior()) -- the regularizer tulpa_eb() documents as what keeps
+# a block off the `sigma = 0` boundary at small G, still available on request.
+.re_cov_resolve_hyperprior <- function(hyperprior, log_prior_theta) {
+  if (is.null(log_prior_theta) && identical(hyperprior, "flat")) {
+    return(function(theta) 0)
+  }
+  log_prior_theta
+}
+
 # Derived quantities of one block's Sigma draws as a matrix: one row per Sigma,
 # named columns sigma_i (= sqrt(Sigma_ii)); for a `full` block also rho_ij
 # (i<j) and the upper-triangular Sigma_ij; for a diagonal block only the
@@ -1273,13 +1301,20 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
 #' `Delta_k * exp(log_marginal(Sigma_k) + log_prior_theta(theta_k))`, following
 #' the INLA convention `int ~ sum_k Delta_k pi(theta_k)`.
 #'
-#' By default `log_prior_theta` is the weakly-informative PC + LKJ hyperprior
-#' built per block by [re_cov_pc_lkj_prior()] and summed over blocks (PC prior on
-#' each marginal SD via `prior_sigma`, LKJ prior on each correlated block's
-#' correlation matrix via `eta`), expressed in the same parameterization with the
-#' exact change-of-variables Jacobian. Supply a custom `log_prior_theta` function
-#' to override it (then `prior_sigma` / `eta` are ignored); it must act on the
-#' full stacked parameter vector.
+#' By default (`hyperprior = "flat"`) `log_prior_theta` is the zero function:
+#' flat in log(theta), the same convention the nested-Laplace spatial /
+#' temporal / RE-scale axes use (icar / rw1 / rw2 / ar1's tau / iid, none of
+#' which carry a hyperprior on their scale either -- see `vignette("priors")`).
+#' Set `hyperprior = "pc_lkj"` to use the weakly-informative PC + LKJ hyperprior
+#' instead, built per block by [re_cov_pc_lkj_prior()] and summed over blocks
+#' (PC prior on each marginal SD via `prior_sigma`, LKJ prior on each correlated
+#' block's correlation matrix via `eta`), expressed in the same parameterization
+#' with the exact change-of-variables Jacobian. Supply a custom `log_prior_theta`
+#' function to override either default (then `prior_sigma` / `eta` /
+#' `hyperprior` are ignored); it must act on the full stacked parameter vector.
+#' [tulpa_eb()] shares this same objective and the same default, so
+#' `tulpa_eb()$theta_hat` and `tulpa_re_cov_nested()$theta_hat` stay the same
+#' estimate on the same data under either setting.
 #'
 #' @param y,n_trials,X,family,phi Passed to [tulpa_laplace()] for the inner
 #'   solve. `n_trials = NULL` defaults to 1 (binary / single-trial).
@@ -1298,13 +1333,20 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
 #'   defaults to `TRUE`). An optional `label` / `group_var` names the block in
 #'   the output. Any `L` / `cov` / `sigma` field is ignored -- `Sigma` is what
 #'   this function integrates over.
-#' @param prior_sigma,eta Hyperparameters of the default PC + LKJ prior (see
-#'   [re_cov_pc_lkj_prior()]): `prior_sigma = c(U, alpha)` with
-#'   `P(sigma_i > U) = alpha` (default `c(3, 0.05)`) and LKJ shape `eta`
-#'   (default 2). Ignored when `log_prior_theta` is supplied.
+#' @param prior_sigma,eta Hyperparameters of the PC + LKJ prior used when
+#'   `hyperprior = "pc_lkj"` (see [re_cov_pc_lkj_prior()]):
+#'   `prior_sigma = c(U, alpha)` with `P(sigma_i > U) = alpha` (default
+#'   `c(3, 0.05)`) and LKJ shape `eta` (default 2). Ignored when
+#'   `hyperprior = "flat"` or `log_prior_theta` is supplied.
+#' @param hyperprior `"flat"` (default) or `"pc_lkj"`. `"flat"` integrates with
+#'   `log_prior_theta` the zero function (flat in log(theta)), matching the
+#'   nested-Laplace convention on every other scale axis in the engine.
+#'   `"pc_lkj"` builds the PC + LKJ prior from `prior_sigma` / `eta` (the
+#'   regularizer that keeps a variance component off the `sigma = 0` boundary
+#'   at small G). Ignored when `log_prior_theta` is supplied.
 #' @param log_prior_theta Optional `function(theta)` returning a scalar log
-#'   prior density on the full stacked parameter vector. Default `NULL`, which
-#'   builds the PC + LKJ prior from `prior_sigma` / `eta`.
+#'   prior density on the full stacked parameter vector, overriding
+#'   `hyperprior` entirely. Default `NULL`, which defers to `hyperprior`.
 #' @param beta_prior Optional Gaussian prior on the fixed effects, threaded into
 #'   every inner [tulpa_laplace()] solve (`list(mean, sd)`).
 #'   `NULL` (default) keeps the weak built-in prior.
@@ -1418,6 +1460,7 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
 tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
                                 family = "binomial", phi = 1.0, phi2 = NULL,
                                 prior_sigma = c(3, 0.05), eta = 2,
+                                hyperprior = c("flat", "pc_lkj"),
                                 log_prior_theta = NULL,
                                 beta_prior = NULL, offset = NULL, n_quad = 1L,
                                 X_zi = NULL, zi_prior_sd = 2.5,
@@ -1425,6 +1468,8 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   # Perf/numerical knobs live in `control = list()` (matching tulpa() /
   # tulpa_nested_laplace()); the signature carries only statistical arguments.
   tulpa_check_control(control, .CONTROL_KEYS$re_cov_nested, "tulpa_re_cov_nested")
+  hyperprior <- match.arg(hyperprior)
+  log_prior_theta <- .re_cov_resolve_hyperprior(hyperprior, log_prior_theta)
   integration <- match.arg(control$integration %||% "ccd", c("ccd", "grid"))
   n_per_axis  <- as.integer(control$n_per_axis %||% 5L)
   span        <- control$span %||% 3

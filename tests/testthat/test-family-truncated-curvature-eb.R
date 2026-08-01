@@ -76,8 +76,8 @@ eb_sigma <- function(d, family) {
            phi = d$phi)$map$sigma
 }
 
-# Mean estimate over seeds. The PC prior pulls sigma down a little, so every
-# assertion below is a bias bound on this mean rather than a per-seed bound.
+# Mean estimate over seeds -- a bias bound on this mean rather than a
+# per-seed bound.
 mean_sigma <- function(seeds, family, ...) {
   est <- vapply(seeds, function(s) {
     eb_sigma(sim_re_count(s, family, ...), family)
