@@ -664,6 +664,8 @@ get_mode_backends <- function(mode) {
 #' @param has_spatial Whether model has spatial effects
 #' @param has_temporal Whether model has temporal effects
 #' @param has_latent Whether model has latent factors
+#' @param has_re Whether the model has any random-effect term (`(1 | g)` or
+#'   `(1 + x | g)`), scalar or slope alike
 #'
 #' @return List with:
 #'   - mode: The selected mode name
@@ -680,7 +682,8 @@ select_inference_mode <- function(mode,
                                   has_temporal = FALSE,
                                   has_latent = FALSE,
                                   spatial_type = NULL,
-                                  temporal = NULL) {
+                                  temporal = NULL,
+                                  has_re = FALSE) {
 
   mode <- tolower(mode)
 
@@ -717,7 +720,7 @@ select_inference_mode <- function(mode,
   # is the router doing its job, not an override of anything the caller asked for.
   if (mode == "auto") {
     sel <- auto_select_mode(family, n_obs, has_spatial, has_temporal, has_latent, temporal,
-                            spatial_type)
+                            spatial_type, has_re = has_re)
     sel$requested <- "auto"
     sel$explicit  <- FALSE
     return(sel)
@@ -750,7 +753,7 @@ select_inference_mode <- function(mode,
 #'
 #' @keywords internal
 auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_latent, temporal = NULL,
-                             spatial_type = NULL) {
+                             spatial_type = NULL, has_re = FALSE) {
 
   # Latent prior blocks (`latent(tgmrf(...))`) integrate their hyperparameters
   # via nested Laplace -- the designed Tier 2 hot path for latent Gaussian
@@ -844,6 +847,27 @@ auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_laten
     return(list(
       mode = "structured", backend = "laplace", tier = 2L, tier_name = "Structured",
       reason = sprintf("large dataset (n=%s)", format(n_obs, big.mark = ","))
+    ))
+  }
+
+  # A random-effect term ((1 | g) or (1 + x | g)) has no dataset-implied scalar
+  # sigma_re for auto to condition on -- conditioning at an unsupplied value
+  # (silently fixed at 1) is not "the most reliable method that is expected to
+  # finish for this model" when the covariance can instead be inferred. Route
+  # to the exact Metropolis-within-Gibbs debias of the RE covariance
+  # (re_cov_gibbs, still Tier 1) rather than falling through to the plain
+  # fixed-effect default below. re_cov_gibbs already treats a scalar `(1 | g)`
+  # term as the degenerate c = 1 covariance block, so a random-intercept-only
+  # model is routed here exactly like a random-slope model -- no
+  # special-casing by term shape (gcol33/tulpa#267). An explicit
+  # mode = "laplace" / "mala" / ... still conditions on sigma_re (defaulting
+  # to 1, with a warning) when the caller names it directly; only the auto
+  # default changes.
+  if (has_re) {
+    return(list(
+      mode = "exact", backend = "re_cov_gibbs", tier = 1L, tier_name = "Exact",
+      reason = paste("random-effect term(s); RE covariance(s) integrated via",
+                     "exact Metropolis-within-Gibbs debias")
     ))
   }
 

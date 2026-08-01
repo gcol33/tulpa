@@ -11,7 +11,8 @@ auto_select_mode(
   has_temporal,
   has_latent,
   temporal = NULL,
-  spatial_type = NULL
+  spatial_type = NULL,
+  has_re = FALSE
 )
 }
 \description{

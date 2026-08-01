@@ -1867,11 +1867,17 @@ tulpa <- function(formula, data,
   }
   has_smooth <- length(smooth_specs) > 0L
 
+  # Computed here (ahead of mode selection) so a bare `(1 | g)` term can steer
+  # auto's default choice the same way a random slope already does -- see the
+  # has_slope-based redirect below, which reuses this same `re_terms`.
+  re_terms <- bundle$re_terms %||% list()
+  has_re <- length(re_terms) > 0L
+
   fam_obj <- list(name = family, distribution = family)
   sel <- select_inference_mode(
     mode, family = fam_obj, n_obs = bundle$n_obs,
     has_spatial = has_spatial, has_temporal = has_temporal, has_latent = has_latent,
-    spatial_type = spatial_type, temporal = temporal_spec
+    spatial_type = spatial_type, temporal = temporal_spec, has_re = has_re
   )
 
   # Spatially- / temporally-varying coefficients are sampled only by the
@@ -1915,9 +1921,12 @@ tulpa <- function(formula, data,
   # Metropolis-within-Gibbs debias; `control$re_cov = "aghq"` keeps the nested
   # integrator with an AGHQ inner marginal (n_quad defaults to 9 there). Plain
   # random-intercept-only models (no slopes) keep the scalar-sigma_re design
-  # path via .bundle_to_re_list.
-  re_terms <- bundle$re_terms %||% list()
-  has_slope <- length(re_terms) > 0L &&
+  # path via .bundle_to_re_list when an explicit conditional mode names it
+  # (`mode = "laplace"` / `"mala"` / ...); auto routes them to the
+  # covariance-integrating backend too (see auto_select_mode(), gcol33/tulpa#267),
+  # so `re_terms` and `has_re` are computed once, above, ahead of mode
+  # selection, and reused here.
+  has_slope <- has_re &&
     any(vapply(re_terms, function(rt) (rt$n_coefs %||% 1L) > 1L, logical(1)))
   if (has_spatial && has_slope) {
     stop("Random-slope term(s) together with a spatial field are not supported ",
@@ -2101,14 +2110,18 @@ tulpa <- function(formula, data,
   # alongside the other blocks' hyperparameters (#265). A `sigma_re` supplied
   # explicitly still conditions there, via the one-point grid the iid registry
   # entry documents, so it is passed through rather than defaulted here.
+  # A `warning()`, not a `message()`, so a script that promotes warnings (or a
+  # chunk that traps them) actually sees that a variance component was fixed
+  # rather than estimated (gcol33/tulpa#267, same sub-issue as #265).
   if (K > 0L &&
       !sel$backend %in% c("gibbs", "re_cov_nested", "re_cov_gibbs", "eb", "agq",
                           "nested_laplace") &&
       BACKEND_REGISTRY[[sel$backend]]$input != "modeldata") {
     if (is.null(sigma_re)) {
       sigma_re <- rep(1, K)
-      message("tulpa(): `sigma_re` not supplied; conditioning on sigma_re = 1 for ",
-              "each of the ", K, " RE term(s). Pass `sigma_re` to override.")
+      warning("tulpa(): `sigma_re` not supplied; conditioning on sigma_re = 1 for ",
+              "each of the ", K, " RE term(s). Pass `sigma_re` to override.",
+              call. = FALSE)
     } else if (length(sigma_re) == 1L) {
       sigma_re <- rep(sigma_re, K)
     } else if (length(sigma_re) != K) {

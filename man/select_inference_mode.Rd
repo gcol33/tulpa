@@ -12,7 +12,8 @@ select_inference_mode(
   has_temporal = FALSE,
   has_latent = FALSE,
   spatial_type = NULL,
-  temporal = NULL
+  temporal = NULL,
+  has_re = FALSE
 )
 }
 \arguments{
@@ -27,6 +28,9 @@ select_inference_mode(
 \item{has_temporal}{Whether model has temporal effects}
 
 \item{has_latent}{Whether model has latent factors}
+
+\item{has_re}{Whether the model has any random-effect term (\code{(1 | g)} or
+\code{(1 + x | g)}), scalar or slope alike}
 }
 \value{
 List with:

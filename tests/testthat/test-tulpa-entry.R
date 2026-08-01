@@ -116,10 +116,44 @@ test_that("tulpa() validates family and defaults sigma_re with a message", {
   skip_on_cran()
   d <- make_pois_re()
   expect_error(tulpa(y ~ x + (1 | g), d, family = "weibull"), "Unknown family")
-  expect_message(
+  expect_warning(
     tulpa(y ~ x + (1 | g), d, family = "poisson", mode = "laplace"),
     "sigma_re = 1"
   )
+})
+
+test_that("auto mode infers a random-intercept's SD instead of conditioning it at 1 (gcol33/tulpa#267)", {
+  # A random slope already routes auto to the RE-covariance integrator (see
+  # "correlated random slopes" above); a bare `(1 | g)` term used to fall
+  # through to the plain-GLM default (backend "mala") and condition sigma_re
+  # at 1 instead. auto now treats the two the same way.
+  skip_on_cran()
+  set.seed(2)
+  G <- 15L; npg <- 30L; n <- G * npg
+  g <- factor(rep(seq_len(G), each = npg)); x <- rnorm(n)
+  b0 <- rnorm(G, 0, 0.9)
+  y <- rpois(n, exp(0.2 + 0.3 * x + b0[as.integer(g)]))
+  d <- data.frame(y = y, x = x, g = g)
+
+  fit <- tulpa(y ~ x + (1 | g), data = d, family = "poisson",
+               control = list(n_iter = 1500L, warmup = 800L, seed = 5L))
+  expect_equal(fit$backend, "re_cov_gibbs")
+  expect_equal(fit$inference_tier, 1L)
+
+  vc <- VarCorr(fit)
+  expect_equal(vc$source, "estimated")
+  # A real recovery bound against the simulated truth (0.9), not a shape check.
+  expect_lt(abs(vc$sd - 0.9), 0.35)
+
+  # An explicit conditional mode is unaffected: it still conditions (and warns)
+  # rather than being silently redirected out from under the caller.
+  expect_warning(
+    fit_laplace <- tulpa(y ~ x + (1 | g), data = d, family = "poisson",
+                         mode = "laplace"),
+    "sigma_re = 1"
+  )
+  expect_equal(fit_laplace$backend, "laplace")
+  expect_equal(VarCorr(fit_laplace)$source, "conditioned")
 })
 
 test_that("tulpa() handles a no-RE model on the design path", {
