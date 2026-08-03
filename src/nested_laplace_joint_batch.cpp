@@ -353,7 +353,7 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
     if (use_sparse) {
         SparseHessianBuilder pattern;
         build_joint_hessian_pattern(parsed, arms, blocks, n_x, pattern,
-                                    coupled_arms);
+                                    coupled_arms, cell_rows, n_cells);
         H_sparse_per_sp.assign(B, pattern);
     } else {
         H_per_sp.assign(B, DenseMat());

@@ -365,3 +365,105 @@ test_that("build-once + copy: parallel outer grid matches serial (sparse coupled
     expect_equal(par2$theta_mean,   serial$theta_mean,   tolerance = 1e-10)
     expect_equal(par2$theta_sd,     serial$theta_sd,     tolerance = 1e-10)
 })
+
+# --------------------------------------------------------------------------- #
+# gcol33/tulpa#270: a latent block reached by only ONE side of a coupled arm  #
+# pair. #86 above already covers a block BOTH arms reach (obs_idx = list(grp, #
+# grp)), which section 3's per-arm walk covers on its own regardless of       #
+# coupling. It does not exercise a block one coupled arm never touches at all #
+# (obs_idx's 0-sentinel on that side, or a spatial_idx sentinel) while the    #
+# spec still declares a nonzero cross-Hessian between the two arms -- the     #
+# per-cell scatter still forms a real cross entry between that block's dofs   #
+# and the OTHER arm's beta/RE/field, which build_joint_hessian_pattern's      #
+# section 5 (beta/RE-only) missed before section 6 was added. This is the     #
+# shape occu_cover's detection-only random slope (a correlated RE exclusive   #
+# to the detection arm, crossed against the shared occupancy field) and its   #
+# rank-1 s2z fold path (a field exclusive to one arm, crossed against the     #
+# other's beta) both need.
+# --------------------------------------------------------------------------- #
+
+test_that("coupled field + arm-exclusive RE block: dense and sparse agree (#270)", {
+    skip_on_cran()
+    cpp_register_test_bivariate_gaussian_coupling(
+        lam00 = 2.0, lam11 = 1.5, lam01 = 0.6)
+    n_s <- 30L; n_g <- 6L
+    adj <- .chain_adj_re(n_s)
+    grp <- rep(seq_len(n_g), length.out = n_s)
+    set.seed(270L)
+    w <- rnorm(n_s, 0, 0.8); w <- w - mean(w)
+    u <- rnorm(n_g, 0, 0.6)
+    y0 <- 0.3 + w + rnorm(n_s, 0, 0.35)               # arm a: field only
+    y1 <- -0.2 + w + u[grp] + rnorm(n_s, 0, 0.35)      # arm b: field + RE
+    arm <- function(y) list(
+        y = y, n_trials = rep(1L, n_s), X = matrix(1, n_s, 1),
+        spatial_idx = seq_len(n_s), re_idx = rep(0, n_s),
+        n_re_groups = 0L, sigma_re = 1.0, family = "gaussian", phi = 1,
+        coupled = TRUE, cell_obs_map = seq_len(n_s))
+    prior <- list(
+        list(type = "bym2", n_spatial_units = n_s,
+             adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
+             n_neighbors = adj$n_neighbors, scale_factor = 1.0,
+             sigma_grid = seq(0.2, 1.4, length.out = 5L),
+             rho_grid   = seq(0.1, 0.95, length.out = 5L),
+             spatial_idx = list(seq_len(n_s), seq_len(n_s))),
+        # Arm-exclusive RE: arm "a"'s column is the 0-sentinel (no RE reaches
+        # it); arm "b" alone reaches this block.
+        list(type = "iid", n_units = n_g,
+             sigma_grid = seq(0.2, 1.4, length.out = 5L),
+             obs_idx = list(rep(0L, n_s), grp)))
+
+    res_dense <- tulpa_nested_laplace_joint(
+        responses = list(a = arm(y0), b = arm(y1)), prior = prior,
+        cell_coupling = "test_bivariate_gaussian",
+        control = list(adaptive_grid = FALSE, max_iter = 80L, tol = 1e-11,
+                       diagnose_k = FALSE))
+    res_sparse <- tulpa_nested_laplace_joint(
+        responses = list(a = arm(y0), b = arm(y1)), prior = prior,
+        cell_coupling = "test_bivariate_gaussian",
+        control = list(adaptive_grid = FALSE, max_iter = 80L, tol = 1e-11,
+                       diagnose_k = FALSE, force_sparse = TRUE))
+
+    expect_equal(res_sparse$log_marginal, res_dense$log_marginal, tolerance = 1e-9)
+    expect_equal(res_sparse$modes,        res_dense$modes,        tolerance = 1e-8)
+    expect_equal(res_sparse$theta_mean,   res_dense$theta_mean,   tolerance = 1e-8)
+    expect_equal(res_sparse$theta_sd,     res_dense$theta_sd,     tolerance = 1e-8)
+})
+
+test_that("coupled field private to one arm: rank-1 s2z pattern matches densify (#270)", {
+    skip_on_cran()
+    cpp_register_test_bivariate_gaussian_coupling(
+        lam00 = 2.0, lam11 = 1.5, lam01 = 0.6)
+    n_s <- 300L
+    adj <- .chain_adj_re(n_s)
+    set.seed(271L)
+    w <- rnorm(n_s, 0, 0.8); w <- w - mean(w)
+    y0 <- 0.3 + w + rnorm(n_s, 0, 0.35)
+    y1 <- -0.2 + rnorm(n_s, 0, 0.35)   # arm b never reaches the field
+
+    arm_a <- list(y = y0, n_trials = rep(1L, n_s), X = matrix(1, n_s, 1),
+                 spatial_idx = seq_len(n_s), family = "gaussian", phi = 1,
+                 coupled = TRUE, cell_obs_map = seq_len(n_s))
+    arm_b <- list(y = y1, n_trials = rep(1L, n_s), X = matrix(1, n_s, 1),
+                 spatial_idx = rep(0L, n_s), family = "gaussian", phi = 1,
+                 coupled = TRUE, cell_obs_map = seq_len(n_s))
+    prior <- list(type = "icar", n_spatial_units = n_s,
+                 adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
+                 n_neighbors = adj$n_neighbors, sigma_grid = c(0.5, 1.0),
+                 spatial_idx = list(seq_len(n_s), rep(0L, n_s)))
+
+    old <- Sys.getenv("TULPA_S2Z_DENSIFY_MAX", unset = NA)
+    on.exit(if (is.na(old)) Sys.unsetenv("TULPA_S2Z_DENSIFY_MAX")
+            else Sys.setenv(TULPA_S2Z_DENSIFY_MAX = old), add = TRUE)
+    fit_at <- function(densify_max) {
+        Sys.setenv(TULPA_S2Z_DENSIFY_MAX = densify_max)
+        tulpa_nested_laplace_joint(
+            responses = list(a = arm_a, b = arm_b), prior = prior,
+            cell_coupling = "test_bivariate_gaussian",
+            control = list(max_iter = 200L, tol = 1e-9, diagnose_k = FALSE))
+    }
+    dns <- fit_at("100000")   # store the full 1 1' (dense densify path)
+    r1  <- fit_at("0")        # fold 1 1' in at solve time (the > 256-node path)
+
+    expect_equal(r1$log_marginal, dns$log_marginal, tolerance = 1e-6)
+    expect_equal(as.numeric(r1$modes), as.numeric(dns$modes), tolerance = 1e-6)
+})

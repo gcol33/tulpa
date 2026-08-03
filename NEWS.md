@@ -1,5 +1,33 @@
 # tulpa NEWS
 
+## 0.0.115
+
+* **The joint Hessian sparsity pattern now covers a latent block reached by
+  only one side of a coupled arm pair (#270).** `HessianPatternGuard`
+  (introduced after the tulpaObs v0.0.101 pin, so this had never been
+  checked) caught `occu_cover()` dropping 10592-124160 nonzero contributions
+  per fit whenever a coupled ICAR field met either a correlated random-slope
+  RE block private to the detection arm, or its own detection-arm beta under
+  the rank-1 s2z fold path (fields above `TULPA_S2Z_DENSIFY_MAX`, default
+  256 units).
+
+  The per-cell cross-Hessian scatter multiplies EVERY active dof of one
+  coupled arm's row -- beta, RE, and any latent-block dof that row's `idx` /
+  `obs_indices` resolves to -- against every active dof of another (or the
+  same) coupled arm's row sharing the cell. `build_joint_hessian_pattern`'s
+  cross-arm section only ever registered the beta/RE part of that product; a
+  block reached by just one side (a private random-slope block, or a field
+  the other arm's `field_coef = 0` decouples) had no pattern entry for its
+  cross term against the other arm's beta/RE/latent dofs, even though the
+  scatter produces a real nonzero value there whenever the coupling spec's
+  cross-Hessian for that arm pair is nonzero. A new section walks each
+  coupled cell's per-arm active-dof union (mirroring the scatter's own
+  `collect_coupled_row_latents` resolver) and adds the missing cross
+  entries, scoped per cell so it costs no more than the scatter already
+  does. Two regression tests reproduce both shapes on tulpa's own bivariate
+  test-coupling spec (`test-cell-coupling-cross-hess.R`), independent of
+  tulpaObs.
+
 ## 0.0.114
 
 * **`mode = "auto"` no longer conditions a random-effect term's SD at 1 (#267).**

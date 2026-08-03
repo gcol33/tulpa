@@ -104,17 +104,34 @@ inline void resolve_indexed_dofs(
 // at this fit (empty if no spec is registered, or the spec is the
 // separable default). Every (k, l) pair with k != l from `coupled_arms`
 // adds cross-arm beta/beta, beta/RE, RE/beta, RE/RE dense pattern blocks
-// (section 5 below). Latent-block cross-coverage is already provided by
-// section 3's per-arm walk -- each arm's own per-obs path adds its beta/RE
-// x latent entries, so a shared latent dof reached from two coupled arms
-// already has both (beta_k, z) and (beta_l, z) in the pattern.
+// (section 5 below) -- unconditionally, without consulting the spec's
+// `dense_cross_pairs()`, a safe over-approximation matching section 6's
+// same choice.
+//
+// `cell_rows` / `n_cells` (from `build_cell_rows_from_arms`, empty/0 when
+// the fit has no cell coupling) drive section 6: the per-cell cross-Hessian
+// scatter (`scatter_cell_coupling_branch_impl`) multiplies EVERY active dof
+// of one coupled arm's row -- beta, RE, and any latent-block dof that row's
+// `idx` / `obs_indices` resolves to -- against every active dof of another
+// (or the same) coupled arm's row sharing the cell. Section 5's beta/RE-only
+// coverage is blind to a latent block reached by only ONE side of a coupled
+// pair (a random-slope block private to one arm, or a spatial field one arm
+// doesn't carry): that block's dofs still take part in a REAL cross-Hessian
+// entry against the other side whenever the spec's cross-Hessian for that
+// arm pair is nonzero, which section 3's per-arm walk cannot see (it never
+// pairs dofs across two different arms). This is the fix for gcol33/tulpa#270
+// (10592-124160 dropped contributions on occu_cover's coupled ICAR field
+// crossed with a correlated random-slope RE block, or with its own detection
+// arm beta under the rank-1 s2z fold path).
 inline void build_joint_hessian_pattern(
     const std::vector<ParsedArm>&    parsed,
     const std::vector<JointArm>&     arms,
     const std::vector<LatentBlock>&  blocks,
     int                              n_x,
     SparseHessianBuilder&            out_builder,
-    const std::vector<int>&          coupled_arms = std::vector<int>()
+    const std::vector<int>&          coupled_arms = std::vector<int>(),
+    const std::vector<std::vector<std::vector<int>>>& cell_rows = {},
+    int                              n_cells = 0
 ) {
     const int n_arms = static_cast<int>(arms.size());
     const int B      = static_cast<int>(blocks.size());
@@ -317,6 +334,84 @@ inline void build_joint_hessian_pattern(
                 detail::add_dense_block_pattern(entries,
                                                  pa_k.re_start, pa_k.n_re_groups,
                                                  pa_l.re_start, pa_l.n_re_groups);
+            }
+        }
+    }
+
+    // ---- (6) Cell-coupled cross pattern: latent-block-involving pairs the
+    // per-cell cross-Hessian scatter (scatter_cell_coupling_branch_impl) can
+    // produce between two coupled arms, or between two rows of the same
+    // coupled arm sharing a cell. See the function-header note for why
+    // sections 1-5 miss this: they cover every WITHIN-arm dof combination and
+    // the CROSS-arm beta/RE combinations, but not a cross entry where at
+    // least one side is a latent-block dof reached by only one of the two
+    // arms/rows in play.
+    if (!coupled_arms.empty() && !cell_rows.empty()) {
+        const int n_coupled = static_cast<int>(coupled_arms.size());
+        std::vector<int> dofs_kk, dofs_ll;
+        std::vector<std::pair<int,double>> row_scratch;
+
+        // Every (beta, RE, active-latent) dof any row of coupled arm `kk`
+        // touches within cell `c`. Mirrors collect_coupled_row_latents (the
+        // scatter's own resolver) exactly, minus the d_eff / row_weight
+        // zero-skips: the pattern is fit-level (no k_grid), so like sections
+        // 3-4 it over-includes rather than guess which grid points a weight
+        // is zero at. Sorted + deduped so the O(|dofs|^2) self-cross below
+        // stays cheap even when many rows in a cell share the same RE group
+        // or field cell.
+        auto cell_arm_dofs = [&](int kk, int c, std::vector<int>& out) {
+            out.clear();
+            const int k = coupled_arms[kk];
+            const ParsedArm& pa = parsed[k];
+            for (int j = 0; j < pa.p; j++) out.push_back(pa.beta_start + j);
+            for (int row : cell_rows[kk][c]) {
+                if (pa.n_re_groups > 0) {
+                    int gi = static_cast<int>(pa.re_idx[row]) - 1;
+                    if (gi >= 0 && gi < pa.n_re_groups)
+                        out.push_back(pa.re_start + gi);
+                }
+                for (int b = 0; b < B; b++) {
+                    const LatentBlock& blk = blocks[b];
+                    if (blk.contrib_kind == BlockContribKind::INDEXED_SINGLE) {
+                        if (!blk.idx) continue;
+                        int l = blk.idx(row, k);
+                        if (l > 0 && l <= blk.size)
+                            out.push_back(blk.start + l - 1);
+                    } else if (blk.contrib_kind == BlockContribKind::INDEXED_MULTI) {
+                        if (!blk.obs_indices) continue;
+                        blk.obs_indices(row, k, row_scratch);
+                        for (const auto& jw : row_scratch) {
+                            int l = jw.first;
+                            if (l > 0 && l <= blk.size)
+                                out.push_back(blk.start + l - 1);
+                        }
+                    }
+                    // DENSE_BASIS / BILINEAR_FACTOR: not a coupled-scatter
+                    // kind (collect_coupled_row_latents skips them too; no
+                    // coupled family reaches one of these through a row).
+                }
+            }
+            std::sort(out.begin(), out.end());
+            out.erase(std::unique(out.begin(), out.end()), out.end());
+        };
+
+        for (int c = 0; c < n_cells; c++) {
+            for (int kk = 0; kk < n_coupled; kk++) {
+                cell_arm_dofs(kk, c, dofs_kk);
+                if (dofs_kk.empty()) continue;
+                // Self pair (kk, kk): any two rows of this arm within the
+                // cell can co-appear in the self cross-Hessian (dense or the
+                // rank-1 self-cross's u u^T span the same dof set).
+                for (std::size_t a = 0; a < dofs_kk.size(); a++)
+                    for (std::size_t b2 = 0; b2 <= a; b2++)
+                        entries.emplace_back(dofs_kk[a], dofs_kk[b2]);
+                for (int ll = kk + 1; ll < n_coupled; ll++) {
+                    cell_arm_dofs(ll, c, dofs_ll);
+                    if (dofs_ll.empty()) continue;
+                    for (int a : dofs_kk)
+                        for (int b2 : dofs_ll)
+                            entries.emplace_back(a, b2);
+                }
             }
         }
     }

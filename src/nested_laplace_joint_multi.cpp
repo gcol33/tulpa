@@ -2387,7 +2387,8 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
     std::vector<SparseHessianBuilder> H_builders(1);
     if (progress) progress->note("preparing joint Hessian sparsity pattern");
     { TULPA_PROFILE_PHASE(PHASE_PATTERN_BUILD);
-      build_joint_hessian_pattern(parsed, arms, blocks, n_x, H_builders[0], coupled_arms); }
+      build_joint_hessian_pattern(parsed, arms, blocks, n_x, H_builders[0],
+                                  coupled_arms, cell_rows, n_cells); }
     {
         const size_t nnz = H_builders[0].values.size();
         // Per-thread working set after the build-once + copy refactor: each

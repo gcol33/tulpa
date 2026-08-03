@@ -166,7 +166,9 @@ public:
     // Add value to entry (row, col). Handles symmetric storage (lower triangle).
     // An entry outside the pattern cannot be stored; a nonzero contribution to
     // one is recorded so the enclosing driver's HessianPatternGuard can raise
-    // (see hessian_pattern_guard.h).
+    // (see hessian_pattern_guard.h). With TULPA_DEBUG_HESSIAN_DROPS set, the
+    // first 200 misses also print their (row, col) so a pattern/scatter
+    // mismatch can be localized to a block without a debugger.
     void add(int row, int col, double val) {
         int lo = std::min(row, col);
         int hi = std::max(row, col);
@@ -174,6 +176,13 @@ public:
         if (it != entry_map->end()) {
             values[it->second] += val;
         } else if (val != 0.0) {
+            static const char* dbg = std::getenv("TULPA_DEBUG_HESSIAN_DROPS");
+            if (dbg) {
+                static std::atomic<int> printed{0};
+                if (printed.fetch_add(1) < 200) {
+                    Rprintf("HESSIAN_DROP row=%d col=%d val=%g\n", hi, lo, val);
+                }
+            }
             record_hessian_pattern_drop();
         }
     }
