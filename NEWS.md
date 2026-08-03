@@ -1,5 +1,24 @@
 # tulpa NEWS
 
+## 0.0.116
+
+* **Stale test fixed, no engine bug (#271).** `test-tulpa-entry-nested.R`'s
+  "more than one random-intercept term alongside a block errors" test
+  asserted a restriction gcol33/tulpa#265 (0.0.113-era, commit cd80b95)
+  deliberately removed: every `(1 | g)` term on the nested-Laplace + `latent()`
+  path now becomes its own `iid` block integrated on the outer grid, so N
+  random-intercept terms beside a block are no different in kind from one --
+  the same change `test-smoother-re-integrated.R` already covers beside a
+  smoother. #265's commit updated `R/tulpa.R` but never touched this test, so
+  it kept asserting the old `stop()` and started failing with a `NULL`
+  condition once the guard it expected was gone. Bisected past the #267
+  auto-mode change #271 suspected as the cause: `auto_select_mode()` checks
+  `has_latent` before `has_re`, so a model combining RE terms with a
+  `latent()` block already routes to `nested_laplace`, not `re_cov_gibbs`,
+  regardless of #267. The test now asserts the current, intended behavior
+  (routing, `re_block_index`, and bit-exact equivalence to the direct
+  multi-block `tulpa_nested_laplace()` call).
+
 ## 0.0.115
 
 * **The joint Hessian sparsity pattern now covers a latent block reached by

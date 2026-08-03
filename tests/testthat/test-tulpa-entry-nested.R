@@ -129,17 +129,34 @@ test_that("the joint engine cannot be driven from a single-response formula", {
   expect_match(conditionMessage(err), "multiple response arms")
 })
 
-test_that("more than one random-intercept term alongside a block errors", {
+test_that("more than one random-intercept term alongside a block each become their own iid block", {
   set.seed(107)
   n  <- 60L
   g  <- factor(rep(seq_len(6), each = 10))
   g2 <- factor(rep(seq_len(5), times = 12))
   d  <- data.frame(y = rpois(n, 2), g = g, g2 = g2)
   blk <- make_ar1_block(n)
-  err <- expect_error(
-    tulpa(y ~ (1 | g) + (1 | g2) + latent(blk), d, family = "poisson",
-          mode = "auto", sigma_re = 0.4))
-  expect_match(conditionMessage(err), "at most one random-intercept")
+
+  # Previously refused outright: "at most one random-intercept term alongside
+  # a block". gcol33/tulpa#265 replaced that restriction: every `(1 | g)` term
+  # becomes its own `iid` latent block integrated on the outer grid, so N
+  # terms are no different in kind from one -- see
+  # test-smoother-re-integrated.R for the same change beside a smoother.
+  fit <- tulpa(y ~ (1 | g) + (1 | g2) + latent(blk), d, family = "poisson",
+               mode = "auto", sigma_re = 0.4)
+  expect_equal(fit$backend, "nested_laplace")
+  expect_equal(fit$re_block_index, c(2L, 3L))
+
+  direct <- tulpa_nested_laplace(
+    y = d$y, n_trials = rep(1L, n), X = model.matrix(y ~ 1, d),
+    prior = list(blk,
+                 list(type = "iid", obs_idx = as.integer(g),
+                      n_units = nlevels(g), sigma_grid = 0.4),
+                 list(type = "iid", obs_idx = as.integer(g2),
+                      n_units = nlevels(g2), sigma_grid = 0.4)),
+    family = "poisson"
+  )
+  expect_equal(fit$log_marginal, direct$log_marginal)
 })
 
 test_that("nested_laplace and nested_laplace_joint are registered Tier 2", {
