@@ -40,7 +40,7 @@
 #include "hsgp_block_factory.h"             // make_hsgp_block
 #include "laplace_spec_fit.h"               // build_spec_family_inputs + laplace_mode_spec_dense_solve
 #include "nngp_block_factory.h"             // make_nngp_block
-#include "sparse_hessian.h"     // SparseHessianBuilder + laplace_newton_solve_sparse
+#include "sparse_hessian.h"     // SparseHessianBuilder
 #include <Rcpp.h>
 #include <algorithm>
 #include <functional>

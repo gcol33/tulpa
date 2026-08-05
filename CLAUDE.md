@@ -455,18 +455,21 @@ provably all-NaN (every arm is coupled), now as an explicit NaN field rather
 than an absent one.
 
 **SPDE/GP single fits are one-cell runs of the shared machinery
-(gcol33/tulpa#277, 0.0.121).** `cpp_laplace_fit_gp` and `cpp_laplace_fit_spde`
-used to carry their own Newton loops (`laplace_mode_gp()`,
-`spde_run_single_fit()`) -- an independent implementation the joint-multi
-driver never touched, so #273's `gamma_3` pass had to be wired into them
-separately. Each is now a thin wrapper: `make_single_arm()`
-(`nested_laplace_joint_core.h`) + the same block factory the nested entry uses
-(`make_nngp_block` / `make_spde_block`) + the joint driver at a one-row grid,
-projected back onto the single-fit contract by `nl_grid_cell_to_result_list()`
+(gcol33/tulpa#277, #282, 0.0.121/0.0.123).** `cpp_laplace_fit_gp`,
+`cpp_laplace_fit_spde` and `cpp_laplace_fit_spde_precomputed` used to carry
+their own Newton loops (`laplace_mode_gp()`, `spde_run_single_fit()`) -- an
+independent implementation the joint-multi driver never touched, so #273's
+`gamma_3` pass had to be wired into them separately. Each is now a thin
+wrapper: `make_single_arm()` (`nested_laplace_joint_core.h`) + the same block
+factory the nested entry uses (`make_nngp_block` / `make_spde_block` /
+`make_spde_block_precomputed`) + the joint driver at a one-row grid, projected
+back onto the single-fit contract by `nl_grid_cell_to_result_list()`
 (`nested_laplace_grid.h`, reading the per-cell `log_det_Q` / `score_max` /
 `converged` the grid driver now reports). The equivalence is EXACT and asserted
 at `tolerance = 0` in `test-laplace-spatial-gp-spde-equiv.R`; anything the
-joint-multi driver gains (`gamma_3` included) is inherited, not wired.
+joint-multi driver gains (`gamma_3` included) is inherited, not wired. With the
+last of them migrated, `laplace_newton_solve_sparse` and `spde_run_single_fit`
+are gone -- there is one Newton loop behind every SPDE/GP entry.
 
 Two things the migration settled, both load-bearing:
 
@@ -487,16 +490,24 @@ Two things the migration settled, both load-bearing:
   so `eta` is preserved. The bespoke SPDE fit took the first route without the
   fold and reported a converged mode whose fixed-effect score was ~0.47.
 
-`cpp_laplace_fit_spde_precomputed` (the rational/fractional-nu path) still has
-its own Newton loop via `spde_run_single_fit()` -> `laplace_newton_solve_sparse()`,
-which is why that function survives #277's checklist. Its `Q`/`Aeff` arrive
-already assembled from `.spde_rational_assemble` (`R/brasil.R`), so following the
-others needs `make_spde_block` to accept a precomputed CSC `Q` with `prep()` a
-no-op and centring off. Also still bespoke: `implicit_diff.cpp`'s
-`cpp_spde_laplace_gradient`, which calls `run_spde_laplace` directly for the
-`SpdeQBuilder`'s per-entry `c0_contrib`/`g1_contrib` decomposition and a raw
-`SparseCholeskySolver&` for Takahashi selected inversion -- internals the
-driver's `Rcpp::List`-only interface does not expose.
+`cpp_laplace_fit_spde_precomputed` (the rational/fractional-nu path) takes its
+`Q`/`Aeff` already assembled from `.spde_rational_assemble` (`R/brasil.R`), so
+`make_spde_block_precomputed` seeds the template `SpdeQBuilder` from that CSC
+instead of `qb->init()`, makes `prep()` the `0.5 log|Q|` normalizer only (Q does
+not move with the cell), and leaves `block.center` empty -- the latent is the
+auxiliary weights `x` (field `u = Pr x`), which must NOT be sum-to-zero centred.
+Everything else (`obs_indices`, the pattern, both prior scatters, `log_prior`)
+is shared with the FEM entries through `spde_assemble_block`, since all of it
+reads whatever CSC the builder holds. Migrating it changed one number: the
+shared driver's `log_prior_per_arm_re` carries the RE prior normalizer
+`0.5 G (log tau_re - log 2pi)` that the bespoke loop dropped, so an RE-carrying
+fit's `log_marginal` shifts by that constant and is now comparable across
+`sigma_re` (pinned in `test-laplace-spatial-gp-spde-equiv.R`). Still bespoke:
+`implicit_diff.cpp`'s `cpp_spde_laplace_gradient`, which calls
+`run_spde_laplace` directly for the `SpdeQBuilder`'s per-entry
+`c0_contrib`/`g1_contrib` decomposition and a raw `SparseCholeskySolver&` for
+Takahashi selected inversion -- internals the driver's `Rcpp::List`-only
+interface does not expose.
 
 `unwrap_skew_idx()` (`laplace_spec_fit.h`) remains the shared
 1-based-R-to-0-based-probe conversion. The coupled (non-separable) cubic-term

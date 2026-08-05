@@ -1,14 +1,21 @@
 # Fixed-hyperparameter (single-point) Laplace for the NNGP and SPDE fields
-# (gcol33/tulpa#277). Both exports are one-cell runs of the SAME single arm
-# (make_single_arm) + LatentBlock factory (make_nngp_block / make_spde_block) +
-# joint multi-block driver their nested integrators grid over, so the mode and
-# the log-marginal must equal the nested kernel evaluated at that single cell.
+# (gcol33/tulpa#277, #282). All three exports are one-cell runs of the SAME
+# single arm (make_single_arm) + LatentBlock factory (make_nngp_block /
+# make_spde_block / make_spde_block_precomputed) + joint multi-block driver their
+# nested integrators grid over, so the mode and the log-marginal must equal the
+# nested kernel evaluated at that single cell.
 #
 # The equivalence here is EXACT, not approximate: the single fit and the nested
 # kernel run the same driver over the same block, so the assertions below use
 # `tolerance = 0` deliberately. A tolerance would hide exactly the drift a
 # second Newton implementation reintroduces, which is what this file exists to
 # prevent -- the precedent is test-laplace-spatial-car-proper-hsgp.R.
+#
+# The precomputed rational entry has no nested twin to compare against (its
+# precision is assembled in R per (range, sigma), not gridded over in C++), so
+# the section at the bottom pins it against the definitions instead: a mode its
+# own score confirms, and a log-marginal that is the Laplace formula evaluated at
+# that mode.
 
 # ---------------------------------------------------------------- NNGP -------
 
@@ -209,4 +216,149 @@ test_that("the SPDE single fit returns a mode its own score confirms", {
   g_beta <- as.numeric(crossprod(a$X, a$y - plogis(eta))) -
     1e-4 * sp$mode[seq_len(p)]
   expect_lt(max(abs(g_beta)), 1e-4)
+})
+
+
+# ------------------------------------------- SPDE, precomputed rational -------
+
+# The rational rSPDE construction assembles its precision Q = Pl' C^-1 Pl and
+# observation map A_eff = A Pr in R (.spde_rational_assemble) and hands them to
+# cpp_laplace_fit_spde_precomputed finished, so the latent is the auxiliary
+# weights x (field u = Pr x) and there is no operator for the block to rebuild.
+# A 1D circulant FEM mesh gives that assembly without an fmesher mesh.
+#
+# order = 2 keeps cond(Q) around 1e8 rather than the 1e13+ a high-order rational
+# reaches, which is what lets R recompute log|Q| accurately enough to check the
+# log-marginal below against the engine's own value.
+.spde_pre_fixture <- function(n = 240L, kappa = 30, nu = 0.5, order = 2L,
+                              seed = 4L, p = 2L, n_re_groups = 0L,
+                              sigma_re = 0.7) {
+  set.seed(seed)
+  h  <- 1 / n
+  C0 <- rep(h, n)
+  G  <- Matrix::bandSparse(n, n, c(-1, 0, 1),
+                           list(rep(-1 / h, n - 1), rep(2 / h, n),
+                                rep(-1 / h, n - 1)))
+  G  <- as(G, "CsparseMatrix")
+  G[1, n] <- -1 / h
+  G[n, 1] <- -1 / h
+  asm <- tulpa:::.spde_rational_assemble(C0, G, kappa = kappa, tau = 1,
+                                         nu = nu, order = order, d = 2)
+
+  s <- seq_len(n) / n
+  u <- sin(2 * pi * s) + 0.3 * cos(6 * pi * s)
+  u <- u / sd(u)
+  X <- if (p == 1L) matrix(1, n, 1) else cbind(1, rnorm(n))
+  beta <- if (p == 1L) 0.2 else c(0.2, -0.4)
+  eta <- as.numeric(X %*% beta) + u
+  re_idx <- if (n_re_groups > 0L)
+    as.numeric(rep(seq_len(n_re_groups), length.out = n)) else rep(0, n)
+  if (n_re_groups > 0L)
+    eta <- eta + rnorm(n_re_groups, 0, sigma_re)[as.integer(re_idx)]
+  y <- as.numeric(rbinom(n, 1, plogis(eta)))
+
+  Qg  <- as(asm$Q, "generalMatrix")
+  Prg <- as(asm$Pr, "CsparseMatrix")
+  list(
+    args = list(y = y, n_trials = rep(1L, n), X = X,
+                re_idx = re_idx, n_re_groups = as.integer(n_re_groups),
+                sigma_re = sigma_re, n_obs = n, n_mesh = n,
+                Q_p = Qg@p, Q_i = Qg@i, Q_x = Qg@x,
+                Aeff_x = Prg@x, Aeff_i = Prg@i, Aeff_p = Prg@p,
+                family = "binomial", phi = 1.0,
+                max_iter = 300L, tol = 1e-10),
+    Q = as(asm$Q, "CsparseMatrix"), Aeff = Prg, p = p, n = n,
+    n_re_groups = n_re_groups, sigma_re = sigma_re)
+}
+
+test_that("the precomputed SPDE fit returns a mode its own score confirms", {
+  skip_on_cran()
+  # Both blocks are clean stationarity statements here: unlike the integer
+  # entry, this latent is NOT sum-to-zero centred, so no multiplier rides on the
+  # mesh score. A prior term dropped from the scatter, or a transform applied
+  # after the loop without compensating eta, shows up directly.
+  fx  <- .spde_pre_fixture()
+  fit <- do.call(tulpa:::cpp_laplace_fit_spde_precomputed, fx$args)
+  expect_true(fit$converged)
+
+  p <- fx$p
+  xm <- fit$mode[(p + 1L):(p + fx$n)]
+  eta <- as.numeric(fx$args$X %*% fit$mode[seq_len(p)]) +
+    as.numeric(fx$Aeff %*% xm)
+  resid <- fx$args$y - plogis(eta)
+  # DEFAULT_TAU_BETA = 1e-4 is the kernel's weak ridge on the fixed effects.
+  g_beta <- as.numeric(crossprod(fx$args$X, resid)) - 1e-4 * fit$mode[seq_len(p)]
+  g_mesh <- as.numeric(Matrix::crossprod(fx$Aeff, resid)) -
+    as.numeric(fx$Q %*% xm)
+  expect_lt(max(abs(g_beta)), 1e-6)
+  expect_lt(max(abs(g_mesh)), 1e-6)
+
+  # Q_nnz reports the supplied precision, not a re-enumerated pattern.
+  expect_equal(fit$Q_nnz, length(fx$args$Q_x))
+})
+
+test_that("the precomputed SPDE latent is not sum-to-zero centred", {
+  skip_on_cran()
+  # The auxiliary weights are not the field, and the proper SPDE prior
+  # (kappa^2 > 0) already identifies the constant mode, so this block carries no
+  # centring -- the integer entry's `expect_lt(abs(mean(mesh)), 1e-8)` must NOT
+  # hold here. Sharing one block factory between the two is what makes this
+  # worth pinning.
+  fx  <- .spde_pre_fixture()
+  fit <- do.call(tulpa:::cpp_laplace_fit_spde_precomputed, fx$args)
+  xm  <- fit$mode[(fx$p + 1L):(fx$p + fx$n)]
+  expect_gt(abs(mean(xm)), 1e-6)
+})
+
+# log p(y | theta) at the reported mode, in the engine's own convention:
+#   log lik + log p(x | Q) + log p(b | tau_re) - 0.5 log|H| + (n_x/2) log(2 pi)
+# with log p(x | Q) = 0.5 log|Q| - 0.5 x'Qx  (the constant -(n/2) log(2 pi) is
+# dropped, being theta-independent) and the RE block carrying its FULL normalizer
+# 0.5 G (log tau_re - log 2 pi), which does move with sigma_re. The weak
+# fixed-effect ridge enters the Hessian but not the log-prior.
+.spde_pre_expected_lm <- function(fx, fit) {
+  p <- fx$p
+  n_x <- p + fx$n_re_groups + fx$n
+  xm <- fit$mode[(p + fx$n_re_groups + 1L):(p + fx$n_re_groups + fx$n)]
+  eta <- as.numeric(fx$args$X %*% fit$mode[seq_len(p)]) +
+    as.numeric(fx$Aeff %*% xm)
+  if (fx$n_re_groups > 0L)
+    eta <- eta + fit$mode[p + as.integer(fx$args$re_idx)]
+  log_lik <- sum(dbinom(fx$args$y, fx$args$n_trials, plogis(eta), log = TRUE))
+
+  half_ldQ <- 0.5 * as.numeric(
+    Matrix::determinant(fx$Q, logarithm = TRUE)$modulus)
+  log_prior <- half_ldQ - 0.5 * as.numeric(Matrix::crossprod(xm, fx$Q %*% xm))
+  if (fx$n_re_groups > 0L) {
+    tau_re <- 1 / (fx$sigma_re^2 + 1e-10)
+    b <- fit$mode[p + seq_len(fx$n_re_groups)]
+    log_prior <- log_prior - 0.5 * tau_re * sum(b^2) +
+      0.5 * fx$n_re_groups * (log(tau_re) - log(2 * pi))
+  }
+  log_lik + log_prior - 0.5 * fit$log_det_Q + 0.5 * n_x * log(2 * pi)
+}
+
+test_that("the precomputed SPDE log-marginal is the Laplace formula at its mode", {
+  skip_on_cran()
+  fx  <- .spde_pre_fixture()
+  fit <- do.call(tulpa:::cpp_laplace_fit_spde_precomputed, fx$args)
+  expect_true(fit$converged)
+  expect_equal(fit$log_marginal, .spde_pre_expected_lm(fx, fit),
+               tolerance = 1e-8)
+})
+
+test_that("the precomputed SPDE log-marginal carries the RE prior normalizer", {
+  skip_on_cran()
+  # 0.5 G (log tau_re - log 2 pi) is sigma_re-dependent, so a marginal that
+  # omits it is not comparable across RE scales. At G = 6, sigma_re = 0.7 the
+  # omission is a 3.4-nat error -- far outside the tolerance below, which is
+  # what makes the equality a real gate on the term rather than on roundoff.
+  fx  <- .spde_pre_fixture(seed = 12L, n_re_groups = 6L)
+  fit <- do.call(tulpa:::cpp_laplace_fit_spde_precomputed, fx$args)
+  expect_equal(fit$log_marginal, .spde_pre_expected_lm(fx, fit),
+               tolerance = 1e-8)
+
+  tau_re <- 1 / (fx$sigma_re^2 + 1e-10)
+  omitted <- 0.5 * fx$n_re_groups * (log(tau_re) - log(2 * pi))
+  expect_gt(abs(omitted), 3)
 })

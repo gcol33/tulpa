@@ -448,18 +448,17 @@ test_that("tulpa_nested_laplace_joint() wires gamma_3 through the multi-block di
 })
 
 # --------------------------------------------------------------------------- #
-# (8) SPDE / GP bespoke Newton pair (gcol33/tulpa#273 item 3). cpp_laplace_fit_gp,
-#     cpp_laplace_fit_spde and cpp_laplace_fit_spde_precomputed are standalone,
-#     fixed-hyperparameter single fits with their OWN Newton implementation
-#     (laplace_mode_gp / spde_run_single_fit) -- they are NOT reached by the
-#     joint-multi driver's re-dispatch (the nested "nngp" / "spde" registry
-#     entries integrate hyperparameters via the shared joint-multi machinery
-#     instead, already covered above). Each has a dense branch
-#     (laplace_newton_solve / run_spde_laplace) and a fully sparse
-#     CHOLMOD-only branch (laplace_newton_solve_sparse) for n_x >=
-#     SPARSE_THRESHOLD (200); both are exercised directly below via the
-#     gaussian exact-zero invariant, which holds regardless of latent
-#     structure (the third log-lik derivative is family-only).
+# (8) Fixed-hyperparameter GP / SPDE single fits (gcol33/tulpa#273 item 3).
+#     cpp_laplace_fit_gp, cpp_laplace_fit_spde and
+#     cpp_laplace_fit_spde_precomputed are one-cell runs of the shared
+#     joint-multi driver over their nested integrator's own LatentBlock
+#     (gcol33/tulpa#277, #282), so they inherit the same gamma_3 pass the nested
+#     entries take. The gaussian exact-zero invariant below is what pins that:
+#     it holds regardless of latent structure or field size, because the third
+#     log-lik derivative is family-only. Fixtures sit on both sides of
+#     SPARSE_THRESHOLD (200) because n_x used to select the Newton container;
+#     blocks_require_sparse() now decides it from the block, and both field
+#     sizes stay covered.
 # --------------------------------------------------------------------------- #
 
 .isk_nngp_fixture <- function(n_spatial, nn_k = 10L, seed = 1) {
@@ -481,7 +480,7 @@ test_that("tulpa_nested_laplace_joint() wires gamma_3 through the multi-block di
        nn_order = as.integer(order_idx - 1L))
 }
 
-test_that("gamma_3 is exactly zero for a gaussian NNGP fit (dense Newton path)", {
+test_that("gamma_3 is exactly zero for a gaussian NNGP fit (small field)", {
   skip_on_cran()
   n_s <- 30L
   fx <- .isk_nngp_fixture(n_s, nn_k = 8L, seed = 21)
@@ -498,11 +497,11 @@ test_that("gamma_3 is exactly zero for a gaussian NNGP fit (dense Newton path)",
     compute_skew = TRUE, skew_idx = as.integer(c(1, 2))
   )
   expect_true(fit$n_iter > 0)
-  expect_lt(1L + n_s, 200L)  # this fixture must stay on the dense path
+  expect_lt(1L + n_s, 200L)   # below SPARSE_THRESHOLD
   expect_equal(fit$inner_skew, c(0, 0))
 })
 
-test_that("gamma_3 is exactly zero for a gaussian NNGP fit (sparse CHOLMOD path)", {
+test_that("gamma_3 is exactly zero for a gaussian NNGP fit (large field)", {
   skip_on_cran()
   n_s <- 210L
   fx <- .isk_nngp_fixture(n_s, nn_k = 10L, seed = 22)
@@ -519,11 +518,11 @@ test_that("gamma_3 is exactly zero for a gaussian NNGP fit (sparse CHOLMOD path)
     compute_skew = TRUE, skew_idx = as.integer(c(1, 2))
   )
   expect_true(fit$n_iter > 0)
-  expect_gte(1L + n_s, 200L)  # this fixture must force the sparse path
+  expect_gte(1L + n_s, 200L)  # above SPARSE_THRESHOLD
   expect_equal(fit$inner_skew, c(0, 0))
 })
 
-test_that("gamma_3 is exactly zero for a gaussian SPDE fit (dense Newton path)", {
+test_that("gamma_3 is exactly zero for a gaussian SPDE fit (small mesh)", {
   skip_if_not_installed("fmesher")
   skip_on_cran()
   set.seed(23)
@@ -531,7 +530,7 @@ test_that("gamma_3 is exactly zero for a gaussian SPDE fit (dense Newton path)",
   coords <- cbind(runif(n_obs), runif(n_obs))
   mesh <- fmesher::fm_mesh_2d(loc = coords, max.edge = c(0.4, 0.9), cutoff = 0.15)
   n_mesh <- mesh$n
-  expect_lt(1L + n_mesh, 200L)  # this fixture must stay on the dense path
+  expect_lt(1L + n_mesh, 200L)   # below SPARSE_THRESHOLD
 
   fem <- fmesher::fm_fem(mesh)
   A <- as(fmesher::fm_basis(mesh, loc = coords), "CsparseMatrix")
@@ -559,7 +558,7 @@ test_that("gamma_3 is exactly zero for a gaussian SPDE fit (dense Newton path)",
   expect_equal(fit$inner_skew, c(0, 0))
 })
 
-test_that("gamma_3 is exactly zero for a gaussian SPDE fit (sparse CHOLMOD path)", {
+test_that("gamma_3 is exactly zero for a gaussian SPDE fit (large mesh)", {
   skip_if_not_installed("fmesher")
   skip_on_cran()
   set.seed(24)
@@ -567,7 +566,7 @@ test_that("gamma_3 is exactly zero for a gaussian SPDE fit (sparse CHOLMOD path)
   coords <- cbind(runif(n_obs), runif(n_obs))
   mesh <- fmesher::fm_mesh_2d(loc = coords, max.edge = c(0.13, 0.3), cutoff = 0.05)
   n_mesh <- mesh$n
-  expect_gte(1L + n_mesh, 200L)  # this fixture must force the sparse path
+  expect_gte(1L + n_mesh, 200L)  # above SPARSE_THRESHOLD
 
   fem <- fmesher::fm_fem(mesh)
   A <- as(fmesher::fm_basis(mesh, loc = coords), "CsparseMatrix")

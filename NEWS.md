@@ -1,5 +1,32 @@
 # tulpa NEWS
 
+## 0.0.123
+
+* **The last standalone Newton loop is gone (#282).** #277 left
+  `cpp_laplace_fit_spde_precomputed` -- the fixed-hyperparameter fit behind the
+  fractional/rational SPDE path -- on its own solver, and with it
+  `spde_run_single_fit` and `laplace_newton_solve_sparse`. It is now a one-cell
+  run of the same joint multi-block driver every other SPDE/GP entry takes:
+  `make_spde_block_precomputed` seeds the block's `SpdeQBuilder` from the CSC
+  `.spde_rational_assemble()` hands it, makes `prep()` the `0.5 log|Q|`
+  normalizer only (the precision does not move with the cell), and leaves the
+  latent uncentred -- the auxiliary weights `x` are not the field `u = Pr x`,
+  and the proper SPDE prior already identifies the constant mode. Everything
+  else -- `obs_indices`, the H pattern, both prior scatters, `log_prior` -- is
+  shared with the FEM entries through the new `spde_assemble_block`. The path
+  now inherits `gamma_3`, grid-cell checkpointing and the per-cell `score_max` /
+  `converged` reporting instead of needing a wiring pass each time.
+  `laplace_newton_solve_sparse` and `spde_run_single_fit` are deleted.
+* **The precomputed SPDE log-marginal carries the RE prior normalizer (#282).**
+  The bespoke loop's log-prior omitted `0.5 G (log tau_re - log 2 pi)`, so a fit
+  with an iid RE block reported a marginal that was not comparable across
+  `sigma_re` (a 3.4-nat error at `G = 6`, `sigma_re = 0.7`). The shared driver
+  supplies it. The mode, the fitted linear predictor and the field are unchanged
+  -- measured across nine rational-SPDE fixtures, `eta` agrees to 3e-07 and the
+  penalized objective to 1e-08, with two fixtures reproducing bit-for-bit; the
+  residual movement is confined to the auxiliary-weight directions the rational
+  precision leaves unidentified.
+
 ## 0.0.122
 
 * **The SPDE FEM assembly builds the operator order it was asked for (#280).**

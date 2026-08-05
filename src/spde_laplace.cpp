@@ -1,203 +1,65 @@
 // spde_laplace.cpp
-// SPDE spatial Laplace: single-fit and nested Laplace over (range, sigma).
-// Uses SpdeQBuilder from spde_qbuilder.h for pattern-preserving Q construction.
+// SPDE spatial Laplace: single fits and nested Laplace over (range, sigma).
 //
-// The nested-Laplace entry (cpp_nested_laplace_spde) delegates to the
-// shared joint-multi sparse impl via a single-arm ParsedArm + LatentBlock
-// built by make_spde_block. This keeps SPDE on the same code path as the
-// joint multi-arm driver (one pattern enumerator, one scatter, one prior
-// scatter), removing the previous bespoke pattern/scatter/log_prior path.
+// All three entries delegate to the shared joint-multi sparse impl via a
+// single-arm ParsedArm + one SPDE LatentBlock, so they run one pattern
+// enumerator, one scatter, one prior scatter and one Newton loop: the nested
+// integrator over its grid, the two fixed-hyperparameter fits over a one-row
+// grid projected back by nl_grid_cell_to_result_list. The block differs only in
+// where its precision comes from -- make_spde_block assembles it from the FEM
+// operators per cell, make_spde_block_precomputed takes the rational assembly's
+// finished CSC.
 
-#include "spde_qbuilder.h"
-#include "spde_logdet.h"        // SpdeQLogDet (0.5 log|Q| prior normalizer)
-#include "laplace_spec_fit.h"   // as_offset_vec (offset marshalling)
-#include "sparse_hessian.h"
-#include "nested_laplace_grid.h"
-#include "laplace_re_priors.h"
+#include "hessian_pattern_guard.h"  // HessianPatternGuard
+#include "laplace_spec_fit.h"       // unwrap_skew_idx
+#include "nested_laplace_grid.h"    // nl_grid_cell_to_result_list, checkpointing
 #include "latent_block.h"
 #include "nested_laplace_joint_core.h"
 #include "nested_laplace_joint_multi.h"
 #include "spde_block_factory.h"
 #include <Rcpp.h>
-#include <cmath>
-#include <functional>
-#include <set>
-#include <utility>
+#include <string>
 #include <vector>
-
-// =====================================================================
-// Shared SPDE single-fit driver: given a precision builder `qb` and the obs
-// projector rows `a_rows`, run the Laplace solve (sparse for large meshes,
-// dense otherwise). Both the FEM-built integer/alpha path (cpp_laplace_fit_spde)
-// and the precomputed rational path (cpp_laplace_fit_spde_precomputed) build qb
-// + a_rows their own way, then call this. `center_mesh` is false for the
-// rational path (its latent is the auxiliary weights x, not the field).
-// =====================================================================
-static Rcpp::List spde_run_single_fit(
-    const Rcpp::NumericVector& y, const Rcpp::IntegerVector& n_trials,
-    const Rcpp::NumericMatrix& X, int N, int p,
-    const Rcpp::NumericVector& re_idx, int n_re_groups, double sigma_re,
-    int n_mesh, int mesh_start, int n_x,
-    const tulpa::SpdeQBuilder& qb, const tulpa::ARows& a_rows,
-    const std::string& family, double phi,
-    int max_iter, double tol, int n_threads,
-    const Rcpp::NumericVector& x_init, const double* off_ptr,
-    bool center_mesh,
-    // Inner-Laplace skewness diagnostic (gcol33/tulpa#273 item 3): this is a
-    // fixed-hyperparameter single fit (no outer grid), so compute_skew scores
-    // the converged mode of THIS solve directly -- no re-dispatch needed.
-    bool compute_skew = false,
-    const std::vector<int>* skew_probe_idx = nullptr
-) {
-    const double tau_re = (n_re_groups > 0)
-                          ? 1.0 / (sigma_re * sigma_re + 1e-10) : 0.0;
-    Rcpp::List out;
-    const tulpa::HessianPatternGuard pattern_guard;
-
-    // Prior normalizer 0.5 log|Q(theta)|. A constant in the latent solve (it
-    // does not move the mode or the SEs), but required for this fit's
-    // log_marginal to be a proper marginal when compared across (range, sigma)
-    // -- e.g. the CCD mode-find's final refit and fixed-hyper model comparison.
-    // See spde_logdet.h.
-    double half_ldQ = 0.0;
-    {
-        tulpa::SpdeQLogDet qld;
-        if (!qld.half_logdet(qb, half_ldQ)) half_ldQ = 0.0;
-    }
-
-    if (n_x >= tulpa::SPARSE_THRESHOLD) {
-        std::vector<std::pair<int,int>> pattern;
-        for (int j1 = 0; j1 < p; j1++)
-            for (int j2 = j1; j2 < p; j2++)
-                pattern.push_back({j2, j1});
-        for (int g = 0; g < n_re_groups; g++)
-            pattern.push_back({p + g, p + g});
-        for (int col = 0; col < n_mesh; col++)
-            for (int idx = qb.Q_p[col]; idx < qb.Q_p[col + 1]; idx++)
-                pattern.push_back({mesh_start + qb.Q_i[idx], mesh_start + col});
-        for (int i = 0; i < N; i++) {
-            int g = (n_re_groups > 0) ? (int)re_idx[i] - 1 : -1;
-            if (!(g >= 0 && g < n_re_groups)) g = -1;
-            if (g >= 0)
-                for (int j = 0; j < p; j++) pattern.push_back({p + g, j});
-            for (const auto& ae : a_rows[i]) {
-                int m_idx = mesh_start + ae.mesh_idx;
-                for (int j = 0; j < p; j++) pattern.push_back({m_idx, j});
-                if (g >= 0) pattern.push_back({m_idx, p + g});
-                for (const auto& ae2 : a_rows[i]) {
-                    int m_idx2 = mesh_start + ae2.mesh_idx;
-                    if (m_idx >= m_idx2) pattern.push_back({m_idx, m_idx2});
-                }
-            }
-        }
-
-        tulpa::SparseHessianBuilder H_builder;
-        H_builder.init(n_x, pattern);
-
-        auto re_group = [&](int i) -> int {
-            if (n_re_groups <= 0) return -1;
-            int g = (int)re_idx[i] - 1;
-            return (g >= 0 && g < n_re_groups) ? g : -1;
-        };
-        auto compute_eta = [&](const Rcpp::NumericVector& x, Rcpp::NumericVector& eta) {
-            for (int i = 0; i < N; i++) {
-                eta[i] = off_ptr ? off_ptr[i] : 0.0;
-                for (int j = 0; j < p; j++) eta[i] += X(i, j) * x[j];
-                int g = re_group(i);
-                if (g >= 0) eta[i] += x[p + g];
-                for (const auto& ae : a_rows[i])
-                    eta[i] += ae.weight * x[mesh_start + ae.mesh_idx];
-            }
-        };
-        auto scatter_sparse = [&](const Rcpp::NumericVector& x, const Rcpp::NumericVector& eta,
-                                   tulpa::DenseVec& grad, tulpa::SparseHessianBuilder& H) {
-            for (int i = 0; i < N; i++) {
-                auto gh = tulpa::grad_hess_for_family(y[i], n_trials[i], eta[i], family, phi);
-                for (int j = 0; j < p; j++) {
-                    grad[j] += gh.grad * X(i, j);
-                    for (int k = 0; k <= j; k++)
-                        H.add(j, k, gh.neg_hess * X(i, j) * X(i, k));
-                }
-                int g = re_group(i);
-                if (g >= 0) {
-                    int re_i = p + g;
-                    grad[re_i] += gh.grad;
-                    H.add(re_i, re_i, gh.neg_hess);
-                    for (int j = 0; j < p; j++)
-                        H.add(re_i, j, gh.neg_hess * X(i, j));
-                }
-                const auto& row = a_rows[i];
-                for (size_t s1 = 0; s1 < row.size(); s1++) {
-                    int idx1 = mesh_start + row[s1].mesh_idx;
-                    double a1 = row[s1].weight;
-                    grad[idx1] += gh.grad * a1;
-                    H.add(idx1, idx1, gh.neg_hess * a1 * a1);
-                    for (int j = 0; j < p; j++)
-                        H.add(idx1, j, gh.neg_hess * X(i, j) * a1);
-                    if (g >= 0)
-                        H.add(idx1, p + g, gh.neg_hess * a1);
-                    for (size_t s2 = s1 + 1; s2 < row.size(); s2++) {
-                        int idx2 = mesh_start + row[s2].mesh_idx;
-                        H.add(std::max(idx1, idx2), std::min(idx1, idx2),
-                              gh.neg_hess * a1 * row[s2].weight);
-                    }
-                }
-            }
-            for (int col = 0; col < n_mesh; col++) {
-                for (int qidx = qb.Q_p[col]; qidx < qb.Q_p[col + 1]; qidx++) {
-                    int row = qb.Q_i[qidx];
-                    double q = qb.Q_x[qidx];
-                    grad[mesh_start + row] -= q * x[mesh_start + col];
-                    if (row >= col) H.add(mesh_start + row, mesh_start + col, q);
-                }
-            }
-            double tau_beta = 1e-4;
-            for (int j = 0; j < p; j++) { grad[j] -= tau_beta * x[j]; H.add(j, j, tau_beta); }
-            for (int g = 0; g < n_re_groups; g++) {
-                grad[p + g] -= tau_re * x[p + g];
-                H.add(p + g, p + g, tau_re);
-            }
-        };
-        auto center = [&](Rcpp::NumericVector& x) {
-            if (center_mesh) tulpa::center_effects(x, mesh_start, n_mesh);
-        };
-        auto log_prior = [&](const Rcpp::NumericVector& x, const Rcpp::NumericVector&) {
-            double qf = 0.0;
-            for (int col = 0; col < n_mesh; col++)
-                for (int qidx = qb.Q_p[col]; qidx < qb.Q_p[col + 1]; qidx++)
-                    qf += x[mesh_start + qb.Q_i[qidx]] * qb.Q_x[qidx] * x[mesh_start + col];
-            for (int g = 0; g < n_re_groups; g++) qf += tau_re * x[p + g] * x[p + g];
-            return half_ldQ - 0.5 * qf;
-        };
-
-        tulpa::LaplaceResult res = tulpa::laplace_newton_solve_sparse(
-            y, n_trials, family, phi, N, n_x, max_iter, tol, n_threads,
-            compute_eta, scatter_sparse, center, log_prior, H_builder, x_init,
-            /*shared_solver=*/nullptr, /*store_Q=*/false,
-            compute_skew, skew_probe_idx);
-        pattern_guard.check("the sparse SPDE Laplace solve");
-        Rcpp::List out_sparse = tulpa::laplace_result_to_list(res);
-        out_sparse["Q_nnz"] = qb.nnz();
-        out_sparse["H_nnz"] = H_builder.nnz;
-        return out_sparse;
-    }
-
-    tulpa::run_spde_laplace(
-        y, n_trials, X, N, p, n_mesh, mesh_start, n_x,
-        a_rows, qb, family, phi, max_iter, tol, n_threads, x_init, nullptr, off_ptr,
-        [&](const tulpa::LaplaceResult& res) {
-            out = tulpa::laplace_result_to_list(res);
-            out["Q_nnz"] = qb.nnz();
-        },
-        re_idx, n_re_groups, sigma_re, center_mesh, half_ldQ,
-        compute_skew, skew_probe_idx);
-    pattern_guard.check("the SPDE Laplace solve");
-    return out;
-}
 
 // =====================================================================
 // Single SPDE Laplace fit
 // =====================================================================
+
+// One-cell run of the shared joint driver over a single arm and one SPDE
+// LatentBlock. `q_nnz` receives the block's precision nonzero count, reported
+// alongside the projected single-fit result.
+static Rcpp::List spde_single_cell_fit(
+    std::vector<tulpa::ParsedArm>& parsed,
+    std::vector<tulpa::JointArm>& arms,
+    std::vector<tulpa::LatentBlock>& blocks,
+    int n_x, int max_iter, double tol, int n_threads,
+    const Rcpp::NumericVector& x_init,
+    bool compute_skew, const std::vector<int>* skew_idx_ptr,
+    int q_nnz, const char* what
+) {
+    const tulpa::HessianPatternGuard pattern_guard;
+    Rcpp::List grid = tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
+        /*n_grid=*/1, arms, parsed, blocks, n_x,
+        max_iter, tol, n_threads,
+        /*store_modes=*/true, x_init, /*store_Q=*/false,
+        /*prep_at_grid=*/nullptr,
+        /*tile_ids=*/std::vector<int>(),
+        /*tile_pilot_cells=*/std::vector<int>(),
+        /*prune_tol=*/0.0,
+        /*cell_coupling_spec=*/nullptr,
+        /*coupled_arms=*/std::vector<int>(),
+        /*cell_rows=*/std::vector<std::vector<std::vector<int>>>(),
+        /*n_cells=*/0,
+        tulpa::JointPDMode::LM, tulpa::CurvatureMode::Observed,
+        /*hessian_refresh=*/1, /*n_threads_outer=*/1,
+        /*progress=*/nullptr, /*checkpoint=*/nullptr,
+        /*x_init_per_cell=*/std::vector<double>(),
+        compute_skew, skew_idx_ptr);
+    pattern_guard.check(what);
+    Rcpp::List out = tulpa::nl_grid_cell_to_result_list(grid, 0);
+    out["Q_nnz"] = q_nnz;
+    return out;
+}
 
 // [[Rcpp::export]]
 Rcpp::List cpp_laplace_fit_spde(
@@ -280,38 +142,20 @@ Rcpp::List cpp_laplace_fit_spde(
         use_rational, rat_poles, rat_weights,
         /*direct_kappa_tau=*/true, &q_nnz));
 
-    const tulpa::HessianPatternGuard pattern_guard;
-    Rcpp::List grid = tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
-        /*n_grid=*/1, arms, parsed, blocks, n_x,
-        max_iter, tol, n_threads,
-        /*store_modes=*/true, x_init, /*store_Q=*/false,
-        /*prep_at_grid=*/nullptr,
-        /*tile_ids=*/std::vector<int>(),
-        /*tile_pilot_cells=*/std::vector<int>(),
-        /*prune_tol=*/0.0,
-        /*cell_coupling_spec=*/nullptr,
-        /*coupled_arms=*/std::vector<int>(),
-        /*cell_rows=*/std::vector<std::vector<std::vector<int>>>(),
-        /*n_cells=*/0,
-        tulpa::JointPDMode::LM, tulpa::CurvatureMode::Observed,
-        /*hessian_refresh=*/1, /*n_threads_outer=*/1,
-        /*progress=*/nullptr, /*checkpoint=*/nullptr,
-        /*x_init_per_cell=*/std::vector<double>(),
-        compute_skew, skew_idx_ptr);
-    pattern_guard.check("the SPDE Laplace solve");
-    Rcpp::List out = tulpa::nl_grid_cell_to_result_list(grid, 0);
-    out["Q_nnz"] = q_nnz;
-    return out;
+    return spde_single_cell_fit(parsed, arms, blocks, n_x, max_iter, tol,
+                                n_threads, x_init, compute_skew, skew_idx_ptr,
+                                q_nnz, "the SPDE Laplace solve");
 }
 
 // =====================================================================
-// Fractional SPDE single fit from a PRECOMPUTED rational precision + obs map
-//. The rational rSPDE construction makes the latent the
-// auxiliary weights x ~ N(0, Q^{-1}) with field u = Pr x, so the obs map is
-// A_eff = A Pr and the precision is Q = Pl' Ci Pl. Both are assembled in R
-// (.spde_rational_assemble, the validated oracle) and passed here as CSC; this
-// entry wraps them in an SpdeQBuilder + ARows and reuses the shared driver. The
-// latent x is NOT centred (the proper SPDE prior identifies the constant mode).
+// Fractional SPDE single fit from a PRECOMPUTED rational precision + obs map.
+// The rational rSPDE construction makes the latent the auxiliary weights
+// x ~ N(0, Q^{-1}) with field u = Pr x, so the obs map is A_eff = A Pr and the
+// precision is Q = Pl' Ci Pl. Both are assembled in R (.spde_rational_assemble,
+// the validated oracle) and passed here as CSC. Like the integer entry above,
+// this is a one-cell run of the joint driver: make_spde_block_precomputed seeds
+// its builder from the supplied CSC instead of the FEM operators, and leaves the
+// latent uncentred (the proper SPDE prior identifies the constant mode).
 // =====================================================================
 // [[Rcpp::export]]
 Rcpp::List cpp_laplace_fit_spde_precomputed(
@@ -335,28 +179,38 @@ Rcpp::List cpp_laplace_fit_spde_precomputed(
     if (n_re_groups > 0 && (int)re_idx.size() != N)
         Rcpp::stop("length(re_idx) (%d) must equal n_obs (%d).", (int)re_idx.size(), N);
 
-    std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, N);
-    const double* off_ptr = offset.empty() ? nullptr : offset.data();
     Rcpp::NumericVector x_init;
     if (x_init_nullable.isNotNull())
         x_init = Rcpp::as<Rcpp::NumericVector>(x_init_nullable);
 
-    // Wrap the precomputed lower-triangular CSC precision in an SpdeQBuilder.
-    tulpa::SpdeQBuilder qb;
-    qb.n_mesh = n_mesh;
-    qb.Q_p.assign(Q_p.begin(), Q_p.end());
-    qb.Q_i.assign(Q_i.begin(), Q_i.end());
-    qb.Q_x.assign(Q_x.begin(), Q_x.end());
-
-    tulpa::ARows a_rows = tulpa::build_A_rows(N, n_mesh, Aeff_x, Aeff_i, Aeff_p);
     std::vector<int> skew_idx_vec;
     const std::vector<int>* skew_idx_ptr =
         tulpa::unwrap_skew_idx(compute_skew, skew_idx, skew_idx_vec);
-    return spde_run_single_fit(
-        y, n_trials, X, N, p, re_idx, n_re_groups, sigma_re,
-        n_mesh, mesh_start, n_x, qb, a_rows, family, phi,
-        max_iter, tol, n_threads, x_init, off_ptr, /*center_mesh=*/false,
-        compute_skew, skew_idx_ptr);
+
+    std::vector<tulpa::ParsedArm> parsed;
+    std::vector<tulpa::JointArm> arms;
+    // INDEXED_MULTI: obs reach the latent through A_eff, so spatial_idx is
+    // never indexed; a dummy zero vector keeps lifetime safe.
+    tulpa::make_single_arm(parsed, arms, X, re_idx, Rcpp::IntegerVector(N, 0),
+                           p, n_re_groups, sigma_re, y, n_trials, family, phi,
+                           N, offset_nullable);
+
+    Rcpp::List Aeff_x_per_arm = Rcpp::List::create(Aeff_x);
+    Rcpp::List Aeff_i_per_arm = Rcpp::List::create(Aeff_i);
+    Rcpp::List Aeff_p_per_arm = Rcpp::List::create(Aeff_p);
+    Rcpp::IntegerVector n_obs_per_arm = Rcpp::IntegerVector::create(N);
+
+    int q_nnz = 0;
+    std::vector<tulpa::LatentBlock> blocks;
+    blocks.push_back(tulpa::make_spde_block_precomputed(
+        mesh_start, n_mesh,
+        Aeff_x_per_arm, Aeff_i_per_arm, Aeff_p_per_arm, n_obs_per_arm,
+        /*n_arms=*/1, /*block_index=*/0,
+        Q_p, Q_i, Q_x, &q_nnz));
+
+    return spde_single_cell_fit(parsed, arms, blocks, n_x, max_iter, tol,
+                                n_threads, x_init, compute_skew, skew_idx_ptr,
+                                q_nnz, "the precomputed SPDE Laplace solve");
 }
 
 // =====================================================================
@@ -514,13 +368,8 @@ Rcpp::List cpp_nested_laplace_spde(
         n_re_groups, sigma_re, family, phi, {range_grid, sigma_grid});
 
     std::vector<int> skew_idx_vec;
-    const std::vector<int>* skew_idx_ptr = nullptr;
-    if (compute_skew && skew_idx.isNotNull()) {
-        Rcpp::IntegerVector idx_r(skew_idx);
-        skew_idx_vec.resize(idx_r.size());
-        for (int k = 0; k < idx_r.size(); k++) skew_idx_vec[k] = idx_r[k] - 1;
-        skew_idx_ptr = &skew_idx_vec;
-    }
+    const std::vector<int>* skew_idx_ptr =
+        tulpa::unwrap_skew_idx(compute_skew, skew_idx, skew_idx_vec);
 
     Rcpp::List out = tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
         n_grid, arms, parsed, blocks, n_x,
