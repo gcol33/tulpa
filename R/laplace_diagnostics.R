@@ -159,15 +159,23 @@
 #' "did the approximation work", not "did the chains mix".
 #'
 #' The headline is a Pareto-smoothed importance-sampling (PSIS) reliability
-#' diagnostic for the approximation. The nested integrator scores its
-#' hyperparameter grid against the exact inner-Laplace marginal posterior with a
-#' generalized-Pareto fit to the upper tail of the importance ratios
-#' `log p_target(theta) - log q_proposal(theta)` (see [tulpa_psis()]); the
-#' resulting tail-shape `pareto_k` is the "did it work" number -- `k-hat < 0.5`
-#' good, `0.5-0.7` usable, `>= 0.7` unreliable (Vehtari et al. 2024; Yao et al.
-#' 2018). It is computed at fit time and read back here; a fit that did not run
-#' the diagnostic, or whose grid proposal degenerated, reports it as `NA` and is
-#' assessed on the grid quadrature reliability instead.
+#' diagnostic for the OUTER hyperparameter-grid integration. The nested
+#' integrator scores its hyperparameter grid against the exact inner-Laplace
+#' marginal posterior with a generalized-Pareto fit to the upper tail of the
+#' importance ratios `log p_target(theta) - log q_proposal(theta)`
+#' (see [tulpa_psis()]); the resulting tail-shape `pareto_k` is the "did the
+#' outer integration work" number -- `k-hat < 0.5` good, `0.5-0.7` usable,
+#' `>= 0.7` unreliable (Vehtari et al. 2024; Yao et al. 2018). It is computed at
+#' fit time and read back here; a fit that did not run the diagnostic, or whose
+#' grid proposal degenerated, reports it as `NA` and is assessed on the grid
+#' quadrature reliability instead.
+#'
+#' `pareto_k` scores the outer integration only. The inner Laplace on the latent
+#' field is a separate layer this diagnostic does not cover, so a high `pareto_k`
+#' on a fit whose grid quadrature is healthy (`ess_grid` well above 1, largest
+#' cell weight modest) flags outer-integration (CI-width) calibration in the
+#' right-skewed hyperparameter tail and does not by itself invalidate the
+#' point estimates, which the grid quadrature governs.
 #'
 #' The grid quadrature reliability -- the effective sample size
 #' `ess_grid = 1 / sum(w_k^2)` of the outer integration weights and the largest
@@ -240,15 +248,17 @@ print.laplace_diagnostics <- function(x, ...) {
   s <- attr(x, "summary")
   k <- attr(x, "pareto_k")
   band <- attr(x, "pareto_k_band")
-  cat("Nested-Laplace approximation reliability (i.i.d. draws)\n")
+  cat("Nested-Laplace OUTER-integration reliability (i.i.d. draws)\n")
+  cat("  scope: the outer hyperparameter-grid integration; the latent-field",
+      "Laplace is a separate, unscored layer\n")
   if (is.finite(k)) {
-    cat(sprintf("  PSIS pareto_k = %.3f (%s); IS-ESS = %.1f\n",
+    cat(sprintf("  outer PSIS pareto_k = %.3f (%s); IS-ESS = %.1f\n",
                 k, band, attr(x, "pareto_k_is_ess")))
   } else {
-    cat("  PSIS pareto_k = NA (outer diagnostic not run or proposal degenerate)\n")
+    cat("  outer PSIS pareto_k = NA (outer diagnostic not run or proposal degenerate)\n")
   }
   if (!is.null(attr(x, "ess_grid"))) {
-    cat(sprintf("  grid quadrature ESS = %.2f of %d cells (max weight %.3f)\n",
+    cat(sprintf("  outer grid quadrature ESS = %.2f of %d cells (max weight %.3f)\n",
                 attr(x, "ess_grid"), attr(x, "n_grid"), attr(x, "max_weight")))
   }
   cat(sprintf("  %d parameters, %d draws; per-parameter rhat / ESS below are\n",

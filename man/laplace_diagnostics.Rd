@@ -41,15 +41,23 @@ the accessor that plays Rhat's role for the deterministic engine: it answers
 "did the approximation work", not "did the chains mix".
 
 The headline is a Pareto-smoothed importance-sampling (PSIS) reliability
-diagnostic for the approximation. The nested integrator scores its
-hyperparameter grid against the exact inner-Laplace marginal posterior with a
-generalized-Pareto fit to the upper tail of the importance ratios
-\verb{log p_target(theta) - log q_proposal(theta)} (see \code{\link[=tulpa_psis]{tulpa_psis()}}); the
-resulting tail-shape \code{pareto_k} is the "did it work" number -- \code{k-hat < 0.5}
-good, \code{0.5-0.7} usable, \verb{>= 0.7} unreliable (Vehtari et al. 2024; Yao et al.
-2018). It is computed at fit time and read back here; a fit that did not run
-the diagnostic, or whose grid proposal degenerated, reports it as \code{NA} and is
-assessed on the grid quadrature reliability instead.
+diagnostic for the OUTER hyperparameter-grid integration. The nested
+integrator scores its hyperparameter grid against the exact inner-Laplace
+marginal posterior with a generalized-Pareto fit to the upper tail of the
+importance ratios \verb{log p_target(theta) - log q_proposal(theta)}
+(see \code{\link[=tulpa_psis]{tulpa_psis()}}); the resulting tail-shape \code{pareto_k} is the "did the
+outer integration work" number -- \code{k-hat < 0.5} good, \code{0.5-0.7} usable,
+\verb{>= 0.7} unreliable (Vehtari et al. 2024; Yao et al. 2018). It is computed at
+fit time and read back here; a fit that did not run the diagnostic, or whose
+grid proposal degenerated, reports it as \code{NA} and is assessed on the grid
+quadrature reliability instead.
+
+\code{pareto_k} scores the outer integration only. The inner Laplace on the latent
+field is a separate layer this diagnostic does not cover, so a high \code{pareto_k}
+on a fit whose grid quadrature is healthy (\code{ess_grid} well above 1, largest
+cell weight modest) flags outer-integration (CI-width) calibration in the
+right-skewed hyperparameter tail and does not by itself invalidate the
+point estimates, which the grid quadrature governs.
 
 The grid quadrature reliability -- the effective sample size
 \code{ess_grid = 1 / sum(w_k^2)} of the outer integration weights and the largest

@@ -32,7 +32,7 @@
     fn      = function(fit, pars, measures, probs)
                 .tulpa_approx_diag_table(fit, pars),
     honours = "pars",
-    what    = "approximation reliability (PSIS k-hat / grid quadrature ESS)"
+    what    = "outer-integration reliability (PSIS k-hat / grid quadrature ESS)"
   ),
   point = list(
     fn      = function(fit, pars, measures, probs) {
