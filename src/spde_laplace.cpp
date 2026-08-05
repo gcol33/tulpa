@@ -228,41 +228,80 @@ Rcpp::List cpp_laplace_fit_spde(
     if (n_re_groups > 0 && (int)re_idx.size() != N)
         Rcpp::stop("length(re_idx) (%d) must equal n_obs (%d).",
                    (int)re_idx.size(), N);
-    const double tau_re = (n_re_groups > 0)
-                          ? 1.0 / (sigma_re * sigma_re + 1e-10) : 0.0;
-
-    std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, N);
-    const double* off_ptr = offset.empty() ? nullptr : offset.data();
 
     Rcpp::NumericVector x_init;
     if (x_init_nullable.isNotNull()) {
         x_init = Rcpp::as<Rcpp::NumericVector>(x_init_nullable);
     }
 
-    // Build Q
-    tulpa::SpdeQBuilder qb;
-    qb.init(n_mesh, C0_diag, G1_x, G1_i, G1_p);
-
-    if (rational_poles_nullable.isNotNull() && rational_weights_nullable.isNotNull()) {
-        // Fractional alpha: rational approximation
-        std::vector<double> poles = Rcpp::as<std::vector<double>>(rational_poles_nullable);
-        std::vector<double> weights = Rcpp::as<std::vector<double>>(rational_weights_nullable);
-        qb.rebuild_rational(kappa, tau_spde, poles, weights);
-    } else {
-        qb.rebuild(kappa, tau_spde, alpha);
-    }
-
-    // Build sparse A and run the shared single-fit driver (integer field is
-    // sum-to-zero centred).
-    tulpa::ARows a_rows = tulpa::build_A_rows(N, n_mesh, A_x, A_i, A_p);
     std::vector<int> skew_idx_vec;
     const std::vector<int>* skew_idx_ptr =
         tulpa::unwrap_skew_idx(compute_skew, skew_idx, skew_idx_vec);
-    return spde_run_single_fit(
-        y, n_trials, X, N, p, re_idx, n_re_groups, sigma_re,
-        n_mesh, mesh_start, n_x, qb, a_rows, family, phi,
-        max_iter, tol, n_threads, x_init, off_ptr, /*center_mesh=*/true,
+
+    std::vector<tulpa::ParsedArm> parsed;
+    std::vector<tulpa::JointArm> arms;
+    // SPDE is INDEXED_MULTI (obs -> several mesh nodes via A), so the arm's
+    // spatial_idx is never indexed; a dummy zero vector keeps lifetime safe.
+    tulpa::make_single_arm(parsed, arms, X, re_idx, Rcpp::IntegerVector(N, 0),
+                           p, n_re_groups, sigma_re, y, n_trials, family, phi,
+                           N, offset_nullable);
+
+    // One-row grid holding the operator parameters directly: this entry is
+    // handed (kappa, tau_spde) by its caller, so direct_kappa_tau skips the
+    // block's Matern (range, sigma) conversion rather than composing it with
+    // its own inverse. nu = alpha - 1 reproduces the requested alpha inside the
+    // block (which derives alpha = round(nu) + 1).
+    Rcpp::NumericMatrix theta_grid(1, 2);
+    theta_grid(0, 0) = kappa;
+    theta_grid(0, 1) = tau_spde;
+    const double nu_equiv = static_cast<double>(alpha) - 1.0;
+
+    Rcpp::List A_x_per_arm = Rcpp::List::create(A_x);
+    Rcpp::List A_i_per_arm = Rcpp::List::create(A_i);
+    Rcpp::List A_p_per_arm = Rcpp::List::create(A_p);
+    Rcpp::IntegerVector n_obs_per_arm = Rcpp::IntegerVector::create(N);
+
+    std::vector<double> rat_poles, rat_weights;
+    const bool use_rational = rational_poles_nullable.isNotNull() &&
+                              rational_weights_nullable.isNotNull();
+    if (use_rational) {
+        rat_poles   = Rcpp::as<std::vector<double>>(rational_poles_nullable);
+        rat_weights = Rcpp::as<std::vector<double>>(rational_weights_nullable);
+    }
+
+    int q_nnz = 0;
+    std::vector<tulpa::LatentBlock> blocks;
+    blocks.push_back(tulpa::make_spde_block(
+        mesh_start, n_mesh,
+        A_x_per_arm, A_i_per_arm, A_p_per_arm, n_obs_per_arm,
+        /*n_arms=*/1, /*block_index=*/0,
+        C0_diag, G1_x, G1_i, G1_p, nu_equiv,
+        /*axis_range=*/0, /*axis_sigma=*/1, theta_grid,
+        use_rational, rat_poles, rat_weights,
+        /*direct_kappa_tau=*/true, &q_nnz));
+
+    const tulpa::HessianPatternGuard pattern_guard;
+    Rcpp::List grid = tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
+        /*n_grid=*/1, arms, parsed, blocks, n_x,
+        max_iter, tol, n_threads,
+        /*store_modes=*/true, x_init, /*store_Q=*/false,
+        /*prep_at_grid=*/nullptr,
+        /*tile_ids=*/std::vector<int>(),
+        /*tile_pilot_cells=*/std::vector<int>(),
+        /*prune_tol=*/0.0,
+        /*cell_coupling_spec=*/nullptr,
+        /*coupled_arms=*/std::vector<int>(),
+        /*cell_rows=*/std::vector<std::vector<std::vector<int>>>(),
+        /*n_cells=*/0,
+        tulpa::JointPDMode::LM, tulpa::CurvatureMode::Observed,
+        /*hessian_refresh=*/1, /*n_threads_outer=*/1,
+        /*progress=*/nullptr, /*checkpoint=*/nullptr,
+        /*x_init_per_cell=*/std::vector<double>(),
         compute_skew, skew_idx_ptr);
+    pattern_guard.check("the SPDE Laplace solve");
+    Rcpp::List out = tulpa::nl_grid_cell_to_result_list(grid, 0);
+    out["Q_nnz"] = q_nnz;
+    return out;
 }
 
 // =====================================================================

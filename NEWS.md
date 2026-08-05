@@ -1,5 +1,54 @@
 # tulpa NEWS
 
+## 0.0.121
+
+* **`cpp_laplace_fit_gp` and `cpp_laplace_fit_spde` are now one-cell runs of
+  the shared machinery (#277).** Both were fixed-hyperparameter spatial kernels
+  carrying their own Newton loop, so a feature added to the joint-multi driver
+  had to be wired into them separately -- which is what the `gamma_3` pass
+  (#273) ran into. Each is now a thin wrapper: the same `make_single_arm`, the
+  same `make_nngp_block` / `make_spde_block`, the same driver at one grid cell,
+  reading the result back through `nl_grid_cell_to_result_list()`. The
+  equivalence is exact, asserted at `tolerance = 0` in
+  `test-laplace-spatial-gp-spde-equiv.R`, and `gamma_3` is now inherited rather
+  than wired.
+
+* **The SPDE single fit no longer reports an off-mode mode.** The mesh field is
+  sum-to-zero centred after the Newton loop. The bespoke path centred it
+  without moving the removed constant into the intercept, which shifts `eta`
+  away from the mode the loop found, and then re-evaluated `log_marginal` and
+  the Hessian there: a converged fit reported a fixed-effect score of ~0.47.
+  The driver folds the constant into the arm intercept, so `eta` is preserved.
+  Fixed effects and `log_marginal` move for every fixed-hyperparameter SPDE fit;
+  the mesh field is unchanged.
+
+* **NNGP is pinned to the sparse Newton path.** Its prior scatters only into
+  the sparse builder, and the dense route disagreed with it -- measurably at
+  `nn = 5`, and at `nn = 8` a 300-iteration non-convergence returning
+  `log_marginal = NaN` against a 23-iteration convergence. `blocks_require_sparse()`
+  (`latent_block.h`) now reads that requirement off the blocks: a block whose
+  prior has only `add_prior_sparse` forces the sparse path, instead of each
+  caller remembering `force_sparse`. This closes the silent case where the dense
+  path called an absent `add_prior` and contributed nothing at all. NNGP is the
+  only block whose dispatch changes; MCAR, HSGP-MO and the latent factor are
+  already non-`INDEXED_SINGLE` and were forced sparse before.
+
+* **Nested fits report per-cell solve health.** `log_det_Q`, `score_max` and
+  `converged` join `log_marginal` / `n_iter` / `modes` on every grid-driver
+  result, so a grid fit can see which cells settled instead of only that the
+  run finished.
+
+* `cpp_nested_laplace_nngp()` accepts an `offset`, which the generic driver
+  already read off `ParsedArm`; `make_spde_block()` takes its axes as
+  `(kappa, tau)` directly via `direct_kappa_tau`, so a fit handed the operator
+  parameters does not round-trip them through the Matern conversion.
+
+* `fit_spde()` with `nu = 0` now reports an infeasible cell (`log_marginal =
+  -Inf`, no iterations) rather than iterating on a degenerate precision. The
+  Matern parameterisation has no `(kappa, tau)` at `nu = 0`
+  (`kappa = sqrt(8 nu) / range` is 0 and `tau` is infinite); this is the verdict
+  `cpp_nested_laplace_spde()` has always returned there.
+
 ## 0.0.120
 
 * **Outer `pareto_k` no longer over-flags collapsed-grid fits (#276).** On a

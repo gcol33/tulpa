@@ -65,54 +65,15 @@ inline Rcpp::NumericVector unwrap_x_init(
     return Rcpp::NumericVector();
 }
 
-// The single-arm (ParsedArm, JointArm) pair every single-block kernel in this
-// file builds before handing off to the shared multi-block driver. Only the
-// response, its trial counts and the obs -> unit map vary between kernels; the
-// joint layout (beta at offset 0, the RE block right after it) and the RE
-// precision tau_re = 1 / sigma_re^2 are the same in all of them.
-//
-// A backend with no per-observation unit map (the HSGP dense basis) passes a
-// length-N vector of zeros for `spatial_idx`, which the parsed arm carries but
-// never indexes.
-inline void make_single_arm(
-    std::vector<tulpa::ParsedArm>& parsed,
-    std::vector<tulpa::JointArm>& arms,
-    const Rcpp::NumericMatrix& X,
-    const Rcpp::NumericVector& re_idx,
-    const Rcpp::IntegerVector& spatial_idx,
-    int p, int n_re_groups, double sigma_re,
-    const Rcpp::NumericVector& y,
-    const Rcpp::IntegerVector& n_trials,
-    const std::string& family, double phi, int N
-) {
-    parsed.resize(1);
-    tulpa::ParsedArm& pa = parsed[0];
-    pa.X           = X;
-    pa.re_idx      = re_idx;
-    pa.spatial_idx = spatial_idx;
-    pa.p           = p;
-    pa.n_re_groups = n_re_groups;
-    pa.sigma_re    = sigma_re;
-    pa.beta_start  = 0;
-    pa.re_start    = p;
-    pa.tau_re      = (n_re_groups > 0)
-                     ? 1.0 / (sigma_re * sigma_re + 1e-10)
-                     : 0.0;
-
-    arms.resize(1);
-    tulpa::JointArm& a = arms[0];
-    a.y        = y;
-    a.n_trials = n_trials;
-    a.family   = family;
-    a.phi      = phi;
-    a.N        = N;
-}
-
 } // namespace
 
-// Bring the multi-block driver into the anonymous-namespace caller scope so
+// Bring the multi-block driver and the shared single-arm builder
+// (nested_laplace_joint_core.h) into the anonymous-namespace caller scope so
 // the per-kernel Rcpp wrappers below can dispatch without a tulpa:: prefix.
-namespace { using tulpa::run_multi_block_nested_laplace; }
+namespace {
+using tulpa::run_multi_block_nested_laplace;
+using tulpa::make_single_arm;
+}
 
 // =====================================================================
 // Areal spatial-block factories (single source of truth)
@@ -686,7 +647,8 @@ Rcpp::List cpp_nested_laplace_nngp(
     bool store_Q = false,
     std::string checkpoint_path = "",
     bool compute_skew = false,
-    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue
 ) {
     const int n_grid = sigma2_grid.size();
     if (phi_gp_grid.size() != n_grid)
@@ -710,7 +672,8 @@ Rcpp::List cpp_nested_laplace_nngp(
     std::vector<tulpa::ParsedArm> parsed;
     std::vector<tulpa::JointArm> arms;
     make_single_arm(parsed, arms, X, re_idx, spatial_idx,
-                    p, n_re_groups, sigma_re, y, n, family, phi, N);
+                    p, n_re_groups, sigma_re, y, n, family, phi, N,
+                    offset_nullable);
 
     // ---- theta_grid: (sigma2, phi_gp). ----
     Rcpp::NumericMatrix theta_grid(n_grid, 2);

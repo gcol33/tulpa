@@ -1,262 +1,30 @@
 // laplace_core_gp.cpp
-// GP (NNGP) Laplace mode finder + its R export.
-// Split from laplace_core.cpp on 2026-05-02.
+// GP (NNGP) Laplace at a FIXED (sigma2_gp, phi_gp).
+//
+// The conditional counterpart of cpp_nested_laplace_nngp: it builds the SAME
+// single arm (make_single_arm) and the SAME NNGP LatentBlock (make_nngp_block)
+// at a one-row (sigma2, phi_gp) grid and runs the shared joint multi-block
+// driver, so the mode and log-marginal equal the nested kernel evaluated at that
+// single grid cell -- bit-for-bit, at any n_x.
+//
+// The NNGP block scatters its prior into the sparse builder only, so
+// blocks_require_sparse() routes this to the sparse Newton whatever n_x is. A
+// small field therefore pays CHOLMOD overhead it could in principle skip; that
+// is deliberate. The dense route disagrees with the sparse one on this block
+// (measurably at nn = 5, divergently at nn = 8), and the spatio-temporal NNGP
+// entry already pinned itself to sparse for the same reason.
+//
+// Routed from dispatch_laplace_spatial / tulpa_laplace(spatial = spatial_gp()).
 
 #include "laplace_core.h"
-#include "laplace_cholesky.h"
-#include "laplace_newton.h"
-#include "laplace_re_priors.h"
-#include "laplace_scatter.h"
-#include "laplace_temporal_priors.h"
-#include "linalg_fast.h"
-#include "gpu_nngp_laplace.h"
-#include "laplace_spec_fit.h"   // as_offset_vec (offset marshalling)
-#include "sparse_hessian.h"
+#include "hessian_pattern_guard.h"          // HessianPatternGuard
+#include "laplace_spec_fit.h"               // as_offset_vec, unwrap_skew_idx
+#include "nested_laplace_grid.h"            // nl_grid_cell_to_result_list
+#include "nested_laplace_joint_core.h"      // ParsedArm / JointArm, make_single_arm
+#include "nested_laplace_joint_multi.h"     // run_multi_block_nested_laplace_joint
+#include "nngp_block_factory.h"             // make_nngp_block
 #include <Rcpp.h>
-#include <cmath>
-#include <algorithm>
 #include <vector>
-
-#ifdef _OPENMP
-#include <omp.h>
-#endif
-
-using namespace Rcpp;
-
-namespace tulpa {
-
-// --- 4. GP (NNGP) ---
-// Uses fully sparse Newton when n_spatial >= SPARSE_THRESHOLD (200).
-// The H sparsity pattern comes from: beta×beta (dense p×p), spatial diagonal
-// (likelihood), and NNGP neighbor pairs (prior). Total nnz ≈ p² + n_spatial × nn.
-
-LaplaceResult laplace_mode_gp(
-    const NumericVector& y, const IntegerVector& n,
-    const NumericMatrix& X, const NumericVector& re_idx,
-    int n_re_groups, double sigma_re,
-    const NumericMatrix& coords,
-    const IntegerMatrix& nn_idx, const NumericMatrix& nn_dist,
-    const IntegerVector& nn_order,
-    int n_spatial, int nn,
-    double sigma2_gp, double phi_gp, int cov_type,
-    const std::string& family, double phi,
-    int max_iter, double tol, int n_threads,
-    const double* offset = nullptr,
-    // Per-observation 1-based location index (length N). nullptr = identity
-    // (obs i -> location i), the old behavior; a non-null map is required when
-    // coordinates repeat (n_spatial unique locations < N), so an observation is
-    // attached to its actual field node and later observations are not dropped.
-    const int* obs_to_loc = nullptr,
-    // Inner-Laplace skewness diagnostic (gcol33/tulpa#273 item 3): this is a
-    // fixed-hyperparameter single fit (no outer grid over sigma2_gp/phi_gp;
-    // that lives in the separate cpp_nested_laplace_nngp joint-multi path), so
-    // compute_skew scores the converged mode of THIS solve directly.
-    bool compute_skew = false,
-    const std::vector<int>* skew_probe_idx = nullptr
-) {
-    int N = y.size();
-    int p = X.ncol();
-    int n_x = p + n_re_groups + n_spatial;
-    double tau_re = 1.0 / (sigma_re * sigma_re + 1e-10);
-    int gp_start = p + n_re_groups;
-
-    auto compute_eta = [&](const NumericVector& x, NumericVector& eta) {
-        for (int i = 0; i < N; i++) {
-            eta[i] = offset ? offset[i] : 0.0;
-            for (int j = 0; j < p; j++) eta[i] += X(i, j) * x[j];
-            if (n_re_groups > 0) {
-                int g = (int)re_idx[i] - 1;
-                if (g >= 0 && g < n_re_groups) eta[i] += x[p + g];
-            }
-            int loc = obs_to_loc ? (obs_to_loc[i] - 1) : i;
-            if (loc >= 0 && loc < n_spatial) eta[i] += x[gp_start + loc];
-        }
-    };
-
-    auto log_prior = [&](const NumericVector& x, const NumericVector&) {
-        double lp = compute_log_prior_re(x, p, n_re_groups, tau_re);
-        std::vector<double> w(n_spatial);
-        for (int s = 0; s < n_spatial; s++) w[s] = x[gp_start + s];
-        std::vector<double> cm, cv;
-        bool gpu;
-        batch_nngp_scatter(w, n_spatial, nn, sigma2_gp, phi_gp, cov_type,
-                           coords, nn_idx, nn_dist, nn_order, cm, cv, gpu);
-        for (int s = 0; s < n_spatial; s++) {
-            double resid = w[s] - cm[s];
-            lp += -0.5 * std::log(2.0 * M_PI * cv[s]) -
-                  0.5 * resid * resid / cv[s];
-        }
-        return lp;
-    };
-
-    auto center = [](NumericVector&) {};
-
-    // --- Sparse Newton path for large n_spatial ---
-    if (n_x >= SPARSE_THRESHOLD) {
-        // Build sparsity pattern: beta block + RE diagonal + GP diagonal + NNGP neighbors
-        std::vector<std::pair<int,int>> pattern;
-
-        // Beta-beta dense block
-        for (int j1 = 0; j1 < p; j1++)
-            for (int j2 = j1; j2 < p; j2++)
-                pattern.push_back({j2, j1});
-
-        // RE diagonal
-        for (int g = 0; g < n_re_groups; g++)
-            pattern.push_back({p + g, p + g});
-
-        // Beta-GP cross terms (each obs contributes to its GP node × beta)
-        for (int i = 0; i < std::min(N, n_spatial); i++) {
-            int gp_idx = gp_start + i;
-            for (int j = 0; j < p; j++)
-                pattern.push_back({gp_idx, j});
-        }
-
-        // Beta-RE and GP-RE cross terms, so the sparse observed information
-        // matches the dense path (scatter_obs_with_latent); without these the
-        // sparse log|Q| dropped the RE cross blocks and diverged from dense.
-        if (n_re_groups > 0) {
-            for (int g = 0; g < n_re_groups; g++)
-                for (int j = 0; j < p; j++)
-                    pattern.push_back({p + g, j});
-            for (int i = 0; i < N; i++) {
-                int loc = obs_to_loc ? (obs_to_loc[i] - 1) : i;
-                int g = (int)re_idx[i] - 1;
-                if (loc >= 0 && loc < n_spatial && g >= 0 && g < n_re_groups)
-                    pattern.push_back({gp_start + loc, p + g});
-            }
-        }
-
-        // GP diagonal (likelihood + prior)
-        for (int s = 0; s < n_spatial; s++)
-            pattern.push_back({gp_start + s, gp_start + s});
-
-        // NNGP neighbor + neighbor-of-neighbor pairs: the precision matrix
-        // Λ = (I-A)' D⁻¹ (I-A) has off-diagonal entries at (focal, neighbor_k)
-        // and at (neighbor_k, neighbor_kp) for every conditioning-set pair.
-        // Without these, the Newton solve collapses to the diagonal-on-w
-        // approximation and pointwise field recovery degrades.
-        make_nngp_prior_sparsity_pattern(pattern, nn_idx, nn_order,
-                                          n_spatial, nn, gp_start);
-
-        SparseHessianBuilder H_builder;
-        H_builder.init(n_x, pattern);
-
-        auto scatter_sparse = [&](const NumericVector& x, const NumericVector& eta,
-                                   DenseVec& grad, SparseHessianBuilder& H) {
-            // Fixed effects
-            for (int i = 0; i < N; i++) {
-                auto gh = grad_hess_for_family(y[i], n[i], eta[i], family, phi);
-                for (int j = 0; j < p; j++) {
-                    grad[j] += gh.grad * X(i, j);
-                    for (int k = 0; k <= j; k++) {
-                        H.add(j, k, gh.neg_hess * X(i, j) * X(i, k));
-                    }
-                }
-                // RE
-                if (n_re_groups > 0) {
-                    int g = (int)re_idx[i] - 1;
-                    if (g >= 0 && g < n_re_groups) {
-                        grad[p + g] += gh.grad;
-                        H.add(p + g, p + g, gh.neg_hess);
-                        // Cross with beta
-                        for (int j = 0; j < p; j++) {
-                            H.add(p + g, j, gh.neg_hess * X(i, j));
-                        }
-                    }
-                }
-                // GP diagonal
-                int loc = obs_to_loc ? (obs_to_loc[i] - 1) : i;
-                if (loc >= 0 && loc < n_spatial) {
-                    int gp_idx = gp_start + loc;
-                    grad[gp_idx] += gh.grad;
-                    H.add(gp_idx, gp_idx, gh.neg_hess);
-                    // Cross with beta
-                    for (int j = 0; j < p; j++) {
-                        H.add(gp_idx, j, gh.neg_hess * X(i, j));
-                    }
-                    // Cross with RE
-                    if (n_re_groups > 0) {
-                        int g = (int)re_idx[i] - 1;
-                        if (g >= 0 && g < n_re_groups) {
-                            H.add(gp_idx, p + g, gh.neg_hess);
-                        }
-                    }
-                }
-            }
-
-            // NNGP prior — full precision Λ = (I-A)' D⁻¹ (I-A).
-            std::vector<double> w(n_spatial);
-            for (int s = 0; s < n_spatial; s++) w[s] = x[gp_start + s];
-            std::vector<double> cond_means, cond_vars, nngp_alpha;
-            bool gpu_used;
-            batch_nngp_scatter(w, n_spatial, nn, sigma2_gp, phi_gp, cov_type,
-                               coords, nn_idx, nn_dist, nn_order,
-                               cond_means, cond_vars, gpu_used, &nngp_alpha);
-            apply_nngp_full_prior_sparse(grad, H, w, nngp_alpha, cond_vars,
-                                           nn_idx, nn_order,
-                                           n_spatial, nn, gp_start);
-
-            // Beta + RE regularization
-            double tau_beta = 1e-4;
-            for (int j = 0; j < p; j++) { grad[j] -= tau_beta * x[j]; H.add(j, j, tau_beta); }
-            for (int g = 0; g < n_re_groups; g++) {
-                grad[p + g] -= tau_re * x[p + g]; H.add(p + g, p + g, tau_re);
-            }
-        };
-
-        return laplace_newton_solve_sparse(
-            y, n, family, phi, N, n_x,
-            max_iter, tol, n_threads,
-            compute_eta, scatter_sparse, center, log_prior,
-            H_builder, Rcpp::NumericVector(), /*shared_solver=*/nullptr,
-            /*store_Q=*/false, compute_skew, skew_probe_idx);
-    }
-
-    // --- Dense Newton path for small n_spatial ---
-    // Per-obs GP effect index (or -1) with unit design coefficient; the shared
-    // scatter_obs_with_latent adds the base beta/RE curvature plus the GP
-    // diagonal and the GP x beta / GP x RE cross-Hessian blocks, so the dense
-    // log|Q| carries the full observed information instead of the GP diagonal
-    // alone (the previous loop dropped every GP cross block).
-    std::vector<int> gp_effect_idx(N);
-    for (int i = 0; i < N; i++) {
-        int loc = obs_to_loc ? (obs_to_loc[i] - 1) : i;
-        gp_effect_idx[i] = (loc >= 0 && loc < n_spatial) ? (gp_start + loc) : -1;
-    }
-    std::vector<double> gp_d_factors(N, 1.0);
-    auto scatter = [&](const NumericVector& x, const NumericVector& eta,
-                       DenseVec& grad, DenseMat& H) {
-        scatter_obs_with_latent(y, n, X, re_idx, N, p, n_re_groups,
-                                eta, family, phi, gp_effect_idx, gp_d_factors,
-                                grad, H, n_threads);
-        std::vector<double> w(n_spatial);
-        for (int s = 0; s < n_spatial; s++) w[s] = x[gp_start + s];
-        std::vector<double> cond_means, cond_vars, nngp_alpha;
-        bool gpu_used;
-        batch_nngp_scatter(w, n_spatial, nn, sigma2_gp, phi_gp, cov_type,
-                           coords, nn_idx, nn_dist, nn_order,
-                           cond_means, cond_vars, gpu_used, &nngp_alpha);
-        apply_nngp_full_prior_dense(grad, H, w, nngp_alpha, cond_vars,
-                                      nn_idx, nn_order,
-                                      n_spatial, nn, gp_start);
-        add_re_beta_priors(grad, H, x, p, n_re_groups, tau_re);
-    };
-
-    return laplace_newton_solve(y, n, family, phi, N, n_x,
-                                 max_iter, tol, n_threads,
-                                 compute_eta, scatter, center, log_prior,
-                                 Rcpp::NumericVector(), /*shared_solver=*/nullptr,
-                                 /*store_Q=*/false, /*inv_block_layout=*/nullptr,
-                                 compute_skew, skew_probe_idx);
-}
-
-
-} // namespace tulpa
-
-// =====================================================================
-// R exports (call into tulpa:: functions defined above)
-// =====================================================================
 
 // [[Rcpp::export]]
 Rcpp::List cpp_laplace_fit_gp(
@@ -275,31 +43,84 @@ Rcpp::List cpp_laplace_fit_gp(
     bool compute_skew = false,
     Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
 ) {
-    std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, y.size());
-    std::vector<int> obs_to_loc;
+    const int N = y.size();
+    const int p = X.ncol();
+    // Layout [beta (p), re (n_re_groups), w_gp (n_spatial)], matching the
+    // nested NNGP entry (cpp_nested_laplace_nngp).
+    const int n_x = p + n_re_groups + n_spatial;
+    const int gp_start = p + n_re_groups;
+
+    if (coords.nrow() != n_spatial) {
+        Rcpp::stop("nrow(coords) (%d) must equal n_spatial (%d).",
+                   static_cast<int>(coords.nrow()), n_spatial);
+    }
+
+    // Per-observation 1-based field-node index. A supplied obs_to_loc attaches
+    // each observation to its actual node, which is required when coordinates
+    // repeat (n_spatial unique locations < N). Absent, the map is the identity
+    // (obs i -> node i); observations past n_spatial get 0, which the driver
+    // reads as "this obs does not see the block" -- the same rows the identity
+    // bounds check used to drop.
+    Rcpp::IntegerVector spatial_idx(N);
     if (obs_to_loc_nullable.isNotNull()) {
         Rcpp::IntegerVector otl(obs_to_loc_nullable);
-        obs_to_loc.assign(otl.begin(), otl.end());
+        if (otl.size() != N) {
+            Rcpp::stop("length(obs_to_loc) (%d) must equal length(y) (%d).",
+                       static_cast<int>(otl.size()), N);
+        }
+        spatial_idx = otl;
+    } else {
+        for (int i = 0; i < N; i++) {
+            spatial_idx[i] = (i < n_spatial) ? (i + 1) : 0;
+        }
     }
+
+    std::vector<tulpa::ParsedArm> parsed;
+    std::vector<tulpa::JointArm> arms;
+    tulpa::make_single_arm(parsed, arms, X, re_idx, spatial_idx,
+                           p, n_re_groups, sigma_re, y, n, family, phi, N,
+                           offset_nullable);
+
+    // One-row (sigma2, phi_gp) grid; make_nngp_block reads the pair from
+    // theta_grid(k, axis) in block.prep, so the row must outlive the solve.
+    Rcpp::NumericMatrix theta_grid(1, 2);
+    theta_grid(0, 0) = sigma2_gp;
+    theta_grid(0, 1) = phi_gp;
+
+    Rcpp::List spatial_idx_per_arm = Rcpp::List::create(spatial_idx);
+    Rcpp::IntegerVector n_obs_per_arm = Rcpp::IntegerVector::create(N);
+
+    std::vector<tulpa::LatentBlock> blocks;
+    blocks.push_back(tulpa::make_nngp_block(
+        gp_start, n_spatial, spatial_idx_per_arm, n_obs_per_arm,
+        /*n_arms=*/1, /*block_index=*/0,
+        nn, cov_type, coords, nn_idx, nn_dist, nn_order,
+        /*axis_sigma2=*/0, /*axis_phi_gp=*/1, theta_grid));
+
     std::vector<int> skew_idx_vec;
     const std::vector<int>* skew_idx_ptr =
         tulpa::unwrap_skew_idx(compute_skew, skew_idx, skew_idx_vec);
-    // The GP / NNGP Laplace path runs serially: the observation-scatter is the
-    // only OpenMP region here and its speedup is negligible (n_spatial is small
-    // and the Vecchia prior scatter that dominates is serial), while running it
-    // multi-threaded triggers a flaky heap corruption under the mingw OpenMP
-    // toolchain. Pin to one thread.
+
+    // The GP / NNGP Laplace path runs serially: the Vecchia prior scatter that
+    // dominates is serial, while running the observation scatter multi-threaded
+    // triggers a flaky heap corruption under the mingw OpenMP toolchain.
     n_threads = 1;
+
     const tulpa::HessianPatternGuard pattern_guard;
-    tulpa::LaplaceResult result = tulpa::laplace_mode_gp(
-        y, n, X, re_idx, n_re_groups, sigma_re,
-        coords, nn_idx, nn_dist, nn_order, n_spatial, nn,
-        sigma2_gp, phi_gp, cov_type,
-        family, phi, max_iter, tol, n_threads,
-        offset.empty() ? nullptr : offset.data(),
-        obs_to_loc.empty() ? nullptr : obs_to_loc.data(),
-        compute_skew, skew_idx_ptr
-    );
+    Rcpp::List grid = tulpa::run_multi_block_nested_laplace_joint(
+        /*n_grid=*/1, arms, parsed, blocks, n_x,
+        max_iter, tol, n_threads,
+        /*store_modes=*/true, Rcpp::NumericVector(), /*store_Q=*/false,
+        /*prep_at_grid=*/nullptr, /*n_threads_outer=*/1,
+        /*tile_ids=*/std::vector<int>(),
+        /*tile_pilot_cells=*/std::vector<int>(),
+        /*prune_tol=*/0.0, /*force_sparse=*/false,
+        /*cell_coupling_spec=*/nullptr,
+        tulpa::JointPDMode::LM, tulpa::CurvatureMode::Observed,
+        /*hessian_refresh=*/1, /*progress=*/nullptr, /*checkpoint=*/nullptr,
+        /*x_init_per_cell=*/std::vector<double>(),
+        compute_skew, skew_idx_ptr);
     pattern_guard.check("the GP / NNGP Laplace solve");
-    return tulpa::laplace_result_to_list(result);
+
+    return tulpa::nl_grid_cell_to_result_list(grid, 0);
 }

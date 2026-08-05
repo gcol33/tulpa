@@ -37,9 +37,17 @@ test_that("spatial_spde accepts fractional nu (gcol33/tulpa#71)", {
   expect_error(spatial_spde(coords, nu = -0.5), "non-negative")
 })
 
-test_that("fit_spde with nu = 0 runs without error", {
+test_that("fit_spde with nu = 0 reports an infeasible cell rather than a fit", {
   skip_on_cran()
-  # nu=0 (alpha=1) is the first-order operator -- ill-conditioned, rarely used.
+  # nu = 0 (alpha = 1) is the first-order operator. The Matern parameterisation
+  # is degenerate there: kappa = sqrt(8 nu) / range is 0 and
+  # tau = 1 / (sqrt(4 pi nu) kappa^nu sigma) is infinite, so there is no
+  # precision to build. Both entries gate the cell as infeasible --
+  # log_marginal = -Inf, no Newton iterations -- rather than iterating on a
+  # degenerate Q. cpp_nested_laplace_spde has always returned this; the
+  # single-point fit reports it too now that both share make_spde_block's PD
+  # gate (gcol33/tulpa#277). Tracked separately: nu = 0 is accepted by
+  # spatial_spde() but is not a usable model.
   set.seed(42)
   n_obs <- 80
   coords <- cbind(runif(n_obs), runif(n_obs))
@@ -47,7 +55,15 @@ test_that("fit_spde with nu = 0 runs without error", {
   y <- rbinom(n_obs, 1, 0.4)
   X <- matrix(1, nrow = n_obs, ncol = 1)
   result <- fit_spde(y, X, spec, family = "binomial", range = 0.5, sigma = 0.3)
-  expect_true(result$n_iter > 0)
+  expect_equal(result$n_iter, 0L)
+  expect_identical(result$log_marginal, -Inf)
+
+  # nu = 1 over the same mesh is the working case, so the gate above is about
+  # the degenerate parameterisation and not about this fixture.
+  spec1 <- spatial_spde(coords, nu = 1)
+  ok <- fit_spde(y, X, spec1, family = "binomial", range = 0.5, sigma = 0.3)
+  expect_gt(ok$n_iter, 0L)
+  expect_true(is.finite(ok$log_marginal))
 })
 
 test_that("fit_spde works with nu = 1 (alpha = 2, standard)", {

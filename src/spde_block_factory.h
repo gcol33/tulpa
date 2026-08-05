@@ -17,18 +17,20 @@
 // nested_laplace_joint_multi.cpp file header: copy semantics for spatial
 // fields are gated to icar/bym2/car_proper).
 //
-// Two axis schemas, dispatched at factory time on `use_rational`:
-//   * use_rational = false (integer alpha): axes are (range, sigma).
-//   * use_rational = true  (fractional nu): axes are still (range, sigma);
-//                                            rational coefs are constants
-//                                            captured at factory time.
+// Operator assembly is selected at factory time by `use_rational`:
+//   * use_rational = false: integer alpha, the exact FEM construction.
+//   * use_rational = true:  fractional nu, rational coefficients captured
+//                           at factory time.
+// Independently, `direct_kappa_tau` selects what the two theta_grid axes
+// hold -- Matern (range, sigma) converted per cell, or the operator
+// (kappa, tau) used as-is.
 //
-// SPDE forces the sparse Newton path (the dense scatter does not support
-// INDEXED_MULTI). add_prior is left empty — calling the dense path on a
-// blocks-list containing SPDE will skip the SPDE prior contribution, which
-// would silently corrupt the fit. The dispatch in solve_at_theta_impl
-// (1.4a) MUST route to the sparse path whenever any block has
-// contrib_kind != INDEXED_SINGLE.
+// In the JOINT driver SPDE forces the sparse Newton path: that driver's dense
+// scatter resolves INDEXED_SINGLE blocks through `idx` only, so it cannot see
+// an INDEXED_MULTI block's per-obs mesh weights. Its dispatch routes to the
+// sparse path whenever any block has contrib_kind != INDEXED_SINGLE. The dense
+// `add_prior` below is for the non-joint multi-block driver, whose scatter does
+// handle INDEXED_MULTI; it mirrors add_prior_sparse value-for-value.
 
 #ifndef TULPA_SPDE_BLOCK_FACTORY_H
 #define TULPA_SPDE_BLOCK_FACTORY_H
@@ -40,11 +42,24 @@
 #include "spde_qbuilder.h"               // SpdeQBuilder, ARows, build_A_rows
 #include "spde_logdet.h"                 // SpdeQLogDet (0.5 log|Q| normalizer)
 #include <Rcpp.h>
+#include <cmath>
 #include <memory>
+#include <tuple>
 #include <utility>
 #include <vector>
 
 namespace tulpa {
+
+// Matern (range, sigma) -> SPDE operator (kappa, tau) for the d = 2 FEM
+// construction. Single source of truth for the axis conversion the nested
+// integrators apply per grid cell.
+inline std::pair<double, double> spde_range_sigma_to_kappa_tau(
+    double range, double sigma, double nu
+) {
+    const double kappa = std::sqrt(8.0 * nu) / range;
+    const double tau   = 1.0 / (std::sqrt(4.0 * M_PI) * kappa * sigma);
+    return {kappa, tau};
+}
 
 inline LatentBlock make_spde_block(
     int                            start,
@@ -65,7 +80,20 @@ inline LatentBlock make_spde_block(
     const Rcpp::NumericMatrix&     theta_grid,
     bool                           use_rational,
     const std::vector<double>&     rational_poles,
-    const std::vector<double>&     rational_weights
+    const std::vector<double>&     rational_weights,
+    // Meaning of the two theta_grid columns selected by axis_range / axis_sigma.
+    // false (default): Matern (range, sigma), converted per cell by
+    // spde_range_sigma_to_kappa_tau -- what the nested integrators grid over.
+    // true: the columns ARE the operator parameters (kappa, tau) and are used
+    // as-is. The fixed-hyperparameter single fit takes (kappa, tau) from its
+    // caller, so a round-trip through (range, sigma) would be the conversion
+    // composed with its inverse; taking them directly keeps that fit exact.
+    bool                           direct_kappa_tau = false,
+    // Optional: receives the FEM precision's nonzero count. The pattern is
+    // fixed across cells (prep only reweights it), so it is a property of the
+    // mesh and is read off the template builder below -- a caller that reports
+    // Q_nnz does not enumerate the pattern a second time to get it.
+    int*                           q_nnz_out = nullptr
 ) {
     if (static_cast<int>(A_x_per_arm.size()) != n_arms ||
         static_cast<int>(A_i_per_arm.size()) != n_arms ||
@@ -98,6 +126,7 @@ inline LatentBlock make_spde_block(
     // add_prior_pattern.
     auto qb = std::make_shared<SpdeQBuilder>();
     qb->init(n_mesh, C0_diag, G1_x, G1_i, G1_p);
+    if (q_nnz_out) *q_nnz_out = qb->nnz();
 
     // Per-cell state (nl_cell_cache.h): Q values and the prior normalizer
     // 0.5 log|Q(theta)| are rebuilt per outer cell by prep(), and the joint
@@ -149,13 +178,18 @@ inline LatentBlock make_spde_block(
     // A non-PD cell returns false (infeasible -> log_marginal = -inf), matching
     // the proper-CAR PD gate.
     block.prep = [cell_cache, axis_range, axis_sigma, theta_grid,
-                   nu, alpha, use_rational,
+                   nu, alpha, use_rational, direct_kappa_tau,
                    rational_poles, rational_weights](int k_grid) -> bool {
-        double range = theta_grid(k_grid, axis_range);
-        double sigma = theta_grid(k_grid, axis_sigma);
-        if (!(range > 0.0) || !(sigma > 0.0)) return false;
-        double kappa = std::sqrt(8.0 * nu) / range;
-        double tau   = 1.0 / (std::sqrt(4.0 * M_PI) * kappa * sigma);
+        double a0 = theta_grid(k_grid, axis_range);
+        double a1 = theta_grid(k_grid, axis_sigma);
+        if (!(a0 > 0.0) || !(a1 > 0.0)) return false;
+        double kappa, tau;
+        if (direct_kappa_tau) {
+            kappa = a0;
+            tau   = a1;
+        } else {
+            std::tie(kappa, tau) = spde_range_sigma_to_kappa_tau(a0, a1, nu);
+        }
         auto& st = cell_cache->claim();
         if (use_rational) {
             st.qb.rebuild_rational(kappa, tau, rational_poles, rational_weights);

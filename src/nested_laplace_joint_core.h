@@ -200,6 +200,62 @@ inline int parse_joint_arms(
     return n_x_running;
 }
 
+// The single-arm (ParsedArm, JointArm) pair every single-block kernel builds
+// before handing off to the shared multi-block driver. Only the response, its
+// trial counts and the obs -> unit map vary between kernels; the joint layout
+// (beta at offset 0, the RE block right after it) and the RE precision
+// tau_re = 1 / sigma_re^2 are the same in all of them.
+//
+// A backend with no per-observation unit map (the HSGP dense basis) passes a
+// length-N vector of zeros for `spatial_idx`, which the parsed arm carries but
+// never indexes.
+//
+// `offset_nullable` is the optional per-observation offset added to eta ahead of
+// the linear predictor. The generic driver reads it off ParsedArm::offset, so
+// wiring it here covers every kernel that builds its arm through this helper.
+inline void make_single_arm(
+    std::vector<ParsedArm>& parsed,
+    std::vector<JointArm>& arms,
+    const Rcpp::NumericMatrix& X,
+    const Rcpp::NumericVector& re_idx,
+    const Rcpp::IntegerVector& spatial_idx,
+    int p, int n_re_groups, double sigma_re,
+    const Rcpp::NumericVector& y,
+    const Rcpp::IntegerVector& n_trials,
+    const std::string& family, double phi, int N,
+    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue
+) {
+    parsed.resize(1);
+    ParsedArm& pa = parsed[0];
+    pa.X           = X;
+    pa.re_idx      = re_idx;
+    pa.spatial_idx = spatial_idx;
+    pa.p           = p;
+    pa.n_re_groups = n_re_groups;
+    pa.sigma_re    = sigma_re;
+    pa.beta_start  = 0;
+    pa.re_start    = p;
+    pa.tau_re      = (n_re_groups > 0)
+                     ? 1.0 / (sigma_re * sigma_re + 1e-10)
+                     : 0.0;
+    if (offset_nullable.isNotNull()) {
+        Rcpp::NumericVector off(offset_nullable);
+        if ((int)off.size() != N) {
+            Rcpp::stop("length(offset) (%d) must equal n_obs (%d).",
+                       (int)off.size(), N);
+        }
+        pa.offset = off;
+    }
+
+    arms.resize(1);
+    JointArm& a = arms[0];
+    a.y        = y;
+    a.n_trials = n_trials;
+    a.family   = family;
+    a.phi      = phi;
+    a.N        = N;
+}
+
 // Per-arm Gaussian beta + RE priors. Identical across all backends.
 // `tau_beta` is a weak prior precision (default 1e-4 ≡ sd ~ 100).
 inline void add_per_arm_beta_re_priors(

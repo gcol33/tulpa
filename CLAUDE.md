@@ -454,30 +454,53 @@ arm). For a fully-coupled fit like `occu_cover` the answer is still
 provably all-NaN (every arm is coupled), now as an explicit NaN field rather
 than an absent one.
 
-**SPDE/GP bespoke Newton pair (gcol33/tulpa#273 item 3, closed in 0.0.119):**
-`cpp_laplace_fit_gp` / `cpp_laplace_fit_spde` / `cpp_laplace_fit_spde_precomputed`
-are standalone, fixed-hyperparameter single fits (`laplace_mode_gp()` in
-`laplace_core_gp.cpp`, `spde_run_single_fit()` in `spde_laplace.cpp`) --
-a fourth, independent Newton implementation the joint-multi driver above
-never touches (the nested "nngp" / "spde" registry entries integrate
-hyperparameters via the shared joint-multi machinery instead, already
-covered by the wiring above). Both branches now carry `compute_skew`:
-the dense path (`laplace_newton_solve` / `run_spde_laplace`, which already
-had the hook from the single-arm family kernels) just needed the two new
-parameters threaded through its own signature into that existing call, and
-the fully sparse CHOLMOD-only path (`laplace_newton_solve_sparse` in
-`sparse_hessian.h`, used once `n_x >= SPARSE_THRESHOLD`) gained a new
-`compute_inner_skew_gamma3` call after its final factorize, reusing the live
-CHOLMOD factor. `unwrap_skew_idx()` (`laplace_spec_fit.h`) is the shared
-1-based-R-to-0-based-probe conversion the two new Rcpp exports use, rather
-than adding a 7th copy of the inline conversion already duplicated across
-`laplace_core.cpp` / `laplace_core_spatial.cpp` / `nested_laplace_multi.cpp`
-/ `nested_laplace_joint_multi.cpp`. Verified via the gaussian exact-zero
-invariant (third log-lik derivative is identically zero regardless of
-latent structure) on all four combinations: GP dense, GP sparse (n_spatial
-= 210), SPDE dense, SPDE sparse (n_mesh = 231), plus the precomputed
-rational-SPDE export (`test-inner-skew.R`). The coupled (non-separable)
-cubic-term derivation (item 2) remains open (gcol33/tulpa#273).
+**SPDE/GP single fits are one-cell runs of the shared machinery
+(gcol33/tulpa#277, 0.0.121).** `cpp_laplace_fit_gp` and `cpp_laplace_fit_spde`
+used to carry their own Newton loops (`laplace_mode_gp()`,
+`spde_run_single_fit()`) -- an independent implementation the joint-multi
+driver never touched, so #273's `gamma_3` pass had to be wired into them
+separately. Each is now a thin wrapper: `make_single_arm()`
+(`nested_laplace_joint_core.h`) + the same block factory the nested entry uses
+(`make_nngp_block` / `make_spde_block`) + the joint driver at a one-row grid,
+projected back onto the single-fit contract by `nl_grid_cell_to_result_list()`
+(`nested_laplace_grid.h`, reading the per-cell `log_det_Q` / `score_max` /
+`converged` the grid driver now reports). The equivalence is EXACT and asserted
+at `tolerance = 0` in `test-laplace-spatial-gp-spde-equiv.R`; anything the
+joint-multi driver gains (`gamma_3` included) is inherited, not wired.
+
+Two things the migration settled, both load-bearing:
+
+- **NNGP is sparse-only.** `make_nngp_block` scatters its prior into the sparse
+  builder alone, and the dense route disagrees with it -- measurably at
+  `nn = 5`, and at `nn = 8` a 300-iteration non-convergence returning
+  `log_marginal = NaN` against a 23-iteration convergence. `blocks_require_sparse()`
+  (`latent_block.h`) reads that off the blocks: a non-`INDEXED_SINGLE`
+  contribution OR a prior with only `add_prior_sparse` forces the sparse path.
+  That also closes the silent case where the dense path calls an absent
+  `add_prior` and contributes nothing. NNGP is the only block whose dispatch
+  this changes (MCAR / HSGP-MO / latent factor are already non-`INDEXED_SINGLE`);
+  the ST NNGP entry had been passing `force_sparse = true` by hand for it.
+- **Post-loop centring must compensate the intercept.** `center_effects_fn` runs
+  ONCE after the Newton loop. The single-arm loop centres and then re-evaluates
+  `log_marginal` / `H` at the shifted point; the joint loop computes
+  `log_marginal` first and centres with a `CenterFold` into the arm intercept,
+  so `eta` is preserved. The bespoke SPDE fit took the first route without the
+  fold and reported a converged mode whose fixed-effect score was ~0.47.
+
+`cpp_laplace_fit_spde_precomputed` (the rational/fractional-nu path) still has
+its own Newton loop via `spde_run_single_fit()` -> `laplace_newton_solve_sparse()`,
+which is why that function survives #277's checklist. Its `Q`/`Aeff` arrive
+already assembled from `.spde_rational_assemble` (`R/brasil.R`), so following the
+others needs `make_spde_block` to accept a precomputed CSC `Q` with `prep()` a
+no-op and centring off. Also still bespoke: `implicit_diff.cpp`'s
+`cpp_spde_laplace_gradient`, which calls `run_spde_laplace` directly for the
+`SpdeQBuilder`'s per-entry `c0_contrib`/`g1_contrib` decomposition and a raw
+`SparseCholeskySolver&` for Takahashi selected inversion -- internals the
+driver's `Rcpp::List`-only interface does not expose.
+
+`unwrap_skew_idx()` (`laplace_spec_fit.h`) remains the shared
+1-based-R-to-0-based-probe conversion. The coupled (non-separable) cubic-term
+derivation (#273 item 2) remains open.
 
 ### Checkpoint / resume across every fitter (gcol33/tulpa#50)
 

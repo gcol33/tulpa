@@ -175,6 +175,13 @@ inline LatentBlock make_nngp_block(
                                       nn_idx, nn_order, n_spatial, nn, start);
     };
 
+    // No dense `add_prior`: the NNGP prior is scattered through the sparse
+    // builder only. The dense Newton route disagrees with the sparse one on
+    // this block -- measurably at nn = 5 and divergently at nn = 8 -- so the
+    // block declares add_prior_sparse alone and the driver's
+    // blocks_require_sparse() predicate routes it accordingly, rather than
+    // every caller remembering to pass force_sparse.
+
     block.log_prior = [cell_cache, start, n_spatial, nn, nn_idx, nn_order](
         const Rcpp::NumericVector& x, int k_grid
     ) -> double {

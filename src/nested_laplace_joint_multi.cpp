@@ -2021,20 +2021,13 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
     }
 
     // Sparse-path detection. Triggered by (a) user opt-in via force_sparse,
-    // (b) n_x crossing the dense-Newton threshold, or (c) any block whose
-    // contrib_kind is not INDEXED_SINGLE — the dense scatter
-    // (scatter_arm_obs_joint_multi) only handles INDEXED_SINGLE via the
-    // `idx` callback, so SPDE/HSGP/etc. require the sparse path even at
-    // small n_x.
-    bool needs_sparse = force_sparse || (n_x >= SPARSE_THRESHOLD);
-    if (!needs_sparse) {
-        for (const auto& b : blocks) {
-            if (b.contrib_kind != BlockContribKind::INDEXED_SINGLE) {
-                needs_sparse = true;
-                break;
-            }
-        }
-    }
+    // (b) n_x crossing the dense-Newton threshold, or (c) a block that cannot
+    // be scattered densely at all -- a non-INDEXED_SINGLE contribution, or a
+    // prior with only a sparse scatter. blocks_require_sparse (latent_block.h)
+    // owns that test so it stays a property of the block rather than something
+    // each caller passes as force_sparse.
+    bool needs_sparse = force_sparse || (n_x >= SPARSE_THRESHOLD) ||
+                        blocks_require_sparse(blocks);
     if (needs_sparse) {
         // The sparse impl runs the outer grid across n_threads_outer with one
         // SparseHessianBuilder + Newton scratch + arm-spec set + scatter cache

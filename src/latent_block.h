@@ -291,6 +291,27 @@ struct LatentBlock {
         add_prior_sparse;
 };
 
+// Does this block set force the sparse Newton path regardless of n_x?
+//
+// Two reasons a block cannot go through the dense scatter:
+//   * contrib_kind != INDEXED_SINGLE -- the dense scatter resolves a block
+//     only through `idx`, so it cannot see an INDEXED_MULTI block's per-obs
+//     weights or a DENSE_BASIS block's basis row.
+//   * a prior that scatters only into a SparseHessianBuilder (add_prior_sparse
+//     set, dense add_prior empty) -- the dense path calls `add_prior` if it is
+//     present and silently contributes NOTHING if it is not, which drops the
+//     block's prior from H and from the mode it implies.
+//
+// Reading it off the blocks makes the requirement a property of the block
+// rather than something each caller has to remember to pass as force_sparse.
+inline bool blocks_require_sparse(const std::vector<LatentBlock>& blocks) {
+    for (const auto& b : blocks) {
+        if (b.contrib_kind != BlockContribKind::INDEXED_SINGLE) return true;
+        if (b.add_prior_sparse && !b.add_prior) return true;
+    }
+    return false;
+}
+
 } // namespace tulpa
 
 #endif // TULPA_LATENT_BLOCK_H

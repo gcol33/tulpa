@@ -97,6 +97,55 @@
 
 namespace tulpa {
 
+// Project cell k of a grid-driver result onto the single-fit result shape
+// (the laplace_result_to_list contract: mode, log_det_Q, log_marginal, n_iter,
+// converged, score_max).
+//
+// A fixed-hyperparameter export is the same computation as its nested
+// integrator run on a one-cell grid, so it builds the same arm + LatentBlock,
+// calls the same driver, and reads cell 0 back through here. Every field the
+// single-fit contract promises is a per-cell vector on the grid result, so this
+// is a projection, not a re-derivation -- there is no second Newton loop to
+// drift from the first.
+inline Rcpp::List nl_grid_cell_to_result_list(const Rcpp::List& grid, int k) {
+    Rcpp::NumericMatrix modes = grid["modes"];
+    if (k < 0 || k >= modes.nrow()) {
+        Rcpp::stop("nl_grid_cell_to_result_list: cell %d out of range "
+                   "[0, %d).", k, static_cast<int>(modes.nrow()));
+    }
+    const int n_x = modes.ncol();
+    Rcpp::NumericVector mode(n_x);
+    for (int j = 0; j < n_x; j++) mode[j] = modes(k, j);
+
+    Rcpp::NumericVector log_marginal = grid["log_marginal"];
+    Rcpp::IntegerVector n_iter       = grid["n_iter"];
+    Rcpp::NumericVector log_det_Q    = grid["log_det_Q"];
+    Rcpp::NumericVector score_max    = grid["score_max"];
+    Rcpp::LogicalVector converged    = grid["converged"];
+
+    Rcpp::List out = Rcpp::List::create(
+        Rcpp::Named("mode")             = mode,
+        Rcpp::Named("log_det_Q")        = log_det_Q[k],
+        Rcpp::Named("log_marginal")     = log_marginal[k],
+        Rcpp::Named("n_iter")           = n_iter[k],
+        Rcpp::Named("converged")        = static_cast<bool>(converged[k]),
+        Rcpp::Named("score_max")        = score_max[k],
+        Rcpp::Named("start_infeasible") = false
+    );
+
+    // Inner-Laplace skewness diagnostic, under the names the single-fit
+    // contract uses (laplace_result_to_list). The grid emits it for the one
+    // cell that computed it, which on a fixed-hyperparameter run is this cell.
+    if (grid.containsElementNamed("inner_skew")) {
+        out["inner_skew"]     = grid["inner_skew"];
+        out["inner_skew_idx"] = grid["inner_skew_idx"];
+        if (grid.containsElementNamed("inner_skew_dropped")) {
+            out["inner_skew_dropped"] = grid["inner_skew_dropped"];
+        }
+    }
+    return out;
+}
+
 // Run a nested Laplace outer grid loop.
 //
 // SolveAtTheta is any callable with signature
@@ -167,6 +216,15 @@ inline Rcpp::List run_nested_laplace_grid(
 ) {
     Rcpp::NumericVector log_marginals(n_grid);
     Rcpp::IntegerVector n_iters(n_grid);
+    // Per-cell solve health. log_det_Q and score_max are the inner solve's own
+    // log|H| and achieved joint-score residual at the returned mode; `converged`
+    // is its stopping-rule flag. Reported per cell so a grid fit can see which
+    // cells settled, and so a fixed-hyperparameter export (a 1-cell grid) can
+    // project this result onto the single-fit contract -- see
+    // nl_grid_cell_to_result_list below.
+    Rcpp::NumericVector log_det_Qs(n_grid);
+    Rcpp::NumericVector score_maxs(n_grid);
+    Rcpp::LogicalVector convergeds(n_grid);
     int mode_rows = store_modes ? n_grid : 0;
     Rcpp::NumericMatrix all_modes(mode_rows, store_modes ? n_x : 0);
 
@@ -187,6 +245,9 @@ inline Rcpp::List run_nested_laplace_grid(
             Rcpp::Named("n_iter") = n_iters,
             Rcpp::Named("n_grid") = n_grid
         );
+        out["log_det_Q"] = log_det_Qs;
+        out["score_max"] = score_maxs;
+        out["converged"] = convergeds;
         if (store_modes) out["modes"] = all_modes;
         return out;
     }
@@ -737,6 +798,9 @@ inline Rcpp::List run_nested_laplace_grid(
         const LaplaceResult& res = cell_results[k];
         log_marginals[k] = res.log_marginal;
         n_iters[k] = res.n_iter;
+        log_det_Qs[k] = res.log_det_Q;
+        score_maxs[k] = res.score_max;
+        convergeds[k] = res.converged;
         if (store_modes) {
             int copy_n = std::min(n_x, static_cast<int>(res.mode.size()));
             for (int j = 0; j < copy_n; j++) all_modes(k, j) = res.mode[j];
@@ -762,6 +826,9 @@ inline Rcpp::List run_nested_laplace_grid(
         Rcpp::Named("n_iter") = n_iters,
         Rcpp::Named("n_grid") = n_grid
     );
+    out["log_det_Q"] = log_det_Qs;
+    out["score_max"] = score_maxs;
+    out["converged"] = convergeds;
     if (store_modes) out["modes"] = all_modes;
     if (any_Q) {
         out["Q_csc_p_per_grid"] = Q_p_per_grid;

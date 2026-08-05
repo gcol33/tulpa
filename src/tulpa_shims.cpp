@@ -146,7 +146,8 @@ Rcpp::List cpp_nested_laplace_nngp(
     bool store_Q,
     std::string checkpoint_path = "",
     bool compute_skew = false,
-    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue
 );
 
 Rcpp::List cpp_nested_laplace_hsgp(
