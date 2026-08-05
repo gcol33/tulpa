@@ -72,6 +72,23 @@ struct LaplaceResult {
   // Cov(u_g | y, Sigma) per group.
   std::vector<double> re_cov_flat;
   std::vector<int>    re_cov_block_sizes;
+
+  // Inner-Laplace skewness diagnostic (Rue, Martino & Chopin 2009, JRSSB
+  // 71(2) Sec 3.2.3, eq. 21's cubic term, generalized to tulpa's eta =
+  // compute_eta(x) representation -- see src/inner_laplace_skew.h for the
+  // derivation). `inner_skew[k]` is gamma_3 for latent index
+  // `inner_skew_idx[k]`, i.e. the leading-order skewness estimate of the true
+  // conditional posterior pi(x_i | theta, y) under the Gaussian (inner
+  // Laplace) approximation; NaN means "not computable" (an unidentified
+  // component, or a likelihood contribution without a registered
+  // third-derivative). Populated only when the solver is called with
+  // compute_skew = true (default false). `inner_skew_dropped` counts
+  // (i, observation) contributions skipped for a non-finite third
+  // derivative -- a nonzero count does not invalidate the other entries, but
+  // is surfaced so the caller can say how many were skipped.
+  std::vector<double> inner_skew;
+  std::vector<int>    inner_skew_idx;
+  int                 inner_skew_dropped = 0;
 };
 
 // Convert LaplaceResult to Rcpp::List. Single source of truth used by every
@@ -116,6 +133,18 @@ inline Rcpp::List laplace_result_to_list(const LaplaceResult& result) {
     out["H_joint_i"] = result.Q_csc_i;
     out["H_joint_x"] = result.Q_csc_x;
     out["H_joint_n"] = result.Q_csc_n;
+  }
+
+  // Inner-Laplace skewness diagnostic, when the solver was asked to compute
+  // it (compute_skew = true). `inner_skew_idx` is 1-based on the R side.
+  if (!result.inner_skew_idx.empty()) {
+    Rcpp::IntegerVector idx_r(result.inner_skew_idx.size());
+    for (std::size_t k = 0; k < result.inner_skew_idx.size(); k++) {
+      idx_r[k] = result.inner_skew_idx[k] + 1;
+    }
+    out["inner_skew"] = result.inner_skew;
+    out["inner_skew_idx"] = idx_r;
+    out["inner_skew_dropped"] = result.inner_skew_dropped;
   }
 
   return out;

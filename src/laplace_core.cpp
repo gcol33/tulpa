@@ -127,7 +127,9 @@ Rcpp::List cpp_laplace_fit(
     Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
     int n_re_groups, double sigma_re,
     std::string family, double phi = 1.0,
-    int max_iter = 100, double tol = 1e-6, int n_threads = 1
+    int max_iter = 100, double tol = 1e-6, int n_threads = 1,
+    bool compute_skew = false,
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
 ) {
     // Fixed effects + optional single iid RE, through the unified spec solver
     // (the family-enum laplace_mode_dense was retired in B2-live). sigma_beta =
@@ -144,8 +146,19 @@ Rcpp::List cpp_laplace_fit(
         /*sigma_beta=*/100.0, /*n_block_latent=*/0);
     std::vector<double> params(in.layout.total_params, 0.0);
     if (in.layout.has_re) params[in.layout.log_sigma_re_idx] = std::log(sigma_re);
+    std::vector<int> skew_idx_vec;
+    const std::vector<int>* skew_idx_ptr = nullptr;
+    if (compute_skew && skew_idx.isNotNull()) {
+        Rcpp::IntegerVector idx_r(skew_idx);
+        skew_idx_vec.resize(idx_r.size());
+        for (int k = 0; k < idx_r.size(); k++) skew_idx_vec[k] = idx_r[k] - 1;  // 1-based -> 0-based
+        skew_idx_ptr = &skew_idx_vec;
+    }
     tulpa::LaplaceResult res = tulpa::laplace_mode_spec_dense_solve(
-        in.data, in.layout, params, in.re_group, max_iter, tol, n_threads);
+        in.data, in.layout, params, in.re_group, max_iter, tol, n_threads,
+        /*blocks=*/nullptr, /*k_grid=*/0, /*beta_prior=*/nullptr,
+        /*return_re_cov=*/false, /*sparse_override=*/0, /*store_Q=*/false,
+        compute_skew, skew_idx_ptr);
     return tulpa::laplace_result_to_list(res);
 }
 
@@ -169,7 +182,9 @@ Rcpp::List cpp_laplace_fit_multi_re(
     double phi2 = NA_REAL,
     Rcpp::Nullable<Rcpp::NumericMatrix> X_zi = R_NilValue,
     double zi_prior_sd = 2.5,
-    bool return_joint_hessian = false
+    bool return_joint_hessian = false,
+    bool compute_skew = false,
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
 ) {
     // Multi-term RE (intercept / slopes / correlated) + built-in family through
     // the unified spec solver (the family-enum laplace_mode_dense_multi_re was
@@ -412,11 +427,20 @@ Rcpp::List cpp_laplace_fit_multi_re(
     }
 
     std::vector<int> re_group_empty;   // groups come from re_group_multi_flat
+    std::vector<int> skew_idx_vec;
+    const std::vector<int>* skew_idx_ptr = nullptr;
+    if (compute_skew && skew_idx.isNotNull()) {
+        Rcpp::IntegerVector idx_r(skew_idx);
+        skew_idx_vec.resize(idx_r.size());
+        for (int k = 0; k < idx_r.size(); k++) skew_idx_vec[k] = idx_r[k] - 1;
+        skew_idx_ptr = &skew_idx_vec;
+    }
     tulpa::LaplaceResult res = tulpa::laplace_mode_spec_dense_solve(
         data, layout, params, re_group_empty, max_iter, tol, n_threads,
         /*blocks=*/nullptr, /*k_grid=*/0,
         (has_bp || has_zi) ? &bp : nullptr, return_re_cov,
-        /*sparse_override=*/0, return_joint_hessian);
+        /*sparse_override=*/0, return_joint_hessian,
+        compute_skew, skew_idx_ptr);
     return tulpa::laplace_result_to_list(res);
 }
 

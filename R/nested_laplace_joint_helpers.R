@@ -553,7 +553,13 @@
     function(new_cells, warm_start = NULL, store_extras = FALSE,
              max_iter_override = NULL, n_threads_outer = 1L,
              inner_refresh_override = NULL, tol_override = NULL,
-             x_init_per_cell = NULL) {
+             x_init_per_cell = NULL,
+             # Inner-Laplace skewness diagnostic (gcol33/tulpa#272), opt-in
+             # like `store_extras`. Off by default so every existing caller
+             # (adaptive-grid refinement, the outer Pareto-k re-evaluation)
+             # is unaffected; .nlj_inner_skew_at_theta() is the only caller
+             # that sets it, at a single (MAP) row of `new_cells`.
+             compute_skew = FALSE, skew_idx = NULL) {
         new_grids <- .joint_grids_from_cells(new_cells, cp)
         slice_x_init <- if (!is.null(warm_start) && !is.null(warm_start$mode))
                         as.numeric(warm_start$mode) else x_init_default
@@ -586,7 +592,9 @@
                                       hessian_pd_mode = hessian_pd_mode,
                                       step_curvature_mode = step_curvature_mode,
                                       inner_refresh = ir,
-                                      x_init_per_cell = x_init_per_cell)
+                                      x_init_per_cell = x_init_per_cell,
+                                      compute_skew = compute_skew,
+                                      skew_idx = skew_idx)
         extras <- NULL
         if (isTRUE(store_extras)) {
             n <- nrow(new_cells)
@@ -606,7 +614,10 @@
                 extras[[k]] <- e
             }
         }
-        list(log_marginal = res_x$log_marginal, extras = extras)
+        list(log_marginal = res_x$log_marginal, extras = extras,
+             inner_skew = res_x$inner_skew,
+             inner_skew_idx = res_x$inner_skew_idx,
+             inner_skew_dropped = res_x$inner_skew_dropped)
     }
 }
 

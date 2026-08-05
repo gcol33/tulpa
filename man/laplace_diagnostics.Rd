@@ -21,7 +21,17 @@ A data frame with one row per parameter -- \code{parameter}, \code{mean}, \code{
 \item{\code{pareto_k_is_ess}}{importance-sampling ESS on the smoothed weights.}
 \item{\code{ess_grid}, \code{n_grid}, \code{rel_ess_grid}, \code{max_weight}}{grid quadrature
 reliability.}
-\item{\code{scope}}{the diagnostic's scope string.}
+\item{\code{scope}}{the outer diagnostic's scope string.}
+\item{\code{inner_skew_max}}{the largest \verb{|gamma_3|} among the scored latent
+indices (\code{NA} if \code{control$diagnose_skew = FALSE} or nothing scored).}
+\item{\code{inner_skew_band}}{\code{"good"} / \code{"ok"} / \code{"unreliable"} / \code{NA}, banded
+on \code{inner_skew_max} by the general skewness-magnitude convention
+(Bulmer 1979) -- not a Rue-Martino-Chopin-specific cutoff.}
+\item{\code{inner_skew_scored}, \code{inner_skew_probed}}{how many of the probed
+latent indices returned a finite \code{gamma_3} vs how many were probed.}
+\item{\code{reliability}}{the combined whole-fit verdict: \code{"reliable"} only
+when both layers are good; otherwise names which layer is scoped or
+flags both as unreliable.}
 }
 and a trailing \code{summary} attribute (a one-row data frame of the headline
 numbers) for printing.
@@ -52,10 +62,9 @@ fit time and read back here; a fit that did not run the diagnostic, or whose
 grid proposal degenerated, reports it as \code{NA} and is assessed on the grid
 quadrature reliability instead.
 
-\code{pareto_k} scores the outer integration only. The inner Laplace on the latent
-field is a separate layer this diagnostic does not cover, so a high \code{pareto_k}
-on a fit whose grid quadrature is healthy (\code{ess_grid} well above 1, largest
-cell weight modest) flags outer-integration (CI-width) calibration in the
+\code{pareto_k} scores the outer integration only. A high \code{pareto_k} on a fit
+whose grid quadrature is healthy (\code{ess_grid} well above 1, largest cell
+weight modest) flags outer-integration (CI-width) calibration in the
 right-skewed hyperparameter tail and does not by itself invalidate the
 point estimates, which the grid quadrature governs.
 
@@ -64,6 +73,18 @@ The grid quadrature reliability -- the effective sample size
 single cell weight -- is always computed from the stored grid: a grid that
 collapses onto one cell (\code{ess_grid} near 1) integrates no hyperparameter
 uncertainty, while a spread grid does.
+
+A SEPARATE layer -- the inner Gaussian Laplace approximation to the
+latent-field conditional posterior \code{pi(x | theta, y)}, which \code{pareto_k}
+does not cover -- is scored by \code{inner_skew}: the leading-order Edgeworth
+skewness estimate \code{gamma_3} (Rue, Martino & Chopin 2009 Sec 3.2.3) at the
+fitted MAP grid cell, computed when \code{control$diagnose_skew = TRUE} (the
+default) on the fitting call. Reading a high \code{pareto_k} alone as "the fit
+is broken" conflates the two layers: an occu_cover batch flagged 42/78
+species "unreliable" on outer k-hat alone when their point estimates,
+governed by the healthy inner layer, were fine (gcol33/tulpa#272) -- the
+\code{reliability} attribute is the combined verdict that names which layer
+degrades, if either does.
 
 Each parameter row also carries the rank-normalized split-Rhat and bulk /
 tail effective sample size of the draws (Vehtari et al. 2021). On i.i.d.
@@ -83,6 +104,19 @@ joint posterior \code{pi(x)} is not computed: the latent prior marginal
 the marginalized-occupancy / cover-hurdle likelihoods the exact joint density
 is evaluable only inside the C++ kernel, so a stored fit cannot reconstruct
 it. The grid quadrature reliability is the complementary stored-fit number.
+
+\code{inner_skew} diagnoses the INNER (latent-field) Laplace: whether the
+Gaussian approximation to \code{pi(x_i | theta, y)} is itself a good fit, at
+each scored latent index \code{i}. \code{gamma_3} is exact for a gaussian-family
+coefficient (the log-likelihood is exactly quadratic in eta) and
+declines to \code{NA} -- never a silently-wrong \code{0} ("perfectly Gaussian") --
+whenever no per-observation third-derivative oracle is available: a
+coupled multi-process likelihood (e.g. tulpaObs's \code{occu_cover}, whose
+arms combine non-separably through a \code{CellCouplingSpec}) or a family with
+no registered third derivative. Only the requested latent indices are
+scored (every arm's fixed-effects coefficients by default -- see
+\code{control$skew_idx}), since each index costs one extra linear solve; the
+full latent field is not scored by default on a large spatial field.
 }
 
 \examples{
@@ -105,6 +139,10 @@ variational inference. \emph{ICML}, PMLR 80:5581-5590.
 Vehtari, Gelman, Simpson, Carpenter & Burkner (2021). Rank-normalization,
 folding, and localization: an improved Rhat for assessing convergence of
 MCMC. \emph{Bayesian Analysis} 16(2):667-718.
+
+Rue, Martino & Chopin (2009). Approximate Bayesian inference for latent
+Gaussian models by using integrated nested Laplace approximations.
+\emph{JRSS-B} 71(2):319-392.
 }
 \seealso{
 \code{\link[=diagnostics]{diagnostics()}} (the front door, which returns this table for

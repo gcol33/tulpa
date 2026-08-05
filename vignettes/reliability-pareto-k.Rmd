@@ -297,17 +297,68 @@ promise: if the budget is spent without confirming the band, the fit reports the
 band it reached and the reason, and the next step is an exact debias (a Gibbs or
 gradient-sampler correction) as the ladder above describes.
 
+## The inner Laplace, scored
+
+Everything so far reads the outer k-hat, and the second section already
+flagged its blind spot: it scores the grid over the hyperparameters, not the
+Gaussian the inner Laplace fits to the latent conditional at each grid point.
+A fit can carry a clean, confident outer k-hat and still rest on an inner
+approximation that is a poor fit to a skewed conditional posterior -- the
+k-hat was never measuring that.
+
+`gamma_3` is the number for that layer: the leading-order skewness estimate
+of the true conditional posterior relative to the inner Gaussian (Rue,
+Martino & Chopin 2009, the same cubic correction their simplified-Laplace
+method adds). It runs by default alongside the outer diagnostic, scored at
+the fitted MAP grid cell for each arm's fixed-effects coefficients.
+
+```{r skew}
+fit$inner_skew
+fit$inner_skew_idx
+```
+
+The two occupancy-arm coefficients (indices 1-2, binomial) carry a small
+non-zero skew; the two positive-value coefficients (indices 3-4, gaussian)
+read exactly zero. That is not a numerical accident: a gaussian log-likelihood
+is exactly quadratic in the linear predictor, so its inner Laplace is exact
+and has nothing to be skewed. A binomial or Poisson coefficient with thin
+data is the case where this number moves, and it grows toward the same
+"good / ok / unreliable" bands the outer k-hat uses:
+
+```{r skew-band}
+cut(abs(fit$inner_skew), c(-Inf, 0.5, 1.0, Inf),
+    labels = c("good", "ok", "unreliable"))
+```
+
+Reading the two numbers together is the point. An outer k-hat past its
+boundary with a healthy inner skew says the hyperparameter grid needs work,
+not the fit's point estimates -- follow the ladder above. A high inner skew
+with a healthy outer k-hat says the opposite: the grid integrated correctly
+around a latent-field approximation that was itself a poor fit, which is the
+case `diagnose_k` alone cannot see, and the reason this is a second number
+rather than a footnote on the first.
+
+A likelihood this cubic-term derivation cannot reach -- most often a
+genuinely coupled multi-arm response, where the arms combine through a joint
+density rather than each contributing its own term -- reports `NA`, never a
+silently reassuring `0`. `control$skew_idx` extends the probed indices past
+the default fixed-effects set (1-based, into the `[arm1_beta | arm1_re |
+arm2_beta | ... ]` latent layout carried on `fit$arm_layout`); `diagnose_skew
+= FALSE` turns the diagnostic off.
+
 ## See also
 
 - `tulpa_nested_laplace_joint()` documents the full `control` surface for the
   diagnostic: `k_quality`, `k_refine`, `k_max_rounds`, `diagnose_k`,
-  `k_samples`, `k_bootstrap`, `k_tail_points`, `k_conf_bands`, and
-  `k_threads`.
+  `k_samples`, `k_bootstrap`, `k_tail_points`, `k_conf_bands`, `k_threads`,
+  `diagnose_skew`, and `skew_idx`.
 - `tulpa_psis()` is the native Pareto-smoothed importance-sampling core the
   diagnostic is built on, callable directly on a vector of log importance
   ratios.
 - `mcmc_diagnostics()` is the chain-fit counterpart, the Rhat and ESS surface
   for sampled fits.
+- `?laplace_diagnostics` documents `gamma_3` and the combined whole-fit
+  verdict `diagnostics()` reports when a fit carries posterior draws.
 - The inference-modes vignette runs the reliability ladder from a Laplace fit
   through an exact debias, and shows the k-hat on a random-effect covariance
   fit.

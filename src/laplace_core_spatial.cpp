@@ -45,7 +45,9 @@ Rcpp::List cpp_laplace_fit_spatial(
     int max_iter = 100, double tol = 1e-6, int n_threads = 1,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
-    int force_sparse = 0
+    int force_sparse = 0,
+    bool compute_skew = false,
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
 ) {
     // Fixed effects + optional iid RE + a single ICAR latent block, through the
     // unified spec solver (the family-enum laplace_mode_spatial was retired in
@@ -105,10 +107,20 @@ Rcpp::List cpp_laplace_fit_spatial(
         for (int j = 0; j < n_lat && j < (int)xi.size(); j++) params[j] = xi[j];
     }
 
+    std::vector<int> skew_idx_vec;
+    const std::vector<int>* skew_idx_ptr = nullptr;
+    if (compute_skew && skew_idx.isNotNull()) {
+        Rcpp::IntegerVector idx_r(skew_idx);
+        skew_idx_vec.resize(idx_r.size());
+        for (int k = 0; k < idx_r.size(); k++) skew_idx_vec[k] = idx_r[k] - 1;
+        skew_idx_ptr = &skew_idx_vec;
+    }
+
     tulpa::LaplaceResult res = tulpa::laplace_mode_spec_dense_solve(
         in.data, in.layout, params, in.re_group, max_iter, tol, n_threads,
         &blocks, /*k_grid=*/0, /*beta_prior=*/nullptr,
-        /*return_re_cov=*/false, /*sparse_override=*/force_sparse);
+        /*return_re_cov=*/false, /*sparse_override=*/force_sparse,
+        /*store_Q=*/false, compute_skew, skew_idx_ptr);
     return tulpa::laplace_result_to_list(res);
 }
 
@@ -124,7 +136,9 @@ Rcpp::List cpp_laplace_fit_bym2(
     std::string family, double phi = 1.0,
     int max_iter = 100, double tol = 1e-6, int n_threads = 1,
     Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
-    int force_sparse = 0
+    int force_sparse = 0,
+    bool compute_skew = false,
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
 ) {
     // Fixed effects + optional iid RE + BYM2's two latent blocks (phi:
     // ICAR-structured & centered, theta: IID) through the unified spec solver
@@ -209,9 +223,19 @@ Rcpp::List cpp_laplace_fit_bym2(
     std::vector<double> params(in.layout.total_params, 0.0);
     if (has_re) params[in.layout.log_sigma_re_idx] = std::log(sigma_re);
 
+    std::vector<int> skew_idx_vec;
+    const std::vector<int>* skew_idx_ptr = nullptr;
+    if (compute_skew && skew_idx.isNotNull()) {
+        Rcpp::IntegerVector idx_r(skew_idx);
+        skew_idx_vec.resize(idx_r.size());
+        for (int k = 0; k < idx_r.size(); k++) skew_idx_vec[k] = idx_r[k] - 1;
+        skew_idx_ptr = &skew_idx_vec;
+    }
+
     tulpa::LaplaceResult res = tulpa::laplace_mode_spec_dense_solve(
         in.data, in.layout, params, in.re_group, max_iter, tol, n_threads,
         &blocks, /*k_grid=*/0, /*beta_prior=*/nullptr,
-        /*return_re_cov=*/false, /*sparse_override=*/force_sparse);
+        /*return_re_cov=*/false, /*sparse_override=*/force_sparse,
+        /*store_Q=*/false, compute_skew, skew_idx_ptr);
     return tulpa::laplace_result_to_list(res);
 }

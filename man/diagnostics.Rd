@@ -55,9 +55,14 @@ Vehtari et al. (2021). Split-Rhat is defined for a single chain, so a
 result is produced for any number of chains.}
 \item{i.i.d. approximation draws}{the approximation-reliability table --
 the PSIS tail-shape \code{pareto_k} scored against the exact inner-Laplace
-marginal, the outer-grid quadrature effective sample size, and a
-per-parameter posterior summary. See \code{\link[=laplace_diagnostics]{laplace_diagnostics()}} for the
-full description of this table and its attributes.}
+marginal and the outer-grid quadrature effective sample size (the
+OUTER hyperparameter-grid integration layer), the inner-Laplace
+skewness diagnostic \code{gamma_3} when computed (the INNER Gaussian
+approximation to the latent field, a separate layer \code{pareto_k} does not
+cover), a combined whole-fit verdict naming which layer degrades when
+one does, and a per-parameter posterior summary. See
+\code{\link[=laplace_diagnostics]{laplace_diagnostics()}} for the full description of this table and its
+attributes.}
 \item{point summaries}{no sample to diagnose; returns \code{NULL} with a
 message naming the backend.}
 }

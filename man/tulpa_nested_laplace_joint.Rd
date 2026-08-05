@@ -407,6 +407,21 @@ at the realised draw count \eqn{S} (Vehtari et al. 2024): the good cut is
 \eqn{S = 200}, reaching 0.7 only past \eqn{S \approx 2154}). Supply a
 strictly-increasing numeric vector to fix the boundaries instead, e.g.
 \code{c(0.5, 0.7)} for the size-independent good / ok / unreliable split.
+\item \code{diagnose_skew} (\code{TRUE}), \code{skew_idx} (\code{NULL}) -- compute the
+inner-Laplace skewness diagnostic (\verb{$inner_skew}, gamma_3, Rue Martino
+& Chopin 2009 Sec 3.2.3) at the fitted MAP grid cell: one extra Newton
+solve via the same \code{kernel_fn} the outer diagnostic reuses, scoring
+every arm's fixed-effects coefficients by default (pass \code{skew_idx},
+1-based indices in the joint \verb{[arm1_beta | arm1_re | arm2_beta | ... | blocks]} latent layout -- see \verb{$arm_layout} -- to probe additional
+indices). This is the complementary layer to \code{diagnose_k}: that scores
+the outer hyperparameter-grid integration around a FIXED inner
+Laplace, this scores whether that inner Gaussian approximation is
+itself a good fit. A genuinely coupled arm (\code{cell_coupling != "separable"} on that arm, e.g. tulpaObs's \code{occu_cover}) has no per-obs
+likelihood for this formula to score and reports \code{NaN} there, not a
+silently wrong 0 -- see \code{\link[=diagnostics]{diagnostics()}} for the combined verdict. Only
+wired for the single-block backends (icar/bym2/car_proper) in this
+release; a fit taking the multi-block path (a per-group RE, a trend
+field, or an arm-specific field block) reports \code{inner_skew = NULL}.
 \item \code{checkpoint} (\code{NULL}) -- grid-cell checkpoint/resume. Set
 \code{list(path = "fit.ckpt", resume = TRUE)} to make a killed or interrupted
 fit resumable: each completed outer-grid cell is appended to \code{path}, and

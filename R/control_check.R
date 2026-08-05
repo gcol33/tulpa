@@ -97,6 +97,7 @@ tulpa_check_control <- function(control, allowed, where) {
   keys <- list(
     nested_laplace = c("max_iter", "tol", "n_threads", "x_init",
                        "keep_grid_hessians", "diagnose_k", "k_samples",
+                       "diagnose_skew", "skew_idx",
                        "checkpoint", progress),
     nested_laplace_joint = c(
       "max_iter", "tol", "n_threads", "n_threads_outer", "n_threads_scatter",
@@ -109,6 +110,7 @@ tulpa_check_control <- function(control, allowed, where) {
       "var_of_means_consistency", "var_of_means_tolerance",
       "diagnose_k", "k_samples", "k_threads", "k_quality", "k_refine",
       "k_max_rounds", "k_bootstrap", "k_tail_points", "k_conf_bands",
+      "diagnose_skew", "skew_idx",
       "checkpoint", progress),
     spde = c("method", "n_grid", "max_iter", "tol", "n_threads",
              "diagnose_k", "k_samples", "checkpoint"),

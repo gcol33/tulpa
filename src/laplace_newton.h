@@ -6,12 +6,15 @@
 
 #include "laplace_cholesky.h"
 #include "laplace_cholesky_dispatch.h"  // dispatch_factor_solve, dispatch_factor_log_det
+#include "laplace_family_curvature.h"   // curvature3_obs_for_family
 #include "laplace_family_link.h"
 #include "laplace_newton_loop.h"        // eval_*, line_search_backtrack, finalize_log_marginal
+#include "inner_laplace_skew.h"         // compute_inner_skew_gamma3
 #include "sparse_cholesky.h"
 #include <Rcpp.h>
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <utility>
 #include <vector>
 
@@ -99,7 +102,15 @@ LaplaceResult laplace_newton_solve_ll(
     // likelihood's domain -- the per-process intercepts. nullptr (the default)
     // skips the sweep entirely, which is the behaviour every caller had before
     // it existed; see make_start_feasible in laplace_newton_loop.h.
-    const std::vector<int>* feasible_start_coords = nullptr
+    const std::vector<int>* feasible_start_coords = nullptr,
+    // Inner-Laplace skewness diagnostic (inner_laplace_skew.h), opt-in like
+    // store_Q. curvature3_fn(j, eta_j) -> l_j'''(eta_j) or NaN; the caller
+    // builds it (family ladder or a LikelihoodSpec finite-difference wrapper)
+    // because this loop is otherwise likelihood-agnostic. skew_probe_idx ==
+    // nullptr with compute_skew = true probes every latent index.
+    bool compute_skew = false,
+    const std::vector<int>* skew_probe_idx = nullptr,
+    const std::function<double(int, double)>& curvature3_fn = nullptr
 ) {
     LaplaceResult result;
     result.mode.assign(n_x, 0.0);
@@ -243,6 +254,24 @@ LaplaceResult laplace_newton_solve_ll(
         result.Q_csc_n = n_x;
     }
 
+    if (compute_skew && result.converged) {
+        std::vector<int> all_idx;
+        const std::vector<int>* probe = skew_probe_idx;
+        if (!probe) {
+            all_idx.resize(n_x);
+            for (int j = 0; j < n_x; j++) all_idx[j] = j;
+            probe = &all_idx;
+        }
+        bool used_sparse_factor = use_sparse && sparse_solver.factored();
+        InnerSkewOutcome sk = compute_inner_skew_gamma3(
+            n_x, N, result.mode, scratch.chol, sparse_solver, used_sparse_factor,
+            compute_eta, x, scratch.eta, scratch.eta_tmp, curvature3_fn, *probe
+        );
+        result.inner_skew = std::move(sk.gamma3);
+        result.inner_skew_idx = *probe;
+        result.inner_skew_dropped = sk.n_nonfinite_dropped;
+    }
+
     return result;
 }
 
@@ -267,13 +296,22 @@ LaplaceResult laplace_newton_solve(
     const std::vector<double>& x_init,
     SparseCholeskySolver* shared_solver,
     bool store_Q,
-    const std::vector<std::pair<int, int>>* inv_block_layout = nullptr
+    const std::vector<std::pair<int, int>>* inv_block_layout = nullptr,
+    bool compute_skew = false,
+    const std::vector<int>* skew_probe_idx = nullptr
 ) {
     FamilyLogLik ll{&y, &n_trials, N, family, phi, n_threads};
+    std::function<double(int, double)> curvature3_fn = nullptr;
+    if (compute_skew) {
+        curvature3_fn = [&y, &n_trials, &family, phi](int j, double eta_j) -> double {
+            return curvature3_obs_for_family(y[j], n_trials[j], eta_j, family, phi);
+        };
+    }
     return laplace_newton_solve_ll(
         N, n_x, max_iter, tol,
         compute_eta, scatter_grad_hess, center_effects_fn, compute_log_prior,
-        ll, scratch, x_init, shared_solver, store_Q, inv_block_layout
+        ll, scratch, x_init, shared_solver, store_Q, inv_block_layout,
+        0, nullptr, compute_skew, skew_probe_idx, curvature3_fn
     );
 }
 
@@ -297,7 +335,9 @@ LaplaceResult laplace_newton_solve(
     const Rcpp::NumericVector& x_init = Rcpp::NumericVector(),
     SparseCholeskySolver* shared_solver = nullptr,
     bool store_Q = false,
-    const std::vector<std::pair<int, int>>* inv_block_layout = nullptr
+    const std::vector<std::pair<int, int>>* inv_block_layout = nullptr,
+    bool compute_skew = false,
+    const std::vector<int>* skew_probe_idx = nullptr
 ) {
     NewtonScratch scratch;
     scratch.allocate(n_x, N);
@@ -311,7 +351,8 @@ LaplaceResult laplace_newton_solve(
         y, n_trials, family, phi, N, n_x,
         max_iter, tol, n_threads,
         compute_eta, scatter_grad_hess, center_effects_fn, compute_log_prior,
-        scratch, x_init_vec, shared_solver, store_Q, inv_block_layout
+        scratch, x_init_vec, shared_solver, store_Q, inv_block_layout,
+        compute_skew, skew_probe_idx
     );
 }
 

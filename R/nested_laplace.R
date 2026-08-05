@@ -59,6 +59,17 @@
 #'     Computed for a single-block, single positive-scale-axis grid; left `NA`
 #'     (with the grid's quadrature ESS as the fallback diagnostic) for
 #'     multi-block, multi-axis, or bounded-parameter grids. See [tulpa_psis()].
+#'   * `diagnose_skew` (`TRUE`), `skew_idx` (`NULL`) -- compute the inner-Laplace
+#'     skewness diagnostic (`$inner_skew`, gamma_3, Rue Martino & Chopin 2009
+#'     Sec 3.2.3) at the fitted MAP grid cell: one extra Newton solve, scoring
+#'     the `p` fixed-effects latent indices by default (pass `skew_idx`, 1-based
+#'     latent indices, to score additional ones, e.g. specific spatial units --
+#'     the full latent field is not scored by default since it costs one linear
+#'     solve per index). This is the complementary layer to `diagnose_k`: the
+#'     outer diagnostic scores the hyperparameter-grid integration around a
+#'     FIXED inner Laplace, this scores whether that inner Gaussian
+#'     approximation is itself a good fit to the latent-field conditional
+#'     posterior. See [diagnostics()] for the combined whole-fit verdict.
 #'
 #' @return A list with:
 #'   * `theta_grid`: matrix or vector of grid hyperparameter values.
@@ -70,6 +81,10 @@
 #'   * `pareto_k`, `pareto_k_is_ess`: outer Pareto-\eqn{\hat{k}} and its
 #'     importance-sampling ESS (`NA` when not computed for the grid; see
 #'     `control$diagnose_k`).
+#'   * `inner_skew`, `inner_skew_idx`, `inner_skew_dropped`: the inner-Laplace
+#'     skewness diagnostic (gamma_3) at each scored latent index and its
+#'     1-based index, plus a count of (index, observation) contributions
+#'     dropped for a non-finite third derivative (see `control$diagnose_skew`).
 #'   * `timing`: named numeric of wall-clock seconds (`total`, `setup`,
 #'     `grid`, `postproc`, `diagnostics`); the `grid` phase is the inner
 #'     Laplace pass that scales with grid size. Surfaced one-line in `print`.
@@ -132,6 +147,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   keep_grid_hessians <- isTRUE(control$keep_grid_hessians)
   diagnose_k         <- isTRUE(control$diagnose_k %||% TRUE)
   k_samples          <- as.integer(control$k_samples %||% 200L)
+  diagnose_skew      <- isTRUE(control$diagnose_skew %||% TRUE)
+  skew_idx           <- control$skew_idx
 
   # Grid-cell checkpoint/resume. `control$checkpoint =
   # list(path =, resume =)` makes every grid cell append to `path`; a resume
@@ -214,6 +231,9 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     tm$mark("postproc")
     res <- .nl_attach_pareto_k(res, prior, cargs_no_ckpt, "multi", NULL,
                                likelihood, k_samples, compute = diagnose_k)
+    res <- .nl_inner_skew_at_theta(res, prior, cargs_no_ckpt, "multi", NULL,
+                                   likelihood, p_fixed, skew_idx,
+                                   compute = diagnose_skew)
     tm$mark("diagnostics")
     res$prior <- prior
     res$timing <- tm$timing()
@@ -250,6 +270,9 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   tm$mark("postproc")
   res <- .nl_attach_pareto_k(res, prior, cargs_no_ckpt, "single", type, NULL,
                              k_samples, compute = diagnose_k)
+  res <- .nl_inner_skew_at_theta(res, prior, cargs_no_ckpt, "single", type,
+                                 NULL, p_fixed, skew_idx,
+                                 compute = diagnose_skew)
   tm$mark("diagnostics")
   res$prior <- prior
   res$timing <- tm$timing()
@@ -1145,7 +1168,20 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 .NL_MULTI_GRID_HARD_CAP <- 2048L
 
 .nl_dispatch_multi <- function(cargs, prior_list, likelihood = NULL,
-                               progress = .nl_progress_args(list(progress = FALSE))) {
+                               progress = .nl_progress_args(list(progress = FALSE)),
+                               # Single-cell re-dispatch for the inner-Laplace
+                               # skewness diagnostic (.nl_inner_skew_at_theta()):
+                               # when supplied, `theta_grid_override` (a 1-row
+                               # matrix at the outer grid's MAP cell) replaces
+                               # the Cartesian-product grid construction below,
+                               # reusing the SAME blocks_spec machinery so the
+                               # re-solve is at exactly the fitted MAP theta.
+                               # The SPDE-prior fold / weight normalisation /
+                               # posterior-moments tail is skipped in that case
+                               # -- the caller only wants inner_skew, not a
+                               # re-normalised single-cell "posterior".
+                               theta_grid_override = NULL,
+                               compute_skew = FALSE, skew_idx = NULL) {
   # Inject a default obs_idx for any tgmrf block that didn't supply one.
   # The C++ scatter needs obs_idx[i] -> latent slot for each observation;
   # the canonical "one obs per latent slot" case has N == n_latent and the
@@ -1169,34 +1205,46 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   prepared  <- lapply(per_block, function(x) x$prepared)
   block_grids <- lapply(per_block, function(x) x$grid)
 
-  # Cartesian product of per-block row indices.
-  row_counts <- vapply(block_grids, nrow, integer(1))
-  idx <- do.call(expand.grid, lapply(row_counts, seq_len))
-  n_cells <- nrow(idx)
-  if (n_cells > .NL_MULTI_GRID_HARD_CAP) {
-    stop(sprintf(
-      "Joint multi-block grid has %d cells (hard cap %d). Reduce per-block grid sizes or wait for CCD integration support.",
-      n_cells, .NL_MULTI_GRID_HARD_CAP
-    ), call. = FALSE)
-  }
-  if (n_cells > .NL_MULTI_GRID_WARN) {
-    warning(sprintf(
-      "Joint multi-block grid has %d cells (>%d). Each cell costs one inner Newton solve; reduce per-block grid sizes if this is slow. CCD integration is a follow-up.",
-      n_cells, .NL_MULTI_GRID_WARN
-    ), call. = FALSE)
-  }
-
-  # Concatenate per-block axis grids into the joint theta_grid.
-  joint_grid <- do.call(cbind, lapply(seq_along(block_grids), function(b) {
-    block_grids[[b]][idx[[b]], , drop = FALSE]
-  }))
   axis_counts  <- vapply(block_grids, ncol, integer(1))
   axis_offsets <- as.integer(c(0L, cumsum(axis_counts)))
   # Block-prefix the axis names so they're unambiguous (e.g. block1.tau).
   axis_names <- unlist(lapply(seq_along(block_grids), function(b) {
     paste0("b", b, ".", colnames(block_grids[[b]]))
   }))
-  colnames(joint_grid) <- axis_names
+
+  if (!is.null(theta_grid_override)) {
+    joint_grid <- as.matrix(theta_grid_override)
+    total_axes <- axis_offsets[length(axis_offsets)]
+    if (ncol(joint_grid) != total_axes) {
+      stop("theta_grid_override must have ", total_axes,
+           " columns (sum of block axes), got ", ncol(joint_grid), ".",
+           call. = FALSE)
+    }
+    colnames(joint_grid) <- axis_names
+  } else {
+    # Cartesian product of per-block row indices.
+    row_counts <- vapply(block_grids, nrow, integer(1))
+    idx <- do.call(expand.grid, lapply(row_counts, seq_len))
+    n_cells <- nrow(idx)
+    if (n_cells > .NL_MULTI_GRID_HARD_CAP) {
+      stop(sprintf(
+        "Joint multi-block grid has %d cells (hard cap %d). Reduce per-block grid sizes or wait for CCD integration support.",
+        n_cells, .NL_MULTI_GRID_HARD_CAP
+      ), call. = FALSE)
+    }
+    if (n_cells > .NL_MULTI_GRID_WARN) {
+      warning(sprintf(
+        "Joint multi-block grid has %d cells (>%d). Each cell costs one inner Newton solve; reduce per-block grid sizes if this is slow. CCD integration is a follow-up.",
+        n_cells, .NL_MULTI_GRID_WARN
+      ), call. = FALSE)
+    }
+
+    # Concatenate per-block axis grids into the joint theta_grid.
+    joint_grid <- do.call(cbind, lapply(seq_along(block_grids), function(b) {
+      block_grids[[b]][idx[[b]], , drop = FALSE]
+    }))
+    colnames(joint_grid) <- axis_names
+  }
 
   blocks_spec <- lapply(seq_along(prepared), function(b) {
     cols <- (axis_offsets[b] + 1L):axis_offsets[b + 1L]
@@ -1226,12 +1274,17 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     progress_every    = as.integer(progress$progress_every),
     progress_throttle = as.numeric(progress$progress_throttle),
     progress_file     = as.character(progress$progress_file),
-    checkpoint_path   = as.character(cargs$checkpoint_path %||% "")
+    checkpoint_path   = as.character(cargs$checkpoint_path %||% ""),
+    compute_skew      = isTRUE(compute_skew),
+    skew_idx          = skew_idx
   )
 
   out$theta_grid   <- joint_grid
   out$theta_names  <- axis_names
   out$axis_offsets <- axis_offsets
+
+  if (!is.null(theta_grid_override)) return(out)  # skew re-dispatch: caller
+                                                    # only wants inner_skew*
 
   # Fold each SPDE block's PC prior on (range, sigma) into the per-cell
   # log-marginal. The areal / temporal / iid blocks carry their hyperprior

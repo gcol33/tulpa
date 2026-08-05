@@ -32,7 +32,9 @@
     fn      = function(fit, pars, measures, probs)
                 .tulpa_approx_diag_table(fit, pars),
     honours = "pars",
-    what    = "outer-integration reliability (PSIS k-hat / grid quadrature ESS)"
+    what    = paste("approximation reliability (outer PSIS k-hat / grid",
+                    "quadrature ESS, plus inner-Laplace skewness -- gamma_3",
+                    "-- when control$diagnose_skew computed it)")
   ),
   point = list(
     fn      = function(fit, pars, measures, probs) {
@@ -59,9 +61,14 @@
 #'     result is produced for any number of chains.}
 #'   \item{i.i.d. approximation draws}{the approximation-reliability table --
 #'     the PSIS tail-shape `pareto_k` scored against the exact inner-Laplace
-#'     marginal, the outer-grid quadrature effective sample size, and a
-#'     per-parameter posterior summary. See [laplace_diagnostics()] for the
-#'     full description of this table and its attributes.}
+#'     marginal and the outer-grid quadrature effective sample size (the
+#'     OUTER hyperparameter-grid integration layer), the inner-Laplace
+#'     skewness diagnostic `gamma_3` when computed (the INNER Gaussian
+#'     approximation to the latent field, a separate layer `pareto_k` does not
+#'     cover), a combined whole-fit verdict naming which layer degrades when
+#'     one does, and a per-parameter posterior summary. See
+#'     [laplace_diagnostics()] for the full description of this table and its
+#'     attributes.}
 #'   \item{point summaries}{no sample to diagnose; returns `NULL` with a
 #'     message naming the backend.}
 #' }

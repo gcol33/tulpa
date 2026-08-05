@@ -56,7 +56,11 @@ LaplaceResult spec_inner_solve(
     bool store_Q,
     const std::vector<std::pair<int, int>>* inv_block_layout,
     const BetaPrior* beta_prior = nullptr,
-    int sparse_override = 0
+    int sparse_override = 0,
+    // Inner-Laplace skewness diagnostic (inner_laplace_skew.h), opt-in like
+    // store_Q; see laplace_spec_curvature3.h for which specs it can score.
+    bool compute_skew = false,
+    const std::vector<int>* skew_probe_idx = nullptr
 );
 
 // Result-returning standalone spec Laplace (defined in laplace_spec.cpp).
@@ -77,7 +81,9 @@ LaplaceResult laplace_mode_spec_dense_solve(
     const BetaPrior* beta_prior = nullptr,
     bool return_re_cov = false,
     int sparse_override = 0,
-    bool store_Q = false
+    bool store_Q = false,
+    bool compute_skew = false,
+    const std::vector<int>* skew_probe_idx = nullptr
 );
 
 } // namespace tulpa

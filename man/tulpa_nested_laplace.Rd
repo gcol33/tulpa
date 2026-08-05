@@ -94,6 +94,17 @@ fitted to the grid, drawing \code{k_samples} extra inner-marginal evaluations.
 Computed for a single-block, single positive-scale-axis grid; left \code{NA}
 (with the grid's quadrature ESS as the fallback diagnostic) for
 multi-block, multi-axis, or bounded-parameter grids. See \code{\link[=tulpa_psis]{tulpa_psis()}}.
+\item \code{diagnose_skew} (\code{TRUE}), \code{skew_idx} (\code{NULL}) -- compute the inner-Laplace
+skewness diagnostic (\verb{$inner_skew}, gamma_3, Rue Martino & Chopin 2009
+Sec 3.2.3) at the fitted MAP grid cell: one extra Newton solve, scoring
+the \code{p} fixed-effects latent indices by default (pass \code{skew_idx}, 1-based
+latent indices, to score additional ones, e.g. specific spatial units --
+the full latent field is not scored by default since it costs one linear
+solve per index). This is the complementary layer to \code{diagnose_k}: the
+outer diagnostic scores the hyperparameter-grid integration around a
+FIXED inner Laplace, this scores whether that inner Gaussian
+approximation is itself a good fit to the latent-field conditional
+posterior. See \code{\link[=diagnostics]{diagnostics()}} for the combined whole-fit verdict.
 }}
 }
 \value{
@@ -108,6 +119,10 @@ A list with:
 \item \code{pareto_k}, \code{pareto_k_is_ess}: outer Pareto-\eqn{\hat{k}} and its
 importance-sampling ESS (\code{NA} when not computed for the grid; see
 \code{control$diagnose_k}).
+\item \code{inner_skew}, \code{inner_skew_idx}, \code{inner_skew_dropped}: the inner-Laplace
+skewness diagnostic (gamma_3) at each scored latent index and its
+1-based index, plus a count of (index, observation) contributions
+dropped for a non-finite third derivative (see \code{control$diagnose_skew}).
 \item \code{timing}: named numeric of wall-clock seconds (\code{total}, \code{setup},
 \code{grid}, \code{postproc}, \code{diagnostics}); the \code{grid} phase is the inner
 Laplace pass that scales with grid size. Surfaced one-line in \code{print}.

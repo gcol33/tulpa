@@ -732,6 +732,7 @@ inline Rcpp::List run_nested_laplace_grid(
 
     // -------- Merge POD results into the Rcpp output (single-threaded) --------
     bool any_Q = false;
+    int skew_cell = -1;  // first grid cell (if any) that computed inner_skew
     for (int k = 0; k < n_grid; k++) {
         const LaplaceResult& res = cell_results[k];
         log_marginals[k] = res.log_marginal;
@@ -751,6 +752,7 @@ inline Rcpp::List run_nested_laplace_grid(
             Q_x_per_grid[k] = Rcpp::NumericVector(
                 res.Q_csc_x.begin(), res.Q_csc_x.end());
         }
+        if (skew_cell < 0 && !res.inner_skew_idx.empty()) skew_cell = k;
     }
 
     if (progress) progress->finish();
@@ -766,6 +768,22 @@ inline Rcpp::List run_nested_laplace_grid(
         out["Q_csc_i_per_grid"] = Q_i_per_grid;
         out["Q_csc_x_per_grid"] = Q_x_per_grid;
         out["Q_csc_n"] = n_x;
+    }
+    // Inner-Laplace skewness diagnostic (opt-in, computed on the full solve
+    // of a single cell -- see the compute_skew doc on
+    // run_multi_block_nested_laplace). Emits the FIRST cell that populated
+    // it; the intended caller always passes a length-1 grid when requesting
+    // this, so there is only ever one cell to report.
+    if (skew_cell >= 0) {
+        const LaplaceResult& res = cell_results[skew_cell];
+        Rcpp::IntegerVector idx_r(res.inner_skew_idx.size());
+        for (std::size_t k = 0; k < res.inner_skew_idx.size(); k++) {
+            idx_r[k] = res.inner_skew_idx[k] + 1;
+        }
+        out["inner_skew"] = res.inner_skew;
+        out["inner_skew_idx"] = idx_r;
+        out["inner_skew_dropped"] = res.inner_skew_dropped;
+        out["inner_skew_cell"] = skew_cell + 1;
     }
     if (prune_active) {
         Rcpp::NumericVector cheap_lm_out(n_grid);

@@ -184,6 +184,16 @@ inline LikelihoodSpec builtin_family_spec(const std::string& family,
     return spec;
 }
 
+// Whether a LikelihoodSpec was built by builtin_family_spec() above, as
+// opposed to a genuine consumer-package LikelihoodSpec -- the one place
+// other engine code (the inner-Laplace skew diagnostic,
+// laplace_spec_curvature3.h) that needs to recover the underlying
+// family/phi/phi2 from model_data checks this, so the naming convention
+// stays defined in a single place.
+inline bool is_builtin_family_spec(const std::string& spec_name) {
+    return spec_name.rfind("builtin:", 0) == 0;
+}
+
 } // namespace tulpa
 
 #endif // TULPA_LAPLACE_BUILTIN_FAMILY_SPEC_H

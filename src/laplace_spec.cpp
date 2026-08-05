@@ -37,6 +37,7 @@
 #include "laplace_newton.h"       // shared single-arm loop (np == 1 delegates here)
 #include "laplace_newton_loop.h"
 #include "laplace_re_priors.h"
+#include "laplace_spec_curvature3.h"  // build_spec_curvature3_fn (inner-skew diagnostic)
 #include "laplace_spec_solve.h"   // spec_inner_solve (defined below, shared with driver)
 #include "laplace_spatial_priors.h"
 #include "latent_block.h"
@@ -1130,7 +1131,9 @@ LaplaceResult spec_inner_solve(
     bool store_Q,
     const std::vector<std::pair<int, int>>* inv_block_layout,
     const BetaPrior* beta_prior,
-    int sparse_override
+    int sparse_override,
+    bool compute_skew,
+    const std::vector<int>* skew_probe_idx
 ) {
     const SpecLatentLayout L = build_latent_layout(data, layout, blocks);
     const int N = data.N;
@@ -1209,11 +1212,18 @@ LaplaceResult spec_inner_solve(
         if (L.beta_count[k] > 0) feasible_start_coords.push_back(L.latent_offset[k]);
     }
 
+    std::function<double(int, double)> curvature3_fn = nullptr;
+    if (compute_skew) {
+        curvature3_fn = build_spec_curvature3_fn(spec, response_data, data,
+                                                 layout, params_work);
+    }
+
     return laplace_newton_solve_ll(
         n_eta, n_x, max_iter, tol,
         compute_eta, scatter_grad_hess, center_effects_fn, compute_log_prior,
         log_lik_fn, scratch, x_init, solver, store_Q, inv_block_layout,
-        sparse_override, &feasible_start_coords
+        sparse_override, &feasible_start_coords,
+        compute_skew, skew_probe_idx, curvature3_fn
     );
 }
 
@@ -1235,7 +1245,9 @@ LaplaceResult laplace_mode_spec_dense_solve(
     const BetaPrior* beta_prior,
     bool return_re_cov,
     int sparse_override,
-    bool store_Q
+    bool store_Q,
+    bool compute_skew,
+    const std::vector<int>* skew_probe_idx
 ) {
     if (data.n_processes < 1) {
         Rcpp::stop("laplace_spec_dense: requires n_processes >= 1 (got %d)",
@@ -1380,7 +1392,8 @@ LaplaceResult laplace_mode_spec_dense_solve(
         params_inout, scratch, &newton_solver,
         store_Q,
         return_re_cov ? &inv_block_layout : nullptr,
-        beta_prior, sparse_override
+        beta_prior, sparse_override,
+        compute_skew, skew_probe_idx
     );
     scatter_compacted_latent(L, res.mode.data(), params_inout);  // mode -> params latent
     return res;

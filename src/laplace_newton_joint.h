@@ -26,6 +26,8 @@
 #include "laplace_family_link.h"
 #include "laplace_newton.h"          // SPARSE_THRESHOLD
 #include "laplace_newton_loop.h"
+#include "laplace_spec_curvature3.h" // build_spec_curvature3_fn (inner-skew diagnostic)
+#include "inner_laplace_skew.h"      // compute_inner_skew_gamma3_joint
 #include "sparse_cholesky.h"
 #include <Rcpp.h>
 #include <algorithm>
@@ -243,6 +245,29 @@ inline double compute_total_log_lik_joint(
     return total;
 }
 
+// Per-arm third-log-lik-derivative oracles for the inner-Laplace skewness
+// diagnostic (inner_laplace_skew.h's compute_inner_skew_gamma3_joint), one
+// entry per arm in `views`. Mirrors compute_total_log_lik_joint's own
+// separable-sum contract exactly: a coupled arm (`skip_arm[k] == true`) has
+// its per-obs sum excluded from the log-lik there via `skip_arm`, so its
+// oracle must be excluded here the same way -- an empty std::function, not
+// whatever build_spec_curvature3_fn would return for its (unused) per-obs
+// spec. Every other arm gets build_spec_curvature3_fn(*view.spec, ...), which
+// itself declines (returns empty) for any non-single-process spec.
+inline std::vector<std::function<double(int, double)>> build_joint_curvature3_fns(
+    const std::vector<ArmSpecView>& views,
+    const std::vector<bool>* skip_arm
+) {
+    std::vector<std::function<double(int, double)>> fns(views.size());
+    for (std::size_t k = 0; k < views.size(); k++) {
+        if (skip_arm && k < skip_arm->size() && (*skip_arm)[k]) continue;
+        const ArmSpecView& v = views[k];
+        fns[k] = build_spec_curvature3_fn(*v.spec, v.response_data, *v.data,
+                                          *v.layout, *v.params);
+    }
+    return fns;
+}
+
 // Joint data log-lik as a functor of the per-arm etas, sourced through each
 // arm's resolved spec view. The joint Newton loop reads the data log-lik only
 // through `log_lik_fn(etas) -> double`; the built-in family enters solely via
@@ -346,7 +371,19 @@ LaplaceResult laplace_newton_solve_joint_ll(
     NewtonScratchJoint& scratch,
     const std::vector<double>& x_init,
     SparseCholeskySolver* shared_solver,
-    bool store_Q
+    bool store_Q,
+    // Inner-Laplace skewness diagnostic (inner_laplace_skew.h), opt-in like
+    // store_Q. curvature3_fns has one entry per arm (build_joint_curvature3_fns);
+    // nullptr declines entirely. skew_probe_idx == nullptr probes every latent
+    // index. Computed BEFORE center_effects_fn(x) below -- unlike the single-arm
+    // loop, this joint loop centers x POST-HOC, after log_marginal, purely to
+    // present mean(phi) = 0 in the reported mode (see the comment on that call);
+    // the Newton-converged x and its freshly-factored scratch.chol / scratch.H
+    // (what dispatch_factor_log_det and log_lik_fn just used) are the consistent
+    // point to probe, not the cosmetically-shifted one.
+    bool compute_skew = false,
+    const std::vector<int>* skew_probe_idx = nullptr,
+    const std::vector<std::function<double(int, double)>>* curvature3_fns = nullptr
 ) {
     LaplaceResult result;
     result.mode.assign(n_x, 0.0);
@@ -419,6 +456,27 @@ LaplaceResult laplace_newton_solve_joint_ll(
     double log_prior = compute_log_prior_joint(x, scratch.etas);
 
     result.log_marginal = finalize_log_marginal(log_lik, log_prior, result.log_det_Q, n_x);
+
+    if (compute_skew && result.converged && curvature3_fns) {
+        std::vector<int> all_idx;
+        const std::vector<int>* probe = skew_probe_idx;
+        if (!probe) {
+            all_idx.resize(n_x);
+            for (int j = 0; j < n_x; j++) all_idx[j] = j;
+            probe = &all_idx;
+        }
+        std::vector<double> pre_center_x(n_x);
+        for (int j = 0; j < n_x; j++) pre_center_x[j] = x[j];
+        bool used_sparse_factor = use_sparse && sparse_solver.factored();
+        InnerSkewOutcome sk = compute_inner_skew_gamma3_joint(
+            n_x, pre_center_x, scratch.chol, sparse_solver, used_sparse_factor,
+            compute_eta_joint, x, scratch.etas, scratch.etas_tmp,
+            *curvature3_fns, *probe
+        );
+        result.inner_skew = std::move(sk.gamma3);
+        result.inner_skew_idx = *probe;
+        result.inner_skew_dropped = sk.n_nonfinite_dropped;
+    }
 
     center_effects_fn(x);
     for (int j = 0; j < n_x; j++) result.mode[j] = x[j];

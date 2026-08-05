@@ -516,6 +516,24 @@ inline double obs_curvature_deta2_for_family(
                                                 phi2);
 }
 
+// Third derivative of a single observation's log-likelihood, l_j'''(eta_j),
+// for the inner-Laplace skewness diagnostic (inner_laplace_skew.h). The
+// observed curvature is w_obs = -l'', so d(w_obs)/d(eta) = -l''' exactly;
+// has_curvature_derivative() gates both halves of obs_curvature_deta_for_family
+// (see its own doc comment), so it is the single correctness gate here too.
+// Returns NaN -- not a silently wrong number -- for any family without a
+// registered third derivative.
+inline double curvature3_obs_for_family(
+    double y, int n_trials, double eta,
+    const std::string& family, double phi,
+    double phi2 = std::numeric_limits<double>::quiet_NaN()
+) {
+    if (!has_curvature_derivative(family)) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+    return -obs_curvature_deta_for_family(y, n_trials, eta, family, phi, phi2);
+}
+
 } // namespace tulpa
 
 #endif // TULPA_LAPLACE_FAMILY_CURVATURE_H

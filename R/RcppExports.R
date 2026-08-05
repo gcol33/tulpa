@@ -197,12 +197,12 @@ cpp_joint_inner_vcov_blocks <- function(Q_p_per_grid, Q_i_per_grid, Q_x_per_grid
     .Call(`_tulpa_cpp_joint_inner_vcov_blocks`, Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, idx, n_dense, A_cols_list, field_marginal, n_threads)
 }
 
-cpp_laplace_fit <- function(y, n, X, re_idx, n_re_groups, sigma_re, family, phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L) {
-    .Call(`_tulpa_cpp_laplace_fit`, y, n, X, re_idx, n_re_groups, sigma_re, family, phi, max_iter, tol, n_threads)
+cpp_laplace_fit <- function(y, n, X, re_idx, n_re_groups, sigma_re, family, phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L, compute_skew = FALSE, skew_idx = NULL) {
+    .Call(`_tulpa_cpp_laplace_fit`, y, n, X, re_idx, n_re_groups, sigma_re, family, phi, max_iter, tol, n_threads, compute_skew, skew_idx)
 }
 
-cpp_laplace_fit_multi_re <- function(y, n, X, re_idx_list, re_ngroups, re_sigma_list, family, phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L, re_Z_list = NULL, re_ncoefs = NULL, weights = NULL, offset = NULL, x_init = NULL, beta_prior_mean = NULL, beta_prior_sd = NULL, return_re_cov = FALSE, phi2 = NA_real_, X_zi = NULL, zi_prior_sd = 2.5, return_joint_hessian = FALSE) {
-    .Call(`_tulpa_cpp_laplace_fit_multi_re`, y, n, X, re_idx_list, re_ngroups, re_sigma_list, family, phi, max_iter, tol, n_threads, re_Z_list, re_ncoefs, weights, offset, x_init, beta_prior_mean, beta_prior_sd, return_re_cov, phi2, X_zi, zi_prior_sd, return_joint_hessian)
+cpp_laplace_fit_multi_re <- function(y, n, X, re_idx_list, re_ngroups, re_sigma_list, family, phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L, re_Z_list = NULL, re_ncoefs = NULL, weights = NULL, offset = NULL, x_init = NULL, beta_prior_mean = NULL, beta_prior_sd = NULL, return_re_cov = FALSE, phi2 = NA_real_, X_zi = NULL, zi_prior_sd = 2.5, return_joint_hessian = FALSE, compute_skew = FALSE, skew_idx = NULL) {
+    .Call(`_tulpa_cpp_laplace_fit_multi_re`, y, n, X, re_idx_list, re_ngroups, re_sigma_list, family, phi, max_iter, tol, n_threads, re_Z_list, re_ncoefs, weights, offset, x_init, beta_prior_mean, beta_prior_sd, return_re_cov, phi2, X_zi, zi_prior_sd, return_joint_hessian, compute_skew, skew_idx)
 }
 
 cpp_laplace_sample <- function(mode, H, n_samples) {
@@ -213,12 +213,12 @@ cpp_laplace_fit_gp <- function(y, n, X, re_idx, n_re_groups, sigma_re, coords, n
     .Call(`_tulpa_cpp_laplace_fit_gp`, y, n, X, re_idx, n_re_groups, sigma_re, coords, nn_idx, nn_dist, nn_order, n_spatial, nn, sigma2_gp, phi_gp, cov_type, family, phi, max_iter, tol, n_threads, offset_nullable, obs_to_loc_nullable)
 }
 
-cpp_laplace_fit_spatial <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_spatial, family, phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, offset_nullable = NULL, force_sparse = 0L) {
-    .Call(`_tulpa_cpp_laplace_fit_spatial`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_spatial, family, phi, max_iter, tol, n_threads, x_init_nullable, offset_nullable, force_sparse)
+cpp_laplace_fit_spatial <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_spatial, family, phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, offset_nullable = NULL, force_sparse = 0L, compute_skew = FALSE, skew_idx = NULL) {
+    .Call(`_tulpa_cpp_laplace_fit_spatial`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_spatial, family, phi, max_iter, tol, n_threads, x_init_nullable, offset_nullable, force_sparse, compute_skew, skew_idx)
 }
 
-cpp_laplace_fit_bym2 <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, sigma_spatial, rho, scale_factor, family, phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L, offset_nullable = NULL, force_sparse = 0L) {
-    .Call(`_tulpa_cpp_laplace_fit_bym2`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, sigma_spatial, rho, scale_factor, family, phi, max_iter, tol, n_threads, offset_nullable, force_sparse)
+cpp_laplace_fit_bym2 <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, sigma_spatial, rho, scale_factor, family, phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L, offset_nullable = NULL, force_sparse = 0L, compute_skew = FALSE, skew_idx = NULL) {
+    .Call(`_tulpa_cpp_laplace_fit_bym2`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, sigma_spatial, rho, scale_factor, family, phi, max_iter, tol, n_threads, offset_nullable, force_sparse, compute_skew, skew_idx)
 }
 
 cpp_line_search_probe <- function(slope, c) {
@@ -265,60 +265,60 @@ cpp_multinomial_logit_terms <- function(eta, cls) {
     .Call(`_tulpa_cpp_multinomial_logit_terms`, eta, cls)
 }
 
-cpp_nested_laplace_icar <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_grid, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, checkpoint_path = "") {
-    .Call(`_tulpa_cpp_nested_laplace_icar`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_grid, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, checkpoint_path)
+cpp_nested_laplace_icar <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_grid, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, checkpoint_path = "", compute_skew = FALSE, skew_idx = NULL) {
+    .Call(`_tulpa_cpp_nested_laplace_icar`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_grid, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, checkpoint_path, compute_skew, skew_idx)
 }
 
-cpp_nested_laplace_bym2 <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, scale_factor, sigma_spatial_grid, rho_grid, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, checkpoint_path = "") {
-    .Call(`_tulpa_cpp_nested_laplace_bym2`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, scale_factor, sigma_spatial_grid, rho_grid, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, checkpoint_path)
+cpp_nested_laplace_bym2 <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, scale_factor, sigma_spatial_grid, rho_grid, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, checkpoint_path = "", compute_skew = FALSE, skew_idx = NULL) {
+    .Call(`_tulpa_cpp_nested_laplace_bym2`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, scale_factor, sigma_spatial_grid, rho_grid, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, checkpoint_path, compute_skew, skew_idx)
 }
 
-cpp_nested_laplace_car_proper <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_grid, rho_grid, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, checkpoint_path = "") {
-    .Call(`_tulpa_cpp_nested_laplace_car_proper`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_grid, rho_grid, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, checkpoint_path)
+cpp_nested_laplace_car_proper <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_grid, rho_grid, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, checkpoint_path = "", compute_skew = FALSE, skew_idx = NULL) {
+    .Call(`_tulpa_cpp_nested_laplace_car_proper`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_grid, rho_grid, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, checkpoint_path, compute_skew, skew_idx)
 }
 
-cpp_laplace_fit_car_proper <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_spatial, rho, family, phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, offset_nullable = NULL) {
-    .Call(`_tulpa_cpp_laplace_fit_car_proper`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_spatial, rho, family, phi, max_iter, tol, n_threads, x_init_nullable, offset_nullable)
+cpp_laplace_fit_car_proper <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_spatial, rho, family, phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, offset_nullable = NULL, compute_skew = FALSE, skew_idx = NULL) {
+    .Call(`_tulpa_cpp_laplace_fit_car_proper`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_spatial, rho, family, phi, max_iter, tol, n_threads, x_init_nullable, offset_nullable, compute_skew, skew_idx)
 }
 
-cpp_nested_laplace_nngp <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, coords, nn_idx, nn_dist, nn_order, n_spatial, nn, sigma2_grid, phi_gp_grid, cov_type, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, checkpoint_path = "") {
-    .Call(`_tulpa_cpp_nested_laplace_nngp`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, coords, nn_idx, nn_dist, nn_order, n_spatial, nn, sigma2_grid, phi_gp_grid, cov_type, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, checkpoint_path)
+cpp_nested_laplace_nngp <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, coords, nn_idx, nn_dist, nn_order, n_spatial, nn, sigma2_grid, phi_gp_grid, cov_type, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, checkpoint_path = "", compute_skew = FALSE, skew_idx = NULL) {
+    .Call(`_tulpa_cpp_nested_laplace_nngp`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, coords, nn_idx, nn_dist, nn_order, n_spatial, nn, sigma2_grid, phi_gp_grid, cov_type, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, checkpoint_path, compute_skew, skew_idx)
 }
 
-cpp_nested_laplace_hsgp <- function(y, n, X, re_idx, n_re_groups, sigma_re, phi_basis, lambda_eig, sigma2_grid, lengthscale_grid, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, checkpoint_path = "") {
-    .Call(`_tulpa_cpp_nested_laplace_hsgp`, y, n, X, re_idx, n_re_groups, sigma_re, phi_basis, lambda_eig, sigma2_grid, lengthscale_grid, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, checkpoint_path)
+cpp_nested_laplace_hsgp <- function(y, n, X, re_idx, n_re_groups, sigma_re, phi_basis, lambda_eig, sigma2_grid, lengthscale_grid, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, checkpoint_path = "", compute_skew = FALSE, skew_idx = NULL) {
+    .Call(`_tulpa_cpp_nested_laplace_hsgp`, y, n, X, re_idx, n_re_groups, sigma_re, phi_basis, lambda_eig, sigma2_grid, lengthscale_grid, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, checkpoint_path, compute_skew, skew_idx)
 }
 
-cpp_laplace_fit_hsgp <- function(y, n, X, re_idx, n_re_groups, sigma_re, phi_basis, lambda_eig, sigma2, lengthscale, family, phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, offset_nullable = NULL) {
-    .Call(`_tulpa_cpp_laplace_fit_hsgp`, y, n, X, re_idx, n_re_groups, sigma_re, phi_basis, lambda_eig, sigma2, lengthscale, family, phi, max_iter, tol, n_threads, x_init_nullable, offset_nullable)
+cpp_laplace_fit_hsgp <- function(y, n, X, re_idx, n_re_groups, sigma_re, phi_basis, lambda_eig, sigma2, lengthscale, family, phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, offset_nullable = NULL, compute_skew = FALSE, skew_idx = NULL) {
+    .Call(`_tulpa_cpp_laplace_fit_hsgp`, y, n, X, re_idx, n_re_groups, sigma_re, phi_basis, lambda_eig, sigma2, lengthscale, family, phi, max_iter, tol, n_threads, x_init_nullable, offset_nullable, compute_skew, skew_idx)
 }
 
-cpp_nested_laplace_temporal <- function(y, n, X, re_idx, n_re_groups, sigma_re, temporal_idx, n_times, temporal_type, tau_grid, rho_grid, cyclic, family, phi = 1.0, n_groups = 1L, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, checkpoint_path = "") {
-    .Call(`_tulpa_cpp_nested_laplace_temporal`, y, n, X, re_idx, n_re_groups, sigma_re, temporal_idx, n_times, temporal_type, tau_grid, rho_grid, cyclic, family, phi, n_groups, max_iter, tol, n_threads, x_init_nullable, store_Q, checkpoint_path)
+cpp_nested_laplace_temporal <- function(y, n, X, re_idx, n_re_groups, sigma_re, temporal_idx, n_times, temporal_type, tau_grid, rho_grid, cyclic, family, phi = 1.0, n_groups = 1L, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, checkpoint_path = "", compute_skew = FALSE, skew_idx = NULL) {
+    .Call(`_tulpa_cpp_nested_laplace_temporal`, y, n, X, re_idx, n_re_groups, sigma_re, temporal_idx, n_times, temporal_type, tau_grid, rho_grid, cyclic, family, phi, n_groups, max_iter, tol, n_threads, x_init_nullable, store_Q, checkpoint_path, compute_skew, skew_idx)
 }
 
-cpp_nested_laplace_st_icar <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, temporal_idx, n_times, tau_spatial_grid, temporal_type, tau_temporal_grid, rho_temporal_grid, cyclic, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, force_sparse = FALSE, checkpoint_path = "") {
-    .Call(`_tulpa_cpp_nested_laplace_st_icar`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, temporal_idx, n_times, tau_spatial_grid, temporal_type, tau_temporal_grid, rho_temporal_grid, cyclic, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, force_sparse, checkpoint_path)
+cpp_nested_laplace_st_icar <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, temporal_idx, n_times, tau_spatial_grid, temporal_type, tau_temporal_grid, rho_temporal_grid, cyclic, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, force_sparse = FALSE, checkpoint_path = "", compute_skew = FALSE, skew_idx = NULL) {
+    .Call(`_tulpa_cpp_nested_laplace_st_icar`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, temporal_idx, n_times, tau_spatial_grid, temporal_type, tau_temporal_grid, rho_temporal_grid, cyclic, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, force_sparse, checkpoint_path, compute_skew, skew_idx)
 }
 
-cpp_nested_laplace_st_car_proper <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, temporal_idx, n_times, tau_spatial_grid, rho_spatial_grid, temporal_type, tau_temporal_grid, rho_temporal_grid, cyclic, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, force_sparse = FALSE, checkpoint_path = "") {
-    .Call(`_tulpa_cpp_nested_laplace_st_car_proper`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, temporal_idx, n_times, tau_spatial_grid, rho_spatial_grid, temporal_type, tau_temporal_grid, rho_temporal_grid, cyclic, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, force_sparse, checkpoint_path)
+cpp_nested_laplace_st_car_proper <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, temporal_idx, n_times, tau_spatial_grid, rho_spatial_grid, temporal_type, tau_temporal_grid, rho_temporal_grid, cyclic, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, force_sparse = FALSE, checkpoint_path = "", compute_skew = FALSE, skew_idx = NULL) {
+    .Call(`_tulpa_cpp_nested_laplace_st_car_proper`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, temporal_idx, n_times, tau_spatial_grid, rho_spatial_grid, temporal_type, tau_temporal_grid, rho_temporal_grid, cyclic, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, force_sparse, checkpoint_path, compute_skew, skew_idx)
 }
 
-cpp_nested_laplace_st_bym2 <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, scale_factor, temporal_idx, n_times, sigma_spatial_grid, rho_spatial_grid, temporal_type, tau_temporal_grid, rho_temporal_grid, cyclic, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, force_sparse = FALSE, checkpoint_path = "") {
-    .Call(`_tulpa_cpp_nested_laplace_st_bym2`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, scale_factor, temporal_idx, n_times, sigma_spatial_grid, rho_spatial_grid, temporal_type, tau_temporal_grid, rho_temporal_grid, cyclic, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, force_sparse, checkpoint_path)
+cpp_nested_laplace_st_bym2 <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, scale_factor, temporal_idx, n_times, sigma_spatial_grid, rho_spatial_grid, temporal_type, tau_temporal_grid, rho_temporal_grid, cyclic, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, force_sparse = FALSE, checkpoint_path = "", compute_skew = FALSE, skew_idx = NULL) {
+    .Call(`_tulpa_cpp_nested_laplace_st_bym2`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, scale_factor, temporal_idx, n_times, sigma_spatial_grid, rho_spatial_grid, temporal_type, tau_temporal_grid, rho_temporal_grid, cyclic, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, force_sparse, checkpoint_path, compute_skew, skew_idx)
 }
 
-cpp_nested_laplace_st_hsgp <- function(y, n, X, re_idx, n_re_groups, sigma_re, phi_basis, lambda_eig, temporal_idx, n_times, sigma2_spatial_grid, lengthscale_spatial_grid, temporal_type, tau_temporal_grid, rho_temporal_grid, cyclic, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, force_sparse = FALSE, checkpoint_path = "") {
-    .Call(`_tulpa_cpp_nested_laplace_st_hsgp`, y, n, X, re_idx, n_re_groups, sigma_re, phi_basis, lambda_eig, temporal_idx, n_times, sigma2_spatial_grid, lengthscale_spatial_grid, temporal_type, tau_temporal_grid, rho_temporal_grid, cyclic, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, force_sparse, checkpoint_path)
+cpp_nested_laplace_st_hsgp <- function(y, n, X, re_idx, n_re_groups, sigma_re, phi_basis, lambda_eig, temporal_idx, n_times, sigma2_spatial_grid, lengthscale_spatial_grid, temporal_type, tau_temporal_grid, rho_temporal_grid, cyclic, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, force_sparse = FALSE, checkpoint_path = "", compute_skew = FALSE, skew_idx = NULL) {
+    .Call(`_tulpa_cpp_nested_laplace_st_hsgp`, y, n, X, re_idx, n_re_groups, sigma_re, phi_basis, lambda_eig, temporal_idx, n_times, sigma2_spatial_grid, lengthscale_spatial_grid, temporal_type, tau_temporal_grid, rho_temporal_grid, cyclic, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, force_sparse, checkpoint_path, compute_skew, skew_idx)
 }
 
-cpp_nested_laplace_st_nngp <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial, coords, nn_idx, nn_dist, nn_order, nn, cov_type, temporal_idx, n_times, sigma2_spatial_grid, phi_gp_spatial_grid, temporal_type, tau_temporal_grid, rho_temporal_grid, cyclic, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, force_sparse = FALSE, checkpoint_path = "") {
-    .Call(`_tulpa_cpp_nested_laplace_st_nngp`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial, coords, nn_idx, nn_dist, nn_order, nn, cov_type, temporal_idx, n_times, sigma2_spatial_grid, phi_gp_spatial_grid, temporal_type, tau_temporal_grid, rho_temporal_grid, cyclic, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, force_sparse, checkpoint_path)
+cpp_nested_laplace_st_nngp <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial, coords, nn_idx, nn_dist, nn_order, nn, cov_type, temporal_idx, n_times, sigma2_spatial_grid, phi_gp_spatial_grid, temporal_type, tau_temporal_grid, rho_temporal_grid, cyclic, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, force_sparse = FALSE, checkpoint_path = "", compute_skew = FALSE, skew_idx = NULL) {
+    .Call(`_tulpa_cpp_nested_laplace_st_nngp`, y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial, coords, nn_idx, nn_dist, nn_order, nn, cov_type, temporal_idx, n_times, sigma2_spatial_grid, phi_gp_spatial_grid, temporal_type, tau_temporal_grid, rho_temporal_grid, cyclic, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, force_sparse, checkpoint_path, compute_skew, skew_idx)
 }
 
-cpp_nested_laplace_joint_multi <- function(arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, phi_grid_per_arm = NULL, n_threads_outer = 1L, tile_ids = NULL, tile_pilot_cells = NULL, prune_tol = 0.0, force_sparse = FALSE, cell_coupling_name = "separable", hessian_pd_mode = 0L, step_curvature_mode = 0L, inner_refresh = 1L, progress = FALSE, progress_every = 0L, progress_throttle = 0.0, progress_file = "", checkpoint_path = "", x_init_per_cell = NULL) {
-    .Call(`_tulpa_cpp_nested_laplace_joint_multi`, arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets, max_iter, tol, n_threads, x_init_nullable, store_Q, phi_grid_per_arm, n_threads_outer, tile_ids, tile_pilot_cells, prune_tol, force_sparse, cell_coupling_name, hessian_pd_mode, step_curvature_mode, inner_refresh, progress, progress_every, progress_throttle, progress_file, checkpoint_path, x_init_per_cell)
+cpp_nested_laplace_joint_multi <- function(arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, phi_grid_per_arm = NULL, n_threads_outer = 1L, tile_ids = NULL, tile_pilot_cells = NULL, prune_tol = 0.0, force_sparse = FALSE, cell_coupling_name = "separable", hessian_pd_mode = 0L, step_curvature_mode = 0L, inner_refresh = 1L, progress = FALSE, progress_every = 0L, progress_throttle = 0.0, progress_file = "", checkpoint_path = "", x_init_per_cell = NULL, compute_skew = FALSE, skew_idx = NULL) {
+    .Call(`_tulpa_cpp_nested_laplace_joint_multi`, arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets, max_iter, tol, n_threads, x_init_nullable, store_Q, phi_grid_per_arm, n_threads_outer, tile_ids, tile_pilot_cells, prune_tol, force_sparse, cell_coupling_name, hessian_pd_mode, step_curvature_mode, inner_refresh, progress, progress_every, progress_throttle, progress_file, checkpoint_path, x_init_per_cell, compute_skew, skew_idx)
 }
 
 cpp_nested_laplace_joint_multi_batch <- function(arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets, n_batch, y_batch, phi_batch, max_iter = 200L, tol = 1e-6, cell_coupling_name = "separable", store_Q = TRUE) {
@@ -333,8 +333,8 @@ cpp_test_joint_logpost_grad <- function(arms_list, copy_arms, copy_blocks, block
     .Call(`_tulpa_cpp_test_joint_logpost_grad`, arms_list, copy_arms, copy_blocks, blocks_spec, theta_grid, axis_offsets, x, k_grid)
 }
 
-cpp_nested_laplace_multi <- function(y, n, X, re_idx, n_re_groups, sigma_re, blocks_spec, theta_grid, axis_offsets, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, prune_tol = 0.0, likelihood = NULL, progress = FALSE, progress_every = 0L, progress_throttle = 0.0, progress_file = "", checkpoint_path = "") {
-    .Call(`_tulpa_cpp_nested_laplace_multi`, y, n, X, re_idx, n_re_groups, sigma_re, blocks_spec, theta_grid, axis_offsets, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, prune_tol, likelihood, progress, progress_every, progress_throttle, progress_file, checkpoint_path)
+cpp_nested_laplace_multi <- function(y, n, X, re_idx, n_re_groups, sigma_re, blocks_spec, theta_grid, axis_offsets, family, phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, store_Q = FALSE, prune_tol = 0.0, likelihood = NULL, progress = FALSE, progress_every = 0L, progress_throttle = 0.0, progress_file = "", checkpoint_path = "", compute_skew = FALSE, skew_idx = NULL) {
+    .Call(`_tulpa_cpp_nested_laplace_multi`, y, n, X, re_idx, n_re_groups, sigma_re, blocks_spec, theta_grid, axis_offsets, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, prune_tol, likelihood, progress, progress_every, progress_throttle, progress_file, checkpoint_path, compute_skew, skew_idx)
 }
 
 cpp_nested_laplace_test_occupancy_likelihood <- function(y, det_prob) {
@@ -493,8 +493,8 @@ cpp_laplace_fit_spde_precomputed <- function(y, n_trials, X, re_idx, n_re_groups
     .Call(`_tulpa_cpp_laplace_fit_spde_precomputed`, y, n_trials, X, re_idx, n_re_groups, sigma_re, n_obs, n_mesh, Q_p, Q_i, Q_x, Aeff_x, Aeff_i, Aeff_p, family, phi, max_iter, tol, n_threads, x_init_nullable, offset_nullable)
 }
 
-cpp_nested_laplace_spde <- function(y, n_trials, X, re_idx, n_re_groups, sigma_re, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, range_grid, sigma_grid, nu = 1.0, family = "gaussian", phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, rational_poles_nullable = NULL, rational_weights_nullable = NULL, store_Q = FALSE, checkpoint_path = "", offset_nullable = NULL) {
-    .Call(`_tulpa_cpp_nested_laplace_spde`, y, n_trials, X, re_idx, n_re_groups, sigma_re, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, range_grid, sigma_grid, nu, family, phi, max_iter, tol, n_threads, x_init_nullable, rational_poles_nullable, rational_weights_nullable, store_Q, checkpoint_path, offset_nullable)
+cpp_nested_laplace_spde <- function(y, n_trials, X, re_idx, n_re_groups, sigma_re, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, range_grid, sigma_grid, nu = 1.0, family = "gaussian", phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, rational_poles_nullable = NULL, rational_weights_nullable = NULL, store_Q = FALSE, checkpoint_path = "", offset_nullable = NULL, compute_skew = FALSE, skew_idx = NULL) {
+    .Call(`_tulpa_cpp_nested_laplace_spde`, y, n_trials, X, re_idx, n_re_groups, sigma_re, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, range_grid, sigma_grid, nu, family, phi, max_iter, tol, n_threads, x_init_nullable, rational_poles_nullable, rational_weights_nullable, store_Q, checkpoint_path, offset_nullable, compute_skew, skew_idx)
 }
 
 cpp_stochastic_log_determinant <- function(Q_x, Q_i, Q_p, n, n_probes = 30L, n_lanczos = 50L, seed = 42L) {

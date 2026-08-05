@@ -1340,7 +1340,9 @@ Rcpp::List cpp_nested_laplace_joint_multi(
     double              progress_throttle = 0.0,
     std::string         progress_file = "",
     std::string         checkpoint_path = "",
-    Rcpp::Nullable<Rcpp::NumericMatrix> x_init_per_cell = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericMatrix> x_init_per_cell = R_NilValue,
+    bool                compute_skew = false,
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
 ) {
     int n_arms = arms_list.size();
     int B = blocks_spec.size();
@@ -1552,6 +1554,15 @@ Rcpp::List cpp_nested_laplace_joint_multi(
                                              kb.take()));
     }
 
+    std::vector<int> skew_idx_vec;
+    const std::vector<int>* skew_idx_ptr = nullptr;
+    if (compute_skew && skew_idx.isNotNull()) {
+        Rcpp::IntegerVector idx_r(skew_idx);
+        skew_idx_vec.resize(idx_r.size());
+        for (int k = 0; k < idx_r.size(); k++) skew_idx_vec[k] = idx_r[k] - 1;
+        skew_idx_ptr = &skew_idx_vec;
+    }
+
     Rcpp::List out = tulpa::run_multi_block_nested_laplace_joint(
         n_grid, arms, parsed, blocks, n_x_after_re,
         max_iter, tol, n_threads,
@@ -1569,7 +1580,8 @@ Rcpp::List cpp_nested_laplace_joint_multi(
         inner_refresh,
         gp.get(),
         ckpt.get(),
-        x_init_per_cell_vec
+        x_init_per_cell_vec,
+        compute_skew, skew_idx_ptr
     );
     out["theta_grid"]   = theta_grid;
     out["axis_offsets"] = axis_offsets;
@@ -1962,7 +1974,9 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
     int                              hessian_refresh,
     tulpa_progress::GridProgress*    progress,
     GridCheckpoint*                  checkpoint,
-    const std::vector<double>&       x_init_per_cell) {
+    const std::vector<double>&       x_init_per_cell,
+    bool                             compute_skew,
+    const std::vector<int>*          skew_probe_idx) {
     const int n_arms = static_cast<int>(arms.size());
     if (static_cast<int>(parsed.size()) != n_arms) {
         Rcpp::stop("parsed and arms vectors must have the same length.");
@@ -2035,7 +2049,8 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
             prep_at_grid, tile_ids, tile_pilot_cells, prune_tol,
             cell_coupling_spec, coupled_arms, cell_rows, n_cells, pd_mode,
             step_curvature, hessian_refresh, n_threads_outer, progress,
-            checkpoint, x_init_per_cell
+            checkpoint, x_init_per_cell,
+            compute_skew, skew_probe_idx
         );
     }
 
@@ -2063,6 +2078,17 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
     // at a time. The scatter and the joint log-lik read every arm only through
     // these views.
     JointArmSpecs specs = build_joint_arm_specs(arms);
+
+    // Inner-Laplace skewness diagnostic: per-arm oracle built once from the
+    // shared `specs`, valid only for the full solve (never the cheap-pass
+    // screen, which reads a per-worker `cheap_specs_pool` entry instead --
+    // see is_cheap below). Coupled arms are excluded automatically (their
+    // per-obs oracle would score the wrong, unused likelihood).
+    std::vector<std::function<double(int, double)>> skew_curvature3_fns;
+    if (compute_skew) {
+        skew_curvature3_fns = build_joint_curvature3_fns(
+            specs.views, any_coupling ? &arm_is_coupled : nullptr);
+    }
 
     // One cheap-pass specs view per outer worker slot. The cheap screen may run
     // per-tile chains concurrently; sync_dispersion mutates
@@ -2271,7 +2297,9 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
             max_iter_use, tol,
             compute_eta_joint, scatter_joint, center_joint, log_prior_joint,
             joint_ll, scratch, prev_mode, shared_solver,
-            store_Q
+            store_Q,
+            compute_skew && !is_cheap, skew_probe_idx,
+            (compute_skew && !is_cheap) ? &skew_curvature3_fns : nullptr
         );
     };
 
@@ -2349,7 +2377,9 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
     int                              n_threads_outer,
     tulpa_progress::GridProgress*    progress,
     GridCheckpoint*                  checkpoint,
-    const std::vector<double>&       x_init_per_cell
+    const std::vector<double>&       x_init_per_cell,
+    bool                             compute_skew,
+    const std::vector<int>*          skew_probe_idx
 ) {
     const int n_arms = static_cast<int>(arms.size());
     const int B      = static_cast<int>(blocks.size());
@@ -2500,6 +2530,19 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
     // owning thread's copy under a short critical (see below).
     std::vector<JointArmSpecs> specs_pool(n_outer);
     for (auto& sp : specs_pool) build_joint_arm_specs_into(arms, sp);
+
+    // Inner-Laplace skewness diagnostic: one per-arm oracle vector per outer
+    // slot (mirrors specs_pool / db_buffers_pool -- each JointArmSpecs is
+    // self-referential, so its curvature3 closures must be built from ITS OWN
+    // views, not a shared copy). Coupled arms are excluded automatically.
+    std::vector<std::vector<std::function<double(int, double)>>> skew_curvature3_fns_pool;
+    if (compute_skew) {
+        skew_curvature3_fns_pool.resize(n_outer);
+        for (int t = 0; t < n_outer; t++) {
+            skew_curvature3_fns_pool[t] = build_joint_curvature3_fns(
+                specs_pool[t].views, any_coupling ? &arm_is_coupled : nullptr);
+        }
+    }
 
     std::vector<std::vector<DenseBasisScratch>> db_buffers_pool(n_outer);
     for (auto& d : db_buffers_pool)
@@ -2749,13 +2792,16 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
         // pruning ranking stays faithful to a full Newton screen; factor reuse
         // applies only to the full per-cell solve.
         const int refresh_use = use_cheap_scratch ? 1 : hessian_refresh;
+        const bool want_skew = compute_skew && !use_cheap_scratch;
         return laplace_newton_solve_joint_sparse_ll(
             n_x,
             max_iter_use, tol,
             compute_eta_joint, scatter_joint_sparse,
             center_joint, log_prior_joint,
             joint_ll, H_use, sc, prev_mode, shared_solver, store_Q, pd_mode,
-            refresh_use
+            refresh_use,
+            want_skew, skew_probe_idx,
+            want_skew ? &skew_curvature3_fns_pool[slot] : nullptr
         );
     };
 

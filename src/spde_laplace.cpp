@@ -330,7 +330,9 @@ Rcpp::List cpp_nested_laplace_spde(
     Rcpp::Nullable<Rcpp::NumericVector> rational_weights_nullable = R_NilValue,
     bool store_Q = false,
     std::string checkpoint_path = "",
-    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
+    bool compute_skew = false,
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
 ) {
     int N = n_obs;
     int p = X.ncol();
@@ -452,6 +454,15 @@ Rcpp::List cpp_nested_laplace_spde(
         checkpoint_path, sfp.value(), max_iter, tol, y, n_trials, X, re_idx,
         n_re_groups, sigma_re, family, phi, {range_grid, sigma_grid});
 
+    std::vector<int> skew_idx_vec;
+    const std::vector<int>* skew_idx_ptr = nullptr;
+    if (compute_skew && skew_idx.isNotNull()) {
+        Rcpp::IntegerVector idx_r(skew_idx);
+        skew_idx_vec.resize(idx_r.size());
+        for (int k = 0; k < idx_r.size(); k++) skew_idx_vec[k] = idx_r[k] - 1;
+        skew_idx_ptr = &skew_idx_vec;
+    }
+
     Rcpp::List out = tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
         n_grid, arms, parsed, blocks, n_x,
         max_iter, tol, n_threads,
@@ -466,7 +477,9 @@ Rcpp::List cpp_nested_laplace_spde(
         /*n_cells=*/0,
         tulpa::JointPDMode::LM, tulpa::CurvatureMode::Observed,
         /*hessian_refresh=*/1, /*n_threads_outer=*/1,
-        /*progress=*/nullptr, ckpt.get()
+        /*progress=*/nullptr, ckpt.get(),
+        /*x_init_per_cell=*/std::vector<double>(),
+        compute_skew, skew_idx_ptr
     );
     out["range_grid"] = range_grid;
     out["sigma_grid"] = sigma_grid;

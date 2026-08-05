@@ -68,7 +68,16 @@ inline Rcpp::List run_multi_block_nested_laplace(
     const LikelihoodSpec* ext_spec = nullptr,
     void* ext_response = nullptr,
     tulpa_progress::GridProgress* progress = nullptr,
-    GridCheckpoint* ckpt = nullptr
+    GridCheckpoint* ckpt = nullptr,
+    // Inner-Laplace skewness diagnostic (inner_laplace_skew.h), opt-in like
+    // store_Q. Applied only to the FULL per-cell solve, never the cheap-pass
+    // warm-start screen; the caller is expected to pass a length-1 theta grid
+    // (n_grid == 1) built at a single target theta (typically the outer
+    // grid's MAP cell) when requesting this, mirroring the outer Pareto-k
+    // diagnostic's re-dispatch-at-a-point convention -- see
+    // .nl_inner_skew_at_theta() in R/laplace_diagnostics.R.
+    bool compute_skew = false,
+    const std::vector<int>* skew_probe_idx = nullptr
 ) {
     int n_x = p + n_re_groups;
     for (const auto& b : blocks) {
@@ -182,7 +191,8 @@ inline Rcpp::List run_multi_block_nested_laplace(
                                    int max_iter_use,
                                    NewtonScratch* scratch_override
                                    = nullptr,
-                                   bool want_var = false) -> LaplaceResult
+                                   bool want_var = false,
+                                   bool allow_skew = false) -> LaplaceResult
     {
         for (const auto& b : blocks) {
             if (b.prep && !b.prep(k)) {
@@ -226,7 +236,9 @@ inline Rcpp::List run_multi_block_nested_laplace(
         LaplaceResult res = spec_inner_solve(
             data, layout, &blocks, k, *spec_ptr, resp_ptr, re_group_1based,
             max_iter_use, tol, n_threads_inner_eff, base_params,
-            scratch, solver, store_Q, /*inv_block_layout=*/nullptr
+            scratch, solver, store_Q, /*inv_block_layout=*/nullptr,
+            /*beta_prior=*/nullptr, /*sparse_override=*/0,
+            allow_skew && compute_skew, skew_probe_idx
         );
 
         // Per-row predictive variance, var(eta_i | theta_k) = a_i' H^{-1} a_i,
@@ -296,7 +308,7 @@ inline Rcpp::List run_multi_block_nested_laplace(
                               SparseCholeskySolver* solver) -> LaplaceResult
     {
         return solve_at_theta_impl(k, prev_mode, solver, max_iter, nullptr,
-                                   /*want_var=*/store_modes);
+                                   /*want_var=*/store_modes, /*allow_skew=*/true);
     };
 
     // Cheap-pass screening: a short inner Newton run warm-started from the

@@ -229,7 +229,20 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
     SparseCholeskySolver* shared_solver,
     bool store_Q,
     JointPDMode pd_mode = JointPDMode::LM,
-    int hessian_refresh = 1
+    int hessian_refresh = 1,
+    // Inner-Laplace skewness diagnostic (inner_laplace_skew.h), opt-in like
+    // store_Q. Only computable on the plain-CHOLMOD final factor: the s2z
+    // (sum-to-zero large-field) path solves against H + a rank-1 correction
+    // the stored CHOLMOD factor of H_builder alone does not reflect (see
+    // s2z_newton_step / apply_s2z_rank1_correction above), and the PSD path
+    // never populates `solver` at all (its final factorize goes through the
+    // dense eigen-clamp branch of joint_pd_step_solve). Probing either with a
+    // plain solver.solve() would silently solve against the wrong matrix, so
+    // both decline (compute_skew is honored only when pd_mode == LM and no
+    // s2z rank-1 term is registered) rather than report a wrong gamma_3.
+    bool compute_skew = false,
+    const std::vector<int>* skew_probe_idx = nullptr,
+    const std::vector<std::function<double(int, double)>>* curvature3_fns = nullptr
 ) {
     LaplaceResult result;
     result.mode.assign(n_x, 0.0);
@@ -428,6 +441,30 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
 
     result.log_marginal = finalize_log_marginal(log_lik, log_prior,
                                                   result.log_det_Q, n_x);
+
+    const bool skew_factor_valid =
+        result.converged && (pd_mode == JointPDMode::LM) &&
+        H_builder.s2z_rank1.empty() && solver.factored();
+    if (compute_skew && curvature3_fns && skew_factor_valid) {
+        std::vector<int> all_idx;
+        const std::vector<int>* probe = skew_probe_idx;
+        if (!probe) {
+            all_idx.resize(n_x);
+            for (int j = 0; j < n_x; j++) all_idx[j] = j;
+            probe = &all_idx;
+        }
+        std::vector<double> pre_center_x(n_x);
+        for (int j = 0; j < n_x; j++) pre_center_x[j] = x[j];
+        DenseCholeskyScratch unused_dense_chol;  // sparse-only path never reads it
+        InnerSkewOutcome sk = compute_inner_skew_gamma3_joint(
+            n_x, pre_center_x, unused_dense_chol, solver, /*use_sparse=*/true,
+            compute_eta_joint, x, scratch.etas, scratch.etas_tmp,
+            *curvature3_fns, *probe
+        );
+        result.inner_skew = std::move(sk.gamma3);
+        result.inner_skew_idx = *probe;
+        result.inner_skew_dropped = sk.n_nonfinite_dropped;
+    }
 
     { TULPA_PROFILE_PHASE(PHASE_LOG_LIK_PRIOR);
       center_effects_fn(x); }

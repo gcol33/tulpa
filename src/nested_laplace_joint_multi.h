@@ -1513,7 +1513,14 @@ Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
     int                              n_threads_outer = 1,
     tulpa_progress::GridProgress*    progress = nullptr,
     GridCheckpoint*                  checkpoint = nullptr,
-    const std::vector<double>&       x_init_per_cell = std::vector<double>()
+    const std::vector<double>&       x_init_per_cell = std::vector<double>(),
+    // Inner-Laplace skewness diagnostic (inner_laplace_skew.h), opt-in like
+    // store_Q. See laplace_newton_joint.h's build_joint_curvature3_fns: a
+    // coupled arm (cell_coupling_spec->arm_ids()) is excluded from the
+    // per-arm oracle automatically, so its observations drop out of gamma_3
+    // rather than being scored against the wrong (unused) per-obs likelihood.
+    bool                             compute_skew = false,
+    const std::vector<int>*          skew_probe_idx = nullptr
 );
 
 // Outer-grid driver. n_x_after_re is the latent dimension after all per-arm
@@ -1550,7 +1557,9 @@ Rcpp::List run_multi_block_nested_laplace_joint(
     int                              hessian_refresh = 1,
     tulpa_progress::GridProgress*    progress = nullptr,
     GridCheckpoint*                  checkpoint = nullptr,
-    const std::vector<double>&       x_init_per_cell = std::vector<double>()
+    const std::vector<double>&       x_init_per_cell = std::vector<double>(),
+    bool                             compute_skew = false,
+    const std::vector<int>*          skew_probe_idx = nullptr
 );
 
 } // namespace tulpa

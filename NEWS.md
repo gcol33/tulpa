@@ -1,5 +1,37 @@
 # tulpa NEWS
 
+## 0.0.117
+
+* **Inner-Laplace skewness diagnostic: score the layer outer Pareto-k-hat
+  doesn't cover (#272).** `pareto_k` scores the OUTER hyperparameter-grid
+  integration around a fixed inner Laplace; it read as a whole-fit verdict
+  even though the inner Gaussian approximation to the latent-field
+  conditional posterior is a separate, unscored layer -- an `occu_cover`
+  batch flagged 42/78 species "unreliable" on outer k-hat alone when their
+  point estimates, governed by the healthy inner layer, were fine. `gamma_3`
+  (`src/inner_laplace_skew.h`, the leading-order Edgeworth skewness estimate
+  from Rue, Martino & Chopin 2009 Sec 3.2.3's cubic correction, generalized
+  from their augmented representation to tulpa's general `eta = compute_eta(x)`
+  and to the joint multi-arm case) closes that gap: opt-in
+  (`control$diagnose_skew`, default `TRUE`) and computed with one extra
+  deterministic Newton solve at the fitted MAP grid cell, scoring every arm's
+  fixed-effects coefficients by default (`control$skew_idx` extends it).
+  Declines to `NA` -- never a silently-wrong `0` ("perfectly Gaussian") -- for
+  a likelihood the formula cannot score (a coupled multi-process spec such as
+  zero-inflation or tulpaObs's `occu_cover`, or a family with no registered
+  third derivative); this also caught and fixed a real bug in the diagnostic
+  as first staged, where an entirely absent oracle silently summed to
+  `0 / sigma_i^3 == 0` instead of `NA`. `diagnostics()` /
+  `print.laplace_diagnostics()` report a combined whole-fit verdict naming
+  which layer degrades, if either does. Wired through every single-arm
+  nested-Laplace kernel (icar/bym2/car_proper/temporal/nngp/hsgp/the ST
+  variants/SPDE) and the joint driver's single-block backends; validated in
+  `tests/testthat/test-inner-skew.R` against a direct numerically-integrated
+  exact posterior skewness (a rare-event binomial intercept), not just shape
+  checks. Known remaining scope (joint multi-block wiring, a genuinely
+  coupled-arm cubic-term derivation, the SPDE/GP bespoke large-`n` Newton
+  pair) tracked in #273.
+
 ## 0.0.116
 
 * **Stale test fixed, no engine bug (#271).** `test-tulpa-entry-nested.R`'s

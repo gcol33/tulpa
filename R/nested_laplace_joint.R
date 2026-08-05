@@ -415,6 +415,23 @@
 #'     \eqn{S = 200}, reaching 0.7 only past \eqn{S \approx 2154}). Supply a
 #'     strictly-increasing numeric vector to fix the boundaries instead, e.g.
 #'     `c(0.5, 0.7)` for the size-independent good / ok / unreliable split.
+#'   * `diagnose_skew` (`TRUE`), `skew_idx` (`NULL`) -- compute the
+#'     inner-Laplace skewness diagnostic (`$inner_skew`, gamma_3, Rue Martino
+#'     & Chopin 2009 Sec 3.2.3) at the fitted MAP grid cell: one extra Newton
+#'     solve via the same `kernel_fn` the outer diagnostic reuses, scoring
+#'     every arm's fixed-effects coefficients by default (pass `skew_idx`,
+#'     1-based indices in the joint `[arm1_beta | arm1_re | arm2_beta | ... |
+#'     blocks]` latent layout -- see `$arm_layout` -- to probe additional
+#'     indices). This is the complementary layer to `diagnose_k`: that scores
+#'     the outer hyperparameter-grid integration around a FIXED inner
+#'     Laplace, this scores whether that inner Gaussian approximation is
+#'     itself a good fit. A genuinely coupled arm (`cell_coupling !=
+#'     "separable"` on that arm, e.g. tulpaObs's `occu_cover`) has no per-obs
+#'     likelihood for this formula to score and reports `NaN` there, not a
+#'     silently wrong 0 -- see [diagnostics()] for the combined verdict. Only
+#'     wired for the single-block backends (icar/bym2/car_proper) in this
+#'     release; a fit taking the multi-block path (a per-group RE, a trend
+#'     field, or an arm-specific field block) reports `inner_skew = NULL`.
 #'   * `checkpoint` (`NULL`) -- grid-cell checkpoint/resume. Set
 #'     `list(path = "fit.ckpt", resume = TRUE)` to make a killed or interrupted
 #'     fit resumable: each completed outer-grid cell is appended to `path`, and
@@ -827,6 +844,19 @@ tulpa_nested_laplace_joint <- function(responses,
         stop("`control$k_conf_bands` must be NULL (the sample-size-dependent ",
              "default) or a strictly increasing numeric vector.", call. = FALSE)
     }
+    # Inner-Laplace skewness diagnostic (gcol33/tulpa#272), the complementary
+    # layer to diagnose_k above: whether the Gaussian inner Laplace on the
+    # latent field is itself a good fit, scored at the fitted MAP grid cell
+    # (one extra Newton solve via kernel_fn, not an importance batch). Default
+    # probe scope is every arm's fixed-effects coefficients (see
+    # .nlj_inner_skew_at_theta()); pass `control$skew_idx` (1-based, in the
+    # joint [arm1_beta | arm1_re | arm2_beta | ... | blocks] latent layout,
+    # see res$arm_layout) to probe additional indices. Declines to NA for a
+    # genuinely coupled arm (a non-"separable" cell_coupling): the coupled
+    # arm's per-obs likelihood is not what is being scored (see
+    # build_joint_curvature3_fns), so this is honest, not a gap.
+    diagnose_skew              <- isTRUE(control$diagnose_skew %||% TRUE)
+    skew_idx                   <- control$skew_idx
     # Outer-grid node layout for the multi-block path. A CCD
     # places a central-composite design around the joint hyperparameter mode --
     # far fewer inner solves than the full tensor product (1 + 2d + 2^d vs k^d).
@@ -1161,6 +1191,8 @@ tulpa_nested_laplace_joint <- function(responses,
                                          k_bootstrap = k_bootstrap,
                                          k_tail_points = k_tail_points,
                                          k_conf_bands = k_conf_bands)
+    res <- .nlj_inner_skew_at_theta(res, kernel_fn, skew_idx,
+                                    compute = diagnose_skew)
     tm$mark("diagnostics")
     res$timing <- tm$timing()
     res <- .joint_attach_diagnose_cost(res, diagnose_k, diagnose_draws)
@@ -1169,6 +1201,70 @@ tulpa_nested_laplace_joint <- function(responses,
                   n_fixed = fixed$n_fixed, fixed_names = fixed$names,
                   extra_class = c("tulpa_nested_laplace_joint",
                                   "tulpa_nested_laplace", "list"))
+}
+
+# Inner-Laplace skewness diagnostic (gcol33/tulpa#272) for the joint driver:
+# the single-block counterpart of .nl_inner_skew_at_theta() (R/laplace_diagnostics.R),
+# reusing `kernel_fn` (the SAME closure the outer Pareto-k diagnostic and the
+# adaptive-grid refinement already call) so no separate re-dispatch machinery
+# is duplicated -- one extra deterministic Newton solve at the fitted MAP grid
+# cell, `compute_skew = TRUE`.
+#
+# Default probe scope is every arm's fixed-effects coefficients, read from
+# `res$arm_layout$beta_start` / `$p` (.joint_layout(), already attached by the
+# caller): the union of `(beta_start[k]+1):(beta_start[k]+p[k])` across arms
+# k, generalizing the single-arm default (probe 1:p_fixed) to "every arm's
+# beta", the direct multi-arm analogue.
+#
+# A coupled arm (cell_coupling != "separable" on that arm) has no per-obs
+# oracle to score (build_joint_curvature3_fns excludes it, see
+# laplace_newton_joint.h) -- its indices come back NaN, not a silently wrong
+# 0. This is the ONLY inner-skew attach point for the joint driver in this
+# pass; the joint MULTI-block path (nested_laplace_joint_multi.R, used when a
+# fit carries a per-group RE / trend / arm-specific field block) does not yet
+# thread compute_skew through its own kernel_fn -- tracked as a follow-up,
+# not silently skipped (see gcol33/tulpa#272's checklist).
+.nlj_inner_skew_at_theta <- function(res, kernel_fn, skew_idx = NULL,
+                                     compute = TRUE) {
+    res$inner_skew         <- NULL
+    res$inner_skew_idx     <- integer(0)
+    res$inner_skew_dropped <- 0L
+    if (!compute) return(res)
+
+    modal_theta <- .joint_modal_theta(res)
+    if (is.null(modal_theta)) return(res)
+
+    probe_idx <- skew_idx
+    if (is.null(probe_idx)) {
+        al <- res$arm_layout
+        if (is.null(al) || is.null(al$beta_start) || is.null(al$p)) return(res)
+        probe_idx <- unlist(lapply(seq_len(al$n_arms), function(k) {
+            if (al$p[k] <= 0L) return(integer(0))
+            (al$beta_start[k] + 1L):(al$beta_start[k] + al$p[k])
+        }))
+    }
+    probe_idx <- as.integer(probe_idx)
+    if (length(probe_idx) == 0L) return(res)
+
+    warm     <- .joint_modal_mode(res)
+    warm_arg <- if (is.null(warm)) NULL else list(mode = warm)
+    # .joint_grids_from_cells() reads colnames(new_cells) to rebuild the named
+    # grids list, so the 1-row matrix must carry them (.joint_modal_theta()
+    # strips to a bare numeric vector).
+    theta_mat <- matrix(modal_theta, nrow = 1L,
+                        dimnames = list(NULL, colnames(res$theta_grid)))
+
+    out <- tryCatch(
+        .joint_with_quiet_opts(kernel_fn(theta_mat, warm_start = warm_arg,
+                                         compute_skew = TRUE,
+                                         skew_idx = probe_idx)),
+        error = function(e) NULL)
+
+    if (is.null(out) || is.null(out$inner_skew)) return(res)
+    res$inner_skew         <- as.numeric(out$inner_skew)
+    res$inner_skew_idx     <- as.integer(out$inner_skew_idx)
+    res$inner_skew_dropped <- as.integer(out$inner_skew_dropped %||% 0L)
+    res
 }
 
 # Thin wrapper over cpp_nested_laplace_joint_multi that injects the outer-grid

@@ -381,7 +381,9 @@ Rcpp::List cpp_nested_laplace_icar(
     int max_iter = 50, double tol = 1e-6, int n_threads = 1,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
     bool store_Q = false,
-    std::string checkpoint_path = ""
+    std::string checkpoint_path = "",
+    bool compute_skew = false,
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
 ) {
     int n_grid = tau_grid.size();
     int N = y.size();
@@ -403,6 +405,15 @@ Rcpp::List cpp_nested_laplace_icar(
         checkpoint_path, sfp.value(), max_iter, tol, y, n, X, re_idx,
         n_re_groups, sigma_re, family, phi, {tau_grid});
 
+    std::vector<int> skew_idx_vec;
+    const std::vector<int>* skew_idx_ptr = nullptr;
+    if (compute_skew && skew_idx.isNotNull()) {
+        Rcpp::IntegerVector idx_r(skew_idx);
+        skew_idx_vec.resize(idx_r.size());
+        for (int k = 0; k < idx_r.size(); k++) skew_idx_vec[k] = idx_r[k] - 1;
+        skew_idx_ptr = &skew_idx_vec;
+    }
+
     Rcpp::List out = run_multi_block_nested_laplace(
         n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
         blocks,
@@ -410,7 +421,8 @@ Rcpp::List cpp_nested_laplace_icar(
         /*store_modes=*/true, unwrap_x_init(x_init_nullable),
         store_Q, /*n_threads_outer=*/1, /*prune_tol=*/0.0,
         /*ext_spec=*/nullptr, /*ext_response=*/nullptr,
-        /*progress=*/nullptr, ckpt.get()
+        /*progress=*/nullptr, ckpt.get(),
+        compute_skew, skew_idx_ptr
     );
     out["tau_grid"] = tau_grid;
     return out;
@@ -444,7 +456,9 @@ Rcpp::List cpp_nested_laplace_bym2(
     int max_iter = 50, double tol = 1e-6, int n_threads = 1,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
     bool store_Q = false,
-    std::string checkpoint_path = ""
+    std::string checkpoint_path = "",
+    bool compute_skew = false,
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
 ) {
     int n_grid = sigma_spatial_grid.size();
     int N = y.size();
@@ -466,6 +480,15 @@ Rcpp::List cpp_nested_laplace_bym2(
         checkpoint_path, sfp.value(), max_iter, tol, y, n, X, re_idx,
         n_re_groups, sigma_re, family, phi, {sigma_spatial_grid, rho_grid});
 
+    std::vector<int> skew_idx_vec;
+    const std::vector<int>* skew_idx_ptr = nullptr;
+    if (compute_skew && skew_idx.isNotNull()) {
+        Rcpp::IntegerVector idx_r(skew_idx);
+        skew_idx_vec.resize(idx_r.size());
+        for (int k = 0; k < idx_r.size(); k++) skew_idx_vec[k] = idx_r[k] - 1;
+        skew_idx_ptr = &skew_idx_vec;
+    }
+
     Rcpp::List out = run_multi_block_nested_laplace(
         n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
         blocks,
@@ -473,7 +496,8 @@ Rcpp::List cpp_nested_laplace_bym2(
         /*store_modes=*/true, unwrap_x_init(x_init_nullable),
         store_Q, /*n_threads_outer=*/1, /*prune_tol=*/0.0,
         /*ext_spec=*/nullptr, /*ext_response=*/nullptr,
-        /*progress=*/nullptr, ckpt.get()
+        /*progress=*/nullptr, ckpt.get(),
+        compute_skew, skew_idx_ptr
     );
     out["sigma_spatial_grid"] = sigma_spatial_grid;
     out["rho_grid"] = rho_grid;
@@ -501,7 +525,9 @@ Rcpp::List cpp_nested_laplace_car_proper(
     int max_iter = 50, double tol = 1e-6, int n_threads = 1,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
     bool store_Q = false,
-    std::string checkpoint_path = ""
+    std::string checkpoint_path = "",
+    bool compute_skew = false,
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
 ) {
     int n_grid = tau_grid.size();
     if (rho_grid.size() != n_grid) {
@@ -526,6 +552,15 @@ Rcpp::List cpp_nested_laplace_car_proper(
         checkpoint_path, sfp.value(), max_iter, tol, y, n, X, re_idx,
         n_re_groups, sigma_re, family, phi, {tau_grid, rho_grid});
 
+    std::vector<int> skew_idx_vec;
+    const std::vector<int>* skew_idx_ptr = nullptr;
+    if (compute_skew && skew_idx.isNotNull()) {
+        Rcpp::IntegerVector idx_r(skew_idx);
+        skew_idx_vec.resize(idx_r.size());
+        for (int k = 0; k < idx_r.size(); k++) skew_idx_vec[k] = idx_r[k] - 1;
+        skew_idx_ptr = &skew_idx_vec;
+    }
+
     Rcpp::List out = run_multi_block_nested_laplace(
         n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
         blocks,
@@ -533,7 +568,8 @@ Rcpp::List cpp_nested_laplace_car_proper(
         /*store_modes=*/true, unwrap_x_init(x_init_nullable),
         store_Q, /*n_threads_outer=*/1, /*prune_tol=*/0.0,
         /*ext_spec=*/nullptr, /*ext_response=*/nullptr,
-        /*progress=*/nullptr, ckpt.get()
+        /*progress=*/nullptr, ckpt.get(),
+        compute_skew, skew_idx_ptr
     );
     out["tau_grid"] = tau_grid;
     out["rho_grid"] = rho_grid;
@@ -558,7 +594,9 @@ Rcpp::List cpp_laplace_fit_car_proper(
     std::string family, double phi = 1.0,
     int max_iter = 100, double tol = 1e-6, int n_threads = 1,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
-    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
+    bool compute_skew = false,
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
 ) {
     const int N = y.size();
     const int p = X.ncol();
@@ -594,9 +632,19 @@ Rcpp::List cpp_laplace_fit_car_proper(
         for (int j = 0; j < n_lat && j < (int)xi.size(); j++) params[j] = xi[j];
     }
 
+    std::vector<int> skew_idx_vec;
+    const std::vector<int>* skew_idx_ptr = nullptr;
+    if (compute_skew && skew_idx.isNotNull()) {
+        Rcpp::IntegerVector idx_r(skew_idx);
+        skew_idx_vec.resize(idx_r.size());
+        for (int k = 0; k < idx_r.size(); k++) skew_idx_vec[k] = idx_r[k] - 1;
+        skew_idx_ptr = &skew_idx_vec;
+    }
+
     tulpa::LaplaceResult res = tulpa::laplace_mode_spec_dense_solve(
         in.data, in.layout, params, in.re_group, max_iter, tol, n_threads,
-        &blocks, /*k_grid=*/0);
+        &blocks, /*k_grid=*/0, /*beta_prior=*/nullptr, /*return_re_cov=*/false,
+        /*sparse_override=*/0, /*store_Q=*/false, compute_skew, skew_idx_ptr);
     return tulpa::laplace_result_to_list(res);
 }
 
@@ -636,7 +684,9 @@ Rcpp::List cpp_nested_laplace_nngp(
     int max_iter = 50, double tol = 1e-6, int n_threads = 1,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
     bool store_Q = false,
-    std::string checkpoint_path = ""
+    std::string checkpoint_path = "",
+    bool compute_skew = false,
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
 ) {
     const int n_grid = sigma2_grid.size();
     if (phi_gp_grid.size() != n_grid)
@@ -700,6 +750,15 @@ Rcpp::List cpp_nested_laplace_nngp(
         checkpoint_path, sfp.value(), max_iter, tol, y, n, X, re_idx,
         n_re_groups, sigma_re, family, phi, {sigma2_grid, phi_gp_grid});
 
+    std::vector<int> skew_idx_vec;
+    const std::vector<int>* skew_idx_ptr = nullptr;
+    if (compute_skew && skew_idx.isNotNull()) {
+        Rcpp::IntegerVector idx_r(skew_idx);
+        skew_idx_vec.resize(idx_r.size());
+        for (int k = 0; k < idx_r.size(); k++) skew_idx_vec[k] = idx_r[k] - 1;
+        skew_idx_ptr = &skew_idx_vec;
+    }
+
     Rcpp::List out = tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
         n_grid, arms, parsed, blocks, n_x,
         max_iter, tol, n_threads,
@@ -714,7 +773,9 @@ Rcpp::List cpp_nested_laplace_nngp(
         /*n_cells=*/0,
         tulpa::JointPDMode::LM, tulpa::CurvatureMode::Observed,
         /*hessian_refresh=*/1, /*n_threads_outer=*/1,
-        /*progress=*/nullptr, ckpt.get()
+        /*progress=*/nullptr, ckpt.get(),
+        /*x_init_per_cell=*/std::vector<double>(),
+        compute_skew, skew_idx_ptr
     );
     out["sigma2_grid"] = sigma2_grid;
     out["phi_gp_grid"] = phi_gp_grid;
@@ -744,7 +805,9 @@ Rcpp::List cpp_nested_laplace_hsgp(
     int max_iter = 50, double tol = 1e-6, int n_threads = 1,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
     bool store_Q = false,
-    std::string checkpoint_path = ""
+    std::string checkpoint_path = "",
+    bool compute_skew = false,
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
 ) {
     const int n_grid = sigma2_grid.size();
     if (lengthscale_grid.size() != n_grid)
@@ -807,6 +870,15 @@ Rcpp::List cpp_nested_laplace_hsgp(
         checkpoint_path, sfp.value(), max_iter, tol, y, n, X, re_idx,
         n_re_groups, sigma_re, family, phi, {sigma2_grid, lengthscale_grid});
 
+    std::vector<int> skew_idx_vec;
+    const std::vector<int>* skew_idx_ptr = nullptr;
+    if (compute_skew && skew_idx.isNotNull()) {
+        Rcpp::IntegerVector idx_r(skew_idx);
+        skew_idx_vec.resize(idx_r.size());
+        for (int k = 0; k < idx_r.size(); k++) skew_idx_vec[k] = idx_r[k] - 1;
+        skew_idx_ptr = &skew_idx_vec;
+    }
+
     Rcpp::List out = tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
         n_grid, arms, parsed, blocks, n_x,
         max_iter, tol, n_threads,
@@ -821,7 +893,9 @@ Rcpp::List cpp_nested_laplace_hsgp(
         /*n_cells=*/0,
         tulpa::JointPDMode::LM, tulpa::CurvatureMode::Observed,
         /*hessian_refresh=*/1, /*n_threads_outer=*/1,
-        /*progress=*/nullptr, ckpt.get()
+        /*progress=*/nullptr, ckpt.get(),
+        /*x_init_per_cell=*/std::vector<double>(),
+        compute_skew, skew_idx_ptr
     );
     out["sigma2_grid"]      = sigma2_grid;
     out["lengthscale_grid"] = lengthscale_grid;
@@ -844,7 +918,9 @@ Rcpp::List cpp_laplace_fit_hsgp(
     std::string family, double phi = 1.0,
     int max_iter = 100, double tol = 1e-6, int n_threads = 1,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
-    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
+    bool compute_skew = false,
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
 ) {
     const int N = y.size();
     const int p = X.ncol();
@@ -890,9 +966,19 @@ Rcpp::List cpp_laplace_fit_hsgp(
         for (int j = 0; j < n_lat && j < (int)xi.size(); j++) params[j] = xi[j];
     }
 
+    std::vector<int> skew_idx_vec;
+    const std::vector<int>* skew_idx_ptr = nullptr;
+    if (compute_skew && skew_idx.isNotNull()) {
+        Rcpp::IntegerVector idx_r(skew_idx);
+        skew_idx_vec.resize(idx_r.size());
+        for (int k = 0; k < idx_r.size(); k++) skew_idx_vec[k] = idx_r[k] - 1;
+        skew_idx_ptr = &skew_idx_vec;
+    }
+
     tulpa::LaplaceResult res = tulpa::laplace_mode_spec_dense_solve(
         in.data, in.layout, params, in.re_group, max_iter, tol, n_threads,
-        &blocks, /*k_grid=*/0);
+        &blocks, /*k_grid=*/0, /*beta_prior=*/nullptr, /*return_re_cov=*/false,
+        /*sparse_override=*/0, /*store_Q=*/false, compute_skew, skew_idx_ptr);
     return tulpa::laplace_result_to_list(res);
 }
 
@@ -1142,7 +1228,9 @@ inline Rcpp::List run_indexed_st_nested_laplace_joint(
     const std::string& family, double phi,
     int max_iter, double tol, int n_threads,
     const Rcpp::NumericVector& x_init, bool store_Q, bool force_sparse,
-    tulpa::GridCheckpoint* ckpt = nullptr
+    tulpa::GridCheckpoint* ckpt = nullptr,
+    bool compute_skew = false,
+    const std::vector<int>* skew_probe_idx = nullptr
 ) {
     const int n_x_after_re = p + n_re_groups;
 
@@ -1159,7 +1247,9 @@ inline Rcpp::List run_indexed_st_nested_laplace_joint(
         force_sparse,
         /*cell_coupling_spec=*/nullptr,
         tulpa::JointPDMode::LM, tulpa::CurvatureMode::Observed,
-        /*hessian_refresh=*/1, /*progress=*/nullptr, ckpt
+        /*hessian_refresh=*/1, /*progress=*/nullptr, ckpt,
+        /*x_init_per_cell=*/std::vector<double>(),
+        compute_skew, skew_probe_idx
     );
 }
 
@@ -1184,7 +1274,9 @@ inline Rcpp::List run_st_spatial_kernel(
     const std::string& family, double phi,
     int max_iter, double tol, int n_threads,
     const Rcpp::NumericVector& x_init, bool store_Q, bool force_sparse,
-    tulpa::GridCheckpoint* ckpt = nullptr
+    tulpa::GridCheckpoint* ckpt = nullptr,
+    bool compute_skew = false,
+    const std::vector<int>* skew_probe_idx = nullptr
 ) {
     const int N = y.size();
     const int p = X.ncol();
@@ -1196,7 +1288,7 @@ inline Rcpp::List run_st_spatial_kernel(
     return run_indexed_st_nested_laplace_joint(
         n_grid, y, n_trials, X, re_idx, N, p, n_re_groups, sigma_re,
         spatial_idx, blocks, family, phi, max_iter, tol, n_threads,
-        x_init, store_Q, force_sparse, ckpt);
+        x_init, store_Q, force_sparse, ckpt, compute_skew, skew_probe_idx);
 }
 
 } // namespace
@@ -1253,7 +1345,9 @@ Rcpp::List cpp_nested_laplace_temporal(
     int max_iter = 50, double tol = 1e-6, int n_threads = 1,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
     bool store_Q = false,
-    std::string checkpoint_path = ""
+    std::string checkpoint_path = "",
+    bool compute_skew = false,
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
 ) {
     int n_grid = tau_grid.size();
     int N = y.size();
@@ -1280,6 +1374,15 @@ Rcpp::List cpp_nested_laplace_temporal(
         checkpoint_path, sfp.value(), max_iter, tol, y, n, X, re_idx,
         n_re_groups, sigma_re, family, phi, {tau_grid, rho_grid});
 
+    std::vector<int> skew_idx_vec;
+    const std::vector<int>* skew_idx_ptr = nullptr;
+    if (compute_skew && skew_idx.isNotNull()) {
+        Rcpp::IntegerVector idx_r(skew_idx);
+        skew_idx_vec.resize(idx_r.size());
+        for (int k = 0; k < idx_r.size(); k++) skew_idx_vec[k] = idx_r[k] - 1;
+        skew_idx_ptr = &skew_idx_vec;
+    }
+
     Rcpp::List out = run_multi_block_nested_laplace(
         n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
         blocks,
@@ -1287,7 +1390,8 @@ Rcpp::List cpp_nested_laplace_temporal(
         /*store_modes=*/true, unwrap_x_init(x_init_nullable),
         store_Q, /*n_threads_outer=*/1, /*prune_tol=*/0.0,
         /*ext_spec=*/nullptr, /*ext_response=*/nullptr,
-        /*progress=*/nullptr, ckpt.get()
+        /*progress=*/nullptr, ckpt.get(),
+        compute_skew, skew_idx_ptr
     );
     out["tau_grid"] = tau_grid;
     if (rho_grid.size() > 0) out["rho_grid"] = rho_grid;
@@ -1316,7 +1420,9 @@ Rcpp::List cpp_nested_laplace_st_icar(
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
     bool store_Q = false,
     bool force_sparse = false,
-    std::string checkpoint_path = ""
+    std::string checkpoint_path = "",
+    bool compute_skew = false,
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
 ) {
     int n_grid = tau_spatial_grid.size();
     if (tau_temporal_grid.size() != n_grid) {
@@ -1346,12 +1452,22 @@ Rcpp::List cpp_nested_laplace_st_icar(
         n_re_groups, sigma_re, family, phi,
         {tau_spatial_grid, tau_temporal_grid, rho_t});
 
+    std::vector<int> skew_idx_vec;
+    const std::vector<int>* skew_idx_ptr = nullptr;
+    if (compute_skew && skew_idx.isNotNull()) {
+        Rcpp::IntegerVector idx_r(skew_idx);
+        skew_idx_vec.resize(idx_r.size());
+        for (int k = 0; k < idx_r.size(); k++) skew_idx_vec[k] = idx_r[k] - 1;
+        skew_idx_ptr = &skew_idx_vec;
+    }
+
     Rcpp::List out = run_st_spatial_kernel(
         n_grid, /*spatial_latent_dim=*/n_spatial_units,
         y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, std::move(blocks),
         temporal_idx, n_times, temporal_type, tau_temporal_grid, rho_t, cyclic,
         family, phi, max_iter, tol, n_threads,
-        unwrap_x_init(x_init_nullable), store_Q, force_sparse, ckpt.get());
+        unwrap_x_init(x_init_nullable), store_Q, force_sparse, ckpt.get(),
+        compute_skew, skew_idx_ptr);
     out["tau_spatial_grid"]  = tau_spatial_grid;
     out["tau_temporal_grid"] = tau_temporal_grid;
     if (temporal_type == "ar1") out["rho_temporal_grid"] = rho_t;
@@ -1381,7 +1497,9 @@ Rcpp::List cpp_nested_laplace_st_car_proper(
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
     bool store_Q = false,
     bool force_sparse = false,
-    std::string checkpoint_path = ""
+    std::string checkpoint_path = "",
+    bool compute_skew = false,
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
 ) {
     int n_grid = tau_spatial_grid.size();
     if (rho_spatial_grid.size() != n_grid || tau_temporal_grid.size() != n_grid) {
@@ -1411,12 +1529,22 @@ Rcpp::List cpp_nested_laplace_st_car_proper(
         n_re_groups, sigma_re, family, phi,
         {tau_spatial_grid, rho_spatial_grid, tau_temporal_grid, rho_t});
 
+    std::vector<int> skew_idx_vec;
+    const std::vector<int>* skew_idx_ptr = nullptr;
+    if (compute_skew && skew_idx.isNotNull()) {
+        Rcpp::IntegerVector idx_r(skew_idx);
+        skew_idx_vec.resize(idx_r.size());
+        for (int k = 0; k < idx_r.size(); k++) skew_idx_vec[k] = idx_r[k] - 1;
+        skew_idx_ptr = &skew_idx_vec;
+    }
+
     Rcpp::List out = run_st_spatial_kernel(
         n_grid, /*spatial_latent_dim=*/n_spatial_units,
         y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, std::move(blocks),
         temporal_idx, n_times, temporal_type, tau_temporal_grid, rho_t, cyclic,
         family, phi, max_iter, tol, n_threads,
-        unwrap_x_init(x_init_nullable), store_Q, force_sparse, ckpt.get());
+        unwrap_x_init(x_init_nullable), store_Q, force_sparse, ckpt.get(),
+        compute_skew, skew_idx_ptr);
     out["tau_spatial_grid"]  = tau_spatial_grid;
     out["rho_spatial_grid"]  = rho_spatial_grid;
     out["tau_temporal_grid"] = tau_temporal_grid;
@@ -1449,7 +1577,9 @@ Rcpp::List cpp_nested_laplace_st_bym2(
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
     bool store_Q = false,
     bool force_sparse = false,
-    std::string checkpoint_path = ""
+    std::string checkpoint_path = "",
+    bool compute_skew = false,
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
 ) {
     int n_grid = sigma_spatial_grid.size();
     if (rho_spatial_grid.size() != n_grid || tau_temporal_grid.size() != n_grid) {
@@ -1481,12 +1611,22 @@ Rcpp::List cpp_nested_laplace_st_bym2(
         n_re_groups, sigma_re, family, phi,
         {sigma_spatial_grid, rho_spatial_grid, tau_temporal_grid, rho_t});
 
+    std::vector<int> skew_idx_vec;
+    const std::vector<int>* skew_idx_ptr = nullptr;
+    if (compute_skew && skew_idx.isNotNull()) {
+        Rcpp::IntegerVector idx_r(skew_idx);
+        skew_idx_vec.resize(idx_r.size());
+        for (int k = 0; k < idx_r.size(); k++) skew_idx_vec[k] = idx_r[k] - 1;
+        skew_idx_ptr = &skew_idx_vec;
+    }
+
     Rcpp::List out = run_st_spatial_kernel(
         n_grid, /*spatial_latent_dim=*/2 * n_spatial_units,
         y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, std::move(blocks),
         temporal_idx, n_times, temporal_type, tau_temporal_grid, rho_t, cyclic,
         family, phi, max_iter, tol, n_threads,
-        unwrap_x_init(x_init_nullable), store_Q, force_sparse, ckpt.get());
+        unwrap_x_init(x_init_nullable), store_Q, force_sparse, ckpt.get(),
+        compute_skew, skew_idx_ptr);
     out["sigma_spatial_grid"] = sigma_spatial_grid;
     out["rho_spatial_grid"]   = rho_spatial_grid;
     out["tau_temporal_grid"]  = tau_temporal_grid;
@@ -1517,7 +1657,9 @@ Rcpp::List cpp_nested_laplace_st_hsgp(
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
     bool store_Q = false,
     bool force_sparse = false,
-    std::string checkpoint_path = ""
+    std::string checkpoint_path = "",
+    bool compute_skew = false,
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
 ) {
     int n_grid = sigma2_spatial_grid.size();
     if (lengthscale_spatial_grid.size() != n_grid ||
@@ -1572,12 +1714,22 @@ Rcpp::List cpp_nested_laplace_st_hsgp(
         n_re_groups, sigma_re, family, phi,
         {sigma2_spatial_grid, lengthscale_spatial_grid, tau_temporal_grid, rho_t});
 
+    std::vector<int> skew_idx_vec;
+    const std::vector<int>* skew_idx_ptr = nullptr;
+    if (compute_skew && skew_idx.isNotNull()) {
+        Rcpp::IntegerVector idx_r(skew_idx);
+        skew_idx_vec.resize(idx_r.size());
+        for (int k = 0; k < idx_r.size(); k++) skew_idx_vec[k] = idx_r[k] - 1;
+        skew_idx_ptr = &skew_idx_vec;
+    }
+
     Rcpp::List out = run_st_spatial_kernel(
         n_grid, /*spatial_latent_dim=*/M,
         y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx_unused, std::move(blocks),
         temporal_idx, n_times, temporal_type, tau_temporal_grid, rho_t, cyclic,
         family, phi, max_iter, tol, n_threads,
-        unwrap_x_init(x_init_nullable), store_Q, /*force_sparse=*/true, ckpt.get());
+        unwrap_x_init(x_init_nullable), store_Q, /*force_sparse=*/true, ckpt.get(),
+        compute_skew, skew_idx_ptr);
     out["sigma2_spatial_grid"]      = sigma2_spatial_grid;
     out["lengthscale_spatial_grid"] = lengthscale_spatial_grid;
     out["tau_temporal_grid"]        = tau_temporal_grid;
@@ -1609,7 +1761,9 @@ Rcpp::List cpp_nested_laplace_st_nngp(
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
     bool store_Q = false,
     bool force_sparse = false,
-    std::string checkpoint_path = ""
+    std::string checkpoint_path = "",
+    bool compute_skew = false,
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
 ) {
     int n_grid = sigma2_spatial_grid.size();
     if (phi_gp_spatial_grid.size() != n_grid ||
@@ -1666,12 +1820,22 @@ Rcpp::List cpp_nested_laplace_st_nngp(
         n_re_groups, sigma_re, family, phi,
         {sigma2_spatial_grid, phi_gp_spatial_grid, tau_temporal_grid, rho_t});
 
+    std::vector<int> skew_idx_vec;
+    const std::vector<int>* skew_idx_ptr = nullptr;
+    if (compute_skew && skew_idx.isNotNull()) {
+        Rcpp::IntegerVector idx_r(skew_idx);
+        skew_idx_vec.resize(idx_r.size());
+        for (int k = 0; k < idx_r.size(); k++) skew_idx_vec[k] = idx_r[k] - 1;
+        skew_idx_ptr = &skew_idx_vec;
+    }
+
     Rcpp::List out = run_st_spatial_kernel(
         n_grid, /*spatial_latent_dim=*/n_spatial,
         y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, std::move(blocks),
         temporal_idx, n_times, temporal_type, tau_temporal_grid, rho_t, cyclic,
         family, phi, max_iter, tol, n_threads,
-        unwrap_x_init(x_init_nullable), store_Q, /*force_sparse=*/true, ckpt.get());
+        unwrap_x_init(x_init_nullable), store_Q, /*force_sparse=*/true, ckpt.get(),
+        compute_skew, skew_idx_ptr);
     out["sigma2_spatial_grid"] = sigma2_spatial_grid;
     out["phi_gp_spatial_grid"] = phi_gp_spatial_grid;
     out["tau_temporal_grid"]   = tau_temporal_grid;

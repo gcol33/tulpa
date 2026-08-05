@@ -374,6 +374,88 @@ multi-chain producer (`run_hmc_parallel_chains_cpp`, exposed via
 `tests/testthat/test-generic-sampler.R` ("mcmc_diagnostics consumes a native
 multi-chain fit").
 
+### Inner-Laplace reliability: gamma_3 (gcol33/tulpa#272)
+
+The counterpart layer to Pareto-k-hat above: k-hat scores the OUTER
+hyperparameter-grid integration around a FIXED inner Laplace; `gamma_3`
+scores whether that inner Gaussian approximation to the latent-field
+conditional posterior `pi(x_i | theta, y)` is itself a good fit. A fit can
+carry a healthy outer k-hat and a poorly-approximated inner layer (or vice
+versa) -- reading k-hat alone as a whole-fit verdict is exactly the #272
+motivating bug (an occu_cover batch read 42/78 species "broken" on outer
+k-hat alone when the point estimates, governed by the healthy inner layer,
+were fine).
+
+`gamma_3` is the leading-order Edgeworth skewness estimate of
+`pi(x_i | theta, y)` relative to the Gaussian inner Laplace (Rue, Martino &
+Chopin 2009 Sec 3.2.3's cubic correction term), generalized from their
+augmented `x_j == eta_j` representation to tulpa's general
+`eta = compute_eta(x)` representation (`src/inner_laplace_skew.h`; the
+generalization is proved exact by construction, verified against the paper's
+own eq. 21 in the special case, and cross-checked against a direct
+numerically-integrated exact posterior skewness in
+`tests/testthat/test-inner-skew.R`, matching to within the expected
+leading-order undershoot as skewness grows). Only the skewness term ships;
+the paper's `gamma_1` (location shift) and a kurtosis term are NOT
+attempted -- see the scope note atop `inner_laplace_skew.h` for why (the
+denominator log-determinant response the location-shift term needs is
+diagonal only in the paper's augmented representation, and the paper itself
+routes heavy-tailed cases to a different numerical procedure rather than a
+closed-form quartic).
+
+Per-observation third-log-lik-derivatives come from
+`curvature3_obs_for_family()` (`src/laplace_family_curvature.h`, exact
+analytic ladder for built-in families) or a central finite difference on the
+Newton working weight for a consumer-package `LikelihoodSpec`
+(`build_spec_curvature3_fn`, `src/laplace_spec_curvature3.h`). Both decline
+(empty oracle) for a `LikelihoodSpec` with `n_processes != 1` -- a coupled
+multi-process likelihood (ZI, tulpaObs's `occu_cover`) has no single per-obs
+term this formula scores. The joint multi-arm loops generalize the same sum
+across arms (`build_joint_curvature3_fns`,
+`src/laplace_newton_joint.h`) -- sound because tulpa's own production
+coupling registry only ever registers `"separable"`; a genuinely coupled arm
+(`skip_arm[k]`) is excluded from the sum, not silently scored against its
+unused per-obs likelihood. **Every decline path returns NaN, never a
+silently-wrong `0`** ("perfectly Gaussian") -- `compute_inner_skew_gamma3[_joint]`
+early-returns all-NaN when the oracle is entirely absent, and per-index
+only assigns a value when at least one finite contribution accumulated
+(the pre-existing bug this fixed: an absent oracle summed to `acc = 0`,
+`0 / sigma_i^3 == 0`, read as "no skew" instead of "not computable").
+
+Wired (opt-in `compute_skew` + `skew_idx`, defaulted off in every C++
+kernel) through: the single-arm family/spec kernels (`laplace_newton.h`,
+`laplace_spec.cpp`) and every `run_multi_block_nested_laplace[_joint[_sparse_impl]]`
+single-arm driver -- covers icar/bym2/car_proper/temporal/nngp/hsgp/the ST
+variants/SPDE. R-side: `tulpa_nested_laplace()`'s `.nl_inner_skew_at_theta()`
+and `tulpa_nested_laplace_joint()`'s `.nlj_inner_skew_at_theta()`
+(`R/laplace_diagnostics.R`, `R/nested_laplace_joint.R`) re-dispatch the SAME
+kernel/`kernel_fn` at a length-1 grid pinned to the fitted MAP cell with
+`compute_skew = TRUE` -- one extra deterministic Newton solve, no importance
+sampling (unlike outer k-hat's `k_samples` batch). Default probe scope is
+every arm's fixed-effects coefficients (`control$skew_idx` extends it; the
+full latent field is not scored by default -- one linear solve per index).
+Gated by `control$diagnose_skew` (default TRUE).
+
+`.tulpa_gamma3_band()` (`good`/`ok`/`unreliable` at 0.5/1.0, a general
+skewness-magnitude convention -- Bulmer 1979 -- not a Rue-Martino-Chopin
+cutoff) and `.tulpa_combined_reliability()` (`R/laplace_diagnostics.R`)
+combine the outer and inner bands into one verdict, surfaced by
+`diagnostics()` / `print.laplace_diagnostics()`.
+
+**Known scope gap, not silently dropped:** the joint MULTI-block path
+(`nested_laplace_joint_multi.R`, used when a joint fit carries a per-group
+RE / trend field / arm-specific field block -- e.g. some `occu_cover()`
+configurations) does not yet thread `compute_skew` through its own
+`kernel_fn`; only the single-block backends (icar/bym2/car_proper, wired via
+`.joint_call_kernel_via_multi`) do. For a fully-coupled fit like `occu_cover`
+the eventual answer there is provably the same all-NaN regardless (every arm
+is coupled), so the gap is presence/absence of an explicit NaN field, not a
+missing real number -- still worth closing for the SEPARABLE multi-block
+case. The bespoke SPDE/GP large-`n` sparse Newton pair
+(`laplace_newton_solve_sparse` / `run_spde_laplace`, fixed-hyperparameter
+only, no outer grid to complement) is a fourth, independent Newton
+implementation with zero skew hooks, not attempted.
+
 ### Checkpoint / resume across every fitter (gcol33/tulpa#50)
 
 Every fitter with an outer loop of independent, expensive units supports
