@@ -446,3 +446,183 @@ test_that("tulpa_nested_laplace_joint() wires gamma_3 through the multi-block di
                      diagnose_skew = FALSE))
   expect_null(fit_off$inner_skew)
 })
+
+# --------------------------------------------------------------------------- #
+# (8) SPDE / GP bespoke Newton pair (gcol33/tulpa#273 item 3). cpp_laplace_fit_gp,
+#     cpp_laplace_fit_spde and cpp_laplace_fit_spde_precomputed are standalone,
+#     fixed-hyperparameter single fits with their OWN Newton implementation
+#     (laplace_mode_gp / spde_run_single_fit) -- they are NOT reached by the
+#     joint-multi driver's re-dispatch (the nested "nngp" / "spde" registry
+#     entries integrate hyperparameters via the shared joint-multi machinery
+#     instead, already covered above). Each has a dense branch
+#     (laplace_newton_solve / run_spde_laplace) and a fully sparse
+#     CHOLMOD-only branch (laplace_newton_solve_sparse) for n_x >=
+#     SPARSE_THRESHOLD (200); both are exercised directly below via the
+#     gaussian exact-zero invariant, which holds regardless of latent
+#     structure (the third log-lik derivative is family-only).
+# --------------------------------------------------------------------------- #
+
+.isk_nngp_fixture <- function(n_spatial, nn_k = 10L, seed = 1) {
+  set.seed(seed)
+  coords <- cbind(runif(n_spatial), runif(n_spatial))
+  order_idx <- order(coords[, 1], coords[, 2])
+  coords_ord <- coords[order_idx, ]
+  nn_idx <- matrix(0L, nrow = n_spatial, ncol = nn_k)
+  nn_dist <- matrix(0, nrow = n_spatial, ncol = nn_k)
+  for (i in 2:n_spatial) {
+    dists <- sqrt((coords_ord[seq_len(i - 1), 1] - coords_ord[i, 1])^2 +
+                  (coords_ord[seq_len(i - 1), 2] - coords_ord[i, 2])^2)
+    n_cand <- min(length(dists), nn_k)
+    ord <- order(dists)[seq_len(n_cand)]
+    nn_idx[i, seq_len(n_cand)] <- ord
+    nn_dist[i, seq_len(n_cand)] <- dists[ord]
+  }
+  list(coords = coords_ord, nn_idx = nn_idx, nn_dist = nn_dist,
+       nn_order = as.integer(order_idx - 1L))
+}
+
+test_that("gamma_3 is exactly zero for a gaussian NNGP fit (dense Newton path)", {
+  skip_on_cran()
+  n_s <- 30L
+  fx <- .isk_nngp_fixture(n_s, nn_k = 8L, seed = 21)
+  w_true <- rnorm(n_s, 0, 0.3)
+  y <- 1 + w_true + rnorm(n_s, 0, 1)
+
+  fit <- tulpa:::cpp_laplace_fit_gp(
+    y = as.numeric(y), n = rep(1L, n_s), X = matrix(1, n_s, 1),
+    re_idx = rep(0, n_s), n_re_groups = 0L, sigma_re = 1.0,
+    coords = fx$coords, nn_idx = fx$nn_idx, nn_dist = fx$nn_dist,
+    nn_order = fx$nn_order, n_spatial = n_s, nn = 8L,
+    sigma2_gp = 0.3, phi_gp = 0.4, cov_type = 0L,
+    family = "gaussian",
+    compute_skew = TRUE, skew_idx = as.integer(c(1, 2))
+  )
+  expect_true(fit$n_iter > 0)
+  expect_lt(1L + n_s, 200L)  # this fixture must stay on the dense path
+  expect_equal(fit$inner_skew, c(0, 0))
+})
+
+test_that("gamma_3 is exactly zero for a gaussian NNGP fit (sparse CHOLMOD path)", {
+  skip_on_cran()
+  n_s <- 210L
+  fx <- .isk_nngp_fixture(n_s, nn_k = 10L, seed = 22)
+  w_true <- rnorm(n_s, 0, 0.3)
+  y <- 1 + w_true + rnorm(n_s, 0, 1)
+
+  fit <- tulpa:::cpp_laplace_fit_gp(
+    y = as.numeric(y), n = rep(1L, n_s), X = matrix(1, n_s, 1),
+    re_idx = rep(0, n_s), n_re_groups = 0L, sigma_re = 1.0,
+    coords = fx$coords, nn_idx = fx$nn_idx, nn_dist = fx$nn_dist,
+    nn_order = fx$nn_order, n_spatial = n_s, nn = 10L,
+    sigma2_gp = 0.3, phi_gp = 0.4, cov_type = 0L,
+    family = "gaussian",
+    compute_skew = TRUE, skew_idx = as.integer(c(1, 2))
+  )
+  expect_true(fit$n_iter > 0)
+  expect_gte(1L + n_s, 200L)  # this fixture must force the sparse path
+  expect_equal(fit$inner_skew, c(0, 0))
+})
+
+test_that("gamma_3 is exactly zero for a gaussian SPDE fit (dense Newton path)", {
+  skip_if_not_installed("fmesher")
+  skip_on_cran()
+  set.seed(23)
+  n_obs <- 40L
+  coords <- cbind(runif(n_obs), runif(n_obs))
+  mesh <- fmesher::fm_mesh_2d(loc = coords, max.edge = c(0.4, 0.9), cutoff = 0.15)
+  n_mesh <- mesh$n
+  expect_lt(1L + n_mesh, 200L)  # this fixture must stay on the dense path
+
+  fem <- fmesher::fm_fem(mesh)
+  A <- as(fmesher::fm_basis(mesh, loc = coords), "CsparseMatrix")
+  G1 <- as(fem$g1, "CsparseMatrix")
+  C0_diag <- Matrix::diag(fem$c0)
+
+  w_true <- rnorm(n_mesh, 0, 0.3)
+  y <- 1 + as.numeric(A %*% w_true) + rnorm(n_obs, 0, 1)
+
+  range_true <- 0.3; sigma_true <- 0.4
+  kappa <- sqrt(8) / range_true
+  tau_spde <- 1.0 / (sqrt(4 * pi) * kappa * sigma_true)
+
+  fit <- tulpa:::cpp_laplace_fit_spde(
+    y = as.numeric(y), n_trials = rep(1L, n_obs), X = matrix(1, n_obs, 1),
+    re_idx = rep(0, n_obs), n_re_groups = 0L, sigma_re = 1.0,
+    A_x = A@x, A_i = A@i, A_p = A@p,
+    n_obs = n_obs, n_mesh = n_mesh, C0_diag = C0_diag,
+    G1_x = G1@x, G1_i = G1@i, G1_p = G1@p,
+    kappa = kappa, tau_spde = tau_spde,
+    family = "gaussian",
+    compute_skew = TRUE, skew_idx = as.integer(c(1, 2))
+  )
+  expect_true(fit$n_iter > 0)
+  expect_equal(fit$inner_skew, c(0, 0))
+})
+
+test_that("gamma_3 is exactly zero for a gaussian SPDE fit (sparse CHOLMOD path)", {
+  skip_if_not_installed("fmesher")
+  skip_on_cran()
+  set.seed(24)
+  n_obs <- 150L
+  coords <- cbind(runif(n_obs), runif(n_obs))
+  mesh <- fmesher::fm_mesh_2d(loc = coords, max.edge = c(0.13, 0.3), cutoff = 0.05)
+  n_mesh <- mesh$n
+  expect_gte(1L + n_mesh, 200L)  # this fixture must force the sparse path
+
+  fem <- fmesher::fm_fem(mesh)
+  A <- as(fmesher::fm_basis(mesh, loc = coords), "CsparseMatrix")
+  G1 <- as(fem$g1, "CsparseMatrix")
+  C0_diag <- Matrix::diag(fem$c0)
+
+  w_true <- rnorm(n_mesh, 0, 0.2)
+  y <- 1 + as.numeric(A %*% w_true) + rnorm(n_obs, 0, 1)
+
+  range_true <- 0.2; sigma_true <- 0.3
+  kappa <- sqrt(8) / range_true
+  tau_spde <- 1.0 / (sqrt(4 * pi) * kappa * sigma_true)
+
+  fit <- tulpa:::cpp_laplace_fit_spde(
+    y = as.numeric(y), n_trials = rep(1L, n_obs), X = matrix(1, n_obs, 1),
+    re_idx = rep(0, n_obs), n_re_groups = 0L, sigma_re = 1.0,
+    A_x = A@x, A_i = A@i, A_p = A@p,
+    n_obs = n_obs, n_mesh = n_mesh, C0_diag = C0_diag,
+    G1_x = G1@x, G1_i = G1@i, G1_p = G1@p,
+    kappa = kappa, tau_spde = tau_spde,
+    family = "gaussian",
+    compute_skew = TRUE, skew_idx = as.integer(c(1, 2))
+  )
+  expect_true(fit$n_iter > 0)
+  expect_equal(fit$inner_skew, c(0, 0))
+})
+
+test_that("gamma_3 is exactly zero for a gaussian precomputed-rational SPDE fit", {
+  skip_on_cran()
+  set.seed(25)
+  n <- 100L; h <- 1 / n; kappa <- 8
+  C0 <- rep(h, n)
+  G <- Matrix::bandSparse(n, n, c(-1, 0, 1),
+                          list(rep(-1 / h, n - 1), rep(2 / h, n), rep(-1 / h, n - 1)))
+  G <- as(G, "CsparseMatrix"); G[1, n] <- -1 / h; G[n, 1] <- -1 / h
+
+  asm <- tulpa:::.spde_rational_assemble(C0, G, kappa = kappa, tau = 1,
+                                         nu = 0.5, order = 4L, d = 2)
+  R <- chol(as.matrix(asm$Q))
+  x_true <- backsolve(R, rnorm(n))
+  u_true <- as.numeric(asm$Pr %*% x_true)
+  u_true <- u_true / sd(u_true)
+  y <- 0.2 + u_true + rnorm(n, 0, 0.3)
+
+  Qg  <- as(asm$Q, "generalMatrix")
+  Prg <- as(asm$Pr, "CsparseMatrix")
+  fit <- tulpa:::cpp_laplace_fit_spde_precomputed(
+    y = as.numeric(y), n_trials = rep(1L, n), X = matrix(1, n, 1),
+    re_idx = rep(0, n), n_re_groups = 0L, sigma_re = 1.0,
+    n_obs = n, n_mesh = n,
+    Q_p = Qg@p, Q_i = Qg@i, Q_x = Qg@x,
+    Aeff_x = Prg@x, Aeff_i = Prg@i, Aeff_p = Prg@p,
+    family = "gaussian", phi = 0.09,
+    compute_skew = TRUE, skew_idx = as.integer(c(1, 2))
+  )
+  expect_true(fit$n_iter > 0)
+  expect_equal(fit$inner_skew, c(0, 0))
+})

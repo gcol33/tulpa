@@ -256,7 +256,14 @@ void run_spde_laplace(
     F callback,
     const Rcpp::NumericVector& re_idx = Rcpp::NumericVector(),
     int n_re_groups = 0, double sigma_re = 1.0,
-    bool center_mesh = true, double prior_lognorm = 0.0
+    bool center_mesh = true, double prior_lognorm = 0.0,
+    // Inner-Laplace skewness diagnostic (gcol33/tulpa#273 item 3): forwarded
+    // unchanged to laplace_newton_solve, which already supports it (the
+    // dense/auto-sparse family-enum path every other single-block kernel
+    // shares). skew_probe_idx == nullptr with compute_skew = true probes
+    // every latent index.
+    bool compute_skew = false,
+    const std::vector<int>* skew_probe_idx = nullptr
 ) {
     const double tau_re = (n_re_groups > 0)
                           ? 1.0 / (sigma_re * sigma_re + 1e-10) : 0.0;
@@ -363,7 +370,8 @@ void run_spde_laplace(
         y, n_trials, family, phi, N, n_x,
         max_iter, tol, n_threads,
         compute_eta, scatter, center, log_prior,
-        x_init, shared_solver
+        x_init, shared_solver, /*store_Q=*/false, /*inv_block_layout=*/nullptr,
+        compute_skew, skew_probe_idx
     );
 
     callback(result);

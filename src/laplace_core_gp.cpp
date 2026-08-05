@@ -46,7 +46,13 @@ LaplaceResult laplace_mode_gp(
     // (obs i -> location i), the old behavior; a non-null map is required when
     // coordinates repeat (n_spatial unique locations < N), so an observation is
     // attached to its actual field node and later observations are not dropped.
-    const int* obs_to_loc = nullptr
+    const int* obs_to_loc = nullptr,
+    // Inner-Laplace skewness diagnostic (gcol33/tulpa#273 item 3): this is a
+    // fixed-hyperparameter single fit (no outer grid over sigma2_gp/phi_gp;
+    // that lives in the separate cpp_nested_laplace_nngp joint-multi path), so
+    // compute_skew scores the converged mode of THIS solve directly.
+    bool compute_skew = false,
+    const std::vector<int>* skew_probe_idx = nullptr
 ) {
     int N = y.size();
     int p = X.ncol();
@@ -203,7 +209,8 @@ LaplaceResult laplace_mode_gp(
             y, n, family, phi, N, n_x,
             max_iter, tol, n_threads,
             compute_eta, scatter_sparse, center, log_prior,
-            H_builder);
+            H_builder, Rcpp::NumericVector(), /*shared_solver=*/nullptr,
+            /*store_Q=*/false, compute_skew, skew_probe_idx);
     }
 
     // --- Dense Newton path for small n_spatial ---
@@ -238,7 +245,10 @@ LaplaceResult laplace_mode_gp(
 
     return laplace_newton_solve(y, n, family, phi, N, n_x,
                                  max_iter, tol, n_threads,
-                                 compute_eta, scatter, center, log_prior);
+                                 compute_eta, scatter, center, log_prior,
+                                 Rcpp::NumericVector(), /*shared_solver=*/nullptr,
+                                 /*store_Q=*/false, /*inv_block_layout=*/nullptr,
+                                 compute_skew, skew_probe_idx);
 }
 
 
@@ -261,7 +271,9 @@ Rcpp::List cpp_laplace_fit_gp(
     std::string family, double phi = 1.0,
     int max_iter = 100, double tol = 1e-6, int n_threads = 1,
     Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
-    Rcpp::Nullable<Rcpp::IntegerVector> obs_to_loc_nullable = R_NilValue
+    Rcpp::Nullable<Rcpp::IntegerVector> obs_to_loc_nullable = R_NilValue,
+    bool compute_skew = false,
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
 ) {
     std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, y.size());
     std::vector<int> obs_to_loc;
@@ -269,6 +281,9 @@ Rcpp::List cpp_laplace_fit_gp(
         Rcpp::IntegerVector otl(obs_to_loc_nullable);
         obs_to_loc.assign(otl.begin(), otl.end());
     }
+    std::vector<int> skew_idx_vec;
+    const std::vector<int>* skew_idx_ptr =
+        tulpa::unwrap_skew_idx(compute_skew, skew_idx, skew_idx_vec);
     // The GP / NNGP Laplace path runs serially: the observation-scatter is the
     // only OpenMP region here and its speedup is negligible (n_spatial is small
     // and the Vecchia prior scatter that dominates is serial), while running it
@@ -282,7 +297,8 @@ Rcpp::List cpp_laplace_fit_gp(
         sigma2_gp, phi_gp, cov_type,
         family, phi, max_iter, tol, n_threads,
         offset.empty() ? nullptr : offset.data(),
-        obs_to_loc.empty() ? nullptr : obs_to_loc.data()
+        obs_to_loc.empty() ? nullptr : obs_to_loc.data(),
+        compute_skew, skew_idx_ptr
     );
     pattern_guard.check("the GP / NNGP Laplace solve");
     return tulpa::laplace_result_to_list(result);

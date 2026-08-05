@@ -42,7 +42,12 @@ static Rcpp::List spde_run_single_fit(
     const std::string& family, double phi,
     int max_iter, double tol, int n_threads,
     const Rcpp::NumericVector& x_init, const double* off_ptr,
-    bool center_mesh
+    bool center_mesh,
+    // Inner-Laplace skewness diagnostic (gcol33/tulpa#273 item 3): this is a
+    // fixed-hyperparameter single fit (no outer grid), so compute_skew scores
+    // the converged mode of THIS solve directly -- no re-dispatch needed.
+    bool compute_skew = false,
+    const std::vector<int>* skew_probe_idx = nullptr
 ) {
     const double tau_re = (n_re_groups > 0)
                           ? 1.0 / (sigma_re * sigma_re + 1e-10) : 0.0;
@@ -167,7 +172,9 @@ static Rcpp::List spde_run_single_fit(
 
         tulpa::LaplaceResult res = tulpa::laplace_newton_solve_sparse(
             y, n_trials, family, phi, N, n_x, max_iter, tol, n_threads,
-            compute_eta, scatter_sparse, center, log_prior, H_builder, x_init);
+            compute_eta, scatter_sparse, center, log_prior, H_builder, x_init,
+            /*shared_solver=*/nullptr, /*store_Q=*/false,
+            compute_skew, skew_probe_idx);
         pattern_guard.check("the sparse SPDE Laplace solve");
         Rcpp::List out_sparse = tulpa::laplace_result_to_list(res);
         out_sparse["Q_nnz"] = qb.nnz();
@@ -182,7 +189,8 @@ static Rcpp::List spde_run_single_fit(
             out = tulpa::laplace_result_to_list(res);
             out["Q_nnz"] = qb.nnz();
         },
-        re_idx, n_re_groups, sigma_re, center_mesh, half_ldQ);
+        re_idx, n_re_groups, sigma_re, center_mesh, half_ldQ,
+        compute_skew, skew_probe_idx);
     pattern_guard.check("the SPDE Laplace solve");
     return out;
 }
@@ -207,7 +215,9 @@ Rcpp::List cpp_laplace_fit_spde(
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericVector> rational_poles_nullable = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericVector> rational_weights_nullable = R_NilValue,
-    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
+    bool compute_skew = false,
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
 ) {
     int N = n_obs;
     int p = X.ncol();
@@ -245,10 +255,14 @@ Rcpp::List cpp_laplace_fit_spde(
     // Build sparse A and run the shared single-fit driver (integer field is
     // sum-to-zero centred).
     tulpa::ARows a_rows = tulpa::build_A_rows(N, n_mesh, A_x, A_i, A_p);
+    std::vector<int> skew_idx_vec;
+    const std::vector<int>* skew_idx_ptr =
+        tulpa::unwrap_skew_idx(compute_skew, skew_idx, skew_idx_vec);
     return spde_run_single_fit(
         y, n_trials, X, N, p, re_idx, n_re_groups, sigma_re,
         n_mesh, mesh_start, n_x, qb, a_rows, family, phi,
-        max_iter, tol, n_threads, x_init, off_ptr, /*center_mesh=*/true);
+        max_iter, tol, n_threads, x_init, off_ptr, /*center_mesh=*/true,
+        compute_skew, skew_idx_ptr);
 }
 
 // =====================================================================
@@ -271,7 +285,9 @@ Rcpp::List cpp_laplace_fit_spde_precomputed(
     std::string family, double phi = 1.0,
     int max_iter = 100, double tol = 1e-6, int n_threads = 1,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
-    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
+    bool compute_skew = false,
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
 ) {
     int N = n_obs;
     int p = X.ncol();
@@ -294,10 +310,14 @@ Rcpp::List cpp_laplace_fit_spde_precomputed(
     qb.Q_x.assign(Q_x.begin(), Q_x.end());
 
     tulpa::ARows a_rows = tulpa::build_A_rows(N, n_mesh, Aeff_x, Aeff_i, Aeff_p);
+    std::vector<int> skew_idx_vec;
+    const std::vector<int>* skew_idx_ptr =
+        tulpa::unwrap_skew_idx(compute_skew, skew_idx, skew_idx_vec);
     return spde_run_single_fit(
         y, n_trials, X, N, p, re_idx, n_re_groups, sigma_re,
         n_mesh, mesh_start, n_x, qb, a_rows, family, phi,
-        max_iter, tol, n_threads, x_init, off_ptr, /*center_mesh=*/false);
+        max_iter, tol, n_threads, x_init, off_ptr, /*center_mesh=*/false,
+        compute_skew, skew_idx_ptr);
 }
 
 // =====================================================================

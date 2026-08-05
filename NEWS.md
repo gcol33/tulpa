@@ -1,5 +1,21 @@
 # tulpa NEWS
 
+## 0.0.119
+
+* **`gamma_3` wired through the SPDE / GP bespoke Newton pair (#273 item
+  3).** `cpp_laplace_fit_gp`, `cpp_laplace_fit_spde` and
+  `cpp_laplace_fit_spde_precomputed` are standalone, fixed-hyperparameter
+  single fits (`laplace_mode_gp()` / `spde_run_single_fit()`) that route
+  through their own Newton implementation rather than the joint-multi driver
+  #272/#273 item 1 already wired -- the nested "nngp" / "spde" registry
+  entries integrate hyperparameters via the shared joint-multi machinery
+  instead and were unaffected. Both the dense branch (`laplace_newton_solve`
+  / `run_spde_laplace`) and the fully sparse CHOLMOD-only branch
+  (`laplace_newton_solve_sparse`, `n_x >= SPARSE_THRESHOLD`) now accept
+  `compute_skew` / `skew_idx`, matching the icar/bym2/car_proper/hsgp
+  kernels' existing surface. #273 item 2 (the coupled non-separable
+  cubic-term derivation) remains open.
+
 ## 0.0.118
 
 * **`gamma_3` wired through the joint multi-block dispatch (#273).** The

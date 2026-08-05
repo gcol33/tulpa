@@ -42,6 +42,23 @@ inline std::vector<double> as_offset_vec(
     return std::vector<double>(o.begin(), o.end());
 }
 
+// Convert an R-facing (1-based, possibly NULL) skew_idx into the 0-based probe
+// vector compute_inner_skew_gamma3 (inner_laplace_skew.h) expects, writing into
+// caller-owned `storage` and returning a pointer into it (nullptr when either
+// compute_skew is false or skew_idx is NULL, which probes every latent index --
+// the same convention every compute_skew call site shares).
+inline const std::vector<int>* unwrap_skew_idx(
+    bool compute_skew,
+    const Rcpp::Nullable<Rcpp::IntegerVector>& skew_idx,
+    std::vector<int>& storage
+) {
+    if (!compute_skew || skew_idx.isNull()) return nullptr;
+    Rcpp::IntegerVector idx_r(skew_idx);
+    storage.resize(idx_r.size());
+    for (int k = 0; k < idx_r.size(); k++) storage[k] = idx_r[k] - 1;
+    return &storage;
+}
+
 // Spec-solver inputs for a single-process built-in-family fit with an optional
 // single iid RE term, kept alive together: data borrows spec & resp (and resp
 // borrows the response arrays), so the whole struct must outlive the solve.

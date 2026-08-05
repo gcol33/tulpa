@@ -209,8 +209,8 @@ cpp_laplace_sample <- function(mode, H, n_samples) {
     .Call(`_tulpa_cpp_laplace_sample`, mode, H, n_samples)
 }
 
-cpp_laplace_fit_gp <- function(y, n, X, re_idx, n_re_groups, sigma_re, coords, nn_idx, nn_dist, nn_order, n_spatial, nn, sigma2_gp, phi_gp, cov_type, family, phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L, offset_nullable = NULL, obs_to_loc_nullable = NULL) {
-    .Call(`_tulpa_cpp_laplace_fit_gp`, y, n, X, re_idx, n_re_groups, sigma_re, coords, nn_idx, nn_dist, nn_order, n_spatial, nn, sigma2_gp, phi_gp, cov_type, family, phi, max_iter, tol, n_threads, offset_nullable, obs_to_loc_nullable)
+cpp_laplace_fit_gp <- function(y, n, X, re_idx, n_re_groups, sigma_re, coords, nn_idx, nn_dist, nn_order, n_spatial, nn, sigma2_gp, phi_gp, cov_type, family, phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L, offset_nullable = NULL, obs_to_loc_nullable = NULL, compute_skew = FALSE, skew_idx = NULL) {
+    .Call(`_tulpa_cpp_laplace_fit_gp`, y, n, X, re_idx, n_re_groups, sigma_re, coords, nn_idx, nn_dist, nn_order, n_spatial, nn, sigma2_gp, phi_gp, cov_type, family, phi, max_iter, tol, n_threads, offset_nullable, obs_to_loc_nullable, compute_skew, skew_idx)
 }
 
 cpp_laplace_fit_spatial <- function(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_spatial, family, phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, offset_nullable = NULL, force_sparse = 0L, compute_skew = FALSE, skew_idx = NULL) {
@@ -485,12 +485,12 @@ cpp_spde_fractional_logmarginal <- function(y, X, A_eff, Pl, C0sub, family, phi,
     .Call(`_tulpa_cpp_spde_fractional_logmarginal`, y, X, A_eff, Pl, C0sub, family, phi, beta_hat, x_hat, n_trials, offset_nullable, tau_beta)
 }
 
-cpp_laplace_fit_spde <- function(y, n_trials, X, re_idx, n_re_groups, sigma_re, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, kappa, tau_spde, family, phi = 1.0, alpha = 2L, max_iter = 100L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, rational_poles_nullable = NULL, rational_weights_nullable = NULL, offset_nullable = NULL) {
-    .Call(`_tulpa_cpp_laplace_fit_spde`, y, n_trials, X, re_idx, n_re_groups, sigma_re, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, kappa, tau_spde, family, phi, alpha, max_iter, tol, n_threads, x_init_nullable, rational_poles_nullable, rational_weights_nullable, offset_nullable)
+cpp_laplace_fit_spde <- function(y, n_trials, X, re_idx, n_re_groups, sigma_re, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, kappa, tau_spde, family, phi = 1.0, alpha = 2L, max_iter = 100L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, rational_poles_nullable = NULL, rational_weights_nullable = NULL, offset_nullable = NULL, compute_skew = FALSE, skew_idx = NULL) {
+    .Call(`_tulpa_cpp_laplace_fit_spde`, y, n_trials, X, re_idx, n_re_groups, sigma_re, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, kappa, tau_spde, family, phi, alpha, max_iter, tol, n_threads, x_init_nullable, rational_poles_nullable, rational_weights_nullable, offset_nullable, compute_skew, skew_idx)
 }
 
-cpp_laplace_fit_spde_precomputed <- function(y, n_trials, X, re_idx, n_re_groups, sigma_re, n_obs, n_mesh, Q_p, Q_i, Q_x, Aeff_x, Aeff_i, Aeff_p, family, phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, offset_nullable = NULL) {
-    .Call(`_tulpa_cpp_laplace_fit_spde_precomputed`, y, n_trials, X, re_idx, n_re_groups, sigma_re, n_obs, n_mesh, Q_p, Q_i, Q_x, Aeff_x, Aeff_i, Aeff_p, family, phi, max_iter, tol, n_threads, x_init_nullable, offset_nullable)
+cpp_laplace_fit_spde_precomputed <- function(y, n_trials, X, re_idx, n_re_groups, sigma_re, n_obs, n_mesh, Q_p, Q_i, Q_x, Aeff_x, Aeff_i, Aeff_p, family, phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, offset_nullable = NULL, compute_skew = FALSE, skew_idx = NULL) {
+    .Call(`_tulpa_cpp_laplace_fit_spde_precomputed`, y, n_trials, X, re_idx, n_re_groups, sigma_re, n_obs, n_mesh, Q_p, Q_i, Q_x, Aeff_x, Aeff_i, Aeff_p, family, phi, max_iter, tol, n_threads, x_init_nullable, offset_nullable, compute_skew, skew_idx)
 }
 
 cpp_nested_laplace_spde <- function(y, n_trials, X, re_idx, n_re_groups, sigma_re, A_x, A_i, A_p, n_obs, n_mesh, C0_diag, G1_x, G1_i, G1_p, range_grid, sigma_grid, nu = 1.0, family = "gaussian", phi = 1.0, max_iter = 50L, tol = 1e-6, n_threads = 1L, x_init_nullable = NULL, rational_poles_nullable = NULL, rational_weights_nullable = NULL, store_Q = FALSE, checkpoint_path = "", offset_nullable = NULL, compute_skew = FALSE, skew_idx = NULL) {

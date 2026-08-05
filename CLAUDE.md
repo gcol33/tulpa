@@ -452,11 +452,32 @@ both attach points are wired identically (fitted-MAP-cell probe, every arm's
 fixed-effects coefficients by default, NaN for a non-"separable" coupled
 arm). For a fully-coupled fit like `occu_cover` the answer is still
 provably all-NaN (every arm is coupled), now as an explicit NaN field rather
-than an absent one. The bespoke SPDE/GP large-`n` sparse Newton pair
-(`laplace_newton_solve_sparse` / `run_spde_laplace`, fixed-hyperparameter
-only, no outer grid to complement) is a fourth, independent Newton
-implementation with zero skew hooks, and the coupled (non-separable)
-cubic-term derivation itself, remain open (gcol33/tulpa#273).
+than an absent one.
+
+**SPDE/GP bespoke Newton pair (gcol33/tulpa#273 item 3, closed in 0.0.119):**
+`cpp_laplace_fit_gp` / `cpp_laplace_fit_spde` / `cpp_laplace_fit_spde_precomputed`
+are standalone, fixed-hyperparameter single fits (`laplace_mode_gp()` in
+`laplace_core_gp.cpp`, `spde_run_single_fit()` in `spde_laplace.cpp`) --
+a fourth, independent Newton implementation the joint-multi driver above
+never touches (the nested "nngp" / "spde" registry entries integrate
+hyperparameters via the shared joint-multi machinery instead, already
+covered by the wiring above). Both branches now carry `compute_skew`:
+the dense path (`laplace_newton_solve` / `run_spde_laplace`, which already
+had the hook from the single-arm family kernels) just needed the two new
+parameters threaded through its own signature into that existing call, and
+the fully sparse CHOLMOD-only path (`laplace_newton_solve_sparse` in
+`sparse_hessian.h`, used once `n_x >= SPARSE_THRESHOLD`) gained a new
+`compute_inner_skew_gamma3` call after its final factorize, reusing the live
+CHOLMOD factor. `unwrap_skew_idx()` (`laplace_spec_fit.h`) is the shared
+1-based-R-to-0-based-probe conversion the two new Rcpp exports use, rather
+than adding a 7th copy of the inline conversion already duplicated across
+`laplace_core.cpp` / `laplace_core_spatial.cpp` / `nested_laplace_multi.cpp`
+/ `nested_laplace_joint_multi.cpp`. Verified via the gaussian exact-zero
+invariant (third log-lik derivative is identically zero regardless of
+latent structure) on all four combinations: GP dense, GP sparse (n_spatial
+= 210), SPDE dense, SPDE sparse (n_mesh = 231), plus the precomputed
+rational-SPDE export (`test-inner-skew.R`). The coupled (non-separable)
+cubic-term derivation (item 2) remains open (gcol33/tulpa#273).
 
 ### Checkpoint / resume across every fitter (gcol33/tulpa#50)
 

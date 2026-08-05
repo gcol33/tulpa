@@ -958,7 +958,14 @@ LaplaceResult laplace_newton_solve_sparse(
     NewtonScratch& scratch,
     const std::vector<double>& x_init,
     SparseCholeskySolver* shared_solver,
-    bool store_Q
+    bool store_Q,
+    // Inner-Laplace skewness diagnostic (inner_laplace_skew.h), same opt-in
+    // contract as the dense solver in laplace_newton.h: skew_probe_idx ==
+    // nullptr with compute_skew = true probes every latent index. Built from
+    // family/phi here (rather than taking a caller-supplied functor) because
+    // every call site already carries family/phi positionally.
+    bool compute_skew = false,
+    const std::vector<int>* skew_probe_idx = nullptr
 ) {
     LaplaceResult result;
     result.mode.assign(n_x, 0.0);
@@ -1108,6 +1115,33 @@ LaplaceResult laplace_newton_solve_sparse(
         result.Q_csc_n = n_x;
     }
 
+    if (compute_skew && result.converged && final_fact_ok) {
+        std::vector<int> all_idx;
+        const std::vector<int>* probe = skew_probe_idx;
+        if (!probe) {
+            all_idx.resize(n_x);
+            for (int j = 0; j < n_x; j++) all_idx[j] = j;
+            probe = &all_idx;
+        }
+        std::function<double(int, double)> curvature3_fn =
+            [&y, &n_trials, &family, phi](int j, double eta_j) -> double {
+                return curvature3_obs_for_family(y[j], n_trials[j], eta_j, family, phi);
+            };
+        // This solver is always sparse (use_sparse = true): `solver` already
+        // holds the live CHOLMOD factor of H_final from the finalization block
+        // above, so compute_inner_skew_gamma3 reuses it without refactorizing.
+        // scratch.chol is never populated on this path -- harmless, the dense
+        // branch inside compute_inner_skew_gamma3 is unreachable when
+        // use_sparse = true.
+        InnerSkewOutcome sk = compute_inner_skew_gamma3(
+            n_x, N, result.mode, scratch.chol, solver, /*use_sparse=*/true,
+            compute_eta, x, scratch.eta, scratch.eta_tmp, curvature3_fn, *probe
+        );
+        result.inner_skew = std::move(sk.gamma3);
+        result.inner_skew_idx = *probe;
+        result.inner_skew_dropped = sk.n_nonfinite_dropped;
+    }
+
     return result;
 }
 
@@ -1129,7 +1163,9 @@ LaplaceResult laplace_newton_solve_sparse(
     SparseHessianBuilder& H_builder,
     const Rcpp::NumericVector& x_init = Rcpp::NumericVector(),
     SparseCholeskySolver* shared_solver = nullptr,
-    bool store_Q = false
+    bool store_Q = false,
+    bool compute_skew = false,
+    const std::vector<int>* skew_probe_idx = nullptr
 ) {
     NewtonScratch scratch;
     scratch.allocate(n_x, N);
@@ -1143,7 +1179,8 @@ LaplaceResult laplace_newton_solve_sparse(
         y, n_trials, family, phi, N, n_x,
         max_iter, tol, n_threads,
         compute_eta, scatter_sparse, center_effects_fn, compute_log_prior,
-        H_builder, scratch, x_init_vec, shared_solver, store_Q
+        H_builder, scratch, x_init_vec, shared_solver, store_Q,
+        compute_skew, skew_probe_idx
     );
 }
 
