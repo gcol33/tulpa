@@ -176,11 +176,11 @@ inline LatentBlock make_nngp_block(
     };
 
     // No dense `add_prior`: the NNGP prior is scattered through the sparse
-    // builder only. The dense Newton route disagrees with the sparse one on
-    // this block -- measurably at nn = 5 and divergently at nn = 8 -- so the
-    // block declares add_prior_sparse alone and the driver's
-    // blocks_require_sparse() predicate routes it accordingly, rather than
-    // every caller remembering to pass force_sparse.
+    // builder only, and blocks_require_sparse() reads that off the block rather
+    // than every caller remembering to pass force_sparse. The dense twin was
+    // deleted in 0.0.124 -- it reproduced the same Lambda to ~1e-16 relative
+    // (gcol33/tulpa#278), so it was a second unexercised implementation, not a
+    // second answer.
 
     block.log_prior = [cell_cache, start, n_spatial, nn, nn_idx, nn_order](
         const Rcpp::NumericVector& x, int k_grid

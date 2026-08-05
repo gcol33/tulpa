@@ -97,23 +97,64 @@ test_that("the NNGP prior gradient is -Lambda w", {
   }
 })
 
-test_that("the NNGP conditional-variance floor is what inflates Lambda", {
+# Conditional variance sigma2 - c' C^-1 c, computed from scratch: rebuild each
+# location's neighbour covariance and solve. No reference to how the engine
+# batches or factorizes.
+.nngp_ref_cond_var <- function(fx, sigma2, phi_gp) {
+  cov_exp <- function(d) ifelse(d < 1e-10, sigma2, sigma2 * exp(-d / phi_gp))
+  v <- rep(sigma2, fx$ng)
+  for (i in seq_len(fx$ng)) {
+    act <- which(fx$nn_idx[i, ] > 0L)
+    if (!length(act)) next
+    nb <- fx$nn_order[fx$nn_idx[i, act]] + 1L
+    cc <- cov_exp(fx$nn_dist[i, act])
+    C <- cov_exp(as.matrix(dist(fx$coords[nb, , drop = FALSE])))
+    diag(C) <- sigma2
+    v[fx$nn_order[i] + 1L] <- sigma2 - sum(cc * solve(C, cc))
+  }
+  v
+}
+
+test_that("NNGP conditional variances hold across the GPU dispatch threshold", {
   skip_on_cran()
-  # The floor is silent, so this records its reach rather than gating on a
-  # threshold nobody chose: at nn = 2 almost nothing is floored and Lambda is
-  # O(1e1); by nn = 8 roughly a third of the field is, and Lambda is O(1e13).
+  # batch_nngp_scatter hands the neighbour-covariance factorizations to
+  # cuda_batched_cholesky once the batch reaches 50, and runs them on the CPU
+  # below that. cuSOLVER is column-major and every consumer of the returned
+  # buffer indexes row-major, so the accepted "factor" used to be the input
+  # covariances with a Cholesky diagonal -- finite, ordinary-looking, and wrong
+  # by ~0.25 in every conditional variance on this fixture, with a third of the
+  # field pushed onto the 1e-10 variance floor at nn = 8.
+  #
+  # Straddling the threshold is the point: the CPU side was always right, so a
+  # test that stays under 50 locations proves nothing. On a machine with no
+  # usable CUDA both sides run on the CPU and the assertions still hold.
+  for (ng in c(45L, 51L, 150L)) {
+    for (nn in c(3L, 8L)) {
+      fx <- .nngp_scatter_fixture(ng, nn, 11L + ng)
+      set.seed(99)
+      r <- .nngp_scatter(fx, rnorm(ng, 0, 0.5))
+      expect_equal(r$cv, .nngp_ref_cond_var(fx, 0.9, 0.4), tolerance = 1e-12)
+      # Nothing on this fixture is near-deterministic given its neighbours, so
+      # the 1e-10 floor must not bind. It binding is the signature of a broken
+      # factor, which is how it presented.
+      expect_gt(min(r$cv), 1e-3)
+    }
+  }
+})
+
+test_that("Lambda stays at the scale the covariance implies", {
+  skip_on_cran()
+  # With correct factors the NNGP precision on this fixture is O(1e2) and grows
+  # mildly with nn. The 1e13 entries that made an absolute Hessian comparison
+  # look like a disagreement (gcol33/tulpa#278) came from 1/cond_var at the
+  # floor, not from the prior.
   fx2 <- .nngp_scatter_fixture(150L, 2L, 161L)
   fx8 <- .nngp_scatter_fixture(150L, 8L, 161L)
   set.seed(99); w <- rnorm(150L, 0, 0.5)
   r2 <- .nngp_scatter(fx2, w)
   r8 <- .nngp_scatter(fx8, w)
-  floored <- function(r) sum(r$cv <= 1e-10 * (1 + 1e-12))
-
-  expect_lt(floored(r2), 5L)
-  expect_gt(floored(r8), 30L)
-  expect_gt(max(abs(r8$H)) / max(abs(r2$H)), 1e3)
-  # And the scatter still reproduces Lambda there -- the magnitude is the
-  # prior's, not an error in building it.
+  expect_lt(max(abs(r2$H)), 1e4)
+  expect_lt(max(abs(r8$H)), 1e4)
   L8 <- .nngp_lambda(fx8, r8$alpha, r8$cv)
   expect_lt(max(abs(r8$H - L8)) / max(abs(L8)), 1e-13)
 })

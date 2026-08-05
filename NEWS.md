@@ -1,5 +1,35 @@
 # tulpa NEWS
 
+## 0.0.125
+
+* **The batched CUDA Cholesky returned a column-major factor that every
+  consumer read row-major (#283).** `batch_nngp_scatter` hands the NNGP
+  neighbour-covariance factorizations to `cuda_batched_cholesky` once the batch
+  reaches 50 locations. cuSOLVER writes `L[i][j]` at offset `j*k + i` and leaves
+  the opposite triangle holding the input; `chol_forward_solve` /
+  `chol_back_solve` index `i*k + j`. The accepted "factor" was therefore the
+  input covariances with a Cholesky diagonal -- finite, ordinary-looking, and
+  wrong. **Every NNGP fit with 51 or more spatial locations on a machine with
+  usable CUDA was affected**; below 50 the CPU path ran and was always correct.
+  On a 150-point unit-square fixture (exponential covariance, `sigma2 = 0.9`,
+  `phi_gp = 0.4`) the conditional variances were off by up to 0.28 in absolute
+  terms and 47 of 150 nodes were pushed onto the 1e-10 variance floor, against
+  a true minimum of 2.5e-02. After the fix both sides of the dispatch threshold
+  agree with an independently computed reference to 3e-16 and nothing floors.
+* **The GPU factor is now verified before it is accepted (#283).** The batched
+  call also ignored cuSOLVER's per-matrix `info` codes, so a non-positive-
+  definite neighbour set came back as a partially written factor that looked
+  valid. `cuda_batched_cholesky` now reads them, and `batch_nngp_scatter`
+  checks the returned factor for one batch element against the CPU
+  factorization before using the batch, falling back to the CPU for all of it
+  on mismatch -- one extra `m^3` factorization against 50+ matrices. The
+  fallback now also restores the original covariances, which a partial GPU
+  write had been corrupting.
+* `test-nngp-prior-scatter.R` straddles the 50-location dispatch threshold and
+  compares conditional variances against a from-scratch reference, so the CPU
+  and GPU paths are held to the same answer. A fixture that stays under 50
+  locations exercises only the path that was already right.
+
 ## 0.0.124
 
 * **The NNGP prior scatter is checked against the matrix it claims to build
@@ -13,15 +43,13 @@
   callers once `blocks_require_sparse()` pinned NNGP to the sparse Newton path
   -- and the survivor is held to the definition by the new
   `test-nngp-prior-scatter.R`, which also pins the gradient to `-Lambda w`.
-* **Where the 1e13 comes from is now recorded (#283).**
-  `nngp_moments_from_chol` floors the conditional variance at 1e-10 and says
-  nothing when the floor binds, putting `1e10` on `Lambda`'s diagonal for that
-  node. On a 150-point unit-square fixture (exponential covariance,
-  `sigma2 = 0.9`, `phi_gp = 0.4`) one node is floored at `nn = 2` and 47 of 150
-  at `nn = 8`, taking `cond(Lambda)` from 5.9e+11 to numerically infinite. That
-  conditioning, not a defective Hessian, is what stalls a Newton solve at large
-  `nn`. gcol33/tulpa#283 carries the fix, which is a modelling decision rather
-  than a threshold change.
+* **Where the 1e13 comes from was tracked to #283.** `nngp_moments_from_chol`
+  floors the conditional variance at 1e-10, and 47 of 150 nodes hit that floor
+  on the reference fixture at `nn = 8`, putting `1e10` on `Lambda`'s diagonal
+  and taking `cond(Lambda)` to numerically infinite. That conditioning, not a
+  defective Hessian, is what stalls a Newton solve at large `nn`. The floor
+  turned out to be a symptom rather than the cause -- see 0.0.125, where the
+  broken CUDA factor behind it is fixed and nothing floors on that fixture.
 
 ## 0.0.123
 

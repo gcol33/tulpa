@@ -1891,7 +1891,8 @@ Rcpp::List cpp_test_nngp_prior_scatter(
     Rcpp::_["grad"]    = Rcpp::NumericVector(grad_sparse.begin(), grad_sparse.end()),
     Rcpp::_["alpha"]   = alpha_mat,
     Rcpp::_["cv"]      = Rcpp::NumericVector(cv.begin(), cv.end()),
-    Rcpp::_["dropped"] = dropped,
-    Rcpp::_["nnz"]     = H_builder.nnz
+    Rcpp::_["dropped"]  = dropped,
+    Rcpp::_["nnz"]      = H_builder.nnz,
+    Rcpp::_["gpu_used"] = gpu_used
   );
 }

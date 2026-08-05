@@ -117,18 +117,14 @@ inline void nngp_moments_from_chol(const double* L, int n, int ld,
     c_Cinv_c += c_vec[j] * alpha[j];
   }
   cond_mean = cm;
-  // sigma2 - c'C^-1 c goes to zero (and, once C is numerically singular, below
-  // it) as the conditioning set approaches determining the focal node. The
-  // floor keeps the precision 1/cond_var finite, but it is not free: at the
-  // floor the NNGP prior asserts the node is known to sqrt(var_floor) given its
-  // neighbours, which is a numerical artifact rather than a modelling
-  // statement, and 1/var_floor = 1e10 lands directly on Lambda's diagonal.
-  // Measured on a 150-point unit-square fixture (exponential covariance,
-  // sigma2 = 0.9, phi = 0.4): 1 node floored at nn = 2, 32 at nn = 5, 47 at
-  // nn = 8, with max|Lambda| rising to 2.4e13 and cond(Lambda) to numerically
-  // infinite. That conditioning -- not a defective scatter -- is what stalls a
-  // Newton solve at large nn. The floor is currently silent; making it visible
-  // and deciding what a floored node should do is gcol33/tulpa#283.
+  // sigma2 - c'C^-1 c is a Schur complement of a PSD matrix, so it is >= 0
+  // whenever L really is a factor of C. The floor keeps 1/cond_var finite when
+  // it is not -- and a bound floor is a strong signal, because 1/var_floor =
+  // 1e10 lands directly on the NNGP precision's diagonal and asserts the node
+  // is known to 1e-5 sd given its neighbours. It reads as near-determinism
+  // while usually meaning the factor is wrong: gcol33/tulpa#283 was a
+  // column-major cuSOLVER factor consumed row-major, which floored 47 of 150
+  // nodes on a fixture whose true minimum conditional variance is 2.5e-02.
   cond_var = std::max(var_floor, sigma2 - c_Cinv_c);
 }
 

@@ -490,10 +490,20 @@ Two things the migration settled, both load-bearing:
   RELATIVE, and the 2.9e-03 `log|H|` gap was an absolute difference on entries
   of magnitude 1e13. The dense twin is deleted (0.0.124) as unreachable dead
   code, and `test-nngp-prior-scatter.R` holds the survivor to the definition.
-  What actually diverges at `nn = 8` is the SOLVE: `nngp_moments_from_chol`
-  silently floors the conditional variance at 1e-10, 47 of 150 field nodes hit
-  that floor at `nn = 8` on the reference fixture, and `cond(Lambda)` goes
-  numerically infinite. gcol33/tulpa#283 carries that.
+  What actually diverged at `nn = 8` was the input to both scatters
+  (gcol33/tulpa#283, 0.0.125). `batch_nngp_scatter` hands the neighbour
+  factorizations to `cuda_batched_cholesky` once the batch reaches 50
+  locations; cuSOLVER returns a COLUMN-major factor and every consumer in
+  `linalg_fast.h` indexes ROW-major, so the accepted factor was the input
+  covariances carrying a Cholesky diagonal. Conditional variances came back
+  wrong by up to 0.28 and 47 of 150 nodes landed on the 1e-10 variance floor
+  (true minimum: 2.5e-02), which is where the 1e13 precision entries and the
+  infinite `cond(Lambda)` came from. **Every NNGP fit with 51+ locations on a
+  CUDA machine was affected**; the CPU path below 50 was always correct. The
+  layout is fixed, cuSOLVER's per-matrix `info` codes are read, and the batch
+  is now accepted only after one element is checked against the CPU factor.
+  `test-nngp-prior-scatter.R` straddles the dispatch threshold -- a fixture
+  under 50 locations tests only the path that was already right.
 - **Post-loop centring must compensate the intercept.** `center_effects_fn` runs
   ONCE after the Newton loop. The single-arm loop centres and then re-evaluates
   `log_marginal` / `H` at the shifted point; the joint loop computes

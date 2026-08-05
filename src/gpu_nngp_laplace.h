@@ -9,6 +9,7 @@
 #include "gpu_cuda.h"
 #include "linalg_fast.h"  // shared small-dense Cholesky / NNGP solve core
 #include <Rcpp.h>
+#include <algorithm>
 #include <vector>
 #include <cmath>
 
@@ -112,17 +113,55 @@ inline void batch_nngp_scatter(
     if (batch_size == 0) return;
 
     // Phase 2: Cholesky factorize — GPU or CPU
-    // After this, C_mats[b] contains L (lower triangular)
+    // After this, C_mats[b] contains L (lower triangular, ROW-major, upper
+    // triangle zeroed) — the layout chol_forward_solve / chol_back_solve read.
+    //
+    // The GPU result is verified against the CPU factorization of one batch
+    // element before the batch is accepted. This is not defensive padding: the
+    // batched cuSOLVER call returned a COLUMN-major factor that every consumer
+    // here read row-major, so each conditional variance came back wrong by
+    // ~0.25 on a unit-square fixture while staying finite and ordinary-looking,
+    // and nothing downstream could tell. One extra m^3 factorization per batch
+    // (m <= nn, against 50+ matrices) buys a check that the accepted factor is
+    // the one the CPU would have produced.
     bool chol_ok = false;
     if (batch_size >= 50) {  // GPU overhead threshold
+        // cuda_batched_cholesky writes into C_mats, and can also fail PARTWAY
+        // (a per-matrix non-PD `info`, or a failed copy-back after some
+        // matrices have landed). Either way the CPU fallback below must see the
+        // original covariances, not half-factorized ones, so keep them.
+        std::vector<std::vector<double>> C_orig(C_mats);
+
+        const int probe = batch_size / 2;
+        const int probe_n = locs[probe].n_nb;
+        std::vector<double> probe_ref(C_orig[probe]);
+        tulpa_linalg::chol_factor_lower(probe_ref.data(), probe_ref.data(),
+                                        probe_n, nn,
+                                        tulpa_linalg::kCholJitter);
+
         chol_ok = tulpa_gpu::cuda_batched_cholesky(C_mats, nn);
+        if (chol_ok) {
+            // Compare the lower triangle only; the reference's upper triangle
+            // still holds its input (chol_factor_lower leaves it untouched).
+            double scale = 0.0, diff = 0.0;
+            for (int j = 0; j < probe_n; j++) {
+                for (int k = 0; k <= j; k++) {
+                    const double ref = probe_ref[j * nn + k];
+                    const double got = C_mats[probe][j * nn + k];
+                    scale = std::max(scale, std::abs(ref));
+                    diff  = std::max(diff, std::abs(ref - got));
+                }
+            }
+            if (!(diff <= 1e-8 * std::max(scale, 1e-12))) chol_ok = false;
+        }
         if (chol_ok) gpu_used = true;
+        else C_mats.swap(C_orig);
     }
 
     if (!chol_ok) {
         // CPU Cholesky per matrix: shared core, in-place on the nn-strided
-        // n_nb×n_nb block; zero the upper triangle afterwards as the GPU
-        // path does.
+        // n_nb×n_nb block; zero the upper triangle afterwards, which is what
+        // makes the buffer a row-major lower factor for the solves below.
         for (int b = 0; b < batch_size; b++) {
             auto& L = C_mats[b];
             int n_nb = locs[b].n_nb;
@@ -206,9 +245,9 @@ inline void batch_nngp_scatter(
 //
 // The scatter reproduces Λ to ~1e-16 relative, asserted against an
 // independently assembled (I - A)' D⁻¹ (I - A) in test-nngp-prior-scatter.R.
-// That test also records what the magnitudes look like once cond_var hits its
-// floor: entries reach 1e13 and above, so an ABSOLUTE comparison against Λ
-// reads as a large discrepancy while the relative one is at machine epsilon.
+// Compare it RELATIVELY: Λ's entries scale as 1/cond_var, so a fixture where
+// the conditional variance collapses puts them at 1e13 and an absolute
+// comparison reads machine epsilon as a large discrepancy (gcol33/tulpa#278).
 template <typename DenseVec, typename SparseBuilder>
 inline void apply_nngp_full_prior_sparse(
     DenseVec& grad, SparseBuilder& H,

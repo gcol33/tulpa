@@ -2,17 +2,18 @@
 // CUDA implementation for GPU-accelerated GP computations
 // Uses dynamic loading - no CUDA SDK required at compile time
 //
-// STATUS: opt-in roadmap backend, not wired into a sampler.
-// The dynamic-loaded batched primitives below (cuda_batched_cholesky /
-// cuda_batched_trsv / cuda_batched_trsv_transpose) are complete and target the
-// batched dense Cholesky / triangular solves that dominate NNGP neighbour
-// factorization and the community-scale multi-response joint path
-// (occu_cover). They are CPU-fallback-by-default and compiled in only under
-// TULPA_ENABLE_CUDA; no fitter dispatches to them yet. This is intentional
-// surface kept for the GPU dispatch path, NOT dead scaffolding -- the decision
-// is to keep it as roadmap. Wiring cuda_batched_cholesky into the batched
-// Laplace inner solve behind a runtime capability check + CPU fallback is the
-// tracked follow-up.
+// STATUS: cuda_batched_cholesky IS dispatched -- batch_nngp_scatter
+// (gpu_nngp_laplace.h) hands it every NNGP neighbour factorization once the
+// batch reaches 50, and reaches it by including this header directly, so the
+// TULPA_ENABLE_CUDA guard in gpu_backend.h does not gate that call. Treat this
+// file as production, not roadmap.
+//
+// cuda_batched_trsv / cuda_batched_trsv_transpose have no caller. They stay as
+// surface for the batched Laplace inner solve; anything wiring them must
+// reconcile the same layout contract cuda_batched_cholesky documents below
+// (cuSOLVER and cuBLAS are COLUMN-major, every CPU consumer in linalg_fast.h is
+// ROW-major) and must be validated against the CPU result rather than trusted
+// on a success return.
 //
 // Minimum requirements:
 // - CUDA Toolkit 11.0+ (for cusolverDnDpotrfBatched)
@@ -500,9 +501,44 @@ inline bool cuda_batched_cholesky(
   bool success = ctx.batched_cholesky((double**)d_ptrs, k, batch_size, (int*)d_info);
 
   if (success) {
-    // Copy results back
+    // cusolverDnDpotrfBatched reports per-matrix status in `info`: 0 on
+    // success, j > 0 when leading minor j is not positive definite. A
+    // CUSOLVER_STATUS_SUCCESS return only says the launch worked, so the
+    // per-matrix codes have to be read or a non-PD neighbour set comes back as
+    // a partially-written factor that looks like a valid one.
+    std::vector<int> info(batch_size, 0);
+    if (!ctx.copy_to_host(info.data(), d_info,
+                          batch_size * sizeof(int))) {
+      success = false;
+    } else {
+      for (int i = 0; i < batch_size; i++) {
+        if (info[i] != 0) { success = false; break; }
+      }
+    }
+  }
+
+  if (success) {
     for (int i = 0; i < batch_size; i++) {
-      ctx.copy_to_host(matrices[i].data(), d_matrices[i], matrix_bytes);
+      if (!ctx.copy_to_host(matrices[i].data(), d_matrices[i], matrix_bytes)) {
+        success = false;
+        break;
+      }
+      // cuSOLVER is COLUMN-major and was asked for CUBLAS_FILL_MODE_LOWER, so
+      // it writes L[i][j] (i >= j) at offset j*k + i and leaves the opposite
+      // triangle holding the input. Every consumer of this buffer
+      // (chol_forward_solve / chol_back_solve in linalg_fast.h) indexes
+      // ROW-major, so without this conversion it reads the untouched input
+      // covariances as if they were factor entries -- the diagonal is the only
+      // part that agrees, which is why the result stays finite and plausible.
+      // Move the factor into the row-major lower triangle and clear what
+      // becomes the row-major upper, matching the CPU fallback's contract.
+      double* m = matrices[i].data();
+      for (int r = 0; r < k; r++) {
+        for (int c = 0; c < r; c++) {
+          m[r * k + c] = m[c * k + r];
+          m[c * k + r] = 0.0;
+        }
+      }
     }
   }
 
