@@ -5,7 +5,7 @@
 #' rational approximation is needed. For fractional `nu` it returns the
 #' rational-SPDE roots from the BRASIL best-rational approximation (see Details).
 #'
-#' @param nu Matern smoothness parameter. A non-negative number; may be
+#' @param nu Matern smoothness parameter. A positive number; may be
 #'   fractional (e.g. 0.5, 1.5, 2.5).
 #' @param m Rational approximation order (number of numerator / denominator
 #'   factors) used for fractional `nu`. Higher `m` lowers the approximation
@@ -24,7 +24,7 @@
 #'   the approximation `error`.
 #'
 #' @details
-#' For integer `nu` (0, 1, 2, ...) the operator order `alpha = nu + 1` is an
+#' For integer `nu` (1, 2, 3, ...) the operator order `alpha = nu + 1` is an
 #' integer and the precision is assembled directly from integer powers of the
 #' FEM operator `L = kappa^2 C + G` -- an exact construction.
 #'
@@ -81,7 +81,7 @@ rational_spde_coefficients <- function(nu, m = 4L, lambda_range = c(1e-4, 1e4)) 
 
 #' Validate the SPDE smoothness parameter
 #'
-#' `nu` must be a single finite non-negative number. Integer `nu` (0, 1, 2, ...)
+#' `nu` must be a single finite positive number. Integer `nu` (1, 2, 3, ...)
 #' gives an exact FEM construction; fractional `nu` uses the rational SPDE
 #' approximation (see [rational_spde_coefficients()]).
 #'
@@ -92,8 +92,16 @@ rational_spde_coefficients <- function(nu, m = 4L, lambda_range = c(1e-4, 1e4)) 
   if (!is.numeric(nu) || length(nu) != 1L || !is.finite(nu)) {
     stop("SPDE `nu` must be a single finite number.", call. = FALSE)
   }
-  if (nu < 0) {
-    stop("SPDE `nu` must be non-negative.", call. = FALSE)
+  if (nu <= 0) {
+    # The d = 2 Matern parameterisation carries a factor Gamma(nu) / Gamma(nu+1)
+    # = 1 / nu in the marginal variance, so nu = 0 has no (kappa, tau):
+    # kappa = sqrt(8 nu) / range is 0 and tau = 1 / (sqrt(4 pi nu) kappa^nu
+    # sigma) is infinite. A fit at nu = 0 could only report an infeasible cell.
+    stop("SPDE `nu` must be > 0. The Matern parameterisation is degenerate ",
+         "at nu = 0: kappa = sqrt(8 * nu) / range is 0 and ",
+         "tau = 1 / (sqrt(4 * pi * nu) * kappa^nu * sigma) is infinite, so no ",
+         "precision can be built. Use nu = 1 for the standard second-order ",
+         "operator.", call. = FALSE)
   }
   invisible(TRUE)
 }

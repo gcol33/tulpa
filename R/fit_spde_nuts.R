@@ -228,6 +228,19 @@ tulpa_nuts_spde <- function(y, X, spatial,
   alpha    <- as.integer(round(spatial$nu)) + 1L
   rat      <- rational_spde_coefficients(spatial$nu)
 
+  # Joint NUTS runs the non-centered z -> w transform, whose Murray (2016)
+  # adjoint uses the closed form dQ/dlog_kappa = 4 kappa^2 tau^2 K -- the
+  # alpha = 2 assembly. Higher integer alpha has no such analogue there, so it
+  # is refused rather than silently sampled at alpha = 2. The fixed-hyper
+  # sampler and the nested-Laplace path both assemble general integer alpha.
+  if (joint && isTRUE(rat$is_integer) && alpha != 2L) {
+    stop("Joint-hyper NUTS implements the alpha = 2 (nu = 1) operator; ",
+         "got nu = ", spatial$nu, " (alpha = ", alpha, "). Its non-centered ",
+         "transform differentiates that assembly. Use joint = FALSE (fixed ",
+         "range/sigma) or the nested-Laplace path over (range, sigma), which ",
+         "assemble any integer alpha.", call. = FALSE)
+  }
+
   if (is.null(n_trials)) n_trials <- rep(1L, N)
   n_trials <- as.integer(n_trials)
 

@@ -32,8 +32,8 @@ or \code{c(inner, outer)}.}
 
 \item{cutoff}{Minimum distance between mesh vertices. Default 0.}
 
-\item{nu}{Matern smoothness parameter. A non-negative number. Integer \code{nu}
-(0, 1, 2, ...) gives an exact FEM construction (operator order
+\item{nu}{Matern smoothness parameter. A positive number. Integer \code{nu}
+(1, 2, 3, ...) gives an exact FEM construction (operator order
 \code{alpha = nu + 1}). Fractional \code{nu} (e.g. 0.5, 1.5) uses the operator-based
 rational SPDE approximation with BRASIL best-rational coefficients
 (Bolin & Kirchner 2020; Hofreither 2021); supported by the Laplace fitter

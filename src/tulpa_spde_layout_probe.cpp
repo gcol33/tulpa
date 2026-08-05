@@ -119,8 +119,8 @@ Rcpp::List cpp_spde_prior_probe(Rcpp::NumericVector vals,
         sm.G1_p.assign(G1_p.begin(), G1_p.end());
 
         tulpa::SpdeQBuilder qb;
-        qb.init(n_mesh, C0_diag, G1_x, G1_i, G1_p);
-        qb.rebuild(kappa, tau_spde, alpha);
+        qb.init(n_mesh, C0_diag, G1_x, G1_i, G1_p, alpha);
+        qb.rebuild(kappa, tau_spde);
         sm.Q_p.assign(qb.Q_p.begin(), qb.Q_p.end());
         sm.Q_i.assign(qb.Q_i.begin(), qb.Q_i.end());
         sm.Q_x.assign(qb.Q_x.begin(), qb.Q_x.end());

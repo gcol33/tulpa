@@ -793,6 +793,10 @@ cpp_spatial_partition_probe <- function(n_units, row_ptr, col_idx, n_neighbors, 
     .Call(`_tulpa_cpp_spatial_partition_probe`, n_units, row_ptr, col_idx, n_neighbors, use_setter)
 }
 
+cpp_test_spde_assemble <- function(C0_diag, G1_x, G1_i, G1_p, range, sigma, nu, alpha) {
+    .Call(`_tulpa_cpp_test_spde_assemble`, C0_diag, G1_x, G1_i, G1_p, range, sigma, nu, alpha)
+}
+
 cpp_test_lkj_build_L <- function(raw, n) {
     .Call(`_tulpa_cpp_test_lkj_build_L`, raw, n)
 }

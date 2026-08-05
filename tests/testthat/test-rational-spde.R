@@ -34,32 +34,32 @@ test_that("spatial_spde accepts fractional nu (gcol33/tulpa#71)", {
   coords <- cbind(runif(20), runif(20))
   expect_s3_class(spatial_spde(coords, nu = 0.5), "tulpa_spatial")
   expect_s3_class(spatial_spde(coords, nu = 1.5), "tulpa_spatial")
-  expect_error(spatial_spde(coords, nu = -0.5), "non-negative")
+  expect_error(spatial_spde(coords, nu = -0.5), "must be > 0")
 })
 
-test_that("fit_spde with nu = 0 reports an infeasible cell rather than a fit", {
+test_that("nu = 0 is rejected at construction (gcol33/tulpa#281)", {
+  # The d = 2 Matern parameterisation is degenerate at nu = 0:
+  # kappa = sqrt(8 nu) / range is 0 and tau = 1 / (sqrt(4 pi nu) kappa^nu sigma)
+  # is infinite, so there is no precision to build. Reaching a fitter it could
+  # only report an infeasible cell (log_marginal = -Inf, no Newton iterations)
+  # with nothing saying why, so the rejection is at the front door.
+  coords <- cbind(runif(20), runif(20))
+  expect_error(spatial_spde(coords, nu = 0), "degenerate at nu = 0")
+  expect_error(spatial_spde_custom(
+    C = Matrix::Diagonal(3), G = Matrix::Diagonal(3),
+    A = Matrix::Diagonal(3), nu = 0), "degenerate at nu = 0")
+  expect_error(rational_spde_coefficients(0), "degenerate at nu = 0")
+})
+
+test_that("fit_spde with nu = 1 over the nu = 0 fixture fits (gcol33/tulpa#281)", {
   skip_on_cran()
-  # nu = 0 (alpha = 1) is the first-order operator. The Matern parameterisation
-  # is degenerate there: kappa = sqrt(8 nu) / range is 0 and
-  # tau = 1 / (sqrt(4 pi nu) kappa^nu sigma) is infinite, so there is no
-  # precision to build. Both entries gate the cell as infeasible --
-  # log_marginal = -Inf, no Newton iterations -- rather than iterating on a
-  # degenerate Q. cpp_nested_laplace_spde has always returned this; the
-  # single-point fit reports it too now that both share make_spde_block's PD
-  # gate (gcol33/tulpa#277). Tracked separately: nu = 0 is accepted by
-  # spatial_spde() but is not a usable model.
+  # The companion to the rejection above: the same mesh and data fit at nu = 1,
+  # so what nu = 0 fails on is the parameterisation, not this fixture.
   set.seed(42)
   n_obs <- 80
   coords <- cbind(runif(n_obs), runif(n_obs))
-  spec <- spatial_spde(coords, nu = 0)
   y <- rbinom(n_obs, 1, 0.4)
   X <- matrix(1, nrow = n_obs, ncol = 1)
-  result <- fit_spde(y, X, spec, family = "binomial", range = 0.5, sigma = 0.3)
-  expect_equal(result$n_iter, 0L)
-  expect_identical(result$log_marginal, -Inf)
-
-  # nu = 1 over the same mesh is the working case, so the gate above is about
-  # the degenerate parameterisation and not about this fixture.
   spec1 <- spatial_spde(coords, nu = 1)
   ok <- fit_spde(y, X, spec1, family = "binomial", range = 0.5, sigma = 0.3)
   expect_gt(ok$n_iter, 0L)
@@ -208,12 +208,20 @@ test_that("different integer nu values produce different log-marginals", {
   coords <- cbind(runif(n_obs), runif(n_obs))
   y <- rbinom(n_obs, 1, 0.4)
   X <- matrix(1, nrow = n_obs, ncol = 1)
-  nu_vals <- c(0, 1, 2)
+  nu_vals <- c(1, 2, 3)
   lmls <- numeric(length(nu_vals))
+  nnz  <- numeric(length(nu_vals))
   for (i in seq_along(nu_vals)) {
     spec <- spatial_spde(coords, nu = nu_vals[i])
-    result <- fit_spde(y, X, spec, family = "binomial", range = 0.3, sigma = 0.5)
+    result <- tulpa:::laplace_spde_at(y, rep(1L, n_obs), X, spec,
+                                      family = "binomial",
+                                      range = 0.3, sigma = 0.5)
     lmls[i] <- result$log_marginal
+    nnz[i]  <- result$Q_nnz
   }
-  expect_true(length(unique(round(lmls, 2))) > 1)
+  expect_equal(length(unique(round(lmls, 2))), length(nu_vals))
+  # Each integer nu builds its own operator order, so the precision stencil
+  # widens with nu rather than every nu reusing the alpha = 2 pattern
+  # (gcol33/tulpa#280).
+  expect_true(all(diff(nnz) > 0))
 })

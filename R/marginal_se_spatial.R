@@ -66,15 +66,18 @@ NULL
 
   if (isTRUE(rat$is_integer)) {
     alpha <- as.integer(round(rat$alpha))
-    if (alpha == 1L) {
-      eps_ridge <- 1e-2
-      Q <- tau2 * ((k2 + eps_ridge) * Cmat + G1)
-    } else {
-      # alpha == 2 (the default, nu = 1): Q = tau^2 * (kappa^4C + 2kappa^2G + GC^-1G)
-      k4  <- k2 * k2
-      G2  <- G1 %*% CinvDiag %*% G1
-      Q   <- tau2 * (k4 * Cmat + 2 * k2 * G1 + G2)
-    }
+    # Q = tau^2 * K (C^-1 K)^(alpha-1) with K = kappa^2 C + G expands over the
+    # operator chain M_0 = C, M_1 = G, M_j = G (C^-1 G)^(j-1) as
+    #   tau^2 * sum_j choose(alpha, j) kappa^(2(alpha-j)) M_j.
+    # Mirrors src/spde_qbuilder.h's rebuild(); alpha = 2 (nu = 1) is
+    # kappa^4 C + 2 kappa^2 G + G C^-1 G.
+    M <- vector("list", alpha + 1L)
+    M[[1]] <- Cmat
+    M[[2]] <- G1
+    for (l in seq_len(alpha - 1L)) M[[l + 2L]] <- M[[l + 1L]] %*% CinvDiag %*% G1
+    Q <- tau2 * Reduce(`+`, lapply(0:alpha, function(j) {
+      choose(alpha, j) * k2^(alpha - j) * M[[j + 1L]]
+    }))
   } else {
     # Fractional alpha: the operator-based rational field does
     # NOT have a shifted-alpha=2 precision; its precision is Q = Pl' C^{-1} Pl

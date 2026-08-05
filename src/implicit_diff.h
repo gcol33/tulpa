@@ -56,8 +56,8 @@ inline ImplicitDiffResult spde_implicit_gradient(
     SparseCholeskySolver& solver
 ) {
     ImplicitDiffResult res;
-    double kappa = std::sqrt(8.0 * nu) / range;
-    double tau = 1.0 / (std::sqrt(4.0 * M_PI) * kappa * sigma_spde);
+    double kappa, tau;
+    std::tie(kappa, tau) = spde_range_sigma_to_kappa_tau(range, sigma_spde, nu);
 
     // --- Term 1: d/d(theta) of log p(x*|theta) = d/d(theta) of -0.5 x*'Q(theta)x* ---
     // Q depends on theta through kappa and tau.
@@ -105,8 +105,8 @@ inline ImplicitDiffResult spde_implicit_gradient(
             //   dQ/d(log_kappa) = tau^2 (4 kappa^4 c0 + 4 kappa^2 g1),
             // and kappa = sqrt(8 nu)/range gives d(log_kappa)/d(log_range) = -1,
             // so the kappa channel of dQ/d(log_range) is -dQ/d(log_kappa).
-            double dq_dlogk = tau2 * (4.0 * k4 * qb.c0_contrib[qidx] +
-                                       4.0 * k2 * qb.g1_contrib[qidx]);
+            double dq_dlogk = tau2 * (4.0 * k4 * qb.c0_contrib()[qidx] +
+                                       4.0 * k2 * qb.g1_contrib()[qidx]);
             xdQdr_x -= wiwj * dq_dlogk;
 
             // tau channel. Q is proportional to tau^2, so dQ/d(log_tau) = 2 Q.
@@ -195,8 +195,8 @@ inline ImplicitDiffResult spde_implicit_gradient(
 
             double h_inv = H_inv.at(mesh_start + row, mesh_start + col);
 
-            double dq_dlogk = tau2 * (4.0 * k4 * qb.c0_contrib[qidx] +
-                                       4.0 * k2 * qb.g1_contrib[qidx]);
+            double dq_dlogk = tau2 * (4.0 * k4 * qb.c0_contrib()[qidx] +
+                                       4.0 * k2 * qb.g1_contrib()[qidx]);
             // dQ/d(log_range) = -(dQ/d(log_kappa)) + 2Q (kappa channel minus,
             // tau channel plus — d(log_tau)/d(log_range) = +1).
             trace_range += h_inv * (-dq_dlogk + 2.0 * qb.Q_x[qidx]);

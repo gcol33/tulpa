@@ -334,11 +334,11 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
                    "FALSE (the rational roots are not differentiable in kappa).");
     }
     if (!joint_hypers && !use_precomp_Q) {
-        qb.init(n_mesh, C0_diag, G1_x, G1_i, G1_p);
+        qb.init(n_mesh, C0_diag, G1_x, G1_i, G1_p, use_rational ? 2 : alpha);
         if (use_rational) {
             qb.rebuild_rational(kappa, tau_spde, rat_poles, rat_weights);
         } else {
-            qb.rebuild(kappa, tau_spde, alpha);
+            qb.rebuild(kappa, tau_spde);
         }
     }
 
@@ -558,7 +558,7 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
     //
     // Matern map (d=2, nu = alpha - 1):
     //   range = sqrt(8 nu) / kappa
-    //   sigma = 1 / (sqrt(4 pi) * kappa * tau)
+    //   sigma = 1 / (sqrt(4 pi nu) * kappa^nu * tau)
     Rcpp::List out = Rcpp::List::create(
         Rcpp::Named("draws")       = draws,
         Rcpp::Named("means")       = means,

@@ -14,25 +14,62 @@
 #include <Rcpp.h>
 #include <vector>
 #include <map>
+#include <set>
 #include <algorithm>
 #include <cmath>
+#include <tuple>
+#include <utility>
 
 namespace tulpa {
+
+// Matern (range, sigma) -> SPDE operator (kappa, tau) for the d = 2
+// construction. Single source of truth for the conversion every caller
+// applies before touching SpdeQBuilder; the R counterpart is .spde_kappa_tau()
+// (R/marginal_se_spatial.R) and the two must agree formula for formula.
+//
+// The marginal variance is sigma^2 = Gamma(nu) / (Gamma(nu+1) (4 pi)
+// kappa^(2 nu) tau^2) = 1 / (4 pi nu kappa^(2 nu) tau^2) (Lindgren, Rue &
+// Lindstrom 2011, d = 2), so nu enters BOTH kappa and tau. At nu = 1 the tau
+// factor collapses to sqrt(4 pi) kappa.
+inline std::pair<double, double> spde_range_sigma_to_kappa_tau(
+    double range, double sigma, double nu
+) {
+    const double kappa = std::sqrt(8.0 * nu) / range;
+    const double tau   = 1.0 / (std::sqrt(4.0 * M_PI * nu) *
+                                std::pow(kappa, nu) * sigma);
+    return {kappa, tau};
+}
 
 // =====================================================================
 // SpdeQBuilder: pattern-preserving sparse Q construction
 // =====================================================================
 //
-// Stores three per-entry contribution arrays (C0, G1, GDG) that combine as:
-//   Q(kappa, tau) = tau² * (kappa⁴ * c0[e] + 2*kappa² * g1[e] + gdg[e])
-// The sparsity pattern (Q_p, Q_i) is fixed. Only Q_x changes with theta.
+// The FEM precision of operator order alpha is Q = tau² K (C⁻¹K)^(alpha-1)
+// with K = kappa²C + G (Lindgren, Rue & Lindstrom 2011). Expanding the
+// product over the operator chain
+//
+//   M_0 = C,   M_1 = G,   M_j = G (C⁻¹G)^(j-1)
+//
+// gives a binomial sum whose only theta dependence is a scalar per level:
+//
+//   Q(kappa, tau) = tau² * sum_{j=0}^{alpha} C(alpha, j) kappa^(2(alpha-j)) M_j
+//
+// so one per-entry array per level (m_contrib[j]) covers EVERY integer alpha:
+// alpha = 1 is kappa²C + G, alpha = 2 is kappa⁴C + 2kappa²G + GC⁻¹G, alpha = 3
+// adds 3kappa²GC⁻¹G + GC⁻¹GC⁻¹G, and so on. The chain is built once by init()
+// for the requested alpha; the sparsity pattern (Q_p, Q_i) is its union and is
+// fixed, so only Q_x changes with theta.
 
 struct SpdeQBuilder {
     int n_mesh;
     std::vector<int> Q_p, Q_i;
-    std::vector<double> c0_contrib;
-    std::vector<double> g1_contrib;
-    std::vector<double> gdg_contrib;
+    // Operator order the chain was built for. rebuild() expands over levels
+    // 0..alpha_order, so m_contrib.size() == alpha_order + 1.
+    int alpha_order = 2;
+    // m_contrib[j][e] = entry e of M_j. Levels 0/1/2 are C, G and GC⁻¹G; the
+    // named accessors below expose them for the callers that need those three
+    // specifically (the rational assembly and the analytic dQ/dtheta kernel).
+    std::vector<std::vector<double>> m_contrib;
     // Orphan ridge: per-entry contribution that is theta-independent. Equals
     // 1.0 on the diagonal of orphan mesh nodes (nodes with C0_diag ~ 0 AND no
     // off-diagonal G1 connectivity — i.e. vertices the mesh refiner inserted
@@ -41,10 +78,21 @@ struct SpdeQBuilder {
     std::vector<double> orphan_contrib;
     std::vector<double> Q_x;
 
+    const std::vector<double>& c0_contrib()  const { return m_contrib[0]; }
+    const std::vector<double>& g1_contrib()  const { return m_contrib[1]; }
+    const std::vector<double>& gdg_contrib() const { return m_contrib[2]; }
+
+    // `alpha` is the operator order the chain is built for. The rational
+    // assembly shifts the alpha = 2 stencil, so rational callers pass 2.
     void init(int n, const Rcpp::NumericVector& C0_diag,
               const Rcpp::NumericVector& G1_x, const Rcpp::IntegerVector& G1_i,
-              const Rcpp::IntegerVector& G1_p) {
+              const Rcpp::IntegerVector& G1_p, int alpha = 2) {
+        if (alpha < 1) {
+            Rcpp::stop("SPDE FEM assembly requires alpha >= 1 (nu >= 0); got %d.",
+                       alpha);
+        }
         n_mesh = n;
+        alpha_order = alpha;
 
         // Detect orphan mesh nodes: any vertex with zero (or near-zero) FEM
         // mass. Two flavors land here:
@@ -53,9 +101,9 @@ struct SpdeQBuilder {
         //      to retriangulate (see tulpaMesh fix-mesh-zero-triangles).
         //   2. Zero-mass vertices that DO carry G1 connectivity (e.g. a
         //      Steiner point on a constraint edge with degenerate incident-
-        //      triangle area). The SPDE precision Q = tau² (κ⁴C + 2κ²G + G C⁻¹G)
-        //      uses C⁻¹ in the GDG term, which is undefined where C_diag = 0:
-        //      the GDG contribution for that row silently zeros out, leaving
+        //      triangle area). Every operator level above M_1 carries a C⁻¹,
+        //      which is undefined where C_diag = 0: the GC⁻¹G contribution for
+        //      that row silently zeros out, leaving
         //      Q rank-deficient at the node. CHOLMOD then warns "not positive
         //      definite" and the Newton solver makes no progress.
         // The defensive fix in both flavors: place a unit precision ridge on
@@ -73,30 +121,34 @@ struct SpdeQBuilder {
             c0_inv[i] = (C0_diag[i] > c0_eps) ? 1.0 / C0_diag[i] : 0.0;
         }
 
-        struct Triple { double c0 = 0, g1 = 0, gdg = 0, orph = 0; };
-        std::map<std::pair<int,int>, Triple> entries;
+        // Operator chain M_0 = C, M_1 = G, M_{l+1} = M_l C⁻¹ G, held
+        // column-major as row -> value maps. Every M_l is symmetric
+        // (M_l = G (C⁻¹G)^(l-1)), so column k of M_l also reads its row k,
+        // which is what the product below indexes.
+        const int n_levels = alpha + 1;
+        std::vector<std::vector<std::map<int, double>>> M(
+            n_levels, std::vector<std::map<int, double>>(n));
 
-        // C0 diagonal
-        for (int i = 0; i < n; i++) entries[{i, i}].c0 += C0_diag[i];
+        for (int i = 0; i < n; i++) M[0][i][i] += C0_diag[i];
 
-        // G1 sparse
         for (int j = 0; j < n; j++) {
             for (int idx = G1_p[j]; idx < G1_p[j + 1]; idx++) {
-                entries[{G1_i[idx], j}].g1 += G1_x[idx];
+                M[1][j][G1_i[idx]] += G1_x[idx];
             }
         }
 
-        // GDG = G1 * diag(c0_inv) * G1
-        for (int j = 0; j < n; j++) {
-            std::vector<std::pair<int, double>> scaled;
-            for (int idx = G1_p[j]; idx < G1_p[j + 1]; idx++) {
-                int k = G1_i[idx];
-                double val = G1_x[idx] * c0_inv[k];
-                if (std::abs(val) > c0_eps) scaled.push_back({k, val});
-            }
-            for (auto& [k, sc] : scaled) {
-                for (int idx2 = G1_p[k]; idx2 < G1_p[k + 1]; idx2++) {
-                    entries[{G1_i[idx2], j}].gdg += G1_x[idx2] * sc;
+        // (M_l C⁻¹ G)[r, c] = sum_k M_l[r, k] * c0_inv[k] * G[k, c]. The k loop
+        // walks column c of G (G is symmetric, so G[k, c] is its entry at row
+        // k), and r walks column k of M_l. A node with zero FEM mass has
+        // c0_inv = 0, so paths through an orphan drop out of every level.
+        for (int l = 1; l < alpha; l++) {
+            for (int c = 0; c < n; c++) {
+                for (int idx = G1_p[c]; idx < G1_p[c + 1]; idx++) {
+                    int k = G1_i[idx];
+                    double w = G1_x[idx] * c0_inv[k];
+                    if (std::abs(w) <= c0_eps) continue;
+                    auto& out_col = M[l + 1][c];
+                    for (const auto& [r, v] : M[l][k]) out_col[r] += v * w;
                 }
             }
         }
@@ -105,70 +157,75 @@ struct SpdeQBuilder {
         // This is a theta-independent term — see rebuild() for how it's mixed
         // into Q_x. Pinning to ~zero is fine because A never references
         // orphan vertices, so the orphan latent has no likelihood contribution.
+        std::vector<double> orph(n, 0.0);
         for (int i = 0; i < n; i++) {
-            if (is_orphan[i]) entries[{i, i}].orph += 1.0;
+            if (is_orphan[i]) orph[i] += 1.0;
         }
 
-        // Convert to CSC
-        struct Entry { int row, col; double c0, g1, gdg, orph; };
-        std::vector<Entry> sorted;
-        sorted.reserve(entries.size());
-        for (auto& [key, t] : entries) {
-            if (std::abs(t.c0) + std::abs(t.g1) + std::abs(t.gdg) + std::abs(t.orph) > c0_eps) {
-                sorted.push_back({key.first, key.second, t.c0, t.g1, t.gdg, t.orph});
+        // Convert to CSC over the union of the chain's patterns, dropping
+        // entries that are numerically absent at every level.
+        Q_p.assign(n + 1, 0);
+        Q_i.clear();
+        m_contrib.assign(n_levels, std::vector<double>());
+        orphan_contrib.clear();
+
+        std::vector<double> vals(n_levels);
+        for (int col = 0; col < n; col++) {
+            Q_p[col] = static_cast<int>(Q_i.size());
+            std::set<int> rows;
+            for (int l = 0; l < n_levels; l++) {
+                for (const auto& [r, v] : M[l][col]) rows.insert(r);
+            }
+            if (orph[col] != 0.0) rows.insert(col);
+            for (int row : rows) {
+                double mag = 0.0;
+                for (int l = 0; l < n_levels; l++) {
+                    auto it = M[l][col].find(row);
+                    vals[l] = (it == M[l][col].end()) ? 0.0 : it->second;
+                    mag += std::abs(vals[l]);
+                }
+                double o = (row == col) ? orph[col] : 0.0;
+                if (mag + std::abs(o) <= c0_eps) continue;
+                Q_i.push_back(row);
+                for (int l = 0; l < n_levels; l++) m_contrib[l].push_back(vals[l]);
+                orphan_contrib.push_back(o);
             }
         }
-        std::sort(sorted.begin(), sorted.end(),
-                  [](const Entry& a, const Entry& b) {
-                      return a.col < b.col || (a.col == b.col && a.row < b.row);
-                  });
-
-        int nnz = static_cast<int>(sorted.size());
-        Q_p.assign(n + 1, 0);
-        Q_i.resize(nnz);
-        c0_contrib.resize(nnz);
-        g1_contrib.resize(nnz);
-        gdg_contrib.resize(nnz);
-        orphan_contrib.resize(nnz);
-        Q_x.resize(nnz);
-
-        int cur_col = 0;
-        for (int e = 0; e < nnz; e++) {
-            while (cur_col <= sorted[e].col) { Q_p[cur_col] = e; cur_col++; }
-            Q_i[e] = sorted[e].row;
-            c0_contrib[e] = sorted[e].c0;
-            g1_contrib[e] = sorted[e].g1;
-            gdg_contrib[e] = sorted[e].gdg;
-            orphan_contrib[e] = sorted[e].orph;
-        }
-        while (cur_col <= n) { Q_p[cur_col] = nnz; cur_col++; }
+        Q_p[n] = static_cast<int>(Q_i.size());
+        Q_x.assign(Q_i.size(), 0.0);
     }
 
-    // Rebuild Q values for given (kappa, tau) and operator order alpha.
-    // alpha = nu + d/2 where d=2 (spatial dimension), nu = Matérn smoothness.
-    //   alpha=1 (nu=0): Q = tau² * (κ²C + G)  — very rough
+    // Rebuild Q values for given (kappa, tau) at the operator order this
+    // builder was init()'d for. alpha = nu + d/2 with d = 2 (spatial
+    // dimension), nu = Matérn smoothness:
+    //   alpha=1 (nu=0): Q = tau² * (κ²C + G)
     //   alpha=2 (nu=1): Q = tau² * (κ⁴C + 2κ²G + GC⁻¹G)  — standard
-    //   Fractional alpha: rational approximation via weighted sum of shifted terms
-    void rebuild(double kappa, double tau_spde, int alpha = 2) {
-        double k2 = kappa * kappa;
-        double tau2 = tau_spde * tau_spde;
-        int nnz_val = static_cast<int>(Q_i.size());
+    //   alpha=3 (nu=2): Q = tau² * (κ⁶C + 3κ⁴G + 3κ²GC⁻¹G + GC⁻¹GC⁻¹G)
+    //   ... and so on, the binomial expansion of K(C⁻¹K)^(alpha-1).
+    // Fractional alpha goes through rebuild_rational instead.
+    void rebuild(double kappa, double tau_spde) {
+        const double k2 = kappa * kappa;
+        const double tau2 = tau_spde * tau_spde;
+        const int nnz_val = static_cast<int>(Q_i.size());
+        const int n_levels = alpha_order + 1;
 
-        if (alpha == 1) {
-            // Q = tau² * (κ²C + G + eps*C) — ridge for positive definiteness
-            // alpha=1 operator is rank-deficient; needs more regularization
-            double eps_ridge = 1e-2;
-            for (int e = 0; e < nnz_val; e++) {
-                Q_x[e] = tau2 * ((k2 + eps_ridge) * c0_contrib[e] + g1_contrib[e])
-                       + orphan_contrib[e];
-            }
-        } else {
-            // alpha == 2 (default): Q = tau² * L·C⁻¹·L
-            double k4 = k2 * k2;
-            for (int e = 0; e < nnz_val; e++) {
-                Q_x[e] = tau2 * (k4 * c0_contrib[e] + 2.0 * k2 * g1_contrib[e] + gdg_contrib[e])
-                       + orphan_contrib[e];
-            }
+        // coef[j] = C(alpha, j) * kappa^(2 * (alpha - j)). Powers accumulate by
+        // repeated multiplication so alpha = 2 reproduces k4 = k2 * k2 exactly.
+        std::vector<double> kpow(n_levels);
+        kpow[0] = 1.0;
+        for (int m = 1; m < n_levels; m++) kpow[m] = kpow[m - 1] * k2;
+
+        std::vector<double> coef(n_levels);
+        double binom = 1.0;
+        for (int j = 0; j < n_levels; j++) {
+            if (j > 0) binom = binom * (alpha_order - j + 1) / j;
+            coef[j] = binom * kpow[alpha_order - j];
+        }
+
+        for (int e = 0; e < nnz_val; e++) {
+            double acc = 0.0;
+            for (int j = 0; j < n_levels; j++) acc += coef[j] * m_contrib[j][e];
+            Q_x[e] = tau2 * acc + orphan_contrib[e];
         }
     }
 
@@ -180,6 +237,14 @@ struct SpdeQBuilder {
     void rebuild_rational(double kappa, double tau_spde,
                           const std::vector<double>& poles,
                           const std::vector<double>& weights) {
+        if (alpha_order < 2) {
+            Rcpp::stop("The rational assembly shifts the alpha = 2 stencil, so "
+                       "the builder must be init()'d with alpha >= 2; got %d.",
+                       alpha_order);
+        }
+        const std::vector<double>& c0  = c0_contrib();
+        const std::vector<double>& g1  = g1_contrib();
+        const std::vector<double>& gdg = gdg_contrib();
         double k2 = kappa * kappa;
         double tau2 = tau_spde * tau_spde;
         int nnz_val = static_cast<int>(Q_i.size());
@@ -194,9 +259,9 @@ struct SpdeQBuilder {
             double k4_shifted = k2_shifted * k2_shifted;
             for (int e = 0; e < nnz_val; e++) {
                 Q_x[e] += tau2 * weights[j] * (
-                    k4_shifted * c0_contrib[e] +
-                    2.0 * k2_shifted * g1_contrib[e] +
-                    gdg_contrib[e]
+                    k4_shifted * c0[e] +
+                    2.0 * k2_shifted * g1[e] +
+                    gdg[e]
                 );
             }
         }

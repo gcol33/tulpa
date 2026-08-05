@@ -7,7 +7,7 @@
 rational_spde_coefficients(nu, m = 4L, lambda_range = c(1e-04, 10000))
 }
 \arguments{
-\item{nu}{Matern smoothness parameter. A non-negative number; may be
+\item{nu}{Matern smoothness parameter. A positive number; may be
 fractional (e.g. 0.5, 1.5, 2.5).}
 
 \item{m}{Rational approximation order (number of numerator / denominator
@@ -35,7 +35,7 @@ rational approximation is needed. For fractional \code{nu} it returns the
 rational-SPDE roots from the BRASIL best-rational approximation (see Details).
 }
 \details{
-For integer \code{nu} (0, 1, 2, ...) the operator order \code{alpha = nu + 1} is an
+For integer \code{nu} (1, 2, 3, ...) the operator order \code{alpha = nu + 1} is an
 integer and the precision is assembled directly from integer powers of the
 FEM operator \verb{L = kappa^2 C + G} -- an exact construction.
 

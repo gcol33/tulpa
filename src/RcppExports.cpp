@@ -3402,6 +3402,24 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_test_spde_assemble
+List cpp_test_spde_assemble(Rcpp::NumericVector C0_diag, Rcpp::NumericVector G1_x, Rcpp::IntegerVector G1_i, Rcpp::IntegerVector G1_p, double range, double sigma, double nu, int alpha);
+RcppExport SEXP _tulpa_cpp_test_spde_assemble(SEXP C0_diagSEXP, SEXP G1_xSEXP, SEXP G1_iSEXP, SEXP G1_pSEXP, SEXP rangeSEXP, SEXP sigmaSEXP, SEXP nuSEXP, SEXP alphaSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type C0_diag(C0_diagSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type G1_x(G1_xSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type G1_i(G1_iSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type G1_p(G1_pSEXP);
+    Rcpp::traits::input_parameter< double >::type range(rangeSEXP);
+    Rcpp::traits::input_parameter< double >::type sigma(sigmaSEXP);
+    Rcpp::traits::input_parameter< double >::type nu(nuSEXP);
+    Rcpp::traits::input_parameter< int >::type alpha(alphaSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_spde_assemble(C0_diag, G1_x, G1_i, G1_p, range, sigma, nu, alpha));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_test_lkj_build_L
 List cpp_test_lkj_build_L(NumericVector raw, int n);
 RcppExport SEXP _tulpa_cpp_test_lkj_build_L(SEXP rawSEXP, SEXP nSEXP) {
@@ -4107,6 +4125,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_pc_prior_scales", (DL_FUNC) &_tulpa_cpp_pc_prior_scales, 3},
     {"_tulpa_cpp_test_hessian_pattern_guard", (DL_FUNC) &_tulpa_cpp_test_hessian_pattern_guard, 4},
     {"_tulpa_cpp_spatial_partition_probe", (DL_FUNC) &_tulpa_cpp_spatial_partition_probe, 5},
+    {"_tulpa_cpp_test_spde_assemble", (DL_FUNC) &_tulpa_cpp_test_spde_assemble, 8},
     {"_tulpa_cpp_test_lkj_build_L", (DL_FUNC) &_tulpa_cpp_test_lkj_build_L, 2},
     {"_tulpa_cpp_test_lkj_density", (DL_FUNC) &_tulpa_cpp_test_lkj_density, 2},
     {"_tulpa_cpp_test_lkj_grad", (DL_FUNC) &_tulpa_cpp_test_lkj_grad, 3},

@@ -6,6 +6,7 @@
 #include "spde_qbuilder.h"
 #include "sparse_hessian.h"
 #include <Rcpp.h>
+#include <tuple>
 
 // Compute gradient of Laplace log-marginal w.r.t. (log_range, log_sigma)
 // at a given point. Runs inner Laplace to find x*(theta), then implicit diff.
@@ -29,10 +30,18 @@ Rcpp::List cpp_spde_laplace_gradient(
     int n_x = p + n_mesh;
     int mesh_start = p;
 
+    // The analytic dQ/dtheta kernel (implicit_diff.h) differentiates the
+    // alpha = 2 assembly term by term, so this entry is the nu = 1 operator.
+    if (std::abs(nu - 1.0) > 1e-10) {
+        Rcpp::stop("cpp_spde_laplace_gradient implements the alpha = 2 "
+                   "(nu = 1) operator; got nu = %g. Its analytic dQ/dtheta is "
+                   "written for that assembly.", nu);
+    }
     double range = std::exp(log_range);
     double sigma_spde = std::exp(log_sigma);
-    double kappa = std::sqrt(8.0 * nu) / range;
-    double tau = 1.0 / (std::sqrt(4.0 * M_PI) * kappa * sigma_spde);
+    double kappa, tau;
+    std::tie(kappa, tau) =
+        tulpa::spde_range_sigma_to_kappa_tau(range, sigma_spde, nu);
 
     Rcpp::NumericVector x_init;
     if (x_init_nullable.isNotNull()) {
@@ -41,8 +50,8 @@ Rcpp::List cpp_spde_laplace_gradient(
 
     // Build Q and A
     tulpa::SpdeQBuilder qb;
-    qb.init(n_mesh, C0_diag, G1_x, G1_i, G1_p);
-    qb.rebuild(kappa, tau, 2);
+    qb.init(n_mesh, C0_diag, G1_x, G1_i, G1_p, 2);
+    qb.rebuild(kappa, tau);
 
     tulpa::ARows a_rows = tulpa::build_A_rows(N, n_mesh, A_x, A_i, A_p);
 

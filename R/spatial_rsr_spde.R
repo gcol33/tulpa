@@ -270,8 +270,8 @@ apply_rsr_projection <- function(w, P_perp) {
 #' @param max_edge Maximum edge length for mesh refinement. A single value
 #'   or `c(inner, outer)`.
 #' @param cutoff Minimum distance between mesh vertices. Default 0.
-#' @param nu Matern smoothness parameter. A non-negative number. Integer `nu`
-#'   (0, 1, 2, ...) gives an exact FEM construction (operator order
+#' @param nu Matern smoothness parameter. A positive number. Integer `nu`
+#'   (1, 2, 3, ...) gives an exact FEM construction (operator order
 #'   `alpha = nu + 1`). Fractional `nu` (e.g. 0.5, 1.5) uses the operator-based
 #'   rational SPDE approximation with BRASIL best-rational coefficients
 #'   (Bolin & Kirchner 2020; Hofreither 2021); supported by the Laplace fitter
@@ -364,7 +364,7 @@ spatial_spde <- function(coords, data = NULL, mesh = NULL,
 #' @param C Mass matrix (n_mesh x n_mesh sparse matrix, e.g. from `fmesher::fm_fem()$c0`).
 #' @param G Stiffness matrix (n_mesh x n_mesh sparse matrix, e.g. from `fmesher::fm_fem()$g1`).
 #' @param A Projection matrix (n_obs x n_mesh sparse matrix, e.g. from `fmesher::fm_basis()`).
-#' @param nu Matern smoothness parameter. A non-negative number; integer values
+#' @param nu Matern smoothness parameter. A positive number; integer values
 #'   give the exact FEM construction, fractional values the BRASIL rational SPDE
 #' approximation (supported by `fit_spde()`;). Default 1.
 #' @param prior_range Prior for the spatial range. Default `c(0.5, 0.5)`.

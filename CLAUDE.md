@@ -502,6 +502,27 @@ driver's `Rcpp::List`-only interface does not expose.
 1-based-R-to-0-based-probe conversion. The coupled (non-separable) cubic-term
 derivation (#273 item 2) remains open.
 
+**SPDE smoothness is general in `nu`, and `nu > 0` (gcol33/tulpa#279, #280,
+#281, 0.0.122).** `SpdeQBuilder` holds the operator chain `M_0 = C`, `M_1 = G`,
+`M_j = G (C^-1 G)^(j-1)` built by `init(..., alpha)`, and `rebuild(kappa, tau)`
+is the binomial expansion of `Q = tau^2 K (C^-1 K)^(alpha-1)` over it -- one
+loop for every integer alpha, replacing an `if (alpha == 1) ... else` whose
+else-branch assembled `alpha = 2` for any higher order. The sparsity pattern is
+the union of the chain's levels, so it widens with the order; `alpha = 2` is
+reproduced term for term, so `nu = 1` is byte-identical. The rational assembly
+shifts the `alpha = 2` stencil, so rational callers `init(..., 2)` regardless of
+the fractional `nu` they approximate. The Matern axis conversion is
+`spde_range_sigma_to_kappa_tau()` (`spde_qbuilder.h`), carrying `nu` in BOTH
+coordinates (`tau = 1 / (sqrt(4 pi nu) kappa^nu sigma)`) and matching R's
+`.spde_kappa_tau()`; `.spde_precision_Q()` (`R/marginal_se_spatial.R`) mirrors
+the same expansion for the analytic marginal-SE path. Two paths stay
+alpha = 2-only and now say so rather than silently downgrading: joint-hyper
+NUTS (its non-centered transform differentiates that assembly) and
+`cpp_spde_laplace_gradient` (its analytic `dQ/dtheta` is written term by term
+for it). `nu <= 0` is refused by `.validate_spde_nu()` -- the parameterisation
+is degenerate there, so the `alpha = 1` operator is unreachable from the Matern
+front door and its `eps_ridge` workaround is gone.
+
 ### Checkpoint / resume across every fitter (gcol33/tulpa#50)
 
 Every fitter with an outer loop of independent, expensive units supports

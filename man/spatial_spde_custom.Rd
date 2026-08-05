@@ -20,7 +20,7 @@ spatial_spde_custom(
 
 \item{A}{Projection matrix (n_obs x n_mesh sparse matrix, e.g. from \code{fmesher::fm_basis()}).}
 
-\item{nu}{Matern smoothness parameter. A non-negative number; integer values
+\item{nu}{Matern smoothness parameter. A positive number; integer values
 give the exact FEM construction, fractional values the BRASIL rational SPDE
 approximation (supported by \code{fit_spde()};). Default 1.}
 

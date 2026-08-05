@@ -1,5 +1,43 @@
 # tulpa NEWS
 
+## 0.0.122
+
+* **The SPDE FEM assembly builds the operator order it was asked for (#280).**
+  `SpdeQBuilder::rebuild()` branched `if (alpha == 1) ... else <alpha 2>`, so
+  every `alpha >= 3` was assembled as `alpha = 2` with no error -- a user
+  asking for a smoother Matern field silently got the `nu = 1` operator.
+  `init()` now takes the operator order and builds the chain `M_0 = C`,
+  `M_1 = G`, `M_j = G (C^-1 G)^(j-1)`; `rebuild()` is the binomial expansion of
+  `Q = tau^2 K (C^-1 K)^(alpha-1)` over it, so one loop covers every integer
+  alpha and the sparsity pattern widens with the order instead of every `nu`
+  reusing the `alpha = 2` stencil. The analytic marginal-SE mirror
+  `.spde_precision_Q()` carries the same expansion. `alpha = 2` is reproduced
+  term for term, so `nu = 1` results are unchanged.
+
+* **`(range, sigma) -> (kappa, tau)` carries `nu` in both coordinates (#279).**
+  The C++ conversion had `nu` entering `kappa` but not `tau`, which is the
+  `nu = 1` special case; the general d = 2 relation is
+  `tau = 1 / (sqrt(4 pi nu) kappa^nu sigma)` (Lindgren, Rue & Lindstrom 2011),
+  as the R side already used. At `nu = 2` the old `tau` was ~14x too large, so
+  a requested `sigma` mapped to a different marginal SD, and the single fit and
+  the nested integrator disagreed with each other. The conversion is now one
+  function, `spde_range_sigma_to_kappa_tau()` in `src/spde_qbuilder.h`, shared
+  by the block factory and the implicit-differentiation entry.
+
+* **`spatial_spde(nu = 0)` is refused at construction (#281).** The Matern
+  parameterisation is degenerate there -- `kappa` is 0 and `tau` infinite -- so
+  a fit could only report an infeasible cell (`log_marginal = -Inf`, no Newton
+  iterations) with nothing saying why. `.validate_spde_nu()` now requires
+  `nu > 0` and names both broken quantities.
+
+* Joint-hyper NUTS refuses an integer `nu != 1`. Its non-centered transform
+  differentiates the `alpha = 2` assembly, so higher orders would have been
+  sampled as `nu = 1`; the fixed-hyper sampler and the nested-Laplace path both
+  assemble any integer alpha. New `test-spde-nu-general.R` checks the compiled
+  assembly against an independently built `K (C^-1 K)^(alpha-1)` at
+  `alpha = 1..4`, the conversion against the closed-form marginal variance, and
+  a `nu = 2` field end to end.
+
 ## 0.0.121
 
 * **`cpp_laplace_fit_gp` and `cpp_laplace_fit_spde` are now one-cell runs of

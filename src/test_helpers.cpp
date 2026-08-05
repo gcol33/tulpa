@@ -9,6 +9,7 @@
 #include "autodiff.h"
 #include "tulpa/autodiff_arena.h"
 #include "spde_nc_transform.h"
+#include "spde_qbuilder.h"
 #include "laplace_core.h"
 #include "pg_binomial.h"
 #include "hmc_gp.h"
@@ -1785,5 +1786,39 @@ Rcpp::List cpp_spatial_partition_probe(int n_units,
     Rcpp::_["n_components"]    = d.n_spatial_components,
     Rcpp::_["accepted"]        = accepted,
     Rcpp::_["error"]           = error
+  );
+}
+
+// =====================================================================
+// SPDE FEM assembly probe (gcol33/tulpa#280)
+// =====================================================================
+// Assembles Q at the requested operator order and returns it as CSC, so the
+// testthat layer can compare the compiled binomial expansion against an
+// independently built K (C^-1 K)^(alpha-1) at each integer alpha. Also returns
+// the (kappa, tau) the shared Matern conversion produces for the given nu
+// (gcol33/tulpa#279), so both formulas are checked at one call site.
+// [[Rcpp::export]]
+List cpp_test_spde_assemble(
+    Rcpp::NumericVector C0_diag,
+    Rcpp::NumericVector G1_x,
+    Rcpp::IntegerVector G1_i,
+    Rcpp::IntegerVector G1_p,
+    double range, double sigma, double nu, int alpha
+) {
+  const int n = C0_diag.size();
+  double kappa, tau;
+  std::tie(kappa, tau) = tulpa::spde_range_sigma_to_kappa_tau(range, sigma, nu);
+
+  tulpa::SpdeQBuilder qb;
+  qb.init(n, C0_diag, G1_x, G1_i, G1_p, alpha);
+  qb.rebuild(kappa, tau);
+
+  return Rcpp::List::create(
+    Rcpp::_["Q_p"]   = Rcpp::IntegerVector(qb.Q_p.begin(), qb.Q_p.end()),
+    Rcpp::_["Q_i"]   = Rcpp::IntegerVector(qb.Q_i.begin(), qb.Q_i.end()),
+    Rcpp::_["Q_x"]   = Rcpp::NumericVector(qb.Q_x.begin(), qb.Q_x.end()),
+    Rcpp::_["kappa"] = kappa,
+    Rcpp::_["tau"]   = tau,
+    Rcpp::_["alpha"] = qb.alpha_order
   );
 }
