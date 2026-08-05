@@ -91,6 +91,15 @@
   )
 }
 
+# One layer's band collapsed to a state: "bad" (unreliable), "ok" (borderline),
+# "na" (never assessed for this fit/backend), or "good" (anything else).
+.tulpa_layer_state <- function(band) {
+  if (is.na(band)) return("na")
+  if (identical(band, "unreliable")) return("bad")
+  if (identical(band, "ok")) return("ok")
+  "good"
+}
+
 # Combine the outer (grid-quadrature / PSIS) band with the inner (Laplace
 # skewness) band into a single whole-fit verdict: reliable only when BOTH
 # layers are reliable; otherwise "scoped", naming which layer(s) degrade, so
@@ -98,22 +107,44 @@
 # broken" when the inner layer is fine, or vice versa -- the framing #272
 # was filed to fix (42/78 occu_cover species read as "broken" on outer k-hat
 # alone when their point estimates, governed by the inner layer, were fine).
+#
+# A layer can also be "na" -- never assessed (gamma_3 not wired for a coupled
+# likelihood; a multi-block/multi-axis outer grid that declines to a guessed
+# support transform) -- which must never collapse into the SAME string as
+# "assessed and good", or a batch consumer reading the verdict off many fits
+# cannot tell "outer bad, inner genuinely fine" from "outer bad, inner never
+# checked" (gcol33/tulpa#274). Every combination naming an "na" layer says so
+# explicitly ("... not assessed"), so `grepl("not assessed", reliability)`
+# reliably separates the two.
 .tulpa_combined_reliability <- function(outer_band, inner_band) {
-  bad_outer <- identical(outer_band, "unreliable")
-  bad_inner <- identical(inner_band, "unreliable")
-  ok_outer  <- identical(outer_band, "ok")
-  ok_inner  <- identical(inner_band, "ok")
-  if (is.na(outer_band) && is.na(inner_band)) {
+  outer_state <- .tulpa_layer_state(outer_band)
+  inner_state <- .tulpa_layer_state(inner_band)
+
+  if (outer_state == "na" && inner_state == "na") {
     return("not computed (neither layer's diagnostic ran)")
   }
-  if (bad_outer && bad_inner) {
+  if (outer_state == "bad" && inner_state == "bad") {
     return("unreliable (both outer integration and inner Laplace flagged)")
   }
-  if (bad_outer) return("scoped: outer (hyperparameter) integration flagged")
-  if (bad_inner) return("scoped: inner (latent-field) Laplace flagged")
-  if (ok_outer && ok_inner) return("usable (both layers borderline)")
-  if (ok_outer) return("scoped: outer integration borderline")
-  if (ok_inner) return("scoped: inner Laplace borderline")
+  if (outer_state == "bad" && inner_state == "na") {
+    return("scoped: outer (hyperparameter) integration flagged; inner Laplace not assessed")
+  }
+  if (outer_state == "bad") return("scoped: outer (hyperparameter) integration flagged")
+  if (inner_state == "bad" && outer_state == "na") {
+    return("scoped: inner (latent-field) Laplace flagged; outer integration not assessed")
+  }
+  if (inner_state == "bad") return("scoped: inner (latent-field) Laplace flagged")
+  if (outer_state == "ok" && inner_state == "ok") return("usable (both layers borderline)")
+  if (outer_state == "ok" && inner_state == "na") {
+    return("scoped: outer integration borderline; inner Laplace not assessed")
+  }
+  if (outer_state == "ok") return("scoped: outer integration borderline")
+  if (inner_state == "ok" && outer_state == "na") {
+    return("scoped: inner Laplace borderline; outer integration not assessed")
+  }
+  if (inner_state == "ok") return("scoped: inner Laplace borderline")
+  if (outer_state == "na") return("outer integration not assessed; inner Laplace good")
+  if (inner_state == "na") return("outer integration good; inner Laplace not assessed")
   "reliable (both layers good)"
 }
 

@@ -1,5 +1,46 @@
 # tulpa NEWS
 
+## 0.0.118
+
+* **`gamma_3` wired through the joint multi-block dispatch (#273).** The
+  inner-Laplace skewness diagnostic #272 shipped for every single-arm kernel
+  and the joint driver's single-block backends, but explicitly left the
+  MULTI-block joint path (`nested_laplace_joint_multi.R`, used when a fit
+  carries a per-group RE / trend field / arm-specific field block) unwired.
+  `.nlj_multi_inner_skew_at_theta()` closes that gap: the multi-block
+  counterpart of `.nlj_inner_skew_at_theta()`, re-dispatching the SAME
+  `call_kernel` at the fitted MAP grid cell with `compute_skew = TRUE` (the
+  C++ kernel already accepted the parameter; only the R-side threading was
+  missing). Same defaults as the single-block path: every arm's
+  fixed-effects coefficients scored by default, `NA` (not a silently-wrong
+  `0`) for a non-separable coupled arm.
+
+* **Combined outer/inner reliability verdict no longer conflates "not
+  assessed" with "good" (#274).** `.tulpa_combined_reliability()` collapsed
+  an unassessed inner layer (gamma_3 not computable for a given backend or
+  likelihood) into the same verdict string as a genuinely good inner layer
+  whenever the outer layer was flagged, so a batch consumer reading the
+  `reliability` string off many fits couldn't tell "outer bad, inner
+  genuinely fine" from "outer bad, inner never checked". Every combination
+  naming an unassessed layer now says so explicitly ("... not assessed"),
+  symmetric in both layers (an unassessed OUTER layer -- e.g. a multi-block,
+  multi-axis grid that declines Pareto-k rather than apply a guessed support
+  transform -- gets the same honest treatment).
+
+* **Fixed a crash in the joint multi-block dispatch on a malformed per-arm
+  index vector (#275, found while testing the #273 fix).** A block's
+  per-arm `spatial_idx` / `temporal_idx` / `obs_idx` entry shorter than that
+  arm's actual observation count (in particular, an empty vector for an arm
+  the block is meant to "skip") was read out of bounds by the C++ kernel's
+  per-arm index closure, crashing the R session instead of raising an error.
+  There is no supported "this block excludes arm k" shorthand via a
+  short/empty index vector -- every arm needs a matching-length index vector
+  for every block; a block's contribution to an arm is excluded via that
+  arm's `field_coef = 0` instead. `.multi_block_per_arm_idx()` now validates
+  every per-arm entry's length across all 7 call sites (icar/bym2/car_proper,
+  mcar, rw1/rw2/ar1, iid, miid, tgmrf, lf) and raises a clear error naming
+  the block, the arm, and the expected/actual counts.
+
 ## 0.0.117
 
 * **Inner-Laplace skewness diagnostic: score the layer outer Pareto-k-hat

@@ -442,19 +442,21 @@ cutoff) and `.tulpa_combined_reliability()` (`R/laplace_diagnostics.R`)
 combine the outer and inner bands into one verdict, surfaced by
 `diagnostics()` / `print.laplace_diagnostics()`.
 
-**Known scope gap, not silently dropped:** the joint MULTI-block path
+**Multi-block joint wiring (gcol33/tulpa#273):** the joint MULTI-block path
 (`nested_laplace_joint_multi.R`, used when a joint fit carries a per-group
 RE / trend field / arm-specific field block -- e.g. some `occu_cover()`
-configurations) does not yet thread `compute_skew` through its own
-`kernel_fn`; only the single-block backends (icar/bym2/car_proper, wired via
-`.joint_call_kernel_via_multi`) do. For a fully-coupled fit like `occu_cover`
-the eventual answer there is provably the same all-NaN regardless (every arm
-is coupled), so the gap is presence/absence of an explicit NaN field, not a
-missing real number -- still worth closing for the SEPARABLE multi-block
-case. The bespoke SPDE/GP large-`n` sparse Newton pair
+configurations) now threads `compute_skew`/`skew_idx` through its own
+`call_kernel` (`.joint_multi_call_factory`) via `.nlj_multi_inner_skew_at_theta()`,
+the multi-block counterpart of the single-block `.nlj_inner_skew_at_theta()`;
+both attach points are wired identically (fitted-MAP-cell probe, every arm's
+fixed-effects coefficients by default, NaN for a non-"separable" coupled
+arm). For a fully-coupled fit like `occu_cover` the answer is still
+provably all-NaN (every arm is coupled), now as an explicit NaN field rather
+than an absent one. The bespoke SPDE/GP large-`n` sparse Newton pair
 (`laplace_newton_solve_sparse` / `run_spde_laplace`, fixed-hyperparameter
 only, no outer grid to complement) is a fourth, independent Newton
-implementation with zero skew hooks, not attempted.
+implementation with zero skew hooks, and the coupled (non-separable)
+cubic-term derivation itself, remain open (gcol33/tulpa#273).
 
 ### Checkpoint / resume across every fitter (gcol33/tulpa#50)
 

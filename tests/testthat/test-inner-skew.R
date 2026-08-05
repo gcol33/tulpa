@@ -387,3 +387,62 @@ test_that("tulpa_nested_laplace_joint() declines to NaN for a genuinely coupled 
   expect_true(all(is.nan(res$inner_skew)))
   expect_length(res$inner_skew, sum(res$arm_layout$p))
 })
+
+# --------------------------------------------------------------------------- #
+# (7) Joint front door: tulpa_nested_laplace_joint() MULTI-block path         #
+#     (gcol33/tulpa#273 -- .nlj_multi_inner_skew_at_theta())                  #
+# --------------------------------------------------------------------------- #
+
+test_that("tulpa_nested_laplace_joint() wires gamma_3 through the multi-block dispatch", {
+  skip_on_cran()
+  # Two SEPARATE icar blocks, each contributing directly (no copy scaling) to
+  # BOTH arms -- the simplest fit that routes through .joint_dispatch_multi()
+  # rather than the single-block path the two tests above exercise.
+  set.seed(37)
+  n_s <- 8L
+  adjA <- .isk_chain_adj(n_s); adjB <- .isk_chain_adj(n_s)
+  N <- 80L
+  iA <- sample.int(n_s, N, replace = TRUE)
+  iB <- sample.int(n_s, N, replace = TRUE)
+  pA <- as.numeric(scale(cumsum(rnorm(n_s, 0, 0.5))))
+  pB <- as.numeric(scale(cumsum(rnorm(n_s, 0, 0.4))))
+  x <- rnorm(N); Xocc <- cbind(1, x)
+  occ <- rbinom(N, 1, plogis(as.numeric(Xocc %*% c(-0.2, 0.4)) + pA[iA] + pB[iB]))
+  is_pos <- occ == 1L
+  Xpos <- Xocc[is_pos, , drop = FALSE]
+  iAp <- iA[is_pos]; iBp <- iB[is_pos]
+  y_pos <- rnorm(sum(is_pos),
+                 as.numeric(Xpos %*% c(0.1, -0.3)) + pA[iAp] + pB[iBp], 0.5)
+
+  responses <- list(
+    occ = list(y = as.numeric(occ), n_trials = rep(1L, N), X = Xocc,
+              spatial_idx = as.integer(iA), re_idx = rep(0, N),
+              n_re_groups = 0L, sigma_re = 1.0, family = "binomial", phi = 1.0),
+    pos = list(y = y_pos, n_trials = rep(1L, length(y_pos)), X = Xpos,
+              spatial_idx = as.integer(iAp), re_idx = rep(0, length(y_pos)),
+              n_re_groups = 0L, sigma_re = 1.0, family = "gaussian", phi = 0.5))
+  prior <- list(
+    list(type = "icar", n_spatial_units = n_s,
+         adj_row_ptr = adjA$adj_row_ptr, adj_col_idx = adjA$adj_col_idx,
+         n_neighbors = adjA$n_neighbors, sigma_grid = c(0.4, 0.9),
+         spatial_idx = list(as.integer(iA), as.integer(iAp))),
+    list(type = "icar", n_spatial_units = n_s,
+         adj_row_ptr = adjB$adj_row_ptr, adj_col_idx = adjB$adj_col_idx,
+         n_neighbors = adjB$n_neighbors, sigma_grid = c(0.3, 0.8),
+         spatial_idx = list(as.integer(iB), as.integer(iBp))))
+
+  fit <- tulpa_nested_laplace_joint(
+      responses = responses, prior = prior,
+      control = list(max_iter = 100L, tol = 1e-6, diagnose_k = FALSE))
+  expect_s3_class(fit, "tulpa_nested_laplace_joint_multi")
+  # Default probe scope is every arm's fixed-effects coefficients (2 + 2).
+  expect_length(fit$inner_skew, sum(fit$arm_layout$p))
+  expect_true(all(is.finite(fit$inner_skew)))
+  expect_equal(fit$inner_skew_idx, seq_len(sum(fit$arm_layout$p)))
+
+  fit_off <- tulpa_nested_laplace_joint(
+      responses = responses, prior = prior,
+      control = list(max_iter = 100L, tol = 1e-6, diagnose_k = FALSE,
+                     diagnose_skew = FALSE))
+  expect_null(fit_off$inner_skew)
+})

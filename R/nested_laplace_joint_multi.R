@@ -232,6 +232,8 @@
 # NULL only from contexts where no such block can appear.
 .joint_block_spec_for_cpp <- function(p, n_arms, block_index, arms = NULL) {
     type <- tolower(p$type)
+    arm_n_obs <- if (is.null(arms)) NULL
+                 else vapply(arms, function(a) length(a$y), integer(1))
     if (type %in% c("icar", "bym2", "car_proper")) {
         if (is.null(p$spatial_idx)) {
             stop("Block ", block_index, " (type '", type, "'): ",
@@ -239,7 +241,8 @@
                  call. = FALSE)
         }
         spatial_idx <- .multi_block_per_arm_idx(p$spatial_idx, n_arms,
-                                                  block_index, "spatial_idx")
+                                                  block_index, "spatial_idx",
+                                                  arm_n_obs)
         out <- list(
             type            = type,
             spatial_idx     = spatial_idx,
@@ -286,7 +289,8 @@
                  "required as a list of length n_arms.", call. = FALSE)
         }
         spatial_idx <- .multi_block_per_arm_idx(p$spatial_idx, n_arms,
-                                                  block_index, "spatial_idx")
+                                                  block_index, "spatial_idx",
+                                                  arm_n_obs)
         n_fields <- as.integer(p$n_fields)
         if (is.null(p$field_weight) || length(p$field_weight) != n_fields) {
             stop("Block ", block_index, " (type 'mcar'): `field_weight` must be ",
@@ -329,7 +333,8 @@
                  call. = FALSE)
         }
         temporal_idx <- .multi_block_per_arm_idx(p$temporal_idx, n_arms,
-                                                   block_index, "temporal_idx")
+                                                   block_index, "temporal_idx",
+                                                   arm_n_obs)
         out <- list(
             type         = type,
             temporal_idx = temporal_idx,
@@ -357,7 +362,8 @@
                  call. = FALSE)
         }
         obs_idx <- .multi_block_per_arm_idx(p$obs_idx, n_arms,
-                                              block_index, "obs_idx")
+                                              block_index, "obs_idx",
+                                              arm_n_obs)
         out <- list(
             type    = "iid",
             obs_idx = obs_idx,
@@ -390,7 +396,8 @@
                  "required as a list of length n_arms.", call. = FALSE)
         }
         obs_idx <- .multi_block_per_arm_idx(p$obs_idx, n_arms,
-                                              block_index, "obs_idx")
+                                              block_index, "obs_idx",
+                                              arm_n_obs)
         n_fields <- as.integer(p$n_fields)
         if (is.null(p$field_weight) || length(p$field_weight) != n_fields) {
             stop("Block ", block_index, " (type 'miid'): `field_weight` must be ",
@@ -418,7 +425,8 @@
             }
         }
         obs_idx <- .multi_block_per_arm_idx(p$obs_idx, n_arms,
-                                              block_index, "obs_idx")
+                                              block_index, "obs_idx",
+                                              arm_n_obs)
         list(
             type                       = "tgmrf",
             n_latent                   = as.integer(p$n_latent),
@@ -572,7 +580,8 @@
                  call. = FALSE)
         }
         obs_idx <- .multi_block_per_arm_idx(p$obs_idx, n_arms,
-                                              block_index, "obs_idx")
+                                              block_index, "obs_idx",
+                                              arm_n_obs)
         out <- list(
             type     = "lf",
             n_latent = as.integer(p$n_latent),
@@ -624,8 +633,19 @@
 # Accepts either a list (already per-arm) or a single vector (replicated
 # across arms; useful when every arm shares the same indexing -- e.g. years
 # 1..T mapped one-to-one).
-.multi_block_per_arm_idx <- function(idx, n_arms, block_index, field_name) {
-    if (is.list(idx)) {
+# `arm_n_obs`, when supplied, is each arm's observation count
+# (length(arms[[k]]$y)): the C++ side (make_per_arm_idx_fn,
+# src/nested_laplace_joint_multi.cpp) reads `cache[k_arm][i]` for every row i
+# of that arm with NO bounds check, so a per-arm entry shorter than that arm's
+# row count is a read out of bounds -- an access violation, not a clean error
+# -- the moment a grid cell scatters that arm's rows into this block. There is
+# no "this block skips arm k" shorthand via a short/empty vector: a block
+# that should not affect an arm still needs a full-length index vector for
+# it; exclude the arm's CONTRIBUTION instead (e.g. a field_coef of 0 on that
+# arm), which the engine already tests via `d_eff_cache == 0`.
+.multi_block_per_arm_idx <- function(idx, n_arms, block_index, field_name,
+                                     arm_n_obs = NULL) {
+    out <- if (is.list(idx)) {
         if (length(idx) != n_arms) {
             stop("Block ", block_index, ": `", field_name, "` is a list of ",
                  length(idx), " entries but n_arms = ", n_arms, ".",
@@ -635,6 +655,21 @@
     } else {
         rep(list(as.integer(idx)), n_arms)
     }
+    if (!is.null(arm_n_obs)) {
+        for (k in seq_len(n_arms)) {
+            if (length(out[[k]]) != arm_n_obs[k]) {
+                stop("Block ", block_index, ": `", field_name, "[[", k, "]]` has ",
+                     length(out[[k]]), " entries but arm ", k, " has ",
+                     arm_n_obs[k], " observations -- every arm needs a ",
+                     "matching-length index vector for every block (there is ",
+                     "no arm-exclusion shorthand). To exclude arm ", k,
+                     " from this block, zero its CONTRIBUTION (e.g. a ",
+                     "`field_coef` of 0 on that arm) rather than shortening ",
+                     "`", field_name, "`.", call. = FALSE)
+            }
+        }
+    }
+    out
 }
 
 # Materialize the C++-facing theta_grid from a user-facing multi-block
@@ -774,7 +809,9 @@
              x_init_per_cell  = NULL,
              max_iter_        = NULL,
              tol_             = NULL,
-             inner_refresh_   = NULL) {
+             inner_refresh_   = NULL,
+             compute_skew     = FALSE,
+             skew_idx         = NULL) {
         .cpp_joint_multi(
             arms_list           = arms,
             copy_arms           = as.integer(cp$copy_arms_zero),
@@ -798,7 +835,9 @@
             hessian_pd_mode     = as.integer(hessian_pd_mode),
             step_curvature_mode = as.integer(step_curvature_mode),
             inner_refresh       = as.integer(inner_refresh_ %||% inner_refresh),
-            x_init_per_cell     = x_init_per_cell)
+            x_init_per_cell     = x_init_per_cell,
+            compute_skew        = isTRUE(compute_skew),
+            skew_idx            = skew_idx)
     }
 }
 
@@ -861,6 +900,67 @@
     res
 }
 
+# Inner-Laplace skewness diagnostic (gcol33/tulpa#272) for the multi-block
+# joint driver -- the multi-block analogue of
+# .nlj_inner_skew_at_theta() (R/nested_laplace_joint.R), completing the
+# checklist item gcol33/tulpa#273 left open. Reuses `call_kernel` (the SAME
+# closure the outer Pareto-k diagnostic and the adaptive-grid refinement
+# already call), re-dispatched at the fitted MAP grid cell with
+# `compute_skew = TRUE`: one extra deterministic Newton solve, no importance
+# sampling -- mirrors the single-block helper exactly except for the
+# multi-block `call_kernel` signature (`x_init` instead of `warm_start`, and
+# an explicit `phi_grid_per_arm` for the probed cell, since only the
+# multi-block path carries per-arm dispersion axes).
+#
+# Default probe scope is every arm's fixed-effects coefficients, read from
+# `res$arm_layout$beta_start` / `$p` (.joint_multi_layout(), already attached
+# by the caller) -- the direct multi-block analogue of the single-block
+# default ("every arm's beta").
+#
+# A coupled arm (`cell_coupling != "separable"` on that arm) has no per-obs
+# oracle to score (build_joint_curvature3_fns excludes it) -- its indices
+# come back NaN, not a silently wrong 0, exactly as for the single-block and
+# single-arm paths.
+.nlj_multi_inner_skew_at_theta <- function(res, call_kernel, arm_names,
+                                           skew_idx = NULL, compute = TRUE) {
+    res$inner_skew         <- NULL
+    res$inner_skew_idx     <- integer(0)
+    res$inner_skew_dropped <- 0L
+    if (!compute) return(res)
+
+    modal_theta <- .joint_modal_theta(res)
+    if (is.null(modal_theta)) return(res)
+
+    probe_idx <- skew_idx
+    if (is.null(probe_idx)) {
+        al <- res$arm_layout
+        if (is.null(al) || is.null(al$beta_start) || is.null(al$p)) return(res)
+        probe_idx <- unlist(lapply(seq_len(al$n_arms), function(k) {
+            if (al$p[k] <= 0L) return(integer(0))
+            (al$beta_start[k] + 1L):(al$beta_start[k] + al$p[k])
+        }))
+    }
+    probe_idx <- as.integer(probe_idx)
+    if (length(probe_idx) == 0L) return(res)
+
+    warm_mode <- .joint_modal_mode(res)
+    theta_mat <- matrix(modal_theta, nrow = 1L,
+                        dimnames = list(NULL, colnames(res$theta_grid)))
+
+    out <- tryCatch(
+        .joint_with_quiet_opts(call_kernel(
+            theta_mat, x_init = warm_mode,
+            phi_grid_per_arm = .joint_multi_phi_per_arm(theta_mat, arm_names),
+            compute_skew = TRUE, skew_idx = probe_idx)),
+        error = function(e) NULL)
+
+    if (is.null(out) || is.null(out$inner_skew)) return(res)
+    res$inner_skew         <- as.numeric(out$inner_skew)
+    res$inner_skew_idx     <- as.integer(out$inner_skew_idx)
+    res$inner_skew_dropped <- as.integer(out$inner_skew_dropped %||% 0L)
+    res
+}
+
 # Main multi-block joint dispatch. Mirrors the structure of the
 # single-block path (build grid, call C++, post-process) but accepts a
 # list-of-blocks `prior_list` and a `copy` spec that points at a
@@ -886,6 +986,8 @@
                                   k_bootstrap = 1000L,
                                   k_tail_points = NULL,
                                   k_conf_bands = NULL,
+                                  diagnose_skew = TRUE,
+                                  skew_idx = NULL,
                                   inner_refresh = 1L,
                                   integration = "auto",
                                   local_ccd = NULL,
@@ -1358,6 +1460,8 @@
                                         k_bootstrap = k_bootstrap,
                                         k_tail_points = k_tail_points,
                                         k_conf_bands = k_conf_bands)
+    res <- .nlj_multi_inner_skew_at_theta(res, call_kernel, arm_names,
+                                          skew_idx, compute = diagnose_skew)
     tm$mark("diagnostics")
     res$timing <- tm$timing()
     res <- .joint_attach_diagnose_cost(res, diagnose_k, diagnose_draws)

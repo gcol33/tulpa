@@ -428,10 +428,10 @@
 #'     itself a good fit. A genuinely coupled arm (`cell_coupling !=
 #'     "separable"` on that arm, e.g. tulpaObs's `occu_cover`) has no per-obs
 #'     likelihood for this formula to score and reports `NaN` there, not a
-#'     silently wrong 0 -- see [diagnostics()] for the combined verdict. Only
-#'     wired for the single-block backends (icar/bym2/car_proper) in this
-#'     release; a fit taking the multi-block path (a per-group RE, a trend
-#'     field, or an arm-specific field block) reports `inner_skew = NULL`.
+#'     silently wrong 0 -- see [diagnostics()] for the combined verdict. Wired
+#'     for both the single-block backends (icar/bym2/car_proper) and the
+#'     multi-block path (a per-group RE, a trend field, or an arm-specific
+#'     field block).
 #'   * `checkpoint` (`NULL`) -- grid-cell checkpoint/resume. Set
 #'     `list(path = "fit.ckpt", resume = TRUE)` to make a killed or interrupted
 #'     fit resumable: each completed outer-grid cell is appended to `path`, and
@@ -976,6 +976,8 @@ tulpa_nested_laplace_joint <- function(responses,
             k_bootstrap = k_bootstrap,
             k_tail_points = k_tail_points,
             k_conf_bands = k_conf_bands,
+            diagnose_skew = diagnose_skew,
+            skew_idx = skew_idx,
             inner_refresh = inner_refresh,
             integration = integration,
             local_ccd = local_ccd,
@@ -1219,11 +1221,9 @@ tulpa_nested_laplace_joint <- function(responses,
 # A coupled arm (cell_coupling != "separable" on that arm) has no per-obs
 # oracle to score (build_joint_curvature3_fns excludes it, see
 # laplace_newton_joint.h) -- its indices come back NaN, not a silently wrong
-# 0. This is the ONLY inner-skew attach point for the joint driver in this
-# pass; the joint MULTI-block path (nested_laplace_joint_multi.R, used when a
-# fit carries a per-group RE / trend / arm-specific field block) does not yet
-# thread compute_skew through its own kernel_fn -- tracked as a follow-up,
-# not silently skipped (see gcol33/tulpa#272's checklist).
+# 0. The joint MULTI-block path (nested_laplace_joint_multi.R, used when a
+# fit carries a per-group RE / trend / arm-specific field block) has its own
+# counterpart, `.nlj_multi_inner_skew_at_theta()` (gcol33/tulpa#273).
 .nlj_inner_skew_at_theta <- function(res, kernel_fn, skew_idx = NULL,
                                      compute = TRUE) {
     res$inner_skew         <- NULL

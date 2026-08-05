@@ -418,10 +418,10 @@ the outer hyperparameter-grid integration around a FIXED inner
 Laplace, this scores whether that inner Gaussian approximation is
 itself a good fit. A genuinely coupled arm (\code{cell_coupling != "separable"} on that arm, e.g. tulpaObs's \code{occu_cover}) has no per-obs
 likelihood for this formula to score and reports \code{NaN} there, not a
-silently wrong 0 -- see \code{\link[=diagnostics]{diagnostics()}} for the combined verdict. Only
-wired for the single-block backends (icar/bym2/car_proper) in this
-release; a fit taking the multi-block path (a per-group RE, a trend
-field, or an arm-specific field block) reports \code{inner_skew = NULL}.
+silently wrong 0 -- see \code{\link[=diagnostics]{diagnostics()}} for the combined verdict. Wired
+for both the single-block backends (icar/bym2/car_proper) and the
+multi-block path (a per-group RE, a trend field, or an arm-specific
+field block).
 \item \code{checkpoint} (\code{NULL}) -- grid-cell checkpoint/resume. Set
 \code{list(path = "fit.ckpt", resume = TRUE)} to make a killed or interrupted
 fit resumable: each completed outer-grid cell is appended to \code{path}, and
