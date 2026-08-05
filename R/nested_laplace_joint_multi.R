@@ -854,6 +854,8 @@
     res$pareto_k_is_ess <- NA_real_
     res$pareto_k_scope  <- "outer (hyperparameter) Gaussian proposal"
     res$pareto_k_proposal_source <- NA_character_
+    # Regime read off stored weights: attached even with the diagnostic off.
+    res <- .joint_attach_pareto_k_regime(res)
     if (!isTRUE(diagnose_k)) return(res)
 
     warm_mode   <- .joint_modal_mode(res)
@@ -895,6 +897,7 @@
     res$pareto_k        <- kd$pareto_k
     res$pareto_k_is_ess <- kd$is_ess
     res$pareto_k_proposal_source <- kd$proposal_source
+    res <- .joint_attach_pareto_k_regime(res, kd)
     res <- .joint_attach_pareto_k_uncertainty(res, kd)
     res <- .joint_attach_by_arm_k(res, kd)
     res

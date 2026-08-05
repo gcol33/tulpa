@@ -270,6 +270,57 @@
        pareto_k_scope = jf$pareto_k_scope %||% NA_character_)
 }
 
+# Outer-integration REGIME of a nested-Laplace fit (gcol33/tulpa#276), read
+# from the fields `.joint_attach_pareto_k_regime()` stores at fit time.
+#
+# `pareto_k` alone cannot separate two very different situations, and a bare
+# threshold on it bins them together: a SPREAD grid whose integration is
+# genuinely tail-misfit, versus a COLLAPSED grid where the outer integration
+# degenerated to a point evaluation at the modal hyperparameter and the k-hat is
+# scoring a mode-Gaussian's stand-in for the hyperparameter marginal instead.
+# The collapse is itself benign or actionable depending on where the dominant
+# cell sits -- interior (the grid bracketed the mode; only integrated
+# hyperparameter uncertainty is missing) or against a grid boundary (the grid
+# may be too narrow, so widen that axis and refit).
+#
+# `outer_skew_max` is the largest |skewness| of the hyperparameter marginal in
+# the proposal's whitened coordinate, computed only on a fit whose k-hat
+# triggered the skew-normal rescue pass -- so `NA` means "the Gaussian proposal
+# already fit", not "symmetric and unchecked". NULL when the fit stores no
+# regime at all (an older fit, or a backend that does not populate it).
+.tulpa_outer_regime <- function(fit) {
+  jf <- if (!is.null(fit$joint_fit)) fit$joint_fit else fit
+  rg <- jf$pareto_k_regime
+  if (is.null(rg)) return(NULL)
+  sk <- jf$pareto_k_outer_skew
+  sk <- if (is.null(sk) || !any(is.finite(sk))) NA_real_ else max(abs(sk[is.finite(sk)]))
+  list(regime         = as.character(rg),
+       edge_axes      = jf$pareto_k_grid_edge_axes  %||% character(0),
+       edge_sides     = jf$pareto_k_grid_edge_sides %||% character(0),
+       outer_skew_max = sk)
+}
+
+# One-line reading of an outer regime, for `print` and `diagnostic_summary()`.
+# Returns NULL for a spread grid (nothing to explain) or an unknown regime.
+.tulpa_outer_regime_note <- function(rg) {
+  if (is.null(rg) || is.na(rg$regime)) return(NULL)
+  if (identical(rg$regime, "collapsed_interior")) {
+    return(paste("outer grid collapsed onto an interior mode: hyperparameter",
+                 "uncertainty is not integrated (empirical Bayes at the mode);",
+                 "pareto_k here scores the mode-Gaussian's fit to the",
+                 "hyperparameter marginal, not the point estimates"))
+  }
+  if (identical(rg$regime, "collapsed_edge")) {
+    ax <- if (length(rg$edge_axes))
+      paste(sprintf("%s (%s)", rg$edge_axes, rg$edge_sides), collapse = ", ")
+      else "an axis"
+    return(paste0("outer grid collapsed against a boundary node on ", ax,
+                  ": the grid may be too narrow -- widen that axis and refit ",
+                  "to confirm the mode is bracketed"))
+  }
+  NULL
+}
+
 # Inner-Laplace skewness reliability of a nested-Laplace fit, read from the
 # `inner_skew` / `inner_skew_idx` / `inner_skew_dropped` fields
 # .nl_inner_skew_at_theta() attaches at fit time (see nested_laplace.R). NULL
@@ -328,6 +379,7 @@
   grid  <- .tulpa_grid_reliability(fit)
   psis  <- .tulpa_psis_reliability(fit)
   inner <- .tulpa_inner_skew_reliability(fit)
+  regime <- .tulpa_outer_regime(fit)
   k          <- psis$pareto_k
   outer_band <- .tulpa_khat_band(k)
   inner_band <- if (is.null(inner)) NA_character_ else inner$band
@@ -348,11 +400,20 @@
     attr(tab, "inner_skew_scored") <- inner$n_scored
     attr(tab, "inner_skew_probed") <- inner$n_probed
   }
+  if (!is.null(regime)) {
+    attr(tab, "outer_regime")    <- regime$regime
+    attr(tab, "grid_edge_axes")  <- regime$edge_axes
+    attr(tab, "grid_edge_sides") <- regime$edge_sides
+    attr(tab, "outer_skew_max")  <- regime$outer_skew_max
+    attr(tab, "outer_regime_note") <- .tulpa_outer_regime_note(regime)
+  }
   attr(tab, "reliability") <- .tulpa_combined_reliability(outer_band, inner_band)
 
   summary_row <- data.frame(
     pareto_k        = k,
     pareto_k_band   = outer_band,
+    outer_regime    = if (is.null(regime)) NA_character_ else regime$regime,
+    outer_skew_max  = if (is.null(regime)) NA_real_ else regime$outer_skew_max,
     ess_grid        = if (is.null(grid)) NA_real_ else grid$ess_grid,
     n_grid          = if (is.null(grid)) NA_integer_ else grid$n_grid,
     max_weight      = if (is.null(grid)) NA_real_ else grid$max_weight,
@@ -400,6 +461,24 @@
 #' weight modest) flags outer-integration (CI-width) calibration in the
 #' right-skewed hyperparameter tail and does not by itself invalidate the
 #' point estimates, which the grid quadrature governs.
+#'
+#' `outer_regime` qualifies what a high `pareto_k` means, and is the reason a
+#' bare threshold on `pareto_k` is not a reliability verdict
+#' (gcol33/tulpa#276). A sharp hyperparameter posterior collapses the grid onto
+#' ~1 cell (`ess_grid` near 1); the outer integration has then degenerated to a
+#' point evaluation at the modal hyperparameter, so `pareto_k` is scoring how
+#' well a Gaussian at that mode stands in for the hyperparameter marginal, not
+#' how well a grid integrated it. Where the dominant cell is INTERIOR to the
+#' grid the collapse is benign -- the grid bracketed the mode, the estimate is
+#' empirical Bayes there, and only integrated hyperparameter uncertainty is
+#' missing. Where it sits at a grid BOUNDARY the grid may simply be too narrow:
+#' `grid_edge_axes` / `grid_edge_sides` name the axes to widen. On a fit whose
+#' `pareto_k` cleared the good band, the outer diagnostic also fits a
+#' skew-normal proposal and reports the marginal's estimated skewness as
+#' `outer_skew_max`, so an inflated k-hat that was purely the symmetric
+#' proposal's mismatch with a skewed variance-component marginal is both
+#' corrected and explained. A skew-normal has Gaussian tails, so this can never
+#' mask a genuinely heavy-tailed target.
 #'
 #' The grid quadrature reliability -- the effective sample size
 #' `ess_grid = 1 / sum(w_k^2)` of the outer integration weights and the largest
@@ -461,6 +540,18 @@
 #'     \item{`pareto_k_is_ess`}{importance-sampling ESS on the smoothed weights.}
 #'     \item{`ess_grid`, `n_grid`, `rel_ess_grid`, `max_weight`}{grid quadrature
 #'       reliability.}
+#'     \item{`outer_regime`}{`"spread"` / `"collapsed_interior"` /
+#'       `"collapsed_edge"` -- whether the outer grid integrated hyperparameter
+#'       uncertainty at all, and if not whether its dominant cell is interior
+#'       (benign) or against a grid boundary (widen it).}
+#'     \item{`grid_edge_axes`, `grid_edge_sides`}{for an edge collapse, the axes
+#'       the dominant cell sits against and on which side.}
+#'     \item{`outer_skew_max`}{largest estimated |skewness| of the hyperparameter
+#'       marginal, computed only when the k-hat triggered the skew-normal
+#'       proposal rescue (`NA` means the Gaussian proposal already fit, not
+#'       "symmetric and unchecked").}
+#'     \item{`outer_regime_note`}{a one-line reading of a collapsed regime, or
+#'       absent on a spread grid.}
 #'     \item{`scope`}{the outer diagnostic's scope string.}
 #'     \item{`inner_skew_max`}{the largest `|gamma_3|` among the scored latent
 #'       indices (`NA` if `control$diagnose_skew = FALSE` or nothing scored).}
@@ -531,6 +622,12 @@ print.laplace_diagnostics <- function(x, ...) {
     cat(sprintf("  outer grid quadrature ESS = %.2f of %d cells (max weight %.3f)\n",
                 attr(x, "ess_grid"), attr(x, "n_grid"), attr(x, "max_weight")))
   }
+  osk <- attr(x, "outer_skew_max")
+  if (!is.null(osk) && is.finite(osk)) {
+    cat(sprintf("  outer hyperparameter marginal max |skewness| = %.2f\n", osk))
+  }
+  note <- attr(x, "outer_regime_note")
+  if (!is.null(note)) cat("  note: ", note, "\n", sep = "")
   if (has_inner) {
     ib <- attr(x, "inner_skew_band")
     im <- attr(x, "inner_skew_max")

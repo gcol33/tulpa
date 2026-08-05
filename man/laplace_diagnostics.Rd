@@ -21,6 +21,18 @@ A data frame with one row per parameter -- \code{parameter}, \code{mean}, \code{
 \item{\code{pareto_k_is_ess}}{importance-sampling ESS on the smoothed weights.}
 \item{\code{ess_grid}, \code{n_grid}, \code{rel_ess_grid}, \code{max_weight}}{grid quadrature
 reliability.}
+\item{\code{outer_regime}}{\code{"spread"} / \code{"collapsed_interior"} /
+\code{"collapsed_edge"} -- whether the outer grid integrated hyperparameter
+uncertainty at all, and if not whether its dominant cell is interior
+(benign) or against a grid boundary (widen it).}
+\item{\code{grid_edge_axes}, \code{grid_edge_sides}}{for an edge collapse, the axes
+the dominant cell sits against and on which side.}
+\item{\code{outer_skew_max}}{largest estimated |skewness| of the hyperparameter
+marginal, computed only when the k-hat triggered the skew-normal
+proposal rescue (\code{NA} means the Gaussian proposal already fit, not
+"symmetric and unchecked").}
+\item{\code{outer_regime_note}}{a one-line reading of a collapsed regime, or
+absent on a spread grid.}
 \item{\code{scope}}{the outer diagnostic's scope string.}
 \item{\code{inner_skew_max}}{the largest \verb{|gamma_3|} among the scored latent
 indices (\code{NA} if \code{control$diagnose_skew = FALSE} or nothing scored).}
@@ -67,6 +79,24 @@ whose grid quadrature is healthy (\code{ess_grid} well above 1, largest cell
 weight modest) flags outer-integration (CI-width) calibration in the
 right-skewed hyperparameter tail and does not by itself invalidate the
 point estimates, which the grid quadrature governs.
+
+\code{outer_regime} qualifies what a high \code{pareto_k} means, and is the reason a
+bare threshold on \code{pareto_k} is not a reliability verdict
+(gcol33/tulpa#276). A sharp hyperparameter posterior collapses the grid onto
+~1 cell (\code{ess_grid} near 1); the outer integration has then degenerated to a
+point evaluation at the modal hyperparameter, so \code{pareto_k} is scoring how
+well a Gaussian at that mode stands in for the hyperparameter marginal, not
+how well a grid integrated it. Where the dominant cell is INTERIOR to the
+grid the collapse is benign -- the grid bracketed the mode, the estimate is
+empirical Bayes there, and only integrated hyperparameter uncertainty is
+missing. Where it sits at a grid BOUNDARY the grid may simply be too narrow:
+\code{grid_edge_axes} / \code{grid_edge_sides} name the axes to widen. On a fit whose
+\code{pareto_k} cleared the good band, the outer diagnostic also fits a
+skew-normal proposal and reports the marginal's estimated skewness as
+\code{outer_skew_max}, so an inflated k-hat that was purely the symmetric
+proposal's mismatch with a skewed variance-component marginal is both
+corrected and explained. A skew-normal has Gaussian tails, so this can never
+mask a genuinely heavy-tailed target.
 
 The grid quadrature reliability -- the effective sample size
 \code{ess_grid = 1 / sum(w_k^2)} of the outer integration weights and the largest

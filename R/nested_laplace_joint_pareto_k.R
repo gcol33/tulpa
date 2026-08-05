@@ -69,6 +69,53 @@
 .K_DIAG_MIX_BW    <- 0.5
 .K_DIAG_MIX_FLOOR <- 1e-3
 
+# Skew-normal rescue for the outer Pareto-k (gcol33/tulpa#276)
+# A hyperparameter marginal on a variance component stays
+# right-skewed even after the log unconstraining transform, and a SYMMETRIC
+# Gaussian proposal against a skewed target has a heavy importance-ratio tail
+# whatever the integration's quality -- so the k-hat reads unreliable for a
+# reason that lives in the proposal. The grid-mixture rescue above covers that
+# skew where the grid is SPREAD (its bumps trace the posterior's shape), but a
+# sharp posterior collapses the grid onto ~1 cell, the mixture's few bumps then
+# cover worse than the Gaussian, and nothing corrects the mismatch: the k-hat
+# tracks the collapse rather than the fit. The skew-normal proposal is the
+# rescue for that regime -- and, being scored last, for any regime where the
+# chosen proposal is still above the good band.
+#
+# Below this |skewness| the target is "approximately symmetric" on the usual
+# magnitude convention (the same Bulmer 1979 scale `.tulpa_gamma3_band` bands
+# the inner gamma_3 on, whose first cut is 0.5), so a skew-normal proposal is
+# numerically the Gaussian and cannot move the tail. Skip it rather than pay a
+# scoring pass that can only reproduce the k it started from.
+.K_DIAG_SKEW_MIN <- 0.2
+
+# ... but a fixed floor alone is not enough, because the skewness is ESTIMATED.
+# A sample skewness of a normal variable has standard error
+# `sqrt(6n(n-1) / ((n-2)(n+1)(n+3)))` -- about 0.17 at n = 200 -- so a bare 0.2
+# floor is barely one standard error and fires on noise. The rescue therefore
+# also requires the skewness to be significantly non-zero at `.K_DIAG_SKEW_Z`
+# standard errors, evaluated at the weights' EFFECTIVE sample size rather than
+# the raw draw count, since these are importance-weighted moments.
+#
+# The multiplier is set by measurement, not convention. On a GAUSSIAN outer
+# target at 200 draws (so the true skewness is 0 and every adoption is noise),
+# the share of RNG states in which the skew proposal was adopted ran: no
+# significance screen 18%, a two-SE screen 5%, a three-SE screen 0%. Because a
+# batch consumer bins fits on the REPORTED number, a proposal source that flaps
+# with the RNG seed is itself a defect -- the failure mode gcol33/tulpa#276 is
+# about -- so the screen is set where spurious adoption vanishes. Sensitivity is
+# given up only at small draw counts, where the k-hat being rescued is too noisy
+# to act on anyway.
+.K_DIAG_SKEW_Z <- 3
+
+# Standard error of a sample skewness at effective sample size `n`, under the
+# null that the variable is normal (Cramer 1946; the finite-sample form behind
+# the usual D'Agostino skewness test).
+.skew_se <- function(n) {
+    if (!is.finite(n) || n < 4) return(Inf)
+    sqrt(6 * n * (n - 1) / ((n - 2) * (n + 1) * (n + 3)))
+}
+
 # Grid-coverage tolerance for adopting the grid-mixture over the single Gaussian
 # The mixture is confined to the grid's coordinate hull, so it
 # cannot detect a target tail BEYOND the grid; the single Gaussian, whose tails
@@ -483,6 +530,75 @@
     which(ax_var > var_tol)
 }
 
+# Regime of the outer integration grid (gcol33/tulpa#276): does the grid
+# actually INTEGRATE hyperparameter uncertainty, and if not, is its dominant
+# cell interior to the grid or against a boundary?
+#
+# The quadrature effective sample size `ess_grid = 1 / sum(w_k^2)` counts the
+# cells the integration effectively averages over. Below two effective cells no
+# axis can carry resolved spread (a second moment along any direction needs two
+# points), so the outer integration has degenerated to a point evaluation --
+# empirical Bayes at the modal hyperparameter -- and the outer Pareto-k-hat is
+# then scoring how well a Gaussian at that mode stands in for the hyperparameter
+# marginal, NOT how well a grid integrated it. That distinction is the whole of
+# gcol33/tulpa#276: a bare k-hat threshold reads the two as the same failure.
+#
+# Where the grid HAS collapsed, the dominant cell's position matters and is a
+# one-liner on the stored nodes:
+#   * interior -- the grid bracketed the mode, so the collapse is benign: the
+#     estimate is empirical-Bayes-at-the-mode and only the integrated
+#     hyperparameter uncertainty is missing.
+#   * boundary -- the mode sits at the extreme node of some axis, so the grid may
+#     simply be too narrow and the true mode may lie outside it. Actionable:
+#     widen that axis and refit. Reported per axis with its side, since a scale
+#     axis pinned at its floor (field effectively flat) and one pinned at its
+#     ceiling (field truncated) call for different reading.
+# An axis the grid gives a single value (a copy `alpha` fixed at 0, a one-point
+# dispersion axis) is PINNED, not at a boundary, and is excluded.
+#
+# Returns list(regime, ess_grid, n_grid, max_weight, edge_axes, edge_sides), or
+# NULL when the grid / weights are unusable.
+.K_DIAG_COLLAPSE_ESS <- 2
+
+.joint_pareto_grid_regime <- function(res) {
+    tg <- res$theta_grid
+    w  <- res$weights
+    if (is.null(tg) || is.null(w)) return(NULL)
+    # The generic single-axis nested path stores its grid as a bare vector; the
+    # joint paths store a named matrix. One axis is still an axis, so coerce
+    # rather than decline.
+    if (!is.matrix(tg)) tg <- matrix(as.numeric(tg), ncol = 1L,
+                                     dimnames = list(NULL, "theta"))
+    if (length(w) != nrow(tg)) return(NULL)
+    ok <- is.finite(w) & w > 0
+    if (!any(ok) || sum(w[ok]) <= 0) return(NULL)
+    wn <- w; wn[!ok] <- 0; wn <- wn / sum(wn)
+    ess <- 1 / sum(wn^2)
+    out <- list(ess_grid = ess, n_grid = nrow(tg), max_weight = max(wn),
+                edge_axes = character(0), edge_sides = character(0))
+    if (ess >= .K_DIAG_COLLAPSE_ESS) {
+        out$regime <- "spread"
+        return(out)
+    }
+
+    map <- which.max(wn)
+    cn  <- colnames(tg) %||% paste0("axis", seq_len(ncol(tg)))
+    for (j in seq_len(ncol(tg))) {
+        v <- sort(unique(as.numeric(tg[, j])))
+        if (length(v) < 2L) next                       # pinned axis, not an edge
+        x <- as.numeric(tg[map, j])
+        side <- if (isTRUE(all.equal(x, v[1L]))) "lower"
+                else if (isTRUE(all.equal(x, v[length(v)]))) "upper"
+                else NA_character_
+        if (!is.na(side)) {
+            out$edge_axes  <- c(out$edge_axes, cn[j])
+            out$edge_sides <- c(out$edge_sides, side)
+        }
+    }
+    out$regime <- if (length(out$edge_axes)) "collapsed_edge" else "collapsed_interior"
+    out
+}
+
 # Laplace-at-mode covariance of the joint hyperparameter posterior, from a
 # finite-difference Hessian of the outer target at the modal grid cell
 # The importance proposal for the outer Pareto-k is normally
@@ -885,6 +1001,126 @@
     sum(w[outside]) / sw
 }
 
+# Per-axis centred moments of the outer target in the WHITENED coordinate of the
+# Gaussian proposal that produced the draws (gcol33/tulpa#276).
+#
+# `U` are the proposal's importance draws and `log_weights` their PSIS-smoothed
+# log weights, so the weighted moments estimate the TARGET's moments (importance
+# correction), not the proposal's. Whitening by the proposal's own
+# `(u_c, L_v)` decorrelates first, so a per-axis skewness is a statement about
+# the target's shape along the directions the proposal already aligned to,
+# rather than about an arbitrary raw parameterization -- which is what lets the
+# skew proposal be an independent PRODUCT of univariate skew-normals.
+#
+# PSIS smoothing is what makes the third moment usable: it caps any single
+# draw's weight, so the estimate cannot be set by one runaway ratio. This is the
+# same weighted-moment machinery `.joint_pareto_score`'s moment-matching loop
+# already applies to the first two moments, extended by one order -- and it
+# costs NO extra inner solves, unlike differencing the target at the mode.
+#
+# Returns list(mu, sd, skew) in whitened coordinates (length |vary| each), or
+# NULL when the weights are degenerate.
+.joint_pareto_wtd_moments <- function(U, log_weights, u_c, L_v) {
+    if (is.null(U) || !is.matrix(U) || nrow(U) < 3L ||
+        is.null(log_weights) || length(log_weights) != nrow(U)) return(NULL)
+    Z <- tryCatch(t(forwardsolve(L_v, t(sweep(U, 2L, u_c)))),
+                  error = function(e) NULL)
+    if (is.null(Z) || any(!is.finite(Z))) return(NULL)
+    w <- exp(log_weights - max(log_weights))
+    sw <- sum(w)
+    if (!is.finite(sw) || sw <= 0) return(NULL)
+    w  <- w / sw
+    mu <- as.numeric(crossprod(w, Z))
+    cen <- sweep(Z, 2L, mu)
+    v  <- as.numeric(crossprod(w, cen^2))
+    if (any(!is.finite(v)) || any(v <= 0)) return(NULL)
+    sd <- sqrt(v)
+    g  <- as.numeric(crossprod(w, cen^3)) / sd^3
+    if (any(!is.finite(mu)) || any(!is.finite(g))) return(NULL)
+    # Effective sample size of the importance weights: what the third moment is
+    # actually estimated from, and hence the n its standard error is read at.
+    list(mu = mu, sd = sd, skew = g, n_eff = 1 / sum(w^2))
+}
+
+# Score the outer Pareto-k against a SKEW-NORMAL proposal (gcol33/tulpa#276):
+# the product of |vary| univariate skew-normals in the whitened coordinate of
+# the Gaussian proposal `(u_c, L_v)`, each matched to `mom`'s corresponding
+# whitened mean / sd / skewness. Draws are mapped back as
+# `U = u_c + L_v z`; the whitening Jacobian |det L_v| is common to every draw
+# and drops under PSIS self-normalization, so the proposal density is evaluated
+# in `z` directly.
+#
+# Because a skew-normal has GAUSSIAN tails on BOTH sides, this can only absorb
+# ASYMMETRY. A genuinely heavy-tailed target keeps its high k-hat here, which is
+# the property that makes the rescue safe: it cannot launder a real tail problem
+# into a clean verdict, only remove a mismatch the proposal itself created.
+#
+# Returns list(pareto_k, is_ess, refined = FALSE, lr) or NULL (degenerate
+# proposal, too few finite importance draws). Does NOT manage the RNG (the
+# driver saves / restores it once around all scoring).
+.joint_pareto_score_skew <- function(prep, vary, refit_log_marginal, n_samples,
+                                     u_c, L_v, mom, tail_points = NULL) {
+    dp <- .sn_prop_from_moments(mu = mom$mu, sd = mom$sd, skew = mom$skew)
+    if (is.null(dp)) return(NULL)
+
+    lt  <- .joint_pareto_make_lt(prep, vary, refit_log_marginal)
+    n_s <- as.integer(n_samples)
+    Z   <- .sn_prop_rand(n_s, dp)
+    U   <- sweep(Z %*% t(L_v), 2L, u_c, `+`)
+
+    ltv <- lt(U)
+    if (length(ltv) != n_s) return(NULL)
+    lr  <- ltv - .sn_prop_logpdf(Z, dp)
+    fin <- is.finite(lr)
+    if (sum(fin) < .PSIS_MIN_EVAL) return(NULL)
+    ps <- tulpa_psis(lr[fin], tail_points = tail_points)
+    if (!is.finite(ps$pareto_k)) return(NULL)
+    list(pareto_k = ps$pareto_k, is_ess = ps$is_ess, refined = FALSE,
+         lr = lr[fin])
+}
+
+# Skew-normal rescue pass (gcol33/tulpa#276). Runs after the Gaussian / mixture
+# dispatch has chosen a proposal, and only when that choice is still above the
+# good band -- so a fit whose Gaussian proposal already fits pays nothing.
+#
+# The target's whitened skewness is estimated from the best SINGLE-Gaussian
+# pass's own draws and PSIS weights (`g`, always carrying a centre and scale,
+# unlike the mixture), so the estimate is free and is automatically located and
+# scaled where the target actually is. It is REPORTED whether or not the rescue
+# is adopted: on a collapsed grid it is the EXPLANATION for a high k-hat, which
+# is what a downstream bare-k threshold is missing.
+#
+# Adopts the skew-normal only when it gives a strictly lower k-hat -- the same
+# rule the mixture rescue follows. A proposal that covers the target better
+# reports the target's true tail behaviour; one that covers worse is discarded.
+# Returns the (possibly replaced) `list(best, source)` with `outer_skew`
+# attached.
+.joint_pareto_skew_rescue <- function(chosen, g, prep, vary, refit_log_marginal,
+                                      n_samples, tail_points = NULL) {
+    if (is.null(chosen) || is.null(g) || is.null(g$prop_u) || is.null(g$prop_L)) {
+        return(chosen)
+    }
+    k_now <- chosen$best$pareto_k %||% NA_real_
+    if (!is.finite(k_now) || k_now <= .K_DIAG_GOOD) return(chosen)
+
+    mom <- .joint_pareto_wtd_moments(g$U, g$log_weights, g$prop_u, g$prop_L)
+    if (is.null(mom)) return(chosen)
+    chosen$outer_skew <- stats::setNames(mom$skew, prep$cn[vary])
+    # Engage only on skewness that is BOTH materially large and distinguishable
+    # from zero at this many effective draws -- see .K_DIAG_SKEW_Z.
+    gate <- max(.K_DIAG_SKEW_MIN, .K_DIAG_SKEW_Z * .skew_se(mom$n_eff))
+    if (max(abs(mom$skew)) < gate) {
+        return(chosen)                     # symmetric enough: nothing to correct
+    }
+
+    sk <- tryCatch(.joint_pareto_score_skew(prep, vary, refit_log_marginal,
+                                            n_samples, g$prop_u, g$prop_L, mom,
+                                            tail_points = tail_points),
+                   error = function(e) NULL)
+    if (is.null(sk) || !is.finite(sk$pareto_k) || sk$pareto_k >= k_now) return(chosen)
+    list(best = sk, source = "skew_normal", outer_skew = chosen$outer_skew)
+}
+
 # Dispatch the outer Pareto-k scoring to the right proposal.
 # Always scores the single-Gaussian proposal (the grid-moment / mode-Hessian / CCD
 # Gaussian with moment-matching refinement), whose tails extend beyond the grid so
@@ -901,12 +1137,11 @@
 # (higher) k-hat so the grid-width deficiency is flagged, and a near-collapsed grid
 # (where the mixture's few bumps cover worse) keeps the moment-matched Gaussian. A
 # true delta collapse and a supplied CCD proposal are not `grid_moment`, so only
-# the single Gaussian is scored. Returns list(best, source) or NULL. Shared by the
-# joint k and the per-arm k.
-.joint_pareto_score_dispatch <- function(prep, vary, refit_log_marginal, n_samples,
-                                         tail_points = NULL) {
-    g     <- .joint_pareto_score(prep, vary, refit_log_marginal, n_samples,
-                                 tail_points = tail_points)
+# the single Gaussian is scored. Returns list(best, source) or NULL. The
+# SYMMETRIC half of the dispatch; `.joint_pareto_score_dispatch` runs the
+# skew-normal rescue on top of whatever this chooses.
+.joint_pareto_score_symmetric <- function(prep, vary, refit_log_marginal, n_samples,
+                                          g, tail_points = NULL) {
     g_src <- if (!is.null(g) && isTRUE(g$refined)) "moment_matched"
              else prep$proposal_source
     g_out <- if (is.null(g)) NULL else list(best = g, source = g_src)
@@ -952,6 +1187,24 @@
     # grid-width deficiency the escaped single Gaussian masked.
     improves <- is.finite(mix$pareto_k) && is.finite(gm_k) && mix$pareto_k < gm_k
     if (covered && improves) list(best = mix, source = "grid_mixture") else g_out
+}
+
+# Full outer Pareto-k proposal dispatch: the symmetric choice above (grid-moment
+# / mode-Hessian / moment-matched Gaussian, or the grid mixture where the grid
+# is spread and covers the posterior), then the skew-normal rescue
+# (gcol33/tulpa#276) on top of it. The rescue is last because it is the most
+# expensive and the least often needed: it fires only when the symmetric choice
+# is still above the good band, which is exactly the collapsed-grid regime where
+# the mixture cannot help. Returns list(best, source[, outer_skew]) or NULL.
+# Shared by the joint k and the per-arm k.
+.joint_pareto_score_dispatch <- function(prep, vary, refit_log_marginal, n_samples,
+                                         tail_points = NULL) {
+    g <- .joint_pareto_score(prep, vary, refit_log_marginal, n_samples,
+                             tail_points = tail_points)
+    chosen <- .joint_pareto_score_symmetric(prep, vary, refit_log_marginal,
+                                            n_samples, g, tail_points = tail_points)
+    .joint_pareto_skew_rescue(chosen, g, prep, vary, refit_log_marginal,
+                              n_samples, tail_points = tail_points)
 }
 
 # Bootstrap + closed-form uncertainty of a CHOSEN proposal's outer Pareto-k-hat
@@ -1047,6 +1300,7 @@
                                      k_conf_bands)
     out <- list(pareto_k = ju$pareto_k, is_ess = ju$is_ess,
                 proposal_source = joint$source,
+                outer_skew = joint$outer_skew,
                 pareto_k_se_boot               = ju$se_boot,
                 pareto_k_ci_low                = ju$ci_low,
                 pareto_k_ci_high               = ju$ci_high,
@@ -1221,6 +1475,28 @@
     res
 }
 
+# Attach the outer-integration REGIME and the outer hyperparameter skewness
+# (gcol33/tulpa#276) -- the context that keeps a bare `pareto_k` threshold from
+# being the whole story. Single source for both joint attach paths, and called
+# whether or not the k-hat diagnostic ran: the regime is read off the stored
+# grid weights, so it costs nothing and is available even with
+# `control$diagnose_k = FALSE`.
+#
+#   * `pareto_k_regime` -- "spread" / "collapsed_interior" / "collapsed_edge".
+#   * `pareto_k_grid_edge_axes` / `pareto_k_grid_edge_sides` -- which axes the
+#     collapsed mode sits against, and on which side.
+#   * `pareto_k_outer_skew` -- per-axis skewness of the hyperparameter marginal
+#     in the proposal's whitened coordinate, estimated only when the rescue pass
+#     ran (a high k-hat), so `NULL` on a fit whose Gaussian proposal already fit.
+.joint_attach_pareto_k_regime <- function(res, kd = NULL) {
+    rg <- .joint_pareto_grid_regime(res)
+    res$pareto_k_regime          <- if (is.null(rg)) NA_character_ else rg$regime
+    res$pareto_k_grid_edge_axes  <- if (is.null(rg)) character(0) else rg$edge_axes
+    res$pareto_k_grid_edge_sides <- if (is.null(rg)) character(0) else rg$edge_sides
+    res$pareto_k_outer_skew      <- if (is.null(kd)) NULL else kd$outer_skew
+    res
+}
+
 # Attach the diagnostic's draw budget and wall-clock cost ratio.
 # `diagnose_cost_ratio` = diagnostic seconds / fit seconds (the latter excluding the
 # diagnostic), read from the fit timer's "diagnostics" bucket vs the rest, so a
@@ -1322,6 +1598,10 @@
     res$pareto_k_is_ess <- NA_real_
     res$pareto_k_scope  <- "outer (hyperparameter) Gaussian proposal"
     res$pareto_k_proposal_source <- NA_character_
+    # The grid regime is read off stored weights, so it is attached even when the
+    # k-hat diagnostic is off -- a collapsed or boundary-pinned grid is worth
+    # knowing about regardless.
+    res <- .joint_attach_pareto_k_regime(res)
     if (!isTRUE(diagnose_k)) return(res)
 
     warm        <- .joint_modal_mode(res)
@@ -1365,6 +1645,7 @@
     res$pareto_k        <- kd$pareto_k
     res$pareto_k_is_ess <- kd$is_ess
     res$pareto_k_proposal_source <- kd$proposal_source
+    res <- .joint_attach_pareto_k_regime(res, kd)
     res <- .joint_attach_pareto_k_uncertainty(res, kd)
     res <- .joint_attach_by_arm_k(res, kd)
     res

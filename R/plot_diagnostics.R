@@ -945,6 +945,7 @@ diagnostic_summary <- function(fit, quiet = FALSE) {
     worst_ess = NULL,
     e_bfmi = NA,
     pareto_k = NA_real_,
+    outer_regime = NA_character_,
     quad_ess = NA_real_,
     recommendations = character(0),
     status = "PASS"
@@ -1033,6 +1034,18 @@ diagnostic_summary <- function(fit, quiet = FALSE) {
     # (.tulpa_psis_reliability / .tulpa_grid_reliability) so the k-hat / weights
     # surface here too, rather than falling through to the generic message.
     jf <- if (!is.null(fit$joint_fit)) fit$joint_fit else fit
+    # Outer-integration regime: read off the stored grid weights, so it is
+    # available whether or not the k-hat diagnostic ran, and it qualifies what a
+    # high k-hat means (gcol33/tulpa#276). Reported BEFORE the k-hat line so a
+    # collapsed grid is not read as a failed integration.
+    rgm <- .tulpa_outer_regime(fit)
+    result$outer_regime <- if (is.null(rgm)) NA_character_ else rgm$regime
+    rnote <- .tulpa_outer_regime_note(rgm)
+    if (!is.null(rnote)) {
+      recommendations <- c(recommendations, paste0(toupper(substring(rnote, 1, 1)),
+                                                   substring(rnote, 2), "."))
+      if (identical(rgm$regime, "collapsed_edge")) status <- "WARN"
+    }
     k_hat <- jf$pareto_k
     if (!is.null(k_hat) && is.finite(k_hat)) {
       result$pareto_k <- k_hat

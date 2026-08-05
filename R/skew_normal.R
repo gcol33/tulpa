@@ -200,3 +200,91 @@ sn_quantile <- function(p, sn, tol = 1e-10, max_iter = 60L) {
   }
   invisible(TRUE)
 }
+
+
+# ============================================================================
+# Skew-normal as an IMPORTANCE-PROPOSAL family (gcol33/tulpa#276).
+#
+# The outer Pareto-k-hat scores the hyperparameter posterior against a Gaussian
+# proposal. A variance-component marginal stays right-skewed even after the log
+# unconstraining transform, and a SYMMETRIC proposal against a skewed target has
+# a heavy importance-ratio tail whatever the fit's quality -- so the k-hat reads
+# unreliable for a reason living in the proposal, not in the integration. The
+# skew-normal is the smallest family that removes that particular mismatch: it
+# nests the Gaussian at zero skewness and keeps GAUSSIAN TAILS on both sides, so
+# it absorbs skew but cannot absorb a genuinely heavy tail. A k-hat that stays
+# high against it is a real signal, not a proposal artefact.
+#
+# The d-dimensional proposal is the PRODUCT of d univariate skew-normals, one
+# per coordinate. In the whitened coordinate the diagnostic works in, the
+# target's Gaussian part is isotropic and its leading Edgeworth correction is
+# per-axis cubic (the cross terms cancel from the third cumulant to leading
+# order -- see .joint_pareto_mode_skew), so the independent product is the right
+# leading-order family there. It also sidesteps the multivariate skew-normal's
+# single-skewing-latent constraint (delta' Omega_bar^-1 delta < 1), which caps
+# the joint skewness an Azzalini-Dalla Valle vector can carry across d axes.
+#
+# Sampling and density are separate from sn_cdf() / sn_quantile() above by
+# necessity: those route through Owen's T by stats::integrate() per point, which
+# is right for a handful of reported quantiles and unusable for the hundreds of
+# proposal draws scored here.
+# ============================================================================
+
+# Safety margin on the skewness clamp. At |delta| = 1 the shape `alpha` is
+# infinite and the density degenerates to a half-normal with a hard edge -- a
+# poor importance proposal, since a target draw on the truncated side would get
+# zero proposal mass. Clamping a little inside sn_match()'s ceiling keeps
+# `alpha` finite and both tails alive.
+.SN_PROP_CLAMP <- 0.95
+
+# Per-coordinate direct parameters of the product proposal matching the supplied
+# centred moments. `mu` / `sd` / `skew` are length-d numerics. Each coordinate
+# goes through sn_match() -- the single source of truth for the cumulant
+# inversion -- after clamping the skewness inside the representable ceiling, so
+# an over-skewed axis yields the most-skewed proposal available rather than
+# sn_match()'s NULL (the proposal only has to COVER the target, not match it).
+# Returns list(xi, omega, alpha, delta), each length d, or NULL when any
+# coordinate's scale is unusable.
+.sn_prop_from_moments <- function(mu, sd, skew) {
+  d <- length(mu)
+  if (length(sd) != d || length(skew) != d) return(NULL)
+  if (any(!is.finite(mu)) || any(!is.finite(sd)) || any(sd <= 0)) return(NULL)
+  skew <- as.numeric(skew)
+  skew[!is.finite(skew)] <- 0
+  lim  <- .SN_PROP_CLAMP * .SN_GAMMA_MAX
+  skew <- pmax(pmin(skew, lim), -lim)
+
+  ps <- lapply(seq_len(d), function(j) sn_match(mu[j], sd[j], skew[j]))
+  if (any(vapply(ps, is.null, logical(1)))) return(NULL)
+  alpha <- vapply(ps, function(p) p$alpha, numeric(1))
+  out <- list(xi    = vapply(ps, function(p) p$xi,    numeric(1)),
+              omega = vapply(ps, function(p) p$omega, numeric(1)),
+              alpha = alpha,
+              delta = alpha / sqrt(1 + alpha^2))
+  if (any(!is.finite(unlist(out, use.names = FALSE)))) return(NULL)
+  out
+}
+
+# Draw `n` points from the product proposal, by the Azzalini stochastic
+# representation Z = delta |U0| + sqrt(1 - delta^2) U1 with U0, U1 independent
+# standard normals (so Z ~ SN(0, 1, alpha)), then X = xi + omega Z. Returns an
+# [n x d] matrix and consumes 2 * n * d variates from the caller's RNG stream.
+.sn_prop_rand <- function(n, dp) {
+  d  <- length(dp$xi)
+  U0 <- matrix(abs(stats::rnorm(n * d)), n, d)
+  U1 <- matrix(stats::rnorm(n * d), n, d)
+  Z  <- sweep(U0, 2L, dp$delta, `*`) +
+        sweep(U1, 2L, sqrt(pmax(1 - dp$delta^2, 0)), `*`)
+  sweep(sweep(Z, 2L, dp$omega, `*`), 2L, dp$xi, `+`)
+}
+
+# Log-density of the product proposal at the rows of `U` ([n x d]), summed over
+# coordinates. `pnorm(log.p = TRUE)` keeps the truncated side finite instead of
+# underflowing to -Inf, which would send an importance ratio there to +Inf and
+# manufacture a spurious tail. Returns a length-n numeric.
+.sn_prop_logpdf <- function(U, dp) {
+  Z <- sweep(sweep(U, 2L, dp$xi, `-`), 2L, dp$omega, `/`)
+  lp <- stats::dnorm(Z, log = TRUE) +
+        stats::pnorm(sweep(Z, 2L, dp$alpha, `*`), log.p = TRUE)
+  as.numeric(rowSums(lp) + sum(log(2) - log(dp$omega)))
+}

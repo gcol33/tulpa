@@ -1,5 +1,67 @@
 # tulpa NEWS
 
+## 0.0.120
+
+* **Outer `pareto_k` no longer over-flags collapsed-grid fits (#276).** On a
+  sharp hyperparameter posterior the outer grid collapses onto ~1 cell, the
+  existing grid-mixture rescue cannot engage (its few bumps cover worse than
+  the Gaussian), and the k-hat is left scored against a SYMMETRIC Gaussian
+  proposal on a right-skewed variance-component marginal. A symmetric proposal
+  against a skewed target has a heavy importance-ratio tail whatever the
+  integration's quality, so the k tracked the grid collapse and the marginal's
+  asymmetry rather than the fit. Surfaced by a collaborator's 78-species
+  `occu_cover` run in which 42/78 species binned as "problematic/unreliable" on
+  a bare k threshold while their point estimates were sound.
+
+  Three changes, all on the joint nested-Laplace backend (single- and
+  multi-block paths alike):
+
+  - **A skew-normal proposal rescue.** After the Gaussian / grid-mixture
+    dispatch, a k-hat still above the good band is re-scored against a product
+    of univariate skew-normals in the chosen Gaussian's whitened coordinate,
+    matched to the target's PSIS-weighted mean, sd and skewness -- estimated
+    from the pass's own draws, so it costs no extra inner solves and is
+    automatically located and scaled where the target is. Adopted only if it
+    strictly lowers the k-hat. Because a skew-normal has GAUSSIAN tails on both
+    sides it can absorb asymmetry but never a heavy tail, so the rescue cannot
+    launder a real tail problem: `test-outer-skew-rescue.R` asserts both
+    directions, including a skewed HEAVY-tailed target on which the rescue is
+    built, scored and rejected.
+
+    Engagement is screened for significance, not just magnitude. A sample
+    skewness has standard error `sqrt(6/n)` (~0.17 at 200 draws), so a bare
+    magnitude floor fires on noise: measured on a GAUSSIAN outer target, an
+    unscreened floor adopted the skew proposal in 18% of RNG states, a two-SE
+    screen in 5%, and the shipped three-SE screen in 0%. The screen reads the
+    importance weights' effective sample size, not the raw draw count.
+
+  - **A grid-regime classifier.** `pareto_k_regime` reports `"spread"` /
+    `"collapsed_interior"` / `"collapsed_edge"`, with
+    `pareto_k_grid_edge_axes` / `pareto_k_grid_edge_sides` naming the axes a
+    collapsed mode sits against and on which side. Below two effective grid
+    cells no axis carries resolved spread, so the outer integration has
+    degenerated to a point evaluation and `pareto_k` is scoring a mode-Gaussian
+    stand-in for the hyperparameter marginal rather than an integration. An
+    interior collapse is benign; a boundary collapse is actionable (the grid may
+    be too narrow). Axes the grid pins to a single value are excluded -- pinned,
+    not at a boundary. Read off stored weights, so it is attached even with
+    `control$diagnose_k = FALSE`.
+
+  - **The context is surfaced**, so a downstream bare-k threshold is not the
+    whole story: `diagnostics()` gains `outer_regime`, `grid_edge_axes`,
+    `grid_edge_sides` and `outer_skew_max` attributes plus `outer_regime` /
+    `outer_skew_max` summary columns, `print.laplace_diagnostics()` prints the
+    marginal's skewness and a one-line reading of a collapsed regime, and
+    `diagnostic_summary()` raises a WARN with the widen-this-axis
+    recommendation on an edge collapse.
+
+  The `pareto_k` band itself is left to speak for the number it reports: the
+  fix is the number, not a verdict override. `sn_match()` remains the single
+  source of truth for the cumulant inversion; the proposal path adds only a
+  vectorized sampler and log-density (`sn_cdf()` / `sn_quantile()` route through
+  Owen's T by quadrature per point, which is right for a few reported quantiles
+  and unusable for hundreds of proposal draws).
+
 ## 0.0.119
 
 * **`gamma_3` wired through the SPDE / GP bespoke Newton pair (#273 item

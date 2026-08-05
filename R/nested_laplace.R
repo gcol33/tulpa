@@ -300,6 +300,11 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   res$pareto_k        <- NA_real_
   res$pareto_k_is_ess <- NA_real_
   res$pareto_k_scope  <- "outer (hyperparameter) Gaussian proposal"
+  # The outer-integration regime (gcol33/tulpa#276) is read off the stored grid
+  # weights, so it costs nothing and is attached on every path -- including the
+  # ones that DECLINE the k-hat below, where knowing the grid collapsed (and
+  # whether against a boundary) is the only outer signal left.
+  res <- .joint_attach_pareto_k_regime(res)
   if (!compute) return(res)                                  # field present, not computed
 
   blocks <- if (is.list(prior) && is.null(prior$type)) prior else list(prior)

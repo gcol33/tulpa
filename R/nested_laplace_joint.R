@@ -482,9 +482,34 @@
 #'      \eqn{\hat{k}} scores was built: `"mode_hessian"` from the Laplace
 #'      curvature at the hyperparameter mode (the CCD design's, or a
 #'      finite-difference Hessian when a sharp posterior collapses the grid),
-#'      or `"grid_moment"` from the grid-weighted covariance. `NA` when the
+#'      `"grid_moment"` from the grid-weighted covariance, `"moment_matched"`
+#'      when the moment-matching refinement improved on either, `"grid_mixture"`
+#'      when the faithful mixture-over-grid-cells proposal won, or
+#'      `"skew_normal"` when the skew-normal rescue did. `NA` when the
 #'      diagnostic is off or declines. The mode-Hessian source keeps the
 #'      \eqn{\hat{k}} meaningful when the grid concentrates on ~1 cell.
+#'   * `pareto_k_regime` -- whether the outer grid actually integrated
+#'      hyperparameter uncertainty: `"spread"`, or `"collapsed_interior"` /
+#'      `"collapsed_edge"` when the quadrature effective sample size falls below
+#'      two cells so the integration has degenerated to a point evaluation at
+#'      the modal hyperparameter. An interior collapse is benign (the grid
+#'      bracketed the mode; the fit is empirical Bayes at that mode and only the
+#'      integrated hyperparameter uncertainty is missing); an edge collapse means
+#'      the mode sits at an extreme node, so the grid may be too narrow.
+#'      Attached from the stored weights, so it is present even with
+#'      `control$diagnose_k = FALSE`.
+#'   * `pareto_k_grid_edge_axes`, `pareto_k_grid_edge_sides` -- for an edge
+#'      collapse, which axes the dominant cell sits against and on which side
+#'      (`"lower"` / `"upper"`); widen those axes and refit to confirm the mode
+#'      is bracketed. Axes the grid pins to one value are excluded (pinned, not
+#'      at a boundary).
+#'   * `pareto_k_outer_skew` -- per-axis skewness of the hyperparameter marginal
+#'      in the proposal's whitened coordinate, present only when a
+#'      \eqn{\hat{k}} above the good band triggered the skew-normal rescue pass.
+#'      It is the EXPLANATION for an inflated \eqn{\hat{k}}: a symmetric Gaussian
+#'      proposal against a right-skewed variance-component marginal has a heavy
+#'      importance-ratio tail whatever the integration's quality. `NULL` when the
+#'      Gaussian proposal already fit.
 #'   * `pareto_k_se_boot`, `pareto_k_ci_low`, `pareto_k_ci_high`,
 #'      `pareto_k_se_formula`, `pareto_k_tail_points`,
 #'      `pareto_k_tail_points_requested`, `pareto_k_band_confident` -- the outer
