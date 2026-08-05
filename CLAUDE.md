@@ -474,15 +474,26 @@ are gone -- there is one Newton loop behind every SPDE/GP entry.
 Two things the migration settled, both load-bearing:
 
 - **NNGP is sparse-only.** `make_nngp_block` scatters its prior into the sparse
-  builder alone, and the dense route disagrees with it -- measurably at
-  `nn = 5`, and at `nn = 8` a 300-iteration non-convergence returning
-  `log_marginal = NaN` against a 23-iteration convergence. `blocks_require_sparse()`
-  (`latent_block.h`) reads that off the blocks: a non-`INDEXED_SINGLE`
-  contribution OR a prior with only `add_prior_sparse` forces the sparse path.
-  That also closes the silent case where the dense path calls an absent
-  `add_prior` and contributes nothing. NNGP is the only block whose dispatch
-  this changes (MCAR / HSGP-MO / latent factor are already non-`INDEXED_SINGLE`);
-  the ST NNGP entry had been passing `force_sparse = true` by hand for it.
+  builder alone, so `blocks_require_sparse()` (`latent_block.h`) forces the
+  sparse Newton for it at any `n_x`: a non-`INDEXED_SINGLE` contribution OR a
+  prior with only `add_prior_sparse` routes there. That also closes the silent
+  case where the dense path calls an absent `add_prior` and contributes
+  nothing. NNGP is the only block whose dispatch this changes (MCAR / HSGP-MO /
+  latent factor are already non-`INDEXED_SINGLE`); the ST NNGP entry had been
+  passing `force_sparse = true` by hand for it.
+
+  The observation that motivated the pin -- the dense route measurably apart
+  from the sparse one at `nn = 5`, and a 300-iteration non-convergence
+  returning `log_marginal = NaN` at `nn = 8` against a 23-iteration
+  convergence -- was misread as the two scatters disagreeing. They do not
+  (gcol33/tulpa#278): both reproduce `Lambda = (I - A)' D^-1 (I - A)` to ~1e-16
+  RELATIVE, and the 2.9e-03 `log|H|` gap was an absolute difference on entries
+  of magnitude 1e13. The dense twin is deleted (0.0.124) as unreachable dead
+  code, and `test-nngp-prior-scatter.R` holds the survivor to the definition.
+  What actually diverges at `nn = 8` is the SOLVE: `nngp_moments_from_chol`
+  silently floors the conditional variance at 1e-10, 47 of 150 field nodes hit
+  that floor at `nn = 8` on the reference fixture, and `cond(Lambda)` goes
+  numerically infinite. gcol33/tulpa#283 carries that.
 - **Post-loop centring must compensate the intercept.** `center_effects_fn` runs
   ONCE after the Newton loop. The single-arm loop centres and then re-evaluates
   `log_marginal` / `H` at the shifted point; the joint loop computes

@@ -3420,6 +3420,26 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_test_nngp_prior_scatter
+Rcpp::List cpp_test_nngp_prior_scatter(Rcpp::NumericVector w, Rcpp::NumericMatrix coords, Rcpp::IntegerMatrix nn_idx, Rcpp::NumericMatrix nn_dist, Rcpp::IntegerVector nn_order, int n_spatial, int nn, double sigma2, double phi_gp, int cov_type);
+RcppExport SEXP _tulpa_cpp_test_nngp_prior_scatter(SEXP wSEXP, SEXP coordsSEXP, SEXP nn_idxSEXP, SEXP nn_distSEXP, SEXP nn_orderSEXP, SEXP n_spatialSEXP, SEXP nnSEXP, SEXP sigma2SEXP, SEXP phi_gpSEXP, SEXP cov_typeSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type w(wSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type coords(coordsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerMatrix >::type nn_idx(nn_idxSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type nn_dist(nn_distSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type nn_order(nn_orderSEXP);
+    Rcpp::traits::input_parameter< int >::type n_spatial(n_spatialSEXP);
+    Rcpp::traits::input_parameter< int >::type nn(nnSEXP);
+    Rcpp::traits::input_parameter< double >::type sigma2(sigma2SEXP);
+    Rcpp::traits::input_parameter< double >::type phi_gp(phi_gpSEXP);
+    Rcpp::traits::input_parameter< int >::type cov_type(cov_typeSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_nngp_prior_scatter(w, coords, nn_idx, nn_dist, nn_order, n_spatial, nn, sigma2, phi_gp, cov_type));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_test_lkj_build_L
 List cpp_test_lkj_build_L(NumericVector raw, int n);
 RcppExport SEXP _tulpa_cpp_test_lkj_build_L(SEXP rawSEXP, SEXP nSEXP) {
@@ -4126,6 +4146,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_test_hessian_pattern_guard", (DL_FUNC) &_tulpa_cpp_test_hessian_pattern_guard, 4},
     {"_tulpa_cpp_spatial_partition_probe", (DL_FUNC) &_tulpa_cpp_spatial_partition_probe, 5},
     {"_tulpa_cpp_test_spde_assemble", (DL_FUNC) &_tulpa_cpp_test_spde_assemble, 8},
+    {"_tulpa_cpp_test_nngp_prior_scatter", (DL_FUNC) &_tulpa_cpp_test_nngp_prior_scatter, 10},
     {"_tulpa_cpp_test_lkj_build_L", (DL_FUNC) &_tulpa_cpp_test_lkj_build_L, 2},
     {"_tulpa_cpp_test_lkj_density", (DL_FUNC) &_tulpa_cpp_test_lkj_density, 2},
     {"_tulpa_cpp_test_lkj_grad", (DL_FUNC) &_tulpa_cpp_test_lkj_grad, 3},

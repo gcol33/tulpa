@@ -797,6 +797,10 @@ cpp_test_spde_assemble <- function(C0_diag, G1_x, G1_i, G1_p, range, sigma, nu, 
     .Call(`_tulpa_cpp_test_spde_assemble`, C0_diag, G1_x, G1_i, G1_p, range, sigma, nu, alpha)
 }
 
+cpp_test_nngp_prior_scatter <- function(w, coords, nn_idx, nn_dist, nn_order, n_spatial, nn, sigma2, phi_gp, cov_type) {
+    .Call(`_tulpa_cpp_test_nngp_prior_scatter`, w, coords, nn_idx, nn_dist, nn_order, n_spatial, nn, sigma2, phi_gp, cov_type)
+}
+
 cpp_test_lkj_build_L <- function(raw, n) {
     .Call(`_tulpa_cpp_test_lkj_build_L`, raw, n)
 }

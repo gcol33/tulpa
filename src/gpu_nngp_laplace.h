@@ -167,7 +167,7 @@ inline void batch_nngp_scatter(
 }
 
 // =====================================================================
-// NNGP full-precision prior scatter (dense Hessian path).
+// NNGP full-precision prior scatter.
 //
 // Assembles the full NNGP precision Λ = (I - A)' D⁻¹ (I - A) contribution
 // into (grad, H), instead of the diagonal-on-w approximation. Here `A` is
@@ -185,6 +185,13 @@ inline void batch_nngp_scatter(
 // indexed by obs idx, i.e., x[gp_start + obs_idx]); grad and H are
 // indexed by the global latent layout starting at gp_start.
 //
+// Hessian entries go through SparseHessianBuilder::add(). The sparsity
+// pattern must include all (focal, neighbor_k) and (neighbor_k, neighbor_kp)
+// pairs for every row; see make_nngp_prior_sparsity_pattern below. This is
+// the only container the NNGP prior scatters into: make_nngp_block declares
+// no dense `add_prior`, so blocks_require_sparse() pins every NNGP fit to the
+// sparse Newton path regardless of n_x.
+//
 // Inputs:
 //   alpha    : length n_spatial * nn, flat row-major, indexed by NNGP-order
 //              index. Output of batch_nngp_scatter(..., &alpha).
@@ -196,72 +203,12 @@ inline void batch_nngp_scatter(
 //   gp_start : offset in the global latent layout where the spatial block
 //              begins. grad[gp_start + obs_idx] and H[gp_start + obs_idx][.]
 //              are scattered into.
-template <typename DenseVec, typename DenseMat>
-inline void apply_nngp_full_prior_dense(
-    DenseVec& grad, DenseMat& H,
-    const std::vector<double>& w_block,
-    const std::vector<double>& alpha,
-    const std::vector<double>& cv,
-    const Rcpp::IntegerMatrix& nn_idx,
-    const Rcpp::IntegerVector& nn_order,
-    int n_spatial, int nn, int gp_start
-) {
-    std::vector<int> nb_obs(nn);
-    std::vector<double> a_row(nn);
-    for (int i_nngp = 0; i_nngp < n_spatial; i_nngp++) {
-        int obs_focal = nn_order[i_nngp];
-        if (obs_focal < 0 || obs_focal >= n_spatial) continue;
-        double v_i = cv[obs_focal];
-        if (!(v_i > 0.0)) continue;
-        double tau_i = 1.0 / v_i;
-        int idx_i = gp_start + obs_focal;
-
-        // Resolve neighbor obs indices and weights once per row.
-        int n_nb = 0;
-        const double* arow = alpha.data() + static_cast<size_t>(i_nngp) * nn;
-        for (int k = 0; k < nn; k++) {
-            int nnidx_k = nn_idx(i_nngp, k);
-            if (nnidx_k <= 0 || nnidx_k > n_spatial) continue;
-            int obs_k = nn_order[nnidx_k - 1];
-            if (obs_k < 0 || obs_k >= n_spatial) continue;
-            nb_obs[n_nb] = obs_k;
-            a_row[n_nb] = arow[k];
-            n_nb++;
-        }
-
-        // q_i = w_i - sum_k a_k * w_{N(i)_k}
-        double q_i = w_block[obs_focal];
-        for (int k = 0; k < n_nb; k++) q_i -= a_row[k] * w_block[nb_obs[k]];
-
-        // Gradient: focal point and each neighbor.
-        grad[idx_i] -= q_i * tau_i;
-        for (int k = 0; k < n_nb; k++) {
-            grad[gp_start + nb_obs[k]] += a_row[k] * q_i * tau_i;
-        }
-
-        // Hessian: Λ = (I-A)' D⁻¹ (I-A) row-i contribution.
-        H[idx_i][idx_i] += tau_i;
-        for (int k = 0; k < n_nb; k++) {
-            int idx_k = gp_start + nb_obs[k];
-            double a_k = a_row[k];
-            H[idx_i][idx_k] += -a_k * tau_i;
-            H[idx_k][idx_i] += -a_k * tau_i;
-            double ak_tau = a_k * tau_i;
-            for (int kp = 0; kp < n_nb; kp++) {
-                int idx_kp = gp_start + nb_obs[kp];
-                H[idx_k][idx_kp] += ak_tau * a_row[kp];
-            }
-        }
-    }
-}
-
-// =====================================================================
-// NNGP full-precision prior scatter (sparse Hessian path).
 //
-// Same math as apply_nngp_full_prior_dense, but routes the Hessian entries
-// through SparseHessianBuilder::add(). The sparsity pattern must include
-// all (focal, neighbor_k) and (neighbor_k, neighbor_kp) pairs for every
-// row; see make_nngp_prior_sparsity_pattern below.
+// The scatter reproduces Λ to ~1e-16 relative, asserted against an
+// independently assembled (I - A)' D⁻¹ (I - A) in test-nngp-prior-scatter.R.
+// That test also records what the magnitudes look like once cond_var hits its
+// floor: entries reach 1e13 and above, so an ABSOLUTE comparison against Λ
+// reads as a large discrepancy while the relative one is at machine epsilon.
 template <typename DenseVec, typename SparseBuilder>
 inline void apply_nngp_full_prior_sparse(
     DenseVec& grad, SparseBuilder& H,

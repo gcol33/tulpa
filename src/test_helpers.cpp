@@ -17,6 +17,7 @@
 #include "sparse_hessian.h"
 #include "sparse_cholesky.h"
 #include "mcar_block_factory.h"
+#include "gpu_nngp_laplace.h"
 #include "laplace_spatial_priors.h"
 #include "mem_budget.h"
 #include "hmc_sampler.h"           // require_spatial_partition
@@ -1820,5 +1821,77 @@ List cpp_test_spde_assemble(
     Rcpp::_["kappa"] = kappa,
     Rcpp::_["tau"]   = tau,
     Rcpp::_["alpha"] = qb.alpha_order
+  );
+}
+
+// ---------------------------------------------------------------------------
+// NNGP prior scatter, next to the pieces needed to rebuild Lambda
+// independently (gcol33/tulpa#278).
+//
+// Runs batch_nngp_scatter, then applies the prior scatter to the (alpha, cv)
+// it returned. Handing back the filled Hessian alongside those coefficients
+// lets the caller assemble Lambda = (I - A)' D^-1 (I - A) from scratch and
+// score the scatter against the matrix it claims to build. `cv` also reports
+// how many locations hit the conditional-variance floor, which sets Lambda's
+// magnitude (see nngp_moments_from_chol).
+//
+// gp_start = 0 (the block is the whole latent) so the returned matrix is the
+// prior alone, with no data scatter or ridge folded in.
+// [[Rcpp::export]]
+Rcpp::List cpp_test_nngp_prior_scatter(
+    Rcpp::NumericVector w,
+    Rcpp::NumericMatrix coords,
+    Rcpp::IntegerMatrix nn_idx,
+    Rcpp::NumericMatrix nn_dist,
+    Rcpp::IntegerVector nn_order,
+    int n_spatial, int nn,
+    double sigma2, double phi_gp, int cov_type
+) {
+  std::vector<double> w_block(w.begin(), w.end());
+  std::vector<double> cond_mean, cv, alpha;
+  bool gpu_used = false;
+  // (alpha, cv) do not depend on w: the conditional regression weights and
+  // variances are functions of the covariance alone. Pass w through anyway so
+  // the call matches how the block factory builds them.
+  tulpa::batch_nngp_scatter(w_block, n_spatial, nn, sigma2, phi_gp, cov_type,
+                            coords, nn_idx, nn_dist, nn_order,
+                            cond_mean, cv, gpu_used, &alpha);
+
+  std::vector<std::pair<int,int>> pattern;
+  tulpa::make_nngp_prior_sparsity_pattern(pattern, nn_idx, nn_order,
+                                          n_spatial, nn, /*gp_start=*/0);
+  tulpa::SparseHessianBuilder H_builder;
+  H_builder.init(n_spatial, pattern);
+  H_builder.zero();
+  tulpa::DenseVec grad_sparse(n_spatial, 0.0);
+  const tulpa::HessianPatternGuard guard;
+  tulpa::apply_nngp_full_prior_sparse(grad_sparse, H_builder, w_block, alpha,
+                                      cv, nn_idx, nn_order, n_spatial, nn,
+                                      /*gp_start=*/0);
+  const double dropped = (double) guard.dropped();
+
+  // Sparse lower triangle -> dense symmetric, so the caller compares like
+  // with like.
+  Rcpp::NumericMatrix H_sp(n_spatial, n_spatial);
+  for (int c = 0; c < n_spatial; c++) {
+    for (int e = H_builder.col_ptr[c]; e < H_builder.col_ptr[c + 1]; e++) {
+      const int r = H_builder.row_idx[e];
+      H_sp(r, c) = H_builder.values[e];
+      if (r != c) H_sp(c, r) = H_builder.values[e];
+    }
+  }
+
+  Rcpp::NumericMatrix alpha_mat(n_spatial, nn);
+  for (int i = 0; i < n_spatial; i++)
+    for (int k = 0; k < nn; k++)
+      alpha_mat(i, k) = alpha[(std::size_t) i * nn + k];
+
+  return Rcpp::List::create(
+    Rcpp::_["H"]       = H_sp,
+    Rcpp::_["grad"]    = Rcpp::NumericVector(grad_sparse.begin(), grad_sparse.end()),
+    Rcpp::_["alpha"]   = alpha_mat,
+    Rcpp::_["cv"]      = Rcpp::NumericVector(cv.begin(), cv.end()),
+    Rcpp::_["dropped"] = dropped,
+    Rcpp::_["nnz"]     = H_builder.nnz
   );
 }

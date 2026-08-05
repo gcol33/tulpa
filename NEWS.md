@@ -1,5 +1,28 @@
 # tulpa NEWS
 
+## 0.0.124
+
+* **The NNGP prior scatter is checked against the matrix it claims to build
+  (#278).** `apply_nngp_full_prior_dense` and `apply_nngp_full_prior_sparse`
+  were documented as the same math in different containers, and a measured
+  `log|H|` gap of 2.9e-03 between them put that in doubt. Assembling
+  `Lambda = (I - A)' D^-1 (I - A)` independently from the `(alpha, cv)` the
+  batched scatter returns settles it: both reproduce it to ~1e-16 RELATIVE at
+  every neighbour-set size from 2 to 10. The gap was an ABSOLUTE difference on
+  matrix entries of magnitude 1e13. The dense twin is deleted -- it had no
+  callers once `blocks_require_sparse()` pinned NNGP to the sparse Newton path
+  -- and the survivor is held to the definition by the new
+  `test-nngp-prior-scatter.R`, which also pins the gradient to `-Lambda w`.
+* **Where the 1e13 comes from is now recorded (#283).**
+  `nngp_moments_from_chol` floors the conditional variance at 1e-10 and says
+  nothing when the floor binds, putting `1e10` on `Lambda`'s diagonal for that
+  node. On a 150-point unit-square fixture (exponential covariance,
+  `sigma2 = 0.9`, `phi_gp = 0.4`) one node is floored at `nn = 2` and 47 of 150
+  at `nn = 8`, taking `cond(Lambda)` from 5.9e+11 to numerically infinite. That
+  conditioning, not a defective Hessian, is what stalls a Newton solve at large
+  `nn`. gcol33/tulpa#283 carries the fix, which is a modelling decision rather
+  than a threshold change.
+
 ## 0.0.123
 
 * **The last standalone Newton loop is gone (#282).** #277 left

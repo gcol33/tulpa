@@ -117,6 +117,18 @@ inline void nngp_moments_from_chol(const double* L, int n, int ld,
     c_Cinv_c += c_vec[j] * alpha[j];
   }
   cond_mean = cm;
+  // sigma2 - c'C^-1 c goes to zero (and, once C is numerically singular, below
+  // it) as the conditioning set approaches determining the focal node. The
+  // floor keeps the precision 1/cond_var finite, but it is not free: at the
+  // floor the NNGP prior asserts the node is known to sqrt(var_floor) given its
+  // neighbours, which is a numerical artifact rather than a modelling
+  // statement, and 1/var_floor = 1e10 lands directly on Lambda's diagonal.
+  // Measured on a 150-point unit-square fixture (exponential covariance,
+  // sigma2 = 0.9, phi = 0.4): 1 node floored at nn = 2, 32 at nn = 5, 47 at
+  // nn = 8, with max|Lambda| rising to 2.4e13 and cond(Lambda) to numerically
+  // infinite. That conditioning -- not a defective scatter -- is what stalls a
+  // Newton solve at large nn. The floor is currently silent; making it visible
+  // and deciding what a floored node should do is gcol33/tulpa#283.
   cond_var = std::max(var_floor, sigma2 - c_Cinv_c);
 }
 
