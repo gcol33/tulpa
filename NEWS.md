@@ -1,5 +1,44 @@
 # tulpa NEWS
 
+## 0.0.130
+
+* **Outer hyperparameter grids auto-recenter on a collapsed boundary instead
+  of railing silently (#289, #290).** Every nested-Laplace family built its
+  outer grid from a fixed default axis in original coordinates (e.g.
+  bym2/icar/car_proper's `sigma_grid = exp(seq(log(0.1), log(3),
+  length.out = 5))`). A fit whose field-SD posterior mode sat above the top
+  node collapsed every outer weight onto that boundary node
+  (`pareto_k_regime = "collapsed_edge"`), silently -- on Michael Glaser's 78
+  real EVA `occu_cover` fits, 10 railed the 5.0 sigma ceiling.
+
+  The fixed grid is now a starting axis, not a ceiling: a fit that collapses
+  onto a boundary re-centers via the mode-Hessian its own outer Pareto-k
+  diagnostic already computes (`R/nested_laplace_auto_grid.R`) and refits,
+  reusing that curvature rather than running a second optimizer. An explicit
+  `sigma_grid` / `tau_grid` always wins -- auto-recenter only engages when
+  left at its default. Wired through:
+  - the joint driver's single-block backends (bym2/icar/car_proper) and
+    multi-block copy blocks, with a second attempt composing a light default
+    PC(U=3, alpha=0.01) prior on sigma for a genuinely unidentified
+    (near-separation) mode that geometry alone cannot settle;
+  - the standalone `.NL_REGISTRY` path (icar's `tau_grid`, bym2's
+    `sigma_grid`), one recenter attempt, reusing the joint path's generic
+    axis-tagging and FD-Hessian machinery;
+  - `fit_spde()`'s explicit `method = "grid"` path, which now attaches the
+    same `pareto_k_regime` diagnostic (visibility only -- `fit_spde()`'s
+    default `control$method` is already `"ccd"`, the mode-Hessian path, so
+    `"grid"` is a deliberate opt-in the fix respects rather than overrides).
+
+  Byte-stable when the mode already sits inside the old default axis (a
+  no-op branch, exercised by regression tests in
+  `test-nested-laplace-joint-auto-grid.R` and
+  `test-nested-laplace-registry-auto-grid.R`). car_proper (its `rho` axis is
+  unguessable, same limitation the existing outer-k-hat diagnostic already
+  has) and MCAR (log-Cholesky axis geometry, a materially different
+  recentering problem) are out of scope; `fit_st_nested()`'s
+  spatiotemporal grid got the diagnostic only, since it has no existing
+  mode-find machinery to reuse -- tracked as #291.
+
 ## 0.0.129
 
 * **`temporal_gp()` now reaches a fitter (#287).** The constructor was

@@ -270,6 +270,39 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   tm$mark("postproc")
   res <- .nl_attach_pareto_k(res, prior, cargs_no_ckpt, "single", type, NULL,
                              k_samples, compute = diagnose_k)
+
+  # Auto-recenter a collapsed icar `tau` / bym2 `sigma` axis
+  # (gcol33/tulpa#290, the registry generalization of #289's joint-path
+  # fix): a single mode-Hessian recenter-and-refit when the fixed default
+  # axis railed. A no-op (zero extra fit) unless it actually did; an
+  # explicit `tau_grid` / `sigma_grid` always wins. car_proper (unguessable
+  # `rho`) and mcar (log-Cholesky axis geometry) are out of scope here --
+  # see `.nl_registry_axis_mode_cov()`.
+  registry_rescue <- .nl_registry_grid_rescue(
+    res, type, prior,
+    refit = function(prior_i) {
+      r <- .nl_dispatch(type, cargs, prior_i)
+      r <- .nl_apply_ar1_rho_prior(r, type, prior_i)
+      r$weights <- .nl_normalise_weights_safe(r$log_marginal, "outer grid")
+      r <- .nl_posterior_moments(r, type)
+      if (isTRUE(keep_grid_hessians)) r <- .nl_attach_grid_hessians(r, p_fixed)
+      .nl_attach_pareto_k(r, prior_i, cargs_no_ckpt, "single", type, NULL,
+                          k_samples, compute = diagnose_k)
+    },
+    refit_log_marginal = function(prior_i, theta_mat) {
+      blk2 <- prior_i
+      if (type == "icar") {
+        blk2$tau_grid <- theta_mat[, 1L]
+      } else if (type == "bym2") {
+        blk2$sigma_grid <- theta_mat[, 1L]
+        blk2$rho_grid   <- theta_mat[, 2L]
+      }
+      .nl_dispatch(type, cargs_no_ckpt, blk2)$log_marginal
+    })
+  res   <- registry_rescue$res
+  prior <- registry_rescue$prior
+  res$outer_grid_placement <- res$outer_grid_placement %||% "fixed"
+
   res <- .nl_inner_skew_at_theta(res, prior, cargs_no_ckpt, "single", type,
                                  NULL, p_fixed, skew_idx,
                                  compute = diagnose_skew)

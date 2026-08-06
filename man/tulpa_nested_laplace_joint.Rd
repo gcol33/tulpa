@@ -69,7 +69,19 @@ field \code{type}. Backend-specific fields:
 in \verb{[0.1, 3]}).
 \item \strong{car_proper}: same as icar plus \code{rho_car_grid}
 (default \code{c(0.5, 0.8, 0.95, 0.99)}).
-}}
+}
+
+\code{sigma_grid}'s default is a starting axis, not a hard ceiling
+(gcol33/tulpa#289): when the fitted field-SD posterior mode rails the top
+node (\code{pareto_k_regime = "collapsed_edge"}, see below), the driver
+re-centres the axis on the mode-Hessian the outer Pareto-k diagnostic
+already computed and refits (up to two attempts, the second adding a
+light default PC(U=3, alpha=0.01) prior on sigma if \code{prior_sigma} was not
+set), so a sparse or strongly-identified species is not silently
+truncated at 3.0. An explicit \code{sigma_grid} always wins -- auto-recenter
+only engages when this field is left \code{NULL}. Declines gracefully (keeps
+the fixed-grid fit) when \code{control$diagnose_k = FALSE} or another axis in
+the same grid has unguessable support (car_proper's \code{rho_car}).}
 
 \item{copy}{Multi-block copy specification (multi-block \code{prior} only). For a
 single-block fit there is no \code{copy} argument: declare the copy coefficient
@@ -80,7 +92,10 @@ latent fields, each onto its own arm with its own \eqn{\alpha} axis,
 integrated over the product outer grid. Each spec must name a distinct
 block. The copy block may be any of \code{icar} / \code{bym2} / \code{car_proper} / \code{rw1}
 / \code{rw2} / \code{ar1} / \code{iid}; blocks with their own per-arm scaling (\code{lf},
-\code{hsgp_mo}) or a precomputed precision (\code{tgmrf}) do not take a copy.}
+\code{hsgp_mo}) or a precomputed precision (\code{tgmrf}) do not take a copy. A
+copy block's own \code{sigma_grid} (the donor field amplitude, same default
+ceiling as the single-block \code{prior$sigma_grid} above) auto-recenters on
+\code{collapsed_edge} the same way, one block per attempt.}
 
 \item{phi_grid}{Optional list specifying per-arm dispersion axes on the
 outer grid. Accepts either a named list (keys = arm names) or a
@@ -495,6 +510,12 @@ collapse, which axes the dominant cell sits against and on which side
 (\code{"lower"} / \code{"upper"}); widen those axes and refit to confirm the mode
 is bracketed. Axes the grid pins to one value are excluded (pinned, not
 at a boundary).
+\item \code{outer_grid_placement} -- \code{"fixed"} (the default \code{sigma_grid} axis was
+used as-is) or \code{"auto_recentered"} when a \code{collapsed_edge} on \code{sigma}
+triggered the mode-Hessian recenter-and-refit (gcol33/tulpa#289; see
+the \code{prior} argument above). \code{outer_grid_recenter_attempts} (integer)
+and \code{outer_grid_prior_added} (logical: whether the light default
+PC(U=3, alpha=0.01) sigma prior was applied) are set alongside it.
 \item \code{pareto_k_outer_skew} -- per-axis skewness of the hyperparameter marginal
 in the proposal's whitened coordinate, present only when a
 \eqn{\hat{k}} above the good band triggered the skew-normal rescue pass.

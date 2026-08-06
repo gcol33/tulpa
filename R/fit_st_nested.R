@@ -146,6 +146,13 @@ fit_st_nested <- function(y, X, spatial_idx, adjacency, temporal_idx, n_times,
   out$theta_grid  <- as.matrix(grid)
   out$theta_names <- colnames(grid)
   out$weights <- .nl_normalise_weights_safe(out$log_marginal, "spatiotemporal grid")
+  # Outer-grid collapse visibility (gcol33/tulpa#276, #290): this fixed
+  # tau_spatial x tau_temporal [x rho] tensor has no mode-Hessian recenter
+  # path (unlike the joint / single-block registry families) -- attaching
+  # only the diagnostic so a railed axis is visible rather than silent.
+  # Auto-recentering this grid needs a fresh mode-find this file has none
+  # of today; tracked as a follow-up rather than bundled here.
+  out <- .joint_attach_pareto_k_regime(out)
   out <- .nl_posterior_moments(out, "st")
   out <- .nl_attach_grid_hessians(out, ncol(X))
 

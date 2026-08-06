@@ -83,6 +83,18 @@
 #'   * **car_proper**: same as icar plus `rho_car_grid`
 #'     (default `c(0.5, 0.8, 0.95, 0.99)`).
 #'
+#'   `sigma_grid`'s default is a starting axis, not a hard ceiling
+#'   (gcol33/tulpa#289): when the fitted field-SD posterior mode rails the top
+#'   node (`pareto_k_regime = "collapsed_edge"`, see below), the driver
+#'   re-centres the axis on the mode-Hessian the outer Pareto-k diagnostic
+#'   already computed and refits (up to two attempts, the second adding a
+#'   light default PC(U=3, alpha=0.01) prior on sigma if `prior_sigma` was not
+#'   set), so a sparse or strongly-identified species is not silently
+#'   truncated at 3.0. An explicit `sigma_grid` always wins -- auto-recenter
+#'   only engages when this field is left `NULL`. Declines gracefully (keeps
+#'   the fixed-grid fit) when `control$diagnose_k = FALSE` or another axis in
+#'   the same grid has unguessable support (car_proper's `rho_car`).
+#'
 #' @param copy Multi-block copy specification (multi-block `prior` only). For a
 #' single-block fit there is no `copy` argument: declare the copy coefficient
 #' on the arm via `responses[[X]]$field_coef = list(name = "alpha", grid = G)`.
@@ -92,7 +104,10 @@
 #' integrated over the product outer grid. Each spec must name a distinct
 #' block. The copy block may be any of `icar` / `bym2` / `car_proper` / `rw1`
 #' / `rw2` / `ar1` / `iid`; blocks with their own per-arm scaling (`lf`,
-#'   `hsgp_mo`) or a precomputed precision (`tgmrf`) do not take a copy.
+#'   `hsgp_mo`) or a precomputed precision (`tgmrf`) do not take a copy. A
+#'   copy block's own `sigma_grid` (the donor field amplitude, same default
+#'   ceiling as the single-block `prior$sigma_grid` above) auto-recenters on
+#'   `collapsed_edge` the same way, one block per attempt.
 #'
 #' @param phi_grid Optional list specifying per-arm dispersion axes on the
 #'   outer grid. Accepts either a named list (keys = arm names) or a
@@ -503,6 +518,12 @@
 #'      (`"lower"` / `"upper"`); widen those axes and refit to confirm the mode
 #'      is bracketed. Axes the grid pins to one value are excluded (pinned, not
 #'      at a boundary).
+#'   * `outer_grid_placement` -- `"fixed"` (the default `sigma_grid` axis was
+#'      used as-is) or `"auto_recentered"` when a `collapsed_edge` on `sigma`
+#'      triggered the mode-Hessian recenter-and-refit (gcol33/tulpa#289; see
+#'      the `prior` argument above). `outer_grid_recenter_attempts` (integer)
+#'      and `outer_grid_prior_added` (logical: whether the light default
+#'      PC(U=3, alpha=0.01) sigma prior was applied) are set alongside it.
 #'   * `pareto_k_outer_skew` -- per-axis skewness of the hyperparameter marginal
 #'      in the proposal's whitened coordinate, present only when a
 #'      \eqn{\hat{k}} above the good band triggered the skew-normal rescue pass.
@@ -649,6 +670,43 @@ tulpa_nested_laplace_joint <- function(responses,
                                           prior_sigma, prior_alpha, prior_phi,
                                           cell_coupling, ctrl))
     res$k_quality_rounds <- 0L
+    res$outer_grid_placement <- res$outer_grid_placement %||% "fixed"
+
+    # Auto-recenter a collapsed sigma axis (gcol33/tulpa#289) before the
+    # k_quality escalation below: that loop assumes the grid's BOUNDS are
+    # right and only needs densifying / refining, so a mis-centred axis
+    # (mode beyond the fixed ceiling) must be fixed first, not densified.
+    # A no-op (zero extra fit) unless the first fit actually railed on
+    # sigma; `prior` / `prior_sigma` are reassigned to the recentered
+    # values so escalation, if it still runs, continues from there.
+    rescue <- .joint_sigma_grid_rescue(
+        res, prior, prior_sigma,
+        refit = function(prior_i, prior_sigma_i)
+            attach_q(.tulpa_nl_joint_once(responses, prior_i, copy, phi_grid,
+                                          prior_sigma_i, prior_alpha, prior_phi,
+                                          cell_coupling, ctrl)))
+    res         <- rescue$res
+    prior       <- rescue$prior
+    prior_sigma <- rescue$prior_sigma
+
+    # Multi-block counterpart: a copy block's own scalar sigma axis
+    # (mutually exclusive with the single-block rescue above -- each
+    # declines immediately on the other's prior shape, so chaining them
+    # unconditionally is safe).
+    cp_resolved <- tryCatch(.resolve_copy_multi(copy, responses, prior),
+                            error = function(e) NULL)
+    rescue_multi <- .joint_multi_sigma_grid_rescue(
+        res, prior, copy, cp_resolved, prior_sigma,
+        refit = function(prior_i, prior_sigma_i)
+            attach_q(.tulpa_nl_joint_once(responses, prior_i, copy, phi_grid,
+                                          prior_sigma_i, prior_alpha, prior_phi,
+                                          cell_coupling, ctrl)))
+    res         <- rescue_multi$res
+    prior       <- rescue_multi$prior
+    prior_sigma <- rescue_multi$prior_sigma
+
+    res$k_quality_rounds     <- res$k_quality_rounds %||% 0L
+    res$outer_grid_placement <- res$outer_grid_placement %||% "fixed"
 
     if (k_quality %in% c("ok", "good") && isTRUE(diagnose_k) &&
         k_max_rounds > 0L && k_refine %in% c("grid", "ccd")) {

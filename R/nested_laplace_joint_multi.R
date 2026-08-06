@@ -897,6 +897,10 @@
     res$pareto_k        <- kd$pareto_k
     res$pareto_k_is_ess <- kd$is_ess
     res$pareto_k_proposal_source <- kd$proposal_source
+    res$pareto_k_mode_u     <- kd$mode_u
+    res$pareto_k_cov_u      <- kd$cov_u
+    res$pareto_k_axis_tags  <- kd$axis_tags
+    res$pareto_k_axis_names <- kd$axis_names
     res <- .joint_attach_pareto_k_regime(res, kd)
     res <- .joint_attach_pareto_k_uncertainty(res, kd)
     res <- .joint_attach_by_arm_k(res, kd)

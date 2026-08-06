@@ -1308,7 +1308,18 @@
                 pareto_k_tail_points           = ju$tail_points,
                 pareto_k_tail_points_requested = tp_req,
                 pareto_k_band_confident        = ju$band_confident,
-                pareto_k_conf_bands            = ju$conf_bands)
+                pareto_k_conf_bands            = ju$conf_bands,
+                # The proposal's (mode, covariance) in the per-axis
+                # unconstrained coordinate, exactly as fit to score this k-hat
+                # (grid-weighted moments, or the mode-Hessian / delta-collapse
+                # FD rescue -- see .joint_pareto_prepare()). Exposed so an
+                # outer-grid rescue (gcol33/tulpa#289) can re-center a
+                # collapsed axis from the SAME (mode, H) rather than
+                # re-optimizing.
+                mode_u     = prep$u_hat,
+                cov_u      = prep$Su,
+                axis_tags  = prep$tags,
+                axis_names = prep$cn)
 
     if (n_arm > 0L) {
         pa <- lapply(seq_len(n_arm), function(a) {
@@ -1645,6 +1656,10 @@
     res$pareto_k        <- kd$pareto_k
     res$pareto_k_is_ess <- kd$is_ess
     res$pareto_k_proposal_source <- kd$proposal_source
+    res$pareto_k_mode_u     <- kd$mode_u
+    res$pareto_k_cov_u      <- kd$cov_u
+    res$pareto_k_axis_tags  <- kd$axis_tags
+    res$pareto_k_axis_names <- kd$axis_names
     res <- .joint_attach_pareto_k_regime(res, kd)
     res <- .joint_attach_pareto_k_uncertainty(res, kd)
     res <- .joint_attach_by_arm_k(res, kd)
