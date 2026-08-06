@@ -257,6 +257,18 @@ cpp_laplace_spec_test_multi_re <- function(y, X, re_terms, sigma_beta, phi, max_
     .Call(`_tulpa_cpp_laplace_spec_test_multi_re`, y, X, re_terms, sigma_beta, phi, max_iter, tol, n_threads)
 }
 
+cpp_test_tri_solve <- function(Lbuf, n, b, layout, transpose) {
+    .Call(`_tulpa_cpp_test_tri_solve`, Lbuf, n, b, layout, transpose)
+}
+
+cpp_test_chol_factor <- function(Abuf, n, layout) {
+    .Call(`_tulpa_cpp_test_chol_factor`, Abuf, n, layout)
+}
+
+cpp_test_nngp_moments <- function(Lbuf, n, c_vec, w_nb, sigma2, var_floor, layout) {
+    .Call(`_tulpa_cpp_test_nngp_moments`, Lbuf, n, c_vec, w_nb, sigma2, var_floor, layout)
+}
+
 cpp_mclmc_test <- function(mu_target, sigma_target, init, n_iter = 2000L, n_warmup = 1000L, seed = 42L, adjusted = FALSE) {
     .Call(`_tulpa_cpp_mclmc_test`, mu_target, sigma_target, init, n_iter, n_warmup, seed, adjusted)
 }

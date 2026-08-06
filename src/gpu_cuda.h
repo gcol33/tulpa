@@ -526,8 +526,8 @@ inline bool cuda_batched_cholesky(
       // cuSOLVER is COLUMN-major and was asked for CUBLAS_FILL_MODE_LOWER, so
       // it writes L[i][j] (i >= j) at offset j*k + i and leaves the opposite
       // triangle holding the input. Every consumer of this buffer
-      // (chol_forward_solve / chol_back_solve in linalg_fast.h) indexes
-      // ROW-major, so without this conversion it reads the untouched input
+      // (tri_solve_lower<RowMajor> / tri_solve_lower_transpose<RowMajor> in
+      // linalg_fast.h) indexes ROW-major, so without this conversion it reads the untouched input
       // covariances as if they were factor entries -- the diagonal is the only
       // part that agrees, which is why the result stays finite and plausible.
       // Move the factor into the row-major lower triangle and clear what

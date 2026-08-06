@@ -1,5 +1,37 @@
 # tulpa NEWS
 
+## 0.0.126
+
+* **The small-dense Cholesky core takes its storage layout as a required
+  argument (#285).** `linalg_fast.h` shipped two triangular-solve pairs on
+  opposite conventions with names that said neither: `chol_forward_solve` /
+  `chol_back_solve` indexed row-major with an explicit leading dimension,
+  `tri_solve_lower` / `tri_solve_upper_transpose` indexed column-major with `n`
+  as the stride. The two are related by transposition, so a factor handed to
+  the wrong pair does not crash, does not produce NaN and trips no dimension
+  check -- it solves against the transpose and returns a plausible vector.
+  #283 was that mistake on a cuSOLVER factor, and it corrupted every NNGP fit
+  with 51 or more locations while staying finite and ordinary-looking.
+
+  There is now one implementation of each solve, templated on
+  `tulpa_linalg::TriLayout`, and the layout is a **required** template argument
+  rather than something a call site inherits from argument order:
+  `tri_solve_lower<TriLayout::RowMajor>(L, n, ld, b, y)` and
+  `tri_solve_lower_transpose<...>`. `chol_factor_lower` and
+  `nngp_moments_from_chol` -- the producer and the consumer that must agree
+  with the solve -- carry the same parameter, so a call site states the whole
+  convention it is asserting. `chol_log_det` does not: the diagonal sits at
+  `i * ld + i` under both. The layout folds at compile time, so the emitted
+  arithmetic and its summation order are unchanged.
+
+  `tri_solve_lower`'s old column-major body had no callers and is gone; the one
+  caller of `tri_solve_upper_transpose` (the dense mass matrix's momentum draw,
+  which reads an Eigen factor and so really is column-major) now says so. New
+  `test-tri-solve-layout.R` states the contract -- each routine reads the lower
+  triangle of the matrix its declared layout spells out of the buffer -- and
+  checks it on matched and mismatched buffers, including the cuSOLVER-shaped
+  one whose opposite triangle still holds the input.
+
 ## 0.0.125
 
 * **The batched CUDA Cholesky returned a column-major factor that every

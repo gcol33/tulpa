@@ -174,12 +174,13 @@ inline double temporal_gp_log_lik_direct(
 
   // Cholesky decomposition: K = L * L^T (shared core)
   std::vector<double> L(N * N, 0.0);
-  tulpa_linalg::chol_factor_lower(K.data(), L.data(), N, N,
-                                  tulpa_linalg::kCholJitter);
+  tulpa_linalg::chol_factor_lower<tulpa_linalg::TriLayout::RowMajor>(
+      K.data(), L.data(), N, N, tulpa_linalg::kCholJitter);
 
   // Solve L * y = f (forward substitution)
   std::vector<double> y(N);
-  tulpa_linalg::chol_forward_solve(L.data(), N, N, f.data(), y.data());
+  tulpa_linalg::tri_solve_lower<tulpa_linalg::TriLayout::RowMajor>(
+      L.data(), N, N, f.data(), y.data());
 
   // Log-likelihood: -0.5 * (N * log(2*pi) + log|K| + f' K^{-1} f)
   // log|K| = 2 * sum(log(L_ii))

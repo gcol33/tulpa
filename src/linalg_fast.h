@@ -28,30 +28,57 @@ namespace tulpa_linalg {
 // argument, not a drifted literal.
 constexpr double kCholJitter = 1e-10;
 
+// Storage convention for a dense triangular factor. Both appear in this
+// package: the per-neighbourhood NNGP / CAR / GP kernels build their factors
+// row-major, the adapted HMC mass matrix comes out of Eigen column-major.
+//
+// The two are related by transposition -- a column-major lower-triangular
+// factor is the same bytes as a row-major upper-triangular one -- so a factor
+// read under the wrong convention does not crash, does not produce NaN, and
+// trips no dimension check. It solves against the transpose and returns a
+// plausible vector. That is what gcol33/tulpa#283 was, and it corrupted every
+// NNGP fit with 51+ locations while staying finite and ordinary-looking.
+//
+// The layout is therefore a required template argument on every routine below
+// that indexes off the diagonal: a call site has to state which convention it
+// is asserting, and cannot inherit one by argument order.
+enum class TriLayout { RowMajor, ColMajor };
+
+// Offset of element (i, j) in an ld-strided n x n buffer.
+template <TriLayout LO>
+inline int tri_index(int i, int j, int ld) {
+  if constexpr (LO == TriLayout::RowMajor) {
+    return i * ld + j;
+  } else {
+    return j * ld + i;
+  }
+}
+
 // Lower-Cholesky factorization of the leading n x n block of an
-// ld-strided dense SPD matrix (A[i * ld + j]). With jitter >= 0 the
+// ld-strided dense SPD matrix. With jitter >= 0 the
 // diagonal pivots are floored at `jitter`. With jitter < 0 the
 // factorization runs in PD-check mode: returns false on a non-positive
-// pivot instead of flooring. Supports in-place use (L == A); the upper
+// pivot instead of flooring. Supports in-place use (L == A); the opposite
 // triangle of L is left untouched, so callers wanting zeros there must
 // pass a zero-initialized L.
+template <TriLayout LO>
 inline bool chol_factor_lower(const double* A, double* L, int n, int ld,
                               double jitter) {
   for (int j = 0; j < n; j++) {
     for (int k = 0; k <= j; k++) {
-      double sum = A[j * ld + k];
+      double sum = A[tri_index<LO>(j, k, ld)];
       for (int m = 0; m < k; m++) {
-        sum -= L[j * ld + m] * L[k * ld + m];
+        sum -= L[tri_index<LO>(j, m, ld)] * L[tri_index<LO>(k, m, ld)];
       }
       if (j == k) {
         if (jitter < 0.0) {
           if (sum <= 0.0) return false;  // Not positive definite
-          L[j * ld + j] = std::sqrt(sum);
+          L[tri_index<LO>(j, j, ld)] = std::sqrt(sum);
         } else {
-          L[j * ld + j] = std::sqrt(std::max(jitter, sum));
+          L[tri_index<LO>(j, j, ld)] = std::sqrt(std::max(jitter, sum));
         }
       } else {
-        L[j * ld + k] = sum / L[k * ld + k];
+        L[tri_index<LO>(j, k, ld)] = sum / L[tri_index<LO>(k, k, ld)];
       }
     }
   }
@@ -59,30 +86,33 @@ inline bool chol_factor_lower(const double* A, double* L, int n, int ld,
 }
 
 // Forward substitution: solve L y = b for lower-triangular L.
-inline void chol_forward_solve(const double* L, int n, int ld,
-                               const double* b, double* y) {
+template <TriLayout LO>
+inline void tri_solve_lower(const double* L, int n, int ld,
+                            const double* b, double* y) {
   for (int i = 0; i < n; i++) {
     double sum = b[i];
     for (int j = 0; j < i; j++) {
-      sum -= L[i * ld + j] * y[j];
+      sum -= L[tri_index<LO>(i, j, ld)] * y[j];
     }
-    y[i] = sum / L[i * ld + i];
+    y[i] = sum / L[tri_index<LO>(i, i, ld)];
   }
 }
 
 // Back substitution: solve L' x = y for lower-triangular L.
-inline void chol_back_solve(const double* L, int n, int ld,
-                            const double* y, double* x) {
+template <TriLayout LO>
+inline void tri_solve_lower_transpose(const double* L, int n, int ld,
+                                      const double* y, double* x) {
   for (int i = n - 1; i >= 0; i--) {
     double sum = y[i];
     for (int j = i + 1; j < n; j++) {
-      sum -= L[j * ld + i] * x[j];
+      sum -= L[tri_index<LO>(j, i, ld)] * x[j];
     }
-    x[i] = sum / L[i * ld + i];
+    x[i] = sum / L[tri_index<LO>(i, i, ld)];
   }
 }
 
-// log|A| = 2 * sum(log(L_ii)) from a Cholesky factor.
+// log|A| = 2 * sum(log(L_ii)) from a Cholesky factor. The diagonal sits at
+// i * ld + i under both conventions, so this one takes no layout.
 inline double chol_log_det(const double* L, int n, int ld) {
   double log_det = 0.0;
   for (int i = 0; i < n; i++) {
@@ -96,6 +126,7 @@ inline double chol_log_det(const double* L, int n, int ld) {
 // `w_nb` holds the neighbor values gathered in the same order as `c_vec`.
 // If `alpha_out` is non-null the kriging weights C^{-1} c are written there
 // (length n).
+template <TriLayout LO>
 inline void nngp_moments_from_chol(const double* L, int n, int ld,
                                    const double* c_vec, const double* w_nb,
                                    double sigma2, double var_floor,
@@ -107,8 +138,8 @@ inline void nngp_moments_from_chol(const double* L, int n, int ld,
     alpha_local.resize(n);
     alpha = alpha_local.data();
   }
-  chol_forward_solve(L, n, ld, c_vec, y.data());
-  chol_back_solve(L, n, ld, y.data(), alpha);
+  tri_solve_lower<LO>(L, n, ld, c_vec, y.data());
+  tri_solve_lower_transpose<LO>(L, n, ld, y.data(), alpha);
 
   double cm = 0.0;
   double c_Cinv_c = 0.0;
@@ -129,15 +160,17 @@ inline void nngp_moments_from_chol(const double* L, int n, int ld,
 }
 
 // Full NNGP conditional-moments core: factorize the neighbor covariance
-// C (n x n), then compute the kriging moments against c_vec / w_nb.
+// C (n x n), then compute the kriging moments against c_vec / w_nb. C is
+// symmetric, so the factor's layout is an internal detail here.
 inline void nngp_conditional_moments(const double* C, const double* c_vec,
                                      const double* w_nb, int n, double sigma2,
                                      double jitter, double var_floor,
                                      double& cond_mean, double& cond_var) {
   std::vector<double> L(static_cast<size_t>(n) * n, 0.0);
-  chol_factor_lower(C, L.data(), n, n, jitter);
-  nngp_moments_from_chol(L.data(), n, n, c_vec, w_nb, sigma2, var_floor,
-                         cond_mean, cond_var);
+  chol_factor_lower<TriLayout::RowMajor>(C, L.data(), n, n, jitter);
+  nngp_moments_from_chol<TriLayout::RowMajor>(L.data(), n, n, c_vec, w_nb,
+                                              sigma2, var_floor, cond_mean,
+                                              cond_var);
 }
 
 // ============================================================================
@@ -800,28 +833,6 @@ inline double quadratic_form(const double* x, const double* A, int n) {
     result += x[i] * Ax_i;
   }
   return result;
-}
-
-// Forward substitution: solve L*y = b (L lower triangular, column-major)
-inline void tri_solve_lower(const double* L, const double* b, double* y, int n) {
-  for (int i = 0; i < n; i++) {
-    double sum = b[i];
-    for (int j = 0; j < i; j++) {
-      sum -= L[j * n + i] * y[j];  // L[i,j] = L[j*n + i]
-    }
-    y[i] = sum / L[i * n + i];  // L[i,i] = L[i*n + i]
-  }
-}
-
-// Back substitution: solve L^T*y = b (L lower triangular, column-major)
-inline void tri_solve_upper_transpose(const double* L, const double* b, double* y, int n) {
-  for (int i = n - 1; i >= 0; i--) {
-    double sum = b[i];
-    for (int j = i + 1; j < n; j++) {
-      sum -= L[i * n + j] * y[j];  // L^T[i,j] = L[j,i] = L[i*n + j]
-    }
-    y[i] = sum / L[i * n + i];  // L^T[i,i] = L[i,i] = L[i*n + i]
-  }
 }
 
 // Fused scale + matvec + add: y += alpha * A * x (A symmetric n×n, column-major)

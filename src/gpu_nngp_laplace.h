@@ -114,7 +114,7 @@ inline void batch_nngp_scatter(
 
     // Phase 2: Cholesky factorize — GPU or CPU
     // After this, C_mats[b] contains L (lower triangular, ROW-major, upper
-    // triangle zeroed) — the layout chol_forward_solve / chol_back_solve read.
+    // triangle zeroed) — the layout the TriLayout::RowMajor solves read.
     //
     // The GPU result is verified against the CPU factorization of one batch
     // element before the batch is accepted. This is not defensive padding: the
@@ -135,9 +135,9 @@ inline void batch_nngp_scatter(
         const int probe = batch_size / 2;
         const int probe_n = locs[probe].n_nb;
         std::vector<double> probe_ref(C_orig[probe]);
-        tulpa_linalg::chol_factor_lower(probe_ref.data(), probe_ref.data(),
-                                        probe_n, nn,
-                                        tulpa_linalg::kCholJitter);
+        tulpa_linalg::chol_factor_lower<tulpa_linalg::TriLayout::RowMajor>(
+            probe_ref.data(), probe_ref.data(), probe_n, nn,
+            tulpa_linalg::kCholJitter);
 
         chol_ok = tulpa_gpu::cuda_batched_cholesky(C_mats, nn);
         if (chol_ok) {
@@ -165,8 +165,8 @@ inline void batch_nngp_scatter(
         for (int b = 0; b < batch_size; b++) {
             auto& L = C_mats[b];
             int n_nb = locs[b].n_nb;
-            tulpa_linalg::chol_factor_lower(L.data(), L.data(), n_nb, nn,
-                                            tulpa_linalg::kCholJitter);
+            tulpa_linalg::chol_factor_lower<tulpa_linalg::TriLayout::RowMajor>(
+                L.data(), L.data(), n_nb, nn, tulpa_linalg::kCholJitter);
             for (int j = 0; j < n_nb; j++) {
                 for (int k = j + 1; k < n_nb; k++) L[j * nn + k] = 0.0;
             }
@@ -193,7 +193,7 @@ inline void batch_nngp_scatter(
         }
 
         std::vector<double> alpha(n_nb);
-        tulpa_linalg::nngp_moments_from_chol(
+        tulpa_linalg::nngp_moments_from_chol<tulpa_linalg::TriLayout::RowMajor>(
             L.data(), n_nb, nn, c.data(), w_nb.data(), sigma2,
             tulpa_linalg::kCholJitter,
             cond_mean_out[obs_idx], cond_var_out[obs_idx], alpha.data());

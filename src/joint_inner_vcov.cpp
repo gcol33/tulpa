@@ -141,16 +141,18 @@ bool extract_inner_vcov_block_cell(
         std::vector<double> Lm(static_cast<std::size_t>(kc) * kc, 0.0);
         // M not PD (degenerate constraint) -> leave yvec empty (skip the
         // correction) rather than emit a wrong block.
-        if (tulpa_linalg::chol_factor_lower(M.data(), Lm.data(), kc, kc,
-                                            /*jitter=*/-1.0)) {
+        if (tulpa_linalg::chol_factor_lower<tulpa_linalg::TriLayout::RowMajor>(
+                M.data(), Lm.data(), kc, kc, /*jitter=*/-1.0)) {
             yvec.assign(static_cast<std::size_t>(p) * kc, 0.0);
             std::vector<double> g_a(kc), tmp(kc), y_a(kc);
             for (int a = 0; a < p; a++) {
                 for (int g = 0; g < kc; g++) g_a[g] = W_cols[g][idx0[a]];
-                tulpa_linalg::chol_forward_solve(Lm.data(), kc, kc, g_a.data(),
-                                                 tmp.data());
-                tulpa_linalg::chol_back_solve(Lm.data(), kc, kc, tmp.data(),
-                                              y_a.data());
+                tulpa_linalg::tri_solve_lower<
+                    tulpa_linalg::TriLayout::RowMajor>(Lm.data(), kc, kc,
+                                                       g_a.data(), tmp.data());
+                tulpa_linalg::tri_solve_lower_transpose<
+                    tulpa_linalg::TriLayout::RowMajor>(Lm.data(), kc, kc,
+                                                       tmp.data(), y_a.data());
                 for (int g = 0; g < kc; g++)
                     yvec[static_cast<std::size_t>(a) * kc + g] = y_a[g];
             }

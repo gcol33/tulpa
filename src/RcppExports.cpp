@@ -993,6 +993,51 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_test_tri_solve
+Rcpp::NumericVector cpp_test_tri_solve(Rcpp::NumericVector Lbuf, int n, Rcpp::NumericVector b, int layout, bool transpose);
+RcppExport SEXP _tulpa_cpp_test_tri_solve(SEXP LbufSEXP, SEXP nSEXP, SEXP bSEXP, SEXP layoutSEXP, SEXP transposeSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type Lbuf(LbufSEXP);
+    Rcpp::traits::input_parameter< int >::type n(nSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type b(bSEXP);
+    Rcpp::traits::input_parameter< int >::type layout(layoutSEXP);
+    Rcpp::traits::input_parameter< bool >::type transpose(transposeSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_tri_solve(Lbuf, n, b, layout, transpose));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_test_chol_factor
+Rcpp::NumericVector cpp_test_chol_factor(Rcpp::NumericVector Abuf, int n, int layout);
+RcppExport SEXP _tulpa_cpp_test_chol_factor(SEXP AbufSEXP, SEXP nSEXP, SEXP layoutSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type Abuf(AbufSEXP);
+    Rcpp::traits::input_parameter< int >::type n(nSEXP);
+    Rcpp::traits::input_parameter< int >::type layout(layoutSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_chol_factor(Abuf, n, layout));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_test_nngp_moments
+Rcpp::List cpp_test_nngp_moments(Rcpp::NumericVector Lbuf, int n, Rcpp::NumericVector c_vec, Rcpp::NumericVector w_nb, double sigma2, double var_floor, int layout);
+RcppExport SEXP _tulpa_cpp_test_nngp_moments(SEXP LbufSEXP, SEXP nSEXP, SEXP c_vecSEXP, SEXP w_nbSEXP, SEXP sigma2SEXP, SEXP var_floorSEXP, SEXP layoutSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type Lbuf(LbufSEXP);
+    Rcpp::traits::input_parameter< int >::type n(nSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type c_vec(c_vecSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type w_nb(w_nbSEXP);
+    Rcpp::traits::input_parameter< double >::type sigma2(sigma2SEXP);
+    Rcpp::traits::input_parameter< double >::type var_floor(var_floorSEXP);
+    Rcpp::traits::input_parameter< int >::type layout(layoutSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_nngp_moments(Lbuf, n, c_vec, w_nb, sigma2, var_floor, layout));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_mclmc_test
 Rcpp::List cpp_mclmc_test(Rcpp::NumericVector mu_target, Rcpp::NumericVector sigma_target, Rcpp::NumericVector init, int n_iter, int n_warmup, int seed, bool adjusted);
 RcppExport SEXP _tulpa_cpp_mclmc_test(SEXP mu_targetSEXP, SEXP sigma_targetSEXP, SEXP initSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP seedSEXP, SEXP adjustedSEXP) {
@@ -4011,6 +4056,9 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_laplace_spec_test_gaussian", (DL_FUNC) &_tulpa_cpp_laplace_spec_test_gaussian, 10},
     {"_tulpa_cpp_laplace_spec_test_gaussian2p", (DL_FUNC) &_tulpa_cpp_laplace_spec_test_gaussian2p, 17},
     {"_tulpa_cpp_laplace_spec_test_multi_re", (DL_FUNC) &_tulpa_cpp_laplace_spec_test_multi_re, 8},
+    {"_tulpa_cpp_test_tri_solve", (DL_FUNC) &_tulpa_cpp_test_tri_solve, 5},
+    {"_tulpa_cpp_test_chol_factor", (DL_FUNC) &_tulpa_cpp_test_chol_factor, 3},
+    {"_tulpa_cpp_test_nngp_moments", (DL_FUNC) &_tulpa_cpp_test_nngp_moments, 7},
     {"_tulpa_cpp_mclmc_test", (DL_FUNC) &_tulpa_cpp_mclmc_test, 7},
     {"_tulpa_cpp_multinomial_logit_terms", (DL_FUNC) &_tulpa_cpp_multinomial_logit_terms, 2},
     {"_tulpa_cpp_nested_laplace_icar", (DL_FUNC) &_tulpa_cpp_nested_laplace_icar, 22},

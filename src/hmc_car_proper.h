@@ -98,7 +98,8 @@ inline double car_log_det(
 ) {
   // Cholesky decomposition: Q = L * L^T (PD-check mode: jitter < 0)
   std::vector<double> L(n * n, 0.0);
-  if (!tulpa_linalg::chol_factor_lower(Q.data(), L.data(), n, n, -1.0)) {
+  if (!tulpa_linalg::chol_factor_lower<tulpa_linalg::TriLayout::RowMajor>(
+          Q.data(), L.data(), n, n, -1.0)) {
     return -INFINITY;  // Not positive definite
   }
   return tulpa_linalg::chol_log_det(L.data(), n, n);
@@ -304,7 +305,8 @@ inline bool car_proper_log_det_and_grad_rho(
   // Cholesky Q = L * L^T (PD-check mode: jitter < 0). A fresh L matrix —
   // the solves below need the unclobbered factor.
   std::vector<double> L(static_cast<size_t>(n) * n, 0.0);
-  if (!tulpa_linalg::chol_factor_lower(Q.data(), L.data(), n, n, -1.0)) {
+  if (!tulpa_linalg::chol_factor_lower<tulpa_linalg::TriLayout::RowMajor>(
+          Q.data(), L.data(), n, n, -1.0)) {
     return false;  // not PD
   }
 
@@ -322,8 +324,10 @@ inline bool car_proper_log_det_and_grad_rho(
   for (int k = 0; k < n; k++) {
     // forward solve L y = e_k, then back solve L^T x = y (both in place)
     for (int i = 0; i < n; i++) col[i] = (i == k) ? 1.0 : 0.0;
-    tulpa_linalg::chol_forward_solve(L.data(), n, n, col.data(), col.data());
-    tulpa_linalg::chol_back_solve(L.data(), n, n, col.data(), col.data());
+    tulpa_linalg::tri_solve_lower<tulpa_linalg::TriLayout::RowMajor>(
+        L.data(), n, n, col.data(), col.data());
+    tulpa_linalg::tri_solve_lower_transpose<tulpa_linalg::TriLayout::RowMajor>(
+        L.data(), n, n, col.data(), col.data());
     // Store column k of Q^{-1}
     for (int i = 0; i < n; i++) Qinv[i * n + k] = col[i];
   }

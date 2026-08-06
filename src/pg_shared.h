@@ -123,8 +123,8 @@ inline Rcpp::NumericMatrix chol_decomp_pg(const Rcpp::NumericMatrix& A) {
     }
   }
   std::vector<double> L_flat(static_cast<size_t>(n) * n, 0.0);
-  tulpa_linalg::chol_factor_lower(A_flat.data(), L_flat.data(), n, n,
-                                  tulpa_linalg::kCholJitter);
+  tulpa_linalg::chol_factor_lower<tulpa_linalg::TriLayout::RowMajor>(
+      A_flat.data(), L_flat.data(), n, n, tulpa_linalg::kCholJitter);
   Rcpp::NumericMatrix L(n, n);
   for (int i = 0; i < n; i++) {
     for (int j = 0; j <= i; j++) {

@@ -20,7 +20,7 @@
 
 #include "hmc_sampler_decls.h"  // MassMatrixType (alias of tulpa::MassMatrixType)
 #include "hmc_temporal.h"       // tulpa_temporal::TemporalType
-#include "linalg_fast.h"        // tulpa_linalg::tri_solve_upper_transpose, etc.
+#include "linalg_fast.h"        // tulpa_linalg::tri_solve_lower_transpose, etc.
 
 namespace tulpa_hmc {
 
@@ -650,7 +650,9 @@ struct DenseMassMatrix {
         // Solve L^T * p = z: transpose L then use upper-triangular solve
         pv.noalias() = Lm.transpose().triangularView<Eigen::Upper>().solve(zv);
       } else {
-        tulpa_linalg::tri_solve_upper_transpose(L_inv_mass.data(), z.data(), p, n);
+        tulpa_linalg::tri_solve_lower_transpose<
+            tulpa_linalg::TriLayout::ColMajor>(L_inv_mass.data(), n, n,
+                                               z.data(), p);
       }
     }
     // Precision/Kronecker blocks override their param ranges
