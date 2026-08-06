@@ -51,10 +51,22 @@
 #'   `rho_lower` / `rho_upper` (ar1 grid, default 0.1 / 0.9), `max_iter`, `tol`,
 #'   `n_threads`.
 #'
+#'   The `(tau_lower, tau_upper)` span (and, for `ar1`, `(rho_lower,
+#'   rho_upper)`) is a starting axis, not a hard ceiling (gcol33/tulpa#291):
+#'   when the fitted precision (or, for `ar1`, autocorrelation) posterior
+#'   mode rails a boundary node (`pareto_k_regime = "collapsed_edge"`, see
+#'   below), the driver fits a mode-Hessian via a derivative-free `optim()`
+#'   over the collapsed grid and refits a grid re-centred on it (one
+#'   attempt). Declines (keeps the fixed-grid fit) when any of the grid
+#'   knobs above was set explicitly -- an explicit choice always wins.
+#'
 #' @return A `tulpa_fit` (subclass `tulpa_nested_laplace`) carrying the
 #'   fixed-effect posterior (`draws` via the grid mixture), `spatial_effects`,
 #'   `temporal_effects`, `log_marginal`, `weights`, and `theta_grid` over
-#'   `(tau_spatial, tau_temporal, rho)`.
+#'   `(tau_spatial, tau_temporal, rho)`. Also carries `pareto_k_regime`
+#'   (`"spread"` / `"collapsed_interior"` / `"collapsed_edge"`, see
+#'   [tulpa_nested_laplace_joint()]'s return docs for the definition) and
+#'   `outer_grid_placement` (`"fixed"` or `"auto_recentered"`).
 #'
 #' @seealso [tulpa()] (front door), [tulpa_nested_laplace()] (single field).
 #' @examples
@@ -138,21 +150,29 @@ fit_st_nested <- function(y, X, spatial_idx, adjacency, temporal_idx, n_times,
   )
   # bym2 needs a scale_factor; car_proper an rho_spatial_grid. Keep to the
   # kernels' documented defaults for those extra axes here (icar is the base).
+  rho_spatial_val <- control$rho_spatial %||% 0.9
   if (spatial_type == "car_proper") {
-    kargs$rho_spatial_grid <- rep(control$rho_spatial %||% 0.9, nrow(grid))
+    kargs$rho_spatial_grid <- rep(rho_spatial_val, nrow(grid))
   }
   out <- do.call(kernel, kargs)
 
   out$theta_grid  <- as.matrix(grid)
   out$theta_names <- colnames(grid)
   out$weights <- .nl_normalise_weights_safe(out$log_marginal, "spatiotemporal grid")
-  # Outer-grid collapse visibility (gcol33/tulpa#276, #290): this fixed
-  # tau_spatial x tau_temporal [x rho] tensor has no mode-Hessian recenter
-  # path (unlike the joint / single-block registry families) -- attaching
-  # only the diagnostic so a railed axis is visible rather than silent.
-  # Auto-recentering this grid needs a fresh mode-find this file has none
-  # of today; tracked as a follow-up rather than bundled here.
+  # Outer-grid collapse visibility + recenter (gcol33/tulpa#276, #290, #291):
+  # tau_lower/tau_upper's default [0.25, 16] span (and, for ar1, the default
+  # rho_lower/rho_upper) is a starting axis, not a hard ceiling, the same
+  # contract every other nested-Laplace family's default grid carries. A
+  # from-scratch mode-Hessian recenter-and-refit engages when the grid
+  # collapses onto a boundary (`pareto_k_regime = "collapsed_edge"`) and no
+  # grid knob was explicitly overridden; see `.st_auto_grid_rescue()`
+  # (R/fit_st_nested_auto_grid.R) for the optim()-based mode-find this file
+  # had none of before #291.
   out <- .joint_attach_pareto_k_regime(out)
+  out <- .st_auto_grid_rescue(out, kernel, kargs, spatial_type, temporal_type,
+                              n_gs, n_gt, n_grho, tau_lo, tau_hi, control,
+                              rho_spatial_val = rho_spatial_val)
+  out$outer_grid_placement <- out$outer_grid_placement %||% "fixed"
   out <- .nl_posterior_moments(out, "st")
   out <- .nl_attach_grid_hessians(out, ncol(X))
 
