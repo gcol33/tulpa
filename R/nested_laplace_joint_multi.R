@@ -841,6 +841,12 @@
     }
 }
 
+# Multi-block counterpart of `.joint_attach_pareto_k_single()`
+# (`R/nested_laplace_joint_pareto_k.R`). Same `diagnose_k = FALSE` behaviour:
+# `pareto_k` / `pareto_k_is_ess` stay NA, but `pareto_k_mode_u` / `cov_u` /
+# `axis_tags` / `axis_names` are still populated on a collapsed-edge grid via
+# the diagnose_k-independent placement path (gcol33/tulpa#292), so the
+# #289/#290 auto-recenter rescue engages regardless of `diagnose_k`.
 .joint_attach_pareto_k_multi <- function(res, call_kernel,
                                          axis_offsets, B, arm_names,
                                          fn_sigma, fn_alpha, fn_phi = NULL,
@@ -856,7 +862,6 @@
     res$pareto_k_proposal_source <- NA_character_
     # Regime read off stored weights: attached even with the diagnostic off.
     res <- .joint_attach_pareto_k_regime(res)
-    if (!isTRUE(diagnose_k)) return(res)
 
     warm_mode   <- .joint_modal_mode(res)
     modal_theta <- .joint_modal_theta(res)
@@ -886,6 +891,16 @@
         .joint_multi_add_hp(r$log_marginal, theta_mat, axis_offsets, B,
                             fn_sigma, fn_alpha, fn_phi)
     }
+
+    if (!isTRUE(diagnose_k)) {
+        # Placement-only recenter curvature (gcol33/tulpa#292): cheap (one
+        # batched FD-stencil solve, only when the grid actually collapsed on a
+        # boundary) even though the full diagnostic below never runs. `proposal`
+        # (the CCD mode-Hessian, when the CCD grid path built one) is threaded
+        # through here too -- it is available independent of `diagnose_k`.
+        return(.joint_attach_pareto_k_placement(res, solve_fn, proposal = proposal))
+    }
+
     # Per-cell warm start (nearest grid mode, serial + parallel) when modes are
     # stored; else near-neighbour chain re-order; else plain broadcast
 

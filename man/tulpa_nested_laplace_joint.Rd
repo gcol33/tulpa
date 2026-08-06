@@ -74,14 +74,19 @@ in \verb{[0.1, 3]}).
 \code{sigma_grid}'s default is a starting axis, not a hard ceiling
 (gcol33/tulpa#289): when the fitted field-SD posterior mode rails the top
 node (\code{pareto_k_regime = "collapsed_edge"}, see below), the driver
-re-centres the axis on the mode-Hessian the outer Pareto-k diagnostic
-already computed and refits (up to two attempts, the second adding a
-light default PC(U=3, alpha=0.01) prior on sigma if \code{prior_sigma} was not
-set), so a sparse or strongly-identified species is not silently
-truncated at 3.0. An explicit \code{sigma_grid} always wins -- auto-recenter
-only engages when this field is left \code{NULL}. Declines gracefully (keeps
-the fixed-grid fit) when \code{control$diagnose_k = FALSE} or another axis in
-the same grid has unguessable support (car_proper's \code{rho_car}).}
+re-centres the axis on a mode-Hessian and refits (up to two attempts, the
+second adding a light default PC(U=3, alpha=0.01) prior on sigma if
+\code{prior_sigma} was not set), so a sparse or strongly-identified species is
+not silently truncated at 3.0. This engages whether or not
+\code{control$diagnose_k} computed the full outer Pareto-k diagnostic
+(gcol33/tulpa#292): the mode-Hessian is reused from the diagnostic when it
+ran, or computed on its own (one extra batched finite-difference solve,
+only when the grid actually collapsed) when it did not -- so
+\code{diagnose_k = FALSE}, the default, does not leave a railed axis stuck. An
+explicit \code{sigma_grid} always wins -- auto-recenter only engages when this
+field is left \code{NULL}. Declines gracefully (keeps the fixed-grid fit) when
+another axis in the same grid has unguessable support (car_proper's
+\code{rho_car}).}
 
 \item{copy}{Multi-block copy specification (multi-block \code{prior} only). For a
 single-block fit there is no \code{copy} argument: declare the copy coefficient

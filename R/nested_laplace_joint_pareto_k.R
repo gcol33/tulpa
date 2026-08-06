@@ -665,6 +665,51 @@
     cov
 }
 
+# Grid + per-axis unconstrained transform: theta_grid / weights / column names
+# / dimension, plus `u_grid` (the grid rows forward-transformed to the
+# unconstrained coordinate `tags` describes). Single source for
+# `.joint_pareto_prepare()`'s weighted-moment proposal and the
+# diagnose_k-independent placement path (`.joint_attach_pareto_k_placement()`,
+# gcol33/tulpa#292), both of which need the same u-space grid before they
+# diverge on what they do with it. Returns NULL when the grid / weights are
+# unusable or a forward transform produces a non-finite value.
+.joint_pareto_grid_u <- function(res, tags) {
+    tg <- res$theta_grid
+    w  <- res$weights
+    if (is.null(tg) || is.null(w) || length(w) != nrow(tg) ||
+        !is.finite(sum(w)) || sum(w) <= 0) {
+        return(NULL)
+    }
+    cn <- colnames(tg)
+    d  <- ncol(tg)
+    u_grid <- matrix(0, nrow(tg), d)
+    for (j in seq_len(d)) u_grid[, j] <- .joint_pareto_fwd(tags[j], as.numeric(tg[, j]))
+    if (any(!is.finite(u_grid))) return(NULL)
+    list(tg = tg, w = w, u_grid = u_grid, cn = cn, d = d)
+}
+
+# Delta-collapse mode-Hessian: reconstruct a Laplace-at-mode covariance from a
+# finite-difference Hessian of the outer target at the grid's highest-weight
+# cell, restricted to the axes the GRID LAYOUT offers spread along (a pinned
+# axis -- a copy alpha fixed at 0, a one-point dispersion grid -- has zero FD
+# curvature and would make a full-axis stencil singular; see
+# `.joint_pareto_grid_vary_axes()`). Single source for
+# `.joint_pareto_prepare()`'s degenerate-grid-weight fallback (engaged during
+# the full outer-k diagnostic) and the diagnose_k-independent placement path
+# (`.joint_attach_pareto_k_placement()`) that recenters a collapsed axis
+# WITHOUT running the diagnostic (gcol33/tulpa#292). `refit_log_marginal` as in
+# `.joint_pareto_mode_cov()`. Returns `list(u_mode=, cov=)` or NULL when the FD
+# curvature is unusable.
+.joint_pareto_grid_mode_cov <- function(tg, w, u_grid, tags, cn, d,
+                                        refit_log_marginal) {
+    vary_g <- .joint_pareto_grid_vary_axes(tg)
+    u_mode <- as.numeric(u_grid[which.max(w), ])
+    cov_h  <- .joint_pareto_mode_cov(u_mode, tags, cn, refit_log_marginal, d,
+                                     vary = vary_g)
+    if (is.null(cov_h)) return(NULL)
+    list(u_mode = u_mode, cov = cov_h)
+}
+
 # Shared preparation for the outer Pareto-k-hat of a joint nested-Laplace
 # result. Fits a Gaussian proposal to the joint hyperparameter posterior in the
 # per-axis unconstrained coordinate `u` (weighted mean `u_hat` + covariance `Su`
@@ -688,19 +733,9 @@
     # transform + proposal fit off the table.
     if (as.integer(n_samples) < .PSIS_MIN_EVAL) return(NULL)
 
-    tg <- res$theta_grid
-    w  <- res$weights
-    if (is.null(w) || length(w) != nrow(tg) || !is.finite(sum(w)) || sum(w) <= 0) {
-        return(NULL)
-    }
-    cn <- colnames(tg)
-    d  <- ncol(tg)
-
-    u_grid <- matrix(0, nrow(tg), d)
-    for (j in seq_len(d)) {
-        u_grid[, j] <- .joint_pareto_fwd(tags[j], as.numeric(tg[, j]))
-    }
-    if (any(!is.finite(u_grid))) return(NULL)
+    gu <- .joint_pareto_grid_u(res, tags)
+    if (is.null(gu)) return(NULL)
+    tg <- gu$tg; w <- gu$w; u_grid <- gu$u_grid; cn <- gu$cn; d <- gu$d
 
     u_hat <- as.numeric(crossprod(w, u_grid))
     cen   <- sweep(u_grid, 2L, u_hat)
@@ -755,13 +790,11 @@
     # draw dominates the weights (k-hat -> large, IS-ESS -> 1) even though the
     # integration is well resolved on that axis.
     if (!used_mode_hessian && length(.joint_pareto_vary_axes(Su)) == 0L) {
-        vary_g <- .joint_pareto_grid_vary_axes(tg)
-        u_mode <- as.numeric(u_grid[which.max(w), ])
-        cov_h  <- .joint_pareto_mode_cov(u_mode, tags, cn,
-                                         refit_log_marginal, d, vary = vary_g)
-        if (!is.null(cov_h)) {
-            u_hat <- u_mode
-            Su    <- cov_h
+        gmc <- .joint_pareto_grid_mode_cov(tg, w, u_grid, tags, cn, d,
+                                           refit_log_marginal)
+        if (!is.null(gmc)) {
+            u_hat <- gmc$u_mode
+            Su    <- gmc$cov
             proposal_source   <- "mode_hessian"
             used_mode_hessian <- TRUE
         }
@@ -1508,6 +1541,47 @@
     res
 }
 
+# Placement-only mode-Hessian for a collapsed outer grid, computed
+# INDEPENDENTLY of whether the full outer Pareto-k diagnostic ran
+# (gcol33/tulpa#292). At `control$diagnose_k = FALSE` (the default) the full
+# diagnostic in `.joint_pareto_k()` never executes, so `res$pareto_k_mode_u` /
+# `cov_u` / `axis_tags` / `axis_names` -- what the #289/#290 auto-recenter
+# rescues (`.joint_sigma_grid_rescue()` / `.joint_multi_sigma_grid_rescue()` in
+# `R/nested_laplace_auto_grid.R`) consume to recentre a railed axis -- are
+# never attached, so a fit that collapses onto a field-SD ceiling stays railed
+# even though `SIGMA_GRID = "auto"` was requested.
+#
+# Calls the SAME `.joint_pareto_prepare()` the full diagnostic scores its
+# proposal from -- not a re-derived subset -- so the (mode, covariance) this
+# attaches is exactly what the diagnostic would have attached, whichever of
+# its three sources applies: the grid-weighted moment (pure arithmetic over
+# the stored grid, no extra solve, when `collapsed_edge` still leaves SOME
+# axis with weighted spread -- `ess_grid` in `[1, 2)`), the CCD `proposal`
+# splice (already built at grid-construction time, independent of
+# `diagnose_k`), or the delta-collapse finite-difference Hessian at the modal
+# cell (one batched stencil call, only when the grid weight has concentrated
+# on essentially one cell). Threading `proposal` through matters: without it
+# a CCD-gridded fit would fall back to the (potentially still-informative)
+# grid moment instead of the sharper mode-Hessian the CCD integrator already
+# has. `n_samples` only gates `.joint_pareto_prepare()`'s sample-floor decline
+# (irrelevant here -- no importance draws are taken), so a fixed floor value
+# is enough. A no-op (returns `res` unchanged) unless the grid has actually
+# collapsed onto a boundary (`pareto_k_regime == "collapsed_edge"`, already
+# attached by `.joint_attach_pareto_k_regime()` regardless of `diagnose_k`) --
+# so this is zero extra cost for the common fit whose grid already brackets
+# the mode.
+.joint_attach_pareto_k_placement <- function(res, refit_log_marginal,
+                                             proposal = NULL) {
+    if (!identical(res$pareto_k_regime, "collapsed_edge")) return(res)
+    prep <- .joint_pareto_prepare(res, refit_log_marginal, .PSIS_MIN_EVAL, proposal)
+    if (is.null(prep)) return(res)
+    res$pareto_k_mode_u     <- prep$u_hat
+    res$pareto_k_cov_u      <- prep$Su
+    res$pareto_k_axis_tags  <- prep$tags
+    res$pareto_k_axis_names <- prep$cn
+    res
+}
+
 # Attach the diagnostic's draw budget and wall-clock cost ratio.
 # `diagnose_cost_ratio` = diagnostic seconds / fit seconds (the latter excluding the
 # diagnostic), read from the fit timer's "diagnostics" bucket vs the rest, so a
@@ -1596,7 +1670,11 @@
 # re-solved in one `kernel_fn` call with `n_threads_outer` so the independent
 # re-solves run concurrently across cores rather than one-at-a-time using all
 # inner threads. Attaches `pareto_k` / `pareto_k_is_ess` / `pareto_k_scope`;
-# with `diagnose_k = FALSE` the fields are present but NA.
+# with `diagnose_k = FALSE` the fields are present but NA -- but
+# `pareto_k_mode_u` / `cov_u` / `axis_tags` / `axis_names` are still populated
+# on a collapsed-edge grid via the diagnose_k-independent placement path
+# (gcol33/tulpa#292), so the #289/#290 auto-recenter rescue in
+# `R/nested_laplace_auto_grid.R` engages regardless of `diagnose_k`.
 .joint_attach_pareto_k_single <- function(res, kernel_fn, hp_fn,
                                           max_iter = 50L,
                                           diagnose_k = TRUE, diagnose_draws = 500L,
@@ -1613,7 +1691,6 @@
     # k-hat diagnostic is off -- a collapsed or boundary-pinned grid is worth
     # knowing about regardless.
     res <- .joint_attach_pareto_k_regime(res)
-    if (!isTRUE(diagnose_k)) return(res)
 
     warm        <- .joint_modal_mode(res)
     warm_arg    <- if (is.null(warm)) NULL else list(mode = warm)
@@ -1644,6 +1721,14 @@
         }
         lm
     }
+
+    if (!isTRUE(diagnose_k)) {
+        # Placement-only recenter curvature (gcol33/tulpa#292): cheap (one
+        # batched FD-stencil solve, only when the grid actually collapsed on a
+        # boundary) even though the full diagnostic below never runs.
+        return(.joint_attach_pareto_k_placement(res, solve_fn))
+    }
+
     # Per-cell warm start (each draw from its nearest stored grid mode) is the
     # best start and works in serial AND parallel; it supersedes the chain
     # re-order. Fall back to the near-neighbour chain re-order when modes are
