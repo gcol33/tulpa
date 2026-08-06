@@ -1,5 +1,38 @@
 # tulpa NEWS
 
+## 0.0.127
+
+* **1015 lines of unreachable C++ removed from `src/` (#284).** Four headers
+  and a set of functions nothing called. Each was checked by grepping the whole
+  tree for the symbol, then by compiling all 95 translation units after the
+  deletion -- nothing referenced any of it, so the change cannot alter
+  behaviour.
+
+  Deleted whole: `hmc_latent_grad.h` (a closed component superseded by
+  `hmc_latent.h`'s `apply_first_zero`), `hmc_tvc_autodiff.h` and
+  `log_post_car_proper_det.h` (never `#include`d anywhere), and
+  `hmc_temporal_gp.h`. That last one WAS included, by `hmc_sampler.h`, but
+  every symbol in it was unreachable: its namespace `tulpa_temporal_gp` is
+  named nowhere but its own opening and closing brace. The live temporal GP is
+  `tulpa_priors_temporal.h`, which is templated for autodiff and writes the
+  exponential-kernel state-space recursion and the non-centred transform
+  inline; the deleted header was a plain-double implementation that could not
+  serve the gradient modes the sampler uses. Its five `temporal_cov_*` kernels
+  were a second, untested copy of covariance math the canonical templated
+  `tulpa_svc::compute_cov` already holds, pinned by `test-cov-kernel.R`.
+
+  Deleted in place: `gp_nngp_gradient_w_analytical` (`hmc_gp_gradients.h`),
+  `multiscale_gp_log_lik` (`hmc_gp_log_lik.h`), and `hmc_tvc.h`'s dead
+  hyperparameter-prior and gradient block (`log_prior_tau_pc`,
+  `log_prior_rho_uniform`, `log_prior_rho_beta`, the finite-difference
+  `rw2_gradient`, `parse_tvc_structure`). The live TVC priors are in
+  `tulpa_priors_tvc.h` (PC prior on log-tau via `pc_prior.h`, Uniform(-1, 1) on
+  rho) and the live gradients are the analytic ones in `hmc_tvc_grad.h`.
+
+  `SelectedInverse::at` was reported as dead and is not: `implicit_diff.h:196`
+  calls it as `H_inv.at(...)`, which a search for the qualified name misses. It
+  stays.
+
 ## 0.0.126
 
 * **The small-dense Cholesky core takes its storage layout as a required

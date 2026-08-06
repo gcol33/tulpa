@@ -15,7 +15,6 @@
 // for callers (log_post_impl.h, gradient kernels, ESS, ...) that include
 // hmc_sampler.h to access tulpa_temporal::, etc.
 #include "hmc_temporal.h"
-#include "hmc_temporal_gp.h"
 #include "hmc_svc.h"
 #include "hmc_gp.h"
 #include "hmc_temporal_multiscale.h"
