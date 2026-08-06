@@ -11,6 +11,7 @@
 #include <cmath>
 #include "autodiff_utils.h"
 #include "hmc_temporal.h"  // single-source RW1/RW2/AR1 kernels
+#include "temporal_gp_kernel.h"  // temporal GP covariance + dense factorization
 #include "tulpa/sum_to_zero.h"  // s2z_aug_coef / s2z_aug_rank
 
 namespace tulpa {
@@ -87,6 +88,44 @@ T compute_temporal_prior(const std::vector<T>& params, const ModelData& data,
                 data.temporal_gp_phi_prior_upper);
 
             const bool use_nc = (data.temporal_gp_parameterization == 1);
+
+            // The exponential kernel (and Matern nu = 1/2, which is the same
+            // kernel) is an Ornstein-Uhlenbeck process, so its joint density is
+            // a first-order Markov chain and evaluates in O(T) with no matrix.
+            // Every other kernel has no finite-dimensional state-space form and
+            // is evaluated densely off a T x T Cholesky.
+            if (!tulpa_temporal_gp::cov_is_markov(data.temporal_gp_data.cov_type,
+                                                  data.temporal_gp_data.nu)) {
+                std::vector<T> L;
+                const bool ok = tulpa_temporal_gp::temporal_cov_chol(
+                    data.temporal_gp_data.time_values, T_times,
+                    sigma2_temporal_gp_out, phi_temporal_gp_out,
+                    data.temporal_gp_data.cov_type,
+                    data.temporal_gp_data.nu,
+                    data.temporal_gp_data.period, L);
+                if (!ok) return T(-INFINITY);
+
+                if (use_nc) {
+                    // The sampled variable IS z ~ N(0, I); f = L z is handed to
+                    // the observation loop. No log|det(df/dz)| here, for the
+                    // same reason the Markov branch below omits it.
+                    for (int t = 0; t < n_temporal; t++) {
+                        log_post = log_post - T(0.5) * phi_temporal[t] * phi_temporal[t];
+                    }
+                    std::vector<T> f_reconstructed(n_temporal);
+                    for (int g = 0; g < data.n_temporal_groups; g++) {
+                        tulpa_temporal_gp::dense_gp_forward(
+                            L, T_times, phi_temporal, g * T_times, f_reconstructed);
+                    }
+                    phi_temporal = std::move(f_reconstructed);
+                } else {
+                    for (int g = 0; g < data.n_temporal_groups; g++) {
+                        log_post = log_post + tulpa_temporal_gp::dense_gp_log_density(
+                            L, T_times, phi_temporal, g * T_times);
+                    }
+                }
+                return log_post;
+            }
 
             // Precompute shared rho[t] and derived quantities once (same dt for all groups)
                 std::vector<T> rho_shared(T_times > 1 ? T_times - 1 : 0);

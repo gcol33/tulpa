@@ -1167,11 +1167,34 @@
         short_term  = tolower(temporal$short_term %||% "none"),
         shared      = isTRUE(temporal$shared %||% TRUE)
       )
+    } else if (!is.null(temporal) &&
+               tolower(temporal$type %||% "") == "gp") {
+      # Continuous-time GP over irregularly-spaced times. The field carries one
+      # effect per UNIQUE instant, so it needs where those instants sit
+      # (time_values) on top of the per-observation index the discrete kernels
+      # use. Everything else the kernel needs -- which covariance, its
+      # smoothness / period, the parameterization -- rides along, since a
+      # covariance choice that reaches no further than the spec object is the
+      # gcol33/tulpa#288 defect.
+      n_groups <- as.integer(temporal$n_groups %||% 1L)
+      temporal_spec_arg <- list(
+        type             = "gp",
+        time_idx         = as.integer(temporal$time_index),
+        time_values      = as.numeric(temporal$time_values),
+        n_times          = as.integer(temporal$n_times),
+        n_groups         = n_groups,
+        group_idx        = if (n_groups > 1L) as.integer(temporal$group_index) else NULL,
+        cyclic           = FALSE,
+        cov              = temporal$cov %||% "exponential",
+        nu               = temporal$nu,
+        period           = temporal$period,
+        parameterization = temporal$parameterization %||% "noncentered"
+      )
     } else if (!is.null(temporal)) {
       ttype <- tolower(temporal$type %||% "")
       if (!ttype %in% c("rw1", "rw2", "ar1")) {
         stop(sprintf(paste0(
-          "Backend '%s' samples temporal fields rw1 / rw2 / ar1; got '%s'."),
+          "Backend '%s' samples temporal fields rw1 / rw2 / ar1 / gp; got '%s'."),
           backend, ttype), call. = FALSE)
       }
       n_groups <- as.integer(temporal$n_groups %||% 1L)
@@ -1801,9 +1824,19 @@ tulpa <- function(formula, data,
     }
     if (!inherits(temporal_spec, "tulpa_temporal")) {
       stop("`temporal=` must be a temporal_rw1() / temporal_rw2() / temporal_ar1() ",
-           "or temporal_tvc() spec object.", call. = FALSE)
+           "/ temporal_gp() or temporal_tvc() spec object.", call. = FALSE)
     }
-    if (identical(tolower(temporal_spec$type %||% ""), "tvc")) {
+    if (identical(tolower(temporal_spec$type %||% ""), "gp")) {
+      # Continuous-time GP over irregular times. Sampler-path only: the field is
+      # a dense T x T Gaussian whose hyperparameters are sampled jointly, and
+      # there is no nested-Laplace kernel laying a grid over them.
+      if (has_spatial || has_latent) {
+        stop("A temporal GP field cannot be combined with a spatial or ",
+             "latent(...) field through tulpa() yet. Fit the temporal GP on ",
+             "its own.", call. = FALSE)
+      }
+      temporal_spec <- validate_temporal_gp(temporal_spec, data)
+    } else if (identical(tolower(temporal_spec$type %||% ""), "tvc")) {
       # Temporally-varying coefficients: design-dependent (the varying columns
       # resolve against the model matrix) and exact-NUTS only. Validate against
       # the built X; combine with fixed effects only for now.

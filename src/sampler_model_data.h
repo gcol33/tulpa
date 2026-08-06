@@ -2,7 +2,8 @@
 // Builds the full ModelData + ParamLayout the model-agnostic sampler kernels
 // (NUTS / ESS / SGHMC / SGLD / MCLMC / SMC / VI) consume, threading the latent
 // structure -- random effects (intercept / slopes / correlated / multi-term),
-// areal spatial fields (ICAR / BYM2), and temporal fields (RW1 / RW2 / AR1) --
+// areal spatial fields (ICAR / BYM2), and temporal fields (RW1 / RW2 / AR1 /
+// GP over irregular times) --
 // through the same built-in-family spec scaffold the fixed-effect path uses
 //. The kernels need no change: they already sample the full
 // parameter vector compute_param_layout() lays out and score it through the
@@ -443,7 +444,7 @@ inline void build_sampler_model_inputs(
                     Rf_isNull(tp["shared"]) || Rcpp::as<bool>(tp["shared"]);
         in.data.has_multiscale_temporal = true;
     }
-    // --- Temporal field (RW1 / RW2 / AR1). ---
+    // --- Temporal field (RW1 / RW2 / AR1 / GP). ---
     else if (temporal_spec.isNotNull()) {
         Rcpp::List tp = Rcpp::as<Rcpp::List>(temporal_spec);
         std::string ttype = Rcpp::as<std::string>(tp["type"]);
@@ -466,9 +467,75 @@ inline void build_sampler_model_inputs(
         if (ttype == "rw1")      in.data.temporal_type = TemporalType::RW1;
         else if (ttype == "rw2") in.data.temporal_type = TemporalType::RW2;
         else if (ttype == "ar1") in.data.temporal_type = TemporalType::AR1;
+        else if (ttype == "gp") {
+            // Continuous-time GP over irregularly-spaced times. The field is
+            // indexed by n_times unique instants (time_idx maps observations
+            // onto them, as for the discrete kernels), and time_values carries
+            // where those instants actually sit -- that spacing is the whole
+            // point of the field, and the discrete kernels have no use for it.
+            in.data.temporal_type = TemporalType::GP;
+            auto& gp = in.data.temporal_gp_data;
+            Rcpp::NumericVector tv = Rcpp::as<Rcpp::NumericVector>(tp["time_values"]);
+            if ((int)tv.size() != in.data.n_times) {
+                Rcpp::stop("build_sampler_model_inputs: temporal_spec$time_values "
+                           "has length %d but n_times is %d.",
+                           (int)tv.size(), in.data.n_times);
+            }
+            gp.time_values.assign(tv.begin(), tv.end());
+            gp.n_obs = in.data.n_times;
+            gp.n_groups = in.data.n_temporal_groups;
+            gp.group_index = in.data.temporal_group_idx;
+            static const tulpa::EnumEntry<tulpa::TemporalCovType> cov_table[] = {
+                {"exponential", tulpa::TemporalCovType::EXPONENTIAL},
+                {"matern",      tulpa::TemporalCovType::MATERN},
+                {"gaussian",    tulpa::TemporalCovType::GAUSSIAN},
+                {"periodic",    tulpa::TemporalCovType::PERIODIC}};
+            gp.cov_type = tulpa::parse_enum(
+                Rcpp::as<std::string>(tp["cov"]), cov_table,
+                tulpa::TemporalCovType::EXPONENTIAL);
+            if (tp.containsElementNamed("nu") && !Rf_isNull(tp["nu"]))
+                gp.nu = Rcpp::as<double>(tp["nu"]);
+            if (tp.containsElementNamed("period") && !Rf_isNull(tp["period"]))
+                gp.period = Rcpp::as<double>(tp["period"]);
+            // Matern is closed-form only at nu in {1/2, 3/2, 5/2} (see
+            // temporal_gp_kernel.h); R rejects the rest, and this is the
+            // backstop for a consumer building the spec by hand.
+            if (gp.cov_type == tulpa::TemporalCovType::MATERN &&
+                std::abs(gp.nu - 0.5) > 1e-12 &&
+                std::abs(gp.nu - 1.5) > 1e-12 &&
+                std::abs(gp.nu - 2.5) > 1e-12) {
+                Rcpp::stop("build_sampler_model_inputs: temporal GP Matern "
+                           "smoothness nu = %g has no closed form here; use "
+                           "0.5, 1.5 or 2.5.", gp.nu);
+            }
+            if (gp.cov_type == tulpa::TemporalCovType::PERIODIC && !(gp.period > 0.0)) {
+                Rcpp::stop("build_sampler_model_inputs: temporal GP period must "
+                           "be positive (got %g).", gp.period);
+            }
+            gp.shared = true;
+            in.data.temporal_gp_parameterization =
+                (tp.containsElementNamed("parameterization") &&
+                 Rcpp::as<std::string>(tp["parameterization"]) == "centered")
+                ? 0 : 1;
+            if (tp.containsElementNamed("sigma2_prior_U"))
+                in.data.temporal_gp_sigma2_prior_U = Rcpp::as<double>(tp["sigma2_prior_U"]);
+            if (tp.containsElementNamed("sigma2_prior_alpha"))
+                in.data.temporal_gp_sigma2_prior_alpha = Rcpp::as<double>(tp["sigma2_prior_alpha"]);
+            if (tp.containsElementNamed("phi_prior_lower"))
+                in.data.temporal_gp_phi_prior_lower = Rcpp::as<double>(tp["phi_prior_lower"]);
+            if (tp.containsElementNamed("phi_prior_upper"))
+                in.data.temporal_gp_phi_prior_upper = Rcpp::as<double>(tp["phi_prior_upper"]);
+            if (!(in.data.temporal_gp_phi_prior_lower <
+                  in.data.temporal_gp_phi_prior_upper)) {
+                Rcpp::stop("build_sampler_model_inputs: temporal GP lengthscale "
+                           "bounds must satisfy lower < upper (got %g, %g).",
+                           in.data.temporal_gp_phi_prior_lower,
+                           in.data.temporal_gp_phi_prior_upper);
+            }
+        }
         else Rcpp::stop("build_sampler_model_inputs: temporal type '%s' is not "
-                        "supported on the sampler path (use 'rw1'/'rw2'/'ar1').",
-                        ttype.c_str());
+                        "supported on the sampler path (use 'rw1'/'rw2'/'ar1'/"
+                        "'gp').", ttype.c_str());
     }
 
     // --- Spatially-varying coefficients (NNGP). compute_param_layout keys the
@@ -719,8 +786,15 @@ inline Rcpp::CharacterVector sampler_param_names(
 
     // Temporal.
     if (layout.has_temporal) {
-        set(layout.log_tau_temporal_idx, "log_tau_temporal");
-        if (layout.is_ar1) set(layout.logit_rho_ar1_idx, "logit_rho_ar1");
+        if (layout.is_temporal_gp) {
+            // The GP field is scaled by (sigma2, lengthscale) rather than a
+            // precision, so it carries its own two hyperparameters.
+            set(layout.log_sigma2_temporal_gp_idx, "log_sigma2_temporal_gp");
+            set(layout.logit_phi_temporal_gp_idx,  "logit_phi_temporal_gp");
+        } else {
+            set(layout.log_tau_temporal_idx, "log_tau_temporal");
+            if (layout.is_ar1) set(layout.logit_rho_ar1_idx, "logit_rho_ar1");
+        }
         int u = 0;
         for (int j = layout.temporal_start; j < layout.temporal_end; j++)
             set(j, "phi_temporal[" + std::to_string(++u) + "]");

@@ -108,6 +108,32 @@ coverage). CRAN runs tier 1 only.
 - Inference engines: Laplace, EM+Laplace, VI, ESS, NUTS, MI correction, Gibbs correction
 - Autodiff: arena, forward, tape
 - Latent structure: spatial, temporal, RE, SVC, TVC, ST, latent factors
+
+### Temporal GP (irregularly-spaced times)
+
+`temporal_gp(time_var, cov =, nu =, period =, parameterization =)` is a
+continuous-time GP over the DISTINCT time instants, so it is the field for
+irregular spacing where RW1/RW2/AR1 assume a grid. It is **sampler-path only**
+(`mode = "hmc"` and the other sampler modes): the hyperparameters
+`log_sigma2_temporal_gp` / `logit_phi_temporal_gp` are sampled jointly with the
+field, and there is no nested-Laplace kernel laying a grid over a dense T x T
+Gaussian. It cannot yet share a fit with a spatial or `latent()` block.
+
+The whole density is `compute_temporal_prior()` in `tulpa_priors_temporal.h`,
+templated, including the non-centered `z -> f` forward transform (it overwrites
+`phi_temporal` in place for the observation loop, so nothing in eta assembly or
+the gradient kernels has to know which parameterization ran). Kernels live in
+`src/temporal_gp_kernel.h`, templated over the scalar type because
+`(sigma2, phi)` are sampled -- a plain-double kernel cannot serve this path,
+which is why the untemplated copies deleted in #284 were never wired.
+
+Dispatch is `cov_is_markov()`: exponential (equivalently Matern `nu = 0.5`) is
+an Ornstein-Uhlenbeck process, so its joint density factorizes into a
+first-order Markov chain and evaluates in O(T) with no matrix; Matern 3/2 and
+5/2, Gaussian and periodic have no finite-dimensional state-space form and take
+a dense T x T Cholesky. Matern is closed-form at `nu` in {0.5, 1.5, 2.5} only
+and R rejects the rest at construction (gcol33/tulpa#288 was those choices being
+accepted and then silently run as exponential).
 - ZI/OI parameter-layout hooks only (`ZIType` enum, `has_zi` / `has_oi`); the distribution-specific ZI likelihood math lives in model packages
 - Censoring/truncation KERNELS only: `interval_gaussian` / `truncated_gaussian` are generic per-observation likelihood arms that model packages compose. General censored / survival responses (right-censored gaussian/lognormal, Weibull/exponential AFT with a censoring indicator) are an observation process and belong to tulpaObs via `LikelihoodSpec`; the engine does not grow a censoring-indicator front door (decided 2026-07-07, closes the recurring todo item)
 - Generic S3 methods operating on posterior draws: coef, confint, vcov, logLik, summary

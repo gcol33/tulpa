@@ -1,5 +1,46 @@
 # tulpa NEWS
 
+## 0.0.129
+
+* **`temporal_gp()` now reaches a fitter (#287).** The constructor was
+  exported, documented, and carried a `tulpa()` worked example, but `tulpa()`
+  rejected `type = "gp"` by name, `validate_temporal_gp()` had no caller, and
+  nothing in `R/` or `src/` populated `TemporalGPData` or set
+  `TemporalType::GP`. The C++ was not the gap -- `tulpa_priors_temporal.h` has
+  carried a complete templated temporal-GP prior, in both parameterizations,
+  the whole time. What was missing was the marshalling.
+
+  `tulpa(y ~ x, temporal = temporal_gp("t"), mode = "hmc")` now fits: the spec
+  is validated at the front door, `build_sampler_model_inputs()` accepts
+  `type = "gp"` and fills `TemporalGPData` from the unique time instants, and
+  the field's two hyperparameters are sampled jointly with it. They are named
+  too -- `log_sigma2_temporal_gp` / `logit_phi_temporal_gp` rather than
+  `param[3]` / `param[4]`. The field is sampler-path only (there is no
+  nested-Laplace kernel laying a grid over a dense T x T Gaussian), and it
+  cannot yet share a fit with a spatial or `latent()` block; both now say so.
+
+* **`temporal_gp(cov =)` selects a kernel (#288).** `cov`, `nu` and `period`
+  were `match.arg`-validated, documented with their closed forms, carried on
+  the spec object -- and read by nothing. The live density hardcoded
+  `exp(-dt/phi)`, so `cov = "gaussian"` and `cov = "periodic"` silently fit an
+  exponential field: a misspecified prior with no error or warning.
+
+  New `src/temporal_gp_kernel.h` holds the covariance templated over the scalar
+  type, so the sampled `(sigma2, phi)` can be autodiff variables -- which is
+  why the old plain-double kernels could never have been wired here. The
+  exponential kernel (equivalently Matern `nu = 0.5`) is an Ornstein-Uhlenbeck
+  process, so it keeps the exact O(T) Markov recursion and its numbers are
+  unchanged; Matern 3/2 and 5/2, Gaussian and periodic have no
+  finite-dimensional state-space form and are evaluated from a dense T x T
+  Cholesky, in both the centered and non-centered parameterizations.
+
+  Matern is offered at `nu` in {0.5, 1.5, 2.5} only -- the smoothnesses with a
+  closed form -- and anything between them is now rejected at construction
+  rather than quietly run as exponential. `test-temporal-gp-frontdoor.R`
+  asserts the five kernel configurations DISAGREE (a test asserting they agree
+  would have passed before this), that Matern `nu = 0.5` reproduces the
+  exponential fit to the bit, and that the periodic kernel tracks its period.
+
 ## 0.0.128
 
 * **The nested-Laplace entry points no longer each carry their own fingerprint

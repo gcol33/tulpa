@@ -281,11 +281,13 @@ validate_temporal_multiscale <- function(temporal, data) {
 #' @param cov Covariance function: `"exponential"` (default, rough),
 #'   `"matern"` (tunable smoothness), `"gaussian"` (very smooth), or
 #'   `"periodic"` (for seasonal patterns).
-#' @param nu Smoothness parameter for Matern covariance. Common values:
-#'   - 0.5: Equivalent to exponential (rough)
-#'   - 1.5: Once differentiable (moderate smoothness)
-#'   - 2.5: Twice differentiable (smooth)
-#'   Ignored for non-Matern covariance functions.
+#' @param nu Smoothness parameter for Matern covariance, one of:
+#'   - 0.5: equivalent to exponential (rough)
+#'   - 1.5: once differentiable (moderate smoothness)
+#'   - 2.5: twice differentiable (smooth)
+#'   These are the smoothnesses with a closed form; anything between them needs
+#'   a Bessel function of the second kind and is rejected. Ignored for
+#'   non-Matern covariance functions.
 #' @param period Period for periodic covariance (e.g., 12 for monthly, 365 for
 #'   daily data with annual cycle). Only used when `cov = "periodic"`.
 #' @param group_var Optional name of grouping variable for panel data.
@@ -316,8 +318,17 @@ validate_temporal_multiscale <- function(temporal, data) {
 #' - **Gaussian**: \eqn{C(d) = \exp(-(d/\phi)^2)} - infinitely differentiable
 #' - **Periodic**: \eqn{C(d) = \exp(-2\sin^2(\pi d/p)/\phi^2)} - for seasonal data
 #'
-#' **Implementation**: Uses a state-space representation for O(n) computational
-#' complexity when possible (exponential, Matern with half-integer nu).
+#' **Implementation**: the exponential kernel (equivalently Matern with
+#' `nu = 0.5`) is an Ornstein-Uhlenbeck process, so its joint density
+#' factorizes into a first-order Markov chain and evaluates in O(T) with no
+#' matrix. The other kernels have no finite-dimensional state-space form and
+#' are evaluated from a dense T x T Cholesky, where T is the number of distinct
+#' time points.
+#'
+#' The field is fit on the sampler path: its two hyperparameters
+#' (`log_sigma2_temporal_gp`, `logit_phi_temporal_gp`) are sampled jointly with
+#' the field and the fixed effects, so pass a sampler `mode` such as
+#' `mode = "hmc"`. There is no nested-Laplace kernel for it.
 #'
 #' @examples
 #' # Create GP temporal specification
@@ -325,23 +336,23 @@ validate_temporal_multiscale <- function(temporal, data) {
 #' temporal_gp("day", cov = "matern", nu = 1.5)
 #' temporal_gp("month", cov = "periodic", period = 12)
 #'
-#' \dontrun{
-#' # Irregularly-spaced time series (not run - GP temporal experimental)
+#' \donttest{
+#' # Irregularly-spaced time series
 #' set.seed(140)
-#' times <- sort(runif(30, 0, 100))
+#' times <- sort(runif(40, 0, 10))
 #' df <- data.frame(
 #'   time = times,
-#'   x = rnorm(30),
-#'   count = rpois(30, lambda = 20),
-#'   effort = rgamma(30, shape = 4, rate = 1)
+#'   x = rnorm(40),
+#'   y = rbinom(40, 1, 0.5)
 #' )
 #'
 #' fit <- tulpa(
-#'   count | effort ~ x,
+#'   y ~ x,
 #'   data = df,
-#'   family = tulpaRatio::tulpa_poisson_gamma(),
+#'   family = "binomial",
 #'   temporal = temporal_gp("time"),
-#'   iter = 200, warmup = 100, chains = 1
+#'   mode = "hmc",
+#'   control = list(n_iter = 200, warmup = 100, n_chains = 1)
 #' )
 #' }
 #'
@@ -371,10 +382,19 @@ temporal_gp <- function(time_var,
     }
   }
 
-  # Validate nu for Matern
+  # Validate nu for Matern. The kernel is evaluated from its closed form, which
+  # exists at nu in {1/2, 3/2, 5/2}; general nu needs a Bessel function of the
+  # second kind and there is no autodiff-friendly form of it here. Rejecting is
+  # the point: an unsupported nu used to be accepted and then run as
+  # exponential (gcol33/tulpa#288).
   if (cov == "matern") {
     if (!is.numeric(nu) || length(nu) != 1 || nu <= 0) {
       stop("`nu` must be a positive number for Matern covariance", call. = FALSE)
+    }
+    if (!any(abs(nu - c(0.5, 1.5, 2.5)) < 1e-12)) {
+      stop("`nu` must be 0.5, 1.5 or 2.5 for Matern covariance; ",
+           "smoothnesses between them have no closed form here. Got ", nu, ".",
+           call. = FALSE)
     }
   }
 
