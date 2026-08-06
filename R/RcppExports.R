@@ -353,6 +353,10 @@ cpp_nested_laplace_test_occupancy_likelihood <- function(y, det_prob) {
     .Call(`_tulpa_cpp_nested_laplace_test_occupancy_likelihood`, y, det_prob)
 }
 
+cpp_test_nl_field_seed <- function(kind, tag, n_spatial_units, scale_factor, adj_row_ptr, adj_col_idx, n_spatial, nn, cov_type, coords, nn_idx, spatial_idx, M, phi_basis, lambda_eig, temporal_type, n_times, cyclic, temporal_idx, n_groups, with_groups) {
+    .Call(`_tulpa_cpp_test_nl_field_seed`, kind, tag, n_spatial_units, scale_factor, adj_row_ptr, adj_col_idx, n_spatial, nn, cov_type, coords, nn_idx, spatial_idx, M, phi_basis, lambda_eig, temporal_type, n_times, cyclic, temporal_idx, n_groups, with_groups)
+}
+
 cpp_test_gp_nngp_twins <- function(w, sigma2, phi, coords, nn_idx, nn_dist, nn_neighbor_dist, nn_order, nn_order_inv, cov_type) {
     .Call(`_tulpa_cpp_test_gp_nngp_twins`, w, sigma2, phi, coords, nn_idx, nn_dist, nn_neighbor_dist, nn_order, nn_order_inv, cov_type)
 }

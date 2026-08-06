@@ -355,25 +355,17 @@ Rcpp::List cpp_nested_laplace_icar(
         spatial_start, n_spatial_units, spatial_idx, tau_grid,
         adj_row_ptr, adj_col_idx, n_neighbors);
 
-    tulpa::Fingerprint sfp;
-    sfp.fold_str("icar");
-    sfp.fold_pod(n_spatial_units);
-    if (adj_row_ptr.size()) sfp.fold(adj_row_ptr.begin(),
-                                     (std::size_t)adj_row_ptr.size() * sizeof(int));
-    if (adj_col_idx.size()) sfp.fold(adj_col_idx.begin(),
-                                     (std::size_t)adj_col_idx.size() * sizeof(int));
+    const std::uint64_t struct_seed =
+        tulpa::NlFieldIdentity("icar")
+            .areal(n_spatial_units, adj_row_ptr, adj_col_idx)
+            .seed();
     auto ckpt = tulpa::make_nl_grid_checkpoint(
-        checkpoint_path, sfp.value(), max_iter, tol, y, n, X, re_idx,
+        checkpoint_path, struct_seed, max_iter, tol, y, n, X, re_idx,
         n_re_groups, sigma_re, family, phi, {tau_grid});
 
     std::vector<int> skew_idx_vec;
-    const std::vector<int>* skew_idx_ptr = nullptr;
-    if (compute_skew && skew_idx.isNotNull()) {
-        Rcpp::IntegerVector idx_r(skew_idx);
-        skew_idx_vec.resize(idx_r.size());
-        for (int k = 0; k < idx_r.size(); k++) skew_idx_vec[k] = idx_r[k] - 1;
-        skew_idx_ptr = &skew_idx_vec;
-    }
+    const std::vector<int>* skew_idx_ptr =
+        tulpa::unwrap_skew_idx(compute_skew, skew_idx, skew_idx_vec);
 
     Rcpp::List out = run_multi_block_nested_laplace(
         n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
@@ -429,26 +421,17 @@ Rcpp::List cpp_nested_laplace_bym2(
         sigma_spatial_grid, rho_grid,
         adj_row_ptr, adj_col_idx, n_neighbors);
 
-    tulpa::Fingerprint sfp;
-    sfp.fold_str("bym2");
-    sfp.fold_pod(n_spatial_units);
-    sfp.fold_pod(scale_factor);
-    if (adj_row_ptr.size()) sfp.fold(adj_row_ptr.begin(),
-                                     (std::size_t)adj_row_ptr.size() * sizeof(int));
-    if (adj_col_idx.size()) sfp.fold(adj_col_idx.begin(),
-                                     (std::size_t)adj_col_idx.size() * sizeof(int));
+    const std::uint64_t struct_seed =
+        tulpa::NlFieldIdentity("bym2")
+            .areal(n_spatial_units, adj_row_ptr, adj_col_idx, scale_factor)
+            .seed();
     auto ckpt = tulpa::make_nl_grid_checkpoint(
-        checkpoint_path, sfp.value(), max_iter, tol, y, n, X, re_idx,
+        checkpoint_path, struct_seed, max_iter, tol, y, n, X, re_idx,
         n_re_groups, sigma_re, family, phi, {sigma_spatial_grid, rho_grid});
 
     std::vector<int> skew_idx_vec;
-    const std::vector<int>* skew_idx_ptr = nullptr;
-    if (compute_skew && skew_idx.isNotNull()) {
-        Rcpp::IntegerVector idx_r(skew_idx);
-        skew_idx_vec.resize(idx_r.size());
-        for (int k = 0; k < idx_r.size(); k++) skew_idx_vec[k] = idx_r[k] - 1;
-        skew_idx_ptr = &skew_idx_vec;
-    }
+    const std::vector<int>* skew_idx_ptr =
+        tulpa::unwrap_skew_idx(compute_skew, skew_idx, skew_idx_vec);
 
     Rcpp::List out = run_multi_block_nested_laplace(
         n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
@@ -502,25 +485,17 @@ Rcpp::List cpp_nested_laplace_car_proper(
         spatial_start, n_spatial_units, spatial_idx, tau_grid, rho_grid,
         adj_row_ptr, adj_col_idx, n_neighbors);
 
-    tulpa::Fingerprint sfp;
-    sfp.fold_str("car_proper");
-    sfp.fold_pod(n_spatial_units);
-    if (adj_row_ptr.size()) sfp.fold(adj_row_ptr.begin(),
-                                     (std::size_t)adj_row_ptr.size() * sizeof(int));
-    if (adj_col_idx.size()) sfp.fold(adj_col_idx.begin(),
-                                     (std::size_t)adj_col_idx.size() * sizeof(int));
+    const std::uint64_t struct_seed =
+        tulpa::NlFieldIdentity("car_proper")
+            .areal(n_spatial_units, adj_row_ptr, adj_col_idx)
+            .seed();
     auto ckpt = tulpa::make_nl_grid_checkpoint(
-        checkpoint_path, sfp.value(), max_iter, tol, y, n, X, re_idx,
+        checkpoint_path, struct_seed, max_iter, tol, y, n, X, re_idx,
         n_re_groups, sigma_re, family, phi, {tau_grid, rho_grid});
 
     std::vector<int> skew_idx_vec;
-    const std::vector<int>* skew_idx_ptr = nullptr;
-    if (compute_skew && skew_idx.isNotNull()) {
-        Rcpp::IntegerVector idx_r(skew_idx);
-        skew_idx_vec.resize(idx_r.size());
-        for (int k = 0; k < idx_r.size(); k++) skew_idx_vec[k] = idx_r[k] - 1;
-        skew_idx_ptr = &skew_idx_vec;
-    }
+    const std::vector<int>* skew_idx_ptr =
+        tulpa::unwrap_skew_idx(compute_skew, skew_idx, skew_idx_vec);
 
     Rcpp::List out = run_multi_block_nested_laplace(
         n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
@@ -594,13 +569,8 @@ Rcpp::List cpp_laplace_fit_car_proper(
     }
 
     std::vector<int> skew_idx_vec;
-    const std::vector<int>* skew_idx_ptr = nullptr;
-    if (compute_skew && skew_idx.isNotNull()) {
-        Rcpp::IntegerVector idx_r(skew_idx);
-        skew_idx_vec.resize(idx_r.size());
-        for (int k = 0; k < idx_r.size(); k++) skew_idx_vec[k] = idx_r[k] - 1;
-        skew_idx_ptr = &skew_idx_vec;
-    }
+    const std::vector<int>* skew_idx_ptr =
+        tulpa::unwrap_skew_idx(compute_skew, skew_idx, skew_idx_vec);
 
     tulpa::LaplaceResult res = tulpa::laplace_mode_spec_dense_solve(
         in.data, in.layout, params, in.re_group, max_iter, tol, n_threads,
@@ -698,29 +668,17 @@ Rcpp::List cpp_nested_laplace_nngp(
     if (x_init_nullable.isNotNull())
         x_init = Rcpp::as<Rcpp::NumericVector>(x_init_nullable);
 
-    tulpa::Fingerprint sfp;
-    sfp.fold_str("nngp");
-    sfp.fold_pod(n_spatial);
-    sfp.fold_pod(nn);
-    sfp.fold_pod(cov_type);
-    if (coords.size())      sfp.fold(coords.begin(),
-                                     (std::size_t)coords.size() * sizeof(double));
-    if (nn_idx.size())      sfp.fold(nn_idx.begin(),
-                                     (std::size_t)nn_idx.size() * sizeof(int));
-    if (spatial_idx.size()) sfp.fold(spatial_idx.begin(),
-                                     (std::size_t)spatial_idx.size() * sizeof(int));
+    const std::uint64_t struct_seed =
+        tulpa::NlFieldIdentity("nngp")
+            .nngp(n_spatial, nn, cov_type, coords, nn_idx, spatial_idx)
+            .seed();
     auto ckpt = tulpa::make_nl_grid_checkpoint(
-        checkpoint_path, sfp.value(), max_iter, tol, y, n, X, re_idx,
+        checkpoint_path, struct_seed, max_iter, tol, y, n, X, re_idx,
         n_re_groups, sigma_re, family, phi, {sigma2_grid, phi_gp_grid});
 
     std::vector<int> skew_idx_vec;
-    const std::vector<int>* skew_idx_ptr = nullptr;
-    if (compute_skew && skew_idx.isNotNull()) {
-        Rcpp::IntegerVector idx_r(skew_idx);
-        skew_idx_vec.resize(idx_r.size());
-        for (int k = 0; k < idx_r.size(); k++) skew_idx_vec[k] = idx_r[k] - 1;
-        skew_idx_ptr = &skew_idx_vec;
-    }
+    const std::vector<int>* skew_idx_ptr =
+        tulpa::unwrap_skew_idx(compute_skew, skew_idx, skew_idx_vec);
 
     Rcpp::List out = tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
         n_grid, arms, parsed, blocks, n_x,
@@ -822,25 +780,17 @@ Rcpp::List cpp_nested_laplace_hsgp(
     if (x_init_nullable.isNotNull())
         x_init = Rcpp::as<Rcpp::NumericVector>(x_init_nullable);
 
-    tulpa::Fingerprint sfp;
-    sfp.fold_str("hsgp");
-    sfp.fold_pod(M);
-    if (phi_basis.size())  sfp.fold(phi_basis.begin(),
-                                    (std::size_t)phi_basis.size() * sizeof(double));
-    if (lambda_eig.size()) sfp.fold(lambda_eig.begin(),
-                                    (std::size_t)lambda_eig.size() * sizeof(double));
+    const std::uint64_t struct_seed =
+        tulpa::NlFieldIdentity("hsgp")
+            .hsgp(M, phi_basis, lambda_eig)
+            .seed();
     auto ckpt = tulpa::make_nl_grid_checkpoint(
-        checkpoint_path, sfp.value(), max_iter, tol, y, n, X, re_idx,
+        checkpoint_path, struct_seed, max_iter, tol, y, n, X, re_idx,
         n_re_groups, sigma_re, family, phi, {sigma2_grid, lengthscale_grid});
 
     std::vector<int> skew_idx_vec;
-    const std::vector<int>* skew_idx_ptr = nullptr;
-    if (compute_skew && skew_idx.isNotNull()) {
-        Rcpp::IntegerVector idx_r(skew_idx);
-        skew_idx_vec.resize(idx_r.size());
-        for (int k = 0; k < idx_r.size(); k++) skew_idx_vec[k] = idx_r[k] - 1;
-        skew_idx_ptr = &skew_idx_vec;
-    }
+    const std::vector<int>* skew_idx_ptr =
+        tulpa::unwrap_skew_idx(compute_skew, skew_idx, skew_idx_vec);
 
     Rcpp::List out = tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
         n_grid, arms, parsed, blocks, n_x,
@@ -930,13 +880,8 @@ Rcpp::List cpp_laplace_fit_hsgp(
     }
 
     std::vector<int> skew_idx_vec;
-    const std::vector<int>* skew_idx_ptr = nullptr;
-    if (compute_skew && skew_idx.isNotNull()) {
-        Rcpp::IntegerVector idx_r(skew_idx);
-        skew_idx_vec.resize(idx_r.size());
-        for (int k = 0; k < idx_r.size(); k++) skew_idx_vec[k] = idx_r[k] - 1;
-        skew_idx_ptr = &skew_idx_vec;
-    }
+    const std::vector<int>* skew_idx_ptr =
+        tulpa::unwrap_skew_idx(compute_skew, skew_idx, skew_idx_vec);
 
     tulpa::LaplaceResult res = tulpa::laplace_mode_spec_dense_solve(
         in.data, in.layout, params, in.re_group, max_iter, tol, n_threads,
@@ -1283,6 +1228,17 @@ inline Rcpp::NumericVector nl_unwrap_rho_temporal(
         ? Rcpp::NumericVector(rho_temporal_grid)
         : Rcpp::NumericVector(0);
 }
+
+// The temporal axes an ST fit reports back: tau always, rho only for ar1. rw1 /
+// rw2 pass an empty rho grid, so returning it would name an axis the fit has no
+// coordinate on.
+inline void nl_attach_temporal_grids(Rcpp::List& out,
+                                     const std::string& temporal_type,
+                                     const Rcpp::NumericVector& tau_temporal_grid,
+                                     const Rcpp::NumericVector& rho_t) {
+    out["tau_temporal_grid"] = tau_temporal_grid;
+    if (temporal_type == "ar1") out["rho_temporal_grid"] = rho_t;
+}
 } // namespace
 
 // ---- Temporal-only (rw1 / rw2 / ar1) ---------------------------------------
@@ -1325,26 +1281,17 @@ Rcpp::List cpp_nested_laplace_temporal(
         temporal_start, n_groups, n_times, temporal_idx, temporal_type,
         tau_grid, rho_grid, cyclic) };
 
-    tulpa::Fingerprint sfp;
-    sfp.fold_str("temporal");
-    sfp.fold_str(temporal_type);
-    sfp.fold_pod(n_times);
-    sfp.fold_pod(n_groups);
-    sfp.fold_pod(cyclic);
-    if (temporal_idx.size()) sfp.fold(temporal_idx.begin(),
-                                      (std::size_t)temporal_idx.size() * sizeof(int));
+    const std::uint64_t struct_seed =
+        tulpa::NlFieldIdentity("temporal")
+            .temporal(temporal_type, n_times, cyclic, temporal_idx, n_groups)
+            .seed();
     auto ckpt = tulpa::make_nl_grid_checkpoint(
-        checkpoint_path, sfp.value(), max_iter, tol, y, n, X, re_idx,
+        checkpoint_path, struct_seed, max_iter, tol, y, n, X, re_idx,
         n_re_groups, sigma_re, family, phi, {tau_grid, rho_grid});
 
     std::vector<int> skew_idx_vec;
-    const std::vector<int>* skew_idx_ptr = nullptr;
-    if (compute_skew && skew_idx.isNotNull()) {
-        Rcpp::IntegerVector idx_r(skew_idx);
-        skew_idx_vec.resize(idx_r.size());
-        for (int k = 0; k < idx_r.size(); k++) skew_idx_vec[k] = idx_r[k] - 1;
-        skew_idx_ptr = &skew_idx_vec;
-    }
+    const std::vector<int>* skew_idx_ptr =
+        tulpa::unwrap_skew_idx(compute_skew, skew_idx, skew_idx_vec);
 
     Rcpp::List out = run_multi_block_nested_laplace(
         n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,
@@ -1398,31 +1345,19 @@ Rcpp::List cpp_nested_laplace_st_icar(
         s_start, n_spatial_units, spatial_idx, tau_spatial_grid,
         adj_row_ptr, adj_col_idx, n_neighbors);
 
-    tulpa::Fingerprint sfp;
-    sfp.fold_str("st_icar");
-    sfp.fold_pod(n_spatial_units);
-    if (adj_row_ptr.size()) sfp.fold(adj_row_ptr.begin(),
-                                     (std::size_t)adj_row_ptr.size() * sizeof(int));
-    if (adj_col_idx.size()) sfp.fold(adj_col_idx.begin(),
-                                     (std::size_t)adj_col_idx.size() * sizeof(int));
-    sfp.fold_str(temporal_type);
-    sfp.fold_pod(n_times);
-    sfp.fold_pod(cyclic);
-    if (temporal_idx.size()) sfp.fold(temporal_idx.begin(),
-                                      (std::size_t)temporal_idx.size() * sizeof(int));
+    const std::uint64_t struct_seed =
+        tulpa::NlFieldIdentity("st_icar")
+            .areal(n_spatial_units, adj_row_ptr, adj_col_idx)
+            .temporal(temporal_type, n_times, cyclic, temporal_idx)
+            .seed();
     auto ckpt = tulpa::make_nl_grid_checkpoint(
-        checkpoint_path, sfp.value(), max_iter, tol, y, n, X, re_idx,
+        checkpoint_path, struct_seed, max_iter, tol, y, n, X, re_idx,
         n_re_groups, sigma_re, family, phi,
         {tau_spatial_grid, tau_temporal_grid, rho_t});
 
     std::vector<int> skew_idx_vec;
-    const std::vector<int>* skew_idx_ptr = nullptr;
-    if (compute_skew && skew_idx.isNotNull()) {
-        Rcpp::IntegerVector idx_r(skew_idx);
-        skew_idx_vec.resize(idx_r.size());
-        for (int k = 0; k < idx_r.size(); k++) skew_idx_vec[k] = idx_r[k] - 1;
-        skew_idx_ptr = &skew_idx_vec;
-    }
+    const std::vector<int>* skew_idx_ptr =
+        tulpa::unwrap_skew_idx(compute_skew, skew_idx, skew_idx_vec);
 
     Rcpp::List out = run_st_spatial_kernel(
         n_grid, /*spatial_latent_dim=*/n_spatial_units,
@@ -1432,8 +1367,7 @@ Rcpp::List cpp_nested_laplace_st_icar(
         unwrap_x_init(x_init_nullable), store_Q, force_sparse, ckpt.get(),
         compute_skew, skew_idx_ptr);
     out["tau_spatial_grid"]  = tau_spatial_grid;
-    out["tau_temporal_grid"] = tau_temporal_grid;
-    if (temporal_type == "ar1") out["rho_temporal_grid"] = rho_t;
+    nl_attach_temporal_grids(out, temporal_type, tau_temporal_grid, rho_t);
     return out;
 }
 
@@ -1475,31 +1409,19 @@ Rcpp::List cpp_nested_laplace_st_car_proper(
         s_start, n_spatial_units, spatial_idx, tau_spatial_grid, rho_spatial_grid,
         adj_row_ptr, adj_col_idx, n_neighbors);
 
-    tulpa::Fingerprint sfp;
-    sfp.fold_str("st_car_proper");
-    sfp.fold_pod(n_spatial_units);
-    if (adj_row_ptr.size()) sfp.fold(adj_row_ptr.begin(),
-                                     (std::size_t)adj_row_ptr.size() * sizeof(int));
-    if (adj_col_idx.size()) sfp.fold(adj_col_idx.begin(),
-                                     (std::size_t)adj_col_idx.size() * sizeof(int));
-    sfp.fold_str(temporal_type);
-    sfp.fold_pod(n_times);
-    sfp.fold_pod(cyclic);
-    if (temporal_idx.size()) sfp.fold(temporal_idx.begin(),
-                                      (std::size_t)temporal_idx.size() * sizeof(int));
+    const std::uint64_t struct_seed =
+        tulpa::NlFieldIdentity("st_car_proper")
+            .areal(n_spatial_units, adj_row_ptr, adj_col_idx)
+            .temporal(temporal_type, n_times, cyclic, temporal_idx)
+            .seed();
     auto ckpt = tulpa::make_nl_grid_checkpoint(
-        checkpoint_path, sfp.value(), max_iter, tol, y, n, X, re_idx,
+        checkpoint_path, struct_seed, max_iter, tol, y, n, X, re_idx,
         n_re_groups, sigma_re, family, phi,
         {tau_spatial_grid, rho_spatial_grid, tau_temporal_grid, rho_t});
 
     std::vector<int> skew_idx_vec;
-    const std::vector<int>* skew_idx_ptr = nullptr;
-    if (compute_skew && skew_idx.isNotNull()) {
-        Rcpp::IntegerVector idx_r(skew_idx);
-        skew_idx_vec.resize(idx_r.size());
-        for (int k = 0; k < idx_r.size(); k++) skew_idx_vec[k] = idx_r[k] - 1;
-        skew_idx_ptr = &skew_idx_vec;
-    }
+    const std::vector<int>* skew_idx_ptr =
+        tulpa::unwrap_skew_idx(compute_skew, skew_idx, skew_idx_vec);
 
     Rcpp::List out = run_st_spatial_kernel(
         n_grid, /*spatial_latent_dim=*/n_spatial_units,
@@ -1510,8 +1432,7 @@ Rcpp::List cpp_nested_laplace_st_car_proper(
         compute_skew, skew_idx_ptr);
     out["tau_spatial_grid"]  = tau_spatial_grid;
     out["rho_spatial_grid"]  = rho_spatial_grid;
-    out["tau_temporal_grid"] = tau_temporal_grid;
-    if (temporal_type == "ar1") out["rho_temporal_grid"] = rho_t;
+    nl_attach_temporal_grids(out, temporal_type, tau_temporal_grid, rho_t);
     return out;
 }
 
@@ -1556,32 +1477,19 @@ Rcpp::List cpp_nested_laplace_st_bym2(
         sigma_spatial_grid, rho_spatial_grid,
         adj_row_ptr, adj_col_idx, n_neighbors);
 
-    tulpa::Fingerprint sfp;
-    sfp.fold_str("st_bym2");
-    sfp.fold_pod(n_spatial_units);
-    sfp.fold_pod(scale_factor);
-    if (adj_row_ptr.size()) sfp.fold(adj_row_ptr.begin(),
-                                     (std::size_t)adj_row_ptr.size() * sizeof(int));
-    if (adj_col_idx.size()) sfp.fold(adj_col_idx.begin(),
-                                     (std::size_t)adj_col_idx.size() * sizeof(int));
-    sfp.fold_str(temporal_type);
-    sfp.fold_pod(n_times);
-    sfp.fold_pod(cyclic);
-    if (temporal_idx.size()) sfp.fold(temporal_idx.begin(),
-                                      (std::size_t)temporal_idx.size() * sizeof(int));
+    const std::uint64_t struct_seed =
+        tulpa::NlFieldIdentity("st_bym2")
+            .areal(n_spatial_units, adj_row_ptr, adj_col_idx, scale_factor)
+            .temporal(temporal_type, n_times, cyclic, temporal_idx)
+            .seed();
     auto ckpt = tulpa::make_nl_grid_checkpoint(
-        checkpoint_path, sfp.value(), max_iter, tol, y, n, X, re_idx,
+        checkpoint_path, struct_seed, max_iter, tol, y, n, X, re_idx,
         n_re_groups, sigma_re, family, phi,
         {sigma_spatial_grid, rho_spatial_grid, tau_temporal_grid, rho_t});
 
     std::vector<int> skew_idx_vec;
-    const std::vector<int>* skew_idx_ptr = nullptr;
-    if (compute_skew && skew_idx.isNotNull()) {
-        Rcpp::IntegerVector idx_r(skew_idx);
-        skew_idx_vec.resize(idx_r.size());
-        for (int k = 0; k < idx_r.size(); k++) skew_idx_vec[k] = idx_r[k] - 1;
-        skew_idx_ptr = &skew_idx_vec;
-    }
+    const std::vector<int>* skew_idx_ptr =
+        tulpa::unwrap_skew_idx(compute_skew, skew_idx, skew_idx_vec);
 
     Rcpp::List out = run_st_spatial_kernel(
         n_grid, /*spatial_latent_dim=*/2 * n_spatial_units,
@@ -1592,8 +1500,7 @@ Rcpp::List cpp_nested_laplace_st_bym2(
         compute_skew, skew_idx_ptr);
     out["sigma_spatial_grid"] = sigma_spatial_grid;
     out["rho_spatial_grid"]   = rho_spatial_grid;
-    out["tau_temporal_grid"]  = tau_temporal_grid;
-    if (temporal_type == "ar1") out["rho_temporal_grid"] = rho_t;
+    nl_attach_temporal_grids(out, temporal_type, tau_temporal_grid, rho_t);
     return out;
 }
 
@@ -1660,31 +1567,19 @@ Rcpp::List cpp_nested_laplace_st_hsgp(
     // DENSE_BASIS HSGP block forces the joint sparse path regardless of n_x.
     Rcpp::IntegerVector spatial_idx_unused(N, 0);  // HSGP has no per-obs unit idx
 
-    tulpa::Fingerprint sfp;
-    sfp.fold_str("st_hsgp");
-    sfp.fold_pod(M);
-    if (phi_basis.size())  sfp.fold(phi_basis.begin(),
-                                    (std::size_t)phi_basis.size() * sizeof(double));
-    if (lambda_eig.size()) sfp.fold(lambda_eig.begin(),
-                                    (std::size_t)lambda_eig.size() * sizeof(double));
-    sfp.fold_str(temporal_type);
-    sfp.fold_pod(n_times);
-    sfp.fold_pod(cyclic);
-    if (temporal_idx.size()) sfp.fold(temporal_idx.begin(),
-                                      (std::size_t)temporal_idx.size() * sizeof(int));
+    const std::uint64_t struct_seed =
+        tulpa::NlFieldIdentity("st_hsgp")
+            .hsgp(M, phi_basis, lambda_eig)
+            .temporal(temporal_type, n_times, cyclic, temporal_idx)
+            .seed();
     auto ckpt = tulpa::make_nl_grid_checkpoint(
-        checkpoint_path, sfp.value(), max_iter, tol, y, n, X, re_idx,
+        checkpoint_path, struct_seed, max_iter, tol, y, n, X, re_idx,
         n_re_groups, sigma_re, family, phi,
         {sigma2_spatial_grid, lengthscale_spatial_grid, tau_temporal_grid, rho_t});
 
     std::vector<int> skew_idx_vec;
-    const std::vector<int>* skew_idx_ptr = nullptr;
-    if (compute_skew && skew_idx.isNotNull()) {
-        Rcpp::IntegerVector idx_r(skew_idx);
-        skew_idx_vec.resize(idx_r.size());
-        for (int k = 0; k < idx_r.size(); k++) skew_idx_vec[k] = idx_r[k] - 1;
-        skew_idx_ptr = &skew_idx_vec;
-    }
+    const std::vector<int>* skew_idx_ptr =
+        tulpa::unwrap_skew_idx(compute_skew, skew_idx, skew_idx_vec);
 
     Rcpp::List out = run_st_spatial_kernel(
         n_grid, /*spatial_latent_dim=*/M,
@@ -1695,8 +1590,7 @@ Rcpp::List cpp_nested_laplace_st_hsgp(
         compute_skew, skew_idx_ptr);
     out["sigma2_spatial_grid"]      = sigma2_spatial_grid;
     out["lengthscale_spatial_grid"] = lengthscale_spatial_grid;
-    out["tau_temporal_grid"]        = tau_temporal_grid;
-    if (temporal_type == "ar1") out["rho_temporal_grid"] = rho_t;
+    nl_attach_temporal_grids(out, temporal_type, tau_temporal_grid, rho_t);
     return out;
 }
 
@@ -1762,35 +1656,19 @@ Rcpp::List cpp_nested_laplace_st_nngp(
         nn, cov_type, coords, nn_idx, nn_dist, nn_order,
         /*axis_sigma2=*/0, /*axis_phi_gp=*/1, theta_grid));
 
-    tulpa::Fingerprint sfp;
-    sfp.fold_str("st_nngp");
-    sfp.fold_pod(n_spatial);
-    sfp.fold_pod(nn);
-    sfp.fold_pod(cov_type);
-    if (coords.size())   sfp.fold(coords.begin(),
-                                  (std::size_t)coords.size() * sizeof(double));
-    if (nn_idx.size())   sfp.fold(nn_idx.begin(),
-                                  (std::size_t)nn_idx.size() * sizeof(int));
-    if (spatial_idx.size()) sfp.fold(spatial_idx.begin(),
-                                     (std::size_t)spatial_idx.size() * sizeof(int));
-    sfp.fold_str(temporal_type);
-    sfp.fold_pod(n_times);
-    sfp.fold_pod(cyclic);
-    if (temporal_idx.size()) sfp.fold(temporal_idx.begin(),
-                                      (std::size_t)temporal_idx.size() * sizeof(int));
+    const std::uint64_t struct_seed =
+        tulpa::NlFieldIdentity("st_nngp")
+            .nngp(n_spatial, nn, cov_type, coords, nn_idx, spatial_idx)
+            .temporal(temporal_type, n_times, cyclic, temporal_idx)
+            .seed();
     auto ckpt = tulpa::make_nl_grid_checkpoint(
-        checkpoint_path, sfp.value(), max_iter, tol, y, n, X, re_idx,
+        checkpoint_path, struct_seed, max_iter, tol, y, n, X, re_idx,
         n_re_groups, sigma_re, family, phi,
         {sigma2_spatial_grid, phi_gp_spatial_grid, tau_temporal_grid, rho_t});
 
     std::vector<int> skew_idx_vec;
-    const std::vector<int>* skew_idx_ptr = nullptr;
-    if (compute_skew && skew_idx.isNotNull()) {
-        Rcpp::IntegerVector idx_r(skew_idx);
-        skew_idx_vec.resize(idx_r.size());
-        for (int k = 0; k < idx_r.size(); k++) skew_idx_vec[k] = idx_r[k] - 1;
-        skew_idx_ptr = &skew_idx_vec;
-    }
+    const std::vector<int>* skew_idx_ptr =
+        tulpa::unwrap_skew_idx(compute_skew, skew_idx, skew_idx_vec);
 
     Rcpp::List out = run_st_spatial_kernel(
         n_grid, /*spatial_latent_dim=*/n_spatial,
@@ -1801,7 +1679,6 @@ Rcpp::List cpp_nested_laplace_st_nngp(
         compute_skew, skew_idx_ptr);
     out["sigma2_spatial_grid"] = sigma2_spatial_grid;
     out["phi_gp_spatial_grid"] = phi_gp_spatial_grid;
-    out["tau_temporal_grid"]   = tau_temporal_grid;
-    if (temporal_type == "ar1") out["rho_temporal_grid"] = rho_t;
+    nl_attach_temporal_grids(out, temporal_type, tau_temporal_grid, rho_t);
     return out;
 }

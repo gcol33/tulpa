@@ -31,6 +31,7 @@
 
 #include "laplace_re_priors.h"
 #include "laplace_spatial_priors.h"
+#include "laplace_spec_fit.h"       // unwrap_skew_idx
 #include "laplace_temporal_priors.h"
 #include "latent_block.h"
 #include "nl_cell_cache.h"
@@ -569,13 +570,8 @@ Rcpp::List cpp_nested_laplace_multi(
     }
 
     std::vector<int> skew_idx_vec;
-    const std::vector<int>* skew_idx_ptr = nullptr;
-    if (compute_skew && skew_idx.isNotNull()) {
-        Rcpp::IntegerVector idx_r(skew_idx);
-        skew_idx_vec.resize(idx_r.size());
-        for (int k = 0; k < idx_r.size(); k++) skew_idx_vec[k] = idx_r[k] - 1;
-        skew_idx_ptr = &skew_idx_vec;
-    }
+    const std::vector<int>* skew_idx_ptr =
+        tulpa::unwrap_skew_idx(compute_skew, skew_idx, skew_idx_vec);
 
     Rcpp::List out = tulpa::run_multi_block_nested_laplace(
         n_grid, y, n, X, re_idx, N, p, n_re_groups, sigma_re,

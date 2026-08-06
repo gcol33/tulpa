@@ -24,6 +24,7 @@
 #include "checkpoint_io.h"
 #include "laplace_core.h"
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -67,6 +68,100 @@ inline bool ckpt_deserialize(CkptReader& rd, LaplaceResult& r) {
 }
 
 using GridCheckpoint = CheckpointLog<LaplaceResult>;
+
+// ---------------------------------------------------------------------------
+// Structural identity of one field model
+// ---------------------------------------------------------------------------
+//
+// `struct_seed` below is a fingerprint of everything that makes a field model
+// what it is and is NOT visible to make_nl_grid_checkpoint: the kernel tag plus
+// the latent structure (adjacency, neighbour graph, basis, temporal layout).
+// Each cpp_nested_laplace_* entry point used to fold that by hand, which put
+// the same byte-fold loops in eleven places and made adding a field model a
+// copy of them. A copied block that folds the wrong structure produces a
+// checkpoint that MATCHES across runs it should not match, and a resumed run
+// then reuses cells computed under different inputs -- an error that passes
+// every shape and finiteness check.
+//
+// NlFieldIdentity names each structural group once. Chain the groups the model
+// carries, in the order they contribute:
+//
+//   NlFieldIdentity("st_icar").areal(n_units, adj_row_ptr, adj_col_idx)
+//                             .temporal(type, n_times, cyclic, temporal_idx)
+//                             .seed()
+//
+// Order is part of the fingerprint, so a group folds its own members in a fixed
+// order and the optional members (the BYM2 mixing scale, the temporal group
+// count) sit in the slot they have always occupied.
+class NlFieldIdentity {
+public:
+    explicit NlFieldIdentity(const char* tag) { fp_.fold_str(tag); }
+
+    // Areal field: unit count, the BYM2 mixing scale where there is one, then
+    // the adjacency itself in CSR.
+    NlFieldIdentity& areal(int n_units,
+                           const Rcpp::IntegerVector& adj_row_ptr,
+                           const Rcpp::IntegerVector& adj_col_idx,
+                           std::optional<double> scale_factor = std::nullopt) {
+        fp_.fold_pod(n_units);
+        if (scale_factor) fp_.fold_pod(*scale_factor);
+        fold_bytes(adj_row_ptr);
+        fold_bytes(adj_col_idx);
+        return *this;
+    }
+
+    // NNGP field: the Vecchia neighbour graph and the kernel it is built for.
+    NlFieldIdentity& nngp(int n_spatial, int nn, int cov_type,
+                          const Rcpp::NumericMatrix& coords,
+                          const Rcpp::IntegerMatrix& nn_idx,
+                          const Rcpp::IntegerVector& spatial_idx) {
+        fp_.fold_pod(n_spatial);
+        fp_.fold_pod(nn);
+        fp_.fold_pod(cov_type);
+        fold_bytes(coords);
+        fold_bytes(nn_idx);
+        fold_bytes(spatial_idx);
+        return *this;
+    }
+
+    // HSGP field: the basis and its eigenvalues.
+    NlFieldIdentity& hsgp(int M, const Rcpp::NumericMatrix& phi_basis,
+                          const Rcpp::NumericVector& lambda_eig) {
+        fp_.fold_pod(M);
+        fold_bytes(phi_basis);
+        fold_bytes(lambda_eig);
+        return *this;
+    }
+
+    // Temporal layout: the structure, its length, the per-panel group count
+    // where the field has one, whether the chain closes, and the node map.
+    NlFieldIdentity& temporal(const std::string& temporal_type, int n_times,
+                              bool cyclic,
+                              const Rcpp::IntegerVector& temporal_idx,
+                              std::optional<int> n_groups = std::nullopt) {
+        fp_.fold_str(temporal_type);
+        fp_.fold_pod(n_times);
+        if (n_groups) fp_.fold_pod(*n_groups);
+        fp_.fold_pod(cyclic);
+        fold_bytes(temporal_idx);
+        return *this;
+    }
+
+    std::uint64_t seed() const { return fp_.value(); }
+
+private:
+    // Fold an R vector's / matrix's payload. An empty one folds nothing:
+    // reading from begin() would run off the buffer.
+    template <typename RObj>
+    void fold_bytes(const RObj& v) {
+        if (v.size()) {
+            fp_.fold(v.begin(),
+                     (std::size_t)v.size() * sizeof(*v.begin()));
+        }
+    }
+
+    Fingerprint fp_;
+};
 
 // Build a checkpoint for a single-arm nested-Laplace kernel (the
 // run_multi_block_nested_laplace / sparse_impl callers: icar, bym2, car_proper,

@@ -1,5 +1,45 @@
 # tulpa NEWS
 
+## 0.0.128
+
+* **The nested-Laplace entry points no longer each carry their own fingerprint
+  and skew boilerplate (#286).** `cpp_nested_laplace_*` was already well
+  factored on the part that matters -- every entry builds its latent blocks and
+  hands them to a shared kernel -- but the plumbing wrapped around that call was
+  copied per model.
+
+  The structural fingerprint is the one that punished a mistake quietly: it
+  keys the grid checkpoint, so a copied block that folds the wrong structure
+  produces a checkpoint that MATCHES across runs it should not, and a resumed
+  run then reuses cells computed under different inputs. New
+  `tulpa::NlFieldIdentity` (`nested_laplace_checkpoint.h`) names each structural
+  group once -- `areal()`, `nngp()`, `hsgp()`, `temporal()` -- and each entry
+  point chains the groups it carries:
+
+  ```cpp
+  const std::uint64_t struct_seed =
+      tulpa::NlFieldIdentity("st_icar")
+          .areal(n_spatial_units, adj_row_ptr, adj_col_idx)
+          .temporal(temporal_type, n_times, cyclic, temporal_idx)
+          .seed();
+  ```
+
+  Fold order is part of the fingerprint, so the optional members (the BYM2
+  mixing scale, the standalone temporal field's group count) sit in the slot
+  they have always occupied and every seed is unchanged. New
+  `test-nl-field-identity.R` checks that bit for bit against the folds the
+  entry points used to write by hand, for all eleven field models, and pins
+  that each structural input still moves the seed.
+
+  The 1-based-to-0-based `skew_idx` conversion had nineteen copies across
+  `src/`; all now call the `tulpa::unwrap_skew_idx` that already existed for it
+  in `laplace_spec_fit.h`. The five spatiotemporal entries returned their
+  temporal axes through a repeated pair of lines carrying an `ar1`-only
+  conditional; that is `nl_attach_temporal_grids` now.
+
+  No behaviour change: the entry points shed 225 lines of plumbing, and the
+  fingerprint values and returned lists are identical.
+
 ## 0.0.127
 
 * **1015 lines of unreachable C++ removed from `src/` (#284).** Four headers

@@ -578,7 +578,14 @@ Two specializations:
   kernel: icar / bym2 / car_proper / temporal / the ST variants / nngp / hsgp),
   `cpp_nested_laplace_multi`, and the sparse driver (`fit_spde`). `make_nl_grid_checkpoint()`
   is the single-arm kernel factory (a per-kernel structural seed + the shared
-  obs inputs + the grid axes). The RE-covariance CCD path
+  obs inputs + the grid axes). The structural seed comes from
+  `NlFieldIdentity` (same header): one named method per structural group --
+  `areal()` (optional BYM2 mixing scale), `nngp()`, `hsgp()`, `temporal()`
+  (optional panel group count) -- chained by each `cpp_nested_laplace_*` entry
+  in the order the groups contribute. Fold order IS the fingerprint, so adding
+  a group means adding a method rather than copying byte-fold loops, and
+  `test-nl-field-identity.R` holds every field model's seed against the folds
+  written by hand before the extraction. The RE-covariance CCD path
   (`tulpa_re_cov_nested`) uses a small R-level analogue (atomic-RDS node cache
   keyed by node index, the CCD grid being deterministic given the fingerprint).
 - **`ChainCheckpoint` = `CheckpointLog<HMCResultCpp>`** (`hmc_chain_checkpoint.h`):

@@ -108,13 +108,8 @@ Rcpp::List cpp_laplace_fit_spatial(
     }
 
     std::vector<int> skew_idx_vec;
-    const std::vector<int>* skew_idx_ptr = nullptr;
-    if (compute_skew && skew_idx.isNotNull()) {
-        Rcpp::IntegerVector idx_r(skew_idx);
-        skew_idx_vec.resize(idx_r.size());
-        for (int k = 0; k < idx_r.size(); k++) skew_idx_vec[k] = idx_r[k] - 1;
-        skew_idx_ptr = &skew_idx_vec;
-    }
+    const std::vector<int>* skew_idx_ptr =
+        tulpa::unwrap_skew_idx(compute_skew, skew_idx, skew_idx_vec);
 
     tulpa::LaplaceResult res = tulpa::laplace_mode_spec_dense_solve(
         in.data, in.layout, params, in.re_group, max_iter, tol, n_threads,
@@ -224,13 +219,8 @@ Rcpp::List cpp_laplace_fit_bym2(
     if (has_re) params[in.layout.log_sigma_re_idx] = std::log(sigma_re);
 
     std::vector<int> skew_idx_vec;
-    const std::vector<int>* skew_idx_ptr = nullptr;
-    if (compute_skew && skew_idx.isNotNull()) {
-        Rcpp::IntegerVector idx_r(skew_idx);
-        skew_idx_vec.resize(idx_r.size());
-        for (int k = 0; k < idx_r.size(); k++) skew_idx_vec[k] = idx_r[k] - 1;
-        skew_idx_ptr = &skew_idx_vec;
-    }
+    const std::vector<int>* skew_idx_ptr =
+        tulpa::unwrap_skew_idx(compute_skew, skew_idx, skew_idx_vec);
 
     tulpa::LaplaceResult res = tulpa::laplace_mode_spec_dense_solve(
         in.data, in.layout, params, in.re_group, max_iter, tol, n_threads,
