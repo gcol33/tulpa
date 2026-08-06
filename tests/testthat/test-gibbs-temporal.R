@@ -57,7 +57,7 @@ test_that("dispatch_gibbs_temporal rejects rw2, non-binomial, and spatial+tempor
   expect_error(
     tulpa_gibbs(y = rbinom(n, 5L, 0.5), n_trials = rep(5L, n),
                 X = cbind(1, rnorm(n)), group = rep(1L, n), n_groups = 0L,
-                family = "binomial", temporal = spec_rw2,,
+                family = "binomial", temporal = spec_rw2,
                 control = list(n_iter = 50L, warmup = 25L)),
     "rw2"
   )
@@ -69,7 +69,7 @@ test_that("dispatch_gibbs_temporal rejects rw2, non-binomial, and spatial+tempor
   expect_error(
     tulpa_gibbs(y = rpois(n, 2), n_trials = rep(1L, n),
                 X = cbind(1, rnorm(n)), group = rep(1L, n), n_groups = 0L,
-                family = "poisson", temporal = spec_rw1,,
+                family = "poisson", temporal = spec_rw1,
                 control = list(n_iter = 50L, warmup = 25L)),
     "binomial"
   )
@@ -81,7 +81,7 @@ test_that("dispatch_gibbs_temporal rejects rw2, non-binomial, and spatial+tempor
                 family = "binomial",
                 spatial = list(type = "icar", adjacency = W,
                                spatial_idx = seq_len(n)),
-                temporal = spec_rw1,,
+                temporal = spec_rw1,
                 control = list(n_iter = 50L, warmup = 25L)),
     "Combined spatial \\+ temporal"
   )
