@@ -1,5 +1,26 @@
 # tulpa NEWS
 
+## 0.0.135
+
+* **A prior block missing its required fields now errors instead of segfaulting
+  the session** (gcol33/tulpa#299). Each `.NL_REGISTRY` entry declares, per
+  dispatch path, the fields its converter indexes; the shared
+  `.nl_check_block_fields()` checks them at the four boundaries that feed the
+  kernels (`.nl_dispatch()`, `.nl_block_axis_grid()`,
+  `.nl_block_spec_for_cpp()`, `.joint_block_spec_for_cpp()`, plus the
+  single-block joint packer). A block naming a field wrongly -- a typo, a stale
+  name after a rename, a block copied from a different family -- used to reach
+  the C++ side as a zero-length vector, which the kernels index with no bounds
+  check; it now raises
+  `prior block 'icar' is missing required field(s): spatial_idx, adj_row_ptr,
+  adj_col_idx, n_neighbors.` A field present but empty counts as missing, since
+  that is the same out-of-bounds read. The per-branch presence checks that had
+  accumulated in the joint converter are replaced by the shared one, so the
+  declaration is the single source of truth; `test-nl-required-fields.R` walks
+  every registry entry on every declared path dropping one field at a time, and
+  lints both converters' sources so a field read unconditionally by a branch but
+  left undeclared fails the suite.
+
 ## 0.0.134
 
 * **`fit_st_nested()`'s auto-recenter no longer switches itself off when a grid

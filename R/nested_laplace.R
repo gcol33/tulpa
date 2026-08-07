@@ -432,6 +432,51 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 #   2. Make sure cpp_nested_laplace_<variant> exists in RcppExports.
 # No changes needed to .nl_dispatch() or the public driver.
 
+# --- Required block fields, per dispatch path -------------------------------
+#
+# Each registry entry declares which fields its converter indexes, keyed by the
+# path that consumes them. The C++ kernels read those vectors positionally with
+# no bounds check, so a block naming a field wrongly -- a typo, a stale name
+# after a rename, a block copied from a different family -- arrives with a
+# zero-length vector and takes the session down (gcol33/tulpa#299). Checking
+# presence at the R boundary turns that into a message naming the fields.
+#
+# Path keys:
+#   axis   read by defaults() / theta() while the outer grid is built, so
+#          checked on every path.
+#   single extra fields pack() indexes for the single-block kernel.
+#   multi  extra fields .nl_block_spec_for_cpp() indexes.
+#   joint  extra fields .joint_block_spec_for_cpp() indexes.
+#   joint_single
+#          extra fields .joint_call_kernel_via_multi() indexes on the
+#          single-block joint path, where the per-observation index lives on
+#          each arm rather than on the block.
+# A key absent from an entry means the type is not dispatchable on that path;
+# the path's own converter raises its "only supported inside ..." message.
+.NL_REQ_AREAL_GRAPH <- c("n_spatial_units", "adj_row_ptr", "adj_col_idx",
+                         "n_neighbors")
+.NL_REQ_AREAL <- c("spatial_idx", .NL_REQ_AREAL_GRAPH)
+.NL_REQ_TEMPORAL <- c("temporal_idx", "n_times")
+.NL_REQ_HSGP_ARM <- c("m_total", "phi", "n_obs_per_arm", "eigenvalues")
+.NL_REQ_SPDE_MESH <- c("n_mesh", "A_x", "A_i", "A_p",
+                       "C0_diag", "G1_x", "G1_i", "G1_p", "nu")
+
+# `paths` is one or more keys above; their union is checked. A field that is
+# present but empty counts as missing -- a zero-length vector is exactly what
+# the kernel indexes out of bounds.
+.nl_check_block_fields <- function(p, paths, block_index = NULL) {
+  type <- tolower(p$type %||% "")
+  spec <- .NL_REGISTRY[[type]]
+  if (is.null(spec) || is.null(spec$required)) return(invisible(p))
+  req <- unique(unlist(spec$required[paths], use.names = FALSE))
+  if (!length(req)) return(invisible(p))
+  bad <- req[vapply(req, function(f) length(p[[f]]) == 0L, logical(1))]
+  if (!length(bad)) return(invisible(p))
+  stop("prior block ", if (is.null(block_index)) "" else paste0(block_index, " "),
+       "'", type, "' is missing required field(s): ",
+       paste(bad, collapse = ", "), ".", call. = FALSE)
+}
+
 # Areal CSR adjacency block -- shared by icar/bym2/car_proper.
 .nl_adj_args <- function(p) list(
   spatial_idx     = as.integer(p$spatial_idx),
@@ -483,6 +528,9 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 .NL_REGISTRY <- list(
   icar = list(
     cpp_fn = "cpp_nested_laplace_icar",
+    required = list(single = .NL_REQ_AREAL, multi = .NL_REQ_AREAL,
+                    joint = .NL_REQ_AREAL,
+                    joint_single = .NL_REQ_AREAL_GRAPH),
     defaults = function(p, a) .nl_fill_family_axes(p, "icar"),
     pack = function(p) c(.nl_adj_args(p), list(
       tau_grid = as.numeric(p$tau_grid)
@@ -492,6 +540,9 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 
   bym2 = list(
     cpp_fn = "cpp_nested_laplace_bym2",
+    required = list(single = .NL_REQ_AREAL, multi = .NL_REQ_AREAL,
+                    joint = .NL_REQ_AREAL,
+                    joint_single = .NL_REQ_AREAL_GRAPH),
     defaults = function(p, a) .nl_fill_family_axes(p, "bym2"),
     pack = function(p) c(.nl_adj_args(p), list(
       scale_factor       = as.numeric(p$scale_factor %||% 1.0),
@@ -506,6 +557,9 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 
   car_proper = list(
     cpp_fn = "cpp_nested_laplace_car_proper",
+    required = list(single = .NL_REQ_AREAL, multi = .NL_REQ_AREAL,
+                    joint = .NL_REQ_AREAL,
+                    joint_single = .NL_REQ_AREAL_GRAPH),
     defaults = function(p, a) {
       # `rho_car_grid` is the joint-API spelling of the correlation axis; accept
       # it as an alias so a grid passed under either name is honoured.
@@ -544,6 +598,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     # Multi-block-only (like iid): the coupled inner solve lives in the joint
     # driver. The outer axes are the p(p+1)/2 log-Cholesky coordinates of Sigma.
     cpp_fn = NULL,
+    required = list(axis = "n_fields",
+                    joint = c(.NL_REQ_AREAL, "n_fields", "field_weight")),
     defaults = function(p, a) {
       if (is.null(p$logchol_grid)) {
         p$logchol_grid <- .mcar_default_logchol_grid(as.integer(p$n_fields))
@@ -569,6 +625,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     # D - W) differs, which does not change the outer grid, so the default grid
     # is reused from mcar.
     cpp_fn = NULL,
+    required = list(axis = "n_fields",
+                    joint = c("obs_idx", "n_groups", "n_fields", "field_weight")),
     defaults = function(p, a) {
       if (is.null(p$logchol_grid)) {
         p$logchol_grid <- .mcar_default_logchol_grid(as.integer(p$n_fields))
@@ -587,6 +645,9 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 
   nngp = list(
     cpp_fn = "cpp_nested_laplace_nngp",
+    # spatial_idx / nn_order / cov_type are defaulted below, so they are not
+    # required.
+    required = list(single = c("coords", "nn_idx", "nn_dist", "n_spatial", "nn")),
     defaults = function(p, a) .nl_fill_family_axes(p, "nngp"),
     pack = function(p) {
       # nn_order in cpp_nested_laplace_nngp expects 0-based indices, matching
@@ -625,6 +686,10 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     # spatial_idx. Same SpdeQBuilder and make_spde_block factory the
     # single-Laplace occupancy SPDE path (cpp_nested_laplace_spde) uses.
     cpp_fn = NULL,   # multi-block only; reached via .nl_dispatch_multi
+    # The single-block converter reads a scalar `n_obs`; the joint one reads a
+    # per-arm `n_obs_per_arm` alongside per-arm A CSC triples.
+    required = list(multi = c(.NL_REQ_SPDE_MESH, "n_obs"),
+                    joint = c(.NL_REQ_SPDE_MESH, "n_obs_per_arm")),
     defaults = function(p, a) {
       if (is.null(p$range_grid) || is.null(p$sigma_grid)) {
         # Geometric grid centred on the PC-prior mode (prior_range[1] /
@@ -674,6 +739,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     # sigma (an EM-estimated random-effect term on a nested block carries its
     # own grid this way; see .fit_block_via_nested_laplace).
     cpp_fn = NULL,
+    required = list(multi = c("obs_idx", "n_units"),
+                    joint = c("obs_idx", "n_units")),
     defaults = function(p, a) .nl_fill_family_axes(p, "iid"),
     pack = function(p) stop(
       "iid is only supported inside a multi-block latent prior on the ",
@@ -686,6 +753,11 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 
   hsgp = list(
     cpp_fn = "cpp_nested_laplace_hsgp",
+    # The single-block kernel takes the basis as one matrix (phi_basis) with its
+    # eigenvalues (lambda_eig); the joint one takes a per-arm list (phi) with
+    # `eigenvalues` and the basis / row counts it needs to slice them.
+    required = list(single = c("phi_basis", "lambda_eig"),
+                    joint = .NL_REQ_HSGP_ARM),
     defaults = function(p, a) .nl_fill_family_axes(p, "hsgp"),
     pack = function(p) list(
       phi_basis        = as.matrix(p$phi_basis),
@@ -707,6 +779,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     # paired per-axis grids. Multi-block-only -- there is no single-arm
     # version of multi-output HSGP.
     cpp_fn = NULL,
+    required = list(joint = .NL_REQ_HSGP_ARM),
     defaults = function(p, a) {
       # All four grids treated as paired axes (each row of theta_grid is
       # one (sigma_1, sigma_2, rho, ell) tuple). When any grid is missing
@@ -731,6 +804,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 
   rw1 = list(
     cpp_fn = "cpp_nested_laplace_temporal",
+    required = list(single = .NL_REQ_TEMPORAL, multi = .NL_REQ_TEMPORAL,
+                    joint = .NL_REQ_TEMPORAL),
     defaults = function(p, a) .nl_fill_family_axes(p, "rw1"),
     pack = function(p) list(
       temporal_idx  = as.integer(p$temporal_idx),
@@ -746,6 +821,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 
   rw2 = list(
     cpp_fn = "cpp_nested_laplace_temporal",
+    required = list(single = .NL_REQ_TEMPORAL, multi = .NL_REQ_TEMPORAL,
+                    joint = .NL_REQ_TEMPORAL),
     defaults = function(p, a) .nl_fill_family_axes(p, "rw2"),
     pack = function(p) list(
       temporal_idx  = as.integer(p$temporal_idx),
@@ -761,6 +838,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 
   ar1 = list(
     cpp_fn = "cpp_nested_laplace_temporal",
+    required = list(single = .NL_REQ_TEMPORAL, multi = .NL_REQ_TEMPORAL,
+                    joint = .NL_REQ_TEMPORAL),
     defaults = function(p, a) .nl_fill_family_axes(p, "ar1"),
     pack = function(p) list(
       temporal_idx  = as.integer(p$temporal_idx),
@@ -784,6 +863,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     # optimized by the inner Newton. Returns a 1 x 0 grid so the joint
     # Cartesian product treats this block as a "no axis" contributor.
     cpp_fn = NULL,
+    required = list(joint = c("obs_idx", "n_latent")),
     defaults = function(p, a) p,
     pack = function(p) stop(
       "lf is only supported inside a multi-block prior. ",
@@ -805,6 +885,14 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     # at every grid row are packed into the C++ block spec by
     # `.nl_block_spec_for_cpp`.
     cpp_fn = NULL,
+    # The multi-block converter builds the per-grid Q / logdet / log-prior from
+    # the block's own closures; the joint one takes them already materialised.
+    required = list(
+      axis  = c("theta_dim", "theta_names"),
+      multi = c("n_latent", "obs_idx"),
+      joint = c("n_latent", "obs_idx", "Q_csc_p_per_grid", "Q_csc_i_per_grid",
+                "Q_csc_x_per_grid", "logdet_Q_per_grid",
+                "log_prior_theta_per_grid")),
     defaults = function(p, a) {
       if (is.null(p$theta_grid_built)) {
         d <- p$theta_dim
@@ -846,6 +934,10 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
          ". Supported: ", paste(names(.NL_REGISTRY), collapse = ", "), ".",
          call. = FALSE)
   }
+  # A multi-block-only type has no single-arm kernel; let its own pack() raise
+  # the "only supported inside a multi-block prior" message rather than a
+  # field-name list for fields the single path would never read.
+  if (!is.null(spec$cpp_fn)) .nl_check_block_fields(p, c("axis", "single"))
   p   <- spec$defaults(p, a)
   out <- do.call(spec$cpp_fn, c(spec$pack(p), a))
   th  <- spec$theta(p)
@@ -999,6 +1091,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 # because they read theta values directly from theta_grid in the C++ side.
 .nl_block_spec_for_cpp <- function(p, block_joint_grid = NULL) {
   type <- tolower(p$type)
+  .nl_check_block_fields(p, c("axis", "multi"))
   if (type %in% c("icar", "bym2", "car_proper")) {
     out <- list(
       type            = type,
@@ -1167,6 +1260,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   if (is.null(spec)) {
     stop("Unknown block type: ", p$type, call. = FALSE)
   }
+  .nl_check_block_fields(p, "axis")
   p <- spec$defaults(p, list())
   th <- spec$theta(p)
   if (is.matrix(th$grid)) {

@@ -164,6 +164,15 @@
                                           compute_skew = FALSE,
                                           skew_idx = NULL) {
     n_arms <- length(arms)
+    blk <- prior; blk$type <- type
+    .nl_check_block_fields(blk, "joint_single")
+    missing_spi <- which(vapply(arms, function(a) length(a$spatial_idx) == 0L,
+                                logical(1)))
+    if (length(missing_spi)) {
+        stop("arm(s) ", paste(missing_spi, collapse = ", "),
+             " carry no `spatial_idx`; a '", type,
+             "' field needs one per arm.", call. = FALSE)
+    }
     spi <- lapply(arms, function(a) as.integer(a$spatial_idx))
 
     block_spec <- list(

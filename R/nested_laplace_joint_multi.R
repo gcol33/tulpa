@@ -228,14 +228,10 @@
 # NULL only from contexts where no such block can appear.
 .joint_block_spec_for_cpp <- function(p, n_arms, block_index, arms = NULL) {
     type <- tolower(p$type)
+    .nl_check_block_fields(p, c("axis", "joint"), block_index)
     arm_n_obs <- if (is.null(arms)) NULL
                  else vapply(arms, function(a) length(a$y), integer(1))
     if (type %in% c("icar", "bym2", "car_proper")) {
-        if (is.null(p$spatial_idx)) {
-            stop("Block ", block_index, " (type '", type, "'): ",
-                 "`spatial_idx` is required as a list of length n_arms.",
-                 call. = FALSE)
-        }
         spatial_idx <- .multi_block_per_arm_idx(p$spatial_idx, n_arms,
                                                   block_index, "spatial_idx",
                                                   arm_n_obs)
@@ -280,15 +276,11 @@
         # per-arm 1-based cell index (shared by all fields); field_weight is the
         # per-field design column (the intercept's is all-ones, a covariate
         # column is the per-row value) -- outer length p, inner length n_arms.
-        if (is.null(p$spatial_idx)) {
-            stop("Block ", block_index, " (type 'mcar'): `spatial_idx` is ",
-                 "required as a list of length n_arms.", call. = FALSE)
-        }
         spatial_idx <- .multi_block_per_arm_idx(p$spatial_idx, n_arms,
                                                   block_index, "spatial_idx",
                                                   arm_n_obs)
         n_fields <- as.integer(p$n_fields)
-        if (is.null(p$field_weight) || length(p$field_weight) != n_fields) {
+        if (length(p$field_weight) != n_fields) {
             stop("Block ", block_index, " (type 'mcar'): `field_weight` must be ",
                  "a list of length n_fields (", n_fields, ").", call. = FALSE)
         }
@@ -323,11 +315,6 @@
         }
         out
     } else if (type %in% c("rw1", "rw2", "ar1")) {
-        if (is.null(p$temporal_idx)) {
-            stop("Block ", block_index, " (type '", type, "'): ",
-                 "`temporal_idx` is required as a list of length n_arms.",
-                 call. = FALSE)
-        }
         temporal_idx <- .multi_block_per_arm_idx(p$temporal_idx, n_arms,
                                                    block_index, "temporal_idx",
                                                    arm_n_obs)
@@ -352,11 +339,6 @@
         }
         out
     } else if (type == "iid") {
-        if (is.null(p$obs_idx)) {
-            stop("Block ", block_index, " (type 'iid'): ",
-                 "`obs_idx` is required as a list of length n_arms.",
-                 call. = FALSE)
-        }
         obs_idx <- .multi_block_per_arm_idx(p$obs_idx, n_arms,
                                               block_index, "obs_idx",
                                               arm_n_obs)
@@ -387,15 +369,11 @@
         # design column (intercept all-ones, slope = covariate) -- outer length
         # n_fields, inner length n_arms. Expresses a correlated random slope
         # (1 + x | g): n_fields = 1 + n_slopes.
-        if (is.null(p$obs_idx)) {
-            stop("Block ", block_index, " (type 'miid'): `obs_idx` is ",
-                 "required as a list of length n_arms.", call. = FALSE)
-        }
         obs_idx <- .multi_block_per_arm_idx(p$obs_idx, n_arms,
                                               block_index, "obs_idx",
                                               arm_n_obs)
         n_fields <- as.integer(p$n_fields)
-        if (is.null(p$field_weight) || length(p$field_weight) != n_fields) {
+        if (length(p$field_weight) != n_fields) {
             stop("Block ", block_index, " (type 'miid'): `field_weight` must be ",
                  "a list of length n_fields (", n_fields, ").", call. = FALSE)
         }
@@ -412,14 +390,6 @@
         )
     } else if (type == "tgmrf") {
         # User-supplied GMRF: per-grid CSC Q + logdet + log p(theta).
-        for (req in c("n_latent", "obs_idx", "Q_csc_p_per_grid",
-                      "Q_csc_i_per_grid", "Q_csc_x_per_grid",
-                      "logdet_Q_per_grid", "log_prior_theta_per_grid")) {
-            if (is.null(p[[req]])) {
-                stop("Block ", block_index, " (type 'tgmrf'): `", req,
-                     "` is required.", call. = FALSE)
-            }
-        }
         obs_idx <- .multi_block_per_arm_idx(p$obs_idx, n_arms,
                                               block_index, "obs_idx",
                                               arm_n_obs)
@@ -445,12 +415,6 @@
         # and passing the scaled phi to the existing DENSE_BASIS factory.
         # Multi-scale composition (1.6c) falls out by declaring multiple
         # type='hsgp' blocks in the same prior_list.
-        for (req in c("m_total", "phi", "n_obs_per_arm", "eigenvalues")) {
-            if (is.null(p[[req]])) {
-                stop("Block ", block_index, " (type 'hsgp'): `", req,
-                     "` is required.", call. = FALSE)
-            }
-        }
         if (!is.list(p$phi) || length(p$phi) != n_arms) {
             stop("Block ", block_index, " (type 'hsgp'): `phi` must be a ",
                  "list of length n_arms (", n_arms, ").", call. = FALSE)
@@ -498,12 +462,6 @@
         # correlated latent fields share basis + eigenvalues; coefficients are
         # cross-output-correlated via Sigma. First ship restricts K == 2 with
         # axes (sigma_1, sigma_2, rho, ell), all raw.
-        for (req in c("m_total", "phi", "n_obs_per_arm", "eigenvalues")) {
-            if (is.null(p[[req]])) {
-                stop("Block ", block_index, " (type 'hsgp_mo'): `", req,
-                     "` is required.", call. = FALSE)
-            }
-        }
         if (n_arms != 2L) {
             stop("Block ", block_index, " (type 'hsgp_mo'): ",
                  "requires n_arms == 2 (got ", n_arms, "). Multi-output HSGP ",
@@ -529,13 +487,6 @@
         # SPDE block: per-arm sparse barycentric projector A and shared FEM
         # mesh (C0_diag, G1). Axes are (range, sigma). Optional rational
         # coefficients for fractional nu.
-        for (req in c("n_mesh", "A_x", "A_i", "A_p", "n_obs_per_arm",
-                      "C0_diag", "G1_x", "G1_i", "G1_p", "nu")) {
-            if (is.null(p[[req]])) {
-                stop("Block ", block_index, " (type 'spde'): `", req,
-                     "` is required.", call. = FALSE)
-            }
-        }
         per_arm <- function(field) {
             v <- p[[field]]
             if (!is.list(v) || length(v) != n_arms) {
@@ -570,11 +521,6 @@
         # latent vector and co-optimized by the inner Newton. No outer-
         # grid axes -- identifiability handled by tight Gaussian anchors
         # on (u_1, lambda_1) inside the C++ factory.
-        if (is.null(p$obs_idx) || is.null(p$n_latent)) {
-            stop("Block ", block_index, " (type 'lf'): both `obs_idx` ",
-                 "(list of length n_arms) and `n_latent` are required.",
-                 call. = FALSE)
-        }
         obs_idx <- .multi_block_per_arm_idx(p$obs_idx, n_arms,
                                               block_index, "obs_idx",
                                               arm_n_obs)
