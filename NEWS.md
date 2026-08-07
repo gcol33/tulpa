@@ -1,5 +1,58 @@
 # tulpa NEWS
 
+## 0.0.140
+
+* **`gamma_3` is now consumed, not only graded: the inner-Laplace marginals can
+  be skew-corrected** (gcol33/tulpa#302). The cubic term was computed, banded
+  and printed, and nothing read it -- so the inner layer was nested
+  approximation with no debias, the position this engine is designed against,
+  one layer in from where that argument is usually made. `summary()` and
+  `confint()` on a nested-Laplace fit run with `control$skew_correct = TRUE` now
+  report Cornish-Fisher marginal quantiles at each coefficient's own `gamma_3`,
+  gated to the `good` / `ok` bands, and the Gaussian quantiles everywhere else.
+  `$skew_correction` records the per-coefficient `gamma_3`, band and
+  eligibility; a `skew_applied` attribute on `summary()` / `confint()` records
+  what was used at the requested level. Wired through `tulpa_nested_laplace()`
+  and both `tulpa_nested_laplace_joint()` paths. A joint fit records the
+  correction but does not yet show it: `summary()` / `confint()` there report
+  `NA` bounds because the joint driver retains no per-cell fixed-effect
+  Hessians for the grid-marginalized covariance, which predates this change
+  (gcol33/tulpa#305).
+
+  Rue, Martino & Chopin (2009) Sec 3.2.3 fit a skew normal here, under three
+  constraints -- mean `gamma^(1)`, variance 1, third log-density derivative at
+  the mode `gamma^(3)`. Two of those inputs exist in this engine and one does
+  not: `gamma^(1)` comes from their denominator expansion, which is diagonal
+  only in their augmented `x_j == eta_j` representation
+  (`src/inner_laplace_skew.h` carries the reason). A skew normal fitted on the
+  cubic term alone is therefore a different construction from theirs, and its
+  attainable skewness saturates at `|skewness| ~ 0.995` with the shape parameter
+  diverging as that bound is approached -- inside the very band the correction
+  is gated to. The Cornish-Fisher expansion is the quantile-side inverse of the
+  same Edgeworth series `gamma_3` is the leading term of, is linear in
+  `gamma_3` so it does not saturate, and returns quantiles directly.
+
+  The correction is skewness-only and therefore partial, which is measured
+  rather than asserted. Against exact quadrature quantiles of rare-event
+  binomial-logit posteriors it cuts total absolute endpoint error from 2.4931 to
+  1.3837 (44.5%), improving both endpoints in every case. On CI coverage over a
+  small-group Bernoulli random-effect fixture (N = 48, 200 seeds x 2
+  coefficients) it is directionally right and immaterial: nominal 0.95, Gaussian
+  0.9650, corrected 0.9600; nominal 0.80, 0.8050 vs 0.8075; nominal 0.50, 0.4950
+  vs 0.5000 -- every difference inside one standard error. Two reasons the
+  coverage gain is smaller than the marginal gain: `gamma_3` is a lower bound on
+  the true skewness (0.875-0.943 of it on the cases above), and a biased Laplace
+  mode stays biased because the location term is not computed. **The correction
+  is therefore OFF by default** (`.NL_DIAG$skew_correct`); the coverage
+  measurement does not justify defaulting it on. Draws, modes, weights and every
+  other field the solve produced are bit-for-bit unchanged either way -- this is
+  post-processing on the reported quantiles.
+
+  New: `.nl_skew_marginal()`, `.nl_skew_by_fixed()`, `.nl_skew_correction_attach()`
+  (`R/laplace_diagnostics.R`), `src/cornish_fisher.h` / `.cpp`,
+  `tests/testthat/test-inner-skew-correction.R`, and a paired
+  corrected-vs-Gaussian coverage gate in `test-nested-laplace-recovery.R`.
+
 ## 0.0.139
 
 * **`gamma_3` now scores coupled multi-predictor likelihoods instead of

@@ -37,6 +37,10 @@ cpp_cell_coupling_registry_size <- function() {
     .Call(`_tulpa_cpp_cell_coupling_registry_size`)
 }
 
+cpp_cornish_fisher_quantile <- function(mu, sigma, gamma3, z, max_abs_gamma3) {
+    .Call(`_tulpa_cpp_cornish_fisher_quantile`, mu, sigma, gamma3, z, max_abs_gamma3)
+}
+
 cpp_test_compute_cov <- function(d, sigma2, phi, cov_type) {
     .Call(`_tulpa_cpp_test_compute_cov`, d, sigma2, phi, cov_type)
 }

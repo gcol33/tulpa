@@ -632,6 +632,45 @@ interface does not expose.
 1-based-R-to-0-based-probe conversion. The coupled (non-separable) cubic-term
 derivation (#273 item 2) remains open.
 
+**gamma_3 is consumed, not only graded (gcol33/tulpa#302, 0.0.140).**
+`control$skew_correct` makes `summary()` / `confint()` on a nested-Laplace fit
+report **Cornish-Fisher** marginal quantiles at each coefficient's own
+`gamma_3` (`.nl_skew_marginal()` in `R/laplace_diagnostics.R` over
+`src/cornish_fisher.h`), gated to the `good` / `ok` bands and falling back to
+the Gaussian quantiles elsewhere -- including where the requested level would
+leave the expansion's monotone range. `.nl_skew_correction_attach()` records
+the per-coefficient `gamma_3`, band and eligibility on the fit; a
+`skew_applied` attribute on the summary records what was used at that level.
+The correction is post-processing on the reported quantiles, so draws, modes
+and weights are bit-for-bit unchanged either way. A JOINT fit records the
+correction but cannot yet show it: `confint()` there reports `NA` bounds
+because the joint driver retains no per-cell fixed-effect Hessians for
+`.nested_fixed_moments()` (gcol33/tulpa#305, predates this).
+
+NOT a skew normal, on purpose. RMC 2009 Sec 3.2.3 fit one under three
+constraints -- mean `gamma^(1)`, variance 1, third log-density derivative at
+the mode `gamma^(3)`. This engine has the cubic term and NOT `gamma^(1)` (see
+the SCOPE note in `inner_laplace_skew.h`), so a skew normal fitted on
+`gamma_3` alone is a different construction from theirs and cannot carry their
+name; it also saturates at `|skewness| ~ 0.995` with the shape parameter
+diverging as that bound is approached, inside the band the correction is gated
+to. Cornish-Fisher is the quantile-side inverse of the same Edgeworth series,
+linear in `gamma_3`, and returns quantiles directly. The paper's own
+spline-corrected Gaussian (eq. 17) is the FULL Laplace of Sec 3.2.2, reached
+only for symmetric heavy-tailed cases a cubic term cannot describe --
+`dev_notes/rmc2009/FACTS.md` holds the quoted passages.
+
+**OFF by default**, on the measurement. Against exact quadrature quantiles of
+rare-event binomial-logit posteriors it cuts total absolute endpoint error
+44.5% (2.4931 -> 1.3837), improving both endpoints in every case. On CI
+coverage over the small-group Bernoulli RE fixture (200 seeds x 2
+coefficients) it is directionally right and immaterial -- nominal 0.95 gives
+0.9650 against 0.9600, nominal 0.80 gives 0.8050 against 0.8075 -- every
+difference inside one standard error. `gamma_3` is a LOWER bound on the true
+skewness, and the correction is skewness-only, so a biased Laplace mode stays
+biased. Tests: `test-inner-skew-correction.R`, plus a paired
+corrected-vs-Gaussian coverage gate in `test-nested-laplace-recovery.R`.
+
 **The engine registers its own coupled likelihood (gcol33/tulpa#300, 0.0.137).**
 `CellCouplingSpec` is virtual-dispatched per cell, but every genuinely
 non-separable instance used to live downstream in tulpaObs, so this repo could

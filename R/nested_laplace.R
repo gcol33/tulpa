@@ -79,6 +79,20 @@
 #'     FIXED inner Laplace, this scores whether that inner Gaussian
 #'     approximation is itself a good fit to the latent-field conditional
 #'     posterior. See [diagnostics()] for the combined whole-fit verdict.
+#'   * `skew_correct` (`FALSE`) -- consume `gamma_3` instead of only grading it
+#'     (gcol33/tulpa#302): report Cornish-Fisher marginal quantiles at each
+#'     coefficient's own `gamma_3` from `summary()` / `confint()`, wherever the
+#'     band says the leading-order expansion is in its regime, and the Gaussian
+#'     quantiles everywhere else. The correction reshapes where the interval
+#'     sits and leaves the centre and the draws untouched, so a fit run with it
+#'     off is bit for bit the fit it was before. `$skew_correction` records the
+#'     per-coefficient `gamma_3`, band and eligibility; the `skew_applied`
+#'     attribute on `summary()` / `confint()` records what was actually used at
+#'     the requested level. Rue, Martino & Chopin (2009) fit a skew normal here
+#'     instead, under a mean constraint from a location term this engine does
+#'     not compute; the series correction is the same-order alternative that
+#'     needs only the cubic term, and unlike a skew normal its skewness does not
+#'     saturate inside the band it is applied on.
 #'   * `auto_recenter` (`TRUE`) -- re-centre a default outer grid axis on its
 #'     posterior mode and refit when the fit rails against a boundary node
 #'     (gcol33/tulpa#289 / #290). `FALSE` integrates over the grid exactly as
@@ -163,6 +177,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   k_samples          <- as.integer(control$k_samples %||% .nl_diag("k_samples"))
   diagnose_skew      <- isTRUE(control$diagnose_skew %||% TRUE)
   skew_idx           <- control$skew_idx
+  skew_correct       <- isTRUE(control$skew_correct %||% .nl_diag("skew_correct"))
 
   # Grid-cell checkpoint/resume. `control$checkpoint =
   # list(path =, resume =)` makes every grid cell append to `path`; a resume
@@ -253,6 +268,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     res <- .nl_inner_skew_at_theta(res, prior, cargs_no_ckpt, "multi", NULL,
                                    likelihood, p_fixed, skew_idx,
                                    compute = diagnose_skew)
+    res <- .nl_skew_correction_attach(res, p_fixed, skew_correct)
     tm$mark("diagnostics")
     res$prior <- prior
     res$timing <- tm$timing()
@@ -328,6 +344,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   res <- .nl_inner_skew_at_theta(res, prior, cargs_no_ckpt, "single", type,
                                  NULL, p_fixed, skew_idx,
                                  compute = diagnose_skew)
+  res <- .nl_skew_correction_attach(res, p_fixed, skew_correct)
   tm$mark("diagnostics")
   res$prior <- prior
   res$timing <- tm$timing()

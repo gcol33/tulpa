@@ -474,6 +474,20 @@
 #'     for both the single-block backends (icar/bym2/car_proper) and the
 #'     multi-block path (a per-group RE, a trend field, or an arm-specific
 #'     field block).
+#'   * `skew_correct` (`FALSE`) -- consume `gamma_3` instead of only grading it
+#'     (gcol33/tulpa#302): report Cornish-Fisher marginal quantiles at each
+#'     coefficient's own `gamma_3` from `summary()` / `confint()`, wherever the
+#'     band says the leading-order expansion is in its regime, and the Gaussian
+#'     quantiles everywhere else. The correction reshapes where the interval
+#'     sits and leaves the centre and the draws untouched, so a fit run with it
+#'     off is bit for bit the fit it was before. `$skew_correction` records the
+#'     per-coefficient `gamma_3`, band and eligibility; the `skew_applied`
+#'     attribute on `summary()` / `confint()` records what was actually used at
+#'     the requested level. Rue, Martino & Chopin (2009) fit a skew normal here
+#'     instead, under a mean constraint from a location term this engine does
+#'     not compute; the series correction is the same-order alternative that
+#'     needs only the cubic term, and unlike a skew normal its skewness does not
+#'     saturate inside the band it is applied on.
 #'   * `auto_recenter` (`TRUE`) -- re-centre a default outer grid axis on its
 #'     posterior mode and refit when the fit rails against a boundary node
 #'     (gcol33/tulpa#289 / #290). `FALSE` integrates over the grid exactly as
@@ -1005,6 +1019,8 @@ tulpa_nested_laplace_joint <- function(responses,
     # build_joint_curvature3_fns), so this is honest, not a gap.
     diagnose_skew              <- isTRUE(control$diagnose_skew %||% TRUE)
     skew_idx                   <- control$skew_idx
+    skew_correct               <- isTRUE(control$skew_correct %||%
+                                          .nl_diag("skew_correct"))
     # Outer-grid node layout for the multi-block path. A CCD
     # places a central-composite design around the joint hyperparameter mode --
     # far fewer inner solves than the full tensor product (1 + 2d + 2^d vs k^d).
@@ -1126,6 +1142,7 @@ tulpa_nested_laplace_joint <- function(responses,
             k_conf_bands = k_conf_bands,
             diagnose_skew = diagnose_skew,
             skew_idx = skew_idx,
+            skew_correct = skew_correct,
             inner_refresh = inner_refresh,
             integration = integration,
             local_ccd = local_ccd,
@@ -1343,6 +1360,8 @@ tulpa_nested_laplace_joint <- function(responses,
                                          k_conf_bands = k_conf_bands)
     res <- .nlj_inner_skew_at_theta(res, kernel_fn, skew_idx,
                                     compute = diagnose_skew)
+    res <- .nl_skew_correction_attach(res, .joint_fixed_layout(responses)$n_fixed,
+                                      skew_correct)
     tm$mark("diagnostics")
     res$timing <- tm$timing()
     res <- .joint_attach_diagnose_cost(res, diagnose_k, diagnose_draws)

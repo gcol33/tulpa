@@ -114,6 +114,20 @@ outer diagnostic scores the hyperparameter-grid integration around a
 FIXED inner Laplace, this scores whether that inner Gaussian
 approximation is itself a good fit to the latent-field conditional
 posterior. See \code{\link[=diagnostics]{diagnostics()}} for the combined whole-fit verdict.
+\item \code{skew_correct} (\code{FALSE}) -- consume \code{gamma_3} instead of only grading it
+(gcol33/tulpa#302): report Cornish-Fisher marginal quantiles at each
+coefficient's own \code{gamma_3} from \code{summary()} / \code{confint()}, wherever the
+band says the leading-order expansion is in its regime, and the Gaussian
+quantiles everywhere else. The correction reshapes where the interval
+sits and leaves the centre and the draws untouched, so a fit run with it
+off is bit for bit the fit it was before. \verb{$skew_correction} records the
+per-coefficient \code{gamma_3}, band and eligibility; the \code{skew_applied}
+attribute on \code{summary()} / \code{confint()} records what was actually used at
+the requested level. Rue, Martino & Chopin (2009) fit a skew normal here
+instead, under a mean constraint from a location term this engine does
+not compute; the series correction is the same-order alternative that
+needs only the cubic term, and unlike a skew normal its skewness does not
+saturate inside the band it is applied on.
 \item \code{auto_recenter} (\code{TRUE}) -- re-centre a default outer grid axis on its
 posterior mode and refit when the fit rails against a boundary node
 (gcol33/tulpa#289 / #290). \code{FALSE} integrates over the grid exactly as

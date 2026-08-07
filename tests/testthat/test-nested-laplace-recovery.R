@@ -69,12 +69,23 @@ beta_post <- function(fit) {
 
 # Fit n_seed data sets for one family; return per-coefficient mean estimate,
 # bias and 95%-CI coverage counts, plus the RE-SD recovery summary.
+#
+# It also records the SAME coverage read off the fit's own reporting path
+# (confint()), twice: once with the inner-Laplace skew correction on and once
+# with it off (gcol33/tulpa#302). Both come from ONE fit per seed -- the
+# correction is post-processing on the reported quantiles and changes nothing
+# the solve produced -- so that comparison is paired and carries no fit-to-fit
+# noise. `beta_post` above is untouched and remains what the coverage gates
+# below judge.
 recov_sweep <- function(family, cfg, n_seed, seed_off) {
   beta <- cfg$beta
   p    <- length(beta)
   sg   <- exp(seq(log(0.2), log(1.5), length.out = 7))
   est  <- matrix(NA_real_, n_seed, p)
   covb <- integer(p)
+  cov_gauss <- integer(p)
+  cov_skew  <- integer(p)
+  gamma3    <- matrix(NA_real_, n_seed, p)
   s_med <- numeric(n_seed)
   s_cov <- 0L
   for (s in seq_len(n_seed)) {
@@ -86,11 +97,23 @@ recov_sweep <- function(family, cfg, n_seed, seed_off) {
       y = d$y, n_trials = rep(cfg$ntr, d$N), X = d$X,
       prior = prior, family = family, phi = cfg$phi,
       control = list(max_iter = 100L, tol = 1e-8, n_threads = 1L,
-                     keep_grid_hessians = TRUE)))
+                     keep_grid_hessians = TRUE, skew_correct = TRUE)))
     bp <- beta_post(f)
     est[s, ] <- bp$mean
     for (j in seq_len(p)) {
       if (beta[j] >= bp$lo[j] && beta[j] <= bp$hi[j]) covb[j] <- covb[j] + 1L
+    }
+    gamma3[s, ] <- f$skew_correction$gamma3
+    ci_skew <- confint(f, level = 0.95)
+    f$skew_correction$enabled <- FALSE
+    ci_gauss <- confint(f, level = 0.95)
+    for (j in seq_len(p)) {
+      if (beta[j] >= ci_gauss[j, 1] && beta[j] <= ci_gauss[j, 2]) {
+        cov_gauss[j] <- cov_gauss[j] + 1L
+      }
+      if (beta[j] >= ci_skew[j, 1] && beta[j] <= ci_skew[j, 2]) {
+        cov_skew[j] <- cov_skew[j] + 1L
+      }
     }
     s_med[s] <- f$theta_median[[1]]
     if (cfg$su >= f$theta_ci_lo[[1]] && cfg$su <= f$theta_ci_hi[[1]]) {
@@ -98,7 +121,9 @@ recov_sweep <- function(family, cfg, n_seed, seed_off) {
     }
   }
   list(mean = colMeans(est), bias = colMeans(est) - beta, cov = covb,
-       sigma_bias = mean(s_med) - cfg$su, sigma_cov = s_cov, n_seed = n_seed)
+       cov_gauss = cov_gauss, cov_skew = cov_skew,
+       gamma3 = colMeans(gamma3), sigma_bias = mean(s_med) - cfg$su,
+       sigma_cov = s_cov, n_seed = n_seed)
 }
 
 # Per-family identified regimes (RE SD recoverable, link well-determined).
@@ -157,4 +182,69 @@ test_that("all built-in families: beta recovery and >= 85% aggregate coverage (s
   expect_lt(bias_max, 0.12)
   # RE standard deviation covers across families.
   expect_gte(mean(s_cov_rate), 0.85)
+})
+
+# --- the inner-Laplace skew correction, judged by coverage (gcol33/tulpa#302) --
+#
+# A small-group Bernoulli random-effect design with rare events: N = 48 over 12
+# groups of 4, intercept -2.5. That is the known-skewed case -- the fitted
+# gamma_3 averages -0.695 on the intercept and +0.306 on the slope over 200
+# seeds, both inside the band the correction is gated to. The six
+# configurations above are not: the second test below measures their gamma_3
+# and holds the correction to leaving their coverage where it was.
+#
+# MEASURED, 200 seeds x 2 coefficients = 400 trials (standard error ~0.011),
+# both intervals read off the same fits:
+#
+#   level 0.95   Gaussian 0.9650   corrected 0.9600   (nominal 0.95)
+#   level 0.80   Gaussian 0.8050   corrected 0.8075   (nominal 0.80)
+#   level 0.50   Gaussian 0.4950   corrected 0.5000   (nominal 0.50)
+#
+# The correction is directionally right and immaterial at this size: every
+# difference is within one standard error. That is the reason
+# `.NL_DIAG$skew_correct` is FALSE by default. Where it IS unambiguous is
+# against the exact posterior quantiles, with the Laplace point bias and the
+# grid-mixture inflation taken out of the comparison --
+# test-inner-skew-correction.R measures a 44% reduction in absolute endpoint
+# error there. Two reasons the coverage gain is smaller than that: gamma_3 is a
+# lower bound on the true skewness, and the correction is skewness-only, so a
+# biased Laplace mode stays biased.
+#
+# The gate below is therefore the acceptance criterion and not more: no worse
+# than the Gaussian intervals, within the sampling error of the seed count run.
+SKEW_CFG <- list(nr = 12L, spr = 4L, ntr = 1L, beta = c(-2.5, 0.8),
+                 su = 0.7, phi = 1.0)
+
+test_that("skew-corrected intervals cover no worse than Gaussian ones on a skewed fixture", {
+  skip_if_not_slow()
+  n_seed <- 60L
+  R <- recov_sweep("binomial", SKEW_CFG, n_seed = n_seed, seed_off = 7000L)
+
+  # The fixture is genuinely skewed and inside the band, so the correction has
+  # something to do here rather than being trivially inert.
+  expect_gt(max(abs(R$gamma3)), 0.25)
+  expect_lt(max(abs(R$gamma3)), .nl_diag("gamma3_unreliable"))
+
+  n_trial <- n_seed * length(SKEW_CFG$beta)
+  cov_g <- sum(R$cov_gauss) / n_trial
+  cov_c <- sum(R$cov_skew)  / n_trial
+  se <- sqrt(0.95 * 0.05 / n_trial)
+  expect_lte(abs(cov_c - 0.95), abs(cov_g - 0.95) + 3 * se)
+})
+
+test_that("the correction leaves a near-symmetric family's coverage where it was", {
+  skip_if_not_slow()
+  # The six-family gate above sits far inside the `good` band, so turning the
+  # correction on there may not move coverage. A gaussian response is the
+  # sharpest case: its log-likelihood is exactly quadratic in eta, gamma_3 is
+  # identically 0, and the two intervals must be the same interval.
+  Rg <- recov_sweep("gaussian", CFG[["gaussian"]], n_seed = 12L, seed_off = 2000L)
+  expect_identical(max(abs(Rg$gamma3)), 0)
+  expect_identical(Rg$cov_skew, Rg$cov_gauss)
+
+  # A poisson response is barely skewed at these counts; the shift is a small
+  # fraction of a standard error, so coverage moves by at most one seed.
+  Rp <- recov_sweep("poisson", CFG[["poisson"]], n_seed = 12L, seed_off = 2000L)
+  expect_lt(max(abs(Rp$gamma3)), 0.1)
+  expect_lte(max(abs(Rp$cov_skew - Rp$cov_gauss)), 1L)
 })

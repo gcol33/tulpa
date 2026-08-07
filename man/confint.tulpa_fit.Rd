@@ -16,7 +16,10 @@
 \item{...}{Ignored.}
 }
 \value{
-Matrix with lower and upper columns.
+Matrix with lower and upper columns, carrying a \code{skew_applied}
+attribute on a nested-Laplace fit: one logical per reported coefficient
+saying whether its bounds are the inner-Laplace skew-corrected quantiles
+or the Gaussian ones (see \code{\link[=summary.tulpa_fit]{summary.tulpa_fit()}}).
 }
 \description{
 Credible intervals for the fixed effects

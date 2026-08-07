@@ -363,12 +363,32 @@
 # banded only on probed indices whose realized IS efficiency `is_ess / n_draws`
 # falls BELOW this floor, i.e. where correcting the proposal costs at least half
 # a percent of the sample; the raw shape is reported either way.
+#
+# `skew_correct` decides whether the inner-Laplace marginal quantiles are
+# skew-corrected (gcol33/tulpa#302) rather than only graded: a Cornish-Fisher
+# correction at each coordinate's own gamma_3, gated to the `good` / `ok` bands
+# by `gamma3_unreliable` above. FALSE, on the measurement rather than on
+# caution. Against exact quadrature quantiles of rare-event binomial-logit
+# posteriors the correction cuts total absolute endpoint error from 2.4931 to
+# 1.3837 (44.5%), improving both endpoints in every case
+# (test-inner-skew-correction.R). But on CI coverage over the small-group
+# Bernoulli random-effect fixture -- 200 seeds x 2 coefficients, both intervals
+# read off the same fits -- it is directionally right and immaterial: nominal
+# 0.95 gives Gaussian 0.9650 against corrected 0.9600, nominal 0.80 gives 0.8050
+# against 0.8075, nominal 0.50 gives 0.4950 against 0.5000, every difference
+# inside one standard error (test-nested-laplace-recovery.R). Two reasons the
+# coverage gain is smaller than the marginal gain: gamma_3 is a LOWER bound on
+# the true skewness (0.875 to 0.943 of it on the cases above), and the
+# correction is skewness-only, so a biased Laplace mode stays biased -- that is
+# Rue, Martino & Chopin's gamma^(1) term, which this engine does not compute.
+# `control$skew_correct = TRUE` turns it on per fit.
 .NL_DIAG <- list(
     k_usable             = 0.7,
     k_samples            = 200L,
     gamma3_ok            = 0.5,
     gamma3_unreliable    = 1.0,
-    inner_k_material_ess = 0.995
+    inner_k_material_ess = 0.995,
+    skew_correct         = FALSE
 )
 
 .nl_diag <- function(par) {

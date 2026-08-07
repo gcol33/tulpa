@@ -195,12 +195,21 @@
     if (!is.null(mom)) {
       est <- mom$mean[idx]
       se  <- sqrt(pmax(diag(mom$cov)[idx], 0))
-      z   <- stats::qnorm(1 - a)
-      return(data.frame(
+      # Skew-corrected bounds where the inner-Laplace cubic term says the
+      # Gaussian marginal is misshapen and its band says the expansion is in
+      # its regime (gcol33/tulpa#302); Gaussian bounds everywhere else, which
+      # is every coordinate when `control$skew_correct` is off. `applied`
+      # travels with the table so the reporting methods can say which is which.
+      sc <- .nl_skew_correction(object, p)
+      mg <- .nl_skew_marginal(est, se, sc$gamma3[idx], c(a, 1 - a),
+                              enabled = isTRUE(sc$enabled))
+      tab <- data.frame(
         term = nm, estimate = est, std.error = se,
-        conf.low = est - z * se, conf.high = est + z * se,
+        conf.low = mg$q[, 1L], conf.high = mg$q[, 2L],
         row.names = NULL, stringsAsFactors = FALSE
-      ))
+      )
+      attr(tab, "skew_applied") <- stats::setNames(mg$applied, nm)
+      return(tab)
     }
     w   <- object$weights / sum(object$weights)
     est <- as.numeric(crossprod(w, object$modes[, idx, drop = FALSE]))
@@ -335,7 +344,11 @@ print.tulpa_fit <- function(x, ...) {
 #' @param ... Ignored.
 #' @return Data frame: estimate, std.error, and lower/upper credible bounds, one
 #'   row per fixed effect. Sampler tiers report empirical quantiles; the Laplace
-#'   tier reports the Gaussian approximation.
+#'   tier reports the Gaussian approximation. On a nested-Laplace fit run with
+#'   `control$skew_correct = TRUE` the bounds are Cornish-Fisher quantiles at
+#'   each coefficient's inner-Laplace `gamma_3` wherever that term is in the
+#'   band it is valid on, and Gaussian elsewhere; a `skew_applied` attribute
+#'   names which coefficients took the correction.
 #' @export
 summary.tulpa_fit <- function(object, level = 0.95, ...) {
   tab <- .fit_fixed_table(object, level = level)
@@ -348,6 +361,7 @@ summary.tulpa_fit <- function(object, level = 0.95, ...) {
     row.names = tab$term, check.names = FALSE
   )
   names(out)[3:4] <- sprintf("%.1f%%", 100 * c(a, 1 - a))
+  attr(out, "skew_applied") <- attr(tab, "skew_applied")
   out
 }
 
@@ -357,7 +371,10 @@ summary.tulpa_fit <- function(object, level = 0.95, ...) {
 #' @param parm Parameter names or indices (default: all fixed effects).
 #' @param level Interval level (default 0.95).
 #' @param ... Ignored.
-#' @return Matrix with lower and upper columns.
+#' @return Matrix with lower and upper columns, carrying a `skew_applied`
+#'   attribute on a nested-Laplace fit: one logical per reported coefficient
+#'   saying whether its bounds are the inner-Laplace skew-corrected quantiles
+#'   or the Gaussian ones (see [summary.tulpa_fit()]).
 #' @export
 confint.tulpa_fit <- function(object, parm = NULL, level = 0.95, ...) {
   tab <- .fit_fixed_table(object, level = level)
@@ -365,7 +382,12 @@ confint.tulpa_fit <- function(object, parm = NULL, level = 0.95, ...) {
   ci <- as.matrix(tab[, c("conf.low", "conf.high")])
   rownames(ci) <- tab$term
   colnames(ci) <- sprintf("%.1f%%", 100 * c(a, 1 - a))
-  if (!is.null(parm)) ci <- ci[parm, , drop = FALSE]
+  sa <- attr(tab, "skew_applied")
+  if (!is.null(parm)) {
+    ci <- ci[parm, , drop = FALSE]
+    if (!is.null(sa)) sa <- sa[parm]
+  }
+  attr(ci, "skew_applied") <- sa
   ci
 }
 

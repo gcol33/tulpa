@@ -955,6 +955,7 @@
                                   k_conf_bands = NULL,
                                   diagnose_skew = TRUE,
                                   skew_idx = NULL,
+                                  skew_correct = FALSE,
                                   inner_refresh = 1L,
                                   integration = "auto",
                                   local_ccd = NULL,
@@ -1429,6 +1430,8 @@
                                         k_conf_bands = k_conf_bands)
     res <- .nlj_multi_inner_skew_at_theta(res, call_kernel, arm_names,
                                           skew_idx, compute = diagnose_skew)
+    res <- .nl_skew_correction_attach(res, .joint_fixed_layout(responses)$n_fixed,
+                                      skew_correct)
     tm$mark("diagnostics")
     res$timing <- tm$timing()
     res <- .joint_attach_diagnose_cost(res, diagnose_k, diagnose_draws)

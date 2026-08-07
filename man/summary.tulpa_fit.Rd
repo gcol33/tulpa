@@ -16,7 +16,11 @@
 \value{
 Data frame: estimate, std.error, and lower/upper credible bounds, one
 row per fixed effect. Sampler tiers report empirical quantiles; the Laplace
-tier reports the Gaussian approximation.
+tier reports the Gaussian approximation. On a nested-Laplace fit run with
+\code{control$skew_correct = TRUE} the bounds are Cornish-Fisher quantiles at
+each coefficient's inner-Laplace \code{gamma_3} wherever that term is in the
+band it is valid on, and Gaussian elsewhere; a \code{skew_applied} attribute
+names which coefficients took the correction.
 }
 \description{
 Posterior summary of the fixed effects

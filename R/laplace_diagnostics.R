@@ -597,6 +597,129 @@
   .inner_skew_attach(res, out)
 }
 
+# =============================================================================
+# Inner-Laplace skew CORRECTION (gcol33/tulpa#302) -- the consumer of gamma_3.
+#
+# Everything above SCORES the inner Gaussian. Rue, Martino & Chopin (2009)
+# Sec 3.2.3 compute the same cubic term in order to correct the marginal, and
+# without a consumer the inner layer is nested approximation with no debias.
+# `.nl_skew_marginal()` is that consumer: given each coordinate's Gaussian
+# marginal (mu_i, sigma_i) and its gamma_3, it reports Cornish-Fisher quantiles
+# instead of Gaussian ones wherever the band says the expansion is in its
+# regime, and Gaussian ones everywhere else.
+#
+# WHICH CORRECTION, AND WHY NOT THE PAPER'S. RMC fit a skew normal to their
+# eq. (22) under three constraints: mean gamma^(1), variance 1, and third
+# log-density derivative at the mode gamma^(3). This engine computes gamma_3
+# and not gamma^(1) -- the location term comes from their denominator expansion
+# (eq. 20), which is diagonal only in their augmented x_j == eta_j
+# representation, and src/inner_laplace_skew.h documents why it is not derived
+# here. A skew normal fitted on the cubic term alone is therefore a DIFFERENT
+# construction from theirs and could not be reported as theirs; it also
+# saturates (attainable |skewness| < ~0.995, shape parameter diverging as that
+# bound is approached) inside the very band this correction is gated to.
+# Cornish-Fisher is the quantile-side inverse of the same Edgeworth series
+# gamma_3 is the leading term of, is linear in gamma_3 so it does not saturate,
+# and returns quantiles directly, which is what the summaries need. The
+# derivation and the monotonicity condition are in src/cornish_fisher.h.
+#
+# WHAT IS NOT CORRECTED. The centre. With the location term absent the
+# correction reshapes the interval around the Laplace centre and leaves it
+# where it was, which is RMC's own parameterization read at gamma^(1) = 0.
+#
+# gamma_3 is also a LOWER BOUND on the true skewness, not a two-sided estimate.
+# test-inner-skew.R pins the ratio against exact quadrature: 0.4 to 0.7 on the
+# coupled fixture's occupancy coordinate, above 0.8 on its detection coordinate
+# and on the separable rare-event binomials. A marginal corrected from it
+# therefore moves PART of the way, and an index banded `good` may truly be `ok`.
+# Both are properties of the input, and both show up in the measured numbers in
+# test-inner-skew-correction.R rather than being argued away.
+# =============================================================================
+
+# Skew-corrected marginal quantiles for a block of coordinates.
+#
+# `mu` / `sigma` are the Gaussian marginal centre and scale, `gamma3` the
+# per-coordinate cubic term (NaN where not computable), `probs` the requested
+# probabilities. Returns the [length(mu) x length(probs)] quantile matrix and a
+# per-coordinate logical saying whether the row is the corrected or the Gaussian
+# quantile -- a declined coordinate is still reported, from the Gaussian, so the
+# table is always complete and always says how each row was produced.
+#
+# `enabled = FALSE` short-circuits to the Gaussian quantiles with every flag
+# FALSE, so a caller that leaves the correction off gets bit-for-bit the numbers
+# it got before this existed.
+.nl_skew_marginal <- function(mu, sigma, gamma3, probs, enabled = TRUE,
+                              max_abs_gamma3 = .nl_diag("gamma3_unreliable")) {
+  mu    <- as.numeric(mu)
+  sigma <- as.numeric(sigma)
+  n     <- length(mu)
+  z     <- stats::qnorm(as.numeric(probs))
+  # A short or absent gamma_3 leaves the tail of the block unscored, which is
+  # NA ("not computable") and never 0 ("no skew").
+  g <- rep(NA_real_, n)
+  if (isTRUE(enabled) && length(gamma3)) {
+    m <- min(n, length(gamma3))
+    g[seq_len(m)] <- as.numeric(gamma3)[seq_len(m)]
+  }
+  out <- cpp_cornish_fisher_quantile(mu, sigma, g, z,
+                                     as.numeric(max_abs_gamma3))
+  list(q = out$q, applied = as.logical(out$applied))
+}
+
+# gamma_3 per FIXED EFFECT, from the per-probed-index vector the kernel
+# attached. The probe defaults to the p fixed-effects latent indices, so the
+# default fit gives gamma3[j] for coefficient j; a fit whose `control$skew_idx`
+# probed something else is read through `inner_skew_idx` and leaves any
+# unprobed coefficient NA (never 0).
+.nl_skew_by_fixed <- function(fit, p) {
+  g <- fit[["inner_skew"]]
+  if (is.null(g) || !length(g) || p <= 0L) return(rep(NA_real_, max(p, 0L)))
+  idx <- fit[["inner_skew_idx"]]
+  out <- rep(NA_real_, p)
+  if (is.null(idx) || length(idx) != length(g)) {
+    m <- min(p, length(g))
+    out[seq_len(m)] <- as.numeric(g)[seq_len(m)]
+    return(out)
+  }
+  idx <- as.integer(idx)
+  keep <- which(idx >= 1L & idx <= p)
+  out[idx[keep]] <- as.numeric(g)[keep]
+  out
+}
+
+# Record the skew correction's inputs and its per-coefficient eligibility on the
+# fit, so `summary()` / `confint()` are readers rather than deciders and a
+# stored fit says which coefficients its intervals were corrected on. One attach
+# point for every nested driver, called right after the gamma_3 attach.
+#
+# `enabled` is the `control$skew_correct` knob. Eligibility is the band gate
+# only; the monotonicity condition also depends on the requested interval level,
+# so the final per-level decision is `.nl_skew_marginal()`'s and is reported as
+# an attribute on the summary it produced.
+.nl_skew_correction_attach <- function(res, p_fixed, enabled) {
+  p <- max(as.integer(p_fixed %||% 0L), 0L)
+  g <- .nl_skew_by_fixed(res, p)
+  band <- vapply(g, .tulpa_gamma3_band, character(1))
+  res$skew_correction <- list(
+    enabled  = isTRUE(enabled),
+    gamma3   = g,
+    band     = band,
+    eligible = isTRUE(enabled) & !is.na(band) & band != "unreliable"
+  )
+  res
+}
+
+# The correction's state on a fit, defaulted for a fit that predates it or a
+# backend that does not attach one.
+.nl_skew_correction <- function(object, p) {
+  sc <- object[["skew_correction"]]
+  if (is.null(sc)) {
+    return(list(enabled = FALSE, gamma3 = rep(NA_real_, p),
+                band = rep(NA_character_, p), eligible = rep(FALSE, p)))
+  }
+  sc
+}
+
 # Outer-grid (hyperparameter) quadrature reliability of a nested-Laplace fit:
 # the normalized integration weights `w_k` summarise how the marginal
 # hyperparameter posterior is spread over the grid. A grid that collapses onto a
