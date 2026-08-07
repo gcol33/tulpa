@@ -415,9 +415,19 @@ tulpa_psis <- function(log_ratios, tail_points = NULL) {
 # diagnostic always matches whatever target the integrator actually weights).
 # The proposal's normalizing constant is common to all draws and drops under
 # PSIS, leaving the quadratic 0.5||z||^2.
+# `Z` is the whitened draw matrix. NULL (the default) draws it here from R's
+# stream, which is what every outer-k caller wants. A caller that already HOLDS
+# the whitened draws its target was evaluated at passes them instead -- the
+# inner k-hat does, because its target evaluations happen inside the C++ Newton
+# loop against an engine-owned deterministic sample (see src/inner_laplace_is.h),
+# so the sampling and the evaluation cannot be split across the boundary. The
+# rest of the core -- the GPD-fit floor, the decline vocabulary, the radius
+# envelope, the capture aperture, the PSIS call -- is identical either way, so
+# there is one importance-sampling k-hat in the engine rather than two.
 .nested_is_pareto_k <- function(theta_hat, L_scale, log_target_batched,
                                 n_samples = 200L, radius_cap = Inf,
-                                return_draws = FALSE, tail_points = NULL) {
+                                return_draws = FALSE, tail_points = NULL,
+                                Z = NULL) {
   d <- length(theta_hat)
   n_samples <- as.integer(n_samples)
   na_out <- function(reason, n_eval = 0L) {
@@ -427,7 +437,12 @@ tulpa_psis <- function(log_ratios, tail_points = NULL) {
   if (n_samples < .PSIS_MIN_EVAL) {                          # cannot reach the floor
     return(na_out("draws_too_few"))
   }
-  Z <- matrix(stats::rnorm(n_samples * d), n_samples, d)
+  if (is.null(Z)) {
+    Z <- matrix(stats::rnorm(n_samples * d), n_samples, d)
+  } else {
+    Z <- matrix(as.numeric(Z), ncol = d)
+    if (nrow(Z) != n_samples) return(na_out("internal_inconsistency"))
+  }
   U <- sweep(Z %*% t(L_scale), 2L, theta_hat, `+`)           # S x d ~ N(theta_hat, .)
   z2 <- rowSums(Z^2)                                         # squared whitened radius
 

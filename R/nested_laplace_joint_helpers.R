@@ -619,7 +619,11 @@
              inner_skew_idx = res_x$inner_skew_idx,
              inner_skew_dropped = res_x$inner_skew_dropped,
              inner_skew_declined = res_x$inner_skew_declined,
-             inner_skew_arms_declined = res_x$inner_skew_arms_declined)
+             inner_skew_arms_declined = res_x$inner_skew_arms_declined,
+             inner_is_z = res_x$inner_is_z,
+             inner_is_sigma = res_x$inner_is_sigma,
+             inner_is_log_joint = res_x$inner_is_log_joint,
+             inner_is_declined = res_x$inner_is_declined)
     }
 }
 

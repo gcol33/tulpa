@@ -1134,6 +1134,32 @@ diagnostic_summary <- function(fit, quiet = FALSE) {
       }
     }
 
+    # The second score on the same inner layer (gcol33/tulpa#303): the
+    # importance k-hat, which needs no likelihood derivative and so answers
+    # where gamma_3 declines.
+    ikk <- .tulpa_inner_k_reliability(fit)
+    if (!is.null(ikk)) {
+      if (is.finite(ikk$max_pareto_k)) {
+        result$inner_pareto_k <- ikk$max_pareto_k
+        result$inner_pareto_k_rel_ess <- ikk$min_rel_ess
+        if (identical(ikk$band, "unreliable")) status <- "WARN"
+        recommendations <- c(recommendations, if (isTRUE(ikk$weights_uniform)) sprintf(
+          paste("Inner-Laplace importance weights are uniform on all %d probed",
+                "latents (min IS efficiency %.4f): the inner Gaussian needs no",
+                "correction over the sampled region."),
+          ikk$n_scored, ikk$min_rel_ess) else sprintf(
+          paste("Inner-Laplace importance pareto_k = %.2f (%s) over %d scored",
+                "latents, min IS efficiency %.3f."),
+          ikk$max_pareto_k, ikk$band, ikk$n_scored, ikk$min_rel_ess))
+      }
+      knote2 <- .inner_k_decline_note(ikk$declined)
+      if (!is.null(knote2)) {
+        result$inner_pareto_k_declined <- ikk$declined
+        recommendations <- c(recommendations,
+          sprintf("Inner-Laplace importance k-hat not reported: %s.", knote2))
+      }
+    }
+
     converged <- fit$laplace_result$converged %||% fit$.internal$converged
     if (!is.null(converged) && !converged) {
       status <- "WARN"

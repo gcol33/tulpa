@@ -9,6 +9,7 @@
 #include "laplace_family_curvature.h"   // curvature3_obs_for_family
 #include "laplace_family_link.h"
 #include "laplace_newton_loop.h"        // eval_*, line_search_backtrack, finalize_log_marginal
+#include "inner_laplace_is.h"           // compute_inner_is_curve
 #include "inner_laplace_skew.h"         // compute_inner_skew_gamma3
 #include "sparse_cholesky.h"
 #include <Rcpp.h>
@@ -281,6 +282,20 @@ LaplaceResult laplace_newton_solve_ll(
             curvature3_declined && *curvature3_declined) {
             result.inner_skew_declined = curvature3_declined;
         }
+
+        // The likelihood-agnostic inner k-hat over the same probed subspace,
+        // along the same conditional-mean curve the cubic term just walked. It
+        // reads the joint density through the loop's own penalized objective,
+        // so it does not depend on the third-derivative oracle and stands where
+        // gamma_3 declines (gcol33/tulpa#303).
+        InnerISOutcome is_out = compute_inner_is_curve(
+            n_x, result.mode, scratch.chol, sparse_solver, used_sparse_factor,
+            eval_objective, x, *probe
+        );
+        result.inner_is_z          = std::move(is_out.z);
+        result.inner_is_log_joint  = std::move(is_out.log_joint);
+        result.inner_is_sigma      = std::move(is_out.sigma);
+        result.inner_is_declined   = is_out.declined;
     }
 
     return result;

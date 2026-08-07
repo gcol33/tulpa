@@ -1,5 +1,70 @@
 # tulpa NEWS
 
+## 0.0.138
+
+* **The inner Laplace layer now has a likelihood-agnostic reliability number**
+  (gcol33/tulpa#303). `gamma_3` scores the inner Gaussian by expanding the joint
+  log density along the Gaussian conditional-mean curve at a probed latent
+  index, which needs a per-observation third derivative -- so a coupled
+  multi-process likelihood (a ZI mixture, tulpaObs's `occu_cover`) declines
+  permanently and the fit has only the outer k-hat, which scores a different
+  layer. `inner_pareto_k` walks the SAME curve and simply evaluates the joint
+  density along it: the inner Gaussian is an importance proposal for the exact
+  conditional posterior, and the Pareto-smoothed shape of that ratio scores the
+  approximation directly. No likelihood derivative anywhere, so it answers
+  wherever a mode was found.
+
+  It runs on the probed subspace, not the field. Importance sampling degrades
+  with dimension on its own, so a k-hat over all `n_x` coordinates would report
+  `n_x` rather than the approximation; one dimension per probed index keeps
+  every sampling problem 1-D and makes the number directly comparable to the
+  `gamma_3` for the same index. The engine returns the draws and the joint log
+  density at them (`src/inner_laplace_is.h`); the Pareto fit is the existing
+  shared `.nested_is_pareto_k()` core, which now accepts an injected draw
+  matrix, so there is one importance-sampling k-hat in the package rather than
+  two. The conditional-curve solve `v_i = Sigma e_i` is extracted to
+  `src/inner_laplace_probe.h` and shared with the cubic term; neither
+  refactorizes.
+
+  A Pareto shape index is scale-free -- it describes the SHAPE of the
+  importance-weight tail and says nothing about its size. Measured on the
+  engine's own fixtures at 256 draws: a gaussian-family coefficient, where the
+  inner Laplace is EXACT and `gamma_3` is exactly 0, reads k-hat 0.19 / 0.26 at
+  importance efficiency 1.000, and a balanced binomial intercept (N = 500,
+  S = 230, `gamma_3` = -0.007) reads 0.640 at efficiency 0.99998. Both are noise
+  on a proposal that needs no correction. The k-hat is therefore banded only on
+  probed indices whose realized efficiency falls below
+  `.NL_DIAG$inner_k_material_ess` (0.995); the raw shape is reported either way,
+  and `inner_pareto_k_uniform` records that no index carried a correction worth
+  describing.
+
+  The two inner scores agree where both compute. Across a binomial-intercept
+  skewness ladder ((N, S) = (500, 230), (500, 60), (100, 3), (20, 2), (15, 1)),
+  `|gamma_3|` runs 0.007 to 0.897 and the importance efficiency falls
+  monotonically with it (0.99998, 0.9962, 0.850, 0.807, 0.634 -- Spearman 1.00);
+  the tail shape follows at Spearman 0.90, and the band verdicts agree rung by
+  rung. On the coupled fixture, where `gamma_3` is NaN for every index, the arm
+  with the larger exact posterior skewness (0.53 vs 0.13 by direct quadrature)
+  is the arm with the lower efficiency (0.983 vs 0.997).
+
+  `.tulpa_combined_reliability()` folds the inner layer's two scores into one
+  band -- the worse of them where both computed, the one that did where only one
+  did -- so a fully coupled fit reads "reliable (both layers good)" instead of
+  "inner Laplace not assessed". Reported through `diagnostics()`,
+  `print.laplace_diagnostics()` and `diagnostic_summary()`; declines carry a
+  reason from the same closed vocabulary the outer k-hat uses.
+
+  The draws are engine-owned and deterministic rather than taken from R's
+  stream, so requesting the diagnostic leaves a fit bit-for-bit unchanged and
+  the reported k-hat does not flap with the seed. Cost is one joint-density
+  evaluation per draw per probed index -- no factorization -- which is why the
+  budget is a fixed engine constant rather than the outer diagnostic's
+  `k_samples`, whose draws each cost a full inner Laplace solve.
+
+* Fixed: `.tulpa_inner_k_reliability()` reads its fields with `[[`. On a
+  declined fit the only field carrying the `inner_pareto_k` prefix is the reason
+  string, which `$` would partial-match into the k-hat.
+
 ## 0.0.137
 
 * **The engine can now test its own coupled likelihood paths** (gcol33/tulpa#300).

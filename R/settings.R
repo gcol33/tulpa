@@ -347,11 +347,28 @@
 # `gamma3_ok` / `gamma3_unreliable` band the inner-Laplace skewness on the
 # usual skewness-magnitude convention (Bulmer 1979) -- a general reading of
 # "moderate" / "substantial" skew, NOT a Rue-Martino-Chopin cutoff.
+#
+# `inner_k_material_ess` is the materiality floor for the INNER Pareto-k
+# (gcol33/tulpa#303). A Pareto shape index is scale-free: it describes the SHAPE
+# of the importance-weight tail and says nothing about its size, so where the
+# inner Gaussian already reproduces the conditional posterior over the sampled
+# region the weights are uniform, there is no tail for the generalized Pareto to
+# describe, and the shape returned is fitted to the residual wiggle. Measured on
+# the engine's own fixtures at 256 draws: a gaussian-family coefficient, where
+# the inner Laplace is EXACT and gamma_3 is exactly 0, reads k-hat 0.19 / 0.26
+# with realized IS efficiency 1.000; a balanced binomial intercept (N = 500,
+# S = 230, gamma_3 = -0.007) reads 0.640 at efficiency 0.99998. Both are noise
+# on a proposal that needs no correction, and banding them would flag healthy
+# fits -- the failure gcol33/tulpa#272 exists to stop. The k-hat is therefore
+# banded only on probed indices whose realized IS efficiency `is_ess / n_draws`
+# falls BELOW this floor, i.e. where correcting the proposal costs at least half
+# a percent of the sample; the raw shape is reported either way.
 .NL_DIAG <- list(
-    k_usable          = 0.7,
-    k_samples         = 200L,
-    gamma3_ok         = 0.5,
-    gamma3_unreliable = 1.0
+    k_usable             = 0.7,
+    k_samples            = 200L,
+    gamma3_ok            = 0.5,
+    gamma3_unreliable    = 1.0,
+    inner_k_material_ess = 0.995
 )
 
 .nl_diag <- function(par) {

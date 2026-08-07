@@ -58,9 +58,25 @@ available, permanently), \code{"curvature3_unavailable"},
 \code{"backend_unsupported"}, or \code{"solve_failed"}; the arms (1-based) a
 joint fit had no oracle for, which is also set on a PARTIALLY scored
 fit; and a one-line reading.}
+\item{\code{inner_pareto_k}, \code{inner_pareto_k_band}}{the inner-Laplace
+importance k-hat over the probed subspace, and its band on the same
+convention as the outer k-hat. Available wherever a mode was found,
+including a coupled likelihood \code{gamma_3} cannot score.}
+\item{\code{inner_pareto_k_rel_ess}, \code{inner_pareto_k_is_ess}}{the smallest
+realized importance efficiency and effective sample size across the
+probed indices -- how much correcting the inner Gaussian actually
+needs, which is what makes the scale-free shape above readable.}
+\item{\code{inner_pareto_k_uniform}}{\code{TRUE} when no probed index carried a
+material correction, i.e. the inner Gaussian reproduces the conditional
+posterior over the sampled region.}
+\item{\code{inner_pareto_k_scored}, \code{inner_pareto_k_probed}}{how many probed
+indices returned a finite k-hat vs how many were probed.}
+\item{\code{inner_pareto_k_declined}, \code{inner_pareto_k_declined_note}}{when it
+is \code{NA}, WHY, from the same closed vocabulary the outer k-hat uses.}
 \item{\code{reliability}}{the combined whole-fit verdict: \code{"reliable"} only
 when both layers are good; otherwise names which layer is scoped or
-flags both as unreliable.}
+flags both as unreliable. The inner layer enters through the worse of
+its two scores, so a fit whose cubic term declined is still assessed.}
 }
 and a trailing \code{summary} attribute (a one-row data frame of the headline
 numbers) for printing.
@@ -151,6 +167,19 @@ joint posterior \code{pi(x)} is not computed: the latent prior marginal
 the marginalized-occupancy / cover-hurdle likelihoods the exact joint density
 is evaluable only inside the C++ kernel, so a stored fit cannot reconstruct
 it. The grid quadrature reliability is the complementary stored-fit number.
+
+The inner layer carries a SECOND score, \code{inner_pareto_k}, which needs no
+likelihood derivative at all and therefore answers where \code{inner_skew}
+declines. The inner Gaussian at the fitted hyperparameter is an importance
+proposal for the exact conditional posterior, and the joint density is the
+target, so PSIS on that ratio scores the inner approximation directly. It is
+computed on the same probed indices along the same conditional-mean curve,
+one dimension per index, since importance sampling degrades with dimension
+and a k-hat over the whole latent field would report \code{n_x} rather than the
+approximation. A Pareto shape index is scale-free, so it is banded only on
+indices whose realized importance efficiency shows a correction worth
+describing; \code{inner_pareto_k_uniform} records that none did, which is what a
+well-approximated inner layer looks like.
 
 \code{inner_skew} diagnoses the INNER (latent-field) Laplace: whether the
 Gaussian approximation to \code{pi(x_i | theta, y)} is itself a good fit, at

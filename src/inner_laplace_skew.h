@@ -73,6 +73,7 @@
 #ifndef TULPA_INNER_LAPLACE_SKEW_H
 #define TULPA_INNER_LAPLACE_SKEW_H
 
+#include "inner_laplace_probe.h"
 #include "laplace_cholesky.h"
 #include "sparse_cholesky.h"
 #include <Rcpp.h>
@@ -167,21 +168,12 @@ inline InnerSkewOutcome compute_inner_skew_gamma3(
     int i = probe_idx[idx];
     if (i < 0 || i >= n_x) continue;
 
-    std::fill(rhs.begin(), rhs.end(), 0.0);
-    rhs[i] = 1.0;
-    bool solved;
-    if (use_sparse) {
-      sparse_solver.solve(rhs.data(), v.data(), n_x);
-      solved = true;
-      for (int k = 0; k < n_x; k++) if (!std::isfinite(v[k])) { solved = false; break; }
-    } else {
-      solved = chol_substitute_raw(chol.L.data(), n_x, rhs.data(), v.data(), z_work.data());
+    double sigma_i = 0.0;
+    if (!inner_probe_column(n_x, i, chol, sparse_solver, use_sparse,
+                            rhs, v, z_work, sigma_i)) {
+      continue;
     }
-    if (!solved) continue;
-
-    double sigma2_i = v[i];
-    if (!(sigma2_i > 0.0) || !std::isfinite(sigma2_i)) continue;  // unidentified / degenerate
-    double sigma_i = std::sqrt(sigma2_i);
+    const double sigma2_i = v[i];
 
     for (int k = 0; k < n_x; k++) x_buf[k] = mode[k] + v[k];
     compute_eta_fn(x_buf, eta_buf1);
@@ -276,21 +268,12 @@ inline InnerSkewOutcome compute_inner_skew_gamma3_joint(
     int i = probe_idx[idx];
     if (i < 0 || i >= n_x) continue;
 
-    std::fill(rhs.begin(), rhs.end(), 0.0);
-    rhs[i] = 1.0;
-    bool solved;
-    if (use_sparse) {
-      sparse_solver.solve(rhs.data(), v.data(), n_x);
-      solved = true;
-      for (int k = 0; k < n_x; k++) if (!std::isfinite(v[k])) { solved = false; break; }
-    } else {
-      solved = chol_substitute_raw(chol.L.data(), n_x, rhs.data(), v.data(), z_work.data());
+    double sigma_i = 0.0;
+    if (!inner_probe_column(n_x, i, chol, sparse_solver, use_sparse,
+                            rhs, v, z_work, sigma_i)) {
+      continue;
     }
-    if (!solved) continue;
-
-    double sigma2_i = v[i];
-    if (!(sigma2_i > 0.0) || !std::isfinite(sigma2_i)) continue;  // unidentified / degenerate
-    double sigma_i = std::sqrt(sigma2_i);
+    const double sigma2_i = v[i];
 
     for (int k = 0; k < n_x; k++) x_buf[k] = mode[k] + v[k];
     compute_eta_joint_fn(x_buf, eta_buf1);

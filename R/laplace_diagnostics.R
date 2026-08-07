@@ -98,15 +98,161 @@
 # models the outer k-hat is the only reliability number available, permanently.
 .INNER_SKEW_STRUCTURAL <- c("coupled_likelihood", "coupled_arm")
 
+# =============================================================================
+# Inner-Laplace importance k-hat (gcol33/tulpa#303) -- the second score on the
+# SAME inner layer, and the one that survives where the cubic term declines.
+#
+# `gamma_3` above expands the joint log density along the Gaussian
+# conditional-mean curve at a probed index and reads its cubic coefficient, so
+# it needs a per-observation third derivative and has none for a coupled
+# multi-process likelihood. The inner k-hat walks the same curve and simply
+# EVALUATES the joint density along it (src/inner_laplace_is.h), treating the
+# inner Gaussian as an importance proposal for the exact conditional posterior:
+# no likelihood derivative anywhere, so a fully coupled fit still gets an
+# inner-layer number.
+#
+# The engine returns the raw material -- the standardized proposal draws and the
+# joint log density at them, per probed index -- and the Pareto fit is the
+# shared `.nested_is_pareto_k()` core, one dimension at a time. Reported on the
+# same band convention as the outer k-hat (`.tulpa_khat_band`), and declined
+# with a reason from the same closed vocabulary (`.K_DECLINE_REASONS`).
+# =============================================================================
+
+# Reset the inner-k fields and record why nothing was computed, from the shared
+# outer-k decline vocabulary.
+.inner_k_decline <- function(res, reason, detail = NULL) {
+    res$inner_pareto_k          <- NULL
+    res$inner_pareto_k_is_ess   <- NULL
+    res$inner_pareto_k_rel_ess  <- NULL
+    res$inner_pareto_k_declined <- .k_decline_label(.k_decline(reason, detail))
+    res
+}
+
+# A skew decline that also settles the inner k-hat: the two diagnostics share a
+# probe dispatch, so whatever stopped one before it ran stopped both. Mapped
+# onto the k vocabulary rather than carried across verbatim, so a reader never
+# meets a skew-specific reason on a k-hat field.
+.INNER_SKEW_TO_K_DECLINE <- list(
+    not_requested       = list("not_requested", NULL),
+    no_probe_indices    = list("not_applicable", "no probed latent index"),
+    backend_unsupported = list("not_applicable",
+                               "this backend does not compute the inner importance curve"),
+    solve_failed        = list("degenerate_proposal", "the probe re-solve failed")
+)
+
+.inner_k_decline_from_skew <- function(res, reason) {
+    map <- .INNER_SKEW_TO_K_DECLINE[[reason]]
+    if (is.null(map)) map <- list("not_applicable", reason)
+    .inner_k_decline(res, map[[1L]], map[[2L]])
+}
+
+# One-line user-facing reading of an inner-k decline, for `print` /
+# `diagnostic_summary()`. Same reason codes as the outer k-hat, read in the
+# inner layer's terms.
+.inner_k_decline_note <- function(label) {
+    if (is.null(label) || !length(label) || is.na(label)) return(NULL)
+    reason <- sub(":.*$", "", label)
+    detail <- if (grepl(":", label, fixed = TRUE)) sub("^[^:]*:\\s*", "", label) else NULL
+    with_detail <- function(txt) {
+        if (is.null(detail)) txt else paste0(txt, " (", detail, ")")
+    }
+    switch(reason,
+        not_requested = "the inner diagnostic was not requested (control$diagnose_skew = FALSE)",
+        not_applicable = with_detail("this fit exposes no inner importance curve to score"),
+        draws_too_few = paste("too few finite joint-density evaluations along the probed",
+                              "curve to fit the GPD tail"),
+        degenerate_proposal = with_detail(paste(
+            "the inner Gaussian could not be used as a proposal (the probed",
+            "conditional variance was not positive)")),
+        internal_inconsistency = with_detail(paste(
+            "an internal bookkeeping mismatch stopped the diagnostic;",
+            "this indicates an engine bug -- please report it")),
+        NULL)
+}
+
+# Per-probed-index inner k-hat from the engine's importance curve. `z` are the
+# standardized N(0, 1) proposal draws, `lj` the [length(z) x n_probe] matrix of
+# joint log densities along each index's conditional-mean curve at those draws.
+# The proposal is N(0, 1) by construction on that curve, so the whole importance
+# problem is one-dimensional per index and the shared core scores it with the
+# draws it was already evaluated at (`Z = z`, no radius cap: at d = 1 there is
+# no grid hull to bound the cost against, and every draw is one cheap density
+# evaluation that has already been paid).
+.inner_k_from_curve <- function(z, lj) {
+    S <- length(z)
+    P <- ncol(lj)
+    k      <- rep(NA_real_, P)
+    is_ess <- rep(NA_real_, P)
+    n_eval <- rep(NA_real_, P)
+    reasons <- character(0)
+    Z1 <- matrix(z, ncol = 1L)
+    # The shared core stashes its log-ratios when `tulpa.kdiag.capture` holds an
+    # environment. That aperture belongs to the OUTER diagnostic's validation
+    # harness, so the inner pass runs with it closed rather than overwriting
+    # what the outer pass put there.
+    cap <- getOption("tulpa.kdiag.capture", NULL)
+    if (!is.null(cap)) {
+        options(tulpa.kdiag.capture = NULL)
+        on.exit(options(tulpa.kdiag.capture = cap), add = TRUE)
+    }
+    for (j in seq_len(P)) {
+        col <- lj[, j]
+        target <- function(U) if (nrow(U) == S) col else rep(NA_real_, nrow(U))
+        out <- .nested_is_pareto_k(0, matrix(1, 1L, 1L), target,
+                                   n_samples = S, radius_cap = Inf, Z = Z1)
+        k[j]      <- out$pareto_k
+        is_ess[j] <- out$is_ess
+        n_eval[j] <- out$n_eval
+        if (length(out$declined)) reasons <- c(reasons, out$declined)
+    }
+    declined <- if (any(is.finite(k))) NA_character_
+                else if (length(reasons)) reasons[1L]
+                else "degenerate_proposal"
+    # Realized importance efficiency per index -- the size of the correction the
+    # scale-free shape index describes. `.tulpa_inner_k_summary()` bands the
+    # shape only where this says there is something to correct.
+    list(pareto_k = k, is_ess = is_ess, rel_ess = is_ess / n_eval,
+         declined = declined)
+}
+
+# Copy the kernel's inner importance curve onto a fit as a per-index k-hat. One
+# attach point for all three drivers, reached through `.inner_skew_attach()`.
+.inner_k_attach <- function(res, out) {
+    lj <- out$inner_is_log_joint
+    z  <- out$inner_is_z
+    if (is.null(lj) || is.null(z) || !length(z) || !is.matrix(lj)) {
+        return(.inner_k_decline(res, "not_applicable",
+                                "this backend does not compute the inner importance curve"))
+    }
+    kernel_reason <- as.character(out$inner_is_declined %||% "")
+    if (length(kernel_reason) && nzchar(kernel_reason[1L])) {
+        return(.inner_k_decline_from_skew(res, kernel_reason[1L]))
+    }
+    if (nrow(lj) != length(z)) {
+        return(.inner_k_decline(res, "internal_inconsistency",
+                                "importance curve rows do not match the draws"))
+    }
+    got <- .inner_k_from_curve(as.numeric(z), lj)
+    if (is.na(got$declined)) {
+        res$inner_pareto_k          <- got$pareto_k
+        res$inner_pareto_k_is_ess   <- got$is_ess
+        res$inner_pareto_k_rel_ess  <- got$rel_ess
+        res$inner_pareto_k_declined <- NA_character_
+        return(res)
+    }
+    .inner_k_decline(res, got$declined)
+}
+
 # Reset the inner-skew fields and record why nothing was computed. Used by every
-# R-side early return, so a decline is never an absent field.
+# R-side early return, so a decline is never an absent field. The inner k-hat
+# rides the same probe dispatch, so it is settled here too.
 .inner_skew_decline <- function(res, reason) {
     res$inner_skew               <- NULL
     res$inner_skew_idx           <- integer(0)
     res$inner_skew_dropped       <- 0L
     res$inner_skew_declined      <- reason
     res$inner_skew_arms_declined <- integer(0)
-    res
+    .inner_k_decline_from_skew(res, reason)
 }
 
 # Copy the kernel's inner-skew output (including its own decline reason) onto a
@@ -120,7 +266,7 @@
                                else d[1L]
     arms <- out$inner_skew_arms_declined
     res$inner_skew_arms_declined <- if (is.null(arms)) integer(0) else as.integer(arms)
-    res
+    .inner_k_attach(res, out)
 }
 
 # One-line user-facing reading of an inner-skew decline, for `print` /
@@ -182,6 +328,70 @@
   )
 }
 
+# Aggregate the per-probed-index inner k-hat vector into a per-fit summary.
+# Mirrors `.tulpa_inner_skew_summary`: the WORST index governs, since one badly
+# approximated coefficient is what a reader has to act on.
+#
+# The band is read off the MATERIAL indices only -- those whose realized
+# importance efficiency `rel_ess` falls below `.nl_diag("inner_k_material_ess")`.
+# A Pareto shape index is scale-free, so an index whose weights are uniform (the
+# inner Gaussian already reproduces the conditional posterior over the sampled
+# region) still returns a shape, fitted to the residual wiggle; banding that
+# would flag healthy fits. See the settings note for the measured values. The
+# raw shape is reported regardless, so nothing is hidden; `weights_uniform`
+# records that no index carried a correction worth describing. Returns NULL when
+# nothing was computed.
+.tulpa_inner_k_summary <- function(k, is_ess = NULL, rel_ess = NULL) {
+  if (is.null(k) || length(k) == 0L) return(NULL)
+  ok <- is.finite(k)
+  n_scored <- sum(ok)
+  if (n_scored == 0L) {
+    return(list(max_pareto_k = NA_real_, band = NA_character_,
+                min_is_ess = NA_real_, min_rel_ess = NA_real_,
+                weights_uniform = NA, n_material = 0L,
+                n_scored = 0L, n_probed = length(k)))
+  }
+  ess <- if (is.null(is_ess)) numeric(0) else is_ess[is.finite(is_ess)]
+  rel <- if (is.null(rel_ess)) rep(NA_real_, length(k)) else rel_ess
+  material <- ok & is.finite(rel) & rel < .nl_diag("inner_k_material_ess")
+  # A fit whose backend reported no efficiency at all cannot be gated, so every
+  # scored index counts as material rather than being silently waved through.
+  if (!any(is.finite(rel))) material <- ok
+  list(
+    max_pareto_k    = max(k[ok]),
+    band            = if (any(material)) .tulpa_khat_band(max(k[material])) else "good",
+    min_is_ess      = if (length(ess)) min(ess) else NA_real_,
+    min_rel_ess     = if (any(is.finite(rel))) min(rel[is.finite(rel)]) else NA_real_,
+    weights_uniform = !any(material),
+    n_material      = sum(material),
+    n_scored        = n_scored,
+    n_probed        = length(k)
+  )
+}
+
+# Inner-Laplace importance reliability of a fit, read from the fields
+# `.inner_k_attach()` stores at fit time. NULL when the fit carries neither a
+# k-hat nor a reason (a backend predating the diagnostic).
+.tulpa_inner_k_reliability <- function(fit) {
+  jf <- if (!is.null(fit$joint_fit)) fit$joint_fit else fit
+  # `[[` throughout: on a DECLINED fit the only field carrying the
+  # `inner_pareto_k` prefix is `inner_pareto_k_declined`, and `$` would
+  # partial-match the k-hat to that reason string -- a decline read back as a
+  # computed value.
+  s <- .tulpa_inner_k_summary(jf[["inner_pareto_k"]],
+                              jf[["inner_pareto_k_is_ess"]],
+                              jf[["inner_pareto_k_rel_ess"]])
+  reason <- jf[["inner_pareto_k_declined"]] %||% NA_character_
+  if (is.null(s)) {
+    if (is.na(reason[1L])) return(NULL)
+    s <- list(max_pareto_k = NA_real_, band = NA_character_,
+              min_is_ess = NA_real_, min_rel_ess = NA_real_,
+              weights_uniform = NA, n_material = 0L,
+              n_scored = 0L, n_probed = 0L)
+  }
+  c(s, list(declined = reason[1L]))
+}
+
 # One layer's band collapsed to a state: "bad" (unreliable), "ok" (borderline),
 # "na" (never assessed for this fit/backend), or "good" (anything else).
 .tulpa_layer_state <- function(band) {
@@ -215,9 +425,41 @@
 # with the right knob would fill it in. The `"not assessed"` wording is kept in
 # every such verdict (a documented `grepl("not assessed", ...)` contract from
 # gcol33/tulpa#274), with the permanence as a qualifier on top.
+#
+# The INNER layer carries two scores, not one (gcol33/tulpa#303): the cubic
+# term gamma_3 and the importance k-hat, both read off the same probed
+# conditional-mean curve through the same joint density. `.tulpa_inner_layer()`
+# resolves them into the one band this verdict is built on -- the worse of the
+# two where both computed, the one that did where only one did. That is what
+# lets a fully coupled fit, whose cubic term can never be computed, still get an
+# inner verdict rather than "not assessed".
+.tulpa_inner_layer <- function(inner_band, inner_declined = NA_character_,
+                               inner_k_band = NA_character_,
+                               inner_k_declined = NA_character_) {
+  s_skew <- .tulpa_layer_state(inner_band)
+  s_k    <- .tulpa_layer_state(inner_k_band)
+  if (s_skew == "na" && s_k == "na") {
+    # Neither score exists. Keep the cubic term's reason: it is the one that
+    # separates a structurally unscorable model class from an unset knob.
+    return(list(band = NA_character_, declined = inner_declined))
+  }
+  if (s_skew == "na") return(list(band = inner_k_band, declined = NA_character_))
+  if (s_k == "na")    return(list(band = inner_band,   declined = NA_character_))
+  rank <- c(good = 0L, ok = 1L, bad = 2L)
+  worse <- if (rank[[s_k]] > rank[[s_skew]]) inner_k_band else inner_band
+  list(band = worse, declined = NA_character_)
+}
+
 .tulpa_combined_reliability <- function(outer_band, inner_band,
                                         inner_declined = NA_character_,
-                                        outer_declined = NA_character_) {
+                                        outer_declined = NA_character_,
+                                        inner_k_band = NA_character_,
+                                        inner_k_declined = NA_character_) {
+  layer <- .tulpa_inner_layer(inner_band, inner_declined, inner_k_band,
+                              inner_k_declined)
+  inner_band     <- layer$band
+  inner_declined <- layer$declined
+
   outer_state <- .tulpa_layer_state(outer_band)
   inner_state <- .tulpa_layer_state(inner_band)
 
@@ -516,10 +758,12 @@
   grid  <- .tulpa_grid_reliability(fit)
   psis  <- .tulpa_psis_reliability(fit)
   inner <- .tulpa_inner_skew_reliability(fit)
+  inner_k <- .tulpa_inner_k_reliability(fit)
   regime <- .tulpa_outer_regime(fit)
   k          <- psis$pareto_k
   outer_band <- .tulpa_khat_band(k)
   inner_band <- if (is.null(inner)) NA_character_ else inner$band
+  inner_k_band <- if (is.null(inner_k)) NA_character_ else inner_k$band
 
   attr(tab, "pareto_k")        <- k
   attr(tab, "pareto_k_band")   <- outer_band
@@ -554,10 +798,27 @@
     attr(tab, "outer_skew_max")  <- regime$outer_skew_max
     attr(tab, "outer_regime_note") <- .tulpa_outer_regime_note(regime)
   }
+  if (!is.null(inner_k)) {
+    attr(tab, "inner_pareto_k")        <- inner_k$max_pareto_k
+    attr(tab, "inner_pareto_k_band")   <- inner_k$band
+    attr(tab, "inner_pareto_k_is_ess")  <- inner_k$min_is_ess
+    attr(tab, "inner_pareto_k_rel_ess") <- inner_k$min_rel_ess
+    attr(tab, "inner_pareto_k_scored") <- inner_k$n_scored
+    attr(tab, "inner_pareto_k_probed") <- inner_k$n_probed
+    attr(tab, "inner_pareto_k_uniform") <- inner_k$weights_uniform
+    if (!is.na(inner_k$declined)) {
+      attr(tab, "inner_pareto_k_declined")      <- inner_k$declined
+      attr(tab, "inner_pareto_k_declined_note") <-
+        .inner_k_decline_note(inner_k$declined)
+    }
+  }
   inner_declined <- if (is.null(inner)) NA_character_ else inner$declined
+  inner_k_declined <- if (is.null(inner_k)) NA_character_ else inner_k$declined
   reliability <- .tulpa_combined_reliability(outer_band, inner_band,
                                             inner_declined,
-                                            psis$pareto_k_declined)
+                                            psis$pareto_k_declined,
+                                            inner_k_band,
+                                            inner_k_declined)
   attr(tab, "reliability") <- reliability
 
   summary_row <- data.frame(
@@ -569,9 +830,12 @@
     n_grid          = if (is.null(grid)) NA_integer_ else grid$n_grid,
     max_weight      = if (is.null(grid)) NA_real_ else grid$max_weight,
     inner_skew_max  = if (is.null(inner)) NA_real_ else inner$max_abs_gamma3,
-    inner_skew_band = inner_band,
+    inner_skew_band = if (is.null(inner)) NA_character_ else inner$band,
+    inner_pareto_k      = if (is.null(inner_k)) NA_real_ else inner_k$max_pareto_k,
+    inner_pareto_k_band = inner_k_band,
     pareto_k_declined   = psis$pareto_k_declined,
-    inner_skew_declined = inner_declined,
+    inner_skew_declined = if (is.null(inner)) NA_character_ else inner$declined,
+    inner_pareto_k_declined = inner_k_declined,
     reliability     = reliability,
     n_draws         = nrow(as.matrix(draws)),
     stringsAsFactors = FALSE, row.names = NULL
@@ -669,6 +933,19 @@
 #' is evaluable only inside the C++ kernel, so a stored fit cannot reconstruct
 #' it. The grid quadrature reliability is the complementary stored-fit number.
 #'
+#' The inner layer carries a SECOND score, `inner_pareto_k`, which needs no
+#' likelihood derivative at all and therefore answers where `inner_skew`
+#' declines. The inner Gaussian at the fitted hyperparameter is an importance
+#' proposal for the exact conditional posterior, and the joint density is the
+#' target, so PSIS on that ratio scores the inner approximation directly. It is
+#' computed on the same probed indices along the same conditional-mean curve,
+#' one dimension per index, since importance sampling degrades with dimension
+#' and a k-hat over the whole latent field would report `n_x` rather than the
+#' approximation. A Pareto shape index is scale-free, so it is banded only on
+#' indices whose realized importance efficiency shows a correction worth
+#' describing; `inner_pareto_k_uniform` records that none did, which is what a
+#' well-approximated inner layer looks like.
+#'
 #' `inner_skew` diagnoses the INNER (latent-field) Laplace: whether the
 #' Gaussian approximation to `pi(x_i | theta, y)` is itself a good fit, at
 #' each scored latent index `i`. `gamma_3` is exact for a gaussian-family
@@ -730,9 +1007,25 @@
 #'       `"backend_unsupported"`, or `"solve_failed"`; the arms (1-based) a
 #'       joint fit had no oracle for, which is also set on a PARTIALLY scored
 #'       fit; and a one-line reading.}
+#'     \item{`inner_pareto_k`, `inner_pareto_k_band`}{the inner-Laplace
+#'       importance k-hat over the probed subspace, and its band on the same
+#'       convention as the outer k-hat. Available wherever a mode was found,
+#'       including a coupled likelihood `gamma_3` cannot score.}
+#'     \item{`inner_pareto_k_rel_ess`, `inner_pareto_k_is_ess`}{the smallest
+#'       realized importance efficiency and effective sample size across the
+#'       probed indices -- how much correcting the inner Gaussian actually
+#'       needs, which is what makes the scale-free shape above readable.}
+#'     \item{`inner_pareto_k_uniform`}{`TRUE` when no probed index carried a
+#'       material correction, i.e. the inner Gaussian reproduces the conditional
+#'       posterior over the sampled region.}
+#'     \item{`inner_pareto_k_scored`, `inner_pareto_k_probed`}{how many probed
+#'       indices returned a finite k-hat vs how many were probed.}
+#'     \item{`inner_pareto_k_declined`, `inner_pareto_k_declined_note`}{when it
+#'       is `NA`, WHY, from the same closed vocabulary the outer k-hat uses.}
 #'     \item{`reliability`}{the combined whole-fit verdict: `"reliable"` only
 #'       when both layers are good; otherwise names which layer is scoped or
-#'       flags both as unreliable.}
+#'       flags both as unreliable. The inner layer enters through the worse of
+#'       its two scores, so a fit whose cubic term declined is still assessed.}
 #'   }
 #'   and a trailing `summary` attribute (a one-row data frame of the headline
 #'   numbers) for printing.
@@ -773,8 +1066,17 @@ print.laplace_diagnostics <- function(x, ...) {
   k <- attr(x, "pareto_k")
   band <- attr(x, "pareto_k_band")
   inner_note <- attr(x, "inner_skew_declined_note")
-  has_inner <- !is.null(attr(x, "inner_skew_band")) &&
+  has_skew <- !is.null(attr(x, "inner_skew_band")) &&
     is.finite(attr(x, "inner_skew_max") %||% NA_real_)
+  has_inner_k <- !is.null(attr(x, "inner_pareto_k_band")) &&
+    is.finite(attr(x, "inner_pareto_k") %||% NA_real_)
+  has_inner <- has_skew || has_inner_k
+  if (!has_skew && has_inner_k) {
+    # The cubic term declined but the importance k-hat did not, so the inner
+    # layer IS assessed -- say which score carries it rather than reprinting the
+    # cubic term's decline as though nothing were known.
+    inner_note <- NULL
+  }
   if (has_inner) {
     cat("Nested-Laplace WHOLE-FIT reliability (i.i.d. draws)\n")
     cat("  two layers: the outer hyperparameter-grid integration, and the",
@@ -811,7 +1113,7 @@ print.laplace_diagnostics <- function(x, ...) {
   }
   note <- attr(x, "outer_regime_note")
   if (!is.null(note)) cat("  note: ", note, "\n", sep = "")
-  if (has_inner) {
+  if (has_skew) {
     ib <- attr(x, "inner_skew_band")
     im <- attr(x, "inner_skew_max")
     cat(sprintf("  inner Laplace max |gamma_3| = %.3f (%s), scored %d/%d latents\n",
@@ -821,6 +1123,28 @@ print.laplace_diagnostics <- function(x, ...) {
     if (!is.null(arms) && length(arms)) {
       cat(sprintf("  inner Laplace unscored on arm(s) %s\n",
                   paste(arms, collapse = ", ")))
+    }
+  } else if (has_inner_k && !is.null(attr(x, "inner_skew_declined_note"))) {
+    cat("  inner Laplace |gamma_3| = NA:\n    ",
+        attr(x, "inner_skew_declined_note"), "\n", sep = "")
+  }
+  if (has_inner_k) {
+    cat(sprintf(
+      paste0("  inner Laplace importance pareto_k = %.3f (%s), min IS efficiency",
+             " %.4f, scored %d/%d latents\n"),
+      attr(x, "inner_pareto_k"), attr(x, "inner_pareto_k_band"),
+      attr(x, "inner_pareto_k_rel_ess") %||% NA_real_,
+      attr(x, "inner_pareto_k_scored"), attr(x, "inner_pareto_k_probed")))
+    if (isTRUE(attr(x, "inner_pareto_k_uniform"))) {
+      cat("    the importance weights are uniform on every probed index: the",
+          "inner\n    Gaussian reproduces the conditional posterior over the",
+          "sampled region,\n    so the shape above describes no correction and",
+          "is not banded\n")
+    }
+  } else {
+    knote <- attr(x, "inner_pareto_k_declined_note")
+    if (!is.null(knote)) {
+      cat("  inner Laplace importance pareto_k = NA:\n    ", knote, "\n", sep = "")
     }
   }
   if (!is.null(attr(x, "reliability"))) {

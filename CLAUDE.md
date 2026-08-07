@@ -468,6 +468,56 @@ cutoff) and `.tulpa_combined_reliability()` (`R/laplace_diagnostics.R`)
 combine the outer and inner bands into one verdict, surfaced by
 `diagnostics()` / `print.laplace_diagnostics()`.
 
+### Inner-Laplace importance k-hat: the likelihood-agnostic floor (gcol33/tulpa#303)
+
+`gamma_3` needs a per-observation third derivative, so a coupled
+multi-process likelihood declines permanently. `inner_pareto_k` is the SECOND
+score on the same inner layer and needs no derivative at all: the inner
+Gaussian at a fixed theta IS an importance proposal for the exact conditional
+posterior, and the joint density is the target, so PSIS on that ratio scores
+the approximation directly. Available wherever a mode was found.
+
+Scope is the PROBED SUBSPACE, never the field. Importance sampling degrades
+with dimension on its own, so a k-hat over `n_x` coordinates would report
+`n_x` rather than the approximation. It runs on the same indices `gamma_3`
+probes, along the same Gaussian-conditional-mean curve
+`x(t) = mode + (t / sigma_i^2) v_i`, with the remaining coordinates
+integrated out by the Gaussian conditional -- ONE dimension per probed index,
+which is the regime PSIS is reliable in and makes the number comparable to
+the `gamma_3` for that index. On that curve the proposal is exactly
+`N(mode_i, sigma_i^2)`, so in the standardized offset `z` the log ratio is
+`log p_joint(x(z sigma_i)) + z^2 / 2` up to a common constant.
+
+`src/inner_laplace_probe.h` owns the shared `v_i = Sigma e_i` solve against
+the live factor (no refactorization), used by BOTH inner diagnostics;
+`src/inner_laplace_is.h` evaluates the joint density along the curve through
+the Newton loop's own penalized-objective closure, which is why it carries no
+likelihood knowledge and serves the single-arm, joint and joint-sparse loops
+unchanged. The Pareto fit is the existing shared `.nested_is_pareto_k()`
+(`R/psis.R`), which now accepts an injected draw matrix `Z` -- one
+importance-sampling k-hat in the package, not two. Wiring rides the existing
+`compute_skew` request, so no kernel signature changed.
+
+Draws are engine-owned and deterministic (`INNER_IS_DRAWS = 256`, splitmix64
++ Box-Muller), not taken from R's stream: requesting the diagnostic leaves a
+fit bit-for-bit unchanged and the k-hat does not flap with the seed. The
+budget is a fixed constant rather than the outer `k_samples` because an inner
+draw is one O(N) density evaluation with no factorization, whereas an outer
+draw is a full inner Laplace solve.
+
+A Pareto shape index is SCALE-FREE, which matters here because the inner
+proposal is often near-exact: a gaussian-family coefficient (inner Laplace
+exact, `gamma_3` exactly 0) measures k-hat 0.19 / 0.26 at importance
+efficiency 1.000. The shape is therefore banded only on indices whose
+realized efficiency falls below `.NL_DIAG$inner_k_material_ess` (0.995); the
+raw value is reported regardless and `weights_uniform` records that no index
+needed correcting. `.tulpa_combined_reliability()` folds the inner layer's
+two scores into one band (the worse where both computed, the one that did
+where only one did), so a fully coupled fit gets an inner verdict instead of
+"not assessed". Tests: `test-inner-pareto-k.R` (injected-draw equivalence and
+RNG invariance, the materiality gate, the gamma_3 cross-check ladder, the
+coupled fixture against its exact quadrature, front-door wiring).
+
 **Multi-block joint wiring (gcol33/tulpa#273):** the joint MULTI-block path
 (`nested_laplace_joint_multi.R`, used when a joint fit carries a per-group
 RE / trend field / arm-specific field block -- e.g. some `occu_cover()`

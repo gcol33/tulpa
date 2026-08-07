@@ -445,7 +445,7 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
     const bool skew_factor_valid =
         result.converged && (pd_mode == JointPDMode::LM) &&
         H_builder.s2z_rank1.empty() && solver.factored();
-    if (compute_skew && curvature3_fns && skew_factor_valid) {
+    if (compute_skew && skew_factor_valid) {
         std::vector<int> all_idx;
         const std::vector<int>* probe = skew_probe_idx;
         if (!probe) {
@@ -456,16 +456,34 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
         std::vector<double> pre_center_x(n_x);
         for (int j = 0; j < n_x; j++) pre_center_x[j] = x[j];
         DenseCholeskyScratch unused_dense_chol;  // sparse-only path never reads it
-        InnerSkewOutcome sk = compute_inner_skew_gamma3_joint(
+        if (curvature3_fns) {
+            InnerSkewOutcome sk = compute_inner_skew_gamma3_joint(
+                n_x, pre_center_x, unused_dense_chol, solver, /*use_sparse=*/true,
+                compute_eta_joint, x, scratch.etas, scratch.etas_tmp,
+                *curvature3_fns, *probe
+            );
+            result.inner_skew = std::move(sk.gamma3);
+            result.inner_skew_idx = *probe;
+            result.inner_skew_dropped = sk.n_nonfinite_dropped;
+            result.inner_skew_declined = sk.declined;
+            result.inner_skew_arms_declined = sk.arms_declined;
+        } else {
+            result.inner_skew.assign(probe->size(),
+                                     std::numeric_limits<double>::quiet_NaN());
+            result.inner_skew_idx = *probe;
+            result.inner_skew_declined = "curvature3_unavailable";
+        }
+
+        // The likelihood-agnostic inner k-hat over the same probed subspace
+        // (gcol33/tulpa#303).
+        InnerISOutcome is_out = compute_inner_is_curve(
             n_x, pre_center_x, unused_dense_chol, solver, /*use_sparse=*/true,
-            compute_eta_joint, x, scratch.etas, scratch.etas_tmp,
-            *curvature3_fns, *probe
+            eval_objective, x, *probe
         );
-        result.inner_skew = std::move(sk.gamma3);
-        result.inner_skew_idx = *probe;
-        result.inner_skew_dropped = sk.n_nonfinite_dropped;
-        result.inner_skew_declined = sk.declined;
-        result.inner_skew_arms_declined = sk.arms_declined;
+        result.inner_is_z         = std::move(is_out.z);
+        result.inner_is_log_joint = std::move(is_out.log_joint);
+        result.inner_is_sigma     = std::move(is_out.sigma);
+        result.inner_is_declined  = is_out.declined;
     }
 
     { TULPA_PROFILE_PHASE(PHASE_LOG_LIK_PRIOR);

@@ -106,7 +106,40 @@ struct LaplaceResult {
   int                 inner_skew_dropped = 0;
   std::string         inner_skew_declined;
   std::vector<int>    inner_skew_arms_declined;
+
+  // Inner-Laplace importance k-hat raw material (gcol33/tulpa#303, see
+  // src/inner_laplace_is.h). Populated alongside the skewness diagnostic, from
+  // the same probe indices and the same conditional-curve solve, but needing no
+  // likelihood derivative at all -- so it is available where the cubic term
+  // declines. `inner_is_z` are the standardized proposal draws (one shared set),
+  // `inner_is_log_joint` the joint log density along each probed index's
+  // conditional-mean curve at those draws, laid out column-major as
+  // [n_draws x n_probe] against `inner_skew_idx`, and `inner_is_sigma` the
+  // per-index conditional SD (NaN where the probe column could not be solved).
+  // The Pareto fit that turns these into a k-hat is the shared R primitive.
+  std::vector<double> inner_is_z;
+  std::vector<double> inner_is_log_joint;
+  std::vector<double> inner_is_sigma;
+  std::string         inner_is_declined;
 };
+
+// Emit the inner-Laplace importance-curve fields onto a result list, when the
+// solver computed them. One attach point for the single-fit contract
+// (laplace_result_to_list) and the grid driver's per-cell emitters
+// (nested_laplace_grid.h), so the R side reads one set of names everywhere.
+inline void attach_inner_is_fields(Rcpp::List& out, const LaplaceResult& res) {
+  if (res.inner_is_sigma.empty()) return;
+  const int P = static_cast<int>(res.inner_is_sigma.size());
+  const int S = static_cast<int>(res.inner_is_z.size());
+  out["inner_is_z"]     = res.inner_is_z;
+  out["inner_is_sigma"] = res.inner_is_sigma;
+  out["inner_is_declined"] = res.inner_is_declined;
+  if (S > 0 && static_cast<int>(res.inner_is_log_joint.size()) == S * P) {
+    Rcpp::NumericMatrix lj(S, P);
+    for (int e = 0; e < S * P; e++) lj[e] = res.inner_is_log_joint[e];
+    out["inner_is_log_joint"] = lj;
+  }
+}
 
 // Convert LaplaceResult to Rcpp::List. Single source of truth used by every
 // laplace_core* R export. Rcpp wraps std::vector<double> implicitly into a
@@ -171,6 +204,7 @@ inline Rcpp::List laplace_result_to_list(const LaplaceResult& result) {
       out["inner_skew_arms_declined"] = arms_r;
     }
   }
+  attach_inner_is_fields(out, result);
 
   return out;
 }

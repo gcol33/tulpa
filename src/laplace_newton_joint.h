@@ -27,6 +27,7 @@
 #include "laplace_newton.h"          // SPARSE_THRESHOLD
 #include "laplace_newton_loop.h"
 #include "laplace_spec_curvature3.h" // build_spec_curvature3_fn (inner-skew diagnostic)
+#include "inner_laplace_is.h"        // compute_inner_is_curve
 #include "inner_laplace_skew.h"      // compute_inner_skew_gamma3_joint
 #include "sparse_cholesky.h"
 #include <Rcpp.h>
@@ -488,7 +489,7 @@ LaplaceResult laplace_newton_solve_joint_ll(
 
     result.log_marginal = finalize_log_marginal(log_lik, log_prior, result.log_det_Q, n_x);
 
-    if (compute_skew && result.converged && curvature3_fns) {
+    if (compute_skew && result.converged) {
         std::vector<int> all_idx;
         const std::vector<int>* probe = skew_probe_idx;
         if (!probe) {
@@ -499,16 +500,38 @@ LaplaceResult laplace_newton_solve_joint_ll(
         std::vector<double> pre_center_x(n_x);
         for (int j = 0; j < n_x; j++) pre_center_x[j] = x[j];
         bool used_sparse_factor = use_sparse && sparse_solver.factored();
-        InnerSkewOutcome sk = compute_inner_skew_gamma3_joint(
+        if (curvature3_fns) {
+            InnerSkewOutcome sk = compute_inner_skew_gamma3_joint(
+                n_x, pre_center_x, scratch.chol, sparse_solver, used_sparse_factor,
+                compute_eta_joint, x, scratch.etas, scratch.etas_tmp,
+                *curvature3_fns, *probe
+            );
+            result.inner_skew = std::move(sk.gamma3);
+            result.inner_skew_idx = *probe;
+            result.inner_skew_dropped = sk.n_nonfinite_dropped;
+            result.inner_skew_declined = sk.declined;
+            result.inner_skew_arms_declined = sk.arms_declined;
+        } else {
+            // No oracle set was built at all: report the indices as unscored
+            // rather than emit nothing, so the reason reaches the fit.
+            result.inner_skew.assign(probe->size(),
+                                     std::numeric_limits<double>::quiet_NaN());
+            result.inner_skew_idx = *probe;
+            result.inner_skew_declined = "curvature3_unavailable";
+        }
+
+        // The likelihood-agnostic inner k-hat over the same probed subspace
+        // (gcol33/tulpa#303). Evaluated at the pre-centering iterate for the
+        // same reason gamma_3 is: that is the point the live factor and the
+        // reported log_marginal belong to.
+        InnerISOutcome is_out = compute_inner_is_curve(
             n_x, pre_center_x, scratch.chol, sparse_solver, used_sparse_factor,
-            compute_eta_joint, x, scratch.etas, scratch.etas_tmp,
-            *curvature3_fns, *probe
+            eval_objective, x, *probe
         );
-        result.inner_skew = std::move(sk.gamma3);
-        result.inner_skew_idx = *probe;
-        result.inner_skew_dropped = sk.n_nonfinite_dropped;
-        result.inner_skew_declined = sk.declined;
-        result.inner_skew_arms_declined = sk.arms_declined;
+        result.inner_is_z         = std::move(is_out.z);
+        result.inner_is_log_joint = std::move(is_out.log_joint);
+        result.inner_is_sigma     = std::move(is_out.sigma);
+        result.inner_is_declined  = is_out.declined;
     }
 
     center_effects_fn(x);
