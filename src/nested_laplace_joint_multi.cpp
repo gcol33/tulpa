@@ -2448,8 +2448,17 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
         // results accumulating during the solve, CHOLMOD fill-in beyond the 2x
         // nnz factor estimate, and OS headroom. Fall back to half of total, then
         // a fixed 2 GB, when the queries are unavailable.
-        const size_t avail = tulpa::available_ram_bytes();
-        const size_t total = tulpa::total_ram_bytes();
+        //
+        // Both readings are taken ONCE per session. A live reading makes the
+        // resolved outer width -- and through it the scatter partition, the
+        // summation order, and the last bits of every reported number -- a
+        // function of what else the machine happened to be doing at the moment
+        // of the call, so the same model fitted twice in one session could
+        // disagree. The model-dependent term (`per_thread`) is still computed
+        // per call, so a larger model is still clamped harder; only the
+        // machine-state term is frozen.
+        static const size_t avail = tulpa::available_ram_bytes();
+        static const size_t total = tulpa::total_ram_bytes();
         const size_t budget = tulpa::outer_thread_mem_budget(avail, total);
         const int requested_outer = n_outer;
         const int max_builders = tulpa::outer_thread_cap(budget, per_thread);
@@ -2556,14 +2565,6 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
     // within the outer budget so it never oversubscribes.
     const int n_threads_inner_eff = joint_inner_thread_budget(n_outer, n_grid, n_threads);
 
-    // Count of full per-cell solves currently in flight across the outer grid's
-    // parallel-for. Lets a cell in the UNDER-SATURATED tail (fewer cells left
-    // than team threads) hand the freed cores to its coupled-cell scatter, which
-    // dispatches them as stealable tasks (flatten). Zero when
-    // the outer loop runs serially (n_outer == 1); the static budget still
-    // governs the pure-inner path.
-    std::atomic<int> active_cells{0};
-
     auto solve_at_theta_impl = [&](int k_grid,
                                    const std::vector<double>& prev_mode,
                                    SparseCholeskySolver* shared_solver,
@@ -2587,34 +2588,41 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
         const int slot = use_cheap_scratch ? cheap_worker : tid;
         JointArmSpecs& specs_use = specs_pool[slot];
 
-        // Dynamic inner-thread budget for the coupled-cell scatter. Floor at the
-        // static grid budget (1 whenever the outer grid saturates the pool, so
-        // the bulk stays byte-identical). In the outer parallel-for's tail --
-        // fewer active cells than team threads -- raise it to team/active so the
-        // freed threads steal this cell's scatter chunks. RAII-decrements on
-        // every exit path; skipped for the cheap screen (which runs its own sweep).
-        struct ActiveGuard {
-            std::atomic<int>* a;
-            ~ActiveGuard() { if (a) a->fetch_sub(1, std::memory_order_relaxed); }
-        } active_guard{nullptr};
+        // Inner-thread budget for the coupled-cell scatter, and with it the
+        // number of chunks that scatter partitions its cell loop into. Floor at
+        // the static grid budget (1 whenever the outer grid saturates the pool,
+        // so the bulk stays byte-identical); raise it in the grid's tail, where
+        // fewer cells remain than the outer pool is wide, so the freed threads
+        // steal this cell's scatter chunks.
+        //
+        // The tail width is read from the cell INDEX, not from a count of solves
+        // in flight. The chunk count sets the partition, the partition sets the
+        // summation order, and floating-point addition is not associative -- so
+        // deriving it from instantaneous concurrency made the returned numbers a
+        // function of what else the machine was doing, and two identical fits
+        // could disagree in their last bits. `n_grid - k_grid` bounds the peers
+        // this cell can have exactly as the in-flight count estimated it, while
+        // depending only on the grid geometry. `n_outer` stands in for the team
+        // width for the same reason: omp_get_num_threads() can be moved by an
+        // OMP dynamic team adjustment, and n_outer cannot.
+        //
+        // Parallelism is NOT lost by this: the chunks are dispatched as OpenMP
+        // tasks, so however many threads are actually idle drain them. Only the
+        // partition is pinned, never the number of workers that execute it.
         int inner_budget = n_threads_inner_eff;
         if (!use_cheap_scratch) {
-            const int act =
-                active_cells.fetch_add(1, std::memory_order_relaxed) + 1;
-            active_guard.a = &active_cells;
-            #ifdef _OPENMP
-            if (omp_in_parallel()) {
-                const int team = omp_get_num_threads();
-                // TULPA_COUPLING_FORCE_PARALLEL forces the chunked coupling
-                // scatter on EVERY cell (not just the tail) so tests can exercise
-                // the parallel reduce deterministically; production leaves it off.
-                static const bool force_par =
-                    (std::getenv("TULPA_COUPLING_FORCE_PARALLEL") != nullptr);
-                const int tail = force_par ? team : team / (act < 1 ? 1 : act);
-                if (tail > inner_budget) inner_budget = tail;
-                if (inner_budget > team) inner_budget = team;
-            }
-            #endif
+            // TULPA_COUPLING_FORCE_PARALLEL forces the chunked coupling scatter
+            // on EVERY cell (not just the tail) so tests can exercise the
+            // parallel reduce; production leaves it off.
+            static const bool force_par =
+                (std::getenv("TULPA_COUPLING_FORCE_PARALLEL") != nullptr);
+            const int remaining = n_grid - k_grid;   // this cell included
+            const int peers = remaining < 1 ? 1
+                            : (remaining < n_outer ? remaining : n_outer);
+            const int tail = force_par ? n_outer : n_outer / peers;
+            if (tail > inner_budget) inner_budget = tail;
+            if (inner_budget > n_outer) inner_budget = n_outer;
+            if (inner_budget < 1) inner_budget = 1;
         }
 
         // phi-grid axis: prep_at_grid rewrites the SHARED `arms` dispersion for
@@ -2821,5 +2829,10 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
         cheap_eval, prune_tol, progress, checkpoint, x_init_per_cell
     );
     pattern_guard.check("the sparse joint nested-Laplace outer grid");
+    // Report the outer width the solve actually ran at. It is what the memory
+    // clamp above resolved to, not what the caller asked for, and it fixes the
+    // scatter partition -- so when two fits of one model report different
+    // widths, that is the explanation for a change in their last bits.
+    out["n_outer"] = n_outer;
     return out;
 }

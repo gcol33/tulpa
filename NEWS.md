@@ -1,5 +1,42 @@
 # tulpa NEWS
 
+## 0.0.136
+
+* **The joint nested-Laplace grid no longer returns numbers that depend on what
+  else the machine was doing.** Two identical fits could disagree in their last
+  bits, because two inputs to the coupled-cell scatter's partition were read
+  from live machine state rather than from the problem:
+
+  - The scatter splits its per-cell loop into `C` chunks and reduces them in a
+    fixed chunk order, which makes the reduce independent of *which* thread ran
+    each chunk. `C` itself, though, came from `team / act`, where `act` was a
+    count of the solves in flight at that instant (an atomic `fetch_add`). The
+    chunk count sets the chunk boundaries, the boundaries set the summation
+    order, and floating-point addition is not associative -- so `C` moving with
+    the machine's load moved the answer. It is now read from the cell index:
+    `n_grid - k_grid` bounds how many peers a cell can have and estimates the
+    same tail width from grid geometry alone. `n_outer` also replaces
+    `omp_get_num_threads()`, so an OMP dynamic team adjustment cannot move it
+    either.
+
+  - The outer width `n_outer` was clamped against a live `available_ram_bytes()`
+    reading, so the same model fitted twice in one session could resolve
+    different widths (and therefore different partitions) depending on what the
+    box had allocated in between. Both memory readings are now taken once per
+    session. The model-dependent term is still computed per call, so a larger
+    model is still clamped harder; only the machine-state term is frozen.
+
+  No parallelism is given up for this. The chunks are dispatched as OpenMP
+  tasks, so however many threads are genuinely idle still drain them -- only the
+  partition is pinned, never the number of workers executing it. In the bulk of
+  the grid the budget is 1 exactly as before, so those cells stay serial and
+  allocate no partial buffers.
+
+* **`tulpa_nested_laplace_joint()` reports `n_outer`**, the outer width the
+  solve actually ran at after the memory clamp. When two fits of one model
+  report different widths, that is the explanation for a shift in their last
+  bits.
+
 ## 0.0.135
 
 * **A prior block missing its required fields now errors instead of segfaulting
