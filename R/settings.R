@@ -382,13 +382,53 @@
 # correction is skewness-only, so a biased Laplace mode stays biased -- that is
 # Rue, Martino & Chopin's gamma^(1) term, which this engine does not compute.
 # `control$skew_correct = TRUE` turns it on per fit.
+# `debias_select_band` is the floor the SUBSPACE DEBIAS selector reads the inner
+# bands at (gcol33/tulpa#304): a probed coordinate whose combined inner band is
+# at or above it is sampled exactly, the rest stay at their Gaussian
+# conditional. It is "ok", i.e. one step BELOW the `unreliable` band the
+# reporting layer flags on, and the reason is a measured property of the
+# selector's input rather than caution. gamma_3 is a LOWER bound on the true
+# skewness, not a two-sided estimate: against exact quadrature it reads 0.564,
+# 0.766, 0.859 and 0.929 of the truth on the engine's own fixtures
+# (test-inner-skew.R). A coordinate reporting |gamma_3| = 0.5 is therefore
+# consistent with a true skewness up to 0.5 / 0.564 = 0.89, and one reporting
+# 1.0 with up to 1.77, so selecting at the reported `unreliable` boundary would
+# leave genuinely unreliable coordinates uncorrected. Only the SELECTOR is
+# widened; the reported bands are untouched.
+#
+# `debias_closure_pcor` is the partial-correlation threshold the optional
+# S-closure grows the selected set by, and `debias_closure_max` caps how many
+# coordinates it may add. The closure exists because a coordinate left OUT of S
+# is carried at its Gaussian conditional mean, a LINEAR function of x_S, so a
+# neighbour strongly coupled to a member of S is being carried by exactly the
+# approximation the correction is trying to remove.
+#
+# It is OFF by default, and that is a measurement rather than caution. On the
+# engine's own fixtures the partial correlations between a fixed effect and the
+# random effects run about 0.09 to 0.25, so at this threshold the closure adds
+# almost nothing and changes nothing: against the exact quadrature marginal it
+# moves the total endpoint error 0.5923 -> 0.5651, a difference of 0.027 against
+# a combined seed standard error of 0.038, and across a 400-seed whole-fit sweep
+# it leaves coverage identical on 1572 of 1600 seed-coefficient-levels. Lowering
+# it far enough to matter does help -- but only by growing S to nearly the whole
+# latent field (at 0.05 on a 14-coordinate fixture, |S| reaches 13.4), which is
+# the FULL debias wearing a different name rather than a subspace one. So the
+# honest reading is that conditioning x_{-S} on the Gaussian leaves a residual
+# error the closure cannot remove cheaply, not that the coupling is absent.
+# `debias_closure_max` caps the growth for the same reason.
 .NL_DIAG <- list(
     k_usable             = 0.7,
     k_samples            = 200L,
     gamma3_ok            = 0.5,
     gamma3_unreliable    = 1.0,
     inner_k_material_ess = 0.995,
-    skew_correct         = FALSE
+    skew_correct         = FALSE,
+    debias_select_band   = "ok",
+    debias_closure_pcor  = 0.5,
+    debias_closure_max   = 200L,
+    debias_n_iter        = 2000L,
+    debias_warmup        = 1000L,
+    debias_thin          = 1L
 )
 
 .nl_diag <- function(par) {

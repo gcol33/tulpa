@@ -59,6 +59,27 @@ inline const std::vector<int>* unwrap_skew_idx(
     return &storage;
 }
 
+// Convert an R-facing (1-based, possibly NULL) subspace-debias index set plus
+// its sweep budget into the 0-based SubspaceDebiasOptions the Newton loop
+// expects, writing into caller-owned `storage` and returning a pointer into it.
+// A null or empty index set returns nullptr: the sampler is never entered, so
+// the solve is unchanged and no random number is consumed.
+inline const SubspaceDebiasOptions* unwrap_debias_idx(
+    const Rcpp::Nullable<Rcpp::IntegerVector>& debias_idx,
+    int n_iter, int n_warmup, int thin,
+    SubspaceDebiasOptions& storage
+) {
+    if (debias_idx.isNull()) return nullptr;
+    Rcpp::IntegerVector idx_r(debias_idx);
+    if (idx_r.size() == 0) return nullptr;
+    storage.idx.resize(idx_r.size());
+    for (int k = 0; k < idx_r.size(); k++) storage.idx[k] = idx_r[k] - 1;
+    storage.n_iter = n_iter;
+    storage.n_warmup = n_warmup;
+    storage.thin = thin;
+    return &storage;
+}
+
 // Spec-solver inputs for a single-process built-in-family fit with an optional
 // single iid RE term, kept alive together: data borrows spec & resp (and resp
 // borrows the response arrays), so the whole struct must outlive the solve.

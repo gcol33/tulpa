@@ -21,14 +21,18 @@
 //
 // The shared linear predictor xb + sum_m re_contrib_m is maintained incrementally
 // so each block update sees the others held fixed (the cross-block eta coupling
-// the R sampler did via `base = xb + (re_total - re_contrib_m)`). Robbins-Monro
-// proposal-scale adaptation runs during burn-in. All randomness goes through R's
-// RNG (R::rnorm / R::rchisq / R::unif_rand), so set.seed in R reproduces a run.
+// the R sampler did via `base = xb + (re_total - re_contrib_m)`). The starting
+// scales, target acceptance rates, Robbins-Monro burn-in adaptation and accept
+// test are the shared primitives in rwmh.h, so this sweep and the subspace
+// debias (subspace_debias.h) run the same random walk rather than two copies of
+// it. All randomness goes through R's RNG (R::rnorm / R::rchisq / R::unif_rand),
+// so set.seed in R reproduces a run.
 
 #ifndef TULPA_RE_COV_GIBBS_SWEEP_H
 #define TULPA_RE_COV_GIBBS_SWEEP_H
 
 #include "glmm_oracle.h"
+#include "rwmh.h"
 #include <RcppEigen.h>
 #include <Rcpp.h>          // R::rnorm, R::rchisq, R::unif_rand, R::dnorm
 #include <vector>
@@ -170,12 +174,12 @@ inline GibbsOutput run_glmm_gibbs(
     std::vector<double> s_b(M), tgt_b(M);
     for (int m = 0; m < M; ++m) {
         Q[m]     = spd_inverse(Sigma0[m]);
-        s_b[m]   = 2.4 / std::sqrt(static_cast<double>(blocks[m].nc));
-        tgt_b[m] = (blocks[m].nc > 1) ? 0.234 : 0.44;
+        s_b[m]   = rw_init_scale(blocks[m].nc);
+        tgt_b[m] = rw_target_accept(blocks[m].nc);
     }
 
-    double s_beta   = 2.4 / std::sqrt(static_cast<double>(p));
-    double tgt_beta = (p > 1) ? 0.234 : 0.44;
+    double s_beta   = rw_init_scale(p);
+    double tgt_beta = rw_target_accept(p);
 
     // Shared linear predictor bookkeeping: re_contrib[m] is block m's per-obs RE
     // contribution; re_total their sum. offset for block m is re_total minus its
@@ -216,7 +220,7 @@ inline GibbsOutput run_glmm_gibbs(
 
     for (int sweep = 1; sweep <= n_sweep; ++sweep) {
         const bool adapting  = sweep <= cfg.n_burnin;
-        const double gamma_t = 1.0 / std::sqrt(static_cast<double>(sweep));
+        const double gamma_t = rw_adapt_gain(sweep);
 
         // --- beta | b, Sigma : RW Metropolis --------------------------------
         // Total data log-lik via block 0's group partition (offset carries the
@@ -242,12 +246,12 @@ inline GibbsOutput run_glmm_gibbs(
         for (int j = 0; j < p; ++j) z(j) = R::rnorm(0.0, 1.0);
         Eigen::VectorXd beta_prop = beta + s_beta * (L_beta * z);
         double ll_prop = beta_loglik(beta_prop);
-        const bool acc_beta = std::log(R::unif_rand()) < (ll_prop - ll_cur);
+        const bool acc_beta = rw_accept(ll_prop - ll_cur);
         if (acc_beta) beta = beta_prop;
         for (int m = 0; m < M; ++m) oracles[m]->rebind(beta.data());
         if (adapting)
-            s_beta = std::exp(std::log(s_beta)
-                       + gamma_t * ((acc_beta ? 1.0 : 0.0) - tgt_beta));
+            s_beta = rw_adapt_scale(s_beta, gamma_t, acc_beta ? 1.0 : 0.0,
+                                    tgt_beta);
 
         // --- b_{m,g} | beta, Sigma : per-(block, group) RW Metropolis -------
         long n_acc_b = 0, n_prop_b = 0;
@@ -272,7 +276,7 @@ inline GibbsOutput run_glmm_gibbs(
                 const double ll_g_prop = logL_prop
                                   - 0.5 * (bg_prop.transpose() * Qm * bg_prop)(0, 0);
 
-                if (std::log(R::unif_rand()) < (ll_g_prop - ll_g_cur)) {
+                if (rw_accept(ll_g_prop - ll_g_cur)) {
                     B[m].row(gg) = bg_prop.transpose();
                     ++acc_m;
                 }
@@ -283,8 +287,8 @@ inline GibbsOutput run_glmm_gibbs(
             re_total += nc_contrib - re_contrib[m];
             re_contrib[m] = nc_contrib;
             if (adapting)
-                s_b[m] = std::exp(std::log(s_b[m])
-                           + gamma_t * (static_cast<double>(acc_m) / G - tgt_b[m]));
+                s_b[m] = rw_adapt_scale(s_b[m], gamma_t,
+                                        static_cast<double>(acc_m) / G, tgt_b[m]);
             n_acc_b  += acc_m;
             n_prop_b += G;
         }

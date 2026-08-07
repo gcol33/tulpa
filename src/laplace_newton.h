@@ -10,6 +10,7 @@
 #include "laplace_family_link.h"
 #include "laplace_newton_loop.h"        // eval_*, line_search_backtrack, finalize_log_marginal
 #include "inner_laplace_is.h"           // compute_inner_is_curve
+#include "subspace_debias.h"            // compute_subspace_debias
 #include "inner_laplace_skew.h"         // compute_inner_skew_gamma3
 #include "sparse_cholesky.h"
 #include <Rcpp.h>
@@ -114,7 +115,13 @@ LaplaceResult laplace_newton_solve_ll(
     // compute_skew = true probes every latent index.
     bool compute_skew = false,
     const std::vector<int>* skew_probe_idx = nullptr,
-    const Curvature3Oracle* curvature3 = nullptr
+    const Curvature3Oracle* curvature3 = nullptr,
+    // Subspace debias (subspace_debias.h), opt-in and independent of the
+    // diagnostics above: the caller selects the flagged coordinates from a
+    // previous solve's inner-layer bands and passes them here. nullptr or an
+    // empty index set never reaches the sampler, so the solve is unchanged and
+    // consumes no random number.
+    const SubspaceDebiasOptions* debias = nullptr
 ) {
     LaplaceResult result;
     result.mode.assign(n_x, 0.0);
@@ -291,6 +298,21 @@ LaplaceResult laplace_newton_solve_ll(
         result.inner_is_log_joint  = std::move(is_out.log_joint);
         result.inner_is_sigma      = std::move(is_out.sigma);
         result.inner_is_declined   = is_out.declined;
+    }
+
+    if (debias && !debias->idx.empty() && result.converged) {
+        SubspaceDebiasOutcome db = compute_subspace_debias(
+            n_x, result.mode, scratch.chol, sparse_solver,
+            use_sparse && sparse_solver.factored(),
+            eval_objective, x, *debias
+        );
+        result.debias_idx      = std::move(db.idx);
+        result.debias_draws    = std::move(db.draws);
+        result.debias_sigma_ss = std::move(db.sigma_ss);
+        result.debias_n_kept   = db.n_kept;
+        result.debias_accept   = db.accept;
+        result.debias_scale    = db.scale;
+        result.debias_declined = db.declined;
     }
 
     return result;

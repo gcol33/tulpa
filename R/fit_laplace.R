@@ -79,6 +79,23 @@
 #' @param X_zi Optional zero-inflation design matrix (`length(y)` rows). When
 #'   supplied the latent fixed-effect block becomes `[beta_count | beta_zi]` and
 #'   the family's compiled zero-inflated kernel is used. Non-spatial path only.
+#' @param compute_skew If `TRUE`, additionally return the inner-Laplace
+#'   reliability material at `skew_idx`: `inner_skew` (gamma_3, Rue Martino &
+#'   Chopin 2009's cubic term), and the importance curve `inner_is_z` /
+#'   `inner_is_log_joint` the inner Pareto-k-hat is fitted from. Costs one
+#'   linear solve plus a fixed batch of objective evaluations per probed index.
+#'   Non-spatial path only.
+#' @param skew_idx 1-based latent indices to probe (in the `[beta | random
+#'   effects]` layout of `mode`). `NULL` with `compute_skew = TRUE` probes every
+#'   latent index.
+#' @param debias Subspace debias (gcol33/tulpa#304): a list with `idx` (1-based
+#'   latent indices to correct by Metropolis along the Gaussian-conditional-mean
+#'   surface through the mode) and optional `n_iter` / `warmup` / `thin`. The
+#'   result then carries `debias_draws` (`n_kept x length(idx)`, the sampled
+#'   `x_S - mode_S`), `debias_sigma_ss` (the inner Laplace's own marginal
+#'   covariance of `x_S`), `debias_accept` and `debias_idx`. `NULL` (default) or
+#'   an empty `idx` leaves the solve bit-for-bit as it was and consumes no
+#'   random number. Non-spatial path only.
 #' @param zi_prior_sd Prior SD on the zero-inflation coefficients,
 #'   `beta_zi ~ N(0, zi_prior_sd^2)` (default 2.5, matching the samplers'
 #'   `ModelData::zi_prior_sd`). It is what keeps the logit identified when a
@@ -123,7 +140,10 @@ tulpa_laplace <- function(y, n_trials, X,
                           return_re_cov = FALSE,
                           X_zi = NULL,
                           zi_prior_sd = 2.5,
-                          return_joint_hessian = FALSE) {
+                          return_joint_hessian = FALSE,
+                          compute_skew = FALSE,
+                          skew_idx = NULL,
+                          debias = NULL) {
 
   n_obs <- length(y)
   n_fixed <- ncol(X)
@@ -160,6 +180,15 @@ tulpa_laplace <- function(y, n_trials, X,
                            zi = !is.null(X_zi))
 
   if (is.null(n_trials)) n_trials <- rep(1L, n_obs)
+
+  # The inner-layer probe and the subspace debias both read the live Cholesky
+  # factor of the multi-RE spec solve, which the spatial kernels do not expose.
+  if (!is.null(spatial) && (isTRUE(compute_skew) || !is.null(debias))) {
+    stop("`compute_skew` / `debias` are only available on the non-spatial ",
+         "multi-RE Laplace path; the spatial kernels expose no probed ",
+         "conditional curve. Drop `spatial`.", call. = FALSE)
+  }
+  debias_idx <- if (is.null(debias)) NULL else as.integer(debias$idx)
 
   if (isTRUE(return_re_cov) && !is.null(spatial)) {
     stop("`return_re_cov` is only available on the non-spatial multi-RE path. ",
@@ -268,7 +297,13 @@ tulpa_laplace <- function(y, n_trials, X,
       phi2 = phi2 %||% NA_real_,
       X_zi = X_zi,
       zi_prior_sd = zi_prior_sd,
-      return_joint_hessian = want_joint
+      return_joint_hessian = want_joint,
+      compute_skew = isTRUE(compute_skew),
+      skew_idx = if (is.null(skew_idx)) NULL else as.integer(skew_idx),
+      debias_idx = debias_idx,
+      debias_n_iter = as.integer(debias$n_iter %||% .nl_diag("debias_n_iter")),
+      debias_warmup = as.integer(debias$warmup %||% .nl_diag("debias_warmup")),
+      debias_thin   = as.integer(debias$thin   %||% .nl_diag("debias_thin"))
     )
     if (want_joint) {
       result$H_joint <- .laplace_joint_hessian(result)

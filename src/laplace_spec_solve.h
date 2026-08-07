@@ -28,6 +28,7 @@
 #include "tulpa/param_layout.h"
 #include "laplace_cholesky.h"     // LaplaceResult
 #include "laplace_newton.h"       // NewtonScratch
+#include "subspace_debias.h"       // SubspaceDebiasOptions
 #include "latent_block.h"
 #include "sparse_cholesky.h"
 #include <utility>
@@ -60,7 +61,11 @@ LaplaceResult spec_inner_solve(
     // Inner-Laplace skewness diagnostic (inner_laplace_skew.h), opt-in like
     // store_Q; see laplace_spec_curvature3.h for which specs it can score.
     bool compute_skew = false,
-    const std::vector<int>* skew_probe_idx = nullptr
+    const std::vector<int>* skew_probe_idx = nullptr,
+    // Subspace debias (subspace_debias.h): the flagged latent coordinates to
+    // correct by Metropolis, selected from a previous solve's inner-layer
+    // bands. nullptr or empty leaves the solve untouched.
+    const SubspaceDebiasOptions* debias = nullptr
 );
 
 // Result-returning standalone spec Laplace (defined in laplace_spec.cpp).
@@ -83,7 +88,8 @@ LaplaceResult laplace_mode_spec_dense_solve(
     int sparse_override = 0,
     bool store_Q = false,
     bool compute_skew = false,
-    const std::vector<int>* skew_probe_idx = nullptr
+    const std::vector<int>* skew_probe_idx = nullptr,
+    const SubspaceDebiasOptions* debias = nullptr
 );
 
 } // namespace tulpa

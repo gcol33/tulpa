@@ -1133,7 +1133,8 @@ LaplaceResult spec_inner_solve(
     const BetaPrior* beta_prior,
     int sparse_override,
     bool compute_skew,
-    const std::vector<int>* skew_probe_idx
+    const std::vector<int>* skew_probe_idx,
+    const SubspaceDebiasOptions* debias
 ) {
     const SpecLatentLayout L = build_latent_layout(data, layout, blocks);
     const int N = data.N;
@@ -1223,7 +1224,7 @@ LaplaceResult spec_inner_solve(
         compute_eta, scatter_grad_hess, center_effects_fn, compute_log_prior,
         log_lik_fn, scratch, x_init, solver, store_Q, inv_block_layout,
         sparse_override, &feasible_start_coords,
-        compute_skew, skew_probe_idx, &curvature3
+        compute_skew, skew_probe_idx, &curvature3, debias
     );
 }
 
@@ -1247,7 +1248,8 @@ LaplaceResult laplace_mode_spec_dense_solve(
     int sparse_override,
     bool store_Q,
     bool compute_skew,
-    const std::vector<int>* skew_probe_idx
+    const std::vector<int>* skew_probe_idx,
+    const SubspaceDebiasOptions* debias
 ) {
     if (data.n_processes < 1) {
         Rcpp::stop("laplace_spec_dense: requires n_processes >= 1 (got %d)",
@@ -1393,7 +1395,7 @@ LaplaceResult laplace_mode_spec_dense_solve(
         store_Q,
         return_re_cov ? &inv_block_layout : nullptr,
         beta_prior, sparse_override,
-        compute_skew, skew_probe_idx
+        compute_skew, skew_probe_idx, debias
     );
     scatter_compacted_latent(L, res.mode.data(), params_inout);  // mode -> params latent
     return res;

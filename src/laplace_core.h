@@ -121,7 +121,51 @@ struct LaplaceResult {
   std::vector<double> inner_is_log_joint;
   std::vector<double> inner_is_sigma;
   std::string         inner_is_declined;
+
+  // Subspace debias (gcol33/tulpa#304, see src/subspace_debias.h). Populated
+  // only when the solver is called with a non-empty index set: the Metropolis
+  // draws of x_S - mode_S along the Gaussian-conditional-mean surface through
+  // the mode, laid out column-major as [n_kept x q] against `debias_idx`
+  // (0-based here, 1-based on the R side), together with the inner Laplace's
+  // own marginal covariance of x_S (`debias_sigma_ss`, q x q column-major) so
+  // the caller can rebuild the Gaussian conditional for the coordinates it did
+  // NOT sample. `debias_declined` says why nothing was sampled, when nothing
+  // was; an empty index set never reaches the sampler at all, so the fit is
+  // then the plain Laplace fit with no random number consumed.
+  std::vector<int>    debias_idx;
+  std::vector<double> debias_draws;
+  std::vector<double> debias_sigma_ss;
+  int                 debias_n_kept = 0;
+  double              debias_accept = 0.0;
+  double              debias_scale = 0.0;
+  std::string         debias_declined;
 };
+
+// Emit the subspace-debias fields onto a result list, when the solver ran the
+// correction. One attach point, mirroring attach_inner_is_fields below.
+inline void attach_debias_fields(Rcpp::List& out, const LaplaceResult& res) {
+  if (res.debias_idx.empty()) return;
+  const int q = static_cast<int>(res.debias_idx.size());
+  Rcpp::IntegerVector idx_r(q);
+  for (int b = 0; b < q; b++) idx_r[b] = res.debias_idx[b] + 1;
+  out["debias_idx"] = idx_r;
+  out["debias_accept"] = res.debias_accept;
+  out["debias_scale"] = res.debias_scale;
+  out["debias_declined"] = res.debias_declined;
+  const int S = res.debias_n_kept;
+  if (S > 0 && res.debias_draws.size() ==
+                   static_cast<std::size_t>(S) * static_cast<std::size_t>(q)) {
+    Rcpp::NumericMatrix dr(S, q);
+    for (std::size_t e = 0; e < res.debias_draws.size(); e++) dr[e] = res.debias_draws[e];
+    out["debias_draws"] = dr;
+  }
+  if (res.debias_sigma_ss.size() ==
+          static_cast<std::size_t>(q) * static_cast<std::size_t>(q)) {
+    Rcpp::NumericMatrix ss(q, q);
+    for (int e = 0; e < q * q; e++) ss[e] = res.debias_sigma_ss[e];
+    out["debias_sigma_ss"] = ss;
+  }
+}
 
 // Emit the inner-Laplace importance-curve fields onto a result list, when the
 // solver computed them. One attach point for the single-fit contract
@@ -205,6 +249,7 @@ inline Rcpp::List laplace_result_to_list(const LaplaceResult& result) {
     }
   }
   attach_inner_is_fields(out, result);
+  attach_debias_fields(out, result);
 
   return out;
 }

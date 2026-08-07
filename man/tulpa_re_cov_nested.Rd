@@ -128,6 +128,20 @@ Each completed CCD / grid node (one inner Laplace solve) is cached to
 only the rest. \code{resume = FALSE} starts fresh. A file written for
 different data, layout, or grid is rejected (fingerprint mismatch).
 Default \code{NULL} (off).
+\item \code{subspace_debias}: subspace debias (gcol33/tulpa#304), \code{FALSE} by
+default. \code{TRUE} takes every default; a list overrides \code{band} (the
+inner-reliability floor a coordinate is selected at, default \code{"ok"}),
+\code{idx} (pin the corrected set explicitly, skipping the selector),
+\code{probe} (the latent indices scored, default the fixed effects),
+\code{closure} (\code{FALSE}, \code{TRUE}, or a partial-correlation threshold: grow
+the set by the precision-graph neighbours it is strongly coupled to),
+\code{closure_max}, and the sampler budget \code{n_iter} / \code{warmup} / \code{thin}.
+When the selected set is non-empty, each integration node reports the
+selected fixed-effect coordinates from a Metropolis sample of the exact
+conditional along the Gaussian-conditional-mean surface, and the rest
+from the Gaussian conditional given them; an EMPTY set leaves the fit
+bit-for-bit identical to the plain path. What was selected is recorded
+in \code{subspace_debias} on the returned fit.
 }}
 }
 \value{
@@ -151,6 +165,10 @@ integrates each group out instead of conditioning on it; that fit carries
 \code{ranef_unavailable} (the reason) in their place.
 \item \code{theta_hat}, \code{theta_grid}, \code{weights}, \code{log_marginal}, \code{n_grid}, \code{layout},
 \code{n_blocks}, \code{n_coefs} (vector of per-block \code{c}).
+\item \code{subspace_debias}: present only when \code{control$subspace_debias} was set.
+\code{idx} are the corrected latent coordinates, \code{bands} the per-probed-index
+reliability table they were read from, \code{closure_added} what the coupling
+closure added, and \code{accept} the per-node Metropolis acceptance rate.
 }
 }
 \description{

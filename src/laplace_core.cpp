@@ -157,6 +157,11 @@ Rcpp::List cpp_laplace_fit(
     return tulpa::laplace_result_to_list(res);
 }
 
+// `debias_idx` (gcol33/tulpa#304) is the 1-based latent index set to correct by
+// Metropolis along the Gaussian-conditional-mean surface, with
+// `debias_n_iter` / `debias_warmup` / `debias_thin` its sweep budget. An absent
+// or empty index set leaves the solve bit-for-bit as it was and consumes no
+// random number.
 // [[Rcpp::export]]
 Rcpp::List cpp_laplace_fit_multi_re(
     Rcpp::NumericVector y, Rcpp::IntegerVector n,
@@ -179,7 +184,11 @@ Rcpp::List cpp_laplace_fit_multi_re(
     double zi_prior_sd = 2.5,
     bool return_joint_hessian = false,
     bool compute_skew = false,
-    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
+    Rcpp::Nullable<Rcpp::IntegerVector> debias_idx = R_NilValue,
+    int debias_n_iter = 2000,
+    int debias_warmup = 1000,
+    int debias_thin = 1
 ) {
     // Multi-term RE (intercept / slopes / correlated) + built-in family through
     // the unified spec solver (the family-enum laplace_mode_dense_multi_re was
@@ -425,12 +434,16 @@ Rcpp::List cpp_laplace_fit_multi_re(
     std::vector<int> skew_idx_vec;
     const std::vector<int>* skew_idx_ptr =
         tulpa::unwrap_skew_idx(compute_skew, skew_idx, skew_idx_vec);
+    tulpa::SubspaceDebiasOptions db_opts;
+    const tulpa::SubspaceDebiasOptions* db_ptr =
+        tulpa::unwrap_debias_idx(debias_idx, debias_n_iter, debias_warmup,
+                                 debias_thin, db_opts);
     tulpa::LaplaceResult res = tulpa::laplace_mode_spec_dense_solve(
         data, layout, params, re_group_empty, max_iter, tol, n_threads,
         /*blocks=*/nullptr, /*k_grid=*/0,
         (has_bp || has_zi) ? &bp : nullptr, return_re_cov,
         /*sparse_override=*/0, return_joint_hessian,
-        compute_skew, skew_idx_ptr);
+        compute_skew, skew_idx_ptr, db_ptr);
     return tulpa::laplace_result_to_list(res);
 }
 

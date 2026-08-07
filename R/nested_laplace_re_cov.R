@@ -425,8 +425,16 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
 # dropped. Returns the draws plus the per-draw node index (`picks`), so
 # node-level quantities (e.g. the hyperparameter log-prior for power-scaling)
 # can be aligned draw-by-draw.
+#
+# `debias_nodes` / `debias_idx` (gcol33/tulpa#304) replace the Gaussian block of
+# the SELECTED fixed-effect coordinates with the node's Metropolis draws, the
+# rest of the block following from the Gaussian conditional
+# (`.subspace_node_draws`). Everything else about the mixture -- which nodes are
+# usable, how the weights are renormalized, how a node is picked -- is
+# unchanged, so the correction is scoped to the coordinates the selector named.
 .re_cov_nested_beta_draws <- function(beta_nodes, beta_cov_nodes, w,
-                                      n_draws, beta_names) {
+                                      n_draws, beta_names,
+                                      debias_nodes = NULL, debias_idx = NULL) {
   p  <- ncol(beta_nodes)
   ok <- is.finite(w) & w > 0 & is.finite(rowSums(beta_nodes))
   # Cholesky each usable node's fixed-effect covariance. A node whose covariance
@@ -447,9 +455,41 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
   w2 <- w; w2[!ok] <- 0; w2 <- w2 / sum(w2)
   picks <- sample.int(length(w2), n_draws, replace = TRUE, prob = w2)
   out <- matrix(NA_real_, n_draws, p)
-  for (d in seq_len(n_draws)) {
-    k <- picks[d]
-    out[d, ] <- beta_nodes[k, ] + as.numeric(Lb[[k]] %*% stats::rnorm(p))
+
+  # Positions of the corrected coordinates within the fixed-effect block. A
+  # selected index beyond `p` is a random effect the closure pulled in: it moves
+  # under the sampler, which is the point, but it is not a reported coefficient
+  # and so has no position here. With none of them the Gaussian mixture below is
+  # the untouched plain path, right down to its RNG consumption.
+  pos <- integer(0); take <- integer(0)
+  if (!is.null(debias_idx) && length(debias_idx)) {
+    take <- which(debias_idx <= p)
+    pos  <- as.integer(debias_idx[take])
+  }
+  if (length(pos) == 0L || is.null(debias_nodes)) {
+    for (d in seq_len(n_draws)) {
+      k <- picks[d]
+      out[d, ] <- beta_nodes[k, ] + as.numeric(Lb[[k]] %*% stats::rnorm(p))
+    }
+    colnames(out) <- beta_names %||% paste0("beta", seq_len(p))
+    return(list(draws = out, picks = picks))
+  }
+
+  for (k in unique(picks)) {
+    rows <- which(picks == k)
+    dk <- debias_nodes[[k]]
+    got <- if (!is.null(dk) && is.matrix(dk) && ncol(dk) >= max(take))
+      .subspace_node_draws(beta_nodes[k, ], beta_cov_nodes[[k]], pos,
+                           dk[, take, drop = FALSE], length(rows))
+      else NULL
+    # A node whose sampler declined keeps the Gaussian draw it would have had,
+    # so one unusable node degrades that node rather than the fit.
+    if (is.null(got)) {
+      got <- t(vapply(rows, function(ignored)
+        beta_nodes[k, ] + as.numeric(Lb[[k]] %*% stats::rnorm(p)),
+        numeric(p)))
+    }
+    out[rows, ] <- got
   }
   colnames(out) <- beta_names %||% paste0("beta", seq_len(p))
   list(draws = out, picks = picks)
@@ -702,16 +742,27 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
   # solve per random-effect coefficient against the factor the log-determinant
   # already built, so it is off wherever nobody reads the blocks (tulpa_eb()'s
   # re-solve at theta_hat, which reports the mode).
-  inner_fit <- function(L_list, phi_ = phi, re_cov = FALSE) {
+  #
+  # `compute_skew` / `debias` are the two inner-layer extras the subspace debias
+  # needs (gcol33/tulpa#304): the first turns the node solve into the reliability
+  # probe the selector reads, the second hands it the selected index set so the
+  # flagged coordinates come back as Metropolis draws instead of a Gaussian.
+  # Both default off, so every existing caller solves exactly what it did.
+  inner_fit <- function(L_list, phi_ = phi, re_cov = FALSE,
+                        compute_skew = FALSE, skew_idx = NULL, debias = NULL,
+                        joint_hessian = FALSE) {
     tryCatch(
       tulpa_laplace(
         y = y, n_trials = n_trials, X = X,
         re_list = .re_cov_build_re_list(L_list, layout),
         family = family, phi = phi_, phi2 = phi2, return_hessian = TRUE,
         return_re_cov = isTRUE(re_cov),
+        return_joint_hessian = isTRUE(joint_hessian),
         beta_prior = beta_prior, offset = offset,
         X_zi = X_zi, zi_prior_sd = zi_prior_sd,
-        max_iter = max_iter, tol = tol, n_threads = n_threads
+        max_iter = max_iter, tol = tol, n_threads = n_threads,
+        compute_skew = isTRUE(compute_skew), skew_idx = skew_idx,
+        debias = debias
       ),
       error = function(e) NULL
     )
@@ -867,7 +918,23 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
     # it produces no per-group mean or covariance to hand back. The driver reads
     # `re_conditional` (FALSE here) and says so rather than reporting an empty
     # random-effect table.
-    inner_fit <- function(L_list, phi_ = phi, re_cov = FALSE) core_solve(L_list)
+    # The inner-layer extras the joint-field solve carries are refused here
+    # rather than ignored: this solve integrates each group out, so there is no
+    # conditional latent field to score a cubic term on, no joint precision to
+    # read a coupling from, and nothing for a subspace sampler to move. The
+    # front door refuses `control$subspace_debias` at `n_quad > 1` for the same
+    # reason; this is the guard for anything reaching the closure directly.
+    inner_fit <- function(L_list, phi_ = phi, re_cov = FALSE,
+                          compute_skew = FALSE, skew_idx = NULL, debias = NULL,
+                          joint_hessian = FALSE) {
+      if (isTRUE(compute_skew) || !is.null(debias) || isTRUE(joint_hessian)) {
+        stop("the adaptive Gauss-Hermite inner marginal (n_quad > 1) exposes ",
+             "no conditional latent field, so it carries neither the ",
+             "inner-Laplace diagnostics nor the subspace debias. Use ",
+             "n_quad = 1 (the joint-field Laplace inner solve).", call. = FALSE)
+      }
+      core_solve(L_list)
+    }
   }
 
   # --- mode of g(theta) = log_marginal(Sigma(theta)) + log_prior ------------
@@ -1408,6 +1475,20 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
 #'       only the rest. `resume = FALSE` starts fresh. A file written for
 #'       different data, layout, or grid is rejected (fingerprint mismatch).
 #'       Default `NULL` (off).
+#'     \item `subspace_debias`: subspace debias (gcol33/tulpa#304), `FALSE` by
+#'       default. `TRUE` takes every default; a list overrides `band` (the
+#'       inner-reliability floor a coordinate is selected at, default `"ok"`),
+#'       `idx` (pin the corrected set explicitly, skipping the selector),
+#'       `probe` (the latent indices scored, default the fixed effects),
+#'       `closure` (`FALSE`, `TRUE`, or a partial-correlation threshold: grow
+#'       the set by the precision-graph neighbours it is strongly coupled to),
+#'       `closure_max`, and the sampler budget `n_iter` / `warmup` / `thin`.
+#'       When the selected set is non-empty, each integration node reports the
+#'       selected fixed-effect coordinates from a Metropolis sample of the exact
+#'       conditional along the Gaussian-conditional-mean surface, and the rest
+#'       from the Gaussian conditional given them; an EMPTY set leaves the fit
+#'       bit-for-bit identical to the plain path. What was selected is recorded
+#'       in `subspace_debias` on the returned fit.
 #'   }
 #'
 #' @return A list with:
@@ -1430,6 +1511,10 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
 #'     `ranef_unavailable` (the reason) in their place.
 #'   - `theta_hat`, `theta_grid`, `weights`, `log_marginal`, `n_grid`, `layout`,
 #'     `n_blocks`, `n_coefs` (vector of per-block `c`).
+#'   - `subspace_debias`: present only when `control$subspace_debias` was set.
+#'     `idx` are the corrected latent coordinates, `bands` the per-probed-index
+#'     reliability table they were read from, `closure_added` what the coupling
+#'     closure added, and `accept` the per-node Metropolis acceptance rate.
 #'
 #' @seealso [tulpa_laplace()] for the inner solve; [tulpa_nested_laplace()] for
 #'   the analogous outer integration over spatial / temporal prior
@@ -1481,6 +1566,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   tol         <- control$tol %||% 1e-8
   n_threads   <- as.integer(control$n_threads %||% 1L)
   checkpoint  <- control$checkpoint
+  sd_cfg      <- .subspace_debias_config(control$subspace_debias)
   n_quad <- as.integer(n_quad)
   if (n_quad < 1L) stop("`n_quad` must be >= 1.", call. = FALSE)
   .seed_scoped(seed)
@@ -1509,6 +1595,38 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   theta_hat       <- core$theta_hat
   L_scale         <- core$L_scale
 
+  # --- subspace debias: which latent directions need the exact sampler? -----
+  # One probe solve at the fitted MAP covariance, scored by the inner-layer
+  # diagnostics, decides S once for the whole fit (gcol33/tulpa#304). Selecting
+  # per node would make the correction's scope a function of the integration
+  # design, and would leave nothing auditable to record; the MAP cell is where
+  # the weight is and is the cell every other inner-layer probe in the engine
+  # re-dispatches at.
+  subspace <- NULL
+  if (!is.null(sd_cfg) && n_quad > 1L) {
+    stop("tulpa_re_cov_nested(): `control$subspace_debias` needs the ",
+         "joint-field Laplace inner solve (`n_quad = 1`). The adaptive ",
+         "Gauss-Hermite inner marginal integrates each group's random effects ",
+         "out, so it exposes no conditional latent field to correct.",
+         call. = FALSE)
+  }
+  if (!is.null(sd_cfg)) {
+    probe_idx <- sd_cfg$probe %||% seq_len(p_fix)
+    probe <- inner_fit(.re_cov_theta_to_L_list(theta_hat, layout),
+                       compute_skew = is.null(sd_cfg$idx),
+                       skew_idx = probe_idx,
+                       joint_hessian = !identical(sd_cfg$closure, FALSE))
+    if (is.null(probe)) {
+      stop("tulpa_re_cov_nested(): the subspace-debias probe solve failed at ",
+           "the fitted covariance, so no reliability band could be read. ",
+           "Refit with control$subspace_debias = FALSE, or pin the set with ",
+           "control$subspace_debias = list(idx = ...).", call. = FALSE)
+    }
+    subspace <- .subspace_select(probe, sd_cfg)
+  }
+  debias_arg <- if (!is.null(subspace) && length(subspace$idx))
+    list(idx = subspace$idx, n_iter = sd_cfg$n_iter, warmup = sd_cfg$warmup,
+         thin = sd_cfg$thin) else NULL
 
   # --- integration nodes in whitened theta-space ----------------------------
   if (integration == "ccd") {
@@ -1540,7 +1658,8 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     family = family, phi = phi,
     layout = lapply(layout, function(b) b[c("k", "nc", "full")]),
     theta_grid = theta_grid, max_iter = max_iter, tol = tol,
-    beta_prior = beta_prior, n_quad = n_quad, re_cov = re_cond))
+    beta_prior = beta_prior, n_quad = n_quad, re_cov = re_cond,
+    debias = debias_arg))
 
   # --- evaluate inner marginal + derived quantities per cell ----------------
   # One FULL Laplace solve per node: the log-marginal feeds the integration
@@ -1559,6 +1678,8 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   Sig_node_list  <- vector("list", ng)
   beta_nodes     <- matrix(NA_real_, ng, p_fix)
   beta_cov_nodes <- vector("list", ng)
+  debias_nodes   <- vector("list", ng)
+  debias_accept  <- rep(NA_real_, ng)
   re_nodes     <- if (re_cond) matrix(NA_real_, ng, n_re) else NULL
   re_var_nodes <- if (re_cond) matrix(NA_real_, ng, n_re) else NULL
   for (i in seq_len(ng)) {
@@ -1569,7 +1690,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     if (!is.null(ckpt) && ckpt$has(key)) {
       fit_i <- ckpt$get(key)
     } else {
-      fit_i <- inner_fit(L_list, re_cov = re_cond)
+      fit_i <- inner_fit(L_list, re_cov = re_cond, debias = debias_arg)
       if (!is.null(ckpt) && !is.null(fit_i) && !is.null(fit_i$mode) &&
           length(fit_i$log_marginal) == 1L && is.finite(fit_i$log_marginal)) {
         ckpt$save(key, fit_i)
@@ -1583,6 +1704,10 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     beta_cov_nodes[[i]] <-
       if (is.null(fit_i$H_beta)) NULL
       else tryCatch(solve(fit_i$H_beta), error = function(e) NULL)
+    if (!is.null(debias_arg)) {
+      debias_nodes[[i]]  <- fit_i$debias_draws
+      debias_accept[i]   <- fit_i$debias_accept %||% NA_real_
+    }
     if (re_cond && length(fit_i$mode) == p_fix + n_re) {
       re_nodes[i, ] <- fit_i$mode[p_fix + seq_len(n_re)]
       # Diagonals of the per-(term, group) covariance blocks, concatenated in the
@@ -1633,7 +1758,10 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
                   if (core$p_zi > 0L)
                     colnames(core$X_zi) %||% paste0("zi_", seq_len(core$p_zi)))
   ds <- .re_cov_nested_beta_draws(beta_nodes, beta_cov_nodes, w,
-                                  as.integer(n_draws), beta_names)
+                                  as.integer(n_draws), beta_names,
+                                  debias_nodes = if (is.null(debias_arg)) NULL
+                                                 else debias_nodes,
+                                  debias_idx = subspace$idx)
   draws <- ds$draws
   # Per-draw hyperparameter log-prior (the node's log_prior_theta), aligned
   # with the draw rows: the input power-scaling needs to reweight the
@@ -1713,6 +1841,15 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     n_grid      = ng,
     layout      = layout,
     n_blocks    = length(layout),
-    n_coefs     = vapply(layout, `[[`, integer(1), "nc")
+    n_coefs     = vapply(layout, `[[`, integer(1), "nc"),
+    # The escalation, recorded rather than implicit: which latent coordinates
+    # were sampled exactly, which band each probed coordinate was read at, and
+    # what the coupling closure added on top.
+    subspace_debias = if (is.null(subspace)) NULL else list(
+      idx = subspace$idx, bands = subspace$bands, closure_added = subspace$added,
+      selected_by = subspace$selected_by, band_floor = sd_cfg$band,
+      closure = sd_cfg$closure,
+      n_iter = sd_cfg$n_iter, warmup = sd_cfg$warmup, thin = sd_cfg$thin,
+      accept = debias_accept)
   ), backend = "re_cov_nested", n_fixed = p_fix, fixed_names = beta_names)
 }

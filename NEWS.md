@@ -1,5 +1,106 @@
 # tulpa NEWS
 
+## 0.0.141
+
+* **The reliability band is now the debias SELECTOR: exact MCMC runs on only the
+  misfit directions** (gcol33/tulpa#304). Escalation used to be whole-fit and
+  all-or-nothing (`tulpa_re_cov_nested` -> `tulpa_re_cov_gibbs`, or a grid
+  refinement), with nothing saying which directions needed exact treatment, so
+  every coordinate paid the sampler's price including the ones the Gaussian
+  already fits. The per-index inner diagnostics are already a map of exactly
+  that. `control$subspace_debias` (default `FALSE`) bands every probed index,
+  takes `S` = the misfit set, and corrects only `x_S` by Metropolis with
+  `x_{-S}` carried at its Gaussian conditional.
+
+  The sampled surface is `x(u) = mode + V Sigma_SS^{-1} L u` with
+  `V = Sigma E_S` -- the q-dimensional generalization of the one-dimensional
+  conditional-mean curve both inner diagnostics already walk, reusing
+  `inner_probe_column()` rather than a second solve. The Gaussian restricted to
+  it is exactly `N(0, I)` in `u`, so the walk is spherical and the Laplace
+  shaping lives in the coordinates. Random-walk Metropolis, not NUTS: each
+  evaluation is one call of the Newton loop's own penalized objective (O(N), no
+  factorization, no derivative), so a gradient sampler would buy nothing and
+  would need a derivative the loop does not expose along the surface.
+
+  Selection is at the `ok` band, one step below the `unreliable` band the
+  reporting layer flags on, because `gamma_3` is a LOWER bound on the true
+  skewness (0.564-0.943 of the exact value across the engine's own fixtures), so
+  selecting at the reported boundary would leave genuinely misfit coordinates
+  uncorrected. The inner importance k-hat (#303), which needs no derivative and
+  does not undershoot the same way, is folded in as the worse of the two -- on
+  the rare-event sweep below it is what bands 225 of 400 intercepts
+  `unreliable` where the mean `gamma_3` is only -0.597.
+
+  MEASURED against an exact reference (Bernoulli random intercept at fixed RE
+  SD, the group intercepts integrated out by Gauss-Hermite and `p(beta | y)`
+  marginalized on a grid): the exact intercept marginal is
+  `mean -4.0050, 95% (-6.5082, -2.2898)`; the Laplace Gaussian gives
+  `mean -3.4025, (-5.3153, -1.4897)`, total endpoint error 1.9930; the
+  correction on `S = {intercept}` gives `mean -3.7675, (-6.1446, -2.0611)`,
+  endpoint error 0.5923 -- a 70.3% reduction. Residual bias remains, as expected
+  from a lower-bound skewness estimate and a Gaussian conditional.
+
+  MEASURED against correcting EVERY coordinate, which is the question of whether
+  a subspace is enough (200 seeds x 2 coefficients, Bernoulli random intercept,
+  60 groups of 3, at the true RE SD, against the exact quadrature marginal,
+  nominal 0.95): plain Laplace 0.9050 (se 0.0147), subspace debias 0.9275
+  (0.0130) at a mean `|S|` of 0.945 coordinates, full-S debias over all 62
+  latent coordinates 0.9225 (0.0134). Correcting about one coordinate recovers
+  what correcting all 62 recovers, and costs 0.313 s against 0.461 s.
+
+  MEASURED against the full Gibbs debias (400 seeds, rare-event binomial-logit
+  with a random intercept, pooled over both coefficients): at nominal 0.95,
+  plain Laplace 0.9738 (se 0.0057), subspace 0.8662 (0.0120), full Gibbs 0.8888
+  (0.0111) -- subspace within 1.4 standard errors of the full debias; at nominal
+  0.80, plain 0.8738, subspace 0.7175 (0.0159), full Gibbs 0.7037 (0.0161),
+  within 0.6 standard errors. Cost 0.468 s against the full debias's 1.287 s,
+  **2.75x cheaper**. On the small-group binary RE fixture every probed
+  coordinate bands `good` (max `|gamma_3|` 0.236 over all 122 latent
+  coordinates), `S` is empty, and the fit is the plain one.
+
+  The COUPLING CLOSURE (grow `S` by the precision-graph neighbours whose partial
+  correlation with a member exceeds a threshold) is implemented and was measured
+  both ways rather than assumed, which is what the issue asked for. At the
+  default threshold it changes nothing: against the exact marginal it moves the
+  endpoint error 0.5923 -> 0.5651, a difference of 0.027 against a combined seed
+  standard error of 0.038, and across the 400-seed sweep it fires on 163 seeds
+  yet leaves coverage identical on 1572 of 1600 seed-coefficient-levels. The
+  reason is that the partial correlations between a fixed effect and the random
+  effects only run about 0.09 to 0.25 on these models, so a threshold in the
+  usual "strong coupling" range never bites.
+
+  Lowering it far enough to bite does move the finer metric, and that is worth
+  stating precisely rather than glossing: on a 14-coordinate fixture the total
+  endpoint error against the exact marginal falls 4.43 -> 1.21 only once the
+  threshold reaches 0.05, at which point `|S|` has grown to 13.4 of 14 -- the
+  full debias wearing a different name rather than a subspace one. So
+  conditioning `x_{-S}` on the Gaussian does NOT reproduce the exact marginal
+  endpoint for endpoint; it removes about 70% of the Gaussian's endpoint error
+  at `|S| = 1` and the rest is not cheaply recoverable by growing `S`.
+
+  On the arbiter the issue actually names -- interval coverage -- that residual
+  does not show: at 200 seeds the `|S| = 1` correction and the all-62-coordinate
+  correction cover 0.9275 and 0.9225, indistinguishable. Coverage is the coarser
+  of the two metrics, and the closure is off by default because nothing measured
+  here asks for it. It stays available as `closure = TRUE` or an explicit
+  threshold.
+
+  `S` is recorded on the fit as `subspace_debias` (selected indices, the
+  per-index band table they were read from, what the closure added, and the
+  per-node acceptance), so the escalation is auditable rather than implicit. An
+  empty `S` is not a special case of anything: the sampler is never entered, no
+  random number is consumed, and the fit is bit-for-bit the plain Laplace fit --
+  asserted on both the solver and the front door.
+
+* **One random-walk Metropolis definition, not two** (`src/rwmh.h`). The
+  starting scale `2.4 / sqrt(d)`, the Roberts-Gelman-Gilks target acceptance,
+  the Robbins-Monro burn-in adaptation and the accept test were written out
+  inline in the covariance Gibbs sweep and would have been written out again for
+  the subspace debias. They are now one set of primitives both consume.
+  `rw_accept()` draws its uniform unconditionally so a sweep consumes exactly
+  one uniform per test whatever the ratio is, which is what keeps the migrated
+  Gibbs sweep's RNG stream unchanged.
+
 ## 0.0.140
 
 * **`gamma_3` is now consumed, not only graded: the inner-Laplace marginals can

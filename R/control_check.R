@@ -117,7 +117,8 @@ tulpa_check_control <- function(control, allowed, where) {
              "diagnose_k", "k_samples", "checkpoint"),
     re_cov_nested = c("integration", "n_per_axis", "span", "n_draws", "seed",
                       "max_iter", "tol", "n_threads", "diagnose_k",
-                      "k_samples", "checkpoint", "outer_maxit"),
+                      "k_samples", "checkpoint", "outer_maxit",
+                      "subspace_debias"),
     re_cov_gibbs = c("n_iter", "warmup", "thin", "seed", "max_iter", "tol",
                      "n_threads"),
     # EB stops at the maximizer, so beyond the inner-solve knobs and the outer

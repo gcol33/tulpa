@@ -23,7 +23,10 @@ tulpa_laplace(
   return_re_cov = FALSE,
   X_zi = NULL,
   zi_prior_sd = 2.5,
-  return_joint_hessian = FALSE
+  return_joint_hessian = FALSE,
+  compute_skew = FALSE,
+  skew_idx = NULL,
+  debias = NULL
 )
 }
 \arguments{
@@ -108,6 +111,25 @@ Laplace approximation takes the determinant of, so it is what an exact
 derivative of the log-marginal has to differentiate through; \code{H_beta} is
 only its fixed-effect Schur complement. Costs one extra copy of the
 Hessian, so it is off by default. Non-spatial multi-RE path only.}
+
+\item{compute_skew}{If \code{TRUE}, additionally return the inner-Laplace
+reliability material at \code{skew_idx}: \code{inner_skew} (gamma_3, Rue Martino &
+Chopin 2009's cubic term), and the importance curve \code{inner_is_z} /
+\code{inner_is_log_joint} the inner Pareto-k-hat is fitted from. Costs one
+linear solve plus a fixed batch of objective evaluations per probed index.
+Non-spatial path only.}
+
+\item{skew_idx}{1-based latent indices to probe (in the \verb{[beta | random effects]} layout of \code{mode}). \code{NULL} with \code{compute_skew = TRUE} probes every
+latent index.}
+
+\item{debias}{Subspace debias (gcol33/tulpa#304): a list with \code{idx} (1-based
+latent indices to correct by Metropolis along the Gaussian-conditional-mean
+surface through the mode) and optional \code{n_iter} / \code{warmup} / \code{thin}. The
+result then carries \code{debias_draws} (\verb{n_kept x length(idx)}, the sampled
+\code{x_S - mode_S}), \code{debias_sigma_ss} (the inner Laplace's own marginal
+covariance of \code{x_S}), \code{debias_accept} and \code{debias_idx}. \code{NULL} (default) or
+an empty \code{idx} leaves the solve bit-for-bit as it was and consumes no
+random number. Non-spatial path only.}
 }
 \value{
 A list with:
