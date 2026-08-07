@@ -116,6 +116,33 @@
   coordinate bands `good` (max `|gamma_3|` 0.236 over all 122 latent
   coordinates), `S` is empty, and the fit is the plain one.
 
+  A second whole-fit sweep on a denser fixture -- Bernoulli random intercept, 60
+  groups of 3 (n = 180), `beta = (-2.5, 1)`, `sigma_u = 1`, 200 seeds, all three
+  backends at their defaults on the same data -- does NOT reproduce that match,
+  and the reason is worth stating rather than averaging away. Beta coverage
+  pooled over both coefficients at nominal 0.95: plain nested 356/400 = 0.8900
+  (se 0.0156), subspace 359/400 = 0.8975 (0.0152), full Gibbs 376/400 = 0.9400
+  (0.0119) -- a 2.2 standard-error gap, at 1.074 s against 8.123 s. The
+  correction is not what falls short there. On the SAME 200 seeds its own layer,
+  conditional coverage at the true sigma, goes 0.9050 plain -> 0.9275 subspace
+  against 0.9225 for correcting every one of the 62 latent coordinates, so one
+  coordinate recovers what all 62 do, at 0.313 s against 0.461 s. What is left
+  is outer: the nested path's `sigma_1` interval covers 150/200 against the
+  Gibbs sampler's 199/200 and its intercept interval is 26% narrower, and
+  turning the correction on moves neither number. That is a different layer,
+  and the two backends are not even integrating the same hyperprior (the
+  conjugate `Sigma | b` draw cannot take the flat default); gcol33/tulpa#308
+  separates it.
+
+  Against exact Gauss-Hermite quadrature on that fixture (24 seeds x 2
+  coefficients, max grid tail mass 8.4e-14) total absolute endpoint error is
+  plain 24.2040, subspace 21.2363 (-12.3%), every-coordinate 7.7709 (-67.9%).
+  So the band-selected subspace recovers the full correction's COVERAGE while
+  recovering about a fifth of its endpoint accuracy: it puts the interval in the
+  right place without fully fixing its shape. Closing that remainder is what the
+  coupling closure below would do, and only by growing `S` to nearly the whole
+  coupled block.
+
   The COUPLING CLOSURE (grow `S` by the precision-graph neighbours whose partial
   correlation with a member exceeds a threshold) is implemented and was measured
   both ways rather than assumed, which is what the issue asked for. At the
