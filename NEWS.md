@@ -1,5 +1,56 @@
 # tulpa NEWS
 
+## 0.0.132
+
+* **The #289/#290/#291 auto-recenter now fires for wrapper-package fits: axis
+  provenance replaces field presence (#293).** The rescue's guard was
+  `!is.null(prior$sigma_grid)` -- "the caller named a grid, so it is an
+  override". A wrapper package that computes the engine's own default axis
+  itself (tulpaObs's `occu_cover()` does, because it also derives the copy arm's
+  amplitude axis from that vector and hands the same axis to several blocks)
+  writes a non-NULL `sigma_grid` on a fit where the USER named nothing, so every
+  such fit looked pinned and the recenter never ran. `SIGMA_GRID = "auto"` was
+  inert for exactly the fits it exists to rescue.
+
+  Provenance is now explicit, in one predicate (`.nl_axis_is_pinned()`,
+  `R/nested_laplace_auto_grid.R`) that all four rescues share -- the joint
+  single-block, the joint multi-block copy block, the standalone registry
+  (`icar` `tau_grid` / `bym2` `sigma_grid`) and `fit_st_nested()`. An axis
+  counts as a DEFAULT (recentre-able) when it is absent, when it is marked with
+  the new `auto_grid()`, or when its node set is exactly the engine's own
+  default axis for that field -- a grid identical to the default carries no
+  information a pin would add. Anything else is a pin and is never moved.
+
+  - `auto_grid(x)` / `is_auto_grid(x)` (exported) let a wrapper package declare
+    an axis it defaulted rather than one the user chose. The marker is an
+    attribute, recorded and stripped once at the front door
+    (`.nl_grid_provenance()`), so no downstream consumer ever sees an attributed
+    numeric.
+  - `control$auto_recenter = FALSE` (new, on `tulpa_nested_laplace()`,
+    `tulpa_nested_laplace_joint()` and `fit_st_nested()`) is the opt-out that
+    integrates any grid exactly as given, the engine's default axis included.
+  - `res$outer_grid_recenter_declined` reports why a `"fixed"` placement stayed
+    fixed: `"grid_not_collapsed"`, `"axis_pinned"`, `"no_usable_curvature"`,
+    `"auto_recenter_disabled"`, `"grid_knobs_overridden"`, `"refit_failed"`. An
+    inert rescue was previously indistinguishable from one that was never
+    needed, which is how #293 went unnoticed through #289 -> #292.
+  - Axis-name resolution is shared (`.nl_axis_alias()`): the same axis is
+    spelled `sigma` in a single-block grid, `b<k>.sigma` in a multi-block one,
+    and `theta` when a single-axis vector grid is coerced for the regime
+    diagnostic. The multi-block rescue matched only the prefixed spelling and
+    the registry rescue carried a hard-coded `value_axis_name` for the coerced
+    one; both now go through the alias set, plus the "a lone log-tagged axis IS
+    the family's scale axis" fallback.
+  - The default field-SD axis is single-sourced as `.nl_default_sigma_axis()`
+    (it was copy-pasted across the three single-block backends, the multi-block
+    copy-axis builder and the bym2 registry default).
+
+  Contract change: handing the engine's own default axis in explicitly used to
+  hold the grid fixed; it now recentres like the defaulted axis it is
+  (`test-nested-laplace-registry-auto-grid.R` updated, and that fit's k-hat now
+  agrees with the defaulted-grid fit's on a collapsed grid). Use
+  `control$auto_recenter = FALSE` to hold a grid where it is.
+
 ## 0.0.131
 
 * **The 0.0.130 auto-recenter now also engages under the default

@@ -94,11 +94,14 @@
 #'   (gcol33/tulpa#292): the mode-Hessian is reused from the diagnostic when it
 #'   ran, or computed on its own (one extra batched finite-difference solve,
 #'   only when the grid actually collapsed) when it did not -- so
-#'   `diagnose_k = FALSE`, the default, does not leave a railed axis stuck. An
-#'   explicit `sigma_grid` always wins -- auto-recenter only engages when this
-#'   field is left `NULL`. Declines gracefully (keeps the fixed-grid fit) when
-#'   another axis in the same grid has unguessable support (car_proper's
-#'   `rho_car`).
+#'   `diagnose_k = FALSE`, the default, does not leave a railed axis stuck. A
+#'   `sigma_grid` the caller PINNED always wins: auto-recenter engages when the
+#'   field is left `NULL`, when it is marked with [auto_grid()] (how a wrapper
+#'   package declares an axis it defaulted rather than one the user chose,
+#'   gcol33/tulpa#293), or when its nodes are exactly the engine's own default
+#'   axis. Declines gracefully (keeps the fixed-grid fit) when another axis in
+#'   the same grid has unguessable support (car_proper's `rho_car`); whichever
+#'   way it declines, `outer_grid_recenter_declined` says which (see below).
 #'
 #' @param copy Multi-block copy specification (multi-block `prior` only). For a
 #' single-block fit there is no `copy` argument: declare the copy coefficient
@@ -452,6 +455,11 @@
 #'     for both the single-block backends (icar/bym2/car_proper) and the
 #'     multi-block path (a per-group RE, a trend field, or an arm-specific
 #'     field block).
+#'   * `auto_recenter` (`TRUE`) -- re-centre a default outer grid axis on its
+#'     posterior mode and refit when the fit rails against a boundary node
+#'     (gcol33/tulpa#289 / #290). `FALSE` integrates over the grid exactly as
+#'     given, whatever it is, and records
+#'     `outer_grid_recenter_declined = "auto_recenter_disabled"`.
 #'   * `checkpoint` (`NULL`) -- grid-cell checkpoint/resume. Set
 #'     `list(path = "fit.ckpt", resume = TRUE)` to make a killed or interrupted
 #'     fit resumable: each completed outer-grid cell is appended to `path`, and
@@ -529,6 +537,14 @@
 #'      the `prior` argument above). `outer_grid_recenter_attempts` (integer)
 #'      and `outer_grid_prior_added` (logical: whether the light default
 #'      PC(U=3, alpha=0.01) sigma prior was applied) are set alongside it.
+#'   * `outer_grid_recenter_declined` -- on a `"fixed"` placement, why the
+#'      recenter did not run: `"grid_not_collapsed"` (the grid already brackets
+#'      the mode -- the common case, no refit needed), `"axis_pinned"` (the
+#'      caller pinned `sigma_grid`; mark it with [auto_grid()] if it is a
+#'      default rather than a choice), or `"no_usable_curvature"` (the
+#'      mode-Hessian the recenter needs was unavailable or degenerate, e.g. a
+#'      car_proper grid whose `rho_car` axis has unguessable support). Absent
+#'      when the fit WAS recentred.
 #'   * `pareto_k_outer_skew` -- per-axis skewness of the hyperparameter marginal
 #'      in the proposal's whitened coordinate, present only when a
 #'      \eqn{\hat{k}} above the good band triggered the skew-normal rescue pass.
@@ -670,6 +686,17 @@ tulpa_nested_laplace_joint <- function(responses,
         .joint_attach_k_quality(res, k_quality, diagnose_k,
                                 res$diagnose_draws %||% NA_integer_, k_conf_bands)
 
+    # Outer-axis provenance, taken ONCE before the first fit: which grid axes
+    # the caller declared as defaults with `auto_grid()` (as opposed to pinned
+    # deliberately), and the same prior with the markers stripped so nothing
+    # downstream sees an attributed numeric. The auto-recenter passes below read
+    # the record; everything else reads plain grids (gcol33/tulpa#293).
+    prov  <- .nl_grid_provenance(prior)
+    prior <- prov$prior
+    # `control$auto_recenter = FALSE` holds every grid exactly as given -- the
+    # opt-out for a caller who wants the default axis integrated as-is.
+    auto_recenter <- !isFALSE(control$auto_recenter)
+
     ctrl <- control
     res  <- attach_q(.tulpa_nl_joint_once(responses, prior, copy, phi_grid,
                                           prior_sigma, prior_alpha, prior_phi,
@@ -689,7 +716,8 @@ tulpa_nested_laplace_joint <- function(responses,
         refit = function(prior_i, prior_sigma_i)
             attach_q(.tulpa_nl_joint_once(responses, prior_i, copy, phi_grid,
                                           prior_sigma_i, prior_alpha, prior_phi,
-                                          cell_coupling, ctrl)))
+                                          cell_coupling, ctrl)),
+        auto = prov$auto, enabled = auto_recenter)
     res         <- rescue$res
     prior       <- rescue$prior
     prior_sigma <- rescue$prior_sigma
@@ -705,7 +733,8 @@ tulpa_nested_laplace_joint <- function(responses,
         refit = function(prior_i, prior_sigma_i)
             attach_q(.tulpa_nl_joint_once(responses, prior_i, copy, phi_grid,
                                           prior_sigma_i, prior_alpha, prior_phi,
-                                          cell_coupling, ctrl)))
+                                          cell_coupling, ctrl)),
+        auto = prov$auto, enabled = auto_recenter)
     res         <- rescue_multi$res
     prior       <- rescue_multi$prior
     prior_sigma <- rescue_multi$prior_sigma

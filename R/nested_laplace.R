@@ -34,6 +34,15 @@
 #'   * rw1/rw2: `temporal_idx` (1-based), `n_times`; optional `tau_grid`,
 #'             `cyclic` (default FALSE).
 #'   * ar1:   `temporal_idx`, `n_times`; optional `tau_grid`, `rho_grid`.
+#'
+#'   A default grid axis is a starting axis, not a hard ceiling: for `icar`
+#'   (`tau_grid`) and `bym2` (`sigma_grid`) a posterior mode that rails a
+#'   boundary node (`pareto_k_regime = "collapsed_edge"`) triggers one
+#'   mode-Hessian recenter-and-refit (gcol33/tulpa#290), reported through
+#'   `outer_grid_placement` / `outer_grid_recenter_declined` -- see
+#'   [tulpa_nested_laplace_joint()]'s return docs. An axis the caller pinned is
+#'   never moved; mark a grid your own code defaulted with [auto_grid()] to keep
+#'   the recenter live on it (gcol33/tulpa#293).
 #' @param re_idx Optional 1-based RE group index per obs (defaults to no RE).
 #' @param n_re_groups RE group count (default 0).
 #' @param sigma_re RE standard deviation (default 1).
@@ -70,6 +79,11 @@
 #'     FIXED inner Laplace, this scores whether that inner Gaussian
 #'     approximation is itself a good fit to the latent-field conditional
 #'     posterior. See [diagnostics()] for the combined whole-fit verdict.
+#'   * `auto_recenter` (`TRUE`) -- re-centre a default outer grid axis on its
+#'     posterior mode and refit when the fit rails against a boundary node
+#'     (gcol33/tulpa#289 / #290). `FALSE` integrates over the grid exactly as
+#'     given, whatever it is, and records
+#'     `outer_grid_recenter_declined = "auto_recenter_disabled"`.
 #'
 #' @return A list with:
 #'   * `theta_grid`: matrix or vector of grid hyperparameter values.
@@ -184,6 +198,11 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     stop("`prior` must be a list (single block) or list-of-lists (multi-block).",
          call. = FALSE)
   }
+  # Outer-axis provenance (gcol33/tulpa#293): record which grid axes the caller
+  # declared as defaults with `auto_grid()` -- the registry rescue below reads
+  # it -- and strip the markers so every downstream consumer sees plain grids.
+  .prov <- .nl_grid_provenance(prior)
+  prior <- .prov$prior
   # A model-supplied `likelihood` is only honoured by the spec-driven multi-block
   # driver (run_multi_block_nested_laplace); the single-kernel path (.nl_dispatch)
   # has no spec hook. Route a single LatentBlock-type prior through the
@@ -274,8 +293,10 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   # Auto-recenter a collapsed icar `tau` / bym2 `sigma` axis
   # (gcol33/tulpa#290, the registry generalization of #289's joint-path
   # fix): a single mode-Hessian recenter-and-refit when the fixed default
-  # axis railed. A no-op (zero extra fit) unless it actually did; an
-  # explicit `tau_grid` / `sigma_grid` always wins. car_proper (unguessable
+  # axis railed. A no-op (zero extra fit) unless it actually did; a PINNED
+  # `tau_grid` / `sigma_grid` always wins (`.nl_axis_is_pinned()`: a grid the
+  # caller named and neither marked with `auto_grid()` nor equal to the
+  # engine's own default axis). car_proper (unguessable
   # `rho`) and mcar (log-Cholesky axis geometry) are out of scope here --
   # see `.nl_registry_axis_mode_cov()`.
   registry_rescue <- .nl_registry_grid_rescue(
@@ -298,7 +319,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
         blk2$rho_grid   <- theta_mat[, 2L]
       }
       .nl_dispatch(type, cargs_no_ckpt, blk2)$log_marginal
-    })
+    },
+    auto = .prov$auto, enabled = !isFALSE(control$auto_recenter))
   res   <- registry_rescue$res
   prior <- registry_rescue$prior
   res$outer_grid_placement <- res$outer_grid_placement %||% "fixed"
@@ -454,7 +476,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     cpp_fn = "cpp_nested_laplace_bym2",
     defaults = function(p, a) {
       if (is.null(p$sigma_grid) || is.null(p$rho_grid)) {
-        sg <- exp(seq(log(0.1), log(3), length.out = 5))
+        sg <- .nl_default_sigma_axis()
         rg <- c(0.2, 0.5, 0.8, 0.95)
         gr <- expand.grid(sigma = sg, rho = rg)
         p$sigma_grid <- gr$sigma; p$rho_grid <- gr$rho
@@ -650,7 +672,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     cpp_fn = NULL,
     defaults = function(p, a) {
       if (is.null(p$sigma_grid)) {
-        p$sigma_grid <- exp(seq(log(0.1), log(3), length.out = 5))
+        p$sigma_grid <- .nl_default_sigma_axis()
       }
       p
     },

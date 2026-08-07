@@ -170,11 +170,7 @@
                     prepared = base$prepared))
     }
     if (is_copy) {
-        sigma_axis <- p$sigma_grid
-        if (is.null(sigma_axis)) {
-            sigma_axis <- exp(seq(log(0.1), log(3), length.out = 5))
-        }
-        sigma_axis <- as.numeric(sigma_axis)
+        sigma_axis <- as.numeric(p$sigma_grid %||% .nl_default_sigma_axis())
         # Copy axes always lead with (sigma, alpha); the kernel materializes
         # sigma_donor = sigma and sigma_copy = alpha * sigma in those two
         # leading columns (see .joint_multi_cpp_grid), so any trailing

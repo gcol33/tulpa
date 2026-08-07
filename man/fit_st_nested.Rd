@@ -56,7 +56,8 @@ is no RE term.}
 \code{n_grid_temporal} (default 4 each), \code{n_grid_rho} (ar1 only, default 3),
 \code{tau_lower} / \code{tau_upper} (precision grid bounds, default 0.25 / 16),
 \code{rho_lower} / \code{rho_upper} (ar1 grid, default 0.1 / 0.9), \code{max_iter}, \code{tol},
-\code{n_threads}.
+\code{n_threads}, \code{auto_recenter} (default \code{TRUE}; \code{FALSE} holds the grid
+exactly as specified).
 
 The \verb{(tau_lower, tau_upper)} span (and, for \code{ar1}, \verb{(rho_lower, rho_upper)}) is a starting axis, not a hard ceiling (gcol33/tulpa#291):
 when the fitted precision (or, for \code{ar1}, autocorrelation) posterior
@@ -64,7 +65,8 @@ mode rails a boundary node (\code{pareto_k_regime = "collapsed_edge"}, see
 below), the driver fits a mode-Hessian via a derivative-free \code{optim()}
 over the collapsed grid and refits a grid re-centred on it (one
 attempt). Declines (keeps the fixed-grid fit) when any of the grid
-knobs above was set explicitly -- an explicit choice always wins.}
+knobs above was set explicitly -- an explicit choice always wins;
+\code{outer_grid_recenter_declined} records which reason applied.}
 }
 \value{
 A \code{tulpa_fit} (subclass \code{tulpa_nested_laplace}) carrying the
@@ -73,7 +75,10 @@ fixed-effect posterior (\code{draws} via the grid mixture), \code{spatial_effect
 \verb{(tau_spatial, tau_temporal, rho)}. Also carries \code{pareto_k_regime}
 (\code{"spread"} / \code{"collapsed_interior"} / \code{"collapsed_edge"}, see
 \code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}}'s return docs for the definition) and
-\code{outer_grid_placement} (\code{"fixed"} or \code{"auto_recentered"}).
+\code{outer_grid_placement} (\code{"fixed"} or \code{"auto_recentered"}) plus, on a
+\code{"fixed"} placement, \code{outer_grid_recenter_declined}
+(\code{"grid_knobs_overridden"} / \code{"grid_not_collapsed"} /
+\code{"no_usable_curvature"} / \code{"refit_failed"}).
 }
 \description{
 Fits \verb{y ~ X beta + u_spatial[s] + v_temporal[t]} with an areal spatial field

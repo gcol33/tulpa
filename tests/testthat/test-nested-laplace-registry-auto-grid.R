@@ -3,6 +3,11 @@
 # driver's #289 fix (test-nested-laplace-joint-auto-grid.R). Scope: icar's
 # `tau_grid` and bym2's `sigma_grid`, one recenter attempt (no PC-prior
 # fallback -- see the scope note on `.nl_registry_grid_rescue()`).
+#
+# gcol33/tulpa#293: what counts as a PIN (never moved) is decided by
+# `.nl_axis_is_pinned()`, not by field presence -- an axis equal to the engine's
+# own default axis, or marked with `auto_grid()`, is a default whoever wrote it.
+# `control$auto_recenter = FALSE` is the opt-out that holds any grid as given.
 
 .chain_adj_reg <- function(n_s) {
     nbr <- lapply(seq_len(n_s),
@@ -27,16 +32,28 @@ test_that("icar auto-recenters a collapsed tau axis away from the fixed ceiling"
                   adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
                   n_neighbors = adj$n_neighbors, spatial_idx = spatial_idx)
 
+    # `control$auto_recenter = FALSE` is the opt-out that holds ANY grid where it
+    # is (the default axis included -- gcol33/tulpa#293: handing the engine's own
+    # default back in is a default, not a pin, so it does NOT hold the grid).
     fit_fixed <- tulpa_nested_laplace(
         y = y, n_trials = rep(1L, length(y)), X = X,
         prior = modifyList(prior, list(tau_grid = .default_tau_grid())),
-        family = "binomial")
+        family = "binomial", control = list(auto_recenter = FALSE))
     fit_auto <- tulpa_nested_laplace(y = y, n_trials = rep(1L, length(y)), X = X,
                                      prior = prior, family = "binomial")
+    # Same data, same axis, arriving explicitly instead of by default.
+    fit_explicit_default <- tulpa_nested_laplace(
+        y = y, n_trials = rep(1L, length(y)), X = X,
+        prior = modifyList(prior, list(tau_grid = .default_tau_grid())),
+        family = "binomial")
 
     expect_identical(fit_fixed$outer_grid_placement, "fixed")
+    expect_identical(fit_fixed$outer_grid_recenter_declined,
+                     "auto_recenter_disabled")
     expect_identical(fit_auto$outer_grid_placement, "auto_recentered")
     expect_identical(fit_auto$outer_grid_recenter_attempts, 1L)
+    expect_identical(fit_explicit_default$outer_grid_placement, "auto_recentered")
+    expect_identical(fit_explicit_default$theta_grid, fit_auto$theta_grid)
     # The recentered axis brackets a smaller tau (larger field SD) than the
     # fixed default's floor of 0.3 -- the mode moved off the low-tau
     # ceiling instead of being silently truncated there.
@@ -60,6 +77,7 @@ test_that("an explicit tau_grid on icar is never touched by the rescue", {
     fit <- tulpa_nested_laplace(y = y, n_trials = rep(1L, length(y)), X = X,
                                 prior = prior, family = "binomial")
     expect_identical(fit$outer_grid_placement, "fixed")
+    expect_identical(fit$outer_grid_recenter_declined, "axis_pinned")
     expect_null(fit$outer_grid_recenter_attempts)
     expect_identical(fit$theta_grid, c(1, 5, 10, 20, 30))
 })

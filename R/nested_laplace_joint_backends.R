@@ -58,8 +58,7 @@
 .joint_backends <- list(
     bym2 = list(
         build_grids = function(prior, has_copy, alpha_axis, phi_axes = NULL) {
-            sigma_axis <- prior$sigma_grid %||%
-                exp(seq(log(0.1), log(3), length.out = 5))
+            sigma_axis <- prior$sigma_grid %||% .nl_default_sigma_axis()
             rho_axis <- prior$rho_grid %||% c(0.2, 0.5, 0.8, 0.95)
             .joint_cartesian(list(sigma = sigma_axis, rho = rho_axis),
                               has_copy, alpha_axis, phi_axes)
@@ -82,8 +81,7 @@
 
     icar = list(
         build_grids = function(prior, has_copy, alpha_axis, phi_axes = NULL) {
-            sigma_axis <- prior$sigma_grid %||%
-                exp(seq(log(0.1), log(3), length.out = 5))
+            sigma_axis <- prior$sigma_grid %||% .nl_default_sigma_axis()
             .joint_cartesian(list(sigma = sigma_axis), has_copy,
                               alpha_axis, phi_axes)
         },
@@ -104,8 +102,7 @@
 
     car_proper = list(
         build_grids = function(prior, has_copy, alpha_axis, phi_axes = NULL) {
-            sigma_axis   <- prior$sigma_grid %||%
-                exp(seq(log(0.1), log(3), length.out = 5))
+            sigma_axis   <- prior$sigma_grid %||% .nl_default_sigma_axis()
             rho_car_axis <- prior$rho_car_grid %||% c(0.5, 0.8, 0.95, 0.99)
             .joint_cartesian(list(sigma = sigma_axis, rho_car = rho_car_axis),
                               has_copy, alpha_axis, phi_axes)

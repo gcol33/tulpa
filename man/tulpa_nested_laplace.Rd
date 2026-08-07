@@ -42,7 +42,16 @@ spatially-varying coefficient whose eta contribution is
 \item rw1/rw2: \code{temporal_idx} (1-based), \code{n_times}; optional \code{tau_grid},
 \code{cyclic} (default FALSE).
 \item ar1:   \code{temporal_idx}, \code{n_times}; optional \code{tau_grid}, \code{rho_grid}.
-}}
+}
+
+A default grid axis is a starting axis, not a hard ceiling: for \code{icar}
+(\code{tau_grid}) and \code{bym2} (\code{sigma_grid}) a posterior mode that rails a
+boundary node (\code{pareto_k_regime = "collapsed_edge"}) triggers one
+mode-Hessian recenter-and-refit (gcol33/tulpa#290), reported through
+\code{outer_grid_placement} / \code{outer_grid_recenter_declined} -- see
+\code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}}'s return docs. An axis the caller pinned is
+never moved; mark a grid your own code defaulted with \code{\link[=auto_grid]{auto_grid()}} to keep
+the recenter live on it (gcol33/tulpa#293).}
 
 \item{spec}{Optional \code{tulpa_temporal} or \code{tulpa_spatial} spec object
 (output of \code{\link[=temporal_rw1]{temporal_rw1()}}, \code{\link[=temporal_rw2]{temporal_rw2()}}, \code{\link[=temporal_ar1]{temporal_ar1()}},
@@ -105,6 +114,11 @@ outer diagnostic scores the hyperparameter-grid integration around a
 FIXED inner Laplace, this scores whether that inner Gaussian
 approximation is itself a good fit to the latent-field conditional
 posterior. See \code{\link[=diagnostics]{diagnostics()}} for the combined whole-fit verdict.
+\item \code{auto_recenter} (\code{TRUE}) -- re-centre a default outer grid axis on its
+posterior mode and refit when the fit rails against a boundary node
+(gcol33/tulpa#289 / #290). \code{FALSE} integrates over the grid exactly as
+given, whatever it is, and records
+\code{outer_grid_recenter_declined = "auto_recenter_disabled"}.
 }}
 }
 \value{

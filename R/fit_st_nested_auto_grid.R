@@ -92,9 +92,10 @@
 # original `seq(rho_lower, rho_upper, ...)` convention, just re-centred and
 # no longer bounded by the retired default range).
 #
-# Declines (returns `out` unchanged) when the grid knobs were explicitly
-# overridden, the regime never collapsed onto an edge, or the mode-find /
-# Hessian is unusable (non-finite, non-positive-definite, a degenerate
+# Declines (returns `out` unchanged, carrying the reason in
+# `outer_grid_recenter_declined`) when `control$auto_recenter = FALSE`, the grid
+# knobs were explicitly overridden, the regime never collapsed onto an edge, or
+# the mode-find / Hessian is unusable (non-finite, non-positive-definite, a degenerate
 # refit) -- the same guard-rather-than-guess stance every other family's
 # rescue takes.
 #
@@ -115,15 +116,22 @@
 .st_auto_grid_rescue <- function(out, kernel, kargs, spatial_type, temporal_type,
                                  n_gs, n_gt, n_grho, tau_lo, tau_hi, control,
                                  rho_spatial_val = 0.9) {
-    if (.st_grid_overridden(control)) return(out)
-    if (!identical(out$pareto_k_regime, "collapsed_edge")) return(out)
+    if (isFALSE(control$auto_recenter)) {
+        return(.nl_decline_recenter(out, "auto_recenter_disabled"))
+    }
+    if (.st_grid_overridden(control)) {
+        return(.nl_decline_recenter(out, "grid_knobs_overridden"))
+    }
+    if (!identical(out$pareto_k_regime, "collapsed_edge")) {
+        return(.nl_decline_recenter(out, "grid_not_collapsed"))
+    }
 
     axes <- .st_grid_axes(temporal_type)
     tg <- out$theta_grid
     w  <- out$weights
     if (is.null(tg) || is.null(w) || length(w) != nrow(tg) ||
         !all(axes %in% colnames(tg))) {
-        return(out)
+        return(.nl_decline_recenter(out, "no_usable_curvature"))
     }
     seed_row <- tg[which.max(w), , drop = TRUE]
     u0 <- vapply(axes, function(a) .st_axis_fwd(a, seed_row[[a]]), numeric(1))
@@ -147,12 +155,12 @@
         error = function(e) NULL)
     if (is.null(opt) || !all(is.finite(opt$par)) || is.null(opt$hessian) ||
         !all(is.finite(opt$hessian))) {
-        return(out)
+        return(.nl_decline_recenter(out, "no_usable_curvature"))
     }
     H     <- (opt$hessian + t(opt$hessian)) / 2
     cov_u <- tryCatch(solve(H), error = function(e) NULL)
     if (is.null(cov_u) || any(!is.finite(cov_u)) || any(diag(cov_u) <= 0)) {
-        return(out)
+        return(.nl_decline_recenter(out, "no_usable_curvature"))
     }
     u_hat <- stats::setNames(opt$par, axes)
     sd_u  <- stats::setNames(sqrt(pmax(diag(cov_u), 0)), axes)
@@ -169,10 +177,14 @@
     clamp_axis <- function(vals, axis) sort(unique(pmin(pmax(vals, exp(lo[[axis]])), exp(hi[[axis]]))))
     new_ts <- .nl_recenter_log_axis(u_hat[["tau_spatial"]],  sd_u[["tau_spatial"]],  n_pts = n_gs)
     new_tt <- .nl_recenter_log_axis(u_hat[["tau_temporal"]], sd_u[["tau_temporal"]], n_pts = n_gt)
-    if (is.null(new_ts) || is.null(new_tt)) return(out)
+    if (is.null(new_ts) || is.null(new_tt)) {
+        return(.nl_decline_recenter(out, "no_usable_curvature"))
+    }
     new_ts <- clamp_axis(new_ts, "tau_spatial")
     new_tt <- clamp_axis(new_tt, "tau_temporal")
-    if (length(new_ts) < 2L || length(new_tt) < 2L) return(out)
+    if (length(new_ts) < 2L || length(new_tt) < 2L) {
+        return(.nl_decline_recenter(out, "no_usable_curvature"))
+    }
 
     if ("rho" %in% axes) {
         span  <- 2.5
@@ -183,7 +195,9 @@
         # not the retired rho_lower/rho_upper default -- the whole point of
         # the recenter is to no longer be confined to that default range.
         new_rho <- sort(unique(pmin(pmax(2 * stats::plogis(u_seq) - 1, -0.999), 0.999)))
-        if (length(new_rho) < 2L) return(out)
+        if (length(new_rho) < 2L) {
+            return(.nl_decline_recenter(out, "no_usable_curvature"))
+        }
     } else {
         new_rho <- 0.0
     }
@@ -196,7 +210,7 @@
     refit <- tryCatch(do.call(kernel, a), error = function(e) NULL)
     if (is.null(refit) || is.null(refit$log_marginal) ||
         !all(is.finite(refit$log_marginal))) {
-        return(out)
+        return(.nl_decline_recenter(out, "refit_failed"))
     }
 
     refit$theta_grid  <- as.matrix(new_grid)

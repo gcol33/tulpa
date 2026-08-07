@@ -82,11 +82,14 @@ not silently truncated at 3.0. This engages whether or not
 (gcol33/tulpa#292): the mode-Hessian is reused from the diagnostic when it
 ran, or computed on its own (one extra batched finite-difference solve,
 only when the grid actually collapsed) when it did not -- so
-\code{diagnose_k = FALSE}, the default, does not leave a railed axis stuck. An
-explicit \code{sigma_grid} always wins -- auto-recenter only engages when this
-field is left \code{NULL}. Declines gracefully (keeps the fixed-grid fit) when
-another axis in the same grid has unguessable support (car_proper's
-\code{rho_car}).}
+\code{diagnose_k = FALSE}, the default, does not leave a railed axis stuck. A
+\code{sigma_grid} the caller PINNED always wins: auto-recenter engages when the
+field is left \code{NULL}, when it is marked with \code{\link[=auto_grid]{auto_grid()}} (how a wrapper
+package declares an axis it defaulted rather than one the user chose,
+gcol33/tulpa#293), or when its nodes are exactly the engine's own default
+axis. Declines gracefully (keeps the fixed-grid fit) when another axis in
+the same grid has unguessable support (car_proper's \code{rho_car}); whichever
+way it declines, \code{outer_grid_recenter_declined} says which (see below).}
 
 \item{copy}{Multi-block copy specification (multi-block \code{prior} only). For a
 single-block fit there is no \code{copy} argument: declare the copy coefficient
@@ -442,6 +445,11 @@ silently wrong 0 -- see \code{\link[=diagnostics]{diagnostics()}} for the combin
 for both the single-block backends (icar/bym2/car_proper) and the
 multi-block path (a per-group RE, a trend field, or an arm-specific
 field block).
+\item \code{auto_recenter} (\code{TRUE}) -- re-centre a default outer grid axis on its
+posterior mode and refit when the fit rails against a boundary node
+(gcol33/tulpa#289 / #290). \code{FALSE} integrates over the grid exactly as
+given, whatever it is, and records
+\code{outer_grid_recenter_declined = "auto_recenter_disabled"}.
 \item \code{checkpoint} (\code{NULL}) -- grid-cell checkpoint/resume. Set
 \code{list(path = "fit.ckpt", resume = TRUE)} to make a killed or interrupted
 fit resumable: each completed outer-grid cell is appended to \code{path}, and
@@ -521,6 +529,14 @@ triggered the mode-Hessian recenter-and-refit (gcol33/tulpa#289; see
 the \code{prior} argument above). \code{outer_grid_recenter_attempts} (integer)
 and \code{outer_grid_prior_added} (logical: whether the light default
 PC(U=3, alpha=0.01) sigma prior was applied) are set alongside it.
+\item \code{outer_grid_recenter_declined} -- on a \code{"fixed"} placement, why the
+recenter did not run: \code{"grid_not_collapsed"} (the grid already brackets
+the mode -- the common case, no refit needed), \code{"axis_pinned"} (the
+caller pinned \code{sigma_grid}; mark it with \code{\link[=auto_grid]{auto_grid()}} if it is a
+default rather than a choice), or \code{"no_usable_curvature"} (the
+mode-Hessian the recenter needs was unavailable or degenerate, e.g. a
+car_proper grid whose \code{rho_car} axis has unguessable support). Absent
+when the fit WAS recentred.
 \item \code{pareto_k_outer_skew} -- per-axis skewness of the hyperparameter marginal
 in the proposal's whitened coordinate, present only when a
 \eqn{\hat{k}} above the good band triggered the skew-normal rescue pass.

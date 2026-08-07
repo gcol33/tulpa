@@ -49,7 +49,8 @@
 #'   `n_grid_temporal` (default 4 each), `n_grid_rho` (ar1 only, default 3),
 #'   `tau_lower` / `tau_upper` (precision grid bounds, default 0.25 / 16),
 #'   `rho_lower` / `rho_upper` (ar1 grid, default 0.1 / 0.9), `max_iter`, `tol`,
-#'   `n_threads`.
+#'   `n_threads`, `auto_recenter` (default `TRUE`; `FALSE` holds the grid
+#'   exactly as specified).
 #'
 #'   The `(tau_lower, tau_upper)` span (and, for `ar1`, `(rho_lower,
 #'   rho_upper)`) is a starting axis, not a hard ceiling (gcol33/tulpa#291):
@@ -58,7 +59,8 @@
 #'   below), the driver fits a mode-Hessian via a derivative-free `optim()`
 #'   over the collapsed grid and refits a grid re-centred on it (one
 #'   attempt). Declines (keeps the fixed-grid fit) when any of the grid
-#'   knobs above was set explicitly -- an explicit choice always wins.
+#'   knobs above was set explicitly -- an explicit choice always wins;
+#'   `outer_grid_recenter_declined` records which reason applied.
 #'
 #' @return A `tulpa_fit` (subclass `tulpa_nested_laplace`) carrying the
 #'   fixed-effect posterior (`draws` via the grid mixture), `spatial_effects`,
@@ -66,7 +68,10 @@
 #'   `(tau_spatial, tau_temporal, rho)`. Also carries `pareto_k_regime`
 #'   (`"spread"` / `"collapsed_interior"` / `"collapsed_edge"`, see
 #'   [tulpa_nested_laplace_joint()]'s return docs for the definition) and
-#'   `outer_grid_placement` (`"fixed"` or `"auto_recentered"`).
+#'   `outer_grid_placement` (`"fixed"` or `"auto_recentered"`) plus, on a
+#'   `"fixed"` placement, `outer_grid_recenter_declined`
+#'   (`"grid_knobs_overridden"` / `"grid_not_collapsed"` /
+#'   `"no_usable_curvature"` / `"refit_failed"`).
 #'
 #' @seealso [tulpa()] (front door), [tulpa_nested_laplace()] (single field).
 #' @examples
