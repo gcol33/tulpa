@@ -433,20 +433,42 @@ Per-observation third-log-lik-derivatives come from
 `curvature3_obs_for_family()` (`src/laplace_family_curvature.h`, exact
 analytic ladder for built-in families) or a central finite difference on the
 Newton working weight for a consumer-package `LikelihoodSpec`
-(`build_spec_curvature3_fn`, `src/laplace_spec_curvature3.h`). Both decline
-(empty oracle) for a `LikelihoodSpec` with `n_processes != 1` -- a coupled
-multi-process likelihood (ZI, tulpaObs's `occu_cover`) has no single per-obs
-term this formula scores. The joint multi-arm loops generalize the same sum
-across arms (`build_joint_curvature3_fns`,
-`src/laplace_newton_joint.h`) -- sound because tulpa's own production
-coupling registry only ever registers `"separable"`; a genuinely coupled arm
-(`skip_arm[k]`) is excluded from the sum, not silently scored against its
-unused per-obs likelihood. **Every decline path returns NaN, never a
-silently-wrong `0`** ("perfectly Gaussian") -- `compute_inner_skew_gamma3[_joint]`
-early-returns all-NaN when the oracle is entirely absent, and per-index
-only assigns a value when at least one finite contribution accumulated
-(the pre-existing bug this fixed: an absent oracle summed to `acc = 0`,
-`0 / sigma_i^3 == 0`, read as "no skew" instead of "not computable").
+(`build_spec_curvature3_oracle`, `src/laplace_spec_curvature3.h`). The joint
+multi-arm loops generalize the same sum across arms
+(`build_joint_curvature3_fns`, `src/laplace_newton_joint.h`).
+
+**A unit reading several linear predictors at once is scored by the widened
+contraction, not declined (gcol33/tulpa#301, 0.0.139).** `src/curvature3_contract.h`
+carries the derivation: with the unit's coordinates partitioned into K blocks
+and `u^(a)` the probe direction restricted to block a,
+`sum_{a,b,c} T^{abc} u^a u^b u^c = sum_a d/ds [u' L''(e + s u^(a)) u]_{s=0}`,
+so the tensor is never materialised -- each block's term is one central
+difference of the Hessian the likelihood already returns, `2K` extra
+evaluations per unit, no storage, any block sizes. Two instances:
+a multi-process `LikelihoodSpec` (a ZI mixture; blocks = processes, Hessian =
+the row-major `n x n` `eta_weights_fn` block) and a `CellCouplingSpec` cell
+(`src/cell_curvature3.h`; blocks = the cell's arms, Hessian = the `CellDerivs`
+diagonal + cross blocks + rank-1 self-cross, so this is ONE finite-difference
+layer on a quantity the spec computes analytically). The step is scaled PER
+BLOCK off that block's own eta magnitude, matching the eta-space step the
+scalar fallback takes; a single global step is measurably coarser once the
+arms' eta scales diverge. The contraction is symmetrised over index
+permutations, which for this block decomposition is algebraically the plain
+sum (the three relabelings coincide) and buys robustness at a block whose own
+quotient could not be formed rather than variance reduction.
+
+`"coupled_likelihood"` is therefore retired: the only remaining decline is
+`curvature3_unavailable` (a spec shipping no way to reach a third derivative)
+and `coupled_arm` (a coupled fit for which no cell tensor could be built at
+all). **Every decline path returns NaN, never a silently-wrong `0`**
+("perfectly Gaussian") -- `compute_inner_skew_gamma3[_joint]` early-returns
+all-NaN when the oracle is entirely absent, per-index only assigns a value when
+at least one finite contribution accumulated, and one unreadable cell takes the
+whole contraction to NaN rather than silently understating the sum.
+
+`gamma_3` is a LOWER BOUND on the skewness, not a two-sided estimate: on the
+coupled occupancy fixture it recovers 0.299 of an exact 0.530, which bands
+"good" where the exact value bands "ok" (pinned in `test-inner-skew.R`).
 
 Wired (opt-in `compute_skew` + `skew_idx`, defaulted off in every C++
 kernel) through: the single-arm family/spec kernels (`laplace_newton.h`,

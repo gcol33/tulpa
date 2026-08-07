@@ -1,5 +1,67 @@
 # tulpa NEWS
 
+## 0.0.139
+
+* **`gamma_3` now scores coupled multi-predictor likelihoods instead of
+  declining on them** (gcol33/tulpa#301). The cubic Edgeworth term assumed a
+  log-likelihood that is a separable sum of one-eta terms, so every unit reading
+  several linear predictors at once -- a zero-inflation mixture's (count, zi)
+  pair, a `CellCouplingSpec` cell's arms (tulpaObs's `occu_cover`) -- had no
+  per-eta third derivative and came back `NaN` for good. The expansion is
+  unchanged; only the contraction widens, to
+  `sum_units sum_{a,b,c} T^{abc} u^a u^b u^c` with `T` the unit's third
+  derivative in its linear predictors and `u` the eta response to `Sigma e_i`.
+  The separable case is the one-coordinate special case of it.
+
+  `T` is never materialised (`src/curvature3_contract.h`). Partition the unit's
+  coordinates into `K` blocks and the contraction equals
+  `sum_a d/ds [u' L''(e + s u^(a)) u]` at `s = 0`, because moving along block
+  `a`'s slice of the direction differentiates exactly that block's coordinates.
+  Each term is one central difference of the Hessian the likelihood already
+  returns for the Newton solve, so the whole tensor costs `2K` extra evaluations
+  per unit and no storage, at any block sizes. For a `CellCouplingSpec` that
+  Hessian is the analytic `CellDerivs` block, so this is one finite-difference
+  layer on an exact quantity, not a difference of a difference.
+
+  The step is scaled PER BLOCK off that block's own eta magnitude, matching the
+  eta-space step the scalar working-weight fallback takes. Measured against a
+  five-point third derivative of the cell log-density: identical to a single
+  global step while the arms share an eta scale, and 1.8x more accurate once one
+  arm's `|eta|` is 67x the other's. The contraction is symmetrised over index
+  permutations; for this block decomposition that is algebraically the plain sum
+  (the three relabelings coincide), so it buys robustness at a block whose own
+  quotient could not be formed rather than variance reduction.
+
+  Verified against the exact posterior, not asserted: on the coupled two-arm
+  occupancy fixture the engine's `gamma_3` reproduces the same quantity computed
+  independently in R -- the third derivative of the exact log posterior along
+  the same conditional-mean curve -- to 8e-4 relative, and the zero-inflated
+  Poisson to 5e-4. Held against the two-dimensional quadrature of the same
+  posteriors it has the right sign and undershoots, closely where the skewness
+  is small (0.86 and 0.93 of the exact value at `|skew| ~ 0.11-0.13`) and by
+  about half where it is moderate (0.299 of an exact 0.530). That last case is
+  pinned in the suite because it has a consequence: `gamma_3` is a LOWER BOUND
+  on the skewness, and there it bands "good" where the exact value bands "ok".
+  A coupled Gaussian cell, whose Hessian is constant, reads exactly `0`.
+
+  The scalar single-coordinate path is untouched: byte-identical across seven
+  fixtures on both the family-enum and the spec entry (`identical()`, max
+  absolute difference exactly 0), verified against a build of the preceding
+  commit.
+
+* `"coupled_likelihood"` is retired from the inner-skew decline vocabulary and
+  from `.INNER_SKEW_STRUCTURAL` -- coupling several processes in one likelihood
+  no longer describes anything permanently unscorable. What remains is
+  `"curvature3_unavailable"` (a spec that ships no way to reach a third
+  derivative) and `"coupled_arm"` (a coupled fit for which no cell tensor could
+  be built at all). Every decline still returns `NaN`; one unreadable cell takes
+  the whole contraction to `NaN` rather than silently understating the sum.
+
+* New `cpp_cell_coupling_curvature3()` exposes the contraction at one cell,
+  outside any solve, so a registered spec's tensor can be checked against a
+  direct numerical third derivative of its own log-density and the step policy
+  measured rather than asserted (`tests/testthat/test-cell-curvature3.R`).
+
 ## 0.0.138
 
 * **The inner Laplace layer now has a likelihood-agnostic reliability number**

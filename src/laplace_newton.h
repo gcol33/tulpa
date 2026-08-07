@@ -105,19 +105,16 @@ LaplaceResult laplace_newton_solve_ll(
     // it existed; see make_start_feasible in laplace_newton_loop.h.
     const std::vector<int>* feasible_start_coords = nullptr,
     // Inner-Laplace skewness diagnostic (inner_laplace_skew.h), opt-in like
-    // store_Q. curvature3_fn(j, eta_j) -> l_j'''(eta_j) or NaN; the caller
-    // builds it (family ladder or a LikelihoodSpec finite-difference wrapper)
-    // because this loop is otherwise likelihood-agnostic. skew_probe_idx ==
-    // nullptr with compute_skew = true probes every latent index.
+    // store_Q. The caller builds the third-derivative oracle (family ladder,
+    // a LikelihoodSpec finite-difference wrapper, or the per-observation tensor
+    // contraction of a multi-process spec) because this loop is otherwise
+    // likelihood-agnostic; the oracle carries its own decline reason
+    // (gcol33/tulpa#296), so a likelihood that ships no third derivative does not
+    // report as an unset knob. skew_probe_idx == nullptr with
+    // compute_skew = true probes every latent index.
     bool compute_skew = false,
     const std::vector<int>* skew_probe_idx = nullptr,
-    const std::function<double(int, double)>& curvature3_fn = nullptr,
-    // Why the caller could not build `curvature3_fn`, when it could not
-    // (gcol33/tulpa#296) -- e.g. build_spec_curvature3_fn's
-    // "coupled_likelihood" / "curvature3_unavailable". Refines the loop's own
-    // generic "no_oracle" into the reason the caller actually knows, so a
-    // structurally unscorable model does not report as an unset knob.
-    const char* curvature3_declined = nullptr
+    const Curvature3Oracle* curvature3 = nullptr
 ) {
     LaplaceResult result;
     result.mode.assign(n_x, 0.0);
@@ -270,18 +267,16 @@ LaplaceResult laplace_newton_solve_ll(
             probe = &all_idx;
         }
         bool used_sparse_factor = use_sparse && sparse_solver.factored();
+        Curvature3Oracle no_oracle;
         InnerSkewOutcome sk = compute_inner_skew_gamma3(
             n_x, N, result.mode, scratch.chol, sparse_solver, used_sparse_factor,
-            compute_eta, x, scratch.eta, scratch.eta_tmp, curvature3_fn, *probe
+            compute_eta, x, scratch.eta, scratch.eta_tmp,
+            curvature3 ? *curvature3 : no_oracle, *probe
         );
         result.inner_skew = std::move(sk.gamma3);
         result.inner_skew_idx = *probe;
         result.inner_skew_dropped = sk.n_nonfinite_dropped;
         result.inner_skew_declined = sk.declined;
-        if (result.inner_skew_declined == "no_oracle" &&
-            curvature3_declined && *curvature3_declined) {
-            result.inner_skew_declined = curvature3_declined;
-        }
 
         // The likelihood-agnostic inner k-hat over the same probed subspace,
         // along the same conditional-mean curve the cubic term just walked. It
@@ -327,9 +322,9 @@ LaplaceResult laplace_newton_solve(
     const std::vector<int>* skew_probe_idx = nullptr
 ) {
     FamilyLogLik ll{&y, &n_trials, N, family, phi, n_threads};
-    std::function<double(int, double)> curvature3_fn = nullptr;
+    Curvature3Oracle curvature3;
     if (compute_skew) {
-        curvature3_fn = [&y, &n_trials, &family, phi](int j, double eta_j) -> double {
+        curvature3.scalar = [&y, &n_trials, &family, phi](int j, double eta_j) -> double {
             return curvature3_obs_for_family(y[j], n_trials[j], eta_j, family, phi);
         };
     }
@@ -337,7 +332,7 @@ LaplaceResult laplace_newton_solve(
         N, n_x, max_iter, tol,
         compute_eta, scatter_grad_hess, center_effects_fn, compute_log_prior,
         ll, scratch, x_init, shared_solver, store_Q, inv_block_layout,
-        0, nullptr, compute_skew, skew_probe_idx, curvature3_fn
+        0, nullptr, compute_skew, skew_probe_idx, &curvature3
     );
 }
 

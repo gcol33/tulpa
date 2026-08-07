@@ -30,8 +30,8 @@ and \code{"internal_inconsistency"} is an engine bug and raises the status to
 \code{"WARN"}}
 \item{inner_skew_max, inner_skew_declined}{approximation fits only: the
 largest scored inner-Laplace \verb{|gamma_3|}, or why nothing was scored
-(gcol33/tulpa#296 -- \code{"coupled_likelihood"} / \code{"coupled_arm"} mark a model
-class the inner layer can never score)}
+(gcol33/tulpa#296 -- \code{"coupled_arm"} marks arms the inner layer could
+score neither per observation nor through the cell tensor)}
 \item{recommendations}{Character vector of recommendations}
 }
 }

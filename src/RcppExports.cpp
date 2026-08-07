@@ -103,6 +103,24 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_cell_coupling_curvature3
+double cpp_cell_coupling_curvature3(std::string name, Rcpp::List eta, Rcpp::List u, Rcpp::List y, Rcpp::CharacterVector family, Rcpp::NumericVector phi, int cell_idx, bool per_arm_step);
+RcppExport SEXP _tulpa_cpp_cell_coupling_curvature3(SEXP nameSEXP, SEXP etaSEXP, SEXP uSEXP, SEXP ySEXP, SEXP familySEXP, SEXP phiSEXP, SEXP cell_idxSEXP, SEXP per_arm_stepSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< std::string >::type name(nameSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type eta(etaSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type u(uSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type y(ySEXP);
+    Rcpp::traits::input_parameter< Rcpp::CharacterVector >::type family(familySEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< int >::type cell_idx(cell_idxSEXP);
+    Rcpp::traits::input_parameter< bool >::type per_arm_step(per_arm_stepSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_cell_coupling_curvature3(name, eta, u, y, family, phi, cell_idx, per_arm_step));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_cell_coupling_registry_has
 bool cpp_cell_coupling_registry_has(std::string name);
 RcppExport SEXP _tulpa_cpp_cell_coupling_registry_has(SEXP nameSEXP) {
@@ -4056,6 +4074,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_aghq_blups", (DL_FUNC) &_tulpa_cpp_aghq_blups, 4},
     {"_tulpa_cpp_flatten_3d_rowmajor", (DL_FUNC) &_tulpa_cpp_flatten_3d_rowmajor, 4},
     {"_tulpa_cpp_cell_coupling_evaluate", (DL_FUNC) &_tulpa_cpp_cell_coupling_evaluate, 8},
+    {"_tulpa_cpp_cell_coupling_curvature3", (DL_FUNC) &_tulpa_cpp_cell_coupling_curvature3, 8},
     {"_tulpa_cpp_cell_coupling_registry_has", (DL_FUNC) &_tulpa_cpp_cell_coupling_registry_has, 1},
     {"_tulpa_cpp_cell_coupling_registry_size", (DL_FUNC) &_tulpa_cpp_cell_coupling_registry_size, 0},
     {"_tulpa_cpp_test_compute_cov", (DL_FUNC) &_tulpa_cpp_test_compute_cov, 4},

@@ -249,12 +249,14 @@ test_that("the inner k-hat tracks gamma_3 across a binomial-intercept skewness l
 # (5) The coupled fixture: the k-hat answers where gamma_3 cannot              #
 # --------------------------------------------------------------------------- #
 
-test_that("the inner k-hat scores the coupled fixture gamma_3 declines on", {
+test_that("the inner k-hat scores the coupled fixture alongside gamma_3", {
   skip_on_cran()
-  # The whole point of #303. Every arm of this fit is coupled through a
-  # CellCouplingSpec, so gamma_3 has no separable per-observation sum to read
-  # and declines permanently -- yet the inner layer still gets a number, and
-  # that number is checked against the fixture's exact quadrature.
+  # Every arm of this fit is coupled through a CellCouplingSpec, so gamma_3 has
+  # no separable per-observation sum to read: it is scored by the cell
+  # third-derivative tensor instead (gcol33/tulpa#301). The k-hat is the second,
+  # independent number on the same inner layer (#303), and it is what survives
+  # where the tensor cannot be built at all. Both are checked against the
+  # fixture's exact quadrature.
   coupled_occ_register()
   beta_prec <- 0.25
   d <- coupled_occ_data(seed = 311, n_cells = 100L, n_visits = 4L,
@@ -265,11 +267,12 @@ test_that("the inner k-hat scores the coupled fixture gamma_3 declines on", {
     cell_coupling = "test_occupancy_mixture",
     control = list(max_iter = 300L, tol = 1e-12, diagnose_k = FALSE))
 
-  # The cubic term declines, structurally.
-  expect_true(all(is.nan(fit$inner_skew)))
-  expect_identical(fit$inner_skew_declined, "coupled_arm")
+  # The cubic term now scores this fit through the cell tensor; its own
+  # agreement with the exact quadrature is asserted in test-inner-skew.R.
+  expect_true(all(is.finite(fit$inner_skew)))
+  expect_true(is.na(fit$inner_skew_declined))
 
-  # The importance k-hat does not.
+  # The importance k-hat is available on the same fit, independently.
   expect_length(fit[["inner_pareto_k"]], sum(fit$arm_layout$p))
   expect_true(all(is.finite(fit[["inner_pareto_k"]])))
   expect_true(is.na(fit[["inner_pareto_k_declined"]]))

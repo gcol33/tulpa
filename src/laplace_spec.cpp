@@ -37,7 +37,7 @@
 #include "laplace_newton.h"       // shared single-arm loop (np == 1 delegates here)
 #include "laplace_newton_loop.h"
 #include "laplace_re_priors.h"
-#include "laplace_spec_curvature3.h"  // build_spec_curvature3_fn (inner-skew diagnostic)
+#include "laplace_spec_curvature3.h"  // build_spec_curvature3_oracle (inner-skew diagnostic)
 #include "laplace_spec_solve.h"   // spec_inner_solve (defined below, shared with driver)
 #include "laplace_spatial_priors.h"
 #include "latent_block.h"
@@ -1212,12 +1212,10 @@ LaplaceResult spec_inner_solve(
         if (L.beta_count[k] > 0) feasible_start_coords.push_back(L.latent_offset[k]);
     }
 
-    std::function<double(int, double)> curvature3_fn = nullptr;
-    const char* curvature3_declined = nullptr;
+    Curvature3Oracle curvature3;
     if (compute_skew) {
-        curvature3_fn = build_spec_curvature3_fn(spec, response_data, data,
-                                                 layout, params_work,
-                                                 &curvature3_declined);
+        curvature3 = build_spec_curvature3_oracle(spec, response_data, data,
+                                                  layout, params_work);
     }
 
     return laplace_newton_solve_ll(
@@ -1225,7 +1223,7 @@ LaplaceResult spec_inner_solve(
         compute_eta, scatter_grad_hess, center_effects_fn, compute_log_prior,
         log_lik_fn, scratch, x_init, solver, store_Q, inv_block_layout,
         sparse_override, &feasible_start_coords,
-        compute_skew, skew_probe_idx, curvature3_fn, curvature3_declined
+        compute_skew, skew_probe_idx, &curvature3
     );
 }
 

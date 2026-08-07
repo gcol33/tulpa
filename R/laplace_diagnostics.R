@@ -43,9 +43,12 @@
 # STANDARDIZED CUMULANT (skewness) of pi(x_i | theta, y) relative to the
 # Gaussian inner Laplace: log f(z) = -z^2/2 + (gamma_3/6)(z^3 - 3z) + ...,
 # so |gamma_3| directly measures how large that cubic correction is. NaN means
-# "not computable there" (a coupled multi-process likelihood, or a family
-# without a registered third derivative -- see build_spec_curvature3_fn) and
-# is never conflated with 0 ("no skew").
+# "not computable there" (a likelihood that ships no way to reach a third
+# derivative -- see build_spec_curvature3_oracle) and is never conflated with 0
+# ("no skew"). A likelihood whose unit reads several linear predictors at once --
+# a zero-inflation mixture, a cell-coupled `occu_cover` -- is scored through the
+# widened contraction of the third-derivative tensor (src/curvature3_contract.h,
+# gcol33/tulpa#301) rather than declined.
 # =============================================================================
 
 # Band a single |gamma_3| magnitude. Thresholds follow the common
@@ -67,24 +70,25 @@
 #
 # `gamma_3` is careful never to return a silently-wrong 0 for a non-computable
 # skewness -- every decline is NaN (#272). But NaN says only "not computable",
-# and the reasons are not interchangeable: a coupled multi-process likelihood
-# (a ZI mixture, tulpaObs's `occu_cover`) can NEVER be scored by this formula,
+# and the reasons are not interchangeable: a fit whose coupled arms have no
+# scorable path at all leaves the outer k-hat as the only reliability number,
 # while a failed finite difference is specific to one fit and a disabled knob is
-# not a problem at all. Without the reason a structurally unscorable model
-# printed as `control$diagnose_skew = FALSE`, attributing an impossibility to a
-# setting the user likely left at its default `TRUE`.
+# not a problem at all. Without the reason an unscorable fit printed as
+# `control$diagnose_skew = FALSE`, attributing an impossibility to a setting the
+# user likely left at its default `TRUE`.
 #
 # `res$inner_skew_declined` carries it, from this closed vocabulary (the first
-# five come from C++ -- see `InnerSkewOutcome::declined` and
-# `build_spec_curvature3_fn` -- the rest are decided R-side):
+# four come from C++ -- see `InnerSkewOutcome::declined` and
+# `build_spec_curvature3_oracle` -- the rest are decided R-side):
 #
-#   coupled_likelihood     a LikelihoodSpec with n_processes != 1. STRUCTURAL:
-#                          this model class will never be scorable.
-#   coupled_arm            a joint fit whose scorable arms all declined because
-#                          the coupling spec excluded them. Also structural.
+#   coupled_arm            a joint fit whose coupled arms could be scored neither
+#                          by a per-observation sum (the coupling spec took them
+#                          over) nor by the cell tensor contraction. STRUCTURAL:
+#                          nothing about this fit's coupling is readable, so the
+#                          outer k-hat is the only reliability number it has.
 #                          `inner_skew_arms_declined` names them (1-based), so a
 #                          PARTIALLY scored joint fit is visible too.
-#   curvature3_unavailable no registered third derivative / no `eta_weights_fn`
+#   curvature3_unavailable no registered third derivative and no `eta_weights_fn`
 #                          to finite-difference.
 #   no_finite_contribution an oracle existed but nothing finite reached any
 #                          probed index (an unidentified or degenerate mode).
@@ -94,9 +98,14 @@
 #   backend_unsupported    this backend does not populate gamma_3.
 #   solve_failed           the probe re-solve errored or returned no field.
 #
+# Coupling several processes in ONE likelihood is no longer a reason of its own:
+# a multi-process `LikelihoodSpec` (a ZI mixture) is scored by the
+# per-observation tensor contraction, so the former `"coupled_likelihood"` has no
+# producer left and is gone from the vocabulary (gcol33/tulpa#301).
+#
 # Structural reasons are the ones a reader must act on differently: for those
-# models the outer k-hat is the only reliability number available, permanently.
-.INNER_SKEW_STRUCTURAL <- c("coupled_likelihood", "coupled_arm")
+# fits the outer k-hat is the only reliability number available.
+.INNER_SKEW_STRUCTURAL <- c("coupled_arm")
 
 # =============================================================================
 # Inner-Laplace importance k-hat (gcol33/tulpa#303) -- the second score on the
@@ -277,12 +286,10 @@
     switch(reason,
         not_requested = "the inner diagnostic was not requested (control$diagnose_skew = FALSE)",
         no_probe_indices = "no latent indices were probed; pass control$skew_idx",
-        coupled_likelihood = paste("this likelihood couples several processes, so it has no",
-                                   "single per-observation term gamma_3 can score; the inner",
-                                   "layer is unscorable for this model class, permanently"),
         coupled_arm = paste0("every scorable arm is coupled through the cell-coupling spec",
                              arm_txt, ", so gamma_3 has no separable per-observation sum to",
-                             " read; unscorable for this model class, permanently"),
+                             " read, and no cell third-derivative tensor could be built for",
+                             " this fit either; the inner layer is unscorable here"),
         curvature3_unavailable = paste("this likelihood registers no third derivative and",
                                        "exposes no eta-weight callback to finite-difference"),
         no_finite_contribution = paste("an oracle was available but no probed index",
@@ -999,18 +1006,17 @@
 #'       latent indices returned a finite `gamma_3` vs how many were probed.}
 #'     \item{`inner_skew_declined`, `inner_skew_arms_declined`,
 #'       `inner_skew_declined_note`}{when nothing was scored, WHY
-#'       (gcol33/tulpa#296): `"coupled_likelihood"` / `"coupled_arm"` (both
-#'       STRUCTURAL -- the formula has no per-observation term to read for this
-#'       model class, so the outer k-hat is the only reliability number
-#'       available, permanently), `"curvature3_unavailable"`,
-#'       `"no_finite_contribution"`, `"no_probe_indices"`, `"not_requested"`,
-#'       `"backend_unsupported"`, or `"solve_failed"`; the arms (1-based) a
-#'       joint fit had no oracle for, which is also set on a PARTIALLY scored
-#'       fit; and a one-line reading.}
+#'       (gcol33/tulpa#296): `"coupled_arm"` (STRUCTURAL -- the coupled arms have
+#'       neither a per-observation sum nor a cell third-derivative tensor to
+#'       read, so the outer k-hat is the only reliability number this fit has),
+#'       `"curvature3_unavailable"`, `"no_finite_contribution"`,
+#'       `"no_probe_indices"`, `"not_requested"`, `"backend_unsupported"`, or
+#'       `"solve_failed"`; the arms (1-based) a joint fit had no oracle for,
+#'       which is also set on a PARTIALLY scored fit; and a one-line reading.}
 #'     \item{`inner_pareto_k`, `inner_pareto_k_band`}{the inner-Laplace
 #'       importance k-hat over the probed subspace, and its band on the same
 #'       convention as the outer k-hat. Available wherever a mode was found,
-#'       including a coupled likelihood `gamma_3` cannot score.}
+#'       including a fit `gamma_3` cannot score.}
 #'     \item{`inner_pareto_k_rel_ess`, `inner_pareto_k_is_ess`}{the smallest
 #'       realized importance efficiency and effective sample size across the
 #'       probed indices -- how much correcting the inner Gaussian actually

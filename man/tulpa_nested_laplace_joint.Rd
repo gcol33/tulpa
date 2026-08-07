@@ -451,12 +451,15 @@ indices). This is the complementary layer to \code{diagnose_k}: that scores
 the outer hyperparameter-grid integration around a FIXED inner
 Laplace, this scores whether that inner Gaussian approximation is
 itself a good fit. A genuinely coupled arm (\code{cell_coupling != "separable"} on that arm, e.g. tulpaObs's \code{occu_cover}) has no per-obs
-likelihood for this formula to score and reports \code{NaN} there, not a
-silently wrong 0. When nothing is scorable, \verb{$inner_skew_declined} says
-WHY -- \code{"coupled_arm"} / \code{"coupled_likelihood"} mark a model class the
-inner layer can never score, distinct from a diagnostic that was simply
-switched off (gcol33/tulpa#296) -- and \verb{$inner_skew_arms_declined} names
-the arms with no oracle, including on a partially scored fit. See
+likelihood for the separable formula to score; it is scored instead by
+the contraction of the cell third-derivative tensor
+(gcol33/tulpa#301), which differences the cross-arm Hessian the coupling
+spec already returns. A fit that can carry neither reports \code{NaN}, not a
+silently wrong 0, and \verb{$inner_skew_declined} says WHY -- \code{"coupled_arm"}
+marks arms the inner layer could not score at all, distinct from a
+diagnostic that was simply switched off (gcol33/tulpa#296) -- while
+\verb{$inner_skew_arms_declined} names the arms with no oracle, including on a
+partially scored fit. See
 \code{\link[=diagnostics]{diagnostics()}} for the combined verdict. Wired
 for both the single-block backends (icar/bym2/car_proper) and the
 multi-block path (a per-group RE, a trend field, or an arm-specific

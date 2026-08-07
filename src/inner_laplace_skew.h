@@ -52,6 +52,23 @@
 // b_ij: this formula reduces EXACTLY to eq. (21)'s gamma_3 = sum_j d_j^(3)
 // {sigma_j a_ij}^3 in that special case.
 //
+// UNITS WITH SEVERAL LINEAR PREDICTORS. The step from the joint log density to
+// `sum_j l_j'''(eta_j) u_j^3` above assumes the data log-likelihood is a
+// separable sum of one-eta terms. A unit that reads several linear predictors at
+// once -- a zero-inflation mixture's (count, zi) pair, a CellCouplingSpec cell's
+// arms -- has no such per-eta third derivative, but the expansion itself is
+// unchanged: it is still the cubic Taylor coefficient along the same curve, and
+// only the contraction widens, to
+//
+//   gamma_3(i) = sigma_i^{-3} sum_units sum_{a,b,c} T^{abc} u^a u^b u^c
+//
+// with T^{abc} the unit's third derivative in its linear predictors. The
+// separable case is K = 1 coordinates per unit, where the triple sum has one
+// term, T^{111} = l''', and the formula reduces to the line above term for term.
+// curvature3_contract.h derives and implements the wider contraction; the two
+// oracle shapes reach this file through Curvature3Oracle (per-observation) and
+// CellCubic3Fn (per coupled cell).
+//
 // SCOPE. Only gamma_3 (skewness) is computed, not the paper's gamma_1
 // (location-shift, eq. 21's first line) or a quartic (kurtosis) term. gamma_1
 // needs the denominator log-determinant's response to a likelihood-curvature
@@ -73,11 +90,13 @@
 #ifndef TULPA_INNER_LAPLACE_SKEW_H
 #define TULPA_INNER_LAPLACE_SKEW_H
 
+#include "curvature3_contract.h"
 #include "inner_laplace_probe.h"
 #include "laplace_cholesky.h"
 #include "sparse_cholesky.h"
 #include <Rcpp.h>
 #include <cmath>
+#include <cstddef>
 #include <functional>
 #include <limits>
 #include <string>
@@ -85,16 +104,23 @@
 
 namespace tulpa {
 
+// Cubic contraction over every coupled cell of a CellCouplingSpec fit, given the
+// per-arm eta at the mode and at the probed point mode + v_i (so the direction is
+// their difference). Built by build_cell_curvature3_tensor (cell_curvature3.h);
+// declared here because this is where a joint fit stores it.
+using CellCubic3Fn = std::function<double(const std::vector<Rcpp::NumericVector>&,
+                                          const std::vector<Rcpp::NumericVector>&)>;
+
 struct InnerSkewOutcome {
   std::vector<double> gamma3;      // one entry per requested index, NaN = not computable there
   int n_nonfinite_dropped = 0;     // (i, j) contributions skipped for a non-finite l'''_j
   // Why NOTHING was computable, when nothing was (gcol33/tulpa#296). Empty
   // when at least one index scored. A NaN says only "not computable"; the
   // reasons behind it are not interchangeable -- a coupled multi-process
-  // likelihood can NEVER be scored by this formula, while a numerically failed
-  // finite difference is specific to one fit. The caller refines
-  // "no_oracle" into the specific spec-level reason it knows (see
-  // build_spec_curvature3_fn).
+  // likelihood may ship no way to reach a third derivative at all, while a
+  // numerically failed finite difference is specific to one fit. The oracle
+  // carries its own reason (Curvature3Oracle::declined) and it is reported
+  // verbatim here rather than re-derived downstream.
   std::string declined;
   // Joint only: arms with no third-derivative oracle at all (0-based), so a
   // partially scored joint fit names which arms it left out.
@@ -107,62 +133,68 @@ inline bool inner_skew_any_scored(const std::vector<double>& gamma3) {
   return false;
 }
 
-// Per-arm third-derivative oracles for a joint fit, carried WITH the reason any
-// arm has none (gcol33/tulpa#296). Built by build_joint_curvature3_fns
+// Third-derivative oracles for a joint fit, carried WITH the reason any arm has
+// none (gcol33/tulpa#296). Built by build_joint_curvature3_fns
 // (laplace_newton_joint.h); the reason travels with the oracles rather than
 // being re-derived downstream, so a decline can never lose its explanation on
 // the way to the fit object.
+//
+// `arms` holds one per-observation oracle per arm, for the arms whose
+// contribution IS a separable per-observation sum. `cell_cubic`, when set,
+// covers the arms a CellCouplingSpec took over: their per-obs sum is excluded
+// from the joint log-lik (`skip_arm`), and the cell tensor contraction replaces
+// it here (gcol33/tulpa#301). The two are disjoint by construction -- an arm is
+// either summed per observation or routed through the cell branch -- so they add
+// rather than double-count.
 struct JointCurvature3Oracles {
-  std::vector<std::function<double(int, double)>> fns;
+  std::vector<Curvature3Oracle> arms;
+  CellCubic3Fn        cell_cubic;
   std::vector<int>    arms_declined;   // 0-based arms with no oracle
-  std::string         declined;        // fit-level reason when NO arm has one
+  std::string         declined;        // fit-level reason when NOTHING has one
   bool any() const {
-    for (const auto& f : fns) if (f) return true;
-    return false;
+    for (const auto& o : arms) if (o.any()) return true;
+    return static_cast<bool>(cell_cubic);
   }
 };
 
-// curvature3_fn(j, eta_j) -> l_j'''(eta_j) at the mode, or NaN if this
-// observation's likelihood has no registered third derivative.
-// compute_eta_fn(x, eta_out): the SAME closure convention laplace_newton_ll
-// already uses (in-place write into eta_out, sized n_eta).
+// The probe scan every gamma_3 variant runs: walk the requested latent indices,
+// solve H v_i = e_i against the LIVE factor, evaluate eta at mode + v_i, and hand
+// the caller's accumulator the two eta buffers. Only the accumulation over the
+// data log-likelihood differs between the single-arm, multi-process and joint
+// variants, so everything else lives here once.
 //
-// x_buf / eta_buf0 / eta_buf1 are caller-supplied scratch (sized n_x, n_eta,
-// n_eta respectively); x_buf must hold `mode` on entry and is restored to it
-// on return. Reuses the live factor (chol, dense fallback; or sparse_solver
-// when use_sparse) without refactorizing -- the same pattern the
-// inv_block_layout diagonal-block extraction in laplace_newton.h uses.
-template <typename ComputeEtaFn>
-inline InnerSkewOutcome compute_inner_skew_gamma3(
-    int n_x, int n_eta,
+// `fill_eta0` / `fill_eta1` write eta at the current `x_buf` into the caller's own
+// buffers (`fill_eta0` also precomputes anything that depends only on the mode).
+// `accumulate(dropped, any_finite)` returns the un-normalised cubic sum for the
+// current index; it must leave `any_finite` false when nothing finite reached it,
+// so the index stays NaN rather than reading acc/sigma_i^3 == 0 ("perfectly
+// Gaussian") -- the silently-wrong 0 gcol33/tulpa#272 fixed.
+//
+// x_buf must hold `mode` on entry and is restored to it on return. Reuses the
+// live factor (chol, dense fallback; or sparse_solver when use_sparse) without
+// refactorizing -- the same pattern the inv_block_layout diagonal-block
+// extraction in laplace_newton.h uses.
+template <typename FillEta0Fn, typename FillEta1Fn, typename AccumFn>
+inline InnerSkewOutcome inner_skew_probe_scan(
+    int n_x,
     const std::vector<double>& mode,
     DenseCholeskyScratch& chol,
     SparseCholeskySolver& sparse_solver,
     bool use_sparse,
-    ComputeEtaFn compute_eta_fn,
     Rcpp::NumericVector& x_buf,
-    Rcpp::NumericVector& eta_buf0,
-    Rcpp::NumericVector& eta_buf1,
-    const std::function<double(int, double)>& curvature3_fn,
-    const std::vector<int>& probe_idx
+    const std::vector<int>& probe_idx,
+    FillEta0Fn fill_eta0,
+    FillEta1Fn fill_eta1,
+    AccumFn accumulate
 ) {
   InnerSkewOutcome out;
   out.gamma3.assign(probe_idx.size(), std::numeric_limits<double>::quiet_NaN());
-  // No oracle at all (e.g. a coupled multi-process spec build_spec_curvature3_fn
-  // declines) -- every index is "not computable", not "zero skew". Without this
-  // early return the per-index loop below would see every l3[j] as NaN, drop
-  // every contribution, and divide 0/sigma_i^3 = 0 into gamma3 -- a silently
-  // wrong "perfectly Gaussian" reading instead of NaN.
-  if (probe_idx.empty()) { out.declined = "no_probe_indices"; return out; }
-  if (!curvature3_fn)    { out.declined = "no_oracle"; return out; }
 
   std::vector<double> rhs(n_x, 0.0), v(n_x, 0.0), z_work;
   if (!use_sparse) z_work.assign(n_x, 0.0);
 
   // eta at the mode -- x_buf already holds `mode` on entry.
-  compute_eta_fn(x_buf, eta_buf0);
-  std::vector<double> l3(n_eta, std::numeric_limits<double>::quiet_NaN());
-  for (int j = 0; j < n_eta; j++) l3[j] = curvature3_fn(j, eta_buf0[j]);
+  fill_eta0();
 
   for (std::size_t idx = 0; idx < probe_idx.size(); idx++) {
     int i = probe_idx[idx];
@@ -176,22 +208,10 @@ inline InnerSkewOutcome compute_inner_skew_gamma3(
     const double sigma2_i = v[i];
 
     for (int k = 0; k < n_x; k++) x_buf[k] = mode[k] + v[k];
-    compute_eta_fn(x_buf, eta_buf1);
+    fill_eta1();
 
-    double acc = 0.0;
     bool any_finite = false;
-    for (int j = 0; j < n_eta; j++) {
-      double u = eta_buf1[j] - eta_buf0[j];
-      if (u == 0.0) continue;
-      double l3j = l3[j];
-      if (!std::isfinite(l3j)) { out.n_nonfinite_dropped++; continue; }
-      acc += l3j * u * u * u;
-      any_finite = true;
-    }
-    // Leave gamma3[idx] at its NaN default when NOTHING finite contributed --
-    // otherwise an index whose every observation lacks a third derivative would
-    // silently read as acc/sigma_i^3 == 0 ("perfectly Gaussian") rather than
-    // "not computable".
+    const double acc = accumulate(out.n_nonfinite_dropped, any_finite);
     if (any_finite) out.gamma3[idx] = acc / (sigma_i * sigma2_i);  // sigma_i^-3
   }
 
@@ -200,31 +220,121 @@ inline InnerSkewOutcome compute_inner_skew_gamma3(
   return out;
 }
 
+// Single-arm gamma_3. `oracle` is the third-derivative oracle for this fit's
+// likelihood: `scalar` (l_j'''(eta_j) at the mode, or NaN where the likelihood
+// has no registered third derivative) when the unit carries one eta, `unit` (the
+// per-observation tensor contraction, curvature3_contract.h) when it carries
+// `n_coords` of them laid out observation-major in eta as [i * n_coords + k] --
+// the layout compute_eta_spec writes.
+//
+// compute_eta_fn(x, eta_out): the SAME closure convention laplace_newton_ll
+// already uses (in-place write into eta_out, sized n_eta). x_buf / eta_buf0 /
+// eta_buf1 are caller-supplied scratch (sized n_x, n_eta, n_eta).
+template <typename ComputeEtaFn>
+inline InnerSkewOutcome compute_inner_skew_gamma3(
+    int n_x, int n_eta,
+    const std::vector<double>& mode,
+    DenseCholeskyScratch& chol,
+    SparseCholeskySolver& sparse_solver,
+    bool use_sparse,
+    ComputeEtaFn compute_eta_fn,
+    Rcpp::NumericVector& x_buf,
+    Rcpp::NumericVector& eta_buf0,
+    Rcpp::NumericVector& eta_buf1,
+    const Curvature3Oracle& oracle,
+    const std::vector<int>& probe_idx
+) {
+  // No oracle at all -- every index is "not computable", not "zero skew".
+  // Without this early return the per-index loop below would see every l3[j] as
+  // NaN, drop every contribution, and divide 0/sigma_i^3 = 0 into gamma3.
+  if (probe_idx.empty()) {
+    InnerSkewOutcome out;
+    out.gamma3.assign(probe_idx.size(), std::numeric_limits<double>::quiet_NaN());
+    out.declined = "no_probe_indices";
+    return out;
+  }
+  if (!oracle.any()) {
+    InnerSkewOutcome out;
+    out.gamma3.assign(probe_idx.size(), std::numeric_limits<double>::quiet_NaN());
+    out.declined = oracle.declined.empty() ? std::string("no_oracle")
+                                           : oracle.declined;
+    return out;
+  }
+
+  std::vector<double> l3;
+  const int nc = (oracle.n_coords > 0) ? oracle.n_coords : 1;
+  const int n_units = (nc > 0) ? (n_eta / nc) : 0;
+  std::vector<double> u_unit(oracle.unit ? nc : 0, 0.0);
+
+  auto fill_eta0 = [&]() {
+    compute_eta_fn(x_buf, eta_buf0);
+    if (oracle.scalar) {
+      l3.assign(n_eta, std::numeric_limits<double>::quiet_NaN());
+      for (int j = 0; j < n_eta; j++) l3[j] = oracle.scalar(j, eta_buf0[j]);
+    }
+  };
+  auto fill_eta1 = [&]() { compute_eta_fn(x_buf, eta_buf1); };
+
+  auto accumulate = [&](int& dropped, bool& any_finite) -> double {
+    double acc = 0.0;
+    if (oracle.scalar) {
+      for (int j = 0; j < n_eta; j++) {
+        double u = eta_buf1[j] - eta_buf0[j];
+        if (u == 0.0) continue;
+        double l3j = l3[j];
+        if (!std::isfinite(l3j)) { dropped++; continue; }
+        acc += l3j * u * u * u;
+        any_finite = true;
+      }
+      return acc;
+    }
+    const double* e0 = eta_buf0.begin();
+    const double* e1 = eta_buf1.begin();
+    for (int i = 0; i < n_units; i++) {
+      const std::ptrdiff_t off = (std::ptrdiff_t)i * nc;
+      bool moved = false;
+      for (int k = 0; k < nc; k++) {
+        u_unit[k] = e1[off + k] - e0[off + k];
+        if (u_unit[k] != 0.0) moved = true;
+      }
+      if (!moved) continue;
+      const double c = oracle.unit(i, e0 + off, u_unit.data());
+      if (!std::isfinite(c)) { dropped++; continue; }
+      acc += c;
+      any_finite = true;
+    }
+    return acc;
+  };
+
+  return inner_skew_probe_scan(n_x, mode, chol, sparse_solver, use_sparse,
+                               x_buf, probe_idx, fill_eta0, fill_eta1,
+                               accumulate);
+}
+
 // Joint-arm generalization of compute_inner_skew_gamma3 above, for
 // laplace_newton_joint.h / laplace_newton_joint_sparse.h's multi-arm Newton
-// loops. The derivation in the file header assumes a log-likelihood that is a
-// single separable sum `sum_j l_j(eta_j)`; a SEPARABLE joint fit (every arm's
-// per-observation contributions summed, no CellCouplingSpec term -- the only
-// coupling tulpa's own production src/ ever registers, see
-// laplace_spec_curvature3.h's scope note) is exactly that sum with j ranging
-// over the union of (arm, observation) pairs instead of a single arm's rows,
-// so the formula and its correctness proof carry over unchanged -- this is
-// the same sum, not a new derivation. A genuinely COUPLED arm (its per-obs
-// sum replaced by a CellCouplingSpec's evaluate_cell() term, `skip_arm[k] ==
-// true`) is a different, non-separable log-density this formula does not
-// cover; `curvature3_fns[k]` must be the empty std::function for such arms so
-// their observations are dropped rather than silently scored against the
-// wrong (unused) per-obs likelihood -- see build_joint_curvature3_fns in
-// laplace_newton_joint.h, which enforces exactly this.
+// loops. A SEPARABLE joint fit (every arm's per-observation contributions
+// summed) is the file header's own sum with j ranging over the union of
+// (arm, observation) pairs instead of a single arm's rows, so the formula and
+// its correctness proof carry over unchanged -- the same sum, not a new
+// derivation.
+//
+// A genuinely COUPLED arm has its per-obs sum replaced by a CellCouplingSpec's
+// evaluate_cell() term. Those arms are excluded from the per-observation sum
+// (`skip_arm[k] == true` there, an empty `oracles.arms[k]` here, so their rows
+// can never be scored against the wrong unused per-obs likelihood) and enter
+// through `oracles.cell_cubic` instead: the cell tensor contraction of
+// cell_curvature3.h, added once per probed index over all cells. The two terms
+// partition the arms, so they add rather than double-count. Without a cell
+// oracle a coupled arm simply contributes nothing, which is the pre-#301
+// behaviour and still what a spec whose CellDerivs Hessian cannot be read gets.
 //
 // eta_buf0 / eta_buf1 are the per-arm scratch (NewtonScratchJoint's `etas` /
 // `etas_tmp`), one Rcpp::NumericVector per arm sized to that arm's N.
-// `oracles.fns` has one entry per arm (parallel to eta_buf0); an empty entry
-// declines that whole arm (every one of its observations contributes NaN,
-// i.e. gets dropped from the sum -- same per-entry semantics as a single
-// non-finite l_j''' in the single-arm version above), and `oracles.declined` /
-// `oracles.arms_declined` carry WHY, so a partially or fully declined fit says
-// which arms were left out and for what reason (gcol33/tulpa#296).
+// `oracles.arms` has one entry per arm (parallel to eta_buf0), and
+// `oracles.declined` / `oracles.arms_declined` carry WHY an arm has none, so a
+// partially or fully declined fit says which arms were left out and for what
+// reason (gcol33/tulpa#296).
 template <typename ComputeEtaJointFn>
 inline InnerSkewOutcome compute_inner_skew_gamma3_joint(
     int n_x,
@@ -239,63 +349,89 @@ inline InnerSkewOutcome compute_inner_skew_gamma3_joint(
     const JointCurvature3Oracles& oracles,
     const std::vector<int>& probe_idx
 ) {
-  const std::vector<std::function<double(int, double)>>& curvature3_fns = oracles.fns;
-  InnerSkewOutcome out;
-  out.gamma3.assign(probe_idx.size(), std::numeric_limits<double>::quiet_NaN());
-  out.arms_declined = oracles.arms_declined;
   const int n_arms = static_cast<int>(eta_buf0.size());
-  if (probe_idx.empty()) { out.declined = "no_probe_indices"; return out; }
-  if (!oracles.any()) {
-    out.declined = oracles.declined.empty() ? "no_oracle" : oracles.declined;
+  if (probe_idx.empty() || !oracles.any()) {
+    InnerSkewOutcome out;
+    out.gamma3.assign(probe_idx.size(), std::numeric_limits<double>::quiet_NaN());
+    out.arms_declined = oracles.arms_declined;
+    if (probe_idx.empty()) {
+      out.declined = "no_probe_indices";
+    } else {
+      out.declined = oracles.declined.empty() ? std::string("no_oracle")
+                                              : oracles.declined;
+    }
     return out;
   }
 
-  std::vector<double> rhs(n_x, 0.0), v(n_x, 0.0), z_work;
-  if (!use_sparse) z_work.assign(n_x, 0.0);
-
-  // eta at the mode, per arm -- x_buf already holds `mode` on entry.
-  compute_eta_joint_fn(x_buf, eta_buf0);
   std::vector<std::vector<double>> l3(n_arms);
-  for (int k = 0; k < n_arms; k++) {
-    const int Nk = eta_buf0[k].size();
-    l3[k].assign(Nk, std::numeric_limits<double>::quiet_NaN());
-    if (k < static_cast<int>(curvature3_fns.size()) && curvature3_fns[k]) {
-      for (int j = 0; j < Nk; j++) l3[k][j] = curvature3_fns[k](j, eta_buf0[k][j]);
-    }
-  }
+  std::vector<std::vector<double>> u_unit(n_arms);
 
-  for (std::size_t idx = 0; idx < probe_idx.size(); idx++) {
-    int i = probe_idx[idx];
-    if (i < 0 || i >= n_x) continue;
-
-    double sigma_i = 0.0;
-    if (!inner_probe_column(n_x, i, chol, sparse_solver, use_sparse,
-                            rhs, v, z_work, sigma_i)) {
-      continue;
-    }
-    const double sigma2_i = v[i];
-
-    for (int k = 0; k < n_x; k++) x_buf[k] = mode[k] + v[k];
-    compute_eta_joint_fn(x_buf, eta_buf1);
-
-    double acc = 0.0;
-    bool any_finite = false;
+  auto fill_eta0 = [&]() {
+    compute_eta_joint_fn(x_buf, eta_buf0);
     for (int k = 0; k < n_arms; k++) {
       const int Nk = eta_buf0[k].size();
-      for (int j = 0; j < Nk; j++) {
-        double u = eta_buf1[k][j] - eta_buf0[k][j];
-        if (u == 0.0) continue;
-        double l3kj = l3[k][j];
-        if (!std::isfinite(l3kj)) { out.n_nonfinite_dropped++; continue; }
-        acc += l3kj * u * u * u;
-        any_finite = true;
+      if (k >= static_cast<int>(oracles.arms.size())) continue;
+      const Curvature3Oracle& o = oracles.arms[k];
+      if (o.scalar) {
+        l3[k].assign(Nk, std::numeric_limits<double>::quiet_NaN());
+        for (int j = 0; j < Nk; j++) l3[k][j] = o.scalar(j, eta_buf0[k][j]);
+      } else if (o.unit) {
+        u_unit[k].assign(o.n_coords > 0 ? o.n_coords : 1, 0.0);
       }
     }
-    if (any_finite) out.gamma3[idx] = acc / (sigma_i * sigma2_i);  // sigma_i^-3
-  }
+  };
+  auto fill_eta1 = [&]() { compute_eta_joint_fn(x_buf, eta_buf1); };
 
-  for (int k = 0; k < n_x; k++) x_buf[k] = mode[k];  // restore
-  if (!inner_skew_any_scored(out.gamma3)) out.declined = "no_finite_contribution";
+  auto accumulate = [&](int& dropped, bool& any_finite) -> double {
+    double acc = 0.0;
+    for (int k = 0; k < n_arms; k++) {
+      if (k >= static_cast<int>(oracles.arms.size())) continue;
+      const Curvature3Oracle& o = oracles.arms[k];
+      const int Nk = eta_buf0[k].size();
+      if (o.scalar) {
+        for (int j = 0; j < Nk; j++) {
+          double u = eta_buf1[k][j] - eta_buf0[k][j];
+          if (u == 0.0) continue;
+          double l3kj = l3[k][j];
+          if (!std::isfinite(l3kj)) { dropped++; continue; }
+          acc += l3kj * u * u * u;
+          any_finite = true;
+        }
+      } else if (o.unit) {
+        const int nc = (o.n_coords > 0) ? o.n_coords : 1;
+        const double* e0 = eta_buf0[k].begin();
+        const double* e1 = eta_buf1[k].begin();
+        for (int i = 0; i < Nk / nc; i++) {
+          const std::ptrdiff_t off = (std::ptrdiff_t)i * nc;
+          bool moved = false;
+          for (int t = 0; t < nc; t++) {
+            u_unit[k][t] = e1[off + t] - e0[off + t];
+            if (u_unit[k][t] != 0.0) moved = true;
+          }
+          if (!moved) continue;
+          const double c = o.unit(i, e0 + off, u_unit[k].data());
+          if (!std::isfinite(c)) { dropped++; continue; }
+          acc += c;
+          any_finite = true;
+        }
+      }
+    }
+    if (oracles.cell_cubic) {
+      const double c = oracles.cell_cubic(eta_buf0, eta_buf1);
+      if (std::isfinite(c)) {
+        acc += c;
+        any_finite = true;
+      } else {
+        dropped++;
+      }
+    }
+    return acc;
+  };
+
+  InnerSkewOutcome out =
+      inner_skew_probe_scan(n_x, mode, chol, sparse_solver, use_sparse,
+                            x_buf, probe_idx, fill_eta0, fill_eta1, accumulate);
+  out.arms_declined = oracles.arms_declined;
   return out;
 }
 

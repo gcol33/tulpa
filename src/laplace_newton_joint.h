@@ -26,7 +26,7 @@
 #include "laplace_family_link.h"
 #include "laplace_newton.h"          // SPARSE_THRESHOLD
 #include "laplace_newton_loop.h"
-#include "laplace_spec_curvature3.h" // build_spec_curvature3_fn (inner-skew diagnostic)
+#include "laplace_spec_curvature3.h" // build_spec_curvature3_oracle (inner-skew diagnostic)
 #include "inner_laplace_is.h"        // compute_inner_is_curve
 #include "inner_laplace_skew.h"      // compute_inner_skew_gamma3_joint
 #include "sparse_cholesky.h"
@@ -252,40 +252,52 @@ inline double compute_total_log_lik_joint(
 // entry per arm in `views`. Mirrors compute_total_log_lik_joint's own
 // separable-sum contract exactly: a coupled arm (`skip_arm[k] == true`) has
 // its per-obs sum excluded from the log-lik there via `skip_arm`, so its
-// oracle must be excluded here the same way -- an empty std::function, not
-// whatever build_spec_curvature3_fn would return for its (unused) per-obs
-// spec. Every other arm gets build_spec_curvature3_fn(*view.spec, ...), which
-// itself declines (returns empty) for any non-single-process spec.
+// per-observation oracle is excluded here the same way -- an empty entry, not
+// whatever build_spec_curvature3_oracle would return for its (unused) per-obs
+// spec. Every other arm gets build_spec_curvature3_oracle(*view.spec, ...).
 //
-// The REASON each arm declined travels with the oracles (gcol33/tulpa#296):
-// "coupled_arm" for an arm the coupling spec excluded, or whatever
-// build_spec_curvature3_fn reported for the rest. `declined` is the fit-level
-// reason when no arm has an oracle at all -- the single reason when the arms
-// agree on it (a fully coupled model like occu_cover reads "coupled_arm"), or
-// the distinct reasons joined when they do not.
+// `coupled_scored` says the caller will supply the cell tensor contraction
+// (cell_curvature3.h) covering those arms, which is what scores them instead
+// (gcol33/tulpa#301). A coupled arm is then not declined at all -- it is
+// carried by the other term -- so it neither appears in `arms_declined` nor
+// contributes a fit-level reason. At `coupled_scored = false` it reads
+// "coupled_arm" as before.
+//
+// The REASON each arm declined travels with the oracles (gcol33/tulpa#296).
+// `declined` is the fit-level reason when no arm has an oracle at all -- the
+// single reason when the arms agree on it, or the distinct reasons joined when
+// they do not.
 inline JointCurvature3Oracles build_joint_curvature3_fns(
     const std::vector<ArmSpecView>& views,
-    const std::vector<bool>* skip_arm
+    const std::vector<bool>* skip_arm,
+    bool coupled_scored = false
 ) {
     JointCurvature3Oracles out;
-    out.fns.resize(views.size());
+    out.arms.resize(views.size());
     std::vector<std::string> why;
     for (std::size_t k = 0; k < views.size(); k++) {
         if (skip_arm && k < skip_arm->size() && (*skip_arm)[k]) {
+            if (coupled_scored) continue;
             out.arms_declined.push_back(static_cast<int>(k));
             why.push_back("coupled_arm");
             continue;
         }
         const ArmSpecView& v = views[k];
-        const char* reason = "";
-        out.fns[k] = build_spec_curvature3_fn(*v.spec, v.response_data, *v.data,
-                                              *v.layout, *v.params, &reason);
-        if (!out.fns[k]) {
+        out.arms[k] = build_spec_curvature3_oracle(*v.spec, v.response_data,
+                                                   *v.data, *v.layout, *v.params);
+        if (!out.arms[k].any()) {
             out.arms_declined.push_back(static_cast<int>(k));
-            why.push_back(reason && *reason ? reason : "curvature3_unavailable");
+            why.push_back(out.arms[k].declined.empty()
+                              ? std::string("curvature3_unavailable")
+                              : out.arms[k].declined);
         }
     }
-    if (!out.any()) {
+    // `cell_cubic` is assigned by the caller after this returns (it needs the
+    // per-solve dispersion), so this emptiness test runs over the per-arm
+    // oracles alone, which is the right scope for the per-arm reasons.
+    bool any_arm = false;
+    for (const auto& o : out.arms) if (o.any()) { any_arm = true; break; }
+    if (!any_arm && !coupled_scored) {
         std::vector<std::string> distinct;
         for (const std::string& w : why) {
             if (std::find(distinct.begin(), distinct.end(), w) == distinct.end()) {
@@ -405,8 +417,10 @@ LaplaceResult laplace_newton_solve_joint_ll(
     SparseCholeskySolver* shared_solver,
     bool store_Q,
     // Inner-Laplace skewness diagnostic (inner_laplace_skew.h), opt-in like
-    // store_Q. curvature3_fns has one entry per arm (build_joint_curvature3_fns);
-    // nullptr declines entirely. skew_probe_idx == nullptr probes every latent
+    // store_Q. curvature3_fns carries one per-observation oracle per arm plus the
+    // optional coupled-cell tensor contraction (build_joint_curvature3_fns +
+    // build_cell_curvature3_tensor); nullptr declines entirely. skew_probe_idx
+    // == nullptr probes every latent
     // index. Computed BEFORE center_effects_fn(x) below -- unlike the single-arm
     // loop, this joint loop centers x POST-HOC, after log_marginal, purely to
     // present mean(phi) = 0 in the reported mode (see the comment on that call);

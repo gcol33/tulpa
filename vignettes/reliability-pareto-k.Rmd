@@ -338,10 +338,13 @@ around a latent-field approximation that was itself a poor fit, which is the
 case `diagnose_k` alone cannot see, and the reason this is a second number
 rather than a footnote on the first.
 
-A likelihood this cubic-term derivation cannot reach -- most often a
-genuinely coupled multi-arm response, where the arms combine through a joint
-density rather than each contributing its own term -- reports `NA`, never a
-silently reassuring `0`. `control$skew_idx` extends the probed indices past
+A response whose arms combine through one joint density rather than each
+contributing its own term -- a genuinely coupled multi-arm likelihood -- has
+no per-observation third derivative to sum. It is scored by the same expansion
+contracted one level wider, against the third-derivative tensor of the coupled
+cell in the arm linear predictors, so it carries a `gamma_3` like any other
+fit. Where even that cannot be built the number is `NA`, never a silently
+reassuring `0`. `control$skew_idx` extends the probed indices past
 the default fixed-effects set (1-based, into the `[arm1_beta | arm1_re |
 arm2_beta | ... ]` latent layout carried on `fit$arm_layout`); `diagnose_skew
 = FALSE` turns the diagnostic off.

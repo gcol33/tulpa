@@ -25,6 +25,10 @@ cpp_cell_coupling_evaluate <- function(name, eta, y, family, phi, n_trials = NUL
     .Call(`_tulpa_cpp_cell_coupling_evaluate`, name, eta, y, family, phi, n_trials, cell_idx, grad_only)
 }
 
+cpp_cell_coupling_curvature3 <- function(name, eta, u, y, family, phi, cell_idx = 0L, per_arm_step = TRUE) {
+    .Call(`_tulpa_cpp_cell_coupling_curvature3`, name, eta, u, y, family, phi, cell_idx, per_arm_step)
+}
+
 cpp_cell_coupling_registry_has <- function(name) {
     .Call(`_tulpa_cpp_cell_coupling_registry_has`, name)
 }

@@ -50,18 +50,17 @@ on \code{inner_skew_max} by the general skewness-magnitude convention
 latent indices returned a finite \code{gamma_3} vs how many were probed.}
 \item{\code{inner_skew_declined}, \code{inner_skew_arms_declined},
 \code{inner_skew_declined_note}}{when nothing was scored, WHY
-(gcol33/tulpa#296): \code{"coupled_likelihood"} / \code{"coupled_arm"} (both
-STRUCTURAL -- the formula has no per-observation term to read for this
-model class, so the outer k-hat is the only reliability number
-available, permanently), \code{"curvature3_unavailable"},
-\code{"no_finite_contribution"}, \code{"no_probe_indices"}, \code{"not_requested"},
-\code{"backend_unsupported"}, or \code{"solve_failed"}; the arms (1-based) a
-joint fit had no oracle for, which is also set on a PARTIALLY scored
-fit; and a one-line reading.}
+(gcol33/tulpa#296): \code{"coupled_arm"} (STRUCTURAL -- the coupled arms have
+neither a per-observation sum nor a cell third-derivative tensor to
+read, so the outer k-hat is the only reliability number this fit has),
+\code{"curvature3_unavailable"}, \code{"no_finite_contribution"},
+\code{"no_probe_indices"}, \code{"not_requested"}, \code{"backend_unsupported"}, or
+\code{"solve_failed"}; the arms (1-based) a joint fit had no oracle for,
+which is also set on a PARTIALLY scored fit; and a one-line reading.}
 \item{\code{inner_pareto_k}, \code{inner_pareto_k_band}}{the inner-Laplace
 importance k-hat over the probed subspace, and its band on the same
 convention as the outer k-hat. Available wherever a mode was found,
-including a coupled likelihood \code{gamma_3} cannot score.}
+including a fit \code{gamma_3} cannot score.}
 \item{\code{inner_pareto_k_rel_ess}, \code{inner_pareto_k_is_ess}}{the smallest
 realized importance efficiency and effective sample size across the
 probed indices -- how much correcting the inner Gaussian actually

@@ -71,7 +71,9 @@ test_that("gamma_3 is exactly zero for a gaussian intercept (the log-lik is exac
   # d^3/deta^3 of a gaussian log-density in eta (identity link) is identically
   # zero, so the inner Laplace is EXACT and gamma_3 must be exactly 0, not
   # just "small" -- a real gap here (not noise) would mean the third-derivative
-  # ladder for gaussian is wrong.
+  # ladder for gaussian is wrong. Asserted with expect_identical (tolerance 0):
+  # this is the scalar K = 1 path, which the tensor generalization
+  # (gcol33/tulpa#301) must leave bit for bit alone.
   set.seed(11)
   n <- 300L
   x <- rnorm(n)
@@ -81,7 +83,16 @@ test_that("gamma_3 is exactly zero for a gaussian intercept (the log-lik is exac
     re_idx = numeric(0), n_re_groups = 0L, sigma_re = 1.0,
     family = "gaussian", compute_skew = TRUE, skew_idx = as.integer(1:2)
   )
-  expect_equal(fit$inner_skew, c(0, 0))
+  expect_identical(fit$inner_skew, c(0, 0))
+
+  # The spec-driven single-process entry takes the same scalar oracle, and its
+  # gaussian gamma_3 is exactly zero for the same reason.
+  fit_spec <- tulpa:::cpp_laplace_fit_multi_re(
+    y = as.numeric(y), n = rep(1L, n), X = cbind(1, x),
+    re_idx_list = list(), re_ngroups = integer(0), re_sigma_list = list(),
+    family = "gaussian", compute_skew = TRUE, skew_idx = as.integer(1:2)
+  )
+  expect_identical(fit_spec$inner_skew, c(0, 0))
 })
 
 test_that("gamma_3 stays near zero for a large-count poisson fit (CLT regime)", {
@@ -173,48 +184,90 @@ test_that("gamma_3 tracks the exact posterior skewness of a rare-event binomial 
 })
 
 # --------------------------------------------------------------------------- #
-# (4) Decline behaviour: a coupled multi-process spec reports NaN, never a    #
-#     silently-wrong 0 ("perfectly Gaussian")                                #
+# (4) A multi-process likelihood is SCORED by the per-observation tensor       #
+#     contraction (gcol33/tulpa#301), not declined                            #
 # --------------------------------------------------------------------------- #
 
-test_that("gamma_3 declines to NaN (not 0) for a zero-inflated (multi-process) fit", {
-  skip_on_cran()
-  # build_spec_curvature3_fn declines whenever spec.n_processes != 1; ZI adds
-  # a second process (the zero-inflation logit). Before the fix in
-  # inner_laplace_skew.h this silently returned 0.0 ("no skew") instead of NaN
-  # when the oracle was entirely absent -- this test pins that fix.
-  set.seed(13)
-  n <- 200L
-  x <- rnorm(n); z <- rnorm(n)
-  X <- cbind(1, x); X_zi <- cbind(1, z)
-  mu <- exp(0.5 + 0.3 * x)
-  zi_p <- plogis(-0.5 + 0.4 * z)
-  y <- ifelse(rbinom(n, 1, zi_p) == 1, 0, rpois(n, mu))
+# gamma_3 as the derivation defines it, computed independently in R: the third
+# derivative of a log posterior along x(t) = mode + t * Sigma e_i, divided by
+# sigma_i^3. Nothing here touches the engine, so agreement pins the C++
+# contraction against the formula rather than against itself.
+.isk_num_hess <- function(f, p, h = 1e-4) {
+  k <- length(p); H <- matrix(0, k, k)
+  for (i in seq_len(k)) for (j in seq_len(k)) {
+    ei <- rep(0, k); ei[i] <- h; ej <- rep(0, k); ej[j] <- h
+    H[i, j] <- (f(p + ei + ej) - f(p + ei - ej) -
+                f(p - ei + ej) + f(p - ei - ej)) / (4 * h^2)
+  }
+  (H + t(H)) / 2
+}
+.isk_along_curve_gamma3 <- function(f2, ctr) {
+  S <- solve(-.isk_num_hess(f2, ctr))
+  vapply(seq_along(ctr), function(i) {
+    v <- S[, i]; s2 <- v[i]; s <- sqrt(s2)
+    g <- function(t) f2(ctr + t * v)
+    hh <- 0.15 * s / s2                 # an x_i displacement of 0.15 sigma
+    (g(2 * hh) - 2 * g(hh) + 2 * g(-hh) - g(-2 * hh)) / (2 * hh^3) / s^3
+  }, numeric(1))
+}
 
+test_that("gamma_3 scores a zero-inflated (multi-process) fit and tracks its exact skewness", {
+  skip_on_cran()
+  # A ZI mixture reads two linear predictors per observation, so there is no
+  # per-eta third derivative. The per-observation tensor contraction
+  # (src/curvature3_contract.h) supplies the cubic term instead of declining.
+  set.seed(313)
+  n <- 300L
+  y <- ifelse(rbinom(n, 1, plogis(-0.6)) == 1, 0, rpois(n, exp(0.4)))
   fit_zi <- tulpa:::cpp_laplace_fit_multi_re(
-    y = as.numeric(y), n = rep(1L, n), X = X,
+    y = as.numeric(y), n = rep(1L, n), X = matrix(1, n, 1),
     re_idx_list = list(), re_ngroups = integer(0), re_sigma_list = list(),
-    family = "poisson", X_zi = X_zi,
+    family = "poisson", X_zi = matrix(1, n, 1),
     compute_skew = TRUE, skew_idx = as.integer(1:2)
   )
-  expect_true(all(is.nan(fit_zi$inner_skew)))
+  expect_true(all(is.finite(fit_zi$inner_skew)))
+  expect_identical(fit_zi$inner_skew_declined, "")
+
+  # The exact log posterior of this intercept-only ZI Poisson, with the priors
+  # the kernel applies: N(0, 100^2) on the count block (tau = 1e-4) and
+  # N(0, zi_prior_sd^2) with the default zi_prior_sd = 2.5 on the ZI block.
+  zi_lp <- function(a, b) {
+    mu <- exp(a); p <- plogis(b)
+    ypos <- y[y > 0]
+    sum(y == 0) * log(p + (1 - p) * exp(-mu)) +
+      length(ypos) * log1p(-p) + sum(ypos) * a - length(ypos) * mu -
+      sum(lgamma(ypos + 1)) - 0.5 * 1e-4 * a^2 - 0.5 * (1 / 2.5^2) * b^2
+  }
+  f2 <- function(p) zi_lp(p[1], p[2])
+  ctr <- stats::optim(c(0, 0), function(v) -f2(v), method = "BFGS",
+                      control = list(reltol = 1e-14))$par
+
+  # (a) the contraction IS the cubic term of the formula, to finite-difference
+  #     accuracy on both sides.
+  expect_equal(fit_zi$inner_skew, .isk_along_curve_gamma3(f2, ctr),
+               tolerance = 5e-3)
+
+  # (b) and that term tracks the exact posterior: same sign, undershooting the
+  #     exact marginal skewness as the leading-order expansion is documented to.
+  q <- coupled_occ_quadrature(Vectorize(zi_lp), ctr, half = 10, n_grid = 1601L)
+  exact <- c(q$a[["skew"]], q$b[["skew"]])
+  expect_true(all(sign(fit_zi$inner_skew) == sign(exact)))
+  expect_true(all(abs(fit_zi$inner_skew) < abs(exact)))
+  # The count coordinate is barely skewed (|skew| ~ 0.11), which is the regime
+  # the expansion is valid in; it must land close, not merely in the right
+  # direction.
+  expect_gt(fit_zi$inner_skew[1] / exact[1], 0.85)
 
   # The identical count-process model WITHOUT zero-inflation (n_processes == 1)
-  # scores fine -- confirms the NaN above is the coupling gate, not a
-  # dispatch failure.
-  y_nozi <- rpois(n, mu)
+  # takes the scalar oracle -- confirms the tensor path is the multi-process
+  # branch, not a change of dispatch for everything.
   fit_nozi <- tulpa:::cpp_laplace_fit_multi_re(
-    y = as.numeric(y_nozi), n = rep(1L, n), X = X,
+    y = as.numeric(rpois(n, exp(0.4))), n = rep(1L, n), X = matrix(1, n, 1),
     re_idx_list = list(), re_ngroups = integer(0), re_sigma_list = list(),
     family = "poisson",
-    compute_skew = TRUE, skew_idx = as.integer(1:2)
+    compute_skew = TRUE, skew_idx = 1L
   )
   expect_true(all(is.finite(fit_nozi$inner_skew)))
-
-  # gcol33/tulpa#296: NaN says only "not computable". The kernel now says WHY,
-  # so a structurally unscorable model class is distinguishable from a fit whose
-  # finite difference merely failed -- or from a disabled knob.
-  expect_identical(fit_zi$inner_skew_declined, "coupled_likelihood")
   expect_identical(fit_nozi$inner_skew_declined, "")
 })
 
@@ -236,13 +289,16 @@ test_that("the inner-skew decline reason reaches the fit and the diagnostics lay
   expect_identical(a$inner_skew_dropped, 4L)
 
   # Every reason reads back as a sentence; a structural one is flagged as such.
-  for (r in c("not_requested", "no_probe_indices", "coupled_likelihood",
+  for (r in c("not_requested", "no_probe_indices",
               "coupled_arm", "curvature3_unavailable", "no_finite_contribution",
               "no_oracle", "backend_unsupported", "solve_failed")) {
     expect_true(is.character(tulpa:::.inner_skew_decline_note(r)))
   }
   expect_null(tulpa:::.inner_skew_decline_note(NA_character_))
-  expect_true(tulpa:::.inner_skew_is_structural("coupled_likelihood"))
+  # gcol33/tulpa#301 retired "coupled_likelihood": a multi-process spec is
+  # scored by the per-observation tensor, so the reason has no producer left.
+  expect_null(tulpa:::.inner_skew_decline_note("coupled_likelihood"))
+  expect_false(tulpa:::.inner_skew_is_structural("coupled_likelihood"))
   expect_true(tulpa:::.inner_skew_is_structural("coupled_arm"))
   expect_false(tulpa:::.inner_skew_is_structural("not_requested"))
   expect_false(tulpa:::.inner_skew_is_structural(NA_character_))
@@ -256,7 +312,7 @@ test_that("an unscorable inner layer is not reported as a disabled knob", {
   # `control$diagnose_skew = FALSE`, sending readers after a knob they had left
   # at its default TRUE. The verdict now says the layer is unscorable instead.
   structural <- tulpa:::.tulpa_combined_reliability(
-    "unreliable", NA_character_, inner_declined = "coupled_likelihood")
+    "unreliable", NA_character_, inner_declined = "coupled_arm")
   expect_match(structural, "not assessed")             # the #274 contract
   expect_match(structural, "unscorable for this model class", fixed = TRUE)
 
@@ -423,14 +479,14 @@ test_that("tulpa_nested_laplace_joint() scores real gamma_3 for a separable 2-ar
   expect_null(fit_off$inner_skew)
 })
 
-test_that("tulpa_nested_laplace_joint() declines to NaN for a genuinely coupled fit", {
+test_that("gamma_3 is exactly zero for a coupled GAUSSIAN cell (K = 2 tensor, tolerance 0)", {
   skip_on_cran()
-  # A coupled arm's per-obs oracle would score the WRONG (unused) likelihood
-  # -- build_joint_curvature3_fns excludes it, so every probed index must
-  # come back NaN, never a silently-wrong 0. Uses the test-only bivariate
-  # gaussian CellCouplingSpec (registered in src/, mirrors
-  # test-cell-coupling-cross-hess.R): both arms coupled == the occu_cover
-  # shape (every arm coupled through the cell-coupling spec).
+  # The K > 1 counterpart of the gaussian exact-zero invariant above. The
+  # test-only bivariate gaussian CellCouplingSpec has a CONSTANT cross-arm
+  # Hessian, so every difference quotient the tensor forms is exactly zero and
+  # the contraction must return exactly 0 -- finite, not NaN (the cell IS
+  # scorable) and not merely small. Before gcol33/tulpa#301 this fit came back
+  # all-NaN because both arms were coupled and therefore excluded.
   cpp_register_test_bivariate_gaussian_coupling(lam00 = 2.0, lam11 = 1.5,
                                                 lam01 = 0.7)
   skip_if_not(cpp_cell_coupling_registry_has("test_bivariate_gaussian"),
@@ -443,8 +499,11 @@ test_that("tulpa_nested_laplace_joint() declines to NaN for a genuinely coupled 
     cell_coupling = "test_bivariate_gaussian",
     control   = list(max_iter = 80L, tol = 1e-11, diagnose_k = FALSE)
   )
-  expect_true(all(is.nan(res$inner_skew)))
   expect_length(res$inner_skew, sum(res$arm_layout$p))
+  expect_true(all(is.finite(res$inner_skew)))
+  expect_identical(res$inner_skew, rep(0, sum(res$arm_layout$p)))
+  expect_true(is.na(res$inner_skew_declined))
+  expect_identical(res$inner_skew_arms_declined, integer(0))
 })
 
 # --------------------------------------------------------------------------- #
@@ -691,11 +750,11 @@ test_that("gamma_3 is exactly zero for a gaussian precomputed-rational SPDE fit"
 #                                                                              #
 # `.exact_intercept_skew()` above is the ground truth for the separable scalar #
 # case: integrate the exact posterior on a grid, take its central moments, and #
-# hold gamma_3 against them. Everything it covers is a single separable sum,   #
-# which is the only shape the leading-order Edgeworth term in                  #
-# src/inner_laplace_skew.h is derived for -- a coupled cell has its per-obs    #
-# sum replaced by a CellCouplingSpec term, and the joint kernel declines on it #
-# rather than score the wrong (unused) per-obs likelihood.                     #
+# hold gamma_3 against them. Everything it covers is a single separable sum.   #
+# A coupled cell has its per-obs sum replaced by a CellCouplingSpec term, and  #
+# the cubic coefficient there is the contraction of the cell third-derivative  #
+# tensor (gcol33/tulpa#301) -- a different computation reaching the same       #
+# quantity, so it needs the same kind of arbiter.                              #
 #                                                                              #
 # The same construction is carried up to two dimensions here, over the         #
 # engine's own coupled fixture (the two-arm occupancy mixture registered from  #
@@ -783,22 +842,60 @@ test_that("the coupled fixture has a converged, materially skewed exact posterio
   expect_gt((fine$a[["mean"]] - ctr[1L]) / fine$a[["sd"]], 0.1)
 })
 
-test_that("the joint kernel declines gamma_3 on the coupled fixture rather than scoring it wrong", {
+test_that("the coupled cubic term reproduces the formula and tracks the exact skewness", {
   skip_on_cran()
-  # Until the coupled cubic term lands (gcol33/tulpa#301) the exact skewness
-  # above has no engine-side counterpart to compare against. What the engine
-  # must NOT do is report a number: every probed index comes back NaN, with the
-  # reason naming the coupled arm.
+  # The arbiter for gcol33/tulpa#301. Two things are checked, in that order,
+  # because they answer different questions:
+  #
+  #  (a) does the cell tensor contraction compute the quantity the derivation
+  #      defines? Held against the third derivative of the SAME exact log
+  #      posterior along the SAME conditional-mean curve, computed in R with no
+  #      engine involvement. Agreement here is exact up to finite differences.
+  #  (b) does that quantity track the exact posterior? Held against the
+  #      two-dimensional quadrature above. gamma_3 is a LEADING-ORDER estimate
+  #      and undershoots as skewness grows (the scalar section (3) characterises
+  #      the same behaviour), so the assertions are: right sign, undershoot in
+  #      magnitude, and close agreement on the coordinate whose skewness is
+  #      small enough for the expansion to be valid.
   coupled_occ_register()
+  beta_prec <- 0.25
   d <- coupled_occ_data(seed = 311, n_cells = 100L, n_visits = 4L,
                         b_occ = 0.2, b_det = -0.5)
+  lp <- coupled_occ_log_post(d, beta_prec)
+  f2 <- function(p) lp(p[1], p[2])
+  ctr <- stats::optim(c(0, 0), function(v) -f2(v), method = "BFGS",
+                      control = list(reltol = 1e-14))$par
+
   fit <- tulpa_nested_laplace_joint(
     responses = coupled_occ_arms(d, beta_prec = 0.25),
     prior = coupled_occ_flat_prior(d),
     cell_coupling = "test_occupancy_mixture",
     control = list(max_iter = 300L, tol = 1e-12, diagnose_k = FALSE))
   expect_length(fit$inner_skew, sum(fit$arm_layout$p))
-  expect_true(all(is.nan(fit$inner_skew)))
-  expect_identical(fit$inner_skew_declined, "coupled_arm")
-  expect_true(.inner_skew_is_structural(fit$inner_skew_declined))
+  expect_true(all(is.finite(fit$inner_skew)))
+  expect_true(is.na(fit$inner_skew_declined))
+  expect_identical(fit$inner_skew_arms_declined, integer(0))
+
+  # (a)
+  expect_equal(fit$inner_skew, .isk_along_curve_gamma3(f2, ctr),
+               tolerance = 5e-3)
+
+  # (b)
+  q <- coupled_occ_quadrature(lp, ctr, half = 16, n_grid = 1601L)
+  exact <- c(q$a[["skew"]], q$b[["skew"]])
+  expect_true(all(sign(fit$inner_skew) == sign(exact)))
+  expect_true(all(abs(fit$inner_skew) < abs(exact)))
+  # The detection coordinate is only mildly skewed (|skew| ~ 0.13): the
+  # expansion is valid there and must land close.
+  expect_gt(fit$inner_skew[2] / exact[2], 0.8)
+  # The occupancy coordinate is moderately skewed (~0.53) and the leading-order
+  # term recovers a little over half of it. Pinned rather than smoothed over,
+  # because it has a consequence a reader has to know: the exact skewness bands
+  # "ok" while gamma_3 bands "good", so on a posterior this shape the band is
+  # optimistic. gamma_3 is a lower bound on the skewness, not a two-sided
+  # estimate of it.
+  expect_gt(fit$inner_skew[1] / exact[1], 0.4)
+  expect_lt(fit$inner_skew[1] / exact[1], 0.7)
+  expect_identical(.tulpa_gamma3_band(exact[1]), "ok")
+  expect_identical(.tulpa_gamma3_band(fit$inner_skew[1]), "good")
 })

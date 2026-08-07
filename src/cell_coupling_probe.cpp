@@ -23,6 +23,7 @@
 // shape it sees under the driver.
 
 #include "cell_coupling_registry.h"
+#include "cell_curvature3.h"
 
 #include <Rcpp.h>
 
@@ -178,4 +179,80 @@ Rcpp::List cpp_cell_coupling_evaluate(std::string name,
         Rcpp::Named("rank1_vec")     = rank1_out,
         Rcpp::Named("arm_ids")       = Rcpp::IntegerVector(ids.begin(), ids.end())
     );
+}
+
+// The cubic contraction of a registered spec's cell third-derivative tensor
+// against one direction (gcol33/tulpa#301), on one cell, outside any solve.
+//
+// The engine reaches this through the joint Newton's inner-skew probe, where the
+// direction is the eta response to v_i = Sigma e_i and the result is one term of
+// gamma_3's numerator. Exposed here at cell granularity so the contraction can be
+// held against an independent third derivative of the spec's own `value`, and so
+// the per-arm step policy can be measured against the global one rather than
+// asserted. `eta` is the cell's per-arm linear predictor, `u` the per-arm
+// direction (same shapes).
+// [[Rcpp::export]]
+double cpp_cell_coupling_curvature3(std::string name,
+                                    Rcpp::List eta,
+                                    Rcpp::List u,
+                                    Rcpp::List y,
+                                    Rcpp::CharacterVector family,
+                                    Rcpp::NumericVector phi,
+                                    int cell_idx = 0,
+                                    bool per_arm_step = true) {
+    auto spec = tulpa::lookup_cell_coupling(name);
+    if (!spec) {
+        Rcpp::stop("cell coupling spec '" + name + "' is not registered.");
+    }
+    const int n_arms = eta.size();
+    if (u.size() != n_arms || y.size() != n_arms || family.size() != n_arms ||
+        phi.size() != n_arms) {
+        Rcpp::stop("`eta`, `u`, `y`, `family` and `phi` must all have one entry "
+                   "per coupled arm.");
+    }
+
+    // Cell `cell_idx` holds every supplied row and every earlier cell is empty,
+    // so a spec that reads per-cell metadata sees the index it was asked for
+    // while the empty cells contribute exactly nothing (their direction is zero).
+    if (cell_idx < 0) Rcpp::stop("cell_idx must be non-negative.");
+    std::vector<std::vector<std::vector<int>>> cell_rows(n_arms);
+    std::vector<Rcpp::NumericVector> eta0(n_arms), eta1(n_arms);
+    std::vector<std::vector<double>> y_store(n_arms);
+    std::vector<std::string>         family_store(n_arms);
+    tulpa::CellCurvature3Inputs in;
+    in.spec         = spec.get();
+    in.n_cells      = cell_idx + 1;
+    in.per_arm_step = per_arm_step;
+    in.coupled_arms.resize(n_arms);
+    in.arm_y.resize(n_arms);
+    in.arm_n_trials.assign(n_arms, nullptr);
+    in.arm_family.resize(n_arms);
+    in.arm_phi.assign(phi.begin(), phi.end());
+    for (int k = 0; k < n_arms; k++) {
+        Rcpp::NumericVector ek = eta[k];
+        Rcpp::NumericVector uk = u[k];
+        Rcpp::NumericVector yk = y[k];
+        const int rc = ek.size();
+        if (uk.size() != rc || yk.size() != rc) {
+            Rcpp::stop("arm " + std::to_string(k + 1) +
+                       ": length(u) and length(y) must equal length(eta).");
+        }
+        eta0[k] = Rcpp::NumericVector(ek.begin(), ek.end());
+        eta1[k] = Rcpp::NumericVector(rc);
+        for (int j = 0; j < rc; j++) eta1[k][j] = ek[j] + uk[j];
+        y_store[k].assign(yk.begin(), yk.end());
+        family_store[k] = Rcpp::as<std::string>(family[k]);
+        cell_rows[k].assign(cell_idx + 1, std::vector<int>());
+        cell_rows[k][cell_idx].resize(rc);
+        for (int j = 0; j < rc; j++) cell_rows[k][cell_idx][j] = j;
+        in.coupled_arms[k] = k;
+        in.arm_y[k]        = y_store[k].data();
+        in.arm_family[k]   = family_store[k];
+    }
+    in.cell_rows = &cell_rows;
+
+    const char* reason = "";
+    tulpa::CellCubic3Fn fn = tulpa::build_cell_curvature3_tensor(in, &reason);
+    if (!fn) Rcpp::stop("cell curvature3 tensor declined: %s", reason);
+    return fn(eta0, eta1);
 }

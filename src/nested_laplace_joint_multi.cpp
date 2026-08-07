@@ -53,6 +53,7 @@
 // offset.
 
 #include "cell_coupling_registry.h"
+#include "cell_curvature3.h"        // coupled-cell gamma_3 tensor contraction
 #include "joint_hessian_pattern.h"
 #include "laplace_core.h"
 #include "laplace_re_priors.h"
@@ -90,6 +91,42 @@
 #endif
 
 namespace {
+
+// The coupled-cell gamma_3 contraction for one joint solve (gcol33/tulpa#301).
+// Snapshots the coupled arms' response pointers, family tags and the dispersion
+// THIS solve runs at (`phi_override` when the caller holds a per-thread snapshot
+// taken under the phi-sync critical; the shared `arms[k].phi` otherwise, which is
+// what the serial dense path reads), so the returned closure cannot pick up a
+// concurrent cell's dispersion. Built per solve for exactly that reason,
+// alongside `cell_coupling_log_lik_fn`. `cell_rows` is the fit-scoped row
+// inversion and is borrowed; it outlives every solve.
+inline tulpa::CellCubic3Fn make_cell_cubic3(
+    const tulpa::CellCouplingSpec*                    spec,
+    const std::vector<int>&                           coupled_arms,
+    const std::vector<std::vector<std::vector<int>>>& cell_rows,
+    int                                               n_cells,
+    const std::vector<tulpa::JointArm>&               arms,
+    const double*                                     phi_override
+) {
+    tulpa::CellCurvature3Inputs in;
+    in.spec         = spec;
+    in.cell_rows    = &cell_rows;
+    in.n_cells      = n_cells;
+    in.coupled_arms = coupled_arms;
+    const int K = static_cast<int>(coupled_arms.size());
+    in.arm_y.resize(K);
+    in.arm_n_trials.resize(K);
+    in.arm_family.resize(K);
+    in.arm_phi.resize(K);
+    for (int kk = 0; kk < K; kk++) {
+        const tulpa::JointArm& a = arms[coupled_arms[kk]];
+        in.arm_y[kk]        = a.y.size()        > 0 ? REAL(a.y)            : nullptr;
+        in.arm_n_trials[kk] = a.n_trials.size() > 0 ? INTEGER(a.n_trials)  : nullptr;
+        in.arm_family[kk]   = a.family;
+        in.arm_phi[kk]      = phi_override ? phi_override[kk] : a.phi;
+    }
+    return tulpa::build_cell_curvature3_tensor(std::move(in));
+}
 
 // Inner-thread budget for the joint nested-Laplace grid solve.
 //
@@ -2071,12 +2108,16 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
     // Inner-Laplace skewness diagnostic: per-arm oracle built once from the
     // shared `specs`, valid only for the full solve (never the cheap-pass
     // screen, which reads a per-worker `cheap_specs_pool` entry instead --
-    // see is_cheap below). Coupled arms are excluded automatically (their
-    // per-obs oracle would score the wrong, unused likelihood).
+    // see is_cheap below). Coupled arms carry no per-obs oracle (it would score
+    // the wrong, unused likelihood); they are scored by the cell tensor
+    // contraction assigned per solve below (gcol33/tulpa#301) whenever this fit
+    // can carry one.
+    const bool coupled_scored = any_coupling &&
+        cell_curvature3_available(cell_coupling_spec.get(), coupled_arms, n_cells);
     JointCurvature3Oracles skew_curvature3_fns;
     if (compute_skew) {
         skew_curvature3_fns = build_joint_curvature3_fns(
-            specs.views, any_coupling ? &arm_is_coupled : nullptr);
+            specs.views, any_coupling ? &arm_is_coupled : nullptr, coupled_scored);
     }
 
     // One cheap-pass specs view per outer worker slot. The cheap screen may run
@@ -2280,6 +2321,14 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
                         arms, e
                     );
                 };
+        }
+        // Cell tensor contraction for the coupled arms' gamma_3, rebuilt at the
+        // dispersion this cell runs at. The dense outer grid is serial, so the
+        // single shared oracle set is written by one thread at a time.
+        if (compute_skew && !is_cheap && coupled_scored) {
+            skew_curvature3_fns.cell_cubic = make_cell_cubic3(
+                cell_coupling_spec.get(), coupled_arms, cell_rows, n_cells,
+                arms, nullptr);
         }
         return laplace_newton_solve_joint_ll(
             n_x,
@@ -2532,13 +2581,18 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
     // Inner-Laplace skewness diagnostic: one per-arm oracle vector per outer
     // slot (mirrors specs_pool / db_buffers_pool -- each JointArmSpecs is
     // self-referential, so its curvature3 closures must be built from ITS OWN
-    // views, not a shared copy). Coupled arms are excluded automatically.
+    // views, not a shared copy). Coupled arms carry no per-obs oracle; the cell
+    // tensor contraction assigned into the owning slot per solve scores them
+    // (gcol33/tulpa#301).
+    const bool coupled_scored = any_coupling &&
+        cell_curvature3_available(cell_coupling_spec.get(), coupled_arms, n_cells);
     std::vector<JointCurvature3Oracles> skew_curvature3_fns_pool;
     if (compute_skew) {
         skew_curvature3_fns_pool.resize(n_outer);
         for (int t = 0; t < n_outer; t++) {
             skew_curvature3_fns_pool[t] = build_joint_curvature3_fns(
-                specs_pool[t].views, any_coupling ? &arm_is_coupled : nullptr);
+                specs_pool[t].views, any_coupling ? &arm_is_coupled : nullptr,
+                coupled_scored);
         }
     }
 
@@ -2790,6 +2844,13 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
         // applies only to the full per-cell solve.
         const int refresh_use = use_cheap_scratch ? 1 : hessian_refresh;
         const bool want_skew = compute_skew && !use_cheap_scratch;
+        // Cell tensor contraction for the coupled arms' gamma_3, rebuilt at the
+        // dispersion snapshot this cell runs at, into the slot this thread owns.
+        if (want_skew && coupled_scored) {
+            skew_curvature3_fns_pool[slot].cell_cubic = make_cell_cubic3(
+                cell_coupling_spec.get(), coupled_arms, cell_rows, n_cells,
+                arms, coupled_phi_ptr);
+        }
         return laplace_newton_solve_joint_sparse_ll(
             n_x,
             max_iter_use, tol,
