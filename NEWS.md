@@ -1,5 +1,33 @@
 # tulpa NEWS
 
+## 0.0.131
+
+* **The 0.0.130 auto-recenter now also engages under the default
+  `diagnose_k = FALSE`, and covers `fit_st_nested()`'s spatiotemporal grid
+  (#291, #292).** Two gaps left open by #289/#290:
+
+  - The joint driver's rescue only fired when `control$diagnose_k = TRUE`,
+    because it read `pareto_k_mode_u`/`cov_u` -- fields only the full outer
+    Pareto-k diagnostic populated. Production batch runs default
+    `diagnose_k = FALSE`, so a collapsed fit stayed railed regardless of the
+    auto sigma grid. `.joint_attach_pareto_k_placement()` now computes the
+    same (mode, covariance) via the same `.joint_pareto_prepare()` the full
+    diagnostic scores its proposal from, and runs whenever the grid has
+    collapsed onto an edge, independent of `diagnose_k`.
+  - `fit_st_nested()`'s `tau_spatial x tau_temporal [x rho]` tensor grid was
+    the one nested-Laplace family #289/#290 left out, since it had no
+    mode-find machinery to reuse. `.st_auto_grid_rescue()`
+    (`R/fit_st_nested_auto_grid.R`) adds one: a box-constrained L-BFGS-B
+    mode-find (finite-difference gradient, no analytic one available from the
+    compiled kernel) over the unconstrained per-axis coordinate -- log for
+    the two precision axes, `qlogis((rho+1)/2)` for ar1's autocorrelation --
+    seeded at the collapsed grid's own highest-weight cell, then a refit on a
+    grid recentered at the mode. Same trigger as every other family
+    (`pareto_k_regime == "collapsed_edge"`), one attempt only, bounded 6 nats
+    past the default axis on each side, and declines whenever a
+    grid-construction knob (`tau_lower`/`tau_upper`/`n_grid_*`/`rho_lower`/
+    `rho_upper`) was set explicitly.
+
 ## 0.0.130
 
 * **Outer hyperparameter grids auto-recenter on a collapsed boundary instead
