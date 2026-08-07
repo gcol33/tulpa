@@ -33,7 +33,7 @@ test_that("default-grid single-block Pareto-k is computed, not declined (#203)",
                                 family = "binomial")
   f_exp <- tulpa_nested_laplace(
     y = y, n_trials = ntr, X = X, family = "binomial",
-    prior = c(base, list(tau_grid = tulpa:::.default_tau_grid())))
+    prior = c(base, list(tau_grid = tulpa:::.nl_grid_axis("gmrf_tau"))))
 
   expect_false(is.na(f_def$pareto_k))                    # was NA before the fix
   # Same axis, same (default) grid -> identical k-hat whether named or defaulted.

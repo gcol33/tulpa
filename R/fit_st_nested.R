@@ -118,15 +118,16 @@ fit_st_nested <- function(y, X, spatial_idx, adjacency, temporal_idx, n_times,
   if (is.null(re_idx)) re_idx <- rep(0, N)
 
   # Hyperparameter grid: spatial precision x temporal precision x (ar1) rho.
-  n_gs   <- as.integer(control$n_grid_spatial  %||% 4L)
-  n_gt   <- as.integer(control$n_grid_temporal %||% 4L)
-  n_grho <- if (temporal_type == "ar1") as.integer(control$n_grid_rho %||% 3L) else 1L
-  tau_lo <- control$tau_lower %||% 0.25
-  tau_hi <- control$tau_upper %||% 16
+  n_gs   <- as.integer(control$n_grid_spatial  %||% .nl_st_default("n_spatial"))
+  n_gt   <- as.integer(control$n_grid_temporal %||% .nl_st_default("n_temporal"))
+  n_grho <- if (temporal_type == "ar1") as.integer(control$n_grid_rho %||% .nl_st_default("n_rho")) else 1L
+  tau_lo <- control$tau_lower %||% .nl_st_default("tau_lower")
+  tau_hi <- control$tau_upper %||% .nl_st_default("tau_upper")
   ts_axis  <- .st_log_grid(tau_lo, tau_hi, n_gs)
   tt_axis  <- .st_log_grid(tau_lo, tau_hi, n_gt)
   rho_axis <- if (temporal_type == "ar1") {
-    seq(control$rho_lower %||% 0.1, control$rho_upper %||% 0.9, length.out = n_grho)
+    seq(control$rho_lower %||% .nl_st_default("rho_lower"),
+        control$rho_upper %||% .nl_st_default("rho_upper"), length.out = n_grho)
   } else 0.0
   grid <- expand.grid(tau_spatial = ts_axis, tau_temporal = tt_axis, rho = rho_axis)
 

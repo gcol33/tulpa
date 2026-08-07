@@ -37,11 +37,11 @@ test_that("a pinned axis is pinned and every flavour of default is not", {
     expect_false(tulpa:::.nl_axis_is_pinned(pinned, "sigma_grid", "sigma_grid"))
     # The engine's OWN default axis, handed back in unmarked (the #293 case).
     eng <- pinned
-    eng$sigma_grid <- tulpa:::.nl_default_sigma_axis()
+    eng$sigma_grid <- tulpa:::.nl_grid_axis("field_sd")
     expect_false(tulpa:::.nl_axis_is_pinned(eng, "sigma_grid"))
     # ... and the same node set crossed against a second axis (bym2's paired
     # (sigma, rho) grid) is still that default node set.
-    gr <- expand.grid(sigma = tulpa:::.nl_default_sigma_axis(),
+    gr <- expand.grid(sigma = tulpa:::.nl_grid_axis("field_sd"),
                       rho = c(0.2, 0.5, 0.8, 0.95))
     crossed <- pinned
     crossed$sigma_grid <- gr$sigma
@@ -53,7 +53,7 @@ test_that("a pinned axis is pinned and every flavour of default is not", {
 })
 
 test_that("both registry tau defaults are recognised, an unrelated tau grid is not", {
-    for (d in list(tulpa:::.default_tau_grid(),
+    for (d in list(tulpa:::.nl_grid_axis("gmrf_tau"),
                    exp(seq(log(0.3), log(30), length.out = 5)))) {
         expect_false(tulpa:::.nl_axis_is_pinned(
             list(type = "icar", tau_grid = d), "tau_grid"))
@@ -189,7 +189,7 @@ test_that("the single-block rescue guard honours a pin and passes a default", {
     # 2. Engine default handed in unmarked -> still recenters (#293).
     calls$n <- 0L
     out <- tulpa:::.joint_sigma_grid_rescue(
-        stub_res, c(icar, list(sigma_grid = tulpa:::.nl_default_sigma_axis())),
+        stub_res, c(icar, list(sigma_grid = tulpa:::.nl_grid_axis("field_sd"))),
         NULL, refit)
     expect_identical(out$res$outer_grid_placement, "auto_recentered")
     expect_identical(calls$n, 1L)
@@ -267,7 +267,7 @@ test_that("the multi-block rescue reports a pinned copy-block axis", {
     # -> recenters.
     out <- tulpa:::.joint_multi_sigma_grid_rescue(
         stub_res,
-        list(list(type = "icar", sigma_grid = tulpa:::.nl_default_sigma_axis())),
+        list(list(type = "icar", sigma_grid = tulpa:::.nl_grid_axis("field_sd"))),
         NULL, cp, NULL, refit)
     expect_identical(out$res$outer_grid_placement, "auto_recentered")
 })

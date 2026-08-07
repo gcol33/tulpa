@@ -1,5 +1,54 @@
 # tulpa NEWS
 
+## 0.0.133
+
+* **Every engine default now lives in one file (`R/settings.R`).** A default
+  outer hyperparameter axis used to be written where it was consumed, so the
+  same numbers appeared in several places at once: the field-SD axis
+  `exp(seq(log(0.1), log(3), length.out = 5))` in five (the three single-block
+  joint areal backends, the multi-block copy-block axis builder, and the
+  bym2 / iid registry entries), the copy-coefficient axis
+  `c(0, exp(seq(log(0.1), log(3), ...)))` verbatim in two, the wide
+  intrinsic-precision axis in three, `k_samples = 200L` in five, and the
+  reported Pareto-k usable threshold `0.7` in seven. `.NL_GRID` now holds one
+  entry per DISTINCT default axis (keyed by what the axis measures --
+  `field_sd`, `gmrf_tau`, `gp_lengthscale`, `copy_alpha`, ... -- so families
+  that integrate the same quantity share the entry and move together), with
+  `.NL_RECENTER`, `.NL_ST_GRID` and `.NL_DIAG` alongside it for the
+  auto-recenter policy, the spatiotemporal driver's own grid, and the
+  diagnostic thresholds. Every call site reads an accessor
+  (`.nl_grid_axis()`, `.nl_grid_par()`, `.nl_recenter()`, `.nl_st_default()`,
+  `.nl_diag()`); no number is restated anywhere else. All 20 default axes and
+  every registry `defaults()` closure are byte-identical to what they produced
+  before, verified node by node.
+
+* **`.NL_FAMILY_AXES` binds family + path -> axis, so a new family cannot be
+  half-registered.** The registry's per-family `defaults()` closures and the
+  auto-recenter's axis-provenance check (#293) now read the SAME binding, and
+  a plain Cartesian default is one line
+  (`.nl_fill_family_axes(p, "bym2")`) instead of a hand-written
+  `is.null()` / `expand.grid()` block per family. This closes a gap the #293
+  fix left: provenance carried a hand-maintained list of two fields
+  (`sigma_grid`, `tau_grid`), so an engine default on any OTHER axis
+  (`gp_var`, `phi_gp_grid`, `ar1_rho`, `mo_lengthscale`, ...) coming back in
+  through a wrapper's prior was still read as a user pin. Every defaulted axis
+  is now covered. `type` narrows the comparison to the axis that one
+  path-and-family lays -- passed explicitly, never inferred from
+  `block$type`, since a joint areal block carries `type = "icar"` while its
+  `sigma_grid` default comes from the joint path and the icar REGISTRY entry
+  defaults a precision axis instead.
+
+* Two source-level tests keep the defaults from re-scattering: a geometric axis
+  over literal bounds outside `R/settings.R` fails
+  `test-settings.R`, as does a restated Pareto-k threshold or `k_samples`
+  default. `test-settings.R` also pins every axis to its exact nodes -- these
+  numbers are the engine's behaviour on any fit that does not name its own
+  grid, so changing one is deliberate enough to update a test.
+
+* `.default_tau_grid()` and `.nl_default_sigma_axis()` are gone; call
+  `.nl_grid_axis("gmrf_tau")` / `.nl_grid_axis("field_sd")`. Pre-release, so no
+  shim.
+
 ## 0.0.132
 
 * **The #289/#290/#291 auto-recenter now fires for wrapper-package fits: axis

@@ -160,7 +160,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   x_init             <- control$x_init
   keep_grid_hessians <- isTRUE(control$keep_grid_hessians)
   diagnose_k         <- isTRUE(control$diagnose_k %||% TRUE)
-  k_samples          <- as.integer(control$k_samples %||% 200L)
+  k_samples          <- as.integer(control$k_samples %||% .nl_diag("k_samples"))
   diagnose_skew      <- isTRUE(control$diagnose_skew %||% TRUE)
   skew_idx           <- control$skew_idx
 
@@ -431,8 +431,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 # separately interpretable).
 .mcar_default_logchol_grid <- function(p) {
   if (p == 2L) {
-    sig <- c(0.4, 0.7, 1.1, 1.7)
-    rho <- c(-0.8, -0.4, 0, 0.4, 0.7, 0.9)
+    sig <- .nl_grid_axis("mcar_sd")
+    rho <- .nl_grid_axis("mcar_rho")
     g <- expand.grid(s1 = sig, s2 = sig, rho = rho,
                      KEEP.OUT.ATTRS = FALSE)
     # Sigma = [[s1^2, rho s1 s2], [rho s1 s2, s2^2]] -> lower Cholesky L:
@@ -443,8 +443,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     colnames(out) <- c("L11", "L21", "L22")
     return(out)
   }
-  diag_nodes <- log(c(0.4, 0.8, 1.5, 2.5))
-  off_nodes  <- c(-1.2, 0.0, 1.2)
+  diag_nodes <- log(.nl_grid_axis("mcar_logchol_diag"))
+  off_nodes  <- .nl_grid_axis("mcar_logchol_off")
   m <- p * (p + 1L) / 2L
   axes <- vector("list", m)
   nm <- character(m)
@@ -462,10 +462,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 .NL_REGISTRY <- list(
   icar = list(
     cpp_fn = "cpp_nested_laplace_icar",
-    defaults = function(p, a) {
-      if (is.null(p$tau_grid)) p$tau_grid <- .default_tau_grid()
-      p
-    },
+    defaults = function(p, a) .nl_fill_family_axes(p, "icar"),
     pack = function(p) c(.nl_adj_args(p), list(
       tau_grid = as.numeric(p$tau_grid)
     )),
@@ -474,15 +471,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 
   bym2 = list(
     cpp_fn = "cpp_nested_laplace_bym2",
-    defaults = function(p, a) {
-      if (is.null(p$sigma_grid) || is.null(p$rho_grid)) {
-        sg <- .nl_default_sigma_axis()
-        rg <- c(0.2, 0.5, 0.8, 0.95)
-        gr <- expand.grid(sigma = sg, rho = rg)
-        p$sigma_grid <- gr$sigma; p$rho_grid <- gr$rho
-      }
-      p
-    },
+    defaults = function(p, a) .nl_fill_family_axes(p, "bym2"),
     pack = function(p) c(.nl_adj_args(p), list(
       scale_factor       = as.numeric(p$scale_factor %||% 1.0),
       sigma_spatial_grid = as.numeric(p$sigma_grid),
@@ -505,15 +494,16 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
       if (!is.null(p$tau_grid) && !is.null(p$rho_grid)) return(p)
       # Otherwise default each missing axis independently and cross the two, so
       # supplying only one axis keeps it instead of discarding it.
-      rb <- p$rho_bounds %||% c(0, 1)
+      rb <- p$rho_bounds %||% .nl_grid_par("car_rho", "bounds")
       # Margin in from the eigenvalue endpoints -- Q goes singular at the
       # boundary, so anchoring the grid in (lower + eps, upper - eps) avoids
       # NaN log-determinants from the per-grid-point Cholesky.
-      eps <- 0.05 * (rb[2] - rb[1])
+      eps <- .nl_grid_par("car_rho", "margin") * (rb[2] - rb[1])
       g_tau <- if (is.null(p$tau_grid))
-        exp(seq(log(0.3), log(30), length.out = 5)) else sort(unique(p$tau_grid))
+        .nl_grid_axis("car_tau") else sort(unique(p$tau_grid))
       g_rho <- if (is.null(p$rho_grid))
-        seq(rb[1] + eps, rb[2] - eps, length.out = 5) else sort(unique(p$rho_grid))
+        seq(rb[1] + eps, rb[2] - eps,
+            length.out = .nl_grid_par("car_rho", "n")) else sort(unique(p$rho_grid))
       gr <- expand.grid(tau = g_tau, rho = g_rho)
       p$tau_grid <- gr$tau; p$rho_grid <- gr$rho
       p
@@ -576,16 +566,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 
   nngp = list(
     cpp_fn = "cpp_nested_laplace_nngp",
-    defaults = function(p, a) {
-      if (is.null(p$sigma2_grid) || is.null(p$phi_gp_grid)) {
-        s2 <- exp(seq(log(0.05), log(2), length.out = 5))
-        pg <- exp(seq(log(0.05), log(1.5), length.out = 5))
-        gr <- expand.grid(sigma2 = s2, phi_gp = pg)
-        p$sigma2_grid <- gr$sigma2
-        p$phi_gp_grid <- gr$phi_gp
-      }
-      p
-    },
+    defaults = function(p, a) .nl_fill_family_axes(p, "nngp"),
     pack = function(p) {
       # nn_order in cpp_nested_laplace_nngp expects 0-based indices, matching
       # the convention in cpp_laplace_fit_gp (see R/fit_laplace.R:433).
@@ -636,10 +617,12 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
         # integrated field in the well-identified region the single-Laplace
         # SPDE path fits at the fixed mode, while still integrating modest
         # hyperparameter uncertainty.
-        n_g <- as.integer(p$n_grid %||% 5L)
-        span <- as.numeric(p$grid_span %||% 1.4)
-        rng_mode <- (p$prior_range %||% c(1, 0.5))[1]
-        sig_mode <- (p$prior_sigma %||% c(1, 0.5))[1]
+        n_g <- as.integer(p$n_grid %||% .nl_grid_par("spde_registry", "n"))
+        span <- as.numeric(p$grid_span %||% .nl_grid_par("spde_registry", "span"))
+        rng_mode <- (p$prior_range %||%
+                       .nl_grid_par("spde_registry", "prior_range"))[1]
+        sig_mode <- (p$prior_sigma %||%
+                       .nl_grid_par("spde_registry", "prior_sigma"))[1]
         rg <- exp(seq(log(rng_mode / span), log(rng_mode * span), length.out = n_g))
         sg <- exp(seq(log(sig_mode / span), log(sig_mode * span), length.out = n_g))
         gr <- expand.grid(range = rg, sigma = sg)
@@ -670,12 +653,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     # sigma (an EM-estimated random-effect term on a nested block carries its
     # own grid this way; see .fit_block_via_nested_laplace).
     cpp_fn = NULL,
-    defaults = function(p, a) {
-      if (is.null(p$sigma_grid)) {
-        p$sigma_grid <- .nl_default_sigma_axis()
-      }
-      p
-    },
+    defaults = function(p, a) .nl_fill_family_axes(p, "iid"),
     pack = function(p) stop(
       "iid is only supported inside a multi-block latent prior on the ",
       "nested-Laplace path. Pass it as one element of a block list to ",
@@ -687,16 +665,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 
   hsgp = list(
     cpp_fn = "cpp_nested_laplace_hsgp",
-    defaults = function(p, a) {
-      if (is.null(p$sigma2_grid) || is.null(p$lengthscale_grid)) {
-        s2 <- exp(seq(log(0.05), log(2), length.out = 5))
-        ls <- exp(seq(log(0.05), log(1.5), length.out = 5))
-        gr <- expand.grid(sigma2 = s2, ell = ls)
-        p$sigma2_grid <- gr$sigma2
-        p$lengthscale_grid <- gr$ell
-      }
-      p
-    },
+    defaults = function(p, a) .nl_fill_family_axes(p, "hsgp"),
     pack = function(p) list(
       phi_basis        = as.matrix(p$phi_basis),
       lambda_eig       = as.numeric(p$lambda_eig),
@@ -723,20 +692,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
       # we fill in a small Cartesian default; when the user supplies grids
       # they must already be aligned (use expand.grid() on the R side to
       # form a Cartesian, then pass the four aligned columns).
-      if (is.null(p$sigma_1_grid) || is.null(p$sigma_2_grid) ||
-          is.null(p$rho_grid) || is.null(p$lengthscale_grid)) {
-        s1 <- exp(seq(log(0.3), log(1.5), length.out = 3))
-        s2 <- exp(seq(log(0.3), log(1.5), length.out = 3))
-        rh <- c(-0.4, 0.0, 0.4)
-        ls <- exp(seq(log(0.1), log(1.0), length.out = 3))
-        gr <- expand.grid(sigma_1 = s1, sigma_2 = s2, rho = rh, ell = ls,
-                          KEEP.OUT.ATTRS = FALSE, stringsAsFactors = FALSE)
-        p$sigma_1_grid     <- gr$sigma_1
-        p$sigma_2_grid     <- gr$sigma_2
-        p$rho_grid         <- gr$rho
-        p$lengthscale_grid <- gr$ell
-      }
-      p
+      .nl_fill_family_axes(p, "hsgp_mo")
     },
     pack = function(p) stop(
       "hsgp_mo is only supported inside a multi-block joint prior. ",
@@ -754,10 +710,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 
   rw1 = list(
     cpp_fn = "cpp_nested_laplace_temporal",
-    defaults = function(p, a) {
-      if (is.null(p$tau_grid)) p$tau_grid <- .default_tau_grid()
-      p
-    },
+    defaults = function(p, a) .nl_fill_family_axes(p, "rw1"),
     pack = function(p) list(
       temporal_idx  = as.integer(p$temporal_idx),
       n_times       = as.integer(p$n_times),
@@ -772,10 +725,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 
   rw2 = list(
     cpp_fn = "cpp_nested_laplace_temporal",
-    defaults = function(p, a) {
-      if (is.null(p$tau_grid)) p$tau_grid <- .default_tau_grid()
-      p
-    },
+    defaults = function(p, a) .nl_fill_family_axes(p, "rw2"),
     pack = function(p) list(
       temporal_idx  = as.integer(p$temporal_idx),
       n_times       = as.integer(p$n_times),
@@ -790,15 +740,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 
   ar1 = list(
     cpp_fn = "cpp_nested_laplace_temporal",
-    defaults = function(p, a) {
-      if (is.null(p$tau_grid) || is.null(p$rho_grid)) {
-        g_tau <- exp(seq(log(0.5), log(20), length.out = 5))
-        g_rho <- c(0.0, 0.4, 0.7, 0.9, 0.97)
-        gr <- expand.grid(tau = g_tau, rho = g_rho)
-        p$tau_grid <- gr$tau; p$rho_grid <- gr$rho
-      }
-      p
-    },
+    defaults = function(p, a) .nl_fill_family_axes(p, "ar1"),
     pack = function(p) list(
       temporal_idx  = as.integer(p$temporal_idx),
       n_times       = as.integer(p$n_times),
@@ -851,10 +793,12 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
             lo <- p$bounds$lower[j]
             hi <- p$bounds$upper[j]
           } else {
-            lo <- p$init[j] - 2
-            hi <- p$init[j] + 2
+            hw <- .nl_grid_par("tgmrf_axis", "half_width")
+            lo <- p$init[j] - hw
+            hi <- p$init[j] + hw
           }
-          axes[[j]] <- seq(lo, hi, length.out = 5L)
+          axes[[j]] <- seq(lo, hi,
+                           length.out = .nl_grid_par("tgmrf_axis", "n"))
         }
         names(axes) <- p$theta_names
         gr <- do.call(expand.grid, axes)
@@ -905,12 +849,6 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   res$log_marginal <- res$log_marginal +
     (ab[1L] - 1) * log(u) + (ab[2L] - 1) * log1p(-u)
   res
-}
-
-# Default 1D log-spaced tau grid: a 9-point search over a wide precision range,
-# shared by the icar / rw1 / rw2 intrinsic-GMRF kernels.
-.default_tau_grid <- function() {
-  exp(seq(log(0.3), log(30), length.out = 9))
 }
 
 # Normalise log-marginals to integration weights summing to 1. The single

@@ -62,13 +62,16 @@ pc_prior_log_density <- function(range, sigma, prior_range, prior_sigma) {
 # nested-Laplace ABI (re_idx / n_re_groups / sigma_re).
 # ---------------------------------------------------------------------
 fit_spde_nested_grid <- function(spde_log_marginal, sp, n_grid, spatial,
-                                 diagnose_k = TRUE, k_samples = 200L) {
+                                 diagnose_k = TRUE,
+                                 k_samples = .nl_diag("k_samples")) {
   range_mode <- sp$prior_range[1]
   sigma_mode <- sp$prior_sigma[1]
 
-  range_grid <- exp(seq(log(range_mode * 0.3), log(range_mode * 3),
+  lo_m <- .nl_grid_par("spde_direct", "lo_mult")
+  hi_m <- .nl_grid_par("spde_direct", "hi_mult")
+  range_grid <- exp(seq(log(range_mode * lo_m), log(range_mode * hi_m),
                         length.out = n_grid))
-  sigma_grid <- exp(seq(log(sigma_mode * 0.3), log(sigma_mode * 3),
+  sigma_grid <- exp(seq(log(sigma_mode * lo_m), log(sigma_mode * hi_m),
                         length.out = n_grid))
 
   grid <- expand.grid(range = range_grid, sigma = sigma_grid)
@@ -147,7 +150,8 @@ fit_spde_nested_grid <- function(spde_log_marginal, sp, n_grid, spatial,
 fit_spde_nested_ccd <- function(spde_log_marginal,
                                 fit_spde_single,
                                 sp, spatial,
-                                diagnose_k = TRUE, k_samples = 200L) {
+                                diagnose_k = TRUE,
+                                k_samples = .nl_diag("k_samples")) {
   range_mode <- sp$prior_range[1]
   sigma_mode <- sp$prior_sigma[1]
 

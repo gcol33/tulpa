@@ -58,8 +58,8 @@
 .tulpa_gamma3_band <- function(g) {
   if (!is.finite(g)) return(NA_character_)
   ag <- abs(g)
-  if (ag < 0.5) return("good")
-  if (ag < 1.0) return("ok")
+  if (ag < .nl_diag("gamma3_ok")) return("good")
+  if (ag < .nl_diag("gamma3_unreliable")) return("ok")
   "unreliable"
 }
 

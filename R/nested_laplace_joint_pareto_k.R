@@ -41,7 +41,8 @@
 # Simpson, Gelman, Yao & Gabry 2024 usable band). This is a fixed loop control,
 # distinct from the REPORTED reliability bands, which are sample-size dependent
 # (`.ps_conf_bands` in R/psis.R).
-.K_DIAG_USABLE <- 0.7
+# (the number itself lives in `.NL_DIAG`, R/settings.R -- read at use time,
+# since a top-level value here would evaluate before that file is collated).
 
 # Internal proposal-loop threshold for the grid-mixture skip: a
 # single-Gaussian k-hat below this is already good, so the mixture rescue (which
@@ -899,7 +900,7 @@
         # proposal stays consistent with `best$pareto_k` and the bootstrap re-fits
         # the GPD on this same converged proposal's ratios.
         if (is.null(best) || kd$pareto_k < best$pareto_k) best <- cand
-        if (kd$pareto_k <= .K_DIAG_USABLE || iter == .K_DIAG_MM_MAX) break
+        if (kd$pareto_k <= .nl_diag("k_usable") || iter == .K_DIAG_MM_MAX) break
         # Stop refining once a pass no longer improves on the proposal it was
         # estimated from: moment matching has converged (or started to drift on the
         # seed-dependent widening), so further passes only spend budget without

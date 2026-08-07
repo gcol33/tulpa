@@ -1,8 +1,8 @@
 # Shared mode-Hessian outer-axis recentering (gcol33/tulpa#289, #290, #293).
 #
 # Every nested-Laplace family builds its outer hyperparameter grid from a
-# FIXED default axis in original coordinates (e.g. bym2/icar/car_proper's
-# `sigma_grid = exp(seq(log(0.1), log(3), length.out = 5))`). A dataset whose
+# FIXED default axis in original coordinates (`.NL_GRID` / `.NL_FAMILY_AXES`,
+# R/settings.R -- e.g. the areal families' `field_sd`). A dataset whose
 # field-SD posterior mode sits above the top node rails onto that ceiling:
 # every outer weight collapses onto the boundary node
 # (`pareto_k_regime = "collapsed_edge"`, edge side `"upper"`), silently,
@@ -16,7 +16,7 @@
 # optimizer: callers detect the collapse (the `pareto_k_regime` diagnostic
 # every family already attaches, gcol33/tulpa#276), recentre once, and
 # refit; a second attempt composes a light default PC(U, alpha) prior
-# (`.NL_DEFAULT_SIGMA_PC_PRIOR`) for genuinely unidentified (near-separation)
+# (`.NL_RECENTER$sigma_pc_prior`, R/settings.R) for genuinely unidentified
 # cases where the mode itself keeps running rather than settling on finite
 # curvature.
 #
@@ -36,15 +36,6 @@
 #     (`res$outer_grid_recenter_declined`), so an inert auto-recenter is
 #     visible in the fit instead of indistinguishable from one that was never
 #     needed (`.nl_decline_recenter()`).
-
-# The default field-SD axis for the areal joint backends: 5 log-spaced nodes
-# over [0.1, 3]. Single source of truth -- the three single-block
-# `build_grids` closures (`R/nested_laplace_joint_backends.R`), the
-# multi-block copy-block axis builder (`.joint_block_axis_grid()`,
-# `R/nested_laplace_joint_multi.R`), the bym2 registry default (`.NL_REGISTRY`,
-# `R/nested_laplace.R`) and `.nl_axis_matches_default()` below all read it
-# from here.
-.nl_default_sigma_axis <- function() exp(seq(log(0.1), log(3), length.out = 5))
 
 # --- axis provenance ---------------------------------------------------------
 #
@@ -106,26 +97,32 @@ auto_grid <- function(x) {
 #' @export
 is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 
-# Per-field candidate default axes. A grid equal (as a node SET, so a
-# Cartesian expansion against a second axis still matches) to one of these is
-# the engine's own default coming back in through a caller's prior, and carries
-# no information a pin would add -- treated as a default, not a pin. Keyed by
-# grid field; the values are every default the engine itself lays on that field
-# (`tau_grid` has two: the icar registry's 9-node axis and car_proper's 5-node
-# one).
-.NL_DEFAULT_AXIS_CANDIDATES <- list(
-    sigma_grid = function() list(.nl_default_sigma_axis()),
-    tau_grid   = function() list(.default_tau_grid(),
-                                 exp(seq(log(0.3), log(30), length.out = 5)))
-)
-
-.nl_axis_matches_default <- function(value, field) {
-    gen <- .NL_DEFAULT_AXIS_CANDIDATES[[field]]
-    if (is.null(gen)) return(FALSE)
+# Is `value` a grid the ENGINE would have laid on `field` itself? Such a grid
+# carries no information a pin would add, so it counts as a default.
+#
+# Compared as a node SET (sorted, de-duplicated), because a family stores its
+# axes pre-paired: bym2's default `sigma_grid` is the 5-node field-SD axis
+# repeated across the 4 rho nodes, and that 20-long vector must still be
+# recognised as the default axis it was expanded from.
+#
+# Candidates come from `.NL_FAMILY_AXES` (`R/settings.R`), so every family the
+# engine defaults an axis for is covered by construction -- the hand-maintained
+# two-field list this replaced could only see `sigma_grid` and `tau_grid`.
+# `type` narrows the comparison to the axis THAT family defaults, which is the
+# precise question; without it (a call site that does not know the block type)
+# every axis any family binds to the field is a candidate. Data-dependent axes
+# (`car_rho`, `spde_*`, `tgmrf_axis`) cannot be materialised without the data
+# that shapes them, so they never match -- the safe direction, since a
+# non-matching axis is treated as a pin and left alone.
+.nl_axis_matches_default <- function(value, field, type = NULL) {
+    keys <- if (!is.null(type)) .nl_family_axis_key(type, field) else
+        .nl_field_axis_keys(field)
+    if (!length(keys)) return(FALSE)
     u <- sort(unique(as.numeric(value)))
     if (!length(u)) return(FALSE)
-    for (d in gen()) {
-        du <- sort(unique(as.numeric(d)))
+    for (k in keys) {
+        if (isTRUE(.NL_GRID[[k]]$data_dependent)) next
+        du <- sort(unique(.nl_grid_axis(k)))
         if (length(du) == length(u) && isTRUE(all.equal(du, u))) return(TRUE)
     }
     FALSE
@@ -178,12 +175,23 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 # `.nl_grid_provenance()` took for that block. An absent axis, a marked one,
 # and one whose nodes are the engine's own default are all defaults; anything
 # else is a pin the rescue must leave alone.
-.nl_axis_is_pinned <- function(block, field, auto_fields = character(0)) {
+#
+# `type` narrows the default comparison to the axis that ONE path-and-family
+# lays on the field, and must be passed EXPLICITLY -- it is deliberately not
+# inferred from `block$type`, because the block's family is not the same thing
+# as the path that defaulted the axis: a joint areal fit carries
+# `type = "icar"` on a block whose `sigma_grid` default comes from
+# `.joint_areal`, while the icar REGISTRY entry defaults a precision axis and no
+# `sigma_grid` at all. Inferring would silently answer "pinned" there, which is
+# gcol33/tulpa#293 again one layer down. Unnarrowed (`NULL`) compares against
+# every family's binding for the field, which errs toward recognising a default.
+.nl_axis_is_pinned <- function(block, field, auto_fields = character(0),
+                               type = NULL) {
     g <- if (is.list(block)) block[[field]] else NULL
     if (is.null(g)) return(FALSE)
     if (field %in% auto_fields) return(FALSE)
     if (is_auto_grid(g)) return(FALSE)
-    !.nl_axis_matches_default(g, field)
+    !.nl_axis_matches_default(g, field, type)
 }
 
 # --- axis naming -------------------------------------------------------------
@@ -256,8 +264,11 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 # purpose of the retry is to bracket the mode with actual spread), and a
 # ceiling so a near-flat direction does not fling nodes to implausible
 # extremes.
-.nl_recenter_log_axis <- function(mode_u, sd_u, n_pts = 5L, span = 2.5,
-                                   min_sd_u = 0.15, max_sd_u = 3) {
+.nl_recenter_log_axis <- function(mode_u, sd_u,
+                                   n_pts    = .nl_recenter("n_pts"),
+                                   span     = .nl_recenter("span"),
+                                   min_sd_u = .nl_recenter("min_sd_u"),
+                                   max_sd_u = .nl_recenter("max_sd_u")) {
     if (length(mode_u) != 1L || length(sd_u) != 1L) return(NULL)
     if (!is.finite(mode_u) || !is.finite(sd_u) || sd_u <= 0) return(NULL)
     sd_u  <- min(max(sd_u, min_sd_u), max_sd_u)
@@ -281,7 +292,8 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 # `.joint_pareto_axis_tags()` -- so a fit's `sigma` mode is only ever recentred
 # when EVERY axis in that fit's grid is guessable).
 .nl_axis_recenter_from_fit <- function(mode_u, cov_u, axis_tags, axis_names,
-                                       axis, n_pts = 5L, span = 2.5,
+                                       axis, n_pts = .nl_recenter("n_pts"),
+                                       span = .nl_recenter("span"),
                                        block_index = NULL, n_blocks = 0L) {
     if (is.null(mode_u) || is.null(cov_u) || is.null(axis_names)) return(NULL)
     aliases <- .nl_axis_alias(axis, block_index, n_blocks)
@@ -293,14 +305,6 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
     .nl_recenter_log_axis(mode_u[j], sd_u, n_pts = n_pts, span = span)
 }
 
-# Weakly-informative default for the donor field-SD axis, engaged only on the
-# SECOND auto-recenter attempt (a genuinely runaway mode -- see
-# `.nl_recenter_log_axis()`'s guards) and only when the user supplied no
-# `prior_sigma` of their own. `U = 3` matches the retired fixed-grid ceiling,
-# so the shrinkage is only felt past where the old default axis already
-# stopped; `P(sigma > 3) = 0.01` is weak enough to leave a data-identified
-# mode essentially untouched (gcol33/tulpa#289).
-.NL_DEFAULT_SIGMA_PC_PRIOR <- list("pc.prec", c(U = 3, alpha = 0.01))
 
 # Single-block joint auto-recenter rescue (gcol33/tulpa#289). `res` is the
 # just-completed single-block fit (bym2 / icar / car_proper); `refit(prior_i,
@@ -338,7 +342,7 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 # recentered grid rather than the original one.
 .joint_sigma_grid_rescue <- function(res, prior, prior_sigma, refit,
                                      auto = character(0), enabled = TRUE,
-                                     max_attempts = 2L) {
+                                     max_attempts = .nl_recenter("max_attempts_joint")) {
     out <- list(res = res, prior = prior, prior_sigma = prior_sigma)
     type <- tolower(prior$type %||% "")
     if (!type %in% c("bym2", "icar", "car_proper")) return(out)
@@ -346,7 +350,8 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
         out$res <- .nl_decline_recenter(res, "auto_recenter_disabled")
         return(out)
     }
-    if (.nl_axis_is_pinned(prior, "sigma_grid", .nl_auto_fields_at(auto))) {
+    if (.nl_axis_is_pinned(prior, "sigma_grid", .nl_auto_fields_at(auto),
+                           type = ".joint_areal")) {
         out$res <- .nl_decline_recenter(res, "axis_pinned")
         return(out)
     }
@@ -368,7 +373,7 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
         }
         cur_prior$sigma_grid <- new_axis
         if (attempt >= 2L && is.null(cur_prior_sigma)) {
-            cur_prior_sigma <- .NL_DEFAULT_SIGMA_PC_PRIOR
+            cur_prior_sigma <- .nl_recenter("sigma_pc_prior")
         }
         res <- refit(cur_prior, cur_prior_sigma)
         res$outer_grid_placement           <- "auto_recentered"
@@ -422,7 +427,7 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 # multi-block counterpart of `.joint_sigma_grid_rescue()`. Scope: a COPY
 # block's own scalar `sigma` axis (icar / bym2 / car_proper / rw1 / rw2 /
 # ar1 / iid copy blocks all build it via the identical
-# `p$sigma_grid %||% .nl_default_sigma_axis()` default -- see
+# `p$sigma_grid %||% .nl_grid_axis("field_sd")` default -- see
 # `.joint_block_axis_grid()`, `R/nested_laplace_joint_multi.R`), the
 # donor field amplitude a copy coefficient scales -- the exact axis role
 # gcol33/tulpa#289's driver (`occu_cover`) hits. A non-copy block's axis
@@ -441,7 +446,7 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 # within `max_attempts` rather than looping without bound).
 .joint_multi_sigma_grid_rescue <- function(res, prior, copy, cp, prior_sigma,
                                            refit, auto = list(), enabled = TRUE,
-                                           max_attempts = 2L) {
+                                           max_attempts = .nl_recenter("max_attempts_joint")) {
     out <- list(res = res, prior = prior, prior_sigma = prior_sigma)
     if (!.is_multi_block_prior(prior) || is.null(cp) || !isTRUE(cp$has_copy)) {
         return(out)
@@ -462,7 +467,8 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
             b <- b0 + 1L
             if (!.nl_edge_axis_hit(res, "sigma", b)) next
             if (.nl_axis_is_pinned(cur_prior[[b]], "sigma_grid",
-                                   .nl_auto_fields_at(auto, b))) {
+                                   .nl_auto_fields_at(auto, b),
+                                   type = ".copy")) {
                 reason <- "axis_pinned"
                 next
             }
@@ -481,7 +487,7 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
         }
         cur_prior[[target_b]]$sigma_grid <- new_axis
         if (attempt >= 2L && is.null(cur_prior_sigma)) {
-            cur_prior_sigma <- .NL_DEFAULT_SIGMA_PC_PRIOR
+            cur_prior_sigma <- .nl_recenter("sigma_pc_prior")
         }
         res <- refit(cur_prior, cur_prior_sigma)
         res$outer_grid_placement           <- "auto_recentered"
@@ -512,8 +518,8 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 # Standalone (non-joint) `tulpa_nested_laplace()` single-block registry
 # rescue (gcol33/tulpa#290) -- the registry generalization of
 # `.joint_sigma_grid_rescue()`. Scope: icar's `tau_grid` and bym2's
-# `sigma_grid`, the two fixed-ceiling defaults #290 confirms
-# (`exp(seq(log(0.1|0.3), log(3|30), length.out = 5|9))`). car_proper
+# `sigma_grid`, the two fixed-ceiling defaults #290 confirms (`gmrf_tau` and
+# `field_sd` in `.NL_GRID`). car_proper
 # declines (its `rho` axis is unguessable under
 # `.joint_pareto_block_tags()`, the same limitation the joint path already
 # has); MCAR's log-Cholesky axis geometry is a materially different
@@ -533,7 +539,7 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 # full fit). `auto` is the front door's provenance record.
 .nl_registry_grid_rescue <- function(res, type, prior, refit, refit_log_marginal,
                                      auto = character(0), enabled = TRUE,
-                                     max_attempts = 1L) {
+                                     max_attempts = .nl_recenter("max_attempts_registry")) {
     out <- list(res = res, prior = prior)
     fields <- .NL_REGISTRY_AXIS_FIELD[[type]]
     if (is.null(fields)) return(out)
@@ -541,7 +547,8 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
         out$res <- .nl_decline_recenter(res, "auto_recenter_disabled")
         return(out)
     }
-    if (.nl_axis_is_pinned(prior, fields$value, .nl_auto_fields_at(auto))) {
+    if (.nl_axis_is_pinned(prior, fields$value, .nl_auto_fields_at(auto),
+                           type = type)) {
         out$res <- .nl_decline_recenter(res, "axis_pinned")
         return(out)
     }

@@ -138,7 +138,7 @@ fit_spde <- function(y, X, spatial,
   method     <- match.arg(control$method %||% "ccd", c("ccd", "grid"))
   n_grid     <- as.integer(control$n_grid %||% 5L)
   diagnose_k <- isTRUE(control$diagnose_k %||% TRUE)
-  k_samples  <- as.integer(control$k_samples %||% 200L)
+  k_samples  <- as.integer(control$k_samples %||% .nl_diag("k_samples"))
   max_iter   <- as.integer(control$max_iter %||% 100L)
   tol        <- control$tol %||% 1e-6
   n_threads  <- as.integer(control$n_threads %||% 1L)

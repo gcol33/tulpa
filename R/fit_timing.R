@@ -130,7 +130,7 @@ print.tulpa_nested_laplace <- function(x, ...) {
   cat("\n")
 
   if (!is.null(x$pareto_k) && length(x$pareto_k) == 1L && !is.na(x$pareto_k)) {
-    verdict <- if (x$pareto_k < 0.7) "reliable" else "escalate to Gibbs debias"
+    verdict <- if (x$pareto_k < .nl_diag("k_usable")) "reliable" else "escalate to Gibbs debias"
     cat(sprintf("  outer pareto-k: %.2f (%s)\n", x$pareto_k, verdict))
   }
 

@@ -253,7 +253,7 @@ tulpa_criteria <- function(log_lik,
     out$se_elpd_loo <- sqrt(n_fold * stats::var(eloo_i))
     out$se_looic <- 2 * out$se_elpd_loo
     out$pareto_k <- pk_i
-    out$n_high_k <- sum(pk_i >= 0.7, na.rm = TRUE)
+    out$n_high_k <- sum(pk_i >= .nl_diag("k_usable"), na.rm = TRUE)
     if ("cpo" %in% criteria || "lpml" %in% criteria) {
       out$lpml <- out$elpd_loo               # sum_i log CPO_i
     }
@@ -328,8 +328,8 @@ print.tulpa_criteria <- function(x, digits = 1, ...) {
     cat(sprintf("  p_DIC     %s\n", fmt(x$p_dic, NULL)))
   }
   if (!is.null(x$n_high_k) && x$n_high_k > 0L) {
-    cat(sprintf("  %d obs with Pareto k >= 0.7 (PSIS-LOO unreliable there)\n",
-                x$n_high_k))
+    cat(sprintf("  %d obs with Pareto k >= %s (PSIS-LOO unreliable there)\n",
+                format(.nl_diag("k_usable")), x$n_high_k))
   }
   if (!is.null(x$n_high_p_waic) && x$n_high_p_waic > 0L) {
     cat(sprintf("  %d obs with p_waic > 0.4 (WAIC biased; prefer elpd_loo)\n",

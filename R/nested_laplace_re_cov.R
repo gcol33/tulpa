@@ -1476,7 +1476,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   n_draws     <- as.integer(control$n_draws %||% 2000L)
   seed        <- control$seed
   diagnose_k  <- isTRUE(control$diagnose_k %||% TRUE)
-  k_samples   <- as.integer(control$k_samples %||% 200L)
+  k_samples   <- as.integer(control$k_samples %||% .nl_diag("k_samples"))
   max_iter    <- as.integer(control$max_iter %||% 100L)
   tol         <- control$tol %||% 1e-8
   n_threads   <- as.integer(control$n_threads %||% 1L)

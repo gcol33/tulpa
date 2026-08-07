@@ -37,14 +37,14 @@ test_that("icar auto-recenters a collapsed tau axis away from the fixed ceiling"
     # default back in is a default, not a pin, so it does NOT hold the grid).
     fit_fixed <- tulpa_nested_laplace(
         y = y, n_trials = rep(1L, length(y)), X = X,
-        prior = modifyList(prior, list(tau_grid = .default_tau_grid())),
+        prior = modifyList(prior, list(tau_grid = .nl_grid_axis("gmrf_tau"))),
         family = "binomial", control = list(auto_recenter = FALSE))
     fit_auto <- tulpa_nested_laplace(y = y, n_trials = rep(1L, length(y)), X = X,
                                      prior = prior, family = "binomial")
     # Same data, same axis, arriving explicitly instead of by default.
     fit_explicit_default <- tulpa_nested_laplace(
         y = y, n_trials = rep(1L, length(y)), X = X,
-        prior = modifyList(prior, list(tau_grid = .default_tau_grid())),
+        prior = modifyList(prior, list(tau_grid = .nl_grid_axis("gmrf_tau"))),
         family = "binomial")
 
     expect_identical(fit_fixed$outer_grid_placement, "fixed")

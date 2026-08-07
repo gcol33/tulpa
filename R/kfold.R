@@ -264,7 +264,7 @@ tulpa_kfold <- function(object, data, K = 10L, folds = NULL,
 #' rl$elpd_loo
 #' }
 #' @export
-tulpa_reloo <- function(object, data, k_threshold = 0.7,
+tulpa_reloo <- function(object, data, k_threshold = .nl_diag("k_usable"),
                         n_trials = NULL, ndraws = NULL) {
   su <- .cv_refit_setup(object, data, n_trials, "reloo")
   cl <- su$cl; data <- su$data; n <- su$n

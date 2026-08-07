@@ -431,7 +431,7 @@
     spec   <- axes[[k_axis]]
     alpha_axis <- spec$grid
     if (is.null(alpha_axis)) {
-        alpha_axis <- c(0, exp(seq(log(0.1), log(3), length.out = 5)))
+        alpha_axis <- .nl_grid_axis("copy_alpha")
     }
     if (length(alpha_axis) == 0L) {
         stop("Arm ", k_axis, ": `field_coef$grid` must have at least one ",

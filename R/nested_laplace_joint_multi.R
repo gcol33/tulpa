@@ -93,7 +93,7 @@
     } else {
         # Default: a small log-spaced alpha grid with 0 included so the
         # "no copy" base model carries posterior mass when supported.
-        alpha_axis <- c(0, exp(seq(log(0.1), log(3), length.out = 5)))
+        alpha_axis <- .nl_grid_axis("copy_alpha")
     }
     if (length(alpha_axis) == 0L) {
         stop("`copy$alpha_grid` must have at least one non-negative value.",
@@ -170,7 +170,7 @@
                     prepared = base$prepared))
     }
     if (is_copy) {
-        sigma_axis <- as.numeric(p$sigma_grid %||% .nl_default_sigma_axis())
+        sigma_axis <- as.numeric(p$sigma_grid %||% .nl_grid_axis("field_sd"))
         # Copy axes always lead with (sigma, alpha); the kernel materializes
         # sigma_donor = sigma and sigma_copy = alpha * sigma in those two
         # leading columns (see .joint_multi_cpp_grid), so any trailing

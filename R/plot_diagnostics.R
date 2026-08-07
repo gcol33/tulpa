@@ -1049,15 +1049,16 @@ diagnostic_summary <- function(fit, quiet = FALSE) {
     k_hat <- jf$pareto_k
     if (!is.null(k_hat) && is.finite(k_hat)) {
       result$pareto_k <- k_hat
-      if (k_hat >= 0.7) {
+      if (k_hat >= .nl_diag("k_usable")) {
         status <- "WARN"
         recommendations <- c(recommendations, sprintf(
-          paste("Pareto k-hat = %.2f (>= 0.7): the %s is misfit by the nested",
+          paste("Pareto k-hat = %.2f (>= %s): the %s is misfit by the nested",
                 "grid; the approximation is unreliable -- escalate (debias / MCMC)."),
-          k_hat, jf$pareto_k_scope %||% "hyperparameter posterior"))
+          k_hat, format(.nl_diag("k_usable")), jf$pareto_k_scope %||% "hyperparameter posterior"))
       } else {
         recommendations <- c(recommendations, sprintf(
-          "Pareto k-hat = %.2f (< 0.7): nested approximation is reliable.", k_hat))
+          "Pareto k-hat = %.2f (< %s): nested approximation is reliable.",
+          k_hat, format(.nl_diag("k_usable"))))
       }
       # Opt-in per-arm k-hat: localises which arm's
       # hyperparameter axes drive a tail-heavy joint k.
@@ -1156,7 +1157,7 @@ print.tulpa_diagnostic_summary <- function(x, ...) {
 
   # Pareto k-hat / quadrature ESS (approximation fits)
   if (!is.null(x$pareto_k) && is.finite(x$pareto_k)) {
-    khat_status <- if (x$pareto_k < 0.7) "OK" else "HIGH"
+    khat_status <- if (x$pareto_k < .nl_diag("k_usable")) "OK" else "HIGH"
     cat(sprintf("Pareto k-hat: %.3f (%s)\n\n", x$pareto_k, khat_status))
   } else if (!is.null(x$quad_ess) && is.finite(x$quad_ess)) {
     cat(sprintf("Quadrature ESS: %.1f\n\n", x$quad_ess))
