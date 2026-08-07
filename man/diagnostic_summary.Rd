@@ -20,6 +20,18 @@ A list with class \code{tulpa_diagnostic_summary} containing:
 \item{worst_rhat}{Data frame of parameters with worst Rhat}
 \item{worst_ess}{Data frame of parameters with worst ESS}
 \item{e_bfmi}{E-BFMI value (HMC only)}
+\item{pareto_k, quad_ess}{approximation fits only: the outer PSIS k-hat,
+or the grid quadrature ESS when no k-hat was produced}
+\item{pareto_k_declined}{approximation fits only, and only when there is no
+k-hat: WHY (gcol33/tulpa#295) -- \code{"not_requested"} and
+\code{"unguessable_axis: <axis>"} are benign or permanent,
+\code{"degenerate_proposal"} and \code{"grid_too_small"} are signals about the fit,
+and \code{"internal_inconsistency"} is an engine bug and raises the status to
+\code{"WARN"}}
+\item{inner_skew_max, inner_skew_declined}{approximation fits only: the
+largest scored inner-Laplace \verb{|gamma_3|}, or why nothing was scored
+(gcol33/tulpa#296 -- \code{"coupled_likelihood"} / \code{"coupled_arm"} mark a model
+class the inner layer can never score)}
 \item{recommendations}{Character vector of recommendations}
 }
 }

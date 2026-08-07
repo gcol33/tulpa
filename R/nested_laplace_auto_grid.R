@@ -49,44 +49,65 @@
 # exactly this reason). Provenance is only known to the layer that CHOSE the
 # values, so `auto_grid()` lets that layer say so.
 
-#' Mark an outer hyperparameter grid as a default rather than a pin
+#' Mark an outer-grid setting as a default rather than a pin
 #'
 #' @description
-#' Declares that an outer-grid axis (`sigma_grid`, `tau_grid`, ...) on a
-#' nested-Laplace `prior` block carries a *default* the caller computed, not a
-#' choice the user made. The auto-recenter pass
-#' (\code{outer_grid_placement}, gcol33/tulpa#289) leaves a user-pinned axis
-#' exactly where it is, and re-centres a marked one on the posterior mode when
-#' the fit rails against its ceiling.
+#' Declares that a setting shaping the outer hyperparameter grid carries a
+#' *default* the caller computed, not a choice the user made. The auto-recenter
+#' pass (\code{outer_grid_placement}, gcol33/tulpa#289) leaves a user-pinned
+#' setting exactly as given, and re-centres (or, for a prior, engages its own
+#' regularizer over) a marked one when the fit rails against its ceiling.
 #'
-#' Wrapper packages are the intended caller: one that builds a default axis of
-#' its own -- because it derives a second axis from it, or hands the same
-#' vector to several blocks -- would otherwise be indistinguishable from a user
-#' who pinned that grid deliberately. Mark it and the recenter stays live.
-#' A grid whose node set is exactly the engine's own default axis is recognised
-#' without a mark; anything else needs one.
+#' Three kinds of setting take the mark:
+#' \itemize{
+#'   \item a grid axis on a nested-Laplace `prior` block (`sigma_grid`,
+#'     `tau_grid`, ...) -- a numeric vector of nodes;
+#'   \item a scalar grid-construction knob in `control`, for a driver that
+#'     builds its axes rather than taking them (`fit_st_nested()`'s
+#'     `n_grid_spatial`, `tau_upper`, ..., gcol33/tulpa#294);
+#'   \item a `prior_sigma` hyperprior specification -- a list, e.g.
+#'     `list("pc.prec", c(U = 3, alpha = 0.01))` (gcol33/tulpa#297).
+#' }
+#'
+#' Wrapper packages are the intended caller: one that builds a default of its
+#' own -- because it derives a second axis from it, hands the same vector to
+#' several blocks, or exposes its own argument with a default -- would
+#' otherwise be indistinguishable from a user who pinned that setting
+#' deliberately. Mark it and the rescue stays live. A setting whose value is
+#' exactly the engine's own default is recognised without a mark; anything else
+#' needs one.
 #'
 #' The mark is an attribute, so it is dropped by `sort()`, `[`, `c()` and
-#' `as.numeric()`: build the axis first, mark it last.
+#' `as.numeric()`: build the value first, mark it last.
 #'
-#' @param x Numeric vector of grid nodes.
-#' @return `x` as a numeric vector carrying the marker attribute.
-#' @seealso [is_auto_grid()], [tulpa_nested_laplace_joint()]
+#' @param x Numeric vector of grid nodes, a numeric scalar knob, or a
+#'   prior-specification list.
+#' @return `x` carrying the marker attribute (numeric input is coerced to
+#'   numeric; a list is returned unchanged apart from the attribute).
+#' @seealso [is_auto_grid()], [tulpa_nested_laplace_joint()], [fit_st_nested()]
 #' @examples
 #' prior <- list(type = "icar", sigma_grid = auto_grid(c(0.1, 0.5, 1, 2, 3)))
 #' is_auto_grid(prior$sigma_grid)
+#' is_auto_grid(auto_grid(list("pc.prec", c(U = 3, alpha = 0.01))))
 #' @export
 auto_grid <- function(x) {
-    x <- as.numeric(x)
-    if (!length(x) || anyNA(x)) {
-        stop("`auto_grid()` takes a non-empty numeric grid with no NA.",
-             call. = FALSE)
+    if (is.list(x)) {
+        if (!length(x)) {
+            stop("`auto_grid()` takes a non-empty prior specification.",
+                 call. = FALSE)
+        }
+    } else {
+        x <- as.numeric(x)
+        if (!length(x) || anyNA(x)) {
+            stop("`auto_grid()` takes a non-empty numeric grid with no NA.",
+                 call. = FALSE)
+        }
     }
     attr(x, "tulpa_auto_grid") <- TRUE
     x
 }
 
-#' Is an outer hyperparameter grid marked as a default?
+#' Is an outer-grid setting marked as a default?
 #'
 #' @param x Any object.
 #' @return `TRUE` when `x` carries the [auto_grid()] marker.
@@ -96,6 +117,30 @@ auto_grid <- function(x) {
 #' is_auto_grid(c(0.5, 1, 2))
 #' @export
 is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
+
+# Is a supplied `prior_sigma` a PIN? The prior-spec counterpart of
+# `.nl_axis_is_pinned()` (gcol33/tulpa#297). The second recenter attempt exists
+# to engage the weakly-informative PC prior on a mode with no finite curvature
+# to settle on, and it must not be suppressed by a wrapper package that stamps a
+# `prior_sigma` of its own -- the same presence-is-not-provenance mistake #293
+# fixed one field over. Absent, marked with `auto_grid()`, or equal by value to
+# the engine's own `.NL_RECENTER$sigma_pc_prior` are all defaults; anything else
+# is a deliberate choice the rescue leaves alone.
+.nl_prior_sigma_is_pinned <- function(prior_sigma) {
+    if (is.null(prior_sigma)) return(FALSE)
+    if (is_auto_grid(prior_sigma)) return(FALSE)
+    d <- .nl_recenter("sigma_pc_prior")
+    p <- prior_sigma
+    attr(p, "tulpa_auto_grid") <- NULL
+    !isTRUE(all.equal(d, p, check.attributes = FALSE))
+}
+
+# Drop the marker so nothing downstream of the rescue sees an attributed
+# object (a prior spec is passed on to `.joint_parse_sigma_prior()`).
+.nl_strip_auto <- function(x) {
+    attr(x, "tulpa_auto_grid") <- NULL
+    x
+}
 
 # Is `value` a grid the ENGINE would have laid on `field` itself? Such a grid
 # carries no information a pin would add, so it counts as a default.
@@ -329,8 +374,11 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 #   1. Recentre `sigma_grid` alone.
 #   2. If STILL `collapsed_edge` (a genuinely unidentified / near-separation
 #      case whose mode has no finite curvature to settle on), additionally
-#      apply the light default PC(U=3, alpha=0.01) prior (only if the user
-#      set no `prior_sigma` of their own) and recentre once more.
+#      apply the light default PC(U=3, alpha=0.01) prior (only if the caller
+#      PINNED no `prior_sigma` of their own -- `.nl_prior_sigma_is_pinned()`,
+#      the same provenance question the axis asks, so a wrapper stamping a
+#      default prior does not silently disable the escalation; the suppression
+#      is recorded in `res$outer_grid_prior_declined`) and recentre once more.
 # Gives up (keeps the last, still-improved fit) rather than looping when a
 # recenter attempt cannot be built (e.g. the diagnostic declined because
 # another axis in the same grid is unguessable, such as CAR_proper's
@@ -356,8 +404,9 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
         return(out)
     }
 
+    prior_pinned    <- .nl_prior_sigma_is_pinned(prior_sigma)
     cur_prior       <- prior
-    cur_prior_sigma <- prior_sigma
+    cur_prior_sigma <- .nl_strip_auto(prior_sigma)
     attempt <- 0L
     reason  <- "grid_not_collapsed"
     while (attempt < max_attempts &&
@@ -372,13 +421,15 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
             break
         }
         cur_prior$sigma_grid <- new_axis
-        if (attempt >= 2L && is.null(cur_prior_sigma)) {
+        if (attempt >= 2L && !prior_pinned) {
             cur_prior_sigma <- .nl_recenter("sigma_pc_prior")
         }
         res <- refit(cur_prior, cur_prior_sigma)
         res$outer_grid_placement           <- "auto_recentered"
         res$outer_grid_recenter_attempts   <- attempt
-        res$outer_grid_prior_added         <- attempt >= 2L && is.null(prior_sigma)
+        res$outer_grid_prior_added         <- attempt >= 2L && !prior_pinned
+        res$outer_grid_prior_declined      <-
+            if (attempt >= 2L && prior_pinned) "prior_pinned" else NULL
         out <- list(res = res, prior = cur_prior, prior_sigma = cur_prior_sigma)
     }
     out$res <- .nl_decline_recenter(out$res, reason)
@@ -407,7 +458,7 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
     if (is.null(w) || length(w) != nrow(tg)) return(NULL)
 
     tags <- .joint_pareto_block_tags(type, cn)
-    if (is.null(tags)) return(NULL)
+    if (anyNA(tags)) return(NULL)   # an axis whose support is not guessable
     d <- ncol(tg)
     u_grid <- matrix(0, nrow(tg), d)
     for (j in seq_len(d)) u_grid[, j] <- .joint_pareto_fwd(tags[j], as.numeric(tg[, j]))
@@ -456,8 +507,9 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
         return(out)
     }
 
+    prior_pinned    <- .nl_prior_sigma_is_pinned(prior_sigma)
     cur_prior       <- prior
-    cur_prior_sigma <- prior_sigma
+    cur_prior_sigma <- .nl_strip_auto(prior_sigma)
     attempt <- 0L
     reason  <- "grid_not_collapsed"
     while (attempt < max_attempts &&
@@ -486,13 +538,15 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
             break
         }
         cur_prior[[target_b]]$sigma_grid <- new_axis
-        if (attempt >= 2L && is.null(cur_prior_sigma)) {
+        if (attempt >= 2L && !prior_pinned) {
             cur_prior_sigma <- .nl_recenter("sigma_pc_prior")
         }
         res <- refit(cur_prior, cur_prior_sigma)
         res$outer_grid_placement           <- "auto_recentered"
         res$outer_grid_recenter_attempts   <- attempt
-        res$outer_grid_prior_added         <- attempt >= 2L && is.null(prior_sigma)
+        res$outer_grid_prior_added         <- attempt >= 2L && !prior_pinned
+        res$outer_grid_prior_declined      <-
+            if (attempt >= 2L && prior_pinned) "prior_pinned" else NULL
         out <- list(res = res, prior = cur_prior, prior_sigma = cur_prior_sigma)
     }
     out$res <- .nl_decline_recenter(out$res, reason)

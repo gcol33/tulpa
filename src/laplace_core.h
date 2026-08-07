@@ -6,6 +6,7 @@
 #define TULPA_LAPLACE_CORE_H
 
 #include <Rcpp.h>
+#include <string>
 #include <vector>
 #include "laplace_likelihoods.h"
 
@@ -86,9 +87,25 @@ struct LaplaceResult {
   // (i, observation) contributions skipped for a non-finite third
   // derivative -- a nonzero count does not invalidate the other entries, but
   // is surfaced so the caller can say how many were skipped.
+  // WHY nothing was computable, when nothing was (gcol33/tulpa#296). NaN alone
+  // says "not computable" without separating a structural impossibility (a
+  // coupled multi-process likelihood has no single per-observation term this
+  // formula scores, so it can NEVER be scored) from a transient one (a
+  // finite-difference that failed numerically) -- and a fit reporting the
+  // former was read as the caller having switched the diagnostic off. Empty
+  // when at least one index scored. Vocabulary: "no_probe_indices",
+  // "coupled_likelihood" (n_processes != 1), "coupled_arm" (a joint fit whose
+  // scorable arms all declined), "curvature3_unavailable" (no registered third
+  // derivative / no eta_weights_fn), "no_finite_contribution" (an oracle
+  // existed but nothing finite reached any probed index).
+  // `inner_skew_arms_declined` lists the joint arms with no oracle at all
+  // (0-based here, 1-based on the R side), so a PARTIALLY scored joint fit
+  // names which arms were left out.
   std::vector<double> inner_skew;
   std::vector<int>    inner_skew_idx;
   int                 inner_skew_dropped = 0;
+  std::string         inner_skew_declined;
+  std::vector<int>    inner_skew_arms_declined;
 };
 
 // Convert LaplaceResult to Rcpp::List. Single source of truth used by every
@@ -145,6 +162,14 @@ inline Rcpp::List laplace_result_to_list(const LaplaceResult& result) {
     out["inner_skew"] = result.inner_skew;
     out["inner_skew_idx"] = idx_r;
     out["inner_skew_dropped"] = result.inner_skew_dropped;
+    out["inner_skew_declined"] = result.inner_skew_declined;
+    if (!result.inner_skew_arms_declined.empty()) {
+      Rcpp::IntegerVector arms_r(result.inner_skew_arms_declined.size());
+      for (std::size_t k = 0; k < result.inner_skew_arms_declined.size(); k++) {
+        arms_r[k] = result.inner_skew_arms_declined[k] + 1;
+      }
+      out["inner_skew_arms_declined"] = arms_r;
+    }
   }
 
   return out;

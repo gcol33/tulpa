@@ -18,6 +18,13 @@ A data frame with one row per parameter -- \code{parameter}, \code{mean}, \code{
 \describe{
 \item{\code{pareto_k}}{the outer PSIS reliability k-hat (\code{NA} if not computed).}
 \item{\code{pareto_k_band}}{\code{"good"} / \code{"ok"} / \code{"unreliable"} / \code{NA}.}
+\item{\code{pareto_k_declined}, \code{pareto_k_declined_note}}{when \code{pareto_k} is
+\code{NA}, WHY (gcol33/tulpa#295): \code{"not_requested"}, \code{"not_applicable"},
+\code{"unguessable_axis"} (naming the axis -- a permanent limitation of that
+family, so read \code{ess_grid} instead), \code{"draws_too_few"},
+\code{"grid_too_small"}, \code{"no_varying_axis"}, \code{"degenerate_proposal"}, or
+\code{"internal_inconsistency"} (an engine bug worth reporting), plus a
+one-line reading of it.}
 \item{\code{pareto_k_is_ess}}{importance-sampling ESS on the smoothed weights.}
 \item{\code{ess_grid}, \code{n_grid}, \code{rel_ess_grid}, \code{max_weight}}{grid quadrature
 reliability.}
@@ -41,6 +48,16 @@ on \code{inner_skew_max} by the general skewness-magnitude convention
 (Bulmer 1979) -- not a Rue-Martino-Chopin-specific cutoff.}
 \item{\code{inner_skew_scored}, \code{inner_skew_probed}}{how many of the probed
 latent indices returned a finite \code{gamma_3} vs how many were probed.}
+\item{\code{inner_skew_declined}, \code{inner_skew_arms_declined},
+\code{inner_skew_declined_note}}{when nothing was scored, WHY
+(gcol33/tulpa#296): \code{"coupled_likelihood"} / \code{"coupled_arm"} (both
+STRUCTURAL -- the formula has no per-observation term to read for this
+model class, so the outer k-hat is the only reliability number
+available, permanently), \code{"curvature3_unavailable"},
+\code{"no_finite_contribution"}, \code{"no_probe_indices"}, \code{"not_requested"},
+\code{"backend_unsupported"}, or \code{"solve_failed"}; the arms (1-based) a
+joint fit had no oracle for, which is also set on a PARTIALLY scored
+fit; and a one-line reading.}
 \item{\code{reliability}}{the combined whole-fit verdict: \code{"reliable"} only
 when both layers are good; otherwise names which layer is scoped or
 flags both as unreliable.}

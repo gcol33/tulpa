@@ -4,7 +4,13 @@
 \alias{tulpa_reloo}
 \title{Selective refit of high-Pareto-k observations (reloo)}
 \usage{
-tulpa_reloo(object, data, k_threshold = 0.7, n_trials = NULL, ndraws = NULL)
+tulpa_reloo(
+  object,
+  data,
+  k_threshold = .nl_diag("k_usable"),
+  n_trials = NULL,
+  ndraws = NULL
+)
 }
 \arguments{
 \item{object}{A \code{tulpa_fit} fitted through \code{\link[=tulpa]{tulpa()}} (must carry \verb{$call}).}

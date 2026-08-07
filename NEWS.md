@@ -1,5 +1,85 @@
 # tulpa NEWS
 
+## 0.0.134
+
+* **`fit_st_nested()`'s auto-recenter no longer switches itself off when a grid
+  knob is set to the engine's own default value** (gcol33/tulpa#294). The
+  spatiotemporal rescue guarded on the PRESENCE of any of `tau_lower`,
+  `tau_upper`, `n_grid_spatial`, `n_grid_temporal`, `n_grid_rho`, `rho_lower`,
+  `rho_upper` in `control`, so `control = list(n_grid_spatial = 4L)` -- 4L being
+  the default -- returned at the first guard and left a railed grid railed. That
+  is gcol33/tulpa#293 one level down: a wrapper package exposing its own
+  `n_grid` argument, defaulted to the engine's value, threads it through on
+  every fit and disabled the rescue for all of them. A knob is now a PIN only
+  when its value differs from `.nl_st_default()` and it carries no
+  [auto_grid()] mark, the same provenance question the three grid-vector
+  rescues ask.
+
+  Pinning is also PER AXIS rather than all-or-nothing: `tau_lower` / `tau_upper`
+  hold the two precision axes (they build both), `n_grid_spatial` /
+  `n_grid_temporal` one each, and `n_grid_rho` / `rho_lower` / `rho_upper` the
+  `ar1` autocorrelation axis. A pinned axis keeps exactly the nodes its knobs
+  built and is named in the new `outer_grid_pinned_axes`; the rest are recentred
+  as usual. Only when EVERY axis is pinned does the rescue decline outright.
+
+* **`auto_grid()` now marks a scalar knob or a prior specification, not just a
+  grid vector.** One front door for "this value is my default, not the user's
+  choice", across the three shapes that question arises in.
+
+* **The auto-recenter's second-attempt PC prior is no longer suppressed by a
+  `prior_sigma` the caller merely supplied** (gcol33/tulpa#297). The escalation
+  that exists for a runaway, near-separation mode engaged only when
+  `prior_sigma` was `NULL`, so a wrapper stamping a `prior_sigma` of its own
+  turned attempt 2 into a second geometry recenter while the fit still reported
+  `outer_grid_recenter_attempts = 2` as if the full escalation had run. The
+  suppression is now decided by provenance -- an `auto_grid()`-marked spec, or
+  one equal by value to the engine's own `PC(U = 3, alpha = 0.01)`, is a default
+  and does not hold the prior back -- and when a genuine pin does suppress it
+  the fit carries `outer_grid_prior_declined = "prior_pinned"`.
+
+* **The outer Pareto-k now says WHY it declined** (gcol33/tulpa#295). Roughly
+  two dozen distinct decline paths all arrived as the single value
+  `pareto_k = NA`, and the print method admitted as much ("outer diagnostic not
+  run or proposal degenerate"). "You turned it off", "this family's support can
+  never be scored", "the outer Hessian came back non-finite" and "the weights
+  carry no mass" are not interchangeable, and a batch reading `pareto_k` across
+  many fits could not tell a permanent structural limitation from a live signal
+  about the fit. Every decline now carries a reason from a closed vocabulary in
+  `fit$pareto_k_declined`: `"not_requested"`, `"not_applicable"`,
+  `"unguessable_axis"` (naming the axis, e.g. car_proper's `rho_car` -- read the
+  quadrature ESS instead, permanently), `"draws_too_few"`, `"grid_too_small"`,
+  `"no_varying_axis"`, `"degenerate_proposal"`, and
+  `"internal_inconsistency"` (an engine bug, which `diagnostic_summary()` now
+  WARNs on). Wired through the joint single- and multi-block paths, the
+  registry path, the SPDE grid and CCD paths, and the shared IS cores;
+  surfaced by `diagnostics()`, `print.laplace_diagnostics()` and
+  `diagnostic_summary()`.
+
+* **The inner-Laplace `gamma_3` diagnostic now says why it declined too**
+  (gcol33/tulpa#296). `gamma_3` never returns a silently-wrong `0`
+  (gcol33/tulpa#272), but its `NaN` carried no reason, so a structurally
+  unscorable model -- a coupled multi-process likelihood such as tulpaObs's
+  `occu_cover`, which this formula can never score -- printed as
+  `control$diagnose_skew = FALSE`, attributing an impossibility to a knob the
+  user had most likely left at its default `TRUE`. The reason now travels from
+  the point of decline: `build_spec_curvature3_fn()` reports
+  `"coupled_likelihood"` / `"curvature3_unavailable"` through an out-parameter
+  rather than a second predicate that could drift from it, the per-arm oracles
+  travel as a `JointCurvature3Oracles` carrying `"coupled_arm"` and which arms
+  it applies to, and the R side adds `"not_requested"`, `"no_probe_indices"`,
+  `"backend_unsupported"` and `"solve_failed"`. Reported on the fit as
+  `inner_skew_declined` / `inner_skew_arms_declined` -- the latter also on a
+  PARTIALLY scored joint fit -- and read back by the combined verdict, which
+  now distinguishes a layer that was not assessed from one that is unscorable
+  by construction (for those models the outer k-hat is the only reliability
+  number available, permanently).
+
+* Fixed: `.nl_inner_skew_at_theta()` guarded its probe with `return(NULL)`
+  written inside a `tryCatch()` expression (gcol33/tulpa#298). That returns from
+  the ENCLOSING function, so a fit hitting any of those guards had the whole
+  `res` replaced by `NULL` by a diagnostic that was only meant to decline. The
+  probe is now its own function.
+
 ## 0.0.133
 
 * **Every engine default now lives in one file (`R/settings.R`).** A default

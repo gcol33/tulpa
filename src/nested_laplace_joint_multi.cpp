@@ -2073,7 +2073,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
     // screen, which reads a per-worker `cheap_specs_pool` entry instead --
     // see is_cheap below). Coupled arms are excluded automatically (their
     // per-obs oracle would score the wrong, unused likelihood).
-    std::vector<std::function<double(int, double)>> skew_curvature3_fns;
+    JointCurvature3Oracles skew_curvature3_fns;
     if (compute_skew) {
         skew_curvature3_fns = build_joint_curvature3_fns(
             specs.views, any_coupling ? &arm_is_coupled : nullptr);
@@ -2524,7 +2524,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
     // slot (mirrors specs_pool / db_buffers_pool -- each JointArmSpecs is
     // self-referential, so its curvature3 closures must be built from ITS OWN
     // views, not a shared copy). Coupled arms are excluded automatically.
-    std::vector<std::vector<std::function<double(int, double)>>> skew_curvature3_fns_pool;
+    std::vector<JointCurvature3Oracles> skew_curvature3_fns_pool;
     if (compute_skew) {
         skew_curvature3_fns_pool.resize(n_outer);
         for (int t = 0; t < n_outer; t++) {

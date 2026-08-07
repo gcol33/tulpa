@@ -54,7 +54,11 @@ pc_prior_log_density <- function(range, sigma, prior_range, prior_sigma) {
     tryCatch(.nested_is_pareto_k(theta_hat, L_scale, lt, n_samples),
              error = function(e) NULL)
   )
-  if (is.null(kd)) list(pareto_k = NA_real_, is_ess = NA_real_) else kd
+  if (is.null(kd)) {
+    list(pareto_k = NA_real_, is_ess = NA_real_,
+         declined = .k_decline_label(.k_decline("degenerate_proposal",
+                                               "the scorer errored")))
+  } else kd
 }
 
 # ---------------------------------------------------------------------
@@ -94,14 +98,19 @@ fit_spde_nested_grid <- function(spde_log_marginal, sp, n_grid, spatial,
 
   # Outer k-hat: no mode Hessian on the grid path, so fit the Gaussian proposal
   # to the grid posterior moments in (log_range, log_sigma).
-  kd <- list(pareto_k = NA_real_, is_ess = NA_real_)
+  kd <- list(pareto_k = NA_real_, is_ess = NA_real_,
+             declined = .k_decline_label(.k_decline("not_requested")))
   if (isTRUE(diagnose_k)) {
     u_grid <- cbind(log(grid$range), log(grid$sigma))
     u_hat  <- as.numeric(crossprod(weights, u_grid))
     cen    <- sweep(u_grid, 2L, u_hat)
     Su     <- crossprod(cen * weights, cen); Su <- (Su + t(Su)) / 2
     Lk <- tryCatch(t(chol(Su)), error = function(e) NULL)
-    if (!is.null(Lk)) kd <- .spde_pareto_k(u_hat, Lk, spde_log_marginal, sp, k_samples)
+    kd <- if (is.null(Lk)) {
+      list(pareto_k = NA_real_, is_ess = NA_real_,
+           declined = .k_decline_label(.k_decline("degenerate_proposal",
+                                                  "grid-moment covariance not positive definite")))
+    } else .spde_pareto_k(u_hat, Lk, spde_log_marginal, sp, k_samples)
   }
 
   # Outer-grid collapse visibility (gcol33/tulpa#276, #290). This span is
@@ -122,6 +131,7 @@ fit_spde_nested_grid <- function(spde_log_marginal, sp, n_grid, spatial,
     spatial = spatial,
     pareto_k = kd$pareto_k,
     pareto_k_is_ess = kd$is_ess,
+    pareto_k_declined = .k_reason_of(kd),
     pareto_k_scope = "outer (range, sigma) Gaussian proposal",
     pareto_k_regime          = regime$pareto_k_regime,
     pareto_k_grid_edge_axes  = regime$pareto_k_grid_edge_axes,
@@ -271,7 +281,8 @@ fit_spde_nested_ccd <- function(spde_log_marginal,
   # Gaussian the CCD design is oriented by.
   kd <- if (isTRUE(diagnose_k)) {
     .spde_pareto_k(theta_hat, L, spde_log_marginal, sp, k_samples)
-  } else list(pareto_k = NA_real_, is_ess = NA_real_)
+  } else list(pareto_k = NA_real_, is_ess = NA_real_,
+              declined = .k_decline_label(.k_decline("not_requested")))
 
   list(
     mode             = fit_at_mode$mode,
@@ -285,6 +296,7 @@ fit_spde_nested_ccd <- function(spde_log_marginal,
     sigma            = sigma_hat,
     pareto_k         = kd$pareto_k,
     pareto_k_is_ess  = kd$is_ess,
+    pareto_k_declined = .k_reason_of(kd),
     pareto_k_scope   = "outer (range, sigma) Gaussian proposal",
     nested = list(
       method        = "ccd",

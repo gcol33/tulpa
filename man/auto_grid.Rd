@@ -2,38 +2,52 @@
 % Please edit documentation in R/nested_laplace_auto_grid.R
 \name{auto_grid}
 \alias{auto_grid}
-\title{Mark an outer hyperparameter grid as a default rather than a pin}
+\title{Mark an outer-grid setting as a default rather than a pin}
 \usage{
 auto_grid(x)
 }
 \arguments{
-\item{x}{Numeric vector of grid nodes.}
+\item{x}{Numeric vector of grid nodes, a numeric scalar knob, or a
+prior-specification list.}
 }
 \value{
-\code{x} as a numeric vector carrying the marker attribute.
+\code{x} carrying the marker attribute (numeric input is coerced to
+numeric; a list is returned unchanged apart from the attribute).
 }
 \description{
-Declares that an outer-grid axis (\code{sigma_grid}, \code{tau_grid}, ...) on a
-nested-Laplace \code{prior} block carries a \emph{default} the caller computed, not a
-choice the user made. The auto-recenter pass
-(\code{outer_grid_placement}, gcol33/tulpa#289) leaves a user-pinned axis
-exactly where it is, and re-centres a marked one on the posterior mode when
-the fit rails against its ceiling.
+Declares that a setting shaping the outer hyperparameter grid carries a
+\emph{default} the caller computed, not a choice the user made. The auto-recenter
+pass (\code{outer_grid_placement}, gcol33/tulpa#289) leaves a user-pinned
+setting exactly as given, and re-centres (or, for a prior, engages its own
+regularizer over) a marked one when the fit rails against its ceiling.
 
-Wrapper packages are the intended caller: one that builds a default axis of
-its own -- because it derives a second axis from it, or hands the same
-vector to several blocks -- would otherwise be indistinguishable from a user
-who pinned that grid deliberately. Mark it and the recenter stays live.
-A grid whose node set is exactly the engine's own default axis is recognised
-without a mark; anything else needs one.
+Three kinds of setting take the mark:
+\itemize{
+\item a grid axis on a nested-Laplace \code{prior} block (\code{sigma_grid},
+\code{tau_grid}, ...) -- a numeric vector of nodes;
+\item a scalar grid-construction knob in \code{control}, for a driver that
+builds its axes rather than taking them (\code{fit_st_nested()}'s
+\code{n_grid_spatial}, \code{tau_upper}, ..., gcol33/tulpa#294);
+\item a \code{prior_sigma} hyperprior specification -- a list, e.g.
+\code{list("pc.prec", c(U = 3, alpha = 0.01))} (gcol33/tulpa#297).
+}
+
+Wrapper packages are the intended caller: one that builds a default of its
+own -- because it derives a second axis from it, hands the same vector to
+several blocks, or exposes its own argument with a default -- would
+otherwise be indistinguishable from a user who pinned that setting
+deliberately. Mark it and the rescue stays live. A setting whose value is
+exactly the engine's own default is recognised without a mark; anything else
+needs one.
 
 The mark is an attribute, so it is dropped by \code{sort()}, \code{[}, \code{c()} and
-\code{as.numeric()}: build the axis first, mark it last.
+\code{as.numeric()}: build the value first, mark it last.
 }
 \examples{
 prior <- list(type = "icar", sigma_grid = auto_grid(c(0.1, 0.5, 1, 2, 3)))
 is_auto_grid(prior$sigma_grid)
+is_auto_grid(auto_grid(list("pc.prec", c(U = 3, alpha = 0.01))))
 }
 \seealso{
-\code{\link[=is_auto_grid]{is_auto_grid()}}, \code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}}
+\code{\link[=is_auto_grid]{is_auto_grid()}}, \code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}}, \code{\link[=fit_st_nested]{fit_st_nested()}}
 }

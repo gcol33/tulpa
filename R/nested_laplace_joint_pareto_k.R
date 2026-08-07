@@ -411,9 +411,10 @@
         if (a %in% .JOINT_POS_AXES || startsWith(a, "phi_")) return("log")
         NA_character_
     }
-    tags <- vapply(axes, tag_one, character(1))
-    if (anyNA(tags)) return(NULL)
-    tags
+    # NA marks an axis whose support is not safely guessable. Returned rather
+    # than collapsed to NULL so a caller can NAME the offending axis in its
+    # decline reason (gcol33/tulpa#295) instead of reporting a bare NA k-hat.
+    vapply(axes, tag_one, character(1))
 }
 
 # Resolve the per-column unconstraining transforms for a joint result.
@@ -422,10 +423,15 @@
 # resolved by the block that owns the axis, not by name alone. Trailing
 # `phi_<arm>` dispersion columns (appended after the latent-block axes) are
 # positive-scale (log). Returns a character vector of tags, one per
-# `theta_grid` column, or NULL to decline.
+# `theta_grid` column, or a `.k_decline()` naming the axes that stopped it
+# (gcol33/tulpa#295) -- `"unguessable_axis"` for a support the engine will not
+# guess (car_proper's `rho_car`, which can never be scored for that family), and
+# `"not_applicable"` for a fit shape carrying no outer grid at all.
 .joint_pareto_axis_tags <- function(res) {
     tg <- res$theta_grid
-    if (is.null(tg) || !is.matrix(tg) || ncol(tg) == 0L) return(NULL)
+    if (is.null(tg) || !is.matrix(tg) || ncol(tg) == 0L) {
+        return(.k_decline("not_applicable", "no outer hyperparameter grid"))
+    }
     cn <- colnames(tg)
     d  <- ncol(tg)
     tags <- rep(NA_character_, d)
@@ -438,15 +444,18 @@
         for (b in seq_len(B)) {
             if (ao[b + 1L] <= ao[b]) next                  # block carries no axis
             cols <- (ao[b] + 1L):ao[b + 1L]
-            t_b <- .joint_pareto_block_tags(tolower(res$blocks[[b]]$type %||% ""),
-                                            bare(cols))
-            if (is.null(t_b)) return(NULL)
-            tags[cols] <- t_b
+            tags[cols] <- .joint_pareto_block_tags(
+                tolower(res$blocks[[b]]$type %||% ""), bare(cols))
         }
         # Columns past the last block axis are per-arm phi dispersion axes.
         if (ao[B + 1L] < d) {
             extra <- (ao[B + 1L] + 1L):d
-            if (!all(startsWith(cn[extra], "phi_"))) return(NULL)
+            named <- startsWith(cn[extra], "phi_")
+            if (!all(named)) {
+                return(.k_decline("internal_inconsistency",
+                                  paste0("axis past the last block is not a phi axis: ",
+                                         paste(cn[extra][!named], collapse = ", "))))
+            }
             tags[extra] <- "log"
         }
     } else {
@@ -455,13 +464,13 @@
         type <- tolower(res$prior$type %||% "")
         is_phi <- startsWith(cn, "phi_")
         if (any(!is_phi)) {
-            t_blk <- .joint_pareto_block_tags(type, bare(which(!is_phi)))
-            if (is.null(t_blk)) return(NULL)
-            tags[!is_phi] <- t_blk
+            tags[!is_phi] <- .joint_pareto_block_tags(type, bare(which(!is_phi)))
         }
         tags[is_phi] <- "log"
     }
-    if (anyNA(tags)) return(NULL)
+    if (anyNA(tags)) {
+        return(.k_decline("unguessable_axis", cn[is.na(tags)]))
+    }
     tags
 }
 
@@ -672,20 +681,33 @@
 # `.joint_pareto_prepare()`'s weighted-moment proposal and the
 # diagnose_k-independent placement path (`.joint_attach_pareto_k_placement()`,
 # gcol33/tulpa#292), both of which need the same u-space grid before they
-# diverge on what they do with it. Returns NULL when the grid / weights are
-# unusable or a forward transform produces a non-finite value.
+# diverge on what they do with it. Declines (a `.k_decline()`, gcol33/tulpa#295)
+# when the grid / weights are unusable or a forward transform produces a
+# non-finite value, distinguishing a fit whose weights carry no mass
+# (`grid_too_small`) from a layout fault (`internal_inconsistency`).
 .joint_pareto_grid_u <- function(res, tags) {
     tg <- res$theta_grid
     w  <- res$weights
-    if (is.null(tg) || is.null(w) || length(w) != nrow(tg) ||
-        !is.finite(sum(w)) || sum(w) <= 0) {
-        return(NULL)
+    if (is.null(tg) || is.null(w)) {
+        return(.k_decline("not_applicable", "no outer grid or weights"))
+    }
+    if (length(w) != nrow(tg)) {
+        return(.k_decline("internal_inconsistency",
+                          "weights do not match theta_grid rows"))
+    }
+    if (!is.finite(sum(w)) || sum(w) <= 0) {
+        return(.k_decline("grid_too_small", "no positive integration weight"))
     }
     cn <- colnames(tg)
     d  <- ncol(tg)
     u_grid <- matrix(0, nrow(tg), d)
     for (j in seq_len(d)) u_grid[, j] <- .joint_pareto_fwd(tags[j], as.numeric(tg[, j]))
-    if (any(!is.finite(u_grid))) return(NULL)
+    if (any(!is.finite(u_grid))) {
+        bad <- cn[apply(!is.finite(u_grid), 2L, any)]
+        return(.k_decline("internal_inconsistency",
+                          paste0("node outside its axis support on ",
+                                 paste(bad, collapse = ", "))))
+    }
     list(tg = tg, w = w, u_grid = u_grid, cn = cn, d = d)
 }
 
@@ -718,24 +740,25 @@
 # to mixed support), splices the CCD mode-Hessian `proposal`
 # over the axes it spans, and engages the delta-collapse FD rescue
 # Returns the proposal summary the scorer draws
-# from, or NULL to DECLINE (an axis with unguessable support, an unusable grid /
-# weight vector, a sub-floor sample budget). The joint k and the opt-in per-arm
+# from, or a `.k_decline()` (an axis with unguessable support, an unusable grid /
+# weight vector, a sub-floor sample budget -- each named, gcol33/tulpa#295).
+# The joint k and the opt-in per-arm
 # k score this SAME (u_hat, Su) summary, differing only in
 # which axes are allowed to vary -- so the grid build, proposal splice and rescue
 # are computed once here.
 .joint_pareto_prepare <- function(res, refit_log_marginal, n_samples, proposal) {
     tags <- .joint_pareto_axis_tags(res)
-    if (is.null(tags)) return(NULL)
+    if (.k_is_decline(tags)) return(tags)
 
     # Decline before any inner solve when the sample budget cannot reach the
     # GPD-fit floor: a sub-floor `n_samples` would run every
     # one of its solves and then discard the result as NA. The shared core
     # short-circuits, but catching it here too keeps the costly forward/inverse
     # transform + proposal fit off the table.
-    if (as.integer(n_samples) < .PSIS_MIN_EVAL) return(NULL)
+    if (as.integer(n_samples) < .PSIS_MIN_EVAL) return(.k_decline("draws_too_few"))
 
     gu <- .joint_pareto_grid_u(res, tags)
-    if (is.null(gu)) return(NULL)
+    if (.k_is_decline(gu)) return(gu)
     tg <- gu$tg; w <- gu$w; u_grid <- gu$u_grid; cn <- gu$cn; d <- gu$d
 
     u_hat <- as.numeric(crossprod(w, u_grid))
@@ -1229,16 +1252,21 @@
 # (gcol33/tulpa#276) on top of it. The rescue is last because it is the most
 # expensive and the least often needed: it fires only when the symmetric choice
 # is still above the good band, which is exactly the collapsed-grid regime where
-# the mixture cannot help. Returns list(best, source[, outer_skew]) or NULL.
-# Shared by the joint k and the per-arm k.
+# the mixture cannot help. Returns list(best, source[, outer_skew]), or a
+# `.k_decline()` (gcol33/tulpa#295) separating "the grid pins every axis, so
+# there is no direction to sample along" from "the proposal could not be built
+# or its GPD shape came back non-finite". Shared by the joint k and the per-arm k.
 .joint_pareto_score_dispatch <- function(prep, vary, refit_log_marginal, n_samples,
                                          tail_points = NULL) {
+    if (length(vary) == 0L) return(.k_decline("no_varying_axis"))
     g <- .joint_pareto_score(prep, vary, refit_log_marginal, n_samples,
                              tail_points = tail_points)
     chosen <- .joint_pareto_score_symmetric(prep, vary, refit_log_marginal,
                                             n_samples, g, tail_points = tail_points)
-    .joint_pareto_skew_rescue(chosen, g, prep, vary, refit_log_marginal,
-                              n_samples, tail_points = tail_points)
+    out <- .joint_pareto_skew_rescue(chosen, g, prep, vary, refit_log_marginal,
+                                     n_samples, tail_points = tail_points)
+    if (is.null(out)) return(.k_decline("degenerate_proposal"))
+    out
 }
 
 # Bootstrap + closed-form uncertainty of a CHOSEN proposal's outer Pareto-k-hat
@@ -1298,10 +1326,11 @@
                             proposal = NULL, arm_axes = NULL,
                             k_bootstrap = 1000L, k_tail_points = NULL,
                             k_conf_bands = NULL) {
-    na_out <- list(pareto_k = NA_real_, is_ess = NA_real_,
-                   proposal_source = NA_character_)
+    na_out <- function(x) list(pareto_k = NA_real_, is_ess = NA_real_,
+                               proposal_source = NA_character_,
+                               declined = .k_reason_of(x))
     prep <- .joint_pareto_prepare(res, refit_log_marginal, n_samples, proposal)
-    if (is.null(prep)) return(na_out)
+    if (.k_is_decline(prep)) return(na_out(prep))
 
     # Resolve the GPD tail-size request once: an explicit
     # `k_tail_points` beyond the 20%-of-draws ceiling is capped, with a single
@@ -1328,12 +1357,13 @@
     vary  <- .joint_pareto_vary_axes(prep$Su)
     joint <- .joint_pareto_score_dispatch(prep, vary, refit_log_marginal,
                                           n_samples, tail_points = k_tail_points)
-    if (is.null(joint)) return(na_out)
+    if (.k_is_decline(joint)) return(na_out(joint))
 
     ju  <- .joint_pareto_uncertainty(joint$best, k_tail_points, k_bootstrap,
                                      k_conf_bands)
     out <- list(pareto_k = ju$pareto_k, is_ess = ju$is_ess,
                 proposal_source = joint$source,
+                declined = NA_character_,
                 outer_skew = joint$outer_skew,
                 pareto_k_se_boot               = ju$se_boot,
                 pareto_k_ci_low                = ju$ci_low,
@@ -1364,7 +1394,7 @@
             if (length(v) == 0L) return(none)
             s <- .joint_pareto_score_dispatch(prep, v, refit_log_marginal,
                                               n_samples, tail_points = k_tail_points)
-            if (is.null(s)) return(none)
+            if (.k_is_decline(s)) return(none)
             u <- .joint_pareto_uncertainty(s$best, k_tail_points, k_bootstrap,
                                            k_conf_bands)
             list(k = u$pareto_k, ess = u$is_ess, se = u$se_boot, lo = u$ci_low,
@@ -1575,7 +1605,7 @@
                                              proposal = NULL) {
     if (!identical(res$pareto_k_regime, "collapsed_edge")) return(res)
     prep <- .joint_pareto_prepare(res, refit_log_marginal, .PSIS_MIN_EVAL, proposal)
-    if (is.null(prep)) return(res)
+    if (.k_is_decline(prep)) return(res)
     res$pareto_k_mode_u     <- prep$u_hat
     res$pareto_k_cov_u      <- prep$Su
     res$pareto_k_axis_tags  <- prep$tags
@@ -1688,6 +1718,7 @@
     res$pareto_k_is_ess <- NA_real_
     res$pareto_k_scope  <- "outer (hyperparameter) Gaussian proposal"
     res$pareto_k_proposal_source <- NA_character_
+    res$pareto_k_declined <- NA_character_
     # The grid regime is read off stored weights, so it is attached even when the
     # k-hat diagnostic is off -- a collapsed or boundary-pinned grid is worth
     # knowing about regardless.
@@ -1727,6 +1758,7 @@
         # Placement-only recenter curvature (gcol33/tulpa#292): cheap (one
         # batched FD-stencil solve, only when the grid actually collapsed on a
         # boundary) even though the full diagnostic below never runs.
+        res <- .k_attach_declined(res, .k_decline("not_requested"))
         return(.joint_attach_pareto_k_placement(res, solve_fn))
     }
 
@@ -1742,6 +1774,7 @@
     res$pareto_k        <- kd$pareto_k
     res$pareto_k_is_ess <- kd$is_ess
     res$pareto_k_proposal_source <- kd$proposal_source
+    res <- .k_attach_declined(res, kd)
     res$pareto_k_mode_u     <- kd$mode_u
     res$pareto_k_cov_u      <- kd$cov_u
     res$pareto_k_axis_tags  <- kd$axis_tags

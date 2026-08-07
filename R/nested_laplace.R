@@ -360,10 +360,14 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   # ones that DECLINE the k-hat below, where knowing the grid collapsed (and
   # whether against a boundary) is the only outer signal left.
   res <- .joint_attach_pareto_k_regime(res)
-  if (!compute) return(res)                                  # field present, not computed
+  # Every decline below says which one it was (gcol33/tulpa#295).
+  decline <- function(reason, detail = NULL) {
+    .k_attach_declined(res, .k_decline(reason, detail))
+  }
+  if (!compute) return(decline("not_requested"))             # field present, not computed
 
   blocks <- if (is.list(prior) && is.null(prior$type)) prior else list(prior)
-  if (length(blocks) != 1L) return(res)                      # multi-block: decline
+  if (length(blocks) != 1L) return(decline("not_applicable", "multi-block grid"))
   blk <- blocks[[1L]]
   # The multi-block dispatch does not carry a `type`, so resolve it from the block
   # itself for the length-1 case (a single latent block wrapped in a list, or the
@@ -382,9 +386,24 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   gfs <- grep("_grid$", names(blk), value = TRUE)
   gfs <- gfs[vapply(gfs, function(f) is.numeric(blk[[f]]) && length(blk[[f]]) >= 2L,
                     logical(1))]
-  if (length(gfs) != 1L || !(gfs %in% .NL_POS_GRID)) return(res)  # multi-axis / bounded
+  if (length(gfs) != 1L) {
+    return(decline("not_applicable",
+                   if (length(gfs)) "multi-axis grid" else "no resolvable grid axis"))
+  }
+  if (!(gfs %in% .NL_POS_GRID)) {
+    # A bounded axis (a correlation `rho_grid`, say): declining beats
+    # transforming it with a guessed support -- and it will decline for every
+    # fit of this family, which is what the reason says.
+    return(decline("unguessable_axis", gfs))
+  }
   tg <- as.numeric(res$theta_grid)
-  if (length(tg) != length(res$weights) || any(tg <= 0)) return(res)
+  if (length(tg) != length(res$weights)) {
+    return(decline("internal_inconsistency", "weights do not match theta_grid"))
+  }
+  if (any(tg <= 0)) {
+    return(decline("internal_inconsistency",
+                   paste0("non-positive node on the log axis ", gfs)))
+  }
 
   refit <- function(theta_mat) {
     blk2 <- blk; blk2[[gfs]] <- as.numeric(theta_mat[, 1L])
@@ -400,8 +419,10 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   kd <- .with_preserved_seed(tryCatch(
     .nested_grid_pareto_k(matrix(log(tg), ncol = 1L), res$weights, refit, n_samples),
     error = function(e) NULL))
-  if (!is.null(kd)) { res$pareto_k <- kd$pareto_k; res$pareto_k_is_ess <- kd$is_ess }
-  res
+  if (is.null(kd)) return(decline("degenerate_proposal", "the scorer errored"))
+  res$pareto_k <- kd$pareto_k
+  res$pareto_k_is_ess <- kd$is_ess
+  .k_attach_declined(res, kd)
 }
 
 # --- Per-prior registry & dispatcher ---

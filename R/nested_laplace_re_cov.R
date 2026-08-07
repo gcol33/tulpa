@@ -1653,7 +1653,11 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   # posterior is too skewed / heavy-tailed for the grid (>= 0.7). Run after the
   # draw synthesis and with the RNG state restored, so existing draws are
   # bit-for-bit unchanged whether or not the diagnostic is requested.
+  # A decline says which one it was rather than a bare NA (gcol33/tulpa#295).
   pareto_k <- NA_real_; k_is_ess <- NA_real_
+  k_declined <- if (!isTRUE(diagnose_k)) .k_decline_label(.k_decline("not_requested"))
+                else .k_decline_label(.k_decline("no_varying_axis",
+                                                 "no free covariance coordinate"))
   if (isTRUE(diagnose_k) && k > 0L) {
     kd <- .with_preserved_seed(tryCatch(
       .nested_outer_pareto_k(
@@ -1661,7 +1665,13 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
           log_prior_theta(th),
         theta_hat = theta_hat, L_scale = L_scale, n_samples = k_samples),
       error = function(e) NULL))
-    if (!is.null(kd)) { pareto_k <- kd$pareto_k; k_is_ess <- kd$is_ess }
+    if (is.null(kd)) {
+      k_declined <- .k_decline_label(.k_decline("degenerate_proposal",
+                                                "the scorer errored"))
+    } else {
+      pareto_k <- kd$pareto_k; k_is_ess <- kd$is_ess
+      k_declined <- .k_reason_of(kd)
+    }
   }
 
   .finalize_fit(list(
@@ -1673,6 +1683,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     hyper_log_prior_draws = hyper_lp_draws,
     pareto_k    = pareto_k,
     pareto_k_is_ess = k_is_ess,
+    pareto_k_declined = k_declined,
     pareto_k_scope  = "outer (hyperparameter) Gaussian proposal",
     # Per-node random-effect posterior: mode and marginal variance of every
     # (term, group, coefficient), one row per integration node. ranef() mixes

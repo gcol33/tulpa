@@ -63,6 +63,97 @@
   "unreliable"
 }
 
+# --- inner-skew decline reasons (gcol33/tulpa#296) ---------------------------
+#
+# `gamma_3` is careful never to return a silently-wrong 0 for a non-computable
+# skewness -- every decline is NaN (#272). But NaN says only "not computable",
+# and the reasons are not interchangeable: a coupled multi-process likelihood
+# (a ZI mixture, tulpaObs's `occu_cover`) can NEVER be scored by this formula,
+# while a failed finite difference is specific to one fit and a disabled knob is
+# not a problem at all. Without the reason a structurally unscorable model
+# printed as `control$diagnose_skew = FALSE`, attributing an impossibility to a
+# setting the user likely left at its default `TRUE`.
+#
+# `res$inner_skew_declined` carries it, from this closed vocabulary (the first
+# five come from C++ -- see `InnerSkewOutcome::declined` and
+# `build_spec_curvature3_fn` -- the rest are decided R-side):
+#
+#   coupled_likelihood     a LikelihoodSpec with n_processes != 1. STRUCTURAL:
+#                          this model class will never be scorable.
+#   coupled_arm            a joint fit whose scorable arms all declined because
+#                          the coupling spec excluded them. Also structural.
+#                          `inner_skew_arms_declined` names them (1-based), so a
+#                          PARTIALLY scored joint fit is visible too.
+#   curvature3_unavailable no registered third derivative / no `eta_weights_fn`
+#                          to finite-difference.
+#   no_finite_contribution an oracle existed but nothing finite reached any
+#                          probed index (an unidentified or degenerate mode).
+#   no_probe_indices       nothing was asked for (`p_fixed = 0` and no
+#                          `control$skew_idx`).
+#   not_requested          `control$diagnose_skew = FALSE`.
+#   backend_unsupported    this backend does not populate gamma_3.
+#   solve_failed           the probe re-solve errored or returned no field.
+#
+# Structural reasons are the ones a reader must act on differently: for those
+# models the outer k-hat is the only reliability number available, permanently.
+.INNER_SKEW_STRUCTURAL <- c("coupled_likelihood", "coupled_arm")
+
+# Reset the inner-skew fields and record why nothing was computed. Used by every
+# R-side early return, so a decline is never an absent field.
+.inner_skew_decline <- function(res, reason) {
+    res$inner_skew               <- NULL
+    res$inner_skew_idx           <- integer(0)
+    res$inner_skew_dropped       <- 0L
+    res$inner_skew_declined      <- reason
+    res$inner_skew_arms_declined <- integer(0)
+    res
+}
+
+# Copy the kernel's inner-skew output (including its own decline reason) onto a
+# fit. One attach point for all three drivers.
+.inner_skew_attach <- function(res, out) {
+    res$inner_skew         <- as.numeric(out$inner_skew)
+    res$inner_skew_idx     <- as.integer(out$inner_skew_idx)
+    res$inner_skew_dropped <- as.integer(out$inner_skew_dropped %||% 0L)
+    d <- as.character(out$inner_skew_declined %||% "")
+    res$inner_skew_declined <- if (!length(d) || !nzchar(d[1L])) NA_character_
+                               else d[1L]
+    arms <- out$inner_skew_arms_declined
+    res$inner_skew_arms_declined <- if (is.null(arms)) integer(0) else as.integer(arms)
+    res
+}
+
+# One-line user-facing reading of an inner-skew decline, for `print` /
+# `diagnostic_summary()`. `arms` are the 1-based joint arms with no oracle.
+.inner_skew_decline_note <- function(reason, arms = integer(0)) {
+    if (is.null(reason) || !length(reason) || is.na(reason)) return(NULL)
+    arm_txt <- if (length(arms)) paste0(" (arms ", paste(arms, collapse = ", "), ")") else ""
+    switch(reason,
+        not_requested = "the inner diagnostic was not requested (control$diagnose_skew = FALSE)",
+        no_probe_indices = "no latent indices were probed; pass control$skew_idx",
+        coupled_likelihood = paste("this likelihood couples several processes, so it has no",
+                                   "single per-observation term gamma_3 can score; the inner",
+                                   "layer is unscorable for this model class, permanently"),
+        coupled_arm = paste0("every scorable arm is coupled through the cell-coupling spec",
+                             arm_txt, ", so gamma_3 has no separable per-observation sum to",
+                             " read; unscorable for this model class, permanently"),
+        curvature3_unavailable = paste("this likelihood registers no third derivative and",
+                                       "exposes no eta-weight callback to finite-difference"),
+        no_finite_contribution = paste("an oracle was available but no probed index",
+                                       "accumulated a finite contribution"),
+        no_oracle = "no per-observation third-derivative oracle was available",
+        backend_unsupported = "this backend does not compute the inner-Laplace skewness",
+        solve_failed = "the probe re-solve failed",
+        NULL)
+}
+
+# Is the inner layer unscorable BY CONSTRUCTION for this model, as opposed to
+# merely unscored? The distinction the combined verdict needs.
+.inner_skew_is_structural <- function(reason) {
+    !is.null(reason) && length(reason) && !is.na(reason) &&
+        reason %in% .INNER_SKEW_STRUCTURAL
+}
+
 # Aggregate a per-latent-index gamma_3 vector (as returned by the C++ kernel's
 # `inner_skew` field) into a per-fit inner-reliability summary. `n_dropped` is
 # the (index, observation) contribution count the kernel reported as
@@ -116,35 +207,52 @@
 # checked" (gcol33/tulpa#274). Every combination naming an "na" layer says so
 # explicitly ("... not assessed"), so `grepl("not assessed", reliability)`
 # reliably separates the two.
-.tulpa_combined_reliability <- function(outer_band, inner_band) {
+# An "na" layer is further split by WHY it was not assessed (gcol33/tulpa#295,
+# #296): a layer that CANNOT be assessed for this model or family -- a coupled
+# multi-process likelihood has no per-observation term gamma_3 can score, and a
+# car_proper `rho_car` axis has no support the outer k-hat may guess -- will
+# never become assessable, so the verdict says so rather than implying a rerun
+# with the right knob would fill it in. The `"not assessed"` wording is kept in
+# every such verdict (a documented `grepl("not assessed", ...)` contract from
+# gcol33/tulpa#274), with the permanence as a qualifier on top.
+.tulpa_combined_reliability <- function(outer_band, inner_band,
+                                        inner_declined = NA_character_,
+                                        outer_declined = NA_character_) {
   outer_state <- .tulpa_layer_state(outer_band)
   inner_state <- .tulpa_layer_state(inner_band)
 
+  inner_na <- if (.inner_skew_is_structural(inner_declined))
+    "inner Laplace not assessed (unscorable for this model class)"
+    else "inner Laplace not assessed"
+  outer_na <- if (.k_decline_is_permanent(outer_declined))
+    "outer integration not assessed (unscorable for this family)"
+    else "outer integration not assessed"
+
   if (outer_state == "na" && inner_state == "na") {
-    return("not computed (neither layer's diagnostic ran)")
+    return(paste0("not computed (", outer_na, "; ", inner_na, ")"))
   }
   if (outer_state == "bad" && inner_state == "bad") {
     return("unreliable (both outer integration and inner Laplace flagged)")
   }
   if (outer_state == "bad" && inner_state == "na") {
-    return("scoped: outer (hyperparameter) integration flagged; inner Laplace not assessed")
+    return(paste0("scoped: outer (hyperparameter) integration flagged; ", inner_na))
   }
   if (outer_state == "bad") return("scoped: outer (hyperparameter) integration flagged")
   if (inner_state == "bad" && outer_state == "na") {
-    return("scoped: inner (latent-field) Laplace flagged; outer integration not assessed")
+    return(paste0("scoped: inner (latent-field) Laplace flagged; ", outer_na))
   }
   if (inner_state == "bad") return("scoped: inner (latent-field) Laplace flagged")
   if (outer_state == "ok" && inner_state == "ok") return("usable (both layers borderline)")
   if (outer_state == "ok" && inner_state == "na") {
-    return("scoped: outer integration borderline; inner Laplace not assessed")
+    return(paste0("scoped: outer integration borderline; ", inner_na))
   }
   if (outer_state == "ok") return("scoped: outer integration borderline")
   if (inner_state == "ok" && outer_state == "na") {
-    return("scoped: inner Laplace borderline; outer integration not assessed")
+    return(paste0("scoped: inner Laplace borderline; ", outer_na))
   }
   if (inner_state == "ok") return("scoped: inner Laplace borderline")
-  if (outer_state == "na") return("outer integration not assessed; inner Laplace good")
-  if (inner_state == "na") return("outer integration good; inner Laplace not assessed")
+  if (outer_state == "na") return(paste0(outer_na, "; inner Laplace good"))
+  if (inner_state == "na") return(paste0("outer integration good; ", inner_na))
   "reliable (both layers good)"
 }
 
@@ -176,22 +284,29 @@
 .nl_inner_skew_at_theta <- function(res, prior, cargs, dispatch_kind, type,
                                     likelihood, p_fixed, skew_idx = NULL,
                                     compute = TRUE) {
-  res$inner_skew         <- NULL
-  res$inner_skew_idx     <- integer(0)
-  res$inner_skew_dropped <- 0L
+  res <- .inner_skew_decline(res, "not_requested")
   if (!compute) return(res)
 
   w <- res$weights
-  if (is.null(w) || !any(is.finite(w))) return(res)
+  if (is.null(w) || !any(is.finite(w))) {
+    return(.inner_skew_decline(res, "backend_unsupported"))
+  }
   map_idx <- which.max(w)
 
   probe_idx <- if (is.null(skew_idx)) seq_len(max(as.integer(p_fixed %||% 0L), 0L))
               else as.integer(skew_idx)
-  if (length(probe_idx) == 0L) return(res)
+  if (length(probe_idx) == 0L) {
+    return(.inner_skew_decline(res, "no_probe_indices"))
+  }
+  res <- .inner_skew_decline(res, "solve_failed")
 
   cargs_no_ckpt <- utils::modifyList(cargs, list(checkpoint_path = ""))
 
-  out <- tryCatch({
+  # The probe is its own function so its `return(NULL)` guards return from IT.
+  # A `return()` inside a tryCatch() expression evaluates in the ENCLOSING
+  # function's frame, so written inline those guards returned NULL as the whole
+  # fit instead of skipping the probe (gcol33/tulpa#298).
+  probe <- function() {
     if (dispatch_kind == "multi") {
       tg <- res$theta_grid
       if (is.null(tg)) return(NULL)
@@ -224,13 +339,13 @@
     } else {
       NULL
     }
-  }, error = function(e) NULL)
+  }
+  out <- tryCatch(probe(), error = function(e) NULL)
 
-  if (is.null(out) || is.null(out$inner_skew)) return(res)
-  res$inner_skew         <- as.numeric(out$inner_skew)
-  res$inner_skew_idx     <- as.integer(out$inner_skew_idx)
-  res$inner_skew_dropped <- as.integer(out$inner_skew_dropped %||% 0L)
-  res
+  if (is.null(out) || is.null(out$inner_skew)) {
+    return(.inner_skew_decline(res, "backend_unsupported"))
+  }
+  .inner_skew_attach(res, out)
 }
 
 # Outer-grid (hyperparameter) quadrature reliability of a nested-Laplace fit:
@@ -265,9 +380,20 @@
 # that never ran the diagnostic, or whose proposal degenerated, leaves these NA.
 .tulpa_psis_reliability <- function(fit) {
   jf <- if (!is.null(fit$joint_fit)) fit$joint_fit else fit
-  list(pareto_k = jf$pareto_k %||% NA_real_,
+  k  <- jf$pareto_k %||% NA_real_
+  # WHY it is NA, when it is (gcol33/tulpa#295). A backend with no outer
+  # hyperparameter grid at all (SMC, VI, ...) records no reason of its own,
+  # because it never reached the diagnostic -- name that case here rather than
+  # leave the reader with a bare NA.
+  declined <- jf$pareto_k_declined %||% NA_character_
+  if (is.na(declined) && !is.finite(k) && is.null(jf$weights)) {
+    declined <- .k_decline_label(
+      .k_decline("not_applicable", "this backend has no outer hyperparameter grid"))
+  }
+  list(pareto_k = k,
        pareto_k_is_ess = jf$pareto_k_is_ess %||% NA_real_,
-       pareto_k_scope = jf$pareto_k_scope %||% NA_character_)
+       pareto_k_scope = jf$pareto_k_scope %||% NA_character_,
+       pareto_k_declined = declined)
 }
 
 # Outer-integration REGIME of a nested-Laplace fit (gcol33/tulpa#276), read
@@ -328,7 +454,18 @@
 # backend that does not yet populate it).
 .tulpa_inner_skew_reliability <- function(fit) {
   jf <- if (!is.null(fit$joint_fit)) fit$joint_fit else fit
-  .tulpa_inner_skew_summary(jf$inner_skew, jf$inner_skew_dropped %||% 0L)
+  s <- .tulpa_inner_skew_summary(jf$inner_skew, jf$inner_skew_dropped %||% 0L)
+  reason <- jf$inner_skew_declined %||% NA_character_
+  arms   <- as.integer(jf$inner_skew_arms_declined %||% integer(0))
+  # A fit that computed NOTHING still reports WHY (gcol33/tulpa#296), so an
+  # unscorable model class is distinguishable from a disabled knob.
+  if (is.null(s)) {
+    if (is.na(reason[1L])) return(NULL)
+    s <- list(max_abs_gamma3 = NA_real_, band = NA_character_,
+              n_scored = 0L, n_probed = 0L, n_dropped = 0L,
+              share_moderate = NA_real_, share_unreliable = NA_real_)
+  }
+  c(s, list(declined = reason[1L], arms_declined = arms))
 }
 
 # Per-parameter posterior summary + i.i.d.-draw Monte-Carlo diagnostics on a
@@ -388,6 +525,10 @@
   attr(tab, "pareto_k_band")   <- outer_band
   attr(tab, "pareto_k_is_ess") <- psis$pareto_k_is_ess
   attr(tab, "scope")           <- psis$pareto_k_scope
+  if (!is.na(psis$pareto_k_declined)) {
+    attr(tab, "pareto_k_declined")      <- psis$pareto_k_declined
+    attr(tab, "pareto_k_declined_note") <- .k_decline_note(psis$pareto_k_declined)
+  }
   if (!is.null(grid)) {
     attr(tab, "ess_grid")     <- grid$ess_grid
     attr(tab, "n_grid")       <- grid$n_grid
@@ -399,6 +540,12 @@
     attr(tab, "inner_skew_band")   <- inner$band
     attr(tab, "inner_skew_scored") <- inner$n_scored
     attr(tab, "inner_skew_probed") <- inner$n_probed
+    if (!is.na(inner$declined)) {
+      attr(tab, "inner_skew_declined")      <- inner$declined
+      attr(tab, "inner_skew_arms_declined") <- inner$arms_declined
+      attr(tab, "inner_skew_declined_note") <-
+        .inner_skew_decline_note(inner$declined, inner$arms_declined)
+    }
   }
   if (!is.null(regime)) {
     attr(tab, "outer_regime")    <- regime$regime
@@ -407,7 +554,11 @@
     attr(tab, "outer_skew_max")  <- regime$outer_skew_max
     attr(tab, "outer_regime_note") <- .tulpa_outer_regime_note(regime)
   }
-  attr(tab, "reliability") <- .tulpa_combined_reliability(outer_band, inner_band)
+  inner_declined <- if (is.null(inner)) NA_character_ else inner$declined
+  reliability <- .tulpa_combined_reliability(outer_band, inner_band,
+                                            inner_declined,
+                                            psis$pareto_k_declined)
+  attr(tab, "reliability") <- reliability
 
   summary_row <- data.frame(
     pareto_k        = k,
@@ -419,7 +570,9 @@
     max_weight      = if (is.null(grid)) NA_real_ else grid$max_weight,
     inner_skew_max  = if (is.null(inner)) NA_real_ else inner$max_abs_gamma3,
     inner_skew_band = inner_band,
-    reliability     = .tulpa_combined_reliability(outer_band, inner_band),
+    pareto_k_declined   = psis$pareto_k_declined,
+    inner_skew_declined = inner_declined,
+    reliability     = reliability,
     n_draws         = nrow(as.matrix(draws)),
     stringsAsFactors = FALSE, row.names = NULL
   )
@@ -537,6 +690,13 @@
 #'   \describe{
 #'     \item{`pareto_k`}{the outer PSIS reliability k-hat (`NA` if not computed).}
 #'     \item{`pareto_k_band`}{`"good"` / `"ok"` / `"unreliable"` / `NA`.}
+#'     \item{`pareto_k_declined`, `pareto_k_declined_note`}{when `pareto_k` is
+#'       `NA`, WHY (gcol33/tulpa#295): `"not_requested"`, `"not_applicable"`,
+#'       `"unguessable_axis"` (naming the axis -- a permanent limitation of that
+#'       family, so read `ess_grid` instead), `"draws_too_few"`,
+#'       `"grid_too_small"`, `"no_varying_axis"`, `"degenerate_proposal"`, or
+#'       `"internal_inconsistency"` (an engine bug worth reporting), plus a
+#'       one-line reading of it.}
 #'     \item{`pareto_k_is_ess`}{importance-sampling ESS on the smoothed weights.}
 #'     \item{`ess_grid`, `n_grid`, `rel_ess_grid`, `max_weight`}{grid quadrature
 #'       reliability.}
@@ -560,6 +720,16 @@
 #'       (Bulmer 1979) -- not a Rue-Martino-Chopin-specific cutoff.}
 #'     \item{`inner_skew_scored`, `inner_skew_probed`}{how many of the probed
 #'       latent indices returned a finite `gamma_3` vs how many were probed.}
+#'     \item{`inner_skew_declined`, `inner_skew_arms_declined`,
+#'       `inner_skew_declined_note`}{when nothing was scored, WHY
+#'       (gcol33/tulpa#296): `"coupled_likelihood"` / `"coupled_arm"` (both
+#'       STRUCTURAL -- the formula has no per-observation term to read for this
+#'       model class, so the outer k-hat is the only reliability number
+#'       available, permanently), `"curvature3_unavailable"`,
+#'       `"no_finite_contribution"`, `"no_probe_indices"`, `"not_requested"`,
+#'       `"backend_unsupported"`, or `"solve_failed"`; the arms (1-based) a
+#'       joint fit had no oracle for, which is also set on a PARTIALLY scored
+#'       fit; and a one-line reading.}
 #'     \item{`reliability`}{the combined whole-fit verdict: `"reliable"` only
 #'       when both layers are good; otherwise names which layer is scoped or
 #'       flags both as unreliable.}
@@ -602,21 +772,34 @@ print.laplace_diagnostics <- function(x, ...) {
   s <- attr(x, "summary")
   k <- attr(x, "pareto_k")
   band <- attr(x, "pareto_k_band")
-  has_inner <- !is.null(attr(x, "inner_skew_band"))
+  inner_note <- attr(x, "inner_skew_declined_note")
+  has_inner <- !is.null(attr(x, "inner_skew_band")) &&
+    is.finite(attr(x, "inner_skew_max") %||% NA_real_)
   if (has_inner) {
     cat("Nested-Laplace WHOLE-FIT reliability (i.i.d. draws)\n")
     cat("  two layers: the outer hyperparameter-grid integration, and the",
         "inner Gaussian Laplace on the latent field\n")
   } else {
+    # The inner layer is unscored -- say WHY (gcol33/tulpa#296). Attributing a
+    # structural impossibility to `control$diagnose_skew` sent readers looking
+    # for a knob they never touched.
     cat("Nested-Laplace OUTER-integration reliability (i.i.d. draws)\n")
-    cat("  scope: the outer hyperparameter-grid integration; the latent-field",
-        "Laplace is a separate, unscored layer (control$diagnose_skew = FALSE)\n")
+    cat("  scope: the outer hyperparameter-grid integration; the latent-field\n",
+        "  Laplace is a separate, unscored layer",
+        if (!is.null(inner_note)) paste0(":\n    ", inner_note, "\n") else ".\n",
+        sep = "")
   }
   if (is.finite(k)) {
     cat(sprintf("  outer PSIS pareto_k = %.3f (%s); IS-ESS = %.1f\n",
                 k, band, attr(x, "pareto_k_is_ess")))
   } else {
-    cat("  outer PSIS pareto_k = NA (outer diagnostic not run or proposal degenerate)\n")
+    # Every decline path says which one it was (gcol33/tulpa#295) instead of
+    # the old "not run or proposal degenerate" disjunction.
+    knote <- attr(x, "pareto_k_declined_note")
+    cat("  outer PSIS pareto_k = NA",
+        if (!is.null(knote)) paste0(":\n    ", knote, "\n")
+        else " (no reason recorded by this backend)\n",
+        sep = "")
   }
   if (!is.null(attr(x, "ess_grid"))) {
     cat(sprintf("  outer grid quadrature ESS = %.2f of %d cells (max weight %.3f)\n",
@@ -631,12 +814,16 @@ print.laplace_diagnostics <- function(x, ...) {
   if (has_inner) {
     ib <- attr(x, "inner_skew_band")
     im <- attr(x, "inner_skew_max")
-    if (is.finite(im)) {
-      cat(sprintf("  inner Laplace max |gamma_3| = %.3f (%s), scored %d/%d latents\n",
-                  im, ib, attr(x, "inner_skew_scored"), attr(x, "inner_skew_probed")))
-    } else {
-      cat("  inner Laplace gamma_3 = NA (not computable for this likelihood)\n")
+    cat(sprintf("  inner Laplace max |gamma_3| = %.3f (%s), scored %d/%d latents\n",
+                im, ib, attr(x, "inner_skew_scored"), attr(x, "inner_skew_probed")))
+    # A partly-scored joint fit names the arms that had no oracle at all.
+    arms <- attr(x, "inner_skew_arms_declined")
+    if (!is.null(arms) && length(arms)) {
+      cat(sprintf("  inner Laplace unscored on arm(s) %s\n",
+                  paste(arms, collapse = ", ")))
     }
+  }
+  if (!is.null(attr(x, "reliability"))) {
     cat(sprintf("  whole-fit verdict: %s\n", attr(x, "reliability")))
   }
   cat(sprintf("  %d parameters, %d draws; per-parameter rhat / ESS below are\n",

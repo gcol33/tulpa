@@ -41,7 +41,12 @@
         axis_offsets = axis_offsets,
         blocks       = prepared
     )
-    .joint_pareto_axis_tags(pseudo)
+    # This caller only needs "can every axis be unconstrained" -- a decline of
+    # any kind (unguessable support, an inconsistent layout) means no, so it
+    # collapses back to NULL rather than carrying the reason (gcol33/tulpa#295:
+    # the reason is for the FIT's k-hat field, not for the CCD design).
+    tags <- .joint_pareto_axis_tags(pseudo)
+    if (.k_is_decline(tags)) NULL else tags
 }
 
 # Central-difference value / gradient / Hessian of an objective `eval1` (a

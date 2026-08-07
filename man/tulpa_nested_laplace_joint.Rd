@@ -75,8 +75,8 @@ in \verb{[0.1, 3]}).
 (gcol33/tulpa#289): when the fitted field-SD posterior mode rails the top
 node (\code{pareto_k_regime = "collapsed_edge"}, see below), the driver
 re-centres the axis on a mode-Hessian and refits (up to two attempts, the
-second adding a light default PC(U=3, alpha=0.01) prior on sigma if
-\code{prior_sigma} was not set), so a sparse or strongly-identified species is
+second adding a light default PC(U=3, alpha=0.01) prior on sigma unless
+\code{prior_sigma} was pinned -- see there), so a sparse or strongly-identified species is
 not silently truncated at 3.0. This engages whether or not
 \code{control$diagnose_k} computed the full outer Pareto-k diagnostic
 (gcol33/tulpa#292): the mode-Hessian is reused from the diagnostic when it
@@ -164,7 +164,18 @@ data identifies the parameter (e.g. \code{n_pos >= ~200}) the prior is
 essentially harmless -- the lever is tail-shrinkage at small
 \code{n_pos}. \code{prior_alpha} only applies when \code{copy} is active;
 \code{prior_sigma} applies on any \code{sigma}-named axis.
-}}
+}
+
+\code{prior_sigma} also interacts with the auto-recenter above: its second
+attempt engages the engine's own weakly-informative PC(U = 3,
+alpha = 0.01) prior, and a \code{prior_sigma} the caller PINNED suppresses
+that (the caller's prior stands). Pinning is decided by provenance, not
+presence (gcol33/tulpa#297): a spec marked with \code{\link[=auto_grid]{auto_grid()}}, or one
+equal by value to the engine's own default, is a default and does not
+suppress the escalation. When it does, the fit carries
+\code{outer_grid_prior_declined = "prior_pinned"}, so a second attempt that
+changed only the grid geometry is legible rather than looking like the
+full escalation.}
 
 \item{prior_phi}{Optional regularizing hyperprior on the per-arm
 dispersion axes declared through \code{phi_grid} (e.g. a Beta precision on a
@@ -441,7 +452,12 @@ the outer hyperparameter-grid integration around a FIXED inner
 Laplace, this scores whether that inner Gaussian approximation is
 itself a good fit. A genuinely coupled arm (\code{cell_coupling != "separable"} on that arm, e.g. tulpaObs's \code{occu_cover}) has no per-obs
 likelihood for this formula to score and reports \code{NaN} there, not a
-silently wrong 0 -- see \code{\link[=diagnostics]{diagnostics()}} for the combined verdict. Wired
+silently wrong 0. When nothing is scorable, \verb{$inner_skew_declined} says
+WHY -- \code{"coupled_arm"} / \code{"coupled_likelihood"} mark a model class the
+inner layer can never score, distinct from a diagnostic that was simply
+switched off (gcol33/tulpa#296) -- and \verb{$inner_skew_arms_declined} names
+the arms with no oracle, including on a partially scored fit. See
+\code{\link[=diagnostics]{diagnostics()}} for the combined verdict. Wired
 for both the single-block backends (icar/bym2/car_proper) and the
 multi-block path (a per-group RE, a trend field, or an arm-specific
 field block).
@@ -498,6 +514,15 @@ see the \code{diagnose_k} control knob). \code{pareto_k < 0.7} indicates the
 nested integration is reliable; \verb{>= 0.7} that the (skewed / heavy-
 tailed) hyperparameter posterior is misfit by the Gaussian grid and
 the fit should escalate to an exact debias.
+\item \code{pareto_k_declined} -- when \code{pareto_k} is \code{NA}, WHY (gcol33/tulpa#295):
+\code{"not_requested"} (\code{control$diagnose_k = FALSE}; nothing is wrong),
+\code{"unguessable_axis: <axis>"} (a support the engine will not guess, e.g.
+car_proper's \code{rho_car} -- a PERMANENT limitation of that family, so read
+the quadrature ESS instead), \code{"draws_too_few"}, \code{"grid_too_small"},
+\code{"no_varying_axis"}, \code{"degenerate_proposal"} (the outer mode curvature
+came back non-finite -- a signal about the fit), \code{"not_applicable"}, or
+\code{"internal_inconsistency"} (an engine bug worth reporting). \code{NA} on a
+fit whose \eqn{\hat{k}} WAS computed.
 \item \code{pareto_k_proposal_source} -- how the outer importance proposal the
 \eqn{\hat{k}} scores was built: \code{"mode_hessian"} from the Laplace
 curvature at the hyperparameter mode (the CCD design's, or a
@@ -528,7 +553,10 @@ used as-is) or \code{"auto_recentered"} when a \code{collapsed_edge} on \code{si
 triggered the mode-Hessian recenter-and-refit (gcol33/tulpa#289; see
 the \code{prior} argument above). \code{outer_grid_recenter_attempts} (integer)
 and \code{outer_grid_prior_added} (logical: whether the light default
-PC(U=3, alpha=0.01) sigma prior was applied) are set alongside it.
+PC(U=3, alpha=0.01) sigma prior was applied) are set alongside it, plus
+\code{outer_grid_prior_declined = "prior_pinned"} when a second attempt ran
+but the caller's pinned \code{prior_sigma} held that prior back
+(gcol33/tulpa#297).
 \item \code{outer_grid_recenter_declined} -- on a \code{"fixed"} placement, why the
 recenter did not run: \code{"grid_not_collapsed"} (the grid already brackets
 the mode -- the common case, no refit needed), \code{"axis_pinned"} (the

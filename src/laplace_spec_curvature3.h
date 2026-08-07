@@ -44,14 +44,26 @@ namespace tulpa {
 // Relative finite-difference step for the generic LikelihoodSpec fallback.
 constexpr double SPEC_CURVATURE3_FD_STEP = 1e-4;
 
+// `reason` (optional out-parameter, gcol33/tulpa#296) records WHY no oracle
+// could be built, from the closed vocabulary the diagnostic reports:
+// "coupled_likelihood" (n_processes != 1 -- a permanent property of the model
+// class, never scorable by this formula) or "curvature3_unavailable" (a
+// single-process spec with no eta_weights_fn to finite-difference). Set to ""
+// on success. Reported here rather than re-derived by a second predicate, so
+// the reason and the decision can never drift apart.
 inline std::function<double(int, double)> build_spec_curvature3_fn(
     const LikelihoodSpec& spec,
     const void* response_data,
     const ModelData& data,
     const ParamLayout& layout,
-    const std::vector<double>& params
+    const std::vector<double>& params,
+    const char** reason = nullptr
 ) {
-    if (spec.n_processes != 1) return nullptr;
+    if (reason) *reason = "";
+    if (spec.n_processes != 1) {
+        if (reason) *reason = "coupled_likelihood";
+        return nullptr;
+    }
 
     if (is_builtin_family_spec(spec.name)) {
         const auto* r = static_cast<const BuiltinFamilyResponse*>(response_data);
@@ -63,7 +75,10 @@ inline std::function<double(int, double)> build_spec_curvature3_fn(
         };
     }
 
-    if (!spec.eta_weights_fn) return nullptr;
+    if (!spec.eta_weights_fn) {
+        if (reason) *reason = "curvature3_unavailable";
+        return nullptr;
+    }
     // Captures response_data/data/layout/params by reference/pointer: all are
     // owned by the caller's stack frame for the duration of the synchronous
     // solve this closure is used inside, so nothing outlives its owner.

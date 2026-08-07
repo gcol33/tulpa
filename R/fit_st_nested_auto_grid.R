@@ -30,14 +30,53 @@
 .st_axis_fwd <- function(axis, x) if (identical(axis, "rho")) stats::qlogis((x + 1) / 2) else log(x)
 .st_axis_inv <- function(axis, u) if (identical(axis, "rho")) 2 * stats::plogis(u) - 1 else exp(u)
 
-# Has the caller explicitly set any grid-construction knob? An explicit
-# choice always wins -- mirrors every other family's "an explicit sigma_grid
-# always wins" contract, generalized to the knobs that BUILD this grid since
-# fit_st_nested() has no single grid-vector argument to override.
-.st_grid_overridden <- function(control) {
-    knobs <- c("tau_lower", "tau_upper", "n_grid_spatial", "n_grid_temporal",
-              "n_grid_rho", "rho_lower", "rho_upper")
-    any(!vapply(knobs, function(nm) is.null(control[[nm]]), logical(1)))
+# --- knob provenance ---------------------------------------------------------
+#
+# The other three rescues guard on `.nl_axis_is_pinned()`, which asks whether a
+# grid VECTOR carries information a pin would add. This driver has no grid
+# vector to override -- its axes are BUILT from scalar `control` knobs -- so the
+# same question is asked one level down, per knob: a knob absent, marked with
+# `auto_grid()`, or set to the engine's own default (`.nl_st_default()`) carries
+# no preference, and only anything else is a pin. Presence alone is not
+# provenance: a wrapper that exposes its own `n_grid` argument defaulted to the
+# engine's value threads that value into `control` on every fit, and reading
+# that as an override made the recenter inert for every fit it makes
+# (gcol33/tulpa#294, the #293 shape one level down).
+#
+# Each knob is mapped to the axis or axes it SHAPES, so a pin is per-axis rather
+# than all-or-nothing: `tau_lower` / `tau_upper` are the shared bounds of both
+# precision axes (`fit_st_nested()` builds `ts_axis` and `tt_axis` from the same
+# pair), `n_grid_spatial` / `n_grid_temporal` shape one each, and the three rho
+# knobs shape the ar1 autocorrelation axis alone.
+.ST_GRID_KNOBS <- list(
+    tau_lower       = list(default = "tau_lower",  axes = c("tau_spatial", "tau_temporal")),
+    tau_upper       = list(default = "tau_upper",  axes = c("tau_spatial", "tau_temporal")),
+    n_grid_spatial  = list(default = "n_spatial",  axes = "tau_spatial"),
+    n_grid_temporal = list(default = "n_temporal", axes = "tau_temporal"),
+    n_grid_rho      = list(default = "n_rho",      axes = "rho"),
+    rho_lower       = list(default = "rho_lower",  axes = "rho"),
+    rho_upper       = list(default = "rho_upper",  axes = "rho")
+)
+
+# Is one grid knob a PIN? The scalar counterpart of `.nl_axis_is_pinned()`.
+.st_knob_is_pinned <- function(control, knob) {
+    v <- control[[knob]]
+    if (is.null(v)) return(FALSE)
+    if (is_auto_grid(v)) return(FALSE)
+    if (length(v) != 1L) return(TRUE)
+    v <- suppressWarnings(as.numeric(v))
+    if (!is.finite(v)) return(TRUE)
+    d <- as.numeric(.nl_st_default(.ST_GRID_KNOBS[[knob]]$default))
+    !isTRUE(all.equal(v, d))
+}
+
+# The grid axes the caller genuinely pinned. An axis absent from this set is
+# free to be recentred even when another axis was pinned.
+.st_pinned_axes <- function(control) {
+    hit <- vapply(names(.ST_GRID_KNOBS),
+                  function(nm) .st_knob_is_pinned(control, nm), logical(1))
+    as.character(unique(unlist(lapply(.ST_GRID_KNOBS[hit], `[[`, "axes"),
+                               use.names = FALSE)))
 }
 
 # Set the three (or two) grid-defining kernel args to a single trial cell (or
@@ -93,11 +132,17 @@
 # no longer bounded by the retired default range).
 #
 # Declines (returns `out` unchanged, carrying the reason in
-# `outer_grid_recenter_declined`) when `control$auto_recenter = FALSE`, the grid
-# knobs were explicitly overridden, the regime never collapsed onto an edge, or
-# the mode-find / Hessian is unusable (non-finite, non-positive-definite, a degenerate
-# refit) -- the same guard-rather-than-guess stance every other family's
-# rescue takes.
+# `outer_grid_recenter_declined`) when `control$auto_recenter = FALSE`, EVERY
+# axis the grid has was pinned by a genuinely non-default knob, the regime never
+# collapsed onto an edge, or the mode-find / Hessian is unusable (non-finite,
+# non-positive-definite, a degenerate refit) -- the same guard-rather-than-guess
+# stance every other family's rescue takes.
+#
+# A pin is PER AXIS (`.st_pinned_axes()`): a pinned axis keeps its original
+# nodes, the rest are recentred, and `outer_grid_pinned_axes` records which were
+# held. The joint mode-find still runs over every axis -- the free axes are
+# placed at the joint mode's coordinates, not at a mode conditioned on the
+# pinned axes' node sets, which are a range rather than a value.
 #
 # The mode-find is BOX-CONSTRAINED (L-BFGS-B, numerical gradient -- no
 # analytic gradient is available from this compiled kernel, and L-BFGS-B
@@ -119,14 +164,16 @@
     if (isFALSE(control$auto_recenter)) {
         return(.nl_decline_recenter(out, "auto_recenter_disabled"))
     }
-    if (.st_grid_overridden(control)) {
+    axes   <- .st_grid_axes(temporal_type)
+    pinned <- intersect(.st_pinned_axes(control), axes)
+    free   <- setdiff(axes, pinned)
+    if (!length(free)) {
         return(.nl_decline_recenter(out, "grid_knobs_overridden"))
     }
     if (!identical(out$pareto_k_regime, "collapsed_edge")) {
         return(.nl_decline_recenter(out, "grid_not_collapsed"))
     }
 
-    axes <- .st_grid_axes(temporal_type)
     tg <- out$theta_grid
     w  <- out$weights
     if (is.null(tg) || is.null(w) || length(w) != nrow(tg) ||
@@ -175,18 +222,33 @@
     # "escape the ceiling by a sane margin" true of the OUTPUT, not just the
     # search.
     clamp_axis <- function(vals, axis) sort(unique(pmin(pmax(vals, exp(lo[[axis]])), exp(hi[[axis]]))))
-    new_ts <- .nl_recenter_log_axis(u_hat[["tau_spatial"]],  sd_u[["tau_spatial"]],  n_pts = n_gs)
-    new_tt <- .nl_recenter_log_axis(u_hat[["tau_temporal"]], sd_u[["tau_temporal"]], n_pts = n_gt)
-    if (is.null(new_ts) || is.null(new_tt)) {
-        return(.nl_decline_recenter(out, "no_usable_curvature"))
+    # A pinned axis keeps exactly the nodes the caller's knobs built, read back
+    # off the kernel arguments the fit ran with rather than rebuilt from the
+    # knobs (one source, and it already carries `.st_log_grid()`'s 2-node floor).
+    kept <- function(field) sort(unique(as.numeric(kargs[[field]])))
+
+    if ("tau_spatial" %in% free) {
+        new_ts <- .nl_recenter_log_axis(u_hat[["tau_spatial"]], sd_u[["tau_spatial"]],
+                                        n_pts = n_gs)
+        if (is.null(new_ts)) return(.nl_decline_recenter(out, "no_usable_curvature"))
+        new_ts <- clamp_axis(new_ts, "tau_spatial")
+        if (length(new_ts) < 2L) return(.nl_decline_recenter(out, "no_usable_curvature"))
+    } else {
+        new_ts <- kept("tau_spatial_grid")
     }
-    new_ts <- clamp_axis(new_ts, "tau_spatial")
-    new_tt <- clamp_axis(new_tt, "tau_temporal")
-    if (length(new_ts) < 2L || length(new_tt) < 2L) {
-        return(.nl_decline_recenter(out, "no_usable_curvature"))
+    if ("tau_temporal" %in% free) {
+        new_tt <- .nl_recenter_log_axis(u_hat[["tau_temporal"]], sd_u[["tau_temporal"]],
+                                        n_pts = n_gt)
+        if (is.null(new_tt)) return(.nl_decline_recenter(out, "no_usable_curvature"))
+        new_tt <- clamp_axis(new_tt, "tau_temporal")
+        if (length(new_tt) < 2L) return(.nl_decline_recenter(out, "no_usable_curvature"))
+    } else {
+        new_tt <- kept("tau_temporal_grid")
     }
 
-    if ("rho" %in% axes) {
+    if (!("rho" %in% axes)) {
+        new_rho <- 0.0
+    } else if ("rho" %in% free) {
         span  <- 2.5
         su    <- min(max(sd_u[["rho"]], 0.15), 3)
         u_seq <- seq(u_hat[["rho"]] - span * su, u_hat[["rho"]] + span * su,
@@ -199,7 +261,7 @@
             return(.nl_decline_recenter(out, "no_usable_curvature"))
         }
     } else {
-        new_rho <- 0.0
+        new_rho <- kept("rho_temporal_grid")
     }
 
     new_grid <- expand.grid(tau_spatial = new_ts, tau_temporal = new_tt, rho = new_rho)
@@ -219,5 +281,6 @@
     refit <- .joint_attach_pareto_k_regime(refit)
     refit$outer_grid_placement         <- "auto_recentered"
     refit$outer_grid_recenter_attempts <- 1L
+    refit$outer_grid_pinned_axes       <- pinned
     refit
 }

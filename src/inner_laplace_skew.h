@@ -79,6 +79,7 @@
 #include <cmath>
 #include <functional>
 #include <limits>
+#include <string>
 #include <vector>
 
 namespace tulpa {
@@ -86,6 +87,38 @@ namespace tulpa {
 struct InnerSkewOutcome {
   std::vector<double> gamma3;      // one entry per requested index, NaN = not computable there
   int n_nonfinite_dropped = 0;     // (i, j) contributions skipped for a non-finite l'''_j
+  // Why NOTHING was computable, when nothing was (gcol33/tulpa#296). Empty
+  // when at least one index scored. A NaN says only "not computable"; the
+  // reasons behind it are not interchangeable -- a coupled multi-process
+  // likelihood can NEVER be scored by this formula, while a numerically failed
+  // finite difference is specific to one fit. The caller refines
+  // "no_oracle" into the specific spec-level reason it knows (see
+  // build_spec_curvature3_fn).
+  std::string declined;
+  // Joint only: arms with no third-derivative oracle at all (0-based), so a
+  // partially scored joint fit names which arms it left out.
+  std::vector<int> arms_declined;
+};
+
+// Did any probed index come back with a finite gamma_3?
+inline bool inner_skew_any_scored(const std::vector<double>& gamma3) {
+  for (double g : gamma3) if (std::isfinite(g)) return true;
+  return false;
+}
+
+// Per-arm third-derivative oracles for a joint fit, carried WITH the reason any
+// arm has none (gcol33/tulpa#296). Built by build_joint_curvature3_fns
+// (laplace_newton_joint.h); the reason travels with the oracles rather than
+// being re-derived downstream, so a decline can never lose its explanation on
+// the way to the fit object.
+struct JointCurvature3Oracles {
+  std::vector<std::function<double(int, double)>> fns;
+  std::vector<int>    arms_declined;   // 0-based arms with no oracle
+  std::string         declined;        // fit-level reason when NO arm has one
+  bool any() const {
+    for (const auto& f : fns) if (f) return true;
+    return false;
+  }
 };
 
 // curvature3_fn(j, eta_j) -> l_j'''(eta_j) at the mode, or NaN if this
@@ -119,7 +152,8 @@ inline InnerSkewOutcome compute_inner_skew_gamma3(
   // early return the per-index loop below would see every l3[j] as NaN, drop
   // every contribution, and divide 0/sigma_i^3 = 0 into gamma3 -- a silently
   // wrong "perfectly Gaussian" reading instead of NaN.
-  if (!curvature3_fn || probe_idx.empty()) return out;
+  if (probe_idx.empty()) { out.declined = "no_probe_indices"; return out; }
+  if (!curvature3_fn)    { out.declined = "no_oracle"; return out; }
 
   std::vector<double> rhs(n_x, 0.0), v(n_x, 0.0), z_work;
   if (!use_sparse) z_work.assign(n_x, 0.0);
@@ -170,6 +204,7 @@ inline InnerSkewOutcome compute_inner_skew_gamma3(
   }
 
   for (int k = 0; k < n_x; k++) x_buf[k] = mode[k];  // restore
+  if (!inner_skew_any_scored(out.gamma3)) out.declined = "no_finite_contribution";
   return out;
 }
 
@@ -192,10 +227,12 @@ inline InnerSkewOutcome compute_inner_skew_gamma3(
 //
 // eta_buf0 / eta_buf1 are the per-arm scratch (NewtonScratchJoint's `etas` /
 // `etas_tmp`), one Rcpp::NumericVector per arm sized to that arm's N.
-// curvature3_fns has one entry per arm (parallel to eta_buf0); an empty entry
+// `oracles.fns` has one entry per arm (parallel to eta_buf0); an empty entry
 // declines that whole arm (every one of its observations contributes NaN,
 // i.e. gets dropped from the sum -- same per-entry semantics as a single
-// non-finite l_j''' in the single-arm version above).
+// non-finite l_j''' in the single-arm version above), and `oracles.declined` /
+// `oracles.arms_declined` carry WHY, so a partially or fully declined fit says
+// which arms were left out and for what reason (gcol33/tulpa#296).
 template <typename ComputeEtaJointFn>
 inline InnerSkewOutcome compute_inner_skew_gamma3_joint(
     int n_x,
@@ -207,15 +244,19 @@ inline InnerSkewOutcome compute_inner_skew_gamma3_joint(
     Rcpp::NumericVector& x_buf,
     std::vector<Rcpp::NumericVector>& eta_buf0,
     std::vector<Rcpp::NumericVector>& eta_buf1,
-    const std::vector<std::function<double(int, double)>>& curvature3_fns,
+    const JointCurvature3Oracles& oracles,
     const std::vector<int>& probe_idx
 ) {
+  const std::vector<std::function<double(int, double)>>& curvature3_fns = oracles.fns;
   InnerSkewOutcome out;
   out.gamma3.assign(probe_idx.size(), std::numeric_limits<double>::quiet_NaN());
+  out.arms_declined = oracles.arms_declined;
   const int n_arms = static_cast<int>(eta_buf0.size());
-  bool any_oracle = false;
-  for (const auto& f : curvature3_fns) if (f) { any_oracle = true; break; }
-  if (!any_oracle || probe_idx.empty()) return out;
+  if (probe_idx.empty()) { out.declined = "no_probe_indices"; return out; }
+  if (!oracles.any()) {
+    out.declined = oracles.declined.empty() ? "no_oracle" : oracles.declined;
+    return out;
+  }
 
   std::vector<double> rhs(n_x, 0.0), v(n_x, 0.0), z_work;
   if (!use_sparse) z_work.assign(n_x, 0.0);
@@ -271,6 +312,7 @@ inline InnerSkewOutcome compute_inner_skew_gamma3_joint(
   }
 
   for (int k = 0; k < n_x; k++) x_buf[k] = mode[k];  // restore
+  if (!inner_skew_any_scored(out.gamma3)) out.declined = "no_finite_contribution";
   return out;
 }
 

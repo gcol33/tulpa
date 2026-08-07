@@ -23,6 +23,119 @@
 
 .PSIS_MIN_EVAL <- 25L
 
+# --- outer Pareto-k decline reasons (gcol33/tulpa#295) -----------------------
+#
+# The outer k-hat has many places it can decline, and every one of them used to
+# arrive as the single value `pareto_k = NA` -- so "you turned the diagnostic
+# off", "this family's support can never be scored", and "the outer Hessian came
+# back non-finite" were indistinguishable in a fit object, and a batch reading
+# `pareto_k` across many fits could not tell a permanent structural limitation
+# from a live signal about the fit. Every decline now carries a reason from this
+# closed vocabulary, attached as `res$pareto_k_declined`:
+#
+#   not_requested          the caller set control$diagnose_k = FALSE. NA is
+#                          expected and means nothing is wrong.
+#   not_applicable         the fit shape has no outer grid this diagnostic is
+#                          defined on (multi-block or multi-axis on the single
+#                          positive-scale-axis path, a bounded grid field).
+#   unguessable_axis       an axis whose support is not safely known
+#                          (car_proper's rho_car). A PERMANENT limitation of
+#                          that family: read the quadrature ESS instead.
+#   draws_too_few          the requested importance-draw budget is below the
+#                          GPD-fit floor (.PSIS_MIN_EVAL), or too few draws
+#                          evaluated finitely.
+#   grid_too_small         the integration grid / weights cannot support a
+#                          proposal (no positive weight, a grid of one cell).
+#                          A signal about the FIT, not the diagnostic.
+#   no_varying_axis        every axis is pinned to a single value, so there is
+#                          no direction to importance-sample along.
+#   degenerate_proposal    the proposal could not be built or scored (non-finite
+#                          or non-PD outer Hessian, a Cholesky failure, a
+#                          non-finite GPD shape). Also a signal about the fit.
+#   internal_inconsistency a bookkeeping mismatch (weights not matching the
+#                          grid, a re-solve returning the wrong length). This
+#                          indicates an engine bug rather than a property of the
+#                          data, and is worth reporting.
+.K_DECLINE_REASONS <- c("not_requested", "not_applicable", "unguessable_axis",
+                        "draws_too_few", "grid_too_small", "no_varying_axis",
+                        "degenerate_proposal", "internal_inconsistency")
+
+# A decline is a first-class return value, not a bare NULL: helpers that can
+# fail for materially different reasons return `.k_decline(<reason>)` and their
+# callers propagate it, so the reason reaches the fit instead of being erased at
+# the first `is.null()`. `detail` names the specific thing (an axis name, say)
+# where one exists.
+.k_decline <- function(reason, detail = NULL) {
+    if (!reason %in% .K_DECLINE_REASONS) {
+        stop("Unknown Pareto-k decline reason '", reason, "'.", call. = FALSE)
+    }
+    structure(list(declined = reason, detail = detail),
+              class = "tulpa_k_decline")
+}
+
+.k_is_decline <- function(x) inherits(x, "tulpa_k_decline")
+
+# Reason string for `res$pareto_k_declined`, with the detail appended when there
+# is one ("unguessable_axis: rho_car" names the axis that can never be scored).
+.k_decline_label <- function(x) {
+    if (!.k_is_decline(x)) return(NA_character_)
+    if (is.null(x$detail) || !length(x$detail)) return(x$declined)
+    paste0(x$declined, ": ", paste(as.character(x$detail), collapse = ", "))
+}
+
+# The reason carried by either shape a decline can arrive in: the sentinel
+# above (where a helper used to return NULL) or a result list that already
+# returns NA fields and carries the reason alongside them (`$declined`, the
+# shape the IS cores use so their callers keep reading `$pareto_k`).
+.k_reason_of <- function(x) {
+    if (.k_is_decline(x)) return(.k_decline_label(x))
+    if (is.list(x) && length(x$declined)) return(as.character(x$declined)[1L])
+    NA_character_
+}
+
+# Attach a decline (or clear it, on a computed k-hat) onto a fit.
+.k_attach_declined <- function(res, x) {
+    res$pareto_k_declined <- .k_reason_of(x)
+    res
+}
+
+# Is this decline PERMANENT for the family -- an axis whose support the engine
+# will never guess -- as opposed to something a rerun with different settings
+# could fill in? The reader's action differs: for a permanent decline the
+# quadrature ESS is the reliability number, full stop.
+.k_decline_is_permanent <- function(label) {
+    if (is.null(label) || !length(label) || is.na(label[1L])) return(FALSE)
+    identical(sub(":.*$", "", label[1L]), "unguessable_axis")
+}
+
+# One-line user-facing reading of a decline label, for `print` /
+# `diagnostic_summary()`. `label` is `res$pareto_k_declined`.
+.k_decline_note <- function(label) {
+    if (is.null(label) || !length(label) || is.na(label)) return(NULL)
+    reason <- sub(":.*$", "", label)
+    detail <- if (grepl(":", label, fixed = TRUE)) sub("^[^:]*:\\s*", "", label) else NULL
+    with_detail <- function(txt) {
+        if (is.null(detail)) txt else paste0(txt, " (", detail, ")")
+    }
+    switch(reason,
+        not_requested = "the outer diagnostic was not requested (control$diagnose_k = FALSE)",
+        not_applicable = with_detail("this fit's outer grid is not one the k-hat is defined on"),
+        unguessable_axis = paste0(
+            "the outer grid carries an axis whose support is not safely known",
+            if (!is.null(detail)) paste0(" (", detail, ")") else "",
+            "; k-hat is permanently unavailable for this family -- read the",
+            " quadrature ESS instead"),
+        draws_too_few = "too few importance draws to fit the GPD tail; raise diagnose_draws",
+        grid_too_small = with_detail("the outer grid / weights cannot support a proposal"),
+        no_varying_axis = "every outer axis is pinned to a single value; there is nothing to sample along",
+        degenerate_proposal = with_detail(
+            "the outer proposal degenerated (non-finite or non-PD mode curvature)"),
+        internal_inconsistency = with_detail(paste(
+            "an internal bookkeeping mismatch stopped the diagnostic;",
+            "this indicates an engine bug -- please report it")),
+        NULL)
+}
+
 # Whitened-radius envelope for the outer Pareto-k importance draws
 #. The outer integrator placed its grid to cover the
 # hyperparameter posterior; a proposal draw far outside that node cloud is a
@@ -307,8 +420,12 @@ tulpa_psis <- function(log_ratios, tail_points = NULL) {
                                 return_draws = FALSE, tail_points = NULL) {
   d <- length(theta_hat)
   n_samples <- as.integer(n_samples)
+  na_out <- function(reason, n_eval = 0L) {
+    list(pareto_k = NA_real_, is_ess = NA_real_, n_eval = n_eval,
+         declined = reason)
+  }
   if (n_samples < .PSIS_MIN_EVAL) {                          # cannot reach the floor
-    return(list(pareto_k = NA_real_, is_ess = NA_real_, n_eval = 0L))
+    return(na_out("draws_too_few"))
   }
   Z <- matrix(stats::rnorm(n_samples * d), n_samples, d)
   U <- sweep(Z %*% t(L_scale), 2L, theta_hat, `+`)           # S x d ~ N(theta_hat, .)
@@ -330,13 +447,15 @@ tulpa_psis <- function(log_ratios, tail_points = NULL) {
              else rep(TRUE, n_samples)
   n_in <- sum(in_supp)
   if (n_in < .PSIS_MIN_EVAL) {                               # too few within support
-    return(list(pareto_k = NA_real_, is_ess = NA_real_, n_eval = n_in))
+    return(na_out("draws_too_few", n_in))
   }
 
   lr <- rep(-Inf, n_samples)
   lt <- log_target_batched(U[in_supp, , drop = FALSE])
   if (length(lt) != n_in) {
-    return(list(pareto_k = NA_real_, is_ess = NA_real_, n_eval = 0L))
+    # The re-solve returned a different number of values than it was handed:
+    # a bookkeeping fault in the caller's target, not a property of the data.
+    return(na_out("internal_inconsistency"))
   }
   lr[in_supp] <- lt + 0.5 * z2[in_supp]                      # target - log q (up to const)
 
@@ -358,7 +477,7 @@ tulpa_psis <- function(log_ratios, tail_points = NULL) {
 
   n_eval <- sum(is.finite(lr))
   if (n_eval < .PSIS_MIN_EVAL) {
-    return(list(pareto_k = NA_real_, is_ess = NA_real_, n_eval = n_eval))
+    return(na_out("draws_too_few", n_eval))
   }
   # Validation aperture: when `tulpa.kdiag.capture` holds an environment, stash
   # the finite importance log-ratios so an external check can recompute the same
@@ -432,7 +551,12 @@ tulpa_psis <- function(log_ratios, tail_points = NULL) {
   Su    <- crossprod(cen * weights, cen)                     # weighted covariance
   Su    <- (Su + t(Su)) / 2
   L <- tryCatch(t(chol(Su)), error = function(e) NULL)
-  if (is.null(L)) return(list(pareto_k = NA_real_, is_ess = NA_real_, n_eval = 0L))
+  if (is.null(L)) {
+    # The grid-weighted covariance is not positive definite -- a collapsed or
+    # single-cell grid leaves nothing to place a proposal with.
+    return(list(pareto_k = NA_real_, is_ess = NA_real_, n_eval = 0L,
+                declined = "degenerate_proposal"))
+  }
 
   lt <- function(U) {
     lm <- refit_log_marginal(exp(U))

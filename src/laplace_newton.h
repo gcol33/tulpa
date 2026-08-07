@@ -110,7 +110,13 @@ LaplaceResult laplace_newton_solve_ll(
     // nullptr with compute_skew = true probes every latent index.
     bool compute_skew = false,
     const std::vector<int>* skew_probe_idx = nullptr,
-    const std::function<double(int, double)>& curvature3_fn = nullptr
+    const std::function<double(int, double)>& curvature3_fn = nullptr,
+    // Why the caller could not build `curvature3_fn`, when it could not
+    // (gcol33/tulpa#296) -- e.g. build_spec_curvature3_fn's
+    // "coupled_likelihood" / "curvature3_unavailable". Refines the loop's own
+    // generic "no_oracle" into the reason the caller actually knows, so a
+    // structurally unscorable model does not report as an unset knob.
+    const char* curvature3_declined = nullptr
 ) {
     LaplaceResult result;
     result.mode.assign(n_x, 0.0);
@@ -270,6 +276,11 @@ LaplaceResult laplace_newton_solve_ll(
         result.inner_skew = std::move(sk.gamma3);
         result.inner_skew_idx = *probe;
         result.inner_skew_dropped = sk.n_nonfinite_dropped;
+        result.inner_skew_declined = sk.declined;
+        if (result.inner_skew_declined == "no_oracle" &&
+            curvature3_declined && *curvature3_declined) {
+            result.inner_skew_declined = curvature3_declined;
+        }
     }
 
     return result;

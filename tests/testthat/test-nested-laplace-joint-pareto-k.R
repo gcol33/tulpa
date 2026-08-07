@@ -114,15 +114,66 @@ test_that(".joint_pareto_k rises when the target is heavier than the proposal", 
     expect_gt(kd$pareto_k, 0.5)
 })
 
-test_that(".joint_pareto_k declines a fit carrying an unguessable axis", {
+test_that(".joint_pareto_k declines a fit carrying an unguessable axis, and NAMES it", {
     # A car_proper-typed single block with a rho_car axis: the resolver must
-    # return NULL (decline) rather than guess the eigenvalue-bounded support.
+    # decline rather than guess the eigenvalue-bounded support -- and say which
+    # axis stopped it, since that decline is PERMANENT for this family
+    # (gcol33/tulpa#295).
     res <- list(theta_grid = matrix(c(0.5, 1.0, 0.8, 0.9), ncol = 2,
                                     dimnames = list(NULL, c("sigma", "rho_car"))),
                 weights = c(0.5, 0.5), prior = list(type = "car_proper"))
-    expect_null(.joint_pareto_axis_tags(res))
+    tags <- .joint_pareto_axis_tags(res)
+    expect_true(tulpa:::.k_is_decline(tags))
+    expect_identical(tulpa:::.k_decline_label(tags), "unguessable_axis: rho_car")
     kd <- .joint_pareto_k(res, function(tm) rep(0, nrow(tm)), n_samples = 200L)
     expect_true(is.na(kd$pareto_k))
+    expect_identical(kd$declined, "unguessable_axis: rho_car")
+    expect_true(tulpa:::.k_decline_is_permanent(kd$declined))
+})
+
+test_that("each outer Pareto-k decline path reports its own reason", {
+    # gcol33/tulpa#295: "you turned it off", "this family can never be scored"
+    # and "the grid carries no weight" used to be one indistinguishable NA.
+    lm0 <- function(tm) rep(0, nrow(tm))
+
+    # A sub-floor draw budget: nothing about the fit is wrong.
+    ok <- list(theta_grid = matrix(c(0.5, 1, 2), ncol = 1,
+                                   dimnames = list(NULL, "sigma")),
+               weights = c(0.2, 0.5, 0.3), prior = list(type = "icar"))
+    expect_identical(.joint_pareto_k(ok, lm0, n_samples = 5L)$declined,
+                     "draws_too_few")
+
+    # Weights that carry no mass -- a signal about the FIT.
+    dead <- ok; dead$weights <- c(0, 0, 0)
+    expect_identical(.joint_pareto_k(dead, lm0, n_samples = 200L)$declined,
+                     "grid_too_small: no positive integration weight")
+
+    # A weight vector that does not match the grid -- an engine bug.
+    torn <- ok; torn$weights <- c(0.5, 0.5)
+    expect_identical(.joint_pareto_k(torn, lm0, n_samples = 200L)$declined,
+                     "internal_inconsistency: weights do not match theta_grid rows")
+
+    # No grid at all.
+    expect_match(.joint_pareto_k(list(), lm0, n_samples = 200L)$declined,
+                 "^not_applicable")
+
+    # A one-value axis: nothing to importance-sample along.
+    pinned <- list(theta_grid = matrix(c(1, 1), ncol = 1,
+                                       dimnames = list(NULL, "sigma")),
+                   weights = c(0.5, 0.5), prior = list(type = "icar"))
+    expect_identical(.joint_pareto_k(pinned, lm0, n_samples = 200L)$declined,
+                     "no_varying_axis")
+})
+
+test_that(".k_decline_note reads each reason back, and only unguessable_axis is permanent", {
+    for (r in tulpa:::.K_DECLINE_REASONS) {
+        expect_true(is.character(tulpa:::.k_decline_note(r)))
+    }
+    expect_null(tulpa:::.k_decline_note(NA_character_))
+    expect_true(tulpa:::.k_decline_is_permanent("unguessable_axis: rho_car"))
+    expect_false(tulpa:::.k_decline_is_permanent("not_requested"))
+    expect_false(tulpa:::.k_decline_is_permanent(NA_character_))
+    expect_error(tulpa:::.k_decline("nonsense"), "Unknown Pareto-k decline reason")
 })
 
 # --------------------------------------------------------------------------- #

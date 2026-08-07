@@ -87,8 +87,8 @@
 #'   (gcol33/tulpa#289): when the fitted field-SD posterior mode rails the top
 #'   node (`pareto_k_regime = "collapsed_edge"`, see below), the driver
 #'   re-centres the axis on a mode-Hessian and refits (up to two attempts, the
-#'   second adding a light default PC(U=3, alpha=0.01) prior on sigma if
-#'   `prior_sigma` was not set), so a sparse or strongly-identified species is
+#'   second adding a light default PC(U=3, alpha=0.01) prior on sigma unless
+#'   `prior_sigma` was pinned -- see there), so a sparse or strongly-identified species is
 #'   not silently truncated at 3.0. This engages whether or not
 #'   `control$diagnose_k` computed the full outer Pareto-k diagnostic
 #'   (gcol33/tulpa#292): the mode-Hessian is reused from the diagnostic when it
@@ -171,6 +171,17 @@
 #'   essentially harmless -- the lever is tail-shrinkage at small
 #'   `n_pos`. `prior_alpha` only applies when `copy` is active;
 #'   `prior_sigma` applies on any `sigma`-named axis.
+#'
+#'   `prior_sigma` also interacts with the auto-recenter above: its second
+#'   attempt engages the engine's own weakly-informative PC(U = 3,
+#'   alpha = 0.01) prior, and a `prior_sigma` the caller PINNED suppresses
+#'   that (the caller's prior stands). Pinning is decided by provenance, not
+#'   presence (gcol33/tulpa#297): a spec marked with [auto_grid()], or one
+#'   equal by value to the engine's own default, is a default and does not
+#'   suppress the escalation. When it does, the fit carries
+#'   `outer_grid_prior_declined = "prior_pinned"`, so a second attempt that
+#'   changed only the grid geometry is legible rather than looking like the
+#'   full escalation.
 #'
 #' @param prior_phi Optional regularizing hyperprior on the per-arm
 #'   dispersion axes declared through `phi_grid` (e.g. a Beta precision on a
@@ -451,7 +462,12 @@
 #'     itself a good fit. A genuinely coupled arm (`cell_coupling !=
 #'     "separable"` on that arm, e.g. tulpaObs's `occu_cover`) has no per-obs
 #'     likelihood for this formula to score and reports `NaN` there, not a
-#'     silently wrong 0 -- see [diagnostics()] for the combined verdict. Wired
+#'     silently wrong 0. When nothing is scorable, `$inner_skew_declined` says
+#'     WHY -- `"coupled_arm"` / `"coupled_likelihood"` mark a model class the
+#'     inner layer can never score, distinct from a diagnostic that was simply
+#'     switched off (gcol33/tulpa#296) -- and `$inner_skew_arms_declined` names
+#'     the arms with no oracle, including on a partially scored fit. See
+#'     [diagnostics()] for the combined verdict. Wired
 #'     for both the single-block backends (icar/bym2/car_proper) and the
 #'     multi-block path (a per-group RE, a trend field, or an arm-specific
 #'     field block).
@@ -506,6 +522,15 @@
 #'      nested integration is reliable; `>= 0.7` that the (skewed / heavy-
 #'      tailed) hyperparameter posterior is misfit by the Gaussian grid and
 #'      the fit should escalate to an exact debias.
+#'   * `pareto_k_declined` -- when `pareto_k` is `NA`, WHY (gcol33/tulpa#295):
+#'      `"not_requested"` (`control$diagnose_k = FALSE`; nothing is wrong),
+#'      `"unguessable_axis: <axis>"` (a support the engine will not guess, e.g.
+#'      car_proper's `rho_car` -- a PERMANENT limitation of that family, so read
+#'      the quadrature ESS instead), `"draws_too_few"`, `"grid_too_small"`,
+#'      `"no_varying_axis"`, `"degenerate_proposal"` (the outer mode curvature
+#'      came back non-finite -- a signal about the fit), `"not_applicable"`, or
+#'      `"internal_inconsistency"` (an engine bug worth reporting). `NA` on a
+#'      fit whose \eqn{\hat{k}} WAS computed.
 #'   * `pareto_k_proposal_source` -- how the outer importance proposal the
 #'      \eqn{\hat{k}} scores was built: `"mode_hessian"` from the Laplace
 #'      curvature at the hyperparameter mode (the CCD design's, or a
@@ -536,7 +561,10 @@
 #'      triggered the mode-Hessian recenter-and-refit (gcol33/tulpa#289; see
 #'      the `prior` argument above). `outer_grid_recenter_attempts` (integer)
 #'      and `outer_grid_prior_added` (logical: whether the light default
-#'      PC(U=3, alpha=0.01) sigma prior was applied) are set alongside it.
+#'      PC(U=3, alpha=0.01) sigma prior was applied) are set alongside it, plus
+#'      `outer_grid_prior_declined = "prior_pinned"` when a second attempt ran
+#'      but the caller's pinned `prior_sigma` held that prior back
+#'      (gcol33/tulpa#297).
 #'   * `outer_grid_recenter_declined` -- on a `"fixed"` placement, why the
 #'      recenter did not run: `"grid_not_collapsed"` (the grid already brackets
 #'      the mode -- the common case, no refit needed), `"axis_pinned"` (the
@@ -1343,25 +1371,26 @@ tulpa_nested_laplace_joint <- function(responses,
 # counterpart, `.nlj_multi_inner_skew_at_theta()` (gcol33/tulpa#273).
 .nlj_inner_skew_at_theta <- function(res, kernel_fn, skew_idx = NULL,
                                      compute = TRUE) {
-    res$inner_skew         <- NULL
-    res$inner_skew_idx     <- integer(0)
-    res$inner_skew_dropped <- 0L
+    res <- .inner_skew_decline(res, "not_requested")
     if (!compute) return(res)
 
     modal_theta <- .joint_modal_theta(res)
-    if (is.null(modal_theta)) return(res)
+    if (is.null(modal_theta)) return(.inner_skew_decline(res, "backend_unsupported"))
 
     probe_idx <- skew_idx
     if (is.null(probe_idx)) {
         al <- res$arm_layout
-        if (is.null(al) || is.null(al$beta_start) || is.null(al$p)) return(res)
+        if (is.null(al) || is.null(al$beta_start) || is.null(al$p)) {
+            return(.inner_skew_decline(res, "no_probe_indices"))
+        }
         probe_idx <- unlist(lapply(seq_len(al$n_arms), function(k) {
             if (al$p[k] <= 0L) return(integer(0))
             (al$beta_start[k] + 1L):(al$beta_start[k] + al$p[k])
         }))
     }
     probe_idx <- as.integer(probe_idx)
-    if (length(probe_idx) == 0L) return(res)
+    if (length(probe_idx) == 0L) return(.inner_skew_decline(res, "no_probe_indices"))
+    res <- .inner_skew_decline(res, "solve_failed")
 
     warm     <- .joint_modal_mode(res)
     warm_arg <- if (is.null(warm)) NULL else list(mode = warm)
@@ -1377,11 +1406,10 @@ tulpa_nested_laplace_joint <- function(responses,
                                          skew_idx = probe_idx)),
         error = function(e) NULL)
 
-    if (is.null(out) || is.null(out$inner_skew)) return(res)
-    res$inner_skew         <- as.numeric(out$inner_skew)
-    res$inner_skew_idx     <- as.integer(out$inner_skew_idx)
-    res$inner_skew_dropped <- as.integer(out$inner_skew_dropped %||% 0L)
-    res
+    if (is.null(out) || is.null(out$inner_skew)) {
+        return(.inner_skew_decline(res, "backend_unsupported"))
+    }
+    .inner_skew_attach(res, out)
 }
 
 # Thin wrapper over cpp_nested_laplace_joint_multi that injects the outer-grid

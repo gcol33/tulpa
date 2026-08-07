@@ -856,6 +856,7 @@
     res$pareto_k_is_ess <- NA_real_
     res$pareto_k_scope  <- "outer (hyperparameter) Gaussian proposal"
     res$pareto_k_proposal_source <- NA_character_
+    res$pareto_k_declined <- NA_character_
     # Regime read off stored weights: attached even with the diagnostic off.
     res <- .joint_attach_pareto_k_regime(res)
 
@@ -894,6 +895,7 @@
         # boundary) even though the full diagnostic below never runs. `proposal`
         # (the CCD mode-Hessian, when the CCD grid path built one) is threaded
         # through here too -- it is available independent of `diagnose_k`.
+        res <- .k_attach_declined(res, .k_decline("not_requested"))
         return(.joint_attach_pareto_k_placement(res, solve_fn, proposal = proposal))
     }
 
@@ -908,6 +910,7 @@
     res$pareto_k        <- kd$pareto_k
     res$pareto_k_is_ess <- kd$is_ess
     res$pareto_k_proposal_source <- kd$proposal_source
+    res <- .k_attach_declined(res, kd)
     res$pareto_k_mode_u     <- kd$mode_u
     res$pareto_k_cov_u      <- kd$cov_u
     res$pareto_k_axis_tags  <- kd$axis_tags
@@ -941,25 +944,26 @@
 # single-arm paths.
 .nlj_multi_inner_skew_at_theta <- function(res, call_kernel, arm_names,
                                            skew_idx = NULL, compute = TRUE) {
-    res$inner_skew         <- NULL
-    res$inner_skew_idx     <- integer(0)
-    res$inner_skew_dropped <- 0L
+    res <- .inner_skew_decline(res, "not_requested")
     if (!compute) return(res)
 
     modal_theta <- .joint_modal_theta(res)
-    if (is.null(modal_theta)) return(res)
+    if (is.null(modal_theta)) return(.inner_skew_decline(res, "backend_unsupported"))
 
     probe_idx <- skew_idx
     if (is.null(probe_idx)) {
         al <- res$arm_layout
-        if (is.null(al) || is.null(al$beta_start) || is.null(al$p)) return(res)
+        if (is.null(al) || is.null(al$beta_start) || is.null(al$p)) {
+            return(.inner_skew_decline(res, "no_probe_indices"))
+        }
         probe_idx <- unlist(lapply(seq_len(al$n_arms), function(k) {
             if (al$p[k] <= 0L) return(integer(0))
             (al$beta_start[k] + 1L):(al$beta_start[k] + al$p[k])
         }))
     }
     probe_idx <- as.integer(probe_idx)
-    if (length(probe_idx) == 0L) return(res)
+    if (length(probe_idx) == 0L) return(.inner_skew_decline(res, "no_probe_indices"))
+    res <- .inner_skew_decline(res, "solve_failed")
 
     warm_mode <- .joint_modal_mode(res)
     theta_mat <- matrix(modal_theta, nrow = 1L,
@@ -972,11 +976,10 @@
             compute_skew = TRUE, skew_idx = probe_idx)),
         error = function(e) NULL)
 
-    if (is.null(out) || is.null(out$inner_skew)) return(res)
-    res$inner_skew         <- as.numeric(out$inner_skew)
-    res$inner_skew_idx     <- as.integer(out$inner_skew_idx)
-    res$inner_skew_dropped <- as.integer(out$inner_skew_dropped %||% 0L)
-    res
+    if (is.null(out) || is.null(out$inner_skew)) {
+        return(.inner_skew_decline(res, "backend_unsupported"))
+    }
+    .inner_skew_attach(res, out)
 }
 
 # Main multi-block joint dispatch. Mirrors the structure of the

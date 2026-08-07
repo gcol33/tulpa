@@ -142,6 +142,12 @@ inline Rcpp::List nl_grid_cell_to_result_list(const Rcpp::List& grid, int k) {
         if (grid.containsElementNamed("inner_skew_dropped")) {
             out["inner_skew_dropped"] = grid["inner_skew_dropped"];
         }
+        if (grid.containsElementNamed("inner_skew_declined")) {
+            out["inner_skew_declined"] = grid["inner_skew_declined"];
+        }
+        if (grid.containsElementNamed("inner_skew_arms_declined")) {
+            out["inner_skew_arms_declined"] = grid["inner_skew_arms_declined"];
+        }
     }
     return out;
 }
@@ -850,6 +856,14 @@ inline Rcpp::List run_nested_laplace_grid(
         out["inner_skew"] = res.inner_skew;
         out["inner_skew_idx"] = idx_r;
         out["inner_skew_dropped"] = res.inner_skew_dropped;
+        out["inner_skew_declined"] = res.inner_skew_declined;
+        if (!res.inner_skew_arms_declined.empty()) {
+            Rcpp::IntegerVector arms_r(res.inner_skew_arms_declined.size());
+            for (std::size_t k = 0; k < res.inner_skew_arms_declined.size(); k++) {
+                arms_r[k] = res.inner_skew_arms_declined[k] + 1;
+            }
+            out["inner_skew_arms_declined"] = arms_r;
+        }
         out["inner_skew_cell"] = skew_cell + 1;
     }
     if (prune_active) {

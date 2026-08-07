@@ -917,6 +917,18 @@ plot_energy_base <- function(energy, energy_diff, e_bfmi, status) {
 #'   \item{worst_rhat}{Data frame of parameters with worst Rhat}
 #'   \item{worst_ess}{Data frame of parameters with worst ESS}
 #'   \item{e_bfmi}{E-BFMI value (HMC only)}
+#'   \item{pareto_k, quad_ess}{approximation fits only: the outer PSIS k-hat,
+#'     or the grid quadrature ESS when no k-hat was produced}
+#'   \item{pareto_k_declined}{approximation fits only, and only when there is no
+#'     k-hat: WHY (gcol33/tulpa#295) -- `"not_requested"` and
+#'     `"unguessable_axis: <axis>"` are benign or permanent,
+#'     `"degenerate_proposal"` and `"grid_too_small"` are signals about the fit,
+#'     and `"internal_inconsistency"` is an engine bug and raises the status to
+#'     `"WARN"`}
+#'   \item{inner_skew_max, inner_skew_declined}{approximation fits only: the
+#'     largest scored inner-Laplace `|gamma_3|`, or why nothing was scored
+#'     (gcol33/tulpa#296 -- `"coupled_likelihood"` / `"coupled_arm"` mark a model
+#'     class the inner layer can never score)}
 #'   \item{recommendations}{Character vector of recommendations}
 #' }
 #'
@@ -1076,6 +1088,18 @@ diagnostic_summary <- function(fit, quiet = FALSE) {
           paste(parts, collapse = ", ")))
       }
     } else {
+      # WHY there is no k-hat (gcol33/tulpa#295): "you turned it off", "this
+      # family can never be scored" and "the outer proposal degenerated" all
+      # arrived here as a bare NA before, and the last two are signals worth
+      # acting on. An internal inconsistency is an engine bug, so it WARNs.
+      kdec <- jf$pareto_k_declined
+      knote <- .k_decline_note(kdec)
+      if (!is.null(knote)) {
+        result$pareto_k_declined <- kdec
+        recommendations <- c(recommendations, sprintf(
+          "No outer Pareto k-hat: %s.", knote))
+        if (identical(sub(":.*$", "", kdec), "internal_inconsistency")) status <- "WARN"
+      }
       w <- jf$weights
       if (!is.null(w) && length(w) > 1L && is.finite(sum(w))) {
         result$quad_ess <- sum(w)^2 / sum(w^2)
@@ -1087,6 +1111,26 @@ diagnostic_summary <- function(fit, quiet = FALSE) {
         recommendations <- c(recommendations,
           paste("Approximation fit: Rhat/ESS are not convergence diagnostics here.",
                 "Validate with the debias step (IMH/Gibbs) or coverage/recovery checks."))
+      }
+    }
+
+    # The inner (latent-field) Laplace layer, and why it went unscored when it
+    # did (gcol33/tulpa#296) -- a model class that can never be scored reads
+    # differently from a diagnostic that was switched off.
+    isk <- .tulpa_inner_skew_reliability(fit)
+    if (!is.null(isk)) {
+      if (is.finite(isk$max_abs_gamma3)) {
+        result$inner_skew_max <- isk$max_abs_gamma3
+        if (identical(isk$band, "unreliable")) status <- "WARN"
+        recommendations <- c(recommendations, sprintf(
+          "Inner-Laplace max |gamma_3| = %.2f (%s) over %d scored latents.",
+          isk$max_abs_gamma3, isk$band, isk$n_scored))
+      }
+      inote <- .inner_skew_decline_note(isk$declined, isk$arms_declined)
+      if (!is.null(inote)) {
+        result$inner_skew_declined <- isk$declined
+        recommendations <- c(recommendations,
+                             sprintf("Inner-Laplace gamma_3 not reported: %s.", inote))
       }
     }
 

@@ -210,6 +210,65 @@ test_that("gamma_3 declines to NaN (not 0) for a zero-inflated (multi-process) f
     compute_skew = TRUE, skew_idx = as.integer(1:2)
   )
   expect_true(all(is.finite(fit_nozi$inner_skew)))
+
+  # gcol33/tulpa#296: NaN says only "not computable". The kernel now says WHY,
+  # so a structurally unscorable model class is distinguishable from a fit whose
+  # finite difference merely failed -- or from a disabled knob.
+  expect_identical(fit_zi$inner_skew_declined, "coupled_likelihood")
+  expect_identical(fit_nozi$inner_skew_declined, "")
+})
+
+test_that("the inner-skew decline reason reaches the fit and the diagnostics layer", {
+  # The R-side decline paths, exercised without a fit.
+  d <- tulpa:::.inner_skew_decline(list(), "not_requested")
+  expect_null(d$inner_skew)
+  expect_identical(d$inner_skew_declined, "not_requested")
+  expect_identical(d$inner_skew_arms_declined, integer(0))
+
+  # The kernel's own reason is copied through verbatim, and "" means "scored".
+  a <- tulpa:::.inner_skew_attach(list(), list(inner_skew = c(0.1, NaN),
+                                               inner_skew_idx = c(1L, 2L),
+                                               inner_skew_dropped = 4L,
+                                               inner_skew_declined = "",
+                                               inner_skew_arms_declined = c(2L, 3L)))
+  expect_true(is.na(a$inner_skew_declined))
+  expect_identical(a$inner_skew_arms_declined, c(2L, 3L))
+  expect_identical(a$inner_skew_dropped, 4L)
+
+  # Every reason reads back as a sentence; a structural one is flagged as such.
+  for (r in c("not_requested", "no_probe_indices", "coupled_likelihood",
+              "coupled_arm", "curvature3_unavailable", "no_finite_contribution",
+              "no_oracle", "backend_unsupported", "solve_failed")) {
+    expect_true(is.character(tulpa:::.inner_skew_decline_note(r)))
+  }
+  expect_null(tulpa:::.inner_skew_decline_note(NA_character_))
+  expect_true(tulpa:::.inner_skew_is_structural("coupled_likelihood"))
+  expect_true(tulpa:::.inner_skew_is_structural("coupled_arm"))
+  expect_false(tulpa:::.inner_skew_is_structural("not_requested"))
+  expect_false(tulpa:::.inner_skew_is_structural(NA_character_))
+  # The arms are named when the decline is partial or per-arm.
+  expect_match(tulpa:::.inner_skew_decline_note("coupled_arm", c(1L, 2L)),
+               "arms 1, 2", fixed = TRUE)
+})
+
+test_that("an unscorable inner layer is not reported as a disabled knob", {
+  # The #296 motivating case: a fully coupled model printed as
+  # `control$diagnose_skew = FALSE`, sending readers after a knob they had left
+  # at its default TRUE. The verdict now says the layer is unscorable instead.
+  structural <- tulpa:::.tulpa_combined_reliability(
+    "unreliable", NA_character_, inner_declined = "coupled_likelihood")
+  expect_match(structural, "not assessed")             # the #274 contract
+  expect_match(structural, "unscorable for this model class", fixed = TRUE)
+
+  off <- tulpa:::.tulpa_combined_reliability(
+    "unreliable", NA_character_, inner_declined = "not_requested")
+  expect_match(off, "not assessed")
+  expect_false(grepl("unscorable", off))
+
+  # And symmetrically for a family whose OUTER axis can never be scored.
+  perm <- tulpa:::.tulpa_combined_reliability(
+    NA_character_, "good", outer_declined = "unguessable_axis: rho_car")
+  expect_match(perm, "unscorable for this family", fixed = TRUE)
 })
 
 # --------------------------------------------------------------------------- #

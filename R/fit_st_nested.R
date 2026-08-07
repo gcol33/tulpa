@@ -58,8 +58,20 @@
 #'   mode rails a boundary node (`pareto_k_regime = "collapsed_edge"`, see
 #'   below), the driver fits a mode-Hessian via a derivative-free `optim()`
 #'   over the collapsed grid and refits a grid re-centred on it (one
-#'   attempt). Declines (keeps the fixed-grid fit) when any of the grid
-#'   knobs above was set explicitly -- an explicit choice always wins;
+#'   attempt).
+#'
+#'   A grid knob PINS the axes it shapes, and a pin always wins -- but
+#'   pinning is decided by value, not by presence (gcol33/tulpa#294): a knob
+#'   set to the engine's own default, or marked with [auto_grid()], expresses
+#'   no preference and leaves its axes free. That is what lets a wrapper
+#'   package thread its own `n_grid`-style argument through `control` without
+#'   silently disabling the recenter for every fit it makes. Pinning is also
+#'   per axis: `tau_lower` / `tau_upper` hold the two precision axes,
+#'   `n_grid_spatial` / `n_grid_temporal` one each, and `n_grid_rho` /
+#'   `rho_lower` / `rho_upper` the `ar1` autocorrelation axis, so pinning one
+#'   axis leaves the others free to be recentred. A pinned axis keeps its
+#'   nodes exactly and is named in `outer_grid_pinned_axes`; with EVERY axis
+#'   pinned the recenter declines outright and
 #'   `outer_grid_recenter_declined` records which reason applied.
 #'
 #' @return A `tulpa_fit` (subclass `tulpa_nested_laplace`) carrying the
@@ -71,7 +83,9 @@
 #'   `outer_grid_placement` (`"fixed"` or `"auto_recentered"`) plus, on a
 #'   `"fixed"` placement, `outer_grid_recenter_declined`
 #'   (`"grid_knobs_overridden"` / `"grid_not_collapsed"` /
-#'   `"no_usable_curvature"` / `"refit_failed"`).
+#'   `"no_usable_curvature"` / `"refit_failed"`). A recentred fit also carries
+#'   `outer_grid_pinned_axes`, the axes whose knobs were pinned and whose
+#'   nodes were therefore kept.
 #'
 #' @seealso [tulpa()] (front door), [tulpa_nested_laplace()] (single field).
 #' @examples

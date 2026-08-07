@@ -286,6 +286,8 @@ test_that("tulpa_re_cov_nested reports a Pareto-k-hat without disturbing draws",
   expect_gt(fit$pareto_k_is_ess, 0)
   expect_lte(fit$pareto_k_is_ess, 200 + 1e-6)
   expect_equal(fit$pareto_k_scope, "outer (hyperparameter) Gaussian proposal")
+  # A computed k-hat carries no decline reason (gcol33/tulpa#295).
+  expect_true(is.na(fit$pareto_k_declined))
 
   # diagnose_k must not perturb the fixed-effect draws (RNG state restored).
   off <- tulpa_re_cov_nested(d$y, rep(1L, d$N), d$X, rt, family = "binomial",
@@ -294,6 +296,8 @@ test_that("tulpa_re_cov_nested reports a Pareto-k-hat without disturbing draws",
                              control = list(seed = 11L, diagnose_k = TRUE,
                                             k_samples = 150L))
   expect_true(is.na(off$pareto_k))
+  # The NA says WHY it is NA: nothing is wrong, the caller asked for it off.
+  expect_identical(off$pareto_k_declined, "not_requested")
   expect_equal(off$draws, on$draws)
 })
 

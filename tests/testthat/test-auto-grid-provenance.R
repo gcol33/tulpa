@@ -233,6 +233,77 @@ test_that("the single-block rescue guard honours a pin and passes a default", {
     expect_null(out$res$outer_grid_recenter_declined)
 })
 
+# gcol33/tulpa#297: the second attempt's regularizing PC prior was suppressed by
+# ANY supplied prior_sigma, decided by presence -- so a wrapper stamping a
+# prior_sigma of its own silently turned the escalation into a second geometry
+# recenter while still reporting `attempts = 2`.
+test_that(".nl_prior_sigma_is_pinned reads provenance, not presence", {
+    pinned <- tulpa:::.nl_prior_sigma_is_pinned
+    expect_false(pinned(NULL))
+    # The engine's own default handed back in carries no information a pin adds.
+    expect_false(pinned(tulpa:::.nl_recenter("sigma_pc_prior")))
+    # A caller declaring its own spec a default.
+    expect_false(pinned(auto_grid(list("pc.prec", c(U = 1, alpha = 0.01)))))
+    # A different prior, undeclared: a real choice.
+    expect_true(pinned(list("pc.prec", c(U = 1, alpha = 0.01))))
+    expect_true(pinned(list("half_normal", 2)))
+})
+
+test_that("the second recenter attempt engages the PC prior unless it was PINNED", {
+    stub_res <- list(pareto_k_regime = "collapsed_edge",
+                     pareto_k_grid_edge_axes = "sigma",
+                     pareto_k_grid_edge_sides = "upper",
+                     pareto_k_mode_u = log(3),
+                     pareto_k_cov_u = matrix(0.25, 1, 1),
+                     pareto_k_axis_tags = "log",
+                     pareto_k_axis_names = "sigma",
+                     outer_grid_placement = "fixed")
+    calls <- new.env(parent = emptyenv())
+    # Never leaves collapsed_edge, so the loop runs its full two attempts.
+    refit <- function(prior_i, prior_sigma_i) {
+        calls$last_prior_sigma <- prior_sigma_i
+        stub_res
+    }
+    icar <- list(type = "icar")
+    pc <- tulpa:::.nl_recenter("sigma_pc_prior")
+
+    # No prior at all -> attempt 2 adds the engine's PC prior.
+    out <- tulpa:::.joint_sigma_grid_rescue(stub_res, icar, NULL, refit)
+    expect_identical(out$res$outer_grid_recenter_attempts, 2L)
+    expect_true(out$res$outer_grid_prior_added)
+    expect_equal(calls$last_prior_sigma, pc)
+    expect_null(out$res$outer_grid_prior_declined)
+
+    # A wrapper's own default, declared -> the escalation still engages, and the
+    # engine's prior replaces the declared default.
+    wrapper_default <- auto_grid(list("pc.prec", c(U = 1, alpha = 0.01)))
+    out <- tulpa:::.joint_sigma_grid_rescue(stub_res, icar, wrapper_default, refit)
+    expect_true(out$res$outer_grid_prior_added)
+    expect_equal(calls$last_prior_sigma, pc)
+    expect_null(out$res$outer_grid_prior_declined)
+
+    # A deliberate, undeclared choice -> held, and the suppression is legible
+    # rather than an `attempts = 2` that quietly did the same thing twice.
+    chosen <- list("pc.prec", c(U = 1, alpha = 0.01))
+    out <- tulpa:::.joint_sigma_grid_rescue(stub_res, icar, chosen, refit)
+    expect_identical(out$res$outer_grid_recenter_attempts, 2L)
+    expect_false(out$res$outer_grid_prior_added)
+    expect_identical(out$res$outer_grid_prior_declined, "prior_pinned")
+    expect_equal(calls$last_prior_sigma, chosen)
+})
+
+test_that("auto_grid() marks a prior specification as well as a grid or a knob", {
+    m <- auto_grid(list("pc.prec", c(U = 3, alpha = 0.01)))
+    expect_true(is_auto_grid(m))
+    expect_true(is.list(m))
+    expect_identical(m[[1L]], "pc.prec")
+    # A scalar control knob (fit_st_nested's grid knobs, gcol33/tulpa#294).
+    k <- auto_grid(4L)
+    expect_true(is_auto_grid(k))
+    expect_identical(as.numeric(k), 4)
+    expect_error(auto_grid(list()), "non-empty")
+})
+
 test_that("the multi-block rescue reports a pinned copy-block axis", {
     stub_res <- list(pareto_k_regime = "collapsed_edge",
                      pareto_k_grid_edge_axes = "b1.sigma",

@@ -2,7 +2,7 @@
 % Please edit documentation in R/nested_laplace_auto_grid.R
 \name{is_auto_grid}
 \alias{is_auto_grid}
-\title{Is an outer hyperparameter grid marked as a default?}
+\title{Is an outer-grid setting marked as a default?}
 \usage{
 is_auto_grid(x)
 }
@@ -13,7 +13,7 @@ is_auto_grid(x)
 \code{TRUE} when \code{x} carries the \code{\link[=auto_grid]{auto_grid()}} marker.
 }
 \description{
-Is an outer hyperparameter grid marked as a default?
+Is an outer-grid setting marked as a default?
 }
 \examples{
 is_auto_grid(auto_grid(c(0.5, 1, 2)))

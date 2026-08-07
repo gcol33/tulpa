@@ -64,8 +64,20 @@ when the fitted precision (or, for \code{ar1}, autocorrelation) posterior
 mode rails a boundary node (\code{pareto_k_regime = "collapsed_edge"}, see
 below), the driver fits a mode-Hessian via a derivative-free \code{optim()}
 over the collapsed grid and refits a grid re-centred on it (one
-attempt). Declines (keeps the fixed-grid fit) when any of the grid
-knobs above was set explicitly -- an explicit choice always wins;
+attempt).
+
+A grid knob PINS the axes it shapes, and a pin always wins -- but
+pinning is decided by value, not by presence (gcol33/tulpa#294): a knob
+set to the engine's own default, or marked with \code{\link[=auto_grid]{auto_grid()}}, expresses
+no preference and leaves its axes free. That is what lets a wrapper
+package thread its own \code{n_grid}-style argument through \code{control} without
+silently disabling the recenter for every fit it makes. Pinning is also
+per axis: \code{tau_lower} / \code{tau_upper} hold the two precision axes,
+\code{n_grid_spatial} / \code{n_grid_temporal} one each, and \code{n_grid_rho} /
+\code{rho_lower} / \code{rho_upper} the \code{ar1} autocorrelation axis, so pinning one
+axis leaves the others free to be recentred. A pinned axis keeps its
+nodes exactly and is named in \code{outer_grid_pinned_axes}; with EVERY axis
+pinned the recenter declines outright and
 \code{outer_grid_recenter_declined} records which reason applied.}
 }
 \value{
@@ -78,7 +90,9 @@ fixed-effect posterior (\code{draws} via the grid mixture), \code{spatial_effect
 \code{outer_grid_placement} (\code{"fixed"} or \code{"auto_recentered"}) plus, on a
 \code{"fixed"} placement, \code{outer_grid_recenter_declined}
 (\code{"grid_knobs_overridden"} / \code{"grid_not_collapsed"} /
-\code{"no_usable_curvature"} / \code{"refit_failed"}).
+\code{"no_usable_curvature"} / \code{"refit_failed"}). A recentred fit also carries
+\code{outer_grid_pinned_axes}, the axes whose knobs were pinned and whose
+nodes were therefore kept.
 }
 \description{
 Fits \verb{y ~ X beta + u_spatial[s] + v_temporal[t]} with an areal spatial field

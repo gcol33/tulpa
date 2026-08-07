@@ -1213,9 +1213,11 @@ LaplaceResult spec_inner_solve(
     }
 
     std::function<double(int, double)> curvature3_fn = nullptr;
+    const char* curvature3_declined = nullptr;
     if (compute_skew) {
         curvature3_fn = build_spec_curvature3_fn(spec, response_data, data,
-                                                 layout, params_work);
+                                                 layout, params_work,
+                                                 &curvature3_declined);
     }
 
     return laplace_newton_solve_ll(
@@ -1223,7 +1225,7 @@ LaplaceResult spec_inner_solve(
         compute_eta, scatter_grad_hess, center_effects_fn, compute_log_prior,
         log_lik_fn, scratch, x_init, solver, store_Q, inv_block_layout,
         sparse_override, &feasible_start_coords,
-        compute_skew, skew_probe_idx, curvature3_fn
+        compute_skew, skew_probe_idx, curvature3_fn, curvature3_declined
     );
 }
 

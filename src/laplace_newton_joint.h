@@ -32,6 +32,7 @@
 #include <Rcpp.h>
 #include <algorithm>
 #include <cmath>
+#include <string>
 #include <vector>
 
 #ifdef _OPENMP
@@ -254,18 +255,48 @@ inline double compute_total_log_lik_joint(
 // whatever build_spec_curvature3_fn would return for its (unused) per-obs
 // spec. Every other arm gets build_spec_curvature3_fn(*view.spec, ...), which
 // itself declines (returns empty) for any non-single-process spec.
-inline std::vector<std::function<double(int, double)>> build_joint_curvature3_fns(
+//
+// The REASON each arm declined travels with the oracles (gcol33/tulpa#296):
+// "coupled_arm" for an arm the coupling spec excluded, or whatever
+// build_spec_curvature3_fn reported for the rest. `declined` is the fit-level
+// reason when no arm has an oracle at all -- the single reason when the arms
+// agree on it (a fully coupled model like occu_cover reads "coupled_arm"), or
+// the distinct reasons joined when they do not.
+inline JointCurvature3Oracles build_joint_curvature3_fns(
     const std::vector<ArmSpecView>& views,
     const std::vector<bool>* skip_arm
 ) {
-    std::vector<std::function<double(int, double)>> fns(views.size());
+    JointCurvature3Oracles out;
+    out.fns.resize(views.size());
+    std::vector<std::string> why;
     for (std::size_t k = 0; k < views.size(); k++) {
-        if (skip_arm && k < skip_arm->size() && (*skip_arm)[k]) continue;
+        if (skip_arm && k < skip_arm->size() && (*skip_arm)[k]) {
+            out.arms_declined.push_back(static_cast<int>(k));
+            why.push_back("coupled_arm");
+            continue;
+        }
         const ArmSpecView& v = views[k];
-        fns[k] = build_spec_curvature3_fn(*v.spec, v.response_data, *v.data,
-                                          *v.layout, *v.params);
+        const char* reason = "";
+        out.fns[k] = build_spec_curvature3_fn(*v.spec, v.response_data, *v.data,
+                                              *v.layout, *v.params, &reason);
+        if (!out.fns[k]) {
+            out.arms_declined.push_back(static_cast<int>(k));
+            why.push_back(reason && *reason ? reason : "curvature3_unavailable");
+        }
     }
-    return fns;
+    if (!out.any()) {
+        std::vector<std::string> distinct;
+        for (const std::string& w : why) {
+            if (std::find(distinct.begin(), distinct.end(), w) == distinct.end()) {
+                distinct.push_back(w);
+            }
+        }
+        for (std::size_t i = 0; i < distinct.size(); i++) {
+            if (i) out.declined += ", ";
+            out.declined += distinct[i];
+        }
+    }
+    return out;
 }
 
 // Joint data log-lik as a functor of the per-arm etas, sourced through each
@@ -383,7 +414,7 @@ LaplaceResult laplace_newton_solve_joint_ll(
     // point to probe, not the cosmetically-shifted one.
     bool compute_skew = false,
     const std::vector<int>* skew_probe_idx = nullptr,
-    const std::vector<std::function<double(int, double)>>* curvature3_fns = nullptr
+    const JointCurvature3Oracles* curvature3_fns = nullptr
 ) {
     LaplaceResult result;
     result.mode.assign(n_x, 0.0);
@@ -476,6 +507,8 @@ LaplaceResult laplace_newton_solve_joint_ll(
         result.inner_skew = std::move(sk.gamma3);
         result.inner_skew_idx = *probe;
         result.inner_skew_dropped = sk.n_nonfinite_dropped;
+        result.inner_skew_declined = sk.declined;
+        result.inner_skew_arms_declined = sk.arms_declined;
     }
 
     center_effects_fn(x);

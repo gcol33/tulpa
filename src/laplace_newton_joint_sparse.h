@@ -242,7 +242,7 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
     // s2z rank-1 term is registered) rather than report a wrong gamma_3.
     bool compute_skew = false,
     const std::vector<int>* skew_probe_idx = nullptr,
-    const std::vector<std::function<double(int, double)>>* curvature3_fns = nullptr
+    const JointCurvature3Oracles* curvature3_fns = nullptr
 ) {
     LaplaceResult result;
     result.mode.assign(n_x, 0.0);
@@ -464,6 +464,8 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
         result.inner_skew = std::move(sk.gamma3);
         result.inner_skew_idx = *probe;
         result.inner_skew_dropped = sk.n_nonfinite_dropped;
+        result.inner_skew_declined = sk.declined;
+        result.inner_skew_arms_declined = sk.arms_declined;
     }
 
     { TULPA_PROFILE_PHASE(PHASE_LOG_LIK_PRIOR);
