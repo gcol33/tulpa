@@ -684,3 +684,121 @@ test_that("gamma_3 is exactly zero for a gaussian precomputed-rational SPDE fit"
   expect_true(fit$n_iter > 0)
   expect_equal(fit$inner_skew, c(0, 0))
 })
+
+# --------------------------------------------------------------------------- #
+# (9) The exact-quadrature reference for a GENUINELY COUPLED likelihood        #
+#     (gcol33/tulpa#300).                                                      #
+#                                                                              #
+# `.exact_intercept_skew()` above is the ground truth for the separable scalar #
+# case: integrate the exact posterior on a grid, take its central moments, and #
+# hold gamma_3 against them. Everything it covers is a single separable sum,   #
+# which is the only shape the leading-order Edgeworth term in                  #
+# src/inner_laplace_skew.h is derived for -- a coupled cell has its per-obs    #
+# sum replaced by a CellCouplingSpec term, and the joint kernel declines on it #
+# rather than score the wrong (unused) per-obs likelihood.                     #
+#                                                                              #
+# The same construction is carried up to two dimensions here, over the         #
+# engine's own coupled fixture (the two-arm occupancy mixture registered from  #
+# src/ under "test_occupancy_mixture"): the conditional posterior of           #
+# (beta_occ, beta_det) is integrated directly, with no Laplace approximation   #
+# anywhere, so its marginal skewness is what a coupled cubic term has to       #
+# reproduce.                                                                   #
+#                                                                              #
+# Three things have to hold for that number to be ground truth rather than a   #
+# number: the quadrature has to reproduce the trusted scalar reference, the R  #
+# density has to be the density the compiled spec evaluates, and the grid has  #
+# to be converged. All three are asserted below.                               #
+# --------------------------------------------------------------------------- #
+
+test_that("the 2-D quadrature reproduces the scalar exact-skew reference on a product posterior", {
+  skip_on_cran()
+  # A posterior that separates, log post(a, b) = f(a) + g(b), has marginal-of-a
+  # equal to f's own posterior. Summing b out of the two-dimensional grid must
+  # therefore return what .exact_intercept_skew() returns for f -- the
+  # machinery is checked against the reference it extends, on a case whose
+  # answer is already known.
+  sb <- 100
+  f <- function(eta, N, S) S * eta - N * log1p(exp(eta)) - 0.5 * (eta / sb)^2
+  prod_post <- function(a, b) f(a, 100, 3) + f(b, 200, 60)
+  mode_a <- stats::optimize(f, c(-30, 30), N = 100, S = 3, maximum = TRUE)$maximum
+  mode_b <- stats::optimize(f, c(-30, 30), N = 200, S = 60, maximum = TRUE)$maximum
+
+  q <- coupled_occ_quadrature(prod_post, center = c(mode_a, mode_b),
+                              half = 15, n_grid = 1501L)
+  expect_equal(q$a[["skew"]], .exact_intercept_skew(100, 3), tolerance = 1e-4)
+  expect_equal(q$b[["skew"]], .exact_intercept_skew(200, 60), tolerance = 1e-4)
+})
+
+test_that("the reference density is the density the compiled coupled spec evaluates", {
+  skip_on_cran()
+  # A quadrature of the wrong model is not a reference for anything. The R log
+  # posterior is held against the compiled spec cell by cell, so what follows
+  # integrates exactly what the inner Newton sees.
+  coupled_occ_register()
+  beta_prec <- 0.25
+  d <- coupled_occ_data(seed = 311, n_cells = 100L, n_visits = 4L,
+                        b_occ = 0.2, b_det = -0.5)
+  lp <- coupled_occ_log_post(d, beta_prec)
+  for (ab in list(c(0.0, 0.0), c(0.7, -1.1), c(-1.3, 0.4))) {
+    cell_sum <- sum(vapply(seq_len(d$n_cells), function(cc) {
+      rows <- ((cc - 1L) * d$n_visits + 1L):(cc * d$n_visits)
+      cpp_cell_coupling_evaluate(
+        "test_occupancy_mixture",
+        eta = list(ab[1L], rep(ab[2L], d$n_visits)),
+        y = list(0, d$y_det[rows]),
+        family = c("binomial", "binomial"), phi = c(1, 1))$value
+    }, numeric(1)))
+    penalty <- 0.5 * beta_prec * (ab[1L]^2 + ab[2L]^2)
+    expect_equal(lp(ab[1L], ab[2L]), cell_sum - penalty, tolerance = 1e-10)
+  }
+})
+
+test_that("the coupled fixture has a converged, materially skewed exact posterior", {
+  skip_on_cran()
+  coupled_occ_register()
+  beta_prec <- 0.25
+  d <- coupled_occ_data(seed = 311, n_cells = 100L, n_visits = 4L,
+                        b_occ = 0.2, b_det = -0.5)
+  lp <- coupled_occ_log_post(d, beta_prec)
+  ctr <- stats::optim(c(0, 0), function(v) -lp(v[1L], v[2L]),
+                      method = "BFGS", control = list(reltol = 1e-14))$par
+
+  coarse <- coupled_occ_quadrature(lp, ctr, half = 8,  n_grid = 901L)
+  fine   <- coupled_occ_quadrature(lp, ctr, half = 16, n_grid = 1601L)
+  # Widening the grid and halving the spacing does not move the answer: the
+  # tails are inside the box and the peak is resolved.
+  expect_equal(coarse$a, fine$a, tolerance = 1e-4)
+  expect_equal(coarse$b, fine$b, tolerance = 1e-4)
+
+  # Both coordinates are genuinely skewed, so a coupled cubic term checked
+  # against this has something to be wrong about -- a fixture whose exact
+  # posterior were Gaussian would certify nothing.
+  expect_gt(fine$a[["skew"]], 0.4)
+  expect_lt(fine$b[["skew"]], -0.08)
+  expect_equal(.tulpa_gamma3_band(fine$a[["skew"]]), "ok")
+
+  # The Laplace approximation the engine forms is measurably off here: the
+  # exact posterior mean sits a tenth of a standard deviation up from the mode,
+  # on the side the positive third moment puts it.
+  expect_gt((fine$a[["mean"]] - ctr[1L]) / fine$a[["sd"]], 0.1)
+})
+
+test_that("the joint kernel declines gamma_3 on the coupled fixture rather than scoring it wrong", {
+  skip_on_cran()
+  # Until the coupled cubic term lands (gcol33/tulpa#301) the exact skewness
+  # above has no engine-side counterpart to compare against. What the engine
+  # must NOT do is report a number: every probed index comes back NaN, with the
+  # reason naming the coupled arm.
+  coupled_occ_register()
+  d <- coupled_occ_data(seed = 311, n_cells = 100L, n_visits = 4L,
+                        b_occ = 0.2, b_det = -0.5)
+  fit <- tulpa_nested_laplace_joint(
+    responses = coupled_occ_arms(d, beta_prec = 0.25),
+    prior = coupled_occ_flat_prior(d),
+    cell_coupling = "test_occupancy_mixture",
+    control = list(max_iter = 300L, tol = 1e-12, diagnose_k = FALSE))
+  expect_length(fit$inner_skew, sum(fit$arm_layout$p))
+  expect_true(all(is.nan(fit$inner_skew)))
+  expect_identical(fit$inner_skew_declined, "coupled_arm")
+  expect_true(.inner_skew_is_structural(fit$inner_skew_declined))
+})

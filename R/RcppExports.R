@@ -21,6 +21,10 @@ cpp_flatten_3d_rowmajor <- function(arr, d1, d2, d3) {
     .Call(`_tulpa_cpp_flatten_3d_rowmajor`, arr, d1, d2, d3)
 }
 
+cpp_cell_coupling_evaluate <- function(name, eta, y, family, phi, n_trials = NULL, cell_idx = 0L, grad_only = FALSE) {
+    .Call(`_tulpa_cpp_cell_coupling_evaluate`, name, eta, y, family, phi, n_trials, cell_idx, grad_only)
+}
+
 cpp_cell_coupling_registry_has <- function(name) {
     .Call(`_tulpa_cpp_cell_coupling_registry_has`, name)
 }
@@ -527,6 +531,10 @@ cpp_register_test_separable_bernoulli_coupling <- function() {
 
 cpp_register_test_bivariate_gaussian_coupling <- function(lam00, lam11, lam01) {
     invisible(.Call(`_tulpa_cpp_register_test_bivariate_gaussian_coupling`, lam00, lam11, lam01))
+}
+
+cpp_register_test_occupancy_mixture_coupling <- function() {
+    invisible(.Call(`_tulpa_cpp_register_test_occupancy_mixture_coupling`))
 }
 
 cpp_test_leapfrog <- function(q_init, p_init, epsilon, L) {

@@ -560,6 +560,26 @@ interface does not expose.
 1-based-R-to-0-based-probe conversion. The coupled (non-separable) cubic-term
 derivation (#273 item 2) remains open.
 
+**The engine registers its own coupled likelihood (gcol33/tulpa#300, 0.0.137).**
+`CellCouplingSpec` is virtual-dispatched per cell, but every genuinely
+non-separable instance used to live downstream in tulpaObs, so this repo could
+not reach its own coupled paths. `test_occupancy_mixture`
+(`src/test_cell_coupling_occupancy_mixture.h`, registered by
+`cpp_register_test_occupancy_mixture_coupling()`) is a two-arm occupancy mixture
+carrying one occupancy row and J detection rows per cell: a cell with a
+detection factorises, a cell with none does not, so its cross-arm and
+cross-visit second derivatives are nonzero. It fills both dense cross blocks
+rather than taking the rank-1 self-cross shortcut, so a third-derivative tensor
+has an explicit Hessian to difference. `cpp_cell_coupling_evaluate()`
+(`src/cell_coupling_probe.cpp`) drives ANY registered spec at one cell and hands
+back the value, gradient, negative-Hessian diagonal and every dense cross block,
+allocating buffers by the spec's own `dense_cross_pairs()` exactly as the kernel
+does. The exact two-dimensional quadrature of the fixture's conditional
+posterior lives in `test-inner-skew.R` section 9 (validated against the scalar
+`.exact_intercept_skew()` reference, against the compiled spec cell by cell, and
+for grid convergence); its marginal skewnesses (0.53 / -0.13) are the ground
+truth #301 has to reproduce. Scaffolding: `tests/testthat/helper-coupled-fixture.R`.
+
 **SPDE smoothness is general in `nu`, and `nu > 0` (gcol33/tulpa#279, #280,
 #281, 0.0.122).** `SpdeQBuilder` holds the operator chain `M_0 = C`, `M_1 = G`,
 `M_j = G (C^-1 G)^(j-1)` built by `init(..., alpha)`, and `rebuild(kappa, tau)`

@@ -12,6 +12,7 @@
 #include "cell_coupling_registry.h"
 #include "test_cell_coupling_separable_bernoulli.h"
 #include "test_cell_coupling_bivariate_gaussian.h"
+#include "test_cell_coupling_occupancy_mixture.h"
 
 #include <Rcpp.h>
 #include <memory>
@@ -32,5 +33,13 @@ void cpp_register_test_bivariate_gaussian_coupling(double lam00,
         "test_bivariate_gaussian",
         std::make_shared<tulpa::TestBivariateGaussianCoupling>(
             lam00, lam11, lam01)
+    );
+}
+
+// [[Rcpp::export]]
+void cpp_register_test_occupancy_mixture_coupling() {
+    tulpa::register_cell_coupling(
+        "test_occupancy_mixture",
+        std::make_shared<tulpa::TestOccupancyMixtureCoupling>()
     );
 }

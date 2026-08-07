@@ -85,6 +85,24 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_cell_coupling_evaluate
+Rcpp::List cpp_cell_coupling_evaluate(std::string name, Rcpp::List eta, Rcpp::List y, Rcpp::CharacterVector family, Rcpp::NumericVector phi, Rcpp::Nullable<Rcpp::List> n_trials, int cell_idx, bool grad_only);
+RcppExport SEXP _tulpa_cpp_cell_coupling_evaluate(SEXP nameSEXP, SEXP etaSEXP, SEXP ySEXP, SEXP familySEXP, SEXP phiSEXP, SEXP n_trialsSEXP, SEXP cell_idxSEXP, SEXP grad_onlySEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< std::string >::type name(nameSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type eta(etaSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type y(ySEXP);
+    Rcpp::traits::input_parameter< Rcpp::CharacterVector >::type family(familySEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type n_trials(n_trialsSEXP);
+    Rcpp::traits::input_parameter< int >::type cell_idx(cell_idxSEXP);
+    Rcpp::traits::input_parameter< bool >::type grad_only(grad_onlySEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_cell_coupling_evaluate(name, eta, y, family, phi, n_trials, cell_idx, grad_only));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_cell_coupling_registry_has
 bool cpp_cell_coupling_registry_has(std::string name);
 RcppExport SEXP _tulpa_cpp_cell_coupling_registry_has(SEXP nameSEXP) {
@@ -2573,6 +2591,15 @@ BEGIN_RCPP
     return R_NilValue;
 END_RCPP
 }
+// cpp_register_test_occupancy_mixture_coupling
+void cpp_register_test_occupancy_mixture_coupling();
+RcppExport SEXP _tulpa_cpp_register_test_occupancy_mixture_coupling() {
+BEGIN_RCPP
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    cpp_register_test_occupancy_mixture_coupling();
+    return R_NilValue;
+END_RCPP
+}
 // cpp_test_leapfrog
 List cpp_test_leapfrog(NumericVector q_init, NumericVector p_init, double epsilon, int L);
 RcppExport SEXP _tulpa_cpp_test_leapfrog(SEXP q_initSEXP, SEXP p_initSEXP, SEXP epsilonSEXP, SEXP LSEXP) {
@@ -4028,6 +4055,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_aghq_objective_grad", (DL_FUNC) &_tulpa_cpp_aghq_objective_grad, 6},
     {"_tulpa_cpp_aghq_blups", (DL_FUNC) &_tulpa_cpp_aghq_blups, 4},
     {"_tulpa_cpp_flatten_3d_rowmajor", (DL_FUNC) &_tulpa_cpp_flatten_3d_rowmajor, 4},
+    {"_tulpa_cpp_cell_coupling_evaluate", (DL_FUNC) &_tulpa_cpp_cell_coupling_evaluate, 8},
     {"_tulpa_cpp_cell_coupling_registry_has", (DL_FUNC) &_tulpa_cpp_cell_coupling_registry_has, 1},
     {"_tulpa_cpp_cell_coupling_registry_size", (DL_FUNC) &_tulpa_cpp_cell_coupling_registry_size, 0},
     {"_tulpa_cpp_test_compute_cov", (DL_FUNC) &_tulpa_cpp_test_compute_cov, 4},
@@ -4155,6 +4183,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_test_temporal_grad_equiv", (DL_FUNC) &_tulpa_cpp_test_temporal_grad_equiv, 3},
     {"_tulpa_cpp_register_test_separable_bernoulli_coupling", (DL_FUNC) &_tulpa_cpp_register_test_separable_bernoulli_coupling, 0},
     {"_tulpa_cpp_register_test_bivariate_gaussian_coupling", (DL_FUNC) &_tulpa_cpp_register_test_bivariate_gaussian_coupling, 3},
+    {"_tulpa_cpp_register_test_occupancy_mixture_coupling", (DL_FUNC) &_tulpa_cpp_register_test_occupancy_mixture_coupling, 0},
     {"_tulpa_cpp_test_leapfrog", (DL_FUNC) &_tulpa_cpp_test_leapfrog, 4},
     {"_tulpa_cpp_test_hamiltonian", (DL_FUNC) &_tulpa_cpp_test_hamiltonian, 2},
     {"_tulpa_cpp_test_log_sum_exp", (DL_FUNC) &_tulpa_cpp_test_log_sum_exp, 1},

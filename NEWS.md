@@ -1,5 +1,58 @@
 # tulpa NEWS
 
+## 0.0.137
+
+* **The engine can now test its own coupled likelihood paths** (gcol33/tulpa#300).
+  `CellCouplingSpec` has been virtual-dispatched per cell since the joint driver
+  gained a coupled branch, but every genuinely non-separable implementation lived
+  downstream in tulpaObs, so the cross-arm scatter, the dense-pair allocation and
+  the per-cell derivative contract were only ever exercised by a consumer. A
+  minimal coupled likelihood is now registered here as a test fixture:
+  `test_occupancy_mixture` (`src/test_cell_coupling_occupancy_mixture.h`), a
+  two-arm occupancy mixture whose cell density is
+  `psi prod_v Bern(y_v | p_v) + (1 - psi) 1{no detection}`. A cell with a
+  detection factorises; a cell with none puts the occupancy state and every visit
+  inside one logarithm, so `d^2 log p_cell / d eta_occ d eta_det` and the
+  cross-visit second derivatives are nonzero. It writes both dense cross blocks
+  (`(occ, det)` and the `(det, det)` self block) rather than taking the rank-1
+  self-cross shortcut, so a third-derivative tensor has an explicit Hessian to
+  difference, and it declares those two through `dense_cross_pairs()` while
+  omitting the one-row occupancy self block.
+
+* **`cpp_cell_coupling_evaluate()` exposes what a spec actually writes.** The
+  inner Newton chains each spec's eta-space derivatives through the design and
+  scatters them immediately, so nothing a spec computes was visible from R. This
+  export drives any registered spec at one cell and returns the cell log-density,
+  the per-arm gradient, the per-arm negative-Hessian diagonal and every dense
+  cross block, with the same buffer-allocation policy the kernel applies (pairs
+  read from the spec's own `dense_cross_pairs()`, rank-1 descriptor supplied).
+  It is the surface a finite-difference check of a spec's analytic derivatives
+  runs on.
+
+* **The exact-quadrature ground truth reaches the coupled case.**
+  `test-inner-skew.R` held the separable scalar reference: integrate the exact
+  posterior on a grid and hold `gamma_3` against its central moments. The same
+  construction is now carried to two dimensions over the coupled fixture's
+  intercept-only conditional posterior, with three things asserted rather than
+  assumed -- the two-dimensional quadrature reproduces the trusted scalar
+  reference on a product posterior, the R density agrees cell by cell with what
+  the compiled spec evaluates, and the grid is converged under widening and
+  refinement. The fixture's exact marginal skewness is 0.53 on the occupancy
+  intercept and -0.13 on the detection intercept, so a coupled cubic term
+  (gcol33/tulpa#301) checked against it has something to be wrong about. The
+  joint kernel's current behaviour on it is pinned alongside: every probed index
+  returns NaN with the reason `"coupled_arm"`, never a silently-wrong 0.
+
+* New tests: `tests/testthat/test-cell-coupling-occupancy-mixture.R` (the
+  per-cell contract at tier 1 -- value against the closed form, gradient against
+  a difference of the value, the full cross-arm Hessian against a difference of
+  the gradient, the coupled/factorising branch split, the declared dense pairs,
+  the grad-only path; then at tier 2 an end-to-end joint fit landing on the exact
+  mode of the posterior it claims to solve, a spatial ICAR fit whose cross-arm
+  curvature is measured nonzero at its own fitted mode, and dense-versus-sparse
+  agreement) and four blocks in `tests/testthat/test-inner-skew.R`. Shared
+  scaffolding is in `tests/testthat/helper-coupled-fixture.R`.
+
 ## 0.0.136
 
 * **The joint nested-Laplace grid no longer returns numbers that depend on what
