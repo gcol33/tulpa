@@ -1,5 +1,63 @@
 # tulpa NEWS
 
+## 0.0.142
+
+* **A joint fit reports uncertainty on its fixed effects** (gcol33/tulpa#305).
+  `summary()`, `confint()` and `vcov()` on a `tulpa_nested_laplace_joint()` fit
+  reported the point estimates and `NA` for every standard error and both
+  bounds, on both the single-block and the multi-block path. The grid
+  marginalizer `.nested_fixed_moments()` reads one representation --
+  `$grid_modes` and `$grid_hessians`, the per-cell fixed-effect mode and
+  marginal precision -- and the joint driver stored neither, so a joint fit
+  could not put an interval on any coefficient.
+
+  Both joint drivers now fill that same pair through one shared helper,
+  `.joint_attach_grid_fixed()`, so the two tiers reach the one marginalizer
+  rather than growing a second one. Both joint layouts stack every arm's
+  coefficients as a contiguous prefix of the latent vector, so the extraction
+  is arm-aware by construction: it takes the whole `1:n_fixed` block in one
+  pass and reports each arm's coefficients under its own name. The per-cell
+  block comes from `cpp_joint_inner_vcov_blocks()`, the joint tier's existing
+  per-cell inner-covariance extraction, so the reported covariance is the
+  field-constrained one the fit's own `tulpa_posterior_draws()` mixture is
+  generated from. The reported covariance is the law of total variance over the
+  outer grid and so carries both the within-cell curvature and the between-cell
+  hyperparameter spread.
+
+  Measured against references outside the engine. On the #300 coupled fixture,
+  whose log posterior is written independently in R, the reported covariance
+  matches the inverse numerical Hessian of that density at the mode to 1.4e-09
+  relative. A one-arm joint fit and the single-block fit of the same model --
+  the same data, block and grid -- now agree to 5e-08 on every coefficient and
+  standard error, where the joint side previously produced `NA`; that
+  equivalence is asserted for poisson, binomial and gaussian. Over a
+  multi-cell ICAR grid the mixture matches the independent R implementation of
+  the same law-of-total-covariance (`.joint_mixture_moments()`) to 8e-17, and
+  200000 draws of the fit's own posterior mixture reproduce its standard errors
+  to 0.1%. CI coverage is judged by the existing recovery sweep with the joint
+  fitter substituted rather than by a second harness.
+
+  Retention is `control$keep_grid_hessians` (default `TRUE`), and costs
+  `O(n_fixed^2)` per cell: 860 bytes per cell at `n_fixed = 8`, unchanged as
+  the field grows from `n_x = 408` to `n_x = 6008`, with no measurable fit-time
+  overhead (-0.1% over three paired runs). Reading the block needs the cell
+  precision, which the kernels now keep during the fit and drop again unless
+  `control$store_Q` asked for it; that transient is the existing `store_Q`
+  peak, ~64 bytes per latent per cell, and gcol33/tulpa#307 tracks removing it
+  by extracting the block inside the joint Newton loop.
+
+  Draws, modes, weights, `log_marginal` and the hyperparameter moments are
+  bit-for-bit identical with the retention on and off -- this adds reporting,
+  not inference. Where the retention cannot be trusted it declines with a
+  reason on `$grid_fixed_declined` instead of going quiet: `"not_requested"`
+  when switched off, and `"local_ccd_refined"` when local-CCD refinement
+  rewrote the outer grid after the cells were stored (local-CCD keeps
+  precedence, so no existing fit changes).
+
+* `.nested_fixed_moments()` skips a grid cell that carries no integration
+  weight. A pruned cell with no retained block previously turned the whole
+  marginalized covariance into `NA`.
+
 ## 0.0.141
 
 * **The reliability band is now the debias SELECTOR: exact MCMC runs on only the
@@ -114,11 +172,10 @@
   `$skew_correction` records the per-coefficient `gamma_3`, band and
   eligibility; a `skew_applied` attribute on `summary()` / `confint()` records
   what was used at the requested level. Wired through `tulpa_nested_laplace()`
-  and both `tulpa_nested_laplace_joint()` paths. A joint fit records the
-  correction but does not yet show it: `summary()` / `confint()` there report
-  `NA` bounds because the joint driver retains no per-cell fixed-effect
-  Hessians for the grid-marginalized covariance, which predates this change
-  (gcol33/tulpa#305).
+  and both `tulpa_nested_laplace_joint()` paths. (At this release a joint fit
+  recorded the correction without showing it, because the joint driver retained
+  no per-cell fixed-effect Hessians for the grid-marginalized covariance;
+  gcol33/tulpa#305 supplies them in 0.0.142 and the correction applies there.)
 
   Rue, Martino & Chopin (2009) Sec 3.2.3 fit a skew normal here, under three
   constraints -- mean `gamma^(1)`, variance 1, third log-density derivative at

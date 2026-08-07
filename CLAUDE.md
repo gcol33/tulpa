@@ -642,10 +642,9 @@ leave the expansion's monotone range. `.nl_skew_correction_attach()` records
 the per-coefficient `gamma_3`, band and eligibility on the fit; a
 `skew_applied` attribute on the summary records what was used at that level.
 The correction is post-processing on the reported quantiles, so draws, modes
-and weights are bit-for-bit unchanged either way. A JOINT fit records the
-correction but cannot yet show it: `confint()` there reports `NA` bounds
-because the joint driver retains no per-cell fixed-effect Hessians for
-`.nested_fixed_moments()` (gcol33/tulpa#305, predates this).
+and weights are bit-for-bit unchanged either way. It applies on the JOINT
+paths too since gcol33/tulpa#305 gave them the per-cell fixed-effect retention
+`.nested_fixed_moments()` reads (see below).
 
 NOT a skew normal, on purpose. RMC 2009 Sec 3.2.3 fit one under three
 constraints -- mean `gamma^(1)`, variance 1, third log-density derivative at
@@ -670,6 +669,69 @@ difference inside one standard error. `gamma_3` is a LOWER bound on the true
 skewness, and the correction is skewness-only, so a biased Laplace mode stays
 biased. Tests: `test-inner-skew-correction.R`, plus a paired
 corrected-vs-Gaussian coverage gate in `test-nested-laplace-recovery.R`.
+
+### Per-cell fixed-effect retention on the joint tier (gcol33/tulpa#305)
+
+`.nested_fixed_moments()` (`R/methods_generic.R`) is the ONE grid marginalizer
+behind `summary()` / `confint()` / `vcov()` on every nested tier, and it reads
+ONE representation: `$grid_modes[[k]]` and `$grid_hessians[[k]]`, cell k's
+fixed-effect mode and marginal precision. `tulpa_nested_laplace()` fills that
+pair in `.nl_attach_grid_hessians()`; until 0.0.142 the joint driver filled
+neither, so EVERY `tulpa_nested_laplace_joint()` fit -- single-block and
+multi-block alike -- reported point estimates with `NA` for both bounds and
+every standard error, and #302's skew correction was recorded on such a fit
+but had no quantiles to correct.
+
+Both joint paths now fill the same pair through one shared helper,
+`.joint_attach_grid_fixed()` (`R/nested_laplace_joint_helpers.R`), reached from
+the one exit point `.joint_finalize_grid_fixed()`. Do NOT add a joint-specific
+marginalizer; the whole point is that the two tiers meet at
+`.nested_fixed_moments()`.
+
+Three things make this work and are load-bearing:
+
+- **The fixed block is a contiguous latent prefix.** `.joint_layout()` and
+  `.joint_multi_layout()` both start `beta_start` at 0 and lay the arms out
+  consecutively, so every arm's coefficients together are latent indices
+  `1:n_fixed` -- the same span `.joint_fixed_layout()` names. The extraction is
+  arm-aware because it takes the whole block at once, not because it loops arms.
+- **The block comes from the joint tier's own extraction**,
+  `cpp_joint_inner_vcov_blocks()` (`src/joint_inner_vcov.cpp`), with the field
+  sum-to-zero columns from `.joint_constraint_cols()`. So the reported
+  covariance is the CONSTRAINED one `tulpa_posterior_draws()` samples from; an
+  unconstrained block would disagree with the fit's own draws. The single-block
+  path's `.nl_attach_grid_hessians()` is a separate, unconstrained extraction
+  whose numbers are pinned -- the two are deliberately not merged.
+- **Extraction happens after the grid settles.** Attach is the last step before
+  `.finalize_fit()`, so adaptive refinement and the var-of-means consistency
+  pass (which carry the precision through `.joint_glue_extras_to_res`) have
+  already run. Local-CCD refinement does NOT carry it, so a fit it engaged on
+  drops the cells and declines with `grid_fixed_declined = "local_ccd_refined"`;
+  local-CCD keeps precedence, so no fit that used it changed.
+
+`control$keep_grid_hessians` (default `TRUE`) switches the retention off, and
+`$grid_fixed_declined` always says why a fit has none. Reading the block needs
+the cell precision, so the kernels run with `store_Q` internally and the
+precision is dropped again unless `control$store_Q` asked for it; the kernel
+closure only stores it when `store_extras` is set, which keeps the outer
+Pareto-k batch from allocating hundreds of cells' worth it would discard.
+
+Measured: 860 bytes/cell retained at `n_fixed = 8`, flat as `n_x` goes 408 ->
+6008 (it is `O(n_fixed^2)`, not `O(n_x)`); fit-time overhead -0.1% over paired
+runs. The transient precision is ~64 bytes per latent per cell -- the existing
+`store_Q` peak; gcol33/tulpa#307 tracks removing it via `inv_block_layout` in
+the joint Newton loop, which `laplace_newton.h` already has and
+`laplace_newton_joint.h` does not.
+
+Arbiters, none of them engine code: the inverse numerical Hessian of the #300
+coupled fixture's independently-written R log posterior (1.4e-09 relative); a
+one-arm joint fit against the single-block fit of the same model (5e-08 on
+coefficients and SEs, poisson / binomial / gaussian); the independent R
+law-of-total-covariance `.joint_mixture_moments()` (8e-17); and the fit's own
+posterior draws (0.1% at 200000 draws). Coverage runs through the SAME
+`recov_sweep()` harness with `fit_fn = recov_fit_joint`. Tests:
+`test-nested-laplace-joint-fixed-moments.R` and the joint blocks in
+`test-nested-laplace-recovery.R`.
 
 **The engine registers its own coupled likelihood (gcol33/tulpa#300, 0.0.137).**
 `CellCouplingSpec` is virtual-dispatched per cell, but every genuinely

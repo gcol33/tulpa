@@ -939,6 +939,7 @@
                                   fn_phi = NULL,
                                   max_iter, tol, n_threads,
                                   x_init, verbose, store_Q,
+                                  keep_grid_hessians = TRUE,
                                   n_threads_outer = 1L,
                                   tile_warm = TRUE,
                                   prune_tol = 0.0,
@@ -1287,11 +1288,15 @@
         }
     }
 
+    # The per-cell fixed-effect block is read off the cell precision, so the
+    # kernel keeps it whether or not the caller asked for `store_Q`; it is
+    # dropped again after extraction unless they did.
+    store_Q_eff <- isTRUE(store_Q) || isTRUE(keep_grid_hessians)
     call_kernel_with_tol <- function(tol_prune) {
         call_kernel(
             joint_grid,
             x_init           = x_init,
-            store_Q          = store_Q,
+            store_Q          = store_Q_eff,
             phi_grid_per_arm = phi_grid_per_arm_list,
             n_threads_outer  = n_threads_outer,
             tile_ids         = tile_partition$tile_ids,
@@ -1326,6 +1331,7 @@
     # partition-of-unity design weights so the total integration weight is
     # conserved (no double-count).
     local_ccd_info <- NULL
+    grid_fixed_decline <- NULL
     # Local-CCD refinement changes the outer grid but not the stored per-cell Q
     # (nor the tile partition / phi tensor), so combining it with store_Q would
     # leave a Q that no longer aligns with the refined grid and crash
@@ -1365,6 +1371,16 @@
                 res$modes        <- ref$modes
                 dnode            <- ref$dnode
                 local_ccd_info   <- ref$info
+                # The node solves above re-evaluate the grid without keeping
+                # their precision, so the cells stored earlier no longer
+                # describe the grid that is now integrated. Drop them: the
+                # fixed-effect retention declines with that reason rather than
+                # marginalizing over cells the weights do not belong to.
+                res$Q_csc_p_per_grid <- NULL
+                res$Q_csc_i_per_grid <- NULL
+                res$Q_csc_x_per_grid <- NULL
+                res$Q_csc_n          <- NULL
+                grid_fixed_decline   <- "local_ccd_refined"
             }
         }
         tm$mark("grid")
@@ -1430,12 +1446,22 @@
                                         k_conf_bands = k_conf_bands)
     res <- .nlj_multi_inner_skew_at_theta(res, call_kernel, arm_names,
                                           skew_idx, compute = diagnose_skew)
-    res <- .nl_skew_correction_attach(res, .joint_fixed_layout(responses)$n_fixed,
-                                      skew_correct)
+    fixed <- .joint_fixed_layout(responses)
+    res <- .nl_skew_correction_attach(res, fixed$n_fixed, skew_correct)
     tm$mark("diagnostics")
+    # Per-cell fixed-effect mode + precision for the grid marginalization
+    # (gcol33/tulpa#305). Local-CCD refinement invalidates the stored cells, so
+    # a fit it engaged on records that reason instead.
+    res <- .joint_finalize_grid_fixed(
+        res, fixed$n_fixed,
+        keep_grid_hessians = isTRUE(keep_grid_hessians) &&
+            is.null(grid_fixed_decline),
+        store_Q = store_Q, n_threads = n_threads)
+    if (!is.null(grid_fixed_decline)) {
+        res$grid_fixed_declined <- grid_fixed_decline
+    }
     res$timing <- tm$timing()
     res <- .joint_attach_diagnose_cost(res, diagnose_k, diagnose_draws)
-    fixed <- .joint_fixed_layout(responses)
     .finalize_fit(res, backend = "nested_laplace_joint",
                   n_fixed = fixed$n_fixed, fixed_names = fixed$names,
                   extra_class = c("tulpa_nested_laplace_joint_multi",

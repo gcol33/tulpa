@@ -263,6 +263,12 @@
 #'     `Q_csc_x_per_grid`, `Q_csc_n`, letting callers compute INLA-style
 #'     total-variance posterior moments (`Var-of-means + Mean-of-Var`) on inner
 #'     latent coordinates such as fixed-effect betas.
+#'   * `keep_grid_hessians` (`TRUE`) -- retain the per-grid-point fixed-effect
+#'     mode and marginal precision as `$grid_modes` / `$grid_hessians`, which is
+#'     what lets [summary.tulpa_fit()], [confint.tulpa_fit()] and
+#'     [vcov.tulpa_fit()] report the grid-marginalized fixed-effect covariance
+#'     instead of `NA`. Memory is `O(n_fixed^2)` per cell. When the retention is
+#'     not available the reason is recorded on `$grid_fixed_declined`.
 #'   * `adaptive_grid` (`FALSE`), `adaptive_grid_edge_thresh` (`0.02`),
 #'     `adaptive_grid_max_passes` (`1L`) -- when `adaptive_grid = TRUE`, a
 #'     mode-tracked 1D refinement pass triggers on any axis whose marginal
@@ -896,6 +902,11 @@ tulpa_nested_laplace_joint <- function(responses,
     x_init                    <- control$x_init
     verbose                   <- control$verbose %||% FALSE
     store_Q                   <- control$store_Q %||% FALSE
+    keep_grid_hessians        <- isTRUE(control$keep_grid_hessians %||% TRUE)
+    # The per-cell fixed-effect block is read off the cell precision, so the
+    # kernel must keep it whether or not the caller asked for `store_Q`. The
+    # precision itself is dropped again after extraction unless they did.
+    store_Q_eff               <- isTRUE(store_Q) || keep_grid_hessians
     adaptive_grid             <- control$adaptive_grid %||% FALSE
     adaptive_grid_edge_thresh <- control$adaptive_grid_edge_thresh %||% 0.02
     adaptive_grid_max_passes  <- control$adaptive_grid_max_passes %||% 1L
@@ -1130,6 +1141,7 @@ tulpa_nested_laplace_joint <- function(responses,
             tile_warm = tile_warm,
             prune_tol = prune_tol_eff,
             x_init = x_init, verbose = verbose, store_Q = store_Q,
+            keep_grid_hessians = keep_grid_hessians,
             force_sparse = force_sparse,
             cell_coupling = cell_coupling,
             hessian_pd_mode = hessian_pd_mode,
@@ -1193,7 +1205,7 @@ tulpa_nested_laplace_joint <- function(responses,
 
     call_kernel_with_tol <- function(tol_prune) {
         backend$call_kernel(arms, prior, cp, grids, max_iter, tol,
-                            n_threads, x_init, isTRUE(store_Q),
+                            n_threads, x_init, isTRUE(store_Q_eff),
                             arm_names = arm_names,
                             n_threads_outer = n_threads_outer,
                             tile_warm = tile_warm,
@@ -1254,7 +1266,7 @@ tulpa_nested_laplace_joint <- function(responses,
     # the modes / Q consumers) reads the refined values unchanged.
     specs <- .joint_axis_specs(grids, cp)
     kernel_fn <- .joint_make_kernel_fn(arms, prior, cp, backend, max_iter,
-                                        tol, n_threads, x_init, store_Q,
+                                        tol, n_threads, x_init, store_Q_eff,
                                         arm_names,
                                         cell_coupling = cell_coupling,
                                         hessian_pd_mode = hessian_pd_mode,
@@ -1360,12 +1372,16 @@ tulpa_nested_laplace_joint <- function(responses,
                                          k_conf_bands = k_conf_bands)
     res <- .nlj_inner_skew_at_theta(res, kernel_fn, skew_idx,
                                     compute = diagnose_skew)
-    res <- .nl_skew_correction_attach(res, .joint_fixed_layout(responses)$n_fixed,
-                                      skew_correct)
+    fixed <- .joint_fixed_layout(responses)
+    res <- .nl_skew_correction_attach(res, fixed$n_fixed, skew_correct)
     tm$mark("diagnostics")
+    # Per-cell fixed-effect mode + precision for the grid marginalization
+    # (gcol33/tulpa#305), taken after every refinement pass has settled the grid
+    # so the cells it reads are the cells the weights describe.
+    res <- .joint_finalize_grid_fixed(res, fixed$n_fixed, keep_grid_hessians,
+                                      store_Q, n_threads)
     res$timing <- tm$timing()
     res <- .joint_attach_diagnose_cost(res, diagnose_k, diagnose_draws)
-    fixed <- .joint_fixed_layout(responses)
     .finalize_fit(res, backend = "nested_laplace_joint",
                   n_fixed = fixed$n_fixed, fixed_names = fixed$names,
                   extra_class = c("tulpa_nested_laplace_joint",

@@ -257,6 +257,12 @@ triangle, CSC) as \code{Q_csc_p_per_grid}, \code{Q_csc_i_per_grid},
 \code{Q_csc_x_per_grid}, \code{Q_csc_n}, letting callers compute INLA-style
 total-variance posterior moments (\code{Var-of-means + Mean-of-Var}) on inner
 latent coordinates such as fixed-effect betas.
+\item \code{keep_grid_hessians} (\code{TRUE}) -- retain the per-grid-point fixed-effect
+mode and marginal precision as \verb{$grid_modes} / \verb{$grid_hessians}, which is
+what lets \code{\link[=summary.tulpa_fit]{summary.tulpa_fit()}}, \code{\link[=confint.tulpa_fit]{confint.tulpa_fit()}} and
+\code{\link[=vcov.tulpa_fit]{vcov.tulpa_fit()}} report the grid-marginalized fixed-effect covariance
+instead of \code{NA}. Memory is \code{O(n_fixed^2)} per cell. When the retention is
+not available the reason is recorded on \verb{$grid_fixed_declined}.
 \item \code{adaptive_grid} (\code{FALSE}), \code{adaptive_grid_edge_thresh} (\code{0.02}),
 \code{adaptive_grid_max_passes} (\code{1L}) -- when \code{adaptive_grid = TRUE}, a
 mode-tracked 1D refinement pass triggers on any axis whose marginal

@@ -102,7 +102,8 @@ tulpa_check_control <- function(control, allowed, where) {
                        "checkpoint", progress),
     nested_laplace_joint = c(
       "max_iter", "tol", "n_threads", "n_threads_outer", "n_threads_scatter",
-      "x_init", "verbose", "hessian", "store_Q", "force_sparse",
+      "x_init", "verbose", "hessian", "store_Q", "keep_grid_hessians",
+      "force_sparse",
       "inner_refresh", "integration", "local_ccd", "tile_warm",
       "prune", "prune_tol",
       "adaptive_grid", "adaptive_grid_cutoff", "adaptive_grid_edge_thresh",

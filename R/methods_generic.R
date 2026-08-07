@@ -139,16 +139,29 @@
 # mu_g / V_g are the per-grid fixed-effect mode / covariance retained under
 # keep_grid_hessians (V_g = solve(grid_hessians[[g]])); w_g are the normalized
 # grid weights. NULL when the per-grid pieces were not retained.
+#
+# One marginalizer for every nested tier: `tulpa_nested_laplace()` fills the
+# pair from its own per-cell precision, and both `tulpa_nested_laplace_joint()`
+# paths fill it through `.joint_attach_grid_fixed()` (gcol33/tulpa#305).
+#
+# A cell with zero integration weight contributes nothing to either moment, so
+# it is skipped rather than multiplied in -- a pruned cell that carries no
+# retained block would otherwise turn the whole covariance into NA.
 #' @keywords internal
 .nested_fixed_moments <- function(object) {
   H <- object$grid_hessians
   M <- object$grid_modes
   if (is.null(H) || is.null(M) || is.null(object$weights)) return(NULL)
   w <- object$weights / sum(object$weights)
-  p <- length(M[[1]])
+  if (length(H) != length(w) || length(M) != length(w)) return(NULL)
+  keep <- which(is.finite(w) & w > 0 &
+                  !vapply(H, is.null, logical(1)) &
+                  !vapply(M, is.null, logical(1)))
+  if (!length(keep)) return(NULL)
+  p <- length(M[[keep[1]]])
   m <- numeric(p)
   S <- matrix(0, p, p)
-  for (g in seq_along(w)) {
+  for (g in keep) {
     Vg <- tryCatch(solve(H[[g]]), error = function(e) matrix(NA_real_, p, p))
     mu <- M[[g]]
     m <- m + w[g] * mu

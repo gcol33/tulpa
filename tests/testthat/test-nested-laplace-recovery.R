@@ -59,12 +59,41 @@ beta_post <- function(fit) {
   w  <- fit$weights
   gm <- fit$grid_modes
   gh <- fit$grid_hessians
+  # An empty cell would be dropped by rbind() below and silently shift every
+  # weight onto the wrong component, so require the retention to be complete.
+  stopifnot(length(gm) == length(w), length(gh) == length(w),
+            !any(vapply(gm, is.null, logical(1))),
+            !any(vapply(gh, is.null, logical(1))))
   p  <- length(gm[[1]])
   mu_k  <- do.call(rbind, gm)                                    # K x p modes
   var_k <- t(vapply(gh, function(H) diag(solve(H)), numeric(p))) # K x p variances
   mean  <- as.numeric(crossprod(w, mu_k))
   sd    <- sqrt(pmax(0, as.numeric(crossprod(w, var_k + mu_k^2)) - mean^2))
   list(mean = mean, lo = mean - 1.96 * sd, hi = mean + 1.96 * sd)
+}
+
+# The two fitters the sweep runs. Both describe the SAME model -- one region
+# IID block over the outer RE-SD grid, the same design and response -- so their
+# fixed-effect estimates and intervals are each other's reference.
+recov_fit_single <- function(d, sg, family, cfg) {
+  suppressWarnings(tulpa_nested_laplace(
+    y = d$y, n_trials = rep(cfg$ntr, d$N), X = d$X,
+    prior = list(list(type = "iid", obs_idx = d$region,
+                      n_units = d$nr, sigma_grid = sg)),
+    family = family, phi = cfg$phi,
+    control = list(max_iter = 100L, tol = 1e-8, n_threads = 1L,
+                   keep_grid_hessians = TRUE, skew_correct = TRUE)))
+}
+
+recov_fit_joint <- function(d, sg, family, cfg) {
+  suppressWarnings(tulpa_nested_laplace_joint(
+    responses = list(a = list(y = as.numeric(d$y),
+                              n_trials = rep(cfg$ntr, d$N), X = d$X,
+                              family = family, phi = cfg$phi)),
+    prior = list(list(type = "iid", obs_idx = list(d$region),
+                      n_units = d$nr, sigma_grid = sg)),
+    control = list(max_iter = 100L, tol = 1e-8, n_threads = 1L,
+                   diagnose_k = FALSE, skew_correct = TRUE)))
 }
 
 # Fit n_seed data sets for one family; return per-coefficient mean estimate,
@@ -77,7 +106,12 @@ beta_post <- function(fit) {
 # the solve produced -- so that comparison is paired and carries no fit-to-fit
 # noise. `beta_post` above is untouched and remains what the coverage gates
 # below judge.
-recov_sweep <- function(family, cfg, n_seed, seed_off) {
+#
+# `fit_fn(d, sg, family, cfg)` is the fitter under test. It defaults to the
+# single-block nested driver; `recov_fit_joint` below fits the SAME simulated
+# data as a one-arm joint model, so the joint tier's fixed-effect intervals are
+# judged by this one harness rather than a second copy of it (gcol33/tulpa#305).
+recov_sweep <- function(family, cfg, n_seed, seed_off, fit_fn = recov_fit_single) {
   beta <- cfg$beta
   p    <- length(beta)
   sg   <- exp(seq(log(0.2), log(1.5), length.out = 7))
@@ -91,13 +125,7 @@ recov_sweep <- function(family, cfg, n_seed, seed_off) {
   for (s in seq_len(n_seed)) {
     d <- sim_re(seed_off + s, family, cfg$nr, cfg$spr, cfg$ntr,
                 beta, cfg$su, cfg$phi)
-    prior <- list(list(type = "iid", obs_idx = d$region,
-                       n_units = d$nr, sigma_grid = sg))
-    f <- suppressWarnings(tulpa_nested_laplace(
-      y = d$y, n_trials = rep(cfg$ntr, d$N), X = d$X,
-      prior = prior, family = family, phi = cfg$phi,
-      control = list(max_iter = 100L, tol = 1e-8, n_threads = 1L,
-                     keep_grid_hessians = TRUE, skew_correct = TRUE)))
+    f <- fit_fn(d, sg, family, cfg)
     bp <- beta_post(f)
     est[s, ] <- bp$mean
     for (j in seq_len(p)) {
@@ -247,4 +275,61 @@ test_that("the correction leaves a near-symmetric family's coverage where it was
   Rp <- recov_sweep("poisson", CFG[["poisson"]], n_seed = 12L, seed_off = 2000L)
   expect_lt(max(abs(Rp$gamma3)), 0.1)
   expect_lte(max(abs(Rp$cov_skew - Rp$cov_gauss)), 1L)
+})
+
+# --- the joint tier's fixed-effect intervals (gcol33/tulpa#305) --------------
+#
+# Until #305 a joint fit reported NA for every standard error and both bounds,
+# so nothing below could be asked of it. The two tests here are the recovery
+# standard applied to what it now reports.
+#
+# The reference is exact rather than approximate: a one-arm joint fit and the
+# single-block fit describe the same model, so their marginalized fixed-effect
+# posteriors are the same posterior and any disagreement beyond the inner-solve
+# tolerance is a defect in one of them.
+
+test_that("a one-arm joint fit reproduces the single-block fixed-effect posterior", {
+  skip_on_cran()
+  for (fam in c("poisson", "binomial", "gaussian")) {
+    cfg <- CFG[[fam]]
+    d  <- sim_re(4100L, fam, cfg$nr, cfg$spr, cfg$ntr, cfg$beta, cfg$su, cfg$phi)
+    sg <- exp(seq(log(0.2), log(1.5), length.out = 7))
+    fs <- recov_fit_single(d, sg, fam, cfg)
+    fj <- recov_fit_joint(d, sg, fam, cfg)
+
+    expect_true(is.na(fj$grid_fixed_declined))
+    # The joint tier reports real uncertainty at all -- the #305 defect.
+    expect_true(all(is.finite(summary(fj)$std.error)))
+    expect_true(all(is.finite(confint(fj))))
+
+    # Unnamed: the joint tier prefixes each coefficient with its arm name, the
+    # single-block tier uses the design column names. Same numbers, and the
+    # numbers are what the two tiers owe each other.
+    expect_equal(unname(coef(fj)), unname(coef(fs)), tolerance = 1e-5,
+                 label = sprintf("%s joint vs single coef", fam))
+    expect_equal(unname(summary(fj)$std.error), unname(summary(fs)$std.error),
+                 tolerance = 1e-5,
+                 label = sprintf("%s joint vs single SE", fam))
+    expect_equal(unname(vcov(fj)), unname(vcov(fs)), tolerance = 1e-5,
+                 label = sprintf("%s joint vs single vcov", fam))
+  }
+})
+
+test_that("joint fixed-effect intervals cover at the nominal rate", {
+  skip_if_not_slow()
+  # The same sweep, the same simulated data and the same coverage rule the
+  # single-block gate above runs under, with the joint fitter substituted.
+  n_seed <- 20L
+  for (fam in c("poisson", "binomial")) {
+    Rj <- recov_sweep(fam, CFG[[fam]], n_seed = n_seed, seed_off = 4200L,
+                      fit_fn = recov_fit_joint)
+    expect_lt(max(abs(Rj$bias)), 0.12,
+              label = sprintf("%s joint max |beta bias|", fam))
+    # Per-coefficient floor at the same 70% the pooled single-block gate uses
+    # as its loose per-cell criterion; the mean below is the stable statistic.
+    expect_gte(min(Rj$cov / n_seed), 0.70,
+               label = sprintf("%s joint per-coefficient coverage", fam))
+    expect_gte(mean(Rj$cov / n_seed), 0.85,
+               label = sprintf("%s joint mean coverage", fam))
+  }
 })
