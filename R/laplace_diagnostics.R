@@ -86,8 +86,8 @@
     n_scored         = n_scored,
     n_probed         = length(gamma3),
     n_dropped        = as.integer(n_dropped),
-    share_moderate   = mean(ag >= 0.5),
-    share_unreliable = mean(ag >= 1.0)
+    share_moderate   = mean(ag >= .nl_diag("gamma3_ok")),
+    share_unreliable = mean(ag >= .nl_diag("gamma3_unreliable"))
   )
 }
 

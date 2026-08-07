@@ -265,4 +265,19 @@ test_that("the reported Pareto-k threshold is read, never restated", {
         }
     }
     expect_identical(offenders, character(0))
+
+    # The gamma_3 bands: a comparison of a skewness magnitude against the
+    # literal band edges. `.tulpa_inner_skew_summary()` restated both after
+    # `.tulpa_gamma3_band()` was already reading them.
+    offenders <- character(0)
+    for (f in files) {
+        code <- readLines(f, warn = FALSE)
+        code <- code[!grepl("^\\s*#|^#'", code)]
+        hits <- grep("\\b(ag|abs_gamma3|gamma3|g)\\s*(<|<=|>|>=)\\s*(0\\.5|1\\.0)\\b",
+                     code, value = TRUE)
+        if (length(hits)) {
+            offenders <- c(offenders, paste0(basename(f), ": ", trimws(hits)))
+        }
+    }
+    expect_identical(offenders, character(0))
 })
