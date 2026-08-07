@@ -903,10 +903,6 @@ tulpa_nested_laplace_joint <- function(responses,
     verbose                   <- control$verbose %||% FALSE
     store_Q                   <- control$store_Q %||% FALSE
     keep_grid_hessians        <- isTRUE(control$keep_grid_hessians %||% TRUE)
-    # The per-cell fixed-effect block is read off the cell precision, so the
-    # kernel must keep it whether or not the caller asked for `store_Q`. The
-    # precision itself is dropped again after extraction unless they did.
-    store_Q_eff               <- isTRUE(store_Q) || keep_grid_hessians
     adaptive_grid             <- control$adaptive_grid %||% FALSE
     adaptive_grid_edge_thresh <- control$adaptive_grid_edge_thresh %||% 0.02
     adaptive_grid_max_passes  <- control$adaptive_grid_max_passes %||% 1L
@@ -1201,11 +1197,24 @@ tulpa_nested_laplace_joint <- function(responses,
         lay <- if (is.function(backend$layout)) backend$layout(arms, prior)
         if (is.list(lay)) lay$n_x else NULL
     })
+    # Per-cell fixed-effect covariance retention (gcol33/tulpa#305). The block
+    # size and the field sum-to-zero groups follow from the latent layout, which
+    # is fixed before the first solve, so the request goes in with the kernel
+    # call and each cell's block is extracted inside that cell's own solve
+    # (gcol33/tulpa#307) rather than off a grid-wide store of every precision.
+    fb_layout <- if (is.function(backend$layout)) backend$layout(arms, prior)
+                 else NULL
+    fixed_block_p <- if (isTRUE(keep_grid_hessians))
+        as.integer(.joint_fixed_layout(responses)$n_fixed) else 0L
+    fixed_block_constraints <- if (is.list(fb_layout))
+        .joint_constraint_cols(fb_layout, fb_layout$n_x) else list()
     tm$mark("setup")
 
     call_kernel_with_tol <- function(tol_prune) {
         backend$call_kernel(arms, prior, cp, grids, max_iter, tol,
-                            n_threads, x_init, isTRUE(store_Q_eff),
+                            n_threads, x_init, isTRUE(store_Q),
+                            fixed_block_p = fixed_block_p,
+                            fixed_block_constraints = fixed_block_constraints,
                             arm_names = arm_names,
                             n_threads_outer = n_threads_outer,
                             tile_warm = tile_warm,
@@ -1266,8 +1275,11 @@ tulpa_nested_laplace_joint <- function(responses,
     # the modes / Q consumers) reads the refined values unchanged.
     specs <- .joint_axis_specs(grids, cp)
     kernel_fn <- .joint_make_kernel_fn(arms, prior, cp, backend, max_iter,
-                                        tol, n_threads, x_init, store_Q_eff,
+                                        tol, n_threads, x_init, store_Q,
                                         arm_names,
+                                        fixed_block_p = fixed_block_p,
+                                        fixed_block_constraints =
+                                            fixed_block_constraints,
                                         cell_coupling = cell_coupling,
                                         hessian_pd_mode = hessian_pd_mode,
                                         step_curvature_mode = step_curvature_mode,
@@ -1378,8 +1390,7 @@ tulpa_nested_laplace_joint <- function(responses,
     # Per-cell fixed-effect mode + precision for the grid marginalization
     # (gcol33/tulpa#305), taken after every refinement pass has settled the grid
     # so the cells it reads are the cells the weights describe.
-    res <- .joint_finalize_grid_fixed(res, fixed$n_fixed, keep_grid_hessians,
-                                      store_Q, n_threads)
+    res <- .joint_finalize_grid_fixed(res, fixed$n_fixed, keep_grid_hessians)
     res$timing <- tm$timing()
     res <- .joint_attach_diagnose_cost(res, diagnose_k, diagnose_draws)
     .finalize_fit(res, backend = "nested_laplace_joint",

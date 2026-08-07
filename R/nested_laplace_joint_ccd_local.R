@@ -149,21 +149,25 @@
 #   latent_axes  character: the latent axis column names to refine over.
 #   tags         named character per latent axis ("log"/"logit01"/"identity"),
 #                or NULL to DECLINE (an unguessable-support axis, e.g. rho_car).
-#   eval_nodes   function(theta_mat, warm) -> list(log_marginal, modes): evaluate
-#                the inner marginal (hyperprior baked in) at new node rows
+#   eval_nodes   function(theta_mat, warm) -> list(log_marginal, modes,
+#                cov_blocks): evaluate the inner marginal at new node rows
 #                (full-coordinate matrix, colnames = colnames(joint_grid)), warm-
 #                started from `warm` (the refined cell's inner mode, or NULL).
 #   max_cells    cap on refined cells (hard cap on extra solve fan-out).
 #   f0           CCD factorial-corner radius per whitened axis (INLA default 1.1).
 #   verbose      announce the refinement summary.
+#   cov_blocks   length-n list of per-cell fixed-effect covariance blocks, or
+#                NULL. Carried cell-for-cell exactly like `modes`, so a refined
+#                grid keeps the retention aligned with the weights it is
+#                integrated against (gcol33/tulpa#307) instead of declining.
 #
-# Returns list(joint_grid, log_marginal, modes, dnode, info) with the refined
-# cells replaced by their node clouds, or NULL when refinement declines (NULL
-# tags, no candidate peaked cells, or a degenerate layout).
+# Returns list(joint_grid, log_marginal, modes, cov_blocks, dnode, info) with the
+# refined cells replaced by their node clouds, or NULL when refinement declines
+# (NULL tags, no candidate peaked cells, or a degenerate layout).
 .joint_local_ccd_refine <- function(joint_grid, log_marginal, modes = NULL,
                                      dnode = NULL, latent_axes, tags,
                                      eval_nodes, max_cells = 8L, f0 = 1.1,
-                                     verbose = FALSE) {
+                                     verbose = FALSE, cov_blocks = NULL) {
     if (is.null(tags)) return(NULL)
     latent_cols <- match(latent_axes, colnames(joint_grid))
     if (anyNA(latent_cols)) return(NULL)
@@ -209,9 +213,11 @@
     delta_centre <- delta[is_centre][1L]
 
     n_x <- if (is.matrix(modes)) ncol(modes) else 0L
+    have_cov <- is.list(cov_blocks) && length(cov_blocks) == n
     new_grid_blocks <- list()
     new_lm_blocks   <- list()
     new_mode_blocks <- list()
+    new_cov_blocks  <- list()
     new_dn_blocks   <- list()
     n_nodes_added   <- 0L
 
@@ -258,6 +264,13 @@
             mode_blk <- rbind(modes[c, , drop = FALSE], mode_off)
             new_mode_blocks[[length(new_mode_blocks) + 1L]] <- mode_blk
         }
+        if (have_cov) {
+            cov_off <- if (is.list(ev$cov_blocks) &&
+                           length(ev$cov_blocks) == nrow(theta_nodes))
+                ev$cov_blocks else vector("list", nrow(theta_nodes))
+            new_cov_blocks[[length(new_cov_blocks) + 1L]] <-
+                c(cov_blocks[c], cov_off)
+        }
         new_grid_blocks[[length(new_grid_blocks) + 1L]] <- grid_blk
         new_lm_blocks[[length(new_lm_blocks) + 1L]]     <- lm_blk
         new_dn_blocks[[length(new_dn_blocks) + 1L]]     <- dn_blk
@@ -272,6 +285,8 @@
     out_dn   <- c(dn_w[keep], unlist(new_dn_blocks, use.names = FALSE))
     out_modes <- if (n_x > 0L)
         rbind(modes[keep, , drop = FALSE], do.call(rbind, new_mode_blocks)) else NULL
+    out_cov <- if (have_cov)
+        c(cov_blocks[keep], unlist(new_cov_blocks, recursive = FALSE)) else NULL
 
     if (isTRUE(verbose)) {
         message(sprintf(
@@ -282,6 +297,7 @@
     list(joint_grid   = out_grid,
          log_marginal = out_lm,
          modes        = out_modes,
+         cov_blocks   = out_cov,
          dnode        = out_dn,
          info         = list(n_cells_refined = length(chosen),
                              n_nodes_added   = n_nodes_added,

@@ -549,7 +549,9 @@
                                   arm_names, cell_coupling = "separable",
                                   hessian_pd_mode = 0L,
                                   step_curvature_mode = 0L,
-                                  inner_refresh = 1L) {
+                                  inner_refresh = 1L,
+                                  fixed_block_p = 0L,
+                                  fixed_block_constraints = NULL) {
     function(new_cells, warm_start = NULL, store_extras = FALSE,
              max_iter_override = NULL, n_threads_outer = 1L,
              inner_refresh_override = NULL, tol_override = NULL,
@@ -582,14 +584,18 @@
         # each warm-started from the broadcast modal mode. Tiling is left off:
         # the IS batch is not a per-axis alpha lattice, so there is no tile
         # structure for the three-tier warm-start to exploit.
-        # The precision leaves this closure only inside `extras`, so a call that
-        # asks for no extras never needs it stored. That keeps the outer
-        # Pareto-k batch -- hundreds of cells, `store_extras` off -- from
-        # allocating a per-cell precision it would immediately discard.
+        # Both the precision and the per-cell fixed-effect block leave this
+        # closure only inside `extras`, so a call that asks for no extras
+        # requests neither. That keeps the outer Pareto-k batch -- hundreds of
+        # cells, `store_extras` off -- from paying for either.
         res_x <- backend$call_kernel(arms, prior, cp, new_grids,
                                       mi, tl, n_threads,
                                       slice_x_init,
                                       isTRUE(store_Q) && isTRUE(store_extras),
+                                      fixed_block_p = if (isTRUE(store_extras))
+                                          as.integer(fixed_block_p) else 0L,
+                                      fixed_block_constraints =
+                                          fixed_block_constraints,
                                       arm_names = arm_names,
                                       n_threads_outer = as.integer(n_threads_outer),
                                       tile_warm = FALSE,
@@ -609,6 +615,7 @@
             Qp <- res_x$Q_csc_p_per_grid
             Qi <- res_x$Q_csc_i_per_grid
             Qx <- res_x$Q_csc_x_per_grid
+            CB <- res_x$cov_block_per_grid
             for (k in seq_len(n)) {
                 e <- list()
                 if (!is.null(modes_mat))  e$mode   <- as.numeric(modes_mat[k, ])
@@ -616,6 +623,7 @@
                 if (!is.null(Qp))         e$Q_csc_p <- Qp[[k]]
                 if (!is.null(Qi))         e$Q_csc_i <- Qi[[k]]
                 if (!is.null(Qx))         e$Q_csc_x <- Qx[[k]]
+                if (!is.null(CB))         e$cov_block <- CB[[k]]
                 extras[[k]] <- e
             }
         }
@@ -644,6 +652,7 @@
     Qp <- res$Q_csc_p_per_grid
     Qi <- res$Q_csc_i_per_grid
     Qx <- res$Q_csc_x_per_grid
+    CB <- res$cov_block_per_grid
     lapply(seq_len(n), function(k) {
         e <- list()
         if (!is.null(modes_mat))  e$mode   <- as.numeric(modes_mat[k, ])
@@ -651,6 +660,7 @@
         if (!is.null(Qp))         e$Q_csc_p <- Qp[[k]]
         if (!is.null(Qi))         e$Q_csc_i <- Qi[[k]]
         if (!is.null(Qx))         e$Q_csc_x <- Qx[[k]]
+        if (!is.null(CB))         e$cov_block <- CB[[k]]
         e
     })
 }
@@ -682,6 +692,9 @@
         res$Q_csc_i_per_grid <- lapply(extras, `[[`, "Q_csc_i")
         res$Q_csc_x_per_grid <- lapply(extras, `[[`, "Q_csc_x")
     }
+    if (!is.null(extras[[1L]]$cov_block)) {
+        res$cov_block_per_grid <- lapply(extras, `[[`, "cov_block")
+    }
     res
 }
 
@@ -702,19 +715,17 @@
 # `beta_start` at 0 and run the arms consecutively), so the fixed-effect block is
 # latent indices `1:n_fixed` -- the same span `.joint_fixed_layout()` names.
 #
-# The per-cell block itself comes from `cpp_joint_inner_vcov_blocks()`, the
-# joint tier's existing per-cell inner-covariance extraction (parallel over
-# cells, one factorization each, reused rather than re-derived). It applies the
-# field sum-to-zero constraint through `.joint_constraint_cols()`, so the
-# covariance reported here is the constrained one the fit's own posterior draws
-# are generated from, not an unconstrained block that would disagree with them.
-#
-# Memory is O(n_fixed^2) per cell -- the fixed-effect block only, never a
-# retained copy of the field precision.
+# The per-cell block arrives on `$cov_block_per_grid`, extracted by the inner
+# Newton loop inside each cell's own solve (gcol33/tulpa#307) through the same
+# `extract_inner_vcov_block_cell()` the R-level `cpp_joint_inner_vcov_blocks()`
+# drives, so the block is the constrained covariance the fit's own posterior
+# draws are generated from -- the field sum-to-zero groups go in with the kernel
+# call. Nothing here holds a precision: the whole grid's worth of them is never
+# resident, and what the fit carries home is O(n_fixed^2) per cell.
 #
 # A decline is recorded on `$grid_fixed_declined` rather than left as an absent
 # field, so a fit that reports NA intervals says why it does.
-.joint_attach_grid_fixed <- function(res, n_fixed, n_threads = 1L) {
+.joint_attach_grid_fixed <- function(res, n_fixed) {
     decline <- function(reason) {
         res$grid_modes <- NULL
         res$grid_hessians <- NULL
@@ -724,40 +735,26 @@
     p <- as.integer(n_fixed %||% 0L)
     if (length(p) != 1L || is.na(p) || p < 1L) return(decline("no_fixed_effects"))
 
-    Qp  <- res$Q_csc_p_per_grid
-    Qi  <- res$Q_csc_i_per_grid
-    Qx  <- res$Q_csc_x_per_grid
-    n_x <- res$Q_csc_n
-    if (is.null(Qp) || is.null(Qi) || is.null(Qx) || is.null(n_x)) {
-        return(decline("precision_not_stored"))
-    }
-    n_x <- as.integer(n_x)
-    if (p > n_x) return(decline("fixed_block_exceeds_latent"))
+    V <- res$cov_block_per_grid
+    if (is.null(V)) return(decline("block_not_extracted"))
 
     modes <- res$modes
     w     <- res$weights
-    n_grid <- length(Qp)
+    n_grid <- length(V)
     # Every per-cell array must describe the SAME grid. A refinement pass that
-    # rewrote the grid without carrying the precision along would otherwise be
+    # rewrote the grid without carrying the blocks along would otherwise be
     # marginalized against stale cells.
     if (!is.matrix(modes) || nrow(modes) != n_grid || ncol(modes) < p ||
         is.null(w) || length(w) != n_grid) {
         return(decline("grid_misaligned"))
     }
 
-    V <- tryCatch(
-        cpp_joint_inner_vcov_blocks(
-            Qp, Qi, Qx, n_x = n_x, idx = seq_len(p), n_dense = p,
-            A_cols_list = .joint_constraint_cols(res$arm_layout, n_x),
-            field_marginal = FALSE, n_threads = as.integer(n_threads)),
-        error = function(e) NULL)
-    if (is.null(V) || length(V) != n_grid) return(decline("extraction_failed"))
-
     grid_hessians <- vector("list", n_grid)
     grid_modes    <- vector("list", n_grid)
     for (k in seq_len(n_grid)) {
-        Hk <- if (is.null(V[[k]])) NULL else
-            tryCatch(solve(V[[k]]), error = function(e) NULL)
+        Vk <- V[[k]]
+        ok <- is.matrix(Vk) && nrow(Vk) == p && ncol(Vk) == p
+        Hk <- if (!ok) NULL else tryCatch(solve(Vk), error = function(e) NULL)
         # A cell carrying no usable block is fatal only if it carries weight;
         # a zero-weight cell contributes nothing and is left empty for
         # `.nested_fixed_moments()` to skip.
@@ -776,25 +773,17 @@
 }
 
 # The one place either joint driver settles what it retains for the fixed-effect
-# marginalization: extract the per-cell block (unless the caller switched the
-# retention off), then drop the cell precision again unless `store_Q` asked for
-# it. `store_Q` is the caller's own knob here, never the effective one the
-# kernels ran with, so a fit that did not request the precision does not carry
-# a copy of it home.
-.joint_finalize_grid_fixed <- function(res, n_fixed, keep_grid_hessians,
-                                       store_Q, n_threads = 1L) {
+# marginalization. The per-cell blocks are already on the result; this turns
+# them into the `$grid_modes` / `$grid_hessians` pair the marginalizer reads,
+# and drops the raw blocks afterwards.
+.joint_finalize_grid_fixed <- function(res, n_fixed, keep_grid_hessians) {
     res <- if (isTRUE(keep_grid_hessians)) {
-        .joint_attach_grid_fixed(res, n_fixed, n_threads = n_threads)
+        .joint_attach_grid_fixed(res, n_fixed)
     } else {
         res$grid_fixed_declined <- "not_requested"
         res
     }
-    if (!isTRUE(store_Q)) {
-        res$Q_csc_p_per_grid <- NULL
-        res$Q_csc_i_per_grid <- NULL
-        res$Q_csc_x_per_grid <- NULL
-        res$Q_csc_n          <- NULL
-    }
+    res$cov_block_per_grid <- NULL
     res
 }
 

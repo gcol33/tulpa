@@ -59,6 +59,38 @@ bool extract_inner_vcov_block_cell(
     std::vector<double>& out_block
 );
 
+// The joint tier's per-cell fixed-effect retention (gcol33/tulpa#305), asked for
+// on the inner Newton loop itself rather than off a grid-wide store of every
+// cell's precision (gcol33/tulpa#307).
+//
+// `p` is the leading latent block -- both joint layouts stack every arm's
+// coefficients as a contiguous prefix, so the fixed effects are latent indices
+// [0, p). `A_cols` are the field sum-to-zero groups (0-based), so the block is
+// the CONSTRAINED covariance the fit's own posterior draws are generated from;
+// leave it empty for an unconstrained fit.
+struct JointFixedBlockRequest {
+    int p = 0;
+    std::vector<std::vector<int>> A_cols;
+    bool active() const { return p > 0; }
+};
+
+// Extract the request's block from one cell's lower-triangle CSC and append it
+// to (`flat_out`, `sizes_out`) in the LaplaceResult re_cov contract. The CSC is
+// the caller's working Hessian, alive only for this cell, so the whole grid's
+// precision is never resident. `solver` is the caller's own CHOLMOD context (one
+// per thread; it is reset here, so it must NOT be the loop's live factor).
+//
+// Identical by construction to what cpp_joint_inner_vcov_blocks() returns for
+// the same cell at `idx = 1:p`, `n_dense = p`, `field_marginal = FALSE`: same
+// bytes in, same routine.
+bool extract_joint_fixed_block(
+    const int* Qp, const int* Qi, const double* Qx, int n_x, int nnz,
+    const JointFixedBlockRequest& req,
+    SparseCholeskySolver& solver,
+    std::vector<double>& flat_out,
+    std::vector<int>& sizes_out
+);
+
 } // namespace tulpa
 
 #endif // TULPA_JOINT_INNER_VCOV_H

@@ -1380,8 +1380,33 @@ Rcpp::List cpp_nested_laplace_joint_multi(
     std::string         checkpoint_path = "",
     Rcpp::Nullable<Rcpp::NumericMatrix> x_init_per_cell = R_NilValue,
     bool                compute_skew = false,
-    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
+    int                 fixed_block_p = 0,
+    Rcpp::Nullable<Rcpp::List> fixed_block_constraints = R_NilValue
 ) {
+    // Per-cell fixed-effect covariance retention (gcol33/tulpa#305), extracted
+    // inside each cell's own solve (gcol33/tulpa#307). `fixed_block_p` is the
+    // leading latent block size; zero extracts nothing.
+    // `fixed_block_constraints` is a list of 1-based latent index vectors, one
+    // per field sum-to-zero group, so the retained block is the constrained
+    // covariance the fit's own posterior draws are generated from.
+    tulpa::JointFixedBlockRequest fixed_block_req;
+    if (fixed_block_p > 0) {
+        fixed_block_req.p = fixed_block_p;
+        if (fixed_block_constraints.isNotNull()) {
+            Rcpp::List ac(fixed_block_constraints);
+            fixed_block_req.A_cols.resize(ac.size());
+            for (int g = 0; g < ac.size(); g++) {
+                Rcpp::IntegerVector col = ac[g];
+                fixed_block_req.A_cols[g].reserve(col.size());
+                for (int e = 0; e < col.size(); e++)
+                    fixed_block_req.A_cols[g].push_back(col[e] - 1);
+            }
+        }
+    }
+    const tulpa::JointFixedBlockRequest* fixed_block_ptr =
+        fixed_block_req.active() ? &fixed_block_req : nullptr;
+
     int n_arms = arms_list.size();
     int B = blocks_spec.size();
     if (axis_offsets.size() != B + 1) {
@@ -1614,7 +1639,8 @@ Rcpp::List cpp_nested_laplace_joint_multi(
         gp.get(),
         ckpt.get(),
         x_init_per_cell_vec,
-        compute_skew, skew_idx_ptr
+        compute_skew, skew_idx_ptr,
+        fixed_block_ptr
     );
     out["theta_grid"]   = theta_grid;
     out["axis_offsets"] = axis_offsets;
@@ -2009,7 +2035,8 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
     GridCheckpoint*                  checkpoint,
     const std::vector<double>&       x_init_per_cell,
     bool                             compute_skew,
-    const std::vector<int>*          skew_probe_idx) {
+    const std::vector<int>*          skew_probe_idx,
+    const JointFixedBlockRequest*    fixed_block) {
     const int n_arms = static_cast<int>(arms.size());
     if (static_cast<int>(parsed.size()) != n_arms) {
         Rcpp::stop("parsed and arms vectors must have the same length.");
@@ -2076,7 +2103,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
             cell_coupling_spec, coupled_arms, cell_rows, n_cells, pd_mode,
             step_curvature, hessian_refresh, n_threads_outer, progress,
             checkpoint, x_init_per_cell,
-            compute_skew, skew_probe_idx
+            compute_skew, skew_probe_idx, fixed_block
         );
     }
 
@@ -2093,8 +2120,12 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
     // serial outer grid costs little; the inner per-observation eta reduction
     // still parallelises across n.threads.
     int n_outer = 1;
+    // The fixed-effect block extraction (gcol33/tulpa#307) needs its own
+    // CHOLMOD context per outer slot; build it here, single-threaded, and only
+    // when the driver was asked for a block.
+    const bool want_fixed_block = fixed_block && fixed_block->active();
     std::vector<NewtonScratchJoint> scratch_pool(n_outer);
-    for (auto& s : scratch_pool) s.allocate(n_x, arms);
+    for (auto& s : scratch_pool) s.allocate(n_x, arms, want_fixed_block);
 
     // Resolve each arm to a spec view ONCE for the whole grid: built-in family
     // arms materialize a builtin_family_spec + response, model-supplied arms
@@ -2337,7 +2368,8 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
             joint_ll, scratch, prev_mode, shared_solver,
             store_Q,
             compute_skew && !is_cheap, skew_probe_idx,
-            (compute_skew && !is_cheap) ? &skew_curvature3_fns : nullptr
+            (compute_skew && !is_cheap) ? &skew_curvature3_fns : nullptr,
+            is_cheap ? nullptr : fixed_block
         );
     };
 
@@ -2368,6 +2400,8 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
     std::vector<SparseCholeskySolver> cheap_solvers(n_cheap_workers);
     std::vector<NewtonScratchJoint> cheap_scratches(n_cheap_workers);
     for (auto& cs : cheap_scratches) cs.allocate(n_x, arms);
+    // The cheap screen only ranks cells; it never contributes a retained
+    // block, so its scratches carry no extraction context.
     auto cheap_eval = [&](int k_grid,
                           const std::vector<double>& warm,
                           int n_steps, int worker) -> LaplaceResult {
@@ -2417,7 +2451,8 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
     GridCheckpoint*                  checkpoint,
     const std::vector<double>&       x_init_per_cell,
     bool                             compute_skew,
-    const std::vector<int>*          skew_probe_idx
+    const std::vector<int>*          skew_probe_idx,
+    const JointFixedBlockRequest*    fixed_block
 ) {
     const int n_arms = static_cast<int>(arms.size());
     const int B      = static_cast<int>(blocks.size());
@@ -2567,8 +2602,9 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
           idx_caches[t].cache_H_ptr = static_cast<const void*>(&H_builders[t]);
       } }
 
+    const bool want_fixed_block = fixed_block && fixed_block->active();
     std::vector<NewtonScratchJointSparse> scratches(n_outer);
-    for (auto& s : scratches) s.allocate(n_x, arms);
+    for (auto& s : scratches) s.allocate(n_x, arms, want_fixed_block);
 
     // Per-thread arm specs, built in place: JointArmSpecs is self-referential
     // (its views point at the owner's own storage and members), so it cannot be
@@ -2859,7 +2895,8 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
             joint_ll, H_use, sc, prev_mode, shared_solver, store_Q, pd_mode,
             refresh_use,
             want_skew, skew_probe_idx,
-            want_skew ? &skew_curvature3_fns_pool[slot] : nullptr
+            want_skew ? &skew_curvature3_fns_pool[slot] : nullptr,
+            use_cheap_scratch ? nullptr : fixed_block
         );
     };
 

@@ -734,11 +734,14 @@
 .joint_multi_call_factory <- function(arms, cp, blocks_spec, axis_offsets, B,
                                       n_threads, force_sparse, cell_coupling,
                                       hessian_pd_mode, step_curvature_mode,
-                                      max_iter, tol, inner_refresh) {
+                                      max_iter, tol, inner_refresh,
+                                      fixed_block_p = 0L,
+                                      fixed_block_constraints = NULL) {
     force(arms); force(cp); force(blocks_spec); force(axis_offsets); force(B)
     force(n_threads); force(force_sparse); force(cell_coupling)
     force(hessian_pd_mode); force(step_curvature_mode)
     force(max_iter); force(tol); force(inner_refresh)
+    force(fixed_block_p); force(fixed_block_constraints)
 
     function(theta_mat,
              x_init           = NULL,
@@ -753,7 +756,13 @@
              tol_             = NULL,
              inner_refresh_   = NULL,
              compute_skew     = FALSE,
-             skew_idx         = NULL) {
+             skew_idx         = NULL,
+             # Per-cell fixed-effect covariance retention (gcol33/tulpa#307).
+             # Off by default so the mode-find, the Pareto-k re-solve batch and
+             # the skew probe -- none of which contribute an integrated cell --
+             # never pay for it; the grid solve and the local-CCD node solves
+             # switch it on.
+             fixed_block      = FALSE) {
         .cpp_joint_multi(
             arms_list           = arms,
             copy_arms           = as.integer(cp$copy_arms_zero),
@@ -779,7 +788,10 @@
             inner_refresh       = as.integer(inner_refresh_ %||% inner_refresh),
             x_init_per_cell     = x_init_per_cell,
             compute_skew        = isTRUE(compute_skew),
-            skew_idx            = skew_idx)
+            skew_idx            = skew_idx,
+            fixed_block_p       = if (isTRUE(fixed_block))
+                                      as.integer(fixed_block_p) else 0L,
+            fixed_block_constraints = fixed_block_constraints)
     }
 }
 
@@ -1010,13 +1022,26 @@
         .joint_multi_layout(arms, prepared)$n_x
     })
 
+    # Per-cell fixed-effect covariance retention (gcol33/tulpa#305). Both the
+    # block size and the field sum-to-zero groups are fixed by the latent layout,
+    # which is known before the first solve, so the request is built here and the
+    # kernel extracts each cell's block inside that cell's own solve
+    # (gcol33/tulpa#307) instead of the grid keeping every precision.
+    fixed_layout <- .joint_fixed_layout(responses)
+    fb_layout    <- .joint_multi_layout(arms, prepared)
+    fixed_block_p <- if (isTRUE(keep_grid_hessians))
+        as.integer(fixed_layout$n_fixed) else 0L
+    fixed_block_constraints <- .joint_constraint_cols(fb_layout, fb_layout$n_x)
+
     call_kernel <- .joint_multi_call_factory(
         arms = arms, cp = cp, blocks_spec = blocks_spec,
         axis_offsets = axis_offsets, B = B, n_threads = n_threads,
         force_sparse = force_sparse, cell_coupling = cell_coupling,
         hessian_pd_mode = hessian_pd_mode,
         step_curvature_mode = step_curvature_mode,
-        max_iter = max_iter, tol = tol, inner_refresh = inner_refresh)
+        max_iter = max_iter, tol = tol, inner_refresh = inner_refresh,
+        fixed_block_p = fixed_block_p,
+        fixed_block_constraints = fixed_block_constraints)
 
     # Per-latent-axis fine grid values (sorted unique), shared by the CCD and the
     # adaptive-lattice integrators to place / locate the outer nodes.
@@ -1288,15 +1313,12 @@
         }
     }
 
-    # The per-cell fixed-effect block is read off the cell precision, so the
-    # kernel keeps it whether or not the caller asked for `store_Q`; it is
-    # dropped again after extraction unless they did.
-    store_Q_eff <- isTRUE(store_Q) || isTRUE(keep_grid_hessians)
     call_kernel_with_tol <- function(tol_prune) {
         call_kernel(
             joint_grid,
             x_init           = x_init,
-            store_Q          = store_Q_eff,
+            store_Q          = store_Q,
+            fixed_block      = TRUE,
             phi_grid_per_arm = phi_grid_per_arm_list,
             n_threads_outer  = n_threads_outer,
             tile_ids         = tile_partition$tile_ids,
@@ -1331,7 +1353,6 @@
     # partition-of-unity design weights so the total integration weight is
     # conserved (no double-count).
     local_ccd_info <- NULL
-    grid_fixed_decline <- NULL
     # Local-CCD refinement changes the outer grid but not the stored per-cell Q
     # (nor the tile partition / phi tensor), so combining it with store_Q would
     # leave a Q that no longer aligns with the refined grid and crash
@@ -1354,15 +1375,18 @@
                     as.numeric(warm) else x_init
                 r <- .joint_with_quiet_opts(call_kernel(
                     theta_mat, x_init = xi,
+                    fixed_block = (fixed_block_p > 0L),
                     n_threads_outer = n_threads_outer))
                 list(log_marginal = .joint_multi_add_hp(
                          r$log_marginal, theta_mat, axis_offsets, B,
                          fn_sigma, fn_alpha, fn_phi),
-                     modes = if (is.matrix(r$modes)) r$modes else NULL)
+                     modes = if (is.matrix(r$modes)) r$modes else NULL,
+                     cov_blocks = r$cov_block_per_grid)
             }
             ref <- .joint_local_ccd_refine(
                 joint_grid = joint_grid, log_marginal = res$log_marginal,
-                modes = res$modes, dnode = dnode, latent_axes = axis_names,
+                modes = res$modes, cov_blocks = res$cov_block_per_grid,
+                dnode = dnode, latent_axes = axis_names,
                 tags = tags_lc, eval_nodes = eval_nodes,
                 max_cells = lc_max_cells, f0 = lc_f0, verbose = verbose)
             if (!is.null(ref)) {
@@ -1371,16 +1395,12 @@
                 res$modes        <- ref$modes
                 dnode            <- ref$dnode
                 local_ccd_info   <- ref$info
-                # The node solves above re-evaluate the grid without keeping
-                # their precision, so the cells stored earlier no longer
-                # describe the grid that is now integrated. Drop them: the
-                # fixed-effect retention declines with that reason rather than
-                # marginalizing over cells the weights do not belong to.
-                res$Q_csc_p_per_grid <- NULL
-                res$Q_csc_i_per_grid <- NULL
-                res$Q_csc_x_per_grid <- NULL
-                res$Q_csc_n          <- NULL
-                grid_fixed_decline   <- "local_ccd_refined"
+                # The node solves carry their own fixed-effect block, so the
+                # refined grid keeps the retention aligned with the weights it
+                # is integrated against (gcol33/tulpa#307). The per-cell
+                # precision is not carried, which is why refinement engages only
+                # when store_Q is off -- the gate above.
+                res$cov_block_per_grid <- ref$cov_blocks
             }
         }
         tm$mark("grid")
@@ -1452,14 +1472,7 @@
     # Per-cell fixed-effect mode + precision for the grid marginalization
     # (gcol33/tulpa#305). Local-CCD refinement invalidates the stored cells, so
     # a fit it engaged on records that reason instead.
-    res <- .joint_finalize_grid_fixed(
-        res, fixed$n_fixed,
-        keep_grid_hessians = isTRUE(keep_grid_hessians) &&
-            is.null(grid_fixed_decline),
-        store_Q = store_Q, n_threads = n_threads)
-    if (!is.null(grid_fixed_decline)) {
-        res$grid_fixed_declined <- grid_fixed_decline
-    }
+    res <- .joint_finalize_grid_fixed(res, fixed$n_fixed, keep_grid_hessians)
     res$timing <- tm$timing()
     res <- .joint_attach_diagnose_cost(res, diagnose_k, diagnose_draws)
     .finalize_fit(res, backend = "nested_laplace_joint",

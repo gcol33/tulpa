@@ -4,7 +4,7 @@
 // See joint_inner_vcov.h.
 
 #include "joint_inner_vcov.h"
-#include "linalg_fast.h"        // small-dense Cholesky for the k_constr M-solve
+#include "inv_block_extract.h"  // InvBlockConstraint, extract_inv_diag_blocks
 #include "sparse_cholesky.h"
 #include <Rcpp.h>
 #include <algorithm>
@@ -90,7 +90,6 @@ bool extract_inner_vcov_block_cell(
     if (n_dense < 0) n_dense = 0;
     if (n_dense > p) n_dense = p;
     const int n_field = p - n_dense;
-    const int kc = static_cast<int>(A_cols.size());
 
     if (!factorize_cell(solver, Qp, Qi, Qx, n_x, nnz)) return false;
 
@@ -107,24 +106,15 @@ bool extract_inner_vcov_block_cell(
         C_cols[t] = v;
     }
 
-    // Constraint columns W = C A' (one solve per sum-to-zero group), then
-    // M = A C A' = A_t' W (k_constr x k_constr, SPD).
-    std::vector<std::vector<double>> W_cols(kc);
-    std::vector<double> M(static_cast<std::size_t>(kc) * kc, 0.0);
-    for (int g = 0; g < kc; g++) {
-        std::fill(e.begin(), e.end(), 0.0);
-        for (int latent : A_cols[g]) if (latent >= 0 && latent < n_x) e[latent] = 1.0;
-        solver.solve(e.data(), v.data(), n_x);
-        W_cols[g] = v;
-    }
-    for (int g1 = 0; g1 < kc; g1++) {
-        for (int g2 = 0; g2 < kc; g2++) {
-            double s = 0.0;
-            for (int latent : A_cols[g1])
-                if (latent >= 0 && latent < n_x) s += W_cols[g2][latent];
-            M[static_cast<std::size_t>(g1) * kc + g2] = s;
-        }
-    }
+    // Constraint columns W = C A' (one solve per sum-to-zero group) and the
+    // Cholesky of M = A C A'. Shared with the Newton-loop extraction and with
+    // laplace_newton.h's diagonal-block path through inv_block_extract.h, so
+    // the conditioning-by-kriging algebra is written once.
+    auto solve_cell = [&](const double* rhs, double* out) {
+        solver.solve(rhs, out, n_x);
+    };
+    InvBlockConstraint constr;
+    constr.build(solve_cell, n_x, A_cols);
 
     // Field marginal variances via one Takahashi selected-inversion pass (only
     // needed in the cheap recipe; full mode reads field diagonals off C_cols).
@@ -135,30 +125,13 @@ bool extract_inner_vcov_block_cell(
     }
 
     // Constraint correction corr(a,b) = G_a' M^{-1} G_b, G_a = W[idx0[a], :].
-    // Precompute y_a = M^{-1} G_a for every idx position touched (a <- chol(M)).
-    std::vector<double> yvec;
-    if (kc > 0) {
-        std::vector<double> Lm(static_cast<std::size_t>(kc) * kc, 0.0);
-        // M not PD (degenerate constraint) -> leave yvec empty (skip the
-        // correction) rather than emit a wrong block.
-        if (tulpa_linalg::chol_factor_lower<tulpa_linalg::TriLayout::RowMajor>(
-                M.data(), Lm.data(), kc, kc, /*jitter=*/-1.0)) {
-            yvec.assign(static_cast<std::size_t>(p) * kc, 0.0);
-            std::vector<double> g_a(kc), tmp(kc), y_a(kc);
-            for (int a = 0; a < p; a++) {
-                for (int g = 0; g < kc; g++) g_a[g] = W_cols[g][idx0[a]];
-                tulpa_linalg::tri_solve_lower<
-                    tulpa_linalg::TriLayout::RowMajor>(Lm.data(), kc, kc,
-                                                       g_a.data(), tmp.data());
-                tulpa_linalg::tri_solve_lower_transpose<
-                    tulpa_linalg::TriLayout::RowMajor>(Lm.data(), kc, kc,
-                                                       tmp.data(), y_a.data());
-                for (int g = 0; g < kc; g++)
-                    yvec[static_cast<std::size_t>(a) * kc + g] = y_a[g];
-            }
-        }
+    // Precompute y_a = M^{-1} G_a for every idx position touched.
+    std::vector<std::vector<double>> yvec;
+    if (constr.usable) {
+        yvec.resize(p);
+        for (int a = 0; a < p; a++) constr.solve_y(idx0[a], yvec[a]);
     }
-    const bool have_corr = (kc > 0) && !yvec.empty();
+    const bool have_corr = constr.usable;
 
     // Assemble the constrained block (lower triangle + mirror). field x field
     // off-diagonal in the cheap recipe stays 0.
@@ -176,18 +149,42 @@ bool extract_inner_vcov_block_cell(
                 else             { solved_col = a; row_lat = idx0[b]; }
                 cval = C_cols[solved_col][row_lat];
             }
-            double corr = 0.0;
-            if (have_corr) {
-                const double* yb = &yvec[static_cast<std::size_t>(b) * kc];
-                for (int g = 0; g < kc; g++)
-                    corr += W_cols[g][idx0[a]] * yb[g];
-            }
+            const double corr =
+                have_corr ? constr.correction(idx0[a], yvec[b]) : 0.0;
             const double val = cval - corr;
             out_block[static_cast<std::size_t>(a) + static_cast<std::size_t>(b) * p] = val;
             out_block[static_cast<std::size_t>(b) + static_cast<std::size_t>(a) * p] = val;
         }
     }
     return true;
+}
+
+bool extract_joint_fixed_block(
+    const int* Qp, const int* Qi, const double* Qx, int n_x, int nnz,
+    const JointFixedBlockRequest& req,
+    SparseCholeskySolver& solver,
+    std::vector<double>& flat_out,
+    std::vector<int>& sizes_out
+) {
+    const int p = req.p;
+    if (p <= 0 || p > n_x || nnz <= 0) return false;
+    if (!factorize_cell(solver, Qp, Qi, Qx, n_x, nnz)) return false;
+
+    auto solve_cell = [&](const double* rhs, double* out) {
+        solver.solve(rhs, out, n_x);
+    };
+    InvBlockConstraint constr;
+    constr.build(solve_cell, n_x, req.A_cols);
+
+    const std::size_t before = sizes_out.size();
+    // MirrorLower + the leading (0, p) range reproduce
+    // extract_inner_vcov_block_cell's own assembly for idx = [0, p),
+    // n_dense = p, field_marginal = false, entry for entry.
+    extract_inv_diag_blocks(solve_cell, n_x,
+                            std::vector<std::pair<int, int>>{{0, p}},
+                            &constr, InvBlockSymmetry::MirrorLower,
+                            flat_out, sizes_out);
+    return sizes_out.size() > before;
 }
 
 } // namespace tulpa

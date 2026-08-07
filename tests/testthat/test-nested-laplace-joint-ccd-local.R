@@ -227,3 +227,44 @@ test_that("local CCD carries inner modes through the splice", {
   expect_equal(ncol(out$modes), n_x)
   expect_false(anyNA(out$modes))
 })
+
+test_that("local CCD keeps the fixed-effect retention aligned with the refined grid", {
+  skip_on_cran()
+  sim  <- .lccd_sim_joint()
+  ctrl <- list(max_iter = 60L, tol = 1e-6, diagnose_k = FALSE,
+               var_of_means_consistency = FALSE, integration = "grid")
+  fitl <- suppressWarnings(tulpa_nested_laplace_joint(
+    sim$responses, sim$prior, copy = sim$copy,
+    control = c(ctrl, list(local_ccd = list(max_cells = 4L)))))
+
+  expect_false(is.null(fitl$local_ccd_info))
+  # The node solves carry their own block, so the refined grid reports instead
+  # of declining "local_ccd_refined" (gcol33/tulpa#307).
+  expect_true(is.na(fitl$grid_fixed_declined))
+  expect_length(fitl$grid_hessians, length(fitl$weights))
+  expect_length(fitl$grid_modes,    length(fitl$weights))
+  for (k in seq_along(fitl$weights)) {
+    expect_identical(dim(fitl$grid_hessians[[k]]),
+                     c(fitl$n_fixed, fitl$n_fixed))
+  }
+  expect_true(all(is.finite(vcov(fitl))))
+  expect_true(all(is.finite(confint(fitl))))
+})
+
+test_that("local CCD splices per-cell covariance blocks alongside the modes", {
+  mu <- c(0.5, 0.5); s <- c(0.3, 0.3)
+  gd <- .lccd_grid(list(a = c(-1, 0.5, 2), b = c(-1, 0.5, 2)), mu, s)
+  n  <- nrow(gd$grid)
+  blocks <- lapply(seq_len(n), function(k) diag(k, 2L))
+  eval_with_blocks <- function(theta_mat, warm) {
+    list(log_marginal = .lccd_true_lm(theta_mat, mu, s), modes = NULL,
+         cov_blocks = replicate(nrow(theta_mat), diag(-1, 2L), simplify = FALSE))
+  }
+  out <- tulpa:::.joint_local_ccd_refine(
+    gd$grid, gd$lm, modes = NULL, dnode = NULL,
+    latent_axes = c("a", "b"), tags = c(a = "identity", b = "identity"),
+    eval_nodes = eval_with_blocks, max_cells = 4L, cov_blocks = blocks)
+  expect_false(is.null(out))
+  expect_length(out$cov_blocks, nrow(out$joint_grid))
+  expect_true(all(vapply(out$cov_blocks, is.matrix, logical(1))))
+})

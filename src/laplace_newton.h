@@ -12,6 +12,7 @@
 #include "inner_laplace_is.h"           // compute_inner_is_curve
 #include "subspace_debias.h"            // compute_subspace_debias
 #include "inner_laplace_skew.h"         // compute_inner_skew_gamma3
+#include "inv_block_extract.h"          // extract_inv_diag_blocks
 #include "sparse_cholesky.h"
 #include <Rcpp.h>
 #include <algorithm>
@@ -218,35 +219,19 @@ LaplaceResult laplace_newton_solve_ll(
     // symmetrized and stored column-major.
     if (inv_block_layout && !inv_block_layout->empty()) {
         bool used_sparse_factor = use_sparse && sparse_solver.factored();
-        std::vector<double> rhs(n_x, 0.0), col(n_x, 0.0);
         std::vector<double> z_work;
         if (!used_sparse_factor) z_work.assign(n_x, 0.0);
-
-        for (const auto& blk : *inv_block_layout) {
-            int s = blk.first, m = blk.second;
-            std::vector<double> block(static_cast<std::size_t>(m) * m, 0.0);
-
-            for (int c = 0; c < m; c++) {
-                std::fill(rhs.begin(), rhs.end(), 0.0);
-                rhs[s + c] = 1.0;
-                if (used_sparse_factor) {
-                    sparse_solver.solve(rhs.data(), col.data(), n_x);
-                } else {
-                    chol_substitute_raw(scratch.chol.L.data(), n_x,
-                                        rhs.data(), col.data(), z_work.data());
-                }
-                for (int r = 0; r < m; r++) block[r * m + c] = col[s + r];
+        auto solve_live = [&](const double* rhs, double* out) {
+            if (used_sparse_factor) {
+                sparse_solver.solve(rhs, out, n_x);
+            } else {
+                chol_substitute_raw(scratch.chol.L.data(), n_x, rhs, out,
+                                    z_work.data());
             }
-
-            // Symmetrize (numerical asymmetry only) and append column-major.
-            for (int cc = 0; cc < m; cc++) {
-                for (int r = 0; r < m; r++) {
-                    result.re_cov_flat.push_back(
-                        0.5 * (block[r * m + cc] + block[cc * m + r]));
-                }
-            }
-            result.re_cov_block_sizes.push_back(m);
-        }
+        };
+        extract_inv_diag_blocks(solve_live, n_x, *inv_block_layout,
+                                /*constr=*/nullptr, InvBlockSymmetry::Average,
+                                result.re_cov_flat, result.re_cov_block_sizes);
     }
 
     double log_lik = log_lik_fn(scratch.eta);

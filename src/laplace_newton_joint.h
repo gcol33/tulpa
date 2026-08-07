@@ -29,10 +29,12 @@
 #include "laplace_spec_curvature3.h" // build_spec_curvature3_oracle (inner-skew diagnostic)
 #include "inner_laplace_is.h"        // compute_inner_is_curve
 #include "inner_laplace_skew.h"      // compute_inner_skew_gamma3_joint
+#include "joint_inner_vcov.h"        // JointFixedBlockRequest, extract_joint_fixed_block
 #include "sparse_cholesky.h"
 #include <Rcpp.h>
 #include <algorithm>
 #include <cmath>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -372,7 +374,19 @@ struct NewtonScratchJoint {
     DenseVec  delta;             // size n_x, zeroed per iter
     DenseCholeskyScratch chol;   // raw L/z buffers for dense fallback
 
-    void allocate(int n_x, const std::vector<JointArm>& arms) {
+    // CHOLMOD context for the per-cell fixed-effect block extraction
+    // (gcol33/tulpa#307). Separate from the loop's own solver: the extraction
+    // resets and re-analyzes, which would throw away the pattern cache the
+    // Newton iterations rely on. Built here, single-threaded, only when the
+    // driver asked for the block -- one CHOLMOD common per outer thread, never
+    // one per grid cell.
+    std::unique_ptr<SparseCholeskySolver> extract_solver;
+
+    void allocate(int n_x, const std::vector<JointArm>& arms,
+                  bool want_fixed_block = false) {
+        if (want_fixed_block && !extract_solver) {
+            extract_solver.reset(new SparseCholeskySolver());
+        }
         x       = Rcpp::NumericVector(n_x, 0.0);
         x_try   = Rcpp::NumericVector(n_x, 0.0);
         etas.clear();     etas.reserve(arms.size());
@@ -429,7 +443,13 @@ LaplaceResult laplace_newton_solve_joint_ll(
     // point to probe, not the cosmetically-shifted one.
     bool compute_skew = false,
     const std::vector<int>* skew_probe_idx = nullptr,
-    const JointCurvature3Oracles* curvature3_fns = nullptr
+    const JointCurvature3Oracles* curvature3_fns = nullptr,
+    // Per-cell fixed-effect covariance block (gcol33/tulpa#307). Extracted from
+    // this cell's precision here, so the caller no longer has to keep every
+    // cell's precision alive to read it afterwards. Independent of store_Q: a
+    // fit that did not ask for the precision still gets the block, and one that
+    // did gets both. nullptr / p == 0 extracts nothing.
+    const JointFixedBlockRequest* fixed_block = nullptr
 ) {
     LaplaceResult result;
     result.mode.assign(n_x, 0.0);
@@ -551,12 +571,29 @@ LaplaceResult laplace_newton_solve_joint_ll(
     center_effects_fn(x);
     for (int j = 0; j < n_x; j++) result.mode[j] = x[j];
 
-    if (store_Q) {
-        dense_to_csc_lower_drop_raw(
-            scratch.H, n_x, SPARSE_DROP_TOL_DISPATCH,
-            result.Q_csc_p, result.Q_csc_i, result.Q_csc_x
-        );
-        result.Q_csc_n = n_x;
+    // The precision at the mode in CSC. The fixed-effect block is read off it
+    // here and the arrays are then released, so requesting the block costs one
+    // cell's precision -- not the grid's. Centering does not touch H.
+    const bool want_block =
+        fixed_block && fixed_block->active() && scratch.extract_solver;
+    if (store_Q || want_block) {
+        std::vector<int> csc_p, csc_i;
+        std::vector<double> csc_x;
+        dense_to_csc_lower_drop_raw(scratch.H, n_x, SPARSE_DROP_TOL_DISPATCH,
+                                    csc_p, csc_i, csc_x);
+        if (want_block) {
+            extract_joint_fixed_block(
+                csc_p.data(), csc_i.data(), csc_x.data(), n_x,
+                static_cast<int>(csc_x.size()), *fixed_block,
+                *scratch.extract_solver,
+                result.re_cov_flat, result.re_cov_block_sizes);
+        }
+        if (store_Q) {
+            result.Q_csc_p = std::move(csc_p);
+            result.Q_csc_i = std::move(csc_i);
+            result.Q_csc_x = std::move(csc_x);
+            result.Q_csc_n = n_x;
+        }
     }
 
     return result;

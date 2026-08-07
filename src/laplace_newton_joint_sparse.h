@@ -67,7 +67,15 @@ struct NewtonScratchJointSparse {
     // the s2z large-field path (A_FF pattern + symbolic factor + scatter slots).
     S2ZBlockSchurCache s2z_block_schur_cache;
 
-    void allocate(int n_x, const std::vector<JointArm>& arms) {
+    // CHOLMOD context for the per-cell fixed-effect block extraction
+    // (gcol33/tulpa#307). See the twin member on NewtonScratchJoint.
+    std::unique_ptr<SparseCholeskySolver> extract_solver;
+
+    void allocate(int n_x, const std::vector<JointArm>& arms,
+                  bool want_fixed_block = false) {
+        if (want_fixed_block && !extract_solver) {
+            extract_solver.reset(new SparseCholeskySolver());
+        }
         x      = Rcpp::NumericVector(n_x, 0.0);
         x_try  = Rcpp::NumericVector(n_x, 0.0);
         etas.clear();     etas.reserve(arms.size());
@@ -242,7 +250,16 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
     // s2z rank-1 term is registered) rather than report a wrong gamma_3.
     bool compute_skew = false,
     const std::vector<int>* skew_probe_idx = nullptr,
-    const JointCurvature3Oracles* curvature3_fns = nullptr
+    const JointCurvature3Oracles* curvature3_fns = nullptr,
+    // Per-cell fixed-effect covariance block (gcol33/tulpa#307). Read off the
+    // builder's own CSC -- the working Hessian is already in that layout, so on
+    // this path the block costs no precision copy at all. The extraction
+    // factorizes that CSC itself rather than reusing the loop's live factor,
+    // which after joint_pd_step_solve may be of a ridge-escalated matrix (the
+    // s2z path) or absent (the PSD path densifies instead). Reading the same
+    // bytes store_Q would hand out is what makes the block available on every
+    // path and identical to what cpp_joint_inner_vcov_blocks() returns.
+    const JointFixedBlockRequest* fixed_block = nullptr
 ) {
     LaplaceResult result;
     result.mode.assign(n_x, 0.0);
@@ -489,6 +506,15 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
     { TULPA_PROFILE_PHASE(PHASE_LOG_LIK_PRIOR);
       center_effects_fn(x); }
     for (int j = 0; j < n_x; j++) result.mode[j] = x[j];
+
+    if (fixed_block && fixed_block->active() && scratch.extract_solver) {
+        extract_joint_fixed_block(
+            H_builder.col_ptr.data(), H_builder.row_idx.data(),
+            H_builder.values.data(), n_x,
+            static_cast<int>(H_builder.values.size()), *fixed_block,
+            *scratch.extract_solver,
+            result.re_cov_flat, result.re_cov_block_sizes);
+    }
 
     if (store_Q) {
         // Copy the CSC arrays out so the caller doesn't depend on H_builder

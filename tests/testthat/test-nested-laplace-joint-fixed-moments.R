@@ -244,3 +244,92 @@ test_that(".nested_fixed_moments ignores zero-weight and empty cells", {
     list(weights = c(0.5, 0.5), grid_modes = list(c(1, 2)),
          grid_hessians = list(H))))
 })
+
+# --------------------------------------------------------------------------- #
+# (6) The block is extracted inside each cell's own solve (gcol33/tulpa#307).  #
+# --------------------------------------------------------------------------- #
+
+# Reference: the block read the way #305 read it -- off the STORED per-cell
+# precision, through the R-level `cpp_joint_inner_vcov_blocks()` entry. The
+# in-loop extraction hands the same cell CSC to the same routine, so the two
+# agree entry for entry, not to a tolerance.
+.j307_reference_blocks <- function(fq) {
+  p <- fq$n_fixed
+  n_x <- as.integer(fq$Q_csc_n)
+  cpp_joint_inner_vcov_blocks(
+    fq$Q_csc_p_per_grid, fq$Q_csc_i_per_grid, fq$Q_csc_x_per_grid,
+    n_x = n_x, idx = seq_len(p), n_dense = p,
+    A_cols_list = tulpa:::.joint_constraint_cols(fq$arm_layout, n_x),
+    field_marginal = FALSE, n_threads = 1L)
+}
+
+test_that("the in-loop block is the stored-precision block, entry for entry", {
+  skip_on_cran()
+  d <- .j305_icar_data()
+  fq <- .j305_icar_fit(d, store_Q = TRUE)
+  V <- .j307_reference_blocks(fq)
+  expect_length(V, length(fq$weights))
+
+  for (k in seq_along(V)) {
+    expect_identical(fq$grid_hessians[[k]], solve(V[[k]]))
+  }
+
+  # The probe is live: the same routine WITHOUT the field sum-to-zero groups
+  # returns a materially different block, so the exact agreement above is the
+  # constrained extraction matching, not two ways of reading nothing.
+  n_x <- as.integer(fq$Q_csc_n)
+  V_unc <- cpp_joint_inner_vcov_blocks(
+    fq$Q_csc_p_per_grid, fq$Q_csc_i_per_grid, fq$Q_csc_x_per_grid,
+    n_x = n_x, idx = seq_len(fq$n_fixed), n_dense = fq$n_fixed,
+    A_cols_list = list(), field_marginal = FALSE, n_threads = 1L)
+  expect_gt(max(abs(V_unc[[1L]] - V[[1L]])), 1e-6)
+})
+
+test_that("a coupled multi-block joint fit extracts the same block in the loop", {
+  skip_on_cran()
+  coupled_occ_register()
+  d <- coupled_occ_data(seed = 4L, n_cells = 40L, n_visits = 3L,
+                        b_occ = 0.3, b_det = -0.6)
+  fq <- tulpa_nested_laplace_joint(
+    responses = coupled_occ_arms(d, beta_prec = 0.25),
+    prior = coupled_occ_flat_prior(d),
+    cell_coupling = "test_occupancy_mixture",
+    control = list(max_iter = 100L, tol = 1e-10, diagnose_k = FALSE,
+                   store_Q = TRUE))
+  V <- .j307_reference_blocks(fq)
+  for (k in seq_along(V)) expect_identical(fq$grid_hessians[[k]], solve(V[[k]]))
+})
+
+test_that("the retention no longer needs the precision materialised at all", {
+  skip_on_cran()
+  d <- .j305_icar_data()
+  fit <- .j305_icar_fit(d)
+  # Nothing anywhere in the pipeline stored a precision, and the block is still
+  # there: before #307 the kernel had to keep every cell's precision to reach it.
+  expect_null(fit$Q_csc_p_per_grid)
+  expect_null(fit$cov_block_per_grid)
+  expect_true(is.na(fit$grid_fixed_declined))
+  expect_true(all(is.finite(vcov(fit))))
+
+  # And the reported numbers do not depend on whether the precision was kept.
+  fq <- .j305_icar_fit(d, store_Q = TRUE)
+  expect_identical(vcov(fit), vcov(fq))
+  expect_identical(confint(fit), confint(fq))
+  expect_identical(fit$grid_hessians, fq$grid_hessians)
+})
+
+# The sparse joint Newton loop takes a different route to the same block: it
+# reads the builder's own CSC instead of converting a dense H, and its live
+# factor after the final PD-enforced solve is not one the block could be read
+# off -- which is why the extraction factorizes the cell's own CSC.
+test_that("the sparse joint loop extracts the same block as the dense one", {
+  skip_on_cran()
+  d <- .j305_icar_data()
+  dense  <- .j305_icar_fit(d, force_sparse = FALSE, store_Q = TRUE)
+  sparse <- .j305_icar_fit(d, force_sparse = TRUE,  store_Q = TRUE)
+  expect_equal(unname(vcov(dense)), unname(vcov(sparse)), tolerance = 1e-8)
+  for (k in seq_along(sparse$weights)) {
+    expect_identical(sparse$grid_hessians[[k]],
+                     solve(.j307_reference_blocks(sparse)[[k]]))
+  }
+})

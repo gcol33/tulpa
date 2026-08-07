@@ -696,32 +696,52 @@ Three things make this work and are load-bearing:
   `1:n_fixed` -- the same span `.joint_fixed_layout()` names. The extraction is
   arm-aware because it takes the whole block at once, not because it loops arms.
 - **The block comes from the joint tier's own extraction**,
-  `cpp_joint_inner_vcov_blocks()` (`src/joint_inner_vcov.cpp`), with the field
+  `extract_inner_vcov_block_cell()` (`src/joint_inner_vcov.cpp`), with the field
   sum-to-zero columns from `.joint_constraint_cols()`. So the reported
   covariance is the CONSTRAINED one `tulpa_posterior_draws()` samples from; an
   unconstrained block would disagree with the fit's own draws. The single-block
   path's `.nl_attach_grid_hessians()` is a separate, unconstrained extraction
   whose numbers are pinned -- the two are deliberately not merged.
-- **Extraction happens after the grid settles.** Attach is the last step before
-  `.finalize_fit()`, so adaptive refinement and the var-of-means consistency
-  pass (which carry the precision through `.joint_glue_extras_to_res`) have
-  already run. Local-CCD refinement does NOT carry it, so a fit it engaged on
-  drops the cells and declines with `grid_fixed_declined = "local_ccd_refined"`;
-  local-CCD keeps precedence, so no fit that used it changed.
+- **The block is extracted inside each cell's own solve (gcol33/tulpa#307).**
+  Both joint Newton loops (`laplace_newton_joint.h`,
+  `laplace_newton_joint_sparse.h`) take a `JointFixedBlockRequest` -- the leading
+  block size plus the constraint groups, both fixed by the latent layout before
+  the first solve -- and return the block on the `LaplaceResult` `re_cov_flat`
+  contract, which the grid driver emits as `cov_block_per_grid`. Nothing keeps
+  the precision: the dense loop builds one cell's CSC, extracts, and releases it;
+  the sparse loop reads the builder's own CSC, so there it costs no copy at all.
+  `store_Q` is once again the caller's own knob, passed straight through.
+  The kernel closure requests the block only when `store_extras` is set, which
+  keeps the outer Pareto-k batch from paying for hundreds of cells it would
+  discard, and the cheap screen never requests it.
+- **Refinement carries the blocks, so nothing declines for having moved the
+  grid.** Adaptive refinement and the var-of-means consistency pass carry them
+  through `.joint_glue_extras_to_res` alongside the modes; local-CCD refinement
+  carries them through `.joint_local_ccd_refine(cov_blocks =)` the same way, so
+  the `grid_fixed_declined = "local_ccd_refined"` decline #305 recorded is gone.
 
 `control$keep_grid_hessians` (default `TRUE`) switches the retention off, and
-`$grid_fixed_declined` always says why a fit has none. Reading the block needs
-the cell precision, so the kernels run with `store_Q` internally and the
-precision is dropped again unless `control$store_Q` asked for it; the kernel
-closure only stores it when `store_extras` is set, which keeps the outer
-Pareto-k batch from allocating hundreds of cells' worth it would discard.
+`$grid_fixed_declined` always says why a fit has none.
 
-Measured: 860 bytes/cell retained at `n_fixed = 8`, flat as `n_x` goes 408 ->
-6008 (it is `O(n_fixed^2)`, not `O(n_x)`); fit-time overhead -0.1% over paired
-runs. The transient precision is ~64 bytes per latent per cell -- the existing
-`store_Q` peak; gcol33/tulpa#307 tracks removing it via `inv_block_layout` in
-the joint Newton loop, which `laplace_newton.h` already has and
-`laplace_newton_joint.h` does not.
+One extraction algebra serves every caller: `src/inv_block_extract.h` holds
+`InvBlockConstraint` (the conditioning-by-kriging correction `W = H^{-1}A'`,
+`M = A W`, `chol(M)`) and `extract_inv_diag_blocks()`, both templated on a solve
+oracle. `laplace_newton.h`'s `inv_block_layout` path drives it against the LIVE
+Newton factor with no constraint; `extract_inner_vcov_block_cell()` drives it
+against a freshly factorized cell with one. The joint loops go through the
+latter, which is why the block they produce is byte-identical to what
+`cpp_joint_inner_vcov_blocks()` returns for the same cell -- same bytes in, same
+routine. The loops do NOT reuse their own live factor: after
+`joint_pd_step_solve` that factor may be of a ridge-escalated matrix (the s2z
+path) or absent entirely (the PSD path densifies instead), which is the same
+reason `compute_skew` declines there. Factorizing the cell's own CSC -- the
+bytes `store_Q` would have handed out -- is what makes the block available on
+every path and identical to the pre-#307 report.
+
+Measured (ICAR chain, `n_fixed = 8`, 40-cell grid): 868 bytes/cell retained,
+flat as `n_x` goes 408 -> 6008 (`O(n_fixed^2)`, not `O(n_x)`). The removed
+transient is the whole grid's precision, 41.7 / 104.2 / 218.7 KB per cell at
+those sizes and linear in the cell count.
 
 Arbiters, none of them engine code: the inverse numerical Hessian of the #300
 coupled fixture's independently-written R log posterior (1.4e-09 relative); a

@@ -37,7 +37,9 @@
              inner_refresh = 1L,
              x_init_per_cell = NULL,
              compute_skew = FALSE,
-             skew_idx = NULL) {
+             skew_idx = NULL,
+             fixed_block_p = 0L,
+             fixed_block_constraints = NULL) {
         .joint_call_kernel_via_multi(backend_name, arms, prior, cp, grids,
                                       max_iter, tol, n_threads,
                                       x_init, store_Q, arm_names,
@@ -51,7 +53,10 @@
                                       inner_refresh = inner_refresh,
                                       x_init_per_cell = x_init_per_cell,
                                       compute_skew = compute_skew,
-                                      skew_idx = skew_idx)
+                                      skew_idx = skew_idx,
+                                      fixed_block_p = fixed_block_p,
+                                      fixed_block_constraints =
+                                          fixed_block_constraints)
     }
 }
 
@@ -162,7 +167,9 @@
                                           inner_refresh = 1L,
                                           x_init_per_cell = NULL,
                                           compute_skew = FALSE,
-                                          skew_idx = NULL) {
+                                          skew_idx = NULL,
+                                          fixed_block_p = 0L,
+                                          fixed_block_constraints = NULL) {
     n_arms <- length(arms)
     blk <- prior; blk$type <- type
     .nl_check_block_fields(blk, "joint_single")
@@ -277,7 +284,9 @@
         inner_refresh = as.integer(inner_refresh),
         x_init_per_cell = x_init_per_cell,
         compute_skew = isTRUE(compute_skew),
-        skew_idx     = skew_idx
+        skew_idx     = skew_idx,
+        fixed_block_p = as.integer(fixed_block_p),
+        fixed_block_constraints = fixed_block_constraints
     )
     # Strip the C++-side theta_grid / axis_offsets -- the backend's
     # `theta_grid()` callback rebuilds them with the user-facing bare

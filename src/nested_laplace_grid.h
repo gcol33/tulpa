@@ -250,6 +250,13 @@ inline Rcpp::List run_nested_laplace_grid(
     Rcpp::List Q_i_per_grid(n_grid);
     Rcpp::List Q_x_per_grid(n_grid);
 
+    // Per-cell inverse block, when the per-point solve was asked for one (the
+    // joint tier's fixed-effect retention, gcol33/tulpa#307). O(m^2) per cell
+    // and flat in the field size, so this is what a caller keeps instead of a
+    // grid's worth of precisions. Every current requester asks for exactly one
+    // block, so slot k holds that block as an m x m matrix.
+    Rcpp::List cov_block_per_grid(n_grid);
+
     if (n_grid <= 0) {
         Rcpp::List out = Rcpp::List::create(
             Rcpp::Named("log_marginal") = log_marginals,
@@ -804,6 +811,7 @@ inline Rcpp::List run_nested_laplace_grid(
 
     // -------- Merge POD results into the Rcpp output (single-threaded) --------
     bool any_Q = false;
+    bool any_cov_block = false;
     int skew_cell = -1;  // first grid cell (if any) that computed inner_skew
     for (int k = 0; k < n_grid; k++) {
         const LaplaceResult& res = cell_results[k];
@@ -827,6 +835,15 @@ inline Rcpp::List run_nested_laplace_grid(
             Q_x_per_grid[k] = Rcpp::NumericVector(
                 res.Q_csc_x.begin(), res.Q_csc_x.end());
         }
+        if (!res.re_cov_block_sizes.empty()) {
+            const int m = res.re_cov_block_sizes[0];
+            if (m > 0 && static_cast<int>(res.re_cov_flat.size()) >= m * m) {
+                Rcpp::NumericMatrix Bk(m, m);
+                for (int e = 0; e < m * m; e++) Bk[e] = res.re_cov_flat[e];
+                cov_block_per_grid[k] = Bk;
+                any_cov_block = true;
+            }
+        }
         if (skew_cell < 0 && !res.inner_skew_idx.empty()) skew_cell = k;
     }
 
@@ -847,6 +864,7 @@ inline Rcpp::List run_nested_laplace_grid(
         out["Q_csc_x_per_grid"] = Q_x_per_grid;
         out["Q_csc_n"] = n_x;
     }
+    if (any_cov_block) out["cov_block_per_grid"] = cov_block_per_grid;
     // Inner-Laplace skewness diagnostic (opt-in, computed on the full solve
     // of a single cell -- see the compute_skew doc on
     // run_multi_block_nested_laplace). Emits the FIRST cell that populated

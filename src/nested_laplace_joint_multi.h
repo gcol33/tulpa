@@ -1520,7 +1520,11 @@ Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
     // per-arm oracle automatically, so its observations drop out of gamma_3
     // rather than being scored against the wrong (unused) per-obs likelihood.
     bool                             compute_skew = false,
-    const std::vector<int>*          skew_probe_idx = nullptr
+    const std::vector<int>*          skew_probe_idx = nullptr,
+    // Per-cell fixed-effect covariance block (gcol33/tulpa#307), extracted
+    // inside each cell's own solve so the grid never holds every cell's
+    // precision at once.
+    const JointFixedBlockRequest*    fixed_block = nullptr
 );
 
 // Outer-grid driver. n_x_after_re is the latent dimension after all per-arm
@@ -1559,7 +1563,11 @@ Rcpp::List run_multi_block_nested_laplace_joint(
     GridCheckpoint*                  checkpoint = nullptr,
     const std::vector<double>&       x_init_per_cell = std::vector<double>(),
     bool                             compute_skew = false,
-    const std::vector<int>*          skew_probe_idx = nullptr
+    const std::vector<int>*          skew_probe_idx = nullptr,
+    // Per-cell fixed-effect covariance block (gcol33/tulpa#307), extracted
+    // inside each cell's own solve so the grid never holds every cell's
+    // precision at once.
+    const JointFixedBlockRequest*    fixed_block = nullptr
 );
 
 } // namespace tulpa

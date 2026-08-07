@@ -1,5 +1,45 @@
 # tulpa NEWS
 
+## 0.0.143
+
+* **The joint tier's fixed-effect block is extracted inside each cell's own
+  solve** (gcol33/tulpa#307). Filling `$grid_modes` / `$grid_hessians` on a joint
+  fit (#305) read the block off the cell precision, so the joint kernels ran with
+  `store_Q` internally and the whole outer grid's precision was alive at once
+  between the kernel call and the extraction. Both joint Newton loops now take
+  the request -- the leading block size plus the field sum-to-zero groups, both
+  fixed by the latent layout before the first solve -- and return the block on the
+  `LaplaceResult` `re_cov` contract, which the grid driver emits per cell. The
+  dense loop builds one cell's CSC, extracts, and releases it; the sparse loop
+  reads the builder's own CSC, so there the block costs no precision copy at all.
+  `store_Q` is once again the caller's own knob, passed straight through.
+
+  Measured on an ICAR chain fixture (`n_fixed = 8`, 40-cell grid, R heap
+  high-water over three paired runs): peak 49.9 vs 51.5 MB at `n_x = 408`,
+  53.6 vs 58.2 MB at 2008, and 62.1 vs 71.9 MB at 6008 -- the saving tracking the
+  grid's precision (1.63 / 4.07 / 8.54 MB, i.e. 41.7 / 104.2 / 218.7 KB per cell)
+  and growing with the field where the retained block does not (868 bytes per
+  cell at every size). Fit time is unchanged: 0.27 / 0.73 / 1.73 s against
+  0.31 / 0.72 / 1.75 s.
+
+  The blocks are byte-identical to what `cpp_joint_inner_vcov_blocks()` returns
+  for the same cells -- same bytes in, same routine -- so `summary()`,
+  `confint()` and `vcov()` report exactly what they did in 0.0.142, and draws,
+  modes, weights and `log_marginal` are untouched.
+
+* **Local-CCD refinement no longer costs a joint fit its intervals**
+  (gcol33/tulpa#307). The node solves carry their own fixed-effect block through
+  the splice alongside the inner modes, so a refined grid reports instead of
+  recording `grid_fixed_declined = "local_ccd_refined"`. Refinement itself is
+  unchanged.
+
+* One extraction algebra behind all of it: `src/inv_block_extract.h` holds the
+  conditioning-by-kriging constraint correction and the diagonal-block
+  extraction, both templated on a solve oracle. `laplace_newton.h`'s
+  `inv_block_layout` path drives it against the live Newton factor;
+  `extract_inner_vcov_block_cell()` drives it against a factorized cell with the
+  constraint; the joint loops go through the latter.
+
 ## 0.0.142
 
 * **A joint fit reports uncertainty on its fixed effects** (gcol33/tulpa#305).
