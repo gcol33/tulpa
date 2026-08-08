@@ -48,6 +48,21 @@
 # a caller's choice: `.nl_axis_quantiles()` reads exactly three, in this order.
 OGD_PROBS <- c(0.025, 0.5, 0.975)
 
+# The parts a read is compared in, each named once and given as the numbers that
+# part is compared on. Every layer that splits a read walks THIS set --
+# `outer_grid_read_diff()` forms one difference per entry, the noise floor
+# aggregates one per entry, and the verdict scores one per entry -- so a part
+# named here is a part all three report.
+#
+# The alternative shape, one `<part>_above_floor` field per part written out by
+# hand beside the others, is what let the median go unscored: a part gained a
+# difference and a floor and no verdict, and nothing in the harness could notice
+# because the verdict set was not derived from anything (gcol33/tulpa#330).
+OGD_PARTS <- list(
+  endpoints = function(r) c(r$ci_lo, r$ci_hi),
+  widths    = function(r) r$ci_hi - r$ci_lo,
+  median    = function(r) r$median)
+
 # What KIND of node set the fit's read was taken off, and the per-axis domains a
 # moment-rule read needs. Both come off the fit's own recorded provenance, so a
 # dump replays the support the fit used rather than a guess at it: the multi-block
@@ -264,21 +279,20 @@ outer_grid_weights <- function(dump, dnode = NULL, log_marginal = NULL) {
   tulpa:::.joint_integration_weights(log_marginal %||% dump$log_marginal, dnode)
 }
 
-# Mean absolute difference between two reads, split the way the reported summary
-# splits: the 2 x n_axes interval endpoints, the n_axes widths, and the n_axes
-# medians. Axes whose read is NA on either side are dropped from the mean and
-# counted, so a difference is never averaged against a missing number.
+# Mean absolute difference between two reads, one part of `OGD_PARTS` at a time:
+# the 2 x n_axes interval endpoints, the n_axes widths, and the n_axes medians.
+# Axes whose read is NA on either side are dropped from the mean and counted
+# (`n_<part>`), so a difference is never averaged against a missing number.
 outer_grid_read_diff <- function(a, b) {
-  mad <- function(x, y) {
-    d <- abs(as.numeric(y) - as.numeric(x))
+  out <- list()
+  for (nm in names(OGD_PARTS)) {
+    f  <- OGD_PARTS[[nm]]
+    d  <- abs(as.numeric(f(b)) - as.numeric(f(a)))
     ok <- is.finite(d)
-    list(value = if (any(ok)) mean(d[ok]) else NA_real_, n = sum(ok))
+    out[[nm]] <- if (any(ok)) mean(d[ok]) else NA_real_
+    out[[paste0("n_", nm)]] <- sum(ok)
   }
-  ends <- mad(c(a$ci_lo, a$ci_hi), c(b$ci_lo, b$ci_hi))
-  wid  <- mad(a$ci_hi - a$ci_lo, b$ci_hi - b$ci_lo)
-  med  <- mad(a$median, b$median)
-  list(endpoints = ends$value, widths = wid$value, median = med$value,
-       n_endpoints = ends$n, n_widths = wid$n, n_median = med$n)
+  out
 }
 
 # Which cells the per-axis read of axis `ax` uses. Mirrors the mask in
@@ -376,23 +390,27 @@ outer_grid_noise_floor <- function(dump, weights = NULL, strides = c(2L, 3L)) {
     v <- vapply(parts, function(p) p[[nm]], numeric(1))
     if (!any(is.finite(v))) NA_real_ else mean(v[is.finite(v)])
   }
-  list(endpoints = agg("endpoints"), widths = agg("widths"),
-       median = agg("median"), n_perturbations = length(parts),
-       strides = as.integer(strides), base = base)
+  c(lapply(stats::setNames(nm = names(OGD_PARTS)), agg),
+    list(n_perturbations = length(parts), strides = as.integer(strides),
+         base = base))
 }
 
-# A candidate weight vector's difference from the shipped read, against the
-# floor. The verdict is the whole point of the harness: a difference is reported
-# relative to what this grid can resolve, never on its own.
+# A candidate rule's difference from the shipped read, against the floor. The
+# verdict is the whole point of the harness: a difference is reported relative to
+# what this grid can resolve, never on its own.
+#
+# `above_floor` is one logical per part of `OGD_PARTS`, in that order, so the
+# verdict covers exactly the parts the difference and the floor carry.
 outer_grid_weight_report <- function(dump, weights, floor = NULL) {
   fl <- floor %||% outer_grid_noise_floor(dump)
   d  <- outer_grid_read_diff(outer_grid_rebuild(dump), outer_grid_rebuild(dump, weights))
   list(diff = d, floor = fl,
-       endpoints_above_floor = isTRUE(d$endpoints > fl$endpoints),
-       widths_above_floor    = isTRUE(d$widths    > fl$widths))
+       above_floor = vapply(stats::setNames(nm = names(OGD_PARTS)),
+                            function(nm) isTRUE(d[[nm]] > fl[[nm]]),
+                            logical(1)))
 }
 
-for (.nm in c("OGD_PROBS", "outer_grid_dump", "outer_grid_load",
+for (.nm in c("OGD_PROBS", "OGD_PARTS", "outer_grid_dump", "outer_grid_load",
               "outer_grid_rebuild", "outer_grid_rebuild_fixed",
               "outer_grid_weights",
               "outer_grid_read_diff", "outer_grid_noise_floor",

@@ -343,8 +343,9 @@ test_that("the box rule's read is reported against what this grid can resolve", 
   expect_lt(r5$diff$endpoints, r5$floor$endpoints)
   expect_lt(r5$diff$widths, r5$floor$widths)
   expect_gt(r5$diff$median, r5$floor$median)
-  expect_false(r5$endpoints_above_floor)
-  expect_false(r5$widths_above_floor)
+  expect_false(r5$above_floor[["endpoints"]])
+  expect_false(r5$above_floor[["widths"]])
+  expect_true(r5$above_floor[["median"]])
 
   # Coarser, which is where a cell carries a real gradient: at four levels the
   # same rule moves the endpoints 0.4618 against a floor of 0.2112, above what
@@ -356,7 +357,7 @@ test_that("the box rule's read is reported against what this grid can resolve", 
   expect_identical(sum(b4$bm$computed), 8L)
   r4 <- outer_grid_weight_report(d4, b4$w)
   expect_gt(r4$diff$endpoints, r4$floor$endpoints)
-  expect_true(r4$endpoints_above_floor)
+  expect_true(r4$above_floor[["endpoints"]])
   expect_gt(max(b4$bm$log_box_ratio), 10)
 })
 

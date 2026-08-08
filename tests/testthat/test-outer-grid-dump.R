@@ -385,8 +385,7 @@ test_that("a candidate weight rule is reported against the floor, not on its own
   # verdict says so.
   same <- outer_grid_weight_report(d, outer_grid_weights(d, d$dnode))
   expect_equal(same$diff$endpoints, 0, tolerance = 1e-12)
-  expect_false(same$endpoints_above_floor)
-  expect_false(same$widths_above_floor)
+  expect_false(any(same$above_floor))
 
   # This fit's base grid holds three levels per axis, and one step of coarsening
   # moves its read by 0.105 -- so on THIS grid even a heavy re-weighting
@@ -398,7 +397,7 @@ test_that("a candidate weight rule is reported against the floor, not on its own
     d, outer_grid_weights(d, dnode = d$dnode, log_marginal = 3 * d$log_marginal),
     floor = same$floor)
   expect_gt(hot$diff$endpoints, 0)
-  expect_false(hot$endpoints_above_floor)
+  expect_false(hot$above_floor[["endpoints"]])
 
   # Where the grid does resolve the read, the same rule is reported as the
   # difference it is: at 81 levels the floor is 0.0135 and tempering moves the
@@ -407,6 +406,55 @@ test_that("a candidate weight rule is reported against the floor, not on its own
   loud <- outer_grid_weight_report(
     fine, outer_grid_weights(fine, log_marginal = 3 * fine$log_marginal))
   expect_gt(loud$diff$endpoints, 0.5)
-  expect_true(loud$endpoints_above_floor)
-  expect_true(loud$widths_above_floor)
+  expect_true(loud$above_floor[["endpoints"]])
+  expect_true(loud$above_floor[["widths"]])
+})
+
+test_that("every part the read is compared in carries a verdict", {
+  # The verdict set is derived from `OGD_PARTS`, so it covers exactly the parts
+  # the difference and the floor carry. What is asserted is the agreement with a
+  # hand comparison of the corresponding pair, part by part: a part that gains a
+  # difference and a floor without gaining a verdict is the drift this catches
+  # (gcol33/tulpa#330).
+  check <- function(rep) {
+    expect_named(rep$above_floor, names(OGD_PARTS))
+    expect_type(rep$above_floor, "logical")
+    for (nm in names(OGD_PARTS)) {
+      expect_true(is.finite(rep$diff[[nm]]))
+      expect_true(is.finite(rep$floor[[nm]]))
+      expect_identical(rep$above_floor[[nm]],
+                       isTRUE(rep$diff[[nm]] > rep$floor[[nm]]))
+    }
+    rep$above_floor
+  }
+
+  # A rule that tilts the integrand along the axis, which is the shape a
+  # location rule has: it moves the atom set's centre of mass and leaves its
+  # spread nearly alone. `w` is the exponential tilt strength in nats per unit
+  # of the axis, so the median moves by about `w` times the axis variance.
+  tilt <- function(d, w) outer_grid_weights(
+    d, log_marginal = d$log_marginal + w * as.numeric(d$joint_grid[, 1L]))
+
+  # The rule that changes nothing: three FALSEs.
+  fine <- .ogd_fake_dump(81L)
+  expect_false(any(check(outer_grid_weight_report(fine, tilt(fine, 0)))))
+
+  # The part the sibling-field verdict had no slot for, on its own. At fifteen
+  # levels a 0.05-nat tilt moves the median 0.0519 against a floor of 0.0138
+  # while the endpoints move 0.0455 against 0.2814 and the widths 0.0042 against
+  # 0.5628: a location this grid resolves and an interval it does not, which
+  # under the old two-field verdict read as a rule that changes nothing.
+  coarse <- .ogd_fake_dump(15L)
+  v <- check(outer_grid_weight_report(coarse, tilt(coarse, 0.05)))
+  expect_true(v[["median"]])
+  expect_false(v[["endpoints"]])
+  expect_false(v[["widths"]])
+
+  # And the same tilt six times as strong on a grid six times finer, where the
+  # endpoints move past their floor as well. Across the three reports every part
+  # is compared on both sides, so no branch of the hand comparison is untaken.
+  v <- check(outer_grid_weight_report(fine, tilt(fine, 0.3)))
+  expect_true(v[["median"]])
+  expect_true(v[["endpoints"]])
+  expect_false(v[["widths"]])
 })
