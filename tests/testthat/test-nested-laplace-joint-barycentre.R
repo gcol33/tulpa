@@ -54,7 +54,8 @@ test_that("the barycentre is the box's own first moment, on either sign of a", {
                                             gr$h_hi[i])
     # Every combination has an answer: the axis is never declined for the sign
     # of its curvature.
-    expect_false(is.null(f))
+    expect_false(is.null(f$u_bar))
+    expect_true(is.na(f$reason))
     route[i] <- f$route
     inbox[i] <- f$u_bar >= -gr$h_lo[i] && f$u_bar <= gr$h_hi[i]
     e_int[i] <- abs(f$u_bar - .bar_integrate(gr$g[i], gr$a[i], gr$h_lo[i],
@@ -132,10 +133,14 @@ test_that("the closed form covers the concave axis and quadrature the rest", {
     expect_identical(f$route, "numeric")
     expect_equal(f$u_bar, .bar_simpson(p[1L], p[2L], 1, 1), tolerance = 1e-11)
   }
-  # A degenerate box carries no barycentre rather than a guessed one.
-  expect_null(tulpa:::.joint_local_ccd_axis_bary(1, 1, 0, 0))
-  expect_null(tulpa:::.joint_local_ccd_axis_bary(NA_real_, 1, 1, 1))
-  expect_null(tulpa:::.joint_local_ccd_axis_bary(1, 1, -1, 1))
+  # A degenerate box carries no barycentre rather than a guessed one, and says
+  # so: the quadratic never formed, which is a different refusal from the
+  # conditioning ones below.
+  for (p in list(c(1, 1, 0, 0), c(NA_real_, 1, 1, 1), c(1, 1, -1, 1))) {
+    f <- tulpa:::.joint_local_ccd_axis_bary(p[1L], p[2L], p[3L], p[4L])
+    expect_null(f$u_bar)
+    expect_identical(f$reason, "no_factor")
+  }
 })
 
 # --------------------------------------------------------------------------- #
@@ -194,6 +199,15 @@ test_that("only interior cells move, and they move within their own box", {
   expect_identical(bc$joint_grid[!interior, ], gg[!interior, ])
   expect_true(all(bc$u_offset[!interior, ] == 0))
   expect_identical(bc$n_axes_declined, 0L)
+  # The eight boundary cells account for their own axes under `boundary`, two
+  # apiece, the stencil being a cell-level object; no axis that reached a
+  # per-axis gate fell at one (gcol33/tulpa#334).
+  expect_identical(bc$declined_reasons,
+                   c(boundary = 16L, no_factor = 0L, cancellation = 0L,
+                     out_of_box = 0L))
+  expect_identical(bc$n_axes_declined,
+                   sum(bc$declined_reasons[c("no_factor", "cancellation",
+                                             "out_of_box")]))
 
   # The interior cell moves toward the peak on both axes and stays inside its
   # own Voronoi half-box, which on this grid is half a level in each direction.
@@ -212,6 +226,66 @@ test_that("only interior cells move, and they move within their own box", {
   none <- tulpa:::.joint_local_ccd_barycentre(gg, lm, colnames(gg), NULL)
   expect_false(any(none$computed))
   expect_identical(none$joint_grid, gg)
+  expect_true(all(none$declined_reasons == 0L))
+  expect_identical(names(none$declined_reasons), tulpa:::.LCCD_BARY_REASONS)
+})
+
+# --------------------------------------------------------------------------- #
+# What a declined axis declined at (gcol33/tulpa#334)                         #
+# --------------------------------------------------------------------------- #
+
+test_that("a declined barycentre axis names the gate it fell at", {
+  # `cancellation`: the local peak sits 5e11 nats above a box it is half a
+  # million widths away from, so the closed form's `mu + corr` is refused before
+  # it is formed (`.LCCD_BAR_CANCEL`) and the quadrature that takes over is
+  # handed a needle 1e-6 wide in a box of width 2 and returns nothing either.
+  expect_gt(0.5 * 1e6^2 / 1 * max(1, 1e6 / 2), tulpa:::.LCCD_BAR_CANCEL)
+  f <- tulpa:::.joint_local_ccd_axis_bary(1e6, 1, 1, 1)
+  expect_null(f$u_bar)
+  expect_identical(f$reason, "cancellation")
+
+  # `out_of_box`: 700 nats of gradient across a box 1e-6 wide, whose whole
+  # integral is then of order 1e-9. `stats::integrate()` defaults its absolute
+  # tolerance to its relative one, so on integrals that small the absolute
+  # criterion is met long before the needle at the lower edge is resolved, and
+  # the two quadratures the ratio is formed from stop in different places. The
+  # first moment of a positive density over a box is a convex combination of
+  # points in the box and cannot leave it, so a value outside is the arithmetic
+  # failing and the axis keeps the cell's own coordinate rather than shipping an
+  # atom into the neighbouring cell's territory.
+  f <- tulpa:::.joint_local_ccd_axis_bary(-7e8, 0, 1e-6, 1e-8)
+  expect_null(f$u_bar)
+  expect_identical(f$reason, "out_of_box")
+  # Exactly the same shape of cell one decade wider is answered, and answered
+  # correctly: the refusal is a property of the quadrature's own scale, not of
+  # the cell's geometry.
+  ok <- tulpa:::.joint_local_ccd_axis_bary(-7e3, 0, 1e-1, 1e-3)
+  expect_identical(ok$route, "numeric")
+  expect_true(is.na(ok$reason))
+  expect_equal(ok$u_bar, .bar_simpson(-7e3, 0, 1e-1, 1e-3), tolerance = 1e-9)
+})
+
+test_that("a cell's decline tally is per axis, alongside the count", {
+  # Four axes: one concave and answered in closed form, one whose closed form is
+  # refused for conditioning and whose quadrature returns nothing, one with no
+  # extent at all, and one whose quadrature puts the atom outside its own box.
+  # Three declines, three different remedies, one count.
+  st <- list(g = c(1.0, 1e6, 0.3, -7e8), d2 = c(-2, -1, 0, 0),
+             half_lo = c(0.5, 1, 0, 1e-6), half_hi = c(0.5, 1, 0, 1e-8))
+  bc <- tulpa:::.joint_local_ccd_cell_bary(st)
+  expect_identical(bc$n_axes_declined, 3L)
+  expect_identical(bc$declined_reasons,
+                   c(boundary = 0L, no_factor = 1L, cancellation = 1L,
+                     out_of_box = 1L))
+  expect_identical(names(bc$declined_reasons), tulpa:::.LCCD_BARY_REASONS)
+
+  # A declined axis keeps the cell's own coordinate, and the one axis that was
+  # read still moves: the decline is per axis, so three unreadable axes do not
+  # cost the fourth its barycentre.
+  expect_identical(bc$n_axes_closed, 1L)
+  expect_identical(bc$n_axes_numeric, 0L)
+  expect_equal(bc$u_bar,
+               c(.bar_simpson(1.0, 2, 0.5, 0.5), 0, 0, 0), tolerance = 1e-11)
 })
 
 test_that("the moved coordinate is the u-space barycentre through the axis map", {

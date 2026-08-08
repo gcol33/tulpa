@@ -113,7 +113,8 @@ test_that("a convex axis is integrated rather than declined", {
   route <- character(nrow(gr))
   for (i in seq_len(nrow(gr))) {
     f <- tulpa:::.joint_local_ccd_axis_box(gr$g[i], gr$a[i], gr$h[i], gr$h[i])
-    expect_false(is.null(f))
+    expect_false(is.null(f$log_factor))
+    expect_true(is.na(f$reason))
     route[i] <- f$route
     err[i] <- abs(f$log_factor - .bxm_simpson(gr$g[i], gr$a[i],
                                               gr$h[i], gr$h[i]))
@@ -212,6 +213,15 @@ test_that("a boundary cell has no centred stencil and keeps its midpoint atom", 
   expect_true(all(bm$log_box_ratio[!bm$computed] == 0))
   expect_true(bm$log_box_ratio[interior] != 0)
   expect_identical(bm$n_axes_declined, 0L)
+  # No axis that reached a per-axis gate fell at one, and the eight boundary
+  # cells account for their own axes: the stencil is a cell-level object, so a
+  # cell missing a neighbour on one axis has no local quadratic on either. The
+  # count and the tally are read together rather than one summing to the other
+  # (gcol33/tulpa#334).
+  expect_identical(bm$declined_reasons,
+                   c(boundary = 16L, no_factor = 0L, cancellation = 0L))
+  expect_identical(bm$n_axes_declined,
+                   sum(bm$declined_reasons[c("no_factor", "cancellation")]))
 
   # The interior cell's multiplier is the product of its own axis factors.
   nb <- tulpa:::.joint_local_ccd_neighbors(gg, gg, seq_len(2L))
@@ -223,9 +233,73 @@ test_that("a boundary cell has no centred stencil and keeps its midpoint atom", 
                  numeric(1))), tolerance = 1e-10, ignore_attr = TRUE)
 
   # An unguessable-support grid declines whole rather than guessing a transform.
+  # No cell was scored at all there, so no axis declined at a gate and the tally
+  # is empty: the whole-grid decline is what `computed` reports, not a per-axis
+  # refusal.
   none <- tulpa:::.joint_local_ccd_box_mass(gg, lm, colnames(gg), NULL)
   expect_false(any(none$computed))
   expect_true(all(none$log_box_ratio == 0))
+  expect_true(all(none$declined_reasons == 0L))
+  expect_identical(names(none$declined_reasons), tulpa:::.LCCD_BOX_REASONS)
+})
+
+# --------------------------------------------------------------------------- #
+# What a declined axis declined at (gcol33/tulpa#334)                         #
+# --------------------------------------------------------------------------- #
+
+test_that("a declined box axis names the gate it fell at", {
+  # `no_factor`: the quadratic never formed. A box of zero extent has no
+  # integral to divide by its own width, and a non-finite coefficient has no
+  # integrand at all.
+  for (p in list(c(1, 1, 0, 0), c(NA_real_, 1, 1, 1), c(1, NA_real_, 1, 1))) {
+    f <- tulpa:::.joint_local_ccd_axis_box(p[1L], p[2L], p[3L], p[4L])
+    expect_null(f$log_factor)
+    expect_identical(f$reason, "no_factor")
+  }
+
+  # `cancellation`: the local peak sits 5e11 nats above the box, past
+  # `.LCCD_BOX_CANCEL`, so the closed form is refused before it is formed and
+  # the quadrature that takes over is handed a needle 1e-6 wide in a box of
+  # width 2 and returns nothing either. The quadratic here is perfectly good and
+  # only its arithmetic is out of reach, which is the distinction the reason
+  # carries and the count cannot.
+  expect_gt(0.5 * 1e6^2 / 1, tulpa:::.LCCD_BOX_CANCEL)
+  f <- tulpa:::.joint_local_ccd_axis_box(1e6, 1, 1, 1)
+  expect_null(f$log_factor)
+  expect_identical(f$reason, "cancellation")
+  # One decade of gradient lower is inside the budget and is answered.
+  ok <- tulpa:::.joint_local_ccd_axis_box(1e5, 1, 1, 1)
+  expect_identical(ok$route, "numeric")
+  expect_true(is.na(ok$reason))
+  expect_true(is.finite(ok$log_factor))
+})
+
+test_that("a cell's decline tally is per axis, alongside the count", {
+  # Four axes: one concave and answered in closed form, one whose closed form is
+  # refused for conditioning and whose quadrature then returns nothing, one with
+  # no extent at all, and one convex axis that is integrated rather than
+  # declined. The count says two axes went unread; the tally says they went
+  # unread for structurally different reasons, and only the second of the two
+  # would be fixed by a finer grid.
+  st <- list(g = c(1.0, 1e6, 0.3, 2.0), d2 = c(-2, -1, 0, 0.8),
+             half_lo = c(0.5, 1, 0, 0.5), half_hi = c(0.5, 1, 0, 0.5))
+  bm <- tulpa:::.joint_local_ccd_cell_box_mass(st)
+  expect_identical(bm$n_axes_declined, 2L)
+  expect_identical(bm$declined_reasons,
+                   c(boundary = 0L, no_factor = 1L, cancellation = 1L))
+  # `boundary` cannot fire on a cell that already holds a stencil, and the slot
+  # is carried anyway so the tally is the same object the grid-wide entry point
+  # returns.
+  expect_identical(names(bm$declined_reasons), tulpa:::.LCCD_BOX_REASONS)
+
+  # The two axes that were read still contribute their exact factors, which is
+  # the separability the diagonal form is chosen for.
+  expect_identical(bm$n_axes_closed, 1L)
+  expect_identical(bm$n_axes_numeric, 1L)
+  expect_equal(bm$log_box_ratio,
+               .bxm_simpson(1.0, 2, 0.5, 0.5) +
+                 .bxm_simpson(2.0, -0.8, 0.5, 0.5),
+               tolerance = 1e-12)
 })
 
 test_that("a refined cell records the box mass beside the cloud's own", {

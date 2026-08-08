@@ -166,6 +166,20 @@
 # on the three instead of declining whole. The correlated form is worth its
 # rectangle routine only if the diagonal one moves the read.
 #
+# A declined axis carries the gate that declined it and is not only counted. The
+# ways an axis can fail are structurally different and have different remedies:
+# a cell at the edge of the grid has no three-point stencil at all and wants a
+# wider grid; a quadratic that formed while its integral did not is a property of
+# that cell's own local shape; and the conditioning refusal below is neither, the
+# arithmetic being dropped rather than shipped wrong on a reading that would have
+# been right in exact arithmetic. A bare count cannot be acted on, so each
+# declined axis reports its own reason, per axis for the same reason the factor
+# is per axis, and the tally rides alongside `n_axes_declined` rather than
+# replacing it (gcol33/tulpa#334). The barycentre carries a fourth, the in-box
+# guard: the first moment of a positive density over the box lies in the box
+# analytically, so an atom the arithmetic puts outside its own cell says the
+# quadrature failed, not that the cell has no barycentre.
+#
 # Mass is half of what the midpoint atom drops, and the other half is PLACE. The
 # per-axis read summarises axis j as a weighted quantile over the grid
 # COORDINATES (`.nl_axis_quantiles()` hands `tg[, j]` to
@@ -576,6 +590,47 @@
     s
 }
 
+# The vocabulary a declined axis is reported under, one entry per structurally
+# distinct refusal:
+#
+#   boundary      the cell has no centred three-point stencil, so no local
+#                 quadratic exists to integrate. The stencil is a cell-level
+#                 object -- one axis missing a neighbour leaves the whole cell
+#                 without one -- so every axis of such a cell carries it.
+#   no_factor     the quadratic formed and its integral did not: a degenerate
+#                 box, a non-finite coefficient, or a quadrature that returned
+#                 nothing on an axis whose closed form was never refused.
+#   cancellation  the closed form was refused for conditioning (`.LCCD_BOX_CANCEL`
+#                 / `.LCCD_BAR_CANCEL`) and the bounded quadrature that takes over
+#                 returned nothing either. A statement about the arithmetic on
+#                 this axis, not about the cell's shape.
+#   out_of_box    (barycentre only) the value left the cell's own box, which it
+#                 cannot do analytically, so the quadrature that produced it is
+#                 refused rather than an atom shipped into a neighbour's
+#                 territory.
+#
+# Fixed and ordered, so a per-cell tally is a fixed-length integer vector
+# whatever that cell happened to hit and a grid-level tally is one vector
+# addition.
+.LCCD_BOX_REASONS  <- c("boundary", "no_factor", "cancellation")
+.LCCD_BARY_REASONS <- c("boundary", "no_factor", "cancellation", "out_of_box")
+
+# A declined axis, tagged with the gate that declined it. The value field is
+# absent rather than NA, so the caller's own `f$log_factor` / `f$u_bar` is NULL
+# and the decline test stays a null test on the quantity the caller wanted.
+.joint_local_ccd_axis_declined <- function(reason) {
+    list(route = NULL, reason = reason)
+}
+
+# Counts per reason over a character vector of per-axis declines, laid out on
+# the full vocabulary so an absent reason reads 0 rather than being missing.
+.joint_local_ccd_reason_tally <- function(reasons, vocab) {
+    out <- integer(length(vocab))
+    names(out) <- vocab
+    for (r in reasons) out[[r]] <- out[[r]] + 1L
+    out
+}
+
 # The log gap between the two tail probabilities has to be resolved against the
 # absolute size of the logs it is a difference of: `pnorm(log.p = TRUE)` carries
 # each to about `eps` of its own magnitude, so a gap below this fraction of that
@@ -650,21 +705,36 @@
 # The same numeric route takes the near-flat concave axis, where the closed
 # form's own pieces cancel (see `.LCCD_BOX_CANCEL`).
 #
-# NULL when the axis carries no usable factor at all, which the caller reads as
-# a decline to the midpoint factor of 1 on THAT axis.
+# `log_factor` NULL when the axis carries no usable factor at all, which the
+# caller reads as a decline to the midpoint factor of 1 on THAT axis, alongside
+# `reason`: `cancellation` where the `.LCCD_BOX_CANCEL` refusal above is what
+# sent the axis to a quadrature that then produced nothing, `no_factor`
+# everywhere else. The reason is taken at the gate that produced it rather than
+# reconstructed from `(g, a)` afterwards, so it cannot disagree with the branch
+# actually taken.
 .joint_local_ccd_axis_box <- function(g, a, h_lo, h_hi) {
     w <- h_lo + h_hi
-    if (!is.finite(g) || !is.finite(a) || !is.finite(w) || w <= 0) return(NULL)
-    if (a > 0 && 0.5 * g^2 / a < .LCCD_BOX_CANCEL) {
-        s  <- 1 / sqrt(a)
-        mu <- g / a
-        ld <- .joint_local_ccd_log_pnorm_diff((-h_lo - mu) / s, (h_hi - mu) / s)
-        val <- 0.5 * g^2 / a + 0.5 * log(2 * pi / a) + ld - log(w)
-        if (is.finite(val)) return(list(log_factor = val, route = "closed"))
+    if (!is.finite(g) || !is.finite(a) || !is.finite(w) || w <= 0)
+        return(.joint_local_ccd_axis_declined("no_factor"))
+    cancelled <- FALSE
+    if (a > 0) {
+        if (0.5 * g^2 / a < .LCCD_BOX_CANCEL) {
+            s  <- 1 / sqrt(a)
+            mu <- g / a
+            ld <- .joint_local_ccd_log_pnorm_diff((-h_lo - mu) / s, (h_hi - mu) / s)
+            val <- 0.5 * g^2 / a + 0.5 * log(2 * pi / a) + ld - log(w)
+            if (is.finite(val))
+                return(list(log_factor = val, route = "closed",
+                            reason = NA_character_))
+        } else {
+            cancelled <- TRUE
+        }
     }
     val <- .joint_local_ccd_axis_box_numeric(g, a, h_lo, h_hi)
-    if (is.null(val)) return(NULL)
-    list(log_factor = val, route = "numeric")
+    if (is.null(val))
+        return(.joint_local_ccd_axis_declined(
+            if (cancelled) "cancellation" else "no_factor"))
+    list(log_factor = val, route = "numeric", reason = NA_character_)
 }
 
 # The same axis factor by bounded one-dimensional quadrature. The exponent
@@ -701,21 +771,26 @@
 #
 # `n_axes_declined` counts the axes that fell back to the midpoint factor of 1,
 # so a multiplier is never read as a full-cell correction when part of the cell
-# went unread.
+# went unread, and `declined_reasons` says which gate each of them fell at.
+# `boundary` is structurally 0 here: the caller already holds a stencil, so an
+# axis reaching this loop has a local quadratic by construction.
 .joint_local_ccd_cell_box_mass <- function(st) {
     d <- length(st$g)
     lf <- 0
-    n_closed <- 0L; n_numeric <- 0L; n_declined <- 0L
+    n_closed <- 0L; n_numeric <- 0L
+    reasons <- character(0)
     for (j in seq_len(d)) {
         f <- .joint_local_ccd_axis_box(st$g[j], -st$d2[j],
                                        st$half_lo[j], st$half_hi[j])
-        if (is.null(f)) { n_declined <- n_declined + 1L; next }
+        if (is.null(f$log_factor)) { reasons <- c(reasons, f$reason); next }
         lf <- lf + f$log_factor
         if (identical(f$route, "closed")) n_closed <- n_closed + 1L
         else n_numeric <- n_numeric + 1L
     }
     list(log_box_ratio = lf, n_axes_closed = n_closed,
-         n_axes_numeric = n_numeric, n_axes_declined = n_declined)
+         n_axes_numeric = n_numeric, n_axes_declined = length(reasons),
+         declined_reasons = .joint_local_ccd_reason_tally(reasons,
+                                                          .LCCD_BOX_REASONS))
 }
 
 # Every cell of a tensor outer grid, scored by the same rule.
@@ -731,12 +806,25 @@
 #
 # A cell missing a neighbour on any axis has no centred stencil and takes the
 # midpoint atom it already had: `log_box_ratio` 0, `computed` FALSE. That is the
-# same decline `.joint_local_ccd_cell_curv()` returns NULL for, one gate earlier.
+# same decline `.joint_local_ccd_cell_curv()` returns NULL for, one gate earlier,
+# and it is the `boundary` entry of `declined_reasons` -- `d` axes per such cell,
+# the stencil being a cell-level object. `n_axes_declined` counts only the axes
+# that reached the per-axis loop and fell there, so the two are read together
+# rather than one being the sum of the other: the invariant is
+# `n_axes_declined == sum(declined_reasons[c("no_factor", "cancellation")])`.
+#
+# A grid declining WHOLE -- an unguessable-support axis (NULL tags), an axis name
+# the grid does not carry, a degenerate layout -- is reported by `computed` being
+# FALSE everywhere and leaves the tally at zero: no axis of any cell was scored,
+# so none of them declined at a gate.
 .joint_local_ccd_box_mass <- function(joint_grid, log_marginal, latent_axes,
                                       tags) {
     n <- nrow(joint_grid)
     out <- list(log_box_ratio = rep(0, n), computed = rep(FALSE, n),
-                n_axes_closed = 0L, n_axes_numeric = 0L, n_axes_declined = 0L)
+                n_axes_closed = 0L, n_axes_numeric = 0L, n_axes_declined = 0L,
+                declined_reasons =
+                    .joint_local_ccd_reason_tally(character(0),
+                                                  .LCCD_BOX_REASONS))
     if (is.null(tags)) return(out)
     latent_cols <- match(latent_axes, colnames(joint_grid))
     if (anyNA(latent_cols)) return(out)
@@ -750,13 +838,18 @@
 
     for (c in seq_len(n)) {
         st <- .joint_local_ccd_cell_stencil(c, U, log_marginal, nb$up, nb$dn)
-        if (is.null(st)) next
+        if (is.null(st)) {
+            out$declined_reasons[["boundary"]] <-
+                out$declined_reasons[["boundary"]] + d
+            next
+        }
         bm <- .joint_local_ccd_cell_box_mass(st)
         out$log_box_ratio[c] <- bm$log_box_ratio
         out$computed[c]      <- TRUE
         out$n_axes_closed    <- out$n_axes_closed + bm$n_axes_closed
         out$n_axes_numeric   <- out$n_axes_numeric + bm$n_axes_numeric
         out$n_axes_declined  <- out$n_axes_declined + bm$n_axes_declined
+        out$declined_reasons <- out$declined_reasons + bm$declined_reasons
     }
     out
 }
@@ -834,13 +927,19 @@
 # failure, and the axis is declined (its atom stays at the cell's coordinate)
 # rather than shipped into a neighbouring cell's territory.
 #
-# NULL when the axis carries no usable barycentre at all, which the caller reads
-# as a decline to an offset of 0 on THAT axis.
+# `u_bar` NULL when the axis carries no usable barycentre at all, which the
+# caller reads as a decline to an offset of 0 on THAT axis, alongside `reason`:
+# `out_of_box` for the in-box refusal just described, `cancellation` where the
+# `.LCCD_BAR_CANCEL` refusal is what sent the axis to a quadrature that then
+# produced nothing, `no_factor` everywhere else. Each is taken at its own gate,
+# so the reason names the branch the axis actually took.
 .joint_local_ccd_axis_bary <- function(g, a, h_lo, h_hi) {
     w <- h_lo + h_hi
-    if (!is.finite(g) || !is.finite(a) || !is.finite(w) || w <= 0) return(NULL)
-    if (h_lo < 0 || h_hi < 0) return(NULL)
-    val <- NULL; route <- NULL
+    if (!is.finite(g) || !is.finite(a) || !is.finite(w) || w <= 0)
+        return(.joint_local_ccd_axis_declined("no_factor"))
+    if (h_lo < 0 || h_hi < 0)
+        return(.joint_local_ccd_axis_declined("no_factor"))
+    val <- NULL; route <- NULL; cancelled <- FALSE
     if (a > 0) {
         s  <- 1 / sqrt(a)
         mu <- g / a
@@ -854,16 +953,22 @@
                 v <- mu + corr
                 if (is.finite(v)) { val <- v; route <- "closed" }
             }
+        } else {
+            cancelled <- TRUE
         }
     }
     if (is.null(val)) {
         v <- .joint_local_ccd_axis_bary_numeric(g, a, h_lo, h_hi)
-        if (is.null(v)) return(NULL)
+        if (is.null(v))
+            return(.joint_local_ccd_axis_declined(
+                if (cancelled) "cancellation" else "no_factor"))
         val <- v; route <- "numeric"
     }
     tol <- .LCCD_BAR_INBOX * w
-    if (val < -h_lo - tol || val > h_hi + tol) return(NULL)
-    list(u_bar = min(max(val, -h_lo), h_hi), route = route)
+    if (val < -h_lo - tol || val > h_hi + tol)
+        return(.joint_local_ccd_axis_declined("out_of_box"))
+    list(u_bar = min(max(val, -h_lo), h_hi), route = route,
+         reason = NA_character_)
 }
 
 # The same axis barycentre by bounded one-dimensional quadrature: the ratio of
@@ -903,15 +1008,18 @@
 # `bary_shift` is the largest share of its own half-cell any axis's atom moves,
 # measured against the half-width on the side it moves toward, so the in-box
 # property bounds it in [0, 1] and it is comparable across cells of different
-# extent. `n_axes_declined` counts the axes that kept the cell's own coordinate.
+# extent. `n_axes_declined` counts the axes that kept the cell's own coordinate
+# and `declined_reasons` says which gate each of them kept it at. `boundary` is
+# structurally 0 here, the caller already holding a stencil.
 .joint_local_ccd_cell_bary <- function(st) {
     d <- length(st$g)
     u_bar <- numeric(d)
-    n_closed <- 0L; n_numeric <- 0L; n_declined <- 0L
+    n_closed <- 0L; n_numeric <- 0L
+    reasons <- character(0)
     for (j in seq_len(d)) {
         f <- .joint_local_ccd_axis_bary(st$g[j], -st$d2[j],
                                         st$half_lo[j], st$half_hi[j])
-        if (is.null(f)) { n_declined <- n_declined + 1L; next }
+        if (is.null(f$u_bar)) { reasons <- c(reasons, f$reason); next }
         u_bar[j] <- f$u_bar
         if (identical(f$route, "closed")) n_closed <- n_closed + 1L
         else n_numeric <- n_numeric + 1L
@@ -921,7 +1029,9 @@
     list(u_bar = u_bar,
          bary_shift = if (d > 0L) max(share) else NA_real_,
          n_axes_closed = n_closed, n_axes_numeric = n_numeric,
-         n_axes_declined = n_declined)
+         n_axes_declined = length(reasons),
+         declined_reasons = .joint_local_ccd_reason_tally(reasons,
+                                                          .LCCD_BARY_REASONS))
 }
 
 # Every cell of a tensor outer grid moved to its own mass barycentre.
@@ -950,14 +1060,19 @@
 #
 # A cell missing a neighbour on any axis has no centred stencil and stays where
 # it is: offset 0, `computed` FALSE, the same decline the box mass makes one gate
-# earlier. Non-latent columns (an active phi dispersion tensor) are never moved.
+# earlier, and the same `boundary` entry of `declined_reasons` at `d` axes per
+# such cell. Non-latent columns (an active phi dispersion tensor) are never
+# moved.
 .joint_local_ccd_barycentre <- function(joint_grid, log_marginal, latent_axes,
                                         tags) {
     n <- nrow(joint_grid)
     out <- list(joint_grid = joint_grid,
                 u_offset = matrix(0, n, length(latent_axes)),
                 bary_shift = rep(NA_real_, n), computed = rep(FALSE, n),
-                n_axes_closed = 0L, n_axes_numeric = 0L, n_axes_declined = 0L)
+                n_axes_closed = 0L, n_axes_numeric = 0L, n_axes_declined = 0L,
+                declined_reasons =
+                    .joint_local_ccd_reason_tally(character(0),
+                                                  .LCCD_BARY_REASONS))
     if (is.null(tags)) return(out)
     latent_cols <- match(latent_axes, colnames(joint_grid))
     if (anyNA(latent_cols)) return(out)
@@ -971,14 +1086,19 @@
 
     for (c in seq_len(n)) {
         st <- .joint_local_ccd_cell_stencil(c, U, log_marginal, nb$up, nb$dn)
-        if (is.null(st)) next
+        if (is.null(st)) {
+            out$declined_reasons[["boundary"]] <-
+                out$declined_reasons[["boundary"]] + d
+            next
+        }
         bc <- .joint_local_ccd_cell_bary(st)
-        out$u_offset[c, ]   <- bc$u_bar
-        out$bary_shift[c]   <- bc$bary_shift
-        out$computed[c]     <- TRUE
-        out$n_axes_closed   <- out$n_axes_closed + bc$n_axes_closed
-        out$n_axes_numeric  <- out$n_axes_numeric + bc$n_axes_numeric
-        out$n_axes_declined <- out$n_axes_declined + bc$n_axes_declined
+        out$u_offset[c, ]    <- bc$u_bar
+        out$bary_shift[c]    <- bc$bary_shift
+        out$computed[c]      <- TRUE
+        out$n_axes_closed    <- out$n_axes_closed + bc$n_axes_closed
+        out$n_axes_numeric   <- out$n_axes_numeric + bc$n_axes_numeric
+        out$n_axes_declined  <- out$n_axes_declined + bc$n_axes_declined
+        out$declined_reasons <- out$declined_reasons + bc$declined_reasons
     }
 
     # Only a cell that moves is rewritten. A round trip through
@@ -1252,7 +1372,8 @@
     declined_gain   <- numeric(0)
     # The per-cell recordings that gate nothing, on both sides of the gate: the
     # coarse-vs-refined mass comparison (gcol33/tulpa#323), the box-integral mass
-    # (gcol33/tulpa#326) and the barycentre shift (gcol33/tulpa#327).
+    # (gcol33/tulpa#326), the barycentre shift (gcol33/tulpa#327) and the two
+    # per-axis decline tallies those last two carry (gcol33/tulpa#334).
     # Accumulated as a list of named readings so the two sides stay one code
     # path and a reading added to it is reported on both.
     rec_kept     <- list()
@@ -1325,11 +1446,18 @@
         # half-cell any axis's atom moves under the barycentre
         # (gcol33/tulpa#327) -- and the two are read together for the same
         # reason: a cell can be given the right mass at the wrong place.
+        # Both readings carry their own per-axis decline tally, which travels
+        # with them: a multiplier formed on three of four axes and one formed on
+        # all four are different readings, and which gate the fourth fell at
+        # says whether the cell's quadratic was degenerate or its arithmetic was
+        # refused (gcol33/tulpa#334).
+        bm_c <- .joint_local_ccd_cell_box_mass(cc)
+        bc_c <- .joint_local_ccd_cell_bary(cc)
         rec_c <- c(rec_c,
-                   list(log_box_ratio =
-                            .joint_local_ccd_cell_box_mass(cc)$log_box_ratio,
-                        bary_shift =
-                            .joint_local_ccd_cell_bary(cc)$bary_shift))
+                   list(log_box_ratio     = bm_c$log_box_ratio,
+                        bary_shift        = bc_c$bary_shift,
+                        box_axis_reasons  = bm_c$declined_reasons,
+                        bary_axis_reasons = bc_c$declined_reasons))
 
         mis <- fit_c$misfit
         if (!isTRUE(mis < skew_max)) {
@@ -1372,11 +1500,26 @@
         n_nodes_added <- n_nodes_added + nrow(theta_nodes)
     }
 
-    # One numeric vector per recording, in cell order, on each side of the gate.
-    # An empty side gives a zero-length numeric, matching the empty `misfit` /
-    # `offset` vectors beside it.
+    # One numeric vector per scalar recording, in cell order, on each side of
+    # the gate. An empty side gives a zero-length numeric, matching the empty
+    # `misfit` / `offset` vectors beside it.
     rec_col <- function(acc, nm)
         vapply(acc, function(m) m[[nm]], numeric(1))
+    # The same, for a recording that is a per-axis decline tally rather than a
+    # scalar: one [cells x reasons] integer matrix, its columns the full
+    # vocabulary so a reason no cell hit reads 0 rather than being absent. An
+    # empty side gives a 0-row matrix carrying the same column names, so a
+    # reader takes the vocabulary off the matrix either way. The `boundary`
+    # column is structurally 0 on both sides -- every cell reaching the loop
+    # above passed `.joint_local_ccd_cell_curv()` and so has a centred stencil --
+    # and is carried so the tally is the same object the grid-wide entry points
+    # return.
+    rec_mat <- function(acc, nm, vocab) {
+        m <- matrix(0L, length(acc), length(vocab),
+                    dimnames = list(NULL, vocab))
+        for (i in seq_along(acc)) m[i, ] <- acc[[i]][[nm]]
+        m
+    }
 
     keep <- setdiff(seq_len(n), refined)
     out_grid <- rbind(joint_grid[keep, , drop = FALSE],
@@ -1431,6 +1574,12 @@
                              max_node_weight  = rec_col(rec_kept, "max_node_weight"),
                              log_box_ratio    = rec_col(rec_kept, "log_box_ratio"),
                              bary_shift       = rec_col(rec_kept, "bary_shift"),
+                             box_axis_reasons =
+                                 rec_mat(rec_kept, "box_axis_reasons",
+                                         .LCCD_BOX_REASONS),
+                             bary_axis_reasons =
+                                 rec_mat(rec_kept, "bary_axis_reasons",
+                                         .LCCD_BARY_REASONS),
                              skew_max        = skew_max,
                              cells_declined  = declined_cells,
                              misfit_declined = declined_misfit,
@@ -1448,6 +1597,12 @@
                                  rec_col(rec_declined, "log_box_ratio"),
                              bary_shift_declined =
                                  rec_col(rec_declined, "bary_shift"),
+                             box_axis_reasons_declined =
+                                 rec_mat(rec_declined, "box_axis_reasons",
+                                         .LCCD_BOX_REASONS),
+                             bary_axis_reasons_declined =
+                                 rec_mat(rec_declined, "bary_axis_reasons",
+                                         .LCCD_BARY_REASONS),
                              n_cells_declined = length(declined_cells),
                              n_cells_before  = n,
                              n_cells_after   = nrow(out_grid),

@@ -1194,6 +1194,54 @@ test_that("a declined cell reports the mass comparison its nodes already paid fo
   expect_length(on$info$mode_gain, 0L)
 })
 
+test_that("the per-axis decline tally is carried on both sides of the gate", {
+  # The two free readings each carry the vocabulary their own estimator can
+  # decline under, per cell and in cell order, on the kept side and the declined
+  # side alike: a cell the gate put back as a mass atom is as legible as one it
+  # kept (gcol33/tulpa#334).
+  tg <- .lccd_gate_target(rho = 0.8, reach = 1.5, m = 3L, gamma_shape = 2)
+  on  <- tulpa:::.joint_local_ccd_refine(tg$grid, tg$lm, NULL, NULL,
+                                         colnames(tg$grid), tg$tags, tg$eval,
+                                         max_cells = 4L)
+  off <- tulpa:::.joint_local_ccd_refine(tg$grid, tg$lm, NULL, NULL,
+                                         colnames(tg$grid), tg$tags, tg$eval,
+                                         max_cells = 4L, skew_max = Inf)
+  expect_gt(on$info$n_cells_declined, 0L)
+  expect_equal(on$info$n_cells_refined, 0L)
+  expect_gt(off$info$n_cells_refined, 0L)
+
+  vocab <- list(box_axis_reasons  = tulpa:::.LCCD_BOX_REASONS,
+                bary_axis_reasons = tulpa:::.LCCD_BARY_REASONS)
+  for (nm in names(vocab)) {
+    kept <- off$info[[nm]]
+    decl <- on$info[[paste0(nm, "_declined")]]
+    for (m in list(kept, decl)) {
+      expect_true(is.matrix(m))
+      expect_true(is.integer(m))
+      expect_identical(colnames(m), vocab[[nm]])
+    }
+    expect_identical(nrow(kept), off$info$n_cells_refined)
+    expect_identical(nrow(decl), on$info$n_cells_declined)
+    # Every cell reaching the cloud passed `.joint_local_ccd_cell_curv()`, so it
+    # has a centred stencil and `boundary` cannot fire here; on this fixture the
+    # remaining gates do not fire either, so both tallies are clean and the
+    # count of declined axes they break down is zero.
+    expect_true(all(kept == 0L))
+    expect_true(all(decl == 0L))
+    # An empty side is a zero-row matrix carrying the vocabulary rather than an
+    # absent entry, so a reader takes the column names off either side.
+    empty <- on$info[[nm]]
+    expect_identical(dim(empty), c(0L, length(vocab[[nm]])))
+    expect_identical(colnames(empty), vocab[[nm]])
+  }
+  # The tally is a per-axis breakdown of the same cells the scalar readings
+  # beside it describe, so its rows track them.
+  expect_identical(nrow(on$info$box_axis_reasons_declined),
+                   length(on$info$log_box_ratio_declined))
+  expect_identical(nrow(off$info$bary_axis_reasons),
+                   length(off$info$bary_shift))
+})
+
 test_that("the mass ratio is stable where one node dominates the cell", {
   # A node sitting several nats above the cell's own coordinate is the regime the
   # ratio is read in, and the one a naive sum of exponentials loses.
