@@ -108,10 +108,11 @@
 
 # Monotone maps between a derived quantity's own domain and the unbounded
 # coordinate a moment-matched interval is formed on. `positive` covers standard
-# deviations and variances, `correlation` the (-1, 1) interval of a correlation,
-# and `unbounded` a covariance entry, whose sign is free. A registry rather than
-# a branch, so a new derived quantity names its domain and inherits the
-# interval.
+# deviations, variances, precisions and ranges, `correlation` the (-1, 1)
+# interval of a correlation, `unit` the (0, 1) interval of a mixing weight
+# (BYM2's rho, a probability), and `unbounded` a covariance entry or a copy
+# coefficient, whose sign is free. A registry rather than a branch, so a new
+# derived quantity names its domain and inherits the interval.
 #
 # `in_domain` is the map's own support, checked before it is applied so a
 # degenerate node (a collapsed scale, a correlation on the boundary) is reported
@@ -121,6 +122,8 @@
                      in_domain = function(x) x > 0),
   correlation = list(to = atanh,    from = tanh,
                      in_domain = function(x) abs(x) < 1),
+  unit        = list(to = stats::qlogis, from = stats::plogis,
+                     in_domain = function(x) x > 0 & x < 1),
   unbounded   = list(to = identity, from = identity,
                      in_domain = function(x) rep(TRUE, length(x)))
 )
@@ -162,6 +165,40 @@
   m <- sum(w * u)
   s <- sqrt(max(0, sum(w * u^2) - m^2))
   tr$from(m + stats::qnorm(probs) * s)
+}
+
+# Median and interval of one quantity, given what KIND of node set carries it.
+#
+# `support = "density"` means the weights are proportional to posterior mass --
+# an MCMC sample, or a tensor grid whose uniform cells discretize the density --
+# so their cumulative sum is a CDF and the weighted quantile is the summary.
+# `support = "moment_rule"` means they are a central-composite design's: they
+# reproduce the integrand's moments and the node positions carry no mass, so the
+# interval comes from the moments on the quantity's own `domain`
+# (gcol33/tulpa#308). A `moment_rule` quantity whose domain is NA has a support
+# the engine will not guess -- a proper-CAR correlation on the adjacency
+# eigenvalue interval -- and reports NA rather than the design's extent.
+#
+# The single dispatcher for every consumer of the two summaries, so a caller
+# names its support and its domain and inherits the rest.
+.nl_summary_quantile <- function(values, weights, probs,
+                                 domain = NA_character_,
+                                 support = c("density", "moment_rule")) {
+  support <- match.arg(support)
+  if (!identical(support, "moment_rule")) {
+    return(.nl_wtd_quantile(values, weights, probs, outside = "clamp"))
+  }
+  if (length(domain) != 1L || is.na(domain)) {
+    return(.nl_wtd_quantile(values, weights, probs, outside = "na"))
+  }
+  .nl_moment_quantile(values, weights, probs, domain)
+}
+
+# What kind of node set an outer integrator leaves behind, from the name it
+# reports in `fit$integration`. Only the central-composite design is a moment
+# rule; the tensor grid and its adaptive subset discretize the density.
+.nl_node_support <- function(integration) {
+  if (identical(integration, "ccd")) "moment_rule" else "density"
 }
 
 # Summary of a weighted mixture of Gaussians, one mixture per parameter.
@@ -259,9 +296,17 @@
 #
 # Returns list(median = named_vec, ci_lo = named_vec, ci_hi = named_vec).
 # For scalar tg the returned vectors are length-1 with names = "value".
+#
+# `support` says what the supplied `weights` are and is passed through to
+# `.nl_summary_quantile`; `domains` gives one `.NL_DOMAIN_TRANSFORM` name per
+# axis, which a `"moment_rule"` support needs to form its interval (an axis whose
+# support the engine will not guess carries NA and reports NA).
 .nl_axis_quantiles <- function(tg, log_marginal, refining = NULL,
                                 probs = c(0.025, 0.5, 0.975),
-                                weights = NULL) {
+                                weights = NULL,
+                                support = c("density", "moment_rule"),
+                                domains = NULL) {
+  support <- match.arg(support)
   if (is.null(dim(tg))) {
     tg <- matrix(as.numeric(tg), ncol = 1L,
                  dimnames = list(NULL, "value"))
@@ -300,7 +345,8 @@
       if (!is.finite(m)) next
       ws    <- exp(lm_u - m); ws <- ws / sum(ws)
     }
-    qs    <- .nl_wtd_quantile(tg[use, j], ws, probs)
+    dm <- if (length(domains) < j) NA_character_ else domains[[j]]
+    qs <- .nl_summary_quantile(as.numeric(tg[use, j]), ws, probs, dm, support)
     lo[j]  <- qs[1L]
     med[j] <- qs[2L]
     hi[j]  <- qs[3L]

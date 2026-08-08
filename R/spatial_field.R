@@ -601,15 +601,29 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
   names(fields) <- block_names
 
   tg <- jfit$theta_grid
+  # Which outer integrator actually ran decides how a median and interval are
+  # read off the nodes: a tensor grid's uniform cells discretize the density, so
+  # their cumulative weight is a CDF; the CCD forced above is a moment rule, so
+  # the interval comes from the moments on each quantity's own domain
+  # (gcol33/tulpa#310). `sigma = 1 / sqrt(tau)` is positive whatever the block;
+  # `rho` takes the domain the axis registry gives it, and an axis the registry
+  # will not guess reports NA rather than the design's extent.
+  support <- .nl_node_support(jfit$integration)
+  doms <- if (identical(support, "moment_rule"))
+    stats::setNames(.joint_axis_domains(jfit), colnames(tg)) else NULL
+  dom_of <- function(nm) if (is.null(doms)) NA_character_ else unname(doms[nm])
+  probs <- c(0.025, 0.5, 0.975)
   hypers <- lapply(seq_along(blocks), function(b) {
     prefix  <- paste0("b", b, ".")
     has_col <- function(nm) !is.null(tg) && nm %in% colnames(tg)
-    sigma <- if (has_col(paste0(prefix, "tau")))
-      .nl_wtd_quantile(1 / sqrt(tg[, paste0(prefix, "tau")]), w,
-                       c(0.025, 0.5, 0.975)) else NULL
-    rho <- if (has_col(paste0(prefix, "rho")))
-      .nl_wtd_quantile(tg[, paste0(prefix, "rho")], w,
-                       c(0.025, 0.5, 0.975)) else NULL
+    tau_nm <- paste0(prefix, "tau")
+    rho_nm <- paste0(prefix, "rho")
+    sigma <- if (has_col(tau_nm))
+      .nl_summary_quantile(1 / sqrt(tg[, tau_nm]), w, probs,
+                           "positive", support) else NULL
+    rho <- if (has_col(rho_nm))
+      .nl_summary_quantile(tg[, rho_nm], w, probs,
+                           dom_of(rho_nm), support) else NULL
     list(name = block_names[b], structure = blocks[[b]]$type,
          sigma = sigma, rho = rho)
   })
@@ -676,9 +690,11 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
     })
     names(spatial_fields) <- mb$field_names
     # Sigma derived quantities, marginalized over the log-Cholesky outer grid:
-    # reconstruct Sigma per grid cell, derive (sigma_a, rho_ab), weighted-
-    # quantile each (the marginalize-derived-quantities rule). Reuses the
-    # RE-covariance log-Cholesky -> Sigma and derived-matrix helpers.
+    # reconstruct Sigma per grid cell, derive (sigma_a, rho_ab), and summarize
+    # each (the marginalize-derived-quantities rule). Reuses the RE-covariance
+    # log-Cholesky -> Sigma and derived-matrix helpers, including the per-column
+    # domain they carry, so a CCD-integrated grid reports the moment-matched
+    # interval rather than the design's own extent (gcol33/tulpa#310).
     m <- p_fields * (p_fields + 1L) / 2L
     axis_nm <- character(m); tt <- 1L
     for (j in seq_len(p_fields)) for (i in j:p_fields) {
@@ -689,8 +705,12 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
       L %*% t(L)
     })
     D <- .re_cov_derived_matrix(Sig_list, p_fields, full = TRUE)
-    mcar_summary <- lapply(colnames(D), function(cn)
-      list(name = cn, q = .nl_wtd_quantile(D[, cn], w, c(0.025, 0.5, 0.975))))
+    dom <- attr(D, "domain")
+    supp <- .nl_node_support(jfit$integration)
+    mcar_summary <- lapply(seq_len(ncol(D)), function(j)
+      list(name = colnames(D)[j],
+           q = .nl_summary_quantile(D[, j], w, c(0.025, 0.5, 0.975),
+                                    dom[[j]], supp)))
     names(mcar_summary) <- colnames(D)
     spatial_field_hypers <- NULL
   } else {

@@ -423,9 +423,7 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
 
   summarize <- function(x, domain) {
     ms <- .nl_wtd_mean_sd(x, w)
-    q  <- if (identical(support, "moment_rule"))
-      .nl_moment_quantile(x, w, probs, domain)
-    else .nl_wtd_quantile(x, w, probs, outside = "clamp")
+    q  <- .nl_summary_quantile(x, w, probs, domain, support)
     c(mean = ms$mean, sd = ms$sd, median = q[2L], ci_lo = q[1L], ci_hi = q[3L])
   }
   post <- t(vapply(seq_len(ncol(D)),

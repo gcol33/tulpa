@@ -29,16 +29,11 @@
 # drives the mean-coverage standard error to ~0.02, making the >= 0.85 mean a
 # stable gate. This mirrors the occupancy test's mean-coverage criterion.
 
-# ----- simulate: known beta + region IID RE -> built-in family response -----
-sim_re <- function(seed, family, nr, spr, ntr, beta, sigma_u, phi) {
-  set.seed(seed)
-  N      <- nr * spr
-  region <- rep(seq_len(nr), each = spr)
-  x      <- rnorm(N)
-  X      <- cbind(1, x)
-  u      <- rnorm(nr, 0, sigma_u)
-  eta    <- as.numeric(X %*% beta) + u[region]
-  y <- switch(family,
+# Draw a response of one built-in family at a given linear predictor. Shared by
+# every simulator below so the response law has one definition.
+recov_draw_y <- function(family, eta, ntr, phi) {
+  N <- length(eta)
+  switch(family,
     poisson        = rpois(N, exp(eta)),
     binomial       = rbinom(N, ntr, plogis(eta)),
     gaussian       = eta + rnorm(N, 0, sqrt(phi)),
@@ -49,8 +44,42 @@ sim_re <- function(seed, family, nr, spr, ntr, beta, sigma_u, phi) {
       pmin(pmax(rbeta(N, mu * phi, (1 - mu) * phi), 1e-4), 1 - 1e-4)
     },
     stop("unhandled family ", family))
-  list(y = y, X = X, region = as.integer(region), nr = nr, N = N,
-       beta = beta, sigma_u = sigma_u, ntr = ntr)
+}
+
+# ----- simulate: known beta + region IID RE -> built-in family response -----
+sim_re <- function(seed, family, nr, spr, ntr, beta, sigma_u, phi) {
+  set.seed(seed)
+  N      <- nr * spr
+  region <- rep(seq_len(nr), each = spr)
+  x      <- rnorm(N)
+  X      <- cbind(1, x)
+  u      <- rnorm(nr, 0, sigma_u)
+  eta    <- as.numeric(X %*% beta) + u[region]
+  y <- recov_draw_y(family, eta, ntr, phi)
+  list(y = y, X = X, region = as.integer(region), regions = list(as.integer(region)),
+       sigma_u = sigma_u, nr = nr, N = N, beta = beta, ntr = ntr)
+}
+
+# The same design with `length(su_extra) + 1` CROSSED IID groupings: block 1 is
+# the one `recov_sweep` judges (its SD is `sigma_u`), the rest are further
+# independent random effects at the supplied SDs. Each block contributes one
+# outer hyperparameter axis, so the block count IS the outer dimension `d` --
+# the knob the CCD's node placement (and, before gcol33/tulpa#309, the reported
+# interval's width) depends on. Returns a simulator with `sim_re`'s signature.
+sim_re_crossed <- function(su_extra) {
+  function(seed, family, nr, spr, ntr, beta, sigma_u, phi) {
+    set.seed(seed)
+    N   <- nr * spr
+    sus <- c(sigma_u, su_extra)
+    grp <- lapply(sus, function(s) sample.int(nr, N, replace = TRUE))
+    x   <- rnorm(N)
+    X   <- cbind(1, x)
+    eta <- as.numeric(X %*% beta)
+    for (k in seq_along(sus)) eta <- eta + rnorm(nr, 0, sus[k])[grp[[k]]]
+    y <- recov_draw_y(family, eta, ntr, phi)
+    list(y = y, X = X, region = grp[[1L]], regions = grp,
+         sigma_u = sigma_u, nr = nr, N = N, beta = beta, ntr = ntr)
+  }
 }
 
 # Marginalized fixed-effect posterior: Gaussian mixture over the grid.
@@ -96,6 +125,21 @@ recov_fit_joint <- function(d, sg, family, cfg) {
                    diagnose_k = FALSE, skew_correct = TRUE)))
 }
 
+# The same joint fitter over every grouping the simulator produced, with the CCD
+# outer integrator asked for explicitly (it engages from three transformable
+# axes). One iid block per grouping, so `length(d$regions)` is the outer
+# dimension. Axis 1 is block 1's SD, which is what `recov_sweep` covers.
+recov_fit_joint_ccd <- function(d, sg, family, cfg) {
+  suppressWarnings(tulpa_nested_laplace_joint(
+    responses = list(a = list(y = as.numeric(d$y),
+                              n_trials = rep(cfg$ntr, d$N), X = d$X,
+                              family = family, phi = cfg$phi)),
+    prior = lapply(d$regions, function(g)
+      list(type = "iid", obs_idx = list(g), n_units = d$nr, sigma_grid = sg)),
+    control = list(max_iter = 100L, tol = 1e-8, n_threads = 1L,
+                   diagnose_k = FALSE, integration = "ccd")))
+}
+
 # Fit n_seed data sets for one family; return per-coefficient mean estimate,
 # bias and 95%-CI coverage counts, plus the RE-SD recovery summary.
 #
@@ -111,7 +155,12 @@ recov_fit_joint <- function(d, sg, family, cfg) {
 # single-block nested driver; `recov_fit_joint` below fits the SAME simulated
 # data as a one-arm joint model, so the joint tier's fixed-effect intervals are
 # judged by this one harness rather than a second copy of it (gcol33/tulpa#305).
-recov_sweep <- function(family, cfg, n_seed, seed_off, fit_fn = recov_fit_single) {
+# `sim_fn(seed, family, nr, spr, ntr, beta, sigma_u, phi)` is the simulator. It
+# defaults to the single-grouping design; `sim_re_crossed()` above supplies the
+# same design with several crossed groupings, so the outer dimension can be
+# varied while the regime is held fixed.
+recov_sweep <- function(family, cfg, n_seed, seed_off, fit_fn = recov_fit_single,
+                        sim_fn = sim_re) {
   beta <- cfg$beta
   p    <- length(beta)
   sg   <- exp(seq(log(0.2), log(1.5), length.out = 7))
@@ -121,9 +170,10 @@ recov_sweep <- function(family, cfg, n_seed, seed_off, fit_fn = recov_fit_single
   cov_skew  <- integer(p)
   gamma3    <- matrix(NA_real_, n_seed, p)
   s_med <- numeric(n_seed)
+  s_wid <- numeric(n_seed)
   s_cov <- 0L
   for (s in seq_len(n_seed)) {
-    d <- sim_re(seed_off + s, family, cfg$nr, cfg$spr, cfg$ntr,
+    d <- sim_fn(seed_off + s, family, cfg$nr, cfg$spr, cfg$ntr,
                 beta, cfg$su, cfg$phi)
     f <- fit_fn(d, sg, family, cfg)
     bp <- beta_post(f)
@@ -144,6 +194,7 @@ recov_sweep <- function(family, cfg, n_seed, seed_off, fit_fn = recov_fit_single
       }
     }
     s_med[s] <- f$theta_median[[1]]
+    s_wid[s] <- f$theta_ci_hi[[1]] - f$theta_ci_lo[[1]]
     if (cfg$su >= f$theta_ci_lo[[1]] && cfg$su <= f$theta_ci_hi[[1]]) {
       s_cov <- s_cov + 1L
     }
@@ -151,7 +202,7 @@ recov_sweep <- function(family, cfg, n_seed, seed_off, fit_fn = recov_fit_single
   list(mean = colMeans(est), bias = colMeans(est) - beta, cov = covb,
        cov_gauss = cov_gauss, cov_skew = cov_skew,
        gamma3 = colMeans(gamma3), sigma_bias = mean(s_med) - cfg$su,
-       sigma_cov = s_cov, n_seed = n_seed)
+       sigma_cov = s_cov, sigma_width = mean(s_wid), n_seed = n_seed)
 }
 
 # Per-family identified regimes (RE SD recoverable, link well-determined).
@@ -312,6 +363,30 @@ test_that("a one-arm joint fit reproduces the single-block fixed-effect posterio
                  label = sprintf("%s joint vs single SE", fam))
     expect_equal(unname(vcov(fj)), unname(vcov(fs)), tolerance = 1e-5,
                  label = sprintf("%s joint vs single vcov", fam))
+  }
+})
+
+test_that("a CCD-integrated joint fit's hyperparameter interval covers at the nominal rate", {
+  skip_if_not_slow()
+  # gcol33/tulpa#309. The block count IS the outer dimension, and a CCD places
+  # its axial nodes at 1.1 sqrt(d) whitened SDs, so a summary that reports the
+  # design's extent covers 2 Phi(1.1 sqrt(d)) - 1 -- 0.943 at d = 3, 0.972 at
+  # d = 4 -- whatever the data. Reading the interval from the design's MOMENTS
+  # puts it at nominal, and takes the width off the design.
+  cfg <- list(nr = 40L, spr = 30L, ntr = 1L, beta = c(-0.2, 0.7), su = 0.7,
+              phi = 0.5)
+  n_seed <- 40L
+  for (extra in list(c(0.5, 0.35), c(0.5, 0.35, 0.25))) {
+    R <- recov_sweep("gaussian", cfg, n_seed = n_seed, seed_off = 6100L,
+                     fit_fn = recov_fit_joint_ccd,
+                     sim_fn = sim_re_crossed(extra))
+    d_axes <- length(extra) + 1L
+    p  <- R$sigma_cov / n_seed
+    se <- sqrt(0.95 * 0.05 / n_seed)
+    expect_lt(abs(p - 0.95), 4 * se,
+              label = sprintf("d = %d sigma_1 coverage %.3f", d_axes, p))
+    expect_lt(abs(R$sigma_bias), 0.12,
+              label = sprintf("d = %d sigma_1 bias", d_axes))
   }
 })
 

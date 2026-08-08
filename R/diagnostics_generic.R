@@ -196,11 +196,24 @@ compare_models <- function(..., criterion = c("waic", "loo", "loglik")) {
   sigma_from_precision   = function(v) 1 / sqrt(v),
   identity               = function(v) v
 )
+#
+# A transformed entry also names the DOMAIN of the quantity it produces, which
+# is what a moment-matched interval is formed on when the grid is a quadrature
+# design rather than a discretized density (`.nl_summary_quantile`,
+# gcol33/tulpa#312). A standard deviation and a range are `positive` whatever
+# axis they came from. An identity entry carries no domain of its own and takes
+# the AXIS's, from the same registry the outer Pareto-k unconstrains with, so a
+# proper-CAR `rho` on the adjacency eigenvalue interval is declined rather than
+# guessed.
 .SPATIAL_HYPER_TRANSFORM <- list(
-  tau         = list(name = "sigma", fn = .hyper_nat$sigma_from_precision),
-  sigma2      = list(name = "sigma", fn = .hyper_nat$sigma_from_var),
-  phi_gp      = list(name = "range", fn = .hyper_nat$range_from_lengthscale),
-  lengthscale = list(name = "range", fn = .hyper_nat$range_from_lengthscale),
+  tau         = list(name = "sigma", fn = .hyper_nat$sigma_from_precision,
+                     domain = "positive"),
+  sigma2      = list(name = "sigma", fn = .hyper_nat$sigma_from_var,
+                     domain = "positive"),
+  phi_gp      = list(name = "range", fn = .hyper_nat$range_from_lengthscale,
+                     domain = "positive"),
+  lengthscale = list(name = "range", fn = .hyper_nat$range_from_lengthscale,
+                     domain = "positive"),
   sigma       = list(name = "sigma", fn = .hyper_nat$identity),
   range       = list(name = "range", fn = .hyper_nat$identity),
   rho         = list(name = "rho",   fn = .hyper_nat$identity)
@@ -245,14 +258,25 @@ compare_models <- function(..., criterion = c("waic", "loo", "loglik")) {
   keep <- if (is.null(keep_types)) seq_along(axes)
           else which(axis_kind %in% keep_types)
   if (length(keep) == 0L) return(NULL)
+  # The outer integrator decides how a quantile may be read off these weights: a
+  # tensor grid's uniform cells discretize the density, a CCD is a moment rule
+  # whose node positions carry no mass of their own (gcol33/tulpa#312).
+  support <- .nl_node_support(object$integration)
+  doms <- if (identical(support, "moment_rule")) .joint_axis_domains(object)
+          else NULL
   rows <- lapply(keep, function(j) {
     v   <- tg[, j]
     tr  <- if (!is.null(transform)) transform[[bare_axes[j]]] else NULL
     nm  <- bare_axes[j]
-    if (!is.null(tr)) { v <- tr$fn(v); nm <- tr$name }   # marginalize derived
+    dm  <- if (length(doms) < j) NA_character_ else doms[[j]]
+    if (!is.null(tr)) {                                 # marginalize derived
+      v  <- tr$fn(v)
+      nm <- tr$name
+      if (!is.null(tr$domain)) dm <- tr$domain
+    }
     m  <- sum(w * v)
     s  <- sqrt(max(0, sum(w * v^2) - m^2))
-    qs <- .nl_wtd_quantile(v, w, probs)
+    qs <- .nl_summary_quantile(v, w, probs, dm, support)
     out <- data.frame(mean = m, sd = s, row.names = nm,
                       stringsAsFactors = FALSE)
     out[.quantile_colnames(probs)] <- as.list(qs)

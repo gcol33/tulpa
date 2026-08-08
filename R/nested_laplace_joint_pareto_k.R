@@ -422,12 +422,15 @@
 # single-block: the lone `prior$type`) so the `rho` ambiguity above is
 # resolved by the block that owns the axis, not by name alone. Trailing
 # `phi_<arm>` dispersion columns (appended after the latent-block axes) are
-# positive-scale (log). Returns a character vector of tags, one per
-# `theta_grid` column, or a `.k_decline()` naming the axes that stopped it
-# (gcol33/tulpa#295) -- `"unguessable_axis"` for a support the engine will not
-# guess (car_proper's `rho_car`, which can never be scored for that family), and
-# `"not_applicable"` for a fit shape carrying no outer grid at all.
-.joint_pareto_axis_tags <- function(res) {
+# positive-scale (log).
+#
+# Returns one tag per `theta_grid` column, NA where the axis support is not
+# safely guessable, or a `.k_decline()` for a structural fault (no grid at all,
+# a layout inconsistency). The per-axis NAs are kept here rather than collapsed
+# so a per-axis consumer can act on the axes it CAN transform;
+# `.joint_pareto_axis_tags()` below is the whole-fit view that declines on any
+# of them.
+.joint_axis_tags_raw <- function(res) {
     tg <- res$theta_grid
     if (is.null(tg) || !is.matrix(tg) || ncol(tg) == 0L) {
         return(.k_decline("not_applicable", "no outer hyperparameter grid"))
@@ -468,10 +471,37 @@
         }
         tags[is_phi] <- "log"
     }
+    tags
+}
+
+# Whole-fit view of the same walk: every axis must be transformable, so a fit
+# carrying an unguessable one (car_proper's `rho_car`, a non-BYM2 `rho`)
+# DECLINES, naming the axes that stopped it (gcol33/tulpa#295).
+.joint_pareto_axis_tags <- function(res) {
+    tags <- .joint_axis_tags_raw(res)
+    if (.k_is_decline(tags)) return(tags)
     if (anyNA(tags)) {
+        cn <- colnames(res$theta_grid)
         return(.k_decline("unguessable_axis", cn[is.na(tags)]))
     }
     tags
+}
+
+# The domain each joint-grid axis lives on, for the moment-matched interval a
+# quadrature-design node set is summarized with (`.nl_summary_quantile`). Reads
+# the SAME per-axis registry the outer Pareto-k unconstrains with, so "what
+# coordinate is this axis Gaussian on" has one definition: a positive scale
+# (sigma / tau / range / phi_*) is `positive`, the BYM2 mixing weight is `unit`,
+# an unconstrained coordinate (a copy `alpha`, an MCAR log-Cholesky entry) is
+# `unbounded`. An axis the registry will not guess carries NA, and its summary
+# is withheld rather than guessed.
+.JOINT_AXIS_DOMAIN <- c(log = "positive", logit01 = "unit", identity = "unbounded")
+
+.joint_axis_domains <- function(res) {
+    d <- if (is.matrix(res$theta_grid)) ncol(res$theta_grid) else 0L
+    tags <- .joint_axis_tags_raw(res)
+    if (.k_is_decline(tags)) return(rep(NA_character_, d))
+    unname(.JOINT_AXIS_DOMAIN[tags])
 }
 
 # Forward (constrained -> unconstrained) transform for one axis.

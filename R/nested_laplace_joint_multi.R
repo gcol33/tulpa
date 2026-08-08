@@ -1423,9 +1423,16 @@
     # cells is already the calibrated SD. It therefore takes the same weighted-
     # moment path, not the lattice refit.
     is_design_weighted <- is_ccd || !is.null(local_ccd_info) || use_adaptive
+    # The median and interval per axis are read off whatever node set the
+    # integrator left. The global CCD is a MOMENT RULE -- its nodes reproduce the
+    # integrand's moments and carry no mass -- so a cumulative sum over them is
+    # not a CDF and the interval comes from the moments instead
+    # (gcol33/tulpa#309). The adaptive lattice and the locally refined grid keep
+    # a cell per unit of mass, so their cumulative weight is a CDF.
     res <- .joint_posterior_moments_multi(
         res, prepared, axis_offsets, joint_grid, cp,
-        int_weights = if (is_design_weighted) res$weights else NULL)
+        int_weights = if (is_design_weighted) res$weights else NULL,
+        support = .nl_node_support(integration_used))
     if (!is_design_weighted) {
         # Replace per-axis var-of-means SDs with Laplace-at-mode SDs at the
         # modal cell. The 3-point grid-profile fit needs the
@@ -1618,7 +1625,9 @@
 # hyperparameters (alpha at small n_pos, sigma/range/phi near boundary).
 .joint_posterior_moments_multi <- function(res, prepared, axis_offsets,
                                             joint_grid, cp,
-                                            int_weights = NULL) {
+                                            int_weights = NULL,
+                                            support = c("density", "moment_rule")) {
+    support <- match.arg(support)
     w <- res$weights
     # Joint moments across every column of joint_grid (including phi
     # columns appended for per-arm dispersion overrides).
@@ -1666,8 +1675,13 @@
     # alpha) reparameterization, alpha is a column of joint_grid like
     # any other axis; this attaches the calibrated summary for every
     # axis, not just alpha.
+    domains <- if (identical(support, "moment_rule"))
+        .joint_axis_domains(list(theta_grid = joint_grid,
+                                 axis_offsets = axis_offsets,
+                                 blocks = prepared)) else NULL
     qs <- .nl_axis_quantiles(joint_grid, res$log_marginal,
-                              res$refining_axis, weights = int_weights)
+                              res$refining_axis, weights = int_weights,
+                              support = support, domains = domains)
     res$theta_median <- qs$median
     res$theta_ci_lo  <- qs$ci_lo
     res$theta_ci_hi  <- qs$ci_hi
