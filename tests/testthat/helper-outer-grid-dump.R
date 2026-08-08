@@ -37,7 +37,8 @@
 #
 #   outer_grid_dump()          fit  -> the grid state + the summary the fit
 #                                      reported, optionally written to an RDS
-#   outer_grid_rebuild()       dump + weights -> the same per-axis read
+#   outer_grid_rebuild()       dump + weights + coordinates -> the same per-axis
+#                                      read
 #   outer_grid_rebuild_fixed() dump + weights -> the same fixed-effect read
 #   outer_grid_read_diff()     two reads -> mean absolute endpoint / width /
 #                                      median difference
@@ -196,9 +197,30 @@ outer_grid_load <- function(file) {
   d
 }
 
-# The per-axis median + 95% interval a dump's grid gives under `weights`,
-# through the engine's own summary path. `weights = NULL` uses the fit's own,
-# which is the round trip.
+# The coordinates a read is taken at. `NULL` is the dump's own, which is the
+# round trip; a candidate LOCATION rule (gcol33/tulpa#327) supplies a perturbed
+# matrix of the same shape, so the atoms move within the grid the fit left while
+# the weights they carry stay as they were. The two arguments are independent,
+# which is what lets a mass rule and a place rule be scored apart and together.
+#
+# Held to the dump's own dimensions, for the reason `.ogd_check_cells()` holds
+# the per-cell blocks to them: a read is attributable to the candidate rule only
+# while cell k of the coordinates is the same cell as cell k of the weights.
+.ogd_coords <- function(dump, joint_grid) {
+  if (is.null(joint_grid)) return(dump$joint_grid)
+  jg <- as.matrix(joint_grid)
+  if (!identical(dim(jg), dim(dump$joint_grid))) {
+    stop("`joint_grid` is ", nrow(jg), " x ", ncol(jg), " but the dumped grid ",
+         "has ", nrow(dump$joint_grid), " cell(s) on ",
+         ncol(dump$joint_grid), " axis(es).", call. = FALSE)
+  }
+  colnames(jg) <- colnames(dump$joint_grid)
+  jg
+}
+
+# The per-axis median + 95% interval a dump's grid gives under `weights` at
+# `joint_grid`, through the engine's own summary path. Both NULL uses the fit's
+# own, which is the round trip.
 #
 # `.nl_axis_quantiles()` takes the weights explicitly on every call here. The
 # driver passes NULL on a density grid and lets the helper form the per-axis
@@ -206,7 +228,7 @@ outer_grid_load <- function(file) {
 # cells and renormalised IS the fit's own weight vector restricted the same way,
 # so the two agree to floating point and the harness has one entry point instead
 # of two.
-outer_grid_rebuild <- function(dump, weights = NULL) {
+outer_grid_rebuild <- function(dump, weights = NULL, joint_grid = NULL) {
   w <- weights %||% dump$weights
   n <- nrow(dump$joint_grid)
   if (length(w) != n) {
@@ -214,7 +236,7 @@ outer_grid_rebuild <- function(dump, weights = NULL) {
          " cell(s).", call. = FALSE)
   }
   tulpa:::.nl_axis_quantiles(
-    dump$joint_grid, dump$log_marginal, dump$refining_axis,
+    .ogd_coords(dump, joint_grid), dump$log_marginal, dump$refining_axis,
     probs = dump$probs, weights = as.numeric(w),
     support = dump$support, domains = dump$axis_domains)
 }
@@ -399,11 +421,19 @@ outer_grid_noise_floor <- function(dump, weights = NULL, strides = c(2L, 3L)) {
 # verdict is the whole point of the harness: a difference is reported relative to
 # what this grid can resolve, never on its own.
 #
+# The candidate is a weight vector, a perturbed coordinate matrix, or both, so a
+# mass rule and a place rule are scored on the same footing and their combination
+# is a third candidate rather than a special case. The floor is the resolution of
+# the grid the fit left, so it is read at the dumped coordinates whichever
+# candidate is being scored.
+#
 # `above_floor` is one logical per part of `OGD_PARTS`, in that order, so the
 # verdict covers exactly the parts the difference and the floor carry.
-outer_grid_weight_report <- function(dump, weights, floor = NULL) {
+outer_grid_weight_report <- function(dump, weights = NULL, floor = NULL,
+                                     joint_grid = NULL) {
   fl <- floor %||% outer_grid_noise_floor(dump)
-  d  <- outer_grid_read_diff(outer_grid_rebuild(dump), outer_grid_rebuild(dump, weights))
+  d  <- outer_grid_read_diff(outer_grid_rebuild(dump),
+                             outer_grid_rebuild(dump, weights, joint_grid))
   list(diff = d, floor = fl,
        above_floor = vapply(stats::setNames(nm = names(OGD_PARTS)),
                             function(nm) isTRUE(d[[nm]] > fl[[nm]]),

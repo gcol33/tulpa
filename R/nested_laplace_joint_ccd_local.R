@@ -156,6 +156,36 @@
 # on the three instead of declining whole. The correlated form is worth its
 # rectangle routine only if the diagonal one moves the read.
 #
+# Mass is half of what the midpoint atom drops, and the other half is PLACE. The
+# per-axis read summarises axis j as a weighted quantile over the grid
+# COORDINATES (`.nl_axis_quantiles()` hands `tg[, j]` to
+# `.nl_summary_quantile()`), so a cell whose log-marginal carries a gradient
+# contributes its whole mass at a point that mass is not centred on. Correcting
+# the mass alone gives such a cell the right weight in the wrong place, and the
+# two fail independently -- a cell can have either one right and the other wrong
+# (gcol33/tulpa#327). The place is the same local quadratic's first moment over
+# the same box, so per axis it is the doubly-truncated normal mean
+#   mu = g/a, s = a^(-1/2), alpha = (-h_lo - mu)/s, beta = (h_hi - mu)/s,
+#   ubar = mu + s (phi(alpha) - phi(beta)) / (Phi(beta) - Phi(alpha)),
+# reducing to the cell's own coordinate exactly at `g = 0`, which is the whole
+# content of the current placement. It reads the same `(g, A)` off the same
+# stencil, so like the mass it costs no inner solve, and it declines per axis for
+# the same reason: the first moment over a BOUNDED box is finite at either sign
+# of `a_i`, so a convex axis is integrated rather than throwing the cell away.
+#
+# Two properties of it are load-bearing. The barycentre lies INSIDE the cell's
+# box -- it is the first moment of a positive density over that box -- so an atom
+# moved to it never crosses into a neighbour's territory and the grid stays a
+# partition of the same space; the runtime check that it does is a check on the
+# arithmetic, not on the integral. And it applies to the HYPERPARAMETER axes
+# only: `v` IS the outer coordinate, so its barycentre is a property of outer
+# cell geometry alone. A fixed effect is not summarised this way at all --
+# `.nested_fixed_moments()` marginalizes each cell's OWN `(beta_k, Vb_k)` from
+# its own inner solve (gcol33/tulpa#305) -- so moving that cell's location asks
+# what `beta` would have been at the moved point, which is another inner solve or
+# an interpolation across cells. Anything reported on a fixed effect stays where
+# its own solve put it.
+#
 # The node cloud of each refined cell is clamped to the cell's Voronoi half-box
 # (half the distance to each neighbour on each axis), so clouds of distinct cells
 # never overlap and never spill into an unrefined neighbour's mass. Combined with
@@ -530,6 +560,245 @@
     out
 }
 
+# log|phi(z_lo) - phi(z_hi)| and its sign, the numerator of the truncated mean.
+#
+# Both standard normal densities are written as `exp(-0.5 z^2)` times the common
+# constant, so the difference is `exp(hi) - exp(lo)` with `hi = max`, `lo = min`
+# of the two exponents. Factoring the larger out leaves `1 - exp(lo - hi)`, taken
+# through `expm1` so a pair of endpoints equidistant from the local peak (where
+# the two densities agree to many figures and their difference is all that
+# survives) is as accurate as a pair on opposite tails. `sign = 0` is the exactly
+# balanced box, whose barycentre is the local peak itself.
+#
+# NULL on a non-finite argument, which the caller reads as a decline to the
+# bounded quadrature.
+.joint_local_ccd_log_dnorm_diff <- function(z_lo, z_hi) {
+    if (!is.finite(z_lo) || !is.finite(z_hi)) return(NULL)
+    la <- -0.5 * z_lo^2
+    lb <- -0.5 * z_hi^2
+    if (la == lb) return(list(sign = 0, log_abs = -Inf))
+    hi <- max(la, lb)
+    lg <- log(-expm1(min(la, lb) - hi))
+    if (!is.finite(hi) || !is.finite(lg)) return(NULL)
+    list(sign = if (la > lb) 1 else -1,
+         log_abs = hi + lg - 0.5 * log(2 * pi))
+}
+
+# Above this the closed form's `mu + s (...)` is no longer being formed in double
+# precision. The barycentre lies in the box while `mu = g/a` is the unbounded
+# location of the local peak, so once the peak leaves the box the two terms are
+# equal and opposite to within the box width: the result is a difference of
+# numbers of size `|mu|` and the rounding of each is carried into it. The
+# `pnorm` / `dnorm` logs the correction is built from are accurate to about `eps`
+# of their OWN magnitude, which for a peak `P = 0.5 g^2 / a` nats above the
+# origin is `eps P`, so the absolute error in the barycentre is about
+# `eps P |mu|` and the error as a fraction of the cell's own width is
+# `eps P |mu| / w`. Capping that product at 1e6 holds the fraction under 2.2e-10,
+# and the bounded quadrature -- which forms the same ratio from two integrals
+# that are both O(w) and never sees `mu` at all -- takes over beyond it. Measured
+# at a product of 2.0e5 the error is 4.7e-11 of the cell width, which is
+# `eps` times that product to two figures, so the budget is the observed one.
+.LCCD_BAR_CANCEL <- 1e6
+
+# The slack on the in-box check, as a fraction of the cell's own width. Set at
+# the closed form's own error budget above, so a barycentre resting on an edge is
+# clamped to it rather than refused, while a genuine escape is refused.
+.LCCD_BAR_INBOX <- 1e-9
+
+# One axis's mass barycentre under the local quadratic: the first moment of
+# `exp(g u - 0.5 a u^2)` over `[-h_lo, h_hi]` divided by its integral, in the
+# cell's own u-space offset (so 0 IS the cell's coordinate).
+#
+# `a > 0` (the concave axis) is the Gaussian case, and the ratio is the mean of
+# `N(mu, s^2)` truncated to the box,
+#   ubar = mu + s (phi(alpha) - phi(beta)) / (Phi(beta) - Phi(alpha)),
+# with `alpha` / `beta` the standardized box edges. Numerator and denominator are
+# both formed in logs -- the denominator by the same
+# `.joint_local_ccd_log_pnorm_diff()` the box mass uses, so a box that is a
+# sliver of the Gaussian it sits in is read on the tail that does not cancel --
+# and combined as one exponential, which is what keeps a box far out in the tail
+# (where both differences underflow on their own) from returning 0/0.
+#
+# `a <= 0` is the convex axis, and the near-flat concave axis is the same case
+# one gate later (the closed form's `mu` runs away, see `.LCCD_BAR_CANCEL`).
+# Both take the bounded quadrature: the first moment over a BOUNDED box is finite
+# at either sign of `a`, so the axis has an answer either way, and the exponent is
+# shifted by its own maximum over the box first so the integrand is bounded by 1
+# whatever the curvature. Declining the AXIS rather than the CELL is the same
+# separability the box mass buys.
+#
+# The result is checked to lie in the cell's own box before it is returned.
+# Analytically it must -- a first moment of a positive density over the box is a
+# convex combination of points in the box -- so a violation is an arithmetic
+# failure, and the axis is declined (its atom stays at the cell's coordinate)
+# rather than shipped into a neighbouring cell's territory.
+#
+# NULL when the axis carries no usable barycentre at all, which the caller reads
+# as a decline to an offset of 0 on THAT axis.
+.joint_local_ccd_axis_bary <- function(g, a, h_lo, h_hi) {
+    w <- h_lo + h_hi
+    if (!is.finite(g) || !is.finite(a) || !is.finite(w) || w <= 0) return(NULL)
+    if (h_lo < 0 || h_hi < 0) return(NULL)
+    val <- NULL; route <- NULL
+    if (a > 0) {
+        s  <- 1 / sqrt(a)
+        mu <- g / a
+        if (0.5 * g^2 / a * max(1, abs(mu) / w) < .LCCD_BAR_CANCEL) {
+            alpha <- (-h_lo - mu) / s
+            beta  <- ( h_hi - mu) / s
+            ld <- .joint_local_ccd_log_pnorm_diff(alpha, beta)
+            ln <- .joint_local_ccd_log_dnorm_diff(alpha, beta)
+            if (is.finite(ld) && !is.null(ln)) {
+                corr <- if (ln$sign == 0) 0 else ln$sign * s * exp(ln$log_abs - ld)
+                v <- mu + corr
+                if (is.finite(v)) { val <- v; route <- "closed" }
+            }
+        }
+    }
+    if (is.null(val)) {
+        v <- .joint_local_ccd_axis_bary_numeric(g, a, h_lo, h_hi)
+        if (is.null(v)) return(NULL)
+        val <- v; route <- "numeric"
+    }
+    tol <- .LCCD_BAR_INBOX * w
+    if (val < -h_lo - tol || val > h_hi + tol) return(NULL)
+    list(u_bar = min(max(val, -h_lo), h_hi), route = route)
+}
+
+# The same axis barycentre by bounded one-dimensional quadrature: the ratio of
+# `int u exp(g u - 0.5 a u^2) du` to `int exp(g u - 0.5 a u^2) du` over the box,
+# both with the exponent shifted by its maximum over the box before
+# exponentiating (on a concave axis that maximum sits at the local peak `g / a`
+# clamped into the box, on a convex one at whichever endpoint is higher). The
+# shift cancels out of the ratio and keeps both integrands in (0, 1], so neither
+# overflows nor underflows to zero everywhere; and because neither integral is
+# ever larger than the box, this route forms the barycentre without the `mu` the
+# closed form subtracts.
+.joint_local_ccd_axis_bary_numeric <- function(g, a, h_lo, h_hi) {
+    expo <- function(u) g * u - 0.5 * a * u^2
+    cand <- c(-h_lo, h_hi)
+    if (a > 0) cand <- c(cand, min(max(g / a, -h_lo), h_hi))
+    m <- max(expo(cand))
+    if (!is.finite(m)) return(NULL)
+    quad <- function(f) tryCatch(
+        stats::integrate(f, -h_lo, h_hi,
+                         rel.tol = .Machine$double.eps^0.75)$value,
+        error = function(e) NA_real_)
+    i0 <- quad(function(u) exp(expo(u) - m))
+    i1 <- quad(function(u) u * exp(expo(u) - m))
+    if (!is.finite(i0) || i0 <= 0 || !is.finite(i1)) return(NULL)
+    val <- i1 / i0
+    if (!is.finite(val)) NULL else val
+}
+
+# The cell's mass barycentre, as the per-axis offset from the cell's own
+# coordinate in u-space (all zeros on a cell the log-marginal is flat across).
+#
+# `A` is taken DIAGONAL, `a_j = -d2_j`, the same reading the box mass makes of
+# the same stencil: with `A` diagonal the local quadratic factorizes across axes,
+# so the joint barycentre is the vector of per-axis barycentres and no
+# multivariate first moment over a rectangle is needed.
+#
+# `bary_shift` is the largest share of its own half-cell any axis's atom moves,
+# measured against the half-width on the side it moves toward, so the in-box
+# property bounds it in [0, 1] and it is comparable across cells of different
+# extent. `n_axes_declined` counts the axes that kept the cell's own coordinate.
+.joint_local_ccd_cell_bary <- function(st) {
+    d <- length(st$g)
+    u_bar <- numeric(d)
+    n_closed <- 0L; n_numeric <- 0L; n_declined <- 0L
+    for (j in seq_len(d)) {
+        f <- .joint_local_ccd_axis_bary(st$g[j], -st$d2[j],
+                                        st$half_lo[j], st$half_hi[j])
+        if (is.null(f)) { n_declined <- n_declined + 1L; next }
+        u_bar[j] <- f$u_bar
+        if (identical(f$route, "closed")) n_closed <- n_closed + 1L
+        else n_numeric <- n_numeric + 1L
+    }
+    share <- ifelse(u_bar >= 0, u_bar / st$half_hi, -u_bar / st$half_lo)
+    share[!is.finite(share)] <- 0
+    list(u_bar = u_bar,
+         bary_shift = if (d > 0L) max(share) else NA_real_,
+         n_axes_closed = n_closed, n_axes_numeric = n_numeric,
+         n_axes_declined = n_declined)
+}
+
+# Every cell of a tensor outer grid moved to its own mass barycentre.
+#
+# Returns the perturbed PHYSICAL grid alongside the u-space offsets, because the
+# per-axis summary reads physical theta. The map back is the axis's own
+# `.joint_pareto_inv()`, and that it is a mean in `u` pushed through `exp` rather
+# than a mean in theta is a DESIGN CHOICE of the quantile read, not an
+# approximation slipped past:
+#
+#   the grid stores physical theta on a geometric grid while the quadratic the
+#   barycentre comes from is fitted in `u = log theta` (which is why
+#   `log_marginal` needs no Jacobian on that axis, gcol33/tulpa#179), so `ubar`
+#   is a mean in `u` and `exp(E[u]) != E[exp(u)]`;
+#
+#   the quantile read does not want a mean. Its atom is a REPRESENTATIVE POINT
+#   of the cell, and a weighted quantile is equivariant under a monotone map, so
+#   mapping `ubar` through `exp` gives the atom the representative point of the
+#   cell measured in the coordinate the quadratic was fitted in -- and, since
+#   `exp` is monotone and the barycentre is in the box, keeps it inside its own
+#   cell, which the moment-free reading depends on.
+#
+# The MOMENT read is a different question with a different answer: `theta_mean` /
+# `theta_sd` are moments in theta, so they need the transformed truncated moment
+# rather than the transformed barycentre, and nothing here touches them.
+#
+# A cell missing a neighbour on any axis has no centred stencil and stays where
+# it is: offset 0, `computed` FALSE, the same decline the box mass makes one gate
+# earlier. Non-latent columns (an active phi dispersion tensor) are never moved.
+.joint_local_ccd_barycentre <- function(joint_grid, log_marginal, latent_axes,
+                                        tags) {
+    n <- nrow(joint_grid)
+    out <- list(joint_grid = joint_grid,
+                u_offset = matrix(0, n, length(latent_axes)),
+                bary_shift = rep(NA_real_, n), computed = rep(FALSE, n),
+                n_axes_closed = 0L, n_axes_numeric = 0L, n_axes_declined = 0L)
+    if (is.null(tags)) return(out)
+    latent_cols <- match(latent_axes, colnames(joint_grid))
+    if (anyNA(latent_cols)) return(out)
+    d <- length(latent_cols)
+    if (d < 1L || n < 3L) return(out)
+
+    U <- matrix(0, n, d)
+    for (j in seq_len(d))
+        U[, j] <- .joint_pareto_fwd(tags[j], joint_grid[, latent_cols[j]])
+    nb <- .joint_local_ccd_neighbors(U, joint_grid, latent_cols)
+
+    for (c in seq_len(n)) {
+        st <- .joint_local_ccd_cell_stencil(c, U, log_marginal, nb$up, nb$dn)
+        if (is.null(st)) next
+        bc <- .joint_local_ccd_cell_bary(st)
+        out$u_offset[c, ]   <- bc$u_bar
+        out$bary_shift[c]   <- bc$bary_shift
+        out$computed[c]     <- TRUE
+        out$n_axes_closed   <- out$n_axes_closed + bc$n_axes_closed
+        out$n_axes_numeric  <- out$n_axes_numeric + bc$n_axes_numeric
+        out$n_axes_declined <- out$n_axes_declined + bc$n_axes_declined
+    }
+
+    # Only a cell that moves is rewritten. A round trip through
+    # `.joint_pareto_fwd()` / `.joint_pareto_inv()` is the identity in exact
+    # arithmetic and not in floating point, so writing every cell back would
+    # perturb the coordinates of the cells the rule declined to move -- and a
+    # rule has to leave what it declines exactly as it found it, or a read taken
+    # under it is not attributable to the cells it did move.
+    tg <- joint_grid
+    for (j in seq_len(d)) {
+        off <- out$u_offset[, j]
+        mv  <- off != 0
+        if (any(mv)) {
+            tg[mv, latent_cols[j]] <-
+                .joint_pareto_inv(tags[j], U[mv, j] + off[mv])$theta
+        }
+    }
+    out$joint_grid <- tg
+    out
+}
+
 # How far the cell's own outer log-marginal is from the quadratic the design was
 # placed from, read off the design's OWN nodes.
 #
@@ -780,11 +1049,13 @@
     declined_misfit <- numeric(0)
     declined_offset <- numeric(0)
     declined_gain   <- numeric(0)
-    # The coarse-vs-refined mass comparison, per cell, on both sides of the gate
-    # (gcol33/tulpa#323). Accumulated as a list of the four readings so the two
-    # sides stay one code path.
-    mass_kept     <- list()
-    mass_declined <- list()
+    # The per-cell recordings that gate nothing, on both sides of the gate: the
+    # coarse-vs-refined mass comparison (gcol33/tulpa#323), the box-integral mass
+    # (gcol33/tulpa#326) and the barycentre shift (gcol33/tulpa#327).
+    # Accumulated as a list of named readings so the two sides stay one code
+    # path and a reading added to it is reported on both.
+    rec_kept     <- list()
+    rec_declined <- list()
 
     for (c in chosen) {
         cc  <- curv[[c]]
@@ -841,17 +1112,23 @@
         # comparison is arithmetic, and it is recorded whichever way the gate
         # goes: the nodes were evaluated before the score was read
         # (gcol33/tulpa#323).
-        mass_c <- .joint_local_ccd_mass(c(delta_centre, delta_off),
-                                        c(log_marginal[c], lm_off), dn_w[c])
+        rec_c <- .joint_local_ccd_mass(c(delta_centre, delta_off),
+                                       c(log_marginal[c], lm_off), dn_w[c])
         # A third reading of the same cell's mass, and the only one of the three
         # that needs no node at all: the base grid's own neighbours already give
         # the local quadratic, and integrating it over the cell's box instead of
         # evaluating it at the centre is the correction the midpoint atom drops
         # (gcol33/tulpa#326). Recorded beside the cloud's ratio so the two
-        # re-estimates of the same atom are read together.
-        mass_c <- c(mass_c,
-                    list(log_box_ratio =
-                             .joint_local_ccd_cell_box_mass(cc)$log_box_ratio))
+        # re-estimates of the same atom are read together. `bary_shift` is the
+        # place half of the same quadratic -- the largest share of its own
+        # half-cell any axis's atom moves under the barycentre
+        # (gcol33/tulpa#327) -- and the two are read together for the same
+        # reason: a cell can be given the right mass at the wrong place.
+        rec_c <- c(rec_c,
+                   list(log_box_ratio =
+                            .joint_local_ccd_cell_box_mass(cc)$log_box_ratio,
+                        bary_shift =
+                            .joint_local_ccd_cell_bary(cc)$bary_shift))
 
         mis <- fit_c$misfit
         if (!isTRUE(mis < skew_max)) {
@@ -859,7 +1136,7 @@
             declined_misfit <- c(declined_misfit, mis)
             declined_offset <- c(declined_offset, fit_c$offset)
             declined_gain   <- c(declined_gain, fit_c$mode_gain)
-            mass_declined[[length(mass_declined) + 1L]] <- mass_c
+            rec_declined[[length(rec_declined) + 1L]] <- rec_c
             next
         }
 
@@ -890,14 +1167,14 @@
         misfit     <- c(misfit, mis)
         offset     <- c(offset, fit_c$offset)
         mode_gain  <- c(mode_gain, fit_c$mode_gain)
-        mass_kept[[length(mass_kept) + 1L]] <- mass_c
+        rec_kept[[length(rec_kept) + 1L]] <- rec_c
         n_nodes_added <- n_nodes_added + nrow(theta_nodes)
     }
 
-    # One numeric vector per mass reading, in cell order, on each side of the
-    # gate. An empty side gives a zero-length numeric, matching the empty
-    # `misfit` / `offset` vectors beside it.
-    mass_col <- function(acc, nm)
+    # One numeric vector per recording, in cell order, on each side of the gate.
+    # An empty side gives a zero-length numeric, matching the empty `misfit` /
+    # `offset` vectors beside it.
+    rec_col <- function(acc, nm)
         vapply(acc, function(m) m[[nm]], numeric(1))
 
     keep <- setdiff(seq_len(n), refined)
@@ -947,26 +1224,29 @@
                              misfit          = misfit,
                              offset          = offset,
                              mode_gain       = mode_gain,
-                             log_mass_ratio   = mass_col(mass_kept, "log_mass_ratio"),
-                             log_mass_coarse  = mass_col(mass_kept, "log_mass_coarse"),
-                             log_mass_refined = mass_col(mass_kept, "log_mass_refined"),
-                             max_node_weight  = mass_col(mass_kept, "max_node_weight"),
-                             log_box_ratio    = mass_col(mass_kept, "log_box_ratio"),
+                             log_mass_ratio   = rec_col(rec_kept, "log_mass_ratio"),
+                             log_mass_coarse  = rec_col(rec_kept, "log_mass_coarse"),
+                             log_mass_refined = rec_col(rec_kept, "log_mass_refined"),
+                             max_node_weight  = rec_col(rec_kept, "max_node_weight"),
+                             log_box_ratio    = rec_col(rec_kept, "log_box_ratio"),
+                             bary_shift       = rec_col(rec_kept, "bary_shift"),
                              skew_max        = skew_max,
                              cells_declined  = declined_cells,
                              misfit_declined = declined_misfit,
                              offset_declined = declined_offset,
                              mode_gain_declined = declined_gain,
                              log_mass_ratio_declined =
-                                 mass_col(mass_declined, "log_mass_ratio"),
+                                 rec_col(rec_declined, "log_mass_ratio"),
                              log_mass_coarse_declined =
-                                 mass_col(mass_declined, "log_mass_coarse"),
+                                 rec_col(rec_declined, "log_mass_coarse"),
                              log_mass_refined_declined =
-                                 mass_col(mass_declined, "log_mass_refined"),
+                                 rec_col(rec_declined, "log_mass_refined"),
                              max_node_weight_declined =
-                                 mass_col(mass_declined, "max_node_weight"),
+                                 rec_col(rec_declined, "max_node_weight"),
                              log_box_ratio_declined =
-                                 mass_col(mass_declined, "log_box_ratio"),
+                                 rec_col(rec_declined, "log_box_ratio"),
+                             bary_shift_declined =
+                                 rec_col(rec_declined, "bary_shift"),
                              n_cells_declined = length(declined_cells),
                              n_cells_before  = n,
                              n_cells_after   = nrow(out_grid),
