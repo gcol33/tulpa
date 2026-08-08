@@ -762,7 +762,11 @@
              # the skew probe -- none of which contribute an integrated cell --
              # never pay for it; the grid solve and the local-CCD node solves
              # switch it on.
-             fixed_block      = FALSE) {
+             fixed_block      = FALSE,
+             # Subspace debias (gcol33/tulpa#306): the kernel-facing request
+             # list, off by default so no existing call site re-solves anything
+             # different.
+             debias           = NULL) {
         .cpp_joint_multi(
             arms_list           = arms,
             copy_arms           = as.integer(cp$copy_arms_zero),
@@ -791,7 +795,8 @@
             skew_idx            = skew_idx,
             fixed_block_p       = if (isTRUE(fixed_block))
                                       as.integer(fixed_block_p) else 0L,
-            fixed_block_constraints = fixed_block_constraints)
+            fixed_block_constraints = fixed_block_constraints,
+            debias              = debias)
     }
 }
 
@@ -969,6 +974,7 @@
                                   diagnose_skew = TRUE,
                                   skew_idx = NULL,
                                   skew_correct = FALSE,
+                                  subspace_debias = NULL,
                                   inner_refresh = 1L,
                                   integration = "auto",
                                   local_ccd = NULL,
@@ -1480,6 +1486,16 @@
     # (gcol33/tulpa#305). Local-CCD refinement invalidates the stored cells, so
     # a fit it engaged on records that reason instead.
     res <- .joint_finalize_grid_fixed(res, fixed$n_fixed, keep_grid_hessians)
+    # Subspace debias (gcol33/tulpa#306), over the settled grid, through the
+    # same `call_kernel` the skew probe and the Pareto-k batch re-dispatch with.
+    res <- .nl_subspace_debias_attach(
+        res, subspace_debias,
+        redispatch = function(req) .joint_with_quiet_opts(call_kernel(
+            res$theta_grid,
+            phi_grid_per_arm = .joint_multi_phi_per_arm(res$theta_grid,
+                                                        arm_names),
+            debias = req)),
+        p_fixed = fixed$n_fixed, beta_names = fixed$names)
     res$timing <- tm$timing()
     res <- .joint_attach_diagnose_cost(res, diagnose_k, diagnose_draws)
     .finalize_fit(res, backend = "nested_laplace_joint",

@@ -449,7 +449,12 @@ LaplaceResult laplace_newton_solve_joint_ll(
     // cell's precision alive to read it afterwards. Independent of store_Q: a
     // fit that did not ask for the precision still gets the block, and one that
     // did gets both. nullptr / p == 0 extracts nothing.
-    const JointFixedBlockRequest* fixed_block = nullptr
+    const JointFixedBlockRequest* fixed_block = nullptr,
+    // Subspace debias (subspace_debias.h, gcol33/tulpa#304/#306). Runs on the
+    // same pre-centering iterate and the same live factor the two inner
+    // diagnostics probe, since that is the point log_marginal belongs to. Empty
+    // or absent leaves the solve untouched and consumes no random number.
+    const SubspaceDebiasOptions* debias = nullptr
 ) {
     LaplaceResult result;
     result.mode.assign(n_x, 0.0);
@@ -523,6 +528,14 @@ LaplaceResult laplace_newton_solve_joint_ll(
 
     result.log_marginal = finalize_log_marginal(log_lik, log_prior, result.log_det_Q, n_x);
 
+    // The Newton-converged iterate, before the cosmetic post-hoc centering
+    // below. Every probe of the inner layer -- gamma_3, the importance curve,
+    // and the subspace sampler -- reads this point, because it is the one the
+    // live factor and the reported log_marginal belong to.
+    std::vector<double> pre_center_x(n_x);
+    for (int j = 0; j < n_x; j++) pre_center_x[j] = x[j];
+    const bool used_sparse_factor = use_sparse && sparse_solver.factored();
+
     if (compute_skew && result.converged) {
         std::vector<int> all_idx;
         const std::vector<int>* probe = skew_probe_idx;
@@ -531,9 +544,6 @@ LaplaceResult laplace_newton_solve_joint_ll(
             for (int j = 0; j < n_x; j++) all_idx[j] = j;
             probe = &all_idx;
         }
-        std::vector<double> pre_center_x(n_x);
-        for (int j = 0; j < n_x; j++) pre_center_x[j] = x[j];
-        bool used_sparse_factor = use_sparse && sparse_solver.factored();
         if (curvature3_fns) {
             InnerSkewOutcome sk = compute_inner_skew_gamma3_joint(
                 n_x, pre_center_x, scratch.chol, sparse_solver, used_sparse_factor,
@@ -566,6 +576,12 @@ LaplaceResult laplace_newton_solve_joint_ll(
         result.inner_is_log_joint = std::move(is_out.log_joint);
         result.inner_is_sigma     = std::move(is_out.sigma);
         result.inner_is_declined  = is_out.declined;
+    }
+
+    if (result.converged) {
+        run_subspace_debias(result, n_x, pre_center_x, scratch.chol,
+                            sparse_solver, used_sparse_factor,
+                            eval_objective, x, debias);
     }
 
     center_effects_fn(x);

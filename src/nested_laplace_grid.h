@@ -813,6 +813,13 @@ inline Rcpp::List run_nested_laplace_grid(
     bool any_Q = false;
     bool any_cov_block = false;
     int skew_cell = -1;  // first grid cell (if any) that computed inner_skew
+    // Subspace-debias draws are PER CELL: the correction enters the reported
+    // marginal as a mixture over the outer grid, so unlike the single-cell
+    // diagnostics above every integrated cell contributes its own sample.
+    int debias_cell = -1;
+    Rcpp::List debias_per_grid(n_grid);
+    Rcpp::NumericVector debias_accept(n_grid, NA_REAL);
+    Rcpp::CharacterVector debias_declined(n_grid, NA_STRING);
     for (int k = 0; k < n_grid; k++) {
         const LaplaceResult& res = cell_results[k];
         log_marginals[k] = res.log_marginal;
@@ -845,6 +852,22 @@ inline Rcpp::List run_nested_laplace_grid(
             }
         }
         if (skew_cell < 0 && !res.inner_skew_idx.empty()) skew_cell = k;
+        if (!res.debias_idx.empty()) {
+            if (debias_cell < 0) debias_cell = k;
+            debias_accept[k] = res.debias_accept;
+            const int q = static_cast<int>(res.debias_idx.size());
+            const int S = res.debias_n_kept;
+            if (S > 0 && res.debias_draws.size() ==
+                             static_cast<std::size_t>(S) * q) {
+                Rcpp::NumericMatrix dr(S, q);
+                for (std::size_t e = 0; e < res.debias_draws.size(); e++) {
+                    dr[e] = res.debias_draws[e];
+                }
+                debias_per_grid[k] = dr;
+            } else {
+                debias_declined[k] = res.debias_declined;
+            }
+        }
     }
 
     if (progress) progress->finish();
@@ -889,6 +912,17 @@ inline Rcpp::List run_nested_laplace_grid(
         }
         out["inner_skew_cell"] = skew_cell + 1;
         attach_inner_is_fields(out, res);
+    }
+    if (debias_cell >= 0) {
+        const LaplaceResult& res = cell_results[debias_cell];
+        Rcpp::IntegerVector idx_r(res.debias_idx.size());
+        for (std::size_t k = 0; k < res.debias_idx.size(); k++) {
+            idx_r[k] = res.debias_idx[k] + 1;
+        }
+        out["debias_idx"] = idx_r;
+        out["debias_draws_per_grid"] = debias_per_grid;
+        out["debias_accept"] = debias_accept;
+        out["debias_declined"] = debias_declined;
     }
     if (prune_active) {
         Rcpp::NumericVector cheap_lm_out(n_grid);

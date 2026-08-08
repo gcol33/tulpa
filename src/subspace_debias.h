@@ -229,6 +229,39 @@ inline SubspaceDebiasOutcome compute_subspace_debias(
   return out;
 }
 
+// Guard, run, and record the correction on a solver result, in one call.
+//
+// Every Newton loop that can carry the correction -- the single-arm spec loop
+// (laplace_newton.h), the dense joint loop and the sparse joint loop
+// (laplace_newton_joint*.h) -- reaches the sampler through here, so the
+// "nullptr or empty index set is a no-op" contract and the mapping from
+// SubspaceDebiasOutcome onto the result fields are written once. Templated on
+// the result type only to avoid including laplace_core.h from here; the single
+// instantiation is LaplaceResult.
+template <typename Result, typename EvalLogJoint>
+inline void run_subspace_debias(
+    Result& result,
+    int n_x,
+    const std::vector<double>& mode,
+    DenseCholeskyScratch& chol,
+    SparseCholeskySolver& sparse_solver,
+    bool use_sparse,
+    EvalLogJoint eval_log_joint,
+    Rcpp::NumericVector& x_buf,
+    const SubspaceDebiasOptions* opts
+) {
+  if (!opts || opts->idx.empty()) return;
+  SubspaceDebiasOutcome db = compute_subspace_debias(
+      n_x, mode, chol, sparse_solver, use_sparse, eval_log_joint, x_buf, *opts);
+  result.debias_idx      = std::move(db.idx);
+  result.debias_draws    = std::move(db.draws);
+  result.debias_sigma_ss = std::move(db.sigma_ss);
+  result.debias_n_kept   = db.n_kept;
+  result.debias_accept   = db.accept;
+  result.debias_scale    = db.scale;
+  result.debias_declined = std::move(db.declined);
+}
+
 } // namespace tulpa
 
 #endif // TULPA_SUBSPACE_DEBIAS_H

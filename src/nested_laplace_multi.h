@@ -77,7 +77,15 @@ inline Rcpp::List run_multi_block_nested_laplace(
     // diagnostic's re-dispatch-at-a-point convention -- see
     // .nl_inner_skew_at_theta() in R/laplace_diagnostics.R.
     bool compute_skew = false,
-    const std::vector<int>* skew_probe_idx = nullptr
+    const std::vector<int>* skew_probe_idx = nullptr,
+    // Subspace debias (subspace_debias.h, gcol33/tulpa#304/#306). Unlike the
+    // diagnostics above this runs on EVERY integrated cell, because the
+    // correction it produces enters the reported marginal as a mixture over the
+    // outer grid -- one node's corrected shape is not the grid's. The cheap
+    // warm-start screen never runs it. nullptr or an empty index set never
+    // reaches the sampler, so the grid is unchanged and consumes no random
+    // number.
+    const SubspaceDebiasOptions* debias = nullptr
 ) {
     int n_x = p + n_re_groups;
     for (const auto& b : blocks) {
@@ -159,6 +167,12 @@ inline Rcpp::List run_multi_block_nested_laplace(
 
     // Per-outer-thread NewtonScratch. omp_get_thread_num() returns 0 outside
     // parallel regions so the serial path correctly picks scratch_pool[0].
+    //
+    // The subspace sampler draws from R's RNG (rwmh.h), which is not reentrant
+    // and would make a run's draws a function of the thread schedule, so a
+    // debiased grid is integrated serially whatever the caller asked for.
+    const bool debias_active = (debias != nullptr) && !debias->idx.empty();
+    if (debias_active) n_threads_outer = 1;
     int n_outer = std::max(1, n_threads_outer);
     std::vector<NewtonScratch> scratch_pool(n_outer);
     for (auto& s : scratch_pool) s.allocate(n_x, N);
@@ -192,7 +206,7 @@ inline Rcpp::List run_multi_block_nested_laplace(
                                    NewtonScratch* scratch_override
                                    = nullptr,
                                    bool want_var = false,
-                                   bool allow_skew = false) -> LaplaceResult
+                                   bool allow_probe = false) -> LaplaceResult
     {
         for (const auto& b : blocks) {
             if (b.prep && !b.prep(k)) {
@@ -238,7 +252,8 @@ inline Rcpp::List run_multi_block_nested_laplace(
             max_iter_use, tol, n_threads_inner_eff, base_params,
             scratch, solver, store_Q, /*inv_block_layout=*/nullptr,
             /*beta_prior=*/nullptr, /*sparse_override=*/0,
-            allow_skew && compute_skew, skew_probe_idx
+            allow_probe && compute_skew, skew_probe_idx,
+            allow_probe ? debias : nullptr
         );
 
         // Per-row predictive variance, var(eta_i | theta_k) = a_i' H^{-1} a_i,
@@ -308,7 +323,7 @@ inline Rcpp::List run_multi_block_nested_laplace(
                               SparseCholeskySolver* solver) -> LaplaceResult
     {
         return solve_at_theta_impl(k, prev_mode, solver, max_iter, nullptr,
-                                   /*want_var=*/store_modes, /*allow_skew=*/true);
+                                   /*want_var=*/store_modes, /*allow_probe=*/true);
     };
 
     // Cheap-pass screening: a short inner Newton run warm-started from the

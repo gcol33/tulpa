@@ -128,6 +128,25 @@ instead, under a mean constraint from a location term this engine does
 not compute; the series correction is the same-order alternative that
 needs only the cubic term, and unlike a skew normal its skewness does not
 saturate inside the band it is applied on.
+\item \code{subspace_debias} (\code{FALSE}) -- correct only the latent directions the
+inner-layer diagnostics flagged, by exact Metropolis, and leave the rest
+at their Gaussian conditional (gcol33/tulpa#304, extended to this backend
+by gcol33/tulpa#306). \code{TRUE} takes every default; a list overrides \code{band}
+(the inner-reliability floor a coordinate is selected at, default
+\code{"ok"}), \code{idx} (pin the corrected set explicitly, skipping the selector),
+\code{closure} / \code{closure_max} (grow the set by strongly coupled
+precision-graph neighbours -- declined on this backend, which retains no
+joint precision), the sampler budget \code{n_iter} / \code{warmup} / \code{thin}, and
+\code{n_draws}. The selector reads the per-index bands \code{diagnose_skew} already
+attached, so it costs no extra solve; the correction itself re-runs the
+settled grid once with the sampler on, and the fit then reports \verb{$draws}
+-- the per-cell Metropolis sample for the selected coordinates, the rest
+from the Gaussian conditional given them -- instead of the
+Gaussian-mixture moments. An EMPTY selection leaves the fit bit-for-bit
+identical to the plain path. \verb{$subspace_debias} records what was selected,
+the bands it was read from, and the per-cell acceptance rate. Requesting
+it turns \code{keep_grid_hessians} on, since the recombination reads exactly
+those per-cell pieces.
 \item \code{auto_recenter} (\code{TRUE}) -- re-centre a default outer grid axis on its
 posterior mode and refit when the fit rails against a boundary node
 (gcol33/tulpa#289 / #290). \code{FALSE} integrates over the grid exactly as

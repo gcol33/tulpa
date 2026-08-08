@@ -484,6 +484,19 @@ instead, under a mean constraint from a location term this engine does
 not compute; the series correction is the same-order alternative that
 needs only the cubic term, and unlike a skew normal its skewness does not
 saturate inside the band it is applied on.
+\item \code{subspace_debias} (\code{FALSE}) -- correct only the latent directions the
+inner-layer diagnostics flagged, by exact Metropolis along the
+Gaussian-conditional-mean surface through each cell's mode, and leave the
+rest at their Gaussian conditional (gcol33/tulpa#304, extended to both
+joint paths by gcol33/tulpa#306). Settings and semantics are the ones
+documented on \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}}. On a fully coupled fit \code{gamma_3}
+is \code{NaN} for every arm, so the selector rests on the derivative-free
+inner Pareto-k-hat (gcol33/tulpa#303); where that also bands the
+coordinate reliable, \code{idx} pins the set explicitly. An EMPTY selection
+leaves the fit bit-for-bit identical to the plain path. A fit whose
+inner solve took the s2z rank-1 or the PSD eigen-clamp path carries no
+usable factor to build the surface from and is left uncorrected, the same
+two paths \code{diagnose_skew} declines on.
 \item \code{auto_recenter} (\code{TRUE}) -- re-centre a default outer grid axis on its
 posterior mode and refit when the fit rails against a boundary node
 (gcol33/tulpa#289 / #290). \code{FALSE} integrates over the grid exactly as

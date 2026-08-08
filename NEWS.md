@@ -1,5 +1,127 @@
 # tulpa NEWS
 
+## 0.0.144
+
+* **The subspace debias reaches the grid and joint nested backends**
+  (gcol33/tulpa#306, the follow-up to #304). `control$subspace_debias` is now
+  accepted by `tulpa_nested_laplace()` -- both the single-block kernels
+  (icar / bym2 / car_proper / rw1 / rw2 / ar1) and the multi-block driver -- and
+  by `tulpa_nested_laplace_joint()` on both its single-block and multi-block
+  paths, with the same settings and the same meaning as on
+  `tulpa_re_cov_nested()`.
+
+  The selector costs nothing new here. `control$diagnose_skew` (on by default)
+  already re-dispatches the kernel at the fitted MAP cell and attaches both
+  inner scores, so `.subspace_bands()` reads the per-index gamma_3 and inner
+  Pareto-k-hat off the fit instead of paying for a probe of its own -- the one
+  thing it had to learn is to prefer the stored per-index k-hat over re-fitting
+  the raw importance curve, which a nested fit does not retain. The correction
+  itself re-runs the settled grid once with the sampler on, because the
+  corrected shape is a property of each cell and which cell is the MAP is only
+  known after the first pass. A corrected fit then reports `$draws` -- each
+  cell's Metropolis sample for the selected coordinates, the rest from the
+  Gaussian conditional given them, mixed by the grid weights through the same
+  `.re_cov_nested_beta_draws()` the RE-covariance backend uses -- instead of the
+  Gaussian-mixture moments, and every coefficient-facing method reads them
+  through the accessor it already used.
+
+  Measured against the exact conditional posterior, computed by two-dimensional
+  quadrature outside the engine. Both fixtures put the latent block where no
+  observation reaches it, so the conditional posterior factorises into the
+  fixed-effect target and an independent Gaussian and the quadrature is exact
+  for the reported coefficients.
+
+  Grid backend, rare-event binomial logit (n = 120): total absolute
+  interval-endpoint error 0.5229 -> 0.1883 (mean of 5 seeds, sd 0.0672), a 64.0%
+  cut; the reported centre moves -2.526 -> -2.63 against an exact posterior mean
+  of -2.635. S is the intercept, selected on an inner k-hat of 0.705 with
+  gamma_3 = -0.375 against an exact skewness of -0.388.
+
+  Joint multi-block, the #300 coupled occupancy fixture: 0.6189 -> 0.163 / 0.341
+  / 0.313 over three seeds, the centre -0.240 -> about -0.15 against an exact
+  -0.1437 and the scale 0.389 -> about 0.447 against an exact 0.479.
+
+  Coverage, with the exact posterior's OWN coverage as the reference rather than
+  the nominal level -- the correction targets that posterior, so reproducing its
+  coverage is the success condition and matching nominal is not. Grid backend,
+  400 seeds, per coefficient:
+
+  | level | coef  | exact          | plain          | corrected      |
+  |-------|-------|----------------|----------------|----------------|
+  | 0.95  | beta0 | 0.9050 (.0147) | 0.9750 (.0078) | 0.9150 (.0139) |
+  | 0.95  | beta1 | 0.9300 (.0128) | 0.9550 (.0104) | 0.9225 (.0134) |
+  | 0.80  | beta0 | 0.7600 (.0214) | 0.8225 (.0191) | 0.7575 (.0214) |
+  | 0.80  | beta1 | 0.7950 (.0202) | 0.8375 (.0184) | 0.7800 (.0207) |
+
+  The corrected rate is within 0.52 SE of the exact posterior's on all four; the
+  plain Laplace sits 2.4 to 4.8 SE above it. Its apparently better agreement
+  with the nominal level is an over-wide, mis-shaped Gaussian, not accuracy.
+  Joint multi-block, 200 seeds with S pinned to both coefficients, same
+  reference: 0.9500 / 0.9600 / 0.7900 / 0.7400 exact against 0.9598 / 0.9598 /
+  0.7940 / 0.7387 corrected and 0.9749 / 0.9548 / 0.8191 / 0.7739 plain (one
+  seed's fit reported an NA bound, so n = 199 for the fits and 200 for the
+  reference).
+
+  Cost, over those sweeps: 0.0324 s (SE 0.0005) -> 0.1765 s (SE 0.0011) on the
+  grid backend at mean |S| = 1.060, and 0.0662 s (SE 0.0012) -> 0.4019 s
+  (SE 0.0045) on the joint one at |S| = 2, i.e. 5.45x and 6.07x. Roughly half of
+  that is the second grid pass and the rest the sweeps themselves.
+
+  An EMPTY selection leaves every backend bit-for-bit identical to the plain
+  path, asserted per backend (log-marginal, weights, modes, the per-cell
+  fixed-effect pieces, `summary()` and `vcov()`) in the new
+  `tests/testthat/test-subspace-debias-backends.R`.
+
+* **The band selector under-flags on the coupled fixture, measured.** On the
+  #300 coupled occupancy fit both coefficients band `good` on both inner scores
+  -- gamma_3 reads 0.256 and -0.126, the inner k-hat 0.378 and 0.329 -- while
+  the exact skewness of the occupancy coefficient is 1.198, which is
+  `unreliable`. gamma_3 recovers 0.21 of it there, below the 0.564 to 0.943
+  range #304 measured on the separable fixtures, and the inner k-hat over 256
+  one-dimensional draws does not separate that target from a Gaussian either. So
+  on that fit the selector takes nothing and `control$subspace_debias$idx` is
+  what pins the set; the joint numbers above are the pinned run. The `ok` band
+  floor is unchanged -- #304 measured it, and one fixture where a lower-bound
+  estimator undershoots harder than usual is a fact about the estimator, not a
+  reason to move a threshold that was itself set on measurement.
+
+* **Threading.** The sampler draws from R's RNG, so a debiased outer grid is
+  integrated serially whatever `n_threads_outer` asked for, on both the
+  single-arm driver and the sparse joint one. The cheap warm-start screen never
+  runs the correction, and a joint cell whose inner solve took the s2z rank-1 or
+  the PSD eigen-clamp path carries no usable factor to build the surface from
+  and is left uncorrected -- the same two paths `diagnose_skew` declines on, for
+  the same reason.
+
+* **One request, one unwrap, one assignment point.** The debias request travels
+  through every nested kernel entry as ONE R list (`idx` plus the sweep budget)
+  rather than four parallel arguments; `unwrap_debias()` / `DebiasRequest`
+  (`src/laplace_spec_fit.h`) turn it into the solver's options at each entry,
+  and `run_subspace_debias()` (`src/subspace_debias.h`) guards, runs and records
+  the outcome for all three Newton loops -- the single-arm spec loop and both
+  joint loops -- so the "empty index set is a no-op" contract and the result
+  mapping are written once. `cpp_laplace_fit_multi_re()`'s four #304 arguments
+  are folded into the same list; pre-release, no shim.
+
+* `control$subspace_debias` is left refused at `n_quad > 1` on
+  `tulpa_re_cov_nested()`, which is the honest answer rather than a gap. The
+  adaptive Gauss-Hermite inner marginal integrates each group's random effects
+  out, so at the fitted point there is no conditional latent field: no joint
+  precision to take `Sigma e_i` from, hence no Gaussian-conditional-mean surface
+  and nothing for the sampler to move along. What could be corrected there is
+  the outer optimum's own Laplace approximation, which is a different
+  construction on a different density and would not share this machinery.
+
+* Reporting the SAMPLED values per group for a random effect the closure pulled
+  into S is split out as gcol33/tulpa#314: the draws exist per node but are not
+  recorded on the fit, so `ranef()` still reports the Gaussian mixture there.
+
+* Fixed: `tests/testthat/test-inner-pareto-k.R` asserted that a fit is
+  bit-for-bit identical with `control$diagnose_skew` on and off after stripping
+  `inner_*` and `timing`, which stopped holding when #302 added the
+  gamma_3-derived `$skew_correction` record two commits later. The record is
+  diagnostic-derived, so it is stripped alongside them (gcol33/tulpa#313).
+
 ## 0.0.143
 
 * **The joint tier's fixed-effect block is extracted inside each cell's own

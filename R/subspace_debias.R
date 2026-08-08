@@ -58,17 +58,26 @@
   n <- length(idx)
   g <- as.numeric(fit[["inner_skew"]] %||% rep(NA_real_, n))[seq_len(n)]
 
-  # The inner k-hat is not stored on a bare tulpa_laplace() result -- the kernel
-  # returns the importance curve and the Pareto fit is R-side -- so it is fitted
-  # here from the same raw material `.inner_k_attach()` reads.
+  # The per-index inner k-hat, from whichever representation the fit carries.
+  # A nested-Laplace fit has it already: `.inner_k_attach()` fitted it at attach
+  # time from the probe's importance curve and stored the per-index vectors, so
+  # it is read rather than re-fitted. A bare `tulpa_laplace()` result carries
+  # only the curve the kernel returned (the Pareto fit is R-side), so there it
+  # is fitted here -- from the same raw material, through the same estimator.
   k <- rep(NA_real_, n); rel <- rep(NA_real_, n)
-  lj <- fit[["inner_is_log_joint"]]
-  z  <- fit[["inner_is_z"]]
-  if (!is.null(lj) && !is.null(z) && is.matrix(lj) && nrow(lj) == length(z) &&
-      ncol(lj) == n) {
-    got <- tryCatch(.inner_k_from_curve(as.numeric(z), lj),
-                    error = function(e) NULL)
-    if (!is.null(got)) { k <- got$pareto_k; rel <- got$rel_ess }
+  k_att   <- fit[["inner_pareto_k"]]
+  rel_att <- fit[["inner_pareto_k_rel_ess"]]
+  if (length(k_att) == n && length(rel_att) == n) {
+    k <- as.numeric(k_att); rel <- as.numeric(rel_att)
+  } else {
+    lj <- fit[["inner_is_log_joint"]]
+    z  <- fit[["inner_is_z"]]
+    if (!is.null(lj) && !is.null(z) && is.matrix(lj) && nrow(lj) == length(z) &&
+        ncol(lj) == n) {
+      got <- tryCatch(.inner_k_from_curve(as.numeric(z), lj),
+                      error = function(e) NULL)
+      if (!is.null(got)) { k <- got$pareto_k; rel <- got$rel_ess }
+    }
   }
 
   band_g <- vapply(g, .tulpa_gamma3_band, character(1))
@@ -137,7 +146,7 @@
          "settings.", call. = FALSE)
   }
   known <- c("idx", "probe", "band", "closure", "closure_max", "n_iter",
-             "warmup", "thin")
+             "warmup", "thin", "n_draws")
   unknown <- setdiff(names(spec), known)
   if (length(unknown)) {
     stop(sprintf("Unknown `control$subspace_debias` setting(s): %s.\nAllowed: %s.",
@@ -157,7 +166,8 @@
     closure_max = as.integer(spec$closure_max %||% .nl_diag("debias_closure_max")),
     n_iter      = as.integer(spec$n_iter %||% .nl_diag("debias_n_iter")),
     warmup      = as.integer(spec$warmup %||% .nl_diag("debias_warmup")),
-    thin        = as.integer(spec$thin %||% .nl_diag("debias_thin"))
+    thin        = as.integer(spec$thin %||% .nl_diag("debias_thin")),
+    n_draws     = as.integer(spec$n_draws %||% .nl_diag("debias_n_draws"))
   )
 }
 
@@ -228,4 +238,145 @@
   noise <- matrix(stats::rnorm(n_draws * length(rest)), n_draws, length(rest))
   out[, rest] <- rep(mu[rest], each = n_draws) + shift + noise %*% t(Lc)
   out
+}
+
+# The kernel-facing form of a debias request: the 1-based index set plus the
+# sweep budget, in ONE list. Every nested kernel entry takes it under that name
+# (`unwrap_debias` in src/laplace_spec_fit.h), so a backend gains the correction
+# by forwarding one argument rather than four. NULL for an absent or empty set,
+# which is the C++ side's "never enter the sampler" contract.
+.subspace_debias_request <- function(spec) {
+  if (is.null(spec)) return(NULL)
+  idx <- as.integer(spec$idx)
+  if (!length(idx)) return(NULL)
+  list(idx    = idx,
+       n_iter = as.integer(spec$n_iter %||% .nl_diag("debias_n_iter")),
+       warmup = as.integer(spec$warmup %||% .nl_diag("debias_warmup")),
+       thin   = as.integer(spec$thin   %||% .nl_diag("debias_thin")))
+}
+
+# What a fit records about the escalation, whether or not anything was
+# corrected. Written even for an empty selection, so a fit says it looked and
+# found nothing rather than being silent about it -- and so a fit that WAS
+# corrected can be told from one that was not without re-reading the bands.
+.subspace_debias_record <- function(sel, cfg, accept = NA_real_,
+                                    declined = NA_character_) {
+  list(idx = sel$idx, bands = sel$bands, closure_added = sel$added,
+       selected_by = sel$selected_by, band_floor = cfg$band,
+       closure = cfg$closure, n_iter = cfg$n_iter, warmup = cfg$warmup,
+       thin = cfg$thin, accept = accept, declined = declined)
+}
+
+# Rebuild a nested-Laplace grid's fixed-effect posterior as DRAWS, with the
+# selected coordinates taken from each cell's Metropolis sample.
+#
+# The plain grid path reports the fixed effects through moments
+# (`.nested_fixed_moments()`: the law of total variance over `grid_modes` /
+# `grid_hessians`), which is a Gaussian mixture summary and cannot carry a
+# corrected shape. Once a coordinate is sampled the posterior is no longer that
+# mixture, so the fit reports draws instead and every coefficient-facing method
+# reads them through the accessor it already uses.
+#
+# Recombination is `.re_cov_nested_beta_draws()` -- the same node mixture the
+# RE-covariance backend draws from, given this grid's per-cell mode, covariance
+# and weight. A cell whose sampler declined (or that a resume loaded without
+# draws) falls back to its Gaussian there, so one unusable cell degrades that
+# cell rather than the fit.
+.nl_subspace_grid_draws <- function(res, cell_draws, idx, n_draws, beta_names) {
+  H <- res$grid_hessians
+  M <- res$grid_modes
+  w <- res$weights
+  if (is.null(H) || is.null(M) || is.null(w)) return(NULL)
+  if (length(H) != length(w) || length(M) != length(w)) return(NULL)
+  ok <- which(is.finite(w) & w > 0 &
+                !vapply(M, is.null, logical(1)) &
+                !vapply(H, is.null, logical(1)))
+  if (!length(ok)) return(NULL)
+  p <- length(M[[ok[1L]]])
+  beta_nodes <- matrix(NA_real_, length(w), p)
+  cov_nodes  <- vector("list", length(w))
+  for (k in ok) {
+    mu <- M[[k]]
+    if (length(mu) != p) next
+    V <- tryCatch(solve(H[[k]]), error = function(e) NULL)
+    if (is.null(V) || any(dim(V) != p)) next
+    beta_nodes[k, ] <- mu
+    cov_nodes[[k]]  <- V
+  }
+  nodes <- if (is.null(cell_draws)) NULL else {
+    out <- vector("list", length(w))
+    m <- min(length(cell_draws), length(w))
+    if (m > 0L) out[seq_len(m)] <- cell_draws[seq_len(m)]
+    out
+  }
+  ds <- .re_cov_nested_beta_draws(beta_nodes, cov_nodes, w,
+                                  as.integer(n_draws), beta_names,
+                                  debias_nodes = nodes, debias_idx = idx)
+  ds$draws
+}
+
+# The escalation itself, for a backend that integrates an outer hyperparameter
+# grid (gcol33/tulpa#306). One selector, one recombination, one record.
+#
+# The selector's input is ALREADY on the fit: `control$diagnose_skew` (on by
+# default) re-dispatches the kernel at the fitted MAP cell and attaches
+# gamma_3 and the inner importance curve, which is exactly what
+# `.subspace_bands()` reads. So selecting costs no extra solve here, unlike on
+# `tulpa_re_cov_nested()`, where the correction is decided before the node grid
+# is laid out and needs its own probe.
+#
+# `redispatch(request)` re-runs the fit's OWN grid with the correction on and
+# returns the kernel result carrying `debias_draws_per_grid`. That second pass
+# is the cost: the corrected shape is a property of each cell, and which cell is
+# the MAP is only known once the first pass has run.
+#
+# The coupling closure needs the joint precision, which a grid fit does not
+# retain; it is recorded as declined rather than silently reporting no
+# neighbours found.
+.nl_subspace_debias_attach <- function(res, cfg, redispatch, p_fixed,
+                                       beta_names = NULL) {
+  if (is.null(cfg)) return(res)
+  if (!is.null(cfg$probe)) {
+    stop("`control$subspace_debias$probe` is a `tulpa_re_cov_nested()` setting. ",
+         "On a grid or joint nested fit the selector reads the bands the ",
+         "inner-Laplace diagnostic already attached, so widen the probe with ",
+         "`control$skew_idx` instead (or pin the set with ",
+         "`control$subspace_debias$idx`).", call. = FALSE)
+  }
+  sel <- .subspace_select(res, cfg)
+  cl_declined <- if (!identical(cfg$closure, FALSE) && is.null(res$H_joint))
+    "closure_needs_joint_hessian" else NA_character_
+  if (!is.na(cl_declined)) sel$added <- integer(0)
+  if (!length(sel$idx)) {
+    # No bands at all is a different answer from "every band came back good":
+    # the selector was never given anything to read (control$diagnose_skew off,
+    # or a backend that declined the inner diagnostic).
+    if (is.null(cfg$idx) && !nrow(sel$bands)) cl_declined <- "selector_unavailable"
+    res$subspace_debias <- .subspace_debias_record(sel, cfg,
+                                                   declined = cl_declined)
+    return(res)
+  }
+  out <- tryCatch(redispatch(.subspace_debias_request(
+    list(idx = sel$idx, n_iter = cfg$n_iter, warmup = cfg$warmup,
+         thin = cfg$thin))), error = function(e) NULL)
+  if (is.null(out) || is.null(out$debias_draws_per_grid)) {
+    res$subspace_debias <- .subspace_debias_record(sel, cfg,
+                                                   declined = "redispatch_failed")
+    return(res)
+  }
+  draws <- .nl_subspace_grid_draws(res, out$debias_draws_per_grid, sel$idx,
+                                   cfg$n_draws,
+                                   beta_names %||% res$fixed_names)
+  if (is.null(draws)) {
+    res$subspace_debias <- .subspace_debias_record(
+      sel, cfg, accept = as.numeric(out$debias_accept %||% NA_real_),
+      declined = "no_per_cell_fixed_moments")
+    return(res)
+  }
+  res$draws <- draws
+  res$n_fixed <- res$n_fixed %||% as.integer(p_fixed)
+  res$subspace_debias <- .subspace_debias_record(
+    sel, cfg, accept = as.numeric(out$debias_accept %||% NA_real_),
+    declined = cl_declined)
+  res
 }

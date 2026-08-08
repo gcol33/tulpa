@@ -73,7 +73,8 @@ Rcpp::List cpp_nested_laplace_icar(
     bool store_Q,
     std::string checkpoint_path = "",
     bool compute_skew = false,
-    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> debias = R_NilValue
 );
 
 Rcpp::List cpp_nested_laplace_bym2(
@@ -92,7 +93,8 @@ Rcpp::List cpp_nested_laplace_bym2(
     bool store_Q,
     std::string checkpoint_path = "",
     bool compute_skew = false,
-    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> debias = R_NilValue
 );
 
 Rcpp::List cpp_nested_laplace_car_proper(
@@ -109,7 +111,8 @@ Rcpp::List cpp_nested_laplace_car_proper(
     bool store_Q,
     std::string checkpoint_path = "",
     bool compute_skew = false,
-    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> debias = R_NilValue
 );
 
 Rcpp::List cpp_nested_laplace_temporal(
@@ -126,7 +129,8 @@ Rcpp::List cpp_nested_laplace_temporal(
     bool store_Q,
     std::string checkpoint_path = "",
     bool compute_skew = false,
-    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> debias = R_NilValue
 );
 
 Rcpp::List cpp_nested_laplace_nngp(
@@ -147,7 +151,8 @@ Rcpp::List cpp_nested_laplace_nngp(
     std::string checkpoint_path = "",
     bool compute_skew = false,
     Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
-    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> debias = R_NilValue
 );
 
 Rcpp::List cpp_nested_laplace_hsgp(
@@ -164,7 +169,8 @@ Rcpp::List cpp_nested_laplace_hsgp(
     bool store_Q,
     std::string checkpoint_path = "",
     bool compute_skew = false,
-    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> debias = R_NilValue
 );
 
 // Spatio-temporal nested-Laplace entries (defined in nested_laplace.cpp):
@@ -190,7 +196,8 @@ Rcpp::List cpp_nested_laplace_st_icar(
     bool force_sparse = false,
     std::string checkpoint_path = "",
     bool compute_skew = false,
-    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> debias = R_NilValue
 );
 
 Rcpp::List cpp_nested_laplace_st_car_proper(
@@ -214,7 +221,8 @@ Rcpp::List cpp_nested_laplace_st_car_proper(
     bool force_sparse = false,
     std::string checkpoint_path = "",
     bool compute_skew = false,
-    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> debias = R_NilValue
 );
 
 Rcpp::List cpp_nested_laplace_st_bym2(
@@ -239,7 +247,8 @@ Rcpp::List cpp_nested_laplace_st_bym2(
     bool force_sparse = false,
     std::string checkpoint_path = "",
     bool compute_skew = false,
-    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> debias = R_NilValue
 );
 
 Rcpp::List cpp_nested_laplace_st_hsgp(
@@ -262,7 +271,8 @@ Rcpp::List cpp_nested_laplace_st_hsgp(
     bool force_sparse = false,
     std::string checkpoint_path = "",
     bool compute_skew = false,
-    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> debias = R_NilValue
 );
 
 Rcpp::List cpp_nested_laplace_st_nngp(
@@ -287,7 +297,8 @@ Rcpp::List cpp_nested_laplace_st_nngp(
     bool force_sparse = false,
     std::string checkpoint_path = "",
     bool compute_skew = false,
-    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> debias = R_NilValue
 );
 
 Rcpp::List cpp_nested_laplace_spde(

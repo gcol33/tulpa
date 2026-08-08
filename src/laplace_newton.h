@@ -285,19 +285,11 @@ LaplaceResult laplace_newton_solve_ll(
         result.inner_is_declined   = is_out.declined;
     }
 
-    if (debias && !debias->idx.empty() && result.converged) {
-        SubspaceDebiasOutcome db = compute_subspace_debias(
-            n_x, result.mode, scratch.chol, sparse_solver,
-            use_sparse && sparse_solver.factored(),
-            eval_objective, x, *debias
-        );
-        result.debias_idx      = std::move(db.idx);
-        result.debias_draws    = std::move(db.draws);
-        result.debias_sigma_ss = std::move(db.sigma_ss);
-        result.debias_n_kept   = db.n_kept;
-        result.debias_accept   = db.accept;
-        result.debias_scale    = db.scale;
-        result.debias_declined = db.declined;
+    if (result.converged) {
+        run_subspace_debias(result, n_x, result.mode, scratch.chol,
+                            sparse_solver,
+                            use_sparse && sparse_solver.factored(),
+                            eval_objective, x, debias);
     }
 
     return result;

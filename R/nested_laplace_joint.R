@@ -494,6 +494,19 @@
 #'     not compute; the series correction is the same-order alternative that
 #'     needs only the cubic term, and unlike a skew normal its skewness does not
 #'     saturate inside the band it is applied on.
+#'   * `subspace_debias` (`FALSE`) -- correct only the latent directions the
+#'     inner-layer diagnostics flagged, by exact Metropolis along the
+#'     Gaussian-conditional-mean surface through each cell's mode, and leave the
+#'     rest at their Gaussian conditional (gcol33/tulpa#304, extended to both
+#'     joint paths by gcol33/tulpa#306). Settings and semantics are the ones
+#'     documented on [tulpa_nested_laplace()]. On a fully coupled fit `gamma_3`
+#'     is `NaN` for every arm, so the selector rests on the derivative-free
+#'     inner Pareto-k-hat (gcol33/tulpa#303); where that also bands the
+#'     coordinate reliable, `idx` pins the set explicitly. An EMPTY selection
+#'     leaves the fit bit-for-bit identical to the plain path. A fit whose
+#'     inner solve took the s2z rank-1 or the PSD eigen-clamp path carries no
+#'     usable factor to build the surface from and is left uncorrected, the same
+#'     two paths `diagnose_skew` declines on.
 #'   * `auto_recenter` (`TRUE`) -- re-centre a default outer grid axis on its
 #'     posterior mode and refit when the fit rails against a boundary node
 #'     (gcol33/tulpa#289 / #290). `FALSE` integrates over the grid exactly as
@@ -1151,6 +1164,7 @@ tulpa_nested_laplace_joint <- function(responses,
             diagnose_skew = diagnose_skew,
             skew_idx = skew_idx,
             skew_correct = skew_correct,
+            subspace_debias = .subspace_debias_config(control$subspace_debias),
             inner_refresh = inner_refresh,
             integration = integration,
             local_ccd = local_ccd,
@@ -1391,6 +1405,14 @@ tulpa_nested_laplace_joint <- function(responses,
     # (gcol33/tulpa#305), taken after every refinement pass has settled the grid
     # so the cells it reads are the cells the weights describe.
     res <- .joint_finalize_grid_fixed(res, fixed$n_fixed, keep_grid_hessians)
+    # Subspace debias (gcol33/tulpa#306), after the per-cell fixed-effect pieces
+    # are in place: the correction reports draws recombined from them, so it has
+    # to see the settled grid the weights describe.
+    res <- .nl_subspace_debias_attach(
+        res, .subspace_debias_config(control$subspace_debias),
+        redispatch = function(req) .joint_with_quiet_opts(
+            kernel_fn(res$theta_grid, debias = req)),
+        p_fixed = fixed$n_fixed, beta_names = fixed$names)
     res$timing <- tm$timing()
     res <- .joint_attach_diagnose_cost(res, diagnose_k, diagnose_draws)
     .finalize_fit(res, backend = "nested_laplace_joint",

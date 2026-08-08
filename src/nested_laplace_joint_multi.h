@@ -1524,7 +1524,11 @@ Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
     // Per-cell fixed-effect covariance block (gcol33/tulpa#307), extracted
     // inside each cell's own solve so the grid never holds every cell's
     // precision at once.
-    const JointFixedBlockRequest*    fixed_block = nullptr
+    const JointFixedBlockRequest*    fixed_block = nullptr,
+    // Subspace debias (subspace_debias.h, gcol33/tulpa#304/#306). Runs on every
+    // integrated cell (never the cheap screen), so the corrected coordinates
+    // enter the reported marginal as a mixture over the whole outer grid.
+    const SubspaceDebiasOptions*     debias = nullptr
 );
 
 // Outer-grid driver. n_x_after_re is the latent dimension after all per-arm
@@ -1567,7 +1571,11 @@ Rcpp::List run_multi_block_nested_laplace_joint(
     // Per-cell fixed-effect covariance block (gcol33/tulpa#307), extracted
     // inside each cell's own solve so the grid never holds every cell's
     // precision at once.
-    const JointFixedBlockRequest*    fixed_block = nullptr
+    const JointFixedBlockRequest*    fixed_block = nullptr,
+    // Subspace debias (subspace_debias.h, gcol33/tulpa#304/#306). Runs on every
+    // integrated cell (never the cheap screen), so the corrected coordinates
+    // enter the reported marginal as a mixture over the whole outer grid.
+    const SubspaceDebiasOptions*     debias = nullptr
 );
 
 } // namespace tulpa

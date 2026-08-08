@@ -1382,7 +1382,8 @@ Rcpp::List cpp_nested_laplace_joint_multi(
     bool                compute_skew = false,
     Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
     int                 fixed_block_p = 0,
-    Rcpp::Nullable<Rcpp::List> fixed_block_constraints = R_NilValue
+    Rcpp::Nullable<Rcpp::List> fixed_block_constraints = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> debias = R_NilValue
 ) {
     // Per-cell fixed-effect covariance retention (gcol33/tulpa#305), extracted
     // inside each cell's own solve (gcol33/tulpa#307). `fixed_block_p` is the
@@ -1620,6 +1621,9 @@ Rcpp::List cpp_nested_laplace_joint_multi(
     std::vector<int> skew_idx_vec;
     const std::vector<int>* skew_idx_ptr =
         tulpa::unwrap_skew_idx(compute_skew, skew_idx, skew_idx_vec);
+    tulpa::SubspaceDebiasOptions debias_opts;
+    const tulpa::SubspaceDebiasOptions* debias_ptr =
+        tulpa::unwrap_debias(debias, debias_opts);
 
     Rcpp::List out = tulpa::run_multi_block_nested_laplace_joint(
         n_grid, arms, parsed, blocks, n_x_after_re,
@@ -1640,7 +1644,8 @@ Rcpp::List cpp_nested_laplace_joint_multi(
         ckpt.get(),
         x_init_per_cell_vec,
         compute_skew, skew_idx_ptr,
-        fixed_block_ptr
+        fixed_block_ptr,
+        debias_ptr
     );
     out["theta_grid"]   = theta_grid;
     out["axis_offsets"] = axis_offsets;
@@ -2036,7 +2041,8 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
     const std::vector<double>&       x_init_per_cell,
     bool                             compute_skew,
     const std::vector<int>*          skew_probe_idx,
-    const JointFixedBlockRequest*    fixed_block) {
+    const JointFixedBlockRequest*    fixed_block,
+    const SubspaceDebiasOptions*     debias) {
     const int n_arms = static_cast<int>(arms.size());
     if (static_cast<int>(parsed.size()) != n_arms) {
         Rcpp::stop("parsed and arms vectors must have the same length.");
@@ -2103,7 +2109,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
             cell_coupling_spec, coupled_arms, cell_rows, n_cells, pd_mode,
             step_curvature, hessian_refresh, n_threads_outer, progress,
             checkpoint, x_init_per_cell,
-            compute_skew, skew_probe_idx, fixed_block
+            compute_skew, skew_probe_idx, fixed_block, debias
         );
     }
 
@@ -2369,7 +2375,8 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
             store_Q,
             compute_skew && !is_cheap, skew_probe_idx,
             (compute_skew && !is_cheap) ? &skew_curvature3_fns : nullptr,
-            is_cheap ? nullptr : fixed_block
+            is_cheap ? nullptr : fixed_block,
+            is_cheap ? nullptr : debias
         );
     };
 
@@ -2452,7 +2459,8 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
     const std::vector<double>&       x_init_per_cell,
     bool                             compute_skew,
     const std::vector<int>*          skew_probe_idx,
-    const JointFixedBlockRequest*    fixed_block
+    const JointFixedBlockRequest*    fixed_block,
+    const SubspaceDebiasOptions*     debias
 ) {
     const int n_arms = static_cast<int>(arms.size());
     const int B      = static_cast<int>(blocks.size());
@@ -2471,6 +2479,11 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
     // cheap-screen sweep runs serially (before any parallel region), so its
     // resources stay a single set. n_outer == 1 reproduces the prior serial
     // path exactly (one pool slot, used by every cell).
+    //
+    // The subspace sampler draws from R's RNG (rwmh.h), which is neither
+    // reentrant nor schedule-independent, so a debiased grid is integrated
+    // serially whatever the caller asked for.
+    if (debias && !debias->idx.empty()) n_threads_outer = 1;
     int n_outer = std::max(1, n_threads_outer);
 
     // Build the joint Hessian sparsity pattern + scatter index cache ONCE into
@@ -2896,7 +2909,8 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
             refresh_use,
             want_skew, skew_probe_idx,
             want_skew ? &skew_curvature3_fns_pool[slot] : nullptr,
-            use_cheap_scratch ? nullptr : fixed_block
+            use_cheap_scratch ? nullptr : fixed_block,
+            use_cheap_scratch ? nullptr : debias
         );
     };
 

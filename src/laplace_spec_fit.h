@@ -59,26 +59,45 @@ inline const std::vector<int>* unwrap_skew_idx(
     return &storage;
 }
 
-// Convert an R-facing (1-based, possibly NULL) subspace-debias index set plus
-// its sweep budget into the 0-based SubspaceDebiasOptions the Newton loop
-// expects, writing into caller-owned `storage` and returning a pointer into it.
-// A null or empty index set returns nullptr: the sampler is never entered, so
-// the solve is unchanged and no random number is consumed.
-inline const SubspaceDebiasOptions* unwrap_debias_idx(
-    const Rcpp::Nullable<Rcpp::IntegerVector>& debias_idx,
-    int n_iter, int n_warmup, int thin,
+// Convert an R-facing subspace-debias request into the 0-based
+// SubspaceDebiasOptions the Newton loop expects, writing into caller-owned
+// `storage` and returning a pointer into it.
+//
+// The request is ONE R list -- `idx` (1-based latent indices) plus the optional
+// sweep budget `n_iter` / `warmup` / `thin` -- rather than four parallel
+// arguments, because it travels through every nested kernel entry and a
+// four-argument request would be four signature widenings per entry. A null
+// request, an absent `idx`, or an empty one returns nullptr: the sampler is
+// never entered, so the solve is unchanged and no random number is consumed.
+inline const SubspaceDebiasOptions* unwrap_debias(
+    const Rcpp::Nullable<Rcpp::List>& debias,
     SubspaceDebiasOptions& storage
 ) {
-    if (debias_idx.isNull()) return nullptr;
-    Rcpp::IntegerVector idx_r(debias_idx);
+    if (debias.isNull()) return nullptr;
+    Rcpp::List spec(debias);
+    if (!spec.containsElementNamed("idx")) return nullptr;
+    Rcpp::IntegerVector idx_r = spec["idx"];
     if (idx_r.size() == 0) return nullptr;
     storage.idx.resize(idx_r.size());
     for (int k = 0; k < idx_r.size(); k++) storage.idx[k] = idx_r[k] - 1;
-    storage.n_iter = n_iter;
-    storage.n_warmup = n_warmup;
-    storage.thin = thin;
+    if (spec.containsElementNamed("n_iter")) storage.n_iter = Rcpp::as<int>(spec["n_iter"]);
+    if (spec.containsElementNamed("warmup")) storage.n_warmup = Rcpp::as<int>(spec["warmup"]);
+    if (spec.containsElementNamed("thin"))   storage.thin = Rcpp::as<int>(spec["thin"]);
     return &storage;
 }
+
+// The request as a call-site temporary: `DebiasRequest(debias).ptr` owns the
+// unwrapped options for the duration of the full expression it appears in,
+// which is exactly the lifetime a driver call needs. Every nested kernel entry
+// forwards its `debias` argument this way, so the unwrap is one expression per
+// entry rather than a declaration plus a pointer plus a comment.
+struct DebiasRequest {
+    SubspaceDebiasOptions        opts;
+    const SubspaceDebiasOptions* ptr = nullptr;
+    explicit DebiasRequest(const Rcpp::Nullable<Rcpp::List>& spec) {
+        ptr = unwrap_debias(spec, opts);
+    }
+};
 
 // Spec-solver inputs for a single-process built-in-family fit with an optional
 // single iid RE term, kept alive together: data borrows spec & resp (and resp

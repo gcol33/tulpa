@@ -157,11 +157,11 @@ Rcpp::List cpp_laplace_fit(
     return tulpa::laplace_result_to_list(res);
 }
 
-// `debias_idx` (gcol33/tulpa#304) is the 1-based latent index set to correct by
-// Metropolis along the Gaussian-conditional-mean surface, with
-// `debias_n_iter` / `debias_warmup` / `debias_thin` its sweep budget. An absent
-// or empty index set leaves the solve bit-for-bit as it was and consumes no
-// random number.
+// `debias` (gcol33/tulpa#304) is the subspace-debias request: a list carrying
+// `idx` (the 1-based latent index set to correct by Metropolis along the
+// Gaussian-conditional-mean surface) and the optional sweep budget `n_iter` /
+// `warmup` / `thin`. An absent or empty index set leaves the solve bit-for-bit
+// as it was and consumes no random number.
 // [[Rcpp::export]]
 Rcpp::List cpp_laplace_fit_multi_re(
     Rcpp::NumericVector y, Rcpp::IntegerVector n,
@@ -185,10 +185,7 @@ Rcpp::List cpp_laplace_fit_multi_re(
     bool return_joint_hessian = false,
     bool compute_skew = false,
     Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
-    Rcpp::Nullable<Rcpp::IntegerVector> debias_idx = R_NilValue,
-    int debias_n_iter = 2000,
-    int debias_warmup = 1000,
-    int debias_thin = 1
+    Rcpp::Nullable<Rcpp::List> debias = R_NilValue
 ) {
     // Multi-term RE (intercept / slopes / correlated) + built-in family through
     // the unified spec solver (the family-enum laplace_mode_dense_multi_re was
@@ -436,8 +433,7 @@ Rcpp::List cpp_laplace_fit_multi_re(
         tulpa::unwrap_skew_idx(compute_skew, skew_idx, skew_idx_vec);
     tulpa::SubspaceDebiasOptions db_opts;
     const tulpa::SubspaceDebiasOptions* db_ptr =
-        tulpa::unwrap_debias_idx(debias_idx, debias_n_iter, debias_warmup,
-                                 debias_thin, db_opts);
+        tulpa::unwrap_debias(debias, db_opts);
     tulpa::LaplaceResult res = tulpa::laplace_mode_spec_dense_solve(
         data, layout, params, re_group_empty, max_iter, tol, n_threads,
         /*blocks=*/nullptr, /*k_grid=*/0,

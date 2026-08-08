@@ -259,7 +259,12 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
     // s2z path) or absent (the PSD path densifies instead). Reading the same
     // bytes store_Q would hand out is what makes the block available on every
     // path and identical to what cpp_joint_inner_vcov_blocks() returns.
-    const JointFixedBlockRequest* fixed_block = nullptr
+    const JointFixedBlockRequest* fixed_block = nullptr,
+    // Subspace debias (subspace_debias.h, gcol33/tulpa#304/#306). Built from the
+    // same live factor as the diagnostics above and so declined on exactly the
+    // same two paths, for the same reason: the s2z rank-1 correction and the PSD
+    // eigen-clamp both leave `solver` holding a factor of a different matrix.
+    const SubspaceDebiasOptions* debias = nullptr
 ) {
     LaplaceResult result;
     result.mode.assign(n_x, 0.0);
@@ -462,6 +467,9 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
     const bool skew_factor_valid =
         result.converged && (pd_mode == JointPDMode::LM) &&
         H_builder.s2z_rank1.empty() && solver.factored();
+    std::vector<double> pre_center_x(n_x);
+    for (int j = 0; j < n_x; j++) pre_center_x[j] = x[j];
+    DenseCholeskyScratch unused_dense_chol;  // sparse-only path never reads it
     if (compute_skew && skew_factor_valid) {
         std::vector<int> all_idx;
         const std::vector<int>* probe = skew_probe_idx;
@@ -470,9 +478,6 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
             for (int j = 0; j < n_x; j++) all_idx[j] = j;
             probe = &all_idx;
         }
-        std::vector<double> pre_center_x(n_x);
-        for (int j = 0; j < n_x; j++) pre_center_x[j] = x[j];
-        DenseCholeskyScratch unused_dense_chol;  // sparse-only path never reads it
         if (curvature3_fns) {
             InnerSkewOutcome sk = compute_inner_skew_gamma3_joint(
                 n_x, pre_center_x, unused_dense_chol, solver, /*use_sparse=*/true,
@@ -501,6 +506,12 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
         result.inner_is_log_joint = std::move(is_out.log_joint);
         result.inner_is_sigma     = std::move(is_out.sigma);
         result.inner_is_declined  = is_out.declined;
+    }
+
+    if (skew_factor_valid) {
+        run_subspace_debias(result, n_x, pre_center_x, unused_dense_chol,
+                            solver, /*use_sparse=*/true,
+                            eval_objective, x, debias);
     }
 
     { TULPA_PROFILE_PHASE(PHASE_LOG_LIK_PRIOR);

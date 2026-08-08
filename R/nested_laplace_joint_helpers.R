@@ -561,7 +561,12 @@
              # (adaptive-grid refinement, the outer Pareto-k re-evaluation)
              # is unaffected; .nlj_inner_skew_at_theta() is the only caller
              # that sets it, at a single (MAP) row of `new_cells`.
-             compute_skew = FALSE, skew_idx = NULL) {
+             compute_skew = FALSE, skew_idx = NULL,
+             # Subspace debias (gcol33/tulpa#306): the kernel-facing request
+             # list. Off by default, so every existing caller re-solves exactly
+             # what it did; `.nl_subspace_debias_attach()` is the only caller
+             # that sets it, over the fit's whole settled grid.
+             debias = NULL) {
         new_grids <- .joint_grids_from_cells(new_cells, cp)
         slice_x_init <- if (!is.null(warm_start) && !is.null(warm_start$mode))
                         as.numeric(warm_start$mode) else x_init_default
@@ -605,7 +610,8 @@
                                       inner_refresh = ir,
                                       x_init_per_cell = x_init_per_cell,
                                       compute_skew = compute_skew,
-                                      skew_idx = skew_idx)
+                                      skew_idx = skew_idx,
+                                      debias = debias)
         extras <- NULL
         if (isTRUE(store_extras)) {
             n <- nrow(new_cells)
@@ -636,7 +642,11 @@
              inner_is_z = res_x$inner_is_z,
              inner_is_sigma = res_x$inner_is_sigma,
              inner_is_log_joint = res_x$inner_is_log_joint,
-             inner_is_declined = res_x$inner_is_declined)
+             inner_is_declined = res_x$inner_is_declined,
+             debias_draws_per_grid = res_x$debias_draws_per_grid,
+             debias_idx = res_x$debias_idx,
+             debias_accept = res_x$debias_accept,
+             debias_declined = res_x$debias_declined)
     }
 }
 

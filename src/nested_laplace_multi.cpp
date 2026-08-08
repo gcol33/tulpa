@@ -473,7 +473,8 @@ Rcpp::List cpp_nested_laplace_multi(
     std::string progress_file = "",
     std::string checkpoint_path = "",
     bool compute_skew = false,
-    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> debias = R_NilValue
 ) {
     int B = blocks_spec.size();
     if (axis_offsets.size() != B + 1) {
@@ -583,7 +584,8 @@ Rcpp::List cpp_nested_laplace_multi(
         prune_tol,
         ext_spec, ext_response,
         gp.get(), ckpt.get(),
-        compute_skew, skew_idx_ptr
+        compute_skew, skew_idx_ptr,
+        tulpa::DebiasRequest(debias).ptr
     );
     out["theta_grid"]   = theta_grid;
     out["axis_offsets"] = axis_offsets;

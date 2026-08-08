@@ -416,6 +416,11 @@
 # honest reading is that conditioning x_{-S} on the Gaussian leaves a residual
 # error the closure cannot remove cheaply, not that the coupling is absent.
 # `debias_closure_max` caps the growth for the same reason.
+#
+# `debias_n_draws` is how many fixed-effect draws a corrected grid fit reports.
+# A corrected coordinate no longer has a Gaussian-mixture summary, so the fit
+# reports draws instead of moments and this is their count -- Monte Carlo error
+# on a reported quantile, not a property of the correction.
 .NL_DIAG <- list(
     k_usable             = 0.7,
     k_samples            = 200L,
@@ -428,7 +433,8 @@
     debias_closure_max   = 200L,
     debias_n_iter        = 2000L,
     debias_warmup        = 1000L,
-    debias_thin          = 1L
+    debias_thin          = 1L,
+    debias_n_draws       = 4000L
 )
 
 .nl_diag <- function(par) {

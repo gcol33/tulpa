@@ -93,6 +93,25 @@
 #'     not compute; the series correction is the same-order alternative that
 #'     needs only the cubic term, and unlike a skew normal its skewness does not
 #'     saturate inside the band it is applied on.
+#'   * `subspace_debias` (`FALSE`) -- correct only the latent directions the
+#'     inner-layer diagnostics flagged, by exact Metropolis, and leave the rest
+#'     at their Gaussian conditional (gcol33/tulpa#304, extended to this backend
+#'     by gcol33/tulpa#306). `TRUE` takes every default; a list overrides `band`
+#'     (the inner-reliability floor a coordinate is selected at, default
+#'     `"ok"`), `idx` (pin the corrected set explicitly, skipping the selector),
+#'     `closure` / `closure_max` (grow the set by strongly coupled
+#'     precision-graph neighbours -- declined on this backend, which retains no
+#'     joint precision), the sampler budget `n_iter` / `warmup` / `thin`, and
+#'     `n_draws`. The selector reads the per-index bands `diagnose_skew` already
+#'     attached, so it costs no extra solve; the correction itself re-runs the
+#'     settled grid once with the sampler on, and the fit then reports `$draws`
+#'     -- the per-cell Metropolis sample for the selected coordinates, the rest
+#'     from the Gaussian conditional given them -- instead of the
+#'     Gaussian-mixture moments. An EMPTY selection leaves the fit bit-for-bit
+#'     identical to the plain path. `$subspace_debias` records what was selected,
+#'     the bands it was read from, and the per-cell acceptance rate. Requesting
+#'     it turns `keep_grid_hessians` on, since the recombination reads exactly
+#'     those per-cell pieces.
 #'   * `auto_recenter` (`TRUE`) -- re-centre a default outer grid axis on its
 #'     posterior mode and refit when the fit rails against a boundary node
 #'     (gcol33/tulpa#289 / #290). `FALSE` integrates over the grid exactly as
@@ -172,7 +191,13 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   tol                <- control$tol %||% 1e-6
   n_threads          <- control$n_threads %||% 1L
   x_init             <- control$x_init
-  keep_grid_hessians <- isTRUE(control$keep_grid_hessians)
+  # Subspace debias (gcol33/tulpa#306). The correction reports per-cell DRAWS
+  # instead of the Gaussian-mixture moments, and those are built from the same
+  # per-cell fixed-effect mode + precision `.nested_fixed_moments()` reads, so
+  # requesting it turns that retention on: without it there is nothing to
+  # recombine the sampled coordinates with.
+  sd_cfg             <- .subspace_debias_config(control$subspace_debias)
+  keep_grid_hessians <- isTRUE(control$keep_grid_hessians) || !is.null(sd_cfg)
   diagnose_k         <- isTRUE(control$diagnose_k %||% TRUE)
   k_samples          <- as.integer(control$k_samples %||% .nl_diag("k_samples"))
   diagnose_skew      <- isTRUE(control$diagnose_skew %||% TRUE)
@@ -269,6 +294,11 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
                                    likelihood, p_fixed, skew_idx,
                                    compute = diagnose_skew)
     res <- .nl_skew_correction_attach(res, p_fixed, skew_correct)
+    res <- .nl_subspace_debias_attach(
+      res, sd_cfg,
+      redispatch = function(req) .nl_dispatch_multi(
+        cargs_no_ckpt, prior, likelihood = likelihood, debias = req),
+      p_fixed = p_fixed, beta_names = colnames(X))
     tm$mark("diagnostics")
     res$prior <- prior
     res$timing <- tm$timing()
@@ -345,6 +375,11 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
                                  NULL, p_fixed, skew_idx,
                                  compute = diagnose_skew)
   res <- .nl_skew_correction_attach(res, p_fixed, skew_correct)
+  res <- .nl_subspace_debias_attach(
+    res, sd_cfg,
+    redispatch = function(req) .nl_dispatch(
+      type, utils::modifyList(cargs_no_ckpt, list(debias = req)), prior),
+    p_fixed = p_fixed, beta_names = colnames(X))
   tm$mark("diagnostics")
   res$prior <- prior
   res$timing <- tm$timing()
@@ -1311,7 +1346,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
                                # -- the caller only wants inner_skew, not a
                                # re-normalised single-cell "posterior".
                                theta_grid_override = NULL,
-                               compute_skew = FALSE, skew_idx = NULL) {
+                               compute_skew = FALSE, skew_idx = NULL,
+                               debias = NULL) {
   # Inject a default obs_idx for any tgmrf block that didn't supply one.
   # The C++ scatter needs obs_idx[i] -> latent slot for each observation;
   # the canonical "one obs per latent slot" case has N == n_latent and the
@@ -1406,7 +1442,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     progress_file     = as.character(progress$progress_file),
     checkpoint_path   = as.character(cargs$checkpoint_path %||% ""),
     compute_skew      = isTRUE(compute_skew),
-    skew_idx          = skew_idx
+    skew_idx          = skew_idx,
+    debias            = debias
   )
 
   out$theta_grid   <- joint_grid

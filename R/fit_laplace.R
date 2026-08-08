@@ -188,7 +188,7 @@ tulpa_laplace <- function(y, n_trials, X,
          "multi-RE Laplace path; the spatial kernels expose no probed ",
          "conditional curve. Drop `spatial`.", call. = FALSE)
   }
-  debias_idx <- if (is.null(debias)) NULL else as.integer(debias$idx)
+  debias_req <- .subspace_debias_request(debias)
 
   if (isTRUE(return_re_cov) && !is.null(spatial)) {
     stop("`return_re_cov` is only available on the non-spatial multi-RE path. ",
@@ -300,10 +300,7 @@ tulpa_laplace <- function(y, n_trials, X,
       return_joint_hessian = want_joint,
       compute_skew = isTRUE(compute_skew),
       skew_idx = if (is.null(skew_idx)) NULL else as.integer(skew_idx),
-      debias_idx = debias_idx,
-      debias_n_iter = as.integer(debias$n_iter %||% .nl_diag("debias_n_iter")),
-      debias_warmup = as.integer(debias$warmup %||% .nl_diag("debias_warmup")),
-      debias_thin   = as.integer(debias$thin   %||% .nl_diag("debias_thin"))
+      debias = debias_req
     )
     if (want_joint) {
       result$H_joint <- .laplace_joint_hessian(result)
