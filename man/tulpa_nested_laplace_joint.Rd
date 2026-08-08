@@ -650,10 +650,15 @@ describing the refinement passes. NULL otherwise.
 \item \code{local_ccd_info} -- when \code{local_ccd} engaged (or \code{k_refine = "ccd"}), a
 list with \code{n_cells_refined}, \code{n_nodes_added}, the refined \code{cells}, the
 \code{n_cells_before} / \code{n_cells_after} grid sizes, \code{n_design_nodes} (the cells
-that carry an in-cell design weight rather than their own mass) and
-\code{design_mass} (the share of the integration weight sitting on them). NULL
-when local CCD was off or declined (single-block, \verb{< 4} axes, an active
-\code{phi_grid}, or no peaked interior cell).
+that carry an in-cell design weight rather than their own mass),
+\code{design_mass} (the share of the integration weight sitting on them) and
+\code{cell_share} (the share each refined cell held on the BASE grid, before
+any node was placed). The two shares differ: the replacement nodes sit
+nearer the peak than the cell's own coordinate did, so refining raises
+the share the refined region holds, and reading both separates how
+concentrated the base grid already was from how much the refinement
+concentrated it. NULL when local CCD was off or declined (single-block,
+\verb{< 4} axes, an active \code{phi_grid}, or no peaked interior cell).
 \item \code{integration_requested}, \code{integration_declined} -- what \code{integration}
 asked for, and why the CCD did not run. \verb{$integration} names the
 integrator that RAN, and \code{.nl_node_support()} keys the interval

@@ -26,12 +26,15 @@
 #     channel for this is `dnode`, consumed by .joint_integration_weights(): the
 #     weighting code is untouched.
 #
-#   * No mode-find, no line search. The local Gaussian scale comes from a
-#     diagonal finite-difference of the OUTER log-marginal over the cell's own
-#     grid neighbours -- values already computed for the base grid -- so the only
-#     new inner solves are the off-centre CCD nodes themselves (the centre node
-#     coincides with the cell and reuses its solve). Curvature for free, nodes
-#     warm-started from the cell's inner mode.
+#   * No mode-find, no line search. The local Gaussian scale comes from a finite
+#     difference of the OUTER log-marginal over the cell's own grid neighbours --
+#     values already computed for the base grid -- so the only new inner solves
+#     are the off-centre CCD nodes themselves (the centre node coincides with
+#     the cell and reuses its solve). Curvature for free, nodes warm-started
+#     from the cell's inner mode. The stencil reaches the corner neighbours as
+#     well as the axis ones, so the scale is the MARGINAL spread per axis; the
+#     diagonal alone gives the conditional spread, which on a correlated
+#     posterior is narrower (gcol33/tulpa#316).
 #
 # The node cloud of each refined cell is clamped to the cell's Voronoi half-box
 # (half the distance to each neighbour on each axis), so clouds of distinct cells
@@ -87,19 +90,41 @@
     list(up = up, dn = dn)
 }
 
-# Diagonal local outer curvature at cell `c` from its grid neighbours, in
-# u-space. Per axis the 3-point divided-difference second derivative of the log-
-# marginal (unequal spacing safe) gives d2_j; the cell is a refinement candidate
-# only if it has both neighbours on EVERY axis and is concave (d2_j < 0) on every
-# axis -- a genuine interior local peak, the only place a local Gaussian is
-# defined. Returns the per-axis sd (1 / sqrt(-d2)) and the per-axis Voronoi
-# half-widths (half the u-distance to the lower / upper neighbour), or NULL when
-# the cell is not a candidate.
+# Local outer curvature at cell `c` from its grid neighbours, in u-space.
+#
+# Per axis the 3-point divided-difference second derivative of the log-marginal
+# (unequal spacing safe) gives d2_j; the cell is a refinement candidate only if
+# it has both neighbours on EVERY axis and is concave (d2_j < 0) on every axis --
+# a genuine interior local peak, the only place a local Gaussian is defined.
+#
+# `1 / sqrt(-d2_j)` is the CONDITIONAL scale along axis j: the spread with every
+# other axis held at the cell. The summary reports MARGINAL spreads, and on a
+# correlated outer posterior -- a sigma-alpha copy ridge is one -- the two differ
+# by sqrt(H_jj (H^-1)_jj), so a design scaled by the conditional spread stands in
+# for a posterior narrower than the marginal it is read as (gcol33/tulpa#316).
+# The mixed second derivatives that close the gap come from the cell's own
+# CORNER grid neighbours -- the axis neighbour OF an axis neighbour, which a cell
+# interior on every axis always has, and which the tensor base already evaluated
+# -- so `sd` costs no extra inner solve.
+#
+# Only the SCALE changes. The design stays axis-aligned, because the summary
+# reads a weighted quantile over the refined grid and on design weights that is
+# close to the design's own per-axis EXTENT: an axis-aligned design puts an axial
+# node at f_0 * sd_j on coordinate j, while a design rotated by the Cholesky
+# factor of the same covariance puts it at f_0 * L[j, k] and reports an interval
+# that depends on the arbitrary order of the axes.
+#
+# Returns the per-axis sd, the per-axis Voronoi half-widths (half the u-distance
+# to the lower / upper neighbour) and `sd_marginal` (`NULL` when a corner is
+# missing -- a grid a previous pass already spliced nodes into -- or the local
+# Hessian is not negative definite, which a wide finite-difference window can
+# easily produce), or NULL when the cell is not a candidate.
 .joint_local_ccd_cell_curv <- function(c, U, lm, up, dn, eps = 1e-8) {
     d <- ncol(U)
     sd      <- numeric(d)
     half_lo <- numeric(d)
     half_hi <- numeric(d)
+    H       <- matrix(0, d, d)
     for (j in seq_len(d)) {
         iu <- up[c, j]; id <- dn[c, j]
         if (is.na(iu) || is.na(id)) return(NULL)
@@ -115,8 +140,41 @@
         sd[j]      <- 1 / sqrt(-d2)
         half_lo[j] <- 0.5 * du_lo
         half_hi[j] <- 0.5 * du_hi
+        H[j, j]    <- d2
     }
-    list(sd = sd, half_lo = half_lo, half_hi = half_hi)
+    list(sd = sd, half_lo = half_lo, half_hi = half_hi,
+         sd_marginal = .joint_local_ccd_marginal_sd(c, U, lm, up, dn, H))
+}
+
+# Per-axis MARGINAL sd at cell `c`: `sqrt(diag((-H)^-1))` where `H` carries the
+# diagonal second derivatives already computed and the mixed ones differenced
+# over the cell's corner neighbours,
+#   H_jk = (l(+j+k) - l(+j-k) - l(-j+k) + l(-j-k)) / ((u_hi_j - u_lo_j)(u_hi_k - u_lo_k)),
+# the same central-difference stencil `.joint_ccd_fd_stencil()` uses for the
+# global CCD's mode Hessian. NULL when any corner is missing or `-H` is not
+# positive definite, which is the caller's signal to keep the conditional scale.
+.joint_local_ccd_marginal_sd <- function(c, U, lm, up, dn, H) {
+    d <- ncol(U)
+    if (d < 2L) return(NULL)
+    for (j in seq_len(d - 1L)) for (k in (j + 1L):d) {
+        pj <- up[c, j]; mj <- dn[c, j]
+        idx <- c(up[pj, k], dn[pj, k], up[mj, k], dn[mj, k])
+        if (anyNA(idx)) return(NULL)
+        den <- (U[up[c, j], j] - U[dn[c, j], j]) * (U[up[c, k], k] - U[dn[c, k], k])
+        v <- (lm[idx[1L]] - lm[idx[2L]] - lm[idx[3L]] + lm[idx[4L]]) / den
+        if (!is.finite(v)) return(NULL)
+        H[j, k] <- v; H[k, j] <- v
+    }
+    negH <- -0.5 * (H + t(H))
+    # Positive definiteness is what makes the inverse a covariance; a wide
+    # finite-difference window can leave the estimate indefinite even when every
+    # diagonal entry is concave.
+    if (is.null(tryCatch(chol(negH), error = function(e) NULL))) return(NULL)
+    S <- tryCatch(solve(negH), error = function(e) NULL)
+    if (is.null(S)) return(NULL)
+    s <- sqrt(diag(S))
+    if (!all(is.finite(s)) || any(s <= 0)) return(NULL)
+    s
 }
 
 # Greedy mutually-non-adjacent selection: take the highest-weight candidate, drop
@@ -220,6 +278,14 @@
     new_cov_blocks  <- list()
     new_dn_blocks   <- list()
     n_nodes_added   <- 0L
+    # Each refined cell's share of the BASE grid's integration weight, before
+    # any node was placed. `design_mass` on the fit is the post-refinement
+    # share, which is a different number: the cloud's nodes sit nearer the peak
+    # than the cell's own coordinate did, so refining a cell raises the share
+    # the refined region holds. Reporting both says how concentrated the base
+    # grid already was, separately from how much the refinement concentrated it
+    # (gcol33/tulpa#316).
+    cell_share      <- numeric(0)
 
     for (c in chosen) {
         cc  <- curv[[c]]
@@ -232,8 +298,12 @@
         # clamping nodes (which would break the weight / position correspondence
         # and over-disperse). A symmetric shrink keeps the +/- pairs balanced, so a
         # flat integrand leaves the cell's first moment unchanged.
+        #
+        # The scale is the MARGINAL spread where the corner stencil gives one,
+        # since that is what the per-axis summary reads; the diagonal stencil's
+        # conditional spread is the fallback (gcol33/tulpa#316).
         half <- pmin(cc$half_lo, cc$half_hi)
-        sd_design <- pmin(cc$sd, half / node_reach)
+        sd_design <- pmin(cc$sd_marginal %||% cc$sd, half / node_reach)
         u_nodes <- sweep(z_off %*% diag(sd_design, d, d), 2L, u_c, FUN = "+")
         for (j in seq_len(d)) {
             u_nodes[, j] <- pmin(pmax(u_nodes[, j], u_c[j] - cc$half_lo[j]),
@@ -274,6 +344,7 @@
         new_grid_blocks[[length(new_grid_blocks) + 1L]] <- grid_blk
         new_lm_blocks[[length(new_lm_blocks) + 1L]]     <- lm_blk
         new_dn_blocks[[length(new_dn_blocks) + 1L]]     <- dn_blk
+        cell_share <- c(cell_share, w[c])
         n_nodes_added <- n_nodes_added + nrow(theta_nodes)
     }
 
@@ -313,6 +384,7 @@
          info         = list(n_cells_refined = length(chosen),
                              n_nodes_added   = n_nodes_added,
                              cells           = chosen,
+                             cell_share      = cell_share,
                              n_cells_before  = n,
                              n_cells_after   = nrow(out_grid),
                              n_design_nodes  = sum(out_kind == "design")))

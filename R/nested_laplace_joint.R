@@ -658,10 +658,15 @@
 #'   * `local_ccd_info` -- when `local_ccd` engaged (or `k_refine = "ccd"`), a
 #'      list with `n_cells_refined`, `n_nodes_added`, the refined `cells`, the
 #'      `n_cells_before` / `n_cells_after` grid sizes, `n_design_nodes` (the cells
-#'      that carry an in-cell design weight rather than their own mass) and
-#'      `design_mass` (the share of the integration weight sitting on them). NULL
-#'      when local CCD was off or declined (single-block, `< 4` axes, an active
-#'      `phi_grid`, or no peaked interior cell).
+#'      that carry an in-cell design weight rather than their own mass),
+#'      `design_mass` (the share of the integration weight sitting on them) and
+#'      `cell_share` (the share each refined cell held on the BASE grid, before
+#'      any node was placed). The two shares differ: the replacement nodes sit
+#'      nearer the peak than the cell's own coordinate did, so refining raises
+#'      the share the refined region holds, and reading both separates how
+#'      concentrated the base grid already was from how much the refinement
+#'      concentrated it. NULL when local CCD was off or declined (single-block,
+#'      `< 4` axes, an active `phi_grid`, or no peaked interior cell).
 #'   * `integration_requested`, `integration_declined` -- what `integration`
 #'      asked for, and why the CCD did not run. `$integration` names the
 #'      integrator that RAN, and `.nl_node_support()` keys the interval

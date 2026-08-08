@@ -270,6 +270,151 @@ test_that("local CCD splices per-cell covariance blocks alongside the modes", {
 })
 
 # --------------------------------------------------------------------------- #
+# Design scale on a correlated outer posterior (gcol33/tulpa#316)              #
+# --------------------------------------------------------------------------- #
+#
+# The reference is analytic: an equicorrelated Gaussian outer target on identity
+# axes, whose axis marginals are standard normal whatever the correlation is, so
+# the exact 95% endpoints are qnorm(0.025) / qnorm(0.975) and the reference
+# carries no numerical noise of its own. The target is quadratic in u, so the
+# central-difference stencil is exact there too.
+
+.lccd_corr <- function(d = 4L, rho = 0.8, m = 3L, reach = 4, offset = 0) {
+  R <- matrix(rho, d, d); diag(R) <- 1
+  Q <- solve(R)
+  lv <- seq(-reach, reach, length.out = m) + offset * (2 * reach / (m - 1))
+  ll <- stats::setNames(replicate(d, lv, simplify = FALSE), paste0("a", seq_len(d)))
+  g <- as.matrix(expand.grid(ll, KEEP.OUT.ATTRS = FALSE))
+  colnames(g) <- names(ll)
+  logf <- function(TH) -0.5 * rowSums((TH %*% Q) * TH)
+  list(R = R, Q = Q, grid = g, lm = logf(g),
+       tags = stats::setNames(rep("identity", d), colnames(g)),
+       eval = function(theta_mat, warm) list(log_marginal = logf(theta_mat),
+                                             modes = NULL))
+}
+
+# The mean per-axis 95% interval the summary would report off a refined grid.
+.lccd_mean_width <- function(rf) {
+  w <- tulpa:::.joint_integration_weights(rf$log_marginal, rf$dnode)
+  mean(vapply(seq_len(ncol(rf$joint_grid)), function(j) {
+    v <- as.numeric(rf$joint_grid[, j])
+    use <- is.finite(v) & is.finite(w) & w > 0
+    q <- tulpa:::.nl_wtd_quantile(v[use], w[use] / sum(w[use]),
+                                  c(0.025, 0.975), outside = "clamp")
+    q[2L] - q[1L]
+  }, numeric(1)))
+}
+
+test_that("the cell's design scale is the marginal spread, not the conditional one", {
+  tg <- .lccd_corr(d = 4L, rho = 0.8)
+  nb <- tulpa:::.joint_local_ccd_neighbors(tg$grid, tg$grid, seq_len(4L))
+  ctr <- which(rowSums(abs(tg$grid)) == 0)
+  cc <- tulpa:::.joint_local_ccd_cell_curv(ctr, tg$grid, tg$lm, nb$up, nb$dn)
+
+  # The target is exactly quadratic, so both stencils are exact.
+  expect_equal(cc$sd, 1 / sqrt(diag(tg$Q)), tolerance = 1e-12)
+  expect_false(is.null(cc$sd_marginal))
+  expect_equal(cc$sd_marginal, sqrt(diag(tg$R)), tolerance = 1e-10)
+  # At rho = 0.8 in four dimensions the marginal spread is about twice the
+  # conditional one, which is the whole of gcol33/tulpa#316.
+  expect_equal(cc$sd_marginal / cc$sd, sqrt(diag(tg$Q) * diag(tg$R)),
+               tolerance = 1e-10)
+  expect_gt(min(cc$sd_marginal / cc$sd), 1.9)
+})
+
+test_that("a dominant refined cell reports the marginal spread it stands in for", {
+  exact <- diff(stats::qnorm(c(0.025, 0.975)))
+  for (rho in c(0.7, 0.8, 0.9)) {
+    tg <- .lccd_corr(d = 4L, rho = rho)
+    rf <- tulpa:::.joint_local_ccd_refine(
+      tg$grid, tg$lm, NULL, NULL, colnames(tg$grid), tg$tags, tg$eval,
+      max_cells = 4L)
+    expect_false(is.null(rf))
+
+    # The regime, asserted before the width is read: this cell carries
+    # essentially the whole posterior, so the neighbours the cloud is clamped
+    # against hold none of the truncated tail.
+    w <- tulpa:::.joint_integration_weights(rf$log_marginal, rf$dnode)
+    expect_gt(sum(w[rf$weight_kind == "design"]), 0.99)
+
+    # Measured from the conditional scale this replaces: 0.675 / 0.554 / 0.394
+    # of the exact width at these three correlations.
+    expect_equal(.lccd_mean_width(rf) / exact, 1, tolerance = 0.08)
+  }
+})
+
+test_that("the design scale is unchanged where the outer axes are uncorrelated", {
+  tg <- .lccd_corr(d = 4L, rho = 0)
+  nb <- tulpa:::.joint_local_ccd_neighbors(tg$grid, tg$grid, seq_len(4L))
+  ctr <- which(rowSums(abs(tg$grid)) == 0)
+  cc <- tulpa:::.joint_local_ccd_cell_curv(ctr, tg$grid, tg$lm, nb$up, nb$dn)
+  expect_equal(cc$sd_marginal, cc$sd, tolerance = 1e-10)
+
+  rf <- tulpa:::.joint_local_ccd_refine(
+    tg$grid, tg$lm, NULL, NULL, colnames(tg$grid), tg$tags, tg$eval,
+    max_cells = 4L)
+  expect_equal(.lccd_mean_width(rf) / diff(stats::qnorm(c(0.025, 0.975))),
+               1, tolerance = 0.02)
+})
+
+test_that("a grid with no corner stencil keeps the conditional scale", {
+  # A grid a previous pass already spliced nodes into has no complete corner
+  # stencil; the cell then reports its conditional scale and no marginal one,
+  # which is the fallback the refinement runs on.
+  tg <- .lccd_corr(d = 4L, rho = 0.8)
+  keep <- which(!(tg$grid[, 1L] > 0 & tg$grid[, 2L] > 0))
+  g2 <- tg$grid[keep, , drop = FALSE]
+  nb <- tulpa:::.joint_local_ccd_neighbors(g2, g2, seq_len(4L))
+  ctr <- which(rowSums(abs(g2)) == 0)
+  cc <- tulpa:::.joint_local_ccd_cell_curv(ctr, g2, tg$lm[keep], nb$up, nb$dn)
+  expect_false(is.null(cc))
+  expect_null(cc$sd_marginal)
+  expect_equal(cc$sd, 1 / sqrt(diag(tg$Q)), tolerance = 1e-12)
+})
+
+# --------------------------------------------------------------------------- #
+# What share of the base grid each refined cell already held (gcol33/tulpa#316) #
+# --------------------------------------------------------------------------- #
+
+test_that("each refined cell reports the base-grid share it held", {
+  mu <- c(0.5, 0.5); s <- c(0.3, 0.3)
+  gd <- .lccd_grid(list(a = c(-1, 0.5, 2), b = c(-1, 0.5, 2)), mu, s)
+  out <- tulpa:::.joint_local_ccd_refine(
+    gd$grid, gd$lm, modes = NULL, dnode = NULL,
+    latent_axes = c("a", "b"), tags = c(a = "identity", b = "identity"),
+    eval_nodes = .lccd_eval(mu, s), max_cells = 4L)
+  expect_false(is.null(out))
+  # One share per refined cell, and each is that cell's own weight on the grid
+  # the refinement started from.
+  w0 <- tulpa:::.joint_integration_weights(gd$lm, NULL)
+  expect_length(out$info$cell_share, out$info$n_cells_refined)
+  expect_equal(out$info$cell_share, w0[out$info$cells], tolerance = 1e-12)
+})
+
+test_that("a fit reports the base share separately from the design mass", {
+  skip_on_cran()
+  # The two are different numbers: the replacement nodes sit nearer the peak
+  # than the cell's own coordinate did, so refining a cell RAISES the share of
+  # the posterior the refined region holds. `design_mass` is the share after,
+  # `cell_share` the share before, and the regime gcol33/tulpa#316 describes is
+  # the one where either approaches 1.
+  sim  <- .lccd_sim_joint()
+  fitl <- suppressWarnings(tulpa_nested_laplace_joint(
+    sim$responses, sim$prior, copy = sim$copy,
+    control = list(max_iter = 60L, tol = 1e-6, diagnose_k = FALSE,
+                   var_of_means_consistency = FALSE, integration = "grid",
+                   local_ccd = list(max_cells = 4L))))
+  info <- fitl$local_ccd_info
+  expect_false(is.null(info))
+  expect_length(info$cell_share, info$n_cells_refined)
+  expect_true(all(info$cell_share > 0 & info$cell_share < 1))
+  expect_lte(sum(info$cell_share), 1 + 1e-8)
+  # The refinement concentrates: the design-weighted share after exceeds the
+  # cells' own share before.
+  expect_gt(info$design_mass, sum(info$cell_share))
+})
+
+# --------------------------------------------------------------------------- #
 # Per-cell weight kind (gcol33/tulpa#311)                                      #
 # --------------------------------------------------------------------------- #
 

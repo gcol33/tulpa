@@ -117,6 +117,84 @@
   so a refined cell's mass is redistributed only inside the cell the unrefined
   grid had collapsed onto one point.
 
+* Local CCD refinement scales each node cloud by the refined cell's MARGINAL
+  spread instead of its conditional one (gcol33/tulpa#316). The cloud's scale
+  came from a diagonal finite-difference stencil, and `1 / sqrt(-d2_j)` is the
+  spread along axis `j` with every other axis held at the cell; the per-axis
+  summary reports marginal spreads, and on a correlated outer posterior -- a
+  sigma-alpha copy ridge is one -- the two differ by `sqrt(H_jj (H^-1)_jj)`. The
+  stencil now also differences the cell's CORNER grid neighbours, which a cell
+  interior on every axis always has and which the tensor base already evaluated,
+  so `sqrt(diag((-H)^-1))` costs no extra inner solve. A cell whose corners are
+  missing (a grid a previous pass spliced nodes into) or whose local `-H` is not
+  positive definite keeps the conditional scale.
+
+  Only the scale changes. The design stays axis-aligned, the per-axis shrink to
+  the Voronoi half-box and the node clamp are untouched, and so is the
+  weight-conservation argument. That is deliberate: the summary reads a weighted
+  quantile over the refined grid and on design weights a cumulative sum is not a
+  CDF, so what it returns is close to the design's own per-axis EXTENT. An
+  axis-aligned design puts an axial node at `f_0 sd_j` on coordinate `j`; a
+  design rotated by the Cholesky factor of the same covariance puts it at
+  `f_0 L[j, k]`, and measured on an equicorrelated target with unit marginal SDs
+  at `rho = 0.8` the per-axis extents are 2.200 / 1.760 / 1.765 / 1.918 times the
+  SD -- so a rotated design reports an interval that depends on the arbitrary
+  order of the axes. Rotating was built and measured and is not what shipped.
+
+  Scored against an equicorrelated Gaussian outer target on identity axes, whose
+  axis marginals are standard normal whatever the correlation is, at four axes
+  and three levels per axis (`design_mass` above 0.99), reported 95% width as a
+  fraction of the exact 3.91993:
+
+  ```
+  rho     0.0     0.5     0.7     0.8     0.9
+  before  1.0052  0.8587  0.6748  0.5543  0.3942
+  after   1.0052  0.9740  0.9540  0.9527  0.9569
+  ```
+
+  Mean absolute endpoint error at `rho = 0.8` goes 0.58240 -> 0.06182. The target
+  is quadratic, so the stencil is exact there: the recovered marginal SDs match
+  `sqrt(diag(Sigma))` to 1.1e-15 and the conditional ones `1 / sqrt(diag(Q))`
+  exactly.
+
+  On the package's own 4-axis multi-block fixture, refit on axis ranges that
+  bracket its posterior and scored against a converged `m = 13` tensor grid
+  (28561 cells, 583 s, refinement off), mean absolute endpoint error per base
+  grid, with the reference's own `m = 11` against `m = 13` movement as the noise
+  floor (0.01716 on endpoints, 0.03853 on widths):
+
+  ```
+  levels m      3       4       5       6       7       8    total
+  design_mass  0.931   0.289   0.222   0.254   0.169   0.121
+  before       0.1797  0.1533  0.1219  0.0616  0.0537  0.0469  0.6170
+  after        0.1641  0.1518  0.1219  0.0616  0.0537  0.0469  0.6000
+  ```
+
+  The improvement is concentrated where #316 is: at three levels per axis the
+  reported mean width goes 0.67781 -> 0.71103 against a reference 1.09089, and
+  since both sit below the reference that direction does not depend on the
+  reference's exact value. It is modest there because that fixture's outer
+  correlations are weak (the refined cell's local correlations are -0.460 to
+  +0.158) and because at four of the six base grids the estimated `-H` is
+  indefinite, so the conditional scale is kept. Four other candidates were built
+  and measured against the same reference -- removing the shrink and clamp and
+  deleting absorbed cells, calibrating the scale to the cell's own mass share,
+  collapsing each cloud back to a mass atom, and rotating by the Cholesky factor
+  -- and none of them beats this across the sweep.
+
+  Also measured: the shrink to the Voronoi box, which #316 names as the
+  mechanism, does not bind on that fixture at three levels per axis. The
+  conditional scale there is (0.2120, 0.1034, 0.1954, 0.0388) against a
+  `half / node_reach` of (0.3197, 0.1818, 0.3197, 0.1420), and a candidate that
+  removes the shrink and the clamp entirely returns bit-identical numbers.
+
+* `local_ccd_info` gains `cell_share`, the share of the base grid's integration
+  weight each refined cell held before any node was placed. It is a different
+  number from `design_mass`, which is the share the refined region holds after:
+  the replacement nodes sit nearer the peak than the cell's own coordinate did,
+  so refining raises it. Reading both separates how concentrated the base grid
+  already was from how much the refinement concentrated it.
+
 * A joint multi-block fit records which outer integrator the caller ASKED for
   and why the CCD did not run (gcol33/tulpa#315). `$integration` names the
   integrator that ran, and `.nl_node_support()` keys the interval construction
