@@ -1,5 +1,122 @@
 # tulpa NEWS
 
+## 0.0.145
+
+* `tulpa_re_cov_nested()` reports the median and 95% interval of every derived
+  covariance quantity (`sigma_i`, `rho_ij`, `Sigma_ij`, in every block) from the
+  moments its integration design reproduces, instead of from a discrete weighted
+  quantile over the design's node positions (gcol33/tulpa#308). A central
+  composite design is a moment rule: its nodes sit where they reproduce the
+  integrand's first two moments and carry no probability mass of their own, so
+  the cumulative design weight across them is not a CDF. The discrete quantile
+  clamped an out-of-support probability to the extreme node, which made every
+  reported interval exactly the design's own extent -- at `k` covariance
+  coordinates, `theta_hat +/- 1.1 sqrt(k)` posterior SDs, whose coverage is
+  capped at `2 Phi(1.1 sqrt(k)) - 1 = 0.729 / 0.880 / 0.943 / 0.972` for
+  `k = 1 ... 4` no matter how much data the model is given. The interval is now
+  moment-matched on each quantity's own coordinate (`log` for a scale or a
+  variance, `atanh` for a correlation, the identity for a covariance) and mapped
+  back, so scale intervals stay positive and asymmetric and correlation
+  intervals stay inside `(-1, 1)`. Measured `sigma_1` coverage over 200 seeds
+  per arm (poisson, 60 groups x 40 observations, nominal 0.95), varying only the
+  random-effect block: `k = 1` 0.735 -> 0.950, `k = 2` 0.880 -> 0.945, `k = 3`
+  0.950 -> 0.945 (binomial SE 0.015 - 0.031). The `mean` and `sd` columns are
+  unchanged, `tulpa_re_cov_gibbs()` was never affected, and the tensor-grid
+  layout (`control$integration = "grid"`), whose uniform cells do discretize the
+  density, keeps the weighted quantile.
+
+* `.nl_wtd_quantile()` takes an explicit `outside` policy for a probability
+  beyond the support's own cumulative range. The default `"clamp"` is the
+  cumulative-mass convention a sample uses and is unchanged; `"na"` withholds
+  the number where the support is a quadrature design rather than posterior
+  mass, so the clamp is a stated choice instead of a silent one.
+
+* The nested random-effect-covariance recovery gate
+  (`test-re-cov-recovery.R`) is raised from 75% to the 85% its Gibbs sibling is
+  held to. The 75% was the defect above, measured and accepted rather than
+  diagnosed.
+
+* Every remaining consumer that reads a median and interval off a CCD-integrated
+  outer grid now takes them from the moments the design reproduces, the same way
+  `tulpa_re_cov_nested()` does since gcol33/tulpa#308. The three are the joint
+  multi-block per-axis hyperparameter summary (`theta_median` / `theta_ci_lo` /
+  `theta_ci_hi`, gcol33/tulpa#309), the inline `spatial()` bar field's per-block
+  `sigma` / `rho` and its MCAR `Sigma` summary (gcol33/tulpa#310), and
+  `spatial_range()` / `temporal_corr()` (gcol33/tulpa#312). Confirmed before
+  changing anything: on a real three-block joint CCD fit the reported upper
+  endpoint equalled the node maximum on every axis at `0.000e+00`, and on a real
+  MCAR fit four of the six derived quantities had BOTH endpoints exactly on the
+  node extent.
+
+  Measured coverage of the reported interval, gaussian response, 40 groups per
+  factor and 1200 observations, varying ONLY the number of crossed random-effect
+  blocks (which is the outer dimension `d`), 200 seeds per arm, nominal 0.95:
+  `d = 3` 0.9350 -> 0.9450, `d = 4` 0.9900 -> 0.9700, `d = 5` 0.9650 -> 0.9300
+  (binomial SE 0.007 - 0.018). Before, the mean interval width grew with the
+  design -- 0.3131 / 0.3560 / 0.3899 across the three arms, in a data regime that
+  did not change -- because the endpoints were the design's `1.1 sqrt(d)`
+  whitened-SD reach rather than a property of the posterior; after, it is
+  0.3241 / 0.3251 / 0.3261, flat to 0.6%.
+
+  On the MCAR bar field, whose simulated `Sigma` gives an explicit truth (8 x 8
+  lattice, 20 observations per cell, 150 seeds, nominal 0.95), every derived
+  quantity's coverage improves: `sigma_1` 0.9067 -> 0.9133, `sigma_2`
+  0.7467 -> 0.8333, `rho_12` 0.7533 -> 0.8400, `Sigma_12` 0.8667 -> 0.9267,
+  pooled 0.8211 -> 0.8767 over 900 trials. It does not reach nominal; the
+  residual is the inner Laplace's attenuation of a spatial covariance at 64
+  units plus the outer Gaussian grid's fit to a skewed log-Cholesky posterior,
+  which this does not address.
+
+* Each nested-Laplace hyperparameter axis names the DOMAIN its interval is
+  formed on, read from the same per-axis registry the outer Pareto-k
+  unconstrains with (`.joint_axis_domains()`): a positive scale on `log`, the
+  BYM2 mixing weight on `logit`, an unconstrained coordinate (a copy `alpha`, an
+  MCAR log-Cholesky entry) on the identity. A proper-CAR `rho_car`, whose support
+  is the adjacency's eigenvalue interval, has no domain the engine will guess, so
+  its interval is withheld rather than reported as the design's extent.
+
+* `ranef()` on a `tulpa_re_cov_nested()` fit reports the SAMPLED values for a
+  random-effect coordinate the subspace debias selected, instead of the Gaussian
+  mixture the fit had stopped using (gcol33/tulpa#314). The node mixture is
+  reused rather than redrawn, so the group effects and the fixed effects
+  marginalize one weighted node set, and a `source` column says per row which
+  construction produced it (`"sampled"`, `"mixture"` or `"mode"`). A fit whose
+  `S` contains no random effect is untouched, consumes no random number, and
+  reports what it reported before.
+
+* The inner-k-hat identity test strips the `$skew_correction` record alongside
+  `$inner_*` (gcol33/tulpa#313). Every entry of that record is derived from
+  gamma_3 or from the switch itself, so it necessarily differs with
+  `control$diagnose_skew` on and off; the invariant the test asserts -- that the
+  diagnostic consumes no randomness and changes no non-diagnostic field -- is
+  unchanged.
+
+* Every joint outer grid reports `weight_kind`, one entry per cell, saying
+  whether that cell carries the mass of its own cell or an in-cell design weight
+  (gcol33/tulpa#311). A fit integrated by one rule reports one value throughout;
+  a locally CCD-refined grid is the one support carrying both, and it now says so
+  per cell instead of leaving a consumer to read one kind off `integration`.
+  `local_ccd_info` gains `n_design_nodes` and `design_mass`, the share of the
+  integration weight sitting on design-weighted nodes.
+
+  The per-axis median and interval keep the weighted quantile on a refined grid,
+  which is a measurement rather than an omission. Scored against outer targets
+  whose exact axis quantiles are known in closed form, the refined grid's
+  quantile beats the unrefined grid's own in 8 of 8 configurations on a
+  diagonal-Gaussian target (`d = 4/5`, 5/7 levels per axis, two peak
+  sharpnesses), so declining it would withhold a number strictly better than the
+  one the same summary reports one refinement earlier. On a target the moment
+  rule cannot fit by construction (each axis carrying a `Gamma(k, 1)` marginal on
+  a log-tagged axis, 18 configurations over `d = 4/5`, 5/7/9 levels,
+  `k = 1/2/8`), the moment read beats the quantile as often on an unrefined grid
+  (12 of 18) as on a refined one (11 of 18), and refining improves the moment
+  read in only 2 of 18 -- so that advantage belongs to coarse grids and
+  near-lognormal targets, not to the mixed weights, and moving a refined fit onto
+  it is a separate question about density supports. The mixing is bounded by the
+  refinement itself: each node cloud is clamped to its cell's Voronoi half-box,
+  so a refined cell's mass is redistributed only inside the cell the unrefined
+  grid had collapsed onto one point.
+
 ## 0.0.144
 
 * **The subspace debias reaches the grid and joint nested backends**
