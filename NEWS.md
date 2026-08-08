@@ -1,5 +1,28 @@
 # tulpa NEWS
 
+## 0.0.149
+
+* A CI-coverage gate now reaches local-CCD refinement (gcol33/tulpa#320). The
+  joint recovery fixture builds one `iid` block, so it has one latent axis and
+  `.joint_local_ccd_engage()` -- which requires four -- declined silently: every
+  number measured on this path over four rounds came from grid dumps rather than
+  from a coverage sweep. `recov_fit_joint_local_ccd()` is that sweep at four
+  crossed groupings on a deliberately coarse four-level base grid, run twice on
+  the same seeds with the refinement on and off, and a companion test asserts the
+  refinement actually engaged rather than trusting the settings.
+* Measured, 150 seeds x 2 coefficients per level: pooled coverage 0.8800 with
+  refinement on against 0.8800 off at nominal 0.95, and 0.7300 against 0.7267 at
+  0.80, against a standard error of 0.0126. What refinement moves is the width,
+  in the direction gcol33/tulpa#319 predicts -- the intercept's mean 95% interval
+  is 2.9% narrower -- but that buys 0 of 300 trials at 0.95 and 1 at 0.80. Where
+  it pays is the hyperparameter axis: the `sigma_1` interval is more than
+  fourfold sharper (0.2330 against 1.0590) with half the median bias (0.0245
+  against 0.0592) while still covering 149 of 150 against a nominal 0.95.
+* `recov_sweep()` takes the nominal level to judge at (`z` / `level`, defaulting
+  to the 95% every existing gate runs at) and reports mean interval `width`, so a
+  second level and the width effect are read through the shared harness rather
+  than a parallel one.
+
 ## 0.0.148
 
 * A locally refined cell now reports the ratio of the two estimates of its own
