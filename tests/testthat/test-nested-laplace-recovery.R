@@ -790,6 +790,251 @@ test_that("the coverage gate reads the residual scale and not a layer of the fit
   expect_lt(abs(r1$se[2] / r0$se[2] - 1), 0.01)
 })
 
+# --- the two free cell rules, judged by coverage (gcol33/tulpa#331) ----------
+#
+# gcol33/tulpa#326 (a cell's mass integrated over its own box) and
+# gcol33/tulpa#327 (a cell's atom placed at its own mass barycentre) are two
+# corrections to what the midpoint atom throws away, both read off the same
+# three-point stencil at zero inner solves, and neither has a production caller.
+# Scored as distance to a finer grid's read, no rule dominates and the ranking
+# flips with resolution, which is what gcol33/tulpa#331 asks coverage to settle.
+#
+# The four arms are the two rules crossed -- shipped, mass, location, pair --
+# and all four are post-processing of ONE fit per seed through the
+# gcol33/tulpa#322 dump, so they are paired on the same solve and not merely on
+# the same data. The rules read a TENSOR base grid: on a locally refined grid
+# the spliced design nodes leave only the base grid's own interior cells with a
+# centred stencil (16 of 448 on this fixture), so the base grid is where they
+# are defined and where they are scored.
+#
+# Two of the twelve cells of the table are not measurements. A weight rule
+# cannot move a grid coordinate and a placement rule cannot move a cell's own
+# inner solve, so `location` reads a fixed effect exactly as `shipped` does and
+# `pair` exactly as `mass` does. The test below asserts that at 0.000e+00 rather
+# than reporting four fixed-effect arms as if they were four.
+lccd_arms <- function(dm) {
+  bm <- .joint_local_ccd_box_mass(dm$joint_grid, dm$log_marginal,
+                                  dm$axis_names, dm$axis_tags)
+  base <- if (is.null(dm$dnode)) rep(1, nrow(dm$joint_grid)) else dm$dnode
+  w <- outer_grid_weights(dm, dnode = base * exp(bm$log_box_ratio))
+  g <- .joint_local_ccd_barycentre(dm$joint_grid, dm$log_marginal,
+                                   dm$axis_names, dm$axis_tags)$joint_grid
+  list(shipped  = list(w = NULL, g = NULL),
+       mass     = list(w = w,    g = NULL),
+       location = list(w = NULL, g = g),
+       pair     = list(w = w,    g = g))
+}
+
+# One arm's two reads off one dump, each through the engine's own summary path:
+# the hyperparameter axes through `.nl_axis_quantiles()`, the coefficients
+# through `.nested_fixed_moments()`.
+lccd_arm_read <- function(dm, arm, z = 1.96) {
+  rb <- outer_grid_rebuild(dm, arm$w, arm$g)
+  fx <- outer_grid_rebuild_fixed(dm, arm$w)
+  list(s_lo = rb$ci_lo[[1L]], s_hi = rb$ci_hi[[1L]], s_med = rb$median[[1L]],
+       lo = fx$mean - z * fx$se, hi = fx$mean + z * fx$se)
+}
+
+# All four arms over `n_seed` seeds at one base-grid resolution: per-arm sigma_1
+# coverage and mean width, and the same pair for each coefficient. One fit per
+# seed serves every arm.
+lccd_arm_sweep <- function(levels, n_seed, seed_off = 8100L) {
+  sg   <- exp(seq(log(0.2), log(1.5), length.out = 7))
+  arms <- c("shipped", "mass", "location", "pair")
+  p    <- length(LCCD_CFG$beta)
+  s_cov <- stats::setNames(integer(length(arms)), arms)
+  s_wid <- stats::setNames(numeric(length(arms)), arms)
+  b_cov <- matrix(0L, length(arms), p, dimnames = list(arms, NULL))
+  b_wid <- matrix(0,  length(arms), p, dimnames = list(arms, NULL))
+  for (s in seq_len(n_seed)) {
+    d  <- LCCD_SIM(seed_off + s, "gaussian", LCCD_CFG$nr, LCCD_CFG$spr,
+                   LCCD_CFG$ntr, LCCD_CFG$beta, LCCD_CFG$su, LCCD_CFG$phi)
+    dm <- outer_grid_dump(recov_fit_joint_coarse(d, sg, "gaussian", LCCD_CFG,
+                                                 levels = levels))
+    A <- lccd_arms(dm)
+    for (a in arms) {
+      r <- lccd_arm_read(dm, A[[a]])
+      s_cov[a] <- s_cov[a] +
+        as.integer(LCCD_CFG$su >= r$s_lo && LCCD_CFG$su <= r$s_hi)
+      s_wid[a] <- s_wid[a] + (r$s_hi - r$s_lo)
+      b_cov[a, ] <- b_cov[a, ] +
+        as.integer(LCCD_CFG$beta >= r$lo & LCCD_CFG$beta <= r$hi)
+      b_wid[a, ] <- b_wid[a, ] + (r$hi - r$lo)
+    }
+  }
+  list(n_seed = n_seed, s_cov = s_cov, s_width = s_wid / n_seed,
+       b_cov = b_cov, b_width = b_wid / n_seed)
+}
+
+test_that("a weight rule and a placement rule reach different halves of the read", {
+  skip_on_cran()
+  d  <- LCCD_SIM(8101L, "gaussian", LCCD_CFG$nr, LCCD_CFG$spr, LCCD_CFG$ntr,
+                 LCCD_CFG$beta, LCCD_CFG$su, LCCD_CFG$phi)
+  sg <- exp(seq(log(0.2), log(1.5), length.out = 7))
+  dm <- outer_grid_dump(recov_fit_joint_coarse(d, sg, "gaussian", LCCD_CFG))
+  A  <- lccd_arms(dm)
+  R  <- lapply(A, function(a) lccd_arm_read(dm, a))
+
+  # Both rules have something to say on this grid: 16 of the 256 cells are
+  # interior on all four axes and carry a centred stencil, and no axis of any
+  # of them declines.
+  bm <- .joint_local_ccd_box_mass(dm$joint_grid, dm$log_marginal,
+                                  dm$axis_names, dm$axis_tags)
+  bc <- .joint_local_ccd_barycentre(dm$joint_grid, dm$log_marginal,
+                                    dm$axis_names, dm$axis_tags)
+  expect_identical(sum(bm$computed), 16L)
+  expect_identical(sum(bc$computed), 16L)
+  expect_identical(bm$n_axes_declined, 0L)
+  expect_identical(bc$n_axes_declined, 0L)
+
+  # A placement rule moves grid coordinates and `.nested_fixed_moments()` reads
+  # none, so the fixed half of the read is identical under it -- bit for bit,
+  # not to a tolerance. The pair is the mass rule's fixed read for the same
+  # reason. Half the four-arm table is therefore a derivation.
+  expect_identical(R$location$lo, R$shipped$lo)
+  expect_identical(R$location$hi, R$shipped$hi)
+  expect_identical(R$pair$lo, R$mass$lo)
+  expect_identical(R$pair$hi, R$mass$hi)
+  # The converse holds one step further out. A weight rule leaves the
+  # coordinates, so it reaches the hyperparameter axis only through the
+  # softmax, and a weighted quantile over a discrete atom set can land on the
+  # same coordinates under a redistribution this size -- it does on this seed,
+  # which rewrites 0.1142 of the outer mass. What it moves on every seed is the
+  # coefficient block it marginalizes. The placement rule reaches the axis
+  # directly and contracts it to a third.
+  w0 <- dm$weights / sum(dm$weights)
+  w1 <- A$mass$w / sum(A$mass$w)
+  expect_gt(0.5 * sum(abs(w1 - w0)), 0.1)
+  expect_false(identical(R$mass$lo, R$shipped$lo))
+  expect_lt(R$location$s_hi - R$location$s_lo,
+            0.8 * (R$shipped$s_hi - R$shipped$s_lo))
+
+  # On a locally refined grid the spliced design nodes have no axis neighbours,
+  # so only the base grid's own interior cells keep a centred stencil. That is
+  # why the arms are scored on the tensor base rather than on top of #320's
+  # refinement.
+  fr <- recov_fit_joint_local_ccd(d, sg, "gaussian", LCCD_CFG)
+  dr <- outer_grid_dump(fr)
+  br <- .joint_local_ccd_box_mass(dr$joint_grid, dr$log_marginal,
+                                  dr$axis_names, dr$axis_tags)
+  expect_gt(nrow(dr$joint_grid), nrow(dm$joint_grid))
+  expect_identical(sum(br$computed), 16L)
+})
+
+# MEASURED, 200 seeds (seed offset 8100, seeds 1-200), one fit per seed per
+# resolution, all four arms read off that fit. sigma_1 is the fit's own 95%
+# interval on block 1's SD, true value 0.7; the coefficients are read at 1.96
+# mixture SDs, nominal 0.95. Coverage counts of 200 and mean interval width:
+#
+#                  4 levels (256)    5 levels (625)    6 levels (1296)
+#   sigma_1
+#     shipped      200   1.0593      200   0.8787      200   0.6399
+#     mass         200   1.1006      200   0.9091      200   0.6952
+#     location     128   0.5092      129   0.5390      118   0.3079
+#     pair         172   0.4775      174   0.4967      151   0.3563
+#   intercept
+#     shipped      191   0.6389      193   0.6283      190   0.6071
+#     mass         190   0.6047      192   0.6052      190   0.6046
+#   slope
+#     shipped      191   0.08533     191   0.08534     191   0.08534
+#     mass         191   0.08540     191   0.08538     191   0.08535
+#
+# COVERAGE ALONE IS THE WRONG STATISTIC HERE and the table is read two-sided:
+# the shipped arm is at or above nominal everywhere, so an arm earns promotion
+# only by being SHARPER without dropping below nominal. That framing is what
+# gcol33/tulpa#320 established on this same fixture, where refinement sharpened
+# sigma_1 fourfold while still covering 150 of 150 and what it removed was
+# conservative-side slack.
+#
+# POWER. At 200 seeds the arms are paired off one solve, so the comparison is
+# the discordant pairs and not two independent rates. An exact two-sided sign
+# test needs six one-directional swaps to reject at 0.05, which is 3.0% of 200:
+# power is 0.557 against a 3-point deficit, 0.938 against 5 points and 1.000
+# against 10. Below about two points (power 0.213) nothing is resolvable, and
+# the seed count was chosen against that rather than against the 15-point gap
+# the pre-gcol33/tulpa#332 fixture appeared to carry. The fixed-effect half sits
+# under that floor by construction: the mass rule moves the intercept's standard
+# error 5.1% and the slope's 0.09%, and the observed discordance is 1 seed of
+# 200 on the intercept and 0 on the slope at every resolution, so 400 fixed
+# trials cannot separate the arms and only the WIDTH there is a measurement. The
+# sigma_1 half is not close to that floor: location is -72 / +0 discordant at
+# four levels, -71 / +0 at five and -82 / +0 at six, and the pair -28 / -26 /
+# -49, every swap in the same direction, exact p below 1e-7 in all six.
+#
+# WHAT THE PLACEMENT RULE DOES is contract the atom set rather than correct it.
+# Its sigma_1 width ratio against the shipped read is 0.4776 / 0.5840 / 0.4465
+# at the three resolutions -- flat, not decaying -- because each cell's atom
+# moves a share of its own box (up to 0.95 here) and that share does not shrink
+# as the boxes do. A discretisation correction becomes inert on a finer grid;
+# this one applies the same collapse at every resolution, and the weighted
+# quantile it feeds depends on the atoms tiling the axis, which a uniform
+# inward pull breaks. At four levels it lands at 0.5092 against the 1296-cell
+# grid's own 0.6399, i.e. narrower than the converged answer, which is why its
+# 72 misses are 71 high and 1 low.
+#
+# THAT IS ALSO WHY GRID ACCURACY RANKED IT FIRST. Per-seed absolute distance to
+# the same seed's 1296-cell width: at four levels sigma_1 goes 0.4194 shipped
+# against 0.3576 location, so the placement rule IS closer to the finer grid's
+# read and still loses 72 seeds of coverage. The two error directions do not
+# cost the same -- the shipped arm overshoots the converged width by 0.42 and
+# pays nothing, the placement rule undershoots by 0.13 and pays 36 points --
+# so a rule selected on distance to a finer grid can be selected against on
+# calibration. That is the question gcol33/tulpa#331 was opened to answer.
+#
+# THE MASS RULE is the only arm that holds coverage, and it is not a sharpening.
+# It never moves a sigma_1 trial (0 discordant at all three resolutions) and
+# WIDENS that interval by 4.1% / 4.2% / 9.8%, on an axis already covering
+# 200 of 200. What it does buy is the intercept: per-seed absolute distance to
+# the 1296-cell interval width goes 0.04289 -> 0.03442 at four levels and
+# 0.04478 -> 0.03049 at five, and its own width is 0.6047 / 0.6052 / 0.6046
+# against the converged 0.6071 -- flat in the resolution, which is what a
+# discretisation correction should look like -- for one trial of 200. So the
+# rule is coverage-safe and its sign differs between the two reads, sharpening
+# the coefficient and blunting the hyperparameter, at every resolution. None of
+# the three is promoted to a default on this measurement.
+test_that("only the mass rule keeps the outer grid's coverage, and it does not sharpen it", {
+  skip_if_not_slow()
+  n_seed <- 40L
+  for (lev in c(4L, 5L)) {
+    R <- lccd_arm_sweep(lev, n_seed)
+    lab <- sprintf("%d levels", lev)
+
+    # The coverage floor, which is what a candidate has to clear before its
+    # width is worth reading. The shipped read and the mass rule cover every
+    # seed's sigma_1 at 200 seeds; the floor is three binomial standard errors
+    # of this gate's own 40 below that.
+    expect_gte(R$s_cov[["shipped"]] / n_seed, 0.95, label = lab)
+    expect_gte(R$s_cov[["mass"]] / n_seed, 0.95, label = lab)
+    # Moving the atoms to their barycentres costs a third of it. Measured
+    # 0.640 / 0.645 / 0.590 at the three resolutions, so 0.85 is more than
+    # three of this gate's standard errors above the weakest.
+    expect_lt(R$s_cov[["location"]] / n_seed, 0.85, label = lab)
+    # The pair recovers most of what the placement lost and still misses:
+    # measured 0.860 and 0.870, against a shipped arm that misses nothing.
+    expect_lt(R$s_cov[["pair"]], R$s_cov[["shipped"]], label = lab)
+
+    # Both placement arms narrow sigma_1 below the 1296-cell grid's own 0.6399,
+    # which is the sense in which the narrowing is not slack being removed.
+    expect_lt(R$s_width[["location"]], 0.7 * R$s_width[["shipped"]], label = lab)
+    expect_lt(R$s_width[["pair"]], 0.7 * R$s_width[["shipped"]], label = lab)
+    # And the arm that does hold coverage buys no sharpness on this axis.
+    expect_gt(R$s_width[["mass"]], R$s_width[["shipped"]], label = lab)
+
+    # The fixed half: the placement rule cannot reach it at all, and the mass
+    # rule reaches the intercept (5.1% / 3.4% narrower) and not the slope
+    # (0.09% / 0.04%), the within-group contrast gcol33/tulpa#325 found barely
+    # reads this grid.
+    expect_identical(R$b_width["location", ], R$b_width["shipped", ], label = lab)
+    expect_identical(R$b_cov["location", ], R$b_cov["shipped", ], label = lab)
+    expect_lt(R$b_width["mass", 1L], 0.99 * R$b_width["shipped", 1L], label = lab)
+    expect_lt(abs(R$b_width["mass", 2L] / R$b_width["shipped", 2L] - 1), 5e-3,
+              label = lab)
+    # Coverage there is unmoved: 1 discordant seed of 200 on the intercept and
+    # 0 on the slope, so the floor is set where a real collapse would show.
+    expect_gte(min(R$b_cov["mass", ]) / n_seed, 0.85, label = lab)
+  }
+})
+
 # --- the residual-scale convention every gaussian fixture here rests on ------
 #
 # `recov_draw_y()` hands `cfg$phi` straight to `rnorm()` as an SD, and every
