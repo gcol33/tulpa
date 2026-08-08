@@ -523,6 +523,49 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
   list(draws = out, picks = picks)
 }
 
+# Draws of the NON-fixed latent coordinates the subspace sampler moved
+# (gcol33/tulpa#314) -- the random effects a closure or an explicit probe pulled
+# into S, which `.re_cov_nested_beta_draws()` drops because they are not
+# reported coefficients.
+#
+# The node mixture is REUSED rather than redrawn: `picks` is the very vector
+# `.re_cov_nested_beta_draws()` returned, one node index per draw sampled from
+# the integration weights, so the coordinates summarized here and the fixed
+# effects are marginalized over the same weighted node set. What is left to do
+# is the per-node reconstruction, which the fixed-effect path does not perform
+# for these coordinates: a node's Metropolis output holds x_S - mode_S, so the
+# value is the node's own mode plus a sampled offset.
+#
+# `centers` is one row per node holding the modes of the requested coordinates,
+# `cols` their columns within each node's offset matrix. A node whose sampler
+# declined contributes its mode, so one unusable node degrades that node. NULL
+# when no picked node sampled, or when any assembled value is non-finite -- the
+# caller then reports the Gaussian mixture, never a half-sampled column.
+.re_cov_debias_coord_draws <- function(picks, debias_nodes, centers, cols) {
+  q <- length(cols)
+  if (q == 0L || is.null(picks) || !length(picks) || is.null(debias_nodes)) {
+    return(NULL)
+  }
+  centers <- as.matrix(centers)
+  if (ncol(centers) != q) return(NULL)
+  out <- matrix(NA_real_, length(picks), q)
+  sampled <- FALSE
+  for (k in unique(picks)) {
+    rows <- which(picks == k)
+    mu <- centers[k, ]
+    dk <- debias_nodes[[k]]
+    if (is.matrix(dk) && nrow(dk) > 0L && ncol(dk) >= max(cols)) {
+      take <- sample.int(nrow(dk), length(rows), replace = TRUE)
+      out[rows, ] <- dk[take, cols, drop = FALSE] + rep(mu, each = length(rows))
+      sampled <- TRUE
+    } else {
+      out[rows, ] <- rep(mu, each = length(rows))
+    }
+  }
+  if (!sampled || any(!is.finite(out))) return(NULL)
+  out
+}
+
 # Marginal variance of every random-effect coefficient from an inner solve's
 # per-(term, group) covariance blocks (`cov_blocks` from tulpa_laplace(
 # return_re_cov = TRUE), term-major then group order). Returns one value per
@@ -1550,6 +1593,12 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
 #'     `weights`-mixture of them. `NULL` at `n_quad > 1`, whose inner marginal
 #'     integrates each group out instead of conditioning on it; that fit carries
 #'     `ranef_unavailable` (the reason) in their place.
+#'   - `re_debias_draws`, `re_debias_idx`: present when the subspace debias
+#'     selected a random-effect coordinate. The sampled draws of those
+#'     coordinates on the node mixture the fixed-effect draws use, and their
+#'     positions within the random-effect block. [ranef()] reports those rows
+#'     empirically and the rest from the Gaussian mixture, recording which in
+#'     its `source` column.
 #'   - `theta_hat`, `theta_grid`, `weights`, `log_marginal`, `n_grid`, `layout`,
 #'     `n_blocks`, `n_coefs` (vector of per-block `c`).
 #'   - `subspace_debias`: present only when `control$subspace_debias` was set.
@@ -1809,6 +1858,23 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
                                                  else debias_nodes,
                                   debias_idx = subspace$idx)
   draws <- ds$draws
+  # Random-effect coordinates the selector pulled into S are moved by the
+  # Metropolis sampler at every node, so their posterior is no longer the
+  # Gaussian mixture ranef() otherwise reports -- it is the sampled one, and
+  # reporting the mixture for them would describe a distribution the fit did not
+  # use. Recombined on the SAME node mixture the fixed effects were synthesized
+  # on, so the two tables marginalize one weighted node set.
+  re_debias_draws <- NULL
+  re_debias_idx   <- NULL
+  if (!is.null(debias_arg) && !is.null(ds) && re_cond && !is.null(re_nodes)) {
+    cols <- which(subspace$idx > p_fix & subspace$idx <= p_fix + n_re)
+    if (length(cols)) {
+      pos <- as.integer(subspace$idx[cols]) - p_fix
+      got <- .re_cov_debias_coord_draws(
+        ds$picks, debias_nodes, re_nodes[, pos, drop = FALSE], cols)
+      if (!is.null(got)) { re_debias_draws <- got; re_debias_idx <- pos }
+    }
+  }
   # Per-draw hyperparameter log-prior (the node's log_prior_theta), aligned
   # with the draw rows: the input power-scaling needs to reweight the
   # hyperparameter prior (tulpa_powerscale_sensitivity).
@@ -1866,6 +1932,13 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     # an empty table indistinguishable from a model with no random effects.
     re_nodes     = re_nodes,
     re_var_nodes = re_var_nodes,
+    # The sampled per-group coordinates (gcol33/tulpa#314): one column per
+    # random effect the subspace debias selected, `re_debias_idx` giving its
+    # position within the random-effect block. ranef() reports these rows
+    # empirically and the rest from the Gaussian mixture above, saying per row
+    # which it used. Absent when the selected set contains no random effect.
+    re_debias_draws = re_debias_draws,
+    re_debias_idx   = re_debias_idx,
     ranef_unavailable = if (!re_cond) paste0(
       "the adaptive Gauss-Hermite inner marginal (n_quad > 1) integrates each ",
       "group's random effects out by quadrature instead of conditioning at ",

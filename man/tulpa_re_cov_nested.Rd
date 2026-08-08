@@ -163,6 +163,12 @@ integration node -- conditional mean and marginal variance of every
 \code{weights}-mixture of them. \code{NULL} at \code{n_quad > 1}, whose inner marginal
 integrates each group out instead of conditioning on it; that fit carries
 \code{ranef_unavailable} (the reason) in their place.
+\item \code{re_debias_draws}, \code{re_debias_idx}: present when the subspace debias
+selected a random-effect coordinate. The sampled draws of those
+coordinates on the node mixture the fixed-effect draws use, and their
+positions within the random-effect block. \code{\link[=ranef]{ranef()}} reports those rows
+empirically and the rest from the Gaussian mixture, recording which in
+its \code{source} column.
 \item \code{theta_hat}, \code{theta_grid}, \code{weights}, \code{log_marginal}, \code{n_grid}, \code{layout},
 \code{n_blocks}, \code{n_coefs} (vector of per-block \code{c}).
 \item \code{subspace_debias}: present only when \code{control$subspace_debias} was set.

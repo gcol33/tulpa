@@ -546,9 +546,15 @@ glance.tulpa_fit <- function(x, ...) {
 #'     Gaussian per-group posterior at each `Sigma` node; the reported summaries
 #'     are the exact moments and quantiles of the weighted mixture of those, so
 #'     they carry both the within-node curvature and the `Sigma` uncertainty.
+#'     A group effect the subspace debias selected
+#'     (`control$subspace_debias`) is moved by the Metropolis sampler at every
+#'     node instead, and is reported from those draws.
 #'   \item The Laplace tier reports the conditional mode with no spread (`sd` and
 #'     the bounds are `NA`), which is the only per-group quantity it forms.
 #' }
+#' The `source` column says per row which of these produced it: `"sampled"` for
+#' a posterior draw summary, `"mixture"` for the node mixture, `"mode"` for a
+#' conditional mode.
 #' A fit whose backend never forms a per-group posterior at all (the adaptive
 #' Gauss-Hermite inner marginal integrates each group out by quadrature) errors
 #' with that reason rather than returning an empty table, which would be
@@ -558,9 +564,10 @@ glance.tulpa_fit <- function(x, ...) {
 #' @param object A `tulpa_fit` object.
 #' @param ... Ignored.
 #' @return Data frame with one row per random-effect coefficient: `term` (the
-#'   group level, and the coefficient for a random slope), `estimate`, `sd`, and
-#'   the 2.5% / 97.5% bounds `conf.low` / `conf.high`. `sd` and the bounds are
-#'   `NA` on a backend that reports a point per group (see Details).
+#'   group level, and the coefficient for a random slope), `estimate`, `sd`,
+#'   the 2.5% / 97.5% bounds `conf.low` / `conf.high`, and `source` (which
+#'   construction the row came from). `sd` and the bounds are `NA` on a backend
+#'   that reports a point per group (see Details).
 #' @examples
 #' \donttest{
 #' set.seed(1)
@@ -587,6 +594,52 @@ ranef <- function(object, ...) UseMethod("ranef")
         else sprintf("%s.%s[%s]", gv, cl, lev),
         character(1))))
   }), use.names = FALSE) %||% character(0)
+}
+
+# Empirical per-coefficient summary of a draw matrix: the estimate / sd /
+# bounds block of a ranef table, one row per column of `draws`. The single
+# definition every branch that HAS draws reports through, so the sampler tier,
+# the RE-covariance Gibbs debias and the per-coordinate overlay below cannot
+# summarize the same kind of material three different ways.
+#' @keywords internal
+.ranef_empirical <- function(draws) {
+  data.frame(
+    estimate  = colMeans(draws),
+    sd        = apply(draws, 2L, stats::sd),
+    conf.low  = apply(draws, 2L, stats::quantile, 0.025),
+    conf.high = apply(draws, 2L, stats::quantile, 0.975),
+    row.names = NULL, stringsAsFactors = FALSE
+  )
+}
+
+# Overlay the random effects the subspace debias sampled onto a
+# Gaussian-mixture per-group table (gcol33/tulpa#314).
+#
+# A coordinate the selector pulled into S is moved by the Metropolis sampler at
+# every integration node, and `tulpa_re_cov_nested()` recombines it on the node
+# mixture the fixed-effect draws use (`re_debias_draws`, one column per
+# selected coordinate, `re_debias_idx` its row in this table). Those rows are
+# summarized empirically -- through `.ranef_empirical()`, the same routine the
+# Gibbs branch reports `fit$re` with -- and every other row keeps the Gaussian
+# mixture. `source` records which of the two produced each row, so the table
+# never leaves the caller to infer that two constructions were interleaved.
+#' @keywords internal
+.ranef_overlay_sampled <- function(tab, object) {
+  D <- object$re_debias_draws
+  j <- object$re_debias_idx
+  if (!is.matrix(D) || is.null(j) || length(j) != ncol(D) || !nrow(D)) {
+    return(tab)
+  }
+  j <- as.integer(j)
+  keep <- which(is.finite(j) & j >= 1L & j <= nrow(tab))
+  if (!length(keep)) return(tab)
+  emp <- .ranef_empirical(D[, keep, drop = FALSE])
+  rows <- j[keep]
+  for (cl in c("estimate", "sd", "conf.low", "conf.high")) {
+    tab[[cl]][rows] <- emp[[cl]]
+  }
+  tab$source[rows] <- "sampled"
+  tab
 }
 
 #' @rdname ranef
@@ -630,10 +683,8 @@ ranef.tulpa_fit <- function(object, ...) {
       seq_len(ncol(re))
     return(data.frame(
       term = nm,
-      estimate = colMeans(re),
-      sd = apply(re, 2, stats::sd),
-      conf.low = apply(re, 2, stats::quantile, 0.025),
-      conf.high = apply(re, 2, stats::quantile, 0.975),
+      .ranef_empirical(re),
+      source = "sampled",
       row.names = NULL, stringsAsFactors = FALSE
     ))
   }
@@ -651,11 +702,12 @@ ranef.tulpa_fit <- function(object, ...) {
     mx <- .nl_gauss_mixture_summary(object$re_nodes, object$re_var_nodes,
                                     object$weights, probs = c(0.025, 0.975))
     if (!is.null(mx)) {
-      return(data.frame(
+      return(.ranef_overlay_sampled(data.frame(
         term = re_names, estimate = mx$mean, sd = mx$sd,
         conf.low = mx$quantiles[, 1L], conf.high = mx$quantiles[, 2L],
+        source = "mixture",
         row.names = NULL, stringsAsFactors = FALSE
-      ))
+      ), object))
     }
   }
 
@@ -683,6 +735,7 @@ ranef.tulpa_fit <- function(object, ...) {
       return(data.frame(
         term = re_names, estimate = as.numeric(crossprod(w, seg)),
         sd = NA_real_, conf.low = NA_real_, conf.high = NA_real_,
+        source = "mode",
         row.names = NULL, stringsAsFactors = FALSE
       ))
     }
@@ -692,6 +745,7 @@ ranef.tulpa_fit <- function(object, ...) {
       return(data.frame(
         term = re_names, estimate = est,
         sd = NA_real_, conf.low = NA_real_, conf.high = NA_real_,
+        source = "mode",
         row.names = NULL, stringsAsFactors = FALSE
       ))
     }
@@ -705,6 +759,7 @@ ranef.tulpa_fit <- function(object, ...) {
     return(data.frame(
       term = nm, estimate = blups,
       sd = NA_real_, conf.low = NA_real_, conf.high = NA_real_,
+      source = "mode",
       row.names = NULL, stringsAsFactors = FALSE
     ))
   }

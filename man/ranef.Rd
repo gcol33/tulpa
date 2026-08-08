@@ -16,9 +16,10 @@ ranef(object, ...)
 }
 \value{
 Data frame with one row per random-effect coefficient: \code{term} (the
-group level, and the coefficient for a random slope), \code{estimate}, \code{sd}, and
-the 2.5\% / 97.5\% bounds \code{conf.low} / \code{conf.high}. \code{sd} and the bounds are
-\code{NA} on a backend that reports a point per group (see Details).
+group level, and the coefficient for a random slope), \code{estimate}, \code{sd},
+the 2.5\% / 97.5\% bounds \code{conf.low} / \code{conf.high}, and \code{source} (which
+construction the row came from). \code{sd} and the bounds are \code{NA} on a backend
+that reports a point per group (see Details).
 }
 \description{
 Random-effect summaries
@@ -33,9 +34,16 @@ else, so \code{estimate} / \code{sd} / bounds are the empirical posterior summar
 Gaussian per-group posterior at each \code{Sigma} node; the reported summaries
 are the exact moments and quantiles of the weighted mixture of those, so
 they carry both the within-node curvature and the \code{Sigma} uncertainty.
+A group effect the subspace debias selected
+(\code{control$subspace_debias}) is moved by the Metropolis sampler at every
+node instead, and is reported from those draws.
 \item The Laplace tier reports the conditional mode with no spread (\code{sd} and
 the bounds are \code{NA}), which is the only per-group quantity it forms.
 }
+The \code{source} column says per row which of these produced it: \code{"sampled"} for
+a posterior draw summary, \code{"mixture"} for the node mixture, \code{"mode"} for a
+conditional mode.
+
 A fit whose backend never forms a per-group posterior at all (the adaptive
 Gauss-Hermite inner marginal integrates each group out by quadrature) errors
 with that reason rather than returning an empty table, which would be
