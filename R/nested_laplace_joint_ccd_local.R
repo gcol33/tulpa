@@ -186,6 +186,81 @@
 # an interpolation across cells. Anything reported on a fixed effect stays where
 # its own solve put it.
 #
+# The box mass exists BEFORE the cloud does, so it can be a refinement CRITERION
+# and not only a reading. `log_mass_ratio` compares a cell's two mass estimates
+# after the 24 node solves are spent, which makes it a verifier;
+# `log(M_c^(Q) / M_c^(0))` is defined on every interior cell of the base grid at
+# zero solves, including the cells the budget will never reach. What ranks the
+# candidates for that budget today is the cell's own integration weight `w_c`,
+# and the question is whether the free ratio should replace it
+# (gcol33/tulpa#328). It should not. The measurement is worth recording anyway,
+# because the predictor is good and it is the ranking that fails to follow from
+# it.
+#
+# Measured over 2509 refined cells: 784 from 52 four-axis joint fits (crossed
+# iid blocks on gaussian / binomial / poisson arms, and two coupled ICAR fields
+# with two copy coefficients) on four- and five-level tensor bases, and 1725
+# from 72 analytic outer targets (an equicorrelated Gaussian, and Gaussian
+# copulas with Gamma(2) / Gamma(8) / Gamma(32) marginals). The free ratio
+# predicts the realized surplus: sign agreement 0.9518 overall (0.9821 on the
+# real fits), Spearman 0.940, Pearson 0.892. It is not CALIBRATED to it -- the
+# regression slope is 0.470, the box integral covering the whole cell while the
+# cloud it is predicting is clamped to a shrunk design box -- and it does not
+# need to be, since a ranking reads the order.
+#
+# The ranking still does not follow, because the per-cell surplus and the mass
+# that surplus moves are different orderings of the same cells, and they run
+# OPPOSITE: per-fit Spearman between `|log(M_1/M_0)|` and
+# `|M_1 - M_0| = w_c |exp(log_mass_ratio) - 1|` is -0.700 (median), their top
+# deciles overlap on 0.089 of their cells, and the top decile by log ratio holds
+# 0.045 of the grid's weight against 0.262 by mass moved. Only the second is a
+# statement about the integral -- a cell holding 2.1e-23 of the weight whose
+# atom is 37.7 nats out moves 4.9e-7 of the posterior, and a cloud spent there
+# buys nothing. On the capture curve for it (cells ordered by a rule, share of the
+# grid's total realized mass movement captured; 117 fits with at least 8 refined
+# cells) the incumbent weight ranking is already at the ceiling: at the leading
+# 10% of cells the oracle captures 0.8231, `w_c` captures 0.8173, `w_c` times
+# the predicted ratio 0.7669, and the bare ratio 0.0070 -- below the 0.1170 of
+# random, since it selects precisely the cells that hold no mass. The weight
+# ranking IS the mass-movement ranking to within 0.006 of the oracle, and
+# multiplying it by a predictor that overstates by a factor of two moves it away
+# from the oracle rather than toward it. On the OTHER reading, the per-cell log
+# surplus, the predictor is the better rule by as much (0.1838 against 0.1174 at
+# the same 10%, oracle 0.2379) -- but that reading weights a cell that cannot
+# affect the answer equally with one that decides it.
+#
+# The read is scored the same way and says the same thing. Over 468 analytic
+# configurations against exact per-axis quantiles, summed absolute endpoint
+# error is 377.07 ranking by weight against 380.71 by predicted mass movement,
+# and summed width error 675.02 against 681.38, on 419.98 / 823.53 for not
+# refining at all: the two rankings differ on 190 of the 468, and the gap
+# between their totals is under a tenth of what refining buys at all.
+# Through the #322 harness on 24 four-axis fits (8 seeds x 3 budgets, four-level
+# base against a six-level reference) the two arms' endpoint reads differ by
+# 0.7360 summed against a noise floor of 7.1268 and their widths by 1.4275
+# against 14.2302, above the floor in 0 of 24 configurations either way, so that
+# grid does not resolve the choice at all. The MEDIAN it does resolve, above the
+# floor in 14 of 24, and there the predicted-movement ranking scores 1.4059
+# against the weight ranking's 0.5772 and loses in 24 of 24. So the criterion
+# stands as it is, and the box ratio stays a per-cell reading.
+#
+# Two further readings of the same measurement, both about `mode_gain`. It is
+# the unbounded quadratic gain and the box ratio is the truncated one, so their
+# gap is what integrating over the CELL rather than the line costs: a median
+# -6.198 nats, 0.867 of the unbounded gain, negative on every one of the 2072
+# cells carrying both. That gap is the truncation and not a disagreement about
+# the quadratic -- `mode_gain` comes from the design's least-squares full
+# Hessian and the stencil's own `0.5 sum g_j^2 / a_j` from a diagonal finite
+# difference, and the two agree to a median ratio of 1.068. Ordering the cells,
+# the truncated form is the better predictor of the realized surplus by a clear
+# margin (Spearman 0.978 against the stencil's 0.904 and `mode_gain`'s 0.812).
+# And the divergence is NOT the regime `misfit` characterises: the correlation
+# between `misfit` and the predictor's residual is -0.015, and splitting at
+# `gamma3_ok` costs the predictor 0.11 of Spearman and 0.05 of sign agreement
+# while leaving the residual MAGNITUDE slightly smaller on the high-misfit side.
+# Shape and mass remain the orthogonal pair described above: the cells where the
+# predictor is wrong are not the cells `misfit` flags.
+#
 # The node cloud of each refined cell is clamped to the cell's Voronoi half-box
 # (half the distance to each neighbour on each axis), so clouds of distinct cells
 # never overlap and never spill into an unrefined neighbour's mass. Combined with
