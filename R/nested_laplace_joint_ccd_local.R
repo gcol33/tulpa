@@ -26,6 +26,32 @@
 #     channel for this is `dnode`, consumed by .joint_integration_weights(): the
 #     weighting code is untouched.
 #
+#     Conservation is the statement on a FLAT integrand, and the integrand
+#     refinement is selected for is peaked, so the two estimates a grid then
+#     holds are not on the same footing: a refined cell's mass is re-estimated by
+#     a 25-node rule (at d = 4) while every unrefined sibling keeps the base
+#     grid's single atom, and the cloud's nodes sit nearer the peak than the
+#     cell's own coordinate did, so the refined cell's share rises. That
+#     asymmetry is real and is what `log_mass_ratio` reports per cell
+#     (gcol33/tulpa#323). What it costs was MEASURED by coverage rather than
+#     argued from the grid (gcol33/tulpa#320): over 150 seeds on a four-axis
+#     coarse-grid fixture fit twice on the same data, pooled fixed-effect
+#     coverage is 0.8800 refined against 0.8800 unrefined at nominal 0.95 and
+#     0.7300 against 0.7267 at 0.80, on a standard error of 0.0126. The width
+#     does move the way the asymmetry predicts -- the intercept's mean 95%
+#     interval is 2.9% narrower with refinement on -- and that buys 0 of 300
+#     trials at 0.95 and 1 at 0.80. The measurement bounds the calibration cost
+#     under a percentage point; it does not resolve it to zero, 150 seeds having
+#     no power below about one seed. So the estimator asymmetry stands as a known
+#     and instrumented property of this refinement rather than a defect it is
+#     worth spending an inner-solve budget to remove (gcol33/tulpa#319).
+#
+#     On the hyperparameter axis the same re-estimation is the point: the
+#     `sigma_1` interval is more than fourfold sharper (0.2330 against 1.0590 on
+#     that fixture) with half the posterior-median bias, while still covering 149
+#     of 150 against a nominal 0.95, so what the refined cell's rising share
+#     removes there is conservative-side slack a four-level grid left behind.
+#
 #   * No mode-find, no line search. The local Gaussian scale comes from a finite
 #     difference of the OUTER log-marginal over the cell's own grid neighbours --
 #     values already computed for the base grid -- so the only new inner solves
@@ -476,7 +502,9 @@
     # than the cell's own coordinate did, so refining a cell raises the share
     # the refined region holds. Reporting both says how concentrated the base
     # grid already was, separately from how much the refinement concentrated it
-    # (gcol33/tulpa#316).
+    # (gcol33/tulpa#316). The gap between the two is the cross-cell estimator
+    # asymmetry the header describes; `log_mass_ratio` is its per-cell reading
+    # and coverage bounds what it costs (gcol33/tulpa#319, gcol33/tulpa#320).
     cell_share      <- numeric(0)
     refined         <- integer(0)
     misfit          <- numeric(0)

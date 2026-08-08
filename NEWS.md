@@ -1,5 +1,16 @@
 # tulpa NEWS
 
+## 0.0.150
+
+* The cross-cell estimator asymmetry in local-CCD refinement is documented as a
+  known and instrumented property rather than left reading as an expected
+  consequence (gcol33/tulpa#319). Weight conservation is the statement on a flat
+  integrand; the integrand refinement is selected for is peaked, so a refined
+  cell's mass is re-estimated by a 25-node rule while its unrefined siblings keep
+  the base grid's single atom, and the refined cell's share rises. The header now
+  says so, points at `log_mass_ratio` as the per-cell reading, and records what
+  the asymmetry costs in coverage rather than in grid-internal metrics.
+
 ## 0.0.149
 
 * A CI-coverage gate now reaches local-CCD refinement (gcol33/tulpa#320). The
