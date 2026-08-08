@@ -43,7 +43,6 @@ the bounds are \code{NA}), which is the only per-group quantity it forms.
 The \code{source} column says per row which of these produced it: \code{"sampled"} for
 a posterior draw summary, \code{"mixture"} for the node mixture, \code{"mode"} for a
 conditional mode.
-
 A fit whose backend never forms a per-group posterior at all (the adaptive
 Gauss-Hermite inner marginal integrates each group out by quadrature) errors
 with that reason rather than returning an empty table, which would be

@@ -1359,6 +1359,7 @@
     # partition-of-unity design weights so the total integration weight is
     # conserved (no double-count).
     local_ccd_info <- NULL
+    weight_kind    <- NULL
     # Local-CCD refinement changes the outer grid but not the stored per-cell Q
     # (nor the tile partition / phi tensor), so combining it with store_Q would
     # leave a Q that no longer aligns with the refined grid and crash
@@ -1401,6 +1402,7 @@
                 res$modes        <- ref$modes
                 dnode            <- ref$dnode
                 local_ccd_info   <- ref$info
+                weight_kind      <- ref$weight_kind
                 # The node solves carry their own fixed-effect block, so the
                 # refined grid keeps the retention aligned with the weights it
                 # is integrated against (gcol33/tulpa#307). The per-cell
@@ -1420,6 +1422,22 @@
     # tensor grid `dnode` is NULL and this is the plain log-marginal softmax.
     res$weights      <- .joint_integration_weights(res$log_marginal, dnode)
     is_ccd <- identical(integration_used, "ccd")
+    # What kind of weight each cell carries. `integration` names the integrator
+    # that ran, which describes a homogeneous support: a tensor cell holds the
+    # mass of its own cell, a CCD node holds a design weight. A locally refined
+    # grid is the one case with both, so it says so per cell rather than leaving
+    # a consumer to read one kind off `integration` (gcol33/tulpa#311).
+    res$weight_kind <- weight_kind %||%
+        rep(if (is_ccd) "design" else "mass", nrow(joint_grid))
+    if (!is.null(local_ccd_info)) {
+        # The share of the posterior that sits on design-weighted nodes: the
+        # part of the support whose cumulative weight is not a CDF, and so the
+        # bound on how much mass the per-axis quantile can misplace. It is also
+        # confined to the refined cells' own Voronoi boxes, so the displacement
+        # is at most one base-grid cell wide.
+        local_ccd_info$design_mass <-
+            sum(res$weights[res$weight_kind == "design"], na.rm = TRUE)
+    }
     # Local CCD refinement also leaves a design-weighted (scattered) grid, so it
     # takes the same moment / SD path as the global CCD: weighted moments over the
     # design, no per-axis lattice SD refit. The adaptive lattice is a mass-

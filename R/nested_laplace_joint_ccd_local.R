@@ -294,14 +294,26 @@
             length(chosen), n_nodes_added, n, nrow(out_grid)))
     }
 
+    # Which kind of weight each output row carries. A carried-over base cell
+    # holds the mass of its own cell; a node of a replacement cloud holds a
+    # partition-of-unity share of its cell's mass, placed at the design's radius
+    # rather than where that share sits. The two are on the same footing for the
+    # moments (which is what the design reproduces) and not for a cumulative sum
+    # (gcol33/tulpa#311), so the grid says which it carries instead of leaving a
+    # consumer to read one kind off `integration`.
+    out_kind <- c(rep("mass", length(keep)),
+                  rep("design", nrow(out_grid) - length(keep)))
+
     list(joint_grid   = out_grid,
          log_marginal = out_lm,
          modes        = out_modes,
          cov_blocks   = out_cov,
          dnode        = out_dn,
+         weight_kind  = out_kind,
          info         = list(n_cells_refined = length(chosen),
                              n_nodes_added   = n_nodes_added,
                              cells           = chosen,
                              n_cells_before  = n,
-                             n_cells_after   = nrow(out_grid)))
+                             n_cells_after   = nrow(out_grid),
+                             n_design_nodes  = sum(out_kind == "design")))
 }

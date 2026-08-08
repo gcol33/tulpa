@@ -268,3 +268,91 @@ test_that("local CCD splices per-cell covariance blocks alongside the modes", {
   expect_length(out$cov_blocks, nrow(out$joint_grid))
   expect_true(all(vapply(out$cov_blocks, is.matrix, logical(1))))
 })
+
+# --------------------------------------------------------------------------- #
+# Per-cell weight kind (gcol33/tulpa#311)                                      #
+# --------------------------------------------------------------------------- #
+
+test_that("the refined grid labels which cells carry a design weight", {
+  mu <- c(0.5, 0.5); s <- c(0.3, 0.3)
+  gd <- .lccd_grid(list(a = c(-1, 0.5, 2), b = c(-1, 0.5, 2)), mu, s)
+  out <- tulpa:::.joint_local_ccd_refine(
+    gd$grid, gd$lm, modes = NULL, dnode = NULL,
+    latent_axes = c("a", "b"), tags = c(a = "identity", b = "identity"),
+    eval_nodes = .lccd_eval(mu, s), max_cells = 4L)
+  expect_false(is.null(out))
+  expect_length(out$weight_kind, nrow(out$joint_grid))
+  expect_setequal(unique(out$weight_kind), c("mass", "design"))
+  # One label per row, and the design rows are exactly each refined cell's whole
+  # replacement cloud: the nodes added plus the centre that reuses the cell's
+  # own solve, which carries the design's centre weight rather than the cell's
+  # mass.
+  n_design <- out$info$n_nodes_added + out$info$n_cells_refined
+  expect_identical(sum(out$weight_kind == "design"), n_design)
+  expect_identical(out$info$n_design_nodes, n_design)
+  expect_identical(sum(out$weight_kind == "mass"),
+                   out$info$n_cells_before - out$info$n_cells_refined)
+  # The mass-labelled rows are the carried-over base cells, unchanged.
+  keep <- setdiff(seq_len(nrow(gd$grid)), out$info$cells)
+  expect_equal(out$joint_grid[out$weight_kind == "mass", , drop = FALSE],
+               gd$grid[keep, , drop = FALSE])
+})
+
+test_that("a fit reports its weight kind per cell and the design mass share", {
+  skip_on_cran()
+  sim  <- .lccd_sim_joint()
+  ctrl <- list(max_iter = 60L, tol = 1e-6, diagnose_k = FALSE,
+               var_of_means_consistency = FALSE, integration = "grid")
+  fit  <- suppressWarnings(tulpa_nested_laplace_joint(
+    sim$responses, sim$prior, copy = sim$copy, control = ctrl))
+  fitl <- suppressWarnings(tulpa_nested_laplace_joint(
+    sim$responses, sim$prior, copy = sim$copy,
+    control = c(ctrl, list(local_ccd = list(max_cells = 4L)))))
+
+  # An unrefined tensor grid is mass-weighted throughout; the refined one is the
+  # case that carries both, which is what `integration` alone cannot say.
+  expect_identical(unique(fit$weight_kind), "mass")
+  expect_length(fit$weight_kind, length(fit$weights))
+  expect_length(fitl$weight_kind, length(fitl$weights))
+  expect_setequal(unique(fitl$weight_kind), c("mass", "design"))
+  expect_identical(sum(fitl$weight_kind == "design"),
+                   fitl$local_ccd_info$n_design_nodes)
+
+  # `design_mass` is the share of the posterior sitting on those cells: the part
+  # of the support whose cumulative weight is not a CDF.
+  expect_equal(fitl$local_ccd_info$design_mass,
+               sum(fitl$weights[fitl$weight_kind == "design"]))
+  expect_gt(fitl$local_ccd_info$design_mass, 0)
+  expect_lt(fitl$local_ccd_info$design_mass, 1)
+
+  expect_identical(tulpa:::.nl_node_support(fit$integration), "density")
+})
+
+test_that("a globally CCD-integrated fit is design-weighted throughout", {
+  skip_on_cran()
+  # Where the support IS homogeneous the tag and `.nl_node_support(integration)`
+  # agree. This needs a fit the CCD integrator actually engages on: the local-CCD
+  # fixture above has a ridged outer log-posterior, on which the mode-find
+  # declines back to the tensor grid. Crossed iid blocks give it curvature.
+  set.seed(4242)
+  G <- 30L; N <- 600L
+  grp <- lapply(1:3, function(k) sample.int(G, N, replace = TRUE))
+  X <- cbind(1, rnorm(N))
+  eta <- as.numeric(X %*% c(0.2, 0.6))
+  for (k in 1:3) eta <- eta + rnorm(G, 0, c(0.8, 0.5, 0.3)[k])[grp[[k]]]
+  y <- eta + rnorm(N, 0, 0.5)
+  sg <- exp(seq(log(0.1), log(2), length.out = 7))
+  fitc <- suppressWarnings(tulpa_nested_laplace_joint(
+    responses = list(a = list(y = y, n_trials = rep(1L, N), X = X,
+                              family = "gaussian", phi = 0.25)),
+    prior = lapply(grp, function(g)
+      list(type = "iid", obs_idx = list(g), n_units = G, sigma_grid = sg)),
+    control = list(integration = "ccd", n_threads = 1L, diagnose_k = FALSE,
+                   max_iter = 100L, tol = 1e-8)))
+  # Asserted first: on a declined CCD the tag check below would pass vacuously
+  # for the wrong reason.
+  expect_identical(fitc$integration, "ccd")
+  expect_identical(unique(fitc$weight_kind), "design")
+  expect_length(fitc$weight_kind, length(fitc$weights))
+  expect_identical(tulpa:::.nl_node_support(fitc$integration), "moment_rule")
+})

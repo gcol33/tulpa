@@ -646,10 +646,17 @@ the first fit sufficed or escalation was off).
 \code{triggered_axes} (character) and \code{n_points_added} (integer)
 describing the refinement passes. NULL otherwise.
 \item \code{local_ccd_info} -- when \code{local_ccd} engaged (or \code{k_refine = "ccd"}), a
-list with \code{n_cells_refined}, \code{n_nodes_added}, the refined \code{cells}, and the
-\code{n_cells_before} / \code{n_cells_after} grid sizes. NULL when local CCD was off
-or declined (single-block, \verb{< 4} axes, an active \code{phi_grid}, or no peaked
-interior cell).
+list with \code{n_cells_refined}, \code{n_nodes_added}, the refined \code{cells}, the
+\code{n_cells_before} / \code{n_cells_after} grid sizes, \code{n_design_nodes} (the cells
+that carry an in-cell design weight rather than their own mass) and
+\code{design_mass} (the share of the integration weight sitting on them). NULL
+when local CCD was off or declined (single-block, \verb{< 4} axes, an active
+\code{phi_grid}, or no peaked interior cell).
+\item \code{weight_kind} -- one entry per outer-grid cell, \code{"mass"} or \code{"design"}.
+A tensor cell holds the mass of its own cell and a CCD node holds a
+design weight, so a fit integrated by one rule reports one value
+throughout; a locally refined grid carries both, and this says which per
+cell instead of leaving it to be read off \code{integration}.
 \item \code{prune_cheap_log_marginal}, \code{prune_mask}, \code{prune_n_pruned},
 \code{prune_tol} -- present only when \code{prune = TRUE} and the safety gate did
 not fall back. Cheap-pass log-marginals at every cell, a logical mask

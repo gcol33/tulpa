@@ -654,10 +654,17 @@
 #'      `triggered_axes` (character) and `n_points_added` (integer)
 #'      describing the refinement passes. NULL otherwise.
 #'   * `local_ccd_info` -- when `local_ccd` engaged (or `k_refine = "ccd"`), a
-#'      list with `n_cells_refined`, `n_nodes_added`, the refined `cells`, and the
-#'      `n_cells_before` / `n_cells_after` grid sizes. NULL when local CCD was off
-#'      or declined (single-block, `< 4` axes, an active `phi_grid`, or no peaked
-#'      interior cell).
+#'      list with `n_cells_refined`, `n_nodes_added`, the refined `cells`, the
+#'      `n_cells_before` / `n_cells_after` grid sizes, `n_design_nodes` (the cells
+#'      that carry an in-cell design weight rather than their own mass) and
+#'      `design_mass` (the share of the integration weight sitting on them). NULL
+#'      when local CCD was off or declined (single-block, `< 4` axes, an active
+#'      `phi_grid`, or no peaked interior cell).
+#'   * `weight_kind` -- one entry per outer-grid cell, `"mass"` or `"design"`.
+#'      A tensor cell holds the mass of its own cell and a CCD node holds a
+#'      design weight, so a fit integrated by one rule reports one value
+#'      throughout; a locally refined grid carries both, and this says which per
+#'      cell instead of leaving it to be read off `integration`.
 #'   * `prune_cheap_log_marginal`, `prune_mask`, `prune_n_pruned`,
 #'      `prune_tol` -- present only when `prune = TRUE` and the safety gate did
 #'      not fall back. Cheap-pass log-marginals at every cell, a logical mask
