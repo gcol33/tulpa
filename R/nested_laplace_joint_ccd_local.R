@@ -123,6 +123,39 @@
 # correction (did refining change how much mass this cell competes for?). None
 # of the three gates; `skew_max` reads `misfit` and nothing else.
 #
+# The same stencil that scales the design also says what the base grid's own mass
+# estimate throws away, and that reading needs no node cloud at all. A cell's
+# shipped mass is the midpoint atom `M_c^(0) = Delta exp(ell_c)` --
+# `.joint_integration_weights()` softmaxes `log_marginal`, and the default grid
+# being geometric is uniform in `u = log theta` and carries no volume element --
+# so the GRADIENT of the log-marginal across the cell is invisible to it by
+# construction. That is the `offset` blind spot one layer down: a cell read as if
+# its own coordinate were a representative point of it. Integrating the local
+# quadratic `ell(u_c + u) ~ ell_c + g'u - 0.5 u'A u` over the cell's own box
+# rather than evaluating it at the centre gives
+#   M_c^(Q) = exp(ell_c + 0.5 g'A^-1 g) (2 pi)^(d/2) |A|^(-1/2)
+#             P{N(A^-1 g, A^-1) in box_c},
+# whose `0.5 g'A^-1 g` is precisely `mode_gain`, the nats the atom drops. It
+# costs no inner solve: `g` and the diagonal of `A` are the first and second
+# divided differences of the SAME three points the curvature already came from
+# (`.joint_local_ccd_diff3()`), all of them base-grid values (gcol33/tulpa#326).
+#
+# Two things about the form. First, it is the exact box integral and not the
+# second-order expansion of the integrand,
+# `Delta exp(ell_c) [1 + (1/6) sum_i h_i^2 (ell_ii + g_i^2)]`, which is a
+# `|g_i h_i| << 1` statement and so fails on exactly the cells the correction
+# exists for: at `g h` of 0.5 / 1 / 2 / 3 / 4.44 nats it recovers 98.8% / 95.1% /
+# 82.0% / 64.1% / 38.5% of the exact correction, degrades monotonically into the
+# regime of interest, and can go negative. 4.44 nats is the displacement the
+# fixture that motivated this carries. Second, `A` is taken DIAGONAL, which turns
+# the rectangle probability into a product of `pnorm` differences over the axes
+# -- closed form, no new dependency -- and, more than cheapness, keeps the
+# decline PER AXIS: an MVN rectangle probability needs `A` positive definite,
+# while the integral over a BOUNDED box is finite at either sign of `a_i`, so a
+# cell concave on three axes and convex on the fourth contributes an exact factor
+# on the three instead of declining whole. The correlated form is worth its
+# rectangle routine only if the diagonal one moves the read.
+#
 # The node cloud of each refined cell is clamped to the cell's Voronoi half-box
 # (half the distance to each neighbour on each axis), so clouds of distinct cells
 # never overlap and never spill into an unrefined neighbour's mass. Combined with
@@ -177,6 +210,65 @@
     list(up = up, dn = dn)
 }
 
+# Three-point divided differences of the outer log-marginal at the MIDDLE point
+# of an unequally spaced stencil.
+#
+# Three points identify exactly one quadratic, so its derivatives at `u_c` are
+# the only first and second derivatives the stencil carries. Written on the two
+# one-sided slopes
+#   slope_hi = (l_hi - l_c) / du_hi,  slope_lo = (l_c - l_lo) / du_lo,
+# they are
+#   d1 = (slope_hi du_lo + slope_lo du_hi) / (du_lo + du_hi),
+#   d2 = 2 (slope_hi - slope_lo) / (u_hi - u_lo),
+# the spacing-weighted MEAN of the two slopes and their DIFFERENCE: the same pair
+# of numbers read two ways, collapsing to the central differences
+# (l_hi - l_lo) / (2h) and (l_hi - 2 l_c + l_lo) / h^2 on equal spacing. Both are
+# returned from the one call because a caller wanting the curvature has already
+# paid for the gradient and vice versa; differencing the stencil twice would be
+# the same arithmetic written down twice.
+#
+# NULL on a non-finite value or a non-increasing stencil, which is the caller's
+# signal that this axis carries no local quadratic at all.
+.joint_local_ccd_diff3 <- function(u_lo, u_c, u_hi, l_lo, l_c, l_hi) {
+    if (!all(is.finite(c(u_lo, u_c, u_hi, l_lo, l_c, l_hi)))) return(NULL)
+    du_hi <- u_hi - u_c
+    du_lo <- u_c - u_lo
+    if (du_hi <= 0 || du_lo <= 0) return(NULL)
+    slope_hi <- (l_hi - l_c) / du_hi
+    slope_lo <- (l_c - l_lo) / du_lo
+    d1 <- (slope_hi * du_lo + slope_lo * du_hi) / (du_lo + du_hi)
+    d2 <- 2 * (slope_hi - slope_lo) / (u_hi - u_lo)
+    if (!is.finite(d1) || !is.finite(d2)) return(NULL)
+    list(d1 = d1, d2 = d2, half_lo = 0.5 * du_lo, half_hi = 0.5 * du_hi)
+}
+
+# The whole local quadratic at cell `c`, one axis at a time: the gradient `g`,
+# the diagonal of the curvature `d2`, and the cell's own Voronoi half-widths
+# (half the u-distance to each neighbour). NULL when the cell is missing a
+# neighbour on any axis -- a boundary cell has no centred stencil there, and a
+# one-sided one would report a gradient and a curvature the grid never measured.
+#
+# No sign condition is imposed here. Concavity is what a local GAUSSIAN needs and
+# `.joint_local_ccd_cell_curv()` gates on it; the box integral below is finite at
+# either sign, so it reads the same stencil without the gate.
+.joint_local_ccd_cell_stencil <- function(c, U, lm, up, dn) {
+    d <- ncol(U)
+    g <- numeric(d); d2 <- numeric(d)
+    half_lo <- numeric(d); half_hi <- numeric(d)
+    for (j in seq_len(d)) {
+        iu <- up[c, j]; id <- dn[c, j]
+        if (is.na(iu) || is.na(id)) return(NULL)
+        fd <- .joint_local_ccd_diff3(U[id, j], U[c, j], U[iu, j],
+                                     lm[id], lm[c], lm[iu])
+        if (is.null(fd)) return(NULL)
+        g[j]       <- fd$d1
+        d2[j]      <- fd$d2
+        half_lo[j] <- fd$half_lo
+        half_hi[j] <- fd$half_hi
+    }
+    list(g = g, d2 = d2, half_lo = half_lo, half_hi = half_hi)
+}
+
 # Local outer curvature at cell `c` from its grid neighbours, in u-space.
 #
 # Per axis the 3-point divided-difference second derivative of the log-marginal
@@ -201,35 +293,24 @@
 # factor of the same covariance puts it at f_0 * L[j, k] and reports an interval
 # that depends on the arbitrary order of the axes.
 #
-# Returns the per-axis sd, the per-axis Voronoi half-widths (half the u-distance
-# to the lower / upper neighbour) and `sd_marginal` (`NULL` when a corner is
-# missing -- a grid a previous pass already spliced nodes into -- or the local
-# Hessian is not negative definite, which a wide finite-difference window can
-# easily produce), or NULL when the cell is not a candidate.
+# Returns the stencil's own `g` / `d2`, the per-axis sd, the per-axis Voronoi
+# half-widths (half the u-distance to the lower / upper neighbour) and
+# `sd_marginal` (`NULL` when a corner is missing -- a grid a previous pass
+# already spliced nodes into -- or the local Hessian is not negative definite,
+# which a wide finite-difference window can easily produce), or NULL when the
+# cell is not a candidate.
 .joint_local_ccd_cell_curv <- function(c, U, lm, up, dn, eps = 1e-8) {
+    st <- .joint_local_ccd_cell_stencil(c, U, lm, up, dn)
+    if (is.null(st)) return(NULL)
+    if (any(st$d2 >= -eps)) return(NULL)
     d <- ncol(U)
-    sd      <- numeric(d)
-    half_lo <- numeric(d)
-    half_hi <- numeric(d)
-    H       <- matrix(0, d, d)
-    for (j in seq_len(d)) {
-        iu <- up[c, j]; id <- dn[c, j]
-        if (is.na(iu) || is.na(id)) return(NULL)
-        u_c <- U[c, j]; u_hi <- U[iu, j]; u_lo <- U[id, j]
-        l_c <- lm[c];   l_hi <- lm[iu];   l_lo <- lm[id]
-        if (!all(is.finite(c(u_c, u_hi, u_lo, l_c, l_hi, l_lo)))) return(NULL)
-        du_hi <- u_hi - u_c; du_lo <- u_c - u_lo
-        if (du_hi <= 0 || du_lo <= 0) return(NULL)
-        slope_hi <- (l_hi - l_c) / du_hi
-        slope_lo <- (l_c - l_lo) / du_lo
-        d2 <- 2 * (slope_hi - slope_lo) / (u_hi - u_lo)
-        if (!is.finite(d2) || d2 >= -eps) return(NULL)
-        sd[j]      <- 1 / sqrt(-d2)
-        half_lo[j] <- 0.5 * du_lo
-        half_hi[j] <- 0.5 * du_hi
-        H[j, j]    <- d2
-    }
-    list(sd = sd, half_lo = half_lo, half_hi = half_hi,
+    H <- matrix(0, d, d)
+    diag(H) <- st$d2
+    list(g           = st$g,
+         d2          = st$d2,
+         sd          = 1 / sqrt(-st$d2),
+         half_lo     = st$half_lo,
+         half_hi     = st$half_hi,
          sd_marginal = .joint_local_ccd_marginal_sd(c, U, lm, up, dn, H))
 }
 
@@ -262,6 +343,191 @@
     s <- sqrt(diag(S))
     if (!all(is.finite(s)) || any(s <= 0)) return(NULL)
     s
+}
+
+# The log gap between the two tail probabilities has to be resolved against the
+# absolute size of the logs it is a difference of: `pnorm(log.p = TRUE)` carries
+# each to about `eps` of its own magnitude, so a gap below this fraction of that
+# magnitude is mostly rounding. Below it the box is a sliver of the Gaussian it
+# sits in, the exact factor is 1 to within `a w^2 / 24`, and the numeric route
+# reads it exactly.
+.LCCD_BOX_GAP <- 1e-4
+
+# log(Phi(z_hi) - Phi(z_lo)), formed on whichever tail keeps the two arguments
+# from cancelling: in the upper half-line the two `pnorm` values are both within
+# rounding of 1 and their difference is carried by the upper tails instead. Both
+# branches take the difference through `expm1` of a log gap, so a pair of nodes
+# separated by a hair of probability is as accurate as a pair separated by all
+# of it -- until the gap itself falls under the rounding of the logs, where the
+# reading is refused (NA) rather than returned wrong.
+.joint_local_ccd_log_pnorm_diff <- function(z_lo, z_hi) {
+    if (!is.finite(z_lo) || !is.finite(z_hi) || z_hi <= z_lo) return(NA_real_)
+    if (z_lo > 0) {
+        a <- stats::pnorm(z_lo, lower.tail = FALSE, log.p = TRUE)
+        b <- stats::pnorm(z_hi, lower.tail = FALSE, log.p = TRUE)
+    } else {
+        a <- stats::pnorm(z_hi, log.p = TRUE)
+        b <- stats::pnorm(z_lo, log.p = TRUE)
+    }
+    if (!is.finite(a) || !is.finite(b)) return(NA_real_)
+    gap <- b - a
+    if (gap >= 0 || -gap < .LCCD_BOX_GAP * max(1, abs(a))) return(NA_real_)
+    a + log(-expm1(gap))
+}
+
+# Above this the closed form's two divergent pieces are no longer being
+# subtracted in double precision. `0.5 g^2 / a` is the height of the local peak
+# above the cell, and it and the log of the `pnorm` difference grow against each
+# other -- a steep gradient or a flat curvature sends both out -- while their sum
+# stays finite, so the absolute error in the log factor is about
+# `eps * 0.5 g^2 / a`; at 1e10 that is 2e-6 nats, and the numeric route takes
+# over before it grows past it.
+.LCCD_BOX_CANCEL <- 1e10
+
+# One axis's factor of the local-quadratic box integral, on the log scale.
+#
+# The cell's mass under the local quadratic separates across axes when `A` is
+# diagonal, so axis i contributes
+#   I_i = int_{-h_lo}^{h_hi} exp(g_i u - 0.5 a_i u^2) du,
+# and the factor reported here is `I_i / (h_lo + h_hi)`: the axis's integral
+# divided by the axis's own extent, so the product over axes is the cell's mass
+# divided by the cell's own box volume and the whole thing is a dimensionless
+# MULTIPLIER on the midpoint atom `Delta_c exp(ell_c)`, equal to 1 on a cell the
+# log-marginal is flat across.
+#
+# `a_i > 0` (the concave axis) is the Gaussian case. Completing the square with
+# `mu = g/a` and `s = a^(-1/2)`,
+#   I_i = exp(0.5 g^2/a) sqrt(2 pi / a) (Phi((h_hi - mu)/s) - Phi((-h_lo - mu)/s)),
+# closed form and needing no rectangle probability. It is evaluated in logs
+# throughout: `0.5 g^2/a` is unbounded as the local peak leaves the box while the
+# `pnorm` difference vanishes at the matching rate, and only their logs stay in
+# range.
+#
+# `a_i <= 0` is the convex axis, and declining the CELL there is what the
+# separability buys us out of. The integral over a BOUNDED box is finite at
+# either sign -- it is `int exp(g u + 0.5 |a| u^2) du`, an imaginary-error /
+# Dawson function rather than a `pnorm` difference -- so a cell concave on three
+# axes and convex on the fourth still has an exact factor on the three. Rather
+# than carry an `erfi` (whose `exp(t^2)` overflows well inside the range of `t`
+# this stencil produces, and which base R does not have), the offending axis is
+# integrated numerically: `stats::integrate()` on a smooth integrand over a
+# bounded interval is machine-precision, and the exponent is shifted by its own
+# maximum over the box first so the integrand is bounded by 1 whatever the
+# curvature. It costs no inner solve, which is the property that matters -- the
+# grid's log-marginals are already in hand.
+#
+# The same numeric route takes the near-flat concave axis, where the closed
+# form's own pieces cancel (see `.LCCD_BOX_CANCEL`).
+#
+# NULL when the axis carries no usable factor at all, which the caller reads as
+# a decline to the midpoint factor of 1 on THAT axis.
+.joint_local_ccd_axis_box <- function(g, a, h_lo, h_hi) {
+    w <- h_lo + h_hi
+    if (!is.finite(g) || !is.finite(a) || !is.finite(w) || w <= 0) return(NULL)
+    if (a > 0 && 0.5 * g^2 / a < .LCCD_BOX_CANCEL) {
+        s  <- 1 / sqrt(a)
+        mu <- g / a
+        ld <- .joint_local_ccd_log_pnorm_diff((-h_lo - mu) / s, (h_hi - mu) / s)
+        val <- 0.5 * g^2 / a + 0.5 * log(2 * pi / a) + ld - log(w)
+        if (is.finite(val)) return(list(log_factor = val, route = "closed"))
+    }
+    val <- .joint_local_ccd_axis_box_numeric(g, a, h_lo, h_hi)
+    if (is.null(val)) return(NULL)
+    list(log_factor = val, route = "numeric")
+}
+
+# The same axis factor by bounded one-dimensional quadrature. The exponent
+# `g u - 0.5 a u^2` is shifted by its maximum over the box before exponentiating:
+# on a concave axis that maximum sits at the local peak `g / a` clamped into the
+# box, on a convex one at whichever endpoint is higher, so the integrand is in
+# (0, 1] and neither overflows nor underflows to zero everywhere.
+.joint_local_ccd_axis_box_numeric <- function(g, a, h_lo, h_hi) {
+    expo <- function(u) g * u - 0.5 * a * u^2
+    cand <- c(-h_lo, h_hi)
+    if (a > 0) cand <- c(cand, min(max(g / a, -h_lo), h_hi))
+    m <- max(expo(cand))
+    if (!is.finite(m)) return(NULL)
+    val <- tryCatch(
+        stats::integrate(function(u) exp(expo(u) - m), -h_lo, h_hi,
+                         rel.tol = .Machine$double.eps^0.75)$value,
+        error = function(e) NA_real_)
+    if (!is.finite(val) || val <= 0) return(NULL)
+    out <- m + log(val) - log(h_lo + h_hi)
+    if (!is.finite(out)) NULL else out
+}
+
+# The cell's local-quadratic box mass, as the log of its multiplier on the
+# midpoint atom: `log(M_c^(Q) / (Delta_c exp(ell_c)))`, zero where the cell's
+# log-marginal is flat across it.
+#
+# `A` is taken DIAGONAL, `a_j = -d2_j` from the stencil, which is what makes the
+# box integral a product of `pnorm` differences instead of a multivariate normal
+# rectangle probability. The correlated form would need one, and would need `A`
+# positive definite to have one at all -- the guard
+# `.joint_local_ccd_marginal_sd()` already declines under -- so the diagonal rule
+# is both the cheaper measurement and the one that survives an indefinite
+# finite-difference quadratic.
+#
+# `n_axes_declined` counts the axes that fell back to the midpoint factor of 1,
+# so a multiplier is never read as a full-cell correction when part of the cell
+# went unread.
+.joint_local_ccd_cell_box_mass <- function(st) {
+    d <- length(st$g)
+    lf <- 0
+    n_closed <- 0L; n_numeric <- 0L; n_declined <- 0L
+    for (j in seq_len(d)) {
+        f <- .joint_local_ccd_axis_box(st$g[j], -st$d2[j],
+                                       st$half_lo[j], st$half_hi[j])
+        if (is.null(f)) { n_declined <- n_declined + 1L; next }
+        lf <- lf + f$log_factor
+        if (identical(f$route, "closed")) n_closed <- n_closed + 1L
+        else n_numeric <- n_numeric + 1L
+    }
+    list(log_box_ratio = lf, n_axes_closed = n_closed,
+         n_axes_numeric = n_numeric, n_axes_declined = n_declined)
+}
+
+# Every cell of a tensor outer grid, scored by the same rule.
+#
+# The per-cell multiplier is the whole of what the estimator contributes to the
+# integration: the softmax in `.joint_integration_weights()` normalises the
+# common cell volume `Delta` away, so `exp(log_box_ratio)` enters as a `dnode`
+# and nothing else has to change. That cancellation is a property of the GRID,
+# not of the rule -- it holds because a geometric grid is uniform in
+# `u = log theta` and its interior cells are congruent -- so a caller reusing the
+# multiplier form on a grid whose cells differ in volume has to carry `Delta_c`
+# itself.
+#
+# A cell missing a neighbour on any axis has no centred stencil and takes the
+# midpoint atom it already had: `log_box_ratio` 0, `computed` FALSE. That is the
+# same decline `.joint_local_ccd_cell_curv()` returns NULL for, one gate earlier.
+.joint_local_ccd_box_mass <- function(joint_grid, log_marginal, latent_axes,
+                                      tags) {
+    n <- nrow(joint_grid)
+    out <- list(log_box_ratio = rep(0, n), computed = rep(FALSE, n),
+                n_axes_closed = 0L, n_axes_numeric = 0L, n_axes_declined = 0L)
+    if (is.null(tags)) return(out)
+    latent_cols <- match(latent_axes, colnames(joint_grid))
+    if (anyNA(latent_cols)) return(out)
+    d <- length(latent_cols)
+    if (d < 1L || n < 3L) return(out)
+
+    U <- matrix(0, n, d)
+    for (j in seq_len(d))
+        U[, j] <- .joint_pareto_fwd(tags[j], joint_grid[, latent_cols[j]])
+    nb <- .joint_local_ccd_neighbors(U, joint_grid, latent_cols)
+
+    for (c in seq_len(n)) {
+        st <- .joint_local_ccd_cell_stencil(c, U, log_marginal, nb$up, nb$dn)
+        if (is.null(st)) next
+        bm <- .joint_local_ccd_cell_box_mass(st)
+        out$log_box_ratio[c] <- bm$log_box_ratio
+        out$computed[c]      <- TRUE
+        out$n_axes_closed    <- out$n_axes_closed + bm$n_axes_closed
+        out$n_axes_numeric   <- out$n_axes_numeric + bm$n_axes_numeric
+        out$n_axes_declined  <- out$n_axes_declined + bm$n_axes_declined
+    }
+    out
 }
 
 # How far the cell's own outer log-marginal is from the quadratic the design was
@@ -577,6 +843,15 @@
         # (gcol33/tulpa#323).
         mass_c <- .joint_local_ccd_mass(c(delta_centre, delta_off),
                                         c(log_marginal[c], lm_off), dn_w[c])
+        # A third reading of the same cell's mass, and the only one of the three
+        # that needs no node at all: the base grid's own neighbours already give
+        # the local quadratic, and integrating it over the cell's box instead of
+        # evaluating it at the centre is the correction the midpoint atom drops
+        # (gcol33/tulpa#326). Recorded beside the cloud's ratio so the two
+        # re-estimates of the same atom are read together.
+        mass_c <- c(mass_c,
+                    list(log_box_ratio =
+                             .joint_local_ccd_cell_box_mass(cc)$log_box_ratio))
 
         mis <- fit_c$misfit
         if (!isTRUE(mis < skew_max)) {
@@ -676,6 +951,7 @@
                              log_mass_coarse  = mass_col(mass_kept, "log_mass_coarse"),
                              log_mass_refined = mass_col(mass_kept, "log_mass_refined"),
                              max_node_weight  = mass_col(mass_kept, "max_node_weight"),
+                             log_box_ratio    = mass_col(mass_kept, "log_box_ratio"),
                              skew_max        = skew_max,
                              cells_declined  = declined_cells,
                              misfit_declined = declined_misfit,
@@ -689,6 +965,8 @@
                                  mass_col(mass_declined, "log_mass_refined"),
                              max_node_weight_declined =
                                  mass_col(mass_declined, "max_node_weight"),
+                             log_box_ratio_declined =
+                                 mass_col(mass_declined, "log_box_ratio"),
                              n_cells_declined = length(declined_cells),
                              n_cells_before  = n,
                              n_cells_after   = nrow(out_grid),
