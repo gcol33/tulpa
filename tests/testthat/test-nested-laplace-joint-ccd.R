@@ -261,3 +261,94 @@ test_that("integration = 'grid' forces the tensor product even for >= 3 axes", {
     expect_identical(fit$integration, "grid")
     expect_equal(length(fit$log_marginal), 27L)   # 3 * 3 * 3
 })
+
+# --------------------------------------------------------------------------- #
+# The decline is recorded on the fit (gcol33/tulpa#315)                        #
+# --------------------------------------------------------------------------- #
+#
+# `fit$integration` names the integrator that RAN, and `.nl_node_support()` keys
+# the interval construction off it, so "grid" cannot distinguish a tensor grid
+# the caller chose from one a declined CCD fell back to. Each case below asserts
+# the decline FIRED (or did not) before reading the reason, so none can pass
+# vacuously on a fit that took the other branch.
+
+test_that("an engaged CCD records no decline", {
+    skip_on_cran()
+    sim <- .sim_joint_ccd(2024L, N = 800L, n_s = 40L)
+    sp  <- list(sim$responses$occ$spatial_idx, sim$responses$pos$spatial_idx)
+    blk <- .bym2_copy_block(sim$adj, c(0.3, 0.6, 1.0), c(0.3, 0.7, 0.9), sp)
+    fit <- tulpa_nested_laplace_joint(
+        sim$responses, list(blk),
+        copy = list(arm = "pos", block = 1L, alpha_grid = c(0.3, 0.7, 1.2)),
+        control = list(integration = "ccd", diagnose_k = FALSE,
+                       var_of_means_consistency = FALSE))
+    expect_identical(fit$integration, "ccd")
+    expect_identical(fit$integration_requested, "ccd")
+    expect_true(is.na(fit$integration_declined))
+})
+
+test_that("a tensor grid nobody asked to replace records no decline", {
+    skip_on_cran()
+    sim <- .sim_joint_ccd(2024L, N = 800L, n_s = 40L)
+    sp  <- list(sim$responses$occ$spatial_idx, sim$responses$pos$spatial_idx)
+    blk <- .bym2_copy_block(sim$adj, c(0.3, 0.6, 1.0), c(0.3, 0.7, 0.9), sp)
+    fit <- tulpa_nested_laplace_joint(
+        sim$responses, list(blk),
+        copy = list(arm = "pos", block = 1L, alpha_grid = c(0.3, 0.7, 1.2)),
+        control = list(integration = "grid", diagnose_k = FALSE,
+                       var_of_means_consistency = FALSE))
+    expect_identical(fit$integration, "grid")
+    expect_identical(fit$integration_requested, "grid")
+    expect_true(is.na(fit$integration_declined))
+})
+
+test_that("an unguessable axis records why the CCD declined", {
+    skip_on_cran()
+    sim <- .sim_joint_ccd(99L, N = 800L, n_s = 40L)
+    sp  <- list(sim$responses$occ$spatial_idx, sim$responses$pos$spatial_idx)
+    car <- list(type = "car_proper", spatial_idx = sp,
+                n_spatial_units = sim$adj$n_spatial_units,
+                adj_row_ptr = sim$adj$adj_row_ptr,
+                adj_col_idx = sim$adj$adj_col_idx,
+                n_neighbors = sim$adj$n_neighbors,
+                sigma_grid = c(0.5, 1.0), rho_car_grid = c(0.5, 0.9))
+    fit <- tulpa_nested_laplace_joint(
+        sim$responses, list(car),
+        copy = list(arm = "pos", block = 1L, alpha_grid = c(0.3, 0.7, 1.2)),
+        control = list(integration = "ccd", diagnose_k = FALSE,
+                       var_of_means_consistency = FALSE))
+    # The decline fired: 3 axes were requested as a CCD and a tensor grid ran.
+    expect_identical(fit$integration_requested, "ccd")
+    expect_false(identical(fit$integration, "ccd"))
+    # rho_car's support is the adjacency eigenvalue interval, the one axis the
+    # transform registry will not guess.
+    expect_identical(fit$integration_declined, "unguessable_axis")
+})
+
+test_that("a CCD below its axis threshold records the axis count", {
+    skip_on_cran()
+    sim <- .sim_joint_ccd(5L, N = 600L, n_s = 30L)
+    sp  <- list(sim$responses$occ$spatial_idx, sim$responses$pos$spatial_idx)
+    icar <- list(type = "icar", spatial_idx = sp,
+                 n_spatial_units = sim$adj$n_spatial_units,
+                 adj_row_ptr = sim$adj$adj_row_ptr,
+                 adj_col_idx = sim$adj$adj_col_idx,
+                 n_neighbors = sim$adj$n_neighbors,
+                 sigma_grid = c(0.4, 0.8, 1.2))
+    fit <- tulpa_nested_laplace_joint(
+        sim$responses, list(icar),
+        copy = list(arm = "pos", block = 1L, alpha_grid = c(0.5, 1.0, 1.5)),
+        control = list(integration = "ccd", diagnose_k = FALSE,
+                       var_of_means_consistency = FALSE))
+    expect_identical(fit$integration_requested, "ccd")
+    expect_false(identical(fit$integration, "ccd"))
+    expect_identical(fit$integration_declined, "axis_count")
+})
+
+test_that("every recorded decline reason is one of the named ones", {
+    expect_true(all(c("axis_count", "unguessable_axis", "degenerate_axis",
+                      "modefind_ridge", "modefind_boundary",
+                      "modefind_degenerate", "modefind_failed",
+                      "hessian_singular", "hessian_not_pd") %in%
+                    tulpa:::.CCD_DECLINE_REASONS))
+})

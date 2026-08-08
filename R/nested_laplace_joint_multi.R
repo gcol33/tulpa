@@ -1091,6 +1091,15 @@
     ccd_proposal          <- NULL
 
     ccd_requested <- .joint_ccd_engage(integration, d_axes)
+    # Why a CCD the caller asked for did not run (gcol33/tulpa#315). NA when
+    # nothing was declined, so `fit$integration == "grid"` is never the only
+    # trace of a request the engine turned down. An explicit
+    # `integration = "ccd"` below the axis threshold declines here; every other
+    # reason comes from .joint_ccd_grid()'s own vocabulary.
+    integration_declined <- NA_character_
+    if (identical(integration, "ccd") && !ccd_requested) {
+        integration_declined <- "axis_count"
+    }
     use_ccd <- ccd_requested
     if (use_ccd) {
         axis_values <- latent_axis_values
@@ -1136,8 +1145,9 @@
         ccd <- .joint_ccd_grid(axis_names, axis_offsets, prepared, axis_values,
                                eval_logpost, verbose = verbose,
                                set_warm = set_warm)
-        if (is.null(ccd)) {
+        if (is.null(ccd$grid)) {
             use_ccd <- FALSE
+            integration_declined <- as.character(ccd$declined %||% "modefind_failed")
         } else {
             joint_grid       <- ccd$grid
             dnode            <- ccd$dnode
@@ -1231,16 +1241,24 @@
         row_counts <- vapply(block_grids, nrow, integer(1))
         idx <- do.call(expand.grid, lapply(row_counts, seq_len))
         n_cells <- nrow(idx)
+        # The CCD is only a remedy for the cell count while it is still
+        # available. Once this fit has already declined one, advising the caller
+        # to set the option they set is noise (gcol33/tulpa#315), so the advice
+        # names the decline instead.
+        remedy <- if (is.na(integration_declined))
+            "Reduce per-block grid sizes or set control$integration = \"ccd\"." else
+            sprintf("Reduce per-block grid sizes; CCD integration declined (%s).",
+                    integration_declined)
         if (n_cells > .NL_MULTI_GRID_HARD_CAP) {
             stop(sprintf(
-                "Joint multi-block grid has %d cells (hard cap %d). Reduce per-block grid sizes or set control$integration = \"ccd\".",
-                n_cells, .NL_MULTI_GRID_HARD_CAP
+                "Joint multi-block grid has %d cells (hard cap %d). %s",
+                n_cells, .NL_MULTI_GRID_HARD_CAP, remedy
             ), call. = FALSE)
         }
         if (n_cells > .NL_MULTI_GRID_WARN) {
             warning(sprintf(
-                "Joint multi-block grid has %d cells (>%d). Each cell costs one inner Newton solve; reduce per-block grid sizes or set control$integration = \"ccd\".",
-                n_cells, .NL_MULTI_GRID_WARN
+                "Joint multi-block grid has %d cells (>%d). Each cell costs one inner Newton solve. %s",
+                n_cells, .NL_MULTI_GRID_WARN, remedy
             ), call. = FALSE)
         }
 
@@ -1418,6 +1436,13 @@
     res$theta_names  <- colnames(joint_grid)
     res$axis_offsets <- axis_offsets
     res$integration  <- integration_used
+    # What the caller asked for, and why it did not run. `integration` alone
+    # names the integrator that RAN, so a fit reporting "grid" cannot say
+    # whether the tensor grid was chosen or fallen back to
+    # (gcol33/tulpa#315). `.nl_node_support()` keys the interval construction
+    # off `integration`, so the difference is one a consumer can act on.
+    res$integration_requested <- integration
+    res$integration_declined  <- integration_declined
     # Integration weights fold in the CCD design weights (`dnode`); for the
     # tensor grid `dnode` is NULL and this is the plain log-marginal softmax.
     res$weights      <- .joint_integration_weights(res$log_marginal, dnode)

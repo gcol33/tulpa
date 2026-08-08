@@ -117,6 +117,20 @@
   so a refined cell's mass is redistributed only inside the cell the unrefined
   grid had collapsed onto one point.
 
+* A joint multi-block fit records which outer integrator the caller ASKED for
+  and why the CCD did not run (gcol33/tulpa#315). `$integration` names the
+  integrator that ran, and `.nl_node_support()` keys the interval construction
+  off it, so `"grid"` could not distinguish a tensor grid the caller chose from
+  one a declined CCD fell back to; the reason existed and was thrown away
+  outside a `verbose` message. `$integration_requested` carries the request and
+  `$integration_declined` the reason -- `NA_character_` when nothing was
+  declined, otherwise `"axis_count"`, `"unguessable_axis"`, `"degenerate_axis"`,
+  `"modefind_ridge"`, `"modefind_boundary"`, `"modefind_degenerate"`,
+  `"modefind_failed"`, `"hessian_singular"` or `"hessian_not_pd"`. The
+  cell-count warning drops its "set `control$integration = \"ccd\"`" advice on a
+  fit that already asked for one and was turned down, and names the decline
+  instead.
+
 ## 0.0.144
 
 * **The subspace debias reaches the grid and joint nested backends**

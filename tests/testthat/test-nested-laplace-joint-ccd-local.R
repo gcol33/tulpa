@@ -355,4 +355,39 @@ test_that("a globally CCD-integrated fit is design-weighted throughout", {
   expect_identical(unique(fitc$weight_kind), "design")
   expect_length(fitc$weight_kind, length(fitc$weights))
   expect_identical(tulpa:::.nl_node_support(fitc$integration), "moment_rule")
+  # Nothing was declined here, which is what makes the tag check above the
+  # engaged case rather than the fallback (gcol33/tulpa#315).
+  expect_true(is.na(fitc$integration_declined))
+})
+
+test_that("this fixture's CCD decline is on the fit, not only in a message", {
+  skip_on_cran()
+  # The fixture's own outer log-posterior is ridged, so a requested CCD falls
+  # back here. Asserted in that order: the fallback has to have happened before
+  # the reason means anything.
+  sim <- .lccd_sim_joint()
+  ctrl <- list(max_iter = 60L, tol = 1e-6, diagnose_k = FALSE,
+               var_of_means_consistency = FALSE)
+  fit <- suppressWarnings(tulpa_nested_laplace_joint(
+    sim$responses, sim$prior, copy = sim$copy,
+    control = c(ctrl, list(integration = "ccd"))))
+  expect_identical(fit$integration_requested, "ccd")
+  expect_false(identical(fit$integration, "ccd"))
+  expect_identical(fit$integration_declined, "modefind_ridge")
+
+  # The same reason the verbose channel reports, so the field and the message
+  # cannot drift apart.
+  expect_message(
+    suppressWarnings(tulpa_nested_laplace_joint(
+      sim$responses, sim$prior, copy = sim$copy,
+      control = c(ctrl, list(integration = "ccd", verbose = TRUE)))),
+    "flat / ridged")
+
+  # The same fit under integration = "grid" asked for nothing and declined
+  # nothing, which is the state the reason field has to be distinguishable from.
+  fit_g <- suppressWarnings(tulpa_nested_laplace_joint(
+    sim$responses, sim$prior, copy = sim$copy,
+    control = c(ctrl, list(integration = "grid"))))
+  expect_identical(fit_g$integration, fit$integration)
+  expect_true(is.na(fit_g$integration_declined))
 })

@@ -303,6 +303,29 @@
     list(par = u, hess = H, value = f_u, converged = converged, status = "ok")
 }
 
+# Why a requested CCD fell back to the tensor grid. One entry per `return`
+# below, so the caller records a named reason on the fit instead of leaving a
+# consumer to read the choice off the absence of a field (gcol33/tulpa#315,
+# the convention #293-#297 established):
+#
+#   "axis_count"          fewer transformable latent axes than the mode's
+#                         threshold -- decided by .joint_ccd_engage(), so it is
+#                         stamped by the caller rather than here.
+#   "unguessable_axis"    an axis whose support the engine will not guess
+#                         (CAR_proper's rho_car, a non-BYM2 rho).
+#   "degenerate_axis"     an axis carrying a single value, or a non-finite
+#                         u-space box: no curvature to orient a design across.
+#   "modefind_ridge"      the outer log-posterior is flat / ridged.
+#   "modefind_boundary"   the outer mode pinned to the (wide) axis box.
+#   "modefind_degenerate" the outer Hessian is degenerate at the mode.
+#   "modefind_failed"     the mode-find did not converge.
+#   "hessian_singular"    the outer Hessian would not invert.
+#   "hessian_not_pd"      its inverse has no Cholesky factor.
+.CCD_DECLINE_REASONS <- c("axis_count", "unguessable_axis", "degenerate_axis",
+                          "modefind_ridge", "modefind_boundary",
+                          "modefind_degenerate", "modefind_failed",
+                          "hessian_singular", "hessian_not_pd")
+
 # Build the CCD node grid for the joint multi-block path. `eval_logpost` maps a
 # user-facing [S x d] theta matrix (columns = `axis_names`) to a length-S
 # log-posterior vector (inner log-marginal + baked hyperprior). `axis_values`
@@ -310,13 +333,14 @@
 # the mode-find box and the initial point). Returns
 #   list(grid, dnode, u_hat, L_scale, tags)
 # with `grid` the [n_node x d] physical node matrix (colnames = axis_names) and
-# `dnode` the corrected CCD design weights, or NULL to fall back to the tensor
-# grid (unguessable axis, degenerate mode-find, or non-PD outer Hessian).
+# `dnode` the corrected CCD design weights, or `list(declined = <reason>)` to
+# fall back to the tensor grid. A caller tests `is.null(x$grid)`.
 .joint_ccd_grid <- function(axis_names, axis_offsets, prepared, axis_values,
                             eval_logpost, verbose = FALSE, set_warm = NULL) {
     d <- length(axis_names)
+    declined <- function(reason) list(declined = reason)
     tags <- .joint_ccd_axis_tags(axis_names, axis_offsets, prepared)
-    if (is.null(tags)) return(NULL)
+    if (is.null(tags)) return(declined("unguessable_axis"))
 
     # u-space search box, generously wider than the supplied per-axis grid
     # range so the mode-find can reach a posterior mode that sits beyond the
@@ -342,7 +366,7 @@
     # Degenerate axis (a single supplied value) carries no curvature; CCD
     # cannot orient a design across it -- fall back to the tensor grid.
     if (any(!is.finite(c(lower, upper, u0))) || any(upper - lower <= 0)) {
-        return(NULL)
+        return(declined("degenerate_axis"))
     }
 
     # Map a u-space matrix to physical theta (per-axis inverse transform).
@@ -409,22 +433,27 @@
         got    <- try_modefind(u_seed, h_cal)
     }
     if (is.null(got$u_hat)) {
+        why <- got$reason %||% "fail"
         if (verbose)
-            message("tulpa CCD: ", switch(got$reason %||% "fail",
+            message("tulpa CCD: ", switch(why,
                 ridge      = "outer log-posterior is flat / ridged (curvature ill-conditioned)",
                 boundary   = "outer mode pinned to the axis box (boundary-supported hyperparameter)",
                 degenerate = "outer Hessian degenerate at the mode",
                              "outer mode-find failed"),
                 "; using the tensor grid.")
-        return(NULL)
+        return(declined(switch(why,
+            ridge      = "modefind_ridge",
+            boundary   = "modefind_boundary",
+            degenerate = "modefind_degenerate",
+                          "modefind_failed")))
     }
     u_hat <- got$u_hat
     H     <- got$H
     neg_H <- -0.5 * (H + t(H))
     post_cov <- tryCatch(solve(neg_H), error = function(e) NULL)
-    if (is.null(post_cov)) return(NULL)
+    if (is.null(post_cov)) return(declined("hessian_singular"))
     L_scale <- tryCatch(t(chol(post_cov)), error = function(e) NULL)
-    if (is.null(L_scale)) return(NULL)
+    if (is.null(L_scale)) return(declined("hessian_not_pd"))
 
     # CCD design: factorial corners at +/- 1.1 per whitened axis (INLA's f0),
     # with the matching corrected design weights (single source of truth with

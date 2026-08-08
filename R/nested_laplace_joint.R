@@ -323,7 +323,9 @@
 #'     nodes)` or `tensor grid (72 cells)`, or `CCD declined -> tensor grid`),
 #'     so the auto switch to the CCD at `>= 4` axes is never silent. The
 #'     resolved integrator is also returned on the joint result as
-#'     `$integration`.
+#'     `$integration`, alongside `$integration_requested` and
+#'     `$integration_declined` (see Value), so a fallback is on the fit itself
+#'     and not only in a verbose message.
 #'   * `local_ccd` (`NULL`) -- local CCD refinement of a multi-block tensor grid.
 #'     `TRUE` (defaults) or a `list(max_cells =, f0 =)` refines a few high-weight,
 #'     mutually non-adjacent interior cells, replacing each with a small
@@ -660,6 +662,18 @@
 #'      `design_mass` (the share of the integration weight sitting on them). NULL
 #'      when local CCD was off or declined (single-block, `< 4` axes, an active
 #'      `phi_grid`, or no peaked interior cell).
+#'   * `integration_requested`, `integration_declined` -- what `integration`
+#'      asked for, and why the CCD did not run. `$integration` names the
+#'      integrator that RAN, and `.nl_node_support()` keys the interval
+#'      construction off it, so a caller who asked for a moment rule and
+#'      received a density grid reads the reason here rather than inferring it.
+#'      `integration_declined` is `NA_character_` when nothing was declined, and
+#'      otherwise one of `"axis_count"` (fewer transformable latent axes than the
+#'      requested mode's threshold), `"unguessable_axis"` (a CAR_proper
+#'      `rho_car` or a non-BYM2 `rho`), `"degenerate_axis"` (a single-valued
+#'      axis), `"modefind_ridge"` / `"modefind_boundary"` /
+#'      `"modefind_degenerate"` / `"modefind_failed"`, `"hessian_singular"` or
+#'      `"hessian_not_pd"`. Multi-block fits only.
 #'   * `weight_kind` -- one entry per outer-grid cell, `"mass"` or `"design"`.
 #'      A tensor cell holds the mass of its own cell and a CCD node holds a
 #'      design weight, so a fit integrated by one rule reports one value

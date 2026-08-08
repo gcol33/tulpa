@@ -315,7 +315,9 @@ file. Under \code{verbose = TRUE} the engaged integrator is announced in one
 line at selection time (e.g. \verb{outer integration: CCD (4 latent axes, 25 nodes)} or \verb{tensor grid (72 cells)}, or \verb{CCD declined -> tensor grid}),
 so the auto switch to the CCD at \verb{>= 4} axes is never silent. The
 resolved integrator is also returned on the joint result as
-\verb{$integration}.
+\verb{$integration}, alongside \verb{$integration_requested} and
+\verb{$integration_declined} (see Value), so a fallback is on the fit itself
+and not only in a verbose message.
 \item \code{local_ccd} (\code{NULL}) -- local CCD refinement of a multi-block tensor grid.
 \code{TRUE} (defaults) or a \code{list(max_cells =, f0 =)} refines a few high-weight,
 mutually non-adjacent interior cells, replacing each with a small
@@ -652,6 +654,18 @@ that carry an in-cell design weight rather than their own mass) and
 \code{design_mass} (the share of the integration weight sitting on them). NULL
 when local CCD was off or declined (single-block, \verb{< 4} axes, an active
 \code{phi_grid}, or no peaked interior cell).
+\item \code{integration_requested}, \code{integration_declined} -- what \code{integration}
+asked for, and why the CCD did not run. \verb{$integration} names the
+integrator that RAN, and \code{.nl_node_support()} keys the interval
+construction off it, so a caller who asked for a moment rule and
+received a density grid reads the reason here rather than inferring it.
+\code{integration_declined} is \code{NA_character_} when nothing was declined, and
+otherwise one of \code{"axis_count"} (fewer transformable latent axes than the
+requested mode's threshold), \code{"unguessable_axis"} (a CAR_proper
+\code{rho_car} or a non-BYM2 \code{rho}), \code{"degenerate_axis"} (a single-valued
+axis), \code{"modefind_ridge"} / \code{"modefind_boundary"} /
+\code{"modefind_degenerate"} / \code{"modefind_failed"}, \code{"hessian_singular"} or
+\code{"hessian_not_pd"}. Multi-block fits only.
 \item \code{weight_kind} -- one entry per outer-grid cell, \code{"mass"} or \code{"design"}.
 A tensor cell holds the mass of its own cell and a CCD node holds a
 design weight, so a fit integrated by one rule reports one value
