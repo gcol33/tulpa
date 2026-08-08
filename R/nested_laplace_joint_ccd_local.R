@@ -224,7 +224,22 @@
 # random, since it selects precisely the cells that hold no mass. The weight
 # ranking IS the mass-movement ranking to within 0.006 of the oracle, and
 # multiplying it by a predictor that overstates by a factor of two moves it away
-# from the oracle rather than toward it. On the OTHER reading, the per-cell log
+# from the oracle rather than toward it.
+#
+# That follows from the factorization and not from these particular fits. The
+# two factors of `|M_1 - M_0| = w_c |exp(r_c) - 1|` are separated by orders of
+# magnitude: `w_c` spans more than twenty of them across a grid whose outer
+# cells reach well into the tail, while `|exp(r_c) - 1|` spans a few, a
+# refinement moving a cell's own mass by a factor of order one. A product
+# dominated by one factor is ordered by that factor, so the ranking is settled
+# by `w_c` before the predictor is consulted, and how well the predictor
+# estimates `r_c` is not what is in question. The negative result is therefore
+# conditional on that scale hierarchy: a grid whose weights were flat enough for
+# the two factors to be comparable is a different measurement, and the
+# capture-curve comparison would have to be run again there before the criterion
+# could be called settled on it.
+#
+# On the OTHER reading, the per-cell log
 # surplus, the predictor is the better rule by as much (0.1838 against 0.1174 at
 # the same 10%, oracle 0.2379) -- but that reading weights a cell that cannot
 # affect the answer equally with one that decides it.
