@@ -662,18 +662,30 @@ any node was placed). The two shares differ: the replacement nodes sit
 nearer the peak than the cell's own coordinate did, so refining raises
 the share the refined region holds, and reading both separates how
 concentrated the base grid already was from how much the refinement
-concentrated it. Two per-cell readings of the design's own least-squares
-fit come with it: \code{misfit} (the standardized cubic magnitude of the part
-of the cell the design cannot represent, kept below \code{skew_max}, with
-\code{misfit_declined} / \code{cells_declined} for the cells put back as their own
-mass atoms) and \code{offset} / \code{offset_declined} (the norm of the whitened
-gradient, i.e. how far the cell's own peak sat from the cell's
-coordinate in units of its marginal spread). \code{misfit} certifies that the
-design can represent the cell's shape and nothing more; a cell can be
-exactly quadratic and still be read at a point that is not
-representative of it, which is what \code{offset} reports and nothing gates
-on. NULL when local CCD was off or declined (single-block,
-\verb{< 4} axes, an active \code{phi_grid}, or no peaked interior cell).
+concentrated it. Three per-cell readings come with it, on three
+orthogonal axes, none of them gating anything. Shape: \code{misfit} (the
+standardized cubic magnitude of the part of the cell the design cannot
+represent, the one reading \code{skew_max} gates on, with \code{misfit_declined} /
+\code{cells_declined} for the cells put back as their own mass atoms).
+Centring: \code{offset} (the norm of the whitened gradient, i.e. how far the
+cell's own peak sat from the cell's coordinate in units of its marginal
+spread) and \code{mode_gain} (the same displacement in the cell's own
+curvature units, \verb{0.5 * g' (-H)^-1 g} in nats, read off the same fit's
+quadratic coefficients and comparable across cells whose curvature
+differs; \code{NA} where \code{-H} is not positive definite, a cell with no
+interior peak to be displaced from). Mass: \code{log_mass_ratio} (the cell's
+refined mass over the coarse atom it replaced, \code{log_mass_refined - log_mass_coarse}, both carried on the log scale with the cell's outer
+design weight in them) and \code{max_node_weight} (the share the single
+largest node takes of its own cell's refined mass). Each carries a
+\verb{_declined} twin for the cells the gate put back, whose nodes were
+evaluated before the score was read. \code{misfit} certifies that the design
+can represent the cell's shape and nothing more: a cell can be exactly
+quadratic and still be read at a point that is not representative of it
+(\code{offset} / \code{mode_gain}), and refining it can still move how much mass it
+competes for against its unrefined neighbours (\code{log_mass_ratio}, the
+embedded-rule local error indicator of adaptive cubature). NULL when
+local CCD was off or declined (single-block, \verb{< 4} axes, an active
+\code{phi_grid}, or no peaked interior cell).
 \item \code{integration_requested}, \code{integration_declined} -- what \code{integration}
 asked for, and why the CCD did not run. \verb{$integration} names the
 integrator that RAN, and \code{.nl_node_support()} keys the interval

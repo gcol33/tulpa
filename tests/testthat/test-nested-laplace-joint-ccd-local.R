@@ -1017,3 +1017,207 @@ test_that("the refinement gate holds on both sides of the regime it keys on", {
   expect_lte(sum(ws$gated), sum(ws$unconditional))
   expect_lt(sum(ws$gated), 37)
 })
+
+# --------------------------------------------------------------------------- #
+# The centring score in the cell's own curvature units (gcol33/tulpa#324)      #
+# --------------------------------------------------------------------------- #
+
+# A quadratic response in the whitened coordinate, built from a KNOWN gradient
+# and Hessian on the design's own convention: b0 + g'z + 0.5 z'Hz, whose
+# quadratic coefficients are H_jj / 2 on the diagonal and H_jk off it.
+.lccd_quad_resp <- function(Z, g, H, b0 = 0) {
+  b0 + drop(Z %*% g) + 0.5 * rowSums((Z %*% H) * Z)
+}
+
+test_that("mode_gain recovers 0.5 g' (-H)^-1 g from the design's own coefficients", {
+  d <- 4L
+  ccd <- ccd_grid(d, f_0 = sqrt(d) * 1.1)
+  u_c <- rep(0, d)
+  g <- c(0.45, -1.2, 0.3, 0.8)
+
+  # Diagonal first, then a Hessian with genuine cross terms: the second is what
+  # exercises the factor-2-on-the-diagonal convention, since a diagonal fit reads
+  # the same whether the off-diagonal columns were mapped correctly or not.
+  A_diag <- diag(c(2, 0.5, 1.25, 3))
+  A_full <- matrix(c( 2.0,  0.6, -0.3,  0.1,
+                      0.6,  1.4,  0.2, -0.4,
+                     -0.3,  0.2,  1.1,  0.5,
+                      0.1, -0.4,  0.5,  1.7), d, d)
+  for (A in list(A_diag, A_full)) {
+    H <- -A
+    exact <- 0.5 * drop(t(g) %*% solve(A) %*% g)
+    fit <- tulpa:::.joint_local_ccd_misfit(ccd$z, u_c,
+                                           .lccd_quad_resp(ccd$z, g, H, 1.7),
+                                           rep(1, d))
+    # The design identifies the quadratic exactly, so the shape score is zero and
+    # the two centring readings are the exact ones.
+    expect_equal(fit$misfit, 0, tolerance = 1e-10)
+    expect_equal(fit$offset, sqrt(sum(g^2)), tolerance = 1e-8)
+    expect_equal(fit$mode_gain, exact, tolerance = 1e-8)
+    # It is a log-density gain in nats: the fitted peak sits at (-H)^-1 g and the
+    # quadratic's value there exceeds its value at the cell by exactly that.
+    zstar <- solve(A, g)
+    expect_equal(.lccd_quad_resp(matrix(zstar, 1L), g, H) -
+                   .lccd_quad_resp(matrix(0, 1L, d), g, H),
+                 exact, tolerance = 1e-10)
+  }
+
+  # The same whitened quadratic read on a cell whose per-axis marginal spreads
+  # are not 1: the whitening is what puts the gain in curvature units, so both
+  # readings are unchanged while the physical node positions are not.
+  s <- c(0.5, 2, 1, 4)
+  H <- -A_full
+  exact <- 0.5 * drop(t(g) %*% solve(A_full) %*% g)
+  u_nodes <- sweep(ccd$z, 2L, s, FUN = "*")
+  scaled <- tulpa:::.joint_local_ccd_misfit(u_nodes, u_c,
+                                            .lccd_quad_resp(ccd$z, g, H), s)
+  expect_equal(scaled$misfit, 0, tolerance = 1e-10)
+  expect_equal(scaled$offset, sqrt(sum(g^2)), tolerance = 1e-8)
+  expect_equal(scaled$mode_gain, exact, tolerance = 1e-8)
+
+  # And it is the reading `offset` is not: two cells with the SAME gradient norm
+  # and curvature an order of magnitude apart are displaced by very different
+  # amounts, which only the scaled form says.
+  sharp <- tulpa:::.joint_local_ccd_misfit(
+    ccd$z, u_c, .lccd_quad_resp(ccd$z, g, -10 * A_full), rep(1, d))
+  expect_equal(sharp$offset, scaled$offset, tolerance = 1e-8)
+  expect_equal(sharp$mode_gain, exact / 10, tolerance = 1e-8)
+})
+
+test_that("mode_gain declines where the fitted quadratic has no interior peak", {
+  d <- 4L
+  ccd <- ccd_grid(d, f_0 = sqrt(d) * 1.1)
+  u_c <- rep(0, d)
+  sd  <- rep(1, d)
+  g <- c(0.3, 0.2, -0.1, 0.4)
+  # A saddle: concave on three axes, convex on the fourth. The design represents
+  # it exactly, so the shape score and the unscaled displacement are both
+  # readable and only the curvature-scaled one declines.
+  y <- .lccd_quad_resp(ccd$z, g, diag(c(-1, -2, -1.5, 1)))
+  fit <- tulpa:::.joint_local_ccd_misfit(ccd$z, u_c, y, sd)
+  expect_equal(fit$misfit, 0, tolerance = 1e-10)
+  expect_equal(fit$offset, sqrt(sum(g^2)), tolerance = 1e-8)
+  expect_true(is.na(fit$mode_gain))
+
+  # And it declines with the fit: a non-finite response identifies nothing, and a
+  # design flat on one axis aliases that axis's coefficients.
+  bad <- y; bad[1L] <- NA_real_
+  expect_true(is.na(tulpa:::.joint_local_ccd_misfit(ccd$z, u_c, bad, sd)$mode_gain))
+  z <- ccd$z; z[, d] <- 0
+  flat <- tulpa:::.joint_local_ccd_misfit(z, u_c, -0.5 * rowSums(z^2), sd)
+  expect_true(is.finite(flat$misfit))
+  expect_true(is.na(flat$mode_gain))
+})
+
+test_that("a refined cell carries mode_gain beside the offset it scales", {
+  tg <- .lccd_gate_target(rho = 0.8, reach = 3, m = 3L)
+  rf <- tulpa:::.joint_local_ccd_refine(tg$grid, tg$lm, NULL, NULL,
+                                        colnames(tg$grid), tg$tags, tg$eval,
+                                        max_cells = 4L)
+  expect_gt(rf$info$n_cells_refined, 0L)
+  expect_length(rf$info$mode_gain, rf$info$n_cells_refined)
+  expect_true(all(is.finite(rf$info$mode_gain)))
+  expect_true(all(rf$info$mode_gain >= 0))
+  # This target's refined cell sits ON its own peak, so both centring readings
+  # are zero and the gain is the tighter statement of it.
+  expect_lt(max(rf$info$offset), 1e-6)
+  expect_lt(max(rf$info$mode_gain), 1e-10)
+})
+
+# --------------------------------------------------------------------------- #
+# The coarse-vs-refined mass ratio (gcol33/tulpa#323)                          #
+# --------------------------------------------------------------------------- #
+
+test_that("each refined cell reports its coarse-vs-refined mass comparison", {
+  mu <- c(0.5, 0.5); s <- c(0.3, 0.3)
+  gd <- .lccd_grid(list(a = c(-1, 0.5, 2), b = c(-1, 0.5, 2)), mu, s)
+  out <- tulpa:::.joint_local_ccd_refine(
+    gd$grid, gd$lm, modes = NULL, dnode = NULL,
+    latent_axes = c("a", "b"), tags = c(a = "identity", b = "identity"),
+    eval_nodes = .lccd_eval(mu, s), max_cells = 4L)
+  expect_false(is.null(out))
+  info <- out$info
+  nc <- info$n_cells_refined
+  expect_gt(nc, 0L)
+  for (nm in c("log_mass_ratio", "log_mass_coarse", "log_mass_refined",
+               "max_node_weight"))
+    expect_length(info[[nm]], nc)
+
+  # The ratio is the difference of the two masses it is formed from, so the pair
+  # is auditable rather than a derived scalar standing alone.
+  expect_equal(info$log_mass_ratio, info$log_mass_refined - info$log_mass_coarse,
+               tolerance = 1e-12)
+  # The coarse estimate is the base grid's own atom, Delta_c exp(ell_c), and
+  # Delta_c is 1 on a uniform tensor base.
+  expect_equal(info$log_mass_coarse, gd$lm[info$cells], tolerance = 1e-12)
+
+  # The refined estimate is recomputed off the returned grid rather than trusted:
+  # each refined cell's replacement block is one contiguous run of design rows
+  # carrying Delta_c * delta_j, so its mass is logSumExp(log dnode + lm).
+  design <- which(out$weight_kind == "design")
+  blk <- length(design) %/% nc
+  for (k in seq_len(nc)) {
+    ix  <- design[(k - 1L) * blk + seq_len(blk)]
+    lv  <- log(out$dnode[ix]) + out$log_marginal[ix]
+    lse <- tulpa:::.tulpa_logsumexp(lv)
+    expect_equal(info$log_mass_refined[k], lse, tolerance = 1e-12)
+    expect_equal(info$max_node_weight[k], max(exp(lv - lse)), tolerance = 1e-12)
+  }
+  expect_true(all(info$max_node_weight > 0 & info$max_node_weight <= 1))
+  # This fixture's refined cell sits on the peak, so every node it is replaced by
+  # sits below the atom it replaced and the cloud reads less mass than the atom.
+  expect_true(all(info$log_mass_ratio < 0))
+})
+
+test_that("a declined cell reports the mass comparison its nodes already paid for", {
+  tg <- .lccd_gate_target(rho = 0.8, reach = 1.5, m = 3L, gamma_shape = 2)
+  on <- tulpa:::.joint_local_ccd_refine(tg$grid, tg$lm, NULL, NULL,
+                                        colnames(tg$grid), tg$tags, tg$eval,
+                                        max_cells = 4L)
+  nd <- on$info$n_cells_declined
+  expect_gt(nd, 0L)
+  expect_equal(on$info$n_cells_refined, 0L)
+  for (nm in c("log_mass_ratio_declined", "log_mass_coarse_declined",
+               "log_mass_refined_declined", "max_node_weight_declined",
+               "mode_gain_declined"))
+    expect_length(on$info[[nm]], nd)
+  expect_true(all(is.finite(on$info$log_mass_ratio_declined)))
+  expect_equal(on$info$log_mass_ratio_declined,
+               on$info$log_mass_refined_declined -
+                 on$info$log_mass_coarse_declined, tolerance = 1e-12)
+  expect_equal(on$info$log_mass_coarse_declined, tg$lm[on$info$cells_declined],
+               tolerance = 1e-12)
+  expect_true(all(on$info$max_node_weight_declined > 0 &
+                    on$info$max_node_weight_declined <= 1))
+  # Every cell declined here, so the kept side is empty rather than absent.
+  expect_length(on$info$log_mass_ratio, 0L)
+  expect_length(on$info$mode_gain, 0L)
+})
+
+test_that("the mass ratio is stable where one node dominates the cell", {
+  # A node sitting several nats above the cell's own coordinate is the regime the
+  # ratio is read in, and the one a naive sum of exponentials loses.
+  delta <- c(0.1, 0.3, 0.6)
+  lm_all <- c(0, 4.44, -900)
+  m <- tulpa:::.joint_local_ccd_mass(delta, lm_all, 2)
+  expect_equal(m$log_mass_ratio,
+               log(0.1 + 0.3 * exp(4.44) + 0.6 * exp(-900)), tolerance = 1e-12)
+  expect_equal(m$log_mass_coarse, log(2) + 0, tolerance = 1e-12)
+  expect_equal(m$log_mass_refined - m$log_mass_coarse, m$log_mass_ratio,
+               tolerance = 1e-12)
+  expect_equal(m$max_node_weight,
+               0.3 * exp(4.44) / (0.1 + 0.3 * exp(4.44) + 0.6 * exp(-900)),
+               tolerance = 1e-12)
+
+  # Shifting every log-marginal by a constant leaves the ratio and the share
+  # untouched and moves both masses by that constant, which is what makes the
+  # pair readable on a common scale.
+  m2 <- tulpa:::.joint_local_ccd_mass(delta, lm_all + 1200, 2)
+  expect_equal(m2$log_mass_ratio, m$log_mass_ratio, tolerance = 1e-12)
+  expect_equal(m2$max_node_weight, m$max_node_weight, tolerance = 1e-12)
+  expect_equal(m2$log_mass_refined - m$log_mass_refined, 1200, tolerance = 1e-9)
+
+  # A non-finite node declines the whole reading rather than reporting part of it.
+  bad <- tulpa:::.joint_local_ccd_mass(delta, c(0, NA_real_, 1), 2)
+  expect_true(all(vapply(bad, is.na, logical(1))))
+})

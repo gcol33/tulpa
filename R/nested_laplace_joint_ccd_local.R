@@ -62,6 +62,41 @@
 # on it -- a gradient across the cell is a cross-cell estimator question, an axis
 # orthogonal to the local shape `skew_max` reads (gcol33/tulpa#321).
 #
+# That norm is a displacement and not yet a comparable one: it says nothing about
+# how sharply the cell's log-marginal falls away in the direction the gradient
+# points, so two cells with the same norm and curvature an order of magnitude
+# apart are displaced by very different amounts. The same fit estimates the
+# curvature too -- a central composite design identifies a full quadratic
+# exactly, so the whitened Hessian sits in the same coefficient vector
+# (H_jj = 2 c_jj, H_jk = c_jk for j < k) -- and `mode_gain = 0.5 g' (-H)^-1 g` is
+# the displacement in local curvature units, i.e. the nats the quadratic model
+# predicts the log-density gains by moving the expansion centre to the cell's own
+# fitted peak. It declines to NA where -H is not positive definite: a cell whose
+# fitted quadratic is not concave has no interior peak to be displaced from, and
+# the ratio would report a number carrying no such reading (gcol33/tulpa#324).
+#
+# The third axis is mass, and neither a shape score nor a centring score reaches
+# it. A refined cell carries two estimates of its own mass -- the coarse atom
+# `Delta_c exp(ell_c)` the base grid gave it, and the refined cloud
+# `Delta_c sum_j delta_j exp(ell_j)` its nodes give it -- so their ratio,
+#   log(M1 / M0) = logSumExp_j(log delta_j + ell_j - ell_c),
+# over the full node set INCLUDING the centre, is post-processing of numbers
+# already in hand and costs no inner solve. That comparison is the embedded-rule
+# local error indicator classical adaptive cubature uses to decide whether a
+# subdivided region's estimate is comparable to its unrefined siblings': two
+# rules of different degree on the SAME region, their difference the indicator.
+# This grid computes both rules, so the indicator is free. `log_mass_ratio`, the
+# two masses it is formed from, and `max_node_weight` -- the share the single
+# largest node takes of its own cell's refined mass -- are recorded per cell
+# (gcol33/tulpa#323).
+#
+# The three scores are orthogonal, and a cell can fail any one of them with the
+# other two clean: `misfit` is non-quadraticity (can the design represent the
+# cell's shape?), `offset` / `mode_gain` are off-centring (is the cell's
+# coordinate a representative point of it?), and `log_mass_ratio` is mass
+# correction (did refining change how much mass this cell competes for?). None
+# of the three gates; `skew_max` reads `misfit` and nothing else.
+#
 # The node cloud of each refined cell is clamped to the cell's Voronoi half-box
 # (half the distance to each neighbour on each axis), so clouds of distinct cells
 # never overlap and never spill into an unrefined neighbour's mass. Combined with
@@ -227,14 +262,27 @@
 # the linear term having its own columns, so an off-centre but exactly quadratic
 # cell scores zero misfit at any `offset` (gcol33/tulpa#321).
 #
-# Both NA when the design cannot identify the quadratic at all, which the caller
-# treats the same as a failing score: an unverified local Gaussian. `offset`
-# alone is NA on a rank-deficient design, where the aliased linear coefficients
-# come back NA and a norm over them would report a displacement that was never
-# estimated.
+# `mode_gain` is that same displacement in the cell's own curvature units. The
+# design identifies the full quadratic, so the whitened Hessian is in the same
+# coefficient vector -- the quadratic columns are laid out `(j, k)` for `j <= k`,
+# so `H[j, j] = 2 c_jj` and `H[j, k] = H[k, j] = c_jk` -- and
+# `0.5 g' (-H)^-1 g` is the log-density gain in nats the quadratic model predicts
+# from moving the expansion centre to the cell's fitted peak. Comparable across
+# cells whose curvature differs, which `offset` is not; `offset` is kept because
+# it is the unscaled reading and survives cases the scaled one cannot be formed
+# in (gcol33/tulpa#324).
+#
+# All three NA when the design cannot identify the quadratic at all, which the
+# caller treats the same as a failing score: an unverified local Gaussian.
+# `offset` alone is NA on a rank-deficient design, where the aliased linear
+# coefficients come back NA and a norm over them would report a displacement that
+# was never estimated. `mode_gain` is additionally NA wherever `-H` is not
+# positive definite -- a saddle-shaped cell has no interior peak to be displaced
+# from -- the same guard `.joint_local_ccd_marginal_sd()` applies to the
+# finite-difference Hessian.
 .joint_local_ccd_misfit <- function(u_nodes, u_c, lm_nodes, sd) {
     d <- length(u_c)
-    none <- list(misfit = NA_real_, offset = NA_real_)
+    none <- list(misfit = NA_real_, offset = NA_real_, mode_gain = NA_real_)
     if (!all(is.finite(lm_nodes)) || !all(is.finite(sd)) || any(sd <= 0))
         return(none)
     Z <- sweep(sweep(u_nodes, 2L, u_c, FUN = "-"), 2L, sd, FUN = "/")
@@ -250,8 +298,68 @@
     r3 <- sqrt(mean((rowSums(Z^2)^1.5)^2))
     if (!is.finite(r3) || r3 <= 0) return(none)
     g <- fit$coefficients[seq_len(d) + 1L]
-    list(misfit = 6 * sqrt(mean(fit$residuals^2)) / r3,
-         offset  = if (all(is.finite(g))) sqrt(sum(g^2)) else NA_real_)
+    ok_g <- all(is.finite(g))
+    list(misfit    = 6 * sqrt(mean(fit$residuals^2)) / r3,
+         offset    = if (ok_g) sqrt(sum(g^2)) else NA_real_,
+         mode_gain = if (ok_g)
+             .joint_local_ccd_mode_gain(g, fit$coefficients, d) else NA_real_)
+}
+
+# `0.5 * g' (-H)^-1 g` in nats, with `H` read back out of the quadratic columns
+# of the design matrix `.joint_local_ccd_misfit()` built. The column walk here
+# mirrors that construction exactly -- intercept, then the `d` linear columns,
+# then `(j, k)` for `k >= j` in ascending `j` -- so the coefficient a term is
+# read from is the coefficient it was fitted for. The cross terms `z_j z_k`
+# appear once each, hence the factor 2 on the diagonal and none off it.
+#
+# NA on any aliased quadratic coefficient (an unestimated Hessian entry) and on a
+# non-concave fit, where `(-H)^-1` is not a covariance and the quadratic form is
+# not a displacement.
+.joint_local_ccd_mode_gain <- function(g, coefs, d) {
+    H <- matrix(0, d, d)
+    p <- d + 1L
+    for (j in seq_len(d)) for (k in j:d) {
+        p <- p + 1L
+        cjk <- coefs[p]
+        if (!is.finite(cjk)) return(NA_real_)
+        if (j == k) H[j, j] <- 2 * cjk else { H[j, k] <- cjk; H[k, j] <- cjk }
+    }
+    negH <- -H
+    R <- tryCatch(chol(negH), error = function(e) NULL)
+    if (is.null(R)) return(NA_real_)
+    v <- backsolve(R, backsolve(R, g, transpose = TRUE))
+    val <- 0.5 * sum(g * v)
+    if (!is.finite(val)) NA_real_ else val
+}
+
+# The cell's two estimates of its own mass, and their ratio.
+#
+# `delta` are the design weights of the whole node set INCLUDING the centre (a
+# partition of unity) and `lm_all` the matching log-marginals, the centre first.
+# The coarse atom is `Delta_c exp(ell_c)` and the refined cloud is
+# `Delta_c sum_j delta_j exp(ell_j)`, so
+#   log(M1 / M0) = logSumExp_j(log delta_j + ell_j) - ell_c,
+# and `Delta_c` cancels out of it. Both masses are returned on the log scale with
+# `Delta_c` carried, so they are the cell's actual contributions to the integral
+# rather than a normalized pair, and their difference is the ratio exactly.
+#
+# `max_node_weight` is the share the single largest node takes of its own cell's
+# refined mass. It is the one weight-conditioning reading worth keeping here:
+# `ccd_weights()` is strictly positive and sums to 1, so `sum|w| / |sum w|` is
+# identically 1 and the weight entropy is a constant of the design.
+.joint_local_ccd_mass <- function(delta, lm_all, dn_c) {
+    none <- list(log_mass_ratio = NA_real_, log_mass_coarse = NA_real_,
+                 log_mass_refined = NA_real_, max_node_weight = NA_real_)
+    if (length(delta) != length(lm_all) || length(delta) == 0L) return(none)
+    if (!all(is.finite(delta)) || any(delta <= 0)) return(none)
+    if (!all(is.finite(lm_all)) || !is.finite(dn_c) || dn_c <= 0) return(none)
+    lv  <- log(delta) + lm_all
+    lse <- .tulpa_logsumexp(lv)
+    if (!is.finite(lse)) return(none)
+    list(log_mass_ratio   = lse - lm_all[1L],
+         log_mass_coarse  = log(dn_c) + lm_all[1L],
+         log_mass_refined = log(dn_c) + lse,
+         max_node_weight  = exp(max(lv) - lse))
 }
 
 # Greedy mutually-non-adjacent selection: take the highest-weight candidate, drop
@@ -292,9 +400,10 @@
 #   f0           CCD factorial-corner radius per whitened axis (INLA default 1.1).
 #   skew_max     a cell keeps its cloud only while `.joint_local_ccd_misfit()`'s
 #                `misfit` stays below this; above it the cell is put back as its
-#                own mass atom (gcol33/tulpa#318). The same call's `offset` is
-#                recorded for every cell either way and gates nothing
-#                (gcol33/tulpa#321).
+#                own mass atom (gcol33/tulpa#318). The same call's `offset` /
+#                `mode_gain`, and the cell's coarse-vs-refined mass comparison,
+#                are recorded for every cell either way and gate nothing
+#                (gcol33/tulpa#321, #323, #324).
 #   verbose      announce the refinement summary.
 #   cov_blocks   length-n list of per-cell fixed-effect covariance blocks, or
 #                NULL. Carried cell-for-cell exactly like `modes`, so a refined
@@ -372,9 +481,16 @@
     refined         <- integer(0)
     misfit          <- numeric(0)
     offset          <- numeric(0)
+    mode_gain       <- numeric(0)
     declined_cells  <- integer(0)
     declined_misfit <- numeric(0)
     declined_offset <- numeric(0)
+    declined_gain   <- numeric(0)
+    # The coarse-vs-refined mass comparison, per cell, on both sides of the gate
+    # (gcol33/tulpa#323). Accumulated as a list of the four readings so the two
+    # sides stay one code path.
+    mass_kept     <- list()
+    mass_declined <- list()
 
     for (c in chosen) {
         cc  <- curv[[c]]
@@ -418,18 +534,29 @@
         # (gcol33/tulpa#318). The score is read off the nodes just evaluated, so
         # the decision costs no further solve -- the ones already spent are the
         # price of finding out. Passing it says the design can represent the
-        # cell's shape, and only that: the same fit's whitened gradient `offset`
-        # is how far the cell's own peak sits from the coordinate the cloud was
-        # centred on, which a third-order score cannot see and which nothing here
-        # gates on (gcol33/tulpa#321).
+        # cell's shape, and only that: the same fit's `offset` / `mode_gain` are
+        # how far the cell's own peak sits from the coordinate the cloud was
+        # centred on -- unscaled, and in the cell's own curvature units -- which a
+        # third-order score cannot see and which nothing here gates on
+        # (gcol33/tulpa#321, #324).
         fit_c <- .joint_local_ccd_misfit(rbind(u_c, u_nodes), u_c,
                                          c(log_marginal[c], lm_off),
                                          cc$sd_marginal %||% cc$sd)
+        # Both mass estimates of this cell are now in hand -- the coarse atom the
+        # base grid gave it and the cloud its own nodes give it -- so their
+        # comparison is arithmetic, and it is recorded whichever way the gate
+        # goes: the nodes were evaluated before the score was read
+        # (gcol33/tulpa#323).
+        mass_c <- .joint_local_ccd_mass(c(delta_centre, delta_off),
+                                        c(log_marginal[c], lm_off), dn_w[c])
+
         mis <- fit_c$misfit
         if (!isTRUE(mis < skew_max)) {
             declined_cells  <- c(declined_cells, c)
             declined_misfit <- c(declined_misfit, mis)
             declined_offset <- c(declined_offset, fit_c$offset)
+            declined_gain   <- c(declined_gain, fit_c$mode_gain)
+            mass_declined[[length(mass_declined) + 1L]] <- mass_c
             next
         }
 
@@ -459,8 +586,16 @@
         refined    <- c(refined, c)
         misfit     <- c(misfit, mis)
         offset     <- c(offset, fit_c$offset)
+        mode_gain  <- c(mode_gain, fit_c$mode_gain)
+        mass_kept[[length(mass_kept) + 1L]] <- mass_c
         n_nodes_added <- n_nodes_added + nrow(theta_nodes)
     }
+
+    # One numeric vector per mass reading, in cell order, on each side of the
+    # gate. An empty side gives a zero-length numeric, matching the empty
+    # `misfit` / `offset` vectors beside it.
+    mass_col <- function(acc, nm)
+        vapply(acc, function(m) m[[nm]], numeric(1))
 
     keep <- setdiff(seq_len(n), refined)
     out_grid <- rbind(joint_grid[keep, , drop = FALSE],
@@ -508,10 +643,24 @@
                              cell_share      = cell_share,
                              misfit          = misfit,
                              offset          = offset,
+                             mode_gain       = mode_gain,
+                             log_mass_ratio   = mass_col(mass_kept, "log_mass_ratio"),
+                             log_mass_coarse  = mass_col(mass_kept, "log_mass_coarse"),
+                             log_mass_refined = mass_col(mass_kept, "log_mass_refined"),
+                             max_node_weight  = mass_col(mass_kept, "max_node_weight"),
                              skew_max        = skew_max,
                              cells_declined  = declined_cells,
                              misfit_declined = declined_misfit,
                              offset_declined = declined_offset,
+                             mode_gain_declined = declined_gain,
+                             log_mass_ratio_declined =
+                                 mass_col(mass_declined, "log_mass_ratio"),
+                             log_mass_coarse_declined =
+                                 mass_col(mass_declined, "log_mass_coarse"),
+                             log_mass_refined_declined =
+                                 mass_col(mass_declined, "log_mass_refined"),
+                             max_node_weight_declined =
+                                 mass_col(mass_declined, "max_node_weight"),
                              n_cells_declined = length(declined_cells),
                              n_cells_before  = n,
                              n_cells_after   = nrow(out_grid),

@@ -1,5 +1,35 @@
 # tulpa NEWS
 
+## 0.0.148
+
+* A locally refined cell now reports the ratio of the two estimates of its own
+  mass it already carries (gcol33/tulpa#323): the coarse atom
+  `Delta_c exp(ell_c)` the base grid gave it against the refined cloud
+  `Delta_c sum_j delta_j exp(ell_j)` its own nodes give it, as
+  `log_mass_ratio = logSumExp_j(log delta_j + ell_j - ell_c)` over the full node
+  set including the centre. That comparison is the embedded-rule local error
+  indicator classical adaptive cubature uses to decide whether a subdivided
+  region's estimate is comparable to its unrefined siblings', and this grid
+  evaluates both rules already, so it costs no inner solve. Recorded per cell on
+  `local_ccd_info` with the two masses it is formed from and `max_node_weight`,
+  the share the single largest node takes of its own cell's refined mass, for
+  refined and declined cells alike.
+* The centring score gains its curvature-scaled form (gcol33/tulpa#324). A
+  central composite design identifies a full quadratic exactly, so the whitened
+  Hessian sits in the same coefficient vector the gradient does, and
+  `mode_gain = 0.5 g' (-H)^-1 g` is the nats the quadratic model predicts the
+  log-density gains by moving the expansion centre to the cell's own fitted
+  peak. The plain gradient norm `offset` says nothing about how sharply the
+  log-marginal falls away in the direction it points, so two cells with the same
+  norm and curvature an order of magnitude apart are displaced by very different
+  amounts; the scaled form is comparable across cells and the unscaled one is
+  kept for the cases the scaled one cannot be formed in. `mode_gain` declines to
+  NA where `-H` is not positive definite: a cell whose fitted quadratic is not
+  concave has no interior peak to be displaced from.
+* The three scores are orthogonal and none of them gates: `misfit` is
+  non-quadraticity, `offset` / `mode_gain` are off-centring, `log_mass_ratio` is
+  mass correction, and `skew_max` reads `misfit` and nothing else.
+
 ## 0.0.147
 
 * The outer-grid dump / rebuild harness is in the test suite
