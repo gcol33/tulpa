@@ -1,6 +1,7 @@
 # Nested-Laplace integration over a random-effect covariance Sigma
-# (Bias-2 fix: marginalize Sigma over a grid, report weighted quantiles of the
-# derived scale / correlation parameters instead of the plug-in MAP).
+# (Bias-2 fix: marginalize Sigma over a grid, report a marginalized median and
+# interval for the derived scale / correlation parameters instead of the
+# plug-in MAP).
 
 sim_corr_recov <- function(seed, G = 60L, npg = 12L, beta = c(-0.3, 0.7),
                            Sigma = matrix(c(0.8^2, 0.5 * 0.8 * 0.6,
@@ -234,4 +235,165 @@ test_that("n_quad > 1 (AGHQ inner solve) recovers Sigma on a single factor", {
   }
   expect_gte(covered[["sigma_1"]], 2L)
   expect_gte(covered[["sigma_2"]], 2L)
+})
+
+
+# ---------------------------------------------------------------------------
+# Reading the interval off a quadrature design (gcol33/tulpa#308).
+#
+# A CCD reproduces the integrand's moments; its node positions carry no
+# probability mass, so a discrete weighted quantile over them is bounded by the
+# design's own extent. These pin the moment-matched summary that replaces it and
+# the explicit out-of-support policy on the discrete one.
+# ---------------------------------------------------------------------------
+
+# The standardized k = 1 design: centre plus two axial nodes at +/- 1.1, with
+# the corrected R-INLA design weights.
+ccd1 <- local({
+  g <- ccd_grid(1L, f_0 = 1.1)
+  w <- ccd_weights(g)
+  list(z = as.numeric(g$z), w = w / sum(w))
+})
+
+test_that("moment interval reproduces the lognormal the design's moments imply", {
+  m <- -0.3; s <- 0.8
+  u <- m + s * ccd1$z
+  v <- exp(u)
+  q <- tulpa:::.nl_moment_quantile(v, ccd1$w, c(0.025, 0.5, 0.975), "positive")
+
+  mu  <- sum(ccd1$w * u)
+  sdu <- sqrt(sum(ccd1$w * u^2) - mu^2)
+  expect_equal(q, exp(mu + qnorm(c(0.025, 0.5, 0.975)) * sdu))
+  # The median is the back-transformed first moment, so it is a scale rather
+  # than one of the three nodes.
+  expect_equal(q[2L], exp(mu))
+  # And the interval is free to leave the node range, which the discrete
+  # quantile over the same nodes cannot.
+  expect_lt(q[1L], min(v))
+  expect_gt(q[3L], max(v))
+  expect_equal(tulpa:::.nl_wtd_quantile(v, ccd1$w, c(0.025, 0.975)),
+               c(min(v), max(v)))
+})
+
+test_that("moment interval respects each domain and declines outside it", {
+  probs <- c(0.025, 0.5, 0.975)
+  # A correlation is summarized on the Fisher-z coordinate, so the interval
+  # stays inside (-1, 1) however wide the nodes are.
+  qc <- tulpa:::.nl_moment_quantile(c(0, 0.95, -0.95), ccd1$w, probs,
+                                    "correlation")
+  expect_true(all(abs(qc) < 1))
+  expect_equal(qc[2L], 0)
+  # An unbounded quantity gets the plain Gaussian interval.
+  qu <- tulpa:::.nl_moment_quantile(c(0, 2, -2), ccd1$w, probs, "unbounded")
+  expect_equal(qu[2L], 0)
+  expect_equal(qu[3L], -qu[1L])
+  # Nodes outside the domain, or no usable weight, withhold the summary rather
+  # than dropping the offending node and integrating a different design.
+  expect_true(all(is.na(
+    tulpa:::.nl_moment_quantile(c(1, -1, 2), ccd1$w, probs, "positive"))))
+  expect_true(all(is.na(
+    tulpa:::.nl_moment_quantile(c(0, 1, -0.5), ccd1$w, probs, "correlation"))))
+  expect_true(all(is.na(
+    tulpa:::.nl_moment_quantile(c(1, 2, 3), c(0, 0, 0), probs, "positive"))))
+  expect_error(
+    tulpa:::.nl_moment_quantile(c(1, 2, 3), ccd1$w, probs, "nope"),
+    "unknown derived-quantity domain")
+})
+
+test_that("the discrete quantile's out-of-support policy is explicit", {
+  v <- c(1, 2, 3); w <- rep(1 / 3, 3L)
+  # Default: the extreme atom, the cumulative-mass convention a sample uses.
+  expect_equal(tulpa:::.nl_wtd_quantile(v, w, c(0.025, 0.975)), c(1, 3))
+  # outside = "na" withholds it, and leaves interior probabilities alone.
+  expect_true(all(is.na(
+    tulpa:::.nl_wtd_quantile(v, w, c(0.025, 0.975), outside = "na"))))
+  expect_equal(tulpa:::.nl_wtd_quantile(v, w, 0.5, outside = "na"), 2)
+  # A sample large enough to bracket the requested probability is unaffected by
+  # the policy at all.
+  vs <- qnorm(seq(0.001, 0.999, length.out = 400L))
+  ws <- rep(1 / 400, 400L)
+  expect_equal(tulpa:::.nl_wtd_quantile(vs, ws, c(0.025, 0.975)),
+               tulpa:::.nl_wtd_quantile(vs, ws, c(0.025, 0.975),
+                                        outside = "na"))
+})
+
+test_that("each derived quantity carries the domain its interval is formed on", {
+  S <- matrix(c(0.49, 0.14, 0.14, 0.25), 2, 2)
+  D <- tulpa:::.re_cov_derived_matrix(list(S, S * 1.1), 2L, full = TRUE)
+  expect_equal(colnames(D),
+               c("sigma_1", "sigma_2", "rho_12",
+                 "Sigma_11", "Sigma_12", "Sigma_22"))
+  expect_equal(attr(D, "domain"),
+               c("positive", "positive", "correlation",
+                 "positive", "unbounded", "positive"))
+  Dd <- tulpa:::.re_cov_derived_matrix(list(S, S), 2L, full = FALSE)
+  expect_equal(colnames(Dd), c("sigma_1", "sigma_2", "Sigma_11", "Sigma_22"))
+  expect_equal(attr(Dd, "domain"), rep("positive", 4L))
+  # Several blocks concatenate their domains alongside their columns.
+  layout <- list(
+    list(nc = 2L, full = TRUE,  k = 3L, label = "g", n_groups = 5L),
+    list(nc = 1L, full = FALSE, k = 1L, label = "h", n_groups = 4L))
+  nodes <- list(list(S, matrix(0.36, 1, 1)), list(S * 1.2, matrix(0.4, 1, 1)))
+  DM <- tulpa:::.re_cov_derived_matrix_multi(nodes, layout)
+  expect_equal(length(attr(DM, "domain")), ncol(DM))
+  expect_equal(attr(DM, "domain")[colnames(DM) == "g.rho_12"], "correlation")
+  expect_equal(attr(DM, "domain")[colnames(DM) == "h.sigma_1"], "positive")
+})
+
+test_that("the summary support decides how the interval is read off the nodes", {
+  layout <- list(list(nc = 1L, full = FALSE, k = 1L, label = "g",
+                      n_groups = 5L))
+  sig <- exp(-0.3 + 0.8 * ccd1$z)
+  nodes <- lapply(sig, function(s) list(matrix(s^2, 1, 1)))
+
+  mom <- tulpa:::.re_cov_derived_summary(nodes, ccd1$w, layout,
+                                         support = "moment_rule")
+  den <- tulpa:::.re_cov_derived_summary(nodes, ccd1$w, layout,
+                                         support = "density")
+  row <- function(p, nm) p$posterior[p$posterior$parameter == nm, ]
+  # Same weighted moments either way; only the median and interval differ.
+  expect_equal(row(mom, "sigma_1")$mean, row(den, "sigma_1")$mean)
+  expect_equal(row(mom, "sigma_1")$sd, row(den, "sigma_1")$sd)
+  # The density reading is pinned to the node extent; the moment reading is not.
+  expect_equal(c(row(den, "sigma_1")$ci_lo, row(den, "sigma_1")$ci_hi),
+               c(min(sig), max(sig)))
+  expect_lt(row(mom, "sigma_1")$ci_lo, min(sig))
+  expect_gt(row(mom, "sigma_1")$ci_hi, max(sig))
+  # A variance is positive too, so its interval is a positive lognormal one.
+  expect_gt(row(mom, "Sigma_11")$ci_lo, 0)
+  # With equal weights over genuine draws the density reading is the sample
+  # quantile, which is what the Gibbs backend relies on.
+  set.seed(11L)
+  dr <- lapply(rexp(400L), function(s) list(matrix(s^2, 1, 1)))
+  eq <- tulpa:::.re_cov_derived_summary(dr, rep(1 / 400, 400L), layout)
+  expect_equal(row(eq, "sigma_1")$median,
+               unname(quantile(vapply(dr, function(z) sqrt(z[[1L]][1, 1]),
+                                      numeric(1)), 0.5, type = 7)),
+               tolerance = 1e-8)
+})
+
+test_that("a CCD fit reports a scale interval that is not the node extent", {
+  skip_on_cran()
+  d <- sim_corr_recov(77L, G = 60L, npg = 12L)
+  rt <- list(idx = d$grp, n_groups = d$G, n_coefs = 2L, Z = d$Z)
+  res <- tulpa_re_cov_nested(d$y, rep(1L, d$N), d$X, rt, family = "binomial",
+                             control = list(diagnose_k = FALSE))
+  # theta axis 1 is log(L_11) = log(sigma_1), so the design's extent on sigma_1
+  # is exp(range(theta_grid[, 1])). The reported interval covers strictly more.
+  ax  <- range(as.numeric(res$theta_grid[, 1L]))
+  row <- res$posterior[res$posterior$parameter == "sigma_1", ]
+  expect_lt(log(row$ci_lo), ax[1L])
+  expect_gt(log(row$ci_hi), ax[2L])
+  expect_gt(row$ci_lo, 0)
+  # A correlation interval stays inside (-1, 1).
+  rr <- res$posterior[res$posterior$parameter == "rho_12", ]
+  expect_gt(rr$ci_lo, -1)
+  expect_lt(rr$ci_hi, 1)
+  # It is a Gaussian interval on log(sigma), so it is symmetric about the
+  # reported median in that coordinate -- which a quantile read off scattered
+  # node positions would not be.
+  expect_equal(log(row$ci_hi) - log(row$median),
+               log(row$median) - log(row$ci_lo))
+  expect_equal(atanh(rr$ci_hi) - atanh(rr$median),
+               atanh(rr$median) - atanh(rr$ci_lo))
 })

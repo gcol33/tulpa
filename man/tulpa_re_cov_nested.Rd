@@ -107,8 +107,8 @@ tensor product).
 deviations per whitened axis (default 3); grid only.
 \item \code{n_draws}: posterior draws of the fixed effects synthesized from the
 node mixture (default 2000), exposed as \code{draws} for the generic
-\code{tulpa_fit} methods. The \code{Sigma} posterior is summarized exactly
-(weighted node quantiles) in \code{posterior}, independent of \code{n_draws}.
+\code{tulpa_fit} methods. The \code{Sigma} posterior is summarized directly from
+the integration nodes in \code{posterior}, independent of \code{n_draws}.
 \item \code{seed}: optional integer seed for the fixed-effect draw synthesis.
 \item \code{diagnose_k}: if \code{TRUE} (default), compute the outer Pareto k-hat
 accuracy diagnostic for the Gaussian proposal over the hyperparameters,
@@ -210,6 +210,19 @@ but only tractable for small \code{k}.
 Each node \code{k} contributes integration weight proportional to
 \code{Delta_k * exp(log_marginal(Sigma_k) + log_prior_theta(theta_k))}, following
 the INLA convention \verb{int ~ sum_k Delta_k pi(theta_k)}.
+
+The two layouts also decide how the reported median and 2.5\\%/97.5\\% interval
+of each derived quantity are read off the nodes. A tensor grid's uniform
+cells discretize the posterior density, so the cumulative node weights are a
+CDF and the summary is the weighted quantile. A CCD is a moment rule: its
+nodes sit where they reproduce the integrand's first two moments and carry no
+probability mass of their own, so the summary is moment-matched instead --
+the first two weighted moments on each quantity's own coordinate (\code{log} for a
+scale or a variance, \code{atanh} for a correlation, the identity for a covariance)
+define a Gaussian there whose quantiles are mapped back. Scale intervals are
+therefore positive and asymmetric, and correlation intervals stay inside
+\verb{(-1, 1)}. The \code{mean} and \code{sd} columns are the weighted moments under either
+layout.
 
 By default (\code{hyperprior = "flat"}) \code{log_prior_theta} is the zero function:
 flat in log(theta), the same convention the nested-Laplace spatial /

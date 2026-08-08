@@ -3,8 +3,8 @@
 # Bias-2 fix (the `Marginalize Derived Quantities` principle): rather than
 # report each Sigma at its mode (the plug-in MAP, biased low for skewed
 # variance-component marginals at small G), integrate the Laplace marginal
-# likelihood over the joint Sigma-grid and report weighted quantiles of every
-# Sigma and its derived scale / correlation parameters.
+# likelihood over the joint Sigma-grid and report a marginalized median and
+# interval for every Sigma and its derived scale / correlation parameters.
 #
 # Composition: the inner solve at each grid point is the multi-RE Laplace fit
 # (tulpa_laplace, which returns the Laplace log-marginal at SUPPLIED covariances);
@@ -338,31 +338,42 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
 # is a transform of a SINGLE Sigma (never of summarized components), so this is
 # the per-cell / per-draw input the weighted-quantile summary and the
 # posterior-draw synthesis consume (`Marginalize Derived Quantities`).
+#
+# Every column also carries its DOMAIN, in the matrix's `domain` attribute: a
+# scale and a variance are `positive`, a correlation is `correlation`, an
+# off-diagonal covariance is `unbounded`. The moment-matched interval
+# (`.nl_moment_quantile`) forms each interval on that domain's own coordinate,
+# so the domain is registered here beside the quantity it belongs to rather than
+# recovered from the column name downstream.
 .re_cov_derived_matrix <- function(Sig_list, nc, full = TRUE) {
-  cols <- list()
+  cols <- list(); dom <- character(0)
+  put <- function(name, domain, fn) {
+    cols[[name]] <<- vapply(Sig_list, fn, numeric(1))
+    dom[[name]]  <<- domain
+  }
   for (i in seq_len(nc)) {
-    cols[[sprintf("sigma_%d", i)]] <-
-      vapply(Sig_list, function(S) sqrt(S[i, i]), numeric(1))
+    put(sprintf("sigma_%d", i), "positive", function(S) sqrt(S[i, i]))
   }
   if (full && nc > 1L) {
     for (i in seq_len(nc - 1L)) for (j in (i + 1L):nc) {
-      cols[[sprintf("rho_%d%d", i, j)]] <-
-        vapply(Sig_list, function(S) S[i, j] / sqrt(S[i, i] * S[j, j]),
-               numeric(1))
+      put(sprintf("rho_%d%d", i, j), "correlation",
+          function(S) S[i, j] / sqrt(S[i, i] * S[j, j]))
     }
   }
   if (full) {
     for (i in seq_len(nc)) for (j in i:nc) {
-      cols[[sprintf("Sigma_%d%d", i, j)]] <-
-        vapply(Sig_list, function(S) S[i, j], numeric(1))
+      put(sprintf("Sigma_%d%d", i, j),
+          if (i == j) "positive" else "unbounded",
+          function(S) S[i, j])
     }
   } else {
     for (i in seq_len(nc)) {
-      cols[[sprintf("Sigma_%d%d", i, i)]] <-
-        vapply(Sig_list, function(S) S[i, i], numeric(1))
+      put(sprintf("Sigma_%d%d", i, i), "positive", function(S) S[i, i])
     }
   }
-  do.call(cbind, cols)   # length(Sig_list) x n_derived, named columns
+  D <- do.call(cbind, cols)   # length(Sig_list) x n_derived, named columns
+  attr(D, "domain") <- unname(dom[colnames(D)])
+  D
 }
 
 # Combine the per-block derived matrices for a set of joint Sigma draws. Each
@@ -381,7 +392,9 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
     }
     D
   })
-  do.call(cbind, parts)
+  D <- do.call(cbind, parts)
+  attr(D, "domain") <- unlist(lapply(parts, attr, "domain"), use.names = FALSE)
+  D
 }
 
 # Marginalized summary of one or more random-effect covariances. Shared by the
@@ -389,17 +402,34 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
 # sampler (tulpa_re_cov_gibbs, equal-weight posterior draws). Each element of
 # `Sig_node_list` is the per-block list of Sigma matrices for one cell / draw.
 # `Marginalize Derived Quantities`: each derived value is computed PER matrix
-# then weighted-quantiled. With equal weights `.nl_wtd_quantile` reduces to the
-# sample quantile, so the same code summarizes both paths.
-.re_cov_derived_summary <- function(Sig_node_list, w, layout) {
-  D <- .re_cov_derived_matrix_multi(Sig_node_list, layout)
+# then summarized, never assembled from summarized components.
+#
+# `support` says what the weights are, which decides how the median and the
+# interval are read off them. `"density"` means the weights are proportional to
+# posterior mass -- the Gibbs sampler's equal-weight draws, and the tensor grid,
+# whose uniform cells discretize the density -- so their cumulative sum is a CDF
+# and the weighted quantile is the summary (reducing to the sample quantile at
+# equal weight). `"moment_rule"` means the weights are a central-composite
+# design's: they reproduce the integrand's moments, and the node positions carry
+# no mass, so the interval comes from the moments via `.nl_moment_quantile()` on
+# each quantity's own domain (gcol33/tulpa#308). The mean and SD columns are the
+# same weighted moments either way.
+.re_cov_derived_summary <- function(Sig_node_list, w, layout,
+                                    support = c("density", "moment_rule")) {
+  support <- match.arg(support)
+  D   <- .re_cov_derived_matrix_multi(Sig_node_list, layout)
+  dom <- attr(D, "domain")
+  probs <- c(0.025, 0.5, 0.975)
 
-  summarize <- function(x) {
+  summarize <- function(x, domain) {
     ms <- .nl_wtd_mean_sd(x, w)
-    q  <- .nl_wtd_quantile(x, w, c(0.025, 0.5, 0.975))
+    q  <- if (identical(support, "moment_rule"))
+      .nl_moment_quantile(x, w, probs, domain)
+    else .nl_wtd_quantile(x, w, probs, outside = "clamp")
     c(mean = ms$mean, sd = ms$sd, median = q[2L], ci_lo = q[1L], ci_hi = q[3L])
   }
-  post <- t(vapply(seq_len(ncol(D)), function(j) summarize(D[, j]), numeric(5)))
+  post <- t(vapply(seq_len(ncol(D)),
+                   function(j) summarize(D[, j], dom[[j]]), numeric(5)))
   rownames(post) <- colnames(D)
   posterior <- data.frame(parameter = rownames(post), post,
                           row.names = NULL, check.names = FALSE)
@@ -1368,6 +1398,19 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
 #' `Delta_k * exp(log_marginal(Sigma_k) + log_prior_theta(theta_k))`, following
 #' the INLA convention `int ~ sum_k Delta_k pi(theta_k)`.
 #'
+#' The two layouts also decide how the reported median and 2.5\%/97.5\% interval
+#' of each derived quantity are read off the nodes. A tensor grid's uniform
+#' cells discretize the posterior density, so the cumulative node weights are a
+#' CDF and the summary is the weighted quantile. A CCD is a moment rule: its
+#' nodes sit where they reproduce the integrand's first two moments and carry no
+#' probability mass of their own, so the summary is moment-matched instead --
+#' the first two weighted moments on each quantity's own coordinate (`log` for a
+#' scale or a variance, `atanh` for a correlation, the identity for a covariance)
+#' define a Gaussian there whose quantiles are mapped back. Scale intervals are
+#' therefore positive and asymmetric, and correlation intervals stay inside
+#' `(-1, 1)`. The `mean` and `sd` columns are the weighted moments under either
+#' layout.
+#'
 #' By default (`hyperprior = "flat"`) `log_prior_theta` is the zero function:
 #' flat in log(theta), the same convention the nested-Laplace spatial /
 #' temporal / RE-scale axes use (icar / rw1 / rw2 / ar1's tau / iid, none of
@@ -1454,8 +1497,8 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
 #'       deviations per whitened axis (default 3); grid only.
 #'     \item `n_draws`: posterior draws of the fixed effects synthesized from the
 #'       node mixture (default 2000), exposed as `draws` for the generic
-#'       `tulpa_fit` methods. The `Sigma` posterior is summarized exactly
-#'       (weighted node quantiles) in `posterior`, independent of `n_draws`.
+#'       `tulpa_fit` methods. The `Sigma` posterior is summarized directly from
+#'       the integration nodes in `posterior`, independent of `n_draws`.
 #'     \item `seed`: optional integer seed for the fixed-effect draw synthesis.
 #'     \item `diagnose_k`: if `TRUE` (default), compute the outer Pareto k-hat
 #'       accuracy diagnostic for the Gaussian proposal over the hyperparameters,
@@ -1747,7 +1790,12 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   }
 
   # --- derived quantities, marginalized over the grid -----------------------
-  summ <- .re_cov_derived_summary(Sig_node_list, w, layout)
+  # The CCD is a moment rule, so its median and interval come from the moments
+  # it reproduces; the tensor grid's uniform cells discretize the density, so
+  # its cumulative weights are a CDF and the weighted quantile is the summary.
+  summ <- .re_cov_derived_summary(
+    Sig_node_list, w, layout,
+    support = if (identical(integration, "ccd")) "moment_rule" else "density")
   posterior <- summ$posterior
 
   # --- plug-in MAP summary (for comparison) ---------------------------------

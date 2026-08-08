@@ -55,7 +55,20 @@
 # (sigma, alpha) reparameterization) from the joint nested-Laplace
 # posterior. Weighted quantiles handle skewed/heavy-tailed marginals that
 # `mean +/- 1.96 sd` summaries misrepresent.
-.nl_wtd_quantile <- function(values, weights, probs) {
+#
+# `outside` is the policy for a probability beyond the support's own cumulative
+# range, `[p[1], p[n]]`. The cumulative weights are a CDF only when the weights
+# are proportional to posterior mass -- an MCMC sample, or a tensor grid whose
+# uniform cells discretize the density -- and there the extreme atom is the
+# right answer, the same convention `stats::quantile(type = 7)` uses; that is
+# `"clamp"`. On weights that are a QUADRATURE DESIGN (`ccd_weights()`) the
+# cumulative sum is not a CDF at all, and clamping reports the design's own
+# extent as a posterior interval (gcol33/tulpa#308); `"na"` withholds the number
+# instead. Such a support is summarized by `.nl_moment_quantile()`, which uses
+# the moments the design does deliver.
+.nl_wtd_quantile <- function(values, weights, probs,
+                             outside = c("clamp", "na")) {
+  outside <- match.arg(outside)
   ord <- order(values)
   v <- as.numeric(values)[ord]
   w <- as.numeric(weights)[ord]
@@ -85,11 +98,70 @@
   # midpoints. The collapse (tied p -> mean of v) is the right behavior
   # at that resolution -- the underlying mass between the tied cells is
   # zero up to floating-point error. Suppress the noise.
+  na_outside <- identical(outside, "na")
   vapply(probs, function(q) {
-    if (q <= p[1L])          return(v[1L])
-    if (q >= p[length(p)])   return(v[length(v)])
+    if (q <= p[1L])        return(if (na_outside) NA_real_ else v[1L])
+    if (q >= p[length(p)]) return(if (na_outside) NA_real_ else v[length(v)])
     suppressWarnings(approx(p, v, xout = q, method = "linear")$y)
   }, numeric(1L))
+}
+
+# Monotone maps between a derived quantity's own domain and the unbounded
+# coordinate a moment-matched interval is formed on. `positive` covers standard
+# deviations and variances, `correlation` the (-1, 1) interval of a correlation,
+# and `unbounded` a covariance entry, whose sign is free. A registry rather than
+# a branch, so a new derived quantity names its domain and inherits the
+# interval.
+#
+# `in_domain` is the map's own support, checked before it is applied so a
+# degenerate node (a collapsed scale, a correlation on the boundary) is reported
+# as unsummarizable rather than reaching `log` / `atanh` as a NaN.
+.NL_DOMAIN_TRANSFORM <- list(
+  positive    = list(to = log,      from = exp,
+                     in_domain = function(x) x > 0),
+  correlation = list(to = atanh,    from = tanh,
+                     in_domain = function(x) abs(x) < 1),
+  unbounded   = list(to = identity, from = identity,
+                     in_domain = function(x) rep(TRUE, length(x)))
+)
+
+# Median and interval of a quantity evaluated on a QUADRATURE DESIGN rather than
+# sampled from the posterior.
+#
+# A central-composite design (`ccd_grid()` + `ccd_weights()`) is a moment rule:
+# its nodes sit where they reproduce the first two moments of the integrand, and
+# their positions carry no probability mass of their own. So the cumulative
+# design weight across them is not a CDF, and a discrete weighted quantile over
+# them returns an interval bounded by the design's own extent -- at k
+# parameters, `theta_hat +/- 1.1 sqrt(k) sd`, whose Gaussian coverage is
+# `2 Phi(1.1 sqrt(k)) - 1` no matter how much data there is (gcol33/tulpa#308).
+#
+# The moments ARE delivered, so the interval comes from them: the first two
+# weighted moments on the domain's unbounded coordinate define a Gaussian there
+# and its quantiles are mapped back. On a positive quantity that is a lognormal
+# interval -- positive, asymmetric, and free to leave the node range -- and on a
+# correlation it stays inside (-1, 1). At `probs = 0.5` the Gaussian quantile is
+# its mean, so the median is the back-transformed first moment.
+#
+# Returns NA for every requested probability when no node carries usable weight,
+# or when any weighted node falls outside the domain: dropping such a node would
+# evaluate the moment rule on a design other than the one that was integrated.
+.nl_moment_quantile <- function(values, weights, probs, domain = "unbounded") {
+  tr <- .NL_DOMAIN_TRANSFORM[[domain]]
+  if (is.null(tr)) {
+    stop("unknown derived-quantity domain '", domain, "'.", call. = FALSE)
+  }
+  use <- is.finite(weights) & weights > 0 & is.finite(values)
+  if (!any(use)) return(rep(NA_real_, length(probs)))
+  v <- as.numeric(values)[use]
+  if (!all(tr$in_domain(v))) return(rep(NA_real_, length(probs)))
+  u <- tr$to(v)
+  if (!all(is.finite(u))) return(rep(NA_real_, length(probs)))
+  w <- as.numeric(weights)[use]
+  w <- w / sum(w)
+  m <- sum(w * u)
+  s <- sqrt(max(0, sum(w * u^2) - m^2))
+  tr$from(m + stats::qnorm(probs) * s)
 }
 
 # Summary of a weighted mixture of Gaussians, one mixture per parameter.

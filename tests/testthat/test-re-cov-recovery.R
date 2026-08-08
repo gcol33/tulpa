@@ -140,8 +140,14 @@ test_that("strict N=20 gate: binomial identified (all three gated)", {
 # checks (no point-bias or coverage gate) while the gibbs sibling above carries
 # the strict N=20 gate. Close the gap on the path most users actually hit
 # (gcol33/tulpa#155). Poisson small groups, where the nested Laplace is
-# well-behaved; calibrated at bias < 15% and coverage >= 75% on the variance
-# components.
+# well-behaved; the same gate the gibbs sibling is held to, bias < 15% and
+# coverage >= 85% on the variance components.
+#
+# The gate was 0.75 until gcol33/tulpa#308, and that number was the defect: the
+# interval came from a discrete weighted quantile over the CCD's nodes, which
+# cannot leave the design's own extent, so no amount of data could push coverage
+# past 2 * Phi(1.1 * sqrt(k)) - 1. The interval is now read off the moments the
+# design reproduces, so this path is gated at the sibling's level.
 test_that("nested backend recovers variance components with coverage (default path)", {
   skip_if_not_slow()
   n_seed <- 20L
@@ -150,7 +156,7 @@ test_that("nested backend recovers variance components with coverage (default pa
   for (nm in c("sigma_1", "sigma_2")) {
     expect_lt(abs(mean(R$med[, nm]) - R$truth[[nm]]) / R$truth[[nm]], 0.15,
               label = sprintf("nested %s relative bias", nm))
-    expect_gte(R$cov[[nm]] / n_seed, 0.75,
+    expect_gte(R$cov[[nm]] / n_seed, 0.85,
                label = sprintf("nested %s coverage", nm))
   }
 })
