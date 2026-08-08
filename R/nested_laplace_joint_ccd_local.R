@@ -286,6 +286,107 @@
 # Shape and mass remain the orthogonal pair described above: the cells where the
 # predictor is wrong are not the cells `misfit` flags.
 #
+# Mass and place being independent failures, the two free readings of a cell are
+# a PLANE and not a line, and the question left over is whether a cell's
+# position in it says which of the two corrections that cell wants -- large
+# `R_L = ||ubar||` and small `R_M = |log(M^(Q)/M^(0))|` asking for the
+# barycentre, the other corner for the multiplier, both for the pair, neither
+# for the midpoint atom it already has. That is a different question from which
+# cells get a node budget, which is settled above, and it costs nothing to ask:
+# both corrections are post-processing of the same `(g, A)`.
+#
+# The truncation does separate the two descriptors, and it is the only thing
+# that does. On an UNBOUNDED quadratic both reduce to functions of `A^-1 g`, and
+# in that metric they are near-collinear here (Spearman 0.9495 pooled, 0.9830 on
+# the four-level grids); read as the box quantities they actually are, the
+# correlation falls to 0.8496 with 0.3881 of cells off the quartile diagonal.
+# The separation is one-sided, though, and that is the shape of everything
+# below: `R_L` is the share of its own half-cell an atom moves, so it saturates
+# below `sqrt(d)` -- measured 0.2261 to 1.6336 against a bound of 1.7321, no
+# cell within 1% of it -- while `R_M` is a log mass ratio and spans 0.0208 to
+# 78.2587 nats over the same cells. The two off-diagonal regimes the plane
+# exists for are therefore the sparse ones.
+#
+# What a cell's best correction IS cannot be read from that cell's own
+# contribution, because the reported summary is a weighted QUANTILE: moving one
+# atom changes which OTHER atom sits at the crossing, so a cell scored against
+# the reference in isolation is scored without the nonlinearity the read is made
+# of. It is read instead by a ONE-CELL INTERVENTION -- the shipped grid with
+# cell `c` alone corrected, re-read whole through `.nl_axis_quantiles()` and
+# scored against a fine-grid reference fit of the same model (the
+# gcol33/tulpa#322 harness; `outer_grid_one_cell()` restricts a whole-grid
+# candidate to one cell). Measured that way over 2520 cells from 216 fits (1680
+# cells from 144 gaussian-arm fits at three grid spreads, 840 from 72
+# binomial-arm fits, four- and five-level bases against twelve-level
+# references), on each of the three parts of the read separately, since the
+# parts disagreed on the whole-grid winner and disagree per cell too:
+#
+#   * The plane position selects nothing. The best label per quadrant buys
+#     +0.0000 over the single best label overall in 23 of the 30 scored
+#     combinations (three readings of `R_L` -- L2 of the shares, the largest
+#     share, the A metric -- by two resolvability gates by the parts with enough
+#     resolved cells) and never more than +0.0256; a 3 x 3 tercile partition
+#     reaches +0.0408 once, on 98 cells. The plane does shift the MIX -- the
+#     median contingency is significant at both resolutions, Cramer V 0.2078 and
+#     0.1882 -- but the argmax is the same in every quadrant, and the argmax is
+#     what a rule would switch on.
+#
+#   * Where the direction is strongest it is the wrong one. Spearman between a
+#     cell's relative position (`rank R_L - rank R_M`) and which single
+#     correction helps it more is +0.1835 / +0.0283 on the endpoints, -0.0595 /
+#     +0.1303 on the widths and +0.1230 / -0.3178 on the median at four / five
+#     levels: the largest, the five-level median, says cells with relatively
+#     more location displacement prefer the MASS correction, and the binomial
+#     arm reproduces it (-0.3057). Partialling `R_M` out leaves no stable sign
+#     either (+0.031, +0.063, -0.280, +0.012, +0.144, -0.269).
+#
+# So the resolution-dependent ranking is not a region of this plane. The two
+# base grids occupy the same part of it -- median `R_M` 11.7853 against 10.2645
+# (Mann-Whitney 0.1424), median `R_L` 1.1694 against 1.2105 on a 3.5% shift, and
+# quadrant occupancy 43.2 / 2.6 / 12.8 / 41.4 percent against 41.0 / 10.3 / 7.3 /
+# 41.5, the two populated quadrants holding the same share at both resolutions
+# and only the sparse ones trading. Where they differ is not WHERE the cells sit
+# but how much weight sits on the steep ones: integration-weighted mean `R_M` is
+# 3.3417 at four levels against 1.0483 at five. That is the one-dimensional
+# steepness statement again, not a second descriptor.
+#
+# One more property closes it off. A per-cell label could not have been composed
+# into a grid rule even had the partition been clean, because the same quantile
+# nonlinearity that makes the intervention the right measurement makes the
+# measurements non-additive: the sum of the per-cell `both` improvements exceeds
+# the whole-grid `both` improvement by 8.48x / 33.11x on the endpoints, 9.15x /
+# 68.58x on the widths and 6.23x on the four-level median, and at five levels
+# the median's two carry OPPOSITE SIGNS (-0.0548 summed against +0.0040 whole
+# grid). Correcting every cell and correcting each cell are different
+# operations.
+#
+# Two bounds on what a favourable plane could have licensed, both from
+# gcol33/tulpa#331's coverage measurement of the whole-grid barycentre rule, and
+# the first is why the two measurements do not contradict each other. A one-cell
+# intervention CANNOT see the failure that rule has: the gradient points toward
+# the peak in every cell, so applying the barycentre everywhere moves every atom
+# inward at once and the atom SET contracts, which moving one atom does not do.
+# That rule covers `sigma_1` on 128 / 129 / 118 of 200 seeds at four / five /
+# six levels against the shipped 200 of 200, at a width ratio of 0.4776 /
+# 0.5840 / 0.4465 -- flat in resolution, the signature of a systematic
+# contraction rather than a discretisation correction -- and 71 of its 72 misses
+# at four levels are high. A per-cell reading that a cell's atom is
+# mispositioned and a whole-grid rule that ruins coverage are both true; they
+# answer different questions.
+#
+# The second bound is on the metric. Every plane above is coloured by distance
+# to a fine-grid read, and on this fixture that distance does not track
+# inferential quality: the location rule is genuinely nearer the converged width
+# (per-seed absolute distance 0.3576 against the shipped 0.4194) and still loses
+# 72 seeds, because the two error directions do not cost the same --
+# overshooting cost nothing and undershooting cost 36 points. The winner of a
+# plane is the correction that moves a coarse read toward a fine one, and that
+# is the whole of what it is.
+#
+# Both descriptors therefore stay per-cell readings, as the box ratio already
+# did, and which correction to apply stays a whole-grid choice, gated by
+# coverage rather than by grid accuracy (gcol33/tulpa#333, gcol33/tulpa#331).
+#
 # The node cloud of each refined cell is clamped to the cell's Voronoi half-box
 # (half the distance to each neighbour on each axis), so clouds of distinct cells
 # never overlap and never spill into an unrefined neighbour's mass. Combined with
