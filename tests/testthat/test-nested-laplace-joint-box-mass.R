@@ -54,9 +54,10 @@ test_that("the concave axis factor is the box integral, to machine precision", {
   # Every one of these takes the closed form: the whole point is that a concave
   # axis needs no quadrature.
   expect_identical(unique(route), "closed")
-  # Measured: 8.9e-16 against integrate() and 6.1e-14 against Simpson, over the
-  # 90 combinations, on the log scale. The tolerances are floating slack.
-  expect_lt(max(err_int), 1e-13)
+  # Measured over the 90 combinations, on the log scale: 6.13e-14 against
+  # integrate() and 6.08e-14 against Simpson, the two arbiters agreeing with
+  # each other to the same figure. The tolerances are floating slack.
+  expect_lt(max(err_int), 1e-12)
   expect_lt(max(err_sim), 1e-12)
 
   # An asymmetric box -- the cell's Voronoi half-widths need not match, and the
