@@ -401,6 +401,37 @@
 # did, and which correction to apply stays a whole-grid choice, gated by
 # coverage rather than by grid accuracy (gcol33/tulpa#333, gcol33/tulpa#331).
 #
+# The three negative results above -- no better refinement ranking
+# (gcol33/tulpa#328), no per-cell choice of correction (gcol33/tulpa#333), no
+# whole-grid rule worth promoting (gcol33/tulpa#331) -- have one mechanism
+# between them, and it is worth stating once rather than rediscovering.
+# POSTERIOR MASS DOMINATES EVERY LEVEL OF THIS GRID. `|M_1 - M_0|` factorizes as
+# `w_c |exp(r_c) - 1|` with the factors orders of magnitude apart, so the
+# incumbent weight ranking is already the mass-movement ranking; the same
+# imbalance is why unweighted cell categories explain nothing, cells not being
+# equally consequential; and it is why a rule's ranking reverses with
+# resolution, since what moves between a four- and a five-level base is not
+# WHICH cells exist but how much weight sits on the steep ones (integration-
+# weighted mean `R_M` 3.3417 against 1.0483, on plane occupancy that is
+# statistically indistinguishable).
+#
+# The second reason a per-cell architecture cannot work is structural rather
+# than empirical, and survives any classifier. What the outer read scores is a
+# weighted QUANTILE, which couples the cells through ordering and cumulative
+# mass: improving one cell changes which atom sits at a threshold, so several
+# corrections applied together cancel, reinforce, or move the threshold atom
+# entirely. Measured, summed per-cell improvements exceed the whole-grid
+# improvement by 8.48x to 68.58x and at five levels the median's two carry
+# opposite signs. `L_grid` is not `sum_c L_c`, so a perfect per-cell rule would
+# still not compose into a grid rule.
+#
+# If a further resolution-dependent reversal ever needs explaining, the
+# statistic to reach for is a posterior-WEIGHTED steepness distribution
+# (`E_w[R_M]`, `P_w(R_M > r)`) rather than another cell-level descriptor: the
+# 3.3417 against 1.0483 above is already the distinction the unweighted plane
+# missed. It is explanatory only -- which rule ships is a coverage question
+# (gcol33/tulpa#331) -- and nothing here computes it.
+#
 # The node cloud of each refined cell is clamped to the cell's Voronoi half-box
 # (half the distance to each neighbour on each axis), so clouds of distinct cells
 # never overlap and never spill into an unrefined neighbour's mass. Combined with

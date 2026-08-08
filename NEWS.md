@@ -1,5 +1,52 @@
 # tulpa NEWS
 
+## 0.0.152
+
+* Neither free outer cell rule is promoted, decided by coverage rather than by
+  grid accuracy (gcol33/tulpa#331). 200 seeds at each of three resolutions, all
+  four arms post-processed off one solve per seed so the comparison is paired.
+  The placement rule contracts the atom set instead of correcting it -- its
+  `sigma_1` width ratio is 0.4776 / 0.5840 / 0.4465, flat in resolution rather
+  than decaying, because each atom moves a share of its own box and that share
+  does not shrink as the boxes do -- and covers 128 / 129 / 118 of 200 against
+  the shipped 200 / 200 / 200. The mass rule never moves a `sigma_1` trial and
+  widens that interval by 4.1% to 9.8%.
+* The decisive number is that the placement rule is CLOSER to the fine grid and
+  still loses: per-seed distance to the same seed's 1296-cell width is 0.3576
+  against the shipped 0.4194, and it gives up 72 seeds of coverage. The two
+  error directions do not cost the same, so a rule selected on distance to a
+  finer grid can be selected against on calibration. That is what the issue was
+  opened to establish. On the fixed effects coverage cannot separate the arms at
+  any affordable N (1 discordant seed of 200 on the intercept, 0 on the slope),
+  so only the width is a measurement there; the seed count was chosen from an
+  exact sign-test power calculation rather than from the deficit the
+  pre-gcol33/tulpa#332 fixture appeared to carry.
+* A two-dimensional pre-refinement descriptor does not select a per-cell
+  correction either (gcol33/tulpa#333), measured by one-cell intervention on the
+  global read over 2520 cells from 216 fits. The mass and location descriptors
+  do separate once the box truncation is applied (Spearman 0.8496 against 0.9495
+  in the unbounded metric), but the best label per quadrant buys +0.0000 over
+  the single best label overall in 23 of 30 scored combinations, and where the
+  direction is strongest it runs backwards. The issue's central hypothesis is
+  refuted: the four- and five-level grids occupy statistically indistinguishable
+  regions of the plane.
+* Those three negative results have one mechanism and the header now says so
+  once rather than leaving it to be rediscovered: posterior mass dominates every
+  level of this grid. A second, structural reason is recorded alongside it --
+  the outer read is a weighted quantile, which couples cells through ordering
+  and cumulative mass, so summed per-cell improvements exceed the whole-grid
+  improvement by 8.48x to 68.58x and at five levels carry opposite signs. A
+  perfect per-cell classifier would still not compose into a grid rule.
+* A declined outer cell-mass or barycentre axis says which gate it fell at
+  (gcol33/tulpa#334): `boundary`, `no_factor`, `cancellation` and, for the
+  barycentre, `out_of_box`, tallied per cell on both sides of the refinement
+  gate. `n_axes_declined` is unchanged and rides alongside. The reasons are
+  taken at the same constants that already gate the refusals rather than
+  re-derived afterwards, and each one is triggered by a real fixture rather than
+  shipped as an unobserved string -- `out_of_box` turning out to be unreachable
+  through the closed form by construction, since its error bound sits under the
+  in-box slack.
+
 ## 0.0.151
 
 * The gaussian recovery fixture no longer fits at a quarter of its own residual
