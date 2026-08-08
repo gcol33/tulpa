@@ -1,5 +1,33 @@
 # tulpa NEWS
 
+## 0.0.147
+
+* The outer-grid dump / rebuild harness is in the test suite
+  (`tests/testthat/helper-outer-grid-dump.R`, gcol33/tulpa#322). A candidate
+  construction for the outer integration weights is pure post-processing of a
+  fit that already ran, so `outer_grid_dump()` writes the grid state
+  (`joint_grid`, `log_marginal`, `dnode`, `weight_kind`, the axis tags and
+  domains, the support the read was taken off, and the summary the fit shipped)
+  and `outer_grid_rebuild()` re-reads the per-axis summary under any weight
+  vector. The read goes through the engine's own `.nl_axis_quantiles()` ->
+  `.nl_summary_quantile()`, never a second copy of it, and the round-trip
+  assertion in `test-outer-grid-dump.R` -- rebuild-with-own-weights equals the
+  shipped read -- is what makes an offline difference attributable to the
+  weights alone. It holds exactly (0.000e+00) on a tensor grid, a global CCD and
+  a locally refined grid.
+* `outer_grid_noise_floor()` estimates the scale below which a difference
+  between two reads is not resolved by the grid, as the spread of the read under
+  a weight-preserving coarsening of each axis's own atom set (consecutive atoms
+  merged at their weighted mean carrying their summed weight). Total mass and
+  each group's first moment are exactly preserved, so only resolution is
+  removed. On a one-axis dump with a Gaussian outer log-marginal the floor
+  bounds the read's true error against the closed-form quantiles at every
+  resolution from 9 to 81 levels.
+* The joint multi-block driver records `dnode` on the fit beside the integration
+  weights it was folded into. Recovering it afterwards is a division by
+  `exp(log_marginal)`, which loses the scale and is undefined on a cell whose
+  inner solve returned no finite marginal.
+
 ## 0.0.146
 
 * The local-CCD cubic misfit score now reports the whitened gradient its own

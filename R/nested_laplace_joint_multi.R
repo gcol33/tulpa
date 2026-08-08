@@ -1448,6 +1448,15 @@
     # Integration weights fold in the CCD design weights (`dnode`); for the
     # tensor grid `dnode` is NULL and this is the plain log-marginal softmax.
     res$weights      <- .joint_integration_weights(res$log_marginal, dnode)
+    # The outer design weight each cell carries, kept beside the integration
+    # weight it was folded into: absent on a tensor base (uniform cell weight),
+    # the CCD design weights on a global CCD, the partition-of-unity shares of
+    # each replacement cloud on a locally refined grid. Recovering it from
+    # `weights` afterwards is a division by exp(log_marginal), which loses its
+    # scale and is undefined on a cell whose inner solve returned no finite
+    # marginal, so the grid state a weight-construction experiment reads is
+    # recorded rather than reconstructed (gcol33/tulpa#322).
+    res$dnode        <- dnode
     is_ccd <- identical(integration_used, "ccd")
     # What kind of weight each cell carries. `integration` names the integrator
     # that ran, which describes a homogeneous support: a tensor cell holds the
