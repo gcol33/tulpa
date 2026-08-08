@@ -2,6 +2,54 @@
 
 ## 0.0.145
 
+* Local CCD refinement of the joint outer grid now keeps a refined cell's node
+  cloud only where the cell's own outer log-marginal is close to the quadratic
+  the cloud was placed from, and puts the cell back as its own mass atom where it
+  is not (gcol33/tulpa#318). The refinement was a large win on an outer target
+  that is quadratic in the transformed coordinate (summed absolute endpoint error
+  against closed-form axis quantiles 7.3118 against 24.1142 for not refining, 48
+  configurations of an equicorrelated Gaussian) and a net loss on a skewed one
+  (26.2467 against 23.1874 over 27 configurations of a Gaussian copula with
+  Gamma(2) marginals, 42.8578 against 38.1609 over 48).
+
+  The mechanism is the cell's own non-quadraticity, and it is measurable from the
+  design rather than inferred. A central composite design identifies a full
+  quadratic exactly, so the least-squares residual of the nodes' measured
+  log-marginals against intercept + gradient + Hessian in the whitened offset is
+  the part of the cell the design cannot represent; the nodes are evaluated
+  whatever the residual says, so the score costs no inner solve.
+  `.joint_local_ccd_misfit()` reports it as a standardized cubic magnitude on the
+  same convention the inner-Laplace `gamma_3` uses, and on the Gaussian target it
+  is identically zero in all 48 configurations while on every skewed family it
+  exceeds 0.08.
+
+  The threshold is `.NL_DIAG$gamma3_ok` (0.5), one number for the inner band and
+  this gate because both are a standardized third-order departure from the
+  Gaussian the approximation was placed from. Where it belongs was measured: on
+  an eight-family ladder (the Gaussian target plus Gaussian copulas with
+  Gamma(1), (2), (4), (8), (16), (32) and (64) marginals, 48 configurations each
+  bar 32 for Gamma(1)), 0.5 is the only threshold on the ladder 0.01 to 2 that
+  improves or ties every family. Per family, gated against refining
+  unconditionally: 7.3118 / 7.3118 on the Gaussian, then 36.3139 / 37.2185,
+  40.8376 / 42.8578, 31.9596 / 34.3650, 34.1830 / 36.8361, 44.4462 / 47.2740,
+  61.8421 / 63.1718 and 83.2492 / 83.2492 down the ladder; pooled 340.1435
+  against 352.2843, with 365.0831 for never refining. Lower thresholds score
+  better pooled (0.175 gives 337.4142) by regressing on the two least skewed
+  families. 399 of 1196 candidate cells are declined across the ladder, none of
+  them on the Gaussian target.
+
+  On the four-axis two-block fixture the gate is measurably neutral, which is
+  what it has to be: over the 20 distinct refined configurations the summed
+  absolute endpoint error against the converged `m = 13` reference is 2.11091
+  gated against 2.12847 unconditional and 3.12915 unrefined, and the largest
+  single-configuration movement is 0.00696 against that reference's own 0.01716
+  endpoint noise floor. Its per-cell scores there run 0.053 to 3.822, and the
+  design-dominated `m = 3` configuration reads 0.126, so it keeps its cloud.
+  `control$local_ccd$skew_max` overrides the threshold; `$local_ccd_info` gains
+  `misfit`, `skew_max`, `cells_declined`, `misfit_declined` and
+  `n_cells_declined`, and a refinement whose every candidate declined leaves a
+  plain tensor grid that reports `theta_interval_read = "density"`.
+
 * A locally CCD-refined joint outer grid now says what its per-axis
   hyperparameter intervals were read off, and how much of the support underneath
   them is a quadrature design rather than posterior mass (gcol33/tulpa#317). It
@@ -32,7 +80,9 @@
   against 15.72792 for the collapse and 17.80607 for not refining. The moment
   read wins on that target because a Gaussian moment match is its exact family
   there; on a Gaussian copula with Gamma marginals, correlated the same way, it
-  is the worst of the four (39.93958 against 26.24674 over 27 configurations).
+  is the worst of the four (39.93958 against 26.24674 over 27 configurations,
+  both measured with the refinement engaged unconditionally; under the
+  gcol33/tulpa#318 gate above the quantile scores 24.59641 there).
 
 * `tulpa_re_cov_nested()` reports the median and 95% interval of every derived
   covariance quantity (`sigma_i`, `rho_ij`, `Sigma_ij`, in every block) from the

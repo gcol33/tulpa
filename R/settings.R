@@ -348,6 +348,21 @@
 # usual skewness-magnitude convention (Bulmer 1979) -- a general reading of
 # "moderate" / "substantial" skew, NOT a Rue-Martino-Chopin cutoff.
 #
+# `gamma3_ok` is also the local-CCD refinement's engagement gate
+# (gcol33/tulpa#318): a refined outer cell keeps its node cloud only while the
+# standardized cubic magnitude of its own log-marginal, read off the design's own
+# nodes, stays below it. That is the same convention on the same kind of
+# quantity, one layer out -- a standardized third-order departure from the
+# Gaussian the approximation was placed from -- so it is one number, not two.
+# Where it belongs is measured, not inherited: across an eight-family ladder of
+# analytic outer targets (an equicorrelated Gaussian and Gaussian copulas with
+# Gamma(1 .. 64) marginals, 48 configurations each, scored as absolute endpoint
+# error against closed-form axis quantiles), 0.5 is the only threshold on the
+# ladder 0.01 .. 2 that improves or ties EVERY family against refining
+# unconditionally. Lower values score better pooled (0.175 gives 337.41 against
+# 340.14) by regressing on the two least skewed families; higher ones regress on
+# the moderately skewed. See the settings note beside the gate.
+#
 # `inner_k_material_ess` is the materiality floor for the INNER Pareto-k
 # (gcol33/tulpa#303). A Pareto shape index is scale-free: it describes the SHAPE
 # of the importance-weight tail and says nothing about its size, so where the

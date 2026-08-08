@@ -319,7 +319,7 @@ resolved integrator is also returned on the joint result as
 \verb{$integration_declined} (see Value), so a fallback is on the fit itself
 and not only in a verbose message.
 \item \code{local_ccd} (\code{NULL}) -- local CCD refinement of a multi-block tensor grid.
-\code{TRUE} (defaults) or a \code{list(max_cells =, f0 =)} refines a few high-weight,
+\code{TRUE} (defaults) or a \code{list(max_cells =, f0 =, skew_max =)} refines a few high-weight,
 mutually non-adjacent interior cells, replacing each with a small
 curvature-aware CCD node cloud so a coarse base grid resolves the
 sharply-peaked directions without the \code{k^d} tensor blow-up. The local
@@ -330,7 +330,12 @@ sub-nodes carry partition-of-unity design weights so the total integration
 weight is conserved (no double-count). \code{max_cells} (\code{8L}) caps the refined
 cells; \code{f0} (\code{1.1}) is the CCD radius. The design scale is shrunk per cell
 so the cloud fits the cell's Voronoi box (the local-Gaussian mass beyond it
-belongs to the neighbouring cells). Engages only on the tensor path (the
+belongs to the neighbouring cells). A cell keeps its cloud only while the
+nodes' own log-marginals stay within \code{skew_max} (the \code{gamma3_ok} band,
+\code{0.5}) of the quadratic the cloud was placed from, measured as a
+standardized cubic magnitude; above it the cell is put back as its own
+mass atom, which on a skewed outer target is measurably closer than the
+design (gcol33/tulpa#318). Engages only on the tensor path (the
 curvature stencil needs axis neighbours), at \verb{>= 4} transformable latent
 axes, with no active \code{phi_grid}; otherwise it is a no-op. The applied
 refinement is summarised on the result as \verb{$local_ccd_info}. Also driven

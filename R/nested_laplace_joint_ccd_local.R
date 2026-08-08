@@ -36,6 +36,17 @@
 #     diagonal alone gives the conditional spread, which on a correlated
 #     posterior is narrower (gcol33/tulpa#316).
 #
+# The cloud earns the cell only where the cell's own outer log-marginal is close
+# to the quadratic the cloud was placed from. A central composite design
+# identifies a full quadratic exactly, so the least-squares residual of the
+# nodes' measured log-marginals against that quadratic is the part of the cell
+# the design cannot represent, and it is available from the nodes already
+# evaluated. Above `skew_max` on that score the cell is put back as its own mass
+# atom (.joint_local_ccd_misfit(), gcol33/tulpa#318): on an outer target that is
+# quadratic in the transformed coordinate the score is identically zero and the
+# refinement is untouched, while on a skewed one the design reports its own
+# geometry rather than the cell's mass and the atom is measurably closer.
+#
 # The node cloud of each refined cell is clamped to the cell's Voronoi half-box
 # (half the distance to each neighbour on each axis), so clouds of distinct cells
 # never overlap and never spill into an unrefined neighbour's mass. Combined with
@@ -177,6 +188,44 @@
     s
 }
 
+# How far the cell's own outer log-marginal is from the quadratic the design was
+# placed from, read off the design's OWN nodes.
+#
+# A central composite design is built to identify a full quadratic response
+# exactly, so the least-squares residual of the measured node log-marginals
+# against intercept + gradient + symmetric Hessian in the whitened offset
+# `z = (u - u_c) / sd` is the part of the cell the design cannot see. It costs no
+# inner solve: the nodes are evaluated whatever the score says.
+#
+# Reported as a standardized cubic magnitude, on the same convention the
+# inner-Laplace `gamma_3` uses: a cubic term of standardized skewness `g`
+# contributes `g |z|^3 / 6` at whitened radius `|z|`, so
+# `gamma = 6 * rms(residual) / rms(|z|^3)`. The whitening is the cell's own
+# MARGINAL spread (the design's scale after the Voronoi shrink is a smaller
+# number, and the quantity being standardized is a property of the posterior, not
+# of the box it was truncated to).
+#
+# NA when the design cannot identify the quadratic at all, which the caller
+# treats the same as a failing score: an unverified local Gaussian.
+.joint_local_ccd_misfit <- function(u_nodes, u_c, lm_nodes, sd) {
+    d <- length(u_c)
+    if (!all(is.finite(lm_nodes)) || !all(is.finite(sd)) || any(sd <= 0))
+        return(NA_real_)
+    Z <- sweep(sweep(u_nodes, 2L, u_c, FUN = "-"), 2L, sd, FUN = "/")
+    if (!all(is.finite(Z))) return(NA_real_)
+    cols <- list(rep(1, nrow(Z)))
+    for (j in seq_len(d)) cols[[length(cols) + 1L]] <- Z[, j]
+    for (j in seq_len(d)) for (k in j:d)
+        cols[[length(cols) + 1L]] <- Z[, j] * Z[, k]
+    X <- do.call(cbind, cols)
+    if (nrow(X) <= ncol(X)) return(NA_real_)
+    fit <- tryCatch(stats::lm.fit(X, lm_nodes), error = function(e) NULL)
+    if (is.null(fit)) return(NA_real_)
+    r3 <- sqrt(mean((rowSums(Z^2)^1.5)^2))
+    if (!is.finite(r3) || r3 <= 0) return(NA_real_)
+    6 * sqrt(mean(fit$residuals^2)) / r3
+}
+
 # Greedy mutually-non-adjacent selection: take the highest-weight candidate, drop
 # it and all its grid neighbours from contention, repeat up to `max_cells`. Keeps
 # refined node clouds from overlapping (adjacent peaked cells on one contiguous
@@ -213,6 +262,9 @@
 #                started from `warm` (the refined cell's inner mode, or NULL).
 #   max_cells    cap on refined cells (hard cap on extra solve fan-out).
 #   f0           CCD factorial-corner radius per whitened axis (INLA default 1.1).
+#   skew_max     a cell keeps its cloud only while `.joint_local_ccd_misfit()`
+#                stays below this; above it the cell is put back as its own mass
+#                atom (gcol33/tulpa#318).
 #   verbose      announce the refinement summary.
 #   cov_blocks   length-n list of per-cell fixed-effect covariance blocks, or
 #                NULL. Carried cell-for-cell exactly like `modes`, so a refined
@@ -225,7 +277,8 @@
 .joint_local_ccd_refine <- function(joint_grid, log_marginal, modes = NULL,
                                      dnode = NULL, latent_axes, tags,
                                      eval_nodes, max_cells = 8L, f0 = 1.1,
-                                     verbose = FALSE, cov_blocks = NULL) {
+                                     verbose = FALSE, cov_blocks = NULL,
+                                     skew_max = .nl_diag("gamma3_ok")) {
     if (is.null(tags)) return(NULL)
     latent_cols <- match(latent_axes, colnames(joint_grid))
     if (anyNA(latent_cols)) return(NULL)
@@ -286,6 +339,10 @@
     # grid already was, separately from how much the refinement concentrated it
     # (gcol33/tulpa#316).
     cell_share      <- numeric(0)
+    refined         <- integer(0)
+    misfit          <- numeric(0)
+    declined_cells  <- integer(0)
+    declined_misfit <- numeric(0)
 
     for (c in chosen) {
         cc  <- curv[[c]]
@@ -322,6 +379,22 @@
         lm_off <- as.numeric(ev$log_marginal)
         if (length(lm_off) != nrow(theta_nodes)) return(NULL)
 
+        # The cloud stands in for the cell's mass only while the cell's own outer
+        # log-marginal is close to the quadratic the cloud was placed from. Where
+        # it is not, the design reports its own geometry instead of the cell's
+        # mass and the cell is measurably better off as the atom it was
+        # (gcol33/tulpa#318). The score is read off the nodes just evaluated, so
+        # the decision costs no further solve -- the ones already spent are the
+        # price of finding out.
+        mis <- .joint_local_ccd_misfit(rbind(u_c, u_nodes), u_c,
+                                       c(log_marginal[c], lm_off),
+                                       cc$sd_marginal %||% cc$sd)
+        if (!isTRUE(mis < skew_max)) {
+            declined_cells  <- c(declined_cells, c)
+            declined_misfit <- c(declined_misfit, mis)
+            next
+        }
+
         # Replacement block: centre node reuses the cell's own solve; off-centre
         # nodes carry the freshly evaluated marginal. Design weights Delta_c *
         # delta_j conserve the cell's mass on a flat integrand (sum_j delta_j = 1).
@@ -345,10 +418,12 @@
         new_lm_blocks[[length(new_lm_blocks) + 1L]]     <- lm_blk
         new_dn_blocks[[length(new_dn_blocks) + 1L]]     <- dn_blk
         cell_share <- c(cell_share, w[c])
+        refined    <- c(refined, c)
+        misfit     <- c(misfit, mis)
         n_nodes_added <- n_nodes_added + nrow(theta_nodes)
     }
 
-    keep <- setdiff(seq_len(n), chosen)
+    keep <- setdiff(seq_len(n), refined)
     out_grid <- rbind(joint_grid[keep, , drop = FALSE],
                       do.call(rbind, new_grid_blocks))
     colnames(out_grid) <- colnames(joint_grid)
@@ -362,7 +437,14 @@
     if (isTRUE(verbose)) {
         message(sprintf(
             "tulpa joint: local CCD refinement: %d cell(s), +%d nodes (%d -> %d cells)",
-            length(chosen), n_nodes_added, n, nrow(out_grid)))
+            length(refined), n_nodes_added, n, nrow(out_grid)))
+        if (length(declined_cells)) {
+            message(sprintf(
+                paste0("tulpa joint: local CCD refinement: %d cell(s) put back as ",
+                       "mass atoms, local quadratic misfit %.3f (max) >= %.3f"),
+                length(declined_cells), max(declined_misfit, na.rm = TRUE),
+                skew_max))
+        }
     }
 
     # Which kind of weight each output row carries. A carried-over base cell
@@ -381,10 +463,15 @@
          cov_blocks   = out_cov,
          dnode        = out_dn,
          weight_kind  = out_kind,
-         info         = list(n_cells_refined = length(chosen),
+         info         = list(n_cells_refined = length(refined),
                              n_nodes_added   = n_nodes_added,
-                             cells           = chosen,
+                             cells           = refined,
                              cell_share      = cell_share,
+                             misfit          = misfit,
+                             skew_max        = skew_max,
+                             cells_declined  = declined_cells,
+                             misfit_declined = declined_misfit,
+                             n_cells_declined = length(declined_cells),
                              n_cells_before  = n,
                              n_cells_after   = nrow(out_grid),
                              n_design_nodes  = sum(out_kind == "design")))

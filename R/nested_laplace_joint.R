@@ -327,7 +327,7 @@
 #'     `$integration_declined` (see Value), so a fallback is on the fit itself
 #'     and not only in a verbose message.
 #'   * `local_ccd` (`NULL`) -- local CCD refinement of a multi-block tensor grid.
-#'     `TRUE` (defaults) or a `list(max_cells =, f0 =)` refines a few high-weight,
+#'     `TRUE` (defaults) or a `list(max_cells =, f0 =, skew_max =)` refines a few high-weight,
 #'     mutually non-adjacent interior cells, replacing each with a small
 #'     curvature-aware CCD node cloud so a coarse base grid resolves the
 #'     sharply-peaked directions without the `k^d` tensor blow-up. The local
@@ -338,7 +338,12 @@
 #'     weight is conserved (no double-count). `max_cells` (`8L`) caps the refined
 #'     cells; `f0` (`1.1`) is the CCD radius. The design scale is shrunk per cell
 #'     so the cloud fits the cell's Voronoi box (the local-Gaussian mass beyond it
-#'     belongs to the neighbouring cells). Engages only on the tensor path (the
+#'     belongs to the neighbouring cells). A cell keeps its cloud only while the
+#'     nodes' own log-marginals stay within `skew_max` (the `gamma3_ok` band,
+#'     `0.5`) of the quadratic the cloud was placed from, measured as a
+#'     standardized cubic magnitude; above it the cell is put back as its own
+#'     mass atom, which on a skewed outer target is measurably closer than the
+#'     design (gcol33/tulpa#318). Engages only on the tensor path (the
 #'     curvature stencil needs axis neighbours), at `>= 4` transformable latent
 #'     axes, with no active `phi_grid`; otherwise it is a no-op. The applied
 #'     refinement is summarised on the result as `$local_ccd_info`. Also driven
@@ -964,13 +969,14 @@ tulpa_nested_laplace_joint <- function(responses,
     # a few high-weight, mutually non-adjacent cells, so the base grid can stay
     # coarse at moderate-to-high latent dimension where a uniformly fine tensor is
     # k^d-expensive. `control$local_ccd` is TRUE (defaults) or a list(max_cells=,
-    # f0=); NULL (the default) keeps the unrefined grid. Engages only on the
-    # multi-block tensor path at >= 4 transformable latent axes with no active phi
-    # grid; the single-block path always integrates on the tensor grid unrefined.
+    # f0=, skew_max=); NULL (the default) keeps the unrefined grid. Engages only on
+    # the multi-block tensor path at >= 4 transformable latent axes with no active
+    # phi grid; the single-block path always integrates on the tensor grid
+    # unrefined.
     local_ccd                 <- control$local_ccd
     if (!is.null(local_ccd) && !isTRUE(local_ccd) && !is.list(local_ccd)) {
-        stop("`control$local_ccd` must be NULL, TRUE, or a list(max_cells=, f0=).",
-             call. = FALSE)
+        stop("`control$local_ccd` must be NULL, TRUE, or a ",
+             "list(max_cells=, f0=, skew_max=).", call. = FALSE)
     }
     # Adaptive-lattice integrator tuning (integration = "grid_adaptive", the
     # low-dimensional multi-block companion to the CCD; see

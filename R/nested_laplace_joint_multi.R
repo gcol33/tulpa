@@ -1393,6 +1393,7 @@
         lc <- if (is.list(local_ccd)) local_ccd else list()
         lc_max_cells <- as.integer(lc$max_cells %||% 8L)
         lc_f0        <- as.numeric(lc$f0 %||% 1.1)
+        lc_skew_max  <- as.numeric(lc$skew_max %||% .nl_diag("gamma3_ok"))
         tags_lc <- .joint_ccd_axis_tags(axis_names, axis_offsets, prepared)
         if (!is.null(tags_lc)) {
             eval_nodes <- function(theta_mat, warm) {
@@ -1413,7 +1414,8 @@
                 modes = res$modes, cov_blocks = res$cov_block_per_grid,
                 dnode = dnode, latent_axes = axis_names,
                 tags = tags_lc, eval_nodes = eval_nodes,
-                max_cells = lc_max_cells, f0 = lc_f0, verbose = verbose)
+                max_cells = lc_max_cells, f0 = lc_f0, verbose = verbose,
+                skew_max = lc_skew_max)
             if (!is.null(ref)) {
                 joint_grid       <- ref$joint_grid
                 res$log_marginal <- ref$log_marginal
@@ -1471,7 +1473,11 @@
     # and it is dense near the peak, so the weighted var-of-means over the kept
     # cells is already the calibrated SD. It therefore takes the same weighted-
     # moment path, not the lattice refit.
-    is_design_weighted <- is_ccd || !is.null(local_ccd_info) || use_adaptive
+    # A refinement whose every candidate cell was put back as a mass atom
+    # (gcol33/tulpa#318) leaves a plain tensor grid, so it takes the density path
+    # its cells carry rather than the design-weighted one it asked for.
+    is_design_weighted <- is_ccd || use_adaptive ||
+        (!is.null(local_ccd_info) && local_ccd_info$n_design_nodes > 0L)
     # The median and interval per axis are read off whatever node set the
     # integrator left. The global CCD is a MOMENT RULE -- its nodes reproduce the
     # integrand's moments and carry no mass -- so a cumulative sum over them is
