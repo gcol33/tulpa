@@ -16,10 +16,11 @@
 \item{...}{Ignored.}
 }
 \value{
-Matrix with lower and upper columns, carrying a \code{skew_applied}
-attribute on a nested-Laplace fit: one logical per reported coefficient
-saying whether its bounds are the inner-Laplace skew-corrected quantiles
-or the Gaussian ones (see \code{\link[=summary.tulpa_fit]{summary.tulpa_fit()}}).
+Matrix with lower and upper columns. A nested-Laplace fit carries
+\code{interval_source} / \code{interval_declined} (which read produced the bounds --
+by default the grid's Gaussian-mixture CDF) and \code{skew_applied}, one logical
+per reported coefficient saying whether its bounds are the inner-Laplace
+skew-corrected quantiles or not. See \code{\link[=summary.tulpa_fit]{summary.tulpa_fit()}}.
 }
 \description{
 Credible intervals for the fixed effects

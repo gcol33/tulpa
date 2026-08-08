@@ -1,5 +1,54 @@
 # tulpa NEWS
 
+## 0.0.153
+
+* A nested-Laplace fit's fixed-effect credible bounds are the quantiles of the
+  Gaussian mixture its outer grid defines, `sum_k w_k N(mu_kj, V_kjj)`, instead
+  of being read off the single Gaussian matching that mixture's first two
+  moments (gcol33/tulpa#336). A mean and a variance are linear functionals and
+  survive the collapse; a quantile is not and does not. `estimate`,
+  `std.error`, `vcov()` and the debias selectors are the same moments they
+  were -- only the quantile step changed, so any difference in an interval is
+  attributable to the marginal read and to nothing else.
+* The construction is not new to the package. `.nl_gauss_mixture_summary()`
+  already inverted this CDF by bisection, and `ranef()` already reported the
+  per-group posterior with it; the fixed effects on the same fit collapsed
+  first. `.nested_fixed_moments()` now returns the components alongside the two
+  moments and `.nl_fixed_interval()` chooses the read, so there is one mixture
+  summarizer rather than a second one written for the fixed effects.
+* Verified against three arbiters outside the quantile path: the defining CDF
+  assembled by hand from the fit's own retained cells; 400000 draws from
+  `tulpa_posterior_draws()`, which samples a cell by weight and then that
+  cell's Gaussian and so realizes the same mixture; and the reduction cases,
+  where a Gaussian-equivalent mixture (one cell, or several with identical
+  component means and variances at any weights) reproduces the previous
+  interval exactly. A merely symmetric mixture is not one of those cases and is
+  free to differ in width -- `0.5 N(-2, 1) + 0.5 N(2, 1)` has a 95% interval
+  near `+/- 3.64` where matching its moments gives `+/- 1.96 sqrt(5)`.
+* The #302 inner-skew correction keeps its own read and is not composed with
+  this one. Its `gamma_3` is computed by re-dispatching the kernel at the
+  fitted MAP cell, so a fit retains one value per coefficient and not one per
+  cell, and the composed marginal `sum_k w_k F^CF_kj` is not identified by
+  retained state. The two address different non-Gaussianities: this one across
+  cells, #302 within the MAP cell. `confint()` and `summary()` carry
+  `interval_source` (`"mixture_cdf"` / `"gaussian_moment"` / `"skew_map_cell"`)
+  and `interval_declined`, so a fit says which read produced its bounds and why.
+* `recov_sweep()` scores all three reads off one solve per seed, so the
+  collapsed Gaussian remains the baseline the #302 correction is judged against
+  and the mixture read is a third paired arm. Measured over 60 seeds at 2
+  coefficients each: coverage does not move on the six-family configurations
+  (binomial 114/120 both arms, poisson 111/120 both, 0 discordant seeds of 120
+  in each), and on the skewed small-group fixture the mixture arm covers 119/120
+  against 118/120 on 1 discordant seed. Coverage therefore cannot separate the
+  two reads at any affordable seed count here, the same power limit
+  gcol33/tulpa#331 hit on the fixed effects, so the width is what is measurable:
+  the mixture interval is wider by 4.0e-04 and 4.2e-04 on average on those two
+  configurations and by 5.4e-03 on the skewed one, positive on every seed. This
+  lands as a consistency correction whose measured effect is small, not as a
+  calibration gain -- the collapsed Gaussian is a lossy compression of a
+  posterior the engine had already computed, and the two agreed closely wherever
+  the grid was near-Gaussian in the fixed-effect marginal.
+
 ## 0.0.152
 
 * Neither free outer cell rule is promoted, decided by coverage rather than by

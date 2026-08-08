@@ -132,10 +132,22 @@
 .has_draws <- function(object) !is.null(.fixed_draws_mat(object))
 
 
-# Grid-marginalized fixed-effect mean and covariance for a nested-Laplace fit,
-# via the law of total variance over the hyperparameter grid:
+# Grid-marginalized fixed-effect posterior for a nested-Laplace fit.
+#
+# What the grid actually defines for coefficient j is a Gaussian MIXTURE over
+# the hyperparameter cells,
+#   p(beta_j | y) = sum_g w_g N(mu_gj, V_gjj),
+# so this returns both readings of it: the two moments, and the components they
+# were formed from.
+#
+# Moments, via the law of total variance:
 #   mean = sum_g w_g mu_g
 #   cov  = sum_g w_g (V_g + mu_g mu_g') - mean mean'
+# Components: `mu` / `var` are n_kept x p (a row is one cell), `w` the matching
+# cell weights. A mean and a variance are linear functionals of the mixture and
+# survive the collapse to one Gaussian; a quantile does not, which is why the
+# components are kept rather than only the moments (gcol33/tulpa#336).
+#
 # mu_g / V_g are the per-grid fixed-effect mode / covariance retained under
 # keep_grid_hessians (V_g = solve(grid_hessians[[g]])); w_g are the normalized
 # grid weights. NULL when the per-grid pieces were not retained.
@@ -146,7 +158,9 @@
 #
 # A cell with zero integration weight contributes nothing to either moment, so
 # it is skipped rather than multiplied in -- a pruned cell that carries no
-# retained block would otherwise turn the whole covariance into NA.
+# retained block would otherwise turn the whole covariance into NA. `mass` is
+# the weight actually retained, so a reader can tell a full grid from one that
+# dropped a positive-weight cell.
 #' @keywords internal
 .nested_fixed_moments <- function(object) {
   H <- object$grid_hessians
@@ -161,13 +175,19 @@
   p <- length(M[[keep[1]]])
   m <- numeric(p)
   S <- matrix(0, p, p)
-  for (g in keep) {
+  mu_k  <- matrix(NA_real_, length(keep), p)
+  var_k <- matrix(NA_real_, length(keep), p)
+  for (i in seq_along(keep)) {
+    g  <- keep[i]
     Vg <- tryCatch(solve(H[[g]]), error = function(e) matrix(NA_real_, p, p))
     mu <- M[[g]]
     m <- m + w[g] * mu
     S <- S + w[g] * (Vg + tcrossprod(mu))
+    mu_k[i, ]  <- mu
+    var_k[i, ] <- diag(Vg)
   }
-  list(mean = m, cov = S - tcrossprod(m))
+  list(mean = m, cov = S - tcrossprod(m),
+       mu = mu_k, var = var_k, w = w[keep], mass = sum(w[keep]))
 }
 
 
@@ -208,20 +228,22 @@
     if (!is.null(mom)) {
       est <- mom$mean[idx]
       se  <- sqrt(pmax(diag(mom$cov)[idx], 0))
-      # Skew-corrected bounds where the inner-Laplace cubic term says the
-      # Gaussian marginal is misshapen and its band says the expansion is in
-      # its regime (gcol33/tulpa#302); Gaussian bounds everywhere else, which
-      # is every coordinate when `control$skew_correct` is off. `applied`
-      # travels with the table so the reporting methods can say which is which.
+      # The bounds invert the Gaussian mixture the grid defines rather than
+      # reading them off the collapsed Gaussian (gcol33/tulpa#336), except on a
+      # fit carrying the #302 skew correction, which keeps the MAP-cell read it
+      # was measured on. `.nl_fixed_interval()` owns that choice and reports
+      # which read ran; `applied` travels with the table so the reporting
+      # methods can say which coefficients were skew-corrected.
       sc <- .nl_skew_correction(object, p)
-      mg <- .nl_skew_marginal(est, se, sc$gamma3[idx], c(a, 1 - a),
-                              enabled = isTRUE(sc$enabled))
+      iv <- .nl_fixed_interval(mom, idx, est, se, c(a, 1 - a), sc)
       tab <- data.frame(
         term = nm, estimate = est, std.error = se,
-        conf.low = mg$q[, 1L], conf.high = mg$q[, 2L],
+        conf.low = iv$q[, 1L], conf.high = iv$q[, 2L],
         row.names = NULL, stringsAsFactors = FALSE
       )
-      attr(tab, "skew_applied") <- stats::setNames(mg$applied, nm)
+      attr(tab, "skew_applied")     <- stats::setNames(iv$applied, nm)
+      attr(tab, "interval_source")  <- iv$source
+      attr(tab, "interval_declined") <- iv$declined
       return(tab)
     }
     w   <- object$weights / sum(object$weights)
@@ -357,11 +379,22 @@ print.tulpa_fit <- function(x, ...) {
 #' @param ... Ignored.
 #' @return Data frame: estimate, std.error, and lower/upper credible bounds, one
 #'   row per fixed effect. Sampler tiers report empirical quantiles; the Laplace
-#'   tier reports the Gaussian approximation. On a nested-Laplace fit run with
-#'   `control$skew_correct = TRUE` the bounds are Cornish-Fisher quantiles at
-#'   each coefficient's inner-Laplace `gamma_3` wherever that term is in the
-#'   band it is valid on, and Gaussian elsewhere; a `skew_applied` attribute
-#'   names which coefficients took the correction.
+#'   tier reports the Gaussian approximation.
+#'
+#'   On a nested-Laplace fit the estimate and standard error are the
+#'   hyperparameter-grid-marginalized moments, and the bounds invert the Gaussian
+#'   mixture `sum_k w_k N(mu_kj, V_kjj)` that grid defines, rather than reading
+#'   `mu +/- z sigma` off the single Gaussian matching those moments. An
+#'   `interval_source` attribute records which read produced them
+#'   (`"mixture_cdf"`, `"gaussian_moment"`, `"skew_map_cell"`) and
+#'   `interval_declined` says why, whenever the mixture read did not run.
+#'
+#'   With `control$skew_correct = TRUE` the bounds are instead Cornish-Fisher
+#'   quantiles at each coefficient's inner-Laplace `gamma_3` wherever that term
+#'   is in the band it is valid on, and Gaussian elsewhere; a `skew_applied`
+#'   attribute names which coefficients took the correction. That correction is
+#'   measured at the MAP cell, so it is reported on its own and is not composed
+#'   with the mixture read.
 #' @export
 summary.tulpa_fit <- function(object, level = 0.95, ...) {
   tab <- .fit_fixed_table(object, level = level)
@@ -374,7 +407,9 @@ summary.tulpa_fit <- function(object, level = 0.95, ...) {
     row.names = tab$term, check.names = FALSE
   )
   names(out)[3:4] <- sprintf("%.1f%%", 100 * c(a, 1 - a))
-  attr(out, "skew_applied") <- attr(tab, "skew_applied")
+  attr(out, "skew_applied")      <- attr(tab, "skew_applied")
+  attr(out, "interval_source")   <- attr(tab, "interval_source")
+  attr(out, "interval_declined") <- attr(tab, "interval_declined")
   out
 }
 
@@ -384,10 +419,11 @@ summary.tulpa_fit <- function(object, level = 0.95, ...) {
 #' @param parm Parameter names or indices (default: all fixed effects).
 #' @param level Interval level (default 0.95).
 #' @param ... Ignored.
-#' @return Matrix with lower and upper columns, carrying a `skew_applied`
-#'   attribute on a nested-Laplace fit: one logical per reported coefficient
-#'   saying whether its bounds are the inner-Laplace skew-corrected quantiles
-#'   or the Gaussian ones (see [summary.tulpa_fit()]).
+#' @return Matrix with lower and upper columns. A nested-Laplace fit carries
+#'   `interval_source` / `interval_declined` (which read produced the bounds --
+#'   by default the grid's Gaussian-mixture CDF) and `skew_applied`, one logical
+#'   per reported coefficient saying whether its bounds are the inner-Laplace
+#'   skew-corrected quantiles or not. See [summary.tulpa_fit()].
 #' @export
 confint.tulpa_fit <- function(object, parm = NULL, level = 0.95, ...) {
   tab <- .fit_fixed_table(object, level = level)
@@ -400,7 +436,9 @@ confint.tulpa_fit <- function(object, parm = NULL, level = 0.95, ...) {
     ci <- ci[parm, , drop = FALSE]
     if (!is.null(sa)) sa <- sa[parm]
   }
-  attr(ci, "skew_applied") <- sa
+  attr(ci, "skew_applied")      <- sa
+  attr(ci, "interval_source")   <- attr(tab, "interval_source")
+  attr(ci, "interval_declined") <- attr(tab, "interval_declined")
   ci
 }
 

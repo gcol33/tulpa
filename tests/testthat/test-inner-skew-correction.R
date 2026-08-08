@@ -266,12 +266,23 @@ test_that("switching the correction off leaves the fit bit for bit what it was",
                 "n_iter", "inner_skew", "inner_skew_idx")) {
     expect_identical(on[[fld]], off[[fld]], label = paste0("field ", fld))
   }
-  # And the off fit reports exactly the Gaussian interval it reported before
-  # this correction existed.
+  # And the off fit reports the interval the outer grid's own Gaussian mixture
+  # carries (gcol33/tulpa#336). It used to report `estimate +/- z se` off the
+  # single Gaussian matching the marginalized moments; those moments are
+  # unchanged, so the two reads differ only in the quantile step, which is
+  # nonlinear and does not survive the collapse.
   tab <- .fit_fixed_table(off)
+  expect_identical(attr(tab, "interval_source"), "mixture_cdf")
+  mom <- .nested_fixed_moments(off)
+  p   <- nrow(tab)
+  ref <- .nl_gauss_mixture_summary(mom$mu[, seq_len(p), drop = FALSE],
+                                   mom$var[, seq_len(p), drop = FALSE],
+                                   mom$w, probs = c(0.025, 0.975))
+  expect_equal(tab$conf.low,  ref$quantiles[, 1L], tolerance = 1e-12)
+  expect_equal(tab$conf.high, ref$quantiles[, 2L], tolerance = 1e-12)
   z <- stats::qnorm(0.975)
-  expect_identical(tab$conf.low,  tab$estimate - z * tab$std.error)
-  expect_identical(tab$conf.high, tab$estimate + z * tab$std.error)
+  expect_false(isTRUE(all.equal(tab$conf.low,
+                                tab$estimate - z * tab$std.error)))
   expect_identical(unname(attr(confint(off), "skew_applied")), c(FALSE, FALSE))
   expect_false(off$skew_correction$enabled)
 

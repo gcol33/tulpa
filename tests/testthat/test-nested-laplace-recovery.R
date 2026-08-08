@@ -255,6 +255,9 @@ recov_sweep <- function(family, cfg, n_seed, seed_off, fit_fn = recov_fit_single
   covb <- integer(p)
   cov_gauss <- integer(p)
   cov_skew  <- integer(p)
+  cov_mix   <- integer(p)
+  wid_mix   <- matrix(NA_real_, n_seed, p)
+  wid_gauss <- matrix(NA_real_, n_seed, p)
   gamma3    <- matrix(NA_real_, n_seed, p)
   inner_k     <- matrix(NA_real_, n_seed, p)
   inner_k_ess <- matrix(NA_real_, n_seed, p)
@@ -282,16 +285,43 @@ recov_sweep <- function(family, cfg, n_seed, seed_off, fit_fn = recov_fit_single
     inner_k[s, ]     <- .recov_pad(f$inner_pareto_k, p)
     inner_k_ess[s, ] <- .recov_pad(f$inner_pareto_k_rel_ess, p)
     outer_k[s]       <- .recov_pad(f$pareto_k, 1L)
+    # Three reads of the SAME fit, so the arms are paired by construction and
+    # differ only in how the marginal posterior is turned into an interval:
+    #   ci_gauss  the collapsed Gaussian, `mu +/- z sigma` on the marginalized
+    #             moments -- the pre-gcol33/tulpa#336 report, and the baseline
+    #             the #302 correction is judged against
+    #   ci_mix    the quantiles of the Gaussian mixture the grid defines, which
+    #             carries the same two moments and the shape as well (#336)
+    #   ci_skew   the #302 Cornish-Fisher read at the MAP-cell gamma_3
+    # The moments behind all three are identical, so any difference in coverage
+    # or width is attributable to the marginal read and to nothing else.
     ci_skew <- confint(f, level = level)
     f$skew_correction$enabled <- FALSE
-    ci_gauss <- confint(f, level = level)
+    ci_mix <- confint(f, level = level)
+    # The collapsed arm goes through the engine's own quantile helper at a
+    # disabled correction, which is bit-for-bit the interval `confint()` itself
+    # returned before #336. Recomputing `mu +/- z sigma` in R instead would be
+    # the same arithmetic in a different summation order, and the #302 gate
+    # below asserts the corrected and collapsed reads agree EXACTLY at
+    # gamma_3 = 0 -- an exact zero that a re-derivation turns into 1e-14.
+    mom_f <- .nested_fixed_moments(f)
+    a_lvl <- (1 - level) / 2
+    ci_gauss <- .nl_skew_marginal(mom_f$mean[seq_len(p)],
+                                  sqrt(pmax(diag(mom_f$cov)[seq_len(p)], 0)),
+                                  rep(NA_real_, p), c(a_lvl, 1 - a_lvl),
+                                  enabled = FALSE)$q
     ci_skew_gap[s] <- max(abs(ci_skew - ci_gauss))
+    wid_mix[s, ]   <- ci_mix[, 2] - ci_mix[, 1]
+    wid_gauss[s, ] <- ci_gauss[, 2] - ci_gauss[, 1]
     for (j in seq_len(p)) {
       if (beta[j] >= ci_gauss[j, 1] && beta[j] <= ci_gauss[j, 2]) {
         cov_gauss[j] <- cov_gauss[j] + 1L
       }
       if (beta[j] >= ci_skew[j, 1] && beta[j] <= ci_skew[j, 2]) {
         cov_skew[j] <- cov_skew[j] + 1L
+      }
+      if (beta[j] >= ci_mix[j, 1] && beta[j] <= ci_mix[j, 2]) {
+        cov_mix[j] <- cov_mix[j] + 1L
       }
     }
     s_med[s] <- f$theta_median[[1]]
@@ -302,7 +332,9 @@ recov_sweep <- function(family, cfg, n_seed, seed_off, fit_fn = recov_fit_single
   }
   list(mean = colMeans(est), bias = colMeans(est) - beta, cov = covb,
        width = colMeans(wid), width_seed = wid, cov_seed = cvs,
-       cov_gauss = cov_gauss, cov_skew = cov_skew,
+       cov_gauss = cov_gauss, cov_skew = cov_skew, cov_mix = cov_mix,
+       width_mix = colMeans(wid_mix), width_gauss = colMeans(wid_gauss),
+       width_mix_seed = wid_mix, width_gauss_seed = wid_gauss,
        ci_skew_gap = ci_skew_gap,
        gamma3 = colMeans(gamma3), gamma3_seed = gamma3,
        inner_k_seed = inner_k, inner_k_ess_seed = inner_k_ess,
@@ -442,6 +474,50 @@ test_that("the correction leaves a near-symmetric family's coverage where it was
   Rp <- recov_sweep("poisson", CFG[["poisson"]], n_seed = 12L, seed_off = 2000L)
   expect_lt(max(abs(Rp$gamma3)), 0.1)
   expect_lte(max(abs(Rp$cov_skew - Rp$cov_gauss)), 1L)
+})
+
+# --- the mixture read of the fixed effects (gcol33/tulpa#336) ----------------
+#
+# The grid defines a Gaussian mixture per coefficient. Collapsing it to one
+# Gaussian keeps the mean and the variance exactly and throws the shape away,
+# which only the quantiles ever see. So the question this asks is narrow: does
+# retaining that shape improve or preserve interval calibration relative to
+# discarding it? Both arms come off ONE solve per seed and carry identical
+# moments, so any difference is the marginal read and nothing else.
+#
+# The acceptance criterion is "no worse", the same standard #302 was held to.
+# The mixture read is not a competing estimator -- the collapsed Gaussian is a
+# lossy compression of a posterior the engine has already computed -- so the
+# gate is against a coverage regression, not for a coverage gain.
+
+test_that("the mixture read covers no worse than the collapsed Gaussian", {
+  skip_if_not_slow()
+  n_seed <- 60L
+  for (fam in c("binomial", "poisson")) {
+    R <- recov_sweep(fam, CFG[[fam]], n_seed = n_seed, seed_off = 5100L)
+    n_trial <- n_seed * length(CFG[[fam]]$beta)
+    cov_m <- sum(R$cov_mix)   / n_trial
+    cov_g <- sum(R$cov_gauss) / n_trial
+    se <- sqrt(0.95 * 0.05 / n_trial)
+    expect_lte(abs(cov_m - 0.95), abs(cov_g - 0.95) + 3 * se,
+               label = sprintf("%s mixture vs collapsed coverage", fam))
+  }
+})
+
+test_that("a skewed-hyperparameter fixture is where the two reads part", {
+  skip_if_not_slow()
+  # SKEW_CFG has 12 groups of 4 at a rare-event intercept, so the RE-SD
+  # posterior is genuinely skewed and the grid spreads over it -- the regime
+  # where the mixture is least like the Gaussian matching its moments.
+  R <- recov_sweep("binomial", SKEW_CFG, n_seed = 60L, seed_off = 7300L)
+  # The two reads differ per seed, so this fixture is discriminating rather
+  # than one where the mixture collapses back onto its own moments.
+  expect_gt(max(abs(R$width_mix_seed - R$width_gauss_seed)), 1e-6)
+
+  n_trial <- 60L * length(SKEW_CFG$beta)
+  se <- sqrt(0.95 * 0.05 / n_trial)
+  expect_lte(abs(sum(R$cov_mix) / n_trial - 0.95),
+             abs(sum(R$cov_gauss) / n_trial - 0.95) + 3 * se)
 })
 
 # --- the joint tier's fixed-effect intervals (gcol33/tulpa#305) --------------

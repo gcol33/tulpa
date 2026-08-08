@@ -16,11 +16,22 @@
 \value{
 Data frame: estimate, std.error, and lower/upper credible bounds, one
 row per fixed effect. Sampler tiers report empirical quantiles; the Laplace
-tier reports the Gaussian approximation. On a nested-Laplace fit run with
-\code{control$skew_correct = TRUE} the bounds are Cornish-Fisher quantiles at
-each coefficient's inner-Laplace \code{gamma_3} wherever that term is in the
-band it is valid on, and Gaussian elsewhere; a \code{skew_applied} attribute
-names which coefficients took the correction.
+tier reports the Gaussian approximation.
+
+On a nested-Laplace fit the estimate and standard error are the
+hyperparameter-grid-marginalized moments, and the bounds invert the Gaussian
+mixture \verb{sum_k w_k N(mu_kj, V_kjj)} that grid defines, rather than reading
+\verb{mu +/- z sigma} off the single Gaussian matching those moments. An
+\code{interval_source} attribute records which read produced them
+(\code{"mixture_cdf"}, \code{"gaussian_moment"}, \code{"skew_map_cell"}) and
+\code{interval_declined} says why, whenever the mixture read did not run.
+
+With \code{control$skew_correct = TRUE} the bounds are instead Cornish-Fisher
+quantiles at each coefficient's inner-Laplace \code{gamma_3} wherever that term
+is in the band it is valid on, and Gaussian elsewhere; a \code{skew_applied}
+attribute names which coefficients took the correction. That correction is
+measured at the MAP cell, so it is reported on its own and is not composed
+with the mixture read.
 }
 \description{
 Posterior summary of the fixed effects

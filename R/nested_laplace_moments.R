@@ -320,6 +320,77 @@
        quantiles = matrix(qs, np, length(probs)))
 }
 
+# Fixed-effect credible bounds on a nested-Laplace fit, and the provenance of
+# whichever read produced them (gcol33/tulpa#336).
+#
+# The grid defines a Gaussian mixture per coefficient (see
+# `.nested_fixed_moments()`). Its mean and variance are linear functionals and
+# survive the collapse to one Gaussian; a quantile is nonlinear and does not, so
+# the bounds invert the mixture CDF
+#   F_j(b) = sum_k w_k Phi((b - mu_kj) / sqrt(V_kjj))
+# through `.nl_gauss_mixture_summary()` -- the same construction `ranef()`
+# already reports the per-group posterior with. `estimate`, `std.error` and
+# `vcov()` are untouched: they are the moments either way.
+#
+# WHY THE #302 SKEW CORRECTION IS NOT COMPOSED WITH THIS. Its gamma_3 is
+# computed by re-dispatching the kernel at the single fitted MAP cell, so the
+# fit retains one gamma_3 per coefficient and not one per cell. The composed
+# marginal sum_k w_k F^CF_kj is therefore not identified by retained state: it
+# would need gamma_3(k, j). The three available substitutes are each an
+# unbacked assertion -- a scalar Cornish-Fisher shift of the mixture quantile
+# double-counts, since the mixture already carries the across-cell asymmetry;
+# applying the MAP cell's gamma_3 to every component asserts the conditional
+# skew is constant over the grid; applying it to the dominant component alone
+# privileges one component with no approximation theorem behind it. So an
+# enabled correction keeps the read it was measured on, and `declined` says why
+# the mixture read did not run. The two corrections address different
+# non-Gaussianities: this one across cells, #302 within the MAP cell.
+#
+# `mom` is the `.nested_fixed_moments()` list, `idx` the reported coefficient
+# columns, `est` / `se` their moments, `probs` the requested levels, `sc` the
+# `.nl_skew_correction()` state. Returns list(q = length(est) x length(probs),
+# applied, source, declined).
+.nl_fixed_interval <- function(mom, idx, est, se, probs, sc) {
+  gaussian <- function(source, declined) {
+    list(q = est + outer(se, stats::qnorm(probs)),
+         applied = rep(FALSE, length(est)),
+         source = source, declined = declined)
+  }
+  if (isTRUE(sc$enabled)) {
+    mg <- .nl_skew_marginal(est, se, sc$gamma3[idx], probs, enabled = TRUE)
+    return(list(
+      q = mg$q, applied = mg$applied, source = "skew_map_cell",
+      declined = paste("skew_correct: gamma_3 is retained at the MAP cell",
+                       "only, so the mixture components carry no per-cell",
+                       "skew to compose")))
+  }
+  if (is.null(mom$mu) || is.null(mom$var) || is.null(mom$w)) {
+    return(gaussian("gaussian_moment", "no retained mixture components"))
+  }
+  if (ncol(mom$mu) < max(idx)) {
+    return(gaussian("gaussian_moment",
+                    "retained component block is narrower than the reported coefficients"))
+  }
+  # The moments skip a positive-weight cell that retained no block, which the
+  # mixture read cannot reproduce (it would renormalize over what is left and
+  # report a differently-weighted posterior than `estimate` and `std.error`).
+  # Decline rather than ship two reads of one fit that disagree.
+  if (!isTRUE(is.finite(mom$mass)) || mom$mass < 1 - 1e-8) {
+    return(gaussian("gaussian_moment",
+                    sprintf("only %.6f of the grid weight retained a fixed-effect block",
+                            mom$mass)))
+  }
+  mx <- .nl_gauss_mixture_summary(mom$mu[, idx, drop = FALSE],
+                                  mom$var[, idx, drop = FALSE],
+                                  mom$w, probs = probs)
+  if (is.null(mx) || anyNA(mx$quantiles)) {
+    return(gaussian("gaussian_moment",
+                    "component means or variances are not all usable"))
+  }
+  list(q = mx$quantiles, applied = rep(FALSE, length(est)),
+       source = "mixture_cdf", declined = NA_character_)
+}
+
 # Weighted mean and SD of `values` under pre-normalized `weights` (which
 # sum to 1). SD uses the E[x^2] - E[x]^2 form, floored at 0 to absorb the
 # floating-point negatives that form can produce near a degenerate axis.

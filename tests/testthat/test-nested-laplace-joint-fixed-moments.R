@@ -333,3 +333,58 @@ test_that("the sparse joint loop extracts the same block as the dense one", {
                      solve(.j307_reference_blocks(sparse)[[k]]))
   }
 })
+
+# --------------------------------------------------------------------------- #
+# (7) The bounds this retention feeds are the mixture's, not the collapse's    #
+#     (gcol33/tulpa#336).                                                      #
+# --------------------------------------------------------------------------- #
+
+test_that("a real multi-cell fit reports mixture-CDF bounds beside its moments", {
+  skip_on_cran()
+  d   <- .j305_icar_data()
+  fit <- .j305_icar_fit(d)
+  expect_gt(length(fit$weights), 1L)
+
+  ci <- confint(fit)
+  expect_identical(attr(ci, "interval_source"), "mixture_cdf")
+  expect_true(is.na(attr(ci, "interval_declined")))
+
+  # The bounds solve the mixture CDF assembled here from the fit's own retained
+  # cells, so what `summary()` reports is checked against the definition rather
+  # than against the helper that produced it.
+  p <- fit$n_fixed
+  w <- fit$weights / sum(fit$weights)
+  mu <- vapply(fit$grid_modes, function(m) m[seq_len(p)], numeric(p))
+  sd <- vapply(fit$grid_hessians, function(H) sqrt(diag(solve(H))), numeric(p))
+  for (j in seq_len(p)) {
+    cdf <- function(b) sum(w * stats::pnorm(b, mu[j, ], sd[j, ]))
+    expect_equal(cdf(ci[j, 1]), 0.025, tolerance = 1e-8)
+    expect_equal(cdf(ci[j, 2]), 0.975, tolerance = 1e-8)
+  }
+
+  # The moments are untouched, so the two reads differ only in the quantile
+  # step -- and on a grid this spread they do differ.
+  est <- coef(fit); se <- summary(fit)$std.error
+  gauss <- cbind(est + stats::qnorm(0.025) * se, est + stats::qnorm(0.975) * se)
+  expect_gt(max(abs(matrix(as.numeric(ci), p, 2L) - gauss)), 1e-6)
+})
+
+test_that("the mixture bounds are the ones the fit's own posterior draws carry", {
+  skip_if_not_slow()
+  d   <- .j305_icar_data()
+  fit <- .j305_icar_fit(d, store_Q = TRUE)
+  p   <- fit$n_fixed
+  # `tulpa_posterior_draws()` samples a cell by weight and then that cell's
+  # Gaussian, so it realizes the same mixture the bounds invert -- an arbiter
+  # that shares no code with the quantile path.
+  set.seed(101L)
+  dr <- tulpa_posterior_draws(fit, idx = seq_len(p), n = 400000L)
+  emp <- t(apply(dr, 2L, stats::quantile, c(0.025, 0.975)))
+  ci  <- matrix(as.numeric(confint(fit)), p, 2L)
+  expect_equal(ci, unname(emp), tolerance = 0.02)
+
+  # And the collapsed Gaussian read is the one that misses them.
+  est <- coef(fit); se <- summary(fit)$std.error
+  gauss <- cbind(est + stats::qnorm(0.025) * se, est + stats::qnorm(0.975) * se)
+  expect_gt(max(abs(gauss - emp)), max(abs(ci - emp)))
+})

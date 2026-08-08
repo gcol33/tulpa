@@ -670,6 +670,52 @@ skewness, and the correction is skewness-only, so a biased Laplace mode stays
 biased. Tests: `test-inner-skew-correction.R`, plus a paired
 corrected-vs-Gaussian coverage gate in `test-nested-laplace-recovery.R`.
 
+### The fixed-effect marginal is a mixture, and is quantiled as one (gcol33/tulpa#336)
+
+What the outer grid defines for coefficient j is a Gaussian MIXTURE over the
+cells, `p(beta_j | y) = sum_k w_k N(mu_kj, V_kjj)`. Its mean and variance are
+linear functionals and survive being collapsed to one Gaussian; a quantile is
+nonlinear and does not. So `.nested_fixed_moments()` returns the components
+(`mu` / `var` / `w` / `mass`) alongside the two moments, and
+`.nl_fixed_interval()` (`R/nested_laplace_moments.R`) inverts the mixture CDF
+through `.nl_gauss_mixture_summary()` for the bounds. `estimate`, `std.error`,
+`vcov()` and the debias selectors read the moments and are unchanged, so an
+interval difference is the marginal read and nothing else.
+
+The mixture summarizer is NOT new for this: `ranef()` on the nested path
+already reported the per-group posterior by inverting the same CDF, while the
+fixed effects on the same fit collapsed first. Do not write a second
+fixed-effect mixture summarizer -- the two reads meet at
+`.nl_gauss_mixture_summary()`.
+
+The #302 skew correction is deliberately NOT composed with this. Its `gamma_3`
+is computed at the fitted MAP cell only, so a fit retains `gamma_3(j)` and the
+composed marginal `sum_k w_k F^CF_kj` would need `gamma_3(k, j)` -- it is not
+identified by retained state, and the three substitutes (scalar shift of the
+mixture quantile; the MAP cell's value applied to every component; applied to
+the dominant component alone) are each an unbacked assertion. The boundary:
+**#336 corrects across-cell non-Gaussianity, #302 within-cell at the MAP.** A
+`skew_correct = TRUE` fit keeps the #302 read. `interval_source`
+(`"mixture_cdf"` / `"gaussian_moment"` / `"skew_map_cell"`) and
+`interval_declined` travel on `confint()` / `summary()`, so a fit says which
+read produced its bounds and why. A grid that dropped a positive-weight cell
+declines to the collapsed read rather than renormalize the mixture over
+different mass than `estimate` and `std.error` carry.
+
+Arbiters outside the quantile path: the defining CDF assembled by hand from the
+fit's retained cells; `tulpa_posterior_draws()`, which samples a cell by weight
+then that cell's Gaussian and so realizes the same mixture; and the reduction
+cases. Reduction is exact for a GAUSSIAN-EQUIVALENT mixture (one cell, or
+several with identical component means and variances at any weights) and is NOT
+required of a merely symmetric one -- `0.5 N(-2, 1) + 0.5 N(2, 1)` is symmetric,
+is not Gaussian, and its 95% interval is near `+/- 3.64` against the
+moment-matched `+/- 1.96 sqrt(5)`. Asserting equality there would test the read
+back into the approximation it replaced. Tests:
+`test-nested-fixed-mixture-interval.R`, section 7 of
+`test-nested-laplace-joint-fixed-moments.R`, and paired mixture-vs-collapsed
+coverage gates in `test-nested-laplace-recovery.R` (`recov_sweep()` scores all
+three reads off one solve per seed).
+
 ### Per-cell fixed-effect retention on the joint tier (gcol33/tulpa#305)
 
 `.nested_fixed_moments()` (`R/methods_generic.R`) is the ONE grid marginalizer
