@@ -2,33 +2,47 @@
 # (gcol33/tulpa#322).
 #
 # A candidate construction for the OUTER integration weights is pure
-# post-processing of a fit that already ran: the grid coordinates, each cell's
-# inner log-marginal and each cell's outer design weight are the whole of what
-# the reported per-axis summary is built from. So a weight rule can be scored
-# against the shipped one at zero fitting minutes -- dump the grid state once,
-# then re-read the summary under any weights offline.
+# post-processing of a fit that already ran. Two reads are built off the grid,
+# and both are post-processing:
+#
+#   the HYPERPARAMETER read -- the grid coordinates, each cell's inner
+#   log-marginal and each cell's outer design weight are the whole of what the
+#   reported per-axis summary is built from;
+#
+#   the FIXED-EFFECT read -- each cell's fixed-effect mode and marginal
+#   precision (`$grid_modes` / `$grid_hessians`, retained per cell under
+#   `control$keep_grid_hessians`, gcol33/tulpa#305) are the whole of what the
+#   reported coefficient mean, covariance and standard error are built from.
+#
+# So a weight rule can be scored against the shipped one at zero fitting minutes,
+# on either read -- dump the grid state once, then re-read under any weights
+# offline. A coverage experiment on a SLOPE is a fixed-effect question, so it is
+# the second read that carries it.
 #
 # What makes such a score attributable rather than a reimplementation is that the
-# offline read goes through the ENGINE's own summary code
-# (`.nl_axis_quantiles()` -> `.nl_summary_quantile()`), never through a second
-# copy of it. Nothing here forms a quantile, a weight or a support rule of its
-# own; every function below assembles the arguments the fit itself passed and
-# hands them to the same routine. The round-trip assertion in
-# test-outer-grid-dump.R is what holds that: rebuilding a dump with the fit's own
+# offline read goes through the ENGINE's own summary code -- the axis half
+# through `.nl_axis_quantiles()` -> `.nl_summary_quantile()`, the fixed half
+# through `.nested_fixed_moments()`, the one grid marginalizer behind
+# `summary()` / `confint()` / `vcov()` on every nested tier -- never through a
+# second copy of it. Nothing here forms a quantile, a mixture moment, a weight or
+# a support rule of its own; every function below assembles the arguments the fit
+# itself passed and hands them to the same routine. The round-trip assertions in
+# test-outer-grid-dump.R are what hold that: rebuilding a dump with the fit's own
 # weights has to return the numbers the fit shipped, to floating tolerance. If it
 # ever stops holding, an offline weight experiment is no longer measuring what it
 # claims to and the difference it reports is no longer attributable to the
 # weights.
 #
-# The four pieces:
+# The pieces:
 #
-#   outer_grid_dump()         fit  -> the grid state + the summary the fit
-#                                     reported, optionally written to an RDS
-#   outer_grid_rebuild()      dump + weights -> the same per-axis read
-#   outer_grid_read_diff()    two reads -> mean absolute endpoint / width /
-#                                     median difference
-#   outer_grid_noise_floor()  dump -> the scale below which a difference is not
-#                                     resolved by this grid
+#   outer_grid_dump()          fit  -> the grid state + the summary the fit
+#                                      reported, optionally written to an RDS
+#   outer_grid_rebuild()       dump + weights -> the same per-axis read
+#   outer_grid_rebuild_fixed() dump + weights -> the same fixed-effect read
+#   outer_grid_read_diff()     two reads -> mean absolute endpoint / width /
+#                                      median difference
+#   outer_grid_noise_floor()   dump -> the scale below which a difference is not
+#                                      resolved by this grid
 
 # The probabilities the joint fitters summarise every axis at. Fixed rather than
 # a caller's choice: `.nl_axis_quantiles()` reads exactly three, in this order.
@@ -52,6 +66,34 @@ OGD_PROBS <- c(0.025, 0.5, 0.975)
 .ogd_domains <- function(fit, support) {
   if (!identical(support, "moment_rule")) return(NULL)
   tulpa:::.joint_axis_domains(fit)
+}
+
+# A per-cell list off the fit, held to describing the SAME grid the rest of the
+# dump does. NULL passes through rather than erroring: the per-cell fixed-effect
+# blocks are the one part of the state a fit can decline to retain, and a fit
+# that declined still has an axis read worth dumping. What must not pass is a
+# list of the wrong length -- marginalizing cell k's block against cell k's
+# weight only means anything while the two index the same cell.
+.ogd_check_cells <- function(x, what, n) {
+  if (is.null(x)) return(NULL)
+  if (length(x) != n) {
+    stop("this fit's `$", what, "` (", length(x), " entries) does not align ",
+         "with its outer grid (", n, " cell(s)); the grid state is not ",
+         "dumpable.", call. = FALSE)
+  }
+  x
+}
+
+# Why a dump has no fixed-effect blocks, in the driver's own words:
+# `.joint_finalize_grid_fixed()` records "not_requested" when the retention was
+# switched off, and `.joint_attach_grid_fixed()` records "no_fixed_effects",
+# "block_not_extracted", "grid_misaligned" or "cell_block_unavailable" when it
+# was on and could not be honoured. A fit that retained them carries NA here,
+# which is not a reason.
+.ogd_declined_reason <- function(dump) {
+  r <- dump$grid_fixed_declined
+  if (is.null(r) || length(r) != 1L || is.na(r)) "reason not recorded"
+  else as.character(r)
 }
 
 # Per-fit outer-grid state, everything a summary read needs and nothing that
@@ -87,6 +129,13 @@ outer_grid_dump <- function(fit, file = NULL) {
   # `refining_axis` tags the cells a mode-tracked refinement pass pinned to one
   # axis; the per-axis read drops the foreign ones, so it is part of the state.
   refining <- fit$refining_axis %||% rep("", nrow(tg))
+  # The per-cell fixed-effect mode and marginal precision the coefficient read is
+  # marginalized from. Both are O(n_fixed^2) per cell and flat in the latent
+  # dimension, so carrying them is what a coefficient re-read offline costs:
+  # measured at 9.1 KB over 27 cells and 34.1 KB over 105 at n_fixed = 2, against
+  # a whole dump of 17.7 KB and 52.6 KB.
+  grid_modes    <- .ogd_check_cells(fit$grid_modes, "grid_modes", nrow(tg))
+  grid_hessians <- .ogd_check_cells(fit$grid_hessians, "grid_hessians", nrow(tg))
   dump <- list(
     joint_grid   = tg,
     log_marginal = as.numeric(lm),
@@ -107,6 +156,13 @@ outer_grid_dump <- function(fit, file = NULL) {
     theta_interval_design_mass = fit$theta_interval_design_mass,
     theta_mean   = fit$theta_mean,
     theta_sd     = fit$theta_sd,
+    grid_modes    = grid_modes,
+    grid_hessians = grid_hessians,
+    # NA on a fit that retained the blocks; the driver's reason string on one
+    # that did not, so the fixed read can say why it has nothing.
+    grid_fixed_declined = fit$grid_fixed_declined,
+    n_fixed      = fit$n_fixed,
+    fixed_names  = fit$fixed_names,
     # The read the fit itself shipped: the target of the round trip.
     reported     = list(median = fit$theta_median,
                         ci_lo  = fit$theta_ci_lo,
@@ -146,6 +202,58 @@ outer_grid_rebuild <- function(dump, weights = NULL) {
     dump$joint_grid, dump$log_marginal, dump$refining_axis,
     probs = dump$probs, weights = as.numeric(w),
     support = dump$support, domains = dump$axis_domains)
+}
+
+# The grid-marginalized fixed-effect mean and covariance a dump's cells give
+# under `weights`, through the engine's own `.nested_fixed_moments()`. As with
+# the axis half, `weights = NULL` uses the fit's own, which is the round trip.
+#
+# `.nested_fixed_moments()` reads exactly three fields off whatever list it is
+# handed -- `grid_modes`, `grid_hessians`, `weights` -- and forms the law of
+# total covariance over the cells,
+#
+#   mean = sum_k w_k mu_k
+#   cov  = sum_k w_k (V_k + mu_k mu_k') - mean mean'
+#
+# with V_k = solve(grid_hessians[[k]]) and w_k the normalized weights. Nothing in
+# it re-solves, and nothing in it reads a field a dump cannot carry. So the whole
+# of the offline fixed-effect read is that one call on a list holding the dumped
+# cells and the candidate weights; the mixture algebra is not restated here, and
+# a cell that carries no usable block is skipped by the engine's own rule rather
+# than by one of this harness's.
+#
+# `se` is the coefficient table's own derivation from the returned covariance:
+# the square root of its diagonal, floored at zero because the two terms of the
+# law of total covariance can cancel to a slightly negative variance.
+outer_grid_rebuild_fixed <- function(dump, weights = NULL) {
+  if (is.null(dump$grid_modes) || is.null(dump$grid_hessians)) {
+    stop("this dump carries no per-cell fixed-effect blocks, so the ",
+         "fixed-effect read cannot be rebuilt from it: the fit declined the ",
+         "retention (", .ogd_declined_reason(dump), "). Refit with ",
+         "`control$keep_grid_hessians = TRUE`.", call. = FALSE)
+  }
+  w <- weights %||% dump$weights
+  n <- nrow(dump$joint_grid)
+  if (length(w) != n) {
+    stop("`weights` has length ", length(w), " but the dumped grid has ", n,
+         " cell(s).", call. = FALSE)
+  }
+  mom <- tulpa:::.nested_fixed_moments(
+    list(grid_modes = dump$grid_modes, grid_hessians = dump$grid_hessians,
+         weights = as.numeric(w)))
+  if (is.null(mom)) {
+    stop("no dumped cell carries both a fixed-effect mode and a positive ",
+         "weight, so there is nothing for the mixture to marginalize over.",
+         call. = FALSE)
+  }
+  est <- mom$mean
+  V   <- mom$cov
+  nm  <- dump$fixed_names
+  if (length(nm) == length(est)) {
+    names(est) <- nm
+    dimnames(V) <- list(nm, nm)
+  }
+  list(mean = est, cov = V, se = sqrt(pmax(diag(V), 0)))
 }
 
 # Integration weights for a candidate per-cell design weight `dnode`, through the
@@ -285,7 +393,8 @@ outer_grid_weight_report <- function(dump, weights, floor = NULL) {
 }
 
 for (.nm in c("OGD_PROBS", "outer_grid_dump", "outer_grid_load",
-              "outer_grid_rebuild", "outer_grid_weights",
+              "outer_grid_rebuild", "outer_grid_rebuild_fixed",
+              "outer_grid_weights",
               "outer_grid_read_diff", "outer_grid_noise_floor",
               "outer_grid_weight_report")) {
   assign(.nm, get(.nm), envir = globalenv())

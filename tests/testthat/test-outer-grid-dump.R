@@ -7,6 +7,11 @@
 # node set the joint driver can leave behind -- a tensor grid whose cells carry
 # their own mass, a central-composite design whose nodes carry a design weight,
 # and a locally refined grid carrying both.
+#
+# Both reads are held to it: the per-axis hyperparameter summary
+# (gcol33/tulpa#322) and the grid-marginalized fixed-effect mean / covariance /
+# standard error (gcol33/tulpa#329), whose round-trip target is what the fit's
+# own `coef()` / `vcov()` / `summary()` report.
 
 .ogd_cache <- new.env(parent = emptyenv())
 
@@ -76,6 +81,15 @@
   })
 }
 
+# The one fit that declines the per-cell fixed-effect retention. Its axis state
+# is the tensor grid's, so what it isolates is the absence of the blocks.
+.ogd_fit_nofixed <- function() {
+  .ogd_memo("nofixed", function() {
+    .ogd_fit(.ogd_sim(c(0.8, 0.5, 0.3)),
+             control = list(integration = "grid", keep_grid_hessians = FALSE))
+  })
+}
+
 # The largest absolute disagreement between two per-axis reads, over every
 # reported number: 3 x n_axes of them.
 .ogd_max_dev <- function(a, b) {
@@ -124,6 +138,95 @@ test_that("the round trip survives the RDS", {
   expect_identical(d2$weight_kind, d$weight_kind)
   expect_equal(.ogd_max_dev(outer_grid_rebuild(d2), d$reported), 0,
                tolerance = 1e-12)
+  # The per-cell fixed-effect blocks survive the serialisation too, so the
+  # coefficient read is replayable across sessions and not only within one.
+  expect_equal(outer_grid_rebuild_fixed(d2)$mean,
+               outer_grid_rebuild_fixed(d)$mean, tolerance = 1e-12)
+  expect_equal(outer_grid_rebuild_fixed(d2)$cov,
+               outer_grid_rebuild_fixed(d)$cov, tolerance = 1e-12)
+})
+
+# --------------------------------------------------------------------------- #
+# The fixed-effect round trip                                                 #
+# --------------------------------------------------------------------------- #
+
+test_that("a dump rebuilt with its own weights returns the fixed-effect read the fit shipped", {
+  skip_on_cran()
+  for (fit in list(.ogd_fit_grid(), .ogd_fit_ccd(), .ogd_fit_local())) {
+    d <- outer_grid_dump(fit)
+    # Retention has to have happened, or the agreement below is between two
+    # error paths rather than between two mixtures.
+    expect_true(is.na(d$grid_fixed_declined))
+    expect_length(d$grid_modes, nrow(d$joint_grid))
+    expect_length(d$grid_hessians, nrow(d$joint_grid))
+
+    fx <- outer_grid_rebuild_fixed(d)
+    # `coef()`, `vcov()` and `summary()` all reach the fit through
+    # `.nested_fixed_moments()`, so the offline mixture has to reproduce each of
+    # them: the marginalized mean, the full covariance, and the standard error
+    # the coefficient table derives from its diagonal. Measured: 0 on every
+    # reported number of all three fits -- the rebuild runs the same routine on
+    # the same cells, so the tolerance is floating slack, not an allowance.
+    expect_equal(fx$mean, coef(fit), tolerance = 1e-12)
+    expect_equal(fx$cov, vcov(fit), tolerance = 1e-12)
+    expect_equal(unname(fx$se), summary(fit)$std.error, tolerance = 1e-12)
+    expect_identical(names(fx$mean), fit$fixed_names)
+    expect_length(fx$mean, fit$n_fixed)
+  }
+})
+
+test_that("the fixed-effect read is a function of the weights it is rebuilt under", {
+  skip_on_cran()
+  d <- outer_grid_dump(.ogd_fit_local())
+  base <- outer_grid_rebuild_fixed(d)
+
+  # The rule that changes nothing: the fit's own design weights re-entered
+  # through the engine's own weighting. The fixed read is unmoved, which is what
+  # makes a read that DOES move attributable to the rule that moved it.
+  same <- outer_grid_rebuild_fixed(d, outer_grid_weights(d, d$dnode))
+  expect_equal(same$mean, base$mean, tolerance = 1e-12)
+  expect_equal(same$cov, base$cov, tolerance = 1e-12)
+
+  # Tempering the integrand concentrates the outer posterior onto fewer cells,
+  # which removes between-cell spread from the law of total covariance: the
+  # intercept's SE falls from 0.1880 to 0.1852. The slope's moves by 1.2e-06 --
+  # its conditional posterior barely depends on the RE scales the grid spans, so
+  # a reweighting of that grid has almost nothing to move it with. That split is
+  # the reason a weight experiment has to be scored on the coefficient it is
+  # about rather than on the hyperparameter axes.
+  hot <- outer_grid_rebuild_fixed(
+    d, outer_grid_weights(d, dnode = d$dnode, log_marginal = 3 * d$log_marginal))
+  expect_lt(hot$se[[1L]], base$se[[1L]])
+  expect_gt(base$se[[1L]] - hot$se[[1L]], 1e-3)
+  expect_lt(abs(hot$se[[2L]] - base$se[[2L]]), 1e-4)
+  expect_gt(max(abs(hot$mean - base$mean)), 0)
+})
+
+test_that("a dump whose fit declined the fixed-effect retention says so", {
+  skip_on_cran()
+  d <- outer_grid_dump(.ogd_fit_nofixed())
+  # The decline is about the fixed effects only: the axis half of the dump is
+  # complete and still round-trips.
+  expect_lt(.ogd_max_dev(outer_grid_rebuild(d), d$reported), 1e-10)
+  expect_null(d$grid_modes)
+  expect_null(d$grid_hessians)
+  expect_identical(d$grid_fixed_declined, "not_requested")
+  # The reason is raised. Returning an empty read instead would compare equal to
+  # every other empty read, so an offline experiment would score a candidate
+  # weight rule as making no difference on a fit that cannot answer at all.
+  expect_error(outer_grid_rebuild_fixed(d), "not_requested")
+  expect_error(outer_grid_rebuild_fixed(d), "keep_grid_hessians")
+})
+
+test_that("a fixed-effect rebuild refuses cells that describe a different grid", {
+  skip_on_cran()
+  fit <- .ogd_fit_grid()
+  bad <- fit; bad$grid_modes <- fit$grid_modes[-1L]
+  expect_error(outer_grid_dump(bad), "grid_modes")
+  bad <- fit; bad$grid_hessians <- fit$grid_hessians[-1L]
+  expect_error(outer_grid_dump(bad), "grid_hessians")
+  expect_error(outer_grid_rebuild_fixed(outer_grid_dump(fit), weights = c(1, 2, 3)),
+               "cell")
 })
 
 test_that("the floor's per-axis view is the same read as the whole-grid one", {
