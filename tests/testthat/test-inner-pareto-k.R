@@ -341,8 +341,13 @@ test_that("tulpa_nested_laplace() reports the inner k-hat and leaves the draws u
   # The diagnostic consumes no randomness: the RNG stream and every non-
   # diagnostic field of the fit are bit-for-bit identical with it on and off.
   expect_identical(seed_on, seed_off)
-  # `timing` is wall clock, not model output.
-  strip <- function(f) f[!grepl("^inner_|^timing$", names(f))]
+  # `timing` is wall clock, not model output, and `skew_correction` is the
+  # record derived from gamma_3 (gcol33/tulpa#302) -- a diagnostic-derived
+  # field, so it belongs on the stripped side alongside `inner_*`
+  # (gcol33/tulpa#313).
+  strip <- function(f) {
+    f[!grepl("^inner_|^timing$|^skew_correction$", names(f))]
+  }
   expect_identical(strip(on_fit), strip(off_fit))
   expect_true(length(strip(on_fit)) > 5L)   # the comparison is not vacuous
 
