@@ -958,6 +958,8 @@ diagnostic_summary <- function(fit, quiet = FALSE) {
     e_bfmi = NA,
     pareto_k = NA_real_,
     outer_regime = NA_character_,
+    interval_read = NA_character_,
+    interval_design_mass = NA_real_,
     quad_ess = NA_real_,
     recommendations = character(0),
     status = "PASS"
@@ -1057,6 +1059,21 @@ diagnostic_summary <- function(fit, quiet = FALSE) {
       recommendations <- c(recommendations, paste0(toupper(substring(rnote, 1, 1)),
                                                    substring(rnote, 2), "."))
       if (identical(rgm$regime, "collapsed_edge")) status <- "WARN"
+    }
+    # What the reported hyperparameter intervals were read off. A homogeneous
+    # support is already named by `integration`; the locally refined grid is the
+    # one that carries both kinds, and the share on the design part is the regime
+    # variable for how much of the interval is a moment rule read as a CDF
+    # (gcol33/tulpa#317).
+    ir <- .tulpa_interval_read(fit)
+    if (!is.null(ir)) {
+      result$interval_read <- ir$read
+      result$interval_design_mass <- ir$design_mass
+      inote <- .tulpa_interval_read_note(ir)
+      if (!is.null(inote)) {
+        recommendations <- c(recommendations, paste0(
+          toupper(substring(inote, 1, 1)), substring(inote, 2), "."))
+      }
     }
     k_hat <- jf$pareto_k
     if (!is.null(k_hat) && is.finite(k_hat)) {

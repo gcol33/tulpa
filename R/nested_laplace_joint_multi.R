@@ -1476,12 +1476,21 @@
     # integrator left. The global CCD is a MOMENT RULE -- its nodes reproduce the
     # integrand's moments and carry no mass -- so a cumulative sum over them is
     # not a CDF and the interval comes from the moments instead
-    # (gcol33/tulpa#309). The adaptive lattice and the locally refined grid keep
-    # a cell per unit of mass, so their cumulative weight is a CDF.
+    # (gcol33/tulpa#309). The adaptive lattice keeps a cell per unit of mass, so
+    # its cumulative weight is a CDF. A locally CCD-refined grid is neither: it
+    # is part cell masses and part design, and says so rather than passing for a
+    # density grid (gcol33/tulpa#317). What it REPORTS is still the weighted
+    # quantile -- that measured best against a converged reference in both
+    # design_mass regimes, see `.nl_summary_quantile` -- so naming the support
+    # changes what the fit can tell a caller, not the numbers.
+    prov <- .nl_interval_provenance(integration_used, res$weight_kind,
+                                    res$weights)
+    res$theta_interval_read        <- prov$read
+    res$theta_interval_design_mass <- prov$design_mass
     res <- .joint_posterior_moments_multi(
         res, prepared, axis_offsets, joint_grid, cp,
         int_weights = if (is_design_weighted) res$weights else NULL,
-        support = .nl_node_support(integration_used))
+        support = prov$read)
     if (!is_design_weighted) {
         # Replace per-axis var-of-means SDs with Laplace-at-mode SDs at the
         # modal cell. The 3-point grid-profile fit needs the
@@ -1685,7 +1694,8 @@
 .joint_posterior_moments_multi <- function(res, prepared, axis_offsets,
                                             joint_grid, cp,
                                             int_weights = NULL,
-                                            support = c("density", "moment_rule")) {
+                                            support = c("density", "moment_rule",
+                                                        "mixed")) {
     support <- match.arg(support)
     w <- res$weights
     # Joint moments across every column of joint_grid (including phi

@@ -261,7 +261,7 @@ compare_models <- function(..., criterion = c("waic", "loo", "loglik")) {
   # The outer integrator decides how a quantile may be read off these weights: a
   # tensor grid's uniform cells discretize the density, a CCD is a moment rule
   # whose node positions carry no mass of their own (gcol33/tulpa#312).
-  support <- .nl_node_support(object$integration)
+  support <- .nl_node_support(object$integration, object$weight_kind)
   doms <- if (identical(support, "moment_rule")) .joint_axis_domains(object)
           else NULL
   rows <- lapply(keep, function(j) {

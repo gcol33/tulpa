@@ -608,7 +608,7 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
   # (gcol33/tulpa#310). `sigma = 1 / sqrt(tau)` is positive whatever the block;
   # `rho` takes the domain the axis registry gives it, and an axis the registry
   # will not guess reports NA rather than the design's extent.
-  support <- .nl_node_support(jfit$integration)
+  support <- .nl_node_support(jfit$integration, jfit$weight_kind)
   doms <- if (identical(support, "moment_rule"))
     stats::setNames(.joint_axis_domains(jfit), colnames(tg)) else NULL
   dom_of <- function(nm) if (is.null(doms)) NA_character_ else unname(doms[nm])
@@ -706,7 +706,7 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
     })
     D <- .re_cov_derived_matrix(Sig_list, p_fields, full = TRUE)
     dom <- attr(D, "domain")
-    supp <- .nl_node_support(jfit$integration)
+    supp <- .nl_node_support(jfit$integration, jfit$weight_kind)
     mcar_summary <- lapply(seq_len(ncol(D)), function(j)
       list(name = colnames(D)[j],
            q = .nl_summary_quantile(D[, j], w, c(0.025, 0.5, 0.975),

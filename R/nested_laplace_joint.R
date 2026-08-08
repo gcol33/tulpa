@@ -684,6 +684,18 @@
 #'      design weight, so a fit integrated by one rule reports one value
 #'      throughout; a locally refined grid carries both, and this says which per
 #'      cell instead of leaving it to be read off `integration`.
+#'   * `theta_interval_read`, `theta_interval_design_mass` -- what the reported
+#'      per-axis `theta_median` / `theta_ci_lo` / `theta_ci_hi` were read off, and
+#'      how much of the integration weight sits on nodes whose cumulative sum is
+#'      not a CDF. `"density"` is a weighted quantile over cells that discretize
+#'      the posterior (`design_mass` 0), `"moment_rule"` an interval from the
+#'      moments a central-composite design delivers (`design_mass` 1), and
+#'      `"mixed"` the locally CCD-refined grid, which carries both kinds at once.
+#'      A mixed support still reports the weighted quantile, which measured best
+#'      against a converged reference in both `design_mass` regimes; the share is
+#'      the regime variable, since on that part of the support the quantile is
+#'      bounded by the refined cells' own grid neighbourhoods rather than by the
+#'      posterior (gcol33/tulpa#317).
 #'   * `prune_cheap_log_marginal`, `prune_mask`, `prune_n_pruned`,
 #'      `prune_tol` -- present only when `prune = TRUE` and the safety gate did
 #'      not fall back. Cheap-pass log-marginals at every cell, a logical mask

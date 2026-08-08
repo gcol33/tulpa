@@ -2,6 +2,38 @@
 
 ## 0.0.145
 
+* A locally CCD-refined joint outer grid now says what its per-axis
+  hyperparameter intervals were read off, and how much of the support underneath
+  them is a quadrature design rather than posterior mass (gcol33/tulpa#317). It
+  is the one node set carrying both kinds at once -- a carried-over base cell
+  holds the mass of its own cell, a refined cell's replacement cloud holds a
+  partition-of-unity share of its cell's mass placed at the design's radius --
+  and it reports `integration = "grid"`, so `.nl_node_support()` read it as a
+  homogeneous density grid and nothing downstream could tell. The support is now
+  named `"mixed"`, the fit carries `theta_interval_read` and
+  `theta_interval_design_mass`, and `diagnostic_summary()` surfaces the pair.
+
+  The reported numbers are unchanged, on the measurement. Three replacement
+  reads were scored against the converged `m = 13` tensor reference (28561
+  cells) of the four-axis two-block fixture, whose own noise floor is 0.01716 on
+  the endpoints and 0.03853 on the widths: splitting the read into a mass CDF
+  plus a per-cell moment-matched Gaussian, collapsing each refined cell's design
+  block to one atom at its own weighted mean, and the gcol33/tulpa#308 moment
+  read. Summed absolute endpoint error over seven base grids (`m = 3 ... 9`,
+  `design_mass` 0.930 down to 0.092) is 0.63446 for the shipped weighted
+  quantile, 0.73159 for the collapse, 0.74464 for the split and 1.20402 for the
+  moment read, against 1.00289 for not refining at all; over fourteen further
+  configurations reached by varying `local_ccd$max_cells` on the same fixture,
+  1.65810 / 1.86035 / 1.89038 / 2.82062. The collapse is ahead at the single
+  `design_mass = 0.930` grid (0.12022 against 0.16409) and behind at every lower
+  one, which is the pattern a fix has to avoid. On analytic outer targets whose
+  axis quantiles are closed form the same ordering holds: at `design_mass >= 0.5`
+  on an equicorrelated Gaussian (19 configurations) 3.18024 for the quantile
+  against 15.72792 for the collapse and 17.80607 for not refining. The moment
+  read wins on that target because a Gaussian moment match is its exact family
+  there; on a Gaussian copula with Gamma marginals, correlated the same way, it
+  is the worst of the four (39.93958 against 26.24674 over 27 configurations).
+
 * `tulpa_re_cov_nested()` reports the median and 95% interval of every derived
   covariance quantity (`sigma_i`, `rho_ij`, `Sigma_ij`, in every block) from the
   moments its integration design reproduces, instead of from a discrete weighted

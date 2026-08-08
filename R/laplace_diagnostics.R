@@ -819,6 +819,31 @@
   NULL
 }
 
+# What the reported per-axis hyperparameter intervals were read off, and how much
+# of the support underneath them is a quadrature design rather than posterior mass
+# (gcol33/tulpa#317). NULL for a fit that does not record it.
+.tulpa_interval_read <- function(fit) {
+  jf <- if (!is.null(fit$joint_fit)) fit$joint_fit else fit
+  read <- jf$theta_interval_read
+  if (is.null(read) || is.na(read)) return(NULL)
+  list(read = as.character(read),
+       design_mass = as.numeric(jf$theta_interval_design_mass %||% NA_real_))
+}
+
+# One-line reading of that provenance. NULL for a homogeneous support, whose
+# construction `integration` already names.
+.tulpa_interval_read_note <- function(ir) {
+  if (is.null(ir) || !identical(ir$read, "mixed")) return(NULL)
+  share <- if (is.finite(ir$design_mass))
+    sprintf("%.1f%% of the integration weight", 100 * ir$design_mass) else
+    "part of the integration weight"
+  paste0("hyperparameter intervals read off a MIXED support: ", share,
+         " sits on locally CCD-refined nodes, which are a moment rule rather ",
+         "than posterior mass, so on that part the weighted quantile is bounded ",
+         "by the refined cells' own grid neighbourhoods -- widen the base grid ",
+         "(or turn local_ccd off) to move weight back onto mass-weighted cells")
+}
+
 # Inner-Laplace skewness reliability of a nested-Laplace fit, read from the
 # `inner_skew` / `inner_skew_idx` / `inner_skew_dropped` fields
 # .nl_inner_skew_at_theta() attaches at fit time (see nested_laplace.R). NULL

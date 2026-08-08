@@ -536,3 +536,233 @@ test_that("this fixture's CCD decline is on the fit, not only in a message", {
   expect_identical(fit_g$integration, fit$integration)
   expect_true(is.na(fit_g$integration_declined))
 })
+
+# --------------------------------------------------------------------------- #
+# What the per-axis interval was read off (gcol33/tulpa#317)                   #
+# --------------------------------------------------------------------------- #
+
+test_that("a heterogeneous weight kind names the support mixed", {
+  # `integration` describes a homogeneous support, and a locally refined grid
+  # reports "grid", so the integrator name alone reads it as a density one.
+  expect_identical(tulpa:::.nl_node_support("grid"), "density")
+  expect_identical(tulpa:::.nl_node_support("ccd"), "moment_rule")
+  expect_identical(tulpa:::.nl_node_support("grid", rep("mass", 4L)), "density")
+  expect_identical(tulpa:::.nl_node_support("ccd", rep("design", 4L)),
+                   "moment_rule")
+  expect_identical(tulpa:::.nl_node_support("grid", c("mass", "design", "mass")),
+                   "mixed")
+})
+
+test_that("the interval provenance carries the design share", {
+  w <- c(0.4, 0.1, 0.3, 0.2)
+  k <- c("mass", "design", "design", "mass")
+  p <- tulpa:::.nl_interval_provenance("grid", k, w)
+  expect_identical(p$read, "mixed")
+  expect_equal(p$design_mass, 0.4)
+  # A homogeneous support has no share to report: none of it is a moment rule
+  # read as a CDF on a density grid, all of it is on a CCD.
+  expect_equal(
+    tulpa:::.nl_interval_provenance("grid", rep("mass", 4L), w)$design_mass, 0)
+  expect_equal(
+    tulpa:::.nl_interval_provenance("ccd", rep("design", 4L), w)$design_mass, 1)
+})
+
+test_that("naming the support mixed leaves the reported interval unchanged", {
+  # The measurement behind that choice is in `.nl_summary_quantile`: against a
+  # converged tensor reference the weighted quantile beat every alternative read
+  # in both design_mass regimes, so the support name is what changes here, not
+  # the number.
+  set.seed(11L)
+  v <- sort(stats::rnorm(40L))
+  w <- stats::runif(40L); w <- w / sum(w)
+  probs <- c(0.025, 0.5, 0.975)
+  expect_identical(
+    tulpa:::.nl_summary_quantile(v, w, probs, "unbounded", "mixed"),
+    tulpa:::.nl_wtd_quantile(v, w, probs, outside = "clamp"))
+  # And it is NOT the moment read, which is what a design-weighted support takes.
+  expect_false(isTRUE(all.equal(
+    tulpa:::.nl_summary_quantile(v, w, probs, "unbounded", "mixed"),
+    tulpa:::.nl_summary_quantile(v, w, probs, "unbounded", "moment_rule"))))
+})
+
+test_that("a locally refined fit says what its interval was read off", {
+  skip_on_cran()
+  sim  <- .lccd_sim_joint()
+  ctrl <- list(max_iter = 60L, tol = 1e-6, diagnose_k = FALSE,
+               var_of_means_consistency = FALSE, integration = "grid")
+  fit  <- suppressWarnings(tulpa_nested_laplace_joint(
+    sim$responses, sim$prior, copy = sim$copy, control = ctrl))
+  fitl <- suppressWarnings(tulpa_nested_laplace_joint(
+    sim$responses, sim$prior, copy = sim$copy,
+    control = c(ctrl, list(local_ccd = list(max_cells = 4L)))))
+
+  expect_identical(fit$theta_interval_read, "density")
+  expect_equal(fit$theta_interval_design_mass, 0)
+  expect_identical(fitl$theta_interval_read, "mixed")
+  expect_equal(fitl$theta_interval_design_mass,
+               fitl$local_ccd_info$design_mass)
+  expect_gt(fitl$theta_interval_design_mass, 0)
+  expect_lt(fitl$theta_interval_design_mass, 1)
+
+  # The intervals themselves are what the density read gives, to the last bit:
+  # the mixed tag records the support, it does not switch the construction.
+  qs <- tulpa:::.nl_axis_quantiles(fitl$theta_grid, fitl$log_marginal,
+                                   fitl$refining_axis, weights = fitl$weights,
+                                   support = "density")
+  expect_equal(fitl$theta_ci_lo, qs$ci_lo)
+  expect_equal(fitl$theta_ci_hi, qs$ci_hi)
+  expect_equal(fitl$theta_median, qs$median)
+
+  # And the diagnostic layer surfaces the pair rather than leaving it on the fit.
+  ir <- tulpa:::.tulpa_interval_read(fitl)
+  expect_identical(ir$read, "mixed")
+  expect_equal(ir$design_mass, fitl$local_ccd_info$design_mass)
+  expect_match(tulpa:::.tulpa_interval_read_note(ir), "MIXED support")
+  expect_null(tulpa:::.tulpa_interval_read_note(tulpa:::.tulpa_interval_read(fit)))
+})
+
+# --------------------------------------------------------------------------- #
+# The measured case for the mixed read (gcol33/tulpa#317)                      #
+# --------------------------------------------------------------------------- #
+#
+# Two analytic outer targets whose per-axis quantiles are known in closed form:
+# an equicorrelated Gaussian (qnorm) and a Gaussian copula with Gamma marginals
+# (qgamma), which is correlated the same way and skewed. The second one is what
+# separates a read that is right from a read that has the right FAMILY: the #308
+# moment read moment-matches a Gaussian on an `unbounded` domain, so on the
+# Gaussian target it is the exact family and wins by construction.
+#
+# Alternatives scored beside the shipped mixed read: collapsing each refined
+# cell's design block to one atom at its own weighted mean (which removes the
+# design's extent), the moment read, and not refining at all.
+
+.lccd_gate_target <- function(rho, reach, m, d = 4L, gamma_shape = NULL) {
+  R <- matrix(rho, d, d); diag(R) <- 1
+  if (is.null(gamma_shape)) {
+    Q  <- solve(R)
+    lf <- function(TH) -0.5 * rowSums((TH %*% Q) * TH)
+    rng <- c(-reach, reach)
+    qx  <- stats::qnorm(c(0.025, 0.5, 0.975))
+  } else {
+    Qi <- solve(R) - diag(d)
+    lf <- function(TH) {
+      TH <- pmax(TH, 1e-12)
+      z  <- stats::qnorm(stats::pgamma(TH, shape = gamma_shape))
+      z[!is.finite(z)] <- sign(z[!is.finite(z)]) * 8
+      rowSums(stats::dgamma(TH, shape = gamma_shape, log = TRUE)) -
+        0.5 * rowSums((z %*% Qi) * z)
+    }
+    # `reach` is the tail in standard-normal units mapped through the marginal's
+    # own quantile function, so a coarse grid straddles the mode on both targets.
+    rng <- stats::qgamma(stats::pnorm(c(-reach, reach)), shape = gamma_shape)
+    qx  <- stats::qgamma(c(0.025, 0.5, 0.975), shape = gamma_shape)
+  }
+  lv <- seq(rng[1L], rng[2L], length.out = m)
+  ll <- stats::setNames(replicate(d, lv, simplify = FALSE), paste0("a", seq_len(d)))
+  g  <- as.matrix(expand.grid(ll, KEEP.OUT.ATTRS = FALSE))
+  colnames(g) <- names(ll)
+  list(grid = g, lm = lf(g), exact = qx,
+       tags = stats::setNames(rep("identity", d), colnames(g)),
+       eval = function(theta_mat, warm)
+         list(log_marginal = lf(theta_mat), modes = NULL))
+}
+
+# Mean absolute endpoint error of each read against the exact quantiles, on one
+# refined grid. NULL when the refinement declines there.
+.lccd_gate_reads <- function(tg, max_cells = 4L) {
+  rf <- tulpa:::.joint_local_ccd_refine(tg$grid, tg$lm, NULL, NULL,
+                                        colnames(tg$grid), tg$tags, tg$eval,
+                                        max_cells)
+  if (is.null(rf)) return(NULL)
+  w     <- tulpa:::.joint_integration_weights(rf$log_marginal, rf$dnode)
+  probs <- c(0.025, 0.5, 0.975)
+  # Which refined cell each design row belongs to: the refinement appends one
+  # contiguous block per cell, every block the same CCD size.
+  nc   <- rf$info$n_cells_refined
+  blk  <- sum(rf$weight_kind == "design") %/% nc
+  cell <- integer(length(w))
+  cell[rf$weight_kind == "design"] <- rep(seq_len(nc), each = blk)
+
+  per_axis <- function(f) t(vapply(seq_len(ncol(rf$joint_grid)), function(j) {
+    v   <- as.numeric(rf$joint_grid[, j])
+    use <- is.finite(v) & is.finite(w) & w > 0
+    f(v[use], w[use] / sum(w[use]), cell[use])
+  }, numeric(3L)))
+
+  mixed  <- per_axis(function(v, ww, cc)
+    tulpa:::.nl_summary_quantile(v, ww, probs, "unbounded", "mixed"))
+  moment <- per_axis(function(v, ww, cc)
+    tulpa:::.nl_moment_quantile(v, ww, probs, "unbounded"))
+  collapsed <- per_axis(function(v, ww, cc) {
+    keep <- cc == 0L
+    vv <- v[keep]; wv <- ww[keep]
+    for (k in setdiff(unique(cc), 0L)) {
+      ix  <- which(cc == k)
+      tot <- sum(ww[ix])
+      vv  <- c(vv, sum(ww[ix] * v[ix]) / tot)
+      wv  <- c(wv, tot)
+    }
+    tulpa:::.nl_wtd_quantile(vv, wv, probs, outside = "clamp")
+  })
+  w0 <- tulpa:::.joint_integration_weights(tg$lm, NULL)
+  base <- t(vapply(seq_len(ncol(tg$grid)), function(j) {
+    v   <- as.numeric(tg$grid[, j])
+    use <- is.finite(v) & is.finite(w0) & w0 > 0
+    tulpa:::.nl_wtd_quantile(v[use], w0[use] / sum(w0[use]), probs, "clamp")
+  }, numeric(3L)))
+
+  ex <- matrix(rep(tg$exact, each = nrow(mixed)), nrow = nrow(mixed))
+  e  <- function(M) mean(abs(M - ex))
+  list(design_mass = sum(w[rf$weight_kind == "design"]),
+       mixed = e(mixed), moment = e(moment), collapsed = e(collapsed),
+       base = e(base))
+}
+
+.lccd_gate_sweep <- function(gamma_shape = NULL,
+                             reaches = c(2, 3, 4, 6), ms = c(3L, 5L, 7L)) {
+  acc <- list()
+  for (rho in c(0, 0.5, 0.8)) for (reach in reaches) for (m in ms) {
+    r <- .lccd_gate_reads(.lccd_gate_target(rho, reach, m,
+                                            gamma_shape = gamma_shape))
+    if (is.null(r)) next
+    acc[[length(acc) + 1L]] <- as.data.frame(r)
+  }
+  do.call(rbind, acc)
+}
+
+test_that("the mixed read beats the alternatives on both sides of design_mass", {
+  skip_if_not_slow()
+  s <- .lccd_gate_sweep()
+  hi <- s[s$design_mass >= 0.5, ]
+  lo <- s[s$design_mass <  0.5, ]
+  # The regime is asserted before the errors, so neither half can pass by being
+  # empty.
+  expect_gte(nrow(hi), 15L)
+  expect_gte(nrow(lo), 15L)
+
+  # Summed absolute endpoint error against the exact quantiles. Measured:
+  # design_mass >= 0.5 (19 configurations) mixed 3.18024, collapsed 15.72792,
+  # unrefined 17.80607; design_mass < 0.5 (17) mixed 2.69889, collapsed 3.92249,
+  # unrefined 3.83155.
+  for (part in list(hi, lo)) {
+    tot <- colSums(part[, c("mixed", "moment", "collapsed", "base")])
+    expect_lt(tot[["mixed"]], tot[["collapsed"]])
+    expect_lt(tot[["mixed"]], tot[["base"]])
+  }
+  expect_lt(sum(hi$mixed), 3.5)
+  expect_lt(sum(lo$mixed), 3.0)
+
+  # The moment read wins on THIS target because a Gaussian moment match is its
+  # exact family here, which is why the win does not carry (see below).
+  expect_lt(sum(s$moment), sum(s$mixed))
+})
+
+test_that("the moment read's advantage is the family, not the support", {
+  skip_if_not_slow()
+  # Same correlation, same refinement, skewed marginals. Measured over 27
+  # configurations: mixed 26.24674 against moment 39.93958.
+  s <- .lccd_gate_sweep(gamma_shape = 2, reaches = c(1.5, 2, 3))
+  expect_gte(nrow(s), 20L)
+  expect_lt(sum(s$mixed), sum(s$moment))
+  expect_lt(sum(s$mixed), 29)
+})

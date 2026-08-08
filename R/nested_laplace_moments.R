@@ -179,11 +179,29 @@
 # the engine will not guess -- a proper-CAR correlation on the adjacency
 # eigenvalue interval -- and reports NA rather than the design's extent.
 #
-# The single dispatcher for every consumer of the two summaries, so a caller
-# names its support and its domain and inherits the rest.
+# `support = "mixed"` is the locally CCD-refined grid, the one node set that is
+# part cell masses and part quadrature design (gcol33/tulpa#311): the carried-over
+# base cells hold their own mass, the refined cells' replacement clouds hold a
+# partition-of-unity share of theirs placed at the design's radius. On the design
+# part a cumulative sum is not a CDF, so the quantile there reads closer to the
+# design's own per-axis extent than to a posterior property (gcol33/tulpa#317).
+# It still takes the weighted quantile, because that is what measured best:
+# scored against the converged m = 13 tensor reference on the four-axis
+# multi-block fixture (noise floor 0.01716 on the endpoints, 0.03853 on the
+# widths), summed absolute endpoint error over seven base grids is 0.63446 for
+# the quantile against 0.73159 for collapsing each design block to its mean,
+# 0.74464 for splitting the read into a mass CDF plus a per-cell moment-matched
+# Gaussian, and 1.20402 for the #308 moment read; on analytic outer targets whose
+# axis quantiles are known in closed form the same ordering holds in the
+# design-dominated regime. So the value of naming the support is that the fit can
+# SAY it is mixed and how much of the weight is design (`theta_interval_read` /
+# `theta_interval_design_mass`), not that a different formula replaces it.
+#
+# The single dispatcher for every consumer of the summaries, so a caller names
+# its support and its domain and inherits the rest.
 .nl_summary_quantile <- function(values, weights, probs,
                                  domain = NA_character_,
-                                 support = c("density", "moment_rule")) {
+                                 support = c("density", "moment_rule", "mixed")) {
   support <- match.arg(support)
   if (!identical(support, "moment_rule")) {
     return(.nl_wtd_quantile(values, weights, probs, outside = "clamp"))
@@ -194,11 +212,42 @@
   .nl_moment_quantile(values, weights, probs, domain)
 }
 
-# What kind of node set an outer integrator leaves behind, from the name it
-# reports in `fit$integration`. Only the central-composite design is a moment
-# rule; the tensor grid and its adaptive subset discretize the density.
-.nl_node_support <- function(integration) {
+# What kind of node set an outer integrator leaves behind. `integration` names
+# the integrator that RAN, which describes a HOMOGENEOUS support: only the
+# central-composite design is a moment rule, and the tensor grid and its adaptive
+# subset discretize the density. A locally CCD-refined grid carries both kinds at
+# once and reports `"grid"`, so the per-cell `weight_kind` tag decides ahead of
+# the integrator name (gcol33/tulpa#317) -- otherwise a mixed support is read as
+# a homogeneous density one and nothing downstream can tell.
+.nl_node_support <- function(integration, weight_kind = NULL) {
+  if (length(weight_kind) > 1L) {
+    kinds <- unique(weight_kind[!is.na(weight_kind)])
+    if (length(kinds) > 1L) return("mixed")
+  }
   if (identical(integration, "ccd")) "moment_rule" else "density"
+}
+
+# What the reported per-axis intervals were read off, and the share of the
+# integration weight sitting on nodes whose cumulative sum is not a CDF.
+#
+# `design_mass` is 0 on a pure density grid, 1 on a global CCD, and the refined
+# cells' share on a mixed one. It is the regime variable for the mixed read: the
+# larger it is, the more of the reported interval comes from a moment rule being
+# read as a CDF. Returned together so every consumer surfaces the same pair.
+.nl_interval_provenance <- function(integration, weight_kind = NULL,
+                                    weights = NULL) {
+  read <- .nl_node_support(integration, weight_kind)
+  dm <- if (identical(read, "moment_rule")) {
+    1
+  } else if (identical(read, "mixed") && !is.null(weights) &&
+             length(weights) == length(weight_kind)) {
+    sum(weights[weight_kind == "design"], na.rm = TRUE)
+  } else if (identical(read, "mixed")) {
+    NA_real_
+  } else {
+    0
+  }
+  list(read = read, design_mass = dm)
 }
 
 # Summary of a weighted mixture of Gaussians, one mixture per parameter.
@@ -304,7 +353,7 @@
 .nl_axis_quantiles <- function(tg, log_marginal, refining = NULL,
                                 probs = c(0.025, 0.5, 0.975),
                                 weights = NULL,
-                                support = c("density", "moment_rule"),
+                                support = c("density", "moment_rule", "mixed"),
                                 domains = NULL) {
   support <- match.arg(support)
   if (is.null(dim(tg))) {
