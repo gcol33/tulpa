@@ -662,7 +662,17 @@ any node was placed). The two shares differ: the replacement nodes sit
 nearer the peak than the cell's own coordinate did, so refining raises
 the share the refined region holds, and reading both separates how
 concentrated the base grid already was from how much the refinement
-concentrated it. NULL when local CCD was off or declined (single-block,
+concentrated it. Two per-cell readings of the design's own least-squares
+fit come with it: \code{misfit} (the standardized cubic magnitude of the part
+of the cell the design cannot represent, kept below \code{skew_max}, with
+\code{misfit_declined} / \code{cells_declined} for the cells put back as their own
+mass atoms) and \code{offset} / \code{offset_declined} (the norm of the whitened
+gradient, i.e. how far the cell's own peak sat from the cell's
+coordinate in units of its marginal spread). \code{misfit} certifies that the
+design can represent the cell's shape and nothing more; a cell can be
+exactly quadratic and still be read at a point that is not
+representative of it, which is what \code{offset} reports and nothing gates
+on. NULL when local CCD was off or declined (single-block,
 \verb{< 4} axes, an active \code{phi_grid}, or no peaked interior cell).
 \item \code{integration_requested}, \code{integration_declined} -- what \code{integration}
 asked for, and why the CCD did not run. \verb{$integration} names the

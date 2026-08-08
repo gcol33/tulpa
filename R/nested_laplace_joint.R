@@ -670,7 +670,17 @@
 #'      nearer the peak than the cell's own coordinate did, so refining raises
 #'      the share the refined region holds, and reading both separates how
 #'      concentrated the base grid already was from how much the refinement
-#'      concentrated it. NULL when local CCD was off or declined (single-block,
+#'      concentrated it. Two per-cell readings of the design's own least-squares
+#'      fit come with it: `misfit` (the standardized cubic magnitude of the part
+#'      of the cell the design cannot represent, kept below `skew_max`, with
+#'      `misfit_declined` / `cells_declined` for the cells put back as their own
+#'      mass atoms) and `offset` / `offset_declined` (the norm of the whitened
+#'      gradient, i.e. how far the cell's own peak sat from the cell's
+#'      coordinate in units of its marginal spread). `misfit` certifies that the
+#'      design can represent the cell's shape and nothing more; a cell can be
+#'      exactly quadratic and still be read at a point that is not
+#'      representative of it, which is what `offset` reports and nothing gates
+#'      on. NULL when local CCD was off or declined (single-block,
 #'      `< 4` axes, an active `phi_grid`, or no peaked interior cell).
 #'   * `integration_requested`, `integration_declined` -- what `integration`
 #'      asked for, and why the CCD did not run. `$integration` names the

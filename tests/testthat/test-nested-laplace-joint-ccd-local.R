@@ -791,19 +791,71 @@ test_that("the local-quadratic misfit is zero on a quadratic and linear in the c
   # A central composite design identifies a full quadratic exactly, so nothing is
   # left over: the score cannot fire where the outer target is Gaussian in the
   # transformed coordinate, whatever the correlation or the grid spacing.
-  expect_equal(tulpa:::.joint_local_ccd_misfit(ccd$z, u_c, quad, sd), 0,
+  expect_equal(tulpa:::.joint_local_ccd_misfit(ccd$z, u_c, quad, sd)$misfit, 0,
                tolerance = 1e-12)
   # The least-squares residual is linear in the response, so a cubic term of
   # twice the size scores exactly twice as high.
   cub <- ccd$z[, 1L]^3
-  g1 <- tulpa:::.joint_local_ccd_misfit(ccd$z, u_c, quad + cub / 6, sd)
-  g2 <- tulpa:::.joint_local_ccd_misfit(ccd$z, u_c, quad + cub / 3, sd)
+  g1 <- tulpa:::.joint_local_ccd_misfit(ccd$z, u_c, quad + cub / 6, sd)$misfit
+  g2 <- tulpa:::.joint_local_ccd_misfit(ccd$z, u_c, quad + cub / 3, sd)$misfit
   expect_gt(g1, 0)
   expect_equal(g2, 2 * g1, tolerance = 1e-10)
   # And it is invariant to the quadratic part it is measured against.
   expect_equal(
-    tulpa:::.joint_local_ccd_misfit(ccd$z, u_c, 3 - 2 * quad + cub / 6, sd),
+    tulpa:::.joint_local_ccd_misfit(ccd$z, u_c, 3 - 2 * quad + cub / 6, sd)$misfit,
     g1, tolerance = 1e-10)
+})
+
+test_that("the whitened gradient reads an off-centre cell the misfit cannot see", {
+  d <- 4L
+  ccd <- ccd_grid(d, f_0 = sqrt(d) * 1.1)
+  u_c <- rep(0, d)
+  sd  <- rep(1, d)
+  # A quadratic centred ON the cell: the design represents it exactly and the
+  # cell's coordinate is its peak, so both readings are zero.
+  at <- tulpa:::.joint_local_ccd_misfit(ccd$z, u_c, -0.5 * rowSums(ccd$z^2), sd)
+  expect_equal(at$misfit, 0, tolerance = 1e-12)
+  expect_equal(at$offset, 0, tolerance = 1e-10)
+  # The same quadratic, peaked at `m` instead. It is still exactly quadratic in
+  # the whitened coordinate, so the design still represents it exactly and the
+  # misfit stays at zero however far off-centre the peak sits; the whitened
+  # gradient is `m` and its norm is what the offset reports.
+  for (m in list(c(0.4, 0, 0, 0), c(0.9, -0.6, 0.3, 0), c(-2, 1.5, -1, 0.5))) {
+    zc <- sweep(ccd$z, 2L, m, FUN = "-")
+    fit <- tulpa:::.joint_local_ccd_misfit(ccd$z, u_c, -0.5 * rowSums(zc^2), sd)
+    expect_equal(fit$misfit, 0, tolerance = 1e-10)
+    expect_equal(fit$offset, sqrt(sum(m^2)), tolerance = 1e-8)
+  }
+  # And it is standardized: the same displacement read on a cell whose marginal
+  # spread is `s` per axis reports `|p| / s`, not `|p|`.
+  s <- c(0.5, 2, 1, 4)
+  p <- c(0.45, -1.2, 0.3, 2)
+  u_nodes <- sweep(ccd$z, 2L, s, FUN = "*")
+  lm_nodes <- -0.5 * rowSums(sweep(sweep(u_nodes, 2L, p, FUN = "-"),
+                                   2L, s, FUN = "/")^2)
+  scaled <- tulpa:::.joint_local_ccd_misfit(u_nodes, u_c, lm_nodes, s)
+  expect_equal(scaled$misfit, 0, tolerance = 1e-10)
+  expect_equal(scaled$offset, sqrt(sum((p / s)^2)), tolerance = 1e-8)
+})
+
+test_that("the offset declines with the fit rather than reporting an unestimated one", {
+  d <- 4L
+  ccd <- ccd_grid(d, f_0 = sqrt(d) * 1.1)
+  u_c <- rep(0, d)
+  sd  <- rep(1, d)
+  quad <- -0.5 * rowSums(ccd$z^2)
+  # A non-finite response identifies nothing: both readings decline together.
+  bad <- quad; bad[1L] <- NA_real_
+  na <- tulpa:::.joint_local_ccd_misfit(ccd$z, u_c, bad, sd)
+  expect_true(is.na(na$misfit))
+  expect_true(is.na(na$offset))
+  # A design flat on one axis is rank deficient there: the residual is still a
+  # residual, but that axis's linear coefficient was never estimated, so the
+  # norm over the gradient declines instead of standing in for it.
+  z <- ccd$z; z[, d] <- 0
+  flat <- tulpa:::.joint_local_ccd_misfit(z, u_c, -0.5 * rowSums(z^2), sd)
+  expect_true(is.finite(flat$misfit))
+  expect_true(is.na(flat$offset))
 })
 
 test_that("a cell whose local quadratic does not hold is put back as a mass atom", {
@@ -826,6 +878,13 @@ test_that("a cell whose local quadratic does not hold is put back as a mass atom
                off$info$n_cells_refined - on$info$n_cells_declined)
   expect_true(all(on$info$misfit_declined >= on$info$skew_max))
   expect_equal(on$info$skew_max, tulpa:::.nl_diag("gamma3_ok"))
+  # A declined cell still reports how far off-centre it sat: the offset is
+  # carried per cell on both sides of the gate (gcol33/tulpa#321).
+  expect_length(on$info$offset_declined, on$info$n_cells_declined)
+  expect_true(all(is.finite(on$info$offset_declined)))
+  expect_true(all(on$info$offset_declined >= 0))
+  expect_length(off$info$offset, off$info$n_cells_refined)
+  expect_true(all(is.finite(off$info$offset)))
   # Every cell declined here, so the grid is the base grid again: same rows, no
   # design weights, and nothing downstream reads it as a mixed support.
   expect_equal(on$info$n_design_nodes, 0L)
@@ -846,6 +905,11 @@ test_that("the gate leaves a quadratic outer target's refinement untouched", {
   expect_gt(off$info$n_cells_refined, 0L)
   expect_equal(on$info$n_cells_declined, 0L)
   expect_equal(max(on$info$misfit), 0, tolerance = 1e-10)
+  # Zero misfit on a quadratic outer target says nothing about where in the cell
+  # its peak sat, and the offset is the number that does.
+  expect_length(on$info$offset, on$info$n_cells_refined)
+  expect_length(on$info$offset_declined, 0L)
+  expect_true(all(is.finite(on$info$offset)))
   expect_equal(on$joint_grid, off$joint_grid)
   expect_equal(on$log_marginal, off$log_marginal)
   expect_equal(on$dnode, off$dnode)

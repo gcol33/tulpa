@@ -47,6 +47,21 @@
 # refinement is untouched, while on a skewed one the design reports its own
 # geometry rather than the cell's mass and the atom is measurably closer.
 #
+# What passing that score certifies is bounded, and the bound is the whole of
+# it: the design can REPRESENT the cell. It says nothing about the cell's own
+# coordinate being a REPRESENTATIVE POINT of the cell. The linear term sits in
+# its own columns of the design matrix, so a cell whose outer log-marginal is a
+# perfectly good quadratic that simply is not centred on the cell fits exactly
+# and scores near zero however steep the gradient across it; a design centred
+# there reproduces the local quadratic exactly and can still return node masses
+# dominated by one corner. That displacement is the OTHER quantity the same
+# least-squares fit estimates, and it is reported rather than discarded: the
+# `offset` in `info` is the L2 norm of the whitened gradient, the cell's own peak
+# measured from the cell's coordinate in units of the marginal spread the
+# whitening used, carried for refined and declined cells alike. Nothing is gated
+# on it -- a gradient across the cell is a cross-cell estimator question, an axis
+# orthogonal to the local shape `skew_max` reads (gcol33/tulpa#321).
+#
 # The node cloud of each refined cell is clamped to the cell's Voronoi half-box
 # (half the distance to each neighbour on each axis), so clouds of distinct cells
 # never overlap and never spill into an unrefined neighbour's mass. Combined with
@@ -205,25 +220,38 @@
 # number, and the quantity being standardized is a property of the posterior, not
 # of the box it was truncated to).
 #
-# NA when the design cannot identify the quadratic at all, which the caller
-# treats the same as a failing score: an unverified local Gaussian.
+# `offset` is the second reading of the same fit, and a different axis: the L2
+# norm of the whitened gradient `fit$coefficients[2:(d + 1)]`, i.e. how far the
+# cell's own peak sits from the cell's coordinate, in the same marginal-spread
+# units the whitening put the design in. `misfit` cannot see it by construction,
+# the linear term having its own columns, so an off-centre but exactly quadratic
+# cell scores zero misfit at any `offset` (gcol33/tulpa#321).
+#
+# Both NA when the design cannot identify the quadratic at all, which the caller
+# treats the same as a failing score: an unverified local Gaussian. `offset`
+# alone is NA on a rank-deficient design, where the aliased linear coefficients
+# come back NA and a norm over them would report a displacement that was never
+# estimated.
 .joint_local_ccd_misfit <- function(u_nodes, u_c, lm_nodes, sd) {
     d <- length(u_c)
+    none <- list(misfit = NA_real_, offset = NA_real_)
     if (!all(is.finite(lm_nodes)) || !all(is.finite(sd)) || any(sd <= 0))
-        return(NA_real_)
+        return(none)
     Z <- sweep(sweep(u_nodes, 2L, u_c, FUN = "-"), 2L, sd, FUN = "/")
-    if (!all(is.finite(Z))) return(NA_real_)
+    if (!all(is.finite(Z))) return(none)
     cols <- list(rep(1, nrow(Z)))
     for (j in seq_len(d)) cols[[length(cols) + 1L]] <- Z[, j]
     for (j in seq_len(d)) for (k in j:d)
         cols[[length(cols) + 1L]] <- Z[, j] * Z[, k]
     X <- do.call(cbind, cols)
-    if (nrow(X) <= ncol(X)) return(NA_real_)
+    if (nrow(X) <= ncol(X)) return(none)
     fit <- tryCatch(stats::lm.fit(X, lm_nodes), error = function(e) NULL)
-    if (is.null(fit)) return(NA_real_)
+    if (is.null(fit)) return(none)
     r3 <- sqrt(mean((rowSums(Z^2)^1.5)^2))
-    if (!is.finite(r3) || r3 <= 0) return(NA_real_)
-    6 * sqrt(mean(fit$residuals^2)) / r3
+    if (!is.finite(r3) || r3 <= 0) return(none)
+    g <- fit$coefficients[seq_len(d) + 1L]
+    list(misfit = 6 * sqrt(mean(fit$residuals^2)) / r3,
+         offset  = if (all(is.finite(g))) sqrt(sum(g^2)) else NA_real_)
 }
 
 # Greedy mutually-non-adjacent selection: take the highest-weight candidate, drop
@@ -262,9 +290,11 @@
 #                started from `warm` (the refined cell's inner mode, or NULL).
 #   max_cells    cap on refined cells (hard cap on extra solve fan-out).
 #   f0           CCD factorial-corner radius per whitened axis (INLA default 1.1).
-#   skew_max     a cell keeps its cloud only while `.joint_local_ccd_misfit()`
-#                stays below this; above it the cell is put back as its own mass
-#                atom (gcol33/tulpa#318).
+#   skew_max     a cell keeps its cloud only while `.joint_local_ccd_misfit()`'s
+#                `misfit` stays below this; above it the cell is put back as its
+#                own mass atom (gcol33/tulpa#318). The same call's `offset` is
+#                recorded for every cell either way and gates nothing
+#                (gcol33/tulpa#321).
 #   verbose      announce the refinement summary.
 #   cov_blocks   length-n list of per-cell fixed-effect covariance blocks, or
 #                NULL. Carried cell-for-cell exactly like `modes`, so a refined
@@ -341,8 +371,10 @@
     cell_share      <- numeric(0)
     refined         <- integer(0)
     misfit          <- numeric(0)
+    offset          <- numeric(0)
     declined_cells  <- integer(0)
     declined_misfit <- numeric(0)
+    declined_offset <- numeric(0)
 
     for (c in chosen) {
         cc  <- curv[[c]]
@@ -385,13 +417,19 @@
         # mass and the cell is measurably better off as the atom it was
         # (gcol33/tulpa#318). The score is read off the nodes just evaluated, so
         # the decision costs no further solve -- the ones already spent are the
-        # price of finding out.
-        mis <- .joint_local_ccd_misfit(rbind(u_c, u_nodes), u_c,
-                                       c(log_marginal[c], lm_off),
-                                       cc$sd_marginal %||% cc$sd)
+        # price of finding out. Passing it says the design can represent the
+        # cell's shape, and only that: the same fit's whitened gradient `offset`
+        # is how far the cell's own peak sits from the coordinate the cloud was
+        # centred on, which a third-order score cannot see and which nothing here
+        # gates on (gcol33/tulpa#321).
+        fit_c <- .joint_local_ccd_misfit(rbind(u_c, u_nodes), u_c,
+                                         c(log_marginal[c], lm_off),
+                                         cc$sd_marginal %||% cc$sd)
+        mis <- fit_c$misfit
         if (!isTRUE(mis < skew_max)) {
             declined_cells  <- c(declined_cells, c)
             declined_misfit <- c(declined_misfit, mis)
+            declined_offset <- c(declined_offset, fit_c$offset)
             next
         }
 
@@ -420,6 +458,7 @@
         cell_share <- c(cell_share, w[c])
         refined    <- c(refined, c)
         misfit     <- c(misfit, mis)
+        offset     <- c(offset, fit_c$offset)
         n_nodes_added <- n_nodes_added + nrow(theta_nodes)
     }
 
@@ -468,9 +507,11 @@
                              cells           = refined,
                              cell_share      = cell_share,
                              misfit          = misfit,
+                             offset          = offset,
                              skew_max        = skew_max,
                              cells_declined  = declined_cells,
                              misfit_declined = declined_misfit,
+                             offset_declined = declined_offset,
                              n_cells_declined = length(declined_cells),
                              n_cells_before  = n,
                              n_cells_after   = nrow(out_grid),

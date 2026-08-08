@@ -1,5 +1,20 @@
 # tulpa NEWS
 
+## 0.0.146
+
+* The local-CCD cubic misfit score now reports the whitened gradient its own
+  least-squares fit already estimated, and the refinement carries it per cell as
+  `offset` / `offset_declined` on `local_ccd_info` (gcol33/tulpa#321). The score
+  puts the linear term in its own design columns, so a cell whose outer
+  log-marginal is a perfectly good quadratic that simply is not centred on the
+  cell fits exactly and scores near zero however steep the gradient across it:
+  passing it certifies that the design can represent the cell, not that the
+  cell's coordinate is a representative point of it. `offset` is the
+  standardized displacement of the cell's own peak from the cell's coordinate,
+  in units of the marginal spread the whitening used, and nothing gates on it --
+  a gradient across the cell is a cross-cell estimator question, orthogonal to
+  the local shape `skew_max` reads.
+
 ## 0.0.145
 
 * Local CCD refinement of the joint outer grid now keeps a refined cell's node
