@@ -31,12 +31,29 @@
 
 # Draw a response of one built-in family at a given linear predictor. Shared by
 # every simulator below so the response law has one definition.
+#
+# `phi` is ALWAYS the parameterization the fitters' own door takes, which for
+# every fitter in this file is a DIRECT door (`tulpa_nested_laplace()`,
+# `tulpa_nested_laplace_joint()`) and therefore the kernel convention: for
+# gaussian and lognormal that is the residual SD, variance `phi^2`
+# (`R/nested_laplace_joint.R`, `@param phi_grid`). `tulpa()` is the door that
+# takes the residual VARIANCE and converts at its boundary with
+# `.phi_to_kernel()`; nothing in this file goes through it.
+#
+# So the draw applies NO conversion of its own: `cfg$phi` reaches the simulator
+# and the fitter as the same number meaning the same thing, and a crossing
+# between the two conventions has nowhere to enter (gcol33/tulpa#332, which was
+# a `sqrt(phi)` here fitting against a `phi` at the door -- half the residual
+# variance, and a slope interval narrow by sqrt(2)). The convention itself is
+# pinned against the engine by the test at the end of this file, so a change on
+# the door's side fails loudly here instead of silently rescaling every gaussian
+# fixture.
 recov_draw_y <- function(family, eta, ntr, phi) {
   N <- length(eta)
   switch(family,
     poisson        = rpois(N, exp(eta)),
     binomial       = rbinom(N, ntr, plogis(eta)),
-    gaussian       = eta + rnorm(N, 0, sqrt(phi)),
+    gaussian       = eta + rnorm(N, 0, phi),
     neg_binomial_2 = rnbinom(N, mu = exp(eta), size = phi),
     gamma          = rgamma(N, shape = phi, rate = phi / exp(eta)),
     beta           = {
@@ -102,6 +119,15 @@ beta_post <- function(fit, z = 1.96) {
   list(mean = mean, lo = mean - z * sd, hi = mean + z * sd)
 }
 
+# A per-fit diagnostic read to a fixed length. A backend that declined the
+# diagnostic attaches nothing, and a shorter vector than the coefficient block
+# leaves the tail NA -- "not scored", never 0.
+.recov_pad <- function(x, n) {
+  out <- rep(NA_real_, n)
+  if (length(x)) out[seq_len(min(n, length(x)))] <- as.numeric(x)[seq_len(min(n, length(x)))]
+  out
+}
+
 # The two fitters the sweep runs. Both describe the SAME model -- one region
 # IID block over the outer RE-SD grid, the same design and response -- so their
 # fixed-effect estimates and intervals are each other's reference.
@@ -150,21 +176,40 @@ recov_fit_joint_ccd <- function(d, sg, family, cfg) {
 # no phi grid, `store_Q` off. `local_ccd` is the ONLY setting that differs
 # between the two fits, so a difference in what they report is a difference the
 # refinement made (gcol33/tulpa#320).
-recov_fit_joint_coarse <- function(d, sg, family, cfg, local_ccd = NULL) {
-  sgc <- sg[c(1L, 3L, 5L, 7L)]
+#
+# `levels` selects the base-grid resolution off `sg`: four levels by default,
+# and `sg` itself at seven. `phi` is the arm's residual scale, which the joint
+# door reads as the gaussian residual SD (variance `phi^2`) -- passing something
+# other than `cfg$phi` is what lets a fit be scored against a twin whose
+# assumed residual scale is the simulator's.
+recov_fit_joint_coarse <- function(d, sg, family, cfg, local_ccd = NULL,
+                                   phi = cfg$phi, levels = 4L,
+                                   diagnose_k = FALSE) {
+  sgc <- if (levels >= length(sg)) sg else
+    exp(seq(log(min(sg)), log(max(sg)), length.out = levels))
   suppressWarnings(tulpa_nested_laplace_joint(
     responses = list(a = list(y = as.numeric(d$y),
                               n_trials = rep(cfg$ntr, d$N), X = d$X,
-                              family = family, phi = cfg$phi)),
+                              family = family, phi = phi)),
     prior = lapply(d$regions, function(g)
       list(type = "iid", obs_idx = list(g), n_units = d$nr, sigma_grid = sgc)),
     control = list(max_iter = 100L, tol = 1e-8, n_threads = 1L,
-                   diagnose_k = FALSE, integration = "grid",
-                   local_ccd = local_ccd)))
+                   diagnose_k = diagnose_k, integration = "grid",
+                   local_ccd = local_ccd, skew_correct = TRUE)))
 }
 
 recov_fit_joint_local_ccd <- function(d, sg, family, cfg) {
   recov_fit_joint_coarse(d, sg, family, cfg, local_ccd = TRUE)
+}
+
+# The same coarse fit with the two residual-scale conventions crossed: the arm
+# is handed `cfg$phi^2`, the residual VARIANCE, where the door reads an SD. That
+# is exactly the gcol33/tulpa#332 defect, on data the corrected fixture also
+# simulates, so it is the negative control the coverage gate is scored against
+# -- a fit at the wrong residual scale must fail the gate the corrected one
+# passes, or the gate is not sensitive to the thing it grades.
+recov_fit_joint_phi_crossed <- function(d, sg, family, cfg) {
+  recov_fit_joint_coarse(d, sg, family, cfg, phi = cfg$phi^2)
 }
 
 # Fit n_seed data sets for one family; return per-coefficient mean estimate,
@@ -177,6 +222,14 @@ recov_fit_joint_local_ccd <- function(d, sg, family, cfg) {
 # the solve produced -- so that comparison is paired and carries no fit-to-fit
 # noise. `beta_post` above is untouched and remains what the coverage gates
 # below judge.
+#
+# Alongside the aggregates it keeps the PER-SEED reads: `cov_seed` / `width_seed`
+# (which seeds missed and how wide their intervals were), `gamma3_seed`,
+# `inner_k_seed` / `inner_k_ess_seed` and `outer_k_seed` (the inner and outer
+# reliability scores at the same probed indices), and `ci_skew_gap` (how far the
+# skew-corrected endpoints moved). An aggregate cannot say WHICH seeds a
+# diagnostic was bad on, and relating the two is what attributing a coverage
+# deficit to a layer takes (gcol33/tulpa#325).
 #
 # `fit_fn(d, sg, family, cfg)` is the fitter under test. It defaults to the
 # single-block nested driver; `recov_fit_joint` below fits the SAME simulated
@@ -198,10 +251,15 @@ recov_sweep <- function(family, cfg, n_seed, seed_off, fit_fn = recov_fit_single
   sg   <- exp(seq(log(0.2), log(1.5), length.out = 7))
   est  <- matrix(NA_real_, n_seed, p)
   wid  <- matrix(NA_real_, n_seed, p)
+  cvs  <- matrix(NA_integer_, n_seed, p)
   covb <- integer(p)
   cov_gauss <- integer(p)
   cov_skew  <- integer(p)
   gamma3    <- matrix(NA_real_, n_seed, p)
+  inner_k     <- matrix(NA_real_, n_seed, p)
+  inner_k_ess <- matrix(NA_real_, n_seed, p)
+  ci_skew_gap <- numeric(n_seed)
+  outer_k     <- numeric(n_seed)
   s_med <- numeric(n_seed)
   s_wid <- numeric(n_seed)
   s_cov <- 0L
@@ -213,12 +271,21 @@ recov_sweep <- function(family, cfg, n_seed, seed_off, fit_fn = recov_fit_single
     est[s, ] <- bp$mean
     wid[s, ] <- bp$hi - bp$lo
     for (j in seq_len(p)) {
-      if (beta[j] >= bp$lo[j] && beta[j] <= bp$hi[j]) covb[j] <- covb[j] + 1L
+      cvs[s, j] <- as.integer(beta[j] >= bp$lo[j] && beta[j] <= bp$hi[j])
+      covb[j] <- covb[j] + cvs[s, j]
     }
     gamma3[s, ] <- f$skew_correction$gamma3
+    # The two inner-layer scores at the SAME probed indices gamma_3 is read at
+    # (the fixed-effects coefficients), plus the outer one, per seed rather than
+    # averaged -- which seed missed is only relatable to a diagnostic that was
+    # kept per seed (gcol33/tulpa#325). A backend that declined leaves NA.
+    inner_k[s, ]     <- .recov_pad(f$inner_pareto_k, p)
+    inner_k_ess[s, ] <- .recov_pad(f$inner_pareto_k_rel_ess, p)
+    outer_k[s]       <- .recov_pad(f$pareto_k, 1L)
     ci_skew <- confint(f, level = level)
     f$skew_correction$enabled <- FALSE
     ci_gauss <- confint(f, level = level)
+    ci_skew_gap[s] <- max(abs(ci_skew - ci_gauss))
     for (j in seq_len(p)) {
       if (beta[j] >= ci_gauss[j, 1] && beta[j] <= ci_gauss[j, 2]) {
         cov_gauss[j] <- cov_gauss[j] + 1L
@@ -234,19 +301,33 @@ recov_sweep <- function(family, cfg, n_seed, seed_off, fit_fn = recov_fit_single
     }
   }
   list(mean = colMeans(est), bias = colMeans(est) - beta, cov = covb,
-       width = colMeans(wid),
+       width = colMeans(wid), width_seed = wid, cov_seed = cvs,
        cov_gauss = cov_gauss, cov_skew = cov_skew,
-       gamma3 = colMeans(gamma3), sigma_bias = mean(s_med) - cfg$su,
+       ci_skew_gap = ci_skew_gap,
+       gamma3 = colMeans(gamma3), gamma3_seed = gamma3,
+       inner_k_seed = inner_k, inner_k_ess_seed = inner_k_ess,
+       outer_k_seed = outer_k,
+       sigma_bias = mean(s_med) - cfg$su,
        sigma_cov = s_cov, sigma_width = mean(s_wid), n_seed = n_seed)
 }
 
 # Per-family identified regimes (RE SD recoverable, link well-determined).
-# phi (dispersion / residual SD^2 / shape) is supplied at its true value -- the
-# single-block nested driver takes phi as fixed; this is a beta + RE-SD recovery.
+# phi is supplied at its true value in the DIRECT door's own parameterization --
+# gaussian residual SD, negbin dispersion, gamma / beta shape -- the one
+# `recov_draw_y()` draws from unchanged. The nested driver takes phi as fixed;
+# this is a beta + RE-SD recovery.
+#
+# `RESID_SD` is the gaussian residual SD every gaussian fixture in this file
+# runs at, written as the root of the variance it corresponds to so the number
+# says which quantity it is. 0.5 is the residual VARIANCE these fixtures have
+# always simulated at; before gcol33/tulpa#332 the same 0.5 was handed to the
+# door, which reads an SD, and every gaussian fit assumed a quarter.
+RESID_SD <- sqrt(0.5)
+
 CFG <- list(
   poisson        = list(nr = 60L, spr = 10L, ntr = 1L,  beta = c( 0.3, 0.6), su = 0.5, phi = 1.0),
   binomial       = list(nr = 60L, spr = 10L, ntr = 10L, beta = c(-0.2, 0.7), su = 0.5, phi = 1.0),
-  gaussian       = list(nr = 60L, spr = 10L, ntr = 1L,  beta = c(-0.2, 0.7), su = 0.7, phi = 0.5),
+  gaussian       = list(nr = 60L, spr = 10L, ntr = 1L,  beta = c(-0.2, 0.7), su = 0.7, phi = RESID_SD),
   neg_binomial_2 = list(nr = 60L, spr = 10L, ntr = 1L,  beta = c( 0.3, 0.6), su = 0.5, phi = 3.0),
   gamma          = list(nr = 60L, spr = 10L, ntr = 1L,  beta = c( 0.3, 0.6), su = 0.5, phi = 3.0),
   beta           = list(nr = 60L, spr = 10L, ntr = 1L,  beta = c( 0.0, 0.6), su = 0.5, phi = 6.0)
@@ -409,7 +490,7 @@ test_that("a CCD-integrated joint fit's hyperparameter interval covers at the no
   # d = 4 -- whatever the data. Reading the interval from the design's MOMENTS
   # puts it at nominal, and takes the width off the design.
   cfg <- list(nr = 40L, spr = 30L, ntr = 1L, beta = c(-0.2, 0.7), su = 0.7,
-              phi = 0.5)
+              phi = RESID_SD)
   n_seed <- 40L
   for (extra in list(c(0.5, 0.35), c(0.5, 0.35, 0.25))) {
     R <- recov_sweep("gaussian", cfg, n_seed = n_seed, seed_off = 6100L,
@@ -457,7 +538,7 @@ test_that("joint fixed-effect intervals cover at the nominal rate", {
 # off. Everything else -- design, response, grid, inner solve -- is shared, so
 # the difference between the two tallies is the refinement's.
 LCCD_CFG <- list(nr = 40L, spr = 30L, ntr = 1L, beta = c(-0.2, 0.7), su = 0.7,
-                 phi = 0.5)
+                 phi = RESID_SD)
 LCCD_SIM <- sim_re_crossed(c(0.5, 0.35, 0.25))
 
 test_that("local-CCD refinement engages on the four-axis joint recovery fixture", {
@@ -493,36 +574,37 @@ test_that("local-CCD refinement engages on the four-axis joint recovery fixture"
 #
 #                        local_ccd = TRUE   local_ccd = NULL
 #   level 0.95  intercept    144/150            144/150
-#               slope        120/150            120/150
-#   level 0.80  intercept    126/150            127/150
-#               slope         93/150             91/150
+#               slope        146/150            146/150
+#   level 0.80  intercept    125/150            126/150
+#               slope        115/150            116/150
 #   sigma_1 (the fit's own 95% interval)
-#                            149/150            150/150
+#                            150/150            150/150
 #
-# Pooled over both coefficients: 0.8800 against 0.8800 at level 0.95, 0.7300
-# against 0.7267 at 0.80. Refinement is worth +1 trial of 300 at 0.80 and 0 at
-# 0.95, both far inside the 0.0126 standard error.
+# Pooled over both coefficients: 0.9667 against 0.9667 at level 0.95, 0.8000
+# against 0.8067 at 0.80. Refinement is worth 0 trials of 300 at 0.95 and -1 at
+# 0.80, both far inside the 0.0126 standard error, and both levels sit at or
+# above nominal on both arms.
 #
 # What the refinement does move is the WIDTH, in the direction gcol33/tulpa#319
-# predicts. The intercept's mean 95% interval goes 0.6523 -> 0.6337, 2.9%
-# narrower; the slope's is unchanged to four figures (0.06055 -> 0.06056), being
-# a within-group contrast that barely reads the RE-SD grid. A 2.9% narrowing at
-# 0.96 coverage predicts about one seed of 150 changing hands at level 0.95 and
-# about two at 0.80, which is the size of what was observed. So the measurement
-# bounds the asymmetry's calibration cost well under a percentage point rather
-# than showing it is zero -- 150 seeds has no power below roughly one seed.
+# predicts. The intercept's mean 95% interval goes 0.63767 -> 0.63177, 0.9%
+# narrower; the slope's is unchanged to four figures (0.08525 -> 0.08527), being
+# a within-group contrast that barely reads the RE-SD grid. A 0.9% narrowing at
+# 0.96 coverage predicts well under one seed of 150 changing hands, which is what
+# was observed. So the measurement bounds the asymmetry's calibration cost well
+# under a percentage point rather than showing it is zero -- 150 seeds has no
+# power below roughly one seed.
 #
-# The sigma_1 axis is where the refinement pays: mean interval width 0.2330
-# against 1.0590, a coarse four-level grid's weighted quantiles spanning most of
-# the 0.2-1.5 range, and posterior-median bias 0.0245 against 0.0592. It sharpens
-# the hyperparameter interval more than fourfold and still covers 149/150 against
+# The sigma_1 axis is where the refinement pays: mean interval width 0.2399
+# against 1.0591, a coarse four-level grid's weighted quantiles spanning most of
+# the 0.2-1.5 range, and posterior-median bias 0.0350 against 0.0546. It sharpens
+# the hyperparameter interval more than fourfold and still covers 150/150 against
 # a nominal 0.95, so the narrowing is conservative-side slack being removed.
 #
-# The slope's 120/150 at nominal 0.95 belongs to the FIXTURE, not the refinement:
-# four crossed random effects on a four-level grid undercover it identically with
-# the refinement off. That is why the gate below is the paired comparison and a
-# loose floor rather than a nominal-rate assertion -- the two arms are each
-# other's reference, which is the comparison the refinement is responsible for.
+# These are the rates after gcol33/tulpa#332. Before it the same data were fitted
+# at a quarter of their residual variance and the slope covered 120/150 and
+# 91/150 at the two levels, which is the table this block used to carry; the
+# `recov_fit_joint_phi_crossed()` arm reproduces it exactly and the block after
+# the gate is what attributed it.
 test_that("a locally CCD-refined outer grid covers as the grid it refined does", {
   skip_if_not_slow()
   n_seed  <- 40L
@@ -542,9 +624,20 @@ test_that("a locally CCD-refined outer grid covers as the grid it refined does",
   # on the same seeds.
   expect_lte(abs(p_on - 0.95), abs(p_off - 0.95) + 3 * se)
   expect_lte(max(abs(R_on$cov - R_off$cov)), 2L)
-  # Neither arm is grossly miscalibrated, at the same per-coefficient floor the
-  # joint gate above uses.
-  expect_gte(min(R_on$cov / n_seed), 0.70)
+  # The per-coefficient floor, three binomial standard errors below the weaker of
+  # the two rates measured at 150 seeds in the block above. The intercept covers
+  # 0.9600 and the slope 0.9733 there; at this gate's own 40 seeds those carry
+  # standard errors 0.0310 and 0.0255, putting the two bounds at 0.8670 and
+  # 0.8969, so 0.85 clears both. It replaces a 0.70 that had been set beneath the
+  # gcol33/tulpa#332 residual-scale defect, which is the shape of gate that cannot
+  # fail for the reason it was built to catch (gcol33/tulpa#325).
+  #
+  # What 0.85 now protects against is a coefficient losing about eleven points of
+  # coverage. That is calibrated on the defect it replaced: the crossing cost the
+  # slope 0.9733 -> 0.8000, and a 40-seed draw at 0.8000 falls below 0.85 with
+  # probability 0.714, against 0.0010 and 0.0001 of a spurious failure at the two
+  # rates actually measured.
+  expect_gte(min(R_on$cov / n_seed), 0.85)
   expect_lt(max(abs(R_on$bias)), 0.12)
   # The refinement sharpens the RE-SD interval fourfold on this grid; that has to
   # come out of slack, so the interval still covers at or above nominal.
@@ -553,4 +646,185 @@ test_that("a locally CCD-refined outer grid covers as the grid it refined does",
   # The refinement's effect is on the width, and it is small: the intervals it
   # reports stay within a tenth of the unrefined grid's.
   expect_lt(max(abs(R_on$width / R_off$width - 1)), 0.10)
+})
+
+# --- how the slope's 120/150 was attributed (gcol33/tulpa#325) ---------------
+#
+# The table above is the corrected one. Before gcol33/tulpa#332 the slope covered
+# 120/150 at nominal 0.95, identically with the refinement on and off, while the
+# intercept covered 144/150 and sigma_1 149/150 -- so the paired design placed
+# the whole pooled deficit on the fixture rather than on the refinement, and
+# said nothing about which part of the fixture. What follows is how that was
+# narrowed to the residual scale, because the ladder is reusable and the answer
+# is not: the same three perturbations distinguish a coefficient that reads the
+# outer grid from one that does not, on any fixture.
+#
+# Every number below is 150 seeds of the CORRECTED fixture unless it says
+# otherwise, so the ladder can be re-run against what ships.
+#
+# THE OUTER GRID, three perturbations, each large:
+#
+#                                    sigma_1 mean width   slope width   slope cov
+#   four-level base grid (shipped)         1.0591          0.08525       146/150
+#   the same grid, locally refined         0.2399          0.08527       146/150
+#   six-level base grid, 1296 cells        0.6391          0.08527       146/150
+#
+# The six-level grid is the finest tensor base reachable at four axes under the
+# joint driver's 2048-cell cap, and it is a materially better integration -- the
+# sigma_1 posterior-median bias goes +0.0546 -> -0.0097 and its interval narrows
+# on every one of the 150 seeds (width ratio at most 0.9334, median 0.5098). The
+# INTERCEPT reads that: its width ratio runs 0.8573 to 1.2282, median 0.9460. The
+# slope's runs 0.9934 to 1.0041, median 1.0005, and not one of its 150 trials
+# changes hands on any of the three.
+#
+# A fourth perturbation runs offline at zero fits, through the gcol33/tulpa#322
+# dump and the gcol33/tulpa#329 fixed-effect rebuild: the same 150 unrefined fits
+# reweighted under gcol33/tulpa#326's local-quadratic box-integral cell mass,
+# entering as a per-cell design multiplier. It redistributes 0.3890 of the total
+# outer weight on average (median 0.2806, max 0.9489 in total variation) and
+# moves the hyperparameter median above what the grid resolves on 133 of 150
+# seeds (0.0467 against a 0.0136 coarsening floor). It moves the INTERCEPT's
+# standard error 0.162671 -> 0.154063, and per seed by 2.38% at the median and up
+# to 25.4%; its coverage goes 144 -> 143. It moves the SLOPE's 0.021747 ->
+# 0.021767, per seed 0.088% at the median and never more than 0.637%; its
+# coverage goes 146 -> 146. On the pre-fix fits the same rule moved 0.6746 of the
+# weight, the intercept's standard error 13.4%, and the slope's coverage from
+# 120/150 to 120/150 -- not one trial, under a rule rewriting two thirds of the
+# outer mass. That is what exonerated the outer layer by measurement rather than
+# by the width argument alone.
+#
+# THE INNER LAPLACE never had a case to answer, and structurally so: a gaussian
+# log-likelihood is exactly quadratic in eta, so the inner Gaussian IS the
+# conditional posterior. gamma_3 is 0 at both coefficients on every one of the
+# 300 fits, and every probed index's realized importance efficiency is 1.000000
+# -- the materiality gate `inner_pareto_k`'s shape is banded behind, so its
+# values (0.141 median at the intercept, -0.122 at the slope) describe a proposal
+# with nothing to correct. gcol33/tulpa#302's correction consumes gamma_3, so it
+# consumes nothing: corrected and Gaussian endpoints agree to 0.000e+00 on every
+# fit, and both cover 290/300.
+#
+# The one diagnostic that is NOT clean points away from the slope. The outer
+# k-hat on the unrefined four-level grid is 0.752 median and >= 0.7 on 92 of 150
+# seeds; refinement takes it to 0.440 median and 24 of 150. That is the
+# diagnostic reading the coarse grid's Gaussian proposal correctly, on the axis
+# whose interval refinement sharpens fourfold -- an axis the slope does not read.
+#
+# WHAT THE SLOPE READS is the residual scale. `recov_draw_y()` used to draw
+# `rnorm(N, 0, sqrt(phi))`, the residual-VARIANCE convention `tulpa()` takes,
+# while every fitter here goes to a direct door reading `phi` as the residual SD
+# -- so a gaussian arm was fitted at a quarter of the variance it simulated, and
+# every interval was narrow by sqrt(2) in whatever part of its variance the
+# residual carries. For the intercept that part is under one percent, its
+# posterior variance being the integrated RE-SD grid's: crossing the conventions
+# moves its width 0.63767 -> 0.65226, 2.2%, and its coverage 144/150 -> 144/150.
+# For the slope, a within-group contrast, it is all of it: 0.08525 -> 0.06055, a
+# ratio of 1.4079 against sqrt(2) = 1.4142, and 146/150 -> 120/150. The narrowing
+# alone predicts 2 Phi(1.96 / sqrt(2)) - 1 = 0.8342 against the 0.8000 measured;
+# the remainder is the crossed random effects' own projection onto x, which a fit
+# at the wrong residual scale also understates.
+#
+# `recov_fit_joint_phi_crossed()` is that crossing, kept as the negative control:
+# it reproduces the pre-fix table exactly on the same data, so the gate's floor
+# is scored against a defect that can still be run rather than against one that
+# only exists in a comment.
+test_that("the coverage gate reads the residual scale and not a layer of the fit", {
+  skip_if_not_slow()
+  n_seed <- 40L
+  R_ok <- recov_sweep("gaussian", LCCD_CFG, n_seed = n_seed, seed_off = 8100L,
+                      fit_fn = recov_fit_joint_coarse, sim_fn = LCCD_SIM)
+  R_x  <- recov_sweep("gaussian", LCCD_CFG, n_seed = n_seed, seed_off = 8100L,
+                      fit_fn = recov_fit_joint_phi_crossed, sim_fn = LCCD_SIM)
+
+  # The inner layer is exact here, so it cannot own a calibration deficit: the
+  # cubic term is identically zero and every probed index's importance
+  # efficiency clears the materiality gate its k-hat is banded behind.
+  expect_true(all(R_ok$gamma3_seed == 0))
+  expect_gte(min(R_ok$inner_k_ess_seed), .nl_diag("inner_k_material_ess"))
+  # So the correction that consumes gamma_3 has nothing to consume, and the two
+  # reads are the same interval rather than merely a close one.
+  expect_identical(max(R_ok$ci_skew_gap), 0)
+  expect_identical(R_ok$cov_skew, R_ok$cov_gauss)
+
+  # Crossing the residual-scale conventions narrows the slope's interval by
+  # sqrt(2) and costs it coverage, and leaves the intercept's -- carried by the
+  # RE-SD grid -- where it was. That pair is the attribution, and it is also the
+  # sensitivity check on the gate above: the floor it now carries is one a fit at
+  # the wrong residual scale fails.
+  expect_equal(R_ok$width[2] / R_x$width[2], sqrt(2), tolerance = 0.02)
+  expect_equal(R_ok$width[1] / R_x$width[1], 1, tolerance = 0.05)
+  se <- sqrt(0.95 * 0.05 / n_seed)
+  expect_lt(abs(R_ok$cov[2] / n_seed - 0.95), 3 * se)
+  expect_lt(R_x$cov[2], R_ok$cov[2])
+  expect_identical(R_x$cov[1], R_ok$cov[1])
+
+  # Nor does the slope read the base grid's resolution. At six levels per axis
+  # the sigma_1 interval sharpens on every one of the 150 seeds above and the
+  # intercept's width follows it, while the slope's stays inside five parts in a
+  # thousand of the four-level grid's -- across those seeds it never left
+  # [0.9934, 1.0041].
+  d  <- LCCD_SIM(8130L, "gaussian", LCCD_CFG$nr, LCCD_CFG$spr, LCCD_CFG$ntr,
+                 LCCD_CFG$beta, LCCD_CFG$su, LCCD_CFG$phi)
+  sg <- exp(seq(log(0.2), log(1.5), length.out = 7))
+  f4 <- recov_fit_joint_coarse(d, sg, "gaussian", LCCD_CFG)
+  f6 <- recov_fit_joint_coarse(d, sg, "gaussian", LCCD_CFG, levels = 6L)
+  expect_identical(nrow(f6$theta_grid), 1296L)
+  expect_lt(f6$theta_ci_hi[[1]] - f6$theta_ci_lo[[1]],
+            0.6 * (f4$theta_ci_hi[[1]] - f4$theta_ci_lo[[1]]))
+  w4 <- beta_post(f4)
+  w6 <- beta_post(f6)
+  expect_lt(abs((w6$hi[2] - w6$lo[2]) / (w4$hi[2] - w4$lo[2]) - 1), 5e-3)
+
+  # Nor the outer weight rule. The same fit re-read under gcol33/tulpa#326's
+  # box-integral cell mass, through the gcol33/tulpa#322 dump and the
+  # gcol33/tulpa#329 fixed-effect rebuild at no further fitting: on this seed the
+  # rule rewrites 0.9184 of the outer mass and moves the intercept's standard
+  # error 25.4%, the slope's 0.085%.
+  dm <- outer_grid_dump(f4)
+  bm <- .joint_local_ccd_box_mass(dm$joint_grid, dm$log_marginal,
+                                  dm$axis_names, dm$axis_tags)
+  w_box <- outer_grid_weights(dm, dnode = exp(bm$log_box_ratio))
+  expect_gt(0.5 * sum(abs(w_box / sum(w_box) - dm$weights / sum(dm$weights))), 0.5)
+  r0 <- outer_grid_rebuild_fixed(dm)
+  r1 <- outer_grid_rebuild_fixed(dm, w_box)
+  expect_gt(abs(r1$se[1] / r0$se[1] - 1), 0.05)
+  expect_lt(abs(r1$se[2] / r0$se[2] - 1), 0.01)
+})
+
+# --- the residual-scale convention every gaussian fixture here rests on ------
+#
+# `recov_draw_y()` hands `cfg$phi` straight to `rnorm()` as an SD, and every
+# fitter hands the same number straight to a direct door. That is correct only
+# while the door reads it as an SD, so the convention is asserted against the
+# ENGINE rather than taken from the documentation -- if either side moves, this
+# fails here with the reason on it instead of silently rescaling every gaussian
+# fixture in the file the way gcol33/tulpa#332 did.
+#
+# The closed form makes the two conventions distinguishable rather than merely
+# different: a gaussian arm's fixed block is X'X / phi^2, so a slope's per-cell
+# standard error is phi / sqrt(Sxx) under the SD convention and sqrt(phi / Sxx)
+# under the variance one. Three values of phi separate them, since the two
+# agree at phi = 1.
+test_that("both nested doors read a gaussian phi as the residual SD", {
+  skip_on_cran()
+  set.seed(99L)
+  N <- 600L
+  G <- 30L
+  grp <- sample.int(G, N, replace = TRUE)
+  x <- rnorm(N)
+  X <- cbind(1, x)
+  d <- list(y = as.numeric(X %*% c(-0.2, 0.7)) + rnorm(N, 0, 0.5), X = X,
+            region = grp, regions = list(grp), nr = G, N = N)
+  Sxx <- sum((x - mean(x))^2)
+  # An RE pinned near zero, so the fixed block at the first grid cell is the
+  # ordinary least-squares one and its standard error has the closed form above.
+  sgt <- exp(seq(log(0.01), log(0.05), length.out = 4L))
+  cfg <- list(ntr = 1L, phi = NA_real_)
+  for (phi in c(0.25, 0.5, 1.0)) {
+    cfg$phi <- phi
+    for (f in list(recov_fit_single(d, sgt, "gaussian", cfg),
+                   recov_fit_joint(d, sgt, "gaussian", cfg))) {
+      se <- sqrt(diag(solve(f$grid_hessians[[1L]])))
+      expect_equal(se[[2L]], phi / sqrt(Sxx), tolerance = 1e-3)
+    }
+  }
 })
