@@ -40,6 +40,8 @@
 #   outer_grid_rebuild()       dump + weights + coordinates -> the same per-axis
 #                                      read
 #   outer_grid_rebuild_fixed() dump + weights -> the same fixed-effect read
+#   outer_grid_one_cell()      dump + a whole-grid candidate + one cell -> the
+#                                      same candidate restricted to that cell
 #   outer_grid_read_diff()     two reads -> mean absolute endpoint / width /
 #                                      median difference
 #   outer_grid_noise_floor()   dump -> the scale below which a difference is not
@@ -301,6 +303,56 @@ outer_grid_weights <- function(dump, dnode = NULL, log_marginal = NULL) {
   tulpa:::.joint_integration_weights(log_marginal %||% dump$log_marginal, dnode)
 }
 
+# A whole-grid candidate rule restricted to ONE cell, in the two arguments
+# `outer_grid_rebuild()` already takes.
+#
+# What is scored off this grid is a weighted QUANTILE, and a quantile is not a
+# sum over its atoms: moving one atom changes which OTHER atom sits at the
+# crossing. So a per-cell property of a rule -- whether this cell is better off
+# with its mass corrected, its place corrected, or both -- is not readable by
+# comparing that cell's own contribution against a reference. It is readable by
+# intervening on that cell alone and re-reading the whole grid, which is what
+# this assembles (gcol33/tulpa#333).
+#
+# `dnode` / `joint_grid` are the candidate rule's OWN output over every cell,
+# computed by the caller from the engine's rules; the restriction is the only
+# thing done here. Cell `cell` takes the candidate's value and every other cell
+# keeps the dump's, so the returned pair differs from the fit's own state in one
+# row of one matrix and one entry of one weight vector. Nothing here forms a
+# multiplier, a barycentre or a weight: `outer_grid_weights()` normalises the
+# restricted design weights through the engine's own `.joint_integration_weights()`,
+# the same call the whole-grid candidate goes through.
+#
+# Returns `weights` (NULL when no mass candidate was given) and `joint_grid`
+# (NULL when no location candidate was given), which is exactly the argument
+# pair `outer_grid_rebuild()` and `outer_grid_weight_report()` read -- so the
+# one-cell candidate and the whole-grid one are scored by the same code.
+outer_grid_one_cell <- function(dump, cell, dnode = NULL, joint_grid = NULL) {
+  n <- nrow(dump$joint_grid)
+  if (length(cell) != 1L || !is.finite(cell) || cell < 1L || cell > n) {
+    stop("`cell` must be one cell index in 1:", n, ".", call. = FALSE)
+  }
+  cell <- as.integer(cell)
+  w <- NULL
+  if (!is.null(dnode)) {
+    if (length(dnode) != n) {
+      stop("`dnode` has length ", length(dnode), " but the dumped grid has ", n,
+           " cell(s).", call. = FALSE)
+    }
+    dn <- dump$dnode %||% rep(1, n)
+    dn[cell] <- as.numeric(dnode)[cell]
+    w <- outer_grid_weights(dump, dnode = dn)
+  }
+  jg <- NULL
+  if (!is.null(joint_grid)) {
+    jg <- .ogd_coords(dump, joint_grid)
+    out <- dump$joint_grid
+    out[cell, ] <- jg[cell, ]
+    jg <- out
+  }
+  list(weights = w, joint_grid = jg, cell = cell)
+}
+
 # Mean absolute difference between two reads, one part of `OGD_PARTS` at a time:
 # the 2 x n_axes interval endpoints, the n_axes widths, and the n_axes medians.
 # Axes whose read is NA on either side are dropped from the mean and counted
@@ -442,7 +494,7 @@ outer_grid_weight_report <- function(dump, weights = NULL, floor = NULL,
 
 for (.nm in c("OGD_PROBS", "OGD_PARTS", "outer_grid_dump", "outer_grid_load",
               "outer_grid_rebuild", "outer_grid_rebuild_fixed",
-              "outer_grid_weights",
+              "outer_grid_weights", "outer_grid_one_cell",
               "outer_grid_read_diff", "outer_grid_noise_floor",
               "outer_grid_weight_report")) {
   assign(.nm, get(.nm), envir = globalenv())
