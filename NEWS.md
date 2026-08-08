@@ -1,5 +1,85 @@
 # tulpa NEWS
 
+## 0.0.151
+
+* The gaussian recovery fixture no longer fits at a quarter of its own residual
+  variance (gcol33/tulpa#332). `recov_draw_y()` drew `rnorm(N, 0, sqrt(phi))` --
+  the residual-VARIANCE convention `tulpa()` takes and converts at the boundary
+  -- while every fitter in the file goes to a direct door, which reads `phi` as
+  the residual SD. `RESID_SD` now names the gaussian configurations in the door's
+  own parameterization, leaving the data-generating process byte-identical, and a
+  new test pins the convention against the engine through the closed form
+  `se = phi / sqrt(Sxx)` at three `phi` values across both doors, so a future
+  crossing fails loudly instead of silently rescaling. A suite-wide sweep found
+  this fixture was the only crossing, in either direction.
+* Every gaussian coverage number in the recovery file is re-measured at 150
+  seeds. The local-CCD fixture's slope covers 146/150 at nominal 0.95, against
+  the 120/150 the crossed fixture produced; the interval is wider by 1.4079,
+  against the sqrt(2) a halved variance predicts. The intercept is nearly
+  unmoved (144/150), its posterior variance being the integrated RE-SD grid's, of
+  which the residual contributes under one percent, while the slope is a
+  within-group contrast whose variance is entirely residual. Pooled coverage is
+  0.9667 refined against 0.9667 unrefined at 0.95. The refinement's paired
+  conclusion is unchanged; the rates it was read against were not the model's.
+* The local-CCD coverage gate's per-coefficient floor moves 0.70 -> 0.85
+  (gcol33/tulpa#325). A floor set beneath an unexplained deficit cannot fail for
+  the reason it was built to catch. `recov_fit_joint_phi_crossed()` keeps the
+  defect runnable and reproduces the old table exactly, so the new floor is
+  demonstrated to catch it: a 40-seed draw at the crossed rate fails with
+  probability 0.714, against 0.0010 spurious at the corrected rate.
+* The deficit was attributed by measurement before its cause was found, and the
+  ladder is recorded because it is reusable. The outer grid was exonerated by
+  replaying the same 150 fits under a materially different weight rule -- one
+  redistributing 0.6746 of the total outer weight -- which moved the slope's
+  standard error by 0.04% and not one trial of 150. The inner Laplace was
+  exonerated by `gamma_3` being exactly 0 on every one of 300 gaussian fits (the
+  log-likelihood is quadratic in eta, so the inner Laplace IS the conditional
+  posterior) at realized importance efficiency 1.0000.
+* A cell's mass can be integrated over its own box instead of read off a midpoint
+  atom (gcol33/tulpa#326). The local quadratic in the offset from the cell's
+  coordinate is fitted from neighbour values the base grid already holds, so the
+  estimator costs no inner solves; with a diagonal Hessian the box integral
+  factorises into a product of `pnorm` differences, verified to 6.1e-14 against
+  `integrate()` and an independent Simpson rule. The decline is per AXIS rather
+  than per cell -- the integral over a bounded box is finite at either sign of
+  the curvature -- so a cell convex on one axis keeps the exact factor on the
+  others.
+* An outer cell's atom can be placed at its own mass barycentre rather than at
+  its coordinate (gcol33/tulpa#327), the doubly-truncated normal mean of the same
+  local quadratic, verified to 2.4e-11 against `integrate()`. Hyperparameter axes
+  only: a fixed effect is marginalized from each cell's own inner solve, so
+  moving that cell asks what `beta` would have been at the moved point.
+* Neither rule changes a shipped fit. Measured at zero fits against a 1728-cell
+  reference of the same model, correcting the mass alone makes the interval about
+  five times more accurate and the location worse (median error 0.1158 -> 0.2028),
+  while the location rule alone improves all three parts of the read at four
+  levels and the pair wins at five. The ranking reverses with grid resolution, so
+  which rule ships is a coverage question rather than a grid-accuracy one
+  (gcol33/tulpa#331).
+* The free box-mass ratio does NOT rank the refinement budget, measured over 2509
+  refined cells (gcol33/tulpa#328). It predicts the realized surplus well (sign
+  agreement 0.9518, Spearman 0.940), but `|M_1 - M_0|` factorizes as
+  `w_c |exp(r_c) - 1|` and the two factors are separated by orders of magnitude,
+  so the product is ordered by the integration weight before any predictor is
+  consulted: the incumbent ranking captures 0.8173 of the realized correction in
+  its top decile against an oracle's 0.8231, and weighting it by the predictor
+  moves it away. The two readings of "realized correction" order cells oppositely
+  (Spearman -0.700). Recorded with the derivation, and with the scale hierarchy
+  it is conditional on. The cells where the predictor fails are not the cells
+  `misfit` flags (correlation -0.015), so shape and mass remain orthogonal.
+* The outer-grid harness replays the FIXED-EFFECT read offline
+  (gcol33/tulpa#329). `outer_grid_dump()` carries the per-cell modes and
+  Hessians and `outer_grid_rebuild_fixed()` hands them to
+  `.nested_fixed_moments()` itself, so a candidate weight rule is scored against
+  a coefficient's interval and not only a hyperparameter's, at zero fits and
+  through the engine's own marginalizer. A fit that declined retention says so
+  rather than returning NULL.
+* `outer_grid_weight_report()` scores every part of a read against the noise
+  floor (gcol33/tulpa#330). The verdict set is derived from the same part list
+  the difference and the floor are built from, so a part cannot gain a difference
+  and a floor without gaining a verdict -- which is how the median, the one part
+  the gcol33/tulpa#326 rule moves, had none.
+
 ## 0.0.150
 
 * The cross-cell estimator asymmetry in local-CCD refinement is documented as a
@@ -29,6 +109,9 @@
   it pays is the hyperparameter axis: the `sigma_1` interval is more than
   fourfold sharper (0.2330 against 1.0590) with half the median bias (0.0245
   against 0.0592) while still covering 149 of 150 against a nominal 0.95.
+  These rates are superseded: they were measured on a fixture that fitted its
+  gaussian arms at a quarter of their own residual variance (gcol33/tulpa#332).
+  The conclusion held on re-measurement; the numbers did not. See 0.0.151.
 * `recov_sweep()` takes the nominal level to judge at (`z` / `level`, defaulting
   to the 95% every existing gate runs at) and reports mean interval `width`, so a
   second level and the width effect are read through the shared harness rather

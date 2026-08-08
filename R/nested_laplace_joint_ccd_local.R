@@ -36,21 +36,31 @@
 #     (gcol33/tulpa#323). What it costs was MEASURED by coverage rather than
 #     argued from the grid (gcol33/tulpa#320): over 150 seeds on a four-axis
 #     coarse-grid fixture fit twice on the same data, pooled fixed-effect
-#     coverage is 0.8800 refined against 0.8800 unrefined at nominal 0.95 and
-#     0.7300 against 0.7267 at 0.80, on a standard error of 0.0126. The width
+#     coverage is 0.9667 refined against 0.9667 unrefined at nominal 0.95 and
+#     0.8000 against 0.8067 at 0.80, on a standard error of 0.0126. The width
 #     does move the way the asymmetry predicts -- the intercept's mean 95%
-#     interval is 2.9% narrower with refinement on -- and that buys 0 of 300
-#     trials at 0.95 and 1 at 0.80. The measurement bounds the calibration cost
+#     interval is 0.9% narrower with refinement on -- and that buys 0 of 300
+#     trials at 0.95 and -1 at 0.80. The measurement bounds the calibration cost
 #     under a percentage point; it does not resolve it to zero, 150 seeds having
 #     no power below about one seed. So the estimator asymmetry stands as a known
 #     and instrumented property of this refinement rather than a defect it is
 #     worth spending an inner-solve budget to remove (gcol33/tulpa#319).
 #
 #     On the hyperparameter axis the same re-estimation is the point: the
-#     `sigma_1` interval is more than fourfold sharper (0.2330 against 1.0590 on
-#     that fixture) with half the posterior-median bias, while still covering 149
-#     of 150 against a nominal 0.95, so what the refined cell's rising share
+#     `sigma_1` interval is more than fourfold sharper (0.2399 against 1.0591 on
+#     that fixture) with a third less posterior-median bias, while still covering
+#     150 of 150 against a nominal 0.95, so what the refined cell's rising share
 #     removes there is conservative-side slack a four-level grid left behind.
+#
+#     Those are the rates after gcol33/tulpa#332. The table this paragraph
+#     carried until then (0.8800 / 0.7300, a 2.9% narrowing, 149 of 150) was
+#     measured on a fixture that drew its gaussian response at residual VARIANCE
+#     `phi` and handed the same number to a direct door reading it as a residual
+#     SD, so every gaussian arm was fitted at a quarter of its own variance. That
+#     is a property of the fixture and not of this refinement -- both arms carried
+#     it equally, which is why the paired comparison above survived the correction
+#     with its conclusion unchanged -- but the rates it produced were not the
+#     rates of the model being described.
 #
 #   * No mode-find, no line search. The local Gaussian scale comes from a finite
 #     difference of the OUTER log-marginal over the cell's own grid neighbours --
