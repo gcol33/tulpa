@@ -566,7 +566,10 @@
              # list. Off by default, so every existing caller re-solves exactly
              # what it did; `.nl_subspace_debias_attach()` is the only caller
              # that sets it, over the fit's whole settled grid.
-             debias = NULL) {
+             debias = NULL,
+             # Corrected integrated Laplace (gcol33/tulpa#351): the
+             # kernel-facing request list, off by default for the same reason.
+             cila = NULL) {
         new_grids <- .joint_grids_from_cells(new_cells, cp)
         slice_x_init <- if (!is.null(warm_start) && !is.null(warm_start$mode))
                         as.numeric(warm_start$mode) else x_init_default
@@ -611,7 +614,8 @@
                                       x_init_per_cell = x_init_per_cell,
                                       compute_skew = compute_skew,
                                       skew_idx = skew_idx,
-                                      debias = debias)
+                                      debias = debias,
+                                      cila = cila)
         extras <- NULL
         if (isTRUE(store_extras)) {
             n <- nrow(new_cells)
@@ -648,7 +652,13 @@
              debias_draws_per_grid = res_x$debias_draws_per_grid,
              debias_idx = res_x$debias_idx,
              debias_accept = res_x$debias_accept,
-             debias_declined = res_x$debias_declined)
+             debias_declined = res_x$debias_declined,
+             cila_log_w_per_grid = res_x$cila_log_w_per_grid,
+             cila_fixed_per_grid = res_x$cila_fixed_per_grid,
+             cila_log_marginal = res_x$cila_log_marginal,
+             cila_variant = res_x$cila_variant,
+             cila_declined = res_x$cila_declined,
+             cila_fallback = res_x$cila_fallback)
     }
 }
 

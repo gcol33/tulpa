@@ -28,6 +28,7 @@
 #include "laplace_newton.h"          // SPARSE_THRESHOLD
 #include "laplace_newton_loop.h"
 #include "laplace_spec_curvature3.h" // build_spec_curvature3_oracle (inner-skew diagnostic)
+#include "inner_cila.h"              // run_inner_cila
 #include "inner_laplace_is.h"        // compute_inner_is_curve
 #include "inner_laplace_skew.h"      // compute_inner_skew_gamma3_joint
 #include "joint_inner_vcov.h"        // JointFixedBlockRequest, extract_joint_fixed_block
@@ -500,7 +501,16 @@ LaplaceResult laplace_newton_solve_joint_ll(
     // same pre-centering iterate and the same live factor the two inner
     // diagnostics probe, since that is the point log_marginal belongs to. Empty
     // or absent leaves the solve untouched and consumes no random number.
-    const SubspaceDebiasOptions* debias = nullptr
+    const SubspaceDebiasOptions* debias = nullptr,
+    // Corrected integrated Laplace (inner_cila.h, gcol33/tulpa#351). Runs on
+    // the same pre-centering iterate and the same live factor, and presents its
+    // draws under the same centering fold the reported mode carries. Absent or
+    // inactive leaves the solve untouched.
+    const CilaOptions* cila = nullptr,
+    // Distinguishes this cell's auxiliary stream from its neighbours' on an
+    // outer grid; irrelevant for the deterministic net, load-bearing for the
+    // randomized-QMC shifts.
+    std::uint64_t cila_cell_key = 0
 ) {
     LaplaceResult result;
     result.mode.assign(n_x, 0.0);
@@ -646,6 +656,14 @@ LaplaceResult laplace_newton_solve_joint_ll(
                             sparse_solver, used_sparse_factor,
                             eval_objective, x, debias);
     }
+
+    // The correction reads the same pre-centering iterate for the same reason,
+    // and presents each draw through the loop's own centering fold so a drawn
+    // coefficient is in the coordinates the reported mode is in.
+    run_inner_cila(result, n_x, pre_center_x, scratch.chol, sparse_solver,
+                   used_sparse_factor, eval_objective,
+                   [&](Rcpp::NumericVector& xv) { center_effects_fn(xv); },
+                   x, cila, cila_cell_key);
 
     center_effects_fn(x);
     for (int j = 0; j < n_x; j++) result.mode[j] = x[j];

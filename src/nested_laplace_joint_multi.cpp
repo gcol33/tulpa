@@ -1383,7 +1383,8 @@ Rcpp::List cpp_nested_laplace_joint_multi(
     Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
     int                 fixed_block_p = 0,
     Rcpp::Nullable<Rcpp::List> fixed_block_constraints = R_NilValue,
-    Rcpp::Nullable<Rcpp::List> debias = R_NilValue
+    Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> cila = R_NilValue
 ) {
     // Per-cell fixed-effect covariance retention (gcol33/tulpa#305), extracted
     // inside each cell's own solve (gcol33/tulpa#307). `fixed_block_p` is the
@@ -1624,6 +1625,8 @@ Rcpp::List cpp_nested_laplace_joint_multi(
     tulpa::SubspaceDebiasOptions debias_opts;
     const tulpa::SubspaceDebiasOptions* debias_ptr =
         tulpa::unwrap_debias(debias, debias_opts);
+    tulpa::CilaOptions cila_opts;
+    const tulpa::CilaOptions* cila_ptr = tulpa::unwrap_cila(cila, cila_opts);
 
     Rcpp::List out = tulpa::run_multi_block_nested_laplace_joint(
         n_grid, arms, parsed, blocks, n_x_after_re,
@@ -1645,7 +1648,8 @@ Rcpp::List cpp_nested_laplace_joint_multi(
         x_init_per_cell_vec,
         compute_skew, skew_idx_ptr,
         fixed_block_ptr,
-        debias_ptr
+        debias_ptr,
+        cila_ptr
     );
     out["theta_grid"]   = theta_grid;
     out["axis_offsets"] = axis_offsets;
@@ -2042,7 +2046,8 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
     bool                             compute_skew,
     const std::vector<int>*          skew_probe_idx,
     const JointFixedBlockRequest*    fixed_block,
-    const SubspaceDebiasOptions*     debias) {
+    const SubspaceDebiasOptions*     debias,
+    const CilaOptions*               cila) {
     const int n_arms = static_cast<int>(arms.size());
     if (static_cast<int>(parsed.size()) != n_arms) {
         Rcpp::stop("parsed and arms vectors must have the same length.");
@@ -2109,7 +2114,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
             cell_coupling_spec, coupled_arms, cell_rows, n_cells, pd_mode,
             step_curvature, hessian_refresh, n_threads_outer, progress,
             checkpoint, x_init_per_cell,
-            compute_skew, skew_probe_idx, fixed_block, debias
+            compute_skew, skew_probe_idx, fixed_block, debias, cila
         );
     }
 
@@ -2376,7 +2381,9 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
             compute_skew && !is_cheap, skew_probe_idx,
             (compute_skew && !is_cheap) ? &skew_curvature3_fns : nullptr,
             is_cheap ? nullptr : fixed_block,
-            is_cheap ? nullptr : debias
+            is_cheap ? nullptr : debias,
+            is_cheap ? nullptr : cila,
+            static_cast<std::uint64_t>(k_grid) + 1ULL
         );
     };
 
@@ -2460,7 +2467,8 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
     bool                             compute_skew,
     const std::vector<int>*          skew_probe_idx,
     const JointFixedBlockRequest*    fixed_block,
-    const SubspaceDebiasOptions*     debias
+    const SubspaceDebiasOptions*     debias,
+    const CilaOptions*               cila
 ) {
     const int n_arms = static_cast<int>(arms.size());
     const int B      = static_cast<int>(blocks.size());
@@ -2910,7 +2918,9 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
             want_skew, skew_probe_idx,
             want_skew ? &skew_curvature3_fns_pool[slot] : nullptr,
             use_cheap_scratch ? nullptr : fixed_block,
-            use_cheap_scratch ? nullptr : debias
+            use_cheap_scratch ? nullptr : debias,
+            use_cheap_scratch ? nullptr : cila,
+            static_cast<std::uint64_t>(k_grid) + 1ULL
         );
     };
 

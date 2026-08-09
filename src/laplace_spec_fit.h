@@ -14,6 +14,7 @@
 #include "tulpa/likelihood.h"
 #include "tulpa/model_data.h"
 #include "tulpa/param_layout.h"
+#include "inner_cila.h"              // CilaOptions
 #include "laplace_builtin_family_spec.h"
 #include "laplace_core.h"            // LaplaceResult
 #include "laplace_re_priors.h"       // BetaPrior
@@ -83,6 +84,37 @@ inline const SubspaceDebiasOptions* unwrap_debias(
     if (spec.containsElementNamed("n_iter")) storage.n_iter = Rcpp::as<int>(spec["n_iter"]);
     if (spec.containsElementNamed("warmup")) storage.n_warmup = Rcpp::as<int>(spec["warmup"]);
     if (spec.containsElementNamed("thin"))   storage.thin = Rcpp::as<int>(spec["thin"]);
+    return &storage;
+}
+
+// Convert an R-facing corrected-integrated-Laplace request into the CilaOptions
+// the Newton loop expects, writing into caller-owned `storage` and returning a
+// pointer into it. Same one-list convention as the debias request above, for
+// the same reason. A null request, or one asking for no points, returns nullptr
+// and leaves the solve untouched.
+inline const CilaOptions* unwrap_cila(
+    const Rcpp::Nullable<Rcpp::List>& cila,
+    CilaOptions& storage
+) {
+    if (cila.isNull()) return nullptr;
+    Rcpp::List spec(cila);
+    if (spec.containsElementNamed("n_points")) {
+        storage.n_points = Rcpp::as<int>(spec["n_points"]);
+    }
+    if (storage.n_points <= 0) return nullptr;
+    if (spec.containsElementNamed("variant")) {
+        storage.variant = static_cast<CilaVariant>(Rcpp::as<int>(spec["variant"]));
+    }
+    if (spec.containsElementNamed("n_shift")) {
+        storage.n_shift = Rcpp::as<int>(spec["n_shift"]);
+    }
+    if (spec.containsElementNamed("n_fixed")) {
+        storage.n_fixed = Rcpp::as<int>(spec["n_fixed"]);
+    }
+    if (spec.containsElementNamed("seed")) {
+        storage.seed = static_cast<std::uint64_t>(
+            static_cast<std::int64_t>(Rcpp::as<double>(spec["seed"])));
+    }
     return &storage;
 }
 

@@ -226,7 +226,13 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
     // same live factor as the diagnostics above and so declined on exactly the
     // same two paths, for the same reason: the s2z rank-1 correction and the PSD
     // eigen-clamp both leave `solver` holding a factor of a different matrix.
-    const SubspaceDebiasOptions* debias = nullptr
+    const SubspaceDebiasOptions* debias = nullptr,
+    // Corrected integrated Laplace (inner_cila.h, gcol33/tulpa#351). A draw
+    // from the inner Gaussian needs L^-T applied to a standard normal vector,
+    // and the sparse solver exposes only the full solve, so the correction
+    // declines here and says so rather than proposing from something else.
+    const CilaOptions* cila = nullptr,
+    std::uint64_t cila_cell_key = 0
 ) {
     LaplaceResult result;
     result.mode.assign(n_x, 0.0);
@@ -478,6 +484,11 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
                             solver, /*use_sparse=*/true,
                             eval_objective, x, debias);
     }
+
+    run_inner_cila(result, n_x, pre_center_x, unused_dense_chol, solver,
+                   /*use_sparse=*/true, eval_objective,
+                   [&](Rcpp::NumericVector& xv) { center_effects_fn(xv); },
+                   x, cila, cila_cell_key);
 
     { TULPA_PROFILE_PHASE(PHASE_LOG_LIK_PRIOR);
       center_effects_fn(x); }

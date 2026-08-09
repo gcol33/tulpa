@@ -766,7 +766,10 @@
              # Subspace debias (gcol33/tulpa#306): the kernel-facing request
              # list, off by default so no existing call site re-solves anything
              # different.
-             debias           = NULL) {
+             debias           = NULL,
+             # Corrected integrated Laplace (gcol33/tulpa#351): the
+             # kernel-facing request list, off by default for the same reason.
+             cila             = NULL) {
         .cpp_joint_multi(
             arms_list           = arms,
             copy_arms           = as.integer(cp$copy_arms_zero),
@@ -796,7 +799,8 @@
             fixed_block_p       = if (isTRUE(fixed_block))
                                       as.integer(fixed_block_p) else 0L,
             fixed_block_constraints = fixed_block_constraints,
-            debias              = debias)
+            debias              = debias,
+            cila                = cila)
     }
 }
 
@@ -972,6 +976,7 @@
                                   skew_idx = NULL,
                                   skew_correct = FALSE,
                                   subspace_debias = NULL,
+                                  cila = NULL,
                                   inner_refresh = 1L,
                                   integration = "auto",
                                   local_ccd = NULL,
@@ -1554,6 +1559,16 @@
             phi_grid_per_arm = .joint_multi_phi_per_arm(res$theta_grid,
                                                         arm_names),
             debias = req)),
+        p_fixed = fixed$n_fixed, beta_names = fixed$names)
+    # Corrected integrated Laplace (gcol33/tulpa#351), over the same settled
+    # grid and through the same `call_kernel`.
+    res <- .nl_cila_attach(
+        res, cila,
+        redispatch = function(req) .joint_with_quiet_opts(call_kernel(
+            res$theta_grid,
+            phi_grid_per_arm = .joint_multi_phi_per_arm(res$theta_grid,
+                                                        arm_names),
+            cila = req)),
         p_fixed = fixed$n_fixed, beta_names = fixed$names)
     res$timing <- tm$timing()
     res <- .joint_attach_diagnose_cost(res, diagnose_k, diagnose_draws)

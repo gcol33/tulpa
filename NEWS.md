@@ -1,5 +1,74 @@
 # tulpa NEWS
 
+## 0.0.164
+
+* Corrected integrated Laplace joins the engine as a second INNER-LAYER DEBIAS,
+  alongside the gcol33/tulpa#304 / #306 subspace debias (gcol33/tulpa#351, after
+  Lai, Margossian & Sheldon, arXiv:2605.20345). The two differ in what they
+  select, not in what they approximate: the subspace debias picks the
+  coordinates the inner bands flagged and runs exact Metropolis on them,
+  carrying the rest at their Gaussian conditional, while this one selects
+  nothing. At every outer cell it draws `n_points` points from the WHOLE inner
+  Gaussian, weights each by the exact joint density it came from, and reports
+  the weighted particles; the cell marginal and the latent posterior both
+  converge to the exact ones as the effort grows, so `n_points` is the only
+  dial. `control$cila` on `tulpa_nested_laplace_joint()`, off by default.
+
+  MEASURED on gcol33/tulpa#341's fixture B -- a small-group Bernoulli GLMM over
+  a 7-point hyperparameter grid, which is the shape of a real consumer fit --
+  at 400 prior-predictive replicates scored by `tests/testthat/helper-sbc.R`
+  against a machine-accurate quadrature. Paired CRPS against that quadrature on
+  the intercept:
+
+  | arm | CRPS - exact | t | SBC p_unif |
+  |---|---|---|---|
+  | shipped nested read | +0.0447 | 4.44 | 1.6e-03 |
+  | + subspace debias | +0.0191 | 3.17 | 0.017 |
+  | + cila, M = 1024 | +0.00090 | 1.10 | 0.15 |
+  | + cila, M = 4096 | +0.000033 | 0.05 | 0.80 |
+
+  The slope behaves the same way (subspace +0.0138 at t = 2.38, cila at
+  M = 1024 +0.00027 at t = 0.30), and the hyperparameter, already correct
+  before, stays correct. All three variants sit inside `k < 0.7` on every one of
+  the 400 replicates, median 0.42 / 0.51 / 0.51 for `qmc` / `is` / `rqmc`.
+
+  COST on the same fixture, medians over 8 seeds at 3 repetitions: M = 1024 is
+  10.2x a plain fit and M = 4096 is 37.6x, against the subspace debias's 26.1x.
+  The correction is one extra pass over the settled grid plus M evaluations of
+  the Newton loop's own penalized objective per cell, and that closure takes one
+  latent vector at a time, so the M evaluations dominate and are what a batched
+  density interface would address.
+
+* The auxiliary point set is a NATIVE Sobol' net -- Joe & Kuo direction numbers
+  for 1024 dimensions compiled in, Gray-code recurrence, no new dependency
+  (`src/sobol.h`). Its low-discrepancy property is asserted against Monte Carlo
+  rather than assumed: on a smooth integrand the QMC error slope beats the plain
+  MC slope by 0.51 / 0.51 / 0.35 / 0.21 at d = 1 / 2 / 14 / 18, and the first
+  `2^m - 1` points fill every elementary interval of every one-dimensional
+  projection exactly once. Past the tabulated dimension the request falls back
+  to iid draws and records `fallback = "sobol_dim_exceeded"`, so a fit never
+  reports a variant it did not run.
+
+* The correction's randomness is ENGINE-OWNED, not R's. Requesting it leaves
+  every other posterior quantity on the fit bit-for-bit unchanged, the outer
+  grid stays parallel-integrable (the subspace debias forces a serial grid
+  precisely because it draws from R), and the reported k-hat does not flap with
+  the seed; `control$cila$seed` selects an independent realization of the
+  randomized-QMC shifts.
+
+* Below 512 points per cell the request is REFUSED rather than served.
+  Proposition 5's recovered posterior is literally a weighted particle set, so a
+  truth outside the particle range gets PIT exactly 0 or 1 -- gcol33/tulpa#341
+  measured every variant leaving the simultaneous calibration band at M = 64 and
+  the iid one still leaving it at M = 256.
+
+* Every decline says why. A cell whose inner solve factorized SPARSELY reports
+  `"sparse_factor_unavailable"`, since drawing from the inner Gaussian needs a
+  triangular solve against the factor and the sparse solver exposes only the
+  full solve; the R attach reports `"no_fixed_effects"`, `"no_grid_weights"`,
+  `"redispatch_failed"`, or the first cell's own reason where nothing usable
+  came back.
+
 ## 0.0.163
 
 * `auto_grid()` coerces in place instead of through `as.numeric()`, so a

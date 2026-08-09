@@ -1528,7 +1528,11 @@ Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
     // Subspace debias (subspace_debias.h, gcol33/tulpa#304/#306). Runs on every
     // integrated cell (never the cheap screen), so the corrected coordinates
     // enter the reported marginal as a mixture over the whole outer grid.
-    const SubspaceDebiasOptions*     debias = nullptr
+    const SubspaceDebiasOptions*     debias = nullptr,
+    // Corrected integrated Laplace (inner_cila.h, gcol33/tulpa#351). Runs on
+    // every integrated cell (never the cheap screen), so the corrected cell
+    // weights and particles cover the whole outer grid.
+    const CilaOptions*               cila = nullptr
 );
 
 // Outer-grid driver. n_x_after_re is the latent dimension after all per-arm
@@ -1575,7 +1579,11 @@ Rcpp::List run_multi_block_nested_laplace_joint(
     // Subspace debias (subspace_debias.h, gcol33/tulpa#304/#306). Runs on every
     // integrated cell (never the cheap screen), so the corrected coordinates
     // enter the reported marginal as a mixture over the whole outer grid.
-    const SubspaceDebiasOptions*     debias = nullptr
+    const SubspaceDebiasOptions*     debias = nullptr,
+    // Corrected integrated Laplace (inner_cila.h, gcol33/tulpa#351). Runs on
+    // every integrated cell (never the cheap screen), so the corrected cell
+    // weights and particles cover the whole outer grid.
+    const CilaOptions*               cila = nullptr
 );
 
 } // namespace tulpa

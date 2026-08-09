@@ -516,6 +516,28 @@
 #'     inner solve took the s2z rank-1 or the PSD eigen-clamp path carries no
 #'     usable factor to build the surface from and is left uncorrected, the same
 #'     two paths `diagnose_skew` declines on.
+#'   * `cila` (`FALSE`) -- corrected integrated Laplace, the second inner-layer
+#'     debias (gcol33/tulpa#351, after Lai, Margossian and Sheldon,
+#'     arXiv:2605.20345). Where `subspace_debias` selects coordinates and runs
+#'     exact Metropolis on them, this selects nothing: at every outer cell it
+#'     draws `n_points` points from the whole inner Gaussian, weights each by the
+#'     exact joint density it came from, and reports the weighted particles. The
+#'     cell marginals and the latent posterior both converge to the exact ones as
+#'     the effort grows, so `n_points` is the only dial. `TRUE` takes the
+#'     defaults; a list overrides `n_points` (`1024L`), `variant`
+#'     (`"qmc"`, a Sobol net; `"is"` for iid draws, `"rqmc"` for the net under
+#'     `n_shift` random shifts), `n_shift` (`8L`), `n_draws` (the reported draw
+#'     count) and `seed` (the auxiliary stream, engine-owned so requesting the
+#'     correction leaves every other posterior draw unchanged). Below 512 points
+#'     a cell's particle set is too coarse to be a marginal at all and the
+#'     request is refused. The correction reports DRAWS, so every
+#'     coefficient-facing method reads them instead of the grid's Gaussian
+#'     mixture; `$cila` carries the corrected cell weights and marginals, the
+#'     variant actually run, and the PSIS grade (`pareto_k`, `rel_ess`) of the
+#'     correction's own weights. A cell whose inner solve factorized SPARSELY is
+#'     declined with `"sparse_factor_unavailable"`: drawing needs a triangular
+#'     solve against the factor and the sparse solver exposes only the full
+#'     solve.
 #'   * `auto_recenter` (`TRUE`) -- re-centre a default outer grid axis on its
 #'     posterior mode and refit when the fit rails against a boundary node
 #'     (gcol33/tulpa#289 / #290). `FALSE` integrates over the grid exactly as
@@ -1254,6 +1276,7 @@ tulpa_nested_laplace_joint <- function(responses,
             skew_idx = skew_idx,
             skew_correct = skew_correct,
             subspace_debias = .subspace_debias_config(control$subspace_debias),
+            cila = .cila_config(control$cila),
             inner_refresh = inner_refresh,
             integration = integration,
             local_ccd = local_ccd,
@@ -1501,6 +1524,13 @@ tulpa_nested_laplace_joint <- function(responses,
         res, .subspace_debias_config(control$subspace_debias),
         redispatch = function(req) .joint_with_quiet_opts(
             kernel_fn(res$theta_grid, debias = req)),
+        p_fixed = fixed$n_fixed, beta_names = fixed$names)
+    # Corrected integrated Laplace (gcol33/tulpa#351), over the same settled
+    # grid and through the same kernel closure.
+    res <- .nl_cila_attach(
+        res, .cila_config(control$cila),
+        redispatch = function(req) .joint_with_quiet_opts(
+            kernel_fn(res$theta_grid, cila = req)),
         p_fixed = fixed$n_fixed, beta_names = fixed$names)
     res$timing <- tm$timing()
     res <- .joint_attach_diagnose_cost(res, diagnose_k, diagnose_draws)

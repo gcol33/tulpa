@@ -823,6 +823,17 @@ inline Rcpp::List run_nested_laplace_grid(
     Rcpp::List debias_per_grid(n_grid);
     Rcpp::NumericVector debias_accept(n_grid, NA_REAL);
     Rcpp::CharacterVector debias_declined(n_grid, NA_STRING);
+    // Corrected integrated Laplace (inner_cila.h) is per cell for the same
+    // reason: the corrected marginal is a reweighting of every cell's own
+    // particle set, so all of them travel out.
+    bool any_cila = false;
+    Rcpp::List cila_lw_per_grid(n_grid);
+    Rcpp::List cila_fixed_per_grid(n_grid);
+    Rcpp::NumericVector cila_log_marginal(n_grid, NA_REAL);
+    Rcpp::IntegerVector cila_n_points(n_grid, NA_INTEGER);
+    Rcpp::IntegerVector cila_variant(n_grid, NA_INTEGER);
+    Rcpp::CharacterVector cila_declined(n_grid, NA_STRING);
+    Rcpp::CharacterVector cila_fallback(n_grid, NA_STRING);
     for (int k = 0; k < n_grid; k++) {
         const LaplaceResult& res = cell_results[k];
         log_marginals[k] = res.log_marginal;
@@ -869,6 +880,29 @@ inline Rcpp::List run_nested_laplace_grid(
                 debias_per_grid[k] = dr;
             } else {
                 debias_declined[k] = res.debias_declined;
+            }
+        }
+        if (res.cila_requested) {
+            any_cila = true;
+            cila_log_marginal[k] = res.cila_log_marginal;
+            cila_n_points[k] = res.cila_n_points;
+            cila_variant[k] = res.cila_variant;
+            if (!res.cila_declined.empty()) cila_declined[k] = res.cila_declined;
+            if (!res.cila_fallback.empty()) cila_fallback[k] = res.cila_fallback;
+            if (!res.cila_log_w.empty()) {
+                cila_lw_per_grid[k] = Rcpp::NumericVector(
+                    res.cila_log_w.begin(), res.cila_log_w.end());
+            }
+            const int M = res.cila_n_points;
+            const int p = res.cila_n_fixed;
+            if (M > 0 && p > 0 &&
+                res.cila_fixed.size() == static_cast<std::size_t>(M) *
+                                         static_cast<std::size_t>(p)) {
+                Rcpp::NumericMatrix fx(M, p);
+                for (std::size_t e = 0; e < res.cila_fixed.size(); e++) {
+                    fx[e] = res.cila_fixed[e];
+                }
+                cila_fixed_per_grid[k] = fx;
             }
         }
     }
@@ -928,6 +962,15 @@ inline Rcpp::List run_nested_laplace_grid(
         out["debias_draws_per_grid"] = debias_per_grid;
         out["debias_accept"] = debias_accept;
         out["debias_declined"] = debias_declined;
+    }
+    if (any_cila) {
+        out["cila_log_w_per_grid"]  = cila_lw_per_grid;
+        out["cila_fixed_per_grid"]  = cila_fixed_per_grid;
+        out["cila_log_marginal"]    = cila_log_marginal;
+        out["cila_n_points"]        = cila_n_points;
+        out["cila_variant"]         = cila_variant;
+        out["cila_declined"]        = cila_declined;
+        out["cila_fallback"]        = cila_fallback;
     }
     if (prune_active) {
         Rcpp::NumericVector cheap_lm_out(n_grid);

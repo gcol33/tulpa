@@ -6,6 +6,7 @@
 #define TULPA_LAPLACE_CORE_H
 
 #include <Rcpp.h>
+#include <limits>
 #include <string>
 #include <vector>
 #include "laplace_likelihoods.h"
@@ -148,6 +149,26 @@ struct LaplaceResult {
   double              debias_accept = 0.0;
   double              debias_scale = 0.0;
   std::string         debias_declined;
+
+  // Corrected integrated Laplace (gcol33/tulpa#351, see src/inner_cila.h).
+  // Populated only when the solver is called with an active request: the M
+  // unnormalized log importance ratios of draws from this cell's inner
+  // Gaussian, the leading latent prefix of each draw (`cila_fixed`,
+  // column-major [M x cila_n_fixed], presented under whatever fold the loop
+  // presents its mode under), and the corrected cell log-marginal
+  // logmeanexp(cila_log_w). `cila_requested` separates "the correction was
+  // asked for and produced nothing" from "it was never asked for", so
+  // `cila_declined` is read as a reason rather than as silence.
+  bool                cila_requested = false;
+  std::vector<double> cila_log_w;
+  std::vector<double> cila_fixed;
+  double              cila_log_marginal =
+                          std::numeric_limits<double>::quiet_NaN();
+  int                 cila_n_points = 0;
+  int                 cila_n_fixed = 0;
+  int                 cila_variant = 0;
+  std::string         cila_declined;
+  std::string         cila_fallback;
 };
 
 // Emit the subspace-debias fields onto a result list, when the solver ran the
@@ -173,6 +194,28 @@ inline void attach_debias_fields(Rcpp::List& out, const LaplaceResult& res) {
     Rcpp::NumericMatrix ss(q, q);
     for (int e = 0; e < q * q; e++) ss[e] = res.debias_sigma_ss[e];
     out["debias_sigma_ss"] = ss;
+  }
+}
+
+// Emit the corrected-integrated-Laplace fields onto a result list, when the
+// correction was requested. Written even when it declined, so the reason
+// reaches the fit instead of the fields simply being absent.
+inline void attach_cila_fields(Rcpp::List& out, const LaplaceResult& res) {
+  if (!res.cila_requested) return;
+  out["cila_log_marginal"] = res.cila_log_marginal;
+  out["cila_n_points"]     = res.cila_n_points;
+  out["cila_variant"]      = res.cila_variant;
+  out["cila_declined"]     = res.cila_declined;
+  out["cila_fallback"]     = res.cila_fallback;
+  if (!res.cila_log_w.empty()) out["cila_log_w"] = res.cila_log_w;
+  const int M = res.cila_n_points;
+  const int p = res.cila_n_fixed;
+  if (M > 0 && p > 0 &&
+      res.cila_fixed.size() == static_cast<std::size_t>(M) *
+                               static_cast<std::size_t>(p)) {
+    Rcpp::NumericMatrix fx(M, p);
+    for (std::size_t e = 0; e < res.cila_fixed.size(); e++) fx[e] = res.cila_fixed[e];
+    out["cila_fixed"] = fx;
   }
 }
 
@@ -261,6 +304,7 @@ inline Rcpp::List laplace_result_to_list(const LaplaceResult& result) {
   }
   attach_inner_is_fields(out, result);
   attach_debias_fields(out, result);
+  attach_cila_fields(out, result);
 
   return out;
 }

@@ -40,7 +40,8 @@
              skew_idx = NULL,
              fixed_block_p = 0L,
              fixed_block_constraints = NULL,
-             debias = NULL) {
+             debias = NULL,
+             cila = NULL) {
         .joint_call_kernel_via_multi(backend_name, arms, prior, cp, grids,
                                       max_iter, tol, n_threads,
                                       x_init, store_Q, arm_names,
@@ -58,7 +59,8 @@
                                       fixed_block_p = fixed_block_p,
                                       fixed_block_constraints =
                                           fixed_block_constraints,
-                                      debias = debias)
+                                      debias = debias,
+                                      cila = cila)
     }
 }
 
@@ -172,7 +174,8 @@
                                           skew_idx = NULL,
                                           fixed_block_p = 0L,
                                           fixed_block_constraints = NULL,
-                                          debias = NULL) {
+                                          debias = NULL,
+                                          cila = NULL) {
     n_arms <- length(arms)
     blk <- prior; blk$type <- type
     .nl_check_block_fields(blk, "joint_single")
@@ -290,7 +293,8 @@
         skew_idx     = skew_idx,
         fixed_block_p = as.integer(fixed_block_p),
         fixed_block_constraints = fixed_block_constraints,
-        debias = debias
+        debias = debias,
+        cila = cila
     )
     # Strip the C++-side theta_grid / axis_offsets -- the backend's
     # `theta_grid()` callback rebuilds them with the user-facing bare

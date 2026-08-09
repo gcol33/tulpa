@@ -506,6 +506,28 @@ leaves the fit bit-for-bit identical to the plain path. A fit whose
 inner solve took the s2z rank-1 or the PSD eigen-clamp path carries no
 usable factor to build the surface from and is left uncorrected, the same
 two paths \code{diagnose_skew} declines on.
+\item \code{cila} (\code{FALSE}) -- corrected integrated Laplace, the second inner-layer
+debias (gcol33/tulpa#351, after Lai, Margossian and Sheldon,
+arXiv:2605.20345). Where \code{subspace_debias} selects coordinates and runs
+exact Metropolis on them, this selects nothing: at every outer cell it
+draws \code{n_points} points from the whole inner Gaussian, weights each by the
+exact joint density it came from, and reports the weighted particles. The
+cell marginals and the latent posterior both converge to the exact ones as
+the effort grows, so \code{n_points} is the only dial. \code{TRUE} takes the
+defaults; a list overrides \code{n_points} (\code{1024L}), \code{variant}
+(\code{"qmc"}, a Sobol net; \code{"is"} for iid draws, \code{"rqmc"} for the net under
+\code{n_shift} random shifts), \code{n_shift} (\code{8L}), \code{n_draws} (the reported draw
+count) and \code{seed} (the auxiliary stream, engine-owned so requesting the
+correction leaves every other posterior draw unchanged). Below 512 points
+a cell's particle set is too coarse to be a marginal at all and the
+request is refused. The correction reports DRAWS, so every
+coefficient-facing method reads them instead of the grid's Gaussian
+mixture; \verb{$cila} carries the corrected cell weights and marginals, the
+variant actually run, and the PSIS grade (\code{pareto_k}, \code{rel_ess}) of the
+correction's own weights. A cell whose inner solve factorized SPARSELY is
+declined with \code{"sparse_factor_unavailable"}: drawing needs a triangular
+solve against the factor and the sparse solver exposes only the full
+solve.
 \item \code{auto_recenter} (\code{TRUE}) -- re-centre a default outer grid axis on its
 posterior mode and refit when the fit rails against a boundary node
 (gcol33/tulpa#289 / #290). \code{FALSE} integrates over the grid exactly as
