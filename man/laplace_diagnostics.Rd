@@ -40,6 +40,14 @@ proposal rescue (\code{NA} means the Gaussian proposal already fit, not
 "symmetric and unchecked").}
 \item{\code{outer_regime_note}}{a one-line reading of a collapsed regime, or
 absent on a spread grid.}
+\item{\code{grid_railed_axes}}{outer axes whose OWN marginal is maximal at one
+of their own endpoints, as \code{axis:side} -- the span does not contain that
+axis's posterior mode, so its marginal is a truncated tail at any
+spacing. Reported whether or not the engine was allowed to, able to, or
+built to move the axis.}
+\item{\code{grid_placement}, \code{grid_recentred_axes},
+\code{grid_placement_declined}, \code{grid_placement_note}}{whether the outer grid
+was re-centred, on which axes, and -- when it was not -- why.}
 \item{\code{scope}}{the outer diagnostic's scope string.}
 \item{\code{inner_skew_max}}{the largest \verb{|gamma_3|} among the scored latent
 indices (\code{NA} if \code{control$diagnose_skew = FALSE} or nothing scored).}
