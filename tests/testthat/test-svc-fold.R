@@ -18,12 +18,12 @@
        n_spatial_units = n_s)
 }
 
-.svc_icar_block <- function(adj, s_idx, w, sigma_grid, beta_offset = NULL) {
+.svc_icar_block <- function(adj, s_idx, w, tau_grid, beta_offset = NULL) {
   b <- list(type = "icar",
             n_spatial_units = adj$n_spatial_units,
             adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
             n_neighbors = adj$n_neighbors,
-            sigma_grid = sigma_grid,
+            tau_grid = tau_grid,
             spatial_idx = list(s_idx),
             svc_weight = list(w))
   if (!is.null(beta_offset)) b$svc_beta_offset <- beta_offset
@@ -60,12 +60,12 @@ test_that("areal SVC: the constant folds into the covariate coefficient, preserv
   arm <- list(y = y, n_trials = rep(1L, N), X = cbind(1, x),
               re_idx = rep(0, N), n_re_groups = 0L, sigma_re = 1.0,
               family = "gaussian", phi = 1.0)
-  sigma_grid <- c(0.6, 1.0, 1.4)
+  tau_grid <- 1 / c(0.6, 1.0, 1.4)^2
 
   # x is column 1 (0-based) of X; the field rides on x, so its constant aliases
   # with beta[1] (the x coefficient), NOT beta[0] (the intercept).
-  fit_fold <- .svc_fit(arm, .svc_icar_block(adj, s, x, sigma_grid, beta_offset = 1L))
-  fit_none <- .svc_fit(arm, .svc_icar_block(adj, s, x, sigma_grid))
+  fit_fold <- .svc_fit(arm, .svc_icar_block(adj, s, x, tau_grid, beta_offset = 1L))
+  fit_none <- .svc_fit(arm, .svc_icar_block(adj, s, x, tau_grid))
 
   bstart <- fit_fold$arm_layout$beta_start[[1L]]     # 0-based
   fstart <- fit_fold$arm_layout$field_starts[[1L]]   # 0-based
@@ -114,6 +114,6 @@ test_that("areal SVC: a declared column that does not match the weight errors", 
   # The field rides on x, but declare the INTERCEPT column (0, all-ones) as its
   # alias -- a mismatch that would silently shift eta. It must error, not fit.
   expect_error(
-    .svc_fit(arm, .svc_icar_block(adj, s, x, c(0.8, 1.2), beta_offset = 0L)),
+    .svc_fit(arm, .svc_icar_block(adj, s, x, 1 / c(0.8, 1.2)^2, beta_offset = 0L)),
     "does not match the field weight")
 })

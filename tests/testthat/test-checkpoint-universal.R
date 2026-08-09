@@ -30,7 +30,7 @@ test_that("single-block nested-Laplace checkpoint == un-checkpointed + resumes",
   sidx <- sample(n_s, N, replace = TRUE); x <- rnorm(N)
   y <- rbinom(N, 1, plogis(0.3 + 0.5 * x + w[sidx]))
   X <- cbind(1, x)
-  prior <- c(list(type = "icar", sigma_grid = c(0.5, 0.8, 1.2, 1.8),
+  prior <- c(list(type = "icar", tau_grid = 1 / c(0.5, 0.8, 1.2, 1.8)^2,
                   spatial_idx = sidx), adj)
   fit <- function(ck = NULL) {
     ctrl <- list(diagnose_k = FALSE)

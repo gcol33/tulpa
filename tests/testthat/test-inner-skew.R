@@ -542,11 +542,11 @@ test_that("tulpa_nested_laplace_joint() wires gamma_3 through the multi-block di
   prior <- list(
     list(type = "icar", n_spatial_units = n_s,
          adj_row_ptr = adjA$adj_row_ptr, adj_col_idx = adjA$adj_col_idx,
-         n_neighbors = adjA$n_neighbors, sigma_grid = c(0.4, 0.9),
+         n_neighbors = adjA$n_neighbors, tau_grid = 1 / c(0.4, 0.9)^2,
          spatial_idx = list(as.integer(iA), as.integer(iAp))),
     list(type = "icar", n_spatial_units = n_s,
          adj_row_ptr = adjB$adj_row_ptr, adj_col_idx = adjB$adj_col_idx,
-         n_neighbors = adjB$n_neighbors, sigma_grid = c(0.3, 0.8),
+         n_neighbors = adjB$n_neighbors, tau_grid = 1 / c(0.3, 0.8)^2,
          spatial_idx = list(as.integer(iB), as.integer(iBp))))
 
   fit <- tulpa_nested_laplace_joint(

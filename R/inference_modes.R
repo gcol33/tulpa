@@ -609,6 +609,11 @@ tulpa_dispatch <- function(mode,
   reg <- if (!is.null(fit$backend)) BACKEND_REGISTRY[[fit$backend]] else NULL
   fit$draws_kind <- fit$draws_kind %||% draws_kind %||% reg$emits
 
+  # Axis fields the fit's own path could not read (gcol33/tulpa#352), published
+  # for the duration of the fit by the nested-Laplace front doors.
+  fit$axis_fields_dropped <- fit$axis_fields_dropped %||%
+    getOption("tulpa.nl_axis_dropped", NULL)
+
   if (!is.null(n_fixed))     fit$n_fixed     <- fit$n_fixed     %||% n_fixed
   if (!is.null(fixed_names)) fit$fixed_names <- fit$fixed_names %||% fixed_names
   if (!is.null(param_names)) fit$param_names <- fit$param_names %||% param_names

@@ -831,6 +831,12 @@ tulpa_nested_laplace_joint <- function(responses,
     # the record; everything else reads plain grids (gcol33/tulpa#293).
     prov  <- .nl_grid_provenance(prior)
     prior <- prov$prior
+    # Refuse an axis the resolved per-block path cannot read, and record a
+    # dropped default (gcol33/tulpa#352).
+    .op_axis <- .nl_publish_axis_dropped(
+        .nl_check_axis_fields(prior, "joint", auto = prov$auto,
+                              copy = copy, responses = responses))
+    on.exit(options(.op_axis), add = TRUE)
     # `control$auto_recenter = FALSE` holds every grid exactly as given -- the
     # opt-out for a caller who wants the default axis integrated as-is.
     auto_recenter <- !isFALSE(control$auto_recenter)

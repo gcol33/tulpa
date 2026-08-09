@@ -268,6 +268,12 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   # it -- and strip the markers so every downstream consumer sees plain grids.
   .prov <- .nl_grid_provenance(prior)
   prior <- .prov$prior
+  # And refuse an axis this path cannot read (gcol33/tulpa#352): a grid field
+  # some OTHER driver spells the same family with is neither integrated nor
+  # reported here, so a pinned one is an error and a defaulted one is recorded.
+  .op_axis <- .nl_publish_axis_dropped(
+    .nl_check_axis_fields(prior, "registry", auto = .prov$auto))
+  on.exit(options(.op_axis), add = TRUE)
   # A model-supplied `likelihood` is only honoured by the spec-driven multi-block
   # driver (run_multi_block_nested_laplace); the single-kernel path (.nl_dispatch)
   # has no spec hook. Route a single LatentBlock-type prior through the

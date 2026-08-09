@@ -91,7 +91,7 @@ test_that("a cyclic RW2 joint block differs from its acyclic counterpart", {
   )
   mk_prior <- function(cyclic) list(list(
     type = "rw2", temporal_idx = list(t_idx), n_times = Tt,
-    cyclic = cyclic, sigma_grid = c(0.3, 0.6, 1.0)
+    cyclic = cyclic, tau_grid = c(1, 3, 11)
   ))
 
   fit_cyc <- tulpa_nested_laplace_joint(

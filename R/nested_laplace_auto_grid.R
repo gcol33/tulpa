@@ -239,6 +239,142 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
     !.nl_axis_matches_default(g, field, type)
 }
 
+# --- axis consumption (gcol33/tulpa#352) --------------------------------------
+#
+# A grid field the resolved path does not read must not pass in silence. Which
+# fields a path reads is `.NL_PATH_AXES` (`R/settings.R`), so this is one check
+# over the whole binding table rather than a rule per family: any family whose
+# drivers parameterize it differently -- icar (precision on the registry path,
+# field SD on the joint areal backends), car_proper, every copy block -- is
+# covered by its table entry.
+#
+# The verdict splits on PROVENANCE, the same question every rescue above asks.
+# A PINNED axis (named by the caller, neither marked with `auto_grid()` nor
+# equal to the engine's own default nodes) is a choice the path cannot honour,
+# so it is REFUSED, naming the field, the block, the path, the axis that path
+# integrates, and -- where the engine itself establishes the conversion
+# (`.NL_AXIS_EQUIV`) -- how to write the same grid in the axis that path reads.
+# An axis that IS an engine default carries nothing a pin would add, so refusing
+# it would be a false alarm; it is dropped, and the drop is RECORDED on the fit
+# (`$axis_fields_dropped`) rather than left invisible, per gcol33/tulpa#293.
+
+.NL_AXIS_PATH_LABEL <- c(
+    registry     = paste0("the nested-Laplace registry path (`tulpa_nested_laplace()`, ",
+                          "and every non-copy block of `tulpa_nested_laplace_joint()`)"),
+    joint_single = "the single-block joint areal backend",
+    copy         = "a copy block on the joint multi-block path"
+)
+
+# The conversion sentence for `field` into whichever consumed axis the engine
+# converts it to, or NULL when no such conversion is established.
+.nl_axis_equiv_hint <- function(type, field, consumed) {
+    eq <- .NL_AXIS_EQUIV[[tolower(type %||% "")]][[field]]
+    if (is.null(eq)) return(NULL)
+    hit <- intersect(names(eq), consumed)
+    if (!length(hit)) return(NULL)
+    unname(eq[[hit[1L]]])
+}
+
+.nl_axis_refusal <- function(type, path, block_index, field, consumed) {
+    lab <- .NL_AXIS_PATH_LABEL[[path]] %||% path
+    hint <- .nl_axis_equiv_hint(type, field, consumed)
+    paste0(
+        "prior block ", if (is.null(block_index)) "" else paste0(block_index, " "),
+        "'", type, "': `", field, "` is not an axis ", lab, " reads. ",
+        "That path integrates ",
+        paste0("`", consumed, "`", collapse = ", "), ". ",
+        if (!is.null(hint)) paste0("Write the same grid as ", hint, ", ") else
+            "Pin the axis that path reads, ",
+        "or drop the field."
+    )
+}
+
+# One block. Returns a list of drop records (possibly empty); refuses a pinned
+# unread axis with an error.
+.nl_check_block_axis_fields <- function(blk, path, block_index = NULL,
+                                        auto_fields = character(0)) {
+    if (!is.list(blk)) return(list())
+    type <- tolower(blk$type %||% "")
+    consumed <- .nl_path_axis_fields(type, path)
+    if (!length(consumed)) return(list())
+    present <- intersect(names(blk) %||% character(0), .nl_known_axis_fields())
+    present <- present[vapply(present, function(f)
+        length(blk[[f]]) > 0L && is.numeric(blk[[f]]), logical(1))]
+    unread <- setdiff(present, consumed)
+    if (!length(unread)) return(list())
+    out <- list()
+    for (f in unread) {
+        # `type = NULL`: the field is not this path's, so the question is
+        # whether the value is an engine default under ANY binding for it. That
+        # errs toward recognising a default, which is the direction that errs
+        # away from refusing a fit.
+        if (.nl_axis_is_pinned(blk, f, auto_fields, type = NULL)) {
+            stop(.nl_axis_refusal(type, path, block_index, f, consumed),
+                 call. = FALSE)
+        }
+        out[[length(out) + 1L]] <- data.frame(
+            block      = if (is.null(block_index)) NA_integer_ else
+                             as.integer(block_index),
+            type       = type,
+            field      = f,
+            path       = path,
+            integrates = paste(consumed, collapse = ", "),
+            reason     = "default_axis_not_read_by_this_path",
+            stringsAsFactors = FALSE
+        )
+    }
+    out
+}
+
+# THE front-door check. `path` is `"registry"` (`tulpa_nested_laplace()`) or
+# `"joint"` (`tulpa_nested_laplace_joint()`, which resolves per block: the
+# single-block areal backend, a copy block, or the registry path). `auto` is the
+# provenance record `.nl_grid_provenance()` just took. Returns the drop record
+# (a data.frame) or NULL, and errors on a pinned unread axis.
+.nl_check_axis_fields <- function(prior, path = "registry", auto = NULL,
+                                  copy = NULL, responses = NULL) {
+    if (!is.list(prior) || !length(prior)) return(NULL)
+    multi  <- .is_multi_block_prior(prior)
+    blocks <- if (multi) prior else list(prior)
+    copy_at <- integer(0)
+    if (identical(path, "joint") && multi && !is.null(copy)) {
+        cp <- tryCatch(.resolve_copy_multi(copy, responses, prior),
+                       error = function(e) NULL)
+        # An unresolvable copy spec leaves every block's path unknown, and a
+        # guess there refuses the wrong block with the wrong reason. Decline,
+        # and let the driver raise the error the spec actually has.
+        if (is.null(cp)) return(NULL)
+        if (isTRUE(cp$has_copy)) {
+            copy_at <- as.integer(cp$copy_blocks_zero) + 1L
+        }
+    }
+    rec <- list()
+    for (b in seq_along(blocks)) {
+        blk <- blocks[[b]]
+        if (!is.list(blk) || is.null(blk$type)) next
+        bpath <- if (!identical(path, "joint")) "registry"
+                 else if (!multi) "joint_single"
+                 else if (b %in% copy_at) "copy"
+                 else "registry"
+        bi <- if (multi) b else NULL
+        rec <- c(rec, .nl_check_block_axis_fields(
+            blk, bpath, bi, .nl_auto_fields_at(auto, bi)))
+    }
+    if (!length(rec)) return(NULL)
+    do.call(rbind, rec)
+}
+
+# Publish the drop record for the duration of one fit, the way every front door
+# publishes a fit-scoped setting (`tulpa.nl_max_grid_cells`, `tulpa.nl_progress`).
+# `.finalize_fit()` reads it onto `$axis_fields_dropped`, so every fit the front
+# door produces -- the first solve and any rescue refit -- carries it, and
+# nothing outside the scope sees it. Call as
+# `on.exit(options(.nl_publish_axis_dropped(rec)), add = TRUE)`-style: it
+# returns the previous option list, exactly like `options()`.
+.nl_publish_axis_dropped <- function(rec) {
+    options(tulpa.nl_axis_dropped = rec)
+}
+
 # --- axis naming -------------------------------------------------------------
 #
 # The same physical axis is named three ways depending on the grid it landed

@@ -2,6 +2,34 @@
 
 ## 0.0.158
 
+* A grid axis the resolved path cannot read is refused or recorded, never
+  dropped in silence (gcol33/tulpa#352). A `sigma_grid` on an icar block reached
+  the multi-block driver, which integrates `tau_grid`, and the field neither took
+  effect nor produced any diagnostic -- so a fixture believing it pinned a 2-node
+  axis per block ran a 9-node default on a different parameterization, at an
+  order of magnitude more cells. The two paths keep their parameterizations: the
+  registry integrates the intrinsic families over the PRECISION and the joint
+  areal backends over the field SD, which `.NL_FAMILY_AXES` already recorded as
+  deliberate. What changes is that the binding table now also says which fields
+  each PATH reads (`.NL_PATH_AXES`, `R/settings.R`), so the check is one pass
+  over the whole table rather than a rule per family, and a family whose drivers
+  agree needs no entry at all. Both nested-Laplace front doors run it on the
+  incoming prior, resolving the path per block (registry / single-block joint
+  areal / copy). The verdict splits on the same provenance question every
+  auto-recenter rescue asks: a PINNED unread axis is an error naming the field,
+  the block, the path, the axis that path integrates and -- for the one pair the
+  engine itself converts, icar's `tau = 1 / sigma^2` -- how to write the same
+  grid in the axis that path reads; an axis that IS an engine default carries
+  nothing a pin would add, so it is dropped and the drop is recorded on the fit
+  as `$axis_fields_dropped` rather than left invisible (gcol33/tulpa#293). The
+  refusal is symmetric: a `tau_grid` handed to the single-block joint areal
+  backend was ignored the same way and is refused too. Six fixtures in this
+  repo were in that position and now pin the axis they meant
+  (`test-inner-skew.R`, `test-checkpoint-universal.R`,
+  `test-nested-laplace-spatial-recovery.R`, `test-nested-laplace-joint-svc-areal.R`,
+  `test-svc-fold.R`, `test-audit-228-239.R`). New `test-nl-axis-consumption.R`,
+  which measures the declared conversion against a fit rather than asserting it
+  from the source.
 * The posterior-SBC driver splits the truth-draw and replicate RNG streams
   itself (gcol33/tulpa#350). `recov_posterior_sbc()` derives two seeds and hands
   `draw_theta` one and `simulate` the other, so the obvious `set.seed(seed)` at

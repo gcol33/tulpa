@@ -279,7 +279,7 @@ test_that("bad svc_weight lengths error before the C++ entry", {
         adj_row_ptr = adj$adj_row_ptr,
         adj_col_idx = adj$adj_col_idx,
         n_neighbors = adj$n_neighbors,
-        sigma_grid  = c(0.5, 1.0),
+        tau_grid    = 1 / c(0.5, 1.0)^2,
         spatial_idx = list(s, s),
         svc_weight  = svc)
 

@@ -231,6 +231,96 @@
     .copy        = list(sigma_grid = "field_sd", alpha_grid = "copy_alpha")
 )
 
+# --- which grid fields each PATH reads ----------------------------------------
+#
+# The binding above says which axis the engine LAYS DOWN on a field. This says
+# which fields a resolved path READS, which is the other half of the same
+# question and the half a caller gets wrong: a family whose paths parameterize
+# it differently accepts one spelling on one driver and ignores it on another
+# (gcol33/tulpa#352 -- a `sigma_grid` on an icar block reached the multi-block
+# driver, which integrates `tau_grid`, and neither took effect nor said so).
+#
+# `.NL_PATH_AXES[[path]][[family]]` is the COMPLETE set of grid fields that
+# (path, family) reads. A leading-dot token expands to the field names of a
+# binding above: `.registry` is the family's own entry, anything else is the
+# path pseudo-type of the same name. An absent entry means the path reads
+# exactly the family's registry binding, so a family whose paths agree needs no
+# entry here at all and a family whose paths differ is one line.
+#
+# Paths:
+#   registry     `.nl_dispatch()` / `.nl_block_axis_grid()` -- every
+#                `tulpa_nested_laplace()` fit and every non-copy block of a
+#                multi-block joint fit.
+#   joint_single the single-block joint areal backends
+#                (`R/nested_laplace_joint_backends.R`), which read the field SD.
+#   copy         a copy block on the joint multi-block path
+#                (`.joint_block_axis_grid()`), which leads with (sigma, alpha).
+.NL_PATH_AXES <- list(
+    registry = list(
+        # car_proper's `defaults()` accepts the joint-API spelling of the
+        # correlation axis as an alias, so the registry path reads both.
+        car_proper = c(".registry", "rho_car_grid")
+    ),
+    joint_single = list(
+        icar       = ".joint_areal",
+        bym2       = c(".joint_areal", "rho_grid"),
+        car_proper = c(".joint_areal", "rho_car_grid")
+    ),
+    copy = list(
+        icar       = ".copy",
+        rw1        = ".copy",
+        rw2        = ".copy",
+        iid        = ".copy",
+        bym2       = c(".copy", "rho_grid"),
+        car_proper = c(".copy", "rho_car_grid"),
+        ar1        = c(".copy", "rho_grid"),
+        # A copied correlated field keeps its own log-Cholesky axes and appends
+        # the copy coefficient; there is no scalar sigma on this one.
+        mcar       = c(".registry", "alpha_grid"),
+        miid       = c(".registry", "alpha_grid")
+    )
+)
+
+# Exact conversions between two spellings of ONE axis, for the paths that
+# parameterize a family differently. Only pairs the ENGINE ITSELF converts are
+# listed: `.joint_call_kernel_via_multi()`
+# (`R/nested_laplace_joint_backends.R`) hands the single-block joint icar
+# kernel `b1.tau = 1 / sigma^2` from its own `sigma` axis, so the two spellings
+# name the same set of physical grids and either can be written as the other.
+# A family whose conversion is not established in engine code is absent, and
+# its unread axis is refused with the consumed axis named and no conversion
+# offered -- a guessed relation would be worse than none.
+.NL_AXIS_EQUIV <- list(
+    icar = list(
+        sigma_grid = c(tau_grid   = "tau_grid = 1 / sigma_grid^2"),
+        tau_grid   = c(sigma_grid = "sigma_grid = 1 / sqrt(tau_grid)")
+    )
+)
+
+# The complete field set `path` reads on a block of `type`.
+.nl_path_axis_fields <- function(type, path = "registry") {
+    type <- tolower(type %||% "")
+    base <- names(.NL_FAMILY_AXES[[type]]) %||% character(0)
+    spec <- .NL_PATH_AXES[[path]][[type]]
+    if (is.null(spec)) return(base)
+    out <- lapply(spec, function(tok) {
+        if (!startsWith(tok, ".")) return(tok)
+        if (identical(tok, ".registry")) return(base)
+        names(.NL_FAMILY_AXES[[tok]]) %||% character(0)
+    })
+    unique(unlist(out, use.names = FALSE))
+}
+
+# Every field name any family or path binds -- the set a stray `*_grid` on a
+# block is checked against, so a field the tables know nothing about (a
+# materialised per-grid payload, a consumer's own bookkeeping) is left alone.
+.nl_known_axis_fields <- function() {
+    fromtab <- unlist(lapply(.NL_FAMILY_AXES, names), use.names = FALSE)
+    frompath <- unlist(.NL_PATH_AXES, use.names = FALSE)
+    frompath <- frompath[!startsWith(frompath, ".")]
+    unique(c(fromtab, frompath))
+}
+
 # Fill in a prior block's absent default axes from the family binding. When any
 # of `fields` is missing, ALL of them are rebuilt and crossed as a Cartesian
 # product -- the registry's per-family convention: a family's axes are stored

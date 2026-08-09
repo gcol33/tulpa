@@ -155,7 +155,7 @@ test_that("nested-Laplace ICAR precision moves inversely with the field amplitud
     prior <- list(type = "icar", spatial_idx = sidx, n_spatial_units = S,
                   adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
                   n_neighbors = adj$n_neighbors,
-                  sigma_grid = exp(seq(log(0.2), log(2.5), length.out = 7)))
+                  tau_grid = 1 / exp(seq(log(0.2), log(2.5), length.out = 7))^2)
     fit <- suppressWarnings(tulpa_nested_laplace(
       as.integer(y), rep(1L, N), matrix(1, N, 1), prior = prior,
       family = "binomial", control = list(diagnose_k = FALSE)))
