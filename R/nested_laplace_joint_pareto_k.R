@@ -1391,6 +1391,14 @@
 
     ju  <- .joint_pareto_uncertainty(joint$best, k_tail_points, k_bootstrap,
                                      k_conf_bands)
+    # The aperture publishes the SELECTED proposal's ratios -- the ones `ju`
+    # just fitted the reported shape on. The dispatch above scored several
+    # candidates (each moment-matching pass, the grid mixture, the skew-normal
+    # rescue) and kept one; the per-arm passes below score more. Writing here,
+    # after the choice and before those, is what makes the aperture reproduce
+    # the number the fit reports (gcol33/tulpa#356).
+    .kdiag_capture(joint$best$lr, tail_points = k_tail_points,
+                   scope = paste0("joint nested (", joint$source, ")"))
     out <- list(pareto_k = ju$pareto_k, is_ess = ju$is_ess,
                 proposal_source = joint$source,
                 declined = NA_character_,

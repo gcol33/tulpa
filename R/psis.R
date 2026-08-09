@@ -399,8 +399,10 @@ tulpa_psis <- function(log_ratios, tail_points = NULL) {
     lt <- log_target(Umat[i, ])
     if (is.finite(lt)) lt else -Inf
   }, numeric(1))
-  .nested_is_pareto_k(theta_hat, L_scale, batched,
-                      n_samples = n_samples, radius_cap = Inf)
+  kd <- .nested_is_pareto_k(theta_hat, L_scale, batched,
+                            n_samples = n_samples, radius_cap = Inf)
+  .kdiag_capture(kd$lr, scope = "re_cov nested (hyperparameter Gaussian)")
+  kd
 }
 
 # Outer Pareto-k-hat for a grid-integrated nested fit (the generic
@@ -498,24 +500,52 @@ tulpa_psis <- function(log_ratios, tail_points = NULL) {
   if (n_eval < .PSIS_MIN_EVAL) {
     return(na_out("draws_too_few", n_eval))
   }
-  # Validation aperture: when `tulpa.kdiag.capture` holds an environment, stash
-  # the finite importance log-ratios so an external check can recompute the same
-  # k-hat with loo / posterior on the actual engine output. Off by default, zero
-  # overhead when unset.
-  cap <- getOption("tulpa.kdiag.capture", NULL)
-  if (is.environment(cap)) cap$lr <- lr[is.finite(lr)]
-  ps <- tulpa_psis(lr, tail_points = tail_points)
-  out <- list(pareto_k = ps$pareto_k, is_ess = ps$is_ess, n_eval = n_eval)
+  ps  <- tulpa_psis(lr, tail_points = tail_points)
+  fin <- is.finite(lr)
+  # `lr` travels with every scored proposal: it is what the k bootstrap re-fits
+  # the GPD on, and what `.kdiag_capture()` publishes for the proposal a backend
+  # ends up REPORTING. A scorer that is called several times per fit (the
+  # moment-matching loop) therefore hands each candidate's ratios back rather
+  # than writing any of them anywhere.
+  out <- list(pareto_k = ps$pareto_k, is_ess = ps$is_ess, n_eval = n_eval,
+              lr = lr[fin])
   # The evaluated draws and their PSIS-smoothed log weights, same order
   # (tulpa_psis keeps the finite entries in place), so a caller can re-estimate
   # the proposal from the importance-weighted moments (moment-matching IS).
   if (return_draws) {
-    fin <- is.finite(lr)
     out$U <- U[fin, , drop = FALSE]
     out$log_weights <- ps$log_weights
-    out$lr <- lr[fin]                                  # raw ratios for the k bootstrap
   }
   out
+}
+
+# Validation aperture (gcol33/tulpa#356). When `tulpa.kdiag.capture` holds an
+# environment, a fit stashes there the importance log-ratios its REPORTED outer
+# k-hat was fitted on, so an external check reproduces that number exactly:
+#
+#     tulpa_psis(cap$lr, tail_points = cap$tail_points)$pareto_k == fit$pareto_k
+#
+# It is written ONCE per fit, by the driver that fixes the reported k-hat, from
+# the proposal that driver SELECTED. It is deliberately not written by
+# `.nested_is_pareto_k()`: that scorer runs once per candidate proposal, and on
+# the joint path the moment-matching loop, the grid mixture and the skew-normal
+# rescue each score a candidate that may lose the comparison -- so a write there
+# leaves the aperture holding a discarded proposal's ratios and invites a
+# recomputation that disagrees with the fit for a reason that is not a defect in
+# either number.
+#
+# `tail_points` is the request as handed to `tulpa_psis()` (NULL under the
+# automatic PSIS rule), not the resolved tail size: the resolved size is capped
+# at floor(0.2 * S) on re-entry, so feeding it back can shorten the tail and
+# move the shape. `scope` names what the ratios belong to. Off by default, zero
+# overhead when unset.
+.kdiag_capture <- function(lr, tail_points = NULL, scope = NULL) {
+  cap <- getOption("tulpa.kdiag.capture", NULL)
+  if (!is.environment(cap) || is.null(lr) || !length(lr)) return(invisible(FALSE))
+  cap$lr          <- lr[is.finite(lr)]
+  cap$tail_points <- tail_points
+  cap$scope       <- scope
+  invisible(TRUE)
 }
 
 # One-sided test that the importance log-ratio RISES with the squared whitened
@@ -583,5 +613,8 @@ tulpa_psis <- function(log_ratios, tail_points = NULL) {
     lm                                                       # already the u-space target
   }
   radius_cap <- .nested_grid_radius_cap(u_grid, u_hat, L)
-  .nested_is_pareto_k(u_hat, L, lt, n_samples, radius_cap = radius_cap)
+  kd <- .nested_is_pareto_k(u_hat, L, lt, n_samples, radius_cap = radius_cap)
+  .kdiag_capture(kd$lr,
+                 scope = "nested_laplace grid (single positive-scale axis)")
+  kd
 }

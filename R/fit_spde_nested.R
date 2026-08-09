@@ -58,7 +58,10 @@ pc_prior_log_density <- function(range, sigma, prior_range, prior_sigma) {
     list(pareto_k = NA_real_, is_ess = NA_real_,
          declined = .k_decline_label(.k_decline("degenerate_proposal",
                                                "the scorer errored")))
-  } else kd
+  } else {
+    .kdiag_capture(kd$lr, scope = "fit_spde (log range, log sigma)")
+    kd
+  }
 }
 
 # ---------------------------------------------------------------------
