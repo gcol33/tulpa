@@ -91,6 +91,45 @@ test_that("the boxes tile the axis and carry the shipped masses exactly", {
   expect_equal(e[3L], exp(mean(log(v[2:3]))))
 })
 
+test_that("the partition comes from the grid, the masses from the weights", {
+  # gcol33/tulpa#337's own rule is "keep the masses, tile the axis", and the two
+  # halves come from different places. A cell whose integration weight underflows
+  # to exactly 0 still SITS on the axis, and its coordinate is what fixes its
+  # neighbour's box edge; filtering the coordinates by weight would shrink that
+  # neighbour's box to nothing and collapse the read onto the chord one. Measured
+  # on the coarsest rung of `dev_notes/issue357/coarse357b.R` -- 2 cells at 400
+  # groups -- the softmax underflows one of the two on 43 of 150 seeds, so this
+  # is the difference between measuring the construction and measuring nothing.
+  #
+  # The chord read filters both together, correctly: its knots ARE the
+  # positive-weight coordinates. This one's knots are edges.
+  v <- c(0.3309751, 0.9064126)
+  w <- c(0, 1)
+  h <- 0.5 * diff(log(v))
+  bx <- c(exp(mean(log(v))), exp(log(v[2L]) + h))   # cell 2's own box
+  p <- c(0.025, 0.5, 0.975)
+  q <- .nl_summary_quantile(v, w, p, "positive", "density", "box_uniform")
+  expect_equal(q, bx[1L] + p * diff(bx))
+  expect_false(isTRUE(all.equal(
+    q, .nl_summary_quantile(v, w, p, "positive", "density", "chord"))))
+  # It is a box read, not a decline.
+  expect_true(is.na(.nl_summary_quantile_read(v, w, p, "positive", "density",
+                                              "box_uniform")$declined))
+
+  # An interior empty box is a FLAT segment of the CDF, not a merged one: the
+  # quantile is located on the cumulative mass and evaluated inside the box it
+  # lands in, so an empty box is stepped over rather than interpolated across.
+  v4 <- exp(seq(log(0.2), log(1.5), length.out = 4))
+  e4 <- .nl_box_edges(v4, "positive")
+  q4 <- .nl_summary_quantile(v4, c(0.5, 0, 0, 0.5), c(0.25, 0.5, 0.75),
+                             "positive", "density", "box_uniform")
+  expect_gte(q4[1L], e4[1L]); expect_lte(q4[1L], e4[2L])
+  expect_equal(q4[2L], e4[4L])
+  expect_gte(q4[3L], e4[4L]); expect_lte(q4[3L], e4[5L])
+  # Interpolating across the two empty boxes would put q(0.75) below e4[4].
+  expect_gt(q4[3L], e4[3L])
+})
+
 test_that("a bounded axis's boxes stay inside its support", {
   # gcol33/tulpa#361 extended `bym2_rho` to six nodes including 0.999, so a
   # `unit` axis with a node that close to its boundary is live. Mirroring or

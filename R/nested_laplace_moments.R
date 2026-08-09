@@ -270,25 +270,62 @@
 # gaussian-LMM fixture the shipped read converges at order 1.04 and this at 2.00
 # (`dev_notes/issue353/RESULTS.md` section 2.3).
 #
+# THE PARTITION COMES FROM THE GRID, THE MASSES FROM THE WEIGHTS -- which is
+# what gcol33/tulpa#337's own "keep the masses, tile the axis" says, and the two
+# have to be taken from different places. A cell whose integration weight
+# underflows to exactly 0 still SITS on the axis, and its coordinate is what
+# fixes its neighbour's box edge; dropping it from the partition shrinks that
+# neighbour's box to nothing. On the coarsest rung of the ladder
+# (`dev_notes/issue357/coarse357b.R`, 2 cells at 400 groups) the softmax
+# underflows one of two cells on 43 of 150 seeds, so filtering the coordinates
+# by weight collapsed the read onto the chord one there and the rung stopped
+# measuring the construction at all. The chord read filters both together
+# because its knots ARE the positive-weight coordinates; this one does not,
+# because its knots are edges.
+#
+# A zero-mass box is a FLAT segment of the CDF, not a merged one: the quantile
+# is located on the cumulative mass and evaluated inside the box it lands in, so
+# an empty box is stepped over rather than interpolated across. Reading the
+# inverse off `approx` after dropping tied cumulative values would spread the
+# next box's mass over both.
+#
 # `declined` is why the box read did not run, from a closed vocabulary, and is
 # NA when it did. The caller falls back to the chord read on any decline, so an
 # axis the partition could not be built for still reports an interval.
 .nl_box_quantile <- function(values, weights, probs, domain = NA_character_) {
-  a <- .nl_axis_atoms(values, weights)
-  if (is.null(a)) {
+  v <- as.numeric(values)
+  w <- as.numeric(weights)
+  fin  <- is.finite(v)
+  wpos <- fin & is.finite(w) & w > 0
+  if (!any(wpos)) {
     return(list(q = rep(NA_real_, length(probs)), declined = "no_usable_node"))
   }
-  if (length(a$v) < 2L) {
-    return(list(q = rep(a$v[1L], length(probs)), declined = "single_node"))
+  uv <- sort(unique(v[fin]))
+  if (length(uv) < 2L) {
+    return(list(q = rep(uv[1L], length(probs)), declined = "single_node"))
   }
-  e <- .nl_box_edges(a$v, domain)
+  e <- .nl_box_edges(uv, domain)
   if (is.null(e)) return(list(q = NULL, declined = "boxes_do_not_tile"))
-  cf <- c(0, cumsum(a$w))
+  m <- as.numeric(tapply(w[wpos], factor(match(v[wpos], uv),
+                                         levels = seq_along(uv)), sum))
+  m[is.na(m)] <- 0
+  tot <- sum(m)
+  if (!is.finite(tot) || tot <= 0) {
+    return(list(q = rep(NA_real_, length(probs)), declined = "no_usable_node"))
+  }
+  m <- m / tot
+  cf <- c(0, cumsum(m))
   cf[length(cf)] <- 1
-  keep <- c(TRUE, diff(cf) > 0)
-  list(q = stats::approx(cf[keep], e[keep], xout = probs, ties = "ordered",
-                         rule = 2)$y,
-       declined = NA_character_)
+  n_box <- length(m)
+  q <- vapply(probs, function(p) {
+    if (p <= 0) return(e[1L])
+    if (p >= 1) return(e[n_box + 1L])
+    k <- findInterval(p, cf, rightmost.closed = TRUE, all.inside = TRUE)
+    while (k < n_box && m[k] <= 0) k <- k + 1L
+    if (m[k] <= 0) return(e[k])
+    e[k] + (p - cf[k]) / m[k] * (e[k + 1L] - e[k])
+  }, numeric(1))
+  list(q = q, declined = NA_character_)
 }
 
 # The `.NL_DOMAIN_TRANSFORM` entry a DECLARED `c(lower, upper)` support is, or

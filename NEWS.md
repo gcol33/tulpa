@@ -43,6 +43,21 @@
   (`"support_<kind>"`, `"single_node"`, `"boxes_do_not_tile"`,
   `"no_usable_node"`) and that axis falls back to the chord read on its own.
 
+  THE PARTITION COMES FROM THE GRID AND THE MASSES FROM THE WEIGHTS, which is
+  what gcol33/tulpa#337's own "keep the masses, tile the axis" says and what
+  `recon.R` does (`axis_geometry()` on the whole grid, `slice_masses()` on the
+  positive weights). A cell whose integration weight underflows to exactly 0
+  still SITS on the axis, and its coordinate is what fixes its neighbour's box
+  edge; filtering the coordinates by weight -- which is right for the chord
+  read, whose knots ARE the positive-weight coordinates -- shrinks that
+  neighbour's box to nothing. On the coarsest rung of the re-scored ladder
+  (2 cells at 400 groups) the softmax underflows one of two cells on 43 of 150
+  seeds, so that filter was the difference between measuring the construction
+  and measuring the chord read under another name. An empty interior box is a
+  FLAT segment of the CDF: the quantile is located on the cumulative mass and
+  evaluated inside the box it lands in, so an empty box is stepped over rather
+  than interpolated across.
+
 * Every nested path now stamps what its per-axis intervals were read off, not
   only the multi-block driver (gcol33/tulpa#357). `theta_interval_read` /
   `theta_interval_design_mass` were filled by `.joint_dispatch_multi()` alone,
