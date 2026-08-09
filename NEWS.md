@@ -1,5 +1,22 @@
 # tulpa NEWS
 
+## 0.0.160
+
+* A fit whose supplied grid axis went unused says so through its own readers
+  (gcol33/tulpa#355). gcol33/tulpa#352 records the drop on
+  `$axis_fields_dropped` when the axis was an engine default or an
+  `auto_grid()` the resolved path does not read; nothing read it back, so such a
+  fit reported exactly as one whose axis was integrated. `diagnostic_summary()`
+  now carries the record and one sentence per dropped field -- the field, the
+  block, the path named with the same label the #352 refusal uses, and the axis
+  that path integrated instead; `print()` carries the compact `unused axis
+  fields` line; and `summary()` carries the record as an `axis_fields_dropped`
+  attribute alongside `interval_source` / `retained_mass`. All three go through
+  one reader (`.tulpa_axis_dropped()`) and one formatter, so a fit that used
+  every axis it was given is silent in all three and the ordinary fit is
+  unchanged. This is the read half of the gcol33/tulpa#293 rule that a
+  silent-disable path needs a reason field.
+
 ## 0.0.159
 
 * The coupled joint Newton takes a step from an indefinite start Hessian, and a

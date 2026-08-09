@@ -32,6 +32,10 @@ and \code{"internal_inconsistency"} is an engine bug and raises the status to
 largest scored inner-Laplace \verb{|gamma_3|}, or why nothing was scored
 (gcol33/tulpa#296 -- \code{"coupled_arm"} marks arms the inner layer could
 score neither per observation nor through the cell tensor)}
+\item{axis_fields_dropped}{data frame of grid axes the fit's own resolved
+path could not read and dropped as engine defaults (gcol33/tulpa#352):
+one row per field, with the block, family, path and the axis that path
+integrated instead. Absent whenever every supplied axis was used}
 \item{recommendations}{Character vector of recommendations}
 }
 }

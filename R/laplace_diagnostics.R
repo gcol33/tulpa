@@ -979,6 +979,47 @@
          "(or turn local_ccd off) to move weight back onto mass-weighted cells")
 }
 
+# The grid axes a fit's own resolved path could not read (gcol33/tulpa#352).
+# The nested-Laplace front doors record them on `$axis_fields_dropped`; every
+# reader goes through here, so the record has ONE reading and a fit with nothing
+# dropped is silent in `diagnostic_summary()`, `print()` and `summary()` alike.
+# NULL for such a fit, which is the ordinary case.
+.tulpa_axis_dropped <- function(fit) {
+  rec <- fit$axis_fields_dropped
+  if (is.null(rec) && !is.null(fit$joint_fit)) rec <- fit$joint_fit$axis_fields_dropped
+  if (!is.data.frame(rec) || !nrow(rec)) return(NULL)
+  rec
+}
+
+# One sentence per dropped axis: the field, the block that carried it, and the
+# axis the resolved path integrated instead. The path is named with the same
+# label the refusal uses (`.NL_AXIS_PATH_LABEL`), so the two halves of #352 --
+# the pin that errors and the default that is dropped -- read alike.
+.tulpa_axis_dropped_note <- function(rec) {
+  if (is.null(rec) || !nrow(rec)) return(NULL)
+  vapply(seq_len(nrow(rec)), function(i) {
+    blk <- if (is.na(rec$block[i])) "the prior block" else
+      paste0("prior block ", rec$block[i])
+    reads <- trimws(strsplit(rec$integrates[i], ",", fixed = TRUE)[[1L]])
+    sprintf(paste("Supplied `%s` on %s '%s' was not used: it is not an axis %s",
+                  "reads, and it was an engine default rather than a pin, so it",
+                  "was dropped. That path integrates %s."),
+            rec$field[i], blk, rec$type[i],
+            .NL_AXIS_PATH_LABEL[[rec$path[i]]] %||% rec$path[i],
+            paste0("`", reads, "`", collapse = ", "))
+  }, character(1))
+}
+
+# The compact form a fit's own `print()` carries: which axes went unused, and
+# where the full reading is.
+.tulpa_axis_dropped_line <- function(rec) {
+  if (is.null(rec) || !nrow(rec)) return(NULL)
+  paste0("  unused axis fields: ",
+         paste(unique(sprintf("%s (%s)", rec$field, rec$type)), collapse = ", "),
+         "\n    dropped as engine defaults this path does not read;",
+         " see diagnostic_summary()")
+}
+
 # Inner-Laplace skewness reliability of a nested-Laplace fit, read from the
 # `inner_skew` / `inner_skew_idx` / `inner_skew_dropped` fields
 # .nl_inner_skew_at_theta() attaches at fit time (see nested_laplace.R). NULL

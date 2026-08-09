@@ -42,6 +42,12 @@ is in the band it is valid on, and Gaussian elsewhere; a \code{skew_applied}
 attribute names which coefficients took the correction. That correction is
 measured at the MAP cell, so it is reported on its own and is not composed
 with the mixture read.
+
+An \code{axis_fields_dropped} attribute carries the grid axes the fit's own
+resolved path could not read, one row per dropped field (block, type,
+field, path, integrates, reason). It is \code{NULL} whenever every supplied axis
+was used, which is the ordinary case; \code{\link[=diagnostic_summary]{diagnostic_summary()}} reads the same
+record in sentences.
 }
 \description{
 Posterior summary of the fixed effects

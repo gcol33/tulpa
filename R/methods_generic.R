@@ -458,6 +458,8 @@ print.tulpa_fit <- function(x, ...) {
   }
   .print_re_section(x)
   .print_smooth_section(x)
+  adl <- .tulpa_axis_dropped_line(.tulpa_axis_dropped(x))
+  if (!is.null(adl)) cat("\n", adl, "\n", sep = "")
   invisible(x)
 }
 
@@ -494,6 +496,12 @@ print.tulpa_fit <- function(x, ...) {
 #'   attribute names which coefficients took the correction. That correction is
 #'   measured at the MAP cell, so it is reported on its own and is not composed
 #'   with the mixture read.
+#'
+#'   An `axis_fields_dropped` attribute carries the grid axes the fit's own
+#'   resolved path could not read, one row per dropped field (block, type,
+#'   field, path, integrates, reason). It is `NULL` whenever every supplied axis
+#'   was used, which is the ordinary case; [diagnostic_summary()] reads the same
+#'   record in sentences.
 #' @export
 summary.tulpa_fit <- function(object, level = 0.95, ...) {
   tab <- .fit_fixed_table(object, level = level)
@@ -510,6 +518,7 @@ summary.tulpa_fit <- function(object, level = 0.95, ...) {
   attr(out, "interval_source")   <- attr(tab, "interval_source")
   attr(out, "interval_declined") <- attr(tab, "interval_declined")
   attr(out, "retained_mass")     <- attr(tab, "retained_mass")
+  attr(out, "axis_fields_dropped") <- .tulpa_axis_dropped(object)
   out
 }
 

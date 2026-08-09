@@ -929,6 +929,10 @@ plot_energy_base <- function(energy, energy_diff, e_bfmi, status) {
 #'     largest scored inner-Laplace `|gamma_3|`, or why nothing was scored
 #'     (gcol33/tulpa#296 -- `"coupled_arm"` marks arms the inner layer could
 #'     score neither per observation nor through the cell tensor)}
+#'   \item{axis_fields_dropped}{data frame of grid axes the fit's own resolved
+#'     path could not read and dropped as engine defaults (gcol33/tulpa#352):
+#'     one row per field, with the block, family, path and the axis that path
+#'     integrated instead. Absent whenever every supplied axis was used}
 #'   \item{recommendations}{Character vector of recommendations}
 #' }
 #'
@@ -1183,6 +1187,15 @@ diagnostic_summary <- function(fit, quiet = FALSE) {
       recommendations <- c(recommendations,
         "Inner Laplace optimization did not converge")
     }
+  }
+
+  # Grid axes the resolved path could not read (gcol33/tulpa#352). Recorded on
+  # every tier, so it is read outside the approximation-only block above; a fit
+  # that used every supplied axis carries nothing and this stays silent.
+  axis_dropped <- .tulpa_axis_dropped(fit)
+  if (!is.null(axis_dropped)) {
+    result$axis_fields_dropped <- axis_dropped
+    recommendations <- c(recommendations, .tulpa_axis_dropped_note(axis_dropped))
   }
 
   result$recommendations <- recommendations
