@@ -140,10 +140,11 @@
   }, numeric(1L))
 }
 
-# The sorted, de-duplicated, weight-normalized atoms of one axis's node set:
-# the input EVERY within-cell construction reads, so the filtering and the
-# aggregation are written once and the constructions differ only in what they
-# do with the result.
+# The sorted, de-duplicated, weight-normalized atoms of one axis's node set --
+# the ATOMS of the chord read, whose knots are the positive-weight coordinates
+# themselves. The box read does NOT go through here: its knots are the cell
+# edges, so its partition has to keep a coordinate whose weight underflowed
+# (see `.nl_box_quantile()`), and only its masses are filtered.
 #
 #  * Filters non-finite values and non-positive weights.
 #  * Aggregates runs of strictly-equal adjacent values. Cannot use factor(v)
