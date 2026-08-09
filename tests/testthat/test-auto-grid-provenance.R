@@ -22,6 +22,61 @@ test_that("auto_grid marks a grid and is_auto_grid reads the mark back", {
     expect_error(auto_grid(c(1, NA)), "non-empty|NA")
 })
 
+# gcol33/tulpa#360: two families store their axis as a matrix of pre-paired
+# coordinates, so a coercion that flattens destroys the axis it is marking and
+# leaves those families with no way to declare a default at all.
+test_that("a matrix-valued axis keeps its shape through the mark", {
+    m <- matrix(as.numeric(1:6), nrow = 3, ncol = 2,
+                dimnames = list(NULL, c("d1", "off")))
+    g <- auto_grid(m)
+    expect_true(is_auto_grid(g))
+    expect_true(is.matrix(g))
+    expect_identical(dim(g), c(3L, 2L))
+    expect_identical(dimnames(g), dimnames(m))
+    expect_identical(as.numeric(g), as.numeric(m))
+    expect_identical(storage.mode(g), "double")
+    # An integer matrix is coerced in place, not flattened.
+    gi <- auto_grid(matrix(1:6, nrow = 2))
+    expect_identical(dim(gi), c(2L, 3L))
+    expect_identical(storage.mode(gi), "double")
+})
+
+test_that("a marked matrix axis survives every consumer of the mark", {
+    p <- 2L
+    lc <- tulpa:::.mcar_default_logchol_grid(p)
+    expect_true(is.matrix(lc))
+    blk <- list(type = "miid", n_units = 5L, n_fields = p,
+                logchol_grid = auto_grid(lc))
+
+    # (a) the provenance record names the field and hands back a bare matrix.
+    prov <- tulpa:::.nl_grid_provenance(blk)
+    expect_identical(prov$auto, "logchol_grid")
+    expect_true(is.matrix(prov$prior$logchol_grid))
+    expect_identical(dim(prov$prior$logchol_grid), dim(lc))
+    expect_false(is_auto_grid(prov$prior$logchol_grid))
+
+    # (b) the provenance predicate reads it as a DEFAULT, which is the whole
+    # point: unmarked, the same matrix reads as a pin.
+    expect_false(tulpa:::.nl_axis_is_pinned(blk, "logchol_grid",
+                                            prov$auto, type = "miid"))
+    expect_true(tulpa:::.nl_axis_is_pinned(list(type = "miid",
+                                                logchol_grid = lc),
+                                           "logchol_grid", character(0),
+                                           type = "miid"))
+
+    # (c) the #352 consumption check sees a numeric axis the path reads, so it
+    # neither refuses nor records it.
+    expect_null(tulpa:::.nl_check_axis_fields(blk, "registry",
+                                              auto = prov$auto))
+
+    # (d) the axis still drives the grid builder, unchanged by the round trip.
+    ref <- tulpa:::.nl_block_axis_grid(list(type = "miid", n_units = 5L,
+                                            n_fields = p, logchol_grid = lc))
+    got <- tulpa:::.nl_block_axis_grid(prov$prior)
+    expect_equal(got$grid, ref$grid)
+    expect_identical(got$names, ref$names)
+})
+
 test_that("a pinned axis is pinned and every flavour of default is not", {
     base <- list(type = "icar")
     # No axis at all.

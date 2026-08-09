@@ -252,3 +252,91 @@ test_that("a fit with nothing dropped carries no record", {
     # And the record does not leak past the fit that produced it.
     expect_null(getOption("tulpa.nl_axis_dropped"))
 })
+
+# --------------------------------------------------------------------------- #
+# (5) The copy spec                                                            #
+# --------------------------------------------------------------------------- #
+#
+# The block check above walks the PRIOR. The copy spec is the other object the
+# multi-block joint driver resolves a grid off, and it was walked by nothing:
+# `.resolve_one_copy_spec()` reads `arm`, `block` and `alpha_grid`, and any
+# other grid on that spec fell through in silence (gcol33/tulpaObs#192).
+
+.axc_two_arm <- function(sim) {
+    a <- .axc_arm(sim)
+    a$spatial_idx <- NULL
+    list(occ = a, pos = a)
+}
+
+.axc_copy_block <- function(sim) {
+    .axc_icar_block(sim, spatial_idx = list(sim$sidx, sim$sidx),
+                    sigma_grid = c(0.4, 0.9))
+}
+
+test_that("the read-field set is the set the copy resolver actually reads", {
+    src <- paste(deparse(body(tulpa:::.resolve_one_copy_spec)), collapse = "\n")
+    pat  <- "spec[$][A-Za-z_][A-Za-z0-9_]*"
+    read <- unique(regmatches(src, gregexpr(pat, src))[[1L]])
+    read <- substring(read, 6L)
+    expect_setequal(read, tulpa:::.NL_COPY_SPEC_FIELDS)
+})
+
+test_that("a pinned field the copy spec resolver cannot read is refused", {
+    sim <- .axc_sim(seed = 31L)
+    msg <- tryCatch(
+        tulpa_nested_laplace_joint(
+            responses = .axc_two_arm(sim),
+            prior = list(.axc_copy_block(sim)),
+            copy = list(arm = "pos", block = 1L,
+                        sigma_pos_grid = c(0.4, 0.8, 1.2))),
+        error = conditionMessage)
+    expect_match(msg, "`sigma_pos_grid` is not a field the copy resolver reads",
+                 fixed = TRUE)
+    expect_match(msg, "alpha * sigma", fixed = TRUE)
+    expect_match(msg, "(block icar)", fixed = TRUE)
+})
+
+test_that("a list of copy specs names the offending spec", {
+    sim <- .axc_sim(seed = 32L)
+    msg <- tryCatch(
+        tulpa_nested_laplace_joint(
+            responses = .axc_two_arm(sim),
+            prior = list(.axc_copy_block(sim), .axc_copy_block(sim)),
+            copy = list(
+                list(arm = "pos", block = 1L, alpha_grid = c(0.5, 1)),
+                list(arm = "pos", block = 2L, sigma_pos_grid = c(0.4, 0.8)))),
+        error = conditionMessage)
+    expect_match(msg, "copy spec 2 ", fixed = TRUE)
+})
+
+test_that("the fields the resolver DOES read pass untouched", {
+    sim <- .axc_sim(seed = 33L)
+    expect_length(tulpa:::.nl_check_copy_specs(
+        list(arm = "pos", block = 1L, alpha_grid = c(0.5, 1)),
+        list(.axc_copy_block(sim))), 0L)
+    # A non-numeric extra is a caller's own bookkeeping, not a grid.
+    expect_length(tulpa:::.nl_check_copy_specs(
+        list(arm = "pos", block = 1L, alpha_grid = c(0.5, 1), label = "trend"),
+        list(.axc_copy_block(sim))), 0L)
+})
+
+test_that("an auto_grid()-marked unread copy field is recorded, not refused", {
+    skip_on_cran()
+    sim <- .axc_sim(seed = 34L)
+    fit <- suppressWarnings(tulpa_nested_laplace_joint(
+        responses = .axc_two_arm(sim),
+        prior = list(.axc_copy_block(sim)),
+        copy = list(arm = "pos", block = 1L, alpha_grid = c(0.5, 1.0),
+                    sigma_pos_grid = auto_grid(c(0.4, 0.8, 1.2))),
+        control = list(diagnose_k = FALSE)))
+    rec <- fit$axis_fields_dropped
+    expect_s3_class(rec, "data.frame")
+    expect_true("sigma_pos_grid" %in% rec$field)
+    r <- rec[rec$field == "sigma_pos_grid", , drop = FALSE]
+    expect_identical(r$path, "copy")
+    expect_identical(r$type, "icar")
+    expect_identical(r$block, 1L)
+    expect_identical(r$integrates, "alpha_grid")
+    # The axis the resolver DOES read is the one that got integrated.
+    expect_equal(sort(unique(fit$theta_grid[, "b1.alpha"])), c(0.5, 1.0))
+})

@@ -1,5 +1,33 @@
 # tulpa NEWS
 
+## 0.0.163
+
+* `auto_grid()` coerces in place instead of through `as.numeric()`, so a
+  MATRIX-valued axis survives the mark (gcol33/tulpa#360). Two families store
+  their axis as a matrix of pre-paired coordinates -- `mcar` / `miid`'s
+  `logchol_grid`, `tgmrf`'s `theta_grid_built` -- and flattening one destroys
+  the axis it is declaring, which left those families with no way to declare a
+  default at all: a wrapper package computing its own coarse `logchol_grid`
+  had to choose between handing the driver a flattened vector and leaving the
+  axis undeclared, where the provenance predicate reads it as a user pin.
+  `dim()` and `dimnames()` now come through, and the marked matrix is carried
+  by every consumer of the mark -- `.nl_grid_provenance()`, the pinned/default
+  predicate, the gcol33/tulpa#352 consumption check and `.nl_block_axis_grid()`.
+
+* A grid the COPY SPEC carries and the copy resolver does not read is refused
+  or recorded rather than dropped in silence (gcol33/tulpaObs#192). gcol33/tulpa#352
+  walks the prior blocks; the copy spec is the other object the multi-block
+  joint driver resolves an axis off, and nothing walked it.
+  `.resolve_one_copy_spec()` reads `arm`, `block` and `alpha_grid`, and a
+  numeric field beyond those now takes the same provenance split every unread
+  axis takes: PINNED is refused, naming the field and the (sigma, alpha)
+  parameterization the copy path integrates; an `auto_grid()`-marked or
+  engine-default value is dropped and recorded on `$axis_fields_dropped`. The
+  reported case was a `sigma_pos_grid` from the retired (sigma_occ, sigma_pos)
+  parameterization, pinned by the user and answered with a bit-identical
+  `log_marginal`. `.NL_COPY_SPEC_FIELDS` is the read-field set, held against
+  the resolver's own body by a source lint.
+
 ## 0.0.162
 
 * The `tulpa.kdiag.capture` aperture publishes the importance log-ratios the

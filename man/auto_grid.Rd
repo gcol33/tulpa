@@ -7,12 +7,14 @@
 auto_grid(x)
 }
 \arguments{
-\item{x}{Numeric vector of grid nodes, a numeric scalar knob, or a
+\item{x}{Numeric vector or matrix of grid nodes, a numeric scalar knob, or a
 prior-specification list.}
 }
 \value{
-\code{x} carrying the marker attribute (numeric input is coerced to
-numeric; a list is returned unchanged apart from the attribute).
+\code{x} carrying the marker attribute. Numeric input is coerced to
+double IN PLACE, so everything else it carries -- \code{dim()} and \code{dimnames()}
+above all -- survives the mark; a list is returned unchanged apart from
+the attribute.
 }
 \description{
 Declares that a setting shaping the outer hyperparameter grid carries a
@@ -24,7 +26,9 @@ regularizer over) a marked one when the fit rails against its ceiling.
 Three kinds of setting take the mark:
 \itemize{
 \item a grid axis on a nested-Laplace \code{prior} block (\code{sigma_grid},
-\code{tau_grid}, ...) -- a numeric vector of nodes;
+\code{tau_grid}, ...) -- a numeric vector of nodes, or the \verb{[n_cells x k]}
+matrix of pre-paired coordinates the families whose axis is a matrix
+take (\code{mcar} / \code{miid}'s \code{logchol_grid}, \code{tgmrf}'s \code{theta_grid_built});
 \item a scalar grid-construction knob in \code{control}, for a driver that
 builds its axes rather than taking them (\code{fit_st_nested()}'s
 \code{n_grid_spatial}, \code{tau_upper}, ..., gcol33/tulpa#294);

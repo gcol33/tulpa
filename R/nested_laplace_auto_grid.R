@@ -61,7 +61,9 @@
 #' Three kinds of setting take the mark:
 #' \itemize{
 #'   \item a grid axis on a nested-Laplace `prior` block (`sigma_grid`,
-#'     `tau_grid`, ...) -- a numeric vector of nodes;
+#'     `tau_grid`, ...) -- a numeric vector of nodes, or the `[n_cells x k]`
+#'     matrix of pre-paired coordinates the families whose axis is a matrix
+#'     take (`mcar` / `miid`'s `logchol_grid`, `tgmrf`'s `theta_grid_built`);
 #'   \item a scalar grid-construction knob in `control`, for a driver that
 #'     builds its axes rather than taking them (`fit_st_nested()`'s
 #'     `n_grid_spatial`, `tau_upper`, ..., gcol33/tulpa#294);
@@ -80,10 +82,12 @@
 #' The mark is an attribute, so it is dropped by `sort()`, `[`, `c()` and
 #' `as.numeric()`: build the value first, mark it last.
 #'
-#' @param x Numeric vector of grid nodes, a numeric scalar knob, or a
+#' @param x Numeric vector or matrix of grid nodes, a numeric scalar knob, or a
 #'   prior-specification list.
-#' @return `x` carrying the marker attribute (numeric input is coerced to
-#'   numeric; a list is returned unchanged apart from the attribute).
+#' @return `x` carrying the marker attribute. Numeric input is coerced to
+#'   double IN PLACE, so everything else it carries -- `dim()` and `dimnames()`
+#'   above all -- survives the mark; a list is returned unchanged apart from
+#'   the attribute.
 #' @seealso [is_auto_grid()], [tulpa_nested_laplace_joint()], [fit_st_nested()]
 #' @examples
 #' prior <- list(type = "icar", sigma_grid = auto_grid(c(0.1, 0.5, 1, 2, 3)))
@@ -97,7 +101,11 @@ auto_grid <- function(x) {
                  call. = FALSE)
         }
     } else {
-        x <- as.numeric(x)
+        # In place, not `as.numeric()`: two families store their axis as a
+        # matrix of pre-paired coordinates (`mcar` / `miid`'s `logchol_grid`,
+        # `tgmrf`'s `theta_grid_built`), and flattening one destroys the axis
+        # the caller is declaring (gcol33/tulpa#360).
+        storage.mode(x) <- "double"
         if (!length(x) || anyNA(x)) {
             stop("`auto_grid()` takes a non-empty numeric grid with no NA.",
                  call. = FALSE)
@@ -326,6 +334,75 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
     out
 }
 
+# The fields `.resolve_one_copy_spec()` (`R/nested_laplace_joint_multi.R`)
+# reads off ONE copy spec. A copy spec is a three-field object rather than a
+# payload carrier like a prior block -- it names an arm, a block, and the copy
+# coefficient's axis -- so anything numeric beyond these is a grid the driver
+# cannot act on, and gets the same provenance-split verdict the block check
+# above gives an unread axis (gcol33/tulpaObs#192: a `sigma_pos_grid` from the
+# retired (sigma_occ, sigma_pos) parameterization reached this spec and was
+# neither read nor reported, so a pinned amplitude axis fell back to the
+# engine's own default with a bit-identical `log_marginal`).
+.NL_COPY_SPEC_FIELDS <- c("arm", "block", "alpha_grid")
+
+.nl_copy_spec_refusal <- function(spec_index, field, type) {
+    paste0(
+        "copy spec ", if (is.null(spec_index)) "" else paste0(spec_index, " "),
+        "(block ", type, "): `", field, "` is not a field the copy resolver ",
+        "reads. A copy spec is resolved from ",
+        paste0("`", .NL_COPY_SPEC_FIELDS, "`", collapse = ", "), " only, and ",
+        "the copy arm's field amplitude is `alpha * sigma` -- `alpha` from the ",
+        "spec's `alpha_grid`, `sigma` from the donor block's own `sigma_grid`. ",
+        "Write the grid on one of those, or drop the field."
+    )
+}
+
+# One copy spec. Returns a list of drop records (possibly empty); refuses a
+# pinned unread field with an error.
+.nl_check_one_copy_spec <- function(spec, type, spec_index = NULL) {
+    if (!is.list(spec)) return(list())
+    nm <- setdiff(names(spec) %||% character(0), .NL_COPY_SPEC_FIELDS)
+    nm <- nm[nzchar(nm)]
+    nm <- nm[vapply(nm, function(f)
+        length(spec[[f]]) > 0L && is.numeric(spec[[f]]), logical(1))]
+    out <- list()
+    for (f in nm) {
+        # `.copy` is the path pseudo-type whose binding names the axes a copy
+        # block defaults, so a field carrying one of those axes' own default
+        # nodes still counts as a default here.
+        if (.nl_axis_is_pinned(spec, f, character(0), type = ".copy")) {
+            stop(.nl_copy_spec_refusal(spec_index, f, type), call. = FALSE)
+        }
+        out[[length(out) + 1L]] <- data.frame(
+            block      = if (is.null(spec$block)) NA_integer_ else
+                             as.integer(spec$block),
+            type       = type,
+            field      = f,
+            path       = "copy",
+            integrates = "alpha_grid",
+            reason     = "field_not_read_by_the_copy_spec_resolver",
+            stringsAsFactors = FALSE
+        )
+    }
+    out
+}
+
+.nl_check_copy_specs <- function(copy, prior) {
+    if (is.null(copy) || !is.list(copy)) return(list())
+    specs <- if (.is_copy_spec_list(copy)) copy else list(copy)
+    multi <- length(specs) > 1L || .is_copy_spec_list(copy)
+    rec <- list()
+    for (i in seq_along(specs)) {
+        s <- specs[[i]]
+        b <- suppressWarnings(as.integer(s$block %||% NA_integer_))
+        type <- if (!is.na(b) && b >= 1L && b <= length(prior))
+            tolower(prior[[b]]$type %||% "") else ""
+        rec <- c(rec, .nl_check_one_copy_spec(s, type,
+                                              if (multi) i else NULL))
+    }
+    rec
+}
+
 # THE front-door check. `path` is `"registry"` (`tulpa_nested_laplace()`) or
 # `"joint"` (`tulpa_nested_laplace_joint()`, which resolves per block: the
 # single-block areal backend, a copy block, or the registry path). `auto` is the
@@ -348,7 +425,8 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
             copy_at <- as.integer(cp$copy_blocks_zero) + 1L
         }
     }
-    rec <- list()
+    rec <- if (identical(path, "joint") && multi)
+        .nl_check_copy_specs(copy, blocks) else list()
     for (b in seq_along(blocks)) {
         blk <- blocks[[b]]
         if (!is.list(blk) || is.null(blk$type)) next
