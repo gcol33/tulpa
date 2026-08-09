@@ -373,7 +373,14 @@ tulpa_re_cov_gibbs <- function(y, n_trials = NULL, X, re_terms,
   colnames(re_draws) <- .re_gibbs_re_labels(layout)
 
   w <- rep(1 / n_kept, n_kept)
-  summ <- .re_cov_derived_summary(Sigma_draws, w, layout)
+  # The sweep leaves DRAWS, not a cell partition: equal-weight order statistics
+  # whose cumulative sum is a CDF, but beyond the extreme draw the tail is
+  # unknown rather than half a spacing wide. Naming the producer is what routes
+  # the read to the clamp instead of a grid's outer half-cell
+  # (gcol33/tulpa#358); `.nl_node_support()` makes that one decision.
+  integration <- "sample"
+  summ <- .re_cov_derived_summary(Sigma_draws, w, layout,
+                                  support = .nl_node_support(integration))
 
   # Fixed-effect posterior is the recorded beta draws directly (equal weight);
   # name the columns and expose the generic `tulpa_fit` accessors.
@@ -405,6 +412,7 @@ tulpa_re_cov_gibbs <- function(y, n_trials = NULL, X, re_terms,
     N           = n_obs,
     accept      = list(beta = out$accept_beta, b = out$accept_b),
     n_kept      = n_kept,
+    integration = integration,
     n_blocks    = M,
     n_coefs     = vapply(layout, `[[`, integer(1), "nc"),
     prior       = priors

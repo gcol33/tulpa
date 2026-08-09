@@ -404,18 +404,18 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
 # `Marginalize Derived Quantities`: each derived value is computed PER matrix
 # then summarized, never assembled from summarized components.
 #
-# `support` says what the weights are, which decides how the median and the
-# interval are read off them. `"density"` means the weights are proportional to
-# posterior mass -- the Gibbs sampler's equal-weight draws, and the tensor grid,
-# whose uniform cells discretize the density -- so their cumulative sum is a CDF
-# and the weighted quantile is the summary (reducing to the sample quantile at
-# equal weight). `"moment_rule"` means the weights are a central-composite
-# design's: they reproduce the integrand's moments, and the node positions carry
-# no mass, so the interval comes from the moments via `.nl_moment_quantile()` on
-# each quantity's own domain (gcol33/tulpa#308). The mean and SD columns are the
-# same weighted moments either way.
+# `support` names the KIND of node set, which decides how the median and the
+# interval are read off it; the kinds and their outer-edge policies are the one
+# `.NL_SUPPORT` table. The grid integrator's tensor cells are `"density"`, its
+# central-composite design is `"moment_rule"` (the node positions carry no mass,
+# so the interval comes from the moments via `.nl_moment_quantile()` on each
+# quantity's own domain, gcol33/tulpa#308), and the Gibbs sweep's equal-weight
+# posterior draws are `"sample"` -- a CDF like the grid, but over order
+# statistics rather than cell representatives, so it clamps at the extremes
+# instead of mirroring a half-cell it does not have (gcol33/tulpa#358). The mean
+# and SD columns are the same weighted moments in every case.
 .re_cov_derived_summary <- function(Sig_node_list, w, layout,
-                                    support = c("density", "moment_rule")) {
+                                    support = .NL_SUPPORT_KINDS) {
   support <- match.arg(support)
   D   <- .re_cov_derived_matrix_multi(Sig_node_list, layout)
   dom <- attr(D, "domain")
@@ -1840,9 +1840,10 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   # The CCD is a moment rule, so its median and interval come from the moments
   # it reproduces; the tensor grid's uniform cells discretize the density, so
   # its cumulative weights are a CDF and the weighted quantile is the summary.
-  summ <- .re_cov_derived_summary(
-    Sig_node_list, w, layout,
-    support = if (identical(integration, "ccd")) "moment_rule" else "density")
+  # `.nl_node_support()` is the one place that reads a producer name into a
+  # support kind, here and on every grid consumer.
+  summ <- .re_cov_derived_summary(Sig_node_list, w, layout,
+                                  support = .nl_node_support(integration))
   posterior <- summ$posterior
 
   # --- plug-in MAP summary (for comparison) ---------------------------------

@@ -1701,8 +1701,7 @@
 .joint_posterior_moments_multi <- function(res, prepared, axis_offsets,
                                             joint_grid, cp,
                                             int_weights = NULL,
-                                            support = c("density", "moment_rule",
-                                                        "mixed")) {
+                                            support = .NL_SUPPORT_KINDS) {
     support <- match.arg(support)
     w <- res$weights
     # Joint moments across every column of joint_grid (including phi

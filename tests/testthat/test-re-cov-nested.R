@@ -367,11 +367,16 @@ test_that("the summary support decides how the interval is read off the nodes", 
   expect_gt(row(mom, "sigma_1")$ci_hi, max(sig))
   # A variance is positive too, so its interval is a positive lognormal one.
   expect_gt(row(mom, "Sigma_11")$ci_lo, 0)
-  # With equal weights over genuine draws the density reading is the sample
-  # quantile, which is what the Gibbs backend relies on.
+  # With equal weights over genuine draws the reading is the sample quantile,
+  # which is what the Gibbs backend relies on. It names its node set `"sample"`
+  # since gcol33/tulpa#358 -- order statistics, so the read clamps at the
+  # extremes instead of mirroring an outer half-cell it does not have -- and at
+  # the reported probabilities that is the same number the old `"density"`
+  # spelling gave (test-support-sample.R holds the pair).
   set.seed(11L)
   dr <- lapply(rexp(400L), function(s) list(matrix(s^2, 1, 1)))
-  eq <- tulpa:::.re_cov_derived_summary(dr, rep(1 / 400, 400L), layout)
+  eq <- tulpa:::.re_cov_derived_summary(dr, rep(1 / 400, 400L), layout,
+                                        support = "sample")
   expect_equal(row(eq, "sigma_1")$median,
                unname(quantile(vapply(dr, function(z) sqrt(z[[1L]][1, 1]),
                                       numeric(1)), 0.5, type = 7)),
