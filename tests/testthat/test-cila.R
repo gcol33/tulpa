@@ -14,7 +14,7 @@
 # in the latent, so the inner Gaussian IS the conditional posterior and every
 # importance ratio along the grid is the same number.
 cila_gaussian_fit <- function(cila = NULL, seed = 11L, n_group = 8L,
-                              per_group = 4L) {
+                              per_group = 4L, force_sparse = FALSE) {
   set.seed(seed)
   xg <- stats::rnorm(n_group)
   region <- rep(seq_len(n_group), each = per_group)
@@ -24,7 +24,8 @@ cila_gaussian_fit <- function(cila = NULL, seed = 11L, n_group = 8L,
     stats::rnorm(n_group * per_group, 0, 0.5)
   ctl <- list(max_iter = 300L, tol = 1e-11, n_threads = 1L,
               keep_grid_hessians = TRUE, diagnose_k = FALSE,
-              diagnose_skew = FALSE, auto_recenter = FALSE, progress = FALSE)
+              diagnose_skew = FALSE, auto_recenter = FALSE, progress = FALSE,
+              force_sparse = force_sparse)
   if (!is.null(cila)) ctl$cila <- cila
   suppressWarnings(tulpa_nested_laplace_joint(
     responses = list(list(y = y, X = X, family = "gaussian", phi = 0.25,
@@ -123,10 +124,55 @@ test_that("requesting the correction leaves the uncorrected fit alone", {
   expect_null(f0$draws)
   expect_false(is.null(f1$cila))
   # The correction is post-processing on a second pass over the same grid: the
-  # first pass's own numbers cannot move.
-  expect_identical(f0$log_marginal, f1$log_marginal)
-  expect_identical(f0$weights, f1$weights)
+  # first pass's own numbers cannot move. The corrected fit ADOPTS the corrected
+  # grid read (gcol33/tulpa#367), so the pair to compare against is the one it
+  # kept, not the one it now reports.
+  expect_identical(f0$log_marginal, f1$cila$laplace$log_marginal)
+  expect_identical(f0$weights, f1$cila$laplace$weights)
   expect_identical(f0$grid_modes, f1$grid_modes)
+  expect_null(f0$weights_source)
+})
+
+# ---------------------------------------------------------------------------
+# 2b. One grid weighting per fit (gcol33/tulpa#367)
+# ---------------------------------------------------------------------------
+
+test_that("the corrected fit carries ONE grid weighting", {
+  skip_on_cran()
+  f <- cila_gaussian_fit(cila = list(n_points = 512L))
+  # Not "equal to within a tolerance" -- the same numbers. A caller pairing
+  # `weights` with `cila$cell_weights` cannot pair them wrongly because there is
+  # nothing to pair: they are one vector reported under two names.
+  expect_identical(f$weights, f$cila$cell_weights)
+  expect_identical(f$log_marginal, f$cila$cell_log_marginal)
+  expect_equal(f$weights_source, "cila")
+  expect_true(f$cila$weights_adopted)
+  expect_equal(f$cila$retained_mass, 1)
+  # The only other weighting on the fit is the pre-correction one, under a name
+  # that says so.
+  expect_false(identical(f$cila$laplace$weights, f$weights))
+  expect_equal(as.numeric(f$cila$laplace$weights), as.numeric(f$weights),
+               tolerance = 1e-9)
+})
+
+test_that("the hyperparameter summary is recomputed from the adopted read", {
+  skip_on_cran()
+  f <- cila_gaussian_fit(cila = list(n_points = 512L))
+  # theta_mean is the fitter's own weighted moment, so it must be the weighted
+  # moment of the weights the fit reports -- not of the ones it replaced.
+  expect_equal(as.numeric(f$theta_mean),
+               as.numeric(crossprod(f$weights, f$theta_grid)),
+               tolerance = 1e-12, ignore_attr = TRUE)
+})
+
+test_that("a declined correction leaves the Laplace read in place, and says so", {
+  cfg <- .cila_config(TRUE)
+  res <- .nl_cila_attach(list(log_marginal = c(-1, -2), weights = c(0.6, 0.4)),
+                         cfg, function(req) stop("boom"), p_fixed = 2L)
+  expect_equal(res$weights_source, "laplace_grid")
+  expect_equal(res$weights, c(0.6, 0.4))
+  expect_false(res$cila$weights_adopted)
+  expect_equal(res$cila$declined, "redispatch_failed")
 })
 
 # ---------------------------------------------------------------------------
@@ -262,6 +308,95 @@ test_that("a different seed is a different realization of the same estimator", {
                                 b$cila$cell_log_marginal)))
   # Two realizations of an unbiased estimator, not two different estimators.
   expect_lt(max(abs(a$cila$cell_log_marginal - b$cila$cell_log_marginal)), 0.05)
+})
+
+# ---------------------------------------------------------------------------
+# 5b. The non-joint fitter carries the same correction (gcol33/tulpa#368)
+# ---------------------------------------------------------------------------
+
+# A gaussian arm on an RW1 field, through tulpa_nested_laplace() rather than the
+# joint driver. Same exactness arbiter: the inner Laplace is the conditional
+# posterior, so the corrected cell marginal must reproduce the uncorrected one.
+#
+# The tolerance is 1e-6, not the joint file's 1e-9, and the reason is a property
+# of this loop rather than of the correction. It applies `center_effects_fn`
+# AFTER the Newton loop and re-evaluates the log-marginal at the shifted point,
+# so what it reports is a Laplace expansion at a point that is not quite the
+# mode wherever the shift moves eta; the correction is exact at ANY expansion
+# point on a gaussian arm, so the two differ by that offset. Measured 3.4e-07
+# absolute here on a value of -45.8. The size tracks the shift-invariance of the
+# field: an improper RW1 is invariant up to the weak beta ridge and lands at
+# 7.5e-09 relative, a proper AR1 is not invariant at all and lands at 1e-05.
+cila_nonjoint_fit <- function(cila = NULL, seed = 3L, n_time = 10L,
+                              per_time = 3L) {
+  set.seed(seed)
+  tidx <- rep(seq_len(n_time), each = per_time)
+  xv <- stats::rnorm(n_time * per_time)
+  X <- cbind(1, xv)
+  fld <- cumsum(stats::rnorm(n_time, 0, 0.4))
+  y <- as.numeric(X %*% c(0.3, -0.6)) + fld[tidx] +
+    stats::rnorm(n_time * per_time, 0, 0.5)
+  ctl <- list(max_iter = 300L, tol = 1e-11, n_threads = 1L,
+              keep_grid_hessians = TRUE, diagnose_k = FALSE,
+              diagnose_skew = FALSE, auto_recenter = FALSE)
+  if (!is.null(cila)) ctl$cila <- cila
+  suppressWarnings(tulpa_nested_laplace(
+    y = y, n_trials = rep(1L, length(y)), X = X,
+    prior = list(type = "rw1", temporal_idx = as.integer(tidx),
+                 n_times = n_time,
+                 tau_grid = exp(seq(log(0.5), log(12), length.out = 4))),
+    family = "gaussian", phi = 0.5, control = ctl))
+}
+
+test_that("tulpa_nested_laplace() accepts the correction", {
+  expect_silent(tulpa_check_control(list(cila = TRUE),
+                                    .CONTROL_KEYS$nested_laplace,
+                                    "tulpa_nested_laplace"))
+})
+
+test_that("on the non-joint fitter a gaussian arm reproduces the Laplace grid", {
+  skip_on_cran()
+  f0 <- cila_nonjoint_fit()
+  f  <- cila_nonjoint_fit(cila = list(n_points = 512L, variant = "qmc"))
+  expect_true(is.na(f$cila$declined))
+  expect_equal(f$cila$variant_used, "qmc")
+  expect_equal(as.numeric(f$cila$cell_log_marginal),
+               as.numeric(f0$log_marginal), tolerance = 1e-6)
+  expect_equal(as.numeric(f$weights), as.numeric(f0$weights),
+               tolerance = 1e-4)
+  expect_lt(f$cila$pareto_k, 0.5)
+  expect_equal(f$weights_source, "cila")
+  expect_false(is.null(f$draws))
+  expect_equal(ncol(f$draws), 2L)
+})
+
+# ---------------------------------------------------------------------------
+# 5c. A sparsely factorized cell draws through its own factor
+#     (gcol33/tulpa#366)
+# ---------------------------------------------------------------------------
+
+test_that("a sparse cell is corrected, and agrees with the dense route", {
+  skip_on_cran()
+  # `force_sparse` straddles the dispatch at a fixture small enough to run BOTH
+  # ways, so the two routes are compared on the same model rather than the
+  # sparse one being compared only against itself.
+  f0 <- cila_gaussian_fit(force_sparse = TRUE)
+  fs <- cila_gaussian_fit(cila = list(n_points = 512L), force_sparse = TRUE)
+  expect_true(is.na(fs$cila$declined))
+  # The exactness arbiter first: on a gaussian arm the sparse cell's corrected
+  # marginal is its own uncorrected one.
+  expect_equal(as.numeric(fs$cila$cell_log_marginal),
+               as.numeric(f0$log_marginal), tolerance = 1e-9)
+  # ... and the same model run BOTH ways agrees, so the sparse draw is the same
+  # Gaussian the dense back-substitution draws from.
+  fd <- cila_gaussian_fit(cila = list(n_points = 512L))
+  expect_equal(as.numeric(fs$cila$cell_log_marginal),
+               as.numeric(fd$cila$cell_log_marginal), tolerance = 1e-8)
+  expect_equal(as.numeric(fs$weights), as.numeric(fd$weights),
+               tolerance = 1e-8)
+  # ... and they are not the SAME numbers, which is what says the sparse route
+  # ran at all: a fit that silently took the dense one would be byte-identical.
+  expect_false(identical(fs$cila$cell_log_marginal, fd$cila$cell_log_marginal))
 })
 
 # ---------------------------------------------------------------------------

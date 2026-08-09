@@ -124,8 +124,12 @@ the Gaussian quantiles everywhere else. It is post-processing on the
 reported quantiles: draws, modes and weights are untouched, so a fit run
 with it off is bit for bit the fit it was before. A coefficient whose
 location term could not be formed declines rather than reading it as zero.
-\verb{$skew_correction} records the per-coefficient \code{gamma_3} and \code{gamma_1},
-the band, the inner importance k-hat, the combined band, the eligibility
+The CENTRE is banded as well as the shape (gcol33/tulpa#362): the
+correction relocates the marginal by \code{gamma_1 + gamma_3 / 2} standard
+errors, so a coefficient past \code{centre_unreliable} declines and records
+\code{centre_unreliable}. \verb{$skew_correction} records the per-coefficient
+\code{gamma_3}, \code{gamma_1} and the centre they form, the band, the inner
+importance k-hat, the combined band, the eligibility
 and the reason behind it; the \code{skew_applied} attribute on \code{summary()} /
 \code{confint()} records what was actually used at the requested level. RMC fit
 a skew normal here instead; the series correction is the same-order
@@ -162,6 +166,23 @@ identical to the plain path. \verb{$subspace_debias} records what was selected,
 the bands it was read from, and the per-cell acceptance rate. Requesting
 it turns \code{keep_grid_hessians} on, since the recombination reads exactly
 those per-cell pieces.
+\item \code{cila} (\code{FALSE}) -- corrected integrated Laplace, the second inner-layer
+debias (gcol33/tulpa#351, after Lai, Margossian and Sheldon,
+arXiv:2605.20345; wired to this backend by gcol33/tulpa#368). Where
+\code{subspace_debias} selects coordinates and runs exact Metropolis on them,
+this selects nothing: at every outer cell it draws \code{n_points} points from
+the whole inner Gaussian, weights each by the exact joint density it came
+from, and reports the weighted particles. \code{TRUE} takes the defaults; a
+list overrides \code{n_points} (\code{1024L}), \code{variant} (\code{"qmc"}, a Sobol net;
+\code{"is"} for iid draws, \code{"rqmc"} for the net under \code{n_shift} random
+shifts), \code{n_shift} (\code{8L}), \code{n_draws} and \code{seed}. Below 512 points a
+cell's particle set is too coarse to be a marginal at all and the request
+is refused. The corrected per-cell masses become the fit's own
+\code{weights} / \code{log_marginal} and \code{weights_source} reports \code{"cila"}; the
+pre-correction pair is kept as \verb{$cila$laplace}. A cell whose inner solve
+factorized sparsely draws through the CHOLMOD factor's own triangular and
+permutation solves; an LDL' factor has no square root to draw with and is
+declined with \code{"sparse_factor_not_ll"}.
 \item \code{auto_recenter} (\code{TRUE}) -- re-centre a default outer grid axis on its
 posterior mode and refit when the fit rails against a boundary node
 (gcol33/tulpa#289 / #290). \code{FALSE} integrates over the grid exactly as

@@ -89,8 +89,12 @@
 #'     reported quantiles: draws, modes and weights are untouched, so a fit run
 #'     with it off is bit for bit the fit it was before. A coefficient whose
 #'     location term could not be formed declines rather than reading it as zero.
-#'     `$skew_correction` records the per-coefficient `gamma_3` and `gamma_1`,
-#'     the band, the inner importance k-hat, the combined band, the eligibility
+#'     The CENTRE is banded as well as the shape (gcol33/tulpa#362): the
+#'     correction relocates the marginal by `gamma_1 + gamma_3 / 2` standard
+#'     errors, so a coefficient past `centre_unreliable` declines and records
+#'     `centre_unreliable`. `$skew_correction` records the per-coefficient
+#'     `gamma_3`, `gamma_1` and the centre they form, the band, the inner
+#'     importance k-hat, the combined band, the eligibility
 #'     and the reason behind it; the `skew_applied` attribute on `summary()` /
 #'     `confint()` records what was actually used at the requested level. RMC fit
 #'     a skew normal here instead; the series correction is the same-order
@@ -127,6 +131,23 @@
 #'     the bands it was read from, and the per-cell acceptance rate. Requesting
 #'     it turns `keep_grid_hessians` on, since the recombination reads exactly
 #'     those per-cell pieces.
+#'   * `cila` (`FALSE`) -- corrected integrated Laplace, the second inner-layer
+#'     debias (gcol33/tulpa#351, after Lai, Margossian and Sheldon,
+#'     arXiv:2605.20345; wired to this backend by gcol33/tulpa#368). Where
+#'     `subspace_debias` selects coordinates and runs exact Metropolis on them,
+#'     this selects nothing: at every outer cell it draws `n_points` points from
+#'     the whole inner Gaussian, weights each by the exact joint density it came
+#'     from, and reports the weighted particles. `TRUE` takes the defaults; a
+#'     list overrides `n_points` (`1024L`), `variant` (`"qmc"`, a Sobol net;
+#'     `"is"` for iid draws, `"rqmc"` for the net under `n_shift` random
+#'     shifts), `n_shift` (`8L`), `n_draws` and `seed`. Below 512 points a
+#'     cell's particle set is too coarse to be a marginal at all and the request
+#'     is refused. The corrected per-cell masses become the fit's own
+#'     `weights` / `log_marginal` and `weights_source` reports `"cila"`; the
+#'     pre-correction pair is kept as `$cila$laplace`. A cell whose inner solve
+#'     factorized sparsely draws through the CHOLMOD factor's own triangular and
+#'     permutation solves; an LDL' factor has no square root to draw with and is
+#'     declined with `"sparse_factor_not_ll"`.
 #'   * `auto_recenter` (`TRUE`) -- re-centre a default outer grid axis on its
 #'     posterior mode and refit when the fit rails against a boundary node
 #'     (gcol33/tulpa#289 / #290). `FALSE` integrates over the grid exactly as
@@ -217,6 +238,10 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   # requesting it turns that retention on: without it there is nothing to
   # recombine the sampled coordinates with.
   sd_cfg             <- .subspace_debias_config(control$subspace_debias)
+  # Corrected integrated Laplace (gcol33/tulpa#351), the second inner debias.
+  # Same shape as the subspace one: a second pass over the settled grid whose
+  # per-cell particles are pooled into the reported draws.
+  cila_cfg           <- .cila_config(control$cila)
   keep_grid_hessians <- isTRUE(control$keep_grid_hessians) || !is.null(sd_cfg)
   diagnose_k         <- isTRUE(control$diagnose_k %||% TRUE)
   k_samples          <- as.integer(control$k_samples %||% .nl_diag("k_samples"))
@@ -331,6 +356,13 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
       redispatch = function(req) .nl_dispatch_multi(
         cargs_no_ckpt, prior, likelihood = likelihood, debias = req),
       p_fixed = p_fixed, beta_names = colnames(X))
+    res <- .nl_cila_attach(
+      res, cila_cfg,
+      redispatch = function(req) .nl_dispatch_multi(
+        cargs_no_ckpt, prior, likelihood = likelihood, cila = req),
+      p_fixed = p_fixed, beta_names = colnames(X),
+      remoments = function(r) .nl_posterior_moments_multi(
+        r, r$blocks, r$axis_offsets, r$theta_grid))
     tm$mark("diagnostics")
     res$prior <- prior
     res$timing <- tm$timing()
@@ -412,6 +444,12 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     redispatch = function(req) .nl_dispatch(
       type, utils::modifyList(cargs_no_ckpt, list(debias = req)), prior),
     p_fixed = p_fixed, beta_names = colnames(X))
+  res <- .nl_cila_attach(
+    res, cila_cfg,
+    redispatch = function(req) .nl_dispatch(
+      type, utils::modifyList(cargs_no_ckpt, list(cila = req)), prior),
+    p_fixed = p_fixed, beta_names = colnames(X),
+    remoments = function(r) .nl_posterior_moments(r, type))
   tm$mark("diagnostics")
   res$prior <- prior
   res$timing <- tm$timing()
@@ -1415,7 +1453,10 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
                                # re-normalised single-cell "posterior".
                                theta_grid_override = NULL,
                                compute_skew = FALSE, skew_idx = NULL,
-                               debias = NULL) {
+                               debias = NULL,
+                               # Corrected integrated Laplace (gcol33/tulpa#351):
+                               # the kernel-facing request list, off by default.
+                               cila = NULL) {
   # Inject a default obs_idx for any tgmrf block that didn't supply one.
   # The C++ scatter needs obs_idx[i] -> latent slot for each observation;
   # the canonical "one obs per latent slot" case has N == n_latent and the
@@ -1508,7 +1549,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     checkpoint_path   = as.character(cargs$checkpoint_path %||% ""),
     compute_skew      = isTRUE(compute_skew),
     skew_idx          = skew_idx,
-    debias            = debias
+    debias            = debias,
+    cila              = cila
   )
 
   out$theta_grid   <- joint_grid

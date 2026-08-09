@@ -1,5 +1,54 @@
 # tulpa NEWS
 
+## 0.0.166
+
+* A corrected fit carries ONE grid weighting (gcol33/tulpa#367). The corrected
+  per-cell masses are what `fit$draws` is pooled from, so they are the fit's
+  grid posterior and are now reported as `fit$weights` / `fit$log_marginal`,
+  with `fit$weights_source` naming the read. The pre-correction pair is kept as
+  `fit$cila$laplace$weights` / `$log_marginal`, a name that cannot be mistaken
+  for the reported one, and `fit$cila$cell_weights` / `$cell_log_marginal` are
+  the adopted vectors THEMSELVES -- `identical()`, not equal to a tolerance --
+  so a caller pairing the two cannot pair them wrongly. Each fitter's own
+  hyperparameter-summary tail is re-run on the adopted read, so `theta_mean`
+  and the axis quantiles describe the weights the fit reports rather than the
+  ones it replaced. A grid whose cells did not all produce a usable particle
+  set is read conditional on the cells that remain, the gcol33/tulpa#342
+  convention, with `$cila$retained_mass` recording the original share.
+
+* The correction reaches `tulpa_nested_laplace()`, the single-block non-joint
+  fitter (gcol33/tulpa#368). `control$cila` threads through
+  `laplace_newton_solve_ll`, `spec_inner_solve`,
+  `run_multi_block_nested_laplace` and every `cpp_nested_laplace_*` entry, so
+  icar / bym2 / car_proper / nngp / hsgp / rw1 / rw2 / ar1 / the ST variants and
+  the multi-block driver all carry it. That loop centres BEFORE the correction
+  runs and re-evaluates its factor at the centred point, so it proposes from
+  `result.mode` and presents its draws unchanged where the joint loops apply a
+  centring fold.
+
+* A sparsely factorized cell is corrected instead of declining
+  (gcol33/tulpa#366). A draw with covariance `A^-1` is `P' L^-T eps`, which the
+  live CHOLMOD factor supplies directly through its own `Lt` and `Pt` solves --
+  no refactorization, no dense triangle, and a whole chunk of draws per call.
+  This opens the correction to SPDE, NNGP, ICAR at scale, MCAR, HSGP-MO and
+  latent factors, and to any fit above the sparse dispatch threshold. Only an
+  LL' factor carries that square root; a simplicial LDL' fallback declines by
+  name (`"sparse_factor_not_ll"`) rather than drawing from the wrong covariance.
+
+* Every objective evaluation in the joint Newton loop was paying about 7.6
+  microseconds of OpenMP region entry it could not use (gcol33/tulpa#365). The
+  eta assembly and the data log-likelihood both guarded their parallel region
+  with `if(n_threads > 1)`, which serialises the body but still enters libgomp;
+  at one thread they now take a plain loop, in the same index order, so the
+  numbers are unchanged. Measured on a 48-observation binomial joint fit: the
+  correction's marginal cost per auxiliary draw falls from 26.80 to 19.23
+  microseconds, and the line search pays the same saving on every fit. What
+  remains is 1.9 microseconds of the correction's own machinery (Sobol net,
+  normal quantile, triangular solve, bookkeeping), flat in the data size, plus
+  0.345 microseconds per observation inside the shared per-observation
+  likelihood -- 93% of the cost at that size, and not reachable by batching the
+  density call.
+
 ## 0.0.165
 
 * The inner-Laplace skew correction's CENTRE is banded, not only its shape

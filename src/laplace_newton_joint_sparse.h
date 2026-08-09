@@ -228,9 +228,9 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
     // eigen-clamp both leave `solver` holding a factor of a different matrix.
     const SubspaceDebiasOptions* debias = nullptr,
     // Corrected integrated Laplace (inner_cila.h, gcol33/tulpa#351). A draw
-    // from the inner Gaussian needs L^-T applied to a standard normal vector,
-    // and the sparse solver exposes only the full solve, so the correction
-    // declines here and says so rather than proposing from something else.
+    // from the inner Gaussian is P' L^-T applied to a standard normal vector,
+    // which the live CHOLMOD factor supplies directly (gcol33/tulpa#366); an
+    // LDL' factor has no such square root and is declined by name.
     const CilaOptions* cila = nullptr,
     std::uint64_t cila_cell_key = 0
 ) {

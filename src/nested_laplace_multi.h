@@ -35,6 +35,7 @@
 #include <Rcpp.h>
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 #include <vector>
 
@@ -85,7 +86,14 @@ inline Rcpp::List run_multi_block_nested_laplace(
     // warm-start screen never runs it. nullptr or an empty index set never
     // reaches the sampler, so the grid is unchanged and consumes no random
     // number.
-    const SubspaceDebiasOptions* debias = nullptr
+    const SubspaceDebiasOptions* debias = nullptr,
+    // Corrected integrated Laplace (inner_cila.h, gcol33/tulpa#351). Runs on
+    // every fully-solved cell for the same reason the debias does -- the
+    // corrected marginal is a reweighting of each cell's own particle set, so
+    // all of them travel out -- and never on the cheap warm-start screen. Its
+    // auxiliary points come from an engine-owned stream keyed by the cell index,
+    // so the outer grid stays parallel-integrable with the correction on.
+    const CilaOptions* cila = nullptr
 ) {
     int n_x = p + n_re_groups;
     for (const auto& b : blocks) {
@@ -253,7 +261,9 @@ inline Rcpp::List run_multi_block_nested_laplace(
             scratch, solver, store_Q, /*inv_block_layout=*/nullptr,
             /*beta_prior=*/nullptr, /*sparse_override=*/0,
             allow_probe && compute_skew, skew_probe_idx,
-            allow_probe ? debias : nullptr
+            allow_probe ? debias : nullptr,
+            allow_probe ? cila : nullptr,
+            static_cast<std::uint64_t>(k) + 1ULL
         );
 
         // Per-row predictive variance, var(eta_i | theta_k) = a_i' H^{-1} a_i,

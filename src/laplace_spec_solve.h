@@ -28,7 +28,9 @@
 #include "tulpa/param_layout.h"
 #include "laplace_cholesky.h"     // LaplaceResult
 #include "laplace_newton.h"       // NewtonScratch
+#include "inner_cila.h"            // CilaOptions
 #include "subspace_debias.h"       // SubspaceDebiasOptions
+#include <cstdint>
 #include "latent_block.h"
 #include "sparse_cholesky.h"
 #include <utility>
@@ -65,7 +67,12 @@ LaplaceResult spec_inner_solve(
     // Subspace debias (subspace_debias.h): the flagged latent coordinates to
     // correct by Metropolis, selected from a previous solve's inner-layer
     // bands. nullptr or empty leaves the solve untouched.
-    const SubspaceDebiasOptions* debias = nullptr
+    const SubspaceDebiasOptions* debias = nullptr,
+    // Corrected integrated Laplace (inner_cila.h, gcol33/tulpa#351), with the
+    // per-cell stream key. nullptr or a zero point count leaves the solve
+    // untouched.
+    const CilaOptions* cila = nullptr,
+    std::uint64_t cila_cell_key = 0
 );
 
 // Result-returning standalone spec Laplace (defined in laplace_spec.cpp).

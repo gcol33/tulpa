@@ -23,6 +23,14 @@
 # `log_q_k` is read off the fit as `log(weights_k) - log_marginal_k`, which is
 # the grid weight with the Laplace marginal divided back out.
 #
+# ONE GRID WEIGHTING PER FIT. The pooled masses ARE the fit's grid posterior --
+# `fit$draws` is built from them -- so a corrected fit carries them as
+# `fit$weights` and `fit$log_marginal`, and `fit$weights_source` says which read
+# produced them. The pre-correction pair is kept as `fit$cila$laplace$weights` /
+# `$log_marginal`. `fit$cila$cell_weights` and `$cell_log_marginal` are the
+# adopted vectors themselves, so pairing them with `fit$weights` cannot go
+# wrong: they are the same numbers (gcol33/tulpa#367).
+#
 # HOW IT IS GRADED. The importance weights are the same object PSIS already
 # scores elsewhere in this engine, so `tulpa_psis()` fits them directly -- one
 # Pareto fit in the package, not a third one. A relative ESS and a Pareto shape
@@ -97,17 +105,25 @@
 # What a fit records about the correction, whether or not anything was
 # corrected -- so a fit that WAS corrected can be told from one that was not
 # without re-reading the weights.
+#
+# `laplace` is the PRE-correction grid read, kept under a name that says so
+# (gcol33/tulpa#367). It is the only other grid weighting a corrected fit
+# carries: `cell_weights` / `cell_log_marginal` are the adopted ones, identical
+# to `fit$weights` / `fit$log_marginal` by construction.
 .cila_record <- function(cfg, declined = NA_character_, n_cells = NA_integer_,
                          n_declined = NA_integer_, variant_used = NA_character_,
                          fallback = NA_character_, pareto_k = NA_real_,
                          rel_ess = NA_real_, cell_weights = NULL,
-                         cell_log_marginal = NULL) {
+                         cell_log_marginal = NULL, adopted = FALSE,
+                         retained_mass = NA_real_, laplace = NULL) {
     list(n_points = cfg$n_points, variant = cfg$variant,
          n_shift = cfg$n_shift, n_draws = cfg$n_draws, seed = cfg$seed,
          variant_used = variant_used, fallback = fallback,
          n_cells = n_cells, n_cells_declined = n_declined,
          pareto_k = pareto_k, rel_ess = rel_ess,
          cell_weights = cell_weights, cell_log_marginal = cell_log_marginal,
+         weights_adopted = adopted, retained_mass = retained_mass,
+         laplace = laplace,
          declined = declined)
 }
 
@@ -162,7 +178,7 @@
     grade <- tryCatch(tulpa_psis(pooled_lw - max(pooled_lw)),
                       error = function(e) NULL)
     list(particles = particles, w = w, cell_weights = cell_w,
-         cell_log_marginal = cell_lm_full,
+         cell_log_marginal = cell_lm_full, keep = keep,
          n_cells = length(log_q), n_declined = length(log_q) - length(keep),
          pareto_k = if (is.null(grade)) NA_real_ else as.numeric(grade$pareto_k),
          rel_ess = 1 / (sum(w^2) * length(w)))
@@ -190,8 +206,16 @@
 # prefixes. That second pass is the cost, and it is the same shape the subspace
 # debias pays: the corrected shape is a property of each cell, and which cells
 # the fit settled on is only known once the first pass has run.
-.nl_cila_attach <- function(res, cfg, redispatch, p_fixed, beta_names = NULL) {
+#
+# `remoments(res) -> res` is the fitter's OWN hyperparameter-summary tail, run
+# again once the corrected grid read has been adopted (gcol33/tulpa#367). Each
+# fitter passes the sequence it already runs, so `theta_mean` / `theta_sd` /
+# `theta_median` / `theta_ci_*` are recomputed by the same code that produced
+# them rather than by a second summariser written for the correction.
+.nl_cila_attach <- function(res, cfg, redispatch, p_fixed, beta_names = NULL,
+                            remoments = identity) {
     if (is.null(cfg)) return(res)
+    res$weights_source <- "laplace_grid"
     p_fixed <- as.integer(p_fixed %||% 0L)
     if (!length(p_fixed) || is.na(p_fixed) || p_fixed < 1L) {
         res$cila <- .cila_record(cfg, declined = "no_fixed_effects")
@@ -232,14 +256,39 @@
     }
     res$draws <- draws
     res$n_fixed <- res$n_fixed %||% p_fixed
+
+    # Adopt the corrected grid read (gcol33/tulpa#367). `fit$draws` are pooled
+    # from the corrected per-cell masses, so those masses ARE the fit's grid
+    # posterior and the fit carries them under the name every reader of a grid
+    # weighting already uses. The pre-correction pair travels under `$laplace`,
+    # a name that cannot be mistaken for the reported one, and the hyperparameter
+    # summaries are recomputed from the adopted pair by the fitter's own tail --
+    # so no two same-shaped vectors on the fit disagree about the grid's mass.
+    #
+    # A cell that produced no usable particle set is dropped, and the read is
+    # then conditional on the cells that remain, the same convention
+    # gcol33/tulpa#342 settled for a repaired grid. `retained_mass` is the share
+    # of the ORIGINAL Laplace mass those cells carried, 1 on a complete grid, so
+    # a reader tells the two apart from the fit alone.
+    lm_adopt <- as.numeric(pool$cell_log_marginal)
+    lm_adopt[!is.finite(lm_adopt)] <- -Inf
+    retained <- if (sum(wt, na.rm = TRUE) > 0) {
+        sum(wt[pool$keep], na.rm = TRUE) / sum(wt, na.rm = TRUE)
+    } else NA_real_
+    res$log_marginal   <- lm_adopt
+    res$weights        <- pool$cell_weights
+    res$weights_source <- "cila"
+
     res$cila <- .cila_record(
         cfg, n_cells = pool$n_cells, n_declined = pool$n_declined,
         variant_used = .cila_variant_used(out),
         fallback = .cila_first_fallback(out) %||% NA_character_,
         pareto_k = pool$pareto_k, rel_ess = pool$rel_ess,
         cell_weights = pool$cell_weights,
-        cell_log_marginal = pool$cell_log_marginal)
-    res
+        cell_log_marginal = lm_adopt,
+        adopted = TRUE, retained_mass = retained,
+        laplace = list(weights = wt, log_marginal = lm))
+    remoments(res)
 }
 
 # The first reason any cell gave, when no cell produced a usable set.

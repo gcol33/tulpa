@@ -2244,12 +2244,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
                     d_eff[b] = s * d_fac_cache[b];
                 }
 
-                #ifdef _OPENMP
-                #pragma omp parallel for schedule(static) \
-                    num_threads(n_threads_inner_eff > 0 ? n_threads_inner_eff : 1) \
-                    if(n_threads_inner_eff > 1)
-                #endif
-                for (int i = 0; i < N_k; i++) {
+                auto row_eta = [&](int i) -> double {
                     double e = (pa.offset.size() != 0) ? pa.offset[i] : 0.0;
                     for (int j = 0; j < p_k; j++) e += pa.X(i, j) * x[bstart + j];
                     if (n_re_k > 0) {
@@ -2267,7 +2262,21 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
                                           * x[blocks[b].start + l - 1];
                         }
                     }
-                    etas[k_arm][i] = e;
+                    return e;
+                };
+                // Serial route is a plain loop, not a parallel region under
+                // `if(...)`: the clause serialises the body but still enters
+                // libgomp, and this assembly runs on every objective evaluation
+                // the line search and the inner debiases make. Each row is
+                // independent, so the two routes compute the same numbers.
+                if (n_threads_inner_eff > 1) {
+                #ifdef _OPENMP
+                #pragma omp parallel for schedule(static) \
+                    num_threads(n_threads_inner_eff)
+                #endif
+                    for (int i = 0; i < N_k; i++) etas[k_arm][i] = row_eta(i);
+                } else {
+                    for (int i = 0; i < N_k; i++) etas[k_arm][i] = row_eta(i);
                 }
             }
         };

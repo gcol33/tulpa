@@ -98,7 +98,7 @@ tulpa_check_control <- function(control, allowed, where) {
     nested_laplace = c("max_iter", "tol", "n_threads", "x_init",
                        "keep_grid_hessians", "diagnose_k", "k_samples",
                        "diagnose_skew", "skew_idx", "skew_correct",
-                       "auto_recenter", "subspace_debias",
+                       "auto_recenter", "subspace_debias", "cila",
                        "max_grid_cells",
                        "checkpoint", progress),
     nested_laplace_joint = c(

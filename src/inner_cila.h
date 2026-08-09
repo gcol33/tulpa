@@ -82,6 +82,13 @@ enum class CilaVariant : int {
 // can land exactly on 0, so the clamp is not optional.
 inline constexpr double CILA_U_CLAMP = 9.094947017729282e-13;  // 2^-40
 
+// Auxiliary draws are turned into latent vectors a chunk at a time. The sparse
+// path solves a whole chunk in one CHOLMOD call, so the chunk is what makes the
+// per-draw cost the triangular solve rather than a call into the solver; the
+// bound on it is the transient, n_x * CILA_DRAW_CHUNK doubles, which stays
+// under a megabyte for latent dimensions in the low thousands.
+inline constexpr int CILA_DRAW_CHUNK = 64;
+
 struct CilaOptions {
   int n_points = 1024;                 // total auxiliary points M per cell
   CilaVariant variant = CilaVariant::QMC;
@@ -103,10 +110,13 @@ struct CilaOutcome {
   CilaVariant variant_used = CilaVariant::QMC;
   // Why the correction produced nothing, when it produced nothing. Empty on
   // success. Vocabulary: "not_converged" (no mode to propose from),
-  // "sparse_factor_unavailable" (the cell factorized sparsely and the solver
-  // exposes no triangular solve to draw through), "degenerate_proposal" (a
-  // non-positive pivot in the factor, so the inner Gaussian has no density),
-  // "objective_not_finite" (the joint density is not finite at the mode).
+  // "sparse_factor_unavailable" (the cell routed to the sparse solver and left
+  // no live factor to draw through), "sparse_factor_not_ll" (the live factor is
+  // a simplicial LDL', which carries no square root the draw can apply --
+  // CHOLMOD_DLt gives D^-1 where a draw needs D^-1/2), "degenerate_proposal" (a
+  // non-positive pivot or a non-finite log-determinant, so the inner Gaussian
+  // has no density), "objective_not_finite" (the joint density is not finite at
+  // the mode).
   std::string declined;
   // Set when the REQUESTED point set could not be built and a different one was
   // used instead, so a fit never silently reports a variant it did not run.
@@ -221,24 +231,35 @@ inline CilaOutcome compute_inner_cila(
   CilaOutcome out;
   out.n_fixed = std::max(0, std::min(opts.n_fixed, n_x));
 
-  if (use_sparse) {
-    // A draw needs L^-T applied to a standard normal vector. The sparse solver
-    // exposes only the full solve, so there is no way to form one here; saying
-    // so is the whole report rather than substituting a different proposal.
-    out.declined = "sparse_factor_unavailable";
-    return out;
-  }
-
   // 0.5 log|H| from the live factor, which is also the check that the inner
-  // Gaussian has a density at all.
+  // Gaussian has a density at all. The sparse factor reports it directly; the
+  // dense one is the sum of the log-diagonal of its own L.
   double half_log_det = 0.0;
-  for (int j = 0; j < n_x; j++) {
-    const double d = chol.L[static_cast<std::size_t>(j) + static_cast<std::size_t>(j) * n_x];
-    if (!(d > 0.0) || !std::isfinite(d)) {
+  if (use_sparse) {
+    // A draw is P' L^-T eps against the SAME factor the solve left resident, so
+    // the sparse cell proposes from its own inner Gaussian with no
+    // refactorization (gcol33/tulpa#366). Only an LL' factor has a square root
+    // on that route; a simplicial LDL' fallback says so instead of drawing from
+    // the wrong covariance.
+    if (!sparse_solver.factored()) {
+      out.declined = "sparse_factor_unavailable";
+      return out;
+    }
+    const double ld = sparse_solver.log_determinant();
+    if (!std::isfinite(ld)) {
       out.declined = "degenerate_proposal";
       return out;
     }
-    half_log_det += std::log(d);
+    half_log_det = 0.5 * ld;
+  } else {
+    for (int j = 0; j < n_x; j++) {
+      const double d = chol.L[static_cast<std::size_t>(j) + static_cast<std::size_t>(j) * n_x];
+      if (!(d > 0.0) || !std::isfinite(d)) {
+        out.declined = "degenerate_proposal";
+        return out;
+      }
+      half_log_det += std::log(d);
+    }
   }
 
   std::vector<double> eps;
@@ -259,27 +280,69 @@ inline CilaOutcome compute_inner_cila(
   const double log_q_const =
       -0.5 * n_x * 1.8378770664093453 + half_log_det;
 
-  std::vector<double> draw(n_x, 0.0);
+  // Draws are produced a CHUNK at a time rather than one at a time. On the
+  // sparse path that is what makes the correction affordable at all: CHOLMOD
+  // solves a whole [n_x x chunk] block in one call, so the per-draw cost is the
+  // triangular solve itself instead of a call into the solver. On the dense
+  // path the chunk is a bounded scratch buffer and the back-substitution is
+  // unchanged. The chunk bounds the transient at n_x * CILA_DRAW_CHUNK doubles,
+  // which is what keeps a large sparse latent from materialising an [M x n_x]
+  // block.
+  std::vector<double> block(static_cast<std::size_t>(n_x) * CILA_DRAW_CHUNK, 0.0);
+  std::vector<double> eps_block;
+  if (use_sparse) {
+    eps_block.assign(static_cast<std::size_t>(n_x) * CILA_DRAW_CHUNK, 0.0);
+  }
   Rcpp::NumericVector present(n_x);
-  for (int i = 0; i < M; i++) {
-    // Back-substitution L' draw = eps_i, the only linear algebra per draw.
-    double quad = 0.0;
-    for (int j = n_x - 1; j >= 0; j--) {
-      double sum = eps[static_cast<std::size_t>(j) * M + i];
-      quad += sum * sum;
-      for (int k = j + 1; k < n_x; k++) {
-        sum -= chol.L[static_cast<std::size_t>(k) + static_cast<std::size_t>(j) * n_x] * draw[k];
+  for (int i0 = 0; i0 < M; i0 += CILA_DRAW_CHUNK) {
+    const int nc = std::min(CILA_DRAW_CHUNK, M - i0);
+    if (use_sparse) {
+      for (int c = 0; c < nc; c++) {
+        for (int j = 0; j < n_x; j++) {
+          eps_block[static_cast<std::size_t>(c) * n_x + j] =
+              eps[static_cast<std::size_t>(j) * M + (i0 + c)];
+        }
       }
-      draw[j] = sum / chol.L[static_cast<std::size_t>(j) + static_cast<std::size_t>(j) * n_x];
+      if (!sparse_solver.apply_inv_chol_factor(eps_block.data(), block.data(),
+                                               n_x, nc)) {
+        out.declined = "sparse_factor_not_ll";
+        out.log_w.clear();
+        out.fixed.clear();
+        out.n_points = 0;
+        return out;
+      }
+    } else {
+      for (int c = 0; c < nc; c++) {
+        // Back-substitution L' draw = eps_i, the only linear algebra per draw.
+        double* draw = block.data() + static_cast<std::size_t>(c) * n_x;
+        for (int j = n_x - 1; j >= 0; j--) {
+          double sum = eps[static_cast<std::size_t>(j) * M + (i0 + c)];
+          for (int k = j + 1; k < n_x; k++) {
+            sum -= chol.L[static_cast<std::size_t>(k) +
+                          static_cast<std::size_t>(j) * n_x] * draw[k];
+          }
+          draw[j] = sum /
+              chol.L[static_cast<std::size_t>(j) + static_cast<std::size_t>(j) * n_x];
+        }
+      }
     }
-    for (int j = 0; j < n_x; j++) x_buf[j] = mode[j] + draw[j];
-    const double lp = eval_log_joint(x_buf);
-    out.log_w[i] = lp - (log_q_const - 0.5 * quad);
-    if (out.n_fixed > 0) {
-      for (int j = 0; j < n_x; j++) present[j] = x_buf[j];
-      present_draw(present);
-      for (int b = 0; b < out.n_fixed; b++) {
-        out.fixed[static_cast<std::size_t>(b) * M + i] = present[b];
+    for (int c = 0; c < nc; c++) {
+      const int i = i0 + c;
+      const double* draw = block.data() + static_cast<std::size_t>(c) * n_x;
+      double quad = 0.0;
+      for (int j = n_x - 1; j >= 0; j--) {
+        const double e = eps[static_cast<std::size_t>(j) * M + i];
+        quad += e * e;
+      }
+      for (int j = 0; j < n_x; j++) x_buf[j] = mode[j] + draw[j];
+      const double lp = eval_log_joint(x_buf);
+      out.log_w[i] = lp - (log_q_const - 0.5 * quad);
+      if (out.n_fixed > 0) {
+        for (int j = 0; j < n_x; j++) present[j] = x_buf[j];
+        present_draw(present);
+        for (int b = 0; b < out.n_fixed; b++) {
+          out.fixed[static_cast<std::size_t>(b) * M + i] = present[b];
+        }
       }
     }
   }

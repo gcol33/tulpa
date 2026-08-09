@@ -1569,7 +1569,15 @@
             phi_grid_per_arm = .joint_multi_phi_per_arm(res$theta_grid,
                                                         arm_names),
             cila = req)),
-        p_fixed = fixed$n_fixed, beta_names = fixed$names)
+        p_fixed = fixed$n_fixed, beta_names = fixed$names,
+        remoments = function(r) {
+            r <- .joint_posterior_moments_multi(
+                r, prepared, axis_offsets, joint_grid, cp,
+                int_weights = if (is_design_weighted) r$weights else NULL,
+                support = prov$read)
+            if (!is_design_weighted) r <- .nl_refit_axis_sd_laplace(r)
+            r
+        })
     res$timing <- tm$timing()
     res <- .joint_attach_diagnose_cost(res, diagnose_k, diagnose_draws)
     .finalize_fit(res, backend = "nested_laplace_joint",
@@ -1765,10 +1773,12 @@
     # alpha) reparameterization, alpha is a column of joint_grid like
     # any other axis; this attaches the calibrated summary for every
     # axis, not just alpha.
-    domains <- if (identical(support, "moment_rule"))
-        .joint_axis_domains(list(theta_grid = joint_grid,
-                                 axis_offsets = axis_offsets,
-                                 blocks = prepared)) else NULL
+    # Supplied whatever the support: a moment rule needs the domain to form its
+    # interval at all, and a density read needs it to place its outer cell edges
+    # inside the quantity's own support (gcol33/tulpa#369).
+    domains <- .joint_axis_domains(list(theta_grid = joint_grid,
+                                        axis_offsets = axis_offsets,
+                                        blocks = prepared))
     qs <- .nl_axis_quantiles(joint_grid, res$log_marginal,
                               res$refining_axis, weights = int_weights,
                               support = support, domains = domains)

@@ -236,15 +236,27 @@ inline double compute_total_log_lik_joint(
         const Rcpp::NumericVector& eta = etas[k];
         const int N = static_cast<int>(eta.size());
         double sub = 0.0;
-        #ifdef _OPENMP
-        #pragma omp parallel for reduction(+:sub) schedule(static) \
-            num_threads(n_threads > 0 ? n_threads : 1) if(n_threads > 1)
-        #endif
-        for (int i = 0; i < N; i++) {
+        // The single-thread route is a plain loop rather than a parallel region
+        // under `if(n_threads > 1)`. The clause serialises the body but still
+        // enters libgomp, and the entry is measurable here: this loop is the
+        // data log-lik of every objective evaluation the Newton line search and
+        // the inner debiases make. Serial reduction runs in index order, which
+        // is what the clause's own serialised body does, so the sum is
+        // bit-identical either way.
+        auto obs_ll = [&](int i) -> double {
             double eta_i = eta[i];
-            sub += v.spec->ll_double(i, &eta_i, zd, zd,
+            return v.spec->ll_double(i, &eta_i, zd, zd,
                                      *v.params, *v.data, *v.layout,
                                      v.response_data);
+        };
+        if (n_threads > 1) {
+        #ifdef _OPENMP
+        #pragma omp parallel for reduction(+:sub) schedule(static) \
+            num_threads(n_threads)
+        #endif
+            for (int i = 0; i < N; i++) sub += obs_ll(i);
+        } else {
+            for (int i = 0; i < N; i++) sub += obs_ll(i);
         }
         total += sub;
     }

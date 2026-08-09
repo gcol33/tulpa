@@ -9,6 +9,7 @@
 #include "laplace_family_curvature.h"   // curvature3_obs_for_family
 #include "laplace_family_link.h"
 #include "laplace_newton_loop.h"        // eval_*, line_search_backtrack, finalize_log_marginal
+#include "inner_cila.h"                 // run_inner_cila
 #include "inner_laplace_is.h"           // compute_inner_is_curve
 #include "subspace_debias.h"            // compute_subspace_debias
 #include "inner_laplace_skew.h"         // compute_inner_skew_gamma3
@@ -122,7 +123,17 @@ LaplaceResult laplace_newton_solve_ll(
     // previous solve's inner-layer bands and passes them here. nullptr or an
     // empty index set never reaches the sampler, so the solve is unchanged and
     // consumes no random number.
-    const SubspaceDebiasOptions* debias = nullptr
+    const SubspaceDebiasOptions* debias = nullptr,
+    // Corrected integrated Laplace (inner_cila.h, gcol33/tulpa#351). This loop
+    // centres BEFORE the correction runs and re-evaluates the factor at the
+    // centred point, so the mode it proposes from is `result.mode` and a drawn
+    // latent is already in the coordinates the reported mode is in -- the
+    // presentation fold the joint loops apply is the identity here.
+    const CilaOptions* cila = nullptr,
+    // Distinguishes this cell's auxiliary stream from its neighbours' on an
+    // outer grid; irrelevant for the deterministic net, load-bearing for the
+    // randomized-QMC shifts.
+    std::uint64_t cila_cell_key = 0
 ) {
     LaplaceResult result;
     result.mode.assign(n_x, 0.0);
@@ -293,6 +304,10 @@ LaplaceResult laplace_newton_solve_ll(
                             use_sparse && sparse_solver.factored(),
                             eval_objective, x, debias);
     }
+
+    run_inner_cila(result, n_x, result.mode, scratch.chol, sparse_solver,
+                   use_sparse && sparse_solver.factored(), eval_objective,
+                   [](Rcpp::NumericVector&) {}, x, cila, cila_cell_key);
 
     return result;
 }

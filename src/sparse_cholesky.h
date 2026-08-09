@@ -68,6 +68,19 @@ public:
     // b and x are dense vectors of length n.
     void solve(const double* b, double* x, int n);
 
+    // Apply the inverse Cholesky square root of A to `ncol` standard normal
+    // vectors at once: with A = P' L L' P, the columns of `x = P' L^-T eps`
+    // have covariance A^-1, so a caller holding a factored Hessian can draw
+    // from the Gaussian it defines with no refactorization and no dense
+    // triangle. `eps` and `x` are column-major [n x ncol] and may alias.
+    //
+    // Only an LL' factor carries a square root reachable this way. CHOLMOD's
+    // CHOLMOD_DLt solve gives D^-1 where a draw needs D^-1/2, so a simplicial
+    // LDL' factor is refused (returns false) rather than served draws from the
+    // wrong covariance. The supernodal factorization this class requests is
+    // always LL', so the refusal is the fallback path's, not the usual one's.
+    bool apply_inv_chol_factor(const double* eps, double* x, int n, int ncol);
+
     // Log-determinant of the factored matrix: log|A| = log|LL'| = 2*sum(log(diag(L))).
     // Uses Matrix package's M_cholmod_factor_ldetA which handles both
     // simplicial and supernodal factors correctly.

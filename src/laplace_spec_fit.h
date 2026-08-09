@@ -131,6 +131,16 @@ struct DebiasRequest {
     }
 };
 
+// The corrected-integrated-Laplace request as a call-site temporary, same
+// convention and same lifetime as DebiasRequest above.
+struct CilaRequest {
+    CilaOptions        opts;
+    const CilaOptions* ptr = nullptr;
+    explicit CilaRequest(const Rcpp::Nullable<Rcpp::List>& spec) {
+        ptr = unwrap_cila(spec, opts);
+    }
+};
+
 // Spec-solver inputs for a single-process built-in-family fit with an optional
 // single iid RE term, kept alive together: data borrows spec & resp (and resp
 // borrows the response arrays), so the whole struct must outlive the solve.

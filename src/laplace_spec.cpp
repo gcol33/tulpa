@@ -1134,7 +1134,9 @@ LaplaceResult spec_inner_solve(
     int sparse_override,
     bool compute_skew,
     const std::vector<int>* skew_probe_idx,
-    const SubspaceDebiasOptions* debias
+    const SubspaceDebiasOptions* debias,
+    const CilaOptions* cila,
+    std::uint64_t cila_cell_key
 ) {
     const SpecLatentLayout L = build_latent_layout(data, layout, blocks);
     const int N = data.N;
@@ -1224,7 +1226,7 @@ LaplaceResult spec_inner_solve(
         compute_eta, scatter_grad_hess, center_effects_fn, compute_log_prior,
         log_lik_fn, scratch, x_init, solver, store_Q, inv_block_layout,
         sparse_override, &feasible_start_coords,
-        compute_skew, skew_probe_idx, &curvature3, debias
+        compute_skew, skew_probe_idx, &curvature3, debias, cila, cila_cell_key
     );
 }
 

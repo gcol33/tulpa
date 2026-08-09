@@ -143,8 +143,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_cornish_fisher_quantile
-Rcpp::List cpp_cornish_fisher_quantile(Rcpp::NumericVector mu, Rcpp::NumericVector sigma, Rcpp::NumericVector gamma3, Rcpp::NumericVector gamma1, Rcpp::NumericVector z, double max_abs_gamma3);
-RcppExport SEXP _tulpa_cpp_cornish_fisher_quantile(SEXP muSEXP, SEXP sigmaSEXP, SEXP gamma3SEXP, SEXP gamma1SEXP, SEXP zSEXP, SEXP max_abs_gamma3SEXP) {
+Rcpp::List cpp_cornish_fisher_quantile(Rcpp::NumericVector mu, Rcpp::NumericVector sigma, Rcpp::NumericVector gamma3, Rcpp::NumericVector gamma1, Rcpp::NumericVector z, double max_abs_gamma3, double max_abs_centre);
+RcppExport SEXP _tulpa_cpp_cornish_fisher_quantile(SEXP muSEXP, SEXP sigmaSEXP, SEXP gamma3SEXP, SEXP gamma1SEXP, SEXP zSEXP, SEXP max_abs_gamma3SEXP, SEXP max_abs_centreSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -154,7 +154,22 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< Rcpp::NumericVector >::type gamma1(gamma1SEXP);
     Rcpp::traits::input_parameter< Rcpp::NumericVector >::type z(zSEXP);
     Rcpp::traits::input_parameter< double >::type max_abs_gamma3(max_abs_gamma3SEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_cornish_fisher_quantile(mu, sigma, gamma3, gamma1, z, max_abs_gamma3));
+    Rcpp::traits::input_parameter< double >::type max_abs_centre(max_abs_centreSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_cornish_fisher_quantile(mu, sigma, gamma3, gamma1, z, max_abs_gamma3, max_abs_centre));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_cornish_fisher_bands
+Rcpp::List cpp_cornish_fisher_bands(Rcpp::NumericVector gamma3, Rcpp::NumericVector gamma1, double max_abs_gamma3, double max_abs_centre);
+RcppExport SEXP _tulpa_cpp_cornish_fisher_bands(SEXP gamma3SEXP, SEXP gamma1SEXP, SEXP max_abs_gamma3SEXP, SEXP max_abs_centreSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type gamma3(gamma3SEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type gamma1(gamma1SEXP);
+    Rcpp::traits::input_parameter< double >::type max_abs_gamma3(max_abs_gamma3SEXP);
+    Rcpp::traits::input_parameter< double >::type max_abs_centre(max_abs_centreSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_cornish_fisher_bands(gamma3, gamma1, max_abs_gamma3, max_abs_centre));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -1121,8 +1136,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_nested_laplace_icar
-Rcpp::List cpp_nested_laplace_icar(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::IntegerVector spatial_idx, int n_spatial_units, Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx, Rcpp::IntegerVector n_neighbors, Rcpp::NumericVector tau_grid, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q, std::string checkpoint_path, bool compute_skew, Rcpp::Nullable<Rcpp::IntegerVector> skew_idx, Rcpp::Nullable<Rcpp::List> debias);
-RcppExport SEXP _tulpa_cpp_nested_laplace_icar(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP spatial_idxSEXP, SEXP n_spatial_unitsSEXP, SEXP adj_row_ptrSEXP, SEXP adj_col_idxSEXP, SEXP n_neighborsSEXP, SEXP tau_gridSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP, SEXP checkpoint_pathSEXP, SEXP compute_skewSEXP, SEXP skew_idxSEXP, SEXP debiasSEXP) {
+Rcpp::List cpp_nested_laplace_icar(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::IntegerVector spatial_idx, int n_spatial_units, Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx, Rcpp::IntegerVector n_neighbors, Rcpp::NumericVector tau_grid, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q, std::string checkpoint_path, bool compute_skew, Rcpp::Nullable<Rcpp::IntegerVector> skew_idx, Rcpp::Nullable<Rcpp::List> debias, Rcpp::Nullable<Rcpp::List> cila);
+RcppExport SEXP _tulpa_cpp_nested_laplace_icar(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP spatial_idxSEXP, SEXP n_spatial_unitsSEXP, SEXP adj_row_ptrSEXP, SEXP adj_col_idxSEXP, SEXP n_neighborsSEXP, SEXP tau_gridSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP, SEXP checkpoint_pathSEXP, SEXP compute_skewSEXP, SEXP skew_idxSEXP, SEXP debiasSEXP, SEXP cilaSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -1149,13 +1164,14 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< bool >::type compute_skew(compute_skewSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::IntegerVector> >::type skew_idx(skew_idxSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type debias(debiasSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_icar(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_grid, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, checkpoint_path, compute_skew, skew_idx, debias));
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type cila(cilaSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_icar(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_grid, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, checkpoint_path, compute_skew, skew_idx, debias, cila));
     return rcpp_result_gen;
 END_RCPP
 }
 // cpp_nested_laplace_bym2
-Rcpp::List cpp_nested_laplace_bym2(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::IntegerVector spatial_idx, int n_spatial_units, Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx, Rcpp::IntegerVector n_neighbors, double scale_factor, Rcpp::NumericVector sigma_spatial_grid, Rcpp::NumericVector rho_grid, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q, std::string checkpoint_path, bool compute_skew, Rcpp::Nullable<Rcpp::IntegerVector> skew_idx, Rcpp::Nullable<Rcpp::List> debias);
-RcppExport SEXP _tulpa_cpp_nested_laplace_bym2(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP spatial_idxSEXP, SEXP n_spatial_unitsSEXP, SEXP adj_row_ptrSEXP, SEXP adj_col_idxSEXP, SEXP n_neighborsSEXP, SEXP scale_factorSEXP, SEXP sigma_spatial_gridSEXP, SEXP rho_gridSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP, SEXP checkpoint_pathSEXP, SEXP compute_skewSEXP, SEXP skew_idxSEXP, SEXP debiasSEXP) {
+Rcpp::List cpp_nested_laplace_bym2(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::IntegerVector spatial_idx, int n_spatial_units, Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx, Rcpp::IntegerVector n_neighbors, double scale_factor, Rcpp::NumericVector sigma_spatial_grid, Rcpp::NumericVector rho_grid, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q, std::string checkpoint_path, bool compute_skew, Rcpp::Nullable<Rcpp::IntegerVector> skew_idx, Rcpp::Nullable<Rcpp::List> debias, Rcpp::Nullable<Rcpp::List> cila);
+RcppExport SEXP _tulpa_cpp_nested_laplace_bym2(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP spatial_idxSEXP, SEXP n_spatial_unitsSEXP, SEXP adj_row_ptrSEXP, SEXP adj_col_idxSEXP, SEXP n_neighborsSEXP, SEXP scale_factorSEXP, SEXP sigma_spatial_gridSEXP, SEXP rho_gridSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP, SEXP checkpoint_pathSEXP, SEXP compute_skewSEXP, SEXP skew_idxSEXP, SEXP debiasSEXP, SEXP cilaSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -1184,13 +1200,14 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< bool >::type compute_skew(compute_skewSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::IntegerVector> >::type skew_idx(skew_idxSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type debias(debiasSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_bym2(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, scale_factor, sigma_spatial_grid, rho_grid, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, checkpoint_path, compute_skew, skew_idx, debias));
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type cila(cilaSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_bym2(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, scale_factor, sigma_spatial_grid, rho_grid, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, checkpoint_path, compute_skew, skew_idx, debias, cila));
     return rcpp_result_gen;
 END_RCPP
 }
 // cpp_nested_laplace_car_proper
-Rcpp::List cpp_nested_laplace_car_proper(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::IntegerVector spatial_idx, int n_spatial_units, Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx, Rcpp::IntegerVector n_neighbors, Rcpp::NumericVector tau_grid, Rcpp::NumericVector rho_grid, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q, std::string checkpoint_path, bool compute_skew, Rcpp::Nullable<Rcpp::IntegerVector> skew_idx, Rcpp::Nullable<Rcpp::List> debias);
-RcppExport SEXP _tulpa_cpp_nested_laplace_car_proper(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP spatial_idxSEXP, SEXP n_spatial_unitsSEXP, SEXP adj_row_ptrSEXP, SEXP adj_col_idxSEXP, SEXP n_neighborsSEXP, SEXP tau_gridSEXP, SEXP rho_gridSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP, SEXP checkpoint_pathSEXP, SEXP compute_skewSEXP, SEXP skew_idxSEXP, SEXP debiasSEXP) {
+Rcpp::List cpp_nested_laplace_car_proper(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::IntegerVector spatial_idx, int n_spatial_units, Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx, Rcpp::IntegerVector n_neighbors, Rcpp::NumericVector tau_grid, Rcpp::NumericVector rho_grid, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q, std::string checkpoint_path, bool compute_skew, Rcpp::Nullable<Rcpp::IntegerVector> skew_idx, Rcpp::Nullable<Rcpp::List> debias, Rcpp::Nullable<Rcpp::List> cila);
+RcppExport SEXP _tulpa_cpp_nested_laplace_car_proper(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP spatial_idxSEXP, SEXP n_spatial_unitsSEXP, SEXP adj_row_ptrSEXP, SEXP adj_col_idxSEXP, SEXP n_neighborsSEXP, SEXP tau_gridSEXP, SEXP rho_gridSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP, SEXP checkpoint_pathSEXP, SEXP compute_skewSEXP, SEXP skew_idxSEXP, SEXP debiasSEXP, SEXP cilaSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -1218,7 +1235,8 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< bool >::type compute_skew(compute_skewSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::IntegerVector> >::type skew_idx(skew_idxSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type debias(debiasSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_car_proper(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_grid, rho_grid, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, checkpoint_path, compute_skew, skew_idx, debias));
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type cila(cilaSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_car_proper(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, tau_grid, rho_grid, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, checkpoint_path, compute_skew, skew_idx, debias, cila));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -1255,8 +1273,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_nested_laplace_nngp
-Rcpp::List cpp_nested_laplace_nngp(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::IntegerVector spatial_idx, Rcpp::NumericMatrix coords, Rcpp::IntegerMatrix nn_idx, Rcpp::NumericMatrix nn_dist, Rcpp::IntegerVector nn_order, int n_spatial, int nn, Rcpp::NumericVector sigma2_grid, Rcpp::NumericVector phi_gp_grid, int cov_type, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q, std::string checkpoint_path, bool compute_skew, Rcpp::Nullable<Rcpp::IntegerVector> skew_idx, Rcpp::Nullable<Rcpp::NumericVector> offset_nullable, Rcpp::Nullable<Rcpp::List> debias);
-RcppExport SEXP _tulpa_cpp_nested_laplace_nngp(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP spatial_idxSEXP, SEXP coordsSEXP, SEXP nn_idxSEXP, SEXP nn_distSEXP, SEXP nn_orderSEXP, SEXP n_spatialSEXP, SEXP nnSEXP, SEXP sigma2_gridSEXP, SEXP phi_gp_gridSEXP, SEXP cov_typeSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP, SEXP checkpoint_pathSEXP, SEXP compute_skewSEXP, SEXP skew_idxSEXP, SEXP offset_nullableSEXP, SEXP debiasSEXP) {
+Rcpp::List cpp_nested_laplace_nngp(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::IntegerVector spatial_idx, Rcpp::NumericMatrix coords, Rcpp::IntegerMatrix nn_idx, Rcpp::NumericMatrix nn_dist, Rcpp::IntegerVector nn_order, int n_spatial, int nn, Rcpp::NumericVector sigma2_grid, Rcpp::NumericVector phi_gp_grid, int cov_type, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q, std::string checkpoint_path, bool compute_skew, Rcpp::Nullable<Rcpp::IntegerVector> skew_idx, Rcpp::Nullable<Rcpp::NumericVector> offset_nullable, Rcpp::Nullable<Rcpp::List> debias, Rcpp::Nullable<Rcpp::List> cila);
+RcppExport SEXP _tulpa_cpp_nested_laplace_nngp(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP spatial_idxSEXP, SEXP coordsSEXP, SEXP nn_idxSEXP, SEXP nn_distSEXP, SEXP nn_orderSEXP, SEXP n_spatialSEXP, SEXP nnSEXP, SEXP sigma2_gridSEXP, SEXP phi_gp_gridSEXP, SEXP cov_typeSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP, SEXP checkpoint_pathSEXP, SEXP compute_skewSEXP, SEXP skew_idxSEXP, SEXP offset_nullableSEXP, SEXP debiasSEXP, SEXP cilaSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -1288,13 +1306,14 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::IntegerVector> >::type skew_idx(skew_idxSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type offset_nullable(offset_nullableSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type debias(debiasSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_nngp(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, coords, nn_idx, nn_dist, nn_order, n_spatial, nn, sigma2_grid, phi_gp_grid, cov_type, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, checkpoint_path, compute_skew, skew_idx, offset_nullable, debias));
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type cila(cilaSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_nngp(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, coords, nn_idx, nn_dist, nn_order, n_spatial, nn, sigma2_grid, phi_gp_grid, cov_type, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, checkpoint_path, compute_skew, skew_idx, offset_nullable, debias, cila));
     return rcpp_result_gen;
 END_RCPP
 }
 // cpp_nested_laplace_hsgp
-Rcpp::List cpp_nested_laplace_hsgp(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::NumericMatrix phi_basis, Rcpp::NumericVector lambda_eig, Rcpp::NumericVector sigma2_grid, Rcpp::NumericVector lengthscale_grid, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q, std::string checkpoint_path, bool compute_skew, Rcpp::Nullable<Rcpp::IntegerVector> skew_idx, Rcpp::Nullable<Rcpp::List> debias);
-RcppExport SEXP _tulpa_cpp_nested_laplace_hsgp(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP phi_basisSEXP, SEXP lambda_eigSEXP, SEXP sigma2_gridSEXP, SEXP lengthscale_gridSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP, SEXP checkpoint_pathSEXP, SEXP compute_skewSEXP, SEXP skew_idxSEXP, SEXP debiasSEXP) {
+Rcpp::List cpp_nested_laplace_hsgp(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::NumericMatrix phi_basis, Rcpp::NumericVector lambda_eig, Rcpp::NumericVector sigma2_grid, Rcpp::NumericVector lengthscale_grid, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q, std::string checkpoint_path, bool compute_skew, Rcpp::Nullable<Rcpp::IntegerVector> skew_idx, Rcpp::Nullable<Rcpp::List> debias, Rcpp::Nullable<Rcpp::List> cila);
+RcppExport SEXP _tulpa_cpp_nested_laplace_hsgp(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP phi_basisSEXP, SEXP lambda_eigSEXP, SEXP sigma2_gridSEXP, SEXP lengthscale_gridSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP, SEXP checkpoint_pathSEXP, SEXP compute_skewSEXP, SEXP skew_idxSEXP, SEXP debiasSEXP, SEXP cilaSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -1319,7 +1338,8 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< bool >::type compute_skew(compute_skewSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::IntegerVector> >::type skew_idx(skew_idxSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type debias(debiasSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_hsgp(y, n, X, re_idx, n_re_groups, sigma_re, phi_basis, lambda_eig, sigma2_grid, lengthscale_grid, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, checkpoint_path, compute_skew, skew_idx, debias));
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type cila(cilaSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_hsgp(y, n, X, re_idx, n_re_groups, sigma_re, phi_basis, lambda_eig, sigma2_grid, lengthscale_grid, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, checkpoint_path, compute_skew, skew_idx, debias, cila));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -1353,8 +1373,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_nested_laplace_temporal
-Rcpp::List cpp_nested_laplace_temporal(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::IntegerVector temporal_idx, int n_times, std::string temporal_type, Rcpp::NumericVector tau_grid, Rcpp::NumericVector rho_grid, bool cyclic, std::string family, double phi, int n_groups, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q, std::string checkpoint_path, bool compute_skew, Rcpp::Nullable<Rcpp::IntegerVector> skew_idx, Rcpp::Nullable<Rcpp::List> debias);
-RcppExport SEXP _tulpa_cpp_nested_laplace_temporal(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP temporal_idxSEXP, SEXP n_timesSEXP, SEXP temporal_typeSEXP, SEXP tau_gridSEXP, SEXP rho_gridSEXP, SEXP cyclicSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP n_groupsSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP, SEXP checkpoint_pathSEXP, SEXP compute_skewSEXP, SEXP skew_idxSEXP, SEXP debiasSEXP) {
+Rcpp::List cpp_nested_laplace_temporal(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::IntegerVector temporal_idx, int n_times, std::string temporal_type, Rcpp::NumericVector tau_grid, Rcpp::NumericVector rho_grid, bool cyclic, std::string family, double phi, int n_groups, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q, std::string checkpoint_path, bool compute_skew, Rcpp::Nullable<Rcpp::IntegerVector> skew_idx, Rcpp::Nullable<Rcpp::List> debias, Rcpp::Nullable<Rcpp::List> cila);
+RcppExport SEXP _tulpa_cpp_nested_laplace_temporal(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP temporal_idxSEXP, SEXP n_timesSEXP, SEXP temporal_typeSEXP, SEXP tau_gridSEXP, SEXP rho_gridSEXP, SEXP cyclicSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP n_groupsSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP, SEXP checkpoint_pathSEXP, SEXP compute_skewSEXP, SEXP skew_idxSEXP, SEXP debiasSEXP, SEXP cilaSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -1382,13 +1402,14 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< bool >::type compute_skew(compute_skewSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::IntegerVector> >::type skew_idx(skew_idxSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type debias(debiasSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_temporal(y, n, X, re_idx, n_re_groups, sigma_re, temporal_idx, n_times, temporal_type, tau_grid, rho_grid, cyclic, family, phi, n_groups, max_iter, tol, n_threads, x_init_nullable, store_Q, checkpoint_path, compute_skew, skew_idx, debias));
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type cila(cilaSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_temporal(y, n, X, re_idx, n_re_groups, sigma_re, temporal_idx, n_times, temporal_type, tau_grid, rho_grid, cyclic, family, phi, n_groups, max_iter, tol, n_threads, x_init_nullable, store_Q, checkpoint_path, compute_skew, skew_idx, debias, cila));
     return rcpp_result_gen;
 END_RCPP
 }
 // cpp_nested_laplace_st_icar
-Rcpp::List cpp_nested_laplace_st_icar(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::IntegerVector spatial_idx, int n_spatial_units, Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx, Rcpp::IntegerVector n_neighbors, Rcpp::IntegerVector temporal_idx, int n_times, Rcpp::NumericVector tau_spatial_grid, std::string temporal_type, Rcpp::NumericVector tau_temporal_grid, Rcpp::Nullable<Rcpp::NumericVector> rho_temporal_grid, bool cyclic, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q, bool force_sparse, std::string checkpoint_path, bool compute_skew, Rcpp::Nullable<Rcpp::IntegerVector> skew_idx, Rcpp::Nullable<Rcpp::List> debias);
-RcppExport SEXP _tulpa_cpp_nested_laplace_st_icar(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP spatial_idxSEXP, SEXP n_spatial_unitsSEXP, SEXP adj_row_ptrSEXP, SEXP adj_col_idxSEXP, SEXP n_neighborsSEXP, SEXP temporal_idxSEXP, SEXP n_timesSEXP, SEXP tau_spatial_gridSEXP, SEXP temporal_typeSEXP, SEXP tau_temporal_gridSEXP, SEXP rho_temporal_gridSEXP, SEXP cyclicSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP, SEXP force_sparseSEXP, SEXP checkpoint_pathSEXP, SEXP compute_skewSEXP, SEXP skew_idxSEXP, SEXP debiasSEXP) {
+Rcpp::List cpp_nested_laplace_st_icar(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::IntegerVector spatial_idx, int n_spatial_units, Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx, Rcpp::IntegerVector n_neighbors, Rcpp::IntegerVector temporal_idx, int n_times, Rcpp::NumericVector tau_spatial_grid, std::string temporal_type, Rcpp::NumericVector tau_temporal_grid, Rcpp::Nullable<Rcpp::NumericVector> rho_temporal_grid, bool cyclic, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q, bool force_sparse, std::string checkpoint_path, bool compute_skew, Rcpp::Nullable<Rcpp::IntegerVector> skew_idx, Rcpp::Nullable<Rcpp::List> debias, Rcpp::Nullable<Rcpp::List> cila);
+RcppExport SEXP _tulpa_cpp_nested_laplace_st_icar(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP spatial_idxSEXP, SEXP n_spatial_unitsSEXP, SEXP adj_row_ptrSEXP, SEXP adj_col_idxSEXP, SEXP n_neighborsSEXP, SEXP temporal_idxSEXP, SEXP n_timesSEXP, SEXP tau_spatial_gridSEXP, SEXP temporal_typeSEXP, SEXP tau_temporal_gridSEXP, SEXP rho_temporal_gridSEXP, SEXP cyclicSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP, SEXP force_sparseSEXP, SEXP checkpoint_pathSEXP, SEXP compute_skewSEXP, SEXP skew_idxSEXP, SEXP debiasSEXP, SEXP cilaSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -1422,13 +1443,14 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< bool >::type compute_skew(compute_skewSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::IntegerVector> >::type skew_idx(skew_idxSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type debias(debiasSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_st_icar(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, temporal_idx, n_times, tau_spatial_grid, temporal_type, tau_temporal_grid, rho_temporal_grid, cyclic, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, force_sparse, checkpoint_path, compute_skew, skew_idx, debias));
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type cila(cilaSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_st_icar(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, temporal_idx, n_times, tau_spatial_grid, temporal_type, tau_temporal_grid, rho_temporal_grid, cyclic, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, force_sparse, checkpoint_path, compute_skew, skew_idx, debias, cila));
     return rcpp_result_gen;
 END_RCPP
 }
 // cpp_nested_laplace_st_car_proper
-Rcpp::List cpp_nested_laplace_st_car_proper(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::IntegerVector spatial_idx, int n_spatial_units, Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx, Rcpp::IntegerVector n_neighbors, Rcpp::IntegerVector temporal_idx, int n_times, Rcpp::NumericVector tau_spatial_grid, Rcpp::NumericVector rho_spatial_grid, std::string temporal_type, Rcpp::NumericVector tau_temporal_grid, Rcpp::Nullable<Rcpp::NumericVector> rho_temporal_grid, bool cyclic, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q, bool force_sparse, std::string checkpoint_path, bool compute_skew, Rcpp::Nullable<Rcpp::IntegerVector> skew_idx, Rcpp::Nullable<Rcpp::List> debias);
-RcppExport SEXP _tulpa_cpp_nested_laplace_st_car_proper(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP spatial_idxSEXP, SEXP n_spatial_unitsSEXP, SEXP adj_row_ptrSEXP, SEXP adj_col_idxSEXP, SEXP n_neighborsSEXP, SEXP temporal_idxSEXP, SEXP n_timesSEXP, SEXP tau_spatial_gridSEXP, SEXP rho_spatial_gridSEXP, SEXP temporal_typeSEXP, SEXP tau_temporal_gridSEXP, SEXP rho_temporal_gridSEXP, SEXP cyclicSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP, SEXP force_sparseSEXP, SEXP checkpoint_pathSEXP, SEXP compute_skewSEXP, SEXP skew_idxSEXP, SEXP debiasSEXP) {
+Rcpp::List cpp_nested_laplace_st_car_proper(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::IntegerVector spatial_idx, int n_spatial_units, Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx, Rcpp::IntegerVector n_neighbors, Rcpp::IntegerVector temporal_idx, int n_times, Rcpp::NumericVector tau_spatial_grid, Rcpp::NumericVector rho_spatial_grid, std::string temporal_type, Rcpp::NumericVector tau_temporal_grid, Rcpp::Nullable<Rcpp::NumericVector> rho_temporal_grid, bool cyclic, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q, bool force_sparse, std::string checkpoint_path, bool compute_skew, Rcpp::Nullable<Rcpp::IntegerVector> skew_idx, Rcpp::Nullable<Rcpp::List> debias, Rcpp::Nullable<Rcpp::List> cila);
+RcppExport SEXP _tulpa_cpp_nested_laplace_st_car_proper(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP spatial_idxSEXP, SEXP n_spatial_unitsSEXP, SEXP adj_row_ptrSEXP, SEXP adj_col_idxSEXP, SEXP n_neighborsSEXP, SEXP temporal_idxSEXP, SEXP n_timesSEXP, SEXP tau_spatial_gridSEXP, SEXP rho_spatial_gridSEXP, SEXP temporal_typeSEXP, SEXP tau_temporal_gridSEXP, SEXP rho_temporal_gridSEXP, SEXP cyclicSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP, SEXP force_sparseSEXP, SEXP checkpoint_pathSEXP, SEXP compute_skewSEXP, SEXP skew_idxSEXP, SEXP debiasSEXP, SEXP cilaSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -1463,13 +1485,14 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< bool >::type compute_skew(compute_skewSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::IntegerVector> >::type skew_idx(skew_idxSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type debias(debiasSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_st_car_proper(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, temporal_idx, n_times, tau_spatial_grid, rho_spatial_grid, temporal_type, tau_temporal_grid, rho_temporal_grid, cyclic, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, force_sparse, checkpoint_path, compute_skew, skew_idx, debias));
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type cila(cilaSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_st_car_proper(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, temporal_idx, n_times, tau_spatial_grid, rho_spatial_grid, temporal_type, tau_temporal_grid, rho_temporal_grid, cyclic, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, force_sparse, checkpoint_path, compute_skew, skew_idx, debias, cila));
     return rcpp_result_gen;
 END_RCPP
 }
 // cpp_nested_laplace_st_bym2
-Rcpp::List cpp_nested_laplace_st_bym2(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::IntegerVector spatial_idx, int n_spatial_units, Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx, Rcpp::IntegerVector n_neighbors, double scale_factor, Rcpp::IntegerVector temporal_idx, int n_times, Rcpp::NumericVector sigma_spatial_grid, Rcpp::NumericVector rho_spatial_grid, std::string temporal_type, Rcpp::NumericVector tau_temporal_grid, Rcpp::Nullable<Rcpp::NumericVector> rho_temporal_grid, bool cyclic, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q, bool force_sparse, std::string checkpoint_path, bool compute_skew, Rcpp::Nullable<Rcpp::IntegerVector> skew_idx, Rcpp::Nullable<Rcpp::List> debias);
-RcppExport SEXP _tulpa_cpp_nested_laplace_st_bym2(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP spatial_idxSEXP, SEXP n_spatial_unitsSEXP, SEXP adj_row_ptrSEXP, SEXP adj_col_idxSEXP, SEXP n_neighborsSEXP, SEXP scale_factorSEXP, SEXP temporal_idxSEXP, SEXP n_timesSEXP, SEXP sigma_spatial_gridSEXP, SEXP rho_spatial_gridSEXP, SEXP temporal_typeSEXP, SEXP tau_temporal_gridSEXP, SEXP rho_temporal_gridSEXP, SEXP cyclicSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP, SEXP force_sparseSEXP, SEXP checkpoint_pathSEXP, SEXP compute_skewSEXP, SEXP skew_idxSEXP, SEXP debiasSEXP) {
+Rcpp::List cpp_nested_laplace_st_bym2(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::IntegerVector spatial_idx, int n_spatial_units, Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx, Rcpp::IntegerVector n_neighbors, double scale_factor, Rcpp::IntegerVector temporal_idx, int n_times, Rcpp::NumericVector sigma_spatial_grid, Rcpp::NumericVector rho_spatial_grid, std::string temporal_type, Rcpp::NumericVector tau_temporal_grid, Rcpp::Nullable<Rcpp::NumericVector> rho_temporal_grid, bool cyclic, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q, bool force_sparse, std::string checkpoint_path, bool compute_skew, Rcpp::Nullable<Rcpp::IntegerVector> skew_idx, Rcpp::Nullable<Rcpp::List> debias, Rcpp::Nullable<Rcpp::List> cila);
+RcppExport SEXP _tulpa_cpp_nested_laplace_st_bym2(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP spatial_idxSEXP, SEXP n_spatial_unitsSEXP, SEXP adj_row_ptrSEXP, SEXP adj_col_idxSEXP, SEXP n_neighborsSEXP, SEXP scale_factorSEXP, SEXP temporal_idxSEXP, SEXP n_timesSEXP, SEXP sigma_spatial_gridSEXP, SEXP rho_spatial_gridSEXP, SEXP temporal_typeSEXP, SEXP tau_temporal_gridSEXP, SEXP rho_temporal_gridSEXP, SEXP cyclicSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP, SEXP force_sparseSEXP, SEXP checkpoint_pathSEXP, SEXP compute_skewSEXP, SEXP skew_idxSEXP, SEXP debiasSEXP, SEXP cilaSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -1505,13 +1528,14 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< bool >::type compute_skew(compute_skewSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::IntegerVector> >::type skew_idx(skew_idxSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type debias(debiasSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_st_bym2(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, scale_factor, temporal_idx, n_times, sigma_spatial_grid, rho_spatial_grid, temporal_type, tau_temporal_grid, rho_temporal_grid, cyclic, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, force_sparse, checkpoint_path, compute_skew, skew_idx, debias));
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type cila(cilaSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_st_bym2(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial_units, adj_row_ptr, adj_col_idx, n_neighbors, scale_factor, temporal_idx, n_times, sigma_spatial_grid, rho_spatial_grid, temporal_type, tau_temporal_grid, rho_temporal_grid, cyclic, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, force_sparse, checkpoint_path, compute_skew, skew_idx, debias, cila));
     return rcpp_result_gen;
 END_RCPP
 }
 // cpp_nested_laplace_st_hsgp
-Rcpp::List cpp_nested_laplace_st_hsgp(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::NumericMatrix phi_basis, Rcpp::NumericVector lambda_eig, Rcpp::IntegerVector temporal_idx, int n_times, Rcpp::NumericVector sigma2_spatial_grid, Rcpp::NumericVector lengthscale_spatial_grid, std::string temporal_type, Rcpp::NumericVector tau_temporal_grid, Rcpp::Nullable<Rcpp::NumericVector> rho_temporal_grid, bool cyclic, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q, bool force_sparse, std::string checkpoint_path, bool compute_skew, Rcpp::Nullable<Rcpp::IntegerVector> skew_idx, Rcpp::Nullable<Rcpp::List> debias);
-RcppExport SEXP _tulpa_cpp_nested_laplace_st_hsgp(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP phi_basisSEXP, SEXP lambda_eigSEXP, SEXP temporal_idxSEXP, SEXP n_timesSEXP, SEXP sigma2_spatial_gridSEXP, SEXP lengthscale_spatial_gridSEXP, SEXP temporal_typeSEXP, SEXP tau_temporal_gridSEXP, SEXP rho_temporal_gridSEXP, SEXP cyclicSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP, SEXP force_sparseSEXP, SEXP checkpoint_pathSEXP, SEXP compute_skewSEXP, SEXP skew_idxSEXP, SEXP debiasSEXP) {
+Rcpp::List cpp_nested_laplace_st_hsgp(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::NumericMatrix phi_basis, Rcpp::NumericVector lambda_eig, Rcpp::IntegerVector temporal_idx, int n_times, Rcpp::NumericVector sigma2_spatial_grid, Rcpp::NumericVector lengthscale_spatial_grid, std::string temporal_type, Rcpp::NumericVector tau_temporal_grid, Rcpp::Nullable<Rcpp::NumericVector> rho_temporal_grid, bool cyclic, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q, bool force_sparse, std::string checkpoint_path, bool compute_skew, Rcpp::Nullable<Rcpp::IntegerVector> skew_idx, Rcpp::Nullable<Rcpp::List> debias, Rcpp::Nullable<Rcpp::List> cila);
+RcppExport SEXP _tulpa_cpp_nested_laplace_st_hsgp(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP phi_basisSEXP, SEXP lambda_eigSEXP, SEXP temporal_idxSEXP, SEXP n_timesSEXP, SEXP sigma2_spatial_gridSEXP, SEXP lengthscale_spatial_gridSEXP, SEXP temporal_typeSEXP, SEXP tau_temporal_gridSEXP, SEXP rho_temporal_gridSEXP, SEXP cyclicSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP, SEXP force_sparseSEXP, SEXP checkpoint_pathSEXP, SEXP compute_skewSEXP, SEXP skew_idxSEXP, SEXP debiasSEXP, SEXP cilaSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -1543,13 +1567,14 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< bool >::type compute_skew(compute_skewSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::IntegerVector> >::type skew_idx(skew_idxSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type debias(debiasSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_st_hsgp(y, n, X, re_idx, n_re_groups, sigma_re, phi_basis, lambda_eig, temporal_idx, n_times, sigma2_spatial_grid, lengthscale_spatial_grid, temporal_type, tau_temporal_grid, rho_temporal_grid, cyclic, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, force_sparse, checkpoint_path, compute_skew, skew_idx, debias));
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type cila(cilaSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_st_hsgp(y, n, X, re_idx, n_re_groups, sigma_re, phi_basis, lambda_eig, temporal_idx, n_times, sigma2_spatial_grid, lengthscale_spatial_grid, temporal_type, tau_temporal_grid, rho_temporal_grid, cyclic, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, force_sparse, checkpoint_path, compute_skew, skew_idx, debias, cila));
     return rcpp_result_gen;
 END_RCPP
 }
 // cpp_nested_laplace_st_nngp
-Rcpp::List cpp_nested_laplace_st_nngp(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::IntegerVector spatial_idx, int n_spatial, Rcpp::NumericMatrix coords, Rcpp::IntegerMatrix nn_idx, Rcpp::NumericMatrix nn_dist, Rcpp::IntegerVector nn_order, int nn, int cov_type, Rcpp::IntegerVector temporal_idx, int n_times, Rcpp::NumericVector sigma2_spatial_grid, Rcpp::NumericVector phi_gp_spatial_grid, std::string temporal_type, Rcpp::NumericVector tau_temporal_grid, Rcpp::Nullable<Rcpp::NumericVector> rho_temporal_grid, bool cyclic, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q, bool force_sparse, std::string checkpoint_path, bool compute_skew, Rcpp::Nullable<Rcpp::IntegerVector> skew_idx, Rcpp::Nullable<Rcpp::List> debias);
-RcppExport SEXP _tulpa_cpp_nested_laplace_st_nngp(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP spatial_idxSEXP, SEXP n_spatialSEXP, SEXP coordsSEXP, SEXP nn_idxSEXP, SEXP nn_distSEXP, SEXP nn_orderSEXP, SEXP nnSEXP, SEXP cov_typeSEXP, SEXP temporal_idxSEXP, SEXP n_timesSEXP, SEXP sigma2_spatial_gridSEXP, SEXP phi_gp_spatial_gridSEXP, SEXP temporal_typeSEXP, SEXP tau_temporal_gridSEXP, SEXP rho_temporal_gridSEXP, SEXP cyclicSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP, SEXP force_sparseSEXP, SEXP checkpoint_pathSEXP, SEXP compute_skewSEXP, SEXP skew_idxSEXP, SEXP debiasSEXP) {
+Rcpp::List cpp_nested_laplace_st_nngp(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::IntegerVector spatial_idx, int n_spatial, Rcpp::NumericMatrix coords, Rcpp::IntegerMatrix nn_idx, Rcpp::NumericMatrix nn_dist, Rcpp::IntegerVector nn_order, int nn, int cov_type, Rcpp::IntegerVector temporal_idx, int n_times, Rcpp::NumericVector sigma2_spatial_grid, Rcpp::NumericVector phi_gp_spatial_grid, std::string temporal_type, Rcpp::NumericVector tau_temporal_grid, Rcpp::Nullable<Rcpp::NumericVector> rho_temporal_grid, bool cyclic, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q, bool force_sparse, std::string checkpoint_path, bool compute_skew, Rcpp::Nullable<Rcpp::IntegerVector> skew_idx, Rcpp::Nullable<Rcpp::List> debias, Rcpp::Nullable<Rcpp::List> cila);
+RcppExport SEXP _tulpa_cpp_nested_laplace_st_nngp(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP spatial_idxSEXP, SEXP n_spatialSEXP, SEXP coordsSEXP, SEXP nn_idxSEXP, SEXP nn_distSEXP, SEXP nn_orderSEXP, SEXP nnSEXP, SEXP cov_typeSEXP, SEXP temporal_idxSEXP, SEXP n_timesSEXP, SEXP sigma2_spatial_gridSEXP, SEXP phi_gp_spatial_gridSEXP, SEXP temporal_typeSEXP, SEXP tau_temporal_gridSEXP, SEXP rho_temporal_gridSEXP, SEXP cyclicSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP, SEXP force_sparseSEXP, SEXP checkpoint_pathSEXP, SEXP compute_skewSEXP, SEXP skew_idxSEXP, SEXP debiasSEXP, SEXP cilaSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -1587,7 +1612,8 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< bool >::type compute_skew(compute_skewSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::IntegerVector> >::type skew_idx(skew_idxSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type debias(debiasSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_st_nngp(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial, coords, nn_idx, nn_dist, nn_order, nn, cov_type, temporal_idx, n_times, sigma2_spatial_grid, phi_gp_spatial_grid, temporal_type, tau_temporal_grid, rho_temporal_grid, cyclic, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, force_sparse, checkpoint_path, compute_skew, skew_idx, debias));
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type cila(cilaSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_st_nngp(y, n, X, re_idx, n_re_groups, sigma_re, spatial_idx, n_spatial, coords, nn_idx, nn_dist, nn_order, nn, cov_type, temporal_idx, n_times, sigma2_spatial_grid, phi_gp_spatial_grid, temporal_type, tau_temporal_grid, rho_temporal_grid, cyclic, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, force_sparse, checkpoint_path, compute_skew, skew_idx, debias, cila));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -1692,8 +1718,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_nested_laplace_multi
-Rcpp::List cpp_nested_laplace_multi(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::List blocks_spec, Rcpp::NumericMatrix theta_grid, Rcpp::IntegerVector axis_offsets, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q, double prune_tol, SEXP likelihood, bool progress, int progress_every, double progress_throttle, std::string progress_file, std::string checkpoint_path, bool compute_skew, Rcpp::Nullable<Rcpp::IntegerVector> skew_idx, Rcpp::Nullable<Rcpp::List> debias);
-RcppExport SEXP _tulpa_cpp_nested_laplace_multi(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP blocks_specSEXP, SEXP theta_gridSEXP, SEXP axis_offsetsSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP, SEXP prune_tolSEXP, SEXP likelihoodSEXP, SEXP progressSEXP, SEXP progress_everySEXP, SEXP progress_throttleSEXP, SEXP progress_fileSEXP, SEXP checkpoint_pathSEXP, SEXP compute_skewSEXP, SEXP skew_idxSEXP, SEXP debiasSEXP) {
+Rcpp::List cpp_nested_laplace_multi(Rcpp::NumericVector y, Rcpp::IntegerVector n, Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re, Rcpp::List blocks_spec, Rcpp::NumericMatrix theta_grid, Rcpp::IntegerVector axis_offsets, std::string family, double phi, int max_iter, double tol, int n_threads, Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable, bool store_Q, double prune_tol, SEXP likelihood, bool progress, int progress_every, double progress_throttle, std::string progress_file, std::string checkpoint_path, bool compute_skew, Rcpp::Nullable<Rcpp::IntegerVector> skew_idx, Rcpp::Nullable<Rcpp::List> debias, Rcpp::Nullable<Rcpp::List> cila);
+RcppExport SEXP _tulpa_cpp_nested_laplace_multi(SEXP ySEXP, SEXP nSEXP, SEXP XSEXP, SEXP re_idxSEXP, SEXP n_re_groupsSEXP, SEXP sigma_reSEXP, SEXP blocks_specSEXP, SEXP theta_gridSEXP, SEXP axis_offsetsSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP max_iterSEXP, SEXP tolSEXP, SEXP n_threadsSEXP, SEXP x_init_nullableSEXP, SEXP store_QSEXP, SEXP prune_tolSEXP, SEXP likelihoodSEXP, SEXP progressSEXP, SEXP progress_everySEXP, SEXP progress_throttleSEXP, SEXP progress_fileSEXP, SEXP checkpoint_pathSEXP, SEXP compute_skewSEXP, SEXP skew_idxSEXP, SEXP debiasSEXP, SEXP cilaSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -1723,7 +1749,8 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< bool >::type compute_skew(compute_skewSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::IntegerVector> >::type skew_idx(skew_idxSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type debias(debiasSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_multi(y, n, X, re_idx, n_re_groups, sigma_re, blocks_spec, theta_grid, axis_offsets, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, prune_tol, likelihood, progress, progress_every, progress_throttle, progress_file, checkpoint_path, compute_skew, skew_idx, debias));
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type cila(cilaSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_nested_laplace_multi(y, n, X, re_idx, n_re_groups, sigma_re, blocks_spec, theta_grid, axis_offsets, family, phi, max_iter, tol, n_threads, x_init_nullable, store_Q, prune_tol, likelihood, progress, progress_every, progress_throttle, progress_file, checkpoint_path, compute_skew, skew_idx, debias, cila));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -4132,7 +4159,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_cell_coupling_curvature3", (DL_FUNC) &_tulpa_cpp_cell_coupling_curvature3, 8},
     {"_tulpa_cpp_cell_coupling_registry_has", (DL_FUNC) &_tulpa_cpp_cell_coupling_registry_has, 1},
     {"_tulpa_cpp_cell_coupling_registry_size", (DL_FUNC) &_tulpa_cpp_cell_coupling_registry_size, 0},
-    {"_tulpa_cpp_cornish_fisher_quantile", (DL_FUNC) &_tulpa_cpp_cornish_fisher_quantile, 6},
+    {"_tulpa_cpp_cornish_fisher_quantile", (DL_FUNC) &_tulpa_cpp_cornish_fisher_quantile, 7},
+    {"_tulpa_cpp_cornish_fisher_bands", (DL_FUNC) &_tulpa_cpp_cornish_fisher_bands, 4},
     {"_tulpa_cpp_test_compute_cov", (DL_FUNC) &_tulpa_cpp_test_compute_cov, 4},
     {"_tulpa_cpp_test_dcov_dphi", (DL_FUNC) &_tulpa_cpp_test_dcov_dphi, 4},
     {"_tulpa_cpp_sample_crt", (DL_FUNC) &_tulpa_cpp_sample_crt, 2},
@@ -4195,24 +4223,24 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_test_nngp_moments", (DL_FUNC) &_tulpa_cpp_test_nngp_moments, 7},
     {"_tulpa_cpp_mclmc_test", (DL_FUNC) &_tulpa_cpp_mclmc_test, 7},
     {"_tulpa_cpp_multinomial_logit_terms", (DL_FUNC) &_tulpa_cpp_multinomial_logit_terms, 2},
-    {"_tulpa_cpp_nested_laplace_icar", (DL_FUNC) &_tulpa_cpp_nested_laplace_icar, 23},
-    {"_tulpa_cpp_nested_laplace_bym2", (DL_FUNC) &_tulpa_cpp_nested_laplace_bym2, 25},
-    {"_tulpa_cpp_nested_laplace_car_proper", (DL_FUNC) &_tulpa_cpp_nested_laplace_car_proper, 24},
+    {"_tulpa_cpp_nested_laplace_icar", (DL_FUNC) &_tulpa_cpp_nested_laplace_icar, 24},
+    {"_tulpa_cpp_nested_laplace_bym2", (DL_FUNC) &_tulpa_cpp_nested_laplace_bym2, 26},
+    {"_tulpa_cpp_nested_laplace_car_proper", (DL_FUNC) &_tulpa_cpp_nested_laplace_car_proper, 25},
     {"_tulpa_cpp_laplace_fit_car_proper", (DL_FUNC) &_tulpa_cpp_laplace_fit_car_proper, 22},
-    {"_tulpa_cpp_nested_laplace_nngp", (DL_FUNC) &_tulpa_cpp_nested_laplace_nngp, 28},
-    {"_tulpa_cpp_nested_laplace_hsgp", (DL_FUNC) &_tulpa_cpp_nested_laplace_hsgp, 21},
+    {"_tulpa_cpp_nested_laplace_nngp", (DL_FUNC) &_tulpa_cpp_nested_laplace_nngp, 29},
+    {"_tulpa_cpp_nested_laplace_hsgp", (DL_FUNC) &_tulpa_cpp_nested_laplace_hsgp, 22},
     {"_tulpa_cpp_laplace_fit_hsgp", (DL_FUNC) &_tulpa_cpp_laplace_fit_hsgp, 19},
-    {"_tulpa_cpp_nested_laplace_temporal", (DL_FUNC) &_tulpa_cpp_nested_laplace_temporal, 24},
-    {"_tulpa_cpp_nested_laplace_st_icar", (DL_FUNC) &_tulpa_cpp_nested_laplace_st_icar, 30},
-    {"_tulpa_cpp_nested_laplace_st_car_proper", (DL_FUNC) &_tulpa_cpp_nested_laplace_st_car_proper, 31},
-    {"_tulpa_cpp_nested_laplace_st_bym2", (DL_FUNC) &_tulpa_cpp_nested_laplace_st_bym2, 32},
-    {"_tulpa_cpp_nested_laplace_st_hsgp", (DL_FUNC) &_tulpa_cpp_nested_laplace_st_hsgp, 28},
-    {"_tulpa_cpp_nested_laplace_st_nngp", (DL_FUNC) &_tulpa_cpp_nested_laplace_st_nngp, 34},
+    {"_tulpa_cpp_nested_laplace_temporal", (DL_FUNC) &_tulpa_cpp_nested_laplace_temporal, 25},
+    {"_tulpa_cpp_nested_laplace_st_icar", (DL_FUNC) &_tulpa_cpp_nested_laplace_st_icar, 31},
+    {"_tulpa_cpp_nested_laplace_st_car_proper", (DL_FUNC) &_tulpa_cpp_nested_laplace_st_car_proper, 32},
+    {"_tulpa_cpp_nested_laplace_st_bym2", (DL_FUNC) &_tulpa_cpp_nested_laplace_st_bym2, 33},
+    {"_tulpa_cpp_nested_laplace_st_hsgp", (DL_FUNC) &_tulpa_cpp_nested_laplace_st_hsgp, 29},
+    {"_tulpa_cpp_nested_laplace_st_nngp", (DL_FUNC) &_tulpa_cpp_nested_laplace_st_nngp, 35},
     {"_tulpa_cpp_nested_laplace_joint_multi", (DL_FUNC) &_tulpa_cpp_nested_laplace_joint_multi, 33},
     {"_tulpa_cpp_nested_laplace_joint_multi_batch", (DL_FUNC) &_tulpa_cpp_nested_laplace_joint_multi_batch, 13},
     {"_tulpa_cpp_test_joint_pattern", (DL_FUNC) &_tulpa_cpp_test_joint_pattern, 6},
     {"_tulpa_cpp_test_joint_logpost_grad", (DL_FUNC) &_tulpa_cpp_test_joint_logpost_grad, 8},
-    {"_tulpa_cpp_nested_laplace_multi", (DL_FUNC) &_tulpa_cpp_nested_laplace_multi, 26},
+    {"_tulpa_cpp_nested_laplace_multi", (DL_FUNC) &_tulpa_cpp_nested_laplace_multi, 27},
     {"_tulpa_cpp_nested_laplace_test_occupancy_likelihood", (DL_FUNC) &_tulpa_cpp_nested_laplace_test_occupancy_likelihood, 2},
     {"_tulpa_cpp_test_nl_field_seed", (DL_FUNC) &_tulpa_cpp_test_nl_field_seed, 21},
     {"_tulpa_cpp_test_gp_nngp_twins", (DL_FUNC) &_tulpa_cpp_test_gp_nngp_twins, 10},
