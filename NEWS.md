@@ -1,5 +1,37 @@
 # tulpa NEWS
 
+## 0.0.165
+
+* The inner-Laplace skew correction's CENTRE is banded, not only its shape
+  (gcol33/tulpa#362). The reported quantile is
+  `mu_i + sigma_i {gamma_1 + gamma_3 / 2 + w(z_p; gamma_3)}`, so the correction
+  RELOCATES the marginal by that centre and `cornish_fisher_eligible()` bounded
+  only the reshaping: `|gamma_3|` was banded and the centre was accepted at any
+  size as long as it was finite. Since gcol33/tulpa#354 gave the centre a
+  location term the admitted displacement reached about one standard error on
+  the engine's own fixtures with nothing noticing. One predicate now owns the
+  whole band decision (`cornish_fisher_in_band()`), a coefficient past
+  `centre_unreliable` reports the Gaussian quantiles and records
+  `centre_unreliable`, and the eligibility record `summary()` / `confint()`
+  consume is READ from that same predicate rather than re-derived beside it.
+* The cutoff is measured. 3800 prior-predictive fits across four fixtures with
+  an exact reference, each candidate scored as the PAIRED CRPS difference
+  between the banded and the unbanded correction on the same fits, so the number
+  is what the band costs: +0.0280 at 0.95, +0.0145 at 1.00, +0.0020 at 1.10,
+  +0.0007 at 1.15 and 0 at 1.20, where the largest centre the shape band admits
+  anywhere (1.192) still fits. Binned by centre magnitude the correction
+  recovers 71% to 92% of the distance from the Laplace centre to the exact
+  marginal mean and gains MOST in the largest bins, so every tighter band gives
+  up the coefficients it helps most on. Two fixtures were built for the sweep --
+  rare-event binomial-logit designs carrying a slope, which is what makes
+  `var(eta_j | x_i)` and so `gamma_1` nonzero -- because the existing fixtures
+  cannot reach a large centre (`dev_notes/issue362/RESULTS.md`).
+* `control$skew_correct` still defaults to `FALSE`. Under the banded gate the
+  gcol33/tulpa#354 flip is unchanged: the centre band declines nothing on either
+  fixture the default-on decision rests on (paired CRPS t -1.895 on the
+  rare-event intercept, -3.77 / -3.20 on the small-group RE fit, against
+  gcol33/tulpa#302's +3.54 / +6.12 / +4.64).
+
 ## 0.0.164
 
 * A default outer axis that does not contain its own posterior mode is detected
@@ -129,6 +161,29 @@
   the resolver's own body by a source lint.
 
 ## 0.0.162
+
+* A node set that is an MCMC SAMPLE is named as one, and no longer borrows a
+  cell partition's outer half-cell (gcol33/tulpa#358). `support = "density"`
+  covered two geometries: a tensor grid, whose values are cell representatives
+  of a partition with known spacing and whose extreme cell's mass reaches half a
+  spacing past its coordinate, and `tulpa_re_cov_gibbs()`'s equal-weight
+  posterior draws, whose values are order statistics with an unknown tail beyond
+  the largest of them. gcol33/tulpa#353's `outside = "extend"` is derived for the
+  first and only harmless on the second, and a caller reading the tag could not
+  tell which it had. The kinds are now one table, `.NL_SUPPORT`, naming each
+  one's outer-edge policy exactly once -- `density` and `mixed` extend,
+  `sample` clamps, and `moment_rule` carries none because it never reaches the
+  quantile read -- with `.NL_SUPPORT_KINDS` the single vocabulary every formal
+  reads, so adding a kind is one entry rather than four hand-written lists. The
+  producer names itself: `.nl_node_support()` maps `integration = "sample"` to
+  the new kind, the Gibbs fit carries that tag, and `tulpa_re_cov_nested()`'s
+  hand-written copy of the same producer-to-kind decision now calls the shared
+  reader. Nothing reported moves -- the policies differ only outside
+  `[1 / (2 n), 1 - 1 / (2 n)]` and the backends report 0.025 / 0.5 / 0.975 --
+  which `tests/testthat/test-support-sample.R` shows rather than asserts, on the
+  dispatcher, on the whole derived-`Sigma` summary table, and on a real Gibbs fit
+  whose reported posterior is identical to the pre-change read recomputed on its
+  own draws. A misspelled kind hard-errors instead of being translated.
 
 * The `tulpa.kdiag.capture` aperture publishes the importance log-ratios the
   REPORTED outer Pareto-k-hat was fitted on (gcol33/tulpa#356). It was written
@@ -426,16 +481,6 @@
   remedy for the accidental blow-up and names the override for the deliberate
   run; the `>50` cell warning is unchanged.
 
-* The posterior-SBC driver splits the truth-draw and replicate RNG streams
-  itself (gcol33/tulpa#350). `recov_posterior_sbc()` derives two seeds and hands
-  `draw_theta` one and `simulate` the other, so the obvious `set.seed(seed)` at
-  the top of each callback is the CORRECT fixture and none of them carries an
-  offset any more. Under the previous contract both callbacks got the same seed,
-  and a fixture writing the obvious thing drew the replicate's group effects and
-  residuals from the very uniforms that produced `theta'` -- not `p(y | theta')`,
-  and a non-uniform PIT with nothing wrong in the inference under test. The
-  driver applies the `660000L` offset every fixture used to apply itself, so the
-  seeds a fixture sees did not move.
 * Posterior SBC joins the prior-predictive harness: calibration checked
   CONDITIONAL on an observed data set rather than averaged over the prior
   (gcol33/tulpa#339, after Sailynoja, Schmitt, Buerkner & Vehtari, *Statistics
