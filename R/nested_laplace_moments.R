@@ -136,8 +136,55 @@
   vapply(probs, function(q) {
     if (q <= p[1L]) return(if (na_outside) NA_real_ else v[1L])
     if (q >= p[n])  return(if (na_outside) NA_real_ else v[n])
-    suppressWarnings(approx(p, v, xout = q, method = "linear")$y)
+    y <- suppressWarnings(approx(p, v, xout = q, method = "linear")$y)
+    if (is.finite(y)) return(y)
+    .nl_interp_repair(p, v, q, y)
   }, numeric(1L))
+}
+
+# The interior read's overflow guard (gcol33/tulpa#381).
+#
+# `stats::approx`'s linear interpolant is `y0 + (y1 - y0) * t`, which forms the
+# DIFFERENCE before scaling it. Two adjacent knots more than the double range
+# apart take that difference to `Inf`, and the reported bound comes back `Inf`
+# at a probability sitting strictly between two FINITE coordinates -- on the
+# issue's node set, a 50% bound of `Inf` between `-9.37e307` and `9.46e307`.
+# The convex form `(1 - t) y0 + t y1` cannot overflow there: at `t` in [0, 1]
+# each product is bounded by its own knot and the sum lies in `[y0, y1]`.
+#
+# THE CONVEX FORM IS NOT SUBSTITUTED WHOLESALE. The two are not the same double
+# -- the first rounds twice -- and measured over 840000 randomized quantile
+# reads (40000 node sets x five declarations x three outside policies x seven
+# probabilities, `dev_notes/issue381/measure381.out`) 21.49% of them move, by up
+# to 4.07e-10 relatively where the difference cancels. Three fixes on this exact
+# path (gcol33/tulpa#377, gcol33/tulpa#378, gcol33/tulpa#379) are pinned on
+# `identical()` against the read this function returns, so the convex form is
+# reached ONLY where the straight one already failed to return a double. Every
+# read that returned one keeps the one it returned, byte for byte.
+#
+# Overflow of the difference is the ONLY way the straight form leaves the double
+# range between finite knots, so a bracket whose knots are not both finite is a
+# different defect -- gcol33/tulpa#379's, an unrepresentable mirrored cell edge,
+# already fixed at its source -- and is reported unchanged rather than repaired
+# here.
+.nl_interp_repair <- function(p, v, q, y) {
+  # `approx` collapses tied `x` to the mean of their `y` before interpolating,
+  # so the bracket has to be located on the grid it actually used. `p` is
+  # non-decreasing by construction, so the tie groups are adjacent runs.
+  if (anyDuplicated(p)) {
+    is_first <- c(TRUE, p[-1L] != p[-length(p)])
+    grp <- cumsum(is_first)
+    v <- as.numeric(tapply(v, grp, mean))
+    p <- p[is_first]
+  }
+  if (length(p) < 2L) return(y)
+  i  <- findInterval(q, p, all.inside = TRUE)
+  y0 <- v[i]; y1 <- v[i + 1L]
+  if (!is.finite(y0) || !is.finite(y1)) return(y)
+  dp <- p[i + 1L] - p[i]
+  if (!is.finite(dp) || dp <= 0) return(y)
+  t <- (q - p[i]) / dp
+  (1 - t) * y0 + t * y1
 }
 
 # The sorted, de-duplicated, weight-normalized atoms of one axis's node set --

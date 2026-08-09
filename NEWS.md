@@ -1,5 +1,30 @@
 # tulpa NEWS
 
+## 0.0.179
+
+* The chord read's own interior interpolation no longer reports `Inf` as a
+  bound (gcol33/tulpa#381). `.nl_wtd_quantile()` delegates the interior to
+  `stats::approx`, whose linear form `y0 + (y1 - y0) * t` builds the DIFFERENCE
+  before scaling it, so two adjacent knots more than the double range apart take
+  it out of that range and the reported bound comes back non-finite at a
+  probability sitting strictly between two FINITE coordinates. This is the
+  interior read, not a cell edge: it reproduces with the partition finite and
+  its mirror standing, and on the `sample` support that forms no edge at all,
+  which is what separates it from gcol33/tulpa#377, gcol33/tulpa#378 and
+  gcol33/tulpa#379.
+
+  The convex form `(1 - t) y0 + t y1` cannot overflow there, but it is NOT
+  substituted wholesale: the two are not the same double, and over 840000
+  randomized reads 21.49% of them move between the forms, by up to 4.07e-10
+  relatively where the difference cancels. Three fixes on this path are pinned
+  on `identical()` against what `approx` returns. So `.nl_interp_repair()` is
+  reached only where the straight read already failed to return a double, and a
+  bracket whose knots are not both finite declines rather than inventing a
+  number. Measured over 1620000 reads (60000 node sets straddling the double
+  range in both signs x five declarations x three outside policies): non-finite
+  bounds 9504 -> 0, finite pre-fix reads that moved 0, repaired bounds outside
+  their own bracket 0, mis-ordered reads 0.
+
 ## 0.0.178
 
 * An undeclared axis's mirrored cell edge is guarded the way a declared one's

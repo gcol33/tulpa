@@ -136,3 +136,67 @@ test_that("every CDF support dispatches to the extension, the moment rule does n
   expect_true(all(is.na(
     .nl_summary_quantile(v, w, c(0.01, 0.99), NA_character_, "moment_rule"))))
 })
+
+# ---------------------------------------------------------------------------
+# The interior read's own overflow (gcol33/tulpa#381). Distinct from the three
+# cell-edge fixes above it: no edge is involved, the partition is finite and its
+# mirror stands, and it reproduces on the `sample` support that forms no edge at
+# all.
+# ---------------------------------------------------------------------------
+
+# Two adjacent coordinates of opposite sign, each within a factor of two of
+# `double.xmax`, so `y1 - y0` leaves the double range while both knots are in it.
+.nl381_nodes <- function()
+  c(-9.494687e307, -9.365684e307, 9.464240e307, 1.229003e308, 1.380825e308)
+
+test_that("a knot pair a double range apart does not report Inf as a bound", {
+  v <- .nl381_nodes()
+  w <- rep(1 / 5, 5)
+  pr <- c(0.25, 0.4, 0.5, 0.6, 0.75)
+
+  # The partition is not what produces this: its edges are finite and its mirror
+  # stood, so gcol33/tulpa#379's fallback never fired.
+  pt <- .nl_cell_partition(v, "unbounded")
+  expect_true(all(is.finite(pt$edges)))
+  expect_true(is.na(pt$declined))
+
+  q <- .nl_summary_quantile(v, w, pr, "unbounded", "density")
+  expect_true(all(is.finite(q)))
+  expect_false(is.unsorted(q))
+  # Every bound stays inside the partition it was read off.
+  expect_true(all(q >= pt$edges[1] & q <= pt$edges[2]))
+  # The median lands in the bracket that overflowed, between v[2] and v[3].
+  expect_gte(q[3], v[2])
+  expect_lte(q[3], v[3])
+
+  # The `sample` support CLAMPS and forms no edge, so it is the arm none of the
+  # three edge fixes touch -- and it reported the same `Inf`.
+  qs <- .nl_summary_quantile(v, w, c(0.4, 0.5), "unbounded", "sample")
+  expect_true(all(is.finite(qs)))
+  expect_true(all(qs >= v[1] & qs <= v[5]))
+})
+
+test_that("the repair is reached only where the straight read failed", {
+  # `stats::approx`'s `y0 + (y1 - y0) * t` and the convex `(1 - t) y0 + t y1` are
+  # NOT the same double -- 21.49% of 840000 randomized reads move between them
+  # (dev_notes/issue381/measure381.out) -- so the convex form is a fallback, not
+  # a replacement. On an ordinary node set the read is byte-identical to
+  # `approx`, which is what the pins in gcol33/tulpa#377, gcol33/tulpa#378 and
+  # gcol33/tulpa#379 assert.
+  set.seed(381L)
+  v <- sort(exp(rnorm(9, 0, 0.5)))
+  w <- runif(9)
+  p <- cumsum(w / sum(w)) - (w / sum(w)) / 2
+  pr <- seq(p[1], p[9], length.out = 61L)
+  expect_identical(
+    .nl_wtd_quantile(v, w, pr, outside = "clamp"),
+    vapply(pr, function(q) {
+      if (q <= p[1]) return(v[1])
+      if (q >= p[9]) return(v[9])
+      suppressWarnings(approx(p, v, xout = q, method = "linear")$y)
+    }, numeric(1L)))
+
+  # And the repair itself declines rather than inventing a number when the
+  # bracket it would interpolate over is not finite.
+  expect_identical(.nl_interp_repair(c(0, 0.5, 1), c(0, Inf, 1), 0.25, NaN), NaN)
+})
