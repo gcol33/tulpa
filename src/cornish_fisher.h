@@ -13,7 +13,40 @@
 //   w(z_p; g) = z_p + (g / 6) (z_p^2 - 1) + O(g^2)
 //
 // (Cornish & Fisher 1938; Johnson, Kotz & Balakrishnan 1994 Ch. 12), so the
-// corrected marginal quantile is mu_i + sigma_i w(z_p; gamma_3(i)).
+// corrected marginal quantile is mu_i + sigma_i {m_i + w(z_p; gamma_3(i))}.
+//
+// THE CENTRE m_i (gcol33/tulpa#354). w is the quantile function of a variable
+// with MEAN ZERO, unit variance and skewness g. The expansion it inverts is RMC
+// eq. (22),
+//
+//   log pi_SLA(z) = const - z^2 / 2 + gamma_1 z + (gamma_3 / 6) z^3,
+//
+// whose mean is NOT zero: expanding pi_SLA = phi(z){1 + gamma_1 z +
+// (gamma_3 / 6) z^3 + ...} and integrating gives E[z] = gamma_1 + gamma_3 / 2,
+// var 1 and skewness gamma_3 to the order kept. So the centre carries TWO terms,
+// and only one of them is the paper's location term:
+//
+//   m_i = gamma_1(i) + gamma_3(i) / 2.
+//
+// The second is induced by the cubic term itself. Dropping it -- which placing
+// w's mean-zero variable at mu_i does -- asserts E[z] = 0, i.e. gamma_1 =
+// -gamma_3 / 2, which is a claim about the location term rather than an absence
+// of one. That was the measured defect in gcol33/tulpa#346: on its intercept-only
+// fixture gamma_1 is identically 0 (every eta reads the one latent coordinate, so
+// var(eta_j | x_i) = 0), the whole missing centre is gamma_3 / 2, and the
+// reshaping applied about mu_i was a net loss on the whole marginal while a plain
+// relocation was a gain.
+//
+// RMC instead fit a skew normal constrained to mean gamma^(1), which sets aside
+// the gamma^(3) / 2 contribution their own eq. (22) carries ("gamma^(3)
+// contributes only to the skewness whereas the adjustment in the mean comes from
+// gamma^(1)"). This engine does not fit their skew normal (see below), and the
+// centre used here is the one eq. (22) implies, measured against exact
+// quadrature rather than adopted: over 12 coefficients of 2-coefficient
+// binomial-logit fixtures the total standardized distance from the reported
+// centre to the exact marginal mean is 3.6171 at mu_i, 1.0219 with gamma_3 / 2
+// alone, 2.5799 with gamma_1 alone and 0.1410 with both
+// (test-inner-skew.R section 10).
 //
 // WHY A SERIES AND NOT A FITTED FAMILY. Rue, Martino & Chopin (2009) Sec 3.2.3
 // fit a skew normal to their eq. (22) under three constraints -- mean
@@ -29,12 +62,18 @@
 // gracefully instead, and it is the expansion of the same order gamma_3 itself
 // is a leading term of.
 //
-// WHAT IS CORRECTED AND WHAT IS NOT. Only the skewness. The centre mu_i is
-// left where the Laplace put it, matching the RMC parameterization with the
-// absent location term at its absent value (their gamma^(1) = 0 gives a
-// standardized correction of mean zero). At a symmetric level the two
-// endpoints move by the same amount, so this reshapes WHERE the interval sits
-// rather than how wide it is.
+// WHAT IS CORRECTED AND WHAT IS NOT. The centre and the skewness, to leading
+// order; the scale is left at sigma_i, which is what eq. (22) gives it. At a
+// symmetric level the reshaping term takes the same value at both ends
+// (z_p^2 = z_{1-p}^2), so the SHAPE part of the correction relocates the
+// interval without changing its width and only the centre and the asymmetric
+// levels distinguish it from a shift.
+//
+// gamma_1 IS REQUIRED, NOT OPTIONAL. A coordinate whose location term did not
+// compute (a widened unit, a field past the eta-variance budget) declines the
+// whole correction and reports the Gaussian quantiles. Reading an absent
+// gamma_1 as 0 would be the silently-wrong zero the inner diagnostics exist to
+// avoid, and on a fit where the location term is large it is the dominant error.
 //
 // MONOTONICITY. w is a quantile function only where it increases in z:
 // dw/dz = 1 + (g / 3) z, so w is monotone on [z_lo, z_hi] exactly when that
@@ -51,8 +90,16 @@
 namespace tulpa {
 
 // Cornish-Fisher standardized quantile at Gaussian quantile z and skewness g.
+// Mean zero by construction: E[z + (g/6)(z^2 - 1)] = 0 under z ~ N(0, 1).
 inline double cornish_fisher_z(double z, double g) {
   return z + (g / 6.0) * (z * z - 1.0);
+}
+
+// The standardized centre eq. (22) implies, from the location term and the mean
+// the cubic term induces. NaN in either input propagates, so a coordinate with
+// no gamma_1 has no centre and (via cornish_fisher_eligible) no correction.
+inline double cornish_fisher_center(double gamma1, double gamma3) {
+  return gamma1 + 0.5 * gamma3;
 }
 
 // Derivative of the above in z. Positive == locally order-preserving.

@@ -447,6 +447,8 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
                 *curvature3_fns, *probe
             );
             result.inner_skew = std::move(sk.gamma3);
+            result.inner_skew_gamma1 = std::move(sk.gamma1);
+            result.inner_skew_gamma1_declined = sk.gamma1_declined;
             result.inner_skew_idx = *probe;
             result.inner_skew_dropped = sk.n_nonfinite_dropped;
             result.inner_skew_declined = sk.declined;
@@ -456,6 +458,7 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
                                      std::numeric_limits<double>::quiet_NaN());
             result.inner_skew_idx = *probe;
             result.inner_skew_declined = "curvature3_unavailable";
+            result.inner_skew_gamma1_declined = "curvature3_unavailable";
         }
 
         // The likelihood-agnostic inner k-hat over the same probed subspace

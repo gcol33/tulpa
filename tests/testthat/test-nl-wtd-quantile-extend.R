@@ -95,15 +95,18 @@ test_that("the axis read carries the extension through to a reported interval", 
                    .nl_wtd_quantile(v1, w1, 0.5, outside = "clamp"))
 })
 
-test_that("only the density support dispatches to the extension", {
+test_that("every CDF support dispatches to the extension, the moment rule does not", {
   v <- exp(seq(log(0.2), log(1.5), length.out = 5))
   w <- c(0.30, 0.25, 0.20, 0.15, 0.10)
   pr <- c(0.01, 0.5, 0.99)
   expect_identical(.nl_summary_quantile(v, w, pr, NA_character_, "density"),
                    .nl_wtd_quantile(v, w, pr, outside = "extend"))
-  # A locally CCD-refined grid carries design nodes with no cell of their own.
+  # A locally CCD-refined grid takes the SAME construction as the density read.
+  # Its `mixed` tag records provenance and does not switch the formula
+  # (gcol33/tulpa#317), so a refined fit and the unrefined fit of the same model
+  # cannot report intervals built two different ways.
   expect_identical(.nl_summary_quantile(v, w, pr, NA_character_, "mixed"),
-                   .nl_wtd_quantile(v, w, pr, outside = "clamp"))
+                   .nl_summary_quantile(v, w, pr, NA_character_, "density"))
   # A moment rule with no known domain still withholds the number.
   expect_true(all(is.na(
     .nl_summary_quantile(v, w, c(0.01, 0.99), NA_character_, "moment_rule"))))

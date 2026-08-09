@@ -266,6 +266,8 @@ LaplaceResult laplace_newton_solve_ll(
             curvature3 ? *curvature3 : no_oracle, *probe
         );
         result.inner_skew = std::move(sk.gamma3);
+        result.inner_skew_gamma1 = std::move(sk.gamma1);
+        result.inner_skew_gamma1_declined = sk.gamma1_declined;
         result.inner_skew_idx = *probe;
         result.inner_skew_dropped = sk.n_nonfinite_dropped;
         result.inner_skew_declined = sk.declined;

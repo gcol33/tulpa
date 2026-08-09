@@ -148,6 +148,9 @@ inline Rcpp::List nl_grid_cell_to_result_list(const Rcpp::List& grid, int k) {
         if (grid.containsElementNamed("inner_skew_arms_declined")) {
             out["inner_skew_arms_declined"] = grid["inner_skew_arms_declined"];
         }
+        for (const char* nm : {"inner_skew_gamma1", "inner_skew_gamma1_declined"}) {
+            if (grid.containsElementNamed(nm)) out[nm] = grid[nm];
+        }
     }
     // Inner-Laplace importance curve, same projection.
     for (const char* nm : {"inner_is_z", "inner_is_sigma", "inner_is_declined",
@@ -900,6 +903,8 @@ inline Rcpp::List run_nested_laplace_grid(
             idx_r[k] = res.inner_skew_idx[k] + 1;
         }
         out["inner_skew"] = res.inner_skew;
+        out["inner_skew_gamma1"] = res.inner_skew_gamma1;
+        out["inner_skew_gamma1_declined"] = res.inner_skew_gamma1_declined;
         out["inner_skew_idx"] = idx_r;
         out["inner_skew_dropped"] = res.inner_skew_dropped;
         out["inner_skew_declined"] = res.inner_skew_declined;

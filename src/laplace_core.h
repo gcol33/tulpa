@@ -101,7 +101,16 @@ struct LaplaceResult {
   // `inner_skew_arms_declined` lists the joint arms with no oracle at all
   // (0-based here, 1-based on the R side), so a PARTIALLY scored joint fit
   // names which arms were left out.
+  // The companion LOCATION term (gcol33/tulpa#354): `inner_skew_gamma1[k]` is
+  // Rue, Martino & Chopin's gamma^(1) at the same latent index, the first-order
+  // coefficient of eq. (12)'s DENOMINATOR along the same conditional-mean curve.
+  // Same layout, same NaN-means-not-computable rule. Empty when the pass did not
+  // run at all, with `inner_skew_gamma1_declined` carrying the reason
+  // ("eta_var_budget" for a field past INNER_ETA_VAR_MAX_SOLVES,
+  // "eta_var_solve_failed", "multi_eta_unit" for a widened or coupled unit).
   std::vector<double> inner_skew;
+  std::vector<double> inner_skew_gamma1;
+  std::string         inner_skew_gamma1_declined;
   std::vector<int>    inner_skew_idx;
   int                 inner_skew_dropped = 0;
   std::string         inner_skew_declined;
@@ -237,6 +246,8 @@ inline Rcpp::List laplace_result_to_list(const LaplaceResult& result) {
       idx_r[k] = result.inner_skew_idx[k] + 1;
     }
     out["inner_skew"] = result.inner_skew;
+    out["inner_skew_gamma1"] = result.inner_skew_gamma1;
+    out["inner_skew_gamma1_declined"] = result.inner_skew_gamma1_declined;
     out["inner_skew_idx"] = idx_r;
     out["inner_skew_dropped"] = result.inner_skew_dropped;
     out["inner_skew_declined"] = result.inner_skew_declined;

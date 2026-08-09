@@ -470,47 +470,41 @@
 # a percent of the sample; the raw shape is reported either way.
 #
 # `skew_correct` decides whether the inner-Laplace marginal quantiles are
-# skew-corrected (gcol33/tulpa#302) rather than only graded: a Cornish-Fisher
-# correction at each coordinate's own gamma_3, gated to the `good` / `ok` bands
-# of the COMBINED inner band (gamma_3 and the importance k-hat, gcol33/tulpa#346)
-# by `gamma3_unreliable` and `k_usable` above. FALSE, and the measurement is what
-# says so.
+# corrected (gcol33/tulpa#302) rather than only graded: a Cornish-Fisher
+# reshaping at each coordinate's own gamma_3 about the centre gamma_1 +
+# gamma_3 / 2 (gcol33/tulpa#354), gated to the `good` / `ok` bands of the
+# COMBINED inner band (gamma_3 and the importance k-hat, gcol33/tulpa#346) by
+# `gamma3_unreliable` and `k_usable` above.
 #
-# THE TWO SCORES DISAGREE, AND THE WHOLE-MARGINAL ONE IS THE VERDICT. Against
-# exact quadrature quantiles of rare-event binomial-logit posteriors the
-# correction cuts total absolute endpoint error from 2.4931 to 1.3837 (44.5%),
-# improving both endpoints in every case (test-inner-skew-correction.R). Scored
-# over the whole marginal instead -- paired CRPS against the exact posterior in a
-# 400-replicate prior-predictive experiment on the same family of fits -- it is a
-# NET LOSS: delta +0.00775 against the uncorrected Laplace at t = +3.54, with SBC
-# uniformity moving 0.0833 -> 0.1139 while the exact reference reads 0.0290
+# MEASURED. Against exact quadrature quantiles of rare-event binomial-logit
+# posteriors it cuts total absolute endpoint error from 2.4931 to 0.7687
+# (69.2%), improving both endpoints in every case
+# (test-inner-skew-correction.R). Scored over the WHOLE marginal -- paired CRPS
+# against the exact posterior in a 400-replicate prior-predictive experiment on
+# the same family of fits -- it reads delta -0.01643 against the uncorrected
+# Laplace at t = -1.89, essentially all of the -0.01662 the exact posterior
+# itself achieves, with SBC uniformity moving 0.0833 -> 0.0329 against the exact
+# reference's 0.0290 and the PIT re-entering the simultaneous band at p = 0.089
 # (gcol33/tulpa#346, the section-4 gate in test-inner-skew-correction.R).
 #
-# The two scores disagree structurally, not by fixture accident. At a SYMMETRIC
-# level pair the Cornish-Fisher term sigma (gamma_3 / 6) (z_p^2 - 1) takes the
-# same value at both ends, because z_p^2 = z_{1-p}^2, so there the correction is
-# a pure location shift of the interval with its width exactly unchanged and a
-# two-point symmetric metric can measure nothing else. Away from that pair the
-# median moves +0.0956 sigma while the tails move -0.2715 sigma. A control arm
-# carrying the shift ALONE scores -0.0145 against the uncorrected Laplace,
-# which is what a Gaussian at the exact mean and sd achieves (-0.0145); the
-# reshaping laid on top of it is what turns the gain into a loss.
+# THE CENTRE IS WHAT MADE THE DIFFERENCE. Until gcol33/tulpa#354 the reshaping
+# was applied about the Laplace mode, i.e. about a mean-zero standardized
+# variate. RMC eq. (22) does not have mean zero: expanding it gives
+# E[z] = gamma_1 + gamma_3 / 2, so placing the reshaped variate at mu_i asserts
+# gamma_1 = -gamma_3 / 2 rather than an absent location term. On the same 400
+# replicates that read scored +0.00775 at t = +3.54, a NET LOSS, and it is kept
+# as a control arm in the gate. At a SYMMETRIC level pair the reshaping term
+# sigma (gamma_3 / 6) (z_p^2 - 1) takes the same value at both ends, because
+# z_p^2 = z_{1-p}^2, so a two-point symmetric metric could not see the defect at
+# all -- only the whole-CDF score could.
 #
-# The missing piece is the LOCATION term, Rue, Martino & Chopin's gamma^(1),
-# which this engine does not compute (gcol33/tulpa#354 assesses the derivation
-# it needs here). Their own Epil GLMM reads the same way
-# (dev_notes/rmc2009/FACTS.md, Sec 5.2): the Gaussian is corrected mainly in the
-# mean and "the correction for skewness is minor". A skewness-only correction
-# applied about an uncorrected centre is therefore the smaller half of the
-# method, and gamma_3 is a LOWER bound on the true skewness besides (0.875 to
-# 0.943 of it on the cases above), so it moves only part of even that half. On CI
-# coverage over the small-group Bernoulli random-effect fixture -- 200 seeds x 2
-# coefficients, both intervals read off the same fits -- the difference is
-# immaterial in either direction: nominal 0.95 gives Gaussian 0.9650 against
-# corrected 0.9600, nominal 0.80 gives 0.8050 against 0.8075, nominal 0.50 gives
-# 0.4950 against 0.5000, every difference inside one standard error
-# (test-nested-laplace-recovery.R). `control$skew_correct = TRUE` turns it on per
-# fit.
+# WHAT REMAINS UNCORRECTED. gamma_3 is a LOWER bound on the true skewness (0.875
+# to 0.943 of it on the cases above), so the reshaping moves part of the way;
+# and a coordinate whose location term cannot be formed (a coupled or
+# multi-process unit, a field past the eta-variance solve budget) DECLINES the
+# whole correction rather than reading the absent gamma_1 as zero.
+#
+# `control$skew_correct = TRUE` turns it on per fit; the default stays FALSE.
 # `debias_select_band` is the floor the SUBSPACE DEBIAS selector reads the inner
 # bands at (gcol33/tulpa#304): a probed coordinate whose combined inner band is
 # at or above it is sampled exactly, the rest stay at their Gaussian

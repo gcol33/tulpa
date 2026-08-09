@@ -19,7 +19,7 @@
 # A nested-Laplace-shaped fit carrying exactly the components given. `var` is
 # per-cell MARGINAL variance, so the per-cell precision is its diagonal inverse
 # and `.nested_fixed_moments()` reads the same variances back.
-mx_fit <- function(mu, var, w, gamma3 = NULL) {
+mx_fit <- function(mu, var, w, gamma3 = NULL, gamma1 = NULL) {
   mu <- as.matrix(mu); var <- as.matrix(var)
   p  <- ncol(mu)
   f <- list(
@@ -32,8 +32,9 @@ mx_fit <- function(mu, var, w, gamma3 = NULL) {
                            function(k) diag(1 / var[k, ], p, p))
   )
   if (!is.null(gamma3)) {
-    f$inner_skew     <- as.numeric(gamma3)
-    f$inner_skew_idx <- seq_len(p)
+    f$inner_skew        <- as.numeric(gamma3)
+    f$inner_skew_gamma1 <- if (is.null(gamma1)) rep(0, p) else as.numeric(gamma1)
+    f$inner_skew_idx    <- seq_len(p)
     f <- tulpa:::.nl_skew_correction_attach(f, p, enabled = TRUE)
   }
   structure(f, class = c("tulpa_nested_laplace", "tulpa_fit"))
@@ -202,7 +203,8 @@ test_that("the analytic quantiles are the ones draws from the same mixture carry
 
 test_that("an enabled skew correction reports the MAP-cell read it was measured on", {
   g   <- c(0.35, -0.28)
-  fit <- mx_fit(mx_mu, mx_vr, mx_w, gamma3 = g)
+  g1  <- c(0.04, -0.06)
+  fit <- mx_fit(mx_mu, mx_vr, mx_w, gamma3 = g, gamma1 = g1)
   ci  <- confint(fit)
 
   expect_identical(attr(ci, "interval_source"), "skew_map_cell")
@@ -210,7 +212,7 @@ test_that("an enabled skew correction reports the MAP-cell read it was measured 
   expect_true(all(attr(ci, "skew_applied")))
 
   mom <- tulpa:::.nested_fixed_moments(fit)
-  ref <- tulpa:::.nl_skew_marginal(mom$mean, sqrt(diag(mom$cov)), g,
+  ref <- tulpa:::.nl_skew_marginal(mom$mean, sqrt(diag(mom$cov)), g, g1,
                                    c(0.025, 0.975), enabled = TRUE)
   expect_equal(mx_q(fit), unname(ref$q), tolerance = 1e-14)
 

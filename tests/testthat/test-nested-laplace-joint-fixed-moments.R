@@ -187,35 +187,69 @@ test_that("the cell precision is not carried home unless store_Q asked for it", 
 # (4) What #305 was blocking: the #302 skew correction is now visible.         #
 # --------------------------------------------------------------------------- #
 
-test_that("the inner-Laplace skew correction reaches a joint fit's intervals", {
+test_that("the inner-Laplace skew correction reaches a separable joint fit's intervals", {
   skip_on_cran()
-  coupled_occ_register()
-  gauss <- .j305_coupled_fit(skew_correct = FALSE)$fit
-  skew  <- .j305_coupled_fit(skew_correct = TRUE)$fit
+  # Both arms of this fixture sum per observation, so the location term
+  # gcol33/tulpa#354 requires is a complete sum and the correction runs.
+  d <- .j305_icar_data()
+  gauss <- .j305_icar_fit(d, skew_correct = FALSE)
+  skew  <- .j305_icar_fit(d, skew_correct = TRUE)
 
-  # The fixture is scored and inside the band, so the correction has something
-  # to do (this much held before #305 -- what did not is everything below).
-  expect_true(all(is.finite(skew$skew_correction$gamma3)))
-  expect_true(all(skew$skew_correction$eligible))
+  sc <- skew$skew_correction
+  expect_true(all(is.finite(sc$gamma3)))
+  expect_true(all(is.finite(sc$gamma1)))
+  expect_true(all(sc$eligible))
+  # Both terms sum over EVERY arm, so a gaussian-arm coefficient is not scored
+  # at 0 here: it reads the binomial arm's third derivatives through the shared
+  # ICAR field. Its own arm contributes nothing, which is why the values are
+  # an order of magnitude below the binomial arm's.
+  expect_lt(max(abs(sc$gamma3[3:4])), 0.1 * max(abs(sc$gamma3[1:2])))
 
   ci_g <- confint(gauss)
   ci_s <- confint(skew)
   expect_true(all(is.finite(ci_g)))
   expect_true(all(is.finite(ci_s)))
-  expect_true(all(attr(ci_s, "skew_applied")))
+  expect_identical(unname(attr(ci_s, "skew_applied")), sc$eligible)
   expect_false(any(attr(ci_g, "skew_applied")))
-  # The corrected interval is a DIFFERENT interval, not a silently identical one.
-  expect_gt(max(abs(ci_s - ci_g)), 1e-6)
-
-  # With the correction off the bounds are exactly the Gaussian ones.
-  tab <- tulpa:::.fit_fixed_table(gauss)
-  z <- stats::qnorm(0.975)
-  expect_equal(tab$conf.low,  tab$estimate - z * tab$std.error, tolerance = 1e-12)
-  expect_equal(tab$conf.high, tab$estimate + z * tab$std.error, tolerance = 1e-12)
+  # The corrected interval is a DIFFERENT interval on the binomial arm, not a
+  # silently identical one.
+  expect_gt(max(abs(ci_s[1:2, ] - ci_g[1:2, ])), 1e-6)
 
   # Correcting the report leaves the fit that produced it untouched.
   expect_identical(gauss$modes,   skew$modes)
   expect_identical(gauss$weights, skew$weights)
+})
+
+test_that("a coupled joint fit declines the correction for want of a location term", {
+  skip_on_cran()
+  coupled_occ_register()
+  gauss <- .j305_coupled_fit(skew_correct = FALSE)$fit
+  skew  <- .j305_coupled_fit(skew_correct = TRUE)$fit
+
+  # Every arm is coupled through the cell spec, so the cubic term is scored
+  # through the widened contraction (gcol33/tulpa#301) but the location term's
+  # contraction against a covariance BLOCK is not reachable from that oracle.
+  # The correction declines rather than reading the absent gamma_1 as zero.
+  sc <- skew$skew_correction
+  expect_true(all(is.finite(sc$gamma3)))
+  expect_true(all(is.na(sc$gamma1)))
+  expect_identical(sc$gamma1_declined, "multi_eta_unit")
+  expect_identical(sc$reason, rep("gamma1_not_computable", length(sc$reason)))
+  expect_false(any(sc$eligible))
+
+  ci_g <- confint(gauss)
+  ci_s <- confint(skew)
+  expect_true(all(is.finite(ci_s)))
+  expect_false(any(attr(ci_s, "skew_applied")))
+
+  # With the correction off the bounds are exactly the Gaussian ones, and a
+  # declined correction reports the same numbers rather than a partial one.
+  tab <- tulpa:::.fit_fixed_table(gauss)
+  z <- stats::qnorm(0.975)
+  expect_equal(tab$conf.low,  tab$estimate - z * tab$std.error, tolerance = 1e-12)
+  expect_equal(tab$conf.high, tab$estimate + z * tab$std.error, tolerance = 1e-12)
+  expect_equal(matrix(as.numeric(ci_s), nrow(ci_s)),
+               matrix(as.numeric(ci_g), nrow(ci_g)), tolerance = 1e-12)
 })
 
 # --------------------------------------------------------------------------- #

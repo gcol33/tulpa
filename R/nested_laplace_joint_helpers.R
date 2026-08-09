@@ -635,6 +635,8 @@
         }
         list(log_marginal = res_x$log_marginal, extras = extras,
              inner_skew = res_x$inner_skew,
+             inner_skew_gamma1 = res_x$inner_skew_gamma1,
+             inner_skew_gamma1_declined = res_x$inner_skew_gamma1_declined,
              inner_skew_idx = res_x$inner_skew_idx,
              inner_skew_dropped = res_x$inner_skew_dropped,
              inner_skew_declined = res_x$inner_skew_declined,

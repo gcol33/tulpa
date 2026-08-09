@@ -24,8 +24,8 @@
 // derivative of observation j's log-likelihood at the mode. This numerator
 // term is the WHOLE cubic coefficient: the paper's denominator expansion
 // (eq. 19-20) is carried to first order only and contributes solely to the
-// (unimplemented here) location-shift term gamma_1, never to gamma_3 -- see
-// the scope note below.
+// location-shift term gamma_1, never to gamma_3 -- see the gamma_1 section
+// below.
 //
 // Writing H for the converged Newton Hessian (posterior precision) and
 // Sigma = H^{-1}: b_ij * sigma_i = d(eta_j)/d(x_i) * sigma_i^2 is exactly
@@ -69,19 +69,76 @@
 // oracle shapes reach this file through Curvature3Oracle (per-observation) and
 // CellCubic3Fn (per coupled cell).
 //
-// SCOPE. Only gamma_3 (skewness) is computed, not the paper's gamma_1
-// (location-shift, eq. 21's first line) or a quartic (kurtosis) term. gamma_1
-// needs the denominator log-determinant's response to a likelihood-curvature
-// perturbation that is DIAGONAL only in the paper's augmented representation
-// (removing row/col i from a matrix that is prior-precision-plus-diagonal);
-// in tulpa's general eta = A(theta) x representation the same perturbation is
-// a rank-deficient, non-diagonal Hessian change (H_{-i,-i}(x_i) =
-// A_{-i}' diag(w(eta(x_i))) A_{-i} + P_{-i,-i}), whose log-determinant
-// response needs the conditional covariance of eta given x_i (not just the
-// column Sigma e_i this file already computes) -- a genuinely separate,
-// larger derivation, not attempted here rather than shipped as an unverified
-// guess. A closed-form quartic (kurtosis) term is not part of the paper's
-// simplified-Laplace method either: Sec 3.2.3's own discussion of symmetric
+// THE LOCATION TERM gamma_1 (gcol33/tulpa#354). eq. (18) is the NUMERATOR of
+// eq. (12); the denominator contributes -(1/2) log|H_{-i,-i}(x_i)| to the log
+// density, and the first-order coefficient of THAT along the same curve is the
+// paper's gamma^(1) (eq. 19-21). In the general representation the moving
+// matrix is
+//
+//   H_{-i,-i}(x_i) = A_{-i}' diag(w(eta(x_i))) A_{-i} + P_{-i,-i},
+//
+// with w_j = -l_j''(eta_j), so d log|M| = tr(M^{-1} dM) gives
+//
+//   d/dx_i^(s) [ -(1/2) log|H_{-i,-i}| ]
+//     = -(1/2) sum_j [A_{-i} H_{-i,-i}^{-1} A_{-i}']_jj * (dw_j/dx_i^(s))
+//     = +(1/2) sum_j l_j'''(eta_j) * var(eta_j | x_i) * b_ij,
+//
+// because dw_j/dx_i^(s) = -l_j'''(eta_j) b_ij, and the bracket IS
+// var_piG(eta_j | x_i): conditioning a N(mode, Sigma) on x_i leaves x_{-i} with
+// precision H_{-i,-i}, and eta_j - a_ij x_i is the linear form a_{-i,j}' x_{-i}.
+// So
+//
+//   gamma_1(i) = (1/2) sum_j l_j'''(eta_j) * var(eta_j | x_i) * u_{i,j} / sigma_i,
+//   var(eta_j | x_i) = s_j - u_{i,j}^2 / sigma_i^2,   s_j := [A Sigma A']_jj,
+//
+// the second line being Gaussian conditioning on the pair (eta_j, x_i), whose
+// covariance is (s_j, u_{i,j}; u_{i,j}, sigma_i^2). Substituting the second line
+// into the first and recognising the cubic sum gives the form this file
+// evaluates, which needs no per-index conditional variance at all:
+//
+//   gamma_1(i) = (1/2) [ (1/sigma_i) sum_j l_j'''(eta_j) s_j u_{i,j}
+//                        - gamma_3(i) ].
+//
+// The ONLY quantity here that gamma_3 does not already produce is s_j, the
+// marginal variance of the linear predictor, and it does not depend on the
+// probed index -- one pass per fit, shared across every index (see
+// inner_eta_var_scan below).
+//
+// VERIFICATION AGAINST THE PAPER. At A = I (x_j == eta_j) with a GMRF prior:
+// s_j = sigma_j^2, u_{i,j} = Sigma_ij, so var(eta_j | x_i) =
+// sigma_j^2 {1 - corr(x_i, x_j)^2}, and b_ij = Sigma_ij / sigma_i =
+// sigma_j a_ij as above. Substituting reproduces eq. (21)'s first line term for
+// term. The j = i term needs no exclusion: eta_i is a deterministic function of
+// x_i there, so var(eta_i | x_i) = 0 and the paper's `j in I\i` restriction
+// falls out of the general formula rather than being imposed on it.
+//
+// CONDITIONAL MODE vs CONDITIONAL MEAN. eq. (12)'s denominator is pi_GG
+// evaluated at x*_{-i}(x_i), which the paper's modification (13) replaces by the
+// Gaussian conditional mean; eq. (19) then reads the value at pi_GG's own mean,
+// dropping the quadratic-form penalty between the two. That penalty cannot
+// disturb gamma_1: both curves pass through the joint mode at x_i = mu_i AND
+// share their first derivative there (differentiating the stationarity condition
+// gives dx*_{-i}/dx_i = -H_{-i,-i}^{-1} H_{-i,i}, which is the Gaussian
+// conditional-mean slope), so their difference is O((x_i^(s))^2) and the penalty
+// is O((x_i^(s))^4) -- past the order the expansion keeps.
+//
+// SCOPE. gamma_1 is computed for a SEPARABLE likelihood (one eta per unit, the
+// `scalar` oracle), which covers every built-in family and every single-process
+// LikelihoodSpec, and DECLINES (NaN, never 0) for a unit reading several linear
+// predictors at once. The expansion there is unchanged and the contraction
+// widens exactly as the cubic one did in gcol33/tulpa#301:
+//
+//   gamma_1(i) = (1/2) [ (1/sigma_i) sum_units sum_{a,b,c} T^{abc} S_u^{ab} u^c
+//                        - gamma_3(i) ],
+//
+// with S_u the unit's K x K marginal eta covariance block. The one piece this
+// engine does not yet have is an oracle contracting T against a MATRIX in two
+// slots and a vector in the third; Curvature3Oracle::unit and CellCubic3Fn both
+// contract the same vector three times, so the widened term is not reachable
+// from them and is left unattempted rather than approximated.
+//
+// A closed-form quartic (kurtosis) term is not part of the paper's
+// simplified-Laplace method: Sec 3.2.3's own discussion of symmetric
 // heavy-tailed cases (Student-t) routes to a different, more expensive
 // numerical procedure (the spline-corrected Gaussian, eq. 17) rather than a
 // closed-form fourth-order term, so one is not fabricated here under the
@@ -111,8 +168,21 @@ namespace tulpa {
 using CellCubic3Fn = std::function<double(const std::vector<Rcpp::NumericVector>&,
                                           const std::vector<Rcpp::NumericVector>&)>;
 
+// The eta-marginal-variance pass costs one linear solve per LATENT coordinate,
+// not per probed index, so it is bounded by the field size rather than by the
+// probe scope. Past this many coordinates gamma_1 declines with
+// `eta_var_budget` instead of turning a diagnostic into an O(n_x) solve sweep;
+// gamma_3 and the inner k-hat are unaffected, since neither reads s_j.
+constexpr int INNER_ETA_VAR_MAX_SOLVES = 5000;
+
 struct InnerSkewOutcome {
   std::vector<double> gamma3;      // one entry per requested index, NaN = not computable there
+  // The location term, same layout and the same NaN-means-not-computable rule.
+  // Empty when the eta-variance pass did not run at all; `gamma1_declined` then
+  // carries the reason from the vocabulary { eta_var_budget,
+  // eta_var_solve_failed, multi_eta_unit } on top of whatever declined gamma_3.
+  std::vector<double> gamma1;
+  std::string         gamma1_declined;
   int n_nonfinite_dropped = 0;     // (i, j) contributions skipped for a non-finite l'''_j
   // Why NOTHING was computable, when nothing was (gcol33/tulpa#296). Empty
   // when at least one index scored. A NaN says only "not computable"; the
@@ -126,6 +196,66 @@ struct InnerSkewOutcome {
   // partially scored joint fit names which arms it left out.
   std::vector<int> arms_declined;
 };
+
+// The marginal variance of the linear predictor, s_j = [A Sigma A']_jj, which
+// gamma_1 needs and gamma_3 does not.
+//
+// compute_eta is a CLOSURE here, not a matrix, so A is never assembled. It is
+// affine, so A e_k = eta(mode + e_k) - eta(mode) and A Sigma e_k =
+// eta(mode + Sigma e_k) - eta(mode) are both exact eta differences, and
+//
+//   s_j = sum_{k=1}^{n_x} (A e_k)_j (A Sigma e_k)_j
+//
+// because the inner sum is a_j' Sigma a_j written out over the unit basis. That
+// is exact -- no finite difference, no stochastic trace estimator -- and it uses
+// only the full solves the live factor already serves, so it works unchanged on
+// the dense and the CHOLMOD paths.
+//
+// `probe_direction()` writes eta at the current x_buf into the caller's probe
+// buffer; `stash()` copies that buffer's offset from the mode into caller
+// storage; `accumulate()` adds the elementwise product of the stash and the
+// current offset into the caller's s. Splitting it this way keeps the buffer
+// SHAPE (one flat vector for a single arm, one per arm for a joint fit) with the
+// caller and the solve loop here.
+//
+// x_buf must hold `mode` on entry and is restored to it on return. Returns an
+// empty string on success, or the decline reason.
+template <typename ProbeFn, typename StashFn, typename AccumFn>
+inline std::string inner_eta_var_scan(
+    int n_x,
+    const std::vector<double>& mode,
+    DenseCholeskyScratch& chol,
+    SparseCholeskySolver& sparse_solver,
+    bool use_sparse,
+    Rcpp::NumericVector& x_buf,
+    ProbeFn probe_direction,
+    StashFn stash,
+    AccumFn accumulate
+) {
+  if (n_x > INNER_ETA_VAR_MAX_SOLVES) return "eta_var_budget";
+
+  std::vector<double> rhs(n_x, 0.0), v(n_x, 0.0), z_work;
+  if (!use_sparse) z_work.assign(n_x, 0.0);
+
+  for (int k = 0; k < n_x; k++) {
+    x_buf[k] = mode[k] + 1.0;
+    probe_direction();
+    stash();
+    x_buf[k] = mode[k];
+
+    double sigma_k = 0.0;
+    if (!inner_probe_column(n_x, k, chol, sparse_solver, use_sparse,
+                            rhs, v, z_work, sigma_k)) {
+      for (int t = 0; t < n_x; t++) x_buf[t] = mode[t];
+      return "eta_var_solve_failed";
+    }
+    for (int t = 0; t < n_x; t++) x_buf[t] = mode[t] + v[t];
+    probe_direction();
+    accumulate();
+    for (int t = 0; t < n_x; t++) x_buf[t] = mode[t];
+  }
+  return std::string();
+}
 
 // Did any probed index come back with a finite gamma_3?
 inline bool inner_skew_any_scored(const std::vector<double>& gamma3) {
@@ -165,10 +295,14 @@ struct JointCurvature3Oracles {
 //
 // `fill_eta0` / `fill_eta1` write eta at the current `x_buf` into the caller's own
 // buffers (`fill_eta0` also precomputes anything that depends only on the mode).
-// `accumulate(dropped, any_finite)` returns the un-normalised cubic sum for the
-// current index; it must leave `any_finite` false when nothing finite reached it,
-// so the index stays NaN rather than reading acc/sigma_i^3 == 0 ("perfectly
-// Gaussian") -- the silently-wrong 0 gcol33/tulpa#272 fixed.
+// `accumulate(dropped, any_finite, cross, cross_ok)` returns the un-normalised
+// cubic sum for the current index; it must leave `any_finite` false when nothing
+// finite reached it, so the index stays NaN rather than reading acc/sigma_i^3 ==
+// 0 ("perfectly Gaussian") -- the silently-wrong 0 gcol33/tulpa#272 fixed.
+// `cross` is the companion sum sum_j l_j''' s_j u_{i,j} gamma_1 reads, and
+// `cross_ok` says whether EVERY contribution reached it (a widened unit or
+// coupled cell contributes to the cubic sum and not to this one, so a fit
+// carrying either declines gamma_1 rather than reporting a partial sum).
 //
 // x_buf must hold `mode` on entry and is restored to it on return. Reuses the
 // live factor (chol, dense fallback; or sparse_solver when use_sparse) without
@@ -185,10 +319,14 @@ inline InnerSkewOutcome inner_skew_probe_scan(
     const std::vector<int>& probe_idx,
     FillEta0Fn fill_eta0,
     FillEta1Fn fill_eta1,
-    AccumFn accumulate
+    AccumFn accumulate,
+    bool have_eta_var
 ) {
   InnerSkewOutcome out;
   out.gamma3.assign(probe_idx.size(), std::numeric_limits<double>::quiet_NaN());
+  if (have_eta_var) {
+    out.gamma1.assign(probe_idx.size(), std::numeric_limits<double>::quiet_NaN());
+  }
 
   std::vector<double> rhs(n_x, 0.0), v(n_x, 0.0), z_work;
   if (!use_sparse) z_work.assign(n_x, 0.0);
@@ -210,9 +348,16 @@ inline InnerSkewOutcome inner_skew_probe_scan(
     for (int k = 0; k < n_x; k++) x_buf[k] = mode[k] + v[k];
     fill_eta1();
 
-    bool any_finite = false;
-    const double acc = accumulate(out.n_nonfinite_dropped, any_finite);
-    if (any_finite) out.gamma3[idx] = acc / (sigma_i * sigma2_i);  // sigma_i^-3
+    bool any_finite = false, cross_ok = true;
+    double cross = 0.0;
+    const double acc =
+        accumulate(out.n_nonfinite_dropped, any_finite, cross, cross_ok);
+    if (!any_finite) continue;
+    const double g3 = acc / (sigma_i * sigma2_i);  // sigma_i^-3
+    out.gamma3[idx] = g3;
+    if (have_eta_var && cross_ok && std::isfinite(cross) && std::isfinite(g3)) {
+      out.gamma1[idx] = 0.5 * (cross / sigma_i - g3);
+    }
   }
 
   for (int k = 0; k < n_x; k++) x_buf[k] = mode[k];  // restore
@@ -251,6 +396,7 @@ inline InnerSkewOutcome compute_inner_skew_gamma3(
     InnerSkewOutcome out;
     out.gamma3.assign(probe_idx.size(), std::numeric_limits<double>::quiet_NaN());
     out.declined = "no_probe_indices";
+    out.gamma1_declined = out.declined;
     return out;
   }
   if (!oracle.any()) {
@@ -258,6 +404,7 @@ inline InnerSkewOutcome compute_inner_skew_gamma3(
     out.gamma3.assign(probe_idx.size(), std::numeric_limits<double>::quiet_NaN());
     out.declined = oracle.declined.empty() ? std::string("no_oracle")
                                            : oracle.declined;
+    out.gamma1_declined = out.declined;
     return out;
   }
 
@@ -275,7 +422,32 @@ inline InnerSkewOutcome compute_inner_skew_gamma3(
   };
   auto fill_eta1 = [&]() { compute_eta_fn(x_buf, eta_buf1); };
 
-  auto accumulate = [&](int& dropped, bool& any_finite) -> double {
+  // eta at the mode first: the variance pass and the l''' evaluation both read
+  // it, and every eta the two passes take is an offset from it.
+  fill_eta0();
+
+  // s_j = [A Sigma A']_jj. Only the separable (scalar) oracle can consume it --
+  // see the SCOPE note -- so a widened unit does not pay for the pass either.
+  std::vector<double> eta_var, stash;
+  std::string var_declined = "multi_eta_unit";
+  if (oracle.scalar) {
+    eta_var.assign(n_eta, 0.0);
+    stash.assign(n_eta, 0.0);
+    var_declined = inner_eta_var_scan(
+        n_x, mode, chol, sparse_solver, use_sparse, x_buf,
+        fill_eta1,
+        [&]() { for (int j = 0; j < n_eta; j++) stash[j] = eta_buf1[j] - eta_buf0[j]; },
+        [&]() {
+          for (int j = 0; j < n_eta; j++) {
+            eta_var[j] += stash[j] * (eta_buf1[j] - eta_buf0[j]);
+          }
+        });
+    if (!var_declined.empty()) eta_var.clear();
+  }
+  const bool have_var = !eta_var.empty();
+
+  auto accumulate = [&](int& dropped, bool& any_finite,
+                        double& cross, bool& cross_ok) -> double {
     double acc = 0.0;
     if (oracle.scalar) {
       for (int j = 0; j < n_eta; j++) {
@@ -284,10 +456,12 @@ inline InnerSkewOutcome compute_inner_skew_gamma3(
         double l3j = l3[j];
         if (!std::isfinite(l3j)) { dropped++; continue; }
         acc += l3j * u * u * u;
+        if (have_var) cross += l3j * eta_var[j] * u;
         any_finite = true;
       }
       return acc;
     }
+    cross_ok = false;
     const double* e0 = eta_buf0.begin();
     const double* e1 = eta_buf1.begin();
     for (int i = 0; i < n_units; i++) {
@@ -306,9 +480,12 @@ inline InnerSkewOutcome compute_inner_skew_gamma3(
     return acc;
   };
 
-  return inner_skew_probe_scan(n_x, mode, chol, sparse_solver, use_sparse,
-                               x_buf, probe_idx, fill_eta0, fill_eta1,
-                               accumulate);
+  InnerSkewOutcome out =
+      inner_skew_probe_scan(n_x, mode, chol, sparse_solver, use_sparse,
+                            x_buf, probe_idx, fill_eta0, fill_eta1,
+                            accumulate, have_var);
+  out.gamma1_declined = var_declined;
+  return out;
 }
 
 // Joint-arm generalization of compute_inner_skew_gamma3 above, for
@@ -360,6 +537,7 @@ inline InnerSkewOutcome compute_inner_skew_gamma3_joint(
       out.declined = oracles.declined.empty() ? std::string("no_oracle")
                                               : oracles.declined;
     }
+    out.gamma1_declined = out.declined;
     return out;
   }
 
@@ -382,8 +560,49 @@ inline InnerSkewOutcome compute_inner_skew_gamma3_joint(
   };
   auto fill_eta1 = [&]() { compute_eta_joint_fn(x_buf, eta_buf1); };
 
-  auto accumulate = [&](int& dropped, bool& any_finite) -> double {
+  fill_eta0();
+
+  // Every arm that contributes must be separable for gamma_1 to be a complete
+  // sum: a widened unit or a coupled cell reaches the cubic term and not this
+  // one (see the SCOPE note), so one of either declines the whole location term.
+  bool all_separable = !static_cast<bool>(oracles.cell_cubic);
+  for (int k = 0; k < n_arms && all_separable; k++) {
+    if (k >= static_cast<int>(oracles.arms.size())) continue;
+    if (oracles.arms[k].unit) all_separable = false;
+  }
+
+  std::vector<std::vector<double>> eta_var(n_arms), stash(n_arms);
+  std::string var_declined = "multi_eta_unit";
+  if (all_separable) {
+    for (int k = 0; k < n_arms; k++) {
+      eta_var[k].assign(eta_buf0[k].size(), 0.0);
+      stash[k].assign(eta_buf0[k].size(), 0.0);
+    }
+    var_declined = inner_eta_var_scan(
+        n_x, mode, chol, sparse_solver, use_sparse, x_buf,
+        fill_eta1,
+        [&]() {
+          for (int k = 0; k < n_arms; k++) {
+            const int Nk = eta_buf0[k].size();
+            for (int j = 0; j < Nk; j++) stash[k][j] = eta_buf1[k][j] - eta_buf0[k][j];
+          }
+        },
+        [&]() {
+          for (int k = 0; k < n_arms; k++) {
+            const int Nk = eta_buf0[k].size();
+            for (int j = 0; j < Nk; j++) {
+              eta_var[k][j] += stash[k][j] * (eta_buf1[k][j] - eta_buf0[k][j]);
+            }
+          }
+        });
+    if (!var_declined.empty()) eta_var.assign(n_arms, std::vector<double>());
+  }
+  const bool have_var = all_separable && var_declined.empty();
+
+  auto accumulate = [&](int& dropped, bool& any_finite,
+                        double& cross, bool& cross_ok) -> double {
     double acc = 0.0;
+    if (!have_var) cross_ok = false;
     for (int k = 0; k < n_arms; k++) {
       if (k >= static_cast<int>(oracles.arms.size())) continue;
       const Curvature3Oracle& o = oracles.arms[k];
@@ -395,6 +614,7 @@ inline InnerSkewOutcome compute_inner_skew_gamma3_joint(
           double l3kj = l3[k][j];
           if (!std::isfinite(l3kj)) { dropped++; continue; }
           acc += l3kj * u * u * u;
+          if (have_var) cross += l3kj * eta_var[k][j] * u;
           any_finite = true;
         }
       } else if (o.unit) {
@@ -430,8 +650,10 @@ inline InnerSkewOutcome compute_inner_skew_gamma3_joint(
 
   InnerSkewOutcome out =
       inner_skew_probe_scan(n_x, mode, chol, sparse_solver, use_sparse,
-                            x_buf, probe_idx, fill_eta0, fill_eta1, accumulate);
+                            x_buf, probe_idx, fill_eta0, fill_eta1, accumulate,
+                            have_var);
   out.arms_declined = oracles.arms_declined;
+  out.gamma1_declined = var_declined;
   return out;
 }
 

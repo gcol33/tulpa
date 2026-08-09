@@ -79,34 +79,35 @@
 #'     FIXED inner Laplace, this scores whether that inner Gaussian
 #'     approximation is itself a good fit to the latent-field conditional
 #'     posterior. See [diagnostics()] for the combined whole-fit verdict.
-#'   * `skew_correct` (`FALSE`) -- consume `gamma_3` instead of only grading it
-#'     (gcol33/tulpa#302): report Cornish-Fisher marginal quantiles at each
-#'     coefficient's own `gamma_3` from `summary()` / `confint()`, wherever the
-#'     combined inner band says the leading-order expansion is in its regime,
-#'     and the Gaussian quantiles everywhere else. The correction reshapes where
-#'     the interval sits and leaves the centre and the draws untouched, so a fit
-#'     run with it off is bit for bit the fit it was before. `$skew_correction`
-#'     records the per-coefficient `gamma_3`, its band, the inner importance
-#'     k-hat, the combined band, the eligibility and the reason behind it; the
-#'     `skew_applied` attribute on `summary()` / `confint()` records what was
-#'     actually used at the requested level. Rue, Martino & Chopin (2009) fit a
-#'     skew normal here instead, under a mean constraint from a location term
-#'     this engine does not compute; the series correction is the same-order
-#'     alternative that needs only the cubic term, and unlike a skew normal its
-#'     skewness does not saturate inside the band it is applied on.
+#'   * `skew_correct` (`FALSE`) -- consume the inner-Laplace expansion instead of
+#'     only grading it (gcol33/tulpa#302, gcol33/tulpa#354): report
+#'     Cornish-Fisher marginal quantiles at each coefficient's own `gamma_3`,
+#'     about the centre `gamma_1 + gamma_3 / 2` that Rue, Martino & Chopin
+#'     (2009) eq. (22) implies, from `summary()` / `confint()` wherever the
+#'     combined inner band says the leading-order expansion is in its regime, and
+#'     the Gaussian quantiles everywhere else. It is post-processing on the
+#'     reported quantiles: draws, modes and weights are untouched, so a fit run
+#'     with it off is bit for bit the fit it was before. A coefficient whose
+#'     location term could not be formed declines rather than reading it as zero.
+#'     `$skew_correction` records the per-coefficient `gamma_3` and `gamma_1`,
+#'     the band, the inner importance k-hat, the combined band, the eligibility
+#'     and the reason behind it; the `skew_applied` attribute on `summary()` /
+#'     `confint()` records what was actually used at the requested level. RMC fit
+#'     a skew normal here instead; the series correction is the same-order
+#'     alternative, and unlike a skew normal its skewness does not saturate
+#'     inside the band it is applied on.
 #'
-#'     It stays `FALSE`, and the measurement says so rather than caution
-#'     (gcol33/tulpa#346). Scored over the WHOLE marginal instead of at a
-#'     symmetric endpoint pair -- paired CRPS against an exact reference in a
-#'     prior-predictive experiment -- the correction is a net loss on every
-#'     coefficient of the three fixtures it was measured on. At a symmetric
-#'     level pair the Cornish-Fisher term takes the same value at both ends, so
-#'     it is a pure location shift of the interval there and an endpoint score
-#'     can measure nothing else; away from that pair the median moves one way
-#'     and the tails the other. A control arm carrying the shift alone recovers
-#'     everything a correctly located Gaussian achieves, and the reshaping laid
-#'     on top of it is what turns the gain into a loss. The missing piece is the
-#'     location term, not the cubic one.
+#'     MEASURED (gcol33/tulpa#346, gcol33/tulpa#354). Against exact quadrature
+#'     quantiles of rare-event binomial-logit posteriors it cuts total absolute
+#'     endpoint error 69.2%, improving both endpoints in every case. Scored over
+#'     the WHOLE marginal -- paired CRPS against the exact posterior in a
+#'     400-replicate prior-predictive experiment -- it reads -0.01643 against
+#'     the uncorrected Laplace at t = -1.89, essentially all of the -0.01662 the
+#'     exact posterior itself achieves, and its PIT re-enters the simultaneous
+#'     SBC band. Applied about the Laplace mode instead of about
+#'     `gamma_1 + gamma_3 / 2` the same reshaping scored +0.00775 at t = +3.54,
+#'     a net loss; that centre is what gcol33/tulpa#354 supplied. The default is
+#'     still `FALSE`.
 #'   * `subspace_debias` (`FALSE`) -- correct only the latent directions the
 #'     inner-layer diagnostics flagged, by exact Metropolis, and leave the rest
 #'     at their Gaussian conditional (gcol33/tulpa#304, extended to this backend

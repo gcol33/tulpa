@@ -299,8 +299,8 @@ recov_sweep <- function(family, cfg, n_seed, seed_off, fit_fn = recov_fit_single
     a_lvl <- (1 - level) / 2
     ci_gauss <- .nl_skew_marginal(mom_f$mean[seq_len(p)],
                                   sqrt(pmax(diag(mom_f$cov)[seq_len(p)], 0)),
-                                  rep(NA_real_, p), c(a_lvl, 1 - a_lvl),
-                                  enabled = FALSE)$q
+                                  rep(NA_real_, p), rep(NA_real_, p),
+                                  c(a_lvl, 1 - a_lvl), enabled = FALSE)$q
     ci_skew_gap[s] <- max(abs(ci_skew - ci_gauss))
     wid_mix[s, ]   <- ci_mix[, 2] - ci_mix[, 1]
     wid_gauss[s, ] <- ci_gauss[, 2] - ci_gauss[, 1]

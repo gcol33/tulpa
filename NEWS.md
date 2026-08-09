@@ -1,5 +1,44 @@
 # tulpa NEWS
 
+## 0.0.161
+
+* The inner-Laplace LOCATION term `gamma_1` is computed, and the skew
+  correction is applied about the centre it defines (gcol33/tulpa#354). Rue,
+  Martino & Chopin (2009) Sec 3.2.3 carry two terms; this engine had only the
+  cubic one, and `src/inner_laplace_skew.h`'s SCOPE note called the other
+  blocked because its likelihood-curvature perturbation is diagonal only in the
+  paper's augmented representation. It is not blocked. Expanding the denominator
+  log-determinant along the same conditional-mean curve gives
+  `gamma_1(i) = (1/2)[(1/sigma_i) sum_j l'''_j s_j u_{i,j} - gamma_3(i)]`, whose
+  one new quantity is `s_j = [A Sigma A']_jj`, the marginal variance of the
+  linear predictor -- index-independent, so one pass per fit, and read off exact
+  affine `eta` differences plus the full solves the live factor already serves
+  rather than by assembling `A`. Verified against a central difference of the
+  log-determinant on an independently written model (3e-11 relative) and against
+  the paper's own eq. (21) line 1 at `A = I` over a coupled GMRF prior (1e-15,
+  term for term). Bounded by `INNER_ETA_VAR_MAX_SOLVES`; a coupled or
+  multi-process unit declines with `multi_eta_unit`, never with a zero.
+
+* The `control$skew_correct` marginal is now a NET GAIN over the uncorrected
+  Laplace, which gcol33/tulpa#346 measured it not to be. The cause was the
+  centre, not the location term alone: `z + (g/6)(z^2 - 1)` is the quantile
+  function of a MEAN-ZERO variate, while RMC eq. (22) has mean
+  `gamma_1 + gamma_3 / 2`, so placing the reshaped variate at the Laplace mode
+  asserted `gamma_1 = -gamma_3/2`. On the #346 fixture `gamma_1` is identically
+  0 and the whole missing centre was the mean the cubic term itself induces.
+  Measured on the same 400 prior-predictive replicates: paired CRPS
+  `-0.01643` at `t = -1.89` against the uncorrected Laplace, essentially all of
+  the `-0.01662` the exact posterior achieves, where the previous read scored
+  `+0.00775` at `t = +3.54`; SBC uniformity `0.0833 -> 0.0329` against an exact
+  `0.0290`, with the PIT re-entering the simultaneous band; endpoint error
+  reduction `56.6% -> 77.4%`. The correction also beats the `shift only` control
+  arm, so the cubic term earns its place once the centre is right. The gate's
+  pin moved from `expect_gt(dlt("skew_cf"), 0)` to `expect_lt(..., 0)`, and the
+  old read is kept as a `no centre` control that reproduces the loss exactly.
+  `gamma_1` is required: a coefficient without one declines with
+  `gamma1_not_computable` rather than being corrected about an assumed centre.
+  The default stays `FALSE`.
+
 ## 0.0.160
 
 * A fit whose supplied grid axis went unused says so through its own readers

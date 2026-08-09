@@ -143,17 +143,18 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_cornish_fisher_quantile
-Rcpp::List cpp_cornish_fisher_quantile(Rcpp::NumericVector mu, Rcpp::NumericVector sigma, Rcpp::NumericVector gamma3, Rcpp::NumericVector z, double max_abs_gamma3);
-RcppExport SEXP _tulpa_cpp_cornish_fisher_quantile(SEXP muSEXP, SEXP sigmaSEXP, SEXP gamma3SEXP, SEXP zSEXP, SEXP max_abs_gamma3SEXP) {
+Rcpp::List cpp_cornish_fisher_quantile(Rcpp::NumericVector mu, Rcpp::NumericVector sigma, Rcpp::NumericVector gamma3, Rcpp::NumericVector gamma1, Rcpp::NumericVector z, double max_abs_gamma3);
+RcppExport SEXP _tulpa_cpp_cornish_fisher_quantile(SEXP muSEXP, SEXP sigmaSEXP, SEXP gamma3SEXP, SEXP gamma1SEXP, SEXP zSEXP, SEXP max_abs_gamma3SEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
     Rcpp::traits::input_parameter< Rcpp::NumericVector >::type mu(muSEXP);
     Rcpp::traits::input_parameter< Rcpp::NumericVector >::type sigma(sigmaSEXP);
     Rcpp::traits::input_parameter< Rcpp::NumericVector >::type gamma3(gamma3SEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type gamma1(gamma1SEXP);
     Rcpp::traits::input_parameter< Rcpp::NumericVector >::type z(zSEXP);
     Rcpp::traits::input_parameter< double >::type max_abs_gamma3(max_abs_gamma3SEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_cornish_fisher_quantile(mu, sigma, gamma3, z, max_abs_gamma3));
+    rcpp_result_gen = Rcpp::wrap(cpp_cornish_fisher_quantile(mu, sigma, gamma3, gamma1, z, max_abs_gamma3));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -4108,7 +4109,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_cell_coupling_curvature3", (DL_FUNC) &_tulpa_cpp_cell_coupling_curvature3, 8},
     {"_tulpa_cpp_cell_coupling_registry_has", (DL_FUNC) &_tulpa_cpp_cell_coupling_registry_has, 1},
     {"_tulpa_cpp_cell_coupling_registry_size", (DL_FUNC) &_tulpa_cpp_cell_coupling_registry_size, 0},
-    {"_tulpa_cpp_cornish_fisher_quantile", (DL_FUNC) &_tulpa_cpp_cornish_fisher_quantile, 5},
+    {"_tulpa_cpp_cornish_fisher_quantile", (DL_FUNC) &_tulpa_cpp_cornish_fisher_quantile, 6},
     {"_tulpa_cpp_test_compute_cov", (DL_FUNC) &_tulpa_cpp_test_compute_cov, 4},
     {"_tulpa_cpp_test_dcov_dphi", (DL_FUNC) &_tulpa_cpp_test_dcov_dphi, 4},
     {"_tulpa_cpp_sample_crt", (DL_FUNC) &_tulpa_cpp_sample_crt, 2},

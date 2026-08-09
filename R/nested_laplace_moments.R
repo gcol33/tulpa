@@ -210,23 +210,47 @@
   tr$from(m + stats::qnorm(probs) * s)
 }
 
-# Median and interval of one quantity, given what KIND of node set carries it.
+# The node-set KINDS a summary can be taken off, and the outer-edge policy each
+# one's geometry implies. One table rather than a chain of branches, so a kind
+# is named in exactly one place and a caller reading the tag can tell which
+# geometry it has (gcol33/tulpa#358).
 #
-# `support = "density"` means the weights are proportional to posterior mass --
-# a tensor grid whose uniform cells discretize the density -- so their cumulative
-# sum is a CDF and the weighted quantile is the summary. Its values are cell
-# representatives, so the read's support runs to the outer cells' own edges
-# (`outside = "extend"`, gcol33/tulpa#353) rather than stopping at the extreme
-# coordinate. The Gibbs backend routes genuine equal-weight DRAWS through the
-# same kind, where the edge is half the gap between the two extreme order
-# statistics instead of a cell's half-width; that only ever binds a probability
-# below `1 / (2 n_draw)`, which no reported level reaches.
-# `support = "moment_rule"` means they are a central-composite design's: they
-# reproduce the integrand's moments and the node positions carry no mass, so the
-# interval comes from the moments on the quantity's own `domain`
-# (gcol33/tulpa#308). A `moment_rule` quantity whose domain is NA has a support
-# the engine will not guess -- a proper-CAR correlation on the adjacency
-# eigenvalue interval -- and reports NA rather than the design's extent.
+# `density` -- a tensor grid. The weights are proportional to posterior mass and
+# the values are CELL REPRESENTATIVES of a partition with known spacing, so the
+# cumulative sum is a CDF and the extreme cell's mass reaches half a spacing past
+# its coordinate: the read runs to the outer cells' own edges
+# (`outside = "extend"`, gcol33/tulpa#353).
+#
+# `sample` -- equal-weight posterior DRAWS, what `tulpa_re_cov_gibbs()`'s sweep
+# produces. The cumulative sum is a CDF here too, so the interior read is the
+# same weighted quantile, but the values are ORDER STATISTICS rather than cell
+# representatives: beyond the largest draw nothing is known about the tail, and
+# half the gap between the two extreme draws is not a cell width. So the outer
+# edge CLAMPS, the convention a sample takes. This is the distinction
+# gcol33/tulpa#358 separates out; it binds only a probability outside
+# `[1 / (2 n), 1 - 1 / (2 n)]`, which is why nothing measured moves at the
+# 0.025 / 0.5 / 0.975 the backends report.
+#
+# `moment_rule` -- a central-composite design. Its weights reproduce the
+# integrand's moments and the node positions carry no mass, so a cumulative sum
+# is not a CDF at all and the interval comes from the moments on the quantity's
+# own `domain` (gcol33/tulpa#308). It carries no `outside` policy because it
+# never reaches the quantile read. A `moment_rule` quantity whose domain is NA
+# has a support the engine will not guess -- a proper-CAR correlation on the
+# adjacency eigenvalue interval -- and reports NA rather than the design's
+# extent.
+#
+# `mixed` -- see below; it takes `density`'s policy on purpose.
+.NL_SUPPORT <- list(
+  density     = list(outside = "extend"),
+  moment_rule = list(outside = NA_character_),
+  mixed       = list(outside = "extend"),
+  sample      = list(outside = "clamp")
+)
+
+.NL_SUPPORT_KINDS <- names(.NL_SUPPORT)
+
+# Median and interval of one quantity, given what KIND of node set carries it.
 #
 # `support = "mixed"` is the locally CCD-refined grid, the one node set that is
 # part cell masses and part quadrature design (gcol33/tulpa#311): the carried-over
@@ -244,19 +268,21 @@
 # axis quantiles are known in closed form the same ordering holds in the
 # design-dominated regime. So the value of naming the support is that the fit can
 # SAY it is mixed and how much of the weight is design (`theta_interval_read` /
-# `theta_interval_design_mass`), not that a different formula replaces it.
+# `theta_interval_design_mass`), not that a different formula replaces it. That
+# is why `"mixed"` takes the SAME `outside` policy as `"density"` and not the
+# conservative one its design nodes would argue for: the tag records provenance,
+# and a refined fit reading its interval off a different construction from the
+# unrefined fit of the same model is the defect gcol33/tulpa#317 named.
 #
 # The single dispatcher for every consumer of the summaries, so a caller names
 # its support and its domain and inherits the rest.
 .nl_summary_quantile <- function(values, weights, probs,
                                  domain = NA_character_,
-                                 support = c("density", "moment_rule", "mixed")) {
+                                 support = .NL_SUPPORT_KINDS) {
   support <- match.arg(support)
-  if (identical(support, "density")) {
-    return(.nl_wtd_quantile(values, weights, probs, outside = "extend"))
-  }
-  if (identical(support, "mixed")) {
-    return(.nl_wtd_quantile(values, weights, probs, outside = "clamp"))
+  outside <- .NL_SUPPORT[[support]]$outside
+  if (!is.na(outside)) {
+    return(.nl_wtd_quantile(values, weights, probs, outside = outside))
   }
   if (length(domain) != 1L || is.na(domain)) {
     return(.nl_wtd_quantile(values, weights, probs, outside = "na"))
@@ -264,28 +290,38 @@
   .nl_moment_quantile(values, weights, probs, domain)
 }
 
-# What kind of node set an outer integrator leaves behind. `integration` names
-# the integrator that RAN, which describes a HOMOGENEOUS support: only the
-# central-composite design is a moment rule, and the tensor grid and its adaptive
-# subset discretize the density. A locally CCD-refined grid carries both kinds at
-# once and reports `"grid"`, so the per-cell `weight_kind` tag decides ahead of
-# the integrator name (gcol33/tulpa#317) -- otherwise a mixed support is read as
-# a homogeneous density one and nothing downstream can tell.
+# What kind of node set the producer left behind. `integration` names what RAN,
+# which describes a HOMOGENEOUS support: the central-composite design is a moment
+# rule, a Gibbs sweep leaves draws, and the tensor grid and its adaptive subset
+# discretize the density. A locally CCD-refined grid carries both kinds at once
+# and reports `"grid"`, so the per-cell `weight_kind` tag decides ahead of the
+# producer name (gcol33/tulpa#317) -- otherwise a mixed support is read as a
+# homogeneous density one and nothing downstream can tell.
+#
+# `"sample"` is the same distinction one layer up from `.NL_SUPPORT`: a sampler
+# and a grid both leave a (value, weight) set whose cumulative sum is a CDF, and
+# only the producer knows whether the values are order statistics or cell
+# representatives, so the producer names itself and the read follows
+# (gcol33/tulpa#358).
 .nl_node_support <- function(integration, weight_kind = NULL) {
   if (length(weight_kind) > 1L) {
     kinds <- unique(weight_kind[!is.na(weight_kind)])
     if (length(kinds) > 1L) return("mixed")
   }
-  if (identical(integration, "ccd")) "moment_rule" else "density"
+  switch(integration %||% "grid",
+         ccd    = "moment_rule",
+         sample = "sample",
+         "density")
 }
 
 # What the reported per-axis intervals were read off, and the share of the
 # integration weight sitting on nodes whose cumulative sum is not a CDF.
 #
-# `design_mass` is 0 on a pure density grid, 1 on a global CCD, and the refined
-# cells' share on a mixed one. It is the regime variable for the mixed read: the
-# larger it is, the more of the reported interval comes from a moment rule being
-# read as a CDF. Returned together so every consumer surfaces the same pair.
+# `design_mass` is 0 on a pure density grid and on a sample, 1 on a global CCD,
+# and the refined cells' share on a mixed one. It is the regime variable for the
+# mixed read: the larger it is, the more of the reported interval comes from a
+# moment rule being read as a CDF. Returned together so every consumer surfaces
+# the same pair.
 .nl_interval_provenance <- function(integration, weight_kind = NULL,
                                     weights = NULL) {
   read <- .nl_node_support(integration, weight_kind)
@@ -482,7 +518,7 @@
 .nl_axis_quantiles <- function(tg, log_marginal, refining = NULL,
                                 probs = c(0.025, 0.5, 0.975),
                                 weights = NULL,
-                                support = c("density", "moment_rule", "mixed"),
+                                support = .NL_SUPPORT_KINDS,
                                 domains = NULL) {
   support <- match.arg(support)
   if (is.null(dim(tg))) {

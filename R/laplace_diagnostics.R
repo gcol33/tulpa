@@ -268,11 +268,13 @@
 # R-side early return, so a decline is never an absent field. The inner k-hat
 # rides the same probe dispatch, so it is settled here too.
 .inner_skew_decline <- function(res, reason) {
-    res$inner_skew               <- NULL
-    res$inner_skew_idx           <- integer(0)
-    res$inner_skew_dropped       <- 0L
-    res$inner_skew_declined      <- reason
-    res$inner_skew_arms_declined <- integer(0)
+    res$inner_skew                 <- NULL
+    res$inner_skew_gamma1          <- NULL
+    res$inner_skew_gamma1_declined <- reason
+    res$inner_skew_idx             <- integer(0)
+    res$inner_skew_dropped         <- 0L
+    res$inner_skew_declined        <- reason
+    res$inner_skew_arms_declined   <- integer(0)
     .inner_k_decline_from_skew(res, reason)
 }
 
@@ -280,6 +282,11 @@
 # fit. One attach point for all three drivers.
 .inner_skew_attach <- function(res, out) {
     res$inner_skew         <- as.numeric(out$inner_skew)
+    g1 <- out$inner_skew_gamma1
+    res$inner_skew_gamma1 <- if (is.null(g1) || !length(g1)) NULL else as.numeric(g1)
+    g1d <- as.character(out$inner_skew_gamma1_declined %||% "")
+    res$inner_skew_gamma1_declined <-
+        if (!length(g1d) || !nzchar(g1d[1L])) NA_character_ else g1d[1L]
     res$inner_skew_idx     <- as.integer(out$inner_skew_idx)
     res$inner_skew_dropped <- as.integer(out$inner_skew_dropped %||% 0L)
     d <- as.character(out$inner_skew_declined %||% "")
@@ -333,6 +340,16 @@
         no_finite_contribution = paste("an oracle was available but no probed index",
                                        "accumulated a finite contribution"),
         no_oracle = "no per-observation third-derivative oracle was available",
+        eta_var_budget = paste("the latent field is larger than the location",
+                               "term's solve budget, so gamma_1 was not computed",
+                               "(gamma_3 and the importance k-hat are unaffected)"),
+        eta_var_solve_failed = paste("the marginal variance of the linear",
+                                     "predictor could not be solved for, so",
+                                     "gamma_1 was not computed"),
+        multi_eta_unit = paste("this likelihood's unit reads several linear",
+                               "predictors at once, so the location term's",
+                               "contraction widens past what the third-derivative",
+                               "oracle exposes"),
         backend_unsupported = "this backend does not compute the inner-Laplace skewness",
         solve_failed = "the probe re-solve failed",
         not_converged = paste("the inner Newton solve did not reach a mode, so",
@@ -639,31 +656,31 @@
 # Inner-Laplace skew CORRECTION (gcol33/tulpa#302) -- the consumer of gamma_3.
 #
 # Everything above SCORES the inner Gaussian. Rue, Martino & Chopin (2009)
-# Sec 3.2.3 compute the same cubic term in order to correct the marginal, and
+# Sec 3.2.3 compute the same terms in order to correct the marginal, and
 # without a consumer the inner layer is nested approximation with no debias.
 # `.nl_skew_marginal()` is that consumer: given each coordinate's Gaussian
-# marginal (mu_i, sigma_i) and its gamma_3, it reports Cornish-Fisher quantiles
-# instead of Gaussian ones wherever the band says the expansion is in its
-# regime, and Gaussian ones everywhere else.
+# marginal (mu_i, sigma_i), its gamma_3 and its gamma_1, it reports
+# Cornish-Fisher quantiles about the centre gamma_1 + gamma_3 / 2 wherever the
+# band says the expansion is in its regime, and Gaussian ones everywhere else.
 #
 # WHICH CORRECTION, AND WHY NOT THE PAPER'S. RMC fit a skew normal to their
 # eq. (22) under three constraints: mean gamma^(1), variance 1, and third
-# log-density derivative at the mode gamma^(3). This engine computes gamma_3
-# and not gamma^(1) -- the location term comes from their denominator expansion
-# (eq. 20), which is diagonal only in their augmented x_j == eta_j
-# representation, and src/inner_laplace_skew.h documents why it is not derived
-# here. A skew normal fitted on the cubic term alone is therefore a DIFFERENT
-# construction from theirs and could not be reported as theirs; it also
-# saturates (attainable |skewness| < ~0.995, shape parameter diverging as that
-# bound is approached) inside the very band this correction is gated to.
-# Cornish-Fisher is the quantile-side inverse of the same Edgeworth series
-# gamma_3 is the leading term of, is linear in gamma_3 so it does not saturate,
-# and returns quantiles directly, which is what the summaries need. The
-# derivation and the monotonicity condition are in src/cornish_fisher.h.
+# log-density derivative at the mode gamma^(3). A skew normal saturates
+# (attainable |skewness| < ~0.995, shape parameter diverging as that bound is
+# approached) inside the very band this correction is gated to; Cornish-Fisher
+# is the quantile-side inverse of the same Edgeworth series gamma_3 is the
+# leading term of, is linear in gamma_3 so it does not saturate, and returns
+# quantiles directly, which is what the summaries need. The derivation and the
+# monotonicity condition are in src/cornish_fisher.h.
 #
-# WHAT IS NOT CORRECTED. The centre. With the location term absent the
-# correction reshapes the interval around the Laplace centre and leaves it
-# where it was, which is RMC's own parameterization read at gamma^(1) = 0.
+# THE CENTRE, AND WHERE IT DIFFERS FROM THEIRS. eq. (22) does not have mean
+# zero: expanding it gives E[z] = gamma_1 + gamma_3 / 2, so the reshaped variate
+# is placed there (gcol33/tulpa#354, src/cornish_fisher.h). RMC constrain their
+# skew normal to mean gamma^(1) instead, setting aside the contribution the
+# cubic term makes to the mean. The centre used here is the one their own
+# expansion implies, measured against exact quadrature rather than adopted.
+# A coordinate with no gamma_1 declines the whole correction: reading it as zero
+# would assert a value for the location term rather than an absence of one.
 #
 # gamma_3 is also a LOWER BOUND on the true skewness, not a two-sided estimate.
 # test-inner-skew.R pins the ratio against exact quadrature: 0.4 to 0.7 on the
@@ -671,13 +688,15 @@
 # and on the separable rare-event binomials. A marginal corrected from it
 # therefore moves PART of the way, and an index banded `good` may truly be `ok`.
 # Both are properties of the input, and both show up in the measured numbers in
-# test-inner-skew-correction.R rather than being argued away.
+# test-inner-skew-correction.R rather than being argued away. The scale is not
+# corrected either: eq. (22) leaves it at sigma_i to the order kept.
 # =============================================================================
 
 # Skew-corrected marginal quantiles for a block of coordinates.
 #
 # `mu` / `sigma` are the Gaussian marginal centre and scale, `gamma3` the
-# per-coordinate cubic term (NaN where not computable), `probs` the requested
+# per-coordinate cubic term and `gamma1` the location term (NaN where either is
+# not computable, which declines that coordinate), `probs` the requested
 # probabilities. Returns the [length(mu) x length(probs)] quantile matrix and a
 # per-coordinate logical saying whether the row is the corrected or the Gaussian
 # quantile -- a declined coordinate is still reported, from the Gaussian, so the
@@ -686,20 +705,24 @@
 # `enabled = FALSE` short-circuits to the Gaussian quantiles with every flag
 # FALSE, so a caller that leaves the correction off gets bit-for-bit the numbers
 # it got before this existed.
-.nl_skew_marginal <- function(mu, sigma, gamma3, probs, enabled = TRUE,
+.nl_skew_marginal <- function(mu, sigma, gamma3, gamma1, probs, enabled = TRUE,
                               max_abs_gamma3 = .nl_diag("gamma3_unreliable")) {
   mu    <- as.numeric(mu)
   sigma <- as.numeric(sigma)
   n     <- length(mu)
   z     <- stats::qnorm(as.numeric(probs))
-  # A short or absent gamma_3 leaves the tail of the block unscored, which is
-  # NA ("not computable") and never 0 ("no skew").
-  g <- rep(NA_real_, n)
-  if (isTRUE(enabled) && length(gamma3)) {
-    m <- min(n, length(gamma3))
-    g[seq_len(m)] <- as.numeric(gamma3)[seq_len(m)]
+  # A short or absent term leaves the tail of the block unscored, which is
+  # NA ("not computable") and never 0 ("no skew" / "no shift"). gamma_1 is
+  # required, so a block reaching here without one reports Gaussian quantiles.
+  pad <- function(v) {
+    out <- rep(NA_real_, n)
+    if (isTRUE(enabled) && length(v)) {
+      m <- min(n, length(v))
+      out[seq_len(m)] <- as.numeric(v)[seq_len(m)]
+    }
+    out
   }
-  out <- cpp_cornish_fisher_quantile(mu, sigma, g, z,
+  out <- cpp_cornish_fisher_quantile(mu, sigma, pad(gamma3), pad(gamma1), z,
                                      as.numeric(max_abs_gamma3))
   list(q = out$q, applied = as.logical(out$applied))
 }
@@ -728,6 +751,16 @@
 # gamma_3 per FIXED EFFECT, from the per-probed-index vector the kernel attached.
 .nl_skew_by_fixed <- function(fit, p) {
   g <- fit[["inner_skew"]]
+  if (is.null(g) || !length(g) || p <= 0L) return(rep(NA_real_, max(p, 0L)))
+  .nl_probe_to_fixed(as.numeric(g), fit[["inner_skew_idx"]], p)
+}
+
+# gamma_1 per FIXED EFFECT (gcol33/tulpa#354), read through the same probe
+# correspondence. A fit whose kernel declined the location term carries none, so
+# every coefficient is NA -- "not computable", which the correction reads as a
+# decline rather than as a zero shift.
+.nl_gamma1_by_fixed <- function(fit, p) {
+  g <- fit[["inner_skew_gamma1"]]
   if (is.null(g) || !length(g) || p <= 0L) return(rep(NA_real_, max(p, 0L)))
   .nl_probe_to_fixed(as.numeric(g), fit[["inner_skew_idx"]], p)
 }
@@ -776,12 +809,17 @@
 #   gamma3_unreliable      |gamma_3| at or past the band cutoff
 #   inner_k_unreliable     the importance k-hat flags this coordinate while
 #                          gamma_3 does not
+#   gamma1_not_computable  no location term at this coefficient (NaN, never 0);
+#                          `inner_skew_gamma1_declined` on the fit says why the
+#                          kernel could not produce one (gcol33/tulpa#354)
 .SKEW_CORRECT_REASONS <- c("eligible", "not_enabled", "gamma3_not_computable",
-                           "gamma3_unreliable", "inner_k_unreliable")
+                           "gamma3_unreliable", "inner_k_unreliable",
+                           "gamma1_not_computable")
 
 .nl_skew_correction_attach <- function(res, p_fixed, enabled) {
   p <- max(as.integer(p_fixed %||% 0L), 0L)
   g <- .nl_skew_by_fixed(res, p)
+  g1 <- .nl_gamma1_by_fixed(res, p)
   band <- vapply(g, .tulpa_gamma3_band, character(1))
   inner <- .nl_inner_bands_by_fixed(res, p)
 
@@ -790,6 +828,7 @@
     reason <- rep("not_enabled", p)
   } else if (p > 0L) {
     reason[!is.finite(g)] <- "gamma3_not_computable"
+    reason[reason == "eligible" & !is.finite(g1)] <- "gamma1_not_computable"
     reason[reason == "eligible" & !is.na(band) & band == "unreliable"] <-
       "gamma3_unreliable"
     reason[reason == "eligible" & !is.na(inner$band) &
@@ -799,6 +838,8 @@
   res$skew_correction <- list(
     enabled       = isTRUE(enabled),
     gamma3        = g,
+    gamma1        = g1,
+    gamma1_declined = res[["inner_skew_gamma1_declined"]] %||% NA_character_,
     band          = band,
     pareto_k      = inner$pareto_k,
     band_combined = inner$band,
@@ -832,6 +873,8 @@
   sc <- object[["skew_correction"]]
   if (is.null(sc)) {
     return(list(enabled = FALSE, gamma3 = rep(NA_real_, p),
+                gamma1 = rep(NA_real_, p),
+                gamma1_declined = NA_character_,
                 band = rep(NA_character_, p),
                 pareto_k = rep(NA_real_, p),
                 band_combined = rep(NA_character_, p),
@@ -846,8 +889,15 @@
 # `.nl_skew_marginal()` reads as "not computable here" and reports from the
 # Gaussian. The eligibility record is therefore what the quantile path consumes,
 # not a parallel note beside it.
-.nl_skew_gamma3_eligible <- function(sc) {
-  g <- sc$gamma3
+.nl_skew_gamma3_eligible <- function(sc) .nl_skew_term_eligible(sc, "gamma3")
+
+# The same mask on the location term. Both are read by `.nl_fixed_interval()`,
+# and a coefficient masked in either declines: the correction is the centre AND
+# the reshaping, and half of it is not a correction.
+.nl_skew_gamma1_eligible <- function(sc) .nl_skew_term_eligible(sc, "gamma1")
+
+.nl_skew_term_eligible <- function(sc, field) {
+  g <- sc[[field]]
   el <- sc$eligible
   if (is.null(g)) return(NULL)
   if (is.null(el) || length(el) != length(g)) return(g)

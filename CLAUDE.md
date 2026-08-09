@@ -421,13 +421,11 @@ generalization is proved exact by construction, verified against the paper's
 own eq. 21 in the special case, and cross-checked against a direct
 numerically-integrated exact posterior skewness in
 `tests/testthat/test-inner-skew.R`, matching to within the expected
-leading-order undershoot as skewness grows). Only the skewness term ships;
-the paper's `gamma_1` (location shift) and a kurtosis term are NOT
-attempted -- see the scope note atop `inner_laplace_skew.h` for why (the
-denominator log-determinant response the location-shift term needs is
-diagonal only in the paper's augmented representation, and the paper itself
-routes heavy-tailed cases to a different numerical procedure rather than a
-closed-form quartic).
+leading-order undershoot as skewness grows). The paper's `gamma_1` (location
+shift) ships alongside it since gcol33/tulpa#354 -- see below. A kurtosis term
+does NOT: Sec 3.2.3 itself routes symmetric heavy-tailed cases to a different
+numerical procedure (the spline-corrected Gaussian, eq. 17) rather than a
+closed-form quartic, so one is not fabricated under the paper's name.
 
 Per-observation third-log-lik-derivatives come from
 `curvature3_obs_for_family()` (`src/laplace_family_curvature.h`, exact
@@ -658,51 +656,112 @@ paths too since gcol33/tulpa#305 gave them the per-cell fixed-effect retention
 `.nested_fixed_moments()` reads (see below).
 
 NOT a skew normal, on purpose. RMC 2009 Sec 3.2.3 fit one under three
-constraints -- mean `gamma^(1)`, variance 1, third log-density derivative at
-the mode `gamma^(3)`. This engine has the cubic term and NOT `gamma^(1)` (see
-the SCOPE note in `inner_laplace_skew.h`), so a skew normal fitted on
-`gamma_3` alone is a different construction from theirs and cannot carry their
-name; it also saturates at `|skewness| ~ 0.995` with the shape parameter
-diverging as that bound is approached, inside the band the correction is gated
-to. Cornish-Fisher is the quantile-side inverse of the same Edgeworth series,
-linear in `gamma_3`, and returns quantiles directly. The paper's own
+constraints -- mean `gamma^(1)`, variance 1, third log-density derivative at the
+mode `gamma^(3)`. A skew normal saturates at `|skewness| ~ 0.995` with the shape
+parameter diverging as that bound is approached, inside the band the correction
+is gated to. Cornish-Fisher is the quantile-side inverse of the same Edgeworth
+series, linear in `gamma_3`, and returns quantiles directly. The paper's own
 spline-corrected Gaussian (eq. 17) is the FULL Laplace of Sec 3.2.2, reached
 only for symmetric heavy-tailed cases a cubic term cannot describe --
 `dev_notes/rmc2009/FACTS.md` holds the quoted passages.
 
-**OFF by default, and the whole marginal is why (gcol33/tulpa#346).** The
-endpoint score it was accepted on is structurally blind to most of what it does.
-At a SYMMETRIC level pair the Cornish-Fisher term `sigma (gamma_3/6)(z_p^2 - 1)`
-takes the same value at both ends, because `z_p^2 = z_{1-p}^2`, so there the
-correction is a pure LOCATION SHIFT of the interval with its width exactly
-unchanged and a two-point symmetric metric can measure nothing else. Away from
-that pair it is not a shift at all: the median moves `+0.0956 sigma` while the
-tails move `-0.2715 sigma`.
+**The correction is applied about the centre eq. (22) implies, not about the
+Laplace mode (gcol33/tulpa#354).** `w(z; g) = z + (g/6)(z^2 - 1)` is the
+quantile function of a MEAN-ZERO variate; eq. (22)'s density is not mean zero.
+Expanding `exp(-z^2/2 + gamma_1 z + (gamma_3/6) z^3)` gives mean
+`gamma_1 + gamma_3 / 2`, variance 1 and skewness `gamma_3` to the order kept, so
+the reported quantile is
+`mu_i + sigma_i {gamma_1 + gamma_3/2 + w(z_p; gamma_3)}`. Placing the mean-zero
+variate at `mu_i` asserts `gamma_1 = -gamma_3/2` rather than an absent location
+term, and that is the whole of what gcol33/tulpa#346 measured. RMC constrain
+their skew normal's mean to `gamma^(1)` alone, setting aside the cubic term's
+own contribution to the mean; the centre here is the one their expansion
+implies, measured against exact quadrature rather than adopted (total
+standardized distance to the exact marginal mean over 12 coefficients: 3.6171 at
+`mu_i`, 1.0219 with `gamma_3/2` alone, 2.5799 with `gamma_1` alone, 0.1410 with
+both).
 
-Both scores, 400 prior-predictive replicates of the rare-event binomial-logit
-fixture, read off ONE solve per seed. Endpoint error `441.42 -> 191.58`, a 56.6%
-reduction with both endpoints better on 396 of 400 -- the #302 gate's own
-reading, reproduced. Paired CRPS against the exact posterior, which reads the
-whole CDF: `+0.00775` at `t = +3.54`, a NET LOSS, with SBC uniformity moving
-`0.0833 -> 0.1139` against an exact reference of `0.0290`. The `shift only`
-control arm is what separates the two effects and is why the gate carries it: a
-Gaussian relocated by exactly the 95%-level offset scores `-0.0145`, which is
-what a Gaussian at the exact mean and sd achieves, and the reshaping laid on top
-of that is what turns the gain into a loss.
+**The measurement, 400 prior-predictive replicates of the rare-event
+binomial-logit fixture, read off ONE solve per seed.** Endpoint error
+`442.52 -> 100.05`, a 77.4% reduction with both endpoints better on 396 of 400.
+Paired CRPS against the exact posterior, which reads the whole CDF: `-0.01643`
+at `t = -1.89` against the exact posterior's own `-0.01662`, i.e. essentially
+all of the achievable gain, with SBC uniformity `0.0833 -> 0.0329` against an
+exact reference of `0.0290` and the PIT re-entering the simultaneous band at
+`p = 0.089`. Two control arms hold the decomposition: `shift only` (a Gaussian
+relocated by the 95%-level offset, no reshaping) scores `-0.0145`, which the
+full correction beats -- that is the cubic term earning its place -- and
+`no centre` (the same reshaping about `mu_i`) reproduces the #346 loss exactly,
+`+0.00775` at `t = +3.54` with KS `0.1138`.
 
-So the missing piece is the LOCATION term, RMC's `gamma^(1)`, not the cubic one
-(gcol33/tulpa#354 reduces it to the marginal variance of the linear predictor
-plus quantities `gamma_3` already computes, so it is tractable here rather than
-blocked) -- their own Epil GLMM reads the same way (`dev_notes/rmc2009/FACTS.md` Sec 5.2:
-the Gaussian is corrected mainly in the mean and "the correction for skewness is
-minor"). `gamma_3` is a LOWER bound on the true skewness besides, so it moves
-only part of even the half it addresses. On CI coverage over the small-group
-Bernoulli RE fixture (200 seeds x 2 coefficients) the difference is immaterial in
-either direction -- nominal 0.95 gives 0.9650 against 0.9600, nominal 0.80 gives
-0.8050 against 0.8075 -- every difference inside one standard error. Tests:
-section 4 of `test-inner-skew-correction.R` (the whole-marginal gate, on #335's
-`recov_sbc()` / `sbc_report()` / `sbc_crps_compare()`, slow tier), plus a paired
+`gamma_1` is REQUIRED, not optional: a coordinate whose location term could not
+be formed (a coupled or multi-process unit, a field past the eta-variance solve
+budget) declines the whole correction and reports the Gaussian quantiles.
+`gamma_3` is a LOWER bound on the true skewness besides, so the reshaping still
+moves only part of the way. **The default is still `FALSE`.** Tests: section 4
+of `test-inner-skew-correction.R` (the whole-marginal gate, on #335's
+`recov_sbc()` / `sbc_report()` / `sbc_crps_compare()`, slow tier), section 10 of
+`test-inner-skew.R` (the `gamma_1` arbiters), plus a paired
 corrected-vs-Gaussian coverage gate in `test-nested-laplace-recovery.R`.
+
+### The inner-Laplace location term gamma_1 (gcol33/tulpa#354)
+
+`gamma_3` is the cubic coefficient of eq. (12)'s NUMERATOR along the Gaussian
+conditional-mean curve. `gamma_1` is the FIRST-ORDER coefficient of its
+DENOMINATOR, `-(1/2) log|H_{-i,-i}(x_i)|`, along the same curve, and it is what
+RMC's own Epil GLMM says is the larger of the two ("the simplified Laplace
+approximation does correct the Gaussian approximation in the mean, and the
+correction for skewness is minor", `dev_notes/rmc2009/FACTS.md` Sec 5.2).
+
+The `inner_laplace_skew.h` SCOPE note used to call it blocked, because the
+likelihood-curvature perturbation is diagonal only in the paper's augmented
+representation. That OVERSTATED it. With `w_j = -l_j''(eta_j)`,
+`d log|M| = tr(M^{-1} dM)` gives
+
+    gamma_1(i) = (1/2) sum_j l3_j * var(eta_j | x_i) * u_{i,j} / sigma_i,
+    var(eta_j | x_i) = s_j - u_{i,j}^2 / sigma_i^2,   s_j := [A Sigma A']_jj,
+
+because `[A_{-i} H_{-i,-i}^{-1} A_{-i}']_jj` IS the conditional variance of
+`eta_j` given `x_i`. Substituting the second line and recognising the cubic sum
+collapses it to
+
+    gamma_1(i) = (1/2) [ (1/sigma_i) sum_j l3_j * s_j * u_{i,j} - gamma_3(i) ],
+
+so the ONLY new quantity is `s_j`, the marginal variance of the linear
+predictor, and it does not depend on the probed index -- one pass per fit.
+`compute_eta` is a closure, not a matrix, so `A` is never assembled:
+`s_j = sum_k (A e_k)_j (A Sigma e_k)_j` reads it off exact affine eta
+differences plus the full solves the live factor already serves
+(`inner_eta_var_scan`, `src/inner_laplace_skew.h`), identically on the dense and
+CHOLMOD paths. `INNER_ETA_VAR_MAX_SOLVES` (5000) bounds that pass; past it the
+term declines with `eta_var_budget`.
+
+Three arbiters, none of them the shipped formula (`test-inner-skew.R` section
+10): a central difference of the denominator log-determinant on an
+independently written model (3e-11 relative over 17 index/model combinations);
+the reduction to eq. (21) line 1 at `A = I` over an AR1 GMRF prior, term for
+term to 1e-15 (a DIAGONAL prior makes every `a_ij` zero and both sides
+trivially zero, so it has to be a coupled prior); and the exact 2-D quadrature
+centre check above. The `j in I\i` restriction the paper imposes falls out
+rather than being imposed: at `A = I`, `var(eta_i | x_i) = 0`.
+
+Conditional-mode vs conditional-mean is settled, not assumed: eq. (13) replaces
+the mode by the Gaussian conditional mean and eq. (19) reads pi_GG at its own
+mean. Both curves pass through the joint mode AND share their first derivative
+there (`dx*_{-i}/dx_i = -H_{-i,-i}^{-1} H_{-i,i}` is the Gaussian conditional
+slope), so the dropped quadratic-form penalty is `O((x_i^(s))^4)` -- past the
+order kept.
+
+SCOPE: separable likelihoods (the `scalar` oracle), which is every built-in
+family and every single-process `LikelihoodSpec`. A unit reading several linear
+predictors at once DECLINES with `multi_eta_unit`. The widened form is written
+out in the header --
+`(1/2)[(1/sigma_i) sum_units sum_{a,b,c} T^{abc} S_u^{ab} u^c - gamma_3(i)]`,
+with `S_u` the unit's K x K marginal eta covariance block -- and what is missing
+is an oracle contracting `T` against a MATRIX in two slots and a vector in the
+third; `Curvature3Oracle::unit` and `CellCubic3Fn` both contract the same vector
+three times, so it is not reachable from them and is left unattempted rather
+than approximated.
 
 ### The fixed-effect marginal is a mixture, and is quantiled as one (gcol33/tulpa#336)
 

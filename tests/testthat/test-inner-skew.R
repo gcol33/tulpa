@@ -899,3 +899,218 @@ test_that("the coupled cubic term reproduces the formula and tracks the exact sk
   expect_identical(.tulpa_gamma3_band(exact[1]), "ok")
   expect_identical(.tulpa_gamma3_band(fit$inner_skew[1]), "good")
 })
+
+
+# --------------------------------------------------------------------------- #
+# (10) The LOCATION term gamma_1 (gcol33/tulpa#354)                            #
+# --------------------------------------------------------------------------- #
+#
+# gamma_3 is the cubic coefficient of eq. (12)'s NUMERATOR along the Gaussian
+# conditional-mean curve; gamma_1 is the first-order coefficient of its
+# DENOMINATOR, -(1/2) log|H_{-i,-i}(x_i)|, along the same curve. Three arbiters,
+# none of them the shipped formula:
+#
+#   (a) the definition, differenced: the engine's value against a central
+#       difference of that log-determinant computed in R from an independently
+#       written model;
+#   (b) the paper, at A = I: Rue, Martino & Chopin (2009) eq. (21) line 1
+#       written out in their own symbols, over a GMRF prior so the nodes are
+#       genuinely coupled (a diagonal prior makes every a_ij zero and both
+#       sides trivially zero);
+#   (c) exact quadrature: does the centre mu_i + sigma_i (gamma_1 + gamma_3 / 2)
+#       land nearer the exact marginal mean than the Laplace mode, and than
+#       either term alone.
+
+.g1_SB <- 3
+
+.g1_l3 <- function(e) { p <- stats::plogis(e); -p * (1 - p) * (1 - 2 * p) }
+.g1_H  <- function(X, b) {
+  p <- stats::plogis(as.numeric(X %*% b))
+  t(X) %*% (X * (p * (1 - p))) + diag(ncol(X)) / .g1_SB^2
+}
+.g1_mode <- function(X, y) {
+  b <- rep(0, ncol(X))
+  for (it in seq_len(300L)) {
+    e <- as.numeric(X %*% b)
+    st <- solve(.g1_H(X, b),
+                as.numeric(t(X) %*% (y - stats::plogis(e))) - b / .g1_SB^2)
+    b <- b + st
+    if (max(abs(st)) < 1e-13) break
+  }
+  b
+}
+
+# The general-representation formula, written from the derivation.
+.g1_ref <- function(X, y, i) {
+  b <- .g1_mode(X, y); S <- solve(.g1_H(X, b))
+  d3 <- .g1_l3(as.numeric(X %*% b))
+  sig <- sqrt(S[i, i])
+  u <- as.numeric(X %*% S[, i])          # cov(eta_j, x_i)
+  s <- rowSums((X %*% S) * X)            # var(eta_j)
+  list(sigma = sig, mode = b,
+       gamma3 = sum(d3 * u^3) / sig^3,
+       gamma1 = 0.5 * sum(d3 * (s - u^2 / S[i, i]) * u) / sig)
+}
+
+# The definition: d/ds of -(1/2) log|H_{-i,-i}| along the conditional-mean curve.
+.g1_fd <- function(X, y, i, h = 1e-4) {
+  b <- .g1_mode(X, y); S <- solve(.g1_H(X, b))
+  sig <- sqrt(S[i, i]); v <- S[, i]
+  D <- function(t) {
+    HH <- .g1_H(X, b + (t / sig) * v)
+    -0.5 * as.numeric(determinant(HH[-i, -i, drop = FALSE],
+                                  logarithm = TRUE)$modulus)
+  }
+  (D(h) - D(-h)) / (2 * h)
+}
+
+test_that("gamma_1 is the first-order denominator coefficient it is defined to be", {
+  skip_on_cran()
+  set.seed(404)
+  worst_ref <- 0; worst_fd <- 0; n_checked <- 0L
+  for (cs in list(c(30, 3), c(60, 4), c(25, 2), c(80, 5), c(15, 3))) {
+    n <- cs[1]; p <- cs[2]
+    X <- cbind(1, matrix(stats::rnorm(n * (p - 1)), n))
+    bt <- stats::rnorm(p, 0, 0.8); bt[1] <- -1.2
+    y <- as.numeric(stats::rbinom(n, 1, stats::plogis(as.numeric(X %*% bt))))
+    f <- tulpa_laplace(y = y, n_trials = rep(1L, n), X = X, family = "binomial",
+                       beta_prior = list(mean = rep(0, p), sd = rep(.g1_SB, p)),
+                       max_iter = 300L, tol = 1e-12,
+                       compute_skew = TRUE, skew_idx = seq_len(p))
+    expect_length(f$inner_skew_gamma1, p)
+    expect_true(all(is.finite(f$inner_skew_gamma1)))
+    # The direct single-fit door reports the kernel's own empty reason string;
+    # the nested drivers translate it to NA on the way onto the fit.
+    expect_false(nzchar(f$inner_skew_gamma1_declined))
+    for (i in seq_len(p)) {
+      r <- .g1_ref(X, y, i)
+      scale <- max(abs(r$gamma1), 1e-3)
+      worst_ref <- max(worst_ref, abs(f$inner_skew_gamma1[i] - r$gamma1) / scale)
+      worst_fd  <- max(worst_fd, abs(f$inner_skew_gamma1[i] - .g1_fd(X, y, i)) / scale)
+      n_checked <- n_checked + 1L
+    }
+  }
+  expect_gt(n_checked, 15L)
+  # Measured worst relative deviation: 3e-11 against the reference (the two are
+  # the same algebra evaluated differently) and 2e-9 against the finite
+  # difference, which is the differencing error.
+  expect_lt(worst_ref, 1e-8)
+  expect_lt(worst_fd, 1e-6)
+})
+
+test_that("gamma_1 reduces to RMC eq. (21) line 1 in their augmented representation", {
+  skip_on_cran()
+  # A = I (x_j == eta_j) with an AR1 GMRF prior, so the nodes are coupled and
+  # the reduction is not the trivial one.
+  ar1 <- function(n, rho, tau) {
+    Q <- diag(1 + rho^2, n)
+    Q[1, 1] <- Q[n, n] <- 1
+    for (k in seq_len(n - 1L)) { Q[k, k + 1L] <- -rho; Q[k + 1L, k] <- -rho }
+    tau / (1 - rho^2) * Q
+  }
+  fit_gmrf <- function(P, y) {
+    b <- rep(0, length(y))
+    for (it in seq_len(300L)) {
+      pr <- stats::plogis(b)
+      st <- solve(diag(pr * (1 - pr)) + P, (y - pr) - as.numeric(P %*% b))
+      b <- b + st
+      if (max(abs(st)) < 1e-13) break
+    }
+    b
+  }
+  set.seed(21)
+  gaps <- numeric(0)
+  for (n in c(8L, 12L, 20L)) {
+    for (rho in c(0.5, 0.9)) {
+      P <- ar1(n, rho, tau = 1.5)
+      y <- as.numeric(stats::rbinom(n, 1, 0.25))
+      b <- fit_gmrf(P, y)
+      pr <- stats::plogis(b)
+      S <- solve(diag(pr * (1 - pr)) + P)
+      d3 <- .g1_l3(b); sg <- sqrt(diag(S))
+      for (i in c(1L, 2L, as.integer(n %/% 2L), n)) {
+        # ours, from the general formula with A = I
+        u <- S[, i]; sig <- sg[i]
+        ours <- 0.5 * sum(d3 * (diag(S) - u^2 / S[i, i]) * u) / sig
+        # theirs: (1/2) sum_{j != i} sigma_j^2 {1 - corr^2} d_j^(3) sigma_j a_ij
+        a <- S[i, ] / (sg[i] * sg)
+        jj <- setdiff(seq_len(n), i)
+        theirs <- 0.5 * sum(sg[jj]^2 * (1 - a[jj]^2) * d3[jj] * sg[jj] * a[jj])
+        gaps <- c(gaps, abs(ours - theirs))
+      }
+    }
+  }
+  expect_gt(length(gaps), 20L)
+  # Term for term, not to within a tolerance the numbers could hide in.
+  expect_lt(max(gaps), 1e-15)
+})
+
+test_that("the corrected centre lands on the exact marginal mean", {
+  skip_on_cran()
+  # Two coefficients, so the exact marginal mean is a two-dimensional
+  # quadrature of the same log posterior the reference above writes.
+  lpost <- function(X, y, b) {
+    e <- as.numeric(X %*% b)
+    sum(y * e - log1p(exp(e))) - 0.5 * sum(b^2) / .g1_SB^2
+  }
+  exact_mean <- function(X, y, i, mode, ng = 601L) {
+    S <- solve(.g1_H(X, mode))
+    g1 <- seq(mode[1] - 9 * sqrt(S[1, 1]), mode[1] + 9 * sqrt(S[1, 1]), length.out = ng)
+    g2 <- seq(mode[2] - 9 * sqrt(S[2, 2]), mode[2] + 9 * sqrt(S[2, 2]), length.out = ng)
+    lv <- outer(g1, g2, Vectorize(function(a, b) lpost(X, y, c(a, b))))
+    w <- exp(lv - max(lv)); w <- w / sum(w)
+    mw <- if (i == 1L) rowSums(w) else colSums(w)
+    sum(mw * (if (i == 1L) g1 else g2))
+  }
+
+  set.seed(303)
+  tot <- c(laplace = 0, g3_only = 0, g1_only = 0, both = 0)
+  for (rep in seq_len(6L)) {
+    n <- sample(12:40, 1L)
+    X <- cbind(1, stats::rnorm(n))
+    y <- as.numeric(stats::rbinom(n, 1,
+                                  stats::plogis(-1.8 + 0.9 * X[, 2])))
+    f <- tulpa_laplace(y = y, n_trials = rep(1L, n), X = X, family = "binomial",
+                       beta_prior = list(mean = c(0, 0), sd = rep(.g1_SB, 2)),
+                       max_iter = 300L, tol = 1e-12,
+                       compute_skew = TRUE, skew_idx = 1:2)
+    for (i in 1:2) {
+      r  <- .g1_ref(X, y, i)
+      ex <- exact_mean(X, y, i, r$mode)
+      g3 <- f$inner_skew[i]; g1 <- f$inner_skew_gamma1[i]
+      d  <- function(c0) abs(c0 - ex) / r$sigma
+      tot <- tot + c(d(r$mode[i]),
+                     d(r$mode[i] + r$sigma * (g3 / 2)),
+                     d(r$mode[i] + r$sigma * g1),
+                     d(r$mode[i] + r$sigma * (g1 + g3 / 2)))
+    }
+  }
+  # Total standardized distance from the reported centre to the exact marginal
+  # mean, over 12 coefficients. Measured: 3.6171 at the Laplace mode, 1.0219
+  # with the induced mean alone, 2.5799 with the location term alone, and
+  # 0.1410 with both.
+  # BOTH terms are needed and neither is the whole of it.
+  expect_lt(tot[["both"]], 0.25 * tot[["g3_only"]])
+  expect_lt(tot[["both"]], 0.1 * tot[["g1_only"]])
+  expect_lt(tot[["both"]], 0.1 * tot[["laplace"]])
+})
+
+test_that("gamma_1 declines rather than reporting zero where it cannot be formed", {
+  skip_on_cran()
+  # A coupled cell likelihood scores the cubic term through the widened
+  # contraction (gcol33/tulpa#301) but exposes no way to contract the third
+  # derivative against a covariance BLOCK, which is what the location term
+  # needs. It declines, and says which of the two it is.
+  coupled_occ_register()
+  d <- coupled_occ_data(seed = 311, n_cells = 60L, n_visits = 3L,
+                        b_occ = 0.2, b_det = -0.5)
+  fit <- tulpa_nested_laplace_joint(
+    responses = coupled_occ_arms(d, beta_prec = 0.25),
+    prior = coupled_occ_flat_prior(d),
+    cell_coupling = "test_occupancy_mixture",
+    control = list(max_iter = 300L, tol = 1e-12, diagnose_k = FALSE))
+  expect_true(all(is.finite(fit$inner_skew)))
+  expect_true(is.null(fit$inner_skew_gamma1) || !length(fit$inner_skew_gamma1))
+  expect_identical(fit$inner_skew_gamma1_declined, "multi_eta_unit")
+  expect_match(.inner_skew_decline_note("multi_eta_unit"), "several linear")
+})

@@ -581,9 +581,13 @@ test_that("naming the support mixed leaves the reported interval unchanged", {
   v <- sort(stats::rnorm(40L))
   w <- stats::runif(40L); w <- w / sum(w)
   probs <- c(0.025, 0.5, 0.975)
+  # Compared against the density dispatch itself, not against a hard-coded
+  # `outside` policy: the invariant is that the two supports take ONE
+  # construction, so it has to keep holding when that construction changes
+  # (gcol33/tulpa#353 moved it from "clamp" to "extend").
   expect_identical(
     tulpa:::.nl_summary_quantile(v, w, probs, "unbounded", "mixed"),
-    tulpa:::.nl_wtd_quantile(v, w, probs, outside = "clamp"))
+    tulpa:::.nl_summary_quantile(v, w, probs, "unbounded", "density"))
   # And it is NOT the moment read, which is what a design-weighted support takes.
   expect_false(isTRUE(all.equal(
     tulpa:::.nl_summary_quantile(v, w, probs, "unbounded", "mixed"),
