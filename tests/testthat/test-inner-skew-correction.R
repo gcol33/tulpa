@@ -465,6 +465,88 @@ test_that("a centre past its band declines at the front door, and says so", {
                                 as.numeric(confint(f)[2, ]))))
 })
 
+# A Poisson small-group random-effect fit whose intercept reaches the centre
+# band from its own data (gcol33/tulpa#364). The block above forces the centre
+# by overwriting `inner_skew_gamma1`, which tests the plumbing and cannot say the
+# regime is reachable; this one is the regime.
+#
+# WHY THIS DESIGN. The applied centre is `m_i = cross / (2 sigma_i)` -- the
+# gamma_3 cancels exactly between `gamma_1` and `gamma_3 / 2` -- so with
+# `rho_ij` the Gaussian correlation between `eta_j` and the probed coordinate and
+# `c_j = l_j''' s_j^{3/2}`,
+#
+#   m_i = (1/2) sum_j c_j rho_ij,      gamma_3(i) = sum_j c_j rho_ij^3,
+#
+# the same weighted sum at different powers. Reaching |m| >= 1.20 while
+# |gamma_3| stays inside the shape band needs MANY WEAKLY correlated coherent
+# terms. Poisson's `l''' = -mu` is uniformly negative so every term adds, and
+# many small groups drive `sigma_i` (and so every `rho_ij`) down like `G^-1/2`,
+# which sends `|m| ~ sqrt(G)` up and `|gamma_3| ~ G^-1/2` down at once.
+.skew_centre_fixture <- function(seed = 770001L, NR = 150L, SPR = 2L,
+                                 SB = 0.7,
+                                 grid = exp(seq(log(0.5), log(2), length.out = 7))) {
+    set.seed(seed)
+    sigma <- grid[sample.int(length(grid), 1L)]
+    beta <- stats::rnorm(2, 0, SB)
+    xg <- stats::rnorm(NR)
+    region <- rep(seq_len(NR), each = SPR)
+    X <- cbind(1, xg[region])
+    u <- stats::rnorm(NR, 0, sigma)
+    y <- as.numeric(stats::rpois(NR * SPR,
+                                 exp(as.numeric(X %*% beta) + u[region])))
+    list(y = y, X = X, region = as.integer(region), N = NR * SPR, NR = NR,
+         SB = SB, grid = grid)
+}
+
+.skew_centre_fit <- function(d) {
+    suppressWarnings(tulpa_nested_laplace_joint(
+        responses = list(list(y = d$y, n_trials = rep(1L, d$N), X = d$X,
+                              family = "poisson", phi = 1,
+                              beta_prior_prec = rep(1 / d$SB^2, 2))),
+        prior = list(list(type = "iid", obs_idx = d$region, n_units = d$NR,
+                          sigma_grid = d$grid)),
+        control = list(max_iter = 300L, tol = 1e-10, n_threads = 1L,
+                       keep_grid_hessians = TRUE, diagnose_k = FALSE,
+                       diagnose_skew = TRUE, auto_recenter = FALSE,
+                       progress = FALSE, skew_correct = TRUE)))
+}
+
+test_that("a fit reaches the centre band on its own data, and is declined there", {
+    skip_on_cran()
+    f <- .skew_centre_fit(.skew_centre_fixture())
+    sc <- f$skew_correction
+
+    # The intercept: BOTH other inner scores admit it, and only the centre does
+    # not. That is what makes it a test of the centre band rather than of the
+    # gate's precedence -- a coefficient the shape band or the importance k-hat
+    # had already refused would report their reason instead.
+    expect_false(identical(sc$band[1], "unreliable"))
+    expect_false(identical(sc$band_combined[1], "unreliable"))
+    expect_true(is.finite(sc$gamma1[1]))
+    expect_gte(abs(sc$centre[1]), .nl_diag("centre_unreliable"))
+    expect_identical(sc$reason[1], "centre_unreliable")
+    expect_false(sc$eligible[1])
+
+    # The shape term is not what is large here: the correction this fit declines
+    # is essentially a pure relocation.
+    expect_lt(abs(sc$gamma3[1]), 0.5)
+
+    # The slope's centre is inside the band on the same fit, so the two arms of
+    # the gate are exercised against each other rather than against a constant.
+    expect_identical(sc$reason[2], "eligible")
+    expect_true(sc$eligible[2])
+
+    # And the decline is READ: the intercept reports the Gaussian bounds while
+    # the slope's move off them.
+    ci <- confint(f)
+    tab <- .fit_fixed_table(f)
+    z <- stats::qnorm(c(0.025, 0.975))
+    expect_identical(unname(attr(ci, "skew_applied")), c(FALSE, TRUE))
+    expect_equal(as.numeric(ci[1, ]), tab$estimate[1] + tab$std.error[1] * z)
+    expect_false(isTRUE(all.equal(as.numeric(ci[2, ]),
+                                  tab$estimate[2] + tab$std.error[2] * z)))
+})
+
 # --------------------------------------------------------------------------- #
 # (4) The whole-marginal gate (gcol33/tulpa#346)                              #
 # --------------------------------------------------------------------------- #

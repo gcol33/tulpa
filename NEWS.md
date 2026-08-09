@@ -1,5 +1,23 @@
 # tulpa NEWS
 
+## 0.0.173
+
+* A fit reaches the skew correction's centre band from its own data, and the
+  decline path is tested there (gcol33/tulpa#364). The band
+  (`.NL_DIAG$centre_unreliable = 1.20`, gcol33/tulpa#362) had never fired: the
+  largest admitted centre on any measured fixture was 1.192 and the only test
+  producing `centre_unreliable` did it by overwriting `inner_skew_gamma1`. The
+  applied centre is `m_i = cross / (2 sigma_i)` -- the `gamma_3` cancels exactly
+  between `gamma_1` and `gamma_3 / 2` -- so with `rho_ij` the Gaussian
+  correlation between `eta_j` and the probed coordinate, `m_i` and `gamma_3(i)`
+  are the same weighted sum at the first and third powers of `rho`, and reaching
+  the centre band inside the shape band needs many weakly correlated COHERENT
+  terms rather than a few strong ones. A small-group Poisson random-effect fit
+  supplies both: `l''' = -mu` is uniformly negative so every term adds, and many
+  small groups send `|m| ~ sqrt(G)` up while `|gamma_3| ~ G^-1/2` falls. On 150
+  groups of 2 the band declines 178 of 300 intercept-seeds, every one with the
+  shape band and the combined inner band both admitting.
+
 ## 0.0.172
 
 * The rail detector's materiality guard is read on a node-count-free scale
