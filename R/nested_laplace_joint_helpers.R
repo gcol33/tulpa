@@ -766,14 +766,27 @@
         ok <- is.matrix(Vk) && nrow(Vk) == p && ncol(Vk) == p
         Hk <- if (!ok) NULL else tryCatch(solve(Vk), error = function(e) NULL)
         # A cell carrying no usable block is fatal only if it carries weight;
-        # a zero-weight cell contributes nothing and is left empty for
-        # `.nested_fixed_moments()` to skip.
-        if (is.null(Hk) && is.finite(w[k]) && w[k] > 0) {
-            return(decline("cell_block_unavailable"))
+        # a zero-weight cell contributes nothing and its slot is left empty for
+        # `.nested_fixed_moments()` to skip. The slot is SKIPPED rather than
+        # assigned NULL: `l[[k]] <- NULL` removes the element, which on a
+        # trailing empty cell shortens the list below `n_grid` and takes the
+        # whole marginalization down on the length check (gcol33/tulpa#345).
+        if (is.null(Hk)) {
+            if (is.finite(w[k]) && w[k] > 0) {
+                return(decline("cell_block_unavailable"))
+            }
+            next
         }
         grid_hessians[[k]] <- Hk
-        grid_modes[[k]]    <- if (is.null(Hk)) NULL
-                              else as.numeric(modes[k, seq_len(p)])
+        grid_modes[[k]]    <- as.numeric(modes[k, seq_len(p)])
+    }
+
+    # A retention holding no cell the weights put mass on cannot produce a
+    # coefficient table, so it is a decline with a reason rather than a pair of
+    # lists `.nested_fixed_moments()` silently returns NULL on.
+    filled <- !vapply(grid_hessians, is.null, logical(1))
+    if (!any(filled & is.finite(w) & w > 0)) {
+        return(decline("no_weighted_cell_block"))
     }
 
     res$grid_hessians <- grid_hessians

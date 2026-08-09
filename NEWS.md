@@ -1,5 +1,31 @@
 # tulpa NEWS
 
+## 0.0.158
+
+* The per-cell fixed-effect retention on the joint tier indexes the same grid
+  as the weights, on every grid (gcol33/tulpa#345). `.nested_fixed_moments()`
+  reads `$weights`, `$grid_modes` and `$grid_hessians` as three views of one
+  grid, and a caller pairing `weights[k]` with `grid_modes[[k]]` makes the same
+  assumption with no guard at all. `.joint_attach_grid_fixed()` built the pair
+  cell by cell and wrote `NULL` into the slot of a cell whose inner solve
+  returned no usable block -- which on an R list REMOVES the element instead of
+  leaving it empty. An interior empty cell was invisible, since the next write
+  re-extended the list; a TRAILING one left the pair one shorter than the grid,
+  so the marginalizer's length check declined and every fixed-effect estimate,
+  standard error and interval on the fit came back `NA`. The slot is now
+  skipped rather than assigned, which is what the marginalizer's zero-weight
+  skip and the gcol33/tulpa#342 renormalization were already written for.
+  Adaptive refinement is what makes the trailing case reachable: it appends
+  cells at the end of the grid, and an appended cell whose solve returns a
+  non-finite marginal carries zero weight and no block.
+
+* A joint fit with no coefficient table says why it has none
+  (gcol33/tulpa#293's lesson applied here). A retention holding no cell the
+  weights put mass on -- every block unusable, or an all-`NA` weight vector --
+  now records `grid_fixed_declined = "no_weighted_cell_block"` instead of
+  handing back a pair `.nested_fixed_moments()` silently returns `NULL` on with
+  `grid_fixed_declined` reporting `NA`.
+
 ## 0.0.157
 
 * `tulpa_posterior_draws()` serves a single-block nested-Laplace fit
