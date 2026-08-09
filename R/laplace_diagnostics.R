@@ -666,25 +666,44 @@
   list(q = out$q, applied = as.logical(out$applied))
 }
 
-# gamma_3 per FIXED EFFECT, from the per-probed-index vector the kernel
-# attached. The probe defaults to the p fixed-effects latent indices, so the
-# default fit gives gamma3[j] for coefficient j; a fit whose `control$skew_idx`
-# probed something else is read through `inner_skew_idx` and leaves any
-# unprobed coefficient NA (never 0).
-.nl_skew_by_fixed <- function(fit, p) {
-  g <- fit[["inner_skew"]]
-  if (is.null(g) || !length(g) || p <= 0L) return(rep(NA_real_, max(p, 0L)))
-  idx <- fit[["inner_skew_idx"]]
-  out <- rep(NA_real_, p)
-  if (is.null(idx) || length(idx) != length(g)) {
-    m <- min(p, length(g))
-    out[seq_len(m)] <- as.numeric(g)[seq_len(m)]
+# Map a per-probed-index vector onto the p fixed-effect coefficients through the
+# `inner_skew_idx` correspondence. The probe defaults to the p fixed-effects
+# latent indices, so the default fit gives values[j] for coefficient j; a fit
+# whose `control$skew_idx` probed something else is read through the index and
+# leaves any unprobed coefficient at `fill` (never 0). A fit carrying values but
+# no usable index is read positionally, which is what the default probe means.
+.nl_probe_to_fixed <- function(values, idx, p, fill = NA_real_) {
+  p <- max(as.integer(p), 0L)
+  out <- rep(fill, p)
+  if (p == 0L || is.null(values) || !length(values)) return(out)
+  if (is.null(idx) || length(idx) != length(values)) {
+    m <- min(p, length(values))
+    out[seq_len(m)] <- values[seq_len(m)]
     return(out)
   }
   idx <- as.integer(idx)
   keep <- which(idx >= 1L & idx <= p)
-  out[idx[keep]] <- as.numeric(g)[keep]
+  out[idx[keep]] <- values[keep]
   out
+}
+
+# gamma_3 per FIXED EFFECT, from the per-probed-index vector the kernel attached.
+.nl_skew_by_fixed <- function(fit, p) {
+  g <- fit[["inner_skew"]]
+  if (is.null(g) || !length(g) || p <= 0L) return(rep(NA_real_, max(p, 0L)))
+  .nl_probe_to_fixed(as.numeric(g), fit[["inner_skew_idx"]], p)
+}
+
+# The COMBINED inner band per fixed effect: the worse of gamma_3's band and the
+# importance k-hat's, resolved per index by `.subspace_bands()` -- the same
+# resolution `.tulpa_inner_layer()` performs for the whole-fit verdict, kept per
+# index because that is what a per-coefficient gate needs. Also returns the
+# k-hat itself, so a declined coefficient can report the number that declined it.
+.nl_inner_bands_by_fixed <- function(fit, p) {
+  b <- .subspace_bands(fit)
+  list(pareto_k = .nl_probe_to_fixed(b$pareto_k, b$idx, p),
+       rel_ess  = .nl_probe_to_fixed(b$rel_ess, b$idx, p),
+       band     = .nl_probe_to_fixed(b$band, b$idx, p, NA_character_))
 }
 
 # Record the skew correction's inputs and its per-coefficient eligibility on the
@@ -692,21 +711,81 @@
 # stored fit says which coefficients its intervals were corrected on. One attach
 # point for every nested driver, called right after the gamma_3 attach.
 #
-# `enabled` is the `control$skew_correct` knob. Eligibility is the band gate
-# only; the monotonicity condition also depends on the requested interval level,
-# so the final per-level decision is `.nl_skew_marginal()`'s and is reported as
-# an attribute on the summary it produced.
+# `enabled` is the `control$skew_correct` knob. Eligibility is the band gate;
+# the monotonicity condition also depends on the requested interval level, so the
+# final per-level decision is `.nl_skew_marginal()`'s and is reported as an
+# attribute on the summary it produced.
+#
+# THE GATE IS THE COMBINED INNER BAND, NOT gamma_3 ALONE (gcol33/tulpa#346). The
+# inner layer carries two scores of the same Gaussian approximation -- the cubic
+# term and the importance k-hat (#303) -- and a coefficient the k-hat calls
+# unreliable is one whose inner Gaussian misfits the conditional posterior in
+# ways a leading-order cubic term does not describe. Measured on the rare-event
+# binomial-logit fixture of `test-inner-skew-correction.R`, gamma_3 alone admits
+# every replicate while the combined band is `unreliable` on 38% of them, driven
+# by the k-hat; those are the same fits gcol33/tulpa#304 selects for exact
+# sampling, so reading the two scores differently in the two places had one fit
+# judged reliable enough to correct and unreliable enough to resample.
+#
+# Every coefficient carries `reason` from a closed vocabulary, so a coefficient
+# reported from the Gaussian says which score declined it rather than going
+# silently uncorrected:
+#
+#   eligible               the correction applies, subject to the per-level
+#                          monotonicity check in `.nl_skew_marginal()`
+#   not_enabled            `control$skew_correct` is FALSE
+#   gamma3_not_computable  no cubic term at this coefficient (NaN, never 0)
+#   gamma3_unreliable      |gamma_3| at or past the band cutoff
+#   inner_k_unreliable     the importance k-hat flags this coordinate while
+#                          gamma_3 does not
+.SKEW_CORRECT_REASONS <- c("eligible", "not_enabled", "gamma3_not_computable",
+                           "gamma3_unreliable", "inner_k_unreliable")
+
 .nl_skew_correction_attach <- function(res, p_fixed, enabled) {
   p <- max(as.integer(p_fixed %||% 0L), 0L)
   g <- .nl_skew_by_fixed(res, p)
   band <- vapply(g, .tulpa_gamma3_band, character(1))
+  inner <- .nl_inner_bands_by_fixed(res, p)
+
+  reason <- rep("eligible", p)
+  if (!isTRUE(enabled)) {
+    reason <- rep("not_enabled", p)
+  } else if (p > 0L) {
+    reason[!is.finite(g)] <- "gamma3_not_computable"
+    reason[reason == "eligible" & !is.na(band) & band == "unreliable"] <-
+      "gamma3_unreliable"
+    reason[reason == "eligible" & !is.na(inner$band) &
+             inner$band == "unreliable"] <- "inner_k_unreliable"
+  }
+
   res$skew_correction <- list(
-    enabled  = isTRUE(enabled),
-    gamma3   = g,
-    band     = band,
-    eligible = isTRUE(enabled) & !is.na(band) & band != "unreliable"
+    enabled       = isTRUE(enabled),
+    gamma3        = g,
+    band          = band,
+    pareto_k      = inner$pareto_k,
+    band_combined = inner$band,
+    eligible      = reason == "eligible",
+    reason        = reason,
+    reliability   = .nl_fit_reliability(res)
   )
   res
+}
+
+# The whole-fit combined verdict at attach time, from the summaries the
+# diagnostics already stored on the fit. `diagnostics()` recomputes the same
+# string from the same reader functions; recording it here is what lets a stored
+# fit say the verdict its per-coefficient eligibility was decided under.
+.nl_fit_reliability <- function(res) {
+  psis    <- .tulpa_psis_reliability(res)
+  inner   <- .tulpa_inner_skew_reliability(res)
+  inner_k <- .tulpa_inner_k_reliability(res)
+  .tulpa_combined_reliability(
+    .tulpa_khat_band(psis$pareto_k),
+    if (is.null(inner)) NA_character_ else inner$band,
+    if (is.null(inner)) NA_character_ else inner$declined,
+    psis$pareto_k_declined,
+    if (is.null(inner_k)) NA_character_ else inner_k$band,
+    if (is.null(inner_k)) NA_character_ else inner_k$declined)
 }
 
 # The correction's state on a fit, defaulted for a fit that predates it or a
@@ -715,9 +794,27 @@
   sc <- object[["skew_correction"]]
   if (is.null(sc)) {
     return(list(enabled = FALSE, gamma3 = rep(NA_real_, p),
-                band = rep(NA_character_, p), eligible = rep(FALSE, p)))
+                band = rep(NA_character_, p),
+                pareto_k = rep(NA_real_, p),
+                band_combined = rep(NA_character_, p),
+                eligible = rep(FALSE, p),
+                reason = rep("not_enabled", p),
+                reliability = NA_character_))
   }
   sc
+}
+
+# gamma_3 masked to the coefficients the gate admits: NA elsewhere, which
+# `.nl_skew_marginal()` reads as "not computable here" and reports from the
+# Gaussian. The eligibility record is therefore what the quantile path consumes,
+# not a parallel note beside it.
+.nl_skew_gamma3_eligible <- function(sc) {
+  g <- sc$gamma3
+  el <- sc$eligible
+  if (is.null(g)) return(NULL)
+  if (is.null(el) || length(el) != length(g)) return(g)
+  g[!el] <- NA_real_
+  g
 }
 
 # Outer-grid (hyperparameter) quadrature reliability of a nested-Laplace fit:

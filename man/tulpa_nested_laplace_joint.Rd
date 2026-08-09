@@ -480,17 +480,19 @@ field block).
 \item \code{skew_correct} (\code{FALSE}) -- consume \code{gamma_3} instead of only grading it
 (gcol33/tulpa#302): report Cornish-Fisher marginal quantiles at each
 coefficient's own \code{gamma_3} from \code{summary()} / \code{confint()}, wherever the
-band says the leading-order expansion is in its regime, and the Gaussian
-quantiles everywhere else. The correction reshapes where the interval
-sits and leaves the centre and the draws untouched, so a fit run with it
-off is bit for bit the fit it was before. \verb{$skew_correction} records the
-per-coefficient \code{gamma_3}, band and eligibility; the \code{skew_applied}
-attribute on \code{summary()} / \code{confint()} records what was actually used at
-the requested level. Rue, Martino & Chopin (2009) fit a skew normal here
-instead, under a mean constraint from a location term this engine does
-not compute; the series correction is the same-order alternative that
-needs only the cubic term, and unlike a skew normal its skewness does not
-saturate inside the band it is applied on.
+combined inner band (\code{gamma_3} and the inner importance k-hat) says the
+leading-order expansion is in its regime, and the Gaussian quantiles
+everywhere else. The correction reshapes where the interval sits and
+leaves the centre and the draws untouched, so a fit run with it off is bit
+for bit the fit it was before. \verb{$skew_correction} records the
+per-coefficient \code{gamma_3}, its band, the k-hat, the combined band, the
+eligibility and the reason behind it; the \code{skew_applied} attribute on
+\code{summary()} / \code{confint()} records what was actually used at the requested
+level. It stays \code{FALSE}: scored over the whole marginal rather than at a
+symmetric endpoint pair, the correction is a net loss, because the term it
+applies is a pure location shift at a symmetric pair and the location term
+that would put the centre in the right place is not computed here
+(gcol33/tulpa#346; see \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}}).
 \item \code{subspace_debias} (\code{FALSE}) -- correct only the latent directions the
 inner-layer diagnostics flagged, by exact Metropolis along the
 Gaussian-conditional-mean surface through each cell's mode, and leave the

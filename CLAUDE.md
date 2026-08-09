@@ -638,9 +638,20 @@ report **Cornish-Fisher** marginal quantiles at each coefficient's own
 `gamma_3` (`.nl_skew_marginal()` in `R/laplace_diagnostics.R` over
 `src/cornish_fisher.h`), gated to the `good` / `ok` bands and falling back to
 the Gaussian quantiles elsewhere -- including where the requested level would
-leave the expansion's monotone range. `.nl_skew_correction_attach()` records
-the per-coefficient `gamma_3`, band and eligibility on the fit; a
-`skew_applied` attribute on the summary records what was used at that level.
+leave the expansion's monotone range. The gate is the COMBINED inner band
+(gcol33/tulpa#346): `.nl_skew_correction_attach()` resolves the per-coefficient
+band through `.subspace_bands()`, the worse of `gamma_3`'s band and the inner
+importance k-hat's, which is what #304's selector already reads. Reading the two
+scores differently in the two places had one fit judged reliable enough to
+correct and unreliable enough to resample -- on the rare-event fixture `gamma_3`
+alone admits every replicate while the combined band is `unreliable` on 38% of
+them. `.nl_skew_correction_attach()` records the per-coefficient `gamma_3`, its
+band, the k-hat, the combined band, the eligibility, the `reason` from a closed
+vocabulary (`.SKEW_CORRECT_REASONS`) and the whole-fit verdict it was decided
+under; `.nl_skew_gamma3_eligible()` is what the quantile path consumes, so a
+declined coefficient reaches `.nl_skew_marginal()` as NA rather than being noted
+and corrected anyway. A `skew_applied` attribute on the summary records what was
+used at that level.
 The correction is post-processing on the reported quantiles, so draws, modes
 and weights are bit-for-bit unchanged either way. It applies on the JOINT
 paths too since gcol33/tulpa#305 gave them the per-cell fixed-effect retention
@@ -659,15 +670,38 @@ spline-corrected Gaussian (eq. 17) is the FULL Laplace of Sec 3.2.2, reached
 only for symmetric heavy-tailed cases a cubic term cannot describe --
 `dev_notes/rmc2009/FACTS.md` holds the quoted passages.
 
-**OFF by default**, on the measurement. Against exact quadrature quantiles of
-rare-event binomial-logit posteriors it cuts total absolute endpoint error
-44.5% (2.4931 -> 1.3837), improving both endpoints in every case. On CI
-coverage over the small-group Bernoulli RE fixture (200 seeds x 2
-coefficients) it is directionally right and immaterial -- nominal 0.95 gives
-0.9650 against 0.9600, nominal 0.80 gives 0.8050 against 0.8075 -- every
-difference inside one standard error. `gamma_3` is a LOWER bound on the true
-skewness, and the correction is skewness-only, so a biased Laplace mode stays
-biased. Tests: `test-inner-skew-correction.R`, plus a paired
+**OFF by default, and the whole marginal is why (gcol33/tulpa#346).** The
+endpoint score it was accepted on is structurally blind to most of what it does.
+At a SYMMETRIC level pair the Cornish-Fisher term `sigma (gamma_3/6)(z_p^2 - 1)`
+takes the same value at both ends, because `z_p^2 = z_{1-p}^2`, so there the
+correction is a pure LOCATION SHIFT of the interval with its width exactly
+unchanged and a two-point symmetric metric can measure nothing else. Away from
+that pair it is not a shift at all: the median moves `+0.0956 sigma` while the
+tails move `-0.2715 sigma`.
+
+Both scores, 400 prior-predictive replicates of the rare-event binomial-logit
+fixture, read off ONE solve per seed. Endpoint error `441.42 -> 191.58`, a 56.6%
+reduction with both endpoints better on 396 of 400 -- the #302 gate's own
+reading, reproduced. Paired CRPS against the exact posterior, which reads the
+whole CDF: `+0.00775` at `t = +3.54`, a NET LOSS, with SBC uniformity moving
+`0.0833 -> 0.1139` against an exact reference of `0.0290`. The `shift only`
+control arm is what separates the two effects and is why the gate carries it: a
+Gaussian relocated by exactly the 95%-level offset scores `-0.0145`, which is
+what a Gaussian at the exact mean and sd achieves, and the reshaping laid on top
+of that is what turns the gain into a loss.
+
+So the missing piece is the LOCATION term, RMC's `gamma^(1)`, not the cubic one
+(gcol33/tulpa#354 reduces it to the marginal variance of the linear predictor
+plus quantities `gamma_3` already computes, so it is tractable here rather than
+blocked) -- their own Epil GLMM reads the same way (`dev_notes/rmc2009/FACTS.md` Sec 5.2:
+the Gaussian is corrected mainly in the mean and "the correction for skewness is
+minor"). `gamma_3` is a LOWER bound on the true skewness besides, so it moves
+only part of even the half it addresses. On CI coverage over the small-group
+Bernoulli RE fixture (200 seeds x 2 coefficients) the difference is immaterial in
+either direction -- nominal 0.95 gives 0.9650 against 0.9600, nominal 0.80 gives
+0.8050 against 0.8075 -- every difference inside one standard error. Tests:
+section 4 of `test-inner-skew-correction.R` (the whole-marginal gate, on #335's
+`recov_sbc()` / `sbc_report()` / `sbc_crps_compare()`, slow tier), plus a paired
 corrected-vs-Gaussian coverage gate in `test-nested-laplace-recovery.R`.
 
 ### The fixed-effect marginal is a mixture, and is quantiled as one (gcol33/tulpa#336)

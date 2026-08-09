@@ -82,17 +82,31 @@
 #'   * `skew_correct` (`FALSE`) -- consume `gamma_3` instead of only grading it
 #'     (gcol33/tulpa#302): report Cornish-Fisher marginal quantiles at each
 #'     coefficient's own `gamma_3` from `summary()` / `confint()`, wherever the
-#'     band says the leading-order expansion is in its regime, and the Gaussian
-#'     quantiles everywhere else. The correction reshapes where the interval
-#'     sits and leaves the centre and the draws untouched, so a fit run with it
-#'     off is bit for bit the fit it was before. `$skew_correction` records the
-#'     per-coefficient `gamma_3`, band and eligibility; the `skew_applied`
-#'     attribute on `summary()` / `confint()` records what was actually used at
-#'     the requested level. Rue, Martino & Chopin (2009) fit a skew normal here
-#'     instead, under a mean constraint from a location term this engine does
-#'     not compute; the series correction is the same-order alternative that
-#'     needs only the cubic term, and unlike a skew normal its skewness does not
-#'     saturate inside the band it is applied on.
+#'     combined inner band says the leading-order expansion is in its regime,
+#'     and the Gaussian quantiles everywhere else. The correction reshapes where
+#'     the interval sits and leaves the centre and the draws untouched, so a fit
+#'     run with it off is bit for bit the fit it was before. `$skew_correction`
+#'     records the per-coefficient `gamma_3`, its band, the inner importance
+#'     k-hat, the combined band, the eligibility and the reason behind it; the
+#'     `skew_applied` attribute on `summary()` / `confint()` records what was
+#'     actually used at the requested level. Rue, Martino & Chopin (2009) fit a
+#'     skew normal here instead, under a mean constraint from a location term
+#'     this engine does not compute; the series correction is the same-order
+#'     alternative that needs only the cubic term, and unlike a skew normal its
+#'     skewness does not saturate inside the band it is applied on.
+#'
+#'     It stays `FALSE`, and the measurement says so rather than caution
+#'     (gcol33/tulpa#346). Scored over the WHOLE marginal instead of at a
+#'     symmetric endpoint pair -- paired CRPS against an exact reference in a
+#'     prior-predictive experiment -- the correction is a net loss on every
+#'     coefficient of the three fixtures it was measured on. At a symmetric
+#'     level pair the Cornish-Fisher term takes the same value at both ends, so
+#'     it is a pure location shift of the interval there and an endpoint score
+#'     can measure nothing else; away from that pair the median moves one way
+#'     and the tails the other. A control arm carrying the shift alone recovers
+#'     everything a correctly located Gaussian achieves, and the reshaping laid
+#'     on top of it is what turns the gain into a loss. The missing piece is the
+#'     location term, not the cubic one.
 #'   * `subspace_debias` (`FALSE`) -- correct only the latent directions the
 #'     inner-layer diagnostics flagged, by exact Metropolis, and leave the rest
 #'     at their Gaussian conditional (gcol33/tulpa#304, extended to this backend

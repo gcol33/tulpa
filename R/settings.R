@@ -382,21 +382,45 @@
 # `skew_correct` decides whether the inner-Laplace marginal quantiles are
 # skew-corrected (gcol33/tulpa#302) rather than only graded: a Cornish-Fisher
 # correction at each coordinate's own gamma_3, gated to the `good` / `ok` bands
-# by `gamma3_unreliable` above. FALSE, on the measurement rather than on
-# caution. Against exact quadrature quantiles of rare-event binomial-logit
-# posteriors the correction cuts total absolute endpoint error from 2.4931 to
-# 1.3837 (44.5%), improving both endpoints in every case
-# (test-inner-skew-correction.R). But on CI coverage over the small-group
-# Bernoulli random-effect fixture -- 200 seeds x 2 coefficients, both intervals
-# read off the same fits -- it is directionally right and immaterial: nominal
-# 0.95 gives Gaussian 0.9650 against corrected 0.9600, nominal 0.80 gives 0.8050
-# against 0.8075, nominal 0.50 gives 0.4950 against 0.5000, every difference
-# inside one standard error (test-nested-laplace-recovery.R). Two reasons the
-# coverage gain is smaller than the marginal gain: gamma_3 is a LOWER bound on
-# the true skewness (0.875 to 0.943 of it on the cases above), and the
-# correction is skewness-only, so a biased Laplace mode stays biased -- that is
-# Rue, Martino & Chopin's gamma^(1) term, which this engine does not compute.
-# `control$skew_correct = TRUE` turns it on per fit.
+# of the COMBINED inner band (gamma_3 and the importance k-hat, gcol33/tulpa#346)
+# by `gamma3_unreliable` and `k_usable` above. FALSE, and the measurement is what
+# says so.
+#
+# THE TWO SCORES DISAGREE, AND THE WHOLE-MARGINAL ONE IS THE VERDICT. Against
+# exact quadrature quantiles of rare-event binomial-logit posteriors the
+# correction cuts total absolute endpoint error from 2.4931 to 1.3837 (44.5%),
+# improving both endpoints in every case (test-inner-skew-correction.R). Scored
+# over the whole marginal instead -- paired CRPS against the exact posterior in a
+# 400-replicate prior-predictive experiment on the same family of fits -- it is a
+# NET LOSS: delta +0.00775 against the uncorrected Laplace at t = +3.54, with SBC
+# uniformity moving 0.0833 -> 0.1139 while the exact reference reads 0.0290
+# (gcol33/tulpa#346, the section-4 gate in test-inner-skew-correction.R).
+#
+# The two scores disagree structurally, not by fixture accident. At a SYMMETRIC
+# level pair the Cornish-Fisher term sigma (gamma_3 / 6) (z_p^2 - 1) takes the
+# same value at both ends, because z_p^2 = z_{1-p}^2, so there the correction is
+# a pure location shift of the interval with its width exactly unchanged and a
+# two-point symmetric metric can measure nothing else. Away from that pair the
+# median moves +0.0956 sigma while the tails move -0.2715 sigma. A control arm
+# carrying the shift ALONE scores -0.0145 against the uncorrected Laplace,
+# which is what a Gaussian at the exact mean and sd achieves (-0.0145); the
+# reshaping laid on top of it is what turns the gain into a loss.
+#
+# The missing piece is the LOCATION term, Rue, Martino & Chopin's gamma^(1),
+# which this engine does not compute (gcol33/tulpa#354 assesses the derivation
+# it needs here). Their own Epil GLMM reads the same way
+# (dev_notes/rmc2009/FACTS.md, Sec 5.2): the Gaussian is corrected mainly in the
+# mean and "the correction for skewness is minor". A skewness-only correction
+# applied about an uncorrected centre is therefore the smaller half of the
+# method, and gamma_3 is a LOWER bound on the true skewness besides (0.875 to
+# 0.943 of it on the cases above), so it moves only part of even that half. On CI
+# coverage over the small-group Bernoulli random-effect fixture -- 200 seeds x 2
+# coefficients, both intervals read off the same fits -- the difference is
+# immaterial in either direction: nominal 0.95 gives Gaussian 0.9650 against
+# corrected 0.9600, nominal 0.80 gives 0.8050 against 0.8075, nominal 0.50 gives
+# 0.4950 against 0.5000, every difference inside one standard error
+# (test-nested-laplace-recovery.R). `control$skew_correct = TRUE` turns it on per
+# fit.
 # `debias_select_band` is the floor the SUBSPACE DEBIAS selector reads the inner
 # bands at (gcol33/tulpa#304): a probed coordinate whose combined inner band is
 # at or above it is sampled exactly, the rest stay at their Gaussian

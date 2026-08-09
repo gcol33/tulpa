@@ -369,7 +369,8 @@
          source = source, declined = declined, mass = mass)
   }
   if (isTRUE(sc$enabled)) {
-    mg <- .nl_skew_marginal(est, se, sc$gamma3[idx], probs, enabled = TRUE)
+    mg <- .nl_skew_marginal(est, se, .nl_skew_gamma3_eligible(sc)[idx], probs,
+                            enabled = TRUE)
     return(list(
       q = mg$q, applied = mg$applied, source = "skew_map_cell",
       declined = paste("skew_correct: gamma_3 is retained at the MAP cell",

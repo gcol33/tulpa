@@ -230,21 +230,37 @@ test_that("tulpa_nested_laplace() records the correction and confint() applies i
   expect_length(sc$gamma3, 2L)
   expect_true(all(is.finite(sc$gamma3)))
   expect_identical(sc$band, vapply(sc$gamma3, .tulpa_gamma3_band, character(1)))
-  expect_identical(sc$eligible, !is.na(sc$band) & sc$band != "unreliable")
+
+  # The gate is the COMBINED inner band (gcol33/tulpa#346), so eligibility is
+  # read off `band_combined` -- the worse of gamma_3's band and the importance
+  # k-hat's -- and every coefficient says which score decided it. On this
+  # fixture the intercept's k-hat is 0.72 at material efficiency while its
+  # gamma_3 is a moderate -0.57, so the two gates disagree and the combined one
+  # declines: the gamma_3-only gate this replaced corrected it.
+  expect_identical(sc$band_combined, .subspace_bands(f)$band)
+  expect_identical(sc$eligible, sc$reason == "eligible")
+  expect_true(all(sc$reason %in% .SKEW_CORRECT_REASONS))
+  expect_identical(sc$reason, c("inner_k_unreliable", "eligible"))
+  expect_identical(sc$eligible, c(FALSE, TRUE))
+  expect_gte(sc$pareto_k[1], .nl_diag("k_usable"))
+  # The whole-fit verdict the eligibility was decided under travels with it.
+  expect_true(grepl("inner", sc$reliability))
 
   ci <- confint(f)
   applied <- attr(ci, "skew_applied")
-  expect_identical(unname(applied), c(TRUE, TRUE))
+  expect_identical(unname(applied), c(FALSE, TRUE))
   expect_identical(names(applied), rownames(ci))
   # summary() reads the same table and carries the same record.
-  expect_identical(unname(attr(summary(f), "skew_applied")), c(TRUE, TRUE))
+  expect_identical(unname(attr(summary(f), "skew_applied")), c(FALSE, TRUE))
 
   # The bounds are the Cornish-Fisher ones at this fit's own gamma_3 and its
-  # own reported centre and standard error -- not merely "different".
+  # own reported centre and standard error -- not merely "different" -- on the
+  # eligible coefficient, and the Gaussian ones on the declined one.
   tab <- .fit_fixed_table(f)
   z <- stats::qnorm(c(0.025, 0.975))
   for (j in 1:2) {
-    w <- z + (sc$gamma3[j] / 6) * (z^2 - 1)
+    g <- if (sc$eligible[j]) sc$gamma3[j] else 0
+    w <- z + (g / 6) * (z^2 - 1)
     expect_equal(as.numeric(ci[j, ]),
                  tab$estimate[j] + tab$std.error[j] * w)
   }
@@ -292,6 +308,28 @@ test_that("switching the correction off leaves the fit bit for bit what it was",
   expect_identical(vcov(on), vcov(off))
 })
 
+test_that("the correction declines a coefficient the importance k-hat flags", {
+  skip_on_cran()
+  # The gate is per coefficient and reads the combined band, so a fit whose two
+  # coefficients disagree carries one corrected and one Gaussian row, and the
+  # record names the score responsible for each. `.nl_skew_gamma3_eligible()` is
+  # what the quantile path consumes, so a declined coefficient reaches
+  # `.nl_skew_marginal()` as NA rather than being noted and corrected anyway.
+  sc <- list(enabled = TRUE, gamma3 = c(0.4, -0.3, 0.2),
+             eligible = c(TRUE, FALSE, TRUE))
+  expect_identical(.nl_skew_gamma3_eligible(sc), c(0.4, NA_real_, 0.2))
+  # A record with no eligibility vector at all (a fit predating it) is read at
+  # face value rather than silently blanked.
+  expect_identical(.nl_skew_gamma3_eligible(list(gamma3 = c(0.4, -0.3))),
+                   c(0.4, -0.3))
+
+  probs <- c(0.025, 0.975)
+  mg <- .nl_skew_marginal(rep(0, 3), rep(1, 3),
+                          .nl_skew_gamma3_eligible(sc), probs, enabled = TRUE)
+  expect_identical(mg$applied, c(TRUE, FALSE, TRUE))
+  expect_identical(mg$q[2, ], stats::qnorm(probs))
+})
+
 test_that("an unreliable band keeps the Gaussian quantiles at the front door", {
   skip_on_cran()
   # The band gate is what stops a leading-order expansion being extrapolated
@@ -305,4 +343,177 @@ test_that("an unreliable band keeps the Gaussian quantiles at the front door", {
                           enabled = TRUE, max_abs_gamma3 = tight)
   expect_identical(mg$applied, c(FALSE, FALSE))
   expect_equal(mg$q[, 1], rep(stats::qnorm(0.025), 2))
+})
+
+# --------------------------------------------------------------------------- #
+# (4) The whole-marginal gate (gcol33/tulpa#346)                              #
+# --------------------------------------------------------------------------- #
+#
+# Section 2 scores total absolute error of the 2.5% / 97.5% quantiles, and that
+# is structurally blind to most of what the correction does. At a SYMMETRIC
+# level pair the Cornish-Fisher term sigma (gamma_3 / 6) (z_p^2 - 1) takes the
+# same value at both ends, because z_p^2 = z_{1-p}^2, so the correction is a
+# pure LOCATION SHIFT of the interval with its width exactly unchanged and a
+# two-point symmetric metric can measure nothing else. Away from a symmetric
+# pair the term is not a shift at all: it is negative at z = 0 and positive at
+# |z| > 1 for gamma_3 > 0, so the median moves one way while the tails move the
+# other.
+#
+# This gate reads the whole CDF instead, through the gcol33/tulpa#335 harness:
+# SBC uniformity against the exact simultaneous band, and paired CRPS against
+# the exact posterior in a prior-predictive experiment, where the CRPS is a
+# proper posterior score. The `shift only` arm -- a Gaussian relocated by
+# exactly the 95%-level Cornish-Fisher offset, with no reshaping -- is the
+# control that separates the two effects, and without it the gate still cannot
+# tell them apart.
+#
+# The fixture is the rare-event binomial-logit intercept of section 2 driven
+# prior-predictively, so the exact posterior is a one-dimensional quadrature and
+# no reference sampler is needed.
+
+.WM_N   <- 40L        # trials
+.WM_OFF <- -4         # offset, so successes are rare and the posterior skews
+.WM_SB  <- 2.0        # the prior the truth is drawn from IS the prior fitted
+.WM_P   <- (seq_len(2001L) - 0.5) / 2001L
+.WM_Z   <- stats::qnorm(0.975)
+
+.wm_sim <- function(seed) {
+  set.seed(seed)
+  beta <- stats::rnorm(1, 0, .WM_SB)
+  list(seed = seed, y = as.numeric(stats::rbinom(.WM_N, 1L,
+                                                 stats::plogis(.WM_OFF + beta))),
+       theta = c(beta = beta))
+}
+
+.wm_lp <- function(d, b) {
+  eta <- .WM_OFF + b
+  sum(d$y) * eta - .WM_N * log1p(exp(eta)) - 0.5 * (b / .WM_SB)^2
+}
+
+# The exact posterior as an inverse-CDF grid centred on the engine's own mode.
+.wm_exact <- function(d, mu, sd, p = .WM_P) {
+  g <- seq(mu - 14 * max(sd, 0.5), mu + 14 * max(sd, 0.5), length.out = 20001L)
+  lp <- .wm_lp(d, g)
+  w <- exp(lp - max(lp)); w <- w / sum(w)
+  cdf <- cumsum(w) - 0.5 * w
+  keep <- !duplicated(cdf) & is.finite(cdf)
+  stats::approx(cdf[keep], g[keep], xout = p, rule = 2)$y
+}
+
+# The shipped Cornish-Fisher marginal as a DISTRIBUTION: the push-forward of
+# N(0, 1) through the map, restricted to its monotone branch |z| < 3 / |gamma_3|
+# and renormalized over it. On that branch it is the shipped quantile at every
+# level, which the gate asserts rather than assumes; the discarded tail mass is
+# at most 2 Phi(-3) = 0.0027 at the band edge and less inside it.
+.wm_cf <- function(mu, sigma, g3, p = .WM_P,
+                   max_abs_g3 = .nl_diag("gamma3_unreliable")) {
+  if (!is.finite(g3) || abs(g3) >= max_abs_g3 || !is.finite(sigma) || sigma <= 0)
+    return(mu + sigma * stats::qnorm(p))
+  zb <- 3 / abs(g3)
+  lo <- stats::pnorm(-zb); hi <- stats::pnorm(zb)
+  z <- stats::qnorm(lo + p * (hi - lo))
+  mu + sigma * (z + (g3 / 6) * (z^2 - 1))
+}
+
+test_that("the whole-marginal score sees what the endpoint score cannot", {
+  skip_if_not_slow()
+
+  probs <- c(0.025, 0.975)
+  rows <- list()
+
+  arms <- function(d) {
+    f <- tulpa_laplace(y = d$y, n_trials = rep(1L, .WM_N),
+                       X = matrix(1, .WM_N, 1), family = "binomial",
+                       offset = rep(.WM_OFF, .WM_N),
+                       beta_prior = list(mean = 0, sd = .WM_SB),
+                       max_iter = 200L, tol = 1e-11,
+                       compute_skew = TRUE, skew_idx = 1L)
+    mu <- as.numeric(f$mode[1]); sd <- as.numeric(f$inner_is_sigma[1])
+    g3 <- as.numeric(f$inner_skew[1])
+    ex <- .wm_exact(d, mu, sd)
+    shift <- sd * (g3 / 6) * (.WM_Z^2 - 1)
+
+    # The section-2 endpoint reading of the SAME fit, from the shipped function
+    # at the shipped gamma_3-only gate: what the correction was accepted on.
+    exq <- .wm_exact(d, mu, sd, probs)
+    qg <- mu + sd * stats::qnorm(probs)
+    mg <- .nl_skew_marginal(mu, sd, g3, probs, enabled = TRUE)
+    qc <- as.numeric(mg$q)
+    rows[[length(rows) + 1L]] <<- data.frame(
+      seed = d$seed, gamma3 = g3, sd = sd, applied = mg$applied,
+      band = as.character(.subspace_bands(f)$band[1]),
+      # the two endpoints' displacement, which the algebra says is one number
+      move_lo = qc[1] - qg[1], move_hi = qc[2] - qg[2],
+      err_g = sum(abs(qg - exq)), err_c = sum(abs(qc - exq)),
+      stringsAsFactors = FALSE)
+
+    list(exact      = list(beta = sbc_draws(ex)),
+         laplace    = list(beta = sbc_normal(mu, sd)),
+         shift_only = list(beta = sbc_normal(mu + shift, sd)),
+         skew_cf    = list(beta = sbc_draws(.wm_cf(mu, sd, g3))))
+  }
+
+  res <- recov_sbc(.wm_sim, arms, 400L, truth = "prior_draw")
+  rep <- sbc_report(res)
+  cmp <- sbc_crps_compare(res, "laplace")
+  dg <- do.call(rbind, rows)
+  get <- function(a, col) rep[[col]][rep$arm == a]
+  dlt <- function(a) cmp$delta[cmp$arm == a]
+  tstat <- function(a) cmp$t[cmp$arm == a]
+
+  # The arm's quantile IS the shipped one on the branch it is restricted to,
+  # so the distribution scored below is the correction and not a lookalike.
+  lv <- c(0.1, 0.5, 0.9)
+  chk <- .nl_skew_marginal(0.3, 1.4, 0.6, lv, enabled = TRUE)
+  expect_true(chk$applied)
+  # The branch restriction renormalizes the probability scale, so level q sits
+  # at (q - Phi(-z_b)) / (Phi(z_b) - Phi(-z_b)) of the arm's own grid.
+  zb <- 3 / 0.6
+  lo <- stats::pnorm(-zb); hi <- stats::pnorm(zb)
+  expect_equal(as.numeric(chk$q), .wm_cf(0.3, 1.4, 0.6, p = (lv - lo) / (hi - lo)),
+               tolerance = 1e-12)
+
+  # (a) HARNESS SELF-CHECK. The exact posterior is the CRPS-optimal forecast in
+  # a prior-predictive experiment and its PIT is uniform, so it must score best
+  # and deviate least. Measured: CRPS 0.5504, KS 0.0290.
+  expect_lt(get("exact", "crps"), min(get("laplace", "crps"),
+                                      get("shift_only", "crps"),
+                                      get("skew_cf", "crps")))
+  expect_lt(get("exact", "ks"), min(get("laplace", "ks"), get("skew_cf", "ks")))
+
+  # (b) THE ENDPOINT SCORE IS A PURE LOCATION SHIFT, on real fits and not only
+  # in the algebra: both bounds move by the same number on every replicate.
+  expect_equal(dg$move_lo, dg$move_hi, tolerance = 1e-12)
+
+  # (c) AND IT IMPROVES, by more than the 44.5% section 2 records. Measured:
+  # 441.42 -> 191.58, a 56.6% reduction, with both endpoints better on 396 of
+  # 400 replicates. Read alone this is the correction working.
+  expect_lt(sum(dg$err_c), 0.6 * sum(dg$err_g))
+  expect_gt(mean(dg$err_c < dg$err_g), 0.95)
+
+  # (d) THE WHOLE MARGINAL DISAGREES. The same fits, scored over the whole CDF:
+  # the correction is a NET LOSS against the uncorrected Laplace. Measured
+  # delta +0.00775 (t +3.54), KS 0.0833 -> 0.1139. This is the pin that has to
+  # move if the location term (RMC 2009's gamma^(1), gcol33/tulpa#354) is ever
+  # computed and the reshaping is applied about the right centre.
+  expect_gt(dlt("skew_cf"), 0)
+  expect_gt(tstat("skew_cf"), 2)
+  expect_gt(get("skew_cf", "ks"), get("laplace", "ks"))
+
+  # (e) THE CONTROL SEPARATES THE TWO EFFECTS. The shift alone -- the part the
+  # endpoint score measures -- is a GAIN, and recovers what a correctly located
+  # Gaussian achieves; the reshaping laid on top of it is what turns the gain
+  # into a loss. Measured: shift only -0.01451 (t -1.43) against exact -0.01662,
+  # and its PIT re-enters the simultaneous band (p 0.226 against 7.6e-06).
+  expect_lt(dlt("shift_only"), 0)
+  expect_gt(dlt("skew_cf"), dlt("shift_only"))
+  expect_lt(get("shift_only", "crps"), get("laplace", "crps"))
+  expect_gt(get("shift_only", "p_unif"), 0.05)
+
+  # (f) THE GATE THE CORRECTION NOW READS. gamma_3 alone admits every replicate
+  # here, while the combined inner band is `unreliable` on 38.3% of them, driven
+  # by the importance k-hat -- the same coordinates gcol33/tulpa#304 selects for
+  # exact sampling.
+  expect_true(all(dg$applied))
+  expect_gt(mean(dg$band == "unreliable"), 0.2)
 })

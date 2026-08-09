@@ -2,6 +2,26 @@
 
 ## 0.0.158
 
+* The #302 Cornish-Fisher marginal is scored over the whole posterior, and
+  gated on the combined inner band (gcol33/tulpa#346). Its acceptance test
+  scored total absolute error of the 2.5% / 97.5% quantiles, which is
+  structurally blind to most of what the correction does: at a symmetric level
+  pair the term `sigma (gamma_3 / 6) (z_p^2 - 1)` takes the same value at both
+  ends, so there the correction is a pure location shift of the interval with
+  its width unchanged. Section 4 of `test-inner-skew-correction.R` adds a
+  whole-marginal gate on the gcol33/tulpa#335 harness (`recov_sbc()`,
+  `sbc_report()`, `sbc_crps_compare()`), with a `shift only` control arm that
+  separates the shift from the reshaping. Measured over 400 prior-predictive
+  replicates read off one solve per seed: the endpoint score improves 56.6%
+  while the paired CRPS against the exact posterior is a net loss of +0.00775
+  at t = +3.54, and the shift alone scores -0.0145, which is what a Gaussian at
+  the exact mean and standard deviation achieves. The correction stays off by
+  default; the missing piece is the location term, not the cubic one.
+  `.nl_skew_correction_attach()` now gates each coefficient on the combined
+  inner band -- the worse of `gamma_3`'s band and the inner importance k-hat's,
+  the resolution gcol33/tulpa#304's selector already reads -- and records the
+  k-hat, the combined band, a `reason` from a closed vocabulary and the
+  whole-fit reliability verdict alongside the eligibility.
 * The per-cell fixed-effect retention on the joint tier indexes the same grid
   as the weights, on every grid (gcol33/tulpa#345). `.nested_fixed_moments()`
   reads `$weights`, `$grid_modes` and `$grid_hessians` as three views of one
