@@ -97,7 +97,7 @@ test_that("a pinned axis is pinned and every flavour of default is not", {
     # ... and the same node set crossed against a second axis (bym2's paired
     # (sigma, rho) grid) is still that default node set.
     gr <- expand.grid(sigma = tulpa:::.nl_grid_axis("field_sd"),
-                      rho = c(0.2, 0.5, 0.8, 0.95))
+                      rho = tulpa:::.nl_grid_axis("bym2_rho"))
     crossed <- pinned
     crossed$sigma_grid <- gr$sigma
     expect_false(tulpa:::.nl_axis_is_pinned(crossed, "sigma_grid"))

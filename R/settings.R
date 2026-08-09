@@ -92,7 +92,21 @@
     # BYM2 mixing weight: proportion of the field variance that is spatially
     # structured. Nodes placed at interpretable proportions, weighted toward
     # the structured end where areal data usually sits.
-    bym2_rho       = list(nodes = c(0.2, 0.5, 0.8, 0.95)),
+    #
+    # The span reaches 0.999 because a BOUNDED axis's SPAN and its RESOLUTION
+    # are not interchangeable (gcol33/tulpa#361): the `outside = "extend"` read
+    # mirrors the outer cell edge in the axis's own logit coordinate, so an axis
+    # topping out at 0.95 cannot report an upper bound above
+    # plogis(logit(0.95) + 0.5 (logit(0.95) - logit(0.8))) = 0.97642 whatever
+    # the data say, and no node count moves that. Measured over 800 fits per
+    # candidate set, four fixed truths x 200 seeds: at rho = 0.99 the 4-node
+    # axis covers 0.555 at nominal 0.95 and only because the placement rescue
+    # moved 55.5% of them, against 0.955 here with the rescue never firing.
+    # Mean |coverage - nominal| over the four truths goes 0.140 -> 0.011 at the
+    # 95% level, 0.189 -> 0.088 at 80% and 0.081 -> 0.099 at 50%, mean |median
+    # bias| 0.058 -> 0.041, at a mean 95% width of 0.494 against 0.487 -- so the
+    # span is not bought with wider intervals.
+    bym2_rho       = list(nodes = c(0.2, 0.5, 0.8, 0.95, 0.99, 0.999)),
 
     # AR1 autocorrelation: nodes concentrated near 1, where the temporal
     # likelihood changes fastest.
@@ -121,6 +135,17 @@
     # boundary, so a node there returns a NaN log-determinant).
     car_rho = list(data_dependent = TRUE, n = 5L, margin = 0.05,
                    bounds = c(0, 1)),
+
+    # The same correlation on the JOINT drivers, which do not compute
+    # `rho_bounds` and so lay fixed nodes on (0, 1) instead of the eigenvalue
+    # interval. A separate entry rather than a shape of `car_rho`, because the
+    # two axes are built from different information; it is here so the single-
+    # block and multi-block joint backends read one binding rather than each
+    # restating the nodes (gcol33/tulpa#361). Deliberately NOT bound to a
+    # `.NL_FAMILY_AXES` field: `.nl_axis_matches_default()` reads that table,
+    # and binding it would silently reclassify a caller's identical nodes from
+    # a pin to a default.
+    joint_car_rho = list(nodes = c(0.5, 0.8, 0.95, 0.99)),
 
     # SPDE range / marginal SD on the registry (multi-block) path. Centred on
     # the PC-prior mode and deliberately TIGHT (`mode / span` .. `mode * span`):

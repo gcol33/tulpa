@@ -1,5 +1,57 @@
 # tulpa NEWS
 
+## 0.0.171
+
+* The default BYM2 mixing-weight axis reaches 0.999 (gcol33/tulpa#361). On a
+  BOUNDED axis a coarse span and a short span are not interchangeable: the
+  `outside = "extend"` read mirrors the outer cell edge in the axis's own logit
+  coordinate, so the four-node default could not report an upper bound above
+  `plogis(logit(0.95) + 0.5 (logit(0.95) - logit(0.8))) = 0.97642` whatever the
+  data said, and no node count moves that. Measured over 800 fits per candidate
+  node set -- four fixed truths, 200 seeds, every arm the shipped engine with
+  only `.NL_GRID$bym2_rho` replaced -- 95% coverage at `rho = 0.99` goes 0.555
+  to 0.955 and at 0.97 goes 0.820 to 0.950, mean |coverage - nominal| over the
+  four truths goes 0.140 to 0.011 at 95%, 0.189 to 0.088 at 80% and 0.081 to
+  0.099 at 50%, and mean |median bias| goes 0.058 to 0.041, at a mean 95%
+  width of 0.494 against 0.487. The 0.555 the four-node axis managed at
+  `rho = 0.99` WAS the fraction the placement rescue moved; the six-node axis
+  contains its own mode on every one of those 800 fits, so it also spends no
+  refit. A five-node candidate stopping at 0.99 was scored too and is not what
+  shipped: it takes 95% coverage most of the way (0.900 at `rho = 0.99`) while
+  its 50% interval covers 0 of 200 there.
+
+* Three joint drivers restated a default axis's nodes as a literal instead of
+  reading `.NL_GRID`, so a change to the table did not reach them: bym2's
+  `rho_grid` in `.joint_backends` and `.joint_multi_axis_grid`, and ar1's
+  `rho_grid` in the latter. All three read `.nl_grid_axis()` now. The joint
+  paths' proper-CAR correlation nodes were duplicated between the same two
+  files and are a `.NL_GRID` entry of their own (`joint_car_rho`), separate
+  from `car_rho` because the joint drivers do not compute `rho_bounds` and lay
+  fixed nodes on (0, 1) rather than the adjacency eigenvalue interval. It is
+  deliberately not bound to a `.NL_FAMILY_AXES` field, since that table is what
+  `.nl_axis_matches_default()` reads and binding it would reclassify a caller's
+  identical nodes from a pin to a default.
+
+* `control$auto_recenter` takes `"always"` (gcol33/tulpa#361 checklist items 1
+  and 2): recentre every movable default axis on its posterior mode whatever
+  the fit did, rather than only an axis that rails. The recentred axis is
+  `mode +/- 2.5 sd` over 5 nodes, so it resolves the posterior at `h / sd =
+  1.25` by construction against a census median of 3.9 on the fixed spans.
+  Measured over 200 fixed-truth seeds on each of a 100-region ICAR chain, a
+  144-cell ICAR lattice and a 100-region BYM2, mean |coverage - nominal| over
+  the four (config, axis) rows goes 0.036 to 0.026 at the 95% level, 0.176 to
+  0.078 at 80% and 0.268 to 0.160 at 50%, at 0.24 to 0.81 times the 95%
+  interval width -- the fixed arm covers exactly 1.000 at nominal 0.95 on three
+  of the four rows -- and median `h / sd` goes 3.09 / 2.92 / 1.99 to 1.29 /
+  1.29 / 1.02. It is NOT the default: it is a second full grid solve plus the
+  finite-difference mode/Hessian stencil on every fit, measured at 1.88x /
+  1.94x / 2.23x the wall clock, and `.NL_REGISTRY_AXIS_FIELD` names movable
+  axes for icar and bym2 only, so as a default it would move two families and
+  leave eleven on their fixed spans. `tulpa_nested_laplace_joint()` and
+  `fit_st_nested()` refuse the value rather than accept it and ignore it --
+  their rescues trigger on the whole grid's collapsed-edge regime, not on a
+  per-axis rail, so `"always"` has no measured meaning there.
+
 ## 0.0.170
 
 * A joint fit is reproducible bit for bit at any thread count

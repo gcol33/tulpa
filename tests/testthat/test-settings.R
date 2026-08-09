@@ -78,7 +78,10 @@ test_that("the default axes are exactly these values", {
                  exp(seq(log(0.3), log(1.5), length.out = 3)))
     expect_equal(tulpa:::.nl_grid_axis("mo_lengthscale"),
                  exp(seq(log(0.1), log(1.0), length.out = 3)))
-    expect_equal(tulpa:::.nl_grid_axis("bym2_rho"), c(0.2, 0.5, 0.8, 0.95))
+    expect_equal(tulpa:::.nl_grid_axis("bym2_rho"),
+                 c(0.2, 0.5, 0.8, 0.95, 0.99, 0.999))
+    expect_equal(tulpa:::.nl_grid_axis("joint_car_rho"),
+                 c(0.5, 0.8, 0.95, 0.99))
     expect_equal(tulpa:::.nl_grid_axis("ar1_rho"), c(0, 0.4, 0.7, 0.9, 0.97))
     expect_equal(tulpa:::.nl_grid_axis("mo_rho"), c(-0.4, 0, 0.4))
     expect_equal(tulpa:::.nl_grid_axis("mcar_sd"), c(0.4, 0.7, 1.1, 1.7))

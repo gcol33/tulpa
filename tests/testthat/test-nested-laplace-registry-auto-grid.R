@@ -120,7 +120,7 @@ test_that("bym2's rescue mechanics recentre (sigma, rho) and re-cross rho's node
     # default construction -- confirmed in gcol33/tulpa#290 -- is identical
     # in code to icar/car_proper regardless).
     sg <- exp(seq(log(0.1), log(3), length.out = 5))
-    rg <- c(0.2, 0.5, 0.8, 0.95)
+    rg <- .nl_grid_axis("bym2_rho")
     gr <- expand.grid(sigma = sg, rho = rg, KEEP.OUT.ATTRS = FALSE)
     theta_grid <- cbind(sigma = gr$sigma, rho = gr$rho)
     # A synthetic log-marginal peaked at (sigma = 8, rho = 0.8) -- well past
@@ -165,8 +165,8 @@ test_that("bym2's rescue mechanics recentre (sigma, rho) and re-cross rho's node
     expect_gt(max(new_sigma), 3.0)
     expect_lt(min(new_sigma), 8.0)
     expect_gt(max(new_sigma), 8.0 * 0.5)
-    # rho's nodes are the SAME 4 default values, re-crossed with the new
-    # sigma axis (not altered, not collapsed to one value).
+    # rho's nodes are the SAME default values, re-crossed with the new sigma
+    # axis (not altered, not collapsed to one value).
     expect_identical(sort(unique(rescue$prior$rho_grid)), rg)
     expect_identical(rescue$res$pareto_k_regime, "spread")
 })

@@ -184,21 +184,21 @@
                               KEEP.OUT.ATTRS = FALSE,
                               stringsAsFactors = FALSE)
         } else if (type == "bym2") {
-            rho <- p$rho_grid %||% c(0.2, 0.5, 0.8, 0.95)
+            rho <- p$rho_grid %||% .nl_grid_axis("bym2_rho")
             gr <- expand.grid(sigma = sigma_axis,
                               alpha = alpha_grid,
                               rho   = as.numeric(rho),
                               KEEP.OUT.ATTRS = FALSE,
                               stringsAsFactors = FALSE)
         } else if (type == "car_proper") {
-            rho_car <- p$rho_car_grid %||% c(0.5, 0.8, 0.95, 0.99)
+            rho_car <- p$rho_car_grid %||% .nl_grid_axis("joint_car_rho")
             gr <- expand.grid(sigma   = sigma_axis,
                               alpha   = alpha_grid,
                               rho_car = as.numeric(rho_car),
                               KEEP.OUT.ATTRS = FALSE,
                               stringsAsFactors = FALSE)
         } else if (type == "ar1") {
-            rho <- p$rho_grid %||% c(0.0, 0.4, 0.7, 0.9, 0.97)
+            rho <- p$rho_grid %||% .nl_grid_axis("ar1_rho")
             gr <- expand.grid(sigma = sigma_axis,
                               alpha = alpha_grid,
                               rho   = as.numeric(rho),

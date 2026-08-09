@@ -21,7 +21,7 @@
 }
 
 test_that("a cell edge is mirrored in the quantity's own coordinate", {
-    v <- .nl_grid_axis("bym2_rho")                       # 0.2 0.5 0.8 0.95
+    v <- .nl_grid_axis("bym2_rho")           # 0.2 0.5 0.8 0.95 0.99 0.999
 
     # `unit`: both edges inside (0, 1), where the guessed log coordinate puts
     # the upper one above 1 for a quantity that cannot exceed it.

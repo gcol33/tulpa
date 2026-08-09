@@ -63,7 +63,8 @@ field \code{type}. Backend-specific fields:
 \item \strong{bym2}: \code{n_spatial_units}, \code{adj_row_ptr}, \code{adj_col_idx},
 \code{n_neighbors}, \code{scale_factor} (default \code{1}); optional \code{sigma_grid}
 (donor-arm field amplitude, default 5 log-spaced values in
-\verb{[0.1, 3]}), \code{rho_grid} (default \code{c(0.2, 0.5, 0.8, 0.95)}).
+\verb{[0.1, 3]}), \code{rho_grid} (default
+\code{c(0.2, 0.5, 0.8, 0.95, 0.99, 0.999)}).
 \item \strong{icar}: \code{n_spatial_units}, \code{adj_row_ptr}, \code{adj_col_idx},
 \code{n_neighbors}; optional \code{sigma_grid} (default 5 log-spaced values
 in \verb{[0.1, 3]}).

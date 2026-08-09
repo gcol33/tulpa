@@ -68,7 +68,7 @@
     bym2 = list(
         build_grids = function(prior, has_copy, alpha_axis, phi_axes = NULL) {
             sigma_axis <- prior$sigma_grid %||% .nl_grid_axis("field_sd")
-            rho_axis <- prior$rho_grid %||% c(0.2, 0.5, 0.8, 0.95)
+            rho_axis <- prior$rho_grid %||% .nl_grid_axis("bym2_rho")
             .joint_cartesian(list(sigma = sigma_axis, rho = rho_axis),
                               has_copy, alpha_axis, phi_axes)
         },
@@ -112,7 +112,7 @@
     car_proper = list(
         build_grids = function(prior, has_copy, alpha_axis, phi_axes = NULL) {
             sigma_axis   <- prior$sigma_grid %||% .nl_grid_axis("field_sd")
-            rho_car_axis <- prior$rho_car_grid %||% c(0.5, 0.8, 0.95, 0.99)
+            rho_car_axis <- prior$rho_car_grid %||% .nl_grid_axis("joint_car_rho")
             .joint_cartesian(list(sigma = sigma_axis, rho_car = rho_car_axis),
                               has_copy, alpha_axis, phi_axes)
         },

@@ -37,6 +37,51 @@
 #     visible in the fit instead of indistinguishable from one that was never
 #     needed (`.nl_decline_recenter()`).
 
+# --- placement policy --------------------------------------------------------
+#
+# `control$auto_recenter` selects the outer-grid PLACEMENT policy. Three values
+# on one knob rather than a second knob beside it, so a fit's placement has one
+# spelling:
+#
+#   TRUE (default)  a default axis is recentred on its posterior mode only when
+#                   it RAILS -- its own marginal is maximal at one of its own
+#                   endpoints (`.nl_axis_rail()`). A span that already brackets
+#                   its mode is left where it is and the pass costs nothing.
+#   FALSE           the grid is integrated exactly as given, whatever it is.
+#   "always"        EVERY movable default axis is recentred whatever the fit
+#                   did. The recentred axis is `mode +/- 2.5 sd` over 5 nodes,
+#                   so it is `h / sd = 1.25` BY CONSTRUCTION, against a census
+#                   median of 3.9 on the fixed spans (gcol33/tulpa#357, #361).
+#
+# `"always"` is not the default because of what it costs and what it does not
+# reach, both measured (gcol33/tulpa#361, `dev_notes/issue361/sizeA.R`, 200
+# fixed-truth seeds per configuration):
+#
+#   * it is a second full grid solve plus the FD mode/Hessian stencil on EVERY
+#     fit -- 1.88x / 1.94x / 2.23x the wall clock on a 144-cell ICAR lattice, a
+#     100-region ICAR chain and a 100-region BYM2;
+#   * `.NL_REGISTRY_AXIS_FIELD` names movable axes for icar and bym2 only, so
+#     as a DEFAULT it would move two families and silently leave eleven on their
+#     fixed spans. car_proper's `rho_car` has no guessable coordinate at all
+#     (`.joint_pareto_block_tags()` returns NA), so that one cannot simply be
+#     added.
+#
+# What it buys, on the same measurement: mean |coverage - nominal| over the four
+# (config, axis) rows goes 0.036 -> 0.026 at the 95% level, 0.176 -> 0.078 at
+# 80% and 0.268 -> 0.160 at 50%, at 0.24 to 0.81 times the 95% width, with the
+# fixed arm covering 1.000 at nominal 0.95 on three of the four rows. Median
+# `h / sd` goes 3.09 / 2.92 / 1.99 -> 1.29 / 1.29 / 1.02.
+.nl_recenter_mode <- function(x) {
+    if (is.null(x) || isTRUE(x)) return("rail")
+    if (isFALSE(x)) return("off")
+    if (is.character(x) && length(x) == 1L && identical(x, "always")) {
+        return("always")
+    }
+    stop("control$auto_recenter must be TRUE, FALSE or \"always\"; got ",
+         paste(utils::capture.output(utils::str(x)), collapse = " "),
+         call. = FALSE)
+}
+
 # --- axis provenance ---------------------------------------------------------
 #
 # A rescue must recentre a DEFAULT axis and leave a USER PIN alone, so it needs
@@ -967,6 +1012,7 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 # full fit). `auto` is the front door's provenance record.
 .nl_registry_grid_rescue <- function(res, type, prior, refit, refit_log_marginal,
                                      auto = character(0), enabled = TRUE,
+                                     unconditional = FALSE,
                                      max_attempts = .nl_recenter("max_attempts_registry")) {
     out <- list(res = res, prior = prior)
     # The rail REPORT is taken before anything can decline, so a fit says which
@@ -998,9 +1044,15 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
     attempt <- 0L
     reason  <- "no_axis_railed"
     while (attempt < max_attempts) {
-        railed <- names(fields)[vapply(names(fields), function(f)
-            .nl_edge_axis_hit(res, fields[[f]]) ||
-            !is.null(.nl_axis_rail(res, fields[[f]])), logical(1))]
+        # `unconditional` (`control$auto_recenter = "always"`) drops the rail
+        # test and nothing else -- the same FD mode/Hessian stencil, the same
+        # `mode +/- 2.5 sd` over 5 nodes, the same provenance gate, the same
+        # single attempt -- so an axis that WOULD have railed is moved to the
+        # same nodes either way.
+        railed <- if (isTRUE(unconditional)) names(fields) else
+            names(fields)[vapply(names(fields), function(f)
+                .nl_edge_axis_hit(res, fields[[f]]) ||
+                !is.null(.nl_axis_rail(res, fields[[f]])), logical(1))]
         if (!length(railed)) break
         movable <- railed[!pinned[railed]]
         if (!length(movable)) {

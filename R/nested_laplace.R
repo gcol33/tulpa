@@ -148,11 +148,27 @@
 #'     factorized sparsely draws through the CHOLMOD factor's own triangular and
 #'     permutation solves; an LDL' factor has no square root to draw with and is
 #'     declined with `"sparse_factor_not_ll"`.
-#'   * `auto_recenter` (`TRUE`) -- re-centre a default outer grid axis on its
-#'     posterior mode and refit when the fit rails against a boundary node
-#'     (gcol33/tulpa#289 / #290). `FALSE` integrates over the grid exactly as
+#'   * `auto_recenter` (`TRUE`) -- outer-grid placement policy. `TRUE`
+#'     re-centres a default outer grid axis on its posterior mode and refits
+#'     when that axis rails against one of its own boundary nodes
+#'     (gcol33/tulpa#289 / #290 / #361), and costs nothing on a span that
+#'     already brackets its mode. `FALSE` integrates over the grid exactly as
 #'     given, whatever it is, and records
 #'     `outer_grid_recenter_declined = "auto_recenter_disabled"`.
+#'     `"always"` re-centres every movable default axis whatever the fit did,
+#'     which lays it at `mode +/- 2.5 sd` over 5 nodes and so resolves the
+#'     posterior at a cell width of 1.25 posterior SDs by construction, against
+#'     a census median of 3.9 on the fixed spans. Measured over 200 fixed-truth
+#'     seeds per configuration it moves mean |coverage - nominal| from 0.036 to
+#'     0.026 at the 95% level, 0.176 to 0.078 at 80% and 0.268 to 0.160 at 50%,
+#'     at 0.24 to 0.81 times the 95% interval width -- for 1.9 to 2.2 times the
+#'     wall clock, since it is a second full grid solve plus a finite-difference
+#'     mode/Hessian stencil on every fit. Movable axes are icar's `tau_grid` and
+#'     bym2's `sigma_grid` / `rho_grid`; on any other family `"always"` behaves
+#'     as `TRUE` and the fit records why through
+#'     `outer_grid_recenter_declined`. `"always"` is the standalone registry
+#'     path only -- [tulpa_nested_laplace_joint()] and [fit_st_nested()] refuse
+#'     it rather than accept it and ignore it.
 #'   * `max_grid_cells` (`2048L`) -- cell-count ceiling on a multi-block outer
 #'     grid, refused with an error above it. Each cell is one inner Newton
 #'     solve, so the default catches a per-block grid that multiplied out to a
@@ -430,7 +446,9 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
       }
       .nl_dispatch(type, cargs_no_ckpt, blk2)$log_marginal
     },
-    auto = .prov$auto, enabled = !isFALSE(control$auto_recenter))
+    auto = .prov$auto,
+    enabled = .nl_recenter_mode(control$auto_recenter) != "off",
+    unconditional = .nl_recenter_mode(control$auto_recenter) == "always")
   res   <- registry_rescue$res
   prior <- registry_rescue$prior
   res$outer_grid_placement <- res$outer_grid_placement %||% "fixed"

@@ -76,7 +76,8 @@
 #'   * **bym2**: `n_spatial_units`, `adj_row_ptr`, `adj_col_idx`,
 #'     `n_neighbors`, `scale_factor` (default `1`); optional `sigma_grid`
 #'     (donor-arm field amplitude, default 5 log-spaced values in
-#'     `[0.1, 3]`), `rho_grid` (default `c(0.2, 0.5, 0.8, 0.95)`).
+#'     `[0.1, 3]`), `rho_grid` (default
+#'     `c(0.2, 0.5, 0.8, 0.95, 0.99, 0.999)`).
 #'   * **icar**: `n_spatial_units`, `adj_row_ptr`, `adj_col_idx`,
 #'     `n_neighbors`; optional `sigma_grid` (default 5 log-spaced values
 #'     in `[0.1, 3]`).
@@ -874,7 +875,16 @@ tulpa_nested_laplace_joint <- function(responses,
                               copy = copy, responses = responses))
     on.exit(options(.op_axis), add = TRUE)
     # `control$auto_recenter = FALSE` holds every grid exactly as given -- the
-    # opt-out for a caller who wants the default axis integrated as-is.
+    # opt-out for a caller who wants the default axis integrated as-is. The
+    # joint rescues trigger on the whole grid's `collapsed_edge` regime rather
+    # than on a per-axis rail, so `"always"` has no measured meaning here and is
+    # refused rather than accepted and ignored (gcol33/tulpa#293's rule).
+    if (.nl_recenter_mode(control$auto_recenter) == "always") {
+        stop("control$auto_recenter = \"always\" is implemented on the ",
+             "standalone tulpa_nested_laplace() registry path only; the joint ",
+             "path recentres on the grid's collapsed-edge regime, not a ",
+             "per-axis rail. Use TRUE or FALSE here.", call. = FALSE)
+    }
     auto_recenter <- !isFALSE(control$auto_recenter)
 
     ctrl <- control

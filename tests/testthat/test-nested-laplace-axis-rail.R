@@ -80,10 +80,12 @@ test_that("the registry rescue moves a railed rho, not only a railed sigma", {
     theta_grid <- cbind(sigma = gr$sigma, rho = gr$rho)
 
     # Peaked at sigma = 0.55 (interior), and rising in logit(rho) with a mode at
-    # logit(rho) = 5.3 (rho = 0.995), well past the axis's top node.
+    # logit(rho) = 8.5 (rho = 0.99980), past the axis's top node whatever
+    # `.NL_GRID` places there -- the default reaches 0.999 (logit 6.91) since
+    # gcol33/tulpa#361 extended the span.
     synthetic_lm <- function(tm)
         -0.5 * ((log(tm[, 1L]) - log(0.55)) / 0.10)^2 +
-        -0.5 * ((stats::qlogis(tm[, 2L]) - 5.3) / 2.1)^2
+        -0.5 * ((stats::qlogis(tm[, 2L]) - 8.5) / 2.1)^2
     log_marg <- synthetic_lm(theta_grid)
     w <- exp(log_marg - max(log_marg)); w <- w / sum(w)
     res <- list(theta_grid = theta_grid, theta_names = c("sigma", "rho"),
@@ -109,9 +111,9 @@ test_that("the registry rescue moves a railed rho, not only a railed sigma", {
     expect_identical(rescue$res$outer_grid_placement, "auto_recentered")
     expect_identical(rescue$res$outer_grid_recenter_axes, "rho")
     new_rho <- sort(unique(rescue$prior$rho_grid))
-    # The rho axis now brackets a mode the 0.95 ceiling excluded.
-    expect_gt(max(new_rho), 0.95)
-    expect_lt(min(new_rho), 0.995)
+    # The rho axis now brackets a mode the default's ceiling excluded.
+    expect_gt(max(new_rho), max(rg))
+    expect_lt(min(new_rho), stats::plogis(8.5))
     expect_true(all(new_rho > 0 & new_rho < 1))
     # sigma was not railed, so its four default nodes are re-crossed unchanged.
     expect_identical(sort(unique(rescue$prior$sigma_grid)), sort(sg))
@@ -146,13 +148,21 @@ test_that("a pinned rho axis rails without being moved, and says which", {
     expect_true("rho:upper" %in% rescue$res$outer_grid_railed_axes)
 })
 
-test_that("a BYM2 fit whose mixing weight rails is moved off its 0.95 ceiling", {
+test_that("a BYM2 fit whose mixing weight rails is moved off its ceiling", {
     skip_on_cran()
     # gcol33/tulpa#357's census configuration: 100 chain-adjacent regions, whose
-    # `bym2_rho` posterior is maximal at the top default node. Pre-#361 the fit
+    # `bym2_rho` posterior is maximal at a 0.95 top node. Pre-#361 the fit
     # reported a rho median of 0.89 against a span stopping at 0.95, with the
     # upper interval bound extrapolated PAST the support, and recorded the
     # decline reason `grid_not_collapsed` on a grid that had collapsed.
+    #
+    # The 0.95 ceiling is supplied here through `auto_grid()` rather than taken
+    # from `.NL_GRID`: #361's span change carried the default to 0.999, which
+    # CONTAINS this fixture's mode, so the engine's own axis no longer rails on
+    # it. `auto_grid()` is the marker for "a default the engine may move", so
+    # the rescue path exercised is identical and the statement no longer moves
+    # with the default's value. The block below asserts what the longer default
+    # does on the same data.
     S <- 100L
     set.seed(505L + S + 5000L)
     eff <- as.numeric(scale(cumsum(rnorm(S, 0, 0.4)), scale = FALSE)) +
@@ -163,8 +173,12 @@ test_that("a BYM2 fit whose mixing weight rails is moved off its 0.95 ceiling", 
     y <- as.numeric(X %*% c(-0.2, 0.7)) + eff[idx] +
          rnorm(length(idx), 0, sqrt(0.5))
 
+    gr <- expand.grid(sigma = .nl_grid_axis("field_sd"),
+                      rho = c(0.2, 0.5, 0.8, 0.95), KEEP.OUT.ATTRS = FALSE)
     prior <- c(list(type = "bym2", n_spatial_units = S, spatial_idx = idx,
-                    scale_factor = 1), .rail_chain_adj(S))
+                    scale_factor = 1,
+                    sigma_grid = auto_grid(gr$sigma),
+                    rho_grid   = auto_grid(gr$rho)), .rail_chain_adj(S))
     ctrl <- list(max_iter = 200L, tol = 1e-9, n_threads = 1L,
                  diagnose_k = FALSE, diagnose_skew = FALSE)
     fit_held <- suppressWarnings(tulpa_nested_laplace(
@@ -193,4 +207,100 @@ test_that("a BYM2 fit whose mixing weight rails is moved off its 0.95 ceiling", 
     # to 1.0028 and the moved one to 1.0012.
     expect_lt(as.numeric(fit$theta_ci_hi[["rho"]]), 1)
     expect_lt(as.numeric(fit_held$theta_ci_hi[["rho"]]), 1)
+
+    # The engine's own axis, on the same data. gcol33/tulpa#361's span change
+    # is what makes this a different statement from the block above: a bounded
+    # axis's SPAN and its RESOLUTION are not interchangeable, so a span topping
+    # out at 0.95 could not report a bound above 0.97642 at any node count.
+    fit_default <- suppressWarnings(tulpa_nested_laplace(
+        y = y, n_trials = rep(1L, length(y)), X = X,
+        prior = c(list(type = "bym2", n_spatial_units = S, spatial_idx = idx,
+                       scale_factor = 1), .rail_chain_adj(S)),
+        family = "gaussian", phi = sqrt(0.5), control = ctrl))
+    expect_identical(max(fit_default$theta_grid[, "rho"]), 0.999)
+    # It contains its own mode, so nothing rails and no refit is spent.
+    expect_null(.nl_axis_rail(fit_default, "rho"))
+    expect_identical(fit_default$outer_grid_placement, "fixed")
+    expect_identical(fit_default$outer_grid_railed_axes, character(0))
+    # And it reports past the retired cap, inside the support.
+    expect_gt(as.numeric(fit_default$theta_ci_hi[["rho"]]), 0.97642)
+    expect_lt(as.numeric(fit_default$theta_ci_hi[["rho"]]), 1)
+    expect_gt(as.numeric(fit_default$theta_median[["rho"]]),
+              as.numeric(fit_held$theta_median[["rho"]]))
+})
+
+test_that("auto_recenter = \"always\" recentres an axis that did not rail", {
+    skip_on_cran()
+    # gcol33/tulpa#361 checklist items 1-2: the placement policy knob. The
+    # unconditional arm drops the rail test and nothing else, so an axis that
+    # WOULD have railed lands on the same nodes either way, and one that would
+    # not is moved onto its own posterior mode at `h / sd = 1.25`.
+    expect_identical(.nl_recenter_mode(NULL), "rail")
+    expect_identical(.nl_recenter_mode(TRUE), "rail")
+    expect_identical(.nl_recenter_mode(FALSE), "off")
+    expect_identical(.nl_recenter_mode("always"), "always")
+    expect_error(.nl_recenter_mode("sometimes"), "TRUE, FALSE")
+
+    S <- 100L
+    set.seed(811L)
+    Q <- matrix(0, S, S)
+    for (i in seq_len(S)) {
+        nb <- setdiff(c(i - 1L, i + 1L), c(0L, S + 1L))
+        Q[i, i] <- length(nb); Q[i, nb] <- -1
+    }
+    e <- eigen(Q, symmetric = TRUE); pos <- which(e$values > 1e-8)
+    eff <- as.numeric(e$vectors[, pos, drop = FALSE] %*%
+                      (rnorm(length(pos)) / sqrt(4 * e$values[pos])))
+    idx <- rep(seq_len(S), each = 10L)
+    X <- cbind(1, rnorm(length(idx)))
+    y <- as.numeric(X %*% c(-0.2, 0.7)) + eff[idx] +
+         rnorm(length(idx), 0, sqrt(0.5))
+    prior <- c(list(type = "icar", n_spatial_units = S, spatial_idx = idx),
+               .rail_chain_adj(S))
+    ctrl <- list(max_iter = 200L, tol = 1e-9, n_threads = 1L,
+                 diagnose_k = FALSE, diagnose_skew = FALSE)
+
+    fit <- suppressWarnings(tulpa_nested_laplace(
+        y = y, n_trials = rep(1L, length(y)), X = X, prior = prior,
+        family = "gaussian", phi = sqrt(0.5), control = ctrl))
+    always <- suppressWarnings(tulpa_nested_laplace(
+        y = y, n_trials = rep(1L, length(y)), X = X, prior = prior,
+        family = "gaussian", phi = sqrt(0.5),
+        control = c(ctrl, list(auto_recenter = "always"))))
+
+    # The default axis contains its own mode, so the rail-gated policy leaves
+    # it alone and the unconditional one still moves it.
+    expect_null(.nl_axis_rail(fit, "tau"))
+    expect_identical(fit$outer_grid_placement, "fixed")
+    expect_identical(always$outer_grid_placement, "auto_recentered")
+    expect_identical(always$outer_grid_recenter_axes, "tau")
+    expect_length(unique(as.numeric(always$theta_grid)),
+                  .nl_recenter("n_pts"))
+    # The recentred span is the tighter one: it brackets the fixed grid's own
+    # posterior median rather than the prior's two decades.
+    med <- as.numeric(fit$theta_median[[1L]])
+    expect_lt(diff(range(as.numeric(always$theta_grid))),
+              diff(range(.nl_grid_axis("gmrf_tau"))))
+    expect_gt(max(as.numeric(always$theta_grid)), med)
+    expect_lt(min(as.numeric(always$theta_grid)), med)
+
+    # A pinned axis is still never moved, whatever the policy asks for.
+    pinned <- prior
+    pinned$tau_grid <- c(1, 2, 4, 8)
+    held <- suppressWarnings(tulpa_nested_laplace(
+        y = y, n_trials = rep(1L, length(y)), X = X, prior = pinned,
+        family = "gaussian", phi = sqrt(0.5),
+        control = c(ctrl, list(auto_recenter = "always"))))
+    expect_identical(held$outer_grid_placement, "fixed")
+    expect_identical(held$outer_grid_recenter_declined, "axis_pinned")
+
+    # The paths that do not implement it refuse it rather than ignore it.
+    expect_error(
+        suppressWarnings(tulpa_nested_laplace_joint(
+            responses = list(list(y = y, n_trials = rep(1L, length(y)), X = X,
+                                  family = "gaussian", phi = sqrt(0.5))),
+            prior = c(list(type = "icar", n_spatial_units = S,
+                           spatial_idx = idx), .rail_chain_adj(S)),
+            control = c(ctrl, list(auto_recenter = "always")))),
+        "standalone")
 })
