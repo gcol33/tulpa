@@ -697,7 +697,8 @@
 # FALSE, so a caller that leaves the correction off gets bit-for-bit the numbers
 # it got before this existed.
 .nl_skew_marginal <- function(mu, sigma, gamma3, gamma1, probs, enabled = TRUE,
-                              max_abs_gamma3 = .nl_diag("gamma3_unreliable")) {
+                              max_abs_gamma3 = .nl_diag("gamma3_unreliable"),
+                              max_abs_centre = .nl_diag("centre_unreliable")) {
   mu    <- as.numeric(mu)
   sigma <- as.numeric(sigma)
   n     <- length(mu)
@@ -714,7 +715,8 @@
     out
   }
   out <- cpp_cornish_fisher_quantile(mu, sigma, pad(gamma3), pad(gamma1), z,
-                                     as.numeric(max_abs_gamma3))
+                                     as.numeric(max_abs_gamma3),
+                                     as.numeric(max_abs_centre))
   list(q = out$q, applied = as.logical(out$applied))
 }
 
@@ -803,9 +805,13 @@
 #   gamma1_not_computable  no location term at this coefficient (NaN, never 0);
 #                          `inner_skew_gamma1_declined` on the fit says why the
 #                          kernel could not produce one (gcol33/tulpa#354)
+#   centre_unreliable      |gamma_1 + gamma_3 / 2| at or past the CENTRE band
+#                          (gcol33/tulpa#362). The correction relocates the
+#                          marginal by that many standard errors, so banding
+#                          |gamma_3| alone bounds only the reshaping
 .SKEW_CORRECT_REASONS <- c("eligible", "not_enabled", "gamma3_not_computable",
                            "gamma3_unreliable", "inner_k_unreliable",
-                           "gamma1_not_computable")
+                           "gamma1_not_computable", "centre_unreliable")
 
 .nl_skew_correction_attach <- function(res, p_fixed, enabled) {
   p <- max(as.integer(p_fixed %||% 0L), 0L)
@@ -813,6 +819,12 @@
   g1 <- .nl_gamma1_by_fixed(res, p)
   band <- vapply(g, .tulpa_gamma3_band, character(1))
   inner <- .nl_inner_bands_by_fixed(res, p)
+  # WHETHER the bands admit a coefficient is the quantile path's own predicate,
+  # read here rather than re-derived; only WHY is classified below, and the
+  # centre is the cause left once the two terms' own causes are named.
+  cf <- cpp_cornish_fisher_bands(g, g1,
+                                 as.numeric(.nl_diag("gamma3_unreliable")),
+                                 as.numeric(.nl_diag("centre_unreliable")))
 
   reason <- rep("eligible", p)
   if (!isTRUE(enabled)) {
@@ -824,12 +836,14 @@
       "gamma3_unreliable"
     reason[reason == "eligible" & !is.na(inner$band) &
              inner$band == "unreliable"] <- "inner_k_unreliable"
+    reason[reason == "eligible" & !cf$in_band] <- "centre_unreliable"
   }
 
   res$skew_correction <- list(
     enabled       = isTRUE(enabled),
     gamma3        = g,
     gamma1        = g1,
+    centre        = as.numeric(cf$centre),
     gamma1_declined = res[["inner_skew_gamma1_declined"]] %||% NA_character_,
     band          = band,
     pareto_k      = inner$pareto_k,
@@ -865,6 +879,7 @@
   if (is.null(sc)) {
     return(list(enabled = FALSE, gamma3 = rep(NA_real_, p),
                 gamma1 = rep(NA_real_, p),
+                centre = rep(NA_real_, p),
                 gamma1_declined = NA_character_,
                 band = rep(NA_character_, p),
                 pareto_k = rep(NA_real_, p),

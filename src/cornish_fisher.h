@@ -113,17 +113,40 @@ inline bool cornish_fisher_monotone(double g, double z_lo, double z_hi) {
   return cornish_fisher_dz(z_lo, g) > 0.0 && cornish_fisher_dz(z_hi, g) > 0.0;
 }
 
-// May index i take the correction at all? A non-finite or absent gamma_3 says
-// "not computable" and never means "no skew"; |gamma_3| at or past
-// `max_abs_gamma3` is the band cutoff past which the leading-order expansion
-// is being extrapolated out of its regime; a non-positive scale has no
-// standardized coordinate to correct in.
-inline bool cornish_fisher_eligible(double sigma, double g,
-                                    double max_abs_gamma3) {
-  if (!std::isfinite(sigma) || sigma <= 0.0) return false;
-  if (!std::isfinite(g)) return false;
-  if (!(std::fabs(g) < max_abs_gamma3)) return false;
+// Are the expansion's two terms inside their bands? One predicate owns the
+// whole band decision, so no caller can admit a coordinate on one term alone
+// and none re-derives the centre.
+//
+//   * a non-finite gamma_3 or gamma_1 says "not computable" and never means
+//     "no skew" / "no shift" -- a non-finite gamma_1 reaches this through the
+//     centre, which propagates it;
+//   * |gamma_3| at or past `max_abs_gamma3` is the SHAPE band, past which the
+//     leading-order expansion is being extrapolated out of its regime;
+//   * |m| at or past `max_abs_centre` is the CENTRE band (gcol33/tulpa#362).
+//     The reported quantile is mu_i + sigma_i {m_i + w(z_p; gamma_3)}, so the
+//     correction relocates the marginal by m_i standard errors and the shape
+//     band alone bounds only half of what it does. Both bands are the same
+//     statement about the same expansion: past them the series is no longer
+//     a leading-order adjustment to the Gaussian it is expanded around.
+inline bool cornish_fisher_in_band(double gamma1, double gamma3,
+                                   double max_abs_gamma3,
+                                   double max_abs_centre) {
+  if (!std::isfinite(gamma3)) return false;
+  if (!(std::fabs(gamma3) < max_abs_gamma3)) return false;
+  const double m = cornish_fisher_center(gamma1, gamma3);
+  if (!std::isfinite(m)) return false;
+  if (!(std::fabs(m) < max_abs_centre)) return false;
   return true;
+}
+
+// May index i take the correction at all? The bands, plus a scale to correct
+// in: a non-positive or non-finite sigma has no standardized coordinate.
+inline bool cornish_fisher_eligible(double sigma, double gamma1, double gamma3,
+                                    double max_abs_gamma3,
+                                    double max_abs_centre) {
+  if (!std::isfinite(sigma) || sigma <= 0.0) return false;
+  return cornish_fisher_in_band(gamma1, gamma3, max_abs_gamma3,
+                                max_abs_centre);
 }
 
 } // namespace tulpa

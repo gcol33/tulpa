@@ -31,7 +31,8 @@ test_that("the Cornish-Fisher quantile is the series it claims to be", {
   g1 <- -0.1
   out <- tulpa:::cpp_cornish_fisher_quantile(mu = 1.5, sigma = 2, gamma3 = g,
                                              gamma1 = g1, z = z,
-                                             max_abs_gamma3 = 1)
+                                             max_abs_gamma3 = 1,
+                                             max_abs_centre = 1.2)
   expect_true(out$applied)
   # The centre eq. (22) implies is gamma_1 + gamma_3 / 2 (gcol33/tulpa#354), not
   # the mean-zero standardized variate the expansion is written in.
@@ -43,7 +44,8 @@ test_that("the Cornish-Fisher quantile is the series it claims to be", {
   # (a gaussian-family coefficient reads both as 0 by construction).
   out0 <- tulpa:::cpp_cornish_fisher_quantile(mu = -0.3, sigma = 1.7, gamma3 = 0,
                                               gamma1 = 0, z = z,
-                                              max_abs_gamma3 = 1)
+                                              max_abs_gamma3 = 1,
+                                              max_abs_centre = 1.2)
   expect_identical(as.numeric(out0$q), -0.3 + 1.7 * z)
   expect_true(out0$applied)
 
@@ -61,7 +63,7 @@ test_that("a coefficient with no location term declines rather than assuming zer
   # location term, not an absence of one.
   out <- tulpa:::cpp_cornish_fisher_quantile(
     mu = c(0, 0), sigma = c(1, 1), gamma3 = c(0.5, 0.5),
-    gamma1 = c(0.05, NaN), z = z, max_abs_gamma3 = 1)
+    gamma1 = c(0.05, NaN), z = z, max_abs_gamma3 = 1, max_abs_centre = 1.2)
   expect_identical(as.logical(out$applied), c(TRUE, FALSE))
   expect_identical(out$q[2, ], z)
   expect_equal(out$q[1, ], 0.05 + 0.25 + z + (0.5 / 6) * (z^2 - 1))
@@ -76,7 +78,7 @@ test_that("the correction declines rather than extrapolating, and says so per in
   out <- tulpa:::cpp_cornish_fisher_quantile(
     mu = c(0, 0, 0, 0), sigma = c(1, 1, 1, 0),
     gamma3 = c(0.9, 1.0, NaN, 0.5), gamma1 = rep(0, 4), z = z,
-    max_abs_gamma3 = 1)
+    max_abs_gamma3 = 1, max_abs_centre = 1.2)
   expect_identical(as.logical(out$applied), c(TRUE, FALSE, FALSE, FALSE))
   expect_identical(out$q[2, ], z)          # band cutoff
   expect_identical(out$q[3, ], z)          # gamma_3 not computable
@@ -90,11 +92,55 @@ test_that("the correction declines rather than extrapolating, and says so per in
   wide <- stats::qnorm(c(1e-5, 1 - 1e-5))       # |z| ~ 4.26
   far <- tulpa:::cpp_cornish_fisher_quantile(mu = 0, sigma = 1, gamma3 = 0.9,
                                              gamma1 = 0, z = wide,
-                                             max_abs_gamma3 = 1)
+                                             max_abs_gamma3 = 1,
+                                             max_abs_centre = 1.2)
   expect_false(as.logical(far$applied))
   expect_equal(as.numeric(far$q), wide)
   # Every reported interval is ordered, corrected or not.
   expect_lt(far$q[1, 1], far$q[1, 2])
+})
+
+test_that("the CENTRE is banded, not only the shape", {
+  # gcol33/tulpa#362. The reported quantile is
+  # mu_i + sigma_i {gamma_1 + gamma_3 / 2 + w(z_p; gamma_3)}, so the correction
+  # relocates the marginal by the centre and a band on |gamma_3| alone bounds
+  # only the reshaping. The shape here is identical across the four rows and
+  # well inside its own band; the centre is what decides them.
+  z <- stats::qnorm(c(0.025, 0.975))
+  cut <- 1.2
+  g3 <- rep(0.4, 4)
+  g1 <- c(0.0, 0.5, cut - 0.4 / 2 - 1e-9, cut - 0.4 / 2)   # |m| = 0.2, 0.7, <cut, ==cut
+  out <- tulpa:::cpp_cornish_fisher_quantile(
+    mu = rep(0, 4), sigma = rep(1, 4), gamma3 = g3, gamma1 = g1, z = z,
+    max_abs_gamma3 = 1, max_abs_centre = cut)
+  # The band is strict: a centre AT the cutoff declines, as |gamma_3| at the
+  # shape cutoff already does.
+  expect_identical(as.logical(out$applied), c(TRUE, TRUE, TRUE, FALSE))
+  expect_identical(out$q[4, ], z)
+  expect_equal(out$q[2, ], 0.5 + 0.2 + z + (0.4 / 6) * (z^2 - 1))
+
+  # A wider band admits the row a tighter one declines, and nothing else moves.
+  wide <- tulpa:::cpp_cornish_fisher_quantile(
+    mu = rep(0, 4), sigma = rep(1, 4), gamma3 = g3, gamma1 = g1, z = z,
+    max_abs_gamma3 = 1, max_abs_centre = cut + 0.1)
+  expect_identical(as.logical(wide$applied), rep(TRUE, 4))
+  expect_identical(wide$q[1:3, ], out$q[1:3, ])
+})
+
+test_that("cpp_cornish_fisher_bands is the predicate the quantile path uses", {
+  # The eligibility RECORD and the quantile path must be one decision, not two
+  # implementations of it. `.nl_skew_correction_attach()` reads the bands from
+  # here; the quantile path calls the same predicate inside the loop.
+  g3 <- c(0.4, 0.4, 1.2, NaN, 0.4)
+  g1 <- c(0.1, 2.0, 0.0, 0.1, NaN)
+  b <- tulpa:::cpp_cornish_fisher_bands(g3, g1, 1.0, 1.2)
+  expect_equal(b$centre, g1 + g3 / 2)
+  expect_identical(as.logical(b$in_band), c(TRUE, FALSE, FALSE, FALSE, FALSE))
+  z <- stats::qnorm(c(0.025, 0.975))
+  q <- tulpa:::cpp_cornish_fisher_quantile(
+    mu = rep(0, 5), sigma = rep(1, 5), gamma3 = g3, gamma1 = g1, z = z,
+    max_abs_gamma3 = 1.0, max_abs_centre = 1.2)
+  expect_identical(as.logical(q$applied), as.logical(b$in_band))
 })
 
 test_that(".nl_skew_marginal is inert when the correction is switched off", {
@@ -380,6 +426,43 @@ test_that("an unreliable band keeps the Gaussian quantiles at the front door", {
                           enabled = TRUE, max_abs_gamma3 = tight)
   expect_identical(mg$applied, c(FALSE, FALSE))
   expect_equal(mg$q[, 1], rep(stats::qnorm(0.025), 2))
+})
+
+test_that("a centre past its band declines at the front door, and says so", {
+  skip_on_cran()
+  # gcol33/tulpa#362, and the point gcol33/tulpa#346 made about the record: an
+  # eligibility that is WRITTEN but not CONSUMED corrects the coefficient
+  # anyway. This drives the whole path -- attach, record, `confint()` -- with a
+  # location term the centre band refuses, and asserts the reported bounds
+  # actually change.
+  d <- .skew_corr_fixture()
+  f <- .skew_corr_fit(d, TRUE)
+  p <- length(f$skew_correction$gamma3)
+  expect_true(all(abs(f$skew_correction$centre) < .nl_diag("centre_unreliable")))
+
+  big <- f
+  big$inner_skew_gamma1 <- rep(3, length(f$inner_skew_gamma1))
+  big <- .nl_skew_correction_attach(big, p, TRUE)
+  expect_equal(big$skew_correction$centre, 3 + f$skew_correction$gamma3 / 2)
+  # Coefficient 1 is already declined by the importance k-hat on this fixture,
+  # so the reason it reports is still that one: a coefficient names the score
+  # that declined it, and the precedence does not change because a second one
+  # also fires.
+  expect_identical(big$skew_correction$reason,
+                   c("inner_k_unreliable", "centre_unreliable"))
+  expect_identical(big$skew_correction$eligible, c(FALSE, FALSE))
+  expect_true(all(big$skew_correction$reason %in% .SKEW_CORRECT_REASONS))
+
+  ci_big <- confint(big)
+  expect_identical(unname(attr(ci_big, "skew_applied")), c(FALSE, FALSE))
+  # The Gaussian bounds, and NOT the ones the same fit reports with its own
+  # centre -- the band is read, not merely recorded.
+  tab <- .fit_fixed_table(f)
+  z <- stats::qnorm(c(0.025, 0.975))
+  expect_equal(as.numeric(ci_big[2, ]),
+               tab$estimate[2] + tab$std.error[2] * z)
+  expect_false(isTRUE(all.equal(as.numeric(ci_big[2, ]),
+                                as.numeric(confint(f)[2, ]))))
 })
 
 # --------------------------------------------------------------------------- #

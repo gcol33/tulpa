@@ -522,6 +522,43 @@
 # whole correction rather than reading the absent gamma_1 as zero.
 #
 # `control$skew_correct = TRUE` turns it on per fit; the default stays FALSE.
+#
+# `centre_unreliable` bands the CENTRE the way `gamma3_unreliable` bands the
+# shape (gcol33/tulpa#362). The reported quantile is
+# mu_i + sigma_i {m_i + w(z_p; gamma_3)} with m_i = gamma_1 + gamma_3 / 2, so
+# the correction RELOCATES the marginal by m_i standard errors and a band on
+# |gamma_3| alone bounds only the reshaping. Past the cutoff a coefficient
+# reports the Gaussian quantiles and records `centre_unreliable`. Both bands say
+# the same thing about the same expansion: past them the series is no longer a
+# leading-order adjustment to the Gaussian it is expanded around.
+#
+# MEASURED, on 3800 prior-predictive fits across four fixtures with an exact
+# reference (dev_notes/issue362): the rare-event binomial-logit intercept of
+# gcol33/tulpa#346, the small-group Bernoulli RE fit with a real outer grid of
+# gcol33/tulpa#341, and two rare-event binomial-logit designs carrying a SLOPE,
+# which is what makes var(eta_j | x_i) -- and so gamma_1 -- nonzero, chosen for
+# reach in |m| on a criterion blind to how the correction then scores. Each
+# candidate cutoff is scored as the PAIRED CRPS difference between the banded
+# and the unbanded correction on the same fits, so the number is what the band
+# COSTS. It costs on every cutoff that declines anything: +2.8e-02 at 0.95 (66
+# coefficients declined), +1.4e-02 at 1.00 (41), +2.0e-03 at 1.10 (8), +7.0e-04
+# at 1.15 (1), and exactly 0 at 1.20, where the largest admitted centre measured
+# anywhere (1.192) still fits inside. The correction's advantage GROWS with |m|
+# over that whole range -- binned by |m| it recovers 71% to 92% of the distance
+# from the Laplace centre to the exact marginal mean, with the largest bins
+# gaining most -- so a tighter band buys nothing and gives up the seeds the
+# correction helps most on.
+#
+# WHAT THE BAND IS FOR, given that. On these fixtures the SHAPE band already
+# excludes every centre past 1.192: |gamma_1| and |gamma_3| are correlated (0.87
+# / 0.91 with |m|), and the designs that reach |m| of 3 to 5 reach it on seeds
+# where |gamma_3| >= 1 has already declined the coefficient. So the cutoff is
+# placed at the edge of the measured regime and declines nothing that was
+# measured. What it buys is that the displacement is BOUNDED at all: a fit
+# carrying a large gamma_1 without a correspondingly large gamma_3 -- which no
+# fixture here produced and nothing in the engine rules out -- declines instead
+# of relocating the marginal arbitrarily far.
+#
 # `debias_select_band` is the floor the SUBSPACE DEBIAS selector reads the inner
 # bands at (gcol33/tulpa#304): a probed coordinate whose combined inner band is
 # at or above it is sampled exactly, the rest stay at their Gaussian
@@ -566,6 +603,7 @@
     k_samples            = 200L,
     gamma3_ok            = 0.5,
     gamma3_unreliable    = 1.0,
+    centre_unreliable    = 1.2,
     inner_k_material_ess = 0.995,
     skew_correct         = FALSE,
     debias_select_band   = "ok",
