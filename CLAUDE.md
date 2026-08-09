@@ -761,7 +761,21 @@ with `S_u` the unit's K x K marginal eta covariance block -- and what is missing
 is an oracle contracting `T` against a MATRIX in two slots and a vector in the
 third; `Curvature3Oracle::unit` and `CellCubic3Fn` both contract the same vector
 three times, so it is not reachable from them and is left unattempted rather
-than approximated.
+than approximated. The contraction is CHEAPER than the cubic one once such an
+oracle exists (one central difference of the unit's Hessian per unit, against
+#301's `2K`).
+
+**Read the measured return before building it** (header SCOPE note,
+`dev_notes/issue354`). Computed outside the engine from the coupled fixture's
+own R log posterior, the widened term turns a loss into a gain on both
+coefficients at one configuration (paired CRPS `t +2.31 -> -2.08` and
+`+0.96 -> -2.30`, about 65% of what the exact posterior achieves) and does not
+reach significance at another (`t -1.07`, `-1.37`). The location term is not
+what dominates there: `gamma_1` is near zero on the occupancy coordinate,
+`gamma_3 / 2` does essentially all of the centre, and `gamma_1` ALONE leaves the
+centre marginally WORSE than the uncorrected mode at both configurations. What
+limits the coupled case is `gamma_3` itself, a lower bound pinned at 0.4-0.7 of
+the exact skewness on that coordinate.
 
 ### The fixed-effect marginal is a mixture, and is quantiled as one (gcol33/tulpa#336)
 

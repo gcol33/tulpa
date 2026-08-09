@@ -135,7 +135,27 @@
 // engine does not yet have is an oracle contracting T against a MATRIX in two
 // slots and a vector in the third; Curvature3Oracle::unit and CellCubic3Fn both
 // contract the same vector three times, so the widened term is not reachable
-// from them and is left unattempted rather than approximated.
+// from them and is left unattempted rather than approximated. Note the
+// contraction itself is CHEAPER than the cubic one: by
+// sum_{abc} T^{abc} S^{ab} u^c = <S, d/ds L''(e + s u)>_F it is ONE central
+// difference of the unit's Hessian per unit, against gcol33/tulpa#301's 2K.
+//
+// WHAT BUILDING IT WOULD BUY, measured before anyone starts. On the coupled
+// occupancy fixture the location term was computed OUTSIDE the engine from the
+// fixture's own R log posterior by its definition, and the corrected marginal
+// scored against exact quadrature over 400 prior-predictive replicates
+// (dev_notes/issue354). At one configuration (40 cells x 8 visits) it turns a
+// loss into a gain on both coefficients, paired CRPS t +2.31 -> -2.08 and
+// +0.96 -> -2.30, recovering about 65% of what the exact posterior achieves; at
+// another (100 x 4) it moves the same way and does not reach significance
+// (t -1.07, -1.37). So the return is real but configuration-dependent, and it
+// is NOT the location term that dominates there: gamma_1 is near zero on the
+// occupancy coordinate (median 0.0019), gamma_3 / 2 does essentially all of the
+// centre, and gamma_1 ALONE leaves the centre marginally WORSE than the
+// uncorrected mode at both configurations (108.9 against 99.4, and 57.3 against
+// 55.3, in summed standardized distance to the exact marginal mean). What
+// limits the coupled case is gamma_3 itself, pinned in test-inner-skew.R at
+// 0.4-0.7 of the exact skewness on that coordinate.
 //
 // A closed-form quartic (kurtosis) term is not part of the paper's
 // simplified-Laplace method: Sec 3.2.3's own discussion of symmetric
