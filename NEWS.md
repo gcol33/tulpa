@@ -1,5 +1,45 @@
 # tulpa NEWS
 
+## 0.0.157
+
+* `tulpa_posterior_draws()` serves a single-block nested-Laplace fit
+  (gcol33/tulpa#347). The posterior of such a fit IS the outer-grid Gaussian
+  mixture `.nested_fixed_moments()` returns, so a draw is the same two steps the
+  joint backend already runs -- pick a cell by weight, then draw that cell's
+  Gaussian -- and the two backends now meet at one allocator,
+  `.nl_mixture_draw()`. What a draw covers differs by what the backend retained
+  and travels on the result as a `scope` attribute: the joint fit keeps each
+  cell's sparse precision and so samples the full latent vector (`"latent"`),
+  while the single-block fit inverts each cell's precision into the marginal
+  fixed-effect block and releases the precision, so it samples that block
+  (`"fixed"`). A grid that dropped a positive-weight cell samples the cells that
+  remain and carries the same `retained_mass` provenance `confint()` does
+  (gcol33/tulpa#342). Measured against the retained mixture at 4e5 draws: the
+  sampled mean and covariance reproduce `.nested_fixed_moments()` to 2.9e-04 and
+  3.1e-03 marginal-SD units, and the sampled 2.5% / 97.5% quantiles reproduce
+  `confint()`'s mixture-CDF bounds to 3.3e-03 marginal SDs.
+* `diagnostics()` reports the reliability band on a fit that carries no draws
+  (gcol33/tulpa#348). Draws are what the per-parameter mean / sd / ESS / rhat
+  columns and `n_draws` are computed from; the outer PSIS k-hat and its regime,
+  the grid quadrature ESS, the inner-Laplace `gamma_3` and importance k-hat, and
+  the combined verdict are all read off the fit and need none. The guard was on
+  the wrong quantity, so a default single-block nested fit whose `pareto_k` had
+  cleared the escalation threshold reported `NULL`. The band is now returned with
+  an empty body, `n_draws = NA`, and a `param_table_declined` reason that points
+  at `tulpa_posterior_draws()`; `print()` shows the band and says the columns
+  need a posterior sample. A fit with neither draws nor any band quantity (a
+  plain Laplace fit, no outer grid to score) still returns `NULL`, now saying
+  both halves of why.
+* `posterior_sample()` and `tulpa_draws_array()` name what a draws-less fit
+  carries instead of returning a bare `NULL` (gcol33/tulpa#349). The note gives
+  the backend, the posterior representation on the fit -- the outer-grid mixture
+  over the latent vector or over the fixed effects, per-cell modes with no
+  retained covariance, a Laplace mode and precision, or posterior moments -- and
+  the accessor that samples it where one exists. The internal probes that read
+  draws with a designed fallback (the `posterior` interop conversion, k-fold,
+  power-scaling) go through the silent accessors, so a fallback does not narrate
+  itself.
+
 ## 0.0.156
 
 * `control$max_grid_cells` sets the multi-block outer-grid cell ceiling

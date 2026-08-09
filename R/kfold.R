@@ -195,7 +195,7 @@ tulpa_kfold <- function(object, data, K = 10L, folds = NULL,
 # Fixed-effect posterior draws (`[S x p]`, columns ordered by `bnm`) from a fit,
 # via the provenance-agnostic accessor; a point fit yields a single-row plug-in.
 .kfold_fixed_draws <- function(fit, bnm) {
-  dr <- tryCatch(posterior_sample(fit), error = function(e) NULL)
+  dr <- tryCatch(.fit_draws(fit), error = function(e) NULL)
   if (!is.null(dr) && is.matrix(dr) && all(bnm %in% colnames(dr))) {
     return(dr[, bnm, drop = FALSE])
   }

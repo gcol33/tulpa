@@ -77,7 +77,7 @@
 # per-draw quantities the fit stores); otherwise synthesizes from the
 # (Laplace / Gaussian) fixed-effect posterior N(coef, vcov).
 .ps_fixed_draws <- function(fit, bnm, n_draws = 4000L) {
-  dr <- tryCatch(posterior_sample(fit), error = function(e) NULL)
+  dr <- tryCatch(.fit_draws(fit), error = function(e) NULL)
   if (is.matrix(dr) && all(bnm %in% colnames(dr)) && nrow(dr) > 1L) {
     return(list(B = dr[, bnm, drop = FALSE], genuine = TRUE))
   }

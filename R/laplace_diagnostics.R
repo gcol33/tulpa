@@ -897,25 +897,63 @@
   out
 }
 
+# The zero-row shape of the table above, for a fit whose reliability band is
+# available but whose per-parameter body is not. Written from the same column
+# set so the two cannot drift.
+.tulpa_iid_param_table_empty <- function() {
+  .tulpa_iid_param_table(matrix(0.0, 1L, 1L,
+                                dimnames = list(NULL, "x")))[0L, , drop = FALSE]
+}
+
 # Approximation-reliability table for an i.i.d. deterministic fit. The
 # provenance gate lives in `diagnostics()`; this builds the table and attaches
 # the PSIS / grid-quadrature headline as attributes. Documented user-side under
 # `?laplace_diagnostics`.
+#
+# DRAWS ARE NEEDED FOR THE BODY, NOT THE HEADLINE (gcol33/tulpa#348). Every
+# reliability quantity below -- the outer PSIS k-hat and its regime, the grid
+# quadrature ESS, the inner-Laplace gamma_3 and importance k-hat, and the
+# combined verdict -- is read off `fit` at fit time and needs no posterior
+# sample. Only the per-parameter Monte-Carlo columns and `n_draws` do. So a fit
+# with no draws gets the whole band with an empty body, rather than silence
+# about a k-hat that has already cleared the escalation threshold; the body's
+# absence is recorded in `param_table_declined` and printed.
+#
+# A fit with NEITHER draws NOR any band quantity -- a plain Laplace / EB fit,
+# which has no outer grid to score -- is the one case that still returns NULL:
+# there is nothing to report at either layer, and an all-"not assessed" table
+# would be a report about the absence of a report.
 .tulpa_approx_diag_table <- function(fit, pars = NULL) {
-  draws <- .fit_draws(fit)
-  if (is.null(draws)) {
-    message("diagnostics(): the fit carries no posterior draws.")
-    return(NULL)
-  }
-  tab <- .tulpa_iid_param_table(draws, pars = pars)
-  if (is.null(tab)) return(NULL)
-
   grid  <- .tulpa_grid_reliability(fit)
   psis  <- .tulpa_psis_reliability(fit)
   inner <- .tulpa_inner_skew_reliability(fit)
   inner_k <- .tulpa_inner_k_reliability(fit)
   regime <- .tulpa_outer_regime(fit)
   k          <- psis$pareto_k
+
+  draws <- .fit_draws(fit)
+  tab <- if (is.null(draws)) NULL else .tulpa_iid_param_table(draws, pars = pars)
+  param_declined <- NA_character_
+  if (is.null(draws)) {
+    has_band <- !is.null(grid) || !is.null(inner) || !is.null(inner_k) ||
+      !is.null(regime) || is.finite(k)
+    if (!has_band) {
+      message(.tulpa_no_draws_note(fit, "diagnostics"),
+              " No approximation-reliability quantity was computed for it ",
+              "either, so there is nothing to report.")
+      return(NULL)
+    }
+    param_declined <- paste(
+      "the fit carries no posterior draws, so the per-parameter mean / sd /",
+      "ESS / rhat columns are empty; tulpa_posterior_draws(fit) samples the",
+      "retained outer-grid mixture if a sample is wanted")
+    tab <- .tulpa_iid_param_table_empty()
+  } else if (is.null(tab)) {
+    # Draws are present and `pars` matched nothing -- that is a bad selector,
+    # not an absent representation, and stays an empty answer.
+    return(NULL)
+  }
+
   outer_band <- .tulpa_khat_band(k)
   inner_band <- if (is.null(inner)) NA_character_ else inner$band
   inner_k_band <- if (is.null(inner_k)) NA_character_ else inner_k$band
@@ -992,9 +1030,12 @@
     inner_skew_declined = if (is.null(inner)) NA_character_ else inner$declined,
     inner_pareto_k_declined = inner_k_declined,
     reliability     = reliability,
-    n_draws         = nrow(as.matrix(draws)),
+    n_draws         = if (is.null(draws)) NA_integer_ else nrow(as.matrix(draws)),
     stringsAsFactors = FALSE, row.names = NULL
   )
+  if (!is.na(param_declined)) {
+    attr(tab, "param_table_declined") <- param_declined
+  }
   attr(tab, "summary") <- summary_row
   class(tab) <- c("laplace_diagnostics", class(tab))
   tab
@@ -1075,6 +1116,17 @@
 #' draws these sit at `~1.00` and `~n_draws` by construction; they are reported,
 #' clearly as i.i.d.-draw Monte-Carlo diagnostics and not chain mixing, to
 #' document that the reported posterior summaries are not Monte-Carlo-limited.
+#'
+#' A posterior sample is what those per-parameter rows are computed from, and
+#' nothing else here needs one: every reliability quantity above is read off the
+#' fit. So a fit that carries no draws -- a default single-block nested-Laplace
+#' fit, whose posterior is the retained outer-grid mixture rather than a sample
+#' -- reports the full band with an empty per-parameter body and `n_draws = NA`,
+#' and records why in the `param_table_declined` attribute
+#' (gcol33/tulpa#348). [tulpa_posterior_draws()] samples that mixture where the
+#' rows are wanted. The one case that still returns `NULL` is a fit with neither
+#' draws nor any reliability quantity, such as a plain Laplace fit with no outer
+#' grid to score.
 #'
 #' @section Scope:
 #' The PSIS `pareto_k` diagnoses the OUTER (hyperparameter) integration: whether
@@ -1303,6 +1355,11 @@ print.laplace_diagnostics <- function(x, ...) {
   }
   if (!is.null(attr(x, "reliability"))) {
     cat(sprintf("  whole-fit verdict: %s\n", attr(x, "reliability")))
+  }
+  pdecl <- attr(x, "param_table_declined")
+  if (!is.null(pdecl)) {
+    cat("  per-parameter columns: none.\n    ", pdecl, "\n", sep = "")
+    return(invisible(x))
   }
   cat(sprintf("  %d parameters, %d draws; per-parameter rhat / ESS below are\n",
               nrow(x), if (is.null(s)) NA_integer_ else s$n_draws))

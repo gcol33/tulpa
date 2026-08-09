@@ -20,6 +20,10 @@ Assembles a fitted model's posterior draws into an \verb{[iteration, chain, para
 draws array, a \verb{$chain_id} row map, or an \verb{$n_chains} count over chain-major
 rows; a single pooled chain yields a one-chain array.
 }
+\details{
+As with \code{\link[=posterior_sample]{posterior_sample()}}, a fit that carries no draws returns \code{NULL} with
+a message naming its backend and the representation it carries instead.
+}
 \seealso{
-\code{\link[=diagnostics]{diagnostics()}}
+\code{\link[=posterior_sample]{posterior_sample()}}, \code{\link[=tulpa_posterior_draws]{tulpa_posterior_draws()}}, \code{\link[=diagnostics]{diagnostics()}}
 }

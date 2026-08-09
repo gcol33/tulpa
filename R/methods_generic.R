@@ -172,6 +172,12 @@
 # the two apart from the returned value alone. The returned `w` sums to one over
 # the retained cells, which is the weighting BOTH the moments and the mixture
 # components are formed under, so the two reads describe one posterior.
+#
+# `keep` is the grid-cell index each mixture component came from, so a caller
+# that needs a component's FULL covariance (the mixture sampler,
+# `tulpa_posterior_draws()`) reaches the same cell this read summarized rather
+# than re-deriving which cells were retained. Only the component variances are
+# returned in `var`, since that is all the mixture CDF needs.
 #' @keywords internal
 .nested_fixed_moments <- function(object) {
   H <- object$grid_hessians
@@ -198,7 +204,7 @@
   var_k <- matrix(NA_real_, length(keep), p)
   for (i in seq_along(keep)) {
     g  <- keep[i]
-    Vg <- tryCatch(solve(H[[g]]), error = function(e) matrix(NA_real_, p, p))
+    Vg <- .nested_cell_fixed_cov(H[[g]], p)
     mu <- M[[g]]
     m <- m + wk[i] * mu
     S <- S + wk[i] * (Vg + tcrossprod(mu))
@@ -206,7 +212,18 @@
     var_k[i, ] <- diag(Vg)
   }
   list(mean = m, cov = S - tcrossprod(m),
-       mu = mu_k, var = var_k, w = wk, mass = mass)
+       mu = mu_k, var = var_k, w = wk, mass = mass, keep = keep)
+}
+
+
+# Fixed-effect covariance of ONE outer-grid cell: the inverse of the cell's
+# retained marginal precision, or an all-NA p x p block when that precision is
+# singular. Both readers of the retained mixture go through it -- the moment /
+# component summary above, and the mixture sampler in R/posterior_draws.R, which
+# needs the full matrix rather than its diagonal.
+#' @keywords internal
+.nested_cell_fixed_cov <- function(Hg, p) {
+  tryCatch(solve(Hg), error = function(e) matrix(NA_real_, p, p))
 }
 
 

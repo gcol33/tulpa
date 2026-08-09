@@ -287,9 +287,16 @@
 #' here. For the chain-only view used by convergence diagnostics, see
 #' [mcmc_draws()].
 #'
+#' A fit that carries no draws returns `NULL` with a message naming its backend,
+#' the posterior representation it carries instead, and the accessor that turns
+#' that representation into draws where one exists (gcol33/tulpa#349) -- an
+#' absent draws matrix is a property of the backend, not a failure of the
+#' accessor, and saying which is the difference between a diagnosable answer and
+#' a bare `NULL`.
+#'
 #' @param fit A `tulpa_fit` (or subclass) carrying posterior `$draws`.
 #' @return The posterior draws matrix/array, or `NULL` if the fit carries none.
-#' @seealso [mcmc_draws()], [diagnostics()]
+#' @seealso [mcmc_draws()], [tulpa_posterior_draws()], [diagnostics()]
 #' @examples
 #' \donttest{
 #' set.seed(1)
@@ -299,7 +306,57 @@
 #' dim(posterior_sample(fit))
 #' }
 #' @export
-posterior_sample <- function(fit) .fit_draws(fit)
+posterior_sample <- function(fit) {
+  draws <- .fit_draws(fit)
+  if (is.null(draws)) {
+    message(.tulpa_no_draws_note(fit, "posterior_sample"))
+    return(NULL)
+  }
+  draws
+}
+
+# What to say about a fit that carries no `$draws`. Names the backend, the
+# posterior representation the fit DOES carry, and the accessor that samples it
+# where there is one -- the same standard the Pareto-k / gamma_3 declines are
+# held to (gcol33/tulpa#293, #295, #296): a withheld answer records why.
+#' @keywords internal
+.tulpa_no_draws_note <- function(fit, caller) {
+  backend <- if (is.list(fit)) fit$backend %||% NA_character_ else NA_character_
+  who <- if (is.na(backend)) {
+    paste0("this ", paste(class(fit), collapse = "/"), " fit")
+  } else paste0("the '", backend, "' fit")
+
+  carries <- NULL
+  if (is.list(fit)) {
+    if (!is.null(fit$Q_csc_p_per_grid) && !is.null(fit$modes)) {
+      carries <- paste(
+        "the outer-grid Gaussian mixture over the full latent vector",
+        "(`$modes` / `$Q_csc_*_per_grid` / `$weights`); draw from it with",
+        "tulpa_posterior_draws(fit)")
+    } else if (!is.null(fit$grid_hessians) && !is.null(fit$grid_modes)) {
+      carries <- paste(
+        "the outer-grid Gaussian mixture over the fixed effects",
+        "(`$grid_modes` / `$grid_hessians` / `$weights`); draw from it with",
+        "tulpa_posterior_draws(fit)")
+    } else if (is.matrix(fit$modes) && !is.null(fit$weights)) {
+      carries <- paste(
+        "per-grid-cell modes and integration weights (`$modes` / `$weights`)",
+        "but no per-cell covariance; refit with",
+        "`control$keep_grid_hessians = TRUE` to make it samplable")
+    } else if (!is.null(fit$mode) && !is.null(fit$H_beta)) {
+      carries <- paste("a Laplace mode and its precision (`$mode` /",
+                       "`$H_beta`), summarized by summary() / confint()")
+    } else if (!is.null(fit$means) || is.matrix(fit$cov)) {
+      carries <- paste("posterior moments (`$means` / `$cov`), summarized by",
+                       "summary() / confint()")
+    }
+  }
+  if (is.null(carries)) {
+    carries <- "no posterior representation this accessor can read"
+  }
+  sprintf("%s(): %s carries no posterior draws. It carries %s.",
+          caller, who, carries)
+}
 
 # The one place a fit's posterior draws are read off the object.
 #
@@ -395,13 +452,27 @@ mcmc_draws <- function(fit) {
 #' draws array, a `$chain_id` row map, or an `$n_chains` count over chain-major
 #' rows; a single pooled chain yields a one-chain array.
 #'
+#' As with [posterior_sample()], a fit that carries no draws returns `NULL` with
+#' a message naming its backend and the representation it carries instead.
+#'
 #' @param fit A `tulpa_fit` (or subclass) carrying posterior `$draws`.
 #' @return A numeric array with dimensions `[n_iter, n_chain, n_param]` and the
 #'   parameter names on the third dimension, or `NULL` if the fit carries no
 #'   draws. Chains of unequal length are truncated to the shortest.
-#' @seealso [diagnostics()]
+#' @seealso [posterior_sample()], [tulpa_posterior_draws()], [diagnostics()]
 #' @export
 tulpa_draws_array <- function(fit) {
+  arr <- .tulpa_draws_array(fit)
+  if (is.null(arr)) message(.tulpa_no_draws_note(fit, "tulpa_draws_array"))
+  arr
+}
+
+# The array assembly without the user-facing note, for the internal callers that
+# probe for draws and already have a designed fallback (the `posterior` interop
+# conversion, k-fold, power-scaling). One body, two doors: the front door reports
+# an absent representation, the probe does not narrate its own fallback.
+#' @keywords internal
+.tulpa_draws_array <- function(fit) {
   chain_list <- .tulpa_chain_list(fit)
   if (is.null(chain_list)) return(NULL)
   n_iter <- min(vapply(chain_list, nrow, integer(1)))

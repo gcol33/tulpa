@@ -153,6 +153,17 @@ tail effective sample size of the draws (Vehtari et al. 2021). On i.i.d.
 draws these sit at \code{~1.00} and \code{~n_draws} by construction; they are reported,
 clearly as i.i.d.-draw Monte-Carlo diagnostics and not chain mixing, to
 document that the reported posterior summaries are not Monte-Carlo-limited.
+
+A posterior sample is what those per-parameter rows are computed from, and
+nothing else here needs one: every reliability quantity above is read off the
+fit. So a fit that carries no draws -- a default single-block nested-Laplace
+fit, whose posterior is the retained outer-grid mixture rather than a sample
+-- reports the full band with an empty per-parameter body and \code{n_draws = NA},
+and records why in the \code{param_table_declined} attribute
+(gcol33/tulpa#348). \code{\link[=tulpa_posterior_draws]{tulpa_posterior_draws()}} samples that mixture where the
+rows are wanted. The one case that still returns \code{NULL} is a fit with neither
+draws nor any reliability quantity, such as a plain Laplace fit with no outer
+grid to score.
 }
 \section{Scope}{
 

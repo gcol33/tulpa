@@ -150,7 +150,7 @@ as_draws_rvars.tulpa_fit <- function(x, n_draws = NULL, seed = NULL, ...) {
          "use tulpa_draws_array() for the base R [iteration, chain, parameter] ",
          "array.", call. = FALSE)
   }
-  arr <- tulpa_draws_array(x)
+  arr <- .tulpa_draws_array(x)
   if (!is.null(arr)) {
     if (!is.null(n_draws)) {
       warning("`n_draws` is ignored: this fit carries its own posterior draws. ",

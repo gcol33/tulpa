@@ -1,5 +1,6 @@
-# Generic posterior sampler for the grid-integrated joint nested-Laplace
-# backend -- the inla.posterior.sample analogue.
+# The joint nested-Laplace arm of `tulpa_posterior_draws()` -- the front door,
+# the shared mixture allocator and the single-block arm live in
+# R/posterior_draws.R.
 #
 # Given a joint fit and a latent index set, draw from the outer-grid MIXTURE
 #
@@ -18,20 +19,13 @@
 #' Posterior draws from a joint nested-Laplace fit
 #'
 #' @description
-#' Draw from the outer-grid mixture posterior of a joint nested-Laplace fit
-#' ([tulpa_nested_laplace_joint()]) -- the engine analogue of
-#' `inla.posterior.sample()`. Each draw picks an outer-grid cell
+#' The [tulpa_posterior_draws()] method for a joint nested-Laplace fit
+#' ([tulpa_nested_laplace_joint()]). Each draw picks an outer-grid cell
 #' `k ~ Categorical(weights)` and then samples the inner latent vector from the
 #' constrained Gaussian `N(m_k, V_k)` at that cell, where `m_k` is the cell's
 #' inner mode and `V_k` is the inner-Laplace covariance with the ICAR / BYM2
 #' sum-to-zero field constraint imposed (conditioning by kriging). The draws
 #' are i.i.d. samples from `sum_k weights_k * N(m_k, V_k)`.
-#'
-#' Sampling the mixture is the faithful primitive for marginalizing nonlinear
-#' derived quantities (e.g. `plogis(eta_2) - plogis(eta_1)`, expected-cover
-#' products `p * mu`): compute the derived quantity per draw, then summarize.
-#' Collapsing the grid to a single moment-matched Gaussian biases skewed or
-#' multimodal-over-grid posteriors.
 #'
 #' @param fit A `tulpa_nested_laplace_joint` fit (single-block or multi-block).
 #'   The fit must have been produced with `control$store_Q = TRUE` so the
@@ -46,8 +40,9 @@
 #'
 #' @return A numeric matrix `[n x length(idx)]` of latent draws, one row per
 #'   draw, columns named `x<idx>`. Carries `attr(., "draws_kind") = "iid"`
-#'   (consistent with the draws-provenance gate) and
-#'   `attr(., "cells")`, the outer-grid cell index each row was drawn from.
+#'   (consistent with the draws-provenance gate), `attr(., "cells")` -- the
+#'   outer-grid cell index each row was drawn from -- and
+#'   `attr(., "scope") = "latent"`.
 #'
 #' @details
 #' The constrained draw at cell `k` uses the sparse Cholesky of the stored
@@ -65,26 +60,12 @@
 #' dropped and the remaining weights renormalized. A degenerate single-cell
 #' grid (quadrature ESS 1) returns draws from that cell's `N(m_1, V_1)`.
 #'
-#' @seealso [tulpa_nested_laplace_joint()], [posterior_sample()]
-#' @export
-tulpa_posterior_draws <- function(fit, idx = NULL, n = 1000, ...) {
-    UseMethod("tulpa_posterior_draws")
-}
-
-#' @export
-tulpa_posterior_draws.default <- function(fit, idx = NULL, n = 1000, ...) {
-    stop("tulpa_posterior_draws() is implemented for joint nested-Laplace fits ",
-         "(class 'tulpa_nested_laplace_joint'). Got: ",
-         paste(class(fit), collapse = ", "), ".", call. = FALSE)
-}
-
+#' @seealso [tulpa_posterior_draws()], [tulpa_nested_laplace_joint()],
+#'   [posterior_sample()]
 #' @export
 tulpa_posterior_draws.tulpa_nested_laplace_joint <- function(fit, idx = NULL,
                                                              n = 1000, ...) {
-    n <- as.integer(n)
-    if (length(n) != 1L || is.na(n) || n < 1L) {
-        stop("`n` must be a single positive integer.", call. = FALSE)
-    }
+    n <- .nl_draws_check_n(n)
 
     Qp  <- fit$Q_csc_p_per_grid
     Qi  <- fit$Q_csc_i_per_grid
@@ -92,8 +73,11 @@ tulpa_posterior_draws.tulpa_nested_laplace_joint <- function(fit, idx = NULL,
     n_x <- fit$Q_csc_n
     if (is.null(Qp) || is.null(Qi) || is.null(Qx) || is.null(n_x)) {
         stop("tulpa_posterior_draws(): the fit carries no per-grid precision ",
-             "(`Q_csc_*_per_grid`). Refit with `control$store_Q = TRUE` to ",
-             "enable posterior sampling.", call. = FALSE)
+             "(`Q_csc_*_per_grid`), so the latent vector cannot be sampled. ",
+             "Refit with `control$store_Q = TRUE` to enable it. The retained ",
+             "fixed-effect mixture is still samplable: ",
+             "`tulpa:::tulpa_posterior_draws.tulpa_nested_laplace(fit)`.",
+             call. = FALSE)
     }
     n_x <- as.integer(n_x)
 
@@ -150,30 +134,22 @@ tulpa_posterior_draws.tulpa_nested_laplace_joint <- function(fit, idx = NULL,
         Matrix::sparseMatrix(i = ii, j = jj, x = 1, dims = c(n_x, k_constr))
     } else NULL
 
-    # Allocate draws across cells: multinomial(n, w_valid). Each cell then
-    # draws its share i.i.d. from the constrained N(m_k, V_k).
-    counts <- as.integer(stats::rmultinom(1L, size = n, prob = w_valid))
-
-    out <- matrix(0.0, n, p_out)
-    row_cells <- integer(n)
-    pos <- 0L
-    for (kk in seq_along(cells)) {
-        n_k <- counts[kk]
-        if (n_k == 0L) next
-        k <- cells[kk]
-        Z <- .joint_draw_cell(Qp[[k]], Qi[[k]], Qx[[k]], n_x, A_t, n_k)
-        # Z is n_x x n_k draws of the zero-mean constrained Gaussian; add the
-        # cell mode and subset to idx.
-        m_k <- modes[k, ]
-        block <- Z[idx, , drop = FALSE] + m_k[idx]      # p_out x n_k (recycled)
-        out[(pos + 1L):(pos + n_k), ] <- t(block)
-        row_cells[(pos + 1L):(pos + n_k)] <- k
-        pos <- pos + n_k
-    }
+    # Each cell draws its share i.i.d. from the constrained N(m_k, V_k); the
+    # allocation across cells is the shared `.nl_mixture_draw()`.
+    out <- .nl_mixture_draw(
+        w = w_valid, cell_id = cells, n = n, p = p_out,
+        draw_cell = function(kk, n_k) {
+            k <- cells[kk]
+            Z <- .joint_draw_cell(Qp[[k]], Qi[[k]], Qx[[k]], n_x, A_t, n_k)
+            # Z is n_x x n_k draws of the zero-mean constrained Gaussian; add
+            # the cell mode and subset to idx.
+            m_k <- modes[k, ]
+            t(Z[idx, , drop = FALSE] + m_k[idx])   # p_out x n_k, recycled
+        })
 
     colnames(out) <- paste0("x", idx)
     attr(out, "draws_kind") <- "iid"
-    attr(out, "cells") <- row_cells
+    attr(out, "scope") <- "latent"
     out
 }
 

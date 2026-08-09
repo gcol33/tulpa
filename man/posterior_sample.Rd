@@ -19,6 +19,14 @@ chain, a nested-Laplace node mixture, or a variational sample all answer
 here. For the chain-only view used by convergence diagnostics, see
 \code{\link[=mcmc_draws]{mcmc_draws()}}.
 }
+\details{
+A fit that carries no draws returns \code{NULL} with a message naming its backend,
+the posterior representation it carries instead, and the accessor that turns
+that representation into draws where one exists (gcol33/tulpa#349) -- an
+absent draws matrix is a property of the backend, not a failure of the
+accessor, and saying which is the difference between a diagnosable answer and
+a bare \code{NULL}.
+}
 \examples{
 \donttest{
 set.seed(1)
@@ -29,5 +37,5 @@ dim(posterior_sample(fit))
 }
 }
 \seealso{
-\code{\link[=mcmc_draws]{mcmc_draws()}}, \code{\link[=diagnostics]{diagnostics()}}
+\code{\link[=mcmc_draws]{mcmc_draws()}}, \code{\link[=tulpa_posterior_draws]{tulpa_posterior_draws()}}, \code{\link[=diagnostics]{diagnostics()}}
 }
