@@ -8,6 +8,8 @@
 // above by the number of independent work items.
 
 #include <algorithm>
+#include <cstddef>
+#include <vector>
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -69,20 +71,56 @@ inline void tulpa_parallel_for(int team, int n, Body&& body) {
     for (int i = 0; i < n; i++) body(i);
 }
 
-// Sum of `body(i)` over i in [0, n), same policy.
+// Sum of `body(i)` over i in [0, n), same one-thread policy, and above one
+// thread a sum that is a function of (team, n) alone.
+//
+// `reduction(+:)` leaves the order in which the per-thread private copies are
+// combined into the shared variable unspecified, and libgomp combines them as
+// each thread finishes. Floating-point addition is not associative, so the sum
+// lands an ulp or two apart from one run to the next, and the Newton loop's
+// convergence test and line search amplify that into ~1e-13 on a fit's
+// log_marginal (gcol33/tulpa#374).
+//
+// So the range is cut into `team` contiguous chunks HERE, by index arithmetic,
+// each chunk summed left to right into its own slot, and the slots added in
+// chunk order after the region. Nothing about the answer is left to the
+// runtime: not the combination order, and not the partition either, so a fit
+// reproduces itself even where the runtime hands back a smaller team than the
+// one requested. The parallel loop runs over the chunks rather than over the
+// observations, which keeps the combined `parallel for` construct -- the cheap
+// libgomp entry -- and writes each slot once, so the slots do not share a line
+// under contention.
+//
+// The result above one thread is still not the one-thread sum: chunking the
+// range imposes its own association. Bit-identity ACROSS thread counts is not
+// what this buys; reproducibility AT a thread count is.
+//
+// The slot buffer is allocated only on the multi-thread route, so the serial
+// route keeps its plain loop and allocates nothing.
 template <typename Body>
 inline double tulpa_parallel_sum(int team, int n, Body&& body) {
-    double acc = 0.0;
 #ifdef _OPENMP
     if (team > 1) {
-        #pragma omp parallel for reduction(+:acc) schedule(static) \
-            num_threads(team)
-        for (int i = 0; i < n; i++) acc += body(i);
+        std::vector<double> part(static_cast<std::size_t>(team), 0.0);
+        double* slot = part.data();
+        const long long nn = static_cast<long long>(n);
+        const long long tt = static_cast<long long>(team);
+        #pragma omp parallel for schedule(static) num_threads(team)
+        for (int t = 0; t < team; t++) {
+            const int lo = static_cast<int>(nn * t / tt);
+            const int hi = static_cast<int>(nn * (t + 1) / tt);
+            double local = 0.0;
+            for (int i = lo; i < hi; i++) local += body(i);
+            slot[t] = local;
+        }
+        double acc = 0.0;
+        for (int t = 0; t < team; t++) acc += part[t];
         return acc;
     }
 #else
     (void)team;
 #endif
+    double acc = 0.0;
     for (int i = 0; i < n; i++) acc += body(i);
     return acc;
 }

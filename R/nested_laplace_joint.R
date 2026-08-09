@@ -219,6 +219,12 @@
 #'     Capped at the physical performance-core count by default (see
 #'     `n_threads_scatter`), as the inner per-observation loops oversubscribe a
 #'     hybrid CPU's efficiency cores past that point.
+#'     A fit is reproducible bit for bit at a GIVEN `n_threads`: the
+#'     per-observation sum cuts its range into that many contiguous chunks and
+#'     adds the chunk sums in chunk order, so nothing about the answer is left
+#'     to the OpenMP runtime. Chunking imposes its own association, so two
+#'     different `n_threads` agree only to floating-point tolerance (measured
+#'     at 6e-14 on `log_marginal` over four families).
 #'   * `n_threads_scatter` (performance-core count) -- cap on the inner
 #'     per-observation threads. Overrides the default performance-core cap on
 #'     `n_threads`; raise it to use all logical cores or lower it to leave

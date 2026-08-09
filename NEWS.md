@@ -1,5 +1,43 @@
 # tulpa NEWS
 
+## 0.0.170
+
+* A joint fit is reproducible bit for bit at any thread count
+  (gcol33/tulpa#374). `reduction(+:)` leaves the order its per-thread private
+  copies are combined in unspecified, and libgomp combines them as each thread
+  finishes; floating-point addition is not associative, so the data
+  log-likelihood landed an ulp or two apart from one run to the next and the
+  inner Newton loop's convergence test and line search amplified that into
+  ~1e-13 on `log_marginal`. A capture of ten fits and 90 fields at
+  `n_threads = 4`, taken twice from the same build with every seed fixed, moved
+  15 of the 90.
+
+  `tulpa_parallel_sum()` (`src/omp_threads.h`) now cuts the range into `team`
+  contiguous chunks by index arithmetic, sums each chunk left to right into its
+  own slot, and adds the slots in chunk order. Nothing about the answer is left
+  to the runtime: not the combination order, and not the partition either, so a
+  fit reproduces itself even where the runtime hands back a smaller team than
+  the one requested. The parallel loop runs over the chunks rather than the
+  observations, which keeps the combined `parallel for` construct. Because
+  gcol33/tulpa#373 had already funnelled every one of these sums through that
+  one helper, the change is one function and reaches the joint and non-joint
+  paths together.
+
+  What this buys is reproducibility AT a thread count, not across thread
+  counts: chunking the range imposes its own association, so a fit at
+  `n_threads = 4` still agrees with the same fit at one thread only to
+  floating-point tolerance (measured at 6e-14 on `log_marginal` over four
+  families), which is the invariant `?tulpa_nested_laplace_joint` now states.
+
+  The one-thread route is untouched: it keeps its plain loop and allocates
+  nothing, and the same 90 fields are `identical()` before and after the change.
+  The same capture taken twice at `n_threads = 4` after it moves 0 of 90. Cost,
+  with the three reduction shapes alternated inside one process so they share
+  the machine's load: 1.00 / 1.03 / 1.02 times the old cost at 48 observations
+  with a team of 2 / 4 / 8, and indistinguishable at 960 and 12000
+  observations. Rows where all three arms run the same code move by up to 17% in
+  the same capture, so the 3% is at the edge of what the instrument resolves.
+
 ## 0.0.169
 
 * A one-thread OpenMP region is no longer entered at all on any loop reached
