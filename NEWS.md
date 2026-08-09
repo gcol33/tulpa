@@ -1,5 +1,67 @@
 # tulpa NEWS
 
+## 0.0.178
+
+* An undeclared axis's mirrored cell edge is guarded the way a declared one's
+  is, so a reported interval bound cannot come back `Inf` or `NaN`
+  (gcol33/tulpa#379). `.nl_cell_partition()` mirrors the extreme cell's
+  half-spacing to place the outer edges; gcol33/tulpa#377 gave that mirror a
+  fallback on a DECLARED domain and left the surviving guess branch never
+  checking the edge it produced. On the LINEAR coordinate the mirror needs the
+  extreme coordinate plus half its own spacing to stay in the double range, and
+  at the top of that range it does not: `c(1, 1e300, .Machine$double.xmax)`
+  mirrored to `Inf` and the DEFAULT chord read reported `Inf` as a 97.5% bound
+  from a partition recording no reason, while `c(-.Machine$double.xmax, 0,
+  .Machine$double.xmax)` mirrored to `-Inf` and the interpolation between a
+  non-finite knot and a finite one reported `NaN`.
+
+  Such a mirror now falls back to the extreme coordinates -- representable by
+  construction, and inside whatever support the axis has, since they are
+  coordinates of it -- and records `mirrored_edge_not_representable`, a fourth
+  entry in the closed `.NL_EDGE_DECLINED` vocabulary (gcol33/tulpa#293: a
+  silent-disable path needs a reason). It is a second name rather than
+  `mirrored_edge_outside_domain` because there is no domain here to be outside
+  of, and it takes precedence over a `nodes_outside_declared_domain` /
+  `unknown_domain` already in hand: those name a declaration that was set aside,
+  after which the guess ran, and this one names what the edges ARE.
+
+  The guess itself is not otherwise narrowed. An undeclared all-positive axis
+  whose log mirror underflows keeps its `0` lower edge, which is
+  gcol33/tulpa#377's boundary from the other side -- with no declaration there
+  is no support to measure an edge against, and `car_proper`'s `rho_car` keeps
+  exactly the edge it has.
+
+  Measured over 595010 reads (59501 randomized node sets spanning the double
+  range in both signs x five declarations x both within-cell constructions):
+  non-finite partition edges 69930 -> 0, non-finite reported bounds attributable
+  to the mirror 251746 -> 0, mis-ordered bounds 0 -> 0, finite bounds outside a
+  declared containing support 0 -> 0, and no read gains a non-finite bound.
+  Byte-identical elsewhere: over 540 (node set, domain, weighting) cases and
+  4320 quantile comparisons, plus 118405 randomized node sets, everything whose
+  pre-fix partition had finite edges is `identical()` on the edges, the boxes,
+  the coordinate, the reason and every quantile read; 0 of 118405 moved despite
+  a finite pre-fix edge, and all 960 replaced partitions are finite, bracketing
+  and tile.
+
+  Only the linear coordinate reaches it -- `log` / `qlogis` / `atanh` land
+  inside about +/- 745 -- and no default `.NL_GRID` axis is near it; it is
+  reachable through a pinned grid and through
+  `hyper_axis_spec(bounds = c(-Inf, Inf))`. `test-within-cell-box-uniform.R`'s
+  `boxes_do_not_tile` fixture moves for the second time, off the undeclared
+  `c(1, 1e300, .Machine$double.xmax)` -- which now tiles -- and onto the `unit`
+  axis at the subnormal floor, whose decline is a property of the node set
+  against its coordinate and which no edge guard changes.
+
+* A fit's interval read note reports the two halves of that vocabulary
+  separately, because they say opposite things about the bound.
+  `.NL_EDGE_FALLBACK` names the reasons whose edges ARE the extreme coordinates
+  (`mirrored_edge_outside_domain`, `mirrored_edge_not_representable`), so the
+  bound is conservative on that side; `nodes_outside_declared_domain` /
+  `unknown_domain` set a declaration aside, after which the guess ran and its
+  mirror stood, so the bound is a guessed edge. The single sentence
+  `.tulpa_interval_read_note()` fired for all of them reported the second pair as
+  running to the extreme coordinate, which is the opposite of what happened.
+
 ## 0.0.177
 
 * The box builder's interior midpoint is formed as `a / 2 + b / 2` rather than

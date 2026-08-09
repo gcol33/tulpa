@@ -160,6 +160,129 @@ test_that("the partition says which coordinate it settled on, and why", {
     expect_true(is.na(clean$edge_declined))
 })
 
+test_that("an undeclared axis's mirrored edge is guarded too", {
+    # gcol33/tulpa#379. gcol33/tulpa#377 restricted the value guess to axes with
+    # no declaration, which is the intended boundary; what it left is a
+    # surviving branch that never looked at the edge it produced. The linear
+    # mirror needs the extreme coordinate plus half its own spacing to stay in
+    # the double range, and at the top of that range it does not.
+    v <- c(1, 1e300, .Machine$double.xmax)
+    expect_true(is.infinite(v[3L] + 0.5 * (v[3L] - v[2L])))
+    pt <- .nl_cell_partition(v, NA_character_)
+    expect_identical(pt$edges, c(v[1L], v[3L]))
+    expect_identical(pt$declined, "mirrored_edge_not_representable")
+    expect_true(pt$declined %in% .NL_EDGE_DECLINED)
+
+    # The bound is reported on the DEFAULT chord read of the default density
+    # support, which is what a fit's hyperparameter interval comes off.
+    probs <- c(0.005, 0.025, 0.5, 0.975, 0.995)
+    q <- .nl_summary_quantile(v, rep(1 / 3, 3), probs, NA_character_, "density")
+    expect_true(all(is.finite(q)))
+    expect_false(is.unsorted(q))
+    expect_identical(q[length(q)], v[3L])
+
+    # Straddling zero at that magnitude the LOWER mirror leaves the range, and
+    # the chord read interpolating between a non-finite knot and a finite one
+    # reported NaN.
+    s <- c(-.Machine$double.xmax, 0, .Machine$double.xmax)
+    expect_true(is.infinite(s[1L] - 0.5 * (s[2L] - s[1L])))
+    ps <- .nl_cell_partition(s, NA_character_)
+    expect_identical(ps$edges, c(s[1L], s[3L]))
+    expect_identical(ps$declined, "mirrored_edge_not_representable")
+    qs <- .nl_summary_quantile(s, rep(1 / 3, 3), probs, NA_character_,
+                               "density")
+    expect_true(all(is.finite(qs)))
+    expect_false(anyNA(qs))
+
+    # Both constructions, since the box read falls back to the chord one on a
+    # partition it cannot tile and would have reported the same bound.
+    for (wc in .NL_WITHIN_CELL) {
+        for (nodes in list(v, s)) {
+            rd <- .nl_summary_quantile_read(nodes, rep(1 / 3, 3), probs,
+                                            NA_character_, "density", wc)
+            expect_true(all(is.finite(rd$q)), info = wc)
+            expect_identical(rd$edge_declined,
+                             "mirrored_edge_not_representable", info = wc)
+        }
+    }
+
+    # The reason takes precedence over one already in hand. Those two name a
+    # declaration that was set aside, after which the guess ran; this one names
+    # what the edges ARE, and a reader of a bound needs that one.
+    expect_identical(.nl_cell_partition(s, "positive")$declined,
+                     "mirrored_edge_not_representable")
+    expect_identical(.nl_cell_partition(s, "simplex")$declined,
+                     "mirrored_edge_not_representable")
+    # With a mirror that stands, the upstream reason is untouched.
+    expect_identical(.nl_cell_partition(c(-2, 0, 2), "positive")$declined,
+                     "nodes_outside_declared_domain")
+
+    # THE INVARIANT, on ANY axis rather than only a declared one: both edges are
+    # finite and bracket the coordinates.
+    axes <- list(v, s, c(-1e308, 0, 1e308), c(-.Machine$double.xmax, -1e300, -1),
+                 c(1e-320, 1e-310, 1), c(0.4, 0.7), c(-2, 0, 2),
+                 .nl_grid_axis("field_sd"), .nl_grid_axis("bym2_rho"))
+    for (dm in c(NA_character_, "positive", "unit", "correlation",
+                 "unbounded")) {
+        for (nodes in axes) {
+            nodes <- sort(nodes)
+            ee <- .nl_cell_partition(nodes, dm)$edges
+            expect_true(all(is.finite(ee)), info = dm)
+            expect_lte(ee[1L], nodes[1L])
+            expect_gte(ee[2L], nodes[length(nodes)])
+        }
+    }
+
+    # What is NOT guarded, on purpose: a finite in-order edge the guess placed
+    # where a support nobody declared would not have. An undeclared all-positive
+    # axis whose log mirror underflows keeps its 0 lower edge -- that is
+    # gcol33/tulpa#377's boundary from the other side, and inventing a support
+    # for an undeclared axis is what it refused to do.
+    u <- c(1e-320, 1e-310, 1)
+    pu <- .nl_cell_partition(u, NA_character_)
+    expect_identical(pu$coord, "positive")
+    expect_identical(pu$edges[1L], 0)
+    expect_true(is.na(pu$declined))
+})
+
+test_that("the read note says which side of the vocabulary an axis is on", {
+    # The four reasons split in two, and the two say opposite things about the
+    # bound: `.NL_EDGE_FALLBACK` means the edges ARE the extreme coordinates, so
+    # the bound is conservative, while the other pair means a declaration was
+    # set aside and the GUESS's mirror stood, so the bound is a guessed edge.
+    # Reporting the second pair as running to the extreme coordinate says the
+    # opposite of what happened.
+    expect_true(all(.NL_EDGE_FALLBACK %in% .NL_EDGE_DECLINED))
+    expect_identical(sort(setdiff(.NL_EDGE_DECLINED, .NL_EDGE_FALLBACK)),
+                     c("nodes_outside_declared_domain", "unknown_domain"))
+
+    note <- function(ed) {
+        .tulpa_interval_read_note(list(
+            read = "density", design_mass = NA_real_,
+            within_cell_axes = paste0("ax", seq_along(ed)),
+            edge_declined = ed, within_cell_requested = NA_character_,
+            within_cell = rep(NA_character_, length(ed))))
+    }
+    fb <- note("mirrored_edge_not_representable")
+    expect_length(fb, 1L)
+    expect_match(fb, "could not be mirrored usably")
+    expect_match(fb, "extreme grid coordinate")
+    expect_match(fb, "mirrored_edge_not_representable")
+
+    gs <- note("nodes_outside_declared_domain")
+    expect_length(gs, 1L)
+    expect_match(gs, "support declared for")
+    expect_match(gs, "guessed from the values")
+    expect_false(grepl("extreme grid coordinate", gs))
+
+    both <- note(c("mirrored_edge_outside_domain", "unknown_domain"))
+    expect_length(both, 2L)
+    expect_match(both[1L], "ax1")
+    expect_match(both[2L], "ax2")
+
+    expect_null(note(NA_character_))
+})
+
 test_that("the domain reaches the CDF read, not only the moment rule", {
     v <- c(0.2, 0.5, 0.8, 0.95)
     w <- c(0.001, 0.02, 0.35, 0.629)

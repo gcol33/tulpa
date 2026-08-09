@@ -803,9 +803,12 @@ and inside it, and otherwise the axis reports its extreme grid
 coordinate -- which the containment test has already placed inside the
 support -- rather than falling through to a coordinate guessed from the
 node values, which is what put a lower bound of 0 on a \code{positive} axis
-and a bound above 1 on a \code{unit} one. \code{theta_cell_edge_declined} is
-\code{NA} where nothing was declined, including on an axis that declares no
-support at all and takes the guess by design.
+and a bound above 1 on a \code{unit} one. An axis that declares no support at
+all keeps the guess by design, but its mirrored edge is checked for
+being a representable double that brackets the coordinates, and falls
+back to the extreme grid coordinate with
+\code{"mirrored_edge_not_representable"} when it is not (gcol33/tulpa#379).
+\code{theta_cell_edge_declined} is \code{NA} where nothing was declined.
 \item \code{outer_grid_cell_width}, \code{outer_grid_axis_sd}, \code{outer_grid_h_over_sd} --
 per axis, the cell width and the posterior SD in that axis's own
 coordinate, and their ratio. A within-cell reconstruction resolves an

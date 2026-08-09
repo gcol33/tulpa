@@ -218,9 +218,39 @@
 #     edges bracket the coordinates, so a coordinate outside the support puts the
 #     edge outside it too, and the declaration is the thing that is wrong.
 #
+# THE GUESS'S OWN MIRROR IS CHECKED TOO (gcol33/tulpa#379). Restricting the guess
+# to undeclared axes is what gcol33/tulpa#377 is; it left the surviving branch
+# still not looking at what it produced. The linear mirror needs the extreme
+# coordinate plus half its own spacing to stay in the double range, and on an
+# undeclared axis carrying the top of that range it does not: `c(1, 1e300,
+# double.xmax)` mirrored to `Inf` and the DEFAULT chord read reported `Inf` as a
+# 97.5% bound, from a partition recording no reason; `c(-double.xmax, 0,
+# double.xmax)` mirrored to `-Inf` at the other end and the interpolation between
+# a non-finite knot and a finite one reported `NaN`. So the same fallback the
+# declared branch takes is taken here -- the extreme coordinates, which are
+# representable by construction and are inside whatever support the axis has,
+# since they ARE coordinates of it -- and it records
+# `mirrored_edge_not_representable`.
+#
+# That name is a second entry rather than `mirrored_edge_outside_domain`
+# because there is no domain here to be outside of: the edge is not a double.
+# It TAKES PRECEDENCE over a `nodes_outside_declared_domain` / `unknown_domain`
+# already in hand, which are why the GUESS ran; this one is why the guess's edge
+# was not taken, and it is the one that describes the edges the reader has. A
+# fit reporting either of the first two names has mirrored edges, and one
+# reporting a fallback name has the coordinates.
+#
+# What is NOT guarded is a finite in-order edge the guess placed somewhere the
+# axis's real support would not have -- an undeclared all-positive axis whose log
+# mirror underflows to exactly 0 keeps that 0. That is the gcol33/tulpa#377
+# boundary from the other side: with no declaration there is no support to
+# measure the edge against, and inventing one is what #377 refused to do for
+# `car_proper`'s `rho_car`.
+#
 # The invariant that leaves is the one worth asserting: whenever every
 # coordinate is inside a declared domain, both edges are finite and inside it
-# too, for every entry of `.NL_DOMAIN_TRANSFORM`.
+# too, for every entry of `.NL_DOMAIN_TRANSFORM`; and on ANY axis, declared or
+# not, both edges are finite and bracket the coordinates.
 .nl_cell_edges <- function(v, domain = NA_character_) {
   .nl_cell_partition(v, domain)$edges
 }
@@ -233,12 +263,14 @@
 # tiles the axis with is not one partition. So the choice is made once, here,
 # and both readers take it from the same return.
 #
-# `coord` names that coordinate and `declined` is why the declared domain's own
-# mirror did not produce the edges, from the closed vocabulary
-# `.NL_EDGE_DECLINED` -- NA when it did, and NA when nothing was declared, since
-# a guess on an undeclared axis is the design and not a decline. That pair is
-# the reason field gcol33/tulpa#293 requires of a silent-disable path, and it
-# travels out to the fit through `.nl_summary_quantile_read()`.
+# `coord` names that coordinate and `declined` is why a mirror did not produce
+# the edges, from the closed vocabulary `.NL_EDGE_DECLINED` -- NA when the
+# coordinate's own mirror stood, which on an undeclared axis includes the guess,
+# since a guess where nothing was declared is the design and not a decline. A
+# guess whose mirror is not a representable edge IS one, and says so
+# (gcol33/tulpa#379). That pair is the reason field gcol33/tulpa#293 requires of
+# a silent-disable path, and it travels out to the fit through
+# `.nl_summary_quantile_read()`.
 .nl_cell_partition <- function(v, domain = NA_character_) {
   n <- length(v)
   lin <- .NL_DOMAIN_TRANSFORM$unbounded
@@ -264,22 +296,40 @@
   } else {
     declined <- if (named) "unknown_domain" else NA_character_
   }
-  # Reached only where there is no declaration to contradict.
+  # Reached only where there is no declaration to contradict. `brackets` is what
+  # the guess's own mirror has to satisfy to be an edge at all: finite, and on
+  # the outside of the coordinates it brackets. The second half cannot fail for
+  # the linear mirror in exact arithmetic and is a rounding guard, so it is
+  # cheap and never fires on a partition anything reports.
+  brackets <- function(e) {
+    all(is.finite(e)) && e[1L] <= v[1L] && e[2L] >= v[n]
+  }
   pos <- .NL_DOMAIN_TRANSFORM$positive
   if (all(v > 0)) {
     e <- pos$from(mirror(pos$to(v)))
     if (all(is.finite(e))) return(part(pos, "positive", e, declined))
   }
-  part(lin, "unbounded", mirror(v), declined)
+  e <- mirror(v)
+  if (brackets(e)) return(part(lin, "unbounded", e, declined))
+  part(lin, "unbounded", c(v[1L], v[n]), "mirrored_edge_not_representable")
 }
 
-# Why a declared domain's own mirrored edge did not produce the outer edges of a
-# cell partition (gcol33/tulpa#377). A closed vocabulary, held to this list by
+# Why a mirrored edge did not produce the outer edges of a cell partition
+# (gcol33/tulpa#377, gcol33/tulpa#379). A closed vocabulary, held to this list by
 # `test-nl-interval-support.R` the same way `outside` is held to
 # `.nl_wtd_quantile()`'s and `within` to `.NL_WITHIN_CELL`.
 .NL_EDGE_DECLINED <- c("mirrored_edge_outside_domain",
                        "nodes_outside_declared_domain",
-                       "unknown_domain")
+                       "unknown_domain",
+                       "mirrored_edge_not_representable")
+
+# The subset naming a FALLBACK: the edges are the extreme coordinates, so the
+# reported bound is conservative on that side. The complement names a
+# declaration that was set aside, after which the guess ran and its mirror
+# stood, so the bound is a guessed edge. `.tulpa_interval_read_note()` reads the
+# split because the two say opposite things about the bound.
+.NL_EDGE_FALLBACK <- c("mirrored_edge_outside_domain",
+                       "mirrored_edge_not_representable")
 
 # The cell partition the CHORD read's outer half-cells are mirrored with, on the
 # atoms that read uses. Two pure steps -- `.nl_axis_atoms()` then

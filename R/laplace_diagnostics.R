@@ -1108,15 +1108,31 @@
   }
   ax   <- ir$within_cell_axes
   ed   <- ir$edge_declined
-  edx  <- which(!is.na(ed) & nzchar(ed))
-  if (length(edx)) {
-    nm <- if (length(ax) >= max(edx)) ax[edx] else as.character(edx)
+  # The vocabulary splits in two, and the two say different things about the
+  # bound. `.NL_EDGE_FALLBACK` are the reasons whose edges ARE the extreme
+  # coordinates -- a declared support's mirror that left it (gcol33/tulpa#377)
+  # and a mirror that left the double range (gcol33/tulpa#379) -- so the bound
+  # is conservative. The other two set a DECLARATION aside, after which the
+  # guess ran and its mirror stood, so the bound is a guessed edge and not a
+  # conservative one. Reporting the second pair as running to the extreme
+  # coordinate would say the opposite of what happened.
+  nmof <- function(i) if (length(ax) >= max(i)) ax[i] else as.character(i)
+  fbx <- which(!is.na(ed) & ed %in% .NL_EDGE_FALLBACK)
+  if (length(fbx)) {
     out <- c(out, paste0(
-      "the outer cell edge of ", paste(nm, collapse = ", "),
-      " could not be mirrored inside the support that axis declares (",
-      paste(unique(ed[edx]), collapse = ", "), "), so its interval runs to the ",
+      "the outer cell edge of ", paste(nmof(fbx), collapse = ", "),
+      " could not be mirrored usably (",
+      paste(unique(ed[fbx]), collapse = ", "), "), so its interval runs to the ",
       "extreme grid coordinate instead of half a spacing past it -- the ",
       "reported bound is conservative on that side"))
+  }
+  gsx <- which(!is.na(ed) & nzchar(ed) & !(ed %in% .NL_EDGE_FALLBACK))
+  if (length(gsx)) {
+    out <- c(out, paste0(
+      "the support declared for ", paste(nmof(gsx), collapse = ", "),
+      " could not be used (", paste(unique(ed[gsx]), collapse = ", "),
+      "), so its outer cell edge was mirrored in a coordinate guessed from the ",
+      "values instead"))
   }
   req <- ir$within_cell_requested
   if (!length(req) || is.na(req) || identical(req, "chord")) {

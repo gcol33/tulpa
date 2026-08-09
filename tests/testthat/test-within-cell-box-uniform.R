@@ -235,21 +235,35 @@ test_that("every decline records a reason and falls back to the chord read", {
   expect_identical(
     .nl_summary_quantile_read(vd, c(1, 1, 1), PROBS_WC, "unbounded", "density",
                               "box_uniform")$within, "box_uniform")
-  # The decline that REMAINS on that node set is a property of the node set and
-  # not of the arithmetic. Undeclared, the partition mirrors the extreme
-  # half-spacing in the value itself, and `xmax + (xmax - 1e300) / 2` is past
-  # the double range in any form -- there is no midpoint to compute better.
-  expect_null(.nl_box_edges(vd, NA_character_))
+  # UNDECLARED, that node set no longer declines either (gcol33/tulpa#379). Its
+  # outer mirror -- `xmax + (xmax - 1e300) / 2` -- is past the double range in
+  # any form, and no midpoint arithmetic reaches it, which is what made it the
+  # remaining fixture after gcol33/tulpa#378. What it needed was the guard the
+  # DECLARED branch already had: an unusable mirror falls back to the extreme
+  # coordinates. So the partition is finite, the boxes tile, and the read the
+  # caller asked for runs.
+  expect_true(is.infinite(vd[3L] + 0.5 * (vd[3L] - vd[2L])))
+  expect_identical(.nl_cell_edges(vd, NA_character_), c(vd[1L], vd[3L]))
+  expect_false(is.null(.nl_box_edges(vd, NA_character_)))
   rd <- .nl_summary_quantile_read(vd, c(1, 1, 1), PROBS_WC,
                                   NA_character_, "density", "box_uniform")
-  expect_identical(rd$declined, "boxes_do_not_tile")
-  expect_identical(rd$within, "chord")
-  expect_identical(rd$q, .nl_summary_quantile(vd, c(1, 1, 1), PROBS_WC,
-                                              NA_character_, "density"))
-  # The other one: a node set the coordinate map cannot separate. A `unit` axis
-  # reaching the subnormal floor has `plogis(qlogis(1e-320))` underflow to 0, so
-  # two adjacent edges come back as the same double.
-  expect_null(.nl_box_edges(c(1e-320, 1e-310, 0.5), "unit"))
+  expect_true(is.na(rd$declined))
+  expect_identical(rd$within, "box_uniform")
+  expect_identical(rd$edge_declined, "mirrored_edge_not_representable")
+  expect_true(all(is.finite(rd$q)))
+  # The decline that REMAINS is a node set the coordinate map cannot separate. A
+  # `unit` axis reaching the subnormal floor has `plogis(qlogis(1e-320))`
+  # underflow to 0, so two adjacent edges come back as the same double. That is
+  # a property of the node set against the coordinate, which no arithmetic and
+  # no edge guard changes.
+  vu <- c(1e-320, 1e-310, 0.5)
+  expect_null(.nl_box_edges(vu, "unit"))
+  ru <- .nl_summary_quantile_read(vu, c(1, 1, 1), PROBS_WC, "unit", "density",
+                                  "box_uniform")
+  expect_identical(ru$declined, "boxes_do_not_tile")
+  expect_identical(ru$within, "chord")
+  expect_identical(ru$q, .nl_summary_quantile(vu, c(1, 1, 1), PROBS_WC, "unit",
+                                              "density"))
   # A spacing below the coordinate's own resolution collapses a box to zero
   # width and is refused at the edge builder, but it does not reach the read:
   # `.nl_axis_atoms()` has already merged coordinates that are equal as doubles,
