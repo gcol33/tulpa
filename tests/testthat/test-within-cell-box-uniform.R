@@ -178,9 +178,12 @@ test_that("every decline records a reason and falls back to the chord read", {
   # tile, because mass would leave the cell it was integrated for. A reported
   # interval cannot take that behaviour, so the engine declines instead
   # (gcol33/tulpa#293). The reachable case is an axis reaching the top of the
-  # double range, where the mirrored outer edge is not finite in any coordinate.
+  # double range read in the value itself, where an interior midpoint's own sum
+  # overflows before it is halved -- gcol33/tulpa#378, so this pin moves again
+  # when the midpoint is formed as `a / 2 + b / 2`.
   vd <- c(1, 1e300, .Machine$double.xmax)
-  expect_null(.nl_box_edges(vd, "positive"))
+  expect_null(.nl_box_edges(vd, "unbounded"))
+  expect_null(.nl_box_edges(vd, NA_character_))
   # A spacing below the coordinate's own resolution collapses a box to zero
   # width and is refused at the edge builder, but it does not reach the read:
   # `.nl_axis_atoms()` has already merged coordinates that are equal as doubles,
@@ -189,16 +192,22 @@ test_that("every decline records a reason and falls back to the chord read", {
   expect_false(is.null(.nl_box_edges(
     .nl_axis_atoms(c(1, 1, 2), c(1, 1, 1))$v, "positive")))
   rd <- .nl_summary_quantile_read(vd, c(1, 1, 1), PROBS_WC,
-                                  "positive", "density", "box_uniform")
+                                  "unbounded", "density", "box_uniform")
   expect_identical(rd$declined, "boxes_do_not_tile")
   expect_identical(rd$within, "chord")
   expect_identical(rd$q, .nl_summary_quantile(vd, c(1, 1, 1), PROBS_WC,
-                                              "positive", "density"))
-  # `.nl_cell_edges()` (the chord read's) does NOT decline there -- it returns
-  # the non-finite edge its own fallback chain ends on, which is what the read
-  # has always done. The box read needs a whole finite partition, so it is
-  # stricter, and that is a decline rather than a change to the chord read.
-  expect_false(all(is.finite(.nl_cell_edges(vd, "positive"))))
+                                              "unbounded", "density"))
+  # Declared `positive`, the SAME node set does not reach that decline at all
+  # any more (gcol33/tulpa#377). Its mirrored upper edge overflows, and the
+  # partition then holds the declaration instead of falling through to the value
+  # guess: the outer edges are the extreme coordinates, which the containment
+  # test has already put inside the support, so both reads have a finite
+  # in-support partition to work with.
+  expect_identical(.nl_cell_edges(vd, "positive"), c(vd[1L], vd[3L]))
+  expect_false(is.null(.nl_box_edges(vd, "positive")))
+  expect_identical(
+    .nl_summary_quantile_read(vd, c(1, 1, 1), PROBS_WC, "positive", "density",
+                              "box_uniform")$within, "box_uniform")
   # An unknown construction is refused rather than translated.
   expect_error(.nl_summary_quantile(v, w, 0.5, "positive", "density", "boxes"))
   expect_error(.nl_within_cell_mode("uniform"))

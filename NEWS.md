@@ -1,5 +1,71 @@
 # tulpa NEWS
 
+## 0.0.176
+
+* A DECLARED hyperparameter support is no longer overruled by the coordinate
+  guess that sits under it, so a reported outer cell edge cannot leave the
+  support its own axis named (gcol33/tulpa#377). gcol33/tulpa#369 gave
+  `.nl_cell_edges()` the axis's domain and checked the mapped edge against that
+  domain's `in_domain` before accepting it. The chain did not stop at that
+  check: a rejected edge fell through to the `all(v > 0)` log guess, which
+  computes the SAME number on a `positive` axis and tests only `is.finite()`, so
+  the weaker test accepted one line later exactly what the stronger one had just
+  refused.
+
+  Measured on the issue's own node set, `c(1e-320, 1e-310, 1)` declared
+  `positive`: `exp(log(1e-320) - 0.5 (log(1e-310) - log(1e-320)))` underflows to
+  exactly 0, and the fit reported a lower bound of `5.93e-323` for a quantity
+  whose declared support is `x > 0`. From the other end of the double range,
+  `c(1, 1e300, .Machine$double.xmax)` overflowed to `Inf`, fell past the log
+  guess to the LINEAR mirror, and reported `-4.97e+299` and `Inf` for the same
+  declared support. It is gcol33/tulpa#369's defect one step down: there a
+  `unit` axis reported 1.0028 because the domain never reached the edge; here it
+  reaches it and is overruled.
+
+  THE PRECEDENCE, not a patch on the symptom. A declared domain that CONTAINS
+  every coordinate is authoritative: its mirrored edge is taken when finite and
+  in-domain, and otherwise the partition DECLINES to the extreme coordinates
+  themselves -- which that same containment test has already placed inside the
+  support, and which are the conservative answer -- recording
+  `mirrored_edge_outside_domain`. The guess is RESTRICTED, not removed: it runs
+  where there is no declaration to contradict (no domain named,
+  `nodes_outside_declared_domain`, `unknown_domain`), and `car_proper`'s
+  `rho_car` on the adjacency eigenvalue interval keeps exactly the edge it had.
+  A node set the declaration does not contain cannot be honoured by any edge at
+  all -- the edges bracket the coordinates -- so that case is the guess's by
+  construction and says so rather than silently taking it.
+
+  The reason field is gcol33/tulpa#293's requirement and rides the hook
+  gcol33/tulpa#357 already built: `.nl_cell_partition()` reports the COORDINATE
+  it settled on, so it is also where the decline lives, and both readers take it
+  from the same return. It travels out through `.nl_summary_quantile_read()` and
+  `.nl_axis_quantiles()` to the fit as `theta_cell_edge_coord` /
+  `theta_cell_edge_declined`, one per axis, and `diagnostics()` says which axis
+  reports a conservative bound and why. `.NL_EDGE_DECLINED` is the closed
+  vocabulary.
+
+  WHAT MOVES AND WHAT DOES NOT, proven with `identical()` rather than a
+  tolerance (`dev_notes/issue377/identity377.R`, `identity377.out`): the pre-fix
+  `R/nested_laplace_moments.R` is sourced from git into its own environment over
+  the tulpa namespace, and 22 node sets x 5 domain declarations x 4 weightings x
+  4 support kinds x 2 within-cell constructions are compared call for call. Of
+  110 (node set, domain) cases, 100 are byte-identical on the edges, on the box
+  partition and on every quantile read; the 10 that move are exactly the ones
+  whose partition reports `mirrored_edge_outside_domain`, and no such case
+  arises on an undeclared axis. Over 10324 node sets inside their declared
+  domain -- the fixtures plus a 20000-draw randomized sweep across all four
+  domains -- 174 produced an edge outside that domain before the fix and 0
+  after.
+
+  The invariant asserted alongside gcol33/tulpa#369's `unit` / `correlation`
+  regressions in `test-nl-interval-support.R` is the general one: whenever every
+  coordinate is inside a declared domain, both edges are finite and inside it
+  too, for every entry of `.NL_DOMAIN_TRANSFORM`. `test-within-cell-box-uniform.R`'s
+  `boxes_do_not_tile` fixture moves to the `unbounded` declaration, where an
+  interior midpoint's own sum still overflows before it is halved; declared
+  `positive`, that same node set now has a finite in-support partition and the
+  box read no longer declines on it.
+
 ## 0.0.175
 
 * Box-uniform is promoted to a selectable WITHIN-CELL construction behind the

@@ -795,6 +795,17 @@ construction is recorded per axis, and an axis whose cell partition could
 not be built falls back to \code{"chord"} on its own with the reason in
 \code{theta_within_cell_declined} (\code{"support_<kind>"}, \code{"single_node"},
 \code{"boxes_do_not_tile"}, \code{"no_usable_node"}).
+\item \code{theta_cell_edge_coord}, \code{theta_cell_edge_declined} -- per axis, the
+COORDINATE that axis's outer cell edges were mirrored in, and why the
+support the axis declares did not produce them (gcol33/tulpa#377). A
+declared support is authoritative: its mirrored edge is used when finite
+and inside it, and otherwise the axis reports its extreme grid
+coordinate -- which the containment test has already placed inside the
+support -- rather than falling through to a coordinate guessed from the
+node values, which is what put a lower bound of 0 on a \code{positive} axis
+and a bound above 1 on a \code{unit} one. \code{theta_cell_edge_declined} is
+\code{NA} where nothing was declined, including on an axis that declares no
+support at all and takes the guess by design.
 \item \code{outer_grid_cell_width}, \code{outer_grid_axis_sd}, \code{outer_grid_h_over_sd} --
 per axis, the cell width and the posterior SD in that axis's own
 coordinate, and their ratio. A within-cell reconstruction resolves an

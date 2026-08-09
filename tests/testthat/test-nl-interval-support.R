@@ -55,6 +55,111 @@ test_that("a cell edge is mirrored in the quantity's own coordinate", {
                      .nl_cell_edges(c(0.5, 1.5, 2.5)))
 })
 
+# --------------------------------------------- the declaration is not overruled
+
+test_that("a declared domain's edge is never overruled by the value guess", {
+    # gcol33/tulpa#377. The domain branch above CHECKS its mapped edge, and when
+    # the check failed control fell through to the `all(v > 0)` log guess, which
+    # computes the same number on a `positive` axis and tests only
+    # `is.finite()`. So the weaker test accepted one line later exactly what the
+    # stronger one had just rejected.
+    v <- c(1e-320, 1e-310, 1)
+    # exp(log(1e-320) - 0.5 (log(1e-310) - log(1e-320))) underflows to exactly
+    # 0, and 0 is not a standard deviation, a variance, a precision or a range.
+    expect_identical(exp(log(v[1L]) - 0.5 * (log(v[2L]) - log(v[1L]))), 0)
+    e <- .nl_cell_edges(v, "positive")
+    expect_true(all(e > 0))
+    expect_gt(e[1L], 0)
+    # The declaration holds, so the edge is the extreme coordinate -- inside the
+    # support by the containment test the branch has already made.
+    expect_identical(e, c(v[1L], v[3L]))
+    q <- .nl_summary_quantile(v, c(0.5, 0.3, 0.2), c(0.001, 0.5, 0.999),
+                              "positive", "density")
+    expect_true(all(q > 0))
+
+    # The same defect from the other end of the double range: the mirrored UPPER
+    # edge overflows, the guess reproduces it, and the LINEAR mirror the chain
+    # then ends on reported a NEGATIVE lower bound for a positive quantity.
+    h <- c(1, 1e300, .Machine$double.xmax)
+    expect_identical(.nl_cell_edges(h, "positive"), c(h[1L], h[3L]))
+    expect_true(all(.nl_summary_quantile(h, rep(1 / 3, 3), c(0.001, 0.5, 0.999),
+                                         "positive", "density") > 0))
+
+    # THE INVARIANT, over every domain the registry carries rather than the one
+    # in the bug report: a node set every coordinate of which is inside a
+    # DECLARED support produces edges that are finite and inside it too.
+    cases <- list(
+        positive    = list(v, h, .nl_grid_axis("field_sd"), c(1e-8, 1e-4, 1)),
+        unit        = list(.nl_grid_axis("bym2_rho"), c(1e-320, 1e-310, 0.5),
+                           c(0.5, 1 - 1e-16), seq(0.1, 0.9, by = 0.2)),
+        correlation = list(c(-0.8, -0.4, 0, 0.4, 0.9), c(0.99, 1 - 1e-16),
+                           c(-1 + 1e-320, -1 + 1e-310, 0)),
+        unbounded   = list(c(-2, 0, 2),
+                           c(-.Machine$double.xmax, 0, .Machine$double.xmax)))
+    for (dm in names(cases)) {
+        tr <- .NL_DOMAIN_TRANSFORM[[dm]]
+        for (nodes in cases[[dm]]) {
+            nodes <- sort(nodes)
+            if (!all(tr$in_domain(nodes))) next
+            ee <- .nl_cell_edges(nodes, dm)
+            expect_true(all(is.finite(ee)), info = dm)
+            expect_true(all(tr$in_domain(ee)), info = dm)
+        }
+    }
+})
+
+test_that("the partition says which coordinate it settled on, and why", {
+    # gcol33/tulpa#293: a silent-disable path needs a reason field.
+    # `.nl_cell_partition()` is where the coordinate choice is made, so it is
+    # where the reason lives, and both readers take it from the same return.
+    ok <- .nl_cell_partition(.nl_grid_axis("bym2_rho"), "unit")
+    expect_identical(ok$coord, "unit")
+    expect_true(is.na(ok$declined))
+
+    dec <- .nl_cell_partition(c(1e-320, 1e-310, 1), "positive")
+    expect_identical(dec$coord, "positive")
+    expect_identical(dec$declined, "mirrored_edge_outside_domain")
+
+    # The guess is RESTRICTED, not removed. An axis whose support nothing named
+    # keeps it, and that is the design rather than a decline.
+    none <- .nl_cell_partition(c(1e-320, 1e-310, 1), NA_character_)
+    expect_identical(none$coord, "positive")
+    expect_true(is.na(none$declined))
+    expect_identical(none$edges, .nl_cell_edges(c(1e-320, 1e-310, 1)))
+    # A declaration the node set contradicts cannot be honoured by ANY edge --
+    # the edges bracket the coordinates -- so the guess runs there too, and says
+    # so.
+    bad <- .nl_cell_partition(c(0.5, 1.5, 2.5), "unit")
+    expect_identical(bad$declined, "nodes_outside_declared_domain")
+    expect_identical(bad$edges, .nl_cell_edges(c(0.5, 1.5, 2.5)))
+    # A name the registry does not carry is the third way to have no usable
+    # declaration.
+    expect_identical(.nl_cell_partition(c(1, 2, 3), "simplex")$declined,
+                     "unknown_domain")
+
+    # The vocabulary is closed.
+    for (r in c(dec$declined, bad$declined,
+                .nl_cell_partition(c(1, 2, 3), "simplex")$declined)) {
+        expect_true(r %in% .NL_EDGE_DECLINED)
+    }
+
+    # And it travels out to the per-axis read, whichever construction ran.
+    tg <- cbind(rho = c(1e-320, 1e-310, 1))
+    lm <- c(-1, 0, -1)
+    for (wc in .NL_WITHIN_CELL) {
+        rd <- .nl_axis_quantiles(tg, lm, domains = list("positive"),
+                                 within = wc)
+        expect_identical(unname(rd$edge_coord), "positive")
+        expect_identical(unname(rd$edge_declined),
+                         "mirrored_edge_outside_domain")
+    }
+    clean <- .nl_axis_quantiles(cbind(sigma = .nl_grid_axis("field_sd")),
+                                seq(-2, 2, length.out = 5),
+                                domains = list("positive"))
+    expect_identical(unname(clean$edge_coord), "positive")
+    expect_true(is.na(clean$edge_declined))
+})
+
 test_that("the domain reaches the CDF read, not only the moment rule", {
     v <- c(0.2, 0.5, 0.8, 0.95)
     w <- c(0.001, 0.02, 0.35, 0.629)
@@ -136,6 +241,12 @@ test_that("a BYM2 fit reports a mixing weight inside (0, 1)", {
         # `sigma` is a positive scale: its interval is unchanged by naming the
         # domain, and stays positive.
         expect_gt(as.numeric(fit$theta_ci_lo[["sigma"]]), 0)
+        # The fit says which coordinate each axis's outer edges were mirrored
+        # in, and that no declared support had to be declined (gcol33/tulpa#377).
+        expect_identical(unname(fit$theta_cell_edge_coord[["rho"]]), "unit")
+        expect_identical(unname(fit$theta_cell_edge_coord[["sigma"]]),
+                         "positive")
+        expect_true(all(is.na(fit$theta_cell_edge_declined)))
     }
 })
 

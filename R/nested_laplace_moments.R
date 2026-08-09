@@ -192,9 +192,35 @@
 # eigenvalue interval): a guessed edge is what that case had, and inventing a
 # support for it would be worse than the edge it has.
 #
-# The mapped edge is used only when every coordinate AND both edges are inside
-# the domain, so a node set that does not actually live where the caller says it
-# does falls back rather than returning a non-finite or out-of-support edge.
+# A DECLARED SUPPORT IS NOT OVERRULED BY THE GUESS (gcol33/tulpa#377). The guess
+# is for an axis whose support nothing named; where a caller DID name one and
+# the named coordinate's mirrored edge is unusable, the guess is not filling a
+# gap, it is contradicting a declaration -- and it is precisely what produces the
+# out-of-support edge, because the two branches compute the same number on a
+# `positive` axis and the second one checks only `is.finite()`. Measured on the
+# issue's own node set, `c(1e-320, 1e-310, 1)` declared `positive`, the mirrored
+# lower edge underflows to exactly 0, the guess reproduces it, and the fit
+# reported a lower bound of 5.9e-323 for a quantity whose declared support is
+# `x > 0`; from the other end of the double range, `c(1, 1e300, double.xmax)`
+# overflowed to `Inf`, fell through the guess to the LINEAR mirror, and reported
+# a lower bound of -4.97e+299 for the same declared support.
+#
+# So the precedence is:
+#
+#  1. A declared domain that CONTAINS every coordinate is authoritative. Its
+#     mirrored edge is taken when finite and in-domain; otherwise the partition
+#     DECLINES to the extreme coordinates themselves -- which are inside the
+#     support by that same containment test, and are the conservative answer --
+#     and records `mirrored_edge_outside_domain`.
+#  2. The guess runs only where there is no declaration to contradict: no domain
+#     named, a name the registry does not carry, or a node set the declaration
+#     does not contain. That last one cannot be honoured by any edge at all: the
+#     edges bracket the coordinates, so a coordinate outside the support puts the
+#     edge outside it too, and the declaration is the thing that is wrong.
+#
+# The invariant that leaves is the one worth asserting: whenever every
+# coordinate is inside a declared domain, both edges are finite and inside it
+# too, for every entry of `.NL_DOMAIN_TRANSFORM`.
 .nl_cell_edges <- function(v, domain = NA_character_) {
   .nl_cell_partition(v, domain)$edges
 }
@@ -206,27 +232,65 @@
 # the SAME coordinate the outer half-cells were mirrored in, or the partition it
 # tiles the axis with is not one partition. So the choice is made once, here,
 # and both readers take it from the same return.
+#
+# `coord` names that coordinate and `declined` is why the declared domain's own
+# mirror did not produce the edges, from the closed vocabulary
+# `.NL_EDGE_DECLINED` -- NA when it did, and NA when nothing was declared, since
+# a guess on an undeclared axis is the design and not a decline. That pair is
+# the reason field gcol33/tulpa#293 requires of a silent-disable path, and it
+# travels out to the fit through `.nl_summary_quantile_read()`.
 .nl_cell_partition <- function(v, domain = NA_character_) {
   n <- length(v)
   lin <- .NL_DOMAIN_TRANSFORM$unbounded
-  if (n < 2L) return(list(tr = lin, edges = c(v[1L], v[n])))
+  part <- function(tr, coord, edges, declined = NA_character_) {
+    list(tr = tr, coord = coord, declined = declined, edges = edges)
+  }
+  if (n < 2L) return(part(lin, "unbounded", c(v[1L], v[n])))
   mirror <- function(u) c(u[1L] - 0.5 * (u[2L] - u[1L]),
                           u[n] + 0.5 * (u[n] - u[n - 1L]))
-  tr <- if (length(domain) == 1L && !is.na(domain))
-    .NL_DOMAIN_TRANSFORM[[domain]] else NULL
-  if (!is.null(tr) && all(tr$in_domain(v))) {
-    e <- tr$from(mirror(tr$to(v)))
-    if (all(is.finite(e)) && all(tr$in_domain(e))) return(list(tr = tr, edges = e))
+  named <- length(domain) == 1L && !is.na(domain)
+  tr <- if (named) .NL_DOMAIN_TRANSFORM[[domain]] else NULL
+  if (!is.null(tr)) {
+    if (all(tr$in_domain(v))) {
+      e <- tr$from(mirror(tr$to(v)))
+      if (all(is.finite(e)) && all(tr$in_domain(e))) {
+        return(part(tr, domain, e))
+      }
+      # The declaration stands and the mirror does not: the extreme coordinates
+      # are inside the declared support, so they are the edge.
+      return(part(tr, domain, c(v[1L], v[n]), "mirrored_edge_outside_domain"))
+    }
+    declined <- "nodes_outside_declared_domain"
+  } else {
+    declined <- if (named) "unknown_domain" else NA_character_
   }
-  # Reached when no domain was named, or when the named one does not contain
-  # the values -- a caller's declaration the node set contradicts, where the
-  # value guess is the more trustworthy of the two.
+  # Reached only where there is no declaration to contradict.
   pos <- .NL_DOMAIN_TRANSFORM$positive
   if (all(v > 0)) {
     e <- pos$from(mirror(pos$to(v)))
-    if (all(is.finite(e))) return(list(tr = pos, edges = e))
+    if (all(is.finite(e))) return(part(pos, "positive", e, declined))
   }
-  list(tr = lin, edges = mirror(v))
+  part(lin, "unbounded", mirror(v), declined)
+}
+
+# Why a declared domain's own mirrored edge did not produce the outer edges of a
+# cell partition (gcol33/tulpa#377). A closed vocabulary, held to this list by
+# `test-nl-interval-support.R` the same way `outside` is held to
+# `.nl_wtd_quantile()`'s and `within` to `.NL_WITHIN_CELL`.
+.NL_EDGE_DECLINED <- c("mirrored_edge_outside_domain",
+                       "nodes_outside_declared_domain",
+                       "unknown_domain")
+
+# The cell partition the CHORD read's outer half-cells are mirrored with, on the
+# atoms that read uses. Two pure steps -- `.nl_axis_atoms()` then
+# `.nl_cell_partition()` -- and they are the same two `.nl_wtd_quantile()` takes
+# on the same inputs, so the reported coordinate cannot describe a partition
+# other than the one the numbers came out of. NULL when there is no partition to
+# report: no usable atom, or one, where no edge is formed at all.
+.nl_extend_partition <- function(values, weights, domain = NA_character_) {
+  a <- .nl_axis_atoms(values, weights)
+  if (is.null(a) || length(a$v) < 2L) return(NULL)
+  .nl_cell_partition(a$v, domain)
 }
 
 # The full tiling of an axis by the cell partition its coordinates represent:
@@ -248,10 +312,24 @@
 # that fails it returns NULL for the caller to DECLINE on rather than erroring
 # (gcol33/tulpa#293: a silent-disable path needs a reason, and an error is not a
 # behaviour a reported interval can take).
+#
+# A partition whose outer edges are the extreme COORDINATES -- the
+# gcol33/tulpa#377 decline, where the declared domain's mirror was unusable --
+# still tiles: edge k serves both neighbours exactly as before, and the two outer
+# boxes are half-width with their coordinate on the boundary rather than inside.
+# That is the same conservatism the chord read's own clamp takes, so both reads
+# agree on the outer support instead of one of them reporting mass past a
+# coordinate the other will not.
 .nl_box_edges <- function(v, domain = NA_character_) {
+  .nl_box_edges_from(.nl_cell_partition(v, domain), v)
+}
+
+# The same builder, driven by a partition the caller already has, so
+# `.nl_box_quantile()` can report that partition's own coordinate and decline
+# without computing it twice.
+.nl_box_edges_from <- function(part, v) {
   n <- length(v)
   if (n < 2L) return(NULL)
-  part <- .nl_cell_partition(v, domain)
   u  <- part$tr$to(v)
   ue <- part$tr$to(part$edges)
   e  <- part$tr$from(c(ue[1L], (u[-1L] + u[-n]) / 2, ue[2L]))
@@ -305,7 +383,8 @@
   if (length(uv) < 2L) {
     return(list(q = rep(uv[1L], length(probs)), declined = "single_node"))
   }
-  e <- .nl_box_edges(uv, domain)
+  pt <- .nl_cell_partition(uv, domain)
+  e <- .nl_box_edges_from(pt, uv)
   if (is.null(e)) return(list(q = NULL, declined = "boxes_do_not_tile"))
   m <- as.numeric(tapply(w[wpos], factor(match(v[wpos], uv),
                                          levels = seq_along(uv)), sum))
@@ -326,7 +405,8 @@
     if (m[k] <= 0) return(e[k])
     e[k] + (p - cf[k]) / m[k] * (e[k + 1L] - e[k])
   }, numeric(1))
-  list(q = q, declined = NA_character_)
+  list(q = q, declined = NA_character_,
+       edge_coord = pt$coord, edge_declined = pt$declined)
 }
 
 # The `.NL_DOMAIN_TRANSFORM` entry a DECLARED `c(lower, upper)` support is, or
@@ -535,12 +615,16 @@
   within  <- match.arg(within)
   chord <- function(declined = NA_character_) {
     outside <- .NL_SUPPORT[[support]]$outside
+    ep <- NULL
     q <- if (!is.na(outside)) {
       # The `domain` reaches the CDF read too, not only the moment rule: the
       # outer half-cell an `extend` support adds is mirrored in the quantity's
       # own coordinate, so a bounded quantity's interval cannot leave its
       # support (gcol33/tulpa#369). A `clamp` support never forms an edge and
       # ignores it.
+      if (identical(outside, "extend")) {
+        ep <- .nl_extend_partition(values, weights, domain)
+      }
       .nl_wtd_quantile(values, weights, probs, outside = outside,
                        domain = domain)
     } else if (length(domain) != 1L || is.na(domain)) {
@@ -548,7 +632,9 @@
     } else {
       .nl_moment_quantile(values, weights, probs, domain)
     }
-    list(q = q, within = "chord", declined = declined)
+    list(q = q, within = "chord", declined = declined,
+         edge_coord    = ep$coord    %||% NA_character_,
+         edge_declined = ep$declined %||% NA_character_)
   }
   if (identical(within, "chord")) return(chord())
   if (!within %in% .NL_SUPPORT[[support]]$within) {
@@ -556,7 +642,9 @@
   }
   bx <- .nl_box_quantile(values, weights, probs, domain)
   if (is.na(bx$declined)) {
-    return(list(q = bx$q, within = within, declined = NA_character_))
+    return(list(q = bx$q, within = within, declined = NA_character_,
+                edge_coord    = bx$edge_coord    %||% NA_character_,
+                edge_declined = bx$edge_declined %||% NA_character_))
   }
   chord(bx$declined)
 }
@@ -795,6 +883,12 @@
 # axis whose partition could not be built falls back to the chord read on its
 # own rather than taking the whole fit with it, so a fit can carry a mixture of
 # constructions and still say which produced each interval.
+#
+# `edge_coord` / `edge_declined` are the same statement one layer down
+# (gcol33/tulpa#377): the COORDINATE that axis's outer half-cells were mirrored
+# in, and -- when the axis declared a support whose own mirror was not usable --
+# why the declared one did not produce them. They come from whichever read ran,
+# since the chord and box reads take their partitions off different atom sets.
 .nl_axis_quantiles <- function(tg, log_marginal, refining = NULL,
                                 probs = c(0.025, 0.5, 0.975),
                                 weights = NULL,
@@ -814,7 +908,8 @@
     empty <- setNames(numeric(0), character(0))
     empty_c <- setNames(character(0), character(0))
     return(list(median = empty, ci_lo = empty, ci_hi = empty,
-                within = empty_c, within_declined = empty_c))
+                within = empty_c, within_declined = empty_c,
+                edge_coord = empty_c, edge_declined = empty_c))
   }
   nms <- colnames(tg) %||% paste0("V", seq_len(ncol(tg)))
   n_ax <- length(nms)
@@ -823,6 +918,8 @@
   hi  <- setNames(rep(NA_real_, n_ax), nms)
   wc  <- setNames(rep(NA_character_, n_ax), nms)
   wcd <- setNames(rep(NA_character_, n_ax), nms)
+  ec  <- setNames(rep(NA_character_, n_ax), nms)
+  ecd <- setNames(rep(NA_character_, n_ax), nms)
   if (is.null(refining)) refining <- rep("", nrow(tg))
   for (j in seq_len(n_ax)) {
     ax    <- nms[j]
@@ -854,9 +951,12 @@
     hi[j]  <- qs[3L]
     wc[j]  <- rd$within
     wcd[j] <- rd$declined
+    ec[j]  <- rd$edge_coord    %||% NA_character_
+    ecd[j] <- rd$edge_declined %||% NA_character_
   }
   list(median = med, ci_lo = lo, ci_hi = hi,
-       within = wc, within_declined = wcd)
+       within = wc, within_declined = wcd,
+       edge_coord = ec, edge_declined = ecd)
 }
 
 # The RESOLUTION of each outer-grid axis: its cell width `h`, the posterior SD
@@ -916,7 +1016,9 @@
 
 # Stamp onto a fit what its reported per-axis intervals were read off: the
 # node-set KIND, the design share underneath it, the within-cell CONSTRUCTION
-# per axis and why a requested one declined, and the per-axis resolution the
+# per axis and why a requested one declined, the COORDINATE each axis's outer
+# cell edges were mirrored in and why a declared support's own mirror did not
+# produce them (gcol33/tulpa#377), and the per-axis resolution the
 # construction's position sensitivity is governed by.
 #
 # The kind is filled only when the producer has not already named it: the
@@ -940,6 +1042,8 @@
     res$theta_interval_design_mass %||% prov$design_mass
   res$theta_within_cell          <- qs$within
   res$theta_within_cell_declined <- qs$within_declined
+  res$theta_cell_edge_coord      <- qs$edge_coord
+  res$theta_cell_edge_declined   <- qs$edge_declined
   if (identical(res$theta_interval_read, "density")) {
     rs <- .nl_axis_resolution(tg, res$log_marginal, res$refining_axis, domains)
     res$outer_grid_cell_width <- rs$h

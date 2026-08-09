@@ -1077,7 +1077,15 @@
          as.character(jf$within_cell_requested %||% NA_character_),
        within_cell_declined =
          as.character(jf$theta_within_cell_declined %||% character(0)),
-       within_cell_axes = names(wc) %||% character(0))
+       within_cell_axes = names(wc) %||% character(0),
+       # One layer further down (gcol33/tulpa#377): the COORDINATE each axis's
+       # outer cell edges were mirrored in, and why a declared support's own
+       # mirror did not produce them. A declined axis reports the conservative
+       # edge -- its extreme coordinate -- rather than a guessed one outside the
+       # support the caller named.
+       edge_coord = as.character(jf$theta_cell_edge_coord %||% character(0)),
+       edge_declined =
+         as.character(jf$theta_cell_edge_declined %||% character(0)))
 }
 
 # One-line reading of that provenance: a mixed support, or a within-cell
@@ -1098,12 +1106,23 @@
       "by the refined cells' own grid neighbourhoods -- widen the base grid ",
       "(or turn local_ccd off) to move weight back onto mass-weighted cells"))
   }
+  ax   <- ir$within_cell_axes
+  ed   <- ir$edge_declined
+  edx  <- which(!is.na(ed) & nzchar(ed))
+  if (length(edx)) {
+    nm <- if (length(ax) >= max(edx)) ax[edx] else as.character(edx)
+    out <- c(out, paste0(
+      "the outer cell edge of ", paste(nm, collapse = ", "),
+      " could not be mirrored inside the support that axis declares (",
+      paste(unique(ed[edx]), collapse = ", "), "), so its interval runs to the ",
+      "extreme grid coordinate instead of half a spacing past it -- the ",
+      "reported bound is conservative on that side"))
+  }
   req <- ir$within_cell_requested
   if (!length(req) || is.na(req) || identical(req, "chord")) {
     return(if (length(out)) out else NULL)
   }
   used <- ir$within_cell
-  ax   <- ir$within_cell_axes
   fell <- which(!is.na(used) & used != req)
   out <- c(out, paste0(
     "hyperparameter intervals read with the '", req, "' within-cell ",
