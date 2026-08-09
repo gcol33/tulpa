@@ -207,15 +207,6 @@
     n_eval <- rep(NA_real_, P)
     reasons <- character(0)
     Z1 <- matrix(z, ncol = 1L)
-    # The shared core stashes its log-ratios when `tulpa.kdiag.capture` holds an
-    # environment. That aperture belongs to the OUTER diagnostic's validation
-    # harness, so the inner pass runs with it closed rather than overwriting
-    # what the outer pass put there.
-    cap <- getOption("tulpa.kdiag.capture", NULL)
-    if (!is.null(cap)) {
-        options(tulpa.kdiag.capture = NULL)
-        on.exit(options(tulpa.kdiag.capture = cap), add = TRUE)
-    }
     for (j in seq_len(P)) {
         col <- lj[, j]
         target <- function(U) if (nrow(U) == S) col else rep(NA_real_, nrow(U))
