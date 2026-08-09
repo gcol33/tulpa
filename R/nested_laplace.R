@@ -1598,8 +1598,12 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 #' Supported spec types:
 #'  * `tulpa_temporal` with `type in {"rw1", "rw2", "ar1"}`
 #'  * `tulpa_spatial`, areal `type in {"car", "icar", "car_proper", "bym2"}`.
-#'    Proper CAR (rho estimated) is converted to a 2D grid over (tau, rho)
-#'    using the spec's eigenvalue-derived `rho_bounds`.
+#'    An areal spec returns the graph fields only -- `type`, `spatial_idx`,
+#'    `n_spatial_units`, `adj_row_ptr`, `adj_col_idx`, `n_neighbors` -- plus
+#'    `scale_factor` for bym2 and the eigenvalue-derived `rho_bounds` for
+#'    proper CAR. No grid field is returned for any areal type: the outer axes
+#'    are built later by the family's registry `defaults()` closure, and proper
+#'    CAR's `(tau, rho)` grid is built there from those bounds.
 #'  * `tulpa_gp` / `tulpa_hsgp`, continuous `type in {"gp", "nngp", "hsgp"}`:
 #'    validated against `data` and routed to the `nngp` / `hsgp` nested kernel
 #'    through the shared converter.

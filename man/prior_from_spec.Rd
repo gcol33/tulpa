@@ -25,8 +25,12 @@ Supported spec types:
 \itemize{
 \item \code{tulpa_temporal} with \verb{type in \{"rw1", "rw2", "ar1"\}}
 \item \code{tulpa_spatial}, areal \verb{type in \{"car", "icar", "car_proper", "bym2"\}}.
-Proper CAR (rho estimated) is converted to a 2D grid over (tau, rho)
-using the spec's eigenvalue-derived \code{rho_bounds}.
+An areal spec returns the graph fields only -- \code{type}, \code{spatial_idx},
+\code{n_spatial_units}, \code{adj_row_ptr}, \code{adj_col_idx}, \code{n_neighbors} -- plus
+\code{scale_factor} for bym2 and the eigenvalue-derived \code{rho_bounds} for
+proper CAR. No grid field is returned for any areal type: the outer axes
+are built later by the family's registry \code{defaults()} closure, and proper
+CAR's \verb{(tau, rho)} grid is built there from those bounds.
 \item \code{tulpa_gp} / \code{tulpa_hsgp}, continuous \verb{type in \{"gp", "nngp", "hsgp"\}}:
 validated against \code{data} and routed to the \code{nngp} / \code{hsgp} nested kernel
 through the shared converter.
