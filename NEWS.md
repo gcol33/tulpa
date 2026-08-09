@@ -1,5 +1,32 @@
 # tulpa NEWS
 
+## 0.0.162
+
+* The `tulpa.kdiag.capture` aperture publishes the importance log-ratios the
+  REPORTED outer Pareto-k-hat was fitted on (gcol33/tulpa#356). It was written
+  by `.nested_is_pareto_k()`, the scoring primitive, which runs once per
+  CANDIDATE proposal -- and the joint dispatch scores several per reported
+  k-hat (each moment-matching pass, then the grid mixture, then the skew-normal
+  rescue), keeping whichever gives the lowest shape. A candidate scored after
+  the winner left its ratios in the aperture, so an external check refitting the
+  GPD on `cap$lr` landed on a different number from the fit's own: a spatial
+  `occu_cover()` fit reported 0.7714820579 against 1.197156391 recomputed, with
+  `loo::psis()` agreeing with the recomputation. The reported value was the
+  correct one throughout -- it is exactly `tulpa_psis()` on the grid-moment
+  pass's ratios, the proposal the dispatch selected, while the second
+  moment-matching pass scored 1.197156391, lost the comparison, and was the last
+  thing written. The primitive now returns its ratios on `lr` and publishes
+  nothing; each backend publishes once, from the proposal it selected, through
+  the single `.kdiag_capture()` helper, alongside the `tail_points` request that
+  resolves the GPD tail size. So
+  `tulpa_psis(cap$lr, tail_points = cap$tail_points)$pareto_k` reproduces
+  `fit$pareto_k` exactly on every backend that reports an outer k-hat --
+  `tulpa_nested_laplace()`, `tulpa_nested_laplace_joint()` single-block and
+  multi-block, `fit_spde()`, `tulpa_re_cov_nested()` -- which
+  `tests/testthat/test-kdiag-capture.R` pins. The defect was confined to the
+  joint path, the only one that scores a proposal it can discard. No reported
+  k-hat moves: the aperture consumes no RNG and the scoring is untouched.
+
 ## 0.0.161
 
 * The inner-Laplace LOCATION term `gamma_1` is computed, and the skew
