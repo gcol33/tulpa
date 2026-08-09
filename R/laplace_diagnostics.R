@@ -1010,6 +1010,52 @@
   NULL
 }
 
+# Outer-grid PLACEMENT of a nested-Laplace fit (gcol33/tulpa#361, #370): which
+# default axes do not contain their own posterior mode, and what the engine did
+# about it.
+#
+# The neighbour above reads the #276 REGIME, a joint property of the whole
+# tensor. This reads the per-axis one: an axis whose own marginal is maximal at
+# an endpoint has its mode at or beyond that endpoint, and the span is
+# integrating a tail at any spacing. The two disagree exactly where a crossed
+# grid hides one railed axis behind another axis's spread.
+#
+# `declined` is why no axis was moved. It exists for every registry fit,
+# including one whose family the rescue covers no axis of -- that case used to
+# return before stamping anything and was indistinguishable from a fit the
+# rescue never applied to. NULL when the fit records neither, so an older fit
+# and a backend that does not populate them report nothing rather than "none".
+.tulpa_grid_placement <- function(fit) {
+  jf <- if (!is.null(fit$joint_fit)) fit$joint_fit else fit
+  railed <- jf$outer_grid_railed_axes
+  placed <- jf$outer_grid_placement
+  if (is.null(railed) && is.null(placed)) return(NULL)
+  list(placement = as.character(placed %||% NA_character_),
+       railed    = as.character(railed %||% character(0)),
+       moved     = as.character(jf$outer_grid_recenter_axes %||% character(0)),
+       declined  = as.character(jf$outer_grid_recenter_declined %||%
+                                  NA_character_))
+}
+
+# One-line reading of a placement. NULL when every axis brackets its own mode
+# and nothing had to move -- the common case, which needs no sentence.
+.tulpa_grid_placement_note <- function(pl) {
+  if (is.null(pl)) return(NULL)
+  if (identical(pl$placement, "auto_recentered")) {
+    ax <- if (length(pl$moved)) paste(pl$moved, collapse = ", ") else "an axis"
+    return(paste0("outer grid re-centred on ", ax,
+                  ": the default span did not contain that axis's posterior ",
+                  "mode, so the reported grid is not the default one"))
+  }
+  if (!length(pl$railed)) return(NULL)
+  ax <- paste(pl$railed, collapse = ", ")
+  why <- if (is.na(pl$declined)) "" else
+    paste0(" (not moved: ", pl$declined, ")")
+  paste0("outer grid axis maximal at its own boundary on ", ax, why,
+         ": the span does not contain that axis's mode, so its marginal is a ",
+         "truncated tail at any spacing -- widen or pin that axis and refit")
+}
+
 # What the reported per-axis hyperparameter intervals were read off, and how much
 # of the support underneath them is a quadrature design rather than posterior mass
 # (gcol33/tulpa#317). NULL for a fit that does not record it.
@@ -1161,6 +1207,7 @@
   inner <- .tulpa_inner_skew_reliability(fit)
   inner_k <- .tulpa_inner_k_reliability(fit)
   regime <- .tulpa_outer_regime(fit)
+  placement <- .tulpa_grid_placement(fit)
   k          <- psis$pareto_k
 
   draws <- .fit_draws(fit)
@@ -1222,6 +1269,13 @@
     attr(tab, "grid_edge_sides") <- regime$edge_sides
     attr(tab, "outer_skew_max")  <- regime$outer_skew_max
     attr(tab, "outer_regime_note") <- .tulpa_outer_regime_note(regime)
+  }
+  if (!is.null(placement)) {
+    attr(tab, "grid_placement")        <- placement$placement
+    attr(tab, "grid_railed_axes")      <- placement$railed
+    attr(tab, "grid_recentred_axes")   <- placement$moved
+    attr(tab, "grid_placement_declined") <- placement$declined
+    attr(tab, "grid_placement_note")   <- .tulpa_grid_placement_note(placement)
   }
   if (!is.null(inner_k)) {
     attr(tab, "inner_pareto_k")        <- inner_k$max_pareto_k
@@ -1428,6 +1482,14 @@
 #'       "symmetric and unchecked").}
 #'     \item{`outer_regime_note`}{a one-line reading of a collapsed regime, or
 #'       absent on a spread grid.}
+#'     \item{`grid_railed_axes`}{outer axes whose OWN marginal is maximal at one
+#'       of their own endpoints, as `axis:side` -- the span does not contain that
+#'       axis's posterior mode, so its marginal is a truncated tail at any
+#'       spacing. Reported whether or not the engine was allowed to, able to, or
+#'       built to move the axis.}
+#'     \item{`grid_placement`, `grid_recentred_axes`,
+#'       `grid_placement_declined`, `grid_placement_note`}{whether the outer grid
+#'       was re-centred, on which axes, and -- when it was not -- why.}
 #'     \item{`scope`}{the outer diagnostic's scope string.}
 #'     \item{`inner_skew_max`}{the largest `|gamma_3|` among the scored latent
 #'       indices (`NA` if `control$diagnose_skew = FALSE` or nothing scored).}
@@ -1553,6 +1615,8 @@ print.laplace_diagnostics <- function(x, ...) {
   }
   note <- attr(x, "outer_regime_note")
   if (!is.null(note)) cat("  note: ", note, "\n", sep = "")
+  pnote <- attr(x, "grid_placement_note")
+  if (!is.null(pnote)) cat("  note: ", pnote, "\n", sep = "")
   if (has_skew) {
     ib <- attr(x, "inner_skew_band")
     im <- attr(x, "inner_skew_max")

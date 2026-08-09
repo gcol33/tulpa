@@ -2,6 +2,43 @@
 
 ## 0.0.166
 
+* A reported hyperparameter interval stays inside the quantity's own support
+  (gcol33/tulpa#369). gcol33/tulpa#353 gave the density read
+  `outside = "extend"`, so the interval reaches the outer CELL EDGE rather than
+  clamping at the extreme node, and `.nl_cell_edges()` mirrored the extreme
+  half-spacing in a coordinate GUESSED from the values -- log whenever they were
+  all positive, which a proportion is. A BYM2 mixing weight whose top default
+  node is 0.95 therefore got an upper edge of 1.0353, and the fit reported a
+  97.5% bound above 1 for a quantity that lives in (0, 1) and is singular at
+  both ends: 1.0028 on the default axis, 1.0012 after gcol33/tulpa#361 moves it.
+  The edge is now mirrored in the quantity's OWN coordinate, and that coordinate
+  is not a new notion of a domain: `.NL_DOMAIN_TRANSFORM` already defines
+  `positive` / `unit` / `correlation` / `unbounded`, and `.joint_axis_domains()`
+  already maps every outer axis onto one of them from the SAME per-axis registry
+  the outer Pareto-k unconstrains with -- it was simply consulted only on the
+  moment-rule read. It is now supplied whatever the support, on the registry,
+  multi-block, spatial-field and axis-summary paths; `hyper_axis_spec()`'s
+  declared `bounds` name the domain on the generic `tulpa_hyper_grid()` door.
+  `positive` reproduces the log mirroring exactly and `unbounded` the linear
+  one, so a scale axis is bit-identical; an axis whose support the registry will
+  not name (`car_proper`'s `rho_car` on the adjacency eigenvalue interval) keeps
+  the guess rather than acquiring an invented support, and a node set that
+  contradicts the domain the caller named falls back to it too.
+* A fit says which of its outer axes do not contain their own posterior mode,
+  even when nothing can be done about it (gcol33/tulpa#370). The placement
+  rescue read its per-family scope table FIRST and returned before stamping
+  anything, so a `car_proper` fit -- whose `rho_car` support the transform
+  registry will not guess, which blocks placement for every axis of the fit
+  including its ordinary positive-scale `tau` -- was indistinguishable from a
+  fit the rescue never applied to. The rail REPORT (`$outer_grid_railed_axes`,
+  gcol33/tulpa#361) is now taken before anything can decline, since it reads
+  stored weights and needs neither curvature nor a scope entry, and the decline
+  names the blocking axis (`"unguessable_axis: rho_car"`) or says the family
+  carries none the rescue is built for (`"family_out_of_scope"`). Both are READ
+  BACK rather than only recorded, per gcol33/tulpa#346: `diagnostics()` carries
+  `grid_railed_axes` / `grid_placement` / `grid_recentred_axes` /
+  `grid_placement_declined`, and `print()` shows a one-line reading beside the
+  gcol33/tulpa#276 regime note.
 * A corrected fit carries ONE grid weighting (gcol33/tulpa#367). The corrected
   per-cell masses are what `fit$draws` is pooled from, so they are the fit's
   grid posterior and are now reported as `fit$weights` / `fit$log_marginal`,

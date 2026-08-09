@@ -25,11 +25,33 @@
     res$theta_mean <- ms$mean
     res$theta_sd   <- ms$sd
   }
-  qs <- .nl_axis_quantiles(tg, res$log_marginal, res$refining_axis)
+  qs <- .nl_axis_quantiles(tg, res$log_marginal, res$refining_axis,
+                           domains = .nl_axis_domains(res, type))
   res$theta_median <- qs$median
   res$theta_ci_lo  <- qs$ci_lo
   res$theta_ci_hi  <- qs$ci_hi
   res
+}
+
+# The `.NL_DOMAIN_TRANSFORM` domain of every axis of a fit, from
+# `.joint_axis_domains()` -- the SAME per-axis registry the outer Pareto-k
+# unconstrains with, so "what support does this axis live on" keeps one
+# definition (`R/nested_laplace_joint_pareto_k.R`). Two shims and nothing else:
+# a single-axis grid is stored as a bare vector and is named by `theta_names`,
+# and the registry path knows its family as an ARGUMENT while `res$prior` is
+# only attached after the moments are taken.
+.nl_axis_domains <- function(res, type = NULL) {
+  tg <- res$theta_grid
+  if (is.null(tg)) return(NULL)
+  if (!is.matrix(tg)) {
+    nm <- (res$theta_names %||% "theta")[1L]
+    tg <- matrix(as.numeric(tg), ncol = 1L, dimnames = list(NULL, nm))
+  }
+  .joint_axis_domains(list(
+    theta_grid   = tg,
+    axis_offsets = res$axis_offsets,
+    blocks       = res$blocks,
+    prior        = if (is.null(type)) res$prior else list(type = type)))
 }
 
 # Marginal log-density along a single hyperparameter axis (logsumexp over
@@ -85,7 +107,8 @@
 # support is summarized by `.nl_moment_quantile()`, which uses the moments the
 # design does deliver.
 .nl_wtd_quantile <- function(values, weights, probs,
-                             outside = c("clamp", "extend", "na")) {
+                             outside = c("clamp", "extend", "na"),
+                             domain = NA_character_) {
   outside <- match.arg(outside)
   ord <- order(values)
   v <- as.numeric(values)[ord]
@@ -115,7 +138,7 @@
   # whole mass at the upper one, so the same interpolant carries them and the
   # interior knots keep their positions.
   if (identical(outside, "extend")) {
-    e <- .nl_cell_edges(v)
+    e <- .nl_cell_edges(v, domain)
     p <- c(0, p, 1)
     v <- c(e[1L], v, e[2L])
   }
@@ -134,19 +157,65 @@
 }
 
 # The outer edges of the cell partition a sorted vector of cell coordinates
-# represents: the extreme cell mirrors the half-spacing it has. Mirrored in log
-# when every coordinate is positive -- a scale grid is equally spaced there, and
-# the edge stays positive -- and in the value itself otherwise.
-.nl_cell_edges <- function(v) {
+# represents: the extreme cell mirrors the half-spacing it has, in the
+# QUANTITY'S OWN COORDINATE -- `.NL_DOMAIN_TRANSFORM[[domain]]`, the registry
+# right below, whose `to` / `from` are the monotone map onto the unbounded line
+# the mirroring is well defined on. A `positive` quantity mirrors in log and a
+# `unbounded` one in the value itself, which is what this did before it was
+# given the domain; `unit` mirrors in logit and `correlation` in atanh, and
+# those two are the reason for the argument (gcol33/tulpa#369).
+#
+# Without the domain the coordinate was guessed from the values -- log whenever
+# they were all positive -- and a proportion axis is all positive, so a BYM2
+# mixing weight whose top node is 0.95 got an upper edge of 1.0353 and the fit
+# reported a 97.5% bound ABOVE 1 for a quantity that lives in (0, 1) and is
+# singular at both ends. The guess is kept as the fallback for an axis whose
+# support the registry will not name (`car_proper`'s `rho_car` on the adjacency
+# eigenvalue interval): a guessed edge is what that case had, and inventing a
+# support for it would be worse than the edge it has.
+#
+# The mapped edge is used only when every coordinate AND both edges are inside
+# the domain, so a node set that does not actually live where the caller says it
+# does falls back rather than returning a non-finite or out-of-support edge.
+.nl_cell_edges <- function(v, domain = NA_character_) {
   n <- length(v)
   if (n < 2L) return(c(v[1L], v[n]))
+  mirror <- function(u) c(u[1L] - 0.5 * (u[2L] - u[1L]),
+                          u[n] + 0.5 * (u[n] - u[n - 1L]))
+  tr <- if (length(domain) == 1L && !is.na(domain))
+    .NL_DOMAIN_TRANSFORM[[domain]] else NULL
+  if (!is.null(tr) && all(tr$in_domain(v))) {
+    e <- tr$from(mirror(tr$to(v)))
+    if (all(is.finite(e)) && all(tr$in_domain(e))) return(e)
+  }
+  # Reached when no domain was named, or when the named one does not contain
+  # the values -- a caller's declaration the node set contradicts, where the
+  # value guess is the more trustworthy of the two.
   if (all(v > 0)) {
-    u <- log(v)
-    e <- c(exp(u[1L] - 0.5 * (u[2L] - u[1L])),
-           exp(u[n] + 0.5 * (u[n] - u[n - 1L])))
+    e <- exp(mirror(log(v)))
     if (all(is.finite(e))) return(e)
   }
-  c(v[1L] - 0.5 * (v[2L] - v[1L]), v[n] + 0.5 * (v[n] - v[n - 1L]))
+  mirror(v)
+}
+
+# The `.NL_DOMAIN_TRANSFORM` entry a DECLARED `c(lower, upper)` support is, or
+# NA. The second reader of that vocabulary, alongside `.joint_axis_domains()`:
+# where an engine axis's support comes from the per-axis registry, a
+# `hyper_axis_spec()` axis carries the user's own `bounds`, and ignoring a
+# support the caller declared is worse than having none. Only bounds that ARE
+# one of the four domains are recognised -- an arbitrary finite interval
+# (`c(0.3, 30)`) is not one of them and reports NA rather than inventing a
+# transform for it.
+.nl_domain_of_bounds <- function(bounds, log_scale = FALSE) {
+  if (is.null(bounds) || length(bounds) != 2L || anyNA(bounds)) {
+    return(if (isTRUE(log_scale)) "positive" else NA_character_)
+  }
+  b <- as.numeric(bounds)
+  if (b[1L] == 0 && b[2L] == 1)    return("unit")
+  if (b[1L] == -1 && b[2L] == 1)   return("correlation")
+  if (b[1L] == 0 && is.infinite(b[2L]) && b[2L] > 0) return("positive")
+  if (all(is.infinite(b)))         return("unbounded")
+  NA_character_
 }
 
 # Monotone maps between a derived quantity's own domain and the unbounded
@@ -282,7 +351,12 @@
   support <- match.arg(support)
   outside <- .NL_SUPPORT[[support]]$outside
   if (!is.na(outside)) {
-    return(.nl_wtd_quantile(values, weights, probs, outside = outside))
+    # The `domain` reaches the CDF read too, not only the moment rule: the outer
+    # half-cell an `extend` support adds is mirrored in the quantity's own
+    # coordinate, so a bounded quantity's interval cannot leave its support
+    # (gcol33/tulpa#369). A `clamp` support never forms an edge and ignores it.
+    return(.nl_wtd_quantile(values, weights, probs, outside = outside,
+                            domain = domain))
   }
   if (length(domain) != 1L || is.na(domain)) {
     return(.nl_wtd_quantile(values, weights, probs, outside = "na"))
@@ -513,8 +587,11 @@
 #
 # `support` says what the supplied `weights` are and is passed through to
 # `.nl_summary_quantile`; `domains` gives one `.NL_DOMAIN_TRANSFORM` name per
-# axis, which a `"moment_rule"` support needs to form its interval (an axis whose
-# support the engine will not guess carries NA and reports NA).
+# axis. A `"moment_rule"` support needs it to form its interval at all (an axis
+# whose support the engine will not guess carries NA and reports NA); a
+# `"density"` / `"mixed"` one needs it to place its outer cell edges inside the
+# quantity's support (gcol33/tulpa#369), so it is supplied WHATEVER the support
+# rather than only for the design read.
 .nl_axis_quantiles <- function(tg, log_marginal, refining = NULL,
                                 probs = c(0.025, 0.5, 0.975),
                                 weights = NULL,
@@ -706,7 +783,11 @@
 
   # Weighted-quantile median + 2.5/97.5 CI per axis (calibrated summary
   # for right-skewed scale-like hyperparameters; see `.nl_axis_quantiles`).
-  qs <- .nl_axis_quantiles(joint_grid, out$log_marginal, out$refining_axis)
+  qs <- .nl_axis_quantiles(
+    joint_grid, out$log_marginal, out$refining_axis,
+    domains = .joint_axis_domains(list(theta_grid = joint_grid,
+                                       axis_offsets = axis_offsets,
+                                       blocks = prepared)))
   out$theta_median <- qs$median
   out$theta_ci_lo  <- qs$ci_lo
   out$theta_ci_hi  <- qs$ci_hi

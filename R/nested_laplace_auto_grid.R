@@ -579,6 +579,34 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
     res
 }
 
+# Why the registry rescue covers no axis of `type` (gcol33/tulpa#370). Two
+# distinguishable answers, and returning unstamped conflated them with a fit the
+# rescue never applied to:
+#
+#   * `"unguessable_axis: <names>"` -- the family HAS a positive-scale axis the
+#     rescue could place, but some other axis of the same grid has a support the
+#     transform registry will not guess (car_proper's `rho_car` on the adjacency
+#     eigenvalue interval), and `.nl_registry_axis_mode_cov()` declines for the
+#     WHOLE fit rather than per axis. Naming the blocking axis is #295's
+#     convention and is what tells a caller that pinning it themselves unblocks
+#     the rest.
+#   * `"family_out_of_scope"` -- nothing about this family's axis geometry is in
+#     the rescue's scope at all (mcar / miid's log-Cholesky coordinates).
+.nl_out_of_scope_reason <- function(res, type) {
+    cn <- res$theta_names %||% colnames(res$theta_grid) %||% character(0)
+    if (!length(cn)) return("family_out_of_scope")
+    # The same per-axis registry `.nl_registry_axis_mode_cov()` consults, read
+    # with the family passed in: the registry path knows its type as an ARGUMENT
+    # while `res$prior` is only attached after the rescue.
+    tags <- tryCatch(.joint_pareto_block_tags(tolower(type %||% ""), cn),
+                     error = function(e) NULL)
+    if (!is.null(tags) && anyNA(tags)) {
+        return(paste0("unguessable_axis: ",
+                      paste(cn[is.na(tags)], collapse = ", ")))
+    }
+    "family_out_of_scope"
+}
+
 # --- decline reasons ---------------------------------------------------------
 #
 # `res$outer_grid_recenter_declined` records why an applicable auto-recenter did
@@ -592,7 +620,10 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 # the way to hold ANY grid -- the engine's own default axis included -- exactly
 # where it is), `"grid_knobs_overridden"` (the spatiotemporal driver's
 # grid-construction knobs were set explicitly), `"refit_failed"` (the recentred
-# grid did not solve). Absent on a fit that WAS recentred, and never stamped by
+# grid did not solve), `"unguessable_axis: <names>"` / `"family_out_of_scope"`
+# (the registry rescue covers no axis of this family -- gcol33/tulpa#370, which
+# is what returning UNSTAMPED used to look like). Absent on a fit that WAS
+# recentred, and never stamped by
 # a rescue whose prior shape it does not apply to -- a fit carries the reason
 # from the one rescue that could have run, not a tally of the others declining.
 .nl_decline_recenter <- function(res, reason) {
@@ -938,9 +969,16 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
                                      auto = character(0), enabled = TRUE,
                                      max_attempts = .nl_recenter("max_attempts_registry")) {
     out <- list(res = res, prior = prior)
-    fields <- .NL_REGISTRY_AXIS_FIELD[[type]]
-    if (is.null(fields)) return(out)
+    # The rail REPORT is taken before anything can decline, so a fit says which
+    # of its axes do not contain their own mode whether or not this rescue is
+    # allowed to, able to, or built to move them (gcol33/tulpa#370). It reads
+    # stored weights and needs neither curvature nor a scope entry.
     out$res <- .nl_attach_railed_axes(out$res)
+    fields <- .NL_REGISTRY_AXIS_FIELD[[type]]
+    if (is.null(fields)) {
+        out$res <- .nl_decline_recenter(out$res, .nl_out_of_scope_reason(res, type))
+        return(out)
+    }
     if (!isTRUE(enabled)) {
         out$res <- .nl_decline_recenter(out$res, "auto_recenter_disabled")
         return(out)

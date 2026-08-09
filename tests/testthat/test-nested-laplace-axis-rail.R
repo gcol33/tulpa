@@ -188,10 +188,9 @@ test_that("a BYM2 fit whose mixing weight rails is moved off its 0.95 ceiling", 
     expect_null(.nl_axis_rail(fit, "rho"))
     expect_gt(as.numeric(fit$theta_median[["rho"]]),
               as.numeric(fit_held$theta_median[["rho"]]))
-    # The reported upper bound still overshoots the mixing weight's support,
-    # by 1.2e-3 against the held axis's 2.8e-2: the quantile reader interpolates
-    # the axis without its declared domain, which is gcol33/tulpa#369 and not
-    # placement. Pinned so a change either way is visible.
-    expect_lt(as.numeric(fit$theta_ci_hi[["rho"]]) - 1,
-              (as.numeric(fit_held$theta_ci_hi[["rho"]]) - 1) / 10)
+    # Both reads report a mixing weight inside its own support, which is
+    # gcol33/tulpa#369 and not placement -- before that the held axis overshot
+    # to 1.0028 and the moved one to 1.0012.
+    expect_lt(as.numeric(fit$theta_ci_hi[["rho"]]), 1)
+    expect_lt(as.numeric(fit_held$theta_ci_hi[["rho"]]), 1)
 })

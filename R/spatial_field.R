@@ -607,10 +607,11 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
   # the interval comes from the moments on each quantity's own domain
   # (gcol33/tulpa#310). `sigma = 1 / sqrt(tau)` is positive whatever the block;
   # `rho` takes the domain the axis registry gives it, and an axis the registry
-  # will not guess reports NA rather than the design's extent.
+  # will not guess reports NA rather than the design's extent. The domain is
+  # supplied under EITHER read: the density one places its outer cell edges in
+  # the quantity's own coordinate with it (gcol33/tulpa#369).
   support <- .nl_node_support(jfit$integration, jfit$weight_kind)
-  doms <- if (identical(support, "moment_rule"))
-    stats::setNames(.joint_axis_domains(jfit), colnames(tg)) else NULL
+  doms <- stats::setNames(.joint_axis_domains(jfit), colnames(tg))
   dom_of <- function(nm) if (is.null(doms)) NA_character_ else unname(doms[nm])
   probs <- c(0.025, 0.5, 0.975)
   hypers <- lapply(seq_along(blocks), function(b) {

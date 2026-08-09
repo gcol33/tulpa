@@ -262,8 +262,10 @@ compare_models <- function(..., criterion = c("waic", "loo", "loglik")) {
   # tensor grid's uniform cells discretize the density, a CCD is a moment rule
   # whose node positions carry no mass of their own (gcol33/tulpa#312).
   support <- .nl_node_support(object$integration, object$weight_kind)
-  doms <- if (identical(support, "moment_rule")) .joint_axis_domains(object)
-          else NULL
+  # Supplied whatever the support: a moment rule needs the domain to form its
+  # interval at all, and a density read needs it to place its outer cell edges
+  # inside the quantity's own support (gcol33/tulpa#369).
+  doms <- .joint_axis_domains(object)
   rows <- lapply(keep, function(j) {
     v   <- tg[, j]
     tr  <- if (!is.null(transform)) transform[[bare_axes[j]]] else NULL
