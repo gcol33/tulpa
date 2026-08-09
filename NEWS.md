@@ -2,6 +2,31 @@
 
 ## 0.0.156
 
+* `control$max_grid_cells` sets the multi-block outer-grid cell ceiling
+  (gcol33/tulpa#343), defaulting to the 2048 that was hard-wired. The cap is a
+  cost guard -- each cell is one inner Newton solve -- and a good default, but a
+  converged tensor REFERENCE grid is the case a caller knowingly wants the
+  expensive run: 4 axes at 7 levels is 2401 cells, so no cubic reference above 6
+  levels per axis could be built on a 4-axis fit, and the outer-grid line's
+  reference fits had to lift the package internal in-process. Both enforcement
+  sites -- the multi-block nested-Laplace dispatch and the joint multi-block
+  dispatch, until now independent copies of the same comparison -- go through
+  one `.nl_check_grid_cap()` reading one resolved value, carried for the fit on
+  a scoped option so every re-dispatch inside it (the k-hat re-evaluations, the
+  refinement passes) enforces the caller's ceiling. The error keeps each site's
+  remedy for the accidental blow-up and names the override for the deliberate
+  run; the `>50` cell warning is unchanged.
+
+* The posterior-SBC driver splits the truth-draw and replicate RNG streams
+  itself (gcol33/tulpa#350). `recov_posterior_sbc()` derives two seeds and hands
+  `draw_theta` one and `simulate` the other, so the obvious `set.seed(seed)` at
+  the top of each callback is the CORRECT fixture and none of them carries an
+  offset any more. Under the previous contract both callbacks got the same seed,
+  and a fixture writing the obvious thing drew the replicate's group effects and
+  residuals from the very uniforms that produced `theta'` -- not `p(y | theta')`,
+  and a non-uniform PIT with nothing wrong in the inference under test. The
+  driver applies the `660000L` offset every fixture used to apply itself, so the
+  seeds a fixture sees did not move.
 * Posterior SBC joins the prior-predictive harness: calibration checked
   CONDITIONAL on an observed data set rather than averaged over the prior
   (gcol33/tulpa#339, after Sailynoja, Schmitt, Buerkner & Vehtari, *Statistics

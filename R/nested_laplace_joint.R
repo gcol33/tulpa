@@ -519,6 +519,12 @@
 #'     (gcol33/tulpa#289 / #290). `FALSE` integrates over the grid exactly as
 #'     given, whatever it is, and records
 #'     `outer_grid_recenter_declined = "auto_recenter_disabled"`.
+#'   * `max_grid_cells` (`2048L`) -- cell-count ceiling on a multi-block tensor
+#'     outer grid, refused with an error above it. Each cell is one inner
+#'     Newton solve, so the default catches per-block grids that multiplied out
+#'     to a run nobody asked for; a deliberate converged tensor reference grid
+#'     (4 axes at 7 levels is 2401 cells) raises it here, which `integration =
+#'     "ccd"` cannot serve since a CCD is a different integration design.
 #'   * `checkpoint` (`NULL`) -- grid-cell checkpoint/resume. Set
 #'     `list(path = "fit.ckpt", resume = TRUE)` to make a killed or interrupted
 #'     fit resumable: each completed outer-grid cell is appended to `path`, and
@@ -1174,6 +1180,14 @@ tulpa_nested_laplace_joint <- function(responses,
         file.exists(.ckpt$path)) {
         file.remove(.ckpt$path)
     }
+
+    # Multi-block outer-grid cell ceiling, on the same scoped-option transport:
+    # the tensor grid is built inside .joint_dispatch_multi() and again on each
+    # refinement pass, so the caller's value is read where the grid is, not
+    # carried through every backend signature.
+    .op_grid_cap <- options(
+        tulpa.nl_max_grid_cells = .nl_max_grid_cells(control))
+    on.exit(options(.op_grid_cap), add = TRUE)
 
     if (!is.list(responses) || length(responses) < 1L) {
         stop("`responses` must be a non-empty list of arm specs.", call. = FALSE)

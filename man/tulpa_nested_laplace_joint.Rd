@@ -509,6 +509,11 @@ posterior mode and refit when the fit rails against a boundary node
 (gcol33/tulpa#289 / #290). \code{FALSE} integrates over the grid exactly as
 given, whatever it is, and records
 \code{outer_grid_recenter_declined = "auto_recenter_disabled"}.
+\item \code{max_grid_cells} (\code{2048L}) -- cell-count ceiling on a multi-block tensor
+outer grid, refused with an error above it. Each cell is one inner
+Newton solve, so the default catches per-block grids that multiplied out
+to a run nobody asked for; a deliberate converged tensor reference grid
+(4 axes at 7 levels is 2401 cells) raises it here, which \code{integration = "ccd"} cannot serve since a CCD is a different integration design.
 \item \code{checkpoint} (\code{NULL}) -- grid-cell checkpoint/resume. Set
 \code{list(path = "fit.ckpt", resume = TRUE)} to make a killed or interrupted
 fit resumable: each completed outer-grid cell is appended to \code{path}, and

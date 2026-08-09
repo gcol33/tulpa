@@ -1249,12 +1249,7 @@
             "Reduce per-block grid sizes or set control$integration = \"ccd\"." else
             sprintf("Reduce per-block grid sizes; CCD integration declined (%s).",
                     integration_declined)
-        if (n_cells > .NL_MULTI_GRID_HARD_CAP) {
-            stop(sprintf(
-                "Joint multi-block grid has %d cells (hard cap %d). %s",
-                n_cells, .NL_MULTI_GRID_HARD_CAP, remedy
-            ), call. = FALSE)
-        }
+        .nl_check_grid_cap(n_cells, .nl_max_grid_cells(), remedy)
         if (n_cells > .NL_MULTI_GRID_WARN) {
             warning(sprintf(
                 "Joint multi-block grid has %d cells (>%d). Each cell costs one inner Newton solve. %s",

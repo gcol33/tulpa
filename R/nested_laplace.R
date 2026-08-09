@@ -117,6 +117,11 @@
 #'     (gcol33/tulpa#289 / #290). `FALSE` integrates over the grid exactly as
 #'     given, whatever it is, and records
 #'     `outer_grid_recenter_declined = "auto_recenter_disabled"`.
+#'   * `max_grid_cells` (`2048L`) -- cell-count ceiling on a multi-block outer
+#'     grid, refused with an error above it. Each cell is one inner Newton
+#'     solve, so the default catches a per-block grid that multiplied out to a
+#'     run nobody asked for; a deliberate converged tensor reference grid (4
+#'     axes at 7 levels is 2401 cells) raises it here.
 #'
 #' @return A list with:
 #'   * `theta_grid`: matrix or vector of grid hyperparameter values.
@@ -217,6 +222,12 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   if (nzchar(.ckpt$path) && !isTRUE(.ckpt$resume) && file.exists(.ckpt$path)) {
     file.remove(.ckpt$path)
   }
+
+  # Multi-block outer-grid cell ceiling, published for the duration of this fit
+  # so the initial dispatch and every re-dispatch (the k-hat re-evaluations, the
+  # subspace-debias refit) enforce the caller's value rather than the default.
+  .op_grid_cap <- options(tulpa.nl_max_grid_cells = .nl_max_grid_cells(control))
+  on.exit(options(.op_grid_cap), add = TRUE)
 
   if (!is.null(spec)) {
     if (!is.null(prior)) {
@@ -1330,7 +1341,43 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 # uses the Cartesian outer integration, which is correct but scales
 # multiplicatively in the block count, so warn past the soft cap and proceed.
 .NL_MULTI_GRID_WARN <- 50L
+# Hard cap on the same count, and the default value of `control$max_grid_cells`.
 .NL_MULTI_GRID_HARD_CAP <- 2048L
+
+# Resolve the hard cap for one fit. `control$max_grid_cells = <n>` moves the
+# ceiling in either direction: the default refuses the accidental blow-up, and a
+# deliberate converged tensor reference grid (4 axes x 7 levels = 2401 cells) is
+# a run a caller can knowingly ask for (gcol33/tulpa#343). The front doors
+# publish the resolved value on the scoped `tulpa.nl_max_grid_cells` option, so
+# every grid built inside the fit -- the multi-block dispatch, the joint
+# multi-block dispatch, the k-hat re-evaluations -- reads one ceiling without
+# carrying it in each signature, the transport `tulpa.nl_progress` and
+# `tulpa.nl_checkpoint` already use.
+.nl_max_grid_cells <- function(control = list()) {
+  v <- control$max_grid_cells
+  if (is.null(v)) v <- getOption("tulpa.nl_max_grid_cells", NULL)
+  if (is.null(v)) return(as.numeric(.NL_MULTI_GRID_HARD_CAP))
+  if (!is.numeric(v) || length(v) != 1L || is.na(v) || v < 1) {
+    stop("`control$max_grid_cells` must be a single number >= 1 ",
+         "(the cell-count ceiling on a multi-block outer grid).", call. = FALSE)
+  }
+  as.numeric(v)
+}
+
+# The single enforcement of that ceiling, shared by the multi-block
+# nested-Laplace dispatch and the joint multi-block dispatch. `remedy` is the
+# caller's advice for the accidental case; the override is named for the
+# deliberate one.
+.nl_check_grid_cap <- function(n_cells, max_cells, remedy) {
+  if (n_cells <= max_cells) return(invisible(n_cells))
+  fmt <- function(x) format(x, scientific = FALSE, trim = TRUE)
+  stop(sprintf(
+    paste0("Joint multi-block grid has %s cells (hard cap %s). %s ",
+           "A deliberate reference grid raises the cap with ",
+           "control$max_grid_cells = %s."),
+    fmt(n_cells), fmt(max_cells), remedy, fmt(n_cells)
+  ), call. = FALSE)
+}
 
 .nl_dispatch_multi <- function(cargs, prior_list, likelihood = NULL,
                                progress = .nl_progress_args(list(progress = FALSE)),
@@ -1392,12 +1439,9 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     row_counts <- vapply(block_grids, nrow, integer(1))
     idx <- do.call(expand.grid, lapply(row_counts, seq_len))
     n_cells <- nrow(idx)
-    if (n_cells > .NL_MULTI_GRID_HARD_CAP) {
-      stop(sprintf(
-        "Joint multi-block grid has %d cells (hard cap %d). Reduce per-block grid sizes or wait for CCD integration support.",
-        n_cells, .NL_MULTI_GRID_HARD_CAP
-      ), call. = FALSE)
-    }
+    .nl_check_grid_cap(
+      n_cells, .nl_max_grid_cells(),
+      "Reduce per-block grid sizes or wait for CCD integration support.")
     if (n_cells > .NL_MULTI_GRID_WARN) {
       warning(sprintf(
         "Joint multi-block grid has %d cells (>%d). Each cell costs one inner Newton solve; reduce per-block grid sizes if this is slow. CCD integration is a follow-up.",
