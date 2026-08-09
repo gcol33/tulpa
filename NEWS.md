@@ -2,6 +2,17 @@
 
 ## 0.0.158
 
+* The posterior-SBC driver splits the truth-draw and replicate RNG streams
+  itself (gcol33/tulpa#350). `recov_posterior_sbc()` derives two seeds and hands
+  `draw_theta` one and `simulate` the other, so the obvious `set.seed(seed)` at
+  the top of each callback is the CORRECT fixture and none of them carries an
+  offset any more. Under the previous contract both callbacks got the same seed,
+  and a fixture writing the obvious thing drew the replicate's group effects and
+  residuals from the very uniforms that produced `theta'` -- not `p(y | theta')`,
+  and a non-uniform PIT with nothing wrong in the inference under test. The
+  driver applies the `660000L` offset every fixture used to apply itself, so the
+  seeds a fixture sees did not move, and the #339 measurement in
+  `dev_notes/issue339/` was re-run under it.
 * The #302 Cornish-Fisher marginal is scored over the whole posterior, and
   gated on the combined inner band (gcol33/tulpa#346). Its acceptance test
   scored total absolute error of the 2.5% / 97.5% quantiles, which is

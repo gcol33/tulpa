@@ -866,13 +866,18 @@ Laplace IS the conditional posterior and the two reads agree to 1e-04 in the
 PIT. `sbc_psbc_re()` (section 9) is the family-general fixture where the inner
 Gaussian is an approximation and the verdict is real.
 
-**`draw_theta` and `simulate` receive the SAME seed**, and decorrelating the
-second stream is the FIXTURE's job (`set.seed(seed + 660000L)`). Writing the
-obvious `set.seed(seed)` in both makes the replicate's noise a function of the
-truth, which is not `p(y | theta')` and shows up as a non-uniform PIT with
-nothing wrong in the inference. Moving the split into the driver is the better
-design and is gcol33/tulpa#350; it is not done in place because it re-seeds
-every existing result.
+**The DRIVER splits the truth-draw and replicate RNG streams**
+(gcol33/tulpa#350): `draw_theta` gets `s`, `simulate` gets `.sbc_rep_seed(s)`,
+so the obvious `set.seed(seed)` at the top of each callback is the correct
+fixture and no fixture carries an offset. Handing both the same seed makes the
+replicate's noise a function of the truth, which is not `p(y | theta')` and
+shows up as a non-uniform PIT with nothing wrong in the inference under test --
+a harness whose default failure mode is a false alarm against the engine. The
+offset the driver applies is the `660000L` every fixture used to apply itself,
+so the seeds a fixture actually sees did not move and the single-arm RE
+configurations of the measurement below reproduce unchanged; the coupled
+occupancy and `occu_cover` configurations carried a different offset and were
+re-measured.
 
 **A rank arm needs a marginal likelihood, and off the gaussian that means
 quadrature.** `sbc_loglik_re()` is ADAPTIVE Gauss-Hermite -- recentred and

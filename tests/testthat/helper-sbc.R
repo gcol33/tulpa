@@ -614,17 +614,23 @@ sbc_crps_compare <- function(res, baseline) {
 #   pool(data_obs, rep)     the augmented data set
 #   arms(fit, data)         named arms of predictives, as in section 5
 #
-# `draw_theta` AND `simulate` RECEIVE THE SAME SEED, and a fixture must
-# decorrelate the second stream itself -- every fixture here does, with an
-# explicit offset (`nl_re_simulate(seed + 660000L, ...)`). The obvious way to
-# write either callback is `set.seed(seed)` at the top, so a fixture that does
-# that in both would have the replicate's group effects and residuals re-consume
-# the very uniforms that produced theta'. The draw would then determine the
-# noise as well as the parameter, which is not p(y | theta') and would show as a
-# non-uniform PIT with nothing wrong in the inference. Splitting the streams in
-# the DRIVER instead would be safer and is worth doing, but it re-seeds every
-# existing result, so it is tracked as its own change rather than made here.
+# THE DRIVER SPLITS THE TWO RNG STREAMS (gcol33/tulpa#350). `draw_theta` gets
+# the replicate's seed `s` and `simulate` gets `.sbc_rep_seed(s)`, so the obvious
+# `set.seed(seed)` at the top of each callback is the CORRECT fixture. Handing
+# both the same seed instead makes the replicate's group effects and residuals
+# re-consume the very uniforms that produced theta', so the truth determines the
+# noise as well as the parameter -- not p(y | theta'), and it surfaces as a
+# non-uniform PIT with nothing whatever wrong in the inference under test. A
+# harness whose default failure mode is a false alarm against the engine is the
+# wrong default, so the split lives here and no fixture carries an offset.
 # ---------------------------------------------------------------------------
+
+# The offset the driver derives the replicate's seed with. Its value is the one
+# every fixture used to apply itself, so promoting the split into the driver
+# leaves the seeds each fixture actually sees unchanged.
+.SBC_REP_SEED_OFFSET <- 660000L
+
+.sbc_rep_seed <- function(seed) seed + .SBC_REP_SEED_OFFSET
 
 recov_posterior_sbc <- function(model, n_seed, quantities = NULL,
                                 seed_off = 0L, rand_seed = 20240339L,
@@ -637,7 +643,7 @@ recov_posterior_sbc <- function(model, n_seed, quantities = NULL,
 
   simulator <- function(seed) {
     th <- model$draw_theta(fit_obs, seed)
-    rp <- model$simulate(th, seed)
+    rp <- model$simulate(th, .sbc_rep_seed(seed))
     d <- model$pool(model$data_obs, rp)
     d$theta <- th
     d$seed <- seed
@@ -932,11 +938,10 @@ sbc_psbc_gaussian <- function(d_obs, read = c("exact", "engine"),
       b <- P$mu[k, ] + as.numeric(crossprod(L, stats::rnorm(ncol(P$mu))))
       c(beta1 = b[1], beta2 = b[2], sigma = P$grid[k])
     },
-    # The offset is required, and is the fixture's job: the driver hands this
-    # callback the seed `draw_theta` just consumed, so drawing from the head of
-    # that same stream would make the replicate's noise a function of the truth.
+    # The driver hands this callback its own seed, decorrelated from the one
+    # `draw_theta` consumed, so `set.seed(seed)` is all this has to do.
     simulate = function(theta, seed) {
-      set.seed(seed + 660000L)
+      set.seed(seed)
       N <- nr_rep * d_obs$spr
       region <- rep(seq_len(nr_rep), each = d_obs$spr)
       X <- cbind(1, stats::rnorm(N))
@@ -1154,10 +1159,8 @@ sbc_psbc_re <- function(d_obs, nr_rep = d_obs$nr, bad_factor = 1.25,
                                             stats::rnorm(ncol(P$mu))))
       c(beta1 = b[1], beta2 = b[2], sigma = P$grid[k])
     },
-    # Offset for the reason section 8 gives: the truth draw has just consumed the
-    # head of this seed's stream.
     simulate = function(theta, seed) {
-      set.seed(seed + 660000L)
+      set.seed(seed)
       N <- nr_rep * d_obs$spr
       region <- rep(seq_len(nr_rep), each = d_obs$spr)
       X <- cbind(1, stats::rnorm(N))

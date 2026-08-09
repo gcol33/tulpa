@@ -22,22 +22,41 @@
 # 1. The pieces
 # ---------------------------------------------------------------------------
 
+test_that("the driver hands the replicate its own seed", {
+  # gcol33/tulpa#350. The split is the driver's, so a fixture that writes the
+  # obvious `set.seed(seed)` in both callbacks is correct. Read the two seeds
+  # off the callbacks themselves.
+  got <- new.env(parent = emptyenv())
+  m <- list(
+    data_obs = list(), fit = function(data) list(),
+    draw_theta = function(fit, seed) { got$draw <- c(got$draw, seed); c(a = 0) },
+    simulate = function(theta, seed) { got$rep <- c(got$rep, seed); list() },
+    pool = function(obs, rep) list(),
+    arms = function(fit, data) list(only = list(a = sbc_normal(0, 1))))
+  recov_posterior_sbc(m, n_seed = 4L, seed_off = 100L)
+  expect_identical(got$draw, 101:104)
+  expect_identical(got$rep, .sbc_rep_seed(101:104))
+  # Distinct, and distinct from every other replicate's truth seed too, so no
+  # pair of replicates shares a stream either.
+  expect_length(intersect(got$draw, got$rep), 0L)
+})
+
 test_that("a fixture's replicate does not re-consume the truth draw's stream", {
   skip_on_cran()
-  # The driver hands `draw_theta` and `simulate` the SAME seed, so decorrelating
-  # the second stream is the fixture's job. A fixture that writes the obvious
-  # `set.seed(seed)` in both would draw the replicate's group effects and
-  # residuals from the very uniforms that produced theta' -- not p(y | theta'),
-  # and a non-uniform PIT with nothing wrong in the inference.
+  # The property the split exists for: with the seeds the driver derives, the
+  # replicate's design, group effects and residuals do not come from the
+  # uniforms that produced theta'. Drawing both from one stream would make the
+  # truth determine the noise -- not p(y | theta'), and a non-uniform PIT with
+  # nothing wrong in the inference.
   d_obs <- sbc_sim_gaussian(101L)
   cfg <- list(nr = 12L, spr = 4L, ntr = 1L, beta = c(-2.5, 0.8), su = 0.7,
               phi = 1.0, grid = SBC_RE_GRID)
   th <- c(beta1 = 0.4, beta2 = -1.1, sigma = 0.5)
   for (m in list(sbc_psbc_gaussian(d_obs),
                  sbc_psbc_re(sbc_sim_re(4242L, "binomial", cfg)))) {
-    r <- m$simulate(th, 17L)
-    # The head of the raw stream is what `draw_theta` consumes. Nothing in the
-    # replicate may equal it.
+    r <- m$simulate(th, .sbc_rep_seed(17L))
+    # The head of the truth seed's stream is what `draw_theta` consumes. Nothing
+    # in the replicate may equal it.
     set.seed(17L)
     head_of_stream <- stats::rnorm(1)
     expect_false(isTRUE(all.equal(r$X[1, 2], head_of_stream)))
@@ -49,7 +68,8 @@ test_that("a fixture's replicate does not re-consume the truth draw's stream", {
   m <- sbc_psbc_gaussian(d_obs)
   b1 <- c(beta1 = 0, beta2 = 0, sigma = 0.5)
   b2 <- c(beta1 = 3, beta2 = -2, sigma = 0.5)
-  r1 <- m$simulate(b1, 23L); r2 <- m$simulate(b2, 23L)
+  s <- .sbc_rep_seed(23L)
+  r1 <- m$simulate(b1, s); r2 <- m$simulate(b2, s)
   expect_equal(r1$X, r2$X)
   expect_equal(r1$y - as.numeric(r1$X %*% c(0, 0)),
                r2$y - as.numeric(r2$X %*% c(3, -2)))
