@@ -62,6 +62,7 @@
 #include "laplace_temporal_priors.h"
 #include "latent_block.h"
 #include "nl_cell_cache.h"
+#include "omp_threads.h"            // tulpa_parallel_for (serial route at one thread)
 #include "nested_laplace_checkpoint.h"
 #include "nested_laplace_joint_core.h"
 #include "nested_laplace_joint_multi.h"
@@ -2264,20 +2265,14 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
                     }
                     return e;
                 };
-                // Serial route is a plain loop, not a parallel region under
-                // `if(...)`: the clause serialises the body but still enters
-                // libgomp, and this assembly runs on every objective evaluation
-                // the line search and the inner debiases make. Each row is
-                // independent, so the two routes compute the same numbers.
-                if (n_threads_inner_eff > 1) {
-                #ifdef _OPENMP
-                #pragma omp parallel for schedule(static) \
-                    num_threads(n_threads_inner_eff)
-                #endif
-                    for (int i = 0; i < N_k; i++) etas[k_arm][i] = row_eta(i);
-                } else {
-                    for (int i = 0; i < N_k; i++) etas[k_arm][i] = row_eta(i);
-                }
+                // This assembly runs on every objective evaluation the line
+                // search and the inner debiases make, so at one thread
+                // tulpa_parallel_for takes a plain loop rather than entering
+                // libgomp for a team of one (gcol33/tulpa#365, #373). Each row
+                // is independent, so the two routes compute the same numbers.
+                tulpa_parallel_for(n_threads_inner_eff, N_k, [&](int i) {
+                    etas[k_arm][i] = row_eta(i);
+                });
             }
         };
 

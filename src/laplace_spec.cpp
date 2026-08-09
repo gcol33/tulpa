@@ -42,6 +42,7 @@
 #include "laplace_spatial_priors.h"
 #include "latent_block.h"
 #include "linalg_fast.h"
+#include "omp_threads.h"          // tulpa_parallel_for (serial route at one thread)
 #include "sparse_cholesky.h"
 #include <Rcpp.h>
 #include <algorithm>
@@ -461,10 +462,12 @@ inline void compute_eta_spec(
         if (blk.d_fac) d_fac_cache[b] = blk.d_fac(k_grid);
     }
 
-    #ifdef _OPENMP
-    #pragma omp parallel for schedule(static) num_threads(n_threads > 0 ? n_threads : 1)
-    #endif
-    for (int i = 0; i < N; i++) {
+    // Reached once per objective evaluation (eval_penalized_log_lik_ll ->
+    // compute_eta), so the region entry itself is on the hot path: at one
+    // thread tulpa_parallel_for takes a plain loop rather than entering
+    // libgomp. Rows write disjoint eta_flat slots, so the two routes are
+    // bit-identical.
+    tulpa_parallel_for(n_threads, N, [&](int i) {
         bool re_used = false;
         double re_eff = obs_re_contrib(data, params, L, i, n_terms_unified, re_used);
 
@@ -526,7 +529,7 @@ inline void compute_eta_spec(
             if (k == 0) e += blk_eff;
             eta_flat[(std::ptrdiff_t)i * np + k] = e;
         }
-    }
+    });
 }
 
 // Per-observation gradient + neg-Hessian assembled into the latent gradient

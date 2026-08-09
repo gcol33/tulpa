@@ -1,5 +1,48 @@
 # tulpa NEWS
 
+## 0.0.169
+
+* A one-thread OpenMP region is no longer entered at all on any loop reached
+  per objective evaluation, per Newton iteration or per Gibbs sweep
+  (gcol33/tulpa#373). gcol33/tulpa#365 measured that a region guarded by
+  `if(n_threads > 1)` still enters libgomp when the clause is false, and that
+  the entry cost 7.6 microseconds per objective evaluation on the joint path;
+  the two loops fixed there each grew their own runtime branch. That policy is
+  now one pair of helpers in `omp_threads.h`, `tulpa_parallel_for()` and
+  `tulpa_parallel_sum()`, which take a plain loop at a team of one, and the two
+  #365 loops were moved onto them so there is a single place the rule lives.
+
+  Sites moved onto the helpers: the single-arm spec eta assembly
+  (`compute_eta_spec`, which had no guard at all and so entered a one-thread
+  region unconditionally on every non-joint nested-Laplace objective
+  evaluation), both `compute_total_log_lik` overloads for built-in families,
+  `tulpa_linalg::matvec` (reached per leapfrog step through
+  `precompute_generic_fixed_eta`), the five per-observation regions in
+  `pg_gibbs_core_step` and the ten per-sweep regions across the four
+  Polya-Gamma samplers, and the NNGP non-centered reverse sweep
+  (`nngp_nc_backward`), whose per-thread workspace slot and accumulators are
+  now parameters of a single-sourced row body rather than captures.
+
+  A serialised region body runs in index order, which is what the plain loop
+  does, so both routes agree bit for bit, `reduction(+:)` included. Verified
+  over 292 captured fields and 68968 doubles -- non-joint nested Laplace at
+  three families and three field types, a corrected-integrated-Laplace fit,
+  `cpp_laplace_fit`, six Polya-Gamma samplers, generic NUTS, NNGP exact NUTS
+  and single-arm joint fits -- at one thread and at four, and again under
+  `OMP_NUM_THREADS=1`. Every field is `identical()` before and after except a
+  handful on the joint fitter at `n_threads = 4`, which a control run showed is
+  not reproducible run to run under a FIXED build in either direction: a
+  `num_threads(4)` reduction combines its per-thread partial sums in an
+  unspecified order.
+
+  Cost off a corrected-integrated-Laplace M ladder on the non-joint fitter
+  (7-cell sigma grid, one thread, `variant = "qmc"`, two runs per arm): the
+  per-objective-evaluation fixed cost falls 3.39 -> 1.31 us binomial, 3.66 ->
+  1.34 us poisson and 3.25 -> 1.39 us gaussian, and the per-observation cost
+  falls about 8% with it, since a plain loop keeps the eta assembly in the
+  caller's frame instead of an outlined region body. Per auxiliary draw at
+  N = 48: 9.96 -> 7.27, 8.97 -> 6.58 and 9.91 -> 7.77 us.
+
 ## 0.0.168
 
 * The eta-independent part of a built-in family's log-density is now evaluated

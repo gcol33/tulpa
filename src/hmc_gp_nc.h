@@ -363,105 +363,120 @@ inline void nngp_nc_backward(
     };
     std::vector<BackwardWS> bws_vec(n_threads, BackwardWS(nn));
 
-    #ifdef _OPENMP
-    #pragma omp parallel num_threads(n_threads)
-    #endif
-    {
-        int tid = 0;
-        #ifdef _OPENMP
-        tid = omp_get_thread_num();
-        #endif
+    // One row's phi contribution, written once and driven from both routes.
+    // The workspace slot and the two accumulators are parameters rather than
+    // captures, so the parallel route hands each thread its own slot and the
+    // serial route reuses slot 0 -- bws_vec is never copied onto a worker
+    // stack (the gcol33/tulpa#253 rule).
+    auto phi_row = [&](int i, BackwardWS& bw, double& acc_lik, double& acc_jac) {
+        auto& L_eigen = bw.L_eigen;
+        auto& C_eigen = bw.C_eigen;
+        auto& c_eigen = bw.c_eigen;
+        auto& dc_eigen = bw.dc_eigen;
+        auto& rhs_eigen = bw.rhs_eigen;
+        auto& dalpha_eigen = bw.dalpha_eigen;
+        auto& alpha_eigen = bw.alpha_eigen;
+        auto& dC_alpha = bw.dC_alpha;
+        int obs_loc = view.nn_order[i];
+        int n_nb = ws.B_n_nb[i];
+        if (n_nb == 0 || obs_loc < 0 || obs_loc >= N) return;
 
-        auto& L_eigen = bws_vec[tid].L_eigen;
-        auto& C_eigen = bws_vec[tid].C_eigen;
-        auto& c_eigen = bws_vec[tid].c_eigen;
-        auto& dc_eigen = bws_vec[tid].dc_eigen;
-        auto& rhs_eigen = bws_vec[tid].rhs_eigen;
-        auto& dalpha_eigen = bws_vec[tid].dalpha_eigen;
-        auto& alpha_eigen = bws_vec[tid].alpha_eigen;
-        auto& dC_alpha = bws_vec[tid].dC_alpha;
+        // Rebuild c_vec, dc_vec, and C_mat for phi derivatives
+        for (int j = 0; j < n_nb; j++) {
+            double d = view.nn_dist[i * nn + j];
+            c_eigen(j) = compute_cov(d, sigma2, phi, view.cov_type);
+            dc_eigen(j) = dcov_dphi(d, phi, c_eigen(j), sigma2, view.cov_type);
+            alpha_eigen(j) = ws.B_flat[i * nn + j];
+        }
 
-        #ifdef _OPENMP
-        #pragma omp for schedule(dynamic)
-        #endif
-        for (int i = 1; i < N; i++) {
-            int obs_loc = view.nn_order[i];
-            int n_nb = ws.B_n_nb[i];
-            if (n_nb == 0 || obs_loc < 0 || obs_loc >= N) continue;
-
-            // Rebuild c_vec, dc_vec, and C_mat for phi derivatives
-            for (int j = 0; j < n_nb; j++) {
-                double d = view.nn_dist[i * nn + j];
-                c_eigen(j) = compute_cov(d, sigma2, phi, view.cov_type);
-                dc_eigen(j) = dcov_dphi(d, phi, c_eigen(j), sigma2, view.cov_type);
-                alpha_eigen(j) = ws.B_flat[i * nn + j];
+        // Rebuild C_mat from cached distances (needed for dcov_dphi)
+        for (int j1 = 0; j1 < n_nb; j1++) {
+            C_eigen(j1, j1) = sigma2;
+            for (int j2 = j1 + 1; j2 < n_nb; j2++) {
+                double d12 = view.pair_dist(i, j1, j2, ws.nb_idx_flat[i * nn + j1],
+                                             ws.nb_idx_flat[i * nn + j2]);
+                double cov_val = compute_cov(d12, sigma2, phi, view.cov_type);
+                C_eigen(j1, j2) = cov_val;
+                C_eigen(j2, j1) = cov_val;
             }
+        }
 
-            // Rebuild C_mat from cached distances (needed for dcov_dphi)
-            for (int j1 = 0; j1 < n_nb; j1++) {
-                C_eigen(j1, j1) = sigma2;
-                for (int j2 = j1 + 1; j2 < n_nb; j2++) {
+        // Restore cached L factor into Eigen matrix
+        L_eigen.topLeftCorner(n_nb, n_nb).setZero();
+        for (int j1 = 0; j1 < n_nb; j1++) {
+            for (int j2 = 0; j2 <= j1; j2++) {
+                L_eigen(j1, j2) = ws.L_flat[i * nn * nn + j1 * nn + j2];
+            }
+        }
+
+        // dC/dphi * alpha (using properly rebuilt C_mat for dcov_dphi)
+        std::fill(dC_alpha.begin(), dC_alpha.begin() + n_nb, 0.0);
+        for (int j1 = 0; j1 < n_nb; j1++) {
+            for (int j2 = 0; j2 < n_nb; j2++) {
+                if (j1 != j2) {
                     double d12 = view.pair_dist(i, j1, j2, ws.nb_idx_flat[i * nn + j1],
                                                  ws.nb_idx_flat[i * nn + j2]);
-                    double cov_val = compute_cov(d12, sigma2, phi, view.cov_type);
-                    C_eigen(j1, j2) = cov_val;
-                    C_eigen(j2, j1) = cov_val;
+                    double dC_jk = dcov_dphi(d12, phi, C_eigen(j1, j2), sigma2,
+                                              view.cov_type);
+                    dC_alpha[j1] += dC_jk * alpha_eigen(j2);
                 }
             }
+        }
 
-            // Restore cached L factor into Eigen matrix
-            L_eigen.topLeftCorner(n_nb, n_nb).setZero();
-            for (int j1 = 0; j1 < n_nb; j1++) {
-                for (int j2 = 0; j2 <= j1; j2++) {
-                    L_eigen(j1, j2) = ws.L_flat[i * nn * nn + j1 * nn + j2];
-                }
-            }
+        // dalpha/dphi = C^{-1} (dc/dphi - dC/dphi * alpha)
+        // Use Eigen triangular solve with cached L
+        for (int j = 0; j < n_nb; j++) rhs_eigen(j) = dc_eigen(j) - dC_alpha[j];
+        auto L_sub = L_eigen.topLeftCorner(n_nb, n_nb);
+        Eigen::VectorXd y_temp = L_sub.triangularView<Eigen::Lower>().solve(rhs_eigen.head(n_nb));
+        dalpha_eigen.head(n_nb) = L_sub.transpose().triangularView<Eigen::Upper>().solve(y_temp);
 
-            // dC/dphi * alpha (using properly rebuilt C_mat for dcov_dphi)
-            std::fill(dC_alpha.begin(), dC_alpha.begin() + n_nb, 0.0);
-            for (int j1 = 0; j1 < n_nb; j1++) {
-                for (int j2 = 0; j2 < n_nb; j2++) {
-                    if (j1 != j2) {
-                        double d12 = view.pair_dist(i, j1, j2, ws.nb_idx_flat[i * nn + j1],
-                                                     ws.nb_idx_flat[i * nn + j2]);
-                        double dC_jk = dcov_dphi(d12, phi, C_eigen(j1, j2), sigma2,
-                                                  view.cov_type);
-                        dC_alpha[j1] += dC_jk * alpha_eigen(j2);
-                    }
-                }
-            }
+        // dd/dphi = -2 * dc' * alpha + alpha' * dC * alpha
+        double alpha_dc = 0.0, alpha_dC_alpha = 0.0;
+        for (int j = 0; j < n_nb; j++) {
+            alpha_dc += alpha_eigen(j) * dc_eigen(j);
+            alpha_dC_alpha += alpha_eigen(j) * dC_alpha[j];
+        }
+        double dd_dphi = -2.0 * alpha_dc + alpha_dC_alpha;
 
-            // dalpha/dphi = C^{-1} (dc/dphi - dC/dphi * alpha)
-            // Use Eigen triangular solve with cached L
-            for (int j = 0; j < n_nb; j++) rhs_eigen(j) = dc_eigen(j) - dC_alpha[j];
-            auto L_sub = L_eigen.topLeftCorner(n_nb, n_nb);
-            Eigen::VectorXd y_temp = L_sub.triangularView<Eigen::Lower>().solve(rhs_eigen.head(n_nb));
-            dalpha_eigen.head(n_nb) = L_sub.transpose().triangularView<Eigen::Upper>().solve(y_temp);
+        // Likelihood: dw[loc]/dphi = sum_j dalpha[j]*w[nb_j] + dd_dphi/(2*sqrt(d_i))*z[loc]
+        double dw_dphi = 0.0;
+        for (int j = 0; j < n_nb; j++) {
+            dw_dphi += dalpha_eigen(j) * ws.w[ws.nb_idx_flat[i * nn + j]];
+        }
+        double sqrt_di = ws.sqrt_d[i];
+        if (sqrt_di > 1e-15) {
+            dw_dphi += dd_dphi / (2.0 * sqrt_di) * z[obs_loc];
+        }
+        acc_lik += adj[i] * dw_dphi * phi;
 
-            // dd/dphi = -2 * dc' * alpha + alpha' * dC * alpha
-            double alpha_dc = 0.0, alpha_dC_alpha = 0.0;
-            for (int j = 0; j < n_nb; j++) {
-                alpha_dc += alpha_eigen(j) * dc_eigen(j);
-                alpha_dC_alpha += alpha_eigen(j) * dC_alpha[j];
-            }
-            double dd_dphi = -2.0 * alpha_dc + alpha_dC_alpha;
+        // Jacobian: d/d(phi) [0.5*log(d_i)] = 0.5 * dd_dphi / d_i
+        double d_i = sqrt_di * sqrt_di;
+        if (d_i > 1e-15) {
+            acc_jac += 0.5 * dd_dphi / d_i * phi;
+        }
+    };
 
-            // Likelihood: dw[loc]/dphi = sum_j dalpha[j]*w[nb_j] + dd_dphi/(2*sqrt(d_i))*z[loc]
-            double dw_dphi = 0.0;
-            for (int j = 0; j < n_nb; j++) {
-                dw_dphi += dalpha_eigen(j) * ws.w[ws.nb_idx_flat[i * nn + j]];
+    // At a team of one the region is skipped entirely: entering libgomp costs
+    // measurable time per reverse sweep, and this runs on every HMC gradient
+    // (gcol33/tulpa#365, #373). One thread means every row already accumulated
+    // into slot 0 in index order, which is exactly what the plain loop does,
+    // so the two routes are bit-identical. Above one thread the dynamic
+    // schedule is unchanged.
+    #ifdef _OPENMP
+    if (n_threads > 1) {
+        #pragma omp parallel num_threads(n_threads)
+        {
+            int tid = omp_get_thread_num();
+            #pragma omp for schedule(dynamic)
+            for (int i = 1; i < N; i++) {
+                phi_row(i, bws_vec[tid], tl_phi_lik[tid], tl_phi_jac[tid]);
             }
-            double sqrt_di = ws.sqrt_d[i];
-            if (sqrt_di > 1e-15) {
-                dw_dphi += dd_dphi / (2.0 * sqrt_di) * z[obs_loc];
-            }
-            tl_phi_lik[tid] += adj[i] * dw_dphi * phi;
-
-            // Jacobian: d/d(phi) [0.5*log(d_i)] = 0.5 * dd_dphi / d_i
-            double d_i = sqrt_di * sqrt_di;
-            if (d_i > 1e-15) {
-                tl_phi_jac[tid] += 0.5 * dd_dphi / d_i * phi;
-            }
+        }
+    } else
+    #endif
+    {
+        for (int i = 1; i < N; i++) {
+            phi_row(i, bws_vec[0], tl_phi_lik[0], tl_phi_jac[0]);
         }
     }
 

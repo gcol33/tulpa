@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "linalg_fast.h"  // shared small-dense Cholesky / NNGP solve core
+#include "omp_threads.h"   // tulpa_omp_team_size_req, tulpa_parallel_for
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -228,19 +229,20 @@ inline void pg_gibbs_core_step(
     double prior_sigma_re_scale,
     int n_threads = 1
 ) {
+    // Every per-observation region below goes through tulpa_parallel_for: at a
+    // team of one it runs a plain loop rather than entering libgomp, and these
+    // sit inside the Gibbs sweep, so the entry would be paid five times per
+    // iteration. Each row writes its own slots, so the routes are bit-identical.
     const int team = tulpa_omp_team_size_req(n_threads, N);
     // 1. Compute linear predictor
-    #ifdef _OPENMP
-    #pragma omp parallel for schedule(static) num_threads(team)
-    #endif
-    for (int i = 0; i < N; i++) {
+    tulpa_parallel_for(team, N, [&](int i) {
         X_beta[i] = 0.0;
         for (int j = 0; j < p; j++) {
             X_beta[i] += X(i, j) * beta[j];
         }
         re_contrib[i] = (n_re_groups > 0) ? re[re_group[i] - 1] : 0.0;
         eta[i] = X_beta[i] + re_contrib[i] + spatial_contrib[i];
-    }
+    });
 
     // 2. Sample omega ~ PG(n, eta) — NOT parallelized (R's RNG not thread-safe)
     for (int i = 0; i < N; i++) {
@@ -248,42 +250,30 @@ inline void pg_gibbs_core_step(
     }
 
     // 3. Update beta
-    #ifdef _OPENMP
-    #pragma omp parallel for schedule(static) num_threads(team)
-    #endif
-    for (int i = 0; i < N; i++) {
+    tulpa_parallel_for(team, N, [&](int i) {
         offset[i] = re_contrib[i] + spatial_contrib[i];
-    }
+    });
     beta = update_beta(kappa, omega, X, offset, prior_beta_sd);
 
     // 4. Recompute X_beta
-    #ifdef _OPENMP
-    #pragma omp parallel for schedule(static) num_threads(team)
-    #endif
-    for (int i = 0; i < N; i++) {
+    tulpa_parallel_for(team, N, [&](int i) {
         X_beta[i] = 0.0;
         for (int j = 0; j < p; j++) {
             X_beta[i] += X(i, j) * beta[j];
         }
-    }
+    });
 
     // 5. Update random effects
     if (n_re_groups > 0) {
-        #ifdef _OPENMP
-        #pragma omp parallel for schedule(static) num_threads(team)
-        #endif
-        for (int i = 0; i < N; i++) {
+        tulpa_parallel_for(team, N, [&](int i) {
             offset[i] = X_beta[i] + spatial_contrib[i];
-        }
+        });
         re = update_re(kappa, omega, offset, re_group, n_re_groups, sigma_re);
         sigma_re = update_sigma_halfcauchy(re, prior_sigma_re_scale);
 
-        #ifdef _OPENMP
-        #pragma omp parallel for schedule(static) num_threads(team)
-        #endif
-        for (int i = 0; i < N; i++) {
+        tulpa_parallel_for(team, N, [&](int i) {
             re_contrib[i] = re[re_group[i] - 1];
-        }
+        });
     }
 }
 

@@ -115,25 +115,19 @@ Rcpp::List cpp_pg_binomial_gibbs_bym2(
   int save_idx = 0;
   for (int iter = 0; iter < n_iter; iter++) {
     // Steps 1-5: shared core (compute eta, sample omega, update beta/RE)
-    #ifdef _OPENMP
-    #pragma omp parallel for schedule(static) num_threads(C.n_threads_team)
-    #endif
-    for (int i = 0; i < N; i++) {
+    tulpa_parallel_for(C.n_threads_team, N, [&](int i) {
       spatial_contrib[i] = u[spatial_group[i] - 1];
-    }
+    });
     tulpa::pg_gibbs_core_step(
         N, p, C.beta, C.re, C.sigma_re, C.omega, C.eta, C.X_beta, C.re_contrib,
         spatial_contrib, C.offset, C.kappa, n, X, re_group, n_re_groups,
         prior_beta_sd, prior_sigma_re_scale, C.n_threads_team);
 
     // 6. Update BYM2 spatial effects | omega, beta, re, sigma_spatial, rho
-    // Offset for spatial update = X*beta + re (parallelized)
-    #ifdef _OPENMP
-    #pragma omp parallel for schedule(static) num_threads(C.n_threads_team)
-    #endif
-    for (int i = 0; i < N; i++) {
+    // Offset for spatial update = X*beta + re
+    tulpa_parallel_for(C.n_threads_team, N, [&](int i) {
       C.offset[i] = C.X_beta[i] + C.re_contrib[i];
-    }
+    });
     double bym2_removed = 0.0;
     u = tulpa::update_spatial_bym2(C.kappa, C.omega, C.offset, spatial_group, adj_list, n_neighbors,
                                    phi_scaled, theta, sigma_spatial, rho, scale_factor,
@@ -178,13 +172,10 @@ Rcpp::List cpp_pg_binomial_gibbs_bym2(
         u[s] = sigma_spatial * (sr * phi_scaled[s] * scale_factor + s1 * theta[s]);
     }
 
-    // Update spatial contributions (parallelized)
-    #ifdef _OPENMP
-    #pragma omp parallel for schedule(static) num_threads(C.n_threads_team)
-    #endif
-    for (int i = 0; i < N; i++) {
+    // Update spatial contributions
+    tulpa_parallel_for(C.n_threads_team, N, [&](int i) {
       spatial_contrib[i] = u[spatial_group[i] - 1];
-    }
+    });
 
     // Save draws
     if (iter >= n_warmup && (iter - n_warmup) % thin == 0) {

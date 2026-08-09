@@ -297,14 +297,14 @@ inline void vec_copy(const double* src, double* dst, int n) {
 // X is N x p stored row-major (X_flat[i*p + j] = X[i,j])
 inline void matvec(const double* X_flat, const double* beta,
                    double* y, int N, int p) {
-
-  #ifdef _OPENMP
-  #pragma omp parallel for schedule(static) \
-      num_threads(tulpa_omp_team_size(N))
-  #endif
-  for (int i = 0; i < N; i++) {
+  // Reached per leapfrog step through precompute_generic_fixed_eta, so the
+  // region entry is on the sampler's hot path: at a team of one
+  // tulpa_parallel_for takes a plain loop instead of entering libgomp. Rows
+  // write disjoint y slots, so the routes are bit-identical.
+  const int team = tulpa_omp_team_size(N);
+  tulpa_parallel_for(team, N, [&](int i) {
     y[i] = dot_product(&X_flat[i * p], beta, p);
-  }
+  });
 }
 
 // Matrix-vector multiply with accumulation: y += X * beta

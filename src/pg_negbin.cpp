@@ -362,10 +362,7 @@ List pg_negbin_gibbs(
 
     // 1. Compute linear predictor
     // Clamp eta to [-15, 15] to prevent numerical instability
-    #ifdef _OPENMP
-    #pragma omp parallel for schedule(static) num_threads(team)
-    #endif
-    for (int i = 0; i < N; i++) {
+    tulpa_parallel_for(team, N, [&](int i) {
       X_beta[i] = 0.0;
       for (int j = 0; j < p; j++) {
         X_beta[i] += X(i, j) * beta[j];
@@ -377,7 +374,7 @@ List pg_negbin_gibbs(
       }
       double eta_raw = X_beta[i] + re_contrib[i];
       eta[i] = std::max(-15.0, std::min(15.0, eta_raw));
-    }
+    });
 
     // 2. Compute success probabilities: p_i = logistic(eta_i)
     for (int i = 0; i < N; i++) {
@@ -414,15 +411,12 @@ List pg_negbin_gibbs(
     }
 
     // 6. Recompute X_beta
-    #ifdef _OPENMP
-    #pragma omp parallel for schedule(static) num_threads(team)
-    #endif
-    for (int i = 0; i < N; i++) {
+    tulpa_parallel_for(team, N, [&](int i) {
       X_beta[i] = 0.0;
       for (int j = 0; j < p; j++) {
         X_beta[i] += X(i, j) * beta[j];
       }
-    }
+    });
 
     // 7. Update random effects
     if (n_groups > 0) {
@@ -446,15 +440,12 @@ List pg_negbin_gibbs(
       center_random_effects(re, beta);
 
       // Recompute X_beta since beta[0] may have changed
-      #ifdef _OPENMP
-      #pragma omp parallel for schedule(static) num_threads(team)
-      #endif
-      for (int i = 0; i < N; i++) {
+      tulpa_parallel_for(team, N, [&](int i) {
         X_beta[i] = 0.0;
         for (int j = 0; j < p; j++) {
           X_beta[i] += X(i, j) * beta[j];
         }
-      }
+      });
 
       // Update sigma_re with proper half-Cauchy prior using auxiliary variable
       SigmaReState sigma_state = update_sigma_re_negbin_hc(re, prior_sigma_scale, sigma_aux);

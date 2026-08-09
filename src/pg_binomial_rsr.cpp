@@ -99,13 +99,10 @@ Rcpp::List cpp_pg_binomial_gibbs_rsr(
     }
 
     // 2. Set spatial contribution from projected effects
-    #ifdef _OPENMP
-    #pragma omp parallel for schedule(static) num_threads(C.n_threads_team)
-    #endif
-    for (int i = 0; i < N; i++) {
+    tulpa_parallel_for(C.n_threads_team, N, [&](int i) {
       int s = spatial_group[i] - 1;
       spatial_contrib[i] = (s >= 0 && s < n_spatial_units) ? phi_proj[s] : 0.0;
-    }
+    });
 
     // Steps 3-7: shared core (compute eta, sample omega, update beta/RE)
     tulpa::pg_gibbs_core_step(
@@ -126,12 +123,9 @@ Rcpp::List cpp_pg_binomial_gibbs_rsr(
     // This is approximate but maintains ICAR structure
 
     // Compute offset with projection for spatial update
-    #ifdef _OPENMP
-    #pragma omp parallel for schedule(static) num_threads(C.n_threads_team)
-    #endif
-    for (int i = 0; i < N; i++) {
+    tulpa_parallel_for(C.n_threads_team, N, [&](int i) {
       C.offset[i] = C.X_beta[i] + C.re_contrib[i];
-    }
+    });
 
     // Update spatial effects using ICAR
     phi = tulpa::update_spatial_icar(C.kappa, C.omega, C.offset, spatial_group, adj_list, n_neighbors, tau);

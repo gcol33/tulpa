@@ -6,6 +6,7 @@
 
 #include "laplace_likelihoods.h"
 #include "linalg_fast.h"
+#include "omp_threads.h"          // tulpa_parallel_sum (serial route at one thread)
 #include "tulpa/portable_math.h"   // thread-safe digamma / trigamma
 #include <Rcpp.h>
 #include <algorithm>
@@ -1202,14 +1203,9 @@ inline double compute_total_log_lik(
                    "route it through the LikelihoodSpec path, which carries "
                    "phi2.");
     }
-    double log_lik = 0.0;
-    #ifdef _OPENMP
-    #pragma omp parallel for reduction(+:log_lik) schedule(static) num_threads(n_threads > 0 ? n_threads : 1)
-    #endif
-    for (int i = 0; i < N; i++) {
-        log_lik += log_lik_for_family(y[i], n_trials[i], eta[i], family, phi);
-    }
-    return log_lik;
+    return tulpa_parallel_sum(n_threads, N, [&](int i) {
+        return log_lik_for_family(y[i], n_trials[i], eta[i], family, phi);
+    });
 }
 
 // The same sum with the family resolved and its eta-independent per-observation
@@ -1227,15 +1223,14 @@ inline double compute_total_log_lik(
                    "phi2.");
     }
     const double phi2 = std::numeric_limits<double>::quiet_NaN();
-    double log_lik = 0.0;
-    #ifdef _OPENMP
-    #pragma omp parallel for reduction(+:log_lik) schedule(static) num_threads(n_threads > 0 ? n_threads : 1)
-    #endif
-    for (int i = 0; i < N; i++) {
-        log_lik += log_lik_for_family(y[i], n_trials[i], eta[i], fr, phi, phi2,
-                                      ll_const[i]);
-    }
-    return log_lik;
+    // This is the sum the Newton line search reaches, so it is evaluated once
+    // per objective evaluation: at one thread tulpa_parallel_sum reduces
+    // serially rather than entering libgomp for a team of one. Index order,
+    // and therefore the sum, is the same on both routes.
+    return tulpa_parallel_sum(n_threads, N, [&](int i) {
+        return log_lik_for_family(y[i], n_trials[i], eta[i], fr, phi, phi2,
+                                  ll_const[i]);
+    });
 }
 
 // Data log-likelihood as a functor of the current linear predictor eta.

@@ -32,6 +32,7 @@
 #include "inner_laplace_is.h"        // compute_inner_is_curve
 #include "inner_laplace_skew.h"      // compute_inner_skew_gamma3_joint
 #include "joint_inner_vcov.h"        // JointFixedBlockRequest, extract_joint_fixed_block
+#include "omp_threads.h"             // tulpa_parallel_sum (serial route at one thread)
 #include "sparse_cholesky.h"
 #include <Rcpp.h>
 #include <algorithm>
@@ -236,30 +237,16 @@ inline double compute_total_log_lik_joint(
         const ArmSpecView& v = views[k];
         const Rcpp::NumericVector& eta = etas[k];
         const int N = static_cast<int>(eta.size());
-        double sub = 0.0;
-        // The single-thread route is a plain loop rather than a parallel region
-        // under `if(n_threads > 1)`. The clause serialises the body but still
-        // enters libgomp, and the entry is measurable here: this loop is the
-        // data log-lik of every objective evaluation the Newton line search and
-        // the inner debiases make. Serial reduction runs in index order, which
-        // is what the clause's own serialised body does, so the sum is
-        // bit-identical either way.
-        auto obs_ll = [&](int i) -> double {
+        // This loop is the data log-lik of every objective evaluation the
+        // Newton line search and the inner debiases make, so at one thread
+        // tulpa_parallel_sum reduces serially rather than entering libgomp
+        // for a team of one (gcol33/tulpa#365, #373).
+        total += tulpa_parallel_sum(n_threads, N, [&](int i) {
             double eta_i = eta[i];
             return v.spec->ll_double(i, &eta_i, zd, zd,
                                      *v.params, *v.data, *v.layout,
                                      v.response_data);
-        };
-        if (n_threads > 1) {
-        #ifdef _OPENMP
-        #pragma omp parallel for reduction(+:sub) schedule(static) \
-            num_threads(n_threads)
-        #endif
-            for (int i = 0; i < N; i++) sub += obs_ll(i);
-        } else {
-            for (int i = 0; i < N; i++) sub += obs_ll(i);
-        }
-        total += sub;
+        });
     }
     return total;
 }
