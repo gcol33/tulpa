@@ -1,5 +1,27 @@
 # tulpa NEWS
 
+## 0.0.167
+
+* The single-arm nested-Laplace loop reports its log-marginal at the Newton
+  mode (gcol33/tulpa#371). `laplace_newton_solve_ll` applied
+  `center_effects_fn(x)` after the loop converged and then re-evaluated eta,
+  the Hessian, the data log-likelihood and the log-prior at the shifted point,
+  so what it reported was a Laplace expansion at a non-stationary point. The
+  fold each caller applies preserves eta, which is why the data term never
+  moved; the log-prior is what does. A proper field prior is not
+  shift-invariant, and even an intrinsic one moves the beta ridge through the
+  coefficient the fold lands in, so the size of the error tracks how far the
+  field is from shift-invariant: `score_max` at the reported point measured
+  1.6e-05 on an RW1 fixture and 5.7e-02 on an AR1 one, both ~1e-14 now. That
+  propagated into every cell weight, since the outer grid weights cells by
+  `softmax(log_marginal)`. The ordering is now the joint loops': log-marginal
+  and every inner-layer probe at the uncentered iterate, `center_effects_fn`
+  last and over the reported mode alone, with the correction presenting its
+  draws through the fold. Measured on the RW1 fixture, the reported
+  log-marginal moves 2.6e-09 and the weights 7.4e-11.
+* `tests/testthat/test-cila.R` holds the non-joint gaussian arbiter to the
+  joint file's 1e-9, where it read 3.4e-07 before, and pins `score_max`.
+
 ## 0.0.166
 
 * A reported hyperparameter interval stays inside the quantity's own support

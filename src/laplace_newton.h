@@ -124,11 +124,9 @@ LaplaceResult laplace_newton_solve_ll(
     // empty index set never reaches the sampler, so the solve is unchanged and
     // consumes no random number.
     const SubspaceDebiasOptions* debias = nullptr,
-    // Corrected integrated Laplace (inner_cila.h, gcol33/tulpa#351). This loop
-    // centres BEFORE the correction runs and re-evaluates the factor at the
-    // centred point, so the mode it proposes from is `result.mode` and a drawn
-    // latent is already in the coordinates the reported mode is in -- the
-    // presentation fold the joint loops apply is the identity here.
+    // Corrected integrated Laplace (inner_cila.h, gcol33/tulpa#351). Runs on the
+    // pre-centering iterate and the same live factor, and presents its draws
+    // under the same centering fold the reported mode carries.
     const CilaOptions* cila = nullptr,
     // Distinguishes this cell's auxiliary stream from its neighbours' on an
     // outer grid; irrelevant for the deterministic net, load-bearing for the
@@ -210,9 +208,16 @@ LaplaceResult laplace_newton_solve_ll(
         }
     }
 
-    center_effects_fn(x);
-    for (int j = 0; j < n_x; j++) result.mode[j] = x[j];
-
+    // log_marginal belongs to the Newton mode, so everything that enters it is
+    // evaluated at the uncentered iterate and `center_effects_fn` runs last,
+    // over the reported mode alone (gcol33/tulpa#371). The fold each caller
+    // applies preserves eta, so the data log-lik is the same either way, but the
+    // log-prior is not: a proper field prior (AR1, proper CAR) is not
+    // shift-invariant, and even an intrinsic one moves the beta ridge through
+    // the coefficient the fold lands in. Evaluating there reports a Laplace
+    // expansion at a non-stationary point, and `score_max` is non-zero by
+    // exactly the amount the shift moved off the mode. This is the ordering the
+    // joint loops already take.
     compute_eta(x, scratch.eta);
     scratch.zero_for_iter();
     scatter_grad_hess(x, scratch.eta, scratch.grad, scratch.H);
@@ -261,6 +266,15 @@ LaplaceResult laplace_newton_solve_ll(
         result.Q_csc_n = n_x;
     }
 
+    // The Newton-converged iterate, before the presentation centering at the end
+    // of the loop. Every probe of the inner layer -- gamma_3, the importance
+    // curve, the subspace sampler and the correction -- reads this point,
+    // because it is the one the live factor and the reported log_marginal
+    // belong to.
+    std::vector<double> pre_center_x(n_x);
+    for (int j = 0; j < n_x; j++) pre_center_x[j] = x[j];
+    const bool used_sparse_factor = use_sparse && sparse_solver.factored();
+
     if (compute_skew && result.converged) {
         std::vector<int> all_idx;
         const std::vector<int>* probe = skew_probe_idx;
@@ -269,10 +283,9 @@ LaplaceResult laplace_newton_solve_ll(
             for (int j = 0; j < n_x; j++) all_idx[j] = j;
             probe = &all_idx;
         }
-        bool used_sparse_factor = use_sparse && sparse_solver.factored();
         Curvature3Oracle no_oracle;
         InnerSkewOutcome sk = compute_inner_skew_gamma3(
-            n_x, N, result.mode, scratch.chol, sparse_solver, used_sparse_factor,
+            n_x, N, pre_center_x, scratch.chol, sparse_solver, used_sparse_factor,
             compute_eta, x, scratch.eta, scratch.eta_tmp,
             curvature3 ? *curvature3 : no_oracle, *probe
         );
@@ -289,7 +302,7 @@ LaplaceResult laplace_newton_solve_ll(
         // so it does not depend on the third-derivative oracle and stands where
         // gamma_3 declines (gcol33/tulpa#303).
         InnerISOutcome is_out = compute_inner_is_curve(
-            n_x, result.mode, scratch.chol, sparse_solver, used_sparse_factor,
+            n_x, pre_center_x, scratch.chol, sparse_solver, used_sparse_factor,
             eval_objective, x, *probe
         );
         result.inner_is_z          = std::move(is_out.z);
@@ -299,15 +312,21 @@ LaplaceResult laplace_newton_solve_ll(
     }
 
     if (result.converged) {
-        run_subspace_debias(result, n_x, result.mode, scratch.chol,
-                            sparse_solver,
-                            use_sparse && sparse_solver.factored(),
+        run_subspace_debias(result, n_x, pre_center_x, scratch.chol,
+                            sparse_solver, used_sparse_factor,
                             eval_objective, x, debias);
     }
 
-    run_inner_cila(result, n_x, result.mode, scratch.chol, sparse_solver,
-                   use_sparse && sparse_solver.factored(), eval_objective,
-                   [](Rcpp::NumericVector&) {}, x, cila, cila_cell_key);
+    // The correction reads the same pre-centering iterate, and presents each
+    // draw through the loop's own centering fold so a drawn coefficient is in
+    // the coordinates the reported mode is in.
+    run_inner_cila(result, n_x, pre_center_x, scratch.chol, sparse_solver,
+                   used_sparse_factor, eval_objective,
+                   [&](Rcpp::NumericVector& xv) { center_effects_fn(xv); },
+                   x, cila, cila_cell_key);
+
+    center_effects_fn(x);
+    for (int j = 0; j < n_x; j++) result.mode[j] = x[j];
 
     return result;
 }

@@ -316,17 +316,15 @@ test_that("a different seed is a different realization of the same estimator", {
 
 # A gaussian arm on an RW1 field, through tulpa_nested_laplace() rather than the
 # joint driver. Same exactness arbiter: the inner Laplace is the conditional
-# posterior, so the corrected cell marginal must reproduce the uncorrected one.
+# posterior, so the corrected cell marginal must reproduce the uncorrected one,
+# and at the joint file's own 1e-9 (gcol33/tulpa#371).
 #
-# The tolerance is 1e-6, not the joint file's 1e-9, and the reason is a property
-# of this loop rather than of the correction. It applies `center_effects_fn`
-# AFTER the Newton loop and re-evaluates the log-marginal at the shifted point,
-# so what it reports is a Laplace expansion at a point that is not quite the
-# mode wherever the shift moves eta; the correction is exact at ANY expansion
-# point on a gaussian arm, so the two differ by that offset. Measured 3.4e-07
-# absolute here on a value of -45.8. The size tracks the shift-invariance of the
-# field: an improper RW1 is invariant up to the weak beta ridge and lands at
-# 7.5e-09 relative, a proper AR1 is not invariant at all and lands at 1e-05.
+# It read 3.4e-07 while this loop reported its log-marginal at the post-centring
+# point rather than at the Newton mode, and 1e-05 on a proper AR1 field, which
+# is the same defect at the scale of how far the field's prior is from
+# shift-invariant. `score_max` is the independent arbiter for that reading: it
+# measured 1.6e-05 on this fixture and 5.7e-02 on the AR1 one, and both are
+# ~1e-14 now.
 cila_nonjoint_fit <- function(cila = NULL, seed = 3L, n_time = 10L,
                               per_time = 3L) {
   set.seed(seed)
@@ -361,9 +359,11 @@ test_that("on the non-joint fitter a gaussian arm reproduces the Laplace grid", 
   expect_true(is.na(f$cila$declined))
   expect_equal(f$cila$variant_used, "qmc")
   expect_equal(as.numeric(f$cila$cell_log_marginal),
-               as.numeric(f0$log_marginal), tolerance = 1e-6)
+               as.numeric(f0$log_marginal), tolerance = 1e-9)
   expect_equal(as.numeric(f$weights), as.numeric(f0$weights),
-               tolerance = 1e-4)
+               tolerance = 1e-8)
+  # The reported point IS the mode, which is what makes the line above hold.
+  expect_lt(max(f0$score_max), 1e-10)
   expect_lt(f$cila$pareto_k, 0.5)
   expect_equal(f$weights_source, "cila")
   expect_false(is.null(f$draws))
