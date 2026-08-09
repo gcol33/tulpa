@@ -1,5 +1,29 @@
 # tulpa NEWS
 
+## 0.0.174
+
+* The skew correction's centre band carries what it is measured to cost
+  (gcol33/tulpa#376). `.NL_DIAG$centre_unreliable = 1.20` was chosen in
+  gcol33/tulpa#362 as the smallest cutoff declining nothing the correction was
+  measured to help on, over four fixtures none of which could reach it.
+  Re-scored over SEVEN fixtures and 4224 admitted coefficient-seeds -- every one
+  gated by the SHIPPED combined inner band, which the earlier sweep did not
+  apply -- the paired cost of the band is monotone in the cutoff and reaches
+  zero only past the largest admitted centre measured (4.62): `+0.302` at 1.00,
+  `+0.270` at 1.20, `+0.191` at 2.00, `+0.089` at 3.00, `0` at 5.00. No cutoff
+  is protective on any fixture: all 13 fixture-coefficients score a negative
+  paired gain (t -1.65 to -9.83) and the correction gets BETTER as the centre
+  grows, `-0.036` at `|m|` in (1.2, 1.5] through `-0.249` at (3, 6]. The reason
+  is in the mechanism: `m` and `gamma_3` are the same weighted sum at the first
+  and third powers of the per-observation correlation, so
+  `rho_eff = sqrt(|gamma_3| / (2 |m|))` bounds the strongest single correlation
+  from below (exactly 1 on an intercept-only fit), and a large `|m|` with a small
+  `|gamma_3|` is uniformly WEAK correlation -- median `rho_eff` 0.72 to 0.84 on
+  the fixtures that stay under the band and 0.086 to 0.116 on the three that
+  reach past it. The constant is unchanged and the decline path is unchanged;
+  its justification in `R/settings.R` now records the enlarged measurement, the
+  derivation, and the price the band is being paid for.
+
 ## 0.0.173
 
 * A fit reaches the skew correction's centre band from its own data, and the

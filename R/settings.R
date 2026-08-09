@@ -568,32 +568,57 @@
 # the same thing about the same expansion: past them the series is no longer a
 # leading-order adjustment to the Gaussian it is expanded around.
 #
-# MEASURED, on 3800 prior-predictive fits across four fixtures with an exact
-# reference (dev_notes/issue362): the rare-event binomial-logit intercept of
-# gcol33/tulpa#346, the small-group Bernoulli RE fit with a real outer grid of
-# gcol33/tulpa#341, and two rare-event binomial-logit designs carrying a SLOPE,
-# which is what makes var(eta_j | x_i) -- and so gamma_1 -- nonzero, chosen for
-# reach in |m| on a criterion blind to how the correction then scores. Each
-# candidate cutoff is scored as the PAIRED CRPS difference between the banded
-# and the unbanded correction on the same fits, so the number is what the band
-# COSTS. It costs on every cutoff that declines anything: +2.8e-02 at 0.95 (66
-# coefficients declined), +1.4e-02 at 1.00 (41), +2.0e-03 at 1.10 (8), +7.0e-04
-# at 1.15 (1), and exactly 0 at 1.20, where the largest admitted centre measured
-# anywhere (1.192) still fits inside. The correction's advantage GROWS with |m|
-# over that whole range -- binned by |m| it recovers 71% to 92% of the distance
-# from the Laplace centre to the exact marginal mean, with the largest bins
-# gaining most -- so a tighter band buys nothing and gives up the seeds the
-# correction helps most on.
+# MEASURED, on seven fixtures with an exact reference and 4224 admitted
+# coefficient-seeds, every one gated by the SHIPPED combined inner band
+# (dev_notes/issue362, dev_notes/issue376): the rare-event binomial-logit
+# intercept of gcol33/tulpa#346, the small-group Bernoulli RE fit with a real
+# outer grid of gcol33/tulpa#341, two rare-event binomial-logit designs carrying
+# a SLOPE, and three small-group POISSON RE designs (gcol33/tulpa#364) which are
+# the ones that reach past 1.20 at all. Each candidate cutoff is scored as the
+# PAIRED CRPS difference between the banded and the unbanded correction on the
+# same fits, so the number is what the band COSTS:
 #
-# WHAT THE BAND IS FOR, given that. On these fixtures the SHAPE band already
-# excludes every centre past 1.192: |gamma_1| and |gamma_3| are correlated (0.87
-# / 0.91 with |m|), and the designs that reach |m| of 3 to 5 reach it on seeds
-# where |gamma_3| >= 1 has already declined the coefficient. So the cutoff is
-# placed at the edge of the measured regime and declines nothing that was
-# measured. What it buys is that the displacement is BOUNDED at all: a fit
-# carrying a large gamma_1 without a correspondingly large gamma_3 -- which no
-# fixture here produced and nothing in the engine rules out -- declines instead
-# of relocating the marginal arbitrarily far.
+#   cutoff  1.00    1.15    1.20    1.50    2.00    3.00    4.00    5.00
+#   cost   +0.302  +0.274  +0.270  +0.252  +0.191  +0.089  +0.015   0.000
+#
+# monotone in the cutoff and zero only past the largest admitted centre measured
+# (4.62). The correction's advantage GROWS with |m| across that whole range,
+# without turning: binned by |m| the paired gain over the Gaussian runs -0.036
+# at (1.2, 1.5], -0.087 at (1.5, 2], -0.150 at (2, 3] and -0.249 at (3, 6], at
+# t = -4.5, -9.1, -9.9 and -8.0, with the share of seeds the correction hurts
+# falling from 0.34 to 0.04 as |m| rises.
+#
+# NO CUTOFF IS PROTECTIVE ANYWHERE, and the band can only help where the
+# correction HURTS, since converting a corrected coefficient back to the
+# Gaussian is the whole of what it does. All 13 fixture-coefficients score a
+# negative paired gain (t = -1.65 to -9.83), recovering 0.80 to 1.07 of what the
+# exact posterior itself achieves. Binned by |m|, by |gamma_3| and by the
+# effective correlation below, no bin is positive at even t = +1.3, and the
+# single most positive cell anywhere is 13 seeds at t = +1.01.
+#
+# WHY |m| IS THE WRONG AXIS FOR A BOUND. With rho_ij the Gaussian correlation
+# between eta_j and the probed coordinate and c_j = l_j''' s_j^{3/2},
+#
+#   m_i = (1/2) sum_j c_j rho_ij,      gamma_3(i) = sum_j c_j rho_ij^3,
+#
+# the same weighted sum at the first and third powers, so for sign-coherent
+# terms |gamma_3| <= max_j(rho_ij^2) 2|m| and
+#
+#   rho_eff := sqrt(|gamma_3| / (2 |m|))  <=  max_j |rho_ij|
+#
+# bounds the strongest single correlation from below, out of the two numbers the
+# engine already reports. It is exactly 1 on an intercept-only fit, where every
+# eta reads the one latent coordinate and gamma_1 vanishes. A LARGE |m| with a
+# SMALL |gamma_3| is therefore uniformly WEAK correlation, not a strong direction
+# being extrapolated: measured, rho_eff has median 0.72 to 0.84 on the fixtures
+# that stay under 1.20 and 0.086 to 0.116 on the three that reach past it. The
+# band is anti-correlated with the pathology it was imagined for, which is why
+# every cutoff costs.
+#
+# WHAT THE BAND IS FOR, given that. Not a measured failure: it bounds the
+# displacement at all, so a coefficient cannot relocate its marginal arbitrarily
+# far on a leading-order estimate. That is insurance against a regime no fixture
+# has produced, and it is paid for at the rate above.
 #
 # `debias_select_band` is the floor the SUBSPACE DEBIAS selector reads the inner
 # bands at (gcol33/tulpa#304): a probed coordinate whose combined inner band is
