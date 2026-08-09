@@ -787,6 +787,88 @@ the #332 residual-scale crossing shows on the joint log-likelihood rank while
 its intercept marginal stays inside the band. Tests: `test-sbc-crps.R`; write-up
 `dev_notes/issue335/RESULTS.md`.
 
+### Posterior SBC: calibration conditional on an observed data set (gcol33/tulpa#339)
+
+`recov_sbc(truth = "prior_draw")` above reports calibration AVERAGED over the
+prior. A user fitting their own data asks something narrower -- is the inference
+reliable in the posterior geometry THIS data set produces -- and the prior
+average can both miss a defect confined to a small region and flag one the
+observed data rules out. `recov_posterior_sbc()` (`helper-sbc.R` section 6,
+after Sailynoja, Schmitt, Buerkner & Vehtari, *Stat Comput* 36:78 2026,
+doi:10.1007/s11222-026-10825-9, Algorithm 2) answers the narrow one:
+`theta' ~ pi(theta | y_obs)`, `y ~ pi(y | theta')`, and the PIT is taken under
+the AUGMENTED posterior `pi(theta | y, y_obs)`. That is ordinary SBC with
+`pi(theta | y_obs)` in the role of the prior, so #335's whole instrument set --
+the exact simultaneous band, the folded read, the randomized discrete PIT, the
+CRPS closed forms -- carries over unchanged, and `truth = "posterior_draw"` is a
+proper-score experiment for the same reason `"prior_draw"` is.
+
+**Two premises make it an SBC experiment, and each has a negative control.**
+Neither is a detail; both are ways the construction silently degrades into
+something else.
+
+- **The augmented posterior conditions on BOTH data sets.** Fitting the
+  replicate ALONE is ordinary SBC under a hand-made prior, and it is the easiest
+  collapse to fall into. Control: the sigma read leaves the band at p = 2.7e-10,
+  worst of the four -- `y_obs` was most informative about the hyperparameter --
+  though the failure is not confined to it.
+- **The replicate is conditionally independent of `y_obs` given theta.** The
+  nested tier integrates the random effects out, so theta carries no per-group
+  value and a replicate on the SAME groups couples the two data sets through the
+  unmodelled group effects. Every replicate is drawn on FRESH groups. Control:
+  re-observing the observed regions with their effects drawn from
+  `p(u | y_obs, theta)` takes the intercept, the hyperparameter and the joint
+  log-likelihood outside the band (p = 0, 0, 2.7e-14) while the slope survives
+  at p = 0.27 -- it reads within-region contrasts, which a shared per-region
+  effect cancels out of.
+
+**The gaussian fixture is the CONSTRUCTION arbiter, not an engine verdict**
+(`sbc_psbc_gaussian()`, section 8). Its augmented posterior is available in
+closed form, so the whole scheme runs with the exact posterior at both stages
+and its PIT must be uniform; a departure there is a defect in the pooling, the
+seeding or the replicate, never in the engine. It cannot say anything ABOUT the
+engine, because a gaussian log-likelihood is quadratic in eta -- the inner
+Laplace IS the conditional posterior and the two reads agree to 1e-04 in the
+PIT. `sbc_psbc_re()` (section 9) is the family-general fixture where the inner
+Gaussian is an approximation and the verdict is real.
+
+**`draw_theta` and `simulate` receive the SAME seed**, and decorrelating the
+second stream is the FIXTURE's job (`set.seed(seed + 660000L)`). Writing the
+obvious `set.seed(seed)` in both makes the replicate's noise a function of the
+truth, which is not `p(y | theta')` and shows up as a non-uniform PIT with
+nothing wrong in the inference. Moving the split into the driver is the better
+design and is gcol33/tulpa#350; it is not done in place because it re-seeds
+every existing result.
+
+**A rank arm needs a marginal likelihood, and off the gaussian that means
+quadrature.** `sbc_loglik_re()` is ADAPTIVE Gauss-Hermite -- recentred and
+rescaled at each region's own integrand mode, mode located by one vectorized
+scan plus central-difference Newton across all regions at once. A fixed rule
+scaled by sigma places its nodes by the PRIOR while the integrand is the
+likelihood times that prior, and the likelihood bump is narrower than the node
+spacing: measured against the closed form it stalls at 3.1e-03 by 64 nodes once
+beta is a couple of units from its estimate. The adaptive rule is EXACT for the
+gaussian family at any node count from 2 (the integrand is Gaussian there), and
+converges geometrically elsewhere. Nodes come from the Golub-Welsch
+eigendecomposition of the probabilists' Hermite recurrence -- twelve lines of
+base R, no dependency. Same reason `tulpa_re_aghq()` adapts.
+
+The MEASUREMENT is `dev_notes/issue339/`: 15 configurations at N = 1000
+including `occu_cover`, a pre-registered family-wise verdict rule, and a power
+curve (80% power at roughly a 10% over-dispersion or a 0.14-SD location bias;
+measured false-positive rate 0.0117 against a nominal 0.05, so a rejection is
+the strong statement and a pass the weak one). Its headline is that the cheap
+band and the expensive check disagree in BOTH directions:
+
+- `pois_40` -- outer k-hat 0.196, `gamma_3` and inner k-hat both `good`, so the
+  band's cleanest verdict, `reliable (both layers good)` -- FAILS calibration at
+  p = 2.3e-13 on the intercept.
+- `binom_30` -- outer k-hat 1.413, well past the 0.7 escalation threshold --
+  PASSES at p = 0.17.
+
+So the shipped band is a screen, not a verdict, and neither direction of it is
+safe to read as one. Tests: `test-posterior-sbc.R`.
+
 ### Per-cell fixed-effect retention on the joint tier (gcol33/tulpa#305)
 
 `.nested_fixed_moments()` (`R/methods_generic.R`) is the ONE grid marginalizer

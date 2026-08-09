@@ -48,20 +48,11 @@
 # pinned against the engine by the test at the end of this file, so a change on
 # the door's side fails loudly here instead of silently rescaling every gaussian
 # fixture.
-recov_draw_y <- function(family, eta, ntr, phi) {
-  N <- length(eta)
-  switch(family,
-    poisson        = rpois(N, exp(eta)),
-    binomial       = rbinom(N, ntr, plogis(eta)),
-    gaussian       = eta + rnorm(N, 0, phi),
-    neg_binomial_2 = rnbinom(N, mu = exp(eta), size = phi),
-    gamma          = rgamma(N, shape = phi, rate = phi / exp(eta)),
-    beta           = {
-      mu <- plogis(eta)
-      pmin(pmax(rbeta(N, mu * phi, (1 - mu) * phi), 1e-4), 1 - 1e-4)
-    },
-    stop("unhandled family ", family))
-}
+#
+# The law itself lives in `sbc_draw_y()` (helper-sbc.R section 9) beside its own
+# log density, so the SBC fixtures simulate from the same parameterization they
+# score under and neither harness can drift from the other.
+recov_draw_y <- function(family, eta, ntr, phi) sbc_draw_y(family, eta, ntr, phi)
 
 # ----- simulate: known beta + region IID RE -> built-in family response -----
 sim_re <- function(seed, family, nr, spr, ntr, beta, sigma_u, phi) {

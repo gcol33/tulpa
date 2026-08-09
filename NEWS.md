@@ -1,5 +1,47 @@
 # tulpa NEWS
 
+## 0.0.156
+
+* Posterior SBC joins the prior-predictive harness: calibration checked
+  CONDITIONAL on an observed data set rather than averaged over the prior
+  (gcol33/tulpa#339, after Sailynoja, Schmitt, Buerkner & Vehtari, *Statistics
+  and Computing* 36:78 2026). The truth is drawn from `pi(theta | y_obs)`, a
+  replicate from `pi(y | theta')`, and the PIT taken under the augmented
+  posterior `pi(theta | y, y_obs)` -- ordinary SBC with the posterior at `y_obs`
+  in the role of the prior, so #335's simultaneous band, folded read, randomized
+  discrete PIT and CRPS closed forms all carry over and `truth =
+  "posterior_draw"` is a proper-score experiment. It also scores what prior SBC
+  on this engine cannot: the nested door puts no prior on the fixed effects, and
+  an improper prior cannot be drawn from.
+* The construction is now TESTED, not only used (`test-posterior-sbc.R`). Run
+  with the exact posterior at both stages on a gaussian random-intercept fixture
+  it must be uniform, and both premises have negative controls that fail when
+  broken -- fitting the replicate alone instead of pooling takes the
+  hyperparameter outside the band, and re-observing the observed regions with
+  their own effects takes the intercept, the hyperparameter and the joint
+  log-likelihood outside it while the slope survives.
+* The marginal likelihood behind a log-likelihood rank is adaptive Gauss-Hermite,
+  recentred at each region's integrand mode, so the rank arm is available for
+  every family rather than only the gaussian one that has a closed form. A fixed
+  rule scaled by sigma places its nodes by the prior and stalls at 3.1e-03 by 64
+  nodes once beta is a couple of units from its estimate; the adaptive rule is
+  exact on the gaussian closed form at any node count from 2 and converges
+  geometrically elsewhere. Nodes from the Golub-Welsch eigendecomposition of the
+  Hermite recurrence, no dependency added.
+* MEASURED, `dev_notes/issue339/`: 15 configurations at N = 1000 including
+  `occu_cover`, a pre-registered family-wise verdict rule, and a power curve
+  (80% power at roughly a 10% over-dispersion or a 0.14-SD location bias;
+  measured false-positive rate 0.0117 against a nominal 0.05). The shipped
+  reliability band and the calibration check disagree in BOTH directions:
+  `pois_40`, which the band calls `reliable (both layers good)` on an outer
+  k-hat of 0.196, fails at p = 2.3e-13; `binom_30`, whose outer k-hat of 1.413
+  is well past the escalation threshold, passes at p = 0.17. The band is a
+  screen, not a verdict.
+* Single-sourced the response law: `recov_draw_y()` in the recovery sweep now
+  delegates to `sbc_draw_y()`, which sits beside its own log density, so a family
+  cannot be simulated under one parameterization and scored under another.
+  Bit-identical across all six families.
+
 ## 0.0.155
 
 * Simulation-based calibration and a strictly proper score join the fixed-truth
