@@ -1,5 +1,62 @@
 # tulpa NEWS
 
+## 0.0.177
+
+* The box builder's interior midpoint is formed as `a / 2 + b / 2` rather than
+  `(a + b) / 2`, so a partition whose every edge is a representable double is
+  built instead of declined (gcol33/tulpa#378). `.nl_box_edges_from()` bisects
+  each interior cell spacing in the axis's own coordinate; the sum was formed
+  before the halving, so two coordinates near the top of the double range took
+  it to `Inf` and the whole partition was refused with `boxes_do_not_tile`, the
+  axis falling back to the chord read. `c(1, 1e300, .Machine$double.xmax)`
+  declared `unbounded` is the reachable case: `(1e300 + double.xmax) / 2` is
+  `Inf` while `1e300 / 2 + double.xmax / 2` is `8.988466e+307`, and the boxes
+  that midpoint defines tile the axis.
+
+  Only the LINEAR coordinate reaches it -- `log` / `qlogis` / `atanh` land
+  inside about +/- 745, where no sum of two coordinates can overflow -- so it is
+  the `unbounded` declaration and the undeclared axis whose values are not all
+  positive. No default `.NL_GRID` axis is near it; it is reachable through a
+  pinned grid and through `hyper_axis_spec(bounds = c(-Inf, Inf))`.
+
+  `a / 2 + b / 2` and NOT `a + (b - a) / 2`, measured rather than
+  pattern-matched (`dev_notes/issue378/midpoint378.R`, 4e6 randomized pairs
+  spanning the double range in both signs). The offset form overflows on
+  `b - a` for opposite-sign extremes -- reachable, since the linear coordinate
+  is signed -- taking 1117 pairs to `Inf` that `a / 2 + b / 2` returns finite,
+  and it rounds twice on ORDINARY operands, moving 52536 of the 3998914 pairs
+  where `(a + b) / 2` is finite. `a / 2 + b / 2` produced 0 non-finite results,
+  and stays inside `[a, b]` on 2e7 subnormal-heavy ordered pairs.
+
+  BYTE-identical wherever the sum form worked at all. Halving a normal double
+  decrements the exponent and leaves the significand alone, so `a / 2` and
+  `b / 2` are exact and their sum carries ONE rounding of the same real the sum
+  form rounds once -- rounding to nearest commutes with scaling by a power of
+  two. Asserted with `identical()` against the pre-fix file sourced from git
+  into its own environment over the namespace
+  (`dev_notes/issue378/identity378.R`): of 135 (node set, domain) cases over 4
+  weightings x 4 support kinds x 2 within-cell constructions x 11
+  probabilities, 133 are identical on the cell edges, the box partition and
+  every quantile read, and the 2 that move were both pre-fix DECLINES that now
+  tile. Over 197374 randomized node sets across all four domains, the fix
+  removes 24045 declines and introduces 0, with 172860 tiled under both and 0
+  of them moved; all 23913 recovered partitions are finite, strictly
+  increasing, of the right length, contain their own coordinates and stay
+  inside the declared support. The 3621143 pairs where both halvings are exact
+  carry 0 differences; the two forms part only where a halving is subnormal
+  (|x| below about 2.2e-308), by at most 1.0e-320.
+
+  The decline is kept, not removed. `test-within-cell-box-uniform.R`'s
+  `boxes_do_not_tile` pin moves to the same node set UNDECLARED, where the
+  decline is a property of the node set rather than of the arithmetic: the
+  partition mirrors the extreme half-spacing in the value itself and
+  `double.xmax + (double.xmax - 1e300) / 2` is past the double range in any
+  form, so there is no better midpoint to compute. A second pin covers a node
+  set the coordinate map cannot separate (a `unit` axis at the subnormal floor,
+  where `plogis(qlogis(1e-320))` underflows to 0), alongside the zero-width
+  interior box already pinned. A new randomized `identical()` sweep over all
+  four domains holds the bisector to the sum form's own numbers.
+
 ## 0.0.176
 
 * A DECLARED hyperparameter support is no longer overruled by the coordinate

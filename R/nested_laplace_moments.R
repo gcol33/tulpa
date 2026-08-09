@@ -327,12 +327,50 @@
 # The same builder, driven by a partition the caller already has, so
 # `.nl_box_quantile()` can report that partition's own coordinate and decline
 # without computing it twice.
+#
+# The interior midpoint is `a / 2 + b / 2` and not `(a + b) / 2`
+# (gcol33/tulpa#378): the sum is formed before the halving, so two coordinates
+# near the top of the double range take it to `Inf` and the whole partition is
+# declined for a midpoint that is perfectly representable. Only the LINEAR
+# coordinate reaches that -- `log` / `qlogis` / `atanh` land inside about
+# +/- 745 and cannot overflow when added -- so it is the `unbounded`
+# declaration and the undeclared axis whose values are not all positive.
+#
+# The three properties, measured in `dev_notes/issue378/midpoint378.R` over 4e6
+# randomized pairs spanning the whole double range in both signs:
+#
+#   * `a / 2 + b / 2` never overflows. Halving a finite double is finite, and
+#     the two halves are each at most `double.xmax / 2`, so their sum is in
+#     range by construction. 0 spurious non-finite results, against 1086 for
+#     the sum form.
+#   * It is BYTE-identical to `(a + b) / 2` wherever that one is finite and
+#     both halvings are exact -- which is every normal double, so every
+#     coordinate any axis actually carries. Halving a normal decrements the
+#     exponent and leaves the significand alone, so `a / 2` and `b / 2` are
+#     exact and their sum carries ONE rounding of the same real the sum form
+#     rounds once; rounding to nearest commutes with scaling by a power of two.
+#     0 differences on 3621143 such pairs. It differs only where a halving is
+#     subnormal (|x| below about 2.2e-308), by at most 1.0e-320.
+#   * It stays inside `[a, b]`: 0 violations on 2e7 subnormal-heavy ordered
+#     pairs (`dev_notes/issue378/bracket378.R`).
+#
+# `a + (b - a) / 2`, the usual overflow-safe form, is neither: `b - a`
+# overflows for opposite-sign extremes -- reachable here, since the linear
+# coordinate is signed -- and it rounds twice on ORDINARY operands, moving
+# 52536 of the same 4e6 pairs off the shipped number.
+#
+# The decline is kept, not removed. A midpoint that no arithmetic can produce
+# still exists -- the outer edges come from `.nl_cell_partition()` and can be
+# non-finite where the mirrored half-spacing genuinely leaves the range, and a
+# spacing below the coordinate's own resolution still collapses a box to zero
+# width -- so a partition that is not finite and strictly increasing returns
+# NULL for the caller to DECLINE on (gcol33/tulpa#293).
 .nl_box_edges_from <- function(part, v) {
   n <- length(v)
   if (n < 2L) return(NULL)
   u  <- part$tr$to(v)
   ue <- part$tr$to(part$edges)
-  e  <- part$tr$from(c(ue[1L], (u[-1L] + u[-n]) / 2, ue[2L]))
+  e  <- part$tr$from(c(ue[1L], u[-1L] / 2 + u[-n] / 2, ue[2L]))
   if (!all(is.finite(e)) || is.unsorted(e, strictly = TRUE)) return(NULL)
   e
 }

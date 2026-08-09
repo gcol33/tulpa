@@ -150,6 +150,47 @@ test_that("a bounded axis's boxes stay inside its support", {
   expect_true(all(abs(.nl_box_edges(r, "correlation")) < 1))
 })
 
+test_that("the interior bisector is byte-identical to the sum form it replaced", {
+  # gcol33/tulpa#378 changed HOW the interior midpoint is formed, and the whole
+  # claim is that it changes no number any axis actually carries. `a / 2 + b / 2`
+  # and `(a + b) / 2` are not the same expression -- the first rounds twice --
+  # but halving a NORMAL double is exact, so both carry a single rounding of the
+  # same real and agree bit for bit. Asserted with `identical()` against a
+  # reference built here from the sum form, over randomized node sets on every
+  # domain, not on a handful of values.
+  set.seed(378L)
+  ref_edges <- function(v, dm) {
+    pt <- .nl_cell_partition(v, dm)
+    n <- length(v)
+    u <- pt$tr$to(v)
+    ue <- pt$tr$to(pt$edges)
+    e <- pt$tr$from(c(ue[1L], (u[-1L] + u[-n]) / 2, ue[2L]))
+    if (!all(is.finite(e)) || is.unsorted(e, strictly = TRUE)) return(NULL)
+    e
+  }
+  gen <- list(
+    positive    = function(k) exp(runif(k, -300, 300)),
+    unit        = function(k) stats::plogis(runif(k, -300, 300)),
+    correlation = function(k) tanh(runif(k, -15, 15)),
+    unbounded   = function(k) ifelse(runif(k) < 0.5, -1, 1) * 10^runif(k, -8, 8))
+  n_case <- 0L
+  for (i in seq_len(400L)) {
+    for (dm in names(gen)) {
+      v <- sort(unique(gen[[dm]](sample(2:9, 1))))
+      if (length(v) < 2L) next
+      n_case <- n_case + 1L
+      # The edges are the whole difference: the read is a pure function of them
+      # and the masses, so identical edges are identical intervals.
+      expect_identical(.nl_box_edges(v, dm), ref_edges(v, dm))
+    }
+  }
+  expect_gt(n_case, 1500L)
+  # The one place the two forms part is the one #378 is about: a sum that leaves
+  # the double range while the midpoint does not.
+  expect_true(is.infinite((1e300 + .Machine$double.xmax) / 2))
+  expect_true(is.finite(1e300 / 2 + .Machine$double.xmax / 2))
+})
+
 # ------------------------------------------------------ declines, never errors
 
 test_that("every decline records a reason and falls back to the chord read", {
@@ -177,13 +218,38 @@ test_that("every decline records a reason and falls back to the chord read", {
   # `slice_masses()` in `dev_notes/issue337/recon.R` STOPS when the boxes do not
   # tile, because mass would leave the cell it was integrated for. A reported
   # interval cannot take that behaviour, so the engine declines instead
-  # (gcol33/tulpa#293). The reachable case is an axis reaching the top of the
-  # double range read in the value itself, where an interior midpoint's own sum
-  # overflows before it is halved -- gcol33/tulpa#378, so this pin moves again
-  # when the midpoint is formed as `a / 2 + b / 2`.
+  # (gcol33/tulpa#293).
+  #
+  # The interior midpoint is no longer one of the ways that happens
+  # (gcol33/tulpa#378). It is formed as `a / 2 + b / 2`, so two coordinates near
+  # the top of the double range have a representable bisector and the partition
+  # they define is built; `(a + b) / 2` reached `Inf` on the sum and declined a
+  # partition every one of whose edges is a double.
   vd <- c(1, 1e300, .Machine$double.xmax)
-  expect_null(.nl_box_edges(vd, "unbounded"))
+  expect_true(is.infinite((1e300 + .Machine$double.xmax) / 2))
+  eb <- .nl_box_edges(vd, "unbounded")
+  expect_length(eb, length(vd) + 1L)
+  expect_false(is.unsorted(eb, strictly = TRUE))
+  expect_true(all(vd >= eb[-length(eb)] & vd <= eb[-1L]))
+  expect_identical(eb[3L], 1e300 / 2 + .Machine$double.xmax / 2)
+  expect_identical(
+    .nl_summary_quantile_read(vd, c(1, 1, 1), PROBS_WC, "unbounded", "density",
+                              "box_uniform")$within, "box_uniform")
+  # The decline that REMAINS on that node set is a property of the node set and
+  # not of the arithmetic. Undeclared, the partition mirrors the extreme
+  # half-spacing in the value itself, and `xmax + (xmax - 1e300) / 2` is past
+  # the double range in any form -- there is no midpoint to compute better.
   expect_null(.nl_box_edges(vd, NA_character_))
+  rd <- .nl_summary_quantile_read(vd, c(1, 1, 1), PROBS_WC,
+                                  NA_character_, "density", "box_uniform")
+  expect_identical(rd$declined, "boxes_do_not_tile")
+  expect_identical(rd$within, "chord")
+  expect_identical(rd$q, .nl_summary_quantile(vd, c(1, 1, 1), PROBS_WC,
+                                              NA_character_, "density"))
+  # The other one: a node set the coordinate map cannot separate. A `unit` axis
+  # reaching the subnormal floor has `plogis(qlogis(1e-320))` underflow to 0, so
+  # two adjacent edges come back as the same double.
+  expect_null(.nl_box_edges(c(1e-320, 1e-310, 0.5), "unit"))
   # A spacing below the coordinate's own resolution collapses a box to zero
   # width and is refused at the edge builder, but it does not reach the read:
   # `.nl_axis_atoms()` has already merged coordinates that are equal as doubles,
@@ -191,12 +257,6 @@ test_that("every decline records a reason and falls back to the chord read", {
   expect_null(.nl_box_edges(c(1, 1, 2), "positive"))
   expect_false(is.null(.nl_box_edges(
     .nl_axis_atoms(c(1, 1, 2), c(1, 1, 1))$v, "positive")))
-  rd <- .nl_summary_quantile_read(vd, c(1, 1, 1), PROBS_WC,
-                                  "unbounded", "density", "box_uniform")
-  expect_identical(rd$declined, "boxes_do_not_tile")
-  expect_identical(rd$within, "chord")
-  expect_identical(rd$q, .nl_summary_quantile(vd, c(1, 1, 1), PROBS_WC,
-                                              "unbounded", "density"))
   # Declared `positive`, the SAME node set does not reach that decline at all
   # any more (gcol33/tulpa#377). Its mirrored upper edge overflows, and the
   # partition then holds the declaration instead of falling through to the value
