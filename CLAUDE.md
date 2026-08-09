@@ -961,6 +961,24 @@ Three things make this work and are load-bearing:
 `control$keep_grid_hessians` (default `TRUE`) switches the retention off, and
 `$grid_fixed_declined` always says why a fit has none.
 
+**The retained pair is parallel to the weights by construction, not by luck
+(gcol33/tulpa#345).** `.joint_attach_grid_fixed()` preallocates `grid_modes` /
+`grid_hessians` at `n_grid` and writes each cell's slot in turn, so a cell with
+no usable block must SKIP its slot -- `l[[k]] <- NULL` REMOVES the element. An
+interior blank cell hid that: the next write lands at its own index and
+re-extends the list, and shifting NULL padding left is a content no-op. A
+TRAILING blank cell had nothing after it, so the pair came back one shorter than
+`weights` and `.nested_fixed_moments()`'s length check returned `NULL`, NA-ing
+the entire coefficient table with `grid_fixed_declined` reporting `NA`.
+Refinement is what makes the trailing case reachable, since it appends cells at
+the END of the grid and an appended cell whose inner solve returns
+`log_marginal = NaN` gets softmax weight 0 and no block. The cell is carried as
+an empty slot rather than dropped from `weights`: it holds zero weight, so
+`mass` stays 1 and nothing is reported conditional on a reduced grid, which is
+what the #342 renormalization and the zero-weight `keep` filter were already
+written for. `"no_weighted_cell_block"` is the reason when the retention holds
+no cell the weights put mass on at all.
+
 One extraction algebra serves every caller: `src/inv_block_extract.h` holds
 `InvBlockConstraint` (the conditioning-by-kriging correction `W = H^{-1}A'`,
 `M = A W`, `chol(M)`) and `extract_inv_diag_blocks()`, both templated on a solve
@@ -1031,6 +1049,41 @@ NUTS (its non-centered transform differentiates that assembly) and
 for it). `nu <= 0` is refused by `.validate_spde_nu()` -- the parameterisation
 is degenerate there, so the `alpha = 1` operator is unreachable from the Matern
 front door and its `eps_ridge` workaround is gone.
+
+### PD enforcement is one policy with two backends (gcol33/tulpa#344)
+
+A coupled log posterior's negative Hessian need not be PD away from the mode --
+the occupancy mixture's dark-cell term `log(psi (1-p)^J + 1 - psi)` is not
+concave in `(eta_occ, eta_det)` -- so both joint Newton loops condition it
+through `src/joint_pd_step.h`: `pd_lm_escalate()` (smallest diagonal load making
+the factorization succeed; Nocedal & Wright, *Numerical Optimization* 2e,
+Alg. 3.3) and `pd_eigen_clamp_solve()`. `joint_pd_step_solve` is the CHOLMOD
+backend, `joint_pd_step_solve_dense` the dense one. With `H` already PD the
+first attempt succeeds and the step IS the plain Newton step, byte-identically.
+Do not write a third conditioner; the point is that the two loops meet at the
+same two functions.
+
+Until 0.0.159 only the SPARSE loop had a policy, and `pd_mode` was never passed
+to the dense one -- so `control$hessian = "psd"` was inert on the dense path,
+which is what every small coupled fit runs on (`n_x` below `SPARSE_THRESHOLD =
+200`). A negative pivot made `sqrt` NaN, the whole step NaN, and the finite
+guard added nothing: the loop reported its START VECTOR as the mode on a third
+of prior-predictive draws of the engine's own coupled fixture, at any iteration
+budget. The arbiter was already in the repo -- `force_sparse = TRUE` on the same
+fixture converged in 7 to 9 iterations to an independently optimized mode while
+the dense path returned `(0, 0)`.
+
+**A stalled solve declines with `not_converged`, and `$modes` survives it.**
+Convergence is read FIRST by every probe attach (`.inner_skew_attach_probe()`)
+and by the joint fixed-block retention, because it is upstream of every other
+absence those steps can trip over. `$modes` is kept -- the warm-start chain
+(`init_fit$modes[1, ]` as `x_init`), adaptive refinement and local CCD all read
+it -- but the inference read off it is withheld: `.fit_fixed_table()`'s
+per-cell-mode average reads only cells that reached a mode, so a stalled fit
+reports `NA` from `coef()` / `confint()` / `summary()` with
+`interval_declined = "not_converged"` rather than its start vector as an
+estimate. A non-PD Hessian at the returned point also withholds the stored
+precision and the fixed block, whose inverse is not a covariance there.
 
 ### Checkpoint / resume across every fitter (gcol33/tulpa#50)
 
