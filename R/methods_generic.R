@@ -158,20 +158,39 @@
 #
 # A cell with zero integration weight contributes nothing to either moment, so
 # it is skipped rather than multiplied in -- a pruned cell that carries no
-# retained block would otherwise turn the whole covariance into NA. `mass` is
-# the weight actually retained, so a reader can tell a full grid from one that
-# dropped a positive-weight cell.
+# retained block would otherwise turn the whole covariance into NA.
+#
+# The retained weights are renormalized, so what is returned is the posterior
+# CONDITIONAL ON THE RETAINED CELLS, not a reconstruction of the full grid: a
+# dropped positive-weight cell gives exactly the moments of a grid that never
+# held it, and the mass it carried is gone rather than redistributed back into
+# the answer. Without the renormalization a dropped positive-weight cell shrinks
+# the mean toward the origin by exactly the dropped mass (gcol33/tulpa#342).
+#
+# `mass` is the ORIGINAL retained share of the grid weight -- 1 on a complete
+# grid, less on one that dropped a positive-weight cell -- so a reader can tell
+# the two apart from the returned value alone. The returned `w` sums to one over
+# the retained cells, which is the weighting BOTH the moments and the mixture
+# components are formed under, so the two reads describe one posterior.
 #' @keywords internal
 .nested_fixed_moments <- function(object) {
   H <- object$grid_hessians
   M <- object$grid_modes
   if (is.null(H) || is.null(M) || is.null(object$weights)) return(NULL)
-  w <- object$weights / sum(object$weights)
+  denom <- sum(object$weights)
+  w <- object$weights / denom
   if (length(H) != length(w) || length(M) != length(w)) return(NULL)
   keep <- which(is.finite(w) & w > 0 &
                   !vapply(H, is.null, logical(1)) &
                   !vapply(M, is.null, logical(1)))
   if (!length(keep)) return(NULL)
+  # Normalized off the raw weights rather than off `w`, so a grid that kept
+  # every cell divides by the same sum it already divided by and its weights
+  # come out bit-for-bit what they were.
+  sub  <- sum(object$weights[keep])
+  mass <- sub / denom
+  if (!is.finite(mass) || mass <= 0) return(NULL)
+  wk <- object$weights[keep] / sub
   p <- length(M[[keep[1]]])
   m <- numeric(p)
   S <- matrix(0, p, p)
@@ -181,13 +200,13 @@
     g  <- keep[i]
     Vg <- tryCatch(solve(H[[g]]), error = function(e) matrix(NA_real_, p, p))
     mu <- M[[g]]
-    m <- m + w[g] * mu
-    S <- S + w[g] * (Vg + tcrossprod(mu))
+    m <- m + wk[i] * mu
+    S <- S + wk[i] * (Vg + tcrossprod(mu))
     mu_k[i, ]  <- mu
     var_k[i, ] <- diag(Vg)
   }
   list(mean = m, cov = S - tcrossprod(m),
-       mu = mu_k, var = var_k, w = w[keep], mass = sum(w[keep]))
+       mu = mu_k, var = var_k, w = wk, mass = mass)
 }
 
 
@@ -244,6 +263,7 @@
       attr(tab, "skew_applied")     <- stats::setNames(iv$applied, nm)
       attr(tab, "interval_source")  <- iv$source
       attr(tab, "interval_declined") <- iv$declined
+      attr(tab, "retained_mass")    <- iv$mass
       return(tab)
     }
     w   <- object$weights / sum(object$weights)
@@ -387,7 +407,11 @@ print.tulpa_fit <- function(x, ...) {
 #'   `mu +/- z sigma` off the single Gaussian matching those moments. An
 #'   `interval_source` attribute records which read produced them
 #'   (`"mixture_cdf"`, `"gaussian_moment"`, `"skew_map_cell"`) and
-#'   `interval_declined` says why, whenever the mixture read did not run.
+#'   `interval_declined` says why, whenever the mixture read did not run. A
+#'   `retained_mass` attribute gives the share of the grid weight whose cells
+#'   retained a fixed-effect block: 1 on a complete grid, and below 1 on one
+#'   that dropped a positive-weight cell, whose report is then the posterior
+#'   conditional on the cells that remain.
 #'
 #'   With `control$skew_correct = TRUE` the bounds are instead Cornish-Fisher
 #'   quantiles at each coefficient's inner-Laplace `gamma_3` wherever that term
@@ -410,6 +434,7 @@ summary.tulpa_fit <- function(object, level = 0.95, ...) {
   attr(out, "skew_applied")      <- attr(tab, "skew_applied")
   attr(out, "interval_source")   <- attr(tab, "interval_source")
   attr(out, "interval_declined") <- attr(tab, "interval_declined")
+  attr(out, "retained_mass")     <- attr(tab, "retained_mass")
   out
 }
 
@@ -421,9 +446,10 @@ summary.tulpa_fit <- function(object, level = 0.95, ...) {
 #' @param ... Ignored.
 #' @return Matrix with lower and upper columns. A nested-Laplace fit carries
 #'   `interval_source` / `interval_declined` (which read produced the bounds --
-#'   by default the grid's Gaussian-mixture CDF) and `skew_applied`, one logical
-#'   per reported coefficient saying whether its bounds are the inner-Laplace
-#'   skew-corrected quantiles or not. See [summary.tulpa_fit()].
+#'   by default the grid's Gaussian-mixture CDF), `retained_mass` (the share of
+#'   the grid weight the bounds are conditional on), and `skew_applied`, one
+#'   logical per reported coefficient saying whether its bounds are the
+#'   inner-Laplace skew-corrected quantiles or not. See [summary.tulpa_fit()].
 #' @export
 confint.tulpa_fit <- function(object, parm = NULL, level = 0.95, ...) {
   tab <- .fit_fixed_table(object, level = level)
@@ -439,6 +465,7 @@ confint.tulpa_fit <- function(object, parm = NULL, level = 0.95, ...) {
   attr(ci, "skew_applied")      <- sa
   attr(ci, "interval_source")   <- attr(tab, "interval_source")
   attr(ci, "interval_declined") <- attr(tab, "interval_declined")
+  attr(ci, "retained_mass")     <- attr(tab, "retained_mass")
   ci
 }
 

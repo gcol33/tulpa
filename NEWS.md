@@ -1,5 +1,26 @@
 # tulpa NEWS
 
+## 0.0.154
+
+* `.nested_fixed_moments()` renormalizes the grid weights over the cells that
+  retained a fixed-effect block (gcol33/tulpa#342). It normalized over the whole
+  grid and then summed over the retained cells only, so a cell that carried
+  positive weight and no retained block left the mean shrunk toward the origin
+  by exactly the dropped mass, and the covariance misstated to match. A dropped
+  cell now gives the moments of a grid that never held it.
+* What such a fit reports is the posterior CONDITIONAL ON THE RETAINED CELLS.
+  The dropped mass is gone and no reweighting brings it back, so the
+  incompleteness stays on the report: `mass` on the moments, and a
+  `retained_mass` attribute on `confint()` / `summary()`, give the original
+  retained share of the grid weight -- 1 on a complete grid, below 1 on a
+  repaired one. A reader tells the two apart from the fit alone.
+* The #336 mixture read serves a repaired grid. It declined there because the
+  moments were formed under a weighting it could not reproduce; both are now
+  the renormalized weights, so the components and the moments describe one
+  posterior and `interval_source` reports `"mixture_cdf"`. The reachability is
+  unchanged from #342: a healthy fit retains every cell, so no reported number
+  moves on one.
+
 ## 0.0.153
 
 * A nested-Laplace fit's fixed-effect credible bounds are the quantiles of the

@@ -698,9 +698,19 @@ the dominant component alone) are each an unbacked assertion. The boundary:
 `skew_correct = TRUE` fit keeps the #302 read. `interval_source`
 (`"mixture_cdf"` / `"gaussian_moment"` / `"skew_map_cell"`) and
 `interval_declined` travel on `confint()` / `summary()`, so a fit says which
-read produced its bounds and why. A grid that dropped a positive-weight cell
-declines to the collapsed read rather than renormalize the mixture over
-different mass than `estimate` and `std.error` carry.
+read produced its bounds and why.
+
+**A grid that dropped a positive-weight cell is read conditional on the cells
+that remain (gcol33/tulpa#342).** `.nested_fixed_moments()` renormalizes over
+the cells that retained a block, so the mean and covariance are those of a grid
+that never held the dropped cell instead of the whole-grid mean shrunk toward
+the origin by the dropped mass. The mixture components carry that same
+weighting, so the mixture read serves such a grid too. What it reports is the
+posterior CONDITIONAL ON THE RETAINED CELLS: the dropped mass is gone, and no
+reweighting brings it back. `mass` on the moments -- and `retained_mass` on
+`confint()` / `summary()` -- is the ORIGINAL retained share, 1 on a complete
+grid and below 1 on a repaired one, so a reader always tells the two apart from
+the fit alone.
 
 Arbiters outside the quantile path: the defining CDF assembled by hand from the
 fit's retained cells; `tulpa_posterior_draws()`, which samples a cell by weight

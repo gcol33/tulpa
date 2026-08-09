@@ -219,7 +219,7 @@ test_that("the inner-Laplace skew correction reaches a joint fit's intervals", {
 })
 
 # --------------------------------------------------------------------------- #
-# (5) The shared marginalizer skips a cell that carries no weight.             #
+# (5) Which cells the shared marginalizer sums over, and under what weights.   #
 # --------------------------------------------------------------------------- #
 
 test_that(".nested_fixed_moments ignores zero-weight and empty cells", {
@@ -243,6 +243,86 @@ test_that(".nested_fixed_moments ignores zero-weight and empty cells", {
   expect_null(tulpa:::.nested_fixed_moments(
     list(weights = c(0.5, 0.5), grid_modes = list(c(1, 2)),
          grid_hessians = list(H))))
+
+  # A complete grid retains all of its weight.
+  expect_equal(ref$mass, 1, tolerance = 1e-14)
+  expect_equal(got$mass, 1, tolerance = 1e-14)
+})
+
+# A cell that carries POSITIVE weight and no retained block is the other case
+# (gcol33/tulpa#342). Its mass is gone, so the moments are renormalized over
+# what survived and report the posterior conditional on those cells; summing the
+# whole-grid weights over the survivors instead would shrink the mean toward the
+# origin by exactly the dropped mass.
+test_that(".nested_fixed_moments renormalizes over the cells it kept", {
+  # The symmetric reproduction from the issue: two identical cells, one of them
+  # dropped. The truth is unmoved, and the pre-#342 answer was half of it.
+  H <- matrix(c(4, 1, 1, 2), 2, 2)
+  full <- list(weights = c(0.5, 0.5),
+               grid_modes = list(c(1, 2), c(1, 2)),
+               grid_hessians = list(H, H))
+  holed <- full
+  holed$grid_hessians[2] <- list(NULL)
+
+  expect_equal(tulpa:::.nested_fixed_moments(full)$mean, c(1, 2),
+               tolerance = 1e-14)
+  expect_equal(tulpa:::.nested_fixed_moments(holed)$mean, c(1, 2),
+               tolerance = 1e-14)
+  expect_equal(tulpa:::.nested_fixed_moments(holed)$cov, solve(H),
+               tolerance = 1e-12)
+
+  # That fixture passes under any renormalization, because its survivors share
+  # one mode. The discriminating case is a dropped cell whose mode and weight
+  # both differ from the survivors': there the answer is the grid that never
+  # held it, entry for entry.
+  H1 <- matrix(c(4,  1.0,  1.0, 2.0), 2, 2)
+  H2 <- matrix(c(3, -0.5, -0.5, 5.0), 2, 2)
+  H3 <- matrix(c(6,  0.25, 0.25, 1.5), 2, 2)
+  grid <- list(weights = c(0.2, 0.5, 0.3),
+               grid_modes = list(c(-1, 0.5), c(2, -3), c(0.25, 4)),
+               grid_hessians = list(H1, H2, H3))
+  dropped <- grid
+  dropped$grid_hessians[3] <- list(NULL)
+  never <- list(weights = c(0.2, 0.5),
+                grid_modes = grid$grid_modes[1:2],
+                grid_hessians = list(H1, H2))
+
+  a <- tulpa:::.nested_fixed_moments(dropped)
+  b <- tulpa:::.nested_fixed_moments(never)
+  expect_equal(a$mean, b$mean, tolerance = 1e-14)
+  expect_equal(a$cov,  b$cov,  tolerance = 1e-14)
+  expect_equal(a$mu,   b$mu,   tolerance = 1e-14)
+  expect_equal(a$var,  b$var,  tolerance = 1e-14)
+  expect_equal(a$w,    b$w,    tolerance = 1e-14)
+
+  # Against the law of total covariance by hand at the renormalized weights.
+  wk <- c(0.2, 0.5) / 0.7
+  mu <- rbind(c(-1, 0.5), c(2, -3))
+  m  <- as.numeric(crossprod(wk, mu))
+  S  <- wk[1] * (solve(H1) + tcrossprod(mu[1, ])) +
+        wk[2] * (solve(H2) + tcrossprod(mu[2, ]))
+  expect_equal(a$mean, m, tolerance = 1e-14)
+  expect_equal(a$cov, S - tcrossprod(m), tolerance = 1e-14)
+  expect_equal(a$w, wk, tolerance = 1e-14)
+
+  # The weights the moments were formed under sum to one; the mass they were
+  # renormalized from is the reporting channel, and separates the repaired grid
+  # from the one that never held the cell.
+  expect_equal(sum(a$w), 1, tolerance = 1e-14)
+  expect_equal(a$mass, 0.7, tolerance = 1e-14)
+  expect_equal(b$mass, 1,   tolerance = 1e-14)
+
+  # Dropping every cell but one leaves that cell's own Gaussian.
+  one <- grid
+  one$grid_modes[c(1, 3)] <- list(NULL)
+  o <- tulpa:::.nested_fixed_moments(one)
+  solo <- tulpa:::.nested_fixed_moments(
+    list(weights = 1, grid_modes = list(c(2, -3)), grid_hessians = list(H2)))
+  expect_equal(o$mean, solo$mean, tolerance = 1e-14)
+  expect_equal(o$cov,  solo$cov,  tolerance = 1e-14)
+  expect_equal(o$mean, c(2, -3),  tolerance = 1e-14)
+  expect_equal(o$cov,  solve(H2), tolerance = 1e-12)
+  expect_equal(o$mass, 0.5, tolerance = 1e-14)
 })
 
 # --------------------------------------------------------------------------- #

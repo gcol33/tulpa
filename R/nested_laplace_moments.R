@@ -346,15 +346,27 @@
 # the mixture read did not run. The two corrections address different
 # non-Gaussianities: this one across cells, #302 within the MAP cell.
 #
+# A GRID THAT DROPPED A POSITIVE-WEIGHT CELL still gets the mixture read. The
+# moments renormalize over the cells that retained a block, so the components
+# here carry the same weighting the reported `estimate` and `std.error` were
+# formed under and the two reads describe one posterior -- the posterior
+# CONDITIONAL ON THE RETAINED CELLS, not the full grid's, which the dropped mass
+# is gone from either way. `mass` travels with the result and is the original
+# retained share of the grid weight, so a caller reading the bounds can always
+# tell a complete grid from a repaired one (gcol33/tulpa#342).
+#
 # `mom` is the `.nested_fixed_moments()` list, `idx` the reported coefficient
 # columns, `est` / `se` their moments, `probs` the requested levels, `sc` the
 # `.nl_skew_correction()` state. Returns list(q = length(est) x length(probs),
-# applied, source, declined).
+# applied, source, declined, mass).
 .nl_fixed_interval <- function(mom, idx, est, se, probs, sc) {
+  mass <- if (is.numeric(mom$mass) && length(mom$mass) == 1L) {
+    as.numeric(mom$mass)
+  } else NA_real_
   gaussian <- function(source, declined) {
     list(q = est + outer(se, stats::qnorm(probs)),
          applied = rep(FALSE, length(est)),
-         source = source, declined = declined)
+         source = source, declined = declined, mass = mass)
   }
   if (isTRUE(sc$enabled)) {
     mg <- .nl_skew_marginal(est, se, sc$gamma3[idx], probs, enabled = TRUE)
@@ -362,7 +374,8 @@
       q = mg$q, applied = mg$applied, source = "skew_map_cell",
       declined = paste("skew_correct: gamma_3 is retained at the MAP cell",
                        "only, so the mixture components carry no per-cell",
-                       "skew to compose")))
+                       "skew to compose"),
+      mass = mass))
   }
   if (is.null(mom$mu) || is.null(mom$var) || is.null(mom$w)) {
     return(gaussian("gaussian_moment", "no retained mixture components"))
@@ -370,15 +383,6 @@
   if (ncol(mom$mu) < max(idx)) {
     return(gaussian("gaussian_moment",
                     "retained component block is narrower than the reported coefficients"))
-  }
-  # The moments skip a positive-weight cell that retained no block, which the
-  # mixture read cannot reproduce (it would renormalize over what is left and
-  # report a differently-weighted posterior than `estimate` and `std.error`).
-  # Decline rather than ship two reads of one fit that disagree.
-  if (!isTRUE(is.finite(mom$mass)) || mom$mass < 1 - 1e-8) {
-    return(gaussian("gaussian_moment",
-                    sprintf("only %.6f of the grid weight retained a fixed-effect block",
-                            mom$mass)))
   }
   mx <- .nl_gauss_mixture_summary(mom$mu[, idx, drop = FALSE],
                                   mom$var[, idx, drop = FALSE],
@@ -388,7 +392,7 @@
                     "component means or variances are not all usable"))
   }
   list(q = mx$quantiles, applied = rep(FALSE, length(est)),
-       source = "mixture_cdf", declined = NA_character_)
+       source = "mixture_cdf", declined = NA_character_, mass = mass)
 }
 
 # Weighted mean and SD of `values` under pre-normalized `weights` (which

@@ -219,20 +219,48 @@ test_that("an enabled skew correction reports the MAP-cell read it was measured 
 })
 
 # --------------------------------------------------------------------------- #
-# (7) Declines name the gate they fell at                                      #
+# (7) An incomplete grid, and declines that name the gate they fell at         #
 # --------------------------------------------------------------------------- #
 
-test_that("a grid whose retained mass is short declines to the collapsed read", {
+test_that("a repaired grid reads as the posterior over the cells that remain", {
+  # A positive-weight cell that retained no block. The moments renormalize over
+  # the cells that did, so the mixture carries the same weighting `estimate` and
+  # `std.error` were formed under and the read runs (gcol33/tulpa#342). What it
+  # reports is the posterior conditional on those cells: the same fit as a grid
+  # that never held the dropped cell, on every number.
   fit <- mx_fit(mx_mu, mx_vr, mx_w)
-  # A positive-weight cell that retained no block. The moments skip it, so a
-  # mixture normalized over what is left would describe a differently-weighted
-  # posterior than the `estimate` and `std.error` reported beside it.
   fit$grid_hessians[2] <- list(NULL)
+  kept <- mx_fit(mx_mu[c(1, 3), ], mx_vr[c(1, 3), ], mx_w[c(1, 3)])
 
   ci <- confint(fit)
-  expect_identical(attr(ci, "interval_source"), "gaussian_moment")
-  expect_match(attr(ci, "interval_declined"), "grid weight")
-  expect_equal(mx_q(fit), unname(mx_gauss_ci(fit)), tolerance = 1e-14)
+  ck <- confint(kept)
+  expect_identical(attr(ci, "interval_source"), "mixture_cdf")
+  expect_true(is.na(attr(ci, "interval_declined")))
+  expect_equal(mx_q(fit), mx_q(kept), tolerance = 1e-12)
+  expect_equal(unname(coef(fit)), unname(coef(kept)), tolerance = 1e-14)
+  expect_equal(unname(vcov(fit)), unname(vcov(kept)), tolerance = 1e-14)
+
+  # The bounds are the mixture's own, read off the defining CDF over the two
+  # surviving components rather than off the Gaussian matching their moments.
+  w2 <- mx_w[c(1, 3)] / sum(mx_w[c(1, 3)])
+  cdf <- function(b, j) {
+    sum(w2 * stats::pnorm(b, mx_mu[c(1, 3), j], sqrt(mx_vr[c(1, 3), j])))
+  }
+  for (j in 1:2) {
+    expect_equal(cdf(ci[j, 1], j), 0.025, tolerance = 1e-9)
+    expect_equal(cdf(ci[j, 2], j), 0.975, tolerance = 1e-9)
+  }
+  expect_gt(max(abs(mx_q(fit) - unname(mx_gauss_ci(fit)))), 1e-6)
+
+  # Every number agrees; the completeness report is what separates them. The
+  # dropped mass is gone, not recovered, and the fit says so.
+  expect_equal(attr(ci, "retained_mass"), sum(mx_w[c(1, 3)]) / sum(mx_w),
+               tolerance = 1e-14)
+  expect_equal(attr(ck, "retained_mass"), 1, tolerance = 1e-14)
+  expect_equal(attr(summary(fit), "retained_mass"),
+               attr(ci, "retained_mass"), tolerance = 1e-14)
+  expect_equal(tulpa:::.nested_fixed_moments(fit)$mass,
+               sum(mx_w[c(1, 3)]) / sum(mx_w), tolerance = 1e-14)
 })
 
 test_that("a fit with no retained components declines with its own reason", {

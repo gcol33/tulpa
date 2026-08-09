@@ -18,9 +18,10 @@
 \value{
 Matrix with lower and upper columns. A nested-Laplace fit carries
 \code{interval_source} / \code{interval_declined} (which read produced the bounds --
-by default the grid's Gaussian-mixture CDF) and \code{skew_applied}, one logical
-per reported coefficient saying whether its bounds are the inner-Laplace
-skew-corrected quantiles or not. See \code{\link[=summary.tulpa_fit]{summary.tulpa_fit()}}.
+by default the grid's Gaussian-mixture CDF), \code{retained_mass} (the share of
+the grid weight the bounds are conditional on), and \code{skew_applied}, one
+logical per reported coefficient saying whether its bounds are the
+inner-Laplace skew-corrected quantiles or not. See \code{\link[=summary.tulpa_fit]{summary.tulpa_fit()}}.
 }
 \description{
 Credible intervals for the fixed effects

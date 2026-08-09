@@ -24,7 +24,11 @@ mixture \verb{sum_k w_k N(mu_kj, V_kjj)} that grid defines, rather than reading
 \verb{mu +/- z sigma} off the single Gaussian matching those moments. An
 \code{interval_source} attribute records which read produced them
 (\code{"mixture_cdf"}, \code{"gaussian_moment"}, \code{"skew_map_cell"}) and
-\code{interval_declined} says why, whenever the mixture read did not run.
+\code{interval_declined} says why, whenever the mixture read did not run. A
+\code{retained_mass} attribute gives the share of the grid weight whose cells
+retained a fixed-effect block: 1 on a complete grid, and below 1 on one
+that dropped a positive-weight cell, whose report is then the posterior
+conditional on the cells that remain.
 
 With \code{control$skew_correct = TRUE} the bounds are instead Cornish-Fisher
 quantiles at each coefficient's inner-Laplace \code{gamma_3} wherever that term
