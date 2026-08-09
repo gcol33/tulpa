@@ -494,11 +494,99 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
     NA_integer_
 }
 
+# --- axis rails (gcol33/tulpa#361) --------------------------------------------
+#
+# `.nl_edge_axis_hit()` above asks the #276 question: did the WHOLE grid
+# collapse onto one cell, and does that cell sit on a node. That is a joint
+# quantity over the tensor -- `ess_grid = 1 / sum(w^2)` across every cell -- so
+# on a crossed grid a second axis carrying spread lifts it past the collapse
+# threshold while one axis is hard against its own boundary. The gcol33/tulpa#357
+# census's 100-region BYM2 fixture measures `ess_grid = 1.928` against a
+# threshold of 2: whether its railed `rho` axis is seen at all rests on 0.072 of
+# an effective cell, and on a number the `rho` marginal barely enters.
+#
+# The per-axis question is exact and costs nothing beyond the weights already
+# stored. Marginalize the fit's own `log_marginal` onto one axis -- the SAME
+# marginal `.nl_axis_quantiles()` reports that axis's median and interval off --
+# and ask whether the weight is maximal at an endpoint. For a unimodal marginal
+# that happens exactly when the mode is AT or BEYOND that endpoint, so the span
+# does not contain it and the axis integrates a tail at any spacing.
+
+# One axis's marginal over its own sorted distinct nodes, normalized.
+.nl_axis_marginal_w <- function(res, axis) {
+    tg <- res$theta_grid
+    lm <- res$log_marginal
+    if (is.null(tg) || is.null(lm)) return(NULL)
+    cn <- if (is.matrix(tg)) colnames(tg) else (res$theta_names %||% "theta")
+    if (!is.matrix(tg)) tg <- matrix(as.numeric(tg), ncol = 1L)
+    if (is.null(cn) || length(cn) != ncol(tg)) {
+        cn <- paste0("axis", seq_len(ncol(tg)))
+    }
+    j <- match(axis, cn)
+    if (is.na(j) && ncol(tg) == 1L) j <- 1L
+    if (is.na(j) || length(lm) != nrow(tg)) return(NULL)
+    m <- .nl_axis_marginal_logdensity(as.numeric(tg[, j]), lm)
+    if (length(m$vals) < 2L) return(NULL)
+    top <- max(m$log_marg)
+    if (!is.finite(top)) return(NULL)
+    w <- exp(m$log_marg - top)
+    s <- sum(w)
+    if (!is.finite(s) || s <= 0) return(NULL)
+    list(vals = m$vals, w = w / s, col = j)
+}
+
+# Is `axis` railed against one of its own endpoints? Returns
+# `list(side, mass, node)` or NULL.
+#
+# Two clauses. The first IS the statement -- a marginal maximal at a boundary
+# node has its mode at or beyond that boundary. The second requires the boundary
+# node to carry at least `edge_mass` of the axis's marginal weight, and is what
+# keeps a marginal that is merely uneven, or flat to within the weights' own
+# noise (where the argmax is arbitrary), from being read as a rail and moved
+# onto curvature it does not have: a near-flat direction returns a huge mode SD,
+# and a grid laid over it is coarser than the one it replaced.
+.nl_axis_rail <- function(res, axis, edge_mass = .nl_recenter("edge_mass")) {
+    mw <- .nl_axis_marginal_w(res, axis)
+    if (is.null(mw)) return(NULL)
+    m <- length(mw$w)
+    k <- which.max(mw$w)
+    if (k != 1L && k != m) return(NULL)
+    if (!is.finite(mw$w[k]) || mw$w[k] < edge_mass) return(NULL)
+    list(side = if (k == 1L) "lower" else "upper",
+         mass = mw$w[k], node = mw$vals[k])
+}
+
+# Every axis of a fit that is railed, as `axis:side`, whether or not any rescue
+# covers it. Recorded on the fit (`$outer_grid_railed_axes`) so a span that does
+# not contain its own posterior mode is visible instead of silently integrating
+# a tail -- the gcol33/tulpa#293 rule that a placement the engine leaves alone
+# has to say so.
+.nl_railed_axes <- function(res) {
+    tg <- res$theta_grid
+    if (is.null(tg) || is.null(res$log_marginal)) return(character(0))
+    cn <- if (is.matrix(tg)) colnames(tg) else (res$theta_names %||% "theta")
+    if (is.null(cn)) return(character(0))
+    hits <- character(0)
+    for (a in cn) {
+        r <- .nl_axis_rail(res, a)
+        if (!is.null(r)) hits <- c(hits, paste0(a, ":", r$side))
+    }
+    hits
+}
+
+.nl_attach_railed_axes <- function(res) {
+    res$outer_grid_railed_axes <- .nl_railed_axes(res)
+    res
+}
+
 # --- decline reasons ---------------------------------------------------------
 #
 # `res$outer_grid_recenter_declined` records why an applicable auto-recenter did
 # not run: `"axis_pinned"` (the caller pinned the axis), `"grid_not_collapsed"`
-# (the grid already brackets the mode, the common no-op),
+# (the grid already brackets the mode, the common no-op, on the rescues whose
+# trigger is the whole grid's collapse), `"no_axis_railed"` (its per-axis
+# counterpart on the registry rescue: no axis of the family is maximal at one of
+# its own endpoints),
 # `"no_usable_curvature"` (the mode-Hessian the recenter needs was unavailable
 # or degenerate), `"auto_recenter_disabled"` (`control$auto_recenter = FALSE`,
 # the way to hold ANY grid -- the engine's own default axis included -- exactly
@@ -513,27 +601,53 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
     res
 }
 
-# `mode_u` / `sd_u` are on the log scale (u = log(theta)). Returns a sorted
-# numeric vector of `n_pts` positive theta values spanning
-# `mode_u +/- span * sd_u`, or NULL when the curvature is not usable
-# (non-finite / non-positive SD) -- the caller then leaves the existing grid
-# untouched rather than centre on a meaningless spread.
+# `mode_u` / `sd_u` are in the axis's own unconstrained coordinate, the one
+# `.joint_pareto_fwd()` / `.joint_pareto_inv()` define per `tag`: `log` for a
+# positive scale, `logit01` for a proportion, `identity` for an axis already on
+# all of R. Returns a sorted numeric vector of `n_pts` nodes spanning
+# `mode_u +/- span * sd_u`, mapped back to the axis's own support, or NULL when
+# the curvature is not usable (non-finite / non-positive SD, an unguessable
+# tag) -- the caller then leaves the existing grid untouched rather than centre
+# on a meaningless spread.
 # `sd_u` is clamped to `[min_sd_u, max_sd_u]`: a floor so a razor-sharp local
 # curvature does not collapse the new grid to near-duplicate nodes (the
 # purpose of the retry is to bracket the mode with actual spread), and a
 # ceiling so a near-flat direction does not fling nodes to implausible
 # extremes.
-.nl_recenter_log_axis <- function(mode_u, sd_u,
-                                   n_pts    = .nl_recenter("n_pts"),
-                                   span     = .nl_recenter("span"),
-                                   min_sd_u = .nl_recenter("min_sd_u"),
-                                   max_sd_u = .nl_recenter("max_sd_u")) {
+#
+# A `logit01` axis maps back into the OPEN interval, and both endpoints are
+# singular for the families that carry one (a BYM2 `rho` of exactly 0 or 1 is a
+# degenerate mixture), so a node that saturates to a boundary in double
+# precision is dropped rather than laid down; too few survivors declines.
+.nl_recenter_axis <- function(tag, mode_u, sd_u,
+                              n_pts    = .nl_recenter("n_pts"),
+                              span     = .nl_recenter("span"),
+                              min_sd_u = .nl_recenter("min_sd_u"),
+                              max_sd_u = .nl_recenter("max_sd_u")) {
+    if (length(tag) != 1L || is.na(tag) ||
+        !tag %in% c("log", "logit01", "identity")) return(NULL)
     if (length(mode_u) != 1L || length(sd_u) != 1L) return(NULL)
     if (!is.finite(mode_u) || !is.finite(sd_u) || sd_u <= 0) return(NULL)
     sd_u  <- min(max(sd_u, min_sd_u), max_sd_u)
     u_seq <- seq(mode_u - span * sd_u, mode_u + span * sd_u,
                  length.out = as.integer(n_pts))
-    sort(exp(u_seq))
+    nodes <- .joint_pareto_inv(tag, u_seq)$theta
+    keep  <- is.finite(nodes)
+    if (identical(tag, "logit01")) keep <- keep & nodes > 0 & nodes < 1
+    nodes <- sort(unique(nodes[keep]))
+    if (length(nodes) < .nl_recenter("min_nodes")) return(NULL)
+    nodes
+}
+
+# The positive-scale case, kept as its own name because every existing caller
+# (both joint rescues) recentres a field amplitude.
+.nl_recenter_log_axis <- function(mode_u, sd_u,
+                                   n_pts    = .nl_recenter("n_pts"),
+                                   span     = .nl_recenter("span"),
+                                   min_sd_u = .nl_recenter("min_sd_u"),
+                                   max_sd_u = .nl_recenter("max_sd_u")) {
+    .nl_recenter_axis("log", mode_u, sd_u, n_pts = n_pts, span = span,
+                      min_sd_u = min_sd_u, max_sd_u = max_sd_u)
 }
 
 # Build the recentered axis for `axis` from the (mode, covariance) a fit's
@@ -767,28 +881,43 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
     out
 }
 
-# Per-family value/other axis field names for the standalone registry
-# rescue below. `value` is the prior-list field the positive-scale axis
-# lives on (recentred on collapse); `other` (when present) is the paired
-# bounded axis's field, re-crossed with the new value axis via the same
-# `expand.grid()` a family's own `defaults()` uses; `other_axis` is that
-# axis's column name in `res$theta_grid`. `col_name` is the axis's bare name
-# in `res$theta_names` -- `.nl_axis_alias()` resolves it against whatever the
+# Which axes the standalone registry rescue below can move, per family: the
+# prior-list FIELD each axis lives on, mapped to that axis's bare name in
+# `res$theta_names`. `.nl_axis_alias()` resolves the name against whatever the
 # fit calls it (icar's `theta_grid` is a plain numeric vector, so
 # `.joint_pareto_grid_regime()` coerces it to a 1-column matrix generically
 # named `"theta"` while `theta_names` still says `"tau"`).
+#
+# Every axis a family lists is movable on its own. Before gcol33/tulpa#361 the
+# entry named ONE recentrable axis and carried the family's other axis as a
+# passenger, re-crossed unchanged, so BYM2's `rho_grid` was detected against its
+# 0.95 ceiling (`pareto_k_grid_edge_axes` names it) and then left there -- with
+# the fit recording `grid_not_collapsed`, which is not what happened. Field
+# order follows `.NL_FAMILY_AXES` (`R/settings.R`), the same order
+# `.nl_fill_family_axes()` crosses a family's defaults in.
 .NL_REGISTRY_AXIS_FIELD <- list(
-    icar = list(value = "tau_grid",   col_name = "tau"),
-    bym2 = list(value = "sigma_grid", col_name = "sigma",
-               other = "rho_grid", other_axis = "rho")
+    icar = c(tau_grid = "tau"),
+    bym2 = c(sigma_grid = "sigma", rho_grid = "rho")
 )
 
+# The nodes a fit carried on one axis, for an axis the rescue re-crosses
+# unchanged.
+.nl_rescue_axis_nodes <- function(res, axis) {
+    tg <- res$theta_grid
+    if (is.null(tg)) return(NULL)
+    if (!is.matrix(tg)) return(sort(unique(as.numeric(tg))))
+    j <- match(axis, colnames(tg) %||% character(0))
+    if (is.na(j)) return(NULL)
+    sort(unique(as.numeric(tg[, j])))
+}
+
 # Standalone (non-joint) `tulpa_nested_laplace()` single-block registry
-# rescue (gcol33/tulpa#290) -- the registry generalization of
-# `.joint_sigma_grid_rescue()`. Scope: icar's `tau_grid` and bym2's
-# `sigma_grid`, the two fixed-ceiling defaults #290 confirms (`gmrf_tau` and
-# `field_sd` in `.NL_GRID`). car_proper
-# declines (its `rho` axis is unguessable under
+# rescue (gcol33/tulpa#290, gcol33/tulpa#361) -- the registry generalization of
+# `.joint_sigma_grid_rescue()`. Scope: every axis `.NL_REGISTRY_AXIS_FIELD`
+# lists for the family -- icar's `tau_grid`, bym2's `sigma_grid` AND its
+# `rho_grid` -- each moved on its own rail, in whichever coordinate the engine's
+# transform registry gives it (`log` for a scale, `logit01` for the mixing
+# weight). car_proper declines (its `rho` axis is unguessable under
 # `.joint_pareto_block_tags()`, the same limitation the joint path already
 # has); MCAR's log-Cholesky axis geometry is a materially different
 # recentering problem and is out of scope here.
@@ -811,22 +940,35 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
     out <- list(res = res, prior = prior)
     fields <- .NL_REGISTRY_AXIS_FIELD[[type]]
     if (is.null(fields)) return(out)
+    out$res <- .nl_attach_railed_axes(out$res)
     if (!isTRUE(enabled)) {
-        out$res <- .nl_decline_recenter(res, "auto_recenter_disabled")
+        out$res <- .nl_decline_recenter(out$res, "auto_recenter_disabled")
         return(out)
     }
-    if (.nl_axis_is_pinned(prior, fields$value, .nl_auto_fields_at(auto),
-                           type = type)) {
-        out$res <- .nl_decline_recenter(res, "axis_pinned")
+
+    # A prior that pins EVERY axis the family lists leaves the rescue nothing to
+    # move whatever the fit did, which is the answer #290 gave and the one a
+    # caller holding their own grid expects.
+    pinned <- vapply(names(fields), function(f) .nl_axis_is_pinned(
+        prior, f, .nl_auto_fields_at(auto), type = type), logical(1))
+    if (all(pinned)) {
+        out$res <- .nl_decline_recenter(out$res, "axis_pinned")
         return(out)
     }
 
     cur_prior <- prior
     attempt <- 0L
-    reason  <- "grid_not_collapsed"
-    while (attempt < max_attempts &&
-           identical(res$pareto_k_regime, "collapsed_edge") &&
-           .nl_edge_axis_hit(res, fields$col_name)) {
+    reason  <- "no_axis_railed"
+    while (attempt < max_attempts) {
+        railed <- names(fields)[vapply(names(fields), function(f)
+            .nl_edge_axis_hit(res, fields[[f]]) ||
+            !is.null(.nl_axis_rail(res, fields[[f]])), logical(1))]
+        if (!length(railed)) break
+        movable <- railed[!pinned[railed]]
+        if (!length(movable)) {
+            reason <- "axis_pinned"
+            break
+        }
 
         mc <- .nl_registry_axis_mode_cov(
             res, type, function(theta_mat) refit_log_marginal(cur_prior, theta_mat))
@@ -835,31 +977,37 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
             break
         }
 
-        j <- .nl_axis_index(mc$col_names, .nl_axis_alias(fields$col_name), mc$tags)
-        if (is.na(j)) {
-            reason <- "no_usable_curvature"
-            break
+        moved <- list()
+        for (f in movable) {
+            j <- .nl_axis_index(mc$col_names, .nl_axis_alias(fields[[f]]), mc$tags)
+            if (is.na(j)) next
+            nd <- .nl_recenter_axis(mc$tags[j], mc$u_mode[j], sqrt(mc$cov[j, j]))
+            if (!is.null(nd)) moved[[f]] <- nd
         }
-        new_axis <- .nl_recenter_log_axis(mc$u_mode[j], sqrt(mc$cov[j, j]))
-        if (is.null(new_axis)) {
+        if (!length(moved)) {
             reason <- "no_usable_curvature"
             break
         }
 
-        attempt <- attempt + 1L
-        if (is.null(fields$other)) {
-            cur_prior[[fields$value]] <- new_axis
-        } else {
-            tg <- res$theta_grid
-            other_vals <- sort(unique(as.numeric(tg[, fields$other_axis])))
-            gr <- expand.grid(value = new_axis, other = other_vals,
-                              KEEP.OUT.ATTRS = FALSE)
-            cur_prior[[fields$value]] <- gr$value
-            cur_prior[[fields$other]] <- gr$other
+        # Re-cross every axis of the family -- the moved ones on their new
+        # nodes, the rest on the nodes the fit already carried -- so the prior
+        # goes back pre-paired the way the family's own `defaults()` builds it.
+        axes <- lapply(names(fields), function(f)
+            moved[[f]] %||% .nl_rescue_axis_nodes(res, fields[[f]]))
+        names(axes) <- names(fields)
+        if (any(vapply(axes, is.null, logical(1)))) {
+            reason <- "no_usable_curvature"
+            break
         }
+        attempt <- attempt + 1L
+        gr <- expand.grid(axes, KEEP.OUT.ATTRS = FALSE)
+        for (f in names(axes)) cur_prior[[f]] <- as.numeric(gr[[f]])
+
         res <- refit(cur_prior)
+        res <- .nl_attach_railed_axes(res)
         res$outer_grid_placement         <- "auto_recentered"
         res$outer_grid_recenter_attempts <- attempt
+        res$outer_grid_recenter_axes     <- unname(fields[movable])
         out <- list(res = res, prior = cur_prior)
     }
     out$res <- .nl_decline_recenter(out$res, reason)

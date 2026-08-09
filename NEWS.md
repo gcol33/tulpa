@@ -2,6 +2,37 @@
 
 ## 0.0.164
 
+* A default outer axis that does not contain its own posterior mode is detected
+  per axis and moved (gcol33/tulpa#361). The auto-recenter
+  (gcol33/tulpa#290) triggered on the WHOLE grid collapsing onto one cell --
+  `ess_grid` over the tensor -- so on a crossed grid a second axis carrying
+  spread hid an axis hard against its own boundary; it also named one movable
+  axis per family and placed only in the `log` coordinate. A BYM2 `rho` railed
+  against its 0.95 ceiling was therefore detected (`pareto_k_grid_edge_axes`
+  names it) and then left there, with the fit recording `grid_not_collapsed` on
+  a grid that had collapsed. An axis is now railed when its OWN marginal -- the
+  one `.nl_axis_quantiles()` reports that axis's median and interval from -- is
+  maximal at an endpoint and that endpoint carries at least half the marginal
+  weight, which for a unimodal marginal is exactly the statement that the mode
+  is at or beyond the boundary. Every axis a family lists in
+  `.NL_REGISTRY_AXIS_FIELD` is movable on its own rail, in whichever coordinate
+  the engine's own transform registry gives it (`log` for a scale, `logit01`
+  for a mixing weight, mapped back into the OPEN interval). Every registry fit
+  records `$outer_grid_railed_axes` whether or not a rescue could move the
+  axis, so a span the engine may not touch -- a user pin above all -- says so
+  instead of silently integrating a tail. Provenance is unchanged and still
+  decides: a pinned axis is reported and never moved. MEASURED over
+  gcol33/tulpa#357's 34-configuration census, read as the shipped engine
+  reports it: railed axes 2 -> 0, recentred fits 2 -> 6, reported median and
+  interval moving on 3 rows. On a fixed-truth BYM2 sweep (100 regions, `rho` in
+  {0.70, 0.90, 0.97, 0.99}, 60 seeds, both arms the shipped engine of their own
+  build) mean absolute deviation from nominal coverage goes 0.229 -> 0.075 at
+  the 50% level and 0.046 -> 0.038 at 95%, the median's bias shrinks at every
+  truth, and the 95% interval narrows 0.548 -> 0.508 at equal coverage; at
+  `rho = 0.99` the 50% interval went from containing the truth on 3 of 60
+  replicates to 32 of 60. Against a reference read on an axis that contains the
+  posterior, the moved axis is nearer on 84 of 84 replicates whose read
+  changed. `dev_notes/issue361/RESULTS.md`.
 * Corrected integrated Laplace joins the engine as a second INNER-LAYER DEBIAS,
   alongside the gcol33/tulpa#304 / #306 subspace debias (gcol33/tulpa#351, after
   Lai, Margossian & Sheldon, arXiv:2605.20345). The two differ in what they

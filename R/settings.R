@@ -377,6 +377,23 @@
     min_sd_u  = 0.15,
     max_sd_u  = 3,
 
+    # A recentred axis must survive the map back onto its own support with at
+    # least this many distinct nodes; a `logit01` axis whose nodes saturate to a
+    # boundary in double precision loses some, and a two-node axis carries no
+    # interior cell for the mode to sit in.
+    min_nodes = 3L,
+
+    # Share of an axis's OWN marginal weight its boundary node must carry before
+    # the axis counts as railed against that boundary (`.nl_axis_rail()`,
+    # gcol33/tulpa#361). A marginal maximal at a boundary node has its mode at
+    # or beyond it, which is the statement; this is the materiality guard that
+    # keeps a merely uneven -- or numerically flat -- marginal from being moved
+    # onto curvature it does not have. Half the marginal against one node is a
+    # majority read on any axis, and both of #357's two railed configurations
+    # clear it (1.000 on the 144-cell ICAR lattice's `tau`, 0.628 on the
+    # 100-region BYM2's `rho`).
+    edge_mass = 0.5,
+
     # Recenter attempts. The joint paths take two (the second adds the light PC
     # prior below, for a genuinely unidentified near-separation mode that keeps
     # running); the standalone registry path takes one -- that pathology is
