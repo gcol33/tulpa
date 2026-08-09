@@ -526,12 +526,16 @@ correction leaves every other posterior draw unchanged). Below 512 points
 a cell's particle set is too coarse to be a marginal at all and the
 request is refused. The correction reports DRAWS, so every
 coefficient-facing method reads them instead of the grid's Gaussian
-mixture; \verb{$cila} carries the corrected cell weights and marginals, the
-variant actually run, and the PSIS grade (\code{pareto_k}, \code{rel_ess}) of the
-correction's own weights. A cell whose inner solve factorized SPARSELY is
-declined with \code{"sparse_factor_unavailable"}: drawing needs a triangular
-solve against the factor and the sparse solver exposes only the full
-solve.
+mixture, and the corrected per-cell masses become the fit's own
+\code{weights} / \code{log_marginal} with \code{weights_source} reporting \code{"cila"}
+(gcol33/tulpa#367); the pre-correction pair is kept as \verb{$cila$laplace}
+and \verb{$cila$retained_mass} is the original share of the cells that
+produced a usable particle set. \verb{$cila} also carries the variant actually
+run and the PSIS grade (\code{pareto_k}, \code{rel_ess}) of the correction's own
+weights. A cell whose inner solve factorized SPARSELY draws through the
+CHOLMOD factor's own triangular and permutation solves
+(gcol33/tulpa#366); an LDL' factor carries no square root to draw with
+and is declined with \code{"sparse_factor_not_ll"}.
 \item \code{auto_recenter} (\code{TRUE}) -- re-centre a default outer grid axis on its
 posterior mode and refit when the fit rails against a boundary node
 (gcol33/tulpa#289 / #290). \code{FALSE} integrates over the grid exactly as
