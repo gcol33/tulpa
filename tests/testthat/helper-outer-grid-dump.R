@@ -77,6 +77,15 @@ OGD_PARTS <- list(
     tulpa:::.nl_node_support(fit$integration, fit$weight_kind)
 }
 
+# The WITHIN-CELL construction the fit's own intervals were read with
+# (gcol33/tulpa#357). A dump replays the fit's read, so it carries this the same
+# way it carries the support: a fit run with `control$within_cell` other than
+# the default and re-read here has to come back with the numbers it shipped, and
+# the round-trip assertion in test-outer-grid-dump.R is what holds that.
+.ogd_within <- function(fit) {
+  tulpa:::.nl_within_cell_mode(fit$within_cell_requested)
+}
+
 # `domains` is consumed only by a `moment_rule` support (a central-composite
 # design's interval comes from its moments on the axis's own coordinate), and the
 # driver passes NULL otherwise. Mirrored here so the dump carries the argument the
@@ -165,6 +174,7 @@ outer_grid_dump <- function(fit, file = NULL) {
     axis_tags    = tulpa:::.joint_axis_tags_raw(fit),
     axis_domains = .ogd_domains(fit, support),
     support      = support,
+    within       = .ogd_within(fit),
     probs        = OGD_PROBS,
     integration            = fit$integration,
     integration_requested  = fit$integration_requested,
@@ -172,6 +182,8 @@ outer_grid_dump <- function(fit, file = NULL) {
     local_ccd_info         = fit$local_ccd_info,
     theta_interval_read        = fit$theta_interval_read,
     theta_interval_design_mass = fit$theta_interval_design_mass,
+    theta_within_cell          = fit$theta_within_cell,
+    theta_within_cell_declined = fit$theta_within_cell_declined,
     theta_mean   = fit$theta_mean,
     theta_sd     = fit$theta_sd,
     grid_modes    = grid_modes,
@@ -240,7 +252,8 @@ outer_grid_rebuild <- function(dump, weights = NULL, joint_grid = NULL) {
   tulpa:::.nl_axis_quantiles(
     .ogd_coords(dump, joint_grid), dump$log_marginal, dump$refining_axis,
     probs = dump$probs, weights = as.numeric(w),
-    support = dump$support, domains = dump$axis_domains)
+    support = dump$support, domains = dump$axis_domains,
+    within = dump$within %||% "chord")
 }
 
 # The grid-marginalized fixed-effect mean and covariance a dump's cells give
@@ -412,7 +425,8 @@ outer_grid_read_diff <- function(a, b) {
     ws <- ws / sum(ws)
   }
   dm <- if (length(dump$axis_domains) < j) NA_character_ else dump$axis_domains[[j]]
-  tulpa:::.nl_summary_quantile(v, ws, dump$probs, dm, dump$support)
+  tulpa:::.nl_summary_quantile(v, ws, dump$probs, dm, dump$support,
+                               dump$within %||% "chord")
 }
 
 # Every axis at one coarsening, in the shape `outer_grid_rebuild()` returns.

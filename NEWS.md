@@ -1,5 +1,94 @@
 # tulpa NEWS
 
+## 0.0.175
+
+* Box-uniform is promoted to a selectable WITHIN-CELL construction behind the
+  existing `support` taxonomy, and the position sensitivity it carries is
+  reported rather than silently accepted (gcol33/tulpa#357). The outer grid's
+  cell weights say how much mass each cell holds; they do not say how it is
+  spread inside the cell, and a reported quantile needs both. `"chord"` -- the
+  shipped read -- puts the cumulative MID-mass at each cell COORDINATE and
+  interpolates between coordinates. `"box_uniform"` puts the cumulative FULL
+  mass at each cell EDGE and interpolates between edges: the same masses over
+  the same boxes with the knots moved half a cell.
+  `control$within_cell = "box_uniform"` selects it on `tulpa_nested_laplace()`,
+  `tulpa_nested_laplace_joint()` and the ST front door.
+
+  THE DEFAULT DOES NOT MOVE, and that is shown rather than asserted: seven fits
+  spanning the single-block registry, the joint single-block driver, the
+  multi-block tensor, CCD and adaptive paths, a bounded `bym2` `rho` axis and
+  the gcol33/tulpa#337 fixture were run against HEAD's `R/` and against this
+  tree with the same DLL, data and control lists, and every reported
+  `theta_median` / `theta_ci_lo` / `theta_ci_hi` / `theta_mean` / `theta_sd` /
+  `log_marginal` / `weights` and per-block moment is `identical()`
+  (`dev_notes/issue357/identity357.R`, `identity357.out`).
+
+  It is a second FIELD on each `.NL_SUPPORT` entry rather than a fifth kind:
+  `outside` is a fact about what the producer left behind, `within` is a
+  caller's choice about how to read it, and the two are orthogonal. Only a
+  `"density"` support admits box-uniform -- a CCD design is a moment rule, a
+  locally refined grid's replacement clouds sit inside one base cell so a
+  Voronoi partition of the node set is not the design's own boxes, and a
+  posterior sample's values are order statistics. `.nl_cell_edges()` is now
+  `.nl_cell_partition()$edges`, which also reports the COORDINATE the edges came
+  out of, because the box read has to bisect the interior spacings in the same
+  coordinate the outer half-cells were mirrored in or the partition it tiles the
+  axis with is not one partition. That reconciles the construction with
+  gcol33/tulpa#369: on a `unit` axis the boxes are bisected in logit, so a BYM2
+  mixing weight with a node at 0.99972 (gcol33/tulpa#361 extended `bym2_rho` to
+  six nodes including 0.999) stays inside (0, 1) where the log guess reaches
+  1.0015. `dev_notes/issue337/recon.R`'s `slice_masses()` STOPS when the boxes
+  do not tile; a reported interval cannot take that behaviour, so a partition
+  that is not finite and strictly increasing DECLINES with a recorded reason
+  (`"support_<kind>"`, `"single_node"`, `"boxes_do_not_tile"`,
+  `"no_usable_node"`) and that axis falls back to the chord read on its own.
+
+* Every nested path now stamps what its per-axis intervals were read off, not
+  only the multi-block driver (gcol33/tulpa#357). `theta_interval_read` /
+  `theta_interval_design_mass` were filled by `.joint_dispatch_multi()` alone,
+  so the single-block, joint single-block, registry and ST paths were
+  indistinguishable from a fit that does not record it --
+  `helper-outer-grid-dump.R`'s `.ogd_support()` fell back to `.nl_node_support()`
+  for exactly that reason. `.nl_posterior_moments()` and its two multi-block
+  siblings stamp the pair, alongside the new `within_cell_requested` /
+  `theta_within_cell` / `theta_within_cell_declined`.
+  `.tulpa_interval_read_note()` had no consumer at all; it and the new
+  within-cell note are now attached by `laplace_diagnostics()` and printed.
+
+* A fit reports how coarse its own outer grid is:
+  `outer_grid_cell_width` / `outer_grid_axis_sd` / `outer_grid_h_over_sd`, per
+  axis, both in that axis's own coordinate (gcol33/tulpa#357). Every within-cell
+  construction resolves an interval endpoint to within one cell, so part of the
+  reported width and of its realized coverage is a property of where the grid
+  fell rather than of the posterior, and `h / sd` is what governs how much.
+  Below `.nl_diag("grid_resolved") = 1` the cells are narrower than the
+  posterior they discretize and the two constructions converge; the
+  34-configuration census of the engine's own default axes puts every one of
+  them above it (minimum 1.01, median 4.25, maximum 18.06), so
+  `.tulpa_grid_resolution_note()` names the coarsest axis and its ratio.
+  `.nl_laplace_at_mode_sd_axis()` takes the coordinate as an argument and
+  `return_log_sd` becomes `return_u_sd`, the SD in whatever coordinate the
+  parabola was fit in -- the branch existed and had no caller in `R/`.
+
+* The re-score on current main, which is the open question gcol33/tulpa#357 was
+  left with. Neither the box-position sweep's blocker nor the ladder's verdict
+  moves. gcol33/tulpa#361 (default axis placement, `bym2_rho` node set), #369
+  (the outer cell edge's coordinate) and #375 (the rail guard) all landed since
+  the numbers were taken, but the fixture the comparison is measured on pins its
+  own grid, so none of them reaches it. Repeated on the working tree through the
+  SHIPPED `.nl_axis_quantiles(within = )`, 12 positions x 200 seeds at five and
+  seven levels, the conditional 95% coverage across one cell reproduces the
+  recorded numbers exactly: box-uniform 0.585 to 1.000 at five levels, SWING
+  0.4150, box-averaged 0.9033 against nominal 0.95; 0.895 to 0.995 at seven,
+  swing 0.1000, averaged 0.9508. The chord read's own conditional coverage at
+  nominal 0.50 runs 0.655 to 0.950 (swing 0.2950) and 0.720 to 0.855 (0.1350),
+  so both reads have the dependence and the chord read hides it behind width at
+  0.95. The promoted engine read reproduces the arm
+  `dev_notes/issue337/recon.R` scored to 1.8e-15 on every one of the 4800 fits.
+  The default flip stays the maintainer's call and the issue stays open on it.
+  Evidence: `dev_notes/issue357/RESULTS.md`, `common357b.R`, `boxpos357b.R`,
+  `coarse357b.R`, `analyse357b.R`, `identity357.R`, `unit357.R`.
+
 ## 0.0.174
 
 * The skew correction's centre band carries what it is measured to cost

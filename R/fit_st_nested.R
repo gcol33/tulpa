@@ -193,7 +193,10 @@ fit_st_nested <- function(y, X, spatial_idx, adjacency, temporal_idx, n_times,
                               n_gs, n_gt, n_grho, tau_lo, tau_hi, control,
                               rho_spatial_val = rho_spatial_val)
   out$outer_grid_placement <- out$outer_grid_placement %||% "fixed"
-  out <- .nl_posterior_moments(out, "st")
+  # Within-cell construction for the reported per-axis intervals
+  # (gcol33/tulpa#357); the default is the shipped chord read.
+  within_cell <- .nl_within_cell_mode(control$within_cell)
+  out <- .nl_posterior_moments(out, "st", within = within_cell)
   out <- .nl_attach_grid_hessians(out, ncol(X))
 
   # Grid-marginalised field posterior means: the latent block after the fixed

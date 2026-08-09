@@ -24,6 +24,31 @@ test_that("extend leaves every interior probability byte-identical", {
                    .nl_wtd_quantile(v, w, pr, outside = "clamp"))
 })
 
+test_that("that invariance is the OUTSIDE policy's, not the interior read's", {
+  # The assertion above is about `outside`: both policies place the same knots
+  # at the same coordinates and differ only in what happens past the extreme
+  # ones. It is NOT a statement that the interior read is fixed. A WITHIN-CELL
+  # construction changes exactly that -- box-uniform puts the cumulative full
+  # mass at each cell EDGE instead of the mid-mass at each coordinate -- and
+  # that interior chord is its whole remaining advantage over the extension
+  # (gcol33/tulpa#357). Pinned so the two questions cannot be confused: the
+  # `outside` invariance holds under either construction, and the interior read
+  # differs between them.
+  v <- exp(seq(log(0.2), log(1.5), length.out = 5))
+  w <- c(0.30, 0.25, 0.20, 0.15, 0.10)
+  p <- cumsum(w / sum(w)) - (w / sum(w)) / 2
+  pr <- seq(p[1], p[5], length.out = 41L)
+  bx <- .nl_summary_quantile(v, w, pr, "positive", "density", "box_uniform")
+  ch <- .nl_summary_quantile(v, w, pr, "positive", "density", "chord")
+  expect_false(isTRUE(all.equal(bx, ch)))
+  expect_false(is.unsorted(bx))
+  # And the outer-edge question is answered the same way by both: neither read
+  # can leave the cell partition's own outer edges.
+  e <- .nl_cell_edges(v, "positive")
+  q <- .nl_summary_quantile(v, w, c(0, 1), "positive", "density", "box_uniform")
+  expect_equal(unname(q), unname(e))
+})
+
 test_that("the edge is the outer cell's own half-spacing", {
   # A geometric axis is equally spaced in log, so its half-cell is mirrored
   # there and the edge stays positive.

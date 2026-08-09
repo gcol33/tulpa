@@ -79,6 +79,28 @@
 #'     FIXED inner Laplace, this scores whether that inner Gaussian
 #'     approximation is itself a good fit to the latent-field conditional
 #'     posterior. See [diagnostics()] for the combined whole-fit verdict.
+#'   * `within_cell` (`"chord"`) -- the WITHIN-CELL construction the reported
+#'     per-axis hyperparameter intervals are read with (gcol33/tulpa#357). The
+#'     outer grid's weights say how much mass each cell holds; they do not say
+#'     how it is spread inside the cell, and a quantile needs both. `"chord"` is
+#'     the shipped read: the cumulative MID-mass at each cell coordinate, linear
+#'     between coordinates. `"box_uniform"` puts the cumulative FULL mass at each
+#'     cell EDGE and interpolates between edges -- the same masses over the same
+#'     boxes with the knots moved half a cell, which measures as a whole order of
+#'     convergence (1.04 against 2.00 on a fixture with a closed-form posterior)
+#'     and wins the paired CRPS, the folded PIT and the 95% coverage at 12 of 12
+#'     rungs of a ladder spanning cell-width-to-posterior-SD 2.8 to 27.3, at 0.59
+#'     to 0.79x the width. THE DEFAULT IS STILL `"chord"`: a within-cell
+#'     reconstruction resolves an endpoint to within one cell, so a reported
+#'     interval's realized coverage depends on where in its cell the unknown
+#'     truth fell, and swept directly that runs 0.585 to 1.000 at nominal 0.95
+#'     (box-averaged 0.9033, against the chord read's own vacuous 1.0000).
+#'     `outer_grid_h_over_sd` is how wide a cell is on each axis, and
+#'     `theta_within_cell` is what each axis was actually read with. Only a
+#'     `"density"` support admits it -- a CCD design, a locally refined grid and
+#'     a posterior sample are not cell partitions that tile -- and an axis it
+#'     declines on reports `"chord"` with a reason rather than erroring. Nothing
+#'     else moves: point estimates, moments, draws and weights are untouched.
 #'   * `skew_correct` (`FALSE`) -- consume the inner-Laplace expansion instead of
 #'     only grading it (gcol33/tulpa#302, gcol33/tulpa#354): report
 #'     Cornish-Fisher marginal quantiles at each coefficient's own `gamma_3`,
@@ -264,6 +286,13 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   diagnose_skew      <- isTRUE(control$diagnose_skew %||% TRUE)
   skew_idx           <- control$skew_idx
   skew_correct       <- isTRUE(control$skew_correct %||% .nl_diag("skew_correct"))
+  # Which WITHIN-CELL construction the reported per-axis hyperparameter
+  # intervals are read off (gcol33/tulpa#357). A numerical reconstruction of the
+  # integration design the fit already ran, so it sits beside `integration` /
+  # `local_ccd` / `skew_correct` in `control` rather than in the signature,
+  # which carries only statistical arguments. The default is the shipped chord
+  # read and every number is byte-identical under it.
+  within_cell        <- .nl_within_cell_mode(control$within_cell)
 
   # Grid-cell checkpoint/resume. `control$checkpoint =
   # list(path =, resume =)` makes every grid cell append to `path`; a resume
@@ -355,7 +384,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   if (.is_multi_block_prior(prior)) {
     tm$mark("setup")
     res <- .nl_dispatch_multi(cargs, prior, likelihood = likelihood,
-                              progress = .nl_progress_args(control))
+                              progress = .nl_progress_args(control),
+                              within_cell = within_cell)
     tm$mark("grid")
     if (isTRUE(keep_grid_hessians)) {
       res <- .nl_attach_grid_hessians(res, p_fixed)
@@ -378,7 +408,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
         cargs_no_ckpt, prior, likelihood = likelihood, cila = req),
       p_fixed = p_fixed, beta_names = colnames(X),
       remoments = function(r) .nl_posterior_moments_multi(
-        r, r$blocks, r$axis_offsets, r$theta_grid))
+        r, r$blocks, r$axis_offsets, r$theta_grid, within = within_cell))
     tm$mark("diagnostics")
     res$prior <- prior
     res$timing <- tm$timing()
@@ -408,7 +438,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   # points and no user-scale volume element is applied -- adding one biases the
   # scale-hyperparameter posterior (confirmed by CAR_proper (tau, rho) recovery).
   res$weights <- .nl_normalise_weights_safe(res$log_marginal, "outer grid")
-  res <- .nl_posterior_moments(res, type)
+  res <- .nl_posterior_moments(res, type, within = within_cell)
   if (isTRUE(keep_grid_hessians)) {
     res <- .nl_attach_grid_hessians(res, p_fixed)
   }
@@ -431,7 +461,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
       r <- .nl_dispatch(type, cargs, prior_i)
       r <- .nl_apply_ar1_rho_prior(r, type, prior_i)
       r$weights <- .nl_normalise_weights_safe(r$log_marginal, "outer grid")
-      r <- .nl_posterior_moments(r, type)
+      r <- .nl_posterior_moments(r, type, within = within_cell)
       if (isTRUE(keep_grid_hessians)) r <- .nl_attach_grid_hessians(r, p_fixed)
       .nl_attach_pareto_k(r, prior_i, cargs_no_ckpt, "single", type, NULL,
                           k_samples, compute = diagnose_k)
@@ -467,7 +497,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     redispatch = function(req) .nl_dispatch(
       type, utils::modifyList(cargs_no_ckpt, list(cila = req)), prior),
     p_fixed = p_fixed, beta_names = colnames(X),
-    remoments = function(r) .nl_posterior_moments(r, type))
+    remoments = function(r) .nl_posterior_moments(r, type, within = within_cell))
   tm$mark("diagnostics")
   res$prior <- prior
   res$timing <- tm$timing()
@@ -1458,6 +1488,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 
 .nl_dispatch_multi <- function(cargs, prior_list, likelihood = NULL,
                                progress = .nl_progress_args(list(progress = FALSE)),
+                               within_cell = .NL_WITHIN_CELL,
                                # Single-cell re-dispatch for the inner-Laplace
                                # skewness diagnostic (.nl_inner_skew_at_theta()):
                                # when supplied, `theta_grid_override` (a 1-row
@@ -1598,7 +1629,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   }
 
   out$weights      <- .nl_normalise_weights_safe(out$log_marginal, "multi-block outer grid")
-  out <- .nl_posterior_moments_multi(out, prepared, axis_offsets, joint_grid)
+  out <- .nl_posterior_moments_multi(out, prepared, axis_offsets, joint_grid,
+                                     within = match.arg(within_cell))
   out$blocks       <- prepared
   out
 }

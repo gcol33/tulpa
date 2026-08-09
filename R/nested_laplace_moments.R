@@ -11,7 +11,8 @@
 # summary alongside mean +/- SD. Median is the recommended summary for
 # right-skewed posteriors: `mean` of a weakly-identified positive ratio
 # is pulled up by the right tail; `median` matches truth at small n.
-.nl_posterior_moments <- function(res, type) {
+.nl_posterior_moments <- function(res, type, within = .NL_WITHIN_CELL) {
+  within <- match.arg(within)
   w <- res$weights
   tg <- res$theta_grid
   if (is.matrix(tg)) {
@@ -25,12 +26,14 @@
     res$theta_mean <- ms$mean
     res$theta_sd   <- ms$sd
   }
+  doms <- .nl_axis_domains(res, type)
   qs <- .nl_axis_quantiles(tg, res$log_marginal, res$refining_axis,
-                           domains = .nl_axis_domains(res, type))
+                           domains = doms, within = within)
   res$theta_median <- qs$median
   res$theta_ci_lo  <- qs$ci_lo
   res$theta_ci_hi  <- qs$ci_hi
-  res
+  res$within_cell_requested <- within
+  .nl_attach_interval_provenance(res, qs, tg, doms)
 }
 
 # The `.NL_DOMAIN_TRANSFORM` domain of every axis of a fit, from
@@ -110,28 +113,9 @@
                              outside = c("clamp", "extend", "na"),
                              domain = NA_character_) {
   outside <- match.arg(outside)
-  ord <- order(values)
-  v <- as.numeric(values)[ord]
-  w <- as.numeric(weights)[ord]
-  keep <- is.finite(v) & is.finite(w) & w > 0
-  if (!any(keep)) return(rep(NA_real_, length(probs)))
-  v <- v[keep]; w <- w[keep]
-  # Aggregate runs of strictly-equal adjacent values (already sorted).
-  # Cannot use factor(v) here: distinct doubles that share an
-  # `as.character` print form (e.g. 0.4/0.7 and a near-equal ratio off
-  # by ~1e-16) trigger "factor level [k] is duplicated". Group by
-  # integer run-IDs derived from numeric equality on the sorted vector.
-  if (length(v) > 1L) {
-    is_first <- c(TRUE, v[-1L] != v[-length(v)])
-    if (!all(is_first)) {
-      grp <- cumsum(is_first)
-      w   <- as.numeric(tapply(w, grp, sum))
-      v   <- v[is_first]
-    }
-  }
-  w_tot <- sum(w)
-  if (!is.finite(w_tot) || w_tot <= 0) return(rep(NA_real_, length(probs)))
-  w <- w / w_tot
+  a <- .nl_axis_atoms(values, weights)
+  if (is.null(a)) return(rep(NA_real_, length(probs)))
+  v <- a$v; w <- a$w
   if (length(v) == 1L) return(rep(v[1L], length(probs)))
   p <- cumsum(w) - w / 2
   # The outer half-cells are two more knots: mass 0 at the lower edge and the
@@ -156,6 +140,39 @@
   }, numeric(1L))
 }
 
+# The sorted, de-duplicated, weight-normalized atoms of one axis's node set:
+# the input EVERY within-cell construction reads, so the filtering and the
+# aggregation are written once and the constructions differ only in what they
+# do with the result.
+#
+#  * Filters non-finite values and non-positive weights.
+#  * Aggregates runs of strictly-equal adjacent values. Cannot use factor(v)
+#    here: distinct doubles that share an `as.character` print form (e.g.
+#    0.4/0.7 and a near-equal ratio off by ~1e-16) trigger "factor level [k] is
+#    duplicated". Group by integer run-IDs derived from numeric equality on the
+#    sorted vector.
+#  * Returns NULL when nothing usable survives or the total weight is not
+#    positive and finite, which every caller reports as NA.
+.nl_axis_atoms <- function(values, weights) {
+  ord <- order(values)
+  v <- as.numeric(values)[ord]
+  w <- as.numeric(weights)[ord]
+  keep <- is.finite(v) & is.finite(w) & w > 0
+  if (!any(keep)) return(NULL)
+  v <- v[keep]; w <- w[keep]
+  if (length(v) > 1L) {
+    is_first <- c(TRUE, v[-1L] != v[-length(v)])
+    if (!all(is_first)) {
+      grp <- cumsum(is_first)
+      w   <- as.numeric(tapply(w, grp, sum))
+      v   <- v[is_first]
+    }
+  }
+  w_tot <- sum(w)
+  if (!is.finite(w_tot) || w_tot <= 0) return(NULL)
+  list(v = v, w = w / w_tot)
+}
+
 # The outer edges of the cell partition a sorted vector of cell coordinates
 # represents: the extreme cell mirrors the half-spacing it has, in the
 # QUANTITY'S OWN COORDINATE -- `.NL_DOMAIN_TRANSFORM[[domain]]`, the registry
@@ -178,24 +195,100 @@
 # the domain, so a node set that does not actually live where the caller says it
 # does falls back rather than returning a non-finite or out-of-support edge.
 .nl_cell_edges <- function(v, domain = NA_character_) {
+  .nl_cell_partition(v, domain)$edges
+}
+
+# The same construction, returning the COORDINATE it settled on alongside the
+# edges it produced. The coordinate is not recoverable from the edges -- the
+# guard falls back when a mapped edge is non-finite or leaves the support -- and
+# the box-uniform read (gcol33/tulpa#357) has to bisect the interior spacings in
+# the SAME coordinate the outer half-cells were mirrored in, or the partition it
+# tiles the axis with is not one partition. So the choice is made once, here,
+# and both readers take it from the same return.
+.nl_cell_partition <- function(v, domain = NA_character_) {
   n <- length(v)
-  if (n < 2L) return(c(v[1L], v[n]))
+  lin <- .NL_DOMAIN_TRANSFORM$unbounded
+  if (n < 2L) return(list(tr = lin, edges = c(v[1L], v[n])))
   mirror <- function(u) c(u[1L] - 0.5 * (u[2L] - u[1L]),
                           u[n] + 0.5 * (u[n] - u[n - 1L]))
   tr <- if (length(domain) == 1L && !is.na(domain))
     .NL_DOMAIN_TRANSFORM[[domain]] else NULL
   if (!is.null(tr) && all(tr$in_domain(v))) {
     e <- tr$from(mirror(tr$to(v)))
-    if (all(is.finite(e)) && all(tr$in_domain(e))) return(e)
+    if (all(is.finite(e)) && all(tr$in_domain(e))) return(list(tr = tr, edges = e))
   }
   # Reached when no domain was named, or when the named one does not contain
   # the values -- a caller's declaration the node set contradicts, where the
   # value guess is the more trustworthy of the two.
+  pos <- .NL_DOMAIN_TRANSFORM$positive
   if (all(v > 0)) {
-    e <- exp(mirror(log(v)))
-    if (all(is.finite(e))) return(e)
+    e <- pos$from(mirror(pos$to(v)))
+    if (all(is.finite(e))) return(list(tr = pos, edges = e))
   }
-  mirror(v)
+  list(tr = lin, edges = mirror(v))
+}
+
+# The full tiling of an axis by the cell partition its coordinates represent:
+# `length(v) + 1` edges, cell c owning `[e_c, e_{c+1}]`. The two outer edges are
+# `.nl_cell_partition()`'s -- the extreme cell mirroring the half-spacing it has
+# -- and the interior ones are the midpoints between adjacent coordinates in
+# that same coordinate, which is the cell's own Voronoi interval and is exactly
+# the `half_lo` / `half_hi` pair `.joint_local_ccd_diff3()` reports.
+#
+# The boxes TILE by construction: edge k is both the upper edge of cell k and
+# the lower edge of cell k + 1, one number serving both, so there is no gap for
+# mass to leave through and no overlap for it to be counted in twice. That is
+# the property separating a within-cell reconstruction from barycentring
+# (gcol33/tulpa#331 moved the atoms and contracted the support; nothing moves
+# here). What is NOT automatic is that the edges come out finite and strictly
+# increasing -- a degenerate coordinate, or a node set the declared support does
+# not contain, can produce a zero-width or inverted box, and a box of zero width
+# would put a cell's whole mass on a point. So that is checked, and a partition
+# that fails it returns NULL for the caller to DECLINE on rather than erroring
+# (gcol33/tulpa#293: a silent-disable path needs a reason, and an error is not a
+# behaviour a reported interval can take).
+.nl_box_edges <- function(v, domain = NA_character_) {
+  n <- length(v)
+  if (n < 2L) return(NULL)
+  part <- .nl_cell_partition(v, domain)
+  u  <- part$tr$to(v)
+  ue <- part$tr$to(part$edges)
+  e  <- part$tr$from(c(ue[1L], (u[-1L] + u[-n]) / 2, ue[2L]))
+  if (!all(is.finite(e)) || is.unsorted(e, strictly = TRUE)) return(NULL)
+  e
+}
+
+# The BOX-UNIFORM within-cell read (gcol33/tulpa#337, measured in #353 and
+# #357): each cell's shipped mass spread uniformly across its own box instead of
+# placed at its coordinate.
+#
+# The shipped `chord` read puts the cumulative MID-mass `cumsum(w) - w / 2` at
+# each cell COORDINATE and interpolates between coordinates; this puts the
+# cumulative FULL mass at each cell EDGE and interpolates between edges. Same
+# family, same masses, different knots -- and that one difference is a whole
+# order of convergence: measured against the closed-form posterior of a
+# gaussian-LMM fixture the shipped read converges at order 1.04 and this at 2.00
+# (`dev_notes/issue353/RESULTS.md` section 2.3).
+#
+# `declined` is why the box read did not run, from a closed vocabulary, and is
+# NA when it did. The caller falls back to the chord read on any decline, so an
+# axis the partition could not be built for still reports an interval.
+.nl_box_quantile <- function(values, weights, probs, domain = NA_character_) {
+  a <- .nl_axis_atoms(values, weights)
+  if (is.null(a)) {
+    return(list(q = rep(NA_real_, length(probs)), declined = "no_usable_node"))
+  }
+  if (length(a$v) < 2L) {
+    return(list(q = rep(a$v[1L], length(probs)), declined = "single_node"))
+  }
+  e <- .nl_box_edges(a$v, domain)
+  if (is.null(e)) return(list(q = NULL, declined = "boxes_do_not_tile"))
+  cf <- c(0, cumsum(a$w))
+  cf[length(cf)] <- 1
+  keep <- c(TRUE, diff(cf) > 0)
+  list(q = stats::approx(cf[keep], e[keep], xout = probs, ties = "ordered",
+                         rule = 2)$y,
+       declined = NA_character_)
 }
 
 # The `.NL_DOMAIN_TRANSFORM` entry a DECLARED `c(lower, upper)` support is, or
@@ -310,14 +403,47 @@
 # extent.
 #
 # `mixed` -- see below; it takes `density`'s policy on purpose.
+#
+# THE SECOND FIELD, `within`, is the set of WITHIN-CELL constructions the kind
+# ADMITS, first entry its default (gcol33/tulpa#357). It is a second field
+# rather than a fifth kind on purpose: `outside` is a fact about what the
+# producer left behind and is derived from the geometry, while `within` is a
+# CHOICE the caller makes about how to read it, and the two are orthogonal --
+# a density grid can be read either way and still be a density grid. Making
+# box-uniform a KIND would have said a fit that asked for it produced a
+# different node set, which it did not.
+#
+# What each kind admits follows from whether its nodes are cell representatives
+# of a partition that tiles:
+#
+#  * `density` -- a tensor grid, and the only kind that admits `box_uniform`:
+#    its cells ARE such a partition, with the interior edges at the midpoints
+#    and the outer ones at the mirrored half-spacing (`.nl_box_edges()`).
+#  * `mixed` -- a locally CCD-refined grid. Its refined cells' replacement
+#    clouds sit INSIDE one base cell, so a Voronoi partition of the node set is
+#    not the integration design's own boxes and each cloud node's mass would be
+#    spread over a box it was not integrated for. That is the tiling property
+#    the construction rests on, so the kind declines rather than approximating
+#    it.
+#  * `sample` -- order statistics. Half the gap between two draws is not a cell
+#    width, which is the same reason its `outside` policy clamps.
+#  * `moment_rule` -- never reaches the quantile read at all.
 .NL_SUPPORT <- list(
-  density     = list(outside = "extend"),
-  moment_rule = list(outside = NA_character_),
-  mixed       = list(outside = "extend"),
-  sample      = list(outside = "clamp")
+  density     = list(outside = "extend",      within = c("chord", "box_uniform")),
+  moment_rule = list(outside = NA_character_, within = "chord"),
+  mixed       = list(outside = "extend",      within = "chord"),
+  sample      = list(outside = "clamp",       within = "chord")
 )
 
 .NL_SUPPORT_KINDS <- names(.NL_SUPPORT)
+
+# Every within-cell construction the engine knows, first entry the default.
+# `chord` is the shipped read: mid-mass at the coordinate, linear between
+# coordinates. `box_uniform` is gcol33/tulpa#357's. A kind's own `within` entry
+# is the subset it admits, and is held to this vocabulary by
+# `test-within-cell-box-uniform.R` the same way `outside` is held to
+# `.nl_wtd_quantile()`'s.
+.NL_WITHIN_CELL <- c("chord", "box_uniform")
 
 # Median and interval of one quantity, given what KIND of node set carries it.
 #
@@ -345,23 +471,56 @@
 #
 # The single dispatcher for every consumer of the summaries, so a caller names
 # its support and its domain and inherits the rest.
+#
+# `within` names the WITHIN-CELL construction (gcol33/tulpa#357). `"chord"` is
+# the shipped read and the default, so a caller that does not ask for one gets
+# byte-identical numbers. `"box_uniform"` is taken only where the support admits
+# it and the partition builds; anything else falls back to the chord read and
+# the reason travels out of `.nl_summary_quantile_read()`.
 .nl_summary_quantile <- function(values, weights, probs,
                                  domain = NA_character_,
-                                 support = .NL_SUPPORT_KINDS) {
+                                 support = .NL_SUPPORT_KINDS,
+                                 within = .NL_WITHIN_CELL) {
+  .nl_summary_quantile_read(values, weights, probs, domain, support, within)$q
+}
+
+# The same dispatch, returning what actually RAN alongside the numbers: the
+# construction that produced them and, when the requested one did not, the
+# reason. `.nl_summary_quantile()` is this function's `$q` -- there is one
+# dispatcher, not two, so a caller wanting only the vector and a caller wanting
+# the provenance cannot drift apart.
+.nl_summary_quantile_read <- function(values, weights, probs,
+                                      domain = NA_character_,
+                                      support = .NL_SUPPORT_KINDS,
+                                      within = .NL_WITHIN_CELL) {
   support <- match.arg(support)
-  outside <- .NL_SUPPORT[[support]]$outside
-  if (!is.na(outside)) {
-    # The `domain` reaches the CDF read too, not only the moment rule: the outer
-    # half-cell an `extend` support adds is mirrored in the quantity's own
-    # coordinate, so a bounded quantity's interval cannot leave its support
-    # (gcol33/tulpa#369). A `clamp` support never forms an edge and ignores it.
-    return(.nl_wtd_quantile(values, weights, probs, outside = outside,
-                            domain = domain))
+  within  <- match.arg(within)
+  chord <- function(declined = NA_character_) {
+    outside <- .NL_SUPPORT[[support]]$outside
+    q <- if (!is.na(outside)) {
+      # The `domain` reaches the CDF read too, not only the moment rule: the
+      # outer half-cell an `extend` support adds is mirrored in the quantity's
+      # own coordinate, so a bounded quantity's interval cannot leave its
+      # support (gcol33/tulpa#369). A `clamp` support never forms an edge and
+      # ignores it.
+      .nl_wtd_quantile(values, weights, probs, outside = outside,
+                       domain = domain)
+    } else if (length(domain) != 1L || is.na(domain)) {
+      .nl_wtd_quantile(values, weights, probs, outside = "na")
+    } else {
+      .nl_moment_quantile(values, weights, probs, domain)
+    }
+    list(q = q, within = "chord", declined = declined)
   }
-  if (length(domain) != 1L || is.na(domain)) {
-    return(.nl_wtd_quantile(values, weights, probs, outside = "na"))
+  if (identical(within, "chord")) return(chord())
+  if (!within %in% .NL_SUPPORT[[support]]$within) {
+    return(chord(paste0("support_", support)))
   }
-  .nl_moment_quantile(values, weights, probs, domain)
+  bx <- .nl_box_quantile(values, weights, probs, domain)
+  if (is.na(bx$declined)) {
+    return(list(q = bx$q, within = within, declined = NA_character_))
+  }
+  chord(bx$declined)
 }
 
 # What kind of node set the producer left behind. `integration` names what RAN,
@@ -592,12 +751,20 @@
 # `"density"` / `"mixed"` one needs it to place its outer cell edges inside the
 # quantity's support (gcol33/tulpa#369), so it is supplied WHATEVER the support
 # rather than only for the design read.
+#
+# `within` is the requested within-cell construction, and the returned `within`
+# / `within_declined` say what each axis actually got (gcol33/tulpa#357): an
+# axis whose partition could not be built falls back to the chord read on its
+# own rather than taking the whole fit with it, so a fit can carry a mixture of
+# constructions and still say which produced each interval.
 .nl_axis_quantiles <- function(tg, log_marginal, refining = NULL,
                                 probs = c(0.025, 0.5, 0.975),
                                 weights = NULL,
                                 support = .NL_SUPPORT_KINDS,
-                                domains = NULL) {
+                                domains = NULL,
+                                within = .NL_WITHIN_CELL) {
   support <- match.arg(support)
+  within  <- match.arg(within)
   if (is.null(dim(tg))) {
     tg <- matrix(as.numeric(tg), ncol = 1L,
                  dimnames = list(NULL, "value"))
@@ -607,13 +774,17 @@
   # past zero-length integers, so we guard ncol(tg) == 0 explicitly.
   if (ncol(tg) == 0L) {
     empty <- setNames(numeric(0), character(0))
-    return(list(median = empty, ci_lo = empty, ci_hi = empty))
+    empty_c <- setNames(character(0), character(0))
+    return(list(median = empty, ci_lo = empty, ci_hi = empty,
+                within = empty_c, within_declined = empty_c))
   }
   nms <- colnames(tg) %||% paste0("V", seq_len(ncol(tg)))
   n_ax <- length(nms)
   lo  <- setNames(rep(NA_real_, n_ax), nms)
   med <- setNames(rep(NA_real_, n_ax), nms)
   hi  <- setNames(rep(NA_real_, n_ax), nms)
+  wc  <- setNames(rep(NA_character_, n_ax), nms)
+  wcd <- setNames(rep(NA_character_, n_ax), nms)
   if (is.null(refining)) refining <- rep("", nrow(tg))
   for (j in seq_len(n_ax)) {
     ax    <- nms[j]
@@ -637,12 +808,115 @@
       ws    <- exp(lm_u - m); ws <- ws / sum(ws)
     }
     dm <- if (length(domains) < j) NA_character_ else domains[[j]]
-    qs <- .nl_summary_quantile(as.numeric(tg[use, j]), ws, probs, dm, support)
+    rd <- .nl_summary_quantile_read(as.numeric(tg[use, j]), ws, probs, dm,
+                                    support, within)
+    qs <- rd$q
     lo[j]  <- qs[1L]
     med[j] <- qs[2L]
     hi[j]  <- qs[3L]
+    wc[j]  <- rd$within
+    wcd[j] <- rd$declined
   }
-  list(median = med, ci_lo = lo, ci_hi = hi)
+  list(median = med, ci_lo = lo, ci_hi = hi,
+       within = wc, within_declined = wcd)
+}
+
+# The RESOLUTION of each outer-grid axis: its cell width `h`, the posterior SD
+# on that axis, and their ratio -- both in the axis's OWN coordinate, the one
+# `.nl_cell_partition()` lays the boxes out in, so the ratio is a pure number
+# and a geometric sigma axis is measured in log where its spacing is constant.
+#
+# WHY A FIT REPORTS THIS (gcol33/tulpa#357). Every within-cell construction
+# resolves an interval endpoint to within one cell, so the realized coverage of
+# a reported interval depends on WHERE inside its cell the unknown truth fell,
+# and how much it depends on that is governed by `h / sd`. Measured on the
+# gaussian-LMM fixture, conditional 95% coverage swings 0.415 across one cell at
+# `h / sd = 3.41` and 0.100 at 2.43; the shipped chord read has the same
+# dependence and hides it behind width (its own conditional coverage at nominal
+# 0.50 runs 0.655 to 0.950 across the same cell). `h / sd` is the regime
+# variable for both, it costs one 3-point parabola per axis, and a fit that
+# does not report it leaves the reader with no way to tell a resolved axis from
+# an unresolved one. Below `.nl_diag("grid_resolved")` the two constructions
+# converge to each other and the question stops mattering.
+#
+# `h` is the MEDIAN spacing rather than the first one: an adaptive or
+# consistency-refined axis is no longer equally spaced, and one representative
+# width is what the ratio is about. `sd` is the Laplace-at-mode SD of the axis
+# marginal in the same coordinate -- NA at an axis whose mode sits on its own
+# boundary, which is the placement defect gcol33/tulpa#361 reports separately
+# and a spacing statement cannot be made about.
+.nl_axis_resolution <- function(tg, log_marginal, refining = NULL,
+                                domains = NULL) {
+  if (is.null(dim(tg))) {
+    tg <- matrix(as.numeric(tg), ncol = 1L, dimnames = list(NULL, "value"))
+  }
+  nms <- colnames(tg) %||% paste0("V", seq_len(ncol(tg)))
+  n_ax <- length(nms)
+  h  <- setNames(rep(NA_real_, n_ax), nms)
+  sd <- setNames(rep(NA_real_, n_ax), nms)
+  if (n_ax == 0L) return(list(h = h, sd = sd, h_over_sd = h))
+  if (is.null(refining)) refining <- rep("", nrow(tg))
+  for (j in seq_len(n_ax)) {
+    ax <- nms[j]
+    keep <- refining == "" | refining == ax |
+            refining == paste0("consistency_", ax)
+    marg <- .nl_axis_marginal_logdensity(tg[, j], log_marginal, keep)
+    v <- marg$vals
+    if (length(v) < 3L) next
+    dm <- if (length(domains) < j) NA_character_ else domains[[j]]
+    part <- .nl_cell_partition(v, dm)
+    u <- part$tr$to(v)
+    if (!all(is.finite(u))) next
+    du <- diff(u)
+    if (!length(du) || !all(is.finite(du))) next
+    h[j]  <- stats::median(du)
+    sd[j] <- .nl_laplace_at_mode_sd_axis(v, marg$log_marg, coord = part$tr,
+                                         return_u_sd = TRUE)
+  }
+  list(h = h, sd = sd, h_over_sd = h / sd)
+}
+
+# Stamp onto a fit what its reported per-axis intervals were read off: the
+# node-set KIND, the design share underneath it, the within-cell CONSTRUCTION
+# per axis and why a requested one declined, and the per-axis resolution the
+# construction's position sensitivity is governed by.
+#
+# The kind is filled only when the producer has not already named it: the
+# multi-block joint driver stamps `theta_interval_read` before the moments run
+# (it is the one path whose support is not homogeneous), and every other path --
+# single-block, joint single-block, registry, ST -- leaves a plain tensor grid
+# and had nothing stamped at all until gcol33/tulpa#357, so a reader could not
+# distinguish "density" from "this fit does not say". `.nl_node_support()` is
+# the same call `.ogd_support()` was falling back to for exactly that reason.
+# The resolution is reported only for a `density` support. It is a statement
+# about a CELL PARTITION's spacing, and the other kinds do not have one: a
+# central-composite design's nodes carry no cells, a locally refined grid's
+# clouds sit inside one base cell, and a sample's values are draws. The SD side
+# is the same 3-point lattice profile `.nl_refit_axis_sd_laplace()` is skipped
+# for on a design-weighted grid, for the same reason.
+.nl_attach_interval_provenance <- function(res, qs, tg, domains = NULL) {
+  prov <- .nl_interval_provenance(res$integration, res$weight_kind,
+                                  res$weights)
+  res$theta_interval_read <- res$theta_interval_read %||% prov$read
+  res$theta_interval_design_mass <-
+    res$theta_interval_design_mass %||% prov$design_mass
+  res$theta_within_cell          <- qs$within
+  res$theta_within_cell_declined <- qs$within_declined
+  if (identical(res$theta_interval_read, "density")) {
+    rs <- .nl_axis_resolution(tg, res$log_marginal, res$refining_axis, domains)
+    res$outer_grid_cell_width <- rs$h
+    res$outer_grid_axis_sd    <- rs$sd
+    res$outer_grid_h_over_sd  <- rs$h_over_sd
+  }
+  res
+}
+
+# The within-cell construction a fit was asked for, from its own control list.
+# One resolver, so every front door spells the knob the same way and an unknown
+# value is refused at the door rather than silently read as the default.
+.nl_within_cell_mode <- function(x) {
+  if (is.null(x)) return(.nl_diag("within_cell"))
+  match.arg(as.character(x), .NL_WITHIN_CELL)
 }
 
 .nl_axis_marginal_logdensity <- function(vals, log_marg, keep = NULL) {
@@ -668,15 +942,24 @@
 # delta method (sigma_theta = theta_mode * sigma_log_theta). Returns NA
 # when the mode sits at an axis edge or the parabola is concave up.
 #
-# `return_log_sd = TRUE` skips the delta back-map and returns sd(log theta)
-# directly. Only meaningful with `log_axis = TRUE` -- returns NA otherwise.
+# `coord` overrides that guess with a `.NL_DOMAIN_TRANSFORM` entry, so the
+# parabola is fit in the coordinate the caller's own cell partition lives in --
+# `unit` for a mixing weight, `correlation` for a correlation -- rather than in
+# whichever one `all(vals > 0)` happens to pick.
+#
+# `return_u_sd = TRUE` skips the delta back-map and returns the SD in that
+# coordinate directly, which is what a spacing-relative report needs
+# (`.nl_axis_resolution()`): `h` is measured there too, so the ratio is a pure
+# number. The back-map branch is the log delta method (`theta * sd_u`) and is
+# taken only on the default coordinate, where it is the one that applies.
 .nl_laplace_at_mode_sd_axis <- function(vals, log_marg, log_axis = NULL,
-                                        return_log_sd = FALSE) {
+                                        return_u_sd = FALSE, coord = NULL) {
   if (length(vals) < 3L) return(NA_real_)
   ix <- which.max(log_marg)
   if (ix == 1L || ix == length(vals)) return(NA_real_)
   if (is.null(log_axis)) log_axis <- all(is.finite(vals)) && all(vals > 0)
-  u <- if (log_axis) log(vals) else vals
+  u <- if (!is.null(coord)) coord$to(vals) else if (log_axis) log(vals) else vals
+  if (!all(is.finite(u))) return(NA_real_)
   dm <- u[ix - 1L] - u[ix]
   dp <- u[ix + 1L] - u[ix]
   det <- dm * dp * (dm - dp)
@@ -686,8 +969,8 @@
   a <- (lm_m * dp - lm_p * dm) / det
   if (!is.finite(a) || a >= 0) return(NA_real_)
   sd_u <- sqrt(-1 / (2 * a))
-  if (return_log_sd) {
-    if (log_axis) sd_u else NA_real_
+  if (return_u_sd) {
+    sd_u
   } else {
     if (log_axis) vals[ix] * sd_u else sd_u
   }
@@ -745,7 +1028,9 @@
 # Posterior moments for multi-block grids. Two flavours:
 #  * joint moments: across all axes (same as single-block 2D scatter).
 #  * per-block marginal moments: integrate out the other blocks' axes.
-.nl_posterior_moments_multi <- function(out, prepared, axis_offsets, joint_grid) {
+.nl_posterior_moments_multi <- function(out, prepared, axis_offsets, joint_grid,
+                                        within = .NL_WITHIN_CELL) {
+  within <- match.arg(within)
   w  <- out$weights
   tg <- joint_grid
   out$theta_mean <- as.numeric(crossprod(w, tg))
@@ -783,13 +1068,15 @@
 
   # Weighted-quantile median + 2.5/97.5 CI per axis (calibrated summary
   # for right-skewed scale-like hyperparameters; see `.nl_axis_quantiles`).
+  doms <- .joint_axis_domains(list(theta_grid = joint_grid,
+                                   axis_offsets = axis_offsets,
+                                   blocks = prepared))
   qs <- .nl_axis_quantiles(
     joint_grid, out$log_marginal, out$refining_axis,
-    domains = .joint_axis_domains(list(theta_grid = joint_grid,
-                                       axis_offsets = axis_offsets,
-                                       blocks = prepared)))
+    domains = doms, within = within)
   out$theta_median <- qs$median
   out$theta_ci_lo  <- qs$ci_lo
   out$theta_ci_hi  <- qs$ci_hi
-  out
+  out$within_cell_requested <- within
+  .nl_attach_interval_provenance(out, qs, joint_grid, doms)
 }

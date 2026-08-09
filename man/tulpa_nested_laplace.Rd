@@ -114,6 +114,28 @@ outer diagnostic scores the hyperparameter-grid integration around a
 FIXED inner Laplace, this scores whether that inner Gaussian
 approximation is itself a good fit to the latent-field conditional
 posterior. See \code{\link[=diagnostics]{diagnostics()}} for the combined whole-fit verdict.
+\item \code{within_cell} (\code{"chord"}) -- the WITHIN-CELL construction the reported
+per-axis hyperparameter intervals are read with (gcol33/tulpa#357). The
+outer grid's weights say how much mass each cell holds; they do not say
+how it is spread inside the cell, and a quantile needs both. \code{"chord"} is
+the shipped read: the cumulative MID-mass at each cell coordinate, linear
+between coordinates. \code{"box_uniform"} puts the cumulative FULL mass at each
+cell EDGE and interpolates between edges -- the same masses over the same
+boxes with the knots moved half a cell, which measures as a whole order of
+convergence (1.04 against 2.00 on a fixture with a closed-form posterior)
+and wins the paired CRPS, the folded PIT and the 95\% coverage at 12 of 12
+rungs of a ladder spanning cell-width-to-posterior-SD 2.8 to 27.3, at 0.59
+to 0.79x the width. THE DEFAULT IS STILL \code{"chord"}: a within-cell
+reconstruction resolves an endpoint to within one cell, so a reported
+interval's realized coverage depends on where in its cell the unknown
+truth fell, and swept directly that runs 0.585 to 1.000 at nominal 0.95
+(box-averaged 0.9033, against the chord read's own vacuous 1.0000).
+\code{outer_grid_h_over_sd} is how wide a cell is on each axis, and
+\code{theta_within_cell} is what each axis was actually read with. Only a
+\code{"density"} support admits it -- a CCD design, a locally refined grid and
+a posterior sample are not cell partitions that tile -- and an axis it
+declines on reports \code{"chord"} with a reason rather than erroring. Nothing
+else moves: point estimates, moments, draws and weights are untouched.
 \item \code{skew_correct} (\code{FALSE}) -- consume the inner-Laplace expansion instead of
 only grading it (gcol33/tulpa#302, gcol33/tulpa#354): report
 Cornish-Fisher marginal quantiles at each coefficient's own \code{gamma_3},

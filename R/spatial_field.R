@@ -611,6 +611,9 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
   # supplied under EITHER read: the density one places its outer cell edges in
   # the quantity's own coordinate with it (gcol33/tulpa#369).
   support <- .nl_node_support(jfit$integration, jfit$weight_kind)
+  # And the fit's own within-cell construction (gcol33/tulpa#357), so the field
+  # hyperparameter summary and the fit's `theta_ci_*` are one read.
+  within <- .nl_within_cell_mode(jfit$within_cell_requested)
   doms <- stats::setNames(.joint_axis_domains(jfit), colnames(tg))
   dom_of <- function(nm) if (is.null(doms)) NA_character_ else unname(doms[nm])
   probs <- c(0.025, 0.5, 0.975)
@@ -621,10 +624,10 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
     rho_nm <- paste0(prefix, "rho")
     sigma <- if (has_col(tau_nm))
       .nl_summary_quantile(1 / sqrt(tg[, tau_nm]), w, probs,
-                           "positive", support) else NULL
+                           "positive", support, within) else NULL
     rho <- if (has_col(rho_nm))
       .nl_summary_quantile(tg[, rho_nm], w, probs,
-                           dom_of(rho_nm), support) else NULL
+                           dom_of(rho_nm), support, within) else NULL
     list(name = block_names[b], structure = blocks[[b]]$type,
          sigma = sigma, rho = rho)
   })
@@ -708,10 +711,11 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
     D <- .re_cov_derived_matrix(Sig_list, p_fields, full = TRUE)
     dom <- attr(D, "domain")
     supp <- .nl_node_support(jfit$integration, jfit$weight_kind)
+    wc <- .nl_within_cell_mode(jfit$within_cell_requested)
     mcar_summary <- lapply(seq_len(ncol(D)), function(j)
       list(name = colnames(D)[j],
            q = .nl_summary_quantile(D[, j], w, c(0.025, 0.5, 0.975),
-                                    dom[[j]], supp)))
+                                    dom[[j]], supp, wc)))
     names(mcar_summary) <- colnames(D)
     spatial_field_hypers <- NULL
   } else {

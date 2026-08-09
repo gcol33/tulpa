@@ -266,6 +266,10 @@ compare_models <- function(..., criterion = c("waic", "loo", "loglik")) {
   # interval at all, and a density read needs it to place its outer cell edges
   # inside the quantity's own support (gcol33/tulpa#369).
   doms <- .joint_axis_domains(object)
+  # And the WITHIN-CELL construction the fit's own reported intervals were read
+  # with (gcol33/tulpa#357), so a derived-axis summary and `theta_ci_lo` /
+  # `theta_ci_hi` on the same fit cannot be built two different ways.
+  within <- .nl_within_cell_mode(object$within_cell_requested)
   rows <- lapply(keep, function(j) {
     v   <- tg[, j]
     tr  <- if (!is.null(transform)) transform[[bare_axes[j]]] else NULL
@@ -278,7 +282,7 @@ compare_models <- function(..., criterion = c("waic", "loo", "loglik")) {
     }
     m  <- sum(w * v)
     s  <- sqrt(max(0, sum(w * v^2) - m^2))
-    qs <- .nl_summary_quantile(v, w, probs, dm, support)
+    qs <- .nl_summary_quantile(v, w, probs, dm, support, within)
     out <- data.frame(mean = m, sd = s, row.names = nm,
                       stringsAsFactors = FALSE)
     out[.quantile_colnames(probs)] <- as.list(qs)

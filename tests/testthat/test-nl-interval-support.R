@@ -72,6 +72,31 @@ test_that("the domain reaches the CDF read, not only the moment rule", {
                      .nl_summary_quantile(v, w, probs, NA_character_, "sample"))
 })
 
+test_that("the domain reaches a box-uniform read's INTERIOR edges too", {
+    # "Only the outer half-cells move" above is a property of the CHORD
+    # construction, whose interior knots are the coordinates themselves and so
+    # carry no coordinate choice. Box-uniform's knots are the cell EDGES, every
+    # one of which is bisected in the domain's own coordinate, so the domain
+    # reaches the whole read and not just its ends (gcol33/tulpa#357, #369).
+    v <- c(0.2, 0.5, 0.8, 0.95)
+    w <- c(0.001, 0.02, 0.35, 0.629)
+    probs <- c(0.025, 0.5, 0.975)
+
+    q_dom <- .nl_summary_quantile(v, w, probs, "unit", "density", "box_uniform")
+    q_na  <- .nl_summary_quantile(v, w, probs, NA_character_, "density",
+                                  "box_uniform")
+    expect_lt(q_dom[3L], 1)
+    expect_gt(q_na[3L], 1)
+    expect_false(isTRUE(all.equal(q_dom[2L], q_na[2L])))
+    # A logit-bisected interior edge is the one an inverse-logit-uniform cell
+    # would have; the log guess places it elsewhere, which is the difference.
+    e_dom <- .nl_box_edges(v, "unit")
+    e_na  <- .nl_box_edges(v, NA_character_)
+    expect_equal(e_dom[3L], stats::plogis(mean(stats::qlogis(v[2:3]))))
+    expect_equal(e_na[3L], exp(mean(log(v[2:3]))))
+    expect_true(all(e_dom > 0 & e_dom < 1))
+})
+
 test_that("declared bounds name the domain on the generic hyper-grid door", {
     expect_identical(.nl_domain_of_bounds(c(0, 1)), "unit")
     expect_identical(.nl_domain_of_bounds(c(-1, 1)), "correlation")

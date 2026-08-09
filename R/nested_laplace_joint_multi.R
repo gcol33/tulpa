@@ -979,6 +979,7 @@
                                   cila = NULL,
                                   inner_refresh = 1L,
                                   integration = "auto",
+                                  within_cell = .NL_WITHIN_CELL,
                                   local_ccd = NULL,
                                   adaptive_cutoff = 10,
                                   adaptive_stride = 2L,
@@ -988,6 +989,7 @@
     tm <- timer %||% .tulpa_timer()
     integration <- match.arg(integration, c("auto", "ccd", "grid",
                                              "grid_adaptive"))
+    within_cell <- match.arg(within_cell)
     n_arms <- length(responses)
     arms <- lapply(seq_along(responses), function(k) {
         a <- responses[[k]]
@@ -1502,7 +1504,7 @@
     res <- .joint_posterior_moments_multi(
         res, prepared, axis_offsets, joint_grid, cp,
         int_weights = if (is_design_weighted) res$weights else NULL,
-        support = prov$read)
+        support = prov$read, within = within_cell)
     if (!is_design_weighted) {
         # Replace per-axis var-of-means SDs with Laplace-at-mode SDs at the
         # modal cell. The 3-point grid-profile fit needs the
@@ -1574,7 +1576,7 @@
             r <- .joint_posterior_moments_multi(
                 r, prepared, axis_offsets, joint_grid, cp,
                 int_weights = if (is_design_weighted) r$weights else NULL,
-                support = prov$read)
+                support = prov$read, within = within_cell)
             if (!is_design_weighted) r <- .nl_refit_axis_sd_laplace(r)
             r
         })
@@ -1724,8 +1726,10 @@
 .joint_posterior_moments_multi <- function(res, prepared, axis_offsets,
                                             joint_grid, cp,
                                             int_weights = NULL,
-                                            support = .NL_SUPPORT_KINDS) {
+                                            support = .NL_SUPPORT_KINDS,
+                                            within = .NL_WITHIN_CELL) {
     support <- match.arg(support)
+    within  <- match.arg(within)
     w <- res$weights
     # Joint moments across every column of joint_grid (including phi
     # columns appended for per-arm dispersion overrides).
@@ -1781,9 +1785,11 @@
                                         blocks = prepared))
     qs <- .nl_axis_quantiles(joint_grid, res$log_marginal,
                               res$refining_axis, weights = int_weights,
-                              support = support, domains = domains)
+                              support = support, domains = domains,
+                              within = within)
     res$theta_median <- qs$median
     res$theta_ci_lo  <- qs$ci_lo
     res$theta_ci_hi  <- qs$ci_hi
-    res
+    res$within_cell_requested <- within
+    .nl_attach_interval_provenance(res, qs, joint_grid, domains)
 }

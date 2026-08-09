@@ -494,6 +494,28 @@
 #'     for both the single-block backends (icar/bym2/car_proper) and the
 #'     multi-block path (a per-group RE, a trend field, or an arm-specific
 #'     field block).
+#'   * `within_cell` (`"chord"`) -- the WITHIN-CELL construction the reported
+#'     per-axis hyperparameter intervals are read with (gcol33/tulpa#357). The
+#'     outer grid's weights say how much mass each cell holds; they do not say
+#'     how it is spread inside the cell, and a quantile needs both. `"chord"` is
+#'     the shipped read: the cumulative MID-mass at each cell coordinate, linear
+#'     between coordinates. `"box_uniform"` puts the cumulative FULL mass at each
+#'     cell EDGE and interpolates between edges -- the same masses over the same
+#'     boxes with the knots moved half a cell, which measures as a whole order of
+#'     convergence (1.04 against 2.00 on a fixture with a closed-form posterior)
+#'     and wins the paired CRPS, the folded PIT and the 95% coverage at 12 of 12
+#'     rungs of a ladder spanning cell-width-to-posterior-SD 2.8 to 27.3, at 0.59
+#'     to 0.79x the width. THE DEFAULT IS STILL `"chord"`: a within-cell
+#'     reconstruction resolves an endpoint to within one cell, so a reported
+#'     interval's realized coverage depends on where in its cell the unknown
+#'     truth fell, and swept directly that runs 0.585 to 1.000 at nominal 0.95
+#'     (box-averaged 0.9033, against the chord read's own vacuous 1.0000).
+#'     `outer_grid_h_over_sd` is how wide a cell is on each axis, and
+#'     `theta_within_cell` is what each axis was actually read with. Only a
+#'     `"density"` support admits it -- a CCD design, a locally refined grid and
+#'     a posterior sample are not cell partitions that tile -- and an axis it
+#'     declines on reports `"chord"` with a reason rather than erroring. Nothing
+#'     else moves: point estimates, moments, draws and weights are untouched.
 #'   * `skew_correct` (`FALSE`) -- consume the inner-Laplace expansion instead of
 #'     only grading it (gcol33/tulpa#302, gcol33/tulpa#354): report
 #'     Cornish-Fisher marginal quantiles at each coefficient's own `gamma_3`,
@@ -768,7 +790,30 @@
 #'      against a converged reference in both `design_mass` regimes; the share is
 #'      the regime variable, since on that part of the support the quantile is
 #'      bounded by the refined cells' own grid neighbourhoods rather than by the
-#'      posterior (gcol33/tulpa#317).
+#'      posterior (gcol33/tulpa#317). Every nested path stamps the pair, not only
+#'      the multi-block driver.
+#'   * `within_cell_requested`, `theta_within_cell`,
+#'      `theta_within_cell_declined` -- the WITHIN-CELL construction the same
+#'      intervals were read with (gcol33/tulpa#357). The kind above says what the
+#'      integrator left; this says how each cell's mass was spread inside its own
+#'      box when the grid was read back. `"chord"` is the default and puts the
+#'      cumulative mid-mass at each cell coordinate; `"box_uniform"`
+#'      (`control$within_cell`) puts the cumulative full mass at each cell edge,
+#'      the same masses over the same boxes with the knots moved half a cell. The
+#'      construction is recorded per axis, and an axis whose cell partition could
+#'      not be built falls back to `"chord"` on its own with the reason in
+#'      `theta_within_cell_declined` (`"support_<kind>"`, `"single_node"`,
+#'      `"boxes_do_not_tile"`, `"no_usable_node"`).
+#'   * `outer_grid_cell_width`, `outer_grid_axis_sd`, `outer_grid_h_over_sd` --
+#'      per axis, the cell width and the posterior SD in that axis's own
+#'      coordinate, and their ratio. A within-cell reconstruction resolves an
+#'      interval endpoint to within one cell, so how much of the reported width
+#'      and of its realized coverage is a property of where the grid fell rather
+#'      than of the posterior is governed by this ratio; below
+#'      `.nl_diag("grid_resolved")` the cells are narrower than the posterior
+#'      they discretize and the two constructions converge to each other. NA on
+#'      an axis whose own marginal is maximal at an endpoint, which is the
+#'      placement question `outer_grid_railed_axes` reports.
 #'   * `prune_cheap_log_marginal`, `prune_mask`, `prune_n_pruned`,
 #'      `prune_tol` -- present only when `prune = TRUE` and the safety gate did
 #'      not fall back. Cheap-pass log-marginals at every cell, a logical mask
@@ -1183,6 +1228,13 @@ tulpa_nested_laplace_joint <- function(responses,
     integration               <- match.arg(control$integration %||% "auto",
                                             c("auto", "ccd", "grid",
                                               "grid_adaptive"))
+    # WITHIN-CELL construction for the reported per-axis hyperparameter
+    # intervals (gcol33/tulpa#357). `integration` names how the grid was BUILT;
+    # this names how each cell's mass is spread inside its own box when the
+    # grid is read back. Both are numerical reconstructions of the same design,
+    # so both are control knobs; the default reproduces the shipped read
+    # byte-for-byte.
+    within_cell               <- .nl_within_cell_mode(control$within_cell)
     # Inner-Newton curvature + PD enforcement for the (possibly indefinite)
     # joint mixture Hessian. "lm" (default) escalates a diagonal ridge until
     # CHOLMOD factorizes the observed Hessian; "psd" eigen-clamps the dense
@@ -1303,6 +1355,7 @@ tulpa_nested_laplace_joint <- function(responses,
             cila = .cila_config(control$cila),
             inner_refresh = inner_refresh,
             integration = integration,
+            within_cell = within_cell,
             local_ccd = local_ccd,
             adaptive_cutoff = adaptive_cutoff,
             adaptive_stride = adaptive_stride,
@@ -1465,7 +1518,8 @@ tulpa_nested_laplace_joint <- function(responses,
     res$theta_grid  <- theta_grid_M
     res$theta_names <- colnames(res$theta_grid)
     res$weights     <- .nl_normalise_weights_safe(res$log_marginal, "outer grid")
-    res             <- .nl_posterior_moments(res, paste0("joint_", type))
+    res             <- .nl_posterior_moments(res, paste0("joint_", type),
+                                             within = within_cell)
     res             <- .joint_recalibrate_axis_moments(res)
     # Replace per-axis var-of-means SDs with Laplace-at-mode SDs where the
     # 3-point parabolic fit at the modal cell succeeds.
@@ -1504,7 +1558,8 @@ tulpa_nested_laplace_joint <- function(responses,
             res$theta_grid  <- theta_grid_M
             res$theta_names <- colnames(res$theta_grid)
             res$weights     <- .nl_normalise_weights_safe(res$log_marginal, "outer grid")
-            res             <- .nl_posterior_moments(res, paste0("joint_", type))
+            res             <- .nl_posterior_moments(res, paste0("joint_", type),
+                                                     within = within_cell)
             res             <- .joint_recalibrate_axis_moments(res)
             res             <- .nl_refit_axis_sd_laplace(res)
         }
@@ -1558,7 +1613,8 @@ tulpa_nested_laplace_joint <- function(responses,
         p_fixed = fixed$n_fixed, beta_names = fixed$names,
         remoments = function(r) .nl_refit_axis_sd_laplace(
             .joint_recalibrate_axis_moments(
-                .nl_posterior_moments(r, paste0("joint_", type)))))
+                .nl_posterior_moments(r, paste0("joint_", type),
+                                      within = within_cell))))
     res$timing <- tm$timing()
     res <- .joint_attach_diagnose_cost(res, diagnose_k, diagnose_draws)
     .finalize_fit(res, backend = "nested_laplace_joint",

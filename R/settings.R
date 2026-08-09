@@ -659,7 +659,51 @@
 # A corrected coordinate no longer has a Gaussian-mixture summary, so the fit
 # reports draws instead of moments and this is their count -- Monte Carlo error
 # on a reported quantile, not a property of the correction.
+# `within_cell` is the default WITHIN-CELL construction for the reported
+# per-axis hyperparameter intervals (gcol33/tulpa#357), and `grid_resolved` is
+# the cell-width-to-posterior-SD ratio below which the choice stops mattering.
+#
+# The outer grid's cell weights say how much mass each cell holds; they do not
+# say how it is spread INSIDE the cell, and the reported quantile needs both.
+# The shipped `chord` read places the cumulative mid-mass at each cell
+# COORDINATE and interpolates between coordinates; `box_uniform` places the
+# cumulative full mass at each cell EDGE and interpolates between edges, which
+# is the same masses over the same boxes with the knots moved half a cell.
+#
+# MEASURED, and box-uniform is ahead on every prior-average instrument. Against
+# the closed-form posterior of a gaussian-LMM fixture the two converge at order
+# 1.04 and 2.00 (`dev_notes/issue353/RESULTS.md` 2.3); over a twelve-rung ladder
+# spanning `h / sd` 2.82 to 27.34 -- built by sharpening the posterior at
+# realistic cell counts, which is how a fit reaches a high ratio in practice --
+# the paired CRPS favours box-uniform at 12 of 12 rungs, the folded PIT at 12 of
+# 12 and the 95% coverage is closer to nominal at 12 of 12, at 0.59 to 0.79x the
+# width (`dev_notes/issue357/RESULTS.md` section 4).
+#
+# WHY THE DEFAULT IS STILL `chord`. A within-cell reconstruction resolves an
+# endpoint to within one cell, so the realized coverage of a reported interval
+# depends on where in its cell the unknown truth fell. Swept directly, 12
+# positions x 200 seeds at fixed resolution, box-uniform's conditional 95%
+# coverage runs 0.585 to 1.000 across one cell -- box-averaged 0.9033 against
+# nominal 0.95, which is the right average and better than the chord read's
+# vacuous 1.0000, but a user has one fixed unknown truth and not an average. The
+# chord read is not position-insensitive either (0.655 to 0.950 at nominal 0.50
+# on the same sweep); it is wide enough to hide it at 0.95. And gcol33/tulpa#337
+# named fixed-truth coverage as its verdict instrument IN ADVANCE, and that
+# instrument still fails at a fixed truth. Both are on the issue; the default is
+# the maintainer's to move, and the construction ships selectable and reported
+# in the meantime.
+#
+# `grid_resolved = 1` is `h / sd`, both in the axis's own coordinate. It is not
+# a tuning cutoff: at `h / sd` below 1 the cell is narrower than the posterior
+# it discretizes, the two constructions converge to each other
+# (`dev_notes/issue353/RESULTS.md` 2.3) and the position sensitivity is bounded
+# by a fraction of an SD. Above it they part, and the 34-configuration census of
+# the engine's own default axes puts every one of them above it -- minimum 1.01,
+# median 4.25, maximum 18.06 -- so an unresolved axis is the ordinary case and
+# is worth reporting rather than warning about.
 .NL_DIAG <- list(
+    within_cell          = "chord",
+    grid_resolved        = 1,
     k_usable             = 0.7,
     k_samples            = 200L,
     gamma3_ok            = 0.5,

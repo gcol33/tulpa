@@ -484,6 +484,28 @@ partially scored fit. See
 for both the single-block backends (icar/bym2/car_proper) and the
 multi-block path (a per-group RE, a trend field, or an arm-specific
 field block).
+\item \code{within_cell} (\code{"chord"}) -- the WITHIN-CELL construction the reported
+per-axis hyperparameter intervals are read with (gcol33/tulpa#357). The
+outer grid's weights say how much mass each cell holds; they do not say
+how it is spread inside the cell, and a quantile needs both. \code{"chord"} is
+the shipped read: the cumulative MID-mass at each cell coordinate, linear
+between coordinates. \code{"box_uniform"} puts the cumulative FULL mass at each
+cell EDGE and interpolates between edges -- the same masses over the same
+boxes with the knots moved half a cell, which measures as a whole order of
+convergence (1.04 against 2.00 on a fixture with a closed-form posterior)
+and wins the paired CRPS, the folded PIT and the 95\% coverage at 12 of 12
+rungs of a ladder spanning cell-width-to-posterior-SD 2.8 to 27.3, at 0.59
+to 0.79x the width. THE DEFAULT IS STILL \code{"chord"}: a within-cell
+reconstruction resolves an endpoint to within one cell, so a reported
+interval's realized coverage depends on where in its cell the unknown
+truth fell, and swept directly that runs 0.585 to 1.000 at nominal 0.95
+(box-averaged 0.9033, against the chord read's own vacuous 1.0000).
+\code{outer_grid_h_over_sd} is how wide a cell is on each axis, and
+\code{theta_within_cell} is what each axis was actually read with. Only a
+\code{"density"} support admits it -- a CCD design, a locally refined grid and
+a posterior sample are not cell partitions that tile -- and an axis it
+declines on reports \code{"chord"} with a reason rather than erroring. Nothing
+else moves: point estimates, moments, draws and weights are untouched.
 \item \code{skew_correct} (\code{FALSE}) -- consume the inner-Laplace expansion instead of
 only grading it (gcol33/tulpa#302, gcol33/tulpa#354): report
 Cornish-Fisher marginal quantiles at each coefficient's own \code{gamma_3},
@@ -758,7 +780,30 @@ A mixed support still reports the weighted quantile, which measured best
 against a converged reference in both \code{design_mass} regimes; the share is
 the regime variable, since on that part of the support the quantile is
 bounded by the refined cells' own grid neighbourhoods rather than by the
-posterior (gcol33/tulpa#317).
+posterior (gcol33/tulpa#317). Every nested path stamps the pair, not only
+the multi-block driver.
+\item \code{within_cell_requested}, \code{theta_within_cell},
+\code{theta_within_cell_declined} -- the WITHIN-CELL construction the same
+intervals were read with (gcol33/tulpa#357). The kind above says what the
+integrator left; this says how each cell's mass was spread inside its own
+box when the grid was read back. \code{"chord"} is the default and puts the
+cumulative mid-mass at each cell coordinate; \code{"box_uniform"}
+(\code{control$within_cell}) puts the cumulative full mass at each cell edge,
+the same masses over the same boxes with the knots moved half a cell. The
+construction is recorded per axis, and an axis whose cell partition could
+not be built falls back to \code{"chord"} on its own with the reason in
+\code{theta_within_cell_declined} (\code{"support_<kind>"}, \code{"single_node"},
+\code{"boxes_do_not_tile"}, \code{"no_usable_node"}).
+\item \code{outer_grid_cell_width}, \code{outer_grid_axis_sd}, \code{outer_grid_h_over_sd} --
+per axis, the cell width and the posterior SD in that axis's own
+coordinate, and their ratio. A within-cell reconstruction resolves an
+interval endpoint to within one cell, so how much of the reported width
+and of its realized coverage is a property of where the grid fell rather
+than of the posterior is governed by this ratio; below
+\code{.nl_diag("grid_resolved")} the cells are narrower than the posterior
+they discretize and the two constructions converge to each other. NA on
+an axis whose own marginal is maximal at an endpoint, which is the
+placement question \code{outer_grid_railed_axes} reports.
 \item \code{prune_cheap_log_marginal}, \code{prune_mask}, \code{prune_n_pruned},
 \code{prune_tol} -- present only when \code{prune = TRUE} and the safety gate did
 not fall back. Cheap-pass log-marginals at every cell, a logical mask

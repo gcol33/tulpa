@@ -1059,26 +1059,104 @@
 # What the reported per-axis hyperparameter intervals were read off, and how much
 # of the support underneath them is a quadrature design rather than posterior mass
 # (gcol33/tulpa#317). NULL for a fit that does not record it.
+#
+# `within_cell` is the second half of the same question (gcol33/tulpa#357): the
+# node-set kind says what the integrator LEFT, the within-cell construction says
+# how each cell's mass was spread inside its own box when the grid was read
+# back. A fit carries one per axis, so a grid whose partition could not be built
+# on one axis says which axis fell back and why.
 .tulpa_interval_read <- function(fit) {
   jf <- if (!is.null(fit$joint_fit)) fit$joint_fit else fit
   read <- jf$theta_interval_read
   if (is.null(read) || is.na(read)) return(NULL)
+  wc <- jf$theta_within_cell
   list(read = as.character(read),
-       design_mass = as.numeric(jf$theta_interval_design_mass %||% NA_real_))
+       design_mass = as.numeric(jf$theta_interval_design_mass %||% NA_real_),
+       within_cell = as.character(wc %||% character(0)),
+       within_cell_requested =
+         as.character(jf$within_cell_requested %||% NA_character_),
+       within_cell_declined =
+         as.character(jf$theta_within_cell_declined %||% character(0)),
+       within_cell_axes = names(wc) %||% character(0))
 }
 
-# One-line reading of that provenance. NULL for a homogeneous support, whose
-# construction `integration` already names.
+# One-line reading of that provenance: a mixed support, or a within-cell
+# construction other than the shipped one (including one that was asked for and
+# fell back). NULL for the ordinary case -- a homogeneous support read with the
+# default construction, which `integration` already names.
 .tulpa_interval_read_note <- function(ir) {
-  if (is.null(ir) || !identical(ir$read, "mixed")) return(NULL)
-  share <- if (is.finite(ir$design_mass))
-    sprintf("%.1f%% of the integration weight", 100 * ir$design_mass) else
-    "part of the integration weight"
-  paste0("hyperparameter intervals read off a MIXED support: ", share,
-         " sits on locally CCD-refined nodes, which are a moment rule rather ",
-         "than posterior mass, so on that part the weighted quantile is bounded ",
-         "by the refined cells' own grid neighbourhoods -- widen the base grid ",
-         "(or turn local_ccd off) to move weight back onto mass-weighted cells")
+  if (is.null(ir)) return(NULL)
+  out <- character(0)
+  if (identical(ir$read, "mixed")) {
+    share <- if (is.finite(ir$design_mass))
+      sprintf("%.1f%% of the integration weight", 100 * ir$design_mass) else
+      "part of the integration weight"
+    out <- c(out, paste0(
+      "hyperparameter intervals read off a MIXED support: ", share,
+      " sits on locally CCD-refined nodes, which are a moment rule rather ",
+      "than posterior mass, so on that part the weighted quantile is bounded ",
+      "by the refined cells' own grid neighbourhoods -- widen the base grid ",
+      "(or turn local_ccd off) to move weight back onto mass-weighted cells"))
+  }
+  req <- ir$within_cell_requested
+  if (!length(req) || is.na(req) || identical(req, "chord")) {
+    return(if (length(out)) out else NULL)
+  }
+  used <- ir$within_cell
+  ax   <- ir$within_cell_axes
+  fell <- which(!is.na(used) & used != req)
+  out <- c(out, paste0(
+    "hyperparameter intervals read with the '", req, "' within-cell ",
+    "construction rather than the default 'chord': the same cell masses ",
+    "spread over the cells' own boxes, so an endpoint is resolved to within ",
+    "one box and its realized coverage depends on where in that box the truth ",
+    "falls -- see `outer_grid_h_over_sd` for how wide a box is on each axis"))
+  if (length(fell)) {
+    nm <- if (length(ax) >= max(fell)) ax[fell] else as.character(fell)
+    why <- stats::na.omit(unique(ir$within_cell_declined[fell]))
+    out <- c(out, paste0(
+      "'", req, "' declined on ", paste(nm, collapse = ", "), " (",
+      paste(why, collapse = ", "), "): those axes report the default 'chord' ",
+      "read instead"))
+  }
+  out
+}
+
+# The RESOLUTION of a fit's outer grid (gcol33/tulpa#357): per axis, the cell
+# width and the posterior SD in that axis's own coordinate, and their ratio.
+#
+# The neighbours above read WHAT the interval was built from. This reads how
+# finely the thing it was built from divides the posterior, which is what bounds
+# how much of the reported number is the grid rather than the posterior. NULL
+# for a fit that records none -- an older fit, or a backend whose summary does
+# not go through `.nl_posterior_moments()`.
+.tulpa_grid_resolution <- function(fit) {
+  jf <- if (!is.null(fit$joint_fit)) fit$joint_fit else fit
+  r <- jf$outer_grid_h_over_sd
+  if (is.null(r) || !length(r) || !any(is.finite(r))) return(NULL)
+  ok <- is.finite(r)
+  list(h_over_sd = r,
+       h         = jf$outer_grid_cell_width %||% rep(NA_real_, length(r)),
+       sd        = jf$outer_grid_axis_sd    %||% rep(NA_real_, length(r)),
+       max       = max(r[ok]),
+       coarsest  = (names(r) %||% as.character(seq_along(r)))[ok][
+                     which.max(r[ok])],
+       n_scored  = sum(ok),
+       n_axes    = length(r),
+       resolved  = all(r[ok] <= .nl_diag("grid_resolved")))
+}
+
+# One-line reading of a resolution. NULL when every scored axis is at or below
+# `grid_resolved`, where the cells are narrower than the posterior they
+# discretize and the within-cell construction stops mattering.
+.tulpa_grid_resolution_note <- function(rs) {
+  if (is.null(rs) || isTRUE(rs$resolved)) return(NULL)
+  paste0("outer grid coarser than its own posterior on ", rs$coarsest,
+         " (cell width / posterior SD = ", sprintf("%.2f", rs$max),
+         ", both in that axis's own coordinate): the reported interval's ",
+         "endpoints are resolved to within one cell, so part of their width ",
+         "and their realized coverage are properties of where the grid fell ",
+         "rather than of the posterior -- add nodes on that axis to reduce it")
 }
 
 # The grid axes a fit's own resolved path could not read (gcol33/tulpa#352).
@@ -1208,6 +1286,8 @@
   inner_k <- .tulpa_inner_k_reliability(fit)
   regime <- .tulpa_outer_regime(fit)
   placement <- .tulpa_grid_placement(fit)
+  iread <- .tulpa_interval_read(fit)
+  resolution <- .tulpa_grid_resolution(fit)
   k          <- psis$pareto_k
 
   draws <- .fit_draws(fit)
@@ -1276,6 +1356,26 @@
     attr(tab, "grid_recentred_axes")   <- placement$moved
     attr(tab, "grid_placement_declined") <- placement$declined
     attr(tab, "grid_placement_note")   <- .tulpa_grid_placement_note(placement)
+  }
+  # What the reported per-axis hyperparameter intervals were read off, and how
+  # finely the node set they came from divides the posterior (gcol33/tulpa#317,
+  # #357). Both are properties of the OUTER read rather than of the inner solve,
+  # and neither had a consumer before: `.tulpa_interval_read_note()` was written
+  # for the mixed support and never surfaced anywhere.
+  if (!is.null(iread)) {
+    attr(tab, "interval_read")        <- iread$read
+    attr(tab, "interval_design_mass") <- iread$design_mass
+    attr(tab, "within_cell")           <- iread$within_cell
+    attr(tab, "within_cell_requested") <- iread$within_cell_requested
+    attr(tab, "within_cell_declined")  <- iread$within_cell_declined
+    attr(tab, "interval_read_note")   <- .tulpa_interval_read_note(iread)
+  }
+  if (!is.null(resolution)) {
+    attr(tab, "grid_h_over_sd")      <- resolution$h_over_sd
+    attr(tab, "grid_h_over_sd_max")  <- resolution$max
+    attr(tab, "grid_coarsest_axis")  <- resolution$coarsest
+    attr(tab, "grid_resolved")       <- resolution$resolved
+    attr(tab, "grid_resolution_note") <- .tulpa_grid_resolution_note(resolution)
   }
   if (!is.null(inner_k)) {
     attr(tab, "inner_pareto_k")        <- inner_k$max_pareto_k
@@ -1617,6 +1717,10 @@ print.laplace_diagnostics <- function(x, ...) {
   if (!is.null(note)) cat("  note: ", note, "\n", sep = "")
   pnote <- attr(x, "grid_placement_note")
   if (!is.null(pnote)) cat("  note: ", pnote, "\n", sep = "")
+  for (rnote in c(attr(x, "interval_read_note"),
+                  attr(x, "grid_resolution_note"))) {
+    cat("  note: ", rnote, "\n", sep = "")
+  }
   if (has_skew) {
     ib <- attr(x, "inner_skew_band")
     im <- attr(x, "inner_skew_max")

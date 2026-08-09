@@ -34,6 +34,23 @@ test_that("every support kind names an outer-edge policy exactly once", {
   # Every policy the table names is one `.nl_wtd_quantile()` accepts.
   expect_true(all(stats::na.omit(pol) %in%
                     eval(formals(.nl_wtd_quantile)$outside)))
+  # The second field is the WITHIN-CELL vocabulary (gcol33/tulpa#357), held to
+  # `.NL_WITHIN_CELL` the same way. It is a field rather than a fifth kind
+  # because `outside` is a fact about the node set and `within` is a caller's
+  # choice about how to read it; the setequal pin above is what a fifth kind
+  # would have broken.
+  wit <- lapply(.NL_SUPPORT, `[[`, "within")
+  expect_true(all(vapply(wit, function(x) all(x %in% .NL_WITHIN_CELL),
+                         logical(1))))
+  # Every kind's default is the shipped read, so no support silently changes
+  # construction.
+  expect_true(all(vapply(wit, function(x) identical(x[1L], "chord"),
+                         logical(1))))
+  # Only a cell partition that TILES admits box-uniform.
+  expect_true("box_uniform" %in% wit[["density"]])
+  expect_false("box_uniform" %in% wit[["mixed"]])
+  expect_false("box_uniform" %in% wit[["sample"]])
+  expect_false("box_uniform" %in% wit[["moment_rule"]])
 })
 
 test_that("a sample support clamps and a density support extends", {
