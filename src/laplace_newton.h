@@ -357,6 +357,7 @@ LaplaceResult laplace_newton_solve(
     const std::vector<int>* skew_probe_idx = nullptr
 ) {
     FamilyLogLik ll{&y, &n_trials, N, family, phi, n_threads};
+    ll.prepare();
     Curvature3Oracle curvature3;
     if (compute_skew) {
         curvature3.scalar = [&y, &n_trials, &family, phi](int j, double eta_j) -> double {

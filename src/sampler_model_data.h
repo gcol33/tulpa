@@ -96,6 +96,7 @@ inline void build_sampler_model_inputs(
     in.resp.family   = family;
     in.resp.phi      = phi;
     in.resp.weights  = nullptr;
+    in.resp.prepare();
 
     in.data = ModelData();
     in.data.n_processes         = 1;

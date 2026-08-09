@@ -200,6 +200,7 @@ inline void build_spec_family_inputs(
     in.resp.family   = family;
     in.resp.phi      = phi;
     in.resp.weights  = weights;
+    in.resp.prepare();
 
     in.data = ModelData();
     in.data.n_processes         = 1;

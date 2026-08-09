@@ -56,6 +56,32 @@ struct BuiltinFamilyResponse {
     // future two-parameter family's extra parameter, e.g. the Tweedie power).
     // NaN => the family's built-in default (kStudentTDf for "t").
     double phi2 = std::numeric_limits<double>::quiet_NaN();
+
+    // `family` resolved once, and the eta-independent part of each
+    // observation's log-density evaluated once (gcol33/tulpa#372). Both are
+    // owned, not borrowed, so a response copied into a per-arm or per-thread
+    // pool carries its own -- the callbacks below read them by value.
+    FamilyResolved fam;
+    std::vector<double> ll_const;
+    bool prepared = false;
+
+    // Call once, after y / n_trials / family / N are set and before the solve.
+    // Until it runs `prepared` is false and the callbacks take the string
+    // ladder, which is the same arithmetic at the old speed -- a construction
+    // site that forgets this loses the saving, never the lchoose.
+    //
+    // phi is NOT read here: the grid rewrites it per cell (sync_dispersion),
+    // and no family's eta-independent term depends on it.
+    void prepare() {
+        if (!y || N <= 0) return;
+        fam = resolve_family(family);
+        ll_const.resize((size_t)N);
+        for (int i = 0; i < N; i++) {
+            const int nt = n_trials ? n_trials[i] : 1;
+            ll_const[(size_t)i] = log_lik_const_for_kind(y[i], nt, fam.kind);
+        }
+        prepared = true;
+    }
 };
 
 // LikelihoodFn<double>: per-obs log-likelihood for the built-in family.
@@ -88,6 +114,9 @@ inline double builtin_family_ll_double(
         ? log_lik_interval_gaussian(r->lower[i], r->upper[i], eta[0], r->phi)
         : (r->slog_y && r->family == "beta")
         ? log_lik_beta_grouped(r->slog_y[i], r->slog_1my[i], nt, eta[0], r->phi)
+        : r->prepared
+        ? log_lik_for_family(r->y[i], nt, eta[0], r->fam, r->phi, r->phi2,
+                             r->ll_const[(size_t)i])
         : log_lik_for_family(r->y[i], nt, eta[0], r->family, r->phi, r->phi2);
     // Weight the log-lik by the SAME per-obs factor the score / Fisher Hessian
     // carry (builtin_family_eta_weights), so the Newton line search optimizes the
@@ -118,6 +147,8 @@ inline void builtin_family_eta_weights(
         ? grad_hess_interval_gaussian(r->lower[i], r->upper[i], eta[0], r->phi)
         : (r->slog_y && r->family == "beta")
         ? grad_hess_beta_grouped(r->slog_y[i], r->slog_1my[i], nt, eta[0], r->phi)
+        : r->prepared
+        ? grad_hess_for_family(r->y[i], nt, eta[0], r->fam, r->phi, r->phi2)
         : grad_hess_for_family(r->y[i], nt, eta[0], r->family, r->phi, r->phi2);
     const double w = r->weights ? r->weights[i] : 1.0;
     grad_eta[0]     = w * gh.grad;

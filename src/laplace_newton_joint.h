@@ -197,6 +197,7 @@ inline void build_joint_arm_specs_into(const std::vector<JointArm>& arms,
             r.lower    = (a.lower.size()    > 0) ? REAL(a.lower)    : nullptr;
             r.upper    = (a.upper.size()    > 0) ? REAL(a.upper)    : nullptr;
             r.trunc_upper = (a.trunc_upper.size() > 0) ? REAL(a.trunc_upper) : nullptr;
+            r.prepare();
             s.builtin_responses.push_back(r);
             s.views[k] = ArmSpecView{
                 &s.builtin_specs.back(), &s.builtin_responses.back(),

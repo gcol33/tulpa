@@ -140,6 +140,7 @@ inline Rcpp::List run_multi_block_nested_laplace(
         resp.N        = N;
         resp.family   = family;
         resp.phi      = phi;
+        resp.prepare();
         spec_ptr      = &builtin_spec;
         resp_ptr      = &resp;
     }

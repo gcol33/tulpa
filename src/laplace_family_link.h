@@ -72,6 +72,28 @@ inline FamilyLink parse_family_link(const std::string& code) {
     return fl;
 }
 
+// Which branch of the per-observation family ladder a family code selects.
+// GENERIC is the mu-space route that reads FamilyResolved::fl.
+enum class FamilyKind : int {
+    BINOMIAL, POISSON, NEG_BINOMIAL_2, NEG_BINOMIAL_1,
+    TRUNCATED_POISSON, TRUNCATED_NEG_BINOMIAL_2, BETA_BINOMIAL,
+    STUDENT_T, TWEEDIE, GENERIC
+};
+
+// A family code resolved once, so the per-observation entry points below carry
+// no string work at all (gcol33/tulpa#372). The ladders they replace compared
+// the code against every special family in turn and then called
+// parse_family_link, which builds two std::strings and a concatenated prefix
+// per call -- per observation, per objective evaluation. Both entry points take
+// this struct; the std::string overloads resolve it and forward, so the ladder
+// itself is written once.
+struct FamilyResolved {
+    FamilyKind kind = FamilyKind::GENERIC;
+    FamilyLink fl;              // the mu-space route's family and link
+    std::string code;           // the family code as supplied
+    bool positive_eta_domain = false;   // link_has_positive_eta_domain(fl.link)
+};
+
 // Links carried on the open half-line eta > 0:
 //
 //   inverse   mu = 1/eta          singular at eta = 0
@@ -87,6 +109,49 @@ inline FamilyLink parse_family_link(const std::string& code) {
 // branch glm()'s starting values put you on for each of them.
 inline bool link_has_positive_eta_domain(const std::string& link) {
     return link == "inverse" || link == "1mu2" || link == "sqrt";
+}
+
+// Which branch of the ladders below a family code selects. Allocation-free:
+// this is the same sequence of string comparisons the ladders opened with, so a
+// caller that classifies once and then evaluates per observation pays it once,
+// and a caller that still passes a string pays exactly what it paid before.
+inline FamilyKind family_kind(const std::string& code) {
+    if (code == "binomial")                      return FamilyKind::BINOMIAL;
+    if (code == "poisson")                       return FamilyKind::POISSON;
+    if (code == "neg_binomial_2")                return FamilyKind::NEG_BINOMIAL_2;
+    if (code == "neg_binomial_1")                return FamilyKind::NEG_BINOMIAL_1;
+    if (code == "truncated_poisson")             return FamilyKind::TRUNCATED_POISSON;
+    if (code == "truncated_neg_binomial_2")      return FamilyKind::TRUNCATED_NEG_BINOMIAL_2;
+    if (code == "beta_binomial")                 return FamilyKind::BETA_BINOMIAL;
+    if (code == "t")                             return FamilyKind::STUDENT_T;
+    if (code == "tweedie")                       return FamilyKind::TWEEDIE;
+    return FamilyKind::GENERIC;
+}
+
+inline FamilyResolved resolve_family(const std::string& code) {
+    FamilyResolved r;
+    r.kind = family_kind(code);
+    r.fl = parse_family_link(code);
+    r.code = code;
+    r.positive_eta_domain = link_has_positive_eta_domain(r.fl.link);
+    return r;
+}
+
+// The eta-independent per-observation term of the families whose log-density
+// splits into `kernel + const` (laplace_likelihoods.h), and zero for every
+// other kind. A fit evaluates this once per observation and hands the value
+// back to log_lik_for_family, which adds it in the same place and the same
+// order the full density did (gcol33/tulpa#372).
+inline double log_lik_const_for_kind(double y, int n_trials, FamilyKind kind) {
+    switch (kind) {
+    case FamilyKind::BINOMIAL:
+        return log_lik_binomial_const((int)y, n_trials);
+    case FamilyKind::POISSON:
+    case FamilyKind::TRUNCATED_POISSON:   // its base density is the Poisson one
+        return log_lik_poisson_const((int)y);
+    default:
+        return 0.0;
+    }
 }
 
 // Whether eta lies in the link's domain.
@@ -495,10 +560,10 @@ inline TruncationTerm truncation_term(double a, double da, double d2a) {
 // (a, da, d2a) for a truncated family at the current eta, and the third
 // eta-derivative d3a when a non-null pointer is passed. `mu` is the untruncated
 // mean; phi is the NB size and is ignored by the Poisson arm.
-inline void truncation_shape(const std::string& family, double mu, double phi,
+inline void truncation_shape(FamilyKind kind, double mu, double phi,
                              double* a, double* da, double* d2a,
                              double* d3a = nullptr) {
-    if (family == "truncated_poisson") {
+    if (kind == FamilyKind::TRUNCATED_POISSON) {
         *a = mu; *da = mu; *d2a = mu;
         if (d3a) *d3a = mu;
         return;
@@ -510,29 +575,42 @@ inline void truncation_shape(const std::string& family, double mu, double phi,
     if (d3a) *d3a = phi * phi * mu * (phi - mu) / (s * s * s);
 }
 
+inline void truncation_shape(const std::string& family, double mu, double phi,
+                             double* a, double* da, double* d2a,
+                             double* d3a = nullptr) {
+    truncation_shape(family == "truncated_poisson"
+                         ? FamilyKind::TRUNCATED_POISSON
+                         : FamilyKind::TRUNCATED_NEG_BINOMIAL_2,
+                     mu, phi, a, da, d2a, d3a);
+}
+
 struct GradHess {
     double grad;
     double neg_hess;
 };
 
-inline GradHess grad_hess_for_family(
-    double y, int n_trials, double eta,
-    const std::string& family, double phi,
-    double phi2 = std::numeric_limits<double>::quiet_NaN()
+// Score + Newton working weight, with the family already classified. `fl` is
+// read only on the GENERIC (mu-space) branch and may be null for every other
+// kind; it is what the two public entry points below differ in supplying --
+// the resolved one hands over a FamilyLink parsed once per fit, the string one
+// parses it here, and the ladder itself is written only here.
+inline GradHess grad_hess_for_family_core(
+    double y, int n_trials, double eta, FamilyKind kind, const FamilyLink* fl,
+    double phi, double phi2
 ) {
-    if (family == "binomial") {
+    if (kind == FamilyKind::BINOMIAL) {
         return {grad_log_lik_binomial((int)y, n_trials, eta),
                 neg_hess_log_lik_binomial((int)y, n_trials, eta)};
     }
-    if (family == "poisson") {
+    if (kind == FamilyKind::POISSON) {
         return {grad_log_lik_poisson((int)y, eta),
                 neg_hess_log_lik_poisson((int)y, eta)};
     }
-    if (family == "neg_binomial_2") {
+    if (kind == FamilyKind::NEG_BINOMIAL_2) {
         return {grad_log_lik_negbin((int)y, eta, phi),
                 neg_hess_log_lik_negbin((int)y, eta, phi)};
     }
-    if (family == "neg_binomial_1") {
+    if (kind == FamilyKind::NEG_BINOMIAL_1) {
         // Score is exact. The working weight is the quasi-likelihood IRLS
         // weight (dmu/deta)^2 / V(mu) = mu / (1 + phi), the form glmmTMB uses;
         // it is positive everywhere, so Newton needs no Fisher fallback. It is
@@ -547,17 +625,18 @@ inline GradHess grad_hess_for_family(
                                  - std::log1p(phi));
         return {grad, mu / (1.0 + phi)};
     }
-    if (family == "truncated_poisson" || family == "truncated_neg_binomial_2") {
+    if (kind == FamilyKind::TRUNCATED_POISSON ||
+        kind == FamilyKind::TRUNCATED_NEG_BINOMIAL_2) {
         const double mu = std::max(tulpa_linalg::safe_exp(eta), 1e-15);
         double a, da, d2a;
-        truncation_shape(family, mu, phi, &a, &da, &d2a);
+        truncation_shape(kind, mu, phi, &a, &da, &d2a);
         const TruncationTerm t = truncation_term(a, da, d2a);
-        const double base_grad = (family == "truncated_poisson")
+        const double base_grad = (kind == FamilyKind::TRUNCATED_POISSON)
             ? grad_log_lik_poisson((int)y, eta)
             : grad_log_lik_negbin((int)y, eta, phi);
         return {base_grad - t.dlog_p, t.e_weight};
     }
-    if (family == "beta_binomial") {
+    if (kind == FamilyKind::BETA_BINOMIAL) {
         // Beta-binomial (logit link, mu = P(success), phi = precision a + b).
         // Score is exact; the working weight is the moment-based Fisher weight
         // n mu(1-mu) / D with the overdispersion factor D = 1 + (n-1)/(phi+1)
@@ -572,7 +651,7 @@ inline GradHess grad_hess_for_family(
         double D = 1.0 + (n - 1.0) / (phi + 1.0);
         return {grad, n * mu * (1.0 - mu) / D};
     }
-    if (family == "t") {
+    if (kind == FamilyKind::STUDENT_T) {
         // Student-t location-scale (identity link): y ~ eta + phi * t_nu, with
         // nu = phi2 (NaN => the robust default kStudentTDf) and phi the scale.
         // Score is exact; the working weight is the constant Fisher information
@@ -583,7 +662,7 @@ inline GradHess grad_hess_for_family(
         double grad = (nu + 1.0) * resid / (nu * phi * phi + resid * resid);
         return {grad, (nu + 1.0) / ((nu + 3.0) * phi * phi)};
     }
-    if (family == "tweedie") {
+    if (kind == FamilyKind::TWEEDIE) {
         // Compound Poisson-gamma (log link), phi2 = power p in (1, 2). EDM
         // score through the log link, (y - mu)/(phi mu^(p-1)); expected
         // Fisher weight mu^(2-p)/phi. Always positive, no fallback needed.
@@ -596,29 +675,63 @@ inline GradHess grad_hess_for_family(
                 std::pow(mu, 2.0 - p) / phi};
     }
 
-    FamilyLink fl = parse_family_link(family);
-    double mu = linkinv(eta, fl.link);
-    double dmu = mu_eta(eta, fl.link);
-    if (fl.family == "binomial" || fl.family == "beta") {
+    double mu = linkinv(eta, fl->link);
+    double dmu = mu_eta(eta, fl->link);
+    if (fl->family == "binomial" || fl->family == "beta") {
         mu = std::max(std::min(mu, 1.0 - 1e-7), 1e-7);
-    } else if (fl.family != "gaussian" && fl.family != "lognormal") {
+    } else if (fl->family != "gaussian" && fl->family != "lognormal") {
         mu = std::max(mu, 1e-10);
     }
 
-    double g = grad_mu(y, mu, phi, fl.family, n_trials);
-    double V = variance_fn(mu, phi, fl.family, n_trials);
+    double g = grad_mu(y, mu, phi, fl->family, n_trials);
+    double V = variance_fn(mu, phi, fl->family, n_trials);
     return {g * dmu, dmu * dmu / V};
 }
 
-inline double log_lik_for_family(
+// The resolved entry: no string work at all, the family having been classified
+// and its link parsed once at spec construction.
+inline GradHess grad_hess_for_family(
+    double y, int n_trials, double eta, const FamilyResolved& fr,
+    double phi, double phi2 = std::numeric_limits<double>::quiet_NaN()
+) {
+    return grad_hess_for_family_core(y, n_trials, eta, fr.kind, &fr.fl,
+                                     phi, phi2);
+}
+
+inline GradHess grad_hess_for_family(
     double y, int n_trials, double eta,
     const std::string& family, double phi,
     double phi2 = std::numeric_limits<double>::quiet_NaN()
 ) {
-    if (family == "binomial") return log_lik_binomial((int)y, n_trials, eta);
-    if (family == "poisson") return log_lik_poisson((int)y, eta);
-    if (family == "neg_binomial_2") return log_lik_negbin((int)y, eta, phi);
-    if (family == "neg_binomial_1") {
+    const FamilyKind kind = family_kind(family);
+    if (kind != FamilyKind::GENERIC) {
+        return grad_hess_for_family_core(y, n_trials, eta, kind, nullptr,
+                                         phi, phi2);
+    }
+    const FamilyLink fl = parse_family_link(family);
+    return grad_hess_for_family_core(y, n_trials, eta, kind, &fl, phi, phi2);
+}
+
+// Per-observation log-density, with the family already classified and its
+// eta-independent term already evaluated. `ll_const` is
+// log_lik_const_for_kind(y, n_trials, kind) -- the binomial lchoose, the
+// Poisson -lgamma(y+1), zero elsewhere -- and it is ADDED in the same position
+// and the same order the full densities in laplace_likelihoods.h add it, so a
+// caller holding a precomputed value reproduces them bit for bit
+// (gcol33/tulpa#372). `fl` and `pos_eta_domain` are read only on the GENERIC
+// branch; every other kind may pass a null `fl`.
+inline double log_lik_for_family_core(
+    double y, int n_trials, double eta, FamilyKind kind, const FamilyLink* fl,
+    bool pos_eta_domain, double phi, double phi2, double ll_const
+) {
+    if (kind == FamilyKind::BINOMIAL) {
+        return log_lik_binomial_kernel((int)y, n_trials, eta) + ll_const;
+    }
+    if (kind == FamilyKind::POISSON) {
+        return log_lik_poisson_kernel((int)y, eta) + ll_const;
+    }
+    if (kind == FamilyKind::NEG_BINOMIAL_2) return log_lik_negbin((int)y, eta, phi);
+    if (kind == FamilyKind::NEG_BINOMIAL_1) {
         // Log link, variance mu (1 + phi): in NB(r, p) form the shape moves
         // with the mean, r = mu / phi, and p = 1 / (1 + phi) is constant.
         const double mu = std::max(tulpa_linalg::safe_exp(eta), 1e-15);
@@ -627,18 +740,19 @@ inline double log_lik_for_family(
         return R::lgammafn(yi + r) - R::lgammafn(r) - R::lgammafn(yi + 1.0)
              - (yi + r) * std::log1p(phi) + yi * std::log(phi);
     }
-    if (family == "truncated_poisson" || family == "truncated_neg_binomial_2") {
+    if (kind == FamilyKind::TRUNCATED_POISSON ||
+        kind == FamilyKind::TRUNCATED_NEG_BINOMIAL_2) {
         const double yi = (double)(int)y;
         if (yi < 1.0) return R_NegInf;   // support is y >= 1
         const double mu = std::max(tulpa_linalg::safe_exp(eta), 1e-15);
-        const double base = (family == "truncated_poisson")
-            ? log_lik_poisson((int)y, eta)
+        const double base = (kind == FamilyKind::TRUNCATED_POISSON)
+            ? log_lik_poisson_kernel((int)y, eta) + ll_const
             : log_lik_negbin((int)y, eta, phi);
         double a, da, d2a;
-        truncation_shape(family, mu, phi, &a, &da, &d2a);
+        truncation_shape(kind, mu, phi, &a, &da, &d2a);
         return base - truncation_term(a, da, d2a).log_p;
     }
-    if (family == "beta_binomial") {
+    if (kind == FamilyKind::BETA_BINOMIAL) {
         double mu = linkinv(eta, "logit");
         mu = std::max(std::min(mu, 1.0 - 1e-15), 1e-15);
         double a = mu * phi, b = (1.0 - mu) * phi;
@@ -647,31 +761,57 @@ inline double log_lik_for_family(
              + R::lgammafn(yi + a) + R::lgammafn(n - yi + b) - R::lgammafn(n + a + b)
              - R::lgammafn(a) - R::lgammafn(b) + R::lgammafn(a + b);
     }
-    if (family == "t") {
+    if (kind == FamilyKind::STUDENT_T) {
         const double nu = std::isnan(phi2) ? kStudentTDf : phi2;
         double r = (y - eta) / phi;
         return R::lgammafn((nu + 1.0) / 2.0) - R::lgammafn(nu / 2.0)
              - 0.5 * std::log(nu * M_PI * phi * phi)
              - 0.5 * (nu + 1.0) * std::log1p(r * r / nu);
     }
-    if (family == "tweedie") {
+    if (kind == FamilyKind::TWEEDIE) {
         if (std::isnan(phi2)) {
             Rcpp::stop("family 'tweedie' needs phi2 (the variance power p).");
         }
         return log_lik_tweedie(y, std::exp(eta), phi, phi2);
     }
 
-    FamilyLink fl = parse_family_link(family);
     // Domain barrier for the eta > 0 links. -Inf here is what stops the Newton
     // line search from stepping out of the domain; see link_eta_in_domain.
-    if (!link_eta_in_domain(eta, fl.link)) return R_NegInf;
-    double mu = linkinv(eta, fl.link);
-    if (fl.family == "binomial" || fl.family == "beta") {
+    if (pos_eta_domain && eta <= 0.0) return R_NegInf;
+    double mu = linkinv(eta, fl->link);
+    if (fl->family == "binomial" || fl->family == "beta") {
         mu = std::max(std::min(mu, 1.0 - 1e-15), 1e-15);
-    } else if (fl.family != "gaussian" && fl.family != "lognormal") {
+    } else if (fl->family != "gaussian" && fl->family != "lognormal") {
         mu = std::max(mu, 1e-15);
     }
-    return log_lik_mu(y, mu, phi, fl.family, n_trials);
+    return log_lik_mu(y, mu, phi, fl->family, n_trials);
+}
+
+// The resolved entry: no string work, and the caller supplies the constant it
+// precomputed once per fit.
+inline double log_lik_for_family(
+    double y, int n_trials, double eta, const FamilyResolved& fr,
+    double phi, double phi2, double ll_const
+) {
+    return log_lik_for_family_core(y, n_trials, eta, fr.kind, &fr.fl,
+                                   fr.positive_eta_domain, phi, phi2, ll_const);
+}
+
+inline double log_lik_for_family(
+    double y, int n_trials, double eta,
+    const std::string& family, double phi,
+    double phi2 = std::numeric_limits<double>::quiet_NaN()
+) {
+    const FamilyKind kind = family_kind(family);
+    if (kind != FamilyKind::GENERIC) {
+        return log_lik_for_family_core(y, n_trials, eta, kind, nullptr, false,
+                                       phi, phi2,
+                                       log_lik_const_for_kind(y, n_trials, kind));
+    }
+    const FamilyLink fl = parse_family_link(family);
+    return log_lik_for_family_core(y, n_trials, eta, kind, &fl,
+                                   link_has_positive_eta_domain(fl.link),
+                                   phi, phi2, 0.0);
 }
 
 // Whether a family code reaches the generic mu-space route with BOTH ladders
@@ -1072,6 +1212,32 @@ inline double compute_total_log_lik(
     return log_lik;
 }
 
+// The same sum with the family resolved and its eta-independent per-observation
+// terms already evaluated (gcol33/tulpa#372). This is the form the Newton line
+// search reaches, so nothing in the loop body touches a string or an lgamma
+// that does not move with eta; FamilyLogLik below owns the precompute.
+inline double compute_total_log_lik(
+    const Rcpp::NumericVector& y, const Rcpp::IntegerVector& n_trials,
+    const Rcpp::NumericVector& eta, int N,
+    const FamilyResolved& fr, const double* ll_const, double phi, int n_threads
+) {
+    if (fr.kind == FamilyKind::TWEEDIE) {
+        Rcpp::stop("family 'tweedie' needs phi2 (the variance power p); "
+                   "route it through the LikelihoodSpec path, which carries "
+                   "phi2.");
+    }
+    const double phi2 = std::numeric_limits<double>::quiet_NaN();
+    double log_lik = 0.0;
+    #ifdef _OPENMP
+    #pragma omp parallel for reduction(+:log_lik) schedule(static) num_threads(n_threads > 0 ? n_threads : 1)
+    #endif
+    for (int i = 0; i < N; i++) {
+        log_lik += log_lik_for_family(y[i], n_trials[i], eta[i], fr, phi, phi2,
+                                      ll_const[i]);
+    }
+    return log_lik;
+}
+
 // Data log-likelihood as a functor of the current linear predictor eta.
 //
 // The shared Newton loop (laplace_newton_solve_ll) reads the data log-lik
@@ -1088,10 +1254,31 @@ struct FamilyLogLik {
     std::string family;
     double phi = 1.0;
     int n_threads = 1;
+    // Resolved once by prepare(); until it runs the string ladder is taken, so
+    // a construction site that forgets the call gets the same arithmetic and
+    // the old speed rather than a wrong constant.
+    FamilyResolved fam;
+    std::vector<double> ll_const;
+    bool prepared = false;
+
+    void prepare() {
+        if (!y || N <= 0) return;
+        fam = resolve_family(family);
+        ll_const.resize((size_t)N);
+        for (int i = 0; i < N; i++) {
+            const int nt = n_trials ? (*n_trials)[i] : 1;
+            ll_const[(size_t)i] = log_lik_const_for_kind((*y)[i], nt, fam.kind);
+        }
+        prepared = true;
+    }
 
     double operator()(const Rcpp::NumericVector& eta) const {
-        return compute_total_log_lik(*y, *n_trials, eta, N, family, phi,
-                                     n_threads);
+        if (!prepared) {
+            return compute_total_log_lik(*y, *n_trials, eta, N, family, phi,
+                                         n_threads);
+        }
+        return compute_total_log_lik(*y, *n_trials, eta, N, fam,
+                                     ll_const.data(), phi, n_threads);
     }
 };
 

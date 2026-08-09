@@ -1,5 +1,41 @@
 # tulpa NEWS
 
+## 0.0.168
+
+* The eta-independent part of a built-in family's log-density is now evaluated
+  once per observation per FIT rather than once per observation per objective
+  evaluation (gcol33/tulpa#372). Three separate causes measured as one number,
+  because all three sit in the shared penalized objective and are therefore
+  paid by every line-search evaluation of every inner Newton solve in the
+  engine: binomial spent `R::lchoose(n, y)`, three `lgammafn` calls, inside the
+  density; poisson spent `lgammafn(y + 1)`; gaussian matched no special branch
+  and fell through the ladder to `parse_family_link`, which builds a
+  `FamilyLink` carrying two `std::string`s.
+
+  `BuiltinFamilyResponse::prepare()` (and `FamilyLogLik::prepare()`) resolves
+  the family code once into a `FamilyKind` plus a parsed `FamilyLink`, and
+  fills a per-observation vector of the constant. `log_lik_for_family` and
+  `grad_hess_for_family` gain an entry point taking both, so the objective adds
+  a looked-up double where it called `lgamma`. Each ladder is written once, in
+  a core that the `std::string` overload forwards into after an
+  allocation-free classification, so a caller still passing a string does
+  exactly the work it did before and no path regresses. A response that was
+  never prepared reports so and takes the string route, so a construction site
+  that forgets the call loses the saving, never the constant.
+
+  The split densities are `kernel + const` in that order at every call site, so
+  a caller holding a precomputed constant reproduces them bit for bit. Measured
+  over 23 fits (ten families x single-arm and joint, plus three
+  corrected-integrated-Laplace fits) and 253 captured fields -- log-marginals,
+  modes, per-cell modes and Hessians, grid weights, coefficients, intervals,
+  `vcov`, `logLik` -- every field `identical()` before and after, no tolerance.
+
+  Cost, read off a corrected-integrated-Laplace M ladder (7-cell sigma grid,
+  one thread, `variant = "qmc"`), the two arms alternated so they share the
+  machine's load: per-observation cost of the objective 0.190 -> 0.149 us
+  binomial, 0.230 -> 0.138 us gaussian, 0.189 -> 0.118 us poisson. Per
+  auxiliary draw at N = 48 that is 9.9 -> 6.4, 11.3 -> 6.4 and 10.3 -> 5.7 us.
+
 ## 0.0.167
 
 * The single-arm nested-Laplace loop reports its log-marginal at the Newton

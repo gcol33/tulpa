@@ -321,6 +321,7 @@ Rcpp::List cpp_laplace_fit_multi_re(
     resp.phi      = phi;
     resp.phi2     = phi2;   // NA_REAL is a NaN => family default (e.g. t df = 4)
     resp.weights  = w_ptr;
+    resp.prepare();
 
     tulpa::ModelData data;
     data.n_processes         = has_zi ? 2 : 1;
