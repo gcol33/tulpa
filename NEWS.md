@@ -100,6 +100,11 @@
   so both reads have the dependence and the chord read hides it behind width at
   0.95. The promoted engine read reproduces the arm
   `dev_notes/issue337/recon.R` scored to 1.8e-15 on every one of the 4800 fits.
+  The twelve-rung ladder transfers too: the paired CRPS favours box-uniform at
+  12 of 12 rungs, the folded PIT at 12 of 12, the 95% coverage is closer to
+  nominal at 11 of 12 (the twelfth an exact tie, 0.9933 and 0.9067 both 0.0433
+  from nominal) and raw KS at 10 of 12, the two exceptions the same `levels = 2`
+  pair the issue records.
   The default flip stays the maintainer's call and the issue stays open on it.
   Evidence: `dev_notes/issue357/RESULTS.md`, `common357b.R`, `boxpos357b.R`,
   `coarse357b.R`, `analyse357b.R`, `identity357.R`, `unit357.R`.

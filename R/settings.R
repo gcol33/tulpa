@@ -676,8 +676,9 @@
 # spanning `h / sd` 2.82 to 27.34 -- built by sharpening the posterior at
 # realistic cell counts, which is how a fit reaches a high ratio in practice --
 # the paired CRPS favours box-uniform at 12 of 12 rungs, the folded PIT at 12 of
-# 12 and the 95% coverage is closer to nominal at 12 of 12, at 0.59 to 0.79x the
-# width (`dev_notes/issue357/RESULTS.md` section 4).
+# 12 and the 95% coverage is closer to nominal at 11 of 12 -- the twelfth an
+# exact tie, 0.9933 and 0.9067 both 0.0433 from nominal -- at 0.46 to 0.92x the
+# width (`dev_notes/issue357/RESULTS.md` sections 4 and 6.6).
 #
 # WHY THE DEFAULT IS STILL `chord`. A within-cell reconstruction resolves an
 # endpoint to within one cell, so the realized coverage of a reported interval

@@ -503,9 +503,10 @@
 #'     cell EDGE and interpolates between edges -- the same masses over the same
 #'     boxes with the knots moved half a cell, which measures as a whole order of
 #'     convergence (1.04 against 2.00 on a fixture with a closed-form posterior)
-#'     and wins the paired CRPS, the folded PIT and the 95% coverage at 12 of 12
-#'     rungs of a ladder spanning cell-width-to-posterior-SD 2.8 to 27.3, at 0.59
-#'     to 0.79x the width. THE DEFAULT IS STILL `"chord"`: a within-cell
+#'     and takes the paired CRPS at 12 of 12 rungs, the folded PIT at 12 of 12
+#'     and the 95% coverage at 11 of 12 (the twelfth an exact tie), over a ladder
+#'     spanning cell-width-to-posterior-SD 2.8 to 27.3, at 0.46 to 0.92x the
+#'     width. THE DEFAULT IS STILL `"chord"`: a within-cell
 #'     reconstruction resolves an endpoint to within one cell, so a reported
 #'     interval's realized coverage depends on where in its cell the unknown
 #'     truth fell, and swept directly that runs 0.585 to 1.000 at nominal 0.95
