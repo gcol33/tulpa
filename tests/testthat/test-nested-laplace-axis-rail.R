@@ -45,6 +45,56 @@ test_that("an axis is railed exactly when its own marginal peaks at an endpoint"
     expect_identical(.nl_railed_axes(mid), character(0))
 })
 
+test_that("the rail verdict does not move with the axis's node count", {
+    # gcol33/tulpa#375. The materiality guard reads a per-NODE quantity, so it
+    # has to be compared against a per-node reference. Against a fixed SHARE the
+    # same posterior read at more nodes carries less on any one of them, and a
+    # longer axis becomes a weaker detector -- which is the opposite of what
+    # #361's longer `bym2_rho` span was meant to compose with.
+    #
+    # One marginal shape, read at six node counts over ONE fixed span in the
+    # axis's own coordinate. The span is what fixes the posterior geometry; the
+    # node count is the only thing that moves.
+    span <- stats::qlogis(c(0.2, 0.95))
+    ms   <- c(4L, 5L, 6L, 8L, 12L, 20L)
+    read_at <- function(m, shape) {
+        u <- seq(span[1L], span[2L], length.out = m)
+        w <- shape(u); w <- w / sum(w)
+        .rail_stub(stats::plogis(u), w, "rho")
+    }
+
+    # Piled against the ceiling: a mode 1.5 logit units PAST the top node, so
+    # every read has its argmax at that node whatever the resolution.
+    piled <- function(u) exp(-0.5 * ((u - (span[2L] + 1.5)) / 2.1)^2)
+    lift  <- vapply(ms, function(m) .nl_axis_rail(read_at(m, piled), "rho")$lift,
+                    numeric(1))
+    expect_true(all(lift >= 2))
+    # The share it used to be read against falls by more than 3x over the same
+    # reads, and drops through 0.5 -- the defect, in one line.
+    share <- vapply(ms, function(m) .nl_axis_rail(read_at(m, piled), "rho")$mass,
+                    numeric(1))
+    expect_gt(share[1L] / share[length(share)], 3)
+    expect_gt(share[1L], 0.5)
+    expect_lt(share[length(share)], 0.5)
+
+    # Flat to within the weights' own noise: the argmax is arbitrary and lands
+    # on the top node by construction. Declines at every node count -- the
+    # guard's own job, which the rescale must not cost.
+    for (m in ms) {
+        set.seed(400L + m)
+        w <- rep(1, m) + stats::runif(m, -0.02, 0.02)
+        w[m] <- max(w) + 0.01
+        expect_null(.nl_axis_rail(.rail_stub(
+            stats::plogis(seq(span[1L], span[2L], length.out = m)),
+            w / sum(w), "rho"), "rho"))
+    }
+
+    # And a marginal that merely tilts: 1.6x from the bottom node to the top
+    # over the whole span, no curvature to recentre onto.
+    gentle <- function(u) exp(0.47 * (u - u[1L]) / diff(range(u)))
+    for (m in ms) expect_null(.nl_axis_rail(read_at(m, gentle), "rho"))
+})
+
 test_that("a recentred axis is laid in its own coordinate and stays in support", {
     # `log`: unchanged from the positive-scale generator every existing caller
     # uses, so the two names are the same nodes.

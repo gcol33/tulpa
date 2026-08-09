@@ -408,16 +408,27 @@
     # interior cell for the mode to sit in.
     min_nodes = 3L,
 
-    # Share of an axis's OWN marginal weight its boundary node must carry before
-    # the axis counts as railed against that boundary (`.nl_axis_rail()`,
-    # gcol33/tulpa#361). A marginal maximal at a boundary node has its mode at
-    # or beyond it, which is the statement; this is the materiality guard that
+    # How far above a FLAT marginal the boundary node's own weight has to sit
+    # before the axis counts as railed against that boundary (`.nl_axis_rail()`,
+    # gcol33/tulpa#361, #375). A marginal maximal at a boundary node has its mode
+    # at or beyond it, which is the statement; this is the materiality guard that
     # keeps a merely uneven -- or numerically flat -- marginal from being moved
-    # onto curvature it does not have. Half the marginal against one node is a
-    # majority read on any axis, and both of #357's two railed configurations
-    # clear it (1.000 on the 144-cell ICAR lattice's `tau`, 0.628 on the
-    # 100-region BYM2's `rho`).
-    edge_mass = 0.5,
+    # onto curvature it does not have.
+    #
+    # The comparison is against `1 / m` for an `m`-node axis, not against a
+    # constant share. A share is not comparable across node counts: the same
+    # posterior read at more nodes spreads its weight over more of them, so a
+    # fixed share makes a LONGER axis a WEAKER detector (gcol33/tulpa#375
+    # measures the shipped 0.5 share firing on 12 / 10 / 6 / 3 / 0 of the same
+    # 20 railed fits as the span's node count goes 4 / 5 / 6 / 8 / 12). Relative
+    # to uniform the same reads are 12 / 11 / 10 / 10 / 10, against 12 / 11 / 10
+    # / 10 / 10 fits whose marginal is maximal at the top node at all.
+    #
+    # `2` is the retired 0.5 share at the four nodes it was tuned on, so the
+    # calibration is transported rather than re-chosen, and both of #357's two
+    # railed configurations still clear it (4.000 on the 144-cell ICAR lattice's
+    # `tau`, 2.511 on the 100-region BYM2's `rho`).
+    edge_mass_mult = 2,
 
     # Recenter attempts. The joint paths take two (the second adds the light PC
     # prior below, for a genuinely unidentified near-separation mode that keeps

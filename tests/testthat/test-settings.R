@@ -111,6 +111,11 @@ test_that("the default axes are exactly these values", {
     expect_equal(tulpa:::.nl_recenter("span"), 2.5)
     expect_identical(tulpa:::.nl_recenter("max_attempts_joint"), 2L)
     expect_identical(tulpa:::.nl_recenter("max_attempts_registry"), 1L)
+    # A multiple of what a flat marginal puts on one node, not a share of the
+    # axis's weight (gcol33/tulpa#375). `2` is the retired 0.5 share at the four
+    # nodes it was tuned on.
+    expect_equal(tulpa:::.nl_recenter("edge_mass_mult"), 2)
+    expect_error(tulpa:::.nl_recenter("edge_mass"), "Unknown recenter setting")
     expect_identical(tulpa:::.nl_st_default("n_spatial"), 4L)
     expect_equal(tulpa:::.nl_st_default("tau_upper"), 16)
 

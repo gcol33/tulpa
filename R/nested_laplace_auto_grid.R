@@ -581,24 +581,36 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 }
 
 # Is `axis` railed against one of its own endpoints? Returns
-# `list(side, mass, node)` or NULL.
+# `list(side, mass, lift, node)` or NULL.
 #
 # Two clauses. The first IS the statement -- a marginal maximal at a boundary
-# node has its mode at or beyond that boundary. The second requires the boundary
-# node to carry at least `edge_mass` of the axis's marginal weight, and is what
-# keeps a marginal that is merely uneven, or flat to within the weights' own
-# noise (where the argmax is arbitrary), from being read as a rail and moved
-# onto curvature it does not have: a near-flat direction returns a huge mode SD,
-# and a grid laid over it is coarser than the one it replaced.
-.nl_axis_rail <- function(res, axis, edge_mass = .nl_recenter("edge_mass")) {
+# node has its mode at or beyond that boundary. The second is the materiality
+# guard: what keeps a marginal that is merely uneven, or flat to within the
+# weights' own noise (where the argmax is arbitrary), from being read as a rail
+# and moved onto curvature it does not have -- a near-flat direction returns a
+# huge mode SD, and a grid laid over it is coarser than the one it replaced.
+#
+# The guard reads the boundary node's weight against what a FLAT marginal would
+# put there, `1 / m`, rather than against a fixed share (gcol33/tulpa#375). The
+# two differ by exactly the node count, and that is the whole defect: an axis's
+# weights are a distribution over its OWN nodes, so the same posterior read at
+# more nodes carries less on any one of them and a fixed share turns a longer
+# axis into a weaker detector. `lift = m * w[k]` is 1 for a flat marginal at any
+# node count and any spacing, so the threshold means the same thing wherever it
+# is applied. Measured on a BYM2 `rho` posterior held past a fixed span, the
+# lift of a railed fit is flat in the node count (2.70 / 2.81 / 2.87 / 2.94 /
+# 3.02 at m = 4 / 5 / 6 / 8 / 12) where its share collapses (0.68 / 0.56 / 0.48
+# / 0.37 / 0.25).
+.nl_axis_rail <- function(res, axis, edge_mult = .nl_recenter("edge_mass_mult")) {
     mw <- .nl_axis_marginal_w(res, axis)
     if (is.null(mw)) return(NULL)
     m <- length(mw$w)
     k <- which.max(mw$w)
     if (k != 1L && k != m) return(NULL)
-    if (!is.finite(mw$w[k]) || mw$w[k] < edge_mass) return(NULL)
+    lift <- m * mw$w[k]
+    if (!is.finite(lift) || lift < edge_mult) return(NULL)
     list(side = if (k == 1L) "lower" else "upper",
-         mass = mw$w[k], node = mw$vals[k])
+         mass = mw$w[k], lift = lift, node = mw$vals[k])
 }
 
 # Every axis of a fit that is railed, as `axis:side`, whether or not any rescue

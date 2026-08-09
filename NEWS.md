@@ -1,5 +1,27 @@
 # tulpa NEWS
 
+## 0.0.172
+
+* The rail detector's materiality guard is read on a node-count-free scale
+  (gcol33/tulpa#375). `.nl_axis_rail()` required the boundary node to carry at
+  least `.NL_RECENTER$edge_mass = 0.5` of its axis's marginal weight, a per-NODE
+  share against a constant that does not know the node count -- so the same
+  posterior read at more nodes carried less on any one of them and a LONGER axis
+  became a WEAKER detector, exactly as #361 lengthened the default `bym2_rho`
+  span the rescue was meant to compose with. The reference is now what a FLAT
+  marginal would put on that node: `edge_mass_mult = 2` against `m * w[k]`,
+  which is 1 for a flat marginal at any node count and is the retired 0.5 share
+  at the four nodes it was tuned on. On one BYM2 posterior held past a fixed
+  span and read at 4 / 5 / 6 / 8 / 12 / 20 nodes, the rail now fires on
+  12 / 11 / 10 / 10 / 10 / 10 of 20 seeds -- the count whose marginal is maximal
+  at the top node at all -- against 12 / 10 / 6 / 3 / 0 / 0 before. A marginal
+  flat to within its own noise, and one that merely tilts 1.6x across the span,
+  still decline at every node count. Paired fixed-truth interval coverage over
+  240 fits at four truths, both arms the shipped engine of their own library:
+  41 replicates move and 199 are byte-identical, coverage gains 10 / 20 / 30 and
+  loses 0 / 0 / 1 at the 95 / 80 / 50% levels, and the 95% coverage at
+  `rho = 0.9999` goes 0.000 to 0.167 where the detector had never fired at all.
+
 ## 0.0.171
 
 * The default BYM2 mixing-weight axis reaches 0.999 (gcol33/tulpa#361). On a
