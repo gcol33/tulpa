@@ -1,5 +1,44 @@
 # tulpa NEWS
 
+## 0.0.155
+
+* Simulation-based calibration and a strictly proper score join the fixed-truth
+  recovery sweeps as posterior arbiters (gcol33/tulpa#335). Coverage at one or
+  two nominal levels reads one or two points of the marginal CDF, so it cannot
+  say whether an approximation is biased, over- or under-dispersed, or
+  asymmetric, and #336 hit its resolution floor: over 200 paired seeds the
+  mixture read and the collapsed-Gaussian read moved 0 or 1 coverage trials.
+  `recov_sbc()` draws the truth from the prior instead of fixing it and reads
+  the whole PIT ECDF; `sbc_crps()` scores calibration and sharpness together.
+  Both live in `tests/testthat/helper-sbc.R`, test-side and tier 3, alongside
+  the sweeps rather than replacing them.
+* The bands are SIMULTANEOUS and calibrated against an exact crossing
+  probability, not simulated and not pointwise. At n = 100 a band holding each
+  order statistic at 95% holds all of them together at 0.4471; the calibrated
+  one needs a pointwise level of 0.0022. The recursion is validated against
+  closed forms (`P(all U <= t) = t^n`), brute-force simulation, measured
+  simultaneous coverage, and the published Kolmogorov critical value, which its
+  constant-width member reproduces to four figures.
+* Discrete PITs are randomized within their atom, so a rank read and a
+  continuous marginal share one uniform reference and one band. Reading
+  `rank / n_ref` against a continuous uniform is a silent miscalibration and is
+  kept as a negative control.
+* CRPS is scoped in code, not only in prose: it is a proper POSTERIOR score only
+  in a prior-predictive experiment, so `recov_sbc()` records which experiment
+  produced a result and `sbc_crps_compare()` refuses to rank a fixed-truth one,
+  where the CRPS-optimal forecast is a point mass at the truth.
+* MEASURED, 2000 prior-predictive replicates of a gaussian random-intercept
+  fixture whose exact posterior is available in closed form (the engine's read
+  tracks it to 1.3e-05 in the PIT). SBC separates the #336 mixture read from the
+  collapsed Gaussian of the same two moments -- simultaneous p = 0.44 against
+  1.9e-04 raw and 2.5e-04 folded on the intercept -- where 200-seed coverage
+  could not. The paired CRPS does NOT: t = 1.01, because the score is dominated
+  by the first two moments and the two reads share those exactly. The three
+  deliberately broken arms (SD mis-scaled either way, and the #332 residual-scale
+  crossing) all land outside the band, and the crossing shows on the joint
+  log-likelihood rank at ks = 0.17 while its intercept marginal stays inside.
+  `dev_notes/issue335/RESULTS.md`.
+
 ## 0.0.154
 
 * `.nested_fixed_moments()` renormalizes the grid weights over the cells that

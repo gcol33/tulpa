@@ -726,6 +726,67 @@ back into the approximation it replaced. Tests:
 coverage gates in `test-nested-laplace-recovery.R` (`recov_sweep()` scores all
 three reads off one solve per seed).
 
+### Three posterior arbiters, and coverage is only one (gcol33/tulpa#335)
+
+Binary coverage at one or two nominal levels reads one or two points of the
+marginal CDF. It cannot say whether an approximation is biased, over- or
+under-dispersed, or asymmetric, and #336 above is where it ran out: over 200
+paired seeds the mixture read and the collapsed-Gaussian read moved 0 or 1
+trials. `tests/testthat/helper-sbc.R` adds the two instruments that read more
+than two points, ALONGSIDE the fixed-truth sweeps and not replacing them.
+
+- **`recov_sbc(simulator, fitter, n_seed)`** -- simulation-based calibration.
+  Draw the truth from the prior (`theta_s ~ p(theta)`, `y_s ~ p(y | theta_s)`),
+  fit, take `u_s = F_s(theta_s)`; under correct inference `u_s ~ Uniform(0, 1)`
+  and the whole ECDF is the measurement. It reports the PIT, the FOLDED PIT
+  (`2 |u - 1/2|`, also uniform, and where a symmetric dispersion error shows
+  after cancelling in the raw ECDF), and the JOINT LOG-LIKELIHOOD RANK, which
+  reads the whole data set at once and catches an approximation whose
+  per-coefficient marginals look right. Arms are paired off one solve per seed
+  the way `recov_sweep()` pairs its mixture / collapsed / skew reads.
+- **`sbc_crps()`** -- the strictly proper score, closed-form for a Gaussian
+  mixture through the pairwise kernel terms (Grimit, Gneiting, Berrocal &
+  Johnson 2006), so the nested tier's own mixture is scored with no Monte Carlo.
+  `sbc_crps_compare()` pairs it seed by seed.
+
+**CRPS is a proper POSTERIOR score only in a prior-predictive experiment.** With
+`theta = theta_0` fixed across seeds the CRPS-optimal forecast is a point mass
+at `theta_0`, so a sharper wrong posterior wins. This is enforced, not just
+documented: `recov_sbc(truth = )` records the experiment, and
+`sbc_crps_compare()` errors on a fixed-truth result rather than ranking it. The
+fixed-truth sweeps keep coverage and width.
+
+**The bands are simultaneous, calibrated exactly.** A pointwise binomial band is
+NOT a simultaneous band -- at n = 100, holding each order statistic at 95% holds
+all of them together at 0.4471. `sbc_crossing_prob()` is the exact crossing
+probability for `g_i <= U_(i) <= h_i`: the constraints reduce to
+`#{i : h_i <= p} <= K(p) <= #{i : g_i < p}` at the union of the boundary points,
+`K` is a binomial Markov chain in `p`, and the forward pass masks the state to
+the band's own width. `sbc_ecdf_band()` bisects one boundary family against it
+-- equal local levels (Beta quantiles, the SBC band) or constant width (the KS
+band, kept as the conservative cross-check). Arbiters: closed forms
+(`P(all U <= t) = t^n`), brute-force simulation, measured simultaneous coverage,
+and the published Kolmogorov critical value, which the constant-width member
+reproduces to four figures.
+
+**Every discrete PIT is randomized within its atom** (`u = F(theta^-) + V
+P(theta)`, i.e. `(r + V) / (n_ref + 1)` for a rank), so one uniform reference and
+one band serve rank, grid-axis and continuous quantities alike. Reading
+`rank / n_ref` against a continuous uniform is the classic silent SBC bug and is
+kept as a negative control.
+
+MEASURED on a gaussian random-intercept fixture whose exact posterior is
+available in closed form (the engine's read tracks it to 1.3e-05 in the PIT),
+2000 prior-predictive replicates: SBC separates the #336 mixture read from the
+collapsed Gaussian carrying the same two moments (simultaneous p = 0.44 against
+1.9e-04 raw, 2.5e-04 folded on the intercept) where 200-seed coverage could not,
+and the paired CRPS does not (t = 1.01) because the score is dominated by the
+two moments the reads share. The slope separates under neither, which is
+gcol33/tulpa#325's finding again. All three broken control arms are caught, and
+the #332 residual-scale crossing shows on the joint log-likelihood rank while
+its intercept marginal stays inside the band. Tests: `test-sbc-crps.R`; write-up
+`dev_notes/issue335/RESULTS.md`.
+
 ### Per-cell fixed-effect retention on the joint tier (gcol33/tulpa#305)
 
 `.nested_fixed_moments()` (`R/methods_generic.R`) is the ONE grid marginalizer
