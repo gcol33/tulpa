@@ -58,7 +58,8 @@
 #                          data, and is worth reporting.
 .K_DECLINE_REASONS <- c("not_requested", "not_applicable", "unguessable_axis",
                         "draws_too_few", "grid_too_small", "no_varying_axis",
-                        "degenerate_proposal", "internal_inconsistency")
+                        "degenerate_proposal", "internal_inconsistency",
+                        "not_converged")
 
 # A decline is a first-class return value, not a bare NULL: helpers that can
 # fail for materially different reasons return `.k_decline(<reason>)` and their
@@ -133,6 +134,9 @@
         internal_inconsistency = with_detail(paste(
             "an internal bookkeeping mismatch stopped the diagnostic;",
             "this indicates an engine bug -- please report it")),
+        not_converged = with_detail(paste(
+            "the inner solve the diagnostic re-dispatches did not reach a mode,",
+            "so there is no Laplace approximation at a mode to score")),
         NULL)
 }
 

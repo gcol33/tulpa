@@ -2372,7 +2372,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
             max_iter_use, tol,
             compute_eta_joint, scatter_joint, center_joint, log_prior_joint,
             joint_ll, scratch, prev_mode, shared_solver,
-            store_Q,
+            store_Q, pd_mode,
             compute_skew && !is_cheap, skew_probe_idx,
             (compute_skew && !is_cheap) ? &skew_curvature3_fns : nullptr,
             is_cheap ? nullptr : fixed_block,

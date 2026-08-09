@@ -1566,10 +1566,7 @@ tulpa_nested_laplace_joint <- function(responses,
                                          skew_idx = probe_idx)),
         error = function(e) NULL)
 
-    if (is.null(out) || is.null(out$inner_skew)) {
-        return(.inner_skew_decline(res, "backend_unsupported"))
-    }
-    .inner_skew_attach(res, out)
+    .inner_skew_attach_probe(res, out)
 }
 
 # Thin wrapper over cpp_nested_laplace_joint_multi that injects the outer-grid

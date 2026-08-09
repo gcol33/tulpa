@@ -57,15 +57,17 @@ inline constexpr double SPARSE_DROP_TOL_DISPATCH = 1e-12;
 // + dbound retry path; both were activated on different pivot subsets in
 // different elimination orders and produced O(1)-O(10) log_marginal
 // divergence on doubly rank-deficient inputs.
-inline bool dispatch_factor_solve(
+// Factor an H that ALREADY carries its diagonal ridge and solve H delta = grad.
+// `log_det_out`, when non-null, receives log|H| from whichever factor succeeded.
+// Split out of dispatch_factor_solve below so a caller escalating the diagonal
+// across several attempts (joint_pd_step_solve_dense) loads the ridge itself
+// rather than having the base ridge re-applied on every attempt.
+inline bool dispatch_factor_solve_ridged(
     DenseMat& H, DenseVec& grad, std::vector<double>& delta, int n_x,
     SparseCholeskySolver& sparse_solver, bool prefer_sparse,
-    DenseCholeskyScratch& dense_scratch
+    DenseCholeskyScratch& dense_scratch,
+    double* log_det_out = nullptr
 ) {
-    // Apply the uniform upstream ridge once. H is rebuilt fresh per Newton
-    // iter, so each call re-applies it on top of the unridged assembly.
-    add_uniform_ridge_dense(H, n_x, LAPLACE_UNIFORM_RIDGE);
-
     bool ok = false;
     if (prefer_sparse) {
         // Owned-sparse path: first call discovers + caches the pattern; later
@@ -81,15 +83,29 @@ inline bool dispatch_factor_solve(
                 for (int j = 0; j < n_x; j++) {
                     if (!std::isfinite(delta[j])) { ok = false; break; }
                 }
+                if (ok && log_det_out) *log_det_out = sparse_solver.log_determinant();
             }
         }
     }
     if (!ok) {
-        double log_det_unused = 0.0;
+        double log_det = 0.0;
         ok = dense_cholesky_solve_raw(H, grad, n_x, dense_scratch, delta,
-                                       log_det_unused);
+                                       log_det);
+        if (ok && log_det_out) *log_det_out = log_det;
     }
     return ok;
+}
+
+inline bool dispatch_factor_solve(
+    DenseMat& H, DenseVec& grad, std::vector<double>& delta, int n_x,
+    SparseCholeskySolver& sparse_solver, bool prefer_sparse,
+    DenseCholeskyScratch& dense_scratch
+) {
+    // Apply the uniform upstream ridge once. H is rebuilt fresh per Newton
+    // iter, so each call re-applies it on top of the unridged assembly.
+    add_uniform_ridge_dense(H, n_x, LAPLACE_UNIFORM_RIDGE);
+    return dispatch_factor_solve_ridged(H, grad, delta, n_x, sparse_solver,
+                                        prefer_sparse, dense_scratch);
 }
 
 // Factor H and return log|H + ridge*I| via the diagonal of L. Same

@@ -97,6 +97,14 @@
 #   not_requested          `control$diagnose_skew = FALSE`.
 #   backend_unsupported    this backend does not populate gamma_3.
 #   solve_failed           the probe re-solve errored or returned no field.
+#   not_converged          the probe re-solve returned a point that is not a
+#                          mode. gamma_3 is a cubic expansion ABOUT the mode and
+#                          the inner k-hat an importance ratio against the
+#                          Gaussian AT it, so neither exists there. This is what
+#                          a fit whose inner Newton stalled reports, instead of
+#                          `backend_unsupported` -- the backend computes gamma_3
+#                          on every converged solve of the same model
+#                          (gcol33/tulpa#344).
 #
 # Coupling several processes in ONE likelihood is no longer a reason of its own:
 # a multi-process `LikelihoodSpec` (a ZI mixture) is scored by the
@@ -146,7 +154,8 @@
     no_probe_indices    = list("not_applicable", "no probed latent index"),
     backend_unsupported = list("not_applicable",
                                "this backend does not compute the inner importance curve"),
-    solve_failed        = list("degenerate_proposal", "the probe re-solve failed")
+    solve_failed        = list("degenerate_proposal", "the probe re-solve failed"),
+    not_converged       = list("not_converged", "the probe re-solve did not converge")
 )
 
 .inner_k_decline_from_skew <- function(res, reason) {
@@ -176,6 +185,9 @@
         internal_inconsistency = with_detail(paste(
             "an internal bookkeeping mismatch stopped the diagnostic;",
             "this indicates an engine bug -- please report it")),
+        not_converged = with_detail(paste(
+            "the inner Newton solve did not reach a mode, so there is no",
+            "Gaussian at a mode to score as a proposal")),
         NULL)
 }
 
@@ -278,6 +290,32 @@
     .inner_k_attach(res, out)
 }
 
+# Attach the inner-layer output of a probe RE-SOLVE, or decline with the reason
+# that solve itself establishes. The three drivers all re-dispatch their own
+# kernel at a length-1 grid pinned to the fitted MAP cell, so they all meet the
+# same two failure shapes and settle them here rather than each writing its own
+# tail.
+#
+# Convergence is read FIRST because it is upstream of everything else the output
+# can be missing: a solve that stopped short of a mode has no point for gamma_3
+# to expand about and no Gaussian at a mode for the inner k-hat to treat as a
+# proposal, whatever the backend supports. Reporting `backend_unsupported` there
+# names a capability the backend has -- it computes gamma_3 on every converged
+# solve of the same model -- and sends a reader to the wrong layer
+# (gcol33/tulpa#344).
+.inner_skew_attach_probe <- function(res, out) {
+    if (is.null(out)) return(.inner_skew_decline(res, "backend_unsupported"))
+    conv <- out$converged
+    if (!is.null(conv) && length(conv) &&
+        !any(as.logical(conv) %in% TRUE)) {
+        return(.inner_skew_decline(res, "not_converged"))
+    }
+    if (is.null(out$inner_skew)) {
+        return(.inner_skew_decline(res, "backend_unsupported"))
+    }
+    .inner_skew_attach(res, out)
+}
+
 # One-line user-facing reading of an inner-skew decline, for `print` /
 # `diagnostic_summary()`. `arms` are the 1-based joint arms with no oracle.
 .inner_skew_decline_note <- function(reason, arms = integer(0)) {
@@ -297,6 +335,9 @@
         no_oracle = "no per-observation third-derivative oracle was available",
         backend_unsupported = "this backend does not compute the inner-Laplace skewness",
         solve_failed = "the probe re-solve failed",
+        not_converged = paste("the inner Newton solve did not reach a mode, so",
+                              "there is no point for the cubic expansion to",
+                              "expand about"),
         NULL)
 }
 
@@ -591,10 +632,7 @@
   }
   out <- tryCatch(probe(), error = function(e) NULL)
 
-  if (is.null(out) || is.null(out$inner_skew)) {
-    return(.inner_skew_decline(res, "backend_unsupported"))
-  }
-  .inner_skew_attach(res, out)
+  .inner_skew_attach_probe(res, out)
 }
 
 # =============================================================================
@@ -1307,8 +1345,10 @@
 #'       neither a per-observation sum nor a cell third-derivative tensor to
 #'       read, so the outer k-hat is the only reliability number this fit has),
 #'       `"curvature3_unavailable"`, `"no_finite_contribution"`,
-#'       `"no_probe_indices"`, `"not_requested"`, `"backend_unsupported"`, or
-#'       `"solve_failed"`; the arms (1-based) a joint fit had no oracle for,
+#'       `"no_probe_indices"`, `"not_requested"`, `"backend_unsupported"`,
+#'       `"solve_failed"`, or `"not_converged"` (the probe re-solve stopped
+#'       short of a mode, so neither inner score has a point to read);
+#'       the arms (1-based) a joint fit had no oracle for,
 #'       which is also set on a PARTIALLY scored fit; and a one-line reading.}
 #'     \item{`inner_pareto_k`, `inner_pareto_k_band`}{the inner-Laplace
 #'       importance k-hat over the probed subspace, and its band on the same

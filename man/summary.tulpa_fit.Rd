@@ -30,6 +30,12 @@ retained a fixed-effect block: 1 on a complete grid, and below 1 on one
 that dropped a positive-weight cell, whose report is then the posterior
 conditional on the cells that remain.
 
+Where no per-cell block was retained the estimate falls back to the
+grid-weighted average of the per-cell modes, restricted to the cells whose
+inner solve reached a mode. A fit where none did reports \code{NA} with
+\code{interval_declined = "not_converged"}, rather than the vector its Newton
+started from as an estimate.
+
 With \code{control$skew_correct = TRUE} the bounds are instead Cornish-Fisher
 quantiles at each coefficient's inner-Laplace \code{gamma_3} wherever that term
 is in the band it is valid on, and Gaussian elsewhere; a \code{skew_applied}

@@ -28,6 +28,7 @@
 #ifndef TULPA_LAPLACE_NEWTON_JOINT_SPARSE_H
 #define TULPA_LAPLACE_NEWTON_JOINT_SPARSE_H
 
+#include "joint_pd_step.h"            // JointPDMode, pd_lm_escalate, pd_eigen_clamp_solve
 #include "laplace_family_link.h"
 #include "laplace_newton_joint.h"     // JointArm, compute_total_log_lik_joint
 #include "laplace_newton_loop.h"
@@ -94,22 +95,10 @@ struct NewtonScratchJointSparse {
     }
 };
 
-// PD-enforcement mode for the inner Newton step. The occupancy-mixture arm's
-// observed Hessian can be indefinite away from the mode, so a plain CHOLMOD
-// factorize fails ("matrix not positive definite") and the step stalls.
-enum class JointPDMode { LM = 0, PSD = 1 };
-
-// Cap on n_x for the dense PSD eigen-clamp path. The sparse Newton supports
-// fields up to ~10^6 (see header); densifying those would be catastrophic, so
-// above this dimension PSD silently falls back to the LM ridge.
-inline constexpr int JOINT_PSD_MAX_DIM = 4000;
-
-// Factor + solve for one inner Newton step, enforcing positive-definiteness.
-//   LM  : escalate a uniform diagonal ridge until CHOLMOD factorizes, giving a
-//         damped-Newton step that interpolates toward gradient ascent. Reduces
-//         to plain Newton when H is already PD (one factorize, no escalation).
-//   PSD : densify H, symmetric-eigendecompose, clamp eigenvalues to a positive
-//         floor, and solve from the clamped spectrum -- PD in one shot.
+// Factor + solve for one inner Newton step of the SPARSE joint loop, enforcing
+// positive-definiteness. The policies live in joint_pd_step.h and are shared
+// with the dense loop's joint_pd_step_solve_dense; this is the CHOLMOD /
+// SparseHessianBuilder backend for them.
 // `H` must already carry the base LAPLACE_UNIFORM_RIDGE on its diagonal.
 // `out_log_det`, if non-null, receives the log-determinant of the PD-enforced
 // Hessian (LM: from the CHOLMOD factor; PSD: sum of log-clamped eigenvalues).
@@ -120,11 +109,10 @@ inline bool joint_pd_step_solve(
     SparseHessianBuilder& H, SparseCholeskySolver& solver,
     int n_x, JointPDMode pd_mode,
     const double* grad, double* delta,
-    double* out_log_det = nullptr
+    double* out_log_det = nullptr,
+    bool* out_modified = nullptr
 ) {
-    bool use_psd = (pd_mode == JointPDMode::PSD) && (n_x <= JOINT_PSD_MAX_DIM);
-
-    if (use_psd) {
+    if (pd_mode == JointPDMode::PSD && n_x <= JOINT_PSD_MAX_DIM) {
         Eigen::MatrixXd Hd = Eigen::MatrixXd::Zero(n_x, n_x);
         for (int j = 0; j < H.n; ++j) {
             for (int p = H.col_ptr[j]; p < H.col_ptr[j + 1]; ++p) {
@@ -134,49 +122,23 @@ inline bool joint_pd_step_solve(
                 if (i != j) Hd(j, i) = v;   // CSC stores lower triangle only
             }
         }
-        Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> es(Hd);
-        if (es.info() != Eigen::Success) return false;
-        Eigen::VectorXd ev = es.eigenvalues();
-        const double lam_max = ev.cwiseAbs().maxCoeff();
-        const double floor = std::max(1e-8 * std::max(lam_max, 1.0), 1e-10);
-        double log_det = 0.0;
-        for (int i = 0; i < n_x; ++i) {
-            if (ev[i] < floor) ev[i] = floor;
-            log_det += std::log(ev[i]);
-        }
-        Eigen::Map<const Eigen::VectorXd> g(grad, n_x);
-        Eigen::VectorXd y = es.eigenvectors().transpose() * g;
-        for (int i = 0; i < n_x; ++i) y[i] /= ev[i];
-        Eigen::VectorXd d = es.eigenvectors() * y;
-        for (int i = 0; i < n_x; ++i) {
-            if (!std::isfinite(d[i])) return false;
-            delta[i] = d[i];
-        }
-        if (out_log_det) *out_log_det = log_det;
-        return true;
+        return pd_eigen_clamp_solve(Hd, n_x, grad, delta, out_log_det,
+                                    out_modified);
     }
 
-    // LM escalating ridge. Base ridge already on the diagonal; escalate the
-    // ADDITIONAL diagonal load multiplicatively until CHOLMOD succeeds.
-    double added = 0.0;
-    for (int t = 0; t < 32; ++t) {
-        cholmod_sparse H_cholmod = H.as_cholmod(&solver.common());
-        if (!solver.analyzed()) solver.analyze(&H_cholmod);
-        if (solver.factorize(&H_cholmod)) {
+    return pd_lm_escalate(
+        [&](double* log_det) -> bool {
+            cholmod_sparse H_cholmod = H.as_cholmod(&solver.common());
+            if (!solver.analyzed()) solver.analyze(&H_cholmod);
+            if (!solver.factorize(&H_cholmod)) return false;
             solver.solve(grad, delta, n_x);
-            bool finite = true;
             for (int i = 0; i < n_x; ++i)
-                if (!std::isfinite(delta[i])) { finite = false; break; }
-            if (finite) {
-                if (out_log_det) *out_log_det = solver.log_determinant();
-                return true;
-            }
-        }
-        const double bump = (added == 0.0) ? 1e-6 : added * 9.0;
-        H.add_uniform_ridge(bump);
-        added += bump;
-    }
-    return false;
+                if (!std::isfinite(delta[i])) return false;
+            if (log_det) *log_det = solver.log_determinant();
+            return true;
+        },
+        [&](double bump) { H.add_uniform_ridge(bump); },
+        out_log_det, out_modified);
 }
 
 // Inner Newton step for the sum-to-zero large-field path. Prefers the exact

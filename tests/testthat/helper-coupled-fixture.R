@@ -92,6 +92,40 @@ coupled_occ_log_post <- function(d, beta_prec) {
   }
 }
 
+# Central-difference negative Hessian of a two-dimensional log posterior at `z`,
+# and the smallest eigenvalue of it. The mixture's dark-cell term
+# log(psi (1-p)^J + 1 - psi) is not concave in (eta_occ, eta_det), so a data set
+# with few detections makes that eigenvalue NEGATIVE at the Newton start z = 0:
+# the inner Newton has no plain Cholesky factor there and must condition the
+# Hessian to step at all (gcol33/tulpa#344). Written from the R log posterior, so
+# a test can establish that a fixture reaches that regime without asking the
+# engine.
+coupled_occ_curvature <- function(log_post, z = c(0, 0), h = 1e-4) {
+  f <- function(u) log_post(u[1], u[2])
+  H <- matrix(0, 2, 2)
+  H[1, 1] <- -(f(z + c(h, 0)) - 2 * f(z) + f(z - c(h, 0))) / h^2
+  H[2, 2] <- -(f(z + c(0, h)) - 2 * f(z) + f(z - c(0, h))) / h^2
+  H[1, 2] <- H[2, 1] <- -(f(z + c(h, h)) - f(z + c(h, -h)) -
+                            f(z + c(-h, h)) + f(z - c(h, h))) / (4 * h^2)
+  list(H = H, lambda_min = min(eigen(H, symmetric = TRUE,
+                                     only.values = TRUE)$values))
+}
+
+# The mode of a two-dimensional log posterior, found independently of the engine:
+# BFGS from the prior mean, restarted once. A prior-predictive draw can leave one
+# arm weakly identified, so the search is a guarded descent rather than a raw
+# Newton.
+coupled_occ_ref_mode <- function(log_post, z0 = c(0, 0)) {
+  nll <- function(z) {
+    v <- log_post(z[1], z[2])
+    if (is.finite(v)) -v else 1e300
+  }
+  o <- stats::optim(z0, nll, method = "BFGS",
+                    control = list(reltol = 1e-14, maxit = 2000L))
+  stats::optim(o$par, nll, method = "BFGS",
+               control = list(reltol = 1e-14, maxit = 2000L))$par
+}
+
 # Exact marginal mean / sd / skewness of each coordinate of a two-dimensional
 # log posterior, by direct quadrature on a regular grid. The same construction
 # `.exact_intercept_skew()` in test-inner-skew.R applies to a scalar posterior,
@@ -114,6 +148,7 @@ coupled_occ_quadrature <- function(log_post, center, half = 12,
 
 for (.nm in c("coupled_occ_register", "coupled_occ_data", "coupled_occ_arms",
               "coupled_occ_flat_prior", "coupled_occ_log_post",
+              "coupled_occ_curvature", "coupled_occ_ref_mode",
               "coupled_occ_quadrature")) {
   assign(.nm, get(.nm), envir = globalenv())
 }

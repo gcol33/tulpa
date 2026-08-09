@@ -745,6 +745,13 @@
     p <- as.integer(n_fixed %||% 0L)
     if (length(p) != 1L || is.na(p) || p < 1L) return(decline("no_fixed_effects"))
 
+    # Read before the retention checks below, because it is upstream of them: a
+    # cell whose inner solve never reached a mode has no fixed-effect
+    # covariance to hand over, so the retention would report the absence it
+    # trips over first and name a step downstream of the real cause
+    # (gcol33/tulpa#344).
+    if (!.nested_any_weighted_converged(res)) return(decline("not_converged"))
+
     V <- res$cov_block_per_grid
     if (is.null(V)) return(decline("block_not_extracted"))
 

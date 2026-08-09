@@ -54,8 +54,10 @@ latent indices returned a finite \code{gamma_3} vs how many were probed.}
 neither a per-observation sum nor a cell third-derivative tensor to
 read, so the outer k-hat is the only reliability number this fit has),
 \code{"curvature3_unavailable"}, \code{"no_finite_contribution"},
-\code{"no_probe_indices"}, \code{"not_requested"}, \code{"backend_unsupported"}, or
-\code{"solve_failed"}; the arms (1-based) a joint fit had no oracle for,
+\code{"no_probe_indices"}, \code{"not_requested"}, \code{"backend_unsupported"},
+\code{"solve_failed"}, or \code{"not_converged"} (the probe re-solve stopped
+short of a mode, so neither inner score has a point to read);
+the arms (1-based) a joint fit had no oracle for,
 which is also set on a PARTIALLY scored fit; and a one-line reading.}
 \item{\code{inner_pareto_k}, \code{inner_pareto_k_band}}{the inner-Laplace
 importance k-hat over the probed subspace, and its band on the same

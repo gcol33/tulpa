@@ -939,10 +939,7 @@
             compute_skew = TRUE, skew_idx = probe_idx)),
         error = function(e) NULL)
 
-    if (is.null(out) || is.null(out$inner_skew)) {
-        return(.inner_skew_decline(res, "backend_unsupported"))
-    }
-    .inner_skew_attach(res, out)
+    .inner_skew_attach_probe(res, out)
 }
 
 # Main multi-block joint dispatch. Mirrors the structure of the

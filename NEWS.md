@@ -1,5 +1,57 @@
 # tulpa NEWS
 
+## 0.0.159
+
+* The coupled joint Newton takes a step from an indefinite start Hessian, and a
+  fit that stalls reports the cause that stopped it (gcol33/tulpa#344). The
+  occupancy mixture's dark-cell term `log(psi (1-p)^J + 1 - psi)` is not concave
+  in `(eta_occ, eta_det)`, so a data set with few detections has a negative
+  curvature direction at the Newton start `x = 0`. The SPARSE joint loop
+  conditions the Hessian there (`joint_pd_step_solve`); the DENSE one -- which
+  every small coupled fit runs on, `n_x` below the sparse threshold -- did not,
+  and `pd_mode` never even reached it, so `control$hessian = "psd"` was inert on
+  that path. A plain Cholesky of an indefinite matrix returns a non-finite step,
+  the line search accepts nothing, and the loop reported its START VECTOR as the
+  mode: on the engine's own coupled fixture, 32.5% of prior-predictive draws at
+  `prior_sd = 2, n_visits = 4` returned `(0, 0)` with `score_max` after 5000
+  iterations equal to its value after 1, and neither the budget nor the
+  tolerance was binding.
+
+  The two PD policies now live in one place (`src/joint_pd_step.h`) and both
+  loops are backends for them: `pd_lm_escalate()` is the smallest diagonal load
+  making the factorization succeed (Nocedal & Wright, *Numerical Optimization*
+  2nd ed., Alg. 3.3), `pd_eigen_clamp_solve()` the clamped spectrum. With `H`
+  already PD the first attempt succeeds, no load is added, and the step IS the
+  plain Newton step, so every fit that factorized before is unchanged -- the
+  dense and sparse loops agree to 4e-16 on the mode and exactly on
+  `log_marginal` for both an indefinite and a PD start. Measured over the
+  issue's own 80-replicate sweep, non-convergence goes from 32.5 / 22.5 / 13.8 /
+  7.5 / 3.8% (the five affected configurations) to 0% in all ten, each converged
+  fit landing within 1.9e-06 of an independently optimized mode in a median of
+  4-7 Newton iterations.
+
+  Three reports named the wrong layer for it, the gcol33/tulpa#293 shape one
+  layer over. `inner_skew_declined` said `backend_unsupported`, which is false
+  -- the same backend computes `gamma_3` on every converged solve of the same
+  fixture; `grid_fixed_declined` said `block_not_extracted`, a retention step
+  downstream of the real cause. Both now say `not_converged`, which is also a
+  reason in the shared Pareto-k vocabulary, and the three probe drivers settle
+  it in one place (`.inner_skew_attach_probe()`) rather than each writing its
+  own tail. `$modes` is kept -- it is the solver's record of where it stopped,
+  and the warm-start chain and the refinement passes read it -- but the
+  per-cell-mode AVERAGE every coefficient report falls back on now reads only
+  cells that reached a mode, so a stalled fit reports `NA` with
+  `interval_declined = "not_converged"` instead of its own start vector as an
+  estimate. A non-PD Hessian at the returned point also withholds the stored
+  precision and the fixed-effect block, whose inverse is not a covariance there.
+
+  New `test-coupled-indefinite-start.R` carries the sparse-detection fixture the
+  suite lacked: every coupled fixture sat at `b_occ = 0.2, b_det = -0.5`, where
+  the start Hessian is positive definite, which is why nothing reached the path.
+  It establishes that it reaches the regime -- `lambda_min < -5` read off the R
+  log posterior, with the old setting asserted PD as the control -- rather than
+  reaching it by luck.
+
 ## 0.0.158
 
 * A grid axis the resolved path cannot read is refused or recorded, never

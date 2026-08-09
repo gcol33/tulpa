@@ -216,6 +216,42 @@
 }
 
 
+# Which outer-grid cells is a per-cell mode readable from? Those whose inner
+# solve reached a mode. A cell that stalled reports its START vector as `$mode`
+# -- the solver's own record of where it stopped, which the warm-start chain and
+# the refinement passes need -- and that vector is not an estimate of anything.
+# Every report that AVERAGES per-cell modes gates on this so the raw start
+# cannot surface as a coefficient (gcol33/tulpa#344).
+#
+# A fit carrying no convergence flag answers "all readable": an absent flag is a
+# backend that does not report one, not evidence of a stalled solve.
+#' @keywords internal
+.nested_converged_cells <- function(object, n_cell) {
+  conv <- object$converged
+  if (is.null(conv) || length(conv) != n_cell) return(rep(TRUE, n_cell))
+  as.logical(conv) %in% TRUE
+}
+
+# Did any cell the weights put mass on reach a mode? The predicate the joint
+# fixed-effect retention declines on, read here so both tiers share one
+# definition of "this fit has a mode to report".
+#' @keywords internal
+.nested_any_weighted_converged <- function(object) {
+  conv <- object$converged
+  if (is.null(conv) || !length(conv)) return(TRUE)
+  ok <- .nested_converged_cells(object, length(conv))
+  w  <- object$weights
+  keep <- if (is.null(w) || length(w) != length(ok)) {
+    rep(TRUE, length(ok))
+  } else {
+    is.finite(w) & w > 0
+  }
+  # An all-NA or all-zero weight vector says nothing about WHICH cells matter,
+  # so every cell is read rather than none.
+  if (!any(keep)) keep <- rep(TRUE, length(ok))
+  any(ok[keep])
+}
+
 # Fixed-effect covariance of ONE outer-grid cell: the inverse of the cell's
 # retained marginal precision, or an all-NA p x p block when that precision is
 # singular. Both readers of the retained mixture go through it -- the moment /
@@ -283,13 +319,29 @@
       attr(tab, "retained_mass")    <- iv$mass
       return(tab)
     }
-    w   <- object$weights / sum(object$weights)
-    est <- as.numeric(crossprod(w, object$modes[, idx, drop = FALSE]))
-    return(data.frame(
-      term = nm, estimate = est,
+    # The per-cell modes averaged over the grid, restricted to the cells whose
+    # inner solve reached a mode. A stalled cell reports the vector its Newton
+    # started from, so averaging it in reports a number that estimates nothing;
+    # with no readable cell left the estimate is NA and `interval_declined` says
+    # why, which is what makes the non-convergence impossible to read past
+    # (gcol33/tulpa#344).
+    n_cell <- nrow(object$modes)
+    w_all  <- if (length(object$weights) == n_cell) as.numeric(object$weights)
+              else rep(1, n_cell)
+    ok  <- .nested_converged_cells(object, n_cell) &
+           is.finite(w_all) & w_all > 0
+    tab <- data.frame(
+      term = nm, estimate = NA_real_,
       std.error = NA_real_, conf.low = NA_real_, conf.high = NA_real_,
       row.names = NULL, stringsAsFactors = FALSE
-    ))
+    )
+    if (!any(ok)) {
+      attr(tab, "interval_declined") <- "not_converged"
+      return(tab)
+    }
+    w <- w_all[ok] / sum(w_all[ok])
+    tab$estimate <- as.numeric(crossprod(w, object$modes[ok, idx, drop = FALSE]))
+    return(tab)
   }
 
   if (!is.null(object$mode) && !is.null(object$H_beta)) {
@@ -429,6 +481,12 @@ print.tulpa_fit <- function(x, ...) {
 #'   retained a fixed-effect block: 1 on a complete grid, and below 1 on one
 #'   that dropped a positive-weight cell, whose report is then the posterior
 #'   conditional on the cells that remain.
+#'
+#'   Where no per-cell block was retained the estimate falls back to the
+#'   grid-weighted average of the per-cell modes, restricted to the cells whose
+#'   inner solve reached a mode. A fit where none did reports `NA` with
+#'   `interval_declined = "not_converged"`, rather than the vector its Newton
+#'   started from as an estimate.
 #'
 #'   With `control$skew_correct = TRUE` the bounds are instead Cornish-Fisher
 #'   quantiles at each coefficient's inner-Laplace `gamma_3` wherever that term

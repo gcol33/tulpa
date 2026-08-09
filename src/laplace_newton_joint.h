@@ -20,6 +20,7 @@
 #ifndef TULPA_LAPLACE_NEWTON_JOINT_H
 #define TULPA_LAPLACE_NEWTON_JOINT_H
 
+#include "joint_pd_step.h"                // JointPDMode, pd_lm_escalate, pd_eigen_clamp_solve
 #include "laplace_builtin_family_spec.h"  // builtin_family_spec, BuiltinFamilyResponse
 #include "laplace_cholesky.h"
 #include "laplace_cholesky_dispatch.h"
@@ -358,6 +359,43 @@ inline double eval_penalized_log_lik_joint_ll(
     return ll + lp;
 }
 
+// Factor + solve for one inner Newton step of the DENSE joint loop, enforcing
+// positive-definiteness. Same two policies as the sparse loop's
+// joint_pd_step_solve (joint_pd_step.h), over the dense H container and the
+// dense/CHOLMOD dispatch instead of the SparseHessianBuilder.
+//
+// `H` arrives UNRIDGED, exactly as the scatter left it: the base
+// LAPLACE_UNIFORM_RIDGE is applied here, once, and any LM escalation loads the
+// diagonal on top of it. `out_modified`, when non-null, records whether the
+// matrix that was finally factorized is the one handed in -- false for every
+// solve whose first attempt succeeded, which is every solve at a PD Hessian.
+inline bool joint_pd_step_solve_dense(
+    DenseMat& H, DenseVec& grad, std::vector<double>& delta, int n_x,
+    SparseCholeskySolver& solver, bool prefer_sparse,
+    DenseCholeskyScratch& dense_scratch, JointPDMode pd_mode,
+    double* out_log_det = nullptr,
+    bool* out_modified = nullptr
+) {
+    add_uniform_ridge_dense(H, n_x, LAPLACE_UNIFORM_RIDGE);
+
+    if (pd_mode == JointPDMode::PSD && n_x <= JOINT_PSD_MAX_DIM) {
+        Eigen::MatrixXd Hd(n_x, n_x);
+        for (int j = 0; j < n_x; ++j)
+            for (int i = 0; i < n_x; ++i) Hd(i, j) = H[i][j];
+        return pd_eigen_clamp_solve(Hd, n_x, grad.data(), delta.data(),
+                                    out_log_det, out_modified);
+    }
+
+    return pd_lm_escalate(
+        [&](double* log_det) -> bool {
+            return dispatch_factor_solve_ridged(H, grad, delta, n_x, solver,
+                                                prefer_sparse, dense_scratch,
+                                                log_det);
+        },
+        [&](double bump) { add_uniform_ridge_dense(H, n_x, bump); },
+        out_log_det, out_modified);
+}
+
 // Per-thread scratch for the joint Newton solver. Same role as NewtonScratch
 // but with per-arm eta vectors. Allocate once, single-threaded outside any
 // OpenMP region. See NewtonScratch comment for why grad / H / delta are
@@ -430,6 +468,14 @@ LaplaceResult laplace_newton_solve_joint_ll(
     const std::vector<double>& x_init,
     SparseCholeskySolver* shared_solver,
     bool store_Q,
+    // PD enforcement for the inner step (joint_pd_step.h). A coupled arm's
+    // observed Hessian is indefinite wherever the mixture term is not concave,
+    // which for the occupancy mixture is any sparse-detection data set at the
+    // x = 0 start; without a conditioner the Cholesky yields a non-finite step,
+    // nothing is accepted, and the loop reports the start vector as its mode
+    // (gcol33/tulpa#344). LM (the default) reduces to the plain Newton step
+    // wherever H is already PD.
+    JointPDMode pd_mode = JointPDMode::LM,
     // Inner-Laplace skewness diagnostic (inner_laplace_skew.h), opt-in like
     // store_Q. curvature3_fns carries one per-observation oracle per arm plus the
     // optional coupled-cell tensor contraction (build_joint_curvature3_fns +
@@ -483,8 +529,8 @@ LaplaceResult laplace_newton_solve_joint_ll(
 
     auto cholesky_solve = [&](DenseMat& H, DenseVec& grad,
                               std::vector<double>& delta) -> bool {
-        return dispatch_factor_solve(H, grad, delta, n_x, sparse_solver,
-                                     use_sparse, scratch.chol);
+        return joint_pd_step_solve_dense(H, grad, delta, n_x, sparse_solver,
+                                         use_sparse, scratch.chol, pd_mode);
     };
 
     double obj_current = -1e300;
@@ -522,6 +568,20 @@ LaplaceResult laplace_newton_solve_joint_ll(
 
     dispatch_factor_log_det(scratch.H, n_x, sparse_solver, use_sparse,
                              scratch.chol, result.log_det_Q);
+
+    // A non-finite log-determinant is the plain Cholesky reporting that the
+    // Hessian at the returned point is not PD -- a point the solve stopped at
+    // without reaching a mode. Condition it so the cell still carries a defined
+    // log-marginal (an undefined one silently corrupts the outer-grid weights),
+    // and record that the stored precision below is no longer the matrix the
+    // scatter built. A PD Hessian never reaches this, so every fit that
+    // factorizes on the first attempt is unchanged.
+    const bool hessian_pd_at_mode = std::isfinite(result.log_det_Q);
+    if (!hessian_pd_at_mode) {
+        joint_pd_step_solve_dense(scratch.H, scratch.grad, scratch.delta, n_x,
+                                  sparse_solver, use_sparse, scratch.chol,
+                                  pd_mode, &result.log_det_Q);
+    }
 
     double log_lik   = log_lik_fn(scratch.etas);
     double log_prior = compute_log_prior_joint(x, scratch.etas);
@@ -590,9 +650,14 @@ LaplaceResult laplace_newton_solve_joint_ll(
     // The precision at the mode in CSC. The fixed-effect block is read off it
     // here and the arrays are then released, so requesting the block costs one
     // cell's precision -- not the grid's. Centering does not touch H.
+    //
+    // Both are withheld where the Hessian at the returned point is not PD: its
+    // inverse is not a covariance there, and the conditioned matrix the
+    // log-determinant came from is not what the scatter built. The fit's
+    // `converged` flag is what says why, and the R retention reads it.
     const bool want_block =
         fixed_block && fixed_block->active() && scratch.extract_solver;
-    if (store_Q || want_block) {
+    if ((store_Q || want_block) && hessian_pd_at_mode) {
         std::vector<int> csc_p, csc_i;
         std::vector<double> csc_x;
         dense_to_csc_lower_drop_raw(scratch.H, n_x, SPARSE_DROP_TOL_DISPATCH,
