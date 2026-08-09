@@ -354,9 +354,15 @@ test_that("the summary support decides how the interval is read off the nodes", 
   # Same weighted moments either way; only the median and interval differ.
   expect_equal(row(mom, "sigma_1")$mean, row(den, "sigma_1")$mean)
   expect_equal(row(mom, "sigma_1")$sd, row(den, "sigma_1")$sd)
-  # The density reading is pinned to the node extent; the moment reading is not.
-  expect_equal(c(row(den, "sigma_1")$ci_lo, row(den, "sigma_1")$ci_hi),
-               c(min(sig), max(sig)))
+  # The density reading is pinned to the node GEOMETRY -- the node range widened
+  # by the outer cells' own half-spacing and no further (gcol33/tulpa#353);
+  # before that it was the node range exactly. The moment reading is not pinned
+  # to the nodes at all.
+  e <- tulpa:::.nl_cell_edges(sort(sig))
+  expect_lt(row(den, "sigma_1")$ci_lo, min(sig))
+  expect_gt(row(den, "sigma_1")$ci_lo, e[1])
+  expect_gt(row(den, "sigma_1")$ci_hi, max(sig))
+  expect_lt(row(den, "sigma_1")$ci_hi, e[2])
   expect_lt(row(mom, "sigma_1")$ci_lo, min(sig))
   expect_gt(row(mom, "sigma_1")$ci_hi, max(sig))
   # A variance is positive too, so its interval is a positive lognormal one.

@@ -21,7 +21,7 @@ test_that(".nl_summary_quantile reads a density support as a weighted quantile",
   w <- rep(0.2, 5)
   expect_identical(
     .nl_summary_quantile(v, w, c(0.025, 0.5, 0.975), "positive", "density"),
-    .nl_wtd_quantile(v, w, c(0.025, 0.5, 0.975), outside = "clamp"))
+    .nl_wtd_quantile(v, w, c(0.025, 0.5, 0.975), outside = "extend"))
 })
 
 test_that(".nl_summary_quantile reads a moment rule from its moments", {
@@ -48,10 +48,15 @@ test_that("a moment interval leaves the node range where the design confines it"
   expect_equal(unname(q[3] / q[2]), exp(qnorm(0.975) * su))
   expect_lt(q[1], min(v))
   expect_gt(q[3], max(v))
-  # The same nodes read as a density return the node extent, which is the defect.
+  # The same nodes read as a density are confined by the design's own GEOMETRY
+  # and say nothing about its moments, which is the defect. The confinement is
+  # the node range widened by the outer cells' half-spacing and no further
+  # (gcol33/tulpa#353); before that it was the node range exactly.
   qd <- .nl_summary_quantile(v, w, c(0.025, 0.5, 0.975), "positive", "density")
-  expect_identical(qd[1], min(v))
-  expect_identical(qd[3], max(v))
+  e <- .nl_cell_edges(sort(v))
+  expect_lt(qd[1], min(v)); expect_gt(qd[1], e[1])
+  expect_gt(qd[3], max(v)); expect_lt(qd[3], e[2])
+  expect_false(isTRUE(all.equal(unname(qd), unname(q))))
 })
 
 test_that("a moment rule on an axis with no known domain withholds the number", {
@@ -61,11 +66,13 @@ test_that("a moment rule on an axis with no known domain withholds the number", 
                             "moment_rule")
   expect_true(is.na(q[1]))
   expect_true(is.na(q[3]))
-  # ... rather than clamping to the design's extent, which is what the same
-  # weights read as a density would return.
+  # ... rather than returning a number the design's own geometry fixes, which is
+  # what the same weights read as a density do.
   qd <- .nl_summary_quantile(v, w, c(0.025, 0.5, 0.975), NA_character_, "density")
-  expect_identical(qd[1], min(v))
-  expect_identical(qd[3], max(v))
+  e <- .nl_cell_edges(sort(v))
+  expect_true(all(is.finite(qd)))
+  expect_lt(qd[1], min(v)); expect_gt(qd[1], e[1])
+  expect_gt(qd[3], max(v)); expect_lt(qd[3], e[2])
 })
 
 test_that("the unit domain keeps a mixing weight inside (0, 1)", {

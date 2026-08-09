@@ -57,17 +57,35 @@
 # `mean +/- 1.96 sd` summaries misrepresent.
 #
 # `outside` is the policy for a probability beyond the support's own cumulative
-# range, `[p[1], p[n]]`. The cumulative weights are a CDF only when the weights
-# are proportional to posterior mass -- an MCMC sample, or a tensor grid whose
-# uniform cells discretize the density -- and there the extreme atom is the
-# right answer, the same convention `stats::quantile(type = 7)` uses; that is
-# `"clamp"`. On weights that are a QUADRATURE DESIGN (`ccd_weights()`) the
-# cumulative sum is not a CDF at all, and clamping reports the design's own
-# extent as a posterior interval (gcol33/tulpa#308); `"na"` withholds the number
-# instead. Such a support is summarized by `.nl_moment_quantile()`, which uses
-# the moments the design does deliver.
+# range, `[p[1], p[n]]`, which the mid-mass convention leaves the outer half-cell
+# of mass sitting in.
+#
+# `"clamp"` returns the extreme value, the convention a SAMPLE takes: beyond the
+# extreme order statistic nothing is known about the tail, so the order statistic
+# is the answer.
+#
+# `"extend"` is the convention a CELL PARTITION takes. A tensor grid's values are
+# not order statistics, they are cell representatives: each carries the mass of
+# an interval it sits at the centre of, so the extreme cell's mass reaches half a
+# spacing past its coordinate and the support's edge is the design's own
+# geometry rather than an unknown tail. Clamping there reports an interval the
+# read cannot place its own outer half-cell of mass inside -- measured, on a
+# prior-predictive experiment whose grid tiles the prior, as a PIT atom at 0 and
+# 1 of exactly the outer half-cell mass (gcol33/tulpa#353). The half-spacing is
+# mirrored in `log` when every value is positive, which is where a scale grid is
+# equally spaced and where the edge cannot cross zero, and in the value itself
+# otherwise -- the same `all(vals > 0)` test `.nl_laplace_at_mode_sd_axis()`
+# picks its own coordinate with. Nothing inside `[values[1], values[n]]` moves:
+# the interpolant, its knots and every probability the clamp did not bind at are
+# unchanged.
+#
+# On weights that are a QUADRATURE DESIGN (`ccd_weights()`) the cumulative sum is
+# not a CDF at all, and clamping reports the design's own extent as a posterior
+# interval (gcol33/tulpa#308); `"na"` withholds the number instead. Such a
+# support is summarized by `.nl_moment_quantile()`, which uses the moments the
+# design does deliver.
 .nl_wtd_quantile <- function(values, weights, probs,
-                             outside = c("clamp", "na")) {
+                             outside = c("clamp", "extend", "na")) {
   outside <- match.arg(outside)
   ord <- order(values)
   v <- as.numeric(values)[ord]
@@ -93,6 +111,15 @@
   w <- w / w_tot
   if (length(v) == 1L) return(rep(v[1L], length(probs)))
   p <- cumsum(w) - w / 2
+  # The outer half-cells are two more knots: mass 0 at the lower edge and the
+  # whole mass at the upper one, so the same interpolant carries them and the
+  # interior knots keep their positions.
+  if (identical(outside, "extend")) {
+    e <- .nl_cell_edges(v)
+    p <- c(0, p, 1)
+    v <- c(e[1L], v, e[2L])
+  }
+  n <- length(v)
   # `approx` emits "collapsing to unique 'x' values" when tiny floor
   # weights against a dominant prefix sum produce numerically equal
   # midpoints. The collapse (tied p -> mean of v) is the right behavior
@@ -100,10 +127,26 @@
   # zero up to floating-point error. Suppress the noise.
   na_outside <- identical(outside, "na")
   vapply(probs, function(q) {
-    if (q <= p[1L])        return(if (na_outside) NA_real_ else v[1L])
-    if (q >= p[length(p)]) return(if (na_outside) NA_real_ else v[length(v)])
+    if (q <= p[1L]) return(if (na_outside) NA_real_ else v[1L])
+    if (q >= p[n])  return(if (na_outside) NA_real_ else v[n])
     suppressWarnings(approx(p, v, xout = q, method = "linear")$y)
   }, numeric(1L))
+}
+
+# The outer edges of the cell partition a sorted vector of cell coordinates
+# represents: the extreme cell mirrors the half-spacing it has. Mirrored in log
+# when every coordinate is positive -- a scale grid is equally spaced there, and
+# the edge stays positive -- and in the value itself otherwise.
+.nl_cell_edges <- function(v) {
+  n <- length(v)
+  if (n < 2L) return(c(v[1L], v[n]))
+  if (all(v > 0)) {
+    u <- log(v)
+    e <- c(exp(u[1L] - 0.5 * (u[2L] - u[1L])),
+           exp(u[n] + 0.5 * (u[n] - u[n - 1L])))
+    if (all(is.finite(e))) return(e)
+  }
+  c(v[1L] - 0.5 * (v[2L] - v[1L]), v[n] + 0.5 * (v[n] - v[n - 1L]))
 }
 
 # Monotone maps between a derived quantity's own domain and the unbounded
@@ -170,8 +213,14 @@
 # Median and interval of one quantity, given what KIND of node set carries it.
 #
 # `support = "density"` means the weights are proportional to posterior mass --
-# an MCMC sample, or a tensor grid whose uniform cells discretize the density --
-# so their cumulative sum is a CDF and the weighted quantile is the summary.
+# a tensor grid whose uniform cells discretize the density -- so their cumulative
+# sum is a CDF and the weighted quantile is the summary. Its values are cell
+# representatives, so the read's support runs to the outer cells' own edges
+# (`outside = "extend"`, gcol33/tulpa#353) rather than stopping at the extreme
+# coordinate. The Gibbs backend routes genuine equal-weight DRAWS through the
+# same kind, where the edge is half the gap between the two extreme order
+# statistics instead of a cell's half-width; that only ever binds a probability
+# below `1 / (2 n_draw)`, which no reported level reaches.
 # `support = "moment_rule"` means they are a central-composite design's: they
 # reproduce the integrand's moments and the node positions carry no mass, so the
 # interval comes from the moments on the quantity's own `domain`
@@ -203,7 +252,10 @@
                                  domain = NA_character_,
                                  support = c("density", "moment_rule", "mixed")) {
   support <- match.arg(support)
-  if (!identical(support, "moment_rule")) {
+  if (identical(support, "density")) {
+    return(.nl_wtd_quantile(values, weights, probs, outside = "extend"))
+  }
+  if (identical(support, "mixed")) {
     return(.nl_wtd_quantile(values, weights, probs, outside = "clamp"))
   }
   if (length(domain) != 1L || is.na(domain)) {
@@ -369,7 +421,8 @@
          source = source, declined = declined, mass = mass)
   }
   if (isTRUE(sc$enabled)) {
-    mg <- .nl_skew_marginal(est, se, .nl_skew_gamma3_eligible(sc)[idx], probs,
+    mg <- .nl_skew_marginal(est, se, .nl_skew_gamma3_eligible(sc)[idx],
+                            .nl_skew_gamma1_eligible(sc)[idx], probs,
                             enabled = TRUE)
     return(list(
       q = mg$q, applied = mg$applied, source = "skew_map_cell",

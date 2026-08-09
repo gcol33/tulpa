@@ -19,6 +19,27 @@
 
 ## 0.0.159
 
+* The hyperparameter-axis interval reaches the outer cells' own edges instead of
+  stopping at the extreme grid coordinate (gcol33/tulpa#353).
+  `.nl_wtd_quantile()` places the cumulative mid-mass `cumsum(w) - w/2` at each
+  cell coordinate, which leaves `w_1 / 2` of the mass below the first coordinate
+  and `w_n / 2` above the last; the clamp had nowhere to put it and returned the
+  extreme coordinate for every probability there. A grid's values are cell
+  representatives with known spacing, not order statistics, so the missing
+  support is the outer cells' own half-width: `outside = "extend"` mirrors it,
+  in `log` on a positive axis and in the value otherwise, and a `density`
+  support dispatches to it. Nothing inside `[values[1], values[n]]` moves, so a
+  fit whose reported probabilities never reached the clamp is byte-identical.
+  Measured over a prior-predictive experiment whose grid tiles the prior, the
+  shipped read covered every truth inside its support and none outside it
+  (`cover95 + pit_extreme = 1.0000` exactly at 4, 5 and 7 levels): 95% coverage
+  goes from 0.743 to 0.989 against nominal 0.95, the PIT atom at 0 and 1 from
+  0.257 to 0, the paired CRPS improves at every resolution, and the read's order
+  of convergence to the exact posterior rises from 1 to 2. It does not make the
+  read calibrated -- the clamp was partly cancelling a separate interior
+  over-width -- and `dev_notes/issue353/RESULTS.md` reports the instruments that
+  come out against the change alongside those that support it.
+
 * The coupled joint Newton takes a step from an indefinite start Hessian, and a
   fit that stalls reports the cause that stopped it (gcol33/tulpa#344). The
   occupancy mixture's dark-cell term `log(psi (1-p)^J + 1 - psi)` is not concave
