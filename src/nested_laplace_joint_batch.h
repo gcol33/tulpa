@@ -347,7 +347,7 @@ inline void scatter_cell_coupling_batch_impl(
         int k = coupled_arms[kk];
         for (int b = 0; b < Bn; b++) {
             double s = blocks[b].arm_scale ? blocks[b].arm_scale(k, k_grid) : 1.0;
-            d_eff_per_arm[kk][b] = s * blocks[b].d_fac(k_grid);
+            d_eff_per_arm[kk][b] = s * blocks[b].d_fac_at(k_grid);
         }
     }
 

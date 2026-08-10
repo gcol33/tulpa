@@ -104,7 +104,7 @@ inline void collect_coupled_row_latents(
         const LatentBlock& blk = blocks[b];
         if (blk.contrib_kind == BlockContribKind::INDEXED_MULTI) {
             if (!blk.obs_indices) continue;
-            blk.obs_indices(i, k_arm, multi_scratch);
+            blk.fill_obs_indices(i, k_arm, multi_scratch);
             for (const auto& jw : multi_scratch) {
                 const int l = jw.first;
                 if (l > 0 && l <= blk.size) {
@@ -322,7 +322,7 @@ inline void scatter_arm_obs_joint_multi(
         double s = blocks[b].arm_scale
                     ? blocks[b].arm_scale(k_arm, k_grid)
                     : 1.0;
-        d_eff_cache[b] = s * blocks[b].d_fac(k_grid);
+        d_eff_cache[b] = s * blocks[b].d_fac_at(k_grid);
     }
 
     std::vector<int>    active_idx;
@@ -732,7 +732,7 @@ inline void scatter_cell_coupling_branch_impl(
             double s = blocks[b].arm_scale
                         ? blocks[b].arm_scale(k, k_grid)
                         : 1.0;
-            d_eff_per_arm[kk][b] = s * blocks[b].d_fac(k_grid);
+            d_eff_per_arm[kk][b] = s * blocks[b].d_fac_at(k_grid);
         }
     }
 
@@ -1162,7 +1162,7 @@ inline void scatter_arm_obs_joint_multi_sparse(
         double s = blocks[b].arm_scale
                     ? blocks[b].arm_scale(k_arm, k_grid)
                     : 1.0;
-        d_eff_cache[b] = s * blocks[b].d_fac(k_grid);
+        d_eff_cache[b] = s * blocks[b].d_fac_at(k_grid);
         kind_cache[b]  = blocks[b].contrib_kind;
         if (kind_cache[b] == BlockContribKind::DENSE_BASIS) {
             if (blocks[b].size > max_basis_size) max_basis_size = blocks[b].size;
@@ -1269,8 +1269,7 @@ inline void scatter_arm_obs_joint_multi_sparse(
                     active_scratch.emplace_back(lambda_slot, u_val      * d_eff);
                 }
             } else {  // INDEXED_MULTI
-                multi_scratch.clear();
-                blk.obs_indices(i, k_arm, multi_scratch);
+                blk.fill_obs_indices(i, k_arm, multi_scratch);
                 for (const auto& [l, w_local] : multi_scratch) {
                     if (l > 0 && l <= blk.size) {
                         active_scratch.emplace_back(blk.start + l - 1,
@@ -1446,7 +1445,7 @@ inline void compute_eta_joint_sparse_dispatch(
                 }
                 case BlockContribKind::INDEXED_MULTI: {
                     if (!blk.obs_indices) break;
-                    blk.obs_indices(i, k_arm, multi_scratch);
+                    blk.fill_obs_indices(i, k_arm, multi_scratch);
                     for (const auto& jw : multi_scratch) {
                         int l = jw.first;
                         if (l > 0 && l <= blk.size) {

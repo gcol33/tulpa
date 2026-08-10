@@ -1955,7 +1955,7 @@ Rcpp::List cpp_test_joint_logpost_grad(
         for (int b = 0; b < Bn; b++) {
             double s = blocks[b].arm_scale ? blocks[b].arm_scale(k_arm, k_grid)
                                            : 1.0;
-            d_eff[b] = s * blocks[b].d_fac(k_grid);
+            d_eff[b] = s * blocks[b].d_fac_at(k_grid);
         }
         for (int i = 0; i < N_k; i++) {
             double e = (pa.offset.size() != 0) ? pa.offset[i] : 0.0;
@@ -2223,7 +2223,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
         const int B = static_cast<int>(blocks.size());
         std::vector<double> d_fac_cache(B);
         for (int b = 0; b < B; b++) {
-            d_fac_cache[b] = blocks[b].d_fac(k_grid);
+            d_fac_cache[b] = blocks[b].d_fac_at(k_grid);
         }
 
         auto compute_eta_joint = [&](const Rcpp::NumericVector& x,
@@ -2789,7 +2789,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
         // Per-block-per-arm d_eff cache: d_fac(k_grid) * arm_scale(k_arm, k_grid).
         std::vector<std::vector<double>> d_eff(B, std::vector<double>(n_arms, 0.0));
         for (int b = 0; b < B; b++) {
-            double dfac = blocks[b].d_fac ? blocks[b].d_fac(k_grid) : 1.0;
+            double dfac = blocks[b].d_fac_at(k_grid);
             for (int k_arm = 0; k_arm < n_arms; k_arm++) {
                 double s = blocks[b].arm_scale
                             ? blocks[b].arm_scale(k_arm, k_grid)
@@ -2861,7 +2861,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
         auto center_joint = [&](Rcpp::NumericVector& x) {
             for (int b = 0; b < B; b++) {
                 if (!blocks[b].center) continue;
-                const double dfac = blocks[b].d_fac ? blocks[b].d_fac(k_grid) : 1.0;
+                const double dfac = blocks[b].d_fac_at(k_grid);
                 for (const auto& fold : blocks[b].center(x)) {
                     if (std::abs(fold.amount) < 1e-15) continue;
                     for (int k_arm = 0; k_arm < n_arms; k_arm++) {

@@ -368,7 +368,7 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
         if (!feasible) continue;  // -inf log_marginal stays
 
         std::vector<double> d_fac_cache((int) blocks.size());
-        for (int b = 0; b < (int) blocks.size(); b++) d_fac_cache[b] = blocks[b].d_fac(kg);
+        for (int b = 0; b < (int) blocks.size(); b++) d_fac_cache[b] = blocks[b].d_fac_at(kg);
 
         // Warm starts.
         for (int s = 0; s < B; s++) {

@@ -29,6 +29,7 @@
 #include <string>
 #include <cstring>
 #include <stdexcept>
+#include <mutex>
 
 #ifdef _WIN32
   #include <windows.h>
@@ -148,6 +149,7 @@ typedef cusolverStatus_t (*cusolverDnDpotrfBatched_t)(
 
 class CudaContext {
 private:
+  std::mutex init_mu_;
   bool initialized_ = false;
   bool init_failed_ = false;
 
@@ -252,7 +254,21 @@ public:
     return ctx;
   }
 
+  // Serialized because the outer nested-Laplace grid is an OpenMP parallel for
+  // over cells and the block `prep` that reaches this runs OUTSIDE
+  // `omp critical(nl_sparse_phi)`. Without the lock two threads both observe
+  // `initialized_ == false`, both run `load_libraries()` / `load_functions()`
+  // -- which write the library handles and function pointers this object hands
+  // out -- and `cuInit_` is called twice. `instance()`'s static is already
+  // thread-safe to CONSTRUCT; that says nothing about this (gcol33/tulpa#393).
+  //
+  // Latent rather than live at the time of writing: every entry that can build
+  // an NNGP block passes `n_threads_outer = 1` as a hardcoded literal, and the
+  // one entry taking it from R has no `nngp` branch in its block-spec builder.
+  // It becomes live the moment either changes, which is exactly the kind of
+  // change that would not think to look here.
   bool initialize() {
+    std::lock_guard<std::mutex> lock(init_mu_);
     if (initialized_) return true;
     if (init_failed_) return false;
 

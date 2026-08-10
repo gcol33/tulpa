@@ -211,8 +211,7 @@ inline void build_scatter_index_cache(
                     if (l > 0 && l <= blk.size) A_i++;
                 } else if (blk.contrib_kind == BlockContribKind::INDEXED_MULTI) {
                     if (!blk.obs_indices) continue;
-                    multi_scratch.clear();
-                    blk.obs_indices(i, k_arm, multi_scratch);
+                    blk.fill_obs_indices(i, k_arm, multi_scratch);
                     for (const auto& [l, w_local] : multi_scratch) {
                         if (l > 0 && l <= blk.size) {
                             A_i++;
@@ -289,8 +288,7 @@ inline void build_scatter_index_cache(
                     }
                 } else if (blk.contrib_kind == BlockContribKind::INDEXED_MULTI) {
                     if (!blk.obs_indices) continue;
-                    multi_scratch.clear();
-                    blk.obs_indices(i, k_arm, multi_scratch);
+                    blk.fill_obs_indices(i, k_arm, multi_scratch);
                     for (const auto& [l, w_local] : multi_scratch) {
                         if (l > 0 && l <= blk.size) {
                             ac.active_dof_global[act_cursor + a] = blk.start + l - 1;

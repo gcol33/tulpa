@@ -1,5 +1,38 @@
 # tulpa NEWS
 
+## 0.0.193
+
+* **`LatentBlock::d_fac` is read through one accessor that carries its
+  contract** (gcol33/tulpa#394). Twelve call sites read this grid-dependent eta
+  mixing coefficient and they disagreed: eight invoked it directly and four
+  guarded it with `d_fac ? d_fac(k) : 1.0`, on the SAME block vector. Only one
+  can be the contract, and it is the unguarded one -- all 38 block-construction
+  sites set `d_fac` unconditionally, and `LatentBlock` is not an exported
+  header, so no consumer package can construct one without it. `d_fac_at()` now
+  states that in one place and throws a named error instead of an uncaught
+  `std::bad_function_call`; a block that ever did omit it would previously have
+  been silently amplitude-1.0 down one path and a crash down another.
+
+* **The `obs_indices` scratch buffer is cleared by the caller, once**
+  (gcol33/tulpa#395). The contract asked IMPLEMENTATIONS to clear, and four of
+  eleven call sites cleared defensively anyway while seven relied on it. The
+  buffer is `static thread_local` and reused across the whole observation loop,
+  so an implementation that appended would have scattered every stale
+  (index, weight) pair into eta as though it belonged to the current row,
+  growing with position in the loop -- a silent wrong answer rather than a
+  crash. `fill_obs_indices()` clears and dispatches, so neither side can forget
+  and a new block kind cannot get it wrong.
+
+* **`CudaContext::initialize()` is serialized** (gcol33/tulpa#393). It was an
+  unsynchronized check-then-act: two threads both observing `initialized_ ==
+  false` would both load the CUDA libraries and function pointers into the same
+  members and call `cuInit` twice. The static's construction is thread-safe;
+  its initialization was not. Latent rather than live today -- every entry that
+  can build an NNGP block passes `n_threads_outer = 1` as a hardcoded literal,
+  and the one entry taking it from R has no NNGP branch -- but the outer grid
+  is an OpenMP parallel-for and the block prep that reaches this deliberately
+  runs outside its critical section.
+
 ## 0.0.192
 
 * **Every factor in a batched NNGP Cholesky is verified, not one of them**

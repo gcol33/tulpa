@@ -28,6 +28,7 @@
 #ifndef TULPA_LATENT_BLOCK_H
 #define TULPA_LATENT_BLOCK_H
 
+#include <stdexcept>
 #include "laplace_types.h"
 #include <Rcpp.h>
 #include <functional>
@@ -137,6 +138,41 @@ struct LatentBlock {
     // effective coefficient on x[idx].
     std::function<double(int /*k_grid*/)> d_fac;
 
+    // REQUIRED. Every block factory sets `d_fac` unconditionally, so this is a
+    // contract rather than a default, and reading it goes through here so the
+    // contract lives in ONE place (gcol33/tulpa#394). The invocation sites used
+    // to disagree: eight called `d_fac(k)` directly and four guarded it with
+    // `d_fac ? d_fac(k) : 1.0`, on the SAME block vector -- so a block that ever
+    // did omit it would have been silently amplitude-1.0 down one path and an
+    // uncaught `std::bad_function_call` down another.
+    // The ONLY way to invoke `obs_indices`, because it carries the scratch
+    // contract (gcol33/tulpa#395). The buffer is `static thread_local` and
+    // reused across the whole observation loop, so an implementation that
+    // appended instead of replacing would not merely duplicate within one
+    // observation -- every stale (index, weight) pair would be scattered into
+    // eta as though it belonged to the current row, growing with position in
+    // the loop. That is a silent wrong answer, not a crash.
+    //
+    // The contract used to sit in a comment asking IMPLEMENTATIONS to clear,
+    // and four of eleven call sites cleared defensively anyway while seven
+    // relied on it. Clearing HERE makes it unforgettable on both sides, and
+    // means a new block kind cannot get it wrong at all.
+    void fill_obs_indices(int i, int k_arm,
+                          std::vector<std::pair<int, double>>& out) const {
+        out.clear();
+        obs_indices(i, k_arm, out);
+    }
+
+    double d_fac_at(int k_grid) const {
+        if (!d_fac) {
+            throw std::logic_error(
+                "LatentBlock: d_fac is required and was not set by the block "
+                "factory. It is the block's grid-dependent eta mixing "
+                "coefficient; a block with no mixing sets it to a constant 1.");
+        }
+        return d_fac(k_grid);
+    }
+
     // Per-arm linear scale on the block's eta contribution (joint driver
     // only). Multiplied into d_fac(k_grid) when the block contributes to arm
     // k_arm's eta. Used for INLA `copy=` semantics: donor arms see one sigma,
@@ -206,9 +242,11 @@ struct LatentBlock {
     BlockContribKind contrib_kind = BlockContribKind::INDEXED_SINGLE;
     PriorFillKind    prior_kind   = PriorFillKind::ADJACENCY;
 
-    // INDEXED_MULTI only. Append (block-local 1-based index, weight) pairs
-    // for obs i in arm k_arm. Caller passes a reusable thread-local scratch
-    // vector — implementations should `clear()` then `emplace_back(...)`.
+    // INDEXED_MULTI only. Fill (block-local 1-based index, weight) pairs
+    // for obs i in arm k_arm. Call it through `fill_obs_indices()`, never
+    // directly: that clears the caller's reusable thread-local scratch first,
+    // so an implementation may assume an empty vector and just
+    // `emplace_back(...)`.
     // For INDEXED_SINGLE this is unused (use `idx` instead); for DENSE_BASIS
     // unused (use `basis_eval`).
     std::function<void(int /*i*/, int /*k_arm*/,

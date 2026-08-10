@@ -459,7 +459,7 @@ inline void compute_eta_spec(
     std::vector<double> d_fac_cache(L.n_blocks, 1.0);
     for (int b = 0; b < L.n_blocks; b++) {
         const LatentBlock& blk = (*L.blocks)[b];
-        if (blk.d_fac) d_fac_cache[b] = blk.d_fac(k_grid);
+        d_fac_cache[b] = blk.d_fac_at(k_grid);
     }
 
     // Reached once per objective evaluation (eval_penalized_log_lik_ll ->
@@ -482,7 +482,7 @@ inline void compute_eta_spec(
         for (int b = 0; b < L.n_blocks; b++) {
             const LatentBlock& blk = (*L.blocks)[b];
             if (blk.contrib_kind == BlockContribKind::INDEXED_MULTI) {
-                blk.obs_indices(i, /*k_arm=*/0, blk_multi);
+                blk.fill_obs_indices(i, /*k_arm=*/0, blk_multi);
                 for (const auto& nw : blk_multi) {
                     int l = nw.first;
                     if (l >= 1 && l <= L.block_size[b]) {
@@ -579,7 +579,7 @@ inline void scatter_spec(
     std::vector<double> blk_dfac(L.n_blocks, 1.0);
     for (int b = 0; b < L.n_blocks; b++) {
         const LatentBlock& blk = (*L.blocks)[b];
-        if (blk.d_fac) blk_dfac[b] = blk.d_fac(k_grid);
+        blk_dfac[b] = blk.d_fac_at(k_grid);
     }
     std::vector<int> blk_active_idx(L.n_blocks, -1);
     // Per-obs flat list of latent contributions (compacted latent index,
@@ -800,7 +800,7 @@ inline void scatter_spec(
                 const LatentBlock& blk = (*L.blocks)[b];
                 const double d_b = blk_dfac[b];
                 if (blk.contrib_kind == BlockContribKind::INDEXED_MULTI) {
-                    blk.obs_indices(i, /*k_arm=*/0, blk_multi_scratch);
+                    blk.fill_obs_indices(i, /*k_arm=*/0, blk_multi_scratch);
                     for (const auto& nw : blk_multi_scratch) {
                         int l = nw.first;
                         if (l >= 1 && l <= L.block_size[b]) {
@@ -1177,7 +1177,7 @@ LaplaceResult spec_inner_solve(
             // (RW1/RW2) silently deletes the level from the linear predictor,
             // so the reported intercept collapses to zero and the corrupted
             // level leaks into the integrated log-marginal.
-            const double d_fac = blk.d_fac ? blk.d_fac(k_grid) : 1.0;
+            const double d_fac = blk.d_fac_at(k_grid);
             for (const auto& fold : blk.center(x)) {
                 if (std::abs(fold.amount) < 1e-15) continue;
                 if (fold.beta_offset < 0 || fold.beta_offset >= L.beta_count[0])

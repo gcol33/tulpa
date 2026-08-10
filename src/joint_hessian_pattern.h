@@ -80,7 +80,7 @@ inline void resolve_indexed_dofs(
         }
     } else if (blk.contrib_kind == BlockContribKind::INDEXED_MULTI) {
         if (!blk.obs_indices) return;
-        blk.obs_indices(i, k_arm, scratch);
+        blk.fill_obs_indices(i, k_arm, scratch);
         // Translate block-local 1-based indices to global.
         for (auto& [idx_local, w] : scratch) {
             idx_local = blk.start + idx_local - 1;
@@ -379,7 +379,7 @@ inline void build_joint_hessian_pattern(
                             out.push_back(blk.start + l - 1);
                     } else if (blk.contrib_kind == BlockContribKind::INDEXED_MULTI) {
                         if (!blk.obs_indices) continue;
-                        blk.obs_indices(row, k, row_scratch);
+                        blk.fill_obs_indices(row, k, row_scratch);
                         for (const auto& jw : row_scratch) {
                             int l = jw.first;
                             if (l > 0 && l <= blk.size)

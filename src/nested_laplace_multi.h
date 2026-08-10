@@ -233,7 +233,7 @@ inline Rcpp::List run_multi_block_nested_laplace(
 
         std::vector<double> d_fac_cache(blocks.size());
         for (size_t b = 0; b < blocks.size(); b++) {
-            d_fac_cache[b] = blocks[b].d_fac(k);
+            d_fac_cache[b] = blocks[b].d_fac_at(k);
         }
 
         int tid;
@@ -294,7 +294,7 @@ inline Rcpp::List run_multi_block_nested_laplace(
                 for (size_t b = 0; b < blocks.size(); b++) {
                     if (blocks[b].contrib_kind
                             == BlockContribKind::INDEXED_MULTI) {
-                        blocks[b].obs_indices(i, /*k_arm=*/0, a_multi);
+                        blocks[b].fill_obs_indices(i, /*k_arm=*/0, a_multi);
                         for (const auto& nw : a_multi) {
                             int l = nw.first;
                             if (l > 0 && l <= blocks[b].size) {
@@ -385,7 +385,7 @@ inline Rcpp::List run_multi_block_nested_laplace(
         std::vector<double> dfac(blocks.size());
         std::vector<std::pair<int,double>> e_multi;
         for (int k = 0; k < ng; k++) {
-            for (size_t b = 0; b < blocks.size(); b++) dfac[b] = blocks[b].d_fac(k);
+            for (size_t b = 0; b < blocks.size(); b++) dfac[b] = blocks[b].d_fac_at(k);
             for (int i = 0; i < N; i++) {
                 double e = 0.0;
                 for (int j = 0; j < p; j++) e += X(i, j) * modes(k, j);
@@ -396,7 +396,7 @@ inline Rcpp::List run_multi_block_nested_laplace(
                 for (size_t b = 0; b < blocks.size(); b++) {
                     if (blocks[b].contrib_kind
                             == BlockContribKind::INDEXED_MULTI) {
-                        blocks[b].obs_indices(i, /*k_arm=*/0, e_multi);
+                        blocks[b].fill_obs_indices(i, /*k_arm=*/0, e_multi);
                         for (const auto& nw : e_multi) {
                             int l = nw.first;
                             if (l > 0 && l <= blocks[b].size) {
