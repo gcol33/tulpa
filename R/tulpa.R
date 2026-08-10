@@ -231,7 +231,7 @@
   if (!is.finite(U) || U <= 0) U <- 0.1
   list(
     type             = "nngp",
-    coords           = matrix(as.numeric(uc), n_loc, 2),
+    coords           = .coords_2col(uc, "gp() / nngp() under a sampler mode"),
     nn               = nn,
     nn_idx           = matrix(as.integer(ni$nn_idx), n_loc, nn),
     nn_dist          = matrix(as.numeric(ni$nn_dist), n_loc, nn),
@@ -292,7 +292,7 @@
   noncentered <- !identical(sampler, "centered")
   list(
     type                      = "multiscale",
-    coords                    = matrix(as.numeric(uc), n_loc, 2),
+    coords                    = .coords_2col(uc, "the multiscale GP sampler spec"),
     nn_local                  = nn_local,
     nn_idx_local              = matrix(as.integer(nil$nn_idx), n_loc, nn_local),
     nn_dist_local             = matrix(as.numeric(nil$nn_dist), n_loc, nn_local),
@@ -348,7 +348,7 @@
   cm <- as.matrix(cm)
   list(
     type   = "hsgp",
-    coords = matrix(as.numeric(cm), nrow(cm), 2),
+    coords = .coords_2col(cm, "hsgp() under a sampler mode"),
     m      = as.integer(spatial$m),
     c      = as.numeric(spatial$c)
   )
@@ -416,7 +416,7 @@
   U     <- if (length(pos_d)) stats::median(pos_d) else 0.1
   if (!is.finite(U) || U <= 0) U <- 0.1
   list(
-    coords          = matrix(as.numeric(cm), n_obs, 2),
+    coords          = .coords_2col(cm, "svc() under a sampler mode"),
     n_svc           = length(idx),
     nn              = nn,
     nn_idx          = matrix(as.integer(ni$nn_idx), n_obs, nn),

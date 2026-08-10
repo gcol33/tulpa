@@ -11,12 +11,109 @@
 #include <cstring>
 #include <algorithm>
 #include <numeric>
+#include <stdexcept>
+#include <string>
 
 #ifdef _OPENMP
 #include <omp.h>
 #endif
 
 namespace tulpa_linalg {
+
+// ============================================================================
+// Coordinate geometry (single source for the neighbour-to-neighbour distance
+// every NNGP kernel needs)
+// ============================================================================
+
+// Squared Euclidean distance between rows `i` and `j` of a coordinate matrix,
+// over EVERY column the matrix carries -- so the coordinate DIMENSION is
+// whatever the caller supplied, and a 1-column matrix is a 1-D domain rather
+// than a 2-D one with a column missing.
+//
+// The three NNGP neighbour-covariance loops -- the Laplace kernel, the batched
+// builder and the PG-Gibbs sweep -- each formed this by hand over columns 0 and
+// 1. Column 1 was read unconditionally, so an `n x 1` coordinate matrix (a
+// transect, a depth profile, a time axis, any 1-D domain) indexed `1 * n + i`,
+// which is `n` doubles PAST the end of its own allocation: the neighbour
+// covariance was built from whatever the heap held behind the matrix. Nothing
+// crashed, because the read lands inside the R heap and returns a finite
+// double; the fit simply stopped being a function of its data, and moved with
+// the process's allocation history (gcol33/tulpa#389).
+//
+// Templated on the matrix type rather than taking `Rcpp::NumericMatrix` so this
+// header stays free of the Rcpp dependency its other callers do not have; the
+// requirement is `operator()(int, int)` and `ncol()`.
+template <typename Mat>
+inline double coords_dist2(const Mat& coords, int i, int j) {
+    const int d = coords.ncol();
+    double s = 0.0;
+    for (int k = 0; k < d; ++k) {
+        const double dk = coords(i, k) - coords(j, k);
+        s += dk * dk;
+    }
+    return s;
+}
+
+// Euclidean distance between two rows of a coordinate matrix. The kernels want
+// the distance itself; `coords_dist2` is exposed because a squared distance is
+// what a covariance argument sometimes needs directly.
+template <typename Mat>
+inline double coords_dist(const Mat& coords, int i, int j) {
+    return std::sqrt(coords_dist2(coords, i, j));
+}
+
+// The cross-matrix form: row `i` of `a` against row `j` of `b`. Prediction at
+// new locations is the same metric the fit was built on, so it reads the
+// coordinate dimension the same way rather than assuming 2 -- a predictor
+// hard-coded to two columns against a dimension-general fit would disagree with
+// it on any other width, which is a silent metric mismatch rather than an
+// error. The two matrices must agree on their column count; they describe the
+// same domain.
+template <typename MatA, typename MatB>
+inline double coords_dist2(const MatA& a, int i, const MatB& b, int j) {
+    const int d = a.ncol();
+    if (b.ncol() != d) {
+        throw std::invalid_argument(
+            "coordinate matrices describe the same domain and must have the "
+            "same number of columns; got " + std::to_string(d) + " and " +
+            std::to_string(b.ncol()) + ".");
+    }
+    double s = 0.0;
+    for (int k = 0; k < d; ++k) {
+        const double dk = a(i, k) - b(j, k);
+        s += dk * dk;
+    }
+    return s;
+}
+
+template <typename MatA, typename MatB>
+inline double coords_dist(const MatA& a, int i, const MatB& b, int j) {
+    return std::sqrt(coords_dist2(a, i, b, j));
+}
+
+// The arity guard for the OTHER kind of consumer: a site that copies
+// coordinates into a FLAT buffer at stride 2 (`GPData::coords` and its
+// siblings) is 2-D by its own storage layout, so it cannot read a 1-D or 3-D
+// matrix at all. Those sites also indexed column 1 unconditionally, which is
+// the same out-of-bounds read `coords_dist()` above removes -- but making them
+// dimension-general would mean changing a struct layout the samplers and the
+// ABI share, so they REFUSE the input instead of misreading it.
+//
+// Throws `std::invalid_argument` rather than calling `Rcpp::stop` so this
+// header keeps its Rcpp-free include list; Rcpp turns a `std::exception` into
+// an R error at the `.Call` boundary, so the caller sees an ordinary condition.
+template <typename Mat>
+inline void require_coords_2col(const Mat& coords, const char* who) {
+    const int d = coords.ncol();
+    if (d != 2) {
+        throw std::invalid_argument(
+            std::string(who) + " requires a coordinate matrix with exactly 2 "
+            "columns (x, y); got " + std::to_string(d) +
+            ". This path stores coordinates at a fixed 2-D stride. The "
+            "nested-Laplace NNGP/GP kernels accept any number of coordinate "
+            "columns.");
+    }
+}
 
 // ============================================================================
 // Small dense Cholesky (single source for the per-location NNGP /

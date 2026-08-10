@@ -28,6 +28,46 @@ assert_columns_exist <- function(vars, data, role = "Required") {
   invisible(TRUE)
 }
 
+#' Strip a coordinate matrix's attributes without changing its shape.
+#'
+#' A coordinate matrix reaches C++ as a plain numeric matrix, so `scale()`'s
+#' centre/scale attributes and any dimnames have to come off first. Its ARITY is
+#' data, not something this step decides: the nested-Laplace NNGP/GP kernels and
+#' the GP field predictor read whatever coordinate dimension they are given
+#' (gcol33/tulpa#389).
+#' @keywords internal
+#' @noRd
+.coords_plain <- function(x) {
+  x <- as.matrix(x)
+  matrix(as.numeric(x), nrow(x), ncol(x))
+}
+
+#' Strip a coordinate matrix's attributes and require exactly two columns.
+#'
+#' For the paths whose downstream storage is 2-D by layout -- every sampler
+#' spec, whose `GPData::coords` and siblings are flat buffers at stride 2, and
+#' the HSGP 2-D basis. Those sites used to be handed
+#' `matrix(as.numeric(x), n, 2)`, which does not check the arity, it IMPOSES it:
+#' an `n x 1` matrix is recycled so that column 2 equals column 1 and every
+#' location lands on the diagonal, and an `n x 3` matrix is truncated to its
+#' first two columns. Both are a different geometry accepted in silence, which
+#' is the same class of defect as the out-of-bounds read in gcol33/tulpa#389.
+#'
+#' @param x Coordinate matrix.
+#' @param what What to name in the error, e.g. `"gp()"`.
+#' @keywords internal
+#' @noRd
+.coords_2col <- function(x, what) {
+  x <- as.matrix(x)
+  if (ncol(x) != 2L) {
+    stop(what, " requires a coordinate matrix with exactly 2 columns (x, y); ",
+         "got ", ncol(x), ". This path stores coordinates at a fixed 2-D ",
+         "stride. The nested-Laplace NNGP/GP kernels accept any number of ",
+         "coordinate columns.", call. = FALSE)
+  }
+  matrix(as.numeric(x), nrow(x), 2L)
+}
+
 #' Extract a coordinate matrix, check for missing values, optionally scale.
 #'
 #' Wraps the coord-validation pattern shared by `validate_hsgp()` and

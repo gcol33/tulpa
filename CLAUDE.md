@@ -972,6 +972,64 @@ is not a cell width -- the same objection that makes `sample` decline. The
 measurement was taken on the outer hyperparameter axes and is not extended past
 them.
 
+### The coordinate dimension is data, and there is one distance (gcol33/tulpa#389)
+
+`tulpa_linalg::coords_dist(coords, i, j)` (`src/linalg_fast.h`) is the ONLY
+neighbour-to-neighbour distance on the NNGP paths, and it sums over every column
+the coordinate matrix carries. The three loops that need it -- the Laplace
+kernel (`laplace_core.cpp`), the batched builder (`gpu_nngp_laplace.h`) and the
+PG-Gibbs sweep (`pg_shared.h`) -- each used to form it by hand over columns 0
+and 1, reading column 1 UNCONDITIONALLY. On an `n x 1` coordinate matrix that
+offset is `1 * nrow + i`, `n` doubles past the end of the allocation, so the
+neighbour covariance was built from whatever the R heap held behind the matrix.
+Nothing crashed: the read lands inside the heap and returns a finite double.
+**The fit stopped being a function of its data** -- same seeds, one process,
+`n_threads = 1`, 10 of 20 fits differing at 49 locations with `log_marginal`
+moving 4.09 nats.
+
+**Which SIZES broke is not a property of the size.** The first reading proposed
+a size-dependent buffer edge on the evidence that 49 broke while 45 was clean.
+Re-running the same script in a later session broke 30 and 60 and left 120
+clean, where the first had 30 and 60 clean and 120 broken. What lands behind the
+coordinate matrix is the process's allocation and free history, so the pattern
+moves between sessions and nothing is keyed on `n`. It was never the batched
+Cholesky either -- 49 locations dispatches to the CPU path (`batch_size >= 50`
+is the threshold) and broke there.
+
+**A constant extra column is the arbiter.** It cancels in
+`(coords(o1,k) - coords(o2,k))^2`, so it is the same geometry with the read made
+in-bounds: the 1-column fit now reproduces `cbind(co, 0)` and `cbind(co, 1e6)`
+bit-for-bit. That is what says the out-of-bounds column was being READ, rather
+than the numbers having moved for some other reason.
+
+**Two kinds of consumer, and only one can be made general.** A site that copies
+coordinates into a FLAT buffer at stride 2 -- `GPData::coords` and its siblings,
+behind every sampler spec, plus the HSGP 2-D basis -- is 2-D by a layout the
+samplers and the ABI share. Those REFUSE the input through
+`tulpa_linalg::require_coords_2col()` rather than misread it (a
+`std::invalid_argument`, so `linalg_fast.h` keeps its Rcpp-free include list and
+Rcpp converts it at the `.Call` boundary). The nested-Laplace NNGP/GP kernels
+carry the matrix straight to `coords_dist()` and are correct at any `ncol >= 1`;
+their `nrow(coords) == n_spatial` checks are the whole requirement. Do NOT add
+an arity guard there -- it would reject a 1-D domain the engine now handles.
+
+**Prediction reads the metric the fit was built on.** `cpp_gp_field_predict()`
+goes through the same helper and requires only that the prediction and fitted
+coordinates agree on their column count. A predictor pinned to two columns
+against a dimension-general fit is a silent metric mismatch, not an error.
+
+**The R side imposed the arity rather than checking it.** Four sampler specs and
+two prediction paths passed coordinates through `matrix(as.numeric(x), n, 2)`:
+an `n x 1` matrix is RECYCLED so column 2 equals column 1 (every location on the
+diagonal, every distance scaled by `sqrt(2)`), an `n x 3` matrix is truncated.
+`.coords_2col()` / `.coords_plain()` (`R/validate_helpers.R`) are the two
+replacements -- error, or strip attributes and keep the shape.
+
+Any measurement taken on a 1-D-coordinate NNGP fixture predates this and should
+be re-measured before it is cited; `nngp_120` in
+`dev_notes/issue361/RESULTS361EXT.md` is the one in this repo. Tests:
+`test-nngp-coords-arity.R`.
+
 ### The mode-SD clamp is a substitution, and the two ends answer oppositely (gcol33/tulpa#387)
 
 `.nl_recenter_axis()` lays a re-placed outer axis at `mode +/- span * sd` over

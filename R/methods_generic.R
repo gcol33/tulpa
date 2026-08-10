@@ -1066,8 +1066,8 @@ plot.tulpa_fit <- function(x, type = c("density", "trace", "pairs", "smooth"),
     }
   }
   # Strip attributes so the coords reach C++ as plain numeric matrices.
-  ct <- matrix(as.numeric(coords_train), nrow(coords_train), 2)
-  cn <- matrix(as.numeric(coords_new),   nrow(coords_new),   2)
+  ct <- .coords_2col(coords_train, "hsgp() prediction")
+  cn <- .coords_2col(coords_new, "hsgp() prediction")
   as.numeric(cpp_hsgp_field_predict(
     ct, cn, m, as.numeric(sp[["c"]]),
     beta_grid, as.numeric(object$sigma2_grid),
@@ -1103,7 +1103,7 @@ plot.tulpa_fit <- function(x, type = c("density", "trace", "pairs", "smooth"),
   # latent tail (an iid RE) means this slice is not the field, so decline.
   if (ncol(modes) != p_fixed + nloc) return(NULL)
   field_grid <- modes[, p_fixed + seq_len(nloc), drop = FALSE]
-  uc <- matrix(as.numeric(sp$unique_coords), nrow(sp$unique_coords), 2)
+  uc <- .coords_plain(sp$unique_coords)
 
   if (is.null(newdata)) {
     # Training locations: the grid-marginalised field at each unique location,
@@ -1128,7 +1128,7 @@ plot.tulpa_fit <- function(x, type = c("density", "trace", "pairs", "smooth"),
       ncoord <- sweep(sweep(ncoord, 2, ctr, "-"), 2, scl, "/")
     }
   }
-  nc  <- matrix(as.numeric(ncoord), nrow(ncoord), 2)
+  nc  <- .coords_plain(ncoord)
   nn  <- as.integer(object$prior$nn %||% sp$nn %||% 10L)
   cty <- as.integer(object$prior$cov_type %||% 0L)
   as.numeric(cpp_gp_field_predict(nc, uc, field_grid, sigma2_grid, phi_grid,

@@ -16,14 +16,20 @@
 
 #include "hmc_svc.h"     // tulpa_svc::compute_cov, tulpa::CovType
 #include "nngp_cond.h"   // tulpa_nngp::cond_moments, VarFloor
+#include "linalg_fast.h" // tulpa_linalg::coords_dist
 #include <Rcpp.h>
 #include <vector>
 #include <algorithm>
 #include <cmath>
 #include <utility>
 
-// new_coords    : n_new x 2 prediction coordinates.
-// unique_coords : n_loc x 2 fitted (unique) location coordinates.
+// new_coords    : n_new x d prediction coordinates.
+// unique_coords : n_loc x d fitted (unique) location coordinates. The
+//                 coordinate dimension is whatever the caller supplied and
+//                 must match the fit, which is dimension-general since
+//                 gcol33/tulpa#389 -- a predictor pinned to two columns
+//                 would read a different metric than the fit it predicts
+//                 from.
 // field_grid    : n_grid x n_loc, per-cell posterior-mean field at the unique
 //                 locations (in unique_coords row order).
 // sigma2_grid, phi_grid, weights : length n_grid hyperparameter grid + weights.
@@ -42,8 +48,9 @@ Rcpp::NumericVector cpp_gp_field_predict(
     const Rcpp::NumericVector& weights,
     int nn, int cov_type
 ) {
-    if (new_coords.ncol() != 2 || unique_coords.ncol() != 2) {
-        Rcpp::stop("cpp_gp_field_predict: coords must have exactly 2 columns.");
+    if (new_coords.ncol() < 1 || new_coords.ncol() != unique_coords.ncol()) {
+        Rcpp::stop("cpp_gp_field_predict: prediction and fitted coordinates "
+                   "must have the same number of columns (>= 1).");
     }
     const int n_new  = new_coords.nrow();
     const int n_loc  = unique_coords.nrow();
@@ -67,11 +74,9 @@ Rcpp::NumericVector cpp_gp_field_predict(
     std::vector<double> C(static_cast<std::size_t>(m) * m), c_vec(m), w_nb(m);
 
     for (int i = 0; i < n_new; ++i) {
-        const double xi = new_coords(i, 0), yi = new_coords(i, 1);
         for (int j = 0; j < n_loc; ++j) {
-            const double dx = xi - unique_coords(j, 0);
-            const double dy = yi - unique_coords(j, 1);
-            dists[j] = std::make_pair(std::sqrt(dx * dx + dy * dy), j);
+            dists[j] = std::make_pair(
+                tulpa_linalg::coords_dist(new_coords, i, unique_coords, j), j);
         }
         std::partial_sort(dists.begin(), dists.begin() + m, dists.end());
         for (int a = 0; a < m; ++a) nb[a] = dists[a].second;
@@ -83,10 +88,11 @@ Rcpp::NumericVector cpp_gp_field_predict(
             for (int a = 0; a < m; ++a) {
                 for (int b = 0; b < m; ++b) {
                     if (a == b) { C[static_cast<std::size_t>(a) * m + b] = s2; continue; }
-                    const double dx = unique_coords(nb[a], 0) - unique_coords(nb[b], 0);
-                    const double dy = unique_coords(nb[a], 1) - unique_coords(nb[b], 1);
                     C[static_cast<std::size_t>(a) * m + b] =
-                        tulpa_svc::compute_cov(std::sqrt(dx * dx + dy * dy), s2, phi, ct);
+                        tulpa_svc::compute_cov(
+                            tulpa_linalg::coords_dist(unique_coords, nb[a],
+                                                      unique_coords, nb[b]),
+                            s2, phi, ct);
                 }
                 c_vec[a] = tulpa_svc::compute_cov(dists[a].first, s2, phi, ct);
                 w_nb[a]  = field_grid(k, nb[a]);

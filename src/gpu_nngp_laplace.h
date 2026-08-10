@@ -93,9 +93,7 @@ inline void batch_nngp_scatter(
             C[j1 * nn + j1] = sigma2;
             for (int j2 = j1 + 1; j2 < n_nb; j2++) {
                 int o2 = nn_order[nn_idx(i, j2) - 1];
-                double d12 = std::sqrt(
-                    std::pow(coords(o1, 0) - coords(o2, 0), 2) +
-                    std::pow(coords(o1, 1) - coords(o2, 1), 2));
+                double d12 = tulpa_linalg::coords_dist(coords, o1, o2);
                 double cv = nngp_cov_gpu(d12, sigma2, phi_gp, cov_type);
                 C[j1 * nn + j2] = cv;
                 C[j2 * nn + j1] = cv;

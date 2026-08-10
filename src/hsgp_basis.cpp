@@ -15,6 +15,7 @@
 
 // [[Rcpp::depends(RcppEigen)]]
 
+#include "linalg_fast.h"  // require_coords_2col
 #include "hmc_hsgp.h"   // tulpa_hsgp::setup_hsgp_2d, tulpa::HSGPData
 #include <Rcpp.h>
 #include <vector>
@@ -41,6 +42,8 @@ Rcpp::List cpp_hsgp_basis_2d(const Rcpp::NumericMatrix& coords, int m, double c)
     if (m < 1) {
         Rcpp::stop("cpp_hsgp_basis_2d: m (basis functions per dimension) must be >= 1.");
     }
+
+    tulpa_linalg::require_coords_2col(coords, "cpp_hsgp_basis_2d");
 
     // setup_hsgp_2d expects a flattened [x1, y1, x2, y2, ...] coordinate vector.
     std::vector<double> flat(2 * static_cast<std::size_t>(n_obs));

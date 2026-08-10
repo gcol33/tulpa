@@ -14,6 +14,7 @@
 // These exports evaluate both twins at identical inputs so test-nngp-twin.R can
 // assert they agree.
 
+#include "linalg_fast.h"   // require_coords_2col
 #include <Rcpp.h>
 #include <vector>
 
@@ -38,6 +39,7 @@ tulpa::GPData make_gp(const Rcpp::NumericMatrix& coords,
   tulpa::GPData gp;
   gp.n_obs = N;
   gp.nn = nn;
+  tulpa_linalg::require_coords_2col(coords, "the NNGP twin GP probe");
   gp.coords.resize(N * 2);
   for (int i = 0; i < N; i++) {
     gp.coords[i * 2 + 0] = coords(i, 0);
@@ -72,6 +74,7 @@ tulpa::SVCData make_svc(const Rcpp::NumericMatrix& coords,
   sd.n_obs = N;
   sd.nn = nn;
   sd.n_svc = 1;
+  tulpa_linalg::require_coords_2col(coords, "the NNGP twin SVC probe");
   sd.coords.resize(N * 2);
   for (int i = 0; i < N; i++) {
     sd.coords[i * 2 + 0] = coords(i, 0);
@@ -200,6 +203,7 @@ Rcpp::NumericVector cpp_test_svc_nngp_twins(Rcpp::NumericVector w, double sigma2
   sd.n_obs = N;
   sd.nn = nn;
   sd.n_svc = 1;
+  tulpa_linalg::require_coords_2col(coords, "the NNGP twin SVC probe");
   sd.coords.resize(N * 2);
   for (int i = 0; i < N; i++) {
     sd.coords[i * 2 + 0] = coords(i, 0);
@@ -323,6 +327,7 @@ Rcpp::List cpp_test_msgp_nngp_nc_grad(Rcpp::NumericVector z,
   const int nn = nn_idx.ncol();
   tulpa::MultiscaleGPData ms;
   ms.n_obs = N;
+  tulpa_linalg::require_coords_2col(coords, "the NNGP twin multiscale probe");
   ms.coords.resize(N * 2);
   for (int i = 0; i < N; i++) {
     ms.coords[i * 2 + 0] = coords(i, 0);

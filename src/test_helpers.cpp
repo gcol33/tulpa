@@ -986,6 +986,7 @@ List cpp_test_gp_solver_dispatch(
   tulpa::GPData gp;
   gp.n_obs = N;
   gp.nn = nn;
+  tulpa_linalg::require_coords_2col(coords, "the GPData test helper");
   gp.coords.resize(N * 2);
   for (int i = 0; i < N; i++) {
     gp.coords[i * 2 + 0] = coords(i, 0);

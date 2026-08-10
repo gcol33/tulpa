@@ -31,6 +31,7 @@
 #include "builtin_family_ll_ad.h"         // builtin_family_ll_ad / builtin_family_has_ad
 #include "re_structure.h"                 // populate_re_structure
 #include "icar_kernel.h"                   // count_graph_components
+#include "linalg_fast.h"                    // require_coords_2col
 #include "hmc_hsgp.h"                      // tulpa_hsgp::setup_hsgp_2d (HSGP basis)
 #include "hmc_sampler.h"                  // tulpa_hmc::compute_param_layout
 #include <Rcpp.h>
@@ -206,6 +207,7 @@ inline void build_sampler_model_inputs(
             in.data.spatial_type = SpatialType::GP;
             auto& g = in.data.gp_data;
             Rcpp::NumericMatrix coords = Rcpp::as<Rcpp::NumericMatrix>(sp["coords"]);
+            tulpa_linalg::require_coords_2col(coords, "gp() / nngp() under a sampler mode");
             const int n_loc = coords.nrow();
             g.n_obs = n_loc;
             g.nn = Rcpp::as<int>(sp["nn"]);
@@ -259,6 +261,7 @@ inline void build_sampler_model_inputs(
             in.data.spatial_type = SpatialType::MULTISCALE_GP;
             auto& ms = in.data.multiscale_gp_data;
             Rcpp::NumericMatrix coords = Rcpp::as<Rcpp::NumericMatrix>(sp["coords"]);
+            tulpa_linalg::require_coords_2col(coords, "the multiscale GP sampler spec");
             const int n_loc = coords.nrow();
             ms.n_obs = n_loc;
             ms.coords.resize(2 * (std::size_t)n_loc);
@@ -373,6 +376,7 @@ inline void build_sampler_model_inputs(
             // -- so the basis math is never duplicated in R.
             in.data.spatial_type = SpatialType::HSGP;
             Rcpp::NumericMatrix coords = Rcpp::as<Rcpp::NumericMatrix>(sp["coords"]);
+            tulpa_linalg::require_coords_2col(coords, "hsgp() under a sampler mode");
             const int n_obs = coords.nrow();
             std::vector<double> flat(2 * (std::size_t)n_obs);
             for (int i = 0; i < n_obs; ++i) {
@@ -550,6 +554,7 @@ inline void build_sampler_model_inputs(
         Rcpp::List sv = Rcpp::as<Rcpp::List>(svc_spec);
         auto& s = in.data.svc_data;
         Rcpp::NumericMatrix coords = Rcpp::as<Rcpp::NumericMatrix>(sv["coords"]);
+        tulpa_linalg::require_coords_2col(coords, "svc() under a sampler mode");
         const int n_obs = coords.nrow();
         const int n_svc = Rcpp::as<int>(sv["n_svc"]);
         s.n_obs = n_obs;

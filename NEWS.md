@@ -1,5 +1,72 @@
 # tulpa NEWS
 
+## 0.0.190
+
+* **An NNGP fit is a function of its data again: the neighbour covariance was
+  built from an out-of-bounds read** (gcol33/tulpa#389). Three NNGP
+  neighbour-covariance loops -- the Laplace kernel (`laplace_core.cpp`), the
+  batched builder (`gpu_nngp_laplace.h`) and the PG-Gibbs sweep
+  (`pg_shared.h`) -- each formed the neighbour-to-neighbour distance by hand
+  over coordinate columns 0 and 1, and read column 1 UNCONDITIONALLY. On an
+  `n x 1` coordinate matrix that offset is `1 * nrow + i`, which is `n` doubles
+  PAST the end of the matrix's own allocation, so the neighbour covariance was
+  built from whatever the R heap happened to hold behind it. Nothing crashed and
+  no value looked odd -- the read lands inside the heap and returns a finite
+  double -- so the fit simply stopped being a function of its data and moved
+  with the process's allocation history.
+
+  MEASURED before the fix, the same seeds fitted twice in ONE process at
+  `n_threads = 1`: 10 of 20 fits differed at 49 locations with `log_marginal`
+  moving 4.09, and 20 of 20 at 50 and 60. Which SIZES broke moved between
+  sessions -- 30 and 60 broke and 120 was clean in a run where the original
+  report had 30 and 60 clean and 120 broken -- so the size-dependence the first
+  reading proposed was the allocation history, not a buffer edge. It was never
+  the batched-Cholesky dispatch either: 49 locations is on the CPU path and
+  broke.
+
+  The three loops now share one helper, `tulpa_linalg::coords_dist()`
+  (`src/linalg_fast.h`), which sums over EVERY column the coordinate matrix
+  carries. So the coordinate dimension is whatever the caller supplied, and a
+  1-column matrix is a 1-D domain -- a transect, a depth profile, a time axis --
+  rather than a 2-D one with a column missing. Three coordinate columns work on
+  the nested-Laplace path for the same reason. The arbiter is that a CONSTANT
+  extra column, which cancels in the distance, now reproduces the 1-D fit
+  bit-for-bit at two different constants.
+
+* **GP field prediction reads the same metric the fit was built on.**
+  `cpp_gp_field_predict()` computed both its distances over two columns while
+  the fitting path is now dimension-general; leaving it pinned would have made
+  prediction disagree with the fit on any other width, which is a silent metric
+  mismatch rather than an error. It goes through the same helper and requires
+  only that the prediction and fitted coordinates have the same number of
+  columns.
+
+* **A path that cannot store a coordinate refuses it instead of misreading it.**
+  Every sampler spec stores coordinates in a flat buffer at stride 2
+  (`GPData::coords` and its siblings), a layout shared with the samplers and the
+  ABI, so those sites are 2-D by construction and are not made general. They now
+  call `tulpa_linalg::require_coords_2col()` and error with the arity they were
+  given. The same guard covers the HSGP 2-D basis and the NNGP twin probes.
+
+* **The R side stopped silently reshaping coordinates to two columns.** Four
+  sampler specs and two prediction paths passed their coordinates through
+  `matrix(as.numeric(x), n, 2)`, which does not CHECK the arity -- it IMPOSES
+  it. An `n x 1` matrix is recycled so that column 2 equals column 1, putting
+  every location on the diagonal and scaling every distance by `sqrt(2)`; an
+  `n x 3` matrix is truncated to its first two columns. Both are a different
+  geometry accepted in silence. `.coords_2col()` now errors on either, and
+  `.coords_plain()` strips attributes without touching the shape for the paths
+  that read the dimension.
+
+* **Measurements taken on a 1-D-coordinate NNGP fixture predate this.** The
+  `nngp_120` row of `dev_notes/issue361/RESULTS361EXT.md` and the mode-SD
+  ceiling evidence in gcol33/tulpa#387 were both taken on such a fixture and
+  were reading out-of-bounds heap. Neither conclusion rested on that row --
+  gcol33/tulpa#361's default is carried by five other reproducible
+  configurations, and gcol33/tulpa#387 kept `max_sd_u = 3` explicitly because
+  that row is inadmissible -- but the row itself should be re-measured before it
+  is cited (gcol33/tulpa#390).
+
 ## 0.0.189
 
 * **A recentred outer axis whose mode SD hit the CEILING now declines the

@@ -90,10 +90,7 @@ inline void pg_nngp_conditional(
       if (j1 == j2) {
         C_mat[j1 * n_neighbors + j2] = sigma2;
       } else {
-        double d12 = std::sqrt(
-          std::pow(coords(nn_orig1, 0) - coords(nn_orig2, 0), 2) +
-          std::pow(coords(nn_orig1, 1) - coords(nn_orig2, 1), 2)
-        );
+        double d12 = tulpa_linalg::coords_dist(coords, nn_orig1, nn_orig2);
         C_mat[j1 * n_neighbors + j2] = compute_cov(d12);
       }
     }
