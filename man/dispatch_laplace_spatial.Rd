@@ -17,10 +17,15 @@ dispatch_laplace_spatial(
   max_iter,
   tol,
   n_threads,
-  offset = NULL
+  offset = NULL,
+  weights = NULL
 )
 }
 \description{
-Dispatch spatial Laplace to the correct C++ backend
+\code{weights} is the per-observation likelihood weight. It reaches the same
+\code{BuiltinFamilyResponse::weights} channel the non-spatial route uses, which
+scales each row's log-density, score and Fisher curvature by the same \code{w_i},
+so the mode these kernels return and the marginal precision
+\verb{.marginal_H_beta_*()} builds at it describe one model (gcol33/tulpa#385).
 }
 \keyword{internal}

@@ -20,6 +20,7 @@
   tol,
   n_threads,
   offset,
+  weights = NULL,
   order = 2L
 )
 }

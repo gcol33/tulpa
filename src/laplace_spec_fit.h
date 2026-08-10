@@ -43,6 +43,24 @@ inline std::vector<double> as_offset_vec(
     return std::vector<double>(o.begin(), o.end());
 }
 
+// Extract an optional per-observation likelihood weight vector, validating its
+// length against N. A null argument yields an empty vector, which every caller
+// hands on as a null `weights` pointer -- the "1 everywhere" case
+// BuiltinFamilyResponse already reads. Same marshalling contract as
+// as_offset_vec above, so the two optional per-obs vectors are unwrapped the
+// same way at every spatial entry.
+inline std::vector<double> as_weights_vec(
+    const Rcpp::Nullable<Rcpp::NumericVector>& weights_nullable, int N
+) {
+    if (weights_nullable.isNull()) return {};
+    Rcpp::NumericVector w(weights_nullable);
+    if ((int)w.size() != N) {
+        Rcpp::stop("weights length (%d) must equal the number of observations (%d).",
+                   (int)w.size(), N);
+    }
+    return std::vector<double>(w.begin(), w.end());
+}
+
 // Convert an R-facing (1-based, possibly NULL) skew_idx into the 0-based probe
 // vector compute_inner_skew_gamma3 (inner_laplace_skew.h) expects, writing into
 // caller-owned `storage` and returning a pointer into it (nullptr when either

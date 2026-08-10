@@ -47,7 +47,8 @@ Rcpp::List cpp_laplace_fit_spatial(
     Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
     int force_sparse = 0,
     bool compute_skew = false,
-    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericVector> weights_nullable = R_NilValue
 ) {
     // Fixed effects + optional iid RE + a single ICAR latent block, through the
     // unified spec solver (the family-enum laplace_mode_spatial was retired in
@@ -64,12 +65,14 @@ Rcpp::List cpp_laplace_fit_spatial(
     const int block_start = p + (has_re ? n_re_groups : 0);
 
     std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, N);
+    std::vector<double> weights = tulpa::as_weights_vec(weights_nullable, N);
 
     tulpa::SpecFamilyInputs in;
     tulpa::build_spec_family_inputs(
         in, y, n, X, re_group, n_re_groups, sigma_re, family, phi,
         /*sigma_beta=*/100.0, /*n_block_latent=*/n_spatial_units,
-        /*weights=*/nullptr, offset.empty() ? nullptr : offset.data());
+        weights.empty() ? nullptr : weights.data(),
+        offset.empty() ? nullptr : offset.data());
 
     // One constant null direction per connected component; the sampler and the
     // Polya-Gamma kernels derive the same partition from the same adjacency.
@@ -133,7 +136,8 @@ Rcpp::List cpp_laplace_fit_bym2(
     Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
     int force_sparse = 0,
     bool compute_skew = false,
-    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericVector> weights_nullable = R_NilValue
 ) {
     // Fixed effects + optional iid RE + BYM2's two latent blocks (phi:
     // ICAR-structured & centered, theta: IID) through the unified spec solver
@@ -155,12 +159,14 @@ Rcpp::List cpp_laplace_fit_bym2(
         n_spatial_units, adj_row_ptr.begin(), adj_col_idx.begin());
 
     std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, N);
+    std::vector<double> weights = tulpa::as_weights_vec(weights_nullable, N);
 
     tulpa::SpecFamilyInputs in;
     tulpa::build_spec_family_inputs(
         in, y, n, X, re_group, n_re_groups, sigma_re, family, phi,
         /*sigma_beta=*/100.0, /*n_block_latent=*/2 * n_spatial_units,
-        /*weights=*/nullptr, offset.empty() ? nullptr : offset.data());
+        weights.empty() ? nullptr : weights.data(),
+        offset.empty() ? nullptr : offset.data());
 
     // phi block: ICAR-structured, d = sigma * sqrt(rho) * scale_factor, centered.
     tulpa::LatentBlock phi_block;

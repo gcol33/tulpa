@@ -1,5 +1,47 @@
 # tulpa NEWS
 
+## 0.0.184
+
+* `weights` reaches the spatial mode-finding, not only the marginal precision
+  built at it (gcol33/tulpa#385). `dispatch_laplace_spatial()` carried no
+  `weights` argument at all, so a spatial `tulpa_laplace()` fit found the
+  UNWEIGHTED mode and then handed it to `.marginal_H_beta_*()`, which has always
+  consumed `weights` -- the reported mode and the reported precision described
+  two different models. On a 25-cell ICAR fixture at a 4:1 weight split the
+  slope moved 0.740 -> 0.880 (19%) once the weight reached the Newton loop, the
+  score of the weighted objective at the reported mode was 14.86 rather than 0,
+  and `H_beta` matched the WEIGHTED Schur at that unweighted point to 2.0e-16
+  while sitting 130% away from the unweighted one. Reachable from
+  `tulpa_em_laplace()`, which forwards a block's `weights` unconditionally,
+  including for a block that also carries `spatial`.
+
+  The arithmetic already existed: `BuiltinFamilyResponse::weights` scales each
+  row's log-density, score and Fisher information alike, and the third-derivative
+  oracle behind `gamma_3` reads it too. What was missing was the argument. All
+  six spatial kernels now take it -- `cpp_laplace_fit_spatial` / `_bym2` /
+  `_car_proper` / `_hsgp` through `build_spec_family_inputs()`, and
+  `cpp_laplace_fit_gp` / `_spde` / `_spde_precomputed` through a `weights` field
+  on `JointArm` that `make_single_arm()` fills and the joint driver hands to its
+  built-in-family response. None needed the error fallback. The fractional-nu
+  SPDE marginal (`cpp_spde_fractional_logmarginal`) is weighted with them, so a
+  weighted mode is never paired with an unweighted log-marginal; its gaussian
+  branch uses the `|I + K B|` form, which stays finite at a zero weight where the
+  scaled-variance form does not.
+
+  Measured rather than asserted. The weighted mode reproduces an R Newton solve
+  on the penalized objective written from its definition to 8.5e-15, against
+  0.140 for the unweighted one; the weighted score at the reported mode falls
+  from 14.86 to 1.4e-06 (the loop's own step-based floor); `H_beta` and the
+  Schur at the reported mode now agree to 4.8e-17 with the same `w`. An integer
+  weight equals row replication on every kernel, which reads the weighted path
+  against the engine's own unweighted solver on a different data set. Nothing
+  moves at `weights = NULL`: 25 fits spanning every kernel through both the raw
+  C++ entry and the front door (including `H_beta`) are `identical()` to the
+  pre-fix build, worst numeric difference 0. No ABI change -- every struct
+  touched lives in `src/`, none in `inst/include/tulpa/`.
+
+  Evidence in dev_notes/issue385/.
+
 ## 0.0.183
 
 * An EM soft label travels on `weights`, not on a fractional `y`

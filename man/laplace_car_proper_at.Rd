@@ -19,7 +19,8 @@ laplace_car_proper_at(
   max_iter = 100L,
   tol = 1e-06,
   n_threads = 1L,
-  offset = NULL
+  offset = NULL,
+  weights = NULL
 )
 }
 \description{

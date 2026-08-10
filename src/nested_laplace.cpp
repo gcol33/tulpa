@@ -544,7 +544,8 @@ Rcpp::List cpp_laplace_fit_car_proper(
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
     bool compute_skew = false,
-    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericVector> weights_nullable = R_NilValue
 ) {
     const int N = y.size();
     const int p = X.ncol();
@@ -556,6 +557,7 @@ Rcpp::List cpp_laplace_fit_car_proper(
     }
     const int block_start = p + (has_re ? n_re_groups : 0);
     std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, N);
+    std::vector<double> weights = tulpa::as_weights_vec(weights_nullable, N);
 
     // One-cell (tau, rho) grids; make_car_proper_latent_blocks captures them by
     // reference (and runs the log|D - rho W| determinant in block.prep), so they
@@ -570,7 +572,8 @@ Rcpp::List cpp_laplace_fit_car_proper(
     tulpa::build_spec_family_inputs(
         in, y, n, X, re_group, n_re_groups, sigma_re, family, phi,
         /*sigma_beta=*/100.0, /*n_block_latent=*/n_spatial_units,
-        /*weights=*/nullptr, offset.empty() ? nullptr : offset.data());
+        weights.empty() ? nullptr : weights.data(),
+        offset.empty() ? nullptr : offset.data());
 
     std::vector<double> params(in.layout.total_params, 0.0);
     if (has_re) params[in.layout.log_sigma_re_idx] = std::log(sigma_re);
@@ -853,7 +856,8 @@ Rcpp::List cpp_laplace_fit_hsgp(
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
     bool compute_skew = false,
-    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericVector> weights_nullable = R_NilValue
 ) {
     const int N = y.size();
     const int p = X.ncol();
@@ -870,6 +874,7 @@ Rcpp::List cpp_laplace_fit_hsgp(
     }
     const int block_start = p + (has_re ? n_re_groups : 0);
     std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, N);
+    std::vector<double> weights = tulpa::as_weights_vec(weights_nullable, N);
 
     // One-row (log sigma2, log lengthscale) grid; make_hsgp_block reads the
     // amplitude / lengthscale from theta_grid(k, axis) in block.prep, so the row
@@ -889,7 +894,8 @@ Rcpp::List cpp_laplace_fit_hsgp(
     tulpa::build_spec_family_inputs(
         in, y, n, X, re_group, n_re_groups, sigma_re, family, phi,
         /*sigma_beta=*/100.0, /*n_block_latent=*/M,
-        /*weights=*/nullptr, offset.empty() ? nullptr : offset.data());
+        weights.empty() ? nullptr : weights.data(),
+        offset.empty() ? nullptr : offset.data());
 
     std::vector<double> params(in.layout.total_params, 0.0);
     if (has_re) params[in.layout.log_sigma_re_idx] = std::log(sigma_re);

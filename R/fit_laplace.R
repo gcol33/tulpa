@@ -44,7 +44,10 @@
 #'   (`family = "t"`; default 4 when `NULL`). Non-spatial path only.
 #' @param spatial Optional spatial specification (tulpa_spatial object)
 #' @param weights Optional observation weights (numeric vector, length `length(y)`).
-#'   Scales each observation's likelihood contribution. `NULL` (default) uses 1.
+#'   Scales each observation's log-density, score and Fisher curvature by the
+#'   same `w_i`, on the spatial route as well as the non-spatial one, so the
+#'   mode and the marginal precision `H_beta` describe one weighted model.
+#'   `NULL` (default) uses 1.
 #' @param offset Optional observation-level offset on the linear predictor
 #'   (numeric vector, length `length(y)`). `NULL` (default) uses 0.
 #' @param max_iter Maximum Newton iterations (default 100)
@@ -238,7 +241,8 @@ tulpa_laplace <- function(y, n_trials, X,
     }
     result <- dispatch_laplace_spatial(
       y, n_trials, X, re_idx, n_re_groups, sigma_re,
-      spatial, family, phi_kernel, max_iter, tol, n_threads, offset = offset
+      spatial, family, phi_kernel, max_iter, tol, n_threads, offset = offset,
+      weights = weights
     )
   } else {
     # All non-spatial paths: use cpp_laplace_fit_multi_re
@@ -710,13 +714,21 @@ tulpa_laplace <- function(y, n_trials, X,
 
 
 #' Dispatch spatial Laplace to the correct C++ backend
+#'
+#' `weights` is the per-observation likelihood weight. It reaches the same
+#' `BuiltinFamilyResponse::weights` channel the non-spatial route uses, which
+#' scales each row's log-density, score and Fisher curvature by the same `w_i`,
+#' so the mode these kernels return and the marginal precision
+#' `.marginal_H_beta_*()` builds at it describe one model (gcol33/tulpa#385).
 #' @keywords internal
 dispatch_laplace_spatial <- function(y, n_trials, X, re_idx, n_re_groups,
                                      sigma_re, spatial, family, phi,
-                                     max_iter, tol, n_threads, offset = NULL) {
+                                     max_iter, tol, n_threads, offset = NULL,
+                                     weights = NULL) {
 
   spatial_type <- spatial$type
   off_arg <- if (is.null(offset)) NULL else as.numeric(offset)
+  wt_arg  <- if (is.null(weights)) NULL else as.numeric(weights)
 
   if (spatial_type %in% c("icar", "car")) {
     adj <- spatial$adjacency
@@ -735,7 +747,8 @@ dispatch_laplace_spatial <- function(y, n_trials, X, re_idx, n_re_groups,
       family = family, phi = phi,
       max_iter = as.integer(max_iter), tol = tol,
       n_threads = as.integer(n_threads),
-      offset_nullable = off_arg
+      offset_nullable = off_arg,
+      weights_nullable = wt_arg
     )
   } else if (spatial_type == "bym2") {
     adj <- spatial$adjacency
@@ -755,7 +768,8 @@ dispatch_laplace_spatial <- function(y, n_trials, X, re_idx, n_re_groups,
       family = family, phi = phi,
       max_iter = as.integer(max_iter), tol = tol,
       n_threads = as.integer(n_threads),
-      offset_nullable = off_arg
+      offset_nullable = off_arg,
+      weights_nullable = wt_arg
     )
   } else if (spatial_type == "spde") {
     # SPDE Laplace at fixed hyperparameters (uses spec's prior modes), with an
@@ -767,7 +781,7 @@ dispatch_laplace_spatial <- function(y, n_trials, X, re_idx, n_re_groups,
       range = NULL, sigma = NULL,
       re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re,
       max_iter = max_iter, tol = tol, n_threads = n_threads,
-      offset = offset
+      offset = offset, weights = weights
     )
   } else if (spatial_type == "gp") {
     # NNGP Laplace at fixed hyperparameters, with an optional iid RE block
@@ -778,7 +792,7 @@ dispatch_laplace_spatial <- function(y, n_trials, X, re_idx, n_re_groups,
       sigma2_gp = NULL, phi_gp = NULL,
       re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re,
       max_iter = max_iter, tol = tol, n_threads = n_threads,
-      offset = offset
+      offset = offset, weights = weights
     )
   } else if (spatial_type == "car_proper") {
     # Proper-CAR Laplace at a fixed (tau, rho), the conditional counterpart of
@@ -789,7 +803,7 @@ dispatch_laplace_spatial <- function(y, n_trials, X, re_idx, n_re_groups,
       family = family, phi = phi, tau = NULL, rho = NULL,
       re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re,
       max_iter = max_iter, tol = tol, n_threads = n_threads,
-      offset = offset
+      offset = offset, weights = weights
     )
   } else if (spatial_type == "hsgp") {
     # HSGP Laplace at a fixed (sigma2, lengthscale), the conditional counterpart
@@ -800,7 +814,7 @@ dispatch_laplace_spatial <- function(y, n_trials, X, re_idx, n_re_groups,
       family = family, phi = phi, sigma2 = NULL, lengthscale = NULL,
       re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re,
       max_iter = max_iter, tol = tol, n_threads = n_threads,
-      offset = offset
+      offset = offset, weights = weights
     )
   } else {
     stop(sprintf("Spatial type '%s' not yet supported in Laplace", spatial_type),
@@ -827,6 +841,8 @@ dispatch_laplace_spatial <- function(y, n_trials, X, re_idx, n_re_groups,
 #' @param max_iter Newton iterations.
 #' @param tol Newton tolerance.
 #' @param n_threads OpenMP threads.
+#' @param weights Optional per-observation likelihood weights (length
+#'   `length(y)`), scaling each row's log-density, score and Fisher curvature.
 #' @return The raw `cpp_laplace_fit_spde` result list (mode, log_det_Q,
 #'   log_marginal, n_iter, converged), augmented with `range`, `sigma`,
 #'   and the spatial spec for downstream prediction.
@@ -836,7 +852,7 @@ laplace_spde_at <- function(y, n_trials, X, spatial,
                              range = NULL, sigma = NULL,
                              re_idx = NULL, n_re_groups = 0L, sigma_re = 1.0,
                              max_iter = 100L, tol = 1e-6, n_threads = 1L,
-                             offset = NULL) {
+                             offset = NULL, weights = NULL) {
   if (is.null(range)) range <- spatial$prior_range[1]
   if (is.null(sigma)) sigma <- spatial$prior_sigma[1]
 
@@ -851,6 +867,7 @@ laplace_spde_at <- function(y, n_trials, X, spatial,
       family = family, phi = phi, range = range, sigma = sigma,
       re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re,
       max_iter = max_iter, tol = tol, n_threads = n_threads, offset = offset,
+      weights = weights,
       order = spatial$rational_order %||% 2L
     )
   } else {
@@ -880,7 +897,8 @@ laplace_spde_at <- function(y, n_trials, X, spatial,
       n_threads = as.integer(n_threads),
       rational_poles_nullable = if (!rat$is_integer) rat$poles else NULL,
       rational_weights_nullable = if (!rat$is_integer) rat$weights else NULL,
-      offset_nullable = if (is.null(offset)) NULL else as.numeric(offset)
+      offset_nullable = if (is.null(offset)) NULL else as.numeric(offset),
+      weights_nullable = if (is.null(weights)) NULL else as.numeric(weights)
     )
 
     result$range <- range
@@ -945,6 +963,8 @@ gp_cov_type_for_laplace <- function(spatial) {
 #' @param max_iter Newton iterations.
 #' @param tol Newton tolerance.
 #' @param n_threads OpenMP threads.
+#' @param weights Optional per-observation likelihood weights (length
+#'   `length(y)`), scaling each row's log-density, score and Fisher curvature.
 #' @return The raw `cpp_laplace_fit_gp` result list, augmented with
 #'   `sigma2_gp`, `phi_gp`, and the spatial spec.
 #' @keywords internal
@@ -953,7 +973,7 @@ laplace_gp_at <- function(y, n_trials, X, spatial,
                            sigma2_gp = NULL, phi_gp = NULL,
                            re_idx = NULL, n_re_groups = 0L, sigma_re = 1.0,
                            max_iter = 100L, tol = 1e-6, n_threads = 1L,
-                           offset = NULL) {
+                           offset = NULL, weights = NULL) {
   if (is.null(spatial$neighbor_info)) {
     stop("spatial_gp() spec is unvalidated (neighbor_info is NULL). ",
          "Call validate_gp(spatial, data) first, or fit through tulpa() ",
@@ -1000,7 +1020,8 @@ laplace_gp_at <- function(y, n_trials, X, spatial,
     # Per-obs 1-based location index so repeated coordinates share one field
     # node (n_spatial unique locations < N). NULL keeps the identity map.
     obs_to_loc_nullable = if (is.null(spatial$obs_to_loc)) NULL else
-      as.integer(spatial$obs_to_loc)
+      as.integer(spatial$obs_to_loc),
+    weights_nullable = if (is.null(weights)) NULL else as.numeric(weights)
   )
 
   result$sigma2_gp <- sigma2_gp
@@ -1025,7 +1046,7 @@ laplace_car_proper_at <- function(y, n_trials, X, spatial,
                                   tau = NULL, rho = NULL,
                                   re_idx = NULL, n_re_groups = 0L, sigma_re = 1.0,
                                   max_iter = 100L, tol = 1e-6, n_threads = 1L,
-                                  offset = NULL) {
+                                  offset = NULL, weights = NULL) {
   adj <- spatial$adjacency
   if (is.null(adj)) stop("car_proper spec needs an `adjacency`.", call. = FALSE)
   n_units <- nrow(as.matrix(adj))
@@ -1046,7 +1067,8 @@ laplace_car_proper_at <- function(y, n_trials, X, spatial,
     tau_spatial = as.numeric(tau), rho = as.numeric(rho),
     family = family, phi = phi,
     max_iter = as.integer(max_iter), tol = tol, n_threads = as.integer(n_threads),
-    offset_nullable = if (is.null(offset)) NULL else as.numeric(offset)
+    offset_nullable = if (is.null(offset)) NULL else as.numeric(offset),
+    weights_nullable = if (is.null(weights)) NULL else as.numeric(weights)
   )
   result$tau <- tau
   result$rho <- rho
@@ -1069,7 +1091,7 @@ laplace_hsgp_at <- function(y, n_trials, X, spatial,
                             sigma2 = NULL, lengthscale = NULL,
                             re_idx = NULL, n_re_groups = 0L, sigma_re = 1.0,
                             max_iter = 100L, tol = 1e-6, n_threads = 1L,
-                            offset = NULL) {
+                            offset = NULL, weights = NULL) {
   cm <- spatial$coords_matrix
   if (is.null(cm)) {
     stop("spatial_gp(approx='hsgp') spec is unvalidated (coords_matrix is NULL). Call ",
@@ -1091,7 +1113,8 @@ laplace_hsgp_at <- function(y, n_trials, X, spatial,
     sigma2 = as.numeric(sigma2), lengthscale = as.numeric(lengthscale),
     family = family, phi = phi,
     max_iter = as.integer(max_iter), tol = tol, n_threads = as.integer(n_threads),
-    offset_nullable = if (is.null(offset)) NULL else as.numeric(offset)
+    offset_nullable = if (is.null(offset)) NULL else as.numeric(offset),
+    weights_nullable = if (is.null(weights)) NULL else as.numeric(weights)
   )
   result$sigma2      <- sigma2
   result$lengthscale <- lengthscale

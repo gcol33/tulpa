@@ -52,6 +52,12 @@ namespace tulpa {
 struct JointArm {
     Rcpp::NumericVector y;         // [N]
     Rcpp::IntegerVector n_trials;  // [N]
+    // Per-observation likelihood weight. Optional; when non-empty it must be
+    // length N and is handed to the arm's BuiltinFamilyResponse, which scales
+    // this row's log-density, score and Fisher curvature alike. Empty => 1
+    // everywhere. Ignored for a model-supplied spec arm, which owns its own
+    // response payload.
+    Rcpp::NumericVector weights;
     std::string         family;    // built-in family (ignored when spec != null)
     double              phi;        // built-in dispersion (ignored when spec)
     int                 N;
@@ -193,6 +199,7 @@ inline void build_joint_arm_specs_into(const std::vector<JointArm>& arms,
             r.N        = a.N;
             r.family   = a.family;
             r.phi      = a.phi;
+            r.weights  = (a.weights.size() > 0) ? REAL(a.weights) : nullptr;
             r.slog_y   = (a.slog_y.size()   > 0) ? REAL(a.slog_y)   : nullptr;
             r.slog_1my = (a.slog_1my.size() > 0) ? REAL(a.slog_1my) : nullptr;
             r.lower    = (a.lower.size()    > 0) ? REAL(a.lower)    : nullptr;

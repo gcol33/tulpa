@@ -19,7 +19,8 @@ laplace_spde_at(
   max_iter = 100L,
   tol = 1e-06,
   n_threads = 1L,
-  offset = NULL
+  offset = NULL,
+  weights = NULL
 )
 }
 \arguments{
@@ -44,6 +45,9 @@ laplace_spde_at(
 \item{tol}{Newton tolerance.}
 
 \item{n_threads}{OpenMP threads.}
+
+\item{weights}{Optional per-observation likelihood weights (length
+\code{length(y)}), scaling each row's log-density, score and Fisher curvature.}
 }
 \value{
 The raw \code{cpp_laplace_fit_spde} result list (mode, log_det_Q,

@@ -41,7 +41,8 @@ Rcpp::List cpp_laplace_fit_gp(
     Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
     Rcpp::Nullable<Rcpp::IntegerVector> obs_to_loc_nullable = R_NilValue,
     bool compute_skew = false,
-    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericVector> weights_nullable = R_NilValue
 ) {
     const int N = y.size();
     const int p = X.ncol();
@@ -79,7 +80,7 @@ Rcpp::List cpp_laplace_fit_gp(
     std::vector<tulpa::JointArm> arms;
     tulpa::make_single_arm(parsed, arms, X, re_idx, spatial_idx,
                            p, n_re_groups, sigma_re, y, n, family, phi, N,
-                           offset_nullable);
+                           offset_nullable, weights_nullable);
 
     // One-row (sigma2, phi_gp) grid; make_nngp_block reads the pair from
     // theta_grid(k, axis) in block.prep, so the row must outlive the solve.

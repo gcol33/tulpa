@@ -213,6 +213,10 @@ inline int parse_joint_arms(
 // `offset_nullable` is the optional per-observation offset added to eta ahead of
 // the linear predictor. The generic driver reads it off ParsedArm::offset, so
 // wiring it here covers every kernel that builds its arm through this helper.
+//
+// `weights_nullable` is the optional per-observation likelihood weight, carried
+// on JointArm::weights into the arm's BuiltinFamilyResponse, which scales the
+// log-density, the score and the Fisher curvature by the same w_i.
 inline void make_single_arm(
     std::vector<ParsedArm>& parsed,
     std::vector<JointArm>& arms,
@@ -223,7 +227,8 @@ inline void make_single_arm(
     const Rcpp::NumericVector& y,
     const Rcpp::IntegerVector& n_trials,
     const std::string& family, double phi, int N,
-    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue
+    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericVector> weights_nullable = R_NilValue
 ) {
     parsed.resize(1);
     ParsedArm& pa = parsed[0];
@@ -254,6 +259,14 @@ inline void make_single_arm(
     a.family   = family;
     a.phi      = phi;
     a.N        = N;
+    if (weights_nullable.isNotNull()) {
+        Rcpp::NumericVector w(weights_nullable);
+        if ((int)w.size() != N) {
+            Rcpp::stop("length(weights) (%d) must equal n_obs (%d).",
+                       (int)w.size(), N);
+        }
+        a.weights = w;
+    }
 }
 
 // Per-arm Gaussian beta + RE priors. Identical across all backends.

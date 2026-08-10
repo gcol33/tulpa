@@ -79,7 +79,8 @@ Rcpp::List cpp_laplace_fit_spde(
     Rcpp::Nullable<Rcpp::NumericVector> rational_weights_nullable = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
     bool compute_skew = false,
-    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericVector> weights_nullable = R_NilValue
 ) {
     int N = n_obs;
     int p = X.ncol();
@@ -106,7 +107,7 @@ Rcpp::List cpp_laplace_fit_spde(
     // spatial_idx is never indexed; a dummy zero vector keeps lifetime safe.
     tulpa::make_single_arm(parsed, arms, X, re_idx, Rcpp::IntegerVector(N, 0),
                            p, n_re_groups, sigma_re, y, n_trials, family, phi,
-                           N, offset_nullable);
+                           N, offset_nullable, weights_nullable);
 
     // One-row grid holding the operator parameters directly: this entry is
     // handed (kappa, tau_spde) by its caller, so direct_kappa_tau skips the
@@ -170,7 +171,8 @@ Rcpp::List cpp_laplace_fit_spde_precomputed(
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
     bool compute_skew = false,
-    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericVector> weights_nullable = R_NilValue
 ) {
     int N = n_obs;
     int p = X.ncol();
@@ -193,7 +195,7 @@ Rcpp::List cpp_laplace_fit_spde_precomputed(
     // never indexed; a dummy zero vector keeps lifetime safe.
     tulpa::make_single_arm(parsed, arms, X, re_idx, Rcpp::IntegerVector(N, 0),
                            p, n_re_groups, sigma_re, y, n_trials, family, phi,
-                           N, offset_nullable);
+                           N, offset_nullable, weights_nullable);
 
     Rcpp::List Aeff_x_per_arm = Rcpp::List::create(Aeff_x);
     Rcpp::List Aeff_i_per_arm = Rcpp::List::create(Aeff_i);

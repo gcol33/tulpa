@@ -65,7 +65,10 @@ For \code{neg_binomial_2} the size, \code{beta} the precision, \code{t} the scal
 \item{spatial}{Optional spatial specification (tulpa_spatial object)}
 
 \item{weights}{Optional observation weights (numeric vector, length \code{length(y)}).
-Scales each observation's likelihood contribution. \code{NULL} (default) uses 1.}
+Scales each observation's log-density, score and Fisher curvature by the
+same \code{w_i}, on the spatial route as well as the non-spatial one, so the
+mode and the marginal precision \code{H_beta} describe one weighted model.
+\code{NULL} (default) uses 1.}
 
 \item{offset}{Optional observation-level offset on the linear predictor
 (numeric vector, length \code{length(y)}). \code{NULL} (default) uses 0.}

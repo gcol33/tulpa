@@ -43,7 +43,8 @@ double cpp_spde_fractional_logmarginal(
     const Eigen::Map<Eigen::VectorXd>            x_hat,    // n_sub (non-gaussian)
     Rcpp::IntegerVector                          n_trials,
     Rcpp::Nullable<Rcpp::NumericVector>          offset_nullable = R_NilValue,
-    double                                       tau_beta = 1e-4
+    double                                       tau_beta = 1e-4,
+    Rcpp::Nullable<Rcpp::NumericVector>          weights_nullable = R_NilValue
 ) {
     const int n     = static_cast<int>(y.size());
     const int n_sub = static_cast<int>(C0sub.size());
@@ -52,6 +53,19 @@ double cpp_spde_fractional_logmarginal(
     if (offset_nullable.isNotNull()) {
         Rcpp::NumericVector o(offset_nullable);
         for (int i = 0; i < n; ++i) off[i] = o[i];
+    }
+
+    // Per-observation likelihood weight. Absent -> the unweighted branches
+    // below run byte-identically to before the weight channel existed.
+    const bool weighted = weights_nullable.isNotNull();
+    VectorXd wt = VectorXd::Ones(n);
+    if (weighted) {
+        Rcpp::NumericVector wv(weights_nullable);
+        if (static_cast<int>(wv.size()) != n) {
+            Rcpp::stop("weights length (%d) must equal the number of "
+                       "observations (%d).", static_cast<int>(wv.size()), n);
+        }
+        for (int i = 0; i < n; ++i) wt[i] = wv[i];
     }
 
     // Mt = Pl^{-1} A_eff'  (n_sub x n) via the operator factor's LU (general
@@ -70,35 +84,61 @@ double cpp_spde_fractional_logmarginal(
     B = 0.5 * (B + B.transpose());
 
     if (family == "gaussian") {
-        // Exact conjugate marginal: y - off ~ N(0, B + phi^2 I).
-        MatrixXd V = B;
-        V.diagonal().array() += phi * phi;
-        Eigen::LLT<MatrixXd> llt(V);
-        if (llt.info() != Eigen::Success) return R_NegInf;
-        const double half_logdetV =
-            llt.matrixLLT().diagonal().array().log().sum();   // 0.5 log|V|
+        if (!weighted) {
+            // Exact conjugate marginal: y - off ~ N(0, B + phi^2 I).
+            MatrixXd V = B;
+            V.diagonal().array() += phi * phi;
+            Eigen::LLT<MatrixXd> llt(V);
+            if (llt.info() != Eigen::Success) return R_NegInf;
+            const double half_logdetV =
+                llt.matrixLLT().diagonal().array().log().sum();   // 0.5 log|V|
+            VectorXd r = y - off;
+            VectorXd z = llt.matrixL().solve(r);                  // L z = r
+            return -half_logdetV - 0.5 * z.squaredNorm();
+        }
+        // Weighted conjugate marginal, in the form that survives a zero weight.
+        // With K = diag(w_i) / phi^2 the exponent of the weighted density is
+        // -0.5 (y - eta)' K (y - eta), so
+        //   int exp(...) N(eta; off, B) deta
+        //     = |I + K B|^{-1/2} exp(-0.5 r' (I + K B)^{-1} K r),
+        // which is finite at w_i = 0 where the equivalent scaled-variance form
+        // (B + phi^2 W^{-1}) is not. The normalizer of the weighted density is
+        // -0.5 sum_i w_i log(2 pi phi^2); the 2 pi part is dropped to keep the
+        // unweighted branch's convention (it omits -0.5 n log(2 pi)), leaving
+        // -(sum_i w_i) log(phi), which reduces to the branch above at w == 1.
+        const double inv_phi2 = 1.0 / (phi * phi);
+        VectorXd k = wt * inv_phi2;
+        MatrixXd G = k.asDiagonal() * B;
+        G.diagonal().array() += 1.0;
+        Eigen::PartialPivLU<MatrixXd> lu_G(G);
+        const double logdet_G =
+            lu_G.matrixLU().diagonal().array().abs().log().sum();
         VectorXd r = y - off;
-        VectorXd z = llt.matrixL().solve(r);                  // L z = r
-        return -half_logdetV - 0.5 * z.squaredNorm();
+        VectorXd quad_v = lu_G.solve(k.asDiagonal() * r);
+        return -0.5 * logdet_G - 0.5 * r.dot(quad_v) - wt.sum() * std::log(phi);
     }
 
-    // Non-gaussian: GLM working weights w and loglik at the mode's eta.
+    // Non-gaussian: GLM working weights w and loglik at the mode's eta. A
+    // per-observation weight scales this row's log-density and its Fisher
+    // information alike, matching builtin_family_ll_double /
+    // builtin_family_eta_weights -- so the marginal describes the same weighted
+    // model the mode was found under.
     VectorXd eta = X * beta_hat + A_eff * x_hat + off;
     VectorXd w(n);
     double loglik = 0.0;
     if (family == "poisson") {
         for (int i = 0; i < n; ++i) {
             const double lam = std::exp(eta[i]);
-            w[i] = lam;
-            loglik += y[i] * eta[i] - lam - std::lgamma(y[i] + 1.0);
+            w[i] = wt[i] * lam;
+            loglik += wt[i] * (y[i] * eta[i] - lam - std::lgamma(y[i] + 1.0));
         }
     } else if (family == "binomial") {
         for (int i = 0; i < n; ++i) {
             const double pi_ = 1.0 / (1.0 + std::exp(-eta[i]));
             const double nt  = static_cast<double>(n_trials[i]);
-            w[i] = nt * pi_ * (1.0 - pi_);
-            loglik += R::lchoose(nt, y[i]) + y[i] * std::log(pi_)
-                    + (nt - y[i]) * std::log1p(-pi_);
+            w[i] = wt[i] * nt * pi_ * (1.0 - pi_);
+            loglik += wt[i] * (R::lchoose(nt, y[i]) + y[i] * std::log(pi_)
+                             + (nt - y[i]) * std::log1p(-pi_));
         }
     } else {
         Rcpp::stop("Fractional-nu nested SPDE integration supports family in "
