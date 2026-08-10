@@ -161,3 +161,56 @@ test_that("the nested-Laplace NNGP kernel reads three coordinate columns", {
   # which is exactly the quantity that was reading out of bounds.
   expect_false(identical(fit_lm(cbind(co2, runif(n))), base))
 })
+
+test_that("the neighbour graph reads the same dimension the covariance does", {
+  # gcol33/tulpa#391. gcol33/tulpa#389 made the neighbour COVARIANCE read every
+  # coordinate column; `compute_nngp_neighbors()` still selected neighbours over
+  # the first two, so on anything wider than 2 the selection and the covariance
+  # would have been computed under different metrics -- and 1-D could not build
+  # a graph at all, which is what put the dimension-general kernels out of reach
+  # from the front door.
+  set.seed(3L); n <- 40L
+  co2 <- cbind(runif(n), runif(n))
+  g   <- compute_nngp_neighbors(co2, 5L)
+
+  # The 2-D path is the shipped one and must not have moved. Exact, not
+  # toleranced: the generalisation reassociates a sum of two squares and nothing
+  # else, so any difference at all would be a change of behaviour.
+  o_idx <- order(co2[, 1], co2[, 2])
+  cs    <- co2[o_idx, , drop = FALSE]
+  ref_d <- sqrt((cs[1:9, 1] - cs[10, 1])^2 + (cs[1:9, 2] - cs[10, 2])^2)
+  expect_equal(sort(ref_d)[1:5], unname(g$nn_dist[10, ]), tolerance = 0)
+
+  # A constant extra column is the same domain, so it must give the same graph.
+  g3c <- compute_nngp_neighbors(cbind(co2, 7), 5L)
+  expect_identical(g3c$nn_idx, g$nn_idx)
+  expect_equal(g3c$nn_dist, g$nn_dist, tolerance = 0)
+  expect_equal(g3c$nn_neighbor_dist, g$nn_neighbor_dist, tolerance = 0)
+
+  # 1-D and 3-D build at all, which they did not before.
+  g1 <- compute_nngp_neighbors(matrix(sort(runif(n)), ncol = 1L), 5L)
+  g3 <- compute_nngp_neighbors(cbind(runif(n), runif(n), runif(n)), 5L)
+  expect_true(all(is.finite(g1$nn_neighbor_dist)))
+  expect_true(all(is.finite(g3$nn_neighbor_dist)))
+  # A third coordinate that VARIES has to change the graph, or it is being
+  # dropped rather than read.
+  expect_false(identical(compute_nngp_neighbors(cbind(co2, runif(n)), 5L)$nn_idx,
+                         g$nn_idx))
+})
+
+test_that("each spatial door admits the dimension its storage can carry", {
+  # One parser (`.parse_coord_spec()`) behind three doors that used to hold
+  # three verbatim copies of it, with the arity as its one policy argument.
+  # NNGP reads any dimension; the HSGP basis and every sampler spec are 2-D by
+  # storage layout, so they refuse rather than truncate.
+  expect_s3_class(spatial_gp(~x, nn = 5), "tulpa_gp")
+  expect_s3_class(spatial_gp(~x + y + z, nn = 5), "tulpa_gp")
+  expect_s3_class(spatial_gp(c("a", "b", "c"), nn = 5), "tulpa_gp")
+  expect_error(spatial_gp(~x + y + z, approx = "hsgp"), "exactly 2")
+  expect_error(spatial_gp(~x + y + z, approx = "hsgp"), "NNGP approximation")
+  expect_error(spatial_svc(~x + y + z), "exactly 2")
+  expect_error(spatial_multiscale(~x + y + z), "exactly 2")
+  # A spec that names no coordinate at all is still refused.
+  expect_error(spatial_gp(3), "must be a formula")
+  expect_error(spatial_gp(~1), "at least one coordinate")
+})

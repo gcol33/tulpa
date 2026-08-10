@@ -59,19 +59,7 @@ spatial_svc <- function(coords,
   approx <- match.arg(approx)
   parameterization <- match.arg(parameterization)
 
-  # Parse coordinate specification
-  if (inherits(coords, "formula")) {
-    coord_vars <- all.vars(coords)
-    if (length(coord_vars) != 2) {
-      stop("`coords` formula must specify exactly 2 coordinate variables",
-           call. = FALSE)
-    }
-  } else if (is.character(coords) && length(coords) == 2) {
-    coord_vars <- coords
-  } else {
-    stop("`coords` must be a formula (~ lon + lat) or character vector of length 2",
-         call. = FALSE)
-  }
+  coord_vars <- .parse_coord_spec(coords, "svc()")
 
   # Parse terms specification
   if (inherits(terms, "formula")) {
@@ -299,10 +287,15 @@ validate_svc <- function(svc, data, X) {
 #' @keywords internal
 compute_nngp_neighbors <- function(coords, k) {
   N <- nrow(coords)
+  d <- ncol(coords)
 
   # Order observations lexicographically by coordinate (a valid NNGP ordering
-  # that improves conditioning over the raw input order).
-  order_idx <- order(coords[, 1], coords[, 2])
+  # that improves conditioning over the raw input order), over however many
+  # coordinate columns there are. The neighbour SELECTION here and the neighbour
+  # COVARIANCE the kernels build from it have to read the same metric, and the
+  # kernels read every column since gcol33/tulpa#389; a selection pinned to two
+  # would order by a projection of the domain the covariance does not use.
+  order_idx <- do.call(order, lapply(seq_len(d), function(j) coords[, j]))
 
   # Reorder coordinates
   coords_ordered <- coords[order_idx, , drop = FALSE]
@@ -322,10 +315,8 @@ compute_nngp_neighbors <- function(coords, k) {
 
     if (n_candidates > 0) {
       # Compute distances to all previous observations
-      dists <- sqrt(
-        (coords_ordered[1:(i-1), 1] - coords_ordered[i, 1])^2 +
-        (coords_ordered[1:(i-1), 2] - coords_ordered[i, 2])^2
-      )
+      dists <- .coord_dist_to(coords_ordered[1:(i-1), , drop = FALSE],
+                              coords_ordered[i, ])
 
       # Find k nearest
       if (length(dists) <= k) {
@@ -343,18 +334,10 @@ compute_nngp_neighbors <- function(coords, k) {
       if (n_neighbors > 1) {
         neighbor_indices <- nn_idx[i, 1:n_neighbors]
         neighbor_coords <- coords_ordered[neighbor_indices, , drop = FALSE]
-        for (j1 in 1:n_neighbors) {
-          for (j2 in 1:n_neighbors) {
-            if (j1 == j2) {
-              nn_neighbor_dist[i, j1, j2] <- 0
-            } else {
-              nn_neighbor_dist[i, j1, j2] <- sqrt(
-                (neighbor_coords[j1, 1] - neighbor_coords[j2, 1])^2 +
-                (neighbor_coords[j1, 2] - neighbor_coords[j2, 2])^2
-              )
-            }
-          }
-        }
+        # The whole pairwise block at once, over every coordinate column. The
+        # diagonal is exactly 0 by construction rather than by a special case.
+        nn_neighbor_dist[i, seq_len(n_neighbors), seq_len(n_neighbors)] <-
+          as.matrix(stats::dist(neighbor_coords))
       }
     }
   }

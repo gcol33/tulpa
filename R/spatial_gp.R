@@ -5,8 +5,13 @@
 #' nearest-neighbour GP (NNGP) for scalability. Captures smooth spatial
 #' variation from point-referenced coordinates.
 #'
-#' @param coords A formula (`~ lon + lat`) or character vector of length 2
-#'   naming the two coordinate variables in the data.
+#' @param coords A formula (`~ lon + lat`) or character vector naming the
+#'   coordinate variables in the data. With `approx = "nngp"` the coordinate
+#'   DIMENSION is however many are named: two for a map, one for a transect or
+#'   a depth profile, three for a depth-resolved domain. The neighbour graph
+#'   and the neighbour covariance both read every column (gcol33/tulpa#389,
+#'   gcol33/tulpa#391). `approx = "hsgp"` takes exactly two, and so does any
+#'   sampler mode, because both store coordinates at a fixed 2-D stride.
 #' @param approx GP approximation: `"nngp"` (default, a nearest-neighbour GP with
 #'   the `cov` / `nu` / `nn` / `solver` arguments) or `"hsgp"` (a Hilbert-space
 #'   basis GP with `m` functions per dimension and boundary factor `c`).
@@ -82,24 +87,19 @@ if (solver == "gpu" && !cpp_gpu_available()) {
     solver <- "pcg"
   }
 
-  # Parse coordinate specification
-  if (inherits(coords, "formula")) {
-    coord_vars <- all.vars(coords)
-    if (length(coord_vars) != 2) {
-      stop("`coords` formula must specify exactly 2 coordinate variables",
-           call. = FALSE)
-    }
-  } else if (is.character(coords) && length(coords) == 2) {
-    coord_vars <- coords
-  } else {
-    stop("`coords` must be a formula (~ lon + lat) or character vector of length 2",
-         call. = FALSE)
-  }
+  coord_vars <- .parse_coord_spec(coords, "gp()", allow_nd = TRUE)
 
   # Hilbert-space approximation: a basis-function GP with `m` functions per
   # dimension and boundary factor `c` (the NNGP cov/nu/nn/solver args do not
   # apply). Returns a tulpa_hsgp spec.
   if (approx == "hsgp") {
+    # The Hilbert-space basis is assembled on a 2-D domain and stored at a fixed
+    # 2-D stride, so unlike the NNGP branch it cannot carry another dimension.
+    if (length(coord_vars) != 2L) {
+      stop("gp(approx = \"hsgp\") requires exactly 2 coordinate variables ",
+           "(x, y); got ", length(coord_vars), ". The NNGP approximation ",
+           "accepts any number.", call. = FALSE)
+    }
     if (!is.numeric(m) || length(m) != 1 || m < 3 || m > 50) {
       stop("`m` must be an integer between 3 and 50", call. = FALSE)
     }
@@ -389,19 +389,7 @@ spatial_multiscale <- function(coords,
   cov <- match.arg(cov)
   sampler <- match.arg(sampler)
 
-  # Parse coordinate specification
-  if (inherits(coords, "formula")) {
-    coord_vars <- all.vars(coords)
-    if (length(coord_vars) != 2) {
-      stop("`coords` formula must specify exactly 2 coordinate variables",
-           call. = FALSE)
-    }
-  } else if (is.character(coords) && length(coords) == 2) {
-    coord_vars <- coords
-  } else {
-    stop("`coords` must be a formula (~ lon + lat) or character vector of length 2",
-         call. = FALSE)
-  }
+  coord_vars <- .parse_coord_spec(coords, "multiscale()")
 
   # Validate scales
   if (length(scales) != 2) {
@@ -536,11 +524,11 @@ validate_gp <- function(gp, data) {
     }
   }
 
-  # Extract coordinates
-  coords <- cbind(
-    data[[gp$coord_vars[1]]],
-    data[[gp$coord_vars[2]]]
-  )
+  # Extract coordinates over however many were named. The NNGP/GP kernels and
+  # the neighbour construction both read every coordinate column
+  # (gcol33/tulpa#389), so the extraction must not decide the dimension either.
+  coords <- as.matrix(data[, gp$coord_vars, drop = FALSE])
+  storage.mode(coords) <- "double"
 
   # Check for missing coordinates
   if (any(is.na(coords))) {
@@ -553,7 +541,8 @@ validate_gp <- function(gp, data) {
   }
 
   # Detect unique coordinates (NNGP requires unique locations)
-  coord_key <- paste(coords[, 1], coords[, 2], sep = ",")
+  coord_key <- do.call(paste, c(
+    lapply(seq_len(ncol(coords)), function(j) coords[, j]), list(sep = ",")))
   unique_keys <- unique(coord_key)
   obs_to_loc <- match(coord_key, unique_keys)
   unique_coords <- coords[match(unique_keys, coord_key), , drop = FALSE]

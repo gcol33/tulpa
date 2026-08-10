@@ -21,8 +21,13 @@ spatial_gp(
 )
 }
 \arguments{
-\item{coords}{A formula (\code{~ lon + lat}) or character vector of length 2
-naming the two coordinate variables in the data.}
+\item{coords}{A formula (\code{~ lon + lat}) or character vector naming the
+coordinate variables in the data. With \code{approx = "nngp"} the coordinate
+DIMENSION is however many are named: two for a map, one for a transect or
+a depth profile, three for a depth-resolved domain. The neighbour graph
+and the neighbour covariance both read every column (gcol33/tulpa#389,
+gcol33/tulpa#391). \code{approx = "hsgp"} takes exactly two, and so does any
+sampler mode, because both store coordinates at a fixed 2-D stride.}
 
 \item{approx}{GP approximation: \code{"nngp"} (default, a nearest-neighbour GP with
 the \code{cov} / \code{nu} / \code{nn} / \code{solver} arguments) or \code{"hsgp"} (a Hilbert-space

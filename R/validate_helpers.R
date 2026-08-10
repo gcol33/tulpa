@@ -28,6 +28,59 @@ assert_columns_exist <- function(vars, data, role = "Required") {
   invisible(TRUE)
 }
 
+#' Parse a coordinate specification into column names.
+#'
+#' The single body behind `spatial_gp()`, `spatial_multiscale()` and
+#' `spatial_svc()`, which carried three verbatim copies of it.
+#'
+#' `allow_nd` is the arity policy, and it differs by what the spec ends up in
+#' rather than by taste. The nested-Laplace NNGP/GP kernels read every
+#' coordinate column (gcol33/tulpa#389) and the neighbour construction now
+#' matches them, so a 1-D domain -- a transect, a depth profile -- and a 3-D one
+#' are real models there. The HSGP basis and every SAMPLER spec store
+#' coordinates at a fixed 2-D stride and cannot represent anything else.
+#'
+#' @param coords A formula (`~ lon + lat`) or a character vector of column names.
+#' @param what What to name in the error, e.g. `"gp()"`.
+#' @param allow_nd If `TRUE`, any dimension `>= 1`; if `FALSE`, exactly 2.
+#' @keywords internal
+#' @noRd
+.parse_coord_spec <- function(coords, what, allow_nd = FALSE) {
+  if (inherits(coords, "formula")) {
+    coord_vars <- all.vars(coords)
+  } else if (is.character(coords) && length(coords) >= 1L) {
+    coord_vars <- coords
+  } else {
+    stop(what, ": `coords` must be a formula (e.g. ~ lon + lat) or a character ",
+         "vector of coordinate column names.", call. = FALSE)
+  }
+  if (!length(coord_vars)) {
+    stop(what, " requires at least one coordinate variable.", call. = FALSE)
+  }
+  if (!allow_nd && length(coord_vars) != 2L) {
+    stop(what, " requires exactly 2 coordinate variables (x, y); got ",
+         length(coord_vars), ".", call. = FALSE)
+  }
+  coord_vars
+}
+
+#' Euclidean distance from every row of a coordinate matrix to one point.
+#'
+#' Over every column the matrix carries, so the coordinate dimension is the
+#' caller's. The neighbour SELECTION this serves and the neighbour COVARIANCE
+#' the kernels build from it read the same metric (gcol33/tulpa#389).
+#'
+#' @param mat Coordinate matrix `[n x d]`.
+#' @param pt Length-`d` coordinate.
+#' @keywords internal
+#' @noRd
+.coord_dist_to <- function(mat, pt) {
+  # `rep(pt, each = nrow(mat))` lays the point out column-major, which is the
+  # layout `mat` already has, so this is one vectorised subtraction rather than
+  # a sweep.
+  sqrt(rowSums((mat - rep(as.numeric(pt), each = nrow(mat)))^2))
+}
+
 #' Strip a coordinate matrix's attributes without changing its shape.
 #'
 #' A coordinate matrix reaches C++ as a plain numeric matrix, so `scale()`'s

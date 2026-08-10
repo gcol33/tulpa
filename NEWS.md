@@ -1,5 +1,31 @@
 # tulpa NEWS
 
+## 0.0.191
+
+* **`gp(approx = "nngp")` takes the coordinate dimension you give it**
+  (gcol33/tulpa#391). 0.0.190 made the NNGP neighbour COVARIANCE read every
+  coordinate column; `compute_nngp_neighbors()` still selected neighbours over
+  the first two, so the selection and the covariance would have used different
+  metrics on anything wider, and a 1-D domain could not build a graph at all --
+  which put the dimension-general kernels out of reach from the front door. The
+  ordering, the candidate distances and the cached neighbour-pair block are all
+  read over `ncol(coords)` now, and the pair block comes from one `dist()` call
+  rather than a hand-rolled double loop. So a transect, a depth profile or a
+  time axis is a 1-D NNGP, and a depth-resolved domain is a 3-D one.
+
+  The 2-D path is unchanged to the bit: the same neighbour indices and
+  distances, asserted at `tolerance = 0` rather than approximately, and a
+  CONSTANT extra column reproduces the 2-D graph exactly.
+
+* **One coordinate-spec parser behind the three spatial doors.**
+  `spatial_gp()`, `spatial_multiscale()` and `spatial_svc()` carried three
+  verbatim copies of the same formula/character parsing block.
+  `.parse_coord_spec()` is now the single body, with the arity as its one policy
+  argument -- and the policy is decided by what the spec ends up in rather than
+  by taste. NNGP reads any dimension `>= 1`; `approx = "hsgp"` and every sampler
+  mode take exactly 2, because both store coordinates at a fixed 2-D stride, and
+  they say so with the dimension they were given.
+
 ## 0.0.190
 
 * **An NNGP fit is a function of its data again: the neighbour covariance was
