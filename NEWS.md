@@ -1,5 +1,40 @@
 # tulpa NEWS
 
+## 0.0.194
+
+* **CUDA is used when a device is available, and there is now exactly one
+  definition of the batched-CUDA backend** (gcol33/tulpa#396).
+  `cuda_batched_cholesky` and its siblings were defined TWICE, differently:
+  `gpu_backend.h` compiled stubs returning `FALSE` in the `#else` branch of
+  `#ifdef TULPA_ENABLE_CUDA` -- which neither `Makevars` ever defined -- while
+  `gpu_nngp_laplace.h` included `gpu_cuda.h` directly and compiled the real
+  ones. Two `inline` definitions of the same entity across translation units is
+  an ODR violation: the linker keeps one COMDAT and discards the rest, so
+  whether CUDA ran at all was decided by link order rather than by any switch,
+  and nothing in the package could report which had been built.
+
+  `gpu_cuda.h` is now included from exactly one place, and the NNGP kernels
+  reach it through `gpu_backend.h` like everything else. Compiling it in needs
+  no CUDA SDK at build time and no GPU at run time: the driver, cuBLAS and
+  cuSOLVER entry points resolve dynamically and every entry returns `FALSE`
+  when absent, which is what makes "use CUDA if available" expressible as a
+  default. `TULPA_DISABLE_CUDA` builds the stubs instead, and that is now a
+  whole-program choice.
+
+  `cpp_gpu_backend_kind()` reports `"cuda"` or `"stub"`, so which
+  implementation was compiled is observable rather than inferred -- a silent
+  either/or is what let this sit. It is deliberately separate from
+  `cpp_gpu_available()`, which asks whether a usable device is present at run
+  time.
+
+  Two closed investigations should be re-read in this light: gcol33/tulpa#283
+  fixed a column-major/row-major bug in this path, and gcol33/tulpa#389 ruled
+  the GPU dispatch out as a cause -- a conclusion consistent with the stub
+  having won the link. The per-matrix batch verification added in 0.0.192
+  (gcol33/tulpa#392) is what now guards the path on machines where it does run,
+  and the gcol33/tulpa#389 determinism arbiter passes with the CUDA backend
+  live on a device-equipped machine.
+
 ## 0.0.193
 
 * **`LatentBlock::d_fac` is read through one accessor that carries its

@@ -6,7 +6,7 @@
 #ifndef TULPA_GPU_NNGP_LAPLACE_H
 #define TULPA_GPU_NNGP_LAPLACE_H
 
-#include "gpu_cuda.h"
+#include "gpu_backend.h"  // single entry point; it owns the CUDA/stub choice
 #include "linalg_fast.h"  // shared small-dense Cholesky / NNGP solve core
 #include <Rcpp.h>
 #include <algorithm>

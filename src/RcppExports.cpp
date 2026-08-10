@@ -614,6 +614,16 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_gpu_backend_kind
+std::string cpp_gpu_backend_kind();
+RcppExport SEXP _tulpa_cpp_gpu_backend_kind() {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    rcpp_result_gen = Rcpp::wrap(cpp_gpu_backend_kind());
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_gpu_info
 List cpp_gpu_info();
 RcppExport SEXP _tulpa_cpp_gpu_info() {
@@ -4201,6 +4211,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_test_laplace_gaussian", (DL_FUNC) &_tulpa_cpp_test_laplace_gaussian, 3},
     {"_tulpa_cpp_gp_field_predict", (DL_FUNC) &_tulpa_cpp_gp_field_predict, 8},
     {"_tulpa_cpp_gpu_available", (DL_FUNC) &_tulpa_cpp_gpu_available, 0},
+    {"_tulpa_cpp_gpu_backend_kind", (DL_FUNC) &_tulpa_cpp_gpu_backend_kind, 0},
     {"_tulpa_cpp_gpu_info", (DL_FUNC) &_tulpa_cpp_gpu_info, 0},
     {"_tulpa_cpp_get_max_threads", (DL_FUNC) &_tulpa_cpp_get_max_threads, 0},
     {"_tulpa_cpp_total_ram_bytes", (DL_FUNC) &_tulpa_cpp_total_ram_bytes, 0},

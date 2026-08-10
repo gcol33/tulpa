@@ -150,13 +150,35 @@ inline GPUInfo get_gpu_info() {
 
 }  // namespace tulpa_gpu
 
-// CUDA implementation is opt-in via TULPA_ENABLE_CUDA define
-// This avoids potential load-time crashes on systems with partial CUDA installations
-#ifdef TULPA_ENABLE_CUDA
+// The CUDA implementation is compiled in by DEFAULT, and there is exactly ONE
+// definition of it in the program (gcol33/tulpa#396).
+//
+// It used to be opt-in behind TULPA_ENABLE_CUDA, which neither Makevars ever
+// defined -- so this header's includers compiled the STUBS below, while
+// gpu_nngp_laplace.h included gpu_cuda.h DIRECTLY and compiled the real ones.
+// Two different definitions of the same `inline` function across translation
+// units is an ODR violation: the linker keeps one COMDAT and discards the rest,
+// so whether CUDA ran at all was decided by link order rather than by any
+// switch, and nothing in the package could report which had been built.
+//
+// Compiling it in does NOT require a CUDA SDK at build time or a GPU at run
+// time: gpu_cuda.h resolves the driver, cuBLAS and cuSOLVER entry points
+// dynamically and every entry returns false when they are absent, which is what
+// makes "use CUDA if available" expressible as a default at all. Define
+// TULPA_DISABLE_CUDA to build the stubs instead -- and that is now a
+// whole-program choice, because this is the only place the decision is made.
+#ifndef TULPA_DISABLE_CUDA
 #include "gpu_cuda.h"
-#else
-// Stub implementations when CUDA is disabled
 namespace tulpa_gpu {
+// Which implementation this program was built with. Exposed so the choice is
+// OBSERVABLE rather than inferred from behaviour -- a silent either/or is what
+// let the ODR violation sit unnoticed.
+inline const char* cuda_backend_kind() { return "cuda"; }
+}  // namespace tulpa_gpu
+#else
+// Stub implementations when CUDA is explicitly disabled
+namespace tulpa_gpu {
+inline const char* cuda_backend_kind() { return "stub"; }
 inline bool cuda_batched_cholesky(std::vector<std::vector<double>>& matrices, int k) {
   (void)matrices; (void)k;
   return false;  // CUDA not compiled in

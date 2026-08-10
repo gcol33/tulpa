@@ -173,6 +173,10 @@ cpp_gpu_available <- function() {
     .Call(`_tulpa_cpp_gpu_available`)
 }
 
+cpp_gpu_backend_kind <- function() {
+    .Call(`_tulpa_cpp_gpu_backend_kind`)
+}
+
 cpp_gpu_info <- function() {
     .Call(`_tulpa_cpp_gpu_info`)
 }
