@@ -409,10 +409,32 @@
     # SDs pass 3) return a NON-MONOTONE coverage response, and the reason is not
     # the cap: the reported bound lies outside the node range on ~89% of those
     # fits, identically at 0.8 / 1.5 / 2 / 3, so what moves across that ladder
-    # is where the outer-cell extrapolation lands. Scoring the cap itself needs
-    # a fixture whose posterior the 5-node axis can CONTAIN, which makes it a
-    # question about this ceiling together with `span` and `n_pts`
-    # (gcol33/tulpa#390).
+    # is where the outer-cell extrapolation lands.
+    #
+    # SETTLED at gcol33/tulpa#390, and the fixture did not have to be rebuilt --
+    # the LEVEL was the problem. Over 48 (cap, span, n_pts, clamp policy) rungs
+    # on two ceiling-reaching fixtures at 200 seeds, the reported bound leaves
+    # the node range on 56-90% of fits at nominal 0.95 at EVERY setting, and on
+    # 0% at nominal 0.50. So 0.50 is the level whose bound the design actually
+    # supports, and it is the one to score this on; 0.95 measures the `extend`
+    # rule. At 0.50:
+    #
+    #   * at `n_pts = 9` the cap is EXACTLY inert -- 1.5, 3 and 6 give identical
+    #     coverage to three decimals in 7 of 8 (fixture, policy, span) cells;
+    #   * at the shipped `n_pts = 5`, 3 is nearer nominal than 1.5 at
+    #     `span = 4` (0.450 / 0.415 against 0.370) and equal at `span = 2.5`,
+    #     while 6 over-covers on a doubled width (0.520 at width 1.264 against
+    #     3's 0.450 at 0.790);
+    #   * under the SHIPPED `sd_clamp_policy = "decline"` a lower ceiling is not
+    #     free: dropping to 1.5 abandons the placement on 32-39% of fits
+    #     (recentred 0.875 -> 0.680 and 0.835 -> 0.615) and buys nothing at the
+    #     level that measures it.
+    #
+    # So 3 is kept on evidence rather than inertia, and `span` / `n_pts` are
+    # kept with it. What the sweep DID find is that the outer-cell `"extend"`
+    # read, not this cap, is what a diffuse axis's 95% bound is governed by --
+    # recorded per axis on every fit as `theta_ci_outside_nodes`.
+    # Evidence: `dev_notes/issue390/RESULTS390.md`.
     #
     # The earlier reading that the ceiling produces 95% widths in the hundreds
     # came from the one row that reaches it, `nngp_120`, whose fits are not

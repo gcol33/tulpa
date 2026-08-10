@@ -1,5 +1,34 @@
 # tulpa NEWS
 
+## 0.0.195
+
+* **A reported hyperparameter bound that left the node range now says so**
+  (gcol33/tulpa#390). An endpoint past the outermost NODE is produced by the
+  `outside` rule -- `extend` mirrors a half-cell beyond the outer coordinate --
+  so it is an extrapolation rather than a bound the design supports.
+  `theta_ci_outside_nodes` records it per axis (`"lower"` / `"upper"` /
+  `"both"` / `NA`), the same rule that makes a declined placement say so
+  (gcol33/tulpa#293). Recorded rather than corrected: the two used to be
+  indistinguishable on the fit.
+
+* **The recentred axis's mode-SD ceiling is settled: `max_sd_u = 3` is kept, on
+  evidence.** gcol33/tulpa#387 could not score its VALUE because every ladder
+  came back flat or non-monotone. The reason was the LEVEL, not the fixture.
+  Over 48 (cap, span, node-count, clamp-policy) rungs on two ceiling-reaching
+  fixtures at 200 seeds, the reported bound leaves the node range on 56-90% of
+  fits at nominal 0.95 at EVERY setting and on 0% at nominal 0.50 -- so 0.50 is
+  the level whose bound the design supports, and 0.95 is where the earlier
+  ladders were measuring the `extend` rule instead.
+
+  At nominal 0.50: the cap is EXACTLY inert at nine nodes (1.5, 3 and 6 give
+  identical coverage to three decimals in 7 of 8 cells); at the shipped five
+  nodes, 3 is nearer nominal than 1.5 at `span = 4` (0.450 / 0.415 against
+  0.370) and ties at `span = 2.5`; and 6 reaches 0.520 only on a doubled width.
+  Under the shipped `sd_clamp_policy = "decline"` a lower ceiling also is not
+  free -- dropping to 1.5 abandons the placement on 32-39% of fits. `span` and
+  `n_pts` are kept with it: nine nodes moves 50% coverage FURTHER from nominal
+  while costing proportionally more inner solves.
+
 ## 0.0.194
 
 * **CUDA is used when a device is available, and there is now exactly one

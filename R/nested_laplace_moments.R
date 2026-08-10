@@ -1088,7 +1088,8 @@
     empty_c <- setNames(character(0), character(0))
     return(list(median = empty, ci_lo = empty, ci_hi = empty,
                 within = empty_c, within_declined = empty_c,
-                edge_coord = empty_c, edge_declined = empty_c))
+                edge_coord = empty_c, edge_declined = empty_c,
+                outside_nodes = empty_c))
   }
   nms <- colnames(tg) %||% paste0("V", seq_len(ncol(tg)))
   n_ax <- length(nms)
@@ -1099,6 +1100,17 @@
   wcd <- setNames(rep(NA_character_, n_ax), nms)
   ec  <- setNames(rep(NA_character_, n_ax), nms)
   ecd <- setNames(rep(NA_character_, n_ax), nms)
+  # Did the reported bound leave the axis the grid was actually laid on?
+  # An endpoint past the outermost NODE is produced by the `outside` rule
+  # (`extend` mirrors a half-cell beyond it), so it is an extrapolation rather
+  # than a bound the design supports -- and on a diffuse axis that is the common
+  # case, not the exception: measured over 48 (cap, span, node-count, policy)
+  # rungs on two fixtures the 95% bound sits outside the nodes on 56% to 90% of
+  # fits at EVERY setting, while the 50% bound never does (gcol33/tulpa#390).
+  # Recorded rather than corrected, and per axis, because which it is changes
+  # what the number means: the same #293 rule that makes a declined placement
+  # say so.
+  onn <- setNames(rep(NA_character_, n_ax), nms)
   if (is.null(refining)) refining <- rep("", nrow(tg))
   for (j in seq_len(n_ax)) {
     ax    <- nms[j]
@@ -1132,10 +1144,20 @@
     wcd[j] <- rd$declined
     ec[j]  <- rd$edge_coord    %||% NA_character_
     ecd[j] <- rd$edge_declined %||% NA_character_
+    # Absolute tolerance scaled by the axis's own extent, not a multiplicative
+    # one: an axis whose support straddles zero (a correlation) has no scale to
+    # multiply by.
+    rng <- range(as.numeric(tg[use, j]))
+    tol <- 1e-9 * max(abs(rng), diff(rng), 1)
+    below <- is.finite(lo[j]) && lo[j] < rng[1L] - tol
+    above <- is.finite(hi[j]) && hi[j] > rng[2L] + tol
+    onn[j] <- if (below && above) "both" else if (below) "lower" else
+              if (above) "upper" else NA_character_
   }
   list(median = med, ci_lo = lo, ci_hi = hi,
        within = wc, within_declined = wcd,
-       edge_coord = ec, edge_declined = ecd)
+       edge_coord = ec, edge_declined = ecd,
+       outside_nodes = onn)
 }
 
 # The RESOLUTION of each outer-grid axis: its cell width `h`, the posterior SD
@@ -1221,6 +1243,7 @@
     res$theta_interval_design_mass %||% prov$design_mass
   res$theta_within_cell          <- qs$within
   res$theta_within_cell_declined <- qs$within_declined
+  res$theta_ci_outside_nodes     <- qs$outside_nodes
   res$theta_cell_edge_coord      <- qs$edge_coord
   res$theta_cell_edge_declined   <- qs$edge_declined
   if (identical(res$theta_interval_read, "density")) {

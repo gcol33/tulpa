@@ -460,3 +460,85 @@ test_that("the placement record is read back, not merely stored", {
     expect_null(.tulpa_grid_placement_note(quiet))
     expect_null(.tulpa_grid_placement(list()))
 })
+
+test_that("a reported bound that left the node range says so", {
+  # gcol33/tulpa#390. An endpoint past the outermost NODE is produced by the
+  # `outside` rule -- `extend` mirrors a half-cell beyond the outer coordinate
+  # -- so it is an extrapolation rather than a bound the design supports. On a
+  # diffuse axis that is the common case, not the exception, and it used to be
+  # indistinguishable on the fit from a bound the nodes carry.
+  #
+  # Measured over 48 (cap, span, node-count, policy) rungs on two fixtures at
+  # 200 seeds: the 95% bound sits outside the nodes on 56% to 90% of fits at
+  # EVERY setting, while the 50% bound never does. That is why the gcol33/tulpa
+  # #387 ceiling ladder could not discriminate -- it was scored at 95%, where
+  # what moves across the ladder is where the extrapolation LANDS.
+  #
+  # The three cases below are measured, not assumed: whether a given read
+  # leaves the nodes depends on where the WEIGHTS put the mass, not on the
+  # nominal level alone.
+  tg <- matrix(c(0.5, 1, 2, 4, 8), ncol = 1L, dimnames = list(NULL, "sigma"))
+  rd <- function(lm, p) .nl_axis_quantiles(tg, lm, probs = p,
+                                           domains = list("log"))
+
+  # Mass concentrated on the middle node: every level stays inside, even 99%.
+  peaked <- c(-6, -2, 0, -2, -6)
+  for (p in list(c(0.25, 0.5, 0.75), c(0.025, 0.5, 0.975), c(0.005, 0.5, 0.995))) {
+    q <- rd(peaked, p)
+    expect_true(is.na(q$outside_nodes[["sigma"]]))
+    expect_gte(q$ci_lo[["sigma"]], min(tg[, 1]))
+    expect_lte(q$ci_hi[["sigma"]], max(tg[, 1]))
+  }
+
+  # Uniform mass: the 50% read is still inside, the 95% read leaves on BOTH
+  # sides. Same grid, same rule -- the level is what changed.
+  flat <- rep(0, 5)
+  expect_true(is.na(rd(flat, c(0.25, 0.5, 0.75))$outside_nodes[["sigma"]]))
+  q <- rd(flat, c(0.025, 0.5, 0.975))
+  expect_identical(unname(q$outside_nodes[["sigma"]]), "both")
+  expect_lt(q$ci_lo[["sigma"]], min(tg[, 1]))
+  expect_gt(q$ci_hi[["sigma"]], max(tg[, 1]))
+
+  # Mass on the outer cells: one-sided is reported as the side it is, which is
+  # what makes the field more than a flag.
+  outer <- c(0, -3, -6, -3, 0)
+  q1 <- rd(outer, c(0.25, 0.5, 0.75))
+  expect_identical(unname(q1$outside_nodes[["sigma"]]), "upper")
+  expect_gt(q1$ci_hi[["sigma"]], max(tg[, 1]))
+  expect_gte(q1$ci_lo[["sigma"]], min(tg[, 1]))
+
+  # Named per axis and always present, so a reader never has to tell an absent
+  # field from an in-range one.
+  expect_identical(names(q$outside_nodes), "sigma")
+  expect_type(q$outside_nodes, "character")
+})
+
+test_that("the outside-nodes record travels on a fitted object", {
+  skip_on_cran()
+  # Both the single-block and the joint attach points go through
+  # `.nl_attach_interval_provenance()`, which is why there is one field rather
+  # than two.
+  set.seed(4L)
+  n_g <- 5L; per <- 4L
+  idx <- rep(seq_len(n_g), each = per)
+  y   <- rnorm(length(idx), 0.3 + rnorm(n_g, 0, 0.6)[idx], 0.5)
+  X   <- matrix(1, nrow = length(idx), ncol = 1L)
+  f <- suppressWarnings(tulpa_nested_laplace(
+    y = y, n_trials = rep(1L, length(idx)), X = X,
+    prior = list(list(type = "iid", obs_idx = idx, n_units = n_g)),
+    family = "gaussian", phi = 0.25,
+    control = list(max_iter = 100L, tol = 1e-8, n_threads = 1L,
+                   progress = FALSE, diagnose_k = FALSE, diagnose_skew = FALSE)))
+  expect_true("theta_ci_outside_nodes" %in% names(f))
+  expect_type(f$theta_ci_outside_nodes, "character")
+  expect_identical(names(f$theta_ci_outside_nodes), names(f$theta_ci_lo))
+  # Whatever it says has to agree with the grid the fit actually carries.
+  nodes <- sort(unique(as.numeric(as.matrix(f$theta_grid))))
+  for (a in names(f$theta_ci_lo)) {
+    below <- f$theta_ci_lo[[a]] < min(nodes) * (1 - 1e-8)
+    above <- f$theta_ci_hi[[a]] > max(nodes) * (1 + 1e-8)
+    want  <- if (below && above) "both" else if (below) "lower" else
+             if (above) "upper" else NA_character_
+    expect_identical(unname(f$theta_ci_outside_nodes[[a]]), want, info = a)
+  }
+})
