@@ -152,6 +152,43 @@ inline void batch_nngp_scatter(
             }
             if (!(diff <= 1e-8 * std::max(scale, 1e-12))) chol_ok = false;
         }
+        // The probe above compares ONE matrix against an exact CPU
+        // refactorization, which catches a whole-batch failure -- a layout
+        // convention, a call that did nothing. It cannot catch a PER-MATRIX one,
+        // and the call documents that it can fail partway (a per-matrix non-PD
+        // `info`, a copy-back that stops after some matrices have landed), so a
+        // probe at a fixed index accepts every failure that begins after it.
+        // The matrices also have different effective sizes -- `locs[b].n_nb` is
+        // smaller at the neighbour-poor first locations -- so the probe is not
+        // representative of the batch either.
+        //
+        // So EVERY matrix is checked against the factorization's own defining
+        // identity on the diagonal: `sum_k L[j][k]^2 == C[j][j]`, plus a
+        // positive pivot. That is O(n_nb^2) per matrix against the O(n_nb^3)
+        // the factorization itself costs, so full coverage stays an order below
+        // the work being verified (gcol33/tulpa#392).
+        if (chol_ok) {
+            for (int b = 0; b < batch_size && chol_ok; b++) {
+                const auto& L = C_mats[b];
+                const int nb = locs[b].n_nb;
+                for (int j = 0; j < nb; j++) {
+                    const double piv = L[j * nn + j];
+                    if (!(piv > 0.0) || !std::isfinite(piv)) { chol_ok = false; break; }
+                    double acc = 0.0;
+                    for (int k = 0; k <= j; k++) {
+                        const double v = L[j * nn + k];
+                        acc += v * v;
+                    }
+                    const double want = C_orig[b][j * nn + j];
+                    // The factorization adds a jitter floor to the pivot, so the
+                    // reconstruction can exceed the input by that much; the
+                    // check is on agreement, not on an exact identity.
+                    const double tol = 1e-8 * std::max(std::abs(want), 1e-12) +
+                                       8.0 * tulpa_linalg::kCholJitter;
+                    if (!(std::abs(acc - want) <= tol)) { chol_ok = false; break; }
+                }
+            }
+        }
         if (chol_ok) gpu_used = true;
         else C_mats.swap(C_orig);
     }

@@ -1,5 +1,23 @@
 # tulpa NEWS
 
+## 0.0.192
+
+* **Every factor in a batched NNGP Cholesky is verified, not one of them**
+  (gcol33/tulpa#392). `batch_nngp_scatter` hands the neighbour covariances to
+  `cuda_batched_cholesky()` once the batch reaches 50 and then checked the
+  result by refactorizing ONE matrix on the CPU and comparing. That catches a
+  whole-batch failure -- which is what it was written for, after a cuSOLVER
+  column-major factor was read row-major (gcol33/tulpa#283) -- but not a
+  per-matrix one, and the call documents that it can fail partway. A probe at a
+  fixed index accepts every failure beginning after it, and since the matrices
+  have different effective sizes it is not representative of the batch either.
+
+  Every matrix is now checked against the factorization's own defining identity
+  on the diagonal, `sum_k L[j][k]^2 == C[j][j]`, plus a positive finite pivot.
+  That is `O(n_nb^2)` per matrix against the `O(n_nb^3)` the factorization
+  costs, so full coverage sits an order below the work it verifies. The exact
+  one-matrix CPU cross-check stays alongside it as the layout check.
+
 ## 0.0.191
 
 * **`gp(approx = "nngp")` takes the coordinate dimension you give it**
