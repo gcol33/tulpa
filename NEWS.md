@@ -1,5 +1,54 @@
 # tulpa NEWS
 
+## 0.0.183
+
+* An EM soft label travels on `weights`, not on a fractional `y`
+  (gcol33/tulpa#383). `tulpa_em_laplace()`'s own zero-inflated-Poisson example
+  encoded the occupancy arm as `list(y = weights, ...)`, and the count-family
+  guard refused it -- the last `R CMD check --run-donttest` ERROR. The guard is
+  right and the encoding was wrong: the M-step maximizes the expected
+  complete-data log-likelihood, which for a Bernoulli latent is
+  `sum_i [w_i log p_i + (1 - w_i) log(1 - p_i)]`, a WEIGHTED Bernoulli
+  likelihood carrying no binomial coefficient. A fractional `y` asks instead for
+  the exact binomial density at a non-integer response, whose `lchoose(1, w)`
+  normalizer is neither zero nor free of `w` -- a different objective that
+  shares a maximizer only once that term is dropped. The channel for the right
+  one already existed: `BuiltinFamilyResponse::weights` scales each row's
+  log-density, score and Fisher information alike, so the encoding is two rows
+  per unit, `y = 1` at weight `w` and `y = 0` at weight `1 - w`. The example,
+  the `m_step_encode` contract and the block validator now say so, and a
+  fractional binomial `y` on an EM block errors naming the channel rather than
+  the density.
+
+* That claim is measured, not asserted (`test-em-laplace-recovery.R`). One
+  M-step's binomial arm reproduces `glm(family = binomial, weights = )` to
+  3.4e-07 and the `cbind(w, 1 - w)` form to the same figure, its `H_beta` is
+  the weighted Fisher information to 1.2e-12 relative, and the Poisson arm
+  agrees with its own `glm` to 2.5e-08 -- the residual in each case being the
+  engine's weak built-in fixed-effect ridge, which `glm` does not carry.
+  Zero-inflated-Poisson recovery over 12 seeds at n = 2000 returns
+  (0.796, -0.903, 1.197, 0.501) against truth (0.8, -0.9, 1.2, 0.5), and the
+  observed-data log-likelihood -- written out independently of the fit -- rises
+  monotonically across undamped EM iterations, worst decrease -2.6e-11 against
+  a total climb of 78.8. `test-em-laplace.R` mocks the fitter throughout, so
+  until now the driver had 20 structural tests and no recovery.
+
+* `tulpa_laplace(weights = )` is length-validated (gcol33/tulpa#384). The kernel
+  borrows the vector as a bare pointer indexed to `N`, so a short one was an
+  out-of-bounds read that returned the start vector as the mode with no error.
+  `.validate_submodel_block()` checks the same field on an EM block.
+
+* The EM occupancy block in `test-recovery-assembled.R` ran for the first time.
+  It carried the same fractional-`y` encoding, so the guard had made it
+  unrunnable since 0.0.30 and its premise -- that the raw EM leaves the
+  intercept biased and MI / Gibbs reduce that bias -- had never been measured.
+  Under the corrected encoding the raw M-step is already at the expected
+  complete-data maximum and there is no point bias to remove: median
+  `|b0 - truth|` is 0.0817 raw against 0.0863 under MI and 0.0856 under Gibbs.
+  What the corrections do add is the latent-state uncertainty the raw Laplace
+  conditions away, `V_between > 0` and `V_total > V_within`, and that is what
+  the block now asserts.
+
 ## 0.0.182
 
 * `sbc(experiment = "posterior")` reports the pooling premise from the guard's

@@ -42,7 +42,11 @@ binomial trial counts.
 length-matched to \code{y} when non-\code{NULL}.
 \item \code{phi} (numeric scalar, optional) -- dispersion forwarded to
 \code{\link[=tulpa_laplace]{tulpa_laplace()}} (used by \code{negbin}, \code{gamma}).
-\item \code{re_list}, \code{spatial}, \code{weights} (optional) -- forwarded as-is.
+\item \code{weights} (numeric, optional; length \code{length(y)}) -- per-observation
+likelihood weight, scaling that row's log-density, score and Fisher
+information. This is the channel a soft (fractional) latent label
+travels on; see the section below.
+\item \code{re_list}, \code{spatial} (optional) -- forwarded as-is.
 }}
 
 \item{spatial, re_list}{Not consumed at the driver level -- latent structure
@@ -137,11 +141,31 @@ This is an engine block, not a front door: model packages call it
 programmatically, so its tuning knobs (\code{max_iter}, \code{tol}, \code{damping})
 sit in the signature rather than in a \code{control} list.
 }
+\section{Soft latent labels go in \code{weights}, not in \code{y}}{
+
+The M-step maximizes the expected complete-data log-likelihood. For a
+Bernoulli latent \code{z_i} carrying E-step posterior weight \code{w_i} that is
+\deqn{Q = \sum_i [\, w_i \log p_i + (1 - w_i) \log (1 - p_i) \,],}
+a \strong{weighted Bernoulli} log-likelihood, which carries no binomial
+coefficient. Encode it as two rows per unit -- \code{y = 1} at weight \code{w_i} and
+\code{y = 0} at weight \code{1 - w_i}:
+\preformatted{list(y       = rep(c(1, 0), each = n),
+     X       = rbind(X, X),
+     weights = c(w, 1 - w),
+     family  = "binomial")}
+A fractional \code{y} on a binomial block is refused, and is not the same
+objective: it asks for the exact binomial density at a non-integer
+response, whose normalizer \code{lchoose(n, y)} is not zero there and depends on
+\code{w}. On the weighted encoding the block's \code{log_marginal} is the Laplace
+marginal of \code{Q}, an EM objective that increases across iterations.
+}
+
 \examples{
 \donttest{
-# Zero-inflated Poisson via EM: the E-step scores the posterior
-# probability that each zero is non-structural, the M-step encodes a
-# weighted binomial (occupancy) block and a Poisson (abundance) block.
+# Zero-inflated Poisson via EM: the E-step scores the posterior probability
+# that each zero is non-structural. Those are soft labels, so the occupancy
+# arm is the weighted Bernoulli above -- two rows per unit -- and the
+# abundance arm weights each count by the same w.
 set.seed(1)
 n <- 200
 z <- rbinom(n, 1, 0.7)
@@ -157,13 +181,15 @@ e_step <- function(fits, ...) {
 }
 m_step_encode <- function(weights, ...) {
   list(
-    occ   = list(y = weights, X = X, family = "binomial"),
+    occ   = list(y = rep(c(1, 0), each = n), X = rbind(X, X),
+                 weights = c(weights, 1 - weights), family = "binomial"),
     abund = list(y = y, X = X, family = "poisson", weights = weights)
   )
 }
 
 res <- tulpa_em_laplace(e_step, m_step_encode, verbose = FALSE)
 res$converged
-res$fits$abund$mode
+plogis(res$fits$occ$mode[1])    # P(non-structural), truth 0.7
+exp(res$fits$abund$mode[1])     # abundance mean, truth 4
 }
 }

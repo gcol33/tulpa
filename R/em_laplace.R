@@ -30,7 +30,17 @@
 #   - offset   numeric or NULL               (optional; absent treated as NULL)
 # Optional:
 #   - phi      numeric scalar (dispersion)
-#   - re_list, spatial, weights              (passthrough to tulpa_laplace)
+#   - weights  numeric, length(y)             (per-observation likelihood weight)
+#   - re_list, spatial                       (passthrough to tulpa_laplace)
+#
+# `weights` is the channel a soft (fractional) latent label travels on. The
+# M-step maximizes the expected complete-data log-likelihood, which for a
+# Bernoulli latent z_i with E-step posterior w_i is
+#   Q = sum_i [ w_i log p_i + (1 - w_i) log(1 - p_i) ],
+# a WEIGHTED Bernoulli log-likelihood carrying no binomial coefficient. It is
+# encoded as two rows per unit -- y = 1 at weight w_i and y = 0 at weight
+# 1 - w_i -- not as a fractional `y`, which is the exact binomial density at a
+# non-integer response and a different objective (lchoose(1, 0.5) is not zero).
 #
 # Errors are deliberately specific so model packages can debug without
 # stepping into the engine.
@@ -87,6 +97,38 @@
       !(is.numeric(block$n_trials) || is.integer(block$n_trials))) {
     stop(sprintf("%s: `n_trials` must be numeric or NULL", prefix),
          call. = FALSE)
+  }
+
+  # A fractional response on a count family is refused downstream by
+  # .validate_family_support(), whose message is about count densities in
+  # general. Soft latent labels are the reason an EM block reaches it, so name
+  # the channel that carries them here rather than leaving the caller to infer
+  # it from a density argument.
+  if (identical(.canonical_family(block$family), "binomial")) {
+    yf <- block$y[is.finite(block$y)]
+    if (length(yf) && any(yf != round(yf))) {
+      stop(sprintf(paste0(
+        "%s: `y` on a binomial block must be integer counts; got fractional ",
+        "values. Soft latent labels belong in `weights`, not in `y`: the ",
+        "M-step maximizes sum_i [w_i log p_i + (1 - w_i) log(1 - p_i)], which ",
+        "is a weighted Bernoulli likelihood -- encode it as two rows per unit, ",
+        "y = 1 at weight w and y = 0 at weight 1 - w. A fractional `y` is the ",
+        "exact binomial density at a non-integer response, a different ",
+        "objective. See ?tulpa_em_laplace."), prefix), call. = FALSE)
+    }
+  }
+
+  if (!is.null(block$weights)) {
+    if (!is.numeric(block$weights)) {
+      stop(sprintf("%s: `weights` must be numeric or NULL, got %s",
+                   prefix, class(block$weights)[1]),
+           call. = FALSE)
+    }
+    if (length(block$weights) != length(block$y)) {
+      stop(sprintf("%s: length(weights) (%d) != length(y) (%d)",
+                   prefix, length(block$weights), length(block$y)),
+           call. = FALSE)
+    }
   }
 
   if (!is.null(block$offset) && !is.numeric(block$offset)) {
@@ -377,7 +419,27 @@
 #'     length-matched to `y` when non-`NULL`.
 #'   * `phi` (numeric scalar, optional) -- dispersion forwarded to
 #'     [tulpa_laplace()] (used by `negbin`, `gamma`).
-#'   * `re_list`, `spatial`, `weights` (optional) -- forwarded as-is.
+#'   * `weights` (numeric, optional; length `length(y)`) -- per-observation
+#'     likelihood weight, scaling that row's log-density, score and Fisher
+#'     information. This is the channel a soft (fractional) latent label
+#'     travels on; see the section below.
+#'   * `re_list`, `spatial` (optional) -- forwarded as-is.
+#' @section Soft latent labels go in `weights`, not in `y`:
+#' The M-step maximizes the expected complete-data log-likelihood. For a
+#' Bernoulli latent `z_i` carrying E-step posterior weight `w_i` that is
+#' \deqn{Q = \sum_i [\, w_i \log p_i + (1 - w_i) \log (1 - p_i) \,],}
+#' a **weighted Bernoulli** log-likelihood, which carries no binomial
+#' coefficient. Encode it as two rows per unit -- `y = 1` at weight `w_i` and
+#' `y = 0` at weight `1 - w_i`:
+#' \preformatted{list(y       = rep(c(1, 0), each = n),
+#'      X       = rbind(X, X),
+#'      weights = c(w, 1 - w),
+#'      family  = "binomial")}
+#' A fractional `y` on a binomial block is refused, and is not the same
+#' objective: it asks for the exact binomial density at a non-integer
+#' response, whose normalizer `lchoose(n, y)` is not zero there and depends on
+#' `w`. On the weighted encoding the block's `log_marginal` is the Laplace
+#' marginal of `Q`, an EM objective that increases across iterations.
 #' @param spatial,re_list Not consumed at the driver level -- latent structure
 #'   is per-submodel, set as a `spatial` / `re_list` field on each block
 #'   `m_step_encode()` returns. Supplying either here is an error (rather than a
@@ -446,9 +508,10 @@
 #'
 #' @examples
 #' \donttest{
-#' # Zero-inflated Poisson via EM: the E-step scores the posterior
-#' # probability that each zero is non-structural, the M-step encodes a
-#' # weighted binomial (occupancy) block and a Poisson (abundance) block.
+#' # Zero-inflated Poisson via EM: the E-step scores the posterior probability
+#' # that each zero is non-structural. Those are soft labels, so the occupancy
+#' # arm is the weighted Bernoulli above -- two rows per unit -- and the
+#' # abundance arm weights each count by the same w.
 #' set.seed(1)
 #' n <- 200
 #' z <- rbinom(n, 1, 0.7)
@@ -464,14 +527,16 @@
 #' }
 #' m_step_encode <- function(weights, ...) {
 #'   list(
-#'     occ   = list(y = weights, X = X, family = "binomial"),
+#'     occ   = list(y = rep(c(1, 0), each = n), X = rbind(X, X),
+#'                  weights = c(weights, 1 - weights), family = "binomial"),
 #'     abund = list(y = y, X = X, family = "poisson", weights = weights)
 #'   )
 #' }
 #'
 #' res <- tulpa_em_laplace(e_step, m_step_encode, verbose = FALSE)
 #' res$converged
-#' res$fits$abund$mode
+#' plogis(res$fits$occ$mode[1])    # P(non-structural), truth 0.7
+#' exp(res$fits$abund$mode[1])     # abundance mean, truth 4
 #' }
 #' @export
 tulpa_em_laplace <- function(e_step, m_step_encode,

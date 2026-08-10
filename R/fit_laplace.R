@@ -179,6 +179,21 @@ tulpa_laplace <- function(y, n_trials, X,
   .validate_family_support(family, y, n_trials = n_trials,
                            zi = !is.null(X_zi))
 
+  # The kernel borrows `weights` as a bare pointer and indexes it to N, so a
+  # short vector is an out-of-bounds read that returns a silently wrong mode
+  # rather than failing.
+  if (!is.null(weights)) {
+    if (!is.numeric(weights) || length(weights) != n_obs) {
+      stop(sprintf(paste0(
+        "`weights` must be a numeric vector of length %d (one per ",
+        "observation); got %s of length %d."),
+        n_obs, class(weights)[1], length(weights)), call. = FALSE)
+    }
+    if (anyNA(weights) || any(!is.finite(weights)) || any(weights < 0)) {
+      stop("`weights` must be finite and non-negative.", call. = FALSE)
+    }
+  }
+
   if (is.null(n_trials)) n_trials <- rep(1L, n_obs)
 
   # The inner-layer probe and the subspace debias both read the live Cholesky
