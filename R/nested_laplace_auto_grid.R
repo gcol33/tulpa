@@ -716,7 +716,11 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 # no axis rails AND each is resolved to within `.NL_RECENTER$resolve_mult`
 # posterior SDs per node, so re-placing would buy nothing),
 # `"no_usable_curvature"` (the mode-Hessian the recenter needs was unavailable
-# or degenerate), `"auto_recenter_disabled"` (`control$auto_recenter = FALSE`,
+# or degenerate), `"sd_ceiling_unresolved"` / `"sd_floor_unresolved"` (the
+# stencil returned a curvature past one of the mode-SD bounds, so an axis laid
+# from it would be laid from a substituted spread rather than a measured one --
+# gcol33/tulpa#387; only under the declining clamp policies),
+# `"auto_recenter_disabled"` (`control$auto_recenter = FALSE`,
 # the way to hold ANY grid -- the engine's own default axis included -- exactly
 # where it is), `"grid_knobs_overridden"` (the spatiotemporal driver's
 # grid-construction knobs were set explicitly), `"refit_failed"` (the recentred
@@ -750,24 +754,93 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 # singular for the families that carry one (a BYM2 `rho` of exactly 0 or 1 is a
 # degenerate mixture), so a node that saturates to a boundary in double
 # precision is dropped rather than laid down; too few survivors declines.
-.nl_recenter_axis <- function(tag, mode_u, sd_u,
-                              n_pts    = .nl_recenter("n_pts"),
-                              span     = .nl_recenter("span"),
-                              min_sd_u = .nl_recenter("min_sd_u"),
-                              max_sd_u = .nl_recenter("max_sd_u")) {
+#
+# THE CLAMP IS NOT A MEASUREMENT (gcol33/tulpa#387). Whenever a bound binds, the
+# axis is laid from a number the engine substituted for a curvature the stencil
+# could not read, and the two cases are otherwise indistinguishable on the fit.
+# `.nl_recenter_sd_clamp()` is the one place either bound is applied, so what
+# the pass does about it is a policy (`.NL_RECENTER$sd_clamp_policy` /
+# `$sd_floor_policy`, `R/settings.R`) rather than a constant buried in a node
+# generator, and the state it returns is recorded on the fit.
+#
+# `ref_span_u` is the INCOMING axis's own span in the same coordinate, supplied
+# by callers that have it; the `"relative"` ceiling caps the re-placed span by
+# it, and falls back to the absolute ceiling where a caller has none.
+.nl_recenter_sd_clamp <- function(sd_u,
+                                  min_sd_u   = .nl_recenter("min_sd_u"),
+                                  max_sd_u   = .nl_recenter("max_sd_u"),
+                                  span       = .nl_recenter("span"),
+                                  ref_span_u = NULL,
+                                  ceiling    = .nl_recenter("sd_clamp_policy"),
+                                  floor      = .nl_recenter("sd_floor_policy")) {
+    if (length(sd_u) != 1L || !is.finite(sd_u) || sd_u <= 0) {
+        return(list(sd = NA_real_, sd_raw = NA_real_, clamp = NA_character_,
+                    reason = "no_usable_curvature"))
+    }
+    if (sd_u < min_sd_u) {
+        return(list(sd = if (identical(floor, "decline")) NA_real_ else min_sd_u,
+                    sd_raw = sd_u, clamp = "floor",
+                    reason = if (identical(floor, "decline"))
+                        "sd_floor_unresolved" else NULL))
+    }
+    if (sd_u <= max_sd_u) {
+        return(list(sd = sd_u, sd_raw = sd_u, clamp = "none", reason = NULL))
+    }
+    cap <- max_sd_u
+    if (identical(ceiling, "relative") && length(ref_span_u) == 1L &&
+        is.finite(ref_span_u) && ref_span_u > 0) {
+        cap <- min(max_sd_u, ref_span_u / (2 * span))
+    }
+    list(sd = if (identical(ceiling, "decline")) NA_real_ else max(cap, min_sd_u),
+         sd_raw = sd_u, clamp = "ceiling",
+         reason = if (identical(ceiling, "decline"))
+             "sd_ceiling_unresolved" else NULL)
+}
+
+# The node generator, reporting what it was laid from. `nodes` is NULL exactly
+# when the axis was not built, and `reason` then says why in the decline
+# vocabulary `.nl_decline_recenter()` records -- so a caller stamps the clamp's
+# own reason rather than folding it into `"no_usable_curvature"`, which is what
+# made a substituted spread and a measured one read alike.
+.nl_recenter_axis_full <- function(tag, mode_u, sd_u,
+                                   n_pts      = .nl_recenter("n_pts"),
+                                   span       = .nl_recenter("span"),
+                                   min_sd_u   = .nl_recenter("min_sd_u"),
+                                   max_sd_u   = .nl_recenter("max_sd_u"),
+                                   ref_span_u = NULL) {
+    bad <- function(reason, clamp = NA_character_, raw = NA_real_) {
+        list(nodes = NULL, sd_clamp = clamp, sd_used = NA_real_, sd_raw = raw,
+             reason = reason)
+    }
     if (length(tag) != 1L || is.na(tag) ||
-        !tag %in% c("log", "logit01", "identity")) return(NULL)
-    if (length(mode_u) != 1L || length(sd_u) != 1L) return(NULL)
-    if (!is.finite(mode_u) || !is.finite(sd_u) || sd_u <= 0) return(NULL)
-    sd_u  <- min(max(sd_u, min_sd_u), max_sd_u)
-    u_seq <- seq(mode_u - span * sd_u, mode_u + span * sd_u,
+        !tag %in% c("log", "logit01", "identity")) {
+        return(bad("no_usable_curvature"))
+    }
+    if (length(mode_u) != 1L || length(sd_u) != 1L) return(bad("no_usable_curvature"))
+    if (!is.finite(mode_u)) return(bad("no_usable_curvature"))
+    cl <- .nl_recenter_sd_clamp(sd_u, min_sd_u = min_sd_u, max_sd_u = max_sd_u,
+                                span = span, ref_span_u = ref_span_u)
+    if (!is.null(cl$reason)) return(bad(cl$reason, cl$clamp, cl$sd_raw))
+    u_seq <- seq(mode_u - span * cl$sd, mode_u + span * cl$sd,
                  length.out = as.integer(n_pts))
     nodes <- .joint_pareto_inv(tag, u_seq)$theta
     keep  <- is.finite(nodes)
     if (identical(tag, "logit01")) keep <- keep & nodes > 0 & nodes < 1
     nodes <- sort(unique(nodes[keep]))
-    if (length(nodes) < .nl_recenter("min_nodes")) return(NULL)
-    nodes
+    if (length(nodes) < .nl_recenter("min_nodes")) {
+        return(bad("no_usable_curvature", cl$clamp, cl$sd_raw))
+    }
+    list(nodes = nodes, sd_clamp = cl$clamp, sd_used = cl$sd,
+         sd_raw = cl$sd_raw, reason = NULL)
+}
+
+.nl_recenter_axis <- function(tag, mode_u, sd_u,
+                              n_pts    = .nl_recenter("n_pts"),
+                              span     = .nl_recenter("span"),
+                              min_sd_u = .nl_recenter("min_sd_u"),
+                              max_sd_u = .nl_recenter("max_sd_u")) {
+    .nl_recenter_axis_full(tag, mode_u, sd_u, n_pts = n_pts, span = span,
+                           min_sd_u = min_sd_u, max_sd_u = max_sd_u)$nodes
 }
 
 # The positive-scale case, kept as its own name because every existing caller
@@ -795,18 +868,50 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 # as `rho_car`, makes the whole proposal decline -- see
 # `.joint_pareto_axis_tags()` -- so a fit's `sigma` mode is only ever recentred
 # when EVERY axis in that fit's grid is guessable).
+# `ref_nodes` is the axis's incoming nodes in its OWN coordinates, when the
+# caller has them: the `"relative"` ceiling reads its span from them.
+.nl_axis_recenter_from_fit_full <- function(mode_u, cov_u, axis_tags, axis_names,
+                                            axis, n_pts = .nl_recenter("n_pts"),
+                                            span = .nl_recenter("span"),
+                                            block_index = NULL, n_blocks = 0L,
+                                            ref_nodes = NULL) {
+    bad <- function(reason = "no_usable_curvature") {
+        list(nodes = NULL, sd_clamp = NA_character_, sd_used = NA_real_,
+             sd_raw = NA_real_, reason = reason)
+    }
+    if (is.null(mode_u) || is.null(cov_u) || is.null(axis_names)) return(bad())
+    aliases <- .nl_axis_alias(axis, block_index, n_blocks)
+    j <- .nl_axis_index(axis_names, aliases, axis_tags)
+    if (is.na(j)) return(bad())
+    if (is.null(axis_tags) || !identical(axis_tags[j], "log")) return(bad())
+    if (!is.matrix(cov_u) || nrow(cov_u) < j || ncol(cov_u) < j) return(bad())
+    sd_u <- suppressWarnings(sqrt(cov_u[j, j]))
+    .nl_recenter_axis_full("log", mode_u[j], sd_u, n_pts = n_pts, span = span,
+                           ref_span_u = .nl_axis_span_u(ref_nodes, "log"))
+}
+
 .nl_axis_recenter_from_fit <- function(mode_u, cov_u, axis_tags, axis_names,
                                        axis, n_pts = .nl_recenter("n_pts"),
                                        span = .nl_recenter("span"),
                                        block_index = NULL, n_blocks = 0L) {
-    if (is.null(mode_u) || is.null(cov_u) || is.null(axis_names)) return(NULL)
-    aliases <- .nl_axis_alias(axis, block_index, n_blocks)
-    j <- .nl_axis_index(axis_names, aliases, axis_tags)
-    if (is.na(j)) return(NULL)
-    if (is.null(axis_tags) || !identical(axis_tags[j], "log")) return(NULL)
-    if (!is.matrix(cov_u) || nrow(cov_u) < j || ncol(cov_u) < j) return(NULL)
-    sd_u <- suppressWarnings(sqrt(cov_u[j, j]))
-    .nl_recenter_log_axis(mode_u[j], sd_u, n_pts = n_pts, span = span)
+    .nl_axis_recenter_from_fit_full(mode_u, cov_u, axis_tags, axis_names, axis,
+                                    n_pts = n_pts, span = span,
+                                    block_index = block_index,
+                                    n_blocks = n_blocks)$nodes
+}
+
+# The span an existing set of nodes covers in the unconstraining coordinate,
+# for the `"relative"` ceiling. NULL / unusable nodes give NA, which that
+# policy reads as "no reference span" and falls back to the absolute ceiling.
+.nl_axis_span_u <- function(nodes, tag) {
+    if (is.null(nodes) || length(tag) != 1L || is.na(tag)) return(NA_real_)
+    v <- suppressWarnings(as.numeric(nodes))
+    v <- v[is.finite(v)]
+    if (length(v) < 2L) return(NA_real_)
+    u <- suppressWarnings(as.numeric(.joint_pareto_fwd(tag, v)))
+    u <- u[is.finite(u)]
+    if (length(u) < 2L) return(NA_real_)
+    diff(range(u))
 }
 
 
@@ -872,20 +977,24 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
            identical(res$pareto_k_regime, "collapsed_edge") &&
            .nl_edge_axis_hit(res, "sigma")) {
         attempt <- attempt + 1L
-        new_axis <- .nl_axis_recenter_from_fit(
+        rc <- .nl_axis_recenter_from_fit_full(
             res$pareto_k_mode_u, res$pareto_k_cov_u,
-            res$pareto_k_axis_tags, res$pareto_k_axis_names, "sigma")
-        if (is.null(new_axis)) {
-            reason <- "no_usable_curvature"
+            res$pareto_k_axis_tags, res$pareto_k_axis_names, "sigma",
+            ref_nodes = .nl_axis_ref_nodes(res, "sigma"))
+        if (is.null(rc$nodes)) {
+            reason <- rc$reason
             break
         }
-        cur_prior$sigma_grid <- new_axis
+        cur_prior$sigma_grid <- rc$nodes
         if (attempt >= 2L && !prior_pinned) {
             cur_prior_sigma <- .nl_recenter("sigma_pc_prior")
         }
         res <- refit(cur_prior, cur_prior_sigma)
         res$outer_grid_placement           <- "auto_recentered"
         res$outer_grid_recenter_attempts   <- attempt
+        res$outer_grid_recenter_sd_clamp   <- stats::setNames(rc$sd_clamp, "sigma")
+        res$outer_grid_recenter_sd_used    <- stats::setNames(rc$sd_used, "sigma")
+        res$outer_grid_recenter_sd_raw     <- stats::setNames(rc$sd_raw, "sigma")
         res$outer_grid_prior_added         <- attempt >= 2L && !prior_pinned
         res$outer_grid_prior_declined      <-
             if (attempt >= 2L && prior_pinned) "prior_pinned" else NULL
@@ -987,21 +1096,29 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
         }
         if (is.null(target_b)) break
         attempt <- attempt + 1L
-        new_axis <- .nl_axis_recenter_from_fit(
+        n_b <- .nl_fit_n_blocks(res)
+        rc <- .nl_axis_recenter_from_fit_full(
             res$pareto_k_mode_u, res$pareto_k_cov_u,
             res$pareto_k_axis_tags, res$pareto_k_axis_names, "sigma",
-            block_index = target_b, n_blocks = .nl_fit_n_blocks(res))
-        if (is.null(new_axis)) {
-            reason <- "no_usable_curvature"
+            block_index = target_b, n_blocks = n_b,
+            ref_nodes = .nl_axis_ref_nodes(res, "sigma", target_b, n_b))
+        if (is.null(rc$nodes)) {
+            reason <- rc$reason
             break
         }
-        cur_prior[[target_b]]$sigma_grid <- new_axis
+        cur_prior[[target_b]]$sigma_grid <- rc$nodes
         if (attempt >= 2L && !prior_pinned) {
             cur_prior_sigma <- .nl_recenter("sigma_pc_prior")
         }
         res <- refit(cur_prior, cur_prior_sigma)
         res$outer_grid_placement           <- "auto_recentered"
         res$outer_grid_recenter_attempts   <- attempt
+        res$outer_grid_recenter_sd_clamp   <- stats::setNames(
+            rc$sd_clamp, .nl_axis_alias("sigma", target_b, n_b)[1L])
+        res$outer_grid_recenter_sd_used    <- stats::setNames(
+            rc$sd_used, .nl_axis_alias("sigma", target_b, n_b)[1L])
+        res$outer_grid_recenter_sd_raw     <- stats::setNames(
+            rc$sd_raw, .nl_axis_alias("sigma", target_b, n_b)[1L])
         res$outer_grid_prior_added         <- attempt >= 2L && !prior_pinned
         res$outer_grid_prior_declined      <-
             if (attempt >= 2L && prior_pinned) "prior_pinned" else NULL
@@ -1141,6 +1258,15 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
     blocks
 }
 
+# The nodes an axis was laid on for the fit just completed -- the INCOMING span
+# the `"relative"` ceiling caps a re-placement against (`.nl_axis_span_u()`).
+# Read off the fit rather than the prior, so an axis the caller left to the
+# engine's own default has a reference span like any other.
+.nl_axis_ref_nodes <- function(res, axis, block_index = NULL, n_blocks = 0L) {
+    .nl_rescue_axis_nodes(
+        res, .nl_axis_colname(res, .nl_axis_alias(axis, block_index, n_blocks)))
+}
+
 # The nodes a fit carried on one axis, for an axis the rescue re-crosses
 # unchanged.
 .nl_rescue_axis_nodes <- function(res, axis) {
@@ -1275,16 +1401,37 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
             break
         }
 
-        moved <- list()
+        moved    <- list()
+        clamps   <- character(0)
+        sd_used  <- numeric(0)
+        sd_raw   <- numeric(0)
+        declines <- character(0)
         for (i in movable) {
             s <- slots[[i]]
             j <- .nl_axis_index(mc$col_names, alias_of(s), mc$tags)
             if (is.na(j)) next
-            nd <- .nl_recenter_axis(mc$tags[j], mc$u_mode[j], sqrt(mc$cov[j, j]))
-            if (!is.null(nd)) moved[[paste(s$block, s$field, sep = ".")]] <- nd
+            rc <- .nl_recenter_axis_full(
+                mc$tags[j], mc$u_mode[j], sqrt(mc$cov[j, j]),
+                ref_span_u = .nl_axis_span_u(
+                    .nl_rescue_axis_nodes(res, .nl_axis_colname(res, alias_of(s))),
+                    mc$tags[j]))
+            # The RAW SD is recorded even for an axis the policy declined -- that
+            # is the reading which says whether declining was right.
+            sd_raw[alias_of(s)[1L]] <- rc$sd_raw
+            if (is.null(rc$nodes)) {
+                clamps[alias_of(s)[1L]] <- rc$sd_clamp
+                declines <- c(declines, rc$reason)
+                next
+            }
+            clamps[alias_of(s)[1L]]  <- rc$sd_clamp
+            sd_used[alias_of(s)[1L]] <- rc$sd_used
+            moved[[paste(s$block, s$field, sep = ".")]] <- rc$nodes
         }
+        # An axis the clamp policy declined says so; a mixed set of reasons
+        # reports the generic one rather than picking a winner among them.
         if (!length(moved)) {
-            reason <- "no_usable_curvature"
+            reason <- if (length(unique(declines)) == 1L) unique(declines) else
+                "no_usable_curvature"
             break
         }
 
@@ -1318,6 +1465,9 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
         res$outer_grid_recenter_axes     <- vapply(
             slots[movable], function(s) .nl_axis_alias(s$axis, bidx(s),
                                                        n_blocks)[1L], character(1))
+        res$outer_grid_recenter_sd_clamp <- clamps
+        res$outer_grid_recenter_sd_used  <- sd_used
+        res$outer_grid_recenter_sd_raw   <- sd_raw
         out <- list(res = res, prior = unwrap(cur))
     }
     out$res <- .nl_decline_recenter(out$res, reason)

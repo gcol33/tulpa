@@ -1,5 +1,72 @@
 # tulpa NEWS
 
+## 0.0.189
+
+* **A recentred outer axis whose mode SD hit the CEILING now declines the
+  placement and keeps its incoming span** (gcol33/tulpa#387). A clamp is not a
+  spread the finite-difference stencil measured -- it is the stencil failing to
+  resolve a direction, with a number substituted for what it could not read.
+  Laying an axis from the substitute states a spread the fit does not have: on
+  a `log` axis `mode +/- span * max_sd_u` is `exp(+/- 7.5)`, a factor of 1808
+  either side of the mode, and the reported interval is read off that span. The
+  fit now records `outer_grid_recenter_declined = "sd_ceiling_unresolved"`,
+  which is the gcol33/tulpa#293 rule: a placement the engine declines to make
+  has to say so rather than be indistinguishable from one that was not needed.
+  `control` does not carry this; `.NL_RECENTER$sd_clamp_policy` is the single
+  place it is set, and `"clamp"` restores what shipped through 0.0.186.
+
+  MEASURED over 200 fixed-truth seeds on each of six configurations x two
+  placement policies, arms paired seed by seed and differing only in this
+  setting. Summed |coverage - nominal| over nominal 0.95 / 0.80 / 0.50 at the
+  shipped placement, and the paired 95%-level record against `"clamp"`:
+  `"decline"` **0.1393 against 0.1464**, changing 35 trials, winning 7 and
+  losing **none** (sign test p = 0.0078) at an unchanged width (ratio 1.0000).
+  A third policy, `"relative"` -- cap the re-placed span by the INCOMING axis's
+  own span rather than by an absolute bound -- scores 0.1536 and loses 7 trials
+  to 1, and is kept as a selectable arm rather than shipped.
+
+* **The FLOOR keeps substituting, and it is the same table that says so.** A
+  clamped floor WIDENS a too-narrow axis, which is the direction that cannot
+  rail, so substituting there is right and declining costs 22 trials against 9
+  (`sd_floor_policy = "clamp"`). `min_sd_u = 0.15` is a minimum of its ladder in
+  both directions -- dropping it to 0.05 loses 374 trials and wins none, raising
+  it to 0.30 loses 30 and wins none. The floor is also the bound that actually
+  binds: it engages on 3 of 7 rows and on every fit of those rows, where the
+  ceiling reaches 2 of 268 axis reads.
+
+* **`max_sd_u = 3` is KEPT, measured rather than left alone.** Across a ladder
+  spanning a factor of 15 (0.4 to 6) the summed coverage deviation moves 0.2843
+  to 0.3071 and the mean 95% width 1.986 to 2.120, and 3 is the best rung on
+  calibration. Fixtures built to REACH the ceiling -- an `iid` design shrunk
+  until 27.5% of raw mode SDs pass 3 -- return a NON-MONOTONE coverage response
+  whose driver is not the cap: no axis rails at any rung, and the reported bound
+  lies outside the node range on ~89% of those fits, identically at 0.8 / 1.5 /
+  2 / 3. What moves across that ladder is where the outer-cell extrapolation
+  lands. The earlier reading that the ceiling produces 95% widths in the
+  hundreds came from the one row that reaches it, `nngp_120`, whose fits are not
+  reproducible (gcol33/tulpa#389).
+
+* **Every recentred fit now says what its axes were laid from.** Per moved axis,
+  `outer_grid_recenter_sd_clamp` (`"none"` / `"floor"` / `"ceiling"`),
+  `outer_grid_recenter_sd_raw` (what the stencil measured) and
+  `_sd_used` (what the axis was laid from) -- the raw SD is recorded even for an
+  axis the policy declined, since that is the reading which says whether
+  declining was right. `diagnostics()` names a clamped axis in its placement
+  note. The clamp is applied in exactly one function,
+  `.nl_recenter_sd_clamp()`, behind all four rescues -- the spatiotemporal
+  driver's hand-inlined copy of the same two bounds included.
+
+* **A bound-decline is PER AXIS on the multi-axis drivers.** The spatiotemporal
+  rescue re-places `(tau_spatial, tau_temporal, rho)` together, and declining
+  the whole pass because ONE axis hit a bound discards the placement of the axes
+  the mode-find did resolve -- on the `ar1` fixture, both precision axes thrown
+  away because `rho` alone was unresolvable. Each axis now keeps its own
+  incoming nodes and `outer_grid_recenter_sd_declined` names which axes did so
+  and on which bound, so a partially re-placed grid is not read as a fully
+  re-placed one. With every free axis declined the pass reports the grid as the
+  fixed one it still is. A decline for any other reason is a failure of the
+  mode-find itself and still takes the pass down.
+
 ## 0.0.188
 
 * **Reported hyperparameter intervals are read with the box-uniform within-cell

@@ -93,9 +93,18 @@ fixed-effect posterior (\code{draws} via the grid mixture), \code{spatial_effect
 \code{outer_grid_placement} (\code{"fixed"} or \code{"auto_recentered"}) plus, on a
 \code{"fixed"} placement, \code{outer_grid_recenter_declined}
 (\code{"grid_knobs_overridden"} / \code{"grid_not_collapsed"} /
-\code{"no_usable_curvature"} / \code{"refit_failed"}). A recentred fit also carries
+\code{"no_usable_curvature"} / \code{"refit_failed"} / \code{"sd_ceiling_unresolved"} /
+\code{"sd_floor_unresolved"}). A recentred fit also carries
 \code{outer_grid_pinned_axes}, the axes whose knobs were pinned and whose
-nodes were therefore kept.
+nodes were therefore kept, and \code{outer_grid_recenter_sd_clamp} /
+\verb{_sd_raw} / \verb{_sd_used} -- per moved axis, which mode-SD bound the
+placement hit, the SD the stencil measured, and the SD the axis was laid
+from (gcol33/tulpa#387). A bound-decline is PER AXIS here: the axes the
+mode-find did resolve are still re-placed, and
+\code{outer_grid_recenter_sd_declined} names the ones that kept their incoming
+nodes and on which bound, so a partially re-placed grid is not read as a
+fully re-placed one. With every free axis declined the pass reports the
+grid as the fixed one it still is.
 }
 \description{
 Fits \verb{y ~ X beta + u_spatial[s] + v_temporal[t]} with an areal spatial field

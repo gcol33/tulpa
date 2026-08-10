@@ -59,6 +59,21 @@
 )
 
 # Is one grid knob a PIN? The scalar counterpart of `.nl_axis_is_pinned()`.
+# The incoming span of one ST axis in ITS OWN unconstraining coordinate, which
+# for `rho` is `.st_axis_fwd()`'s (-1, 1) map rather than the engine registry's
+# (0, 1) one -- the reference span the shared clamp's `"relative"` ceiling caps
+# a re-placement against (gcol33/tulpa#387).
+.nl_axis_span_u_st <- function(res, axis) {
+    v <- .nl_rescue_axis_nodes(res, axis)
+    if (is.null(v)) return(NA_real_)
+    v <- v[is.finite(v)]
+    if (length(v) < 2L) return(NA_real_)
+    u <- suppressWarnings(vapply(v, function(z) .st_axis_fwd(axis, z), numeric(1)))
+    u <- u[is.finite(u)]
+    if (length(u) < 2L) return(NA_real_)
+    diff(range(u))
+}
+
 .st_knob_is_pinned <- function(control, knob) {
     v <- control[[knob]]
     if (is.null(v)) return(FALSE)
@@ -234,20 +249,55 @@
     # knobs (one source, and it already carries `.st_log_grid()`'s 2-node floor).
     kept <- function(field) sort(unique(as.numeric(kargs[[field]])))
 
+    # The mode SD clamp, its policy and the state it reports are the engine's
+    # shared ones (`.nl_recenter_sd_clamp()`, gcol33/tulpa#387) on every axis
+    # this driver re-places, `rho` included -- the `clamp_axis()` box above
+    # bounds the RANGE and is a separate guard.
+    clamps  <- character(0)
+    sd_used <- numeric(0)
+    sd_raw  <- numeric(0)
+    sd_skip <- character(0)
+
+    # A bound-decline is PER AXIS, exactly as on the registry rescue
+    # (`.nl_registry_grid_rescue()`): the axis whose curvature the mode-find
+    # could not resolve keeps the nodes it came in with, and the axes it DID
+    # resolve are still re-placed. Declining the whole pass on one axis would
+    # throw away the others' placement to say nothing about them -- on the ar1
+    # fixture that is both precision axes discarded because `rho` alone hit the
+    # ceiling. A decline for any OTHER reason is a failure of the mode-find
+    # itself and still takes the pass down.
+    record <- function(axis, rc) {
+        clamps[[axis]] <<- rc$sd_clamp
+        sd_raw[[axis]] <<- rc$sd_raw
+        if (!is.null(rc$nodes)) {
+            sd_used[[axis]] <<- rc$sd_used
+            return(TRUE)
+        }
+        if (!isTRUE(rc$reason %in% c("sd_ceiling_unresolved",
+                                     "sd_floor_unresolved"))) return(NA)
+        sd_skip <<- c(sd_skip, stats::setNames(rc$reason, axis))
+        FALSE
+    }
+    lay_log <- function(axis, n) .nl_recenter_axis_full(
+        "log", u_hat[[axis]], sd_u[[axis]], n_pts = n,
+        ref_span_u = .nl_axis_span_u(.nl_rescue_axis_nodes(out, axis), "log"))
+
     if ("tau_spatial" %in% free) {
-        new_ts <- .nl_recenter_log_axis(u_hat[["tau_spatial"]], sd_u[["tau_spatial"]],
-                                        n_pts = n_gs)
-        if (is.null(new_ts)) return(.nl_decline_recenter(out, "no_usable_curvature"))
-        new_ts <- clamp_axis(new_ts, "tau_spatial")
+        rc <- lay_log("tau_spatial", n_gs)
+        ok <- record("tau_spatial", rc)
+        if (is.na(ok)) return(.nl_decline_recenter(out, rc$reason))
+        new_ts <- if (ok) clamp_axis(rc$nodes, "tau_spatial") else
+            kept("tau_spatial_grid")
         if (length(new_ts) < 2L) return(.nl_decline_recenter(out, "no_usable_curvature"))
     } else {
         new_ts <- kept("tau_spatial_grid")
     }
     if ("tau_temporal" %in% free) {
-        new_tt <- .nl_recenter_log_axis(u_hat[["tau_temporal"]], sd_u[["tau_temporal"]],
-                                        n_pts = n_gt)
-        if (is.null(new_tt)) return(.nl_decline_recenter(out, "no_usable_curvature"))
-        new_tt <- clamp_axis(new_tt, "tau_temporal")
+        rc <- lay_log("tau_temporal", n_gt)
+        ok <- record("tau_temporal", rc)
+        if (is.na(ok)) return(.nl_decline_recenter(out, rc$reason))
+        new_tt <- if (ok) clamp_axis(rc$nodes, "tau_temporal") else
+            kept("tau_temporal_grid")
         if (length(new_tt) < 2L) return(.nl_decline_recenter(out, "no_usable_curvature"))
     } else {
         new_tt <- kept("tau_temporal_grid")
@@ -256,19 +306,43 @@
     if (!("rho" %in% axes)) {
         new_rho <- 0.0
     } else if ("rho" %in% free) {
-        span  <- 2.5
-        su    <- min(max(sd_u[["rho"]], 0.15), 3)
+        # `rho`'s own transform is (-1, 1) (see .st_axis_inv()), which is not one
+        # the shared node generator lays, so the axis is built here -- but the
+        # SD it is built from goes through the shared clamp, not a second copy
+        # of the same bounds.
+        span <- .nl_recenter("span")
+        cl   <- .nl_recenter_sd_clamp(
+            sd_u[["rho"]], span = span,
+            ref_span_u = .nl_axis_span_u_st(out, "rho"))
+        # `.nl_recenter_sd_clamp()` reports no nodes, so the per-axis record
+        # here is the same decision on the same two reasons.
+        ok <- record("rho", list(sd_clamp = cl$clamp, sd_raw = cl$sd_raw,
+                                 sd_used = cl$sd, reason = cl$reason,
+                                 nodes = if (is.null(cl$reason)) TRUE else NULL))
+        if (is.na(ok)) return(.nl_decline_recenter(out, cl$reason))
+        if (!ok) {
+            new_rho <- kept("rho_temporal_grid")
+        } else {
+        su    <- cl$sd
         u_seq <- seq(u_hat[["rho"]] - span * su, u_hat[["rho"]] + span * su,
                      length.out = n_grho)
         # (-1, 1) is the model's own stationarity bound (see .st_axis_inv()),
         # not the retired rho_lower/rho_upper default -- the whole point of
         # the recenter is to no longer be confined to that default range.
         new_rho <- sort(unique(pmin(pmax(2 * stats::plogis(u_seq) - 1, -0.999), 0.999)))
+        }
         if (length(new_rho) < 2L) {
             return(.nl_decline_recenter(out, "no_usable_curvature"))
         }
     } else {
         new_rho <- kept("rho_temporal_grid")
+    }
+
+    # Every free axis declined on a bound, so nothing moved: report the grid as
+    # the fixed one it still is rather than as a re-placement that changed
+    # nothing.
+    if (length(sd_skip) && length(sd_skip) == length(free)) {
+        return(.nl_decline_recenter(out, unname(sd_skip[1L])))
     }
 
     new_grid <- expand.grid(tau_spatial = new_ts, tau_temporal = new_tt, rho = new_rho)
@@ -289,5 +363,12 @@
     refit$outer_grid_placement         <- "auto_recentered"
     refit$outer_grid_recenter_attempts <- 1L
     refit$outer_grid_pinned_axes       <- pinned
+    refit$outer_grid_recenter_sd_clamp <- clamps
+    refit$outer_grid_recenter_sd_used  <- sd_used
+    refit$outer_grid_recenter_sd_raw   <- sd_raw
+    # Which axes kept their incoming nodes because a bound declined them, and on
+    # which bound -- a partially re-placed grid says so rather than looking like
+    # a fully re-placed one.
+    refit$outer_grid_recenter_sd_declined <- sd_skip
     refit
 }

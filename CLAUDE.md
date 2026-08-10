@@ -972,6 +972,68 @@ is not a cell width -- the same objection that makes `sample` decline. The
 measurement was taken on the outer hyperparameter axes and is not extended past
 them.
 
+### The mode-SD clamp is a substitution, and the two ends answer oppositely (gcol33/tulpa#387)
+
+`.nl_recenter_axis()` lays a re-placed outer axis at `mode +/- span * sd` over
+`n_pts` nodes in the axis's own unconstraining coordinate, and the mode SD is
+clamped into `[min_sd_u, max_sd_u]`. Whenever a bound binds, the axis is laid
+from a number the engine SUBSTITUTED for a curvature the stencil could not read,
+and until 0.0.189 that fit was indistinguishable from one laid from a measured
+spread. `.nl_recenter_sd_clamp()` (`R/nested_laplace_auto_grid.R`) is the one
+place either bound is applied -- behind all four rescues, the spatiotemporal
+driver's hand-inlined copy of the same two bounds included -- so what the pass
+DOES about a clamp is a policy in `R/settings.R` rather than a constant buried
+in a node generator, and the state it returns travels on the fit as
+`outer_grid_recenter_sd_clamp` / `_sd_raw` / `_sd_used`.
+
+**The ceiling declines, the floor substitutes, and it is one paired table that
+says so.** 200 fixed-truth seeds on each of six configurations x two placement
+policies, arms differing only in this setting, summed |coverage - nominal| over
+nominal 0.95 / 0.80 / 0.50: `sd_clamp_policy = "decline"` scores 0.1393 against
+`"clamp"`'s 0.1464 and never loses a trial -- of the 35 it changes it improves 7
+and worsens none (sign test p = 0.0078) at width ratio 1.0000 -- while declining
+on the FLOOR costs 22 trials against 9. The asymmetry is the substantive result:
+a clamped floor WIDENS a too-narrow axis, the direction that cannot rail, so
+substituting there is right; a clamped ceiling lays an axis over a flatness the
+stencil could not resolve, so declining is. A third ceiling policy,
+`"relative"` (cap the re-placed span by the incoming axis's own span rather than
+by an absolute bound), scores 0.1536 and loses 7 to 1; it is kept as a
+selectable arm, not shipped.
+
+**Both CONSTANTS are kept, and the ladder is why.** `min_sd_u = 0.15` is a
+minimum of its ladder in both directions (0.05 loses 374 trials and wins none;
+0.30 loses 30 and wins none) and is the bound that actually binds -- 3 of 7 rows
+and every fit of those rows, where the ceiling reaches 2 of 268 axis reads.
+`max_sd_u = 3` is the best rung on calibration across a factor-of-15 ladder over
+which the summed deviation moves only 0.2843 to 0.3071.
+
+**A fixture built to reach the ceiling cannot arbitrate it, and that is a
+property of the read rather than of the cap.** Shrinking an `iid` design until
+27.5% of raw mode SDs pass 3 gives a NON-MONOTONE coverage response, and
+`rail387.R` names the driver: no axis rails at any rung, and the reported 95%
+bound lies OUTSIDE the node range on ~89% of those fits, identically at 0.8 /
+1.5 / 2 / 3. So on a genuinely diffuse axis the reported interval is an
+`"extend"` extrapolation in nearly every fit and what moves across the ladder is
+where that extrapolation lands. Scoring the cap itself needs a fixture whose
+posterior the 5-node axis can CONTAIN, which makes it a question about the
+ceiling together with `span`, `n_pts` and the outer-cell read
+(gcol33/tulpa#390), not about the ceiling alone. The earlier reading that the
+ceiling produces 95% widths in the hundreds came from the one shipped row that
+reaches it, `nngp_120`, whose fits are not reproducible (gcol33/tulpa#389) --
+that row cannot be cited.
+
+**A bound-decline is PER AXIS wherever a rescue re-places several axes at once.**
+The spatiotemporal driver moves `(tau_spatial, tau_temporal, rho)` together, and
+taking the whole pass down because one axis hit a bound discards the placement
+of the axes the mode-find DID resolve -- on the `ar1` fixture, both precision
+axes thrown away because `rho` alone was unresolvable. Each axis keeps its own
+incoming nodes instead and `outer_grid_recenter_sd_declined` names which did so
+and on which bound, so a partially re-placed grid does not read as a fully
+re-placed one; the registry rescue has the same shape, declining outright only
+when NOTHING moved. A decline for any other reason is a failure of the mode-find
+and still takes the pass down. Tests: `test-recenter-sd-clamp.R`,
+`test-fit-st-nested-auto-grid.R`.
+
 ### Three posterior arbiters, and coverage is only one (gcol33/tulpa#335)
 
 Binary coverage at one or two nominal levels reads one or two points of the

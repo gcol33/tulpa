@@ -1043,9 +1043,12 @@
   railed <- jf$outer_grid_railed_axes
   placed <- jf$outer_grid_placement
   if (is.null(railed) && is.null(placed)) return(NULL)
+  cl <- jf$outer_grid_recenter_sd_clamp
   list(placement = as.character(placed %||% NA_character_),
        railed    = as.character(railed %||% character(0)),
        moved     = as.character(jf$outer_grid_recenter_axes %||% character(0)),
+       clamped   = if (is.null(cl)) character(0) else
+                     stats::setNames(as.character(cl), names(cl)),
        declined  = as.character(jf$outer_grid_recenter_declined %||%
                                   NA_character_))
 }
@@ -1056,9 +1059,21 @@
   if (is.null(pl)) return(NULL)
   if (identical(pl$placement, "auto_recentered")) {
     ax <- if (length(pl$moved)) paste(pl$moved, collapse = ", ") else "an axis"
-    return(paste0("outer grid re-centred on ", ax,
+    msg <- paste0("outer grid re-centred on ", ax,
                   ": the default span did not contain that axis's posterior ",
-                  "mode, so the reported grid is not the default one"))
+                  "mode, so the reported grid is not the default one")
+    # A bound the mode SD hit is not a spread the stencil measured, and the
+    # interval is read off the span it produced (gcol33/tulpa#387).
+    cl  <- pl$clamped %||% character(0)
+    hit <- if (!length(cl) || is.null(names(cl))) character(0) else
+      names(cl)[cl %in% c("ceiling", "floor")]
+    if (length(hit)) {
+      msg <- paste0(msg, "; the mode SD hit its bound on ",
+                    paste(hit, collapse = ", "), ", so that axis was laid from ",
+                    "a substituted spread rather than the curvature the ",
+                    "stencil measured")
+    }
+    return(msg)
   }
   if (!length(pl$railed)) return(NULL)
   ax <- paste(pl$railed, collapse = ", ")

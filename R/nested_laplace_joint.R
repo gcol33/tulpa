@@ -695,6 +695,14 @@
 #'      mode-Hessian the recenter needs was unavailable or degenerate, e.g. a
 #'      car_proper grid whose `rho_car` axis has unguessable support). Absent
 #'      when the fit WAS recentred.
+#'   * `outer_grid_recenter_sd_clamp`, `outer_grid_recenter_sd_raw`,
+#'      `outer_grid_recenter_sd_used` -- on a recentred fit, one entry per moved
+#'      axis: which mode-SD bound the placement hit (`"none"` / `"floor"` /
+#'      `"ceiling"`), the SD the finite-difference stencil MEASURED, and the SD
+#'      the axis was actually laid from (gcol33/tulpa#387). A clamped axis was
+#'      laid from a substituted spread rather than a measured one, and the
+#'      reported interval is read off that span; the two used to be
+#'      indistinguishable on the fit.
 #'   * `pareto_k_outer_skew` -- per-axis skewness of the hyperparameter marginal
 #'      in the proposal's whitened coordinate, present only when a
 #'      \eqn{\hat{k}} above the good band triggered the skew-normal rescue pass.

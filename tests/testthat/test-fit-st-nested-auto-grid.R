@@ -228,4 +228,24 @@ test_that("ar1's rho axis rides along with the recenter when both precision axes
     # far the recenter pushes it.
     expect_true(all(fit$theta_grid[, "rho"] > -1 & fit$theta_grid[, "rho"] < 1))
     expect_true(all(is.finite(fit$log_marginal)))
+
+    # A mode-SD bound declines the axis it bound on, NOT the whole pass
+    # (gcol33/tulpa#387). On this fixture `rho`'s mode SD reaches the ceiling
+    # while both precision axes resolve theirs, so the precision axes are still
+    # re-placed and `rho` keeps the nodes it came in with. Declining the pass
+    # outright would discard two placements to say nothing about the third.
+    expect_identical(unname(fit$outer_grid_recenter_sd_clamp[["rho"]]),
+                     "ceiling")
+    expect_identical(names(fit$outer_grid_recenter_sd_declined), "rho")
+    expect_identical(unname(fit$outer_grid_recenter_sd_declined[["rho"]]),
+                     "sd_ceiling_unresolved")
+    # The declined axis reports the SD the mode-find MEASURED but no SD it was
+    # laid from, because it was not laid.
+    expect_true(is.finite(fit$outer_grid_recenter_sd_raw[["rho"]]))
+    expect_false("rho" %in% names(fit$outer_grid_recenter_sd_used))
+    # ... and the axes that did resolve moved off their defaults.
+    expect_true(all(c("tau_spatial", "tau_temporal") %in%
+                        names(fit$outer_grid_recenter_sd_used)))
+    expect_identical(unname(fit$outer_grid_recenter_sd_clamp[["tau_spatial"]]),
+                     "none")
 })

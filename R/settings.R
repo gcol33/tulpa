@@ -399,8 +399,83 @@
     # near-duplicate nodes (the point of recentring is to BRACKET the mode with
     # real spread), a ceiling so a near-flat direction does not fling nodes to
     # implausible extremes.
+    #
+    # Both values were swept and both are KEPT (gcol33/tulpa#387). The ceiling
+    # is close to inert: over 268 axis reads it binds on 2, on neither of the
+    # well-identified families, and across a ladder spanning a factor of 15
+    # (0.4 to 6) the summed coverage deviation moves 0.2843 to 0.3071 and the
+    # mean 95% width 1.986 to 2.120 -- 3 is the best rung on calibration.
+    # Fixtures built to REACH it (an `iid` design shrunk until 27.5% of raw mode
+    # SDs pass 3) return a NON-MONOTONE coverage response, and the reason is not
+    # the cap: the reported bound lies outside the node range on ~89% of those
+    # fits, identically at 0.8 / 1.5 / 2 / 3, so what moves across that ladder
+    # is where the outer-cell extrapolation lands. Scoring the cap itself needs
+    # a fixture whose posterior the 5-node axis can CONTAIN, which makes it a
+    # question about this ceiling together with `span` and `n_pts`
+    # (gcol33/tulpa#390).
+    #
+    # The earlier reading that the ceiling produces 95% widths in the hundreds
+    # came from the one row that reaches it, `nngp_120`, whose fits are not
+    # reproducible (gcol33/tulpa#389: 72 of 120 differ between two passes of the
+    # same seeds in one process). The floor's own ladder is on
+    # `sd_floor_policy` below.
     min_sd_u  = 0.15,
     max_sd_u  = 3,
+
+    # What the pass DOES when that ceiling binds (gcol33/tulpa#387).
+    #
+    # A clamp is not a spread the stencil measured -- it is the stencil failing
+    # to resolve a direction, with a number substituted for what it could not
+    # read. Laying an axis from the substitute states a spread the fit does not
+    # have: on a `log` axis `mode +/- span * max_sd_u` is `exp(+/- 7.5)`, a
+    # factor of 1808 either side of the mode, and the reported interval is read
+    # off that span.
+    #
+    #   "clamp"    lay the axis from the clamped SD (what shipped through
+    #              0.0.186).
+    #   "decline"  keep the incoming span and record
+    #              `outer_grid_recenter_declined = "sd_ceiling_unresolved"` --
+    #              the gcol33/tulpa#293 rule, that a placement the engine
+    #              declines to make has to say so rather than be
+    #              indistinguishable from one that was not needed.
+    #   "relative" cap the recentred span by the INCOMING axis's own span in the
+    #              same coordinate, so a direction the stencil could not resolve
+    #              re-places within the range the caller's own grid already
+    #              covered instead of past it.
+    #
+    # MEASURED (gcol33/tulpa#387, `dev_notes/issue387/analyse_policy387.R`), 200
+    # fixed-truth seeds on each of six configurations x two placement policies,
+    # arms paired seed by seed and differing only in this setting. Summed
+    # |coverage - nominal| over nominal 0.95 / 0.80 / 0.50 at the shipped
+    # placement, and the paired 95%-level win/loss against "clamp":
+    #
+    #   ceiling policy   summed dev   changed   won   lost   width ratio
+    #   clamp                0.1464         -     -      -            -
+    #   decline              0.1393        35     7      0       1.0000
+    #   relative             0.1536        35     1      7       0.9983
+    #
+    # "decline" is the default because it never loses a trial: of the 35 it
+    # changes it improves 7 and worsens none (sign test p = 0.0078) at the same
+    # width. It is also the only arm that does not report a substituted spread
+    # as though the stencil had measured it.
+    sd_clamp_policy = "decline",
+
+    # The floor is the OPPOSITE answer, and it is the same table that says so:
+    #
+    #   floor            summed dev   won   lost
+    #   0.02 / 0.05          0.7600     0    374
+    #   0.15 (this)          0.1464     -      -
+    #   0.30                 0.2621     0     30
+    #   0.50                 0.4893    39     47
+    #   decline              0.3186     9     22
+    #
+    # A clamped floor WIDENS a too-narrow axis, which is the direction that
+    # cannot rail, so substituting there is the right move and declining costs
+    # 22 trials against 9. 0.15 is a minimum of the ladder in both directions --
+    # dropping it to 0.05 loses 374 trials and wins none -- and the floor is the
+    # bound that actually binds: it engages on 3 of 7 rows and on every fit of
+    # those rows, where the ceiling reaches 2 of 268 axis reads.
+    sd_floor_policy = "clamp",
 
     # A recentred axis must survive the map back onto its own support with at
     # least this many distinct nodes; a `logit01` axis whose nodes saturate to a
@@ -481,10 +556,16 @@
     sigma_pc_prior = list("pc.prec", c(U = 3, alpha = 0.01))
 )
 
+# `options(tulpa.recenter.<par> = )` overrides one entry, the same seam the
+# `tulpa.kdiag.*` diagnostics knobs use. It exists so a placement policy can be
+# SWEPT -- one build, several arms paired on the same seeds -- rather than
+# measured across builds that differ in more than the setting under test.
 .nl_recenter <- function(par) {
     if (!par %in% names(.NL_RECENTER)) {
         stop("Unknown recenter setting '", par, "'.", call. = FALSE)
     }
+    ov <- getOption(paste0("tulpa.recenter.", par), NULL)
+    if (!is.null(ov)) return(ov)
     .NL_RECENTER[[par]]
 }
 

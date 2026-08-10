@@ -86,9 +86,18 @@
 #'   `outer_grid_placement` (`"fixed"` or `"auto_recentered"`) plus, on a
 #'   `"fixed"` placement, `outer_grid_recenter_declined`
 #'   (`"grid_knobs_overridden"` / `"grid_not_collapsed"` /
-#'   `"no_usable_curvature"` / `"refit_failed"`). A recentred fit also carries
+#'   `"no_usable_curvature"` / `"refit_failed"` / `"sd_ceiling_unresolved"` /
+#'   `"sd_floor_unresolved"`). A recentred fit also carries
 #'   `outer_grid_pinned_axes`, the axes whose knobs were pinned and whose
-#'   nodes were therefore kept.
+#'   nodes were therefore kept, and `outer_grid_recenter_sd_clamp` /
+#'   `_sd_raw` / `_sd_used` -- per moved axis, which mode-SD bound the
+#'   placement hit, the SD the stencil measured, and the SD the axis was laid
+#'   from (gcol33/tulpa#387). A bound-decline is PER AXIS here: the axes the
+#'   mode-find did resolve are still re-placed, and
+#'   `outer_grid_recenter_sd_declined` names the ones that kept their incoming
+#'   nodes and on which bound, so a partially re-placed grid is not read as a
+#'   fully re-placed one. With every free axis declined the pass reports the
+#'   grid as the fixed one it still is.
 #'
 #' @seealso [tulpa()] (front door), [tulpa_nested_laplace()] (single field).
 #' @examples
