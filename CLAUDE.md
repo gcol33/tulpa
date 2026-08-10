@@ -839,8 +839,32 @@ Binary coverage at one or two nominal levels reads one or two points of the
 marginal CDF. It cannot say whether an approximation is biased, over- or
 under-dispersed, or asymmetric, and #336 above is where it ran out: over 200
 paired seeds the mixture read and the collapsed-Gaussian read moved 0 or 1
-trials. `tests/testthat/helper-sbc.R` adds the two instruments that read more
-than two points, ALONGSIDE the fixed-truth sweeps and not replacing them.
+trials. `R/sbc.R` holds the two instruments that read more than two points,
+ALONGSIDE the fixed-truth sweeps and not replacing them.
+
+**The scorer lives in `R/sbc.R` behind the exported `sbc()`, and there is one
+copy (gcol33/tulpa#380).** It was written and arbitrated as sections 1 to 6 of
+`tests/testthat/helper-sbc.R` and moved there unchanged; that file now holds
+only the engine FIXTURES (sections 7 to 9), which read the package functions.
+Do not reintroduce a private copy -- the duplicate scorer is the specific thing
+the promotion prevents. `sbc(experiment = )` selects `recov_sbc` (a
+`simulator` / `fitter` pair) or `recov_posterior_sbc` (the six-callback
+`model`); the drivers, `sbc_report()`, `sbc_crps_compare()` and the band stay
+INTERNAL, and the only other exports are the five predictive shapes
+(`sbc_mixture` and its siblings), which are the argument type a fitter returns
+rather than alternative verbs. Methods: `print`, `summary(baseline = )` (adds
+the paired proper-score ranking), `plot` (the ECDF difference against the band),
+`diagnostics`, and `diagnostics(fit, sbc = )` for the fit and its calibration
+read together. Two guards ride the door: the prior-predictive path refuses a
+scored quantity whose truth does not move across simulations -- what the nested
+door's improper fixed-effect prior looks like from outside -- unless it is named
+in `flat_prior` (checked in both directions), and the posterior path refuses a
+`pool()` returning no more than one of its inputs and verifies disjoint group
+LABELS when `model$group_ids` is supplied. The unobservable half of that premise
+(where the effects at those labels came from) is recorded as unverified, never
+claimed. Tests: `test-sbc-frontdoor.R` for the door, `test-sbc-crps.R` and
+`test-posterior-sbc.R` for the scorer and the fixtures, both of which now run
+their acceptance reads THROUGH `sbc()`.
 
 - **`recov_sbc(simulator, fitter, n_seed)`** -- simulation-based calibration.
   Draw the truth from the prior (`theta_s ~ p(theta)`, `y_s ~ p(y | theta_s)`),
@@ -900,7 +924,8 @@ its intercept marginal stays inside the band. Tests: `test-sbc-crps.R`; write-up
 prior. A user fitting their own data asks something narrower -- is the inference
 reliable in the posterior geometry THIS data set produces -- and the prior
 average can both miss a defect confined to a small region and flag one the
-observed data rules out. `recov_posterior_sbc()` (`helper-sbc.R` section 6,
+observed data rules out. `recov_posterior_sbc()` (`R/sbc.R` section 6, reached
+through `sbc(experiment = "posterior")`,
 after Sailynoja, Schmitt, Buerkner & Vehtari, *Stat Comput* 36:78 2026,
 doi:10.1007/s11222-026-10825-9, Algorithm 2) answers the narrow one:
 `theta' ~ pi(theta | y_obs)`, `y ~ pi(y | theta')`, and the PIT is taken under

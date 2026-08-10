@@ -1,5 +1,48 @@
 # tulpa NEWS
 
+## 0.0.180
+
+* **New: `sbc()`**, one exported front door for simulation-based calibration
+  (gcol33/tulpa#380). The SBC machinery from gcol33/tulpa#335, gcol33/tulpa#339
+  and gcol33/tulpa#350 was complete and independently arbitrated, but it lived
+  only in `tests/testthat/helper-sbc.R`, so a user could not run SBC on their
+  own fit and a method claim citing it had no engine path a reader could
+  reproduce. Sections 1 to 6 of that file -- the predictive shapes, the PIT with
+  within-atom randomization and its folded read, the CRPS closed forms, the
+  exact simultaneous ECDF bands, and both drivers -- moved unchanged into
+  `R/sbc.R`. The tests now read the PACKAGE functions; nothing is duplicated.
+
+* `sbc(experiment = )` selects the two experiments in which the PIT is uniform
+  and the CRPS is a proper posterior score: `"prior_predictive"` (ordinary SBC,
+  taking `simulator` / `fitter`) and `"posterior"` (calibration conditional on
+  an observed data set, Sailynoja et al. 2026 Algorithm 2, taking the six-callback
+  `model`). A fixed-truth sweep is not offered -- it is not an SBC experiment --
+  and the refusal `sbc_crps_compare()` enforces on one is unchanged underneath.
+  The result carries the per-(arm, quantity) PIT, the report table, the
+  calibrated band and what each guard concluded, and reads through `print()`,
+  `summary(baseline = )` (which adds the paired proper-score ranking), `plot()`
+  (the ECDF difference against the band) and `diagnostics()`. Passing an `sbc`
+  result to `diagnostics(fit, sbc = )` prints the calibration verdict under the
+  fit's own reliability band, which is a screen and not a verdict: the two are
+  measured to disagree in both directions.
+
+* The five predictive shapes `sbc_mixture()`, `sbc_normal()`, `sbc_discrete()`,
+  `sbc_rank()` and `sbc_draws()` are exported alongside it as the argument type
+  a fitter returns. They are the extension point, not alternative verbs.
+
+* Two guards, each on a premise that silently invalidates a result. The
+  prior-predictive path refuses a scored quantity whose truth does not move
+  across simulations -- what an improper prior looks like from outside, and what
+  the nested door's fixed effects are -- before spending the fits, naming
+  `experiment = "posterior"` as the way out; a location parameter admitted by a
+  structural argument goes through `flat_prior`, which is checked in both
+  directions and travels on the result. The posterior path refuses a `pool()`
+  returning no more than one of its two inputs (fitting the replicate alone is
+  ordinary SBC under a hand-made prior), and verifies disjoint group LABELS when
+  `model$group_ids` is supplied, recording the premise as unverified rather than
+  assumed when it is not. Whether the simulator drew those groups' effects
+  independently is not observable from outside the callback and is not claimed.
+
 ## 0.0.179
 
 * The chord read's own interior interpolation no longer reports `Inf` as a

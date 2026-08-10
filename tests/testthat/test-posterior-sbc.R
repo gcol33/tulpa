@@ -249,8 +249,19 @@ psbc_gauss_obs <- function() sbc_sim_gaussian(101L)
 test_that("the exact posterior calibrates under the posterior-SBC construction", {
   skip_if_not_slow()
   n <- 400L
-  res <- recov_posterior_sbc(sbc_psbc_gaussian(psbc_gauss_obs(), read = "exact"),
-                             n_seed = n)
+  # Through the EXPORTED front door (gcol33/tulpa#380), which is also where the
+  # two premises below are checked: the fixture carries `group_ids`, so the
+  # observable half of the fresh-groups premise is verified before the run.
+  fit_sbc <- sbc("posterior",
+                 model = sbc_psbc_gaussian(psbc_gauss_obs(), read = "exact"),
+                 n_sim = n)
+  expect_identical(fit_sbc$premises$pooling, "verified")
+  expect_identical(fit_sbc$premises$fresh_groups,
+                   "verified (disjoint group labels)")
+  res <- fit_sbc$pit
+  expect_identical(
+    res, recov_posterior_sbc(sbc_psbc_gaussian(psbc_gauss_obs(),
+                                               read = "exact"), n_seed = n))
   band <- sbc_ecdf_band(n, 0.999)
   u <- function(a, q) res$pit[res$arm == a & res$quantity == q]
   for (a in c("exact", "mixture")) {
@@ -294,6 +305,10 @@ test_that("breaking either premise of the factorization breaks the calibration",
          grid = obs$grid)
   rA <- recov_posterior_sbc(m, n_seed = n)
   expect_false(sbc_ecdf_inside(u(rA, "sigma"), band))
+  # The front door does not let this one through at all (gcol33/tulpa#380): the
+  # pooled data set carries neither the observed values nor enough of them to
+  # hold both, which is checkable before the first augmented fit.
+  expect_error(sbc("posterior", model = m, n_sim = 4L), "AUGMENTED posterior")
 
   # (b) Conditional independence broken: the replicate re-observes the OBSERVED
   # regions, carrying their effects drawn from p(u | y_obs, theta) rather than
@@ -316,6 +331,13 @@ test_that("breaking either premise of the factorization breaks the calibration",
   rB <- recov_posterior_sbc(m2, n_seed = n)
   expect_false(sbc_ecdf_inside(u(rB, "sigma"), band))
   expect_false(sbc_ecdf_inside(u(rB, "log_lik"), band))
+  # This one the front door CANNOT catch, and does not claim to. Its group
+  # LABELS are fresh -- `pool()` still offsets them, so the pooled set carries
+  # nr_obs + nr_rep of them -- and what is broken is where the effects at those
+  # labels came from, which is inside the callback and not observable from
+  # outside it. That is why `fresh_groups` reads "verified (disjoint group
+  # labels)" and never "premise verified".
+  expect_s3_class(sbc("posterior", model = m2, n_sim = 4L), "sbc")
 })
 
 # ---------------------------------------------------------------------------

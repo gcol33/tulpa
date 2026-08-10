@@ -1793,6 +1793,15 @@ print.laplace_diagnostics <- function(x, ...) {
   if (!is.null(attr(x, "reliability"))) {
     cat(sprintf("  whole-fit verdict: %s\n", attr(x, "reliability")))
   }
+  # The reliability band above scores THIS fit's internal approximation; the SBC
+  # result scores whether the backend's posterior is calibrated over many
+  # simulated data sets. They disagree in both directions, so the two are
+  # printed together rather than one standing in for the other.
+  sbc_rep <- attr(x, "sbc_report")
+  if (!is.null(sbc_rep)) {
+    cat(sprintf("  calibration (SBC, %s): %s\n",
+                attr(x, "sbc_experiment"), attr(x, "sbc_verdict")))
+  }
   pdecl <- attr(x, "param_table_declined")
   if (!is.null(pdecl)) {
     cat("  per-parameter columns: none.\n    ", pdecl, "\n", sep = "")

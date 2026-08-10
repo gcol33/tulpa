@@ -342,8 +342,18 @@ test_that("the nested fit reproduces the exact posterior of the SBC fixture", {
 test_that("SBC and CRPS pass the reference reads and catch the broken ones", {
   skip_if_not_slow()
   n <- 300L
-  res <- recov_sbc(sbc_sim_gaussian, sbc_arms_gaussian, n_seed = n,
-                   seed_off = 500000L, truth = "prior_draw")
+  # Through the EXPORTED front door (gcol33/tulpa#380). `flat_prior` is what
+  # this fixture's own uniformity argument is: beta is held fixed under the
+  # nested door's flat prior, and the PIT is uniform there by the location-
+  # parameter argument in section 7 of helper-sbc.R, not by having been drawn.
+  fit_sbc <- sbc("prior_predictive", simulator = sbc_sim_gaussian,
+                 fitter = sbc_arms_gaussian, n_sim = n, seed = 500000L,
+                 flat_prior = c("beta1", "beta2"))
+  res <- fit_sbc$pit
+  # The door changes nothing about the experiment it runs.
+  expect_identical(res, recov_sbc(sbc_sim_gaussian, sbc_arms_gaussian,
+                                  n_seed = n, seed_off = 500000L,
+                                  truth = "prior_draw"))
   u <- function(a, q) res$pit[res$arm == a & res$quantity == q]
   wide_band <- sbc_ecdf_band(n, 0.999)
   band <- sbc_ecdf_band(n, 0.95)
@@ -390,7 +400,8 @@ test_that("SBC and CRPS pass the reference reads and catch the broken ones", {
   # exact posterior minimizes it: the engine's read scores within 2e-05 of it
   # relatively, every deliberately broken arm pays in the mean, and the
   # collapsed read does not score better than the mixture it compresses.
-  cmp <- sbc_crps_compare(res, baseline = "mixture")
+  cmp <- summary(fit_sbc, baseline = "mixture")$compare
+  expect_identical(cmp, sbc_crps_compare(res, baseline = "mixture"))
   b1 <- cmp[cmp$quantity == "beta1", ]
   b2 <- cmp[cmp$quantity == "beta2", ]
   expect_lt(abs(b1$delta[b1$arm == "exact"]) /
@@ -401,4 +412,17 @@ test_that("SBC and CRPS pass the reference reads and catch the broken ones", {
   expect_gt(b2$delta[b2$arm == "narrow"], 0)
   expect_gt(b1$delta[b1$arm == "collapsed"], -1e-5)
   expect_gt(b2$delta[b2$arm == "collapsed"], -1e-5)
+
+  # And the same verdicts read off the front door's own report, at its own
+  # nominal level: the two reference arms inside the band on every quantity, the
+  # three known-bad controls outside on at least one of theirs.
+  rp <- fit_sbc$report
+  ok <- rp[rp$arm %in% c("exact", "mixture"), ]
+  expect_true(all(ok$inside), label = "reference arms inside the 95% band")
+  expect_true(all(ok$inside_folded), label = "reference arms folded inside")
+  for (a in c("wide", "narrow", "phi_crossed")) {
+    bad <- rp[rp$arm == a, ]
+    expect_true(any(!bad$inside | !bad$inside_folded),
+                label = sprintf("%s outside the band", a))
+  }
 })

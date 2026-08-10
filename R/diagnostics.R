@@ -110,10 +110,24 @@
 #' routing described above and is what a method should delegate to once it has
 #' assembled a draws array.
 #'
+#' @section Calibration alongside reliability:
+#' The tables above score ONE fit's own internal reliability. Whether the
+#' backend's posterior is CALIBRATED is a different question, answered over many
+#' simulated data sets by [sbc()], and the two disagree in both directions -- a
+#' fit whose reliability band is clean on both layers can still fail
+#' calibration, and one whose outer k-hat is well past the escalation threshold
+#' can pass. So the band is a screen, not a verdict. Pass an `sbc` result as
+#' `sbc =` and the calibration verdict is attached to the table and printed
+#' underneath it; `diagnostics()` called on the `sbc` result itself returns its
+#' report table.
+#'
+#' @param sbc Optional [sbc()] result for the same model, whose calibration
+#'   verdict is attached to the returned table.
 #' @param ... Passed to the method.
-#' @seealso [laplace_diagnostics()] for the approximation-reliability table in
-#'   full, [tulpa_draws_array()], [plot_rhat()], [plot_ess()],
-#'   [diagnostic_summary()], [check_diagnostics()]
+#' @seealso [sbc()] for calibration, [laplace_diagnostics()] for the
+#'   approximation-reliability table in full, [tulpa_draws_array()],
+#'   [plot_rhat()], [plot_ess()], [diagnostic_summary()],
+#'   [check_diagnostics()]
 #' @examples
 #' \donttest{
 #' set.seed(1)
@@ -139,8 +153,11 @@ diagnostics <- function(fit, ...) {
 #' @export
 diagnostics.default <- function(fit, pars = NULL,
                                 measures = c("rhat", "ess_bulk", "ess_tail"),
-                                probs = c(0.05, 0.95), ...) {
+                                probs = c(0.05, 0.95), sbc = NULL, ...) {
   measures <- match.arg(measures, names(.tulpa_diag_measures), several.ok = TRUE)
+  if (!is.null(sbc) && !inherits(sbc, "sbc")) {
+    stop("sbc = takes an `sbc` result from sbc().", call. = FALSE)
+  }
 
   kind <- .tulpa_draws_kind(fit)
   # An untagged fit predates the `emits` property; chain diagnostics are the
@@ -155,5 +172,11 @@ diagnostics.default <- function(fit, pars = NULL,
       kind, paste(names(.tulpa_diag_registry), collapse = ", ")), call. = FALSE)
   }
 
-  entry$fn(fit, pars = pars, measures = measures, probs = probs)
+  out <- entry$fn(fit, pars = pars, measures = measures, probs = probs)
+  if (!is.null(sbc) && !is.null(out)) {
+    attr(out, "sbc_report") <- sbc$report
+    attr(out, "sbc_experiment") <- sbc$experiment
+    attr(out, "sbc_verdict") <- .sbc_verdict(sbc$report)
+  }
+  out
 }
