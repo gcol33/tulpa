@@ -529,7 +529,15 @@
     return(list(q = rep(NA_real_, length(probs)), declined = "no_usable_node"))
   }
   m <- m / tot
-  cf <- c(0, cumsum(m))
+  # `cumsum(m)` can round ABOVE 1, and a grid whose trailing cells hold no mass
+  # carries that same value on every entry from the last positive cell onward.
+  # Forcing only the LAST entry to 1 then makes `cf` DECREASE there, and
+  # `findInterval()` refuses a `vec` that is not non-decreasing -- so the read
+  # errored on exactly the node sets this construction exists to handle, a grid
+  # whose outermost cells' softmax weight underflowed to zero. `pmin` with a
+  # constant preserves the order `cumsum` already has, so the tail is clamped
+  # rather than one entry contradicted.
+  cf <- c(0, pmin(cumsum(m), 1))
   cf[length(cf)] <- 1
   n_box <- length(m)
   q <- vapply(probs, function(p) {
@@ -658,7 +666,10 @@
 # `mixed` -- see below; it takes `density`'s policy on purpose.
 #
 # THE SECOND FIELD, `within`, is the set of WITHIN-CELL constructions the kind
-# ADMITS, first entry its default (gcol33/tulpa#357). It is a second field
+# ADMITS (gcol33/tulpa#357). Order carries no meaning: the engine's default is
+# `.nl_diag("within_cell")` and lives in one place, and a kind that does not
+# admit it falls back to `chord`, which every kind admits -- so what this field
+# has to guarantee is membership, not an ordering. It is a second field
 # rather than a fifth kind on purpose: `outside` is a fact about what the
 # producer left behind and is derived from the geometry, while `within` is a
 # CHOICE the caller makes about how to read it, and the two are orthogonal --
@@ -682,7 +693,7 @@
 #    width, which is the same reason its `outside` policy clamps.
 #  * `moment_rule` -- never reaches the quantile read at all.
 .NL_SUPPORT <- list(
-  density     = list(outside = "extend",      within = c("chord", "box_uniform")),
+  density     = list(outside = "extend",      within = c("box_uniform", "chord")),
   moment_rule = list(outside = NA_character_, within = "chord"),
   mixed       = list(outside = "extend",      within = "chord"),
   sample      = list(outside = "clamp",       within = "chord")
@@ -690,13 +701,20 @@
 
 .NL_SUPPORT_KINDS <- names(.NL_SUPPORT)
 
-# Every within-cell construction the engine knows, first entry the default.
-# `chord` is the shipped read: mid-mass at the coordinate, linear between
-# coordinates. `box_uniform` is gcol33/tulpa#357's. A kind's own `within` entry
+# Every within-cell construction the engine knows, first entry the DEFAULT, so
+# an internal caller that names no construction gets the same one the front
+# doors resolve through `.nl_within_cell_mode()`. `box_uniform` places the
+# cumulative full mass at each cell EDGE and interpolates between edges;
+# `chord` places the cumulative mid-mass at each cell COORDINATE and
+# interpolates between coordinates, and is both the selectable alternative and
+# the fallback every support admits. Which one leads is decided in
+# `.NL_DIAG$within_cell` (`R/settings.R`) on the measurement recorded there;
+# this vector and `.NL_SUPPORT`'s `within` field have to agree with it, which
+# `test-settings.R` and `test-support-sample.R` pin. A kind's own `within` entry
 # is the subset it admits, and is held to this vocabulary by
 # `test-within-cell-box-uniform.R` the same way `outside` is held to
 # `.nl_wtd_quantile()`'s.
-.NL_WITHIN_CELL <- c("chord", "box_uniform")
+.NL_WITHIN_CELL <- c("box_uniform", "chord")
 
 # Median and interval of one quantity, given what KIND of node set carries it.
 #

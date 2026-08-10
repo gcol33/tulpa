@@ -42,10 +42,16 @@ test_that("every support kind names an outer-edge policy exactly once", {
   wit <- lapply(.NL_SUPPORT, `[[`, "within")
   expect_true(all(vapply(wit, function(x) all(x %in% .NL_WITHIN_CELL),
                          logical(1))))
-  # Every kind's default is the shipped read, so no support silently changes
-  # construction.
-  expect_true(all(vapply(wit, function(x) identical(x[1L], "chord"),
-                         logical(1))))
+  # RE-PINNED at 0.0.188 (gcol33/tulpa#357): this asserted that every kind's
+  # FIRST entry was `chord`, which said the field's order carried the default.
+  # It does not -- the engine's default is `.NL_DIAG$within_cell` and lives in
+  # one place -- so what the field has to guarantee is that `chord` is a MEMBER
+  # of every kind, since it is the fallback a declined box read returns to and a
+  # kind that did not admit it would have nowhere to fall back to.
+  expect_true(all(vapply(wit, function(x) "chord" %in% x, logical(1))))
+  # And the engine's default has to be admitted by the kind it is the default
+  # for, or every density fit would silently decline.
+  expect_true(tulpa:::.nl_diag("within_cell") %in% wit[["density"]])
   # Only a cell partition that TILES admits box-uniform.
   expect_true("box_uniform" %in% wit[["density"]])
   expect_false("box_uniform" %in% wit[["mixed"]])
@@ -57,14 +63,21 @@ test_that("a sample support clamps and a density support extends", {
   v <- c(1, 2, 3, 4, 5)
   w <- rep(0.2, 5)
   p <- c(0.005, 0.025, 0.5, 0.975, 0.995)
+  # This test is about the OUTSIDE policy, so both reads name the same
+  # within-cell construction; the default moved to `box_uniform` at 0.0.188
+  # (gcol33/tulpa#357) and naming it here would compare two things at once.
   expect_identical(.nl_summary_quantile(v, w, p, "positive", "sample"),
                    .nl_wtd_quantile(v, w, p, outside = "clamp"))
-  expect_identical(.nl_summary_quantile(v, w, p, "positive", "density"),
+  expect_identical(.nl_summary_quantile(v, w, p, "positive", "density", "chord"),
                    .nl_wtd_quantile(v, w, p, outside = "extend"))
+  # The default read still extends past the outer coordinate, which is the
+  # property this test exists for -- it is the KNOTS that moved, not the policy.
+  expect_true(all(.nl_summary_quantile(v, w, p, "positive", "density")[c(1L, 2L)] <
+                    min(v)))
   # The two differ only outside [w_1/2, 1 - w_n/2] = [0.1, 0.9] here: the sample
   # returns the extreme order statistic, the grid its outer cell's own edge.
   qs <- .nl_summary_quantile(v, w, p, "positive", "sample")
-  qd <- .nl_summary_quantile(v, w, p, "positive", "density")
+  qd <- .nl_summary_quantile(v, w, p, "positive", "density", "chord")
   expect_identical(qs[3L], qd[3L])
   expect_identical(unname(qs[c(1L, 2L)]), c(min(v), min(v)))
   expect_true(all(qd[c(1L, 2L)] < min(v)))
@@ -106,7 +119,8 @@ test_that("sample and density agree at every probability the backends report", {
     v <- sort(exp(rnorm(n, -0.3, 0.5)))
     w <- rep(1 / n, n)
     expect_identical(.nl_summary_quantile(v, w, probs, "positive", "sample"),
-                     .nl_summary_quantile(v, w, probs, "positive", "density"))
+                     .nl_summary_quantile(v, w, probs, "positive", "density",
+                                          "chord"))
   }
   # Below that they part, and the sample read is the one with a derivation: at
   # n = 400 the grid read fabricates a stub past the largest draw.
@@ -114,7 +128,7 @@ test_that("sample and density agree at every probability the backends report", {
   v <- sort(exp(rnorm(n, -0.3, 0.5)))
   w <- rep(1 / n, n)
   qs <- .nl_summary_quantile(v, w, 0.999, "positive", "sample")
-  qd <- .nl_summary_quantile(v, w, 0.999, "positive", "density")
+  qd <- .nl_summary_quantile(v, w, 0.999, "positive", "density", "chord")
   expect_identical(unname(qs), max(v))
   expect_gt(qd, max(v))
 })

@@ -1147,25 +1147,34 @@
       "), so its outer cell edge was mirrored in a coordinate guessed from the ",
       "values instead"))
   }
+  # The note fires on a fit read with something OTHER than the engine's own
+  # default, whichever that is (gcol33/tulpa#357). Naming the default here as a
+  # literal is what made it say "rather than the default 'chord'" on a fit that
+  # had just been read with the default.
   req <- ir$within_cell_requested
-  if (!length(req) || is.na(req) || identical(req, "chord")) {
+  dflt <- .nl_diag("within_cell")
+  if (!length(req) || is.na(req) || identical(req, dflt)) {
     return(if (length(out)) out else NULL)
   }
   used <- ir$within_cell
   fell <- which(!is.na(used) & used != req)
   out <- c(out, paste0(
     "hyperparameter intervals read with the '", req, "' within-cell ",
-    "construction rather than the default 'chord': the same cell masses ",
-    "spread over the cells' own boxes, so an endpoint is resolved to within ",
-    "one box and its realized coverage depends on where in that box the truth ",
-    "falls -- see `outer_grid_h_over_sd` for how wide a box is on each axis"))
+    "construction rather than the default '", dflt, "': ",
+    if (identical(req, "chord"))
+      paste0("each cell's mass placed at its own coordinate rather than spread ",
+             "over its box, which is the wider read of the two")
+    else
+      paste0("the same cell masses spread over the cells' own boxes, so an ",
+             "endpoint is resolved to within one box"),
+    " -- see `outer_grid_h_over_sd` for how wide a box is on each axis"))
   if (length(fell)) {
     nm <- if (length(ax) >= max(fell)) ax[fell] else as.character(fell)
     why <- stats::na.omit(unique(ir$within_cell_declined[fell]))
     out <- c(out, paste0(
       "'", req, "' declined on ", paste(nm, collapse = ", "), " (",
-      paste(why, collapse = ", "), "): those axes report the default 'chord' ",
-      "read instead"))
+      paste(why, collapse = ", "), "): those axes report the '",
+      as.character(used[fell][1L]), "' read instead"))
   }
   out
 }

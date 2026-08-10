@@ -886,6 +886,92 @@ back into the approximation it replaced. Tests:
 coverage gates in `test-nested-laplace-recovery.R` (`recov_sweep()` scores all
 three reads off one solve per seed).
 
+### The hyperparameter axis read: outside the grid, and inside a cell (gcol33/tulpa#357)
+
+A reported per-axis hyperparameter interval is read off the outer grid, and the
+grid gives only cell MASSES. Two orthogonal questions have to be answered before
+a quantile exists, and `.NL_SUPPORT` (`R/nested_laplace_moments.R`) carries one
+field for each:
+
+- `outside` is a FACT about the node set the producer left behind, derived from
+  its geometry: a tensor grid and a locally refined one `extend` past the outer
+  coordinate by the mirrored half-cell, a posterior sample `clamp`s at its
+  extreme order statistic, a CCD is a `moment_rule` that never reaches the
+  quantile read at all.
+- `within` is a CHOICE the caller makes about how each cell's mass is spread
+  INSIDE its own box. `chord` places the cumulative mid-mass at each cell
+  COORDINATE and interpolates between coordinates; `box_uniform` places the
+  cumulative full mass at each cell EDGE and interpolates between edges. Same
+  masses, same boxes, knots moved half a cell.
+
+They are orthogonal, which is why `within` is a second FIELD and not a fifth
+kind -- a density grid read either way is still a density grid, and a fifth kind
+would have asserted that a fit asking for box-uniform produced a different node
+set.
+
+**The default is `box_uniform` (0.0.188).** The engine default lives in exactly
+one place, `.NL_DIAG$within_cell` (`R/settings.R`), and `.NL_WITHIN_CELL[1]` and
+`.NL_SUPPORT$density$within` have to agree with it (`test-settings.R` pins all
+three together). `control$within_cell = "chord"` restores the previous report
+per fit, exactly; point estimates, moments, draws and weights are untouched
+either way, because this changes only where inside a cell the mass sits.
+
+**What decided it was fixed-truth coverage at the placement the engine ships,
+and the placement is what moved.** gcol33/tulpa#337 named fixed-truth coverage
+as its verdict instrument in advance and box-uniform failed it, but until
+gcol33/tulpa#361 the default axes were laid without reference to the posterior,
+so every measurement of this choice -- including that one -- was taken on a grid
+pinned coarser than any a user now gets. Re-measured on current main, summed
+|coverage - nominal| over nominal 0.95 / 0.80 / 0.50, chord against box-uniform:
+0.2900 / 0.1233 on #337's own instrument, 0.2004 / 0.0361 over the truth-swept
+fits of the same fixture whose axis contained the truth, and 0.2467 / 0.1572
+over nine (config, axis) rows spanning seven families. The one arrangement
+box-uniform still loses on is the five-level pinned grid #337 recorded its
+failure on, where that fixture's truth sits at fraction 0.9870 of its cell --
+the worst position in the box sweep, with the coarser four-level grid tying and
+the finer seven- and nine-level grids won. What failed there is a box POSITION,
+not a resolution. Evidence: `dev_notes/issue357/RESULTS357C.md`.
+
+**The position sensitivity belongs to any within-cell reconstruction.** An
+endpoint resolved to within one cell has a realized coverage that depends on
+where in that cell the unknown truth fell. That is measured for BOTH reads, and
+at the shipped placement box-uniform's 95% swing is 0.110 against the chord
+read's 0.067, where it was 0.415 on the coarse pinned grid; at nominal 0.50 the
+two are 0.238 and 0.231. A fit reports its own exposure through
+`outer_grid_cell_width` / `outer_grid_axis_sd` / `outer_grid_h_over_sd`
+(`.tulpa_grid_resolution()`), so the regime is readable from the fit.
+
+**A resolution-conditional default was scored, not assumed, and is dominated.**
+The two reads converge as `h / sd` falls, so a rule keyed on it is expressible;
+reading box-uniform only below a threshold scores 0.2517 / 0.2578 / 0.2133 /
+0.2322 / 0.1733 at thresholds 1 / 1.25 / 1.5 / 2 / 3 against 0.1572 for
+box-uniform everywhere. The threshold that scores best is the one that fires
+almost always, which is the fixed rule.
+
+**The regime it is weakest in is pinned, not hidden.** On a coarse grid PINNED
+by the caller with four crossed blocks and the placement pass off -- the regime
+every measurement before gcol33/tulpa#361 was taken in -- box-uniform wins one
+resolution and loses the next (per-axis summed deviation 0.5083 against 0.6500
+at four levels, 0.6875 against 0.5917 at five). Four axes give four independent
+box positions, so the position sensitivity is at its largest there, and the
+chord read's advantage is over-coverage: it sits at exactly 1.0000 on 11 of 24
+cells at nominal 0.80 and 0.95. `test-nested-laplace-recovery.R` asserts the
+SHAPE of that -- box narrower on every axis, box the one whose realized coverage
+spreads -- rather than a winner.
+
+**Two scope limits, both structural.** A locally CCD-refined grid's replacement
+clouds sit INSIDE one base cell, so a Voronoi partition of its node set is not
+the design's own boxes: `mixed` declines the default and reports `chord` with
+`theta_within_cell_declined = "support_mixed"`. That is a read a performance
+knob changes, which is why the decline is RECORDED per axis rather than silent
+-- an unrecorded one is gcol33/tulpa#317's defect again. And
+`.re_cov_derived_summary()` is pinned to `chord`: its values are DERIVED
+quantities at the nodes (`sigma_i`, `rho_ij`, `Sigma_ij`), not the design's own
+cell coordinates on the axis being reported, so half the gap between two of them
+is not a cell width -- the same objection that makes `sample` decline. The
+measurement was taken on the outer hyperparameter axes and is not extended past
+them.
+
 ### Three posterior arbiters, and coverage is only one (gcol33/tulpa#335)
 
 Binary coverage at one or two nominal levels reads one or two points of the

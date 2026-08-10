@@ -173,13 +173,21 @@ test_that("an undeclared axis's mirrored edge is guarded too", {
     expect_identical(pt$declined, "mirrored_edge_not_representable")
     expect_true(pt$declined %in% .NL_EDGE_DECLINED)
 
-    # The bound is reported on the DEFAULT chord read of the default density
-    # support, which is what a fit's hyperparameter interval comes off.
+    # The bound is reported on BOTH within-cell reads of the default density
+    # support, which is what a fit's hyperparameter interval comes off. The
+    # chord read tops out AT the extreme coordinate when the mirror is refused;
+    # the box read tops out at the refused mirror's fallback edge, so it is
+    # asserted finite and sorted rather than equal to a knot.
     probs <- c(0.005, 0.025, 0.5, 0.975, 0.995)
-    q <- .nl_summary_quantile(v, rep(1 / 3, 3), probs, NA_character_, "density")
+    q <- .nl_summary_quantile(v, rep(1 / 3, 3), probs, NA_character_, "density",
+                              "chord")
     expect_true(all(is.finite(q)))
     expect_false(is.unsorted(q))
     expect_identical(q[length(q)], v[3L])
+    qb <- .nl_summary_quantile(v, rep(1 / 3, 3), probs, NA_character_,
+                               "density")
+    expect_true(all(is.finite(qb)))
+    expect_false(is.unsorted(qb))
 
     # Straddling zero at that magnitude the LOWER mirror leaves the range, and
     # the chord read interpolating between a non-finite knot and a finite one
@@ -288,12 +296,34 @@ test_that("the domain reaches the CDF read, not only the moment rule", {
     w <- c(0.001, 0.02, 0.35, 0.629)
     probs <- c(0.025, 0.5, 0.975)
 
-    q_dom <- .nl_summary_quantile(v, w, probs, "unit", "density")
-    q_na  <- .nl_summary_quantile(v, w, probs, NA_character_, "density")
-    expect_lt(q_dom[3L], 1)
-    expect_gt(q_na[3L], 1)
-    # Only the outer half-cells move: the median sits between interior knots.
-    expect_equal(q_dom[2L], q_na[2L], tolerance = 1e-12)
+    # Both within-cell reads (gcol33/tulpa#357): the domain bounds the outer
+    # half-cell whichever set of knots the CDF is read between, which is the
+    # property this test exists for.
+    for (wc in .NL_WITHIN_CELL) {
+      q_dom <- .nl_summary_quantile(v, w, probs, "unit", "density", wc)
+      q_na  <- .nl_summary_quantile(v, w, probs, NA_character_, "density", wc)
+      expect_lt(q_dom[3L], 1)
+      expect_gt(q_na[3L], 1)
+    }
+    # Only the outer half-cells move, so under the CHORD read a quantile between
+    # interior COORDINATES cannot see the domain, and the median here is one.
+    expect_equal(.nl_summary_quantile(v, w, probs, "unit", "density",
+                                      "chord")[2L],
+                 .nl_summary_quantile(v, w, probs, NA_character_, "density",
+                                      "chord")[2L], tolerance = 1e-12)
+    # The box read's knots ARE the edges, both of them mirrored, so a domain
+    # that moves either edge moves every knot the CDF is interpolated between
+    # and the whole interval with it. Asserting the chord read's invariance for
+    # both would be asserting that the two reads have the same knots.
+    qb_dom <- .nl_summary_quantile(v, w, probs, "unit", "density",
+                                   "box_uniform")
+    qb_na  <- .nl_summary_quantile(v, w, probs, NA_character_, "density",
+                                   "box_uniform")
+    expect_lt(qb_dom[3L], 1)
+    expect_gt(qb_na[3L], 1)
+    expect_false(isTRUE(all.equal(qb_dom[2L], qb_na[2L])))
+    # and the declared support is what keeps the whole interval inside it.
+    expect_true(all(qb_dom > 0 & qb_dom < 1))
 
     # A `sample` support forms no edge at all, so the domain cannot change it.
     expect_identical(.nl_summary_quantile(v, w, probs, "unit", "sample"),

@@ -175,7 +175,7 @@ recov_fit_joint_ccd <- function(d, sg, family, cfg) {
 # assumed residual scale is the simulator's.
 recov_fit_joint_coarse <- function(d, sg, family, cfg, local_ccd = NULL,
                                    phi = cfg$phi, levels = 4L,
-                                   diagnose_k = FALSE) {
+                                   diagnose_k = FALSE, within_cell = NULL) {
   sgc <- if (levels >= length(sg)) sg else
     exp(seq(log(min(sg)), log(max(sg)), length.out = levels))
   suppressWarnings(tulpa_nested_laplace_joint(
@@ -184,9 +184,11 @@ recov_fit_joint_coarse <- function(d, sg, family, cfg, local_ccd = NULL,
                               family = family, phi = phi)),
     prior = lapply(d$regions, function(g)
       list(type = "iid", obs_idx = list(g), n_units = d$nr, sigma_grid = sgc)),
-    control = list(max_iter = 100L, tol = 1e-8, n_threads = 1L,
-                   diagnose_k = diagnose_k, integration = "grid",
-                   local_ccd = local_ccd, skew_correct = TRUE)))
+    control = c(list(max_iter = 100L, tol = 1e-8, n_threads = 1L,
+                     diagnose_k = diagnose_k, integration = "grid",
+                     local_ccd = local_ccd, skew_correct = TRUE),
+                if (is.null(within_cell)) list() else
+                  list(within_cell = within_cell))))
 }
 
 recov_fit_joint_local_ccd <- function(d, sg, family, cfg) {
@@ -835,8 +837,22 @@ test_that("the coverage gate reads the residual scale and not a layer of the fit
   f4 <- recov_fit_joint_coarse(d, sg, "gaussian", LCCD_CFG)
   f6 <- recov_fit_joint_coarse(d, sg, "gaussian", LCCD_CFG, levels = 6L)
   expect_identical(nrow(f6$theta_grid), 1296L)
+  # RE-PINNED at 0.0.188. The assertion is that the `sigma_1` interval SHARPENS
+  # when the base grid is refined, and it still does; what moved is by how much.
+  # The reported read is the box one since gcol33/tulpa#357, and it is already
+  # the narrower of the two at BOTH resolutions, so the ratio between them is
+  # 0.714 where the chord read's was under 0.6. A tighter constant here would be
+  # pinning the chord read's discretisation error under a different name.
   expect_lt(f6$theta_ci_hi[[1]] - f6$theta_ci_lo[[1]],
-            0.6 * (f4$theta_ci_hi[[1]] - f4$theta_ci_lo[[1]]))
+            0.8 * (f4$theta_ci_hi[[1]] - f4$theta_ci_lo[[1]]))
+  # Paired with the read that constant WAS calibrated on, so the sharpening is
+  # asserted on both and the re-pin cannot hide a lost one.
+  f4c <- recov_fit_joint_coarse(d, sg, "gaussian", LCCD_CFG,
+                                within_cell = "chord")
+  f6c <- recov_fit_joint_coarse(d, sg, "gaussian", LCCD_CFG, levels = 6L,
+                                within_cell = "chord")
+  expect_lt(f6c$theta_ci_hi[[1]] - f6c$theta_ci_lo[[1]],
+            0.6 * (f4c$theta_ci_hi[[1]] - f4c$theta_ci_lo[[1]]))
   w4 <- beta_post(f4)
   w6 <- beta_post(f6)
   expect_lt(abs((w6$hi[2] - w6$lo[2]) / (w4$hi[2] - w4$lo[2]) - 1), 5e-3)
@@ -918,6 +934,13 @@ lccd_arm_sweep <- function(levels, n_seed, seed_off = 8100L) {
                    LCCD_CFG$ntr, LCCD_CFG$beta, LCCD_CFG$su, LCCD_CFG$phi)
     dm <- outer_grid_dump(recov_fit_joint_coarse(d, sg, "gaussian", LCCD_CFG,
                                                  levels = levels))
+    # The four arms are OUTER WEIGHT and PLACEMENT rules, and every number
+    # below is a comparison between them. The within-cell read is held at
+    # `chord` -- not the engine default since 0.0.188 (gcol33/tulpa#357) -- so
+    # that comparison is not confounded by a second construction changing under
+    # it. `dev_notes/issue357/lccd357.R` measures this fixture under BOTH reads
+    # and is where the within-cell question is scored on it.
+    dm$within <- "chord"
     A <- lccd_arms(dm)
     for (a in arms) {
       r <- lccd_arm_read(dm, A[[a]])
@@ -1100,6 +1123,62 @@ test_that("only the mass rule keeps the outer grid's coverage, and it does not s
     # 0 on the slope, so the floor is set where a real collapse would show.
     expect_gte(min(R$b_cov["mass", ]) / n_seed, 0.85, label = lab)
   }
+})
+
+test_that("the four-axis crossed fixture is where the box read is weakest", {
+  skip_if_not_slow()
+  # gcol33/tulpa#357's default flip was measured on one- and two-axis grids at
+  # the placement the engine ships. THIS fixture is neither: four crossed iid
+  # blocks, so each axis's marginal is read after integrating three others out,
+  # and a PINNED coarse grid with the placement pass off. It is the regime the
+  # flip is weakest in and it is pinned here rather than left to be rediscovered.
+  #
+  # Measured at 60 seeds, four truths, three nominal levels
+  # (`dev_notes/issue357/lccd357.R`), mean |coverage - nominal| per axis summed
+  # over levels: at 4 levels chord 0.6500 against box 0.5083, at 5 levels chord
+  # 0.5917 against box 0.6875. The box read wins one and loses the other, and
+  # its per-cell spread is what does it -- on individual axes it reads 0.183 to
+  # 0.967 at nominal 0.50 where the chord read reads 0.733 to 0.967. The chord
+  # read's own advantage at 5 levels is over-coverage: it sits at exactly 1.0000
+  # on 11 of its 24 cells at nominal 0.80 and 0.95.
+  #
+  # So the assertion is the SHAPE, not a winner: on a coarse pinned crossed
+  # grid the box read is the position-sensitive one and the chord read is the
+  # wide one, at every level.
+  n_seed <- 30L
+  sg <- exp(seq(log(0.2), log(1.5), length.out = 4L))
+  probs <- c(0.25, 0.5, 0.75)
+  # All FOUR truths: `LCCD_CFG$su` is the first block's alone and `LCCD_SIM`
+  # crosses three more, so a read over `LCCD_CFG$su` would score one axis of the
+  # four and this test is about the spread ACROSS them.
+  truth <- c(LCCD_CFG$su, 0.5, 0.35, 0.25)
+  cov <- matrix(0L, 2L, length(truth),
+                dimnames = list(c("chord", "box_uniform"), NULL))
+  wid <- matrix(0, 2L, length(truth),
+                dimnames = list(c("chord", "box_uniform"), NULL))
+  for (s in seq_len(n_seed)) {
+    d <- LCCD_SIM(8100L + s, "gaussian", LCCD_CFG$nr, LCCD_CFG$spr,
+                  LCCD_CFG$ntr, LCCD_CFG$beta, LCCD_CFG$su, LCCD_CFG$phi)
+    f <- recov_fit_joint_coarse(d, sg, "gaussian", LCCD_CFG, levels = 4L)
+    dm <- .nl_axis_domains(f)
+    for (a in rownames(cov)) {
+      q <- .nl_axis_quantiles(f$theta_grid, f$log_marginal, f$refining_axis,
+                              probs = probs, domains = dm, within = a)
+      lo <- vapply(seq_along(truth), function(j) as.numeric(q$ci_lo[[j]]),
+                   numeric(1))
+      hi <- vapply(seq_along(truth), function(j) as.numeric(q$ci_hi[[j]]),
+                   numeric(1))
+      cov[a, ] <- cov[a, ] + as.integer(truth >= lo & truth <= hi)
+      wid[a, ] <- wid[a, ] + (hi - lo)
+    }
+  }
+  cr <- cov / n_seed
+  # The box read is narrower on every axis, which is the whole mechanism.
+  expect_true(all(wid["box_uniform", ] < wid["chord", ]))
+  # And it is the one whose realized coverage spreads across the four axes.
+  expect_gt(diff(range(cr["box_uniform", ])), diff(range(cr["chord", ])))
+  # Neither is allowed to collapse outright on any axis at nominal 0.50.
+  expect_gt(min(cr["box_uniform", ]), 0.05)
 })
 
 # --- the residual-scale convention every gaussian fixture here rests on ------

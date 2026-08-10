@@ -79,29 +79,33 @@
 #'     FIXED inner Laplace, this scores whether that inner Gaussian
 #'     approximation is itself a good fit to the latent-field conditional
 #'     posterior. See [diagnostics()] for the combined whole-fit verdict.
-#'   * `within_cell` (`"chord"`) -- the WITHIN-CELL construction the reported
-#'     per-axis hyperparameter intervals are read with (gcol33/tulpa#357). The
-#'     outer grid's weights say how much mass each cell holds; they do not say
-#'     how it is spread inside the cell, and a quantile needs both. `"chord"` is
-#'     the shipped read: the cumulative MID-mass at each cell coordinate, linear
-#'     between coordinates. `"box_uniform"` puts the cumulative FULL mass at each
-#'     cell EDGE and interpolates between edges -- the same masses over the same
-#'     boxes with the knots moved half a cell, which measures as a whole order of
-#'     convergence (1.04 against 2.00 on a fixture with a closed-form posterior)
-#'     and takes the paired CRPS at 12 of 12 rungs, the folded PIT at 12 of 12
-#'     and the 95% coverage at 11 of 12 (the twelfth an exact tie), over a ladder
-#'     spanning cell-width-to-posterior-SD 2.8 to 27.3, at 0.46 to 0.92x the
-#'     width. THE DEFAULT IS STILL `"chord"`: a within-cell
-#'     reconstruction resolves an endpoint to within one cell, so a reported
-#'     interval's realized coverage depends on where in its cell the unknown
-#'     truth fell, and swept directly that runs 0.585 to 1.000 at nominal 0.95
-#'     (box-averaged 0.9033, against the chord read's own vacuous 1.0000).
+#'   * `within_cell` (`"box_uniform"`) -- the WITHIN-CELL construction the
+#'     reported per-axis hyperparameter intervals are read with
+#'     (gcol33/tulpa#357). The outer grid's weights say how much mass each cell
+#'     holds; they do not say how it is spread inside the cell, and a quantile
+#'     needs both. `"box_uniform"` puts the cumulative FULL mass at each cell
+#'     EDGE and interpolates between edges; `"chord"` puts the cumulative
+#'     MID-mass at each cell coordinate and interpolates between coordinates --
+#'     the same masses over the same boxes with the knots moved half a cell,
+#'     which measures as a whole order of convergence (2.00 against 1.04 on a
+#'     fixture with a closed-form posterior).
+#'     THE DEFAULT IS `"box_uniform"` since 0.0.188, decided on FIXED-TRUTH
+#'     coverage at the placement the engine ships since gcol33/tulpa#361 made
+#'     `auto_recenter = "resolve"` the default. Summed |coverage - nominal| over
+#'     nominal 0.95 / 0.80 / 0.50, chord against box-uniform: 0.2900 / 0.1233 on
+#'     the pre-registered fixed-truth instrument, 0.2004 / 0.0361 over 4680
+#'     truth-swept fits of the same fixture, and 0.2467 / 0.1572 over nine
+#'     (config, axis) rows spanning seven families, at 0.69 to 1.08x the width.
+#'     The conditional-coverage swing that held the default back reads 0.110 at
+#'     the shipped placement against 0.415 on the coarse pinned grid it was
+#'     measured on, and at nominal 0.50 it is the same on both reads.
 #'     `outer_grid_h_over_sd` is how wide a cell is on each axis, and
 #'     `theta_within_cell` is what each axis was actually read with. Only a
 #'     `"density"` support admits it -- a CCD design, a locally refined grid and
 #'     a posterior sample are not cell partitions that tile -- and an axis it
 #'     declines on reports `"chord"` with a reason rather than erroring. Nothing
-#'     else moves: point estimates, moments, draws and weights are untouched.
+#'     else moves: point estimates, moments, draws and weights are untouched, and
+#'     `"chord"` restores the previous report exactly.
 #'   * `skew_correct` (`TRUE`) -- consume the inner-Laplace expansion instead of
 #'     only grading it (gcol33/tulpa#302, gcol33/tulpa#354): report
 #'     Cornish-Fisher marginal quantiles at each coefficient's own `gamma_3`,
@@ -320,8 +324,9 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   # intervals are read off (gcol33/tulpa#357). A numerical reconstruction of the
   # integration design the fit already ran, so it sits beside `integration` /
   # `local_ccd` / `skew_correct` in `control` rather than in the signature,
-  # which carries only statistical arguments. The default is the shipped chord
-  # read and every number is byte-identical under it.
+  # which carries only statistical arguments. The default is
+  # `.nl_diag("within_cell")`, and `"chord"` restores the pre-0.0.188 report
+  # byte-identically.
   within_cell        <- .nl_within_cell_mode(control$within_cell)
 
   # Grid-cell checkpoint/resume. `control$checkpoint =

@@ -253,7 +253,7 @@ outer_grid_rebuild <- function(dump, weights = NULL, joint_grid = NULL) {
     .ogd_coords(dump, joint_grid), dump$log_marginal, dump$refining_axis,
     probs = dump$probs, weights = as.numeric(w),
     support = dump$support, domains = dump$axis_domains,
-    within = dump$within %||% "chord")
+    within = dump$within %||% tulpa:::.nl_within_cell_mode(NULL))
 }
 
 # The grid-marginalized fixed-effect mean and covariance a dump's cells give
@@ -426,7 +426,7 @@ outer_grid_read_diff <- function(a, b) {
   }
   dm <- if (length(dump$axis_domains) < j) NA_character_ else dump$axis_domains[[j]]
   tulpa:::.nl_summary_quantile(v, ws, dump$probs, dm, dump$support,
-                               dump$within %||% "chord")
+                               dump$within %||% tulpa:::.nl_within_cell_mode(NULL))
 }
 
 # Every axis at one coarsening, in the shape `outer_grid_rebuild()` returns.

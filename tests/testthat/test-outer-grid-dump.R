@@ -338,13 +338,39 @@ test_that("the floor bounds the read's own discretisation error", {
   # This grid's exact answer is known: the outer log-marginal is a standard
   # Gaussian, so the axis's 95% endpoints are qnorm(0.025) / qnorm(0.975) and the
   # read's distance from them is the discretisation error the floor is standing
-  # in for. Measured at 9 / 15 / 21 / 41 / 81 levels, the error is 0.2646 /
-  # 0.1263 / 0.0300 / 0.0113 / 0.0035 against a floor of 0.5519 / 0.2814 /
-  # 0.1959 / 0.0562 / 0.0135: bounded at every resolution, and by a factor
-  # between 2 and 7 rather than by orders of magnitude.
+  # in for.
+  #
+  # RE-MEASURED at 0.0.188, when the reported read became `box_uniform`
+  # (gcol33/tulpa#357). Under the chord read the error at 9 / 15 / 21 / 41 / 81
+  # levels was 0.2646 / 0.1263 / 0.0300 / 0.0113 / 0.0035 against a floor of
+  # 0.5246 / 0.2814 / 0.1959 / 0.0562 / 0.0135; under the default read it is
+  # 0.1616 / 0.0004 / 0.0248 / 0.0047 / 0.0004 against 0.2207 / 0.1681 / 0.0370
+  # / 0.0134 / 0.0059.
+  #
+  # BOUNDED at every resolution on both, which is what the floor is for and what
+  # this test keeps asserting. What does NOT survive the flip is the pointwise
+  # "and not by orders of magnitude": the box read is second-order accurate, so
+  # at 15 and 81 levels it lands essentially on the exact endpoints and the floor
+  # is 400x and 14x its error. That is the read being better than the floor's
+  # own resolution, not the floor being wrong, so the tightness claim moves to
+  # the aggregate -- the floor has to be within reach of the error SOMEWHERE, or
+  # it would be a bound that never binds.
   exact <- stats::qnorm(c(0.025, 0.975))
+  ratio <- numeric(0)
   for (m in c(9L, 15L, 21L, 41L, 81L)) {
     d  <- .ogd_fake_dump(m)
+    rb <- outer_grid_rebuild(d)
+    err <- mean(abs(c(rb$ci_lo, rb$ci_hi) - exact))
+    fl  <- outer_grid_noise_floor(d)$endpoints
+    expect_lt(err, fl)
+    ratio <- c(ratio, err / fl)
+  }
+  expect_gt(max(ratio), 0.5)
+  # And the chord read, which the floor was calibrated on, keeps the pointwise
+  # statement.
+  for (m in c(9L, 15L, 21L, 41L, 81L)) {
+    d <- .ogd_fake_dump(m)
+    d$within <- "chord"
     rb <- outer_grid_rebuild(d)
     err <- mean(abs(c(rb$ci_lo, rb$ci_hi) - exact))
     fl  <- outer_grid_noise_floor(d)$endpoints

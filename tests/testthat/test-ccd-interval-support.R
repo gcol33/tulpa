@@ -19,9 +19,17 @@
 test_that(".nl_summary_quantile reads a density support as a weighted quantile", {
   v <- c(1, 2, 3, 4, 5)
   w <- rep(0.2, 5)
+  # Named, because this test is about the SUPPORT dispatch and the within-cell
+  # default moved to `box_uniform` at 0.0.188 (gcol33/tulpa#357).
   expect_identical(
-    .nl_summary_quantile(v, w, c(0.025, 0.5, 0.975), "positive", "density"),
+    .nl_summary_quantile(v, w, c(0.025, 0.5, 0.975), "positive", "density",
+                         "chord"),
     .nl_wtd_quantile(v, w, c(0.025, 0.5, 0.975), outside = "extend"))
+  # The default read is still a CDF read of the same weights on the same axis,
+  # sorted and bracketed by the same outer edges.
+  q <- .nl_summary_quantile(v, w, c(0.025, 0.5, 0.975), "positive", "density")
+  expect_false(is.unsorted(q))
+  expect_gt(q[1L], .nl_cell_edges(v, "positive")[1L])
 })
 
 test_that(".nl_summary_quantile reads a moment rule from its moments", {

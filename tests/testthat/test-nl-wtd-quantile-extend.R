@@ -110,7 +110,10 @@ test_that("the axis read carries the extension through to a reported interval", 
   v2 <- c(0.5, 1.5)
   tg <- as.matrix(expand.grid(sigma = v1, tau = v2))
   lm <- c(0, -0.4, -3, -6, -0.2, -0.6, -3.2, -6.2)
-  q <- .nl_axis_quantiles(tg, lm)
+  # The within-cell construction is named, because this test is about the
+  # OUTSIDE policy and the default moved to `box_uniform` at 0.0.188
+  # (gcol33/tulpa#357). The extension property is asserted on BOTH.
+  q <- .nl_axis_quantiles(tg, lm, within = "chord")
   w <- exp(lm - max(lm)); w <- w / sum(w)
   w1 <- tapply(w, tg[, "sigma"], sum)
   expect_gt(w1[[1]] / 2, 0.025)
@@ -118,20 +121,36 @@ test_that("the axis read carries the extension through to a reported interval", 
   expect_gt(q$ci_lo[["sigma"]], .nl_cell_edges(v1)[1])
   expect_identical(unname(q$median[["sigma"]]),
                    .nl_wtd_quantile(v1, w1, 0.5, outside = "clamp"))
+  qb <- .nl_axis_quantiles(tg, lm)
+  expect_identical(unname(qb$within[["sigma"]]), "box_uniform")
+  expect_lt(qb$ci_lo[["sigma"]], min(v1))
+  expect_gt(qb$ci_lo[["sigma"]], .nl_cell_edges(v1)[1])
 })
 
 test_that("every CDF support dispatches to the extension, the moment rule does not", {
   v <- exp(seq(log(0.2), log(1.5), length.out = 5))
   w <- c(0.30, 0.25, 0.20, 0.15, 0.10)
   pr <- c(0.01, 0.5, 0.99)
-  expect_identical(.nl_summary_quantile(v, w, pr, NA_character_, "density"),
+  expect_identical(.nl_summary_quantile(v, w, pr, NA_character_, "density",
+                                        "chord"),
                    .nl_wtd_quantile(v, w, pr, outside = "extend"))
-  # A locally CCD-refined grid takes the SAME construction as the density read.
-  # Its `mixed` tag records provenance and does not switch the formula
-  # (gcol33/tulpa#317), so a refined fit and the unrefined fit of the same model
-  # cannot report intervals built two different ways.
+  # The default read extends too: it is the knots that moved, not the policy.
+  expect_lt(.nl_summary_quantile(v, w, pr, NA_character_, "density")[1L],
+            min(v))
+  # A locally CCD-refined grid takes the same OUTSIDE policy as the density
+  # read, which is what gcol33/tulpa#317 fixed and what this asserts: its
+  # `mixed` tag records provenance and does not switch the extension.
   expect_identical(.nl_summary_quantile(v, w, pr, NA_character_, "mixed"),
-                   .nl_summary_quantile(v, w, pr, NA_character_, "density"))
+                   .nl_summary_quantile(v, w, pr, NA_character_, "density",
+                                        "chord"))
+  # The WITHIN-CELL construction is the one thing refinement does change since
+  # 0.0.188 (gcol33/tulpa#357): a `mixed` node set is not a partition that
+  # tiles, so it declines the engine default and says so. That is a difference a
+  # performance knob introduces, so the decline has to be RECORDED -- an
+  # unrecorded one is gcol33/tulpa#317's defect again.
+  rm_ <- .nl_summary_quantile_read(v, w, pr, NA_character_, "mixed")
+  expect_identical(rm_$within, "chord")
+  expect_identical(rm_$declined, "support_mixed")
   # A moment rule with no known domain still withholds the number.
   expect_true(all(is.na(
     .nl_summary_quantile(v, w, c(0.01, 0.99), NA_character_, "moment_rule"))))

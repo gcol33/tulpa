@@ -1,5 +1,56 @@
 # tulpa NEWS
 
+## 0.0.188
+
+* **Reported hyperparameter intervals are read with the box-uniform within-cell
+  construction by default** (gcol33/tulpa#357). The outer grid's weights say how
+  much mass each cell holds and not how it is spread inside the cell, and a
+  quantile needs both. The engine now places each cell's full mass at its own
+  box EDGES and interpolates between edges, where it placed the cumulative
+  mid-mass at each cell COORDINATE. Same masses, same boxes, knots moved half a
+  cell -- and a whole order of convergence, 2.00 against 1.04 against a
+  closed-form posterior. `control$within_cell = "chord"` restores the previous
+  report per fit, exactly; point estimates, moments, draws and weights are
+  untouched either way.
+
+  The construction has been selectable since 0.0.175 and the default was held
+  back by two things, both of which the placement work in 0.0.187 changed.
+  Until gcol33/tulpa#361 the default axes were laid without reference to the
+  posterior, so every earlier measurement of this choice was taken on a grid
+  pinned coarser than any a user now gets. Re-measured at the placement the
+  engine ships, summed |coverage - nominal| over nominal 0.95 / 0.80 / 0.50,
+  chord against box-uniform: **0.2900 against 0.1233** on gcol33/tulpa#337's own
+  pre-registered fixed-truth instrument (300 seeds), **0.2004 against 0.0361**
+  over the 4680 truth-swept fits of the same fixture whose axis contained the
+  truth, and **0.2467 against 0.1572** over nine (config, axis) rows spanning
+  seven families at 200 seeds each. Box-uniform is nearer nominal on 6 of those
+  9 rows and at all three levels of the other two, at 0.69 to 1.08x the width.
+
+  The conditional-coverage sensitivity that held the default back is a property
+  of ANY within-cell reconstruction, and at the shipped placement it no longer
+  separates the two: box-uniform's realized 95% coverage swings 0.110 across a
+  cell where it swung 0.415 on the coarse pinned grid it was measured on, and at
+  nominal 0.50 the two reads swing 0.238 and 0.231. A resolution-conditional
+  default was scored rather than assumed and is dominated by the fixed rule
+  (best threshold 0.1733 against 0.1572).
+
+  The regime it is weakest in is recorded rather than left to be rediscovered:
+  on a coarse grid PINNED by the caller with four crossed blocks and no
+  placement pass, box-uniform wins one resolution and loses the next (per-axis
+  summed deviation 0.5083 against the chord read's 0.6500 at four levels,
+  0.6875 against 0.5917 at five), because four axes give four independent box
+  positions. That is the regime every measurement before 0.0.187 was taken in,
+  and it is not what a default fit gets.
+
+  Two consequences worth knowing. A locally CCD-refined grid is not a partition
+  that tiles, so it declines the new default and reports the chord read with
+  `theta_within_cell_declined = "support_mixed"` -- a difference a performance
+  knob introduces, which is why it is recorded per axis rather than silent.
+  And `.re_cov_derived_summary()` is deliberately pinned to the chord read: its
+  values are derived quantities at the nodes rather than the design's own cell
+  coordinates on the reported axis, so a box partition of them would assert a
+  property nothing measured. The RE-covariance backends are unchanged.
+
 ## 0.0.187
 
 * **The outer-grid placement pass reaches every registry family whose axes

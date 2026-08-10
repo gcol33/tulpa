@@ -20,13 +20,28 @@ PROBS_WC <- c(0.005, 0.025, 0.1, 0.25, 0.5, 0.75, 0.9, 0.975, 0.995)
 
 # --------------------------------------------------------- the default is fixed
 
-test_that("the default construction leaves every reported number identical", {
+test_that("the default construction is box-uniform, and one setting decides it", {
+  # RE-PINNED at 0.0.188 (gcol33/tulpa#357). This asserted that the default read
+  # was `chord`; the default moved on the measurement recorded in
+  # `R/settings.R`, so the assertion moves with it. What it has to keep saying is
+  # that there is ONE default and every place that names one agrees with it --
+  # `.NL_DIAG$within_cell`, the `match.arg` vocabulary and the kind's admitted
+  # set -- since three disagreeing defaults is what makes a read depend on which
+  # door it came through.
   v <- exp(seq(log(0.2), log(1.5), length.out = 5))
   w <- c(0.30, 0.25, 0.20, 0.15, 0.10)
+  dflt <- .nl_diag("within_cell")
+  expect_identical(dflt, "box_uniform")
+  expect_identical(.nl_within_cell_mode(NULL), dflt)
+  expect_identical(.NL_WITHIN_CELL[1L], dflt)
+  expect_true(dflt %in% .NL_SUPPORT[["density"]]$within)
   for (sup in .NL_SUPPORT_KINDS) {
     for (dm in c("positive", NA_character_)) {
+      # An unnamed call takes the default, and a kind that does not admit it
+      # falls back to the chord read -- which is the same number either way.
+      want <- if (dflt %in% .NL_SUPPORT[[sup]]$within) dflt else "chord"
       expect_identical(.nl_summary_quantile(v, w, PROBS_WC, dm, sup),
-                       .nl_summary_quantile(v, w, PROBS_WC, dm, sup, "chord"))
+                       .nl_summary_quantile(v, w, PROBS_WC, dm, sup, want))
     }
   }
   # `.nl_summary_quantile()` is `.nl_summary_quantile_read()`'s `$q` -- one
@@ -34,12 +49,19 @@ test_that("the default construction leaves every reported number identical", {
   r <- .nl_summary_quantile_read(v, w, PROBS_WC, "positive", "density")
   expect_identical(r$q, .nl_summary_quantile(v, w, PROBS_WC, "positive",
                                              "density"))
-  expect_identical(r$within, "chord")
+  expect_identical(r$within, "box_uniform")
   expect_true(is.na(r$declined))
-  # And the engine's own default is the shipped read.
-  expect_identical(.nl_diag("within_cell"), "chord")
-  expect_identical(.nl_within_cell_mode(NULL), "chord")
-  expect_identical(.NL_WITHIN_CELL[1L], "chord")
+  # The paired assertion the flip needs: the default moved the read on the ONE
+  # kind that admits box-uniform and on nothing else, and `"chord"` is still
+  # reachable and still different there.
+  for (sup in .NL_SUPPORT_KINDS) {
+    for (dm in c("positive", NA_character_)) {
+      d <- .nl_summary_quantile(v, w, PROBS_WC, dm, sup)
+      c0 <- .nl_summary_quantile(v, w, PROBS_WC, dm, sup, "chord")
+      if (identical(sup, "density")) expect_false(isTRUE(all.equal(d, c0)))
+      else expect_identical(d, c0)
+    }
+  }
 })
 
 test_that("`.nl_cell_edges()` is unchanged by the partition extraction", {
@@ -89,6 +111,44 @@ test_that("the boxes tile the axis and carry the shipped masses exactly", {
   expect_equal(unname(q), e[seq_len(length(v) - 1L) + 1L])
   # Interior edges are midpoints in the coordinate the partition lives in.
   expect_equal(e[3L], exp(mean(log(v[2:3]))))
+})
+
+test_that("a cumulative mass that rounds past 1 does not break the inversion", {
+  # gcol33/tulpa#388. `cumsum(m)` can round ABOVE 1, and a grid whose trailing
+  # cells hold no mass carries that same value from the last positive cell
+  # onward, so forcing the LAST entry of the CDF to 1 made the vector DECREASE
+  # there and `findInterval()` refused it. The read errored on exactly the node
+  # sets this construction exists to handle -- a grid whose outer cells'
+  # softmax weight underflowed to zero -- and it was reachable from a default
+  # fit as soon as this became the default read.
+  #
+  # The witness is found by search rather than by hand, because whether a
+  # normalized sum rounds up is not something to assert by eye: over uniform
+  # log-scale weights with two trailing zeros it takes a few dozen draws.
+  set.seed(11L)
+  hit <- NULL
+  for (i in seq_len(5000L)) {
+    k <- sample(3:8, 1L)
+    cand <- c(exp(stats::rnorm(k, 0, 3)), 0, 0)
+    cs <- cumsum(cand / sum(cand))
+    if (cs[length(cs) - 2L] > 1) { hit <- cand; break }
+  }
+  expect_false(is.null(hit))
+  expect_gt(cumsum(hit / sum(hit))[length(hit) - 2L], 1)
+  v <- seq_along(hit)
+  probs <- c(0.005, 0.025, 0.5, 0.975, 0.995)
+  r <- .nl_box_quantile(v, hit, probs, NA_character_)
+  expect_true(is.na(r$declined))
+  expect_true(all(is.finite(r$q)))
+  expect_false(is.unsorted(r$q))
+  # It is the READ that was broken, not the masses: the interval still sits
+  # inside the partition the coordinates define.
+  e <- .nl_cell_edges(sort(unique(v)), NA_character_)
+  expect_gte(r$q[1L], e[1L])
+  expect_lte(r$q[length(r$q)], e[2L])
+  # And the whole dispatcher survives it, which is the path a fit takes.
+  expect_true(all(is.finite(.nl_summary_quantile(v, hit, probs, NA_character_,
+                                                 "density"))))
 })
 
 test_that("the partition comes from the grid, the masses from the weights", {
@@ -294,12 +354,16 @@ test_that("the axis read says which construction produced each interval", {
   v2 <- c(0.5, 1.5)
   tg <- as.matrix(expand.grid(sigma = v1, tau = v2))
   lm <- c(0, -0.4, -3, -6, -0.2, -0.6, -3.2, -6.2)
-  qc <- .nl_axis_quantiles(tg, lm)
+  qc <- .nl_axis_quantiles(tg, lm, within = "chord")
   expect_identical(unname(qc$within), c("chord", "chord"))
   expect_true(all(is.na(qc$within_declined)))
   qb <- .nl_axis_quantiles(tg, lm, within = "box_uniform")
   expect_identical(unname(qb$within), c("box_uniform", "box_uniform"))
   expect_false(isTRUE(all.equal(unname(qb$ci_lo), unname(qc$ci_lo))))
+  # An unnamed read takes the engine default, whichever that is.
+  q0 <- .nl_axis_quantiles(tg, lm)
+  expect_identical(unname(q0$within),
+                   rep(.nl_diag("within_cell"), 2L))
   # A single-node axis falls back on its OWN, without taking the fit with it.
   tg1 <- cbind(sigma = tg[, "sigma"], fixed = rep(2, nrow(tg)))
   q1 <- .nl_axis_quantiles(tg1, lm, within = "box_uniform")
@@ -361,27 +425,31 @@ test_that("a fit selects the construction, reports it, and stays byte-identical 
   fc <- fit("chord")
   fb <- fit("box_uniform")
 
-  # Asking for the default explicitly changes nothing.
-  expect_identical(f0$theta_median, fc$theta_median)
-  expect_identical(f0$theta_ci_lo, fc$theta_ci_lo)
-  expect_identical(f0$theta_ci_hi, fc$theta_ci_hi)
+  # Asking for the default explicitly changes nothing. RE-PINNED at 0.0.188:
+  # the default is `box_uniform` (gcol33/tulpa#357), so the arm `f0` matches is
+  # `fb`, and `fc` is the alternative that must still be reachable and still
+  # differ.
+  expect_identical(f0$theta_median, fb$theta_median)
+  expect_identical(f0$theta_ci_lo, fb$theta_ci_lo)
+  expect_identical(f0$theta_ci_hi, fb$theta_ci_hi)
+  expect_false(isTRUE(all.equal(unname(f0$theta_ci_lo),
+                                unname(fc$theta_ci_lo))))
   # The construction is reported, and every path stamps the node-set kind now,
   # not only the multi-block driver (gcol33/tulpa#357).
-  expect_identical(f0$within_cell_requested, "chord")
-  expect_identical(fb$within_cell_requested, "box_uniform")
-  expect_identical(unname(f0$theta_within_cell), "chord")
+  expect_identical(f0$within_cell_requested, "box_uniform")
+  expect_identical(fc$within_cell_requested, "chord")
+  expect_identical(unname(f0$theta_within_cell), "box_uniform")
   expect_identical(unname(fb$theta_within_cell), "box_uniform")
+  expect_identical(unname(fc$theta_within_cell), "chord")
   expect_identical(f0$theta_interval_read, "density")
   expect_equal(f0$theta_interval_design_mass, 0)
   # The moments are the SAME under either construction: they are sums over the
   # cells, and this changes only where inside a cell the mass sits.
-  expect_identical(f0$theta_mean, fb$theta_mean)
-  expect_identical(f0$theta_sd, fb$theta_sd)
-  # And the interval is not.
-  expect_false(isTRUE(all.equal(unname(f0$theta_ci_lo),
-                                unname(fb$theta_ci_lo))))
+  expect_identical(fc$theta_mean, fb$theta_mean)
+  expect_identical(fc$theta_sd, fb$theta_sd)
+  # And the interval is not: the box read is the narrower of the two.
   expect_lt(unname(fb$theta_ci_hi - fb$theta_ci_lo),
-            unname(f0$theta_ci_hi - f0$theta_ci_lo))
+            unname(fc$theta_ci_hi - fc$theta_ci_lo))
   # The fit knows how coarse its own grid is.
   expect_true(is.finite(f0$outer_grid_h_over_sd[[1L]]))
   expect_equal(unname(f0$outer_grid_cell_width[[1L]]), diff(log(sg))[1L])
@@ -389,8 +457,8 @@ test_that("a fit selects the construction, reports it, and stays byte-identical 
   # The shipped read IS the arm `dev_notes/issue337/recon.R` scored: cell masses
   # over the cells' own boxes, the CDF read by the chord between edges. Rebuilt
   # here from the fit's own grid, independently of the engine's code path.
-  w <- exp(f0$log_marginal - max(f0$log_marginal)); w <- w / sum(w)
-  v <- as.numeric(f0$theta_grid); o <- order(v); v <- v[o]; w <- w[o]
+  w <- exp(fb$log_marginal - max(fb$log_marginal)); w <- w / sum(w)
+  v <- as.numeric(fb$theta_grid); o <- order(v); v <- v[o]; w <- w[o]
   u <- log(v); n <- length(u)
   mid <- (u[-1L] + u[-n]) / 2
   e <- exp(c(u[1L] - (mid[1L] - u[1L]), mid, u[n] + (u[n] - mid[n - 1L])))
@@ -400,11 +468,20 @@ test_that("a fit selects the construction, reports it, and stays byte-identical 
   expect_equal(unname(c(fb$theta_ci_lo, fb$theta_median, fb$theta_ci_hi)),
                ref, tolerance = 1e-12)
 
-  # `diagnostics()` reads the construction back and says what it means.
+  # `diagnostics()` reads the construction back and says what it means. The
+  # note fires on a read that is NOT the engine default, so at 0.0.188 it is the
+  # `chord` fit that carries one and the `box_uniform` fit that does not
+  # (gcol33/tulpa#357) -- naming the default as a literal in the note is what
+  # made it say "rather than the default 'chord'" on a fit read with the
+  # default.
   d <- diagnostics(fb)
   expect_identical(attr(d, "within_cell_requested"), "box_uniform")
   expect_identical(attr(d, "interval_read"), "density")
-  expect_true(any(grepl("box_uniform", attr(d, "interval_read_note"))))
+  expect_false(any(grepl("within-cell", attr(d, "interval_read_note"))))
+  dc <- diagnostics(fc)
+  expect_identical(attr(dc, "within_cell_requested"), "chord")
+  expect_true(any(grepl("'chord' within-cell", attr(dc, "interval_read_note"),
+                        fixed = TRUE)))
   expect_true(is.finite(attr(d, "grid_h_over_sd_max")))
   # This fixture is in the unresolved regime -- as every configuration of the
   # 34-row census is -- so the resolution note fires and names the axis.

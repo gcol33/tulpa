@@ -758,10 +758,11 @@
 #
 # The outer grid's cell weights say how much mass each cell holds; they do not
 # say how it is spread INSIDE the cell, and the reported quantile needs both.
-# The shipped `chord` read places the cumulative mid-mass at each cell
-# COORDINATE and interpolates between coordinates; `box_uniform` places the
-# cumulative full mass at each cell EDGE and interpolates between edges, which
-# is the same masses over the same boxes with the knots moved half a cell.
+# `box_uniform` places the cumulative full mass at each cell EDGE and
+# interpolates between edges; `chord` places the cumulative mid-mass at each
+# cell COORDINATE and interpolates between coordinates. The same masses over the
+# same boxes with the knots moved half a cell, and that one difference is a
+# whole order of convergence.
 #
 # MEASURED, and box-uniform is ahead on every prior-average instrument. Against
 # the closed-form posterior of a gaussian-LMM fixture the two converge at order
@@ -773,19 +774,47 @@
 # exact tie, 0.9933 and 0.9067 both 0.0433 from nominal -- at 0.46 to 0.92x the
 # width (`dev_notes/issue357/RESULTS.md` sections 4 and 6.6).
 #
-# WHY THE DEFAULT IS STILL `chord`. A within-cell reconstruction resolves an
-# endpoint to within one cell, so the realized coverage of a reported interval
-# depends on where in its cell the unknown truth fell. Swept directly, 12
-# positions x 200 seeds at fixed resolution, box-uniform's conditional 95%
-# coverage runs 0.585 to 1.000 across one cell -- box-averaged 0.9033 against
-# nominal 0.95, which is the right average and better than the chord read's
-# vacuous 1.0000, but a user has one fixed unknown truth and not an average. The
-# chord read is not position-insensitive either (0.655 to 0.950 at nominal 0.50
-# on the same sweep); it is wide enough to hide it at 0.95. And gcol33/tulpa#337
-# named fixed-truth coverage as its verdict instrument IN ADVANCE, and that
-# instrument still fails at a fixed truth. Both are on the issue; the default is
-# the maintainer's to move, and the construction ships selectable and reported
-# in the meantime.
+# THE DEFAULT IS `box_uniform` (gcol33/tulpa#357, 0.0.188), decided on
+# FIXED-TRUTH coverage -- gcol33/tulpa#337's own pre-registered instrument -- at
+# the placement the engine ships, which is what changed. Until gcol33/tulpa#361
+# the default axes were laid without reference to the posterior, and every
+# earlier measurement of this choice was taken on a grid pinned coarser than any
+# a user now gets. Three fixed-truth sweeps on current main
+# (`dev_notes/issue357/RESULTS357C.md`), summed |coverage - nominal| over
+# nominal 0.95 / 0.80 / 0.50, chord against box-uniform:
+#
+#   #337's instrument, truth 0.7, 300 seeds, engine placement  0.2900   0.1233
+#   the same fixture truth-swept, 4680 fits the axis contained  0.2004   0.0361
+#   nine (config, axis) rows over seven families, 200 seeds ea. 0.2467   0.1572
+#
+# Box-uniform is nearer nominal on 6 of those 9 rows and at all three levels of
+# the other two, at 0.69 to 1.08x the width. The one arrangement it still loses
+# on is the five-level pinned grid #337 recorded its failure on, where that
+# fixture's truth of 0.7 falls at fraction 0.9870 of its cell -- the worst
+# position in the box sweep. The four-level grid is coarser and ties, the
+# seven- and nine-level grids are finer and box-uniform wins, so what fails there
+# is a box POSITION and not a resolution.
+#
+# The position sensitivity is what held the default back, and it is what the
+# placement change shrank. A within-cell reconstruction resolves an endpoint to
+# within one cell, so realized coverage depends on where in its cell the unknown
+# truth fell. On the pinned five-level grid box-uniform's conditional 95%
+# coverage runs 0.585 to 1.000; at the shipped placement, 25 truth positions x
+# 200 seeds binned on the realized position, it runs 0.868 to 0.979 -- a swing of
+# 0.110 against the chord read's own 0.067 -- and at nominal 0.50 the two swings
+# are 0.238 and 0.231, i.e. the same. The dependence belongs to any within-cell
+# reconstruction, which is what the chord read's own numbers always said; what is
+# new is that it no longer separates the two.
+#
+# A RESOLUTION-CONDITIONAL default was scored rather than assumed, since the two
+# reads converge as `h / sd` falls and a rule keyed on it is expressible. Reading
+# box-uniform only below a threshold and the chord read above it is DOMINATED by
+# reading box-uniform always: summed |coverage - nominal| over the nine rows is
+# 0.2517 / 0.2578 / 0.2133 / 0.2322 / 0.1733 at thresholds 1 / 1.25 / 1.5 / 2 / 3
+# against 0.1572 for box-uniform everywhere. The threshold that scores best is
+# the one that fires almost always, which is the fixed rule.
+#
+# `control$within_cell = "chord"` restores the previous report per fit, exactly.
 #
 # `grid_resolved = 1` is `h / sd`, both in the axis's own coordinate. It is not
 # a tuning cutoff: at `h / sd` below 1 the cell is narrower than the posterior
@@ -796,7 +825,7 @@
 # median 4.25, maximum 18.06 -- so an unresolved axis is the ordinary case and
 # is worth reporting rather than warning about.
 .NL_DIAG <- list(
-    within_cell          = "chord",
+    within_cell          = "box_uniform",
     grid_resolved        = 1,
     k_usable             = 0.7,
     k_samples            = 200L,

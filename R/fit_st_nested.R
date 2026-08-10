@@ -197,7 +197,7 @@ fit_st_nested <- function(y, X, spatial_idx, adjacency, temporal_idx, n_times,
                               rho_spatial_val = rho_spatial_val)
   out$outer_grid_placement <- out$outer_grid_placement %||% "fixed"
   # Within-cell construction for the reported per-axis intervals
-  # (gcol33/tulpa#357); the default is the shipped chord read.
+  # (gcol33/tulpa#357); the default is `.nl_diag("within_cell")`.
   within_cell <- .nl_within_cell_mode(control$within_cell)
   out <- .nl_posterior_moments(out, "st", within = within_cell)
   out <- .nl_attach_grid_hessians(out, ncol(X))

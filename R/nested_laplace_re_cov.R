@@ -421,9 +421,19 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
   dom <- attr(D, "domain")
   probs <- c(0.025, 0.5, 0.975)
 
+  # The WITHIN-CELL read is pinned to `chord` here, which is NOT the engine
+  # default (gcol33/tulpa#357). `x` is a DERIVED quantity evaluated at the
+  # nodes -- `sigma_i`, `rho_ij`, `Sigma_ij` -- so its values are function
+  # values, not the integration design's own cell coordinates on the axis being
+  # reported. A box read needs a partition that tiles the reported axis, and
+  # half the gap between two derived values is not a cell width, which is the
+  # same objection that makes `sample` decline. The measurement that moved the
+  # default was taken on the outer hyperparameter axes, where the grid's own
+  # cells ARE that partition; extending it here would be asserting a property
+  # nothing measured.
   summarize <- function(x, domain) {
     ms <- .nl_wtd_mean_sd(x, w)
-    q  <- .nl_summary_quantile(x, w, probs, domain, support)
+    q  <- .nl_summary_quantile(x, w, probs, domain, support, "chord")
     c(mean = ms$mean, sd = ms$sd, median = q[2L], ci_lo = q[1L], ci_hi = q[3L])
   }
   post <- t(vapply(seq_len(ncol(D)),

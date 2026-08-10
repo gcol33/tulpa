@@ -112,6 +112,14 @@ test_that("the default axes are exactly these values", {
     # (gcol33/tulpa#376) and the correction itself is ON (gcol33/tulpa#364).
     expect_identical(tulpa:::.nl_diag("centre_unreliable"), Inf)
     expect_true(tulpa:::.nl_diag("skew_correct"))
+    # The within-cell default, decided on fixed-truth coverage at the placement
+    # the engine ships (gcol33/tulpa#357), and the three places that name it
+    # agreeing -- the setting, the `match.arg` vocabulary and the kind that
+    # admits it.
+    expect_identical(tulpa:::.nl_diag("within_cell"), "box_uniform")
+    expect_identical(tulpa:::.NL_WITHIN_CELL[1L], "box_uniform")
+    expect_true("box_uniform" %in% tulpa:::.NL_SUPPORT[["density"]]$within)
+    expect_equal(tulpa:::.nl_diag("grid_resolved"), 1)
     expect_identical(tulpa:::.nl_recenter("n_pts"), 5L)
     expect_equal(tulpa:::.nl_recenter("span"), 2.5)
     expect_identical(tulpa:::.nl_recenter("max_attempts_joint"), 2L)
