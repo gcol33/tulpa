@@ -1,5 +1,14 @@
 # tulpa NEWS
 
+## 0.0.182
+
+* `sbc(experiment = "posterior")` reports the pooling premise from the guard's
+  own state rather than asserting it (gcol33/tulpa#380). The driver calls
+  `pool()` for every simulation, so `"verified"` was always the true answer --
+  but writing it as a constant is the pattern gcol33/tulpa#293 is about, where a
+  field that cannot say "not reached" hides a path that was never taken. It now
+  reads `state$checked`, the same way `fresh_groups` already read its own.
+
 ## 0.0.181
 
 * `R CMD check` is clean again (gcol33/tulpa#382). Three pre-existing defects,

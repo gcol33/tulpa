@@ -1143,7 +1143,9 @@ sbc <- function(experiment = c("prior_predictive", "posterior"),
     state$fresh_groups <- "unreached"
     res <- do.call(recov_posterior_sbc,
                    c(list(model = .sbc_guard_model(model, state)), args))
-    premises <- list(pooling = "verified",
+    # Read the state rather than asserting it: a `pool()` the driver never
+    # reached leaves both premises unchecked, and the result says so.
+    premises <- list(pooling = if (state$checked) "verified" else "unreached",
                      fresh_groups = state$fresh_groups)
   }
 
