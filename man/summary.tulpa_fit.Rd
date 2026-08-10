@@ -23,8 +23,10 @@ hyperparameter-grid-marginalized moments, and the bounds invert the Gaussian
 mixture \verb{sum_k w_k N(mu_kj, V_kjj)} that grid defines, rather than reading
 \verb{mu +/- z sigma} off the single Gaussian matching those moments. An
 \code{interval_source} attribute records which read produced them
-(\code{"mixture_cdf"}, \code{"gaussian_moment"}, \code{"skew_map_cell"}) and
-\code{interval_declined} says why, whenever the mixture read did not run. A
+(\code{"mixture_cdf"}, \code{"gaussian_moment"}, \code{"skew_map_cell"}, or
+\code{"skew_map_cell/mixture_cdf"} when the two are in play on different
+coefficients) and \code{interval_declined} says why, whenever the mixture read
+did not run. A
 \code{retained_mass} attribute gives the share of the grid weight whose cells
 retained a fixed-effect block: 1 on a complete grid, and below 1 on one
 that dropped a positive-weight cell, whose report is then the posterior
@@ -36,12 +38,12 @@ inner solve reached a mode. A fit where none did reports \code{NA} with
 \code{interval_declined = "not_converged"}, rather than the vector its Newton
 started from as an estimate.
 
-With \code{control$skew_correct = TRUE} the bounds are instead Cornish-Fisher
-quantiles at each coefficient's inner-Laplace \code{gamma_3} wherever that term
-is in the band it is valid on, and Gaussian elsewhere; a \code{skew_applied}
-attribute names which coefficients took the correction. That correction is
-measured at the MAP cell, so it is reported on its own and is not composed
-with the mixture read.
+With \code{control$skew_correct = TRUE} a coefficient whose inner-Laplace
+\code{gamma_3} is in the band it is valid on reports Cornish-Fisher quantiles
+instead, and a \code{skew_applied} attribute names which coefficients took the
+correction. That correction is measured at the MAP cell, so it is reported
+on its own and is not composed with the mixture read; a coefficient it
+declines keeps the mixture read rather than falling back further.
 
 An \code{axis_fields_dropped} attribute carries the grid axes the fit's own
 resolved path could not read, one row per dropped field (block, type,

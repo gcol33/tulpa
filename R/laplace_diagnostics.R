@@ -808,12 +808,25 @@
 #   centre_unreliable      |gamma_1 + gamma_3 / 2| at or past the CENTRE band
 #                          (gcol33/tulpa#362). The correction relocates the
 #                          marginal by that many standard errors, so banding
-#                          |gamma_3| alone bounds only the reshaping
+#                          |gamma_3| alone bounds only the reshaping. The
+#                          shipped cutoff is `Inf` (gcol33/tulpa#376), so this
+#                          reason is reachable only at a caller-supplied finite
+#                          `max_abs_centre`; it is retained, along with its
+#                          place in the precedence below, because the cutoff is
+#                          a setting and restoring it must restore the record
 .SKEW_CORRECT_REASONS <- c("eligible", "not_enabled", "gamma3_not_computable",
                            "gamma3_unreliable", "inner_k_unreliable",
                            "gamma1_not_computable", "centre_unreliable")
 
-.nl_skew_correction_attach <- function(res, p_fixed, enabled) {
+# `max_abs_centre` is the CENTRE band, defaulted to the setting the quantile
+# path reads. It is an argument for the same reason `.nl_skew_marginal()`
+# carries one: the shipped cutoff is `Inf`, and a caller that wants the decline
+# path has to drive the shipped predicate at a finite cutoff rather than write
+# a second rule. The SHAPE band is not an argument -- `band` below is the
+# reported gamma_3 band and reads the setting, so a caller-supplied shape cutoff
+# would classify a coefficient the two disagreed about as `centre_unreliable`.
+.nl_skew_correction_attach <- function(res, p_fixed, enabled,
+                                       max_abs_centre = .nl_diag("centre_unreliable")) {
   p <- max(as.integer(p_fixed %||% 0L), 0L)
   g <- .nl_skew_by_fixed(res, p)
   g1 <- .nl_gamma1_by_fixed(res, p)
@@ -824,7 +837,7 @@
   # centre is the cause left once the two terms' own causes are named.
   cf <- cpp_cornish_fisher_bands(g, g1,
                                  as.numeric(.nl_diag("gamma3_unreliable")),
-                                 as.numeric(.nl_diag("centre_unreliable")))
+                                 as.numeric(max_abs_centre))
 
   reason <- rep("eligible", p)
   if (!isTRUE(enabled)) {

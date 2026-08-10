@@ -559,17 +559,25 @@
 #
 # `control$skew_correct = TRUE` turns it on per fit; the default stays FALSE.
 #
-# `centre_unreliable` bands the CENTRE the way `gamma3_unreliable` bands the
-# shape (gcol33/tulpa#362). The reported quantile is
-# mu_i + sigma_i {m_i + w(z_p; gamma_3)} with m_i = gamma_1 + gamma_3 / 2, so
-# the correction RELOCATES the marginal by m_i standard errors and a band on
-# |gamma_3| alone bounds only the reshaping. Past the cutoff a coefficient
-# reports the Gaussian quantiles and records `centre_unreliable`. Both bands say
-# the same thing about the same expansion: past them the series is no longer a
-# leading-order adjustment to the Gaussian it is expanded around.
+# `centre_unreliable` is the CENTRE band's cutoff, the counterpart of
+# `gamma3_unreliable` on the other term of the same expansion (gcol33/tulpa#362).
+# The reported quantile is mu_i + sigma_i {m_i + w(z_p; gamma_3)} with
+# m_i = gamma_1 + gamma_3 / 2, so the correction RELOCATES the marginal by m_i
+# standard errors and a band on |gamma_3| alone bounds only the reshaping. Past
+# the cutoff a coefficient reports the Gaussian quantiles and records
+# `centre_unreliable`.
 #
-# MEASURED, on seven fixtures with an exact reference and 4224 admitted
-# coefficient-seeds, every one gated by the SHIPPED combined inner band
+# IT IS `Inf`: THE BAND IS OFF (gcol33/tulpa#376). It shipped at 1.20, chosen as
+# the smallest cutoff that declined nothing the correction was MEASURED to help,
+# on four fixtures none of which could reach it. Three fixtures that do reach it
+# were then built, on two sampling designs, and on every one of them the band
+# costs. The machinery is retained rather than deleted -- one predicate
+# (`cornish_fisher_in_band()`) behind both the eligibility record and the
+# quantile path, the reason in `.SKEW_CORRECT_REASONS`, its place in the
+# precedence -- so a finite value here restores the band on every path at once.
+#
+# MEASURED, on seven fixtures with an exact reference -- 6220 coefficient-seeds,
+# 3600 of them admitted -- every one gated by the SHIPPED combined inner band
 # (dev_notes/issue362, dev_notes/issue376): the rare-event binomial-logit
 # intercept of gcol33/tulpa#346, the small-group Bernoulli RE fit with a real
 # outer grid of gcol33/tulpa#341, two rare-event binomial-logit designs carrying
@@ -615,10 +623,14 @@
 # band is anti-correlated with the pathology it was imagined for, which is why
 # every cutoff costs.
 #
-# WHAT THE BAND IS FOR, given that. Not a measured failure: it bounds the
-# displacement at all, so a coefficient cannot relocate its marginal arbitrarily
-# far on a leading-order estimate. That is insurance against a regime no fixture
-# has produced, and it is paid for at the rate above.
+# WHAT BOUNDS THE DISPLACEMENT NOW. `gamma1_not_computable` and the shape band,
+# which is what the two terms' own reliability is read at. The centre band bound
+# the displacement ARITHMETICALLY, on a quantity whose size is not evidence that
+# the expansion has left its regime -- that is what the rho_eff derivation says
+# and what the ladder measures. A regime in which a large |m| does signal a bad
+# correction would be a reason to restore a finite cutoff here; nothing in the
+# seven fixtures produces one, and a bound kept against a regime nothing has
+# produced is paid for at the rate above on the regimes that do occur.
 #
 # `debias_select_band` is the floor the SUBSPACE DEBIAS selector reads the inner
 # bands at (gcol33/tulpa#304): a probed coordinate whose combined inner band is
@@ -709,7 +721,7 @@
     k_samples            = 200L,
     gamma3_ok            = 0.5,
     gamma3_unreliable    = 1.0,
-    centre_unreliable    = 1.2,
+    centre_unreliable    = Inf,
     inner_k_material_ess = 0.995,
     skew_correct         = FALSE,
     debias_select_band   = "ok",

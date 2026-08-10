@@ -147,10 +147,12 @@ the Gaussian quantiles everywhere else. It is post-processing on the
 reported quantiles: draws, modes and weights are untouched, so a fit run
 with it off is bit for bit the fit it was before. A coefficient whose
 location term could not be formed declines rather than reading it as zero.
-The CENTRE is banded as well as the shape (gcol33/tulpa#362): the
-correction relocates the marginal by \code{gamma_1 + gamma_3 / 2} standard
-errors, so a coefficient past \code{centre_unreliable} declines and records
-\code{centre_unreliable}. \verb{$skew_correction} records the per-coefficient
+The band that bounded the relocation itself (\code{centre_unreliable},
+gcol33/tulpa#362) is off (\code{Inf}): scored over seven fixtures with an exact
+reference, every finite cutoff declines the coefficients the correction
+helps most, because a large centre carrying a small \code{gamma_3} is uniformly
+weak correlation rather than an expansion out of its regime
+(gcol33/tulpa#376). \verb{$skew_correction} records the per-coefficient
 \code{gamma_3}, \code{gamma_1} and the centre they form, the band, the inner
 importance k-hat, the combined band, the eligibility
 and the reason behind it; the \code{skew_applied} attribute on \code{summary()} /

@@ -525,10 +525,10 @@
 #'     k-hat) says the leading-order expansion is in its regime, and the Gaussian
 #'     quantiles everywhere else. It is post-processing on the reported
 #'     quantiles: draws, modes and weights are untouched, so a fit run with it
-#'     off is bit for bit the fit it was before. The CENTRE is banded as well as
-#'     the shape (gcol33/tulpa#362): the correction relocates the marginal by
-#'     `gamma_1 + gamma_3 / 2` standard errors, so a coefficient past
-#'     `centre_unreliable` declines and records `centre_unreliable`.
+#'     off is bit for bit the fit it was before. The band that bounded the
+#'     relocation itself (`centre_unreliable`, gcol33/tulpa#362) is off (`Inf`):
+#'     every finite cutoff was measured to decline the coefficients the
+#'     correction helps most (gcol33/tulpa#376).
 #'     `$skew_correction` records the per-coefficient `gamma_3`, `gamma_1` and
 #'     the centre they form, the band, the k-hat, the combined
 #'     band, the eligibility and the reason behind it; the `skew_applied`

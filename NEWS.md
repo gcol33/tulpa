@@ -1,5 +1,59 @@
 # tulpa NEWS
 
+## 0.0.185
+
+* The CENTRE band on the inner-Laplace skew correction is off
+  (`.NL_DIAG$centre_unreliable = Inf`, gcol33/tulpa#376). It shipped at 1.20 in
+  gcol33/tulpa#362 as the smallest cutoff that declined nothing the correction
+  was measured to help -- on four fixtures none of which could reach it. Three
+  that do reach it were then built on two sampling designs, and the cutoff
+  ladder over the enlarged set (6220 coefficient-seeds, 3600 of them admitted by
+  the other bands) is monotone and zero only past the largest admitted centre
+  measured: the per-fixture-coefficient costs sum to `+0.30`
+  at 1.00, `+0.27` at the shipped 1.20, `+0.19` at 2.00 and `0` only at 5.00.
+  No cutoff is protective anywhere -- all 13 fixture-coefficients score a
+  negative paired gain, and binned by `|m|` the correction gets BETTER as the
+  centre grows without turning.
+
+  The mechanism is why. `m_i = (1/2) sum_j c_j rho_ij` and
+  `gamma_3(i) = sum_j c_j rho_ij^3` are the same weighted sum at the first and
+  third powers, so a large centre carrying a small `gamma_3` is uniformly WEAK
+  correlation -- the well-behaved incidental-parameter regime -- rather than a
+  strong direction being extrapolated. The band was anti-correlated with the
+  pathology it was imagined for.
+
+  Measured on those stored coefficient-seeds: 376 rows change and every one is
+  `centre_unreliable -> eligible`,
+  with the 2620 the shape band and the combined inner band decline untouched. On
+  those 376 the correction they now take scores `-0.09665` against the Gaussian
+  they used to report (se 0.00676, t -14.31) where the exact posterior scores
+  `-0.09721` -- 99.4% of the achievable gain. A live re-fit of the small-group
+  Poisson fixture agrees through the engine's own record: 21 of 80 rows move,
+  max admitted `|m|` 2.404, and every one still banded `good` by `gamma_3` and
+  by the combined inner band.
+
+  Nothing else changes. `cornish_fisher_in_band()` is still the one predicate
+  behind both the eligibility record and the quantile path, `centre_unreliable`
+  is still in `.SKEW_CORRECT_REASONS` and in the precedence, and the cutoff is
+  still an argument -- `.nl_skew_correction_attach(max_abs_centre =)` now takes
+  it -- so a finite value restores the band on every path at once, which is what
+  the decline tests drive. `gamma1_not_computable` is what guards an unformed
+  location term and is untouched.
+
+* A coefficient the skew correction DECLINES keeps the grid-mixture read
+  (gcol33/tulpa#386). `.nl_fixed_interval()` branched on the whole fit, so
+  `skew_correct = TRUE` sent every reported coefficient down the MAP-cell path
+  and the ones the bands refused fell back past the gcol33/tulpa#336 mixture CDF
+  to `mu +/- z sigma`. The two reads cannot be composed on a CORRECTED
+  coefficient -- `gamma_3` is retained at the MAP cell only -- but a declined one
+  has no MAP-cell read to preserve, so the fallback gave up the across-cell shape
+  for nothing. Worst on a fully coupled fit, where `gamma_1` is unreachable and
+  every coefficient declines: enabling the correction there moved every bound and
+  corrected none. The base read is now computed first and only the rows
+  `.nl_skew_marginal()` applied to are overwritten; `interval_source` reports
+  `"skew_map_cell"` when every row was corrected, `"skew_map_cell/mixture_cdf"`
+  when both reads are in play, and the base source when none was.
+
 ## 0.0.184
 
 * `weights` reaches the spatial mode-finding, not only the marginal precision

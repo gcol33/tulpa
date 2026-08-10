@@ -112,10 +112,12 @@
 #'     reported quantiles: draws, modes and weights are untouched, so a fit run
 #'     with it off is bit for bit the fit it was before. A coefficient whose
 #'     location term could not be formed declines rather than reading it as zero.
-#'     The CENTRE is banded as well as the shape (gcol33/tulpa#362): the
-#'     correction relocates the marginal by `gamma_1 + gamma_3 / 2` standard
-#'     errors, so a coefficient past `centre_unreliable` declines and records
-#'     `centre_unreliable`. `$skew_correction` records the per-coefficient
+#'     The band that bounded the relocation itself (`centre_unreliable`,
+#'     gcol33/tulpa#362) is off (`Inf`): scored over seven fixtures with an exact
+#'     reference, every finite cutoff declines the coefficients the correction
+#'     helps most, because a large centre carrying a small `gamma_3` is uniformly
+#'     weak correlation rather than an expansion out of its regime
+#'     (gcol33/tulpa#376). `$skew_correction` records the per-coefficient
 #'     `gamma_3`, `gamma_1` and the centre they form, the band, the inner
 #'     importance k-hat, the combined band, the eligibility
 #'     and the reason behind it; the `skew_applied` attribute on `summary()` /

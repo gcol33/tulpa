@@ -650,6 +650,20 @@ under; `.nl_skew_gamma3_eligible()` is what the quantile path consumes, so a
 declined coefficient reaches `.nl_skew_marginal()` as NA rather than being noted
 and corrected anyway. A `skew_applied` attribute on the summary records what was
 used at that level.
+
+**There is no band on the CENTRE (gcol33/tulpa#376).**
+`.NL_DIAG$centre_unreliable` shipped at 1.20 from gcol33/tulpa#362 and is now
+`Inf`. `m_i = (1/2) sum_j c_j rho_ij` and `gamma_3(i) = sum_j c_j rho_ij^3` are
+the same weighted sum at the first and third powers, so a large centre carrying a
+small `gamma_3` is uniformly WEAK correlation -- the well-behaved
+incidental-parameter regime -- not a strong direction being extrapolated, and the
+band was anti-correlated with the pathology it was imagined for. Over seven
+fixtures with an exact reference the cutoff ladder is monotone and zero only past
+the largest admitted centre measured; the 376 coefficient-seeds it declined
+recover 99.4% of the achievable gain once admitted (`t = -14.31`). The machinery
+stays -- one predicate, the reason, the precedence, and the cutoff as an argument
+on `.nl_skew_correction_attach()` -- so a finite value restores it everywhere at
+once. `gamma1_not_computable` is what guards an unformed location term.
 The correction is post-processing on the reported quantiles, so draws, modes
 and weights are bit-for-bit unchanged either way. It applies on the JOINT
 paths too since gcol33/tulpa#305 gave them the per-cell fixed-effect retention
@@ -802,10 +816,20 @@ identified by retained state, and the three substitutes (scalar shift of the
 mixture quantile; the MAP cell's value applied to every component; applied to
 the dominant component alone) are each an unbacked assertion. The boundary:
 **#336 corrects across-cell non-Gaussianity, #302 within-cell at the MAP.** A
-`skew_correct = TRUE` fit keeps the #302 read. `interval_source`
-(`"mixture_cdf"` / `"gaussian_moment"` / `"skew_map_cell"`) and
-`interval_declined` travel on `confint()` / `summary()`, so a fit says which
-read produced its bounds and why.
+CORRECTED coefficient keeps the #302 read.
+
+**A DECLINED one keeps the mixture read (gcol33/tulpa#386).** There is no #302
+read to preserve where the bands refuse, so falling back past the mixture to
+`mu +/- z sigma` gave up the across-cell shape for nothing -- and on a fully
+coupled fit, where `gamma_1` is unreachable and every coefficient declines, it
+moved every bound while correcting none. `.nl_fixed_interval()` computes the
+base read first and overwrites only the rows `.nl_skew_marginal()` applied to.
+That per-row composition is what makes the correction safe as a DEFAULT: a fit
+it cannot help reports what it reported before, bit for bit. `interval_source`
+(`"mixture_cdf"` / `"gaussian_moment"` / `"skew_map_cell"` /
+`"skew_map_cell/mixture_cdf"`) and `interval_declined` travel on `confint()` /
+`summary()`, so a fit says which read produced its bounds and why; the per-row
+`skew_applied` says which rows took which.
 
 **A grid that dropped a positive-weight cell is read conditional on the cells
 that remain (gcol33/tulpa#342).** `.nested_fixed_moments()` renormalizes over

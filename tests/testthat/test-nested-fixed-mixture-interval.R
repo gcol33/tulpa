@@ -220,6 +220,41 @@ test_that("an enabled skew correction reports the MAP-cell read it was measured 
   expect_false(isTRUE(all.equal(mx_q(fit), mx_q(mx_fit(mx_mu, mx_vr, mx_w)))))
 })
 
+test_that("a coefficient the correction declines keeps the mixture read", {
+  # gcol33/tulpa#386. The two corrections cannot be composed on a coefficient
+  # the #302 read applies to, which is why an applied row reports the MAP-cell
+  # read alone. A DECLINED row has no #302 read to preserve, so falling back
+  # past the mixture to the collapsed Gaussian would give up the across-cell
+  # shape for nothing. Coefficient 2's gamma_3 is not computable here, so the
+  # same fit carries one of each.
+  off <- mx_fit(mx_mu, mx_vr, mx_w)
+  fit <- mx_fit(mx_mu, mx_vr, mx_w, gamma3 = c(0.35, NaN), gamma1 = c(0.04, 0))
+  ci  <- confint(fit)
+
+  expect_identical(unname(attr(ci, "skew_applied")), c(TRUE, FALSE))
+  expect_identical(attr(ci, "interval_source"), "skew_map_cell/mixture_cdf")
+  # The declined row is the mixture row, to the bit; the applied row is not.
+  expect_equal(mx_q(fit)[2, ], mx_q(off)[2, ], tolerance = 1e-14)
+  expect_false(isTRUE(all.equal(mx_q(fit)[1, ], mx_q(off)[1, ])))
+  # And it is NOT the collapsed Gaussian, which is what it used to fall back to.
+  expect_false(isTRUE(all.equal(mx_q(fit)[2, ],
+                                unname(mx_gauss_ci(off)[2, ]))))
+})
+
+test_that("a fit the correction declines everywhere reports what it would have", {
+  # The case that makes the correction safe to default: a fit where NO
+  # coefficient is eligible -- a fully coupled one, whose gamma_1 is not
+  # reachable -- must report the same bounds enabled or not.
+  off <- mx_fit(mx_mu, mx_vr, mx_w)
+  non <- mx_fit(mx_mu, mx_vr, mx_w, gamma3 = c(0.3, 0.2),
+                gamma1 = c(NaN, NaN))
+  expect_identical(non$skew_correction$reason,
+                   rep("gamma1_not_computable", 2L))
+  expect_false(any(attr(confint(non), "skew_applied")))
+  expect_identical(attr(confint(non), "interval_source"), "mixture_cdf")
+  expect_identical(mx_q(non), mx_q(off))
+})
+
 # --------------------------------------------------------------------------- #
 # (7) An incomplete grid, and declines that name the gate they fell at         #
 # --------------------------------------------------------------------------- #

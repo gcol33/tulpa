@@ -125,9 +125,14 @@ inline bool cornish_fisher_monotone(double g, double z_lo, double z_hi) {
 //   * |m| at or past `max_abs_centre` is the CENTRE band (gcol33/tulpa#362).
 //     The reported quantile is mu_i + sigma_i {m_i + w(z_p; gamma_3)}, so the
 //     correction relocates the marginal by m_i standard errors and the shape
-//     band alone bounds only half of what it does. Both bands are the same
-//     statement about the same expansion: past them the series is no longer
-//     a leading-order adjustment to the Gaussian it is expanded around.
+//     band alone bounds only half of what it does. The shipped cutoff is `Inf`,
+//     i.e. the band does not fire: measured over seven fixtures with an exact
+//     reference, a large |m| carrying a small |gamma_3| is uniformly WEAK
+//     correlation rather than a strong direction being extrapolated, so every
+//     finite cutoff declines the coefficients the correction helps most
+//     (gcol33/tulpa#376; the ladder and the derivation are in R/settings.R).
+//     The predicate keeps the parameter, so a finite value restores the band
+//     on every path at once.
 inline bool cornish_fisher_in_band(double gamma1, double gamma3,
                                    double max_abs_gamma3,
                                    double max_abs_centre) {

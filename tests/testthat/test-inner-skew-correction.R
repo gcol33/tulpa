@@ -100,6 +100,21 @@ test_that("the correction declines rather than extrapolating, and says so per in
   expect_lt(far$q[1, 1], far$q[1, 2])
 })
 
+test_that("the CENTRE band is a cutoff the predicate takes, and ships off", {
+  # gcol33/tulpa#362 added it; gcol33/tulpa#376 measured every finite cutoff to
+  # decline the coefficients the correction helps most and set the shipped one
+  # to `Inf`. The mechanism is retained and the cutoff is a setting, so what is
+  # tested here is that the predicate still bands on it -- driven at a finite
+  # cutoff -- and that the shipped value admits every centre.
+  expect_identical(.nl_diag("centre_unreliable"), Inf)
+  z <- stats::qnorm(c(0.025, 0.975))
+  shipped <- tulpa:::cpp_cornish_fisher_quantile(
+    mu = rep(0, 3), sigma = rep(1, 3), gamma3 = rep(0.4, 3),
+    gamma1 = c(0, 5, 500), z = z, max_abs_gamma3 = 1,
+    max_abs_centre = .nl_diag("centre_unreliable"))
+  expect_identical(as.logical(shipped$applied), rep(TRUE, 3))
+})
+
 test_that("the CENTRE is banded, not only the shape", {
   # gcol33/tulpa#362. The reported quantile is
   # mu_i + sigma_i {gamma_1 + gamma_3 / 2 + w(z_p; gamma_3)}, so the correction
@@ -333,16 +348,18 @@ test_that("tulpa_nested_laplace() records the correction and confint() applies i
 
   # The bounds are the Cornish-Fisher ones at this fit's own gamma_3 and its
   # own reported centre and standard error -- not merely "different" -- on the
-  # eligible coefficient, and the Gaussian ones on the declined one.
+  # eligible coefficient. The declined one keeps the read it would have had
+  # with the correction off, which is the grid mixture (gcol33/tulpa#386), and
+  # is asserted against the same fit refit with the correction disabled.
   tab <- .fit_fixed_table(f)
+  ci_off <- confint(.skew_corr_fit(d, FALSE))
   z <- stats::qnorm(c(0.025, 0.975))
-  for (j in 1:2) {
-    g  <- if (sc$eligible[j]) sc$gamma3[j] else 0
-    g1 <- if (sc$eligible[j]) sc$gamma1[j] else 0
-    w <- g1 + g / 2 + z + (g / 6) * (z^2 - 1)
-    expect_equal(as.numeric(ci[j, ]),
-                 tab$estimate[j] + tab$std.error[j] * w)
-  }
+  expect_identical(attr(ci, "interval_source"), "skew_map_cell/mixture_cdf")
+  expect_equal(as.numeric(ci[1, ]), as.numeric(ci_off[1, ]))
+  w <- sc$gamma1[2] + sc$gamma3[2] / 2 + z + (sc$gamma3[2] / 6) * (z^2 - 1)
+  expect_equal(as.numeric(ci[2, ]), tab$estimate[2] + tab$std.error[2] * w)
+  expect_false(isTRUE(all.equal(as.numeric(ci[2, ]),
+                                as.numeric(ci_off[2, ]))))
   # Selecting a subset carries the record with it.
   ci1 <- confint(f, parm = rownames(ci)[2])
   expect_identical(unname(attr(ci1, "skew_applied")), TRUE)
@@ -435,14 +452,18 @@ test_that("a centre past its band declines at the front door, and says so", {
   # anyway. This drives the whole path -- attach, record, `confint()` -- with a
   # location term the centre band refuses, and asserts the reported bounds
   # actually change.
+  # The shipped centre band is `Inf` (gcol33/tulpa#376), so the whole path --
+  # attach, record, `confint()` -- is driven here at a finite cutoff the attach
+  # point takes. That is the shipped predicate at a caller's cutoff, not a
+  # second rule, which is what keeps this a test of the decline path.
   d <- .skew_corr_fixture()
   f <- .skew_corr_fit(d, TRUE)
   p <- length(f$skew_correction$gamma3)
-  expect_true(all(abs(f$skew_correction$centre) < .nl_diag("centre_unreliable")))
+  expect_true(all(is.finite(f$skew_correction$centre)))
 
   big <- f
   big$inner_skew_gamma1 <- rep(3, length(f$inner_skew_gamma1))
-  big <- .nl_skew_correction_attach(big, p, TRUE)
+  big <- .nl_skew_correction_attach(big, p, TRUE, max_abs_centre = 1.2)
   expect_equal(big$skew_correction$centre, 3 + f$skew_correction$gamma3 / 2)
   # Coefficient 1 is already declined by the importance k-hat on this fixture,
   # so the reason it reports is still that one: a coefficient names the score
@@ -455,20 +476,27 @@ test_that("a centre past its band declines at the front door, and says so", {
 
   ci_big <- confint(big)
   expect_identical(unname(attr(ci_big, "skew_applied")), c(FALSE, FALSE))
-  # The Gaussian bounds, and NOT the ones the same fit reports with its own
-  # centre -- the band is read, not merely recorded.
-  tab <- .fit_fixed_table(f)
-  z <- stats::qnorm(c(0.025, 0.975))
-  expect_equal(as.numeric(ci_big[2, ]),
-               tab$estimate[2] + tab$std.error[2] * z)
+  # The bounds the same data reports with the correction OFF, and NOT the ones
+  # the same fit reports with its own centre -- the band is read, not merely
+  # recorded. A coefficient the correction declines keeps the read it would
+  # have had, which is the grid mixture (gcol33/tulpa#386).
+  ci_off <- confint(.skew_corr_fit(d, FALSE))
+  expect_identical(attr(ci_big, "interval_source"), "mixture_cdf")
+  expect_equal(unname(ci_big), unname(ci_off))
   expect_false(isTRUE(all.equal(as.numeric(ci_big[2, ]),
                                 as.numeric(confint(f)[2, ]))))
+
+  # The same record at the SHIPPED cutoff admits it, so what separates the two
+  # is the cutoff and nothing else.
+  wide <- .nl_skew_correction_attach(big, p, TRUE)
+  expect_identical(wide$skew_correction$reason[2], "eligible")
 })
 
-# A Poisson small-group random-effect fit whose intercept reaches the centre
-# band from its own data (gcol33/tulpa#364). The block above forces the centre
-# by overwriting `inner_skew_gamma1`, which tests the plumbing and cannot say the
-# regime is reachable; this one is the regime.
+# A Poisson small-group random-effect fit whose intercept reaches gcol33/tulpa#362's
+# retired 1.20 cutoff from its own data (gcol33/tulpa#364). The block above forces
+# the centre by overwriting `inner_skew_gamma1`, which tests the plumbing and
+# cannot say the regime is reachable; this one is the regime, and it is where
+# gcol33/tulpa#376 measured the band's cost.
 #
 # WHY THIS DESIGN. The applied centre is `m_i = cross / (2 sigma_i)` -- the
 # gamma_3 cancels exactly between `gamma_1` and `gamma_3 / 2` -- so with
@@ -511,40 +539,54 @@ test_that("a centre past its band declines at the front door, and says so", {
                        progress = FALSE, skew_correct = TRUE)))
 }
 
-test_that("a fit reaches the centre band on its own data, and is declined there", {
+CENTRE_CUT_362 <- 1.2
+
+test_that("a fit reaching the retired cutoff on its own data is corrected there", {
     skip_on_cran()
     f <- .skew_centre_fit(.skew_centre_fixture())
     sc <- f$skew_correction
 
-    # The intercept: BOTH other inner scores admit it, and only the centre does
-    # not. That is what makes it a test of the centre band rather than of the
-    # gate's precedence -- a coefficient the shape band or the importance k-hat
-    # had already refused would report their reason instead.
+    # The intercept's centre reaches past the 1.20 gcol33/tulpa#362 banded at,
+    # while BOTH other inner scores admit it. That is the regime the band was
+    # measured on and removed for (gcol33/tulpa#376): the shape term is small,
+    # so what the band used to refuse is essentially a pure relocation, and on
+    # 376 such coefficient-seeds it recovers 99.4% of what the exact posterior
+    # achieves over the Gaussian.
     expect_false(identical(sc$band[1], "unreliable"))
     expect_false(identical(sc$band_combined[1], "unreliable"))
     expect_true(is.finite(sc$gamma1[1]))
-    expect_gte(abs(sc$centre[1]), .nl_diag("centre_unreliable"))
-    expect_identical(sc$reason[1], "centre_unreliable")
-    expect_false(sc$eligible[1])
-
-    # The shape term is not what is large here: the correction this fit declines
-    # is essentially a pure relocation.
+    expect_gte(abs(sc$centre[1]), CENTRE_CUT_362)
     expect_lt(abs(sc$gamma3[1]), 0.5)
+    expect_identical(sc$reason[1], "eligible")
+    expect_true(sc$eligible[1])
 
-    # The slope's centre is inside the band on the same fit, so the two arms of
-    # the gate are exercised against each other rather than against a constant.
+    # The slope's centre is well inside the retired cutoff on the same fit, so
+    # the two coefficients differ in |m| and in nothing else.
+    expect_lt(abs(sc$centre[2]), CENTRE_CUT_362)
     expect_identical(sc$reason[2], "eligible")
-    expect_true(sc$eligible[2])
 
-    # And the decline is READ: the intercept reports the Gaussian bounds while
-    # the slope's move off them.
+    # Both are READ: each row's bounds are its own Cornish-Fisher quantiles.
     ci <- confint(f)
     tab <- .fit_fixed_table(f)
     z <- stats::qnorm(c(0.025, 0.975))
-    expect_identical(unname(attr(ci, "skew_applied")), c(FALSE, TRUE))
-    expect_equal(as.numeric(ci[1, ]), tab$estimate[1] + tab$std.error[1] * z)
-    expect_false(isTRUE(all.equal(as.numeric(ci[2, ]),
-                                  tab$estimate[2] + tab$std.error[2] * z)))
+    expect_identical(unname(attr(ci, "skew_applied")), c(TRUE, TRUE))
+    for (j in 1:2) {
+      w <- sc$gamma1[j] + sc$gamma3[j] / 2 + z + (sc$gamma3[j] / 6) * (z^2 - 1)
+      expect_equal(as.numeric(ci[j, ]),
+                   tab$estimate[j] + tab$std.error[j] * w)
+    }
+
+    # The decline path is still reachable FROM THIS FIT, which is what the
+    # removal changed: at the retired cutoff the intercept records
+    # `centre_unreliable` and reports the uncorrected bounds instead.
+    old <- .nl_skew_correction_attach(f, 2L, TRUE,
+                                      max_abs_centre = CENTRE_CUT_362)
+    expect_identical(old$skew_correction$reason,
+                     c("centre_unreliable", "eligible"))
+    ci_old <- confint(old)
+    expect_identical(unname(attr(ci_old, "skew_applied")), c(FALSE, TRUE))
+    expect_false(isTRUE(all.equal(as.numeric(ci_old[1, ]),
+                                  as.numeric(ci[1, ]))))
 })
 
 # --------------------------------------------------------------------------- #

@@ -923,10 +923,20 @@
 # double-counts, since the mixture already carries the across-cell asymmetry;
 # applying the MAP cell's gamma_3 to every component asserts the conditional
 # skew is constant over the grid; applying it to the dominant component alone
-# privileges one component with no approximation theorem behind it. So an
-# enabled correction keeps the read it was measured on, and `declined` says why
-# the mixture read did not run. The two corrections address different
+# privileges one component with no approximation theorem behind it. So a
+# CORRECTED coefficient keeps the read it was measured on, and `declined` says
+# why the mixture read did not run there. The two corrections address different
 # non-Gaussianities: this one across cells, #302 within the MAP cell.
+#
+# A DECLINED coefficient is a different case and keeps the mixture read
+# (gcol33/tulpa#386). There is no #302 read to preserve at a coefficient the
+# correction refuses, so falling back to the collapsed Gaussian would give up
+# the across-cell shape for nothing -- and on a fit where every coefficient
+# declines (a coupled one, whose gamma_1 is not reachable) it would move every
+# bound while correcting none. Enabling the correction moves exactly the
+# coefficients it applies to, which `skew_applied` names per row and
+# `interval_source` names as `"skew_map_cell/mixture_cdf"` when both reads are
+# in play.
 #
 # A GRID THAT DROPPED A POSITIVE-WEIGHT CELL still gets the mixture read. The
 # moments renormalize over the cells that retained a block, so the components
@@ -950,33 +960,49 @@
          applied = rep(FALSE, length(est)),
          source = source, declined = declined, mass = mass)
   }
-  if (isTRUE(sc$enabled)) {
-    mg <- .nl_skew_marginal(est, se, .nl_skew_gamma3_eligible(sc)[idx],
-                            .nl_skew_gamma1_eligible(sc)[idx], probs,
-                            enabled = TRUE)
-    return(list(
-      q = mg$q, applied = mg$applied, source = "skew_map_cell",
-      declined = paste("skew_correct: gamma_3 is retained at the MAP cell",
-                       "only, so the mixture components carry no per-cell",
-                       "skew to compose"),
-      mass = mass))
+  # The read every coefficient takes before the correction is consulted: the
+  # mixture quantiles where the grid retained usable components, the collapsed
+  # Gaussian where it did not.
+  base <- if (is.null(mom$mu) || is.null(mom$var) || is.null(mom$w)) {
+    gaussian("gaussian_moment", "no retained mixture components")
+  } else if (ncol(mom$mu) < max(idx)) {
+    gaussian("gaussian_moment",
+             "retained component block is narrower than the reported coefficients")
+  } else {
+    mx <- .nl_gauss_mixture_summary(mom$mu[, idx, drop = FALSE],
+                                    mom$var[, idx, drop = FALSE],
+                                    mom$w, probs = probs)
+    if (is.null(mx) || anyNA(mx$quantiles)) {
+      gaussian("gaussian_moment",
+               "component means or variances are not all usable")
+    } else {
+      list(q = mx$quantiles, applied = rep(FALSE, length(est)),
+           source = "mixture_cdf", declined = NA_character_, mass = mass)
+    }
   }
-  if (is.null(mom$mu) || is.null(mom$var) || is.null(mom$w)) {
-    return(gaussian("gaussian_moment", "no retained mixture components"))
-  }
-  if (ncol(mom$mu) < max(idx)) {
-    return(gaussian("gaussian_moment",
-                    "retained component block is narrower than the reported coefficients"))
-  }
-  mx <- .nl_gauss_mixture_summary(mom$mu[, idx, drop = FALSE],
-                                  mom$var[, idx, drop = FALSE],
-                                  mom$w, probs = probs)
-  if (is.null(mx) || anyNA(mx$quantiles)) {
-    return(gaussian("gaussian_moment",
-                    "component means or variances are not all usable"))
-  }
-  list(q = mx$quantiles, applied = rep(FALSE, length(est)),
-       source = "mixture_cdf", declined = NA_character_, mass = mass)
+  if (!isTRUE(sc$enabled)) return(base)
+
+  # A CORRECTED coefficient takes the #302 read, which cannot be composed with
+  # the mixture (above). A DECLINED one has no #302 read at all, so it keeps
+  # whatever the fit reports with the correction off -- the base read, not the
+  # collapsed Gaussian. Enabling the correction therefore moves exactly the
+  # coefficients it applies to, which is what lets it be a default: a fit whose
+  # every coefficient declines (a coupled one, where gamma_1 is not reachable)
+  # reports the same bounds either way (gcol33/tulpa#386).
+  mg <- .nl_skew_marginal(est, se, .nl_skew_gamma3_eligible(sc)[idx],
+                          .nl_skew_gamma1_eligible(sc)[idx], probs,
+                          enabled = TRUE)
+  if (!any(mg$applied)) return(base)
+  q <- base$q
+  q[mg$applied, ] <- mg$q[mg$applied, , drop = FALSE]
+  list(q = q, applied = mg$applied,
+       source = if (all(mg$applied)) "skew_map_cell"
+                else paste0("skew_map_cell/", base$source),
+       declined = paste("skew_correct: gamma_3 is retained at the MAP cell",
+                        "only, so the mixture components carry no per-cell",
+                        "skew to compose; the coefficients it declines keep",
+                        "the read they would have had"),
+       mass = mass)
 }
 
 # Weighted mean and SD of `values` under pre-normalized `weights` (which
