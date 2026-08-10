@@ -161,8 +161,10 @@
 .st_auto_grid_rescue <- function(out, kernel, kargs, spatial_type, temporal_type,
                                  n_gs, n_gt, n_grho, tau_lo, tau_hi, control,
                                  rho_spatial_val = 0.9) {
-    if (.nl_recenter_mode(control$auto_recenter) == "always") {
-        stop("control$auto_recenter = \"always\" is implemented on the ",
+    if (is.character(control$auto_recenter)) {
+        stop("control$auto_recenter = \"",
+             paste(control$auto_recenter, collapse = "\", \""),
+             "\" names a per-axis placement policy implemented on the ",
              "standalone tulpa_nested_laplace() registry path only. Use TRUE ",
              "or FALSE here.", call. = FALSE)
     }

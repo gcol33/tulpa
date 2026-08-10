@@ -184,27 +184,43 @@
 #'     factorized sparsely draws through the CHOLMOD factor's own triangular and
 #'     permutation solves; an LDL' factor has no square root to draw with and is
 #'     declined with `"sparse_factor_not_ll"`.
-#'   * `auto_recenter` (`TRUE`) -- outer-grid placement policy. `TRUE`
-#'     re-centres a default outer grid axis on its posterior mode and refits
-#'     when that axis rails against one of its own boundary nodes
-#'     (gcol33/tulpa#289 / #290 / #361), and costs nothing on a span that
-#'     already brackets its mode. `FALSE` integrates over the grid exactly as
-#'     given, whatever it is, and records
-#'     `outer_grid_recenter_declined = "auto_recenter_disabled"`.
-#'     `"always"` re-centres every movable default axis whatever the fit did,
-#'     which lays it at `mode +/- 2.5 sd` over 5 nodes and so resolves the
-#'     posterior at a cell width of 1.25 posterior SDs by construction, against
-#'     a census median of 3.9 on the fixed spans. Measured over 200 fixed-truth
-#'     seeds per configuration it moves mean |coverage - nominal| from 0.036 to
-#'     0.026 at the 95% level, 0.176 to 0.078 at 80% and 0.268 to 0.160 at 50%,
-#'     at 0.24 to 0.81 times the 95% interval width -- for 1.9 to 2.2 times the
-#'     wall clock, since it is a second full grid solve plus a finite-difference
-#'     mode/Hessian stencil on every fit. Movable axes are icar's `tau_grid` and
-#'     bym2's `sigma_grid` / `rho_grid`; on any other family `"always"` behaves
-#'     as `TRUE` and the fit records why through
-#'     `outer_grid_recenter_declined`. `"always"` is the standalone registry
-#'     path only -- [tulpa_nested_laplace_joint()] and [fit_st_nested()] refuse
-#'     it rather than accept it and ignore it.
+#'   * `auto_recenter` (`TRUE`) -- outer-grid placement policy
+#'     (gcol33/tulpa#289 / #290 / #361). `TRUE` re-centres the movable default
+#'     axes on the posterior mode and refits when the grid either RAILS (an
+#'     axis's own marginal is maximal at one of its own endpoints) or does not
+#'     RESOLVE its posterior (an axis's node spacing exceeds 2 posterior SDs in
+#'     its own coordinate). Both tests read the weights the fit already stored,
+#'     so a grid that brackets and resolves its mode costs nothing beyond them;
+#'     when the pass does fire it is a second full grid solve plus a
+#'     finite-difference mode/Hessian stencil. A recentred axis is
+#'     `mode +/- 2.5 sd` over 5 nodes, a cell width of 1.25 posterior SDs by
+#'     construction, against a census median of 3.9 on the fixed spans.
+#'
+#'     Measured over 200 fixed-truth seeds on each of six configurations (icar
+#'     chain / icar lattice / rw1 / bym2 / iid / nngp), the default moves mean
+#'     |coverage - nominal| from 0.043 to 0.030 at the 95% level, 0.171 to
+#'     0.084 at 80% and 0.243 to 0.129 at 50% against the rail-only policy, at
+#'     0.63 times the 95% interval width and 0.76 times the median bias, for
+#'     1.71 times the wall clock.
+#'
+#'     Three other values. `"rail"` is the rail test alone, which is what
+#'     `TRUE` meant before the sizing measurement settled the default. `FALSE`
+#'     integrates over the grid exactly as given, whatever it is, and records
+#'     `outer_grid_recenter_declined = "auto_recenter_disabled"`. `"always"`
+#'     re-centres every movable default axis whatever the fit did, at 2.04
+#'     times the wall clock; it agrees with the default seed for seed on five
+#'     of the six measured configurations and differs on the one whose default
+#'     axes already resolve their posterior, where it takes 50% coverage to
+#'     0.135 against a nominal 0.5.
+#'
+#'     Which families carry movable axes is `.NL_REGISTRY_AXIS_FIELD`: icar,
+#'     rw1, rw2, iid, bym2, nngp, hsgp and spde. car_proper, ar1 and hsgp_mo
+#'     each carry a correlation axis with no guessable coordinate, and mcar /
+#'     miid / tgmrf hold their axes in one matrix field; a fit of any of them
+#'     records which through `outer_grid_recenter_declined` rather than passing
+#'     in silence. The per-axis policy names are the standalone registry path
+#'     only -- [tulpa_nested_laplace_joint()] and [fit_st_nested()] refuse them
+#'     rather than accept them and ignore them.
 #'   * `max_grid_cells` (`2048L`) -- cell-count ceiling on a multi-block outer
 #'     grid, refused with an error above it. Each cell is one inner Newton
 #'     solve, so the default catches a per-block grid that multiplied out to a
@@ -407,6 +423,34 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     tm$mark("postproc")
     res <- .nl_attach_pareto_k(res, prior, cargs_no_ckpt, "multi", NULL,
                                likelihood, k_samples, compute = diagnose_k)
+
+    # The same placement pass the single-block path runs, over the block list
+    # (gcol33/tulpa#361). Every axis is block-prefixed here, so a moved block is
+    # re-crossed on its own fields and its neighbours keep theirs; a prior whose
+    # blocks the family table does not cover declines with a reason rather than
+    # leaving the fit with no placement record at all.
+    multi_rescue <- .nl_registry_grid_rescue(
+      res, NULL, prior,
+      refit = function(prior_i) {
+        r <- .nl_dispatch_multi(cargs, prior_i, likelihood = likelihood,
+                                progress = .nl_progress_args(control),
+                                within_cell = within_cell)
+        if (isTRUE(keep_grid_hessians)) r <- .nl_attach_grid_hessians(r, p_fixed)
+        .nl_attach_pareto_k(r, prior_i, cargs_no_ckpt, "multi", NULL,
+                            likelihood, k_samples, compute = diagnose_k)
+      },
+      refit_log_marginal = function(prior_i, theta_mat) {
+        o <- .nl_dispatch_multi(cargs_no_ckpt, prior_i, likelihood = likelihood,
+                                theta_grid_override = theta_mat)
+        o$log_marginal +
+          .nl_multi_spde_log_prior(o$blocks, o$axis_offsets, theta_mat)
+      },
+      auto = .prov$auto, multi = TRUE,
+      policy = .nl_recenter_mode(control$auto_recenter))
+    res   <- multi_rescue$res
+    prior <- multi_rescue$prior
+    res$outer_grid_placement <- res$outer_grid_placement %||% "fixed"
+
     res <- .nl_inner_skew_at_theta(res, prior, cargs_no_ckpt, "multi", NULL,
                                    likelihood, p_fixed, skew_idx,
                                    compute = diagnose_skew)
@@ -460,15 +504,14 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   res <- .nl_attach_pareto_k(res, prior, cargs_no_ckpt, "single", type, NULL,
                              k_samples, compute = diagnose_k)
 
-  # Auto-recenter a collapsed icar `tau` / bym2 `sigma` axis
-  # (gcol33/tulpa#290, the registry generalization of #289's joint-path
-  # fix): a single mode-Hessian recenter-and-refit when the fixed default
-  # axis railed. A no-op (zero extra fit) unless it actually did; a PINNED
-  # `tau_grid` / `sigma_grid` always wins (`.nl_axis_is_pinned()`: a grid the
-  # caller named and neither marked with `auto_grid()` nor equal to the
-  # engine's own default axis). car_proper (unguessable
-  # `rho`) and mcar (log-Cholesky axis geometry) are out of scope here --
-  # see `.nl_registry_axis_mode_cov()`.
+  # Auto-recenter a railed default outer axis (gcol33/tulpa#290, the registry
+  # generalization of #289's joint-path fix, extended over the family table in
+  # #361): a single mode-Hessian recenter-and-refit when the fixed default axis
+  # does not contain its own mode. A no-op (zero extra fit) unless it actually
+  # did; a PINNED axis always wins (`.nl_axis_is_pinned()`: a grid the caller
+  # named and neither marked with `auto_grid()` nor equal to the engine's own
+  # default axis). Which families are covered, and why each of the rest
+  # declines, is `.NL_REGISTRY_AXIS_FIELD`.
   registry_rescue <- .nl_registry_grid_rescue(
     res, type, prior,
     refit = function(prior_i) {
@@ -481,18 +524,12 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
                           k_samples, compute = diagnose_k)
     },
     refit_log_marginal = function(prior_i, theta_mat) {
-      blk2 <- prior_i
-      if (type == "icar") {
-        blk2$tau_grid <- theta_mat[, 1L]
-      } else if (type == "bym2") {
-        blk2$sigma_grid <- theta_mat[, 1L]
-        blk2$rho_grid   <- theta_mat[, 2L]
-      }
+      blk2 <- .nl_registry_write_theta(
+        list(prior_i), theta_mat, colnames(theta_mat))[[1L]]
       .nl_dispatch(type, cargs_no_ckpt, blk2)$log_marginal
     },
     auto = .prov$auto,
-    enabled = .nl_recenter_mode(control$auto_recenter) != "off",
-    unconditional = .nl_recenter_mode(control$auto_recenter) == "always")
+    policy = .nl_recenter_mode(control$auto_recenter))
   res   <- registry_rescue$res
   prior <- registry_rescue$prior
   res$outer_grid_placement <- res$outer_grid_placement %||% "fixed"
@@ -1619,34 +1656,46 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   out$theta_grid   <- joint_grid
   out$theta_names  <- axis_names
   out$axis_offsets <- axis_offsets
+  out$blocks       <- prepared
 
-  if (!is.null(theta_grid_override)) return(out)  # skew re-dispatch: caller
-                                                    # only wants inner_skew*
+  if (!is.null(theta_grid_override)) return(out)  # skew re-dispatch / the
+                                                  # auto-recenter FD stencil:
+                                                  # the caller adds whatever
+                                                  # tail it needs
 
-  # Fold each SPDE block's PC prior on (range, sigma) into the per-cell
-  # log-marginal. The areal / temporal / iid blocks carry their hyperprior
-  # inside the C++ block log_prior (it folds into log|Q|); the SPDE factory
-  # drops the log|Q|/2 normalizer (it is recovered from the Laplace Hessian
-  # log-determinant) and carries no hyperprior, so the proper Matern PC prior
-  # is added here -- the same prior + closed form the single-Laplace SPDE path
-  # uses (pc_prior_log_density), so both paths integrate the same posterior.
-  for (b in seq_along(prepared)) {
-    pb <- prepared[[b]]
-    if (!identical(tolower(pb$type %||% ""), "spde")) next
-    cols <- (axis_offsets[b] + 1L):axis_offsets[b + 1L]
-    rng  <- as.numeric(joint_grid[, cols[1L]])
-    sig  <- as.numeric(joint_grid[, cols[2L]])
-    lp <- pc_prior_log_density(rng, sig,
-                               pb$prior_range %||% c(1, 0.5),
-                               pb$prior_sigma %||% c(1, 0.5))
-    out$log_marginal <- out$log_marginal + lp
-  }
+  out$log_marginal <- out$log_marginal +
+    .nl_multi_spde_log_prior(prepared, axis_offsets, joint_grid)
 
   out$weights      <- .nl_normalise_weights_safe(out$log_marginal, "multi-block outer grid")
   out <- .nl_posterior_moments_multi(out, prepared, axis_offsets, joint_grid,
                                      within = match.arg(within_cell))
-  out$blocks       <- prepared
   out
+}
+
+# Each SPDE block's PC prior on (range, sigma), per outer grid cell. The areal
+# / temporal / iid blocks carry their hyperprior inside the C++ block log_prior
+# (it folds into log|Q|); the SPDE factory drops the log|Q|/2 normalizer (it is
+# recovered from the Laplace Hessian log-determinant) and carries no
+# hyperprior, so the proper Matern PC prior is added on the R side -- the same
+# prior + closed form the single-Laplace SPDE path uses
+# (`pc_prior_log_density`), so both paths integrate the same posterior.
+#
+# Its own function because the auto-recenter's FD stencil re-evaluates the
+# inner marginal through `theta_grid_override`, which returns before the tail
+# above: a stencil differencing the marginal WITHOUT this term would be
+# differencing a different target than the one the grid integrates.
+.nl_multi_spde_log_prior <- function(prepared, axis_offsets, joint_grid) {
+  lp <- numeric(nrow(joint_grid))
+  for (b in seq_along(prepared)) {
+    pb <- prepared[[b]]
+    if (!identical(tolower(pb$type %||% ""), "spde")) next
+    cols <- (axis_offsets[b] + 1L):axis_offsets[b + 1L]
+    lp <- lp + pc_prior_log_density(as.numeric(joint_grid[, cols[1L]]),
+                                    as.numeric(joint_grid[, cols[2L]]),
+                                    pb$prior_range %||% c(1, 0.5),
+                                    pb$prior_sigma %||% c(1, 0.5))
+  }
+  lp
 }
 
 

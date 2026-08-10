@@ -408,6 +408,41 @@
     # interior cell for the mode to sit in.
     min_nodes = 3L,
 
+    # The `h / sd` above which an axis counts as UNDER-RESOLVED and is worth
+    # re-placing even though it contains its own mode -- the trigger of the
+    # default placement policy (`.nl_recenter_mode()` `"resolve"`,
+    # gcol33/tulpa#361). `h / sd` is the median node spacing in the axis's own
+    # unconstraining coordinate over the marginal SD in that coordinate, read
+    # off the weights the fit already stored, so the test itself costs nothing.
+    #
+    # 2, and it is measured rather than picked. A recentred axis is `mode +/-
+    # span * sd` over `n_pts` nodes, so its own `h / sd` is 1.25 by
+    # construction: the threshold is the factor by which re-placing has to
+    # improve the resolution before it is worth a second grid solve, and 2 /
+    # 1.25 = 1.6. Over 200 fixed-truth seeds on each of six configurations
+    # (`dev_notes/issue361/ext361.R`, 2400 fits per arm) a family of thresholds
+    # was scored against the shipped rail-only policy and against
+    # unconditional re-placement, mean |coverage - nominal| over the eight
+    # (configuration, axis) rows:
+    #
+    #   threshold   fires   95%     80%     50%    width   |bias|   cost
+    #   rail only   0.020   0.0425  0.1713  0.2431  1.000   1.000   1.00
+    #   1.5         0.969   0.0294  0.0750  0.1713  0.629   0.787   1.95
+    #   2           0.895   0.0300  0.0844  0.1294  0.630   0.763   1.71
+    #   2.5         0.670   0.0338  0.1025  0.1525  0.730   0.798   1.43
+    #   4           0.505   0.0338  0.1213  0.1656  0.801   0.839   1.29
+    #   always      0.996   0.0294  0.0725  0.1856  0.725   0.849   2.04
+    #
+    # 2 minimizes the 50% deviation and the median bias, sits 0.0006 off the
+    # best 95% deviation, and costs 1.71x against unconditional re-placement's
+    # 2.04x. Width and bias are means of per-row ratios to the rail-only arm,
+    # so both are BELOW 1: the policy narrows intervals rather than buying
+    # coverage with them. The spread across thresholds is one configuration --
+    # the only one whose default axes already resolve their posterior -- so the
+    # table separates "fire on a coarse grid" from "fire always" on cost more
+    # cleanly than on calibration; see `.nl_recenter_mode()`.
+    resolve_mult = 2,
+
     # How far above a FLAT marginal the boundary node's own weight has to sit
     # before the axis counts as railed against that boundary (`.nl_axis_rail()`,
     # gcol33/tulpa#361, #375). A marginal maximal at a boundary node has its mode

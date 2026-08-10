@@ -1,5 +1,77 @@
 # tulpa NEWS
 
+## 0.0.187
+
+* **The outer-grid placement pass reaches every registry family whose axes
+  carry a coordinate, and every one it does not reach says why**
+  (gcol33/tulpa#361). `.NL_REGISTRY_AXIS_FIELD` named movable axes for `icar`
+  and `bym2` alone; it now covers `icar`, `rw1`, `rw2`, `iid`, `bym2`, `nngp`,
+  `hsgp` and `spde`, and the field writer behind the finite-difference stencil
+  is one generic pass over that table instead of a hand-written branch per
+  family (which silently ignored its `theta` argument for everything else, so
+  the curvature was unusable there anyway). Membership follows one rule --
+  the transform registry names a coordinate for EVERY axis of the family's
+  grid, and its grid fields bind to those axes one for one -- and
+  `test-nl-registry-axis-scope.R` holds the table to that rule from both
+  sides, so a family added with a placeable grid and no entry fails rather
+  than being left out in silence. The seven families it does not cover are
+  covered by a stated reason on the fit: `car_proper`, `ar1` and `hsgp_mo`
+  each carry a correlation axis on a support the registry will not guess and
+  decline with `unguessable_axis: rho`; `mcar`, `miid` and `tgmrf` hold their
+  axes in a single matrix field; `lf` carries no outer axis.
+
+* The same pass now runs on the MULTI-BLOCK `tulpa_nested_laplace(prior =
+  list(...))` path, which previously stamped no placement at all -- not
+  `"fixed"`, not a decline, not the railed-axis report. A moved block is
+  re-crossed on its own fields while its neighbours keep theirs, and the
+  finite-difference stencil re-evaluates the inner marginal through the
+  driver's own `theta_grid_override`, with each SPDE block's PC prior folded
+  back on so the stencil differences the target the grid integrates.
+
+* **Behaviour change: `control$auto_recenter = TRUE` now re-places a grid that
+  does not RESOLVE its posterior, not only one that RAILS.** An axis whose
+  median node spacing exceeds `.NL_RECENTER$resolve_mult` (2) posterior SDs in
+  its own coordinate triggers the pass alongside the rail test; both tests read
+  the weights the fit already stored, so a grid that brackets and resolves its
+  mode still costs nothing beyond them. Measured over 200 fixed-truth seeds on
+  each of six configurations (icar chain / icar lattice / rw1 / bym2 / iid /
+  nngp, eight scored axes), mean |coverage - nominal| against the rail-only
+  policy goes 0.043 -> 0.030 at the 95% level, 0.171 -> 0.084 at 80% and
+  0.243 -> 0.129 at 50%, at 0.63 times the 95% interval width and 0.76 times
+  the median bias, for 1.71 times the wall clock. The rail-only policy is
+  available as `auto_recenter = "rail"`; `FALSE` and `"always"` are unchanged.
+
+* Unconditional re-placement (`"always"`) is not what shipped, and the reason
+  is cost rather than a clean calibration win. The two policies agree seed for
+  seed on five of the six measured configurations; they differ on the one whose
+  default axes already resolve their own posterior (NNGP, median `h / sd` 1.81
+  and 1.50), where the default fires on 39.5% of seeds against 97.5% and covers
+  0.530 / 0.500 at the 50% level against 0.135 / 0.385. Coverage arbitrates a
+  placement rule (gcol33/tulpa#331), so that row favours the default -- but the
+  reference read on a dense pinned axis that contains the posterior says
+  `"always"` is the nearest read of it there, and that the fixture's posterior
+  itself sits 0.62 / 0.73 above its own truth on the log scale, so a narrower
+  span covers better by cancellation. What separates the two cleanly is 1.71
+  against 2.04 times the wall clock. The threshold of 2 minimizes the 50%
+  deviation and the median bias over the measured family of thresholds and sits
+  0.0006 off the best 95% deviation.
+
+* The recentred axis's `h / sd` target of 1.25 (5 nodes over `mode +/- 2.5
+  sd`) is measured rather than asserted. Sweeping the node count at fixed reach
+  over 200 seeds on two configurations, mean |coverage - nominal| at 3 / 5 / 7
+  / 9 nodes is 0.038 / 0.032 / 0.027 / 0.022 at 95%, 0.155 / 0.062 / 0.067 /
+  0.082 at 80% and 0.182 / 0.185 / 0.125 / 0.130 at 50%: 3 nodes is clearly
+  worse, and past 5 the gain is small and not uniform across levels. Cost is
+  linear in nodes per axis and multiplicative across crossed axes, so 7 and 9
+  nodes put the widest crossed default the engine lays (`hsgp_mo`, four axes)
+  at 2401 and 6561 cells, both past `.NL_MULTI_GRID_HARD_CAP = 2048`, where 5
+  nodes is 625.
+
+* `tulpa_nested_laplace_joint()` and `fit_st_nested()` refuse every per-axis
+  policy name rather than only `"always"`: their rescues trigger on the whole
+  grid's collapsed-edge regime, so none of the three has a measured meaning
+  there.
+
 ## 0.0.186
 
 * **Behaviour change: `control$skew_correct` now defaults to `TRUE`**

@@ -219,27 +219,43 @@ pre-correction pair is kept as \verb{$cila$laplace}. A cell whose inner solve
 factorized sparsely draws through the CHOLMOD factor's own triangular and
 permutation solves; an LDL' factor has no square root to draw with and is
 declined with \code{"sparse_factor_not_ll"}.
-\item \code{auto_recenter} (\code{TRUE}) -- outer-grid placement policy. \code{TRUE}
-re-centres a default outer grid axis on its posterior mode and refits
-when that axis rails against one of its own boundary nodes
-(gcol33/tulpa#289 / #290 / #361), and costs nothing on a span that
-already brackets its mode. \code{FALSE} integrates over the grid exactly as
-given, whatever it is, and records
-\code{outer_grid_recenter_declined = "auto_recenter_disabled"}.
-\code{"always"} re-centres every movable default axis whatever the fit did,
-which lays it at \verb{mode +/- 2.5 sd} over 5 nodes and so resolves the
-posterior at a cell width of 1.25 posterior SDs by construction, against
-a census median of 3.9 on the fixed spans. Measured over 200 fixed-truth
-seeds per configuration it moves mean |coverage - nominal| from 0.036 to
-0.026 at the 95\% level, 0.176 to 0.078 at 80\% and 0.268 to 0.160 at 50\%,
-at 0.24 to 0.81 times the 95\% interval width -- for 1.9 to 2.2 times the
-wall clock, since it is a second full grid solve plus a finite-difference
-mode/Hessian stencil on every fit. Movable axes are icar's \code{tau_grid} and
-bym2's \code{sigma_grid} / \code{rho_grid}; on any other family \code{"always"} behaves
-as \code{TRUE} and the fit records why through
-\code{outer_grid_recenter_declined}. \code{"always"} is the standalone registry
-path only -- \code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}} and \code{\link[=fit_st_nested]{fit_st_nested()}} refuse
-it rather than accept it and ignore it.
+\item \code{auto_recenter} (\code{TRUE}) -- outer-grid placement policy
+(gcol33/tulpa#289 / #290 / #361). \code{TRUE} re-centres the movable default
+axes on the posterior mode and refits when the grid either RAILS (an
+axis's own marginal is maximal at one of its own endpoints) or does not
+RESOLVE its posterior (an axis's node spacing exceeds 2 posterior SDs in
+its own coordinate). Both tests read the weights the fit already stored,
+so a grid that brackets and resolves its mode costs nothing beyond them;
+when the pass does fire it is a second full grid solve plus a
+finite-difference mode/Hessian stencil. A recentred axis is
+\verb{mode +/- 2.5 sd} over 5 nodes, a cell width of 1.25 posterior SDs by
+construction, against a census median of 3.9 on the fixed spans.
+
+Measured over 200 fixed-truth seeds on each of six configurations (icar
+chain / icar lattice / rw1 / bym2 / iid / nngp), the default moves mean
+|coverage - nominal| from 0.043 to 0.030 at the 95\% level, 0.171 to
+0.084 at 80\% and 0.243 to 0.129 at 50\% against the rail-only policy, at
+0.63 times the 95\% interval width and 0.76 times the median bias, for
+1.71 times the wall clock.
+
+Three other values. \code{"rail"} is the rail test alone, which is what
+\code{TRUE} meant before the sizing measurement settled the default. \code{FALSE}
+integrates over the grid exactly as given, whatever it is, and records
+\code{outer_grid_recenter_declined = "auto_recenter_disabled"}. \code{"always"}
+re-centres every movable default axis whatever the fit did, at 2.04
+times the wall clock; it agrees with the default seed for seed on five
+of the six measured configurations and differs on the one whose default
+axes already resolve their posterior, where it takes 50\% coverage to
+0.135 against a nominal 0.5.
+
+Which families carry movable axes is \code{.NL_REGISTRY_AXIS_FIELD}: icar,
+rw1, rw2, iid, bym2, nngp, hsgp and spde. car_proper, ar1 and hsgp_mo
+each carry a correlation axis with no guessable coordinate, and mcar /
+miid / tgmrf hold their axes in one matrix field; a fit of any of them
+records which through \code{outer_grid_recenter_declined} rather than passing
+in silence. The per-axis policy names are the standalone registry path
+only -- \code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}} and \code{\link[=fit_st_nested]{fit_st_nested()}} refuse them
+rather than accept them and ignore them.
 \item \code{max_grid_cells} (\code{2048L}) -- cell-count ceiling on a multi-block outer
 grid, refused with an error above it. Each cell is one inner Newton
 solve, so the default catches a per-block grid that multiplied out to a

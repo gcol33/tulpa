@@ -573,7 +573,11 @@ and is declined with \code{"sparse_factor_not_ll"}.
 posterior mode and refit when the fit rails against a boundary node
 (gcol33/tulpa#289 / #290). \code{FALSE} integrates over the grid exactly as
 given, whatever it is, and records
-\code{outer_grid_recenter_declined = "auto_recenter_disabled"}.
+\code{outer_grid_recenter_declined = "auto_recenter_disabled"}. The joint
+rescues trigger on the whole grid's collapsed-edge regime rather than on
+a per-axis rail, so the per-axis policy names
+\code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}} takes (\code{"rail"}, \code{"resolve"}, \code{"always"}) are
+refused here with an error rather than accepted and ignored.
 \item \code{max_grid_cells} (\code{2048L}) -- cell-count ceiling on a multi-block tensor
 outer grid, refused with an error above it. Each cell is one inner
 Newton solve, so the default catches per-block grids that multiplied out

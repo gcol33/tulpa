@@ -57,7 +57,10 @@ is no RE term.}
 \code{tau_lower} / \code{tau_upper} (precision grid bounds, default 0.25 / 16),
 \code{rho_lower} / \code{rho_upper} (ar1 grid, default 0.1 / 0.9), \code{max_iter}, \code{tol},
 \code{n_threads}, \code{auto_recenter} (default \code{TRUE}; \code{FALSE} holds the grid
-exactly as specified).
+exactly as specified -- the per-axis policy names
+\code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}} takes are refused here with an error, since this
+driver recentres on the grid's collapsed-edge regime rather than on a
+per-axis rail).
 
 The \verb{(tau_lower, tau_upper)} span (and, for \code{ar1}, \verb{(rho_lower, rho_upper)}) is a starting axis, not a hard ceiling (gcol33/tulpa#291):
 when the fitted precision (or, for \code{ar1}, autocorrelation) posterior

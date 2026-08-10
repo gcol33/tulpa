@@ -50,7 +50,10 @@
 #'   `tau_lower` / `tau_upper` (precision grid bounds, default 0.25 / 16),
 #'   `rho_lower` / `rho_upper` (ar1 grid, default 0.1 / 0.9), `max_iter`, `tol`,
 #'   `n_threads`, `auto_recenter` (default `TRUE`; `FALSE` holds the grid
-#'   exactly as specified).
+#'   exactly as specified -- the per-axis policy names
+#'   [tulpa_nested_laplace()] takes are refused here with an error, since this
+#'   driver recentres on the grid's collapsed-edge regime rather than on a
+#'   per-axis rail).
 #'
 #'   The `(tau_lower, tau_upper)` span (and, for `ar1`, `(rho_lower,
 #'   rho_upper)`) is a starting axis, not a hard ceiling (gcol33/tulpa#291):

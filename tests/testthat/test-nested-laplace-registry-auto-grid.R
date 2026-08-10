@@ -155,8 +155,12 @@ test_that("bym2's rescue mechanics recentre (sigma, rho) and re-cross rho's node
         .joint_attach_pareto_k_regime(r)
     }
 
+    # `policy = "rail"` is the placement this block is about -- move the axes
+    # that rail, re-cross the rest. The engine's default policy also re-places
+    # an axis that merely under-resolves, which would move `rho` here too.
     rescue <- .nl_registry_grid_rescue(res, "bym2", list(type = "bym2"),
-                                       refit, refit_log_marginal)
+                                       refit, refit_log_marginal,
+                                       policy = "rail")
     expect_identical(rescue$res$outer_grid_placement, "auto_recentered")
     expect_identical(rescue$res$outer_grid_recenter_attempts, 1L)
     # The recentered sigma axis brackets the true mode at 8, well past the

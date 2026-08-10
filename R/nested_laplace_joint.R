@@ -583,7 +583,11 @@
 #'     posterior mode and refit when the fit rails against a boundary node
 #'     (gcol33/tulpa#289 / #290). `FALSE` integrates over the grid exactly as
 #'     given, whatever it is, and records
-#'     `outer_grid_recenter_declined = "auto_recenter_disabled"`.
+#'     `outer_grid_recenter_declined = "auto_recenter_disabled"`. The joint
+#'     rescues trigger on the whole grid's collapsed-edge regime rather than on
+#'     a per-axis rail, so the per-axis policy names
+#'     [tulpa_nested_laplace()] takes (`"rail"`, `"resolve"`, `"always"`) are
+#'     refused here with an error rather than accepted and ignored.
 #'   * `max_grid_cells` (`2048L`) -- cell-count ceiling on a multi-block tensor
 #'     outer grid, refused with an error above it. Each cell is one inner
 #'     Newton solve, so the default catches per-block grids that multiplied out
@@ -940,10 +944,13 @@ tulpa_nested_laplace_joint <- function(responses,
     # `control$auto_recenter = FALSE` holds every grid exactly as given -- the
     # opt-out for a caller who wants the default axis integrated as-is. The
     # joint rescues trigger on the whole grid's `collapsed_edge` regime rather
-    # than on a per-axis rail, so `"always"` has no measured meaning here and is
-    # refused rather than accepted and ignored (gcol33/tulpa#293's rule).
-    if (.nl_recenter_mode(control$auto_recenter) == "always") {
-        stop("control$auto_recenter = \"always\" is implemented on the ",
+    # than on a per-axis rail, so the per-axis policy names (`"rail"`,
+    # `"resolve"`, `"always"`) have no measured meaning here and are refused
+    # rather than accepted and ignored (gcol33/tulpa#293's rule).
+    if (is.character(control$auto_recenter)) {
+        stop("control$auto_recenter = \"",
+             paste(control$auto_recenter, collapse = "\", \""),
+             "\" names a per-axis placement policy implemented on the ",
              "standalone tulpa_nested_laplace() registry path only; the joint ",
              "path recentres on the grid's collapsed-edge regime, not a ",
              "per-axis rail. Use TRUE or FALSE here.", call. = FALSE)
