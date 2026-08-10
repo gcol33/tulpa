@@ -557,7 +557,53 @@
 # multi-process unit, a field past the eta-variance solve budget) DECLINES the
 # whole correction rather than reading the absent gamma_1 as zero.
 #
-# `control$skew_correct = TRUE` turns it on per fit; the default stays FALSE.
+# IT IS ON BY DEFAULT (gcol33/tulpa#364); `control$skew_correct = FALSE` restores
+# the uncorrected report per fit, exactly. Three things had to hold, each
+# measured on the fixtures above after gcol33/tulpa#376 removed the centre band
+# and gcol33/tulpa#386 put a declined coefficient back on the mixture read
+# (dev_notes/issue364/RESULTS.md).
+#
+# THE FLIP SURVIVES THE SHIPPED GATE. Scored against the read a default-OFF fit
+# gives -- the gcol33/tulpa#336 grid mixture -- on 400 prior-predictive
+# replicates: the rare-event intercept t = -1.895, and the small-group Bernoulli
+# design's two coefficients t = -3.765 and t = -3.201, against +3.54 / +6.12 /
+# +4.64 for the pre-gcol33/tulpa#354 read that had no location term.
+#
+# COVERAGE HOLDS ACROSS MODEL CLASSES. Twelve configurations -- the six built-in
+# families on the single-block driver, a rare-event small-group binomial, a
+# small-group Poisson, the same data on the joint driver, and three crossed
+# groupings at outer dimension 3 -- read off ONE solve per seed by the shipped
+# `recov_sweep()`, so the corrected and uncorrected arms are paired and differ
+# only in the marginal read. Pooled over 960 trials at nominal 0.95: mixture
+# 0.9510, corrected 0.9542, standard error 0.0070. Every configuration is inside
+# the 3-standard-error acceptance the shipped gates use, and gaussian is
+# identical to the bit (its gamma_3 and gamma_1 are exactly 0).
+#
+# Two SMALL-SAMPLE classes move, in opposite directions, and are the whole of
+# the movement (200 seeds, three levels, 400 trials per cell). The correction
+# takes the small-group Poisson design from 0.8950 / 0.7050 / 0.4200 to 0.9400 /
+# 0.7950 / 0.4650 at nominal 0.95 / 0.80 / 0.50, and the rare-event binomial
+# from 0.9650 / 0.8050 / 0.4900 to 0.9175 / 0.7550 / 0.4700. Summed distance
+# from nominal over the nine cells: 0.295 uncorrected, 0.175 corrected.
+#
+# THE RARE-EVENT DROP IS THE EXACT ANSWER, not a regression, and coverage at a
+# FIXED truth is what cannot say so on its own -- a credible interval attains its
+# nominal rate averaged over the prior, not at one parameter value. Fixture A's
+# posterior is EXACT by one-dimensional quadrature, so it can be run at fixed
+# truths with the exact posterior as an arm (five truths x 400 seeds): pooled,
+# exact 0.9470 / 0.8650 / 0.5630 against the corrected 0.9290 / 0.8650 / 0.5630
+# and the Gaussian 0.9625 / 0.8210 / 0.4165. The corrected interval reproduces
+# what the EXACT posterior does at 0.80 and 0.50 and is 0.018 from it at 0.95,
+# where the Gaussian is 0.044 and 0.147 away at the two lower levels. At
+# beta = -2 and level 0.50 the Gaussian interval contains the truth on 0 of 400
+# replicates, the exact posterior's on 367, and the corrected one on 367.
+#
+# THE DECLINE PATHS ARE NO-OPS. A coupled fit (every arm `multi_eta_unit`, so no
+# location term), a coefficient the importance k-hat flags, a coefficient past
+# the shape band and a non-nested fit all report bounds identical to the
+# correction-off fit, to 0.000e+00, while an eligible coefficient on the same fit
+# moves by 0.397. That took gcol33/tulpa#386; without it every one of those
+# classes moved.
 #
 # `centre_unreliable` is the CENTRE band's cutoff, the counterpart of
 # `gamma3_unreliable` on the other term of the same expansion (gcol33/tulpa#362).
@@ -723,7 +769,7 @@
     gamma3_unreliable    = 1.0,
     centre_unreliable    = Inf,
     inner_k_material_ess = 0.995,
-    skew_correct         = FALSE,
+    skew_correct         = TRUE,
     debias_select_band   = "ok",
     debias_closure_pcor  = 0.5,
     debias_closure_max   = 200L,

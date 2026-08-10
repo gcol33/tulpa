@@ -631,8 +631,9 @@ interface does not expose.
 derivation (#273 item 2) remains open.
 
 **gamma_3 is consumed, not only graded (gcol33/tulpa#302, 0.0.140).**
-`control$skew_correct` makes `summary()` / `confint()` on a nested-Laplace fit
-report **Cornish-Fisher** marginal quantiles at each coefficient's own
+`control$skew_correct` (ON by default since gcol33/tulpa#364) makes `summary()` /
+`confint()` on a nested-Laplace fit report **Cornish-Fisher** marginal quantiles
+at each coefficient's own
 `gamma_3` (`.nl_skew_marginal()` in `R/laplace_diagnostics.R` over
 `src/cornish_fisher.h`), gated to the `good` / `ok` bands and falling back to
 the Gaussian quantiles elsewhere -- including where the requested level would
@@ -712,7 +713,35 @@ full correction beats -- that is the cubic term earning its place -- and
 be formed (a coupled or multi-process unit, a field past the eta-variance solve
 budget) declines the whole correction and reports the Gaussian quantiles.
 `gamma_3` is a LOWER bound on the true skewness besides, so the reshaping still
-moves only part of the way. **The default is still `FALSE`.** Tests: section 4
+moves only part of the way.
+
+**The correction is ON by default (gcol33/tulpa#364, 0.0.186).**
+`control$skew_correct = FALSE` restores the uncorrected report per fit, exactly.
+Three things were measured before the flip, all on current main after #376 and
+#386. (1) The flip survives the shipped gate: scored against the read a
+default-OFF fit gives -- the #336 grid mixture -- `t = -1.895` on the rare-event
+intercept and `-3.765` / `-3.201` on the small-group Bernoulli design. (2)
+Coverage across twelve model classes, read off ONE solve per seed by the shipped
+`recov_sweep()`: pooled over 960 trials, `0.9510 -> 0.9542` at a standard error
+of `0.0070`, every class inside the 3-se acceptance, gaussian identical to the
+bit. Two small-sample classes move in opposite directions and are the whole of
+the movement; summed distance from nominal over nine cells, `0.295 -> 0.175`.
+(3) The decline paths are exact no-ops (`0.000e+00` on a coupled fit, an
+inner-k-declined coefficient, a shape-band-declined one and a non-nested fit),
+which is what #386 bought.
+
+**The rare-event class covering LOWER is the exact answer, not a regression, and
+fixed-truth coverage is what cannot say so.** A credible interval attains its
+nominal rate averaged over the prior, not at one parameter value. Fixture A's
+posterior is exact by quadrature, so it runs at fixed truths with the exact
+posterior as an arm: pooled over five truths x 400 seeds, exact
+`0.9470 / 0.8650 / 0.5630`, corrected `0.9290 / 0.8650 / 0.5630`, Gaussian
+`0.9625 / 0.8210 / 0.4165`. The corrected interval reproduces what the exact
+posterior does at two of three levels; at `beta = -2`, level 0.50, the Gaussian
+contains the truth on 0 of 400 replicates and both the exact and the corrected on
+367. Do not read a fixed-truth coverage drop as a defect without an exact arm.
+
+Tests: section 4
 of `test-inner-skew-correction.R` (the whole-marginal gate, on #335's
 `recov_sbc()` / `sbc_report()` / `sbc_crps_compare()`, slow tier), section 10 of
 `test-inner-skew.R` (the `gamma_1` arbiters), plus a paired

@@ -107,6 +107,11 @@ test_that("the default axes are exactly these values", {
     expect_identical(tulpa:::.nl_diag("k_samples"), 200L)
     expect_equal(tulpa:::.nl_diag("gamma3_ok"), 0.5)
     expect_equal(tulpa:::.nl_diag("gamma3_unreliable"), 1.0)
+    # The two skew-correction defaults, both decided on measurement and both
+    # recorded here so a change to either is deliberate: the CENTRE band is off
+    # (gcol33/tulpa#376) and the correction itself is ON (gcol33/tulpa#364).
+    expect_identical(tulpa:::.nl_diag("centre_unreliable"), Inf)
+    expect_true(tulpa:::.nl_diag("skew_correct"))
     expect_identical(tulpa:::.nl_recenter("n_pts"), 5L)
     expect_equal(tulpa:::.nl_recenter("span"), 2.5)
     expect_identical(tulpa:::.nl_recenter("max_attempts_joint"), 2L)

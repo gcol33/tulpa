@@ -507,7 +507,7 @@ truth fell, and swept directly that runs 0.585 to 1.000 at nominal 0.95
 a posterior sample are not cell partitions that tile -- and an axis it
 declines on reports \code{"chord"} with a reason rather than erroring. Nothing
 else moves: point estimates, moments, draws and weights are untouched.
-\item \code{skew_correct} (\code{FALSE}) -- consume the inner-Laplace expansion instead of
+\item \code{skew_correct} (\code{TRUE}) -- consume the inner-Laplace expansion instead of
 only grading it (gcol33/tulpa#302, gcol33/tulpa#354): report
 Cornish-Fisher marginal quantiles at each coefficient's own \code{gamma_3},
 about the centre \code{gamma_1 + gamma_3 / 2}, from \code{summary()} / \code{confint()}
@@ -526,7 +526,10 @@ attribute on \code{summary()} / \code{confint()} records what was actually used 
 the requested level. A FULLY COUPLED fit declines it: the location term's
 contraction against a covariance block is not reachable from the cell
 third-derivative oracle, and an absent \code{gamma_1} is never read as zero.
-See \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}} for the measurement behind the default.
+Such a fit therefore reports what it reported before the default moved, to
+the bit -- a declined coefficient keeps the grid-mixture read
+(gcol33/tulpa#386). See \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}} for the measurement
+behind the default.
 \item \code{subspace_debias} (\code{FALSE}) -- correct only the latent directions the
 inner-layer diagnostics flagged, by exact Metropolis along the
 Gaussian-conditional-mean surface through each cell's mode, and leave the

@@ -1,5 +1,65 @@
 # tulpa NEWS
 
+## 0.0.186
+
+* **Behaviour change: `control$skew_correct` now defaults to `TRUE`**
+  (gcol33/tulpa#364). `summary()` and `confint()` on a nested-Laplace fit report
+  Cornish-Fisher marginal quantiles at each coefficient's own inner-Laplace
+  `gamma_3`, about the centre `gamma_1 + gamma_3 / 2` that Rue, Martino & Chopin
+  (2009) eq. (22) implies, wherever the combined inner band admits the
+  coefficient -- and the previous read wherever it does not.
+  `control$skew_correct = FALSE` restores the uncorrected report exactly.
+  Point estimates, standard errors, `vcov()`, draws, modes, weights and every
+  hyperparameter summary are untouched: the correction is post-processing on the
+  reported quantiles. `skew_applied` names the rows it was used on,
+  `interval_source` names the read, and `$skew_correction$reason` names the score
+  that declined any row.
+
+  The three things a default-on had to be safe against, all measured on current
+  main after the two changes in 0.0.185.
+
+  **The flip survives the shipped gate.** Scored by paired CRPS against the read
+  a default-OFF fit gives -- the gcol33/tulpa#336 grid mixture -- over 400
+  prior-predictive replicates each: the rare-event binomial-logit intercept
+  `t = -1.895`, and the small-group Bernoulli design's two coefficients
+  `t = -3.765` and `t = -3.201`. The pre-gcol33/tulpa#354 read that had no
+  location term scored `+3.54` / `+6.12` / `+4.64` on the same fixtures.
+
+  **Coverage holds across model classes.** Twelve configurations -- the six
+  built-in families on the single-block driver, a rare-event small-group
+  binomial, a small-group Poisson, the same data on the joint driver, and three
+  crossed groupings at outer dimension 3 -- read off ONE solve per seed by the
+  shipped `recov_sweep()`, so the corrected and uncorrected arms are paired and
+  differ only in the marginal read. Pooled over 960 trials at nominal 0.95:
+  `0.9510 -> 0.9542`, standard error 0.0070, with every configuration inside the
+  3-standard-error acceptance the shipped gates use and the gaussian family
+  identical to the bit. Two small-sample classes move, in opposite directions,
+  and are the whole of the movement: at 200 seeds and three levels the
+  correction takes the small-group Poisson design from 0.8950 / 0.7050 / 0.4200
+  to 0.9400 / 0.7950 / 0.4650 at nominal 0.95 / 0.80 / 0.50, and the rare-event
+  binomial from 0.9650 / 0.8050 / 0.4900 to 0.9175 / 0.7550 / 0.4700. Summed
+  distance from nominal over the nine cells: 0.295 uncorrected, 0.175 corrected.
+
+  **The rare-event drop is the exact answer.** Coverage at a FIXED truth cannot
+  say whether an interval moved away from the right one -- a credible interval
+  attains its nominal rate averaged over the prior, not at one parameter value.
+  Fixture A's posterior is exact by one-dimensional quadrature, so the same
+  rare-event regime runs at five fixed truths with the exact posterior as a third
+  arm (2000 fits): pooled, exact 0.9470 / 0.8650 / 0.5630, corrected
+  0.9290 / 0.8650 / 0.5630, Gaussian 0.9625 / 0.8210 / 0.4165. The corrected
+  interval reproduces what the exact posterior does at 0.80 and 0.50 and is 0.018
+  from it at 0.95, where the Gaussian is 0.044 and 0.147 away at the two lower
+  levels. At `beta = -2` and level 0.50 the Gaussian interval contains the truth
+  on 0 of 400 replicates, the exact posterior's on 367, and the corrected one on
+  367.
+
+  **The decline paths are no-ops.** A coupled fit (every arm a multi-eta unit, so
+  no location term), a coefficient the importance k-hat flags, a coefficient past
+  the shape band and a non-nested fit all report bounds identical to the
+  correction-off fit, to `0.000e+00`, while an eligible coefficient on the same
+  fit moves by 0.397. That required gcol33/tulpa#386 in 0.0.185; without it every
+  one of those classes moved.
+
 ## 0.0.185
 
 * The CENTRE band on the inner-Laplace skew correction is off

@@ -102,7 +102,7 @@
 #'     a posterior sample are not cell partitions that tile -- and an axis it
 #'     declines on reports `"chord"` with a reason rather than erroring. Nothing
 #'     else moves: point estimates, moments, draws and weights are untouched.
-#'   * `skew_correct` (`FALSE`) -- consume the inner-Laplace expansion instead of
+#'   * `skew_correct` (`TRUE`) -- consume the inner-Laplace expansion instead of
 #'     only grading it (gcol33/tulpa#302, gcol33/tulpa#354): report
 #'     Cornish-Fisher marginal quantiles at each coefficient's own `gamma_3`,
 #'     about the centre `gamma_1 + gamma_3 / 2` that Rue, Martino & Chopin
@@ -135,8 +135,19 @@
 #'     exact posterior itself achieves, and its PIT re-enters the simultaneous
 #'     SBC band. Applied about the Laplace mode instead of about
 #'     `gamma_1 + gamma_3 / 2` the same reshaping scored +0.00775 at t = +3.54,
-#'     a net loss; that centre is what gcol33/tulpa#354 supplied. The default is
-#'     still `FALSE`.
+#'     a net loss; that centre is what gcol33/tulpa#354 supplied.
+#'
+#'     IT IS ON BY DEFAULT (gcol33/tulpa#364), so `summary()` / `confint()` on a
+#'     nested-Laplace fit report the corrected quantiles wherever the combined
+#'     inner band admits the coefficient; `skew_correct = FALSE` restores the
+#'     uncorrected report exactly. Scored against the mixture read a
+#'     correction-off fit gives, the flip is t = -1.895 on the rare-event
+#'     intercept and -3.765 / -3.201 on the small-group Bernoulli design. Across
+#'     twelve model classes read off one solve per seed, pooled 95% coverage
+#'     moves 0.9510 -> 0.9542 at a standard error of 0.0070, with every class
+#'     inside the acceptance the shipped gates use. A fit the correction cannot
+#'     help -- a coupled one, whose location term is unreachable -- reports what
+#'     it reported before, to the bit.
 #'   * `subspace_debias` (`FALSE`) -- correct only the latent directions the
 #'     inner-layer diagnostics flagged, by exact Metropolis, and leave the rest
 #'     at their Gaussian conditional (gcol33/tulpa#304, extended to this backend

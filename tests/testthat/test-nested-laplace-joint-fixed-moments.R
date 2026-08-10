@@ -457,12 +457,21 @@ test_that("the sparse joint loop extracts the same block as the dense one", {
 test_that("a real multi-cell fit reports mixture-CDF bounds beside its moments", {
   skip_on_cran()
   d   <- .j305_icar_data()
-  fit <- .j305_icar_fit(d)
+  # The skew correction is ON by default since gcol33/tulpa#364, and this fixture
+  # admits every coefficient, so the mixture read this block is about is now
+  # asked for rather than inherited. The correction is checked on the same
+  # fixture in section 3; the two reads are different features and each is
+  # tested at its own switch.
+  fit <- .j305_icar_fit(d, skew_correct = FALSE)
   expect_gt(length(fit$weights), 1L)
 
   ci <- confint(fit)
   expect_identical(attr(ci, "interval_source"), "mixture_cdf")
   expect_true(is.na(attr(ci, "interval_declined")))
+  # And the DEFAULT on this fixture is the corrected read, which is the
+  # behaviour change gcol33/tulpa#364 made.
+  expect_identical(attr(confint(.j305_icar_fit(d)), "interval_source"),
+                   "skew_map_cell")
 
   # The bounds solve the mixture CDF assembled here from the fit's own retained
   # cells, so what `summary()` reports is checked against the definition rather
@@ -487,7 +496,9 @@ test_that("a real multi-cell fit reports mixture-CDF bounds beside its moments",
 test_that("the mixture bounds are the ones the fit's own posterior draws carry", {
   skip_if_not_slow()
   d   <- .j305_icar_data()
-  fit <- .j305_icar_fit(d, store_Q = TRUE)
+  # Same reason as the block above: this arbiter is the MIXTURE read against the
+  # fit's own draws, so it asks for that read rather than the default one.
+  fit <- .j305_icar_fit(d, store_Q = TRUE, skew_correct = FALSE)
   p   <- fit$n_fixed
   # `tulpa_posterior_draws()` samples a cell by weight and then that cell's
   # Gaussian, so it realizes the same mixture the bounds invert -- an arbiter

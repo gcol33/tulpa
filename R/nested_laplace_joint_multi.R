@@ -974,7 +974,7 @@
                                   k_conf_bands = NULL,
                                   diagnose_skew = TRUE,
                                   skew_idx = NULL,
-                                  skew_correct = FALSE,
+                                  skew_correct = .nl_diag("skew_correct"),
                                   subspace_debias = NULL,
                                   cila = NULL,
                                   inner_refresh = 1L,
