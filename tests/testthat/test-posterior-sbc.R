@@ -259,9 +259,13 @@ test_that("the exact posterior calibrates under the posterior-SBC construction",
   expect_identical(fit_sbc$premises$fresh_groups,
                    "verified (disjoint group labels)")
   res <- fit_sbc$pit
-  expect_identical(
-    res, recov_posterior_sbc(sbc_psbc_gaussian(psbc_gauss_obs(),
-                                               read = "exact"), n_seed = n))
+  ref <- recov_posterior_sbc(sbc_psbc_gaussian(psbc_gauss_obs(),
+                                               read = "exact"), n_seed = n)
+  # `fit_obs` rides along on the driver's return and carries the observed fit's
+  # wall-clock `$timing`, which is not part of the experiment.
+  attr(res, "fit_obs") <- NULL
+  attr(ref, "fit_obs") <- NULL
+  expect_identical(res, ref)
   band <- sbc_ecdf_band(n, 0.999)
   u <- function(a, q) res$pit[res$arm == a & res$quantity == q]
   for (a in c("exact", "mixture")) {

@@ -24,7 +24,7 @@
 #' @seealso [spatial_rsr()], [temporal_rw1()], [temporal_ar1()]
 #'
 #' @examples
-#' rtr <- temporal_rtr(temporal_rw1(), restrict_to = ~ x)
+#' rtr <- temporal_rtr(temporal_rw1("year"), restrict_to = ~ x)
 #' print(rtr)
 #'
 #' @export

@@ -39,6 +39,7 @@
 
 test_that("a coupled multi-block joint fit reports the exact fixed-effect covariance", {
   skip_on_cran()
+  skip_if_not_installed("numDeriv")
   coupled_occ_register()
   o <- .j305_coupled_fit()
   fit <- o$fit

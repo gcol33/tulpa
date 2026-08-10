@@ -11,7 +11,7 @@
 }
 \description{
 A no-op for a canonical name, for a \verb{<family>_<link>} code, and for anything
-unrecognized, which reaches \code{\link[=.family_or_stop]{.family_or_stop()}} and errors there against the
+unrecognized, which reaches \code{.family_or_stop()} and errors there against the
 canonical list.
 }
 \keyword{internal}

@@ -31,7 +31,7 @@ temporally smooth and its coefficient appears attenuated toward zero; avoid it
 when the temporal effect is itself the quantity of interest.
 }
 \examples{
-rtr <- temporal_rtr(temporal_rw1(), restrict_to = ~ x)
+rtr <- temporal_rtr(temporal_rw1("year"), restrict_to = ~ x)
 print(rtr)
 
 }

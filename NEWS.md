@@ -1,5 +1,26 @@
 # tulpa NEWS
 
+## 0.0.181
+
+* `R CMD check` is clean again (gcol33/tulpa#382). Three pre-existing defects,
+  none related to the code they sat next to, and each a one-line fix.
+  `temporal_rtr()`'s example called `temporal_rw1()` with no arguments while
+  `time_var` has no default, so `checking examples` was an ERROR on any machine;
+  it now passes `"year"`, as every other call site in the package does.
+  `.canonical_family()`'s roxygen linked `.family_or_stop()`, which is internal
+  and has no Rd, giving a dangling cross-reference; the sentence naming it
+  stays, the link goes. And `lmtest`, `numDeriv` and `spdep` are used through
+  `::` in the test suite and were not declared -- they are used TODAY, all three
+  are on CRAN, and this is a declaration rather than a new dependency. The
+  `numDeriv` test is now `skip_if_not_installed()`-guarded like the other two,
+  so it skips rather than errors where the package is absent.
+
+* The same hygiene one layer over: `test-posterior-sbc.R`'s new front-door
+  equivalence assertion (gcol33/tulpa#380) compared the whole driver return,
+  including the `fit_obs` the posterior driver attaches, whose `$timing` is
+  wall clock and differs between two identical runs by construction. The
+  assertion now drops that attribute and keeps the experiment.
+
 ## 0.0.180
 
 * **New: `sbc()`**, one exported front door for simulation-based calibration
