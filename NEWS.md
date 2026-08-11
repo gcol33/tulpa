@@ -1,5 +1,27 @@
 # tulpa NEWS
 
+## 0.0.197
+
+* **Fix: the batched joint nested-Laplace driver's DENSE path could converge a
+  species to a different mode than its own independent fit** (gcol33/tulpa#397).
+  `run_multi_block_nested_laplace_joint_batch`'s dense branch (small/medium
+  fields, `n_x < SPARSE_THRESHOLD`) solved every Newton step and the final
+  log-determinant through the fixed-ridge-only `dispatch_factor_solve` /
+  `dispatch_factor_log_det`, instead of the PD-escalating
+  `joint_pd_step_solve_dense` (the gcol33/tulpa#344 fix) the single-species
+  dense joint driver and the batched driver's own SPARSE branch already use.
+  A coupled likelihood whose observed Hessian is indefinite away from the mode
+  (the occupancy mixture's dark-cell term is not concave everywhere) could hit
+  a negative pivot at one outer-grid cell; with no ridge escalation the
+  Cholesky's `sqrt` produced `NaN`, silently dropping that cell's weight from
+  the fit and shifting every reported summary. Confirmed data-dependent (not
+  batch-slot-dependent): the same species diverged identically whether alone,
+  paired, or duplicated against itself, and grid cells before the affected one
+  matched the independent fit to machine precision. Fixed by routing both the
+  per-iteration dense solve and the final-pass log-determinant through
+  `joint_pd_step_solve_dense` with `JointPDMode::LM`, mirroring the
+  single-species driver and the batch driver's own sparse branch exactly.
+
 ## 0.0.196
 
 * **The simulation-based-calibration and goodness-of-fit entry points are S3

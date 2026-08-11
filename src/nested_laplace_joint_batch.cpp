@@ -424,8 +424,16 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
                     DenseMat& H = H_per_sp[s];
                     for (const auto& b : blocks) if (b.add_prior) b.add_prior(grad, H, st[s].x, kg);
                     add_per_arm_beta_re_priors(grad, H, st[s].x, parsed);
-                    ok = dispatch_factor_solve(H, grad, st[s].delta, n_x,
-                                               st[s].sparse, use_sparse, st[s].chol);
+                    // PD-enforcing solve (gcol33/tulpa#344): the occupancy
+                    // mixture's dark-cell term is not concave everywhere, so a
+                    // fixed-ridge-only solve (dispatch_factor_solve) can hand
+                    // back a non-finite step at an indefinite iterate. The
+                    // single-species dense joint loop already escalates via
+                    // joint_pd_step_solve_dense; the sparse branch above does
+                    // too (joint_pd_step_solve). This mirrors both.
+                    ok = joint_pd_step_solve_dense(H, grad, st[s].delta, n_x,
+                                                   st[s].sparse, use_sparse,
+                                                   st[s].chol, JointPDMode::LM);
                 }
                 if (!ok) {
                     for (int j = 0; j < n_x; j++)
@@ -518,6 +526,17 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
                 add_per_arm_beta_re_priors(grad, H, st[s].x, parsed);
                 score_mx[s][kg] = max_abs(grad);
                 dispatch_factor_log_det(H, n_x, st[s].sparse, use_sparse, st[s].chol, log_det);
+                // Mirrors the single-species dense joint driver's post-loop
+                // fallback (laplace_newton_joint.h): a non-finite log_det means
+                // the Hessian at the returned mode is not PD under the plain
+                // ridge alone. Escalate via the same PD-enforcing solve used
+                // for the per-iteration step above, rather than letting the
+                // NaN propagate into log_marginal (gcol33/tulpa#397).
+                if (!std::isfinite(log_det)) {
+                    joint_pd_step_solve_dense(H, grad, st[s].delta, n_x,
+                                              st[s].sparse, use_sparse, st[s].chol,
+                                              JointPDMode::LM, &log_det);
+                }
                 if (store_Q) {
                     std::vector<int> qp, qi; std::vector<double> qx;
                     dense_to_csc_lower_drop_raw(H, n_x, SPARSE_DROP_TOL_DISPATCH,
