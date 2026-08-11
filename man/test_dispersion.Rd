@@ -2,18 +2,24 @@
 % Please edit documentation in R/diagnostics_sim.R
 \name{test_dispersion}
 \alias{test_dispersion}
+\alias{test_dispersion.default}
 \title{Test for over- or underdispersion}
 \usage{
-test_dispersion(
+test_dispersion(object, ...)
+
+\method{test_dispersion}{default}(
   object,
   observed = NULL,
   nsim = 250L,
   seed = 123L,
-  alternative = c("two.sided", "greater", "less")
+  alternative = c("two.sided", "greater", "less"),
+  ...
 )
 }
 \arguments{
 \item{object}{A fitted model with \code{simulate()} method}
+
+\item{...}{Passed to methods.}
 
 \item{observed}{Observed response vector (optional -- extracted from fit)}
 

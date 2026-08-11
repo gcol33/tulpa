@@ -2,12 +2,17 @@
 % Please edit documentation in R/diagnostics_sim.R
 \name{test_zero_inflation}
 \alias{test_zero_inflation}
+\alias{test_zero_inflation.default}
 \title{Test for zero inflation}
 \usage{
-test_zero_inflation(object, observed = NULL, nsim = 250L, seed = 123L)
+test_zero_inflation(object, ...)
+
+\method{test_zero_inflation}{default}(object, observed = NULL, nsim = 250L, seed = 123L, ...)
 }
 \arguments{
 \item{object}{A fitted model with \code{simulate()} method}
+
+\item{...}{Passed to methods.}
 
 \item{observed}{Observed response vector (optional)}
 

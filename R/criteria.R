@@ -378,3 +378,63 @@ tulpa_pit <- function(cdf, cdf_lower = NULL, jitter = TRUE) {
     cpp_tulpa_pit(cdfm, matrix(0, 0L, 0L), FALSE, isTRUE(jitter))
   }
 }
+
+
+# ==============================================================================
+# One-verb doors onto the criteria layer
+# ==============================================================================
+
+#' DIC and CPO
+#'
+#' Generic front doors onto the two criteria [tulpa_criteria()] computes that
+#' the \pkg{loo} package owns no generic for. WAIC and PSIS-LOO have theirs
+#' (`loo::waic()`, `loo::loo()`), so a model package registers methods on
+#' those rather than on new names that would mask them.
+#'
+#' The default methods take a draws x observations pointwise log-likelihood
+#' matrix, the same input [tulpa_criteria()] takes. A model package registers a
+#' method taking its own fit object, builds the matrix from the posterior, and
+#' delegates here.
+#'
+#' @param object A pointwise log-likelihood matrix (draws x observations), or a
+#'   fitted model object a method is registered for.
+#' @param loglik_at_mean Length-`n_obs` vector of pointwise log-likelihoods at
+#'   the posterior mean of the parameters. Required for DIC's plug-in deviance;
+#'   without it the DIC fields are `NA`.
+#' @param ... Passed to [tulpa_criteria()] (e.g. `group`, `chunk_size`).
+#' @return A `tulpa_criteria` object.
+#' @seealso [tulpa_criteria()] for every criterion at once and for what the LOO
+#'   unit means.
+#' @examples
+#' set.seed(1)
+#' y  <- rnorm(40)
+#' mu <- matrix(rnorm(200 * 40, sd = 0.2), 200, 40)
+#' ll <- dnorm(matrix(y, 200, 40, byrow = TRUE), mean = mu, log = TRUE)
+#' cpo(ll)
+#' @name criteria_doors
+NULL
+
+#' @rdname criteria_doors
+#' @export
+dic <- function(object, ...) {
+  UseMethod("dic")
+}
+
+#' @rdname criteria_doors
+#' @export
+dic.default <- function(object, loglik_at_mean = NULL, ...) {
+  tulpa_criteria(object, criteria = "dic", loglik_at_mean = loglik_at_mean, ...)
+}
+
+#' @rdname criteria_doors
+#' @export
+cpo <- function(object, ...) {
+  UseMethod("cpo")
+}
+
+#' @rdname criteria_doors
+#' @export
+cpo.default <- function(object, ...) {
+  tulpa_criteria(object, criteria = c("loo", "cpo", "lpml"),
+                 pointwise = TRUE, ...)
+}

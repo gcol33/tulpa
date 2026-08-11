@@ -2,13 +2,18 @@
 % Please edit documentation in R/diagnostics_sim.R
 \name{pit_residuals}
 \alias{pit_residuals}
+\alias{pit_residuals.default}
 \title{PIT (Probability Integral Transform) residuals}
 \usage{
-pit_residuals(object, observed = NULL, nsim = 250L, seed = 123L)
+pit_residuals(object, ...)
+
+\method{pit_residuals}{default}(object, observed = NULL, nsim = 250L, seed = 123L, ...)
 }
 \arguments{
 \item{object}{A fitted model with a \code{simulate()} method, or a matrix
 of simulated values (n_obs x nsim)}
+
+\item{...}{Passed to methods.}
 
 \item{observed}{Observed response vector (required if \code{object} is a matrix)}
 

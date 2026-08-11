@@ -2,12 +2,18 @@
 % Please edit documentation in R/sbc.R
 \name{sbc}
 \alias{sbc}
+\alias{sbc.default}
+\alias{sbc.character}
 \alias{summary.sbc}
 \alias{plot.sbc}
 \title{Simulation-based calibration}
 \usage{
-sbc(
-  experiment = c("prior_predictive", "posterior"),
+sbc(object, ...)
+
+\method{sbc}{default}(object, ...)
+
+\method{sbc}{character}(
+  object = c("prior_predictive", "posterior"),
   simulator = NULL,
   fitter = NULL,
   model = NULL,
@@ -17,7 +23,8 @@ sbc(
   level = 0.95,
   seed = 0L,
   n_ref = NULL,
-  control = list()
+  control = list(),
+  ...
 )
 
 \method{summary}{sbc}(object, baseline = NULL, ...)
@@ -25,8 +32,9 @@ sbc(
 \method{plot}{sbc}(x, arm = NULL, quantity = NULL, folded = FALSE, ...)
 }
 \arguments{
-\item{experiment}{\code{"prior_predictive"} (ordinary SBC) or \code{"posterior"}
-(calibration conditional on an observed data set).}
+\item{object}{An \code{sbc} result.}
+
+\item{...}{Ignored.}
 
 \item{simulator, fitter}{The prior-predictive callbacks; see the contract
 above. Required for \code{experiment = "prior_predictive"}.}
@@ -57,14 +65,10 @@ the pinned stream the within-atom randomizing uniforms come from (default
 the driver's own, so a result is reproducible and the fits are not
 perturbed by asking for the diagnostic).}
 
-\item{object}{An \code{sbc} result.}
-
 \item{baseline}{Optional arm name. When given, the summary also carries the
 PAIRED CRPS differences of every other arm against it, seed by seed. A
 negative \code{delta} is the arm scoring better. This is refused on an
 experiment where the CRPS is not a proper posterior score.}
-
-\item{...}{Ignored.}
 
 \item{x}{An \code{sbc} result.}
 

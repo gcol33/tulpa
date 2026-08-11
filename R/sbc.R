@@ -1021,8 +1021,12 @@ recov_posterior_sbc <- function(model, n_seed, quantities = NULL,
 #' groups' effects from the prior rather than conditionally on the observed
 #' data, is not visible from outside the callback and is not claimed.
 #'
-#' @param experiment `"prior_predictive"` (ordinary SBC) or `"posterior"`
-#'   (calibration conditional on an observed data set).
+#' @param object What to calibrate. `"prior_predictive"` (ordinary SBC) or
+#'   `"posterior"` (calibration conditional on an observed data set) runs the
+#'   driver against the callbacks given here; a fitted model object dispatches
+#'   to that package's method, which builds the callbacks itself (see
+#'   `tulpaObs::sbc.tobs_fit`).
+#' @param ... Passed to methods.
 #' @param simulator,fitter The prior-predictive callbacks; see the contract
 #'   above. Required for `experiment = "prior_predictive"`.
 #' @param model The list of posterior-SBC callbacks. Required for
@@ -1086,11 +1090,31 @@ recov_posterior_sbc <- function(model, n_seed, quantities = NULL,
 #' res
 #' summary(res, baseline = "exact")
 #' @export
-sbc <- function(experiment = c("prior_predictive", "posterior"),
-                simulator = NULL, fitter = NULL, model = NULL,
-                n_sim = 100L, quantities = NULL, flat_prior = character(),
-                level = 0.95, seed = 0L, n_ref = NULL, control = list()) {
-  experiment <- match.arg(experiment)
+sbc <- function(object, ...) {
+  UseMethod("sbc")
+}
+
+# Dispatch is what admits a fitted model here, so an unhandled class would
+# otherwise land on R's stock "no applicable method" message, which names
+# neither door.
+#' @rdname sbc
+#' @export
+sbc.default <- function(object, ...) {
+  stop("sbc() takes either the experiment name -- \"prior_predictive\" or ",
+       "\"posterior\", with the callbacks that experiment needs -- or a fitted ",
+       "model whose package registers a method. No sbc method is registered ",
+       "for class \"", paste(class(object), collapse = "\", \""), "\".",
+       call. = FALSE)
+}
+
+#' @rdname sbc
+#' @export
+sbc.character <- function(object = c("prior_predictive", "posterior"),
+                          simulator = NULL, fitter = NULL, model = NULL,
+                          n_sim = 100L, quantities = NULL,
+                          flat_prior = character(), level = 0.95, seed = 0L,
+                          n_ref = NULL, control = list(), ...) {
+  experiment <- match.arg(object)
   ctl <- utils::modifyList(list(progress = FALSE, rand_seed = NULL),
                            as.list(control))
   n_sim <- as.integer(n_sim)

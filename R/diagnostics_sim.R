@@ -45,11 +45,19 @@ NULL
 #' @param observed Observed response vector (required if `object` is a matrix)
 #' @param nsim Number of simulations (default 250)
 #' @param seed Random seed (default 123)
+#' @param ... Passed to methods.
 #'
 #' @return Numeric vector of length n_obs with values in `[0, 1]`
 #'
 #' @export
-pit_residuals <- function(object, observed = NULL, nsim = 250L, seed = 123L) {
+pit_residuals <- function(object, ...) {
+  UseMethod("pit_residuals")
+}
+
+#' @rdname pit_residuals
+#' @export
+pit_residuals.default <- function(object, observed = NULL, nsim = 250L,
+                                  seed = 123L, ...) {
 
   if (is.matrix(object)) {
     sims <- object
@@ -104,7 +112,16 @@ test_uniformity <- function(object, observed = NULL, nsim = 250L, seed = 123L,
     r <- pit_residuals(object, observed = observed, nsim = nsim, seed = seed)
   }
 
-  result <- suppressWarnings(ks.test(r, "punif"))
+  # A discrete response gives tied PIT values. The asymptotic KS p-value stays
+  # valid under ties, so muffle that one warning class and let any other
+  # warning through.
+  result <- withCallingHandlers(
+    ks.test(r, "punif"),
+    warning = function(w) {
+      if (grepl("ties should not be present", conditionMessage(w),
+                fixed = TRUE)) invokeRestart("muffleWarning")
+    }
+  )
 
   if (plot) {
     n <- length(r)
@@ -135,12 +152,21 @@ test_uniformity <- function(object, observed = NULL, nsim = 250L, seed = 123L,
 #' @param nsim Number of simulations (default 250)
 #' @param seed Random seed (default 123)
 #' @param alternative `"two.sided"`, `"greater"`, or `"less"`
+#' @param ... Passed to methods.
 #'
 #' @return An `htest` object with dispersion ratio and p-value
 #'
 #' @export
-test_dispersion <- function(object, observed = NULL, nsim = 250L, seed = 123L,
-                            alternative = c("two.sided", "greater", "less")) {
+test_dispersion <- function(object, ...) {
+  UseMethod("test_dispersion")
+}
+
+#' @rdname test_dispersion
+#' @export
+test_dispersion.default <- function(object, observed = NULL, nsim = 250L,
+                                    seed = 123L,
+                                    alternative = c("two.sided", "greater",
+                                                    "less"), ...) {
   alternative <- match.arg(alternative)
 
   sims <- as.matrix(simulate(object, nsim = nsim, seed = seed))
@@ -185,11 +211,19 @@ test_dispersion <- function(object, observed = NULL, nsim = 250L, seed = 123L,
 #' @param observed Observed response vector (optional)
 #' @param nsim Number of simulations (default 250)
 #' @param seed Random seed (default 123)
+#' @param ... Passed to methods.
 #'
 #' @return An `htest` object (binomial test)
 #'
 #' @export
-test_outliers <- function(object, observed = NULL, nsim = 250L, seed = 123L) {
+test_outliers <- function(object, ...) {
+  UseMethod("test_outliers")
+}
+
+#' @rdname test_outliers
+#' @export
+test_outliers.default <- function(object, observed = NULL, nsim = 250L,
+                                  seed = 123L, ...) {
 
   sims <- as.matrix(simulate(object, nsim = nsim, seed = seed))
   obs <- observed %||% object$y %||% object$.internal$fit_args$y
@@ -221,10 +255,19 @@ test_outliers <- function(object, observed = NULL, nsim = 250L, seed = 123L) {
 #' @param nsim Number of simulations (default 250)
 #' @param seed Random seed (default 123)
 #'
+#' @param ... Passed to methods.
+#'
 #' @return An `htest` object with zero-inflation ratio and p-value
 #'
 #' @export
-test_zero_inflation <- function(object, observed = NULL, nsim = 250L, seed = 123L) {
+test_zero_inflation <- function(object, ...) {
+  UseMethod("test_zero_inflation")
+}
+
+#' @rdname test_zero_inflation
+#' @export
+test_zero_inflation.default <- function(object, observed = NULL, nsim = 250L,
+                                        seed = 123L, ...) {
 
   sims <- as.matrix(simulate(object, nsim = nsim, seed = seed))
   obs <- .resolve_obs(object, observed)
@@ -481,11 +524,19 @@ plot.tulpa_variogram <- function(x, ...) {
 #' @param coords Optional N x 2 coordinate matrix for spatial panel
 #' @param nsim Number of simulations (default 250)
 #' @param seed Random seed (default 123)
+#' @param ... Passed to methods.
 #'
 #' @return Invisible list with `ks_p`, `disp_ratio`, `moran` (if spatial)
 #'
 #' @export
-check_model <- function(object, coords = NULL, nsim = 250L, seed = 123L) {
+check_model <- function(object, ...) {
+  UseMethod("check_model")
+}
+
+#' @rdname check_model
+#' @export
+check_model.default <- function(object, coords = NULL, nsim = 250L,
+                                seed = 123L, ...) {
 
   sims <- as.matrix(simulate(object, nsim = nsim, seed = seed))
   obs <- .resolve_obs(object)

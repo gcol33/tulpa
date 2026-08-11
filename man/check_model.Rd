@@ -2,12 +2,17 @@
 % Please edit documentation in R/diagnostics_sim.R
 \name{check_model}
 \alias{check_model}
+\alias{check_model.default}
 \title{Diagnostic panel plot}
 \usage{
-check_model(object, coords = NULL, nsim = 250L, seed = 123L)
+check_model(object, ...)
+
+\method{check_model}{default}(object, coords = NULL, nsim = 250L, seed = 123L, ...)
 }
 \arguments{
 \item{object}{A fitted model with \code{simulate()}, \code{fitted()}, \code{residuals()}}
+
+\item{...}{Passed to methods.}
 
 \item{coords}{Optional N x 2 coordinate matrix for spatial panel}
 

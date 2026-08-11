@@ -1,5 +1,26 @@
 # tulpa NEWS
 
+## 0.0.196
+
+* **The simulation-based-calibration and goodness-of-fit entry points are S3
+  generics**, so a downstream package registers a method on its own fit object
+  instead of exporting a second name for the same concept. `sbc()`,
+  `pit_residuals()`, `test_dispersion()`, `test_outliers()` and
+  `test_zero_inflation()` now dispatch; every existing body became the
+  `default` method, and `sbc("prior_predictive", ...)` / `sbc("posterior", ...)`
+  keep working unchanged through `sbc.character()`. A call passing the
+  experiment BY NAME (`sbc(experiment = "posterior")`) has to drop the name or
+  use `object =`, since the first argument is what dispatch reads.
+
+* **`dic()` and `cpo()` are new generics** over the same criteria layer
+  [tulpa_criteria()] computes, for the two criteria the loo package owns no
+  generic for. The default methods take a pointwise log-likelihood matrix. WAIC
+  and PSIS-LOO deliberately get none: `loo::waic()` and `loo::loo()` already
+  exist, and a same-named generic here would mask them.
+
+* `test_uniformity()` muffles only the ties warning a discrete response
+  produces, rather than every warning the Kolmogorov-Smirnov test can raise.
+
 ## 0.0.195
 
 * **A reported hyperparameter bound that left the node range now says so**

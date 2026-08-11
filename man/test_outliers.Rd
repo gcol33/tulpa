@@ -2,12 +2,17 @@
 % Please edit documentation in R/diagnostics_sim.R
 \name{test_outliers}
 \alias{test_outliers}
+\alias{test_outliers.default}
 \title{Test for outliers (simulation envelope)}
 \usage{
-test_outliers(object, observed = NULL, nsim = 250L, seed = 123L)
+test_outliers(object, ...)
+
+\method{test_outliers}{default}(object, observed = NULL, nsim = 250L, seed = 123L, ...)
 }
 \arguments{
 \item{object}{A fitted model with \code{simulate()} method}
+
+\item{...}{Passed to methods.}
 
 \item{observed}{Observed response vector (optional)}
 
