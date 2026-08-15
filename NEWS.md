@@ -18,6 +18,20 @@
   perturbed theta. Unblocks gcol33/tulpaObs#220 (`ms_abun()`'s posterior-SBC
   registration).
 
+* **`tulpa_re_aghq()` also returns the FULL per-group joint covariance
+  across RE terms** (`blup_cov_g`, `blup_cross_g`). `blup_var` only ever
+  exposed the per-term diagonal of a group's posterior covariance; when a
+  group carries more than one RE term sharing the same grouping factor (e.g.
+  an abundance-arm term and a detection-arm term on the same species), the
+  group's mode is found jointly across every term's coefficients, so real
+  posterior covariance can exist BETWEEN terms -- `cpp_aghq_blups()` already
+  inverts the full joint Hessian to get it, it just discarded everything off
+  the diagonal before this. Drawing a group's terms independently would
+  repeat gcol33/tulpaObs#226 one level deeper (inside a group instead of
+  between theta and a group). Validated against a closed-form joint-Hessian
+  construction on a toy model with deliberately collinear RE terms; the new
+  diagonal is byte-identical to the pre-existing `blup_var`.
+
 ## 0.0.197
 
 * **Fix: the batched joint nested-Laplace driver's DENSE path could converge a
