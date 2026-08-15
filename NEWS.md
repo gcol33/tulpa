@@ -1,5 +1,23 @@
 # tulpa NEWS
 
+## 0.0.198
+
+* **`tulpa_re_aghq()` returns the mode/theta cross-Hessian block** (#398).
+  Adds `blup_cross` (Bf) to the return value: the per-group `-d^2 ell_g /
+  d theta db` block at the mode, needed to draw a group's BLUP jointly with
+  theta instead of independently (`Cinv %*% t(Bf)` is the first-order
+  `db_hat/dtheta` correction) -- the same joint-draw contract
+  `.tobs_community_em()`-based tulpaObs families already expose via their own
+  `Cinv`/`Bf`. Computed via a cheap central finite difference of
+  `theta_score` over `b` (O(d) oracle calls, independent of `n_theta`).
+  Declines to NA (never a silent 0) when the oracle's `theta_score` has no
+  analytic implementation, as on the R-closure bridge (`make_site`/
+  `make_group`) -- `REGroupOracle` gains `has_theta_score()` to signal this.
+  Verified against the closed-form binomial-GLMM cross term and an
+  independent finite-difference re-solve of the group's mode under a
+  perturbed theta. Unblocks gcol33/tulpaObs#220 (`ms_abun()`'s posterior-SBC
+  registration).
+
 ## 0.0.197
 
 * **Fix: the batched joint nested-Laplace driver's DENSE path could converge a
