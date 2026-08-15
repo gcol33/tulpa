@@ -140,7 +140,17 @@
 #'
 #' @return A list with: `theta` (refined fixed parameters), `Sigma_list`
 #'   (refined per-term covariance), `blup` / `blup_var` (per-term `n_groups x
-#'   n_coefs` posterior mean / variance of the RE), `theta_cov` / `theta_se`
+#'   n_coefs` posterior mean / variance of the RE), `blup_cross` (per-term
+#'   `n_groups x n_theta x n_coefs` array: the mode/theta cross-Hessian block
+#'   `Bf`, `-d^2 ell_g / d theta db` at each group's mode, in the same
+#'   negative-Hessian sign convention as the posterior precision underlying
+#'   `blup_var` -- so a joint draw of `theta` and a group's RE `b_g` uses
+#'   `b_g | theta ~ N(blup_g - Cinv_g %*% t(Bf_g) %*% (theta_draw - theta),
+#'   Cinv_g)` with `Cinv_g` the group's `n_coefs x n_coefs` posterior
+#'   covariance block. `NA` throughout when `blup_cross_available` is `FALSE`:
+#'   the cross-Hessian needs the oracle's analytic `theta_score`, which the
+#'   R-closure bridge (`make_site` / `make_group`) does not supply -- only a
+#'   prebuilt native `oracle` carries it), `theta_cov` / `theta_se`
 #'   (fixed-parameter covariance / SE from the marginal Hessian), `log_marginal`
 #'   (the AGHQ marginal log-likelihood at the optimum, excluding any ridge),
 #'   `n_quad`, `lkj_eta`, and `converged`. RE terms that do not share one
@@ -359,15 +369,24 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
   # Per-group BLUPs + marginal variances at the optimum. The engine returns the
   # prior fallback for empty groups (mode 0, variance diag(Sigma)).
   bl   <- cpp_aghq_blups(opt$par, orc, nc_terms, full_vec)
-  BHAT <- bl$bhat; BVAR <- bl$bvar
+  BHAT <- bl$bhat; BVAR <- bl$bvar; BCROSS <- bl$bcross
   blup     <- lapply(seq_along(layout), function(m) BHAT[, coef_off[m] + seq_len(nc_terms[m]), drop = FALSE])
   blup_var <- lapply(seq_along(layout), function(m) BVAR[, coef_off[m] + seq_len(nc_terms[m]), drop = FALSE])
+  # blup_cross[[m]] is n_groups x n_theta x nc_terms[m]: the mode/theta
+  # cross-Hessian block (Bf, see cpp_aghq_blups) for RE term m, one slice per
+  # group. NA throughout when bl$bcross_available is FALSE (the R-closure
+  # bridge -- make_site / make_group -- has no analytic theta_score; only a
+  # prebuilt native `oracle` supplies this).
+  blup_cross <- lapply(seq_along(layout), function(m)
+    BCROSS[, , coef_off[m] + seq_len(nc_terms[m]), drop = FALSE])
 
   list(
     theta      = theta_ref,
     Sigma_list = Sigma_list,
     blup       = blup,
     blup_var   = blup_var,
+    blup_cross = blup_cross,
+    blup_cross_available = bl$bcross_available,
     theta_cov  = V[seq_len(n_theta), seq_len(n_theta), drop = FALSE],
     theta_se   = sqrt(pmax(diag(V)[seq_len(n_theta)], 0)),
     log_marginal = log_marginal,

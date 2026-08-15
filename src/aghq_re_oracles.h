@@ -82,6 +82,7 @@ struct RClosureOracle : REGroupOracle {
     }
 
     void theta_score(int, const double*, double*) const override {}  // unused (FD optimizer)
+    bool has_theta_score() const override { return false; }
     bool thread_safe() const override { return false; }
 };
 

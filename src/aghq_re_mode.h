@@ -118,6 +118,42 @@ inline GroupMode aghq_group_mode(const REGroupOracle& orc, int g,
     return out;
 }
 
+// Mode/theta cross-Hessian -d^2 ell_g / d theta db at the group's mode b_hat
+// (n_theta x d), the same negative-Hessian sign convention as GroupMode::negH.
+// This is the "Bf" block a downstream community-model consumer needs to draw
+// a group's BLUP jointly with theta instead of independently (Cinv %*% t(Bf)
+// is the first-order correction db_hat/dtheta by the implicit function theorem
+// applied to the mode's stationarity condition; the prior term -P*b does not
+// depend on theta, so the block is the data term ell_g alone, matching
+// grad_hess's negH convention).
+//
+// Computed by a central finite difference of theta_score OVER b (not over
+// theta): theta_score already returns the full length-n_theta score in one
+// call, so this costs 2*d oracle calls per group regardless of how large
+// n_theta is -- cheap because d (one group's own RE dimension) is typically
+// small, where FD over theta would cost O(n_theta) calls instead.
+//
+// orc must already be rebind()-ed to the active theta (as aghq_group_mode
+// requires). Caller must check orc.has_theta_score() first -- theta_score is a
+// no-op on the R-closure bridge, and this function does not detect that.
+inline Eigen::MatrixXd aghq_group_cross_hess(const REGroupOracle& orc, int g,
+                                             const Eigen::VectorXd& b) {
+    const int d = orc.d, nth = orc.n_theta;
+    Eigen::MatrixXd Bf = Eigen::MatrixXd::Zero(nth, d);
+    if (nth == 0) return Bf;
+    std::vector<double> ts_p(nth), ts_m(nth);
+    for (int k = 0; k < d; ++k) {
+        const double h = 1e-5 * std::max(1.0, std::abs(b(k)));
+        Eigen::VectorXd bp = b, bm = b;
+        bp(k) += h; bm(k) -= h;
+        orc.theta_score(g, bp.data(), ts_p.data());
+        orc.theta_score(g, bm.data(), ts_m.data());
+        for (int j = 0; j < nth; ++j)
+            Bf(j, k) = -(ts_p[j] - ts_m[j]) / (2.0 * h);
+    }
+    return Bf;
+}
+
 } // namespace tulpa
 
 #endif // TULPA_AGHQ_RE_MODE_H

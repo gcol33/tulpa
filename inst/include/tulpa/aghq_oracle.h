@@ -62,9 +62,19 @@ struct REGroupOracle {
                              double* /*H*/) const { return false; }
 
     // Data theta-score of ell_g at b: d ell_g(b; theta) / d theta (length
-    // n_theta). Drives the analytic theta-gradient (posterior-weighted score).
+    // n_theta). Drives the analytic theta-gradient (posterior-weighted score)
+    // and the mode-b/theta cross-Hessian (aghq_group_cross_hess).
     virtual void theta_score(int g, const double* b,
                              double* dl_dtheta) const = 0;
+
+    // Whether theta_score is a genuine implementation. Every oracle must define
+    // the method (it is pure virtual), but the R-closure bridge (RClosureOracle)
+    // has no analytic score to offer -- its make_site/make_group callbacks never
+    // supply one -- so it stands in a no-op and reports false here. Consumers
+    // that need theta_score's VALUE (not just its presence as a symbol), e.g.
+    // the BLUP mode/theta cross-Hessian, must check this first rather than read
+    // a silently-empty result.
+    virtual bool has_theta_score() const { return true; }
 
     // Optional theta-space data observed-info A_g = -d^2 ell_g / d theta^2 at b
     // (n_theta*n_theta, symmetric). Enables the fast Laplace Schur-complement SE

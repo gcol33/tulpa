@@ -79,7 +79,12 @@ List cpp_aghq_objective_grad(NumericVector par, SEXP oracle, IntegerVector nc,
                         _["ok"]   = r.ok);
 }
 
-// Per-group posterior modes + marginal variances at the optimum (BLUPs).
+// Per-group posterior modes + marginal variances at the optimum (BLUPs), plus
+// the mode/theta cross-Hessian (the "Bf" block: -d^2 ell_g/d theta db at the
+// mode) when the oracle can supply it. `bcross` is an (ng x nth x d) array
+// with `bcross(g, , )` the group's n_theta x d block; `bcross_available` flags
+// whether the oracle's theta_score is a genuine implementation (the R-closure
+// bridge is not, so bcross is filled with NA rather than a silent 0 there).
 // [[Rcpp::export]]
 List cpp_aghq_blups(NumericVector par, SEXP oracle, IntegerVector nc, LogicalVector full) {
     XPtr<REGroupOracle> orc(oracle);
@@ -96,12 +101,23 @@ List cpp_aghq_blups(NumericVector par, SEXP oracle, IntegerVector nc, LogicalVec
     const Eigen::MatrixXd P = lltS.solve(Eigen::MatrixXd::Identity(d, d));
 
     orc->rebind(theta.data());
+    const bool cross_ok = orc->has_theta_score() && nth > 0;
     NumericMatrix BHAT(ng, d), BVAR(ng, d);
+    NumericVector BCROSS((std::size_t)ng * nth * d);
+    BCROSS.attr("dim") = IntegerVector::create(ng, nth, d);
+    if (!cross_ok) std::fill(BCROSS.begin(), BCROSS.end(), NA_REAL);
     for (int g = 0; g < ng; ++g) {
         GroupMode m = aghq_group_mode(*orc, g, P);
         Eigen::LLT<Eigen::MatrixXd> lltN(m.negH);
         const Eigen::MatrixXd C = lltN.solve(Eigen::MatrixXd::Identity(d, d));
         for (int j = 0; j < d; ++j) { BHAT(g, j) = m.b(j); BVAR(g, j) = C(j, j); }
+        if (cross_ok) {
+            const Eigen::MatrixXd Bf = aghq_group_cross_hess(*orc, g, m.b);  // nth x d
+            for (int j = 0; j < nth; ++j)
+                for (int k = 0; k < d; ++k)
+                    BCROSS(g + (std::size_t)ng * (j + (std::size_t)nth * k)) = Bf(j, k);
+        }
     }
-    return List::create(_["bhat"] = BHAT, _["bvar"] = BVAR);
+    return List::create(_["bhat"] = BHAT, _["bvar"] = BVAR,
+                        _["bcross"] = BCROSS, _["bcross_available"] = cross_ok);
 }

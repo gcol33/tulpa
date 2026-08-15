@@ -129,7 +129,16 @@ it agrees with the objective only as \code{n_quad} grows.}
 }
 \value{
 A list with: \code{theta} (refined fixed parameters), \code{Sigma_list}
-(refined per-term covariance), \code{blup} / \code{blup_var} (per-term \verb{n_groups x n_coefs} posterior mean / variance of the RE), \code{theta_cov} / \code{theta_se}
+(refined per-term covariance), \code{blup} / \code{blup_var} (per-term \verb{n_groups x n_coefs} posterior mean / variance of the RE), \code{blup_cross} (per-term
+\verb{n_groups x n_theta x n_coefs} array: the mode/theta cross-Hessian block
+\code{Bf}, \verb{-d^2 ell_g / d theta db} at each group's mode, in the same
+negative-Hessian sign convention as the posterior precision underlying
+\code{blup_var} -- so a joint draw of \code{theta} and a group's RE \code{b_g} uses
+\code{b_g | theta ~ N(blup_g - Cinv_g \%*\% t(Bf_g) \%*\% (theta_draw - theta), Cinv_g)} with \code{Cinv_g} the group's \verb{n_coefs x n_coefs} posterior
+covariance block. \code{NA} throughout when \code{blup_cross_available} is \code{FALSE}:
+the cross-Hessian needs the oracle's analytic \code{theta_score}, which the
+R-closure bridge (\code{make_site} / \code{make_group}) does not supply -- only a
+prebuilt native \code{oracle} carries it), \code{theta_cov} / \code{theta_se}
 (fixed-parameter covariance / SE from the marginal Hessian), \code{log_marginal}
 (the AGHQ marginal log-likelihood at the optimum, excluding any ridge),
 \code{n_quad}, \code{lkj_eta}, and \code{converged}. RE terms that do not share one
