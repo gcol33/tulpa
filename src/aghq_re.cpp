@@ -85,6 +85,20 @@ List cpp_aghq_objective_grad(NumericVector par, SEXP oracle, IntegerVector nc,
 // with `bcross(g, , )` the group's n_theta x d block; `bcross_available` flags
 // whether the oracle's theta_score is a genuine implementation (the R-closure
 // bridge is not, so bcross is filled with NA rather than a silent 0 there).
+//
+// `bcov` is the (ng x d x d) array with `bcov(g, , )` the group's FULL joint
+// posterior covariance Cov(b_g | y) across every RE term sharing that
+// grouping factor -- not just the per-term diagonal `bvar` already returns.
+// When a group carries more than one RE term (e.g. an abundance-arm block
+// and a detection-arm block on the same species), `m.negH` is already the
+// joint (d x d) Hessian of the group's COMBINED mode-finding solve (every
+// term's coefficients are found together, one Newton step over the whole
+// group vector), so `C = solve(negH)` already carries the cross-term
+// covariance -- it was simply discarded before this change (only `C(j, j)`
+// reached R). `bvar` is kept unchanged (a block-diagonal caller needs no new
+// wiring); `bcov` is the superset a caller doing a joint (theta, b_g) draw
+// across correlated terms needs, the same way `bcross`'s un-sliced (nth x d)
+// shape already is per group.
 // [[Rcpp::export]]
 List cpp_aghq_blups(NumericVector par, SEXP oracle, IntegerVector nc, LogicalVector full) {
     XPtr<REGroupOracle> orc(oracle);
@@ -106,11 +120,17 @@ List cpp_aghq_blups(NumericVector par, SEXP oracle, IntegerVector nc, LogicalVec
     NumericVector BCROSS((std::size_t)ng * nth * d);
     BCROSS.attr("dim") = IntegerVector::create(ng, nth, d);
     if (!cross_ok) std::fill(BCROSS.begin(), BCROSS.end(), NA_REAL);
+    NumericVector BCOV((std::size_t)ng * d * d);
+    BCOV.attr("dim") = IntegerVector::create(ng, d, d);
     for (int g = 0; g < ng; ++g) {
         GroupMode m = aghq_group_mode(*orc, g, P);
         Eigen::LLT<Eigen::MatrixXd> lltN(m.negH);
         const Eigen::MatrixXd C = lltN.solve(Eigen::MatrixXd::Identity(d, d));
-        for (int j = 0; j < d; ++j) { BHAT(g, j) = m.b(j); BVAR(g, j) = C(j, j); }
+        for (int j = 0; j < d; ++j) {
+            BHAT(g, j) = m.b(j); BVAR(g, j) = C(j, j);
+            for (int k = 0; k < d; ++k)
+                BCOV(g + (std::size_t)ng * (j + (std::size_t)d * k)) = C(j, k);
+        }
         if (cross_ok) {
             const Eigen::MatrixXd Bf = aghq_group_cross_hess(*orc, g, m.b);  // nth x d
             for (int j = 0; j < nth; ++j)
@@ -118,6 +138,6 @@ List cpp_aghq_blups(NumericVector par, SEXP oracle, IntegerVector nc, LogicalVec
                     BCROSS(g + (std::size_t)ng * (j + (std::size_t)nth * k)) = Bf(j, k);
         }
     }
-    return List::create(_["bhat"] = BHAT, _["bvar"] = BVAR,
+    return List::create(_["bhat"] = BHAT, _["bvar"] = BVAR, _["bcov"] = BCOV,
                         _["bcross"] = BCROSS, _["bcross_available"] = cross_ok);
 }

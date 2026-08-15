@@ -150,7 +150,16 @@
 #'   covariance block. `NA` throughout when `blup_cross_available` is `FALSE`:
 #'   the cross-Hessian needs the oracle's analytic `theta_score`, which the
 #'   R-closure bridge (`make_site` / `make_group`) does not supply -- only a
-#'   prebuilt native `oracle` carries it), `theta_cov` / `theta_se`
+#'   prebuilt native `oracle` carries it), `blup_cov_g` / `blup_cross_g`
+#'   (per-group lists, length `n_groups`, of the FULL joint posterior
+#'   covariance (`d x d`, `d` = every RE term's width combined) and mode/theta
+#'   cross-Hessian (`n_theta x d`) across ALL RE terms sharing that group --
+#'   the superset `blup_var`/`blup_cross` reduce to a per-term diagonal block
+#'   of when a group carries more than one term, since a group's terms are
+#'   found jointly and can carry real posterior covariance BETWEEN terms
+#'   (e.g. an abundance-arm and a detection-arm term sharing one grouping
+#'   factor); same `NA`-when-unavailable rule as `blup_cross`), `theta_cov` /
+#'   `theta_se`
 #'   (fixed-parameter covariance / SE from the marginal Hessian), `log_marginal`
 #'   (the AGHQ marginal log-likelihood at the optimum, excluding any ridge),
 #'   `n_quad`, `lkj_eta`, and `converged`. RE terms that do not share one
@@ -369,7 +378,7 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
   # Per-group BLUPs + marginal variances at the optimum. The engine returns the
   # prior fallback for empty groups (mode 0, variance diag(Sigma)).
   bl   <- cpp_aghq_blups(opt$par, orc, nc_terms, full_vec)
-  BHAT <- bl$bhat; BVAR <- bl$bvar; BCROSS <- bl$bcross
+  BHAT <- bl$bhat; BVAR <- bl$bvar; BCROSS <- bl$bcross; BCOV <- bl$bcov
   blup     <- lapply(seq_along(layout), function(m) BHAT[, coef_off[m] + seq_len(nc_terms[m]), drop = FALSE])
   blup_var <- lapply(seq_along(layout), function(m) BVAR[, coef_off[m] + seq_len(nc_terms[m]), drop = FALSE])
   # blup_cross[[m]] is n_groups x n_theta x nc_terms[m]: the mode/theta
@@ -380,6 +389,24 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
   blup_cross <- lapply(seq_along(layout), function(m)
     BCROSS[, , coef_off[m] + seq_len(nc_terms[m]), drop = FALSE])
 
+  # blup_cov_g[[g]] / blup_cross_g[[g]]: the group's FULL joint posterior
+  # covariance (d x d, d = every RE term's width combined) and mode/theta
+  # cross-Hessian (n_theta x d), unsliced by term -- the superset
+  # `blup_var`/`blup_cross` reduce to a per-term diagonal block of. A group
+  # carrying more than one RE term (e.g. one term per formula arm sharing the
+  # same grouping factor) has real posterior covariance BETWEEN those terms
+  # (`cpp_aghq_blups`'s mode-finding solves every term's coefficients for a
+  # group jointly, one Newton step over the combined vector) -- `blup_var`
+  # alone cannot express it, and drawing the terms independently repeats the
+  # gcol33/tulpaObs#226 bug one level deeper (inside a group instead of
+  # between the community mean and a group). NA throughout when
+  # `blup_cross_available` is FALSE, matching `blup_cross`.
+  n_groups <- dim(BCOV)[1L]
+  blup_cov_g <- lapply(seq_len(n_groups), function(g)
+    array(BCOV[g, , ], dim = c(dtot, dtot)))
+  blup_cross_g <- lapply(seq_len(n_groups), function(g)
+    array(BCROSS[g, , ], dim = c(n_theta, dtot)))
+
   list(
     theta      = theta_ref,
     Sigma_list = Sigma_list,
@@ -387,6 +414,8 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
     blup_var   = blup_var,
     blup_cross = blup_cross,
     blup_cross_available = bl$bcross_available,
+    blup_cov_g   = blup_cov_g,
+    blup_cross_g = blup_cross_g,
     theta_cov  = V[seq_len(n_theta), seq_len(n_theta), drop = FALSE],
     theta_se   = sqrt(pmax(diag(V)[seq_len(n_theta)], 0)),
     log_marginal = log_marginal,

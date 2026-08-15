@@ -141,3 +141,81 @@ test_that("Cinv %*% t(Bf) reproduces the first-order db_hat/dtheta the joint BLU
   # is the right budget; the observed gap is ~2e-10.
   expect_lt(max(abs(db_dtheta_engine - db_dtheta_fd)), 1e-7)
 })
+
+test_that("blup_cov_g exposes the FULL joint covariance across RE terms sharing a group", {
+  skip_on_cran()
+  # gcol33/tulpaObs#220 (ms_abun) needs more than the per-term diagonal
+  # `blup_var`: when a group carries two RE terms (e.g. an abundance-arm term
+  # and a detection-arm term on the same species), the group's mode is found
+  # JOINTLY across both terms' coefficients, so real posterior covariance can
+  # exist BETWEEN them -- drawing the terms independently repeats #226 one
+  # level deeper (inside a group instead of between theta and a group). This
+  # toy deliberately makes b1 and b2 collinear (only b1+b2 identified by the
+  # data) to get a strong, closed-form-checkable off-diagonal signal.
+  set.seed(11)
+  ng <- 10L; nper <- 60L; n <- ng * nper
+  group <- rep(seq_len(ng), each = nper)
+  mu_true <- 0.3
+  sig1 <- 0.5; sig2 <- 0.5
+  b1_true <- rnorm(ng, 0, sig1); b2_true <- rnorm(ng, 0, sig2)
+  eta <- mu_true + b1_true[group] + b2_true[group]
+  y <- rbinom(n, 1, plogis(eta))
+
+  make_group <- function(theta) {
+    list(
+      grad_hess = function(g, b) {
+        rows <- which(group == g); yg <- y[rows]
+        eta_g <- theta[1] + b[1] + b[2]
+        p_g <- plogis(eta_g)
+        logL <- sum(yg * log(p_g) + (1 - yg) * log1p(-p_g))
+        score <- sum(yg - p_g)
+        w <- sum(p_g * (1 - p_g))
+        list(logL = logL, grad = c(score, score), negH = matrix(w, 2, 2))
+      },
+      node_ll = function(g, B) {
+        rows <- which(group == g); yg <- y[rows]
+        apply(B, 1, function(b) {
+          eta_g <- theta[1] + b[1] + b[2]
+          p_g <- plogis(eta_g)
+          sum(yg * log(p_g) + (1 - yg) * log1p(-p_g))
+        })
+      }
+    )
+  }
+  re_terms <- list(list(n_groups = ng, n_coefs = 1L, correlated = FALSE),
+                   list(n_groups = ng, n_coefs = 1L, correlated = FALSE))
+  Sigma0 <- list(matrix(sig1^2), matrix(sig2^2))
+  fit <- tulpa_re_aghq(theta0 = 0, re_terms = re_terms, Sigma0 = Sigma0,
+                       make_group = make_group, n_obs = n, gradient = "fd",
+                       n_quad = 3L, max_iter = 100L)
+  expect_false(is.null(fit))
+  expect_length(fit$blup_cov_g, ng)
+
+  expect_true(all(vapply(fit$blup_cov_g, function(C) isTRUE(all.equal(C, t(C))), logical(1))))
+  # Diagonal must agree exactly with the already-tested per-term blup_var
+  # (same C matrix, this is just a different slice of it).
+  for (g in seq_len(ng)) {
+    expect_equal(fit$blup_cov_g[[g]][1, 1], fit$blup_var[[1]][g, 1])
+    expect_equal(fit$blup_cov_g[[g]][2, 2], fit$blup_var[[2]][g, 1])
+  }
+
+  # Closed form: at the fitted mode, negH_data = matrix(w, 2, 2) (both b1, b2
+  # enter through the SAME eta, so the data curvature is rank-1 and identical
+  # in every cell); the engine adds Sigma^{-1} = diag(1/sig1_hat^2,
+  # 1/sig2_hat^2) (independent-block prior), so
+  # C = solve(matrix(w,2,2) + diag(1/sig1_hat^2, 1/sig2_hat^2)) is the FULL
+  # closed-form joint covariance, off-diagonal included.
+  sig1_hat2 <- fit$Sigma_list[[1]][1, 1]
+  sig2_hat2 <- fit$Sigma_list[[2]][1, 1]
+  theta_hat <- fit$theta
+  b1_hat <- fit$blup[[1]][, 1]; b2_hat <- fit$blup[[2]][, 1]
+  for (g in seq_len(ng)) {
+    rows <- which(group == g)
+    eta_g <- theta_hat[1] + b1_hat[g] + b2_hat[g]
+    p_g <- plogis(eta_g)
+    w <- sum(p_g * (1 - p_g))
+    negH <- matrix(w, 2, 2) + diag(c(1 / sig1_hat2, 1 / sig2_hat2))
+    C_analytic <- solve(negH)
+    expect_equal(fit$blup_cov_g[[g]], C_analytic, tolerance = 1e-6, ignore_attr = TRUE)
+  }
+})
