@@ -1,0 +1,85 @@
+# RW2 temporal structure (Second-order Random Walk)
+
+Specify a second-order random walk temporal random effect. RW2 penalizes
+deviations from linearity, resulting in smoother trends than RW1:
+`phi[t] - 2*phi[t-1] + phi[t-2] ~ N(0, sigma^2)`.
+
+## Usage
+
+``` r
+temporal_rw2(time_var, group_var = NULL, cyclic = FALSE, shared = NULL)
+```
+
+## Arguments
+
+- time_var:
+
+  A formula (`~ time`) or single character string naming the time
+  variable in the data.
+
+- group_var:
+
+  Optional formula (`~ g`) or character string naming a grouping
+  variable. When supplied, a separate random walk is fit per group;
+  `NULL` (default) fits a single walk shared across all observations.
+
+- cyclic:
+
+  Logical. If `TRUE`, the random walk wraps around so the last time
+  point is a neighbour of the first (cyclic boundary, e.g. month of
+  year). Default `FALSE`.
+
+- shared:
+
+  Whether the temporal effect is shared across processes in a
+  multi-process model. `NULL` (default) shares the effect; `FALSE` fits
+  process-specific effects and emits a warning about unshared
+  confounding.
+
+## Value
+
+A `tulpa_temporal` object
+
+## Details
+
+RW2 produces smoother curves than RW1 because it penalizes the second
+derivative (curvature) rather than the first derivative (slope). It
+requires at least 3 time points.
+
+The precision matrix is rank T-2 (two constraints needed).
+
+## Examples
+
+``` r
+# Create temporal RW2 specification
+temporal_rw2("year")
+#> tulpa temporal specification
+#> ============================
+#> 
+#> Type: RW2 (Second-order Random Walk) 
+#> Time variable: year 
+#> Shared: Yes (enters both processes) 
+
+# \donttest{
+# Smooth temporal trend
+set.seed(126)
+df <- data.frame(
+  year = rep(1:20, each = 4),
+  x = rnorm(80)
+)
+trend <- sin(seq(0, 2, length.out = 20))
+df$count <- rpois(80, exp(1 + 0.3 * df$x + trend[df$year]))
+
+fit <- tulpa(
+  count ~ x,
+  data = df,
+  family = "poisson",
+  temporal = temporal_rw2("year"),
+  mode = "auto"
+)
+summary(fit)
+#>              estimate  std.error      2.5%     97.5%
+#> (Intercept) 1.6649024 0.05214552 1.5553495 1.7597562
+#> x           0.2944723 0.05282045 0.1911003 0.3981527
+# }
+```

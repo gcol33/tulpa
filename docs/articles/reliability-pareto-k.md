@@ -1,0 +1,384 @@
+# Reliability of nested approximations: reading the outer Pareto-k
+
+``` r
+
+library(tulpa)
+```
+
+## What the diagnostic is for
+
+A nested-Laplace fit answers a hard integral with two approximations
+stacked on top of each other. The inner one is a Laplace approximation:
+at each value of the hyperparameters it replaces the latent posterior
+with a Gaussian at its mode. The outer one is an integration: it sweeps
+the hyperparameters on a grid, weights each cell by its marginal
+likelihood, and sums. The fit you read back is the result of both.
+Either one can be wrong, and when the answer is off the estimates and
+intervals still come back looking entirely ordinary.
+
+A sampler has a standard answer to this problem. Run several chains, and
+Rhat tells you whether they agree and the effective sample size tells
+you how much independent information you bought. Those numbers are not
+the posterior; they are a verdict on whether the machinery that produced
+it converged. A nested approximation draws no chains, so Rhat is vacuous
+for it, but it needs the same kind of verdict. The outer Pareto-k-hat is
+that verdict. It is the accuracy gate for a deterministic fit, the
+counterpart to what Rhat and ESS are for a sampled one.
+
+The one thing to fix before anything else is what the number actually
+checks. The outer k-hat scores the **outer integration**: whether the
+Gaussian grid the integrator places over the hyperparameters faithfully
+covers the hyperparameter posterior it is integrating. It does not see
+the inner Laplace. A fit can carry a clean k-hat and still be biased if
+the inner Gaussian was a poor fit to a skewed latent conditional,
+because the k-hat was never measuring that. Read `pareto_k < 0.5` as
+“the integration is reliable”, never as “the posterior is correct”. The
+distinction decides how you act on the number, and the last section
+comes back to it.
+
+## A fit to diagnose
+
+The diagnostic lives on the joint nested-Laplace backend, the path for
+models whose arms share a latent field and integrate one hyperparameter
+posterior between them. Build a two-arm example: a presence arm with a
+binomial likelihood and a positive-value arm with a Gaussian one, both
+loading on a shared smooth field over a chain of spatial units.
+
+``` r
+
+S     <- 25L
+nb    <- lapply(seq_len(S), function(s) setdiff(c(s - 1L, s + 1L), c(0L, S + 1L)))
+nn    <- lengths(nb)
+field <- as.numeric(scale(cumsum(rnorm(S, 0, 0.4))))
+
+mk_arm <- function(m, fam) {
+  si  <- sample(S, m, replace = TRUE)
+  x   <- rnorm(m)
+  lin <- 0.2 + 0.5 * x + 0.8 * field[si]
+  y   <- if (fam == "binomial") rbinom(m, 1L, plogis(lin)) else lin + rnorm(m, 0, 0.5)
+  list(y = as.numeric(y), n_trials = rep(1L, m), X = cbind(1, x),
+       spatial_idx = si, family = fam, phi = if (fam == "gaussian") 0.5 else 1)
+}
+
+prior <- list(type = "icar", n_spatial_units = S,
+              adj_row_ptr = c(0L, cumsum(nn)), adj_col_idx = unlist(nb) - 1L,
+              n_neighbors = nn, sigma_grid = seq(0.2, 1.6, length.out = 7))
+```
+
+Fit the two arms together. The diagnostic runs by default, so the k-hat
+comes back on the fitted object with no extra request.
+
+``` r
+
+resp <- list(occ = mk_arm(200L, "binomial"),
+             pos = mk_arm(200L, "gaussian"))
+fit <- tulpa_nested_laplace_joint(
+  responses = resp,
+  prior     = prior,
+  control   = list(k_samples = 400L))
+
+c(pareto_k = round(fit$pareto_k, 3),
+  is_ess   = round(fit$pareto_k_is_ess, 1))
+fit$pareto_k_scope
+```
+
+The scope string names what was scored: the Gaussian proposal the
+integrator placed over the joint hyperparameter posterior. The k-hat
+reads below the boundaries discussed next, so the integration over the
+shared field amplitude and the per-arm scales is reliable, and the
+importance-sampling effective sample size confirms the proposal covered
+the target without a few draws carrying all the weight.
+
+## What the number means
+
+The k-hat is the shape parameter of a generalized-Pareto distribution
+fitted to the upper tail of the importance weights, and it estimates how
+many moments that weight distribution has. The reading splits into three
+bands.
+
+- **Good, `k < 0.5`.** The weights have finite variance. A central limit
+  theorem applies, the importance-sampling estimate converges at the
+  usual rate, and the integration can be trusted.
+- **Ok, `0.5 <= k < 0.7`.** The weights have a finite mean but infinite
+  variance. The estimate still converges, slower, and the smoothing
+  keeps it usable. The result is acceptable but not as sharp as the good
+  band.
+- **Unreliable, `k >= 0.7`.** The proposal cannot be corrected to the
+  target by importance weighting. A skewed or heavy-tailed
+  hyperparameter posterior is being asked to fit inside a Gaussian grid
+  that does not cover it, and a handful of draws dominate the sum.
+
+The two boundaries are configurable through `control$k_conf_bands`,
+defaulting to `c(0.5, 0.7)`, and the band the point estimate falls in is
+the first thing to read.
+
+``` r
+
+band <- cut(fit$pareto_k, c(-Inf, 0.5, 0.7, Inf),
+            labels = c("good", "ok", "unreliable"))
+band
+```
+
+A negative k-hat, as in this fit, sits in the good band with room to
+spare: the weights have an even lighter tail than finite variance
+requires, which is the easy case a well-resolved grid over a
+near-Gaussian hyperparameter posterior produces.
+
+## The boundary moves with the draw count
+
+The `0.7` upper boundary is not a universal constant. The reliability of
+an importance-sampling estimate at a given k-hat depends on how many
+draws were used to form it. The draw count sets how slowly a
+heavy-tailed weight distribution converges, so the boundary below which
+the estimate can still be trusted tightens when there are few draws and
+relaxes toward `0.7` only when there are many. The usable boundary is
+`min(1 - 1/log10(S), 0.7)`, with `S` the number of importance draws
+(Vehtari, Simpson, Gelman, Yao and Gabry, 2024). The diagnostic draws
+`S = k_samples` points, each one independent and drawn from a single
+Gaussian proposal, so the nominal draw count is the right `S` and the
+rule applies directly.
+
+``` r
+
+k_usable <- function(S) pmin(1 - 1 / log10(S), 0.7)
+S_grid   <- c(100, 200, 400, 1000, 2154, 4000)
+data.frame(draws = S_grid, usable_boundary = round(k_usable(S_grid), 3))
+```
+
+A few hundred draws place the boundary nearer `0.6` than `0.7`, and it
+reaches the familiar `0.7` only past roughly two thousand draws. The
+engine applies this by default: `pareto_k_band_confident` tests the
+bootstrap interval against `c(0.5, min(1 - 1/log10(S), 0.7))` at the
+realised draw count, so the good cut stays at `0.5` and the usable cut
+tracks `S`. A k-hat that looks acceptable at `0.65` from four hundred
+draws is already past the usable boundary for that draw count, and the
+flag reflects it. Pass `control$k_conf_bands` a fixed vector
+(e.g. `c(0.5, 0.7)`) to override the size-dependent default. The
+practical consequence is conservative either way: a fit near the
+boundary at a modest draw count deserves more draws before it is
+trusted, which is what the next section does.
+
+## One k-hat is a noisy reading
+
+The k-hat is a single number, but it is an estimate: a
+generalized-Pareto shape fitted to a few hundred tail weights carries
+real sampling error. The true outer k-hat is fixed for a given fit and
+proposal; what a finite draw count leaves uncertain is the estimate of
+it, not the quantity. Were you to redraw the importance sample the k-hat
+would move, and acting on which side of `0.5` a single estimate happens
+to land is reading noise.
+
+The fit reports the spread alongside the point. By default it bootstraps
+the diagnostic’s own importance ratios and returns a confidence interval
+for the k-hat together with a flag for whether that interval stays
+inside a single reliability band.
+
+``` r
+
+c(k       = round(fit$pareto_k, 3),
+  ci_low  = round(fit$pareto_k_ci_low, 3),
+  ci_high = round(fit$pareto_k_ci_high, 3))
+fit$pareto_k_band_confident
+```
+
+`pareto_k_band_confident` is the number to act on, not the point
+estimate. It is `TRUE` only when the whole interval sits in one band, so
+it answers the question you actually have: not “what is the k-hat” but
+“do I know which band this fit is in”. A point estimate of `0.45` with
+an interval spanning `0.3` to `0.6` is not confidently good; it might be
+merely ok, and the flag says so.
+
+The bootstrap cannot invent tail information. It measures how unstable
+the current tail estimate is, given the draws in hand. To make the
+interval itself tighter you need more actual tail ratios, which means
+raising `k_samples`, not the bootstrap count.
+
+## Tightening a borderline reading
+
+When the band is not confident the interval straddles a boundary, and
+the fix is more tail information. The precision knob is `k_samples`:
+each draw is an off-grid Laplace re-solve, and more of them give the
+generalized-Pareto fit more tail ratios, a tighter k-hat, and a narrower
+bootstrap interval. Refit the same model with more draws and read the
+interval again.
+
+``` r
+
+fit_hi <- tulpa_nested_laplace_joint(
+  responses = resp,
+  prior     = prior,
+  control   = list(k_samples = 1500L))
+
+c(k              = round(fit_hi$pareto_k, 3),
+  ci_low         = round(fit_hi$pareto_k_ci_low, 3),
+  ci_high        = round(fit_hi$pareto_k_ci_high, 3),
+  band_confident = fit_hi$pareto_k_band_confident)
+```
+
+Raising `k_samples` is the lever for both halves of the reading at once.
+It tightens the interval around the estimate, and because the usable
+boundary itself relaxes toward `0.7` as the draw count grows, it widens
+the band the estimate has to clear. Raising `k_bootstrap` does neither:
+it re-uses the tail ratios already in hand, so it sharpens the
+description of the current estimate without adding tail information.
+When more draws still leave the interval across a boundary, the fit is
+genuinely on the line, and the next rung of the ladder is the answer.
+
+## The reliability ladder
+
+The bands, the band-confidence flag, and the draw-count lever are rungs
+on a single ladder. Each rung either certifies the fit or hands you the
+reason to climb to the next.
+
+1.  **Report.** Read `pareto_k` and `pareto_k_band_confident`. A
+    confident good reading ends here: the integration is reliable and
+    nothing more is needed.
+2.  **Resolve the band.** When the band is not confident, raise
+    `k_samples` to add tail information until the bootstrap interval
+    clears a boundary, or until more draws stop moving it and the fit is
+    genuinely on the line. This rung pins down which band you are in; it
+    does not change the fit.
+3.  **Refine the integration.** When the band resolves to ok or
+    unreliable because the hyperparameter posterior is skewed or
+    multi-modal within the grid, the fix is to refine the integration so
+    the proposal covers it, then re-diagnose. This rung changes the fit.
+    It is described in the roadmap below.
+4.  **Debias.** When refinement cannot reach the requested band, or when
+    the suspected error is the inner Laplace the outer k-hat cannot see,
+    escalate to an exact debias: a Gibbs or gradient-sampler correction
+    that replaces the deterministic approximation with sampling on the
+    directions where it was biased.
+
+The ladder is the engine’s design philosophy made operational. A cheap
+deterministic approximation carries the body of the work, a diagnostic
+says where it is trustworthy, and exact sampling is reserved for the
+residual directions where the approximation falls short. The k-hat is
+the gate between the rungs. The companion escalation for a random-effect
+covariance fit is shown in the inference-modes vignette, where a k-hat
+past the boundary routes the fit to `control = list(re_cov = "gibbs")`
+and an exact inverse-Wishart draw.
+
+## Naming a reliability target
+
+The ladder so far is driven by reading the flag and choosing the next
+rung by hand. `control$k_quality` collapses the report-and-judge step
+into a single statement of intent: you name the reliability you require,
+the engine sets the draw budget for it, and the fit carries an honest
+verdict.
+
+``` r
+
+fit_q <- tulpa_nested_laplace_joint(
+  responses = resp,
+  prior     = prior,
+  control   = list(k_quality = "good"))
+
+c(requested = fit_q$k_quality_requested,
+  reached   = fit_q$k_quality_reached,
+  best      = fit_q$k_quality_best,
+  draws     = fit_q$diagnose_draws)
+fit_q$k_quality_reason
+```
+
+`k_quality = "good"` requires the k-hat interval to sit confidently in
+the good band and raises the default `k_samples` so the bootstrap CI can
+resolve it; `"ok"` lowers the target to the usable band; `"report"` (the
+default) computes the diagnostic without a target; `"none"` turns it
+off. The verdict is the honest part. `k_quality_reached` is `TRUE` only
+when the requested band is confidently met; when it is not, the fit
+reports the band it did reach (`k_quality_best`) and the reason
+(`k_quality_reason`), and the request is a target rather than a promise
+the output quietly pretends to keep.
+
+When the first fit does not reach the requested band, `k_quality` chases
+it by refining the integration grid, driven by the bad k. A bad outer k
+means the grid does not faithfully represent the hyperparameter
+posterior, usually because the posterior mass spills past the grid
+bounds; so with `control$k_refine = "grid"` (the default for `"ok"` /
+`"good"`) each round widens and densifies the grid where that mass
+escapes (`adaptive_grid`), re-fits, and re-diagnoses, up to
+`control$k_max_rounds` times, with each round allowed one more
+refinement pass than the last. `k_quality_rounds` records how many
+rounds it used. `k_samples` is the separate knob that sharpens the k
+estimate; it is not the escalation lever, since more draws only re-score
+the same grid. The request stays a target, not a promise: if the budget
+is spent without confirming the band, the fit reports the band it
+reached and the reason, and the next step is an exact debias (a Gibbs or
+gradient-sampler correction) as the ladder above describes.
+
+## The inner Laplace, scored
+
+Everything so far reads the outer k-hat, and the second section already
+flagged its blind spot: it scores the grid over the hyperparameters, not
+the Gaussian the inner Laplace fits to the latent conditional at each
+grid point. A fit can carry a clean, confident outer k-hat and still
+rest on an inner approximation that is a poor fit to a skewed
+conditional posterior – the k-hat was never measuring that.
+
+`gamma_3` is the number for that layer: the leading-order skewness
+estimate of the true conditional posterior relative to the inner
+Gaussian (Rue, Martino & Chopin 2009, the same cubic correction their
+simplified-Laplace method adds). It runs by default alongside the outer
+diagnostic, scored at the fitted MAP grid cell for each arm’s
+fixed-effects coefficients.
+
+``` r
+
+fit$inner_skew
+fit$inner_skew_idx
+```
+
+The two occupancy-arm coefficients (indices 1-2, binomial) carry a small
+non-zero skew; the two positive-value coefficients (indices 3-4,
+gaussian) read exactly zero. That is not a numerical accident: a
+gaussian log-likelihood is exactly quadratic in the linear predictor, so
+its inner Laplace is exact and has nothing to be skewed. A binomial or
+Poisson coefficient with thin data is the case where this number moves,
+and it grows toward the same “good / ok / unreliable” bands the outer
+k-hat uses:
+
+``` r
+
+cut(abs(fit$inner_skew), c(-Inf, 0.5, 1.0, Inf),
+    labels = c("good", "ok", "unreliable"))
+```
+
+Reading the two numbers together is the point. An outer k-hat past its
+boundary with a healthy inner skew says the hyperparameter grid needs
+work, not the fit’s point estimates – follow the ladder above. A high
+inner skew with a healthy outer k-hat says the opposite: the grid
+integrated correctly around a latent-field approximation that was itself
+a poor fit, which is the case `diagnose_k` alone cannot see, and the
+reason this is a second number rather than a footnote on the first.
+
+A response whose arms combine through one joint density rather than each
+contributing its own term – a genuinely coupled multi-arm likelihood –
+has no per-observation third derivative to sum. It is scored by the same
+expansion contracted one level wider, against the third-derivative
+tensor of the coupled cell in the arm linear predictors, so it carries a
+`gamma_3` like any other fit. Where even that cannot be built the number
+is `NA`, never a silently reassuring `0`. `control$skew_idx` extends the
+probed indices past the default fixed-effects set (1-based, into the
+`[arm1_beta | arm1_re | arm2_beta | ... ]` latent layout carried on
+`fit$arm_layout`); `diagnose_skew = FALSE` turns the diagnostic off.
+
+## See also
+
+- [`tulpa_nested_laplace_joint()`](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace_joint.md)
+  documents the full `control` surface for the diagnostic: `k_quality`,
+  `k_refine`, `k_max_rounds`, `diagnose_k`, `k_samples`, `k_bootstrap`,
+  `k_tail_points`, `k_conf_bands`, `k_threads`, `diagnose_skew`, and
+  `skew_idx`.
+- [`tulpa_psis()`](https://gillescolling.com/tulpa/reference/tulpa_psis.md)
+  is the native Pareto-smoothed importance-sampling core the diagnostic
+  is built on, callable directly on a vector of log importance ratios.
+- [`mcmc_diagnostics()`](https://gillescolling.com/tulpa/reference/mcmc_diagnostics.md)
+  is the chain-fit counterpart, the Rhat and ESS surface for sampled
+  fits.
+- [`?laplace_diagnostics`](https://gillescolling.com/tulpa/reference/laplace_diagnostics.md)
+  documents `gamma_3` and the combined whole-fit verdict
+  [`diagnostics()`](https://gillescolling.com/tulpa/reference/diagnostics.md)
+  reports when a fit carries posterior draws.
+- The inference-modes vignette runs the reliability ladder from a
+  Laplace fit through an exact debias, and shows the k-hat on a
+  random-effect covariance fit. \`\`\`

@@ -1,0 +1,351 @@
+# Nested-Laplace integration over random-effect covariances
+
+For one or more random-effects terms (e.g. `(1 + x | g)`,
+`(1 + x || g)`, or several terms together), integrate the Laplace
+marginal likelihood over the random-effect covariances `Sigma` instead
+of fixing them at point estimates. Reports weighted posterior summaries
+(mean, SD, median, 2.5\\ `Sigma` and its derived scale (`sigma_i`) and
+correlation (`rho_ij`) parameters, marginalizing the joint posterior
+over a `Sigma`-grid.
+
+This corrects the plug-in-MAP ("summary") bias: the mode of a skewed
+variance-component marginal is biased low relative to its median, so the
+headline summary should be the marginalized median, not the mode.
+
+## Usage
+
+``` r
+tulpa_re_cov_nested(
+  y,
+  n_trials = NULL,
+  X,
+  re_terms,
+  family = "binomial",
+  phi = 1,
+  phi2 = NULL,
+  prior_sigma = c(3, 0.05),
+  eta = 2,
+  hyperprior = c("flat", "pc_lkj"),
+  log_prior_theta = NULL,
+  beta_prior = NULL,
+  offset = NULL,
+  n_quad = 1L,
+  X_zi = NULL,
+  zi_prior_sd = 2.5,
+  control = list()
+)
+```
+
+## Arguments
+
+- y, n_trials, X, family, phi:
+
+  Passed to
+  [`tulpa_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_laplace.md)
+  for the inner solve. `n_trials = NULL` defaults to 1 (binary /
+  single-trial).
+
+- re_terms:
+
+  Either a single random-effect term or a list of them. Each term is a
+  list with `idx` (1-based group index per observation), `n_groups`,
+  `n_coefs` (`c`), `Z` (the `n_obs x c` RE design, e.g. `cbind(1, x)`
+  for `(1 + x | g)`; only required when `c > 1`), and `correlated`
+  (`TRUE` for a full `Sigma`, `FALSE` for a diagonal one; defaults to
+  `TRUE`). An optional `label` / `group_var` names the block in the
+  output. Any `L` / `cov` / `sigma` field is ignored – `Sigma` is what
+  this function integrates over.
+
+- phi2:
+
+  Optional second dispersion, threaded into every inner
+  [`tulpa_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_laplace.md)
+  solve: the Student-t degrees of freedom (`family = "t"`, default 4
+  when `NULL`) or the Tweedie variance power (`family = "tweedie"`,
+  required – a defaulted power would be a statistical decision the
+  caller never made). A `phi2` supplied for any other family errors
+  rather than being ignored. It is conditioned on: the integration is
+  over the random-effect covariances, not over `phi2`.
+
+- prior_sigma, eta:
+
+  Hyperparameters of the PC + LKJ prior used when
+  `hyperprior = "pc_lkj"` (see
+  [`re_cov_pc_lkj_prior()`](https://gillescolling.com/tulpa/reference/re_cov_pc_lkj_prior.md)):
+  `prior_sigma = c(U, alpha)` with `P(sigma_i > U) = alpha` (default
+  `c(3, 0.05)`) and LKJ shape `eta` (default 2). Ignored when
+  `hyperprior = "flat"` or `log_prior_theta` is supplied.
+
+- hyperprior:
+
+  `"flat"` (default) or `"pc_lkj"`. `"flat"` integrates with
+  `log_prior_theta` the zero function (flat in log(theta)), matching the
+  nested-Laplace convention on every other scale axis in the engine.
+  `"pc_lkj"` builds the PC + LKJ prior from `prior_sigma` / `eta` (the
+  regularizer that keeps a variance component off the `sigma = 0`
+  boundary at small G). Ignored when `log_prior_theta` is supplied.
+
+- log_prior_theta:
+
+  Optional `function(theta)` returning a scalar log prior density on the
+  full stacked parameter vector, overriding `hyperprior` entirely.
+  Default `NULL`, which defers to `hyperprior`.
+
+- beta_prior:
+
+  Optional Gaussian prior on the fixed effects, threaded into every
+  inner
+  [`tulpa_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_laplace.md)
+  solve (`list(mean, sd)`). `NULL` (default) keeps the weak built-in
+  prior.
+
+- offset:
+
+  Optional observation-level offset on the linear predictor (length
+  `length(y)`), e.g. `log(exposure)` for a rate model. Not supported
+  with `n_quad > 1`, which errors rather than dropping it.
+
+- n_quad:
+
+  Quadrature order for the inner marginal. `1` (default) uses the
+  joint-field Laplace inner solve
+  ([`tulpa_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_laplace.md)).
+  `> 1` refines the inner marginal with `n_quad`-point adaptive
+  Gauss-Hermite quadrature (the
+  [`tulpa_re_aghq()`](https://gillescolling.com/tulpa/reference/tulpa_re_aghq.md)
+  debias applied inside the `Sigma` integration), reducing the
+  small-cluster variance attenuation for binary / low-count data. AGHQ
+  requires a single shared grouping factor (the per-group integral must
+  factorize); with crossed RE terms `n_quad > 1` errors. When AGHQ is
+  used the fixed effects are integrated, so the reported fixed-effect
+  posterior is the marginal (ML-II) one rather than the joint-mode (PQL)
+  estimate.
+
+- X_zi:
+
+  Optional zero-inflation design matrix (`length(y)` rows), making the
+  model a two-process mixture: each observation is a structural zero
+  with probability `plogis(X_zi beta_zi)` and otherwise follows
+  `family`. Paired with a zero-truncated family it is the hurdle model.
+  The random effects enter the count predictor only, and the integration
+  runs over the same covariance coordinates – the mixture changes the
+  inner solve, not the parameters being integrated over. The ZI
+  coefficients are reported alongside the count ones in
+  [`coef()`](https://rdrr.io/r/stats/coef.html) /
+  [`vcov()`](https://rdrr.io/r/stats/vcov.html), so the fixed block is
+  `ncol(X) + ncol(X_zi)` wide. Needs `n_quad = 1`: the adaptive
+  Gauss-Hermite inner marginal runs through a single-predictor oracle.
+
+- zi_prior_sd:
+
+  Prior SD on `beta_zi`, keeping the logit identified where a level
+  carries no zeros (the likelihood alone would send it to `-Inf`).
+  Ignored when `X_zi` is `NULL`.
+
+- control:
+
+  A named list of numerical / tuning knobs (statistical arguments stay
+  in the signature above). Recognized entries:
+
+  - `integration`: node layout, `"ccd"` (default, central-composite
+    design, scales to larger total parameter count) or `"grid"` (full
+    tensor product).
+
+  - `n_per_axis`: points per parameter axis in the tensor grid (default
+    5); used only when `integration = "grid"`.
+
+  - `span`: half-width of the tensor grid in posterior standard
+    deviations per whitened axis (default 3); grid only.
+
+  - `n_draws`: posterior draws of the fixed effects synthesized from the
+    node mixture (default 2000), exposed as `draws` for the generic
+    `tulpa_fit` methods. The `Sigma` posterior is summarized directly
+    from the integration nodes in `posterior`, independent of `n_draws`.
+
+  - `seed`: optional integer seed for the fixed-effect draw synthesis.
+
+  - `diagnose_k`: if `TRUE` (default), compute the outer Pareto k-hat
+    accuracy diagnostic for the Gaussian proposal over the
+    hyperparameters, returned as `pareto_k`.
+
+  - `k_samples`: importance draws for the `diagnose_k` estimate (default
+    200).
+
+  - `max_iter`, `tol`, `n_threads`: inner-solve controls (see
+    [`tulpa_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_laplace.md)).
+
+  - `outer_maxit`: iteration budget for the mode-finding step that
+    centres the integration grid (default 500). Applies to the
+    Nelder-Mead simplex used from two parameters up; the one-parameter
+    case is bracketed by Brent. Exhausting the budget warns, since the
+    nodes are then centred on wherever the optimizer stopped.
+
+  - `checkpoint`: node checkpoint/resume spec
+    `list(path = , resume = )`. Each completed CCD / grid node (one
+    inner Laplace solve) is cached to `path`; a `resume = TRUE` run
+    loads the finished nodes and re-solves only the rest.
+    `resume = FALSE` starts fresh. A file written for different data,
+    layout, or grid is rejected (fingerprint mismatch). Default `NULL`
+    (off).
+
+  - `subspace_debias`: subspace debias (gcol33/tulpa#304), `FALSE` by
+    default. `TRUE` takes every default; a list overrides `band` (the
+    inner-reliability floor a coordinate is selected at, default
+    `"ok"`), `idx` (pin the corrected set explicitly, skipping the
+    selector), `probe` (the latent indices scored, default the fixed
+    effects), `closure` (`FALSE`, `TRUE`, or a partial-correlation
+    threshold: grow the set by the precision-graph neighbours it is
+    strongly coupled to), `closure_max`, and the sampler budget `n_iter`
+    / `warmup` / `thin`. When the selected set is non-empty, each
+    integration node reports the selected fixed-effect coordinates from
+    a Metropolis sample of the exact conditional along the
+    Gaussian-conditional-mean surface, and the rest from the Gaussian
+    conditional given them; an EMPTY set leaves the fit bit-for-bit
+    identical to the plain path. What was selected is recorded in
+    `subspace_debias` on the returned fit.
+
+## Value
+
+A list with:
+
+- `posterior`: data frame with one row per parameter and columns `mean`,
+  `sd`, `median`, `ci_lo`, `ci_hi`. Parameter names are `sigma_i`,
+  `rho_ij`, `Sigma_ij` for a single block, prefixed by the block label
+  (`g.sigma_1`, ...) when there are several blocks. Diagonal blocks
+  report no `rho`.
+
+- `map`: the plug-in-mode summary at `theta_hat` (a single
+  `list(Sigma, sigma, rho)` for one block, or a named list of them).
+
+- `Sigma_mean`: the weighted posterior mean of `Sigma` (a matrix for one
+  block, or a named list of matrices).
+
+- `beta`, `draws`, `means`, `param_names`, `process_info`: the
+  fixed-effect posterior from the node mixture (drives
+  `coef`/`confint`/`vcov`/`summary`).
+
+- `re_nodes`, `re_var_nodes`: the per-group random-effect posterior at
+  each integration node – conditional mean and marginal variance of
+  every (block, group, coefficient), one row per node.
+  [`ranef()`](https://gillescolling.com/tulpa/reference/ranef.md)
+  reports the `weights`-mixture of them. `NULL` at `n_quad > 1`, whose
+  inner marginal integrates each group out instead of conditioning on
+  it; that fit carries `ranef_unavailable` (the reason) in their place.
+
+- `re_debias_draws`, `re_debias_idx`: present when the subspace debias
+  selected a random-effect coordinate. The sampled draws of those
+  coordinates on the node mixture the fixed-effect draws use, and their
+  positions within the random-effect block.
+  [`ranef()`](https://gillescolling.com/tulpa/reference/ranef.md)
+  reports those rows empirically and the rest from the Gaussian mixture,
+  recording which in its `source` column.
+
+- `theta_hat`, `theta_grid`, `weights`, `log_marginal`, `n_grid`,
+  `layout`, `n_blocks`, `n_coefs` (vector of per-block `c`).
+
+- `subspace_debias`: present only when `control$subspace_debias` was
+  set. `idx` are the corrected latent coordinates, `bands` the
+  per-probed-index reliability table they were read from,
+  `closure_added` what the coupling closure added, and `accept` the
+  per-node Metropolis acceptance rate.
+
+## Details
+
+Each term is one covariance **block**. A correlated block
+(`(1 + x | g)`) is a full `Sigma = L L'` parameterized by its lower
+Cholesky factor in log-Cholesky coordinates (the log-diagonal and the
+strictly-lower entries of `L`, `c(c+1)/2` values for a `c`-coefficient
+block), which keeps `Sigma` positive definite for every coordinate. An
+uncorrelated block (`(1 + x || g)`) is a diagonal `Sigma` parameterized
+by its `c` log standard deviations. A scalar `(1 | g)` term is the
+degenerate `c = 1` block. Several blocks stack their parameters into one
+integration vector; a single-term model is the length-1 case.
+
+Integration nodes live in the whitened stacked-parameter space, centred
+at the joint marginal-likelihood mode and rotated/scaled by the Cholesky
+of the mode's posterior covariance (`solve(Hessian)`), so points track
+the posterior ridge. Two node layouts are available via `integration`:
+
+- `"ccd"` (default): a central-composite design
+  ([`ccd_grid()`](https://gillescolling.com/tulpa/reference/ccd_grid.md))
+  of `1 + 2k + 2^(k-q)` points for the total `k = sum_blocks`
+  parameters, with the corrected R-INLA design weights
+  ([`ccd_weights()`](https://gillescolling.com/tulpa/reference/ccd_weights.md)).
+  Scales polynomially in `k`, where the tensor grid is exponential.
+
+- `"grid"`: the full `n_per_axis^k` tensor product with uniform cell
+  weights – denser and more robust to a non-Gaussian whitened posterior,
+  but only tractable for small `k`.
+
+Each node `k` contributes integration weight proportional to
+`Delta_k * exp(log_marginal(Sigma_k) + log_prior_theta(theta_k))`,
+following the INLA convention `int ~ sum_k Delta_k pi(theta_k)`.
+
+The two layouts also decide how the reported median and 2.5\\ of each
+derived quantity are read off the nodes. A tensor grid's uniform cells
+discretize the posterior density, so the cumulative node weights are a
+CDF and the summary is the weighted quantile. A CCD is a moment rule:
+its nodes sit where they reproduce the integrand's first two moments and
+carry no probability mass of their own, so the summary is moment-matched
+instead – the first two weighted moments on each quantity's own
+coordinate (`log` for a scale or a variance, `atanh` for a correlation,
+the identity for a covariance) define a Gaussian there whose quantiles
+are mapped back. Scale intervals are therefore positive and asymmetric,
+and correlation intervals stay inside `(-1, 1)`. The `mean` and `sd`
+columns are the weighted moments under either layout.
+
+By default (`hyperprior = "flat"`) `log_prior_theta` is the zero
+function: flat in log(theta), the same convention the nested-Laplace
+spatial / temporal / RE-scale axes use (icar / rw1 / rw2 / ar1's tau /
+iid, none of which carry a hyperprior on their scale either – see
+[`vignette("priors")`](https://gillescolling.com/tulpa/articles/priors.md)).
+Set `hyperprior = "pc_lkj"` to use the weakly-informative PC + LKJ
+hyperprior instead, built per block by
+[`re_cov_pc_lkj_prior()`](https://gillescolling.com/tulpa/reference/re_cov_pc_lkj_prior.md)
+and summed over blocks (PC prior on each marginal SD via `prior_sigma`,
+LKJ prior on each correlated block's correlation matrix via `eta`),
+expressed in the same parameterization with the exact
+change-of-variables Jacobian. Supply a custom `log_prior_theta` function
+to override either default (then `prior_sigma` / `eta` / `hyperprior`
+are ignored); it must act on the full stacked parameter vector.
+[`tulpa_eb()`](https://gillescolling.com/tulpa/reference/tulpa_eb.md)
+shares this same objective and the same default, so
+`tulpa_eb()$theta_hat` and `tulpa_re_cov_nested()$theta_hat` stay the
+same estimate on the same data under either setting.
+
+## References
+
+Rue, Martino & Chopin (2009). Approximate Bayesian inference for latent
+Gaussian models by using integrated nested Laplace approximations.
+*JRSS-B* 71(2):319-392. Lewandowski, Kurowicka & Joe (2009). Generating
+random correlation matrices based on vines and extended onion method.
+*Journal of Multivariate Analysis* 100(9):1989-2001.
+
+## See also
+
+[`tulpa_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_laplace.md)
+for the inner solve;
+[`tulpa_nested_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace.md)
+for the analogous outer integration over spatial / temporal prior
+hyperparameters.
+
+## Examples
+
+``` r
+# \donttest{
+set.seed(1)
+G <- 20L; per <- 12L; n <- G * per
+grp <- rep(seq_len(G), each = per); x <- rnorm(n)
+b <- cbind(rnorm(G, 0, 0.7), rnorm(G, 0, 0.5))     # random intercept + slope
+eta <- -0.2 + 0.5 * x + b[grp, 1] + b[grp, 2] * x
+y <- rbinom(n, 1L, plogis(eta))
+re_term <- list(idx = grp, n_groups = G, n_coefs = 2L, Z = cbind(1, x),
+                correlated = TRUE)
+fit <- tulpa_re_cov_nested(y, rep(1L, n), cbind(1, x), re_term,
+                           family = "binomial")
+fit$Sigma_mean        # marginalized RE covariance
+#>            [,1]       [,2]
+#> [1,]  0.5216258 -0.1553363
+#> [2,] -0.1553363  0.4318963
+# }
+```

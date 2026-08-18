@@ -1,0 +1,52 @@
+# tulpa: Template Unified Latent Process Architecture for Bayesian Hierarchical Models
+
+A general-purpose engine for fitting Bayesian hierarchical models with
+spatial fields, temporal effects, spatially varying coefficients, and
+multiple inference backends. Scalable spatial structure includes Hilbert
+space approximate Gaussian processes (HSGP; Riutort-Mayol et al. 2023
+[doi:10.1007/s11222-022-10167-2](https://doi.org/10.1007/s11222-022-10167-2)
+), nearest-neighbor Gaussian processes (NNGP; Datta et al. 2016
+[doi:10.1080/01621459.2015.1044091](https://doi.org/10.1080/01621459.2015.1044091)
+), intrinsic conditional autoregressive models (ICAR; Besag, York, and
+Mollie 1991 [doi:10.1007/BF00116466](https://doi.org/10.1007/BF00116466)
+), the reparameterized Besag-York-Mollie model (BYM2; Riebler et al.
+2016
+[doi:10.1177/0962280216660421](https://doi.org/10.1177/0962280216660421)
+), and stochastic partial differential equation fields (SPDE; Lindgren,
+Rue, and Lindstrom 2011
+[doi:10.1111/j.1467-9868.2011.00777.x](https://doi.org/10.1111/j.1467-9868.2011.00777.x)
+). Temporal structure covers random walks, autoregressive processes, and
+Gaussian processes. Inference is tiered by correctness guarantee: exact
+Hamiltonian Monte Carlo with the No-U-Turn sampler, Laplace and nested
+Laplace approximations with hyperparameter integration (Rue, Martino,
+and Chopin 2009
+[doi:10.1111/j.1467-9868.2008.00700.x](https://doi.org/10.1111/j.1467-9868.2008.00700.x)
+), and variational inference. Model-specific packages plug observation
+likelihoods into the engine through a templated C++ callback interface.
+
+## See also
+
+Useful links:
+
+- <https://github.com/gcol33/tulpa>
+
+- Report bugs at <https://github.com/gcol33/tulpa/issues>
+
+## Author
+
+**Maintainer**: Gilles Colling <gilles.colling051@gmail.com>
+([ORCID](https://orcid.org/0000-0003-3070-6066)) \[copyright holder\]
+
+Authors:
+
+- Gilles Colling <gilles.colling051@gmail.com>
+  ([ORCID](https://orcid.org/0000-0003-3070-6066)) \[copyright holder\]
+
+Other contributors:
+
+- Frances Y. Kuo (Sobol direction numbers in
+  src/sobol_direction_numbers.h, BSD-3-clause) \[contributor, copyright
+  holder\]
+
+- Stephen Joe (Sobol direction numbers in src/sobol_direction_numbers.h,
+  BSD-3-clause) \[contributor, copyright holder\]

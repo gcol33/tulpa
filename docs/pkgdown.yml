@@ -1,0 +1,20 @@
+pandoc: 3.9.0.2
+pkgdown: 2.2.0
+pkgdown_sha: ~
+articles:
+  checkpoint: checkpoint.html
+  data-formatting: data-formatting.html
+  em-laplace: em-laplace.html
+  inference-modes: inference-modes.html
+  model-comparison: model-comparison.html
+  priors: priors.html
+  quickstart: quickstart.html
+  random-slopes: random-slopes.html
+  reliability-pareto-k: reliability-pareto-k.html
+  spatial-models: spatial-models.html
+  temporal-models: temporal-models.html
+  tgmrf: tgmrf.html
+last_built: 2026-08-18T00:09Z
+urls:
+  reference: https://gillescolling.com/tulpa/reference
+  article: https://gillescolling.com/tulpa/articles
