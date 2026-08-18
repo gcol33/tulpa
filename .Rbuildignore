@@ -35,3 +35,4 @@
 ^_doc_install\.R$
 ^_reinstall_full\.R$
 ^\.pkgdown-stash$
+^.*\.done$
