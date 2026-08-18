@@ -134,7 +134,10 @@ truth-swept fits of the same fixture, and 0.2467 / 0.1572 over nine
 The conditional-coverage swing that held the default back reads 0.110 at
 the shipped placement against 0.415 on the coarse pinned grid it was
 measured on, and at nominal 0.50 it is the same on both reads.
-\code{outer_grid_h_over_sd} is how wide a cell is on each axis, and
+\code{outer_grid_h_over_sd} is how wide a cell is on each axis (with
+\code{outer_grid_resolution_declined} naming why an axis carries no ratio, and
+\code{outer_grid_railed_axes} naming any axis whose nodes do not contain its
+own posterior mode), and
 \code{theta_within_cell} is what each axis was actually read with. Only a
 \code{"density"} support admits it -- a CCD design, a locally refined grid and
 a posterior sample are not cell partitions that tile -- and an axis it

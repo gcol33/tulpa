@@ -6,6 +6,7 @@
 #include "joint_inner_vcov.h"
 #include "inv_block_extract.h"  // InvBlockConstraint, extract_inv_diag_blocks
 #include "sparse_cholesky.h"
+#include "omp_threads.h"
 #include <Rcpp.h>
 #include <algorithm>
 #include <cmath>
@@ -241,12 +242,9 @@ Rcpp::List cpp_joint_inner_vcov_blocks(
         has_cell[k] = 1;
     }
 
-    int nthr = std::max(1, n_threads);
-#ifdef _OPENMP
-    nthr = std::min(nthr, std::max(1, omp_get_max_threads()));
-#else
-    nthr = 1;
-#endif
+    // Shared resolver: the requested count clamped by OMP_THREAD_LIMIT, the
+    // environment's max threads, the check-farm core cap and the work count.
+    const int nthr = tulpa_omp_team_size_req(n_threads, n_grid);
 
     // One CHOLMOD context per thread (common workspace is not thread-safe).
     std::vector<std::unique_ptr<tulpa::SparseCholeskySolver>> pool(nthr);

@@ -1,4 +1,4 @@
----
+﻿---
 title: "Checkpoint and resume long fits"
 output: rmarkdown::html_vignette
 vignette: >
@@ -10,6 +10,15 @@ vignette: >
 ```{r setup, include = FALSE}
 knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
 set.seed(20260716)
+```
+
+```{r cran-gate, include = FALSE}
+# The model fits below are evaluated when the article is built locally, in CI
+# and for the pkgdown site (all of which set NOT_CRAN). CRAN's check farm gives
+# the whole check a ten-minute budget, which these fits do not fit inside, so
+# there the code is shown without being run.
+EVAL_FITS <- identical(Sys.getenv("NOT_CRAN"), "true")
+knitr::opts_chunk$set(eval = EVAL_FITS)
 ```
 
 ```{r load, message = FALSE}

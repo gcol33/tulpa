@@ -849,6 +849,15 @@
 #'      they discretize and the two constructions converge to each other. NA on
 #'      an axis whose own marginal is maximal at an endpoint, which is the
 #'      placement question `outer_grid_railed_axes` reports.
+#'   * `outer_grid_resolution_declined` -- per axis, why that axis carries no
+#'      ratio, from the closed vocabulary `too_few_nodes`, `mode_at_edge`,
+#'      `coord_not_finite`, `spacing_not_finite`, `stencil_degenerate`,
+#'      `curvature_not_negative`; `NA` on an axis that scored. The reasons are
+#'      not interchangeable: `mode_at_edge` says the grid does not contain that
+#'      axis's own posterior mode, which is a stronger statement about the fit
+#'      than any ratio, and the whole-grid `resolved` verdict is withheld while
+#'      one is present rather than being read off the axes that did score
+#'      (gcol33/tulpa#401).
 #'   * `prune_cheap_log_marginal`, `prune_mask`, `prune_n_pruned`,
 #'      `prune_tol` -- present only when `prune = TRUE` and the safety gate did
 #'      not fall back. Cheap-pass log-marginals at every cell, a logical mask

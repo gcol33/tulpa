@@ -582,12 +582,26 @@ test_that("naming the support mixed leaves the reported interval unchanged", {
   w <- stats::runif(40L); w <- w / sum(w)
   probs <- c(0.025, 0.5, 0.975)
   # Compared against the density dispatch itself, not against a hard-coded
-  # `outside` policy: the invariant is that the two supports take ONE
+  # `outside` policy: the invariant is that the two supports take ONE `outside`
   # construction, so it has to keep holding when that construction changes
   # (gcol33/tulpa#353 moved it from "clamp" to "extend").
+  #
+  # `within` is the orthogonal field, and there the two supports part company:
+  # a refined grid's replacement clouds sit inside one base cell, so a Voronoi
+  # partition of its node set is not the design's own boxes and `mixed` declines
+  # the box-uniform default (gcol33/tulpa#357). Comparing at the chord read is
+  # what isolates the `outside` invariant from that decline.
   expect_identical(
     tulpa:::.nl_summary_quantile(v, w, probs, "unbounded", "mixed"),
-    tulpa:::.nl_summary_quantile(v, w, probs, "unbounded", "density"))
+    tulpa:::.nl_summary_quantile(v, w, probs, "unbounded", "density", "chord"))
+  # The decline is recorded rather than silent, and it is what makes the two
+  # reads differ at the shipped default.
+  mixed_read <- tulpa:::.nl_summary_quantile_read(v, w, probs, "unbounded", "mixed")
+  expect_identical(mixed_read$within, "chord")
+  expect_identical(mixed_read$declined, "support_mixed")
+  expect_false(isTRUE(all.equal(
+    tulpa:::.nl_summary_quantile(v, w, probs, "unbounded", "mixed"),
+    tulpa:::.nl_summary_quantile(v, w, probs, "unbounded", "density"))))
   # And it is NOT the moment read, which is what a design-weighted support takes.
   expect_false(isTRUE(all.equal(
     tulpa:::.nl_summary_quantile(v, w, probs, "unbounded", "mixed"),
@@ -613,11 +627,16 @@ test_that("a locally refined fit says what its interval was read off", {
   expect_gt(fitl$theta_interval_design_mass, 0)
   expect_lt(fitl$theta_interval_design_mass, 1)
 
-  # The intervals themselves are what the density read gives, to the last bit:
-  # the mixed tag records the support, it does not switch the construction.
+  # The intervals themselves are what the density read gives at the SAME
+  # within-cell construction, to the last bit: the mixed tag records the
+  # support, it does not switch the `outside` policy. It does switch the
+  # within-cell one -- a refined grid's replacement clouds sit inside a base
+  # cell, so mixed declines the box-uniform default and reads chord
+  # (gcol33/tulpa#357) -- so the reference is built at chord to isolate the
+  # invariant this test is about.
   qs <- tulpa:::.nl_axis_quantiles(fitl$theta_grid, fitl$log_marginal,
                                    fitl$refining_axis, weights = fitl$weights,
-                                   support = "density")
+                                   support = "density", within = "chord")
   expect_equal(fitl$theta_ci_lo, qs$ci_lo)
   expect_equal(fitl$theta_ci_hi, qs$ci_hi)
   expect_equal(fitl$theta_median, qs$median)
@@ -956,9 +975,26 @@ test_that("the gate declines this fixture's own cell, and the read moves toward 
   sim  <- .lccd_sim_joint()
   ctrl <- list(max_iter = 60L, tol = 1e-6, diagnose_k = FALSE,
                var_of_means_consistency = FALSE, integration = "grid")
+  # Pinned to the chord within-cell read, because the reference below WAS one:
+  # at a converged m = 13 the chord read reproduces `ref_w` to five decimals on
+  # the two axes whose 95% bound lies inside the node set, and the shipped
+  # box-uniform default does not (gcol33/tulpa#399). Scoring the REFINEMENT GATE
+  # against it therefore has to be done in the read that produced it, or the
+  # within-cell construction -- an orthogonal choice (gcol33/tulpa#357) -- enters
+  # the number. At the default: wid(on) = 0.4706, wid(off) = 0.7313. The ordering
+  # this test asserts holds either way.
+  #
+  # That gap is NOT the box partition being mis-sized on a three-level axis.
+  # Measured on the reference's own axes with only the resolution moving, the
+  # error against the converged limit falls 0.2867 / 0.1490 / 0.0894 / 0.0509 /
+  # 0.0258 at m = 3 / 5 / 7 / 9 / 11 for box-uniform, against 0.8541 / 0.2000 /
+  # 0.1267 / 0.1237 / 0.0451 for chord -- monotone, and closer at every rung
+  # (`dev_notes/issue399/RESULTS399.md`). What this fixture's own pinned axes
+  # differ in is their EXTENT, not their resolution.
   lc <- function(sm) suppressWarnings(tulpa_nested_laplace_joint(
     sim$responses, sim$prior, copy = sim$copy,
-    control = c(ctrl, list(local_ccd = list(max_cells = 4L, skew_max = sm)))))
+    control = c(ctrl, list(local_ccd = list(max_cells = 4L, skew_max = sm),
+                           within_cell = "chord"))))
   off <- lc(Inf)
   on  <- lc(tulpa:::.nl_diag("gamma3_ok"))
 

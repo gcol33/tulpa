@@ -743,11 +743,12 @@
 # The single dispatcher for every consumer of the summaries, so a caller names
 # its support and its domain and inherits the rest.
 #
-# `within` names the WITHIN-CELL construction (gcol33/tulpa#357). `"chord"` is
-# the shipped read and the default, so a caller that does not ask for one gets
-# byte-identical numbers. `"box_uniform"` is taken only where the support admits
-# it and the partition builds; anything else falls back to the chord read and
-# the reason travels out of `.nl_summary_quantile_read()`.
+# `within` names the WITHIN-CELL construction (gcol33/tulpa#357). `"box_uniform"`
+# is the shipped read and the default, taken where the support admits it and the
+# partition builds; anything else falls back to the chord read and the reason
+# travels out of `.nl_summary_quantile_read()`. `"mixed"` is one such fallback:
+# a refined grid's replacement clouds sit inside one base cell, so a Voronoi
+# partition of its node set is not the design's own boxes.
 .nl_summary_quantile <- function(values, weights, probs,
                                  domain = NA_character_,
                                  support = .NL_SUPPORT_KINDS,
@@ -1181,9 +1182,14 @@
 # `h` is the MEDIAN spacing rather than the first one: an adaptive or
 # consistency-refined axis is no longer equally spaced, and one representative
 # width is what the ratio is about. `sd` is the Laplace-at-mode SD of the axis
-# marginal in the same coordinate -- NA at an axis whose mode sits on its own
-# boundary, which is the placement defect gcol33/tulpa#361 reports separately
-# and a spacing statement cannot be made about.
+# marginal in the same coordinate.
+#
+# An axis that could not be scored says WHY, in `declined`, from the closed
+# vocabulary `.NL_AXIS_SD_REASONS` (gcol33/tulpa#401). The reasons are not
+# interchangeable: `mode_at_edge` is the grid failing to contain that axis's own
+# posterior mode, a stronger statement about the fit than any ratio, while
+# `too_few_nodes` is an axis too short to fit a parabola on. Reported per axis
+# rather than folded into the NA, because the reader's next move differs.
 .nl_axis_resolution <- function(tg, log_marginal, refining = NULL,
                                 domains = NULL) {
   if (is.null(dim(tg))) {
@@ -1193,7 +1199,10 @@
   n_ax <- length(nms)
   h  <- setNames(rep(NA_real_, n_ax), nms)
   sd <- setNames(rep(NA_real_, n_ax), nms)
-  if (n_ax == 0L) return(list(h = h, sd = sd, h_over_sd = h))
+  dec <- setNames(rep(NA_character_, n_ax), nms)
+  if (n_ax == 0L) {
+    return(list(h = h, sd = sd, h_over_sd = h, declined = dec))
+  }
   if (is.null(refining)) refining <- rep("", nrow(tg))
   for (j in seq_len(n_ax)) {
     ax <- nms[j]
@@ -1201,18 +1210,31 @@
             refining == paste0("consistency_", ax)
     marg <- .nl_axis_marginal_logdensity(tg[, j], log_marginal, keep)
     v <- marg$vals
-    if (length(v) < 3L) next
+    if (length(v) < 3L) {
+      dec[j] <- "too_few_nodes"
+      next
+    }
     dm <- if (length(domains) < j) NA_character_ else domains[[j]]
     part <- .nl_cell_partition(v, dm)
     u <- part$tr$to(v)
-    if (!all(is.finite(u))) next
+    if (!all(is.finite(u))) {
+      dec[j] <- "coord_not_finite"
+      next
+    }
     du <- diff(u)
-    if (!length(du) || !all(is.finite(du))) next
+    if (!length(du) || !all(is.finite(du))) {
+      dec[j] <- "spacing_not_finite"
+      next
+    }
     h[j]  <- stats::median(du)
-    sd[j] <- .nl_laplace_at_mode_sd_axis(v, marg$log_marg, coord = part$tr,
-                                         return_u_sd = TRUE)
+    # The reason rides on the NA as an attribute, which assignment into `sd`
+    # would drop, so it is read off the return before that.
+    s <- .nl_laplace_at_mode_sd_axis(v, marg$log_marg, coord = part$tr,
+                                     return_u_sd = TRUE)
+    sd[j]  <- as.numeric(s)
+    dec[j] <- .nl_axis_sd_reason(s)
   }
-  list(h = h, sd = sd, h_over_sd = h / sd)
+  list(h = h, sd = sd, h_over_sd = h / sd, declined = dec)
 }
 
 # Stamp onto a fit what its reported per-axis intervals were read off: the
@@ -1251,7 +1273,15 @@
     res$outer_grid_cell_width <- rs$h
     res$outer_grid_axis_sd    <- rs$sd
     res$outer_grid_h_over_sd  <- rs$h_over_sd
+    res$outer_grid_resolution_declined <- rs$declined
   }
+  # An axis whose grid does not contain its own mode is a placement fact, and
+  # `.nl_axis_rail()` reads it off the stored weights alone. Attached here so a
+  # CALLER-PINNED grid reports it too (gcol33/tulpa#401): the rescue that used to
+  # be its only attach point never runs on one, which is the placement the
+  # gcol33/tulpa#293 rule most needs said out loud.
+  res$outer_grid_railed_axes <- res$outer_grid_railed_axes %||%
+    .nl_railed_axes(res)
   res
 }
 
@@ -1296,22 +1326,54 @@
 # (`.nl_axis_resolution()`): `h` is measured there too, so the ratio is a pure
 # number. The back-map branch is the log delta method (`theta * sd_u`) and is
 # taken only on the default coordinate, where it is the one that applies.
+#
+# The five conditions that withhold the number are DISTINGUISHABLE, and a bare
+# `NA_real_` conflated them (gcol33/tulpa#401). `mode_at_edge` in particular is
+# not a missing measurement: it says the grid does not contain the axis's own
+# posterior mode, which is a stronger statement about the fit than any ratio
+# this function could return. The reason rides on the NA as an attribute so
+# every existing `is.finite()` caller is unaffected and only a reader that wants
+# it pays attention to it.
+.NL_AXIS_SD_REASONS <- c("too_few_nodes", "mode_at_edge", "coord_not_finite",
+                         "stencil_degenerate", "curvature_not_negative")
+
+# Everything an axis's resolution read can decline on: the SD estimator's own
+# five, plus the one `.nl_axis_resolution()` reaches before it calls the
+# estimator at all.
+.NL_AXIS_RESOLUTION_REASONS <- c(.NL_AXIS_SD_REASONS, "spacing_not_finite")
+
+.nl_axis_sd_declined <- function(reason) {
+  structure(NA_real_, tulpa_reason = match.arg(reason, .NL_AXIS_SD_REASONS))
+}
+
+# The reason carried by a declined axis SD, `NA_character_` for a finite one.
+.nl_axis_sd_reason <- function(x) {
+  r <- attr(x, "tulpa_reason", exact = TRUE)
+  if (is.null(r)) NA_character_ else as.character(r)
+}
+
 .nl_laplace_at_mode_sd_axis <- function(vals, log_marg, log_axis = NULL,
                                         return_u_sd = FALSE, coord = NULL) {
-  if (length(vals) < 3L) return(NA_real_)
+  if (length(vals) < 3L) return(.nl_axis_sd_declined("too_few_nodes"))
   ix <- which.max(log_marg)
-  if (ix == 1L || ix == length(vals)) return(NA_real_)
+  if (ix == 1L || ix == length(vals)) {
+    return(.nl_axis_sd_declined("mode_at_edge"))
+  }
   if (is.null(log_axis)) log_axis <- all(is.finite(vals)) && all(vals > 0)
   u <- if (!is.null(coord)) coord$to(vals) else if (log_axis) log(vals) else vals
-  if (!all(is.finite(u))) return(NA_real_)
+  if (!all(is.finite(u))) return(.nl_axis_sd_declined("coord_not_finite"))
   dm <- u[ix - 1L] - u[ix]
   dp <- u[ix + 1L] - u[ix]
   det <- dm * dp * (dm - dp)
-  if (!is.finite(det) || abs(det) < .Machine$double.eps) return(NA_real_)
+  if (!is.finite(det) || abs(det) < .Machine$double.eps) {
+    return(.nl_axis_sd_declined("stencil_degenerate"))
+  }
   lm_m <- log_marg[ix - 1L] - log_marg[ix]
   lm_p <- log_marg[ix + 1L] - log_marg[ix]
   a <- (lm_m * dp - lm_p * dm) / det
-  if (!is.finite(a) || a >= 0) return(NA_real_)
+  if (!is.finite(a) || a >= 0) {
+    return(.nl_axis_sd_declined("curvature_not_negative"))
+  }
   sd_u <- sqrt(-1 / (2 * a))
   if (return_u_sd) {
     sd_u

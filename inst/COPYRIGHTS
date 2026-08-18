@@ -1,8 +1,15 @@
 COPYRIGHT HOLDERS
 
-All files in this package are copyright (c) Gilles Colling and released
-under the MIT license (see the LICENSE file), including the following
-vendored component:
+Except for the components listed below, all files in this package are
+copyright (c) Gilles Colling and released under the MIT license (see the
+LICENSE file).
+
+src/sobol_direction_numbers.h
+  Direction numbers for Sobol sequence generation, copyright (c) 2008
+  Frances Y. Kuo and Stephen Joe, released under a 3-clause BSD license.
+  The full license text is reproduced in the file header, as that license
+  requires. Source: https://web.maths.unsw.edu.au/~fkuo/sobol/
+  Both authors are recorded in Authors@R with roles ctb and cph.
 
 src/simp/*.h
   Snapshot of the SIMP symplectic-integrator headers

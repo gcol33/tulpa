@@ -211,7 +211,7 @@ validate_temporal_multiscale <- function(temporal, data) {
   if (temporal$trend != "none") {
     temporal$precision_structures$trend <- list(
       type = temporal$trend,
-      T = temporal$n_times,
+      n_times = temporal$n_times,
       cyclic = FALSE,
       rank_deficiency = if (temporal$trend == "rw1") 1 else 2
     )
@@ -220,7 +220,7 @@ validate_temporal_multiscale <- function(temporal, data) {
   if (!is.null(temporal$seasonal) && temporal$seasonal >= 2) {
     temporal$precision_structures$seasonal <- list(
       type = "rw1",
-      T = temporal$seasonal,
+      n_times = temporal$seasonal,
       cyclic = TRUE,
       rank_deficiency = 1
     )
@@ -229,13 +229,13 @@ validate_temporal_multiscale <- function(temporal, data) {
   if (temporal$short_term == "ar1") {
     temporal$precision_structures$short_term <- list(
       type = "ar1",
-      T = temporal$n_times,
+      n_times = temporal$n_times,
       rank_deficiency = 0
     )
   } else if (temporal$short_term == "iid") {
     temporal$precision_structures$short_term <- list(
       type = "iid",
-      T = temporal$n_times,
+      n_times = temporal$n_times,
       rank_deficiency = 0
     )
   }

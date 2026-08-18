@@ -18,3 +18,4 @@ _*.R
 .code-review-graph/
 .claude/
 claude/
+.pkgdown-stash/

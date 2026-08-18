@@ -8,10 +8,14 @@
 ^_pkgdown\.yml$
 ^\.github$
 ^CLAUDE\.md$
+^AGENTS\.md$
+^\.gitignore$
+^\.gitattributes$
 ^api\.md$
 ^\.claude$
 ^claude$
 ^check-.*\.log$
+^build-.*\.log$
 ^\.code-review-graph$
 ^\.vscode$
 ^\.lintr$
@@ -31,3 +35,4 @@
 ^tgmrf\.html$
 ^_doc_install\.R$
 ^_reinstall_full\.R$
+^\.pkgdown-stash$

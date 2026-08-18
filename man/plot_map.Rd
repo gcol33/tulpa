@@ -90,32 +90,33 @@ are also needed. Install with:
 }
 
 \examples{
-# plot_map requires a fitted spatial tulpa model and ggplot2.
-\dontrun{
-set.seed(123)
-n_sites <- 20
-df <- data.frame(
-  y = rbinom(n_sites, 20, 0.4),
-  elevation = rnorm(n_sites),
-  site = factor(seq_len(n_sites)),
-  lon = runif(n_sites),
-  lat = runif(n_sites)
-)
-adj <- matrix(0, n_sites, n_sites)
-for (i in 1:(n_sites - 1)) adj[i, i + 1] <- adj[i + 1, i] <- 1
-fit <- tulpa(
-  y ~ elevation,
-  data = df,
-  family = "binomial",
-  n_trials = rep(20L, n_sites),
-  spatial = spatial_car(adj, group_var = "site"),
-  mode = "laplace"
-)
-# Areal (CAR/ICAR) fits carry no point coordinates, so pass `coords`:
-cc <- df[, c("lon", "lat")]
-plot_map(fit, coords = cc)                      # fitted response surface
-plot_map(fit, what = "uncertainty", coords = cc)
-plot_map_panel(fit, coords = cc)                # both side by side
+\donttest{
+if (requireNamespace("ggplot2", quietly = TRUE)) {
+  set.seed(123)
+  n_sites <- 20
+  df <- data.frame(
+    y = rbinom(n_sites, 20, 0.4),
+    elevation = rnorm(n_sites),
+    site = factor(seq_len(n_sites)),
+    lon = runif(n_sites),
+    lat = runif(n_sites)
+  )
+  adj <- matrix(0, n_sites, n_sites)
+  for (i in 1:(n_sites - 1)) adj[i, i + 1] <- adj[i + 1, i] <- 1
+  fit <- tulpa(
+    y ~ elevation + spatial(site),
+    data = df,
+    family = "binomial",
+    n_trials = rep(20L, n_sites),
+    spatial = spatial_car(adj, group_var = "site"),
+    mode = "laplace"
+  )
+  # Areal (CAR/ICAR) fits carry no point coordinates, so pass `coords`:
+  cc <- df[, c("lon", "lat")]
+  plot_map(fit, coords = cc)                      # fitted response surface
+  plot_map(fit, what = "uncertainty", coords = cc)
+  plot_map_panel(fit, coords = cc)                # both side by side
+}
 }
 
 }

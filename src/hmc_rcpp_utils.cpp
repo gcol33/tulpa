@@ -3,6 +3,7 @@
 
 #include <Rcpp.h>
 #include "sysmem.h"
+#include "omp_threads.h"
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -23,10 +24,13 @@
 #include <vector>
 #endif
 
+// Reports the team size an intra-chain region would actually get, so an R-side
+// caller sizing work off this number agrees with the kernels. Goes through the
+// shared resolver, which applies OMP_THREAD_LIMIT and the check-farm core cap.
 // [[Rcpp::export]]
 int cpp_get_max_threads() {
   #ifdef _OPENMP
-  return omp_get_max_threads();
+  return tulpa_omp_team_size(omp_get_max_threads());
   #else
   return 1;
   #endif

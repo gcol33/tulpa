@@ -199,7 +199,7 @@ prepare_coords <- function(coord_vars, data, scale_coords = FALSE) {
 #'
 #' `spatial_car()`, `spatial_bym2()` and `spatial()` each carried their own
 #' inline block checking only matrix-ness, squareness and exact dense symmetry.
-#' That is strictly weaker than [.validate_adjacency()], which `adjacency()` and
+#' That is strictly weaker than `.validate_adjacency()`, which `adjacency()` and
 #' `check_adjacency()` already use: a raw matrix with self-loops, non-binary
 #' weights or isolated nodes was reported by `check_adjacency()` and accepted
 #' silently by the constructors, which then built an improper field. The inline

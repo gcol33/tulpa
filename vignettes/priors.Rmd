@@ -1,4 +1,4 @@
----
+﻿---
 title: "Specifying and checking priors"
 output: rmarkdown::html_vignette
 vignette: >
@@ -16,9 +16,20 @@ knitr::opts_chunk$set(
 set.seed(20260529)
 ```
 
+```{r cran-gate, include = FALSE}
+# The model fits below are evaluated when the article is built locally, in CI
+# and for the pkgdown site (all of which set NOT_CRAN). CRAN's check farm gives
+# the whole check a ten-minute budget, which these fits do not fit inside, so
+# there the code is shown without being run.
+EVAL_FITS <- identical(Sys.getenv("NOT_CRAN"), "true")
+knitr::opts_chunk$set(eval = EVAL_FITS)
+# Read here, not in a gated chunk: chunk options are evaluated whether or not
+# the chunk runs, so a flag a chunk option reads has to exist either way.
+has_ggplot <- requireNamespace("ggplot2", quietly = TRUE)
+```
+
 ```{r load, message = FALSE}
 library(tulpa)
-has_ggplot <- requireNamespace("ggplot2", quietly = TRUE)
 ```
 
 ## Why priors get their own object
@@ -538,7 +549,7 @@ and plotting the two `group_spread` distributions side by side shows the prior's
 effect at a glance. The wide PC prior pushes a long right tail onto the
 between-group spread; the tight default keeps it compact.
 
-```{r pc-pp-plot, message = FALSE, eval = has_ggplot, fig.alt = "Between-group spread under two PC priors on sigma"}
+```{r pc-pp-plot, message = FALSE, eval = has_ggplot && EVAL_FITS, fig.alt = "Between-group spread under two PC priors on sigma"}
 library(ggplot2)
 sp <- rbind(
   data.frame(prior = "tight (U=1)", spread = group_spread(pp_tight)),

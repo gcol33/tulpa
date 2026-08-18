@@ -1,6 +1,6 @@
 // pg_rng.cpp
 // Polya-Gamma random number generator implementation
-// Based on Polson, Scott & Windle (2013) JASA and the BayesLogit package.
+// Implements the sampler of Polson, Scott & Windle (2013) JASA.
 
 #include "pg_rng.h"
 #include <Rcpp.h>

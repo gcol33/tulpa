@@ -1,4 +1,4 @@
----
+﻿---
 title: "Getting started with tulpa"
 output: rmarkdown::html_vignette
 vignette: >
@@ -16,9 +16,20 @@ knitr::opts_chunk$set(
 set.seed(20260529)
 ```
 
+```{r cran-gate, include = FALSE}
+# The model fits below are evaluated when the article is built locally, in CI
+# and for the pkgdown site (all of which set NOT_CRAN). CRAN's check farm gives
+# the whole check a ten-minute budget, which these fits do not fit inside, so
+# there the code is shown without being run.
+EVAL_FITS <- identical(Sys.getenv("NOT_CRAN"), "true")
+knitr::opts_chunk$set(eval = EVAL_FITS)
+# Read here, not in a gated chunk: chunk options are evaluated whether or not
+# the chunk runs, so a flag a chunk option reads has to exist either way.
+has_ggplot <- requireNamespace("ggplot2", quietly = TRUE)
+```
+
 ```{r load, message = FALSE}
 library(tulpa)
-has_ggplot <- requireNamespace("ggplot2", quietly = TRUE)
 ```
 
 ## What tulpa is
@@ -313,7 +324,7 @@ credible band turns the table into the marginal effect you would put in a
 paper: the line is the expected response across the covariate, and the
 ribbon is the 95% credible region around it.
 
-```{r predict-plot, eval = has_ggplot, fig.alt = "Predicted response across x with a 95 percent credible band"}
+```{r predict-plot, eval = has_ggplot && EVAL_FITS, fig.alt = "Predicted response across x with a 95 percent credible band"}
 library(ggplot2)
 ggplot(data.frame(x = nd$x, fit = pr$fit, lo = pr$lower, hi = pr$upper),
        aes(x, fit)) +
@@ -507,7 +518,7 @@ regional structure. Plot the per-region field effect around the ring to see
 the wave the fit pulled out of binary data: the mode at each region's latent
 column traces the smooth signal the covariate could not explain.
 
-```{r spatial-plot, eval = has_ggplot, fig.alt = "Estimated spatial field effect per region around the ring"}
+```{r spatial-plot, eval = has_ggplot && EVAL_FITS, fig.alt = "Estimated spatial field effect per region around the ring"}
 library(ggplot2)
 fe <- tail(fit_sp$mode, K)
 ggplot(data.frame(region = seq_len(K), effect = fe), aes(region, effect)) +

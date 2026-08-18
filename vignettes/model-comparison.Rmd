@@ -1,4 +1,4 @@
----
+﻿---
 title: "Comparing tulpa models"
 output: rmarkdown::html_vignette
 vignette: >
@@ -15,6 +15,15 @@ knitr::opts_chunk$set(
 )
 set.seed(20260529)
 has_ggplot <- requireNamespace("ggplot2", quietly = TRUE)
+```
+
+```{r cran-gate, include = FALSE}
+# The model fits below are evaluated when the article is built locally, in CI
+# and for the pkgdown site (all of which set NOT_CRAN). CRAN's check farm gives
+# the whole check a ten-minute budget, which these fits do not fit inside, so
+# there the code is shown without being run.
+EVAL_FITS <- identical(Sys.getenv("NOT_CRAN"), "true")
+knitr::opts_chunk$set(eval = EVAL_FITS)
 ```
 
 ```{r load, message = FALSE}
@@ -212,7 +221,7 @@ numbers. Each bar is one rung's evidence relative to the null, so the bar
 heights are the cumulative gain and the steps between them are the
 per-rung gains from the table.
 
-```{r ladder-plot, eval = has_ggplot, fig.alt = "Bar chart of cumulative log evidence by ladder rung"}
+```{r ladder-plot, eval = has_ggplot && EVAL_FITS, fig.alt = "Bar chart of cumulative log evidence by ladder rung"}
 library(ggplot2)
 pd <- data.frame(model = factor(names(ll), levels = names(ll)),
                  rel = ll - ll[1])

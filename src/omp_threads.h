@@ -9,17 +9,37 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdlib>
+#include <cstring>
 #include <vector>
 
 #ifdef _OPENMP
 #include <omp.h>
 #endif
 
+// CRAN's check farm sets _R_CHECK_LIMIT_CORES_ and permits at most two cores in
+// examples, tests and vignettes. The variable is set once for the lifetime of
+// the check process, so it is read once and cached; "false" / "FALSE" / "0"
+// disable the limit, matching what R itself treats as unset.
+// Returns 0 when no limit applies.
+inline int tulpa_omp_check_cap() {
+    static const int cap = [] {
+        const char* v = std::getenv("_R_CHECK_LIMIT_CORES_");
+        if (v == nullptr || *v == '\0') return 0;
+        if (std::strcmp(v, "false") == 0 || std::strcmp(v, "FALSE") == 0 ||
+            std::strcmp(v, "0") == 0) return 0;
+        return 2;
+    }();
+    return cap;
+}
+
 inline int tulpa_omp_team_size(int n_work_items) {
 #ifdef _OPENMP
     int cap = omp_get_max_threads();
     int limit = omp_get_thread_limit();
     if (limit > 0) cap = std::min(cap, limit);
+    const int check_cap = tulpa_omp_check_cap();
+    if (check_cap > 0) cap = std::min(cap, check_cap);
     return std::max(1, std::min(cap, n_work_items));
 #else
     (void)n_work_items;

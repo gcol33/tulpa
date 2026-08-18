@@ -138,7 +138,16 @@ negative-Hessian sign convention as the posterior precision underlying
 covariance block. \code{NA} throughout when \code{blup_cross_available} is \code{FALSE}:
 the cross-Hessian needs the oracle's analytic \code{theta_score}, which the
 R-closure bridge (\code{make_site} / \code{make_group}) does not supply -- only a
-prebuilt native \code{oracle} carries it), \code{theta_cov} / \code{theta_se}
+prebuilt native \code{oracle} carries it), \code{blup_cov_g} / \code{blup_cross_g}
+(per-group lists, length \code{n_groups}, of the FULL joint posterior
+covariance (\verb{d x d}, \code{d} = every RE term's width combined) and mode/theta
+cross-Hessian (\verb{n_theta x d}) across ALL RE terms sharing that group --
+the superset \code{blup_var}/\code{blup_cross} reduce to a per-term diagonal block
+of when a group carries more than one term, since a group's terms are
+found jointly and can carry real posterior covariance BETWEEN terms
+(e.g. an abundance-arm and a detection-arm term sharing one grouping
+factor); same \code{NA}-when-unavailable rule as \code{blup_cross}), \code{theta_cov} /
+\code{theta_se}
 (fixed-parameter covariance / SE from the marginal Hessian), \code{log_marginal}
 (the AGHQ marginal log-likelihood at the optimum, excluding any ridge),
 \code{n_quad}, \code{lkj_eta}, and \code{converged}. RE terms that do not share one

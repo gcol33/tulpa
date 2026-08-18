@@ -1,12 +1,7 @@
-url: https://gcol33.github.io/tulpa
+﻿url: https://gillescolling.com/tulpa/
 
 template:
   bootstrap: 5
-
-figures:
-  dev: svglite
-  fig.ext: svg
-  bg: "#F5F6F8"
 
 reference:
 - title: Front door

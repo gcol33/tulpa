@@ -216,6 +216,7 @@ full latent field is not scored by default on a large spatial field.
 }
 
 \examples{
+\donttest{
 set.seed(1)
 n <- 200L; x <- rnorm(n)
 y <- rbinom(n, 1, plogis(-0.2 + 0.6 * x))
@@ -224,6 +225,7 @@ y <- rbinom(n, 1, plogis(-0.2 + 0.6 * x))
 fit <- tulpa(y ~ x, data.frame(y = y, x = x), family = "binomial",
              mode = "smc")
 diagnostics(fit)
+}
 }
 \references{
 Vehtari, Simpson, Gelman, Yao & Gabry (2024). Pareto smoothed importance

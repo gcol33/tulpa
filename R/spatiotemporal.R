@@ -314,7 +314,7 @@ spatiotemporal_effects.tulpa_fit <- function(object,
 
   st_info <- object$spatiotemporal
   S <- st_info$n_spatial
-  T <- st_info$n_times
+  n_t <- st_info$n_times
 
   # Get interaction draws
   st_draws <- object$.internal$spatiotemporal_draws
@@ -327,13 +327,13 @@ spatiotemporal_effects.tulpa_fit <- function(object,
 
   if (format == "array") {
     # Reshape to S x T x draws
-    result <- array(NA_real_, dim = c(S, T, n_draws))
+    result <- array(NA_real_, dim = c(S, n_t, n_draws))
     for (d in seq_len(n_draws)) {
-      result[, , d] <- matrix(st_draws[d, ], nrow = S, ncol = T, byrow = FALSE)
+      result[, , d] <- matrix(st_draws[d, ], nrow = S, ncol = n_t, byrow = FALSE)
     }
 
     attr(result, "n_spatial") <- S
-    attr(result, "n_times") <- T
+    attr(result, "n_times") <- n_t
     attr(result, "n_draws") <- n_draws
     class(result) <- c("tulpa_st_array", "array")
     return(result)
@@ -345,7 +345,7 @@ spatiotemporal_effects.tulpa_fit <- function(object,
     result <- expand.grid(
       draw = seq_len(n_draws),
       s = seq_len(S),
-      t = seq_len(T)
+      t = seq_len(n_t)
     )
     result$value <- as.vector(st_draws)
     result <- result[, c("s", "t", "draw", "value")]
@@ -355,11 +355,11 @@ spatiotemporal_effects.tulpa_fit <- function(object,
 
   } else {
     # Compute summary statistics
-    st_mat <- matrix(NA_real_, nrow = S * T, ncol = 3 + length(probs))
+    st_mat <- matrix(NA_real_, nrow = S * n_t, ncol = 3 + length(probs))
     colnames(st_mat) <- c("s", "t", "mean", paste0("q", probs * 100))
 
     for (i in seq_len(S)) {
-      for (j in seq_len(T)) {
+      for (j in seq_len(n_t)) {
         # Draws are stored s-fastest (column-major S x T), matching the array /
         # long formats; index the (s = i, t = j) column accordingly so labels
         # stay aligned when S != T.
@@ -379,7 +379,7 @@ spatiotemporal_effects.tulpa_fit <- function(object,
     result$sd <- apply(st_draws, 2, sd)
 
     attr(result, "n_spatial") <- S
-    attr(result, "n_times") <- T
+    attr(result, "n_times") <- n_t
     attr(result, "n_draws") <- n_draws
     class(result) <- c("tulpa_st_summary", "data.frame")
     return(result)
@@ -404,16 +404,16 @@ spatiotemporal_effects.tulpa_fit <- function(object,
 plot.tulpa_st_summary <- function(x, type = "heatmap", ...) {
 
   S <- attr(x, "n_spatial")
-  T <- attr(x, "n_times")
+  n_t <- attr(x, "n_times")
 
   if (type == "heatmap") {
     # Create matrix of means
-    mean_mat <- matrix(x$mean, nrow = S, ncol = T, byrow = FALSE)
+    mean_mat <- matrix(x$mean, nrow = S, ncol = n_t, byrow = FALSE)
 
     if (requireNamespace("ggplot2", quietly = TRUE)) {
       df <- data.frame(
-        s = rep(seq_len(S), T),
-        t = rep(seq_len(T), each = S),
+        s = rep(seq_len(S), n_t),
+        t = rep(seq_len(n_t), each = S),
         value = as.vector(mean_mat)
       )
 
@@ -435,7 +435,7 @@ plot.tulpa_st_summary <- function(x, type = "heatmap", ...) {
     }
 
     # Base R fallback
-    image(seq_len(T), seq_len(S), t(mean_mat),
+    image(seq_len(n_t), seq_len(S), t(mean_mat),
           xlab = "Time", ylab = "Space",
           main = "Spatiotemporal Interaction Effects",
           col = hcl.colors(100, "RdBu", rev = TRUE),
@@ -443,12 +443,12 @@ plot.tulpa_st_summary <- function(x, type = "heatmap", ...) {
 
   } else if (type == "time_series") {
     # Plot time series for each spatial unit
-    mean_mat <- matrix(x$mean, nrow = S, ncol = T, byrow = FALSE)
+    mean_mat <- matrix(x$mean, nrow = S, ncol = n_t, byrow = FALSE)
 
     if (requireNamespace("ggplot2", quietly = TRUE)) {
       df <- data.frame(
-        s = factor(rep(seq_len(S), T)),
-        t = rep(seq_len(T), each = S),
+        s = factor(rep(seq_len(S), n_t)),
+        t = rep(seq_len(n_t), each = S),
         value = as.vector(mean_mat)
       )
 
@@ -467,7 +467,7 @@ plot.tulpa_st_summary <- function(x, type = "heatmap", ...) {
     }
 
     # Base R fallback
-    matplot(seq_len(T), t(mean_mat), type = "l", lty = 1,
+    matplot(seq_len(n_t), t(mean_mat), type = "l", lty = 1,
             xlab = "Time", ylab = "Interaction Effect",
             main = "Spatiotemporal Effects by Location", ...)
     abline(h = 0, lty = 2, col = "gray50")
@@ -476,7 +476,7 @@ plot.tulpa_st_summary <- function(x, type = "heatmap", ...) {
     # The summary is indexed by spatial unit (s = 1..S) x time (t = 1..T) with
     # no geographic coordinates, so "spatial_map" is the time-averaged effect
     # profile over the spatial units, not a coordinate map.
-    mean_mat <- matrix(x$mean, nrow = S, ncol = T, byrow = FALSE)
+    mean_mat <- matrix(x$mean, nrow = S, ncol = n_t, byrow = FALSE)
     spatial_mean <- rowMeans(mean_mat)
 
     if (requireNamespace("ggplot2", quietly = TRUE)) {

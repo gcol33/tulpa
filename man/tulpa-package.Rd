@@ -11,7 +11,7 @@ A general-purpose engine for fitting Bayesian hierarchical models with spatial f
 Useful links:
 \itemize{
   \item \url{https://github.com/gcol33/tulpa}
-  \item \url{https://gcol33.github.io/tulpa}
+  \item \url{https://gillescolling.com/tulpa/}
   \item Report bugs at \url{https://github.com/gcol33/tulpa/issues}
 }
 
@@ -22,6 +22,12 @@ Useful links:
 Authors:
 \itemize{
   \item Gilles Colling \email{gilles.colling051@gmail.com} (\href{https://orcid.org/0000-0003-3070-6066}{ORCID}) [copyright holder]
+}
+
+Other contributors:
+\itemize{
+  \item Frances Y. Kuo (Sobol direction numbers in src/sobol_direction_numbers.h, BSD-3-clause) [contributor, copyright holder]
+  \item Stephen Joe (Sobol direction numbers in src/sobol_direction_numbers.h, BSD-3-clause) [contributor, copyright holder]
 }
 
 }

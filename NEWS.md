@@ -1,5 +1,65 @@
 # tulpa NEWS
 
+## 0.1.0
+
+First CRAN release. The engine's surface is unchanged from 0.0.198; this
+version number marks the release rather than a feature change.
+
+* Renamed the local `T` bindings in `spatiotemporal_effects()` and
+  `plot.tulpa_st_summary()`, and the `T` field of the (internal, unread)
+  `precision_structures` list, to `n_t` / `n_times`. `T` and `F` are not
+  reserved words in R.
+
+* Intra-chain OpenMP teams now honour `_R_CHECK_LIMIT_CORES_`, capping at two
+  threads under `R CMD check`. The cap lives in `tulpa_omp_team_size()`, so
+  every team-size decision inherits it, and `cpp_get_max_threads()` reports the
+  size a region would actually get.
+
+* **An outer axis whose grid does not contain its own posterior mode now says
+  so** (#401). `h / sd` is the regime variable the reported hyperparameter
+  interval's position sensitivity is governed by, and its SD side is a 3-point
+  parabola at the axis's modal cell that withheld a bare `NA` on five
+  distinguishable conditions. One of them, the mode sitting on an END node, is
+  not a missing measurement: it says the grid brackets nothing on that axis.
+
+  Three consequences, all of them measured on the package's own four-axis joint
+  fixture at `axes_at(5)`, where `b1.alpha` holds 57.7% of its axis mass on its
+  lowest node (2.88x the uniform share). The whole-grid verdict was read off the
+  axes that happened to score, so `resolved` could come back `TRUE` with an
+  unscored axis present; the note named the coarsest SCORED axis, which on that
+  fixture is a different, healthy one, and told the reader to add nodes there;
+  and `.nl_railed_axes()` -- which finds `b1.alpha:lower` instantly from stored
+  weights -- was attached only inside the registry grid rescue, which does not
+  run on a caller-pinned grid, so the placement the engine leaves alone by
+  construction was the one that never reported it.
+
+  Now: `.NL_AXIS_SD_REASONS` is a closed vocabulary (`too_few_nodes`,
+  `mode_at_edge`, `coord_not_finite`, `stencil_degenerate`,
+  `curvature_not_negative`) carried on the NA as an attribute, so every existing
+  `is.finite()` caller is unaffected; it is stamped through as
+  `outer_grid_resolution_declined`, per axis, beside the existing
+  `theta_within_cell_declined` / `theta_cell_edge_declined`; `resolved` requires
+  every axis to have scored; the rail report is attached wherever the resolution
+  is; and the note reports unscored axes and railing BEFORE the coarsest scored
+  one. A fit where nothing scored reports that nothing could be, rather than
+  returning `NULL` as if it carried no resolution at all.
+
+* `_pkgdown.yml`'s `figures:` block is removed (#400). `dev: svglite` named a
+  package rather than a device function, and qualifying it as
+  `svglite::svglite` only moved the failure: `pkgdown:::fig_save()` sets
+  `dev.args$bg <- NA` unconditionally and svglite rejects a logical `NA` there.
+  The block's other two keys were already inert -- `bg` is a formal of
+  `fig_save()` that its body never reads. The default `ragg::agg_png` renders
+  the reference examples cleanly.
+
+* `pkgdown/build_site.R` is the pkgdown deploy entry point (#402).
+  `pkgdown:::package_mds()` renders every root-level `*.md` minus a hard-coded
+  exclusion list with no config knob to extend it, so `CLAUDE.md`, `AGENTS.md`,
+  `todo.md` and `api.md` were published verbatim and `AGENTS.html` was the first
+  entry in the site search index. The script holds them out of the root for the
+  duration of the build and asserts they reached neither `docs/` nor
+  `search.json`.
+
 ## 0.0.198
 
 * **`tulpa_re_aghq()` returns the mode/theta cross-Hessian block** (#398).

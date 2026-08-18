@@ -1205,30 +1205,73 @@
 .tulpa_grid_resolution <- function(fit) {
   jf <- if (!is.null(fit$joint_fit)) fit$joint_fit else fit
   r <- jf$outer_grid_h_over_sd
-  if (is.null(r) || !length(r) || !any(is.finite(r))) return(NULL)
+  if (is.null(r) || !length(r)) return(NULL)
   ok <- is.finite(r)
+  nm <- names(r) %||% as.character(seq_along(r))
+  dec <- jf$outer_grid_resolution_declined
+  if (is.null(dec) || length(dec) != length(r)) {
+    dec <- setNames(rep(NA_character_, length(r)), nm)
+  }
+  railed <- jf$outer_grid_railed_axes %||% character(0)
+  # `resolved` is a claim about the WHOLE grid, so an axis that could not be
+  # scored withholds it rather than being skipped over (gcol33/tulpa#401). A fit
+  # where nothing scored still reports -- what it reports is that nothing could
+  # be, which is the case a NULL return used to make indistinguishable from a
+  # fit that carries no resolution at all.
   list(h_over_sd = r,
        h         = jf$outer_grid_cell_width %||% rep(NA_real_, length(r)),
        sd        = jf$outer_grid_axis_sd    %||% rep(NA_real_, length(r)),
-       max       = max(r[ok]),
-       coarsest  = (names(r) %||% as.character(seq_along(r)))[ok][
-                     which.max(r[ok])],
+       max       = if (any(ok)) max(r[ok]) else NA_real_,
+       coarsest  = if (any(ok)) nm[ok][which.max(r[ok])] else NA_character_,
+       declined  = dec,
+       unscored  = nm[!ok],
+       railed    = railed,
        n_scored  = sum(ok),
        n_axes    = length(r),
-       resolved  = all(r[ok] <= .nl_diag("grid_resolved")))
+       resolved  = all(ok) && all(r[ok] <= .nl_diag("grid_resolved")))
 }
 
-# One-line reading of a resolution. NULL when every scored axis is at or below
-# `grid_resolved`, where the cells are narrower than the posterior they
+# Reading of a resolution. NULL when every axis scored AND every one is at or
+# below `grid_resolved`, where the cells are narrower than the posterior they
 # discretize and the within-cell construction stops mattering.
+#
+# An UNSCORED axis is reported first and separately (gcol33/tulpa#401). Reporting
+# only the coarsest SCORED axis pointed the reader at a healthy axis while the
+# one whose grid did not contain its own mode went unmentioned, and told them to
+# add nodes to the wrong one.
 .tulpa_grid_resolution_note <- function(rs) {
   if (is.null(rs) || isTRUE(rs$resolved)) return(NULL)
-  paste0("outer grid coarser than its own posterior on ", rs$coarsest,
-         " (cell width / posterior SD = ", sprintf("%.2f", rs$max),
-         ", both in that axis's own coordinate): the reported interval's ",
-         "endpoints are resolved to within one cell, so part of their width ",
-         "and their realized coverage are properties of where the grid fell ",
-         "rather than of the posterior -- add nodes on that axis to reduce it")
+  out <- character(0)
+  if (length(rs$unscored)) {
+    why <- rs$declined[rs$unscored]
+    lab <- paste0(rs$unscored, " (",
+                  ifelse(is.na(why), "reason not recorded", why), ")")
+    out <- c(out, paste0(
+      "outer grid resolution could not be scored on ", paste(lab, collapse = ", "),
+      ": ", rs$n_scored, " of ", rs$n_axes, " axes carry a cell-width / ",
+      "posterior-SD ratio, so the grid is not established as resolved on the ",
+      "rest -- an axis reading `mode_at_edge` is one whose nodes do not contain ",
+      "its own posterior mode, which no spacing statement can be made about"))
+  }
+  if (length(rs$railed)) {
+    out <- c(out, paste0(
+      "outer grid does not contain its own posterior mode on ",
+      paste(rs$railed, collapse = ", "),
+      ": that axis's extreme node carries the modal mass, so its reported ",
+      "bound is an extrapolation off the end of the design -- widen the axis ",
+      "rather than adding nodes inside it"))
+  }
+  if (!is.na(rs$max) && rs$max > .nl_diag("grid_resolved")) {
+    out <- c(out, paste0(
+      "outer grid coarser than its own posterior on ", rs$coarsest,
+      " (cell width / posterior SD = ", sprintf("%.2f", rs$max),
+      ", both in that axis's own coordinate): the reported interval's ",
+      "endpoints are resolved to within one cell, so part of their width ",
+      "and their realized coverage are properties of where the grid fell ",
+      "rather than of the posterior -- add nodes on that axis to reduce it"))
+  }
+  if (!length(out)) return(NULL)
+  out
 }
 
 # The grid axes a fit's own resolved path could not read (gcol33/tulpa#352).
@@ -1720,6 +1763,7 @@
 #' @seealso [diagnostics()] (the front door, which returns this table for
 #'   i.i.d. fits), [tulpa_psis()].
 #' @examples
+#' \donttest{
 #' set.seed(1)
 #' n <- 200L; x <- rnorm(n)
 #' y <- rbinom(n, 1, plogis(-0.2 + 0.6 * x))
@@ -1728,6 +1772,7 @@
 #' fit <- tulpa(y ~ x, data.frame(y = y, x = x), family = "binomial",
 #'              mode = "smc")
 #' diagnostics(fit)
+#' }
 #' @export
 laplace_diagnostics <- function(fit, pars = NULL) {
   lifecycle::deprecate_warn("0.0.95", "laplace_diagnostics()", "diagnostics()")
