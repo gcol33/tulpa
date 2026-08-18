@@ -218,29 +218,29 @@ pak::pak("gcol33/tulpa@v0.1.0")
 
 Getting started:
 
-- [Quickstart](https://gcol33.github.io/tulpa/articles/quickstart.html)
-- [Data formatting](https://gcol33.github.io/tulpa/articles/data-formatting.html)
+- [Quickstart](https://gillescolling.com/tulpa/articles/quickstart.html)
+- [Data formatting](https://gillescolling.com/tulpa/articles/data-formatting.html)
 
 Inference:
 
-- [Inference modes](https://gcol33.github.io/tulpa/articles/inference-modes.html)
-- [Priors](https://gcol33.github.io/tulpa/articles/priors.html)
-- [Random slopes and free covariances](https://gcol33.github.io/tulpa/articles/random-slopes.html)
-- [EM + Laplace](https://gcol33.github.io/tulpa/articles/em-laplace.html)
-- [Model comparison](https://gcol33.github.io/tulpa/articles/model-comparison.html)
-- [Reliability and Pareto-k](https://gcol33.github.io/tulpa/articles/reliability-pareto-k.html)
+- [Inference modes](https://gillescolling.com/tulpa/articles/inference-modes.html)
+- [Priors](https://gillescolling.com/tulpa/articles/priors.html)
+- [Random slopes and free covariances](https://gillescolling.com/tulpa/articles/random-slopes.html)
+- [EM + Laplace](https://gillescolling.com/tulpa/articles/em-laplace.html)
+- [Model comparison](https://gillescolling.com/tulpa/articles/model-comparison.html)
+- [Reliability and Pareto-k](https://gillescolling.com/tulpa/articles/reliability-pareto-k.html)
 
 Latent structure:
 
-- [Spatial models](https://gcol33.github.io/tulpa/articles/spatial-models.html)
-- [Temporal models](https://gcol33.github.io/tulpa/articles/temporal-models.html)
+- [Spatial models](https://gillescolling.com/tulpa/articles/spatial-models.html)
+- [Temporal models](https://gillescolling.com/tulpa/articles/temporal-models.html)
 
 Extending the engine:
 
-- [Custom GMRF latent blocks](https://gcol33.github.io/tulpa/articles/tgmrf.html)
-- [Checkpoint and resume](https://gcol33.github.io/tulpa/articles/checkpoint.html)
+- [Custom GMRF latent blocks](https://gillescolling.com/tulpa/articles/tgmrf.html)
+- [Checkpoint and resume](https://gillescolling.com/tulpa/articles/checkpoint.html)
 
-The [function reference](https://gcol33.github.io/tulpa/reference/) lists every fitter, accessor, and diagnostic; `?tulpa` is the front door.
+The [function reference](https://gillescolling.com/tulpa/reference/) lists every fitter, accessor, and diagnostic; `?tulpa` is the front door.
 
 ## Status
 
