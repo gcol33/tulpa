@@ -14,8 +14,7 @@
 ^api\.md$
 ^\.claude$
 ^claude$
-^check-.*\.log$
-^build-.*\.log$
+^.*\.log$
 ^\.code-review-graph$
 ^\.vscode$
 ^\.lintr$

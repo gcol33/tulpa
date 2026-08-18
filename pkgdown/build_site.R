@@ -67,6 +67,14 @@ build_site_without_internal_md <- function(root = ".",
 
   pkgdown::build_site(preview = FALSE, install = FALSE)
 
+  # GitHub Pages runs Jekyll over `docs/` unless this file is present, and
+  # Jekyll re-renders pkgdown's already-built markdown through Liquid. The
+  # CITATION's BibTeX key reaches `authors.md` as `@Manual{tulpa,`, which Liquid
+  # reads as an unterminated `{{tulpa}` variable and the whole deployment fails.
+  # Nothing here needs Jekyll: the HTML is already built.
+  nojekyll <- file.path(root, "docs", ".nojekyll")
+  if (!file.exists(nojekyll)) file.create(nojekyll)
+
   html   <- sub("\\.md$", ".html", internal)
   leaked <- html[file.exists(file.path(root, "docs", html))]
   if (length(leaked)) {
