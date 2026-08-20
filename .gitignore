@@ -19,3 +19,4 @@ _*.R
 .claude/
 claude/
 .pkgdown-stash/
+*.done
