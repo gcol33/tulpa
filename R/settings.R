@@ -927,6 +927,64 @@
 # the engine's own default axes puts every one of them above it -- minimum 1.01,
 # median 4.25, maximum 18.06 -- so an unresolved axis is the ordinary case and
 # is worth reporting rather than warning about.
+
+# --- outer hyperparameter mode-find ------------------------------------------
+#
+# Box-constrained L-BFGS-B over a hyperparameter vector. Both consumers
+# optimise a marginal that comes back from a compiled kernel with no analytic
+# gradient, so both rely on `optim()`'s central-difference gradient and both
+# are governed by its step size.
+#
+# `ndeps` is that step, on the axis's own (log) scale. It sets two competing
+# error terms: the truncation error of the central difference grows as the
+# step squared, while the step has to stay wide enough to clear the inner
+# solver's own convergence tolerance. Too wide and the gradient near a flat
+# optimum is dominated by truncation, leaving L-BFGS-B's line search no descent
+# direction to find; it then aborts AT the mode and reports a nonzero
+# convergence code, which every caller here reads as an unusable mode.
+#
+# `factr` is the relative-reduction stop, in units of `.Machine$double.eps`.
+#
+# The two consumers carry different values because they were tuned against
+# different objectives, so they are recorded separately rather than averaged
+# into one number that serves neither:
+#
+#  * `spde` -- `fit_spde_nested_ccd()` over (log range, log sigma). `factr`
+#    1e5 rather than the 1e7 default, which accepted the prior mode unchanged
+#    on weakly informative problems. `ndeps` 1e-2 measured across 1e-4 to 5e-2
+#    on both the analytic fixture and a real inner-Laplace marginal
+#    (gcol33/tulpa#403): every step up to 2.5e-2 returns convergence 0 on Linux
+#    and Windows alike and agrees bit for bit, and on the real marginal 1e-2
+#    reaches the same mode in the same evaluation count at a lower objective.
+#
+#  * `st` -- `fit_st_nested()`'s auto-grid over (tau_spatial, tau_temporal,
+#    rho). `ndeps` 1e-3 is `optim()`'s own default, written out so the step
+#    this path depends on is stated rather than inherited.
+#  * `pathfinder` -- `tulpa_pathfinder()`'s L-BFGS mode-find. It does NOT go
+#    through `.nl_lbfgsb_mode_find()`: it is unbounded, takes an analytic
+#    gradient when the caller supplies one, and carries `maxit` / `pgtol` as
+#    its own arguments, so `factr` is the only value it needs from here. It is
+#    recorded in this table anyway so every L-BFGS-B stop tolerance in the
+#    package is set in one place.
+.NL_MODE_FIND <- list(
+    spde       = list(factr = 1e5, ndeps = 1e-2, maxit = 300L),
+    st         = list(factr = 1e7, ndeps = 1e-3, maxit = 300L),
+    pathfinder = list(factr = 1e7)
+)
+
+.nl_mode_find <- function(consumer, par) {
+    if (!consumer %in% names(.NL_MODE_FIND)) {
+        stop("Unknown mode-find consumer '", consumer, "'.", call. = FALSE)
+    }
+    tune <- .NL_MODE_FIND[[consumer]]
+    if (!par %in% names(tune)) {
+        stop("Unknown mode-find setting '", par, "'.", call. = FALSE)
+    }
+    ov <- getOption(paste0("tulpa.mode_find.", consumer, ".", par), NULL)
+    if (!is.null(ov)) return(ov)
+    tune[[par]]
+}
+
 .NL_DIAG <- list(
     within_cell          = "box_uniform",
     grid_resolved        = 1,

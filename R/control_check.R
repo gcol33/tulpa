@@ -117,7 +117,7 @@ tulpa_check_control <- function(control, allowed, where) {
       "subspace_debias", "cila", "max_grid_cells", "within_cell",
       "checkpoint", progress),
     spde = c("method", "n_grid", "max_iter", "tol", "n_threads",
-             "diagnose_k", "k_samples", "checkpoint"),
+             "diagnose_k", "k_samples", "checkpoint", "mode_find"),
     re_cov_nested = c("integration", "n_per_axis", "span", "n_draws", "seed",
                       "max_iter", "tol", "n_threads", "diagnose_k",
                       "k_samples", "checkpoint", "outer_maxit",

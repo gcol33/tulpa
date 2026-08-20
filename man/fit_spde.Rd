@@ -83,6 +83,16 @@ sampling the joint \verb{(range, sigma)} posterior on the log scale against
 the Gaussian proposal that orients the integration. See \code{\link[=tulpa_psis]{tulpa_psis()}}.
 \item \code{k_samples}: importance draws for \code{diagnose_k}. Default 200, each
 one extra batched SPDE marginal evaluation.
+\item \code{mode_find}: tuning for the outer \verb{(range, sigma)} mode-find under
+\code{method = "ccd"}, as \code{list(factr =, ndeps =, maxit =)}; supply any
+subset. \code{ndeps} is the central-difference step for \code{optim()}'s
+numerical gradient on the log scale (default 1e-2): it must clear the
+inner solver's convergence tolerance, and a step wide enough that its
+truncation error exceeds the reduction the line search chases near a
+flat optimum leaves L-BFGS-B aborting at the mode it just reached, in
+which case the CCD design declines to the rectangular grid. \code{factr} is
+the relative-reduction stop in units of \code{.Machine$double.eps} (default
+1e5); \code{maxit} the iteration cap (default 300).
 \item \code{max_iter}: maximum Newton iterations. Default 100.
 \item \code{tol}: Newton convergence tolerance. Default 1e-6.
 \item \code{n_threads}: OpenMP threads. Default 1.

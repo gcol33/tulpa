@@ -218,10 +218,10 @@
         if (!is.finite(lm)) .Machine$double.xmax else -lm
     }
 
-    opt <- tryCatch(
-        stats::optim(u0, objective, method = "L-BFGS-B", lower = lo, upper = hi,
-                     hessian = TRUE, control = list(maxit = 300L, factr = 1e7)),
-        error = function(e) NULL)
+    opt <- .nl_lbfgsb_mode_find(par = u0, fn = objective,
+                                lower = lo, upper = hi,
+                                tuning = .nl_mode_find_tuning("st"),
+                                hessian = TRUE)
     if (is.null(opt) || !all(is.finite(opt$par)) || is.null(opt$hessian) ||
         !all(is.finite(opt$hessian))) {
         return(.nl_decline_recenter(out, "no_usable_curvature"))

@@ -100,7 +100,7 @@ pathfinder <- function(log_posterior,
     control = list(
       maxit = max_iter,
       pgtol = tol,
-      factr = 1e7      # ~ standard optim default
+      factr = .nl_mode_find("pathfinder", "factr")
     )
   )
 

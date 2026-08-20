@@ -164,7 +164,8 @@ fit_spde_nested_ccd <- function(spde_log_marginal,
                                 fit_spde_single,
                                 sp, spatial,
                                 diagnose_k = TRUE,
-                                k_samples = .nl_diag("k_samples")) {
+                                k_samples = .nl_diag("k_samples"),
+                                mode_find = .nl_mode_find_tuning("spde")) {
   range_mode <- sp$prior_range[1]
   sigma_mode <- sp$prior_sigma[1]
 
@@ -188,18 +189,9 @@ fit_spde_nested_ccd <- function(spde_log_marginal,
   init  <- c(log(range_mode), log(sigma_mode))
   lower <- init - log(100)
   upper <- init + log(100)
-  # factr default (1e7) accepts the prior mode unchanged on weakly informative
-  # problems; 1e5 forces a real descent. ndeps is the central-difference step
-  # for the numerical gradient on the log scale: large enough to see past the
-  # inner solver's tolerance, small enough that its truncation error stays
-  # under the reduction the line search chases near the mode.
-  op <- tryCatch(
-    stats::optim(par = init, fn = obj,
-                 method = "L-BFGS-B", lower = lower, upper = upper,
-                 control = list(factr = 1e5, maxit = 300,
-                                ndeps = rep(1e-2, length(init)))),
-    error = function(e) NULL
-  )
+  op <- .nl_lbfgsb_mode_find(par = init, fn = obj,
+                             lower = lower, upper = upper,
+                             tuning = mode_find)
 
   bad_mode <- function(op) {
     if (is.null(op)) return(TRUE)

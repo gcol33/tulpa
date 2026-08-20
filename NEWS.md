@@ -23,6 +23,28 @@ version number marks the release rather than a feature change.
   objective (505.675740 against 505.675808), so the wider step was costing
   accuracy at the optimum.
 
+* **The outer mode-find's tuning is a `control` knob, and every L-BFGS-B stop
+  tolerance in the package is set in one table.** `fit_spde(control =
+  list(mode_find = list(factr =, ndeps =, maxit =)))` overrides any subset of
+  the tuning for the `(range, sigma)` mode-find under `method = "ccd"`; an
+  unknown sub-knob or a non-positive value hard-errors rather than fitting the
+  default, matching what `tulpa_check_control()` gives the outer list.
+
+  The values move to `.NL_MODE_FIND` (`R/settings.R`), which records why the
+  consumers differ, and the `stats::optim()` invocation itself moves to
+  `.nl_lbfgsb_mode_find()` (`R/mode_find.R`), so `fit_spde_nested_ccd()` and
+  `fit_st_nested()`'s auto-grid rescue share one call site instead of carrying
+  a copy each. `tulpa_pathfinder()` reads its `factr` from the same table
+  without sharing the helper: it is unbounded, takes an analytic gradient when
+  the caller supplies one, and carries `maxit` / `pgtol` as its own arguments.
+
+  Behaviour is unchanged on every path. The spatiotemporal rescue previously
+  inherited `optim()`'s own `ndeps` default, and `test-mode-find.R` pins that
+  the value now written out is that default by running both calls and comparing
+  `par`, `value`, `convergence` and `hessian`; the same file checks the helper
+  against the call it replaced for each consumer, and `test-settings.R` lints
+  the sources so a new `factr` or `ndeps` literal outside `settings.R` fails.
+
 * `test-sbc-frontdoor.R` opens its device with `pdf()` (#404). `png()` selects
   whatever `getOption("bitmapType")` names, which resolves to the X11 driver
   on a headless machine and cannot start there even where

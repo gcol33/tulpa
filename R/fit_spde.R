@@ -52,6 +52,16 @@
 #'       the Gaussian proposal that orients the integration. See [tulpa_psis()].
 #'     \item `k_samples`: importance draws for `diagnose_k`. Default 200, each
 #'       one extra batched SPDE marginal evaluation.
+#'     \item `mode_find`: tuning for the outer `(range, sigma)` mode-find under
+#'       `method = "ccd"`, as `list(factr =, ndeps =, maxit =)`; supply any
+#'       subset. `ndeps` is the central-difference step for `optim()`'s
+#'       numerical gradient on the log scale (default 1e-2): it must clear the
+#'       inner solver's convergence tolerance, and a step wide enough that its
+#'       truncation error exceeds the reduction the line search chases near a
+#'       flat optimum leaves L-BFGS-B aborting at the mode it just reached, in
+#'       which case the CCD design declines to the rectangular grid. `factr` is
+#'       the relative-reduction stop in units of `.Machine$double.eps` (default
+#'       1e5); `maxit` the iteration cap (default 300).
 #'     \item `max_iter`: maximum Newton iterations. Default 100.
 #'     \item `tol`: Newton convergence tolerance. Default 1e-6.
 #'     \item `n_threads`: OpenMP threads. Default 1.
@@ -139,6 +149,7 @@ fit_spde <- function(y, X, spatial,
   n_grid     <- as.integer(control$n_grid %||% 5L)
   diagnose_k <- isTRUE(control$diagnose_k %||% TRUE)
   k_samples  <- as.integer(control$k_samples %||% .nl_diag("k_samples"))
+  mode_find  <- .nl_mode_find_tuning("spde", control)
   max_iter   <- as.integer(control$max_iter %||% 100L)
   tol        <- control$tol %||% 1e-6
   n_threads  <- as.integer(control$n_threads %||% 1L)
@@ -269,7 +280,8 @@ fit_spde <- function(y, X, spatial,
                                    )
                                  },
                                  sp = sp, spatial = spatial,
-                          diagnose_k = diagnose_k, k_samples = k_samples)
+                          diagnose_k = diagnose_k, k_samples = k_samples,
+                          mode_find = mode_find)
     }
   } else {
     # --- Single-point Laplace at fixed hyperparameters ---
