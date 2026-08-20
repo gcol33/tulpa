@@ -284,8 +284,12 @@ test_that("print, summary, plot and diagnostics read the result", {
   sout <- utils::capture.output(print(s))
   expect_true(any(grepl("Paired CRPS against arm", sout)))
 
-  pf <- tempfile(fileext = ".png")
-  grDevices::png(pf, width = 600, height = 400)
+  # pdf() is the one device present on every platform. png() selects whatever
+  # getOption("bitmapType") names, which resolves to the X11 driver on a
+  # headless machine and cannot start there even where capabilities("png") is
+  # TRUE. Nothing below reads raster output.
+  pf <- tempfile(fileext = ".pdf")
+  grDevices::pdf(pf, width = 6, height = 4)
   plot(res)
   plot(res, arm = "exact", folded = TRUE)
   grDevices::dev.off()

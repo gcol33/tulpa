@@ -5,6 +5,30 @@
 First CRAN release. The engine's surface is unchanged from 0.0.198; this
 version number marks the release rather than a feature change.
 
+* **The SPDE outer mode-find's numerical gradient takes a central-difference
+  step of `1e-2` on the log scale** (#403). At `5e-2` the step's truncation
+  error exceeds the reduction L-BFGS-B's line search chases near a flat
+  optimum, so the search can reach the correct mode and then abort, returning
+  a nonzero convergence code with the best point still in `op$par`.
+  `bad_mode()` reads that code as an unusable mode, and
+  `fit_spde_nested_ccd()` falls back to the rectangular grid, so the CCD
+  design silently does not engage.
+
+  Measured on `test-spde-ccd.R`'s analytic fixture across `1e-4` to `5e-2`:
+  every step up to `2.5e-2` returns convergence 0 on Linux and Windows alike
+  and agrees bit for bit, while `5e-2` at `factr = 1e5` is the one cell that
+  converges on one platform and aborts on the other, at a mode both platforms
+  agree on to 11 significant digits. On the real inner-Laplace marginal the
+  smaller step reaches the same mode in the same 13 evaluations at a lower
+  objective (505.675740 against 505.675808), so the wider step was costing
+  accuracy at the optimum.
+
+* `test-sbc-frontdoor.R` opens its device with `pdf()` (#404). `png()` selects
+  whatever `getOption("bitmapType")` names, which resolves to the X11 driver
+  on a headless machine and cannot start there even where
+  `capabilities("png")` reports `TRUE`. Nothing in that block reads raster
+  output.
+
 * Renamed the local `T` bindings in `spatiotemporal_effects()` and
   `plot.tulpa_st_summary()`, and the `T` field of the (internal, unread)
   `precision_structures` list, to `n_t` / `n_times`. `T` and `F` are not
