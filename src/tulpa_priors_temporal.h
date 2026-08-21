@@ -129,14 +129,25 @@ T compute_temporal_prior(const std::vector<T>& params, const ModelData& data,
 
             // Precompute shared rho[t] and derived quantities once (same dt for all groups)
                 std::vector<T> rho_shared(T_times > 1 ? T_times - 1 : 0);
+                std::vector<T> omr2_shared(T_times > 1 ? T_times - 1 : 0);
                 std::vector<T> a_shared(T_times > 1 ? T_times - 1 : 0);
                 T sigma_t = safe_sqrt(sigma2_temporal_gp_out);
                 for (int t = 1; t < T_times; t++) {
                     double dt = data.temporal_gp_data.time_values[t] - data.temporal_gp_data.time_values[t - 1];
                     rho_shared[t - 1] = safe_exp(T(-dt) / phi_temporal_gp_out);
-                    T one_minus_rho2 = T(1.0) - rho_shared[t - 1] * rho_shared[t - 1];
-                    T one_minus_rho2_safe = safe_max(one_minus_rho2, T(1e-10));
-                    a_shared[t - 1] = sigma_t * safe_sqrt(one_minus_rho2_safe);
+                    // The guard is on the correlation factor 1 - rho^2, the
+                    // shared AR1 floor: it is the factor that degenerates when
+                    // a long lengthscale meets a fine time grid, and flooring
+                    // it leaves the amplitude alone, so a genuinely small
+                    // sigma^2 keeps the conditional variance the model asks for
+                    // instead of being lifted to the floor. Both branches read
+                    // this one value, so the non-centered transform's scale a_t
+                    // and the centered branch's conditional variance are the
+                    // same number and the two parameterizations target the same
+                    // posterior.
+                    omr2_shared[t - 1] =
+                        tulpa_temporal::ar1_one_minus_rho2(rho_shared[t - 1]);
+                    a_shared[t - 1] = sigma_t * safe_sqrt(omr2_shared[t - 1]);
                 }
 
             if (use_nc) {
@@ -179,13 +190,12 @@ T compute_temporal_prior(const std::vector<T>& params, const ModelData& data,
                         T f_prev = phi_temporal[g * T_times + t - 1];
                         T f_curr = phi_temporal[g * T_times + t];
 
-                        T cond_var = sigma2_temporal_gp_out * (T(1.0) - rho_shared[t - 1] * rho_shared[t - 1]);
-                        T cond_var_safe = safe_max(cond_var, T(1e-10));
+                        T cond_var = sigma2_temporal_gp_out * omr2_shared[t - 1];
                         T cond_mean = rho_shared[t - 1] * f_prev;
                         T resid = f_curr - cond_mean;
 
-                        log_post = log_post - T(0.5) * safe_log(T(2.0 * M_PI) * cond_var_safe);
-                        log_post = log_post - T(0.5) * resid * resid / cond_var_safe;
+                        log_post = log_post - T(0.5) * safe_log(T(2.0 * M_PI) * cond_var);
+                        log_post = log_post - T(0.5) * resid * resid / cond_var;
                     }
                 }
             }

@@ -95,6 +95,10 @@ inline void rw1_cyclic_grad_phi(const double* phi, int n, double sigma2, double*
 }
 
 inline double rw1_cyclic_grad_log_sigma2(const double* phi, int n, double sigma2) {
+    // A ring of fewer than two nodes has no edge; the wrap term below reads
+    // phi[n - 1], which is where an empty field would go out of bounds.
+    if (n < 2) return 0.0;
+
     double quad = 0.0;
     // Interior diffs
     for (int t = 1; t < n; t++) {
@@ -146,6 +150,8 @@ inline void ar1_grad_phi(const double* phi, int n, double sigma2, double rho, do
 }
 
 inline double ar1_grad_log_sigma2(const double* phi, int n, double sigma2, double rho) {
+    if (n < 1) return 0.0;
+
     double one_m_rho2 = tulpa_temporal::ar1_one_minus_rho2(rho);
 
     // AR1 has n terms: 1 marginal + (n-1) conditional

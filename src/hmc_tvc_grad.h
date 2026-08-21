@@ -44,7 +44,7 @@ inline double rw1_grad_log_tau(const double* w, int n_times, double tau) {
     double quad = tulpa_temporal::rw1_quadratic_form(w, n_times, false);
     // d/d(log_tau) = 0.5*(T-1) - 0.5*tau*quad + tau (Jacobian: d tau / d log_tau = tau)
     // But we want d log_post / d log_tau, which includes Jacobian automatically in computation
-    return 0.5 * (n_times - 1) - 0.5 * tau * quad;
+    return 0.5 * tulpa_temporal::rw1_rank(n_times, false) - 0.5 * tau * quad;
 }
 
 // =============================================================================
@@ -103,7 +103,7 @@ inline void rw2_grad_w(const double* w, int n_times, double tau, double* grad_w,
 
 inline double rw2_grad_log_tau(const double* w, int n_times, double tau) {
     double quad = tulpa_temporal::rw2_quadratic_form(w, n_times, false);
-    return 0.5 * (n_times - 2) - 0.5 * tau * quad;
+    return 0.5 * tulpa_temporal::rw2_rank(n_times, false) - 0.5 * tau * quad;
 }
 
 // =============================================================================
@@ -119,7 +119,10 @@ inline double rw2_grad_log_tau(const double* w, int n_times, double tau) {
 // t>0, t<T-1: d/d(w[t]) = -tau * (w[t] - rho*w[t-1]) + tau * rho * (w[t+1] - rho*w[t])
 // t=T-1: d/d(w[T-1]) = -tau * (w[T-1] - rho*w[T-2])
 inline void ar1_grad_w(const double* w, int n_times, double tau, double rho, double* grad_w) {
-    double one_m_rho2 = 1.0 - rho * rho;
+    // An empty field has no w[0]; ar1_log_density is flat there too.
+    if (n_times < 1) return;
+
+    double one_m_rho2 = tulpa_temporal::ar1_one_minus_rho2(rho);
 
     if (n_times == 1) {
         grad_w[0] = -tau * one_m_rho2 * w[0];
@@ -144,7 +147,9 @@ inline void ar1_grad_w(const double* w, int n_times, double tau, double rho, dou
 
 // Gradient w.r.t. log(tau)
 inline double ar1_grad_log_tau(const double* w, int n_times, double tau, double rho) {
-    double one_m_rho2 = 1.0 - rho * rho;
+    if (n_times < 1) return 0.0;
+
+    double one_m_rho2 = tulpa_temporal::ar1_one_minus_rho2(rho);
 
     // Stationary part. var_stationary = 1/(tau*(1-rho^2)) is the precision
     // parameterization, so d/d(log tau)[-0.5*log(2*pi*var_stationary)] = +0.5.
@@ -166,16 +171,16 @@ inline double ar1_grad_log_tau(const double* w, int n_times, double tau, double 
 // d/d(logit_rho) = d/d(rho) * d(rho)/d(u) * d(u)/d(logit_rho)
 //                = d/d(rho) * 2 * u * (1-u)
 inline double ar1_grad_logit_rho(const double* w, int n_times, double tau, double rho) {
-    double one_m_rho2 = 1.0 - rho * rho;
+    if (n_times < 1) return 0.0;
 
     // d log p / d rho from stationary distribution:
     // log p(w[0]) = 0.5*log(tau*(1-rho^2)) - 0.5*tau*(1-rho^2)*w[0]^2 + const
     // d/d(rho) = -rho/(1-rho^2) + tau*rho*w[0]^2
-    // Floor the denominator only: 1-rho^2 -> 0 as rho -> +-1 makes this term
-    // diverge. The multiplicative uses above stay exact, so the floor does not
-    // bias the stationary precision.
-    double one_m_rho2_den = std::max(one_m_rho2, 1e-10);
-    double grad_rho = tau * rho * w[0] * w[0] - rho / one_m_rho2_den;
+    // The denominator carries the shared AR1 stationary floor, the same factor
+    // ar1_log_density evaluates its own normalizer at, so the two do not floor
+    // 1 - rho^2 at different points.
+    double one_m_rho2 = tulpa_temporal::ar1_one_minus_rho2(rho);
+    double grad_rho = tau * rho * w[0] * w[0] - rho / one_m_rho2;
 
     // d log p / d rho from AR terms
     for (int t = 1; t < n_times; t++) {
