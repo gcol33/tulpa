@@ -80,6 +80,19 @@
 #'   values below 1 are rejected. `vi_max_grad_norm` (default 10) is the
 #'   gradient-norm clip applied before every Adam step.
 #'
+#'   `epsilon` pins the step size on the stochastic-gradient backends: `"sghmc"`
+#'   runs its warmup step-size adapter only when no `epsilon` is supplied, and
+#'   `"sgld"` runs its polynomial decay `a * (b + t)^-gamma` only then, so a
+#'   supplied value is what the whole run samples at. On `"mclmc"` a
+#'   non-positive `epsilon` selects the kernel's own adaptation. `alpha` is the
+#'   SGHMC friction and `L` its leapfrog count; SGLD carries neither.
+#'
+#'   The SGHMC discretisation is calibrated for small `epsilon^2 * lambda_max`,
+#'   and inflates every posterior SD above that; the acceptance statistic its
+#'   adapter targets is computed from a log-posterior ratio the sampler never
+#'   accepts or rejects on, so it does not measure that error. A sharply
+#'   informative design wants an `epsilon` chosen by hand.
+#'
 #'   The elliptical-slice kernel takes four more, all prefixed `ess_` and all
 #'   inert on other backends. Note that `ess_threshold` above is SMC's
 #'   resampling threshold and not one of them -- the two unrelated senses of

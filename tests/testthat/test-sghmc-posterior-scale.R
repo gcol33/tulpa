@@ -86,3 +86,69 @@ test_that("exact MCMC on the same fixture reproduces the closed form", {
               info = paste("sd ratio:", paste(round(ratio, 3), collapse = ", ")))
   expect_lt(max(abs(unname(fit$means) - ref$mean)), 0.01)
 })
+
+# ---------------------------------------------------------------------------
+# control$epsilon reaches the stochastic-gradient kernels. SGHMC's warmup
+# adapter and SGLD's polynomial decay each supply the step size on every
+# iteration, so both stand down when the caller names one; the assertions below
+# read only the step size the run used and whether the chain responded to it,
+# not any recovery target.
+# ---------------------------------------------------------------------------
+
+.step_fixture <- function() {
+  set.seed(606)
+  n <- 120L
+  X <- cbind(1, rnorm(n))
+  list(X = X, y = as.numeric(X %*% c(0.3, -0.6)) + rnorm(n, 0, 1))
+}
+
+.step_fit <- function(f, backend, epsilon) {
+  tulpa_sample_glmm(
+    y = f$y, n_trials = rep(1L, length(f$y)), X = f$X,
+    family = "gaussian", backend = backend, phi = 1,
+    control = list(n_iter = 600L, warmup = 200L, seed = 11L,
+                   epsilon = epsilon))
+}
+
+test_that("SGHMC runs at the supplied epsilon and adapts without one", {
+  skip_on_cran()
+  f <- .step_fixture()
+
+  small <- .step_fit(f, "sghmc", 0.002)
+  large <- .step_fit(f, "sghmc", 0.02)
+
+  # Pinned: the reported final step size is the one that was asked for.
+  expect_equal(small$final_epsilon, 0.002)
+  expect_equal(large$final_epsilon, 0.02)
+
+  # And the chain responds to it.
+  expect_false(isTRUE(all.equal(small$draws, large$draws)))
+
+  # With none supplied the adapter still runs, so the step size moves off the
+  # kernel's own seed value.
+  adapted <- tulpa_sample_glmm(
+    y = f$y, n_trials = rep(1L, length(f$y)), X = f$X,
+    family = "gaussian", backend = "sghmc", phi = 1,
+    control = list(n_iter = 600L, warmup = 200L, seed = 11L))
+  expect_false(isTRUE(all.equal(adapted$final_epsilon, 0.01)))
+})
+
+test_that("SGLD runs at the supplied epsilon rather than its decay schedule", {
+  skip_on_cran()
+  f <- .step_fixture()
+
+  small <- .step_fit(f, "sgld", 5e-4)
+  large <- .step_fit(f, "sgld", 5e-3)
+
+  expect_false(isTRUE(all.equal(small$draws, large$draws)))
+
+  # The schedule is a * (b + t)^-gamma with a = 0.01, b = 100, gamma = 0.55, so
+  # it never sits at either value: a run left to it matches neither of the two
+  # above.
+  scheduled <- tulpa_sample_glmm(
+    y = f$y, n_trials = rep(1L, length(f$y)), X = f$X,
+    family = "gaussian", backend = "sgld", phi = 1,
+    control = list(n_iter = 600L, warmup = 200L, seed = 11L))
+  expect_false(isTRUE(all.equal(scheduled$draws, small$draws)))
+  expect_false(isTRUE(all.equal(scheduled$draws, large$draws)))
+})

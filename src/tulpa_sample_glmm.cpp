@@ -459,10 +459,16 @@ Rcpp::List cpp_tulpa_sample_glmm(
         tulpa_sghmc::SGHMCConfig cfg;
         cfg.n_iter = n_iter; cfg.n_warmup = n_warmup; cfg.n_thin = 1;
         cfg.batch_size = (batch_size > 0) ? batch_size : N;
-        cfg.epsilon = (epsilon > 0) ? epsilon : 0.01;
         cfg.alpha = alpha; cfg.L = L; cfg.verbose = verbose;
         cfg.print_every = 500; cfg.seed = (unsigned int)seed;
-        cfg.adapt_epsilon = true;
+        // A supplied step size is the step size the chain runs at. The warmup
+        // adapter walks toward an acceptance statistic that SGHMC never accepts
+        // or rejects on, so it is not tied to the discretisation error that
+        // actually bounds this scheme, and letting it overwrite the caller's
+        // value leaves the backend with no controllable step size at all. With
+        // no value supplied the adapter runs from the default seed.
+        cfg.adapt_epsilon = !(epsilon > 0);
+        cfg.epsilon = (epsilon > 0) ? epsilon : 0.01;
         tulpa_sghmc::SGHMCResult res = tulpa_sghmc::run_sghmc_sampler(init, in.data, in.layout, cfg);
         if (!res.success) Rcpp::stop("sghmc sampler failed: %s", res.error_msg);
         Rcpp::NumericMatrix draws = eigen_draws_to_r(res.samples, D, cn);
@@ -479,8 +485,13 @@ Rcpp::List cpp_tulpa_sample_glmm(
         tulpa_sghmc::SGLDConfig cfg;
         cfg.n_iter = n_iter; cfg.n_warmup = n_warmup; cfg.n_thin = 1;
         cfg.batch_size = (batch_size > 0) ? batch_size : N;
-        cfg.epsilon = (epsilon > 0) ? epsilon : 0.001;
         cfg.verbose = verbose; cfg.print_every = 500; cfg.seed = (unsigned int)seed;
+        // A supplied step size pins the SGLD step for the whole run; with none
+        // supplied the polynomial decay a * (b + t)^-gamma runs from the
+        // defaults. The two are exclusive: the schedule overwrites epsilon on
+        // every iteration, so leaving it on would discard the caller's value.
+        cfg.use_schedule = !(epsilon > 0);
+        cfg.epsilon = (epsilon > 0) ? epsilon : 0.001;
         tulpa_sghmc::SGLDResult res = tulpa_sghmc::run_sgld_sampler(init, in.data, in.layout, cfg);
         if (!res.success) Rcpp::stop("sgld sampler failed: %s", res.error_msg);
         Rcpp::NumericMatrix draws = eigen_draws_to_r(res.samples, D, cn);

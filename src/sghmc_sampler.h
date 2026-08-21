@@ -219,6 +219,15 @@ inline void sghmc_leapfrog(
 // Step size adaptation (simplified Robbins-Monro)
 // ============================================================================
 
+// Walks log_epsilon toward a target acceptance statistic. SGHMC takes no
+// Metropolis step -- the friction term stands in for the correction -- so that
+// statistic is a log-posterior ratio the sampler never accepts or rejects on,
+// and it is not the quantity that bounds the step size here. What bounds it is
+// the discretisation error, which grows with epsilon^2 * lambda_max of the
+// posterior precision and inflates the sampled marginal SDs above the true
+// posterior once that product leaves the small regime. A caller who knows the
+// curvature should set config.epsilon and clear config.adapt_epsilon rather
+// than let this run; epsilon_min / epsilon_max bound where it can land.
 struct SGHMCAdapter {
     double log_epsilon;
     double target_accept;
@@ -408,12 +417,14 @@ struct SGLDConfig {
     int n_warmup;
     int n_thin;
     int batch_size;
-    double epsilon;             // Initial step size
+    double epsilon;             // Step size when use_schedule is false
     bool verbose;
     int print_every;
     unsigned int seed;
 
-    // Step size schedule: epsilon_t = a * (b + t)^(-gamma)
+    // Step size schedule: epsilon_t = a * (b + t)^(-gamma). The schedule
+    // supplies the step size on every iteration, so it and `epsilon` are
+    // exclusive: with use_schedule set, `epsilon` is not read at all.
     double schedule_a;
     double schedule_b;
     double schedule_gamma;
