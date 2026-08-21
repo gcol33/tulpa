@@ -5,29 +5,28 @@
 
 # ---- helpers ----
 
-# Reference R implementation of build_L_from_raw (mirrors the C++ logic).
+# Reference R implementation of build_L_from_raw (mirrors the C++ logic):
+# z = tanh(raw) are canonical partial correlations and each entry is scaled by
+# the room the row has left, so every raw vector maps into the cone.
 ref_build_L <- function(raw, n) {
   L <- matrix(0, n, n)
   log_jac <- 0
   idx <- 1
-  ok <- TRUE
-  for (i in seq_len(n)) {
-    row_sum_sq <- 0
-    if (i > 1) {
+  L[1, 1] <- 1
+  if (n >= 2) {
+    for (i in 2:n) {
+      s <- 1
       for (j in seq_len(i - 1)) {
-        l_ij <- tanh(raw[idx])
-        L[i, j] <- l_ij
-        row_sum_sq <- row_sum_sq + l_ij^2
-        sech2 <- 1 - l_ij^2
-        log_jac <- log_jac + log(max(1e-300, sech2))
+        z <- tanh(raw[idx])
+        L[i, j] <- z * sqrt(s)
+        log_jac <- log_jac + log(1 - z^2) + 0.5 * log(s)
+        s <- s * (1 - z^2)
         idx <- idx + 1
       }
+      L[i, i] <- sqrt(s)
     }
-    diag_sq <- 1 - row_sum_sq
-    if (diag_sq < 1e-10) { ok <- FALSE; break }
-    L[i, i] <- sqrt(diag_sq)
   }
-  list(L = L, log_jac = log_jac, ok = ok)
+  list(L = L, log_jac = log_jac)
 }
 
 # Independent reference: the Stan lkj_corr_cholesky_lpdf, written in its
@@ -54,7 +53,6 @@ test_that("build_L produces unit-norm rows", {
     n_raw <- n * (n - 1) / 2
     raw <- rnorm(n_raw, 0, 0.5)
     res <- cpp_test_lkj_build_L(raw, n)
-    expect_true(res$ok)
     row_sq <- rowSums(res$L^2)
     # Lower-triangular L: each row's squared entries should sum to 1
     expect_equal(unname(row_sq), rep(1, n), tolerance = 1e-12)
@@ -73,7 +71,7 @@ test_that("build_L matches reference R implementation", {
   cpp <- cpp_test_lkj_build_L(raw, n)
   ref <- ref_build_L(raw, n)
   expect_equal(cpp$L, ref$L, tolerance = 1e-12)
-  expect_equal(cpp$log_jac_tanh, ref$log_jac, tolerance = 1e-12)
+  expect_equal(cpp$log_jac, ref$log_jac, tolerance = 1e-12)
 })
 
 test_that("LKJ density matches reference formula", {
@@ -127,7 +125,7 @@ test_that("raw-space density is the LKJ(eta) pushforward (det(R)^(eta-1) * |dR/d
       raws <- lapply(1:5, function(i) rnorm(n_raw, 0, 0.3))
       offsets <- vapply(raws, function(raw) {
         helper <- cpp_test_lkj_density(cpp_test_lkj_build_L(raw, n)$L, eta) +
-          cpp_test_lkj_build_L(raw, n)$log_jac_tanh
+          cpp_test_lkj_build_L(raw, n)$log_jac
         helper - target_logp(raw, n, eta)
       }, numeric(1))
       # helper and the LKJ pushforward differ only by the normalizing constant
@@ -147,8 +145,7 @@ test_that("LKJ gradient matches central finite difference", {
   # Total prior density as a function of raw (LKJ + L-Jacobian + tanh-Jacobian)
   total_logp <- function(r) {
     res <- cpp_test_lkj_build_L(r, n)
-    if (!res$ok) return(NA_real_)
-    cpp_test_lkj_density(res$L, eta) + res$log_jac_tanh
+    cpp_test_lkj_density(res$L, eta) + res$log_jac
   }
 
   analytical <- cpp_test_lkj_grad(raw, n, eta)
@@ -280,7 +277,6 @@ test_that("chol_nc_chain_rule grad_raw matches finite difference", {
 
   fwd <- function(r) {
     rr <- cpp_test_lkj_build_L(r, n)
-    if (!rr$ok) return(NA_real_)
     u <- cpp_test_compute_u_eff(rr$L, sigma, z)
     sum(glik * u)
   }
@@ -294,10 +290,68 @@ test_that("chol_nc_chain_rule grad_raw matches finite difference", {
   expect_equal(cr$grad_raw, fd, tolerance = 1e-6)
 })
 
-test_that("build_L returns ok=FALSE for raw values that violate the row-norm constraint", {
-  # Push raw values toward extremes so tanh saturates near +/-1 and the row
-  # squared sum exceeds 1 - 1e-10.
-  raw <- c(8, 8, 8)  # n = 3, all near saturation
-  res <- cpp_test_lkj_build_L(raw, 3)
-  expect_false(res$ok)
+test_that("every raw vector maps into the cone, including saturating ones", {
+  # raw = atanh(0.8) twice on row 3 has row sum of squares 1.28 under a direct
+  # tanh map, which is the case that map cannot represent. Here it is an
+  # ordinary interior point.
+  for (raw in list(c(8, 8, 8), c(atanh(0.8), atanh(0.8), atanh(0.8)),
+                   c(-30, 30, -30), rep(0, 3))) {
+    res <- cpp_test_lkj_build_L(raw, 3)
+    R <- cpp_test_correlation_from_L(res$L)
+    expect_equal(unname(diag(R)), rep(1, 3), tolerance = 1e-12)
+    expect_true(all(diag(res$L) >= 0))
+    ev <- eigen(R, symmetric = TRUE, only.values = TRUE)$values
+    expect_true(all(ev > -1e-10))
+  }
+})
+
+test_that("raw_from_L inverts build_L_from_raw", {
+  set.seed(11L)
+  for (n in 2:5) {
+    n_raw <- n * (n - 1) / 2
+    raw <- rnorm(n_raw, 0, 1.2)
+    res <- cpp_test_lkj_build_L(raw, n)
+    back <- cpp_test_lkj_raw_from_L(res$L)
+    expect_equal(back, raw, tolerance = 1e-9)
+    # and the round trip through L is exact
+    expect_equal(cpp_test_lkj_build_L(back, n)$L, res$L, tolerance = 1e-12)
+  }
+})
+
+test_that("n = 2 reduces to the direct tanh map", {
+  # The scaling factor sqrt(s) is 1 for the single strict-lower entry of a 2x2
+  # row, and the extra 0.5*log(s) Jacobian term is 0.5*log(1) = 0. So a random
+  # intercept-and-slope term -- the overwhelmingly common correlated fit -- maps
+  # as it did before, and a change in such a fit would be a defect rather than
+  # the new parameterization.
+  #
+  # The residual against R's tanh is the engine's shared safe_tanh, which is
+  # 2*sigmoid(2x) - 1 and differs from std::tanh in the last bit; that
+  # implementation is what the HMC prior already used and is not what this
+  # reduction is about.
+  set.seed(41L)
+  for (raw in as.list(rnorm(12, 0, 1.5))) {
+    res <- cpp_test_lkj_build_L(raw, 2L)
+    z <- tanh(raw)
+    expect_equal(res$L[1, 1], 1, tolerance = 0)
+    expect_equal(res$L[2, 1], z, tolerance = 1e-15)
+    # sqrt(1 - z^2) is ill-conditioned in z as |z| -> 1, so the last-bit
+    # difference in safe_tanh is amplified here; 1e-12 is still four orders
+    # inside anything the map itself could change.
+    expect_equal(res$L[2, 2], sqrt(1 - z^2), tolerance = 1e-12)
+    expect_equal(res$log_jac, log(1 - z^2), tolerance = 1e-12)
+  }
+})
+
+test_that("a saturating row at n = 3 gives a correlation matrix, not a clamped one", {
+  # (atanh(0.8), atanh(0.8)) on row 3 has a squared sum of 1.28 under the direct
+  # map, so its diagonal was clamped at sqrt(1e-12) and R = L L' came back with
+  # a diagonal entry of 1.28 rather than 1.
+  raw <- c(0.3, atanh(0.8), atanh(0.8))
+  res <- cpp_test_lkj_build_L(raw, 3L)
+  R <- cpp_test_correlation_from_L(res$L)
+  expect_equal(unname(diag(R)), rep(1, 3), tolerance = 1e-12)
+  expect_true(all(abs(R[lower.tri(R)]) < 1))
+  expect_true(all(eigen(R, symmetric = TRUE, only.values = TRUE)$values > 1e-8))
+  expect_true(is.finite(res$log_jac))
 })

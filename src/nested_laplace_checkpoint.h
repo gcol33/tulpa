@@ -33,7 +33,12 @@ namespace tulpa {
 // LaplaceResult payload (de)serialization -- the customization points the
 // generic CheckpointLog finds by ADL. Every field a resumed cell must reproduce
 // bit-for-bit is written, so a loaded cell is indistinguishable from a freshly
-// solved one.
+// solved one. That means EVERY field, not the eleven the grid merge loop reads
+// first: a cell resumed without its skew / importance / debias / CILA payload
+// comes back looking like a cell that never computed them, and the grid then
+// mixes corrected fresh cells with uncorrected resumed ones. Adding a field to
+// LaplaceResult means adding it here, in the same order on both sides, and
+// bumping CheckpointLog::MAGIC.
 inline std::string ckpt_serialize(const LaplaceResult& r) {
     std::string buf;
     ckpt_put(buf, r.log_marginal);
@@ -41,6 +46,8 @@ inline std::string ckpt_serialize(const LaplaceResult& r) {
     ckpt_put<std::int32_t>(buf, r.n_iter);
     ckpt_put<std::uint8_t>(buf, r.converged ? 1u : 0u);
     ckpt_put(buf, r.score_max);
+    ckpt_put<std::uint8_t>(buf, r.hessian_pd_at_mode ? 1u : 0u);
+    ckpt_put<std::uint8_t>(buf, r.start_infeasible ? 1u : 0u);
     ckpt_put_span(buf, r.mode);
     ckpt_put<std::int32_t>(buf, r.Q_csc_n);
     ckpt_put_span(buf, r.Q_csc_p);
@@ -48,6 +55,37 @@ inline std::string ckpt_serialize(const LaplaceResult& r) {
     ckpt_put_span(buf, r.Q_csc_x);
     ckpt_put_span(buf, r.re_cov_flat);
     ckpt_put_span(buf, r.re_cov_block_sizes);
+    // Inner-Laplace skewness + location term
+    ckpt_put_span(buf, r.inner_skew);
+    ckpt_put_span(buf, r.inner_skew_gamma1);
+    ckpt_put_str(buf, r.inner_skew_gamma1_declined);
+    ckpt_put_span(buf, r.inner_skew_idx);
+    ckpt_put<std::int32_t>(buf, r.inner_skew_dropped);
+    ckpt_put_str(buf, r.inner_skew_declined);
+    ckpt_put_span(buf, r.inner_skew_arms_declined);
+    // Inner-Laplace importance curve
+    ckpt_put_span(buf, r.inner_is_z);
+    ckpt_put_span(buf, r.inner_is_log_joint);
+    ckpt_put_span(buf, r.inner_is_sigma);
+    ckpt_put_str(buf, r.inner_is_declined);
+    // Subspace debias
+    ckpt_put_span(buf, r.debias_idx);
+    ckpt_put_span(buf, r.debias_draws);
+    ckpt_put_span(buf, r.debias_sigma_ss);
+    ckpt_put<std::int32_t>(buf, r.debias_n_kept);
+    ckpt_put(buf, r.debias_accept);
+    ckpt_put(buf, r.debias_scale);
+    ckpt_put_str(buf, r.debias_declined);
+    // Corrected integrated Laplace
+    ckpt_put<std::uint8_t>(buf, r.cila_requested ? 1u : 0u);
+    ckpt_put_span(buf, r.cila_log_w);
+    ckpt_put_span(buf, r.cila_fixed);
+    ckpt_put(buf, r.cila_log_marginal);
+    ckpt_put<std::int32_t>(buf, r.cila_n_points);
+    ckpt_put<std::int32_t>(buf, r.cila_n_fixed);
+    ckpt_put<std::int32_t>(buf, r.cila_variant);
+    ckpt_put_str(buf, r.cila_declined);
+    ckpt_put_str(buf, r.cila_fallback);
     return buf;
 }
 
@@ -57,6 +95,8 @@ inline bool ckpt_deserialize(CkptReader& rd, LaplaceResult& r) {
     r.n_iter             = rd.get<std::int32_t>();
     r.converged          = (rd.get<std::uint8_t>() != 0);
     r.score_max          = rd.get<double>();
+    r.hessian_pd_at_mode = (rd.get<std::uint8_t>() != 0);
+    r.start_infeasible   = (rd.get<std::uint8_t>() != 0);
     r.mode               = rd.get_span<double>();
     r.Q_csc_n            = rd.get<std::int32_t>();
     r.Q_csc_p            = rd.get_span<int>();
@@ -64,6 +104,33 @@ inline bool ckpt_deserialize(CkptReader& rd, LaplaceResult& r) {
     r.Q_csc_x            = rd.get_span<double>();
     r.re_cov_flat        = rd.get_span<double>();
     r.re_cov_block_sizes = rd.get_span<int>();
+    r.inner_skew                 = rd.get_span<double>();
+    r.inner_skew_gamma1          = rd.get_span<double>();
+    r.inner_skew_gamma1_declined = rd.get_str();
+    r.inner_skew_idx             = rd.get_span<int>();
+    r.inner_skew_dropped         = rd.get<std::int32_t>();
+    r.inner_skew_declined        = rd.get_str();
+    r.inner_skew_arms_declined   = rd.get_span<int>();
+    r.inner_is_z         = rd.get_span<double>();
+    r.inner_is_log_joint = rd.get_span<double>();
+    r.inner_is_sigma     = rd.get_span<double>();
+    r.inner_is_declined  = rd.get_str();
+    r.debias_idx         = rd.get_span<int>();
+    r.debias_draws       = rd.get_span<double>();
+    r.debias_sigma_ss    = rd.get_span<double>();
+    r.debias_n_kept      = rd.get<std::int32_t>();
+    r.debias_accept      = rd.get<double>();
+    r.debias_scale       = rd.get<double>();
+    r.debias_declined    = rd.get_str();
+    r.cila_requested     = (rd.get<std::uint8_t>() != 0);
+    r.cila_log_w         = rd.get_span<double>();
+    r.cila_fixed         = rd.get_span<double>();
+    r.cila_log_marginal  = rd.get<double>();
+    r.cila_n_points      = rd.get<std::int32_t>();
+    r.cila_n_fixed       = rd.get<std::int32_t>();
+    r.cila_variant       = rd.get<std::int32_t>();
+    r.cila_declined      = rd.get_str();
+    r.cila_fallback      = rd.get_str();
     return rd.ok;
 }
 
@@ -183,7 +250,12 @@ inline std::unique_ptr<GridCheckpoint> make_nl_grid_checkpoint(
     const Rcpp::NumericVector& re_idx,
     int n_re_groups, double sigma_re,
     const std::string& family, double phi,
-    const std::vector<Rcpp::NumericVector>& grid_axes)
+    const std::vector<Rcpp::NumericVector>& grid_axes,
+    // Per-observation inputs a caller may or may not carry. Both move every
+    // cell's mode and log-marginal, so two runs differing only in one of them
+    // must not share a fingerprint.
+    Rcpp::Nullable<Rcpp::NumericVector> offset = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericVector> weights = R_NilValue)
 {
     if (path.empty()) return nullptr;
     Fingerprint fp;
@@ -196,14 +268,14 @@ inline std::unique_ptr<GridCheckpoint> make_nl_grid_checkpoint(
     fp.fold_pod(sigma_re);
     fp.fold_str(family);
     fp.fold_pod(phi);
-    if (y.size())        fp.fold(y.begin(), (std::size_t)y.size() * sizeof(double));
-    if (n_trials.size()) fp.fold(n_trials.begin(),
-                                 (std::size_t)n_trials.size() * sizeof(int));
-    if (X.size())        fp.fold(X.begin(), (std::size_t)X.size() * sizeof(double));
+    fp.fold_rvec(y);
+    fp.fold_rvec(n_trials);
+    fp.fold_rvec(X);
     // The per-observation RE group assignment changes every cell's mode and
     // log_marginal, so it fingerprints alongside n_re_groups (the count).
-    if (re_idx.size())   fp.fold(re_idx.begin(),
-                                 (std::size_t)re_idx.size() * sizeof(double));
+    fp.fold_rvec(re_idx);
+    fp.fold_rvec_nullable(offset);
+    fp.fold_rvec_nullable(weights);
     int n_grid = grid_axes.empty() ? 0 : static_cast<int>(grid_axes[0].size());
     CellKeyBuilder kb(n_grid);
     for (const auto& ax : grid_axes) {

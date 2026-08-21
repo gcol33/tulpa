@@ -7,6 +7,7 @@
 #ifndef TULPA_PRIORS_ST_H
 #define TULPA_PRIORS_ST_H
 
+#include <cstddef>
 #include <vector>
 #include <cmath>
 #include "autodiff_utils.h"
@@ -23,6 +24,25 @@ using namespace math;
 // ============================================================================
 // 11. Spatiotemporal interaction prior
 // ============================================================================
+
+// Rank of the spatiotemporal ICAR spatial precision: S - k for k connected
+// components of the (1-based) spatiotemporal adjacency, and S - 1 when no
+// adjacency is carried.
+//
+// This is the ONE place the rank is derived. It multiplies log(tau_st) in the
+// GMRF normalizer, so a branch that hardcodes S - 1 puts a different power of
+// tau in the target than the branch beside it whenever the graph has more than
+// one component -- islands, or any unit its adjacency file leaves with no
+// neighbours -- and the centered and non-centered parameterizations of the same
+// model then report different tau_st posteriors.
+inline int st_spatial_rank(const ModelData& data, int S) {
+    const auto& st = data.spatiotemporal_data;
+    const int k_s = st.adj_row_ptr.empty()
+        ? 1
+        : count_graph_components(S, st.adj_row_ptr.data(),
+                                 st.adj_col_idx.data(), 1);
+    return S - k_s;
+}
 
 // Kronecker (Q_s (x) Q_t) quadratic form for a Type-IV interaction:
 // sum_s n_neigh[s] * q_t(delta_s) - 2 * sum_{s<s2 adjacent} q_t(delta_s, delta_s2)
@@ -170,7 +190,7 @@ T compute_st_prior(const std::vector<T>& params, const ModelData& data,
             log_post = log_post - T(0.5) * nc_quad;
 
             // Rank term with actual tau and Jacobian correction
-            int rank_space = S - 1;
+            int rank_space = st_spatial_rank(data, S);
             int rank_time =
                 (data.spatiotemporal_data.temporal_type == TemporalType::RW1)
                     ? tulpa_temporal::rw1_rank(T_st, data.spatiotemporal_data.temporal_cyclic)
@@ -188,6 +208,18 @@ T compute_st_prior(const std::vector<T>& params, const ModelData& data,
         } else if (data.st_is_hsgp) {
             // HSGP-ST: spectral basis interaction (centered)
             int M = data.st_hsgp_data.m_total;
+
+            // The loop below reads st_delta[j * T_st + t] over M basis
+            // functions, while st_delta was sized from the LAYOUT span. The two
+            // are set independently, so a layout narrower than M * T_st reads
+            // past the vector on every remaining basis function; the eigenvalue
+            // read at the top of the loop has the same exposure.
+            if (M < 0 || T_st <= 0 ||
+                static_cast<std::size_t>(M) * static_cast<std::size_t>(T_st)
+                    > st_delta.size() ||
+                static_cast<std::size_t>(M) > data.st_hsgp_data.eigenvalues.size()) {
+                return T(-INFINITY);
+            }
 
             // HSGP-ST hyperparameters
             T sigma2_st_hsgp = safe_exp(params[layout.log_sigma2_st_hsgp_idx]);
@@ -265,13 +297,8 @@ T compute_st_prior(const std::vector<T>& params, const ModelData& data,
                 }
 
             } else if (data.spatiotemporal_data.type == STType::TYPE_III) {
-                // Structured space at each time point (ICAR). Rank S - k for k
-                // connected components (spatiotemporal adjacency is 1-based).
-                int k_s = data.spatiotemporal_data.adj_row_ptr.empty() ? 1
-                    : count_graph_components(
-                          S, data.spatiotemporal_data.adj_row_ptr.data(),
-                          data.spatiotemporal_data.adj_col_idx.data(), 1);
-                int rank_s = S - k_s;
+                // Structured space at each time point (ICAR).
+                int rank_s = st_spatial_rank(data, S);
                 for (int t = 0; t < T_st; t++) {
                     // Compute ICAR quadratic form for spatial field at time t
                     T quad = T(0.0);
@@ -300,12 +327,8 @@ T compute_st_prior(const std::vector<T>& params, const ModelData& data,
                 // Kronecker: Q_delta = Q_s ⊗ Q_t
                 T kron_quad = st_kronecker_temporal_quad(st_delta, data, S, T_st);
                 log_post = log_post - T(0.5) * tau_st * kron_quad;
-                // Rank terms (spatial rank S - k for k connected components).
-                int k_s = data.spatiotemporal_data.adj_row_ptr.empty() ? 1
-                    : count_graph_components(
-                          S, data.spatiotemporal_data.adj_row_ptr.data(),
-                          data.spatiotemporal_data.adj_col_idx.data(), 1);
-                int rank_space = S - k_s;
+                // Rank terms.
+                int rank_space = st_spatial_rank(data, S);
                 int rank_time =
                     (data.spatiotemporal_data.temporal_type == TemporalType::RW1)
                         ? tulpa_temporal::rw1_rank(T_st, data.spatiotemporal_data.temporal_cyclic)

@@ -133,3 +133,65 @@ test_that("per-chain NUTS checkpoint reproduces draws and resumes after a crash"
                                  checkpoint_path = path),
     "fingerprint")
 })
+
+# --- gcol33/tulpa#442 -------------------------------------------------------
+#
+# A resumed cell has to be indistinguishable from a freshly solved one in EVERY
+# field, and a fingerprint has to separate every input that moves a cell.
+
+test_that("a resumed grid reproduces the diagnostics, not only the marginal", {
+  set.seed(19L)
+  n_s <- 14L; N <- 110L
+  adj <- .ck_chain_adj(n_s)
+  w <- as.numeric(arima.sim(n = n_s, list(ar = 0.5))) * 0.7; w <- w - mean(w)
+  sidx <- sample(n_s, N, replace = TRUE); x <- rnorm(N)
+  y <- rbinom(N, 1, plogis(0.2 + 0.6 * x + w[sidx]))
+  X <- cbind(1, x)
+  prior <- c(list(type = "icar", tau_grid = 1 / c(0.6, 1.0, 1.6)^2,
+                  spatial_idx = sidx), adj)
+  fit <- function(ck = NULL) {
+    ctrl <- list(diagnose_k = FALSE, diagnose_skew = TRUE)
+    if (!is.null(ck)) ctrl$checkpoint <- ck
+    tulpa_nested_laplace(y = y, n_trials = rep(1L, N), X = X, prior = prior,
+                         family = "binomial", control = ctrl)
+  }
+  path <- tempfile(fileext = ".ckpt"); on.exit(unlink(path), add = TRUE)
+
+  f_plain <- fit()
+  f_ck    <- fit(list(path = path, resume = FALSE))
+  f_re    <- fit(list(path = path, resume = TRUE))
+
+  # The skew payload is what the eleven-field record used to drop: a resumed
+  # cell came back with an empty inner_skew and read as "did not compute it".
+  expect_equal(f_re$inner_skew, f_plain$inner_skew, tolerance = 1e-12)
+  expect_equal(f_re$inner_skew, f_ck$inner_skew, tolerance = 1e-12)
+  expect_equal(f_re$log_marginal, f_plain$log_marginal, tolerance = 1e-9)
+  expect_equal(f_re$modes, f_plain$modes, tolerance = 1e-9)
+})
+
+test_that("the RE group assignment separates two fingerprints in its second half", {
+  # re_idx is a NumericVector folded at sizeof(int): only its leading half
+  # reached the hash, so two assignments agreeing there matched and a resume
+  # replayed one run's cells under the other's data.
+  set.seed(23L)
+  n_s <- 10L; N <- 80L
+  adj <- .ck_chain_adj(n_s)
+  sidx <- sample(n_s, N, replace = TRUE); x <- rnorm(N)
+  y <- rbinom(N, 1, plogis(0.2 + 0.5 * x))
+  X <- cbind(1, x)
+  g1 <- rep(c(1L, 2L), each = N / 2)
+  g2 <- rep(c(1L, 3L), each = N / 2)   # differs only in the SECOND half
+  path <- tempfile(fileext = ".ckpt"); on.exit(unlink(path), add = TRUE)
+  run <- function(g, resume) {
+    prior <- c(list(type = "icar", tau_grid = 1 / c(0.8, 1.4)^2,
+                    spatial_idx = sidx), adj)
+    tulpa_nested_laplace(y = y, n_trials = rep(1L, N), X = X, prior = prior,
+                         family = "binomial", re_idx = g,
+                         n_re_groups = max(g), sigma_re = 1,
+                         control = list(diagnose_k = FALSE,
+                                        checkpoint = list(path = path,
+                                                          resume = resume)))
+  }
+  run(g1, FALSE)
+  expect_error(run(g2, TRUE), "fingerprint")
+})

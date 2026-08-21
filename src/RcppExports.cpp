@@ -3633,6 +3633,18 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_test_lse_guard
+List cpp_test_lse_guard(double a, double b);
+RcppExport SEXP _tulpa_cpp_test_lse_guard(SEXP aSEXP, SEXP bSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< double >::type a(aSEXP);
+    Rcpp::traits::input_parameter< double >::type b(bSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_lse_guard(a, b));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_test_scalar_guard
 List cpp_test_scalar_guard(std::string fn, double x, double p);
 RcppExport SEXP _tulpa_cpp_test_scalar_guard(SEXP fnSEXP, SEXP xSEXP, SEXP pSEXP) {
@@ -3674,6 +3686,17 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< NumericVector >::type raw(rawSEXP);
     Rcpp::traits::input_parameter< int >::type n(nSEXP);
     rcpp_result_gen = Rcpp::wrap(cpp_test_lkj_build_L(raw, n));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_test_lkj_raw_from_L
+NumericVector cpp_test_lkj_raw_from_L(NumericMatrix L);
+RcppExport SEXP _tulpa_cpp_test_lkj_raw_from_L(SEXP LSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< NumericMatrix >::type L(LSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_lkj_raw_from_L(L));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -4407,9 +4430,11 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_spatial_partition_probe", (DL_FUNC) &_tulpa_cpp_spatial_partition_probe, 5},
     {"_tulpa_cpp_test_spde_assemble", (DL_FUNC) &_tulpa_cpp_test_spde_assemble, 8},
     {"_tulpa_cpp_test_nngp_prior_scatter", (DL_FUNC) &_tulpa_cpp_test_nngp_prior_scatter, 10},
+    {"_tulpa_cpp_test_lse_guard", (DL_FUNC) &_tulpa_cpp_test_lse_guard, 2},
     {"_tulpa_cpp_test_scalar_guard", (DL_FUNC) &_tulpa_cpp_test_scalar_guard, 3},
     {"_tulpa_cpp_test_update_spatial_icar", (DL_FUNC) &_tulpa_cpp_test_update_spatial_icar, 9},
     {"_tulpa_cpp_test_lkj_build_L", (DL_FUNC) &_tulpa_cpp_test_lkj_build_L, 2},
+    {"_tulpa_cpp_test_lkj_raw_from_L", (DL_FUNC) &_tulpa_cpp_test_lkj_raw_from_L, 1},
     {"_tulpa_cpp_test_lkj_density", (DL_FUNC) &_tulpa_cpp_test_lkj_density, 2},
     {"_tulpa_cpp_test_lkj_grad", (DL_FUNC) &_tulpa_cpp_test_lkj_grad, 3},
     {"_tulpa_cpp_test_compute_u_eff", (DL_FUNC) &_tulpa_cpp_test_compute_u_eff, 3},

@@ -9,6 +9,8 @@
 // run_sgld_sampler, and copies the result into a flat
 // SGSamplerShimResult buffer.
 
+#include <limits>
+
 #include "shim_guard.h"
 
 namespace {
@@ -36,8 +38,17 @@ inline void copy_sg_sampler_result(
         }
     }
 
-    out->log_lik = new double[n_save];
-    for (int i = 0; i < n_save; i++) out->log_lik[i] = log_lik[i];
+    // log_lik is filled by the sampler alongside `samples` but is a separate
+    // vector, so a kernel that saved fewer of them (or none) makes this copy
+    // read past its end. A short one is padded with NaN rather than truncating
+    // n_sample, which would drop draws the caller did get; the VI/ESS shim
+    // guards the same copy and this one did not.
+    out->log_lik = new double[n_save > 0 ? n_save : 1];
+    const int n_ll = static_cast<int>(log_lik.size());
+    for (int i = 0; i < n_save; i++) {
+        out->log_lik[i] = (i < n_ll) ? log_lik[i]
+                                     : std::numeric_limits<double>::quiet_NaN();
+    }
 
     int n_eps = (int)epsilon_history.size();
     out->n_eps_history  = n_eps;

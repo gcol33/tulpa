@@ -606,12 +606,15 @@ inline Var exp(const Var& a) {
 inline Var log(const Var& a) {
     Arena* ar = a.arena_;
     double av = a.val();
-    double safe_val = (av > 1e-15) ? av : 1e-15;
+    // d(log(x))/dx = 1/x, with the same clamped rule the tape and fwd overloads
+    // carry: at or below zero the value is the constant -1e10, so the partial is
+    // 0 rather than 1/1e-15, which would put a 1e15 multiplier into the adjoint
+    // on a region the value reports as flat.
+    double d_val = (av > 0.0) ? 1.0 / std::max(av, 1e-15) : 0.0;
     double log_val = (av > 0.0) ? std::log(av) : -1e10;
-    // d(log(x))/dx = 1/x
     Var r;
     r.arena_ = ar;
-    r.idx_ = ar->add_unary(log_val, a.idx_, 1.0 / safe_val);
+    r.idx_ = ar->add_unary(log_val, a.idx_, d_val);
     return r;
 }
 
@@ -681,6 +684,16 @@ inline Var log_sum_exp(const Var& a, const Var& b) {
     double av = a.val();
     double bv = b.val();
     double max_val = std::max(av, bv);
+    // Both arguments -inf makes every shifted exponent inf - inf = NaN, and the
+    // softmax weights below would store that NaN as the partials. The double
+    // core (linalg_fast.h) returns max_val there; so does this, with zero
+    // pull-back to either argument.
+    if (!std::isfinite(max_val)) {
+        Var lse_r;
+        lse_r.arena_ = ar;
+        lse_r.idx_ = ar->add_binary(max_val, a.idx_, b.idx_, 0.0, 0.0);
+        return lse_r;
+    }
     double result_val = max_val + std::log(std::exp(av - max_val) + std::exp(bv - max_val));
 
     // Softmax weights: d(lse)/da = exp(a) / (exp(a)+exp(b))

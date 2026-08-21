@@ -11,6 +11,8 @@
 #ifndef TULPA_LAPLACE_SPEC_FIT_H
 #define TULPA_LAPLACE_SPEC_FIT_H
 
+#include "lkj_chol_helpers.h"
+
 #include "tulpa/likelihood.h"
 #include "tulpa/model_data.h"
 #include "tulpa/param_layout.h"
@@ -258,9 +260,9 @@ inline void build_spec_family_inputs(
 //   correlated (correlated = true) : pack is the column-major lower-triangular
 //       Cholesky of Sigma (Sigma = L L', as packed by .re_cov_spec). Decompose
 //       Sigma = D R D with D = diag(sd), R the correlation matrix: the spec
-//       stores log(sd) and the strict-lower of the correlation Cholesky
-//       L_R = D^{-1} L through atanh (build_chol_L re-applies tanh and recovers
-//       the diagonal as sqrt(1 - rowsumsq), exactly inverting this). The
+//       stores log(sd) and the canonical partial correlations of L_R =
+//       D^{-1} L through atanh (build_chol_L re-applies the forward map,
+//       exactly inverting this). The
 //       resulting Q = (D L_R L_R' D)^{-1} and log|Q| match the family-enum
 //       kernel's to machine precision.
 //
@@ -293,18 +295,18 @@ inline void pack_to_spec_re_params(
         sd[r] = std::sqrt(s);
         log_sigma[r] = std::log(sd[r]);
     }
-    // Correlation Cholesky L_R = D^{-1} L (row r scaled by 1/sd_r); its strict
-    // lower entries are the tanh of the stored raw values.
-    tanh_raw.reserve((size_t)q * (q - 1) / 2);
-    for (int row = 1; row < q; row++) {
-        for (int col = 0; col < row; col++) {
-            double l_rc = L[(size_t)row * q + col] / sd[row];
-            // Guard the atanh domain against a (near-)singular correlation.
-            if (l_rc >  0.999999) l_rc =  0.999999;
-            if (l_rc < -0.999999) l_rc = -0.999999;
-            tanh_raw.push_back(std::atanh(l_rc));
+    // Correlation Cholesky L_R = D^{-1} L (row r scaled by 1/sd_r). Inverting
+    // the raw -> L map is tulpa::raw_from_L, the exact inverse of the build the
+    // solver and the HMC prior share; doing it by hand here is how the two
+    // sides drift apart.
+    std::vector<double> L_R((size_t)q * q, 0.0);
+    for (int row = 0; row < q; row++) {
+        for (int col = 0; col <= row; col++) {
+            L_R[(size_t)row * q + col] = L[(size_t)row * q + col] / sd[row];
         }
     }
+    tanh_raw.assign((size_t)q * (q - 1) / 2, 0.0);
+    tulpa::raw_from_L(L_R.data(), q, tanh_raw.data());
 }
 
 } // namespace tulpa

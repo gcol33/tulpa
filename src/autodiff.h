@@ -346,20 +346,55 @@ inline Var exp(const Var& a) {
   return result;
 }
 
+// ============================================================================
+// Comparison operators (value-based, no gradient tracking)
+// ============================================================================
+//
+// The same set arena::Var (autodiff_arena.h) and fwd::Dual (autodiff_fwd.h)
+// carry. Without them a templated helper that BRANCHES on its argument --
+// log1m_exp_fn's split at log 2, softplus's split at 0 -- compiles for the
+// other three scalar types and not for this one, so the tape path silently
+// covers a smaller set of primitives than the paths it is checked against.
+
+inline bool operator<(const Var& a, const Var& b)  { return a.val() < b.val(); }
+inline bool operator>(const Var& a, const Var& b)  { return a.val() > b.val(); }
+inline bool operator<=(const Var& a, const Var& b) { return a.val() <= b.val(); }
+inline bool operator>=(const Var& a, const Var& b) { return a.val() >= b.val(); }
+inline bool operator==(const Var& a, const Var& b) { return a.val() == b.val(); }
+inline bool operator!=(const Var& a, const Var& b) { return a.val() != b.val(); }
+
+inline bool operator<(const Var& a, double b)  { return a.val() < b; }
+inline bool operator>(const Var& a, double b)  { return a.val() > b; }
+inline bool operator<=(const Var& a, double b) { return a.val() <= b; }
+inline bool operator>=(const Var& a, double b) { return a.val() >= b; }
+inline bool operator==(const Var& a, double b) { return a.val() == b; }
+inline bool operator!=(const Var& a, double b) { return a.val() != b; }
+
+inline bool operator<(double a, const Var& b)  { return a < b.val(); }
+inline bool operator>(double a, const Var& b)  { return a > b.val(); }
+inline bool operator<=(double a, const Var& b) { return a <= b.val(); }
+inline bool operator>=(double a, const Var& b) { return a >= b.val(); }
+inline bool operator==(double a, const Var& b) { return a == b.val(); }
+inline bool operator!=(double a, const Var& b) { return a != b.val(); }
+
 inline Var log(const Var& a) {
   Tape* tape = a.tape;
   double a_val = a.val();
-  // Protect against log of non-positive values
-  // Gradient uses clamped value to avoid division by zero
-  double safe_val = (a_val > 1e-15) ? a_val : 1e-15;
+  // Protect against log of non-positive values. At or below zero the VALUE is
+  // the constant -1e10, so the implemented function is locally flat and its
+  // partial is 0; 1 / 1e-15 there would hand the adjoint a 1e15 multiplier on a
+  // region the double reference finite-differences as flat, and the fwd::Dual
+  // overload already reports 0. Above zero the denominator is clamped, which is
+  // an approximation of a function that is genuinely steep there.
+  double d_val = (a_val > 0.0) ? 1.0 / std::max(a_val, 1e-15) : 0.0;
   double log_val = (a_val > 0.0) ? std::log(a_val) : -1e10;
   Var result(tape, log_val);
 
   size_t a_idx = a.idx;
   size_t r_idx = result.idx;
 
-  tape->nodes[r_idx].backward = [a_idx, r_idx, safe_val](Tape* t) {
-    t->nodes[a_idx].adjoint += t->nodes[r_idx].adjoint / safe_val;
+  tape->nodes[r_idx].backward = [a_idx, r_idx, d_val](Tape* t) {
+    t->nodes[a_idx].adjoint += t->nodes[r_idx].adjoint * d_val;
   };
 
   return result;
@@ -442,6 +477,13 @@ inline Var log_sum_exp(const Var& a, const Var& b) {
   double a_val = a.val();
   double b_val = b.val();
   double max_val = std::max(a_val, b_val);
+  // Both arguments -inf makes every shifted exponent inf - inf = NaN. The
+  // double core (linalg_fast.h) returns max_val there; so does this, with a
+  // zero pull-back to either argument rather than a NaN in the adjoint buffer.
+  if (!std::isfinite(max_val)) {
+    Var lse_result(tape, max_val);
+    return lse_result;
+  }
   double result_val = max_val + std::log(std::exp(a_val - max_val) + std::exp(b_val - max_val));
 
   Var result(tape, result_val);

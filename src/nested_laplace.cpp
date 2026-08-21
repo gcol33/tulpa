@@ -31,6 +31,7 @@
 #include "latent_block.h"
 #include "nl_cell_cache.h"
 #include "nested_laplace_grid.h"
+#include "areal_input_check.h"
 #include "nested_laplace_joint_core.h"      // ParsedArm / JointArm (single-arm joint setup)
 #include "nested_laplace_joint_multi.h"     // run_multi_block_nested_laplace_joint_sparse_impl
 #include "nested_laplace_multi.h"  // accumulate_latent_cross_terms, run_multi_block_nested_laplace
@@ -348,6 +349,10 @@ Rcpp::List cpp_nested_laplace_icar(
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue
 ) {
+    tulpa::check_areal_inputs(adj_row_ptr, adj_col_idx, n_neighbors,
+                              spatial_idx, static_cast<int>(y.size()),
+                              n_spatial_units,
+                              "cpp_nested_laplace_icar");
     int n_grid = tau_grid.size();
     int N = y.size();
     int p = X.ncol();
@@ -419,6 +424,10 @@ Rcpp::List cpp_nested_laplace_bym2(
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue
 ) {
+    tulpa::check_areal_inputs(adj_row_ptr, adj_col_idx, n_neighbors,
+                              spatial_idx, static_cast<int>(y.size()),
+                              n_spatial_units,
+                              "cpp_nested_laplace_bym2");
     const int n_grid = tulpa::nl_grid_axes_length(
         "sigma_spatial_grid", sigma_spatial_grid, {{"rho_grid", &rho_grid}});
     tulpa::nl_grid_axis_unit_interval("rho_grid", rho_grid);
@@ -485,6 +494,10 @@ Rcpp::List cpp_nested_laplace_car_proper(
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue
 ) {
+    tulpa::check_areal_inputs(adj_row_ptr, adj_col_idx, n_neighbors,
+                              spatial_idx, static_cast<int>(y.size()),
+                              n_spatial_units,
+                              "cpp_nested_laplace_car_proper");
     const int n_grid = tulpa::nl_grid_axes_length(
         "tau_grid", tau_grid, {{"rho_grid", &rho_grid}});
     int N = y.size();
@@ -547,6 +560,10 @@ Rcpp::List cpp_laplace_fit_car_proper(
     Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericVector> weights_nullable = R_NilValue
 ) {
+    tulpa::check_areal_inputs(adj_row_ptr, adj_col_idx, n_neighbors,
+                              spatial_idx, static_cast<int>(y.size()),
+                              n_spatial_units,
+                              "cpp_laplace_fit_car_proper");
     const int N = y.size();
     const int p = X.ncol();
     const bool has_re = n_re_groups > 0;
@@ -690,7 +707,8 @@ Rcpp::List cpp_nested_laplace_nngp(
             .seed();
     auto ckpt = tulpa::make_nl_grid_checkpoint(
         checkpoint_path, struct_seed, max_iter, tol, y, n, X, re_idx,
-        n_re_groups, sigma_re, family, phi, {sigma2_grid, phi_gp_grid});
+        n_re_groups, sigma_re, family, phi, {sigma2_grid, phi_gp_grid},
+        offset_nullable);
 
     std::vector<int> skew_idx_vec;
     const std::vector<int>* skew_idx_ptr =
@@ -1370,6 +1388,10 @@ Rcpp::List cpp_nested_laplace_st_icar(
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue
 ) {
+    tulpa::check_areal_inputs(adj_row_ptr, adj_col_idx, n_neighbors,
+                              spatial_idx, static_cast<int>(y.size()),
+                              n_spatial_units,
+                              "cpp_nested_laplace_st_icar");
     const int n_grid = tulpa::nl_grid_axes_length(
         "tau_spatial_grid", tau_spatial_grid,
         {{"tau_temporal_grid", &tau_temporal_grid}});
@@ -1436,6 +1458,10 @@ Rcpp::List cpp_nested_laplace_st_car_proper(
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue
 ) {
+    tulpa::check_areal_inputs(adj_row_ptr, adj_col_idx, n_neighbors,
+                              spatial_idx, static_cast<int>(y.size()),
+                              n_spatial_units,
+                              "cpp_nested_laplace_st_car_proper");
     const int n_grid = tulpa::nl_grid_axes_length(
         "tau_spatial_grid", tau_spatial_grid,
         {{"rho_spatial_grid", &rho_spatial_grid},
@@ -1506,6 +1532,10 @@ Rcpp::List cpp_nested_laplace_st_bym2(
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue
 ) {
+    tulpa::check_areal_inputs(adj_row_ptr, adj_col_idx, n_neighbors,
+                              spatial_idx, static_cast<int>(y.size()),
+                              n_spatial_units,
+                              "cpp_nested_laplace_st_bym2");
     const int n_grid = tulpa::nl_grid_axes_length(
         "sigma_spatial_grid", sigma_spatial_grid,
         {{"rho_spatial_grid", &rho_spatial_grid},

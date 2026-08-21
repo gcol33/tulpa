@@ -1917,6 +1917,49 @@ Rcpp::List cpp_test_nngp_prior_scatter(
 
 
 // ---------------------------------------------------------------------------
+// log_sum_exp on every scalar type, including the both-arguments--inf corner
+// the mixture likelihoods reach when two components both underflow. The double
+// core short-circuits there; an AD overload without the same guard computes
+// inf - inf and stores NaN as the partial.
+// [[Rcpp::export]]
+List cpp_test_lse_guard(double a, double b) {
+  const double v_double = tulpa_linalg::log_sum_exp(a, b);
+
+  fwd::Dual ad_(a, 1.0), bd(b, 0.0);
+  fwd::Dual rd = fwd::log_sum_exp(ad_, bd);
+
+  double v_tape = 0.0, ga_tape = 0.0, gb_tape = 0.0;
+  {
+    tulpa::ad::TapeScope scope;
+    tulpa::ad::Var av(scope.tape, a), bv(scope.tape, b);
+    tulpa::ad::Var rv = tulpa::ad::log_sum_exp(av, bv);
+    rv.backward();
+    v_tape = rv.val(); ga_tape = av.adj(); gb_tape = bv.adj();
+  }
+
+  double v_arena = 0.0, ga_arena = 0.0, gb_arena = 0.0;
+  {
+    tulpa::arena::ArenaScope scope;
+    tulpa::arena::Arena* ar = scope.arena();
+    tulpa::arena::Var av(ar, a), bv(ar, b);
+    tulpa::arena::Var rv = tulpa::arena::log_sum_exp(av, bv);
+    rv.backward();
+    v_arena = rv.val(); ga_arena = av.adj(); gb_arena = bv.adj();
+  }
+
+  return List::create(
+    Named("value_double") = v_double,
+    Named("value_dual")   = rd.val,
+    Named("grad_a_dual")  = rd.grad,
+    Named("value_tape")   = v_tape,
+    Named("grad_a_tape")  = ga_tape,
+    Named("grad_b_tape")  = gb_tape,
+    Named("value_arena")  = v_arena,
+    Named("grad_a_arena") = ga_arena,
+    Named("grad_b_arena") = gb_arena
+  );
+}
+
 // One scalar primitive on every scalar type the templated log posterior is
 // instantiated for
 // ---------------------------------------------------------------------------
@@ -1938,9 +1981,12 @@ List cpp_test_scalar_guard(std::string fn, double x, double p = 2.0) {
   const bool is_sqrt  = (fn == "sqrt");
   const bool is_pow   = (fn == "pow");
   const bool is_logit = (fn == "logit");
-  if (!(is_exp || is_log || is_sqrt || is_pow || is_logit)) {
-    Rcpp::stop("Unknown primitive '%s'; expected exp, log, sqrt, pow or logit.",
-               fn.c_str());
+  const bool is_expm1 = (fn == "expm1");
+  const bool is_l1me  = (fn == "log1m_exp");
+  if (!(is_exp || is_log || is_sqrt || is_pow || is_logit || is_expm1 ||
+        is_l1me)) {
+    Rcpp::stop("Unknown primitive '%s'; expected exp, log, sqrt, pow, logit, "
+               "expm1 or log1m_exp.", fn.c_str());
   }
 
   // Value path.
@@ -1949,6 +1995,8 @@ List cpp_test_scalar_guard(std::string fn, double x, double p = 2.0) {
   else if (is_log)   v_double = tulpa::math::safe_log(x);
   else if (is_sqrt)  v_double = tulpa::math::safe_sqrt(x);
   else if (is_pow)   v_double = std::pow(x, p);
+  else if (is_expm1) v_double = tulpa::math::expm1_fn(x);
+  else if (is_l1me)  v_double = tulpa::math::log1m_exp_fn(x);
   else {
     const double c = tulpa::math::clamp_prob(x);
     v_double = std::log(c / (1.0 - c));
@@ -1957,11 +2005,13 @@ List cpp_test_scalar_guard(std::string fn, double x, double p = 2.0) {
   // Forward mode. pow and logit have no dual overload in the shared set, so
   // they are reported as the value path with no derivative.
   double v_dual = v_double, g_dual = NA_REAL;
-  if (is_exp || is_log || is_sqrt) {
+  if (is_exp || is_log || is_sqrt || is_expm1 || is_l1me) {
     fwd::Dual xd(x, 1.0);
-    fwd::Dual rd = is_exp  ? tulpa::math::safe_exp(xd)
-                 : is_log  ? tulpa::math::safe_log(xd)
-                           : tulpa::math::safe_sqrt(xd);
+    fwd::Dual rd = is_exp   ? tulpa::math::safe_exp(xd)
+                 : is_log   ? tulpa::math::safe_log(xd)
+                 : is_sqrt  ? tulpa::math::safe_sqrt(xd)
+                 : is_expm1 ? tulpa::math::expm1_fn(xd)
+                            : tulpa::math::log1m_exp_fn(xd);
     v_dual = rd.val;
     g_dual = rd.grad;
   }
@@ -1975,6 +2025,8 @@ List cpp_test_scalar_guard(std::string fn, double x, double p = 2.0) {
                       : is_log   ? tulpa::ad::log(xv)
                       : is_sqrt  ? tulpa::ad::sqrt(xv)
                       : is_pow   ? tulpa::ad::pow(xv, p)
+                      : is_expm1 ? tulpa::math::expm1_fn(xv)
+                      : is_l1me  ? tulpa::math::log1m_exp_fn(xv)
                                  : tulpa::ad::logit(xv);
     rv.backward();
     v_tape = rv.val();
@@ -1991,6 +2043,8 @@ List cpp_test_scalar_guard(std::string fn, double x, double p = 2.0) {
                          : is_log   ? tulpa::arena::log(xv)
                          : is_sqrt  ? tulpa::arena::sqrt(xv)
                          : is_pow   ? tulpa::arena::pow(xv, p)
+                         : is_expm1 ? tulpa::math::expm1_fn(xv)
+                         : is_l1me  ? tulpa::math::log1m_exp_fn(xv)
                                     : tulpa::arena::logit(xv);
     rv.backward();
     v_arena = rv.val();

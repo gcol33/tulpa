@@ -1,5 +1,107 @@
 # tulpa NEWS
 
+## 0.1.3
+
+* **The correlation Cholesky covers the whole cone** (#431, #443). The raw
+  parameters of a correlated random-effect term were mapped by
+  `L[i, j] = tanh(raw)` directly, which bounds each entry but not the row: at
+  `n_coefs >= 3` a row's squared sum can exceed 1 and the map covers a strict
+  subset of the correlation-Cholesky cone. The three copies of that build then
+  disagreed about what happens outside it -- the HMC prior returned `-Inf`, the
+  LKJ helper returned `false`, and the Laplace spec solver clamped the squared
+  diagonal at `1e-12` and carried on, producing rows of norm above 1 and a
+  `Sigma` whose diagonal no longer matched the marginal SDs it was handed. Which
+  of the two a user got depended on the backend rather than on the model.
+  `tulpa::build_L_from_raw` is now the one build, templated over the scalar so
+  the AD paths differentiate what the double paths evaluate, and it takes
+  `tanh(raw)` as a canonical partial correlation scaled by the room the row has
+  left: every raw vector lands in the cone, so there is no support boundary left
+  to disagree about. `tulpa::raw_from_L` is its exact inverse and is what
+  `pack_to_spec_re_params` uses. The log-Jacobian gains the scaling term
+  `0.5 log(s)` alongside the tanh term; the LKJ exponent on `log L[k,k]` is
+  unchanged. At `n_coefs == 2` the scaling factor is 1 and its Jacobian term is
+  `0.5 log(1)`, so the two maps coincide term for term and a random
+  intercept-and-slope fit is unchanged.
+
+* **Type-IV spatiotemporal rank is derived once** (#438). The centered branch
+  counted the adjacency's connected components; the non-centered branch
+  hardcoded the spatial rank as `S - 1`. `rank_space` multiplies `log(tau_st)`
+  in the GMRF normalizer, so on a graph with more than one component -- islands,
+  or any unit its adjacency file leaves with no neighbours -- the two
+  parameterizations of the same model targeted different densities and reported
+  different `tau_st` posteriors, with nothing flagged. `st_spatial_rank()` is
+  now the one derivation, called from the non-centered Type IV, the centered
+  Type IV and Type III. The HSGP-ST branch also checks `M * T_st` against the
+  latent span it was sized from before indexing.
+
+* **Areal entry points validate their adjacency** (#441). `adj_col_idx` indexes
+  a WRITE into the dense Hessian (`H[sp_idx][spatial_start + neighbor]`) and
+  `spatial_idx` indexes the latent field, both through raw pointer arithmetic
+  with no bound, and neither was checked. `tulpa::check_areal_inputs()`
+  (`src/areal_input_check.h`) checks the CSR shape, monotonicity, tail and
+  column range plus the site index's length and range, and is called by
+  `cpp_laplace_fit_spatial`, `cpp_laplace_fit_bym2`, `cpp_laplace_fit_car_proper`
+  and the five nested areal / ST entries. An out-of-range value is now an R
+  error naming the entry point and the offending index.
+
+* **Grid checkpoints fingerprint and serialize what they claim to** (#442).
+  `re_idx` is an `Rcpp::NumericVector` and was folded at `sizeof(int)`, so only
+  its leading half reached the hash: two RE assignments agreeing there shared a
+  fingerprint and a resume replayed one run's cells under the other's data.
+  `Fingerprint::fold_rvec()` derives the element size from the R type, so the
+  mismatch is not writable at a call site. The SPDE nested entry's `offset` is
+  now folded as well (`make_nl_grid_checkpoint` takes optional `offset` /
+  `weights`, and an absent one folds distinctly from a present zero). The
+  per-cell record now carries every `LaplaceResult` field rather than eleven of
+  them, so a resumed cell no longer comes back with an empty skew / importance /
+  debias / CILA payload that the grid reads as "did not compute it";
+  `CheckpointLog::MAGIC` is bumped accordingly. `start_infeasible` is carried
+  per cell through the grid merge and read by `nl_grid_cell_to_result_list()`,
+  which hardcoded `false` for every one-cell export.
+
+* **Stochastic Lanczos quadrature: breakdown, orthogonality, bounds** (#444). A
+  breakdown (`beta_j` below tolerance) is the case where the Krylov space is
+  exhausted and the quadrature is exact, and it was reported as
+  "matrix is not positive definite": `alpha` / `beta` stayed padded with zeros
+  out to `n_lanczos`, so the eigensolve returned Ritz values at 0 and the
+  definiteness guard fired on them. `lanczos()` now returns the steps actually
+  taken and resizes to them, and the guard skips a Ritz value carrying no
+  quadrature weight. The recurrence gains the full reorthogonalisation the cited
+  reference (Ubaru, Chen & Saad 2017) assumes, without which the basis loses
+  orthogonality within a few steps and `log|H|` picks up a bias on the
+  `N > 100K` path that has no Cholesky to cross-check against. The CSC triple
+  from R is validated before anything indexes off it.
+
+* **Three AD primitives agree with their double counterparts** (#446).
+  `fwd::expm1` computed `exp(x) - 1`, the cancelling form, which is exactly what
+  `log1m_exp_fn`'s small-argument branch routes through `expm1` to avoid -- a
+  zero-truncated Poisson at small `mu` is both the regime where the truncation
+  correction matters and the branch that was taken. `safe_log` returned partial
+  `1/1e-15` on the two reverse paths and `0` on the forward one in the clamped
+  region, where the value is a constant and the derivative is therefore 0; all
+  four now report 0 there. `log_sum_exp` gained the double core's non-finite
+  guard on all three AD types, so two mixture components that both underflow
+  give `-Inf` rather than a `NaN` in the adjoint buffer, and the six hand-written
+  copies of that reduction in `autodiff_utils.h` are one `log_sum_exp_fn<T>()`.
+  `fwd::pow(Dual, Dual)` no longer forms `0 * log(0)` for a constant exponent.
+  `ad::Var` gains the comparison operators its two sibling AD types already
+  carry, without which a templated helper that branches on its argument compiles
+  for three scalar types and not the fourth.
+
+* **A failed checkpoint truncation is an error** (#449). `resize_file`'s
+  `std::error_code` was never read, and the append stream opens either way, so a
+  failed truncation left every record the run appended sitting past an orphaned
+  torn tail -- written, invisible to the next resume, and recomputed with no
+  message.
+
+* **`cpp_laplace_sample` no longer ridges the caller's matrix** (#451). Rcpp
+  binds a REALSXP argument without duplicating it, so the uniform ridge was
+  written into the R matrix the caller still held, and a second call on the same
+  matrix sampled from a precision carrying it twice.
+
+* Multi-chain stochastic-sampler results guard the `log_lik` copy against a
+  short vector the way the VI/ESS shim already did (#439).
+
 ## 0.1.2
 
 * **The BYM2 outer grid checks its mixing-weight axis** (#421).

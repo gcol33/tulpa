@@ -165,6 +165,17 @@ inline Rcpp::List nl_grid_cell_to_result_list(const Rcpp::List& grid, int k) {
     Rcpp::NumericVector score_max    = grid["score_max"];
     Rcpp::LogicalVector converged    = grid["converged"];
 
+    // A grid that carries the per-cell flag reports it; one that does not (an
+    // older driver) reports false, which is what this used to hardcode for
+    // every caller. The flag is the only signal an infeasible start leaves, so
+    // hardcoding it made the one-cell exports unable to raise the error the R
+    // side exists to raise.
+    bool cell_infeasible = false;
+    if (grid.containsElementNamed("start_infeasible")) {
+        Rcpp::LogicalVector si = grid["start_infeasible"];
+        if (k < si.size()) cell_infeasible = static_cast<bool>(si[k]);
+    }
+
     Rcpp::List out = Rcpp::List::create(
         Rcpp::Named("mode")             = mode,
         Rcpp::Named("log_det_Q")        = log_det_Q[k],
@@ -172,7 +183,7 @@ inline Rcpp::List nl_grid_cell_to_result_list(const Rcpp::List& grid, int k) {
         Rcpp::Named("n_iter")           = n_iter[k],
         Rcpp::Named("converged")        = static_cast<bool>(converged[k]),
         Rcpp::Named("score_max")        = score_max[k],
-        Rcpp::Named("start_infeasible") = false
+        Rcpp::Named("start_infeasible") = cell_infeasible
     );
 
     // Inner-Laplace skewness diagnostic, under the names the single-fit
@@ -298,6 +309,14 @@ inline Rcpp::List run_nested_laplace_grid(
     Rcpp::NumericVector log_det_Qs(n_grid);
     Rcpp::NumericVector score_maxs(n_grid);
     Rcpp::LogicalVector convergeds(n_grid);
+    // The solve never started: the penalized objective was non-finite at the
+    // latent start and no interior point was found. It is a flag rather than a
+    // throw because the solve runs inside an OpenMP region, so the R side is
+    // what turns it into an error -- and it can only do that if the grid
+    // carries it per cell. nl_grid_cell_to_result_list reads this back, which
+    // is what gives the one-cell exports (fit_spde, the GP entries) a flag to
+    // report instead of a hardcoded false.
+    Rcpp::LogicalVector start_infeasibles(n_grid);
     int mode_rows = store_modes ? n_grid : 0;
     Rcpp::NumericMatrix all_modes(mode_rows, store_modes ? n_x : 0);
 
@@ -328,6 +347,7 @@ inline Rcpp::List run_nested_laplace_grid(
         out["log_det_Q"] = log_det_Qs;
         out["score_max"] = score_maxs;
         out["converged"] = convergeds;
+        out["start_infeasible"] = start_infeasibles;
         if (store_modes) out["modes"] = all_modes;
         return out;
     }
@@ -899,6 +919,7 @@ inline Rcpp::List run_nested_laplace_grid(
         log_det_Qs[k] = res.log_det_Q;
         score_maxs[k] = res.score_max;
         convergeds[k] = res.converged;
+        start_infeasibles[k] = res.start_infeasible;
         if (store_modes) {
             int copy_n = std::min(n_x, static_cast<int>(res.mode.size()));
             for (int j = 0; j < copy_n; j++) all_modes(k, j) = res.mode[j];
@@ -975,6 +996,7 @@ inline Rcpp::List run_nested_laplace_grid(
     out["log_det_Q"] = log_det_Qs;
     out["score_max"] = score_maxs;
     out["converged"] = convergeds;
+    out["start_infeasible"] = start_infeasibles;
     if (store_modes) out["modes"] = all_modes;
     if (any_Q) {
         out["Q_csc_p_per_grid"] = Q_p_per_grid;

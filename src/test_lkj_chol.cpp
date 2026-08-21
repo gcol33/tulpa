@@ -11,8 +11,8 @@ using namespace Rcpp;
 // [[Rcpp::export]]
 List cpp_test_lkj_build_L(NumericVector raw, int n) {
   std::vector<double> L_flat(n * n, 0.0);
-  double log_jac_tanh = 0.0;
-  bool ok = tulpa::build_L_from_raw(raw.begin(), n, L_flat.data(), &log_jac_tanh);
+  double log_jac = 0.0;
+  tulpa::build_L_from_raw(raw.begin(), n, L_flat.data(), &log_jac);
 
   NumericMatrix L(n, n);
   for (int i = 0; i < n; i++) {
@@ -22,9 +22,20 @@ List cpp_test_lkj_build_L(NumericVector raw, int n) {
   }
   return List::create(
     _["L"] = L,
-    _["log_jac_tanh"] = log_jac_tanh,
-    _["ok"] = ok
+    _["log_jac"] = log_jac
   );
+}
+
+// [[Rcpp::export]]
+NumericVector cpp_test_lkj_raw_from_L(NumericMatrix L) {
+  int n = L.nrow();
+  std::vector<double> L_flat(n * n);
+  for (int i = 0; i < n; i++) {
+    for (int j = 0; j < n; j++) L_flat[i * n + j] = L(i, j);
+  }
+  std::vector<double> raw((size_t)n * (n - 1) / 2, 0.0);
+  tulpa::raw_from_L(L_flat.data(), n, raw.data());
+  return NumericVector(raw.begin(), raw.end());
 }
 
 // [[Rcpp::export]]
@@ -41,12 +52,8 @@ double cpp_test_lkj_density(NumericMatrix L, double eta) {
 
 // [[Rcpp::export]]
 NumericVector cpp_test_lkj_grad(NumericVector raw, int n, double eta) {
-  std::vector<double> L_flat(n * n, 0.0);
-  if (!tulpa::build_L_from_raw(raw.begin(), n, L_flat.data())) {
-    stop("build_L_from_raw failed: row norm constraint violated");
-  }
   std::vector<double> grad(raw.size(), 0.0);
-  tulpa::lkj_log_prior_grad_add(raw.begin(), L_flat.data(), n, eta, grad.data());
+  tulpa::lkj_log_prior_grad_add(raw.begin(), n, eta, grad.data());
   return NumericVector(grad.begin(), grad.end());
 }
 

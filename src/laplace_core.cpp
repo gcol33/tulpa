@@ -451,10 +451,16 @@ Rcpp::NumericMatrix cpp_laplace_sample(
     // every Laplace solve uses (see LAPLACE_UNIFORM_RIDGE in
     // laplace_cholesky.h); guarantees PD on rank-deficient priors so the
     // sampler never hits a non-positive pivot.
-    for (int j = 0; j < n_x; j++) H(j, j) += tulpa::LAPLACE_UNIFORM_RIDGE;
+    //
+    // The ridge goes on a clone. Rcpp binds a REALSXP argument without
+    // duplicating it, so ridging `H` in place writes the ridge into the R
+    // matrix the caller still holds, and a second call on the same matrix
+    // samples from a precision carrying the ridge twice.
+    Rcpp::NumericMatrix Hr = Rcpp::clone(H);
+    for (int j = 0; j < n_x; j++) Hr(j, j) += tulpa::LAPLACE_UNIFORM_RIDGE;
     Rcpp::NumericMatrix L(n_x, n_x);
     double log_det;
-    tulpa::dense_cholesky_factorize(H, n_x, L, log_det);
+    tulpa::dense_cholesky_factorize(Hr, n_x, L, log_det);
 
     // Sample: z ~ N(0, I), x = mode + L^{-T} z
     for (int s = 0; s < n_samples; s++) {

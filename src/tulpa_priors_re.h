@@ -10,6 +10,7 @@
 #include <vector>
 #include <cmath>
 #include "autodiff_utils.h"
+#include "lkj_chol_helpers.h"
 
 namespace tulpa {
 namespace priors {
@@ -68,42 +69,27 @@ T compute_re_prior(const std::vector<T>& params, const ModelData& data,
                 log_post = log_post + log_prior_half_cauchy(log_sigma, data.sigma_re_scale);
             }
 
-            // Correlated slopes: tanh-Cholesky parameterization + LKJ prior
+            // Correlated slopes: partial-correlation Cholesky + LKJ prior
             std::vector<T> L_flat_t;
             if (is_correlated && n_coefs_t > 1) {
                 int chol_start = layout.chol_re_start_multi[t];
                 L_flat_t.resize(n_coefs_t * n_coefs_t, T(0.0));
 
-                T log_jac_tanh = T(0.0);
-                int chol_idx = 0;
-                for (int row = 0; row < n_coefs_t; row++) {
-                    T row_sum_sq = T(0.0);
-                    for (int col = 0; col < row; col++) {
-                        T raw_ij = params[chol_start + chol_idx];
-                        T l_ij = safe_tanh(raw_ij);
-                        L_flat_t[row * n_coefs_t + col] = l_ij;
-                        row_sum_sq = row_sum_sq + l_ij * l_ij;
-                        // Jacobian: log|d(tanh)/d(raw)| = log(1 - tanh^2)
-                        T sech2 = T(1.0) - l_ij * l_ij;
-                        log_jac_tanh = log_jac_tanh + safe_log(safe_max(sech2, T(1e-300)));
-                        chol_idx++;
-                    }
-                    // Diagonal: guaranteed positive since tanh^2 < 1
-                    T diag_sq = T(1.0) - row_sum_sq;
-                    if (get_value(diag_sq) < 1e-10) {
-                        return T(-INFINITY);
-                    }
-                    L_flat_t[row * n_coefs_t + row] = safe_sqrt(diag_sq);
-                }
-
-                // Tanh Jacobian
-                log_post = log_post + log_jac_tanh;
+                // The build and its log-Jacobian are tulpa::build_L_from_raw:
+                // one implementation, differentiated here and evaluated by the
+                // Laplace spec solver, so the two backends put the same Sigma
+                // on the same raw vector. Every raw vector is in support, so
+                // there is no -Inf wall for the sampler to meet.
+                T log_jac = T(0.0);
+                tulpa::build_L_from_raw(params.data() + chol_start, n_coefs_t,
+                                        L_flat_t.data(), &log_jac);
+                log_post = log_post + log_jac;
 
                 // LKJ(eta=2) prior on R = L L', expressed directly on the
                 // Cholesky factor. The exponent (2*eta - 2 + (n - k - 1)) on
                 // log L_kk is the complete Stan lkj_corr_cholesky_lpdf: it is
                 // det(R)^(eta-1) PLUS the exact correlation -> Cholesky Jacobian
-                // sum_k (n-k) log L_kk. Combined with the tanh raw -> L Jacobian
+                // sum_k (n-k) log L_kk. Combined with the raw -> L Jacobian
                 // above it is the full change of variables to raw space; adding
                 // a second Cholesky -> correlation Jacobian here would tilt the
                 // effective prior to LKJ(eta + 0.5) on a 2x2 block.

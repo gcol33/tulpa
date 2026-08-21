@@ -45,6 +45,7 @@
 #include "omp_threads.h"          // tulpa_parallel_for (serial route at one thread)
 #include "sparse_cholesky.h"
 #include <Rcpp.h>
+#include "lkj_chol_helpers.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -254,11 +255,11 @@ inline std::vector<double> term_sigmas(
     return sig;
 }
 
-// Build the q_t x q_t lower-triangular Cholesky factor L_t from the
-// tanh-Cholesky raw parameters in `params[chol_start .. chol_start +
-// q_t*(q_t-1)/2)`. Mirrors tulpa_priors_re.h::compute_re_prior. Diagonal
-// entries are derived as sqrt(1 - sum_off-diag^2) per row, guaranteed
-// positive because tanh^2 < 1.
+// Correlation Cholesky for a correlated RE term, from the term's raw slots.
+// One build for every backend: tulpa::build_L_from_raw is what the HMC prior
+// differentiates and what the spec solver evaluates, so the same raw vector
+// gives the same Sigma whichever path a user takes. It succeeds for every raw
+// vector, so there is no support boundary here to clamp at or reject on.
 inline void build_chol_L(
     const std::vector<double>& params,
     const ReTermSlot& s,
@@ -266,18 +267,7 @@ inline void build_chol_L(
 ) {
     const int q = s.n_coefs;
     L_flat.assign((size_t)q * q, 0.0);
-    int idx = s.chol_start;
-    for (int row = 0; row < q; row++) {
-        double row_sum_sq = 0.0;
-        for (int col = 0; col < row; col++) {
-            double l_ij = std::tanh(params[idx++]);
-            L_flat[(size_t)row * q + col] = l_ij;
-            row_sum_sq += l_ij * l_ij;
-        }
-        double diag_sq = 1.0 - row_sum_sq;
-        if (diag_sq < 1e-12) diag_sq = 1e-12;
-        L_flat[(size_t)row * q + row] = std::sqrt(diag_sq);
-    }
+    tulpa::build_L_from_raw(params.data() + s.chol_start, q, L_flat.data());
 }
 
 // Build the q_t x q_t precision matrix Q_t = Σ_t^{-1} for term t and its

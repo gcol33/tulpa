@@ -38,6 +38,7 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <system_error>
 #include <fstream>
 #include <memory>
 #include <mutex>
@@ -74,6 +75,13 @@ inline void ckpt_put_span(std::string& buf, const std::vector<T>& v) {
     if (n) buf.append(reinterpret_cast<const char*>(v.data()), n * sizeof(T));
 }
 
+// Append a std::string, length-prefixed.
+inline void ckpt_put_str(std::string& buf, const std::string& v) {
+    std::uint64_t n = v.size();
+    ckpt_put(buf, n);
+    if (n) buf.append(v.data(), n);
+}
+
 // Running FNV-1a fingerprint of everything that changes a unit's result given
 // its coordinate (data, designs, solver settings, layout). Each fitter folds
 // its own fields; the value guards the checkpoint header. fold_vec writes only
@@ -92,6 +100,32 @@ struct Fingerprint {
     }
 
     void fold_str(const std::string& s) { fold(s.data(), s.size()); }
+
+    // Fold an R vector / matrix by its own element type. `fold(x.begin(), n *
+    // sizeof(T))` takes a const void*, so a `double*` handed a `sizeof(int)`
+    // length converts silently and folds the LEADING HALF of the buffer -- two
+    // inputs agreeing on their first half then share a fingerprint, and a
+    // resume replays one run's cells under the other's data. These overloads
+    // are the way to fold an R vector; the raw `fold` is for everything else.
+    void fold_rvec(const Rcpp::NumericVector& v) {
+        if (v.size()) fold(v.begin(), (std::size_t)v.size() * sizeof(double));
+    }
+    void fold_rvec(const Rcpp::IntegerVector& v) {
+        if (v.size()) fold(v.begin(), (std::size_t)v.size() * sizeof(int));
+    }
+    void fold_rvec(const Rcpp::NumericMatrix& m) {
+        if (m.size()) fold(m.begin(), (std::size_t)m.size() * sizeof(double));
+    }
+    void fold_rvec(const Rcpp::IntegerMatrix& m) {
+        if (m.size()) fold(m.begin(), (std::size_t)m.size() * sizeof(int));
+    }
+    // An absent optional input still has to separate itself from a present one,
+    // otherwise "no offset" and "offset = 0" fingerprint alike.
+    void fold_rvec_nullable(const Rcpp::Nullable<Rcpp::NumericVector>& v) {
+        const bool present = v.isNotNull();
+        fold_pod(present);
+        if (present) fold_rvec(Rcpp::NumericVector(v));
+    }
 
     template <typename T>
     void fold_vec(const std::vector<T>& v) {
@@ -183,6 +217,17 @@ struct CkptReader {
         return v;
     }
 
+    std::string get_str() {
+        std::string v;
+        std::uint64_t n = get<std::uint64_t>();
+        if (!ok) return v;
+        std::size_t remaining = static_cast<std::size_t>(end - p);
+        if (n > remaining) { ok = false; return v; }
+        v.assign(p, static_cast<std::size_t>(n));
+        p += static_cast<std::size_t>(n);
+        return v;
+    }
+
     template <typename T>
     std::vector<T> get_span() {
         std::vector<T> v;
@@ -224,7 +269,7 @@ public:
     // carries, so a file written by an older layout would otherwise be replayed
     // field-by-field into the new one and mis-parsed. A magic mismatch errors
     // and points the user at a fresh path.
-    static constexpr char MAGIC[8] = {'T','L','P','A','C','K','P','2'};
+    static constexpr char MAGIC[8] = {'T','L','P','A','C','K','P','3'};
 
     CheckpointLog(const std::string& path,
                   std::uint64_t fingerprint,
@@ -247,8 +292,28 @@ public:
             // truncating to the last fully-valid record before appending; else
             // new records would be written AFTER the orphaned bytes and a later
             // load would stop at the torn boundary and never see them.
+            //
+            // A failed truncation is reported through `ec` rather than thrown,
+            // and the append stream opens fine either way, so an unread `ec`
+            // leaves every record this run appends past the orphaned bytes --
+            // written, invisible to the next load, and recomputed with no
+            // message. Error instead, the way a bad magic and a truncated
+            // header already do.
             std::error_code ec;
-            std::filesystem::resize_file(path_, good_bytes, ec);
+            const std::uintmax_t cur_bytes = std::filesystem::file_size(path_, ec);
+            if (!ec && cur_bytes > good_bytes) {
+                std::filesystem::resize_file(path_, good_bytes, ec);
+            }
+            if (ec) {
+                Rcpp::stop("checkpoint: cannot truncate the torn tail of '%s' "
+                           "to %s bytes (%s). Every record appended after an "
+                           "untruncated tail is invisible to the next resume; "
+                           "remove the file or point `checkpoint$path` "
+                           "elsewhere.",
+                           path_.c_str(),
+                           std::to_string(good_bytes).c_str(),
+                           ec.message().c_str());
+            }
             out_.open(path_, std::ios::binary | std::ios::app);
         } else {
             out_.open(path_, std::ios::binary | std::ios::trunc);

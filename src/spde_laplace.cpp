@@ -360,7 +360,8 @@ Rcpp::List cpp_nested_laplace_spde(
     if (!rat_weights.empty()) sfp.fold(rat_weights.data(), rat_weights.size() * sizeof(double));
     auto ckpt = tulpa::make_nl_grid_checkpoint(
         checkpoint_path, sfp.value(), max_iter, tol, y, n_trials, X, re_idx,
-        n_re_groups, sigma_re, family, phi, {range_grid, sigma_grid});
+        n_re_groups, sigma_re, family, phi, {range_grid, sigma_grid},
+        offset_nullable);
 
     std::vector<int> skew_idx_vec;
     const std::vector<int>* skew_idx_ptr =

@@ -6,6 +6,7 @@
 #ifndef TULPA_AUTODIFF_UTILS_H
 #define TULPA_AUTODIFF_UTILS_H
 
+#include <algorithm>
 #include <cmath>
 #include <vector>
 #include <Rcpp.h>
@@ -97,8 +98,15 @@ safe_log(const T& x) {
 template<typename T>
 inline typename std::enable_if<is_fwd_dual<T>::value, T>::type
 safe_log(const T& x) {
+    // One rule for all four instantiations (see the double overload above):
+    // value log(x) above zero and the constant -1e10 at or below it, partial
+    // 1 / max(x, 1e-15) above zero and 0 at or below it. A clamped VALUE is
+    // locally constant, so its derivative is 0; carrying 1/1e-15 there instead
+    // hands an HMC trajectory a 1e15 adjoint on a flat region, and the double
+    // finite-difference reference the AD paths are checked against sees the
+    // flat one.
     if (x.val <= 0.0) return fwd::Dual(-1e10, 0.0);
-    return fwd::Dual(std::log(x.val), x.grad / x.val);
+    return fwd::Dual(std::log(x.val), x.grad / std::max(x.val, 1e-15));
 }
 
 // log - arena::Var version
@@ -433,6 +441,20 @@ get_value(const T& x) {
     return x.val();
 }
 
+// log(exp(a) + exp(b)), shifted by the larger argument so neither exponent
+// overflows. Both arguments -inf -- two mixture components that both underflow
+// -- makes every difference below inf - inf, i.e. NaN, so a non-finite maximum
+// short-circuits to itself, which is what the double core in linalg_fast.h
+// returns there. This is the one copy: the zero- and one-inflated densities
+// below all reduce their two-component mixture through it.
+template<typename T>
+inline T log_sum_exp_fn(const T& a, const T& b) {
+    const T max_ab = (get_value(a) > get_value(b)) ? a : b;
+    if (!std::isfinite(get_value(max_ab))) return max_ab;
+    return max_ab + safe_log(safe_exp(a - max_ab) + safe_exp(b - max_ab));
+}
+
+
 // ============================================================================
 // Dot product that works with all types
 // ============================================================================
@@ -520,8 +542,7 @@ inline T log_lik_zi_binomial(int y, int n, const T& p, const T& logit_zi) {
         // log-sum-exp: log(exp(log_zi) + exp(log_1m_zi + log_binom_zero))
         T a = log_zi;
         T b = log_1m_zi + log_binom_zero;
-        T max_ab = (get_value(a) > get_value(b)) ? a : b;
-        return max_ab + safe_log(safe_exp(a - max_ab) + safe_exp(b - max_ab));
+        return log_sum_exp_fn(a, b);
     } else {
         // log((1-zi) * Binom(y|n,p))
         return log_1m_zi + log_lik_binomial(y, n, p);
@@ -539,8 +560,7 @@ inline T log_lik_oi_binomial(int y, int n, const T& p, const T& logit_oi) {
         T log_binom_n = n * safe_log(p);
         T a = log_oi;
         T b = log_1m_oi + log_binom_n;
-        T max_ab = (get_value(a) > get_value(b)) ? a : b;
-        return max_ab + safe_log(safe_exp(a - max_ab) + safe_exp(b - max_ab));
+        return log_sum_exp_fn(a, b);
     } else {
         // log((1-oi) * Binom(y|n,p))
         return log_1m_oi + log_lik_binomial(y, n, p);
@@ -560,15 +580,13 @@ inline T log_lik_zoib(int y, int n, const T& p, const T& logit_zi, const T& logi
         T log_binom_zero = n * safe_log(T(1.0) - p);
         T a = log_zi;
         T b = log_1m_zi + log_1m_oi + log_binom_zero;
-        T max_ab = (get_value(a) > get_value(b)) ? a : b;
-        return max_ab + safe_log(safe_exp(a - max_ab) + safe_exp(b - max_ab));
+        return log_sum_exp_fn(a, b);
     } else if (y == n) {
         // P(Y=n) = (1-zi) * (oi + (1-oi) * Binom(n|n,p))
         T log_binom_n = n * safe_log(p);
         T a = log_1m_zi + log_oi;
         T b = log_1m_zi + log_1m_oi + log_binom_n;
-        T max_ab = (get_value(a) > get_value(b)) ? a : b;
-        return max_ab + safe_log(safe_exp(a - max_ab) + safe_exp(b - max_ab));
+        return log_sum_exp_fn(a, b);
     } else {
         // P(Y=y) = (1-zi) * (1-oi) * Binom(y|n,p)
         return log_1m_zi + log_1m_oi + log_lik_binomial(y, n, p);
@@ -605,8 +623,7 @@ inline T log_lik_zi_poisson(int y, const T& mu, const T& logit_zi) {
         // log(zi + (1-zi) * exp(-mu))
         T a = log_zi;
         T b = log_1m_zi + (-mu);
-        T max_ab = (get_value(a) > get_value(b)) ? a : b;
-        return max_ab + safe_log(safe_exp(a - max_ab) + safe_exp(b - max_ab));
+        return log_sum_exp_fn(a, b);
     } else {
         return log_1m_zi + log_lik_poisson(y, mu);
     }
@@ -623,8 +640,7 @@ inline T log_lik_zi_negbin(int y, const T& mu, const T& phi, const T& logit_zi) 
         T log_p0_count = phi * safe_log(phi / (mu + phi));
         T a = log_zi;
         T b = log_1m_zi + log_p0_count;
-        T max_ab = (get_value(a) > get_value(b)) ? a : b;
-        return max_ab + safe_log(safe_exp(a - max_ab) + safe_exp(b - max_ab));
+        return log_sum_exp_fn(a, b);
     } else {
         return log_1m_zi + log_lik_negbin(y, mu, phi);
     }

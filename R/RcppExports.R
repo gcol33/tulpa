@@ -845,6 +845,10 @@ cpp_test_nngp_prior_scatter <- function(w, coords, nn_idx, nn_dist, nn_order, n_
     .Call(`_tulpa_cpp_test_nngp_prior_scatter`, w, coords, nn_idx, nn_dist, nn_order, n_spatial, nn, sigma2, phi_gp, cov_type)
 }
 
+cpp_test_lse_guard <- function(a, b) {
+    .Call(`_tulpa_cpp_test_lse_guard`, a, b)
+}
+
 cpp_test_scalar_guard <- function(fn, x, p = 2.0) {
     .Call(`_tulpa_cpp_test_scalar_guard`, fn, x, p)
 }
@@ -855,6 +859,10 @@ cpp_test_update_spatial_icar <- function(kappa, omega, offset, group, adj_list, 
 
 cpp_test_lkj_build_L <- function(raw, n) {
     .Call(`_tulpa_cpp_test_lkj_build_L`, raw, n)
+}
+
+cpp_test_lkj_raw_from_L <- function(L) {
+    .Call(`_tulpa_cpp_test_lkj_raw_from_L`, L)
 }
 
 cpp_test_lkj_density <- function(L, eta) {

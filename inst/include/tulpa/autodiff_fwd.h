@@ -254,6 +254,11 @@ inline Dual pow(const Dual& x, double n) {
 inline Dual pow(const Dual& x, const Dual& y) {
     // x^y = exp(y * log(x))
     // d(x^y) = x^y * (y' * log(x) + y * x'/x)
+    //
+    // A constant exponent is the common case (a literal wrapped in a Dual), and
+    // there the log(x) term carries no tangent at all: keeping it multiplies
+    // 0 by -inf at x = 0 and returns NaN where pow(Dual, double) is finite.
+    if (y.grad == 0.0) return pow(x, y.val);
     double p = std::pow(x.val, y.val);
     double dp = p * (y.grad * std::log(x.val) + y.val * x.grad / x.val);
     return Dual(p, dp);
@@ -265,9 +270,10 @@ inline Dual log1p(const Dual& x) {
 }
 
 inline Dual expm1(const Dual& x) {
-    // d(exp(x)-1) = exp(x) * dx
-    double e = std::exp(x.val);
-    return Dual(e - 1.0, e * x.grad);
+    // d(exp(x)-1) = exp(x) * dx. The VALUE is std::expm1, not exp(x) - 1: the
+    // subtraction cancels as x -> 0, and log1m_exp_fn routes its small-argument
+    // branch through here precisely to avoid that cancellation.
+    return Dual(std::expm1(x.val), std::exp(x.val) * x.grad);
 }
 
 inline Dual softplus(const Dual& x) {
@@ -347,6 +353,9 @@ inline Dual log_sum_exp(const Dual& a, const Dual& b) {
     // log(exp(a) + exp(b))
     // = max(a,b) + log(1 + exp(min(a,b) - max(a,b)))
     double max_val = std::max(a.val, b.val);
+    // Both arguments -inf (two underflowed mixture components) makes every
+    // difference below inf - inf = NaN. The double core returns max_val there.
+    if (!std::isfinite(max_val)) return Dual(max_val, 0.0);
     double exp_a = std::exp(a.val - max_val);
     double exp_b = std::exp(b.val - max_val);
     double sum_exp = exp_a + exp_b;

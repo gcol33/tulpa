@@ -6,6 +6,7 @@
 
 #include "bym2_mixing.h"           // BYM2_RHO_EPS + the mixing amplitudes
 #include "laplace_core.h"
+#include "areal_input_check.h"
 #include "laplace_cholesky.h"
 #include "laplace_newton.h"
 #include "laplace_re_priors.h"
@@ -53,6 +54,9 @@ Rcpp::List cpp_laplace_fit_spatial(
     // cpp_nested_laplace_icar's, so the mode + log-marginal match the nested
     // kernel at one tau cell.
     const int N = y.size();
+    tulpa::check_areal_inputs(adj_row_ptr, adj_col_idx, n_neighbors,
+                              spatial_idx, N, n_spatial_units,
+                              "cpp_laplace_fit_spatial");
     const int p = X.ncol();
     const bool has_re = n_re_groups > 0;
     std::vector<int> re_group;
@@ -142,6 +146,9 @@ Rcpp::List cpp_laplace_fit_bym2(
     // Blocks built exactly as cpp_nested_laplace_bym2's, with the
     // grid-dependent d_fac.
     const int N = y.size();
+    tulpa::check_areal_inputs(adj_row_ptr, adj_col_idx, n_neighbors,
+                              spatial_idx, N, n_spatial_units,
+                              "cpp_laplace_fit_bym2");
     const int p = X.ncol();
     const bool has_re = n_re_groups > 0;
     std::vector<int> re_group;
