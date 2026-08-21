@@ -31,6 +31,7 @@
 #include "builtin_family_ll_ad.h"         // builtin_family_ll_ad / builtin_family_has_ad
 #include "re_structure.h"                 // populate_re_structure
 #include "icar_kernel.h"                   // count_graph_components
+#include "areal_input_check.h"             // check_areal_inputs
 #include "linalg_fast.h"                    // require_coords_2col
 #include "hmc_hsgp.h"                      // tulpa_hsgp::setup_hsgp_2d (HSGP basis)
 #include "hmc_sampler.h"                  // tulpa_hmc::compute_param_layout
@@ -179,9 +180,13 @@ inline void build_sampler_model_inputs(
             Rcpp::IntegerVector rp   = Rcpp::as<Rcpp::IntegerVector>(sp["adj_row_ptr"]);
             Rcpp::IntegerVector ci   = Rcpp::as<Rcpp::IntegerVector>(sp["adj_col_idx"]);
             Rcpp::IntegerVector nn   = Rcpp::as<Rcpp::IntegerVector>(sp["n_neighbors"]);
+            const int n_units = Rcpp::as<int>(sp["n_spatial_units"]);
+            check_areal_inputs(rp, ci, nn, sidx, N, n_units,
+                               stype == "icar" ? "spatial(type = \"icar\")"
+                                               : "spatial(type = \"bym2\")");
             in.data.spatial_group.assign(sidx.begin(), sidx.end());
             in.data.set_spatial_adjacency(
-                Rcpp::as<int>(sp["n_spatial_units"]),
+                n_units,
                 std::vector<int>(rp.begin(), rp.end()),
                 std::vector<int>(ci.begin(), ci.end()),
                 std::vector<int>(nn.begin(), nn.end()));
@@ -355,9 +360,12 @@ inline void build_sampler_model_inputs(
             Rcpp::IntegerVector rp   = Rcpp::as<Rcpp::IntegerVector>(sp["adj_row_ptr"]);
             Rcpp::IntegerVector ci   = Rcpp::as<Rcpp::IntegerVector>(sp["adj_col_idx"]);
             Rcpp::IntegerVector nn   = Rcpp::as<Rcpp::IntegerVector>(sp["n_neighbors"]);
+            const int n_units = Rcpp::as<int>(sp["n_spatial_units"]);
+            check_areal_inputs(rp, ci, nn, sidx, N, n_units,
+                               "spatial(type = \"car_proper\")");
             in.data.spatial_group.assign(sidx.begin(), sidx.end());
             in.data.set_spatial_adjacency(
-                Rcpp::as<int>(sp["n_spatial_units"]),
+                n_units,
                 std::vector<int>(rp.begin(), rp.end()),
                 std::vector<int>(ci.begin(), ci.end()),
                 std::vector<int>(nn.begin(), nn.end()));

@@ -81,8 +81,8 @@ T compute_spatial_icar_bym2_prior(const std::vector<T>& params, const ModelData&
             T sigma_total_bym2 = safe_exp(params[layout.log_sigma_bym2_idx]);
             T logit_rho_val = params[layout.logit_rho_bym2_idx];
             T rho_bym2 = T(1.0) / (T(1.0) + safe_exp(-logit_rho_val));
-            sigma_s_bym2_out = sigma_total_bym2 * sqrt(rho_bym2);
-            sigma_u_bym2_out = sigma_total_bym2 * sqrt(T(1.0) - rho_bym2);
+            sigma_s_bym2_out = sigma_total_bym2 * safe_sqrt(rho_bym2);
+            sigma_u_bym2_out = sigma_total_bym2 * safe_sqrt(T(1.0) - rho_bym2);
 
             theta_bym2_out = &params[layout.theta_bym2_start];
 
@@ -93,8 +93,8 @@ T compute_spatial_icar_bym2_prior(const std::vector<T>& params, const ModelData&
             // Uniform(0,1) = Beta(1,1) on rho with logit Jacobian:
             // log p(logit_rho) = log(rho) + log(1-rho)
             T rho_bym2_prior = T(1.0) / (T(1.0) + safe_exp(-logit_rho_val));
-            log_post = log_post + log(rho_bym2_prior)
-                                + log(T(1.0) - rho_bym2_prior);
+            log_post = log_post + safe_log(rho_bym2_prior)
+                                + safe_log(T(1.0) - rho_bym2_prior);
 
             // ICAR prior on phi_spatial
             T quad_form = T(0.0);
@@ -140,7 +140,7 @@ T compute_spatial_icar_bym2_prior(const std::vector<T>& params, const ModelData&
             T u = T(1.0) / (T(1.0) + safe_exp(-logit_rho));
             T rho = T(data.car_rho_lower)
                   + (T(data.car_rho_upper) - T(data.car_rho_lower)) * u;
-            log_post = log_post + log(u) + log(T(1.0) - u);
+            log_post = log_post + safe_log(u) + safe_log(T(1.0) - u);
 
             // Quadratic form phi' Q(rho) phi = sum_i d_i phi_i^2
             //   - 2 rho sum_{i~j, j>i} phi_i phi_j.
@@ -162,7 +162,7 @@ T compute_spatial_icar_bym2_prior(const std::vector<T>& params, const ModelData&
             T log_det = T(data.n_spatial_units) * log_tau;
             for (std::size_t k = 0; k < data.car_adj_eigenvalues.size(); k++)
                 log_det = log_det
-                    + log(T(1.0) - rho * T(data.car_adj_eigenvalues[k]));
+                    + safe_log(T(1.0) - rho * T(data.car_adj_eigenvalues[k]));
             log_post = log_post + T(0.5) * log_det - T(0.5) * tau_spatial_out * quad_form;
         } else {
             T log_tau = params[layout.log_tau_spatial_idx];

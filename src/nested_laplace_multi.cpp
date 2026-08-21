@@ -163,6 +163,13 @@ int build_blocks_from_spec(
         Rcpp::IntegerVector n_nbr       = bs["n_neighbors"];
         double scale_factor = bs.containsElementNamed("scale_factor") ?
             Rcpp::as<double>(bs["scale_factor"]) : 1.0;
+        // The mixing weight is a proportion. Past the endpoints
+        // bym2_sd_unstructured's radicand goes negative and d_fac is NaN, which
+        // reaches the inner Newton through eta and returns a NaN cell instead of
+        // an error, so the axis is rejected here -- the same check the
+        // single-block BYM2 and spatiotemporal BYM2 entries run on their own
+        // rho axis.
+        tulpa::nl_grid_axis_unit_interval("bym2 rho axis", theta_grid, axis0 + 1);
         int phi_start   = latent_offset;
         int theta_start = phi_start + size;
         const tulpa::GraphPartition sp_part = tulpa::graph_partition(

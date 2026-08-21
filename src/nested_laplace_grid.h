@@ -127,16 +127,25 @@ inline int nl_grid_axes_length(
 // A mixing-weight axis (the BYM2 rho) is a proportion. Outside [0, 1] both
 // bym2_sd_* square roots go NaN, which reaches the inner Newton through eta and
 // returns a NaN cell rather than an error.
+inline void nl_grid_cell_unit_interval(const char* name, double rho, int k) {
+    if (!(rho >= 0.0 && rho <= 1.0)) {
+        Rcpp::stop("`%s[%d]` is %g; a BYM2 mixing weight must lie in [0, 1].",
+                   name, k + 1, rho);
+    }
+}
+
 inline void nl_grid_axis_unit_interval(const char* name,
                                        const Rcpp::NumericVector& v) {
     const int n = static_cast<int>(v.size());
-    for (int k = 0; k < n; k++) {
-        const double rho = v[k];
-        if (!(rho >= 0.0 && rho <= 1.0)) {
-            Rcpp::stop("`%s[%d]` is %g; a BYM2 mixing weight must lie in [0, 1].",
-                       name, k + 1, rho);
-        }
-    }
+    for (int k = 0; k < n; k++) nl_grid_cell_unit_interval(name, v[k], k);
+}
+
+// The same axis carried as a column of the multi-block `theta_grid`, whose axes
+// are concatenated per block rather than passed one vector at a time.
+inline void nl_grid_axis_unit_interval(const char* name,
+                                       const Rcpp::NumericMatrix& grid, int col) {
+    const int n = grid.nrow();
+    for (int k = 0; k < n; k++) nl_grid_cell_unit_interval(name, grid(k, col), k);
 }
 
 // Project cell k of a grid-driver result onto the single-fit result shape
