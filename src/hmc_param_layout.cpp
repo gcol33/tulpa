@@ -1,6 +1,10 @@
 // hmc_param_layout.cpp
 // Parameter layout and size accounting for HMC/NUTS model data.
 
+#include <cstddef>
+
+#include <Rcpp.h>
+
 #include "hmc_sampler.h"
 #include "tulpa/likelihood.h"
 
@@ -43,6 +47,16 @@ void require_spatial_partition(const ModelData& data) {
              have, data.n_spatial_units);
 }
 
+// A ModelData vector the RE layout indexes by term must be at least as long as
+// the term count it declares.
+static inline void require_re_field(std::size_t have, int n_terms,
+                                    const char* field) {
+  if (static_cast<int>(have) < n_terms) {
+    Rcpp::stop("tulpa: ModelData.%s has %d entries but n_re_terms is %d.",
+               field, static_cast<int>(have), n_terms);
+  }
+}
+
 ParamLayout compute_param_layout(const ModelData& data) {
   ParamLayout layout;
   int idx = 0;
@@ -50,8 +64,8 @@ ParamLayout compute_param_layout(const ModelData& data) {
   // ================================================================
   // GENERIC MULTI-PROCESS LAYOUT
   // ================================================================
-  // Phase D: the legacy ratio (n_processes == 0)
-  // branch was removed along with the cpp_hmc_fit entry point.
+  // Every layout is multi-process; a ModelData carrying none has nothing to
+  // lay out.
   if (data.n_processes == 0) {
     Rcpp::stop("tulpa: compute_param_layout requires n_processes > 0.");
   }
@@ -71,6 +85,15 @@ ParamLayout compute_param_layout(const ModelData& data) {
   if (data.has_re_slopes && data.n_re_terms > 0) {
     // Random slopes case: need sigma per coefficient type + Cholesky params + RE effects
     int n_terms = data.n_re_terms;
+
+    // ModelData ships under inst/include, so a LinkingTo package reaches this
+    // with vectors it filled itself. Every one of the four is indexed by the
+    // term counter below, so a short one is an out-of-bounds read rather than a
+    // wrong layout. Named individually: the message says which field to fix.
+    require_re_field(data.re_n_coefs.size(), n_terms, "re_n_coefs");
+    require_re_field(data.re_correlated.size(), n_terms, "re_correlated");
+    require_re_field(data.re_n_chol.size(), n_terms, "re_n_chol");
+    require_re_field(data.re_n_groups_multi.size(), n_terms, "re_n_groups_multi");
 
     layout.log_sigma_re_multi.resize(n_terms);
     layout.log_sigma_re_slopes.resize(n_terms);
@@ -92,8 +115,10 @@ ParamLayout compute_param_layout(const ModelData& data) {
       for (int c = 0; c < n_coefs; c++) {
         layout.log_sigma_re_slopes[t][c] = idx++;
       }
-      // Legacy: point to first sigma for backwards compat
-      layout.log_sigma_re_multi[t] = layout.log_sigma_re_slopes[t][0];
+      // First sigma of the term, for the callers that read one scalar per
+      // term. A term with no coefficient has no sigma to point at.
+      layout.log_sigma_re_multi[t] =
+          (n_coefs > 0) ? layout.log_sigma_re_slopes[t][0] : -1;
     }
 
     // Second pass: allocate Cholesky parameters for correlated terms
@@ -126,6 +151,8 @@ ParamLayout compute_param_layout(const ModelData& data) {
 
   } else if (data.n_re_terms > 1) {
     // Multiple RE terms (intercept only): allocate sigma and RE for each term
+    require_re_field(data.re_n_groups_multi.size(), data.n_re_terms,
+                     "re_n_groups_multi");
     layout.log_sigma_re_multi.resize(data.n_re_terms);
     layout.re_start_multi.resize(data.n_re_terms);
     layout.re_end_multi.resize(data.n_re_terms);

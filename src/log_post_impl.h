@@ -1,11 +1,9 @@
 // log_post_impl.h
-// Templated log-posterior computation. Phase D simplification
-//: the only supported path is the generic
-// LikelihoodSpec interface, so the template now just forwards to
-// the generic-spec evaluator for T = double and is a defensive no-op
-// for autodiff T (those callers should route through
-// compute_gradient_generic_arena instead, which builds its own
-// arena-AD log_post via compute_log_post_generic<Var>).
+// Templated log-posterior computation. The one supported path is the generic
+// LikelihoodSpec interface, so the template forwards to the generic-spec
+// evaluator for T = double and is a defensive no-op for autodiff T (those
+// callers route through compute_gradient_generic_arena instead, which builds
+// its own arena-AD log_post via compute_log_post_generic<Var>).
 
 #ifndef TULPA_LOG_POST_IMPL_H
 #define TULPA_LOG_POST_IMPL_H

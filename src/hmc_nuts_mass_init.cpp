@@ -273,21 +273,6 @@ MassMatrixConfig select_and_init_mass_matrix(
     }
   }
 
-  // Initialize sparse GMRF block for ST_IV spatiotemporal interaction.
-  // Uses sparse Cholesky of posterior precision Q = tau*(Q_s?Q_t) + diag(H_lik).
-  // At warmup end, extracts diag(Q^{-1}) to set precision-informed diagonal mass.
-  // NOTE: Factorization happens later (after warmup discovers tau and H_lik).
-  bool use_sparse_gmrf_mass = true;
-  if (use_sparse_gmrf_mass && data.has_spatiotemporal && data.spatiotemporal_data.type == STType::TYPE_IV) {
-    int st_S = data.spatiotemporal_data.n_spatial;
-    int st_T = data.spatiotemporal_data.n_times;
-    mass.sparse_gmrf.init(layout.st_delta_start, st_S, st_T);
-    if (verbose) {
-      REprintf("  [SPARSE_GMRF] ST_IV block initialized: %dx%d=%d params at offset %d\n",
-               st_S, st_T, st_S * st_T, layout.st_delta_start);
-    }
-  }
-
   return {effective_metric, auto_selected_diag, std::move(block_specs)};
 }
 
@@ -308,9 +293,9 @@ void warm_start_mass_matrix(
   std::vector<double> sqrt_m(n_params, 1.0);
   bool any_informed = false;
 
-  // HSGP basis coefficients: beta_j ~ N(0, 1) ? posterior variance ? 1
+  // HSGP basis coefficients: beta_j ~ N(0, 1), so posterior variance ~ 1
   // Hyperparameters: log_sigma2 ~ prior with moderate variance,
-  //                  log_lengthscale ~ LogNormal(0,1) ? variance ? 1
+  //                  log_lengthscale ~ LogNormal(0,1), so variance ~ 1
   // layout.is_hsgp follows spatial_type alone, while the indices additionally
   // require the HSGP data block, so the flag is true with the indices unset on
   // a model that declares an HSGP field and carries no basis for it.
@@ -324,13 +309,19 @@ void warm_start_mass_matrix(
     any_informed = true;
   }
 
-  // ICAR: phi[s] precision ? degree (number of neighbors)
-  // Higher degree ? smaller variance ? tighter mass
+  // ICAR: phi[s] precision ~ degree (number of neighbors)
+  // Higher degree means smaller variance and tighter mass.
+  // The loop reads adj_row_ptr[s + 1], so a CSR row pointer covering the whole
+  // spatial block needs one more entry than the block has nodes. A shorter one
+  // is a caller mismatch, not a partial warm start, so the whole group is left
+  // at the identity rather than warm-started off a read past the end.
+  const int n_spatial_nodes = layout.spatial_end - layout.spatial_start;
   if (layout.has_spatial && !layout.is_bym2 &&
-      data.spatial_type == SpatialType::ICAR && !data.adj_row_ptr.empty()) {
-    for (int s = 0; s < (layout.spatial_end - layout.spatial_start); s++) {
+      data.spatial_type == SpatialType::ICAR &&
+      (int)data.adj_row_ptr.size() >= n_spatial_nodes + 1) {
+    for (int s = 0; s < n_spatial_nodes; s++) {
       int degree = data.adj_row_ptr[s + 1] - data.adj_row_ptr[s];
-      // ICAR precision diagonal ? degree; variance ? 1/degree
+      // ICAR precision diagonal ~ degree; variance ~ 1/degree
       double var_est = 1.0 / std::max(1.0, (double)degree);
       inv_m[layout.spatial_start + s] = var_est;
     }
@@ -338,7 +329,7 @@ void warm_start_mass_matrix(
   }
 
   // BYM2: spatial phi ~ ICAR (eigenvalue-scaled), theta ~ N(0, I)
-  // Riebler parameterization: phi[s] ? scale_factor variance
+  // Riebler parameterization: phi[s] carries scale_factor variance
   if (layout.is_bym2) {
     double sf = std::max(data.bym2_scale_factor, 0.1);
     for (int s = layout.spatial_start; s < layout.spatial_end; s++) {
@@ -367,14 +358,14 @@ void warm_start_mass_matrix(
     for (int j = layout.temporal_start; j < layout.temporal_end; j++) {
       inv_m[j] = 1.0;
     }
-    // AR1 rho: logit scale variance ? 4
+    // AR1 rho: logit scale variance ~ 4
     if (layout.logit_rho_ar1_idx >= 0) {
       inv_m[layout.logit_rho_ar1_idx] = 4.0;
     }
     any_informed = true;
   }
 
-  // Non-centered RE: z ~ N(0, 1) ? unit scale
+  // Non-centered RE: z ~ N(0, 1), so unit scale
   if (layout.has_re && data.re_parameterization == 1) {  // 1 = non-centered
     for (int j = layout.re_start; j < layout.re_end; j++) {
       inv_m[j] = 1.0;

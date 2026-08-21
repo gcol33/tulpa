@@ -143,6 +143,7 @@ tulpa_check_control <- function(control, allowed, where) {
     ordinal = c("max_iter", "n_draws", "seed"),
     sample_glmm = c("n_iter", "warmup", "n_chains", "seed", "verbose",
                     "epsilon", "L", "adapt_delta", "max_treedepth",
+                    "mass_matrix",
                     "n_draws", "alpha", "batch_size", "ess_threshold",
                     "n_particles", "n_mcmc_steps", "mclmc_adjusted",
                     "vi_variant", "vi_mc_samples", "vi_max_iter",

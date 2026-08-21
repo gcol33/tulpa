@@ -61,7 +61,18 @@
 #'   `sigma_beta`, `n_chains`, `max_treedepth`, `adapt_delta`, `epsilon`, `L`,
 #'   `batch_size`, `alpha`, `n_particles`, `n_mcmc_steps`, `ess_threshold`,
 #'   `vi_variant`, `vi_mc_samples`, `vi_max_iter`, `vi_max_grad_norm`,
-#'   `n_draws`, `verbose`).
+#'   `n_draws`, `verbose`, `mass_matrix`).
+#'
+#'   `mass_matrix` selects the NUTS/HMC metric: `"diag"` (the default),
+#'   `"dense"`, `"block_diag"`, or `"auto"`. Under `"auto"` the kernel reads the
+#'   parameter layout and gives each correlated hyperparameter group its own
+#'   small dense block -- the BYM2 and GP `(log sigma, phi)` pairs, the
+#'   multiscale-temporal variances, a correlated random-slope term's Cholesky
+#'   coordinates -- while an ICAR or latent-factor model small enough for the
+#'   `O(p^2)` per-step cost takes a full dense metric. `"block_diag"`
+#'   additionally blocks the temporal-GP and HSGP hyperparameter pairs, which
+#'   `"auto"` leaves to the diagonal. Backends other than `"hmc"` carry no
+#'   metric and reject a non-default value.
 #'
 #'   `vi_max_iter` and `vi_mc_samples` both bound a loop that has to run at
 #'   least once -- the optimisation loop whose ELBO history is the fit's only
@@ -166,6 +177,14 @@ tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
     zi_spec       = zi_spec,
     init_nullable = warm_start$init,
     inv_metric_diag_nullable = warm_start$inv_metric_diag,
+    # NUTS/HMC metric. The default stays "diag" -- the metric a fit gets when
+    # nothing asks for another one -- so a fit that does not set this samples
+    # exactly as before. "auto" turns on the structural block detection
+    # (correlated hyperparameter pairs get small dense blocks, an ICAR or
+    # latent-factor model goes to full DENSE); any other backend rejects a
+    # non-default value rather than ignoring it.
+    mass_matrix = match.arg(control$mass_matrix %||% "diag",
+                            c("diag", "dense", "block_diag", "auto")),
     # ESS kernel knobs; inert on every other backend.
     ess_adapt_during_warmup = isTRUE(control$ess_adapt_during_warmup %||% FALSE),
     ess_adapt_interval = as.integer(control$ess_adapt_interval %||% 50L),

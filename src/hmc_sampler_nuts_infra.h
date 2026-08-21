@@ -1,4 +1,4 @@
-﻿// hmc_sampler_nuts_infra.h
+// hmc_sampler_nuts_infra.h
 // Fragment of hmc_sampler.h. Self-contained: defines symbols inside
 // namespace tulpa_hmc.
 // LeapfrogResult variants, TreeStats, U-turn criterion helpers,

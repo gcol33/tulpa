@@ -1,6 +1,12 @@
 // =============================================================================
 // Non-centered NNGP parameterization
 // =============================================================================
+//
+// A namespace-body fragment, not a standalone header: hmc_gp.h includes it
+// inside `namespace tulpa_gp { }`, and it resolves dcov_dphi / compute_cov from
+// what that file has already declared. It carries no include guard and must not
+// be included directly. Same pattern as hmc_nuts_chain_setup.h and the
+// hmc_nuts_chain_iter_*.h fragments, which hmc_nuts_chain.cpp documents.
 
 #include "omp_threads.h"
 // Instead of sampling w ~ NNGP(0, sigma2, phi) directly (centered),

@@ -3,14 +3,17 @@
     if (is_warmup && next_window_idx < (int)mass_window_ends.size() &&
         iter == mass_window_ends[next_window_idx]) {
       bool dense_covariance_set = false;  // Track if DENSE covariance (not just diagonal) succeeded this window
-      // Dense mass matrix: try full covariance first
-      // OAS shrinkage guarantees PD even when n < p, so we can lower the
-      // threshold from n_params+5.  For large p the original threshold is
-      // unreachable during warmup (e.g. p=159, need 164 but only get 125).
-      // New threshold: min(p+5, max(50, p/2))  ? for p=159 this is 79.
+      // Dense mass matrix: try full covariance first.
+      // OAS shrinkage guarantees PD even when n < p, so the threshold sits
+      // below n_params + 5, which for large p is unreachable inside warmup
+      // (at p = 159 it needs 164 samples and the windows supply 125).
       int dense_threshold = std::min(n_params + 5,
                                      std::max(50, n_params / 2));
-      if (mass.type == MassMatrixType::DENSE && cov_stats.n >= dense_threshold) {
+      // `cov_stats` is allocated only for a metric that starts DENSE, so its
+      // dimension is the statement that this chain has a dense accumulator to
+      // read at all.
+      if (mass.type == MassMatrixType::DENSE && cov_stats.dim == n_params &&
+          cov_stats.n >= dense_threshold) {
         auto cov = cov_stats.covariance();
         if (mass.update_from_covariance(cov.data(), cov_stats.n)) {
           use_mass_matrix = true;
@@ -21,7 +24,7 @@
                      cov_stats.shrinkage_intensity);
           }
         } else {
-          // Cholesky failed ? mass auto-degraded to DIAG, use diagonal stats
+          // Cholesky failed -- mass auto-degraded to DIAG, use diagonal stats
           if (verbose) {
             REprintf("  [DENSE] Window %d (iter %d): Cholesky FAILED (cov_stats.n=%d, p=%d)\n",
                      next_window_idx, iter, cov_stats.n, n_params);
@@ -32,7 +35,7 @@
           }
         }
       } else if (mass.type == MassMatrixType::DENSE) {
-        // Not enough samples for dense yet ? use diagonal as interim
+        // Not enough samples for dense yet -- use diagonal as interim
         if (verbose) {
           REprintf("  [DENSE] Window %d (iter %d): not enough samples (cov_stats.n=%d, need=%d)\n",
                    next_window_idx, iter, cov_stats.n, dense_threshold);
@@ -67,10 +70,10 @@
         use_mass_matrix = true;
       }
 
-      // Temporal GP NC: z ~ N(0,1) by construction ? optimal diag mass ? 1.0.
-      // With limited warmup samples, noisy variance estimates for 20 z params
-      // create unbalanced mass ? small epsilon. Fix z entries to 1.0 so the
-      // step size is driven by the hyperparameters (beta, sigma2, phi) only.
+      // Temporal GP NC: z ~ N(0,1) by construction, so the optimal diagonal mass
+      // is ~1.0. With limited warmup samples, noisy variance estimates for 20 z
+      // params create unbalanced mass and a small epsilon. Fix z entries to 1.0 so
+      // the step size is driven by the hyperparameters (beta, sigma2, phi) only.
       if (verbose && layout.is_temporal_gp) {
         REprintf("  [Z-DEBUG] Window %d (iter %d): use_mass=%d, tgp=%d, nc=%d, ts=%d, te=%d, mass_n=%d\n",
                  next_window_idx, iter, (int)use_mass_matrix,

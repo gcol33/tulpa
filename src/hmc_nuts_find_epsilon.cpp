@@ -1,4 +1,4 @@
-﻿// hmc_nuts_find_epsilon.cpp
+// hmc_nuts_find_epsilon.cpp
 // Stan-style find_reasonable_epsilon (identity / diagonal / dense mass).
 
 #include <cmath>

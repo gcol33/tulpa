@@ -860,6 +860,15 @@ double cpp_test_multiscale_temporal_log_lik(
     double rho_short, std::string trend_type, int seasonal_period,
     std::string short_term_type
 ) {
+  // On the sampler path rho is 2 * inv_logit(logit_rho) - 1, so |rho| < 1 by
+  // construction. This entry point takes it raw, and the AR1 density is the
+  // stationary one: outside the unit interval its 1 - rho^2 factor is at its
+  // floor and the number returned is not the density of anything.
+  if (!R_finite(rho_short) || std::fabs(rho_short) >= 1.0) {
+    Rcpp::stop("cpp_test_multiscale_temporal_log_lik: rho_short (%g) must be "
+               "finite and satisfy |rho_short| < 1.", rho_short);
+  }
+
   auto as_type = [](const std::string& s) {
     if (s == "rw1") return tulpa::TemporalType::RW1;
     if (s == "rw2") return tulpa::TemporalType::RW2;
@@ -890,7 +899,12 @@ double cpp_test_multiscale_temporal_log_lik(
 #include <omp.h>
 #endif
 
-// cpp_test_get_max_threads removed — use cpp_get_max_threads (hmc_sampler.cpp)
+#include "omp_threads.h"
+
+// These three probes run in R CMD check, where _R_CHECK_LIMIT_CORES_ caps the
+// permitted team at two, so each takes its requested count through
+// tulpa_omp_team_size_req rather than as a num_threads clause of its own. The
+// requested count is still reported, so a test can see request and team apart.
 
 // [[Rcpp::export]]
 List cpp_test_parallel_dot_products(NumericMatrix X, NumericVector y, int n_threads) {
@@ -909,7 +923,7 @@ List cpp_test_parallel_dot_products(NumericMatrix X, NumericVector y, int n_thre
   double total_sum = 0.0;
 
 #ifdef _OPENMP
-  #pragma omp parallel for reduction(+:total_sum) schedule(static) num_threads(n_threads)
+  #pragma omp parallel for reduction(+:total_sum) schedule(static) num_threads(tulpa_omp_team_size_req(n_threads, N))
 #endif
   for (int i = 0; i < N; i++) {
     double dot = tulpa_linalg::dot_product(&X_flat[i * p], y.begin(), p);
@@ -934,7 +948,7 @@ List cpp_test_parallel_likelihood(
   double log_lik = 0.0;
 
 #ifdef _OPENMP
-  #pragma omp parallel for reduction(+:log_lik) schedule(static) num_threads(n_threads)
+  #pragma omp parallel for reduction(+:log_lik) schedule(static) num_threads(tulpa_omp_team_size_req(n_threads, N))
 #endif
   for (int i = 0; i < N; i++) {
     // Poisson log-likelihood
@@ -956,7 +970,7 @@ NumericVector cpp_test_parallel_independent(int n, int n_threads) {
   NumericVector results(n);
 
 #ifdef _OPENMP
-  #pragma omp parallel for schedule(static) num_threads(n_threads)
+  #pragma omp parallel for schedule(static) num_threads(tulpa_omp_team_size_req(n_threads, n))
 #endif
   for (int i = 0; i < n; i++) {
     // Compute a deterministic function that doesn't depend on shared state

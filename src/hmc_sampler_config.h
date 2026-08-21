@@ -1,4 +1,4 @@
-﻿// hmc_sampler_config.h
+// hmc_sampler_config.h
 // Fragment of hmc_sampler.h. Self-contained: defines symbols inside
 // namespace tulpa_hmc.
 // MassMatrixConfig + select/init/warm-start helpers (used by

@@ -235,7 +235,7 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
     Rcpp::Nullable<Rcpp::IntegerVector> Q_precomp_i = R_NilValue,
     Rcpp::Nullable<Rcpp::IntegerVector> Q_precomp_p = R_NilValue,
     bool noncenter = true,
-    int mass_matrix = 0
+    std::string mass_matrix = "diag"
 ) {
     const int N = y_r.size();
     const int p = X_r.ncol();
@@ -495,20 +495,15 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
         init[layout.log_tau_spde_idx]   = log_tau_init;
     }
 
-    // Metric. DIAG (0, default) suits a well-conditioned field; DENSE (1)
-    // captures the beta/field cross-curvature that a diagonal metric cannot,
-    // which matters for an ill-conditioned latent block (e.g. the rational
-    // fractional-nu Q, whose near-null direction otherwise leaves the
-    // intercept marginal under-dispersed --). BLOCK_DIAG (2)
-    // and AUTO (3) round out the run_hmc_chain_cpp options. The R wrapper
-    // resolves the default per field structure.
-    tulpa::MassMatrixType metric;
-    switch (mass_matrix) {
-        case 1:  metric = tulpa::MassMatrixType::DENSE;      break;
-        case 2:  metric = tulpa::MassMatrixType::BLOCK_DIAG; break;
-        case 3:  metric = tulpa::MassMatrixType::AUTO;       break;
-        default: metric = tulpa::MassMatrixType::DIAG;       break;
-    }
+    // Metric. "diag" suits a well-conditioned field; "dense" captures the
+    // beta/field cross-curvature that a diagonal metric cannot, which matters
+    // for an ill-conditioned latent block (e.g. the rational fractional-nu Q,
+    // whose near-null direction otherwise leaves the intercept marginal
+    // under-dispersed). "block_diag" and "auto" round out the
+    // run_hmc_chain_cpp options; the R wrapper resolves "auto" per field
+    // structure before it reaches here.
+    const tulpa::MassMatrixType metric =
+        tulpa_hmc::parse_metric_type(mass_matrix);
 
     tulpa_hmc::HMCResultCpp result = tulpa_hmc::run_hmc_chain_cpp(
         init, data, layout,

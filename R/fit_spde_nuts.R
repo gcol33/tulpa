@@ -280,11 +280,9 @@ tulpa_nuts_spde <- function(y, X, spatial,
   # DENSE_MAX_PARAMS = 200 ceiling (captures beta/field cross-curvature),
   # diagonal above it. n_params = p + field block + log_phi (+2 hyper slots
   # when joint).
-  mass_code <- switch(mass_matrix, diag = 0L, dense = 1L, block_diag = 2L,
-                      auto = -1L)
-  if (mass_code == -1L) {
-    n_params  <- ncol(X) + n_mesh_use + 1L + if (joint) 2L else 0L
-    mass_code <- if (n_params <= 200L) 1L else 0L
+  if (identical(mass_matrix, "auto")) {
+    n_params    <- ncol(X) + n_mesh_use + 1L + if (joint) 2L else 0L
+    mass_matrix <- if (n_params <= 200L) "dense" else "diag"
   }
 
   res <- cpp_tulpa_fit_spde_nuts(
@@ -331,7 +329,7 @@ tulpa_nuts_spde <- function(y, X, spatial,
     # Non-centering is a fixed-hyper option; the joint path is intrinsically
     # non-centered, so this flag only takes effect when joint = FALSE.
     noncenter         = isTRUE(noncenter) && !joint,
-    mass_matrix       = mass_code
+    mass_matrix       = mass_matrix
   )
 
   res$range   <- range

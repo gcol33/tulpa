@@ -1,4 +1,4 @@
-﻿// hmc_sampler_adapt.h
+// hmc_sampler_adapt.h
 // Fragment of hmc_sampler.h. Self-contained: defines symbols inside
 // namespace tulpa_hmc.
 // WelfordCovStats, WelfordStats, DualAveraging.

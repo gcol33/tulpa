@@ -10,6 +10,8 @@
 
 #include <vector>
 #include <cmath>
+#include <cstddef>
+#include <stdexcept>
 #include <string>
 #include "hmc_temporal.h"  // For temporal kernels (RW1, RW2, AR1)
 #include "pc_prior.h"
@@ -191,6 +193,14 @@ inline void compute_temporal_eta(
     std::vector<T>& eta_temporal  // Output: length n_obs
 ) {
   int N = temp_data.n_obs;
+  // n_obs and time_index are separate fields of MultiscaleTemporalData, which
+  // ships under inst/include: a LinkingTo caller can declare more observations
+  // than it supplied indices for, and the loop below reads time_index[i] for
+  // every one of them.
+  if (temp_data.time_index.size() < static_cast<std::size_t>(N)) {
+    throw std::invalid_argument(
+        "tulpa: MultiscaleTemporalData.time_index is shorter than n_obs.");
+  }
   eta_temporal.resize(N);
 
   // The intrinsic arms are centred on their way in. Their augmented prior gives

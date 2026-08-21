@@ -1,4 +1,4 @@
-﻿// hmc_nuts_dual_avg.cpp
+// hmc_nuts_dual_avg.cpp
 // DualAveraging method definitions for the HMC/NUTS step-size adaptation.
 
 #include <algorithm>
@@ -59,7 +59,7 @@ double DualAveraging::update(double alpha) {
   H_bar = (1.0 - w) * H_bar + w * (target_accept - alpha);
   double log_epsilon = mu - std::sqrt((double)m) / gamma * H_bar;
   // Clamp log_epsilon to reasonable range
-  // Lower bound: exp(-14) ? 8e-7, Upper bound: exp(2) ? 7.4
+  // Lower bound: exp(-14) ~ 8e-7, Upper bound: exp(2) ~ 7.4
   log_epsilon = std::max(-14.0, std::min(log_epsilon, 2.0));
   double epsilon = std::exp(log_epsilon);
   double m_w = std::pow((double)m, -kappa);

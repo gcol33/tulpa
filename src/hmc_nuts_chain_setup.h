@@ -42,9 +42,8 @@
   if (use_nuts) {
     compute_gradient(q, data, layout, current_grad, &log_prob_current);
   } else {
-    // After Phase D every caller is generic LikelihoodSpec
-    // and compute_log_post forwards to compute_log_post_generic_spec_double,
-    // so the legacy autodiff-vs-H log-post split is no longer needed.
+    // Every caller drives a generic LikelihoodSpec, and compute_log_post
+    // forwards to compute_log_post_generic_spec_double.
     log_prob_current = compute_log_post(q, data, layout);
   }
 
@@ -102,7 +101,13 @@
   }
 
   WelfordStats mass_stats(n_params);              // Always track diagonal
-  WelfordCovStats cov_stats(n_params);            // Only used when dense
+  // The dense covariance accumulator holds n_params^2 doubles and is read only
+  // while the metric is DENSE. The warmup-end recovery paths can only move the
+  // metric TOWARD the diagonal (DENSE -> DIAG, BLOCK_DIAG -> DIAG) or install a
+  // DENSE identity mass with adapted = false, which never reads it, so a metric
+  // that does not start DENSE never needs one.
+  WelfordCovStats cov_stats(effective_metric == MassMatrixType::DENSE
+                            ? n_params : 0);
   bool use_mass_matrix = false;
 
   // L-BFGS mass matrix adaptation (warmup-only)
@@ -139,17 +144,15 @@
   // mass update has ~50 samples. This trades one less mass update for better quality.
   int init_window = (n_params > 80) ? 50 : 25;
 
-  // Dense mass models: balance final step size tuning vs warmup budget.
-  // Models with p>100 need sufficient mass adaptation windows (warmup is fixed),
-  // so keep term_buffer moderate. Previous 75 was too aggressive ? used 30%
-  // of warmup for final tuning, leaving fewer samples for mass adaptation.
+  // A dense metric past p = 100 needs enough mass-adaptation windows inside a
+  // fixed warmup, so the final step-size buffer stays moderate rather than
+  // taking a third of warmup.
   if (effective_metric == MassMatrixType::DENSE && n_params > 100) {
-    term_buffer = 60;  // Reduced from 75 ? saves 15 iterations for mass adaptation
+    term_buffer = 60;
   }
 
-  // Note: For p~24, first mass window (25 samples < 29 needed) fails,
-  // but this is fine ? better to wait for more samples than set a poor
-  // mass estimate early. The second window (100+ samples) gives good mass.
+  // A first mass window smaller than the parameter count is skipped rather than
+  // used: the next window carries enough samples for a usable estimate.
 
   // Adjust for short warmup
   if (n_warmup < init_buffer + term_buffer + init_window) {

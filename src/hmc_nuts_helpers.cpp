@@ -1,4 +1,4 @@
-﻿// hmc_nuts_helpers.cpp
+// hmc_nuts_helpers.cpp
 // NUTS helper: log-sum-exp.
 
 #include <algorithm>

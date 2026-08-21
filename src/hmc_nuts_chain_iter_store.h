@@ -95,10 +95,6 @@
       result.divergent[sample_idx] = divergent ? 1 : 0;
       result.treedepth[sample_idx] = iter_treedepth;
 
-      // Collapsed-spatial mode storage was deleted in Phase D
-      // along with the icar_collapsed / gp_collapsed
-      // kernels. Downstream packages on the generic LikelihoodSpec
-      // path never set those flags.
 
       sample_idx++;
     } else {

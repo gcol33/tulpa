@@ -19,9 +19,6 @@
 #include <omp.h>
 #endif
 
-// Verbose debug output (set to false for production)
-#define GP_DEBUG_BOUNDS false
-
 namespace tulpa_gp {
 
 using tulpa::CovType;

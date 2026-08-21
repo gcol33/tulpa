@@ -86,8 +86,7 @@
         }
       }
 
-      // Compute proposed Hamiltonian. After Phase D every caller is
-      // generic LikelihoodSpec, so compute_log_post forwards to the
+      // Compute proposed Hamiltonian. compute_log_post forwards to the
       // generic-spec evaluator.
       double log_prob_prop = compute_log_post(q_prop, data, layout);
       double kinetic_prop = kinetic_energy_of(p_prop);

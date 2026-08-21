@@ -61,7 +61,15 @@ std::size_t available_ram_bytes() {
   }
   return 0;
 #elif defined(__APPLE__)
+  // mach_host_self() hands back a send right the caller owns, so every exit
+  // path deallocates it; this function is called per allocation decision, and a
+  // leaked right per call accumulates for the lifetime of the R session.
   mach_port_t host = mach_host_self();
+  struct HostPortGuard {
+    mach_port_t port;
+    ~HostPortGuard() { mach_port_deallocate(mach_task_self(), port); }
+  } host_guard{host};
+
   vm_size_t page_size = 0;
   if (host_page_size(host, &page_size) != KERN_SUCCESS) {
     return 0;

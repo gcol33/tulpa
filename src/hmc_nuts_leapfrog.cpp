@@ -1,4 +1,4 @@
-﻿// hmc_nuts_leapfrog.cpp
+// hmc_nuts_leapfrog.cpp
 // Leapfrog integrator for HMC/NUTS.
 
 #include <vector>

@@ -566,7 +566,7 @@ inline double parallel_block_reduce(int N, int block_size, int n_threads, Func f
   int n_blocks = (N + block_size - 1) / block_size;
 
   #ifdef _OPENMP
-  #pragma omp parallel for reduction(+:total) num_threads(n_threads)
+  #pragma omp parallel for reduction(+:total)       num_threads(tulpa_omp_team_size_req(n_threads, n_blocks))
   #endif
   for (int b = 0; b < n_blocks; b++) {
     int start = b * block_size;

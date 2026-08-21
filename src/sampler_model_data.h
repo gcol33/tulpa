@@ -412,11 +412,39 @@ inline void build_sampler_model_inputs(
         ms.time_index.assign(tidx.begin(), tidx.end());
         ms.n_obs   = static_cast<int>(tidx.size());
         ms.n_times = Rcpp::as<int>(tp["n_times"]);
+        if (ms.n_times < 1) {
+            Rcpp::stop("build_sampler_model_inputs: multiscale n_times (%d) "
+                       "must be at least 1.", ms.n_times);
+        }
+        // compute_temporal_eta indexes the three fields at time_index[i] - 1
+        // and guards each read, so an out-of-range entry would contribute zero
+        // instead of erroring. It is rejected here, where the value came in.
+        for (int i = 0; i < ms.n_obs; i++) {
+            if (ms.time_index[i] < 1 || ms.time_index[i] > ms.n_times) {
+                Rcpp::stop("build_sampler_model_inputs: multiscale "
+                           "time_index[%d] is %d; it must lie in [1, n_times] "
+                           "= [1, %d].", i + 1, ms.time_index[i], ms.n_times);
+            }
+        }
         ms.n_groups = tp.containsElementNamed("n_groups") &&
                       !Rf_isNull(tp["n_groups"])
                           ? Rcpp::as<int>(tp["n_groups"]) : 1;
         if (tp.containsElementNamed("group_index") && !Rf_isNull(tp["group_index"])) {
             Rcpp::IntegerVector gidx = Rcpp::as<Rcpp::IntegerVector>(tp["group_index"]);
+            if (static_cast<int>(gidx.size()) != ms.n_obs) {
+                Rcpp::stop("build_sampler_model_inputs: multiscale "
+                           "length(group_index) (%d) must equal "
+                           "length(time_index) (%d).",
+                           static_cast<int>(gidx.size()), ms.n_obs);
+            }
+            for (int i = 0; i < ms.n_obs; i++) {
+                if (gidx[i] < 1 || gidx[i] > ms.n_groups) {
+                    Rcpp::stop("build_sampler_model_inputs: multiscale "
+                               "group_index[%d] is %d; it must lie in "
+                               "[1, n_groups] = [1, %d].",
+                               i + 1, gidx[i], ms.n_groups);
+                }
+            }
             ms.group_index.assign(gidx.begin(), gidx.end());
         } else {
             ms.group_index.assign(ms.n_obs, 1);

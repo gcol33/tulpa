@@ -1,5 +1,85 @@
 # tulpa NEWS
 
+## 0.1.4
+
+* **The NUTS metric is reachable from the sampler front door** (#545).
+  `select_and_init_mass_matrix` resolved AUTO, detected the mass blocks and
+  built the block-diagonal `MassBlock` machinery on a path no caller could
+  reach: every entry point but the SPDE one pinned `MassMatrixType::DIAG`, and
+  the SPDE layout carries none of the structures the detector looks for.
+  `tulpa_sample_glmm(control = list(mass_matrix = ))` now selects it --
+  `"diag"` (the default, so an existing fit is unchanged to the bit),
+  `"dense"`, `"block_diag"` or `"auto"`. Under `"auto"` the correlated
+  hyperparameter groups get their own small dense blocks (the BYM2 and GP
+  `(log sigma, phi)` pairs, the multiscale-temporal variances, a correlated
+  random-slope term's Cholesky coordinates) and an ICAR or latent-factor model
+  inside the `DENSE_MAX_PARAMS` ceiling takes a full dense metric.
+  `tulpa_hmc::parse_metric_type` is the one string-to-metric map and rejects an
+  unrecognised name rather than defaulting to DIAG; the SPDE entry point took
+  its own integer code and now comes through the same map. A backend with no
+  mass matrix refuses a non-default value instead of ignoring it.
+
+* **ModelData vectors are checked before the RE layout indexes them** (#546).
+  `compute_param_layout` drove the RE-slopes loop off `n_re_terms` and indexed
+  `re_n_coefs`, `re_correlated`, `re_n_chol` and `re_n_groups_multi` by the term
+  counter with no length test, and read `log_sigma_re_slopes[t][0]` on a term
+  with no coefficient. `ModelData` ships under `inst/include`, so a `LinkingTo`
+  package reaches all five without passing through the R-side validation. Each
+  is now checked once, by name. The ICAR mass warm start guarded its CSR row
+  pointer on `!empty()` while reading `adj_row_ptr[s + 1]` across the whole
+  spatial block, and now requires the length that read needs.
+  `build_sampler_model_inputs` validates the multiscale temporal
+  `time_index` / `group_index` against `n_times` / `n_groups`: an out-of-range
+  entry used to contribute zero through `compute_temporal_eta`'s per-read
+  guards, so a mismatched index vector showed up as a quietly weaker temporal
+  effect rather than an error. `compute_temporal_eta` also checks `time_index`
+  against the `n_obs` its caller declares, and
+  `cpp_test_multiscale_temporal_log_lik` rejects a non-stationary `rho_short`
+  the stationary AR1 factor would otherwise absorb into its floor.
+
+* **The unreachable mass-block machinery is gone** (#547). `PrecisionBlock` and
+  `KroneckerBlock` were never initialised, and `SparseGMRFBlock` was
+  initialised, never factorised, then deactivated at warmup end -- so
+  `has_structured_blocks()` was false on every path and the branches it guarded
+  in the kinetic energy, the momentum draw, `inv_mass_times_p` and the leapfrog
+  drift were dead, including three per-leapfrog-step `std::vector`
+  allocations inside the file that describes itself as the zero-allocation NUTS
+  core (#548). `hmc_sampler_mass_blocks.h` drops from 865 lines to 395. The
+  ST_IV precision-informed mass override the deactivation was waiting on is
+  tracked in #585 rather than left as a half-wired struct a reader cannot tell
+  from a live one. The 13 `#if GP_DEBUG_BOUNDS` blocks in
+  `hmc_gp_log_lik.h` are gone with them: `hmc_gp.h` defined the flag as `false`
+  unconditionally, so no build flag could reach them, and each block that
+  checked anything sat behind an always-on check that returned first. The
+  `GP_AUTODIFF_DEBUG` scaffold read a `call_count` declared under a different
+  flag, so turning it on did not compile; it is gone too.
+
+* **The multiscale GP density stopped copying its inputs per gradient**
+  (#548). `multiscale_gp_log_lik_t` transcribed `MultiscaleGPData` into two
+  temporary `GPData` objects on every call -- every neighbour array copied,
+  `nn_neighbor_dist` included at `n_obs * nn * nn` doubles -- because the
+  density took a `GPData`. It is now written against the six arrays it reads,
+  and both the single-field and the two-scale entry points pass their own
+  members straight in. The dense covariance accumulator
+  (`WelfordCovStats`, `n_params^2` doubles per chain) is allocated only for a
+  metric that starts DENSE, instead of on every chain of every fit.
+
+* **Every OpenMP team goes through `tulpa_omp_team_size`** (#550). The indexed
+  joint scatter took its thread count from R (`.tulpa_inner_threads`, keyed on
+  the core count), and the three exported OpenMP probes took theirs raw, so
+  none of them saw `OMP_NUM_THREADS`, `OMP_THREAD_LIMIT` or the two-core cap
+  `R CMD check` sets through `_R_CHECK_LIMIT_CORES_`. All four now request their
+  team through the shared clamp, as does `parallel_block_reduce`.
+
+* **Header hygiene in the HMC layer** (#549). Ten UTF-8 BOMs stripped, and the
+  comments a non-UTF-8 round trip had turned into bare `?` restored to what they
+  said. `available_ram_bytes()` deallocates the send right `mach_host_self()`
+  hands it on every macOS exit path, instead of leaking one per call.
+  `hmc_gp_nc.h` says at the top that it is a namespace-body fragment included
+  inside `namespace tulpa_gp` and must not be included directly. Refactor
+  history, dated benchmark tables and a stale "known heisenbug" note that told
+  the reader to avoid the only GP density there is are out of the code.
+
 ## 0.1.3
 
 * **The correlation Cholesky covers the whole cone** (#431, #443). The raw

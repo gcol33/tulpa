@@ -18,55 +18,19 @@ inline double gp_nngp_log_lik(
   // Bounds validation (always on - prevents UB from invalid data structures)
   if (gp_data.nn_order.size() < (size_t)N) return -INFINITY;
   if (gp_data.nn_idx.size() < (size_t)(N * nn)) return -INFINITY;
-  if (gp_data.nn_dist.size() < (size_t)(N * nn)) return -INFINITY;  // Added: was missing
-  if (gp_data.nn_neighbor_dist.size() < (size_t)(N * nn * nn)) return -INFINITY;  // Critical: prevents segfault
+  if (gp_data.nn_dist.size() < (size_t)(N * nn)) return -INFINITY;
+  // nn_neighbor_dist is indexed at i * nn * nn + j1 * nn + j2 below; a short
+  // one is an out-of-bounds read, not a wrong number.
+  if (gp_data.nn_neighbor_dist.size() < (size_t)(N * nn * nn)) return -INFINITY;
   if (w.size() < (size_t)N) return -INFINITY;
   if (gp_data.coords.size() < (size_t)(2 * N)) return -INFINITY;
-
-#if GP_DEBUG_BOUNDS
-  Rcpp::Rcout << "[GP_DEBUG] gp_nngp_log_lik called: N=" << N << ", nn=" << nn << "\n";
-  Rcpp::Rcout << "[GP_DEBUG] w.size()=" << w.size() << "\n";
-  Rcpp::Rcout << "[GP_DEBUG] nn_order.size()=" << gp_data.nn_order.size() << "\n";
-  Rcpp::Rcout << "[GP_DEBUG] nn_idx.size()=" << gp_data.nn_idx.size() << "\n";
-  Rcpp::Rcout << "[GP_DEBUG] nn_dist.size()=" << gp_data.nn_dist.size() << "\n";
-  Rcpp::Rcout << "[GP_DEBUG] coords.size()=" << gp_data.coords.size() << "\n";
-
-  // Validate sizes
-  if (gp_data.nn_order.size() < (size_t)N) {
-    Rcpp::Rcout << "[GP_DEBUG] ERROR: nn_order too small! size=" << gp_data.nn_order.size() << " < N=" << N << "\n";
-    return -INFINITY;
-  }
-  if (gp_data.nn_idx.size() < (size_t)(N * nn)) {
-    Rcpp::Rcout << "[GP_DEBUG] ERROR: nn_idx too small! size=" << gp_data.nn_idx.size() << " < N*nn=" << (N * nn) << "\n";
-    return -INFINITY;
-  }
-  if (w.size() < (size_t)N) {
-    Rcpp::Rcout << "[GP_DEBUG] ERROR: w too small! size=" << w.size() << " < N=" << N << "\n";
-    return -INFINITY;
-  }
-#endif
 
   double log_lik = 0.0;
 
   // First observation: marginal N(0, sigma2)
-#if GP_DEBUG_BOUNDS
-  Rcpp::Rcout << "[GP_DEBUG] Accessing nn_order[0]...\n";
-#endif
   int first_idx = gp_data.nn_order[0];
 
-#if GP_DEBUG_BOUNDS
-  Rcpp::Rcout << "[GP_DEBUG] first_idx=" << first_idx << " (should be 0 to " << (N-1) << ")\n";
-  if (first_idx < 0 || first_idx >= N) {
-    Rcpp::Rcout << "[GP_DEBUG] ERROR: first_idx out of bounds!\n";
-    return -INFINITY;
-  }
-#endif
-
   log_lik += tulpa_nngp::marginal_log_density(w[first_idx], sigma2);
-
-#if GP_DEBUG_BOUNDS
-  Rcpp::Rcout << "[GP_DEBUG] First obs log_lik done, now processing remaining " << (N-1) << " observations\n";
-#endif
 
   // Pre-allocate Eigen matrices/vectors for Cholesky/CG solve
   // Using Eigen avoids hand-rolled linear algebra bugs and leverages SIMD
@@ -77,23 +41,11 @@ inline double gp_nngp_log_lik(
 
   // Remaining observations: conditional on neighbors
   for (int i = 1; i < N; i++) {
-#if GP_DEBUG_BOUNDS
-    if (i < 5 || i == N-1) {
-      Rcpp::Rcout << "[GP_DEBUG] Processing obs i=" << i << "\n";
-    }
-#endif
 
     int obs_idx = gp_data.nn_order[i];
 
     // Bounds check (always on)
     if (obs_idx < 0 || obs_idx >= N) return -INFINITY;
-
-#if GP_DEBUG_BOUNDS
-    if (obs_idx < 0 || obs_idx >= N) {
-      Rcpp::Rcout << "[GP_DEBUG] ERROR: obs_idx=" << obs_idx << " out of bounds at i=" << i << "\n";
-      return -INFINITY;
-    }
-#endif
 
     // Count actual neighbors (early observations have fewer). The shared
     // left-packed scan stops at the first entry outside [1, nn_order.size()],
@@ -101,11 +53,6 @@ inline double gp_nngp_log_lik(
     const int n_neighbors = tulpa_nngp::nngp_row_neighbours(
         gp_data.nn_idx.data() + (std::size_t)i * nn, /*stride=*/1, nn,
         (int)gp_data.nn_order.size());
-#if GP_DEBUG_BOUNDS
-    if (i < 5) {
-      Rcpp::Rcout << "[GP_DEBUG]   n_neighbors=" << n_neighbors << "\n";
-    }
-#endif
 
     if (n_neighbors == 0) {
       // No neighbors: marginal
@@ -127,43 +74,17 @@ inline double gp_nngp_log_lik(
       // Bounds check: nn_idx is 1-based from R, so subtract 1
       if (raw_nn_idx1 - 1 < 0 || raw_nn_idx1 - 1 >= (int)gp_data.nn_order.size()) return -INFINITY;
 
-#if GP_DEBUG_BOUNDS
-      if (i < 3 && j1 < 3) {
-        Rcpp::Rcout << "[GP_DEBUG]   j1=" << j1 << " raw_nn_idx1=" << raw_nn_idx1 << "\n";
-      }
-      // nn_idx is 1-based from R, so subtract 1
-      if (raw_nn_idx1 - 1 < 0 || raw_nn_idx1 - 1 >= (int)gp_data.nn_order.size()) {
-        Rcpp::Rcout << "[GP_DEBUG] ERROR: raw_nn_idx1-1=" << (raw_nn_idx1 - 1) << " out of bounds for nn_order (size=" << gp_data.nn_order.size() << ")\n";
-        return -INFINITY;
-      }
-#endif
-
       int nn_idx1 = gp_data.nn_order[raw_nn_idx1 - 1];
 
       // Bounds check for coords access
       if (nn_idx1 < 0 || nn_idx1 * 2 + 1 >= (int)gp_data.coords.size()) return -INFINITY;
 
-#if GP_DEBUG_BOUNDS
-      if (nn_idx1 < 0 || nn_idx1 * 2 + 1 >= (int)gp_data.coords.size()) {
-        Rcpp::Rcout << "[GP_DEBUG] ERROR: nn_idx1=" << nn_idx1 << " leads to coords out of bounds (coords.size=" << gp_data.coords.size() << ")\n";
-        return -INFINITY;
-      }
-#endif
-
       for (int j2 = 0; j2 < n_neighbors; j2++) {
         int raw_nn_idx2 = gp_data.nn_idx[i * nn + j2];
 
-        // Bounds check
+        // The neighbour distance below is read from the cache rather than
+        // recomputed, so only the index itself has to resolve.
         if (raw_nn_idx2 - 1 < 0 || raw_nn_idx2 - 1 >= (int)gp_data.nn_order.size()) return -INFINITY;
-
-#if GP_DEBUG_BOUNDS
-        if (raw_nn_idx2 - 1 < 0 || raw_nn_idx2 - 1 >= (int)gp_data.nn_order.size()) {
-          Rcpp::Rcout << "[GP_DEBUG] ERROR: raw_nn_idx2-1=" << (raw_nn_idx2 - 1) << " out of bounds for nn_order\n";
-          return -INFINITY;
-        }
-#endif
-
-        int nn_idx2 = gp_data.nn_order[raw_nn_idx2 - 1];
 
         if (j1 == j2) {
           C_mat(j1, j2) = sigma2;
@@ -197,24 +118,10 @@ inline double gp_nngp_log_lik(
       // Bounds check
       if (raw_nn_idx - 1 < 0 || raw_nn_idx - 1 >= (int)gp_data.nn_order.size()) return -INFINITY;
 
-#if GP_DEBUG_BOUNDS
-      if (raw_nn_idx - 1 < 0 || raw_nn_idx - 1 >= (int)gp_data.nn_order.size()) {
-        Rcpp::Rcout << "[GP_DEBUG] ERROR: cond_mean raw_nn_idx-1=" << (raw_nn_idx - 1) << " out of bounds\n";
-        return -INFINITY;
-      }
-#endif
-
       int nn_orig_idx = gp_data.nn_order[raw_nn_idx - 1];
 
       // Bounds check for w access
       if (nn_orig_idx < 0 || nn_orig_idx >= (int)w.size()) return -INFINITY;
-
-#if GP_DEBUG_BOUNDS
-      if (nn_orig_idx < 0 || nn_orig_idx >= (int)w.size()) {
-        Rcpp::Rcout << "[GP_DEBUG] ERROR: nn_orig_idx=" << nn_orig_idx << " out of bounds for w (size=" << w.size() << ")\n";
-        return -INFINITY;
-      }
-#endif
 
       cond_mean += alpha(j) * w[nn_orig_idx];
     }
@@ -230,10 +137,6 @@ inline double gp_nngp_log_lik(
         sigma2 - c_Cinv_c, kGpVarFloor, tulpa_nngp::VarFloor::Clamp);
     log_lik += tulpa_nngp::cond_log_density(w[obs_idx], cond_mean, cond_var);
   }
-
-#if GP_DEBUG_BOUNDS
-  Rcpp::Rcout << "[GP_DEBUG] gp_nngp_log_lik completed, log_lik=" << log_lik << "\n";
-#endif
 
   return log_lik;
 }

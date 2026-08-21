@@ -13,9 +13,9 @@
 
       auto& p = _nuts_p;
 
-      // Step size jitter (improvement #5): ?20% random noise per trajectory
+      // Step size jitter: +/-20% random noise per trajectory
       // Prevents systematic step-size resonances that cause divergences.
-      // Only during post-warmup sampling ? warmup needs stable epsilon for adaptation.
+      // Only during post-warmup sampling -- warmup needs stable epsilon for adaptation.
       double eps_iter = epsilon;
       if (!is_warmup) {
         double jitter = 1.0 + 0.2 * (2.0 * unif(rng) - 1.0);  // U[0.8, 1.2]
@@ -61,7 +61,7 @@
       std::fill(rho_bck.begin(), rho_bck.end(), 0.0);
       std::fill(rho_fwd.begin(), rho_fwd.end(), 0.0);
 
-      // p_sharp = M^{-1} * p at initial point ? full mass for correct U-turn geometry
+      // p_sharp = M^{-1} * p at initial point -- full mass for correct U-turn geometry
       auto& p_sharp_init = nuts_ws.iter_p_sharp_init;
       mass.inv_mass_times_p(p.data(), p_sharp_init.data());
 
@@ -113,12 +113,12 @@
           // Stan: relabel halves before building subtree
           // Entire old trajectory becomes one half; new subtree is the other
           if (direction == 1) {
-            // Extending forward: old trajectory ? backward half
+            // Extending forward: old trajectory becomes the backward half
             std::memcpy(rho_bck.data(), rho.data(), n_params * sizeof(double));
             std::memcpy(p_bck_beg.data(), p_fwd_end.data(), n_params * sizeof(double));
             std::memcpy(p_sharp_bck_beg.data(), p_sharp_fwd_end.data(), n_params * sizeof(double));
           } else {
-            // Extending backward: old trajectory ? forward half
+            // Extending backward: old trajectory becomes the forward half
             std::memcpy(rho_fwd.data(), rho.data(), n_params * sizeof(double));
             std::memcpy(p_fwd_beg.data(), p_bck_end.data(), n_params * sizeof(double));
             std::memcpy(p_sharp_fwd_beg.data(), p_sharp_bck_end.data(), n_params * sizeof(double));
@@ -190,7 +190,7 @@
           // Generalized U-turn check at top level (3 junctures)
           if (subtree.stop) break;
 
-          // Check 1: Full trajectory ? far endpoints vs total rho
+          // Check 1: Full trajectory -- far endpoints vs total rho
           bool persist = compute_criterion(p_sharp_bck_end.data(), p_sharp_fwd_end.data(),
                                            rho.data(), n_params);
 
@@ -300,7 +300,7 @@
               softabs_successes++;
               alpha = (total_leapfrog > 0) ? (sum_accept_prob / total_leapfrog) : 0.0;
               iter_n_leapfrog = total_leapfrog;
-              break;  // Success ? stop retry loop
+              break;  // Success -- stop retry loop
             }
             // Otherwise: try again with halved step size (next iteration)
           }  // end retry_attempt loop
@@ -349,7 +349,7 @@
         }
 
         // DIAG?DENSE recovery is checked at warmup end (after da.final_epsilon)
-        // rather than during warmup ? warmup divergences are normal for DIAG models
+        // rather than during warmup -- warmup divergences are normal for DIAG models
         // and resolve via dual averaging. Only catastrophic final epsilon matters.
 
         if (iter >= init_buffer && iter < n_warmup - term_buffer) {
@@ -425,22 +425,6 @@
             epsilon = da.final_epsilon();
           }
 
-          // The precision-informed diagonal mass override for ST_IV is not
-          // wired for the generic LikelihoodSpec path: it would route
-          // per-observation likelihood Hessians through spec->eta_weights_fn
-          // (the IRLS callback already used by laplace_mode_spec_dense).
-          // Until that wiring lands, deactivate the sparse GMRF block so
-          // ST_IV chains fall back to the adapted DIAG mass matrix (one
-          // warmup-end no-op per chain).
-          if (mass.sparse_gmrf.active) {
-            mass.sparse_gmrf.active = false;
-            if (verbose) {
-              REprintf("  [SPARSE_GMRF] ST_IV precision-informed mass override "
-                       "not wired for the generic path; using adapted "
-                       "diagonal mass.\n");
-            }
-          }
-
           if (verbose) {
             REprintf("  [METRIC] Warmup done: epsilon=%.6f, mass.type=%s, mass.adapted=%d\n",
                      epsilon, metric_name(mass.type), (int)mass.adapted);
@@ -467,7 +451,7 @@
           }
           // Proactive SoftAbs at warmup?sampling transition (improvement #4):
           // Pre-compute SoftAbs metric so it's ready for retry attempts.
-          // Do NOT override main mass/epsilon ? warmup-adapted values are better
+          // Do NOT override main mass/epsilon -- warmup-adapted values are better
           // for general sampling. SoftAbs is only used as rescue on divergences.
           if (use_softabs_retry && !softabs_metric_active) {
             std::vector<double> hessian_warmup_end;
@@ -498,7 +482,7 @@
       }
 
       // Adaptive NUTS probe: warn if most early iterations hit max treedepth
-      // (Stan's approach: warn but keep NUTS running ? truncated NUTS picks
+      // (Stan's approach: warn but keep NUTS running -- truncated NUTS picks
       // from up to 2^depth candidates, far better than HMC(L=10) with tiny epsilon)
       if (nuts_probing && !is_warmup && sample_idx < nuts_probe_window) {
         if (iter_treedepth >= max_treedepth) nuts_probe_maxd++;

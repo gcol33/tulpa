@@ -292,6 +292,7 @@ Rcpp::List cpp_tulpa_sample_glmm(
     Rcpp::Nullable<Rcpp::List> zi_spec = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericMatrix> init_nullable = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericVector> inv_metric_diag_nullable = R_NilValue,
+    std::string mass_matrix = "diag",
     bool ess_adapt_during_warmup = false,
     int ess_adapt_interval = 50,
     int ess_joint_sigma_re = -1,
@@ -328,6 +329,15 @@ Rcpp::List cpp_tulpa_sample_glmm(
     // any other backend rather than drop it: silently sampling from the default
     // start would answer a different question than the caller asked.
     const bool is_nuts = (backend == "nuts" || backend == "hmc");
+    // The metric is the NUTS/HMC kernel's own knob. Parsed for every backend so
+    // an unrecognised name is rejected wherever it is written, and refused on
+    // the backends that have no metric rather than accepted and ignored.
+    const tulpa::MassMatrixType metric = tulpa_hmc::parse_metric_type(mass_matrix);
+    if (!is_nuts && metric != tulpa::MassMatrixType::DIAG) {
+        Rcpp::stop("mass_matrix = '%s' is a NUTS/HMC knob; backend '%s' "
+                   "carries no mass matrix.", mass_matrix.c_str(),
+                   backend.c_str());
+    }
     if (!is_nuts && (init_nullable.isNotNull() ||
                      inv_metric_diag_nullable.isNotNull())) {
         Rcpp::stop("a warm start is only carried by the NUTS/HMC kernel; "
@@ -388,7 +398,7 @@ Rcpp::List cpp_tulpa_sample_glmm(
         std::vector<tulpa_hmc::HMCResultCpp> chains = tulpa_hmc::run_hmc_parallel_chains_cpp(
             q_init, inv_metric, in.data, n_iter, n_warmup, /*L=*/0, n_chains,
             (unsigned int)seed, verbose, max_treedepth,
-            tulpa::MassMatrixType::DIAG, adapt_delta, /*riemannian=*/0, "");
+            metric, adapt_delta, /*riemannian=*/0, "");
         tulpa_hmc::StackedChains st = tulpa_hmc::stack_hmc_chains(chains, n_chains, D);
         if (st.n_total > 0) Rcpp::colnames(st.draws) = cn;
         out = Rcpp::List::create(

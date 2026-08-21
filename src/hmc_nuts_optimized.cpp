@@ -1,4 +1,4 @@
-﻿// hmc_nuts_optimized.cpp
+// hmc_nuts_optimized.cpp
 // Zero-allocation NUTS: in-place leapfrog, build_tree_fast,
 // pre-allocated workspace integration.
 
@@ -27,20 +27,10 @@ double nuts_compute_hamiltonian_fast(double log_prob, const double* p,
 // step so every scheme's drift sub-steps reuse the same fused kernels. coeff is
 // the scheme's drift coefficient times the step size; for the default leapfrog
 // it is exactly the step size.
-//
-// A structured precision / Kronecker / sparse-GMRF block owns its parameter
-// range under every metric type, so when one is active the whole product is
-// formed by DenseMassMatrix::inv_mass_times_p -- the same operator the U-turn
-// p_sharp and the kinetic energy read -- into `scratch`, rather than patching
-// the block ranges of a product taken under a different metric.
 static inline void apply_drift(
     double coeff, double* q, const double* p,
     const DenseMassMatrix& mass, double* scratch, int n) {
-  if (mass.has_structured_blocks()) {
-    mass.inv_mass_times_p(p, scratch);
-    tulpa_linalg::axpy(coeff, scratch, q, n);
-    return;
-  }
+  (void) scratch;
   if (!mass.adapted) {
     tulpa_linalg::axpy(coeff, p, q, n);
   } else if (mass.type == MassMatrixType::BLOCK_DIAG) {
@@ -315,7 +305,7 @@ TreeStats build_tree_fast(
   }
 
   // === GENERALIZED U-TURN CRITERION (Stan-style, 3 juncture checks) ===
-  // Check 1: Full merged trajectory ? merged endpoints vs merged rho
+  // Check 1: Full merged trajectory -- merged endpoints vs merged rho
   bool persist = compute_criterion(stats.p_sharp_beg.data(), stats.p_sharp_end.data(),
                                    stats.rho.data(), n);
 

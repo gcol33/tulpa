@@ -1,4 +1,4 @@
-﻿// hmc_nuts_softabs.cpp
+// hmc_nuts_softabs.cpp
 // SoftAbs per-trajectory metric (Riemannian-like divergence retry).
 
 #include <algorithm>
@@ -137,8 +137,8 @@ bool compute_softabs_metric(
   const auto& lambdas = eigen.eigenvalues();
   const auto& Q = eigen.eigenvectors();
 
-  // Apply SoftAbs: f(?) = ? * coth(? * ?)
-  // Properties: always positive, f(|?|>>0) ? |?|, f(0) ? 1/?
+  // Apply SoftAbs: f(lambda) = lambda * coth(alpha * lambda)
+  // Properties: always positive, f(|lambda| >> 0) -> |lambda|, f(0) -> 1/alpha
   Eigen::VectorXd softabs_inv_eig(p);
   for (int i = 0; i < p; i++) {
     double lam = lambdas(i);

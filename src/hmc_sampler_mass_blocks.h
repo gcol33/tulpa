@@ -1,8 +1,7 @@
-﻿// hmc_sampler_mass_blocks.h
+// hmc_sampler_mass_blocks.h
 // Fragment of hmc_sampler.h. Self-contained: defines symbols inside
 // namespace tulpa_hmc.
-// MassBlock (<=4x4), PrecisionBlock, KroneckerBlock,
-// SparseGMRFBlock, DenseMassMatrix container.
+// MassBlock (<=4x4) and the DenseMassMatrix container.
 #ifndef TULPA_HMC_SAMPLER_MASS_BLOCKS_H
 #define TULPA_HMC_SAMPLER_MASS_BLOCKS_H
 
@@ -14,12 +13,9 @@
 #include <vector>
 
 #include <Eigen/Dense>
-#include <Eigen/Sparse>
-#include <Eigen/SparseCholesky>
 #include <RcppEigen.h>
 
 #include "hmc_sampler_decls.h"  // MassMatrixType (alias of tulpa::MassMatrixType)
-#include "hmc_temporal.h"       // tulpa_temporal::TemporalType
 #include "linalg_fast.h"        // tulpa_linalg::tri_solve_lower_transpose, etc.
 
 namespace tulpa_hmc {
@@ -174,375 +170,6 @@ struct MassBlock {
 };
 
 // =====================================================================
-// Precision-informed mass block (heap-allocated, arbitrary size)
-// Used for ICAR/BYM2 spatial params where Q (precision) is known analytically.
-// Unlike MassBlock (≤4, stack), this handles S×S blocks (S=50 typical).
-// NOT adapted from samples — uses fixed analytical precision.
-// =====================================================================
-
-struct PrecisionBlock {
-  int start = 0;        // First param index in full parameter vector
-  int size = 0;         // Block dimension S
-  bool active = false;
-
-  // M^{-1} = Q_reg_inv: (Q + lambda*I)^{-1}, column-major S×S
-  std::vector<double> Q_inv;
-  // L_Q: Cholesky factor where L*L^T = Q + lambda*I = M, column-major S×S.
-  // Momentum has mass M, so p ~ N(0, M): p_block = L * z (Var = L L^T = M).
-  std::vector<double> L_chol;
-
-  void init(int s, int sz, const double* q_inv_data, const double* l_chol_data) {
-    start = s;
-    size = sz;
-    active = true;
-    int nn = static_cast<int>(static_cast<size_t>(sz) * sz);
-    Q_inv.assign(q_inv_data, q_inv_data + nn);
-    L_chol.assign(l_chol_data, l_chol_data + nn);
-  }
-
-  // result[0..size-1] = Q_inv * p[start..start+size-1]
-  void matvec(const double* p_full, double* result) const {
-    const double* pb = p_full + start;
-    Eigen::Map<const Eigen::MatrixXd> M(Q_inv.data(), size, size);
-    Eigen::Map<const Eigen::VectorXd> pv(pb, size);
-    Eigen::Map<Eigen::VectorXd> rv(result, size);
-    rv.noalias() = M.selfadjointView<Eigen::Lower>() * pv;
-  }
-
-  // p_block^T * Q_inv * p_block
-  double quadform(const double* p_full) const {
-    const double* pb = p_full + start;
-    Eigen::Map<const Eigen::MatrixXd> M(Q_inv.data(), size, size);
-    Eigen::Map<const Eigen::VectorXd> pv(pb, size);
-    return pv.dot(M.selfadjointView<Eigen::Lower>() * pv);
-  }
-
-  // Sample momentum for block: p = L * z, so Var(p) = L L^T = M (mass = M).
-  void sample_momentum(double* p_full, std::mt19937& rng) const {
-    std::normal_distribution<double> normal(0.0, 1.0);
-    std::vector<double> z(size);
-    for (int i = 0; i < size; i++) z[i] = normal(rng);
-    double* pb = p_full + start;
-    Eigen::Map<const Eigen::MatrixXd> L(L_chol.data(), size, size);
-    Eigen::Map<const Eigen::VectorXd> zv(z.data(), size);
-    Eigen::Map<Eigen::VectorXd> pv(pb, size);
-    pv.noalias() = L.triangularView<Eigen::Lower>() * zv;
-  }
-};
-
-// =====================================================================
-// Kronecker precision block for spatiotemporal (ST) interaction params.
-// M = Q_space ⊗ Q_time, M^{-1} = Q_space^{-1} ⊗ Q_time^{-1}
-// Never forms the full (S*T)×(S*T) matrix — O(S*T*(S+T)) operations.
-// =====================================================================
-
-struct KroneckerBlock {
-  int start = 0;        // First ST param index in full parameter vector
-  int S = 0;            // Spatial dimension
-  int T = 0;            // Temporal dimension
-  bool active = false;
-
-  // Spatial: Q_space_inv (S×S), L_space (Cholesky of Q_space, S×S)
-  std::vector<double> Qs_inv;  // column-major
-  std::vector<double> Ls;      // column-major
-
-  // Temporal: Q_time_inv (T×T), L_time (Cholesky of Q_time, T×T)
-  std::vector<double> Qt_inv;  // column-major
-  std::vector<double> Lt;      // column-major
-
-  // Scratch buffers (pre-allocated)
-  mutable std::vector<double> scratch_ST;  // S*T work buffer
-
-  void init(int st, int ns, int nt,
-            const double* qs_inv, const double* ls,
-            const double* qt_inv, const double* lt) {
-    start = st;
-    S = ns;
-    T = nt;
-    active = true;
-    int ss = S * S, tt = T * T;
-    Qs_inv.assign(qs_inv, qs_inv + ss);
-    Ls.assign(ls, ls + ss);
-    Qt_inv.assign(qt_inv, qt_inv + tt);
-    Lt.assign(lt, lt + tt);
-    scratch_ST.resize(static_cast<size_t>(S) * T);
-  }
-
-  // Compute (A ⊗ B) * vec(X) = vec(B * X * A^T)
-  // where X is S×T (column-major), A is T×T, B is S×S
-  // result = vec(B * X * A^T)
-  // This is the standard Kronecker-vector product identity.
-  void kron_matvec(const double* As, int na, const double* Bt, int nb,
-                   const double* x, double* result) const {
-    // Step 1: tmp = X * A^T  (S×T * T×T = S×T)
-    // X is S×T column-major, A^T is T×T
-    Eigen::Map<const Eigen::MatrixXd> X(x, S, T);
-    Eigen::Map<const Eigen::MatrixXd> A(Bt, T, T);  // temporal
-    Eigen::Map<const Eigen::MatrixXd> B(As, S, S);   // spatial
-    Eigen::Map<Eigen::MatrixXd> R(result, S, T);
-
-    // (B ⊗ A) * vec(X) = vec(B * X * A^T)
-    // But our params are stored with spatial varying fastest: param[s + t*S]
-    // So X_{s,t} = x[s + t*S] which is column-major S×T.
-    // M^{-1} = Qs_inv ⊗ Qt_inv
-    // M^{-1} * x = vec(Qs_inv * X * Qt_inv^T)
-    R.noalias() = B * X * A.transpose();
-  }
-
-  // result[0..S*T-1] = (Qs_inv ⊗ Qt_inv) * p[start..start+S*T-1]
-  void matvec(const double* p_full, double* result) const {
-    kron_matvec(Qs_inv.data(), S, Qt_inv.data(), T,
-                p_full + start, result);
-  }
-
-  // p_block^T * (Qs_inv ⊗ Qt_inv) * p_block
-  double quadform(const double* p_full) const {
-    matvec(p_full, scratch_ST.data());
-    const double* pb = p_full + start;
-    double qf = 0.0;
-    int ST = S * T;
-    for (int i = 0; i < ST; i++) qf += pb[i] * scratch_ST[i];
-    return qf;
-  }
-
-  // Sample momentum: p ~ N(0, M) where M = Qs ⊗ Qt (mass = the precision).
-  // p = (Ls ⊗ Lt) z = vec(Ls Z Lt^T), so Var(p) = (Ls Ls^T)⊗(Lt Lt^T) = M.
-  // (The inverse form Ls^{-T} Z Lt^{-T} would give Var = M^{-1}.) Z is S×T std normal.
-  void sample_momentum(double* p_full, std::mt19937& rng) const {
-    std::normal_distribution<double> normal(0.0, 1.0);
-    int ST = S * T;
-    // Generate Z ~ N(0,I) as S×T matrix
-    std::vector<double> Z(ST);
-    for (int i = 0; i < ST; i++) Z[i] = normal(rng);
-
-    double* pb = p_full + start;
-    Eigen::Map<Eigen::MatrixXd> Zm(Z.data(), S, T);
-    Eigen::Map<const Eigen::MatrixXd> Lsm(Ls.data(), S, S);
-    Eigen::Map<const Eigen::MatrixXd> Ltm(Lt.data(), T, T);
-    Eigen::Map<Eigen::MatrixXd> Pm(pb, S, T);
-
-    // p = vec(Ls Z Lt^T): Ls, Lt are the lower Cholesky factors of Qs, Qt.
-    // Materialise the clean lower triangles (the stored upper parts are unused).
-    Eigen::MatrixXd Ls_L = Lsm.triangularView<Eigen::Lower>();
-    Eigen::MatrixXd Lt_L = Ltm.triangularView<Eigen::Lower>();
-    Eigen::MatrixXd tmp = Ls_L * Zm;          // Ls * Z  (S×T)
-    Pm.noalias() = tmp * Lt_L.transpose();    // (Ls Z) Lt^T  (S×T)
-  }
-};
-
-// =====================================================================
-// Sparse GMRF block for ST_IV spatiotemporal interaction.
-// Uses Eigen sparse Cholesky for:
-//   1. Block Gibbs sampling: delta ~ N(Q^{-1}b, Q^{-1})
-//   2. Mass matrix operations (momentum, kinetic energy, inv_mass*p)
-// Q = tau * (Q_s ⊗ Q_t) + lambda*I (posterior precision for delta block)
-// =====================================================================
-
-struct SparseGMRFBlock {
-  int start = 0;        // First ST param index in full parameter vector
-  int S = 0;            // Spatial dimension
-  int T = 0;            // Temporal dimension
-  bool active = false;
-  bool factorized = false;
-
-  // Sparse precision and its Cholesky factorization
-  Eigen::SparseMatrix<double> Q_sparse;  // ST×ST sparse precision matrix
-  Eigen::SimplicialLLT<Eigen::SparseMatrix<double>> llt;  // Cholesky LL^T = Q
-
-  // Scratch buffers (pre-allocated)
-  mutable Eigen::VectorXd scratch_vec;
-
-  void init(int st_start, int ns, int nt) {
-    start = st_start;
-    S = ns;
-    T = nt;
-    active = true;
-    factorized = false;
-    int ST = S * T;
-    scratch_vec.resize(ST);
-  }
-
-  // Build Q_sparse = tau * (Q_s ⊗ Q_t) + diag_correction
-  // adj_row_ptr/adj_col_idx: CSR adjacency for spatial graph (1-based col_idx!)
-  // temp_type: RW1, RW2, AR1
-  // tau: precision parameter
-  // h_lik: diagonal of likelihood Hessian (length ST), or nullptr for prior-only
-  // lambda_stz: sum-to-zero penalty (default 0.001)
-  void build_and_factorize(
-      const std::vector<int>& adj_row_ptr,
-      const std::vector<int>& adj_col_idx,
-      tulpa_temporal::TemporalType temp_type,
-      bool cyclic,
-      double tau,
-      const double* h_lik,  // diagonal Hessian correction (length S*T), can be nullptr
-      double lambda_stz = 0.001
-  ) {
-    int ST = S * T;
-
-    // Build spatial Laplacian Q_s (S×S)
-    // Q_s[i,i] = degree(i), Q_s[i,j] = -1 if adjacent
-    std::vector<Eigen::Triplet<double>> triplets;
-    triplets.reserve(ST * 7);  // Rough estimate: ~7 nonzeros per row
-
-    // Build temporal precision Q_t (T×T) as dense small matrix
-    Eigen::MatrixXd Qt = Eigen::MatrixXd::Zero(T, T);
-    if (temp_type == tulpa_temporal::TemporalType::RW1) {
-      for (int t = 0; t < T - 1; t++) {
-        Qt(t, t) += 1.0;
-        Qt(t + 1, t + 1) += 1.0;
-        Qt(t, t + 1) = -1.0;
-        Qt(t + 1, t) = -1.0;
-      }
-    } else if (temp_type == tulpa_temporal::TemporalType::RW2) {
-      for (int t = 0; t < T - 2; t++) {
-        Qt(t, t) += 1.0;
-        Qt(t + 1, t + 1) += 4.0;
-        Qt(t + 2, t + 2) += 1.0;
-        Qt(t, t + 1) += -2.0;
-        Qt(t + 1, t) += -2.0;
-        Qt(t, t + 2) += 1.0;
-        Qt(t + 2, t) += 1.0;
-        Qt(t + 1, t + 2) += -2.0;
-        Qt(t + 2, t + 1) += -2.0;
-      }
-      // Fix double-counted diagonal
-      for (int t = 0; t < T; t++) Qt(t, t) = 0.0;
-      Eigen::MatrixXd D = Eigen::MatrixXd::Zero(T - 2, T);
-      for (int t = 0; t < T - 2; t++) {
-        D(t, t) = 1.0; D(t, t + 1) = -2.0; D(t, t + 2) = 1.0;
-      }
-      Qt = D.transpose() * D;
-    } else {
-      // AR1 with rho=0.5 as default approximation
-      for (int t = 0; t < T; t++) Qt(t, t) = 1.0;
-      for (int t = 0; t < T - 1; t++) {
-        Qt(t, t + 1) = -0.5;
-        Qt(t + 1, t) = -0.5;
-      }
-    }
-
-    // Build Kronecker product Q_kron = Q_s ⊗ Q_t as sparse triplets
-    // (Q_s ⊗ Q_t)[(s1*T+t1), (s2*T+t2)] = Q_s[s1,s2] * Q_t[t1,t2]
-    // For each spatial pair (s1,s2) with Q_s[s1,s2] != 0:
-    //   For each temporal pair (t1,t2) with Q_t[t1,t2] != 0:
-    //     Add Q_s[s1,s2] * Q_t[t1,t2] at row s1*T+t1, col s2*T+t2
-    for (int s1 = 0; s1 < S; s1++) {
-      int n_neigh = adj_row_ptr[s1 + 1] - adj_row_ptr[s1];
-      double qs_diag = static_cast<double>(n_neigh);
-
-      // Diagonal spatial block: Q_s[s1,s1] = degree
-      for (int t1 = 0; t1 < T; t1++) {
-        for (int t2 = 0; t2 < T; t2++) {
-          if (Qt(t1, t2) != 0.0) {
-            triplets.emplace_back(s1 * T + t1, s1 * T + t2, tau * qs_diag * Qt(t1, t2));
-          }
-        }
-      }
-
-      // Off-diagonal spatial: Q_s[s1,s2] = -1 for neighbors
-      for (int idx = adj_row_ptr[s1]; idx < adj_row_ptr[s1 + 1]; idx++) {
-        int s2 = adj_col_idx[idx] - 1;  // Convert 1-based to 0-based
-        for (int t1 = 0; t1 < T; t1++) {
-          for (int t2 = 0; t2 < T; t2++) {
-            if (Qt(t1, t2) != 0.0) {
-              triplets.emplace_back(s1 * T + t1, s2 * T + t2, tau * (-1.0) * Qt(t1, t2));
-            }
-          }
-        }
-      }
-    }
-
-    // Add diagonal corrections: likelihood Hessian + sum-to-zero penalty + regularization
-    double reg = 1e-6;  // Numerical regularization for rank deficiency
-    for (int k = 0; k < ST; k++) {
-      double diag_add = lambda_stz + reg;  // sum-to-zero soft constraint
-      if (h_lik) diag_add += h_lik[k];     // likelihood curvature
-      triplets.emplace_back(k, k, diag_add);
-    }
-
-    Q_sparse.resize(ST, ST);
-    Q_sparse.setFromTriplets(triplets.begin(), triplets.end());
-    Q_sparse.makeCompressed();
-
-    // Cholesky factorization
-    llt.compute(Q_sparse);
-    factorized = (llt.info() == Eigen::Success);
-  }
-
-  // Sample delta from GMRF conditional: delta ~ N(Q^{-1}b, Q^{-1})
-  // b = grad_delta_lik (likelihood gradient wrt delta)
-  // Returns new delta values in delta_out (length S*T)
-  void sample_conditional(const double* b, double* delta_out, std::mt19937& rng) const {
-    if (!factorized) return;
-    int ST = S * T;
-    std::normal_distribution<double> normal(0.0, 1.0);
-
-    // Step 1: Solve Q * mean = b  →  mean = Q^{-1} * b
-    Eigen::Map<const Eigen::VectorXd> bv(b, ST);
-    Eigen::VectorXd mean = llt.solve(bv);
-
-    // Step 2: Sample z ~ N(0, I)
-    Eigen::VectorXd z(ST);
-    for (int i = 0; i < ST; i++) z[i] = normal(rng);
-
-    // Step 3: delta = mean + perturbation from N(0, Q^{-1})
-    // SimplicialLLT factorizes as: P * Q * P^T = L * L^T
-    // To sample from N(0, Q^{-1}): pert = P^T * L^{-T} * z
-    //   Var(pert) = P^T L^{-T} L^{-1} P = P^T (LL^T)^{-1} P = (P^T LL^T P)^{-1} = Q^{-1} ✓
-    auto perm = llt.permutationP();
-    // Get L as a concrete sparse matrix (avoids const-view issues)
-    Eigen::SparseMatrix<double> L_mat = llt.matrixL();
-    // Solve L^T * v = z (upper triangular solve on L^T)
-    Eigen::SparseMatrix<double> Lt_mat = L_mat.transpose();
-    Eigen::VectorXd v = Lt_mat.triangularView<Eigen::Upper>().solve(z);
-    // Un-permute: pert = P^T * v
-    Eigen::VectorXd pert = perm.transpose() * v;
-
-    Eigen::Map<Eigen::VectorXd> out(delta_out, ST);
-    out = mean + pert;
-  }
-
-  // Mass matrix operations (for HMC momentum/kinetic energy)
-  // M = Q (posterior precision), M^{-1} = Q^{-1}
-
-  // result = Q^{-1} * p  (inv_mass * momentum)
-  void inv_mass_matvec(const double* p_full, double* result) const {
-    if (!factorized) return;
-    int ST = S * T;
-    Eigen::Map<const Eigen::VectorXd> pv(p_full + start, ST);
-    Eigen::VectorXd sol = llt.solve(pv);
-    std::memcpy(result, sol.data(), ST * sizeof(double));
-  }
-
-  // p^T * Q^{-1} * p  (kinetic energy contribution)
-  double quadform(const double* p_full) const {
-    if (!factorized) return 0.0;
-    int ST = S * T;
-    Eigen::Map<const Eigen::VectorXd> pv(p_full + start, ST);
-    Eigen::VectorXd sol = llt.solve(pv);
-    return pv.dot(sol);
-  }
-
-  // Sample momentum p ~ N(0, Q) (mass = Q) where P Q P^T = L L^T.
-  void sample_momentum(double* p_full, std::mt19937& rng) const {
-    if (!factorized) return;
-    int ST = S * T;
-    std::normal_distribution<double> normal(0.0, 1.0);
-    Eigen::VectorXd z(ST);
-    for (int i = 0; i < ST; i++) z[i] = normal(rng);
-
-    // P Q P^T = L L^T  =>  Q = P^T L L^T P, so p = P^T L z gives
-    // Var(p) = P^T L L^T P = Q. (Using L^T here would give P^T L^T L P != Q.)
-    auto perm = llt.permutationP();
-    Eigen::SparseMatrix<double> L_mat = llt.matrixL();
-    Eigen::VectorXd p_perm = L_mat * z;                 // L * z ~ N(0, L L^T)
-    Eigen::VectorXd p_vec = perm.transpose() * p_perm;  // P^T * (L * z)
-    double* pb = p_full + start;
-    std::memcpy(pb, p_vec.data(), ST * sizeof(double));
-  }
-};
-
-// =====================================================================
 // Dense mass matrix for NUTS (encapsulates diag + dense state)
 // =====================================================================
 
@@ -566,11 +193,6 @@ struct DenseMassMatrix {
   std::vector<MassBlock> blocks;
   std::vector<bool> in_block;  // in_block[i] = true if param i belongs to a block
 
-  // Precision-informed blocks (optional, independent of type)
-  // These override the mass for specific param ranges using known precision structure.
-  PrecisionBlock precision_block;    // ICAR/BYM2 spatial block (DISABLED)
-  KroneckerBlock kronecker_block;    // ST_IV Kronecker block (DISABLED)
-  SparseGMRFBlock sparse_gmrf;       // ST_IV sparse GMRF mass + Gibbs sampling
 
   void init(int dim, MassMatrixType t) {
     n = dim;
@@ -655,88 +277,15 @@ struct DenseMassMatrix {
                                                z.data(), p);
       }
     }
-    block_sample_momentum(p, rng);
-  }
-
-  // True when a structured block owns part of the parameter range. Every
-  // consumer of the blocks reads this one predicate, so the momentum draw, the
-  // kinetic energy and the drift cannot end up describing different metrics.
-  inline bool has_structured_blocks() const {
-    return precision_block.active || kronecker_block.active ||
-           (sparse_gmrf.active && sparse_gmrf.factorized);
-  }
-
-  // p' C_block p summed over the ranges the structured blocks own.
-  inline double block_quadform(const double* p) const {
-    double ke = 0.0;
-    if (precision_block.active) ke += precision_block.quadform(p);
-    if (kronecker_block.active) ke += kronecker_block.quadform(p);
-    if (sparse_gmrf.active && sparse_gmrf.factorized) ke += sparse_gmrf.quadform(p);
-    return ke;
-  }
-
-  // Overwrite each structured block's range of `result` with C_block p.
-  inline void block_matvec_override(const double* p, double* result) const {
-    if (precision_block.active) {
-      std::vector<double> tmp(precision_block.size);
-      precision_block.matvec(p, tmp.data());
-      for (int i = 0; i < precision_block.size; i++) {
-        result[precision_block.start + i] = tmp[i];
-      }
-    }
-    if (kronecker_block.active) {
-      int ST = kronecker_block.S * kronecker_block.T;
-      std::vector<double> tmp(ST);
-      kronecker_block.matvec(p, tmp.data());
-      for (int i = 0; i < ST; i++) {
-        result[kronecker_block.start + i] = tmp[i];
-      }
-    }
-    if (sparse_gmrf.active && sparse_gmrf.factorized) {
-      int ST = sparse_gmrf.S * sparse_gmrf.T;
-      std::vector<double> tmp(ST);
-      sparse_gmrf.inv_mass_matvec(p, tmp.data());
-      for (int i = 0; i < ST; i++) {
-        result[sparse_gmrf.start + i] = tmp[i];
-      }
-    }
-  }
-
-  // Overwrite each structured block's range of `p` with a draw from that
-  // block's own metric.
-  inline void block_sample_momentum(double* p, std::mt19937& rng) const {
-    if (precision_block.active) precision_block.sample_momentum(p, rng);
-    if (kronecker_block.active) kronecker_block.sample_momentum(p, rng);
-    if (sparse_gmrf.active && sparse_gmrf.factorized) sparse_gmrf.sample_momentum(p, rng);
-  }
-
-  // Check if param i belongs to a precision, kronecker, or sparse GMRF block
-  inline bool in_precision_block(int i) const {
-    if (precision_block.active &&
-        i >= precision_block.start &&
-        i < precision_block.start + precision_block.size) return true;
-    if (kronecker_block.active &&
-        i >= kronecker_block.start &&
-        i < kronecker_block.start + kronecker_block.S * kronecker_block.T) return true;
-    if (sparse_gmrf.active && sparse_gmrf.factorized &&
-        i >= sparse_gmrf.start &&
-        i < sparse_gmrf.start + sparse_gmrf.S * sparse_gmrf.T) return true;
-    return false;
   }
 
   // Kinetic energy: 0.5 * p^T * C * p  where C = M^{-1}
   // Uses Eigen BLAS for dense case (n>=16) for SIMD acceleration.
   double kinetic_energy(const double* p) const {
-    // Structured blocks own their parameter ranges under every metric type, so
-    // their quadratic form enters on every return path and their indices are
-    // excluded from whatever sum covers the rest of the range.
-    const bool blocked = has_structured_blocks();
-    const double ke_prec = blocked ? block_quadform(p) : 0.0;
-
     if (type == MassMatrixType::BLOCK_DIAG && adapted) {
       double ke = 0.0;
       for (int i = 0; i < n; i++) {
-        if (!in_block[i] && !in_precision_block(i)) {
+        if (!in_block[i]) {
           ke += inv_mass_diag[i] * p[i] * p[i];
         }
       }
@@ -745,34 +294,13 @@ struct DenseMassMatrix {
           ke += blk.quadform(p);
         } else {
           for (int i = blk.start; i < blk.start + blk.size; i++) {
-            if (!in_precision_block(i))
-              ke += inv_mass_diag[i] * p[i] * p[i];
+            ke += inv_mass_diag[i] * p[i] * p[i];
           }
         }
       }
-      return 0.5 * (ke + ke_prec);
+      return 0.5 * ke;
     } else if (type == MassMatrixType::DIAG || !adapted) {
-      if (!blocked) {
-        return 0.5 * tulpa_linalg::weighted_norm_squared(p, inv_mass_diag.data(), n);
-      }
-      double ke = 0.0;
-      for (int i = 0; i < n; i++) {
-        if (!in_precision_block(i))
-          ke += inv_mass_diag[i] * p[i] * p[i];
-      }
-      return 0.5 * (ke + ke_prec);
-    } else if (blocked) {
-      // Dense with structured blocks: the dense contribution runs over the
-      // complement of the block ranges, which the blocks then supply themselves.
-      double ke = 0.0;
-      for (int i = 0; i < n; i++) {
-        if (in_precision_block(i)) continue;
-        for (int j = 0; j < n; j++) {
-          if (in_precision_block(j)) continue;
-          ke += p[i] * inv_mass_dense[static_cast<size_t>(j) * n + i] * p[j];
-        }
-      }
-      return 0.5 * (ke + ke_prec);
+      return 0.5 * tulpa_linalg::weighted_norm_squared(p, inv_mass_diag.data(), n);
     } else if (n >= 16) {
       Eigen::Map<const Eigen::MatrixXd> Am(inv_mass_dense.data(), n, n);
       Eigen::Map<const Eigen::VectorXd> pv(p, n);
@@ -811,7 +339,6 @@ struct DenseMassMatrix {
     } else {
       tulpa_linalg::symmatvec(inv_mass_dense.data(), p, result, n);
     }
-    block_matvec_override(p, result);
   }
 
   // Compute diag(C) * p — uses diagonal only, even when dense is available.

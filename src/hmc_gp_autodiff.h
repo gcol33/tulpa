@@ -50,22 +50,31 @@ inline bool cholesky_decompose_t(const std::vector<T>& A, int n, std::vector<T>&
 // Templated NNGP log-likelihood
 // =============================================================================
 
-// Debug flag for GP autodiff
-#ifndef GP_AUTODIFF_DEBUG
-#define GP_AUTODIFF_DEBUG false
-#endif
-
-// NOTE: This function has a known heisenbug with autodiff - use numerical gradients for GP
-// The templated code is preserved for future optimization work
+// The live NNGP density on the sampler path: tulpa_priors_gp.h evaluates it
+// from the generic log posterior, and its templated scalar type is what carries
+// the gradient through every autodiff mode.
+//
+// Written against the six arrays it reads rather than against GPData, because
+// MultiscaleGPData holds two independent scales in members of its own and had
+// to be transcribed into a temporary GPData to reach a GPData-shaped
+// signature -- a copy of every neighbour array, nn_neighbor_dist included
+// (n_obs * nn * nn doubles), on EVERY gradient evaluation. Both entry points
+// below pass their own members straight in, so nothing is copied and both read
+// exactly the same validation.
 template<typename T>
-T gp_nngp_log_lik_t(
+T nngp_log_lik_arrays_t(
     const std::vector<T>& w,
     const T& sigma2,
     const T& phi,
-    const GPData& gp_data
+    int N,
+    int nn,
+    const std::vector<int>& v_nn_order,
+    const std::vector<int>& v_nn_idx,
+    const std::vector<double>& v_nn_dist,
+    const std::vector<double>& v_nn_neighbor_dist,
+    const std::vector<double>& v_coords,
+    CovType v_cov_type
 ) {
-    int N = gp_data.n_obs;
-    int nn = gp_data.nn;
 
 #if AUTODIFF_DEBUG
     static int call_count = 0;
@@ -76,26 +85,19 @@ T gp_nngp_log_lik_t(
     R_FlushConsole();
 #endif
 
-#if GP_AUTODIFF_DEBUG
-    if (call_count <= 5 || call_count % 100 == 0) {
-        Rcpp::Rcout << "[GP_AD] Call #" << call_count << ": N=" << N << ", nn=" << nn
-                    << ", sigma2=" << get_value(sigma2) << ", phi=" << get_value(phi) << "\n";
-    }
-#endif
-
     // Bounds validation
-    if (gp_data.nn_order.size() < (size_t)N) return T(-INFINITY);
-    if (gp_data.nn_idx.size() < (size_t)(N * nn)) return T(-INFINITY);
-    if (gp_data.nn_dist.size() < (size_t)(N * nn)) return T(-INFINITY);
-    if (gp_data.nn_neighbor_dist.size() < (size_t)(N * nn * nn)) return T(-INFINITY);  // Critical: prevents segfault
+    if (v_nn_order.size() < (size_t)N) return T(-INFINITY);
+    if (v_nn_idx.size() < (size_t)(N * nn)) return T(-INFINITY);
+    if (v_nn_dist.size() < (size_t)(N * nn)) return T(-INFINITY);
+    if (v_nn_neighbor_dist.size() < (size_t)(N * nn * nn)) return T(-INFINITY);  // Critical: prevents segfault
     if (w.size() < (size_t)N) return T(-INFINITY);
-    if (gp_data.coords.size() < (size_t)(2 * N)) return T(-INFINITY);
+    if (v_coords.size() < (size_t)(2 * N)) return T(-INFINITY);
 
     T log_lik = T(0.0);
 
     // First observation: marginal N(0, sigma2), through the same shared arm the
     // double twin uses so the two floor a degenerate sigma2 identically.
-    int first_idx = gp_data.nn_order[0];
+    int first_idx = v_nn_order[0];
     log_lik = log_lik + tulpa_nngp::marginal_log_density(w[first_idx], sigma2);
 
     // Pre-allocate work vectors
@@ -113,7 +115,7 @@ T gp_nngp_log_lik_t(
             R_FlushConsole();
         }
 #endif
-        int obs_idx = gp_data.nn_order[i];
+        int obs_idx = v_nn_order[i];
 
         // Bounds check
         if (obs_idx < 0 || obs_idx >= N) return T(-INFINITY);
@@ -121,8 +123,8 @@ T gp_nngp_log_lik_t(
         // Count actual neighbors, through the shared left-packed scan the double
         // twin and the analytic gradient also run.
         const int n_neighbors = tulpa_nngp::nngp_row_neighbours(
-            gp_data.nn_idx.data() + (std::size_t)i * nn, /*stride=*/1, nn,
-            (int)gp_data.nn_order.size());
+            v_nn_idx.data() + (std::size_t)i * nn, /*stride=*/1, nn,
+            (int)v_nn_order.size());
 
         if (n_neighbors == 0) {
             // No neighbors: marginal
@@ -133,40 +135,38 @@ T gp_nngp_log_lik_t(
         // c_vec: covariances between obs i and its neighbors
         for (int j = 0; j < n_neighbors; j++) {
             int nn_flat_idx = i * nn + j;
-            double d = gp_data.nn_dist[nn_flat_idx];
-            c_vec[j] = compute_cov_t(d, sigma2, phi, gp_data.cov_type);
+            double d = v_nn_dist[nn_flat_idx];
+            c_vec[j] = compute_cov_t(d, sigma2, phi, v_cov_type);
         }
 
         // C_mat: covariances among neighbors
         for (int j1 = 0; j1 < n_neighbors; j1++) {
-            int raw_nn_idx1 = gp_data.nn_idx[i * nn + j1];
+            int raw_nn_idx1 = v_nn_idx[i * nn + j1];
 
             // Bounds check
-            if (raw_nn_idx1 - 1 < 0 || raw_nn_idx1 - 1 >= (int)gp_data.nn_order.size()) {
+            if (raw_nn_idx1 - 1 < 0 || raw_nn_idx1 - 1 >= (int)v_nn_order.size()) {
                 return T(-INFINITY);
             }
 
-            int nn_idx1 = gp_data.nn_order[raw_nn_idx1 - 1];
+            int nn_idx1 = v_nn_order[raw_nn_idx1 - 1];
 
-            if (nn_idx1 < 0 || nn_idx1 * 2 + 1 >= (int)gp_data.coords.size()) {
+            if (nn_idx1 < 0 || nn_idx1 * 2 + 1 >= (int)v_coords.size()) {
                 return T(-INFINITY);
             }
 
             for (int j2 = 0; j2 < n_neighbors; j2++) {
-                int raw_nn_idx2 = gp_data.nn_idx[i * nn + j2];
+                int raw_nn_idx2 = v_nn_idx[i * nn + j2];
 
-                if (raw_nn_idx2 - 1 < 0 || raw_nn_idx2 - 1 >= (int)gp_data.nn_order.size()) {
+                if (raw_nn_idx2 - 1 < 0 || raw_nn_idx2 - 1 >= (int)v_nn_order.size()) {
                     return T(-INFINITY);
                 }
-
-                int nn_idx2 = gp_data.nn_order[raw_nn_idx2 - 1];
 
                 if (j1 == j2) {
                     C_mat[j1 * n_neighbors + j2] = sigma2;
                 } else {
                     // Use cached pairwise neighbor distances
-                    double d12 = gp_data.nn_neighbor_dist[i * nn * nn + j1 * nn + j2];
-                    C_mat[j1 * n_neighbors + j2] = compute_cov_t(d12, sigma2, phi, gp_data.cov_type);
+                    double d12 = v_nn_neighbor_dist[i * nn * nn + j1 * nn + j2];
+                    C_mat[j1 * n_neighbors + j2] = compute_cov_t(d12, sigma2, phi, v_cov_type);
                 }
             }
         }
@@ -175,13 +175,13 @@ T gp_nngp_log_lik_t(
         std::vector<T> c_small(c_vec.begin(), c_vec.begin() + n_neighbors);
         std::vector<T> w_nb(n_neighbors);
         for (int j = 0; j < n_neighbors; j++) {
-            int raw_nn_idx = gp_data.nn_idx[i * nn + j];
+            int raw_nn_idx = v_nn_idx[i * nn + j];
 
-            if (raw_nn_idx - 1 < 0 || raw_nn_idx - 1 >= (int)gp_data.nn_order.size()) {
+            if (raw_nn_idx - 1 < 0 || raw_nn_idx - 1 >= (int)v_nn_order.size()) {
                 return T(-INFINITY);
             }
 
-            int nn_orig_idx = gp_data.nn_order[raw_nn_idx - 1];
+            int nn_orig_idx = v_nn_order[raw_nn_idx - 1];
 
             if (nn_orig_idx < 0 || nn_orig_idx >= (int)w.size()) {
                 return T(-INFINITY);
@@ -215,10 +215,26 @@ T gp_nngp_log_lik_t(
     return log_lik;
 }
 
+// One NNGP field held in a GPData.
+template<typename T>
+T gp_nngp_log_lik_t(
+    const std::vector<T>& w,
+    const T& sigma2,
+    const T& phi,
+    const GPData& gp_data
+) {
+    return nngp_log_lik_arrays_t(w, sigma2, phi, gp_data.n_obs, gp_data.nn,
+                                 gp_data.nn_order, gp_data.nn_idx,
+                                 gp_data.nn_dist, gp_data.nn_neighbor_dist,
+                                 gp_data.coords, gp_data.cov_type);
+}
+
 // =============================================================================
 // Templated multi-scale GP log-likelihood
 // =============================================================================
 
+// The two scales share the coordinates and the covariance family and carry
+// their own neighbour topology, so each is one call against its own members.
 template<typename T>
 T multiscale_gp_log_lik_t(
     const std::vector<T>& w_local,
@@ -229,32 +245,15 @@ T multiscale_gp_log_lik_t(
     const T& phi_regional,
     const MultiscaleGPData& ms_data
 ) {
-    // Create temporary GPData structures for each scale
-    GPData gp_local;
-    gp_local.n_obs = ms_data.n_obs;
-    gp_local.nn = ms_data.nn_local;
-    gp_local.coords = ms_data.coords;
-    gp_local.nn_idx = ms_data.nn_idx_local;
-    gp_local.nn_dist = ms_data.nn_dist_local;
-    gp_local.nn_neighbor_dist = ms_data.nn_neighbor_dist_local;
-    gp_local.nn_order = ms_data.nn_order_local;
-    gp_local.nn_order_inv = ms_data.nn_order_inv_local;
-    gp_local.cov_type = ms_data.cov_type;
-
-    GPData gp_regional;
-    gp_regional.n_obs = ms_data.n_obs;
-    gp_regional.nn = ms_data.nn_regional;
-    gp_regional.coords = ms_data.coords;
-    gp_regional.nn_idx = ms_data.nn_idx_regional;
-    gp_regional.nn_dist = ms_data.nn_dist_regional;
-    gp_regional.nn_neighbor_dist = ms_data.nn_neighbor_dist_regional;
-    gp_regional.nn_order = ms_data.nn_order_regional;
-    gp_regional.nn_order_inv = ms_data.nn_order_inv_regional;
-    gp_regional.cov_type = ms_data.cov_type;
-
-    // Compute log-likelihood for each scale
-    T ll_local = gp_nngp_log_lik_t(w_local, sigma2_local, phi_local, gp_local);
-    T ll_regional = gp_nngp_log_lik_t(w_regional, sigma2_regional, phi_regional, gp_regional);
+    T ll_local = nngp_log_lik_arrays_t(
+        w_local, sigma2_local, phi_local, ms_data.n_obs, ms_data.nn_local,
+        ms_data.nn_order_local, ms_data.nn_idx_local, ms_data.nn_dist_local,
+        ms_data.nn_neighbor_dist_local, ms_data.coords, ms_data.cov_type);
+    T ll_regional = nngp_log_lik_arrays_t(
+        w_regional, sigma2_regional, phi_regional, ms_data.n_obs,
+        ms_data.nn_regional, ms_data.nn_order_regional, ms_data.nn_idx_regional,
+        ms_data.nn_dist_regional, ms_data.nn_neighbor_dist_regional,
+        ms_data.coords, ms_data.cov_type);
 
     return ll_local + ll_regional;
 }

@@ -79,7 +79,18 @@ any other backend errors rather than sampling from the default start.}
 \code{sigma_beta}, \code{n_chains}, \code{max_treedepth}, \code{adapt_delta}, \code{epsilon}, \code{L},
 \code{batch_size}, \code{alpha}, \code{n_particles}, \code{n_mcmc_steps}, \code{ess_threshold},
 \code{vi_variant}, \code{vi_mc_samples}, \code{vi_max_iter}, \code{vi_max_grad_norm},
-\code{n_draws}, \code{verbose}).
+\code{n_draws}, \code{verbose}, \code{mass_matrix}).
+
+\code{mass_matrix} selects the NUTS/HMC metric: \code{"diag"} (the default),
+\code{"dense"}, \code{"block_diag"}, or \code{"auto"}. Under \code{"auto"} the kernel reads the
+parameter layout and gives each correlated hyperparameter group its own
+small dense block -- the BYM2 and GP \verb{(log sigma, phi)} pairs, the
+multiscale-temporal variances, a correlated random-slope term's Cholesky
+coordinates -- while an ICAR or latent-factor model small enough for the
+\code{O(p^2)} per-step cost takes a full dense metric. \code{"block_diag"}
+additionally blocks the temporal-GP and HSGP hyperparameter pairs, which
+\code{"auto"} leaves to the diagonal. Backends other than \code{"hmc"} carry no
+metric and reject a non-default value.
 
 \code{vi_max_iter} and \code{vi_mc_samples} both bound a loop that has to run at
 least once -- the optimisation loop whose ELBO history is the fit's only

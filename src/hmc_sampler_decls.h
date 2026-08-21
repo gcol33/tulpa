@@ -7,6 +7,7 @@
 #define TULPA_HMC_SAMPLER_DECLS_H
 
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -81,6 +82,26 @@ inline const char* metric_name(MassMatrixType t) {
         case MassMatrixType::AUTO: return "AUTO";
     }
     return "UNKNOWN";
+}
+
+// The one string -> MassMatrixType map. Every sampler entry point that exposes
+// a `mass_matrix` control takes the name and comes through here, so the spelling
+// a user writes cannot resolve differently at two doors. An unrecognised name is
+// rejected rather than defaulted: silently sampling under DIAG when the caller
+// asked for something else is the failure this replaces.
+inline MassMatrixType parse_metric_type(const std::string& name) {
+    static const tulpa::EnumEntry<MassMatrixType> table[] = {
+        {"diag", MassMatrixType::DIAG},
+        {"dense", MassMatrixType::DENSE},
+        {"block_diag", MassMatrixType::BLOCK_DIAG},
+        {"auto", MassMatrixType::AUTO}
+    };
+    for (const auto& e : table) {
+        if (name == e.name) return e.value;
+    }
+    throw std::invalid_argument(
+        "mass_matrix must be one of \"diag\", \"dense\", \"block_diag\", "
+        "\"auto\"; got \"" + name + "\".");
 }
 
 // Global gradient mode + accessors. Defined in hmc_gradient_fallback.cpp.

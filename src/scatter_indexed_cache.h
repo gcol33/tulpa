@@ -50,6 +50,7 @@
 #include "joint_hessian_pattern.h"
 #include "latent_block.h"
 #include "nested_laplace_joint_core.h"
+#include "omp_threads.h"
 #include "sparse_hessian.h"
 #include <Rcpp.h>
 #include <cstddef>
@@ -565,7 +566,11 @@ inline void scatter_arm_obs_indexed_cached(
         (force_parallel || fill_ops > 2 * reduce_ops);
 
     if (go_parallel) {
-        const int T = n_threads;
+        // The count arrives from R (.tulpa_inner_threads, keyed on the core
+        // count), which knows nothing about OMP_NUM_THREADS, OMP_THREAD_LIMIT
+        // or the two-core cap R CMD check sets. Clamp it here, where the team
+        // is actually requested.
+        const int T = tulpa_omp_team_size_req(n_threads, arm.N);
         // Allocate every per-thread buffer BEFORE the parallel region: nnz can
         // be large at scale and the sparse driver runs at the free-RAM ceiling,
         // so a bad_alloc is a supported regime -- and one thrown inside an
