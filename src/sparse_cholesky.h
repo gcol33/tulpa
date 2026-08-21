@@ -89,7 +89,7 @@ public:
     // Selected inversion (Takahashi equations): compute diagonal of A^{-1}
     // from the Cholesky factor. O(nnz(L)) complexity.
     // Converts factor to simplicial LL' if currently supernodal.
-    // Returns empty vector on failure.
+    // Returns empty vector on failure, a failed conversion included.
     std::vector<double> selected_inversion_diagonal();
 
     // Full selected inversion (Takahashi equations): the partial inverse
@@ -97,7 +97,14 @@ public:
     // sparsity pattern. Returns a lookup keyed by ORIGINAL (pre-permutation)
     // (i, j): every (i, j) on A's nonzero pattern is present, since A's
     // pattern is a subset of the factor's pattern. O(nnz(L)) complexity.
-    // Converts factor to simplicial LL' if currently supernodal.
+    // Converts factor to simplicial LL' if currently supernodal, and returns a
+    // default-constructed SelectedInverse (n == 0) when that conversion fails.
+    //
+    // The conversion is in place and permanent: both selected-inversion entry
+    // points leave the solver holding a simplicial factor, so every later
+    // solve() and log_determinant() on the same object runs the simplicial
+    // path that analyze() may not have chosen. A caller that needs the
+    // supernodal factor for later solves must re-analyze().
     struct SelectedInverse {
         int n = 0;
         std::vector<int> Lp;            // factor column pointers (permuted space)

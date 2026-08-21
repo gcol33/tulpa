@@ -42,6 +42,12 @@ inline void copy_nested_laplace_result(
     Rcpp::IntegerVector ni = out["n_iter"];
     int n_grid = (int)lm.size();
 
+    if ((int)ni.size() != n_grid) {
+        Rcpp::stop("nested-Laplace result malformed: length(n_iter) (%d) != "
+                   "length(log_marginal) (%d).",
+                   (int)ni.size(), n_grid);
+    }
+
     result_out->n_grid = n_grid;
     result_out->log_marginal = new double[n_grid];
     result_out->n_iter       = new int[n_grid];
@@ -81,6 +87,14 @@ inline void copy_nested_laplace_result(
         Rcpp::List Qx_list = out["Q_csc_x_per_grid"];
         int Q_n = Rcpp::as<int>(out["Q_csc_n"]);
 
+        if ((int)Qp_list.size() != n_grid || (int)Qi_list.size() != n_grid ||
+            (int)Qx_list.size() != n_grid) {
+            Rcpp::stop("store_Q result malformed: the per-grid CSC lists have "
+                       "lengths (%d, %d, %d) against n_grid = %d.",
+                       (int)Qp_list.size(), (int)Qi_list.size(),
+                       (int)Qx_list.size(), n_grid);
+        }
+
         result_out->store_Q = 1;
         result_out->Q_n     = Q_n;
         result_out->Q_grid_nnz  = new int[n_grid];
@@ -95,8 +109,25 @@ inline void copy_nested_laplace_result(
         result_out->Q_x_offsets[0] = 0;
         long long x_run = 0;
         for (int k = 0; k < n_grid; k++) {
+            Rcpp::IntegerVector pv = Qp_list[k];
+            Rcpp::IntegerVector iv = Qi_list[k];
             Rcpp::NumericVector xv = Qx_list[k];
             int nnz_k = (int)xv.size();
+            // One nnz per block drives both the allocation and the copy, so
+            // the row-index and value arrays have to agree on it. A cell whose
+            // inner solve stored no Q carries all three slots empty; that is an
+            // empty block, reported to the caller as Q_grid_nnz[k] == 0 with a
+            // zero column-pointer run, not a malformed one.
+            if ((int)iv.size() != nnz_k) {
+                Rcpp::stop("store_Q block %d malformed: length(Q_csc_i) (%d) "
+                           "!= length(Q_csc_x) (%d).",
+                           k + 1, (int)iv.size(), nnz_k);
+            }
+            if (nnz_k > 0 && (int)pv.size() != Q_n + 1) {
+                Rcpp::stop("store_Q block %d malformed: length(Q_csc_p) (%d) "
+                           "!= Q_csc_n + 1 (%d).",
+                           k + 1, (int)pv.size(), Q_n + 1);
+            }
             result_out->Q_grid_nnz[k] = nnz_k;
             long long p_off = (static_cast<long long>(k) + 1) *
                               (static_cast<long long>(Q_n) + 1);
@@ -124,8 +155,11 @@ inline void copy_nested_laplace_result(
 
             int p_off = result_out->Q_p_offsets[k];
             int x_off = result_out->Q_x_offsets[k];
-            for (int j = 0; j <= Q_n; j++) result_out->Q_p_flat[p_off + j] = pv[j];
-            for (int e = 0; e < (int)iv.size(); e++) {
+            const bool have_p = ((int)pv.size() == Q_n + 1);
+            for (int j = 0; j <= Q_n; j++) {
+                result_out->Q_p_flat[p_off + j] = have_p ? pv[j] : 0;
+            }
+            for (int e = 0; e < result_out->Q_grid_nnz[k]; e++) {
                 result_out->Q_i_flat[x_off + e] = iv[e];
                 result_out->Q_x_flat[x_off + e] = xv[e];
             }

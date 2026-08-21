@@ -120,6 +120,8 @@ double cpp_test_log_sum_exp(NumericVector log_vals) {
 
 // [[Rcpp::export]]
 NumericVector cpp_test_softmax(NumericVector x) {
+  if (x.size() == 0) return NumericVector(0);
+
   double max_val = *std::max_element(x.begin(), x.end());
   NumericVector result(x.size());
   double sum_exp = 0.0;
@@ -164,6 +166,10 @@ double cpp_test_lgamma(double x) {
 
 // [[Rcpp::export]]
 double cpp_test_poisson_loglik(IntegerVector y, NumericVector lambda) {
+  if (lambda.size() < y.size()) {
+    Rcpp::stop("length(lambda) (%d) must be at least length(y) (%d).",
+               (int)lambda.size(), (int)y.size());
+  }
   double ll = 0.0;
   for (int i = 0; i < y.size(); i++) {
     if (lambda[i] > 0) {
@@ -181,6 +187,11 @@ double cpp_test_poisson_loglik(IntegerVector y, NumericVector lambda) {
 
 // [[Rcpp::export]]
 double cpp_test_binomial_loglik(IntegerVector y, IntegerVector n, NumericVector p) {
+  if (n.size() < y.size() || p.size() < y.size()) {
+    Rcpp::stop("length(n) (%d) and length(p) (%d) must each be at least "
+               "length(y) (%d).",
+               (int)n.size(), (int)p.size(), (int)y.size());
+  }
   double ll = 0.0;
   for (int i = 0; i < y.size(); i++) {
     if (p[i] > 0 && p[i] < 1) {
@@ -199,6 +210,10 @@ double cpp_test_binomial_loglik(IntegerVector y, IntegerVector n, NumericVector 
 
 // [[Rcpp::export]]
 double cpp_test_negbin_loglik(IntegerVector y, NumericVector mu, double phi) {
+  if (mu.size() < y.size()) {
+    Rcpp::stop("length(mu) (%d) must be at least length(y) (%d).",
+               (int)mu.size(), (int)y.size());
+  }
   double ll = 0.0;
   for (int i = 0; i < y.size(); i++) {
     double r = phi;  // size parameter
@@ -222,6 +237,10 @@ double cpp_test_negbin_loglik(IntegerVector y, NumericVector mu, double phi) {
 
 // [[Rcpp::export]]
 double cpp_test_normal_loglik(NumericVector y, NumericVector mu, double sigma) {
+  if (mu.size() < y.size()) {
+    Rcpp::stop("length(mu) (%d) must be at least length(y) (%d).",
+               (int)mu.size(), (int)y.size());
+  }
   double ll = 0.0;
   double tau = 1.0 / (sigma * sigma);
   for (int i = 0; i < y.size(); i++) {
@@ -238,6 +257,9 @@ double cpp_test_normal_loglik(NumericVector y, NumericVector mu, double sigma) {
 // [[Rcpp::export]]
 NumericMatrix cpp_test_cholesky(NumericMatrix A) {
   int n = A.nrow();
+  if (A.ncol() != n) {
+    Rcpp::stop("A must be square (got %d x %d).", n, (int)A.ncol());
+  }
   NumericMatrix L(n, n);
 
   for (int i = 0; i < n; i++) {
@@ -265,6 +287,9 @@ NumericMatrix cpp_test_cholesky(NumericMatrix A) {
 NumericVector cpp_test_matvec(NumericMatrix A, NumericVector x) {
   int n = A.nrow();
   int m = A.ncol();
+  if ((int)x.size() != m) {
+    Rcpp::stop("length(x) (%d) must equal ncol(A) (%d).", (int)x.size(), m);
+  }
   NumericVector result(n);
 
   for (int i = 0; i < n; i++) {
@@ -1546,24 +1571,13 @@ double cpp_test_log_prior_icar(
                                 adj_rp, adj_ci, nnbr, sp);
 }
 
-// [[Rcpp::export]]
-List cpp_test_mcar_prior(
-    NumericVector theta_logchol, int p, int n,
-    IntegerVector adj_rp, IntegerVector adj_ci, IntegerVector nnbr,
-    NumericVector x
-) {
-  const int m = p * (p + 1) / 2;
-  NumericMatrix tg(1, m);
-  for (int t = 0; t < m; ++t) tg(0, t) = theta_logchol[t];
-
-  std::vector<Rcpp::IntegerVector> cell_idx;                 // unused by the prior
-  std::vector<std::vector<Rcpp::NumericVector>> field_weight;
-  const tulpa::GraphPartition sp =
-      tulpa::graph_partition(n, adj_rp.begin(), adj_ci.begin());
-  tulpa::LatentBlock blk = tulpa::make_mcar_block(
-      /*start=*/0, n, p, /*axis0=*/0, tg, cell_idx, field_weight,
-      adj_rp, adj_ci, nnbr, /*copy_arm=*/-1, /*axis_alpha=*/-1, sp);
-
+// The Hessian densification, gradient read-back and Sigma^-1 unpacking shared
+// by the MCAR and MIID probes below: both drive the same LatentBlock prior
+// interface at one log-Cholesky coordinate, and only the block construction
+// differs.
+static List mcar_family_prior_probe(tulpa::LatentBlock& blk,
+                                    const NumericVector& theta_logchol,
+                                    int p, int n, const NumericVector& x) {
   const int n_x = p * n;
   std::vector<std::pair<int,int>> pat;
   blk.add_prior_pattern(pat);
@@ -1596,6 +1610,27 @@ List cpp_test_mcar_prior(
     _["Sinv"]          = Sinv_m,
     _["log_det_Sigma"] = log_det_Sigma
   );
+}
+
+// [[Rcpp::export]]
+List cpp_test_mcar_prior(
+    NumericVector theta_logchol, int p, int n,
+    IntegerVector adj_rp, IntegerVector adj_ci, IntegerVector nnbr,
+    NumericVector x
+) {
+  const int m = p * (p + 1) / 2;
+  NumericMatrix tg(1, m);
+  for (int t = 0; t < m; ++t) tg(0, t) = theta_logchol[t];
+
+  std::vector<Rcpp::IntegerVector> cell_idx;                 // unused by the prior
+  std::vector<std::vector<Rcpp::NumericVector>> field_weight;
+  const tulpa::GraphPartition sp =
+      tulpa::graph_partition(n, adj_rp.begin(), adj_ci.begin());
+  tulpa::LatentBlock blk = tulpa::make_mcar_block(
+      /*start=*/0, n, p, /*axis0=*/0, tg, cell_idx, field_weight,
+      adj_rp, adj_ci, nnbr, /*copy_arm=*/-1, /*axis_alpha=*/-1, sp);
+
+  return mcar_family_prior_probe(blk, theta_logchol, p, n, x);
 }
 
 // Expose the outer-grid memory-budget arithmetic (mem_budget.h) so the
@@ -1670,38 +1705,7 @@ List cpp_test_miid_prior(
       /*start=*/0, n, p, /*axis0=*/0, tg, group_idx, field_weight,
       /*copy_arm=*/-1, /*axis_alpha=*/-1);
 
-  const int n_x = p * n;
-  std::vector<std::pair<int,int>> pat;
-  blk.add_prior_pattern(pat);
-  tulpa::SparseHessianBuilder H;
-  H.init(n_x, pat);
-  H.zero();
-  tulpa::DenseVec grad(n_x, 0.0);
-  blk.add_prior_sparse(H, grad, x, 0);
-  const double lp = blk.log_prior(x, 0);
-
-  NumericMatrix Hd(n_x, n_x);
-  for (int c = 0; c < n_x; ++c)
-    for (int pp = H.col_ptr[c]; pp < H.col_ptr[c + 1]; ++pp) {
-      const int r = H.row_idx[pp];
-      const double v = H.values[pp];
-      Hd(r, c) += v;
-      if (r != c) Hd(c, r) += v;
-    }
-
-  std::vector<double> Sinv; double log_det_Sigma;
-  tulpa::mcar_sigma_inv_from_logchol(theta_logchol.begin(), p, Sinv, log_det_Sigma);
-  NumericMatrix Sinv_m(p, p);
-  for (int a = 0; a < p; ++a)
-    for (int b = 0; b < p; ++b) Sinv_m(a, b) = Sinv[(std::size_t) a * p + b];
-
-  return List::create(
-    _["H"]             = Hd,
-    _["grad"]          = NumericVector(grad.begin(), grad.end()),
-    _["log_prior"]     = lp,
-    _["Sinv"]          = Sinv_m,
-    _["log_det_Sigma"] = log_det_Sigma
-  );
+  return mcar_family_prior_probe(blk, theta_logchol, p, n, x);
 }
 
 // ---------------------------------------------------------------------------

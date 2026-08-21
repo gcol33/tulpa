@@ -91,9 +91,17 @@ public:
     void init(int dim, const std::vector<std::pair<int,int>>& pattern) {
         n = dim;
 
-        // Deduplicate and sort by (col, row)
+        // Deduplicate and sort by (col, row). A pair outside [0, dim) is not
+        // registered: col_ptr is sized dim + 1 and the CSC build below walks
+        // cur_col up to each entry's column, so an out-of-range column writes
+        // past the end of col_ptr. A rejected pair leaves its entry absent from
+        // the pattern, which is the state add() / scatter_slot() already report
+        // through the drop counter the enclosing HessianPatternGuard raises on
+        // (see hessian_pattern_guard.h) as soon as anything nonzero is written
+        // to it -- the reporting channel that works inside a parallel region.
         std::set<std::pair<int,int>> unique_entries;
         for (auto& [r, c] : pattern) {
+            if (r < 0 || r >= n || c < 0 || c >= n) continue;
             int lo = std::min(r, c);
             int hi = std::max(r, c);
             unique_entries.insert({hi, lo});  // store as (row, col) with row >= col
@@ -541,8 +549,15 @@ inline void build_s2z_log_det_cache(
 // scatter slots, and the symbolic factor are built once and reused, leaving each
 // call to zero the values, scatter through the flat slots, numerically refactor,
 // and read log|B|. Without a cache the same work is done statelessly. Returns
-// log|B| on success. On any failure (allocation, non-PD) returns `fallback` (the
-// bare log|A| the caller already holds) so the marginal stays finite.
+// log|B| on success and `fallback` on any failure (allocation, non-PD), so
+// `fallback` has to be a value the caller can TEST for -- both drivers pass a
+// quiet NaN and keep their own PD-enforced log-determinant when it comes back.
+// The bare log|A| is NOT a usable fallback: along each pinned direction A carries
+// LAPLACE_UNIFORM_RIDGE where B carries coef_k n_k, so the two differ by about
+// sum_k log(coef_k n_k / 1e-10), tens of nats per pinned block, and -0.5 log|B|
+// is what weights the hyperparameter grid, so the shift does not cancel between
+// cells. K == 0 is the one return that is not a failure: with no penalty to fold
+// in, log|B| = log|A| exactly.
 // Small dense SPD Cholesky (row-major), for the K x K capacitance and the
 // n_s x n_s Schur complement in the block-Schur log-determinant / solve.
 struct SmallChol {
@@ -672,8 +687,11 @@ inline void build_s2z_block_schur_cache(
 // U = [1_k] in local field coords, C = diag(coef_k). All sparse + O(K^3) +
 // O(n_s^3); no dense field block, no uniform ridge. Exact and well-conditioned:
 // A_FF is PD, so U'A_FF^-1 U is bounded -- the catastrophic cancellation would
-// need the UNPINNED full A, which this never factors. Returns `fallback` on any non-PD /
-// allocation failure.
+// need the UNPINNED full A, which this never factors. Returns false on any
+// non-PD / allocation failure, and on K == 0, where there is no penalty to fold
+// in and log|B| = log|A|; the determinant-only wrapper turns both into the
+// caller's `fallback`, so a caller that can reach K == 0 has to separate the two
+// itself. Both drivers gate the call on a non-empty penalty list instead.
 inline bool s2z_block_schur(
     const SparseHessianBuilder& A,
     const std::vector<SparseHessianBuilder::S2ZRank1>& r1,

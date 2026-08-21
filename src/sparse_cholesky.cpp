@@ -328,9 +328,13 @@ SparseCholeskySolver::SelectedInverse SparseCholeskySolver::selected_inversion_f
 
     int n = static_cast<int>(factor_->n);
 
-    // Convert to simplicial LL' if supernodal (Takahashi needs element access)
+    // Convert to simplicial LL' if supernodal (Takahashi needs element access).
+    // The conversion allocates, so it can fail; a failed conversion leaves the
+    // factor supernodal, where L->p is supernode pointers and L->i is not the
+    // CSC row index array, so reading Lp[n] as nnz below would walk unrelated
+    // memory. Return the empty struct, which every caller treats as failure.
     if (factor_->is_super) {
-        M_cholmod_change_factor(
+        int ok = M_cholmod_change_factor(
             CHOLMOD_REAL,  // xtype
             1,             // to_ll (LL')
             0,             // to_super = false (simplicial)
@@ -338,15 +342,22 @@ SparseCholeskySolver::SelectedInverse SparseCholeskySolver::selected_inversion_f
             1,             // to_monotonic
             factor_, &common_
         );
+        if (!ok || common_.status != CHOLMOD_OK) return SelectedInverse{};
     }
 
-    // Ensure LL' form (not LDL')
+    // Ensure LL' form (not LDL'): the Takahashi recursion reads the diagonal of
+    // L at Lx[Lp[j]] and assumes a true Cholesky factor.
     if (!factor_->is_ll) {
-        M_cholmod_change_factor(
+        int ok = M_cholmod_change_factor(
             CHOLMOD_REAL, 1, 0, 1, 1,
             factor_, &common_
         );
+        if (!ok || common_.status != CHOLMOD_OK) return SelectedInverse{};
     }
+
+    // Read the achieved form rather than inferring it from the calls having
+    // been made.
+    if (factor_->is_super || !factor_->is_ll) return SelectedInverse{};
 
     int* Lp = static_cast<int*>(factor_->p);
     int* Li = static_cast<int*>(factor_->i);
@@ -480,10 +491,45 @@ Rcpp::NumericVector cpp_selected_inversion_diagonal(
     Rcpp::NumericVector Q_x, Rcpp::IntegerVector Q_i, Rcpp::IntegerVector Q_p,
     int n
 ) {
+    // n is a plain argument, unrelated to the three CSC vectors, and the copy
+    // loops below read all of them unconditionally. Validate the triple
+    // against n before anything is allocated or dereferenced.
+    int nnz = (int)Q_x.size();
+    if (n <= 0) {
+        Rcpp::stop("cpp_selected_inversion_diagonal: n (%d) must be positive.", n);
+    }
+    if ((int)Q_p.size() != n + 1) {
+        Rcpp::stop("cpp_selected_inversion_diagonal: length(Q_p) (%d) != n + 1 (%d).",
+                   (int)Q_p.size(), n + 1);
+    }
+    if ((int)Q_i.size() != nnz) {
+        Rcpp::stop("cpp_selected_inversion_diagonal: length(Q_i) (%d) != "
+                   "length(Q_x) (%d).",
+                   (int)Q_i.size(), nnz);
+    }
+    if (Q_p[0] != 0 || Q_p[n] != nnz) {
+        Rcpp::stop("cpp_selected_inversion_diagonal: Q_p must run 0 .. nnz "
+                   "(got Q_p[0] = %d, Q_p[n] = %d, nnz = %d).",
+                   (int)Q_p[0], (int)Q_p[n], nnz);
+    }
+    for (int j = 0; j < n; j++) {
+        if (Q_p[j + 1] < Q_p[j]) {
+            Rcpp::stop("cpp_selected_inversion_diagonal: Q_p is not "
+                       "non-decreasing at column %d (%d > %d).",
+                       j + 1, (int)Q_p[j], (int)Q_p[j + 1]);
+        }
+    }
+    for (int e = 0; e < nnz; e++) {
+        if (Q_i[e] < 0 || Q_i[e] >= n) {
+            Rcpp::stop("cpp_selected_inversion_diagonal: Q_i[%d] (%d) outside "
+                       "[0, n) with n = %d.",
+                       e + 1, (int)Q_i[e], n);
+        }
+    }
+
     tulpa::SparseCholeskySolver solver;
 
     // Build cholmod_sparse from CSC components
-    int nnz = Q_x.size();
     cholmod_sparse* A = M_cholmod_allocate_sparse(
         n, n, nnz, 1, 1, -1, CHOLMOD_REAL, &solver.common()
     );

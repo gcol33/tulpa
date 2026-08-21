@@ -68,3 +68,26 @@ test_that("selected inversion works for ICAR-like precision", {
   expect_true(all(diag_inv > 0))
   expect_equal(diag_inv, Q_inv_diag_true, tolerance = 1e-6)
 })
+
+test_that("selected inversion rejects a CSC triple that does not match n", {
+  n <- 6
+  Q <- Matrix::Diagonal(n, x = 2)
+  Q_lower <- Matrix::tril(as(Q, "CsparseMatrix"))
+  x <- Q_lower@x
+  i <- Q_lower@i
+  p <- Q_lower@p
+
+  # n unrelated to the vectors: Q_p is read to n + 1 and Q_i / Q_x to nnz, so
+  # every mismatch below is an out-of-bounds read without the check.
+  expect_error(
+    cpp_selected_inversion_diagonal(numeric(0), integer(0), integer(0), 1000L),
+    "Q_p"
+  )
+  expect_error(cpp_selected_inversion_diagonal(x, i, p, 0L), "positive")
+  expect_error(cpp_selected_inversion_diagonal(x, i[-1], p, n), "Q_i")
+  expect_error(cpp_selected_inversion_diagonal(x, i, p[-1], n), "Q_p")
+  expect_error(
+    cpp_selected_inversion_diagonal(x, replace(i, 1L, n), p, n),
+    "outside"
+  )
+})

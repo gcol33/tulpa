@@ -18,6 +18,21 @@ test_that("log_sum_exp does not overflow on a large shift", {
   expect_equal(sum(cpp_test_softmax(big)), 1)
 })
 
+test_that("empty and mismatched inputs are answered, not dereferenced", {
+  # max_element on an empty range dereferences end(); log_sum_exp already
+  # answers the empty case and softmax reads the same way.
+  expect_equal(cpp_test_log_sum_exp(numeric(0)), -Inf)
+  expect_equal(cpp_test_softmax(numeric(0)), numeric(0))
+
+  # Each of these loops to length(y) / nrow(A) and indexes the other argument.
+  expect_error(cpp_test_poisson_loglik(c(0L, 1L), 1.0), "lambda")
+  expect_error(cpp_test_binomial_loglik(c(0L, 1L), 2L, c(0.5, 0.5)), "length")
+  expect_error(cpp_test_negbin_loglik(c(0L, 1L), 1.0, 2.5), "mu")
+  expect_error(cpp_test_normal_loglik(c(0, 1), 1.0, 1.0), "mu")
+  expect_error(cpp_test_cholesky(matrix(1, 2, 3)), "square")
+  expect_error(cpp_test_matvec(matrix(1, 2, 3), c(1, 2)), "ncol")
+})
+
 test_that("family log-likelihood kernels match the R densities", {
   y   <- c(0L, 2L, 5L, 1L)
   lam <- c(0.4, 2.1, 4.4, 1.0)
