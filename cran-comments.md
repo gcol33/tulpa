@@ -12,7 +12,8 @@
 
 * local: Windows 11, R 4.6.0
 * win-builder: R-devel, R-release
-* mac-builder: R-release
+* Linux: Rocky Linux 9.8, R 4.5.2, gcc 14.3, built at the x86-64 baseline
+  with -ffp-contract=off
 
 ## Notes
 
@@ -26,7 +27,9 @@
 
 * Long-running model fits in examples are wrapped in \donttest{}; each
   retains a small runnable form where feasible. Recovery and sampler tests
-  are skipped on CRAN via testthat gating and run in CI instead.
+  are gated by testthat's skip_on_cran() and by the package's own tier
+  variables (NOT_CRAN, TULPA_SLOW_TESTS); they are run by the maintainer
+  before each release on Windows and on Linux.
 
 * A small number of examples remain in \dontrun{}. Each either references
   symbols the user supplies (a per-model E-step / M-step callback pair, a
@@ -36,8 +39,8 @@
 
 * The vignettes fit models, which does not fit inside the ten-minute check
   budget. Each vignette sets `eval` from NOT_CRAN in its setup chunk, so the
-  code is shown but not run on the check farm and is fully evaluated locally,
-  in CI and on the package website.
+  code is shown but not run on the check farm. It is evaluated in full
+  locally and on the package website.
 
 * Intra-chain OpenMP teams are resolved in one place
   (`tulpa_omp_team_size()`, src/omp_threads.h), which reads
