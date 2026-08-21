@@ -1,0 +1,74 @@
+name: R-CMD-check
+
+# Checks a BUILT TARBALL on all four platforms at the tier CRAN runs, so a
+# failure that only a non-Windows toolchain can produce -- an optimizer status
+# code that differs by platform, a graphics device that cannot start on a
+# headless machine, a fused multiply-add changing the last bit of a comparison
+# -- surfaces here rather than at submission.
+#
+# One job additionally builds the reference manual. The Rd LaTeX pass is the
+# only thing that reads typographic Unicode in the roxygen sources, and the
+# local check runs with --no-manual.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 4 * * 1'
+  workflow_dispatch:
+
+# A later push supersedes an in-flight run: the engine takes most of a job to
+# compile, and a queue of superseded runs delays the one being waited on.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: ${{ matrix.os }} (${{ matrix.r }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest,  r: 'release', manual: '1' }
+          - { os: ubuntu-latest,  r: 'devel',   manual: '0' }
+          - { os: macos-latest,   r: 'release', manual: '0' }
+          - { os: windows-latest, r: 'release', manual: '0' }
+
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+      R_KEEP_PKG_SOURCE: yes
+      TULPA_CHECK_MANUAL: ${{ matrix.manual }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/build-env
+        with:
+          r-version: ${{ matrix.r }}
+          cache-key: check
+          extra-packages: |
+            any::rcmdcheck
+
+      - name: TinyTeX
+        if: matrix.manual == '1'
+        uses: r-lib/actions/setup-tinytex@v2
+
+      - name: Check
+        run: Rscript .github/scripts/check.R
+
+      - name: Upload check results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: check-${{ matrix.os }}-${{ matrix.r }}
+          path: check
+          if-no-files-found: warn
+          retention-days: 30

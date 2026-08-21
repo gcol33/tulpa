@@ -1,0 +1,81 @@
+name: slow-tests
+
+# The tier holding the statistical evidence: sampler chains, multi-seed
+# recovery, interval coverage. Hours, so it runs on a schedule and on demand
+# rather than on push.
+#
+# One job per file. The cost is concentrated in a few files, and as a single
+# job the tier reports nothing at all when one of them runs past the cap --
+# with a job each, an overrun costs its own file and every other file still
+# reports.
+
+on:
+  schedule:
+    - cron: '0 3 * * 6'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # The matrix is built from the same rows run-tests.R filters on, so the jobs
+  # and the files cannot drift apart.
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      files: ${{ steps.files.outputs.files }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+
+      - id: files
+        run: |
+          files=$(Rscript -e 'source(".github/scripts/tier-files.R"); cat(tier_files_json(3))')
+          echo "files=$files" >> "$GITHUB_OUTPUT"
+          echo "$files"
+
+  slow:
+    needs: plan
+    name: ${{ matrix.file }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        file: ${{ fromJSON(needs.plan.outputs.files) }}
+
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+      NOT_CRAN: 'true'
+      TULPA_SLOW_TESTS: 'true'
+      TULPA_TIER: '3'
+      TULPA_TEST_FILES: ${{ matrix.file }}
+      TULPA_TEST_OUT: tier3-out
+      OMP_NUM_THREADS: '2'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/build-env
+        with:
+          cache-key: slow
+
+      - name: Install package
+        run: R CMD INSTALL --no-multiarch --with-keep.source .
+
+      - name: Full-validation tier
+        run: Rscript .github/scripts/run-tests.R
+
+      - name: Upload tier timings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tier3-${{ matrix.file }}
+          path: tier3-out
+          if-no-files-found: warn
+          retention-days: 90

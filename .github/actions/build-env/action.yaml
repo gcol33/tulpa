@@ -1,0 +1,118 @@
+name: build-env
+description: >
+  R, the compile cache, and the arithmetic baseline the engine is built under.
+  Every job here goes through this, so the four platforms compile the same
+  source the same way and a difference between them is the platform.
+
+inputs:
+  r-version:
+    description: R version handed to r-lib/actions/setup-r.
+    required: false
+    default: release
+  dependencies:
+    description: Dependency classes to resolve.
+    required: false
+    default: '"all"'
+  extra-packages:
+    description: Packages to install beyond the resolved dependencies.
+    required: false
+    default: ''
+  cache-key:
+    description: Suffix separating one job's compile cache from another's.
+    required: false
+    default: default
+
+runs:
+  using: composite
+  steps:
+    - uses: r-lib/actions/setup-pandoc@v2
+
+    - uses: r-lib/actions/setup-r@v2
+      with:
+        r-version: ${{ inputs.r-version }}
+        use-public-rspm: true
+
+    # A compiler contracts a multiply and an add into a single FMA wherever the
+    # target has the instruction, and the fused result carries one rounding
+    # where the separate operations carry two. Every equivalence assertion that
+    # compares a C++ result against the same arithmetic in R then reads the
+    # runner's -march rather than the algorithm. -ffp-contract=off holds both
+    # sides to the same rounding; -march=x86-64 -mtune=generic is the target a
+    # CRAN binary is built for.
+    #
+    # R_MAKEVARS_USER rather than ~/.R/Makevars: on Windows R expands ~ to the
+    # Documents folder while the shell expands it to the profile root, so the
+    # file lands where R does not look for it. An explicit path is read the
+    # same way everywhere. Set before dependency resolution so the dependency
+    # compiles take the same flags and the same cache.
+    - name: Arithmetic baseline
+      shell: bash
+      run: |
+        mk="$RUNNER_TEMP/tulpa-makevars"
+        : > "$mk"
+        case "$RUNNER_OS" in
+          Linux)
+            base='-march=x86-64 -mtune=generic -ffp-contract=off'
+            ;;
+          *)
+            base='-ffp-contract=off'
+            ;;
+        esac
+        for v in CFLAGS CXXFLAGS CXX11FLAGS CXX14FLAGS CXX17FLAGS CXX20FLAGS; do
+          echo "$v += $base" >> "$mk"
+        done
+        if command -v cygpath >/dev/null 2>&1; then
+          mk_r=$(cygpath -m "$mk")
+        else
+          mk_r="$mk"
+        fi
+        echo "R_MAKEVARS_USER=$mk_r" >> "$GITHUB_ENV"
+        cat "$mk"
+
+    # The engine is 99 translation units over 177 headers, so a cold build is
+    # most of a job. ccache is reached through PATH rather than by overriding
+    # CXX, which would drop the -std flag R pairs with its own compiler entry.
+    - name: Compile cache
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        if [ "$RUNNER_OS" = "Linux" ]; then
+          sudo apt-get update -qq
+          sudo apt-get install -y ccache
+          echo /usr/lib/ccache >> "$GITHUB_PATH"
+        else
+          brew install ccache
+          echo "$(brew --prefix)/opt/ccache/libexec" >> "$GITHUB_PATH"
+        fi
+        {
+          echo "CCACHE_DIR=$HOME/.ccache"
+          echo "CCACHE_MAXSIZE=2G"
+          echo "CCACHE_COMPRESS=1"
+          echo "CCACHE_SLOPPINESS=include_file_ctime,include_file_mtime,time_macros"
+        } >> "$GITHUB_ENV"
+
+    - name: Restore compile cache
+      if: runner.os != 'Windows'
+      uses: actions/cache@v4
+      with:
+        path: ~/.ccache
+        key: ccache-${{ runner.os }}-${{ inputs.r-version }}-${{ inputs.cache-key }}-${{ github.sha }}
+        restore-keys: |
+          ccache-${{ runner.os }}-${{ inputs.r-version }}-${{ inputs.cache-key }}-
+          ccache-${{ runner.os }}-${{ inputs.r-version }}-
+
+    # A templated inference kernel is a large translation unit, and the macOS
+    # runner carries less memory per core than the others.
+    - name: Parallel build width
+      shell: bash
+      run: |
+        if [ "$RUNNER_OS" = "macOS" ]; then
+          echo "MAKEFLAGS=-j2" >> "$GITHUB_ENV"
+        else
+          echo "MAKEFLAGS=-j3" >> "$GITHUB_ENV"
+        fi
+
+    - uses: r-lib/actions/setup-r-dependencies@v2
+      with:
+        dependencies: ${{ inputs.dependencies }}
+        extra-packages: ${{ inputs.extra-packages }}

@@ -1,0 +1,65 @@
+name: recovery
+
+# The tier the check job cannot run. R CMD check runs what CRAN runs, which
+# leaves every skip_on_cran() gate closed: a green check says the plumbing
+# holds and says nothing about whether a fit converges to the right place.
+# This job opens those gates on the named subset in .github/tier-files.csv.
+#
+# The subset is a list rather than the directory because the ungated suite at
+# NOT_CRAN=true is weeks of fits. Per-file seconds are published as an artifact
+# every run, so what is on the list is chosen from measured cost.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  recovery:
+    name: recovery (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+      NOT_CRAN: 'true'
+      TULPA_TIER: '2'
+      TULPA_TEST_OUT: tier2-out
+      # An intra-chain OpenMP team wider than the runner oversubscribes the
+      # cores the test process is already using.
+      OMP_NUM_THREADS: '2'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/build-env
+        with:
+          cache-key: recovery
+
+      - name: Install package
+        run: R CMD INSTALL --no-multiarch --with-keep.source .
+
+      - name: Recovery tier
+        run: Rscript .github/scripts/run-tests.R
+
+      - name: Upload tier timings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tier2-${{ matrix.os }}
+          path: tier2-out
+          if-no-files-found: warn
+          retention-days: 90

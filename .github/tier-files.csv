@@ -1,0 +1,36 @@
+file,tier,why
+test-sbc-frontdoor.R,2,SBC front door and the graphics device its report writes through
+test-laplace-spatial-gp-spde-equiv.R,2,single-fit SPDE and GP entries against the joint driver at tolerance 0
+test-nested-laplace-joint-sparse-equivalence.R,2,dense and sparse joint Newton loops on one model
+test-nested-laplace-st-sparse-equivalence.R,2,spatiotemporal dense and sparse drivers on one model
+test-spde.R,2,SPDE assembly and outer mode-find and hyperparameter grid
+test-nngp-coords-arity.R,2,NNGP distance metric across coordinate column counts
+test-nngp-prior-scatter.R,2,NNGP precision scatter against its definition
+test-em-laplace-recovery.R,2,EM+Laplace parameter recovery
+test-miid-recovery.R,2,multiple-imputation correction recovery
+test-pg-spatial-recovery.R,2,Polya-Gamma spatial Gibbs recovery
+test-subspace-debias-recovery.R,2,subspace debias recovery
+test-re-cov-nested.R,2,nested integration over the RE covariance
+test-re-cov-gibbs.R,2,conjugate Sigma draws in the Gibbs debias
+test-nested-laplace-temporal.R,2,temporal fields on the nested tier
+test-inner-skew.R,2,gamma_1 and gamma_3 against exact quadrature and finite differences
+test-inner-pareto-k.R,2,inner importance k-hat and its injected-draw equivalence
+test-checkpoint-universal.R,2,checkpoint resume and torn tail and fingerprint mismatch
+test-tulpa-entry.R,2,tulpa() front door across families and inference modes
+test-tulpa-spatial-frontdoor.R,2,spatial front door
+test-tulpa-spatial-spde-frontdoor.R,2,SPDE front door
+test-temporal-frontdoor.R,2,temporal front door
+test-tulpa-re-cov-frontdoor.R,2,RE-covariance routing from the front door
+test-nested-laplace-recovery.R,3,the multi-seed coverage aggregate and the paired interval reads
+test-nested-laplace-spatial-recovery.R,3,spatial field recovery across seeds
+test-nested-laplace-joint-multi-recovery.R,3,multi-block joint recovery
+test-re-cov-recovery.R,3,RE covariance recovery across seeds
+test-recovery-assembled.R,3,assembled-model recovery
+test-tgmrf-recovery.R,3,custom latent block recovery
+test-cell-coupling-recovery.R,3,coupled-likelihood recovery
+test-generic-sampler.R,3,NUTS chains and multi-chain diagnostics
+test-hyperparameter-coverage.R,3,hyperparameter interval coverage
+test-spde-nuts-joint.R,3,joint SPDE NUTS recovery
+test-inner-skew-correction.R,3,the whole-marginal calibration gate
+test-posterior-sbc.R,3,posterior SBC fixtures
+test-sbc-crps.R,3,the simultaneous SBC band and the paired CRPS ranking
