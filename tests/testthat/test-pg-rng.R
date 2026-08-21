@@ -77,3 +77,20 @@ test_that("cpp_rpg recovers PG(b, z) mean for exact and approx paths", {
               label = sprintf("b=%d z=%.2f var (approx path)", b, z))
   }
 })
+
+test_that("the large-b normal branch stays finite where cosh(z/2)^2 overflows", {
+  # cosh(z/2)^2 overflows past |z| around 710. Written as
+  # tanh(z/2) / (2 z^3) - sech(z/2)^2 / (4 z^2) the second term goes to zero
+  # there, so the variance tends to its analytic limit 1 / (2 z^3) rather than
+  # becoming Inf / Inf; a NaN draw would have been reported as omega = 0 by the
+  # positivity clamp, silently dropping the observation from every conditional.
+  set.seed(4242)
+  b <- 500L
+  for (z in c(200, 800, 1500)) {
+    x <- tulpa:::cpp_rpg(rep(b, 200L), rep(z, 200L))
+    expect_true(all(is.finite(x)))
+    expect_true(all(x > 0))
+    # tanh(z/2) is 1 to machine precision here, so the mean is b / (2 z).
+    expect_lt(abs(mean(x) / (b / (2 * z)) - 1), 0.01)
+  }
+})

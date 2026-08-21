@@ -162,3 +162,44 @@ test_that("the negative-binomial spatial kernel validates the same arguments", {
   wrong <- f$n_neighbors; wrong[1] <- wrong[1] + 2L
   expect_error(call_nb(n_neighbors = wrong), "neighbour|n_neighbors")
 })
+
+test_that("a design without an intercept column is rejected by the centring kernels", {
+  # Centring a latent effect and adding the removed level to beta[0] leaves eta
+  # unchanged only under an all-ones first column, so every kernel that centres
+  # refuses a design without one rather than shifting the posterior silently.
+  f <- .pg_fixture()
+  N <- length(f$y)
+  X_no_int <- cbind(rnorm(N), rnorm(N))
+  X_empty <- matrix(numeric(0), nrow = N, ncol = 0)
+  y_ct <- as.integer(rpois(N, 3))
+
+  expect_error(.pg_spatial_call(f, X = X_no_int), "intercept")
+  expect_error(.pg_spatial_call(f, X = X_empty), "intercept")
+
+  call_nb_spatial <- function(X) {
+    cpp_pg_negbin_gibbs_spatial(
+      y = y_ct, X = X,
+      re_group = f$re_group, n_re_groups = f$n_re_groups,
+      spatial_group = f$spatial_group, n_spatial_units = f$n_spatial_units,
+      adj_list = f$adj_list, n_neighbors = f$n_neighbors,
+      n_iter = 20L, n_warmup = 10L, thin = 1L,
+      prior_beta_sd = 2.5, prior_sigma_re_scale = 2.5,
+      prior_tau_shape = 1, prior_tau_rate = 1,
+      prior_r_shape = 1, prior_r_rate = 1, r_init = 2,
+      store_eta = FALSE, verbose = FALSE, n_threads = 1L)
+  }
+  expect_error(call_nb_spatial(X_no_int), "intercept")
+  expect_error(call_nb_spatial(X_empty), "intercept")
+
+  call_nb <- function(X) {
+    cpp_pg_negbin_gibbs(
+      y = y_ct, X = X, group = f$re_group, n_groups = f$n_re_groups,
+      n_iter = 20L, n_warmup = 10L, thin = 1L,
+      prior_beta_sd = 2.5, prior_sigma_scale = 2.5,
+      prior_r_shape = 1, prior_r_rate = 1, r_init = 2,
+      store_eta = FALSE, verbose = FALSE, n_threads = 1L)
+  }
+  expect_no_error(call_nb(f$X))
+  expect_error(call_nb(X_no_int), "intercept")
+  expect_error(call_nb(X_empty), "intercept")
+})

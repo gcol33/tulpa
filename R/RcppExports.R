@@ -181,6 +181,10 @@ cpp_gpu_info <- function() {
     .Call(`_tulpa_cpp_gpu_info`)
 }
 
+cpp_gpu_batched_cholesky_solve <- function(C_flat, c_rhs, k) {
+    .Call(`_tulpa_cpp_gpu_batched_cholesky_solve`, C_flat, c_rhs, k)
+}
+
 cpp_get_max_threads <- function() {
     .Call(`_tulpa_cpp_get_max_threads`)
 }
@@ -447,6 +451,10 @@ cpp_pg_binomial_gibbs_rsr <- function(y, n, X, re_group, n_re_groups, spatial_gr
 
 cpp_pg_binomial_gibbs_temporal <- function(y, n, X, re_group, n_re_groups, time_idx, n_times, seasonal_period, trend_type, short_type, n_iter = 2000L, n_warmup = 1000L, thin = 1L, prior_beta_sd = 10.0, prior_sigma_re_scale = 2.5, prior_sigma_trend_scale = 1.0, prior_sigma_seasonal_scale = 1.0, prior_sigma_short_scale = 1.0, rho_short_init = 0.5, store_eta = FALSE, verbose = TRUE, n_threads = 1L) {
     .Call(`_tulpa_cpp_pg_binomial_gibbs_temporal`, y, n, X, re_group, n_re_groups, time_idx, n_times, seasonal_period, trend_type, short_type, n_iter, n_warmup, thin, prior_beta_sd, prior_sigma_re_scale, prior_sigma_trend_scale, prior_sigma_seasonal_scale, prior_sigma_short_scale, rho_short_init, store_eta, verbose, n_threads)
+}
+
+cpp_test_negbin_loglik_eta <- function(y, eta, r) {
+    .Call(`_tulpa_cpp_test_negbin_loglik_eta`, y, eta, r)
 }
 
 cpp_pg_negbin_gibbs <- function(y, X, group, n_groups, n_iter, n_warmup, thin, prior_beta_sd, prior_sigma_scale, prior_r_shape, prior_r_rate, r_init, store_eta, verbose, n_threads) {

@@ -104,9 +104,14 @@ static inline void store_beta_nb2(Rcpp::NumericMatrix& beta_draws, int row,
   for (int j = 1; j < p; j++) beta_draws(row, j) = beta[j];
 }
 
-// Compute log-likelihood for NB given eta (linear predictor) and r
-// In Zhou parameterization: mu = r * exp(eta), so p = exp(eta)/(1+exp(eta))
-// This uses the standard NB2 likelihood with R's parameterization
+// Log-likelihood of the NB given eta (linear predictor) and r.
+//
+// In Zhou's logit parameterization mu = r exp(eta), so the failure probability
+// r / (r + mu) is 1 / (1 + exp(eta)) with r cancelling, and
+//   r log(prob) + y log(1 - prob) = y eta - (y + r) log(1 + exp(eta)).
+// The right-hand side is exact at every eta -- the log(1 + exp(eta)) branches
+// on the sign of eta the way log_lik_binomial_kernel does -- so the density
+// needs neither an eta clamp nor a floor on prob to stay finite.
 static double negbin_loglik_eta(
     const IntegerVector& y,
     const NumericVector& eta,
@@ -116,18 +121,13 @@ static double negbin_loglik_eta(
   double ll = 0.0;
 
   for (int i = 0; i < n; i++) {
-    // mu = r * exp(eta) in Zhou's logit parameterization
-    double eta_i = std::max(-20.0, std::min(20.0, eta[i]));
-    double mu_i = r * std::exp(eta_i);
-    mu_i = std::max(1e-10, mu_i);
-
-    // R's prob = r / (r + mu)
-    double prob = r / (r + mu_i);
-    prob = std::max(1e-10, std::min(1.0 - 1e-10, prob));
+    const double eta_i = eta[i];
+    const double log1p_exp_eta = (eta_i > 0.0)
+        ? eta_i + std::log1p(std::exp(-eta_i))
+        : std::log1p(std::exp(eta_i));
 
     ll += R::lgammafn(y[i] + r) - R::lgammafn(y[i] + 1) - R::lgammafn(r);
-    ll += r * std::log(prob);
-    ll += y[i] * std::log(1.0 - prob);
+    ll += y[i] * eta_i - (y[i] + r) * log1p_exp_eta;
   }
 
   return ll;
@@ -175,8 +175,12 @@ JointRBeta0Result update_r_beta0_joint(
   result.beta0 = beta0_current;
   result.accepted = false;
 
-  // Bounds check
-  if (r_prop < 0.1 || r_prop > 500.0 || std::abs(beta0_prop) > 20.0) {
+  // Rejecting a proposal outside the r bounds is the Metropolis step for the
+  // posterior restricted to r in [0.1, 500], which is the documented support.
+  // beta_0 carries no bound: the Gibbs step that draws it does not either, so
+  // a box here would leave this move rejecting from a state it calls
+  // off-support.
+  if (r_prop < 0.1 || r_prop > 500.0) {
     return result;
   }
 
@@ -258,11 +262,13 @@ double update_r_negbin(
 static std::pair<double, double> nb_mom_init(const IntegerVector& y) {
   int n = y.size();
 
-  // Compute mean and variance
+  // Compute mean and variance. y[i] * y[i] on the IntegerVector wraps for
+  // counts above 46340, so the square is formed in double.
   double sum_y = 0.0, sum_y2 = 0.0;
   for (int i = 0; i < n; i++) {
-    sum_y += y[i];
-    sum_y2 += y[i] * y[i];
+    const double yi = y[i];
+    sum_y += yi;
+    sum_y2 += yi * yi;
   }
   double mu_hat = sum_y / n;
   double var_hat = (sum_y2 - sum_y * sum_y / n) / (n - 1);
@@ -316,6 +322,9 @@ List pg_negbin_gibbs(
   }
   if (n_groups < 0) Rcpp::stop("`n_groups` must be >= 0; got %d.", n_groups);
   if (n_groups > 0) pg_check_index(group, N, n_groups, "group");
+  // The random-effect centring, the moment initializer and the compensating
+  // (r, beta_0) move all write beta[0] as the intercept.
+  pg_require_intercept(X, "negative-binomial");
   const int n_save = tulpa::pg_n_save(n_iter, n_warmup, thin);
   const int team = tulpa_omp_team_size_req(n_threads, N);
 
@@ -357,7 +366,6 @@ List pg_negbin_gibbs(
   NumericVector eta(N);
   NumericVector X_beta(N);
   NumericVector re_contrib(N);
-  NumericVector p_success(N);  // p_i = logistic(eta_i)
 
   // Initialize auxiliary variable for half-Cauchy prior on sigma_re
   // a ~ IG(1/2, 1/scale^2) => E[a] = 2*scale^2
@@ -367,33 +375,27 @@ List pg_negbin_gibbs(
   int save_idx = 0;
   for (int iter = 0; iter < n_iter; iter++) {
 
-    // 1. Compute linear predictor
-    // Clamp eta to [-15, 15] to prevent numerical instability
+    // 1. Compute linear predictor. omega is drawn at this eta and update_beta
+    // solves the Gaussian conditional the same eta defines, so it carries no
+    // clamp: bounding it here would draw the weight of a saturated row at one
+    // linear predictor and then solve for beta as if it came from another.
+    // rpg_real is finite at every |eta|, and the spatial kernel below reads
+    // the same unbounded eta.
     tulpa_parallel_for(team, N, [&](int i) {
       X_beta[i] = 0.0;
       for (int j = 0; j < p; j++) {
         X_beta[i] += X(i, j) * beta[j];
       }
-      if (n_groups > 0) {
-        re_contrib[i] = re[group[i] - 1];
-      } else {
-        re_contrib[i] = 0.0;
-      }
-      double eta_raw = X_beta[i] + re_contrib[i];
-      eta[i] = std::max(-15.0, std::min(15.0, eta_raw));
+      re_contrib[i] = (n_groups > 0) ? re[group[i] - 1] : 0.0;
+      eta[i] = X_beta[i] + re_contrib[i];
     });
 
-    // 2. Compute success probabilities: p_i = logistic(eta_i)
-    for (int i = 0; i < N; i++) {
-      p_success[i] = 1.0 / (1.0 + std::exp(-eta[i]));
-    }
-
-    // 3. Compute kappa = (y - r) / 2
+    // 2. Compute kappa = (y - r) / 2
     for (int i = 0; i < N; i++) {
       kappa[i] = (y[i] - r) / 2.0;
     }
 
-    // 4. Sample omega ~ PG(y + r, eta) at the exact (real) shape: rounding
+    // 3. Sample omega ~ PG(y + r, eta) at the exact (real) shape: rounding
     // the shape changes the augmented joint, worst at zero counts with
     // small r, where the conditional weight of every zero is off by up to
     // a factor 2. rpg_real handles the fractional part exactly.
@@ -401,14 +403,16 @@ List pg_negbin_gibbs(
       omega[i] = rpg_real(y[i] + r, eta[i]);
     }
 
-    // 5. Update beta | omega, re, y
+    // 4. Update beta | omega, re, y
     NumericVector beta_new = update_beta(kappa, omega, X, re_contrib, prior_beta_sd);
 
-    // Check for numerical issues and keep previous value if invalid
+    // Keep the previous value if the solve returned a non-finite draw. The
+    // guard is finiteness only: discarding a finite draw on a magnitude bound
+    // would sample the posterior restricted to that box instead, and the
+    // centring below can carry beta[0] out of any such box afterwards.
     bool beta_valid = true;
     for (int j = 0; j < p; j++) {
-      if (std::isnan(beta_new[j]) || std::isinf(beta_new[j]) ||
-          std::abs(beta_new[j]) > 50.0) {
+      if (!std::isfinite(beta_new[j])) {
         beta_valid = false;
         break;
       }
@@ -417,7 +421,7 @@ List pg_negbin_gibbs(
       beta = beta_new;
     }
 
-    // 6. Recompute X_beta
+    // 5. Recompute X_beta
     tulpa_parallel_for(team, N, [&](int i) {
       X_beta[i] = 0.0;
       for (int j = 0; j < p; j++) {
@@ -425,15 +429,13 @@ List pg_negbin_gibbs(
       }
     });
 
-    // 7. Update random effects
+    // 6. Update random effects
     if (n_groups > 0) {
       NumericVector re_new = update_re(kappa, omega, X_beta, group, n_groups, sigma_re);
 
-      // Check for numerical issues
       bool re_valid = true;
       for (int g = 0; g < n_groups; g++) {
-        if (std::isnan(re_new[g]) || std::isinf(re_new[g]) ||
-            std::abs(re_new[g]) > 50.0) {
+        if (!std::isfinite(re_new[g])) {
           re_valid = false;
           break;
         }
@@ -456,14 +458,13 @@ List pg_negbin_gibbs(
 
       // Update sigma_re with proper half-Cauchy prior using auxiliary variable
       SigmaReState sigma_state = update_sigma_re_negbin_hc(re, prior_sigma_scale, sigma_aux);
-      if (!std::isnan(sigma_state.sigma_re) && !std::isinf(sigma_state.sigma_re) &&
-          sigma_state.sigma_re < 100.0) {
+      if (std::isfinite(sigma_state.sigma_re)) {
         sigma_re = sigma_state.sigma_re;
         sigma_aux = sigma_state.aux;
       }
     }
 
-    // 8. Update (r, beta_0) jointly to break confounding
+    // 7. Update (r, beta_0) jointly to break confounding
     // This is the key fix for the identification issue
     NumericVector re_contrib_for_joint(N);
     for (int i = 0; i < N; i++) {
@@ -487,12 +488,14 @@ List pg_negbin_gibbs(
       }
     }
 
-    // Also do a standard r update (interweaving for better mixing)
-    NumericVector eta_for_r(N);
+    // Also do a standard r update (interweaving for better mixing). This
+    // refreshes eta from the beta / re / beta_0 the sweep ended on, so the
+    // saved eta column belongs to the same draw as the saved beta column
+    // rather than to the state the sweep started from.
     for (int i = 0; i < N; i++) {
-      eta_for_r[i] = X_beta[i] + re_contrib_for_joint[i];
+      eta[i] = X_beta[i] + re_contrib_for_joint[i];
     }
-    r = update_r_negbin(y, eta_for_r, r, prior_r_shape, prior_r_rate);
+    r = update_r_negbin(y, eta, r, prior_r_shape, prior_r_rate);
 
     // Save draws (reported on the NB2 mean scale; see store_beta_nb2).
     if (iter >= n_warmup && (iter - n_warmup) % thin == 0) {
@@ -573,6 +576,7 @@ List pg_negbin_gibbs_spatial(
   if (n_re_groups > 0) pg_check_index(re_group, N, n_re_groups, "re_group");
   pg_check_index(spatial_group, N, n_spatial_units, "spatial_group");
   pg_check_adjacency(adj_list, n_neighbors, n_spatial_units);
+  pg_require_intercept(X, "negative-binomial ICAR spatial");
   const int n_save = tulpa::pg_n_save(n_iter, n_warmup, thin);
 
   // Storage
@@ -684,11 +688,9 @@ List pg_negbin_gibbs_spatial(
       NumericVector sum_omega(n_re_groups);
       NumericVector sum_resid(n_re_groups);
 
-      for (int i = 0; i < N; i++) {
-        int g = re_group[i] - 1;
-        sum_omega[g] += omega[i];
-        sum_resid[g] += kappa[i] - omega[i] * offset_re[i];
-      }
+      pg_accumulate_stats(N, re_group.begin(), n_re_groups, omega.begin(),
+                          kappa.begin(), offset_re.begin(),
+                          sum_omega.begin(), sum_resid.begin());
 
       for (int g = 0; g < n_re_groups; g++) {
         double post_var = 1.0 / (sum_omega[g] + prior_prec);
@@ -700,9 +702,7 @@ List pg_negbin_gibbs_spatial(
       // non-spatial negbin kernel (one prior, both kernels).
       SigmaReState sigma_state =
           update_sigma_re_negbin_hc(re, prior_sigma_re_scale, sigma_aux);
-      if (!std::isnan(sigma_state.sigma_re) &&
-          !std::isinf(sigma_state.sigma_re) &&
-          sigma_state.sigma_re < 100.0) {
+      if (std::isfinite(sigma_state.sigma_re)) {
         sigma_re = sigma_state.sigma_re;
         sigma_aux = sigma_state.aux;
       }
@@ -723,11 +723,9 @@ List pg_negbin_gibbs_spatial(
     NumericVector sum_omega_s(n_spatial_units);
     NumericVector sum_resid_s(n_spatial_units);
 
-    for (int i = 0; i < N; i++) {
-      int s = spatial_group[i] - 1;
-      sum_omega_s[s] += omega[i];
-      sum_resid_s[s] += kappa[i] - omega[i] * offset_spatial[i];
-    }
+    pg_accumulate_stats(N, spatial_group.begin(), n_spatial_units,
+                        omega.begin(), kappa.begin(), offset_spatial.begin(),
+                        sum_omega_s.begin(), sum_resid_s.begin());
 
     // Sample spatial effects with ICAR prior
     for (int s = 0; s < n_spatial_units; s++) {
@@ -853,6 +851,22 @@ List pg_negbin_gibbs_spatial(
 // ---------------------------------------------------------------------
 // R exports
 // ---------------------------------------------------------------------
+
+// Scores the negative-binomial log-likelihood the Gibbs kernels evaluate, at a
+// linear predictor supplied directly, so it can be held against dnbinom() over
+// a range of eta the sampler never visits.
+// [[Rcpp::export]]
+double cpp_test_negbin_loglik_eta(
+    Rcpp::IntegerVector y,
+    Rcpp::NumericVector eta,
+    double r
+) {
+  if (eta.size() != y.size()) {
+    Rcpp::stop("eta holds %d values for %d observations.",
+               (int) eta.size(), (int) y.size());
+  }
+  return tulpa::negbin_loglik_eta(y, eta, r);
+}
 
 // [[Rcpp::export]]
 Rcpp::List cpp_pg_negbin_gibbs(

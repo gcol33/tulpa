@@ -208,6 +208,36 @@ inline void pg_accumulate_stats(int N, const int* group, int n_groups,
 }
 
 // ============================================================================
+// Intercept detection
+//
+// Centring a latent effect and adding the removed level to beta[0] shifts eta
+// by level * X(i, 0), so the move leaves eta unchanged -- and the sampler's
+// target unchanged -- only when the first column of X is an all-ones intercept.
+// A design with no columns at all makes the beta[0] write itself out of bounds.
+// ============================================================================
+inline bool pg_has_intercept(const Rcpp::NumericMatrix& X) {
+  if (X.ncol() < 1) return false;
+  for (int i = 0; i < X.nrow(); i++) {
+    if (X(i, 0) != 1.0) return false;
+  }
+  return true;
+}
+
+inline void pg_require_intercept(bool has_intercept, const char* what) {
+  if (!has_intercept) {
+    Rcpp::stop("The %s Gibbs sampler centres its latent effects and absorbs "
+               "the removed level into the intercept, which leaves eta "
+               "unchanged only when the first column of `X` is an all-ones "
+               "intercept. Supply a design with an intercept column.", what);
+  }
+}
+
+inline void pg_require_intercept(const Rcpp::NumericMatrix& X,
+                                 const char* what) {
+  pg_require_intercept(pg_has_intercept(X), what);
+}
+
+// ============================================================================
 // Sequential NNGP topology and regression weights
 // ============================================================================
 
@@ -668,10 +698,7 @@ struct PgGibbsCommon {
     }
     if (n_re_groups > 0) pg_check_index(re_group, N, n_re_groups, "re_group");
 
-    has_intercept = (p > 0);
-    for (int i = 0; i < N && has_intercept; i++) {
-      if (X(i, 0) != 1.0) has_intercept = false;
-    }
+    has_intercept = pg_has_intercept(X);
 
     n_threads_team = tulpa_omp_team_size_req(n_threads, N);
     for (int i = 0; i < N; i++) {
@@ -685,12 +712,7 @@ struct PgGibbsCommon {
   }
 
   void require_intercept(const char* what) const {
-    if (!has_intercept) {
-      Rcpp::stop("The %s Gibbs sampler centres its field and absorbs the "
-                 "removed level into the intercept, which leaves eta unchanged "
-                 "only when the first column of `X` is an all-ones intercept. "
-                 "Supply a design with an intercept column.", what);
-    }
+    pg_require_intercept(has_intercept, what);
   }
 
   // Absorb a level removed from a latent field into the intercept, keeping eta

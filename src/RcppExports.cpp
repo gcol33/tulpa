@@ -634,6 +634,19 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_gpu_batched_cholesky_solve
+List cpp_gpu_batched_cholesky_solve(NumericMatrix C_flat, NumericMatrix c_rhs, int k);
+RcppExport SEXP _tulpa_cpp_gpu_batched_cholesky_solve(SEXP C_flatSEXP, SEXP c_rhsSEXP, SEXP kSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< NumericMatrix >::type C_flat(C_flatSEXP);
+    Rcpp::traits::input_parameter< NumericMatrix >::type c_rhs(c_rhsSEXP);
+    Rcpp::traits::input_parameter< int >::type k(kSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_gpu_batched_cholesky_solve(C_flat, c_rhs, k));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_get_max_threads
 int cpp_get_max_threads();
 RcppExport SEXP _tulpa_cpp_get_max_threads() {
@@ -2217,6 +2230,19 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< bool >::type verbose(verboseSEXP);
     Rcpp::traits::input_parameter< int >::type n_threads(n_threadsSEXP);
     rcpp_result_gen = Rcpp::wrap(cpp_pg_binomial_gibbs_temporal(y, n, X, re_group, n_re_groups, time_idx, n_times, seasonal_period, trend_type, short_type, n_iter, n_warmup, thin, prior_beta_sd, prior_sigma_re_scale, prior_sigma_trend_scale, prior_sigma_seasonal_scale, prior_sigma_short_scale, rho_short_init, store_eta, verbose, n_threads));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_test_negbin_loglik_eta
+double cpp_test_negbin_loglik_eta(Rcpp::IntegerVector y, Rcpp::NumericVector eta, double r);
+RcppExport SEXP _tulpa_cpp_test_negbin_loglik_eta(SEXP ySEXP, SEXP etaSEXP, SEXP rSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type y(ySEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type eta(etaSEXP);
+    Rcpp::traits::input_parameter< double >::type r(rSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_negbin_loglik_eta(y, eta, r));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -4265,6 +4291,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_gpu_available", (DL_FUNC) &_tulpa_cpp_gpu_available, 0},
     {"_tulpa_cpp_gpu_backend_kind", (DL_FUNC) &_tulpa_cpp_gpu_backend_kind, 0},
     {"_tulpa_cpp_gpu_info", (DL_FUNC) &_tulpa_cpp_gpu_info, 0},
+    {"_tulpa_cpp_gpu_batched_cholesky_solve", (DL_FUNC) &_tulpa_cpp_gpu_batched_cholesky_solve, 3},
     {"_tulpa_cpp_get_max_threads", (DL_FUNC) &_tulpa_cpp_get_max_threads, 0},
     {"_tulpa_cpp_total_ram_bytes", (DL_FUNC) &_tulpa_cpp_total_ram_bytes, 0},
     {"_tulpa_cpp_available_ram_bytes", (DL_FUNC) &_tulpa_cpp_available_ram_bytes, 0},
@@ -4332,6 +4359,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_pg_binomial_gibbs_multiscale_gp", (DL_FUNC) &_tulpa_cpp_pg_binomial_gibbs_multiscale_gp, 36},
     {"_tulpa_cpp_pg_binomial_gibbs_rsr", (DL_FUNC) &_tulpa_cpp_pg_binomial_gibbs_rsr, 21},
     {"_tulpa_cpp_pg_binomial_gibbs_temporal", (DL_FUNC) &_tulpa_cpp_pg_binomial_gibbs_temporal, 22},
+    {"_tulpa_cpp_test_negbin_loglik_eta", (DL_FUNC) &_tulpa_cpp_test_negbin_loglik_eta, 3},
     {"_tulpa_cpp_pg_negbin_gibbs", (DL_FUNC) &_tulpa_cpp_pg_negbin_gibbs, 15},
     {"_tulpa_cpp_pg_negbin_gibbs_spatial", (DL_FUNC) &_tulpa_cpp_pg_negbin_gibbs_spatial, 21},
     {"_tulpa_cpp_rpg1", (DL_FUNC) &_tulpa_cpp_rpg1, 1},

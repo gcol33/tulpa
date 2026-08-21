@@ -343,6 +343,12 @@ glmm_weights <- function(eta, family, n_trials = NULL, phi = 1.0, phi2 = NULL) {
 #'   stationary support is bounded to `r` in `[0.1, 500]`; data favouring a
 #'   dispersion outside that range pile up at the boundary.
 #'
+#'   Every sampler that centres a latent effect -- the negative-binomial
+#'   kernels, and the binomial kernels carrying a `spatial` or `temporal`
+#'   field -- adds the removed level to the first coefficient, which leaves
+#'   `eta` unchanged only when the first column of `X` is an all-ones
+#'   intercept. Those routes error on a design without one.
+#'
 #' @param spatial Optional spatial spec. When supplied the fit routes to the
 #'   matching spatial Polya-Gamma Gibbs sampler via [dispatch_gibbs_spatial()];
 #'   `group`/`n_groups` are the iid random-effect block carried alongside the
