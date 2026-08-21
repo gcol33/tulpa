@@ -6,9 +6,9 @@
 # NOT_CRAN=true is weeks of fits, so what CI covers is a list, and a list that
 # nothing reads back is a list that silently stops matching the suite.
 #
-# run-tests.R sources this to build its filter, and the scheduled workflow
-# calls tier_files_json() to build its job matrix, so the matrix and the filter
-# come from the same rows.
+# run-tests.R sources this to select the files it runs, and the scheduled
+# workflow calls tier_files_json() to build its job matrix, so the jobs and the
+# files come from the same rows.
 
 TIER_FILES_CSV <- file.path(".github", "tier-files.csv")
 TEST_DIR <- file.path("tests", "testthat")
@@ -52,23 +52,31 @@ tier_files <- function(tier) {
   files
 }
 
-# testthat matches `filter` against the file name stripped of its "test-"
-# prefix and ".R" extension, so the pattern is built on the stem and anchored:
-# an unanchored alternation selects every longer name sharing a prefix.
-tier_stems <- function(files) sub("^test-", "", sub("\\.R$", "", files))
-
-tier_filter_regex <- function(files) {
-  paste0("^(", paste(gsub(".", "\\.", tier_stems(files), fixed = TRUE),
-                     collapse = "|"), ")$")
-}
-
-# What the pattern actually selects out of the whole directory. run-tests.R
-# checks this against the assigned list before spending the job on it.
-tier_filter_selects <- function(filter) {
-  on_disk <- basename(list.files(TEST_DIR, pattern = "^test-.*\\.R$"))
-  sort(on_disk[grepl(filter, tier_stems(on_disk))])
-}
-
 tier_files_json <- function(tier) {
   paste0("[", paste0("\"", tier_files(tier), "\"", collapse = ","), "]")
+}
+
+# Which files carry a tier gate at all, read off the sources rather than off a
+# list. A gate is what CI has to open for the block behind it to run, so this is
+# the population the tier lists are drawn from, and it moves on its own as tests
+# are written.
+tier_gated_files <- function(gate = c("any", "cran", "slow")) {
+  gate <- match.arg(gate)
+  pattern <- switch(gate,
+    any = "skip_on_cran\\(\\)|skip_if_not_slow\\(\\)",
+    cran = "skip_on_cran\\(\\)",
+    slow = "skip_if_not_slow\\(\\)")
+  files <- sort(basename(list.files(TEST_DIR, pattern = "^test-.*\\.R$")))
+  keep <- vapply(files, function(f) {
+    any(grepl(pattern, readLines(file.path(TEST_DIR, f), warn = FALSE)))
+  }, logical(1))
+  files[keep]
+}
+
+# Gated files no tier list names. A curated subset is a bound on coverage, and
+# an unstated bound reads as full coverage; every job that runs a subset prints
+# this count.
+tier_uncovered <- function() {
+  tab <- tier_table()
+  setdiff(tier_gated_files("any"), tab$file)
 }

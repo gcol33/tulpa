@@ -36,9 +36,15 @@ runs:
     # target has the instruction, and the fused result carries one rounding
     # where the separate operations carry two. Every equivalence assertion that
     # compares a C++ result against the same arithmetic in R then reads the
-    # runner's -march rather than the algorithm. -ffp-contract=off holds both
-    # sides to the same rounding; -march=x86-64 -mtune=generic is the target a
-    # CRAN binary is built for.
+    # runner's instruction set rather than the algorithm. -ffp-contract=off
+    # holds both sides to the same rounding on every platform here, including
+    # the arm64 macOS runner.
+    #
+    # -march is deliberately NOT set. Both Linux runners already target the
+    # x86-64 baseline a CRAN binary is built for, so naming it changes no code
+    # and only raises "checking compilation flags used ... NOTE: non-portable
+    # flag(s) -march=x86-64" -- which would then mask the same note arriving
+    # from the package's own Makevars.
     #
     # R_MAKEVARS_USER rather than ~/.R/Makevars: on Windows R expands ~ to the
     # Documents folder while the shell expands it to the profile root, so the
@@ -50,16 +56,8 @@ runs:
       run: |
         mk="$RUNNER_TEMP/tulpa-makevars"
         : > "$mk"
-        case "$RUNNER_OS" in
-          Linux)
-            base='-march=x86-64 -mtune=generic -ffp-contract=off'
-            ;;
-          *)
-            base='-ffp-contract=off'
-            ;;
-        esac
         for v in CFLAGS CXXFLAGS CXX11FLAGS CXX14FLAGS CXX17FLAGS CXX20FLAGS; do
-          echo "$v += $base" >> "$mk"
+          echo "$v += -ffp-contract=off" >> "$mk"
         done
         if command -v cygpath >/dev/null 2>&1; then
           mk_r=$(cygpath -m "$mk")

@@ -2,11 +2,12 @@
 
 # R CMD check at the tier CRAN runs.
 #
-# rcmdcheck sets NOT_CRAN="true" in the check subprocess by default, which
-# unskips the recovery gates: at NOT_CRAN=true the whole directory is weeks of
-# fits, and none of it is what the check farm executes. The env below pins
-# every tier variable to what a CRAN machine has, so what this job reads is
-# what CRAN reads.
+# skip_on_cran() runs its gated test whenever NOT_CRAN is "true" in the check
+# subprocess, and the check subprocess inherits whatever the job carries. At
+# NOT_CRAN=true the ungated directory is weeks of fits and none of it is what
+# the check farm executes, so every tier variable is pinned here rather than
+# left to the environment: what this job reads is what CRAN reads, whatever
+# else is set around it.
 
 check_args <- c("--as-cran")
 

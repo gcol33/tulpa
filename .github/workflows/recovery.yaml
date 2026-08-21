@@ -15,6 +15,12 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      scope:
+        description: Which recovery files to run.
+        type: choice
+        default: curated
+        options: [curated, all-gated]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -38,6 +44,10 @@ jobs:
       NOT_CRAN: 'true'
       TULPA_TIER: '2'
       TULPA_TEST_OUT: tier2-out
+      # "all-gated" runs every file carrying a recovery gate and publishes
+      # seconds for each, which is the measurement the curated list is drawn
+      # from. Push runs stay on the curated list.
+      TULPA_TEST_SCOPE: ${{ inputs.scope || 'curated' }}
       # An intra-chain OpenMP team wider than the runner oversubscribes the
       # cores the test process is already using.
       OMP_NUM_THREADS: '2'
