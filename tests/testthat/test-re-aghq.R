@@ -209,8 +209,11 @@ test_that("the variance components' own covariance is returned and layout-consis
   expect_equal(fit$theta_cov,
                fit$joint_cov[seq_len(n_theta), seq_len(n_theta), drop = FALSE],
                tolerance = 0)
+  # `re_par_cov` carries the coordinate names on both dimensions, so its
+  # diagonal is named too; compare the values.
   expect_equal(unname(fit$re_par_se),
-               sqrt(pmax(diag(fit$re_par_cov), 0)), tolerance = 0)
+               unname(sqrt(pmax(diag(fit$re_par_cov), 0))), tolerance = 0)
+  expect_identical(names(fit$re_par_se), colnames(fit$re_par_cov))
 
   # The layout indexes re_par and names the block it belongs to.
   lay <- fit$re_par_layout

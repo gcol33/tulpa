@@ -21,6 +21,7 @@
 // Outer-grid loop + warm-starting + result aggregation live in
 // nested_laplace_grid.h.
 
+#include "bym2_mixing.h"           // BYM2_RHO_EPS + the mixing amplitudes
 #include "laplace_core.h"
 #include "laplace_newton.h"
 #include "laplace_re_priors.h"
@@ -246,7 +247,7 @@ inline std::vector<tulpa::LatentBlock> make_bym2_latent_blocks(
     phi_block.size  = n_s;
     phi_block.idx   = [&spatial_idx](int i, int /*k_arm*/) { return spatial_idx[i]; };
     phi_block.d_fac = [&sigma_spatial_grid, &rho_grid, scale_factor](int k) {
-        return sigma_spatial_grid[k] * std::sqrt(rho_grid[k] + 1e-10) * scale_factor;
+        return sigma_spatial_grid[k] * tulpa::bym2_sd_structured(rho_grid[k]) * scale_factor;
     };
     phi_block.add_prior = [phi_start, n_s, sp_part,
                            &adj_row_ptr, &adj_col_idx, &n_neighbors]
@@ -287,7 +288,7 @@ inline std::vector<tulpa::LatentBlock> make_bym2_latent_blocks(
     theta_block.size  = n_s;
     theta_block.idx   = [&spatial_idx](int i, int /*k_arm*/) { return spatial_idx[i]; };
     theta_block.d_fac = [&sigma_spatial_grid, &rho_grid](int k) {
-        return sigma_spatial_grid[k] * std::sqrt(1.0 - rho_grid[k] + 1e-10);
+        return sigma_spatial_grid[k] * tulpa::bym2_sd_unstructured(rho_grid[k]);
     };
     theta_block.add_prior = [theta_start, n_s]
                             (tulpa::DenseVec& grad, tulpa::DenseMat& H,
@@ -418,7 +419,9 @@ Rcpp::List cpp_nested_laplace_bym2(
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue
 ) {
-    int n_grid = sigma_spatial_grid.size();
+    const int n_grid = tulpa::nl_grid_axes_length(
+        "sigma_spatial_grid", sigma_spatial_grid, {{"rho_grid", &rho_grid}});
+    tulpa::nl_grid_axis_unit_interval("rho_grid", rho_grid);
     int N = y.size();
     int p = X.ncol();
     std::vector<tulpa::LatentBlock> blocks = make_bym2_latent_blocks(
@@ -482,10 +485,8 @@ Rcpp::List cpp_nested_laplace_car_proper(
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue
 ) {
-    int n_grid = tau_grid.size();
-    if (rho_grid.size() != n_grid) {
-        Rcpp::stop("tau_grid and rho_grid must have the same length");
-    }
+    const int n_grid = tulpa::nl_grid_axes_length(
+        "tau_grid", tau_grid, {{"rho_grid", &rho_grid}});
     int N = y.size();
     int p = X.ncol();
     int spatial_start = p + n_re_groups;
@@ -636,9 +637,8 @@ Rcpp::List cpp_nested_laplace_nngp(
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue
 ) {
-    const int n_grid = sigma2_grid.size();
-    if (phi_gp_grid.size() != n_grid)
-        Rcpp::stop("sigma2_grid and phi_gp_grid must have the same length");
+    const int n_grid = tulpa::nl_grid_axes_length(
+        "sigma2_grid", sigma2_grid, {{"phi_gp_grid", &phi_gp_grid}});
     const int N = y.size();
     const int p = X.ncol();
     if (spatial_idx.size() != N)
@@ -750,9 +750,8 @@ Rcpp::List cpp_nested_laplace_hsgp(
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue
 ) {
-    const int n_grid = sigma2_grid.size();
-    if (lengthscale_grid.size() != n_grid)
-        Rcpp::stop("sigma2_grid and lengthscale_grid must have the same length");
+    const int n_grid = tulpa::nl_grid_axes_length(
+        "sigma2_grid", sigma2_grid, {{"lengthscale_grid", &lengthscale_grid}});
     const int N = y.size();
     const int p = X.ncol();
     const int M = phi_basis.ncol();
@@ -1371,10 +1370,9 @@ Rcpp::List cpp_nested_laplace_st_icar(
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue
 ) {
-    int n_grid = tau_spatial_grid.size();
-    if (tau_temporal_grid.size() != n_grid) {
-        Rcpp::stop("tau_spatial_grid and tau_temporal_grid must have the same length");
-    }
+    const int n_grid = tulpa::nl_grid_axes_length(
+        "tau_spatial_grid", tau_spatial_grid,
+        {{"tau_temporal_grid", &tau_temporal_grid}});
     Rcpp::NumericVector rho_t = nl_unwrap_rho_temporal(rho_temporal_grid);
     int s_start = X.ncol() + n_re_groups;
 
@@ -1438,10 +1436,10 @@ Rcpp::List cpp_nested_laplace_st_car_proper(
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue
 ) {
-    int n_grid = tau_spatial_grid.size();
-    if (rho_spatial_grid.size() != n_grid || tau_temporal_grid.size() != n_grid) {
-        Rcpp::stop("tau_spatial_grid, rho_spatial_grid, tau_temporal_grid must have the same length");
-    }
+    const int n_grid = tulpa::nl_grid_axes_length(
+        "tau_spatial_grid", tau_spatial_grid,
+        {{"rho_spatial_grid", &rho_spatial_grid},
+         {"tau_temporal_grid", &tau_temporal_grid}});
     Rcpp::NumericVector rho_t = nl_unwrap_rho_temporal(rho_temporal_grid);
     int s_start = X.ncol() + n_re_groups;
 
@@ -1508,10 +1506,11 @@ Rcpp::List cpp_nested_laplace_st_bym2(
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue
 ) {
-    int n_grid = sigma_spatial_grid.size();
-    if (rho_spatial_grid.size() != n_grid || tau_temporal_grid.size() != n_grid) {
-        Rcpp::stop("sigma_spatial_grid, rho_spatial_grid, tau_temporal_grid must have the same length");
-    }
+    const int n_grid = tulpa::nl_grid_axes_length(
+        "sigma_spatial_grid", sigma_spatial_grid,
+        {{"rho_spatial_grid", &rho_spatial_grid},
+         {"tau_temporal_grid", &tau_temporal_grid}});
+    tulpa::nl_grid_axis_unit_interval("rho_spatial_grid", rho_spatial_grid);
     Rcpp::NumericVector rho_t = nl_unwrap_rho_temporal(rho_temporal_grid);
     int s_start = X.ncol() + n_re_groups;
 
@@ -1577,11 +1576,10 @@ Rcpp::List cpp_nested_laplace_st_hsgp(
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue
 ) {
-    int n_grid = sigma2_spatial_grid.size();
-    if (lengthscale_spatial_grid.size() != n_grid ||
-        tau_temporal_grid.size() != n_grid) {
-        Rcpp::stop("sigma2_spatial_grid, lengthscale_spatial_grid, tau_temporal_grid must have the same length");
-    }
+    const int n_grid = tulpa::nl_grid_axes_length(
+        "sigma2_spatial_grid", sigma2_spatial_grid,
+        {{"lengthscale_spatial_grid", &lengthscale_spatial_grid},
+         {"tau_temporal_grid", &tau_temporal_grid}});
     Rcpp::NumericVector rho_t = nl_unwrap_rho_temporal(rho_temporal_grid);
     int N = y.size();
     int p = X.ncol();
@@ -1671,11 +1669,10 @@ Rcpp::List cpp_nested_laplace_st_nngp(
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue
 ) {
-    int n_grid = sigma2_spatial_grid.size();
-    if (phi_gp_spatial_grid.size() != n_grid ||
-        tau_temporal_grid.size() != n_grid) {
-        Rcpp::stop("sigma2_spatial_grid, phi_gp_spatial_grid, tau_temporal_grid must have the same length");
-    }
+    const int n_grid = tulpa::nl_grid_axes_length(
+        "sigma2_spatial_grid", sigma2_spatial_grid,
+        {{"phi_gp_spatial_grid", &phi_gp_spatial_grid},
+         {"tau_temporal_grid", &tau_temporal_grid}});
     Rcpp::NumericVector rho_t = nl_unwrap_rho_temporal(rho_temporal_grid);
     int N = y.size();
     int p = X.ncol();

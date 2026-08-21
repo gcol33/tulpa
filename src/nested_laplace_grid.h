@@ -88,7 +88,9 @@
 #include <limits>
 #include <memory>
 #include <string>
+#include <initializer_list>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #ifdef _OPENMP
@@ -96,6 +98,46 @@
 #endif
 
 namespace tulpa {
+
+// ---------------------------------------------------------------------
+// Outer-grid axis contract
+// ---------------------------------------------------------------------
+// Every kernel below takes the outer grid as one NumericVector per
+// hyperparameter axis, all of them indexed by the same cell number k. A short
+// axis is read past its end by the block factories, which index it unchecked,
+// so the pairing is checked once here rather than restated at each entry point.
+//
+// `lead` fixes the cell count; `rest` names the axes that must match it.
+inline int nl_grid_axes_length(
+    const char* lead_name, const Rcpp::NumericVector& lead,
+    std::initializer_list<std::pair<const char*, const Rcpp::NumericVector*>> rest
+) {
+    const int n_grid = static_cast<int>(lead.size());
+    for (const auto& axis : rest) {
+        const int len = static_cast<int>(axis.second->size());
+        if (len != n_grid) {
+            Rcpp::stop("`%s` has length %d but `%s` has length %d; every "
+                       "outer-grid axis needs one entry per grid cell.",
+                       axis.first, len, lead_name, n_grid);
+        }
+    }
+    return n_grid;
+}
+
+// A mixing-weight axis (the BYM2 rho) is a proportion. Outside [0, 1] both
+// bym2_sd_* square roots go NaN, which reaches the inner Newton through eta and
+// returns a NaN cell rather than an error.
+inline void nl_grid_axis_unit_interval(const char* name,
+                                       const Rcpp::NumericVector& v) {
+    const int n = static_cast<int>(v.size());
+    for (int k = 0; k < n; k++) {
+        const double rho = v[k];
+        if (!(rho >= 0.0 && rho <= 1.0)) {
+            Rcpp::stop("`%s[%d]` is %g; a BYM2 mixing weight must lie in [0, 1].",
+                       name, k + 1, rho);
+        }
+    }
+}
 
 // Project cell k of a grid-driver result onto the single-fit result shape
 // (the laplace_result_to_list contract: mode, log_det_Q, log_marginal, n_iter,

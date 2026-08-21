@@ -15,6 +15,7 @@
 #include "laplace_core.h"
 #include "pg_binomial.h"
 #include "pg_shared.h"
+#include "pg_spatial.h"
 #include "hmc_gp.h"
 #include "pc_prior.h"
 #include "sparse_hessian.h"
@@ -1906,7 +1907,11 @@ Rcpp::List cpp_test_nngp_prior_scatter(
     Rcpp::_["cv"]      = Rcpp::NumericVector(cv.begin(), cv.end()),
     Rcpp::_["dropped"]  = dropped,
     Rcpp::_["nnz"]      = H_builder.nnz,
-    Rcpp::_["gpu_used"] = gpu_used
+    Rcpp::_["gpu_used"] = gpu_used,
+    // The neighbour covariance is factorized as C + nugget * I, so a reference
+    // scores the returned moments against that matrix rather than against C.
+    Rcpp::_["nugget"]     = tulpa_linalg::kNngpNugget,
+    Rcpp::_["cond_var_floor"] = tulpa_linalg::kNngpVarFloor
   );
 }
 
@@ -2000,5 +2005,50 @@ List cpp_test_scalar_guard(std::string fn, double x, double p = 2.0) {
     Named("grad_tape")    = g_tape,
     Named("value_arena")  = v_arena,
     Named("grad_arena")   = g_arena
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+// One ICAR field sweep, exposed so the full conditional can be scored against
+// its analytic form (gcol33/tulpa#423).
+//
+// The sweep is Gauss-Seidel: unit j's conditional mean reads the neighbours the
+// sweep has already reached at their new values and every other neighbour at
+// the value `phi` arrives with. A replica drawing from the same R stream
+// reproduces the result only if it reads the incoming field the same way, so
+// the comparison pins the conditional rather than a summary of it.
+//
+// `phi` is copied, not modified, so a caller can sweep the same starting field
+// under several taus.
+// [[Rcpp::export]]
+Rcpp::List cpp_test_update_spatial_icar(
+    Rcpp::NumericVector kappa,
+    Rcpp::NumericVector omega,
+    Rcpp::NumericVector offset,
+    Rcpp::IntegerVector group,
+    Rcpp::List adj_list,
+    Rcpp::IntegerVector n_neighbors,
+    int n_units,
+    double tau,
+    Rcpp::NumericVector phi
+) {
+  const tulpa::PgAdjacency adj =
+      tulpa::pg_build_adjacency(adj_list, n_neighbors, n_units);
+  if (phi.size() != n_units) {
+    Rcpp::stop("`phi` has length %d; must be n_units (%d).",
+               static_cast<int>(phi.size()), n_units);
+  }
+  Rcpp::NumericVector phi_out = Rcpp::clone(phi);
+  double removed_mean = 0.0;
+  tulpa::update_spatial_icar(kappa, omega, offset, group, adj, tau,
+                             phi_out, removed_mean);
+  return Rcpp::List::create(
+    Rcpp::_["phi"]          = phi_out,
+    Rcpp::_["removed_mean"] = removed_mean,
+    Rcpp::_["n_components"] = adj.n_components,
+    Rcpp::_["component"]    = Rcpp::IntegerVector(adj.component.begin(),
+                                                  adj.component.end()),
+    Rcpp::_["isolated_prec"] = tulpa::PG_ICAR_ISOLATED_PREC
   );
 }

@@ -5,11 +5,8 @@
 //   - g_gradient_mode  (global mode used by resolve_gradient_fn)
 //   - verify_gradient_runtime  (warmup-time gradient sanity check)
 //
-// Phase D simplification: the legacy ratio
-// compute_gradient_numerical / compute_gradient_autodiff / _arena /
-// _forward / compute_gradient_numerical_impl were deleted with the
-// H-mode kernels. The runtime check now finite-diffs against the
-// generic-spec evaluator regardless of which active path is in use.
+// The runtime check finite-differences against the generic-spec evaluator
+// whichever of the three gradient sources is active.
 
 #include <Rcpp.h>
 

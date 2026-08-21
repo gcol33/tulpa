@@ -50,6 +50,7 @@
 // with the correct per-block layout; this kernel just reads the axes by
 // offset.
 
+#include "bym2_mixing.h"           // BYM2_RHO_EPS + the mixing amplitudes
 #include "cell_coupling_registry.h"
 #include "cell_curvature3.h"        // coupled-cell gamma_3 tensor contraction
 #include "joint_hessian_pattern.h"
@@ -640,11 +641,11 @@ int build_joint_blocks_from_spec(
             d_fac_phi_fn = [axis_rho, theta_grid, scale_factor](int k_grid)
                 -> double {
                 double rho = theta_grid(k_grid, axis_rho);
-                return std::sqrt(rho + 1e-10) * scale_factor;
+                return tulpa::bym2_sd_structured(rho) * scale_factor;
             };
             d_fac_theta_fn = [axis_rho, theta_grid](int k_grid) -> double {
                 double rho = theta_grid(k_grid, axis_rho);
-                return std::sqrt(1.0 - rho + 1e-10);
+                return tulpa::bym2_sd_unstructured(rho);
             };
         } else {
             require_axes(2);  // (sigma, rho) - single-arm BYM2 conventions
@@ -656,13 +657,13 @@ int build_joint_blocks_from_spec(
                 int k_grid) -> double {
                 double sigma = theta_grid(k_grid, axis_sigma);
                 double rho   = theta_grid(k_grid, axis_rho);
-                return sigma * std::sqrt(rho + 1e-10) * scale_factor;
+                return sigma * tulpa::bym2_sd_structured(rho) * scale_factor;
             };
             d_fac_theta_fn = [axis_sigma, axis_rho, theta_grid](int k_grid)
                 -> double {
                 double sigma = theta_grid(k_grid, axis_sigma);
                 double rho   = theta_grid(k_grid, axis_rho);
-                return sigma * std::sqrt(1.0 - rho + 1e-10);
+                return sigma * tulpa::bym2_sd_unstructured(rho);
             };
             // When any arm has a `field_coef != 1` constant, the non-copy
             // BYM2 block still needs a per-arm multiplier on top of d_fac.

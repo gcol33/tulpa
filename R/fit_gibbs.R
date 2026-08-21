@@ -364,7 +364,9 @@ glmm_weights <- function(eta, family, n_trials = NULL, phi = 1.0, phi2 = NULL) {
 #'   AR1/IID short-term). Cannot be combined with `spatial`.
 #' @param control A named list of numerical / tuning knobs (statistical
 #'   arguments stay in the signature above): `n_iter` (default 2000), `warmup`
-#'   (default 1000), `thin` (default 1), `seed` (`NULL` draws from the session
+#'   (default 1000), `thin` (default 1, applied on every route including the
+#'   spatial and temporal ones; the run keeps `ceiling((n_iter - warmup) / thin)`
+#'   draws), `seed` (`NULL` draws from the session
 #'   RNG; the Polya-Gamma kernels use R's RNG, so a seed makes the fit
 #'   reproducible), `verbose` (default FALSE), `n_threads` (default 1).
 #'
@@ -435,7 +437,7 @@ tulpa_gibbs <- function(y, n_trials, X, group, n_groups,
       y = y, n_trials = vd$n_trials,
       X = X, re_group = group, n_re_groups = n_groups,
       spatial = spatial, family = family,
-      iter = n_iter, warmup = warmup,
+      iter = n_iter, warmup = warmup, thin = thin,
       prior_beta_sd = prior_beta_sd, prior_sigma_re_scale = prior_sigma_scale,
       verbose = verbose, n_threads = n_threads
     )
@@ -444,7 +446,7 @@ tulpa_gibbs <- function(y, n_trials, X, group, n_groups,
       y = y, n_trials = vd$n_trials,
       X = X, re_group = group, n_re_groups = n_groups,
       temporal = temporal, family = family,
-      iter = n_iter, warmup = warmup,
+      iter = n_iter, warmup = warmup, thin = thin,
       prior_beta_sd = prior_beta_sd, prior_sigma_re_scale = prior_sigma_scale,
       verbose = verbose, n_threads = n_threads
     )

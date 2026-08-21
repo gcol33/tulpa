@@ -30,7 +30,7 @@
 #define TULPA_HMC_GRADIENT_DISPATCH_H
 
 GradientFn resolve_gradient_fn(GradientMode mode, const ModelData& data, const ParamLayout& layout) {
-    (void)layout;  // dispatcher is layout-agnostic after Phase D
+    (void)layout;  // no layout flag selects a gradient source
     if (data.n_processes == 0 || data.likelihood_spec == nullptr) {
         Rcpp::stop("tulpa: ModelData has n_processes == 0. Downstream packages "
                    "must populate `n_processes > 0` and `data.likelihood_spec` "

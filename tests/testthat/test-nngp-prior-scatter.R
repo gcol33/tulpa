@@ -100,7 +100,13 @@ test_that("the NNGP prior gradient is -Lambda w", {
 # Conditional variance sigma2 - c' C^-1 c, computed from scratch: rebuild each
 # location's neighbour covariance and solve. No reference to how the engine
 # batches or factorizes.
-.nngp_ref_cond_var <- function(fx, sigma2, phi_gp) {
+# `nugget` is what the kernel adds to the neighbour covariance before
+# factorizing it, read off the scatter's own return rather than written here, so
+# the reference conditions on the matrix the kernel factorizes. It is a NUGGET,
+# applied unconditionally, not a pivot floor that fires only near singularity,
+# so on a well-conditioned fixture it still moves every conditional variance at
+# the eighth digit (gcol33/tulpa#578).
+.nngp_ref_cond_var <- function(fx, sigma2, phi_gp, nugget) {
   cov_exp <- function(d) ifelse(d < 1e-10, sigma2, sigma2 * exp(-d / phi_gp))
   v <- rep(sigma2, fx$ng)
   for (i in seq_len(fx$ng)) {
@@ -109,7 +115,7 @@ test_that("the NNGP prior gradient is -Lambda w", {
     nb <- fx$nn_order[fx$nn_idx[i, act]] + 1L
     cc <- cov_exp(fx$nn_dist[i, act])
     C <- cov_exp(as.matrix(dist(fx$coords[nb, , drop = FALSE])))
-    diag(C) <- sigma2
+    diag(C) <- sigma2 + nugget
     v[fx$nn_order[i] + 1L] <- sigma2 - sum(cc * solve(C, cc))
   }
   v
@@ -133,11 +139,13 @@ test_that("NNGP conditional variances hold across the GPU dispatch threshold", {
       fx <- .nngp_scatter_fixture(ng, nn, 11L + ng)
       set.seed(99)
       r <- .nngp_scatter(fx, rnorm(ng, 0, 0.5))
-      expect_equal(r$cv, .nngp_ref_cond_var(fx, 0.9, 0.4), tolerance = 1e-12)
+      expect_equal(r$cv, .nngp_ref_cond_var(fx, 0.9, 0.4, r$nugget),
+                   tolerance = 1e-12)
       # Nothing on this fixture is near-deterministic given its neighbours, so
-      # the 1e-10 floor must not bind. It binding is the signature of a broken
-      # factor, which is how it presented.
+      # the variance floor must not bind. It binding is the signature of a
+      # broken factor, which is how it presented.
       expect_gt(min(r$cv), 1e-3)
+      expect_gt(min(r$cv), r$cond_var_floor)
     }
   }
 })

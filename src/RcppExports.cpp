@@ -3646,6 +3646,25 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_test_update_spatial_icar
+Rcpp::List cpp_test_update_spatial_icar(Rcpp::NumericVector kappa, Rcpp::NumericVector omega, Rcpp::NumericVector offset, Rcpp::IntegerVector group, Rcpp::List adj_list, Rcpp::IntegerVector n_neighbors, int n_units, double tau, Rcpp::NumericVector phi);
+RcppExport SEXP _tulpa_cpp_test_update_spatial_icar(SEXP kappaSEXP, SEXP omegaSEXP, SEXP offsetSEXP, SEXP groupSEXP, SEXP adj_listSEXP, SEXP n_neighborsSEXP, SEXP n_unitsSEXP, SEXP tauSEXP, SEXP phiSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type kappa(kappaSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type omega(omegaSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type offset(offsetSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type group(groupSEXP);
+    Rcpp::traits::input_parameter< Rcpp::List >::type adj_list(adj_listSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type n_neighbors(n_neighborsSEXP);
+    Rcpp::traits::input_parameter< int >::type n_units(n_unitsSEXP);
+    Rcpp::traits::input_parameter< double >::type tau(tauSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type phi(phiSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_update_spatial_icar(kappa, omega, offset, group, adj_list, n_neighbors, n_units, tau, phi));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_test_lkj_build_L
 List cpp_test_lkj_build_L(NumericVector raw, int n);
 RcppExport SEXP _tulpa_cpp_test_lkj_build_L(SEXP rawSEXP, SEXP nSEXP) {
@@ -4389,6 +4408,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_test_spde_assemble", (DL_FUNC) &_tulpa_cpp_test_spde_assemble, 8},
     {"_tulpa_cpp_test_nngp_prior_scatter", (DL_FUNC) &_tulpa_cpp_test_nngp_prior_scatter, 10},
     {"_tulpa_cpp_test_scalar_guard", (DL_FUNC) &_tulpa_cpp_test_scalar_guard, 3},
+    {"_tulpa_cpp_test_update_spatial_icar", (DL_FUNC) &_tulpa_cpp_test_update_spatial_icar, 9},
     {"_tulpa_cpp_test_lkj_build_L", (DL_FUNC) &_tulpa_cpp_test_lkj_build_L, 2},
     {"_tulpa_cpp_test_lkj_density", (DL_FUNC) &_tulpa_cpp_test_lkj_density, 2},
     {"_tulpa_cpp_test_lkj_grad", (DL_FUNC) &_tulpa_cpp_test_lkj_grad, 3},

@@ -1,13 +1,8 @@
 // hmc_gradients.cpp
 // HMC backend gradient orchestrator.
 //
-// Phase D simplification: the legacy ratio H-mode
-// kernels (composite, vectorized, analytical, GP-collapsed,
-// ICAR-collapsed, HSGP/MSGP/SVC/TVC/ST/latent handcoded, autodiff
-// fallbacks) and their thread-local workspaces were deleted along
-// with the legacy entry points. The only live consumer is the
-// dispatcher in hmc_gradient_dispatch.cpp, which always returns the
-// generic-LikelihoodSpec gradient path.
+// One consumer: the dispatcher in hmc_gradient_dispatch.cpp, which resolves
+// every model to the generic-LikelihoodSpec gradient path.
 
 #include "hmc_sampler.h"
 #include "tulpa/likelihood.h"

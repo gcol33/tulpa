@@ -162,6 +162,87 @@ test_that("resume onto a different dataset is rejected (fingerprint)", {
     )
 })
 
+# The latent structure is part of what a cell's result depends on, and the
+# joint kernel's fingerprint used to fold only the solver settings, the axis
+# layout, the coupling name and the per-arm data -- never blocks_spec, and never
+# the copy map. Same data, same grid, changed field: every per-cell key still
+# matched, the header fingerprint still matched, and the resume returned modes
+# and log-marginals solved under the model the user had since changed, with no
+# error and no warning. gcol33/tulpa#419.
+
+# A ring on the same n_s: same latent total, same axis count, same everything
+# the old fingerprint saw, different adjacency.
+.ck_ring_adj <- function(n_s) {
+    nbr <- lapply(seq_len(n_s), function(s) {
+        c(if (s == 1L) n_s else s - 1L, if (s == n_s) 1L else s + 1L)
+    })
+    n_neighbors <- vapply(nbr, length, integer(1))
+    list(adj_row_ptr = as.integer(c(0L, cumsum(n_neighbors))),
+         adj_col_idx = as.integer(unlist(nbr)) - 1L,
+         n_neighbors = as.integer(n_neighbors),
+         n_spatial_units = n_s)
+}
+
+test_that("resume onto a changed adjacency is rejected (fingerprint)", {
+    sim <- .ck_sim_joint(seed = 21L)
+    prior_chain <- c(list(type = "icar", sigma_grid = c(0.4, 0.6, 0.8)),
+                     sim$adj)
+    prior_ring  <- c(list(type = "icar", sigma_grid = c(0.4, 0.6, 0.8)),
+                     .ck_ring_adj(sim$adj$n_spatial_units))
+    path <- tempfile(fileext = ".ckpt")
+    on.exit(unlink(path), add = TRUE)
+
+    .ck_fit(sim, prior_chain,
+            control = list(checkpoint = list(path = path, resume = FALSE)))
+    expect_error(
+        .ck_fit(sim, prior_ring,
+                control = list(checkpoint = list(path = path, resume = TRUE))),
+        "fingerprint"
+    )
+    # The two fields really are different models, so a resume that was accepted
+    # would have returned the wrong answer rather than a harmless one.
+    fit_chain <- .ck_fit(sim, prior_chain)
+    fit_ring  <- .ck_fit(sim, prior_ring)
+    expect_gt(max(abs(as.numeric(fit_ring$log_marginal) -
+                      as.numeric(fit_chain$log_marginal))), 1e-6)
+})
+
+test_that("resume onto a promoted copy block is rejected (fingerprint)", {
+    # Promoting an arm to a copy block rescales that arm's field contribution
+    # through arm_scale, so every cell's result moves; the copy map was not in
+    # the fingerprint either.
+    sim <- .ck_sim_joint(seed = 22L)
+    prior <- c(list(type = "icar", sigma_grid = c(0.4, 0.6, 0.8)), sim$adj)
+    copy <- list(arm = "pos", alpha_grid = c(0.8, 1.0, 1.2))
+    path <- tempfile(fileext = ".ckpt")
+    on.exit(unlink(path), add = TRUE)
+
+    .ck_fit(sim, prior,
+            control = list(checkpoint = list(path = path, resume = FALSE)))
+    expect_error(
+        .ck_fit(sim, prior, copy = copy,
+                control = list(checkpoint = list(path = path, resume = TRUE))),
+        "fingerprint"
+    )
+})
+
+test_that("an unchanged latent structure still resumes", {
+    # The negative control for the two above: the added folds must not make
+    # every resume a mismatch.
+    sim <- .ck_sim_joint(seed = 23L)
+    prior <- c(list(type = "icar", sigma_grid = c(0.4, 0.6, 0.8)), sim$adj)
+    path <- tempfile(fileext = ".ckpt")
+    on.exit(unlink(path), add = TRUE)
+
+    fit_plain <- .ck_fit(sim, prior)
+    .ck_fit(sim, prior,
+            control = list(checkpoint = list(path = path, resume = FALSE)))
+    fit_resume <- .ck_fit(sim, prior,
+                          control = list(checkpoint = list(path = path,
+                                                           resume = TRUE)))
+    .ck_expect_equiv(fit_plain, fit_resume)
+})
+
 test_that("resume = FALSE starts over rather than resuming stale data", {
     sim_a <- .ck_sim_joint(seed = 15L)
     sim_b <- .ck_sim_joint(seed = 77L)

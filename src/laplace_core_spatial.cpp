@@ -4,6 +4,7 @@
 // Each mode finder runs laplace_newton_solve (laplace_newton.h); see
 // laplace_core.cpp for the shared library context.
 
+#include "bym2_mixing.h"           // BYM2_RHO_EPS + the mixing amplitudes
 #include "laplace_core.h"
 #include "laplace_cholesky.h"
 #include "laplace_newton.h"
@@ -171,7 +172,7 @@ Rcpp::List cpp_laplace_fit_bym2(
     phi_block.size  = n_spatial_units;
     phi_block.idx   = [&](int i, int /*k_arm*/) { return spatial_idx[i]; };
     phi_block.d_fac = [&, scale_factor](int) {
-        return sigma_spatial * std::sqrt(rho + 1e-10) * scale_factor;
+        return sigma_spatial * tulpa::bym2_sd_structured(rho) * scale_factor;
     };
     phi_block.add_prior = [&](tulpa::DenseVec& grad, tulpa::DenseMat& H,
                               const Rcpp::NumericVector& x, int /*k*/) {
@@ -197,7 +198,7 @@ Rcpp::List cpp_laplace_fit_bym2(
     theta_block.size  = n_spatial_units;
     theta_block.idx   = [&](int i, int /*k_arm*/) { return spatial_idx[i]; };
     theta_block.d_fac = [&](int) {
-        return sigma_spatial * std::sqrt(1.0 - rho + 1e-10);
+        return sigma_spatial * tulpa::bym2_sd_unstructured(rho);
     };
     theta_block.add_prior = [&](tulpa::DenseVec& grad, tulpa::DenseMat& H,
                                 const Rcpp::NumericVector& x, int /*k*/) {

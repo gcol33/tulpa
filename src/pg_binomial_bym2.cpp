@@ -1,6 +1,7 @@
 // pg_binomial_bym2.cpp
 // BYM2 spatial Gibbs sampler for Pólya-Gamma binomial models
 
+#include "bym2_mixing.h"
 #include "pg_shared.h"
 #include "pg_spatial.h"
 #include "pg_rng.h"
@@ -123,8 +124,8 @@ Rcpp::List cpp_pg_binomial_gibbs_bym2(
     // Recompute the field at the updated (sigma, rho) so the stored draw and the
     // next iteration's offset use the current scale and mixing weight.
     {
-      double sr = std::sqrt(rho + 1e-10);
-      double s1 = std::sqrt(1.0 - rho + 1e-10);
+      double sr = tulpa::bym2_sd_structured(rho);
+      double s1 = tulpa::bym2_sd_unstructured(rho);
       for (int s = 0; s < n_spatial_units; s++)
         u[s] = sigma_spatial * (sr * phi_scaled[s] * scale_factor + s1 * theta[s]);
     }

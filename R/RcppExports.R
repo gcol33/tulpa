@@ -849,6 +849,10 @@ cpp_test_scalar_guard <- function(fn, x, p = 2.0) {
     .Call(`_tulpa_cpp_test_scalar_guard`, fn, x, p)
 }
 
+cpp_test_update_spatial_icar <- function(kappa, omega, offset, group, adj_list, n_neighbors, n_units, tau, phi) {
+    .Call(`_tulpa_cpp_test_update_spatial_icar`, kappa, omega, offset, group, adj_list, n_neighbors, n_units, tau, phi)
+}
+
 cpp_test_lkj_build_L <- function(raw, n) {
     .Call(`_tulpa_cpp_test_lkj_build_L`, raw, n)
 }

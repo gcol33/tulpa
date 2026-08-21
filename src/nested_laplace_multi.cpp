@@ -29,6 +29,7 @@
 // One block-spec maps to ONE input-list element but may push 1 or 2
 // LatentBlocks into the vector (BYM2 is the only 2-block expansion).
 
+#include "bym2_mixing.h"           // BYM2_RHO_EPS + the mixing amplitudes
 #include "laplace_re_priors.h"
 #include "laplace_spatial_priors.h"
 #include "laplace_spec_fit.h"       // unwrap_skew_idx
@@ -174,7 +175,7 @@ int build_blocks_from_spec(
         phi_block.d_fac = [axis0, theta_grid, scale_factor](int k) {
             double sigma_k = theta_grid(k, axis0);
             double rho_k   = theta_grid(k, axis0 + 1);
-            return sigma_k * std::sqrt(rho_k + 1e-10) * scale_factor;
+            return sigma_k * tulpa::bym2_sd_structured(rho_k) * scale_factor;
         };
         phi_block.add_prior = [phi_start, size, adj_rp, adj_ci, n_nbr, sp_part](
             tulpa::DenseVec& grad, tulpa::DenseMat& H,
@@ -202,7 +203,7 @@ int build_blocks_from_spec(
         theta_block.d_fac = [axis0, theta_grid](int k) {
             double sigma_k = theta_grid(k, axis0);
             double rho_k   = theta_grid(k, axis0 + 1);
-            return sigma_k * std::sqrt(1.0 - rho_k + 1e-10);
+            return sigma_k * tulpa::bym2_sd_unstructured(rho_k);
         };
         theta_block.add_prior = [theta_start, size](
             tulpa::DenseVec& grad, tulpa::DenseMat& H,

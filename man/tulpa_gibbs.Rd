@@ -63,7 +63,9 @@ AR1/IID short-term). Cannot be combined with \code{spatial}.}
 
 \item{control}{A named list of numerical / tuning knobs (statistical
 arguments stay in the signature above): \code{n_iter} (default 2000), \code{warmup}
-(default 1000), \code{thin} (default 1), \code{seed} (\code{NULL} draws from the session
+(default 1000), \code{thin} (default 1, applied on every route including the
+spatial and temporal ones; the run keeps \code{ceiling((n_iter - warmup) / thin)}
+draws), \code{seed} (\code{NULL} draws from the session
 RNG; the Polya-Gamma kernels use R's RNG, so a seed makes the fit
 reproducible), \code{verbose} (default FALSE), \code{n_threads} (default 1).}
 }

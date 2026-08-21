@@ -1,5 +1,49 @@
 # tulpa NEWS
 
+## 0.1.2
+
+* **The BYM2 outer grid checks its mixing-weight axis** (#421).
+  `cpp_nested_laplace_bym2` fixed the cell count from `sigma_spatial_grid`
+  alone and never looked at `rho_grid` again, where every sibling paired-grid
+  entry in the same file checks the pairing. A shorter `rho_grid` was read past
+  the end of the R vector for every cell beyond its length, and a rho outside
+  `[0, 1]` took `sqrt(1 - rho)` to `NaN`, which reached the inner Newton through
+  eta and returned a `NaN` cell instead of an error. All eight entry points now
+  go through one `nl_grid_axes_length()`, which names the axis that does not
+  pair and the length it has, and a mixing-weight axis is checked against its
+  own support. The `1e-10` inside the two square roots is `tulpa::BYM2_RHO_EPS`
+  in `src/bym2_mixing.h`, one value for the Laplace kernels and the
+  Polya-Gamma samplers, with what it costs at the endpoints written down.
+
+* **The Polya-Gamma kernels size their draw matrices for the number of saves
+  the loop makes** (#426). `n_save = (n_iter - n_warmup) / thin` truncates,
+  while the save condition `(iter - n_warmup) %% thin == 0` fires
+  `ceiling((n_iter - n_warmup) / thin)` times, so a `thin` that does not divide
+  the post-warmup run wrote one row past the matrices. `NumericMatrix`'s
+  `operator()` is unchecked and its offset is `j * nrow + i`, so the extra write
+  landed on the first saved draw of the next column for every column but the
+  last and one element past the allocation for the last -- a plausible finite
+  number either way. The two negative-binomial kernels now use the shared
+  `pg_n_save()`, which also refuses `thin < 1` and `n_iter < n_warmup`, and
+  `tulpa_gibbs()` forwards `thin` to the spatial and temporal routes, which used
+  to drop it silently.
+
+* Tests for the seven audit items the accompanying `src/` work had already
+  landed: the ICAR full conditional against a replica drawing from the same R
+  stream, with the zeroing sweep as a negative control (#423); `batch_nngp_scatter`'s
+  entry contract and its left-packed neighbour scan (#425); the corrected
+  integrated Laplace on a parallel outer grid, pinned to the serial fit
+  (#424); the joint checkpoint fingerprint against a changed adjacency and a
+  promoted copy block (#419); the joint finite-difference gradient gate on one
+  block per contribution kind through the sparse scatter fits actually run, plus
+  dense-sparse equivalence on a pure `INDEXED_SINGLE` spec (#420); and the
+  posterior SCALE that SGHMC and SGLD sample, which is what the noise-scale
+  defect left wrong while every existing backend test read the mean (#422).
+
+* `test-nngp-prior-scatter.R`'s conditional-variance reference conditions on
+  `C + kNngpNugget * I`, the matrix the kernel factorizes, read off the
+  scatter's own return rather than written into the test (#578).
+
 ## 0.1.1
 
 * **One default fixed-effect prior, resolved at the front door** (#408).

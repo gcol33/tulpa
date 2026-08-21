@@ -2,6 +2,7 @@
 // Spatial random effects for PG Gibbs sampler
 // Implements ICAR (Intrinsic CAR) prior for areal data
 
+#include "bym2_mixing.h"
 #include "pg_spatial.h"
 #include "pg_shared.h"
 #include <Rcpp.h>
@@ -165,8 +166,8 @@ void update_spatial_bym2(
   const int N = kappa.size();
   const int J = adj.n;
 
-  const double sqrt_rho = std::sqrt(rho + 1e-10);
-  const double sqrt_1_rho = std::sqrt(1.0 - rho + 1e-10);
+  const double sqrt_rho = bym2_sd_structured(rho);
+  const double sqrt_1_rho = bym2_sd_unstructured(rho);
 
   std::vector<double> sum_omega(J, 0.0), sum_resid(J, 0.0);
   std::vector<double> work_offset(N);
@@ -260,8 +261,8 @@ double update_rho_bym2(
     double rho = (k + 0.5) / n_grid;  // Avoid exact 0 and 1
     rho_vals[k] = rho;
 
-    double sqrt_rho = std::sqrt(rho + 1e-10);
-    double sqrt_1_rho = std::sqrt(1.0 - rho + 1e-10);
+    double sqrt_rho = bym2_sd_structured(rho);
+    double sqrt_1_rho = bym2_sd_unstructured(rho);
 
     // Log-likelihood contribution
     // Polya-Gamma full conditional for rho through u_j(rho): the quadratic
@@ -275,7 +276,7 @@ double update_rho_bym2(
     }
 
     // Beta prior: (alpha-1)*log(rho) + (beta-1)*log(1-rho)
-    double log_prior = (alpha - 1.0) * std::log(rho + 1e-10) + (beta - 1.0) * std::log(1.0 - rho + 1e-10);
+    double log_prior = (alpha - 1.0) * bym2_log_rho(rho) + (beta - 1.0) * bym2_log1m_rho(rho);
 
     log_probs[k] = log_lik + log_prior;
   }
@@ -327,8 +328,8 @@ double update_sigma_spatial_bym2(
     double prior_scale
 ) {
   int J = phi_scaled.size();
-  double sqrt_rho = std::sqrt(rho + 1e-10);
-  double sqrt_1_rho = std::sqrt(1.0 - rho + 1e-10);
+  double sqrt_rho = bym2_sd_structured(rho);
+  double sqrt_1_rho = bym2_sd_unstructured(rho);
 
   double A = 0.0, B = 0.0;
   for (int j = 0; j < J; j++) {

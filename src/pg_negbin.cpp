@@ -316,7 +316,7 @@ List pg_negbin_gibbs(
   }
   if (n_groups < 0) Rcpp::stop("`n_groups` must be >= 0; got %d.", n_groups);
   if (n_groups > 0) pg_check_index(group, N, n_groups, "group");
-  int n_save = (n_iter - n_warmup) / thin;
+  const int n_save = tulpa::pg_n_save(n_iter, n_warmup, thin);
   const int team = tulpa_omp_team_size_req(n_threads, N);
 
   // Storage
@@ -573,7 +573,7 @@ List pg_negbin_gibbs_spatial(
   if (n_re_groups > 0) pg_check_index(re_group, N, n_re_groups, "re_group");
   pg_check_index(spatial_group, N, n_spatial_units, "spatial_group");
   pg_check_adjacency(adj_list, n_neighbors, n_spatial_units);
-  int n_save = (n_iter - n_warmup) / thin;
+  const int n_save = tulpa::pg_n_save(n_iter, n_warmup, thin);
 
   // Storage
   NumericMatrix beta_draws(n_save, p);
