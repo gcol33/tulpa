@@ -61,6 +61,7 @@
 #include "autodiff_utils.h"
 
 #include <cmath>
+#include <cstddef>
 #include <string>
 #include <utility>
 #include <vector>
@@ -97,86 +98,107 @@ public:
                          CellDerivs&         out) const override {
         if (etas.n_rows_in_arm(0) < 1) return 0.0;
 
+        const int    rc_a = etas.n_rows_in_arm(0);
         const int    J    = etas.n_rows_in_arm(1);
-        const double a    = etas.eta(0, 0);
-        const double psi  = math::inv_logit(a);
-        const double m    = math::inv_logit(-a);   // 1 - psi, evaluated stably
-
-        std::vector<double> p(J), q(J);
-        double S = 0.0, log_P0 = 0.0;
-        for (int v = 0; v < J; v++) {
-            const double e = etas.eta(1, v);
-            p[v] = math::inv_logit(e);
-            q[v] = math::inv_logit(-e);
-            S   += y_cell.y(1, v);
-            log_P0 += test_occ_log_inv_logit(-e);
-        }
-
+        const int    B    = etas.n_batch();
         const bool want_hess = !out.grad_only;
 
-        if (S > 0.0) {
-            // Occupied with certainty: the density factorises into the
-            // occupancy Bernoulli and the per-visit detection Bernoullis.
-            double ll = test_occ_log_inv_logit(a);
-            out.arm_grad[0][0] = m;
-            if (want_hess) out.arm_neg_hess_diag[0][0] = psi * m;
+        std::vector<double> p(J), q(J);
+        double total = 0.0;
+
+        // Species-major buffers: species s owns [s * rc, (s + 1) * rc) of each
+        // per-arm buffer and [s * rc_k * rc_l, ...) of each dense cross block.
+        // At B = 1 every offset is zero and the three-argument eta / y
+        // accessors reduce to the two-argument ones, so the single-response
+        // layout is unchanged.
+        for (int s = 0; s < B; s++) {
+            const std::size_t base_a = (std::size_t) s * rc_a;
+            const std::size_t base_v = (std::size_t) s * J;
+
+            const double a    = etas.eta(0, 0, s);
+            const double psi  = math::inv_logit(a);
+            const double m    = math::inv_logit(-a);   // 1 - psi, evaluated stably
+
+            double S = 0.0, log_P0 = 0.0;
             for (int v = 0; v < J; v++) {
-                const double y = y_cell.y(1, v);
-                ll += y * test_occ_log_inv_logit(etas.eta(1, v))
-                    + (1.0 - y) * test_occ_log_inv_logit(-etas.eta(1, v));
-                out.arm_grad[1][v] = y - p[v];
-                if (want_hess) out.arm_neg_hess_diag[1][v] = p[v] * q[v];
-            }
-            // Cross blocks stay at the zeros the kernel pre-filled.
-            return ll;
-        }
-
-        // All-undetected: the genuinely coupled branch.
-        const double P0 = std::exp(log_P0);
-        const double D  = psi * P0 + m;
-
-        const double g_a = psi * m * (P0 - 1.0) / D;
-        out.arm_grad[0][0] = g_a;
-        for (int v = 0; v < J; v++) {
-            out.arm_grad[1][v] = -psi * P0 * p[v] / D;
-        }
-
-        if (want_hess) {
-            out.arm_neg_hess_diag[0][0] =
-                -((P0 - 1.0) * psi * m * (m - psi) / D - g_a * g_a);
-            for (int v = 0; v < J; v++) {
-                const double g_v = out.arm_grad[1][v];
-                out.arm_neg_hess_diag[1][v] =
-                    psi * P0 * p[v] * (q[v] - p[v]) / D + g_v * g_v;
+                const double e = etas.eta(1, v, s);
+                p[v] = math::inv_logit(e);
+                q[v] = math::inv_logit(-e);
+                S   += y_cell.y(1, v, s);
+                log_P0 += test_occ_log_inv_logit(-e);
             }
 
-            const double cross_scale = psi * m * P0 / (D * D);
-
-            // (arm 0, arm 1): a 1 x J row-major block.
-            if (out.arm_cross_hess && out.arm_cross_hess[0]
-                && out.arm_cross_hess[0][1]) {
-                double* ch = out.arm_cross_hess[0][1];
-                for (int v = 0; v < J; v++) ch[v] = cross_scale * p[v];
-            }
-
-            // (arm 1, arm 1): the J x J detection self block, written
-            // symmetrically. The kernel reads only the strict upper triangle;
-            // the lower half is filled so a direct probe of evaluate_cell()
-            // sees the whole matrix.
-            if (out.arm_cross_hess && out.arm_cross_hess[1]
-                && out.arm_cross_hess[1][1]) {
-                double* ch = out.arm_cross_hess[1][1];
+            if (S > 0.0) {
+                // Occupied with certainty: the density factorises into the
+                // occupancy Bernoulli and the per-visit detection Bernoullis.
+                double ll = test_occ_log_inv_logit(a);
+                out.arm_grad[0][base_a] = m;
+                if (want_hess) out.arm_neg_hess_diag[0][base_a] = psi * m;
                 for (int v = 0; v < J; v++) {
-                    for (int w = v + 1; w < J; w++) {
-                        const double h = -cross_scale * p[v] * p[w];
-                        ch[(std::size_t)v * J + w] = h;
-                        ch[(std::size_t)w * J + v] = h;
+                    const double y = y_cell.y(1, v, s);
+                    const double e = etas.eta(1, v, s);
+                    ll += y * test_occ_log_inv_logit(e)
+                        + (1.0 - y) * test_occ_log_inv_logit(-e);
+                    out.arm_grad[1][base_v + v] = y - p[v];
+                    if (want_hess) out.arm_neg_hess_diag[1][base_v + v] = p[v] * q[v];
+                }
+                // Cross blocks stay at the zeros the kernel pre-filled.
+                total += ll;
+                continue;
+            }
+
+            // All-undetected: the genuinely coupled branch.
+            const double P0 = std::exp(log_P0);
+            const double D  = psi * P0 + m;
+
+            const double g_a = psi * m * (P0 - 1.0) / D;
+            out.arm_grad[0][base_a] = g_a;
+            for (int v = 0; v < J; v++) {
+                out.arm_grad[1][base_v + v] = -psi * P0 * p[v] / D;
+            }
+
+            if (want_hess) {
+                out.arm_neg_hess_diag[0][base_a] =
+                    -((P0 - 1.0) * psi * m * (m - psi) / D - g_a * g_a);
+                for (int v = 0; v < J; v++) {
+                    const double g_v = out.arm_grad[1][base_v + v];
+                    out.arm_neg_hess_diag[1][base_v + v] =
+                        psi * P0 * p[v] * (q[v] - p[v]) / D + g_v * g_v;
+                }
+
+                const double cross_scale = psi * m * P0 / (D * D);
+
+                // (arm 0, arm 1): a rc_a x J row-major block; only the single
+                // occupancy row carries a cross derivative.
+                if (out.arm_cross_hess && out.arm_cross_hess[0]
+                    && out.arm_cross_hess[0][1]) {
+                    double* ch = out.arm_cross_hess[0][1]
+                               + (std::size_t) s * rc_a * J;
+                    for (int v = 0; v < J; v++) ch[v] = cross_scale * p[v];
+                }
+
+                // (arm 1, arm 1): the J x J detection self block, written
+                // symmetrically. The kernel reads only the strict upper triangle;
+                // the lower half is filled so a direct probe of evaluate_cell()
+                // sees the whole matrix.
+                if (out.arm_cross_hess && out.arm_cross_hess[1]
+                    && out.arm_cross_hess[1][1]) {
+                    double* ch = out.arm_cross_hess[1][1]
+                               + (std::size_t) s * J * J;
+                    for (int v = 0; v < J; v++) {
+                        for (int w = v + 1; w < J; w++) {
+                            const double h = -cross_scale * p[v] * p[w];
+                            ch[(std::size_t)v * J + w] = h;
+                            ch[(std::size_t)w * J + v] = h;
+                        }
                     }
                 }
             }
+
+            total += std::log(D);
         }
 
-        return std::log(D);
+        return total;
     }
 
     std::string name() const override {

@@ -6,8 +6,8 @@
 # CCD, no phi-grid axis -- per-arm per-species dispersion is supplied fixed via
 # `phi_batch`), all-coupled cell-coupling families (occu_cover). Returns the C++
 # result: `per_species` (length n_batch; each list(log_marginal, weights, modes,
-# n_iter, and -- when store_Q -- Q_csc_{p,i,x}_per_grid + Q_csc_n)),
-# `theta_grid`, `axis_offsets`.
+# n_iter, score_max, converged, and -- when store_Q --
+# Q_csc_{p,i,x}_per_grid + Q_csc_n)), `theta_grid`, `axis_offsets`.
 #
 # `y_batch`  : length n_arms list; element k is a [N_k x n_batch] response matrix
 #              (species columns) for a data arm, or NULL for a no-data arm (psi).

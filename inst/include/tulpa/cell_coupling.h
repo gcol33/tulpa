@@ -269,7 +269,8 @@ struct CellDerivs {
     // Only k <= l blocks are populated; the integration step symmetrises.
     // Off-diagonal blocks may be nullptr for arm pairs the spec leaves
     // uncoupled at this cell -- the kernel treats nullptr as "this pair
-    // contributes nothing here".
+    // contributes nothing here". The OUTER array is always supplied,
+    // objective-only calls included, so a spec tests the inner pointer only.
     double* const* const* arm_cross_hess = nullptr;
 
     // Per-arm row count for this cell (same as in CellEtas).

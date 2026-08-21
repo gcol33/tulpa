@@ -15,6 +15,7 @@
 
 #include "tulpa/cell_coupling.h"
 #include <cmath>
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -22,9 +23,16 @@ namespace tulpa {
 
 // Single-arm binomial spec, one row per cell. The per-cell density at
 // cell c is `Bern(y_c | sigmoid(eta_c))`:
-//   log p_cell  = y * log p + (1 - y) * log (1 - p),   p = sigmoid(eta)
+//   log p_cell  = y * eta - log(1 + exp(eta)),   p = sigmoid(eta)
 //   d/d eta     = y - p
 //   -d^2/d eta^2 = p * (1 - p)
+//
+// The log-density and the sigmoid are branched on the sign of eta exactly as
+// log_lik_binomial_kernel / grad_log_lik_binomial do (laplace_likelihoods.cpp),
+// so the reference stays exact wherever the path it validates is. Forming
+// 1 / (1 + exp(-eta)) and then log(1 - p) instead rounds p to exactly 1 at
+// eta above ~37, where log(1 - p) is log(0): the reference would then read
+// -Inf (or a sentinel) on a y = 0 row whose true density is -eta.
 class TestSeparableBernoulliCoupling final : public CellCouplingSpec {
 public:
     std::vector<int> arm_ids() const override { return {0}; }
@@ -34,22 +42,36 @@ public:
                          const CellResponse& y_cell,
                          CellDerivs&         out) const override {
         const int rc = etas.n_rows_in_arm(0);
+        const int B  = etas.n_batch();
         double cell_ll = 0.0;
-        for (int j = 0; j < rc; j++) {
-            const double eta = etas.eta(0, j);
-            const double y   = y_cell.y(0, j);
-            const double p   = 1.0 / (1.0 + std::exp(-eta));
+        // Species-major buffers: species s owns [s * rc, (s + 1) * rc) of the
+        // per-arm gradient and curvature. At B = 1 the offset is zero and the
+        // three-argument eta / y accessors reduce to the two-argument ones, so
+        // the single-response layout is unchanged.
+        for (int s = 0; s < B; s++) {
+            const std::size_t base = (std::size_t) s * rc;
+            for (int j = 0; j < rc; j++) {
+                const double eta = etas.eta(0, j, s);
+                const double y   = y_cell.y(0, j, s);
+                double p, log_lik;
+                if (eta > 0.0) {
+                    const double e = std::exp(-eta);
+                    p       = 1.0 / (1.0 + e);
+                    log_lik = y * eta - eta - std::log1p(e);
+                } else {
+                    const double e = std::exp(eta);
+                    p       = e / (1.0 + e);
+                    log_lik = y * eta - std::log1p(e);
+                }
+                cell_ll += log_lik;
 
-            const double one_m_p = 1.0 - p;
-            const double log_p_safe   = (p     > 0.0) ? std::log(p)     : -1e300;
-            const double log_1mp_safe = (one_m_p > 0.0) ? std::log(one_m_p) : -1e300;
-            cell_ll += y * log_p_safe + (1.0 - y) * log_1mp_safe;
-
-            out.arm_grad[0][j]          = y - p;
-            // On a grad-only step (cached-factor reuse) the kernel discards the
-            // Hessian, so leave arm_neg_hess_diag at the pre-filled zero.
-            if (!out.grad_only) {
-                out.arm_neg_hess_diag[0][j] = p * one_m_p;
+                const double one_m_p = 1.0 - p;
+                out.arm_grad[0][base + j]          = y - p;
+                // On a grad-only step (cached-factor reuse) the kernel discards
+                // the Hessian, so leave arm_neg_hess_diag at the pre-filled zero.
+                if (!out.grad_only) {
+                    out.arm_neg_hess_diag[0][base + j] = p * one_m_p;
+                }
             }
         }
         return cell_ll;
