@@ -1251,6 +1251,24 @@
         "nested-Laplace mode for an integrated field."), call. = FALSE)
     }
 
+    # `n_threads` reaches this point because tulpa()'s control surface is the
+    # union over the backends it dispatches, and no sampler kernel reads it. The
+    # outermost region in a sampler run is the across-chain loop, sized from
+    # n_chains and the environment (OMP_NUM_THREADS, OMP_THREAD_LIMIT, the
+    # two-core cap R CMD check sets), and the intra-chain field-gradient regions
+    # size themselves from that same environment. Dropping the knob on the way in
+    # is the silent no-op the control check exists to prevent, so it is refused
+    # where it is written.
+    if (!is.null(control$n_threads)) {
+      stop(paste0(
+        "Backend '", backend, "' does not read `control$n_threads`. A sampler\n",
+        "run's OpenMP teams are sized from `control$n_chains` and the\n",
+        "environment; set OMP_NUM_THREADS to bound them. The knob applies to\n",
+        "the nested-Laplace, SPDE and RE-covariance modes. A GP / SVC fit\n",
+        "reproduces at a fixed `control$seed` at any team size."),
+        call. = FALSE)
+    }
+
     sampler_args <- list(
       y             = bundle$y,
       n_trials      = n_trials %||% rep(1L, n_obs),

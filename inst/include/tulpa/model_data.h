@@ -125,8 +125,13 @@ namespace tulpa {
 // is what turns a consumer built against 39, which assigns the CSR arrays and
 // no partition, into a "rebuild required" at first NUTS use rather than an
 // error about a C++ method its user never called.
+// 40 -> 41: the spatiotemporal-GP range prior moved off a Uniform behind a hard
+// -INFINITY box onto the per-axis PC prior the GP, SVC and multiscale-GP paths
+// already use, anchored at each axis's declared lower bound. ModelData's
+// st_phi_space_prior_upper / st_phi_time_prior_upper are replaced by
+// st_phi_space_prior_alpha / st_phi_time_prior_alpha at the same slots.
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 40;
+constexpr int TULPA_ABI_VERSION = 41;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)
@@ -387,6 +392,9 @@ struct ModelData {
     HSGPData svc_hsgp_data;
     int svc_hsgp_m_per_dim = 6;
     double svc_hsgp_boundary_factor = 1.5;
+    // Half-Cauchy scale on each SVC term's marginal SD. Read on both the NNGP
+    // and the HSGP basis: the basis fixes how the field is represented, not
+    // what its marginal variance means.
     double svc_sigma2_prior_scale = 1.0;
     // PC prior on the range, NNGP path only; see gp_phi_prior_U. The HSGP path
     // reuses the same layout slot for an unbounded log-lengthscale under a
@@ -481,10 +489,14 @@ struct ModelData {
     int st_parameterization = 0;
     double st_sigma2_prior_U = 1.0;
     double st_sigma2_prior_alpha = 0.01;
+    // PC prior on each spatiotemporal-GP range, anchored at that axis's own
+    // declared lower bound: P(range < st_phi_*_prior_lower) =
+    // st_phi_*_prior_alpha. Same form the GP, SVC and multiscale-GP range
+    // priors take; see gp_phi_prior_U.
     double st_phi_space_prior_lower = 0.01;
-    double st_phi_space_prior_upper = 10.0;
+    double st_phi_space_prior_alpha = 0.05;
     double st_phi_time_prior_lower = 0.01;
-    double st_phi_time_prior_upper = 10.0;
+    double st_phi_time_prior_alpha = 0.05;
 
     // Kronecker precision data for ST_IV (precomputed in R)
     std::vector<double> st_Qs_inv;

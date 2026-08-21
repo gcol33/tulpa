@@ -42,10 +42,14 @@ T compute_svc_prior(const std::vector<T>& params, const ModelData& data,
                 T log_sigma2 = params[layout.log_sigma2_svc_start + j];
                 T sigma2_j = safe_exp(log_sigma2);
 
-                // PC prior on sigma, on the sampled log(sigma2) scale. The bare
-                // -rate*sigma form dropped the log(rate) - log2 normalizer;
-                // route through the shared helper (P(sigma > 1) = 0.01).
-                log_post = log_post + log_prior_log_sigma2_pc(log_sigma2, 1.0, 0.01);
+                // Half-Cauchy(0, scale) on the marginal SD, carried to the
+                // sampled log-variance coordinate by the shared helper. sigma2
+                // is term j's marginal spatial variance on either basis -- the
+                // basis choice fixes how the field is REPRESENTED, not what its
+                // variance means -- so both branches read the one prior and the
+                // one user-set scale.
+                log_post = log_post + log_prior_log_sigma2_half_cauchy(
+                    log_sigma2, data.svc_sigma2_prior_scale);
 
                 T log_ls = params[layout.log_phi_svc_start + j];
                 T ls_j = safe_exp(log_ls);
@@ -109,9 +113,9 @@ T compute_svc_prior(const std::vector<T>& params, const ModelData& data,
                 // Non-centered: params[svc_w_start ..] are z_j ~ N(0, I) per
                 // term. Each term's field w_j = f(z_j, sigma2_j, phi_j) and
                 // its likelihood are reconstructed by apply_svc_nc_transform_*
-                // in initialize_generic_state, which also applies the
-                // sum-to-zero penalty and computes svc_eta on the
-                // reconstructed w (both need the field, not z). This avoids
+                // in initialize_generic_state, which also centers each term's
+                // reconstructed field and computes svc_eta from it (both need
+                // the field, not z). This avoids
                 // the field/hyperparameter funnel the centered
                 // parameterization collapses under a diagonal mass matrix --
                 // the same fix as compute_gp_spatial_prior's gp_parameterization

@@ -148,18 +148,31 @@ T compute_st_prior(const std::vector<T>& params, const ModelData& data,
             phi_st_space = safe_exp(log_phi_space);
             phi_st_time = safe_exp(log_phi_time);
 
-            // Uniform prior within bounds
-            double phi_space_val = get_value(phi_st_space);
-            if (phi_space_val < data.st_phi_space_prior_lower ||
-                phi_space_val > data.st_phi_space_prior_upper) {
-                return T(-INFINITY);
-            }
-            double phi_time_val = get_value(phi_st_time);
-            if (phi_time_val < data.st_phi_time_prior_lower ||
-                phi_time_val > data.st_phi_time_prior_upper) {
-                return T(-INFINITY);
-            }
-            log_post = log_post + log_phi_space + log_phi_time;  // Jacobians
+            // PC priors on the two ranges + Jacobians. Both are sampled
+            // unconstrained on the log scale: the PC density is proper on
+            // (0, inf) and penalizes short ranges, so it needs no bounding box.
+            // Each axis anchors at its OWN declared lower bound --
+            // P(range < st_phi_*_prior_lower) = st_phi_*_prior_alpha -- which is
+            // what a user declaring that bound is expressing (ranges below it
+            // are implausible for this axis), and it is carried by the prior's
+            // mass rather than by a wall.
+            //
+            // A hard `return -INFINITY` outside a box fails here twice over: the
+            // rejection sits inside an autodiff log-posterior, so a step outside
+            // the box yields no usable gradient and NUTS books it as a
+            // divergence rather than a rejection; and with a density flat in
+            // log_phi the `+ log_phi` Jacobian makes it a Uniform on phi itself,
+            // whose prior mean is the arithmetic centre of the box and has
+            // nothing to do with the domain.
+            log_post = log_post + log_prior_range_pc_at_log(
+                log_phi_space, data.st_phi_space_prior_lower,
+                data.st_phi_space_prior_alpha);
+            log_post = log_post + log_phi_space;  // Jacobian
+
+            log_post = log_post + log_prior_range_pc_at_log(
+                log_phi_time, data.st_phi_time_prior_lower,
+                data.st_phi_time_prior_alpha);
+            log_post = log_post + log_phi_time;  // Jacobian
         }
 
         // Extract delta parameters

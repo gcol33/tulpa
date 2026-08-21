@@ -56,15 +56,15 @@ inline void gp_nngp_gradients(
   grads.grad_w[first_idx] = -w0 / sigma2;
   grads.grad_log_sigma2 += 0.5 * (w0 * w0 / sigma2 - 1.0);
 
-  // Thread-local workspace setup
+  // Team size, and with it the number of chunks the rows are cut into
   int n_threads = tulpa_omp_team_size(N - 1);
 
-  // Per-thread accumulators: grad_w[tid * N + k], sigma2[tid], phi[tid]
+  // Per-chunk accumulators: grad_w[t * N + k], sigma2[t], phi[t]
   std::vector<double> tl_grad_w(n_threads * N, 0.0);
   std::vector<double> tl_sigma2(n_threads, 0.0);
   std::vector<double> tl_phi(n_threads, 0.0);
 
-  // Per-thread Eigen workspaces (avoid per-iteration allocation)
+  // Per-chunk Eigen workspaces (avoid per-iteration allocation)
   struct ThreadWS {
     Eigen::MatrixXd C_eigen;
     Eigen::VectorXd c_eigen, dc_eigen, w_nb_eigen;
@@ -75,27 +75,33 @@ inline void gp_nngp_gradients(
   };
   std::vector<ThreadWS> ws_vec(n_threads, ThreadWS(nn));
 
+  // The rows are cut into `n_threads` contiguous chunks HERE, by index
+  // arithmetic, and each chunk accumulates left to right into its own slot, so
+  // the reduction order is a function of (n_threads, N) alone. Letting the
+  // runtime hand rows out -- a schedule(dynamic) loop writing into the slot
+  // omp_get_thread_num() names -- makes the order a property of the run, and
+  // floating-point addition is not associative, so the gradient's last bits move
+  // between two runs on identical input. Same policy as tulpa_parallel_sum in
+  // omp_threads.h.
+  const long long n_rows = static_cast<long long>(N - 1);
+  const long long teams  = static_cast<long long>(n_threads);
+
   #ifdef _OPENMP
-  #pragma omp parallel num_threads(n_threads)
+  #pragma omp parallel for schedule(static) num_threads(n_threads)
   #endif
-  {
-    int tid = 0;
-    #ifdef _OPENMP
-    tid = omp_get_thread_num();
-    #endif
+  for (int t = 0; t < n_threads; t++) {
+    const int lo = 1 + static_cast<int>(n_rows * t / teams);
+    const int hi = 1 + static_cast<int>(n_rows * (t + 1) / teams);
 
-    double* my_grad_w = &tl_grad_w[tid * N];
-    auto& C_eigen = ws_vec[tid].C_eigen;
-    auto& c_eigen = ws_vec[tid].c_eigen;
-    auto& dc_eigen = ws_vec[tid].dc_eigen;
-    auto& w_nb_eigen = ws_vec[tid].w_nb_eigen;
-    auto& llt = ws_vec[tid].llt;
-    auto& nb_idx = ws_vec[tid].nb_idx;
+    double* my_grad_w = &tl_grad_w[(std::size_t)t * N];
+    auto& C_eigen = ws_vec[t].C_eigen;
+    auto& c_eigen = ws_vec[t].c_eigen;
+    auto& dc_eigen = ws_vec[t].dc_eigen;
+    auto& w_nb_eigen = ws_vec[t].w_nb_eigen;
+    auto& llt = ws_vec[t].llt;
+    auto& nb_idx = ws_vec[t].nb_idx;
 
-    #ifdef _OPENMP
-    #pragma omp for schedule(dynamic)
-    #endif
-    for (int i = 1; i < N; i++) {
+    for (int i = lo; i < hi; i++) {
       int obs_idx = gp_data.nn_order[i];
       if (obs_idx < 0 || obs_idx >= N) continue;
 
@@ -109,7 +115,7 @@ inline void gp_nngp_gradients(
       if (n_nb == 0) {
         double wi = w[obs_idx];
         my_grad_w[obs_idx] += -wi / sigma2;
-        tl_sigma2[tid] += 0.5 * (wi * wi / sigma2 - 1.0);
+        tl_sigma2[t] += 0.5 * (wi * wi / sigma2 - 1.0);
         continue;
       }
 
@@ -132,7 +138,7 @@ inline void gp_nngp_gradients(
       if (!ok) {
         double wi = w[obs_idx];
         my_grad_w[obs_idx] += -wi / sigma2;
-        tl_sigma2[tid] += 0.5 * (wi * wi / sigma2 - 1.0);
+        tl_sigma2[t] += 0.5 * (wi * wi / sigma2 - 1.0);
         continue;
       }
 
@@ -154,7 +160,7 @@ inline void gp_nngp_gradients(
                                  gp_data.solver_config)) {
         double wi = w[obs_idx];
         my_grad_w[obs_idx] += -wi / sigma2;
-        tl_sigma2[tid] += 0.5 * (wi * wi / sigma2 - 1.0);
+        tl_sigma2[t] += 0.5 * (wi * wi / sigma2 - 1.0);
         continue;
       }
 
@@ -164,7 +170,7 @@ inline void gp_nngp_gradients(
                                         llt, gp_data.solver_config)) {
         double wi = w[obs_idx];
         my_grad_w[obs_idx] += -wi / sigma2;
-        tl_sigma2[tid] += 0.5 * (wi * wi / sigma2 - 1.0);
+        tl_sigma2[t] += 0.5 * (wi * wi / sigma2 - 1.0);
         continue;
       }
 
@@ -186,12 +192,12 @@ inline void gp_nngp_gradients(
           sigma2, phi, kGpVarFloor, tulpa_nngp::VarFloor::Clamp);
       my_grad_w[obs_idx] += g.grad_w_obs;
       for (int j = 0; j < n_nb; j++) my_grad_w[nb_idx[j]] += alpha_vec(j) * g.r_over_v;
-      tl_sigma2[tid] += g.dlog_sigma2;
-      tl_phi[tid] += g.dlog_phi;
+      tl_sigma2[t] += g.dlog_sigma2;
+      tl_phi[t] += g.dlog_phi;
     }
   }
 
-  // Reduce thread-local accumulators
+  // Reduce the per-chunk accumulators, in chunk order
   for (int t = 0; t < n_threads; t++) {
     const double* tg = &tl_grad_w[t * N];
     for (int k = 0; k < N; k++) grads.grad_w[k] += tg[k];

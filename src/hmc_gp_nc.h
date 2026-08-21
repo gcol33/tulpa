@@ -431,9 +431,9 @@ inline void nngp_nc_backward(
 
     // One row's phi contribution, written once and driven from both routes.
     // The workspace slot and the two accumulators are parameters rather than
-    // captures, so the parallel route hands each thread its own slot and the
+    // captures, so the parallel route hands each chunk its own slot and the
     // serial route reuses slot 0 -- bws_vec is never copied onto a worker
-    // stack (the gcol33/tulpa#253 rule).
+    // stack (the OpenMP worker-stack rule).
     auto phi_row = [&](int i, BackwardWS& bw, double& acc_lik, double& acc_jac) {
         auto& L_eigen = bw.L_eigen;
         auto& C_eigen = bw.C_eigen;
@@ -525,19 +525,31 @@ inline void nngp_nc_backward(
     };
 
     // At a team of one the region is skipped entirely: entering libgomp costs
-    // measurable time per reverse sweep, and this runs on every HMC gradient
-    // (gcol33/tulpa#365, #373). One thread means every row already accumulated
-    // into slot 0 in index order, which is exactly what the plain loop does,
-    // so the two routes are bit-identical. Above one thread the dynamic
-    // schedule is unchanged.
+    // measurable time per reverse sweep, and this runs on every HMC gradient.
+    // One thread means every row accumulates into slot 0 in index order, which
+    // is exactly what the plain loop does, so the two routes are bit-identical.
+    //
+    // Above one thread the rows are cut into `n_threads` contiguous chunks HERE,
+    // by index arithmetic, each chunk accumulated left to right into its own
+    // slot and the slots added in chunk order after the region. Letting the
+    // runtime hand rows out -- a schedule(dynamic) loop writing into the slot
+    // omp_get_thread_num() names -- makes the summation order a property of the
+    // run rather than of the problem, and floating-point addition is not
+    // associative, so the last bits of the phi gradient move between two runs of
+    // the SAME fit and a fixed seed stops reproducing a field's draws. Chunking
+    // makes the pair a function of (n_threads, N) alone. It is still not the
+    // one-thread sum: chunking imposes its own association. Same policy as
+    // tulpa_parallel_sum in omp_threads.h.
     #ifdef _OPENMP
     if (n_threads > 1) {
-        #pragma omp parallel num_threads(n_threads)
-        {
-            int tid = omp_get_thread_num();
-            #pragma omp for schedule(dynamic)
-            for (int i = 1; i < N; i++) {
-                phi_row(i, bws_vec[tid], tl_phi_lik[tid], tl_phi_jac[tid]);
+        const long long n_rows = static_cast<long long>(N - 1);
+        const long long teams  = static_cast<long long>(n_threads);
+        #pragma omp parallel for schedule(static) num_threads(n_threads)
+        for (int t = 0; t < n_threads; t++) {
+            const int lo = 1 + static_cast<int>(n_rows * t / teams);
+            const int hi = 1 + static_cast<int>(n_rows * (t + 1) / teams);
+            for (int i = lo; i < hi; i++) {
+                phi_row(i, bws_vec[t], tl_phi_lik[t], tl_phi_jac[t]);
             }
         }
     } else
