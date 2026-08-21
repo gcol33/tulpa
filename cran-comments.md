@@ -12,6 +12,9 @@
 
 * local: Windows 11, R 4.6.0
 * win-builder: R-devel, R-release
+* GitHub Actions, on every push: ubuntu-latest (R-release and R-devel),
+  macos-latest (R-release), windows-latest (R-release), all compiled with
+  -ffp-contract=off
 * Linux: Rocky Linux 9.8, R 4.5.2, gcc 14.3, built at the x86-64 baseline
   with -ffp-contract=off
 
@@ -28,8 +31,10 @@
 * Long-running model fits in examples are wrapped in \donttest{}; each
   retains a small runnable form where feasible. Recovery and sampler tests
   are gated by testthat's skip_on_cran() and by the package's own tier
-  variables (NOT_CRAN, TULPA_SLOW_TESTS); they are run by the maintainer
-  before each release on Windows and on Linux.
+  variables (NOT_CRAN, TULPA_SLOW_TESTS). A named subset of the recovery
+  tier runs on every push in GitHub Actions, on Linux and on macOS, and a
+  named subset of the sampler and coverage tier runs there on a schedule.
+  Both tiers are run in full by the maintainer before each release.
 
 * A small number of examples remain in \dontrun{}. Each either references
   symbols the user supplies (a per-model E-step / M-step callback pair, a
