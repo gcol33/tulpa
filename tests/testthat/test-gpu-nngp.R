@@ -80,3 +80,42 @@ test_that("the batched-CUDA backend has one definition and says which one it is"
   expect_true(is.numeric(info$device_count) && info$device_count >= 0)
   if (!cpp_gpu_available()) expect_equal(info$device_count, 0)
 })
+
+test_that("the batched GPU Cholesky solve reproduces an independent solve", {
+  # gpu_batched_cholesky_solve chains a batched Cholesky into a forward and a
+  # back substitution. The factor passes between the three steps in one buffer,
+  # and each step reads it under a different library's layout convention:
+  # cuSOLVER writes it column-major, the CPU consumers read it row-major, cuBLAS
+  # reads it column-major again. A mismatch there returns TRUE and gives finite,
+  # plausible numbers -- reading the buffer's zero triangle solves against
+  # diag(L) alone -- so scoring alpha against solve(C, c) is the only thing that
+  # sees it.
+  set.seed(9)
+  k <- 6L
+  batch <- 64L   # above the 50-matrix threshold the NNGP path dispatches at
+
+  C_list <- lapply(seq_len(batch), function(b) {
+    A <- matrix(rnorm(k * k), k, k)
+    crossprod(A) + diag(k) * (0.5 + b / batch)
+  })
+  # Each row is one matrix flattened; the matrices are symmetric, so the
+  # flattening order is immaterial and what is under test is the internal
+  # handoff, not the input layout.
+  C_flat <- t(vapply(C_list, as.numeric, numeric(k * k)))
+  c_rhs <- matrix(rnorm(batch * k), batch, k)
+
+  res <- cpp_gpu_batched_cholesky_solve(C_flat, c_rhs, k)
+  expect_type(res$used_gpu, "logical")
+
+  if (!cpp_gpu_available()) {
+    expect_false(res$used_gpu)
+    expect_true(all(is.na(res$alpha)))
+  }
+  skip_if_not(res$used_gpu, "no CUDA device: the batched GPU solve did not run")
+
+  expected <- t(vapply(seq_len(batch),
+                       function(b) solve(C_list[[b]], c_rhs[b, ]),
+                       numeric(k)))
+  scale <- max(abs(expected))
+  expect_lt(max(abs(res$alpha - expected)), 1e-8 * scale)
+})

@@ -2,12 +2,18 @@
 // GPU acceleration for GP computations
 // Supports CUDA (NVIDIA) and OpenCL (cross-platform)
 //
-// STATUS: opt-in roadmap backend. CPU is the default and only
-// active path; the CUDA primitives (gpu_cuda.h) are compiled in only under
-// TULPA_ENABLE_CUDA and are not yet dispatched to by any sampler. The
-// CUDA-disabled definitions below are deliberate CPU-fallback stubs (so the
-// header always compiles), and OpenCL is a placeholder. Kept as roadmap surface
-// for the GPU dispatch path; see gpu_cuda.h for the batched-Cholesky targets.
+// STATUS: the CUDA primitives (gpu_cuda.h) are compiled in by DEFAULT and
+// resolved from the driver at run time, so a build needs no CUDA SDK and a run
+// with no device degrades to the CPU. TULPA_DISABLE_CUDA builds the stubs
+// below instead, and it is the only switch: TULPA_ENABLE_CUDA gates nothing.
+// The block above the #include further down carries why that decision is made
+// in exactly one place, and cuda_backend_kind() reports which was built.
+//
+// cuda_batched_cholesky IS dispatched to -- batch_nngp_scatter
+// (gpu_nngp_laplace.h) hands it every NNGP neighbour factorization once the
+// batch reaches 50. The gpu_batched_* compositions at the end of this file have
+// no caller yet. OpenCL is a placeholder: the library is probed for, and
+// nothing calls it.
 //
 // Uses RUNTIME detection - works even if user installs CUDA/OpenCL after
 // installing tulpa. No recompilation needed.
@@ -52,12 +58,16 @@ namespace tulpa_gpu {
 // =============================================================================
 
 struct GPUDeviceInfo {
-  std::string name;
-  size_t memory_mb;
-  std::string compute_capability;  // CUDA only
+  std::string name;                // driver-reported device name
+  size_t memory_mb;                // total device memory, MiB
+  std::string compute_capability;  // CUDA only; empty when the driver withheld it
   int device_id;
 };
 
+// `available` says a backend library loaded and answered; `device_count` and
+// `devices` are what that backend enumerated, and stay 0 / empty for a backend
+// this package has no query for. The two are separate questions: OpenCL loads
+// and enumerates nothing.
 struct GPUInfo {
   bool available;
   std::string backend;  // "cuda", "opencl", or "none"
@@ -69,83 +79,35 @@ struct GPUInfo {
 // Runtime GPU Detection
 // =============================================================================
 
-// Try to load CUDA driver library at runtime
-inline bool try_load_cuda() {
-  GPU_LIB_HANDLE lib = GPU_LOAD_LIB(CUDA_LIB_NAME);
-  if (lib != nullptr) {
-    GPU_FREE_LIB(lib);
-    return true;
-  }
-  return false;
+// Probe for a backend library. Each probe is a LoadLibrary / FreeLibrary pair
+// and its answer cannot change within a process, so it is taken once and every
+// later caller reads the cached bool. The initialization of a function-local
+// static is thread-safe, which is what lets the probes sit in front of entries
+// a worker thread can reach.
+inline bool probe_library(const char* name) {
+  GPU_LIB_HANDLE lib = GPU_LOAD_LIB(name);
+  if (lib == nullptr) return false;
+  GPU_FREE_LIB(lib);
+  return true;
 }
 
-// Try to load OpenCL library at runtime
+// Is the CUDA driver library present?
+inline bool try_load_cuda() {
+  static const bool present = probe_library(CUDA_LIB_NAME);
+  return present;
+}
+
+// Is the OpenCL library present?
 inline bool try_load_opencl() {
-  GPU_LIB_HANDLE lib = GPU_LOAD_LIB(OPENCL_LIB_NAME);
-  if (lib != nullptr) {
-    GPU_FREE_LIB(lib);
-    return true;
-  }
-  return false;
+  static const bool present = probe_library(OPENCL_LIB_NAME);
+  return present;
 }
 
 // Check GPU availability at runtime (no recompilation needed)
 inline bool gpu_available() {
-  static int cached = -1;  // Cache result: -1 = not checked, 0 = no, 1 = yes
-  if (cached >= 0) {
-    return cached == 1;
-  }
-
   // Try CUDA first (usually faster), then OpenCL
-  if (try_load_cuda() || try_load_opencl()) {
-    cached = 1;
-    return true;
-  }
-
-  cached = 0;
-  return false;
-}
-
-// Get detailed GPU info
-inline GPUInfo get_gpu_info() {
-  GPUInfo info;
-  info.available = false;
-  info.backend = "none";
-  info.device_count = 0;
-
-  // Check CUDA
-  if (try_load_cuda()) {
-    info.available = true;
-    info.backend = "cuda";
-    // Note: To get device count/info, we'd need to actually call CUDA API
-    // For now, just report that CUDA is available
-    info.device_count = 1;  // Assume at least 1 if library loads
-
-    GPUDeviceInfo dev;
-    dev.name = "CUDA Device (details require CUDA initialization)";
-    dev.memory_mb = 0;
-    dev.compute_capability = "unknown";
-    dev.device_id = 0;
-    info.devices.push_back(dev);
-    return info;
-  }
-
-  // Check OpenCL
-  if (try_load_opencl()) {
-    info.available = true;
-    info.backend = "opencl";
-    info.device_count = 1;  // Assume at least 1 if library loads
-
-    GPUDeviceInfo dev;
-    dev.name = "OpenCL Device (details require OpenCL initialization)";
-    dev.memory_mb = 0;
-    dev.compute_capability = "";
-    dev.device_id = 0;
-    info.devices.push_back(dev);
-    return info;
-  }
-
-  return info;
+  static const bool available = try_load_cuda() || try_load_opencl();
+  return available;
 }
 
 }  // namespace tulpa_gpu
@@ -174,11 +136,51 @@ namespace tulpa_gpu {
 // OBSERVABLE rather than inferred from behaviour -- a silent either/or is what
 // let the ODR violation sit unnoticed.
 inline const char* cuda_backend_kind() { return "cuda"; }
+
+// Enumerate the CUDA devices into `info`, from the SAME CudaContext the
+// batched entries run against, so what is reported is the device they would
+// use rather than a description of the library file having loaded. Leaves
+// `device_count` / `devices` untouched and returns false when the context
+// cannot be brought up or reaches no device.
+inline bool cuda_fill_device_info(GPUInfo& info) {
+  CudaContext* ctx_ptr = nullptr;
+  try {
+    ctx_ptr = &CudaContext::instance();
+  } catch (...) {
+    return false;
+  }
+  if (!ctx_ptr) return false;
+
+  CudaContext& ctx = *ctx_ptr;
+  try {
+    if (!ctx.initialize()) return false;
+  } catch (...) {
+    return false;
+  }
+
+  const int count = ctx.get_device_count();
+  if (count <= 0) return false;
+
+  info.device_count = count;
+  for (int d = 0; d < count; d++) {
+    GPUDeviceInfo dev;
+    dev.name = ctx.get_device_name(d);
+    dev.memory_mb = ctx.get_device_memory(d) / (1024 * 1024);
+    dev.compute_capability = ctx.get_compute_capability(d);
+    dev.device_id = d;
+    info.devices.push_back(dev);
+  }
+  return true;
+}
 }  // namespace tulpa_gpu
 #else
 // Stub implementations when CUDA is explicitly disabled
 namespace tulpa_gpu {
 inline const char* cuda_backend_kind() { return "stub"; }
+inline bool cuda_fill_device_info(GPUInfo& info) {
+  (void)info;
+  return false;  // CUDA not compiled in
+}
 inline bool cuda_batched_cholesky(std::vector<std::vector<double>>& matrices, int k) {
   (void)matrices; (void)k;
   return false;  // CUDA not compiled in
@@ -204,18 +206,57 @@ inline bool cuda_batched_trsv_transpose(
 
 namespace tulpa_gpu {
 
+// Get detailed GPU info
+inline GPUInfo get_gpu_info() {
+  GPUInfo info;
+  info.available = false;
+  info.backend = "none";
+  info.device_count = 0;
+
+  // `available` answers the same question gpu_available() does -- a backend
+  // library is present -- and the device fields answer the separate one of what
+  // that backend enumerated. A driver that loads but reaches no device reports
+  // available with a count of zero.
+  if (try_load_cuda()) {
+    info.available = true;
+    info.backend = "cuda";
+    cuda_fill_device_info(info);
+    return info;
+  }
+
+  if (try_load_opencl()) {
+    // The library is present and nothing in this package calls OpenCL, so no
+    // device is enumerated and `devices` stays empty.
+    info.available = true;
+    info.backend = "opencl";
+    return info;
+  }
+
+  return info;
+}
+
 // =============================================================================
 // GPU-accelerated Linear Algebra
 // =============================================================================
 
 // These functions use runtime dynamic loading to call GPU libraries.
-// They return false if GPU is not available or operation fails.
-// No recompilation needed when user installs CUDA/OpenCL.
+// They return false if GPU is not available or operation fails. The CUDA entry
+// makes that decision for itself -- it resolves the driver through CudaContext
+// and returns false when it is absent -- so a second library probe here would
+// only repeat what gpu_available() already answered.
+//
+// There is no OpenCL implementation, so an OpenCL-only machine gets false from
+// the CUDA entry and falls back to the CPU.
+//
+// The k x k factor buffers all three entries pass and expect are in ONE layout:
+// L in the ROW-major lower triangle with the row-major upper zero, which is
+// what cuda_batched_cholesky returns and what linalg_fast.h's CPU solves read.
+// See cusolver_factor_to_row_major() in gpu_cuda.h.
 
 // Batched Cholesky decomposition on GPU
 // Solves many small k x k systems in parallel
 // A_batch: vector of k x k matrices (row-major, flattened)
-// L_batch: output L factors (lower triangular)
+// L_batch: output L factors, in the row-major lower-triangular layout above
 // Returns false if GPU unavailable (falls back to CPU in caller)
 inline bool gpu_batched_cholesky(
     const std::vector<std::vector<double>>& A_batch,
@@ -229,16 +270,11 @@ inline bool gpu_batched_cholesky(
   // Copy input to output (Cholesky is done in-place)
   L_batch = A_batch;
 
-  // Try CUDA implementation
-  if (try_load_cuda()) {
-    return cuda_batched_cholesky(L_batch, k);
-  }
-
-  // OpenCL not yet implemented
-  return false;
+  return cuda_batched_cholesky(L_batch, k);
 }
 
 // Batched triangular solve: L * x = b
+// L_batch carries the factor in the row-major lower-triangular layout above
 // Solves for x in-place (b_batch becomes x_batch)
 inline bool gpu_batched_trsv(
     const std::vector<std::vector<double>>& L_batch,
@@ -249,17 +285,12 @@ inline bool gpu_batched_trsv(
     return false;
   }
 
-  // Try CUDA implementation
-  if (try_load_cuda()) {
-    return cuda_batched_trsv(L_batch, b_batch, k);
-  }
-
-  // OpenCL not yet implemented
-  return false;
+  return cuda_batched_trsv(L_batch, b_batch, k);
 }
 
 // Batched transposed triangular solve: L^T * x = b
 // Used for back-substitution after a forward solve with the same L factor
+// L_batch carries the factor in the row-major lower-triangular layout above
 // Solves for x in-place (b_batch becomes x_batch)
 inline bool gpu_batched_trsv_transpose(
     const std::vector<std::vector<double>>& L_batch,
@@ -270,19 +301,19 @@ inline bool gpu_batched_trsv_transpose(
     return false;
   }
 
-  // Try CUDA implementation
-  if (try_load_cuda()) {
-    return cuda_batched_trsv_transpose(L_batch, b_batch, k);
-  }
-
-  // OpenCL not yet implemented
-  return false;
+  return cuda_batched_trsv_transpose(L_batch, b_batch, k);
 }
 
 // Combined Cholesky + solve for NNGP: solve C * alpha = c
 // Returns the full inverse-times-vector product alpha = C^{-1} c via the
 // three-step factorisation C = L L^T, forward solve L y = c, backward
 // solve L^T alpha = y. Both triangular solves run on the GPU.
+//
+// The factor is handed between the three steps in the row-major lower-triangular
+// layout named above, which is the one thing this composition has to get right
+// and the one thing no single step can check: a mismatch returns true and gives
+// finite, plausible numbers. cpp_gpu_batched_cholesky_solve() exists to score
+// the result against an independent solve.
 //
 // C_batch: k x k SPD covariance matrices (neighbor covariances)
 // c_batch: k vectors (covariances to current point)

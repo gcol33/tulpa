@@ -2,25 +2,22 @@
 // CUDA implementation for GPU-accelerated GP computations
 // Uses dynamic loading - no CUDA SDK required at compile time
 //
-// STATUS: cuda_batched_cholesky IS dispatched -- batch_nngp_scatter
-// (gpu_nngp_laplace.h) hands it every NNGP neighbour factorization once the
-// batch reaches 50, and reaches it by including this header directly, so the
-// TULPA_ENABLE_CUDA guard in gpu_backend.h does not gate that call. Treat this
-// file as production, not roadmap.
+// STATUS: production, not roadmap. cuda_batched_cholesky IS dispatched --
+// batch_nngp_scatter (gpu_nngp_laplace.h) hands it every NNGP neighbour
+// factorization once the batch reaches 50. This header is reached through
+// gpu_backend.h, which owns the single CUDA-or-stub decision in the program.
 //
-// cuda_batched_trsv / cuda_batched_trsv_transpose have no caller. They stay as
-// surface for the batched Laplace inner solve; anything wiring them must
-// reconcile the same layout contract cuda_batched_cholesky documents below
-// (cuSOLVER and cuBLAS are COLUMN-major, every CPU consumer in linalg_fast.h is
-// ROW-major) and must be validated against the CPU result rather than trusted
-// on a success return.
+// cuda_batched_trsv / cuda_batched_trsv_transpose still have no caller. They
+// read the SAME buffer convention cuda_batched_cholesky produces, stated once
+// for the whole file at cusolver_factor_to_row_major() below;
+// gpu_batched_cholesky_solve (gpu_backend.h) is the composition of the three,
+// and cpp_gpu_batched_cholesky_solve() scores that composition against an
+// independent solve.
 //
 // Minimum requirements:
 // - CUDA Toolkit 11.0+ (for cusolverDnDpotrfBatched)
 // - NVIDIA GPU with compute capability 3.5+
 // - Driver version 450.80.02+ (Linux) or 452.39+ (Windows)
-//
-// Enable with: #define TULPA_ENABLE_CUDA before including gpu_backend.h
 
 #ifndef TULPA_GPU_CUDA_H
 #define TULPA_GPU_CUDA_H
@@ -118,6 +115,7 @@ typedef CUresult (*cuDeviceGetCount_t)(int*);
 typedef CUresult (*cuDeviceGet_t)(CUdevice*, int);
 typedef CUresult (*cuDeviceGetName_t)(char*, int, CUdevice);
 typedef CUresult (*cuDeviceTotalMem_t)(size_t*, CUdevice);
+typedef CUresult (*cuDeviceGetAttribute_t)(int*, int, CUdevice);
 typedef CUresult (*cuCtxCreate_t)(CUcontext*, unsigned int, CUdevice);
 typedef CUresult (*cuCtxDestroy_t)(CUcontext);
 typedef CUresult (*cuCtxSetCurrent_t)(CUcontext);
@@ -169,6 +167,7 @@ private:
   cuDeviceGet_t cuDeviceGet_ = nullptr;
   cuDeviceGetName_t cuDeviceGetName_ = nullptr;
   cuDeviceTotalMem_t cuDeviceTotalMem_ = nullptr;
+  cuDeviceGetAttribute_t cuDeviceGetAttribute_ = nullptr;
   cuCtxCreate_t cuCtxCreate_ = nullptr;
   cuCtxDestroy_t cuCtxDestroy_ = nullptr;
   cuCtxSetCurrent_t cuCtxSetCurrent_ = nullptr;
@@ -217,6 +216,7 @@ private:
     cuDeviceGet_ = (cuDeviceGet_t)CUDA_GET_PROC(cuda_lib_, "cuDeviceGet");
     cuDeviceGetName_ = (cuDeviceGetName_t)CUDA_GET_PROC(cuda_lib_, "cuDeviceGetName");
     cuDeviceTotalMem_ = (cuDeviceTotalMem_t)CUDA_GET_PROC(cuda_lib_, "cuDeviceTotalMem_v2");
+    cuDeviceGetAttribute_ = (cuDeviceGetAttribute_t)CUDA_GET_PROC(cuda_lib_, "cuDeviceGetAttribute");
     cuCtxCreate_ = (cuCtxCreate_t)CUDA_GET_PROC(cuda_lib_, "cuCtxCreate_v2");
     cuCtxDestroy_ = (cuCtxDestroy_t)CUDA_GET_PROC(cuda_lib_, "cuCtxDestroy_v2");
     cuCtxSetCurrent_ = (cuCtxSetCurrent_t)CUDA_GET_PROC(cuda_lib_, "cuCtxSetCurrent");
@@ -227,7 +227,7 @@ private:
     cuCtxSynchronize_ = (cuCtxSynchronize_t)CUDA_GET_PROC(cuda_lib_, "cuCtxSynchronize");
 
     if (!cuInit_ || !cuDeviceGetCount_ || !cuMemAlloc_ || !cuMemFree_ ||
-        !cuMemcpyHtoD_ || !cuMemcpyDtoH_ || !cuCtxCreate_) {
+        !cuMemcpyHtoD_ || !cuMemcpyDtoH_ || !cuCtxCreate_ || !cuCtxSetCurrent_) {
       return false;
     }
 
@@ -335,6 +335,18 @@ public:
   bool has_cublas() const { return cublas_handle_ != nullptr; }
   bool has_cusolver() const { return cusolver_handle_ != nullptr; }
 
+  // Bind this object's context to the CALLING thread. The driver keeps a
+  // per-thread context stack and cuCtxCreate pushes onto the stack of the
+  // thread that created it, so a thread that did not run initialize() has no
+  // current context: every cuMemAlloc there returns CUDA_ERROR_INVALID_CONTEXT
+  // and the entry reads as an unavailable GPU. Every high-level entry binds on
+  // the way in, which is what makes them callable from any thread. Cheap and
+  // idempotent when the context is already current.
+  bool make_current() {
+    if (!initialized_ || !context_) return false;
+    return cuCtxSetCurrent_(context_) == CUDA_SUCCESS;
+  }
+
   // Memory management
   CUdeviceptr alloc(size_t bytes) {
     if (!initialized_) return 0;
@@ -387,11 +399,15 @@ public:
     return status == CUSOLVER_STATUS_SUCCESS;
   }
 
-  // Batched triangular solve: op(L) * X = B
-  // op = CUBLAS_OP_N for forward solve (L * X = B)
-  // op = CUBLAS_OP_T for backward solve (L^T * X = B)
-  bool batched_trsm(double** d_L, double** d_B, int n, int nrhs, int batch_size,
-                    cublasOperation_t op = CUBLAS_OP_N) {
+  // Batched triangular solve: op(A) * X = B, stated in cuBLAS's own terms.
+  // cuBLAS reads A COLUMN-major with leading dimension n, and `uplo` names
+  // which triangle of that reading holds the factor; the other triangle is not
+  // touched. Callers holding a buffer in some other layout convert it or say
+  // which triangle the column-major reading of their bytes lands in -- passing
+  // the triangle the buffer does NOT fill solves against its diagonal alone and
+  // still returns success.
+  bool batched_trsm(double** d_A, double** d_B, int n, int nrhs, int batch_size,
+                    cublasFillMode_t uplo, cublasOperation_t op) {
     if (!has_cublas() || !cublasDtrsmBatched_) {
       return false;
     }
@@ -400,12 +416,12 @@ public:
     cublasStatus_t status = cublasDtrsmBatched_(
       cublas_handle_,
       CUBLAS_SIDE_LEFT,
-      CUBLAS_FILL_MODE_LOWER,
+      uplo,
       op,
       CUBLAS_DIAG_NON_UNIT,
       n, nrhs,
       &alpha,
-      (const double* const*)d_L, n,
+      (const double* const*)d_A, n,
       d_B, n,
       batch_size
     );
@@ -439,11 +455,56 @@ public:
     if (cuDeviceTotalMem_(&bytes, device) != CUDA_SUCCESS) return 0;
     return bytes;
   }
+
+  // "major.minor", or empty when the driver did not answer. The two constants
+  // are CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR / _MINOR in the driver's
+  // attribute enumeration, spelled out here for the same reason the CUDA types
+  // above are: this file resolves the driver dynamically and does not include
+  // cuda.h.
+  std::string get_compute_capability(int device_id = 0) {
+    static const int kAttrCcMajor = 75;
+    static const int kAttrCcMinor = 76;
+    if (!initialized_ || !cuDeviceGetAttribute_) return "";
+    CUdevice device;
+    if (cuDeviceGet_(&device, device_id) != CUDA_SUCCESS) return "";
+    int major = 0, minor = 0;
+    if (cuDeviceGetAttribute_(&major, kAttrCcMajor, device) != CUDA_SUCCESS ||
+        cuDeviceGetAttribute_(&minor, kAttrCcMinor, device) != CUDA_SUCCESS) {
+      return "";
+    }
+    return std::to_string(major) + "." + std::to_string(minor);
+  }
 };
 
 // =============================================================================
 // High-level GPU Operations for NNGP
 // =============================================================================
+
+// THE BUFFER CONVENTION every entry below passes and expects: a k x k factor
+// held as L in the ROW-major lower triangle, with the row-major upper triangle
+// zero.
+//
+// cusolverDnDpotrfBatched is COLUMN-major and is asked for
+// CUBLAS_FILL_MODE_LOWER, so it writes L[r][c] (r >= c) at offset c*k + r and
+// leaves the opposite triangle holding the input. Every CPU consumer of the
+// result (tri_solve_lower<RowMajor> / tri_solve_lower_transpose<RowMajor> in
+// linalg_fast.h, and the batch_nngp_scatter probe that scores the batch)
+// indexes ROW-major, so without this move it reads the untouched input
+// covariances as factor entries -- the diagonal is the only part that agrees,
+// which is why such a result stays finite and plausible.
+//
+// Read back COLUMN-major, as cuBLAS reads it, the same bytes are L' held in the
+// UPPER triangle with the strict lower zero. That is what
+// cuda_batched_trsv_impl() tells cublasDtrsmBatched, and it is why the two
+// triangular solves carry the op OPPOSITE to the one their name suggests.
+inline void cusolver_factor_to_row_major(double* m, int k) {
+  for (int r = 0; r < k; r++) {
+    for (int c = 0; c < r; c++) {
+      m[r * k + c] = m[c * k + r];
+      m[c * k + r] = 0.0;
+    }
+  }
+}
 
 // Batched Cholesky for NNGP neighbor covariance matrices
 // Each matrix is k x k, we have batch_size matrices
@@ -465,7 +526,7 @@ inline bool cuda_batched_cholesky(
 
   // Try initialization - may fail if libraries not available
   try {
-    if (!ctx.initialize() || !ctx.has_cusolver()) {
+    if (!ctx.initialize() || !ctx.has_cusolver() || !ctx.make_current()) {
       return false;
     }
   } catch (...) {
@@ -539,22 +600,8 @@ inline bool cuda_batched_cholesky(
         success = false;
         break;
       }
-      // cuSOLVER is COLUMN-major and was asked for CUBLAS_FILL_MODE_LOWER, so
-      // it writes L[i][j] (i >= j) at offset j*k + i and leaves the opposite
-      // triangle holding the input. Every consumer of this buffer
-      // (tri_solve_lower<RowMajor> / tri_solve_lower_transpose<RowMajor> in
-      // linalg_fast.h) indexes ROW-major, so without this conversion it reads the untouched input
-      // covariances as if they were factor entries -- the diagonal is the only
-      // part that agrees, which is why the result stays finite and plausible.
-      // Move the factor into the row-major lower triangle and clear what
-      // becomes the row-major upper, matching the CPU fallback's contract.
-      double* m = matrices[i].data();
-      for (int r = 0; r < k; r++) {
-        for (int c = 0; c < r; c++) {
-          m[r * k + c] = m[c * k + r];
-          m[c * k + r] = 0.0;
-        }
-      }
+      // Into the buffer convention stated above, matching the CPU fallback.
+      cusolver_factor_to_row_major(matrices[i].data(), k);
     }
   }
 
@@ -568,12 +615,20 @@ inline bool cuda_batched_cholesky(
   return success;
 }
 
-// Batched triangular solve for NNGP: L * x = b
-// L is lower triangular k x k, b/x are vectors of length k
-inline bool cuda_batched_trsv(
+// Batched triangular solve against a batch of factors in the buffer convention
+// cusolver_factor_to_row_major() leaves behind. `op` is stated in cuBLAS's own
+// terms, i.e. against the L' that a COLUMN-major read of those bytes gives:
+// CUBLAS_OP_T solves L x = b and CUBLAS_OP_N solves L' x = b, which is the
+// opposite of what each caller's name says because the buffer is transposed
+// relative to how cuBLAS reads it.
+//
+// b_vectors is overwritten with x; the vectors go to the batched trsm as k x 1
+// matrices.
+inline bool cuda_batched_trsv_impl(
     const std::vector<std::vector<double>>& L_matrices,  // batch_size x (k*k)
     std::vector<std::vector<double>>& b_vectors,         // batch_size x k (modified in place)
-    int k
+    int k,
+    cublasOperation_t op
 ) {
   // Try to get CUDA context - return false on any failure
   CudaContext* ctx_ptr = nullptr;
@@ -587,7 +642,7 @@ inline bool cuda_batched_trsv(
   CudaContext& ctx = *ctx_ptr;
 
   try {
-    if (!ctx.initialize() || !ctx.has_cublas()) {
+    if (!ctx.initialize() || !ctx.has_cublas() || !ctx.make_current()) {
       return false;
     }
   } catch (...) {
@@ -629,93 +684,12 @@ inline bool cuda_batched_trsv(
   ctx.copy_to_device(d_L_ptr_array, d_L_ptrs.data(), batch_size * sizeof(double*));
   ctx.copy_to_device(d_b_ptr_array, d_b_ptrs.data(), batch_size * sizeof(double*));
 
-  // Run batched trsm (treating vectors as n x 1 matrices)
-  bool success = ctx.batched_trsm((double**)d_L_ptr_array, (double**)d_b_ptr_array, k, 1, batch_size);
-
-  if (success) {
-    // Copy results back
-    for (int i = 0; i < batch_size; i++) {
-      ctx.copy_to_host(b_vectors[i].data(), d_b[i], vector_bytes);
-    }
-  }
-
-  // Cleanup
-  ctx.free(d_L_ptr_array);
-  ctx.free(d_b_ptr_array);
-  for (int i = 0; i < batch_size; i++) {
-    ctx.free(d_L[i]);
-    ctx.free(d_b[i]);
-  }
-
-  return success;
-}
-
-// Batched transposed triangular solve for NNGP: L^T * x = b
-// L is lower triangular k x k (factor from Cholesky), b/x are vectors of length k
-// Uses cublasDtrsmBatched with CUBLAS_OP_T to perform back-substitution
-inline bool cuda_batched_trsv_transpose(
-    const std::vector<std::vector<double>>& L_matrices,  // batch_size x (k*k)
-    std::vector<std::vector<double>>& b_vectors,         // batch_size x k (modified in place)
-    int k
-) {
-  // Try to get CUDA context - return false on any failure
-  CudaContext* ctx_ptr = nullptr;
-  try {
-    ctx_ptr = &CudaContext::instance();
-  } catch (...) {
-    return false;
-  }
-  if (!ctx_ptr) return false;
-
-  CudaContext& ctx = *ctx_ptr;
-
-  try {
-    if (!ctx.initialize() || !ctx.has_cublas()) {
-      return false;
-    }
-  } catch (...) {
-    return false;
-  }
-
-  int batch_size = (int)L_matrices.size();
-  if (batch_size == 0 || k <= 0 || b_vectors.size() != L_matrices.size()) {
-    return false;
-  }
-
-  size_t matrix_bytes = k * k * sizeof(double);
-  size_t vector_bytes = k * sizeof(double);
-
-  // Allocate device memory
-  std::vector<CUdeviceptr> d_L(batch_size), d_b(batch_size);
-  std::vector<double*> d_L_ptrs(batch_size), d_b_ptrs(batch_size);
-
-  for (int i = 0; i < batch_size; i++) {
-    d_L[i] = ctx.alloc(matrix_bytes);
-    d_b[i] = ctx.alloc(vector_bytes);
-    if (!d_L[i] || !d_b[i]) {
-      for (int j = 0; j <= i; j++) {
-        if (d_L[j]) ctx.free(d_L[j]);
-        if (d_b[j]) ctx.free(d_b[j]);
-      }
-      return false;
-    }
-    d_L_ptrs[i] = (double*)d_L[i];
-    d_b_ptrs[i] = (double*)d_b[i];
-
-    ctx.copy_to_device(d_L[i], L_matrices[i].data(), matrix_bytes);
-    ctx.copy_to_device(d_b[i], b_vectors[i].data(), vector_bytes);
-  }
-
-  // Allocate pointer arrays
-  CUdeviceptr d_L_ptr_array = ctx.alloc(batch_size * sizeof(double*));
-  CUdeviceptr d_b_ptr_array = ctx.alloc(batch_size * sizeof(double*));
-  ctx.copy_to_device(d_L_ptr_array, d_L_ptrs.data(), batch_size * sizeof(double*));
-  ctx.copy_to_device(d_b_ptr_array, d_b_ptrs.data(), batch_size * sizeof(double*));
-
-  // Run batched trsm with CUBLAS_OP_T (treating vectors as n x 1 matrices)
+  // The factor fills the ROW-major lower triangle, which is the COLUMN-major
+  // UPPER triangle cuBLAS has to be pointed at. Naming the lower one here would
+  // hand it a strictly zero off-diagonal and solve against diag(L) alone.
   bool success = ctx.batched_trsm(
     (double**)d_L_ptr_array, (double**)d_b_ptr_array,
-    k, 1, batch_size, CUBLAS_OP_T
+    k, 1, batch_size, CUBLAS_FILL_MODE_UPPER, op
   );
 
   if (success) {
@@ -734,6 +708,28 @@ inline bool cuda_batched_trsv_transpose(
   }
 
   return success;
+}
+
+// Batched triangular solve for NNGP: L * x = b
+// L is a k x k factor in the buffer convention above, b/x are vectors of
+// length k, solved in place.
+inline bool cuda_batched_trsv(
+    const std::vector<std::vector<double>>& L_matrices,
+    std::vector<std::vector<double>>& b_vectors,
+    int k
+) {
+  return cuda_batched_trsv_impl(L_matrices, b_vectors, k, CUBLAS_OP_T);
+}
+
+// Batched transposed triangular solve for NNGP: L^T * x = b
+// The back-substitution after a forward solve with the same factor, reading the
+// same buffer.
+inline bool cuda_batched_trsv_transpose(
+    const std::vector<std::vector<double>>& L_matrices,
+    std::vector<std::vector<double>>& b_vectors,
+    int k
+) {
+  return cuda_batched_trsv_impl(L_matrices, b_vectors, k, CUBLAS_OP_N);
 }
 
 }  // namespace tulpa_gpu
