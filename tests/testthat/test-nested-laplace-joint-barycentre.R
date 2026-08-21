@@ -72,7 +72,14 @@ test_that("the barycentre is the box's own first moment, on either sign of a", {
   # route measures 1.55e-15. The tolerances are floating slack over those.
   expect_lt(max(e_int), 1e-9)
   expect_lt(max(e_sim), 1e-9)
-  expect_lt(max(e_sim[route == "numeric"]), 1e-12)
+  # The numeric route asks stats::integrate() for rel.tol = eps^0.75 on each of
+  # the two integrals it forms the ratio from, so what it guarantees is about
+  # twice that relative, and the box half-widths here are O(1). The bound is
+  # that contract with slack. What any one platform measures inside it is the
+  # arithmetic it happened to do: where the adaptive subdivision lands moves
+  # with the libm, and the same grid measures 1.55e-15 on one and 2e-12 on
+  # another.
+  expect_lt(max(e_sim[route == "numeric"]), 8 * .Machine$double.eps^0.75)
 
   # A barycentre is the first moment of a positive density over the box, so it
   # is a convex combination of points in the box and cannot leave it. The
