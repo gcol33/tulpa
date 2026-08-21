@@ -76,7 +76,15 @@ Rcpp::List cpp_spde_laplace_gradient(
                    "sigma = %g.", range, sigma_spde);
     }
 
-    // Run inner Laplace to find mode
+    // Run inner Laplace to find mode.
+    //
+    // The mesh field is left uncentred here. Sum-to-zero centring runs once
+    // after the Newton loop, over the reported mode alone, and does not shift
+    // the intercept by the mean it removes, so it moves eta. log_marginal is
+    // evaluated at the iterate BEFORE that fold, and the gradient below reads
+    // the mode for x*' Q x*, for the curvature H and for the mode Jacobian --
+    // all of which must be taken at the point the value belongs to, since this
+    // entry reports a (value, gradient) pair of one function.
     tulpa::SparseCholeskySolver solver;
 
     tulpa::LaplaceResult inner_result;
@@ -86,7 +94,7 @@ Rcpp::List cpp_spde_laplace_gradient(
         max_iter, tol, n_threads, x_init, &solver, /*offset=*/nullptr,
         [&](const tulpa::LaplaceResult& res) { inner_result = res; },
         /*re_idx=*/Rcpp::NumericVector(), /*n_re_groups=*/0, /*sigma_re=*/1.0,
-        /*center_mesh=*/true, /*prior_lognorm=*/half_ldQ
+        /*center_mesh=*/false, /*prior_lognorm=*/half_ldQ
     );
 
     // Compute gradient via implicit differentiation. Both sides now use
