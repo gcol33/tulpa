@@ -33,6 +33,19 @@ struct FullRankGradients {
   double elbo;
 };
 
+// d/dL of H[q] = sum_i log L(i,i) + const, which is 1 / L(i,i) on the diagonal
+// and zero elsewhere. FullRankParams::clamp_diagonal() holds L(i,i) at or above
+// MIN_DIAG on every route into L, so this is the exact derivative of the
+// entropy() the ELBO adds. Added to the reparameterisation gradient here and
+// evaluated on its own by the gradient probe.
+inline void fullrank_add_entropy_grad(const FullRankParams& params,
+                                      Eigen::MatrixXd& grad_L) {
+  const int D = params.dim();
+  for (int i = 0; i < D; ++i) {
+    grad_L(i, i) += 1.0 / params.L(i, i);
+  }
+}
+
 // Compute ELBO and gradients for full-rank VI
 // Uses reparameterization trick: θ = μ + L ε, ε ~ N(0, I)
 inline FullRankGradients compute_fullrank_elbo_grad(
@@ -86,12 +99,7 @@ inline FullRankGradients compute_fullrank_elbo_grad(
     }
   }
 
-  // Entropy gradient: ∂H/∂L[i,i] = 1/L[i,i] (only diagonal)
-  for (int i = 0; i < D; ++i) {
-    if (std::abs(params.L(i, i)) > 1e-10) {
-      result.grad_L(i, i) += 1.0 / params.L(i, i);
-    }
-  }
+  fullrank_add_entropy_grad(params, result.grad_L);
 
   // Add entropy to ELBO
   result.elbo += params.entropy();
@@ -117,6 +125,8 @@ inline VIResult fit_fullrank(
                 << " may be slow (O(D^3) per iteration)\n";
   }
 
+  validate_vi_config(config);
+
   // Initialize parameters
   FullRankParams params(D);
 
@@ -125,6 +135,7 @@ inline VIResult fit_fullrank(
   }
   if (init_L != nullptr && init_L->rows() == D && init_L->cols() == D) {
     params.L = *init_L;
+    params.clamp_diagonal();
   }
 
   // Number of variational parameters
@@ -167,17 +178,11 @@ inline VIResult fit_fullrank(
     }
 
     // Convergence test, Adam update and bookkeeping (see vi_adam_step). The
-    // post-update hook keeps the diagonal of L positive so the Cholesky stays
-    // valid.
+    // Adam step lands back in the parameterization through
+    // FullRankParams::unflatten, which is where the diagonal of L is held
+    // positive so the Cholesky stays valid.
     if (vi_adam_step(params, grad_flat, grads.elbo, iter, config, checker,
-                     optimizer, state, result,
-                     [&]() {
-                       for (int i = 0; i < D; ++i) {
-                         if (params.L(i, i) < 0.01) {
-                           params.L(i, i) = 0.01;
-                         }
-                       }
-                     })) {
+                     optimizer, state, result)) {
       break;
     }
   }
@@ -188,7 +193,7 @@ inline VIResult fit_fullrank(
   result.L_factor = params.L;
   result.d_diag = Eigen::VectorXd();  // Not used for full-rank
   result.rank_used = D;  // Full rank
-  result.final_elbo = result.elbo_history.back();
+  result.final_elbo = vi_final_elbo(result.elbo_history);
 
   // Generate posterior samples for diagnostics
   int n_samples = 1000;

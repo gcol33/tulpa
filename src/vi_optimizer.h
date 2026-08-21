@@ -88,7 +88,7 @@ public:
   Eigen::VectorXd step_clipped(const Eigen::VectorXd& params,
                                const Eigen::VectorXd& grads,
                                AdamState& state,
-                               double max_grad_norm = 10.0) const {
+                               double max_grad_norm) const {
     // Clip gradients by norm
     double grad_norm = grads.norm();
     Eigen::VectorXd clipped_grads = grads;
@@ -113,7 +113,7 @@ public:
   // Internal state
   int no_improvement_count;
   double best_elbo;
-  std::vector<double> elbo_history;
+  bool has_best;           // false until the first ELBO has been recorded
 
   ConvergenceChecker(double tol_grad_ = 1e-4,
                      double tol_rel_elbo_ = 0.01,
@@ -122,18 +122,17 @@ public:
       tol_rel_elbo(tol_rel_elbo_),
       patience(patience_),
       no_improvement_count(0),
-      best_elbo(-std::numeric_limits<double>::infinity()) {}
+      best_elbo(-std::numeric_limits<double>::infinity()),
+      has_best(false) {}
 
   void reset() {
     no_improvement_count = 0;
     best_elbo = -std::numeric_limits<double>::infinity();
-    elbo_history.clear();
+    has_best = false;
   }
 
   // Check if converged, returns convergence reason or empty string
   std::string check(double elbo, double grad_norm) {
-    elbo_history.push_back(elbo);
-
     // Check gradient norm
     if (grad_norm < tol_grad) {
       return "gradient_norm";
@@ -141,15 +140,20 @@ public:
 
     // Check relative ELBO improvement
     if (elbo > best_elbo) {
-      double rel_improvement = (best_elbo > -1e10) ?
-        (elbo - best_elbo) / std::abs(best_elbo) : 1.0;
-
-      if (rel_improvement < tol_rel_elbo && best_elbo > -1e10) {
+      if (!has_best) {
+        // Nothing to improve on yet.
+        no_improvement_count = 0;
+      } else if (best_elbo == 0.0) {
+        // Any improvement over zero is unbounded relative to it, so it counts
+        // as a large one.
+        no_improvement_count = 0;
+      } else if ((elbo - best_elbo) / std::abs(best_elbo) < tol_rel_elbo) {
         no_improvement_count++;
       } else {
         no_improvement_count = 0;
       }
       best_elbo = elbo;
+      has_best = true;
     } else {
       no_improvement_count++;
     }
@@ -160,23 +164,6 @@ public:
     }
 
     return "";  // Not converged
-  }
-
-  // Check for ELBO decrease (potential divergence)
-  bool check_divergence(double elbo, int window = 10) const {
-    if (elbo_history.size() < static_cast<size_t>(window + 1)) {
-      return false;
-    }
-
-    // Check if ELBO decreased significantly compared to recent average
-    double recent_avg = 0.0;
-    size_t start = elbo_history.size() - window - 1;
-    for (size_t i = start; i < start + window; ++i) {
-      recent_avg += elbo_history[i];
-    }
-    recent_avg /= window;
-
-    return (recent_avg - elbo) > 10.0;  // Significant decrease
   }
 };
 
@@ -223,7 +210,8 @@ inline bool vi_adam_step(Params& params,
   }
 
   Eigen::VectorXd params_flat = params.flatten();
-  params_flat = optimizer.step_clipped(params_flat, grad_flat, state);
+  params_flat = optimizer.step_clipped(params_flat, grad_flat, state,
+                                      config.max_grad_norm);
   params.unflatten(params_flat);
 
   post_update();
@@ -254,32 +242,6 @@ inline bool vi_adam_step(Params& params,
   return vi_adam_step(params, grad_flat, elbo, iter, config, checker,
                       optimizer, state, result, []() {});
 }
-
-// ---------------------------------------------------------------------
-// Learning Rate Scheduler (optional)
-// ---------------------------------------------------------------------
-
-class LearningRateScheduler {
-public:
-  double initial_lr;
-  double min_lr;
-  double decay_rate;
-  int decay_steps;
-
-  LearningRateScheduler(double initial = 0.01,
-                        double min = 1e-5,
-                        double decay = 0.99,
-                        int steps = 100)
-    : initial_lr(initial), min_lr(min), decay_rate(decay), decay_steps(steps) {}
-
-  double get_lr(int iteration) const {
-    if (decay_steps <= 0) return initial_lr;
-
-    int n_decays = iteration / decay_steps;
-    double lr = initial_lr * std::pow(decay_rate, n_decays);
-    return std::max(lr, min_lr);
-  }
-};
 
 } // namespace vi
 } // namespace tulpa

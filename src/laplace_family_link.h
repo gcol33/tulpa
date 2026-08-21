@@ -19,10 +19,6 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-#ifndef M_LN2
-#define M_LN2 0.693147180559945309417
-#endif
-
 namespace tulpa {
 
 // Default degrees of freedom for the Student-t (robust) family, used when no
@@ -197,9 +193,13 @@ inline double linkinv(double eta, const std::string& link) {
         double e = std::exp(eta);
         return e / (1.0 + e);
     }
-    if (link == "probit") return R::pnorm(eta, 0.0, 1.0, 1, 0);
+    if (link == "probit") return tulpa::math::portable_pnorm(eta);
     if (link == "cauchit") return 0.5 + std::atan(eta) / M_PI;
-    if (link == "cloglog") return 1.0 - std::exp(-std::exp(eta));
+    // -expm1(-a) keeps full relative accuracy for every a > 0; 1 - exp(-a)
+    // cancels as a -> 0 and rounds to exactly 0 once exp(eta) falls below the
+    // double spacing at 1, which is mu = 0, outside the support of every
+    // consumer of this link.
+    if (link == "cloglog") return -std::expm1(-std::exp(eta));
     if (link == "sqrt") return eta * eta;
     if (link == "1mu2") return 1.0 / std::sqrt(safe_pos_eta(eta));
     return tulpa_linalg::safe_exp(eta);
@@ -220,7 +220,7 @@ inline double mu_eta(double eta, const std::string& link) {
         }
         return p * (1.0 - p);
     }
-    if (link == "probit") return R::dnorm(eta, 0.0, 1.0, 0);
+    if (link == "probit") return tulpa::math::portable_dnorm(eta);
     if (link == "cauchit") return 1.0 / (M_PI * (1.0 + eta * eta));
     if (link == "cloglog") return std::exp(eta - std::exp(eta));
     if (link == "sqrt") return 2.0 * eta;
@@ -239,14 +239,14 @@ inline double mu_eta2(double eta, const std::string& link) {
         else         { double e = std::exp(eta);  p = e / (1.0 + e); }
         return p * (1.0 - p) * (1.0 - 2.0 * p);
     }
-    if (link == "probit") return -eta * R::dnorm(eta, 0.0, 1.0, 0);
+    if (link == "probit") return -eta * tulpa::math::portable_dnorm(eta);
     if (link == "cauchit") {
         const double d = 1.0 + eta * eta;
         return -2.0 * eta / (M_PI * d * d);
     }
     if (link == "cloglog") {
         const double ee = std::exp(eta);
-        return std::exp(eta - ee) * (1.0 - ee);
+        return std::exp(eta - ee) * (-std::expm1(eta));
     }
     if (link == "sqrt") return 2.0;
     if (link == "1mu2") { double e = safe_pos_eta(eta); return 0.75 / (e * e * std::sqrt(e)); }
@@ -266,7 +266,7 @@ inline double mu_eta3(double eta, const std::string& link) {
         else         { double e = std::exp(eta);  p = e / (1.0 + e); }
         return (1.0 - 6.0 * p + 6.0 * p * p) * p * (1.0 - p);
     }
-    if (link == "probit") return (eta * eta - 1.0) * R::dnorm(eta, 0.0, 1.0, 0);
+    if (link == "probit") return (eta * eta - 1.0) * tulpa::math::portable_dnorm(eta);
     if (link == "cauchit") {
         const double d = 1.0 + eta * eta;
         return 2.0 * (3.0 * eta * eta - 1.0) / (M_PI * d * d * d);
@@ -293,6 +293,42 @@ inline double mu_eta3(double eta, const std::string& link) {
                "defined in the R registry must be added to "
                "laplace_family_link.h before they can be fitted.",
                fn, family.c_str());
+}
+
+// The one floor on mu, applied identically by the density, the score, the
+// Newton working weight and both curvature ladders.
+//
+// A unit-interval family is held inside (0, 1); every other family with
+// positive support is held above the same epsilon; gaussian and lognormal have
+// unbounded support and are not clamped at all.
+//
+// One value, because the ladders differentiate the density: grad_mu is
+// proportional to 1 / mu for the binomial and the count families, so a wider
+// floor on the score than on the density scales the score by mu / floor while
+// the objective the line search reads is still evaluated at the true mu. The
+// two are then derivatives of different functions, and the Newton loop stops
+// where the clamped score vanishes rather than where the reported objective is
+// stationary.
+// The families the mu-space ladders below implement. Every one of variance_fn,
+// grad_mu, dgrad_mu_dmu, d2grad_mu_dmu2 and log_lik_mu carries exactly these
+// branches and calls unknown_family_stop on anything else, so the list lives
+// here rather than being restated by each caller that has to ask in advance.
+inline bool mu_space_family_supported(const std::string& base) {
+    return base == "gaussian" || base == "lognormal" || base == "binomial" ||
+           base == "poisson" || base == "neg_binomial_2" || base == "gamma" ||
+           base == "inverse_gaussian" || base == "beta";
+}
+
+constexpr double kMuFloor = 1e-15;
+
+inline double clamp_mu_unit(double mu) {
+    return std::max(std::min(mu, 1.0 - kMuFloor), kMuFloor);
+}
+
+inline double clamp_mu_for_family(double mu, const std::string& family) {
+    if (family == "binomial" || family == "beta") return clamp_mu_unit(mu);
+    if (family == "gaussian" || family == "lognormal") return mu;
+    return std::max(mu, kMuFloor);
 }
 
 // The WORKING variance: the V for which dmu^2 / V is the Fisher information per
@@ -322,7 +358,7 @@ inline double variance_fn(double mu, double phi, const std::string& family, int 
         // Working variance: V s.t. dmu^2 / V = Fisher info per obs on eta.
         // Fisher info = phi^2 * (trigamma(mu*phi) + trigamma((1-mu)*phi)) * dmu^2
         // (Ferrari & Cribari-Neto 2004).
-        double tg = R::trigamma(mu * phi) + R::trigamma((1.0 - mu) * phi);
+        double tg = tulpa::math::portable_trigamma(mu * phi) + tulpa::math::portable_trigamma((1.0 - mu) * phi);
         return 1.0 / (phi * phi * tg);
     }
     unknown_family_stop("variance_fn", family);
@@ -347,7 +383,7 @@ inline double grad_mu(double y, double mu, double phi, const std::string& family
         // d log f / d mu = phi * (y* - mu*) with y* = logit(y),
         // mu* = digamma(mu*phi) - digamma((1-mu)*phi).
         double y_star  = std::log(y) - std::log(1.0 - y);
-        double mu_star = R::digamma(mu * phi) - R::digamma((1.0 - mu) * phi);
+        double mu_star = tulpa::math::portable_digamma(mu * phi) - tulpa::math::portable_digamma((1.0 - mu) * phi);
         return phi * (y_star - mu_star);
     }
     unknown_family_stop("grad_mu", family);
@@ -387,8 +423,8 @@ inline double dgrad_mu_dmu(double y, double mu, double phi,
         return -(3.0 * y - 2.0 * mu) / (phi * m2 * m2);
     }
     if (family == "beta") {
-        return -phi * phi * (R::trigamma(mu * phi)
-                             + R::trigamma((1.0 - mu) * phi));
+        return -phi * phi * (tulpa::math::portable_trigamma(mu * phi)
+                             + tulpa::math::portable_trigamma((1.0 - mu) * phi));
     }
     unknown_family_stop("dgrad_mu_dmu", family);
 }
@@ -418,8 +454,8 @@ inline double d2grad_mu_dmu2(double y, double mu, double phi,
     }
     if (family == "beta") {
         const double p3 = phi * phi * phi;
-        return -p3 * (R::psigamma(mu * phi, 2)
-                      - R::psigamma((1.0 - mu) * phi, 2));
+        return -p3 * (tulpa::math::portable_tetragamma(mu * phi)
+                      - tulpa::math::portable_tetragamma((1.0 - mu) * phi));
     }
     unknown_family_stop("d2grad_mu_dmu2", family);
 }
@@ -436,24 +472,24 @@ inline double log_lik_mu(double y, double mu, double phi, const std::string& fam
                - r * r / (2.0 * phi * phi);
     }
     if (family == "binomial") {
-        double p = std::max(std::min(mu, 1.0 - 1e-15), 1e-15);
+        double p = clamp_mu_unit(mu);
         // lchoose keeps this a true log-density, matching the poisson arm below
         // (which keeps its lgamma(y+1)), dbinom(), and the other kernels.
         return (int)y * std::log(p) + (n_trials - (int)y) * std::log(1.0 - p)
-               + R::lchoose((double) n_trials, y);
+               + tulpa::math::portable_lchoose((double) n_trials, y);
     }
     if (family == "poisson") {
-        double safe_mu = std::max(mu, 1e-15);
-        return (int)y * std::log(safe_mu) - safe_mu - R::lgammafn((int)y + 1.0);
+        double safe_mu = std::max(mu, kMuFloor);
+        return (int)y * std::log(safe_mu) - safe_mu - tulpa::math::portable_lgamma((int)y + 1.0);
     }
     if (family == "neg_binomial_2") {
-        double safe_mu = std::max(mu, 1e-15);
-        return R::lgammafn((int)y + phi) - R::lgammafn(phi) - R::lgammafn((int)y + 1.0)
+        double safe_mu = std::max(mu, kMuFloor);
+        return tulpa::math::portable_lgamma((int)y + phi) - tulpa::math::portable_lgamma(phi) - tulpa::math::portable_lgamma((int)y + 1.0)
                + phi * std::log(phi / (safe_mu + phi))
                + (int)y * std::log(safe_mu / (safe_mu + phi));
     }
     if (family == "gamma") {
-        return phi * std::log(phi) - R::lgammafn(phi) + (phi - 1.0) * std::log(y)
+        return phi * std::log(phi) - tulpa::math::portable_lgamma(phi) + (phi - 1.0) * std::log(y)
                - phi * std::log(mu) - phi * y / mu;
     }
     if (family == "inverse_gaussian") {
@@ -464,7 +500,7 @@ inline double log_lik_mu(double y, double mu, double phi, const std::string& fam
     if (family == "beta") {
         double a = mu * phi;
         double b = (1.0 - mu) * phi;
-        return R::lgammafn(phi) - R::lgammafn(a) - R::lgammafn(b)
+        return tulpa::math::portable_lgamma(phi) - tulpa::math::portable_lgamma(a) - tulpa::math::portable_lgamma(b)
                + (a - 1.0) * std::log(y) + (b - 1.0) * std::log(1.0 - y);
     }
     unknown_family_stop("log_lik_mu", family);
@@ -484,8 +520,8 @@ inline double log_lik_tweedie(double y, double mu, double phi, double p) {
     const double b  = std::pow(mu, 1.0 - p) / (phi * (p - 1.0));
     const double la = std::log(lam), lb = std::log(b), ly = std::log(y);
     auto logterm = [&](double n) {
-        return n * la - R::lgammafn(n + 1.0) + n * a * lb
-             + (n * a - 1.0) * ly - R::lgammafn(n * a);
+        return n * la - tulpa::math::portable_lgamma(n + 1.0) + n * a * lb
+             + (n * a - 1.0) * ly - tulpa::math::portable_lgamma(n * a);
     };
     const double jmax = std::pow(y, 2.0 - p) / (phi * (2.0 - p));
     const int n0 = std::max(1, (int)std::lround(jmax));
@@ -545,8 +581,7 @@ inline TruncationTerm truncation_term(double a, double da, double d2a) {
     const double q = std::exp(-a);              // P(Y = 0)
     t.p = -std::expm1(-a);
     const double psafe = t.p > 1e-300 ? t.p : 1e-300;
-    // log(1 - exp(-a)): expm1 near 0, log1p in the tail (Machler 2012).
-    t.log_p = (a <= M_LN2) ? std::log(-std::expm1(-a)) : std::log1p(-q);
+    t.log_p = tulpa::math::log1m_exp(a);
     const double dp  = q * da;
     const double d2p = q * (d2a - da * da);
     t.dlog_p  = dp / psafe;
@@ -643,12 +678,12 @@ inline GradHess grad_hess_for_family_core(
         // n mu(1-mu) / D with the overdispersion factor D = 1 + (n-1)/(phi+1)
         // (D -> 1 recovers the binomial weight as phi -> Inf). Always positive.
         double mu = linkinv(eta, "logit");
-        mu = std::max(std::min(mu, 1.0 - 1e-7), 1e-7);
+        mu = clamp_mu_unit(mu);
         double a = mu * phi, b = (1.0 - mu) * phi;
         double dmu = mu * (1.0 - mu);
         double n = (double)n_trials;
-        double grad = phi * (R::digamma(y + a) - R::digamma(a)
-                             - R::digamma(n - y + b) + R::digamma(b)) * dmu;
+        double grad = phi * (tulpa::math::portable_digamma(y + a) - tulpa::math::portable_digamma(a)
+                             - tulpa::math::portable_digamma(n - y + b) + tulpa::math::portable_digamma(b)) * dmu;
         double D = 1.0 + (n - 1.0) / (phi + 1.0);
         return {grad, n * mu * (1.0 - mu) / D};
     }
@@ -678,11 +713,7 @@ inline GradHess grad_hess_for_family_core(
 
     double mu = linkinv(eta, fl->link);
     double dmu = mu_eta(eta, fl->link);
-    if (fl->family == "binomial" || fl->family == "beta") {
-        mu = std::max(std::min(mu, 1.0 - 1e-7), 1e-7);
-    } else if (fl->family != "gaussian" && fl->family != "lognormal") {
-        mu = std::max(mu, 1e-10);
-    }
+    mu = clamp_mu_for_family(mu, fl->family);
 
     double g = grad_mu(y, mu, phi, fl->family, n_trials);
     double V = variance_fn(mu, phi, fl->family, n_trials);
@@ -738,7 +769,7 @@ inline double log_lik_for_family_core(
         const double mu = std::max(tulpa_linalg::safe_exp(eta), 1e-15);
         const double r  = mu / phi;
         const double yi = (double)(int)y;
-        return R::lgammafn(yi + r) - R::lgammafn(r) - R::lgammafn(yi + 1.0)
+        return tulpa::math::portable_lgamma(yi + r) - tulpa::math::portable_lgamma(r) - tulpa::math::portable_lgamma(yi + 1.0)
              - (yi + r) * std::log1p(phi) + yi * std::log(phi);
     }
     if (kind == FamilyKind::TRUNCATED_POISSON ||
@@ -755,17 +786,17 @@ inline double log_lik_for_family_core(
     }
     if (kind == FamilyKind::BETA_BINOMIAL) {
         double mu = linkinv(eta, "logit");
-        mu = std::max(std::min(mu, 1.0 - 1e-15), 1e-15);
+        mu = clamp_mu_unit(mu);
         double a = mu * phi, b = (1.0 - mu) * phi;
         double n = (double)n_trials, yi = (double)(int)y;
-        return R::lchoose(n, yi)
-             + R::lgammafn(yi + a) + R::lgammafn(n - yi + b) - R::lgammafn(n + a + b)
-             - R::lgammafn(a) - R::lgammafn(b) + R::lgammafn(a + b);
+        return tulpa::math::portable_lchoose(n, yi)
+             + tulpa::math::portable_lgamma(yi + a) + tulpa::math::portable_lgamma(n - yi + b) - tulpa::math::portable_lgamma(n + a + b)
+             - tulpa::math::portable_lgamma(a) - tulpa::math::portable_lgamma(b) + tulpa::math::portable_lgamma(a + b);
     }
     if (kind == FamilyKind::STUDENT_T) {
         const double nu = std::isnan(phi2) ? kStudentTDf : phi2;
         double r = (y - eta) / phi;
-        return R::lgammafn((nu + 1.0) / 2.0) - R::lgammafn(nu / 2.0)
+        return tulpa::math::portable_lgamma((nu + 1.0) / 2.0) - tulpa::math::portable_lgamma(nu / 2.0)
              - 0.5 * std::log(nu * M_PI * phi * phi)
              - 0.5 * (nu + 1.0) * std::log1p(r * r / nu);
     }
@@ -780,11 +811,7 @@ inline double log_lik_for_family_core(
     // line search from stepping out of the domain; see link_eta_in_domain.
     if (pos_eta_domain && eta <= 0.0) return R_NegInf;
     double mu = linkinv(eta, fl->link);
-    if (fl->family == "binomial" || fl->family == "beta") {
-        mu = std::max(std::min(mu, 1.0 - 1e-15), 1e-15);
-    } else if (fl->family != "gaussian" && fl->family != "lognormal") {
-        mu = std::max(mu, 1e-15);
-    }
+    mu = clamp_mu_for_family(mu, fl->family);
     return log_lik_mu(y, mu, phi, fl->family, n_trials);
 }
 
@@ -822,11 +849,7 @@ inline double log_lik_for_family(
 // of them at once instead of each carrying its own copy of the list.
 inline bool generic_mu_route_exact(const std::string& family) {
     FamilyLink fl = parse_family_link(family);
-    const bool fam_ok =
-        fl.family == "gaussian" || fl.family == "lognormal" ||
-        fl.family == "binomial" || fl.family == "poisson" ||
-        fl.family == "neg_binomial_2" || fl.family == "gamma" ||
-        fl.family == "inverse_gaussian" || fl.family == "beta";
+    const bool fam_ok = mu_space_family_supported(fl.family);
     const bool link_ok =
         fl.link == "identity" || fl.link == "log" || fl.link == "inverse" ||
         fl.link == "logit" || fl.link == "probit" || fl.link == "cauchit" ||
@@ -920,6 +943,17 @@ inline bool has_discrete_mass(const std::string& family) {
 // delegation below is exact, not an approximation. neg_binomial_2 also
 // coincides: neg_hess_log_lik_negbin already returns (y + phi) phi mu /
 // (mu + phi)^2, the observed form.
+// Whether a family code reaches a compiled branch at all. A code that does not
+// is the programming error unknown_family_stop names, and the point of asking
+// in advance is WHERE the error is raised: Rcpp::stop throws, and an exception
+// leaving an OpenMP structured block is std::terminate rather than an R error,
+// so every entry that puts a family dispatch inside tulpa_parallel_sum resolves
+// the family and asks this on the calling thread first.
+inline bool family_has_compiled_impl(const std::string& code) {
+    if (family_kind(code) != FamilyKind::GENERIC) return true;
+    return mu_space_family_supported(parse_family_link(code).family);
+}
+
 inline GradHess obs_grad_hess_for_family(
     double y, int n_trials, double eta,
     const std::string& family, double phi,
@@ -956,13 +990,13 @@ inline GradHess obs_grad_hess_for_family(
         // eta. The working weight is the moment form n mu(1-mu) / D instead, so
         // the two differ per observation AND in expectation.
         double mu = linkinv(eta, "logit");
-        mu = std::max(std::min(mu, 1.0 - 1e-7), 1e-7);
+        mu = clamp_mu_unit(mu);
         const double a = mu * phi, b = (1.0 - mu) * phi;
         const double dmu = mu * (1.0 - mu), n = (double)n_trials;
-        const double grad = phi * (R::digamma(y + a) - R::digamma(a)
-                                   - R::digamma(n - y + b) + R::digamma(b)) * dmu;
-        const double tg = R::trigamma(a) + R::trigamma(b)
-                          - R::trigamma(y + a) - R::trigamma(n - y + b);
+        const double grad = phi * (tulpa::math::portable_digamma(y + a) - tulpa::math::portable_digamma(a)
+                                   - tulpa::math::portable_digamma(n - y + b) + tulpa::math::portable_digamma(b)) * dmu;
+        const double tg = tulpa::math::portable_trigamma(a) + tulpa::math::portable_trigamma(b)
+                          - tulpa::math::portable_trigamma(y + a) - tulpa::math::portable_trigamma(n - y + b);
         return {grad, phi * phi * tg * dmu * dmu - (1.0 - 2.0 * mu) * grad};
     }
     if (family == "t") {
@@ -1000,11 +1034,7 @@ inline GradHess obs_grad_hess_for_family(
         // would leave the difference at rounding noise rather than at zero.
         FamilyLink fl = parse_family_link(family);
         double mu = linkinv(eta, fl.link);
-        if (fl.family == "binomial" || fl.family == "beta") {
-            mu = std::max(std::min(mu, 1.0 - 1e-7), 1e-7);
-        } else if (fl.family != "gaussian" && fl.family != "lognormal") {
-            mu = std::max(mu, 1e-10);
-        }
+        mu = clamp_mu_for_family(mu, fl.family);
         const double u  = mu_eta(eta, fl.link);
         const double u1 = mu_eta2(eta, fl.link);
         const double g  = grad_mu(y, mu, phi, fl.family, n_trials);
@@ -1026,19 +1056,19 @@ inline GradHess obs_grad_hess_for_family(
 inline double log_lik_beta_grouped(double slog_y, double slog_1my, int n,
                                    double eta, double phi) {
     double mu = linkinv(eta, "logit");
-    mu = std::max(std::min(mu, 1.0 - 1e-15), 1e-15);
+    mu = clamp_mu_unit(mu);
     double a = mu * phi;
     double b = (1.0 - mu) * phi;
     return (a - 1.0) * slog_y + (b - 1.0) * slog_1my
-           + (double)n * (R::lgammafn(phi) - R::lgammafn(a) - R::lgammafn(b));
+           + (double)n * (tulpa::math::portable_lgamma(phi) - tulpa::math::portable_lgamma(a) - tulpa::math::portable_lgamma(b));
 }
 
 inline GradHess grad_hess_beta_grouped(double slog_y, double slog_1my, int n,
                                        double eta, double phi) {
     double mu  = linkinv(eta, "logit");
     double dmu = mu_eta(eta, "logit");
-    mu = std::max(std::min(mu, 1.0 - 1e-7), 1e-7);
-    double mu_star = R::digamma(mu * phi) - R::digamma((1.0 - mu) * phi);
+    mu = clamp_mu_unit(mu);
+    double mu_star = tulpa::math::portable_digamma(mu * phi) - tulpa::math::portable_digamma((1.0 - mu) * phi);
     double g_mu = phi * ((slog_y - slog_1my) - (double)n * mu_star);
     double V = variance_fn(mu, phi, "beta", 1);
     return { g_mu * dmu, (double)n * dmu * dmu / V };
@@ -1058,9 +1088,40 @@ inline GradHess grad_hess_beta_grouped(double slog_y, double slog_1my, int n,
 //   -d2 logP/d eta2 = g^2 - (zl phi(zl) - zu phi(zu)) / (sigma^2 P)
 //
 // with zl = (lower - eta)/sigma, zu = (upper - eta)/sigma, phi the standard
-// normal density (0 at +/-Inf, as is z phi(z)). The mass P is differenced in the
-// accurate tail to avoid catastrophic cancellation when eta sits far from the
-// class.
+// normal density (0 at +/-Inf, as is z phi(z)). Everything is formed in log
+// space: the mass is differenced in whichever tail keeps its exponent, and the
+// two ratios are exponentiated only after the subtraction, so an eta many sigma
+// from the class still reports the gradient that points back toward it.
+// A real number carried as a sign and a log magnitude, so a difference of two
+// quantities that both underflow on the natural scale can still be formed and
+// divided by a third that underflows with them.
+struct SignedLog {
+    double sign;     // -1, 0 or +1
+    double log_mag;  // log |value|; -Inf when the value is zero
+};
+
+// exp(la) - exp(lb).
+inline SignedLog signed_log_diff(double la, double lb) {
+    if (la == lb) return SignedLog{0.0, R_NegInf};
+    const bool a_bigger = la > lb;
+    const double hi = a_bigger ? la : lb;
+    const double lo = a_bigger ? lb : la;
+    return SignedLog{a_bigger ? 1.0 : -1.0,
+                     hi + tulpa::math::log1m_exp(hi - lo)};
+}
+
+inline SignedLog signed_log_add(const SignedLog& a, const SignedLog& b) {
+    if (a.sign == 0.0) return b;
+    if (b.sign == 0.0) return a;
+    if (a.sign == b.sign) {
+        const double hi = a.log_mag > b.log_mag ? a.log_mag : b.log_mag;
+        const double lo = a.log_mag > b.log_mag ? b.log_mag : a.log_mag;
+        return SignedLog{a.sign, hi + std::log1p(std::exp(lo - hi))};
+    }
+    const SignedLog d = signed_log_diff(a.log_mag, b.log_mag);
+    return SignedLog{d.sign * a.sign, d.log_mag};
+}
+
 struct IntervalGaussian {
     double ll;        // log P
     double grad;      // d logP / d eta
@@ -1069,44 +1130,75 @@ struct IntervalGaussian {
 
 inline IntervalGaussian interval_gaussian_core(double lower, double upper,
                                                double eta, double sigma) {
+    using tulpa::math::portable_dnorm_log;
+    using tulpa::math::portable_pnorm;
+    using tulpa::math::portable_pnorm_log;
+
     const double inv_s = 1.0 / sigma;
     const bool lo_open = !R_finite(lower);   // -Inf
     const bool hi_open = !R_finite(upper);   // +Inf
     const double zl = lo_open ? R_NegInf : (lower - eta) * inv_s;
     const double zu = hi_open ? R_PosInf : (upper - eta) * inv_s;
 
-    // Mass P = Phi(zu) - Phi(zl), differenced in the accurate tail.
-    double P;
+    // log P = log(Phi(zu) - Phi(zl)), differenced in whichever tail keeps its
+    // exponent: below the median both pieces are read from the lower tail,
+    // above it both from the upper, and a straddling interval carries mass of
+    // order one in both so the natural-scale difference is well conditioned.
+    // Differencing the probabilities themselves and flooring the result gives a
+    // finite log, a zero gradient and a floored curvature once both tails
+    // underflow -- a plateau of the floor, which the convergence test reads as
+    // a mode and the line search accepts because it is finite.
+    double logP;
     if (lo_open && hi_open) {
-        P = 1.0;
+        logP = 0.0;
     } else if (lo_open) {
-        P = R::pnorm(zu, 0.0, 1.0, 1, 0);              // Phi(zu)
+        logP = portable_pnorm_log(zu);
     } else if (hi_open) {
-        P = R::pnorm(zl, 0.0, 1.0, 0, 0);              // 1 - Phi(zl)
+        logP = portable_pnorm_log(-zl);
     } else if (zu <= 0.0) {
-        P = R::pnorm(zu, 0.0, 1.0, 1, 0) - R::pnorm(zl, 0.0, 1.0, 1, 0);
+        logP = signed_log_diff(portable_pnorm_log(zu),
+                               portable_pnorm_log(zl)).log_mag;
     } else if (zl >= 0.0) {
-        P = R::pnorm(zl, 0.0, 1.0, 0, 0) - R::pnorm(zu, 0.0, 1.0, 0, 0);
+        logP = signed_log_diff(portable_pnorm_log(-zl),
+                               portable_pnorm_log(-zu)).log_mag;
     } else {
-        P = R::pnorm(zu, 0.0, 1.0, 1, 0) - R::pnorm(zl, 0.0, 1.0, 1, 0);
+        const double P = portable_pnorm(zu) - portable_pnorm(zl);
+        logP = P > 0.0 ? std::log(P) : R_NegInf;
     }
-    const double Psafe = P > 1e-300 ? P : 1e-300;
 
-    const double pl = lo_open ? 0.0 : R::dnorm(zl, 0.0, 1.0, 0);
-    const double pu = hi_open ? 0.0 : R::dnorm(zu, 0.0, 1.0, 0);
-    // z * phi(z) -> 0 as |z| -> Inf. Guard the Inf * 0 = NaN that arises when a
-    // FINITE bound sits far from eta: zl / zu overflow to +/-Inf while the
-    // density underflows to 0. The analytic limit of the product is 0.
-    const double zpl = (lo_open || pl == 0.0 || !R_finite(zl)) ? 0.0 : zl * pl;
-    const double zpu = (hi_open || pu == 0.0 || !R_finite(zu)) ? 0.0 : zu * pu;
+    // An interval carrying no mass -- upper <= lower -- is outside the support.
+    // -Inf is what the line search refuses, so the solve backtracks off it
+    // instead of reporting it as a mode.
+    if (!(logP > R_NegInf)) return { R_NegInf, 0.0, 1e-12 };
 
-    const double Pprime = (pl - pu) * inv_s;                       // dP/d eta
-    const double Pdd    = (zpl - zpu) * inv_s * inv_s;             // d2P/d eta2
-    const double g  = Pprime / Psafe;
-    double nh = g * g - Pdd / Psafe;
+    const double lpl = lo_open ? R_NegInf : portable_dnorm_log(zl);
+    const double lpu = hi_open ? R_NegInf : portable_dnorm_log(zu);
+
+    // dP/deta = (phi(zl) - phi(zu)) / sigma, formed from the logs so the ratio
+    // to P stays finite where both densities underflow individually.
+    const SignedLog dP = signed_log_diff(lpl, lpu);
+    const double g = (dP.sign == 0.0)
+        ? 0.0
+        : dP.sign * std::exp(dP.log_mag - logP) * inv_s;
+
+    // d2P/deta2 = (zl phi(zl) - zu phi(zu)) / sigma^2, with the minus of the
+    // second term carried in its sign. z phi(z) -> 0 as |z| -> Inf, the limit
+    // an open bound takes.
+    const SignedLog t_l = (lo_open || !R_finite(zl) || zl == 0.0)
+        ? SignedLog{0.0, R_NegInf}
+        : SignedLog{zl > 0.0 ? 1.0 : -1.0, std::log(std::fabs(zl)) + lpl};
+    const SignedLog t_u = (hi_open || !R_finite(zu) || zu == 0.0)
+        ? SignedLog{0.0, R_NegInf}
+        : SignedLog{zu > 0.0 ? -1.0 : 1.0, std::log(std::fabs(zu)) + lpu};
+    const SignedLog d2P = signed_log_add(t_l, t_u);
+    const double Pdd_over_P = (d2P.sign == 0.0)
+        ? 0.0
+        : d2P.sign * std::exp(d2P.log_mag - logP) * inv_s * inv_s;
+
+    double nh = g * g - Pdd_over_P;
     if (nh < 1e-12) nh = 1e-12;   // log-concave; guard roundoff at the flat tail
 
-    return { std::log(Psafe), g, nh };
+    return { logP, g, nh };
 }
 
 inline double log_lik_interval_gaussian(double lower, double upper,
@@ -1163,8 +1255,9 @@ inline TruncatedGaussian truncated_gaussian_core(double y, double u_upper,
         lambda   = 0.0;
     } else {
         a = (u_upper - eta) * inv_s;
-        logPhi_a = R::pnorm(a, 0.0, 1.0, 1, 1);                   // log Phi(a)
-        lambda   = std::exp(R::dnorm(a, 0.0, 1.0, 1) - logPhi_a); // phi(a)/Phi(a), stable
+        logPhi_a = tulpa::math::portable_pnorm_log(a);            // log Phi(a)
+        lambda   = std::exp(tulpa::math::portable_dnorm_log(a)
+                            - logPhi_a);                          // phi(a)/Phi(a), stable
     }
 
     const double ll = -0.5 * std::log(2.0 * M_PI * sigma * sigma)
@@ -1194,17 +1287,27 @@ inline double compute_total_log_lik(
     const Rcpp::NumericVector& eta, int N,
     const std::string& family, double phi, int n_threads
 ) {
-    // This entry carries no phi2, so tweedie (which requires the variance
-    // power) can never evaluate here: stop on the calling thread BEFORE the
-    // parallel region — the per-observation stop inside an omp reduction
-    // body would escape the structured block, which is std::terminate.
+    // Both stops below run on the calling thread BEFORE the parallel region —
+    // the per-observation stop inside an omp reduction body would escape the
+    // structured block, which is std::terminate. This entry carries no phi2, so
+    // tweedie (which requires the variance power) can never evaluate here; an
+    // unregistered family would reach unknown_family_stop from log_lik_mu.
     if (family == "tweedie") {
         Rcpp::stop("family 'tweedie' needs phi2 (the variance power p); "
                    "route it through the LikelihoodSpec path, which carries "
                    "phi2.");
     }
+    if (!family_has_compiled_impl(family)) {
+        unknown_family_stop("compute_total_log_lik", family);
+    }
+    // Resolving once also takes the family_kind ladder and the link parse out
+    // of the per-observation body.
+    const FamilyResolved fr = resolve_family(family);
+    const double phi2 = std::numeric_limits<double>::quiet_NaN();
     return tulpa_parallel_sum(n_threads, N, [&](int i) {
-        return log_lik_for_family(y[i], n_trials[i], eta[i], family, phi);
+        return log_lik_for_family(
+            y[i], n_trials[i], eta[i], fr, phi, phi2,
+            log_lik_const_for_kind(y[i], n_trials[i], fr.kind));
     });
 }
 
@@ -1217,10 +1320,15 @@ inline double compute_total_log_lik(
     const Rcpp::NumericVector& eta, int N,
     const FamilyResolved& fr, const double* ll_const, double phi, int n_threads
 ) {
+    // Raised on the calling thread, ahead of the parallel region: see the
+    // entry above.
     if (fr.kind == FamilyKind::TWEEDIE) {
         Rcpp::stop("family 'tweedie' needs phi2 (the variance power p); "
                    "route it through the LikelihoodSpec path, which carries "
                    "phi2.");
+    }
+    if (!family_has_compiled_impl(fr.code)) {
+        unknown_family_stop("compute_total_log_lik", fr.code);
     }
     const double phi2 = std::numeric_limits<double>::quiet_NaN();
     // This is the sum the Newton line search reaches, so it is evaluated once

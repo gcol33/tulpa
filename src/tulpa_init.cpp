@@ -1,5 +1,7 @@
 #include <Rcpp.h>
 #include <R_ext/Rdynload.h>
+#include <algorithm>
+#include <cstddef>
 #include <string>
 #include <cstring>
 #include "hmc_sampler.h"
@@ -17,13 +19,28 @@ static void fill_nuts_result_from_cpp(
     const tulpa_hmc::HMCResultCpp& hmc,
     int n_params
 ) {
-    out->n_sample = hmc.n_sample;
     out->n_params = n_params;
     out->epsilon = hmc.epsilon;
     std::strncpy(out->sampler, hmc.sampler.c_str(), 63);
     out->sampler[63] = '\0';
 
     int ns = hmc.n_sample;
+    // Every per-iteration vector has to reach ns, and so does the flat draw
+    // storage; a short one truncates the copy rather than reading past its end.
+    if (ns < 0) ns = 0;
+    const std::size_t need = static_cast<std::size_t>(ns);
+    if (hmc.log_prob.size() < need)    ns = static_cast<int>(hmc.log_prob.size());
+    if (hmc.accept_prob.size() < need) ns = std::min<int>(ns, static_cast<int>(hmc.accept_prob.size()));
+    if (hmc.divergent.size() < need)   ns = std::min<int>(ns, static_cast<int>(hmc.divergent.size()));
+    if (hmc.treedepth.size() < need)   ns = std::min<int>(ns, static_cast<int>(hmc.treedepth.size()));
+    if (hmc.n_params_stored < n_params) {
+        ns = 0;
+    } else if (hmc.n_params_stored > 0) {
+        ns = std::min<int>(ns, static_cast<int>(
+            hmc.samples_flat.size() / static_cast<std::size_t>(hmc.n_params_stored)));
+    }
+    out->n_sample = ns;
+
     // size_t products: int * int overflows (UB) before ~2.1e9 elements, which
     // a large-latent multi-chain run can reach.
     out->samples = new double[static_cast<std::size_t>(ns) * n_params];
@@ -155,6 +172,10 @@ static void tulpa_run_nuts_chains_impl(
         layout            // honour the caller's layout
     );
 
+    if (static_cast<int>(chains.size()) != n_chains) {
+        Rcpp::stop("multi-chain run returned %d chains, expected %d",
+                   static_cast<int>(chains.size()), n_chains);
+    }
     for (int c = 0; c < n_chains; c++) {
         fill_nuts_result_from_cpp(&results_out[c], chains[c], n_params);
     }

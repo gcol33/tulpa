@@ -165,6 +165,76 @@ test_that("joint NUTS and outer-theta NUTS agree on theta means within MC error"
 })
 
 # ---------------------------------------------------------------------------
+# (b2) The joint gradient against central differences (gcol33/tulpa#479).
+#
+# (beta, z) have closed-form gradients and are limited only by the outer
+# difference rule. The theta gradient is itself a central difference at
+# `fd_step` on Q, mu and log p(theta), so it carries that rule's own
+# O(fd_step^2) truncation and is held to a looser bound -- the two are reported
+# separately for exactly that reason.
+#
+# The error is read RELATIVE to the gradient's own scale, and `grad_scale` is
+# asserted positive first: an absolute agreement on a gradient that is
+# identically zero says nothing. `n_zero` is the guard against an absent block,
+# which is how a dropped term hides without making any number wrong.
+# ---------------------------------------------------------------------------
+
+test_that("the joint (beta, z, theta) gradient matches central differences", {
+  cpp_file <- .joint_cpp_example_path()
+
+  n <- 80L
+  init   <- c(log_sigma = 0, atanh_rho = atanh(0.5))
+  bounds <- list(lower = c(log(0.3), atanh(0.0)),
+                 upper = c(log(3.0), atanh(0.95)))
+  blk <- tgmrf_cpp(cpp_file = cpp_file, id = "tgmrf_periodic_ar1",
+                   init = init, bounds = bounds,
+                   name = "periodic_ar1_cpp")
+
+  set.seed(818)
+  z <- as.numeric(arima.sim(list(ar = 0.6), n = n, sd = 0.7))
+  X <- matrix(1, nrow = n, ncol = 1L)
+  y <- rpois(n, exp(0.3 + z))
+
+  fit <- tulpa_tgmrf(
+    y = y, n_trials = rep(1L, n), X = X, block = blk,
+    family = "poisson", mode = "nuts_joint",
+    n_iter = 6L, warmup = 3L, max_depth = 2L, seed = 77L,
+    debug_gradient_check = TRUE, gradient_check_tol = 0
+  )
+
+  gc <- fit$gradient_check
+  expect_false(is.null(gc))
+
+  report <- sprintf(
+    paste0("joint gradient: |grad|_max = %.4g, max rel = %.3g at index %d, ",
+           "beta %.3g / z %.3g / theta %.3g, %d of %d entries zero, ",
+           "%d of %d checked"),
+    gc$grad_scale, gc$max_rel, gc$worst_index,
+    gc$max_rel_beta, gc$max_rel_z, gc$max_rel_theta,
+    gc$n_zero, gc$n_params, gc$n_checked, gc$n_params)
+
+  expect_gt(gc$grad_scale, 0)
+  expect_equal(gc$n_checked, gc$n_params)
+  expect_equal(gc$n_zero, 0L, label = report)
+  expect_lt(gc$max_rel_beta, 1e-6, label = report)
+  expect_lt(gc$max_rel_z, 1e-6, label = report)
+  # Bounded by the inner fd_step = 1e-3 rule the theta gradient is built from,
+  # not by the outer difference.
+  expect_lt(gc$max_rel_theta, 1e-3, label = report)
+
+  # The tolerance is an assertion, not a printed number: an impossible one
+  # stops the fit.
+  expect_error(
+    tulpa_tgmrf(
+      y = y, n_trials = rep(1L, n), X = X, block = blk,
+      family = "poisson", mode = "nuts_joint",
+      n_iter = 6L, warmup = 3L, max_depth = 2L, seed = 77L,
+      debug_gradient_check = TRUE, gradient_check_tol = 1e-30
+    ),
+    regexp = "central differences")
+})
+
+# ---------------------------------------------------------------------------
 # (c) Refuses R-backend block with a clear message.
 # ---------------------------------------------------------------------------
 

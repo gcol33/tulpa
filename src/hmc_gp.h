@@ -38,15 +38,17 @@ using tulpa_svc::compute_cov;
 // value. They are the contract between those copies: the gradients are
 // finite-differenced from the double log-likelihood, so if the copies condition
 // the neighbour covariance differently the value and the gradient describe
-// different models. (They did: the autodiff copy added its jitter only to an
-// already-degenerate pivot, so on well-conditioned input it added none while the
-// double copies added kGpJitter to every diagonal.)
+// different models.
 //
-// The GP kernel conditions more tightly than the SVC one (tulpa_svc::kSvcJitter
-// / kSvcVarFloor); that split is deliberate, and is why these are per-kernel
-// constants rather than a shared default.
-constexpr double kGpJitter = 1e-8;
-constexpr double kGpVarFloor = 1e-10;
+// kGpJitter is a diagonal NUGGET on the neighbour covariance and kGpVarFloor a
+// bound on the conditional variance -- two different objects, so they are named
+// separately. Both are the tulpa_linalg values, which the Laplace NNGP kernel
+// (gpu_nngp_laplace.h) and the Polya-Gamma sweep (pg_shared.h) also read, so
+// the same GP field is conditioned identically whether it is sampled,
+// Laplace-approximated or Gibbs-swept. The SVC kernel runs a deliberately
+// looser pair of its own (tulpa_svc::kSvcJitter / kSvcVarFloor).
+constexpr double kGpJitter = tulpa_linalg::kNngpNugget;
+constexpr double kGpVarFloor = tulpa_linalg::kNngpVarFloor;
 
 // Parse sampler string to enum
 inline MSGPSampler parse_msgp_sampler(const std::string& s) {

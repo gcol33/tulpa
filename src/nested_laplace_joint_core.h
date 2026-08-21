@@ -70,7 +70,7 @@ inline int parse_joint_arms(
         pa.n_re_groups = Rcpp::as<int>(a["n_re_groups"]);
         pa.sigma_re    = Rcpp::as<double>(a["sigma_re"]);
         pa.tau_re      = (pa.n_re_groups > 0)
-                         ? 1.0 / (pa.sigma_re * pa.sigma_re + 1e-10)
+                         ? 1.0 / (pa.sigma_re * pa.sigma_re + RE_VARIANCE_FLOOR)
                          : 0.0;
         pa.beta_start  = n_x_running;
         n_x_running   += pa.p;
@@ -85,6 +85,13 @@ inline int parse_joint_arms(
                 Rcpp::stop("Arm %d: length(beta_prior_mean) (%d) != p (%d).",
                            k + 1, (int)pa.beta_prior_mean.size(), pa.p);
             }
+            for (int j = 0; j < pa.p; j++) {
+                if (!R_finite(pa.beta_prior_mean[j])) {
+                    Rcpp::stop("Arm %d: beta_prior_mean[%d] is %g; a prior mean "
+                               "must be finite.",
+                               k + 1, j + 1, pa.beta_prior_mean[j]);
+                }
+            }
         }
         if (a.containsElementNamed("beta_prior_prec")) {
             pa.beta_prior_prec =
@@ -92,6 +99,24 @@ inline int parse_joint_arms(
             if ((int)pa.beta_prior_prec.size() != pa.p) {
                 Rcpp::stop("Arm %d: length(beta_prior_prec) (%d) != p (%d).",
                            k + 1, (int)pa.beta_prior_prec.size(), pa.p);
+            }
+            // A precision is finite and strictly positive. Zero reads as "no
+            // prior on this coefficient" to the gradient and the Hessian (both
+            // contributions vanish) but sends the log-prior to -Inf through
+            // log(prec), which drops the whole cell out of the grid
+            // integration; a negative entry removes curvature from the Newton
+            // system and makes the cell's log-marginal NaN. Neither is a
+            // spelling of "leave this coefficient unpenalized" -- omitting the
+            // vector is, and that applies the weak DEFAULT_TAU_BETA ridge.
+            for (int j = 0; j < pa.p; j++) {
+                const double prec = pa.beta_prior_prec[j];
+                if (!R_finite(prec) || prec <= 0.0) {
+                    Rcpp::stop("Arm %d: beta_prior_prec[%d] is %g; every entry "
+                               "must be finite and strictly positive. Omit "
+                               "`beta_prior_prec` on this arm to leave its "
+                               "coefficients on the weak default ridge.",
+                               k + 1, j + 1, prec);
+                }
             }
         }
         // Optional per-observation fixed offset on the linear predictor. Length
@@ -130,8 +155,8 @@ inline int parse_joint_arms(
                            "length(y) (%d).", k + 1, arms_out[k].N);
             }
         }
-        // Optional upper-truncated Gaussian ceiling (truncated lognormal cover,
-        //). When supplied it must match this arm's N; the built-in
+        // Optional upper-truncated Gaussian ceiling (truncated lognormal
+        // cover). When supplied it must match this arm's N; the built-in
         // truncated_gaussian spec reads (y, trunc_upper). +Inf entries => no
         // truncation on that row.
         if (a.containsElementNamed("trunc_upper") && !Rf_isNull(a["trunc_upper"])) {
@@ -152,11 +177,11 @@ inline int parse_joint_arms(
         arms_out[k].field_coef = a.containsElementNamed("field_coef_const")
                                   ? Rcpp::as<double>(a["field_coef_const"])
                                   : 1.0;
-        // Per-arm cell coupling (Change 2b). When `coupled`
-        // is true, the inner Newton dispatches this arm's per-cell
-        // contribution to the registered CellCouplingSpec instead of summing
-        // per-obs through the family. `cell_obs_map` is 1-based; length is
-        // validated against arms[k].N below.
+        // Per-arm cell coupling. When `coupled` is true, the inner Newton
+        // dispatches this arm's per-cell contribution to the registered
+        // CellCouplingSpec instead of summing per-obs through the family.
+        // `cell_obs_map` is 1-based; length is validated against arms[k].N
+        // below.
         arms_out[k].coupled = a.containsElementNamed("coupled")
                               ? Rcpp::as<bool>(a["coupled"])
                               : false;
@@ -241,7 +266,7 @@ inline void make_single_arm(
     pa.beta_start  = 0;
     pa.re_start    = p;
     pa.tau_re      = (n_re_groups > 0)
-                     ? 1.0 / (sigma_re * sigma_re + 1e-10)
+                     ? 1.0 / (sigma_re * sigma_re + RE_VARIANCE_FLOOR)
                      : 0.0;
     if (offset_nullable.isNotNull()) {
         Rcpp::NumericVector off(offset_nullable);
@@ -270,36 +295,17 @@ inline void make_single_arm(
 }
 
 // Per-arm Gaussian beta + RE priors. Identical across all backends.
-// `tau_beta` is a weak prior precision (default 1e-4 ≡ sd ~ 100).
-inline void add_per_arm_beta_re_priors(
-    DenseVec& grad, DenseMat& H,
+// `tau_beta` is the weak default precision applied to any arm carrying no
+// per-coefficient `beta_prior_prec` (DEFAULT_TAU_BETA, i.e. sd 100).
+// `add_diag(i, prec)` is the only thing that separates the dense Hessian sink
+// from the sparse one, so one body serves both.
+template<typename AddDiag>
+inline void add_per_arm_beta_re_priors_impl(
+    DenseVec& grad,
     const Rcpp::NumericVector& x,
     const std::vector<ParsedArm>& parsed,
-    double tau_beta = 1e-4
-) {
-    for (const ParsedArm& pa : parsed) {
-        const bool has_prior = ((int)pa.beta_prior_prec.size() == pa.p);
-        for (int j = 0; j < pa.p; j++) {
-            const double prec = has_prior ? pa.beta_prior_prec[j] : tau_beta;
-            const double mean = ((int)pa.beta_prior_mean.size() == pa.p)
-                                ? pa.beta_prior_mean[j] : 0.0;
-            grad[pa.beta_start + j] -= prec * (x[pa.beta_start + j] - mean);
-            H[pa.beta_start + j][pa.beta_start + j] += prec;
-        }
-        for (int g = 0; g < pa.n_re_groups; g++) {
-            grad[pa.re_start + g] -= pa.tau_re * x[pa.re_start + g];
-            H[pa.re_start + g][pa.re_start + g] += pa.tau_re;
-        }
-    }
-}
-
-// Sparse twin of add_per_arm_beta_re_priors. Writes diagonal entries via
-// SparseHessianBuilder::add.
-inline void add_per_arm_beta_re_priors_sparse(
-    DenseVec& grad, SparseHessianBuilder& H,
-    const Rcpp::NumericVector& x,
-    const std::vector<ParsedArm>& parsed,
-    double tau_beta = 1e-4
+    double tau_beta,
+    AddDiag add_diag
 ) {
     for (const ParsedArm& pa : parsed) {
         const bool has_prior = ((int)pa.beta_prior_prec.size() == pa.p);
@@ -309,14 +315,38 @@ inline void add_per_arm_beta_re_priors_sparse(
             const double mean = ((int)pa.beta_prior_mean.size() == pa.p)
                                 ? pa.beta_prior_mean[j] : 0.0;
             grad[idx] -= prec * (x[idx] - mean);
-            H.add(idx, idx, prec);
+            add_diag(idx, prec);
         }
         for (int g = 0; g < pa.n_re_groups; g++) {
-            int idx = pa.re_start + g;
+            const int idx = pa.re_start + g;
             grad[idx] -= pa.tau_re * x[idx];
-            H.add(idx, idx, pa.tau_re);
+            add_diag(idx, pa.tau_re);
         }
     }
+}
+
+inline void add_per_arm_beta_re_priors(
+    DenseVec& grad, DenseMat& H,
+    const Rcpp::NumericVector& x,
+    const std::vector<ParsedArm>& parsed,
+    double tau_beta = DEFAULT_TAU_BETA
+) {
+    add_per_arm_beta_re_priors_impl(
+        grad, x, parsed, tau_beta,
+        [&H](int i, double prec) { H[i][i] += prec; });
+}
+
+// Sparse twin of add_per_arm_beta_re_priors. Writes diagonal entries via
+// SparseHessianBuilder::add.
+inline void add_per_arm_beta_re_priors_sparse(
+    DenseVec& grad, SparseHessianBuilder& H,
+    const Rcpp::NumericVector& x,
+    const std::vector<ParsedArm>& parsed,
+    double tau_beta = DEFAULT_TAU_BETA
+) {
+    add_per_arm_beta_re_priors_impl(
+        grad, x, parsed, tau_beta,
+        [&H](int i, double prec) { H.add(i, i, prec); });
 }
 
 // Per-arm RE + beta log-prior contribution. The weak default beta prior

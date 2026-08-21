@@ -99,6 +99,12 @@ List cpp_aghq_objective_grad(NumericVector par, SEXP oracle, IntegerVector nc,
 // wiring); `bcov` is the superset a caller doing a joint (theta, b_g) draw
 // across correlated terms needs, the same way `bcross`'s un-sliced (nth x d)
 // shape already is per group.
+//
+// `group_ok` is the per-group solve status: FALSE where the mode search or the
+// factorization of the group's penalized precision failed, in which case that
+// group's `bhat` / `bvar` / `bcov` / `bcross` slots are NA. Both are read
+// through the same aghq_group_solve() the AGHQ objective uses, so the two
+// cannot disagree about what counts as a failed solve.
 // [[Rcpp::export]]
 List cpp_aghq_blups(NumericVector par, SEXP oracle, IntegerVector nc, LogicalVector full) {
     XPtr<REGroupOracle> orc(oracle);
@@ -111,8 +117,11 @@ List cpp_aghq_blups(NumericVector par, SEXP oracle, IntegerVector nc, LogicalVec
 
     std::vector<Eigen::MatrixXd> Ls = recov_theta_to_L(eta, blocks);
     Eigen::MatrixXd Sig = recov_block_diag_sigma(Ls, d);
-    Eigen::LLT<Eigen::MatrixXd> lltS(Sig);
-    const Eigen::MatrixXd P = lltS.solve(Eigen::MatrixXd::Identity(d, d));
+    const AghqSigmaFactor sf = aghq_sigma_factor(Sig, d);
+    if (!sf.ok)
+        stop("cpp_aghq_blups: the covariance at the supplied parameter is not "
+             "positive definite (its Cholesky failed), so no BLUP can be "
+             "extracted.");
 
     orc->rebind(theta.data());
     const bool cross_ok = orc->has_theta_score() && nth > 0;
@@ -122,22 +131,41 @@ List cpp_aghq_blups(NumericVector par, SEXP oracle, IntegerVector nc, LogicalVec
     if (!cross_ok) std::fill(BCROSS.begin(), BCROSS.end(), NA_REAL);
     NumericVector BCOV((std::size_t)ng * d * d);
     BCOV.attr("dim") = IntegerVector::create(ng, d, d);
+    LogicalVector GOK(ng);
     for (int g = 0; g < ng; ++g) {
-        GroupMode m = aghq_group_mode(*orc, g, P);
-        Eigen::LLT<Eigen::MatrixXd> lltN(m.negH);
-        const Eigen::MatrixXd C = lltN.solve(Eigen::MatrixXd::Identity(d, d));
+        const AghqGroupSolve gs = aghq_group_solve(*orc, g, sf.P, d,
+                                                   /*want_chol=*/false);
+        GOK(g) = gs.ok;
+        // A group whose mode search failed, or whose penalized precision would
+        // not factor, has no posterior mode and no covariance. Its slots stay NA
+        // so the caller drops it, rather than carrying the numbers a failed
+        // decomposition's solve happens to return.
+        if (!gs.ok) {
+            for (int j = 0; j < d; ++j) {
+                BHAT(g, j) = NA_REAL; BVAR(g, j) = NA_REAL;
+                for (int k = 0; k < d; ++k)
+                    BCOV(g + (std::size_t)ng * (j + (std::size_t)d * k)) = NA_REAL;
+            }
+            if (cross_ok)
+                for (int j = 0; j < nth; ++j)
+                    for (int k = 0; k < d; ++k)
+                        BCROSS(g + (std::size_t)ng * (j + (std::size_t)nth * k)) = NA_REAL;
+            continue;
+        }
         for (int j = 0; j < d; ++j) {
-            BHAT(g, j) = m.b(j); BVAR(g, j) = C(j, j);
+            BHAT(g, j) = gs.mode.b(j); BVAR(g, j) = gs.C(j, j);
             for (int k = 0; k < d; ++k)
-                BCOV(g + (std::size_t)ng * (j + (std::size_t)d * k)) = C(j, k);
+                BCOV(g + (std::size_t)ng * (j + (std::size_t)d * k)) = gs.C(j, k);
         }
         if (cross_ok) {
-            const Eigen::MatrixXd Bf = aghq_group_cross_hess(*orc, g, m.b);  // nth x d
+            const Eigen::MatrixXd Bf =
+                aghq_group_cross_hess(*orc, g, gs.mode.b);   // nth x d
             for (int j = 0; j < nth; ++j)
                 for (int k = 0; k < d; ++k)
                     BCROSS(g + (std::size_t)ng * (j + (std::size_t)nth * k)) = Bf(j, k);
         }
     }
     return List::create(_["bhat"] = BHAT, _["bvar"] = BVAR, _["bcov"] = BCOV,
-                        _["bcross"] = BCROSS, _["bcross_available"] = cross_ok);
+                        _["bcross"] = BCROSS, _["bcross_available"] = cross_ok,
+                        _["group_ok"] = GOK);
 }

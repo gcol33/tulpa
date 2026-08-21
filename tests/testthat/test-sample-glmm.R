@@ -168,26 +168,164 @@ test_that("offset = 0 reproduces the no-offset sampler draws exactly (gcol33/tul
 # VI is validated at mean level above; this quantifies its SPREAD. The band
 # makes the variational marginal SDs a measured property instead of an
 # unchecked one: within [0.4, 1.8] of the asymptotic (glm) SE, so a broken
-# ELBO (collapsed or exploded variances) fails. Measured at this seed the
-# mean-field fit over-disperses the intercept (~1.5x) and slightly
-# under-disperses the slope (~0.9x).
-test_that("VI posterior SDs sit in a quantified band around the asymptotic SE", {
+# ELBO (collapsed or exploded variances) fails.
+#
+# The variant is named explicitly rather than left to `vi_variant = 3`
+# (VIVariant::AUTO), which selects full-rank below D = 200 and low-rank in
+# [200, 2000) -- at D = 2 the default is full-rank, so leaving it implicit gives
+# the mean-field path no coverage at all. The gradients themselves are
+# finite-difference checked per variant in test-vi-gradient.R; these two fits
+# are the recovery arm.
+for (.vi_variant in list(list(code = 2L, name = "full-rank"),
+                         list(code = 1L, name = "low-rank"))) {
+  local({
+    code <- .vi_variant$code
+    name <- .vi_variant$name
+    test_that(sprintf(
+      "%s VI posterior SDs sit in a quantified band around the asymptotic SE",
+      name), {
+      skip_if_not_slow()
+      set.seed(303)
+      n <- 600L
+      x <- rnorm(n)
+      X <- cbind(1, x)
+      y <- rpois(n, exp(0.4 + 0.6 * x))
+      fit <- tulpa_sample_glmm(
+        y = as.numeric(y), n_trials = rep(1L, n), X = X,
+        family = "poisson", backend = "vi",
+        control = list(vi_variant = code, vi_max_iter = 8000L,
+                       n_draws = 4000L, seed = 17L))
+      ref <- glm(y ~ x, family = poisson)
+      se_ref <- unname(sqrt(diag(vcov(ref))))
+      expect_lt(max(abs(unname(fit$means) - unname(coef(ref)))), 0.15)
+      sd_fit <- apply(tulpa:::.fixed_draws_mat(fit), 2, stats::sd)[seq_along(se_ref)]
+      ratio  <- unname(sd_fit) / se_ref
+      expect_true(all(ratio > 0.4 & ratio < 1.8),
+                  label = paste(name, "VI sd / asymptotic se:",
+                                paste(round(ratio, 3), collapse = ", ")))
+    })
+  })
+}
+
+# --- stochastic / auxiliary sampler kernels -----------------------------------
+
+# The elliptical-slice kernel draws from R's own RNG, so set.seed() is what
+# fixes a run and control$seed does not reach it.
+test_that("the ESS backend reproduces a run from set.seed (gcol33/tulpa#557)", {
+  skip_on_cran()
+  set.seed(91)
+  n <- 120L
+  x <- rnorm(n); X <- cbind(1, x)
+  y <- as.numeric(rbinom(n, 1L, plogis(0.3 + 0.6 * x)))
+  ess_draws <- function(seed, ctrl = list()) {
+    set.seed(seed)
+    tulpa_sample_glmm(y, rep(1L, n), X, "binomial", "ess",
+                      control = c(list(n_iter = 120L, warmup = 60L), ctrl))$draws
+  }
+  a <- ess_draws(4L)
+  b <- ess_draws(4L)
+  d <- ess_draws(5L)
+  expect_equal(a, b)
+  expect_false(isTRUE(all.equal(a, d)))
+
+  # control$seed is carried into the other kernels' own generators and is inert
+  # here, so it cannot move an ESS run.
+  s1 <- ess_draws(4L, list(seed = 1L))
+  s2 <- ess_draws(4L, list(seed = 2L))
+  expect_equal(s1, s2)
+})
+
+# ess_adapt_interval is read by the kernel: two runs from one R seed that differ
+# only in it must diverge (they scale the same random-walk draws differently).
+# Needs a random-effect term, since that is what puts a parameter on the
+# adapted random-walk block in the first place.
+test_that("ess_adapt_interval reaches the kernel (gcol33/tulpa#571)", {
+  skip_on_cran()
+  set.seed(77)
+  G <- 12L; npg <- 8L; N <- G * npg
+  grp <- rep(seq_len(G), each = npg); x <- rnorm(N)
+  b <- rnorm(G, 0, 0.6)
+  d <- data.frame(y = rpois(N, exp(0.2 + 0.4 * x + b[grp])),
+                  x = x, g = factor(grp))
+  run <- function(interval) {
+    set.seed(12)
+    suppressMessages(suppressWarnings(tulpa(
+      y ~ x + (1 | g), d, family = "poisson", mode = "ess",
+      control = list(n_iter = 160L, warmup = 80L,
+                     ess_adapt_during_warmup = TRUE,
+                     ess_adapt_interval = interval))))$draws
+  }
+  expect_false(isTRUE(all.equal(run(5L), run(200L))))
+})
+
+# A control knob that no longer reaches any kernel is rejected, not accepted and
+# dropped. Structural: the control check runs before any model is built.
+test_that("the withdrawn ESS cholesky knob is rejected", {
+  expect_error(
+    tulpa_sample_glmm(y = c(0, 1), n_trials = c(1L, 1L),
+                      X = cbind(1, c(-1, 1)), family = "binomial",
+                      backend = "ess",
+                      control = list(ess_use_cholesky = TRUE)),
+    "ess_use_cholesky")
+})
+
+# The draw matrix is sized by the number of times the store condition fires, so
+# a warmup at least as long as the run stores nothing instead of asking Eigen
+# for a negative extent.
+test_that("sampler backends size the draw matrix by ceil (gcol33/tulpa#473)", {
+  skip_on_cran()
+  set.seed(31)
+  n <- 60L
+  x <- rnorm(n); X <- cbind(1, x)
+  y <- as.numeric(rbinom(n, 1L, plogis(0.1 + 0.4 * x)))
+  for (backend in c("sghmc", "sgld", "ess")) {
+    fit <- suppressWarnings(tulpa_sample_glmm(
+      y, rep(1L, n), X, "binomial", backend,
+      control = list(n_iter = 40L, warmup = 60L, seed = 3L)))
+    expect_equal(nrow(fit$draws), 0L, info = backend)
+  }
+})
+
+# SGHMC's injected momentum noise sets the sampled temperature. At
+# sqrt(2 * alpha * epsilon) the chain samples p(theta)^(1/epsilon), whose
+# marginal sds are short by sqrt(epsilon) -- 0.1 to 0.3 over the step sizes the
+# adapter is bounded to. The band separates that from a chain at temperature 1;
+# it is a band, not a point, because the Euler discretization carries an O(eps)
+# error of its own. The reference is the asymptotic (glm) SE, which is the
+# posterior sd at this n under the weak prior.
+test_that("SGHMC samples the posterior spread, not a tempered one (gcol33/tulpa#422)", {
   skip_if_not_slow()
-  set.seed(303)
-  n <- 600L
-  x <- rnorm(n)
-  X <- cbind(1, x)
-  y <- rpois(n, exp(0.4 + 0.6 * x))
-  fit <- tulpa_sample_glmm(
-    y = as.numeric(y), n_trials = rep(1L, n), X = X,
-    family = "poisson", backend = "vi",
-    control = list(vi_max_iter = 8000L, n_draws = 4000L, seed = 17L))
-  ref <- glm(y ~ x, family = poisson)
+  set.seed(717)
+  n <- 800L
+  x1 <- rnorm(n); x2 <- rnorm(n); X <- cbind(1, x1, x2)
+  y <- as.numeric(rbinom(n, 1L, plogis(-0.3 + 0.8 * x1 - 0.4 * x2)))
+  ref <- glm(y ~ x1 + x2, family = binomial)
   se_ref <- unname(sqrt(diag(vcov(ref))))
-  expect_lt(max(abs(unname(fit$means) - unname(coef(ref)))), 0.15)
-  sd_fit <- apply(tulpa:::.fixed_draws_mat(fit), 2, stats::sd)[seq_along(se_ref)]
-  ratio  <- unname(sd_fit) / se_ref
-  expect_true(all(ratio > 0.4 & ratio < 1.8),
-              label = paste("VI sd / asymptotic se:",
+  fit <- tulpa_sample_glmm(
+    y, rep(1L, n), X, "binomial", "sghmc",
+    fixed_names = c("(Intercept)", "x1", "x2"),
+    control = list(n_iter = 6000L, warmup = 3000L, seed = 23L))
+  ratio <- unname(apply(fit$draws, 2, stats::sd)[seq_along(se_ref)]) / se_ref
+  expect_true(all(ratio > 0.4 & ratio < 2.5),
+              label = paste("SGHMC sd / asymptotic se:",
                             paste(round(ratio, 3), collapse = ", ")))
+})
+
+# The SMC driver initializes its particles from a Gaussian perturbation of
+# `init`, not from p(theta), and carries no p / q correction in the weights, so
+# the log-Z accumulator estimates a different integral than the marginal
+# likelihood. It reports no evidence rather than that number; the draws recover
+# because the mutations target p(theta) L(theta)^beta.
+test_that("the SMC backend reports no evidence under its stand-in prior draw (gcol33/tulpa#445)", {
+  skip_on_cran()
+  set.seed(52)
+  n <- 200L
+  x <- rnorm(n); X <- cbind(1, x)
+  y <- as.numeric(rbinom(n, 1L, plogis(0.2 + 0.5 * x)))
+  fit <- tulpa_sample_glmm(
+    y, rep(1L, n), X, "binomial", "smc",
+    control = list(n_particles = 300L, n_mcmc_steps = 2L, seed = 8L))
+  expect_true(is.na(fit$log_evidence))
+  expect_gt(nrow(fit$draws), 0L)
+  expect_equal(ncol(fit$draws), 2L)
 })

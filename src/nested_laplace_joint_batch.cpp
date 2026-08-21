@@ -3,17 +3,25 @@
 //
 // The B species share one design + sparsity pattern; their latent systems are
 // independent (block-diagonal). This driver runs B per-species Newton solves
-// sharing the FUSED cell-coupling scatter (scatter_cell_coupling_batch_dense),
-// so each species' trajectory is bit-identical to its independent single-species
-// fit while the bandwidth-bound per-cell evaluate is amortised across species.
+// sharing the FUSED cell-coupling scatter, so each species' trajectory is
+// bit-identical to its independent single-species fit while the
+// bandwidth-bound per-cell evaluate is amortised across species.
 //
-// First cut: dense path only (small/medium fields), cell-coupling families with
-// ALL arms coupled (occu_cover), plain outer-grid sweep with per-species
-// warm-start chaining. Returns per-species { log_marginal, modes, weights,
-// n_iter, score_max, Q_csc_*_per_grid } so R unpacks each through the existing
-// single-species post-processing (including .joint_inner_vcov_block for SDs;
-// store_Q stores the converged-mode observed Hessian per grid in CSC
-// lower-triangle, mirroring the single-species path exactly).
+// Both scatter paths are live and selected by the latent dimension, as in the
+// single-species driver: below SPARSE_THRESHOLD each species carries an n_x by
+// n_x DenseMat and the fused scatter runs through
+// scatter_cell_coupling_batch_dense; at or above it each species carries a
+// SparseHessianBuilder seeded from one fit-level joint pattern and the scatter
+// runs through scatter_cell_coupling_batch_sparse, whose SparseScatterPolicy
+// resolves the (row, col) -> flat-slot caches once per cell for all B species.
+//
+// Cell-coupling families with ALL arms coupled (occu_cover) only; plain
+// outer-grid sweep with per-species warm-start chaining. Returns per-species
+// { log_marginal, weights, modes, n_iter, score_max, converged,
+// Q_csc_*_per_grid } so R unpacks each through the existing single-species
+// post-processing (including .joint_inner_vcov_block for SDs; store_Q stores
+// the converged-mode observed Hessian per grid in CSC lower-triangle,
+// mirroring the single-species path exactly).
 
 #include "nested_laplace_joint_batch.h"
 #include "nested_laplace_joint_core.h"
@@ -159,6 +167,13 @@ inline double species_cell_loglik(
     std::vector<std::vector<double>> grad_buf(n_coupled), nh_buf(n_coupled);
     std::vector<double*>        grad_ptr(n_coupled), nh_ptr(n_coupled);
 
+    // Outer cross-Hessian array with every inner block null. A spec is required
+    // to test the INNER pointer only, so an objective-only call supplies the
+    // outer array rather than a null one.
+    std::vector<double*>        cross_hess_null_inner(n_coupled, nullptr);
+    std::vector<double* const*> cross_hess_outer(n_coupled,
+                                                 cross_hess_null_inner.data());
+
     double total = 0.0;
     for (int c = 0; c < n_cells; c++) {
         for (int kk = 0; kk < n_coupled; kk++) {
@@ -181,8 +196,13 @@ inline double species_cell_loglik(
         yv.arm_rows = arm_rows_ptr.data(); yv.arm_row_count = arm_row_count.data();
         yv.n_arms_ = n_coupled;
         CellDerivs out; out.arm_grad = grad_ptr.data(); out.arm_neg_hess_diag = nh_ptr.data();
-        out.arm_cross_hess = nullptr; out.arm_row_count = arm_row_count.data();
+        out.arm_cross_hess = cross_hess_outer.data();
+        out.arm_row_count = arm_row_count.data();
         out.n_arms_ = n_coupled;
+        // Derivatives are discarded here, so the spec may skip its curvature
+        // work; the zero-filled diagonal buffers and the outer cross array are
+        // still supplied, which is what the CellDerivs contract promises.
+        out.grad_only = true;
         total += spec.evaluate_cell(c, ev, yv, out);
     }
     return total;
@@ -318,6 +338,12 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
     std::vector<std::vector<int>> n_iter(B, std::vector<int>(n_grid, 0));
     // Achieved residual per (species, grid cell); see LaplaceResult::score_max.
     std::vector<std::vector<double>> score_mx(B, std::vector<double>(n_grid, 0.0));
+    // Whether each (species, grid cell) inner Newton met the convergence test.
+    // n_iter alone cannot say: the failed-solve path takes a damped step and
+    // moves on, so a cell can end with a small n_iter and a step that was never
+    // solved. Reported alongside log_marginal so a caller can tell a converged
+    // cell from one that exhausted max_iter before it is integrated.
+    std::vector<std::vector<int>> converged_at(B, std::vector<int>(n_grid, 0));
     std::vector<std::vector<double>> prev_mode(B, std::vector<double>(n_x, 0.0));
     std::vector<bool> have_prev(B, false);
 
@@ -377,7 +403,11 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
         }
 
         std::vector<bool> converged(B, false);
-        std::vector<double> obj(B, -1e300);
+        // Sentinel for "this species' objective has not been evaluated at the
+        // current iterate yet"; obj_valid gates every read, so the value is
+        // never used, and -inf loses to any real objective if one ever slipped
+        // through.
+        std::vector<double> obj(B, -std::numeric_limits<double>::infinity());
         std::vector<bool> obj_valid(B, false);
         std::vector<NewtonConvState> conv_state(B);
 
@@ -424,21 +454,28 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
                     DenseMat& H = H_per_sp[s];
                     for (const auto& b : blocks) if (b.add_prior) b.add_prior(grad, H, st[s].x, kg);
                     add_per_arm_beta_re_priors(grad, H, st[s].x, parsed);
-                    // PD-enforcing solve (gcol33/tulpa#344): the occupancy
-                    // mixture's dark-cell term is not concave everywhere, so a
-                    // fixed-ridge-only solve (dispatch_factor_solve) can hand
-                    // back a non-finite step at an indefinite iterate. The
-                    // single-species dense joint loop already escalates via
-                    // joint_pd_step_solve_dense; the sparse branch above does
-                    // too (joint_pd_step_solve). This mirrors both.
+                    // PD-enforcing solve: the occupancy mixture's dark-cell
+                    // term is not concave everywhere, so a fixed-ridge-only
+                    // solve (dispatch_factor_solve) can hand back a non-finite
+                    // step at an indefinite iterate. The single-species dense
+                    // joint loop escalates via joint_pd_step_solve_dense and
+                    // the sparse branch above via joint_pd_step_solve; this
+                    // mirrors both.
                     ok = joint_pd_step_solve_dense(H, grad, st[s].delta, n_x,
                                                    st[s].sparse, use_sparse,
                                                    st[s].chol, JointPDMode::LM);
                 }
                 if (!ok) {
+                    // The step was never solved. Move a short way along
+                    // whatever finite part of it came back, so the next
+                    // iteration starts somewhere else, and record the cell as
+                    // not converged.
+                    constexpr double kFailedStepDamping = 0.1;
                     for (int j = 0; j < n_x; j++)
-                        if (std::isfinite(st[s].delta[j])) st[s].x[j] += 0.1 * st[s].delta[j];
+                        if (std::isfinite(st[s].delta[j]))
+                            st[s].x[j] += kFailedStepDamping * st[s].delta[j];
                     obj_valid[s] = false;
+                    converged[s] = false;
                     n_iter[s][kg] = iter + 1;
                     continue;
                 }
@@ -461,6 +498,7 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
             for (int s = 0; s < B; s++) if (!converged[s]) { all_conv = false; break; }
             if (all_conv) break;
         }
+        for (int s = 0; s < B; s++) converged_at[s][kg] = converged[s] ? 1 : 0;
 
         // Final mode-pass per species: observed Hessian -> log_det -> log_marginal.
         for (int s = 0; s < B; s++) {
@@ -525,17 +563,24 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
                 for (const auto& b : blocks) if (b.add_prior) b.add_prior(grad, H, st[s].x, kg);
                 add_per_arm_beta_re_priors(grad, H, st[s].x, parsed);
                 score_mx[s][kg] = max_abs(grad);
-                dispatch_factor_log_det(H, n_x, st[s].sparse, use_sparse, st[s].chol, log_det);
+                // The base ridge is loaded ONCE onto this assembly, and both the
+                // log-determinant and the escalating solve read the same loaded
+                // matrix; letting each entry apply its own would start the
+                // escalation ladder at twice the documented base.
+                add_uniform_ridge_dense(H, n_x, LAPLACE_UNIFORM_RIDGE);
+                const bool pd_at_mode = dispatch_factor_log_det_ridged(
+                    H, n_x, st[s].sparse, use_sparse, st[s].chol, log_det);
                 // Mirrors the single-species dense joint driver's post-loop
                 // fallback (laplace_newton_joint.h): a non-finite log_det means
                 // the Hessian at the returned mode is not PD under the plain
                 // ridge alone. Escalate via the same PD-enforcing solve used
-                // for the per-iteration step above, rather than letting the
-                // NaN propagate into log_marginal (gcol33/tulpa#397).
-                if (!std::isfinite(log_det)) {
-                    joint_pd_step_solve_dense(H, grad, st[s].delta, n_x,
-                                              st[s].sparse, use_sparse, st[s].chol,
-                                              JointPDMode::LM, &log_det);
+                // for the per-iteration step above, rather than letting the NaN
+                // propagate into log_marginal.
+                if (!pd_at_mode) {
+                    joint_pd_step_solve_dense_ridged(H, grad, st[s].delta, n_x,
+                                                     st[s].sparse, use_sparse,
+                                                     st[s].chol,
+                                                     JointPDMode::LM, &log_det);
                 }
                 if (store_Q) {
                     std::vector<int> qp, qi; std::vector<double> qx;
@@ -553,21 +598,8 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
             log_marg[s][kg] = finalize_log_marginal(ll, lp, log_det, n_x);
 
             // Center (sum-to-zero) with per-arm intercept compensation, then store.
-            for (int b = 0; b < (int) blocks.size(); b++) {
-                if (!blocks[b].center) continue;
-                for (const auto& fold : blocks[b].center(st[s].x)) {
-                    if (std::abs(fold.amount) < 1e-15) continue;
-                    for (int k_arm = 0; k_arm < n_arms; k_arm++) {
-                        if (parsed[k_arm].p == 0) continue;
-                        if (fold.beta_offset < 0 ||
-                            fold.beta_offset >= parsed[k_arm].p) continue;
-                        double sc = blocks[b].arm_scale
-                                      ? blocks[b].arm_scale(k_arm, kg) : 1.0;
-                        st[s].x[parsed[k_arm].beta_start + fold.beta_offset] +=
-                            sc * d_fac_cache[b] * fold.amount;
-                    }
-                }
-            }
+            center_joint_blocks(st[s].x, blocks, parsed, n_arms, kg,
+                                [&](int b) { return d_fac_cache[b]; });
             double* mr = modes_flat[s].data() + (std::size_t) kg * n_x;
             for (int j = 0; j < n_x; j++) mr[j] = st[s].x[j];
             for (int j = 0; j < n_x; j++) prev_mode[s][j] = st[s].x[j];
@@ -581,9 +613,11 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
         Rcpp::NumericVector lm(n_grid);
         Rcpp::IntegerVector ni(n_grid);
         Rcpp::NumericVector sm(n_grid);
+        Rcpp::LogicalVector cv(n_grid);
         double mx = -std::numeric_limits<double>::infinity();
         for (int k = 0; k < n_grid; k++) { lm[k] = log_marg[s][k]; ni[k] = n_iter[s][k];
                                            sm[k] = score_mx[s][k];
+                                           cv[k] = (converged_at[s][k] != 0);
                                            if (std::isfinite(lm[k]) && lm[k] > mx) mx = lm[k]; }
         Rcpp::NumericVector w(n_grid, 0.0);
         double wsum = 0.0;
@@ -599,7 +633,8 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
             Rcpp::Named("weights")      = w,
             Rcpp::Named("modes")        = md,
             Rcpp::Named("n_iter")       = ni,
-            Rcpp::Named("score_max")    = sm
+            Rcpp::Named("score_max")    = sm,
+            Rcpp::Named("converged")    = cv
         );
         if (store_Q) {
             sp["Q_csc_p_per_grid"] = Q_p_per_sp[s];

@@ -72,22 +72,17 @@ inline std::string compiled_zi_supported_families() {
 // Templated pieces (double / arena::Var / fwd::Dual), used by the AD path.
 // ---------------------------------------------------------------------------
 
-// log(1 + exp(x)), guarded at both tails.
+// log(inv_logit(z)) and log(1 - inv_logit(z)), through the shared softplus,
+// which is exact at both tails and whose derivative is inv_logit itself -- so
+// the mixture's value and its AD gradient are accurate at every z, including
+// the far negative logits a fit with no excess zeros heads for.
 template<typename T>
-inline T log1pexp(const T& x) {
-    using tulpa::math::safe_exp;
-    using tulpa::math::log1p_fn;
-    if (x > T(35.0))  return x;
-    if (x < T(-10.0)) return safe_exp(x);
-    return log1p_fn(safe_exp(x));
+inline T log_pi(const T& z) {
+    return T(0.0) - tulpa::math::softplus(T(0.0) - z);
 }
 
-// log(inv_logit(z)) and log(1 - inv_logit(z)).
 template<typename T>
-inline T log_pi(const T& z) { return T(0.0) - log1pexp(T(0.0) - z); }
-
-template<typename T>
-inline T log1m_pi(const T& z) { return T(0.0) - log1pexp(z); }
+inline T log1m_pi(const T& z) { return T(0.0) - tulpa::math::softplus(z); }
 
 // log(exp(a) + exp(b)) without intermediate overflow.
 template<typename T>

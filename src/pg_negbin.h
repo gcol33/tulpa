@@ -94,56 +94,6 @@ Rcpp::List pg_negbin_gibbs(
 );
 
 // ---------------------------------------------------------------------
-// Gibbs sampler for ratio model: NB numerator / NB denominator
-// (ratiod_negbin_negbin family)
-// ---------------------------------------------------------------------
-
-// PG+CRT Gibbs sampler for two-process NB ratio model
-// Both numerator and denominator are NB distributed
-// Shared random effects enter both linear predictors
-//
-// @param y_num Integer vector of numerator counts
-// @param y_denom Integer vector of denominator counts
-// @param X_num Design matrix for numerator
-// @param X_denom Design matrix for denominator
-// @param group Integer vector of group indices (1-based)
-// @param n_groups Number of groups
-// @param n_iter Total MCMC iterations
-// @param n_warmup Warmup iterations
-// @param thin Thinning interval
-// @param prior_beta_sd Prior SD for fixed effects
-// @param prior_sigma_scale Half-Cauchy scale for RE SD
-// @param prior_r_shape Gamma shape for dispersion priors
-// @param prior_r_rate Gamma rate for dispersion priors
-// @param r_num_init Initial dispersion for numerator
-// @param r_denom_init Initial dispersion for denominator
-// @param shared Whether to use shared random effects
-// @param store_eta Store linear predictor draws
-// @param verbose Print progress
-// @param n_threads Number of threads
-Rcpp::List pg_negbin_negbin_gibbs(
-    Rcpp::IntegerVector y_num,
-    Rcpp::IntegerVector y_denom,
-    Rcpp::NumericMatrix X_num,
-    Rcpp::NumericMatrix X_denom,
-    Rcpp::IntegerVector group,
-    int n_groups,
-    int n_iter,
-    int n_warmup,
-    int thin,
-    double prior_beta_sd,
-    double prior_sigma_scale,
-    double prior_r_shape,
-    double prior_r_rate,
-    double r_num_init,
-    double r_denom_init,
-    bool shared,
-    bool store_eta,
-    bool verbose,
-    int n_threads
-);
-
-// ---------------------------------------------------------------------
 // Gibbs sampler for NB with spatial effects (ICAR)
 // ---------------------------------------------------------------------
 

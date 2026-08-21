@@ -234,10 +234,17 @@ inline SubspaceDebiasOutcome compute_subspace_debias(
 // Every Newton loop that can carry the correction -- the single-arm spec loop
 // (laplace_newton.h), the dense joint loop and the sparse joint loop
 // (laplace_newton_joint*.h) -- reaches the sampler through here, so the
-// "nullptr or empty index set is a no-op" contract and the mapping from
+// "nullptr or empty index set is a no-op" contract, the gate deciding whether
+// the mode and the live factor are usable at all, and the mapping from
 // SubspaceDebiasOutcome onto the result fields are written once. Templated on
 // the result type only to avoid including laplace_core.h from here; the single
 // instantiation is LaplaceResult.
+//
+// `gate_declined`, when non-null, is the caller's own reason for a live factor
+// that holds a different matrix than the surface would be built from. It and the
+// convergence test both DECLINE rather than return silently: the index set the
+// caller asked for is echoed back carrying the reason, so a requested correction
+// that produced nothing is distinguishable from one that was never requested.
 template <typename Result, typename EvalLogJoint>
 inline void run_subspace_debias(
     Result& result,
@@ -248,9 +255,18 @@ inline void run_subspace_debias(
     bool use_sparse,
     EvalLogJoint eval_log_joint,
     Rcpp::NumericVector& x_buf,
-    const SubspaceDebiasOptions* opts
+    const SubspaceDebiasOptions* opts,
+    const char* gate_declined = nullptr
 ) {
   if (!opts || opts->idx.empty()) return;
+  if (gate_declined || !result.converged) {
+    // The surface is anchored at the mode and shaped by the inner Laplace's
+    // covariance there, so neither exists at a point the solve stopped short of.
+    result.debias_idx      = opts->idx;
+    result.debias_n_kept   = 0;
+    result.debias_declined = gate_declined ? gate_declined : "not_converged";
+    return;
+  }
   SubspaceDebiasOutcome db = compute_subspace_debias(
       n_x, mode, chol, sparse_solver, use_sparse, eval_log_joint, x_buf, *opts);
   result.debias_idx      = std::move(db.idx);

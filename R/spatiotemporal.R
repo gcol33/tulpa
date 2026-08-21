@@ -44,6 +44,10 @@ NULL
 #' The interaction captures structured or unstructured deviation from
 #' the additive spatial + temporal model.
 #'
+#' No tulpa backend fits an interaction term, so this constructor errors. The
+#' additive space-time model is fitted by `tulpa(spatial = , temporal = )` and
+#' by [fit_st_nested()].
+#'
 #' @param spatial A spatial specification from [spatial_car()], [spatial_bym2()],
 #'   or [spatial_gp()].
 #' @param temporal A temporal specification from [temporal_rw1()], [temporal_rw2()],
@@ -58,7 +62,7 @@ NULL
 #'   all processes. Set to FALSE for process-specific effects
 #'   (triggers warning about potential confounding).
 #'
-#' @return A `tulpa_spatiotemporal` object
+#' @return Nothing: the call always signals an error.
 #'
 #' @details
 #' **Type I (IID)**
@@ -98,55 +102,6 @@ NULL
 #' For GP-based effects, assumes separable covariance:
 #' \deqn{C(\mathbf{s}_1, t_1; \mathbf{s}_2, t_2) = C_s(\mathbf{s}_1, \mathbf{s}_2) \cdot C_t(t_1, t_2)}
 #'
-#' @examples
-#' # Create adjacency matrix for 10 regions
-#' adj <- matrix(0, 10, 10)
-#' for (i in 1:9) adj[i, i+1] <- adj[i+1, i] <- 1
-#'
-#' # Type I: Unstructured interaction
-#' st1 <- spatiotemporal(
-#'   spatial = spatial_car(adj, level = "group", group_var = "region"),
-#'   temporal = temporal_rw1("year"),
-#'   type = "I"
-#' )
-#' print(st1)
-#'
-#' # Type IV: Fully structured interaction
-#' st4 <- spatiotemporal(
-#'   spatial = spatial_car(adj, level = "group", group_var = "region"),
-#'   temporal = temporal_rw1("year"),
-#'   type = "IV"
-#' )
-#' print(st4)
-#'
-#' \dontrun{
-#' # Generate synthetic spatiotemporal data (not run - experimental)
-#' set.seed(123)
-#' n_regions <- 10
-#' n_years <- 8
-#' df <- expand.grid(
-#'   region = 1:n_regions,
-#'   year = 2015:(2015 + n_years - 1)
-#' )
-#' df$x <- rnorm(nrow(df))
-#' df$count <- rpois(nrow(df), lambda = 20)
-#' df$effort <- rgamma(nrow(df), shape = 4, rate = 1)
-#'
-#' # Fit model with spatiotemporal interaction
-#' fit <- tulpa(
-#'   count | effort ~ x,
-#'   data = df,
-#'   family = tulpaRatio::tulpa_poisson_gamma(),
-#'   spatiotemporal = spatiotemporal(
-#'     spatial = spatial_car(adj, level = "group", group_var = "region"),
-#'     temporal = temporal_rw1("year"),
-#'     type = "IV"
-#'   ),
-#'   iter = 200, warmup = 100, chains = 1
-#' )
-#' summary(fit)
-#' }
-#'
 #' @seealso [spatial_car()], [spatial_gp()], [temporal_rw1()], [temporal_ar1()]
 #'
 #' @export
@@ -154,117 +109,15 @@ spatiotemporal <- function(spatial,
                            temporal,
                            type = c("I", "II", "III", "IV", "iid", "separable"),
                            shared = NULL) {
-
-  # Validate spatial specification
-
-  if (!inherits(spatial, c("tulpa_spatial", "tulpa_gp", "tulpa_multiscale"))) {
-    stop("`spatial` must be a tulpa spatial specification ",
-         "(from spatial_car, spatial_bym2, spatial_gp, etc.)", call. = FALSE)
-  }
-
-  # Validate temporal specification
-  if (!inherits(temporal, "tulpa_temporal")) {
-    stop("`temporal` must be a tulpa temporal specification ",
-         "(from temporal_rw1, temporal_rw2, temporal_ar1, temporal_gp, etc.)",
-         call. = FALSE)
-  }
-
-  # Normalize type
-  type <- match.arg(type)
-  if (type == "iid") type <- "I"
-
-  # Check compatibility
-  if (type == "separable") {
-    # Separable requires GP for at least one of spatial/temporal
-    is_spatial_gp <- inherits(spatial, c("tulpa_gp", "tulpa_multiscale"))
-    is_temporal_gp <- inherits(temporal, "tulpa_temporal_gp")
-
-    if (!is_spatial_gp && !is_temporal_gp) {
-      warning(
-        "Separable interaction works best with GP spatial or temporal effects.\n",
-        "Consider using type = 'IV' for CAR/RW combinations.",
-        call. = FALSE
-      )
-    }
-  }
-
-  # Check for Kronecker interaction with proper CAR
-  if (type == "IV" && inherits(spatial, "tulpa_spatial")) {
-    if (!is.null(spatial$proper) && spatial$proper) {
-      warning(
-        "Type IV interaction with proper CAR may have identifiability issues.\n",
-        "Consider using ICAR (proper = FALSE) instead.",
-        call. = FALSE
-      )
-    }
-  }
-
-  if (isFALSE(shared)) .warn_nonshared("spatiotemporal effects")
-
-  structure(
-    list(
-      type = type,
-      spatial = spatial,
-      temporal = temporal,
-      shared = shared,
-      # Filled in during validation
-      n_spatial = NULL,
-      n_times = NULL,
-      n_params = NULL,
-      spatial_group_var = spatial$group_var,
-      temporal_time_var = temporal$time_var
-    ),
-    class = c("tulpa_spatiotemporal", "list")
-  )
+  stop("Spatiotemporal interaction terms are not fitted by any tulpa backend: ",
+       "no solver carries a Knorr-Held type I-IV interaction, and tulpa() has ",
+       "no `spatiotemporal =` argument. The additive space-time model ",
+       "`X beta + u_spatial + v_temporal` is fitted by tulpa(spatial = , ",
+       "temporal = ) through the joint nested-Laplace path, or directly by ",
+       "fit_st_nested().", call. = FALSE)
 }
 
 
-#' Print method for tulpa_spatiotemporal
-#'
-#' @param x A tulpa_spatiotemporal object
-#' @param ... Ignored
-#'
-#' @return The input `x`, returned invisibly. Called for the side effect of
-#'   printing the spatiotemporal interaction specification to the console.
-#'
-#' @export
-print.tulpa_spatiotemporal <- function(x, ...) {
-  cat("tulpa Spatiotemporal Interaction Specification\n")
-  cat("===============================================\n\n")
-
-  type_desc <- switch(x$type,
-    "I" = "Type I: Unstructured (IID)",
-    "II" = "Type II: Structured time, unstructured space",
-    "III" = "Type III: Structured space, unstructured time",
-    "IV" = "Type IV: Fully structured (Kronecker)",
-    "separable" = "Separable covariance"
-  )
-  cat("Interaction type:", type_desc, "\n\n")
-
-  cat("Spatial component:\n")
-  cat("  Type:", class(x$spatial)[1], "\n")
-  if (!is.null(x$spatial$group_var)) {
-    cat("  Group variable:", x$spatial$group_var, "\n")
-  }
-  if (!is.null(x$n_spatial)) {
-    cat("  Spatial units:", x$n_spatial, "\n")
-  }
-
-  cat("\nTemporal component:\n")
-  cat("  Type:", x$temporal$type, "\n")
-  cat("  Time variable:", x$temporal$time_var, "\n")
-  if (!is.null(x$n_times)) {
-    cat("  Time points:", x$n_times, "\n")
-  }
-
-  cat("\nShared:", if (!isFALSE(x$shared)) "Yes (enters both processes)" else "No", "\n")
-
-  if (!is.null(x$n_params)) {
-    cat("Total interaction parameters:", x$n_params, "\n")
-  }
-
-  invisible(x)
-}
 
 #' Extract spatiotemporal effects from fitted model
 #'
@@ -516,6 +369,10 @@ plot.tulpa_st_summary <- function(x, type = "heatmap", ...) {
 #' Unlike separable models where the covariance factors as \eqn{C_s \otimes C_t},
 #' non-separable models allow for direct space-time interaction in the covariance.
 #'
+#' No tulpa backend fits a joint space-time covariance, so this constructor
+#' errors. A spatial GP alongside a temporal field is fitted by
+#' `tulpa(spatial = spatial_gp(...), temporal = ...)`.
+#'
 #' @param coords A one-sided formula specifying coordinate columns (e.g.,
 #'   `~ lon + lat`), or a character vector of length 2.
 #' @param time_var Name of the time variable in data.
@@ -531,7 +388,7 @@ plot.tulpa_st_summary <- function(x, type = "heatmap", ...) {
 #' @param nn Number of nearest neighbors for NNGP approximation. Default 15.
 #' @param shared Logical; if TRUE (default), effect enters both processes.
 #'
-#' @return A `tulpa_st_gp` object
+#' @return Nothing: the call always signals an error.
 #'
 #' @details
 #' The non-separable covariance functions allow for more flexible space-time
@@ -554,15 +411,6 @@ plot.tulpa_st_summary <- function(x, type = "heatmap", ...) {
 #' stationary covariance functions. Journal of the American Statistical
 #' Association, 94(448), 1330-1340.
 #'
-#' @examples
-#' # Non-separable spatiotemporal GP
-#' st_gp <- spatiotemporal_gp(
-#'   ~ lon + lat,
-#'   time_var = "year",
-#'   nonsep_type = "gneiting"
-#' )
-#' print(st_gp)
-#'
 #' @export
 spatiotemporal_gp <- function(coords,
                               time_var,
@@ -571,227 +419,9 @@ spatiotemporal_gp <- function(coords,
                               nonsep_type = c("product", "sum", "gneiting", "cressie_huang"),
                               nn = 15,
                               shared = NULL) {
-
-  cov_space <- match.arg(cov_space)
-  cov_time <- match.arg(cov_time)
-  nonsep_type <- match.arg(nonsep_type)
-
-  # Parse coordinate specification
-  if (inherits(coords, "formula")) {
-    coord_vars <- all.vars(coords)
-    if (length(coord_vars) != 2) {
-      stop("`coords` formula must specify exactly 2 coordinate variables",
-           call. = FALSE)
-    }
-  } else if (is.character(coords) && length(coords) == 2) {
-    coord_vars <- coords
-  } else {
-    stop("`coords` must be a formula (~ lon + lat) or character vector of length 2",
-         call. = FALSE)
-  }
-
-  if (!is.character(time_var) || length(time_var) != 1) {
-    stop("`time_var` must be a single character string", call. = FALSE)
-  }
-
-  # Validate nn
-  if (!is.numeric(nn) || length(nn) != 1 || nn < 1) {
-    stop("`nn` must be a positive integer", call. = FALSE)
-  }
-  nn <- as.integer(nn)
-
-  if (isFALSE(shared)) .warn_nonshared("spatiotemporal GP effects")
-
-  structure(
-    list(
-      type = "st_gp",
-      coord_vars = coord_vars,
-      time_var = time_var,
-      cov_space = cov_space,
-      cov_time = cov_time,
-      nonsep_type = nonsep_type,
-      nn = nn,
-      shared = shared,
-      # Filled during validation
-      n_obs = NULL,
-      n_spatial = NULL,
-      n_times = NULL,
-      coords_matrix = NULL,
-      time_values = NULL,
-      neighbor_info = NULL
-    ),
-    class = c("tulpa_st_gp", "tulpa_spatiotemporal", "list")
-  )
-}
-
-
-#' Print method for tulpa_st_gp
-#'
-#' @param x A tulpa_st_gp object
-#' @param ... Ignored
-#'
-#' @return The input `x`, returned invisibly. Called for the side effect of
-#'   printing the non-separable spatiotemporal GP specification to the console.
-#'
-#' @export
-print.tulpa_st_gp <- function(x, ...) {
-  cat("tulpa Non-Separable Spatiotemporal GP\n")
-  cat("======================================\n\n")
-
-  cat("Coordinates:", paste(x$coord_vars, collapse = ", "), "\n")
-  cat("Time variable:", x$time_var, "\n")
-  cat("Spatial covariance:", x$cov_space, "\n")
-  cat("Temporal covariance:", x$cov_time, "\n")
-
-  nonsep_desc <- switch(x$nonsep_type,
-    product = "Product (separable)",
-    sum = "Sum",
-    gneiting = "Gneiting non-separable",
-    cressie_huang = "Cressie-Huang non-separable"
-  )
-  cat("Non-separability:", nonsep_desc, "\n")
-  cat("Neighbors (NNGP):", x$nn, "\n")
-  cat("Shared:", if (!isFALSE(x$shared)) "Yes" else "No", "\n")
-
-  if (!is.null(x$n_obs)) {
-    cat("\nObservations:", x$n_obs, "\n")
-  }
-
-  invisible(x)
-}
-
-
-#' Validate non-separable spatiotemporal GP
-#'
-#' @param st_gp tulpa_st_gp object
-#' @param data Data frame
-#'
-#' @return Updated object with computed structure
-#' @keywords internal
-validate_st_gp <- function(st_gp, data) {
-  if (is.null(st_gp)) return(NULL)
-  if (!inherits(st_gp, "tulpa_st_gp")) return(st_gp)
-
-  N <- nrow(data)
-
-  # Check coordinate columns exist
-  for (cv in st_gp$coord_vars) {
-    if (!(cv %in% names(data))) {
-      stop(sprintf("Coordinate variable '%s' not found in data", cv),
-           call. = FALSE)
-    }
-  }
-
-  # Check time variable exists
-  if (!(st_gp$time_var %in% names(data))) {
-    stop(sprintf("Time variable '%s' not found in data", st_gp$time_var),
-         call. = FALSE)
-  }
-
-  # Extract coordinates
-  coords <- cbind(
-    data[[st_gp$coord_vars[1]]],
-    data[[st_gp$coord_vars[2]]]
-  )
-
-  # Check for missing coordinates
-  if (any(is.na(coords))) {
-    stop("Coordinate columns contain missing values", call. = FALSE)
-  }
-
-  # Extract and scale time values
-  time_vals <- data[[st_gp$time_var]]
-  if (!is.numeric(time_vals)) {
-    if (inherits(time_vals, c("Date", "POSIXt"))) {
-      time_vals <- as.numeric(time_vals)
-    } else {
-      stop("Time variable must be numeric or a date/time type", call. = FALSE)
-    }
-  }
-
-  if (any(is.na(time_vals))) {
-    stop("Time variable contains missing values", call. = FALSE)
-  }
-
-  # Scale coordinates and time
-  coords_scaled <- scale(coords)
-  time_scaled <- as.vector(scale(time_vals))
-
-  st_gp$n_obs <- N
-  st_gp$n_spatial <- length(unique(paste(coords[, 1], coords[, 2], sep = "_")))
-  st_gp$n_times <- length(unique(time_vals))
-  st_gp$coords_matrix <- coords_scaled
-  st_gp$time_values <- time_scaled
-
-  # Compute space-time neighbors for NNGP
-  # We order by time first, then space within time
-  nn <- min(st_gp$nn, N - 1)
-  st_gp$neighbor_info <- compute_st_nngp_neighbors(coords_scaled, time_scaled, nn)
-  st_gp$n_params <- N
-
-  st_gp
-}
-
-
-#' Compute nearest neighbors for spatiotemporal NNGP
-#'
-#' @param coords N x 2 matrix of coordinates
-#' @param time N-vector of time values
-#' @param k Number of nearest neighbors
-#'
-#' @return List with neighbor structure
-#' @keywords internal
-compute_st_nngp_neighbors <- function(coords, time, k) {
-  N <- nrow(coords)
-
-  # Order by time first (ensures temporal causality in conditioning)
-  time_order <- order(time, coords[, 1], coords[, 2])
-
-  coords_ordered <- coords[time_order, , drop = FALSE]
-  time_ordered <- time[time_order]
-
-  # Compute neighbors in space-time
-  nn_idx <- matrix(0L, nrow = N, ncol = k)
-  nn_dist_space <- matrix(Inf, nrow = N, ncol = k)
-  nn_dist_time <- matrix(Inf, nrow = N, ncol = k)
-
-  # seq_len(N)[-1] is empty for N <= 1 (unlike 2:N, which counts DOWN to give
-  # c(2, 1) at N == 1 and indexes a non-existent row).
-  for (i in seq_len(N)[-1]) {
-    n_candidates <- min(i - 1, k)
-
-    if (n_candidates > 0) {
-      # Compute space-time distances to previous observations
-      # Using simple Euclidean distance in scaled space-time
-      space_dists <- sqrt(
-        (coords_ordered[1:(i-1), 1] - coords_ordered[i, 1])^2 +
-        (coords_ordered[1:(i-1), 2] - coords_ordered[i, 2])^2
-      )
-      time_dists <- abs(time_ordered[1:(i-1)] - time_ordered[i])
-
-      # Combined distance (can be weighted)
-      combined_dists <- sqrt(space_dists^2 + time_dists^2)
-
-      if (length(combined_dists) <= k) {
-        nn_order <- order(combined_dists)
-        nn_idx[i, seq_along(combined_dists)] <- nn_order
-        nn_dist_space[i, seq_along(combined_dists)] <- space_dists[nn_order]
-        nn_dist_time[i, seq_along(combined_dists)] <- time_dists[nn_order]
-      } else {
-        nn_order <- order(combined_dists)[1:k]
-        nn_idx[i, ] <- nn_order
-        nn_dist_space[i, ] <- space_dists[nn_order]
-        nn_dist_time[i, ] <- time_dists[nn_order]
-      }
-    }
-  }
-
-  list(
-    nn_idx = nn_idx,
-    nn_dist_space = nn_dist_space,
-    nn_dist_time = nn_dist_time,
-    nn_order = time_order,
-    nn_order_inv = order(time_order),
-    k = k
-  )
+  stop("Non-separable spatiotemporal GP fields are not fitted by any tulpa ",
+       "backend: no solver carries a joint space-time covariance, and tulpa() ",
+       "has no `spatiotemporal =` argument. A spatial GP alongside a temporal ",
+       "field is fitted by tulpa(spatial = spatial_gp(...), temporal = ...).",
+       call. = FALSE)
 }

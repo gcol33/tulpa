@@ -17,7 +17,7 @@ tulpa_nuts_spde(
   prior_sigma = NULL,
   log_kappa_init = NULL,
   log_tau_init = NULL,
-  beta_prior = list(mean = 0, sd = 10),
+  beta_prior = .tulpa_default_beta_prior("spde_nuts"),
   log_phi_prior_sd = 3,
   log_phi_init = 0,
   control = list()
@@ -68,7 +68,7 @@ the hyper slots. Default to the value implied by the PC anchor's
 
 \item{beta_prior}{Fixed-effect prior as \code{list(mean, sd)}: a mean-zero
 (\code{mean = 0}) Gaussian on each coefficient with SD \code{sd} (default
-\code{list(mean = 0, sd = 10)}).}
+the engine default, \code{prior_normal(0, 2.5)}).}
 
 \item{log_phi_prior_sd}{Prior SD on \code{log(phi)}. Role of \code{phi} is
 family-specific:

@@ -276,7 +276,7 @@ validate_svc <- function(svc, data, X) {
 #' Compute the k nearest neighbors for each observation using Euclidean
 #' distance. Returns in a format suitable for the NNGP likelihood.
 #'
-#' @param coords N x 2 matrix of coordinates
+#' @param coords N x d matrix of coordinates
 #' @param k Number of nearest neighbors
 #'
 #' @return List with:
@@ -284,6 +284,7 @@ validate_svc <- function(svc, data, X) {
 #'   - `nn_dist`: N x k matrix of distances to neighbors
 #'   - `nn_order`: Ordering of observations for NNGP (by coordinate)
 #'
+#' @export
 #' @keywords internal
 compute_nngp_neighbors <- function(coords, k) {
   N <- nrow(coords)
@@ -292,9 +293,9 @@ compute_nngp_neighbors <- function(coords, k) {
   # Order observations lexicographically by coordinate (a valid NNGP ordering
   # that improves conditioning over the raw input order), over however many
   # coordinate columns there are. The neighbour SELECTION here and the neighbour
-  # COVARIANCE the kernels build from it have to read the same metric, and the
-  # kernels read every column since gcol33/tulpa#389; a selection pinned to two
-  # would order by a projection of the domain the covariance does not use.
+  # COVARIANCE the kernels build from it read the same metric over every column;
+  # a selection pinned to two would order by a projection of the domain the
+  # covariance does not use.
   order_idx <- do.call(order, lapply(seq_len(d), function(j) coords[, j]))
 
   # Reorder coordinates

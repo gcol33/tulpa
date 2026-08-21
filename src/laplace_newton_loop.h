@@ -392,18 +392,74 @@ inline bool newton_converged(const std::vector<double>& delta,
     return ++st.stalled >= NEWTON_STALL_PATIENCE;
 }
 
-// One Newton iteration, shared by the single-arm and joint drivers.
+// The step taken when the factorization of this iteration's Hessian failed:
+// move a short damped distance along whatever finite direction the conditioner
+// did return, and mark the objective stale so the next iteration re-evaluates
+// it. `delta` may be entirely non-finite, in which case the iterate does not
+// move and the next iteration re-factorizes from the same point.
 //
-// `refresh_grad_hess()` is the only step that differs between them -- it
-// recomputes the linear predictor(s) and scatters the gradient and Hessian into
-// the scratch (compute_eta + scatter_grad_hess for one arm, compute_eta_joint +
-// scatter_joint for several). Everything after it is identical: the damped
-// fallback when the factorization fails, the lazy objective refresh, the
-// backtracking line search, and the convergence test.
+// This is the damped NEWTON direction, not a gradient step: every conditioner in
+// the engine returns a usable direction alongside its failure report, and that
+// direction carries the curvature scaling a raw gradient step throws away -- a
+// fixed-length gradient step is negligible or enormous depending on the units of
+// the predictors. Every driver takes this step, so a solve that meets a failed
+// factorization walks the same path whichever Hessian container it runs on.
+inline void newton_damped_fallback(
+    Rcpp::NumericVector& x, const std::vector<double>& delta, int n_x,
+    bool& obj_valid
+) {
+    for (int j = 0; j < n_x; j++) {
+        if (std::isfinite(delta[j])) x[j] += 0.1 * delta[j];
+    }
+    obj_valid = false;
+}
+
+// Everything a Newton iteration does AFTER a successful solve: the lazy
+// objective refresh, the Newton decrement, the trust-scaled backtracking line
+// search, and the convergence test. Reads `grad` / `delta` / `x_try` off the
+// scratch, so it serves the dense and sparse containers alike -- neither is
+// touched here, only the step the solve wrote.
 //
 // `obj_current` / `obj_valid` / `conv_state` carry across iterations, and
 // `n_iter_out` records the iteration count the caller reports. Returns true when
 // the solve has converged, which is the caller's signal to break.
+template <typename Scratch, typename EvalObj>
+inline bool newton_step_tail(
+    Rcpp::NumericVector& x,
+    Scratch& scratch,
+    int n_x, int iter, double tol,
+    EvalObj eval_objective,
+    double& obj_current,
+    bool& obj_valid,
+    NewtonConvState& conv_state,
+    int& n_iter_out
+) {
+    if (!obj_valid) {
+        obj_current = eval_objective(x);
+        obj_valid = true;
+    }
+
+    double slope = newton_decrement(scratch.grad, scratch.delta, n_x);
+    double step_scale = line_search_backtrack(
+        x, scratch.delta, n_x, obj_current, slope, eval_objective,
+        obj_current, scratch.x_try, nullptr,
+        newton_trust_scale(conv_state, slope)
+    );
+
+    n_iter_out = iter + 1;
+    return newton_converged(scratch.delta, scratch.grad, step_scale, n_x, tol,
+                            conv_state);
+}
+
+// One Newton iteration, shared by the single-arm and dense joint drivers.
+//
+// `refresh_grad_hess()` and `cholesky_solve()` are the only steps that differ
+// between them -- the first recomputes the linear predictor(s) and scatters the
+// gradient and Hessian into the scratch (compute_eta + scatter_grad_hess for one
+// arm, compute_eta_joint + scatter_joint for several), the second factorizes
+// whichever container holds it and writes `scratch.delta`. Everything else is
+// newton_damped_fallback and newton_step_tail above, which the sparse joint
+// driver calls directly around its own factor-reuse block.
 template <typename Scratch, typename RefreshFn, typename SolveFn,
           typename EvalObj>
 inline bool newton_step(
@@ -420,32 +476,14 @@ inline bool newton_step(
 ) {
     refresh_grad_hess();
 
-    if (!cholesky_solve(scratch.H, scratch.grad, scratch.delta)) {
-        // Factorization failed: take a short damped step along whatever finite
-        // direction came back and refresh the objective next iteration.
-        for (int j = 0; j < n_x; j++) {
-            if (std::isfinite(scratch.delta[j])) x[j] += 0.1 * scratch.delta[j];
-        }
-        obj_valid = false;
+    if (!cholesky_solve()) {
+        newton_damped_fallback(x, scratch.delta, n_x, obj_valid);
         n_iter_out = iter + 1;
         return false;
     }
 
-    if (!obj_valid) {
-        obj_current = eval_objective(x);
-        obj_valid = true;
-    }
-
-    double slope = newton_decrement(scratch.grad, scratch.delta, n_x);
-    double step_scale = line_search_backtrack(
-        x, scratch.delta, n_x, obj_current, slope, eval_objective,
-        obj_current, scratch.x_try, nullptr,
-        newton_trust_scale(conv_state, slope)
-    );
-
-    n_iter_out = iter + 1;
-    return newton_converged(scratch.delta, scratch.grad, step_scale, n_x, tol,
-                            conv_state);
+    return newton_step_tail(x, scratch, n_x, iter, tol, eval_objective,
+                            obj_current, obj_valid, conv_state, n_iter_out);
 }
 
 // Laplace log-marginal: log_lik + log_prior - 0.5 log|H| + 0.5 n log(2 pi).

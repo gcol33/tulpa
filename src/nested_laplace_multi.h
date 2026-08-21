@@ -7,7 +7,7 @@
 // The driver assembles the inner solve at each outer-grid point k as:
 //
 //   eta_i  = X_i β + RE_g(i) + Σ_b d_fac_b(k) * x[start_b + idx_b(i) - 1]
-//   grad/H from scatter_obs_grad_hess_base (β, RE)
+//   grad/H from the spec solver's observation scatter (β, RE)
 //          + accumulate_latent_cross_terms (latent, latent x β, latent x RE)
 //          + Σ_b add_prior_b(k)
 //          + add_re_beta_priors
@@ -27,7 +27,6 @@
 #include "laplace_family_link.h"
 #include "laplace_newton.h"
 #include "laplace_re_priors.h"
-#include "laplace_scatter.h"
 #include "laplace_spec_solve.h"           // spec_inner_solve (the unified inner solve)
 #include "latent_block.h"
 #include "nested_laplace_grid.h"
@@ -44,6 +43,46 @@
 #endif
 
 namespace tulpa {
+
+// Per-observation contribution walk over the [beta (p) | RE (n_re_groups) |
+// blocks] latent layout: for every latent index observation i touches, call
+// sink(latent_index, weight). One definition behind the per-row predictive
+// variance vector a_i and the per-row fitted eta, which differ only in what
+// they accumulate into.
+template <typename Sink>
+inline void nl_multi_obs_contribs(
+    int i, int p, bool has_re, int n_re_groups,
+    const Rcpp::NumericMatrix& X, const Rcpp::NumericVector& re_idx,
+    const std::vector<LatentBlock>& blocks,
+    const std::vector<double>& d_fac,
+    std::vector<std::pair<int,double>>& scratch,
+    Sink&& sink
+) {
+    for (int j = 0; j < p; j++) sink(j, X(i, j));
+    if (has_re) {
+        const int g = static_cast<int>(re_idx[i]) - 1;
+        if (g >= 0 && g < n_re_groups) sink(p + g, 1.0);
+    }
+    for (std::size_t b = 0; b < blocks.size(); b++) {
+        if (blocks[b].contrib_kind == BlockContribKind::INDEXED_MULTI) {
+            blocks[b].fill_obs_indices(i, /*k_arm=*/0, scratch);
+            for (const auto& nw : scratch) {
+                const int l = nw.first;
+                if (l > 0 && l <= blocks[b].size) {
+                    sink(blocks[b].start + l - 1, d_fac[b] * nw.second);
+                }
+            }
+        } else {
+            const int l = blocks[b].idx(i, /*k_arm=*/0);
+            if (l > 0 && l <= blocks[b].size) {
+                const double w = blocks[b].row_weight
+                                 ? blocks[b].row_weight(i, /*k_arm=*/0)
+                                 : 1.0;
+                sink(blocks[b].start + l - 1, d_fac[b] * w);
+            }
+        }
+    }
+}
 
 // Generic outer-grid driver over a vector of LatentBlocks.
 //
@@ -99,7 +138,6 @@ inline Rcpp::List run_multi_block_nested_laplace(
     for (const auto& b : blocks) {
         n_x = std::max(n_x, b.start + b.size);
     }
-    double tau_re = 1.0 / (sigma_re * sigma_re + 1e-10);
 
     // ---- Likelihood: built-in family or model-supplied spec -----------------
     // Each single-block (and np==1 multi-block) nested kernel routes its inner
@@ -118,7 +156,16 @@ inline Rcpp::List run_multi_block_nested_laplace(
     // parallel) grid. sigma_beta = 100 makes the spec's beta ridge tau_beta =
     // 1e-4, identical to the nested kernel's DEFAULT_TAU_BETA; the spec also
     // folds the beta-prior log-density into the log-marginal.
-    const bool has_re = (n_re_groups > 0) && (re_idx.size() == N);
+    // n_re_groups > 0 with an re_idx of the wrong length is a caller error, not
+    // a configuration: silently dropping the block would fit a model with no
+    // random effect and still return a log-marginal for it, and the per-row
+    // walks below read re_idx[i] for every i < N.
+    if (n_re_groups > 0 && (int) re_idx.size() != N) {
+        Rcpp::stop("length(re_idx) (%d) must equal n_obs (%d) when "
+                   "n_re_groups (%d) is positive.",
+                   (int) re_idx.size(), N, n_re_groups);
+    }
+    const bool has_re = (n_re_groups > 0);
 
     ProcessData proc;
     proc.p = p;
@@ -286,32 +333,10 @@ inline Rcpp::List run_multi_block_nested_laplace(
             const std::size_t base = static_cast<std::size_t>(k) * N;
             for (int i = 0; i < N; i++) {
                 std::fill(a.begin(), a.end(), 0.0);
-                for (int j = 0; j < p; j++) a[j] = X(i, j);
-                if (n_re_groups > 0) {
-                    int g = static_cast<int>(re_idx[i]) - 1;
-                    if (g >= 0 && g < n_re_groups) a[p + g] += 1.0;
-                }
-                for (size_t b = 0; b < blocks.size(); b++) {
-                    if (blocks[b].contrib_kind
-                            == BlockContribKind::INDEXED_MULTI) {
-                        blocks[b].fill_obs_indices(i, /*k_arm=*/0, a_multi);
-                        for (const auto& nw : a_multi) {
-                            int l = nw.first;
-                            if (l > 0 && l <= blocks[b].size) {
-                                a[blocks[b].start + l - 1] +=
-                                    d_fac_cache[b] * nw.second;
-                            }
-                        }
-                    } else {
-                        int l = blocks[b].idx(i, /*k_arm=*/0);
-                        if (l > 0 && l <= blocks[b].size) {
-                            double w = blocks[b].row_weight
-                                       ? blocks[b].row_weight(i, /*k_arm=*/0)
-                                       : 1.0;
-                            a[blocks[b].start + l - 1] += d_fac_cache[b] * w;
-                        }
-                    }
-                }
+                nl_multi_obs_contribs(
+                    i, p, has_re, n_re_groups, X, re_idx, blocks,
+                    d_fac_cache, a_multi,
+                    [&](int idx, double w) { a[idx] += w; });
                 bool ok = true;
                 if (used_sparse_factor) {
                     solver->solve(a.data(), z.data(), n_x);
@@ -321,7 +346,14 @@ inline Rcpp::List run_multi_block_nested_laplace(
                 }
                 double v = 0.0;
                 if (ok) for (int j = 0; j < n_x; j++) v += a[j] * z[j];
-                fitted_var_buf[base + i] = (ok && v > 0.0) ? v : 0.0;
+                // H is positive definite, so a' H^-1 a is negative only when
+                // the back-substitution lost accuracy; reporting 0 there gives
+                // a downstream interval zero width and no way to tell that
+                // apart from a genuinely zero loading vector (which does give
+                // exactly 0).
+                fitted_var_buf[base + i] =
+                    (ok && v >= 0.0) ? v
+                                     : std::numeric_limits<double>::quiet_NaN();
             }
         }
 
@@ -388,32 +420,10 @@ inline Rcpp::List run_multi_block_nested_laplace(
             for (size_t b = 0; b < blocks.size(); b++) dfac[b] = blocks[b].d_fac_at(k);
             for (int i = 0; i < N; i++) {
                 double e = 0.0;
-                for (int j = 0; j < p; j++) e += X(i, j) * modes(k, j);
-                if (n_re_groups > 0) {
-                    int g = static_cast<int>(re_idx[i]) - 1;
-                    if (g >= 0 && g < n_re_groups) e += modes(k, p + g);
-                }
-                for (size_t b = 0; b < blocks.size(); b++) {
-                    if (blocks[b].contrib_kind
-                            == BlockContribKind::INDEXED_MULTI) {
-                        blocks[b].fill_obs_indices(i, /*k_arm=*/0, e_multi);
-                        for (const auto& nw : e_multi) {
-                            int l = nw.first;
-                            if (l > 0 && l <= blocks[b].size) {
-                                e += dfac[b] * nw.second
-                                   * modes(k, blocks[b].start + l - 1);
-                            }
-                        }
-                    } else {
-                        int l = blocks[b].idx(i, /*k_arm=*/0);
-                        if (l > 0 && l <= blocks[b].size) {
-                            double w = blocks[b].row_weight
-                                       ? blocks[b].row_weight(i, /*k_arm=*/0)
-                                       : 1.0;
-                            e += dfac[b] * w * modes(k, blocks[b].start + l - 1);
-                        }
-                    }
-                }
+                nl_multi_obs_contribs(
+                    i, p, has_re, n_re_groups, X, re_idx, blocks,
+                    dfac, e_multi,
+                    [&](int idx, double w) { e += w * modes(k, idx); });
                 fitted_eta(k, i) = e;
             }
         }

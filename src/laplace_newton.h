@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <cmath>
 #include <functional>
+#include <limits>
 #include <utility>
 #include <vector>
 
@@ -168,10 +169,9 @@ LaplaceResult laplace_newton_solve_ll(
         );
     };
 
-    auto cholesky_solve = [&](DenseMat& H, DenseVec& grad,
-                              std::vector<double>& delta) -> bool {
-        return dispatch_factor_solve(H, grad, delta, n_x, sparse_solver,
-                                     use_sparse, scratch.chol);
+    auto cholesky_solve = [&]() -> bool {
+        return dispatch_factor_solve(scratch.H, scratch.grad, scratch.delta, n_x,
+                                     sparse_solver, use_sparse, scratch.chol);
     };
 
     double obj_current = -1e300;
@@ -223,8 +223,20 @@ LaplaceResult laplace_newton_solve_ll(
     scatter_grad_hess(x, scratch.eta, scratch.grad, scratch.H);
     result.score_max = max_abs(scratch.grad);
 
-    dispatch_factor_log_det(scratch.H, n_x, sparse_solver, use_sparse,
-                             scratch.chol, result.log_det_Q);
+    // A non-finite log-determinant is the plain Cholesky reporting that the
+    // Hessian at the returned point is not PD -- a point the solve stopped at
+    // without reaching a mode. There is no Laplace expansion there, so the fit
+    // says so rather than carrying the value into log_marginal: an -Inf
+    // log-determinant is a +Inf log-marginal, which does not merely lose the
+    // cell but makes it take the whole outer grid's weight. A PD Hessian never
+    // reaches this, so every fit that factorizes is unchanged.
+    result.hessian_pd_at_mode = dispatch_factor_log_det(
+        scratch.H, n_x, sparse_solver, use_sparse, scratch.chol,
+        result.log_det_Q);
+    if (!result.hessian_pd_at_mode) {
+        result.log_det_Q = std::numeric_limits<double>::quiet_NaN();
+        result.converged = false;
+    }
 
     // Diagonal blocks of H^{-1} for the requested index ranges. Reuses the
     // factor just built for the log-determinant (no refactorization): for each
@@ -233,7 +245,10 @@ LaplaceResult laplace_newton_solve_ll(
     // marginalized out). Sparse path solves against the live CHOLMOD factor;
     // dense path back-substitutes the live scratch.chol.L. Each block is
     // symmetrized and stored column-major.
-    if (inv_block_layout && !inv_block_layout->empty()) {
+    // Withheld where the Hessian at the returned point is not PD: its inverse
+    // is not a covariance there.
+    if (inv_block_layout && !inv_block_layout->empty() &&
+        result.hessian_pd_at_mode) {
         bool used_sparse_factor = use_sparse && sparse_solver.factored();
         std::vector<double> z_work;
         if (!used_sparse_factor) z_work.assign(n_x, 0.0);
@@ -275,47 +290,50 @@ LaplaceResult laplace_newton_solve_ll(
     for (int j = 0; j < n_x; j++) pre_center_x[j] = x[j];
     const bool used_sparse_factor = use_sparse && sparse_solver.factored();
 
-    if (compute_skew && result.converged) {
+    if (compute_skew) {
         std::vector<int> all_idx;
-        const std::vector<int>* probe = skew_probe_idx;
-        if (!probe) {
-            all_idx.resize(n_x);
-            for (int j = 0; j < n_x; j++) all_idx[j] = j;
-            probe = &all_idx;
+        const std::vector<int>& probe =
+            inner_probe_indices(n_x, skew_probe_idx, all_idx);
+        if (!result.converged) {
+            // gamma_3 is a cubic expansion ABOUT the mode and the inner k-hat an
+            // importance ratio against the Gaussian AT it, so neither exists at
+            // a point the solve stopped short of. Emitting the indices unscored
+            // is what separates that from the diagnostic never having been
+            // requested.
+            inner_probe_decline(result, probe, "not_converged");
+        } else {
+            Curvature3Oracle no_oracle;
+            InnerSkewOutcome sk = compute_inner_skew_gamma3(
+                n_x, N, pre_center_x, scratch.chol, sparse_solver,
+                used_sparse_factor, compute_eta, x, scratch.eta, scratch.eta_tmp,
+                curvature3 ? *curvature3 : no_oracle, probe
+            );
+            result.inner_skew = std::move(sk.gamma3);
+            result.inner_skew_gamma1 = std::move(sk.gamma1);
+            result.inner_skew_gamma1_declined = sk.gamma1_declined;
+            result.inner_skew_idx = probe;
+            result.inner_skew_dropped = sk.n_nonfinite_dropped;
+            result.inner_skew_declined = sk.declined;
+
+            // The likelihood-agnostic inner k-hat over the same probed subspace,
+            // along the same conditional-mean curve the cubic term just walked.
+            // It reads the joint density through the loop's own penalized
+            // objective, so it does not depend on the third-derivative oracle
+            // and stands where gamma_3 declines (gcol33/tulpa#303).
+            InnerISOutcome is_out = compute_inner_is_curve(
+                n_x, pre_center_x, scratch.chol, sparse_solver,
+                used_sparse_factor, eval_objective, x, probe
+            );
+            result.inner_is_z          = std::move(is_out.z);
+            result.inner_is_log_joint  = std::move(is_out.log_joint);
+            result.inner_is_sigma      = std::move(is_out.sigma);
+            result.inner_is_declined   = is_out.declined;
         }
-        Curvature3Oracle no_oracle;
-        InnerSkewOutcome sk = compute_inner_skew_gamma3(
-            n_x, N, pre_center_x, scratch.chol, sparse_solver, used_sparse_factor,
-            compute_eta, x, scratch.eta, scratch.eta_tmp,
-            curvature3 ? *curvature3 : no_oracle, *probe
-        );
-        result.inner_skew = std::move(sk.gamma3);
-        result.inner_skew_gamma1 = std::move(sk.gamma1);
-        result.inner_skew_gamma1_declined = sk.gamma1_declined;
-        result.inner_skew_idx = *probe;
-        result.inner_skew_dropped = sk.n_nonfinite_dropped;
-        result.inner_skew_declined = sk.declined;
-
-        // The likelihood-agnostic inner k-hat over the same probed subspace,
-        // along the same conditional-mean curve the cubic term just walked. It
-        // reads the joint density through the loop's own penalized objective,
-        // so it does not depend on the third-derivative oracle and stands where
-        // gamma_3 declines (gcol33/tulpa#303).
-        InnerISOutcome is_out = compute_inner_is_curve(
-            n_x, pre_center_x, scratch.chol, sparse_solver, used_sparse_factor,
-            eval_objective, x, *probe
-        );
-        result.inner_is_z          = std::move(is_out.z);
-        result.inner_is_log_joint  = std::move(is_out.log_joint);
-        result.inner_is_sigma      = std::move(is_out.sigma);
-        result.inner_is_declined   = is_out.declined;
     }
 
-    if (result.converged) {
-        run_subspace_debias(result, n_x, pre_center_x, scratch.chol,
-                            sparse_solver, used_sparse_factor,
-                            eval_objective, x, debias);
-    }
+    run_subspace_debias(result, n_x, pre_center_x, scratch.chol,
+                        sparse_solver, used_sparse_factor,
+                        eval_objective, x, debias);
 
     // The correction reads the same pre-centering iterate, and presents each
     // draw through the loop's own centering fold so a drawn coefficient is in

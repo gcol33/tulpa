@@ -1010,3 +1010,54 @@
     }
     .NL_DIAG[[par]]
 }
+
+
+# --- default fixed-effect prior ----------------------------------------------
+#
+# The Gaussian prior a fitter puts on the fixed effects when the caller supplies
+# no `beta_prior`. ONE value, because the prior is a modelling statement and a
+# backend is a computational choice: `mode = "auto"` routes a plain fixed-effect
+# model and the same model plus a random-effect term to different backends, so a
+# per-backend default makes adding `(1 | g)` move the posterior for a reason the
+# fit does not report.
+#
+# The value is `tulpa_priors()`'s documented fixed-effect default,
+# `prior_normal(0, 2.5)`, which is also the scale the zero-inflation coefficient
+# block already carries.
+.TULPA_PRIOR <- list(
+    beta_sd = 2.5
+)
+
+# Which setting each front door reads. A fitter names itself here rather than
+# restating a number, so a backend that genuinely needs a different scale
+# becomes a visible entry in this table instead of a literal in its own
+# argument list.
+.PRIOR_CONSUMERS <- list(
+    tulpa         = "beta_sd",
+    ridge         = "beta_sd",
+    laplace       = "beta_sd",
+    gaussian      = "beta_sd",
+    gibbs         = "beta_sd",
+    ep            = "beta_sd",
+    beta_nuts     = "beta_sd",
+    spde_nuts     = "beta_sd",
+    multinomial   = "beta_sd",
+    ordinal       = "beta_sd",
+    re_cov_gibbs  = "beta_sd",
+    glmm_logpost  = "beta_sd",
+    sample_glmm   = "beta_sd"
+)
+
+.tulpa_prior_sd <- function(consumer = "tulpa") {
+    if (!consumer %in% names(.PRIOR_CONSUMERS)) {
+        stop("Unknown fixed-effect prior consumer '", consumer, "'.",
+             call. = FALSE)
+    }
+    .TULPA_PRIOR[[.PRIOR_CONSUMERS[[consumer]]]]
+}
+
+# The engine's fixed-effect prior object, in the `list(mean, sd)` shape every
+# fitter's `beta_prior` argument takes.
+.tulpa_default_beta_prior <- function(consumer = "tulpa") {
+    list(mean = 0, sd = .tulpa_prior_sd(consumer))
+}

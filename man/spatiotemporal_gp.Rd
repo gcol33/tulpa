@@ -39,12 +39,16 @@ or \code{"gaussian"}.}
 \item{shared}{Logical; if TRUE (default), effect enters both processes.}
 }
 \value{
-A \code{tulpa_st_gp} object
+Nothing: the call always signals an error.
 }
 \description{
 Specify a non-separable Gaussian Process for spatiotemporal effects.
 Unlike separable models where the covariance factors as \eqn{C_s \otimes C_t},
 non-separable models allow for direct space-time interaction in the covariance.
+
+No tulpa backend fits a joint space-time covariance, so this constructor
+errors. A spatial GP alongside a temporal field is fitted by
+\code{tulpa(spatial = spatial_gp(...), temporal = ...)}.
 }
 \details{
 The non-separable covariance functions allow for more flexible space-time
@@ -58,16 +62,6 @@ space-time interaction.
 
 \strong{Cressie-Huang class:}
 Constructed via Fourier transform methods to ensure positive definiteness.
-}
-\examples{
-# Non-separable spatiotemporal GP
-st_gp <- spatiotemporal_gp(
-  ~ lon + lat,
-  time_var = "year",
-  nonsep_type = "gneiting"
-)
-print(st_gp)
-
 }
 \references{
 Gneiting, T. (2002). Nonseparable, stationary covariance functions for

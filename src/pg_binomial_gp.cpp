@@ -1,6 +1,5 @@
 // pg_binomial_gp.cpp
 // GP (sequential NNGP) spatial Gibbs sampler for Pólya-Gamma binomial models
-// Split from pg_binomial.cpp on 2026-05-02
 
 #include "pg_shared.h"
 #include "pg_rng.h"
@@ -18,12 +17,10 @@ using namespace Rcpp;
 
 // ---------------------------------------------------------------------
 // GP Spatial Gibbs Sampler for Binomial Models
-// Uses sequential NNGP updates
-// ---------------------------------------------------------------------
 //
-// The sequential NNGP conditional N(w_i | cond_mean, cond_var) now lives in
-// pg_shared.h (tulpa::pg_nngp_conditional) so the single-scale and multiscale
-// samplers share one solve (principle #5).
+// The field, its marginal variance and its range are updated by
+// tulpa::pg_nngp_scale_update, shared with the multiscale sampler.
+// ---------------------------------------------------------------------
 
 // [[Rcpp::export]]
 Rcpp::List cpp_pg_binomial_gibbs_gp(
@@ -54,13 +51,27 @@ Rcpp::List cpp_pg_binomial_gibbs_gp(
     bool verbose = true,
     int n_threads = 1
 ) {
-  // CRITICAL: Must call GetRNGstate/PutRNGstate when using R's RNG from C++
-  GetRNGstate();
-
-  int n_save = (n_iter - n_warmup) / thin;
-  tulpa::PgGibbsCommon C(y, n, X.ncol(), n_re_groups, n_save, n_threads, store_eta);
+  const int n_save = tulpa::pg_n_save(n_iter, n_warmup, thin);
+  tulpa::PgGibbsCommon C(y, n, X, re_group, n_re_groups, n_save,
+                         prior_sigma_re_scale, n_threads, store_eta);
   const int N = C.N;
   const int p = C.p;
+  C.require_intercept("NNGP spatial");
+
+  if (N != n_spatial) {
+    Rcpp::stop("The NNGP Gibbs kernel maps observation i to location i, so it "
+               "needs one observation per location: got %d observation(s) for "
+               "%d location(s).", N, n_spatial);
+  }
+  if (coords.nrow() != n_spatial) {
+    Rcpp::stop("`coords` has %d row(s) but `n_spatial` is %d.",
+               static_cast<int>(coords.nrow()), n_spatial);
+  }
+  tulpa::pg_check_pc_prior(prior_sigma_gp_U, prior_sigma_gp_alpha, "gp");
+  if (!(prior_phi_lower > 0.0) || !(prior_phi_upper > prior_phi_lower)) {
+    Rcpp::stop("The range prior needs 0 < prior_phi_lower < prior_phi_upper; "
+               "got [%g, %g].", prior_phi_lower, prior_phi_upper);
+  }
 
   // Per-variant storage
   Rcpp::NumericMatrix gp_draws(n_save, n_spatial);
@@ -68,10 +79,13 @@ Rcpp::List cpp_pg_binomial_gibbs_gp(
   Rcpp::NumericVector phi_gp_draws(n_save);
 
   // Per-variant state
-  std::vector<double> w(n_spatial, 0.0);
-  double sigma2_gp = sigma2_gp_init;
-  double phi_gp = phi_gp_init;
+  tulpa::PgNngpScale gp;
+  gp.w.assign(n_spatial, 0.0);
+  gp.sigma2 = sigma2_gp_init;
+  gp.phi = phi_gp_init;
+  gp.top = tulpa::pg_nngp_topology(nn_idx, nn_dist, nn_order, n_spatial, nn);
   Rcpp::NumericVector gp_contrib(N, 0.0);
+  std::vector<double> sum_omega_gp(n_spatial, 0.0), sum_resid_gp(n_spatial, 0.0);
 
   int save_idx = 0;
 
@@ -86,61 +100,44 @@ Rcpp::List cpp_pg_binomial_gibbs_gp(
         gp_contrib, C.offset, C.kappa, n, X, re_group, n_re_groups,
         prior_beta_sd, prior_sigma_re_scale, C.n_threads_team);
 
-    // 5. Update GP effects (sequential NNGP Gibbs)
+    // 5. Update the GP scale (field, marginal variance, range)
     for (int i = 0; i < N; i++) {
       C.offset[i] = C.X_beta[i] + C.re_contrib[i];
     }
-
-    // Aggregate likelihood info per spatial location
-    std::vector<double> sum_omega_gp(n_spatial, 0.0);
-    std::vector<double> sum_resid_gp(n_spatial, 0.0);
-    for (int i = 0; i < N; i++) {
-      if (i < n_spatial) {
-        sum_omega_gp[i] += C.omega[i];
-        sum_resid_gp[i] += C.kappa[i] - C.omega[i] * C.offset[i];
-      }
-    }
-
-    // Field + (sigma2, phi) via the shared NNGP-correct scale update: the field
-    // by sequential NNGP conditionals, sigma2 by the conjugate InvGamma on the
-    // standardized quadratic form, phi by an MH on the proper NNGP log-density.
-    // The previous inline updates left sigma2 railing (w treated as iid, no NNGP
-    // structure and no normalizer) and phi doing a data-free random walk (its MH
-    // ratio carried no likelihood or prior). prior_sigma_gp_alpha is no longer
-    // used (the conjugate InvGamma uses prior_sigma_gp_U as its rate offset).
-    tulpa::update_nngp_scale(
-        w, sigma2_gp, phi_gp, cov_type, coords, nn_idx, nn_dist, nn_order,
-        nn, n_spatial, sum_omega_gp, sum_resid_gp,
-        prior_sigma_gp_U, prior_phi_lower, prior_phi_upper);
+    tulpa::pg_accumulate_stats(N, nullptr, n_spatial, C.omega.begin(),
+                               C.kappa.begin(), C.offset.begin(),
+                               sum_omega_gp.data(), sum_resid_gp.data());
+    tulpa::pg_nngp_scale_update(
+        gp, cov_type, coords, nn_dist, sum_omega_gp, sum_resid_gp,
+        prior_sigma_gp_U, prior_sigma_gp_alpha,
+        prior_phi_lower, prior_phi_upper);
 
     // Anchor the field level: the overall GP mean and the intercept are
     // confounded (both shift eta by a constant), and under the NNGP sequential
-    // update that level is only weakly identified, so the pair drifts. Center
+    // update that level is only weakly identified, so the pair drifts. Centre
     // the field and absorb the removed mean into the intercept -- eta is
     // unchanged and the field/intercept no longer diverge.
     {
       double w_mean = 0.0;
-      for (int s = 0; s < n_spatial; s++) w_mean += w[s];
+      for (int s = 0; s < n_spatial; s++) w_mean += gp.w[s];
       w_mean /= n_spatial;
-      for (int s = 0; s < n_spatial; s++) w[s] -= w_mean;
-      C.beta[0] += w_mean;
+      for (int s = 0; s < n_spatial; s++) gp.w[s] -= w_mean;
+      C.absorb_level(w_mean);
     }
 
     // Update GP contributions
-    for (int i = 0; i < N; i++) {
-      if (i < n_spatial) {
-        gp_contrib[i] = w[i];
-      }
+    for (int i = 0; i < n_spatial; i++) {
+      gp_contrib[i] = gp.w[i];
     }
 
     // Save draws
     if (iter >= n_warmup && (iter - n_warmup) % thin == 0) {
       C.save(save_idx);
       for (int s = 0; s < n_spatial; s++) {
-        gp_draws(save_idx, s) = w[s];
+        gp_draws(save_idx, s) = gp.w[s];
       }
-      sigma2_gp_draws[save_idx] = sigma2_gp;
-      phi_gp_draws[save_idx] = phi_gp;
+      sigma2_gp_draws[save_idx] = gp.sigma2;
+      phi_gp_draws[save_idx] = gp.phi;
       save_idx++;
     }
 
@@ -160,6 +157,5 @@ Rcpp::List cpp_pg_binomial_gibbs_gp(
     result["eta"] = C.eta_draws;
   }
 
-  PutRNGstate();
   return result;
 }

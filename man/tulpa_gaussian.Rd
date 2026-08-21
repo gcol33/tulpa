@@ -7,7 +7,7 @@
 tulpa_gaussian(
   formula,
   data,
-  beta_prior = list(mean = 0, sd = 10),
+  beta_prior = .tulpa_default_beta_prior("gaussian"),
   control = list()
 )
 }
@@ -18,7 +18,7 @@ tulpa_gaussian(
 
 \item{beta_prior}{Fixed-effect prior as \code{list(mean, sd)}: a mean-zero
 (\code{mean = 0}) Gaussian on every coefficient with SD \code{sd}
-(default \code{list(mean = 0, sd = 10)}).}
+(default the engine default, \code{prior_normal(0, 2.5)}).}
 
 \item{control}{List of numerical / sampler knobs: \code{iter} (total iterations,
 default 2000), \code{warmup} (default 1000), \code{step_size} (HMC step size, default

@@ -42,6 +42,16 @@ struct LaplaceResult {
   // so this is read off that pass at no extra cost.
   double score_max = 0.0;
 
+  // Whether the Hessian at the returned point is the positive-definite matrix
+  // the Laplace expansion needs. False where the final factorization had to
+  // condition it -- a diagonal load or an eigenvalue clamp -- or could not
+  // factor it at all: the reported log-determinant is then of a DIFFERENT matrix
+  // than the scatter built, and the inverse of that matrix is not a posterior
+  // covariance, which is why the stored precision and the marginal covariance
+  // blocks are withheld there. True on every solve whose first factorization
+  // succeeded, which is every solve at a PD Hessian.
+  bool hessian_pd_at_mode = true;
+
   // The solve never started: the penalized objective was non-finite at the
   // supplied latent start and the feasibility sweep (make_start_feasible) found
   // no interior point. This is distinct from converged = false, which means the
@@ -95,10 +105,17 @@ struct LaplaceResult {
   // finite-difference that failed numerically) -- and a fit reporting the
   // former was read as the caller having switched the diagnostic off. Empty
   // when at least one index scored. Vocabulary: "no_probe_indices",
-  // "coupled_likelihood" (n_processes != 1), "coupled_arm" (a joint fit whose
-  // scorable arms all declined), "curvature3_unavailable" (no registered third
-  // derivative / no eta_weights_fn), "no_finite_contribution" (an oracle
-  // existed but nothing finite reached any probed index).
+  // "coupled_arm" (a joint fit whose scorable arms all declined),
+  // "curvature3_unavailable" (no registered third derivative / no
+  // eta_weights_fn), "no_finite_contribution" (an oracle existed but nothing
+  // finite reached any probed index), plus the four reasons a driver settles
+  // before either diagnostic runs, which decline the importance curve too
+  // (inner_probe_decline, inner_laplace_skew.h): "not_converged" (the solve
+  // stopped short of a mode, so there is no point to expand about and no
+  // Gaussian at a mode to score), and on the sparse joint path
+  // "pd_eigen_clamp", "s2z_rank1_factor" and "factor_unavailable", each naming
+  // a way the live CHOLMOD factor holds a different matrix than the one the
+  // solve stepped with.
   // `inner_skew_arms_declined` lists the joint arms with no oracle at all
   // (0-based here, 1-based on the R side), so a PARTIALLY scored joint fit
   // names which arms were left out.
@@ -141,7 +158,13 @@ struct LaplaceResult {
   // the caller can rebuild the Gaussian conditional for the coordinates it did
   // NOT sample. `debias_declined` says why nothing was sampled, when nothing
   // was; an empty index set never reaches the sampler at all, so the fit is
-  // then the plain Laplace fit with no random number consumed.
+  // then the plain Laplace fit with no random number consumed. Vocabulary:
+  // "no_probe_indices", "degenerate_proposal", "objective_not_finite", plus the
+  // gate reasons the driver settles first -- "not_converged" and, on the sparse
+  // joint path, "pd_eigen_clamp" / "s2z_rank1_factor" / "factor_unavailable".
+  // A gated decline echoes `debias_idx` back with `debias_n_kept = 0`, so a
+  // requested correction that produced nothing is not mistaken for one that was
+  // never requested.
   std::vector<int>    debias_idx;
   std::vector<double> debias_draws;
   std::vector<double> debias_sigma_ss;
@@ -248,7 +271,8 @@ inline Rcpp::List laplace_result_to_list(const LaplaceResult& result) {
     Rcpp::Named("n_iter") = result.n_iter,
     Rcpp::Named("converged") = result.converged,
     Rcpp::Named("score_max") = result.score_max,
-    Rcpp::Named("start_infeasible") = result.start_infeasible
+    Rcpp::Named("start_infeasible") = result.start_infeasible,
+    Rcpp::Named("hessian_pd_at_mode") = result.hessian_pd_at_mode
   );
 
   // Marginal posterior-covariance blocks, when the solver was asked to extract

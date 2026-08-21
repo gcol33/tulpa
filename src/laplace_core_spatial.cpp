@@ -1,16 +1,13 @@
 // laplace_core_spatial.cpp
 // Spatial / BYM2 Laplace mode finders + their R exports.
-// Split from laplace_core.cpp on 2026-05-02.
 //
-// Each mode finder still uses laplace_newton_solve (in laplace_newton.h) and the
-// scatter helpers from laplace_scatter.h — see laplace_core.cpp for the shared
-// library context.
+// Each mode finder runs laplace_newton_solve (laplace_newton.h); see
+// laplace_core.cpp for the shared library context.
 
 #include "laplace_core.h"
 #include "laplace_cholesky.h"
 #include "laplace_newton.h"
 #include "laplace_re_priors.h"
-#include "laplace_scatter.h"
 #include "laplace_spatial_priors.h"
 #include "icar_kernel.h"           // count_graph_components
 #include "laplace_spec_fit.h"     // spec-solver marshalling for the single-point fits
@@ -51,9 +48,9 @@ Rcpp::List cpp_laplace_fit_spatial(
     Rcpp::Nullable<Rcpp::NumericVector> weights_nullable = R_NilValue
 ) {
     // Fixed effects + optional iid RE + a single ICAR latent block, through the
-    // unified spec solver (the family-enum laplace_mode_spatial was retired in
-    // B2-live). The block is built exactly as cpp_nested_laplace_icar's, so the
-    // mode + log-marginal match the nested kernel at one tau cell.
+    // unified spec solver. The block is built exactly as
+    // cpp_nested_laplace_icar's, so the mode + log-marginal match the nested
+    // kernel at one tau cell.
     const int N = y.size();
     const int p = X.ncol();
     const bool has_re = n_re_groups > 0;
@@ -140,9 +137,9 @@ Rcpp::List cpp_laplace_fit_bym2(
     Rcpp::Nullable<Rcpp::NumericVector> weights_nullable = R_NilValue
 ) {
     // Fixed effects + optional iid RE + BYM2's two latent blocks (phi:
-    // ICAR-structured & centered, theta: IID) through the unified spec solver
-    // (the family-enum laplace_mode_bym2 was retired in B2-live). Blocks built
-    // exactly as cpp_nested_laplace_bym2's, with the grid-dependent d_fac.
+    // ICAR-structured & centered, theta: IID) through the unified spec solver.
+    // Blocks built exactly as cpp_nested_laplace_bym2's, with the
+    // grid-dependent d_fac.
     const int N = y.size();
     const int p = X.ncol();
     const bool has_re = n_re_groups > 0;

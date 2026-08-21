@@ -90,7 +90,12 @@ log-posterior samplers, and the ModelData samplers. Backends without a
 \code{estimate_phi} covers \code{phi} alone; \code{phi2} is always conditioned on.}
 
 \item{beta_prior}{Optional \code{list(mean, sd)} Gaussian prior on the fixed
-effects.}
+effects. \code{NULL} takes the engine default, \code{prior_normal(0, 2.5)}, on every
+backend that carries a fixed-effect prior -- the prior is a modelling
+statement, so the backend \code{mode = "auto"} selects does not change it. The
+nested-Laplace and SPDE paths hold their own field-conditional prior and
+reject a supplied \code{beta_prior}. The resolved prior is reported on the fit
+as \verb{$beta_prior}.}
 
 \item{re_prior}{Optional \code{list()} of random-effect / variance-component
 hyperpriors (statistical, so they live in the signature rather than in

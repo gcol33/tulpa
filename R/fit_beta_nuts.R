@@ -17,7 +17,7 @@
 #' @param X Fixed-effects design matrix.
 #' @param beta_prior Fixed-effect prior as `list(mean, sd)`: a mean-zero
 #'   (`mean = 0`) Gaussian on each coefficient with SD `sd` (default
-#'   `list(mean = 0, sd = 10)`).
+#'   the engine default, `prior_normal(0, 2.5)`).
 #' @param log_phi_prior_sd Prior SD on `log(phi)`
 #'   (`log_phi ~ N(0, log_phi_prior_sd)`). Default `3` (very weak;
 #'   covers `phi` from ~0.001 to ~1000 within +-2 SD).
@@ -53,7 +53,7 @@
 #' }
 #' @export
 tulpa_nuts_beta <- function(y, X,
-                            beta_prior       = list(mean = 0, sd = 10),
+                            beta_prior       = .tulpa_default_beta_prior("beta_nuts"),
                             log_phi_prior_sd = 3,
                             log_phi_init     = 0,
                             control          = list()) {
@@ -62,7 +62,7 @@ tulpa_nuts_beta <- function(y, X,
   stopifnot(is.numeric(y), is.matrix(X), nrow(X) == length(y))
   .assert_finite_model_inputs(NULL, y)
   .validate_family_support("beta", y)
-  sigma_beta <- .beta_prior_ridge_sd(beta_prior, default_sd = 10)
+  sigma_beta <- .beta_prior_ridge_sd(beta_prior, .tulpa_prior_sd("beta_nuts"))
   if (!is.numeric(log_phi_prior_sd) || length(log_phi_prior_sd) != 1L ||
       !is.finite(log_phi_prior_sd) || log_phi_prior_sd <= 0) {
     stop("`log_phi_prior_sd` must be a positive scalar.", call. = FALSE)

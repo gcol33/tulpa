@@ -305,6 +305,12 @@ void takahashi_partial_inverse_dense(
 }
 
 double SparseCholeskySolver::SelectedInverse::at(int i_orig, int j_orig) const {
+    // An unfactorized solve returns a default-constructed SelectedInverse
+    // (n == 0, every array empty); an index outside the factored dimension has
+    // no entry either. Both read 0.0 rather than dereferencing out of range.
+    if (n == 0 || i_orig < 0 || i_orig >= n || j_orig < 0 || j_orig >= n) {
+        return 0.0;
+    }
     int pi = perm_inv[i_orig];
     int pj = perm_inv[j_orig];
     int lo = std::min(pi, pj);

@@ -52,6 +52,30 @@
 
 namespace {
 
+// Standard-normal prior on a contiguous latent block, x_s ~ N(0, 1) with the
+// block's scale carried by d_fac. Shared by BYM2's unstructured component and
+// the iid block, which are the same density.
+void add_standard_normal_block_prior(tulpa::DenseVec& grad, tulpa::DenseMat& H,
+                                     const Rcpp::NumericVector& x,
+                                     int start, int size) {
+    for (int s = 0; s < size; s++) {
+        const int idx = start + s;
+        grad[idx] -= x[idx];
+        H[idx][idx] += 1.0;
+    }
+}
+
+double log_prior_standard_normal_block(const Rcpp::NumericVector& x,
+                                       int start, int size) {
+    double lp = 0.0;
+    for (int s = 0; s < size; s++) {
+        lp -= 0.5 * x[start + s] * x[start + s];
+    }
+    lp -= 0.5 * size * std::log(2.0 * M_PI);
+    return lp;
+}
+
+
 // Push the LatentBlock(s) for one block-spec entry. Returns the new
 // latent_offset after appending this block's sub-vector(s) to the joint
 // latent vector layout.
@@ -183,20 +207,11 @@ int build_blocks_from_spec(
         theta_block.add_prior = [theta_start, size](
             tulpa::DenseVec& grad, tulpa::DenseMat& H,
             const Rcpp::NumericVector& x, int) {
-            for (int s = 0; s < size; s++) {
-                int idx = theta_start + s;
-                grad[idx] -= x[idx];
-                H[idx][idx] += 1.0;
-            }
+            add_standard_normal_block_prior(grad, H, x, theta_start, size);
         };
         theta_block.log_prior = [theta_start, size](
             const Rcpp::NumericVector& x, int) {
-            double lp = 0.0;
-            for (int s = 0; s < size; s++) {
-                lp -= 0.5 * x[theta_start + s] * x[theta_start + s];
-            }
-            lp -= 0.5 * size * std::log(2.0 * M_PI);
-            return lp;
+            return log_prior_standard_normal_block(x, theta_start, size);
         };
         blocks.push_back(theta_block);
         return theta_start + size;
@@ -310,8 +325,7 @@ int build_blocks_from_spec(
         require_axes(1);
         int size = Rcpp::as<int>(bs["n_times"]);
         Rcpp::IntegerVector temporal_idx = bs["temporal_idx"];
-        bool cyclic = (type == "rw1" || type == "rw2") &&
-                      bs.containsElementNamed("cyclic") &&
+        bool cyclic = bs.containsElementNamed("cyclic") &&
                       Rcpp::as<bool>(bs["cyclic"]);
         int start = latent_offset;
 
@@ -429,19 +443,10 @@ int build_blocks_from_spec(
         block.add_prior = [start, size](
             tulpa::DenseVec& grad, tulpa::DenseMat& H,
             const Rcpp::NumericVector& x, int) {
-            for (int s = 0; s < size; s++) {
-                int idx = start + s;
-                grad[idx] -= x[idx];
-                H[idx][idx] += 1.0;
-            }
+            add_standard_normal_block_prior(grad, H, x, start, size);
         };
         block.log_prior = [start, size](const Rcpp::NumericVector& x, int) {
-            double lp = 0.0;
-            for (int s = 0; s < size; s++) {
-                lp -= 0.5 * x[start + s] * x[start + s];
-            }
-            lp -= 0.5 * size * std::log(2.0 * M_PI);
-            return lp;
+            return log_prior_standard_normal_block(x, start, size);
         };
         // No center: x is anchored by the global intercept already.
         blocks.push_back(block);

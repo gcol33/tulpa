@@ -57,13 +57,19 @@ bool factorize_cell(
     if (ok) return true;
 
     // Ridge fallback: bump the CSC diagonal (first slot of each lower-tri
-    // column, where Qi[Qp[j]] == j) by a relative jitter, then re-factorize.
+    // column, where Qi[Qp[j]] == j) by a relative jitter, then re-factorize. A
+    // structurally empty column has no slot to read or bump; on the lower
+    // triangle of a factorizable precision there is none, so this leaves the
+    // mean over the columns that carry one.
     double diag_mean = 0.0;
-    for (int j = 0; j < n_x; j++) diag_mean += Qx[Qp[j]];
-    diag_mean = (n_x > 0) ? diag_mean / n_x : 0.0;
+    int n_diag = 0;
+    for (int j = 0; j < n_x; j++)
+        if (Qp[j] < nnz) { diag_mean += Qx[Qp[j]]; n_diag++; }
+    diag_mean = (n_diag > 0) ? diag_mean / n_diag : 0.0;
     const double jit = 1e-8 * (std::abs(diag_mean) + 1e-8);
     std::vector<double> Qx_r(Qx, Qx + nnz);
-    for (int j = 0; j < n_x; j++) Qx_r[Qp[j]] += jit;
+    for (int j = 0; j < n_x; j++)
+        if (Qp[j] < nnz) Qx_r[Qp[j]] += jit;
 
     solver.reset();
     cholmod_sparse* A2 = csc_to_cholmod(Qp, Qi, Qx_r.data(), n_x, nnz,
@@ -144,11 +150,11 @@ bool extract_inner_vcov_block_cell(
                 if (a == b) cval = diag_inv[idx0[a]];
                 else continue;   // off-diagonal field x field: leave 0
             } else {
-                // unconstrained C[idx0[a], idx0[b]] from a solved column.
-                int solved_col, row_lat;
-                if (b < n_solve) { solved_col = b; row_lat = idx0[a]; }
-                else             { solved_col = a; row_lat = idx0[b]; }
-                cval = C_cols[solved_col][row_lat];
+                // Unconstrained C[idx0[a], idx0[b]] from a solved column. `b` is
+                // always solved here: without field_marginal every idx column is
+                // solved, and with it this arm is reached only when b < n_dense,
+                // since b <= a and both_field is false.
+                cval = C_cols[b][idx0[a]];
             }
             const double corr =
                 have_corr ? constr.correction(idx0[a], yvec[b]) : 0.0;
@@ -195,8 +201,10 @@ bool extract_joint_fixed_block(
 // (selected inversion + parallelization).
 //
 // Q_*_per_grid : per-cell lower-triangle CSC of Qk (Q_i 0-based rows), as the
-//                joint kernel stores them; a NULL / empty cell yields NULL.
-// idx          : 1-based latent indices [dense | field], length p.
+//                joint kernel stores them; a NULL, empty or malformed cell
+//                yields NULL.
+// idx          : 1-based latent indices [dense | field], length p. Every entry
+//                must lie in [1, n_x]; so must every A_cols_list entry.
 // n_dense      : number of leading dense (fixed-effect) indices; the remaining
 //                p - n_dense are field. With field_marginal the field block is
 //                returned diagonal-only (off-diagonal 0).
@@ -214,28 +222,68 @@ Rcpp::List cpp_joint_inner_vcov_blocks(
     const int n_grid = Q_p_per_grid.size();
     const int p = idx.size();
 
+    // Every R-supplied index is checked here, before the parallel region opens:
+    // an index outside [1, n_x] is an out-of-bounds WRITE into an n_x-sized
+    // solve buffer, and inside an OpenMP team that corrupts a sibling thread's
+    // arena rather than faulting.
+    if (n_x <= 0)
+        Rcpp::stop("n_x (%d) must be positive.", n_x);
+    if (Q_i_per_grid.size() != (R_xlen_t)n_grid ||
+        Q_x_per_grid.size() != (R_xlen_t)n_grid)
+        Rcpp::stop("Q_p_per_grid, Q_i_per_grid and Q_x_per_grid must have the "
+                   "same length.");
+    if (p > n_x)
+        Rcpp::stop("idx holds %d indices, more than the %d latent coordinates.",
+                   p, n_x);
+
     // 1-based R indices -> 0-based POD (outside any parallel region).
     std::vector<int> idx0(p);
-    for (int t = 0; t < p; t++) idx0[t] = idx[t] - 1;
+    for (int t = 0; t < p; t++) {
+        const int v = idx[t];
+        if (v == NA_INTEGER || v < 1 || v > n_x)
+            Rcpp::stop("idx[%d] is not a latent index in [1, %d].", t + 1, n_x);
+        idx0[t] = v - 1;
+    }
     const int kc = A_cols_list.size();
     std::vector<std::vector<int>> A_cols(kc);
     for (int g = 0; g < kc; g++) {
         Rcpp::IntegerVector col = A_cols_list[g];
         A_cols[g].reserve(col.size());
-        for (int e = 0; e < col.size(); e++) A_cols[g].push_back(col[e] - 1);
+        for (int e = 0; e < col.size(); e++) {
+            const int v = col[e];
+            if (v == NA_INTEGER || v < 1 || v > n_x)
+                Rcpp::stop("A_cols_list[[%d]][%d] is not a latent index in "
+                           "[1, %d].", g + 1, e + 1, n_x);
+            A_cols[g].push_back(v - 1);
+        }
     }
 
     // Pre-extract every cell's CSC into POD (R API is not thread-safe). Empty /
-    // NULL cells are marked so the parallel loop skips them.
+    // NULL cells are marked so the parallel loop skips them, and so is a cell
+    // whose CSC triple is not a well-formed n_x x n_x lower triangle: CHOLMOD
+    // and the ridge fallback both index Qi / Qx off the pointer array, so a
+    // malformed cell reads outside the extraction rather than failing to factor.
     std::vector<std::vector<int>>    Qp_all(n_grid), Qi_all(n_grid);
     std::vector<std::vector<double>> Qx_all(n_grid);
     std::vector<char> has_cell(n_grid, 0);
     for (int k = 0; k < n_grid; k++) {
         if (Rf_isNull(Q_p_per_grid[k]) || Rf_isNull(Q_x_per_grid[k])) continue;
+        if (Rf_isNull(Q_i_per_grid[k])) continue;
         Rcpp::IntegerVector Qp = Q_p_per_grid[k];
         Rcpp::IntegerVector Qi = Q_i_per_grid[k];
         Rcpp::NumericVector Qx = Q_x_per_grid[k];
-        if (Qx.size() == 0) continue;
+        const int nnz = Qx.size();
+        if (nnz == 0) continue;
+        if (Qp.size() != (R_xlen_t)n_x + 1 || Qi.size() != (R_xlen_t)nnz) continue;
+        if (Qp[0] != 0 || Qp[n_x] != nnz) continue;
+        bool well_formed = true;
+        for (int j = 0; j < n_x && well_formed; j++)
+            if (Qp[j] == NA_INTEGER || Qp[j + 1] == NA_INTEGER ||
+                Qp[j] > Qp[j + 1]) well_formed = false;
+        for (int e = 0; e < nnz && well_formed; e++)
+            if (Qi[e] == NA_INTEGER || Qi[e] < 0 || Qi[e] >= n_x)
+                well_formed = false;
+        if (!well_formed) continue;
         Qp_all[k].assign(Qp.begin(), Qp.end());
         Qi_all[k].assign(Qi.begin(), Qi.end());
         Qx_all[k].assign(Qx.begin(), Qx.end());

@@ -489,6 +489,42 @@ tulpa_laplace <- function(y, n_trials, X,
 }
 
 
+#' Resolve a supplied fixed-effect prior to its Gaussian `(mean, sd)` fields
+#'
+#' The one place that decides whether a `beta_prior` argument can be expressed
+#' as a Gaussian prior on the fixed effects at all. [.normalize_beta_prior()]
+#' (per-coefficient) and [.beta_prior_ridge_sd()] (scalar ridge) both resolve
+#' through it and differ only in the shape they recycle the fields to, so a
+#' prior one accepts is a prior the other accepts.
+#'
+#' A prior with no `sd` is an input the fitters cannot express: substituting the
+#' default for it would replace the user's modelling statement with a different
+#' one and leave no trace on the posterior.
+#'
+#' @param beta_prior A list (or `tulpa_prior` object) carrying `sd` and
+#'   optionally `mean`.
+#' @return `list(mean, sd)`, unrecycled.
+#' @keywords internal
+.beta_prior_fields <- function(beta_prior) {
+  if (!is.list(beta_prior)) {
+    stop("`beta_prior` must be NULL or a list with `sd` (and optional `mean`); ",
+         "got ", class(beta_prior)[1], ".", call. = FALSE)
+  }
+  if (is.null(beta_prior$sd)) {
+    if (inherits(beta_prior, "tulpa_prior")) {
+      stop("`beta_prior` is a ",
+           beta_prior$distribution %||% class(beta_prior)[1L],
+           " prior. The fixed-effect prior is Gaussian on every fitter: supply ",
+           "prior_normal(mean, sd) or list(mean = , sd = ).", call. = FALSE)
+    }
+    stop("`beta_prior` must supply `sd` (prior standard deviation on the ",
+         "fixed effects).", call. = FALSE)
+  }
+  list(mean = if (is.null(beta_prior$mean)) 0 else beta_prior$mean,
+       sd = beta_prior$sd)
+}
+
+
 #' Normalize an optional fixed-effect Gaussian prior
 #'
 #' Validates `beta_prior` and recycles scalar `mean` / `sd` to length `p`.
@@ -501,14 +537,7 @@ tulpa_laplace <- function(y, n_trials, X,
 #' @keywords internal
 .normalize_beta_prior <- function(beta_prior, p) {
   if (is.null(beta_prior)) return(NULL)
-  if (!is.list(beta_prior)) {
-    stop("`beta_prior` must be NULL or a list with `sd` (and optional `mean`); ",
-         "got ", class(beta_prior)[1], ".", call. = FALSE)
-  }
-  if (is.null(beta_prior$sd)) {
-    stop("`beta_prior` must supply `sd` (prior standard deviation on the ",
-         "fixed effects).", call. = FALSE)
-  }
+  fields <- .beta_prior_fields(beta_prior)
 
   recycle <- function(v, nm) {
     v <- as.numeric(v)
@@ -518,8 +547,8 @@ tulpa_laplace <- function(y, n_trials, X,
                  nm, p, length(v)), call. = FALSE)
   }
 
-  sd   <- recycle(beta_prior$sd, "sd")
-  mean <- recycle(if (is.null(beta_prior$mean)) 0 else beta_prior$mean, "mean")
+  sd   <- recycle(fields$sd, "sd")
+  mean <- recycle(fields$mean, "mean")
 
   # `sd = +Inf` is allowed and means "no penalty on that coefficient"
   # (precision 1 / sd^2 = 0). The C++ layer maps +Inf -> tau = 0.
@@ -585,18 +614,19 @@ tulpa_laplace <- function(y, n_trials, X,
 #' object, enforces a mean of 0, and returns the positive scalar SD. Keeps the
 #' shared prior interface (`beta_prior = list(mean, sd)`) while rejecting the
 #' options those fitters do not implement (a non-zero mean, a per-coefficient
-#' SD).
+#' SD). Validation of the supplied object itself is [.beta_prior_fields()],
+#' shared with [.normalize_beta_prior()].
 #'
 #' @param beta_prior `list(mean, sd)`; `mean` must be 0, `sd` a positive scalar.
-#' @param default_sd SD used when `beta_prior` (or its `sd`) is `NULL`.
+#'   `NULL` takes the engine default.
+#' @param default_sd SD used when `beta_prior` is `NULL`. A supplied prior is
+#'   resolved through [.beta_prior_fields()] and never falls back to this.
 #' @keywords internal
-.beta_prior_ridge_sd <- function(beta_prior, default_sd = 10) {
-  bp <- beta_prior %||% list(mean = 0, sd = default_sd)
-  if (!is.list(bp)) {
-    stop("`beta_prior` must be a list(mean = 0, sd = ).", call. = FALSE)
-  }
-  m0 <- bp$mean %||% 0
-  sd <- bp$sd %||% default_sd
+.beta_prior_ridge_sd <- function(beta_prior,
+                                 default_sd = .tulpa_prior_sd("ridge")) {
+  fields <- .beta_prior_fields(beta_prior %||% list(mean = 0, sd = default_sd))
+  m0 <- fields$mean
+  sd <- fields$sd
   if (any(m0 != 0)) {
     stop("this fitter supports only a mean-zero fixed-effect prior ",
          "(`beta_prior$mean` must be 0); use a sampler (mode = 'mala') for a ",

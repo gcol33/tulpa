@@ -151,7 +151,18 @@ struct MixturePhiDeriv {
     double dWee_dp2;     // d2 W_ee / dphi2
     double dWez_dp2;     // d2 W_ez / dphi2
     double dWzz_dp2;     // d2 W_zz / dphi2
+    // False when the observation could not be evaluated; see
+    // MixtureCurvatureDeriv::ok. Sixteen zeros are a valid answer here (y != 0
+    // and a hurdle's y = 0 are both additively separable), so the failure has
+    // to be carried separately from the values.
+    bool ok = true;
 };
+
+inline MixturePhiDeriv mixture_phi_deriv_declined() {
+    const double n = std::numeric_limits<double>::quiet_NaN();
+    return MixturePhiDeriv{n, n, n, n, n, n, n, n,
+                           n, n, n, n, n, n, n, n, false};
+}
 
 // The y = 0 branch of a GENUINELY zero-inflated mixture. Returns all-zero for
 // y != 0 and for a hurdle's y = 0, because both are additively separable and
@@ -164,9 +175,21 @@ inline MixturePhiDeriv mixture_phi_deriv(
                       0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
     if (y != 0.0 || is_zero_truncated(family)) return d;
 
+    // The two checks below are has_zi_phi_deriv(family) evaluated at this
+    // observation rather than at a probe point: the gradient's gate, which is
+    // what makes the pure-eta column the true log-P0 ladder, and a registered
+    // phi column.
+    if (!has_zi_curvature_derivative(family)) {
+        return mixture_phi_deriv_declined();
+    }
+
+    // zero_prob_log_derivs returns false for a family with no registered phi
+    // column, which is a static property of the family rather than an
+    // arithmetic edge: converting it to zeros makes every observation of that
+    // family contribute nothing to the dispersion column.
     double Lam[5][3];
     if (!zero_prob_log_derivs(family, eta_count, n_trials, phi, phi2, Lam)) {
-        return d;
+        return mixture_phi_deriv_declined();
     }
 
     const double pi_z = (logit_zi >= 0.0)
@@ -217,7 +240,7 @@ inline MixturePhiDeriv mixture_phi_deriv(
     }
 
     const double Dv = Dd[0][0][0];
-    if (!(Dv > 0.0)) return d;
+    if (!(Dv > 0.0)) return mixture_phi_deriv_declined();
 
     // Alphabet: 0 = eta, 1 = z, 2 = phi. R(a) = D_a / D; L is the cumulant
     // recursion off the first listed index. Depth is at most four.

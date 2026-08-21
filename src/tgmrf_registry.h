@@ -6,9 +6,10 @@
 // and inst/include/tulpa/tgmrf.h).
 //
 // The inference layers (nested_laplace_multi) look up a spec by id when
-// the R-side tgmrf block carries `backend == "cpp"`. Lookup is read-only
-// after registration and does not lock; insertion takes a mutex so
-// multiple user DLLs loaded concurrently do not race.
+// the R-side tgmrf block carries `backend == "cpp"`. Every access takes the
+// mutex, insertion and lookup alike: an insert can rehash the table a
+// concurrent lookup is walking, so a mutex on the writer alone would not make
+// the reader safe when several user DLLs load at once.
 //
 // This header is internal to tulpa. The exported C callable signatures
 // live in inst/include/tulpa/tgmrf.h.
@@ -26,7 +27,9 @@ namespace tgmrf_backend {
 void register_spec(const std::string& id, const TgmrfSpec& spec);
 
 // Look up a spec by id. Returns nullptr if no such id is registered.
-// Read-only after registration; no lock taken.
+// Thread-safe. The returned pointer stays valid past the lock: the container
+// is node-based, so neither an insert nor the rehash it may trigger moves an
+// element that is already in the table.
 const TgmrfSpec* lookup_spec(const std::string& id);
 
 // Count of registered specs (for diagnostics / tests).

@@ -5,6 +5,10 @@
 // to enable a joint (log_sigma_re, re) Metropolis move on top of ESS — the
 // alternating updates mix poorly for Poisson + RE because the centered
 // parameterization makes log_sigma_re and re strongly anti-correlated.
+//
+// The sampler draws from R's RNG, so set.seed in R reproduces a run and there
+// is no seed on the config; the shim brackets the call in GetRNGstate /
+// PutRNGstate itself. It must not be called from inside a parallel region.
 
 #ifndef TULPA_ESS_API_H
 #define TULPA_ESS_API_H
@@ -19,13 +23,11 @@ namespace tulpa {
 struct ESSShimConfig {
     int n_iter;
     int n_warmup;
-    int n_thin;
+    int n_thin;              // values below 1 read as 1
     int verbose;
     int print_every;
-    unsigned int seed;
-    int use_cholesky;        // 0/1
-    int adapt_during_warmup; // 0/1
-    int adapt_interval;
+    int adapt_during_warmup; // 0/1 — adapt the RWMH proposal SDs during warmup
+    int adapt_interval;      // sweeps between RWMH proposal-SD updates
     int joint_sigma_re;      // 0/1 — joint-sample (log_sigma_re, z) for Poisson + RE
 };
 
@@ -36,8 +38,6 @@ inline ESSShimConfig default_ess_config() {
     c.n_thin = 1;
     c.verbose = 1;
     c.print_every = 100;
-    c.seed = 12345;
-    c.use_cholesky = 1;
     c.adapt_during_warmup = 1;
     c.adapt_interval = 100;
     c.joint_sigma_re = 0;

@@ -7,6 +7,7 @@
 // over the caller's CSC arrays; nothing is copied or freed in the wrapper.
 // ============================================================================
 
+#include "cholmod_view.h"
 #include "shim_guard.h"
 
 namespace {
@@ -18,21 +19,9 @@ inline cholmod_sparse make_cholmod_view(
     const double* values,
     int nnz
 ) {
-    cholmod_sparse A;
-    A.nrow = n;
-    A.ncol = n;
-    A.nzmax = nnz;
-    A.p = const_cast<int*>(col_ptr);
-    A.i = const_cast<int*>(row_idx);
-    A.x = const_cast<double*>(values);
-    A.z = nullptr;
-    A.stype = -1;   // lower triangle stored
-    A.itype = CHOLMOD_INT;
-    A.xtype = CHOLMOD_REAL;
-    A.dtype = CHOLMOD_DOUBLE;
-    A.sorted = 1;
-    A.packed = 1;
-    return A;
+    return tulpa::cholmod_lower_view(static_cast<std::size_t>(n),
+                                     col_ptr, row_idx, values,
+                                     static_cast<std::size_t>(nnz));
 }
 
 } // namespace

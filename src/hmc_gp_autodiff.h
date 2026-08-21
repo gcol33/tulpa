@@ -84,20 +84,19 @@ T gp_nngp_log_lik_t(
 #endif
 
     // Bounds validation
-    if (gp_data.nn_order.size() < (size_t)N) return T(-1e10);
-    if (gp_data.nn_idx.size() < (size_t)(N * nn)) return T(-1e10);
-    if (gp_data.nn_dist.size() < (size_t)(N * nn)) return T(-1e10);
-    if (gp_data.nn_neighbor_dist.size() < (size_t)(N * nn * nn)) return T(-1e10);  // Critical: prevents segfault
-    if (w.size() < (size_t)N) return T(-1e10);
-    if (gp_data.coords.size() < (size_t)(2 * N)) return T(-1e10);
+    if (gp_data.nn_order.size() < (size_t)N) return T(-INFINITY);
+    if (gp_data.nn_idx.size() < (size_t)(N * nn)) return T(-INFINITY);
+    if (gp_data.nn_dist.size() < (size_t)(N * nn)) return T(-INFINITY);
+    if (gp_data.nn_neighbor_dist.size() < (size_t)(N * nn * nn)) return T(-INFINITY);  // Critical: prevents segfault
+    if (w.size() < (size_t)N) return T(-INFINITY);
+    if (gp_data.coords.size() < (size_t)(2 * N)) return T(-INFINITY);
 
     T log_lik = T(0.0);
 
-    // First observation: marginal N(0, sigma2)
+    // First observation: marginal N(0, sigma2), through the same shared arm the
+    // double twin uses so the two floor a degenerate sigma2 identically.
     int first_idx = gp_data.nn_order[0];
-    T log_sigma2 = safe_log(sigma2);
-    log_lik = log_lik - T(0.5) * safe_log(T(2.0 * M_PI)) - T(0.5) * log_sigma2;
-    log_lik = log_lik - T(0.5) * w[first_idx] * w[first_idx] / sigma2;
+    log_lik = log_lik + tulpa_nngp::marginal_log_density(w[first_idx], sigma2);
 
     // Pre-allocate work vectors
     std::vector<T> c_vec(nn);
@@ -117,22 +116,17 @@ T gp_nngp_log_lik_t(
         int obs_idx = gp_data.nn_order[i];
 
         // Bounds check
-        if (obs_idx < 0 || obs_idx >= N) return T(-1e10);
+        if (obs_idx < 0 || obs_idx >= N) return T(-INFINITY);
 
-        // Count actual neighbors
-        int n_neighbors = 0;
-        for (int j = 0; j < nn; j++) {
-            int nn_flat_idx = i * nn + j;
-            if (nn_flat_idx >= (int)gp_data.nn_idx.size()) break;
-            if (gp_data.nn_idx[nn_flat_idx] > 0) {
-                n_neighbors++;
-            }
-        }
+        // Count actual neighbors, through the shared left-packed scan the double
+        // twin and the analytic gradient also run.
+        const int n_neighbors = tulpa_nngp::nngp_row_neighbours(
+            gp_data.nn_idx.data() + (std::size_t)i * nn, /*stride=*/1, nn,
+            (int)gp_data.nn_order.size());
 
         if (n_neighbors == 0) {
             // No neighbors: marginal
-            log_lik = log_lik - T(0.5) * safe_log(T(2.0 * M_PI)) - T(0.5) * log_sigma2;
-            log_lik = log_lik - T(0.5) * w[obs_idx] * w[obs_idx] / sigma2;
+            log_lik = log_lik + tulpa_nngp::marginal_log_density(w[obs_idx], sigma2);
             continue;
         }
 
@@ -149,20 +143,20 @@ T gp_nngp_log_lik_t(
 
             // Bounds check
             if (raw_nn_idx1 - 1 < 0 || raw_nn_idx1 - 1 >= (int)gp_data.nn_order.size()) {
-                return T(-1e10);
+                return T(-INFINITY);
             }
 
             int nn_idx1 = gp_data.nn_order[raw_nn_idx1 - 1];
 
             if (nn_idx1 < 0 || nn_idx1 * 2 + 1 >= (int)gp_data.coords.size()) {
-                return T(-1e10);
+                return T(-INFINITY);
             }
 
             for (int j2 = 0; j2 < n_neighbors; j2++) {
                 int raw_nn_idx2 = gp_data.nn_idx[i * nn + j2];
 
                 if (raw_nn_idx2 - 1 < 0 || raw_nn_idx2 - 1 >= (int)gp_data.nn_order.size()) {
-                    return T(-1e10);
+                    return T(-INFINITY);
                 }
 
                 int nn_idx2 = gp_data.nn_order[raw_nn_idx2 - 1];
@@ -184,13 +178,13 @@ T gp_nngp_log_lik_t(
             int raw_nn_idx = gp_data.nn_idx[i * nn + j];
 
             if (raw_nn_idx - 1 < 0 || raw_nn_idx - 1 >= (int)gp_data.nn_order.size()) {
-                return T(-1e10);
+                return T(-INFINITY);
             }
 
             int nn_orig_idx = gp_data.nn_order[raw_nn_idx - 1];
 
             if (nn_orig_idx < 0 || nn_orig_idx >= (int)w.size()) {
-                return T(-1e10);
+                return T(-INFINITY);
             }
 
             w_nb[j] = w[nn_orig_idx];
@@ -207,7 +201,7 @@ T gp_nngp_log_lik_t(
                                       kGpJitter, kGpVarFloor,
                                       tulpa_nngp::VarFloor::Clamp,
                                       cond_mean, cond_var)) {
-            return T(-1e10);  // Not positive definite
+            return T(-INFINITY);  // Not positive definite
         }
         log_lik = log_lik + tulpa_nngp::cond_log_density(w[obs_idx], cond_mean,
                                                          cond_var);

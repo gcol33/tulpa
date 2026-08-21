@@ -37,6 +37,17 @@ struct NNGPNCView {
                                                // nn_neighbor_dist is null
     CovType cov_type = CovType::EXPONENTIAL;
 
+    // Conditioning policy of the density kernel this view's field belongs to:
+    // the diagonal NUGGET on the neighbour covariance, the floor on the
+    // conditional variance, and how that floor is applied. The transform below
+    // reads them from here rather than from literals, so a field fitted
+    // non-centered and the same field fitted centered condition identically and
+    // therefore describe the same posterior. Each make_*_nc_view factory sets
+    // all three from its own kernel's constants.
+    double jitter = kGpJitter;
+    double var_floor = kGpVarFloor;
+    tulpa_nngp::VarFloor floor_mode = tulpa_nngp::VarFloor::Clamp;
+
     // Distance between two already-resolved neighbour locations loc1/loc2 for
     // observation i's j1-th/j2-th neighbour slot. Prefers the cached table;
     // falls back to a direct coordinate lookup (the SVCData path).
@@ -63,6 +74,9 @@ inline NNGPNCView make_gp_nc_view(const GPData& g) {
     v.nn_order_inv = g.nn_order_inv.data();
     v.coords = g.coords.data();
     v.cov_type = g.cov_type;
+    v.jitter = kGpJitter;
+    v.var_floor = kGpVarFloor;
+    v.floor_mode = tulpa_nngp::VarFloor::Clamp;
     return v;
 }
 
@@ -81,6 +95,9 @@ inline NNGPNCView make_msgp_nc_view_local(const MultiscaleGPData& g) {
     v.nn_order_inv = g.nn_order_inv_local.data();
     v.coords = g.coords.data();
     v.cov_type = g.cov_type;
+    v.jitter = kGpJitter;
+    v.var_floor = kGpVarFloor;
+    v.floor_mode = tulpa_nngp::VarFloor::Clamp;
     return v;
 }
 
@@ -95,6 +112,9 @@ inline NNGPNCView make_msgp_nc_view_regional(const MultiscaleGPData& g) {
     v.nn_order_inv = g.nn_order_inv_regional.data();
     v.coords = g.coords.data();
     v.cov_type = g.cov_type;
+    v.jitter = kGpJitter;
+    v.var_floor = kGpVarFloor;
+    v.floor_mode = tulpa_nngp::VarFloor::Clamp;
     return v;
 }
 
@@ -114,6 +134,12 @@ inline NNGPNCView make_svc_nc_view(const tulpa::SVCData& s) {
     v.nn_order_inv = s.nn_order_inv.data();
     v.coords = s.coords.data();
     v.cov_type = s.cov_type;
+    // The SVC density kernel conditions deliberately more loosely than the GP
+    // one, and blends at the floor; the transform has to match it or a
+    // non-centered SVC fit targets a different posterior than a centered one.
+    v.jitter = tulpa_svc::kSvcJitter;
+    v.var_floor = tulpa_svc::kSvcVarFloor;
+    v.floor_mode = tulpa_nngp::VarFloor::Blend;
     return v;
 }
 
@@ -126,6 +152,8 @@ struct NNGPNCWorkspace {
     std::vector<int> nb_idx_flat;   // Neighbor indices per obs (N * nn), 0-based in w
     std::vector<double> adj;        // Adjoint accumulator (N)
     std::vector<double> L_flat;     // Cached Cholesky factors (N * nn * nn) for backward phi grad
+    std::vector<double> d_raw;      // Unfloored conditional variance per obs (N)
+    std::vector<double> d_slope;    // d(floored d_i)/d(raw d_i) per obs (N)
 
     void init(int N_, int nn_) {
         if (N == N_ && nn == nn_) return;
@@ -141,6 +169,8 @@ struct NNGPNCWorkspace {
         nb_idx_flat.assign(Ns * nns, -1);
         adj.resize(Ns, 0.0);
         L_flat.assign(Ns * nns * nns, 0.0);
+        d_raw.assign(Ns, 0.0);
+        d_slope.assign(Ns, 1.0);
     }
 };
 
@@ -169,6 +199,8 @@ inline void nngp_nc_forward(
     // ws.w[first_loc] / z[first_loc] an out-of-bounds access.
     int first_loc = view.nn_order[0];
     ws.sqrt_d[0] = std::sqrt(sigma2);
+    ws.d_raw[0] = sigma2;
+    ws.d_slope[0] = 1.0;
     ws.B_n_nb[0] = 0;
     if (first_loc >= 0 && first_loc < N) {
         ws.w[first_loc] = ws.sqrt_d[0] * z[first_loc];
@@ -180,16 +212,21 @@ inline void nngp_nc_forward(
             // obs_loc is out of range; set only the i-indexed fields and skip
             // the ws.w[obs_loc] / z[obs_loc] write (matches the gradient path).
             ws.sqrt_d[i] = std::sqrt(sigma2);
+            ws.d_raw[i] = sigma2;
+            ws.d_slope[i] = 1.0;
             ws.B_n_nb[i] = 0;
             continue;
         }
 
-        // Count neighbors
-        int n_nb = 0;
-        for (int j = 0; j < nn && view.nn_idx[i * nn + j] > 0; j++) n_nb++;
+        // Count neighbors, through the shared left-packed scan the density
+        // kernels run.
+        const int n_nb = tulpa_nngp::nngp_row_neighbours(
+            view.nn_idx + (std::size_t)i * nn, /*stride=*/1, nn, view.n_obs);
 
         if (n_nb == 0) {
             ws.sqrt_d[i] = std::sqrt(sigma2);
+            ws.d_raw[i] = sigma2;
+            ws.d_slope[i] = 1.0;
             ws.w[obs_loc] = ws.sqrt_d[i] * z[obs_loc];
             ws.B_n_nb[i] = 0;
             continue;
@@ -205,13 +242,14 @@ inline void nngp_nc_forward(
         bool ok = true;
         for (int j = 0; j < n_nb && ok; j++) {
             int raw = view.nn_idx[i * nn + j];
-            if (raw - 1 < 0 || raw - 1 >= view.n_obs) { ok = false; break; }
             int loc = view.nn_order[raw - 1];
             if (loc < 0 || loc >= N) { ok = false; break; }
             ws.nb_idx_flat[i * nn + j] = loc;
         }
         if (!ok) {
             ws.sqrt_d[i] = std::sqrt(sigma2);
+            ws.d_raw[i] = sigma2;
+            ws.d_slope[i] = 1.0;
             ws.w[obs_loc] = ws.sqrt_d[i] * z[obs_loc];
             ws.B_n_nb[i] = 0;
             continue;
@@ -219,7 +257,8 @@ inline void nngp_nc_forward(
 
         // Build C_mat using cached distances (symmetric, upper triangle only)
         for (int j1 = 0; j1 < n_nb; j1++) {
-            C_eigen(j1, j1) = sigma2 + 1e-8;  // Jitter for stability
+            // Diagonal NUGGET, from the density kernel this field belongs to.
+            C_eigen(j1, j1) = sigma2 + view.jitter;
             for (int j2 = j1 + 1; j2 < n_nb; j2++) {
                 double d12 = view.pair_dist(i, j1, j2, ws.nb_idx_flat[i * nn + j1],
                                              ws.nb_idx_flat[i * nn + j2]);
@@ -233,6 +272,8 @@ inline void nngp_nc_forward(
         llt.compute(C_eigen.topLeftCorner(n_nb, n_nb));
         if (llt.info() != Eigen::Success) {
             ws.sqrt_d[i] = std::sqrt(sigma2);
+            ws.d_raw[i] = sigma2;
+            ws.d_slope[i] = 1.0;
             ws.w[obs_loc] = ws.sqrt_d[i] * z[obs_loc];
             ws.B_n_nb[i] = 0;
             continue;
@@ -256,7 +297,15 @@ inline void nngp_nc_forward(
         }
         ws.B_n_nb[i] = n_nb;
 
-        double d_i = std::max(sigma2 - c_alpha, 1e-10);
+        // Conditional variance, floored by the density kernel's own policy.
+        // Its slope through the floor is kept so the backward pass reports the
+        // derivative of the variance that was USED, not of the one it replaced.
+        double slope = 1.0;
+        double d_i = tulpa_nngp::apply_var_floor(sigma2 - c_alpha,
+                                                 view.var_floor,
+                                                 view.floor_mode, &slope);
+        ws.d_raw[i] = sigma2 - c_alpha;
+        ws.d_slope[i] = slope;
         ws.sqrt_d[i] = std::sqrt(d_i);
 
         // Forward transform: w[loc] = B @ w_neighbors + sqrt(d_i) * z[loc]
@@ -336,10 +385,21 @@ inline void nngp_nc_backward(
     // --- Hyperparameter gradients ---
 
     // sigma2 likelihood gradient
+    // dw[loc]/d(log sigma2) = (dd_i/d log sigma2) / (2 sqrt(d_i)) * z[loc].
+    // With d_i unfloored it is homogeneous of degree 1 in sigma2, so
+    // dd_i/d log sigma2 = d_i and the whole term collapses to
+    // 0.5 * sqrt(d_i) * z. Where the floor bound, d_i no longer tracks sigma2
+    // at that rate: the derivative is the raw variance scaled by the floor's
+    // own slope, which is 0 under Clamp.
     grad_log_sigma2_lik = 0.0;
     for (int i = 0; i < N; i++) {
         int loc = view.nn_order[i];
-        grad_log_sigma2_lik += adj[i] * 0.5 * ws.sqrt_d[i] * z[loc];
+        if (ws.d_slope[i] >= 1.0) {
+            grad_log_sigma2_lik += adj[i] * 0.5 * ws.sqrt_d[i] * z[loc];
+        } else if (ws.sqrt_d[i] > 0.0) {
+            grad_log_sigma2_lik += adj[i] * ws.d_slope[i] * ws.d_raw[i] /
+                                   (2.0 * ws.sqrt_d[i]) * z[loc];
+        }
     }
 
     // phi gradients (likelihood + Jacobian) — OpenMP parallelized
@@ -436,7 +496,9 @@ inline void nngp_nc_backward(
             alpha_dc += alpha_eigen(j) * dc_eigen(j);
             alpha_dC_alpha += alpha_eigen(j) * dC_alpha[j];
         }
-        double dd_dphi = -2.0 * alpha_dc + alpha_dC_alpha;
+        // Same floor slope as the sigma2 term above: a floored d_i does not
+        // move with phi at the unfloored rate either.
+        double dd_dphi = ws.d_slope[i] * (-2.0 * alpha_dc + alpha_dC_alpha);
 
         // Likelihood: dw[loc]/dphi = sum_j dalpha[j]*w[nb_j] + dd_dphi/(2*sqrt(d_i))*z[loc]
         double dw_dphi = 0.0;

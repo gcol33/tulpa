@@ -4,6 +4,7 @@
 
 #include "pg_binomial.h"
 #include "pg_shared.h"
+#include "pg_spatial.h"
 #include "pg_rng.h"
 #include "linalg_fast.h"
 #include <Rcpp.h>
@@ -24,112 +25,12 @@ using namespace Rcpp;
 namespace tulpa {
 
 // ---------------------------------------------------------------------
-// Helper: solve linear system with diagonal covariance
-// For posterior: (X'WX + D^{-1})^{-1} X'W kappa
-// where W = diag(omega), D = prior precision
-// ---------------------------------------------------------------------
-
-// Compute X'WX + prior_prec * I and X'W * (kappa - offset)
-// Returns list with posterior mean and precision matrix
-List compute_posterior_normal(
-    const NumericMatrix& X,
-    const NumericVector& omega,
-    const NumericVector& kappa,
-    const NumericVector& offset,
-    double prior_prec
-) {
-  int n = X.nrow();
-  int p = X.ncol();
-
-  // X'WX + prior_prec * I
-  NumericMatrix XWX(p, p);
-  NumericVector XWkappa(p);
-
-  for (int j = 0; j < p; j++) {
-    for (int k = j; k < p; k++) {
-      double sum = 0.0;
-      for (int i = 0; i < n; i++) {
-        sum += X(i, j) * omega[i] * X(i, k);
-      }
-      XWX(j, k) = sum;
-      if (j != k) XWX(k, j) = sum;
-    }
-    // Add prior precision to diagonal
-    XWX(j, j) += prior_prec;
-
-    // X'(kappa - omega*offset): algebraically omega*(kappa/omega - offset) but
-    // finite when omega[i] = 0 (a zero-trial row, where kappa[i] = 0 too and
-    // kappa/omega would be 0/0 = NaN).
-    double sum_kappa = 0.0;
-    for (int i = 0; i < n; i++) {
-      sum_kappa += X(i, j) * (kappa[i] - omega[i] * offset[i]);
-    }
-    XWkappa[j] = sum_kappa;
-  }
-
-  return List::create(
-    Named("XWX") = XWX,
-    Named("XWkappa") = XWkappa
-  );
-}
-
-// Cholesky solve: solve (L L') x = b
-NumericVector chol_solve(const NumericMatrix& L, const NumericVector& b) {
-  int p = L.ncol();
-  NumericVector y(p), x(p);
-
-  // Forward substitution: L y = b
-  for (int i = 0; i < p; i++) {
-    double sum = b[i];
-    for (int j = 0; j < i; j++) {
-      sum -= L(i, j) * y[j];
-    }
-    y[i] = sum / L(i, i);
-  }
-
-  // Back substitution: L' x = y
-  for (int i = p - 1; i >= 0; i--) {
-    double sum = y[i];
-    for (int j = i + 1; j < p; j++) {
-      sum -= L(j, i) * x[j];
-    }
-    x[i] = sum / L(i, i);
-  }
-
-  return x;
-}
-
-// Cholesky decomposition — delegates to shared helper
-NumericMatrix chol_decomp(const NumericMatrix& A) {
-  return tulpa::chol_decomp_pg(A);
-}
-
-// Sample from multivariate normal using Cholesky
-NumericVector rmvnorm_chol(const NumericVector& mean, const NumericMatrix& L) {
-  int p = mean.size();
-  NumericVector z(p), x(p);
-
-  // Sample standard normal
-  for (int i = 0; i < p; i++) {
-    z[i] = R::rnorm(0.0, 1.0);
-  }
-
-  // x = mean + L * z
-  for (int i = 0; i < p; i++) {
-    x[i] = mean[i];
-    for (int j = 0; j <= i; j++) {
-      x[i] += L(i, j) * z[j];
-    }
-  }
-
-  return x;
-}
-
-// ---------------------------------------------------------------------
 // Update functions
 // ---------------------------------------------------------------------
 
-// Update beta (fixed effects)
+// Update beta (fixed effects). After PG augmentation the conditional is
+// N((X'WX + D^-1)^-1 X'(kappa - W offset), (X'WX + D^-1)^-1) with
+// W = diag(omega) and D = prior_sd^2 I.
 NumericVector update_beta(
     const NumericVector& kappa,
     const NumericVector& omega,
@@ -137,48 +38,46 @@ NumericVector update_beta(
     const NumericVector& re_contrib,
     double prior_sd
 ) {
-  int n = X.nrow();
-  int p = X.ncol();
-  double prior_prec = 1.0 / (prior_sd * prior_sd);
+  const int n = X.nrow();
+  const int p = X.ncol();
+  const double prior_prec = 1.0 / (prior_sd * prior_sd);
 
-  // Compute posterior parameters
-  List post = compute_posterior_normal(X, omega, kappa, re_contrib, prior_prec);
-  NumericMatrix XWX = post["XWX"];
-  NumericVector XWkappa = post["XWkappa"];
+  std::vector<double> XWX(static_cast<size_t>(p) * p, 0.0);
+  std::vector<double> XWkappa(p, 0.0);
 
-  // Cholesky decomposition
-  NumericMatrix L = chol_decomp(XWX);
-
-  // Posterior mean: solve XWX * mean = XWkappa
-  NumericVector post_mean = chol_solve(L, XWkappa);
-
-  // Sample from posterior N(post_mean, XWX^{-1}) with XWX = L L':
-  // z ~ N(0, I), z_star = L'^{-1} z, so Cov(z_star) = L'^{-1} L^{-1} = XWX^{-1}.
-  NumericVector z(p);
-  for (int i = 0; i < p; i++) {
-    z[i] = R::rnorm(0.0, 1.0);
-  }
-
-  // Solve L' z_star = z (back substitution on the transpose)
-  NumericVector z_star(p);
-  for (int i = p - 1; i >= 0; i--) {
-    double sum = z[i];
-    for (int j = i + 1; j < p; j++) {
-      sum -= L(j, i) * z_star[j];
+  for (int j = 0; j < p; j++) {
+    for (int k = j; k < p; k++) {
+      double sum = 0.0;
+      for (int i = 0; i < n; i++) {
+        sum += X(i, j) * omega[i] * X(i, k);
+      }
+      XWX[static_cast<size_t>(j) * p + k] = sum;
+      if (j != k) XWX[static_cast<size_t>(k) * p + j] = sum;
     }
-    z_star[i] = sum / L(i, i);
+    XWX[static_cast<size_t>(j) * p + j] += prior_prec;
+
+    // X'(kappa - omega*offset): algebraically omega*(kappa/omega - offset) but
+    // finite when omega[i] = 0 (a zero-trial row, where kappa[i] = 0 too and
+    // kappa/omega would be 0/0 = NaN).
+    double sum_kappa = 0.0;
+    for (int i = 0; i < n; i++) {
+      sum_kappa += X(i, j) * (kappa[i] - omega[i] * re_contrib[i]);
+    }
+    XWkappa[j] = sum_kappa;
   }
 
-  // x = mean + z_star
   NumericVector beta(p);
-  for (int i = 0; i < p; i++) {
-    beta[i] = post_mean[i] + z_star[i];
-  }
-
+  pg_draw_gaussian_precision(XWX.data(), p, XWkappa.data(), beta.begin(),
+                             "fixed-effect");
   return beta;
 }
 
 // Update random effects (blocked by group)
+//
+// Observations in group g: kappa_g/omega_g = X_beta_g + b_g + N(0, 1/omega_g)
+// with prior b_g ~ N(0, sigma_re^2), so
+//   b_g | ... ~ N(v_g * sum_resid_g, v_g),
+//   v_g = (sum_omega_g + 1/sigma_re^2)^{-1}.
 NumericVector update_re(
     const NumericVector& kappa,
     const NumericVector& omega,
@@ -187,46 +86,22 @@ NumericVector update_re(
     int n_groups,
     double sigma_re
 ) {
-  int n = kappa.size();
+  const int n = kappa.size();
   NumericVector re(n_groups);
 
-  // For each group, compute posterior
-  // Observations in group g: Y_g = X_beta_g + b_g + error
-  // With PG augmentation: kappa_g/omega_g = X_beta_g + b_g + N(0, 1/omega_g)
-  // Prior: b_g ~ N(0, sigma_re^2)
-  //
-  // Posterior: b_g | ... ~ N(m_g, v_g)
-  // v_g = (sum(omega_g) + 1/sigma_re^2)^{-1}
-  // m_g = v_g * sum(kappa_g - omega_g * X_beta_g)
+  const double prior_prec = 1.0 / (sigma_re * sigma_re + 1e-10);
 
-  double prior_prec = 1.0 / (sigma_re * sigma_re + 1e-10);
+  std::vector<double> sum_omega(n_groups, 0.0), sum_resid(n_groups, 0.0);
+  pg_accumulate_stats(n, group.begin(), n_groups, omega.begin(), kappa.begin(),
+                      X_beta.begin(), sum_omega.data(), sum_resid.data());
 
-  // Accumulate sufficient statistics by group
-  NumericVector sum_omega(n_groups);
-  NumericVector sum_resid(n_groups);
-
-  for (int i = 0; i < n; i++) {
-    int g = group[i] - 1;  // Convert to 0-based
-    sum_omega[g] += omega[i];
-    sum_resid[g] += kappa[i] - omega[i] * X_beta[i];
-  }
-
-  // Sample from posterior
   for (int g = 0; g < n_groups; g++) {
-    double post_var = 1.0 / (sum_omega[g] + prior_prec);
-    double post_mean = post_var * sum_resid[g];
+    const double post_var = 1.0 / (sum_omega[g] + prior_prec);
+    const double post_mean = post_var * sum_resid[g];
     re[g] = R::rnorm(post_mean, std::sqrt(post_var));
   }
 
   return re;
-}
-
-// Update sigma_re with half-Cauchy prior — delegates to shared helper
-double update_sigma_re(
-    const NumericVector& re,
-    double scale
-) {
-  return tulpa::update_sigma_halfcauchy(re, scale);
 }
 
 // ---------------------------------------------------------------------
@@ -248,8 +123,9 @@ List pg_binomial_gibbs_impl(
     bool verbose,
     int n_threads
 ) {
-  int n_save = (n_iter - n_warmup) / thin;
-  PgGibbsCommon C(y, n, X.ncol(), n_groups, n_save, n_threads, store_eta);
+  const int n_save = pg_n_save(n_iter, n_warmup, thin);
+  PgGibbsCommon C(y, n, X, group, n_groups, n_save, prior_sigma_scale,
+                  n_threads, store_eta);
   const int N = C.N;
   const int p = C.p;
 
@@ -309,39 +185,11 @@ Rcpp::List cpp_pg_binomial_gibbs(
     bool verbose = true,
     int n_threads = 1
 ) {
-  // CRITICAL: Must call GetRNGstate/PutRNGstate when using R's RNG from C++
-  GetRNGstate();
-  Rcpp::List result = tulpa::pg_binomial_gibbs_impl(
+  return tulpa::pg_binomial_gibbs_impl(
     y, n, X, group, n_groups,
     n_iter, n_warmup, thin,
     prior_beta_sd, prior_sigma_scale,
     store_eta, verbose, n_threads
-  );
-  PutRNGstate();
-  return result;
-}
-
-// cpp_pg_get_max_threads removed — use cpp_get_max_threads (hmc_sampler.cpp)
-
-// Forward declaration
-namespace tulpa {
-  Rcpp::NumericVector update_spatial_icar(
-      const Rcpp::NumericVector& kappa,
-      const Rcpp::NumericVector& omega,
-      const Rcpp::NumericVector& offset,
-      const Rcpp::IntegerVector& group,
-      const Rcpp::List& adj_list,
-      const Rcpp::IntegerVector& n_neighbors,
-      double tau,
-      double* removed_mean = nullptr
-  );
-
-  double update_tau_icar(
-      const Rcpp::NumericVector& phi,
-      const Rcpp::List& adj_list,
-      const Rcpp::IntegerVector& n_neighbors,
-      double prior_shape,
-      double prior_rate
   );
 }
 
@@ -368,13 +216,17 @@ Rcpp::List cpp_pg_binomial_gibbs_spatial(
     bool verbose = true,
     int n_threads = 1
 ) {
-  // CRITICAL: Must call GetRNGstate/PutRNGstate when using R's RNG from C++
-  GetRNGstate();
-
-  int n_save = (n_iter - n_warmup) / thin;
-  tulpa::PgGibbsCommon C(y, n, X.ncol(), n_re_groups, n_save, n_threads, store_eta);
+  const int n_save = tulpa::pg_n_save(n_iter, n_warmup, thin);
+  tulpa::PgGibbsCommon C(y, n, X, re_group, n_re_groups, n_save,
+                         prior_sigma_re_scale, n_threads, store_eta);
   const int N = C.N;
   const int p = C.p;
+  C.require_intercept("ICAR spatial");
+
+  tulpa::pg_check_index(spatial_group, N, n_spatial_units, "spatial_group");
+  const tulpa::PgAdjacency adj =
+      tulpa::pg_build_adjacency(adj_list, n_neighbors, n_spatial_units);
+  tulpa::pg_check_components_observed(adj, spatial_group);
 
   // Per-variant storage
   Rcpp::NumericMatrix spatial_draws(n_save, n_spatial_units);
@@ -402,14 +254,12 @@ Rcpp::List cpp_pg_binomial_gibbs_spatial(
       C.offset[i] = C.X_beta[i] + C.re_contrib[i];
     });
     double icar_mean = 0.0;
-    phi = tulpa::update_spatial_icar(C.kappa, C.omega, C.offset, spatial_group,
-                                     adj_list, n_neighbors, tau, &icar_mean);
-    // Absorb the removed field level into the intercept so eta is unchanged
-    // (posterior-invariant); X's first column is the intercept.
-    C.beta[0] += icar_mean;
+    tulpa::update_spatial_icar(C.kappa, C.omega, C.offset, spatial_group,
+                               adj, tau, phi, icar_mean);
+    C.absorb_level(icar_mean);
 
     // 7. Update tau (spatial precision)
-    tau = tulpa::update_tau_icar(phi, adj_list, n_neighbors, prior_tau_shape, prior_tau_rate);
+    tau = tulpa::update_tau_icar(phi, adj, prior_tau_shape, prior_tau_rate);
 
     // Save draws
     if (iter >= n_warmup && (iter - n_warmup) % thin == 0) {
@@ -444,6 +294,5 @@ Rcpp::List cpp_pg_binomial_gibbs_spatial(
     result["eta"] = C.eta_draws;
   }
 
-  PutRNGstate();
   return result;
 }

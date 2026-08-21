@@ -1,5 +1,83 @@
 # tulpa NEWS
 
+## 0.1.1
+
+* **One default fixed-effect prior, resolved at the front door** (#408).
+  `tulpa()` substituted `sd = 2.5`, `10` or `100` on the fixed effects
+  depending on which backend `mode = "auto"` selected, so `y ~ x` and
+  `y ~ x + (1 | g)` on the same data were fitted under priors a factor of 40
+  apart, and nothing on the fit recorded which one ran. The default is now the
+  documented `prior_normal(0, 2.5)` everywhere, defined once in `.TULPA_PRIOR`
+  with a `.PRIOR_CONSUMERS` table naming each fitter that reads it, resolved
+  before backend dispatch and passed down. `summary()` and the fit itself
+  report the prior that was applied as `$beta_prior`. The nested-Laplace and
+  SPDE paths are unchanged: they hold their own field-conditional prior and
+  reject a supplied `beta_prior`.
+
+* **The AD scalar primitives are guarded at the same boundaries as the value
+  path** (#409). The templated log posterior is instantiated for `double` and
+  for two reverse-mode `Var` types, and the runtime gradient check compares the
+  double instantiation's central differences against the arena gradient as
+  though the two were one function. They were not: `exp` clamped its argument
+  on the value path and not on either AD path (so a log-scale hyperparameter
+  past 709 returned `+Inf` and took the backward pass with it), and `sqrt` gave
+  a `+Inf` partial at exactly zero where the value path gives a finite `0` -- an
+  HSGP spectral density underflows to zero at a long lengthscale and a high
+  basis index. `arena::pow` and `arena::logit` (and their tape twins) carry the
+  same treatment at a zero base and at the endpoints of the unit interval. The
+  clamp bounds are one named constant in `tulpa::math`.
+
+* **`verify_gradient_runtime()` reports a non-finite gradient instead of
+  passing it** (#410). Every comparison against a `NaN` is false, so the
+  worst-relative-difference scan stepped over exactly the failure the check
+  exists to catch and returned `true`; NUTS then ran on `NaN` momenta for the
+  whole fit. The finite-difference step is now scaled by each coordinate's own
+  magnitude, and the two duplicated difference loops are one helper.
+
+* **A `beta_prior` a fitter cannot express is an error, not a silent swap**
+  (#411). `.beta_prior_ridge_sd()` replaced a prior with no `sd` field -- a
+  `prior_half_cauchy()`, a `prior_pc()`, a misnamed list -- by its default, so
+  `tulpa(..., mode = "ep", beta_prior = prior_half_cauchy(2.5))` fitted under
+  a different prior and reported nothing. Both resolvers now validate through
+  one `.beta_prior_fields()`, so a prior one accepts is a prior the other
+  accepts.
+
+* **`tulpa_variogram()` checks `coords` against the residual length** (#412).
+  A mismatch recycled a logical index and returned a well-formed semivariogram
+  built from squared differences of unrelated pairs. `moran_i()` and
+  `tulpa_variogram()` share one check, and coincident coordinates report the
+  empty distance axis rather than failing inside `seq()`.
+
+* **The generics tulpa borrows from bayesplot and rstantools dispatch under
+  either attach order** (#413). `pp_check`, `bayes_R2` and `posterior_predict`
+  are owned by those packages; tulpa's copies masked them, so
+  `pp_check(y, yrep, fun)` failed for the rest of the session once tulpa was
+  attached. `.onLoad()` now registers the `tulpa_fit` methods on the owners'
+  generics and borrows the owners' own `.default` methods onto tulpa's, so
+  neither direction depends on attach order.
+
+* **The Polya-Gamma kernels validate every R-supplied index at entry** (#415).
+  Group, spatial, time and neighbour indices were converted to 0-based and used
+  as raw subscripts, which Rcpp does not bounds-check, so an out-of-range
+  `spatial_idx` was a read or write past the end of an R allocation. All eight
+  entry points check length, `NA` and range through one helper, and the
+  neighbour list is checked against `n_neighbors` before either is walked.
+
+* **The compiled test harness is reached** (#416). 55 of the 238 generated
+  entry points had no caller, 48 of them in `src/test_helpers.cpp` -- including
+  every autodiff-primitive probe and all three serial-versus-parallel
+  equivalence helpers, so from the outside the package read as though that
+  coverage existed. They are now wired into `test-autodiff-primitives.R`,
+  `test-cpp-kernels.R` and `test-parallel-equivalence.R`, each against an
+  independent R computation. `cpp_pg_negbin_negbin_gibbs` and its driver are
+  removed: a numerator/denominator ratio sampler belongs to tulpaRatio, which
+  carries its own copy.
+
+* **`temporal_rtr()` and `spatiotemporal()` / `spatiotemporal_gp()` refuse to
+  build a specification no fitter reads** (#407, #414). Both returned an object
+  that flowed through `tulpa()` as an unrestricted model, or errored about an
+  unrelated field. `fit_st_nested()` is the spatiotemporal entry point.
+
 ## 0.1.0
 
 First CRAN release. The engine's surface is unchanged from 0.0.198; this

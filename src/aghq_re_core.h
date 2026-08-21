@@ -24,7 +24,9 @@
 #include <vector>
 #include <unordered_map>
 #include <cmath>
+#include <cstdint>
 #include <limits>
+#include <string>
 
 namespace tulpa {
 
@@ -42,16 +44,37 @@ struct AghqGrid {
     Eigen::VectorXd z2;       // n_nodes (sum of squared node coords)
 };
 
+// Largest tensor grid the AGHQ engine will build. The grid is materialized as an
+// n_nodes x d matrix and swept once per group per objective evaluation, so this
+// is a compute wall before it is a memory one: at the cap a single group's
+// node_ll call is already ~10^6 conditional-likelihood evaluations. It admits
+// nine nodes on six correlated coordinates (9^6 = 531441) and refuses seven
+// (9^7 = 4782969), which is the point where an unqualified `n_quad^dim` request
+// stops being something to run without saying so.
+constexpr std::uint64_t AGHQ_MAX_GRID_NODES = 1048576ULL;
+
 // Per-axis node counts from a per-block request. `nq_block` is either length 1
 // (broadcast to every block) or length blocks.size() (one node count per block);
 // every axis of block m gets nq_block[m]. This maps a per-covariance-block order
 // onto the flat axis layout the tensor grid iterates.
+//
+// A request whose length is neither of the two, or that asks for fewer than one
+// node on an axis, is rejected: gauss_hermite_prob() answers a single node at 0
+// with weight 1 below n = 2, so a zero request would silently degrade that axis
+// to a plain Laplace instead of erroring.
 inline std::vector<int> aghq_nq_per_axis(const std::vector<ReCovBlock>& blocks,
                                          const std::vector<int>& nq_block) {
     const bool broadcast = (nq_block.size() == 1);
+    if (!broadcast && nq_block.size() != blocks.size())
+        Rcpp::stop("n_quad has length %d: it must be length 1 or one entry per "
+                   "covariance block (%d).",
+                   (int)nq_block.size(), (int)blocks.size());
     std::vector<int> per_axis;
     for (size_t mi = 0; mi < blocks.size(); ++mi) {
         const int q = broadcast ? nq_block[0] : nq_block[mi];
+        if (q < 1)
+            Rcpp::stop("n_quad must be >= 1 on every covariance block; block %d "
+                       "requested %d.", (int)mi + 1, q);
         for (int c = 0; c < blocks[mi].nc; ++c) per_axis.push_back(q);
     }
     return per_axis;
@@ -66,23 +89,37 @@ inline AghqGrid aghq_build_grid(const std::vector<int>& nq_per_axis) {
     std::vector<const GaussHermite*> gh(d);
     std::vector<Eigen::VectorXd> logwk(d);
     std::vector<int> Qc(d);
-    long n = 1;
+    std::uint64_t n = 1;
     for (int c = 0; c < d; ++c) {
         const int nq = nq_per_axis[c];
+        // Accumulate in 64 bits and stop at the cap before the axis rule is
+        // built, rather than wrapping the product: a truncated extent reaches
+        // Eigen's resize as a wrong or negative allocation instead of a message,
+        // and an absurd single-axis request would reach the Golub-Welsch solve.
+        n *= (std::uint64_t)nq;
+        if (n > AGHQ_MAX_GRID_NODES) {
+            std::string counts;
+            for (int j = 0; j < d; ++j)
+                counts += (j ? " x " : "") + std::to_string(nq_per_axis[j]);
+            Rcpp::stop("AGHQ tensor grid over %d axes (%s) exceeds the %s-node "
+                       "limit. Lower n_quad, or split the covariance blocks.",
+                       d, counts.c_str(),
+                       std::to_string(AGHQ_MAX_GRID_NODES).c_str());
+        }
         auto it = rules.find(nq);
         if (it == rules.end()) it = rules.emplace(nq, gauss_hermite_prob(nq)).first;
         gh[c]    = &it->second;
         logwk[c] = it->second.weights.array().log();
         Qc[c]    = (int)it->second.nodes.size();
-        n *= Qc[c];
     }
+    const int n_nodes = (int)n;
     AghqGrid g;
-    g.d = d; g.Q = (d > 0 ? Qc[0] : 0); g.n_nodes = (int)n;
-    g.Znodes.resize(n, d);
-    g.logw.resize(n);
-    g.z2.resize(n);
+    g.d = d; g.Q = (d > 0 ? Qc[0] : 0); g.n_nodes = n_nodes;
+    g.Znodes.resize(n_nodes, d);
+    g.logw.resize(n_nodes);
+    g.z2.resize(n_nodes);
     std::vector<int> idx(d, 0);                 // mixed radix, axis 0 fastest (expand.grid order)
-    for (long r = 0; r < n; ++r) {
+    for (int r = 0; r < n_nodes; ++r) {
         double lw = 0.0, z2s = 0.0;
         for (int c = 0; c < d; ++c) {
             const double z = gh[c]->nodes(idx[c]);
@@ -102,6 +139,59 @@ struct AghqValueGrad {
     Eigen::VectorXd grad;                                 // d f / d[theta, eta]
     bool ok = false;
 };
+
+// Cholesky of the block-diagonal Sigma: its inverse P = Sigma^{-1} and its
+// log-determinant. Eigen::LLT::solve on a decomposition that did not succeed
+// returns numbers rather than an error or a NaN, so `ok` is the only signal a
+// diverged log-Cholesky coordinate leaves behind and every caller reads it
+// before reading P.
+struct AghqSigmaFactor {
+    Eigen::MatrixXd P;
+    double logdet = 0.0;
+    bool ok = false;
+};
+
+inline AghqSigmaFactor aghq_sigma_factor(const Eigen::MatrixXd& Sig, int d) {
+    AghqSigmaFactor out;
+    Eigen::LLT<Eigen::MatrixXd> lltS(Sig);
+    if (lltS.info() != Eigen::Success) return out;
+    out.P = lltS.solve(Eigen::MatrixXd::Identity(d, d));
+    out.logdet =
+        2.0 * Eigen::MatrixXd(lltS.matrixL()).diagonal().array().log().sum();
+    out.ok = true;
+    return out;
+}
+
+// One group's conditional mode, the inverse C of its penalized precision, and --
+// when `want_chol` -- the lower Cholesky factor of C that places the quadrature
+// nodes. `ok` is false when the mode search failed or either factorization did
+// not succeed. The mode-find, both factorizations and all three failure tests
+// live here so the AGHQ objective and the BLUP extractor cannot drift apart on
+// which of them they read.
+struct AghqGroupSolve {
+    GroupMode mode;
+    Eigen::MatrixXd C;
+    Eigen::MatrixXd Lc;
+    bool ok = false;
+};
+
+inline AghqGroupSolve aghq_group_solve(const REGroupOracle& orc, int g,
+                                       const Eigen::MatrixXd& P, int d,
+                                       bool want_chol) {
+    AghqGroupSolve out;
+    out.mode = aghq_group_mode(orc, g, P);
+    if (!out.mode.ok) return out;
+    Eigen::LLT<Eigen::MatrixXd> lltN(out.mode.negH);
+    if (lltN.info() != Eigen::Success) return out;
+    out.C = lltN.solve(Eigen::MatrixXd::Identity(d, d));
+    if (want_chol) {
+        Eigen::LLT<Eigen::MatrixXd> lltC(out.C);
+        if (lltC.info() != Eigen::Success) return out;
+        out.Lc = lltC.matrixL();
+    }
+    out.ok = true;
+    return out;
+}
 
 // Objective + analytic gradient at par = [theta (n_theta) ; eta (sum block k)].
 // `orc` is rebound to theta internally. Empty groups contribute exactly 0 to
@@ -131,11 +221,10 @@ inline AghqValueGrad aghq_objective_grad(REGroupOracle& orc,
 
     std::vector<Eigen::MatrixXd> Ls = recov_theta_to_L(eta, blocks);
     Eigen::MatrixXd Sig = recov_block_diag_sigma(Ls, d);
-    Eigen::LLT<Eigen::MatrixXd> lltS(Sig);
-    if (lltS.info() != Eigen::Success) return R;
-    const Eigen::MatrixXd P = lltS.solve(Eigen::MatrixXd::Identity(d, d));
-    const double logdetS =
-        2.0 * Eigen::MatrixXd(lltS.matrixL()).diagonal().array().log().sum();
+    const AghqSigmaFactor sf = aghq_sigma_factor(Sig, d);
+    if (!sf.ok) return R;
+    const Eigen::MatrixXd& P = sf.P;
+    const double logdetS = sf.logdet;
 
     orc.rebind(theta.data());
 
@@ -146,19 +235,14 @@ inline AghqValueGrad aghq_objective_grad(REGroupOracle& orc,
 
     std::vector<double> hvals(nN), tsc(std::max(nth, 1));
     for (int g = 0; g < orc.n_groups; ++g) {
-        GroupMode m = aghq_group_mode(orc, g, P);
-        if (!m.ok) return R;
         // C = (-H_g)^{-1}; Lc lower with Lc Lc' = C.
-        Eigen::LLT<Eigen::MatrixXd> lltN(m.negH);
-        if (lltN.info() != Eigen::Success) return R;
-        const Eigen::MatrixXd C = lltN.solve(Eigen::MatrixXd::Identity(d, d));
-        Eigen::LLT<Eigen::MatrixXd> lltC(C);
-        if (lltC.info() != Eigen::Success) return R;
-        const Eigen::MatrixXd Lc = lltC.matrixL();
+        const AghqGroupSolve gs = aghq_group_solve(orc, g, P, d, /*want_chol=*/true);
+        if (!gs.ok) return R;
+        const Eigen::MatrixXd& Lc = gs.Lc;
 
         // Nodes b_k = b_hat + Lc z_k (row-major for the oracle's node_ll).
         RowMat B = grid.Znodes * Lc.transpose();
-        B.rowwise() += m.b.transpose();
+        B.rowwise() += gs.mode.b.transpose();
 
         orc.node_ll(g, B.data(), nN, hvals.data());
 

@@ -4,137 +4,30 @@
 #' The temporal analogue of [spatial_rsr()]: constrain a temporal random effect
 #' to be orthogonal to a set of covariates, so a temporally smooth covariate does
 #' not have its fixed-effect coefficient attenuated by a confounded temporal
-#' field.
+#' field, \eqn{u_{RTR} = (I - P_X) u}.
+#'
+#' No tulpa backend applies that projection to a temporal field, so this
+#' constructor errors rather than returning a specification that would fit as the
+#' unrestricted temporal model. [spatial_rsr()] is the wired spatial analogue.
 #'
 #' @param temporal A `tulpa_temporal` specification (e.g. [temporal_rw1()],
 #'   [temporal_ar1()]).
 #' @param restrict_to A one-sided formula giving the covariate space the temporal
 #'   effect is made orthogonal to, e.g. `~ x`.
 #'
-#' @return The temporal specification with RTR enabled (class `tulpa_rtr`
-#'   prepended), for use in the `temporal =` argument of [tulpa()].
-#'
-#' @details
-#' RTR modifies the temporal random effect to be orthogonal to the fixed-effect
-#' design: \eqn{u_{RTR} = (I - P_X) u} where \eqn{P_X = X(X'X)^{-1}X'} projects
-#' onto the column space of the restricted covariates. Use it when a covariate is
-#' temporally smooth and its coefficient appears attenuated toward zero; avoid it
-#' when the temporal effect is itself the quantity of interest.
+#' @return Nothing: the call always signals an error.
 #'
 #' @seealso [spatial_rsr()], [temporal_rw1()], [temporal_ar1()]
 #'
-#' @examples
-#' rtr <- temporal_rtr(temporal_rw1("year"), restrict_to = ~ x)
-#' print(rtr)
-#'
 #' @export
 temporal_rtr <- function(temporal, restrict_to) {
-
-  if (!inherits(temporal, "tulpa_temporal")) {
-    stop("`temporal` must be a tulpa temporal specification", call. = FALSE)
-  }
-
-  if (!inherits(restrict_to, "formula")) {
-    stop("`restrict_to` must be a formula", call. = FALSE)
-  }
-
-  # Store RTR information in the temporal object
-  temporal$rtr <- TRUE
-  temporal$rtr_formula <- restrict_to
-
-  # Add RTR class for dispatch
-  class(temporal) <- c("tulpa_rtr", class(temporal))
-
-  temporal
+  stop("Restricted temporal regression is not fitted by any tulpa backend: ",
+       "no temporal solver applies the (I - P_X) projection, so an RTR ",
+       "specification would fit as the unrestricted temporal model. Use ",
+       "spatial_rsr() for the spatial analogue, which the binomial ",
+       "Polya-Gamma Gibbs sampler carries.", call. = FALSE)
 }
 
-
-#' Print method for tulpa_rtr (temporal)
-#'
-#' @param x A tulpa_rtr object
-#' @param ... Passed to underlying print method
-#'
-#' @return The input `x`, returned invisibly. Called for the side effect of
-#'   printing the temporal specification and its restricted-temporal-regression
-#'   modifier to the console.
-#'
-#' @export
-print.tulpa_rtr <- function(x, ...) {
-  # Print underlying temporal type
-  NextMethod()
-
-  cat("\nRestricted Temporal Regression (RTR):\n")
-  cat("  Orthogonal to:", deparse(x$rtr_formula), "\n")
-  cat("  (Temporal effect constrained to be orthogonal to covariate space)\n")
-
-  invisible(x)
-}
-
-
-#' Validate RTR specification
-#'
-#' @param temporal tulpa_rtr object
-#' @param data Data frame
-#' @param formula Model formula (to extract design matrix)
-#'
-#' @return Updated temporal object with projection matrix
-#' @keywords internal
-validate_rtr <- function(temporal, data, formula) {
-  if (is.null(temporal) || !inherits(temporal, "tulpa_rtr")) {
-    return(temporal)
-  }
-
-  # Build design matrix for RTR covariates
-  rtr_formula <- temporal$rtr_formula
-
-  # Check if terms exist in data
-  rtr_vars <- all.vars(rtr_formula)
-  missing_vars <- setdiff(rtr_vars, names(data))
-  if (length(missing_vars) > 0) {
-    stop(sprintf("RTR variables not found in data: %s",
-                 paste(missing_vars, collapse = ", ")), call. = FALSE)
-  }
-
-  # Build design matrix
-  X_rtr <- model.matrix(rtr_formula, data = data)
-
-  # Compute projection matrix (using QR for numerical stability)
-  temporal$rtr_projection <- compute_rtr_projection(X_rtr)
-  temporal$rtr_vars <- rtr_vars
-
-  temporal
-}
-
-
-#' Compute RTR projection matrix
-#'
-#' @description
-#' Compute the orthogonal projection matrix P_perp = I - P_X that projects
-#' the temporal effect into the space orthogonal to the covariates.
-#'
-#' @param X Design matrix of covariates to orthogonalize against
-#'
-#' @return Projection matrix (n x n)
-#' @keywords internal
-compute_rtr_projection <- function(X) {
-  .orthogonal_complement_projection(X, "RTR")
-}
-
-
-#' Apply RTR projection to temporal effect
-#'
-#' @description
-#' Project temporal effect into the space orthogonal to covariates.
-#' Called during posterior computation.
-#'
-#' @param f Temporal effect vector (length n)
-#' @param P_perp Projection matrix from compute_rtr_projection
-#'
-#' @return Projected temporal effect (length n)
-#' @keywords internal
-apply_rtr_projection <- function(f, P_perp) {
-  as.vector(P_perp %*% f)
-}
 
 
 #' Extract temporal effects from a fitted model

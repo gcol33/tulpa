@@ -61,6 +61,34 @@
 
 namespace tulpa {
 
+// Environment-driven kernel switches, resolved at namespace scope so the read
+// happens at load time. A function-local static first evaluated inside an
+// OpenMP region emits a thread-safe-initialization guard and runs std::getenv
+// concurrently with the other workers reaching the same line, which is the
+// construct the per-thread scratch note below avoids for the same reason.
+//
+// TULPA_GRID_WORKSTEAL=0 forces the serial per-cell coupling scatter, so a grid
+// solved with several outer threads reproduces the serial reduction exactly.
+// TULPA_COUPLING_FORCE_PARALLEL takes the chunked parallel reduce on every cell
+// instead of only where the cell count pays for the per-chunk partial buffers,
+// so a small grid can exercise the parallel path; the reduce is in fixed chunk
+// order, so the result is the same either way.
+inline bool nl_env_present(const char* name) {
+    return std::getenv(name) != nullptr;
+}
+inline bool nl_env_not_zero(const char* name) {
+    const char* e = std::getenv(name);
+    return !(e != nullptr && e[0] == '0');
+}
+inline const bool kGridWorkstealEnabled = nl_env_not_zero("TULPA_GRID_WORKSTEAL");
+inline const bool kCouplingForceParallel =
+    nl_env_present("TULPA_COUPLING_FORCE_PARALLEL");
+
+// Cell count below which the chunked coupling scatter is not worth its
+// per-chunk partial gradient and Hessian buffers (each a full copy of the
+// joint values array), so the serial pass runs instead.
+inline constexpr int kCouplingWorkstealMinCells = 64;
+
 // Per-arm per-row design weight on an INDEXED_SINGLE block (areal SVC).
 // Returns 1.0 when the block carries no row_weight, so the no-weight path is
 // byte-identical. The weight enters the block-local weight that multiplies
@@ -68,6 +96,64 @@ namespace tulpa {
 // amplitude is applied on top, unchanged.
 inline double block_row_weight(const LatentBlock& blk, int i, int k_arm) {
     return blk.row_weight ? blk.row_weight(i, k_arm) : 1.0;
+}
+
+// Threshold below which a centering fold is skipped: the level the centerer
+// removed is numerically zero, so folding it would only perturb the coefficient
+// it lands in. One definition, so the dense, sparse and batched centering paths
+// cannot drift apart.
+inline constexpr double kCenterFoldMinAmount = 1e-15;
+
+// Apply every block's centerer to x and compensate each arm's aliased
+// coefficient so eta is preserved: arm k's aliased beta column absorbs
+// arm_scale_b(k_arm, k_grid) * d_fac_b(k_grid) * amount for each constant the
+// centerer removed from x[block]. Offset 0 is the intercept, the column an
+// unweighted block aliases with; a weighted block reports the column of the
+// covariate it rides on. `d_fac_at_block(b)` supplies block b's amplitude at
+// the cell being centred (the dense driver reads a per-cell cache, the sparse
+// and batched drivers call the block).
+template <typename DFacFn>
+inline void center_joint_blocks(
+    Rcpp::NumericVector&            x,
+    const std::vector<LatentBlock>& blocks,
+    const std::vector<ParsedArm>&   parsed,
+    int                             n_arms,
+    int                             k_grid,
+    DFacFn                          d_fac_at_block
+) {
+    const int n_blocks = static_cast<int>(blocks.size());
+    for (int b = 0; b < n_blocks; b++) {
+        if (!blocks[b].center) continue;
+        const double dfac = d_fac_at_block(b);
+        for (const auto& fold : blocks[b].center(x)) {
+            if (std::abs(fold.amount) < kCenterFoldMinAmount) continue;
+            for (int k_arm = 0; k_arm < n_arms; k_arm++) {
+                if (parsed[k_arm].p == 0) continue;
+                if (fold.beta_offset < 0 ||
+                    fold.beta_offset >= parsed[k_arm].p) continue;
+                const double s = blocks[b].arm_scale
+                                 ? blocks[b].arm_scale(k_arm, k_grid)
+                                 : 1.0;
+                x[parsed[k_arm].beta_start + fold.beta_offset] +=
+                    s * dfac * fold.amount;
+            }
+        }
+    }
+}
+
+// Joint log-prior at x: the per-arm beta / RE priors plus every block's own
+// log-prior at the grid cell.
+inline double log_prior_joint_blocks(
+    const Rcpp::NumericVector&      x,
+    const std::vector<LatentBlock>& blocks,
+    const std::vector<ParsedArm>&   parsed,
+    int                             k_grid
+) {
+    double lp = log_prior_per_arm_re(x, parsed);
+    for (const auto& b : blocks) {
+        if (b.log_prior) lp += b.log_prior(x, k_grid);
+    }
+    return lp;
 }
 
 // Resolve the active (latent index, chain weight) entries one arm row contributes
@@ -83,6 +169,14 @@ inline double block_row_weight(const LatentBlock& blk, int i, int k_arm) {
 // `scatter_one_arm_row_{dense,sparse}` (gradient + Hessian) and
 // `build_arm_row_chain` (cross-arm Hessian chain). DENSE_BASIS / BILINEAR_FACTOR
 // are not coupled-scatter kinds (no coupled family uses them) and are skipped.
+//
+// PRECONDITION: the appended entries resolve to DISTINCT global latent indices.
+// Block ranges are laid out disjointly (each factory returns start + size) and
+// every INDEXED_MULTI producer emits one slot per row per field, so it holds by
+// construction. The dense row scatter sums all (a, b) pairs and writes both
+// directions while the sparse twin sums b <= a and lets H.add() normalise; the
+// two agree only for distinct indices, since a repeated index would gain
+// 2 * d_a * d_b on the dense diagonal against d_a * d_b on the sparse one.
 inline void collect_coupled_row_latents(
     int                              i,
     int                              k_arm,
@@ -157,7 +251,6 @@ inline void scatter_one_arm_row_dense(
     const int n_re_k = pa.n_re_groups;
     const int bstart = pa.beta_start;
     const int rstart = pa.re_start;
-    const int B      = static_cast<int>(blocks.size());
 
     int g_re = -1;
     if (n_re_k > 0) {
@@ -170,7 +263,6 @@ inline void scatter_one_arm_row_dense(
     // row doesn't see this block"; a block with d_eff == 0 (field_coef = 0 arm,
     // rho = 0 BYM2 phi-component, etc.) is skipped. Shared resolver so the
     // gradient/Hessian scatter and the cross-arm chain see the same dofs.
-    (void) B;
     active_idx.clear();
     active_d.clear();
     collect_coupled_row_latents(i, k_arm, blocks, d_eff_cache, active_idx, active_d);
@@ -243,7 +335,6 @@ inline void scatter_one_arm_row_sparse(
     const int n_re_k = pa.n_re_groups;
     const int bstart = pa.beta_start;
     const int rstart = pa.re_start;
-    const int B      = static_cast<int>(blocks.size());
 
     int g_re = -1;
     if (n_re_k > 0) {
@@ -251,7 +342,6 @@ inline void scatter_one_arm_row_sparse(
         if (gi >= 0 && gi < n_re_k) g_re = rstart + gi;
     }
 
-    (void) B;
     active_idx.clear();
     active_d.clear();
     collect_coupled_row_latents(i, k_arm, blocks, d_eff_cache, active_idx, active_d);
@@ -341,7 +431,7 @@ inline void scatter_arm_obs_joint_multi(
 }
 
 // ============================================================================
-// Cell-coupling per-cell branch (dense path Change 2b).
+// Cell-coupling per-cell branch (dense path).
 //
 // When the joint fit registers a non-separable `CellCouplingSpec` (one
 // whose `arm_ids()` lists at least one arm), the per-obs scatter is
@@ -357,20 +447,24 @@ inline void scatter_arm_obs_joint_multi(
 // the kk-th coupled arm (where kk indexes `coupled_arms`). Pre-computed
 // once per fit by `build_cell_rows_from_arms()`.
 //
-// B.1 scope: single-arm cell coupling only (the per-cell `CellDerivs`
-// writes only `arm_grad` + `arm_neg_hess_diag`; the cross-arm Hessian
-// fields are left unread). Cross-arm Hessian + the sparse twin land
-// with B.2 alongside the real tulpaObs `OccuCoverLognormalCoupling`
-// consumer.
+// The branch reads the whole `CellDerivs` contract: `arm_grad` and
+// `arm_neg_hess_diag` per row, the dense cross-arm block `arm_cross_hess[kk][ll]`
+// for every pair the spec declares, and the rank-1 self-cross descriptor a spec
+// may supply in place of its own (kk, kk) block. The dense and sparse wrappers
+// share this body; the sparse one additionally splits the cell loop across idle
+// team threads.
 // ============================================================================
 
-// Evaluate the cell-coupling spec's per-cell log-density sum at the
-// current etas, discarding derivatives. Used by the log-lik functor
-// during Newton line search (the scatter pass computes the same call
-// with derivatives kept; B.1 accepts the 2x evaluation cost as the
-// trivial way to keep the line-search objective consistent with the
-// scatter -- caching the scatter's derivatives across line-search
-// rejects is a B.2 micro-opt if the spec evaluate is expensive).
+// Evaluate the cell-coupling spec's per-cell log-density sum at the current
+// etas, discarding derivatives. Used by the log-lik functor during the Newton
+// line search; the scatter pass runs the same call with the derivatives kept,
+// which keeps the line-search objective consistent with the scatter at the cost
+// of a second evaluate per accepted step.
+//
+// The call sets `grad_only`, so a spec may skip its curvature work here, and it
+// still hands over the zero-filled `arm_neg_hess_diag` buffers and an outer
+// `arm_cross_hess` array the contract promises -- every inner block null, which
+// is the documented spelling of "this pair contributes nothing at this cell".
 // `phi_override` (optional, length n_coupled): per-coupled-arm dispersion to use
 // in place of the shared `arms[k].phi`. The threaded sparse outer-grid driver
 // passes a per-thread snapshot taken under the phi-sync critical, because the
@@ -413,6 +507,13 @@ inline double eval_cell_coupling_log_lik(
     std::vector<double*>        arm_grad_ptr(n_coupled);
     std::vector<double*>        arm_neg_hess_diag_ptr(n_coupled);
 
+    // Outer cross-Hessian array with every inner block null. A spec is required
+    // to test the INNER pointer only, so an objective-only call supplies the
+    // outer array rather than a null one.
+    std::vector<double*>        cross_hess_null_inner(n_coupled, nullptr);
+    std::vector<double* const*> cross_hess_outer(n_coupled,
+                                                 cross_hess_null_inner.data());
+
     double total = 0.0;
     for (int c = 0; c < n_cells; c++) {
         for (int kk = 0; kk < n_coupled; kk++) {
@@ -447,9 +548,10 @@ inline double eval_cell_coupling_log_lik(
         CellDerivs out;
         out.arm_grad           = arm_grad_ptr.data();
         out.arm_neg_hess_diag  = arm_neg_hess_diag_ptr.data();
-        out.arm_cross_hess     = nullptr;
+        out.arm_cross_hess     = cross_hess_outer.data();
         out.arm_row_count      = arm_row_count.data();
         out.n_arms_            = n_coupled;
+        out.grad_only          = true;
         total += spec.evaluate_cell(c, etas_view, y_view, out);
     }
     return total;
@@ -790,7 +892,7 @@ inline void scatter_cell_coupling_branch_impl(
     std::vector<std::vector<double>> rank1_vec_buf(n_coupled);
     std::vector<double*>             rank1_vec_ptr(n_coupled, nullptr);
     std::vector<ArmRowChainEntry>    rank1_u_scratch;
-    rank1_u_scratch.reserve(64);
+    rank1_u_scratch.reserve(64);   // capacity hint; grows as cells demand
 
     // Per-row chain scratch reused across rows / pairs.
     std::vector<int>    active_idx;
@@ -799,7 +901,7 @@ inline void scatter_cell_coupling_branch_impl(
     active_d.reserve(B);
     std::vector<ArmRowChainEntry> chain_k_scratch;
     std::vector<ArmRowChainEntry> chain_l_scratch;
-    chain_k_scratch.reserve(32);
+    chain_k_scratch.reserve(32);   // capacity hints; grow as rows demand
     chain_l_scratch.reserve(32);
 
     // Which (kk, ll) dense cross-Hessian slabs to allocate. The spec declares the
@@ -916,9 +1018,9 @@ inline void scatter_cell_coupling_branch_impl(
         // Cross-arm Hessian scatter. Pure curvature with no gradient
         // contribution, so a grad-only step (cached-factor reuse) skips it.
         // The self block (kk, kk) takes the rank-1 fast path when the spec
-        // declared one (: one coef * u u^T over the arm's
-        // joint dofs, the all-undetected occupancy mixture); otherwise it walks
-        // the dense off-diagonal. Cross blocks (kk < ll) are always dense.
+        // declared one (a single coef * u u^T over the arm's joint dofs, as in
+        // the all-undetected occupancy mixture); otherwise it walks the dense
+        // off-diagonal. Cross blocks (kk < ll) are always dense.
         if (!grad_only) {
             for (int kk = 0; kk < n_coupled; kk++) {
                 int k     = coupled_arms[kk];
@@ -1035,13 +1137,10 @@ inline void scatter_cell_coupling_sparse_branch(
     // running, and its finished threads drain the task pool at the loop
     // barrier), the spec permits concurrent evaluate_cell(), and the cell count
     // is worth the per-chunk partial buffers. Otherwise fall through to the
-    // byte-identical serial pass. TULPA_GRID_WORKSTEAL=0 forces serial.
-    static const bool worksteal_enabled = []() {
-        const char* e = std::getenv("TULPA_GRID_WORKSTEAL");
-        return !(e != nullptr && e[0] == '0');
-    }();
+    // byte-identical serial pass.
     const bool go_parallel =
-        worksteal_enabled && n_threads > 1 && n_cells >= 64 &&
+        kGridWorkstealEnabled && n_threads > 1 &&
+        (n_cells >= kCouplingWorkstealMinCells || kCouplingForceParallel) &&
         spec.thread_safe() && omp_in_parallel();
 
     if (go_parallel) {
@@ -1186,7 +1285,7 @@ inline void scatter_arm_obs_joint_multi_sparse(
         (n_db_total > 0) &&
         ((n_indexed > 0) || (n_db_total >= 2) || (n_db_legacy > 0));
 
-    // Stage 2.2b fast path: when no DENSE_BASIS block is present, the
+    // Fast path: when no DENSE_BASIS block is present, the
     // per-obs scatter resolves to a (mostly) static (i, k_arm) ->
     // (active_dof, flat_idx) mapping. INDEXED_SINGLE / INDEXED_MULTI have
     // fully static weights; BILINEAR_FACTOR active weights are computed
@@ -1261,6 +1360,9 @@ inline void scatter_arm_obs_joint_multi_sparse(
                 // emit u_slot with weight (lambda * d_eff) and lambda_slot
                 // with weight (u * d_eff). Active × active fills the
                 // mixed-curvature (u, lambda) Hessian entry naturally.
+                // obs_factor_lambda owns both bounds: it returns {-1, -1}
+                // for a row outside the factor's own latent range, so a
+                // non-negative slot is in range by construction.
                 auto [u_slot, lambda_slot] = blk.obs_factor_lambda(i, k_arm);
                 if (u_slot >= 0 && lambda_slot >= 0) {
                     const double u_val      = x[u_slot];
@@ -1469,6 +1571,8 @@ inline void compute_eta_joint_sparse_dispatch(
                 }
                 case BlockContribKind::BILINEAR_FACTOR: {
                     if (!blk.obs_factor_lambda) break;
+                    // Both slots are bounded by obs_factor_lambda itself, which
+                    // returns {-1, -1} outside the factor's latent range.
                     auto [u_slot, lambda_slot] = blk.obs_factor_lambda(i, k_arm);
                     if (u_slot >= 0 && lambda_slot >= 0) {
                         e += d_e * x[u_slot] * x[lambda_slot];
@@ -1520,17 +1624,16 @@ Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
     // rather than being scored against the wrong (unused) per-obs likelihood.
     bool                             compute_skew = false,
     const std::vector<int>*          skew_probe_idx = nullptr,
-    // Per-cell fixed-effect covariance block (gcol33/tulpa#307), extracted
-    // inside each cell's own solve so the grid never holds every cell's
-    // precision at once.
+    // Per-cell fixed-effect covariance block, extracted inside each cell's own
+    // solve so the grid never holds every cell's precision at once.
     const JointFixedBlockRequest*    fixed_block = nullptr,
-    // Subspace debias (subspace_debias.h, gcol33/tulpa#304/#306). Runs on every
-    // integrated cell (never the cheap screen), so the corrected coordinates
-    // enter the reported marginal as a mixture over the whole outer grid.
+    // Subspace debias (subspace_debias.h). Runs on every integrated cell (never
+    // the cheap screen), so the corrected coordinates enter the reported
+    // marginal as a mixture over the whole outer grid.
     const SubspaceDebiasOptions*     debias = nullptr,
-    // Corrected integrated Laplace (inner_cila.h, gcol33/tulpa#351). Runs on
-    // every integrated cell (never the cheap screen), so the corrected cell
-    // weights and particles cover the whole outer grid.
+    // Corrected integrated Laplace (inner_cila.h). Runs on every integrated
+    // cell (never the cheap screen), so the corrected cell weights and
+    // particles cover the whole outer grid.
     const CilaOptions*               cila = nullptr
 );
 
@@ -1571,17 +1674,16 @@ Rcpp::List run_multi_block_nested_laplace_joint(
     const std::vector<double>&       x_init_per_cell = std::vector<double>(),
     bool                             compute_skew = false,
     const std::vector<int>*          skew_probe_idx = nullptr,
-    // Per-cell fixed-effect covariance block (gcol33/tulpa#307), extracted
-    // inside each cell's own solve so the grid never holds every cell's
-    // precision at once.
+    // Per-cell fixed-effect covariance block, extracted inside each cell's own
+    // solve so the grid never holds every cell's precision at once.
     const JointFixedBlockRequest*    fixed_block = nullptr,
-    // Subspace debias (subspace_debias.h, gcol33/tulpa#304/#306). Runs on every
-    // integrated cell (never the cheap screen), so the corrected coordinates
-    // enter the reported marginal as a mixture over the whole outer grid.
+    // Subspace debias (subspace_debias.h). Runs on every integrated cell (never
+    // the cheap screen), so the corrected coordinates enter the reported
+    // marginal as a mixture over the whole outer grid.
     const SubspaceDebiasOptions*     debias = nullptr,
-    // Corrected integrated Laplace (inner_cila.h, gcol33/tulpa#351). Runs on
-    // every integrated cell (never the cheap screen), so the corrected cell
-    // weights and particles cover the whole outer grid.
+    // Corrected integrated Laplace (inner_cila.h). Runs on every integrated
+    // cell (never the cheap screen), so the corrected cell weights and
+    // particles cover the whole outer grid.
     const CilaOptions*               cila = nullptr
 );
 

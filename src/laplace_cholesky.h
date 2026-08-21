@@ -222,9 +222,10 @@ inline bool chol_substitute_raw(
 }
 
 // Raw-buffer solve: writes delta_out in-place, uses scratch.L/z, no Rcpp alloc.
-// Returns true if the back-substituted delta is finite. Singular-pivot guard
-// inside cholesky_factorize_impl_raw clamps tiny pivots so factorization
-// always completes; success here only tracks back-substitution finiteness.
+// Returns true if the back-substituted delta is finite. cholesky_factorize_impl_raw
+// carries no pivot clamp: a non-positive pivot leaves a NaN in L and propagates
+// through the substitution, so the finiteness test below is what reports a
+// factorization of a matrix that is not PD.
 inline bool dense_cholesky_solve_raw(
     const DenseMat& H, const DenseVec& rhs, int n,
     DenseCholeskyScratch& scratch,
@@ -240,14 +241,20 @@ inline bool dense_cholesky_solve_raw(
                                rhs.data(), delta_out.data(), scratch.z.data());
 }
 
-// Raw-buffer factorize-for-log-det: no solve, no Rcpp alloc.
-inline void dense_cholesky_log_det_raw(
+// Raw-buffer factorize-for-log-det: no solve, no Rcpp alloc. Returns true when
+// the log-determinant is finite, which is the factorization reporting that H was
+// PD: an indefinite H leaves a NaN pivot and an exactly singular one a zero
+// pivot, giving NaN and -Inf respectively. A caller that carries either on turns
+// a failed cell into an undefined outer-grid weight (NaN) or into one that
+// dominates the whole grid (-Inf log-determinant is a +Inf log-marginal).
+inline bool dense_cholesky_log_det_raw(
     const DenseMat& H, int n,
     DenseCholeskyScratch& scratch,
     double& log_det_out
 ) {
     scratch.ensure(n);
     detail::cholesky_factorize_impl_raw(H, n, scratch.L.data(), log_det_out);
+    return std::isfinite(log_det_out);
 }
 
 // Extract a symmetric DenseMat into raw CSC lower-triangle arrays

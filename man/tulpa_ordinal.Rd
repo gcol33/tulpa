@@ -8,7 +8,7 @@ tulpa_ordinal(
   formula,
   data,
   link = c("logit", "probit"),
-  beta_prior = list(mean = 0, sd = 10),
+  beta_prior = .tulpa_default_beta_prior("ordinal"),
   cut_prior_sd = 10,
   control = list()
 )
@@ -24,7 +24,7 @@ factor with >= 3 levels. An intercept in \code{formula} is dropped.}
 
 \item{beta_prior}{Fixed-effect prior as \code{list(mean, sd)}: a mean-zero
 (\code{mean = 0}) Gaussian ridge on every coefficient with scalar SD \code{sd}
-(default \code{list(mean = 0, sd = 10)}).}
+(default the engine default, \code{prior_normal(0, 2.5)}).}
 
 \item{cut_prior_sd}{SD of the mean-zero Gaussian ridge prior on the cutpoint
 parameters (default 10).}

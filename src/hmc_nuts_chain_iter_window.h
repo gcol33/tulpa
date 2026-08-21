@@ -121,8 +121,7 @@
       } else {
         epsilon = find_reasonable_epsilon(q, data, layout, rng);
       }
-      da = DualAveraging(epsilon, n_params, target_boost);
-      if (use_nuts) da.target_accept = nuts_target_accept;  // Preserve model-adaptive target
+      da = DualAveraging(epsilon, target_accept);
 
       next_window_idx++;
     }

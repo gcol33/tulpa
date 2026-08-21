@@ -72,16 +72,6 @@ inline GradientMode parse_gradient_mode(const std::string& mode_str) {
     return tulpa::parse_enum(mode_str, table, GradientMode::AUTO);
 }
 
-// Parse metric type from string
-inline MassMatrixType parse_metric_type(const std::string& metric_str) {
-    static const tulpa::EnumEntry<MassMatrixType> table[] = {
-        {"dense", MassMatrixType::DENSE}, {"DENSE", MassMatrixType::DENSE},
-        {"block_diag", MassMatrixType::BLOCK_DIAG}, {"BLOCK_DIAG", MassMatrixType::BLOCK_DIAG},
-        {"auto", MassMatrixType::AUTO}, {"AUTO", MassMatrixType::AUTO}
-    };
-    return tulpa::parse_enum(metric_str, table, MassMatrixType::DIAG);
-}
-
 // Human-readable metric name for verbose logging
 inline const char* metric_name(MassMatrixType t) {
     switch (t) {
@@ -160,9 +150,6 @@ extern ::tulpa_progress::GridProgress* g_active_grid_progress;
 // run); `width` is the chain concurrency for the ETA. Defined in
 // hmc_nuts_parallel.cpp.
 std::unique_ptr<::tulpa_progress::GridProgress> make_nuts_progress(int total, int width);
-
-// Reset VecGradWorkspace cache (for new model fit)
-void reset_grad_workspace_cache();
 
 // Function pointer type for gradient computation (eliminates per-call dispatch overhead)
 using GradientFn = void(*)(
@@ -248,14 +235,9 @@ void compute_gradient(
 );
 
 // Generic (multi-process) gradient drivers used by the dispatch when the
-// model plugs a LikelihoodSpec. Defined in hmc_gradient_fallback.cpp.
-//
-// Phase D simplification: the legacy ratio
-// numerical / autodiff / arena / forward fallbacks and the full set
-// of H-mode specialized kernels (composite, hsgp, gp / gp_collapsed,
-// icar_collapsed, msgp, svc, tvc, st, temporal_gp, ms_temporal,
-// latent) were removed along with the legacy entry points. Downstream
-// model packages must route through `data.likelihood_spec`.
+// model plugs a LikelihoodSpec. Defined in hmc_gradient_fallback.cpp. Every
+// model routes through `data.likelihood_spec`; there is no per-structure
+// specialized kernel behind this dispatch.
 void compute_gradient_generic_numerical(
     const std::vector<double>& params,
     const ModelData& data,

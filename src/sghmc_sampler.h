@@ -103,16 +103,33 @@ inline void clip_gradient(std::vector<double>& grad, double max_norm) {
 // SGHMC update step
 // ============================================================================
 
-// Single SGHMC update:
-// θ_{t+1} = θ_t + ε * r_t
-// r_{t+1} = (1 - α) * r_t + ε * ∇log p(θ_t) + N(0, 2αε)
+// Single SGHMC update, Chen, Fox & Guestrin (2014) eq. (15) written in the
+// momentum r = v / epsilon with mass M = I:
+//
+//   theta_{t+1} = theta_t + epsilon * r_t
+//   r_{t+1}     = (1 - alpha) * r_t + epsilon * grad log p(theta_t)
+//                 + sqrt(2 * alpha) * N(0, 1)
+//
+// The paper's position increment is v = epsilon * r and its learning rate is
+// eta = epsilon^2 M^-1. Multiplying the momentum recursion through by epsilon
+// gives v <- (1 - alpha) v + eta * grad + N(0, 2 * alpha * eta) term for term:
+// the gradient term carries eta = epsilon^2, and the injected variance is
+// epsilon^2 * 2 * alpha, which is 2 * alpha * eta.
+//
+// Fluctuation-dissipation then fixes the sampled temperature at 1. The
+// recursion's stationary momentum variance is
+// 2 * alpha / (1 - (1 - alpha)^2) = 2 / (2 - alpha), which is 1 to O(alpha) --
+// the same N(0, I) the sampler resamples r from at the top of each iteration.
+// Injecting sqrt(2 * alpha * epsilon) instead puts the chain at temperature
+// epsilon, i.e. samples p(theta)^(1/epsilon): posterior means come out roughly
+// right while every posterior sd is short by sqrt(epsilon).
 //
 // Where:
-//   θ = parameters
-//   r = momentum
-//   ε = step size
-//   α = friction coefficient
-//   ∇log p = gradient of log posterior
+//   theta = parameters
+//   r = momentum, stationary N(0, M) = N(0, I)
+//   epsilon = step size
+//   alpha = epsilon * C, the dimensionless friction applied per step
+//   grad log p = gradient of log posterior
 
 struct SGHMCState {
     std::vector<double> theta;     // Parameters
@@ -130,8 +147,10 @@ inline void sghmc_step(
     int n_params = state.theta.size();
     std::normal_distribution<double> noise(0.0, 1.0);
 
-    // Friction noise standard deviation: sqrt(2 * alpha * epsilon)
-    double noise_sd = std::sqrt(2.0 * alpha * epsilon);
+    // Friction noise standard deviation in the r parameterization: the
+    // injected variance is 2 * alpha * eta with eta = epsilon^2, and one
+    // factor of epsilon is carried by the position update theta += epsilon * r.
+    double noise_sd = std::sqrt(2.0 * alpha);
 
     for (int j = 0; j < n_params; j++) {
         // Update position (parameters)
@@ -252,7 +271,12 @@ inline SGHMCResult run_sghmc_sampler(
     result.success = true;
 
     int n_params = init_params.size();
-    int n_save = (config.n_iter - config.n_warmup) / config.n_thin;
+    // Post-warmup iterations store when (iter - n_warmup) % n_thin == 0, which
+    // fires ceil(n_post / n_thin) times; a warmup at least as long as the run
+    // stores nothing.
+    const int n_thin = std::max(1, config.n_thin);
+    const int n_post = config.n_iter - config.n_warmup;
+    const int n_save = (n_post > 0) ? ((n_post + n_thin - 1) / n_thin) : 0;
 
     result.samples.resize(n_save, n_params);
     result.log_lik.resize(n_save);
@@ -340,7 +364,7 @@ inline SGHMCResult run_sghmc_sampler(
         result.epsilon_history.push_back(epsilon);
 
         // Store sample after warmup
-        if (iter >= config.n_warmup && (iter - config.n_warmup) % config.n_thin == 0) {
+        if (iter >= config.n_warmup && (iter - config.n_warmup) % n_thin == 0) {
             for (int j = 0; j < n_params; j++) {
                 result.samples(save_idx, j) = state.theta[j];
             }
@@ -425,7 +449,12 @@ inline SGLDResult run_sgld_sampler(
     result.success = true;
 
     int n_params = init_params.size();
-    int n_save = (config.n_iter - config.n_warmup) / config.n_thin;
+    // Post-warmup iterations store when (iter - n_warmup) % n_thin == 0, which
+    // fires ceil(n_post / n_thin) times; a warmup at least as long as the run
+    // stores nothing.
+    const int n_thin = std::max(1, config.n_thin);
+    const int n_post = config.n_iter - config.n_warmup;
+    const int n_save = (n_post > 0) ? ((n_post + n_thin - 1) / n_thin) : 0;
 
     result.samples.resize(n_save, n_params);
     result.log_lik.resize(n_save);
@@ -511,7 +540,7 @@ inline SGLDResult run_sgld_sampler(
         }
 
         // Store sample after warmup
-        if (iter >= config.n_warmup && (iter - config.n_warmup) % config.n_thin == 0) {
+        if (iter >= config.n_warmup && (iter - config.n_warmup) % n_thin == 0) {
             for (int j = 0; j < n_params; j++) {
                 result.samples(save_idx, j) = theta[j];
             }

@@ -51,6 +51,7 @@
 #include "spde_logdet.h"                 // SpdeQLogDet (0.5 log|Q| normalizer)
 #include <Rcpp.h>
 #include <cmath>
+#include <cstdio>
 #include <functional>
 #include <memory>
 #include <tuple>
@@ -99,12 +100,11 @@ inline std::shared_ptr<std::vector<ARows>> spde_build_a_rows_per_arm(
         Rcpp::NumericVector A_x = A_x_per_arm[k];
         Rcpp::IntegerVector A_i = A_i_per_arm[k];
         Rcpp::IntegerVector A_p = A_p_per_arm[k];
-        if (A_p.size() != n_mesh + 1) {
-            Rcpp::stop("Block %d (type 'spde'): A_p[[%d]] must have length "
-                       "n_mesh + 1 (%d), got %d.",
-                       block_index + 1, k + 1, n_mesh + 1,
-                       static_cast<int>(A_p.size()));
-        }
+        char arm_label[64];
+        std::snprintf(arm_label, sizeof(arm_label),
+                      "Block %d (type 'spde'): A[[%d]]", block_index + 1, k + 1);
+        spde_validate_projector(n_mesh, n_obs_per_arm[k], A_x, A_i, A_p,
+                                arm_label);
         (*a_rows_per_arm)[k] = build_A_rows(n_obs_per_arm[k], n_mesh,
                                             A_x, A_i, A_p);
     }
@@ -298,6 +298,8 @@ inline LatentBlock make_spde_block(
         A_x_per_arm, A_i_per_arm, A_p_per_arm, n_obs_per_arm,
         n_arms, n_mesh, block_index);
 
+    spde_validate_fem(n_mesh, C0_diag, G1_x, G1_i, G1_p);
+
     // alpha = nu + d/2 with d = 2.
     const int alpha = static_cast<int>(std::round(nu)) + 1;
 
@@ -380,6 +382,18 @@ inline LatentBlock make_spde_block_precomputed(
                    "must have the same length.",
                    block_index + 1, static_cast<int>(Q_i.size()),
                    static_cast<int>(Q_x.size()));
+    }
+    // Both prior scatters walk this CSC and write grad[start + row] /
+    // H[start + row][start + col], so a row index outside the block or a
+    // column pointer past the value count writes into another block's latent
+    // slice or past the end of the Hessian.
+    {
+        char q_label[64];
+        std::snprintf(q_label, sizeof(q_label),
+                      "Block %d (type 'spde', precomputed): Q",
+                      block_index + 1);
+        spde_validate_csc(n_mesh, Q_p, Q_i, static_cast<int>(Q_x.size()),
+                          n_mesh, q_label);
     }
 
     auto qb = std::make_shared<SpdeQBuilder>();

@@ -23,14 +23,24 @@ double nuts_compute_hamiltonian_fast(double log_prob, const double* p,
 }
 
 // Drift: q += coeff * C * p, where C = M^{-1} carries the full mass structure
-// (identity / block-diagonal / diagonal / dense, plus precision and Kronecker
-// block corrections). Factored out of the leapfrog step so every scheme's
-// drift sub-steps reuse the same fused kernels. coeff is the scheme's drift
-// coefficient times the step size; for the default leapfrog it is exactly the
-// step size, so this reproduces the historical drift bit-for-bit.
+// (identity / block-diagonal / diagonal / dense). Factored out of the leapfrog
+// step so every scheme's drift sub-steps reuse the same fused kernels. coeff is
+// the scheme's drift coefficient times the step size; for the default leapfrog
+// it is exactly the step size.
+//
+// A structured precision / Kronecker / sparse-GMRF block owns its parameter
+// range under every metric type, so when one is active the whole product is
+// formed by DenseMassMatrix::inv_mass_times_p -- the same operator the U-turn
+// p_sharp and the kinetic energy read -- into `scratch`, rather than patching
+// the block ranges of a product taken under a different metric.
 static inline void apply_drift(
     double coeff, double* q, const double* p,
-    const DenseMassMatrix& mass, int n) {
+    const DenseMassMatrix& mass, double* scratch, int n) {
+  if (mass.has_structured_blocks()) {
+    mass.inv_mass_times_p(p, scratch);
+    tulpa_linalg::axpy(coeff, scratch, q, n);
+    return;
+  }
   if (!mass.adapted) {
     tulpa_linalg::axpy(coeff, p, q, n);
   } else if (mass.type == MassMatrixType::BLOCK_DIAG) {
@@ -54,39 +64,6 @@ static inline void apply_drift(
       qv.noalias() += coeff * (Am.selfadjointView<Eigen::Lower>() * pv);
     } else {
       tulpa_linalg::axpy_matvec(coeff, mass.inv_mass_dense.data(), p, q, n);
-    }
-  }
-  if (mass.precision_block.active) {
-    const auto& pb = mass.precision_block;
-    std::vector<double> tmp(pb.size);
-    pb.matvec(p, tmp.data());
-    for (int i = 0; i < pb.size; i++) {
-      q[pb.start + i] -= coeff * mass.inv_mass_diag[pb.start + i] * p[pb.start + i];
-      q[pb.start + i] += coeff * tmp[i];
-    }
-  }
-  if (mass.kronecker_block.active) {
-    const auto& kb = mass.kronecker_block;
-    int ST = kb.S * kb.T;
-    std::vector<double> tmp(ST);
-    kb.matvec(p, tmp.data());
-    for (int i = 0; i < ST; i++) {
-      q[kb.start + i] -= coeff * mass.inv_mass_diag[kb.start + i] * p[kb.start + i];
-      q[kb.start + i] += coeff * tmp[i];
-    }
-  }
-  // Same range-override as inv_mass_times_p() for the ST_IV sparse-GMRF block, so
-  // the leapfrog drift and the U-turn p_sharp share one metric (the block is
-  // deactivated on the generic path today; this keeps them from diverging if it
-  // is ever factorized).
-  if (mass.sparse_gmrf.active && mass.sparse_gmrf.factorized) {
-    const auto& sg = mass.sparse_gmrf;
-    int ST = sg.S * sg.T;
-    std::vector<double> tmp(ST);
-    sg.inv_mass_matvec(p, tmp.data());
-    for (int i = 0; i < ST; i++) {
-      q[sg.start + i] -= coeff * mass.inv_mass_diag[sg.start + i] * p[sg.start + i];
-      q[sg.start + i] += coeff * tmp[i];
     }
   }
 }
@@ -139,7 +116,7 @@ LeapfrogInPlaceResult leapfrog_step_inplace(
     // Inner leapfrog chain driven by the fast (prior) force.
     for (int k = 0; k < m; k++) {
       for (int i = 0; i < n; i++) p[i] += inner_half * gp[i];
-      apply_drift(inner, q, p, mass, n);
+      apply_drift(inner, q, p, mass, ws.dense_scratch.data(), n);
       std::memcpy(ws.params_buf.data(), q, n * sizeof(double));
       ws.prior_gradient_fn(ws.params_buf, data, layout, ws.grad_buf, nullptr);
       std::memcpy(gp, ws.grad_buf.data(), n * sizeof(double));
@@ -172,7 +149,7 @@ LeapfrogInPlaceResult leapfrog_step_inplace(
         }
         tulpa_linalg::axpy(c, grad, p, n);
       } else {
-        apply_drift(c, q, p, mass, n);
+        apply_drift(c, q, p, mass, ws.dense_scratch.data(), n);
         grad_fresh = false;
       }
     }
@@ -188,17 +165,7 @@ LeapfrogInPlaceResult leapfrog_step_inplace(
     result.log_prob = ws.logp_at(slot);
   }
 
-  // Divergence check (skip param scan if log_prob already non-finite)
-  if (!std::isfinite(result.log_prob)) {
-    result.divergent = true;
-  } else {
-    for (int i = 0; i < n; i++) {
-      if (std::abs(q[i]) > 1e10 || !std::isfinite(q[i])) {
-        result.divergent = true;
-        break;
-      }
-    }
-  }
+  result.divergent = leapfrog_state_nonfinite(result.log_prob, q, p, n);
 
   return result;
 }
@@ -233,13 +200,14 @@ TreeStats build_tree_fast(
     stats.proposal_slot = input_slot;
     stats.log_prob_proposal = lf.log_prob;
 
-    // Multinomial weight: log(weight) = H0 - H_new (relative, Stan-style)
-    stats.sum_log_weight = H0 - H_new;
-
-    // Divergence check
-    stats.divergent = lf.divergent || (delta_H > delta_max);
+    stats.divergent = lf.divergent || hamiltonian_divergent(H0, H_new, delta_max);
     stats.stop = stats.divergent;
     stats.n_valid = stats.divergent ? 0 : 1;
+
+    // Multinomial weight: log(weight) = H0 - H_new (relative, Stan-style). A
+    // divergent leaf carries no weight at all, so a non-finite H_new cannot
+    // reach the merge and turn the whole doubling's weight into NaN.
+    stats.sum_log_weight = stats.divergent ? -INFINITY : (H0 - H_new);
 
     // Acceptance statistic
     double accept_stat = std::min(1.0, std::exp(-delta_H));

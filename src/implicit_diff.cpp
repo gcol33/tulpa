@@ -3,6 +3,7 @@
 // Enables NUTS sampling over SPDE hyperparameters.
 
 #include "implicit_diff.h"
+#include "spde_logdet.h"
 #include "spde_qbuilder.h"
 #include "sparse_hessian.h"
 #include <Rcpp.h>
@@ -37,6 +38,16 @@ Rcpp::List cpp_spde_laplace_gradient(
                    "(nu = 1) operator; got nu = %g. Its analytic dQ/dtheta is "
                    "written for that assembly.", nu);
     }
+    tulpa::spde_validate_operators(n_mesh, N, C0_diag, G1_x, G1_i, G1_p,
+                                   A_x, A_i, A_p);
+    if ((int) y.size() != N)
+        Rcpp::stop("length(y) (%d) must equal n_obs (%d).", (int) y.size(), N);
+    if ((int) n_trials.size() != N)
+        Rcpp::stop("length(n_trials) (%d) must equal n_obs (%d).",
+                   (int) n_trials.size(), N);
+    if (X.nrow() != N)
+        Rcpp::stop("nrow(X) (%d) must equal n_obs (%d).", (int) X.nrow(), N);
+
     double range = std::exp(log_range);
     double sigma_spde = std::exp(log_sigma);
     double kappa, tau;
@@ -55,17 +66,27 @@ Rcpp::List cpp_spde_laplace_gradient(
 
     tulpa::ARows a_rows = tulpa::build_A_rows(N, n_mesh, A_x, A_i, A_p);
 
+    // Prior normalizer 0.5 log|Q(theta)|. Without it the reported marginal is
+    // monotone in sigma (spde_logdet.h), so it enters the inner solve's
+    // log_marginal here and its derivative enters the gradient below.
+    tulpa::SpdeQLogDet qld;
+    double half_ldQ = 0.0;
+    if (!qld.half_logdet(qb, half_ldQ)) {
+        Rcpp::stop("SPDE precision Q is not positive definite at range = %g, "
+                   "sigma = %g.", range, sigma_spde);
+    }
+
     // Run inner Laplace to find mode
     tulpa::SparseCholeskySolver solver;
-    Rcpp::List dummy;
 
-    // Use the dense run_spde_laplace for the inner solve
     tulpa::LaplaceResult inner_result;
     tulpa::run_spde_laplace(
         y, n_trials, X, N, p, n_mesh, mesh_start, n_x,
         a_rows, qb, family, phi,
         max_iter, tol, n_threads, x_init, &solver, /*offset=*/nullptr,
-        [&](const tulpa::LaplaceResult& res) { inner_result = res; }
+        [&](const tulpa::LaplaceResult& res) { inner_result = res; },
+        /*re_idx=*/Rcpp::NumericVector(), /*n_re_groups=*/0, /*sigma_re=*/1.0,
+        /*center_mesh=*/true, /*prior_lognorm=*/half_ldQ
     );
 
     // Compute gradient via implicit differentiation. Both sides now use
@@ -73,13 +94,13 @@ Rcpp::List cpp_spde_laplace_gradient(
     // safety motivation), so no wrap copy is needed here.
     tulpa::ImplicitDiffResult grad = tulpa::spde_implicit_gradient(
         inner_result.mode, y, n_trials, X, N, p, n_mesh, mesh_start,
-        a_rows, qb, range, sigma_spde, nu,
-        C0_diag, G1_x, G1_i, G1_p,
+        a_rows, qb, qld, range, sigma_spde, nu,
         family, phi, solver
     );
 
     Rcpp::List out = tulpa::laplace_result_to_list(inner_result);
     out["grad_log_range"] = grad.grad_log_range;
     out["grad_log_sigma"] = grad.grad_log_sigma;
+    out["half_log_det_Q"] = half_ldQ;
     return out;
 }

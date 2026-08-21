@@ -174,3 +174,75 @@ test_that("sigma_prior pulls a collapsing scalar RE SD off the 0 boundary, unbia
   sd_reg2 <- fit_sd(1.1, 60L, pc)
   expect_lt(abs(sd_reg2 - sd_ml2), 0.15)
 })
+
+test_that("the variance components' own covariance is returned and layout-consistent", {
+  skip_on_cran()
+  set.seed(21)
+  ng <- 30L; n_per <- 8L; N <- ng * n_per
+  group <- rep(seq_len(ng), each = n_per)
+  x <- rnorm(N); X <- cbind(1, x); nt <- rep(3L, N)
+  u <- rnorm(ng, 0, 0.8)
+  y <- rbinom(N, nt, plogis(0.3 + 0.7 * x + u[group]))
+
+  fit <- tulpa_re_aghq(
+    theta0 = c(0, 0),
+    re_terms = list(list(idx = group, n_groups = ng, n_coefs = 1L)),
+    Sigma0 = list(matrix(0.25, 1, 1)),
+    make_site = make_binom_site(X, y, nt), n_obs = N, n_quad = 5L)
+
+  expect_false(is.null(fit))
+  n_theta <- length(fit$theta)
+
+  # A scalar block carries one log-SD coordinate, so SE(log sigma) is the gate
+  # a caller needs to test the component against its boundary.
+  expect_identical(names(fit$re_par), "log_sd_1")
+  expect_equal(exp(unname(fit$re_par)), sqrt(fit$Sigma_list[[1]][1, 1]),
+               tolerance = 1e-8)
+  expect_true(is.finite(fit$re_par_se[["log_sd_1"]]))
+  expect_gt(fit$re_par_se[["log_sd_1"]], 0)
+
+  # The reported blocks are blocks of one joint inverse Hessian.
+  expect_equal(dim(fit$joint_cov), c(n_theta + 1L, n_theta + 1L))
+  expect_equal(unname(fit$re_par_cov),
+               fit$joint_cov[-seq_len(n_theta), -seq_len(n_theta), drop = FALSE],
+               tolerance = 0)
+  expect_equal(fit$theta_cov,
+               fit$joint_cov[seq_len(n_theta), seq_len(n_theta), drop = FALSE],
+               tolerance = 0)
+  expect_equal(unname(fit$re_par_se),
+               sqrt(pmax(diag(fit$re_par_cov), 0)), tolerance = 0)
+
+  # The layout indexes re_par and names the block it belongs to.
+  lay <- fit$re_par_layout
+  expect_length(lay, 1L)
+  expect_identical(lay[[1]]$index, 1L)
+  expect_identical(lay[[1]]$coord, "log_sd_1")
+  expect_false(lay[[1]]$full)
+})
+
+test_that("a correlated block reports one log-Cholesky coordinate per Sigma parameter", {
+  skip_on_cran()
+  set.seed(22)
+  ng <- 40L; n_per <- 12L; N <- ng * n_per
+  group <- rep(seq_len(ng), each = n_per)
+  x <- rnorm(N); X <- cbind(1, x); nt <- rep(4L, N)
+  Sig <- matrix(c(0.6, 0.3, 0.3, 0.4), 2, 2)
+  U <- matrix(rnorm(ng * 2), ng, 2) %*% chol(Sig)
+  y <- rbinom(N, nt, plogis(0.2 - 0.4 * x + U[group, 1] + U[group, 2] * x))
+
+  fit <- tulpa_re_aghq(
+    theta0 = c(0, 0),
+    re_terms = list(list(idx = group, n_groups = ng, n_coefs = 2L,
+                         Z = X, correlated = TRUE)),
+    Sigma0 = list(diag(0.25, 2)),
+    make_site = make_binom_site(X, y, nt), n_obs = N, n_quad = 5L)
+
+  expect_false(is.null(fit))
+  # c(c + 1)/2 = 3 coordinates, column-major lower triangle, diagonal logged.
+  expect_identical(names(fit$re_par), c("log_L11", "L21", "log_L22"))
+  expect_equal(dim(fit$re_par_cov), c(3L, 3L))
+  expect_identical(rownames(fit$re_par_cov), names(fit$re_par))
+  expect_true(all(is.finite(fit$re_par_se)))
+  expect_identical(fit$re_par_layout[[1]]$index, 1:3)
+  expect_true(fit$re_par_layout[[1]]$full)
+})

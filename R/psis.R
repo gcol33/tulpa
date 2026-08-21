@@ -344,7 +344,11 @@
 #' @return A list with `pareto_k` (the tail shape, `NA` if the sample is too
 #'   small to fit), `is_ess` (importance-sampling effective sample size,
 #'   `1 / sum(w^2)` on the normalized smoothed weights), `log_weights`
-#'   (the normalized smoothed log weights), and `tail_len` (the tail size used).
+#'   (the normalized smoothed log weights), `tail_len` (the tail size used), and
+#'   `tail_smoothed` (`FALSE` when the tail kept its raw log ratios because the
+#'   generalized-Pareto fit was not attempted or returned a shape / scale the
+#'   quantile function is undefined at; `pareto_k` then reports the attempted fit
+#'   and does not describe the returned weights).
 #' @references Vehtari, Simpson, Gelman, Yao & Gabry (2024). Pareto smoothed
 #'   importance sampling. \emph{JMLR} 25(72):1-58.
 #' @seealso [diagnostics()] for the fit-level diagnostic front door.
@@ -360,7 +364,7 @@ tulpa_psis <- function(log_ratios, tail_points = NULL) {
   S <- length(log_ratios)
   if (S < 5L) {
     return(list(pareto_k = NA_real_, is_ess = NA_real_, log_weights = numeric(0),
-                tail_len = 0L))
+                tail_len = 0L, tail_smoothed = FALSE))
   }
 
   # The GPD tail fit + Pareto smoothing (the former body, now the C++ oracle

@@ -60,21 +60,32 @@
 #' @param control List of kernel tuning knobs (`n_iter`, `warmup`, `seed`,
 #'   `sigma_beta`, `n_chains`, `max_treedepth`, `adapt_delta`, `epsilon`, `L`,
 #'   `batch_size`, `alpha`, `n_particles`, `n_mcmc_steps`, `ess_threshold`,
-#'   `vi_variant`, `vi_mc_samples`, `vi_max_iter`, `n_draws`, `verbose`).
+#'   `vi_variant`, `vi_mc_samples`, `vi_max_iter`, `vi_max_grad_norm`,
+#'   `n_draws`, `verbose`).
 #'
-#'   The elliptical-slice kernel takes five more, all prefixed `ess_` and all
+#'   `vi_max_iter` and `vi_mc_samples` both bound a loop that has to run at
+#'   least once -- the optimisation loop whose ELBO history is the fit's only
+#'   record, and the reparameterisation average every gradient divides by -- so
+#'   values below 1 are rejected. `vi_max_grad_norm` (default 10) is the
+#'   gradient-norm clip applied before every Adam step.
+#'
+#'   The elliptical-slice kernel takes four more, all prefixed `ess_` and all
 #'   inert on other backends. Note that `ess_threshold` above is SMC's
 #'   resampling threshold and not one of them -- the two unrelated senses of
 #'   "ESS" are why these carry the prefix.
-#'   `ess_adapt_during_warmup` (default `FALSE`) adapts the proposal covariance
-#'   during warmup; `ess_adapt_interval` (default 50) is how often it is
-#'   refreshed and `ess_use_cholesky` (default `TRUE`) how it is factorized, so
-#'   **both act only while adapting** and setting either alone changes nothing.
+#'   `ess_adapt_during_warmup` (default `FALSE`) adapts the random-walk
+#'   proposal SDs on the non-Gaussian parameters during warmup and
+#'   `ess_adapt_interval` (default 50) is how many sweeps sit between those
+#'   updates, so it **acts only while adapting**.
 #'   `ess_joint_sigma_re` toggles the joint `(log_sigma_re, re)` rescaling move,
 #'   which defaults to on whenever a random-effect term is present because the
 #'   two are strongly anti-correlated under the centered parameterization and
 #'   mix poorly when moved separately; forcing it off is how one demonstrates
 #'   that. `ess_joint_proposal_sd` (default 0.1) is that move's step.
+#'
+#'   The elliptical-slice kernel draws from R's own RNG, so `control$seed` does
+#'   not reach it: `set.seed()` before the call is what reproduces an ESS run.
+#'   Every other backend carries `control$seed` into its own generator.
 #'
 #' @return A `tulpa_fit` with `draws`, `means`, `param_names`, the kernel's
 #'   diagnostics, and (for `"hmc"`) `chain_id` / `n_chains` so chain diagnostics
@@ -87,7 +98,7 @@ tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
                               temporal_spec = NULL, svc_spec = NULL,
                               tvc_spec = NULL, zi_spec = NULL,
                               sigma_re_scale = 2.5,
-                              sigma_beta = 10.0,
+                              sigma_beta = .tulpa_prior_sd("sample_glmm"),
                               warm_start = NULL,
                               control = list()) {
   tulpa_check_control(control, .CONTROL_KEYS$sample_glmm, "tulpa_sample_glmm")
@@ -104,6 +115,16 @@ tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
   }
   n_iter  <- control$n_iter %||% 2000L
   warmup  <- control$warmup %||% (n_iter %/% 2L)
+  vi_max_iter   <- as.integer(control$vi_max_iter %||% 10000L)
+  vi_mc_samples <- as.integer(control$vi_mc_samples %||% 10L)
+  if (is.na(vi_max_iter) || vi_max_iter < 1L) {
+    stop("`control$vi_max_iter` must be at least 1; got ",
+         format(control$vi_max_iter), ".", call. = FALSE)
+  }
+  if (is.na(vi_mc_samples) || vi_mc_samples < 1L) {
+    stop("`control$vi_mc_samples` must be at least 1; got ",
+         format(control$vi_mc_samples), ".", call. = FALSE)
+  }
 
   res <- cpp_tulpa_sample_glmm(
     y          = as.numeric(y),
@@ -129,9 +150,10 @@ tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
     n_mcmc_steps  = as.integer(control$n_mcmc_steps %||% 5L),
     ess_threshold = as.numeric(control$ess_threshold %||% 0.5),
     vi_variant    = as.integer(control$vi_variant %||% 3L),
-    vi_mc_samples = as.integer(control$vi_mc_samples %||% 10L),
-    vi_max_iter   = as.integer(control$vi_max_iter %||% 10000L),
+    vi_mc_samples = vi_mc_samples,
+    vi_max_iter   = vi_max_iter,
     vi_n_draws    = as.integer(control$n_draws %||% 2000L),
+    vi_max_grad_norm = as.numeric(control$vi_max_grad_norm %||% 10.0),
     offset_nullable = offset,
     re_spec       = re_spec,
     spatial_spec  = spatial_spec,
@@ -144,9 +166,7 @@ tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
     zi_spec       = zi_spec,
     init_nullable = warm_start$init,
     inv_metric_diag_nullable = warm_start$inv_metric_diag,
-    # ESS kernel knobs; inert on every other backend. The defaults reproduce
-    # what was previously hardcoded, so an unset control changes nothing.
-    ess_use_cholesky = isTRUE(control$ess_use_cholesky %||% TRUE),
+    # ESS kernel knobs; inert on every other backend.
     ess_adapt_during_warmup = isTRUE(control$ess_adapt_during_warmup %||% FALSE),
     ess_adapt_interval = as.integer(control$ess_adapt_interval %||% 50L),
     # -1 keeps the layout-driven rule (on whenever an RE term is present).

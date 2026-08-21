@@ -1,8 +1,8 @@
 // pg_binomial_bym2.cpp
 // BYM2 spatial Gibbs sampler for Pólya-Gamma binomial models
-// Split from pg_binomial.cpp on 2026-05-02
 
 #include "pg_shared.h"
+#include "pg_spatial.h"
 #include "pg_rng.h"
 #include "linalg_fast.h"
 #include <Rcpp.h>
@@ -19,50 +19,6 @@ using namespace Rcpp;
 // ---------------------------------------------------------------------
 // BYM2 Spatial Gibbs sampler
 // ---------------------------------------------------------------------
-
-// Forward declaration for BYM2 functions
-namespace tulpa {
-  Rcpp::NumericVector update_spatial_bym2(
-      const Rcpp::NumericVector& kappa,
-      const Rcpp::NumericVector& omega,
-      const Rcpp::NumericVector& offset,
-      const Rcpp::IntegerVector& group,
-      const Rcpp::List& adj_list,
-      const Rcpp::IntegerVector& n_neighbors,
-      Rcpp::NumericVector& phi_scaled,
-      Rcpp::NumericVector& theta,
-      double sigma_spatial,
-      double rho,
-      double scale_factor,
-      double* removed_mean
-  );
-
-  double update_sigma_spatial(
-      const Rcpp::NumericVector& u,
-      double scale
-  );
-
-  double update_rho_bym2(
-      const Rcpp::NumericVector& phi_scaled,
-      const Rcpp::NumericVector& theta,
-      double sigma_spatial,
-      double scale_factor,
-      const Rcpp::NumericVector& sum_omega,
-      const Rcpp::NumericVector& sum_resid,
-      double alpha,
-      double beta
-  );
-
-  double update_sigma_spatial_bym2(
-      const Rcpp::NumericVector& phi_scaled,
-      const Rcpp::NumericVector& theta,
-      double rho,
-      double scale_factor,
-      const Rcpp::NumericVector& sum_omega,
-      const Rcpp::NumericVector& sum_resid,
-      double prior_scale
-  );
-}
 
 // Binomial Gibbs sampler with random effects AND spatial effects (BYM2)
 // [[Rcpp::export]]
@@ -89,13 +45,16 @@ Rcpp::List cpp_pg_binomial_gibbs_bym2(
     bool verbose = true,
     int n_threads = 1
 ) {
-  // CRITICAL: Must call GetRNGstate/PutRNGstate when using R's RNG from C++
-  GetRNGstate();
-
-  int n_save = (n_iter - n_warmup) / thin;
-  tulpa::PgGibbsCommon C(y, n, X.ncol(), n_re_groups, n_save, n_threads, store_eta);
+  const int n_save = tulpa::pg_n_save(n_iter, n_warmup, thin);
+  tulpa::PgGibbsCommon C(y, n, X, re_group, n_re_groups, n_save,
+                         prior_sigma_re_scale, n_threads, store_eta);
   const int N = C.N;
   const int p = C.p;
+  C.require_intercept("BYM2 spatial");
+
+  tulpa::pg_check_index(spatial_group, N, n_spatial_units, "spatial_group");
+  const tulpa::PgAdjacency adj =
+      tulpa::pg_build_adjacency(adj_list, n_neighbors, n_spatial_units);
 
   // Per-variant storage
   Rcpp::NumericMatrix phi_scaled_draws(n_save, n_spatial_units);
@@ -111,6 +70,8 @@ Rcpp::List cpp_pg_binomial_gibbs_bym2(
   double sigma_spatial = 1.0;
   double rho = 0.5;
   Rcpp::NumericVector spatial_contrib(N);
+  Rcpp::NumericVector sum_omega_s(n_spatial_units);
+  Rcpp::NumericVector sum_resid_s(n_spatial_units);
 
   int save_idx = 0;
   for (int iter = 0; iter < n_iter; iter++) {
@@ -129,28 +90,24 @@ Rcpp::List cpp_pg_binomial_gibbs_bym2(
       C.offset[i] = C.X_beta[i] + C.re_contrib[i];
     });
     double bym2_removed = 0.0;
-    u = tulpa::update_spatial_bym2(C.kappa, C.omega, C.offset, spatial_group, adj_list, n_neighbors,
-                                   phi_scaled, theta, sigma_spatial, rho, scale_factor,
-                                   &bym2_removed);
+    tulpa::update_spatial_bym2(C.kappa, C.omega, C.offset, spatial_group, adj,
+                               phi_scaled, theta, sigma_spatial, rho,
+                               scale_factor, u, bym2_removed);
     // Absorb the field level removed by centering phi into the intercept so eta
-    // is unchanged (posterior-invariant), and refresh the cached X_beta / offset
-    // that the sigma and rho conditionals below read.
-    C.beta[0] += bym2_removed;
+    // is unchanged (posterior-invariant), and refresh the cached X_beta /
+    // offset that the sigma and rho conditionals below read.
+    C.absorb_level(bym2_removed);
     for (int i = 0; i < N; i++) {
-      C.X_beta[i] += bym2_removed;
       C.offset[i] = C.X_beta[i] + C.re_contrib[i];
     }
 
     // Polya-Gamma sufficient statistics per spatial unit (offset excludes the
     // spatial field u): the linear/quadratic data terms both the sigma and rho
     // full conditionals flow through.
-    Rcpp::NumericVector sum_omega_s(n_spatial_units, 0.0);
-    Rcpp::NumericVector sum_resid_s(n_spatial_units, 0.0);
-    for (int i = 0; i < N; i++) {
-      int s = spatial_group[i] - 1;
-      sum_omega_s[s] += C.omega[i];
-      sum_resid_s[s] += C.kappa[i] - C.omega[i] * C.offset[i];
-    }
+    tulpa::pg_accumulate_stats(N, spatial_group.begin(), n_spatial_units,
+                               C.omega.begin(), C.kappa.begin(),
+                               C.offset.begin(),
+                               sum_omega_s.begin(), sum_resid_s.begin());
 
     // 7. Update sigma_spatial from its PG full conditional given the current rho
     //    (a Gaussian in sigma via the standardized field), NOT the iid
@@ -216,6 +173,5 @@ Rcpp::List cpp_pg_binomial_gibbs_bym2(
     result["eta"] = C.eta_draws;
   }
 
-  PutRNGstate();
   return result;
 }

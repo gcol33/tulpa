@@ -49,9 +49,9 @@
 // log_prior_double of TgmrfSpec). theta_dim is typically 2-5, so 2 * theta_dim
 // extra Q evaluations per leapfrog step is cheap.
 //
-// The trace term tr(Q^{-1} dQ/dtheta_m) is computed exactly via one sparse
-// Cholesky of Q (we already do this for logdet) plus one sparse solve per
-// dQ/dtheta_m -- for n_latent <= 500 this is cheap.
+// The trace term tr(Q^{-1} dQ/dtheta_m) is computed exactly against the one
+// sparse Cholesky of Q the logdet already needs, as one sparse solve per
+// nonzero column of dQ/dtheta_m.
 //
 // =============================================================================
 // Why not route through the existing ModelData/ParamLayout NUTS?
@@ -148,19 +148,12 @@ inline double eval_log_prior(const JointState& st,
     return st.spec->log_prior_double(theta);
 }
 
-// Sparse logdet via Cholesky (LL^T). Falls back to LU if Cholesky fails on a
-// nearly-singular Q.
-inline double sparse_logdet_chol(const Eigen::SparseMatrix<double>& Q,
-                                  bool& ok) {
-    Eigen::SimplicialLLT<Eigen::SparseMatrix<double>> llt(Q);
-    if (llt.info() != Eigen::Success) {
-        ok = false;
-        return -std::numeric_limits<double>::infinity();
-    }
-    ok = true;
-    // logdet(Q) = 2 sum log diag(L).
-    const auto& Lf = llt.matrixL();
-    Eigen::SparseMatrix<double> Lmat = Lf;
+// logdet(Q) = 2 sum log diag(L) read off an already-computed Cholesky factor.
+// The factor is what the trace term solves against as well, so Q is factorized
+// once per log_post_and_grad call rather than once here and once there.
+inline double sparse_logdet_from_llt(
+    const Eigen::SimplicialLLT<Eigen::SparseMatrix<double>>& llt) {
+    Eigen::SparseMatrix<double> Lmat = llt.matrixL();
     double ld = 0.0;
     for (int k = 0; k < Lmat.outerSize(); ++k) {
         for (Eigen::SparseMatrix<double>::InnerIterator it(Lmat, k); it; ++it) {
@@ -172,13 +165,40 @@ inline double sparse_logdet_chol(const Eigen::SparseMatrix<double>& Q,
     return 2.0 * ld;
 }
 
+// tr(Q^{-1} dQ) = sum_b e_b' Q^{-1} dQ e_b: one sparse solve per NONZERO column
+// of dQ, reading the b-th entry of each solution. The n_lat x n_lat product
+// whose diagonal this sums is never materialised, so the term costs O(n_lat)
+// storage at any n_lat instead of O(n_lat^2). `llt` must be a successful
+// factorization of Q; `rhs` is scratch of length n_lat, zero on entry and zero
+// on return.
+inline double sparse_trace_Qinv_dQ(
+    const Eigen::SimplicialLLT<Eigen::SparseMatrix<double>>& llt,
+    const Eigen::SparseMatrix<double>& dQ,
+    Eigen::VectorXd& rhs) {
+    const int n = (int)dQ.cols();
+    std::vector<int> touched;
+    double trace_term = 0.0;
+    for (int b = 0; b < n; ++b) {
+        touched.clear();
+        for (Eigen::SparseMatrix<double>::InnerIterator it(dQ, b); it; ++it) {
+            rhs[it.row()] = it.value();
+            touched.push_back(it.row());
+        }
+        if (touched.empty()) continue;
+        const Eigen::VectorXd sol = llt.solve(rhs);
+        trace_term += sol[b];
+        for (int t : touched) rhs[t] = 0.0;
+    }
+    return trace_term;
+}
+
 // Compute log-posterior at (beta, z, theta) and (optionally) its gradient. The
 // gradient layout matches q: [grad_beta, grad_z, grad_theta]. Sets ok = false
 // if anything non-finite or factorization failure occurred (caller treats as
 // -Inf / divergent).
 //
-// This is the core kernel: every leapfrog step calls it twice for an HMC
-// update.
+// This is the core kernel: leapfrog_step calls it once per step, and the
+// sampler calls it once more per accepted proposal to resync the gradient.
 double log_post_and_grad(const JointState& st,
                          const std::vector<double>& q,
                          bool need_grad,
@@ -239,15 +259,14 @@ double log_post_and_grad(const JointState& st,
     Eigen::VectorXd r = z - mu;                              // z - mu(theta)
     Eigen::VectorXd Qr = Q * r;                              // Q (z - mu)
 
-    // ---- logdet Q via Cholesky ----------------------------------------------
-    bool chol_ok = true;
-    double logdet_Q = sparse_logdet_chol(Q, chol_ok);
-    Eigen::SimplicialLLT<Eigen::SparseMatrix<double>> llt;
-    if (chol_ok) {
-        llt.compute(Q);
-        if (llt.info() != Eigen::Success) chol_ok = false;
+    // ---- Cholesky of Q: logdet here, the theta trace term below --------------
+    Eigen::SimplicialLLT<Eigen::SparseMatrix<double>> llt(Q);
+    if (llt.info() != Eigen::Success) {
+        ok = false;
+        return -std::numeric_limits<double>::infinity();
     }
-    if (!chol_ok || !std::isfinite(logdet_Q)) {
+    const double logdet_Q = sparse_logdet_from_llt(llt);
+    if (!std::isfinite(logdet_Q)) {
         ok = false;
         return -std::numeric_limits<double>::infinity();
     }
@@ -298,6 +317,7 @@ double log_post_and_grad(const JointState& st,
     // Central FD: dQ/dtheta_m ~ (Q(theta + h e_m) - Q(theta - h e_m)) / (2h)
     // Same for mu and log_prior. h = st.fd_step.
     double h = st.fd_step;
+    Eigen::VectorXd trace_rhs = Eigen::VectorXd::Zero(n_lat);
 
     for (int m = 0; m < d; ++m) {
         Eigen::VectorXd tp = theta, tm = theta;
@@ -330,20 +350,9 @@ double log_post_and_grad(const JointState& st,
         Eigen::VectorXd dQr = dQ * r;
         double quad_dQ = r.dot(dQr);
 
-        // tr(Q^{-1} dQ) -- solve Q X = dQ exactly: dQ has small nnz (same
-        // pattern as Q in the common case), so we solve one sparse RHS at a
-        // time only at the column indices that have nonzero entries. We do
-        // the simplest correct thing: solve Q * S = dQ as dense and read the
-        // trace. For n_lat <= a few thousand this is fine; document the
-        // cutoff in the wrapper.
-        //
-        // tr(Q^{-1} dQ) = sum_j (Q^{-1} dQ)_{jj}. With Q = L L^T,
-        // Q^{-1} dQ_j = L^{-T} L^{-1} dQ_j -- but dQ_j is a sparse column.
-        // For simplicity we do the dense form. The n_lat target for joint
-        // NUTS is hundreds, not tens of thousands.
-        Eigen::MatrixXd dQ_dense = Eigen::MatrixXd(dQ);
-        Eigen::MatrixXd sol = llt.solve(dQ_dense);
-        double trace_term = sol.trace();
+        // tr(Q^{-1} dQ), one sparse solve per nonzero column of dQ against the
+        // factor already computed above.
+        const double trace_term = sparse_trace_Qinv_dQ(llt, dQ, trace_rhs);
 
         // dmu' Q r
         double cross = dmu.dot(Qr);
@@ -355,6 +364,92 @@ double log_post_and_grad(const JointState& st,
     }
 
     return log_post;
+}
+
+// ---------------------------------------------------------------------------
+// Finite-difference check on the analytic joint gradient.
+//
+// Central differences, (f(q + h e_k) - f(q - h e_k)) / (2h), with the step
+// scaled to each coordinate's own magnitude -- one global h is either too
+// coarse for a coordinate near zero or too fine for one of magnitude 10^3.
+//
+// The comparison is relative to the gradient's own scale. An absolute
+// difference says nothing on its own: the same 1e-3 is machine noise on a
+// gradient entry of 1e13 and a total failure on one of 1e-3. `grad_scale`
+// (max |analytic| over the whole vector) is therefore reported alongside, and a
+// component whose analytic entry sits more than 8 orders below it is compared
+// against that floor rather than against itself, since a central difference
+// cannot resolve it.
+//
+// The three parameter blocks are reported separately because they are not held
+// to the same accuracy. (beta, z) have closed-form gradients, so they are
+// limited only by the outer difference. The theta gradient is itself a central
+// difference at `st.fd_step` on Q, mu and log p(theta), so it carries that
+// rule's own O(fd_step^2) truncation and cannot be tighter than it.
+//
+// `n_zero` counts analytic entries that are identically zero. A whole block of
+// them is how a dropped term hides: it makes no number wrong, it makes a
+// direction absent.
+// ---------------------------------------------------------------------------
+
+struct GradientCheck {
+    double max_rel = 0.0;
+    int    worst_idx = -1;
+    double max_abs = 0.0;
+    double grad_scale = 0.0;
+    double max_rel_beta = 0.0;
+    double max_rel_z = 0.0;
+    double max_rel_theta = 0.0;
+    int    n_zero = 0;
+    int    n_checked = 0;
+    int    n_params = 0;
+};
+
+GradientCheck joint_gradient_check(const JointState& st,
+                                   const std::vector<double>& q,
+                                   const std::vector<double>& grad,
+                                   double h_rel) {
+    const int D = (int)q.size();
+    GradientCheck gc;
+    gc.n_params = D;
+
+    for (int k = 0; k < D; ++k) {
+        const double a = grad[k];
+        if (a == 0.0) gc.n_zero++;
+        const double aa = std::abs(a);
+        if (aa > gc.grad_scale) gc.grad_scale = aa;
+    }
+    const double floor_k = std::max(1e-8 * gc.grad_scale, 1e-300);
+
+    std::vector<double> dummy;
+    for (int k = 0; k < D; ++k) {
+        const double h = h_rel * std::max(1.0, std::abs(q[k]));
+        std::vector<double> qp = q, qm = q;
+        qp[k] += h; qm[k] -= h;
+        bool okp = true, okm = true;
+        const double lpp = log_post_and_grad(st, qp, false, &dummy, okp);
+        const double lpm = log_post_and_grad(st, qm, false, &dummy, okm);
+        if (!okp || !okm || !std::isfinite(lpp) || !std::isfinite(lpm)) continue;
+
+        const double num = (lpp - lpm) / (2.0 * h);
+        const double ana = grad[k];
+        const double diff = std::abs(num - ana);
+        const double denom =
+            std::max(std::max(std::abs(ana), std::abs(num)), floor_k);
+        const double rel = diff / denom;
+
+        gc.n_checked++;
+        if (diff > gc.max_abs) gc.max_abs = diff;
+        if (rel > gc.max_rel) { gc.max_rel = rel; gc.worst_idx = k; }
+        if (k < st.p) {
+            if (rel > gc.max_rel_beta) gc.max_rel_beta = rel;
+        } else if (k < st.p + st.n_lat) {
+            if (rel > gc.max_rel_z) gc.max_rel_z = rel;
+        } else {
+            if (rel > gc.max_rel_theta) gc.max_rel_theta = rel;
+        }
+    }
+    return gc;
 }
 
 // ---------------------------------------------------------------------------
@@ -583,7 +678,9 @@ Rcpp::List cpp_tgmrf_nuts_joint(
     double fd_step,
     bool verbose,
     int seed,
-    bool debug_gradient_check
+    bool debug_gradient_check,
+    double gradient_check_tol,
+    double fd_check_step
 ) {
     // ---- Look up spec --------------------------------------------------------
     const tulpa::tgmrf_backend::TgmrfSpec* spec =
@@ -647,27 +744,39 @@ Rcpp::List cpp_tgmrf_nuts_joint(
         Rcpp::stop("cpp_tgmrf_nuts_joint: initial (beta, z, theta) gave non-finite log-post.");
     }
 
-    // ---- Optional gradient check: compare analytical to numerical at init ---
+    // ---- Optional gradient check: analytic vs central differences at init ----
+    Rcpp::RObject gradient_check = R_NilValue;
     if (debug_gradient_check) {
-        double h = 1e-5;
-        double max_rel = 0.0;
-        int worst_idx = -1;
-        for (int k = 0; k < D; ++k) {
-            std::vector<double> qp = q, qm = q;
-            qp[k] += h; qm[k] -= h;
-            bool okp = true, okm = true;
-            std::vector<double> dummy;
-            double lpp = log_post_and_grad(st, qp, false, &dummy, okp);
-            double lpm = log_post_and_grad(st, qm, false, &dummy, okm);
-            if (!okp || !okm) continue;
-            double num = (lpp - lpm) / (2 * h);
-            double ana = grad[k];
-            double denom = std::max(1.0, std::abs(ana) + std::abs(num));
-            double rel = std::abs(num - ana) / denom;
-            if (rel > max_rel) { max_rel = rel; worst_idx = k; }
+        const GradientCheck gc = joint_gradient_check(st, q, grad, fd_check_step);
+        if (verbose) {
+            Rcpp::Rcout << "[gradient-check] |grad|_max = " << gc.grad_scale
+                        << "; max relative error = " << gc.max_rel
+                        << " at index " << gc.worst_idx << " of " << D
+                        << " (beta " << gc.max_rel_beta
+                        << ", z " << gc.max_rel_z
+                        << ", theta " << gc.max_rel_theta << ")"
+                        << "; " << gc.n_zero << " of " << D
+                        << " analytic entries identically zero" << std::endl;
         }
-        Rcpp::Rcout << "[gradient-check] max relative error = " << max_rel
-                    << " at index " << worst_idx << " of " << D << std::endl;
+        gradient_check = Rcpp::List::create(
+            Rcpp::Named("max_rel")       = gc.max_rel,
+            Rcpp::Named("worst_index")   = gc.worst_idx + 1,
+            Rcpp::Named("max_abs")       = gc.max_abs,
+            Rcpp::Named("grad_scale")    = gc.grad_scale,
+            Rcpp::Named("max_rel_beta")  = gc.max_rel_beta,
+            Rcpp::Named("max_rel_z")     = gc.max_rel_z,
+            Rcpp::Named("max_rel_theta") = gc.max_rel_theta,
+            Rcpp::Named("n_zero")        = gc.n_zero,
+            Rcpp::Named("n_checked")     = gc.n_checked,
+            Rcpp::Named("n_params")      = gc.n_params,
+            Rcpp::Named("step")          = fd_check_step);
+        if (gradient_check_tol > 0.0 && gc.max_rel > gradient_check_tol) {
+            Rcpp::stop("cpp_tgmrf_nuts_joint: joint gradient disagrees with "
+                       "central differences: max relative error %g at index %d "
+                       "of %d (tolerance %g, |grad|_max %g).",
+                       gc.max_rel, gc.worst_idx + 1, D, gradient_check_tol,
+                       gc.grad_scale);
+        }
     }
 
     // ---- Mass matrix ----------------------------------------------------------
@@ -808,6 +917,7 @@ Rcpp::List cpp_tgmrf_nuts_joint(
         Rcpp::Named("accept_prob") = accept_prob,
         Rcpp::Named("divergent")   = divergent,
         Rcpp::Named("log_post")    = log_post_iter,
-        Rcpp::Named("epsilon")     = std::exp(log_eps)
+        Rcpp::Named("epsilon")     = std::exp(log_eps),
+        Rcpp::Named("gradient_check") = gradient_check
     );
 }

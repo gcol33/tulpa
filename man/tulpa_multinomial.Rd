@@ -7,7 +7,7 @@
 tulpa_multinomial(
   formula,
   data,
-  beta_prior = list(mean = 0, sd = 10),
+  beta_prior = .tulpa_default_beta_prior("multinomial"),
   control = list()
 )
 }
@@ -19,7 +19,7 @@ one) with >= 3 levels. The baseline is the last level.}
 
 \item{beta_prior}{Fixed-effect prior as \code{list(mean, sd)}: a mean-zero
 (\code{mean = 0}) Gaussian ridge on every coefficient with scalar SD \code{sd}
-(default \code{list(mean = 0, sd = 10)}). A finite SD keeps the mode finite
+(default the engine default, \code{prior_normal(0, 2.5)}). A finite SD keeps the mode finite
 under separation.}
 
 \item{control}{List of numerical knobs: \code{max_iter} (default 100), \code{tol}

@@ -5,6 +5,7 @@
 #ifndef TULPA_HMC_TVC_H
 #define TULPA_HMC_TVC_H
 
+#include <cstddef>
 #include <vector>
 #include <cmath>
 #include "hmc_temporal.h"  // Reuse RW1/RW2/AR1 implementations
@@ -19,59 +20,11 @@ namespace tulpa_tvc {
 
 using tulpa::TemporalType;
 using tulpa::TVCData;
-using tulpa_temporal::rw1_quadratic_form;
-using tulpa_temporal::rw2_quadratic_form;
-using tulpa_temporal::ar1_log_density;
 using tulpa::math::safe_log;
 
 // -----------------------------------------------------------------------------
 // TVC log-prior
 // -----------------------------------------------------------------------------
-
-// Compute log-prior for a single TVC term's temporal trajectory.
-// Templated over the scalar type (double for evaluation, autodiff types
-// for gradients).
-// w: temporal trajectory (length n_times)
-// tau: precision parameter
-// rho: AR1 correlation (only used if structure == AR1)
-template <typename T>
-inline T tvc_term_log_prior(
-    const T* w,
-    int n_times,
-    TemporalType structure,
-    const T& tau,
-    const T& rho,
-    bool cyclic = false
-) {
-  T log_prior = T(0.0);
-
-  if (structure == TemporalType::RW1) {
-    T quad = rw1_quadratic_form(w, n_times, cyclic);
-    int rank = tulpa_temporal::rw1_rank(n_times, cyclic);
-    log_prior = log_prior + T(0.5 * rank) * safe_log(tau);
-    log_prior = log_prior - T(0.5) * tau * quad;
-
-  } else if (structure == TemporalType::RW2) {
-    T quad = rw2_quadratic_form(w, n_times, cyclic);
-    int rank = tulpa_temporal::rw2_rank(n_times, cyclic);
-    log_prior = log_prior + T(0.5 * rank) * safe_log(tau);
-    log_prior = log_prior - T(0.5) * tau * quad;
-
-  } else if (structure == TemporalType::AR1) {
-    log_prior = log_prior + ar1_log_density(w, n_times, rho, tau, 1e-10);
-
-  } else if (structure == TemporalType::IID) {
-    // IID: independent N(0, 1/tau) for each time point
-    log_prior = log_prior + T(0.5 * n_times) * safe_log(tau);
-    T quad = T(0.0);
-    for (int t = 0; t < n_times; t++) {
-      quad = quad + w[t] * w[t];
-    }
-    log_prior = log_prior - T(0.5) * tau * quad;
-  }
-
-  return log_prior;
-}
 
 // Compute log-prior for all TVC terms
 // w_flat: all TVC values (n_groups * n_tvc * n_times, flattened)
@@ -95,12 +48,57 @@ inline T tvc_log_prior(
     for (int j = 0; j < n_tvc; j++) {
       const T* w_jg = w_flat.data() + (g * n_tvc + j) * n_times;
       T rho_j = (tvc_data.structure == TemporalType::AR1) ? rho[j] : T(0.0);
-      log_prior = log_prior + tvc_term_log_prior(
+      log_prior = log_prior + tulpa_temporal::log_prior_temporal(
           w_jg, n_times, tvc_data.structure, tau[j], rho_j, tvc_data.cyclic);
     }
   }
 
   return log_prior;
+}
+
+// -----------------------------------------------------------------------------
+// Input validation
+// -----------------------------------------------------------------------------
+
+// `time_index` and `group_index` arrive 1-based from R and are used raw as
+// subscripts into w_flat by compute_tvc_eta, which runs once per gradient
+// evaluation. The whole map is checked here, once, at model-build time.
+inline void validate_tvc_data(const TVCData& tvc_data) {
+  const int N = tvc_data.n_obs;
+  const int n_times = tvc_data.n_times;
+  const int n_tvc = tvc_data.n_tvc;
+  const int n_groups = tvc_data.n_groups;
+
+  if (n_times < 1 || n_tvc < 1 || n_groups < 1) {
+    Rcpp::stop("tulpa: a TVC term needs n_times, n_tvc and n_groups >= 1; got "
+               "%d, %d, %d.", n_times, n_tvc, n_groups);
+  }
+  if ((int)tvc_data.time_index.size() != N) {
+    Rcpp::stop("tulpa: TVC `time_index` has length %d but must have one entry "
+               "per observation (%d).",
+               (int)tvc_data.time_index.size(), N);
+  }
+  if ((int)tvc_data.group_index.size() != N) {
+    Rcpp::stop("tulpa: TVC `group_index` has length %d but must have one entry "
+               "per observation (%d).",
+               (int)tvc_data.group_index.size(), N);
+  }
+  if (tvc_data.X_tvc.size() != (std::size_t)N * (std::size_t)n_tvc) {
+    Rcpp::stop("tulpa: TVC `X_tvc` holds %d values but must hold n_obs * n_tvc "
+               "= %d * %d.", (int)tvc_data.X_tvc.size(), N, n_tvc);
+  }
+  for (int i = 0; i < N; i++) {
+    const int t = tvc_data.time_index[i];
+    if (t < 1 || t > n_times) {
+      Rcpp::stop("tulpa: TVC `time_index[%d]` is %d; must be a 1-based index "
+                 "in [1, %d].", i + 1, t, n_times);
+    }
+    const int g = tvc_data.group_index[i];
+    if (g < 1 || g > n_groups) {
+      Rcpp::stop("tulpa: TVC `group_index[%d]` is %d; must be a 1-based index "
+                 "in [1, %d].", i + 1, g, n_groups);
+    }
+  }
 }
 
 // -----------------------------------------------------------------------------

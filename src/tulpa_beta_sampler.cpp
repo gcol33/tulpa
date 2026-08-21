@@ -18,6 +18,7 @@
 #include "tulpa/likelihood.h"
 #include "tulpa/autodiff_arena.h"
 #include "tulpa/autodiff_fwd.h"
+#include "autodiff_utils.h"
 
 using tulpa_hmc::ModelData;
 using tulpa_hmc::ParamLayout;
@@ -65,17 +66,14 @@ T beta_likelihood(
 
     const auto* bd = static_cast<const BetaData*>(model_data);
 
-    // mu = sigmoid(eta) — clamp via the standard -log1p(exp(-x)) trick to
-    // stay numerically sound at large |eta|. arena::Var / fwd::Dual both
-    // expose exp via ADL; we let the linear solve in NUTS guard against
-    // pathological eta drifts rather than clamping mu directly.
+    // mu and 1 - mu through inv_logit_pos, so both beta shapes stay strictly
+    // positive at any |eta| and neither reaches lgamma(0).
     T eta_i = eta[0];
-    T mu    = T(1.0) / (T(1.0) + exp(T(0.0) - eta_i));
 
     T log_phi = params[layout.extra_offset];
     T phi     = exp(log_phi);
-    T a       = mu * phi;
-    T b       = (T(1.0) - mu) * phi;
+    T a       = phi * tulpa::math::inv_logit_pos(eta_i);
+    T b       = phi * tulpa::math::inv_logit_pos(T(0.0) - eta_i);
 
     return lgamma(phi) - lgamma(a) - lgamma(b)
          + (a - T(1.0)) * T(bd->log_y[i])

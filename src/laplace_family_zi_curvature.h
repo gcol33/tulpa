@@ -32,6 +32,7 @@
 #define TULPA_LAPLACE_FAMILY_ZI_CURVATURE_H
 
 #include <cmath>
+#include <limits>
 #include <string>
 
 #include "builtin_family_zi.h"
@@ -48,7 +49,17 @@ struct MixtureCurvatureDeriv {
     double dWez_dz;
     double dWzz_deta;
     double dWzz_dz;
+    // False when the observation could not be evaluated. Zero is a valid
+    // derivative value, so an all-zero struct is indistinguishable from a
+    // computed one and a failed observation would be summed in as a zero
+    // contribution instead of taking the diagnostic down.
+    bool ok = true;
 };
+
+inline MixtureCurvatureDeriv mixture_curvature_deriv_declined() {
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    return MixtureCurvatureDeriv{nan, nan, nan, nan, nan, nan, false};
+}
 
 // Whether mixture_curvature_deriv() is exact for this family. See the header
 // note: narrower than compiled_zi_supported(), because the untruncated y = 0
@@ -119,8 +130,12 @@ inline MixtureCurvatureDeriv mixture_curvature_deriv(
     const double P0_2 = P0 * (s0 * s0 - w0);
     const double P0_3 = P0 * (s0 * s0 * s0 - 3.0 * s0 * w0 - w0p);
 
+    // D is the mixture density at y = 0, pi + (1 - pi) P0. It is non-positive
+    // only where the arithmetic has already failed -- P0 underflowed and pi_z
+    // underflowed with it, or one of them is NaN -- so the answer is that this
+    // observation could not be evaluated, not that its derivatives are zero.
     const double D     = pi_z + q * P0;
-    if (!(D > 0.0)) return d;
+    if (!(D > 0.0)) return mixture_curvature_deriv_declined();
     const double D_e   = q * P0_1;
     const double D_z   = pq * (1.0 - P0);
     const double D_ee  = q * P0_2;
@@ -169,7 +184,13 @@ struct MixtureCurvatureDeriv2 {
     double d4_e2z2;   // d2 W_ee / dz2     = d2 W_ez / deta dz = d2 W_zz / deta2
     double d4_ez3;    // d2 W_ez / dz2     = d2 W_zz / deta dz
     double d4_z4;     // d2 W_zz / dz2
+    bool ok = true;   // see MixtureCurvatureDeriv::ok
 };
+
+inline MixtureCurvatureDeriv2 mixture_curvature_deriv2_declined() {
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    return MixtureCurvatureDeriv2{nan, nan, nan, nan, nan, false};
+}
 
 // The coupled y = 0 branch differentiates P(Y = 0) a FOURTH time, so on top of
 // what the gradient's gate already requires it needs the second eta-derivative
@@ -187,6 +208,14 @@ inline MixtureCurvatureDeriv2 mixture_curvature_deriv2(
     double y, int n_trials, double eta_count, double logit_zi,
     const std::string& family, double phi, double phi2
 ) {
+    // Asked up front rather than at the call site: without it a family whose
+    // second-order observed-curvature delta is unregistered gets a finite
+    // number built from a wrong fourth-derivative input, and the closed outer
+    // Hessian reports it as exact.
+    if (!has_zi_curvature_2nd_derivative(family)) {
+        return mixture_curvature_deriv2_declined();
+    }
+
     const double pi_z = (logit_zi >= 0.0)
         ? 1.0 / (1.0 + std::exp(-logit_zi))
         : std::exp(logit_zi) / (1.0 + std::exp(logit_zi));
@@ -233,7 +262,7 @@ inline MixtureCurvatureDeriv2 mixture_curvature_deriv2(
                               + 3.0 * w0 * w0 - 4.0 * s0 * w0p - w0pp);
 
     const double Dv = pi_z + q * P0;
-    if (!(Dv > 0.0)) return d;
+    if (!(Dv > 0.0)) return mixture_curvature_deriv2_declined();
 
     // pi is logistic in z alone; p0 depends on eta alone. Writing
     // D = p0 + pi (1 - p0), a pure eta-derivative is (1 - pi) p0^(m), a pure

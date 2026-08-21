@@ -23,6 +23,9 @@
 // from cpp_laplace_fit_spde_precomputed; only the marginal is computed here.
 
 #include <RcppEigen.h>
+#include "laplace_likelihoods.h"
+#include "linalg_fast.h"
+#include "spde_zero_mass.h"
 #include <string>
 #include <cmath>
 
@@ -48,10 +51,42 @@ double cpp_spde_fractional_logmarginal(
 ) {
     const int n     = static_cast<int>(y.size());
     const int n_sub = static_cast<int>(C0sub.size());
+    const int p     = static_cast<int>(X.cols());
+
+    if (static_cast<int>(X.rows()) != n) {
+        Rcpp::stop("nrow(X) (%d) must equal the number of observations (%d).",
+                   static_cast<int>(X.rows()), n);
+    }
+    if (static_cast<int>(A_eff.rows()) != n ||
+        static_cast<int>(A_eff.cols()) != n_sub) {
+        Rcpp::stop("A_eff must be %d x %d; got %d x %d.",
+                   n, n_sub, static_cast<int>(A_eff.rows()),
+                   static_cast<int>(A_eff.cols()));
+    }
+    if (static_cast<int>(Pl.rows()) != n_sub ||
+        static_cast<int>(Pl.cols()) != n_sub) {
+        Rcpp::stop("Pl must be %d x %d; got %d x %d.",
+                   n_sub, n_sub, static_cast<int>(Pl.rows()),
+                   static_cast<int>(Pl.cols()));
+    }
+    if (family == "poisson" || family == "binomial") {
+        if (static_cast<int>(beta_hat.size()) != p) {
+            Rcpp::stop("length(beta_hat) (%d) must equal ncol(X) (%d).",
+                       static_cast<int>(beta_hat.size()), p);
+        }
+        if (static_cast<int>(x_hat.size()) != n_sub) {
+            Rcpp::stop("length(x_hat) (%d) must equal length(C0sub) (%d).",
+                       static_cast<int>(x_hat.size()), n_sub);
+        }
+    }
 
     VectorXd off = VectorXd::Zero(n);
     if (offset_nullable.isNotNull()) {
         Rcpp::NumericVector o(offset_nullable);
+        if (static_cast<int>(o.size()) != n) {
+            Rcpp::stop("offset length (%d) must equal the number of "
+                       "observations (%d).", static_cast<int>(o.size()), n);
+        }
         for (int i = 0; i < n; ++i) off[i] = o[i];
     }
 
@@ -128,17 +163,26 @@ double cpp_spde_fractional_logmarginal(
     double loglik = 0.0;
     if (family == "poisson") {
         for (int i = 0; i < n; ++i) {
-            const double lam = std::exp(eta[i]);
+            const double lam = tulpa_linalg::safe_exp(eta[i]);
             w[i] = wt[i] * lam;
             loglik += wt[i] * (y[i] * eta[i] - lam - std::lgamma(y[i] + 1.0));
         }
     } else if (family == "binomial") {
+        if (static_cast<int>(n_trials.size()) != n) {
+            Rcpp::stop("n_trials length (%d) must equal the number of "
+                       "observations (%d).",
+                       static_cast<int>(n_trials.size()), n);
+        }
+        // The engine's kernel and working weight, so the marginal and the mode
+        // (found by cpp_laplace_fit_spde_precomputed) are the same density. A
+        // materialized probability rounds to 0 or 1 near |eta| ~ 40 and turns
+        // the whole cell into -Inf on a representation choice.
         for (int i = 0; i < n; ++i) {
-            const double pi_ = 1.0 / (1.0 + std::exp(-eta[i]));
-            const double nt  = static_cast<double>(n_trials[i]);
-            w[i] = wt[i] * nt * pi_ * (1.0 - pi_);
-            loglik += wt[i] * (R::lchoose(nt, y[i]) + y[i] * std::log(pi_)
-                             + (nt - y[i]) * std::log1p(-pi_));
+            const int nt_i = n_trials[i];
+            const int y_i  = static_cast<int>(y[i]);
+            w[i] = wt[i] * tulpa::neg_hess_log_lik_binomial(y_i, nt_i, eta[i]);
+            loglik += wt[i] * (R::lchoose(static_cast<double>(nt_i), y[i])
+                             + tulpa::log_lik_binomial_kernel(y_i, nt_i, eta[i]));
         }
     } else {
         Rcpp::stop("Fractional-nu nested SPDE integration supports family in "
@@ -146,9 +190,16 @@ double cpp_spde_fractional_logmarginal(
     }
 
     // x'Qx via the Pl matvec: ||C^{-1/2} Pl x||^2 + tau_beta ||beta||^2.
+    // A zero-mass mesh node contributes nothing, matching the c0_inv = 0 floor
+    // every other SPDE assembly applies (spde_zero_mass.h). Dividing by it
+    // outright makes the whole cell NaN, which the R tryCatch wrappers do not
+    // catch.
     double quad = tau_beta * beta_hat.squaredNorm();
     VectorXd Plx = Pl * x_hat;                                // n_sub
-    for (int j = 0; j < n_sub; ++j) quad += Plx[j] * Plx[j] / C0sub[j];
+    for (int j = 0; j < n_sub; ++j) {
+        const double c0_inv = tulpa::spde_c0_inv(C0sub[j]);
+        quad += Plx[j] * Plx[j] * c0_inv;
+    }
 
     // log|H| - log|Q| = log|I + W^{1/2} B W^{1/2}| (det-lemma).
     VectorXd sw = w.array().sqrt();

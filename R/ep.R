@@ -80,7 +80,7 @@
 #' @param n_trials Binomial denominators (length `nrow(data)`), or `NULL` (= 1).
 #' @param beta_prior Fixed-effect prior as `list(mean, sd)`: a mean-zero
 #'   (`mean = 0`) Gaussian on every coefficient with SD `sd` (default
-#'   `list(mean = 0, sd = 10)`). EP's site parameterisation assumes a mean-zero
+#'   the engine default, `prior_normal(0, 2.5)`). EP's site parameterisation assumes a mean-zero
 #'   coefficient prior, so a non-zero `mean` errors -- use a sampler
 #'   (`mode = "mala"`) for a shifted prior.
 #' @param control List: `max_sweeps` (default 50), `tol` (default 1e-6),
@@ -105,7 +105,7 @@
 #' @export
 tulpa_ep <- function(formula, data, family = "binomial", phi = 1.0,
                      phi2 = NULL, n_trials = NULL,
-                     beta_prior = list(mean = 0, sd = 10),
+                     beta_prior = .tulpa_default_beta_prior("ep"),
                      control = list()) {
   tulpa_check_control(control, .CONTROL_KEYS$ep, "tulpa_ep")
   mf <- stats::model.frame(formula, data)
@@ -121,7 +121,7 @@ tulpa_ep <- function(formula, data, family = "binomial", phi = 1.0,
 # formula and calls this; the registry `ep` backend dispatches here directly.
 #' @keywords internal
 ep_fit <- function(y, X, family = "binomial", phi = 1.0, phi2 = NULL,
-                   n_trials = NULL, beta_prior = list(mean = 0, sd = 10),
+                   n_trials = NULL, beta_prior = .tulpa_default_beta_prior("ep"),
                    control = list()) {
   tulpa_check_control(control, .CONTROL_KEYS$ep, "tulpa_ep")
   .family_or_stop(family)
@@ -135,7 +135,7 @@ ep_fit <- function(y, X, family = "binomial", phi = 1.0, phi2 = NULL,
   y  <- as.numeric(y)
   X  <- as.matrix(X)
   n  <- nrow(X); p <- ncol(X)
-  beta_prior_sd <- .beta_prior_ridge_sd(beta_prior, default_sd = 10)
+  beta_prior_sd <- .beta_prior_ridge_sd(beta_prior, .tulpa_prior_sd("ep"))
   nt <- if (is.null(n_trials)) rep(1L, n) else as.integer(n_trials)
   gh <- .gauss_hermite(n_quad)
 

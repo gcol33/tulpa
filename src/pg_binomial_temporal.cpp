@@ -1,7 +1,6 @@
 // pg_binomial_temporal.cpp
 // Multiscale temporal Gibbs sampler for Pólya-Gamma binomial models.
-// Trend (RW1/RW2) + seasonal (cyclic RW1) + short-term (AR1/IID).
-// Split from pg_binomial.cpp on 2026-05-02
+// Trend (RW1) + seasonal (cyclic RW1) + short-term (AR1/IID).
 
 #include "pg_shared.h"
 #include "pg_rng.h"
@@ -19,7 +18,7 @@ using namespace Rcpp;
 
 // ---------------------------------------------------------------------
 // Multiscale Temporal Gibbs Sampler for Binomial Models
-// Supports trend (RW1/RW2) + seasonal (cyclic RW1) + short-term (AR1/IID)
+// Supports trend (RW1) + seasonal (cyclic RW1) + short-term (AR1/IID)
 // ---------------------------------------------------------------------
 
 // [[Rcpp::export]]
@@ -47,17 +46,30 @@ Rcpp::List cpp_pg_binomial_gibbs_temporal(
     bool verbose = true,
     int n_threads = 1
 ) {
-  // CRITICAL: Must call GetRNGstate/PutRNGstate when using R's RNG from C++
-  GetRNGstate();
+  if (trend_type < 0 || trend_type > 1) {
+    Rcpp::stop("`trend_type` must be 0 (none) or 1 (RW1); got %d. The temporal "
+               "Gibbs kernel implements an RW1 trend only.", trend_type);
+  }
+  if (short_type < 0 || short_type > 2) {
+    Rcpp::stop("`short_type` must be 0 (none), 1 (AR1) or 2 (IID); got %d.",
+               short_type);
+  }
+  if (seasonal_period < 0) {
+    Rcpp::stop("`seasonal_period` must be >= 0; got %d.", seasonal_period);
+  }
 
-  int n_save = (n_iter - n_warmup) / thin;
-  tulpa::PgGibbsCommon C(y, n, X.ncol(), n_re_groups, n_save, n_threads, store_eta);
+  const int n_save = tulpa::pg_n_save(n_iter, n_warmup, thin);
+  tulpa::PgGibbsCommon C(y, n, X, re_group, n_re_groups, n_save,
+                         prior_sigma_re_scale, n_threads, store_eta);
   const int N = C.N;
   const int p = C.p;
+  C.require_intercept("temporal");
 
-  int n_trend = (trend_type > 0) ? n_times : 0;
-  int n_seasonal = (seasonal_period > 0) ? seasonal_period : 0;
-  int n_short = (short_type > 0) ? n_times : 0;
+  tulpa::pg_check_index(time_idx, N, n_times, "time_idx");
+
+  const int n_trend = (trend_type > 0) ? n_times : 0;
+  const int n_seasonal = (seasonal_period > 0) ? seasonal_period : 0;
+  const int n_short = (short_type > 0) ? n_times : 0;
 
   // Per-variant storage
   Rcpp::NumericMatrix trend_draws(n_save, n_trend);
@@ -72,11 +84,22 @@ Rcpp::List cpp_pg_binomial_gibbs_temporal(
   Rcpp::NumericVector trend(n_trend, 0.0);
   Rcpp::NumericVector seasonal(n_seasonal, 0.0);
   Rcpp::NumericVector short_term(n_short, 0.0);
-  double sigma_trend = 1.0;
-  double sigma_seasonal = 1.0;
-  double sigma_short = 1.0;
+  tulpa::PgScaleState sigma_trend = tulpa::pg_scale_state_init(prior_sigma_trend_scale);
+  tulpa::PgScaleState sigma_seasonal = tulpa::pg_scale_state_init(prior_sigma_seasonal_scale);
+  tulpa::PgScaleState sigma_short = tulpa::pg_scale_state_init(prior_sigma_short_scale);
   double rho_short = rho_short_init;
   Rcpp::NumericVector temp_contrib(N, 0.0);
+
+  // Season of each observation, 1-based (the time index is fixed for the run).
+  Rcpp::IntegerVector season_group(n_seasonal > 0 ? N : 0);
+  for (int i = 0; i < season_group.size(); i++) {
+    season_group[i] = ((time_idx[i] - 1) % seasonal_period) + 1;
+  }
+
+  // Per-arm working offset: everything in eta except the arm being updated.
+  std::vector<double> arm_offset(N);
+  std::vector<double> sum_omega_t(n_times, 0.0), sum_resid_t(n_times, 0.0);
+  std::vector<double> sum_omega_s(n_seasonal, 0.0), sum_resid_s(n_seasonal, 0.0);
 
   int save_idx = 0;
 
@@ -87,13 +110,11 @@ Rcpp::List cpp_pg_binomial_gibbs_temporal(
 
     // 1. Compute temporal contributions
     for (int i = 0; i < N; i++) {
-      int t = time_idx[i] - 1;
+      const int t = time_idx[i] - 1;
       double temp_eff = 0.0;
-      if (t >= 0 && t < n_times) {
-        if (n_trend > 0 && t < n_trend) temp_eff += trend[t];
-        if (n_seasonal > 0) temp_eff += seasonal[t % seasonal_period];
-        if (n_short > 0 && t < n_short) temp_eff += short_term[t];
-      }
+      if (n_trend > 0) temp_eff += trend[t];
+      if (n_seasonal > 0) temp_eff += seasonal[t % seasonal_period];
+      if (n_short > 0) temp_eff += short_term[t];
       temp_contrib[i] = temp_eff;
     }
 
@@ -108,23 +129,20 @@ Rcpp::List cpp_pg_binomial_gibbs_temporal(
       C.offset[i] = C.X_beta[i] + C.re_contrib[i];
     }
 
-    // Aggregate for trend
-    std::vector<double> sum_omega_t(n_times, 0.0);
-    std::vector<double> sum_resid_t(n_times, 0.0);
-    for (int i = 0; i < N; i++) {
-      int t = time_idx[i] - 1;
-      if (t >= 0 && t < n_times) {
-        sum_omega_t[t] += C.omega[i];
-        double other_temp = 0.0;
-        if (n_seasonal > 0) other_temp += seasonal[t % seasonal_period];
-        if (n_short > 0 && t < n_short) other_temp += short_term[t];
-        sum_resid_t[t] += C.kappa[i] - C.omega[i] * (C.offset[i] + other_temp);
-      }
-    }
-
     // Update trend (RW1)
-    if (trend_type == 1) {
-      double tau_trend = 1.0 / (sigma_trend * sigma_trend);
+    if (n_trend > 0) {
+      for (int i = 0; i < N; i++) {
+        const int t = time_idx[i] - 1;
+        double other = 0.0;
+        if (n_seasonal > 0) other += seasonal[t % seasonal_period];
+        if (n_short > 0) other += short_term[t];
+        arm_offset[i] = C.offset[i] + other;
+      }
+      tulpa::pg_accumulate_stats(N, time_idx.begin(), n_times, C.omega.begin(),
+                                 C.kappa.begin(), arm_offset.data(),
+                                 sum_omega_t.data(), sum_resid_t.data());
+
+      const double tau_trend = 1.0 / (sigma_trend.sigma * sigma_trend.sigma);
       for (int t = 0; t < n_trend; t++) {
         double tau_prior, mean_prior;
         if (t == 0) {
@@ -138,91 +156,86 @@ Rcpp::List cpp_pg_binomial_gibbs_temporal(
           mean_prior = 0.5 * (trend[t - 1] + trend[t + 1]);
         }
 
-        double tau_post = tau_prior + sum_omega_t[t];
-        double mean_post = (tau_prior * mean_prior + sum_resid_t[t]) / tau_post;
+        const double tau_post = tau_prior + sum_omega_t[t];
+        const double mean_post = (tau_prior * mean_prior + sum_resid_t[t]) / tau_post;
         trend[t] = R::rnorm(mean_post, 1.0 / std::sqrt(tau_post));
       }
 
+      // RW1 on n_trend levels has n_trend - 1 independent increments, so that
+      // is the rank of the quadratic form the scale conditional reads.
       double ss = 0.0;
       for (int t = 1; t < n_trend; t++) {
-        double diff = trend[t] - trend[t - 1];
+        const double diff = trend[t] - trend[t - 1];
         ss += diff * diff;
       }
-      double shape = prior_sigma_trend_scale + 0.5 * (n_trend - 1);
-      double rate = prior_sigma_trend_scale + 0.5 * ss;
-      sigma_trend = 1.0 / std::sqrt(R::rgamma(shape, 1.0 / rate));
+      tulpa::pg_update_scale_halfcauchy(ss, n_trend - 1,
+                                        prior_sigma_trend_scale, sigma_trend);
     }
 
     // Update seasonal (cyclic RW1)
     if (n_seasonal > 0) {
-      std::vector<double> sum_omega_s(seasonal_period, 0.0);
-      std::vector<double> sum_resid_s(seasonal_period, 0.0);
       for (int i = 0; i < N; i++) {
-        int t = time_idx[i] - 1;
-        if (t >= 0) {
-          int s = t % seasonal_period;
-          sum_omega_s[s] += C.omega[i];
-          double other_temp = 0.0;
-          if (n_trend > 0 && t < n_trend) other_temp += trend[t];
-          if (n_short > 0 && t < n_short) other_temp += short_term[t];
-          sum_resid_s[s] += C.kappa[i] - C.omega[i] * (C.offset[i] + other_temp);
-        }
+        const int t = time_idx[i] - 1;
+        double other = 0.0;
+        if (n_trend > 0) other += trend[t];
+        if (n_short > 0) other += short_term[t];
+        arm_offset[i] = C.offset[i] + other;
       }
+      tulpa::pg_accumulate_stats(N, season_group.begin(), n_seasonal,
+                                 C.omega.begin(), C.kappa.begin(),
+                                 arm_offset.data(),
+                                 sum_omega_s.data(), sum_resid_s.data());
 
-      double tau_seasonal_val = 1.0 / (sigma_seasonal * sigma_seasonal);
+      const double tau_seasonal_val =
+          1.0 / (sigma_seasonal.sigma * sigma_seasonal.sigma);
       for (int s = 0; s < n_seasonal; s++) {
-        int s_prev = (s == 0) ? n_seasonal - 1 : s - 1;
-        int s_next = (s == n_seasonal - 1) ? 0 : s + 1;
+        const int s_prev = (s == 0) ? n_seasonal - 1 : s - 1;
+        const int s_next = (s == n_seasonal - 1) ? 0 : s + 1;
 
-        double tau_prior = 2.0 * tau_seasonal_val;
-        double mean_prior = 0.5 * (seasonal[s_prev] + seasonal[s_next]);
+        const double tau_prior = 2.0 * tau_seasonal_val;
+        const double mean_prior = 0.5 * (seasonal[s_prev] + seasonal[s_next]);
 
-        double tau_post = tau_prior + sum_omega_s[s];
-        double mean_post = (tau_prior * mean_prior + sum_resid_s[s]) / tau_post;
+        const double tau_post = tau_prior + sum_omega_s[s];
+        const double mean_post = (tau_prior * mean_prior + sum_resid_s[s]) / tau_post;
         seasonal[s] = R::rnorm(mean_post, 1.0 / std::sqrt(tau_post));
       }
 
       double ss = 0.0;
       for (int s = 0; s < n_seasonal; s++) {
-        int s_next = (s == n_seasonal - 1) ? 0 : s + 1;
-        double diff = seasonal[s_next] - seasonal[s];
+        const int s_next = (s == n_seasonal - 1) ? 0 : s + 1;
+        const double diff = seasonal[s_next] - seasonal[s];
         ss += diff * diff;
       }
-      // Cyclic (ring) RW1 with a sum-to-zero constraint has rank n_seasonal - 1
-      // (one constant null vector), so the GMRF adds 0.5*(n_seasonal - 1) to the
-      // inverse-gamma shape, not 0.5*n_seasonal.
-      double shape = prior_sigma_seasonal_scale + 0.5 * (n_seasonal - 1);
-      double rate = prior_sigma_seasonal_scale + 0.5 * ss;
-      sigma_seasonal = 1.0 / std::sqrt(R::rgamma(shape, 1.0 / rate));
+      // Cyclic (ring) RW1 with a sum-to-zero constraint has rank
+      // n_seasonal - 1 (one constant null vector).
+      tulpa::pg_update_scale_halfcauchy(ss, n_seasonal - 1,
+                                        prior_sigma_seasonal_scale,
+                                        sigma_seasonal);
     }
 
     // Update short-term (AR1 or IID)
-    if (short_type > 0) {
-      std::vector<double> sum_omega_sh(n_short, 0.0);
-      std::vector<double> sum_resid_sh(n_short, 0.0);
+    if (n_short > 0) {
       for (int i = 0; i < N; i++) {
-        int t = time_idx[i] - 1;
-        if (t >= 0 && t < n_short) {
-          sum_omega_sh[t] += C.omega[i];
-          double other_temp = 0.0;
-          if (n_trend > 0 && t < n_trend) other_temp += trend[t];
-          if (n_seasonal > 0) other_temp += seasonal[t % seasonal_period];
-          sum_resid_sh[t] += C.kappa[i] - C.omega[i] * (C.offset[i] + other_temp);
-        }
+        const int t = time_idx[i] - 1;
+        double other = 0.0;
+        if (n_trend > 0) other += trend[t];
+        if (n_seasonal > 0) other += seasonal[t % seasonal_period];
+        arm_offset[i] = C.offset[i] + other;
       }
+      tulpa::pg_accumulate_stats(N, time_idx.begin(), n_short, C.omega.begin(),
+                                 C.kappa.begin(), arm_offset.data(),
+                                 sum_omega_t.data(), sum_resid_t.data());
 
-      double tau_short_val = 1.0 / (sigma_short * sigma_short);
+      const double tau_short_val = 1.0 / (sigma_short.sigma * sigma_short.sigma);
 
       if (short_type == 1) {  // AR1
         const double omr2 = 1.0 + rho_short * rho_short;
         for (int t = 0; t < n_short; t++) {
-          // Full conditional uses BOTH neighbours: interior t has prior
-          // precision tau*(1+rho^2), mean rho*(x_{t-1}+x_{t+1})/(1+rho^2); the
-          // endpoints keep the single available neighbour with precision tau.
-          // (Conditioning on the past only, as before, gives the wrong AR1
-          // stationary law.)
+          // The full conditional uses BOTH neighbours: an interior t has prior
+          // precision tau*(1+rho^2) and mean rho*(x_{t-1}+x_{t+1})/(1+rho^2);
+          // the endpoints keep the single available neighbour at precision tau.
           double tau_prior, mean_prior;
-          bool has_prev = (t > 0), has_next = (t < n_short - 1);
+          const bool has_prev = (t > 0), has_next = (t < n_short - 1);
           if (has_prev && has_next) {
             tau_prior  = tau_short_val * omr2;
             mean_prior = rho_short * (short_term[t - 1] + short_term[t + 1]) / omr2;
@@ -233,34 +246,34 @@ Rcpp::List cpp_pg_binomial_gibbs_temporal(
             tau_prior  = tau_short_val;
             mean_prior = rho_short * short_term[t - 1];
           }
-          double tau_post = tau_prior + sum_omega_sh[t];
-          double mean_post = (tau_prior * mean_prior + sum_resid_sh[t]) / tau_post;
+          const double tau_post = tau_prior + sum_omega_t[t];
+          const double mean_post = (tau_prior * mean_prior + sum_resid_t[t]) / tau_post;
           short_term[t] = R::rnorm(mean_post, 1.0 / std::sqrt(tau_post));
         }
 
-        // Sample rho_short (previously fixed at rho_short_init and reported as a
-        // posterior). Reflected-normal RW MH with a Uniform(-1,1) prior; the AR1
-        // log-density in rho is 0.5*log(1-rho^2) - 0.5*tau*ss(rho).
+        // Sample rho_short: reflected-normal random-walk MH with a
+        // Uniform(-1, 1) prior; the AR1 log-density in rho is
+        // 0.5*log(1-rho^2) - 0.5*tau*ss(rho).
         auto ar1_ss = [&](double r) {
           double s = short_term[0] * short_term[0] * (1.0 - r * r);
           for (int t = 1; t < n_short; t++) {
-            double d = short_term[t] - r * short_term[t - 1];
+            const double d = short_term[t] - r * short_term[t - 1];
             s += d * d;
           }
           return s;
         };
-        double rho_prop = rho_short + R::rnorm(0, 0.08);
+        const double rho_prop = rho_short + R::rnorm(0, 0.08);
         if (rho_prop > -0.999 && rho_prop < 0.999) {
-          double lp_c = 0.5 * std::log(1.0 - rho_short * rho_short)
-                        - 0.5 * tau_short_val * ar1_ss(rho_short);
-          double lp_p = 0.5 * std::log(1.0 - rho_prop * rho_prop)
-                        - 0.5 * tau_short_val * ar1_ss(rho_prop);
+          const double lp_c = 0.5 * std::log(1.0 - rho_short * rho_short)
+                              - 0.5 * tau_short_val * ar1_ss(rho_short);
+          const double lp_p = 0.5 * std::log(1.0 - rho_prop * rho_prop)
+                              - 0.5 * tau_short_val * ar1_ss(rho_prop);
           if (std::log(R::runif(0, 1)) < lp_p - lp_c) rho_short = rho_prop;
         }
       } else {  // IID
         for (int t = 0; t < n_short; t++) {
-          double tau_post = tau_short_val + sum_omega_sh[t];
-          double mean_post = sum_resid_sh[t] / tau_post;
+          const double tau_post = tau_short_val + sum_omega_t[t];
+          const double mean_post = sum_resid_t[t] / tau_post;
           short_term[t] = R::rnorm(mean_post, 1.0 / std::sqrt(tau_post));
         }
       }
@@ -269,7 +282,7 @@ Rcpp::List cpp_pg_binomial_gibbs_temporal(
       if (short_type == 1) {
         ss = short_term[0] * short_term[0] * (1.0 - rho_short * rho_short);
         for (int t = 1; t < n_short; t++) {
-          double resid = short_term[t] - rho_short * short_term[t - 1];
+          const double resid = short_term[t] - rho_short * short_term[t - 1];
           ss += resid * resid;
         }
       } else {
@@ -277,28 +290,23 @@ Rcpp::List cpp_pg_binomial_gibbs_temporal(
           ss += short_term[t] * short_term[t];
         }
       }
-      double shape = prior_sigma_short_scale + 0.5 * n_short;
-      double rate = prior_sigma_short_scale + 0.5 * ss;
-      sigma_short = 1.0 / std::sqrt(R::rgamma(shape, 1.0 / rate));
+      // Both the stationary AR1 and the IID quadratic forms are full rank.
+      tulpa::pg_update_scale_halfcauchy(ss, n_short, prior_sigma_short_scale,
+                                        sigma_short);
     }
 
-    // Centre the intrinsic arms and ABSORB the removed levels into the
-    // intercept, so eta is unchanged and the move is posterior-invariant --
-    // what every spatial Polya-Gamma kernel here already does. Discarding a
-    // removed mean instead lags the intercept behind the field by that amount
-    // each sweep and drives the variance up, which is the failure
-    // update_spatial_icar() documents; the seasonal arm used to discard its
-    // mean and the trend was never centred at all, so its level was free to
-    // wander against the intercept.
+    // Centre the intrinsic arms and absorb the removed levels into the
+    // intercept, so eta is unchanged and the move is posterior-invariant.
+    // Discarding a removed mean instead lags the intercept behind the field by
+    // that amount each sweep and drives the variance up.
     //
-    // Both sigma updates above read only DIFFERENCES of their arm, which a
+    // Both scale updates above read only DIFFERENCES of their arm, which a
     // constant shift leaves untouched, so centring here rather than before them
     // gives the same draws. Placed after every arm's update so none of them
-    // reads a C.offset that this has already invalidated; the next sweep
-    // rebuilds X_beta from beta in the core step.
-    if (p > 0) {
+    // reads a C.offset that this has already invalidated.
+    {
       double level = 0.0;
-      if (trend_type == 1 && n_trend > 0) {
+      if (n_trend > 0) {
         double m = 0.0;
         for (int t = 0; t < n_trend; t++) m += trend[t];
         m /= n_trend;
@@ -312,7 +320,7 @@ Rcpp::List cpp_pg_binomial_gibbs_temporal(
         for (int s = 0; s < n_seasonal; s++) seasonal[s] -= m;
         level += m;
       }
-      C.beta[0] += level;
+      C.absorb_level(level);
     }
 
     // Save draws
@@ -327,9 +335,9 @@ Rcpp::List cpp_pg_binomial_gibbs_temporal(
       for (int t = 0; t < n_short; t++) {
         short_draws(save_idx, t) = short_term[t];
       }
-      sigma_trend_draws[save_idx] = sigma_trend;
-      sigma_seasonal_draws[save_idx] = sigma_seasonal;
-      sigma_short_draws[save_idx] = sigma_short;
+      sigma_trend_draws[save_idx] = sigma_trend.sigma;
+      sigma_seasonal_draws[save_idx] = sigma_seasonal.sigma;
+      sigma_short_draws[save_idx] = sigma_short.sigma;
       rho_short_draws[save_idx] = rho_short;
       save_idx++;
     }
@@ -354,6 +362,5 @@ Rcpp::List cpp_pg_binomial_gibbs_temporal(
     result["eta"] = C.eta_draws;
   }
 
-  PutRNGstate();
   return result;
 }

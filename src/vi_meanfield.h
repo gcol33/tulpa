@@ -33,6 +33,15 @@ struct MeanFieldGradients {
   double elbo;
 };
 
+// d/d log_sigma of H[q] = sum_i log_sigma_i + const. Added to the
+// reparameterisation gradient here and evaluated on its own by the gradient
+// probe, so the entropy term the ELBO carries and the entropy term its gradient
+// carries are the same expression.
+inline void meanfield_add_entropy_grad(const MeanFieldParams& /*params*/,
+                                       Eigen::VectorXd& grad_log_sigma) {
+  grad_log_sigma.array() += 1.0;
+}
+
 // Compute ELBO and gradients for mean-field VI
 // Uses reparameterization trick: θ = μ + σ ⊙ ε, ε ~ N(0, I)
 inline MeanFieldGradients compute_meanfield_elbo_grad(
@@ -80,8 +89,7 @@ inline MeanFieldGradients compute_meanfield_elbo_grad(
   result.grad_log_sigma /= mc_samples;
   result.elbo /= mc_samples;
 
-  // Add entropy gradient: ∂H/∂log_σ = 1 (since H = Σ log_σ + const)
-  result.grad_log_sigma.array() += 1.0;
+  meanfield_add_entropy_grad(params, result.grad_log_sigma);
 
   // Add entropy to ELBO
   result.elbo += params.entropy();
@@ -100,6 +108,8 @@ inline VIResult fit_meanfield(
     const VIConfig& config,
     const Eigen::VectorXd* init_mu = nullptr
 ) {
+  validate_vi_config(config);
+
   // Initialize parameters
   MeanFieldParams params(D);
 
@@ -148,7 +158,7 @@ inline VIResult fit_meanfield(
   result.L_factor = Eigen::MatrixXd();  // Not used for mean-field
   result.d_diag = exp(params.log_sigma.array());  // Store sigmas
   result.rank_used = 0;
-  result.final_elbo = result.elbo_history.back();
+  result.final_elbo = vi_final_elbo(result.elbo_history);
 
   // Generate posterior samples for diagnostics
   int n_samples = 1000;

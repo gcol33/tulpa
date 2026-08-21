@@ -655,7 +655,56 @@ struct DenseMassMatrix {
                                                z.data(), p);
       }
     }
-    // Precision/Kronecker blocks override their param ranges
+    block_sample_momentum(p, rng);
+  }
+
+  // True when a structured block owns part of the parameter range. Every
+  // consumer of the blocks reads this one predicate, so the momentum draw, the
+  // kinetic energy and the drift cannot end up describing different metrics.
+  inline bool has_structured_blocks() const {
+    return precision_block.active || kronecker_block.active ||
+           (sparse_gmrf.active && sparse_gmrf.factorized);
+  }
+
+  // p' C_block p summed over the ranges the structured blocks own.
+  inline double block_quadform(const double* p) const {
+    double ke = 0.0;
+    if (precision_block.active) ke += precision_block.quadform(p);
+    if (kronecker_block.active) ke += kronecker_block.quadform(p);
+    if (sparse_gmrf.active && sparse_gmrf.factorized) ke += sparse_gmrf.quadform(p);
+    return ke;
+  }
+
+  // Overwrite each structured block's range of `result` with C_block p.
+  inline void block_matvec_override(const double* p, double* result) const {
+    if (precision_block.active) {
+      std::vector<double> tmp(precision_block.size);
+      precision_block.matvec(p, tmp.data());
+      for (int i = 0; i < precision_block.size; i++) {
+        result[precision_block.start + i] = tmp[i];
+      }
+    }
+    if (kronecker_block.active) {
+      int ST = kronecker_block.S * kronecker_block.T;
+      std::vector<double> tmp(ST);
+      kronecker_block.matvec(p, tmp.data());
+      for (int i = 0; i < ST; i++) {
+        result[kronecker_block.start + i] = tmp[i];
+      }
+    }
+    if (sparse_gmrf.active && sparse_gmrf.factorized) {
+      int ST = sparse_gmrf.S * sparse_gmrf.T;
+      std::vector<double> tmp(ST);
+      sparse_gmrf.inv_mass_matvec(p, tmp.data());
+      for (int i = 0; i < ST; i++) {
+        result[sparse_gmrf.start + i] = tmp[i];
+      }
+    }
+  }
+
+  // Overwrite each structured block's range of `p` with a draw from that
+  // block's own metric.
+  inline void block_sample_momentum(double* p, std::mt19937& rng) const {
     if (precision_block.active) precision_block.sample_momentum(p, rng);
     if (kronecker_block.active) kronecker_block.sample_momentum(p, rng);
     if (sparse_gmrf.active && sparse_gmrf.factorized) sparse_gmrf.sample_momentum(p, rng);
@@ -678,11 +727,11 @@ struct DenseMassMatrix {
   // Kinetic energy: 0.5 * p^T * C * p  where C = M^{-1}
   // Uses Eigen BLAS for dense case (n>=16) for SIMD acceleration.
   double kinetic_energy(const double* p) const {
-    // Precision/Kronecker/Sparse blocks: compute their contribution separately
-    double ke_prec = 0.0;
-    if (precision_block.active) ke_prec += precision_block.quadform(p);
-    if (kronecker_block.active) ke_prec += kronecker_block.quadform(p);
-    if (sparse_gmrf.active && sparse_gmrf.factorized) ke_prec += sparse_gmrf.quadform(p);
+    // Structured blocks own their parameter ranges under every metric type, so
+    // their quadratic form enters on every return path and their indices are
+    // excluded from whatever sum covers the rest of the range.
+    const bool blocked = has_structured_blocks();
+    const double ke_prec = blocked ? block_quadform(p) : 0.0;
 
     if (type == MassMatrixType::BLOCK_DIAG && adapted) {
       double ke = 0.0;
@@ -703,32 +752,28 @@ struct DenseMassMatrix {
       }
       return 0.5 * (ke + ke_prec);
     } else if (type == MassMatrixType::DIAG || !adapted) {
-      if (!precision_block.active && !kronecker_block.active) {
+      if (!blocked) {
         return 0.5 * tulpa_linalg::weighted_norm_squared(p, inv_mass_diag.data(), n);
       }
-      // Skip precision block params in diagonal sum
       double ke = 0.0;
       for (int i = 0; i < n; i++) {
         if (!in_precision_block(i))
           ke += inv_mass_diag[i] * p[i] * p[i];
       }
       return 0.5 * (ke + ke_prec);
-    } else if (n >= 16) {
-      // Dense: full matrix handles all params including precision block range
-      // But if precision blocks are active, we need to exclude their range
-      // from the dense contribution and add the precision block contribution instead.
-      // For simplicity: if precision blocks active, fall back to per-element
-      if (precision_block.active || kronecker_block.active) {
-        double ke = 0.0;
-        for (int i = 0; i < n; i++) {
-          if (in_precision_block(i)) continue;
-          for (int j = 0; j < n; j++) {
-            if (in_precision_block(j)) continue;
-            ke += p[i] * inv_mass_dense[static_cast<size_t>(j) * n + i] * p[j];
-          }
+    } else if (blocked) {
+      // Dense with structured blocks: the dense contribution runs over the
+      // complement of the block ranges, which the blocks then supply themselves.
+      double ke = 0.0;
+      for (int i = 0; i < n; i++) {
+        if (in_precision_block(i)) continue;
+        for (int j = 0; j < n; j++) {
+          if (in_precision_block(j)) continue;
+          ke += p[i] * inv_mass_dense[static_cast<size_t>(j) * n + i] * p[j];
         }
-        return 0.5 * (ke + ke_prec);
       }
+      return 0.5 * (ke + ke_prec);
+    } else if (n >= 16) {
       Eigen::Map<const Eigen::MatrixXd> Am(inv_mass_dense.data(), n, n);
       Eigen::Map<const Eigen::VectorXd> pv(p, n);
       return 0.5 * pv.dot(Am.selfadjointView<Eigen::Lower>() * pv);
@@ -766,30 +811,7 @@ struct DenseMassMatrix {
     } else {
       tulpa_linalg::symmatvec(inv_mass_dense.data(), p, result, n);
     }
-    // Precision/Kronecker blocks override their param ranges
-    if (precision_block.active) {
-      std::vector<double> tmp(precision_block.size);
-      precision_block.matvec(p, tmp.data());
-      for (int i = 0; i < precision_block.size; i++) {
-        result[precision_block.start + i] = tmp[i];
-      }
-    }
-    if (kronecker_block.active) {
-      int ST = kronecker_block.S * kronecker_block.T;
-      std::vector<double> tmp(ST);
-      kronecker_block.matvec(p, tmp.data());
-      for (int i = 0; i < ST; i++) {
-        result[kronecker_block.start + i] = tmp[i];
-      }
-    }
-    if (sparse_gmrf.active && sparse_gmrf.factorized) {
-      int ST = sparse_gmrf.S * sparse_gmrf.T;
-      std::vector<double> tmp(ST);
-      sparse_gmrf.inv_mass_matvec(p, tmp.data());
-      for (int i = 0; i < ST; i++) {
-        result[sparse_gmrf.start + i] = tmp[i];
-      }
-    }
+    block_matvec_override(p, result);
   }
 
   // Compute diag(C) * p — uses diagonal only, even when dense is available.

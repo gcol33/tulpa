@@ -4,12 +4,14 @@
 \alias{.beta_prior_ridge_sd}
 \title{Resolve a \code{beta_prior = list(mean, sd)} to a single ridge SD.}
 \usage{
-.beta_prior_ridge_sd(beta_prior, default_sd = 10)
+.beta_prior_ridge_sd(beta_prior, default_sd = .tulpa_prior_sd("ridge"))
 }
 \arguments{
-\item{beta_prior}{\code{list(mean, sd)}; \code{mean} must be 0, \code{sd} a positive scalar.}
+\item{beta_prior}{\code{list(mean, sd)}; \code{mean} must be 0, \code{sd} a positive scalar.
+\code{NULL} takes the engine default.}
 
-\item{default_sd}{SD used when \code{beta_prior} (or its \code{sd}) is \code{NULL}.}
+\item{default_sd}{SD used when \code{beta_prior} is \code{NULL}. A supplied prior is
+resolved through \code{\link[=.beta_prior_fields]{.beta_prior_fields()}} and never falls back to this.}
 }
 \description{
 For the fitters whose fixed-effect prior is a mean-zero Gaussian ridge with a
@@ -17,6 +19,7 @@ scalar SD (EP, multinomial, ordinal): validates the unified \code{beta_prior}
 object, enforces a mean of 0, and returns the positive scalar SD. Keeps the
 shared prior interface (\code{beta_prior = list(mean, sd)}) while rejecting the
 options those fitters do not implement (a non-zero mean, a per-coefficient
-SD).
+SD). Validation of the supplied object itself is \code{\link[=.beta_prior_fields]{.beta_prior_fields()}},
+shared with \code{\link[=.normalize_beta_prior]{.normalize_beta_prior()}}.
 }
 \keyword{internal}

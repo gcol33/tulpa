@@ -19,6 +19,11 @@ namespace tulpa {
 // keeping it here makes it a single named constant.
 inline constexpr double DEFAULT_TAU_BETA = 1e-4;
 
+// Floor added to sigma_re^2 before inverting it into a precision, so a zero or
+// near-zero random-effect SD yields a large but finite tau_re instead of a
+// division by zero.
+inline constexpr double RE_VARIANCE_FLOOR = 1e-10;
+
 // Gaussian prior on the fixed effects beta. With both vectors empty it
 // reproduces the historical weak prior beta_j ~ N(0, 1e4) applied
 // uniformly. A non-empty `tau` overrides the precision (1/sd^2) per

@@ -148,7 +148,15 @@ found jointly and can carry real posterior covariance BETWEEN terms
 (e.g. an abundance-arm and a detection-arm term sharing one grouping
 factor); same \code{NA}-when-unavailable rule as \code{blup_cross}), \code{theta_cov} /
 \code{theta_se}
-(fixed-parameter covariance / SE from the marginal Hessian), \code{log_marginal}
+(fixed-parameter covariance / SE from the marginal Hessian), \code{re_par} /
+\code{re_par_cov} / \code{re_par_se} (the RE-covariance coordinates the optimizer
+carried -- log-Cholesky for a full block, log-SD for a diagonal one -- with
+their block of the same inverse Hessian, so \verb{SE(log sigma)} is available
+for a boundary test on a weakly-identified variance component),
+\code{re_par_layout} (per block: \code{label}, \code{nc}, \code{full}, the \code{index} range into
+\code{re_par} and the \code{coord} names, so a caller does not reconstruct the
+packing), \code{joint_cov} (the whole \code{(n_theta + n_chol)} inverse Hessian),
+\code{log_marginal}
 (the AGHQ marginal log-likelihood at the optimum, excluding any ridge),
 \code{n_quad}, \code{lkj_eta}, and \code{converged}. RE terms that do not share one
 grouping factor are an input error and stop; a singular / non-finite

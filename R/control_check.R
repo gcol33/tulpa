@@ -146,11 +146,12 @@ tulpa_check_control <- function(control, allowed, where) {
                     "n_draws", "alpha", "batch_size", "ess_threshold",
                     "n_particles", "n_mcmc_steps", "mclmc_adjusted",
                     "vi_variant", "vi_mc_samples", "vi_max_iter",
+                    "vi_max_grad_norm",
                     # Elliptical-slice kernel. Note `ess_threshold` above is
                     # SMC's resampling threshold, not one of these -- the two
                     # unrelated meanings of "ess" are why these carry the
                     # prefix.
-                    "ess_use_cholesky", "ess_adapt_during_warmup",
+                    "ess_adapt_during_warmup",
                     "ess_adapt_interval", "ess_joint_sigma_re",
                     "ess_joint_proposal_sd")
   )

@@ -58,6 +58,8 @@
 #include <Eigen/SparseCholesky>
 #include <vector>
 
+#include "spde_zero_mass.h"
+
 #include "tulpa/autodiff_arena.h"
 
 namespace tulpa {
@@ -71,6 +73,19 @@ public:
     Eigen::VectorXd C0_diag;
     Eigen::VectorXd C0_inv_diag;
     SpMat           G1;
+
+    // Theta-independent unit precision on zero-mass (orphan) mesh nodes, the
+    // same ridge SpdeQBuilder places (spde_zero_mass.h). Without it a mesh
+    // carrying a Steiner point the refiner never wired into a triangle gives a
+    // singular Q at every (kappa, tau), so the forward Cholesky fails on every
+    // proposal while the Laplace path over the same mesh fits.
+    //
+    // It does not scale with tau, so dQ/dlog_tau = 2 Q holds for the assembled
+    // part alone and both hyper derivatives subtract the ridge before applying
+    // that closed form.
+    Eigen::VectorXd orphan_diag;    // SPDE_ORPHAN_RIDGE at orphans, 0 elsewhere
+    SpMat           orphan_ridge;   // diag(orphan_diag), for the adjoint trace
+    bool            has_orphans = false;
 
     // Rational approximation coefficients (Bolin et al. 2023). Empty means
     // integer alpha = 2 (the default fast path). Both vectors are

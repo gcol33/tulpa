@@ -12,6 +12,38 @@
 namespace tulpa {
 namespace math {
 
+// The exponent range every scalar type shares. std::exp overflows to +Inf past
+// ~709.78 and underflows to 0 below ~-745; a log-scale hyperparameter that
+// wanders there during warmup takes the whole backward pass with it, because
+// every product involving an Inf value or partial is NaN. The value path and
+// the three autodiff paths clamp at the same bounds, so the templated log
+// posterior is ONE function of its argument whichever scalar type instantiates
+// it -- which is what the runtime gradient check assumes when it compares the
+// double instantiation's central differences against the arena gradient.
+//
+// The clamp bounds the VALUE and leaves the chain rule to carry the clamped
+// exponential as the local derivative, so the direction is retained rather than
+// flattened to zero at the boundary.
+constexpr double EXP_ARG_MAX =  700.0;
+constexpr double EXP_ARG_MIN = -700.0;
+
+inline double clamp_exp_arg(double x) {
+    if (x > EXP_ARG_MAX) return EXP_ARG_MAX;
+    if (x < EXP_ARG_MIN) return EXP_ARG_MIN;
+    return x;
+}
+
+// The open interval a probability has to sit in for logit() and its derivative
+// to be finite: at exactly 0 or 1 the value is -Inf / +Inf and the derivative
+// 1 / (p (1 - p)) is +Inf. Same shape as the guard log() already applies.
+constexpr double PROB_EPS = 1e-15;
+
+inline double clamp_prob(double p) {
+    if (p < PROB_EPS) return PROB_EPS;
+    if (p > 1.0 - PROB_EPS) return 1.0 - PROB_EPS;
+    return p;
+}
+
 // Portable digamma using asymptotic expansion + recurrence
 // For x > 0 only (sufficient for all our use cases).
 // Unrolled recurrence (branchless for x >= 1) eliminates while-loop overhead.
@@ -172,10 +204,64 @@ inline double portable_pentagamma(double x) {
     return result;
 }
 
+// log Gamma. std::lgamma carries no R error state, so unlike R::lgammafn it may
+// be evaluated on an OpenMP worker.
+inline double portable_lgamma(double x) {
+    return std::lgamma(x);
+}
+
 // Portable lchoose: log(C(n,k)) = lgamma(n+1) - lgamma(k+1) - lgamma(n-k+1)
-inline double portable_lchoose(int n, int k) {
-    if (k < 0 || k > n) return -std::numeric_limits<double>::infinity();
+inline double portable_lchoose(double n, double k) {
+    if (k < 0.0 || k > n) return -std::numeric_limits<double>::infinity();
     return std::lgamma(n + 1.0) - std::lgamma(k + 1.0) - std::lgamma(n - k + 1.0);
+}
+
+// Standard normal CDF through erfc: Phi(x) = erfc(-x / sqrt(2)) / 2. The lower
+// tail is read straight off erfc's own small value, so it keeps full relative
+// accuracy down to underflow instead of being differenced against 1.
+inline double portable_pnorm(double x) {
+    constexpr double kInvSqrt2 = 0.70710678118654752440;
+    return 0.5 * std::erfc(-x * kInvSqrt2);
+}
+
+// Standard normal density.
+inline double portable_dnorm(double x) {
+    constexpr double kInvSqrt2Pi = 0.39894228040143267794;
+    return kInvSqrt2Pi * std::exp(-0.5 * x * x);
+}
+
+inline double portable_dnorm_log(double x) {
+    constexpr double kHalfLog2Pi = 0.91893853320467274178;
+    return -0.5 * x * x - kHalfLog2Pi;
+}
+
+// log Phi(x), finite for every finite x.
+//
+// erfc itself underflows to zero around x = -37.5, so below that the tail is
+// taken from the asymptotic Mills ratio Phi(x) = phi(x) / (-x) *
+// (1 - 1/x^2 + 3/x^4 - 15/x^6 + 105/x^8 - ...), whose truncation error at the
+// switch is ~2e-13 relative and falls as x^-10 from there. Above it the upper
+// tail is subtracted through log1p so the positive side keeps its exponent
+// rather than rounding log(1 - Q) to zero.
+inline double portable_pnorm_log(double x) {
+    constexpr double kInvSqrt2 = 0.70710678118654752440;
+    constexpr double kHalfLog2Pi = 0.91893853320467274178;
+    if (x >= 0.0) return std::log1p(-0.5 * std::erfc(x * kInvSqrt2));
+    if (x > -37.5) return std::log(0.5 * std::erfc(-x * kInvSqrt2));
+    const double z2  = x * x;
+    const double iz2 = 1.0 / z2;
+    const double s = 1.0 - iz2 * (1.0 - iz2 * (3.0 - iz2 * (15.0 - iz2 * 105.0)));
+    return -0.5 * z2 - kHalfLog2Pi - std::log(-x) + std::log(s);
+}
+
+// log(1 - exp(-a)) for a >= 0. log(-expm1(-a)) is accurate as a -> 0, where
+// log1p(-exp(-a)) cancels; log1p(-exp(-a)) is accurate as a -> Inf, where
+// -expm1(-a) rounds to exactly 1. Splitting at log 2 keeps the accurate form on
+// each side (Machler 2012). Returns -Inf at a = 0.
+inline double log1m_exp(double a) {
+    constexpr double kLn2 = 0.69314718055994530942;
+    if (a <= kLn2) return std::log(-std::expm1(-a));
+    return std::log1p(-std::exp(-a));
 }
 
 }  // namespace math

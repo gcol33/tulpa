@@ -54,6 +54,16 @@ constexpr double kEpsMin            = 1.0e-4;
 constexpr double kEpsMax            = 5.0;
 constexpr double kDivergenceThresh  = 1000.0;  // |dH| above this -> divergence
 
+// Langevin partial-refresh retention, applied ONCE per trajectory: the momentum
+// carried across a trajectory is exp(-1), i.e. one decorrelation time per
+// trajectory. The refresh sits between trajectories rather than between
+// leapfrog steps because the MH-adjusted variant compares H at the two ends of
+// a trajectory: -(H_new - H_old) is the acceptance ratio only while the
+// trajectory between them is the deterministic, volume-preserving leapfrog map,
+// and a refresh drawn inside the loop breaks that. Both samplers use the same
+// cadence so the two differ only in the MH check.
+const double kTrajectoryRefresh = 0.36787944117144233;  // exp(-1)
+
 // ----------------------------------------------------------------------------
 // Dual-averaging step-size adapter (Hoffman & Gelman 2014).
 // Used by MAMCLMC; MCLMC uses the cube-root energy-error scheme instead.
@@ -207,14 +217,6 @@ inline MCLMCResult mclmc_sample(
         step_size = 0.5 / std::pow(static_cast<double>(dim), 0.25);
     }
 
-    // Langevin partial-refresh factor: alpha = exp(-friction * step) with
-    // friction ~ 1/L so the cumulative refresh per trajectory ~ exp(-1).
-    // Always in (0, 1); avoids the pathological alpha=1 (no refresh).
-    auto compute_alpha = [&](int traj_len) -> double {
-        double a = std::exp(-1.0 / static_cast<double>(traj_len));
-        return std::max(0.05, std::min(a, 0.99));
-    };
-
     std::mt19937 rng(seed);
 
     std::vector<double> q(init.begin(), init.end());
@@ -242,7 +244,7 @@ inline MCLMCResult mclmc_sample(
     for (int iter = 1; iter <= total_iter; iter++) {
         bool warmup = (iter <= n_warmup);
         double eps = step_size;
-        double alpha = compute_alpha(L);
+        const double alpha = kTrajectoryRefresh;
 
         // Always accept the leapfrog trajectory (unadjusted).
         std::copy(q.begin(), q.end(), q_prop.begin());
@@ -350,14 +352,6 @@ inline MCLMCResult mamclmc_sample(
         step_size = 0.3 / std::pow(static_cast<double>(dim), 0.25);
     }
 
-    // Langevin partial-refresh factor: alpha = exp(-friction * step) with
-    // friction ~ 1/L so the cumulative refresh per trajectory ~ exp(-1).
-    // Always in (0, 1); avoids the pathological alpha=1 (no refresh).
-    auto compute_alpha = [&](int traj_len) -> double {
-        double a = std::exp(-1.0 / static_cast<double>(traj_len));
-        return std::max(0.05, std::min(a, 0.99));
-    };
-
     std::mt19937 rng(seed);
     std::uniform_real_distribution<double> uniform(0.0, 1.0);
 
@@ -389,7 +383,7 @@ inline MCLMCResult mamclmc_sample(
     for (int iter = 1; iter <= total_iter; iter++) {
         bool warmup = (iter <= n_warmup);
         double eps = warmup ? da.eps() : step_size;
-        double alpha = compute_alpha(L);
+        const double alpha = kTrajectoryRefresh;
 
         std::copy(q.begin(), q.end(), q_prop.begin());
         std::copy(p.begin(), p.end(), p_prop.begin());

@@ -11,7 +11,7 @@ tulpa_ep(
   phi = 1,
   phi2 = NULL,
   n_trials = NULL,
-  beta_prior = list(mean = 0, sd = 10),
+  beta_prior = .tulpa_default_beta_prior("ep"),
   control = list()
 )
 }
@@ -31,7 +31,7 @@ tulpa_ep(
 
 \item{beta_prior}{Fixed-effect prior as \code{list(mean, sd)}: a mean-zero
 (\code{mean = 0}) Gaussian on every coefficient with SD \code{sd} (default
-\code{list(mean = 0, sd = 10)}). EP's site parameterisation assumes a mean-zero
+the engine default, \code{prior_normal(0, 2.5)}). EP's site parameterisation assumes a mean-zero
 coefficient prior, so a non-zero \code{mean} errors -- use a sampler
 (\code{mode = "mala"}) for a shifted prior.}
 

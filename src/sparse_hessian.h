@@ -11,6 +11,7 @@
 #ifndef TULPA_SPARSE_HESSIAN_H
 #define TULPA_SPARSE_HESSIAN_H
 
+#include "cholmod_view.h"
 #include "hessian_pattern_guard.h" // scatter_slot, out-of-pattern drop counter
 #include "sparse_cholesky.h"
 #include <Rcpp.h>
@@ -201,21 +202,11 @@ public:
     // The returned pointer is valid until the next init() or destruction.
     // Caller must NOT free the returned sparse matrix.
     cholmod_sparse as_cholmod(cholmod_common* common) const {
-        cholmod_sparse A;
-        A.nrow = n;
-        A.ncol = n;
-        A.nzmax = nnz;
-        A.p = const_cast<int*>(col_ptr.data());
-        A.i = const_cast<int*>(row_idx.data());
-        A.x = const_cast<double*>(values.data());
-        A.z = nullptr;
-        A.stype = -1;   // lower triangle stored
-        A.itype = CHOLMOD_INT;
-        A.xtype = CHOLMOD_REAL;
-        A.dtype = CHOLMOD_DOUBLE;
-        A.sorted = 1;
-        A.packed = 1;
-        return A;
+        (void) common;
+        return cholmod_lower_view(static_cast<std::size_t>(n),
+                                  col_ptr.data(), row_idx.data(),
+                                  values.data(),
+                                  static_cast<std::size_t>(nnz));
     }
 };
 

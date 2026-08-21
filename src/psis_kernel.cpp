@@ -17,6 +17,8 @@
 #include <omp.h>
 #endif
 
+#include "omp_threads.h"
+
 using namespace Rcpp;
 
 namespace {
@@ -72,16 +74,26 @@ void gpd_fit(std::vector<double> x, double& k_out, double& sigma_out) {
 }
 
 // Normalized smoothed PSIS log-weights for a finite log-ratio vector (S >= 5).
-// Fills `lw` (length S) and `k_hat`. Deterministic -- no RNG. Shared by
-// cpp_tulpa_psis and the LOO-PIT weighting.
+// Fills `lw` (length S), `k_hat` and `tail_smoothed`. Deterministic -- no RNG.
+// Shared by cpp_tulpa_psis and the LOO-PIT weighting.
+//
+// `tail_smoothed` is false whenever the tail was left at its raw log ratios:
+// too few draws for a fit, fewer than five strictly positive exceedances, or a
+// fit whose shape / scale the GPD quantile cannot be evaluated at. `k_hat` then
+// reports the fit that was attempted but does not describe the weights.
+//
+// `tail_len` outside [1, S) skips the tail fit; the exported entry points reject
+// such a pair outright, so this is the kernel's own bound rather than a policy.
 inline void psis_logweights(const double* lr, int S, int tail_len,
-                            std::vector<double>& lw, double& k_hat) {
+                            std::vector<double>& lw, double& k_hat,
+                            bool& tail_smoothed) {
   lw.assign(S, 0.0);
   double mx = -std::numeric_limits<double>::infinity();
   for (int i = 0; i < S; ++i) if (lr[i] > mx) mx = lr[i];
   for (int i = 0; i < S; ++i) lw[i] = lr[i] - mx;
   k_hat = NA_REAL;
-  if (tail_len >= 5 && S >= 25) {
+  tail_smoothed = false;
+  if (tail_len >= 5 && tail_len < S && S >= 25) {
     std::vector<int> ord(S); std::iota(ord.begin(), ord.end(), 0);
     std::stable_sort(ord.begin(), ord.end(),
                      [&](int a, int b) { return lw[a] < lw[b]; });
@@ -94,12 +106,22 @@ inline void psis_logweights(const double* lr, int S, int tail_len,
     }
     if (npos >= 5) {
       double kf, sf; gpd_fit(exceed, kf, sf); k_hat = kf;
-      double lwmax = *std::max_element(lw.begin(), lw.end());
-      for (int j = 0; j < tail_len; ++j) {
-        double pp = ((double) (j + 1) - 0.5) / tail_len;
-        double sm = std::log(exp_cut + qgpd_one(pp, kf, sf));
-        if (sm > lwmax) sm = lwmax;
-        lw[ord[cut0 + j]] = sm;
+      // Smooth only against a fit the GPD quantile is defined at. Exceedances
+      // whose lower quartile sits at the cutoff -- a flat region in the log
+      // ratios, where the differenced exponentials cancel exactly -- drive the
+      // Zhang-Stephens profile to a non-finite shape and a NaN scale, and
+      // qgpd_one answers NaN for every tail order statistic. Writing those back
+      // would take the normalizer, and with it all S weights, to NaN. The tail
+      // keeps its raw log ratios instead, which is what the fit failing means.
+      if (std::isfinite(kf) && std::isfinite(sf) && sf > 0.0) {
+        tail_smoothed = true;
+        double lwmax = *std::max_element(lw.begin(), lw.end());
+        for (int j = 0; j < tail_len; ++j) {
+          double pp = ((double) (j + 1) - 0.5) / tail_len;
+          double sm = std::log(exp_cut + qgpd_one(pp, kf, sf));
+          if (sm > lwmax) sm = lwmax;
+          lw[ord[cut0 + j]] = sm;
+        }
       }
     }
   }
@@ -107,13 +129,23 @@ inline void psis_logweights(const double* lr, int S, int tail_len,
   for (int i = 0; i < S; ++i) lw[i] -= ls;
 }
 
+// The tail order statistics are the last `tail_len` of `S`, so a tail at least
+// as long as the sample leaves no cutoff below it and indexes the order vector
+// off both ends. Enforced at every exported entry point.
+inline void check_tail_len(int tail_len, int S) {
+  if (tail_len < 1 || tail_len >= S)
+    Rcpp::stop("tail_len (%d) must lie in [1, S) with S = %d draws.",
+               tail_len, S);
+}
+
 }  // namespace
 
 // [[Rcpp::export]]
 Rcpp::List cpp_tulpa_psis(Rcpp::NumericVector log_ratios, int tail_len) {
   const int S = log_ratios.size();               // R filtered finite, S >= 5
-  std::vector<double> lw; double k_hat;
-  psis_logweights(log_ratios.begin(), S, tail_len, lw, k_hat);
+  check_tail_len(tail_len, S);
+  std::vector<double> lw; double k_hat; bool tail_smoothed;
+  psis_logweights(log_ratios.begin(), S, tail_len, lw, k_hat, tail_smoothed);
   double sw2 = 0.0;
   Rcpp::NumericVector log_weights(S);
   for (int i = 0; i < S; ++i) {
@@ -121,10 +153,11 @@ Rcpp::List cpp_tulpa_psis(Rcpp::NumericVector log_ratios, int tail_len) {
     double w = std::exp(lw[i]); sw2 += w * w;
   }
   return Rcpp::List::create(
-    Rcpp::Named("pareto_k")    = k_hat,
-    Rcpp::Named("is_ess")      = 1.0 / sw2,
-    Rcpp::Named("log_weights") = log_weights,
-    Rcpp::Named("tail_len")    = tail_len);
+    Rcpp::Named("pareto_k")      = k_hat,
+    Rcpp::Named("is_ess")        = 1.0 / sw2,
+    Rcpp::Named("log_weights")   = log_weights,
+    Rcpp::Named("tail_len")      = tail_len,
+    Rcpp::Named("tail_smoothed") = tail_smoothed);
 }
 
 // Leave-one-out randomized PIT from a pointwise log-likelihood `ll` [S x N] and
@@ -139,11 +172,12 @@ Rcpp::NumericVector cpp_psis_loo_pit(Rcpp::NumericMatrix ll, Rcpp::NumericMatrix
                                      Rcpp::NumericMatrix Fu, int tail_len,
                                      int n_threads) {
   const int S = ll.nrow(), N = ll.ncol();
+  check_tail_len(tail_len, S);
   std::vector<double> fl_loo(N), fu_loo(N);
   const double* pll = ll.begin(); const double* pfl = Fl.begin();
   const double* pfu = Fu.begin();
 #ifdef _OPENMP
-  #pragma omp parallel for schedule(static) num_threads(n_threads > 0 ? n_threads : 1)
+  #pragma omp parallel for schedule(static) num_threads(tulpa_omp_team_size_req(n_threads, N))
 #endif
   for (int i = 0; i < N; ++i) {
     std::vector<double> lr(S); int nfin = 0;
@@ -153,8 +187,8 @@ Rcpp::NumericVector cpp_psis_loo_pit(Rcpp::NumericMatrix ll, Rcpp::NumericMatrix
     }
     double a = 0.0, b = 0.0;
     if (nfin == S) {
-      std::vector<double> lw; double kh;
-      psis_logweights(lr.data(), S, tail_len, lw, kh);
+      std::vector<double> lw; double kh; bool smoothed;
+      psis_logweights(lr.data(), S, tail_len, lw, kh, smoothed);
       for (int s = 0; s < S; ++s) {
         double w = std::exp(lw[s]);
         a += w * pfl[(std::size_t) i * S + s];

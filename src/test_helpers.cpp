@@ -8,10 +8,13 @@
 #include <random>
 #include "autodiff.h"
 #include "tulpa/autodiff_arena.h"
+#include "tulpa/autodiff_fwd.h"
+#include "autodiff_utils.h"
 #include "spde_nc_transform.h"
 #include "spde_qbuilder.h"
 #include "laplace_core.h"
 #include "pg_binomial.h"
+#include "pg_shared.h"
 #include "hmc_gp.h"
 #include "pc_prior.h"
 #include "sparse_hessian.h"
@@ -198,6 +201,13 @@ double cpp_test_negbin_loglik(IntegerVector y, NumericVector mu, double phi) {
   double ll = 0.0;
   for (int i = 0; i < y.size(); i++) {
     double r = phi;  // size parameter
+    // A negative binomial with mean 0 puts all its mass on y = 0, so the
+    // boundary is answered before the log: p is exactly 1 there, and
+    // y * log(1 - p) is 0 * -Inf.
+    if (mu[i] <= 0.0) {
+      if (y[i] > 0) return R_NegInf;
+      continue;
+    }
     double p = r / (r + mu[i]);  // success probability
     ll += std::lgamma(y[i] + r) - std::lgamma(r) - std::lgamma(y[i] + 1);
     ll += r * std::log(p) + y[i] * std::log(1 - p);
@@ -627,7 +637,9 @@ NumericVector cpp_test_pg_update_re(
 
 // [[Rcpp::export]]
 double cpp_test_pg_update_sigma_re(NumericVector re, double scale) {
-  return tulpa::update_sigma_re(re, scale);
+  tulpa::PgScaleState st = tulpa::pg_scale_state_init(scale);
+  tulpa::pg_update_scale_halfcauchy(re, scale, st);
+  return st.sigma;
 }
 
 // ---------------------------------------------------------------------------
@@ -810,7 +822,7 @@ double cpp_test_temporal_log_prior(
     type = tulpa_temporal::TemporalType::NONE;
   }
 
-  return tulpa_temporal::temporal_log_prior(
+  return tulpa_temporal::log_prior_temporal(
     phi.begin(), phi.size(), type, tau, rho, cyclic
   );
 }
@@ -1895,5 +1907,98 @@ Rcpp::List cpp_test_nngp_prior_scatter(
     Rcpp::_["dropped"]  = dropped,
     Rcpp::_["nnz"]      = H_builder.nnz,
     Rcpp::_["gpu_used"] = gpu_used
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+// One scalar primitive on every scalar type the templated log posterior is
+// instantiated for
+// ---------------------------------------------------------------------------
+//
+// compute_log_post is instantiated for double (the value path, which the
+// numerical gradient finite-differences) and for the two reverse-mode Var types
+// (the live gradient). The runtime check compares those two evaluations as
+// though they were one function, so each primitive has to agree in value and in
+// derivative across all four types -- including at the guard boundaries, where
+// an unguarded overload returns Inf or NaN and its guarded twin returns a
+// finite number.
+//
+// `fn` is one of exp / log / sqrt / pow / logit; `p` is the exponent read by
+// pow. The forward-mode dual is seeded at 1, so its `grad` is f'(x).
+// [[Rcpp::export]]
+List cpp_test_scalar_guard(std::string fn, double x, double p = 2.0) {
+  const bool is_exp   = (fn == "exp");
+  const bool is_log   = (fn == "log");
+  const bool is_sqrt  = (fn == "sqrt");
+  const bool is_pow   = (fn == "pow");
+  const bool is_logit = (fn == "logit");
+  if (!(is_exp || is_log || is_sqrt || is_pow || is_logit)) {
+    Rcpp::stop("Unknown primitive '%s'; expected exp, log, sqrt, pow or logit.",
+               fn.c_str());
+  }
+
+  // Value path.
+  double v_double;
+  if (is_exp)        v_double = tulpa::math::safe_exp(x);
+  else if (is_log)   v_double = tulpa::math::safe_log(x);
+  else if (is_sqrt)  v_double = tulpa::math::safe_sqrt(x);
+  else if (is_pow)   v_double = std::pow(x, p);
+  else {
+    const double c = tulpa::math::clamp_prob(x);
+    v_double = std::log(c / (1.0 - c));
+  }
+
+  // Forward mode. pow and logit have no dual overload in the shared set, so
+  // they are reported as the value path with no derivative.
+  double v_dual = v_double, g_dual = NA_REAL;
+  if (is_exp || is_log || is_sqrt) {
+    fwd::Dual xd(x, 1.0);
+    fwd::Dual rd = is_exp  ? tulpa::math::safe_exp(xd)
+                 : is_log  ? tulpa::math::safe_log(xd)
+                           : tulpa::math::safe_sqrt(xd);
+    v_dual = rd.val;
+    g_dual = rd.grad;
+  }
+
+  // Tape reverse mode.
+  double v_tape = 0.0, g_tape = 0.0;
+  {
+    tulpa::ad::TapeScope scope;
+    tulpa::ad::Var xv(scope.tape, x);
+    tulpa::ad::Var rv = is_exp   ? tulpa::ad::exp(xv)
+                      : is_log   ? tulpa::ad::log(xv)
+                      : is_sqrt  ? tulpa::ad::sqrt(xv)
+                      : is_pow   ? tulpa::ad::pow(xv, p)
+                                 : tulpa::ad::logit(xv);
+    rv.backward();
+    v_tape = rv.val();
+    g_tape = xv.adj();
+  }
+
+  // Arena reverse mode.
+  double v_arena = 0.0, g_arena = 0.0;
+  {
+    tulpa::arena::ArenaScope scope;
+    tulpa::arena::Arena* ar = scope.arena();
+    tulpa::arena::Var xv(ar, x);
+    tulpa::arena::Var rv = is_exp   ? tulpa::arena::exp(xv)
+                         : is_log   ? tulpa::arena::log(xv)
+                         : is_sqrt  ? tulpa::arena::sqrt(xv)
+                         : is_pow   ? tulpa::arena::pow(xv, p)
+                                    : tulpa::arena::logit(xv);
+    rv.backward();
+    v_arena = rv.val();
+    g_arena = xv.adj();
+  }
+
+  return List::create(
+    Named("value_double") = v_double,
+    Named("value_dual")   = v_dual,
+    Named("grad_dual")    = g_dual,
+    Named("value_tape")   = v_tape,
+    Named("grad_tape")    = g_tape,
+    Named("value_arena")  = v_arena,
+    Named("grad_arena")   = g_arena
   );
 }

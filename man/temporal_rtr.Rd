@@ -14,26 +14,17 @@ temporal_rtr(temporal, restrict_to)
 effect is made orthogonal to, e.g. \code{~ x}.}
 }
 \value{
-The temporal specification with RTR enabled (class \code{tulpa_rtr}
-prepended), for use in the \verb{temporal =} argument of \code{\link[=tulpa]{tulpa()}}.
+Nothing: the call always signals an error.
 }
 \description{
 The temporal analogue of \code{\link[=spatial_rsr]{spatial_rsr()}}: constrain a temporal random effect
 to be orthogonal to a set of covariates, so a temporally smooth covariate does
 not have its fixed-effect coefficient attenuated by a confounded temporal
-field.
-}
-\details{
-RTR modifies the temporal random effect to be orthogonal to the fixed-effect
-design: \eqn{u_{RTR} = (I - P_X) u} where \eqn{P_X = X(X'X)^{-1}X'} projects
-onto the column space of the restricted covariates. Use it when a covariate is
-temporally smooth and its coefficient appears attenuated toward zero; avoid it
-when the temporal effect is itself the quantity of interest.
-}
-\examples{
-rtr <- temporal_rtr(temporal_rw1("year"), restrict_to = ~ x)
-print(rtr)
+field, \eqn{u_{RTR} = (I - P_X) u}.
 
+No tulpa backend applies that projection to a temporal field, so this
+constructor errors rather than returning a specification that would fit as the
+unrestricted temporal model. \code{\link[=spatial_rsr]{spatial_rsr()}} is the wired spatial analogue.
 }
 \seealso{
 \code{\link[=spatial_rsr]{spatial_rsr()}}, \code{\link[=temporal_rw1]{temporal_rw1()}}, \code{\link[=temporal_ar1]{temporal_ar1()}}

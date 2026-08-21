@@ -21,7 +21,11 @@ shape estimate).}
 A list with \code{pareto_k} (the tail shape, \code{NA} if the sample is too
 small to fit), \code{is_ess} (importance-sampling effective sample size,
 \code{1 / sum(w^2)} on the normalized smoothed weights), \code{log_weights}
-(the normalized smoothed log weights), and \code{tail_len} (the tail size used).
+(the normalized smoothed log weights), \code{tail_len} (the tail size used), and
+\code{tail_smoothed} (\code{FALSE} when the tail kept its raw log ratios because the
+generalized-Pareto fit was not attempted or returned a shape / scale the
+quantile function is undefined at; \code{pareto_k} then reports the attempted fit
+and does not describe the returned weights).
 }
 \description{
 Smooths a set of importance ratios by replacing the largest weights with the

@@ -80,9 +80,12 @@ void apply_spde_nc_transform_double(
         Eigen::VectorXd w = tx.forward(z, kappa, tau);
         for (int j = 0; j < n_mesh; j++) spde_w_out[j] = w[j];
     } catch (const std::runtime_error&) {
-        // Q(kappa, tau) failed to Cholesky — log_kappa / log_tau wandered
-        // somewhere numerically degenerate (e.g. extreme values during
-        // warmup adaptation). Fill w with NaN so the downstream eta
+        // Q(kappa, tau) failed to Cholesky at THIS (log_kappa, log_tau) -- an
+        // excursion into a numerically degenerate corner during warmup
+        // adaptation. A mesh whose geometry makes Q singular at every
+        // (kappa, tau) does not land here: init() ridges its zero-mass nodes
+        // (spde_zero_mass.h), so a structural singularity is not served as a
+        // per-proposal rejection. Fill w with NaN so the downstream eta
         // accumulator propagates NaN to log_post; NUTS treats NaN as
         // -Inf and rejects the trajectory cleanly.
         const double nan_v = std::numeric_limits<double>::quiet_NaN();
@@ -135,7 +138,9 @@ void apply_spde_nc_transform_fwd(
         }
     } catch (const std::runtime_error&) {
         // Cholesky failure during the forward (Q not PD at extreme hypers
-        // during warmup adaptation). Emit NaN dual for both .val and .grad
+        // during warmup adaptation; zero-mass mesh nodes are ridged at init,
+        // so a structurally singular Q does not reach here). Emit NaN dual for
+        // both .val and .grad
         // so the downstream eta accumulator propagates NaN to log_post;
         // NUTS treats NaN as -Inf and rejects the trajectory cleanly.
         const double nan_v = std::numeric_limits<double>::quiet_NaN();

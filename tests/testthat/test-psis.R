@@ -20,6 +20,25 @@ test_that("tulpa_psis reproduces loo::psis pareto_k", {
   }
 })
 
+test_that("a tail tied at the cutoff is left unsmoothed, as loo::psis leaves it", {
+  skip_if_not_installed("loo")
+  # A quarter of the exceedances exactly 0 takes the Zhang-Stephens scale anchor
+  # to 0 and the fit to k = Inf with a NaN scale. loo answers the same k and
+  # keeps the tail at its raw log ratios; the engine must not write NaN there.
+  lr <- c(rep(0, 175), seq(0.5, 5, length.out = 25))
+  ours <- tulpa_psis(lr)
+  ref  <- suppressWarnings(
+    loo::psis(matrix(lr, ncol = 1), r_eff = NA))
+
+  expect_equal(ours$pareto_k,
+               ref$diagnostics$pareto_k, tolerance = 1e-12)
+  expect_false(ours$tail_smoothed)
+  expect_false(any(is.nan(ours$log_weights)))
+  expect_equal(ours$log_weights,
+               as.numeric(loo::weights.importance_sampling(ref, log = TRUE)),
+               tolerance = 1e-12)
+})
+
 # --------------------------------------------------------------------------- #
 # Fast outer Pareto-k diagnostic helpers (gcol33/tulpa#118): near-neighbour     #
 # batch ordering + the speed knobs. Pure-R, no fitting.                         #

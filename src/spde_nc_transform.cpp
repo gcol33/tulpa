@@ -60,10 +60,26 @@ void SpdeNcTransform::init(int n,
     n_mesh  = n;
     C0_diag = Eigen::Map<const Eigen::VectorXd>(C0_d.data(), n);
     C0_inv_diag.resize(n);
-    const double eps = 1e-15;
+    orphan_diag = Eigen::VectorXd::Zero(n);
+    has_orphans = false;
     for (int i = 0; i < n; i++) {
-        C0_inv_diag[i] = (C0_diag[i] > eps) ? 1.0 / C0_diag[i] : 0.0;
+        C0_inv_diag[i] = spde_c0_inv(C0_diag[i]);
+        if (spde_is_orphan_mass(C0_diag[i])) {
+            orphan_diag[i] = SPDE_ORPHAN_RIDGE;
+            has_orphans = true;
+        }
     }
+    orphan_ridge = SpMat(n, n);
+    if (has_orphans) {
+        std::vector<Eigen::Triplet<double>> ridge_trips;
+        for (int i = 0; i < n; i++) {
+            if (orphan_diag[i] != 0.0) {
+                ridge_trips.emplace_back(i, i, orphan_diag[i]);
+            }
+        }
+        orphan_ridge.setFromTriplets(ridge_trips.begin(), ridge_trips.end());
+    }
+    orphan_ridge.makeCompressed();
     G1 = SpMat(n, n);
     std::vector<Eigen::Triplet<double>> trips;
     trips.reserve(G1_x.size());
@@ -239,6 +255,10 @@ Eigen::VectorXd SpdeNcTransform::forward(const Eigen::VectorXd& z,
         last_Q = build_Q(last_K, tau);
         last_K_sum = SpMat();
     }
+    if (has_orphans) {
+        last_Q += orphan_ridge;
+        last_Q.makeCompressed();
+    }
     llt.compute(last_Q);
     if (llt.info() != Eigen::Success) {
         throw std::runtime_error("SpdeNcTransform: Cholesky failed (Q not PD)");
@@ -308,13 +328,16 @@ void SpdeNcTransform::backward(
         4.0 * last_kappa * last_kappa * last_tau * last_tau;
     dlog_kappa_out = c_logkappa * trace_term(K_for_logkappa);
 
-    // dQ/dlog_tau = 2 Q for both paths (Q = tau^2 × tau-independent sum, so
-    // d/dlog_tau scales the whole matrix by 2). Collapsing M_logtau:
+    // dQ/dlog_tau = 2 (Q - R) for both paths: the assembled part carries the
+    // tau^2, the orphan ridge R does not. Collapsing the assembled half:
     //   M_logtau = L^{-1} (2Q) L^{-T} = 2 L^{-1} L L^T L^{-T} = 2 I.
     // So Phi(M_logtau)[i,j] = M[i,j] for i>j (= 0), 0.5 × 2 = 1 for i=j.
     // Hence -<z, Phi(2I) y> = -<z, I y> = -z · y. No matrix solve needed —
-    // a single dot product saves the entire dense O(n^2) trace work.
+    // a single dot product saves the entire dense O(n^2) trace work. The trace
+    // is linear in dQ, so the ridge enters as its own streaming term, and only
+    // on a mesh that carries one.
     dlog_tau_out = -z.dot(y);
+    if (has_orphans) dlog_tau_out -= 2.0 * trace_term(orphan_ridge);
 }
 
 void SpdeNcTransform::forward_with_tangent(
@@ -343,10 +366,16 @@ void SpdeNcTransform::forward_with_tangent(
     const double c_logtau       = 2.0 * dlog_tau;
 
     auto dQ_matvec = [&](const Eigen::VectorXd& v) -> Eigen::VectorXd {
-        // (c_logkappa * K + c_logtau * Q) * v, computed without
-        // materializing the linear combination.
+        // (c_logkappa * K + c_logtau * (Q - R)) * v, computed without
+        // materializing the linear combination. R is the theta-independent
+        // orphan ridge, which does not scale with tau.
         Eigen::VectorXd out = c_logkappa * (K_for_logkappa * v);
-        if (c_logtau != 0.0) out.noalias() += c_logtau * (last_Q * v);
+        if (c_logtau != 0.0) {
+            out.noalias() += c_logtau * (last_Q * v);
+            if (has_orphans) {
+                out -= c_logtau * orphan_diag.cwiseProduct(v);
+            }
+        }
         return out;
     };
 

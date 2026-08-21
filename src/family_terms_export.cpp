@@ -32,6 +32,30 @@
 #include "laplace_likelihoods.h"
 #include "builtin_family_ll_ad.h"
 
+// Every vectorized probe below reads y, n_trials and (where it takes one)
+// logit_zi to the length of eta, and Rcpp's operator[] does not bounds-check,
+// so a short vector is a read past the end of an R vector rather than an error.
+// n_trials recycles from length 1 and must otherwise match. One helper, called
+// from all of them: the check was written out per function, and the one that
+// skipped it returned whatever was next in memory.
+static inline void check_probe_lengths(const char* fn, R_xlen_t n,
+                                       const Rcpp::NumericVector& y,
+                                       const Rcpp::IntegerVector& n_trials,
+                                       const Rcpp::NumericVector* logit_zi) {
+  if (y.size() != n) {
+    Rcpp::stop("%s: y (%d) and eta (%d) differ in length.",
+               fn, (int)y.size(), (int)n);
+  }
+  if (logit_zi && logit_zi->size() != n) {
+    Rcpp::stop("%s: logit_zi (%d) and eta (%d) differ in length.",
+               fn, (int)logit_zi->size(), (int)n);
+  }
+  if (n_trials.size() != 1 && n_trials.size() != n) {
+    Rcpp::stop("%s: n_trials must be length 1 or %d (got %d).",
+               fn, (int)n, (int)n_trials.size());
+  }
+}
+
 // Terms from the Laplace/Newton family dispatch (laplace_family_link.h).
 // `phi` follows that kernel's convention: residual SD for gaussian/lognormal.
 // [[Rcpp::export]]
@@ -94,15 +118,8 @@ Rcpp::NumericVector cpp_family_curvature_deta_vec(Rcpp::NumericVector y,
                                                   std::string family, double phi,
                                                   double phi2 = NA_REAL) {
   const R_xlen_t n = eta.size();
-  if (y.size() != n) {
-    Rcpp::stop("cpp_family_curvature_deta_vec: y (%d) and eta (%d) differ in length.",
-               (int)y.size(), (int)n);
-  }
+  check_probe_lengths("cpp_family_curvature_deta_vec", n, y, n_trials, nullptr);
   const bool recycle_nt = (n_trials.size() == 1);
-  if (!recycle_nt && n_trials.size() != n) {
-    Rcpp::stop("cpp_family_curvature_deta_vec: n_trials must be length 1 or %d (got %d).",
-               (int)n, (int)n_trials.size());
-  }
   Rcpp::NumericVector out(n);
   for (R_xlen_t i = 0; i < n; i++) {
     out[i] = tulpa::curvature_deta_for_family(
@@ -172,15 +189,8 @@ Rcpp::NumericVector cpp_family_obs_curvature_delta_vec(Rcpp::NumericVector y,
                                                        std::string family, double phi,
                                                        double phi2 = NA_REAL) {
   const R_xlen_t n = eta.size();
-  if (y.size() != n) {
-    Rcpp::stop("cpp_family_obs_curvature_delta_vec: y (%d) and eta (%d) differ in length.",
-               (int)y.size(), (int)n);
-  }
+  check_probe_lengths("cpp_family_obs_curvature_delta_vec", n, y, n_trials, nullptr);
   const bool recycle_nt = (n_trials.size() == 1);
-  if (!recycle_nt && n_trials.size() != n) {
-    Rcpp::stop("cpp_family_obs_curvature_delta_vec: n_trials must be length 1 or %d (got %d).",
-               (int)n, (int)n_trials.size());
-  }
   Rcpp::NumericVector out(n);
   for (R_xlen_t i = 0; i < n; i++) {
     const int nt = recycle_nt ? n_trials[0] : n_trials[i];
@@ -204,15 +214,8 @@ Rcpp::NumericVector cpp_family_obs_curvature_delta_deta_vec(
     Rcpp::NumericVector eta, std::string family, double phi,
     double phi2 = NA_REAL) {
   const R_xlen_t n = eta.size();
-  if (y.size() != n) {
-    Rcpp::stop("cpp_family_obs_curvature_delta_deta_vec: y (%d) and eta (%d) "
-               "differ in length.", (int)y.size(), (int)n);
-  }
+  check_probe_lengths("cpp_family_obs_curvature_delta_deta_vec", n, y, n_trials, nullptr);
   const bool recycle_nt = (n_trials.size() == 1);
-  if (!recycle_nt && n_trials.size() != n) {
-    Rcpp::stop("cpp_family_obs_curvature_delta_deta_vec: n_trials must be "
-               "length 1 or %d (got %d).", (int)n, (int)n_trials.size());
-  }
   Rcpp::NumericVector out(n);
   for (R_xlen_t i = 0; i < n; i++) {
     out[i] = tulpa::obs_curvature_delta_deta_for_family(
@@ -244,15 +247,8 @@ Rcpp::NumericVector cpp_family_curvature_deta2_vec(Rcpp::NumericVector y,
                                                    std::string family, double phi,
                                                    double phi2 = NA_REAL) {
   const R_xlen_t n = eta.size();
-  if (y.size() != n) {
-    Rcpp::stop("cpp_family_curvature_deta2_vec: y (%d) and eta (%d) differ in length.",
-               (int)y.size(), (int)n);
-  }
+  check_probe_lengths("cpp_family_curvature_deta2_vec", n, y, n_trials, nullptr);
   const bool recycle_nt = (n_trials.size() == 1);
-  if (!recycle_nt && n_trials.size() != n) {
-    Rcpp::stop("cpp_family_curvature_deta2_vec: n_trials must be length 1 or %d (got %d).",
-               (int)n, (int)n_trials.size());
-  }
   Rcpp::NumericVector out(n);
   for (R_xlen_t i = 0; i < n; i++) {
     out[i] = tulpa::curvature_deta2_for_family(
@@ -273,16 +269,8 @@ Rcpp::NumericMatrix cpp_zi_mixture_curvature_deriv(Rcpp::NumericVector y,
                                                    std::string family, double phi,
                                                    double phi2 = NA_REAL) {
   const R_xlen_t n = eta.size();
-  if (y.size() != n || logit_zi.size() != n) {
-    Rcpp::stop("cpp_zi_mixture_curvature_deriv: y (%d), eta (%d) and logit_zi "
-               "(%d) must have the same length.",
-               (int)y.size(), (int)n, (int)logit_zi.size());
-  }
+  check_probe_lengths("cpp_zi_mixture_curvature_deriv", n, y, n_trials, &logit_zi);
   const bool recycle_nt = (n_trials.size() == 1);
-  if (!recycle_nt && n_trials.size() != n) {
-    Rcpp::stop("cpp_zi_mixture_curvature_deriv: n_trials must be length 1 or %d "
-               "(got %d).", (int)n, (int)n_trials.size());
-  }
   Rcpp::NumericMatrix out(n, 6);
   Rcpp::colnames(out) = Rcpp::CharacterVector::create(
       "dWee_deta", "dWee_dz", "dWez_deta", "dWez_dz", "dWzz_deta", "dWzz_dz");
@@ -308,6 +296,7 @@ Rcpp::NumericMatrix cpp_zi_mixture_curvature(Rcpp::NumericVector y,
                                              std::string family, double phi,
                                              double phi2 = NA_REAL) {
   const R_xlen_t n = eta.size();
+  check_probe_lengths("cpp_zi_mixture_curvature", n, y, n_trials, &logit_zi);
   const bool recycle_nt = (n_trials.size() == 1);
   Rcpp::NumericMatrix out(n, 3);
   Rcpp::colnames(out) = Rcpp::CharacterVector::create("W_ee", "W_ez", "W_zz");
@@ -342,16 +331,8 @@ Rcpp::NumericMatrix cpp_zi_mixture_curvature_deriv2(Rcpp::NumericVector y,
                                                     std::string family, double phi,
                                                     double phi2 = NA_REAL) {
   const R_xlen_t n = eta.size();
-  if (y.size() != n || logit_zi.size() != n) {
-    Rcpp::stop("cpp_zi_mixture_curvature_deriv2: y (%d), eta (%d) and logit_zi "
-               "(%d) must have the same length.",
-               (int)y.size(), (int)n, (int)logit_zi.size());
-  }
+  check_probe_lengths("cpp_zi_mixture_curvature_deriv2", n, y, n_trials, &logit_zi);
   const bool recycle_nt = (n_trials.size() == 1);
-  if (!recycle_nt && n_trials.size() != n) {
-    Rcpp::stop("cpp_zi_mixture_curvature_deriv2: n_trials must be length 1 or %d "
-               "(got %d).", (int)n, (int)n_trials.size());
-  }
   Rcpp::NumericMatrix out(n, 5);
   Rcpp::colnames(out) = Rcpp::CharacterVector::create(
       "d4_e4", "d4_e3z", "d4_e2z2", "d4_ez3", "d4_z4");
@@ -387,16 +368,8 @@ Rcpp::NumericMatrix cpp_zi_mixture_phi_deriv(Rcpp::NumericVector y,
                                              std::string family, double phi,
                                              double phi2 = NA_REAL) {
   const R_xlen_t n = eta.size();
-  if (y.size() != n || logit_zi.size() != n) {
-    Rcpp::stop("cpp_zi_mixture_phi_deriv: y (%d), eta (%d) and logit_zi "
-               "(%d) must have the same length.",
-               (int)y.size(), (int)n, (int)logit_zi.size());
-  }
+  check_probe_lengths("cpp_zi_mixture_phi_deriv", n, y, n_trials, &logit_zi);
   const bool recycle_nt = (n_trials.size() == 1);
-  if (!recycle_nt && n_trials.size() != n) {
-    Rcpp::stop("cpp_zi_mixture_phi_deriv: n_trials must be length 1 or %d "
-               "(got %d).", (int)n, (int)n_trials.size());
-  }
   Rcpp::NumericMatrix out(n, 16);
   Rcpp::colnames(out) = Rcpp::CharacterVector::create(
       "dl_dp", "dsc_e_dp", "dsc_z_dp", "dWee_dp", "dWez_dp", "dWzz_dp",

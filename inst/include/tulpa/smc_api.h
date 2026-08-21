@@ -12,6 +12,11 @@
 // The default prior sampler is a Gaussian perturbation around `init`
 // with SD `prior_sigma`. This is a smoke-test default — proper prior
 // draws need per-prior closed-form samplers tulpa lacks generically.
+// Because those particles are not draws from p(theta), the SMC log-Z
+// accumulator estimates a different integral than the marginal likelihood:
+// SMCShimResult::log_evidence comes back NaN and must not be read as a
+// model-comparison number. The draws themselves recover, because the MCMC
+// mutations target p(theta) L(theta)^beta.
 
 #ifndef TULPA_SMC_API_H
 #define TULPA_SMC_API_H
@@ -33,7 +38,7 @@ struct SMCShimResult {
     int n_params;
     double* particles;     // [n_particles * n_params] row-major
     double* log_weights;   // [n_particles]
-    double  log_evidence;
+    double  log_evidence;  // NaN under the default prior sampler (see above)
     int     success;       // 0 / 1
     char    error_msg[256];
 

@@ -29,6 +29,7 @@
 #ifndef TULPA_SPDE_LOGDET_H
 #define TULPA_SPDE_LOGDET_H
 
+#include "cholmod_view.h"
 #include "spde_qbuilder.h"
 #include "sparse_cholesky.h"
 #include <vector>
@@ -72,20 +73,9 @@ struct SpdeQLogDet {
         if (!built) build_pattern(qb);
         for (std::size_t k = 0; k < src.size(); ++k) Lx[k] = qb.Q_x[src[k]];
 
-        cholmod_sparse A;
-        A.nrow   = static_cast<std::size_t>(qb.n_mesh);
-        A.ncol   = static_cast<std::size_t>(qb.n_mesh);
-        A.nzmax  = static_cast<std::size_t>(Li.size());
-        A.p      = Lp.data();
-        A.i      = Li.data();
-        A.x      = Lx.data();
-        A.z      = nullptr;
-        A.stype  = -1;            // symmetric, lower triangle stored
-        A.itype  = CHOLMOD_INT;
-        A.xtype  = CHOLMOD_REAL;
-        A.dtype  = CHOLMOD_DOUBLE;
-        A.sorted = 1;
-        A.packed = 1;
+        cholmod_sparse A = cholmod_lower_view(
+            static_cast<std::size_t>(qb.n_mesh), Lp.data(), Li.data(),
+            Lx.data(), Li.size());
 
         if (!solver.analyzed()) solver.analyze(&A);
         if (!solver.factorize(&A)) return false;

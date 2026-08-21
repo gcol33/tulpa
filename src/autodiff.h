@@ -331,7 +331,9 @@ inline Var operator/(double a, const Var& b) {
 
 inline Var exp(const Var& a) {
   Tape* tape = a.tape;
-  double exp_val = std::exp(a.val());
+  // Same clamp the double and arena paths apply, so all three instantiations of
+  // the templated log posterior evaluate one function.
+  double exp_val = std::exp(tulpa::math::clamp_exp_arg(a.val()));
   Var result(tape, exp_val);
 
   size_t a_idx = a.idx;
@@ -365,14 +367,18 @@ inline Var log(const Var& a) {
 
 inline Var sqrt(const Var& a) {
   Tape* tape = a.tape;
-  double sqrt_val = std::sqrt(a.val());
+  double a_val = a.val();
+  // Value 0 and derivative 0 at and below zero, where 1 / (2 sqrt(x)) is +Inf
+  // and the double overload returns a finite 0.
+  double sqrt_val = (a_val > 0.0) ? std::sqrt(a_val) : 0.0;
+  double deriv = (a_val > 0.0) ? (0.5 / sqrt_val) : 0.0;
   Var result(tape, sqrt_val);
 
   size_t a_idx = a.idx;
   size_t r_idx = result.idx;
 
-  tape->nodes[r_idx].backward = [a_idx, r_idx, sqrt_val](Tape* t) {
-    t->nodes[a_idx].adjoint += t->nodes[r_idx].adjoint / (2.0 * sqrt_val);
+  tape->nodes[r_idx].backward = [a_idx, r_idx, deriv](Tape* t) {
+    t->nodes[a_idx].adjoint += t->nodes[r_idx].adjoint * deriv;
   };
 
   return result;
@@ -387,8 +393,14 @@ inline Var pow(const Var& a, double p) {
   size_t a_idx = a.idx;
   size_t r_idx = result.idx;
 
-  tape->nodes[r_idx].backward = [a_idx, r_idx, a_val, p](Tape* t) {
-    t->nodes[a_idx].adjoint += t->nodes[r_idx].adjoint * p * std::pow(a_val, p - 1.0);
+  // p * x^(p-1) is +Inf at a zero base for p < 1 and NaN for a negative base at
+  // fractional p; a non-finite local partial multiplies every adjoint upstream,
+  // so the direction is dropped and the exact value kept.
+  double pow_deriv = p * std::pow(a_val, p - 1.0);
+  if (!std::isfinite(pow_deriv)) pow_deriv = 0.0;
+
+  tape->nodes[r_idx].backward = [a_idx, r_idx, pow_deriv](Tape* t) {
+    t->nodes[a_idx].adjoint += t->nodes[r_idx].adjoint * pow_deriv;
   };
 
   return result;
@@ -454,7 +466,9 @@ inline Var log_sum_exp(const Var& a, const Var& b) {
 // Logit function: log(x / (1-x))
 inline Var logit(const Var& a) {
   Tape* tape = a.tape;
-  double a_val = a.val();
+  // Clamped into the open unit interval: at exactly 0 or 1 both the value and
+  // 1 / (x (1 - x)) are infinite.
+  double a_val = tulpa::math::clamp_prob(a.val());
   Var result(tape, std::log(a_val / (1.0 - a_val)));
 
   size_t a_idx = a.idx;

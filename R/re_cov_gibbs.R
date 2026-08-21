@@ -172,7 +172,7 @@
 #'   its dimension matches (default `diag(n_coefs)`); otherwise the per-block
 #'   default is used.
 #' @param beta_prior Gaussian fixed-effect prior as `list(mean, sd)` (default
-#'   `list(mean = 0, sd = 100)`, weak by design for the debias sampler). Scalar
+#'   the engine default, `prior_normal(0, 2.5)`). Scalar
 #'   `mean` / `sd` are recycled to `ncol(X)`; a length-`ncol(X)` vector sets a
 #'   per-coefficient prior.
 #' @param control A named list of numerical / tuning knobs (statistical
@@ -233,7 +233,7 @@
 tulpa_re_cov_gibbs <- function(y, n_trials = NULL, X, re_terms,
                                family = "binomial", phi = 1.0,
                                prior_df = NULL, prior_scale = NULL,
-                               beta_prior = list(mean = 0, sd = 100),
+                               beta_prior = .tulpa_default_beta_prior("re_cov_gibbs"),
                                control = list()) {
   # Perf/numerical knobs live in `control = list()` (matching tulpa() /
   # tulpa_nested_laplace()); the signature carries only statistical arguments.
@@ -284,7 +284,8 @@ tulpa_re_cov_gibbs <- function(y, n_trials = NULL, X, re_terms,
                    prior_scale = prior_scale)
 
   # --- fixed-effect prior ----------------------------------------------------
-  bp    <- .normalize_beta_prior(beta_prior %||% list(mean = 0, sd = 100), p)
+  bp    <- .normalize_beta_prior(
+    beta_prior %||% .tulpa_default_beta_prior("re_cov_gibbs"), p)
   bmean <- bp$mean
   bsd   <- bp$sd
 

@@ -1,12 +1,9 @@
 // hmc_hsgp_kernels.h
 // Eigen-free portion of the HSGP basis: spectral density of the squared-
-// exponential kernel and 1D Laplacian eigenfunctions / eigenvalues. Split
-// out of hmc_hsgp.h so translation units that only need the spectral diagonal
-// (e.g. nested-Laplace drivers) do not pull in RcppEigen and trigger
-// inline-template instantiations of the matvec helpers.
-//
-// hmc_hsgp.h still includes this header, so the original API (with Eigen
-// matvecs) remains intact.
+// exponential kernel and 1D Laplacian eigenfunctions / eigenvalues. A
+// translation unit that needs only the spectral diagonal (a nested-Laplace
+// driver, the prediction path) includes this header on its own and does not
+// pull in RcppEigen.
 
 #ifndef TULPA_HMC_HSGP_KERNELS_H
 #define TULPA_HMC_HSGP_KERNELS_H
@@ -28,18 +25,6 @@ inline double spectral_density_se(double omega_sq, double sigma2, double lengths
     double ell = lengthscale;
     double ell2 = ell * ell;
     return sigma2 * (2.0 * M_PI) * ell2 * std::exp(-0.5 * ell2 * omega_sq);
-}
-
-// dS/d(σ²) = S / σ²
-inline double dS_dsigma2(double omega_sq, double sigma2, double lengthscale) {
-    return spectral_density_se(omega_sq, sigma2, lengthscale) / sigma2;
-}
-
-// dS/d(ℓ) = S · (2/ℓ - ℓ ω²)   [D = 2: d/dℓ log(ℓ² exp(-½ ℓ² ω²)) = 2/ℓ - ℓ ω²]
-inline double dS_dlengthscale(double omega_sq, double sigma2, double lengthscale) {
-    double S = spectral_density_se(omega_sq, sigma2, lengthscale);
-    double ell = lengthscale;
-    return S * (2.0 / ell - ell * omega_sq);
 }
 
 // 1D Laplacian eigenfunction on [-L, L]:

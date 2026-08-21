@@ -43,12 +43,12 @@ void register_spec(const std::string& id, const TgmrfSpec& spec) {
 }
 
 const TgmrfSpec* lookup_spec(const std::string& id) {
-    // Read after registration is single-writer-by-time-of-use, so no lock
-    // needed. (Inserts only happen at user-DLL load; lookups happen later
-    // from the inference layers on the R-driven main thread.)
     auto& r = registry();
+    std::lock_guard<std::mutex> lock(r.mtx);
     auto it = r.specs.find(id);
     if (it == r.specs.end()) return nullptr;
+    // std::unordered_map is node-based: an element's address is stable across
+    // later inserts and rehashes, so the pointer outlives the lock.
     return &it->second;
 }
 

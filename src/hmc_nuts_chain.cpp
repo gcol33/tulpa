@@ -23,7 +23,6 @@
 
 #include <tulpa/nested_progress.h>
 
-#include "hmc_progress.h"
 #include "hmc_sampler.h"
 #include "simp/adapt.h"  // step-adapted multistage constructors, resolved at
                          // warmup end (Eigen-heavy; kept out of the widely

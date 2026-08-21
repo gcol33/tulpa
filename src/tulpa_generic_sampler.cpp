@@ -7,6 +7,7 @@
 #include <vector>
 #include <cmath>
 #include <random>
+#include "hmc_chain_stack.h"
 #include "hmc_sampler.h"
 #include "log_post_impl.h"
 #include "linalg_fast.h"
@@ -583,62 +584,28 @@ Rcpp::List cpp_tulpa_fit_generic_chains(
         checkpoint_path
     );
 
-    const int n_sample = chains[0].n_sample;
-    const int n_total = n_sample * n_chains;
-
-    // Draws stacked chain-major: chain 1's iterations, then chain 2's, ...
-    Rcpp::NumericMatrix draws(n_total, n_params);
-    Rcpp::IntegerVector chain_id(n_total);
-    Rcpp::NumericVector log_prob(n_total);
-    Rcpp::NumericVector accept_prob(n_total);
-    Rcpp::IntegerVector divergent(n_total);
-    Rcpp::IntegerVector treedepth(n_total);
-    Rcpp::NumericVector epsilon(n_chains);
-    Rcpp::NumericMatrix inv_metric(n_chains, n_params);
-    Rcpp::NumericMatrix final_position(n_chains, n_params);
-
-    int r = 0;
-    for (int c = 0; c < n_chains; c++) {
-        const tulpa_hmc::HMCResultCpp& ch = chains[c];
-        for (int s = 0; s < ch.n_sample; s++) {
-            const double* row = ch.sample_row(s);
-            for (int j = 0; j < n_params; j++) draws(r, j) = row[j];
-            chain_id[r] = c + 1;
-            log_prob[r] = ch.log_prob[s];
-            accept_prob[r] = ch.accept_prob[s];
-            divergent[r] = ch.divergent[s];
-            treedepth[r] = ch.treedepth[s];
-            r++;
-        }
-        epsilon[c] = ch.epsilon;
-        for (int j = 0; j < n_params; j++) {
-            inv_metric(c, j) = (j < (int)ch.inv_metric_diag.size())
-                                   ? ch.inv_metric_diag[j] : 1.0;
-            final_position(c, j) = (j < (int)ch.final_position.size())
-                                       ? ch.final_position[j] : 0.0;
-        }
-    }
+    tulpa_hmc::StackedChains st = tulpa_hmc::stack_hmc_chains(chains, n_chains, n_params);
 
     Rcpp::CharacterVector col_names = gaussian_col_names(p);
-    Rcpp::colnames(draws) = col_names;
-    Rcpp::colnames(inv_metric) = col_names;
-    Rcpp::colnames(final_position) = col_names;
+    Rcpp::colnames(st.draws) = col_names;
+    Rcpp::colnames(st.inv_metric) = col_names;
+    Rcpp::colnames(st.final_position) = col_names;
 
     return Rcpp::List::create(
-        Rcpp::Named("draws") = draws,
-        Rcpp::Named("chain_id") = chain_id,
+        Rcpp::Named("draws") = st.draws,
+        Rcpp::Named("chain_id") = st.chain_id,
         Rcpp::Named("n_chains") = n_chains,
-        Rcpp::Named("n_samples") = n_sample,
+        Rcpp::Named("n_samples") = st.n_sample_per_chain,
         Rcpp::Named("n_params") = n_params,
-        Rcpp::Named("log_prob") = log_prob,
-        Rcpp::Named("accept_prob") = accept_prob,
-        Rcpp::Named("divergent") = divergent,
-        Rcpp::Named("treedepth") = treedepth,
+        Rcpp::Named("log_prob") = st.log_prob,
+        Rcpp::Named("accept_prob") = st.accept_prob,
+        Rcpp::Named("divergent") = st.divergent,
+        Rcpp::Named("treedepth") = st.treedepth,
         Rcpp::Named("sampler") = chains[0].sampler.empty() ? "nuts" : chains[0].sampler,
-        Rcpp::Named("epsilon") = epsilon,
+        Rcpp::Named("epsilon") = st.epsilon,
         // Per-chain warm-start / resume outputs
-        Rcpp::Named("inv_metric") = inv_metric,
-        Rcpp::Named("final_position") = final_position
+        Rcpp::Named("inv_metric") = st.inv_metric,
+        Rcpp::Named("final_position") = st.final_position
     );
 }
 
@@ -835,8 +802,15 @@ Rcpp::List cpp_test_c_abi_chains_roundtrip(
         results.data()
     );
 
-    const int n_sample = results[0].n_sample;
-    const int n_total = n_sample * n_chains;
+    // Row count is the sum of the per-chain counts: a resumed chain can carry a
+    // different one, and n_chains * results[0].n_sample would then overrun.
+    int n_total = 0;
+    bool equal_counts = true;
+    for (int c = 0; c < n_chains; c++) {
+        n_total += results[c].n_sample;
+        if (results[c].n_sample != results[0].n_sample) equal_counts = false;
+    }
+    const int n_sample = equal_counts ? results[0].n_sample : -1;
 
     Rcpp::NumericMatrix draws(n_total, n_params);
     Rcpp::IntegerVector chain_id(n_total);

@@ -17,6 +17,7 @@
 #include "nested_laplace_joint_core.h"
 #include "nested_laplace_joint_multi.h"
 #include "spde_block_factory.h"
+#include "spde_qbuilder.h"
 #include <Rcpp.h>
 #include <string>
 #include <vector>
@@ -257,16 +258,8 @@ Rcpp::List cpp_nested_laplace_spde(
         Rcpp::stop("range_grid and sigma_grid must have the same length");
     if (re_idx.size() != N)
         Rcpp::stop("length(re_idx) must equal n_obs");
-    if (C0_diag.size() != n_mesh)
-        Rcpp::stop("length(C0_diag) must equal n_mesh");
-    if (G1_p.size() != n_mesh + 1)
-        Rcpp::stop("length(G1_p) must equal n_mesh + 1");
-    if (G1_x.size() != G1_i.size())
-        Rcpp::stop("G1_x and G1_i must have the same length");
-    if (A_x.size() != A_i.size())
-        Rcpp::stop("A_x and A_i must have the same length");
-    if (A_p.size() != n_mesh + 1)
-        Rcpp::stop("length(A_p) must equal n_mesh + 1");
+    tulpa::spde_validate_operators(n_mesh, N, C0_diag, G1_x, G1_i, G1_p,
+                                   A_x, A_i, A_p);
 
     // ---- Single-arm joint setup ----
     // Layout: [beta (p), re (n_re_groups), w_mesh (n_mesh)]. parse_joint_arms

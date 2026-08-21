@@ -13,7 +13,9 @@
 // The default prior_sample is a Gaussian perturbation around `init` with
 // SD `cfg.prior_sigma` (default 1.0). This is a smoke-test default —
 // proper prior draws need per-prior closed-form samplers tulpa lacks
-// generically.
+// generically. Because the particles are therefore not draws from p(theta),
+// the SMC log-Z accumulator estimates a different integral than the marginal
+// likelihood and SMCDriverResult::log_evidence is reported as NaN.
 
 #ifndef TULPA_SMC_MODELDATA_H
 #define TULPA_SMC_MODELDATA_H
@@ -61,7 +63,17 @@ struct SMCConfig {
 struct SMCDriverResult {
     std::vector<std::vector<double>> particles;
     std::vector<double> log_weights;   // log of normalized final weights
-    double log_evidence = 0.0;
+
+    // log Z. The SMC increment log mean_n L(theta_n)^(beta_t - beta_{t-1})
+    // estimates Z_t / Z_{t-1} only when the step-0 population represents
+    // pi_0(theta) = p(theta), i.e. the particles are prior draws. This driver
+    // initializes them from a Gaussian perturbation of `init` and carries no
+    // p / q correction in the weights, so no evidence is available: the field
+    // is NaN and log_evidence_valid is false. The draws themselves recover,
+    // because the MCMC mutations target p(theta) L(theta)^beta.
+    double log_evidence = std::numeric_limits<double>::quiet_NaN();
+    bool log_evidence_valid = false;
+
     bool success = true;
     std::string error_msg;
 };
@@ -186,8 +198,12 @@ inline SMCDriverResult run_smc_sampler(
                 ? std::log(res.weights[i])
                 : -std::numeric_limits<double>::infinity();
         }
-        out.log_evidence = res.log_marginal_likelihood;
+        // Not res.log_marginal_likelihood: see SMCDriverResult::log_evidence.
+        out.log_evidence = std::numeric_limits<double>::quiet_NaN();
+        out.log_evidence_valid = false;
         out.success = true;
+    } catch (Rcpp::internal::InterruptedException&) {
+        throw;
     } catch (const std::exception& e) {
         out.success = false;
         out.error_msg = std::string("SMC failed: ") + e.what();

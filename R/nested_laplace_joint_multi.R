@@ -234,7 +234,7 @@
     if (type %in% c("icar", "bym2", "car_proper")) {
         spatial_idx <- .multi_block_per_arm_idx(p$spatial_idx, n_arms,
                                                   block_index, "spatial_idx",
-                                                  arm_n_obs)
+                                                  arm_n_obs, p$n_spatial_units)
         out <- list(
             type            = type,
             spatial_idx     = spatial_idx,
@@ -278,7 +278,7 @@
         # column is the per-row value) -- outer length p, inner length n_arms.
         spatial_idx <- .multi_block_per_arm_idx(p$spatial_idx, n_arms,
                                                   block_index, "spatial_idx",
-                                                  arm_n_obs)
+                                                  arm_n_obs, p$n_spatial_units)
         n_fields <- as.integer(p$n_fields)
         if (length(p$field_weight) != n_fields) {
             stop("Block ", block_index, " (type 'mcar'): `field_weight` must be ",
@@ -317,7 +317,7 @@
     } else if (type %in% c("rw1", "rw2", "ar1")) {
         temporal_idx <- .multi_block_per_arm_idx(p$temporal_idx, n_arms,
                                                    block_index, "temporal_idx",
-                                                   arm_n_obs)
+                                                   arm_n_obs, p$n_times)
         out <- list(
             type         = type,
             temporal_idx = temporal_idx,
@@ -341,7 +341,7 @@
     } else if (type == "iid") {
         obs_idx <- .multi_block_per_arm_idx(p$obs_idx, n_arms,
                                               block_index, "obs_idx",
-                                              arm_n_obs)
+                                              arm_n_obs, p$n_units)
         out <- list(
             type    = "iid",
             obs_idx = obs_idx,
@@ -371,7 +371,7 @@
         # (1 + x | g): n_fields = 1 + n_slopes.
         obs_idx <- .multi_block_per_arm_idx(p$obs_idx, n_arms,
                                               block_index, "obs_idx",
-                                              arm_n_obs)
+                                              arm_n_obs, p$n_groups)
         n_fields <- as.integer(p$n_fields)
         if (length(p$field_weight) != n_fields) {
             stop("Block ", block_index, " (type 'miid'): `field_weight` must be ",
@@ -392,7 +392,7 @@
         # User-supplied GMRF: per-grid CSC Q + logdet + log p(theta).
         obs_idx <- .multi_block_per_arm_idx(p$obs_idx, n_arms,
                                               block_index, "obs_idx",
-                                              arm_n_obs)
+                                              arm_n_obs, p$n_latent)
         list(
             type                       = "tgmrf",
             n_latent                   = as.integer(p$n_latent),
@@ -523,7 +523,7 @@
         # on (u_1, lambda_1) inside the C++ factory.
         obs_idx <- .multi_block_per_arm_idx(p$obs_idx, n_arms,
                                               block_index, "obs_idx",
-                                              arm_n_obs)
+                                              arm_n_obs, p$n_latent)
         out <- list(
             type     = "lf",
             n_latent = as.integer(p$n_latent),
@@ -585,8 +585,19 @@
 # that should not affect an arm still needs a full-length index vector for
 # it; exclude the arm's CONTRIBUTION instead (e.g. a field_coef of 0 on that
 # arm), which the engine already tests via `d_eff_cache == 0`.
+#
+# `n_units`, when supplied, is the block's own latent unit count
+# (n_spatial_units / n_times / n_units / n_groups / n_latent). Every index must
+# land in 1..n_units. The kernel treats an out-of-range index as "this row does
+# not see this block" and moves on at every one of its six consumers, so a
+# 0-based vector, an off-by-one, or an NA does not fail: the affected rows drop
+# out of eta, out of the gradient and out of the Hessian, the inner Newton
+# converges on the reduced problem, `converged` is TRUE, and the log-marginal
+# surface is the one for a different model. The range is the only place that
+# distinguishes a deliberately absent row from a wrong one, so it is checked
+# here, once, where the length already is.
 .multi_block_per_arm_idx <- function(idx, n_arms, block_index, field_name,
-                                     arm_n_obs = NULL) {
+                                     arm_n_obs = NULL, n_units = NULL) {
     out <- if (is.list(idx)) {
         if (length(idx) != n_arms) {
             stop("Block ", block_index, ": `", field_name, "` is a list of ",
@@ -608,6 +619,29 @@
                      " from this block, zero its CONTRIBUTION (e.g. a ",
                      "`field_coef` of 0 on that arm) rather than shortening ",
                      "`", field_name, "`.", call. = FALSE)
+            }
+        }
+    }
+    if (!is.null(n_units)) {
+        n_units <- as.integer(n_units)
+        if (is.na(n_units) || n_units < 1L) {
+            stop("Block ", block_index, ": the latent unit count backing `",
+                 field_name, "` must be a positive integer, got ", n_units, ".",
+                 call. = FALSE)
+        }
+        for (k in seq_len(n_arms)) {
+            v <- out[[k]]
+            if (length(v) == 0L) next
+            bad <- is.na(v) | v < 1L | v > n_units
+            if (any(bad)) {
+                i <- which(bad)[1L]
+                stop("Block ", block_index, ": `", field_name, "[[", k, "]][",
+                     i, "]` is ", v[i], ", outside 1..", n_units,
+                     " (", sum(bad), " of ", length(v), " entries are). Every ",
+                     "index must name one of the block's latent units; an ",
+                     "out-of-range one is silently dropped by the kernel, ",
+                     "which fits a different model and reports convergence. A ",
+                     "0-based index vector is the usual cause.", call. = FALSE)
             }
         }
     }

@@ -24,7 +24,6 @@
 #include "laplace_core.h"
 #include "laplace_newton.h"
 #include "laplace_re_priors.h"
-#include "laplace_scatter.h"
 #include "laplace_spatial_priors.h"
 #include "icar_kernel.h"           // count_graph_components
 #include "laplace_temporal_priors.h"

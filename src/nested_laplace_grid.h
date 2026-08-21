@@ -228,6 +228,23 @@ inline Rcpp::List run_nested_laplace_grid(
     GridCheckpoint* ckpt = nullptr,
     const std::vector<double>& x_init_per_cell = std::vector<double>()
 ) {
+    // Tile partition, validated once. A cell whose tile id falls outside
+    // [0, n_tiles) joins no tile: the cheap screen never reaches it, its
+    // cheap_lm stays -inf, and it is pruned out of the posterior with
+    // log_marginal = -Inf. The caller owns the partition, so an out-of-range
+    // id is its error and is reported instead of deleting the cell.
+    if (!tile_ids.empty() && !tile_pilot_cells.empty()) {
+        const int n_tiles_declared = static_cast<int>(tile_pilot_cells.size());
+        for (std::size_t k = 0; k < tile_ids.size(); k++) {
+            if (tile_ids[k] < 0 || tile_ids[k] >= n_tiles_declared) {
+                Rcpp::stop("tile_ids[%d] = %d is outside the %d tiles declared "
+                           "by tile_pilot_cells.",
+                           static_cast<int>(k) + 1, tile_ids[k],
+                           n_tiles_declared);
+            }
+        }
+    }
+
     Rcpp::NumericVector log_marginals(n_grid);
     Rcpp::IntegerVector n_iters(n_grid);
     // Per-cell solve health. log_det_Q and score_max are the inner solve's own
@@ -492,8 +509,7 @@ inline Rcpp::List run_nested_laplace_grid(
                 const int n_tiles = static_cast<int>(tile_pilot_cells.size());
                 std::vector<std::vector<int>> tile_cells(n_tiles);
                 for (int k = 0; k < n_grid; k++) {
-                    int t = tile_ids[k];
-                    if (t >= 0 && t < n_tiles) tile_cells[t].push_back(k);
+                    tile_cells[tile_ids[k]].push_back(k);
                 }
 
                 // Phase A: serial tile-pilot backbone (worker slot 0).

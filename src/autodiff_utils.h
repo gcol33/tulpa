@@ -53,11 +53,7 @@ struct is_autodiff : std::integral_constant<bool,
 template<typename T>
 inline typename std::enable_if<!is_autodiff<T>::value, T>::type
 safe_exp(T x) {
-    constexpr double EXP_MAX = 700.0;
-    constexpr double EXP_MIN = -700.0;
-    if (x > EXP_MAX) x = EXP_MAX;
-    if (x < EXP_MIN) x = EXP_MIN;
-    return std::exp(x);
+    return std::exp(tulpa::math::clamp_exp_arg(x));
 }
 
 // exp - ad::Var (tape) version
@@ -71,12 +67,7 @@ safe_exp(const T& x) {
 template<typename T>
 inline typename std::enable_if<is_fwd_dual<T>::value, T>::type
 safe_exp(const T& x) {
-    constexpr double EXP_MAX = 700.0;
-    constexpr double EXP_MIN = -700.0;
-    double v = x.val;
-    if (v > EXP_MAX) v = EXP_MAX;
-    if (v < EXP_MIN) v = EXP_MIN;
-    double e = std::exp(v);
+    double e = std::exp(tulpa::math::clamp_exp_arg(x.val));
     return fwd::Dual(e, e * x.grad);
 }
 
@@ -136,7 +127,9 @@ safe_sqrt(const T& x) {
 template<typename T>
 inline typename std::enable_if<is_fwd_dual<T>::value, T>::type
 safe_sqrt(const T& x) {
-    if (x.val < 0.0) return fwd::Dual(0.0, 0.0);
+    // Zero is included: 0.5 / sqrt(0) is +Inf, where the double overload and
+    // both reverse-mode overloads give a finite 0.
+    if (x.val <= 0.0) return fwd::Dual(0.0, 0.0);
     double s = std::sqrt(x.val);
     return fwd::Dual(s, 0.5 * x.grad / s);
 }
@@ -369,8 +362,8 @@ expm1_fn(const T& x) {
     return arena::expm1(x);
 }
 
-// log(1 - exp(-a)) for a > 0, the retained-mass term of the zero-truncated
-// count families. Both naive forms lose precision at one end: log1p(-exp(-a))
+// log(1 - exp(-a)) for a > 0, the retained-mass term of the zero-truncated and
+// hurdle count families. Both naive forms lose precision at one end: log1p(-exp(-a))
 // cancels as a -> 0, log(-expm1(-a)) underflows as a -> Inf. Splitting at
 // log 2 keeps the accurate form on each side (Machler 2012), and both branches
 // differentiate, so this is exact under AD rather than a fallback.
@@ -378,6 +371,34 @@ template<typename T>
 inline T log1m_exp_fn(const T& a) {
     if (a <= T(0.693147180559945)) return safe_log(T(0.0) - expm1_fn(T(0.0) - a));
     return log1p_fn(T(0.0) - safe_exp(T(0.0) - a));
+}
+
+// log(1 + exp(x)), finite for every finite x. Splitting at zero keeps the
+// exponent negative in both branches, so log1p always sees a small argument and
+// the leading x is carried outside the log rather than through it: the naive
+// log(1 + exp(x)) overflows to +Inf at x > 709.78 where the value is close to
+// x, and log(1 + exp(-|x|)) at the other end is exact where exp(x) alone would
+// drop the -exp(2x)/2 term. Its derivative is the logistic sigmoid, so it
+// differentiates as accurately as it evaluates.
+template<typename T>
+inline T softplus(const T& x) {
+    if (x > T(0.0)) return x + log1p_fn(safe_exp(T(0.0) - x));
+    return log1p_fn(safe_exp(x));
+}
+
+// The logistic sigmoid, held strictly positive: inv_logit(x) is
+// exp(-softplus(-x)), so inv_logit_pos(x) gives mu and inv_logit_pos(-x) gives
+// 1 - mu, and a beta shape pair (mu phi, (1 - mu) phi) built from two calls has
+// neither member exactly zero. Forming 1 / (1 + exp(-x)) instead rounds mu to
+// exactly 1 above x = 36.74, making 1 - mu exactly 0, which is lgamma(0) = +Inf
+// in the density and digamma(0) = -Inf in its gradient. The exponent is bounded
+// at -700, which is where the double form's safe_exp already bounds it and
+// where the AD exponentials would otherwise underflow to zero.
+template<typename T>
+inline T inv_logit_pos(const T& x) {
+    T s = softplus(T(0.0) - x);
+    if (s > T(700.0)) s = T(700.0);
+    return safe_exp(T(0.0) - s);
 }
 
 // ============================================================================
@@ -565,7 +586,7 @@ inline T log_lik_hurdle_binomial(int y, int n, const T& p, const T& logit_theta)
     } else {
         // P(Y=y|Y>0) = Binom(y|n,p) / (1 - (1-p)^n)
         T log_binom = log_lik_binomial(y, n, p);
-        T log_1m_zero = safe_log(T(1.0) - safe_exp(n * safe_log(T(1.0) - p)));
+        T log_1m_zero = log1m_exp_fn(T(0.0) - n * safe_log(T(1.0) - p));
         return log_theta + log_binom - log_1m_zero;
     }
 }
@@ -619,7 +640,7 @@ inline T log_lik_hurdle_poisson(int y, const T& mu, const T& logit_theta) {
         return log_1m_theta;
     } else {
         // P(Y=y|Y>0) * theta = theta * Poisson(y|mu) / (1 - exp(-mu))
-        T log_trunc = log_lik_poisson(y, mu) - safe_log(T(1.0) - safe_exp(-mu));
+        T log_trunc = log_lik_poisson(y, mu) - log1m_exp_fn(mu);
         return log_theta + log_trunc;
     }
 }
@@ -635,7 +656,7 @@ inline T log_lik_hurdle_negbin(int y, const T& mu, const T& phi, const T& logit_
     } else {
         // P(Y=y|Y>0) * theta = theta * NB(y|mu,phi) / (1 - (phi/(phi+mu))^phi)
         T log_p0 = phi * safe_log(phi / (phi + mu));
-        T log_trunc = log_lik_negbin(y, mu, phi) - safe_log(T(1.0) - safe_exp(log_p0));
+        T log_trunc = log_lik_negbin(y, mu, phi) - log1m_exp_fn(T(0.0) - log_p0);
         return log_theta + log_trunc;
     }
 }

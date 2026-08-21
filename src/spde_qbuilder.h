@@ -10,6 +10,7 @@
 #include "laplace_family_link.h"
 #include "laplace_newton.h"
 #include "laplace_re_priors.h"
+#include "spde_zero_mass.h"
 #include "tulpa/spde_model_data.h"
 #include <Rcpp.h>
 #include <vector>
@@ -94,31 +95,18 @@ struct SpdeQBuilder {
         n_mesh = n;
         alpha_order = alpha;
 
-        // Detect orphan mesh nodes: any vertex with zero (or near-zero) FEM
-        // mass. Two flavors land here:
-        //   1. Truly disconnected vertices (zero mass AND no G1 connectivity)
-        //      from upstream mesh refiners that emit Steiner points but fail
-        //      to retriangulate (see tulpaMesh fix-mesh-zero-triangles).
-        //   2. Zero-mass vertices that DO carry G1 connectivity (e.g. a
-        //      Steiner point on a constraint edge with degenerate incident-
-        //      triangle area). Every operator level above M_1 carries a C⁻¹,
-        //      which is undefined where C_diag = 0: the GC⁻¹G contribution for
-        //      that row silently zeros out, leaving
-        //      Q rank-deficient at the node. CHOLMOD then warns "not positive
-        //      definite" and the Newton solver makes no progress.
-        // The defensive fix in both flavors: place a unit precision ridge on
-        // the orphan diagonal so Q stays PD. A is built only from triangles
-        // with valid area, so the orphan latent has no likelihood weight and
-        // is effectively pinned at zero.
-        const double c0_eps = 1e-15;
+        // Orphan mesh nodes (zero or near-zero FEM mass) and the unit ridge
+        // that keeps Q positive definite at them: spde_zero_mass.h carries the
+        // floor, the ridge and why both are needed.
+        const double c0_eps = SPDE_C0_EPS;
         std::vector<bool> is_orphan(n, false);
         for (int i = 0; i < n; i++) {
-            if (C0_diag[i] <= c0_eps) is_orphan[i] = true;
+            is_orphan[i] = spde_is_orphan_mass(C0_diag[i]);
         }
 
         std::vector<double> c0_inv(n);
         for (int i = 0; i < n; i++) {
-            c0_inv[i] = (C0_diag[i] > c0_eps) ? 1.0 / C0_diag[i] : 0.0;
+            c0_inv[i] = spde_c0_inv(C0_diag[i]);
         }
 
         // Operator chain M_0 = C, M_1 = G, M_{l+1} = M_l C⁻¹ G, held
@@ -153,13 +141,11 @@ struct SpdeQBuilder {
             }
         }
 
-        // Orphan ridge: place 1.0 on the diagonal of every orphan node.
-        // This is a theta-independent term — see rebuild() for how it's mixed
-        // into Q_x. Pinning to ~zero is fine because A never references
-        // orphan vertices, so the orphan latent has no likelihood contribution.
+        // Orphan ridge, theta-independent — see rebuild() for how it is mixed
+        // into Q_x.
         std::vector<double> orph(n, 0.0);
         for (int i = 0; i < n; i++) {
-            if (is_orphan[i]) orph[i] += 1.0;
+            if (is_orphan[i]) orph[i] += SPDE_ORPHAN_RIDGE;
         }
 
         // Convert to CSC over the union of the chain's patterns, dropping
@@ -282,6 +268,44 @@ struct SpdeQBuilder {
 using ARowEntry = SpdeARowEntry;
 using ARows     = std::vector<std::vector<ARowEntry>>;
 
+// Structural check on a CSC (column pointers, row indices): the pointers start
+// at 0, never decrease, end at the value count, and every row index lies inside
+// the declared row count. A scatter that walks a malformed CSC reads (and, on
+// the Hessian side, writes) outside the arrays it was handed.
+inline void spde_validate_csc(int n_col, const Rcpp::IntegerVector& p_vec,
+                              const Rcpp::IntegerVector& i_vec, int nnz,
+                              int n_row, const char* what) {
+    if ((int) p_vec.size() != n_col + 1) {
+        Rcpp::stop("%s: column pointer vector must have length %d; got %d.",
+                   what, n_col + 1, (int) p_vec.size());
+    }
+    if ((int) i_vec.size() != nnz) {
+        Rcpp::stop("%s: row-index vector must have length %d; got %d.",
+                   what, nnz, (int) i_vec.size());
+    }
+    if (p_vec[0] != 0) {
+        Rcpp::stop("%s: column pointers must start at 0; got %d.",
+                   what, (int)p_vec[0]);
+    }
+    for (int c = 0; c < n_col; c++) {
+        if (p_vec[c + 1] < p_vec[c]) {
+            Rcpp::stop("%s: column pointers must be non-decreasing; entry %d "
+                       "(%d) is below entry %d (%d).",
+                       what, c + 2, (int)p_vec[c + 1], c + 1, (int)p_vec[c]);
+        }
+    }
+    if (p_vec[n_col] != nnz) {
+        Rcpp::stop("%s: last column pointer (%d) must equal the number of "
+                   "stored values (%d).", what, (int)p_vec[n_col], nnz);
+    }
+    for (int e = 0; e < nnz; e++) {
+        if (i_vec[e] < 0 || i_vec[e] >= n_row) {
+            Rcpp::stop("%s: row index %d at slot %d is outside [0, %d).",
+                       what, (int)i_vec[e], e + 1, n_row);
+        }
+    }
+}
+
 inline ARows build_A_rows(int N, int n_mesh,
                            const Rcpp::NumericVector& A_x,
                            const Rcpp::IntegerVector& A_i,
@@ -290,7 +314,15 @@ inline ARows build_A_rows(int N, int n_mesh,
     for (int j = 0; j < n_mesh; j++) {
         for (int idx = A_p[j]; idx < A_p[j + 1]; idx++) {
             int i = A_i[idx];
-            if (i < N && std::abs(A_x[idx]) > 1e-15) {
+            // A row index outside [0, N) means A was built against a different
+            // observation count. Dropping it would silently fit a model with
+            // fewer design rows than the caller supplied.
+            if (i < 0 || i >= N) {
+                Rcpp::stop("SPDE projector A holds row index %d at column %d; "
+                           "it must lie in [0, n_obs) with n_obs = %d.",
+                           i, j + 1, N);
+            }
+            if (std::abs(A_x[idx]) > 1e-15) {
                 rows[i].push_back({j, A_x[idx]});
             }
         }
@@ -298,16 +330,173 @@ inline ARows build_A_rows(int N, int n_mesh,
     return rows;
 }
 
-// =====================================================================
-// Shared SPDE Laplace runner (used by single-fit and nested)
-// =====================================================================
+// One definition of a well-formed FEM operator set, and one of a well-formed
+// projector. Every loop downstream sizes itself from the caller's n_mesh / N
+// rather than from the vectors, so a short C0_diag or a G1_p of the wrong
+// length is an out-of-range read rather than an error.
+inline void spde_validate_fem(
+    int n_mesh,
+    const Rcpp::NumericVector& C0_diag,
+    const Rcpp::NumericVector& G1_x,
+    const Rcpp::IntegerVector& G1_i,
+    const Rcpp::IntegerVector& G1_p
+) {
+    if (n_mesh <= 0)
+        Rcpp::stop("n_mesh must be positive; got %d.", n_mesh);
+    if ((int) C0_diag.size() != n_mesh)
+        Rcpp::stop("length(C0_diag) (%d) must equal n_mesh (%d).",
+                   (int) C0_diag.size(), n_mesh);
+    if ((int) G1_p.size() != n_mesh + 1)
+        Rcpp::stop("length(G1_p) (%d) must equal n_mesh + 1 (%d).",
+                   (int) G1_p.size(), n_mesh + 1);
+    if (G1_x.size() != G1_i.size())
+        Rcpp::stop("G1_x (%d) and G1_i (%d) must have the same length.",
+                   (int) G1_x.size(), (int) G1_i.size());
+    spde_validate_csc(n_mesh, G1_p, G1_i, (int) G1_x.size(), n_mesh, "G1");
+}
 
-// `re_idx` / `n_re_groups` / `sigma_re` carry an optional iid random-effect
-// block laid out between the fixed effects and the mesh field, matching the
-// nested SPDE layout [beta (p), re (n_re_groups), w_mesh (n_mesh)]. The caller
-// passes mesh_start = p + n_re_groups and n_x = p + n_re_groups + n_mesh. The
-// defaults reproduce the spatial-only case, so callers that carry no RE block
-// (implicit_diff) need no change.
+inline void spde_validate_projector(
+    int n_mesh, int N,
+    const Rcpp::NumericVector& A_x,
+    const Rcpp::IntegerVector& A_i,
+    const Rcpp::IntegerVector& A_p,
+    const char* what = "A"
+) {
+    if (N <= 0)
+        Rcpp::stop("%s: n_obs must be positive; got %d.", what, N);
+    if ((int) A_p.size() != n_mesh + 1)
+        Rcpp::stop("%s: length(A_p) (%d) must equal n_mesh + 1 (%d).",
+                   what, (int) A_p.size(), n_mesh + 1);
+    if (A_x.size() != A_i.size())
+        Rcpp::stop("%s: A_x (%d) and A_i (%d) must have the same length.",
+                   what, (int) A_x.size(), (int) A_i.size());
+    spde_validate_csc(n_mesh, A_p, A_i, (int) A_x.size(), N, what);
+}
+
+inline void spde_validate_operators(
+    int n_mesh, int N,
+    const Rcpp::NumericVector& C0_diag,
+    const Rcpp::NumericVector& G1_x,
+    const Rcpp::IntegerVector& G1_i,
+    const Rcpp::IntegerVector& G1_p,
+    const Rcpp::NumericVector& A_x,
+    const Rcpp::IntegerVector& A_i,
+    const Rcpp::IntegerVector& A_p
+) {
+    spde_validate_fem(n_mesh, C0_diag, G1_x, G1_i, G1_p);
+    spde_validate_projector(n_mesh, N, A_x, A_i, A_p);
+}
+
+// Random-effect group of observation i, 0-based, or -1 when the fit carries no
+// RE block. An id outside [1, n_re_groups] is a caller error: reusing -1 for it
+// would drop that observation's random effect from eta, the gradient and the
+// Hessian, and report a model the caller did not specify.
+inline int spde_re_group(const Rcpp::NumericVector& re_idx, int i,
+                         int n_re_groups) {
+    if (n_re_groups <= 0) return -1;
+    const int g = (int) re_idx[i] - 1;
+    if (g < 0 || g >= n_re_groups) {
+        Rcpp::stop("re_idx[%d] = %g is outside the %d random-effect groups.",
+                   i + 1, (double) re_idx[i], n_re_groups);
+    }
+    return g;
+}
+
+// eta = offset + X beta + RE + A w, over the latent layout
+// [beta (p), re (n_re_groups), w_mesh (n_mesh)] with mesh_start = p +
+// n_re_groups. Templated on the latent / eta containers so the Rcpp-vector
+// Newton path and the std::vector implicit-diff path share one definition.
+template<typename XVec, typename EtaVec>
+inline void spde_compute_eta(
+    const Rcpp::NumericMatrix& X, int N, int p, int mesh_start,
+    const ARows& A_rows, const double* offset,
+    const Rcpp::NumericVector& re_idx, int n_re_groups,
+    const XVec& x, EtaVec& eta
+) {
+    for (int i = 0; i < N; i++) {
+        double e = offset ? offset[i] : 0.0;
+        for (int j = 0; j < p; j++) e += X(i, j) * x[j];
+        const int g = spde_re_group(re_idx, i, n_re_groups);
+        if (g >= 0) e += x[p + g];
+        for (const auto& ae : A_rows[i]) {
+            e += ae.weight * x[mesh_start + ae.mesh_idx];
+        }
+        eta[i] = e;
+    }
+}
+
+// Gradient and negative Hessian of the penalized objective at (x, eta):
+// H = (X'WX | X'WA ; A'WX | A'WA + Q) with the RE cross blocks, the FEM
+// precision Q on the mesh slice, the weak beta ridge and the RE precision.
+// The single assembly behind the SPDE Newton loop and the implicit-diff
+// gradient, so neither can drift from the other.
+template<typename XVec, typename EtaVec>
+inline void spde_scatter(
+    const Rcpp::NumericVector& y, const Rcpp::IntegerVector& n_trials,
+    const Rcpp::NumericMatrix& X, int N, int p, int n_mesh, int mesh_start,
+    const ARows& A_rows, const SpdeQBuilder& qb,
+    const std::string& family, double phi,
+    const Rcpp::NumericVector& re_idx, int n_re_groups,
+    double tau_re, double tau_beta,
+    const XVec& x, const EtaVec& eta,
+    DenseVec& grad, DenseMat& H
+) {
+    for (int i = 0; i < N; i++) {
+        auto gh = grad_hess_for_family(y[i], n_trials[i], eta[i], family, phi);
+        for (int j = 0; j < p; j++) {
+            grad[j] += gh.grad * X(i, j);
+            for (int k = 0; k < p; k++) H[j][k] += gh.neg_hess * X(i, j) * X(i, k);
+        }
+        int g = spde_re_group(re_idx, i, n_re_groups);
+        if (g >= 0) {
+            int re_i = p + g;
+            grad[re_i] += gh.grad;
+            H[re_i][re_i] += gh.neg_hess;
+            for (int j = 0; j < p; j++) {
+                double c = gh.neg_hess * X(i, j);
+                H[re_i][j] += c;
+                H[j][re_i] += c;
+            }
+        }
+        const auto& row = A_rows[i];
+        for (size_t s1 = 0; s1 < row.size(); s1++) {
+            int idx1 = mesh_start + row[s1].mesh_idx;
+            double a1 = row[s1].weight;
+            grad[idx1] += gh.grad * a1;
+            H[idx1][idx1] += gh.neg_hess * a1 * a1;
+            for (int j = 0; j < p; j++) {
+                H[j][idx1] += gh.neg_hess * X(i, j) * a1;
+                H[idx1][j] += gh.neg_hess * X(i, j) * a1;
+            }
+            if (g >= 0) {
+                int re_i = p + g;
+                double c = gh.neg_hess * a1;
+                H[re_i][idx1] += c;
+                H[idx1][re_i] += c;
+            }
+            for (size_t s2 = s1 + 1; s2 < row.size(); s2++) {
+                int idx2 = mesh_start + row[s2].mesh_idx;
+                double cross = gh.neg_hess * a1 * row[s2].weight;
+                H[idx1][idx2] += cross;
+                H[idx2][idx1] += cross;
+            }
+        }
+    }
+    for (int j = 0; j < n_mesh; j++) {
+        for (int qidx = qb.Q_p[j]; qidx < qb.Q_p[j + 1]; qidx++) {
+            int qi = qb.Q_i[qidx];
+            double q = qb.Q_x[qidx];
+            grad[mesh_start + qi] -= q * x[mesh_start + j];
+            H[mesh_start + qi][mesh_start + j] += q;
+        }
+    }
+    for (int j = 0; j < p; j++) { grad[j] -= tau_beta * x[j]; H[j][j] += tau_beta; }
+    for (int g = 0; g < n_re_groups; g++) {
+        grad[p + g] -= tau_re * x[p + g];
+        H[p + g][p + g] += tau_re;
+    }
+}
+
 template<typename F>
 void run_spde_laplace(
     const Rcpp::NumericVector& y, const Rcpp::IntegerVector& n_trials,
@@ -332,81 +521,17 @@ void run_spde_laplace(
 ) {
     const double tau_re = (n_re_groups > 0)
                           ? 1.0 / (sigma_re * sigma_re + 1e-10) : 0.0;
-    auto re_group = [&](int i) -> int {
-        if (n_re_groups <= 0) return -1;
-        int g = (int)re_idx[i] - 1;
-        return (g >= 0 && g < n_re_groups) ? g : -1;
-    };
 
     auto compute_eta = [&](const Rcpp::NumericVector& x, Rcpp::NumericVector& eta) {
-        for (int i = 0; i < N; i++) {
-            eta[i] = offset ? offset[i] : 0.0;
-            for (int j = 0; j < p; j++) eta[i] += X(i, j) * x[j];
-            int g = re_group(i);
-            if (g >= 0) eta[i] += x[p + g];
-            for (const auto& ae : A_rows[i]) {
-                eta[i] += ae.weight * x[mesh_start + ae.mesh_idx];
-            }
-        }
+        spde_compute_eta(X, N, p, mesh_start, A_rows, offset,
+                         re_idx, n_re_groups, x, eta);
     };
 
     auto scatter = [&](const Rcpp::NumericVector& x, const Rcpp::NumericVector& eta,
                        DenseVec& grad, DenseMat& H) {
-        for (int i = 0; i < N; i++) {
-            auto gh = grad_hess_for_family(y[i], n_trials[i], eta[i], family, phi);
-            for (int j = 0; j < p; j++) {
-                grad[j] += gh.grad * X(i, j);
-                for (int k = 0; k < p; k++) H[j][k] += gh.neg_hess * X(i, j) * X(i, k);
-            }
-            int g = re_group(i);
-            if (g >= 0) {
-                int re_i = p + g;
-                grad[re_i] += gh.grad;
-                H[re_i][re_i] += gh.neg_hess;
-                for (int j = 0; j < p; j++) {
-                    double c = gh.neg_hess * X(i, j);
-                    H[re_i][j] += c;
-                    H[j][re_i] += c;
-                }
-            }
-            const auto& row = A_rows[i];
-            for (size_t s1 = 0; s1 < row.size(); s1++) {
-                int idx1 = mesh_start + row[s1].mesh_idx;
-                double a1 = row[s1].weight;
-                grad[idx1] += gh.grad * a1;
-                H[idx1][idx1] += gh.neg_hess * a1 * a1;
-                for (int j = 0; j < p; j++) {
-                    H[j][idx1] += gh.neg_hess * X(i, j) * a1;
-                    H[idx1][j] += gh.neg_hess * X(i, j) * a1;
-                }
-                if (g >= 0) {
-                    int re_i = p + g;
-                    double c = gh.neg_hess * a1;
-                    H[re_i][idx1] += c;
-                    H[idx1][re_i] += c;
-                }
-                for (size_t s2 = s1 + 1; s2 < row.size(); s2++) {
-                    int idx2 = mesh_start + row[s2].mesh_idx;
-                    double cross = gh.neg_hess * a1 * row[s2].weight;
-                    H[idx1][idx2] += cross;
-                    H[idx2][idx1] += cross;
-                }
-            }
-        }
-        for (int j = 0; j < n_mesh; j++) {
-            for (int qidx = qb.Q_p[j]; qidx < qb.Q_p[j + 1]; qidx++) {
-                int qi = qb.Q_i[qidx];
-                double q = qb.Q_x[qidx];
-                grad[mesh_start + qi] -= q * x[mesh_start + j];
-                H[mesh_start + qi][mesh_start + j] += q;
-            }
-        }
-        double tau_beta = 1e-4;
-        for (int j = 0; j < p; j++) { grad[j] -= tau_beta * x[j]; H[j][j] += tau_beta; }
-        for (int g = 0; g < n_re_groups; g++) {
-            grad[p + g] -= tau_re * x[p + g];
-            H[p + g][p + g] += tau_re;
-        }
+        spde_scatter(y, n_trials, X, N, p, n_mesh, mesh_start, A_rows, qb,
+                     family, phi, re_idx, n_re_groups, tau_re, DEFAULT_TAU_BETA,
+                     x, eta, grad, H);
     };
 
     // Integer-alpha field is sum-to-zero centred for intercept identifiability;

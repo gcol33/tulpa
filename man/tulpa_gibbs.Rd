@@ -11,7 +11,7 @@ tulpa_gibbs(
   group,
   n_groups,
   family = "binomial",
-  beta_prior = list(mean = 0, sd = 10),
+  beta_prior = .tulpa_default_beta_prior("gibbs"),
   prior_sigma_scale = 2.5,
   spatial = NULL,
   temporal = NULL,
@@ -33,7 +33,7 @@ tulpa_gibbs(
 
 \item{beta_prior}{Fixed-effect prior as \code{list(mean, sd)}: a mean-zero
 (\code{mean = 0}) Gaussian on every coefficient with SD \code{sd} (default
-\code{list(mean = 0, sd = 10)}). The Polya-Gamma sampler uses a mean-zero prior,
+the engine default, \code{prior_normal(0, 2.5)}). The Polya-Gamma sampler uses a mean-zero prior,
 so a non-zero \code{mean} errors.}
 
 \item{prior_sigma_scale}{Prior scale for RE sigma (statistical; default 2.5).}

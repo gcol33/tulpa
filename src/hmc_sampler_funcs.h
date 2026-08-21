@@ -20,14 +20,29 @@ namespace tulpa_hmc {
 // Sampler functions
 // =====================================================================
 
-// Unified leapfrog step: identity mass when inv_mass is nullptr
+// Unified leapfrog step. The drift applies the metric the caller supplies:
+// `dense_mass` when non-null (dense, block-diagonal and every structured block,
+// via DenseMassMatrix::inv_mass_times_p), else the diagonal `inv_mass`, else
+// the identity. `divergent` reports a non-finite endpoint state; the energy
+// error is the caller's test, since only the caller holds the trajectory's
+// initial Hamiltonian.
 LeapfrogResult leapfrog_step(
     const std::vector<double>& q,
     const std::vector<double>& p,
     double epsilon,
     const ModelData& data,
     const ParamLayout& layout,
-    const double* inv_mass = nullptr
+    const double* inv_mass = nullptr,
+    const DenseMassMatrix* dense_mass = nullptr
+);
+
+// Target acceptance rate for the step-size dual averaging, resolved once per
+// chain from the model structure. `adapt_delta > 0` is the caller's override
+// and wins outright. Honoured by both the NUTS and the fixed-trajectory path.
+double resolve_target_accept(
+    const ModelData& data,
+    const ParamLayout& layout,
+    double adapt_delta
 );
 
 // Find reasonable initial step size
@@ -113,30 +128,17 @@ HMCResult run_hmc_chain(
     const std::vector<double>& inv_metric_init = std::vector<double>()
 );
 
-// Run multiple chains in parallel (across-chain parallelization)
-std::vector<HMCResult> run_hmc_parallel_chains(
-    const std::vector<double>& q_init,
-    const ModelData& data,
-    int n_iter,
-    int n_warmup,
-    int L,
-    int n_chains,
-    unsigned int seed,
-    bool verbose,
-    int max_treedepth = 10,
-    MassMatrixType metric_type = MassMatrixType::DIAG,
-    double adapt_delta = -1.0,
-    int riemannian = -1
-);
-
 // Pure-C++ across-chain core (no Rcpp types -> callable from the C ABI).
-// q_init_per_chain: length n_chains (chain c starts at entry c).
+// q_init_broadcast: length n_chains (chain c starts at entry c). Rows that are
+// all identical are a broadcast start, and are dispersed around entry 0 so the
+// between-chain variance Rhat reads carries information; distinct rows are
+// taken verbatim.
 // inv_metric_per_chain: empty (all default) or length n_chains (entry c may
 // itself be empty). Together these let one call do a fresh fit (broadcast
 // init) or a warm-started resume (per-chain final_position + inv_metric,
-// n_warmup = 0)..
+// n_warmup = 0).
 std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
-    const std::vector<std::vector<double>>& q_init_per_chain,
+    const std::vector<std::vector<double>>& q_init_broadcast,
     const std::vector<std::vector<double>>& inv_metric_per_chain,
     const ModelData& data,
     int n_iter,

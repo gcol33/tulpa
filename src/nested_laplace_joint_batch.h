@@ -280,11 +280,13 @@ struct SparseScatterPolicy {
         double* __restrict__ Hv = H.values.data();
         const int nc = (int) cs.slot.size();
         for (int t = 0; t < nc; t++) {
-            const int s = cs.slot[t];
-            if (s < 0) continue;
+            // Through the guard, like scatter_within_row above: the cross-arm
+            // block is where the coupling lives, so a (row, col) the pattern
+            // builder did not enumerate is exactly the miss the drop counter
+            // exists to surface. A diagonal entry takes the term twice, since
+            // the chain product covers both directions of the pair.
             const double val = (Hkl * cs.w_k[t]) * cs.w_l[t];
-            Hv[s] += val;
-            if (cs.is_diag[t]) Hv[s] += val;
+            scatter_slot(Hv, cs.slot[t], cs.is_diag[t] ? 2.0 * val : val);
         }
     }
 

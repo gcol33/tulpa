@@ -129,7 +129,6 @@ T compute_temporal_prior(const std::vector<T>& params, const ModelData& data,
 
             // Precompute shared rho[t] and derived quantities once (same dt for all groups)
                 std::vector<T> rho_shared(T_times > 1 ? T_times - 1 : 0);
-                std::vector<T> log_one_minus_rho2_shared(T_times > 1 ? T_times - 1 : 0);
                 std::vector<T> a_shared(T_times > 1 ? T_times - 1 : 0);
                 T sigma_t = safe_sqrt(sigma2_temporal_gp_out);
                 for (int t = 1; t < T_times; t++) {
@@ -137,7 +136,6 @@ T compute_temporal_prior(const std::vector<T>& params, const ModelData& data,
                     rho_shared[t - 1] = safe_exp(T(-dt) / phi_temporal_gp_out);
                     T one_minus_rho2 = T(1.0) - rho_shared[t - 1] * rho_shared[t - 1];
                     T one_minus_rho2_safe = safe_max(one_minus_rho2, T(1e-10));
-                    log_one_minus_rho2_shared[t - 1] = safe_log(one_minus_rho2_safe);
                     a_shared[t - 1] = sigma_t * safe_sqrt(one_minus_rho2_safe);
                 }
 
@@ -230,7 +228,8 @@ T compute_temporal_prior(const std::vector<T>& params, const ModelData& data,
                 int rank_rw1 = tulpa::s2z_aug_rank(
                     tulpa_temporal::rw1_rank(T_times, data.temporal_cyclic)
                         * data.n_temporal_groups, 1);
-                log_post = log_post + T(0.5 * rank_rw1) * log_tau;
+                log_post = log_post
+                    + tulpa_temporal::gmrf_log_norm(rank_rw1, log_tau);
                 log_post = log_post - T(0.5) * tau_temporal_out * quad_form;
 
             } else if (data.temporal_type == TemporalType::RW2) {
@@ -247,7 +246,8 @@ T compute_temporal_prior(const std::vector<T>& params, const ModelData& data,
                 int rank_rw2 = tulpa::s2z_aug_rank(
                     tulpa_temporal::rw2_rank(T_times, data.temporal_cyclic)
                         * data.n_temporal_groups, 1);
-                log_post = log_post + T(0.5 * rank_rw2) * log_tau;
+                log_post = log_post
+                    + tulpa_temporal::gmrf_log_norm(rank_rw2, log_tau);
                 log_post = log_post - T(0.5) * tau_temporal_out * quad_form;
 
             } else if (data.temporal_type == TemporalType::AR1) {

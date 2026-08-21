@@ -12,18 +12,22 @@ struct NNGPGradients {
   double grad_log_phi;                // Gradient w.r.t. log(phi)
 };
 
-// Covariance derivative w.r.t. phi: dk(d)/dphi. Delegates to the canonical
-// tulpa_svc::dcov_dphi_svc, which is the same math -- this copy had drifted and
-// was returning half the true Gaussian derivative (it dropped the factor of 2
-// in k*2*d^2/phi^3).
+// Covariance derivative w.r.t. phi: dk(d)/dphi. Delegates to
+// tulpa_svc::dcov_dphi_svc, the single source of truth for every NNGP
+// gradient path.
 inline double dcov_dphi(double d, double phi, double cov_val, double sigma2,
                         tulpa_svc::CovType cov_type) {
   return tulpa_svc::dcov_dphi_svc(d, phi, cov_val, sigma2, cov_type);
 }
 
-// Fully analytical NNGP gradients — Eigen LLT + OpenMP parallelized
-// Uses cached nn_neighbor_dist (no coord recomputation), symmetric C_mat fill
-// Complexity: O(N * nn³) Cholesky-dominated, parallelized across observations
+// Fully analytical NNGP gradients: Eigen LLT + OpenMP parallelized. Reads the
+// cached nn_neighbor_dist (no coordinate recomputation) and fills C_mat
+// symmetrically. Complexity O(N * nn^3), Cholesky-dominated, parallelized
+// across observations.
+//
+// Reference implementation: the only caller is the cpp_test_gp_solver_dispatch
+// export in test_helpers.cpp, which test-gp-cg.R drives to score the GP solver
+// backends against each other.
 inline void gp_nngp_gradients(
     const std::vector<double>& w,
     double sigma2,
@@ -95,9 +99,12 @@ inline void gp_nngp_gradients(
       int obs_idx = gp_data.nn_order[i];
       if (obs_idx < 0 || obs_idx >= N) continue;
 
-      // Count neighbors
-      int n_nb = 0;
-      for (int j = 0; j < nn && gp_data.nn_idx[i * nn + j] > 0; j++) n_nb++;
+      // Count neighbors, through the shared left-packed scan the density
+      // kernels also run -- the density and its analytic gradient have to
+      // condition on the SAME neighbour set.
+      const int n_nb = tulpa_nngp::nngp_row_neighbours(
+          gp_data.nn_idx.data() + (std::size_t)i * nn, /*stride=*/1, nn,
+          (int)gp_data.nn_order.size());
 
       if (n_nb == 0) {
         double wi = w[obs_idx];
@@ -176,7 +183,7 @@ inline void gp_nngp_gradients(
       tulpa_nngp::VecchiaGrad g = tulpa_nngp::vecchia_cond_grad(
           n_nb, alpha_vec.data(), beta_vec.data(), c_eigen.data(),
           dc_eigen.data(), dC.data(), w_nb_eigen.data(), w[obs_idx],
-          sigma2, phi, kGpVarFloor);
+          sigma2, phi, kGpVarFloor, tulpa_nngp::VarFloor::Clamp);
       my_grad_w[obs_idx] += g.grad_w_obs;
       for (int j = 0; j < n_nb; j++) my_grad_w[nb_idx[j]] += alpha_vec(j) * g.r_over_v;
       tl_sigma2[tid] += g.dlog_sigma2;
@@ -192,29 +199,3 @@ inline void gp_nngp_gradients(
     grads.grad_log_phi += tl_phi[t];
   }
 }
-
-// Numerical gradient of NNGP log-likelihood w.r.t. w (spatial effects)
-// For use in HMC updates
-inline void gp_gradient_w(
-    const std::vector<double>& w,
-    double sigma2,
-    double phi,
-    const GPData& gp_data,
-    std::vector<double>& grad_w,  // Output: gradient (length n_obs)
-    double epsilon = 1e-6
-) {
-  int N = gp_data.n_obs;
-  grad_w.resize(N);
-
-  double base_ll = gp_nngp_log_lik(w, sigma2, phi, gp_data);
-
-  // Finite difference for each w[i]
-  std::vector<double> w_plus = w;
-  for (int i = 0; i < N; i++) {
-    w_plus[i] = w[i] + epsilon;
-    double ll_plus = gp_nngp_log_lik(w_plus, sigma2, phi, gp_data);
-    grad_w[i] = (ll_plus - base_ll) / epsilon;
-    w_plus[i] = w[i];  // Reset
-  }
-}
-

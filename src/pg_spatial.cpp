@@ -16,66 +16,40 @@ namespace tulpa {
 // ICAR (Intrinsic Conditional Autoregressive) prior
 // ---------------------------------------------------------------------
 
-// Update spatial effects with ICAR prior
-// Each phi_i is updated given all other phi values and the data
-//
-// Full conditional for phi_i:
-// phi_i | ... ~ N(m_i, v_i)
-// v_i = 1 / (tau * n_i + sum(omega_j for j in group i))
-// m_i = v_i * (tau * sum(phi_j for neighbors j) + sum(kappa_j - omega_j * offset_j for j in group i))
-//
-// For group-level spatial effects:
-// - Each group j has a spatial effect phi_j
-// - Observations in group j share phi_j
-// - ICAR prior relates phi across spatial units
-
-NumericVector update_spatial_icar(
+void update_spatial_icar(
     const NumericVector& kappa,
     const NumericVector& omega,
     const NumericVector& offset,
     const IntegerVector& group,
-    const List& adj_list,
-    const IntegerVector& n_neighbors,
+    const PgAdjacency& adj,
     double tau,
-    double* removed_mean
+    NumericVector& phi,
+    double& removed_mean
 ) {
-  int N = kappa.size();
-  int J = adj_list.size();  // Number of spatial units
-  NumericVector phi(J);
+  const int N = kappa.size();
+  const int J = adj.n;
 
-  // Accumulate data sufficient statistics by group
-  NumericVector sum_omega(J);
-  NumericVector sum_resid(J);
+  std::vector<double> sum_omega(J, 0.0), sum_resid(J, 0.0);
+  pg_accumulate_stats(N, group.begin(), J, omega.begin(), kappa.begin(),
+                      offset.begin(), sum_omega.data(), sum_resid.data());
 
-  for (int i = 0; i < N; i++) {
-    int g = group[i] - 1;  // Convert to 0-based
-    sum_omega[g] += omega[i];
-    sum_resid[g] += kappa[i] - omega[i] * offset[i];
-  }
-
-  // Single-site Gibbs updates for each spatial unit
-  // Could be improved with block updates, but this is simple and works
+  // Single-site sweep. Each neighbour sum reads the current phi, so a
+  // neighbour the sweep has already reached contributes its new value and one
+  // it has not contributes the previous sweep's.
   for (int j = 0; j < J; j++) {
-    // Get neighbors - use eager copy to avoid GC issues with lazy views
-    std::vector<int> neighbors = Rcpp::as<std::vector<int>>(adj_list[j]);
-    int n_j = n_neighbors[j];
+    const int n_j = adj.degree(j);
 
-    // Sum of neighbor values
     double neighbor_sum = 0.0;
-    for (int k = 0; k < n_j; k++) {
-      int neighbor_idx = neighbors[k] - 1;  // Convert to 0-based
-      neighbor_sum += phi[neighbor_idx];
+    for (int e = adj.row_ptr[j]; e < adj.row_ptr[j + 1]; e++) {
+      neighbor_sum += phi[adj.col_idx[e]];
     }
 
-    // Full conditional parameters
     double prec = tau * n_j + sum_omega[j];
     double mean_num = tau * neighbor_sum + sum_resid[j];
 
-    // Handle isolated units (no neighbors)
     if (n_j == 0) {
-      // Fall back to exchangeable prior with the data
       if (sum_omega[j] > 0) {
-        prec = sum_omega[j] + 0.001;  // Small prior precision
+        prec = sum_omega[j] + PG_ICAR_ISOLATED_PREC;
         mean_num = sum_resid[j];
       } else {
         phi[j] = 0.0;
@@ -83,90 +57,80 @@ NumericVector update_spatial_icar(
       }
     }
 
-    double post_var = 1.0 / prec;
-    double post_mean = mean_num / prec;
-
-    phi[j] = R::rnorm(post_mean, std::sqrt(post_var));
+    phi[j] = R::rnorm(mean_num / prec, std::sqrt(1.0 / prec));
   }
 
-  // Center the spatial effects (sum-to-zero) and report the removed mean so the
+  // Component-level block update. Shifting every unit of one graph component
+  // by a constant leaves the ICAR prior unchanged, so the level's conditional
+  // comes from the likelihood alone: delta_c ~ N((B_c - C_c)/A_c, 1/A_c) with
+  // A_c = sum_omega, B_c = sum_resid and C_c = sum_omega * phi over the
+  // component. Drawn jointly under sum_c n_c delta_c = 0, which holds the
+  // overall field level fixed -- that direction is confounded with the
+  // intercept and is handled by the centring below. Without this the k - 1
+  // component contrasts move only through the single-site sweep and mix at the
+  // rate of a random walk across the components.
+  const int k = adj.n_components;
+  if (k > 1) {
+    std::vector<double> A(k, 0.0), Bnum(k, 0.0), d(k, 0.0);
+    std::vector<int> n_c(k, 0);
+    for (int j = 0; j < J; j++) {
+      const int c = adj.component[j];
+      A[c] += sum_omega[j];
+      Bnum[c] += sum_resid[j] - sum_omega[j] * phi[j];
+      n_c[c]++;
+    }
+    bool ok = true;
+    for (int c = 0; c < k; c++) if (!(A[c] > 0.0)) ok = false;
+    if (ok) {
+      for (int c = 0; c < k; c++) {
+        d[c] = R::rnorm(Bnum[c] / A[c], std::sqrt(1.0 / A[c]));
+      }
+      // Condition on sum_c n_c delta_c = 0 (kriging correction against the
+      // independent N(m_c, 1/A_c) draws).
+      double aSa = 0.0, ad = 0.0;
+      for (int c = 0; c < k; c++) {
+        aSa += static_cast<double>(n_c[c]) * n_c[c] / A[c];
+        ad += n_c[c] * d[c];
+      }
+      if (aSa > 0.0) {
+        for (int c = 0; c < k; c++) d[c] -= (n_c[c] / A[c]) * ad / aSa;
+      }
+      for (int j = 0; j < J; j++) phi[j] += d[adj.component[j]];
+    }
+  }
+
+  // Centre the spatial effects (sum-to-zero) and report the removed mean so the
   // caller can absorb it into the intercept -- eta is then unchanged and the
-  // move is posterior-invariant (matching the negbin kernel). Discarding the
-  // mean instead lags the intercept behind the field each sweep and drives tau.
+  // move is posterior-invariant. Discarding the mean instead lags the intercept
+  // behind the field each sweep and drives tau.
   double mean_phi = 0.0;
-  for (int j = 0; j < J; j++) {
-    mean_phi += phi[j];
-  }
+  for (int j = 0; j < J; j++) mean_phi += phi[j];
   mean_phi /= J;
 
-  for (int j = 0; j < J; j++) {
-    phi[j] -= mean_phi;
-  }
-  if (removed_mean) *removed_mean = mean_phi;
-
-  return phi;
+  for (int j = 0; j < J; j++) phi[j] -= mean_phi;
+  removed_mean = mean_phi;
 }
-
-// Update spatial precision tau with gamma prior
-// ICAR precision structure: phi' Q phi where Q_ii = n_neighbors[i], Q_ij = -1 if neighbors
-//
-// Posterior for tau:
-// tau | phi ~ Gamma(a + (J-1)/2, b + 0.5 * phi' Q phi)
 
 double update_tau_icar(
     const NumericVector& phi,
-    const List& adj_list,
-    const IntegerVector& n_neighbors,
+    const PgAdjacency& adj,
     double prior_shape,
     double prior_rate
 ) {
-  int J = phi.size();
+  const int J = adj.n;
 
-  // Compute phi' Q phi = sum_i n_i * phi_i^2 - 2 * sum_{i~j} phi_i * phi_j
-  // = sum_i n_i * phi_i^2 - sum_i phi_i * sum_{j~i} phi_j
+  // phi' Q phi = sum_i n_i phi_i^2 - 2 sum_{i ~ j, j > i} phi_i phi_j
   double quad_form = 0.0;
-
   for (int i = 0; i < J; i++) {
-    // Diagonal contribution: n_i * phi_i^2
-    quad_form += n_neighbors[i] * phi[i] * phi[i];
-
-    // Off-diagonal contribution: -2 * sum over neighbors (count each edge once)
-    std::vector<int> neighbors = Rcpp::as<std::vector<int>>(adj_list[i]);
-    for (int k = 0; k < n_neighbors[i]; k++) {
-      int j = neighbors[k] - 1;
-      if (j > i) {  // Count each edge once
-        quad_form -= 2.0 * phi[i] * phi[j];
-      }
+    quad_form += adj.degree(i) * phi[i] * phi[i];
+    for (int e = adj.row_ptr[i]; e < adj.row_ptr[i + 1]; e++) {
+      const int j = adj.col_idx[e];
+      if (j > i) quad_form -= 2.0 * phi[i] * phi[j];
     }
   }
 
-  // ICAR rank is J - k for k connected components (one constant null direction
-  // per component), so the shape is (J - k)/2, not (J - 1)/2. A disconnected
-  // adjacency (spatial(by=) replication makes this routine) otherwise biases
-  // tau upward. Component count by BFS on the (1-based) adjacency list, matching
-  // the negbin kernel's convention.
-  int k_comp = 0;
-  {
-    std::vector<int> seen(J, 0);
-    std::vector<int> stack;
-    for (int s0 = 0; s0 < J; s0++) {
-      if (seen[s0]) continue;
-      seen[s0] = 1; stack.clear(); stack.push_back(s0);
-      while (!stack.empty()) {
-        int s = stack.back(); stack.pop_back();
-        std::vector<int> nb = Rcpp::as<std::vector<int>>(adj_list[s]);
-        for (int e = 0; e < n_neighbors[s]; e++) {
-          int t = nb[e] - 1;
-          if (t >= 0 && t < J && !seen[t]) { seen[t] = 1; stack.push_back(t); }
-        }
-      }
-      k_comp++;
-    }
-  }
-
-  // Posterior parameters
-  double post_shape = prior_shape + (J - k_comp) / 2.0;
-  double post_rate = prior_rate + quad_form / 2.0;
+  const double post_shape = prior_shape + (J - adj.n_components) / 2.0;
+  const double post_rate = prior_rate + quad_form / 2.0;
 
   return R::rgamma(post_shape, 1.0 / post_rate);
 }
@@ -184,126 +148,93 @@ double update_tau_icar(
 //   rho is proportion of variance from structured component
 //   scale_factor is computed from eigenvalues of Q
 
-// Update BYM2 spatial effects
-// Returns the combined effect u for each spatial unit
-// Also updates phi_scaled and theta in place via references
-NumericVector update_spatial_bym2(
+void update_spatial_bym2(
     const NumericVector& kappa,
     const NumericVector& omega,
     const NumericVector& offset,
     const IntegerVector& group,
-    const List& adj_list,
-    const IntegerVector& n_neighbors,
-    NumericVector& phi_scaled,  // Input/output: structured component
-    NumericVector& theta,       // Input/output: unstructured component
+    const PgAdjacency& adj,
+    NumericVector& phi_scaled,
+    NumericVector& theta,
     double sigma_spatial,
     double rho,
     double scale_factor,
-    double* removed_mean        // out: field level removed by centering phi
+    NumericVector& u,
+    double& removed_mean
 ) {
-  int N = kappa.size();
-  int J = adj_list.size();
+  const int N = kappa.size();
+  const int J = adj.n;
 
-  // Precompute weights
-  double sqrt_rho = std::sqrt(rho + 1e-10);
-  double sqrt_1_rho = std::sqrt(1.0 - rho + 1e-10);
+  const double sqrt_rho = std::sqrt(rho + 1e-10);
+  const double sqrt_1_rho = std::sqrt(1.0 - rho + 1e-10);
 
-  // Accumulate data sufficient statistics by group
-  NumericVector sum_omega(J);
-  NumericVector sum_resid(J);
+  std::vector<double> sum_omega(J, 0.0), sum_resid(J, 0.0);
+  std::vector<double> work_offset(N);
 
+  // Residual for the phi_scaled update removes only theta's contribution (the
+  // OTHER component); removing phi's own contribution too biases the
+  // conditional mean toward zero.
   for (int i = 0; i < N; i++) {
-    int g = group[i] - 1;
-    sum_omega[g] += omega[i];
-    // Residual for the phi_scaled update removes only theta's contribution (the
-    // OTHER component). Removing phi's own contribution too, as before, biases
-    // the conditional mean toward zero (an artificial anti-autocorrelation).
-    double theta_contrib = sigma_spatial * sqrt_1_rho * theta[g];
-    sum_resid[g] += kappa[i] - omega[i] * (offset[i] + theta_contrib);
+    const int g = group[i] - 1;
+    work_offset[i] = offset[i] + sigma_spatial * sqrt_1_rho * theta[g];
   }
+  pg_accumulate_stats(N, group.begin(), J, omega.begin(), kappa.begin(),
+                      work_offset.data(), sum_omega.data(), sum_resid.data());
 
-  // Update phi_scaled (structured component with ICAR prior)
-  // The effective precision for phi_scaled comes from both data and ICAR prior
-  // phi_scaled has unit variance marginally, so ICAR precision is 1.0
+  // Update phi_scaled (structured component with ICAR prior). phi_scaled has
+  // unit marginal variance, so the ICAR precision is 1.
   for (int j = 0; j < J; j++) {
-    std::vector<int> neighbors = Rcpp::as<std::vector<int>>(adj_list[j]);
-    int n_j = n_neighbors[j];
+    const int n_j = adj.degree(j);
 
-    // Sum of neighbor values
     double neighbor_sum = 0.0;
-    for (int k = 0; k < n_j; k++) {
-      int neighbor_idx = neighbors[k] - 1;
-      neighbor_sum += phi_scaled[neighbor_idx];
+    for (int e = adj.row_ptr[j]; e < adj.row_ptr[j + 1]; e++) {
+      neighbor_sum += phi_scaled[adj.col_idx[e]];
     }
 
-    // Effective coefficient in eta for phi_scaled
-    double coef = sigma_spatial * sqrt_rho * scale_factor;
+    const double coef = sigma_spatial * sqrt_rho * scale_factor;
+    const double prior_prec = (n_j > 0) ? n_j : PG_ICAR_ISOLATED_PREC;
+    const double data_prec = sum_omega[j] * coef * coef;
 
-    // Full conditional for phi_scaled_j
-    // Prior: ICAR with unit precision
-    // Likelihood contribution: sum_i omega_i * (coef * phi_scaled_j)^2 - 2 * coef * sum_i (resid_i * phi_scaled_j)
-    double prior_prec = (n_j > 0) ? n_j : 0.001;
-    double data_prec = sum_omega[j] * coef * coef;
-
-    double post_prec = prior_prec + data_prec;
-    double post_mean_num = neighbor_sum + sum_resid[j] * coef;
+    const double post_prec = prior_prec + data_prec;
+    const double post_mean_num = neighbor_sum + sum_resid[j] * coef;
 
     phi_scaled[j] = R::rnorm(post_mean_num / post_prec, std::sqrt(1.0 / post_prec));
   }
 
-  // Center phi_scaled (sum-to-zero on the structured component) and report the
-  // field level removed from u_j = sigma*(sqrt_rho*phi_scaled_j*scale + ...), so
-  // the caller can absorb it into the intercept -- eta is then unchanged and the
-  // move is posterior-invariant (matching the ICAR twin). Discarding it lags the
-  // intercept behind the field each sweep.
+  // Centre phi_scaled (sum-to-zero on the structured component) and report the
+  // field level removed from u_j = sigma*(sqrt_rho*phi_scaled_j*scale + ...),
+  // so the caller can absorb it into the intercept -- eta is then unchanged.
   double mean_phi = 0.0;
-  for (int j = 0; j < J; j++) {
-    mean_phi += phi_scaled[j];
-  }
+  for (int j = 0; j < J; j++) mean_phi += phi_scaled[j];
   mean_phi /= J;
-  for (int j = 0; j < J; j++) {
-    phi_scaled[j] -= mean_phi;
-  }
-  if (removed_mean) *removed_mean = sigma_spatial * sqrt_rho * scale_factor * mean_phi;
+  for (int j = 0; j < J; j++) phi_scaled[j] -= mean_phi;
+  removed_mean = sigma_spatial * sqrt_rho * scale_factor * mean_phi;
 
-  // Recompute residuals for theta update
-  for (int j = 0; j < J; j++) {
-    sum_resid[j] = 0.0;
-  }
+  // Residual for the theta update removes only phi's contribution.
   for (int i = 0; i < N; i++) {
-    int g = group[i] - 1;
-    // Residual for the theta update removes only phi's contribution.
-    double phi_contrib = sigma_spatial * sqrt_rho * phi_scaled[g] * scale_factor;
-    sum_resid[g] += kappa[i] - omega[i] * (offset[i] + phi_contrib);
+    const int g = group[i] - 1;
+    work_offset[i] = offset[i] +
+        sigma_spatial * sqrt_rho * phi_scaled[g] * scale_factor;
   }
+  pg_accumulate_stats(N, group.begin(), J, omega.begin(), kappa.begin(),
+                      work_offset.data(), sum_omega.data(), sum_resid.data());
 
   // Update theta (unstructured component with N(0,1) prior)
   for (int j = 0; j < J; j++) {
-    double coef = sigma_spatial * sqrt_1_rho;
-    double prior_prec = 1.0;  // N(0,1) prior
-    double data_prec = sum_omega[j] * coef * coef;
+    const double coef = sigma_spatial * sqrt_1_rho;
+    const double prior_prec = 1.0;
+    const double data_prec = sum_omega[j] * coef * coef;
 
-    double post_prec = prior_prec + data_prec;
-    double post_mean_num = sum_resid[j] * coef;
+    const double post_prec = prior_prec + data_prec;
+    const double post_mean_num = sum_resid[j] * coef;
 
     theta[j] = R::rnorm(post_mean_num / post_prec, std::sqrt(1.0 / post_prec));
   }
 
-  // Compute combined spatial effect u
-  NumericVector u(J);
   for (int j = 0; j < J; j++) {
-    u[j] = sigma_spatial * (sqrt_rho * phi_scaled[j] * scale_factor + sqrt_1_rho * theta[j]);
+    u[j] = sigma_spatial * (sqrt_rho * phi_scaled[j] * scale_factor +
+                            sqrt_1_rho * theta[j]);
   }
-
-  return u;
-}
-
-// Update sigma_spatial with half-Cauchy prior — delegates to shared helper
-double update_sigma_spatial(
-    const NumericVector& u,
-    double scale
-) {
-  return tulpa::update_sigma_halfcauchy(u, scale);
 }
 
 // Update rho (mixing proportion) with beta prior via a grid approximation of

@@ -299,6 +299,24 @@ test_zero_inflation.default <- function(object, observed = NULL, nsim = 250L,
 # Moran's I
 # ==============================================================================
 
+# One row of `coords` per residual, checked in one place so the spatial
+# diagnostics cannot drift apart. Residuals from a fit that dropped incomplete
+# rows against coordinates taken from the original data frame is the ordinary
+# way the two lengths diverge, and R would recycle rather than object.
+.check_coords_rows <- function(coords, n_resid, where) {
+  coords <- as.matrix(coords)
+  if (nrow(coords) != n_resid) {
+    stop(sprintf("coords has %d rows but residuals has length %d",
+                 nrow(coords), n_resid), call. = FALSE)
+  }
+  if (n_resid < 2L) {
+    stop(sprintf("%s needs at least 2 observations; got %d.",
+                 where, n_resid), call. = FALSE)
+  }
+  coords
+}
+
+
 #' Moran's I test for spatial autocorrelation in residuals
 #'
 #' Tests whether residuals exhibit spatial structure after model fitting.
@@ -334,12 +352,8 @@ moran_i <- function(object, coords,
     x <- residuals(object, type = resid_type)
   }
 
-  coords <- as.matrix(coords)
   N <- length(x)
-  if (nrow(coords) != N) {
-    stop(sprintf("coords has %d rows but residuals has length %d",
-                 nrow(coords), N), call. = FALSE)
-  }
+  coords <- .check_coords_rows(coords, N, "moran_i()")
 
   D <- as.matrix(dist(coords))
   if (weights == "inverse") {
@@ -469,12 +483,18 @@ tulpa_variogram <- function(object, coords, n_bins = 15L, max_dist = NULL,
     x <- residuals(object, type = resid_type)
   }
 
-  coords <- as.matrix(coords)
   N <- length(x)
+  coords <- .check_coords_rows(coords, N, "tulpa_variogram()")
 
   D <- dist(coords)
   d_vec <- as.numeric(D)
   if (is.null(max_dist)) max_dist <- max(d_vec) / 2
+  # Every location coincident (or a caller-supplied max_dist of 0) leaves no
+  # distance axis to bin over, and seq() would fail inside the bin loop.
+  if (!is.finite(max_dist) || max_dist <= 0) {
+    stop("`max_dist` must be a positive finite distance; the coordinates ",
+         "span no distance (every location is coincident).", call. = FALSE)
+  }
 
   idx <- which(lower.tri(matrix(0, N, N)), arr.ind = TRUE)
   sq_diff <- (x[idx[, 1]] - x[idx[, 2]])^2

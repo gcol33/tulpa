@@ -1,10 +1,10 @@
 // hmc_nuts_parallel.cpp
 // run_hmc_parallel_chains_cpp: pure-C++ OpenMP across-chain core.
-// run_hmc_parallel_chains:     thin Rcpp-returning wrapper over it.
 
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -18,9 +18,9 @@
 
 #include <tulpa/nested_progress.h>
 
-#include "hmc_progress.h"
 #include "hmc_sampler.h"
 #include "hmc_chain_checkpoint.h"
+#include "omp_threads.h"
 
 namespace tulpa_hmc {
 
@@ -63,8 +63,59 @@ std::unique_ptr<::tulpa_progress::GridProgress> make_nuts_progress(int total, in
 // inv_metric_per_chain may be empty (all chains use the structural
 // default) or length n_chains (entry c may itself be empty for chain c).
 // =====================================================================
+// Rhat compares between-chain variance against within-chain variance, so it
+// only reports on agreement between chains when the chains start overdispersed
+// relative to the posterior. Chains that all start at the same point make the
+// between-chain variance a measure of how far the sampler wandered from one
+// origin, and a well-mixing sampler drives that toward the within-chain
+// variance whether or not the chains found the same mode.
+//
+// So a broadcast start is dispersed here, at the one point every multi-chain
+// entry funnels through. Chain 0 keeps the caller's position exactly, so a warm
+// start is not thrown away; every other chain is offset per coordinate by
+// Uniform(-2, 2) times that coordinate's own scale. The scale is the posterior
+// SD implied by a caller-supplied inverse-mass diagonal (which is a variance),
+// and 1 otherwise: a fixed absolute offset would be wrong across a layout that
+// mixes coefficients, log-variances and field coordinates, and every coordinate
+// here is on the sampler's unconstrained scale. The stream is keyed on
+// (seed, chain), so a run stays reproducible under a fixed seed.
+//
+// A caller who supplied distinct rows is left alone, and so is a run with no
+// warmup: there the reported draws start at the first iteration, and an
+// overdispersed start would be reported rather than burnt in.
+static void disperse_broadcast_inits(
+    std::vector<std::vector<double>>& q_init_per_chain,
+    const std::vector<std::vector<double>>& inv_metric_per_chain,
+    int n_chains,
+    int n_warmup,
+    unsigned int seed
+) {
+  if (n_chains < 2 || n_warmup < 1) return;
+  if ((int)q_init_per_chain.size() != n_chains) return;
+  const std::vector<double> q0 = q_init_per_chain[0];
+  const int n = (int)q0.size();
+  if (n == 0) return;
+  for (int c = 1; c < n_chains; c++) {
+    if (q_init_per_chain[c] != q0) return;
+  }
+
+  const bool have_metric = ((int)inv_metric_per_chain.size() == n_chains);
+  for (int c = 1; c < n_chains; c++) {
+    std::mt19937 jitter_rng(seed + 7919u * static_cast<unsigned int>(c + 1));
+    std::uniform_real_distribution<double> jitter(-2.0, 2.0);
+    const bool scaled = have_metric && (int)inv_metric_per_chain[c].size() == n;
+    for (int j = 0; j < n; j++) {
+      double sd = 1.0;
+      if (scaled && inv_metric_per_chain[c][j] > 0.0) {
+        sd = std::sqrt(inv_metric_per_chain[c][j]);
+      }
+      q_init_per_chain[c][j] = q0[j] + sd * jitter(jitter_rng);
+    }
+  }
+}
+
 std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
-    const std::vector<std::vector<double>>& q_init_per_chain,
+    const std::vector<std::vector<double>>& q_init_broadcast,
     const std::vector<std::vector<double>>& inv_metric_per_chain,
     const ModelData& data,
     int n_iter,
@@ -87,6 +138,16 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
   ParamLayout layout = layout_override ? *layout_override
                                        : compute_param_layout(data);
 
+  if (n_chains < 1) Rcpp::stop("n_chains must be >= 1");
+  if ((int)q_init_broadcast.size() != n_chains) {
+    Rcpp::stop("run_hmc_parallel_chains_cpp: %d initial positions for %d chains",
+               (int)q_init_broadcast.size(), n_chains);
+  }
+
+  std::vector<std::vector<double>> q_init_per_chain = q_init_broadcast;
+  disperse_broadcast_inits(q_init_per_chain, inv_metric_per_chain,
+                           n_chains, n_warmup, seed);
+
   static const std::vector<double> kNoMetric;
   auto metric_for = [&](int c) -> const std::vector<double>& {
     return ((int)inv_metric_per_chain.size() == n_chains)
@@ -102,7 +163,7 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
   // against numerical BEFORE spawning parallel chains. Single-threaded here,
   // so the R API and g_gradient_mode mutation are safe; the decision then
   // applies to every chain.
-  if (n_chains > 0 && g_gradient_mode != GradientMode::NUMERICAL) {
+  if (g_gradient_mode != GradientMode::NUMERICAL) {
     bool grad_ok = verify_gradient_runtime(q_init_per_chain[0], data, layout, 1e-4);
     if (!grad_ok) {
       g_gradient_mode = GradientMode::NUMERICAL;
@@ -159,15 +220,24 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
 
   // Thread-safe autodiff: each chain creates its own tape via TapeScope (RAII),
   // so all gradient modes (N, A, A_t, H) run in parallel.
+  //
+  // This is the outermost region in a sampler run, so its team is the one that
+  // has to respect the environment: OMP_NUM_THREADS / omp_set_num_threads()
+  // through omp_get_max_threads(), OMP_THREAD_LIMIT, and the two-core cap R CMD
+  // check sets through _R_CHECK_LIMIT_CORES_. A team narrower than n_chains
+  // still runs every chain, several to a worker, and a chain is deterministic
+  // in (seed, chain_id, data, settings), so the results do not depend on the
+  // width.
 #ifdef _OPENMP
-  if (n_chains > 1) {
+  const int chain_team = tulpa_omp_team_size_req(n_chains, n_chains);
+  if (chain_team > 1) {
     // Exception barrier: an exception escaping the omp for body (Rcpp::stop
     // from the log-posterior, bad_alloc from per-chain buffers) is
     // std::terminate. Each chain catches; the first message is re-raised
     // from the main thread after the region.
     std::atomic<bool> chain_failed{false};
     std::string       chain_err;
-    #pragma omp parallel for schedule(static) num_threads(n_chains)
+    #pragma omp parallel for schedule(static) num_threads(chain_team)
     for (int c = 0; c < n_chains; c++) {
       if (done[c]) continue;
       try {
@@ -192,13 +262,17 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
                  chain_err.empty() ? "unknown error" : chain_err.c_str());
     }
   } else {
-    if (!done[0]) {
-      cpp_results[0] = run_hmc_chain_cpp(
-        q_init_per_chain[0], data, layout,
-        n_iter, n_warmup, L, 0, seed, verbose, max_treedepth,
-        metric_type, adapt_delta, riemannian, metric_for(0)
+    // A one-wide team runs the chains one after another. The console bar stays
+    // on for a single chain; several chains report per-chain divergences after
+    // the loop, the same channel the parallel route uses.
+    for (int c = 0; c < n_chains; c++) {
+      if (done[c]) continue;
+      cpp_results[c] = run_hmc_chain_cpp(
+        q_init_per_chain[c], data, layout,
+        n_iter, n_warmup, L, c, seed, verbose && n_chains == 1, max_treedepth,
+        metric_type, adapt_delta, riemannian, metric_for(c)
       );
-      if (ckpt) ckpt->save(0, cpp_results[0]);
+      if (ckpt) ckpt->save(c, cpp_results[c]);
     }
   }
 #else
@@ -219,7 +293,7 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
   }
 
   if (verbose && n_chains > 1) {
-    // Verbose was disabled during the parallel run; report per-chain now.
+    // Per-chain verbose is off for a multi-chain run; report per-chain now.
     for (int c = 0; c < n_chains; c++) {
       int n_div = 0;
       for (int i = 0; i < cpp_results[c].n_sample; i++) {
@@ -231,39 +305,6 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
   }
 
   return cpp_results;
-}
-
-// =====================================================================
-// Rcpp-returning wrapper: broadcast a single q_init across n_chains
-// (the classic fresh-fit signature) and convert to R result structs.
-// =====================================================================
-std::vector<HMCResult> run_hmc_parallel_chains(
-    const std::vector<double>& q_init,
-    const ModelData& data,
-    int n_iter,
-    int n_warmup,
-    int L,
-    int n_chains,
-    unsigned int seed,
-    bool verbose,
-    int max_treedepth,
-    MassMatrixType metric_type,
-    double adapt_delta,
-    int riemannian
-) {
-  std::vector<std::vector<double>> q_init_per_chain(n_chains, q_init);
-  std::vector<HMCResultCpp> cpp_results = run_hmc_parallel_chains_cpp(
-    q_init_per_chain, {}, data,
-    n_iter, n_warmup, L, n_chains, seed, verbose,
-    max_treedepth, metric_type, adapt_delta, riemannian
-  );
-
-  int n_params = compute_param_layout(data).total_params;
-  std::vector<HMCResult> results(n_chains);
-  for (int c = 0; c < n_chains; c++) {
-    results[c] = cpp_to_r_result(cpp_results[c], n_params);
-  }
-  return results;
 }
 
 }  // namespace tulpa_hmc

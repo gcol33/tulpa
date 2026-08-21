@@ -62,8 +62,7 @@ inline double gp_nngp_log_lik(
   }
 #endif
 
-  log_lik += -0.5 * std::log(2.0 * M_PI * sigma2) -
-             0.5 * w[first_idx] * w[first_idx] / sigma2;
+  log_lik += tulpa_nngp::marginal_log_density(w[first_idx], sigma2);
 
 #if GP_DEBUG_BOUNDS
   Rcpp::Rcout << "[GP_DEBUG] First obs log_lik done, now processing remaining " << (N-1) << " observations\n";
@@ -96,23 +95,12 @@ inline double gp_nngp_log_lik(
     }
 #endif
 
-    // Count actual neighbors (early observations have fewer)
-    int n_neighbors = 0;
-    for (int j = 0; j < nn; j++) {
-      int nn_flat_idx = i * nn + j;
-      // Bounds check (always on)
-      if (nn_flat_idx < 0 || nn_flat_idx >= (int)gp_data.nn_idx.size()) return -INFINITY;
-#if GP_DEBUG_BOUNDS
-      if (nn_flat_idx < 0 || nn_flat_idx >= (int)gp_data.nn_idx.size()) {
-        Rcpp::Rcout << "[GP_DEBUG] ERROR: nn_flat_idx=" << nn_flat_idx << " out of bounds (nn_idx.size=" << gp_data.nn_idx.size() << ")\n";
-        return -INFINITY;
-      }
-#endif
-      if (gp_data.nn_idx[nn_flat_idx] > 0) {
-        n_neighbors++;
-      }
-    }
-
+    // Count actual neighbors (early observations have fewer). The shared
+    // left-packed scan stops at the first entry outside [1, nn_order.size()],
+    // so every column below the count resolves inside nn_order.
+    const int n_neighbors = tulpa_nngp::nngp_row_neighbours(
+        gp_data.nn_idx.data() + (std::size_t)i * nn, /*stride=*/1, nn,
+        (int)gp_data.nn_order.size());
 #if GP_DEBUG_BOUNDS
     if (i < 5) {
       Rcpp::Rcout << "[GP_DEBUG]   n_neighbors=" << n_neighbors << "\n";
@@ -121,8 +109,7 @@ inline double gp_nngp_log_lik(
 
     if (n_neighbors == 0) {
       // No neighbors: marginal
-      log_lik += -0.5 * std::log(2.0 * M_PI * sigma2) -
-                 0.5 * w[obs_idx] * w[obs_idx] / sigma2;
+      log_lik += tulpa_nngp::marginal_log_density(w[obs_idx], sigma2);
       continue;
     }
 
@@ -236,12 +223,12 @@ inline double gp_nngp_log_lik(
     for (int j = 0; j < n_neighbors; j++) {
       c_Cinv_c += c_vec(j) * alpha(j);
     }
-    double cond_var = std::max(kGpVarFloor, sigma2 - c_Cinv_c);
-
-    // Log-likelihood contribution
-    double resid = w[obs_idx] - cond_mean;
-    log_lik += -0.5 * std::log(2.0 * M_PI * cond_var) -
-               0.5 * resid * resid / cond_var;
+    // Floor and density through the shared kernel, at the constants the
+    // autodiff twin hands cond_moments. The two are the same function, and the
+    // analytic gradients are finite-differenced from this copy.
+    double cond_var = tulpa_nngp::apply_var_floor(
+        sigma2 - c_Cinv_c, kGpVarFloor, tulpa_nngp::VarFloor::Clamp);
+    log_lik += tulpa_nngp::cond_log_density(w[obs_idx], cond_mean, cond_var);
   }
 
 #if GP_DEBUG_BOUNDS

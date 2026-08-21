@@ -198,15 +198,30 @@ inline void builtin_family_zi_eta_weights(
     }
 }
 
+// The two spec-name prefixes builtin_family_spec() writes. The constructor and
+// the predicates below are built from these, so the naming convention is
+// defined once and the two cannot drift apart.
+inline const char* builtin_spec_prefix()    { return "builtin:"; }
+inline const char* builtin_zi_spec_prefix() { return "builtin_zi:"; }
+
 // Build a LikelihoodSpec backed by the family-enum closed forms. `zi` selects
 // the two-process zero-inflated mixture; without it the spec is single-process.
 // Pair the returned spec with a BuiltinFamilyResponse (via
 // ModelData.model_response_data) whose arrays outlive the fit.
 inline LikelihoodSpec builtin_family_spec(const std::string& family,
                                           bool zi = false) {
+    // The spec's callbacks dispatch on this family string per observation, and
+    // the joint data log-likelihood evaluates them inside an OpenMP reduction.
+    // An unregistered family reaches unknown_family_stop from there, and an
+    // exception leaving a structured block is std::terminate, so the name is
+    // checked here -- on the calling thread, once, at construction.
+    if (!family_has_compiled_impl(family)) {
+        unknown_family_stop("builtin_family_spec", family);
+    }
     LikelihoodSpec spec;
     spec.n_processes    = zi ? 2 : 1;
-    spec.name           = (zi ? "builtin_zi:" : "builtin:") + family;
+    spec.name           = (zi ? builtin_zi_spec_prefix()
+                              : builtin_spec_prefix()) + family;
     spec.ll_double      = zi ? &builtin_family_zi_ll_double
                              : &builtin_family_ll_double;
     spec.eta_weights_fn = zi ? &builtin_family_zi_eta_weights
@@ -221,8 +236,20 @@ inline LikelihoodSpec builtin_family_spec(const std::string& family,
 // laplace_spec_curvature3.h) that needs to recover the underlying
 // family/phi/phi2 from model_data checks this, so the naming convention
 // stays defined in a single place.
+//
+// What the predicate guards is the static_cast to BuiltinFamilyResponse, so it
+// has to answer true for BOTH names the constructor writes: a `builtin_zi:`
+// spec carries the same response payload, and reading it as a consumer-package
+// spec would take the finite-difference branch, or decline, where the closed
+// form is available. The single-process / two-process distinction is
+// spec.n_processes, not the prefix, so a caller that needs it reads that.
+inline bool is_builtin_zi_family_spec(const std::string& spec_name) {
+    return spec_name.rfind(builtin_zi_spec_prefix(), 0) == 0;
+}
+
 inline bool is_builtin_family_spec(const std::string& spec_name) {
-    return spec_name.rfind("builtin:", 0) == 0;
+    return spec_name.rfind(builtin_spec_prefix(), 0) == 0 ||
+           is_builtin_zi_family_spec(spec_name);
 }
 
 } // namespace tulpa

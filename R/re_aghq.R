@@ -160,7 +160,15 @@
 #'   (e.g. an abundance-arm and a detection-arm term sharing one grouping
 #'   factor); same `NA`-when-unavailable rule as `blup_cross`), `theta_cov` /
 #'   `theta_se`
-#'   (fixed-parameter covariance / SE from the marginal Hessian), `log_marginal`
+#'   (fixed-parameter covariance / SE from the marginal Hessian), `re_par` /
+#'   `re_par_cov` / `re_par_se` (the RE-covariance coordinates the optimizer
+#'   carried -- log-Cholesky for a full block, log-SD for a diagonal one -- with
+#'   their block of the same inverse Hessian, so `SE(log sigma)` is available
+#'   for a boundary test on a weakly-identified variance component),
+#'   `re_par_layout` (per block: `label`, `nc`, `full`, the `index` range into
+#'   `re_par` and the `coord` names, so a caller does not reconstruct the
+#'   packing), `joint_cov` (the whole `(n_theta + n_chol)` inverse Hessian),
+#'   `log_marginal`
 #'   (the AGHQ marginal log-likelihood at the optimum, excluding any ridge),
 #'   `n_quad`, `lkj_eta`, and `converged`. RE terms that do not share one
 #'   grouping factor are an input error and stop; a singular / non-finite
@@ -376,8 +384,19 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
                                      n_quad, 1.0)
 
   # Per-group BLUPs + marginal variances at the optimum. The engine returns the
-  # prior fallback for empty groups (mode 0, variance diag(Sigma)).
+  # prior fallback for empty groups (mode 0, variance diag(Sigma)). A group whose
+  # mode search or precision factorization failed comes back NA with
+  # `group_ok[g]` FALSE, rather than the numbers a failed decomposition's solve
+  # would otherwise return.
   bl   <- cpp_aghq_blups(opt$par, orc, nc_terms, full_vec)
+  if (!all(bl$group_ok)) {
+    bad <- which(!bl$group_ok)
+    warning(sprintf(
+      "tulpa_re_aghq: the per-group posterior solve failed for %d of %d groups (%s%s); their blup, blup_var, blup_cov_g and blup_cross_g entries are NA.",
+      length(bad), length(bl$group_ok),
+      paste(utils::head(bad, 5L), collapse = ", "),
+      if (length(bad) > 5L) ", ..." else ""), call. = FALSE)
+  }
   BHAT <- bl$bhat; BVAR <- bl$bvar; BCROSS <- bl$bcross; BCOV <- bl$bcov
   blup     <- lapply(seq_along(layout), function(m) BHAT[, coef_off[m] + seq_len(nc_terms[m]), drop = FALSE])
   blup_var <- lapply(seq_along(layout), function(m) BVAR[, coef_off[m] + seq_len(nc_terms[m]), drop = FALSE])
@@ -407,6 +426,18 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
   blup_cross_g <- lapply(seq_len(n_groups), function(g)
     array(BCROSS[g, , ], dim = c(n_theta, dtot)))
 
+  # The joint inverse Hessian covers c(theta, log-Cholesky Sigma). The RE half
+  # is what says how well determined a variance component is -- a scalar block
+  # collapsing toward its boundary at few groups converges cleanly and leaves no
+  # other trace on the fit -- so it is reported alongside theta's rather than
+  # discarded.
+  re_par_idx <- seq_len(nrow(V))[-seq_len(n_theta)]
+  re_par_layout <- .aghq_re_par_layout(layout)
+  re_par_names <- unlist(lapply(re_par_layout, `[[`, "coord"), use.names = FALSE)
+  re_par_cov <- V[re_par_idx, re_par_idx, drop = FALSE]
+  dimnames(re_par_cov) <- list(re_par_names, re_par_names)
+  re_par_se <- stats::setNames(sqrt(pmax(diag(V)[re_par_idx], 0)), re_par_names)
+
   list(
     theta      = theta_ref,
     Sigma_list = Sigma_list,
@@ -418,12 +449,47 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
     blup_cross_g = blup_cross_g,
     theta_cov  = V[seq_len(n_theta), seq_len(n_theta), drop = FALSE],
     theta_se   = sqrt(pmax(diag(V)[seq_len(n_theta)], 0)),
+    re_par     = stats::setNames(opt$par[re_par_idx], re_par_names),
+    re_par_cov = re_par_cov,
+    re_par_se  = re_par_se,
+    re_par_layout = re_par_layout,
+    joint_cov  = V,
     log_marginal = log_marginal,
     n_quad     = n_quad,
     lkj_eta    = lkj_eta,
     converged  = isTRUE(opt$convergence == 0L)
   )
 }
+
+# Coordinate map for the RE-covariance half of the joint optimizer's parameter
+# vector. `.re_cov_theta_to_L_list()` unpacks each block's `k` coordinates in
+# turn -- a full block in log-Cholesky order (column-major lower triangle, the
+# diagonal on the log scale), a diagonal block as `nc` log-SDs -- so the packing
+# is what a caller reading `re_par_se` needs in order to attach an SE to a named
+# variance component. Names follow `.re_cov_derived_summary()`: bare with one
+# block, block-label-prefixed with several.
+.aghq_re_par_layout <- function(layout) {
+  M <- length(layout)
+  pos <- 0L
+  lapply(seq_along(layout), function(m) {
+    bl <- layout[[m]]
+    nm <- if (bl$full) {
+      unlist(lapply(seq_len(bl$nc), function(j)
+        vapply(j:bl$nc, function(i)
+          if (i == j) sprintf("log_L%d%d", i, j) else sprintf("L%d%d", i, j),
+          character(1))), use.names = FALSE)
+    } else {
+      sprintf("log_sd_%d", seq_len(bl$nc))
+    }
+    label <- .re_cov_block_label(bl, m)
+    if (M > 1L) nm <- paste0(label, ".", nm)
+    idx <- pos + seq_len(bl$k)
+    pos <<- pos + bl$k
+    list(label = label, nc = bl$nc, full = bl$full,
+         index = idx, coord = nm)
+  })
+}
+
 
 # Optional PC prior on the RE-block marginal SDs for the AGHQ joint optimizer.
 # `sigma_prior` is NULL (off), a `c(U, alpha)` pair (all blocks), or a list

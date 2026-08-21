@@ -50,6 +50,11 @@ resolved path could not read, one row per dropped field (block, type,
 field, path, integrates, reason). It is \code{NULL} whenever every supplied axis
 was used, which is the ordinary case; \code{\link[=diagnostic_summary]{diagnostic_summary()}} reads the same
 record in sentences.
+
+A \code{beta_prior} attribute carries the Gaussian fixed-effect prior the fit
+ran under, as \code{list(mean, sd)}. It is the engine default,
+\code{prior_normal(0, 2.5)}, whenever the caller supplied none, and \code{NULL} on
+the paths that express no Gaussian prior on the fixed effects.
 }
 \description{
 Posterior summary of the fixed effects

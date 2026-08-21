@@ -504,6 +504,11 @@ print.tulpa_fit <- function(x, ...) {
 #'   field, path, integrates, reason). It is `NULL` whenever every supplied axis
 #'   was used, which is the ordinary case; [diagnostic_summary()] reads the same
 #'   record in sentences.
+#'
+#'   A `beta_prior` attribute carries the Gaussian fixed-effect prior the fit
+#'   ran under, as `list(mean, sd)`. It is the engine default,
+#'   `prior_normal(0, 2.5)`, whenever the caller supplied none, and `NULL` on
+#'   the paths that express no Gaussian prior on the fixed effects.
 #' @export
 summary.tulpa_fit <- function(object, level = 0.95, ...) {
   tab <- .fit_fixed_table(object, level = level)
@@ -521,6 +526,7 @@ summary.tulpa_fit <- function(object, level = 0.95, ...) {
   attr(out, "interval_declined") <- attr(tab, "interval_declined")
   attr(out, "retained_mass")     <- attr(tab, "retained_mass")
   attr(out, "axis_fields_dropped") <- .tulpa_axis_dropped(object)
+  attr(out, "beta_prior")        <- object$beta_prior
   out
 }
 

@@ -36,6 +36,33 @@ GradientMode g_gradient_mode = GradientMode::AUTO;
 // does not ship an arena-AD log-lik.
 // =====================================================================
 
+// Central-difference gradient of a scalar function of the parameter vector.
+// The step is scaled by the coordinate's own magnitude: with a fixed absolute
+// step, a coordinate that lives far from the origin loses the low-order bits of
+// params[j] + h to rounding, and the difference quotient reports that rounding
+// rather than the derivative.
+template <typename F>
+static void central_difference_gradient(
+    F&& f,
+    const std::vector<double>& params,
+    std::vector<double>& grad
+) {
+    const double eps = 1e-6;
+    const int n = static_cast<int>(params.size());
+    grad.assign(n, 0.0);
+    std::vector<double> pw = params;
+
+    for (int j = 0; j < n; j++) {
+        const double h = eps * std::max(1.0, std::abs(params[j]));
+        pw[j] = params[j] + h;
+        double fp = f(pw);
+        pw[j] = params[j] - h;
+        double fm = f(pw);
+        pw[j] = params[j];
+        grad[j] = (fp - fm) / (2.0 * h);
+    }
+}
+
 void compute_gradient_generic_numerical(
     const std::vector<double>& params,
     const ModelData& data,
@@ -47,22 +74,8 @@ void compute_gradient_generic_numerical(
         return tulpa::compute_log_post_generic_spec_double(p, data, layout);
     };
 
-    double f0 = log_post_fn(params);
-    if (log_post_out) *log_post_out = f0;
-
-    const double eps = 1e-6;
-    const int n = static_cast<int>(params.size());
-    grad.assign(n, 0.0);
-    std::vector<double> pw = params;
-
-    for (int j = 0; j < n; j++) {
-        pw[j] = params[j] + eps;
-        double fp = log_post_fn(pw);
-        pw[j] = params[j] - eps;
-        double fm = log_post_fn(pw);
-        pw[j] = params[j];
-        grad[j] = (fp - fm) / (2.0 * eps);
-    }
+    if (log_post_out) *log_post_out = log_post_fn(params);
+    central_difference_gradient(log_post_fn, params, grad);
 }
 
 // =====================================================================
@@ -121,22 +134,8 @@ void compute_gradient_prior_numerical(
             p, data, layout, /*skip_obs_loop=*/true);
     };
 
-    double f0 = log_prior_fn(params);
-    if (log_post_out) *log_post_out = f0;
-
-    const double eps = 1e-6;
-    const int n = static_cast<int>(params.size());
-    grad.assign(n, 0.0);
-    std::vector<double> pw = params;
-
-    for (int j = 0; j < n; j++) {
-        pw[j] = params[j] + eps;
-        double fp = log_prior_fn(pw);
-        pw[j] = params[j] - eps;
-        double fm = log_prior_fn(pw);
-        pw[j] = params[j];
-        grad[j] = (fp - fm) / (2.0 * eps);
-    }
+    if (log_post_out) *log_post_out = log_prior_fn(params);
+    central_difference_gradient(log_prior_fn, params, grad);
 }
 
 void compute_gradient_prior_arena(
@@ -189,6 +188,27 @@ bool verify_gradient_runtime(
 
   compute_gradient_generic_numerical(params, data, layout, grad_numerical, nullptr);
 
+  if (grad_numerical.size() != grad_active.size()) {
+    REprintf("[tulpa] WARNING: the active gradient returned %d entries for %d "
+             "parameters.\n  Falling back to numerical gradients for safety.\n",
+             (int)grad_active.size(), (int)grad_numerical.size());
+    return false;
+  }
+
+  // A non-finite entry is the failure this check exists to catch, and it cannot
+  // be found by the relative difference below: every comparison against a NaN
+  // is false, so the worst-difference scan would step over it and report a
+  // clean gradient.
+  for (size_t i = 0; i < grad_active.size(); i++) {
+    if (!std::isfinite(grad_active[i]) || !std::isfinite(grad_numerical[i])) {
+      REprintf("[tulpa] WARNING: non-finite gradient at param %d!\n"
+               "  active[%d] = %.8e, numerical[%d] = %.8e\n"
+               "  Falling back to numerical gradients for safety.\n",
+               (int)i, (int)i, grad_active[i], (int)i, grad_numerical[i]);
+      return false;
+    }
+  }
+
   double max_diff = 0.0;
   int worst_idx = -1;
   for (size_t i = 0; i < grad_active.size(); i++) {
@@ -196,13 +216,18 @@ bool verify_gradient_runtime(
     double scale = std::max(1.0, std::max(std::abs(grad_active[i]),
                                            std::abs(grad_numerical[i])));
     double rel_diff = diff / scale;
+    if (!std::isfinite(rel_diff)) {
+      max_diff = rel_diff;
+      worst_idx = static_cast<int>(i);
+      break;
+    }
     if (rel_diff > max_diff) {
       max_diff = rel_diff;
       worst_idx = static_cast<int>(i);
     }
   }
 
-  if (max_diff > tol) {
+  if (worst_idx >= 0 && (!std::isfinite(max_diff) || max_diff > tol)) {
     REprintf("[tulpa] WARNING: gradient mismatch detected at param %d!\n"
              "  max |active - numerical| / scale = %.6e (tol = %.1e)\n"
              "  active[%d] = %.8e, numerical[%d] = %.8e\n"

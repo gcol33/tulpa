@@ -153,3 +153,60 @@ test_that("a NULL / empty cell yields a NULL block", {
   expect_false(is.null(out[[1L]]))
   expect_null(out[[2L]])
 })
+
+test_that("an out-of-range idx or constraint index is rejected at the boundary", {
+  jd   <- .make_joint_Q(p_d = 2L, field_sizes = 10L, seed = 66)
+  fidx <- jd$field_idx[[1L]]
+  idx  <- c(seq_len(jd$p_d), fidx)
+  csc  <- .csc_lower(jd$Q)
+  call_with <- function(idx_use, A_use = list(as.integer(fidx))) {
+    cpp_joint_inner_vcov_blocks(
+      list(csc$p), list(csc$i), list(csc$x), jd$n_x,
+      as.integer(idx_use), jd$p_d, A_use,
+      field_marginal = TRUE, n_threads = 1L)
+  }
+  expect_error(call_with(replace(idx, 1L, 0L)), "idx")
+  expect_error(call_with(replace(idx, 1L, jd$n_x + 1L)), "idx")
+  expect_error(call_with(replace(idx, 1L, NA_integer_)), "idx")
+  expect_error(call_with(seq_len(jd$n_x + 1L)), "idx")
+  expect_error(call_with(idx, list(as.integer(c(fidx, jd$n_x + 5L)))), "A_cols")
+  expect_error(call_with(idx, list(as.integer(c(fidx, NA)))), "A_cols")
+  expect_error(call_with(idx, list(as.integer(c(fidx, 0L)))), "A_cols")
+  expect_silent(call_with(idx))
+})
+
+test_that("a malformed CSC triple yields a NULL block instead of reading past it", {
+  jd   <- .make_joint_Q(p_d = 2L, field_sizes = 10L, seed = 77)
+  fidx <- jd$field_idx[[1L]]
+  idx  <- c(seq_len(jd$p_d), fidx)
+  csc  <- .csc_lower(jd$Q)
+  one  <- function(pp, ii, xx) {
+    cpp_joint_inner_vcov_blocks(
+      list(pp), list(ii), list(xx), jd$n_x, as.integer(idx), jd$p_d,
+      list(as.integer(fidx)), field_marginal = TRUE, n_threads = 1L)[[1L]]
+  }
+  expect_false(is.null(one(csc$p, csc$i, csc$x)))
+  expect_null(one(csc$p[-1L], csc$i, csc$x))                  # short pointer array
+  expect_null(one(csc$p, csc$i[-1L], csc$x))                  # Qi shorter than Qx
+  expect_null(one(csc$p, replace(csc$i, 1L, jd$n_x), csc$x))  # row index past n_x
+  expect_null(one(csc$p, replace(csc$i, 1L, -1L), csc$x))     # negative row index
+  expect_null(one(replace(csc$p, 2L, csc$p[1L] - 1L), csc$i, csc$x))  # not monotone
+})
+
+test_that("a repeated latent index in a constraint group is read as an indicator", {
+  # Row g of A is the indicator of group g's indices, so listing an index twice
+  # must give the same constrained block as listing it once. The right-hand side
+  # W = Q^-1 A' and the Gram matrix M = A W have to use that same A.
+  jd   <- .make_joint_Q(p_d = 3L, field_sizes = 12L, seed = 88)
+  fidx <- jd$field_idx[[1L]]
+  idx  <- c(seq_len(jd$p_d), fidx)
+  csc  <- .csc_lower(jd$Q)
+  one  <- function(A_use) cpp_joint_inner_vcov_blocks(
+    list(csc$p), list(csc$i), list(csc$x), jd$n_x, as.integer(idx),
+    length(idx), A_use, field_marginal = FALSE, n_threads = 1L)[[1L]]
+
+  clean <- one(list(as.integer(fidx)))
+  duped <- one(list(as.integer(c(fidx, fidx[c(1L, 3L, 3L)]))))
+  expect_identical(duped, clean)
+  expect_equal(clean, .ref_inner_block(jd$Q, idx, list(fidx)), tolerance = 1e-9)
+})

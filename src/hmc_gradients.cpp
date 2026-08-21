@@ -45,11 +45,4 @@ GradientMode get_gradient_mode() {
     return g_gradient_mode;
 }
 
-void reset_grad_workspace_cache() {
-    // No-op after Phase D: the legacy vectorized workspace cache was
-    // deleted with the analytical kernels. Retained as a stable symbol
-    // so downstream callers do not have to ifdef their workspace-reset
-    // sites.
-}
-
 } // namespace tulpa_hmc

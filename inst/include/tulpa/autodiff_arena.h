@@ -591,7 +591,11 @@ inline bool operator!=(double a, const Var& b) { return a != b.val(); }
 
 inline Var exp(const Var& a) {
     Arena* ar = a.arena_;
-    double e = std::exp(a.val());
+    // Clamped at the shared bounds so this is the same function the double
+    // instantiation of the log posterior evaluates. Unclamped, a log-scale
+    // hyperparameter past 709 returns +Inf here and every product carrying it
+    // is NaN in the backward pass, while the value path stays finite.
+    double e = std::exp(tulpa::math::clamp_exp_arg(a.val()));
     // d(exp(x))/dx = exp(x)
     Var r;
     r.arena_ = ar;
@@ -613,7 +617,19 @@ inline Var log(const Var& a) {
 
 inline Var sqrt(const Var& a) {
     Arena* ar = a.arena_;
-    double s = std::sqrt(a.val());
+    double av = a.val();
+    // At and below zero the value is 0 and the derivative 0.5 / sqrt(x) is
+    // +Inf, which any nonzero upstream adjoint turns into an Inf or NaN
+    // gradient while the double path returns a finite 0. An HSGP spectral
+    // density reaches exactly zero by underflow at a long lengthscale and a
+    // high basis index, so this is an ordinary argument here, not an edge case.
+    if (av <= 0.0) {
+        Var r0;
+        r0.arena_ = ar;
+        r0.idx_ = ar->add_unary(0.0, a.idx_, 0.0);
+        return r0;
+    }
+    double s = std::sqrt(av);
     // d(sqrt(x))/dx = 1 / (2*sqrt(x))
     Var r;
     r.arena_ = ar;
@@ -625,10 +641,15 @@ inline Var pow(const Var& a, double p) {
     Arena* ar = a.arena_;
     double av = a.val();
     double pv = std::pow(av, p);
-    // d(x^p)/dx = p * x^(p-1)
+    // d(x^p)/dx = p * x^(p-1), which is +Inf at av == 0 for p < 1 and NaN for a
+    // negative base at fractional p. A non-finite local partial multiplies
+    // every adjoint upstream of it, so the direction is dropped and the value
+    // -- which is exact -- is kept.
+    double deriv = p * std::pow(av, p - 1.0);
+    if (!std::isfinite(deriv)) deriv = 0.0;
     Var r;
     r.arena_ = ar;
-    r.idx_ = ar->add_unary(pv, a.idx_, p * std::pow(av, p - 1.0));
+    r.idx_ = ar->add_unary(pv, a.idx_, deriv);
     return r;
 }
 
@@ -674,7 +695,10 @@ inline Var log_sum_exp(const Var& a, const Var& b) {
 
 inline Var logit(const Var& a) {
     Arena* ar = a.arena_;
-    double av = a.val();
+    // A probability at exactly 0 or 1 gives -Inf / +Inf for the value and +Inf
+    // for the derivative. Clamped into the open interval, the same guard log()
+    // above applies to its own argument.
+    double av = tulpa::math::clamp_prob(a.val());
     double result_val = std::log(av / (1.0 - av));
     // d(logit(x))/dx = 1 / (x * (1-x))
     double deriv = 1.0 / (av * (1.0 - av));

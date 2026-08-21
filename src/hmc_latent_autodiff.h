@@ -77,9 +77,10 @@ T latent_factor_log_prior(const std::vector<T>& factors,
                           LatentConstraint constraint) {
     T lp = T(0.0);
 
-    // Standard normal prior on factors
-    // For sum-to-zero: n_obs - 1 free parameters per factor
-    // For first-zero: n_obs - 1 free parameters per factor (first is 0)
+    // Standard normal prior on factors. The quadratic form runs over every
+    // coordinate of a centred column, so SUM_TO_ZERO sums all n_obs terms.
+    // FIRST_ZERO starts at index 1 because apply_first_zero has already set
+    // index 0 to exactly zero, contributing nothing.
     int n_free = (constraint == LatentConstraint::FIRST_ZERO) ? n_obs - 1 : n_obs;
 
     for (int k = 0; k < n_factors; ++k) {

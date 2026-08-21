@@ -23,6 +23,18 @@ namespace tulpa_temporal {
 using tulpa::math::safe_sqrt;
 
 // -----------------------------------------------------------------------------
+// Variance parameterization
+// -----------------------------------------------------------------------------
+
+// The precision a variance-parameterized arm evaluates at. The value functions
+// below and the analytic gradients in hmc_multiscale_temporal_grad.h both take
+// their precision from here, so a value and its gradient describe one density.
+template <typename T>
+inline T variance_to_precision(const T& sigma2) {
+  return T(1.0) / sigma2;
+}
+
+// -----------------------------------------------------------------------------
 // RW1 log-likelihood (intrinsic first-order random walk)
 // -----------------------------------------------------------------------------
 
@@ -49,9 +61,8 @@ inline T rw1_log_lik(
     rank = tulpa::s2z_aug_rank(rank, 1);
   }
 
-  // Normalizing constant (improper prior, omit for sampling)
-  return T(-0.5) * quad / sigma2
-       - T(0.5 * rank) * safe_log(T(2.0 * M_PI) * sigma2);
+  const T tau = variance_to_precision(sigma2);
+  return gmrf_log_norm(rank, safe_log(tau)) - T(0.5) * tau * quad;
 }
 
 // -----------------------------------------------------------------------------
@@ -82,19 +93,17 @@ inline T rw2_log_lik(
     rank = tulpa::s2z_aug_rank(rank, 1);
   }
 
-  // Normalizing constant
-  return T(-0.5) * quad / sigma2
-       - T(0.5 * rank) * safe_log(T(2.0 * M_PI) * sigma2);
+  const T tau = variance_to_precision(sigma2);
+  return gmrf_log_norm(rank, safe_log(tau)) - T(0.5) * tau * quad;
 }
 
 // -----------------------------------------------------------------------------
 // AR1 log-likelihood (stationary first-order autoregressive)
 // -----------------------------------------------------------------------------
 
-// Log-likelihood for AR1: phi[t] = rho * phi[t-1] + epsilon[t]
-// Innovation-variance parameterization (cf. ar1_log_density, which takes
-// the precision); the stationary variance is regularized so the density
-// stays finite as |rho| -> 1.
+// Log-likelihood for AR1: phi[t] = rho * phi[t-1] + epsilon[t], innovation
+// variance sigma2. The density is ar1_log_density taken at the corresponding
+// precision, so the stationary factor 1 - rho^2 is floored in one place.
 template <typename T>
 inline T ar1_log_lik(
     const std::vector<T>& phi,  // Length T
@@ -102,24 +111,7 @@ inline T ar1_log_lik(
     const T& rho                // Autocorrelation (-1 < rho < 1)
 ) {
   int n = static_cast<int>(phi.size());
-  if (n < 2) return T(0.0);
-
-  T log_lik = T(0.0);
-
-  // Marginal distribution of first observation
-  T one_minus_rho2 = T(1.0) - rho * rho;
-  T marginal_var = sigma2 / (one_minus_rho2 + T(1e-10));
-  log_lik = log_lik - T(0.5) * safe_log(T(2.0 * M_PI) * marginal_var);
-  log_lik = log_lik - T(0.5) * phi[0] * phi[0] / marginal_var;
-
-  // Conditional distributions
-  for (int t = 1; t < n; t++) {
-    T resid = phi[t] - rho * phi[t - 1];
-    log_lik = log_lik - T(0.5) * safe_log(T(2.0 * M_PI) * sigma2);
-    log_lik = log_lik - T(0.5) * resid * resid / sigma2;
-  }
-
-  return log_lik;
+  return ar1_log_density(phi.data(), n, rho, variance_to_precision(sigma2));
 }
 
 // -----------------------------------------------------------------------------
@@ -132,14 +124,9 @@ inline T iid_log_lik(
     const T& sigma2
 ) {
   int n = static_cast<int>(phi.size());
-  T log_lik = T(0.0);
-
-  for (int t = 0; t < n; t++) {
-    log_lik = log_lik - T(0.5) * safe_log(T(2.0 * M_PI) * sigma2);
-    log_lik = log_lik - T(0.5) * phi[t] * phi[t] / sigma2;
-  }
-
-  return log_lik;
+  const T tau = variance_to_precision(sigma2);
+  return log_prior_temporal(phi.data(), n, TemporalType::IID,
+                            tau, T(0.0), false);
 }
 
 // -----------------------------------------------------------------------------
@@ -259,16 +246,6 @@ inline void compute_temporal_eta(
 template <typename T>
 inline T log_prior_sigma2_temporal_pc(const T& sigma2, double U, double alpha) {
   return tulpa::log_prior_sigma2_pc(sigma2, U, alpha);
-}
-
-// Prior for AR1 rho: Beta(a, b) on (rho + 1) / 2
-template <typename T>
-inline T log_prior_rho(const T& rho, double a = 2.0, double b = 2.0) {
-  // Transform to [0, 1]
-  T x = (rho + T(1.0)) / T(2.0);
-
-  // Beta log density (unnormalized)
-  return T(a - 1.0) * safe_log(x) + T(b - 1.0) * safe_log(T(1.0) - x);
 }
 
 // Parse temporal type from string

@@ -132,21 +132,29 @@ inline T builtin_family_base_ll_ad(
     }
     if (fam == "inverse_gaussian") {
         // Log link: y ~ IG with mean mu = exp(eta) and variance phi*mu^3.
-        // ll = -0.5 log(2 pi phi y^3) - (y-mu)^2 / (2 phi y mu^2).
+        // ll = -0.5 log(2 pi phi y^3) - (y-mu)^2 / (2 phi y mu^2). The response
+        // is floored the way gamma and lognormal floor theirs, and the y^3 is
+        // taken as 3 log y so a small y underflows the log rather than the
+        // cube.
+        const double ysafe = std::max(yv, 1e-300);
         T mu = safe_exp(eta[0]);
         T resid = T(yv) - mu;
-        const double c = -0.5 * std::log(2.0 * M_PI * phi * yv * yv * yv);
+        const double c = -0.5 * (std::log(2.0 * M_PI * phi)
+                                 + 3.0 * std::log(ysafe));
         return (T(c)
-             - resid * resid * T(1.0 / (2.0 * phi * yv)) / (mu * mu));
+             - resid * resid * T(1.0 / (2.0 * phi * ysafe)) / (mu * mu));
     }
     if (fam == "beta") {
         // Logit link: y ~ Beta(a, b) with a = mu*phi, b = (1-mu)*phi,
         // mu = inv_logit(eta), phi the precision.
-        T mu = inv_logit(eta[0]);
-        T a = mu * T(phi);
-        T b = (T(1.0) - mu) * T(phi);
-        const double ly  = std::log(yv);
-        const double l1y = std::log(1.0 - yv);
+        // The response is floored at both ends, the way gamma and lognormal
+        // floor theirs: an untouched log(0) is -Inf, and -Inf times the zero
+        // adjoint of a data constant is NaN in the gradient rather than a
+        // finite refusal in the value.
+        T a = inv_logit_pos(eta[0]) * T(phi);
+        T b = inv_logit_pos(T(0.0) - eta[0]) * T(phi);
+        const double ly  = std::log(std::max(yv, 1e-300));
+        const double l1y = std::log(std::max(1.0 - yv, 1e-300));
         return (T(std::lgamma(phi)) - lgamma_fn(a) - lgamma_fn(b)
              + (a - T(1.0)) * T(ly) + (b - T(1.0)) * T(l1y));
     }

@@ -173,9 +173,14 @@ double rpg_int(int b, double z) {
       double zh = 0.5 * az;
       double th = std::tanh(zh);
       m1 = th / (2.0 * az);
-      // var = (sinh(z) - z) / (4 z^3 cosh(z/2)^2)
+      // var = (sinh(z) - z) / (4 z^3 cosh(z/2)^2), written as
+      //       tanh(z/2) / (2 z^3) - sech(z/2)^2 / (4 z^2)
+      // using sinh(z) = 2 sinh(z/2) cosh(z/2). Both terms stay finite as z
+      // grows -- cosh(z/2)^2 overflows to Inf and the second term goes to 0 --
+      // so the variance tends to its analytic limit 1 / (2 z^3) instead of
+      // becoming Inf/Inf and taking the draw to NaN.
       double ch = std::cosh(zh);
-      v1 = (std::sinh(az) - az) / (4.0 * az * az * az * ch * ch);
+      v1 = th / (2.0 * az * az * az) - 1.0 / (4.0 * az * az * ch * ch);
     }
     double mean = b * m1;
     double sd = std::sqrt(b * v1);

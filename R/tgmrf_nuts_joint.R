@@ -56,9 +56,22 @@
 #' @param fd_step Central finite-difference step on theta for
 #'   \eqn{\partial_m Q}, \eqn{\partial_m \mu}, \eqn{d\log p(\theta)/d\theta_m}.
 #'   Default 1e-3.
-#' @param debug_gradient_check If `TRUE`, runs a one-shot numerical-gradient
-#'   sanity check at the initial \eqn{q} and prints the max relative error
-#'   across all `D = p + n_lat + theta_dim` components.
+#' @param debug_gradient_check If `TRUE`, compares the analytic joint gradient
+#'   at the initial \eqn{q} against central differences across all
+#'   `D = p + n_lat + theta_dim` components and returns the comparison as
+#'   `gradient_check` on the fit: `max_rel` (largest relative error),
+#'   `grad_scale` (\eqn{\max_k|\partial_k|}, the scale the relative error is
+#'   taken against), `max_rel_beta` / `max_rel_z` / `max_rel_theta` per block,
+#'   `n_zero` (analytic entries that are identically zero) and `n_checked`.
+#'   The theta block is held to a looser accuracy than the other two: its
+#'   analytic gradient is itself a central difference at `fd_step`, so it
+#'   carries that rule's own truncation.
+#' @param gradient_check_tol Relative-error tolerance for the check above.
+#'   A `max_rel` above it is an error rather than a printed number. `0`
+#'   computes the comparison without asserting on it. Inert unless
+#'   `debug_gradient_check` is `TRUE`.
+#' @param fd_check_step Relative step for that check's own central difference,
+#'   scaled per coordinate by `max(1, |q_k|)`. Default 1e-5.
 #' @param seed Integer seed for the C++ RNG. Default uses `sample.int(.Machine$integer.max, 1L)`.
 #' @param n_iter Total number of NUTS iterations (including warmup). Default
 #'   `500L`.
@@ -73,6 +86,8 @@
 #'       `sds_beta`, `sds_z`, `sds_theta` -- column-wise moments.
 #'     \item `mean_accept`, `tree_depth`, `divergent`, `epsilon` --
 #'       sampler diagnostics.
+#'     \item `gradient_check` -- the analytic-vs-central-difference comparison
+#'       when `debug_gradient_check` was set, `NULL` otherwise.
 #'     \item `pilot`, `mode_beta`, `mode_z`, `mode_theta`, `mass_diag` --
 #'       pilot Laplace outputs used for init / mass matrix.
 #'     \item `inference_mode = "exact"`, `inference_tier = 1L`,
@@ -98,6 +113,8 @@
                                    n_threads = 1L,
                                    verbose = FALSE,
                                    debug_gradient_check = FALSE,
+                                   gradient_check_tol = 0,
+                                   fd_check_step = 1e-5,
                                    seed = NULL) {
 
   if (!inherits(block, "tgmrf")) {
@@ -213,7 +230,9 @@
     fd_step     = as.numeric(fd_step),
     verbose     = isTRUE(verbose),
     seed        = as.integer(seed),
-    debug_gradient_check = isTRUE(debug_gradient_check)
+    debug_gradient_check = isTRUE(debug_gradient_check),
+    gradient_check_tol = as.numeric(gradient_check_tol),
+    fd_check_step = as.numeric(fd_check_step)
   )
 
   beta_names  <- colnames(X)
@@ -250,6 +269,7 @@
     divergent      = divergent_keep,
     n_divergent    = sum(divergent_keep),
     epsilon        = raw$epsilon,
+    gradient_check = raw$gradient_check,
     pilot          = pilot,
     mode_beta      = beta_init,
     mode_z         = z_init,

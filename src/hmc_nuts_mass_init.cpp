@@ -18,6 +18,120 @@ namespace tulpa_hmc {
 
 // DENSE_MAX_PARAMS and MassMatrixConfig now defined in hmc_sampler.h
 
+// Contiguous hyperparameter groups the mass matrix can carry as small dense
+// blocks, as (start_index, block_size) pairs. One detector serves both the AUTO
+// resolution and an explicit BLOCK_DIAG request, so the two spellings of the
+// same request cannot resolve to different metrics.
+//
+// `include_field_hyper_pairs` adds the temporal-GP and HSGP hyperparameter
+// pairs. AUTO leaves them out: for both structures a plain diagonal reaches the
+// same acceptance rate in fewer leapfrog steps, and an HSGP model carrying a
+// temporal term is routed to full DENSE instead, since its correlations run
+// between the lengthscale and the whole basis rather than within a pair.
+static std::vector<std::pair<int,int>> detect_mass_blocks(
+    const ModelData& data,
+    const ParamLayout& layout,
+    bool include_field_hyper_pairs
+) {
+  std::vector<std::pair<int,int>> block_specs;
+
+  if (include_field_hyper_pairs) {
+    if (layout.is_temporal_gp && layout.log_sigma2_temporal_gp_idx >= 0 &&
+        layout.logit_phi_temporal_gp_idx == layout.log_sigma2_temporal_gp_idx + 1) {
+      block_specs.push_back({layout.log_sigma2_temporal_gp_idx, 2});
+    }
+    if (layout.is_hsgp && layout.log_sigma2_hsgp_idx >= 0 &&
+        layout.log_lengthscale_hsgp_idx == layout.log_sigma2_hsgp_idx + 1) {
+      block_specs.push_back({layout.log_sigma2_hsgp_idx, 2});
+    }
+  }
+
+  if (layout.is_bym2 && layout.log_sigma_bym2_idx >= 0 &&
+      layout.logit_rho_bym2_idx == layout.log_sigma_bym2_idx + 1) {
+    block_specs.push_back({layout.log_sigma_bym2_idx, 2});
+  }
+  if (layout.is_gp && layout.log_sigma2_gp_idx >= 0 &&
+      layout.log_phi_gp_idx == layout.log_sigma2_gp_idx + 1) {
+    block_specs.push_back({layout.log_sigma2_gp_idx, 2});
+  }
+  if (layout.is_multiscale_gp) {
+    if (layout.log_sigma2_gp_local_idx >= 0 &&
+        layout.log_phi_gp_local_idx == layout.log_sigma2_gp_local_idx + 1) {
+      block_specs.push_back({layout.log_sigma2_gp_local_idx, 2});
+    }
+    if (layout.log_sigma2_gp_regional_idx >= 0 &&
+        layout.log_phi_gp_regional_idx == layout.log_sigma2_gp_regional_idx + 1) {
+      block_specs.push_back({layout.log_sigma2_gp_regional_idx, 2});
+    }
+  }
+  // SVC layout groups all sigma2 then all phi: [sigma2_0..sigma2_{k-1},
+  // phi_0..phi_{k-1}]. The correlated pair for SVC t is (sigma2_t, phi_t),
+  // which is contiguous only when k == 1 (sigma2_0 immediately followed by
+  // phi_0). A BLOCK_DIAG MassBlock spans a contiguous index range, so the
+  // (sigma2_t, phi_t) pairs are blockable only in that single-SVC case;
+  // multi-SVC models keep the DIAG/DENSE selection.
+  if (layout.has_svc && layout.log_sigma2_svc_start >= 0 &&
+      layout.log_phi_svc_start >= 0) {
+    int n_svc = layout.log_sigma2_svc_end - layout.log_sigma2_svc_start;
+    if (n_svc == 1 && layout.log_phi_svc_start == layout.log_sigma2_svc_start + 1) {
+      block_specs.push_back({layout.log_sigma2_svc_start, 2});
+    }
+  }
+  if (layout.is_st_gp && layout.log_phi_st_space_idx >= 0 &&
+      layout.log_phi_st_time_idx == layout.log_phi_st_space_idx + 1) {
+    block_specs.push_back({layout.log_phi_st_space_idx, 2});
+  }
+  if (layout.has_multiscale_temporal) {
+    // Multiscale temporal hyperparams form a natural block (3-4 params):
+    // log_sigma2_trend, log_sigma2_seasonal, log_sigma2_short [, logit_rho_short]
+    // These are correlated but the temporal effects themselves (phi) are not
+    // strongly correlated with the hyperparams -> BLOCK_DIAG, not full DENSE.
+    int ms_block_start = -1;
+    int ms_block_size = 0;
+    if (layout.log_sigma2_trend_idx >= 0) {
+      ms_block_start = layout.log_sigma2_trend_idx;
+      ms_block_size = 1;
+    }
+    if (layout.log_sigma2_seasonal_idx >= 0) {
+      if (ms_block_start < 0) ms_block_start = layout.log_sigma2_seasonal_idx;
+      ms_block_size++;
+    }
+    if (layout.log_sigma2_short_idx >= 0) {
+      if (ms_block_start < 0) ms_block_start = layout.log_sigma2_short_idx;
+      ms_block_size++;
+    }
+    if (layout.logit_rho_short_idx >= 0) {
+      ms_block_size++;
+    }
+    if (ms_block_start >= 0 && ms_block_size >= 2 && ms_block_size <= 4) {
+      block_specs.push_back({ms_block_start, ms_block_size});
+    }
+  }
+  // Correlated slopes: the per-term Cholesky params form a contiguous,
+  // naturally correlated block. A MassBlock holds a dense block up to 4x4
+  // (its stack-allocated storage stride), so terms with 2..4 Cholesky params
+  // get a dedicated block; wider correlated-slope terms keep the DIAG/DENSE
+  // selection.
+  if (layout.has_re_correlated_slopes) {
+    for (size_t t = 0; t < layout.chol_re_start_multi.size(); t++) {
+      if (layout.re_correlated_multi[t]) {
+        int chol_start = layout.chol_re_start_multi[t];
+        int chol_size = layout.chol_re_end_multi[t] - chol_start;
+        if (chol_size >= 2 && chol_size <= 4) {
+          block_specs.push_back({chol_start, chol_size});
+        }
+      }
+    }
+  }
+
+  // Model packages ship their own extra-parameter blocks via
+  // spec->n_extra_params at layout.extra_offset. A family-specific
+  // BLOCK_DIAG mass heuristic could be introduced via a LikelihoodSpec
+  // callback (e.g. spec->suggest_mass_blocks).
+
+  return block_specs;
+}
+
 // Select mass matrix type (AUTO resolution, block detection, DENSE override)
 // and initialize the DenseMassMatrix object.
 MassMatrixConfig select_and_init_mass_matrix(
@@ -52,103 +166,18 @@ MassMatrixConfig select_and_init_mass_matrix(
   std::vector<std::pair<int,int>> block_specs;
 
   if (effective_metric == MassMatrixType::AUTO) {
-    // Build block_specs from param layout: detect pairs of correlated hyperparameters.
-    // Each block captures a small dense correlation (2-4 params) at O(block?) cost,
-    // avoiding full O(n?) DENSE while handling the key correlations DIAG misses.
-    // NOTE: temporal_gp excluded ? DIAG is faster (2.11s vs 2.39s, 5 seeds Bin+GP_t).
-    // NOTE: HSGP excluded from AUTO blocks ? DIAG is faster for HSGP-only (29k LF
-    // vs 39k LF), and HSGP+temporal uses full DENSE (tested BLOCK_DIAG 2026-03-10:
-    // worse performance and more divergences than DENSE).
-    if (layout.is_bym2 && layout.log_sigma_bym2_idx >= 0 &&
-        layout.logit_rho_bym2_idx == layout.log_sigma_bym2_idx + 1) {
-      block_specs.push_back({layout.log_sigma_bym2_idx, 2});
-    }
-    if (layout.is_gp && layout.log_sigma2_gp_idx >= 0 &&
-        layout.log_phi_gp_idx == layout.log_sigma2_gp_idx + 1) {
-      block_specs.push_back({layout.log_sigma2_gp_idx, 2});
-    }
-    if (layout.is_multiscale_gp) {
-      if (layout.log_sigma2_gp_local_idx >= 0 &&
-          layout.log_phi_gp_local_idx == layout.log_sigma2_gp_local_idx + 1) {
-        block_specs.push_back({layout.log_sigma2_gp_local_idx, 2});
-      }
-      if (layout.log_sigma2_gp_regional_idx >= 0 &&
-          layout.log_phi_gp_regional_idx == layout.log_sigma2_gp_regional_idx + 1) {
-        block_specs.push_back({layout.log_sigma2_gp_regional_idx, 2});
-      }
-    }
-    // SVC layout groups all sigma2 then all phi: [sigma2_0..sigma2_{k-1},
-    // phi_0..phi_{k-1}]. The correlated pair for SVC t is (sigma2_t, phi_t),
-    // which is contiguous only when k == 1 (sigma2_0 immediately followed by
-    // phi_0). A BLOCK_DIAG MassBlock spans a contiguous index range, so the
-    // (sigma2_t, phi_t) pairs are blockable only in that single-SVC case;
-    // multi-SVC models keep the DIAG/DENSE selection below.
-    if (layout.has_svc && layout.log_sigma2_svc_start >= 0 &&
-        layout.log_phi_svc_start >= 0) {
-      int n_svc = layout.log_sigma2_svc_end - layout.log_sigma2_svc_start;
-      if (n_svc == 1 && layout.log_phi_svc_start == layout.log_sigma2_svc_start + 1) {
-        block_specs.push_back({layout.log_sigma2_svc_start, 2});
-      }
-    }
-    if (layout.is_st_gp && layout.log_phi_st_space_idx >= 0 &&
-        layout.log_phi_st_time_idx == layout.log_phi_st_space_idx + 1) {
-      block_specs.push_back({layout.log_phi_st_space_idx, 2});
-    }
-    if (layout.has_multiscale_temporal) {
-      // Multiscale temporal hyperparams form a natural block (3-4 params):
-      // log_sigma2_trend, log_sigma2_seasonal, log_sigma2_short [, logit_rho_short]
-      // These are correlated but the temporal effects themselves (phi) are not
-      // strongly correlated with the hyperparams ? BLOCK_DIAG, not full DENSE.
-      int ms_block_start = -1;
-      int ms_block_size = 0;
-      if (layout.log_sigma2_trend_idx >= 0) {
-        ms_block_start = layout.log_sigma2_trend_idx;
-        ms_block_size = 1;
-      }
-      if (layout.log_sigma2_seasonal_idx >= 0) {
-        if (ms_block_start < 0) ms_block_start = layout.log_sigma2_seasonal_idx;
-        ms_block_size++;
-      }
-      if (layout.log_sigma2_short_idx >= 0) {
-        if (ms_block_start < 0) ms_block_start = layout.log_sigma2_short_idx;
-        ms_block_size++;
-      }
-      if (layout.logit_rho_short_idx >= 0) {
-        ms_block_size++;
-      }
-      if (ms_block_start >= 0 && ms_block_size >= 2 && ms_block_size <= 4) {
-        block_specs.push_back({ms_block_start, ms_block_size});
-      }
-    }
-    // Correlated slopes: the per-term Cholesky params form a contiguous,
-    // naturally correlated block. A MassBlock holds a dense block up to 4x4
-    // (its stack-allocated storage stride), so terms with 2..4 Cholesky params
-    // get a dedicated block; wider correlated-slope terms keep the DIAG/DENSE
-    // selection below.
-    if (layout.has_re_correlated_slopes) {
-      for (size_t t = 0; t < layout.chol_re_start_multi.size(); t++) {
-        if (layout.re_correlated_multi[t]) {
-          int chol_start = layout.chol_re_start_multi[t];
-          int chol_size = layout.chol_re_end_multi[t] - chol_start;
-          if (chol_size >= 2 && chol_size <= 4) {
-            block_specs.push_back({chol_start, chol_size});
-          }
-        }
-      }
-    }
+    // Small dense blocks capture the correlated hyperparameter groups a plain
+    // diagonal misses, at O(block^2) cost instead of the O(n^2) a full DENSE
+    // metric pays on every leapfrog step.
+    block_specs = detect_mass_blocks(data, layout,
+                                     /*include_field_hyper_pairs=*/false);
 
-    // Model packages ship their own extra-parameter blocks via
-    // spec->n_extra_params at layout.extra_offset. A family-specific
-    // BLOCK_DIAG mass heuristic could be introduced via a LikelihoodSpec
-    // callback (e.g. spec->suggest_mass_blocks).
     bool is_icar = (data.spatial_type == SpatialType::ICAR);
-    // HSGP+temporal: 36 HSGP basis coefs and 20 temporal effects have complex
-    // cross-correlations that DIAG can't handle (106 div) and BLOCK_DIAG misses
-    // (16 div, eps~0.006). DENSE with eigenvalue conditioning captures the geometry
-    // correctly (0-1 div). Tested BLOCK_DIAG (2026-03-10): 303s/0div PG, 214s/16div NB,
-    // 133s/3div Bin ? worse than DENSE (211s/3div, 176s/1div, 142s/0div).
-    // Also applies to HSGP+TVC and HSGP+MS_t (same cross-correlation issue).
-    // Only use DENSE when p <= 200 to avoid O(n?) per-step overhead dominating.
+    // An HSGP field carrying a temporal, TVC or multiscale-temporal term has
+    // cross-correlations running between the basis coefficients and the
+    // temporal effects, which no small block spans; a full DENSE metric with
+    // eigenvalue conditioning captures them, so long as p stays small enough
+    // that the O(n^2) per-step cost does not dominate.
     bool hsgp_temporal = layout.is_hsgp && data.has_hsgp && n_params <= DENSE_MAX_PARAMS &&
                          (layout.has_temporal || layout.has_tvc || layout.has_multiscale_temporal);
 
@@ -158,11 +187,9 @@ MassMatrixConfig select_and_init_mass_matrix(
                             hsgp_temporal ||      // HSGP+temporal cross-correlations
                             (is_icar && n_params <= DENSE_MAX_PARAMS);
 
-    // HSGP-only (no temporal): DIAG outperforms BLOCK_DIAG (29k LF/6 div vs 39k LF/15 div).
-    // HSGP-only (no temporal): DIAG outperforms BLOCK_DIAG (29k LF/6 div vs
-    // 39k LF/15 div). The real correlations are between lengthscale and m^2 basis
-    // coefficients, which small blocks can't capture. Block adaptation adds noise.
-    // HSGP+temporal uses full DENSE (handled above in needs_full_dense).
+    // HSGP without a temporal term: the correlations that matter run between
+    // the lengthscale and the m^2 basis coefficients, which a small block
+    // cannot span, so block adaptation only adds noise to the metric.
     bool prefer_diag = layout.is_hsgp && data.has_hsgp && !layout.has_temporal;
 
     if (needs_full_dense) {
@@ -170,11 +197,12 @@ MassMatrixConfig select_and_init_mass_matrix(
       block_specs.clear();
       auto_selected_diag = false;
     } else if (!block_specs.empty() && !prefer_diag) {
-      // BLOCK_DIAG: captures key correlations without full O(n?)
+      // BLOCK_DIAG: captures the detected correlations without a full O(n^2)
+      // metric.
       effective_metric = MassMatrixType::BLOCK_DIAG;
       auto_selected_diag = false;
     } else {
-      // No blocks detected, no DENSE needed ? fall back to DIAG
+      // No blocks detected and no DENSE needed: the diagonal it is.
       effective_metric = MassMatrixType::DIAG;
       auto_selected_diag = true;
     }
@@ -203,44 +231,12 @@ MassMatrixConfig select_and_init_mass_matrix(
       REprintf(")\n");
     }
   }
-  // Also build block_specs when user explicitly requests BLOCK_DIAG
+  // An explicit BLOCK_DIAG request reaches the same detector as AUTO, and
+  // additionally takes the temporal-GP and HSGP hyperparameter pairs that AUTO
+  // leaves to the diagonal.
   if (effective_metric == MassMatrixType::BLOCK_DIAG && block_specs.empty()) {
-    // User forced block_diag but AUTO didn't run ? detect blocks from layout
-    if (layout.is_temporal_gp && layout.log_sigma2_temporal_gp_idx >= 0 &&
-        layout.logit_phi_temporal_gp_idx == layout.log_sigma2_temporal_gp_idx + 1) {
-      block_specs.push_back({layout.log_sigma2_temporal_gp_idx, 2});
-    }
-    if (layout.is_hsgp && layout.log_sigma2_hsgp_idx >= 0 &&
-        layout.log_lengthscale_hsgp_idx == layout.log_sigma2_hsgp_idx + 1) {
-      block_specs.push_back({layout.log_sigma2_hsgp_idx, 2});
-    }
-    if (layout.is_bym2 && layout.log_sigma_bym2_idx >= 0 &&
-        layout.logit_rho_bym2_idx == layout.log_sigma_bym2_idx + 1) {
-      block_specs.push_back({layout.log_sigma_bym2_idx, 2});
-    }
-    if (layout.is_gp && layout.log_sigma2_gp_idx >= 0 &&
-        layout.log_phi_gp_idx == layout.log_sigma2_gp_idx + 1) {
-      block_specs.push_back({layout.log_sigma2_gp_idx, 2});
-    }
-    if (layout.is_multiscale_gp) {
-      if (layout.log_sigma2_gp_local_idx >= 0 &&
-          layout.log_phi_gp_local_idx == layout.log_sigma2_gp_local_idx + 1) {
-        block_specs.push_back({layout.log_sigma2_gp_local_idx, 2});
-      }
-      if (layout.log_sigma2_gp_regional_idx >= 0 &&
-          layout.log_phi_gp_regional_idx == layout.log_sigma2_gp_regional_idx + 1) {
-        block_specs.push_back({layout.log_sigma2_gp_regional_idx, 2});
-      }
-    }
-    if (layout.is_st_gp && layout.log_phi_st_space_idx >= 0 &&
-        layout.log_phi_st_time_idx == layout.log_phi_st_space_idx + 1) {
-      block_specs.push_back({layout.log_phi_st_space_idx, 2});
-    }
-    // Legacy ratio overdispersion pair (log_phi_num, log_phi_denom) used
-    // to add a 2x2 block here; both indices moved into the LikelihoodSpec
-    // extra-parameter block in Phase D.
-
-    // If still no blocks found, fall back to DIAG
+    block_specs = detect_mass_blocks(data, layout,
+                                     /*include_field_hyper_pairs=*/true);
     if (block_specs.empty()) {
       effective_metric = MassMatrixType::DIAG;
       if (verbose) {
@@ -315,9 +311,13 @@ void warm_start_mass_matrix(
   // HSGP basis coefficients: beta_j ~ N(0, 1) ? posterior variance ? 1
   // Hyperparameters: log_sigma2 ~ prior with moderate variance,
   //                  log_lengthscale ~ LogNormal(0,1) ? variance ? 1
-  if (layout.is_hsgp) {
+  // layout.is_hsgp follows spatial_type alone, while the indices additionally
+  // require the HSGP data block, so the flag is true with the indices unset on
+  // a model that declares an HSGP field and carries no basis for it.
+  if (layout.is_hsgp && layout.log_sigma2_hsgp_idx >= 0 &&
+      layout.log_lengthscale_hsgp_idx >= 0) {
     for (int j = layout.hsgp_beta_start; j < layout.hsgp_beta_end; j++) {
-      inv_m[j] = 1.0;  // N(0,1) prior ? unit scale
+      inv_m[j] = 1.0;  // N(0,1) prior -> unit scale
     }
     inv_m[layout.log_sigma2_hsgp_idx] = 1.0;
     inv_m[layout.log_lengthscale_hsgp_idx] = 1.0;

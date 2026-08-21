@@ -27,7 +27,7 @@ inline void for_each_temporal_group(int start, int n_groups, int n_times,
 // global constant -- so rank(Q_aug) = sum_g rank(Q_g) + 1, and the per-group
 // log_prior_rw* calls supply the sum_g rank(Q_g) part.
 inline double s2z_pin_log_norm(double tau) {
-    return 0.5 * std::log(tau / (2.0 * M_PI));
+    return tulpa_temporal::gmrf_log_norm(1, std::log(tau));
 }
 
 } // anonymous namespace
@@ -92,7 +92,7 @@ void add_ar1_precision(
     int start_idx, int n_times, double tau, double rho
 ) {
     if (n_times < 1) return;
-    double tau_marginal = tau * (1.0 - rho * rho);
+    double tau_marginal = tau * tulpa_temporal::ar1_one_minus_rho2(rho);
     int idx0 = start_idx;
     grad[idx0] -= tau_marginal * x[idx0];
     H[idx0][idx0] += tau_marginal;
@@ -175,7 +175,7 @@ void add_ar1_precision_sparse(
     int start_idx, int n_times, double tau, double rho
 ) {
     if (n_times < 1) return;
-    double tau_marginal = tau * (1.0 - rho * rho);
+    double tau_marginal = tau * tulpa_temporal::ar1_one_minus_rho2(rho);
     int idx0 = start_idx;
     grad[idx0] -= tau_marginal * x[idx0];
     H.add(idx0, idx0, tau_marginal);

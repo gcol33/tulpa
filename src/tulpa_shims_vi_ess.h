@@ -116,12 +116,14 @@ extern "C" void tulpa_run_ess_sampler_impl(
     cfg.n_thin = shim_config->n_thin;
     cfg.verbose = shim_config->verbose != 0;
     cfg.print_every = shim_config->print_every;
-    cfg.seed = shim_config->seed;
-    cfg.use_cholesky = shim_config->use_cholesky != 0;
     cfg.adapt_during_warmup = shim_config->adapt_during_warmup != 0;
     cfg.adapt_interval = shim_config->adapt_interval;
     cfg.joint_sigma_re = shim_config->joint_sigma_re != 0;
 
+    // The sampler draws from R's RNG, so the consumer's call has to sit inside
+    // a GetRNGstate / PutRNGstate pair. RNGScope is reference-counted, so an
+    // outer scope the consumer already holds is left alone.
+    Rcpp::RNGScope rng_scope;
     tulpa_ess::ESSResult res = tulpa_ess::run_ess_sampler(init, *data, *layout, cfg);
 
     int n_save = res.samples.rows();

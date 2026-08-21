@@ -11,24 +11,6 @@
 
 namespace tulpa_tvc {
 
-// Structure to hold TVC gradient results (legacy, kept for compatibility)
-struct TVCGradients {
-    std::vector<double> grad_w;       // Gradient w.r.t. TVC values
-    std::vector<double> grad_log_tau; // Gradient w.r.t. log(tau)
-    std::vector<double> grad_logit_rho; // Gradient w.r.t. logit(rho) (AR1 only)
-};
-
-// Lightweight view into pre-allocated workspace buffers (zero-allocation)
-struct TVCGradientWS {
-    double* grad_w;           // Pre-allocated: n_groups * n_tvc * n_times
-    double* grad_log_tau;     // Pre-allocated: n_tvc
-    double* grad_logit_rho;   // Pre-allocated: n_tvc
-    double* grad_w_jg;        // Pre-allocated: n_times (reused per group-term)
-    double* d_buf;            // Pre-allocated: n_times (RW2 second differences)
-    int n_w;                  // Total TVC values count
-    int n_tvc;                // Number of TVC terms
-};
-
 // =============================================================================
 // Analytical RW1 gradients
 // =============================================================================
@@ -59,7 +41,7 @@ inline void rw1_grad_w(const double* w, int n_times, double tau, double* grad_w)
 // d/d(log_tau) = 0.5 * (T-1) - 0.5 * tau * quad + log_tau_jacobian
 //              = 0.5 * (T-1) - 0.5 * quad * tau  (Jacobian cancels in chain rule)
 inline double rw1_grad_log_tau(const double* w, int n_times, double tau) {
-    double quad = rw1_quadratic_form(w, n_times, false);
+    double quad = tulpa_temporal::rw1_quadratic_form(w, n_times, false);
     // d/d(log_tau) = 0.5*(T-1) - 0.5*tau*quad + tau (Jacobian: d tau / d log_tau = tau)
     // But we want d log_post / d log_tau, which includes Jacobian automatically in computation
     return 0.5 * (n_times - 1) - 0.5 * tau * quad;
@@ -120,7 +102,7 @@ inline void rw2_grad_w(const double* w, int n_times, double tau, double* grad_w,
 }
 
 inline double rw2_grad_log_tau(const double* w, int n_times, double tau) {
-    double quad = rw2_quadratic_form(w, n_times, false);
+    double quad = tulpa_temporal::rw2_quadratic_form(w, n_times, false);
     return 0.5 * (n_times - 2) - 0.5 * tau * quad;
 }
 
@@ -209,119 +191,6 @@ inline double ar1_grad_logit_rho(const double* w, int n_times, double tau, doubl
     double d_rho_d_logit = 2.0 * u * (1.0 - u);
 
     return grad_rho * d_rho_d_logit;
-}
-
-// =============================================================================
-// Full TVC prior gradients
-// =============================================================================
-
-// Zero-allocation version: writes into pre-allocated workspace buffers
-inline void tvc_prior_gradients_ws(
-    const double* w_flat,               // n_groups * n_tvc * n_times
-    const TVCData& tvc_data,
-    const double* tau,                  // Length n_tvc
-    const double* rho,                  // Length n_tvc (AR1 only)
-    TVCGradientWS& ws                   // Pre-allocated workspace
-) {
-    int n_groups = tvc_data.n_groups;
-    int n_tvc = tvc_data.n_tvc;
-    int n_times = tvc_data.n_times;
-
-    // Zero output buffers (no allocation, just memset)
-    std::fill(ws.grad_w, ws.grad_w + ws.n_w, 0.0);
-    std::fill(ws.grad_log_tau, ws.grad_log_tau + ws.n_tvc, 0.0);
-    std::fill(ws.grad_logit_rho, ws.grad_logit_rho + ws.n_tvc, 0.0);
-
-    for (int g = 0; g < n_groups; g++) {
-        for (int j = 0; j < n_tvc; j++) {
-            int offset = (g * n_tvc + j) * n_times;
-            const double* w_jg = &w_flat[offset];
-
-            // Reuse pre-allocated grad_w_jg buffer
-            double* grad_w_jg = ws.grad_w_jg;
-            double grad_log_tau_j = 0.0;
-            double grad_logit_rho_j = 0.0;
-
-            if (tvc_data.structure == TemporalType::RW1) {
-                rw1_grad_w(w_jg, n_times, tau[j], grad_w_jg);
-                grad_log_tau_j = rw1_grad_log_tau(w_jg, n_times, tau[j]);
-
-            } else if (tvc_data.structure == TemporalType::RW2) {
-                rw2_grad_w(w_jg, n_times, tau[j], grad_w_jg, ws.d_buf);
-                grad_log_tau_j = rw2_grad_log_tau(w_jg, n_times, tau[j]);
-
-            } else if (tvc_data.structure == TemporalType::AR1) {
-                ar1_grad_w(w_jg, n_times, tau[j], rho[j], grad_w_jg);
-                grad_log_tau_j = ar1_grad_log_tau(w_jg, n_times, tau[j], rho[j]);
-                grad_logit_rho_j = ar1_grad_logit_rho(w_jg, n_times, tau[j], rho[j]);
-
-            } else {
-                // IID: N(0, 1/tau)
-                for (int t = 0; t < n_times; t++) {
-                    grad_w_jg[t] = -tau[j] * w_jg[t];
-                }
-                double quad = 0.0;
-                for (int t = 0; t < n_times; t++) {
-                    quad += w_jg[t] * w_jg[t];
-                }
-                grad_log_tau_j = 0.5 * n_times - 0.5 * tau[j] * quad;
-            }
-
-            // Accumulate into output
-            for (int t = 0; t < n_times; t++) {
-                ws.grad_w[offset + t] += grad_w_jg[t];
-            }
-            ws.grad_log_tau[j] += grad_log_tau_j;
-            ws.grad_logit_rho[j] += grad_logit_rho_j;
-        }
-    }
-
-    // Add soft sum-to-zero penalty gradients
-    double lambda = 0.001;
-    for (int g = 0; g < n_groups; g++) {
-        for (int j = 0; j < n_tvc; j++) {
-            int offset = (g * n_tvc + j) * n_times;
-            double sum = 0.0;
-            for (int t = 0; t < n_times; t++) {
-                sum += w_flat[offset + t];
-            }
-            for (int t = 0; t < n_times; t++) {
-                ws.grad_w[offset + t] -= lambda * sum;
-            }
-        }
-    }
-}
-
-// Legacy allocating version (kept for backward compatibility / non-hot paths)
-inline void tvc_prior_gradients(
-    const std::vector<double>& w_flat,
-    const TVCData& tvc_data,
-    const std::vector<double>& tau,
-    const std::vector<double>& rho,
-    TVCGradients& grads
-) {
-    int n_groups = tvc_data.n_groups;
-    int n_tvc = tvc_data.n_tvc;
-    int n_times = tvc_data.n_times;
-    int n_w = n_groups * n_tvc * n_times;
-
-    grads.grad_w.resize(n_w);
-    grads.grad_log_tau.resize(n_tvc);
-    grads.grad_logit_rho.resize(n_tvc);
-
-    // Delegate to workspace version
-    TVCGradientWS ws;
-    ws.grad_w = grads.grad_w.data();
-    ws.grad_log_tau = grads.grad_log_tau.data();
-    ws.grad_logit_rho = grads.grad_logit_rho.data();
-    // Need temporary buffer for grad_w_jg and d_buf
-    std::vector<double> temp_jg(n_times), temp_d(n_times);
-    ws.grad_w_jg = temp_jg.data();
-    ws.d_buf = temp_d.data();
-    ws.n_w = n_w;
-    ws.n_tvc = n_tvc;
-
-    tvc_prior_gradients_ws(w_flat.data(), tvc_data, tau.data(), rho.data(), ws);
 }
 
 } // namespace tulpa_tvc

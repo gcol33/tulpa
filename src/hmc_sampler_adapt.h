@@ -235,33 +235,15 @@ public:
 struct DualAveraging {
   double mu, log_epsilon_bar, H_bar;
   double gamma, t0, kappa;
-  double target_accept;  // Target acceptance rate (dimension-adaptive)
+  double target_accept;  // Target acceptance rate for the step size
   int m;
 
-  // Default constructor with dimension-adaptive target
-  // target_boost: additional boost to target acceptance for challenging models
-  //               (e.g., +0.10 for MSGP+temporal combinations)
-  DualAveraging(double epsilon_init = 1.0, int n_params = 1, double target_boost = 0.0);
+  // The target is resolved by the caller (resolve_target_accept) and passed in,
+  // so every window reset restarts the adaptation at the same target the chain
+  // started with.
+  DualAveraging(double epsilon_init = 1.0, double target_accept_ = 0.80);
   double update(double alpha);
   double final_epsilon() const;
-
-  // Compute dimension-adaptive target acceptance rate
-  // Higher targets (closer to 1) = smaller step sizes = fewer divergences
-  // but slower exploration. Stan default is 0.80.
-  // target_boost: additional boost for challenging model combinations
-  static double compute_target(int n_params, double target_boost = 0.0) {
-    // Use higher targets (0.75-0.85) to avoid divergences in
-    // challenging models (ICAR, hierarchical negbin, etc.)
-    double base_target;
-    if (n_params <= 5) base_target = 0.85;
-    else if (n_params <= 20) base_target = 0.82;
-    else if (n_params <= 50) base_target = 0.80;
-    else if (n_params <= 100) base_target = 0.78;
-    else base_target = 0.75;
-
-    // Apply boost, cap at 0.99
-    return std::min(0.99, base_target + target_boost);
-  }
 };
 
 }  // namespace tulpa_hmc

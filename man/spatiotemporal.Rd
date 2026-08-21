@@ -32,7 +32,7 @@ all processes. Set to FALSE for process-specific effects
 (triggers warning about potential confounding).}
 }
 \value{
-A \code{tulpa_spatiotemporal} object
+Nothing: the call always signals an error.
 }
 \description{
 Functions to specify spatiotemporal interaction effects for tulpa models.
@@ -42,6 +42,10 @@ or when temporal trends differ across space.
 Specify a spatiotemporal interaction effect for tulpa models.
 The interaction captures structured or unstructured deviation from
 the additive spatial + temporal model.
+
+No tulpa backend fits an interaction term, so this constructor errors. The
+additive space-time model is fitted by \code{tulpa(spatial = , temporal = )} and
+by \code{\link[=fit_st_nested]{fit_st_nested()}}.
 }
 \details{
 Spatiotemporal interactions extend the basic additive model:
@@ -104,56 +108,6 @@ same structure as the marginal effects.
 
 For GP-based effects, assumes separable covariance:
 \deqn{C(\mathbf{s}_1, t_1; \mathbf{s}_2, t_2) = C_s(\mathbf{s}_1, \mathbf{s}_2) \cdot C_t(t_1, t_2)}
-}
-\examples{
-# Create adjacency matrix for 10 regions
-adj <- matrix(0, 10, 10)
-for (i in 1:9) adj[i, i+1] <- adj[i+1, i] <- 1
-
-# Type I: Unstructured interaction
-st1 <- spatiotemporal(
-  spatial = spatial_car(adj, level = "group", group_var = "region"),
-  temporal = temporal_rw1("year"),
-  type = "I"
-)
-print(st1)
-
-# Type IV: Fully structured interaction
-st4 <- spatiotemporal(
-  spatial = spatial_car(adj, level = "group", group_var = "region"),
-  temporal = temporal_rw1("year"),
-  type = "IV"
-)
-print(st4)
-
-\dontrun{
-# Generate synthetic spatiotemporal data (not run - experimental)
-set.seed(123)
-n_regions <- 10
-n_years <- 8
-df <- expand.grid(
-  region = 1:n_regions,
-  year = 2015:(2015 + n_years - 1)
-)
-df$x <- rnorm(nrow(df))
-df$count <- rpois(nrow(df), lambda = 20)
-df$effort <- rgamma(nrow(df), shape = 4, rate = 1)
-
-# Fit model with spatiotemporal interaction
-fit <- tulpa(
-  count | effort ~ x,
-  data = df,
-  family = tulpaRatio::tulpa_poisson_gamma(),
-  spatiotemporal = spatiotemporal(
-    spatial = spatial_car(adj, level = "group", group_var = "region"),
-    temporal = temporal_rw1("year"),
-    type = "IV"
-  ),
-  iter = 200, warmup = 100, chains = 1
-)
-summary(fit)
-}
-
 }
 \references{
 Knorr-Held, L. (2000). Bayesian modelling of inseparable space-time variation

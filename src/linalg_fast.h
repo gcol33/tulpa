@@ -120,10 +120,29 @@ inline void require_coords_2col(const Mat& coords, const char* who) {
 // CAR / GP kernels; all hand-rolled copies route through these)
 // ============================================================================
 
-// Default jitter floor for Cholesky pivots. Per-site overrides (e.g. the
-// SVC kernel's 1e-6) are passed explicitly so divergence is a deliberate
-// argument, not a drifted literal.
-constexpr double kCholJitter = 1e-10;
+// Smallest pivot a Cholesky factorization accepts. At or below it the
+// factorization reports failure rather than flooring the pivot: flooring
+// substitutes a different matrix for the one the caller handed in, and the
+// caller cannot tell that it happened.
+constexpr double kCholMinPivot = 1e-12;
+
+// Conditioning constants for an NNGP neighbour covariance.
+//
+// `kNngpNugget` is a diagonal NUGGET: it is added to every diagonal entry
+// BEFORE the factorization, so it changes the matrix being factorized and is
+// part of the density the kernel evaluates. `kNngpVarFloor` is a bound on the
+// conditional variance that comes out of that factorization. The two are
+// different objects and are named separately.
+//
+// Every path that conditions a GP field on its neighbours reads these -- the
+// sampler density and its autodiff twin (hmc_gp_*, via tulpa_gp::kGpJitter /
+// kGpVarFloor), the Laplace kernel (gpu_nngp_laplace.h, laplace_core.cpp) and
+// the Polya-Gamma sweep (pg_shared.h) -- so the same field is conditioned
+// identically whichever path fits it. The SVC kernel runs deliberately looser
+// values of its own (tulpa_svc::kSvcJitter / kSvcVarFloor) and passes them
+// explicitly.
+constexpr double kNngpNugget = 1e-8;
+constexpr double kNngpVarFloor = 1e-10;
 
 // Storage convention for a dense triangular factor. Both appear in this
 // package: the per-neighbourhood NNGP / CAR / GP kernels build their factors
@@ -151,29 +170,35 @@ inline int tri_index(int i, int j, int ld) {
   }
 }
 
-// Lower-Cholesky factorization of the leading n x n block of an
-// ld-strided dense SPD matrix. With jitter >= 0 the
-// diagonal pivots are floored at `jitter`. With jitter < 0 the
-// factorization runs in PD-check mode: returns false on a non-positive
-// pivot instead of flooring. Supports in-place use (L == A); the opposite
-// triangle of L is left untouched, so callers wanting zeros there must
-// pass a zero-initialized L.
+// Lower-Cholesky factorization of the leading n x n block of an ld-strided
+// dense SPD matrix, with `nugget` added to every diagonal entry first. That is
+// the same object `tulpa_nngp::chol_decomp` applies, so the double core here
+// and the templated core the autodiff copies run factorize the same matrix;
+// `nugget = 0.0` factorizes A itself.
+//
+// A nugget is NOT a pivot floor. Flooring a pivot at the nugget leaves a
+// well-conditioned input untouched and silently replaces an ill-conditioned
+// one, so two paths that should evaluate the same density diverge on exactly
+// the inputs where it matters, with no way to tell from the result. Returns
+// false on a pivot at or below kCholMinPivot, leaving L unusable, so a caller
+// hears about a non-PD matrix instead of receiving a plausible factor of a
+// different one.
+//
+// Supports in-place use (L == A); the opposite triangle of L is left
+// untouched, so callers wanting zeros there must pass a zero-initialized L.
 template <TriLayout LO>
 inline bool chol_factor_lower(const double* A, double* L, int n, int ld,
-                              double jitter) {
+                              double nugget) {
   for (int j = 0; j < n; j++) {
     for (int k = 0; k <= j; k++) {
       double sum = A[tri_index<LO>(j, k, ld)];
+      if (j == k) sum += nugget;
       for (int m = 0; m < k; m++) {
         sum -= L[tri_index<LO>(j, m, ld)] * L[tri_index<LO>(k, m, ld)];
       }
       if (j == k) {
-        if (jitter < 0.0) {
-          if (sum <= 0.0) return false;  // Not positive definite
-          L[tri_index<LO>(j, j, ld)] = std::sqrt(sum);
-        } else {
-          L[tri_index<LO>(j, j, ld)] = std::sqrt(std::max(jitter, sum));
-        }
+        if (sum <= kCholMinPivot) return false;  // Not positive definite
+        L[tri_index<LO>(j, j, ld)] = std::sqrt(sum);
       } else {
         L[tri_index<LO>(j, k, ld)] = sum / L[tri_index<LO>(k, k, ld)];
       }
@@ -257,17 +282,28 @@ inline void nngp_moments_from_chol(const double* L, int n, int ld,
 }
 
 // Full NNGP conditional-moments core: factorize the neighbor covariance
-// C (n x n), then compute the kriging moments against c_vec / w_nb. C is
-// symmetric, so the factor's layout is an internal detail here.
-inline void nngp_conditional_moments(const double* C, const double* c_vec,
+// C (n x n) with `nugget` on its diagonal, then compute the kriging moments
+// against c_vec / w_nb. C is symmetric, so the factor's layout is an internal
+// detail here.
+//
+// Returns false when C + nugget*I is not positive definite. The location is
+// then reported as conditioned on NOTHING -- cond_mean 0, cond_var sigma2, the
+// same moments a location with no neighbours gets -- rather than kriged
+// against an unusable factor.
+inline bool nngp_conditional_moments(const double* C, const double* c_vec,
                                      const double* w_nb, int n, double sigma2,
-                                     double jitter, double var_floor,
+                                     double nugget, double var_floor,
                                      double& cond_mean, double& cond_var) {
   std::vector<double> L(static_cast<size_t>(n) * n, 0.0);
-  chol_factor_lower<TriLayout::RowMajor>(C, L.data(), n, n, jitter);
+  if (!chol_factor_lower<TriLayout::RowMajor>(C, L.data(), n, n, nugget)) {
+    cond_mean = 0.0;
+    cond_var = sigma2;
+    return false;
+  }
   nngp_moments_from_chol<TriLayout::RowMajor>(L.data(), n, n, c_vec, w_nb,
                                               sigma2, var_floor, cond_mean,
                                               cond_var);
+  return true;
 }
 
 // ============================================================================

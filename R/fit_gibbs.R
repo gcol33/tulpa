@@ -98,7 +98,7 @@ adjacency_to_list_tulpa <- function(adj) {
 dispatch_gibbs_spatial <- function(y, n_trials, X, re_group, n_re_groups,
                                    spatial, family,
                                    iter, warmup, thin = 1L,
-                                   prior_beta_sd = 10.0,
+                                   prior_beta_sd = .tulpa_prior_sd("gibbs"),
                                    prior_sigma_re_scale = 2.5,
                                    verbose = FALSE, n_threads = 1L) {
   if (!family %in% c("binomial", "neg_binomial_2")) {
@@ -267,7 +267,7 @@ dispatch_gibbs_spatial <- function(y, n_trials, X, re_group, n_re_groups,
 dispatch_gibbs_temporal <- function(y, n_trials, X, re_group, n_re_groups,
                                     temporal, family,
                                     iter, warmup, thin = 1L,
-                                    prior_beta_sd = 10.0,
+                                    prior_beta_sd = .tulpa_prior_sd("gibbs"),
                                     prior_sigma_re_scale = 2.5,
                                     verbose = FALSE, n_threads = 1L) {
   if (!identical(family, "binomial")) {
@@ -334,7 +334,7 @@ glmm_weights <- function(eta, family, n_trials = NULL, phi = 1.0, phi2 = NULL) {
 #' @param family Character: "binomial" or "neg_binomial_2"
 #' @param beta_prior Fixed-effect prior as `list(mean, sd)`: a mean-zero
 #'   (`mean = 0`) Gaussian on every coefficient with SD `sd` (default
-#'   `list(mean = 0, sd = 10)`). The Polya-Gamma sampler uses a mean-zero prior,
+#'   the engine default, `prior_normal(0, 2.5)`). The Polya-Gamma sampler uses a mean-zero prior,
 #'   so a non-zero `mean` errors.
 #' @param prior_sigma_scale Prior scale for RE sigma (statistical; default 2.5).
 #' @details For `family = "neg_binomial_2"` the Polya-Gamma weights are drawn
@@ -386,7 +386,7 @@ glmm_weights <- function(eta, family, n_trials = NULL, phi = 1.0, phi2 = NULL) {
 #' @export
 tulpa_gibbs <- function(y, n_trials, X, group, n_groups,
                         family = "binomial",
-                        beta_prior = list(mean = 0, sd = 10),
+                        beta_prior = .tulpa_default_beta_prior("gibbs"),
                         prior_sigma_scale = 2.5,
                         spatial = NULL, temporal = NULL,
                         control = list()) {
@@ -398,7 +398,7 @@ tulpa_gibbs <- function(y, n_trials, X, group, n_groups,
   thin          <- as.integer(control$thin %||% 1L)
   verbose       <- isTRUE(control$verbose)
   n_threads     <- as.integer(control$n_threads %||% 1L)
-  prior_beta_sd <- .beta_prior_ridge_sd(beta_prior, default_sd = 10)
+  prior_beta_sd <- .beta_prior_ridge_sd(beta_prior, .tulpa_prior_sd("gibbs"))
   .seed_scoped(control$seed)
 
   # Spatial / temporal field present: route to the matching Polya-Gamma Gibbs

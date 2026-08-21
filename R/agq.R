@@ -118,10 +118,13 @@ agq_fit <- function(y, X, group,
   # 1x1 intercept Z = 1; its covariance is one log-SD coordinate (log-Cholesky
   # of a scalar), so par = c(beta, log_sigma_re) and at n_quad = 1 this is the
   # joint Laplace. Empty groups (no obs) are handled in the oracle: they pay
-  # only the N(0, sigma^2) prior. The gaussian residual VARIANCE is phi =
-  # sigma_eps^2; binomial / poisson ignore phi.
+  # only the N(0, sigma^2) prior. The oracle's `phi` follows the R registry
+  # convention -- the residual VARIANCE for gaussian, ignored by binomial and
+  # poisson -- so `sigma_eps`, which is an SD, crosses through the same named
+  # bridge the SD-parameterized kernels use in the other direction.
   Z <- matrix(1, n_obs, 1L)
-  orc <- cpp_glmm_oracle_make(family, sigma_eps^2, as.numeric(y),
+  orc <- cpp_glmm_oracle_make(family, .phi_to_registry(family, sigma_eps),
+                              as.numeric(y),
                               as.numeric(n_trials), X, Z, group, n_groups)
   par_init <- c(beta_init, log(sigma_init))
 

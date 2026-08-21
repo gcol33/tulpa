@@ -110,83 +110,109 @@ inline T rw2_quadratic_form(
 using tulpa::rw1_rank;
 using tulpa::rw2_rank;
 
-// Compute log-density for AR1 process
-// phi[t] | phi[t-1] ~ N(rho * phi[t-1], sigma^2)
-// Marginal variance: sigma^2 / (1 - rho^2)
-// `stationary_eps` regularizes the stationary-precision denominator
-// tau * (1 - rho^2): 0 keeps the exact density, a small positive value
-// keeps it (and its gradient) finite as |rho| -> 1.
+// log(2*pi).
+constexpr double kLogTwoPi = 1.8378770664093454835606594728112;
+
+// Floor on the AR1 stationary factor 1 - rho^2.
+//
+// The stationary variance sigma^2 / (1 - rho^2) diverges at the boundary of the
+// stationary region, and with it the density and its gradient. The floor is on
+// the CORRELATION factor rather than on the stationary precision
+// tau * (1 - rho^2), so where it engages is a property of rho alone and does not
+// move with tau: a precision floor engages at 1 - rho^2 = 1e-12 when tau = 100
+// and at 1e-8 when tau = 0.01, for the same model.
+constexpr double kAr1StationaryFloor = 1e-10;
+
+template <typename T>
+inline T ar1_one_minus_rho2(const T& rho) {
+  return tulpa::math::safe_max(T(1.0) - rho * rho, T(kAr1StationaryFloor));
+}
+
+// Gaussian normalizer of a GMRF whose precision is tau * Q0 and whose Q0 has
+// `rank` non-null eigenvalues: 0.5 * rank * (log tau - log 2pi). Taken on the
+// log-precision, which is the coordinate every sampler carries.
+//
+// The pseudo-determinant 0.5 * log|Q0|_+ is deliberately NOT included. It is
+// constant in the hyperparameters, so every quantity within one model is on a
+// common scale and the Laplace and sampler tiers agree; it differs between RW1
+// and RW2 and between cyclic and acyclic, so a marginal likelihood from this
+// normalizer is NOT comparable across temporal structures.
+template <typename T>
+inline T gmrf_log_norm(int rank, const T& log_tau) {
+  return T(0.5 * rank) * (log_tau - T(kLogTwoPi));
+}
+
+// Log-density of a stationary AR1 of length T_len:
+//   phi[0]            ~ N(0, sigma^2 / (1 - rho^2))
+//   phi[t] | phi[t-1] ~ N(rho * phi[t-1], sigma^2),   sigma^2 = 1 / tau
+//
+// Assembled as one rank-T_len GMRF: the joint precision is
+// tau * Q_AR1 with |Q_AR1| = 1 - rho^2, so the whole normalizer is
+// 0.5 * T_len * (log tau - log 2pi) + 0.5 * log(1 - rho^2).
 template <typename T>
 inline T ar1_log_density(
     const T* phi,
     int T_len,
     const T& rho,
-    const T& tau,  // precision = 1/sigma^2
-    double stationary_eps = 0.0
+    const T& tau  // precision = 1/sigma^2
 ) {
-  if (T_len < 2) return T(0.0);
+  if (T_len < 1) return T(0.0);
 
-  T log_dens = T(0.0);
+  const T omr2 = ar1_one_minus_rho2(rho);
 
-  // First observation: phi[0] ~ N(0, sigma^2 / (1 - rho^2))
-  T marginal_var = T(1.0) / (tau * (T(1.0) - rho * rho) + T(stationary_eps));
-  log_dens = log_dens - T(0.5) * phi[0] * phi[0] / marginal_var;
-  log_dens = log_dens - T(0.5) * safe_log(T(2.0 * M_PI) * marginal_var);
-
-  // Conditional: phi[t] | phi[t-1] ~ N(rho * phi[t-1], sigma^2)
-  T sigma2 = T(1.0) / tau;
+  T quad = omr2 * phi[0] * phi[0];
   for (int t = 1; t < T_len; t++) {
-    T resid = phi[t] - rho * phi[t - 1];
-    log_dens = log_dens - T(0.5) * resid * resid / sigma2;
-    log_dens = log_dens - T(0.5) * safe_log(T(2.0 * M_PI) * sigma2);
+    const T resid = phi[t] - rho * phi[t - 1];
+    quad = quad + resid * resid;
   }
 
-  return log_dens;
+  return gmrf_log_norm(T_len, safe_log(tau))
+       + T(0.5) * safe_log(omr2)
+       - T(0.5) * tau * quad;
 }
 
 // =====================================================================
-// Temporal log-prior contribution
+// Temporal log-prior
 // =====================================================================
 
-// Compute log-prior for temporal effects (single group)
-inline double temporal_log_prior(
-    const double* phi,
-    int T,
+// Log-density of one temporal field of length T_len under the structure
+// `type`, at precision `tau` and (AR1 only) correlation `rho`.
+//
+// The single implementation behind every temporal prior in the engine: the
+// sampler kernels, the TVC terms and the Laplace adapters in
+// laplace_temporal_priors.h all evaluate this, so no two tiers can normalize
+// the same field differently.
+//
+// RW1 and RW2 are intrinsic, so their normalizer takes the RANK of Q0 rather
+// than the field length; AR1 and IID are proper and their rank is T_len.
+template <typename T>
+inline T log_prior_temporal(
+    const T* phi,
+    int T_len,
     TemporalType type,
-    double tau,           // precision for RW1/RW2, or conditional precision for AR1
-    double rho,           // AR1 autocorrelation (ignored for RW)
+    const T& tau,         // precision for RW1/RW2/IID, conditional precision for AR1
+    const T& rho,         // AR1 autocorrelation (ignored for the rest)
     bool cyclic
 ) {
-  double log_prior = 0.0;
+  if (type == TemporalType::AR1) return ar1_log_density(phi, T_len, rho, tau);
+  if (type == TemporalType::NONE) return T(0.0);
+
+  const T log_tau = safe_log(tau);
 
   if (type == TemporalType::RW1) {
-    // RW1: p(phi|tau) propto tau^{(T-1)/2} exp(-0.5 * tau * phi' Q phi)
-    double quad = rw1_quadratic_form(phi, T, cyclic);
-    int rank = rw1_rank(T, cyclic);
-    log_prior += 0.5 * rank * std::log(tau);
-    log_prior -= 0.5 * tau * quad;
-
-  } else if (type == TemporalType::RW2) {
-    // RW2: p(phi|tau) propto tau^{(T-2)/2} exp(-0.5 * tau * phi' Q phi)
-    double quad = rw2_quadratic_form(phi, T, cyclic);
-    int rank = rw2_rank(T, cyclic);
-    log_prior += 0.5 * rank * std::log(tau);
-    log_prior -= 0.5 * tau * quad;
-
-  } else if (type == TemporalType::AR1) {
-    // AR1: proper prior
-    log_prior += ar1_log_density(phi, T, rho, tau);
-
-  } else if (type == TemporalType::IID) {
-    // IID N(0, 1/tau): sum of independent normal log-densities
-    double sigma2 = 1.0 / tau;
-    double log_norm = -0.5 * std::log(2.0 * M_PI * sigma2);
-    for (int t = 0; t < T; t++) {
-      log_prior += log_norm - 0.5 * phi[t] * phi[t] / sigma2;
-    }
+    return gmrf_log_norm(rw1_rank(T_len, cyclic), log_tau)
+         - T(0.5) * tau * rw1_quadratic_form(phi, T_len, cyclic);
   }
-
-  return log_prior;
+  if (type == TemporalType::RW2) {
+    return gmrf_log_norm(rw2_rank(T_len, cyclic), log_tau)
+         - T(0.5) * tau * rw2_quadratic_form(phi, T_len, cyclic);
+  }
+  if (type == TemporalType::IID) {
+    T quad = T(0.0);
+    for (int t = 0; t < T_len; t++) quad = quad + phi[t] * phi[t];
+    return gmrf_log_norm(T_len, log_tau) - T(0.5) * tau * quad;
+  }
+  return T(0.0);
 }
 
 // =====================================================================

@@ -108,17 +108,24 @@ inline bool dispatch_factor_solve(
                                         prefer_sparse, dense_scratch);
 }
 
-// Factor H and return log|H + ridge*I| via the diagonal of L. Same
-// sparse/dense dispatch and uniform upstream regularization as
-// dispatch_factor_solve.
-inline void dispatch_factor_log_det(
+// Factor an H that ALREADY carries its diagonal ridge and return log|H| via the
+// diagonal of L. Same sparse/dense dispatch as dispatch_factor_solve_ridged, and
+// split out for the same reason: a caller that factors ONE assembled H twice --
+// once for the log-determinant, then again through an escalating solve when that
+// log-determinant is not finite -- loads the base ridge itself, once, instead of
+// each entry re-applying it on top of the previous one.
+//
+// Returns whether either path produced a FINITE log-determinant. False is the
+// Cholesky reporting that H is not PD at this point. Carrying the value on
+// instead turns a failed cell into an undefined outer-grid weight (NaN), or, on
+// an exactly singular direction, into a cell that takes the whole grid: a -Inf
+// log-determinant is a +Inf log-marginal.
+inline bool dispatch_factor_log_det_ridged(
     DenseMat& H, int n_x,
     SparseCholeskySolver& sparse_solver, bool prefer_sparse,
     DenseCholeskyScratch& dense_scratch,
     double& log_det_out
 ) {
-    add_uniform_ridge_dense(H, n_x, LAPLACE_UNIFORM_RIDGE);
-
     log_det_out = 0.0;
     bool sparse_ok = false;
     if (prefer_sparse) {
@@ -133,6 +140,21 @@ inline void dispatch_factor_log_det(
     if (!sparse_ok) {
         dense_cholesky_log_det_raw(H, n_x, dense_scratch, log_det_out);
     }
+    return std::isfinite(log_det_out);
+}
+
+// Factor H and return log|H + ridge*I| via the diagonal of L. Same
+// sparse/dense dispatch and uniform upstream regularization as
+// dispatch_factor_solve.
+inline bool dispatch_factor_log_det(
+    DenseMat& H, int n_x,
+    SparseCholeskySolver& sparse_solver, bool prefer_sparse,
+    DenseCholeskyScratch& dense_scratch,
+    double& log_det_out
+) {
+    add_uniform_ridge_dense(H, n_x, LAPLACE_UNIFORM_RIDGE);
+    return dispatch_factor_log_det_ridged(H, n_x, sparse_solver, prefer_sparse,
+                                          dense_scratch, log_det_out);
 }
 
 } // namespace tulpa

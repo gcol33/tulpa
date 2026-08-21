@@ -33,14 +33,6 @@ Rcpp::NumericVector rpg_vec(Rcpp::IntegerVector b, Rcpp::NumericVector z);
 // Inverse Gaussian sampler (IG(mu, lambda)).
 double rinvgauss(double mu, double lambda);
 
-// Numerically stable cosh for large arguments.
-inline double cosh_safe(double x) {
-  if (std::abs(x) > 500) {
-    return std::exp(std::abs(x)) / 2.0;
-  }
-  return std::cosh(x);
-}
-
 } // namespace tulpa
 
 #endif // TULPA_PG_RNG_H

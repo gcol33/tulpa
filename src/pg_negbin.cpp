@@ -309,6 +309,13 @@ List pg_negbin_gibbs(
 ) {
   int N = y.size();
   int p = X.ncol();
+  if (N < 1) Rcpp::stop("`y` is empty.");
+  if (X.nrow() != N) {
+    Rcpp::stop("`X` has %d row(s) but `y` has length %d.",
+               static_cast<int>(X.nrow()), N);
+  }
+  if (n_groups < 0) Rcpp::stop("`n_groups` must be >= 0; got %d.", n_groups);
+  if (n_groups > 0) pg_check_index(group, N, n_groups, "group");
   int n_save = (n_iter - n_warmup) / thin;
   const int team = tulpa_omp_team_size_req(n_threads, N);
 
@@ -527,256 +534,6 @@ List pg_negbin_gibbs(
 }
 
 // ---------------------------------------------------------------------
-// Gibbs sampler for two-process NB ratio model
-// (ratiod_negbin_negbin family)
-// ---------------------------------------------------------------------
-
-List pg_negbin_negbin_gibbs(
-    IntegerVector y_num,
-    IntegerVector y_denom,
-    NumericMatrix X_num,
-    NumericMatrix X_denom,
-    IntegerVector group,
-    int n_groups,
-    int n_iter,
-    int n_warmup,
-    int thin,
-    double prior_beta_sd,
-    double prior_sigma_scale,
-    double prior_r_shape,
-    double prior_r_rate,
-    double r_num_init,
-    double r_denom_init,
-    bool shared,
-    bool store_eta,
-    bool verbose,
-    int n_threads
-) {
-  int N = y_num.size();
-  int p_num = X_num.ncol();
-  int p_denom = X_denom.ncol();
-  int n_save = (n_iter - n_warmup) / thin;
-
-  // Storage
-  NumericMatrix beta_num_draws(n_save, p_num);
-  NumericMatrix beta_denom_draws(n_save, p_denom);
-  NumericMatrix re_draws(n_save, n_groups);
-  NumericVector sigma_draws(n_save);
-  NumericVector r_num_draws(n_save);
-  NumericVector r_denom_draws(n_save);
-  NumericMatrix eta_num_draws, eta_denom_draws;
-  if (store_eta) {
-    eta_num_draws = NumericMatrix(n_save, N);
-    eta_denom_draws = NumericMatrix(n_save, N);
-  }
-
-  // Initialize
-  NumericVector beta_num(p_num, 0.0);
-  NumericVector beta_denom(p_denom, 0.0);
-  NumericVector re(n_groups, 0.0);
-  double sigma_re = 1.0;
-  double sigma_aux = 2.0 * prior_sigma_scale * prior_sigma_scale;
-  double r_num = r_num_init;
-  double r_denom = r_denom_init;
-
-  NumericVector omega_num(N, 1.0);
-  NumericVector omega_denom(N, 1.0);
-  NumericVector kappa_num(N), kappa_denom(N);
-  NumericVector eta_num(N), eta_denom(N);
-  NumericVector X_beta_num(N), X_beta_denom(N);
-  NumericVector re_contrib(N);
-  NumericVector eta_r_num(N), eta_r_denom(N);
-
-  // Gibbs iterations
-  int save_idx = 0;
-  for (int iter = 0; iter < n_iter; iter++) {
-
-    // --- Numerator process ---
-
-    // 1a. Compute numerator linear predictor
-    for (int i = 0; i < N; i++) {
-      X_beta_num[i] = 0.0;
-      for (int j = 0; j < p_num; j++) {
-        X_beta_num[i] += X_num(i, j) * beta_num[j];
-      }
-      if (shared && n_groups > 0) {
-        re_contrib[i] = re[group[i] - 1];
-      } else {
-        re_contrib[i] = 0.0;
-      }
-      eta_num[i] = X_beta_num[i] + re_contrib[i];
-      kappa_num[i] = (y_num[i] - r_num) / 2.0;
-    }
-
-    // 2a. Sample omega_num ~ PG(y_num + r_num, eta_num) at the exact real
-    // shape (rounding the shape biases the augmented joint worst at zero
-    // counts with small r; matches the single-process kernel above).
-    for (int i = 0; i < N; i++) {
-      omega_num[i] = rpg_real(y_num[i] + r_num, eta_num[i]);
-    }
-
-    // 3a. Update beta_num
-    beta_num = update_beta(kappa_num, omega_num, X_num, re_contrib, prior_beta_sd);
-
-    // 4a. Update r_num
-    for (int i = 0; i < N; i++) {
-      double eta_new = 0.0;
-      for (int j = 0; j < p_num; j++) {
-        eta_new += X_num(i, j) * beta_num[j];
-      }
-      if (shared && n_groups > 0) {
-        eta_new += re[group[i] - 1];
-      }
-      eta_r_num[i] = eta_new;
-    }
-    r_num = update_r_negbin(y_num, eta_r_num, r_num, prior_r_shape, prior_r_rate);
-
-    // --- Denominator process ---
-
-    // 1b. Compute denominator linear predictor
-    for (int i = 0; i < N; i++) {
-      X_beta_denom[i] = 0.0;
-      for (int j = 0; j < p_denom; j++) {
-        X_beta_denom[i] += X_denom(i, j) * beta_denom[j];
-      }
-      if (shared && n_groups > 0) {
-        re_contrib[i] = re[group[i] - 1];
-      } else {
-        re_contrib[i] = 0.0;
-      }
-      eta_denom[i] = X_beta_denom[i] + re_contrib[i];
-      kappa_denom[i] = (y_denom[i] - r_denom) / 2.0;
-    }
-
-    // 2b. Sample omega_denom ~ PG(y_denom + r_denom, eta_denom) at the exact
-    // real shape (see 2a).
-    for (int i = 0; i < N; i++) {
-      omega_denom[i] = rpg_real(y_denom[i] + r_denom, eta_denom[i]);
-    }
-
-    // 3b. Update beta_denom
-    beta_denom = update_beta(kappa_denom, omega_denom, X_denom, re_contrib, prior_beta_sd);
-
-    // 4b. Update r_denom
-    for (int i = 0; i < N; i++) {
-      double eta_new = 0.0;
-      for (int j = 0; j < p_denom; j++) {
-        eta_new += X_denom(i, j) * beta_denom[j];
-      }
-      if (shared && n_groups > 0) {
-        eta_new += re[group[i] - 1];
-      }
-      eta_r_denom[i] = eta_new;
-    }
-    r_denom = update_r_negbin(y_denom, eta_r_denom, r_denom, prior_r_shape, prior_r_rate);
-
-    // --- Shared random effects ---
-    if (shared && n_groups > 0) {
-      // Update RE using combined information from both processes
-      // Posterior combines evidence from numerator and denominator
-
-      // Recompute X_beta for both processes
-      for (int i = 0; i < N; i++) {
-        X_beta_num[i] = 0.0;
-        for (int j = 0; j < p_num; j++) {
-          X_beta_num[i] += X_num(i, j) * beta_num[j];
-        }
-        X_beta_denom[i] = 0.0;
-        for (int j = 0; j < p_denom; j++) {
-          X_beta_denom[i] += X_denom(i, j) * beta_denom[j];
-        }
-      }
-
-      // Combined update for shared RE
-      // Posterior: b_g | ... ~ N(m_g, v_g)
-      // where information is pooled from both processes
-      double prior_prec = 1.0 / (sigma_re * sigma_re + 1e-10);
-
-      NumericVector sum_omega(n_groups);
-      NumericVector sum_resid(n_groups);
-
-      // Numerator contribution
-      for (int i = 0; i < N; i++) {
-        int g = group[i] - 1;
-        sum_omega[g] += omega_num[i];
-        sum_resid[g] += kappa_num[i] - omega_num[i] * X_beta_num[i];
-      }
-
-      // Denominator contribution
-      for (int i = 0; i < N; i++) {
-        int g = group[i] - 1;
-        sum_omega[g] += omega_denom[i];
-        sum_resid[g] += kappa_denom[i] - omega_denom[i] * X_beta_denom[i];
-      }
-
-      // Sample from posterior
-      for (int g = 0; g < n_groups; g++) {
-        double post_var = 1.0 / (sum_omega[g] + prior_prec);
-        double post_mean = post_var * sum_resid[g];
-        re[g] = R::rnorm(post_mean, std::sqrt(post_var));
-      }
-
-      // Exact half-Cauchy via the auxiliary-variable scheme (one prior
-      // across all three negbin kernels).
-      SigmaReState sigma_state =
-          update_sigma_re_negbin_hc(re, prior_sigma_scale, sigma_aux);
-      if (!std::isnan(sigma_state.sigma_re) &&
-          !std::isinf(sigma_state.sigma_re) &&
-          sigma_state.sigma_re < 100.0) {
-        sigma_re = sigma_state.sigma_re;
-        sigma_aux = sigma_state.aux;
-      }
-    }
-
-    // Save draws
-    if (iter >= n_warmup && (iter - n_warmup) % thin == 0) {
-      for (int j = 0; j < p_num; j++) {
-        beta_num_draws(save_idx, j) = beta_num[j];
-      }
-      for (int j = 0; j < p_denom; j++) {
-        beta_denom_draws(save_idx, j) = beta_denom[j];
-      }
-      for (int g = 0; g < n_groups; g++) {
-        re_draws(save_idx, g) = re[g];
-      }
-      sigma_draws[save_idx] = sigma_re;
-      r_num_draws[save_idx] = r_num;
-      r_denom_draws[save_idx] = r_denom;
-
-      if (store_eta) {
-        for (int i = 0; i < N; i++) {
-          eta_num_draws(save_idx, i) = eta_num[i];
-          eta_denom_draws(save_idx, i) = eta_denom[i];
-        }
-      }
-      save_idx++;
-    }
-
-    // Progress
-    if (verbose && (iter + 1) % 500 == 0) {
-      Rcpp::Rcout << "Iteration " << (iter + 1) << "/" << n_iter
-                  << " (r_num=" << r_num << ", r_denom=" << r_denom << ")"
-                  << std::endl;
-    }
-
-    if ((iter + 1) % 100 == 0) {
-      Rcpp::checkUserInterrupt();
-    }
-  }
-
-  return List::create(
-    Named("beta_num") = beta_num_draws,
-    Named("beta_denom") = beta_denom_draws,
-    Named("re") = re_draws,
-    Named("sigma_re") = sigma_draws,
-    Named("r_num") = r_num_draws,
-    Named("r_denom") = r_denom_draws,
-    Named("eta_num") = eta_num_draws,
-    Named("eta_denom") = eta_denom_draws
-  );
-}
-
-// ---------------------------------------------------------------------
 // Gibbs sampler for NB with spatial effects (ICAR)
 // ---------------------------------------------------------------------
 
@@ -805,6 +562,17 @@ List pg_negbin_gibbs_spatial(
 ) {
   int N = y.size();
   int p = X.ncol();
+  if (N < 1) Rcpp::stop("`y` is empty.");
+  if (X.nrow() != N) {
+    Rcpp::stop("`X` has %d row(s) but `y` has length %d.",
+               static_cast<int>(X.nrow()), N);
+  }
+  if (n_re_groups < 0) {
+    Rcpp::stop("`n_re_groups` must be >= 0; got %d.", n_re_groups);
+  }
+  if (n_re_groups > 0) pg_check_index(re_group, N, n_re_groups, "re_group");
+  pg_check_index(spatial_group, N, n_spatial_units, "spatial_group");
+  pg_check_adjacency(adj_list, n_neighbors, n_spatial_units);
   int n_save = (n_iter - n_warmup) / thin;
 
   // Storage
@@ -1111,35 +879,6 @@ Rcpp::List cpp_pg_negbin_gibbs(
   );
 }
 
-// [[Rcpp::export]]
-Rcpp::List cpp_pg_negbin_negbin_gibbs(
-    Rcpp::IntegerVector y_num,
-    Rcpp::IntegerVector y_denom,
-    Rcpp::NumericMatrix X_num,
-    Rcpp::NumericMatrix X_denom,
-    Rcpp::IntegerVector group,
-    int n_groups,
-    int n_iter,
-    int n_warmup,
-    int thin,
-    double prior_beta_sd,
-    double prior_sigma_scale,
-    double prior_r_shape,
-    double prior_r_rate,
-    double r_num_init,
-    double r_denom_init,
-    bool shared,
-    bool store_eta,
-    bool verbose,
-    int n_threads
-) {
-  return tulpa::pg_negbin_negbin_gibbs(
-    y_num, y_denom, X_num, X_denom, group, n_groups,
-    n_iter, n_warmup, thin, prior_beta_sd, prior_sigma_scale,
-    prior_r_shape, prior_r_rate, r_num_init, r_denom_init, shared,
-    store_eta, verbose, n_threads
-  );
-}
 
 // [[Rcpp::export]]
 Rcpp::List cpp_pg_negbin_gibbs_spatial(

@@ -10,6 +10,7 @@
 #include <cmath>
 #include <memory>
 #include <random>
+#include <limits>
 
 // Use Eigen for matrix operations
 #include <RcppEigen.h>
@@ -70,6 +71,12 @@ struct VIConfig {
   double adam_beta2 = 0.999;
   double adam_eps = 1e-8;
 
+  // Gradient-norm clip applied before every Adam step. Adam rescales per
+  // coordinate, so a clip that engages on every iteration is largely absorbed;
+  // one that engages on some iterations and not others perturbs the moment
+  // estimates, which is why the threshold is a knob and not a constant.
+  double max_grad_norm = 10.0;
+
   // Low-rank specific
   int rank = -1;  // -1 = auto (D/10 clamped to [10, 50])
 
@@ -87,6 +94,21 @@ struct VIConfig {
   // Random seed
   unsigned int seed = 0;
 };
+
+// Reject a configuration the optimisation loop cannot run. Both counts bound a
+// loop that must execute at least once: `max_iter` the outer optimisation loop,
+// whose ELBO history is the only record a fit has, and `mc_samples` the
+// reparameterisation average every gradient divides by. Every VI entry point
+// -- the R front door, the registered C callable, a direct fit_* call --
+// validates here so no path can substitute a value for a loop that never ran.
+inline void validate_vi_config(const VIConfig& config) {
+  if (config.max_iter < 1) {
+    Rcpp::stop("VI max_iter must be at least 1 (got %d).", config.max_iter);
+  }
+  if (config.mc_samples < 1) {
+    Rcpp::stop("VI mc_samples must be at least 1 (got %d).", config.mc_samples);
+  }
+}
 
 // Parse config from R list
 inline VIConfig parse_vi_config(Rcpp::List options) {
@@ -122,6 +144,9 @@ inline VIConfig parse_vi_config(Rcpp::List options) {
   if (options.containsElementNamed("adam_eps")) {
     config.adam_eps = Rcpp::as<double>(options["adam_eps"]);
   }
+  if (options.containsElementNamed("max_grad_norm")) {
+    config.max_grad_norm = Rcpp::as<double>(options["max_grad_norm"]);
+  }
   if (options.containsElementNamed("rank")) {
     config.rank = Rcpp::as<int>(options["rank"]);
   }
@@ -138,6 +163,7 @@ inline VIConfig parse_vi_config(Rcpp::List options) {
     config.seed = Rcpp::as<unsigned int>(options["seed"]);
   }
 
+  validate_vi_config(config);
   return config;
 }
 
@@ -267,10 +293,23 @@ struct FullRankParams : VIParamsBase {
   Eigen::VectorXd mu;  // Mean vector (D)
   Eigen::MatrixXd L;   // Lower triangular Cholesky factor (D x D)
 
+  // Floor on the diagonal of L, which the Cholesky parameterization requires to
+  // be positive. Every route into L goes through clamp_diagonal(), so
+  // log L(i, i) and its derivative 1 / L(i, i) are defined wherever entropy()
+  // and its gradient are evaluated.
+  static constexpr double MIN_DIAG = 0.01;
+
   FullRankParams() = default;
 
   FullRankParams(int D) : mu(Eigen::VectorXd::Zero(D)),
                           L(Eigen::MatrixXd::Identity(D, D) * 0.5) {}
+
+  void clamp_diagonal() {
+    const int D = dim();
+    for (int i = 0; i < D; ++i) {
+      if (L(i, i) < MIN_DIAG) L(i, i) = MIN_DIAG;
+    }
+  }
 
   int dim() const override {
     return static_cast<int>(mu.size());
@@ -293,11 +332,11 @@ struct FullRankParams : VIParamsBase {
   }
 
   double entropy() const override {
-    // H[q] = Σᵢ log |Lᵢᵢ| + D/2 (1 + log 2π)
+    // H[q] = Σᵢ log Lᵢᵢ + D/2 (1 + log 2π), with Lᵢᵢ >= MIN_DIAG.
     double log_det = 0.0;
     int D = dim();
     for (int i = 0; i < D; ++i) {
-      log_det += std::log(std::abs(L(i, i)) + 1e-10);
+      log_det += std::log(L(i, i));
     }
     return log_det + 0.5 * D * (1.0 + std::log(2.0 * M_PI));
   }
@@ -339,9 +378,8 @@ struct FullRankParams : VIParamsBase {
       for (int j = 0; j <= i; ++j) {
         L(i, j) = x(idx++);
       }
-      // Ensure positive diagonal
-      if (L(i, i) < 0.01) L(i, i) = 0.01;
     }
+    clamp_diagonal();
   }
 };
 
@@ -356,11 +394,14 @@ struct LowRankParams : VIParamsBase {
 
   LowRankParams() = default;
 
-  LowRankParams(int D, int r) : mu(Eigen::VectorXd::Zero(D)),
-                                 L(Eigen::MatrixXd::Zero(D, r) * 0.1),
-                                 log_d(Eigen::VectorXd::Constant(D, -1.0)) {
-    // Initialize L with small random values
-    std::mt19937 rng(42);
+  // `seed` drives the random low-rank factor the fit starts from, so a
+  // low-rank run is a function of the seed its caller set. It has no default:
+  // the start is random, and every construction states which stream it draws.
+  LowRankParams(int D, int r, unsigned int seed)
+      : mu(Eigen::VectorXd::Zero(D)),
+        L(Eigen::MatrixXd::Zero(D, r)),
+        log_d(Eigen::VectorXd::Constant(D, -1.0)) {
+    std::mt19937 rng(seed);
     std::normal_distribution<double> N01(0.0, 0.1);
     for (int i = 0; i < D; ++i) {
       for (int j = 0; j < r; ++j) {
@@ -496,6 +537,15 @@ struct VIResult {
                final_elbo(-std::numeric_limits<double>::infinity()),
                iterations(0), converged(false), psis_k(-1.0) {}
 };
+
+// The ELBO the optimisation loop last recorded. An empty history means the loop
+// recorded none, and -Inf -- what VIResult already carries before the first
+// iteration -- is what that reads as, rather than the value past the end of the
+// vector `history.back()` would return.
+inline double vi_final_elbo(const std::vector<double>& history) {
+  if (history.empty()) return -std::numeric_limits<double>::infinity();
+  return history.back();
+}
 
 // Convert VIResult to R list
 inline Rcpp::List vi_result_to_list(const VIResult& result) {

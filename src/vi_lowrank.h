@@ -34,6 +34,45 @@ struct LowRankGradients {
   double elbo;
 };
 
+// d/d(L, log_d) of H[q] = 0.5 log|LL' + D| + const, with D = diag(d^2).
+// Via the matrix determinant lemma and Woodbury, with M = I + L'D^-1 L:
+//
+//   Sigma^-1 L                    = D^-1 L M^-1
+//   d(0.5 log|Sigma|)/dL          = Sigma^-1 L
+//   d(0.5 log|Sigma|)/d log_d_i   = 1 - (L M^-1 L')_ii / d_i^2
+//
+// Added to the reparameterisation gradient here and evaluated on its own by the
+// gradient probe, so the entropy term the ELBO carries and the entropy term its
+// gradient carries are the same expression.
+inline void lowrank_add_entropy_grad(const LowRankParams& params,
+                                     Eigen::MatrixXd& grad_L,
+                                     Eigen::VectorXd& grad_log_d) {
+  const int D = params.dim();
+  const int r = params.rank();
+  Eigen::VectorXd d2 = exp(2.0 * params.log_d.array());
+
+  // I + L'D⁻¹L (r × r)
+  Eigen::MatrixXd LtDinvL = Eigen::MatrixXd::Identity(r, r);
+  for (int i = 0; i < D; ++i) {
+    LtDinvL.noalias() += params.L.row(i).transpose() * params.L.row(i) / d2(i);
+  }
+  Eigen::LLT<Eigen::MatrixXd> llt(LtDinvL);
+  Eigen::MatrixXd LtDinvL_inv = llt.solve(Eigen::MatrixXd::Identity(r, r));
+
+  Eigen::MatrixXd L_Minv = params.L * LtDinvL_inv;
+  Eigen::VectorXd L_Minv_Lt_diag(D);
+  for (int i = 0; i < D; ++i) {
+    L_Minv_Lt_diag(i) = L_Minv.row(i).dot(params.L.row(i));
+  }
+  grad_log_d.array() += 1.0 - L_Minv_Lt_diag.array() / d2.array();
+
+  Eigen::MatrixXd DinvL(D, r);
+  for (int i = 0; i < D; ++i) {
+    DinvL.row(i) = params.L.row(i) / d2(i);
+  }
+  grad_L += DinvL * LtDinvL_inv;
+}
+
 // Compute ELBO and gradients for low-rank VI
 // Uses reparameterization: θ = μ + L η + d ⊙ ε
 // where η ~ N(0, Iᵣ), ε ~ N(0, I_D)
@@ -93,38 +132,7 @@ inline LowRankGradients compute_lowrank_elbo_grad(
   result.grad_log_d /= mc_samples;
   result.elbo /= mc_samples;
 
-  // Entropy gradient computation via matrix determinant lemma
-  // Σ = LL' + D where D = diag(d²)
-  // ∂H/∂log_d and ∂H/∂L require derivatives of log|Σ|
-
-  Eigen::VectorXd d2 = d.array().square();
-
-  // Compute I + L'D⁻¹L (r × r matrix)
-  Eigen::MatrixXd LtDinvL = Eigen::MatrixXd::Identity(r, r);
-  for (int i = 0; i < D; ++i) {
-    LtDinvL.noalias() += params.L.row(i).transpose() * params.L.row(i) / d2(i);
-  }
-
-  // Cholesky of I + L'D⁻¹L for solving
-  Eigen::LLT<Eigen::MatrixXd> llt(LtDinvL);
-
-  // Entropy gradient for log_d:
-  // ∂(0.5 log|Σ|)/∂log_d = 1 - diag(L (I + L'D⁻¹L)⁻¹ L') / d²
-  Eigen::MatrixXd LtDinvL_inv = llt.solve(Eigen::MatrixXd::Identity(r, r));
-  Eigen::MatrixXd L_Minv = params.L * LtDinvL_inv;
-  Eigen::VectorXd L_Minv_Lt_diag(D);
-  for (int i = 0; i < D; ++i) {
-    L_Minv_Lt_diag(i) = L_Minv.row(i).dot(params.L.row(i));
-  }
-  result.grad_log_d.array() += 1.0 - L_Minv_Lt_diag.array() / d2.array();
-
-  // Entropy gradient for L:
-  // ∂(0.5 log|Σ|)/∂L = D⁻¹ L (I + L'D⁻¹L)⁻¹
-  Eigen::MatrixXd DinvL(D, r);
-  for (int i = 0; i < D; ++i) {
-    DinvL.row(i) = params.L.row(i) / d2(i);
-  }
-  result.grad_L += DinvL * LtDinvL_inv;
+  lowrank_add_entropy_grad(params, result.grad_L, result.grad_log_d);
 
   // Add entropy to ELBO
   result.elbo += params.entropy();
@@ -150,8 +158,10 @@ inline VIResult fit_lowrank(
     Rcpp::Rcout << "Low-rank VI with D=" << D << ", rank=" << r << "\n";
   }
 
+  validate_vi_config(config);
+
   // Initialize parameters
-  LowRankParams params(D, r);
+  LowRankParams params(D, r, config.seed);
 
   if (init_mu != nullptr && init_mu->size() == D) {
     params.mu = *init_mu;
@@ -206,7 +216,7 @@ inline VIResult fit_lowrank(
   result.L_factor = params.L;
   result.d_diag = exp(params.log_d.array());
   result.rank_used = r;
-  result.final_elbo = result.elbo_history.back();
+  result.final_elbo = vi_final_elbo(result.elbo_history);
 
   // Generate posterior samples for diagnostics
   int n_samples = 1000;

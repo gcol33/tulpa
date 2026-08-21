@@ -9,7 +9,7 @@
 #include <vector>
 #include <cmath>
 #include <algorithm>
-#include <Rcpp.h>  // For Rcpp::Rcout in debug
+#include <Rcpp.h>
 #include "tulpa/soft_sum_to_zero.h"  // s2z_precision
 #include "tulpa/svc_data.h"
 #include "tulpa/types.h"
@@ -103,30 +103,35 @@ inline double nngp_log_lik(
   int N = svc_data.n_obs;
   int nn = svc_data.nn;
 
+  // Size validation, matching the GP kernels and the SVC analytic gradient: the
+  // neighbour tables arrive from R and are indexed below as raw offsets.
+  if ((int)svc_data.nn_order.size() < N) return -INFINITY;
+  if ((int)svc_data.nn_idx.size() < N * nn) return -INFINITY;
+  if ((int)svc_data.nn_dist.size() < N * nn) return -INFINITY;
+  if ((int)w.size() < N) return -INFINITY;
+  if ((int)svc_data.coords.size() < 2 * N) return -INFINITY;
+
   double log_lik = 0.0;
 
   // First observation: marginal N(0, sigma2)
   int first_idx = svc_data.nn_order[0];
-  log_lik += -0.5 * std::log(2.0 * M_PI * sigma2) -
-             0.5 * w[first_idx] * w[first_idx] / sigma2;
+  if (first_idx < 0 || first_idx >= N) return -INFINITY;
+  log_lik += tulpa_nngp::marginal_log_density(w[first_idx], sigma2);
 
   // Remaining observations: conditional on neighbors
   for (int i = 1; i < N; i++) {
     int obs_idx = svc_data.nn_order[i];
+    if (obs_idx < 0 || obs_idx >= N) return -INFINITY;
 
-    // Count actual neighbors (early observations have fewer)
-    int n_neighbors = 0;
-    for (int j = 0; j < nn; j++) {
-      int nn_flat_idx = i * nn + j;
-      if (svc_data.nn_idx[nn_flat_idx] > 0) {
-        n_neighbors++;
-      }
-    }
+    // Count actual neighbors (early observations have fewer), through the
+    // shared left-packed scan every NNGP kernel runs.
+    const int n_neighbors = tulpa_nngp::nngp_row_neighbours(
+        svc_data.nn_idx.data() + (std::size_t)i * nn, /*stride=*/1, nn,
+        (int)svc_data.nn_order.size());
 
     if (n_neighbors == 0) {
       // No neighbors: marginal
-      log_lik += -0.5 * std::log(2.0 * M_PI * sigma2) -
-                 0.5 * w[obs_idx] * w[obs_idx] / sigma2;
+      log_lik += tulpa_nngp::marginal_log_density(w[obs_idx], sigma2);
       continue;
     }
 
@@ -141,20 +146,29 @@ inline double nngp_log_lik(
       c_vec[j] = compute_cov(d, sigma2, phi, svc_data.cov_type);
     }
 
+    // Resolve each neighbour slot to its location once. nngp_row_neighbours has
+    // already bounded the nn_order lookup; what remains to check is the value
+    // it returns, which indexes coords and w.
+    std::vector<int> nb_loc(n_neighbors);
+    for (int j = 0; j < n_neighbors; j++) {
+      const int loc = svc_data.nn_order[svc_data.nn_idx[i * nn + j] - 1];
+      if (loc < 0 || loc >= N) return -INFINITY;
+      nb_loc[j] = loc;
+    }
+
     // C_mat: covariances among neighbors
     for (int j1 = 0; j1 < n_neighbors; j1++) {
-      int nn_idx1 = svc_data.nn_order[svc_data.nn_idx[i * nn + j1] - 1];
       for (int j2 = 0; j2 < n_neighbors; j2++) {
-        int nn_idx2 = svc_data.nn_order[svc_data.nn_idx[i * nn + j2] - 1];
-
         if (j1 == j2) {
           C_mat[j1 * n_neighbors + j2] = sigma2;
         } else {
-          // Compute distance between neighbors
-          double d12 = std::sqrt(
-            std::pow(svc_data.coords[nn_idx1 * 2] - svc_data.coords[nn_idx2 * 2], 2) +
-            std::pow(svc_data.coords[nn_idx1 * 2 + 1] - svc_data.coords[nn_idx2 * 2 + 1], 2)
-          );
+          // Compute distance between neighbors. SVCData::coords is a flat
+          // stride-2 buffer, so the two columns are the whole domain here.
+          double dx = svc_data.coords[nb_loc[j1] * 2] -
+                      svc_data.coords[nb_loc[j2] * 2];
+          double dy = svc_data.coords[nb_loc[j1] * 2 + 1] -
+                      svc_data.coords[nb_loc[j2] * 2 + 1];
+          double d12 = std::sqrt(dx * dx + dy * dy);
           C_mat[j1 * n_neighbors + j2] = compute_cov(d12, sigma2, phi, svc_data.cov_type);
         }
       }
@@ -165,10 +179,7 @@ inline double nngp_log_lik(
     // agree with it, so it takes the SAME constants (kSvcJitter / kSvcVarFloor,
     // the deliberately looser SVC conditioning) and the same blended floor.
     std::vector<double> w_nb(n_neighbors);
-    for (int j = 0; j < n_neighbors; j++) {
-      int nn_orig_idx = svc_data.nn_order[svc_data.nn_idx[i * nn + j] - 1];
-      w_nb[j] = w[nn_orig_idx];
-    }
+    for (int j = 0; j < n_neighbors; j++) w_nb[j] = w[nb_loc[j]];
     double cond_mean, cond_var;
     if (!tulpa_nngp::cond_moments(C_mat, c_vec, w_nb, n_neighbors, sigma2,
                                   kSvcJitter,
@@ -242,14 +253,6 @@ inline double svc_sum_to_zero_penalty(
 // Prior on GP hyperparameters
 // -----------------------------------------------------------------------------
 
-// Log prior for sigma2 (spatial variance): Half-Cauchy or exponential
-inline double log_prior_sigma2(double sigma2, double scale) {
-  // Half-Cauchy(0, scale): 2 / (pi * scale * (1 + (sigma2/scale)^2))
-  // On log scale for sigma = sqrt(sigma2)
-  double sigma = std::sqrt(sigma2);
-  return std::log(2.0 / (M_PI * scale)) - std::log(1.0 + sigma * sigma / (scale * scale));
-}
-
 // Log prior for phi (range parameter): Uniform or exponential
 inline double log_prior_phi(double phi, double lower, double upper) {
   // Uniform(lower, upper)
@@ -269,13 +272,6 @@ inline CovType parse_cov_type(const std::string& cov_str) {
 // -----------------------------------------------------------------------------
 // Gradient computation for SVC parameters (for hand-coded HMC gradients)
 // -----------------------------------------------------------------------------
-
-// Struct to hold SVC NNGP gradient results
-struct SVCGradients {
-  std::vector<double> grad_w;         // Gradient w.r.t. spatial effects (length n_obs)
-  double grad_log_sigma2;             // Gradient w.r.t. log(sigma2)
-  double grad_log_phi;                // Gradient w.r.t. log(phi)
-};
 
 // Covariance derivative w.r.t. phi: dk(d)/dphi. Single source of truth for
 // every NNGP gradient path (SVC and GP); see dcov_dphi in hmc_gp_gradients.h,
@@ -308,204 +304,6 @@ inline double dcov_dphi_svc(double d, double phi, double cov_val, double sigma2,
     }
     default:
       return cov_val * d / (phi * phi);
-  }
-}
-
-// SVC gradient diagnostics: compile-time-false like GP_DEBUG_BOUNDS /
-// GP_AUTODIFF_DEBUG. The gradient runs on parallel-chain workers, where
-// Rcpp::Rcout (R API) is not thread-safe and a file-static first-call
-// counter races; flip the macro locally for a serial debugging session.
-#ifndef SVC_GRADIENT_DEBUG
-#define SVC_GRADIENT_DEBUG false
-#endif
-
-// Fully analytical NNGP gradients for SVC - single pass, no redundant function calls
-// Complexity: O(N * nn²) - ~4x faster than numerical
-inline void svc_nngp_gradients(
-    const std::vector<double>& w,
-    double sigma2,
-    double phi,
-    const SVCData& svc_data,
-    SVCGradients& grads
-) {
-  int N = svc_data.n_obs;
-  int nn = svc_data.nn;
-  const bool debug = SVC_GRADIENT_DEBUG;
-
-  grads.grad_w.assign(N, 0.0);
-  grads.grad_log_sigma2 = 0.0;
-  grads.grad_log_phi = 0.0;
-
-  // Validate - with debug output
-  bool val_fail = false;
-  if ((int)svc_data.nn_order.size() < N) {
-    if (debug) Rcpp::Rcout << "[SVC DEBUG] FAIL: nn_order.size()=" << svc_data.nn_order.size() << " < N=" << N << "\n";
-    val_fail = true;
-  }
-  if ((int)svc_data.nn_idx.size() < N * nn) {
-    if (debug) Rcpp::Rcout << "[SVC DEBUG] FAIL: nn_idx.size()=" << svc_data.nn_idx.size() << " < N*nn=" << N*nn << "\n";
-    val_fail = true;
-  }
-  if ((int)svc_data.nn_dist.size() < N * nn) {
-    if (debug) Rcpp::Rcout << "[SVC DEBUG] FAIL: nn_dist.size()=" << svc_data.nn_dist.size() << " < N*nn=" << N*nn << "\n";
-    val_fail = true;
-  }
-  if ((int)w.size() < N) {
-    if (debug) Rcpp::Rcout << "[SVC DEBUG] FAIL: w.size()=" << w.size() << " < N=" << N << "\n";
-    val_fail = true;
-  }
-  if ((int)svc_data.coords.size() < 2 * N) {
-    if (debug) Rcpp::Rcout << "[SVC DEBUG] FAIL: coords.size()=" << svc_data.coords.size() << " < 2*N=" << 2*N << "\n";
-    val_fail = true;
-  }
-  if (val_fail) {
-    return;
-  }
-
-  if (debug) {
-    Rcpp::Rcout << "[SVC DEBUG] Validation passed: N=" << N << ", nn=" << nn
-                << ", sigma2=" << sigma2 << ", phi=" << phi << "\n";
-  }
-
-  // First observation: marginal N(0, sigma2)
-  int first_idx = svc_data.nn_order[0];
-  if (first_idx < 0 || first_idx >= N) {
-    if (debug) Rcpp::Rcout << "[SVC DEBUG] FAIL: first_idx=" << first_idx << " out of bounds [0," << N << ")\n";
-    return;
-  }
-  double w0 = w[first_idx];
-  grads.grad_w[first_idx] = -w0 / sigma2;
-  grads.grad_log_sigma2 += 0.5 * (w0 * w0 / sigma2 - 1.0);  // Will multiply by sigma2 at end
-
-  // Preallocate work arrays (reused across iterations)
-  std::vector<double> c_vec(nn), dc_vec(nn), C_mat(nn * nn), L(nn * nn);
-  std::vector<double> y_vec(nn), alpha(nn), y2(nn), beta(nn), w_nb(nn);
-  std::vector<int> nb_idx(nn);
-
-  for (int i = 1; i < N; i++) {
-    int obs_idx = svc_data.nn_order[i];
-    if (obs_idx < 0 || obs_idx >= N) continue;
-
-    // Count neighbors
-    int n_nb = 0;
-    for (int j = 0; j < nn && svc_data.nn_idx[i * nn + j] > 0; j++) n_nb++;
-
-    if (n_nb == 0) {
-      double wi = w[obs_idx];
-      grads.grad_w[obs_idx] += -wi / sigma2;
-      grads.grad_log_sigma2 += 0.5 * (wi * wi / sigma2 - 1.0);
-      continue;
-    }
-
-    // Build c_vec, dc_vec (covariances and derivatives)
-    for (int j = 0; j < n_nb; j++) {
-      double d = svc_data.nn_dist[i * nn + j];
-      c_vec[j] = compute_cov(d, sigma2, phi, svc_data.cov_type);
-      dc_vec[j] = dcov_dphi_svc(d, phi, c_vec[j], sigma2, svc_data.cov_type);
-    }
-
-    // Build C_mat and get neighbor indices
-    bool ok = true;
-    for (int j1 = 0; j1 < n_nb && ok; j1++) {
-      int raw1 = svc_data.nn_idx[i * nn + j1];
-      if (raw1 - 1 < 0 || raw1 - 1 >= (int)svc_data.nn_order.size()) { ok = false; break; }
-      int idx1 = svc_data.nn_order[raw1 - 1];
-      if (idx1 < 0 || idx1 >= N) { ok = false; break; }
-      nb_idx[j1] = idx1;
-
-      for (int j2 = 0; j2 < n_nb; j2++) {
-        if (j1 == j2) {
-          C_mat[j1 * n_nb + j2] = sigma2;
-        } else {
-          int raw2 = svc_data.nn_idx[i * nn + j2];
-          if (raw2 - 1 < 0 || raw2 - 1 >= (int)svc_data.nn_order.size()) { ok = false; break; }
-          int idx2 = svc_data.nn_order[raw2 - 1];
-          double dx = svc_data.coords[idx1 * 2] - svc_data.coords[idx2 * 2];
-          double dy = svc_data.coords[idx1 * 2 + 1] - svc_data.coords[idx2 * 2 + 1];
-          C_mat[j1 * n_nb + j2] = compute_cov(std::sqrt(dx*dx + dy*dy), sigma2, phi, svc_data.cov_type);
-        }
-      }
-    }
-    if (!ok) {
-      double wi = w[obs_idx];
-      grads.grad_w[obs_idx] += -wi / sigma2;
-      grads.grad_log_sigma2 += 0.5 * (wi * wi / sigma2 - 1.0);
-      continue;
-    }
-
-    // Cholesky: C = LL'
-    std::fill(L.begin(), L.begin() + n_nb * n_nb, 0.0);
-    for (int j = 0; j < n_nb; j++) {
-      double s = 0.0;
-      for (int k = 0; k < j; k++) s += L[j * n_nb + k] * L[j * n_nb + k];
-      double diag = C_mat[j * n_nb + j] - s;
-      // Floor the pivot at the shared SVC variance floor so this gradient
-      // Cholesky conditions the neighbour covariance the same way the value
-      // kernel (nngp_log_lik / cond_moments) does, rather than an ad-hoc floor.
-      L[j * n_nb + j] = (diag > kSvcVarFloor) ? std::sqrt(diag)
-                                              : std::sqrt(kSvcVarFloor);
-      for (int k = j + 1; k < n_nb; k++) {
-        double t = 0.0;
-        for (int m = 0; m < j; m++) t += L[k * n_nb + m] * L[j * n_nb + m];
-        L[k * n_nb + j] = (C_mat[k * n_nb + j] - t) / L[j * n_nb + j];
-      }
-    }
-
-    // Solve L*y = c, L'*alpha = y => alpha = C^{-1}c
-    for (int j = 0; j < n_nb; j++) {
-      double s = 0.0;
-      for (int k = 0; k < j; k++) s += L[j * n_nb + k] * y_vec[k];
-      y_vec[j] = (c_vec[j] - s) / L[j * n_nb + j];
-    }
-    for (int j = n_nb - 1; j >= 0; j--) {
-      double s = 0.0;
-      for (int k = j + 1; k < n_nb; k++) s += L[k * n_nb + j] * alpha[k];
-      alpha[j] = (y_vec[j] - s) / L[j * n_nb + j];
-    }
-
-    // Get w_neighbors and solve for beta = C^{-1}w_nb
-    for (int j = 0; j < n_nb; j++) w_nb[j] = w[nb_idx[j]];
-    for (int j = 0; j < n_nb; j++) {
-      double s = 0.0;
-      for (int k = 0; k < j; k++) s += L[j * n_nb + k] * y2[k];
-      y2[j] = (w_nb[j] - s) / L[j * n_nb + j];
-    }
-    for (int j = n_nb - 1; j >= 0; j--) {
-      double s = 0.0;
-      for (int k = j + 1; k < n_nb; k++) s += L[k * n_nb + j] * beta[k];
-      beta[j] = (y2[j] - s) / L[j * n_nb + j];
-    }
-
-    // Pairwise dC/dphi (row-major, zero diagonal) from the neighbour
-    // coordinates, for the shared gradient assembler.
-    std::vector<double> dC(static_cast<std::size_t>(n_nb) * n_nb, 0.0);
-    for (int j1 = 0; j1 < n_nb; j1++) {
-      for (int j2 = 0; j2 < n_nb; j2++) {
-        if (j1 == j2) continue;
-        double dx = svc_data.coords[nb_idx[j1] * 2] - svc_data.coords[nb_idx[j2] * 2];
-        double dy = svc_data.coords[nb_idx[j1] * 2 + 1] - svc_data.coords[nb_idx[j2] * 2 + 1];
-        double d12 = std::sqrt(dx * dx + dy * dy);
-        dC[j1 * n_nb + j2] = dcov_dphi_svc(d12, phi, C_mat[j1 * n_nb + j2],
-                                           sigma2, svc_data.cov_type);
-      }
-    }
-    tulpa_nngp::VecchiaGrad g = tulpa_nngp::vecchia_cond_grad(
-        n_nb, alpha.data(), beta.data(), c_vec.data(), dc_vec.data(), dC.data(),
-        w_nb.data(), w[obs_idx], sigma2, phi, 1e-6);
-    grads.grad_w[obs_idx] += g.grad_w_obs;
-    for (int j = 0; j < n_nb; j++) grads.grad_w[nb_idx[j]] += alpha[j] * g.r_over_v;
-    grads.grad_log_sigma2 += g.dlog_sigma2;
-    grads.grad_log_phi += g.dlog_phi;
-  }
-
-  if (debug) {
-    double sum_abs_grad_w = 0.0;
-    for (int i = 0; i < N; i++) {
-      sum_abs_grad_w += std::abs(grads.grad_w[i]);
-    }
-    Rcpp::Rcout << "[SVC DEBUG] Output: sum|grad_w|=" << sum_abs_grad_w
-                << ", grad_log_sigma2=" << grads.grad_log_sigma2
-                << ", grad_log_phi=" << grads.grad_log_phi << "\n";
   }
 }
 

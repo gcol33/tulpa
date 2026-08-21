@@ -524,6 +524,22 @@
 }
 
 
+# The fixed-effect prior a backend actually received, read back off the
+# assembled fitter arguments: `beta_prior` where the fitter takes the list,
+# `sigma_beta` where it takes the scalar mean-zero SD. A backend that carries
+# neither expresses no Gaussian prior on the fixed effects (the nested-Laplace,
+# SPDE and spatial-Laplace paths hold their own field-conditional prior), and
+# reports NULL rather than a default it did not apply.
+.beta_prior_applied <- function(args, resolved) {
+  if (!is.null(args$beta_prior)) return(args$beta_prior)
+  if (!is.null(args$sigma_beta)) return(list(mean = 0, sd = args$sigma_beta))
+  # A logpost backend receives closures that already carry the prior, so the
+  # resolved object is what went into them.
+  if (!is.null(args$log_posterior)) return(resolved)
+  NULL
+}
+
+
 # Assemble the fitter argument list for a backend from the model pieces. Routes
 # on the backend's input contract (BACKEND_REGISTRY$<backend>$input). Backends
 # that are reachable but not yet wired through tulpa() error with guidance.
@@ -533,10 +549,19 @@
                                temporal = NULL, weights = NULL,
                                phi2 = NULL, smoothers = list(),
                                re_prior = NULL, zi_prior = NULL,
-                               warm_start = NULL, estimate_phi = FALSE) {
+                               warm_start = NULL, estimate_phi = FALSE,
+                               beta_prior_default = NULL) {
   # Scalar prior SD on the beta_zi block; the engine default when unset. Read
   # once here so every ZI-carrying backend receives the same number.
   zi_prior_sd <- .normalize_zi_prior(zi_prior)
+  # The fixed-effect prior is a modelling statement and a backend is a
+  # computational choice, so the default is resolved ONCE at the front door and
+  # passed in: `y ~ x` and `y ~ x + (1 | g)` route to different backends and
+  # must not be fitted under different priors because of it. The branches that
+  # cannot express a Gaussian fixed-effect prior still test the SUPPLIED
+  # `beta_prior`, so the resolved default does not turn their guard into an
+  # error on every fit.
+  beta_prior_default <- beta_prior_default %||% .tulpa_default_beta_prior()
   # Statistical random-effect / variance-component hyperpriors ride in a single
   # `re_prior` list (a statistical argument), never in `control` (tuning only).
   rp <- re_prior %||% list()
@@ -850,7 +875,7 @@
       return(c(common, list(
         prior_df        = rp$prior_df,
         prior_scale     = rp$prior_scale,
-        beta_prior      = beta_prior %||% list(mean = 0, sd = 100),
+        beta_prior      = beta_prior_default,
         control         = .control_subset(control, .CONTROL_KEYS$re_cov_gibbs)
       )))
     }
@@ -941,7 +966,7 @@
         group = group,
         n_groups = n_groups,
         family = family,
-        beta_prior = beta_prior %||% list(mean = 0, sd = 10),
+        beta_prior = beta_prior_default,
         prior_sigma_scale = rp$prior_sigma_scale %||% 2.5,
         spatial = spatial,
         control = .control_subset(control, .CONTROL_KEYS$gibbs)
@@ -1013,7 +1038,7 @@
         family     = family,
         phi        = phi %||% 1.0,
         n_trials   = n_trials,
-        beta_prior = beta_prior %||% list(mean = 0, sd = 10),
+        beta_prior = beta_prior_default,
         control    = .control_subset(control, .CONTROL_KEYS$ep)
       ))
     }
@@ -1025,7 +1050,7 @@
   if (input == "logpost") {
     m <- build_glmm_logpost(bundle, family, sigma_re = sigma_re,
                             n_trials = n_trials, phi = phi,
-                            beta_prior = beta_prior %||% list(mean = 0, sd = 2.5),
+                            beta_prior = beta_prior_default,
                             weights = weights, phi2 = phi2)
     if (backend == "mala") {
       return(list(
@@ -1247,8 +1272,7 @@
       # The fixed-effect prior SD is the statistical `beta_prior` (mean-zero on
       # this sampler path), not a control knob; inject it into the sampler's
       # sigma_beta. Other perf knobs forward from control.
-      sigma_beta    = if (!is.null(beta_prior))
-                        .beta_prior_ridge_sd(beta_prior, 10) else 10.0,
+      sigma_beta    = .beta_prior_ridge_sd(beta_prior_default),
       control       = .control_subset(control, .CONTROL_KEYS$sample_glmm)
     )
 
@@ -1381,7 +1405,12 @@
 #'   `phi2` channel refuse it rather than fit at the family's default.
 #'   `estimate_phi` covers `phi` alone; `phi2` is always conditioned on.
 #' @param beta_prior Optional `list(mean, sd)` Gaussian prior on the fixed
-#'   effects.
+#'   effects. `NULL` takes the engine default, `prior_normal(0, 2.5)`, on every
+#'   backend that carries a fixed-effect prior -- the prior is a modelling
+#'   statement, so the backend `mode = "auto"` selects does not change it. The
+#'   nested-Laplace and SPDE paths hold their own field-conditional prior and
+#'   reject a supplied `beta_prior`. The resolved prior is reported on the fit
+#'   as `$beta_prior`.
 #' @param re_prior Optional `list()` of random-effect / variance-component
 #'   hyperpriors (statistical, so they live in the signature rather than in
 #'   `control`). Recognised entries, each consumed by the backend that needs it:
@@ -1559,13 +1588,13 @@ tulpa <- function(formula, data,
     }
     fit <- if (family == "multinomial") {
       tulpa_multinomial(formula, data,
-                        beta_prior = beta_prior %||% list(mean = 0, sd = 10),
+                        beta_prior = beta_prior %||% .tulpa_default_beta_prior(),
                         control = .control_subset(control,
                                                   .CONTROL_KEYS$multinomial))
     } else {
       tulpa_ordinal(formula, data,
                     link = if (family == "ordinal_probit") "probit" else "logit",
-                    beta_prior = beta_prior %||% list(mean = 0, sd = 10),
+                    beta_prior = beta_prior %||% .tulpa_default_beta_prior(),
                     control = .control_subset(control, .CONTROL_KEYS$ordinal))
     }
     fit$call <- match.call()
@@ -2168,6 +2197,10 @@ tulpa <- function(formula, data,
     }
   }
 
+  # Resolved before backend dispatch; `beta_prior` itself stays as supplied, so
+  # the branches that reject a fixed-effect prior still see NULL when none was.
+  beta_prior_resolved <- beta_prior %||% .tulpa_default_beta_prior()
+
   args <- .tulpa_fitter_args(sel$backend, bundle, family, sigma_re,
                              n_trials, phi, beta_prior, control,
                              latent_blocks = parsed$latent_blocks,
@@ -2176,7 +2209,8 @@ tulpa <- function(formula, data,
                              smoothers = lapply(smooth_specs, `[[`, "block"),
                              re_prior = re_prior, zi_prior = zi_prior,
                              warm_start = warm_start,
-                             estimate_phi = estimate_phi)
+                             estimate_phi = estimate_phi,
+                             beta_prior_default = beta_prior_resolved)
 
   # sel$backend is itself a valid mode, so dispatch resolves to the same backend.
   fit <- tulpa_dispatch(
@@ -2200,6 +2234,7 @@ tulpa <- function(formula, data,
     fit$mode_overridden <- sel$overridden
     fit$formula <- formula
     fit$family <- family
+    fit$beta_prior <- .beta_prior_applied(args, beta_prior_resolved)
     fit$call <- match.call()
 
     # Canonical parameter layout for the S3 accessors: the fixed-effect count and

@@ -10,7 +10,6 @@
 #include "laplace_re_priors.h"
 #include "laplace_spec_fit.h"     // spec-solver marshalling for the single-point fits
 #include "re_structure.h"         // shared multi-term RE ModelData marshalling
-#include "laplace_scatter.h"
 #include "laplace_spatial_priors.h"
 #include "laplace_temporal_priors.h"
 #include "linalg_fast.h"
@@ -108,7 +107,7 @@ inline void nngp_conditional_laplace(
     }
     tulpa_linalg::nngp_conditional_moments(
         C_mat.data(), c_vec.data(), w_nb.data(), n_neighbors, sigma2,
-        tulpa_linalg::kCholJitter, tulpa_linalg::kCholJitter,
+        tulpa_linalg::kNngpNugget, tulpa_linalg::kNngpVarFloor,
         cond_mean, cond_var);
 }
 

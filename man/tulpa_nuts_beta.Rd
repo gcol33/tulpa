@@ -7,7 +7,7 @@
 tulpa_nuts_beta(
   y,
   X,
-  beta_prior = list(mean = 0, sd = 10),
+  beta_prior = .tulpa_default_beta_prior("beta_nuts"),
   log_phi_prior_sd = 3,
   log_phi_init = 0,
   control = list()
@@ -20,7 +20,7 @@ tulpa_nuts_beta(
 
 \item{beta_prior}{Fixed-effect prior as \code{list(mean, sd)}: a mean-zero
 (\code{mean = 0}) Gaussian on each coefficient with SD \code{sd} (default
-\code{list(mean = 0, sd = 10)}).}
+the engine default, \code{prior_normal(0, 2.5)}).}
 
 \item{log_phi_prior_sd}{Prior SD on \code{log(phi)}
 (\code{log_phi ~ N(0, log_phi_prior_sd)}). Default \code{3} (very weak;

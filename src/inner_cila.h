@@ -207,14 +207,21 @@ inline bool cila_build_aux(const CilaOptions& opts, int d, std::uint64_t key,
 // `eval_log_joint(x) -> double` is the Newton loop's own penalized-objective
 // closure (log-likelihood + log-prior at latent x), so this routine carries no
 // likelihood knowledge and serves the single-arm and joint loops alike.
-// `present_draw(x)` is applied to a COPY of each drawn latent vector before its
-// leading prefix is retained, so a loop that presents its mode under a
-// post-Newton centering fold presents its draws the same way; pass a no-op
-// where the reported mode is the Newton iterate itself.
+// `present_draw(x)` is applied to each drawn latent vector before its leading
+// prefix is retained, so a loop that presents its mode under a post-Newton
+// centering fold presents its draws the same way; pass a no-op where the
+// reported mode is the Newton iterate itself.
 //
 // `x_buf` is caller-supplied scratch sized n_x; it must hold `mode` on entry and
-// is restored to it on return. The dense factor is reused as-is, with no
-// refactorization: a draw is one back-substitution against it.
+// is restored to it on return. It carries the draw into `eval_log_joint` and
+// then into `present_draw`, which rewrites it in place: the next draw overwrites
+// every entry and the mode is written back at the end, so the two uses never
+// meet. Holding a second Rcpp vector for the presented copy would allocate from
+// R's heap, and this routine runs on the outer grid's worker threads, where
+// Rf_allocVector is not thread-safe.
+//
+// The factor is reused as-is, with no refactorization: a draw is one
+// back-substitution against it.
 template <typename EvalLogJoint, typename PresentDraw>
 inline CilaOutcome compute_inner_cila(
     int n_x,
@@ -293,7 +300,6 @@ inline CilaOutcome compute_inner_cila(
   if (use_sparse) {
     eps_block.assign(static_cast<std::size_t>(n_x) * CILA_DRAW_CHUNK, 0.0);
   }
-  Rcpp::NumericVector present(n_x);
   for (int i0 = 0; i0 < M; i0 += CILA_DRAW_CHUNK) {
     const int nc = std::min(CILA_DRAW_CHUNK, M - i0);
     if (use_sparse) {
@@ -338,10 +344,11 @@ inline CilaOutcome compute_inner_cila(
       const double lp = eval_log_joint(x_buf);
       out.log_w[i] = lp - (log_q_const - 0.5 * quad);
       if (out.n_fixed > 0) {
-        for (int j = 0; j < n_x; j++) present[j] = x_buf[j];
-        present_draw(present);
+        // The presented draw replaces the buffer's contents; the next draw
+        // rewrites every entry and the mode is restored below.
+        present_draw(x_buf);
         for (int b = 0; b < out.n_fixed; b++) {
-          out.fixed[static_cast<std::size_t>(b) * M + i] = present[b];
+          out.fixed[static_cast<std::size_t>(b) * M + i] = x_buf[b];
         }
       }
     }

@@ -6,12 +6,46 @@
 #ifndef TULPA_HMC_SAMPLER_NUTS_INFRA_H
 #define TULPA_HMC_SAMPLER_NUTS_INFRA_H
 
+#include <cmath>
 #include <cstring>
 #include <vector>
 
 #include "hmc_sampler_decls.h"  // GradientFn
 
 namespace tulpa_hmc {
+
+// =====================================================================
+// Divergence tests shared by the NUTS tree and the fixed-trajectory step
+// =====================================================================
+
+// Energy-error threshold: a step whose Hamiltonian has risen more than this
+// many nats above the trajectory start has left the level set a symplectic
+// integrator tracks, and the trajectory is reported divergent (Hoffman &
+// Gelman 2014).
+constexpr double DIVERGENCE_DELTA_MAX = 1000.0;
+
+// A leapfrog endpoint whose log-posterior, position or momentum is non-finite
+// carries no usable Hamiltonian: the kinetic term, the multinomial weight and
+// the Metropolis ratio formed from it are all NaN. The momentum is scanned
+// because every integrator scheme in use ends in a Kick, so a non-finite
+// gradient at the endpoint reaches p while q keeps the finite value the
+// preceding Drift wrote.
+inline bool leapfrog_state_nonfinite(double log_prob, const double* q,
+                                     const double* p, int n) {
+  if (!std::isfinite(log_prob)) return true;
+  for (int i = 0; i < n; i++) {
+    if (!std::isfinite(q[i]) || !std::isfinite(p[i])) return true;
+  }
+  return false;
+}
+
+// Divergence test on the Hamiltonian itself. The negated comparison routes a
+// NaN energy difference to the divergent branch, which `H_new - H0 > delta_max`
+// would not.
+inline bool hamiltonian_divergent(double H0, double H_new,
+                                  double delta_max = DIVERGENCE_DELTA_MAX) {
+  return !std::isfinite(H_new) || !(H_new - H0 <= delta_max);
+}
 
 // =====================================================================
 // HMC/NUTS sampler structures

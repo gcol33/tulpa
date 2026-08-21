@@ -47,7 +47,7 @@
 #'   `tau = 1 / (sqrt(4 pi) * kappa * s0)`.
 #' @param beta_prior Fixed-effect prior as `list(mean, sd)`: a mean-zero
 #'   (`mean = 0`) Gaussian on each coefficient with SD `sd` (default
-#'   `list(mean = 0, sd = 10)`).
+#'   the engine default, `prior_normal(0, 2.5)`).
 #' @param log_phi_prior_sd Prior SD on `log(phi)`. Role of `phi` is
 #'   family-specific:
 #'   * `gaussian`: `phi` is the residual SD (sampled jointly)
@@ -97,14 +97,14 @@ tulpa_nuts_spde <- function(y, X, spatial,
                             prior_sigma      = NULL,
                             log_kappa_init   = NULL,
                             log_tau_init     = NULL,
-                            beta_prior       = list(mean = 0, sd = 10),
+                            beta_prior       = .tulpa_default_beta_prior("spde_nuts"),
                             log_phi_prior_sd = 3,
                             log_phi_init     = 0,
                             control          = list()) {
 
   tulpa_check_control(control, .CONTROL_KEYS$nuts_spde, "tulpa_nuts_spde")
   family      <- match.arg(family)
-  sigma_beta  <- .beta_prior_ridge_sd(beta_prior, default_sd = 10)
+  sigma_beta  <- .beta_prior_ridge_sd(beta_prior, .tulpa_prior_sd("spde_nuts"))
   # Perf / sampler knobs live in control (statistical args stay in the
   # signature).
   noncenter     <- isTRUE(control$noncenter %||% TRUE)

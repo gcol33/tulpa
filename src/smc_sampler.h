@@ -11,6 +11,7 @@
 #ifndef TULPA_SMC_SAMPLER_H
 #define TULPA_SMC_SAMPLER_H
 
+#include <Rcpp.h>
 #include <vector>
 #include <functional>
 #include <cmath>
@@ -18,8 +19,16 @@
 #include <algorithm>
 #include <numeric>
 #include <limits>
+#include <stdexcept>
+#include <string>
 
 namespace tulpa_smc {
+
+// Ceiling on adaptive tempering steps. The schedule is data-driven, so it has
+// no a priori length; a well-posed population reaches beta = 1 in tens to a few
+// hundred steps, while a population the ESS target is unreachable for advances
+// by the representable floor below and would otherwise loop without end.
+const int kMaxTemperatureSteps = 10000;
 
 // ============================================================================
 // Result container
@@ -127,7 +136,17 @@ inline double find_next_temperature(
         }
     }
 
+    // `lo` is only ever raised off beta_current by a midpoint that clears the
+    // ESS target. When none does -- a population whose incremental weights are
+    // dominated by one particle at every representable delta, which is what a
+    // non-finite log-likelihood among the particles produces -- `lo` stays at
+    // beta_current, `hi` converges down onto it, and the bisection returns the
+    // temperature it started from. Floor the result at the next representable
+    // temperature so the caller's schedule is strictly increasing and its step
+    // cap can end the run instead of it spinning.
     double result = 0.5 * (lo + hi);
+    const double floor_beta = std::nextafter(beta_current, 1.0);
+    if (!(result > floor_beta)) result = floor_beta;
     if (result > 1.0 - 1e-10) result = 1.0;
     return result;
 }
@@ -141,6 +160,12 @@ inline double find_next_temperature(
 //   log_likelihood(theta)   -> log p(y | theta)
 //   prior_sample(theta, rng, beta) -> fill theta with a draw from the prior
 //   mcmc_mutation(theta, beta, rng) -> one MCMC step targeting p(theta) * p(y|theta)^beta
+//
+// log_marginal_likelihood is an estimate of log Z only when `prior_sample`
+// draws from the NORMALIZED prior p(theta): the step-0 increment
+// log mean_n L(theta_n)^(beta_1) estimates Z_1 / Z_0 under that population and
+// no other, and nothing here carries a p / q correction. A caller whose
+// prior_sample is a stand-in must discard the field.
 
 inline SMCResult smc_sample(
     const std::function<double(const std::vector<double>&)>& log_prior,
@@ -182,7 +207,19 @@ inline SMCResult smc_sample(
     // ------------------------------------------------------------------
     // 2. Tempering loop
     // ------------------------------------------------------------------
+    int n_steps = 0;
     while (beta < 1.0) {
+        Rcpp::checkUserInterrupt();
+        if (++n_steps > kMaxTemperatureSteps) {
+            throw std::runtime_error(
+                "SMC tempering did not reach beta = 1 within " +
+                std::to_string(kMaxTemperatureSteps) + " steps (stalled at "
+                "beta = " + std::to_string(beta) + "). The ESS target is "
+                "unreachable at every temperature above it, which a particle "
+                "carrying a non-finite log-likelihood produces; check the "
+                "initial population and the likelihood at it.");
+        }
+
         // (a) Adaptive temperature selection
         double beta_new = find_next_temperature(log_liks, beta, ess_target, N);
         double delta = beta_new - beta;

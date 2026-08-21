@@ -27,11 +27,15 @@
 #include "laplace_spec_fit.h"      // as_offset_vec
 #include "sampler_model_data.h"    // build_sampler_model_inputs / sampler_param_names
 #include "hmc_sampler.h"           // tulpa_hmc::run_hmc_parallel_chains_cpp, HMCResultCpp
+#include "hmc_chain_stack.h"       // tulpa_hmc::stack_hmc_chains
 #include "ess_sampler.h"           // tulpa_ess::run_ess_sampler
 #include "sghmc_sampler.h"         // tulpa_sghmc::run_sghmc_sampler / run_sgld_sampler
 #include "mclmc_modeldata.h"       // tulpa_mclmc::run_mclmc_sampler
 #include "smc_modeldata.h"         // tulpa::run_smc_sampler
 #include "vi_types.h"              // tulpa::vi::VIConfig / VIResult / VIVariant
+#include "vi_meanfield.h"          // compute_meanfield_elbo_grad + entropy grad
+#include "vi_lowrank.h"            // compute_lowrank_elbo_grad + entropy grad
+#include "vi_fullrank.h"           // compute_fullrank_elbo_grad + entropy grad
 
 using tulpa_hmc::ModelData;
 using tulpa_hmc::ParamLayout;
@@ -57,6 +61,50 @@ Rcpp::NumericMatrix eigen_draws_to_r(const Eigen::MatrixXd& S, int D,
     return draws;
 }
 
+// Pack a variational gradient exactly the way the matching params' flatten()
+// packs the parameters themselves, so a finite difference taken on the packed
+// vector lines up entry for entry with the analytic gradient. One packer per
+// variant, used for both the full ELBO gradient and the entropy-only gradient.
+
+Rcpp::NumericVector vi_pack_meanfield(const Eigen::VectorXd& g_mu,
+                                      const Eigen::VectorXd& g_log_sigma) {
+    const int D = (int)g_mu.size();
+    Rcpp::NumericVector out(2 * D);
+    for (int i = 0; i < D; i++) { out[i] = g_mu(i); out[D + i] = g_log_sigma(i); }
+    return out;
+}
+
+// mu, then the lower triangle of L row by row.
+Rcpp::NumericVector vi_pack_fullrank(const Eigen::VectorXd& g_mu,
+                                     const Eigen::MatrixXd& g_L) {
+    const int D = (int)g_mu.size();
+    Rcpp::NumericVector out(D + D * (D + 1) / 2);
+    for (int i = 0; i < D; i++) out[i] = g_mu(i);
+    int idx = D;
+    for (int i = 0; i < D; i++)
+        for (int j = 0; j <= i; j++) out[idx++] = g_L(i, j);
+    return out;
+}
+
+// mu, then L column-major, then log_d.
+Rcpp::NumericVector vi_pack_lowrank(const Eigen::VectorXd& g_mu,
+                                    const Eigen::MatrixXd& g_L,
+                                    const Eigen::VectorXd& g_log_d) {
+    const int D = (int)g_mu.size();
+    const int r = (int)g_L.cols();
+    Rcpp::NumericVector out(2 * D + D * r);
+    for (int i = 0; i < D; i++) out[i] = g_mu(i);
+    for (int k = 0; k < D * r; k++) out[D + k] = g_L.data()[k];
+    for (int i = 0; i < D; i++) out[D + D * r + i] = g_log_d(i);
+    return out;
+}
+
+Rcpp::NumericVector eigen_to_r(const Eigen::VectorXd& v) {
+    Rcpp::NumericVector out(v.size());
+    for (int i = 0; i < v.size(); i++) out[i] = v(i);
+    return out;
+}
+
 Rcpp::NumericVector col_means(const Rcpp::NumericMatrix& draws) {
     const int n = draws.nrow(), p = draws.ncol();
     Rcpp::NumericVector m(p, 0.0);
@@ -67,6 +115,141 @@ Rcpp::NumericVector col_means(const Rcpp::NumericMatrix& draws) {
 }
 
 } // namespace
+
+// ----------------------------------------------------------------------------
+// VI ELBO and its packed gradient at a supplied variational parameter vector.
+//
+// Exists so the reparameterisation gradients can be finite-difference checked.
+// The Monte Carlo draws are taken from a mt19937 seeded here and nowhere else,
+// and their distribution does not depend on the variational parameters, so at a
+// fixed `seed` and `mc_samples` the returned ELBO is a DETERMINISTIC function of
+// `x` and the returned gradient is that function's exact derivative -- a central
+// difference on `x` reproduces it to the difference rule's own accuracy rather
+// than to Monte Carlo error.
+//
+// The `x` argument is the packed variational parameter vector in the variant's
+// own flatten() layout; NULL evaluates at the variant's default initialisation.
+// The `x` element of the result is what was actually evaluated, which differs
+// from the argument only where the parameterization repaired it (the full-rank
+// diagonal floor).
+//
+// `entropy` / `entropy_grad` are H[q] and its gradient alone, with no Monte
+// Carlo in either, so the entropy term can be checked against an independently
+// written log-determinant.
+//
+// [[Rcpp::export]]
+Rcpp::List cpp_vi_elbo_grad(
+    Rcpp::NumericVector y,
+    Rcpp::IntegerVector n_trials,
+    Rcpp::NumericMatrix X,
+    std::string family,
+    int variant,                 // 0 = meanfield, 1 = lowrank, 2 = fullrank
+    int mc_samples,
+    int seed,
+    int rank = 2,
+    Rcpp::Nullable<Rcpp::NumericVector> x = R_NilValue,
+    double phi = 1.0,
+    double sigma_beta = 10.0,
+    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue
+) {
+    using namespace tulpa::vi;
+
+    if (mc_samples < 1) Rcpp::stop("mc_samples must be at least 1.");
+    if (variant < 0 || variant > 2) {
+        Rcpp::stop("variant must be 0 (meanfield), 1 (lowrank) or 2 (fullrank).");
+    }
+
+    const int N = y.size();
+    tulpa::SamplerModelInputs in;
+    std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, N);
+    tulpa::build_sampler_model_inputs(
+        in, y, n_trials, X, family, phi, sigma_beta, offset, /*sigma_re_scale=*/2.5,
+        R_NilValue, R_NilValue, R_NilValue);
+    const int D = in.layout.total_params;
+
+    std::mt19937 rng((unsigned int)seed);
+
+    Rcpp::NumericVector x_used, grad, entropy_grad;
+    double elbo = 0.0, entropy = 0.0;
+    std::string variant_name;
+
+    if (variant == 0) {
+        MeanFieldParams params(D);
+        if (x.isNotNull()) {
+            Rcpp::NumericVector xv(x);
+            if ((int)xv.size() != params.n_variational_params()) {
+                Rcpp::stop("x has length %d but the mean-field parameterization "
+                           "has %d entries.", (int)xv.size(),
+                           params.n_variational_params());
+            }
+            params.unflatten(Eigen::Map<Eigen::VectorXd>(xv.begin(), xv.size()));
+        }
+        MeanFieldGradients g = compute_meanfield_elbo_grad(
+            params, in.data, in.layout, mc_samples, rng);
+        Eigen::VectorXd e_log_sigma = Eigen::VectorXd::Zero(D);
+        meanfield_add_entropy_grad(params, e_log_sigma);
+        x_used = eigen_to_r(params.flatten());
+        grad = vi_pack_meanfield(g.grad_mu, g.grad_log_sigma);
+        entropy_grad = vi_pack_meanfield(Eigen::VectorXd::Zero(D), e_log_sigma);
+        elbo = g.elbo;
+        entropy = params.entropy();
+        variant_name = "meanfield";
+    } else if (variant == 1) {
+        if (rank < 1) Rcpp::stop("rank must be at least 1 for the low-rank variant.");
+        LowRankParams params(D, rank, (unsigned int)seed);
+        if (x.isNotNull()) {
+            Rcpp::NumericVector xv(x);
+            if ((int)xv.size() != params.n_variational_params()) {
+                Rcpp::stop("x has length %d but the low-rank parameterization "
+                           "has %d entries.", (int)xv.size(),
+                           params.n_variational_params());
+            }
+            params.unflatten(Eigen::Map<Eigen::VectorXd>(xv.begin(), xv.size()));
+        }
+        LowRankGradients g = compute_lowrank_elbo_grad(
+            params, in.data, in.layout, mc_samples, rng);
+        Eigen::MatrixXd e_L = Eigen::MatrixXd::Zero(D, rank);
+        Eigen::VectorXd e_log_d = Eigen::VectorXd::Zero(D);
+        lowrank_add_entropy_grad(params, e_L, e_log_d);
+        x_used = eigen_to_r(params.flatten());
+        grad = vi_pack_lowrank(g.grad_mu, g.grad_L, g.grad_log_d);
+        entropy_grad = vi_pack_lowrank(Eigen::VectorXd::Zero(D), e_L, e_log_d);
+        elbo = g.elbo;
+        entropy = params.entropy();
+        variant_name = "lowrank";
+    } else {
+        FullRankParams params(D);
+        if (x.isNotNull()) {
+            Rcpp::NumericVector xv(x);
+            if ((int)xv.size() != params.n_variational_params()) {
+                Rcpp::stop("x has length %d but the full-rank parameterization "
+                           "has %d entries.", (int)xv.size(),
+                           params.n_variational_params());
+            }
+            params.unflatten(Eigen::Map<Eigen::VectorXd>(xv.begin(), xv.size()));
+        }
+        FullRankGradients g = compute_fullrank_elbo_grad(
+            params, in.data, in.layout, mc_samples, rng);
+        Eigen::MatrixXd e_L = Eigen::MatrixXd::Zero(D, D);
+        fullrank_add_entropy_grad(params, e_L);
+        x_used = eigen_to_r(params.flatten());
+        grad = vi_pack_fullrank(g.grad_mu, g.grad_L);
+        entropy_grad = vi_pack_fullrank(Eigen::VectorXd::Zero(D), e_L);
+        elbo = g.elbo;
+        entropy = params.entropy();
+        variant_name = "fullrank";
+    }
+
+    return Rcpp::List::create(
+        Rcpp::Named("variant")      = variant_name,
+        Rcpp::Named("D")            = D,
+        Rcpp::Named("n_params")     = (int)grad.size(),
+        Rcpp::Named("x")            = x_used,
+        Rcpp::Named("elbo")         = elbo,
+        Rcpp::Named("grad")         = grad,
+        Rcpp::Named("entropy")      = entropy,
+        Rcpp::Named("entropy_grad") = entropy_grad);
+}
 
 // [[Rcpp::export]]
 Rcpp::List cpp_tulpa_sample_glmm(
@@ -96,6 +279,7 @@ Rcpp::List cpp_tulpa_sample_glmm(
     int vi_mc_samples = 10,
     int vi_max_iter = 10000,
     int vi_n_draws = 2000,
+    double vi_max_grad_norm = 10.0,
     Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
     Rcpp::Nullable<Rcpp::List> re_spec = R_NilValue,
     Rcpp::Nullable<Rcpp::List> spatial_spec = R_NilValue,
@@ -108,7 +292,6 @@ Rcpp::List cpp_tulpa_sample_glmm(
     Rcpp::Nullable<Rcpp::List> zi_spec = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericMatrix> init_nullable = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericVector> inv_metric_diag_nullable = R_NilValue,
-    bool ess_use_cholesky = true,
     bool ess_adapt_during_warmup = false,
     int ess_adapt_interval = 50,
     int ess_joint_sigma_re = -1,
@@ -122,7 +305,7 @@ Rcpp::List cpp_tulpa_sample_glmm(
     //       mclmc_adjusted
     //   SMC:   n_particles, n_mcmc_steps, ess_threshold
     //   VI:    vi_variant (0=meanfield,1=lowrank,2=fullrank,3=auto),
-    //       vi_mc_samples, vi_max_iter, vi_n_draws
+    //       vi_mc_samples, vi_max_iter, vi_n_draws, vi_max_grad_norm
     //   Structure: re_spec / spatial_spec / temporal_spec (null => absent),
     //       sigma_re_scale (half-Cauchy scale on the RE / BYM2 SDs).
     const int N = y.size();
@@ -206,54 +389,34 @@ Rcpp::List cpp_tulpa_sample_glmm(
             q_init, inv_metric, in.data, n_iter, n_warmup, /*L=*/0, n_chains,
             (unsigned int)seed, verbose, max_treedepth,
             tulpa::MassMatrixType::DIAG, adapt_delta, /*riemannian=*/0, "");
-        const int n_sample = chains[0].n_sample;
-        const int n_total = n_sample * n_chains;
-        Rcpp::NumericMatrix draws(n_total, D);
-        Rcpp::IntegerVector chain_id(n_total);
-        Rcpp::NumericVector log_prob(n_total), accept_prob(n_total);
-        Rcpp::IntegerVector divergent(n_total), treedepth(n_total);
-        Rcpp::NumericVector epsilon_out(n_chains);
-        int r = 0;
-        for (int c = 0; c < n_chains; c++) {
-            const tulpa_hmc::HMCResultCpp& ch = chains[c];
-            for (int s = 0; s < ch.n_sample; s++) {
-                const double* row = ch.sample_row(s);
-                for (int j = 0; j < D; j++) draws(r, j) = row[j];
-                chain_id[r] = c + 1;
-                log_prob[r] = ch.log_prob[s];
-                accept_prob[r] = ch.accept_prob[s];
-                divergent[r] = ch.divergent[s];
-                treedepth[r] = ch.treedepth[s];
-                r++;
-            }
-            epsilon_out[c] = ch.epsilon;
-        }
-        if (n_total > 0) Rcpp::colnames(draws) = cn;
+        tulpa_hmc::StackedChains st = tulpa_hmc::stack_hmc_chains(chains, n_chains, D);
+        if (st.n_total > 0) Rcpp::colnames(st.draws) = cn;
         out = Rcpp::List::create(
-            Rcpp::Named("draws") = draws,
-            Rcpp::Named("means") = col_means(draws),
-            Rcpp::Named("chain_id") = chain_id,
+            Rcpp::Named("draws") = st.draws,
+            Rcpp::Named("means") = col_means(st.draws),
+            Rcpp::Named("chain_id") = st.chain_id,
             Rcpp::Named("n_chains") = n_chains,
-            Rcpp::Named("n_samples") = n_sample,
+            Rcpp::Named("n_samples") = st.n_sample_per_chain,
             Rcpp::Named("n_params") = D,
-            Rcpp::Named("log_prob") = log_prob,
-            Rcpp::Named("accept_prob") = accept_prob,
-            Rcpp::Named("divergent") = divergent,
-            Rcpp::Named("treedepth") = treedepth,
-            Rcpp::Named("epsilon") = epsilon_out,
+            Rcpp::Named("log_prob") = st.log_prob,
+            Rcpp::Named("accept_prob") = st.accept_prob,
+            Rcpp::Named("divergent") = st.divergent,
+            Rcpp::Named("treedepth") = st.treedepth,
+            Rcpp::Named("epsilon") = st.epsilon,
             Rcpp::Named("sampler") = "nuts");
         return out;
     }
 
     if (backend == "ess") {
+        // No seed: the ESS kernel draws from R's RNG, so set.seed() in R is
+        // what reproduces a run (the Rcpp wrapper holds the RNGScope).
         tulpa_ess::ESSConfig cfg;
         cfg.n_iter = n_iter; cfg.n_warmup = n_warmup; cfg.n_thin = 1;
-        cfg.verbose = verbose; cfg.print_every = 500; cfg.seed = (unsigned int)seed;
-        cfg.use_cholesky = ess_use_cholesky;
+        cfg.verbose = verbose; cfg.print_every = 500;
         cfg.adapt_during_warmup = ess_adapt_during_warmup;
         if (ess_adapt_interval <= 0) {
-            Rcpp::stop("ess_adapt_interval must be positive (it is how often "
-                       "the covariance estimate is refreshed).");
+            Rcpp::stop("ess_adapt_interval must be positive (it is how many "
+                       "sweeps sit between random-walk proposal-SD updates).");
         }
         cfg.adapt_interval = ess_adapt_interval;
         // Joint (log_sigma_re, re) rescaling move: needed when an RE term is
@@ -276,6 +439,8 @@ Rcpp::List cpp_tulpa_sample_glmm(
             Rcpp::Named("n_samples") = draws.nrow(),
             Rcpp::Named("n_params") = D,
             Rcpp::Named("avg_slice_evals") = res.avg_slice_evals,
+            Rcpp::Named("n_slice_exhausted") = res.n_slice_exhausted,
+            Rcpp::Named("n_degenerate_scale") = res.n_degenerate_scale,
             Rcpp::Named("sampler") = "ess");
         return out;
     }
@@ -350,7 +515,8 @@ Rcpp::List cpp_tulpa_sample_glmm(
             Rcpp::Named("draws") = draws, Rcpp::Named("means") = col_means(draws),
             Rcpp::Named("n_samples") = M, Rcpp::Named("n_params") = D,
             Rcpp::Named("log_weights") = Rcpp::wrap(res.log_weights),
-            Rcpp::Named("log_evidence") = res.log_evidence,
+            Rcpp::Named("log_evidence") =
+                res.log_evidence_valid ? res.log_evidence : NA_REAL,
             Rcpp::Named("sampler") = "smc");
         return out;
     }
@@ -359,7 +525,9 @@ Rcpp::List cpp_tulpa_sample_glmm(
         tulpa::vi::VIConfig cfg;
         cfg.variant = static_cast<tulpa::vi::VIVariant>(vi_variant);
         cfg.max_iter = vi_max_iter; cfg.mc_samples = vi_mc_samples;
+        cfg.max_grad_norm = vi_max_grad_norm;
         cfg.seed = (unsigned int)seed; cfg.verbose = verbose;
+        tulpa::vi::validate_vi_config(cfg);
         tulpa::vi::VIResult res = tulpa::vi::fit_vi(in.data, in.layout, D, cfg, nullptr);
         // Posterior draws for downstream summaries: prefer the kernel's own
         // sample matrix; fall back to sampling the fitted Gaussian when empty.

@@ -26,11 +26,13 @@
 #include <vector>
 #include <cmath>
 #include "hmc_sampler.h"
+#include "spde_matern_map.h"
 #include "spde_qbuilder.h"
 #include "spde_nc_apply.h"
 #include "tulpa/likelihood.h"
 #include "tulpa/autodiff_arena.h"
 #include "tulpa/autodiff_fwd.h"
+#include "autodiff_utils.h"
 
 using tulpa_hmc::ModelData;
 using tulpa_hmc::ParamLayout;
@@ -108,9 +110,11 @@ T spde_glm_likelihood(
             return T(sd->y[i]) * eta_i - lambda - T(sd->log_y_fact[i]);
         }
         case SpdeFamily::BINOMIAL: {
-            T one_plus_exp = T(1.0) + exp(eta_i);
+            // n log(1 + exp(eta)) is n softplus(eta), close to n eta for large
+            // eta; formed as written it is n log(Inf) above eta = 709.78.
             return T(sd->log_choose[i]) + T(sd->y[i]) * eta_i
-                 - T(static_cast<double>(sd->n_trials[i])) * log(one_plus_exp);
+                 - T(static_cast<double>(sd->n_trials[i]))
+                       * tulpa::math::softplus(eta_i);
         }
         case SpdeFamily::GAMMA: {
             T log_phi = params[layout.extra_offset];
@@ -124,20 +128,25 @@ T spde_glm_likelihood(
         case SpdeFamily::NEGBIN: {
             T log_phi = params[layout.extra_offset];
             T phi     = exp(log_phi);
-            T mu      = exp(eta_i);
             T y_i     = T(sd->y[i]);
+            // log(exp(eta) + phi) = eta + softplus(log phi - eta), which is
+            // finite for every eta and reduces to log phi as eta -> -Inf and to
+            // eta as eta -> +Inf. Forming exp(eta) first overflows above
+            // eta = 709.78 and takes the term to log(Inf).
+            T log_mu_phi = eta_i + tulpa::math::softplus(log_phi - eta_i);
             return lgamma(y_i + phi) - lgamma(phi)
                  - T(sd->log_y_fact[i])
                  + phi * log_phi
-                 - (y_i + phi) * log(mu + phi)
+                 - (y_i + phi) * log_mu_phi
                  + y_i * eta_i;
         }
         case SpdeFamily::BETA: {
+            // mu and 1 - mu through inv_logit_pos, so both shapes stay
+            // strictly positive at any |eta|.
             T log_phi = params[layout.extra_offset];
             T phi     = exp(log_phi);
-            T mu      = T(1.0) / (T(1.0) + exp(T(0.0) - eta_i));
-            T a       = mu * phi;
-            T b       = (T(1.0) - mu) * phi;
+            T a       = phi * tulpa::math::inv_logit_pos(eta_i);
+            T b       = phi * tulpa::math::inv_logit_pos(T(0.0) - eta_i);
             return lgamma(phi) - lgamma(a) - lgamma(b)
                  + (a - T(1.0)) * T(sd->log_y[i])
                  + (b - T(1.0)) * T(sd->log_1my[i]);
@@ -556,9 +565,7 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
     // cached SpdeNcTransform (built lazily during sampling), and derive
     // (range, sigma) on the natural scale from (log_kappa, log_tau).
     //
-    // Matern map (d=2, nu = alpha - 1):
-    //   range = sqrt(8 nu) / kappa
-    //   sigma = 1 / (sqrt(4 pi nu) * kappa^nu * tau)
+    // Matern map (d=2): spde_matern_map.h.
     Rcpp::List out = Rcpp::List::create(
         Rcpp::Named("draws")       = draws,
         Rcpp::Named("means")       = means,
@@ -588,13 +595,10 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
         std::vector<double> w_out;
 
         if (joint_hypers) {
-            constexpr double k_pi = 3.14159265358979323846;
             // Use the caller-supplied nu when present (correct for fractional
             // cases); fall back to alpha - 1 only when nu was left unset.
             const double nu_used  = (nu > 0.0) ? nu
                                                : static_cast<double>(alpha) - 1.0;
-            const double sqrt_8nu    = std::sqrt(8.0 * nu_used);
-            const double sqrt_4pi_nu = std::sqrt(4.0 * k_pi * nu_used);
 
             Rcpp::NumericVector range_draws(n_sample);
             Rcpp::NumericVector sigma_draws(n_sample);
@@ -612,8 +616,14 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
                 const double t_s = std::exp(lt);
                 kappa_draws[s] = k_s;
                 tau_draws[s]   = t_s;
-                range_draws[s] = sqrt_8nu / k_s;
-                sigma_draws[s] = 1.0 / (sqrt_4pi_nu * std::pow(k_s, nu_used) * t_s);
+                // The same (log_kappa, log_tau) -> (log_range, log_sigma) map
+                // the joint hyper prior is evaluated through, so the reported
+                // summaries and the prior that shaped them cannot diverge.
+                double log_range_s, log_sigma_s;
+                tulpa::spde_log_kappa_tau_to_log_range_sigma(
+                    lk, lt, nu_used, log_range_s, log_sigma_s);
+                range_draws[s] = std::exp(log_range_s);
+                sigma_draws[s] = std::exp(log_sigma_s);
             }
 
             out["range_draws"] = range_draws;

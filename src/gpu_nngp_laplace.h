@@ -8,6 +8,7 @@
 
 #include "gpu_backend.h"  // single entry point; it owns the CUDA/stub choice
 #include "linalg_fast.h"  // shared small-dense Cholesky / NNGP solve core
+#include "nngp_cond.h"    // nngp_row_neighbours: the shared left-packed scan
 #include <Rcpp.h>
 #include <algorithm>
 #include <vector>
@@ -15,7 +16,14 @@
 
 namespace tulpa {
 
-// Compute covariance value
+// Covariance value at distance `d`.
+//
+// PRECONDITION: sigma2 > 0 and phi > 0. Both Matern branches divide by phi, so
+// phi = 0 sends x to infinity and returns inf * 0 = NaN, and a negative phi
+// makes the exponential branch diverge and both Matern branches negative, which
+// takes the assembled neighbour matrix out of the PSD cone before it reaches
+// the Cholesky. batch_nngp_scatter, the only caller, rejects both at entry, so
+// no covariance is ever formed from a non-positive parameter.
 inline double nngp_cov_gpu(double d, double sigma2, double phi, int cov_type) {
     if (d < 1e-10) return sigma2;
     if (cov_type == 0) return sigma2 * std::exp(-d / phi);
@@ -59,6 +67,47 @@ inline void batch_nngp_scatter(
     bool& gpu_used,
     std::vector<double>* alpha_out = nullptr
 ) {
+    // The neighbour tables, the ordering and the coordinates all arrive from R
+    // and are used below as raw array offsets -- one of them (`obs_idx`) as the
+    // offset of a WRITE into cond_mean_out / cond_var_out, where an out-of-range
+    // value is silent heap corruption rather than an error. Check the whole
+    // contract once here, so the loops can index without re-deriving it.
+    if (n_spatial < 0 || nn < 0) {
+        Rcpp::stop("batch_nngp_scatter: n_spatial (%d) and nn (%d) must be "
+                   "non-negative.", n_spatial, nn);
+    }
+    if (!(sigma2 > 0.0) || !(phi_gp > 0.0)) {
+        Rcpp::stop("batch_nngp_scatter: sigma2 (%g) and phi_gp (%g) must both "
+                   "be positive.", sigma2, phi_gp);
+    }
+    if (nn_order.size() != n_spatial) {
+        Rcpp::stop("batch_nngp_scatter: length(nn_order) (%d) must equal "
+                   "n_spatial (%d).",
+                   static_cast<int>(nn_order.size()), n_spatial);
+    }
+    for (int i = 0; i < n_spatial; i++) {
+        const int o = nn_order[i];
+        if (o < 0 || o >= n_spatial) {
+            Rcpp::stop("batch_nngp_scatter: nn_order[%d] is %d; must be a "
+                       "0-based location index in [0, %d).", i + 1, o, n_spatial);
+        }
+    }
+    if (nn_idx.nrow() != n_spatial || nn_idx.ncol() != nn) {
+        Rcpp::stop("batch_nngp_scatter: nn_idx is %d x %d; must be %d x %d.",
+                   static_cast<int>(nn_idx.nrow()),
+                   static_cast<int>(nn_idx.ncol()), n_spatial, nn);
+    }
+    if (nn_dist.nrow() != n_spatial || nn_dist.ncol() != nn) {
+        Rcpp::stop("batch_nngp_scatter: nn_dist is %d x %d; must be %d x %d.",
+                   static_cast<int>(nn_dist.nrow()),
+                   static_cast<int>(nn_dist.ncol()), n_spatial, nn);
+    }
+    if (coords.nrow() < n_spatial) {
+        Rcpp::stop("batch_nngp_scatter: nrow(coords) (%d) must be at least "
+                   "n_spatial (%d).",
+                   static_cast<int>(coords.nrow()), n_spatial);
+    }
+
     cond_mean_out.assign(n_spatial, 0.0);
     cond_var_out.assign(n_spatial, sigma2);
     if (alpha_out) alpha_out->assign(static_cast<size_t>(n_spatial) * nn, 0.0);
@@ -69,6 +118,7 @@ inline void batch_nngp_scatter(
         int nngp_idx;     // index in NNGP ordering
         int obs_idx;      // original location index
         int n_nb;         // actual neighbor count
+        bool factored;    // its neighbour covariance factorized
     };
     std::vector<LocData> locs;
     std::vector<std::vector<double>> C_mats;  // flattened nn×nn
@@ -76,10 +126,14 @@ inline void batch_nngp_scatter(
 
     for (int i = 0; i < n_spatial; i++) {
         int obs_idx = nn_order[i];
-        int n_nb = 0;
-        for (int j = 0; j < nn; j++) {
-            if (nn_idx(i, j) > 0) n_nb++;
-        }
+        // Shared left-packed scan: the leading run of entries in [1, n_spatial].
+        // Counting every positive entry instead reads the padding sentinel as a
+        // neighbour on any row whose valid entries are not leading, and
+        // nn_order[0 - 1] is then an out-of-bounds read whose result indexes
+        // coords. This is the rule phase 3 below and apply_nngp_full_prior_sparse
+        // already applied.
+        const int n_nb = tulpa_nngp::nngp_row_neighbours(
+            &nn_idx(i, 0), /*stride=*/nn_idx.nrow(), nn, n_spatial);
         if (n_nb == 0) continue;
 
         std::vector<double> C(nn * nn, 0.0);
@@ -90,7 +144,11 @@ inline void batch_nngp_scatter(
         }
         for (int j1 = 0; j1 < n_nb; j1++) {
             int o1 = nn_order[nn_idx(i, j1) - 1];
-            C[j1 * nn + j1] = sigma2;
+            // The diagonal NUGGET rides on the MATRIX rather than on the
+            // factorization, so the CPU fallback and the batched cuSOLVER call
+            // factorize the same matrix, and so this kernel conditions the
+            // field the way the sampler density (tulpa_gp::kGpJitter) does.
+            C[j1 * nn + j1] = sigma2 + tulpa_linalg::kNngpNugget;
             for (int j2 = j1 + 1; j2 < n_nb; j2++) {
                 int o2 = nn_order[nn_idx(i, j2) - 1];
                 double d12 = tulpa_linalg::coords_dist(coords, o1, o2);
@@ -102,7 +160,7 @@ inline void batch_nngp_scatter(
         // Pad unused diagonal for stability
         for (int j = n_nb; j < nn; j++) C[j * nn + j] = 1.0;
 
-        locs.push_back({i, obs_idx, n_nb});
+        locs.push_back({i, obs_idx, n_nb, true});
         C_mats.push_back(std::move(C));
         c_vecs.push_back(std::move(c));
     }
@@ -133,11 +191,12 @@ inline void batch_nngp_scatter(
         const int probe = batch_size / 2;
         const int probe_n = locs[probe].n_nb;
         std::vector<double> probe_ref(C_orig[probe]);
-        tulpa_linalg::chol_factor_lower<tulpa_linalg::TriLayout::RowMajor>(
-            probe_ref.data(), probe_ref.data(), probe_n, nn,
-            tulpa_linalg::kCholJitter);
+        const bool probe_ref_ok =
+            tulpa_linalg::chol_factor_lower<tulpa_linalg::TriLayout::RowMajor>(
+                probe_ref.data(), probe_ref.data(), probe_n, nn,
+                /*nugget=*/0.0);
 
-        chol_ok = tulpa_gpu::cuda_batched_cholesky(C_mats, nn);
+        chol_ok = probe_ref_ok && tulpa_gpu::cuda_batched_cholesky(C_mats, nn);
         if (chol_ok) {
             // Compare the lower triangle only; the reference's upper triangle
             // still holds its input (chol_factor_lower leaves it untouched).
@@ -180,11 +239,9 @@ inline void batch_nngp_scatter(
                         acc += v * v;
                     }
                     const double want = C_orig[b][j * nn + j];
-                    // The factorization adds a jitter floor to the pivot, so the
-                    // reconstruction can exceed the input by that much; the
-                    // check is on agreement, not on an exact identity.
-                    const double tol = 1e-8 * std::max(std::abs(want), 1e-12) +
-                                       8.0 * tulpa_linalg::kCholJitter;
+                    // The nugget is already on C_orig's diagonal, so this is the
+                    // factorization's exact defining identity up to rounding.
+                    const double tol = 1e-8 * std::max(std::abs(want), 1e-12);
                     if (!(std::abs(acc - want) <= tol)) { chol_ok = false; break; }
                 }
             }
@@ -200,8 +257,12 @@ inline void batch_nngp_scatter(
         for (int b = 0; b < batch_size; b++) {
             auto& L = C_mats[b];
             int n_nb = locs[b].n_nb;
-            tulpa_linalg::chol_factor_lower<tulpa_linalg::TriLayout::RowMajor>(
-                L.data(), L.data(), n_nb, nn, tulpa_linalg::kCholJitter);
+            // The nugget is already on the diagonal, so this factorizes the
+            // same matrix the batched call was handed.
+            locs[b].factored =
+                tulpa_linalg::chol_factor_lower<tulpa_linalg::TriLayout::RowMajor>(
+                    L.data(), L.data(), n_nb, nn, /*nugget=*/0.0);
+            if (!locs[b].factored) continue;
             for (int j = 0; j < n_nb; j++) {
                 for (int k = j + 1; k < n_nb; k++) L[j * nn + k] = 0.0;
             }
@@ -216,21 +277,24 @@ inline void batch_nngp_scatter(
         int obs_idx = locs[b].obs_idx;
         int nngp_idx = locs[b].nngp_idx;
 
-        // Gather neighbor values (0 for inactive/out-of-range slots: they
-        // then contribute nothing to the conditional mean)
+        // A neighbour covariance that would not factorize leaves the location
+        // conditioned on NOTHING -- the marginal moments the output buffers were
+        // seeded with, and a zero alpha row -- rather than kriged against an
+        // unusable factor.
+        if (!locs[b].factored) continue;
+
+        // Gather neighbor values. Every slot below n_nb resolves inside
+        // nn_order by construction (nngp_row_neighbours bounded it) and
+        // nn_order's own range was checked at entry.
         std::vector<double> w_nb(n_nb, 0.0);
         for (int j = 0; j < n_nb; j++) {
-            int nn_val = nn_idx(nngp_idx, j);
-            if (nn_val <= 0 || nn_val > n_spatial) continue;
-            int nn_orig = nn_order[nn_val - 1];
-            if (nn_orig < 0 || nn_orig >= n_spatial) continue;
-            w_nb[j] = w[nn_orig];
+            w_nb[j] = w[nn_order[nn_idx(nngp_idx, j) - 1]];
         }
 
         std::vector<double> alpha(n_nb);
         tulpa_linalg::nngp_moments_from_chol<tulpa_linalg::TriLayout::RowMajor>(
             L.data(), n_nb, nn, c.data(), w_nb.data(), sigma2,
-            tulpa_linalg::kCholJitter,
+            tulpa_linalg::kNngpVarFloor,
             cond_mean_out[obs_idx], cond_var_out[obs_idx], alpha.data());
 
         if (alpha_out) {
@@ -303,13 +367,15 @@ inline void apply_nngp_full_prior_sparse(
         double tau_i = 1.0 / v_i;
         int idx_i = gp_start + obs_focal;
 
+        // Same left-packed scan batch_nngp_scatter counted `alpha`'s columns
+        // with, so a_row[k] is the coefficient that was written for column k.
+        const int n_row = tulpa_nngp::nngp_row_neighbours(
+            &nn_idx(i_nngp, 0), /*stride=*/nn_idx.nrow(), nn, n_spatial);
         int n_nb = 0;
         const double* arow = alpha.data() + static_cast<size_t>(i_nngp) * nn;
-        for (int k = 0; k < nn; k++) {
-            int nnidx_k = nn_idx(i_nngp, k);
-            if (nnidx_k <= 0 || nnidx_k > n_spatial) continue;
-            int obs_k = nn_order[nnidx_k - 1];
-            if (obs_k < 0 || obs_k >= n_spatial) continue;
+        for (int k = 0; k < n_row; k++) {
+            int obs_k = nn_order[nn_idx(i_nngp, k) - 1];
+            if (obs_k < 0 || obs_k >= n_spatial) break;
             nb_obs[n_nb] = obs_k;
             a_row[n_nb] = arow[k];
             n_nb++;
@@ -357,19 +423,19 @@ inline void make_nngp_prior_sparsity_pattern(
         if (obs_focal < 0 || obs_focal >= n_spatial) continue;
         int idx_i = gp_start + obs_focal;
         pattern.push_back({idx_i, idx_i});
-        for (int k = 0; k < nn; k++) {
-            int nnidx_k = nn_idx(i_nngp, k);
-            if (nnidx_k <= 0 || nnidx_k > n_spatial) continue;
-            int obs_k = nn_order[nnidx_k - 1];
-            if (obs_k < 0 || obs_k >= n_spatial) continue;
+        // Same left-packed scan the scatter runs, so the pattern covers exactly
+        // the pairs the scatter writes into.
+        const int n_row = tulpa_nngp::nngp_row_neighbours(
+            &nn_idx(i_nngp, 0), /*stride=*/nn_idx.nrow(), nn, n_spatial);
+        for (int k = 0; k < n_row; k++) {
+            int obs_k = nn_order[nn_idx(i_nngp, k) - 1];
+            if (obs_k < 0 || obs_k >= n_spatial) break;
             int idx_k = gp_start + obs_k;
             pattern.push_back({idx_i, idx_k});
             pattern.push_back({idx_k, idx_k});
             for (int kp = 0; kp < k; kp++) {
-                int nnidx_kp = nn_idx(i_nngp, kp);
-                if (nnidx_kp <= 0 || nnidx_kp > n_spatial) continue;
-                int obs_kp = nn_order[nnidx_kp - 1];
-                if (obs_kp < 0 || obs_kp >= n_spatial) continue;
+                int obs_kp = nn_order[nn_idx(i_nngp, kp) - 1];
+                if (obs_kp < 0 || obs_kp >= n_spatial) break;
                 int idx_kp = gp_start + obs_kp;
                 pattern.push_back({idx_k, idx_kp});
             }

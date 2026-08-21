@@ -138,18 +138,34 @@ inline GradHess arm_grad_hess(const ArmSpecView& view, int i, double eta_i) {
     return gh;
 }
 
+// The empty ModelData / ParamLayout / params a built-in arm's view points at.
+// They satisfy the spec-callback signature for built-in families, which ignore
+// them, and nothing ever writes to them, so ONE instance serves every view of
+// every fit. They are function-local statics rather than members of the owner
+// below because a member's address is a subobject address: a JointArmSpecs that
+// is moved (or returned without elision, which C++17 mandates only for
+// prvalues) leaves every view pointing into the destroyed source.
+inline const ModelData& joint_empty_model_data() {
+    static const ModelData d;
+    return d;
+}
+inline const ParamLayout& joint_empty_param_layout() {
+    static const ParamLayout l;
+    return l;
+}
+inline const std::vector<double>& joint_empty_params() {
+    static const std::vector<double> p;
+    return p;
+}
+
 // Owns the resolved spec views for a joint fit. Arms with a model-supplied spec
 // borrow it; otherwise a built-in family spec + response is materialized here
-// (single source of truth: builtin_family_spec). The empty ModelData /
-// ParamLayout / params satisfy the spec-callback signature for built-in
-// families, which ignore them. Pointer stability: builtin_specs / responses are
-// reserved to n_arms up front so no reallocation invalidates the view pointers.
+// (single source of truth: builtin_family_spec). Pointer stability:
+// builtin_specs / responses are reserved to n_arms up front so no reallocation
+// invalidates the view pointers.
 struct JointArmSpecs {
     std::vector<LikelihoodSpec>        builtin_specs;
     std::vector<BuiltinFamilyResponse> builtin_responses;
-    ModelData                          empty_data;
-    ParamLayout                        empty_layout;
-    std::vector<double>                empty_params;
     std::vector<ArmSpecView>           views;
     // Per-arm pointer into builtin_responses (nullptr for model-supplied arms).
     // Lets the driver refresh per-cell-mutable dispersion after prep.
@@ -168,11 +184,9 @@ struct JointArmSpecs {
 };
 
 // Populate an already-constructed JointArmSpecs in place. Required for building
-// a per-outer-thread pool of specs: JointArmSpecs is self-referential (each
-// ArmSpecView points at the owner's builtin_responses storage AND at the owner's
-// own empty_data / empty_layout / empty_params members), so it cannot be moved
-// or copied into a pool slot without dangling those pointers. Constructing each
-// pool element in place via this routine keeps every pointer valid.
+// a per-outer-thread pool of specs: each ArmSpecView points into the owner's own
+// builtin_specs / builtin_responses storage, so a slot must be filled where it
+// lives rather than assigned from a temporary.
 inline void build_joint_arm_specs_into(const std::vector<JointArm>& arms,
                                        JointArmSpecs& s) {
     const int n = static_cast<int>(arms.size());
@@ -187,9 +201,9 @@ inline void build_joint_arm_specs_into(const std::vector<JointArm>& arms,
         if (a.spec) {
             s.views[k] = ArmSpecView{
                 a.spec, a.response_data,
-                a.data   ? a.data   : &s.empty_data,
-                a.layout ? a.layout : &s.empty_layout,
-                a.params ? a.params : &s.empty_params
+                a.data   ? a.data   : &joint_empty_model_data(),
+                a.layout ? a.layout : &joint_empty_param_layout(),
+                a.params ? a.params : &joint_empty_params()
             };
         } else {
             s.builtin_specs.push_back(builtin_family_spec(a.family));
@@ -209,17 +223,20 @@ inline void build_joint_arm_specs_into(const std::vector<JointArm>& arms,
             s.builtin_responses.push_back(r);
             s.views[k] = ArmSpecView{
                 &s.builtin_specs.back(), &s.builtin_responses.back(),
-                &s.empty_data, &s.empty_layout, &s.empty_params
+                &joint_empty_model_data(), &joint_empty_param_layout(),
+                &joint_empty_params()
             };
             s.arm_builtin_response[k] = &s.builtin_responses.back();
         }
     }
 }
 
-// Convenience wrapper returning a freshly built JointArmSpecs by value. Safe for
-// a single fit-scoped specs object (NRVO / move keeps the std::vector buffers, so
-// the views into builtin_responses stay valid); for a per-thread POOL use
-// build_joint_arm_specs_into on an in-place slot instead (see its note).
+// Convenience wrapper returning a freshly built JointArmSpecs by value. Every
+// pointer a view holds is either into a std::vector element, whose buffer a move
+// carries over, or into one of the shared empties above, which have static
+// storage duration -- so the return is safe whether or not it is elided. For a
+// per-thread POOL use build_joint_arm_specs_into on an in-place slot instead, so
+// each slot's views point at that slot's own response storage.
 inline JointArmSpecs build_joint_arm_specs(const std::vector<JointArm>& arms) {
     JointArmSpecs s;
     build_joint_arm_specs_into(arms, s);
@@ -372,20 +389,24 @@ inline double eval_penalized_log_lik_joint_ll(
 // joint_pd_step_solve (joint_pd_step.h), over the dense H container and the
 // dense/CHOLMOD dispatch instead of the SparseHessianBuilder.
 //
-// `H` arrives UNRIDGED, exactly as the scatter left it: the base
-// LAPLACE_UNIFORM_RIDGE is applied here, once, and any LM escalation loads the
-// diagonal on top of it. `out_modified`, when non-null, records whether the
-// matrix that was finally factorized is the one handed in -- false for every
-// solve whose first attempt succeeded, which is every solve at a PD Hessian.
-inline bool joint_pd_step_solve_dense(
+// `H` must ALREADY carry the base LAPLACE_UNIFORM_RIDGE on its diagonal; any LM
+// escalation loads the diagonal on top of it. `out_modified`, when non-null,
+// records whether the matrix that was finally factorized is the one handed in --
+// false for every solve whose first attempt succeeded, which is every solve at a
+// PD Hessian.
+//
+// The unridged entry below is the per-iteration one, where H is a fresh scatter.
+// A caller that has already factored this same H once -- the post-loop
+// log-determinant, which escalates only when that factorization failed -- calls
+// THIS entry, so the base ridge is loaded exactly once per assembly and the
+// escalation ladder starts where LAPLACE_UNIFORM_RIDGE says it does.
+inline bool joint_pd_step_solve_dense_ridged(
     DenseMat& H, DenseVec& grad, std::vector<double>& delta, int n_x,
     SparseCholeskySolver& solver, bool prefer_sparse,
     DenseCholeskyScratch& dense_scratch, JointPDMode pd_mode,
     double* out_log_det = nullptr,
     bool* out_modified = nullptr
 ) {
-    add_uniform_ridge_dense(H, n_x, LAPLACE_UNIFORM_RIDGE);
-
     if (pd_mode == JointPDMode::PSD && n_x <= JOINT_PSD_MAX_DIM) {
         Eigen::MatrixXd Hd(n_x, n_x);
         for (int j = 0; j < n_x; ++j)
@@ -402,6 +423,21 @@ inline bool joint_pd_step_solve_dense(
         },
         [&](double bump) { add_uniform_ridge_dense(H, n_x, bump); },
         out_log_det, out_modified);
+}
+
+// Per-iteration entry: `H` arrives UNRIDGED, exactly as the scatter left it, so
+// the base ridge is applied here before the escalation above sees it.
+inline bool joint_pd_step_solve_dense(
+    DenseMat& H, DenseVec& grad, std::vector<double>& delta, int n_x,
+    SparseCholeskySolver& solver, bool prefer_sparse,
+    DenseCholeskyScratch& dense_scratch, JointPDMode pd_mode,
+    double* out_log_det = nullptr,
+    bool* out_modified = nullptr
+) {
+    add_uniform_ridge_dense(H, n_x, LAPLACE_UNIFORM_RIDGE);
+    return joint_pd_step_solve_dense_ridged(H, grad, delta, n_x, solver,
+                                            prefer_sparse, dense_scratch,
+                                            pd_mode, out_log_det, out_modified);
 }
 
 // Per-thread scratch for the joint Newton solver. Same role as NewtonScratch
@@ -544,10 +580,10 @@ LaplaceResult laplace_newton_solve_joint_ll(
         );
     };
 
-    auto cholesky_solve = [&](DenseMat& H, DenseVec& grad,
-                              std::vector<double>& delta) -> bool {
-        return joint_pd_step_solve_dense(H, grad, delta, n_x, sparse_solver,
-                                         use_sparse, scratch.chol, pd_mode);
+    auto cholesky_solve = [&]() -> bool {
+        return joint_pd_step_solve_dense(scratch.H, scratch.grad, scratch.delta,
+                                         n_x, sparse_solver, use_sparse,
+                                         scratch.chol, pd_mode);
     };
 
     double obj_current = -1e300;
@@ -583,8 +619,15 @@ LaplaceResult laplace_newton_solve_joint_ll(
     scatter_joint(x, scratch.etas, scratch.grad, scratch.H, /*finalize=*/true);
     result.score_max = max_abs(scratch.grad);
 
-    dispatch_factor_log_det(scratch.H, n_x, sparse_solver, use_sparse,
-                             scratch.chol, result.log_det_Q);
+    // The base ridge is loaded ONCE onto this assembly, here, and both the
+    // log-determinant and the escalating solve below read the same loaded
+    // matrix. Letting each entry apply its own would start the escalation ladder
+    // at twice the documented base and shift every rank-deficient direction's
+    // log-determinant contribution by log(2).
+    add_uniform_ridge_dense(scratch.H, n_x, LAPLACE_UNIFORM_RIDGE);
+    const bool hessian_pd_at_mode = dispatch_factor_log_det_ridged(
+        scratch.H, n_x, sparse_solver, use_sparse, scratch.chol,
+        result.log_det_Q);
 
     // A non-finite log-determinant is the plain Cholesky reporting that the
     // Hessian at the returned point is not PD -- a point the solve stopped at
@@ -593,11 +636,12 @@ LaplaceResult laplace_newton_solve_joint_ll(
     // and record that the stored precision below is no longer the matrix the
     // scatter built. A PD Hessian never reaches this, so every fit that
     // factorizes on the first attempt is unchanged.
-    const bool hessian_pd_at_mode = std::isfinite(result.log_det_Q);
+    result.hessian_pd_at_mode = hessian_pd_at_mode;
     if (!hessian_pd_at_mode) {
-        joint_pd_step_solve_dense(scratch.H, scratch.grad, scratch.delta, n_x,
-                                  sparse_solver, use_sparse, scratch.chol,
-                                  pd_mode, &result.log_det_Q);
+        joint_pd_step_solve_dense_ridged(scratch.H, scratch.grad, scratch.delta,
+                                         n_x, sparse_solver, use_sparse,
+                                         scratch.chol, pd_mode,
+                                         &result.log_det_Q);
     }
 
     double log_lik   = log_lik_fn(scratch.etas);
@@ -613,56 +657,58 @@ LaplaceResult laplace_newton_solve_joint_ll(
     for (int j = 0; j < n_x; j++) pre_center_x[j] = x[j];
     const bool used_sparse_factor = use_sparse && sparse_solver.factored();
 
-    if (compute_skew && result.converged) {
+    if (compute_skew) {
         std::vector<int> all_idx;
-        const std::vector<int>* probe = skew_probe_idx;
-        if (!probe) {
-            all_idx.resize(n_x);
-            for (int j = 0; j < n_x; j++) all_idx[j] = j;
-            probe = &all_idx;
-        }
-        if (curvature3_fns) {
-            InnerSkewOutcome sk = compute_inner_skew_gamma3_joint(
-                n_x, pre_center_x, scratch.chol, sparse_solver, used_sparse_factor,
-                compute_eta_joint, x, scratch.etas, scratch.etas_tmp,
-                *curvature3_fns, *probe
-            );
-            result.inner_skew = std::move(sk.gamma3);
-            result.inner_skew_gamma1 = std::move(sk.gamma1);
-            result.inner_skew_gamma1_declined = sk.gamma1_declined;
-            result.inner_skew_idx = *probe;
-            result.inner_skew_dropped = sk.n_nonfinite_dropped;
-            result.inner_skew_declined = sk.declined;
-            result.inner_skew_arms_declined = sk.arms_declined;
+        const std::vector<int>& probe =
+            inner_probe_indices(n_x, skew_probe_idx, all_idx);
+        if (!result.converged) {
+            // gamma_3 expands about the mode and the inner k-hat scores the
+            // Gaussian at it, so neither exists at a point the solve stopped
+            // short of. Emitting the indices unscored is what separates that
+            // from the diagnostic never having been requested.
+            inner_probe_decline(result, probe, "not_converged");
         } else {
-            // No oracle set was built at all: report the indices as unscored
-            // rather than emit nothing, so the reason reaches the fit.
-            result.inner_skew.assign(probe->size(),
-                                     std::numeric_limits<double>::quiet_NaN());
-            result.inner_skew_idx = *probe;
-            result.inner_skew_declined = "curvature3_unavailable";
-            result.inner_skew_gamma1_declined = "curvature3_unavailable";
+            if (curvature3_fns) {
+                InnerSkewOutcome sk = compute_inner_skew_gamma3_joint(
+                    n_x, pre_center_x, scratch.chol, sparse_solver,
+                    used_sparse_factor, compute_eta_joint, x, scratch.etas,
+                    scratch.etas_tmp, *curvature3_fns, probe
+                );
+                result.inner_skew = std::move(sk.gamma3);
+                result.inner_skew_gamma1 = std::move(sk.gamma1);
+                result.inner_skew_gamma1_declined = sk.gamma1_declined;
+                result.inner_skew_idx = probe;
+                result.inner_skew_dropped = sk.n_nonfinite_dropped;
+                result.inner_skew_declined = sk.declined;
+                result.inner_skew_arms_declined = sk.arms_declined;
+            } else {
+                // No oracle set was built at all: report the indices as unscored
+                // rather than emit nothing, so the reason reaches the fit.
+                result.inner_skew.assign(probe.size(),
+                                         std::numeric_limits<double>::quiet_NaN());
+                result.inner_skew_idx = probe;
+                result.inner_skew_declined = "curvature3_unavailable";
+                result.inner_skew_gamma1_declined = "curvature3_unavailable";
+            }
+
+            // The likelihood-agnostic inner k-hat over the same probed subspace
+            // (gcol33/tulpa#303). Evaluated at the pre-centering iterate for the
+            // same reason gamma_3 is: that is the point the live factor and the
+            // reported log_marginal belong to.
+            InnerISOutcome is_out = compute_inner_is_curve(
+                n_x, pre_center_x, scratch.chol, sparse_solver,
+                used_sparse_factor, eval_objective, x, probe
+            );
+            result.inner_is_z         = std::move(is_out.z);
+            result.inner_is_log_joint = std::move(is_out.log_joint);
+            result.inner_is_sigma     = std::move(is_out.sigma);
+            result.inner_is_declined  = is_out.declined;
         }
-
-        // The likelihood-agnostic inner k-hat over the same probed subspace
-        // (gcol33/tulpa#303). Evaluated at the pre-centering iterate for the
-        // same reason gamma_3 is: that is the point the live factor and the
-        // reported log_marginal belong to.
-        InnerISOutcome is_out = compute_inner_is_curve(
-            n_x, pre_center_x, scratch.chol, sparse_solver, used_sparse_factor,
-            eval_objective, x, *probe
-        );
-        result.inner_is_z         = std::move(is_out.z);
-        result.inner_is_log_joint = std::move(is_out.log_joint);
-        result.inner_is_sigma     = std::move(is_out.sigma);
-        result.inner_is_declined  = is_out.declined;
     }
 
-    if (result.converged) {
-        run_subspace_debias(result, n_x, pre_center_x, scratch.chol,
-                            sparse_solver, used_sparse_factor,
-                            eval_objective, x, debias);
-    }
+    run_subspace_debias(result, n_x, pre_center_x, scratch.chol,
+                        sparse_solver, used_sparse_factor,
+                        eval_objective, x, debias);
 
     // The correction reads the same pre-centering iterate for the same reason,
     // and presents each draw through the loop's own centering fold so a drawn

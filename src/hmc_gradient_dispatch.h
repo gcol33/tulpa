@@ -1,11 +1,28 @@
 // hmc_gradient_dispatch.h
-// Gradient-mode dispatch policy for the HMC backend.
+// Gradient-mode dispatch policy for the HMC backend. This is the whole of it:
+// the dispatcher is layout-agnostic, so no `layout.has_*` flag selects a
+// kernel and there are no per-structure predicates to consult.
 //
-// Phase D simplification: the only supported entry path
-// is the generic LikelihoodSpec interface (`n_processes > 0` plus a
-// non-null `data.likelihood_spec`). Legacy ratio (n_processes == 0)
-// dispatch was removed along with the entry points that produced that
-// ModelData shape; downstream packages route through `tulpa::LikelihoodSpec`.
+// The only supported entry path is the generic LikelihoodSpec interface
+// (`n_processes > 0` plus a non-null `data.likelihood_spec`); downstream
+// packages route through `tulpa::LikelihoodSpec`.
+//
+// resolve_gradient_fn returns one of three gradient sources, in this order:
+//
+//   1. spec->gradient_fn        the model package's hand-coded full gradient,
+//                               unless the caller asked for NUMERICAL
+//   2. compute_gradient_generic_arena     arena reverse-mode AD, when the
+//                               package ships ll_arena (and an arena variant of
+//                               extra_prior, if it sets one)
+//   3. compute_gradient_generic_numerical central differences against
+//                               compute_log_post_generic_spec_double
+//
+// resolve_prior_gradient_fn mirrors it for the prior-only ("fast") force of the
+// multiple-time-stepping integrator, minus arm 1: a full gradient cannot be
+// split into prior and likelihood parts.
+//
+// Adding a gradient source means adding an arm here. There is no separate
+// predicate header and no specificity ordering to insert into.
 //
 // Included from hmc_gradient_dispatch.cpp inside namespace tulpa_hmc.
 

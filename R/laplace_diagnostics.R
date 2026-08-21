@@ -97,14 +97,25 @@
 #   not_requested          `control$diagnose_skew = FALSE`.
 #   backend_unsupported    this backend does not populate gamma_3.
 #   solve_failed           the probe re-solve errored or returned no field.
-#   not_converged          the probe re-solve returned a point that is not a
-#                          mode. gamma_3 is a cubic expansion ABOUT the mode and
-#                          the inner k-hat an importance ratio against the
-#                          Gaussian AT it, so neither exists there. This is what
-#                          a fit whose inner Newton stalled reports, instead of
+#   not_converged          the solve returned a point that is not a mode.
+#                          gamma_3 is a cubic expansion ABOUT the mode and the
+#                          inner k-hat an importance ratio against the Gaussian
+#                          AT it, so neither exists there. This is what a fit
+#                          whose inner Newton stalled reports, instead of
 #                          `backend_unsupported` -- the backend computes gamma_3
 #                          on every converged solve of the same model
-#                          (gcol33/tulpa#344).
+#                          (gcol33/tulpa#344). The kernel settles it where it can
+#                          see it; the probe re-solve settles it otherwise.
+#   pd_eigen_clamp         sparse joint only: the fit ran under
+#                          `control$hessian = "psd"`, whose inner step
+#                          eigen-solves a densified Hessian and leaves no CHOLMOD
+#                          factor for either probe to solve against.
+#   s2z_rank1_factor       sparse joint only: the field carries sum-to-zero
+#                          rank-1 pins the stored Hessian does not hold, so the
+#                          live factor is of a different matrix than the one the
+#                          solve stepped with.
+#   factor_unavailable     sparse joint only: the solve left no live factor at
+#                          all.
 #
 # Coupling several processes in ONE likelihood is no longer a reason of its own:
 # a multi-process `LikelihoodSpec` (a ZI mixture) is scored by the
@@ -155,7 +166,12 @@
     backend_unsupported = list("not_applicable",
                                "this backend does not compute the inner importance curve"),
     solve_failed        = list("degenerate_proposal", "the probe re-solve failed"),
-    not_converged       = list("not_converged", "the probe re-solve did not converge")
+    not_converged       = list("not_converged", "the inner solve did not converge"),
+    pd_eigen_clamp      = list("not_applicable",
+                               "the PSD inner step leaves no factor to propose from"),
+    s2z_rank1_factor    = list("not_applicable",
+                               "the live factor omits the field's sum-to-zero pins"),
+    factor_unavailable  = list("not_applicable", "the solve left no live factor")
 )
 
 .inner_k_decline_from_skew <- function(res, reason) {
@@ -346,6 +362,15 @@
         not_converged = paste("the inner Newton solve did not reach a mode, so",
                               "there is no point for the cubic expansion to",
                               "expand about"),
+        pd_eigen_clamp = paste("this fit runs the PSD inner step, which",
+                               "eigen-solves a densified Hessian and leaves no",
+                               "sparse factor for the probe to solve against;",
+                               "control$hessian = \"lm\" restores it"),
+        s2z_rank1_factor = paste("the field carries sum-to-zero rank-1 pins that",
+                                 "the stored Hessian does not hold, so the live",
+                                 "factor is of a different matrix than the solve",
+                                 "stepped with"),
+        factor_unavailable = "the inner solve left no live factor to probe",
         NULL)
 }
 

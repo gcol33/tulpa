@@ -626,6 +626,7 @@ inline void build_sampler_model_inputs(
         else Rcpp::stop("build_sampler_model_inputs: TVC structure '%s' is not "
                         "supported (use 'rw1'/'rw2'/'ar1').", st.c_str());
         t.cyclic = tv.containsElementNamed("cyclic") && Rcpp::as<bool>(tv["cyclic"]);
+        tulpa_tvc::validate_tvc_data(t);
         in.data.has_tvc = true;
     }
 

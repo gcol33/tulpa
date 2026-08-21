@@ -7,7 +7,7 @@
 compute_nngp_neighbors(coords, k)
 }
 \arguments{
-\item{coords}{N x 2 matrix of coordinates}
+\item{coords}{N x d matrix of coordinates}
 
 \item{k}{Number of nearest neighbors}
 }

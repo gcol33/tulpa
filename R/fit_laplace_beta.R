@@ -79,7 +79,7 @@ tulpa_laplace_beta <- function(y, X,
     }
     return(tulpa_nuts_beta(
       y = y, X = X,
-      beta_prior = beta_prior %||% list(mean = 0, sd = 10),
+      beta_prior = beta_prior %||% .tulpa_default_beta_prior("laplace"),
       control = control))
   }
   if (length(phi_bounds) != 2L || phi_bounds[1] <= 0 ||

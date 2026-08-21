@@ -118,30 +118,36 @@ T nngp_log_lik(
     int N = svc_data.n_obs;
     int nn = svc_data.nn;
 
+    // Size validation, matching the double twin: the neighbour tables arrive
+    // from R and are indexed below as raw offsets.
+    if ((int)svc_data.nn_order.size() < N) return T(-INFINITY);
+    if ((int)svc_data.nn_idx.size() < N * nn) return T(-INFINITY);
+    if ((int)svc_data.nn_dist.size() < N * nn) return T(-INFINITY);
+    if ((int)w.size() < N) return T(-INFINITY);
+    if ((int)svc_data.coords.size() < 2 * N) return T(-INFINITY);
+
     T log_lik = T(0.0);
 
     // First observation: marginal N(0, sigma2)
     int first_idx = svc_data.nn_order[0];
-    log_lik = log_lik - T(0.5) * safe_log(T(2.0 * M_PI) * sigma2);
-    log_lik = log_lik - T(0.5) * w[first_idx] * w[first_idx] / sigma2;
+    if (first_idx < 0 || first_idx >= N) return T(-INFINITY);
+    log_lik = log_lik + tulpa_nngp::marginal_log_density(w[first_idx], sigma2);
 
     // Remaining observations: conditional on neighbors
     for (int i = 1; i < N; i++) {
         int obs_idx = svc_data.nn_order[i];
+        if (obs_idx < 0 || obs_idx >= N) return T(-INFINITY);
 
-        // Count actual neighbors (early observations have fewer)
-        int n_neighbors = 0;
-        for (int j = 0; j < nn; j++) {
-            int nn_flat_idx = i * nn + j;
-            if (svc_data.nn_idx[nn_flat_idx] > 0) {
-                n_neighbors++;
-            }
-        }
+        // Count actual neighbors (early observations have fewer), through the
+        // shared left-packed scan the double twin and the analytic gradient
+        // also run.
+        const int n_neighbors = tulpa_nngp::nngp_row_neighbours(
+            svc_data.nn_idx.data() + (std::size_t)i * nn, /*stride=*/1, nn,
+            (int)svc_data.nn_order.size());
 
         if (n_neighbors == 0) {
             // No neighbors: marginal
-            log_lik = log_lik - T(0.5) * safe_log(T(2.0 * M_PI) * sigma2);
-            log_lik = log_lik - T(0.5) * w[obs_idx] * w[obs_idx] / sigma2;
+            log_lik = log_lik + tulpa_nngp::marginal_log_density(w[obs_idx], sigma2);
             continue;
         }
 
@@ -156,20 +162,30 @@ T nngp_log_lik(
             c_vec[j] = compute_cov(d, sigma2, phi, svc_data.cov_type);
         }
 
+        // Resolve each neighbour slot to its location once. nngp_row_neighbours
+        // has already bounded the nn_order lookup; what remains to check is the
+        // value it returns, which indexes coords and w.
+        std::vector<int> nb_loc(n_neighbors);
+        for (int j = 0; j < n_neighbors; j++) {
+            const int loc = svc_data.nn_order[svc_data.nn_idx[i * nn + j] - 1];
+            if (loc < 0 || loc >= N) return T(-INFINITY);
+            nb_loc[j] = loc;
+        }
+
         // C_mat: covariances among neighbors
         for (int j1 = 0; j1 < n_neighbors; j1++) {
-            int nn_idx1 = svc_data.nn_order[svc_data.nn_idx[i * nn + j1] - 1];
             for (int j2 = 0; j2 < n_neighbors; j2++) {
-                int nn_idx2 = svc_data.nn_order[svc_data.nn_idx[i * nn + j2] - 1];
-
                 if (j1 == j2) {
                     C_mat[j1 * n_neighbors + j2] = sigma2;
                 } else {
-                    // Compute distance between neighbors (fixed, not dependent on params)
-                    double d12 = std::sqrt(
-                        std::pow(svc_data.coords[nn_idx1 * 2] - svc_data.coords[nn_idx2 * 2], 2) +
-                        std::pow(svc_data.coords[nn_idx1 * 2 + 1] - svc_data.coords[nn_idx2 * 2 + 1], 2)
-                    );
+                    // Distance between neighbors (fixed, not dependent on
+                    // params). SVCData::coords is a flat stride-2 buffer, so
+                    // the two columns are the whole domain here.
+                    double dx = svc_data.coords[nb_loc[j1] * 2] -
+                                svc_data.coords[nb_loc[j2] * 2];
+                    double dy = svc_data.coords[nb_loc[j1] * 2 + 1] -
+                                svc_data.coords[nb_loc[j2] * 2 + 1];
+                    double d12 = std::sqrt(dx * dx + dy * dy);
                     C_mat[j1 * n_neighbors + j2] = compute_cov(d12, sigma2, phi, svc_data.cov_type);
                 }
             }
@@ -179,10 +195,7 @@ T nngp_log_lik(
         // factor, krige, floor. The SVC constants blend at the floor to keep a
         // little gradient (see kSvcJitter / kSvcVarFloor).
         std::vector<T> w_nb(n_neighbors);
-        for (int j = 0; j < n_neighbors; j++) {
-            int nn_orig_idx = svc_data.nn_order[svc_data.nn_idx[i * nn + j] - 1];
-            w_nb[j] = w[nn_orig_idx];
-        }
+        for (int j = 0; j < n_neighbors; j++) w_nb[j] = w[nb_loc[j]];
         T cond_mean, cond_var;
         if (!tulpa_nngp::cond_moments(C_mat, c_vec, w_nb, n_neighbors, sigma2,
                                       kSvcJitter, kSvcVarFloor,
@@ -255,29 +268,6 @@ T svc_sum_to_zero_penalty(
     }
 
     return penalty;
-}
-
-// =============================================================================
-// SVC prior on hyperparameters
-// =============================================================================
-
-// Log prior for sigma2 (spatial variance): Half-Cauchy
-template<typename T>
-T log_prior_sigma2_svc(const T& sigma2, double scale) {
-    T sigma = safe_sqrt(sigma2);
-    // Half-Cauchy: 2 / (pi * scale * (1 + (sigma/scale)^2))
-    // Log form: log(2) - log(pi) - log(scale) - log(1 + (sigma/scale)^2)
-    return T(std::log(2.0 / M_PI / scale)) - safe_log(T(1.0) + sigma * sigma / T(scale * scale));
-}
-
-// Log prior for phi (range parameter): Uniform on [lower, upper]
-template<typename T>
-T log_prior_phi_svc(const T& phi, double lower, double upper) {
-    double phi_val = get_value(phi);
-    if (phi_val < lower || phi_val > upper) {
-        return T(-INFINITY);
-    }
-    return T(-std::log(upper - lower));
 }
 
 } // namespace tulpa_svc_ad

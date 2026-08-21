@@ -32,11 +32,7 @@
   }
 
   std::mt19937 rng(seed + chain_id * 12345);
-  std::normal_distribution<double> normal(0.0, 1.0);
   std::uniform_real_distribution<double> unif(0.0, 1.0);
-
-  // Reset VecGradWorkspace cache for new model fit
-  reset_grad_workspace_cache();
 
   std::vector<double> q = q_init;
 
@@ -54,58 +50,10 @@
 
   double epsilon = find_reasonable_epsilon(q, data, layout, rng);
 
-  // Compute target_boost for challenging model combinations
-  // MSGP and GP with temporal are particularly challenging
-  double target_boost = 0.0;
-  if (data.has_multiscale_gp) {
-    target_boost += 0.10;  // MSGP models need higher target acceptance
-    if (layout.has_temporal) {
-      target_boost += 0.05;  // MSGP + temporal is even more challenging
-    }
-  } else if (data.spatial_type == SpatialType::GP) {
-    target_boost += 0.05;  // GP models moderately challenging
-    if (layout.has_temporal) {
-      target_boost += 0.05;  // GP + temporal combination
-    }
-  }
-  DualAveraging da(epsilon, n_params, target_boost);
-
-  // For NUTS: model-adaptive target acceptance
-  // Store in nuts_target_accept for reuse at mass window boundaries (avoids bug
-  // where da.target_accept was reset to 0.80 at each window reset).
-  double nuts_target_accept = 0.80;
-  if (use_nuts) {
-    if (adapt_delta > 0) {
-      // User override
-      nuts_target_accept = adapt_delta;
-    } else {
-      // Auto-select based on model complexity
-      nuts_target_accept = 0.80;  // Stan default base
-
-      // BYM2: high correlation between ICAR phi + unstructured theta
-      if (data.spatial_type == SpatialType::BYM2) {
-        nuts_target_accept = 0.90;
-      }
-      // ICAR: correlated spatial params need slightly higher target
-      else if (data.spatial_type == SpatialType::ICAR) {
-        nuts_target_accept = 0.85;
-      }
-
-      // Correlated random slopes add funnel geometry
-      if (data.has_re_correlated_slopes) {
-        nuts_target_accept = std::max(nuts_target_accept, 0.90);
-      }
-
-      // Temporal GP NC: z ~ N(0,1) decorrelates parameters, lower target OK
-      // Benchmarked: 0.70 gives 20% fewer LF steps and 50% less seed variance
-      if (layout.is_temporal_gp && nuts_target_accept > 0.70) {
-        nuts_target_accept = 0.70;
-      }
-
-      nuts_target_accept = std::min(0.99, nuts_target_accept);
-    }
-    da.target_accept = nuts_target_accept;
-  }
+  // One target for the chain, honoured by the NUTS and the fixed-trajectory
+  // path alike and re-used at every warmup window reset below.
+  const double target_accept = resolve_target_accept(data, layout, adapt_delta);
+  DualAveraging da(epsilon, target_accept);
 
   // current_grad already computed above (fused with log_prob for NUTS)
 

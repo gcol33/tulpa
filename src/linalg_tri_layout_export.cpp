@@ -69,13 +69,13 @@ Rcpp::NumericVector cpp_test_chol_factor(Rcpp::NumericVector Abuf, int n,
   double* L = out.begin();
   if (layout == kRowMajorCode) {
     tulpa_linalg::chol_factor_lower<tulpa_linalg::TriLayout::RowMajor>(
-        A, L, n, n, tulpa_linalg::kCholJitter);
+        A, L, n, n, /*nugget=*/0.0);
     for (int i = 0; i < n; i++) {
       for (int j = i + 1; j < n; j++) L[i * n + j] = 0.0;
     }
   } else {
     tulpa_linalg::chol_factor_lower<tulpa_linalg::TriLayout::ColMajor>(
-        A, L, n, n, tulpa_linalg::kCholJitter);
+        A, L, n, n, /*nugget=*/0.0);
     for (int i = 0; i < n; i++) {
       for (int j = i + 1; j < n; j++) L[j * n + i] = 0.0;
     }

@@ -345,8 +345,7 @@
           mass.type = MassMatrixType::DIAG;
           // inv_mass_diag already populated from dense diagonal (update_from_covariance)
           epsilon = find_reasonable_epsilon(q, data, layout, rng, mass.inv_mass_diag);
-          da = DualAveraging(epsilon, n_params, target_boost);
-          if (use_nuts) da.target_accept = nuts_target_accept;
+          da = DualAveraging(epsilon, target_accept);
         }
 
         // DIAG?DENSE recovery is checked at warmup end (after da.final_epsilon)
@@ -383,8 +382,7 @@
               effective_metric = MassMatrixType::BLOCK_DIAG;
               auto_selected_diag = false;
               epsilon = find_reasonable_epsilon(q, data, layout, rng);
-              da = DualAveraging(epsilon, n_params, target_boost);
-              if (use_nuts) da.target_accept = nuts_target_accept;
+              da = DualAveraging(epsilon, target_accept);
               epsilon = da.final_epsilon();
             } else if (n_params <= DENSE_MAX_PARAMS) {
               if (verbose) {
@@ -395,8 +393,7 @@
               effective_metric = MassMatrixType::DENSE;
               auto_selected_diag = false;
               epsilon = find_reasonable_epsilon(q, data, layout, rng);
-              da = DualAveraging(epsilon, n_params, target_boost);
-              if (use_nuts) da.target_accept = nuts_target_accept;
+              da = DualAveraging(epsilon, target_accept);
               epsilon = da.final_epsilon();
             }
           }
@@ -410,8 +407,7 @@
             mass.init(n_params, MassMatrixType::DIAG);
             effective_metric = MassMatrixType::DIAG;
             epsilon = find_reasonable_epsilon(q, data, layout, rng, mass.inv_mass_diag);
-            da = DualAveraging(epsilon, n_params, target_boost);
-            if (use_nuts) da.target_accept = nuts_target_accept;
+            da = DualAveraging(epsilon, target_accept);
             epsilon = da.final_epsilon();
           }
 
@@ -425,8 +421,7 @@
             }
             mass.type = MassMatrixType::DIAG;
             epsilon = find_reasonable_epsilon(q, data, layout, rng, mass.inv_mass_diag);
-            da = DualAveraging(epsilon, n_params, target_boost);
-            if (use_nuts) da.target_accept = nuts_target_accept;
+            da = DualAveraging(epsilon, target_accept);
             epsilon = da.final_epsilon();
           }
 

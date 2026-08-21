@@ -13,7 +13,7 @@ tulpa_re_cov_gibbs(
   phi = 1,
   prior_df = NULL,
   prior_scale = NULL,
-  beta_prior = list(mean = 0, sd = 100),
+  beta_prior = .tulpa_default_beta_prior("re_cov_gibbs"),
   control = list()
 )
 }
@@ -43,7 +43,7 @@ its dimension matches (default \code{diag(n_coefs)}); otherwise the per-block
 default is used.}
 
 \item{beta_prior}{Gaussian fixed-effect prior as \code{list(mean, sd)} (default
-\code{list(mean = 0, sd = 100)}, weak by design for the debias sampler). Scalar
+the engine default, \code{prior_normal(0, 2.5)}). Scalar
 \code{mean} / \code{sd} are recycled to \code{ncol(X)}; a length-\code{ncol(X)} vector sets a
 per-coefficient prior.}
 

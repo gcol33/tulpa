@@ -6,11 +6,9 @@
 // parameter alongside log_tau and phi_spatial. The log-prior term and
 // gradient are computed via the helpers below.
 //
-// Performance note: car_log_det() runs a dense O(n^3) Cholesky each call
-// because rho (and therefore Q) changes every gradient evaluation. For
-// large adjacency graphs swap in tulpa::SparseCholeskySolver — Q has the
-// same sparsity as the adjacency, so analyze() is one-shot and only the
-// numeric factorization runs per gradient call.
+// car_log_det() runs a dense O(n^3) Cholesky on each call: rho, and therefore
+// Q, moves with every gradient evaluation, so no factorization is reusable
+// across calls.
 
 #ifndef TULPA_HMC_CAR_PROPER_H
 #define TULPA_HMC_CAR_PROPER_H
@@ -96,10 +94,10 @@ inline double car_log_det(
     int n,
     const std::vector<double>& Q
 ) {
-  // Cholesky decomposition: Q = L * L^T (PD-check mode: jitter < 0)
+  // Cholesky decomposition: Q = L * L^T, of Q itself (no nugget)
   std::vector<double> L(n * n, 0.0);
   if (!tulpa_linalg::chol_factor_lower<tulpa_linalg::TriLayout::RowMajor>(
-          Q.data(), L.data(), n, n, -1.0)) {
+          Q.data(), L.data(), n, n, /*nugget=*/0.0)) {
     return -INFINITY;  // Not positive definite
   }
   return tulpa_linalg::chol_log_det(L.data(), n, n);
@@ -187,32 +185,6 @@ inline double log_prior_car_proper_fast(
 }
 
 // -----------------------------------------------------------------------------
-// Priors for hyperparameters
-// -----------------------------------------------------------------------------
-
-// Log prior for rho: Beta(a, b) scaled to (rho_lower, rho_upper)
-// Default: Uniform on (0, 1) = Beta(1, 1)
-inline double log_prior_rho(double rho, double lower, double upper,
-                            double a = 1.0, double b = 1.0) {
-  if (rho <= lower || rho >= upper) return -INFINITY;
-
-  // Transform to (0, 1)
-  double u = (rho - lower) / (upper - lower);
-
-  // Beta(a, b) log-density (up to normalizing constant)
-  // We include the Jacobian from the scaling
-  return (a - 1.0) * std::log(u) + (b - 1.0) * std::log(1.0 - u) -
-         std::log(upper - lower);
-}
-
-// Log prior for tau: Gamma(shape, rate)
-inline double log_prior_tau(double tau, double shape, double rate) {
-  if (tau <= 0) return -INFINITY;
-  return (shape - 1.0) * std::log(tau) - rate * tau +
-         shape * std::log(rate) - std::lgamma(shape);
-}
-
-// -----------------------------------------------------------------------------
 // Gradient computation (for HMC)
 // -----------------------------------------------------------------------------
 
@@ -245,38 +217,6 @@ inline void car_proper_gradient_phi(
   }
 }
 
-// Numerical gradient of log-prior w.r.t. rho (for HMC).
-// Kept for reference / sanity-check tests; the production HMC path uses
-// car_proper_log_det_and_grad_rho() below for an analytical derivative.
-inline double car_proper_gradient_rho(
-    const double* phi,
-    int n,
-    const std::vector<int>& adj_row_ptr,
-    const std::vector<int>& adj_col_idx,
-    const std::vector<int>& n_neighbors,
-    double tau,
-    double rho,
-    double lower,
-    double upper,
-    double a = 1.0,
-    double b = 1.0,
-    double epsilon = 1e-6
-) {
-  // Finite difference for gradient
-  double rho_plus = std::min(rho + epsilon, upper - epsilon);
-  double rho_minus = std::max(rho - epsilon, lower + epsilon);
-
-  double ll_plus = log_prior_car_proper(phi, n, adj_row_ptr, adj_col_idx,
-                                         n_neighbors, tau, rho_plus) +
-                   log_prior_rho(rho_plus, lower, upper, a, b);
-
-  double ll_minus = log_prior_car_proper(phi, n, adj_row_ptr, adj_col_idx,
-                                          n_neighbors, tau, rho_minus) +
-                    log_prior_rho(rho_minus, lower, upper, a, b);
-
-  return (ll_plus - ll_minus) / (rho_plus - rho_minus);
-}
-
 // Compute log|Q(rho)| AND tr(Q^{-1} W) in a single dense factorization.
 //
 // Both quantities are needed by the HMC gradient w.r.t. rho:
@@ -302,11 +242,11 @@ inline bool car_proper_log_det_and_grad_rho(
   std::vector<double> Q = compute_car_precision(n, adj_row_ptr, adj_col_idx,
                                                  n_neighbors, rho);
 
-  // Cholesky Q = L * L^T (PD-check mode: jitter < 0). A fresh L matrix —
+  // Cholesky Q = L * L^T, of Q itself (no nugget). A fresh L matrix —
   // the solves below need the unclobbered factor.
   std::vector<double> L(static_cast<size_t>(n) * n, 0.0);
   if (!tulpa_linalg::chol_factor_lower<tulpa_linalg::TriLayout::RowMajor>(
-          Q.data(), L.data(), n, n, -1.0)) {
+          Q.data(), L.data(), n, n, /*nugget=*/0.0)) {
     return false;  // not PD
   }
 

@@ -1,8 +1,9 @@
 # Structural coverage for the exported spec constructors whose fitting paths
 # live in the companion model packages (or are experimental): the
-# spatiotemporal, temporal-GP, TVC/RTR, and SVC front doors. These are
-# exported surface -- their construction, field layout, and validation
-# errors must hold even where no end-to-end tulpa() route exists yet.
+# spatiotemporal, temporal-GP, TVC/RTR, and SVC front doors. Constructors no
+# fitter consumes refuse to build; the rest must hold their construction,
+# field layout, and validation errors even where no end-to-end tulpa() route
+# exists yet.
 
 .fc_adj <- function(n = 6L) {
   adj <- matrix(0, n, n)
@@ -10,39 +11,18 @@
   adj
 }
 
-test_that("spatiotemporal() builds every interaction type and validates inputs", {
+test_that("spatiotemporal() and spatiotemporal_gp() refuse to build an unfitted spec", {
   sp <- spatial_car(.fc_adj(), level = "group", group_var = "region")
   tm <- temporal_rw1("year")
 
-  for (ty in c("I", "II", "III", "IV")) {
-    st <- spatiotemporal(spatial = sp, temporal = tm, type = ty)
-    expect_s3_class(st, "tulpa_spatiotemporal")
-    expect_identical(st$type, ty)
+  for (ty in c("I", "II", "III", "IV", "iid", "separable")) {
+    expect_error(spatiotemporal(spatial = sp, temporal = tm, type = ty),
+                 "not fitted by any tulpa backend")
   }
-  # "iid" normalizes to type I.
-  expect_identical(spatiotemporal(sp, tm, type = "iid")$type, "I")
-
-  expect_error(spatiotemporal(spatial = list(), temporal = tm),
-               "spatial")
-  expect_error(spatiotemporal(spatial = sp, temporal = list()),
-               "temporal")
-  # separable over CAR x RW warns toward type IV.
-  expect_warning(spatiotemporal(sp, tm, type = "separable"),
-                 "Separable")
-})
-
-test_that("spatiotemporal_gp() parses coords/time and validates nn", {
-  st <- spatiotemporal_gp(~ lon + lat, time_var = "year", nn = 10)
-  expect_identical(st$type, "st_gp")
-  expect_identical(st$coord_vars, c("lon", "lat"))
-  expect_identical(st$time_var, "year")
-  expect_identical(st$nn, 10L)
-
-  expect_identical(spatiotemporal_gp(c("x", "y"), "t")$coord_vars, c("x", "y"))
-  expect_error(spatiotemporal_gp(~ lon, "year"), "exactly 2")
-  expect_error(spatiotemporal_gp(1:2, "year"), "formula")
-  expect_error(spatiotemporal_gp(~ lon + lat, c("a", "b")), "single character")
-  expect_error(spatiotemporal_gp(~ lon + lat, "year", nn = 0), "positive")
+  expect_error(spatiotemporal_gp(~ lon + lat, time_var = "year", nn = 10),
+               "not fitted by any tulpa backend")
+  expect_error(spatiotemporal_gp(c("x", "y"), "t"),
+               "not fitted by any tulpa backend")
 })
 
 test_that("temporal_gp() validates covariance-specific parameters", {
@@ -76,17 +56,11 @@ test_that("temporal_tvc() builds all three terms forms; tvc() rejects non-TVC fi
   expect_error(tvc(fit_stub), "TVC|tvc")
 })
 
-test_that("temporal_rtr() stamps the RTR modifier and validates its inputs", {
+test_that("temporal_rtr() refuses to build a spec no fitter projects", {
   tm <- temporal_rw1("year")
-  rt <- temporal_rtr(tm, restrict_to = ~ x)
-  expect_s3_class(rt, "tulpa_rtr")
-  expect_s3_class(rt, "tulpa_temporal")
-  expect_true(rt$rtr)
-  expect_identical(rt$rtr_formula, ~ x)
-  expect_output(print(rt), "Restricted Temporal Regression")
-
-  expect_error(temporal_rtr(list(), ~ x), "temporal")
-  expect_error(temporal_rtr(tm, "x"), "formula")
+  expect_error(temporal_rtr(tm, restrict_to = ~ x),
+               "not fitted by any tulpa backend")
+  expect_error(temporal_rtr(list(), ~ x), "not fitted by any tulpa backend")
 })
 
 test_that("spatial_svc() builds NNGP and HSGP variants and validates knobs", {

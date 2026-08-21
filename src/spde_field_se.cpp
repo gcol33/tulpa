@@ -32,6 +32,12 @@ Rcpp::NumericVector cpp_spde_field_se(
         Rcpp::stop("cpp_spde_field_se: joint precision is not positive definite.");
     }
 
+    // H is positive definite, so c' H^{-1} c is negative only when the solve
+    // lost accuracy. Reporting sqrt(0) there presents a numerical failure as
+    // certainty -- an interval built from it has zero width -- so the count is
+    // raised alongside the factorization failure above. A query column that is
+    // entirely zero gives exactly 0 and is a genuine zero standard error.
+    int n_negative = 0;
     Eigen::VectorXd b(m);
     for (int j = 0; j < n; ++j) {
         b.setZero();
@@ -39,7 +45,13 @@ Rcpp::NumericVector cpp_spde_field_se(
         const Eigen::VectorXd x = chol.solve(b);
         double q = 0.0;               // c_j' H^{-1} c_j over the nonzeros of c_j
         for (SpMap::InnerIterator it(Cq, j); it; ++it) q += it.value() * x[it.row()];
-        se[j] = q > 0.0 ? std::sqrt(q) : 0.0;
+        if (q < 0.0) { n_negative++; q = 0.0; }
+        se[j] = std::sqrt(q);
+    }
+    if (n_negative > 0) {
+        Rcpp::stop("cpp_spde_field_se: c' H^-1 c is negative for %d of %d "
+                   "query cells; the joint precision solve lost accuracy.",
+                   n_negative, n);
     }
     return se;
 }

@@ -8,6 +8,12 @@
 //
 // Reference: Murray, Adams, MacKay (2010) "Elliptical Slice Sampling"
 // https://proceedings.mlr.press/v9/murray10a.html
+//
+// All randomness goes through R's RNG (R::norm_rand / R::unif_rand, and the
+// accept test in rwmh.h), so set.seed in R reproduces a run and the sampler
+// must not be called from inside a parallel region. The caller is responsible
+// for the surrounding GetRNGstate / PutRNGstate pair (Rcpp::RNGScope, which the
+// Rcpp attribute wrappers emit and the C shim establishes explicitly).
 
 #ifndef TULPA_ESS_SAMPLER_H
 #define TULPA_ESS_SAMPLER_H
@@ -16,9 +22,11 @@
 #include <RcppEigen.h>
 #include <vector>
 #include <cmath>
-#include <random>
+#include <cstdio>
+#include <limits>
 #include <algorithm>
 #include "hmc_sampler.h"
+#include "rwmh.h"
 
 namespace tulpa_ess {
 
@@ -32,15 +40,14 @@ using tulpa_hmc::ParamLayout;
 struct ESSConfig {
     int n_iter;                 // Total iterations
     int n_warmup;               // Warmup iterations (for adaptation)
-    int n_thin;                 // Thinning interval
+    int n_thin;                 // Thinning interval (values below 1 read as 1)
+
     bool verbose;               // Print progress
     int print_every;            // Print every N iterations
-    unsigned int seed;          // Random seed
 
     // ESS-specific options
-    bool use_cholesky;          // Use Cholesky decomposition for multivariate normal
-    bool adapt_during_warmup;   // Adapt covariance during warmup
-    int adapt_interval;         // How often to update covariance estimate
+    bool adapt_during_warmup;   // Adapt the RWMH proposal SDs during warmup
+    int adapt_interval;         // Sweeps between RWMH proposal-SD updates
 
     // Joint (log_sigma_re, re) move. Required for Poisson + RE where
     // alternating ESS-on-re / RWMH-on-log_sigma_re mixes poorly because the
@@ -52,7 +59,7 @@ struct ESSConfig {
 
     ESSConfig()
         : n_iter(2000), n_warmup(1000), n_thin(1), verbose(true),
-          print_every(100), seed(12345), use_cholesky(true),
+          print_every(100),
           adapt_during_warmup(true), adapt_interval(100),
           joint_sigma_re(false), joint_sigma_proposal_sd(0.1) {}
 };
@@ -66,6 +73,8 @@ struct ESSResult {
     std::vector<double> log_lik;   // Log-likelihood at each sample
     int n_slice_evals;             // Total likelihood evaluations
     double avg_slice_evals;        // Average evaluations per ESS step
+    int n_slice_exhausted;         // Block updates that returned unchanged
+    int n_degenerate_scale;        // Block updates skipped on a zero scale
     bool success;
     std::string error_msg;
 };
@@ -74,63 +83,29 @@ struct ESSResult {
 // Gaussian Prior specification
 // ============================================================================
 
-// Specifies which parameters have Gaussian priors for ESS
+// Specifies which parameters share one zero-mean isotropic ellipse for ESS.
+// Every block the builder below emits is N(0, scale^2 I): the structured
+// blocks that would need a covariance (spatial / temporal / GP) error there
+// rather than being carried here.
 struct GaussianPrior {
-    std::vector<int> param_indices;  // Indices of parameters with this prior
-    Eigen::VectorXd mean;            // Prior mean
-    Eigen::MatrixXd precision;       // Prior precision (inverse covariance)
-    Eigen::MatrixXd chol_cov;        // Cholesky of covariance (lower triangular)
-    bool is_identity_cov;            // If true, use efficient identity sampling
-    double scale;                    // For identity: prior is N(0, scale^2 * I)
+    std::vector<int> param_indices;  // Indices of parameters in this block
+    double scale;                    // Ellipse is N(0, scale^2 * I)
     int scale_param_idx;             // If >= 0, scale = exp(params[scale_param_idx])
                                      // (a sampled log-SD, e.g. the RE log_sigma);
                                      // refreshed each sweep so the ellipse tracks it.
 
-    GaussianPrior() : is_identity_cov(true), scale(1.0), scale_param_idx(-1) {}
+    GaussianPrior() : scale(1.0), scale_param_idx(-1) {}
 };
-
-// ============================================================================
-// Helper: Sample from standard normal
-// ============================================================================
-
-inline Eigen::VectorXd sample_std_normal(int n, std::mt19937& rng) {
-    std::normal_distribution<double> std_normal(0.0, 1.0);
-    Eigen::VectorXd z(n);
-    for (int i = 0; i < n; i++) {
-        z(i) = std_normal(rng);
-    }
-    return z;
-}
-
-// ============================================================================
-// Helper: Sample from Gaussian prior
-// ============================================================================
-
-inline Eigen::VectorXd sample_from_prior(
-    const GaussianPrior& prior,
-    std::mt19937& rng
-) {
-    int n = prior.param_indices.size();
-    Eigen::VectorXd z = sample_std_normal(n, rng);
-
-    if (prior.is_identity_cov) {
-        // N(mean, scale^2 * I)
-        return prior.mean + prior.scale * z;
-    } else {
-        // N(mean, Sigma) where Sigma = L * L^T
-        return prior.mean + prior.chol_cov * z;
-    }
-}
 
 // ============================================================================
 // Core ESS step for a single block of parameters
 // ============================================================================
 
-// Performs one ESS step for parameters with a Gaussian prior
-// Returns new parameter values for the block
+// Performs one ESS step for one zero-mean isotropic block.
+// Returns new parameter values for the block.
 //
 // Algorithm:
-// 1. Draw nu ~ N(0, Sigma) from the prior
+// 1. Draw nu ~ N(0, scale^2 I)
 // 2. Set threshold: log_y = log_lik(f) + log(u), u ~ Uniform(0,1)
 // 3. Draw initial angle: theta ~ Uniform(0, 2*pi)
 // 4. Set bracket: [theta_min, theta_max] = [theta - 2*pi, theta]
@@ -139,53 +114,59 @@ inline Eigen::VectorXd sample_from_prior(
 //    b. If log_lik(f') > log_y: accept and return f'
 //    c. Else shrink bracket toward 0 and draw new theta
 //
+// `exhausted` is set when the block is returned unchanged: either the level was
+// not orderable (below) or the bracket collapsed without an acceptance.
 template<typename LogLikFn>
 Eigen::VectorXd ess_step(
     const Eigen::VectorXd& f,           // Current parameter values (block)
-    const GaussianPrior& prior,         // Gaussian prior for this block
+    const GaussianPrior& prior,         // Ellipse for this block
     LogLikFn log_lik_fn,                // Function: f -> log_likelihood
     double current_log_lik,             // Current log-likelihood
-    std::mt19937& rng,
-    int& n_evals                        // Output: number of likelihood evaluations
+    int& n_evals,                       // Output: number of likelihood evaluations
+    bool& exhausted                     // Output: block returned unchanged
 ) {
-    std::uniform_real_distribution<double> unif(0.0, 1.0);
+    n_evals = 0;
+    exhausted = false;
 
-    // Step 1: Draw nu from prior (centered at 0)
-    int n = f.size();
-    Eigen::VectorXd nu = sample_std_normal(n, rng);
-    if (prior.is_identity_cov) {
-        nu *= prior.scale;
-    } else {
-        nu = prior.chol_cov * nu;
+    // A level of NaN or +Inf orders against no proposal, so every comparison in
+    // the shrink loop below is false and the block would come back unchanged
+    // after max_shrinks full target evaluations. Cost it one evaluation instead.
+    // A level of -Inf is usable: any finite proposal clears it.
+    if (std::isnan(current_log_lik) ||
+        current_log_lik == std::numeric_limits<double>::infinity()) {
+        exhausted = true;
+        return f;
     }
 
+    // Step 1: Draw nu from the ellipse (centered at 0)
+    const int n = f.size();
+    Eigen::VectorXd nu(n);
+    for (int i = 0; i < n; i++) nu(i) = prior.scale * R::norm_rand();
+
     // Step 2: Set threshold
-    double log_u = std::log(unif(rng));
-    double log_y = current_log_lik + log_u;
+    const double log_y = current_log_lik + std::log(R::unif_rand());
 
     // Step 3: Initial angle
-    double theta = unif(rng) * 2.0 * M_PI;
+    double theta = R::unif_rand() * 2.0 * M_PI;
     double theta_min = theta - 2.0 * M_PI;
     double theta_max = theta;
 
-    // Center f around prior mean for correct geometry
-    Eigen::VectorXd f_centered = f - prior.mean;
-
-    n_evals = 0;
     const int max_shrinks = 1000;  // Prevent infinite loop
 
     for (int shrink = 0; shrink < max_shrinks; shrink++) {
         // Step 5a: Proposal on ellipse
-        double cos_theta = std::cos(theta);
-        double sin_theta = std::sin(theta);
-        Eigen::VectorXd f_prime_centered = f_centered * cos_theta + nu * sin_theta;
-        Eigen::VectorXd f_prime = f_prime_centered + prior.mean;
+        const double cos_theta = std::cos(theta);
+        const double sin_theta = std::sin(theta);
+        Eigen::VectorXd f_prime = f * cos_theta + nu * sin_theta;
 
         // Step 5b: Evaluate log-likelihood
-        double log_lik_prime = log_lik_fn(f_prime);
+        const double log_lik_prime = log_lik_fn(f_prime);
         n_evals++;
 
-        if (log_lik_prime > log_y) {
+        // A NaN target orders against nothing, so it is rejected explicitly
+        // rather than through the comparison. The bracket still shrinks, which
+        // is the only move that leaves the loop terminating.
+        if (!std::isnan(log_lik_prime) && log_lik_prime > log_y) {
             // Accept
             return f_prime;
         }
@@ -198,11 +179,10 @@ Eigen::VectorXd ess_step(
         }
 
         // Draw new theta from shrunk bracket
-        theta = unif(rng) * (theta_max - theta_min) + theta_min;
+        theta = R::unif_rand() * (theta_max - theta_min) + theta_min;
     }
 
-    // If we get here, something went wrong - return original
-    Rcpp::warning("ESS reached max shrinks without accepting");
+    exhausted = true;
     return f;
 }
 
@@ -233,9 +213,6 @@ inline std::vector<GaussianPrior> build_gaussian_priors(
         }
 
         if (!prior.param_indices.empty()) {
-            int n = prior.param_indices.size();
-            prior.mean = Eigen::VectorXd::Zero(n);
-            prior.is_identity_cov = true;
             prior.scale = data.sigma_beta;
             priors.push_back(prior);
         }
@@ -262,17 +239,11 @@ inline std::vector<GaussianPrior> build_gaussian_priors(
             prior.param_indices.push_back(j);
         }
 
-        int n = prior.param_indices.size();
-        prior.mean = Eigen::VectorXd::Zero(n);
-        prior.is_identity_cov = true;
         // The RE prior is N(0, sigma_re^2 I). sigma_re is sampled (log_sigma_re_idx),
         // so bind the ellipse scale to it -- refreshed each sweep -- instead of the
         // wrong fixed 1.0.
         if (layout.log_sigma_re_idx >= 0) {
             prior.scale_param_idx = layout.log_sigma_re_idx;
-            prior.scale = 1.0;  // refreshed from the param before each ESS step
-        } else {
-            prior.scale = 1.0;
         }
         priors.push_back(prior);
     }
@@ -327,24 +298,24 @@ inline std::vector<GaussianPrior> build_gaussian_priors(
             prior.param_indices.push_back(j);
         }
 
-        int n = prior.param_indices.size();
-        prior.mean = Eigen::VectorXd::Zero(n);
-        prior.is_identity_cov = true;
         prior.scale = data.zi_prior_sd;
         priors.push_back(prior);
     }
 
-    // Latent factors
+    // Latent factors. The templated latent prior is N(0, 1) on each factor
+    // score (tulpa_priors_latent.h -- the per-factor sigma multiplies into eta,
+    // not into the score), so scale = 1 is the ellipse that matches it. Unlike
+    // the structured blocks above, an isotropic ellipse is not an approximation
+    // here: the slice target subtracts exactly this ellipse's own quadratic, so
+    // the block conditional it samples is the model's whatever the scale is
+    // (see the target built in run_ess_sampler). The scale only decides how
+    // close the ellipse sits to the block's actual prior, and hence how often a
+    // proposal clears the slice.
     if (layout.has_latent && layout.latent_factor_end > layout.latent_factor_start) {
         GaussianPrior prior;
         for (int j = layout.latent_factor_start; j < layout.latent_factor_end; j++) {
             prior.param_indices.push_back(j);
         }
-
-        int n = prior.param_indices.size();
-        prior.mean = Eigen::VectorXd::Zero(n);
-        prior.is_identity_cov = true;
-        prior.scale = 1.0;
         priors.push_back(prior);
     }
 
@@ -421,21 +392,17 @@ double rwmh_step(
     double proposal_sd,
     LogPostFn log_post_fn,
     double current_log_post,
-    std::mt19937& rng,
     bool& accepted
 ) {
-    std::normal_distribution<double> normal(0.0, proposal_sd);
-    std::uniform_real_distribution<double> unif(0.0, 1.0);
-
     double old_val = params[idx];
-    double proposal = old_val + normal(rng);
+    double proposal = old_val + proposal_sd * R::norm_rand();
 
     params[idx] = proposal;
     double proposed_log_post = log_post_fn(params);
 
     double log_alpha = proposed_log_post - current_log_post;
 
-    if (std::log(unif(rng)) < log_alpha) {
+    if (tulpa::rw_accept(log_alpha)) {
         accepted = true;
         return proposed_log_post;
     } else {
@@ -456,12 +423,13 @@ struct AdaptiveProposal {
     double target_rate;
     int adapt_interval;
 
-    AdaptiveProposal(int n_params, double init_sd = 0.1, double target = 0.234)
+    AdaptiveProposal(int n_params, int adapt_every, double init_sd = 0.1,
+                     double target = 0.234)
         : proposal_sds(n_params, init_sd),
           n_accepted(n_params, 0),
           n_total(n_params, 0),
           target_rate(target),
-          adapt_interval(50) {}
+          adapt_interval(std::max(1, adapt_every)) {}
 
     void record(int idx, bool accepted) {
         n_total[idx]++;
@@ -509,16 +477,16 @@ inline ESSResult run_ess_sampler(
 
     int n_params = init_params.size();
     // Number of stored draws: post-warmup iters store when
-    // (iter - n_warmup) % n_thin == 0, which fires ceil(post / n_thin) times.
-    int n_post = config.n_iter - config.n_warmup;
-    int n_save = n_post > 0 ? (n_post + config.n_thin - 1) / config.n_thin : 0;
+    // (iter - n_warmup) % thin == 0, which fires ceil(post / thin) times.
+    const int thin = std::max(1, config.n_thin);
+    const int n_post = config.n_iter - config.n_warmup;
+    const int n_save = n_post > 0 ? (n_post + thin - 1) / thin : 0;
 
     result.samples.resize(n_save, n_params);
     result.log_lik.resize(n_save);
     result.n_slice_evals = 0;
-
-    // Initialize RNG
-    std::mt19937 rng(config.seed);
+    result.n_slice_exhausted = 0;
+    result.n_degenerate_scale = 0;
 
     // Build Gaussian priors for ESS blocks
     std::vector<GaussianPrior> gaussian_priors = build_gaussian_priors(data, layout, n_params);
@@ -527,7 +495,7 @@ inline ESSResult run_ess_sampler(
     std::vector<int> non_gaussian = get_non_gaussian_params(layout, n_params);
 
     // Adaptive proposals for RWMH parameters
-    AdaptiveProposal adaptive(non_gaussian.size());
+    AdaptiveProposal adaptive(non_gaussian.size(), config.adapt_interval);
 
     // Joint-move blocks: (log_sigma_re_idx, re_start, re_end) tuples that
     // can be jointly rescaled. Built once up-front. Diagonal RE only —
@@ -575,6 +543,8 @@ inline ESSResult run_ess_sampler(
     int save_idx = 0;
     int total_ess_evals = 0;
     int total_ess_steps = 0;
+    int n_slice_exhausted = 0;
+    int n_degenerate_scale = 0;
 
     for (int iter = 0; iter < config.n_iter; iter++) {
         // Check for user interrupt
@@ -586,13 +556,6 @@ inline ESSResult run_ess_sampler(
         // ESS updates for Gaussian-prior blocks
         // ----------------------------------------------------------------
         for (auto& prior : gaussian_priors) {
-            // Extract current values for this block
-            int block_size = prior.param_indices.size();
-            Eigen::VectorXd f(block_size);
-            for (int i = 0; i < block_size; i++) {
-                f(i) = params[prior.param_indices[i]];
-            }
-
             // Refresh the ellipse scale from the sampled log-SD when bound to a
             // parameter (the RE block tracks sigma_re = exp(log_sigma_re)).
             if (prior.scale_param_idx >= 0) {
@@ -600,12 +563,37 @@ inline ESSResult run_ess_sampler(
             }
             const double blk_prec = 1.0 / (prior.scale * prior.scale);
 
+            // A sufficiently negative sampled log-SD underflows the scale to
+            // exactly zero, making blk_prec infinite and the slice target below
+            // -Inf + Inf = NaN at every angle. Leave the block where it is for
+            // this sweep and count it; the hyperparameter moves that follow can
+            // still carry the scale back into range.
+            if (!(prior.scale > 0.0) || !std::isfinite(prior.scale) ||
+                !std::isfinite(blk_prec)) {
+                n_degenerate_scale++;
+                continue;
+            }
+
+            // Extract current values for this block
+            int block_size = prior.param_indices.size();
+            Eigen::VectorXd f(block_size);
+            for (int i = 0; i < block_size; i++) {
+                f(i) = params[prior.param_indices[i]];
+            }
+
             // ESS slice target: the ellipse (nu ~ N(0, scale^2 I)) already carries
-            // THIS block's Gaussian prior, so the slice threshold must be the
-            // likelihood WITHOUT it -- i.e. the full log-posterior minus this
-            // block's -0.5 * ||f||^2 / scale^2 quadratic. Passing the full
-            // posterior double-counts the block prior (over-shrinkage); the
-            // normalizer is constant in f and cancels in the slice.
+            // a Gaussian factor on this block, so the slice threshold must be the
+            // full log-posterior with exactly that factor removed -- this block's
+            // -0.5 * ||f||^2 / scale^2 quadratic. ESS then targets
+            // N(f; 0, scale^2 I) * exp(lp + 0.5 * blk_prec * ||f||^2) = exp(lp),
+            // the block conditional itself, for ANY scale: the correction's
+            // contract is with the ellipse (both read prior.scale), not with
+            // whatever the templated priors contribute for this block. The scale
+            // decides how closely the ellipse tracks that prior, i.e. how often a
+            // proposal clears the slice, not what is sampled. Passing the full
+            // posterior uncorrected is what double-counts the block prior and
+            // over-shrinks; the normalizer is constant in f and cancels in the
+            // slice.
             auto log_lik_fn = [&](const Eigen::VectorXd& f_new) -> double {
                 std::vector<double> params_temp = params;
                 for (int i = 0; i < block_size; i++) {
@@ -620,8 +608,11 @@ inline ESSResult run_ess_sampler(
             // removed) and the current params (which already include earlier
             // blocks' updates this sweep), so compute it directly.
             int n_evals = 0;
+            bool exhausted = false;
             double cur_block_loglik = log_lik_fn(f);
-            Eigen::VectorXd f_new = ess_step(f, prior, log_lik_fn, cur_block_loglik, rng, n_evals);
+            Eigen::VectorXd f_new = ess_step(f, prior, log_lik_fn,
+                                             cur_block_loglik, n_evals, exhausted);
+            if (exhausted) n_slice_exhausted++;
 
             // Update params
             for (int i = 0; i < block_size; i++) {
@@ -644,7 +635,7 @@ inline ESSResult run_ess_sampler(
             current_log_post = rwmh_step(
                 params, idx, adaptive.proposal_sds[i],
                 [&](const std::vector<double>& p) { return compute_log_post_double(p, data, layout); },
-                current_log_post, rng, accepted
+                current_log_post, accepted
             );
             adaptive.record(i, accepted);
         }
@@ -658,12 +649,8 @@ inline ESSResult run_ess_sampler(
         // (Jacobian exp(n_re * delta) for the re-rescaling).
         // ----------------------------------------------------------------
         if (!joint_blocks.empty()) {
-            std::normal_distribution<double> joint_normal(
-                0.0, config.joint_sigma_proposal_sd);
-            std::uniform_real_distribution<double> joint_unif(0.0, 1.0);
-
             for (const auto& blk : joint_blocks) {
-                double delta = joint_normal(rng);
+                double delta = config.joint_sigma_proposal_sd * R::norm_rand();
                 double scl = std::exp(delta);
                 double saved_log_sigma = params[blk.log_sigma_idx];
                 std::vector<double> saved_re(blk.re_end - blk.re_start);
@@ -682,8 +669,11 @@ inline ESSResult run_ess_sampler(
                 double log_alpha = (proposed_log_post - current_log_post)
                                  + double(n_re) * delta;
 
-                if (std::isfinite(proposed_log_post) &&
-                    std::log(joint_unif(rng)) < log_alpha) {
+                // The uniform is drawn first and unconditionally (rwmh.h), so
+                // the stream a sweep consumes does not depend on where the
+                // proposal landed.
+                if (tulpa::rw_accept(log_alpha) &&
+                    std::isfinite(proposed_log_post)) {
                     current_log_post = proposed_log_post;
                 } else {
                     params[blk.log_sigma_idx] = saved_log_sigma;
@@ -702,7 +692,7 @@ inline ESSResult run_ess_sampler(
         // ----------------------------------------------------------------
         // Store sample
         // ----------------------------------------------------------------
-        if (iter >= config.n_warmup && (iter - config.n_warmup) % config.n_thin == 0) {
+        if (iter >= config.n_warmup && (iter - config.n_warmup) % thin == 0) {
             for (int j = 0; j < n_params; j++) {
                 result.samples(save_idx, j) = params[j];
             }
@@ -723,10 +713,26 @@ inline ESSResult run_ess_sampler(
     result.n_slice_evals = total_ess_evals;
     result.avg_slice_evals = total_ess_steps > 0 ?
         static_cast<double>(total_ess_evals) / total_ess_steps : 0.0;
+    result.n_slice_exhausted = n_slice_exhausted;
+    result.n_degenerate_scale = n_degenerate_scale;
 
     if (config.verbose) {
         Rcpp::Rcout << "ESS complete. Avg slice evals per step: "
                     << result.avg_slice_evals << "\n";
+    }
+
+    // Reported once for the whole run: a per-sweep warning from inside the
+    // sampler is both noise and, under options(warn = 2), a longjmp through the
+    // sampler loop's own C++ frames.
+    if (n_slice_exhausted > 0 || n_degenerate_scale > 0) {
+        char msg[320];
+        std::snprintf(msg, sizeof(msg),
+            "ESS: %d of %d block updates returned unchanged (the slice level "
+            "was not orderable, or the bracket collapsed without an "
+            "acceptance), and %d were skipped on a prior scale that underflowed "
+            "to zero. Those blocks did not move.",
+            n_slice_exhausted, total_ess_steps, n_degenerate_scale);
+        Rcpp::warning(std::string(msg));
     }
 
     return result;

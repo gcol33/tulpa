@@ -7,7 +7,7 @@
 #' @param data A data frame
 #' @param beta_prior Fixed-effect prior as `list(mean, sd)`: a mean-zero
 #'   (`mean = 0`) Gaussian on every coefficient with SD `sd`
-#'   (default `list(mean = 0, sd = 10)`).
+#'   (default the engine default, `prior_normal(0, 2.5)`).
 #' @param control List of numerical / sampler knobs: `iter` (total iterations,
 #'   default 2000), `warmup` (default 1000), `step_size` (HMC step size, default
 #'   0.05), `n_leapfrog` (default 10), `seed` (`NULL` draws from the session
@@ -16,10 +16,10 @@
 #' @return A list with draws matrix, posterior means, and metadata
 #' @export
 tulpa_gaussian <- function(formula, data,
-                           beta_prior = list(mean = 0, sd = 10),
+                           beta_prior = .tulpa_default_beta_prior("gaussian"),
                            control = list()) {
   tulpa_check_control(control, .CONTROL_KEYS$gaussian, "tulpa_gaussian")
-  sigma_beta <- .beta_prior_ridge_sd(beta_prior, default_sd = 10)
+  sigma_beta <- .beta_prior_ridge_sd(beta_prior, .tulpa_prior_sd("gaussian"))
   iter       <- as.integer(control$iter %||% 2000L)
   warmup     <- as.integer(control$warmup %||% 1000L)
   step_size  <- control$step_size %||% 0.05

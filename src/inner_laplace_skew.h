@@ -217,6 +217,42 @@ struct InnerSkewOutcome {
   std::vector<int> arms_declined;
 };
 
+// The latent indices the inner-layer diagnostics probe: the caller's selection,
+// or every index when none was named. `all_idx` is the caller's storage for the
+// second case; the returned reference is valid for as long as it is.
+inline const std::vector<int>& inner_probe_indices(
+    int n_x, const std::vector<int>* requested, std::vector<int>& all_idx
+) {
+  if (requested) return *requested;
+  all_idx.resize(static_cast<std::size_t>(n_x));
+  for (int j = 0; j < n_x; j++) all_idx[j] = j;
+  return all_idx;
+}
+
+// Record a probed subspace as unscored on BOTH inner-layer diagnostics, with the
+// reason. Reached when something upstream of either one stopped them together --
+// a solve that did not reach a mode, or a live factor that is of a different
+// matrix than the one the step was taken with -- as opposed to the third
+// derivative alone being unavailable, which leaves the importance curve running.
+//
+// The indices are written with NaN rather than left empty, because the result
+// list keys the whole emission on them: an empty index vector is
+// indistinguishable from the diagnostic never having been requested, and the
+// reason never reaches the fit.
+template <typename Result>
+inline void inner_probe_decline(
+    Result& result, const std::vector<int>& probe, const std::string& reason
+) {
+  const double NaN = std::numeric_limits<double>::quiet_NaN();
+  result.inner_skew.assign(probe.size(), NaN);
+  result.inner_skew_gamma1.assign(probe.size(), NaN);
+  result.inner_skew_idx = probe;
+  result.inner_skew_declined = reason;
+  result.inner_skew_gamma1_declined = reason;
+  result.inner_is_sigma.assign(probe.size(), NaN);
+  result.inner_is_declined = reason;
+}
+
 // The marginal variance of the linear predictor, s_j = [A Sigma A']_jj, which
 // gamma_1 needs and gamma_3 does not.
 //
@@ -313,8 +349,11 @@ struct JointCurvature3Oracles {
 // data log-likelihood differs between the single-arm, multi-process and joint
 // variants, so everything else lives here once.
 //
-// `fill_eta0` / `fill_eta1` write eta at the current `x_buf` into the caller's own
-// buffers (`fill_eta0` also precomputes anything that depends only on the mode).
+// `fill_eta1` writes eta at the current `x_buf` into the caller's own buffer.
+// `eta_buf0` is a PRECONDITION here, not something this scan fills: both callers
+// need eta at the mode before they reach it (the l''' oracle and the eta-variance
+// pass both read it), and the variance pass restores `x_buf` to `mode` on every
+// exit, so re-running the caller's own fill would recompute the same values.
 // `accumulate(dropped, any_finite, cross, cross_ok)` returns the un-normalised
 // cubic sum for the current index; it must leave `any_finite` false when nothing
 // finite reached it, so the index stays NaN rather than reading acc/sigma_i^3 ==
@@ -324,11 +363,12 @@ struct JointCurvature3Oracles {
 // coupled cell contributes to the cubic sum and not to this one, so a fit
 // carrying either declines gamma_1 rather than reporting a partial sum).
 //
-// x_buf must hold `mode` on entry and is restored to it on return. Reuses the
-// live factor (chol, dense fallback; or sparse_solver when use_sparse) without
+// x_buf must hold `mode` on entry and is restored to it on return, and the
+// caller's eta-at-the-mode buffer must already be filled. Reuses the live factor
+// (chol, dense fallback; or sparse_solver when use_sparse) without
 // refactorizing -- the same pattern the inv_block_layout diagonal-block
 // extraction in laplace_newton.h uses.
-template <typename FillEta0Fn, typename FillEta1Fn, typename AccumFn>
+template <typename FillEta1Fn, typename AccumFn>
 inline InnerSkewOutcome inner_skew_probe_scan(
     int n_x,
     const std::vector<double>& mode,
@@ -337,7 +377,6 @@ inline InnerSkewOutcome inner_skew_probe_scan(
     bool use_sparse,
     Rcpp::NumericVector& x_buf,
     const std::vector<int>& probe_idx,
-    FillEta0Fn fill_eta0,
     FillEta1Fn fill_eta1,
     AccumFn accumulate,
     bool have_eta_var
@@ -350,9 +389,6 @@ inline InnerSkewOutcome inner_skew_probe_scan(
 
   std::vector<double> rhs(n_x, 0.0), v(n_x, 0.0), z_work;
   if (!use_sparse) z_work.assign(n_x, 0.0);
-
-  // eta at the mode -- x_buf already holds `mode` on entry.
-  fill_eta0();
 
   for (std::size_t idx = 0; idx < probe_idx.size(); idx++) {
     int i = probe_idx[idx];
@@ -502,7 +538,7 @@ inline InnerSkewOutcome compute_inner_skew_gamma3(
 
   InnerSkewOutcome out =
       inner_skew_probe_scan(n_x, mode, chol, sparse_solver, use_sparse,
-                            x_buf, probe_idx, fill_eta0, fill_eta1,
+                            x_buf, probe_idx, fill_eta1,
                             accumulate, have_var);
   out.gamma1_declined = var_declined;
   return out;
@@ -670,7 +706,7 @@ inline InnerSkewOutcome compute_inner_skew_gamma3_joint(
 
   InnerSkewOutcome out =
       inner_skew_probe_scan(n_x, mode, chol, sparse_solver, use_sparse,
-                            x_buf, probe_idx, fill_eta0, fill_eta1, accumulate,
+                            x_buf, probe_idx, fill_eta1, accumulate,
                             have_var);
   out.arms_declined = oracles.arms_declined;
   out.gamma1_declined = var_declined;

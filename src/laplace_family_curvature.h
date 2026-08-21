@@ -51,9 +51,9 @@ inline double dvariance_dmu(double mu, double phi, const std::string& family,
     if (family == "beta") {
         // V = 1 / (phi^2 tg), tg = trigamma(mu phi) + trigamma((1-mu) phi).
         // d tg / d mu = phi (psi''(mu phi) - psi''((1-mu) phi)), psi'' = tetragamma.
-        const double tg = R::trigamma(mu * phi) + R::trigamma((1.0 - mu) * phi);
-        const double dtg = phi * (R::psigamma(mu * phi, 2)
-                                  - R::psigamma((1.0 - mu) * phi, 2));
+        const double tg = tulpa::math::portable_trigamma(mu * phi) + tulpa::math::portable_trigamma((1.0 - mu) * phi);
+        const double dtg = phi * (tulpa::math::portable_tetragamma(mu * phi)
+                                  - tulpa::math::portable_tetragamma((1.0 - mu) * phi));
         const double V = 1.0 / (phi * phi * tg);
         return -V * dtg / tg;
     }
@@ -73,11 +73,11 @@ inline double d2variance_dmu2(double mu, double phi, const std::string& family,
     if (family == "beta") {
         // V = 1 / (phi^2 tg); reuse dvariance_dmu's tg, tg1 and add the next
         // pentagamma rung tg2 = d2 tg / d mu2.
-        const double tg  = R::trigamma(mu * phi) + R::trigamma((1.0 - mu) * phi);
-        const double tg1 = phi * (R::psigamma(mu * phi, 2)
-                                  - R::psigamma((1.0 - mu) * phi, 2));
-        const double tg2 = phi * phi * (R::psigamma(mu * phi, 3)
-                                        + R::psigamma((1.0 - mu) * phi, 3));
+        const double tg  = tulpa::math::portable_trigamma(mu * phi) + tulpa::math::portable_trigamma((1.0 - mu) * phi);
+        const double tg1 = phi * (tulpa::math::portable_tetragamma(mu * phi)
+                                  - tulpa::math::portable_tetragamma((1.0 - mu) * phi));
+        const double tg2 = phi * phi * (tulpa::math::portable_pentagamma(mu * phi)
+                                        + tulpa::math::portable_pentagamma((1.0 - mu) * phi));
         const double cc = 1.0 / (phi * phi);
         return -cc * tg2 / (tg * tg) + 2.0 * cc * tg1 * tg1 / (tg * tg * tg);
     }
@@ -170,7 +170,7 @@ inline double curvature_deta_for_family(
     if (family == "beta_binomial") {
         // w = n mu (1-mu) / D, D independent of mu; logit link.
         double mu = linkinv(eta, "logit");
-        mu = std::max(std::min(mu, 1.0 - 1e-7), 1e-7);
+        mu = clamp_mu_unit(mu);
         const double n = (double)n_trials;
         const double D = 1.0 + (n - 1.0) / (phi + 1.0);
         return n * (1.0 - 2.0 * mu) * mu * (1.0 - mu) / D;
@@ -195,11 +195,7 @@ inline double curvature_deta_for_family(
     double mu = linkinv(eta, fl.link);
     const double dmu  = mu_eta(eta, fl.link);
     const double d2mu = mu_eta2(eta, fl.link);
-    if (fl.family == "binomial" || fl.family == "beta") {
-        mu = std::max(std::min(mu, 1.0 - 1e-7), 1e-7);
-    } else if (fl.family != "gaussian" && fl.family != "lognormal") {
-        mu = std::max(mu, 1e-10);
-    }
+    mu = clamp_mu_for_family(mu, fl.family);
     const double V  = variance_fn(mu, phi, fl.family, n_trials);
     const double dV = dvariance_dmu(mu, phi, fl.family, n_trials);
     return (2.0 * dmu * d2mu * V - dmu * dmu * dmu * dV) / (V * V);
@@ -261,7 +257,7 @@ inline double curvature_deta2_for_family(
     if (family == "beta_binomial") {
         // same logit shape as binomial, with n -> n/D
         double mu = linkinv(eta, "logit");
-        mu = std::max(std::min(mu, 1.0 - 1e-7), 1e-7);
+        mu = clamp_mu_unit(mu);
         const double n = (double)n_trials;
         const double D = 1.0 + (n - 1.0) / (phi + 1.0);
         return n * (1.0 - 6.0 * mu + 6.0 * mu * mu) * mu * (1.0 - mu) / D;
@@ -289,11 +285,7 @@ inline double curvature_deta2_for_family(
     const double u  = mu_eta(eta, fl.link);
     const double u1 = mu_eta2(eta, fl.link);
     const double u2 = mu_eta3(eta, fl.link);
-    if (fl.family == "binomial" || fl.family == "beta") {
-        mu = std::max(std::min(mu, 1.0 - 1e-7), 1e-7);
-    } else if (fl.family != "gaussian" && fl.family != "lognormal") {
-        mu = std::max(mu, 1e-10);
-    }
+    mu = clamp_mu_for_family(mu, fl.family);
     const double V   = variance_fn(mu, phi, fl.family, n_trials);
     const double Vm  = dvariance_dmu(mu, phi, fl.family, n_trials);
     const double Vmm = d2variance_dmu2(mu, phi, fl.family, n_trials);
@@ -397,11 +389,7 @@ inline double obs_curvature_delta_deta_for_family(
         // than a second hand-written expression, so they cannot drift.
         FamilyLink fl = parse_family_link(family);
         double mu = linkinv(eta, fl.link);
-        if (fl.family == "binomial" || fl.family == "beta") {
-            mu = std::max(std::min(mu, 1.0 - 1e-7), 1e-7);
-        } else if (fl.family != "gaussian" && fl.family != "lognormal") {
-            mu = std::max(mu, 1e-10);
-        }
+        mu = clamp_mu_for_family(mu, fl.family);
         const double u   = mu_eta(eta, fl.link);
         const double u1  = mu_eta2(eta, fl.link);
         const double u2  = mu_eta3(eta, fl.link);
@@ -416,16 +404,16 @@ inline double obs_curvature_delta_deta_for_family(
         // s the exact score; dT/dmu = phi (psi''(a) - psi''(b) - psi''(y+a)
         // + psi''(n-y+b)) and ds/deta = -W_obs close it.
         double mu = linkinv(eta, "logit");
-        mu = std::max(std::min(mu, 1.0 - 1e-7), 1e-7);
+        mu = clamp_mu_unit(mu);
         const double a = mu * phi, b = (1.0 - mu) * phi;
         const double dmu = mu * (1.0 - mu), n = (double)n_trials;
-        const double s = phi * (R::digamma(y + a) - R::digamma(a)
-                                - R::digamma(n - y + b) + R::digamma(b)) * dmu;
-        const double T = R::trigamma(a) + R::trigamma(b)
-                         - R::trigamma(y + a) - R::trigamma(n - y + b);
-        const double dT_dmu = phi * (R::psigamma(a, 2) - R::psigamma(b, 2)
-                                     - R::psigamma(y + a, 2)
-                                     + R::psigamma(n - y + b, 2));
+        const double s = phi * (tulpa::math::portable_digamma(y + a) - tulpa::math::portable_digamma(a)
+                                - tulpa::math::portable_digamma(n - y + b) + tulpa::math::portable_digamma(b)) * dmu;
+        const double T = tulpa::math::portable_trigamma(a) + tulpa::math::portable_trigamma(b)
+                         - tulpa::math::portable_trigamma(y + a) - tulpa::math::portable_trigamma(n - y + b);
+        const double dT_dmu = phi * (tulpa::math::portable_tetragamma(a) - tulpa::math::portable_tetragamma(b)
+                                     - tulpa::math::portable_tetragamma(y + a)
+                                     + tulpa::math::portable_tetragamma(n - y + b));
         const double w_obs = phi * phi * T * dmu * dmu - (1.0 - 2.0 * mu) * s;
         const double dw_obs = phi * phi * dmu * dmu
                                 * (dT_dmu * dmu + 2.0 * T * (1.0 - 2.0 * mu))
@@ -506,11 +494,21 @@ inline double obs_curvature_deta_for_family(
                                                phi2);
 }
 
+// Returns NaN, not a silently wrong number, for any family where either half is
+// unregistered. Without the gate a family whose observed and working curvature
+// differ but whose second-order delta is unwritten gets 0 from the second term,
+// so the sum is the WORKING curvature's second derivative presented as the
+// observed one -- a plausible finite value where the exact answer does not
+// exist.
 inline double obs_curvature_deta2_for_family(
     double y, int n_trials, double eta,
     const std::string& family, double phi,
     double phi2 = std::numeric_limits<double>::quiet_NaN()
 ) {
+    if (!has_curvature_2nd_derivative(family) ||
+        !has_obs_curvature_delta_2nd_derivative(family)) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
     return curvature_deta2_for_family(y, n_trials, eta, family, phi, phi2)
          + obs_curvature_delta_deta2_for_family(y, n_trials, eta, family, phi,
                                                 phi2);

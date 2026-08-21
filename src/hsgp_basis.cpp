@@ -9,9 +9,9 @@
 // make_hsgp_basis_2d in test-nested-laplace-gp.R is an independent oracle that
 // must continue to agree with it.
 //
-// Lives in its own translation unit because hmc_hsgp.h pulls in RcppEigen for
-// its matvec helpers; nested_laplace.cpp intentionally includes only the
-// Eigen-free hmc_hsgp_kernels.h and must stay that way.
+// Lives in its own translation unit because hmc_hsgp.h pulls in RcppEigen;
+// nested_laplace.cpp intentionally includes only the Eigen-free
+// hmc_hsgp_kernels.h and must stay that way.
 
 // [[Rcpp::depends(RcppEigen)]]
 
@@ -149,7 +149,6 @@ Rcpp::NumericVector cpp_hsgp_field_predict(
             const double S = tulpa_hsgp::spectral_density_se(data.eigenvalues[j], s2, ls);
             scaled_beta[j] = std::sqrt(S) * beta_grid(k, j);
         }
-        // f_k = Phi_new * scaled_beta (reuse hsgp_evaluate's matvec convention).
         f_k.assign(n_new, 0.0);
         for (int i = 0; i < n_new; ++i) {
             const double* phi_row = &data.phi_flat[static_cast<std::size_t>(i) * M];

@@ -60,6 +60,13 @@ struct InvBlockConstraint {
     // indices; out-of-range entries are ignored. An M that does not factor
     // leaves `usable = false`, and the caller then skips the correction rather
     // than subtracting a wrong one.
+    //
+    // Row g of A is the INDICATOR of group g's indices, so a latent index
+    // repeated within a group contributes once. Both the right-hand side and the
+    // Gram matrix are therefore read off one normalized index list, in the
+    // caller's own order with later repeats dropped: the two must use the same A
+    // or the factored M is not `A W`, and reordering would move the summation
+    // and with it the last bits of the correction.
     template <typename SolveFn>
     void build(SolveFn solve, int n_x,
                const std::vector<std::vector<int>>& A_cols) {
@@ -69,12 +76,23 @@ struct InvBlockConstraint {
         Lm.clear();
         if (kc <= 0) return;
 
+        std::vector<std::vector<int>> cols(kc);
+        std::vector<char> seen(n_x > 0 ? n_x : 1, 0);
+        for (int g = 0; g < kc; g++) {
+            cols[g].reserve(A_cols[g].size());
+            for (int latent : A_cols[g]) {
+                if (latent < 0 || latent >= n_x || seen[latent]) continue;
+                seen[latent] = 1;
+                cols[g].push_back(latent);
+            }
+            for (int latent : cols[g]) seen[latent] = 0;
+        }
+
         std::vector<double> e(n_x, 0.0), v(n_x, 0.0);
         W.resize(kc);
         for (int g = 0; g < kc; g++) {
             std::fill(e.begin(), e.end(), 0.0);
-            for (int latent : A_cols[g])
-                if (latent >= 0 && latent < n_x) e[latent] = 1.0;
+            for (int latent : cols[g]) e[latent] = 1.0;
             solve(e.data(), v.data());
             W[g] = v;
         }
@@ -83,15 +101,14 @@ struct InvBlockConstraint {
         for (int g1 = 0; g1 < kc; g1++) {
             for (int g2 = 0; g2 < kc; g2++) {
                 double s = 0.0;
-                for (int latent : A_cols[g1])
-                    if (latent >= 0 && latent < n_x) s += W[g2][latent];
+                for (int latent : cols[g1]) s += W[g2][latent];
                 M[static_cast<std::size_t>(g1) * kc + g2] = s;
             }
         }
 
         Lm.assign(static_cast<std::size_t>(kc) * kc, 0.0);
         usable = tulpa_linalg::chol_factor_lower<tulpa_linalg::TriLayout::RowMajor>(
-            M.data(), Lm.data(), kc, kc, /*jitter=*/-1.0);
+            M.data(), Lm.data(), kc, kc, /*nugget=*/0.0);
         if (!usable) Lm.clear();
     }
 
