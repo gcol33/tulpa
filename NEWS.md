@@ -1,5 +1,60 @@
 # tulpa NEWS
 
+## 0.1.15
+
+* **The next ten audit issues, and the one that was still a live drop**
+  (#445, #447, #448, #450, #452, #453, #454, #455, #456, #457). Nine had their
+  `src/` work already in the tree from earlier refactors and were missing the
+  arbiter their checklist named; #448 was not fixed at all.
+
+  - #448 an unreadable difference is not a smaller skew. `cell_curvature3.h`
+    states twice that a cell whose differenced Hessian comes back non-finite
+    takes the whole contraction to NaN, so a broken difference can never read
+    as an understated cubic term. The per-arm loop ten lines above the guard
+    did the opposite: a false return from `block_forms` dropped that arm and
+    let the rest of the cell sum to a finite number, and the `isfinite` check
+    below it can only see the terms that SURVIVED. `gamma_3` feeds the skew
+    correction, so understating it moves the correction toward zero -- the
+    direction that reads as "the Gaussian approximation was fine" -- and the
+    arm most likely to drop is the one where it was not. Both `block_forms`
+    exits now return NaN. `h <= 0` had collapsed two meanings into one skip:
+    an arm the probe direction does not move contributes exactly zero, which
+    is a value, while a moved arm whose step could not be sized is unreadable,
+    which is not; they are separated. The row-index reads that reach
+    `Rcpp::NumericVector::operator[]` are bounds-checked, since a cell-row
+    table disagreeing with the eta length was a read past the allocation.
+
+  - #447 one jitter semantics across the two NNGP conditional-moment cores,
+    pinned by a probe rather than by construction alone. `cpp_test_nngp_cond_cores`
+    drives `tulpa_nngp::cond_moments` and `tulpa_linalg::nngp_conditional_moments`
+    on one input: same moments at every jitter, both declining a covariance
+    that is not PD, and the jitter shown to be a NUGGET (it moves a
+    well-conditioned answer, which a pivot floor at the same value would not)
+    against R's own solve of `C + jitter I`.
+
+  - #454 the cloglog lower tail, read on relative tolerance. `cpp_link_ladder`
+    exposes `linkinv` / `mu_eta` / `mu_eta2` / `mu_eta3` so the ladder can be
+    held against `stats::binomial("cloglog")` from eta -50 up, where the
+    cancelling `1 - exp(-exp(eta))` had no correct digits left and returned
+    exactly 0 -- out of support for every consumer of the link. An absolute
+    tolerance passes on that value; a relative one does not.
+
+  - #453 a separated class reports its finite log-likelihood. Pinned at gaps
+    of 600 to 5000 against `eta_c - logsumexp(0, eta)` computed without
+    forming a probability, plus the `cls` range refusal in both directions.
+
+  - #450 the uniform centering fold lands on an all-ones intercept, and #456
+    the per-arm index and weight closures own their own length bound. Both are
+    checked at block-build time, so `cpp_test_joint_pattern` reaches them with
+    no Newton iteration. The factories now verify the per-arm vector against
+    the arm's own row count where the vector is taken, rather than resting on
+    the R producer two files away.
+
+  - #445 (SMC evidence and the tempering floor), #452 (`not_converged` on the
+    skew and debias probes), #455 (the joint arm-spec views) and #457 (the
+    two function-local statics) were verified against the current tree and
+    already carry their fix and, where one is expressible from R, their test.
+
 ## 0.1.14
 
 * **The next ten audit issues are the tests they asked for** (#427, #428, #429,

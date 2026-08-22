@@ -60,3 +60,48 @@ test_that("class probabilities are a valid simplex and overflow-safe", {
   # ll of the dominant class approx 0 (prob approx 1)
   expect_lt(abs(out$ll), 1e-6)
 })
+
+# --------------------------------------------------------------------------- #
+# (gcol33/tulpa#453) A separated class has a finite log-likelihood             #
+#                                                                              #
+# The softmax is overflow-safe on the way in and was not underflow-safe on the #
+# way back out: p_j = exp(eta_j - m) / denom flushes to exactly 0 once eta_j   #
+# sits about 745 below the shift, and log(0) is -Inf where the algebra gives a #
+# finite number near eta_c - m - log(denom). Separation in a categorical arm   #
+# is what drives one class's eta far below the others, so this is reachable    #
+# from a fit: one -Inf observation makes the whole data log-likelihood -Inf,   #
+# the Newton line search never accepts a non-finite trial, and the solve       #
+# backtracks off a point the model is perfectly well defined at.               #
+# --------------------------------------------------------------------------- #
+
+test_that("a class the softmax underflows still reports its finite value", {
+  # eta_c - logsumexp(0, eta), computed without forming a probability.
+  ll_stable <- function(eta, cls) {
+    m <- max(0, eta)
+    (if (cls <= length(eta)) eta[cls] else 0) - m - log(sum(exp(c(0, eta) - m)))
+  }
+  for (gap in c(600, 745, 800, 5000)) {
+    eta <- c(-gap, 0.4, -0.7)
+    for (cls in seq_len(length(eta) + 1L)) {
+      out <- tulpa:::cpp_multinomial_logit_terms(eta, cls)
+      expect_true(is.finite(out$ll),
+                  label = paste("ll finite at gap", gap, "class", cls))
+      expect_equal(out$ll, ll_stable(eta, cls), tolerance = 1e-12)
+    }
+  }
+  # The separated class itself: log p is about -gap, not -Inf.
+  expect_equal(tulpa:::cpp_multinomial_logit_terms(c(-800, 0.4, -0.7), 1)$ll,
+               ll_stable(c(-800, 0.4, -0.7), 1), tolerance = 1e-12)
+})
+
+test_that("cls outside 1..K is refused rather than read as the baseline", {
+  # cls <= 0 indexed p[cls - 1], before the start of the buffer; cls > K
+  # silently returned log(p_K), scoring an observation of the baseline that
+  # was never made.
+  for (bad in c(-1L, 0L, 5L, 100L)) {
+    expect_error(tulpa:::cpp_multinomial_logit_terms(c(0.3, -0.5, 1.1), bad),
+                 "1[.][.]4")
+  }
+  expect_error(tulpa:::cpp_multinomial_logit_terms(numeric(0), 1L),
+               "at least one entry")
+})

@@ -118,3 +118,62 @@ test_that("the tensor builder refuses an unregistered spec by name", {
                                  y = list(0), family = "binomial", phi = 1),
     "not registered")
 })
+
+# --------------------------------------------------------------------------- #
+# (gcol33/tulpa#448) An unreadable difference is not a smaller skew            #
+#                                                                              #
+# gamma_3 feeds the skew correction, and understating it moves the correction  #
+# toward zero -- the direction that reads as "the Gaussian approximation was   #
+# fine". A cell whose arm the difference quotient could not be formed on is    #
+# precisely a cell where it was not, so the term most likely to drop is the    #
+# term that mattered most. The contraction reports NaN there.                  #
+#                                                                              #
+# The per-arm drop and the whole-cell drop are not separable on this fixture:  #
+# a CellCouplingSpec is evaluated cell-globally, so a non-finite eta or        #
+# direction anywhere in the cell takes every arm's quotient down together.     #
+# What is pinned here is the contract at the door -- no non-finite input ever  #
+# comes back as a number -- and, below it, that the fix did not turn the one   #
+# legitimate skip into a decline.                                              #
+# --------------------------------------------------------------------------- #
+
+test_that("no non-finite input is scored as a finite cubic term", {
+  skip_on_cran()
+  .c3_register()
+  a <- 0.35; v <- c(-0.6, 0.2, -1.1, 0.4)
+  u_a <- 0.17; u_v <- c(0.05, -0.09, 0.13, 0.02)
+  y <- rep(0, 4)
+  expect_true(is.finite(.c3_tensor(a, v, u_a, u_v, y)))
+
+  for (bad in c(NaN, Inf, -Inf)) {
+    for (step in c(TRUE, FALSE)) {
+      # non-finite eta, on either arm
+      expect_true(is.na(.c3_tensor(bad, v, u_a, u_v, y, step)))
+      expect_true(is.na(.c3_tensor(a, replace(v, 2L, bad), u_a, u_v, y, step)))
+      # non-finite direction, on either arm
+      expect_true(is.na(.c3_tensor(a, v, bad, u_v, y, step)))
+      expect_true(is.na(.c3_tensor(a, v, u_a, replace(u_v, 3L, bad), y, step)))
+    }
+  }
+})
+
+test_that("an arm the direction leaves alone is a zero, not a decline", {
+  skip_on_cran()
+  .c3_register()
+  # The one skip inside the per-arm loop that is a VALUE: an arm with no
+  # displacement contributes exactly zero to the cubic form, so the cell is
+  # still scorable through the arm that did move. Reading it as unreadable
+  # would decline every probe direction confined to one arm.
+  a <- 0.35; v <- c(-0.6, 0.2, -1.1, 0.4); y <- rep(0, 4)
+  occ_only <- .c3_tensor(a, v, 0.17, rep(0, 4), y)
+  det_only <- .c3_tensor(a, v, 0.0,  c(0.05, -0.09, 0.13, 0.02), y)
+  expect_true(is.finite(occ_only))
+  expect_true(is.finite(det_only))
+  expect_false(occ_only == 0)
+  expect_false(det_only == 0)
+  # And each reproduces a direct third derivative of the cell log-density. The
+  # detection-only direction lands near 4e-06, where the five-point stencil is
+  # itself dominated by cancellation, so it is read on the looser tolerance.
+  expect_equal(occ_only, .c3_brute(a, v, 0.17, rep(0, 4), y), tolerance = 1e-3)
+  expect_equal(det_only, .c3_brute(a, v, 0.0, c(0.05, -0.09, 0.13, 0.02), y),
+               tolerance = 0.1)
+})

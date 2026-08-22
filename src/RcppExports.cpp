@@ -586,6 +586,18 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_link_ladder
+Rcpp::NumericMatrix cpp_link_ladder(Rcpp::NumericVector eta, std::string link);
+RcppExport SEXP _tulpa_cpp_link_ladder(SEXP etaSEXP, SEXP linkSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type eta(etaSEXP);
+    Rcpp::traits::input_parameter< std::string >::type link(linkSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_link_ladder(eta, link));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_gp_field_predict
 Rcpp::NumericVector cpp_gp_field_predict(const Rcpp::NumericMatrix& new_coords, const Rcpp::NumericMatrix& unique_coords, const Rcpp::NumericMatrix& field_grid, const Rcpp::NumericVector& sigma2_grid, const Rcpp::NumericVector& phi_grid, const Rcpp::NumericVector& weights, int nn, int cov_type);
 RcppExport SEXP _tulpa_cpp_gp_field_predict(SEXP new_coordsSEXP, SEXP unique_coordsSEXP, SEXP field_gridSEXP, SEXP sigma2_gridSEXP, SEXP phi_gridSEXP, SEXP weightsSEXP, SEXP nnSEXP, SEXP cov_typeSEXP) {
@@ -1129,6 +1141,23 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< double >::type var_floor(var_floorSEXP);
     Rcpp::traits::input_parameter< int >::type layout(layoutSEXP);
     rcpp_result_gen = Rcpp::wrap(cpp_test_nngp_moments(Lbuf, n, c_vec, w_nb, sigma2, var_floor, layout));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_test_nngp_cond_cores
+Rcpp::List cpp_test_nngp_cond_cores(Rcpp::NumericVector Cbuf, int n, Rcpp::NumericVector c_vec, Rcpp::NumericVector w_nb, double sigma2, double jitter, double var_floor);
+RcppExport SEXP _tulpa_cpp_test_nngp_cond_cores(SEXP CbufSEXP, SEXP nSEXP, SEXP c_vecSEXP, SEXP w_nbSEXP, SEXP sigma2SEXP, SEXP jitterSEXP, SEXP var_floorSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type Cbuf(CbufSEXP);
+    Rcpp::traits::input_parameter< int >::type n(nSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type c_vec(c_vecSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type w_nb(w_nbSEXP);
+    Rcpp::traits::input_parameter< double >::type sigma2(sigma2SEXP);
+    Rcpp::traits::input_parameter< double >::type jitter(jitterSEXP);
+    Rcpp::traits::input_parameter< double >::type var_floor(var_floorSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_nngp_cond_cores(Cbuf, n, c_vec, w_nb, sigma2, jitter, var_floor));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -4600,6 +4629,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_family_ad_terms", (DL_FUNC) &_tulpa_cpp_family_ad_terms, 6},
     {"_tulpa_cpp_glmm_elt_terms", (DL_FUNC) &_tulpa_cpp_glmm_elt_terms, 5},
     {"_tulpa_cpp_test_laplace_gaussian", (DL_FUNC) &_tulpa_cpp_test_laplace_gaussian, 3},
+    {"_tulpa_cpp_link_ladder", (DL_FUNC) &_tulpa_cpp_link_ladder, 2},
     {"_tulpa_cpp_gp_field_predict", (DL_FUNC) &_tulpa_cpp_gp_field_predict, 8},
     {"_tulpa_cpp_gpu_available", (DL_FUNC) &_tulpa_cpp_gpu_available, 0},
     {"_tulpa_cpp_gpu_backend_kind", (DL_FUNC) &_tulpa_cpp_gpu_backend_kind, 0},
@@ -4632,6 +4662,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_test_tri_solve", (DL_FUNC) &_tulpa_cpp_test_tri_solve, 5},
     {"_tulpa_cpp_test_chol_factor", (DL_FUNC) &_tulpa_cpp_test_chol_factor, 3},
     {"_tulpa_cpp_test_nngp_moments", (DL_FUNC) &_tulpa_cpp_test_nngp_moments, 7},
+    {"_tulpa_cpp_test_nngp_cond_cores", (DL_FUNC) &_tulpa_cpp_test_nngp_cond_cores, 7},
     {"_tulpa_cpp_mclmc_test", (DL_FUNC) &_tulpa_cpp_mclmc_test, 7},
     {"_tulpa_cpp_multinomial_logit_terms", (DL_FUNC) &_tulpa_cpp_multinomial_logit_terms, 2},
     {"_tulpa_cpp_nested_laplace_icar", (DL_FUNC) &_tulpa_cpp_nested_laplace_icar, 24},

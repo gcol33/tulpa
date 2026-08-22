@@ -174,7 +174,7 @@ struct NestedOmpLevels {
 // doesn't re-resolve the list each call.
 inline std::function<int(int, int)> make_per_arm_idx_fn(
     const Rcpp::List& per_arm_idx_list, int n_arms, const char* field_name,
-    int block_index
+    int block_index, const std::vector<tulpa::JointArm>* arms_ptr
 ) {
     if (static_cast<int>(per_arm_idx_list.size()) != n_arms) {
         Rcpp::stop("blocks_spec[[%d]]$%s must be a list of length n_arms (%d), got %d.",
@@ -185,6 +185,18 @@ inline std::function<int(int, int)> make_per_arm_idx_fn(
     cache.reserve(n_arms);
     for (int k = 0; k < n_arms; k++) {
         cache.push_back(Rcpp::as<Rcpp::IntegerVector>(per_arm_idx_list[k]));
+        // The closure reads cache[k_arm][i] for every row i of arm k with no
+        // bounds check, so a vector shorter than that arm reads past the
+        // allocation the first time a grid cell scatters those rows. The
+        // guarantee is checked here, where the vector is taken, rather than
+        // resting on the R producer alone.
+        if (arms_ptr && k < static_cast<int>(arms_ptr->size()) &&
+            cache[k].size() < (*arms_ptr)[k].N) {
+            Rcpp::stop("blocks_spec[[%d]]$%s[[%d]] holds %d entries but arm %d "
+                       "has %d observations.", block_index + 1, field_name,
+                       k + 1, static_cast<int>(cache[k].size()), k + 1,
+                       (*arms_ptr)[k].N);
+        }
     }
     return [cache](int i, int k_arm) -> int {
         return cache[k_arm][i];
@@ -194,11 +206,11 @@ inline std::function<int(int, int)> make_per_arm_idx_fn(
 // Build a per-arm per-row weight closure from an Rcpp::List of per-arm
 // NumericVectors (areal SVC). Mirrors make_per_arm_idx_fn: caches the
 // per-arm vectors so per-grid-point eta evaluation does not re-resolve the
-// list. The R side validates lengths; this only checks the list shape.
-// Returns an empty std::function when the spec carries no svc_weight, so the
-// block's row_weight stays unset (uniform weight 1, no behavior change).
+// list. Returns an empty std::function when the spec carries no svc_weight, so
+// the block's row_weight stays unset (uniform weight 1, no behavior change).
 inline std::function<double(int, int)> make_per_arm_row_weight_fn(
-    const Rcpp::List& bs, int n_arms, int block_index
+    const Rcpp::List& bs, int n_arms, int block_index,
+    const std::vector<tulpa::JointArm>* arms_ptr
 ) {
     if (!bs.containsElementNamed("svc_weight") ||
         Rf_isNull(bs["svc_weight"])) {
@@ -215,6 +227,14 @@ inline std::function<double(int, int)> make_per_arm_row_weight_fn(
     cache.reserve(n_arms);
     for (int k = 0; k < n_arms; k++) {
         cache.push_back(Rcpp::as<Rcpp::NumericVector>(w_list[k]));
+        // Same unchecked per-row read as make_per_arm_idx_fn.
+        if (arms_ptr && k < static_cast<int>(arms_ptr->size()) &&
+            cache[k].size() < (*arms_ptr)[k].N) {
+            Rcpp::stop("blocks_spec[[%d]]$svc_weight[[%d]] holds %d entries but "
+                       "arm %d has %d observations.", block_index + 1, k + 1,
+                       static_cast<int>(cache[k].size()), k + 1,
+                       (*arms_ptr)[k].N);
+        }
     }
     return [cache](int i, int k_arm) -> double {
         return cache[k_arm][i];
@@ -475,8 +495,8 @@ int build_joint_blocks_from_spec(
         block.start = start;
         block.size  = size;
         block.idx   = make_per_arm_idx_fn(spatial_idx_list, n_arms,
-                                            "spatial_idx", block_index);
-        block.row_weight = make_per_arm_row_weight_fn(bs, n_arms, block_index);
+                                            "spatial_idx", block_index, arms_ptr);
+        block.row_weight = make_per_arm_row_weight_fn(bs, n_arms, block_index, arms_ptr);
 
         if (is_copy_block) {
             require_axes(2);  // (sigma_donor, sigma_copy)
@@ -641,9 +661,9 @@ int build_joint_blocks_from_spec(
             size, adj_rp.begin(), adj_ci.begin());
 
         auto idx_fn = make_per_arm_idx_fn(spatial_idx_list, n_arms,
-                                           "spatial_idx", block_index);
+                                           "spatial_idx", block_index, arms_ptr);
         auto row_weight_fn = make_per_arm_row_weight_fn(bs, n_arms,
-                                                        block_index);
+                                                        block_index, arms_ptr);
 
         std::function<double(int, int)> arm_scale_fn;
         std::function<double(int)>      d_fac_phi_fn;
@@ -770,8 +790,8 @@ int build_joint_blocks_from_spec(
         block.start = start;
         block.size  = size;
         block.idx   = make_per_arm_idx_fn(spatial_idx_list, n_arms,
-                                            "spatial_idx", block_index);
-        block.row_weight = make_per_arm_row_weight_fn(bs, n_arms, block_index);
+                                            "spatial_idx", block_index, arms_ptr);
+        block.row_weight = make_per_arm_row_weight_fn(bs, n_arms, block_index, arms_ptr);
 
         if (is_copy_block) {
             require_axes(3);  // (sigma_donor, sigma_copy, rho_car)
@@ -896,11 +916,11 @@ int build_joint_blocks_from_spec(
         block.start = start;
         block.size  = size;
         block.idx   = make_per_arm_idx_fn(temporal_idx_list, n_arms,
-                                            "temporal_idx", block_index);
+                                            "temporal_idx", block_index, arms_ptr);
         // Optional per-arm per-row design weight (temporal varying coefficient):
         // eta_i += svc_weight[[k]][i] * amplitude * f[time_i]. The areal
         // analogue of the icar/bym2/car_proper svc_weight; unset => uniform 1.
-        block.row_weight = make_per_arm_row_weight_fn(bs, n_arms, block_index);
+        block.row_weight = make_per_arm_row_weight_fn(bs, n_arms, block_index, arms_ptr);
         block.d_fac = [](int) -> double { return 1.0; };
 
         // Copy block: unit-precision prior (tau = 1) with the per-arm
@@ -993,10 +1013,10 @@ int build_joint_blocks_from_spec(
         block.start = start;
         block.size  = size;
         block.idx   = make_per_arm_idx_fn(temporal_idx_list, n_arms,
-                                            "temporal_idx", block_index);
+                                            "temporal_idx", block_index, arms_ptr);
         // Optional per-arm per-row design weight (temporal varying coefficient),
         // as for rw1/rw2 above; unset => uniform 1.
-        block.row_weight = make_per_arm_row_weight_fn(bs, n_arms, block_index);
+        block.row_weight = make_per_arm_row_weight_fn(bs, n_arms, block_index, arms_ptr);
         block.d_fac = [](int) -> double { return 1.0; };
 
         // Copy block: unit-precision prior (tau = 1), per-arm amplitude on
@@ -1063,12 +1083,12 @@ int build_joint_blocks_from_spec(
         block.start = start;
         block.size  = size;
         block.idx   = make_per_arm_idx_fn(obs_idx_list, n_arms,
-                                            "obs_idx", block_index);
+                                            "obs_idx", block_index, arms_ptr);
         // Optional per-arm per-row design weight (random slope on a covariate
         // column): eta_i += svc_weight[k][i] * d_fac * arm_scale * u[obs_idx_i].
         // Mirrors the icar / rw1 SVC path; unset => weight 1, byte-identical to
         // the plain random-intercept iid block.
-        block.row_weight = make_per_arm_row_weight_fn(bs, n_arms, block_index);
+        block.row_weight = make_per_arm_row_weight_fn(bs, n_arms, block_index, arms_ptr);
 
         // Copy block: the unit-precision prior is unchanged (an IID field is
         // already N(0, I)); the per-arm amplitude (donor: sigma, copy:
@@ -1147,7 +1167,7 @@ int build_joint_blocks_from_spec(
         int size = Rcpp::as<int>(bs["n_latent"]);
         Rcpp::List obs_idx_list = bs["obs_idx"];
         auto obs_idx_fn = make_per_arm_idx_fn(obs_idx_list, n_arms,
-                                                "obs_idx", block_index);
+                                                "obs_idx", block_index, arms_ptr);
 
         Rcpp::List Q_p_list = bs["Q_csc_p_per_grid"];
         Rcpp::List Q_i_list = bs["Q_csc_i_per_grid"];
@@ -1290,7 +1310,7 @@ int build_joint_blocks_from_spec(
         int n_latent = Rcpp::as<int>(bs["n_latent"]);
         Rcpp::List obs_idx_list = bs["obs_idx"];
         auto obs_idx_fn = make_per_arm_idx_fn(obs_idx_list, n_arms,
-                                                "obs_idx", block_index);
+                                                "obs_idx", block_index, arms_ptr);
 
         double sigma_u      = bs.containsElementNamed("sigma_u")
                                   ? Rcpp::as<double>(bs["sigma_u"])      : 1.0;

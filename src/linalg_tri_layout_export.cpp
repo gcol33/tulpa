@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "linalg_fast.h"
+#include "nngp_cond.h"
 
 namespace {
 
@@ -101,4 +102,44 @@ Rcpp::List cpp_test_nngp_moments(Rcpp::NumericVector Lbuf, int n,
   return Rcpp::List::create(Rcpp::Named("cond_mean") = cond_mean,
                             Rcpp::Named("cond_var") = cond_var,
                             Rcpp::Named("alpha") = Rcpp::wrap(alpha));
+}
+
+// The two NNGP conditional-moment cores on one input. tulpa_nngp::cond_moments
+// is the templated core the autodiff and value kernels run;
+// tulpa_linalg::nngp_conditional_moments is the double core the Laplace and
+// batched paths run. `jitter` is a diagonal NUGGET in both: C_jj + jitter
+// before the factorization, so it is part of the density being evaluated. A
+// pivot FLOOR at the same number leaves a well-conditioned input untouched and
+// replaces an ill-conditioned one, which is a divergence confined to exactly
+// the inputs where it matters and invisible in the result.
+//
+// `ok` is each core's own report of a non-PD neighbour covariance, which the
+// two must also agree on: a core that cannot decline hands its caller kriged
+// moments off an unusable factor.
+// [[Rcpp::export]]
+Rcpp::List cpp_test_nngp_cond_cores(Rcpp::NumericVector Cbuf, int n,
+                                    Rcpp::NumericVector c_vec,
+                                    Rcpp::NumericVector w_nb, double sigma2,
+                                    double jitter, double var_floor) {
+  std::vector<double> C(Cbuf.begin(), Cbuf.end());
+  std::vector<double> c_t(c_vec.begin(), c_vec.end());
+  std::vector<double> w_t(w_nb.begin(), w_nb.end());
+
+  double t_mean = 0.0, t_var = 0.0;
+  const bool t_ok = tulpa_nngp::cond_moments<double>(
+      C, c_t, w_t, n, sigma2, jitter, var_floor,
+      tulpa_nngp::VarFloor::Clamp, t_mean, t_var);
+
+  double d_mean = 0.0, d_var = 0.0;
+  const bool d_ok = tulpa_linalg::nngp_conditional_moments(
+      C.data(), c_t.data(), w_t.data(), n, sigma2, jitter, var_floor,
+      d_mean, d_var);
+
+  return Rcpp::List::create(
+      Rcpp::Named("templated_ok")   = t_ok,
+      Rcpp::Named("templated_mean") = t_mean,
+      Rcpp::Named("templated_var")  = t_var,
+      Rcpp::Named("plain_ok")       = d_ok,
+      Rcpp::Named("plain_mean")     = d_mean,
+      Rcpp::Named("plain_var")      = d_var);
 }

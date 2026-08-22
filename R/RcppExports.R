@@ -165,6 +165,10 @@ cpp_test_laplace_gaussian <- function(y, eta, phi) {
     .Call(`_tulpa_cpp_test_laplace_gaussian`, y, eta, phi)
 }
 
+cpp_link_ladder <- function(eta, link) {
+    .Call(`_tulpa_cpp_link_ladder`, eta, link)
+}
+
 cpp_gp_field_predict <- function(new_coords, unique_coords, field_grid, sigma2_grid, phi_grid, weights, nn, cov_type) {
     .Call(`_tulpa_cpp_gp_field_predict`, new_coords, unique_coords, field_grid, sigma2_grid, phi_grid, weights, nn, cov_type)
 }
@@ -291,6 +295,10 @@ cpp_test_chol_factor <- function(Abuf, n, layout) {
 
 cpp_test_nngp_moments <- function(Lbuf, n, c_vec, w_nb, sigma2, var_floor, layout) {
     .Call(`_tulpa_cpp_test_nngp_moments`, Lbuf, n, c_vec, w_nb, sigma2, var_floor, layout)
+}
+
+cpp_test_nngp_cond_cores <- function(Cbuf, n, c_vec, w_nb, sigma2, jitter, var_floor) {
+    .Call(`_tulpa_cpp_test_nngp_cond_cores`, Cbuf, n, c_vec, w_nb, sigma2, jitter, var_floor)
 }
 
 cpp_mclmc_test <- function(mu_target, sigma_target, init, n_iter = 2000L, n_warmup = 1000L, seed = 42L, adjusted = FALSE) {

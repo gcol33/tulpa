@@ -173,3 +173,50 @@ test_that("a hurdle spelling is answered with the composition, not the registry"
     expect_false(grepl("Unknown family", msg), info = nm)
   }
 })
+
+# --------------------------------------------------------------------------- #
+# (gcol33/tulpa#454) The cloglog lower tail, on relative tolerance             #
+#                                                                              #
+# mu = 1 - exp(-exp(eta)) cancels as exp(eta) shrinks: the outer subtraction   #
+# loses a digit per decade of |eta| and rounds to exactly 0 once exp(eta)      #
+# falls below the double spacing at 1, near eta = -36.7. mu = 0 is outside the #
+# support of every consumer of the link, so what reaches log_lik_mu is the     #
+# clamp floor rather than the probability, and the gradient built from it is   #
+# wrong by the same factor. -expm1(-a) is exact for every a > 0.               #
+#                                                                              #
+# Read against R's own link on RELATIVE tolerance: an absolute one passes on a #
+# value with no correct digits left.                                           #
+# --------------------------------------------------------------------------- #
+
+test_that("cloglog matches stats::binomial on relative tolerance into the tail", {
+  eta <- c(seq(-50, 5, by = 0.25), -745, -100, -37, -36.7, -20, -1e-8)
+  R_lk <- stats::binomial("cloglog")
+  lad <- cpp_link_ladder(eta, "cloglog")
+
+  expect_true(all(lad[, "linkinv"] > 0),
+              label = "no eta returns mu = 0, which is out of support")
+  expect_equal(lad[, "linkinv"], R_lk$linkinv(eta), tolerance = 1e-14)
+  expect_equal(lad[, "mu_eta"],  R_lk$mu.eta(eta),  tolerance = 1e-14)
+
+  # In the deep tail mu -> exp(eta) to first order; that is the value the
+  # cancelling form loses entirely.
+  deep <- eta[eta < -40]
+  expect_equal(lad[eta < -40, "linkinv"], exp(deep), tolerance = 1e-12)
+})
+
+test_that("the cloglog derivative ladder is its own finite difference", {
+  # mu_eta2 / mu_eta3 carry the same cancellation risk one and two derivatives
+  # in (-expm1(eta) is the second's stable form), and both reach a gradient.
+  eta <- c(-30, -10, -3, -0.5, 0, 0.7, 1.8)
+  h <- 1e-5
+  lad <- function(e) cpp_link_ladder(e, "cloglog")
+  for (j in seq_along(eta)) {
+    e <- eta[j]
+    d1 <- (lad(e + h)[1, "linkinv"] - lad(e - h)[1, "linkinv"]) / (2 * h)
+    d2 <- (lad(e + h)[1, "mu_eta"]  - lad(e - h)[1, "mu_eta"])  / (2 * h)
+    d3 <- (lad(e + h)[1, "mu_eta2"] - lad(e - h)[1, "mu_eta2"]) / (2 * h)
+    expect_equal(unname(lad(e)[1, "mu_eta"]),  unname(d1), tolerance = 1e-6)
+    expect_equal(unname(lad(e)[1, "mu_eta2"]), unname(d2), tolerance = 1e-6)
+    expect_equal(unname(lad(e)[1, "mu_eta3"]), unname(d3), tolerance = 1e-6)
+  }
+})

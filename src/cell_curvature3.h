@@ -283,6 +283,15 @@ struct CellCurvature3Tensor {
         double total = 0.0;
         bool any = false;
 
+        // The two eta vectors are indexed by the arm id the cell-row table
+        // carries, and Rcpp::NumericVector::operator[] is unchecked, so a table
+        // that disagrees with what was handed in is a read past the allocation
+        // rather than an error. An unreadable input is not a small skew.
+        const int n_arms_eta = static_cast<int>(eta0.size());
+        if (static_cast<int>(eta1.size()) != n_arms_eta) {
+            return std::numeric_limits<double>::quiet_NaN();
+        }
+
         for (int c = 0; c < in.n_cells; c++) {
             bool moved = false;
             for (int kk = 0; kk < K; kk++) {
@@ -290,6 +299,11 @@ struct CellCurvature3Tensor {
                 const std::vector<int>& rows = (*in.cell_rows)[kk][c];
                 const int n = static_cast<int>(rows.size());
                 rc[kk] = n;
+                if (k < 0 || k >= n_arms_eta ||
+                    eta1[k].size() != eta0[k].size()) {
+                    return std::numeric_limits<double>::quiet_NaN();
+                }
+                const int n_eta = static_cast<int>(eta0[k].size());
                 if ((int)eta_local[kk].size() < n) {
                     eta_local[kk].assign(n, 0.0);
                     u_local[kk].assign(n, 0.0);
@@ -299,8 +313,12 @@ struct CellCurvature3Tensor {
                 for (int j = 0; j < n; j++) rows_local[kk][j] = j;
                 double me = 0.0, mu = 0.0;
                 for (int j = 0; j < n; j++) {
-                    const double e0 = eta0[k][rows[j]];
-                    const double du = eta1[k][rows[j]] - e0;
+                    const int r = rows[j];
+                    if (r < 0 || r >= n_eta) {
+                        return std::numeric_limits<double>::quiet_NaN();
+                    }
+                    const double e0 = eta0[k][r];
+                    const double du = eta1[k][r] - e0;
                     eta_local[kk][j] = e0;
                     u_local[kk][j]   = du;
                     me = std::max(me, std::fabs(e0));
@@ -322,20 +340,32 @@ struct CellCurvature3Tensor {
             std::fill(bf.begin(), bf.end(), 0.0);
             std::fill(have.begin(), have.end(), 0);
             for (int a = 0; a < K; a++) {
+                // An arm the probe direction does not move contributes exactly
+                // zero. A MOVED arm whose step could not be sized -- a
+                // non-finite eta or displacement, which is what both step
+                // helpers signal by returning 0 -- is unreadable, and dropping
+                // it would report a smaller cubic term rather than none.
+                if (max_u[a] == 0.0) continue;
                 const double h = in.per_arm_step
                     ? curvature3_block_step(max_eta[a], max_u[a]) : h_global;
-                if (!(h > 0.0)) continue;
+                if (!(h > 0.0)) {
+                    return std::numeric_limits<double>::quiet_NaN();
+                }
 
                 for (int kk = 0; kk < K; kk++) {
                     for (int j = 0; j < rc[kk]; j++) eta_pert[kk][j] = eta_local[kk][j];
                 }
                 for (int j = 0; j < rc[a]; j++) eta_pert[a][j] += h * u_local[a][j];
-                if (!block_forms(c, qp)) continue;
+                if (!block_forms(c, qp)) {
+                    return std::numeric_limits<double>::quiet_NaN();
+                }
 
                 for (int j = 0; j < rc[a]; j++) {
                     eta_pert[a][j] = eta_local[a][j] - h * u_local[a][j];
                 }
-                if (!block_forms(c, qm)) continue;
+                if (!block_forms(c, qm)) {
+                    return std::numeric_limits<double>::quiet_NaN();
+                }
 
                 const double inv = 1.0 / (2.0 * h);
                 for (int b = 0; b < K; b++) {

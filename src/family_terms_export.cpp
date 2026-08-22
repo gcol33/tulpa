@@ -451,3 +451,26 @@ Rcpp::NumericVector cpp_test_laplace_gaussian(double y, double eta, double phi) 
       Rcpp::_["grad"]     = tulpa::grad_log_lik_gaussian(y, eta, phi),
       Rcpp::_["neg_hess"] = tulpa::neg_hess_log_lik_gaussian(y, eta, phi));
 }
+
+// The link ladder itself, vectorized over eta. The mean and its first three
+// eta-derivatives all reach a gradient, and each is a place a difference of
+// two nearly-equal quantities can cancel: cloglog's mu is 1 - exp(-exp(eta)),
+// which loses a digit per decade of |eta| in the lower tail and rounds to
+// exactly 0 -- outside the support of every consumer of the link -- once
+// exp(eta) falls below the double spacing at 1. Reading these against R's own
+// link functions on RELATIVE tolerance is what sees that; an absolute one
+// passes on a value that has no correct digits left.
+// [[Rcpp::export]]
+Rcpp::NumericMatrix cpp_link_ladder(Rcpp::NumericVector eta, std::string link) {
+  const int n = eta.size();
+  Rcpp::NumericMatrix out(n, 4);
+  Rcpp::colnames(out) = Rcpp::CharacterVector::create(
+      "linkinv", "mu_eta", "mu_eta2", "mu_eta3");
+  for (int i = 0; i < n; i++) {
+    out(i, 0) = tulpa::linkinv(eta[i], link);
+    out(i, 1) = tulpa::mu_eta(eta[i], link);
+    out(i, 2) = tulpa::mu_eta2(eta[i], link);
+    out(i, 3) = tulpa::mu_eta3(eta[i], link);
+  }
+  return out;
+}
