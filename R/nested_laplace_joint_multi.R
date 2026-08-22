@@ -521,12 +521,25 @@
         # latent vector and co-optimized by the inner Newton. No outer-
         # grid axes -- identifiability handled by tight Gaussian anchors
         # on (u_1, lambda_1) inside the C++ factory.
+        #
+        # The unit count is checked BEFORE the indices are checked against it:
+        # an `n_latent` of 1 makes every real index out of range, so validating
+        # the indices first reports the block's shape error as an index error.
+        # The C++ factory keeps its own copy of this check for a consumer that
+        # builds the block through `LinkingTo` rather than this door.
+        n_latent <- as.integer(p$n_latent)
+        if (length(n_latent) != 1L || is.na(n_latent) || n_latent < 2L) {
+            stop("Block ", block_index, " (type 'lf'): `n_latent` must be at ",
+                 "least 2 (got ", format(p$n_latent), "). The factor field ",
+                 "needs a second slot for the anchor on (u_1, lambda_1) to ",
+                 "leave anything free.", call. = FALSE)
+        }
         obs_idx <- .multi_block_per_arm_idx(p$obs_idx, n_arms,
                                               block_index, "obs_idx",
-                                              arm_n_obs, p$n_latent)
+                                              arm_n_obs, n_latent)
         out <- list(
             type     = "lf",
-            n_latent = as.integer(p$n_latent),
+            n_latent = n_latent,
             obs_idx  = obs_idx
         )
         if (!is.null(p$sigma_u))      out$sigma_u      <- as.numeric(p$sigma_u)
@@ -632,16 +645,41 @@
         for (k in seq_len(n_arms)) {
             v <- out[[k]]
             if (length(v) == 0L) next
-            bad <- is.na(v) | v < 1L | v > n_units
+            # The kernel's contract for a block index is that `l > 0 && l <=
+            # size` contributes and anything else is skipped (LatentBlock::idx,
+            # and every scatter that reads it). A non-positive entry is
+            # therefore the documented "this observation does not reach this
+            # block" sentinel -- what an arm-exclusive block spells on the arms
+            # it does not reach -- and is accepted. An entry ABOVE n_units names
+            # a latent unit that does not exist: the kernel drops it just as
+            # silently, and there is no reading under which that was meant.
+            bad <- is.na(v) | v > n_units
             if (any(bad)) {
                 i <- which(bad)[1L]
                 stop("Block ", block_index, ": `", field_name, "[[", k, "]][",
-                     i, "]` is ", v[i], ", outside 1..", n_units,
-                     " (", sum(bad), " of ", length(v), " entries are). Every ",
-                     "index must name one of the block's latent units; an ",
-                     "out-of-range one is silently dropped by the kernel, ",
-                     "which fits a different model and reports convergence. A ",
-                     "0-based index vector is the usual cause.", call. = FALSE)
+                     i, "]` is ", v[i], ", above the block's unit count ",
+                     n_units, " (", sum(bad), " of ", length(v),
+                     " entries are). Every positive index must name one of the ",
+                     "block's latent units; an out-of-range one is silently ",
+                     "dropped by the kernel, which fits a different model and ",
+                     "reports convergence. Use 0 (or any non-positive value) ",
+                     "for an observation that does not reach this block.",
+                     call. = FALSE)
+            }
+            # A COMPLETE 0-based enumeration is the one pattern likelier to be
+            # an off-by-one than a sentinel: every unit but the last named, and
+            # the unnamed slot filled by the value that also means "skip". A
+            # sentinel pattern reaching exactly 1..n_units-1 and never n_units
+            # is possible, so this warns rather than rejecting.
+            if (n_units > 1L && any(v == 0L) &&
+                setequal(unique(v), seq.int(0L, n_units - 1L))) {
+                warning("Block ", block_index, ": `", field_name, "[[", k,
+                        "]]` takes every value in 0..", n_units - 1L,
+                        " and never ", n_units, ", the signature of a 0-based ",
+                        "index vector. Indices are 1-based and 0 means \"this ",
+                        "observation does not reach this block\", so unit ",
+                        n_units, " would go unreached and every other ",
+                        "observation would land one unit low.", call. = FALSE)
             }
         }
     }

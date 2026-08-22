@@ -1080,8 +1080,7 @@
                  dimnames = list(NULL, "value"))
   }
   # Empty grid (no outer-grid axes -- e.g. an lf-only fit): nothing to
-  # quantilize; return empty named vectors. paste0 recycles the prefix
-  # past zero-length integers, so we guard ncol(tg) == 0 explicitly.
+  # quantilize; return empty named vectors.
   if (ncol(tg) == 0L) {
     empty <- setNames(numeric(0), character(0))
     empty_c <- setNames(character(0), character(0))
@@ -1090,7 +1089,7 @@
                 edge_coord = empty_c, edge_declined = empty_c,
                 outside_nodes = empty_c))
   }
-  nms <- colnames(tg) %||% paste0("V", seq_len(ncol(tg)))
+  nms <- .nl_axis_names(tg)
   n_ax <- length(nms)
   lo  <- setNames(rep(NA_real_, n_ax), nms)
   med <- setNames(rep(NA_real_, n_ax), nms)
@@ -1193,7 +1192,7 @@
   if (is.null(dim(tg))) {
     tg <- matrix(as.numeric(tg), ncol = 1L, dimnames = list(NULL, "value"))
   }
-  nms <- colnames(tg) %||% paste0("V", seq_len(ncol(tg)))
+  nms <- .nl_axis_names(tg)
   n_ax <- length(nms)
   h  <- setNames(rep(NA_real_, n_ax), nms)
   sd <- setNames(rep(NA_real_, n_ax), nms)
@@ -1289,6 +1288,18 @@
 .nl_within_cell_mode <- function(x) {
   if (is.null(x)) return(.nl_diag("within_cell"))
   match.arg(as.character(x), .NL_WITHIN_CELL)
+}
+
+# The per-axis names of an outer grid. `paste0` recycles a scalar prefix past a
+# zero-length integer, so `paste0("V", seq_len(0))` is the length-1 "V" and not
+# `character(0)`: an unnamed 0-column grid -- what a fit whose only block
+# carries no outer axis produces, e.g. `type = "lf"` -- would otherwise report
+# one phantom axis and index past the grid. Reading the count off `ncol()`
+# rather than off the generated names is what makes an empty grid empty here.
+.nl_axis_names <- function(tg) {
+  d <- ncol(tg)
+  if (d == 0L) return(character(0))
+  colnames(tg) %||% paste0("V", seq_len(d))
 }
 
 .nl_axis_marginal_logdensity <- function(vals, log_marg, keep = NULL) {

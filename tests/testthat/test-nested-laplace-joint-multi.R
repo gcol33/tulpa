@@ -279,3 +279,112 @@ test_that("joint multi-block (BYM2 copy + AR1 + IID) runs end-to-end", {
     expect_true(is.finite(fit$theta_mean[["b1.alpha"]]))
     expect_true(fit$theta_mean[["b1.alpha"]] > 0)
 })
+
+# --------------------------------------------------------------------------- #
+# (3) Per-arm block index contract (gcol33/tulpa#593)                          #
+#                                                                              #
+# `LatentBlock::idx` contributes when `l > 0 && l <= size` and skips otherwise, #
+# at every scatter that reads it. So a non-positive entry is the arm-exclusion  #
+# sentinel and an entry above the unit count is an error.                       #
+# --------------------------------------------------------------------------- #
+
+.pai <- function(...) tulpa:::.multi_block_per_arm_idx(...)
+
+test_that("a non-positive index is the no-contribution sentinel, not an error", {
+    # Whole arm excluded.
+    expect_identical(
+        .pai(list(rep(0L, 4L), 1:4), n_arms = 2L, block_index = 1L,
+             field_name = "obs_idx", arm_n_obs = c(4L, 4L), n_units = 4L),
+        list(rep(0L, 4L), 1:4))
+    # Per-row exclusion mixed with real indices, and the -1 spelling
+    # latent_block.h documents alongside 0.
+    expect_identical(
+        .pai(list(c(1L, 0L, 3L, -1L)), n_arms = 1L, block_index = 1L,
+             field_name = "obs_idx", arm_n_obs = 4L, n_units = 3L),
+        list(c(1L, 0L, 3L, -1L)))
+})
+
+test_that("an index above the unit count is rejected, and says so", {
+    expect_error(
+        .pai(list(c(1L, 5L)), n_arms = 1L, block_index = 2L,
+             field_name = "obs_idx", arm_n_obs = 2L, n_units = 4L),
+        "above the block's unit count 4")
+    expect_error(
+        .pai(list(c(1L, NA_integer_)), n_arms = 1L, block_index = 1L,
+             field_name = "spatial_idx", arm_n_obs = 2L, n_units = 4L),
+        "spatial_idx")
+})
+
+test_that("a complete 0-based enumeration warns without rejecting", {
+    expect_warning(
+        out <- .pai(list(0:3), n_arms = 1L, block_index = 1L,
+                    field_name = "obs_idx", arm_n_obs = 4L, n_units = 4L),
+        "signature of a 0-based index vector")
+    expect_identical(out, list(0:3))
+    # A sentinel pattern that is NOT the complete enumeration stays silent:
+    # unit 4 is reached, so nothing is one low.
+    expect_silent(
+        .pai(list(c(0L, 1L, 4L)), n_arms = 1L, block_index = 1L,
+             field_name = "obs_idx", arm_n_obs = 3L, n_units = 4L))
+})
+
+test_that("an arm-excluded block does not move that arm's mode (#593)", {
+    skip_on_cran()
+    set.seed(593L)
+    n <- 60L; n_g <- 5L
+    grp <- rep(seq_len(n_g), length.out = n)
+    X   <- matrix(1, n, 1)
+    arm <- function(y) list(y = y, n_trials = rep(1L, n), X = X,
+                            family = "gaussian", phi = 1,
+                            re_idx = rep(0, n), n_re_groups = 0L,
+                            sigma_re = 1.0)
+    ya <- rnorm(n, 0.4, 1); yb <- rnorm(n, -0.2, 1)
+    run <- function(idx_a) tulpa_nested_laplace_joint(
+        responses = list(a = arm(ya), b = arm(yb)),
+        prior = list(list(type = "iid", n_units = n_g,
+                          sigma_grid = seq(0.2, 1.5, length.out = 4L),
+                          obs_idx = list(idx_a, grp))),
+        control = list(adaptive_grid = FALSE, diagnose_k = FALSE,
+                       n_threads = 1L, verbose = FALSE))
+
+    excluded <- run(rep(0L, n))
+    reached  <- run(grp)
+    expect_equal(nrow(excluded$modes), 4L)
+
+    # Arm a's intercept is latent slot 1. With the block excluded from arm a it
+    # cannot depend on the block's scale, so it is the SAME at every cell of the
+    # sigma grid. With the block reaching arm a it moves.
+    beta_a_excluded <- excluded$modes[, 1L]
+    beta_a_reached  <- reached$modes[, 1L]
+    expect_equal(stats::sd(beta_a_excluded), 0, tolerance = 1e-12)
+    expect_gt(stats::sd(beta_a_reached), 1e-6)
+
+    # Arm b keeps the block on both fits, so its own mode still moves with
+    # sigma -- the sentinel removed the block from one arm and not the other.
+    b_slot <- ncol(excluded$modes) - n_g   # arm b's intercept precedes the field
+    expect_gt(stats::sd(excluded$modes[, b_slot]), 1e-6)
+})
+
+# --------------------------------------------------------------------------- #
+# (4) A fit whose blocks carry no outer axis (gcol33/tulpa#594)                 #
+# --------------------------------------------------------------------------- #
+
+test_that("axis names of a 0-column grid are empty, not one phantom axis", {
+    tg <- matrix(numeric(0), nrow = 3L, ncol = 0L)
+    # paste0("V", seq_len(0)) is the length-1 "V", which is the whole bug.
+    expect_identical(tulpa:::.nl_axis_names(tg), character(0))
+    expect_identical(tulpa:::.nl_axis_names(matrix(1:6, 3, 2)), c("V1", "V2"))
+    expect_identical(
+        tulpa:::.nl_axis_names(matrix(1:6, 3, 2,
+                                      dimnames = list(NULL, c("s", "t")))),
+        c("s", "t"))
+})
+
+test_that("the axis-resolution read of a 0-column grid is empty", {
+    tg <- matrix(numeric(0), nrow = 2L, ncol = 0L)
+    rs <- tulpa:::.nl_axis_resolution(tg, log_marginal = c(-1, -2))
+    expect_length(rs$h, 0L)
+    expect_length(rs$sd, 0L)
+    expect_length(rs$h_over_sd, 0L)
+    expect_length(rs$declined, 0L)
+})
