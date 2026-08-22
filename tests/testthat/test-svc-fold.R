@@ -115,5 +115,5 @@ test_that("areal SVC: a declared column that does not match the weight errors", 
   # alias -- a mismatch that would silently shift eta. It must error, not fit.
   expect_error(
     .svc_fit(arm, .svc_icar_block(adj, s, x, 1 / c(0.8, 1.2)^2, beta_offset = 0L)),
-    "does not match the field weight")
+    "must carry the field weight")
 })
