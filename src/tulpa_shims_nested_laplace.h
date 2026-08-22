@@ -8,8 +8,14 @@
 // into the caller's NestedLaplaceShimResult. Backend-specific grid vectors
 // are passed in by the caller and not echoed back through the shim.
 
+// NOT A HEADER. This is a textual fragment with no include guard: it defines
+// functions with external linkage and is included, exactly once, from
+// tulpa_shims.cpp. Including it from a second translation unit gives two
+// definitions of each and fails at link time.
+
 #include "shim_guard.h"
 #include <climits>
+#include <vector>
 
 namespace {
 
@@ -60,6 +66,11 @@ inline void copy_nested_laplace_result(
     if (has_modes) {
         Rcpp::NumericMatrix modes = out["modes"];
         int n_x = modes.ncol();
+        if ((int)modes.nrow() != n_grid) {
+            Rcpp::stop("nested-Laplace result malformed: nrow(modes) (%d) != "
+                       "length(log_marginal) (%d).",
+                       (int)modes.nrow(), n_grid);
+        }
         result_out->store_modes = 1;
         result_out->n_x = n_x;
         result_out->modes = new double[(size_t)n_grid * (size_t)n_x];
@@ -95,18 +106,17 @@ inline void copy_nested_laplace_result(
                        (int)Qx_list.size(), n_grid);
         }
 
-        result_out->store_Q = 1;
-        result_out->Q_n     = Q_n;
-        result_out->Q_grid_nnz  = new int[n_grid];
-        result_out->Q_p_offsets = new int[n_grid + 1];
-        result_out->Q_x_offsets = new int[n_grid + 1];
-
-        // First pass: collect per-grid nnz and build offset tables. The
-        // offset arrays are int (exported ABI), so accumulate in 64-bit and
-        // reject a grid whose flattened size would wrap instead of letting
-        // the int products overflow (UB).
-        result_out->Q_p_offsets[0] = 0;
-        result_out->Q_x_offsets[0] = 0;
+        // First pass: validate every block and size the offset tables. Nothing
+        // is allocated and store_Q stays 0 until this pass has passed, because
+        // shim_guard turns an Rcpp::stop into a longjmp that runs no
+        // destructors -- an allocation made before the throw would leak and
+        // leave the struct claiming Q data it has none of. The offset arrays
+        // are int (exported ABI), so accumulate in 64-bit and reject a grid
+        // whose flattened size would wrap instead of letting the int products
+        // overflow.
+        std::vector<int> nnz(n_grid, 0);
+        std::vector<int> p_offsets(n_grid + 1, 0);
+        std::vector<int> x_offsets(n_grid + 1, 0);
         long long x_run = 0;
         for (int k = 0; k < n_grid; k++) {
             Rcpp::IntegerVector pv = Qp_list[k];
@@ -128,7 +138,7 @@ inline void copy_nested_laplace_result(
                            "!= Q_csc_n + 1 (%d).",
                            k + 1, (int)pv.size(), Q_n + 1);
             }
-            result_out->Q_grid_nnz[k] = nnz_k;
+            nnz[k] = nnz_k;
             long long p_off = (static_cast<long long>(k) + 1) *
                               (static_cast<long long>(Q_n) + 1);
             x_run += nnz_k;
@@ -137,12 +147,22 @@ inline void copy_nested_laplace_result(
                            "exceed INT_MAX (n_grid = %d, Q_n = %d).",
                            n_grid, Q_n);
             }
-            result_out->Q_p_offsets[k + 1] = static_cast<int>(p_off);
-            result_out->Q_x_offsets[k + 1] = static_cast<int>(x_run);
+            p_offsets[k + 1] = static_cast<int>(p_off);
+            x_offsets[k + 1] = static_cast<int>(x_run);
         }
 
-        int p_total = result_out->Q_p_offsets[n_grid];
-        int x_total = result_out->Q_x_offsets[n_grid];
+        int p_total = p_offsets[n_grid];
+        int x_total = x_offsets[n_grid];
+        result_out->store_Q     = 1;
+        result_out->Q_n         = Q_n;
+        result_out->Q_grid_nnz  = new int[n_grid];
+        result_out->Q_p_offsets = new int[n_grid + 1];
+        result_out->Q_x_offsets = new int[n_grid + 1];
+        for (int k = 0; k < n_grid; k++) result_out->Q_grid_nnz[k] = nnz[k];
+        for (int k = 0; k <= n_grid; k++) {
+            result_out->Q_p_offsets[k] = p_offsets[k];
+            result_out->Q_x_offsets[k] = x_offsets[k];
+        }
         result_out->Q_p_flat = new int[p_total];
         result_out->Q_i_flat = new int[x_total];
         result_out->Q_x_flat = new double[x_total];
@@ -692,12 +712,8 @@ extern "C" void tulpa_nested_laplace_spde_impl(
     TULPA_SHIM_GUARD_END("tulpa_nested_laplace_spde")
 }
 
-// Joint multi-likelihood nested-Laplace C-ABI shim removed in Phase J-E.
-// The legacy `cpp_nested_laplace_joint_bym2` kernel was deleted along
-// with the matching `cpp_nested_laplace_joint_{icar,car_proper}` kernels
-// when the single-block joint path was routed through
-// `cpp_nested_laplace_joint_multi` (`R/nested_laplace_joint.R`'s
-// `.joint_call_kernel_via_multi`). External callers that previously
-// embedded the BYM2 joint path via the C-ABI should invoke
-// `tulpa_nested_laplace_joint()` from R (or rebuild a shim on top of
-// `cpp_nested_laplace_joint_multi`).
+// There is no C-ABI shim for the joint multi-likelihood nested Laplace. An
+// external caller reaches that path by invoking `tulpa_nested_laplace_joint()`
+// from R, or by building a shim on top of `cpp_nested_laplace_joint_multi`,
+// which is where the single-block joint path routes too
+// (`R/nested_laplace_joint.R`'s `.joint_call_kernel_via_multi`).

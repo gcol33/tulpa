@@ -43,24 +43,13 @@ T gaussian_likelihood(
     const auto* gd = static_cast<const GaussianData*>(model_data);
     T residual = T(gd->y[i]) - eta[0];
     T log_sigma = params[layout.extra_offset];  // log(residual SD)
-    // Normal log-density on log scale (no exp needed):
-    // log N(y|mu,sigma) = -log_sigma - 0.5*(y-mu)^2/sigma^2
-    // = -log_sigma - 0.5*(y-mu)^2 * exp(-2*log_sigma)
-    // Rewrite to avoid sigma^2: use -log_sigma - 0.5 * residual^2 * exp(-2*log_sigma)
+    // Normal log-density up to constants, in log_sigma:
+    //   log p = -log_sigma - 0.5 * r^2 * exp(-2 * log_sigma)
     T neg_log_sigma = T(0.0) - log_sigma;
-    // Precision = 1/sigma^2 = exp(-2*log_sigma). For AD types, log_post_impl.h
-    // has safe_exp overloads. Use the two_log_sigma form directly:
     T half_resid_sq = T(0.5) * residual * residual;
-    // log-density = -log_sigma - half_resid_sq * exp(-2*log_sigma)
-    // We express exp(-2*log_sigma) as 1/sigma^2 without needing exp at all:
-    // since the only thing that matters for MCMC is log-density up to constants,
-    // we can parametrize as tau = log(precision) = -2*log_sigma:
-    //   log p = 0.5*tau - 0.5*exp(tau)*residual^2
-    // But this still needs exp. The simplest AD-compatible approach:
-    // Write -log_sigma - 0.5*r^2/sigma^2 = -log_sigma - 0.5*r^2*exp(-2*log_sigma)
-    // The arena::exp and fwd::exp are available via ADL when T is arena::Var / fwd::Dual
     T neg_two_ls = neg_log_sigma + neg_log_sigma;
-    // For T=double: use std::exp; for T=arena::Var: uses tulpa::arena::exp via ADL
+    // `exp` resolves through ADL: std::exp for T = double, tulpa::arena::exp
+    // for arena::Var, fwd::exp for fwd::Dual.
     using std::exp;
     T precision = exp(neg_two_ls);
     return neg_log_sigma - half_resid_sq * precision;
@@ -229,6 +218,21 @@ Rcpp::List cpp_tulpa_fit_gaussian(
 ) {
     const int N = y_r.size();
     const int p = X_r.ncol();
+
+    if (N < 1) Rcpp::stop("cpp_tulpa_fit_gaussian: `y` is empty.");
+    if ((int)X_r.nrow() != N) {
+        Rcpp::stop("cpp_tulpa_fit_gaussian: nrow(X) (%d) must equal length(y) "
+                   "(%d).", (int)X_r.nrow(), N);
+    }
+    if (p < 1) Rcpp::stop("cpp_tulpa_fit_gaussian: `X` has no columns.");
+    if (n_iter < 1) {
+        Rcpp::stop("cpp_tulpa_fit_gaussian: n_iter (%d) must be at least 1.",
+                   n_iter);
+    }
+    if (n_warmup < 0 || n_warmup >= n_iter) {
+        Rcpp::stop("cpp_tulpa_fit_gaussian: n_warmup (%d) must be in "
+                   "[0, n_iter) with n_iter = %d.", n_warmup, n_iter);
+    }
 
     // Set up model-specific response data
     GaussianData gd;

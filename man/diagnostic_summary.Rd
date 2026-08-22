@@ -23,17 +23,17 @@ A list with class \code{tulpa_diagnostic_summary} containing:
 \item{pareto_k, quad_ess}{approximation fits only: the outer PSIS k-hat,
 or the grid quadrature ESS when no k-hat was produced}
 \item{pareto_k_declined}{approximation fits only, and only when there is no
-k-hat: WHY (gcol33/tulpa#295) -- \code{"not_requested"} and
+k-hat: WHY -- \code{"not_requested"} and
 \code{"unguessable_axis: <axis>"} are benign or permanent,
 \code{"degenerate_proposal"} and \code{"grid_too_small"} are signals about the fit,
 and \code{"internal_inconsistency"} is an engine bug and raises the status to
 \code{"WARN"}}
 \item{inner_skew_max, inner_skew_declined}{approximation fits only: the
 largest scored inner-Laplace \verb{|gamma_3|}, or why nothing was scored
-(gcol33/tulpa#296 -- \code{"coupled_arm"} marks arms the inner layer could
+(\code{"coupled_arm"} marks arms the inner layer could
 score neither per observation nor through the cell tensor)}
 \item{axis_fields_dropped}{data frame of grid axes the fit's own resolved
-path could not read and dropped as engine defaults (gcol33/tulpa#352):
+path could not read and dropped as engine defaults:
 one row per field, with the block, family, path and the axis that path
 integrated instead. Absent whenever every supplied axis was used}
 \item{recommendations}{Character vector of recommendations}

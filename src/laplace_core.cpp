@@ -18,6 +18,7 @@
 #include <Rcpp.h>
 #include <cmath>
 #include <algorithm>
+#include <string>
 #include <vector>
 
 #ifdef _OPENMP
@@ -127,15 +128,11 @@ Rcpp::List cpp_laplace_fit(
     bool compute_skew = false,
     Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
 ) {
-    // Fixed effects + optional single iid RE, through the unified spec solver
-    // (the family-enum laplace_mode_dense was retired in B2-live). sigma_beta =
-    // 100 reproduces the historical weak ridge tau_beta = 1e-4 = DEFAULT_TAU_BETA.
+    // Fixed effects + optional single iid RE, through the unified spec solver.
+    // sigma_beta = 100 is the weak ridge tau_beta = 1e-4 = DEFAULT_TAU_BETA.
     const int N = y.size();
-    std::vector<int> re_group;
-    if (n_re_groups > 0) {
-        re_group.resize(N);
-        for (int i = 0; i < N; i++) re_group[i] = (int)re_idx[i];
-    }
+    std::vector<int> re_group =
+        tulpa::as_re_group_vec(re_idx, n_re_groups, N);
     tulpa::SpecFamilyInputs in;
     tulpa::build_spec_family_inputs(
         in, y, n, X, re_group, n_re_groups, sigma_re, family, phi,
@@ -153,7 +150,7 @@ Rcpp::List cpp_laplace_fit(
     return tulpa::laplace_result_to_list(res);
 }
 
-// `debias` (gcol33/tulpa#304) is the subspace-debias request: a list carrying
+// `debias` is the subspace-debias request: a list carrying
 // `idx` (the 1-based latent index set to correct by Metropolis along the
 // Gaussian-conditional-mean surface) and the optional sweep budget `n_iter` /
 // `warmup` / `thin`. An absent or empty index set leaves the solve bit-for-bit
@@ -184,8 +181,7 @@ Rcpp::List cpp_laplace_fit_multi_re(
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue
 ) {
     // Multi-term RE (intercept / slopes / correlated) + built-in family through
-    // the unified spec solver (the family-enum laplace_mode_dense_multi_re was
-    // retired in B2-live). Marshals the R-facing inputs into the multi-term
+    // the unified spec solver. Marshals the R-facing inputs into the multi-term
     // ModelData / ParamLayout the spec path consumes, converting each term's
     // `pack` (marginal SDs or a packed Sigma-Cholesky) into the spec log-Cholesky
     // parameterization, and preserves every input: weights, offset, the full
@@ -353,8 +349,22 @@ Rcpp::List cpp_laplace_fit_multi_re(
     std::vector<std::vector<double>> term_log_sigma(K), term_tanh_raw(K);
     for (int t = 0; t < K; t++) {
         Rcpp::NumericVector sig = Rcpp::as<Rcpp::NumericVector>(re_sigma_list[t]);
-        tulpa::pack_to_spec_re_params(sig.begin(), ncoefs[t], data.re_correlated[t],
-                                      term_log_sigma[t], term_tanh_raw[t]);
+        const int q = ncoefs[t];
+        const R_xlen_t need = data.re_correlated[t]
+            ? (R_xlen_t)q * (q + 1) / 2
+            : (R_xlen_t)q;
+        if (sig.size() != need) {
+            Rcpp::stop("re_sigma_list[[%d]] must have length %d for a %s "
+                       "term with %d coefficient(s), got %d.",
+                       t + 1, (int)need,
+                       data.re_correlated[t] ? "correlated" : "diagonal",
+                       q, (int)sig.size());
+        }
+        const std::string label =
+            "re_sigma_list[[" + std::to_string(t + 1) + "]]";
+        tulpa::pack_to_spec_re_params(sig.begin(), q, data.re_correlated[t],
+                                      term_log_sigma[t], term_tanh_raw[t],
+                                      label.c_str());
     }
 
     // --- ParamLayout: [beta | sigma slots | chol slots | RE effects], the

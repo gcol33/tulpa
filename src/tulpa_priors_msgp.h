@@ -7,9 +7,13 @@
 #ifndef TULPA_PRIORS_MSGP_H
 #define TULPA_PRIORS_MSGP_H
 
+#include <Rcpp.h>
+#include <algorithm>
+#include <cstddef>
 #include <vector>
 #include <cmath>
 #include "autodiff_utils.h"
+#include "hsgp_spectral.h"
 #include "hmc_gp_autodiff.h"
 
 namespace tulpa {
@@ -85,13 +89,13 @@ T compute_multiscale_gp_prior(const std::vector<T>& params, const ModelData& dat
                 T beta_regional_j = params[layout.gp_regional_start + j];
 
                 // Spectral density for local scale
-                T S_local_j = sigma2_local_h * T(2.0 * M_PI) * ls_local * ls_local
-                    * safe_exp(T(-0.5) * ls_local * ls_local * T(omega_sq));
+                T S_local_j = hsgp_spectral_density_2d(sigma2_local_h, ls_local,
+                                                       omega_sq);
                 T scaled_local_j = safe_sqrt(S_local_j) * beta_local_j;
 
                 // Spectral density for regional scale
-                T S_regional_j = sigma2_regional_h * T(2.0 * M_PI) * ls_regional * ls_regional
-                    * safe_exp(T(-0.5) * ls_regional * ls_regional * T(omega_sq));
+                T S_regional_j = hsgp_spectral_density_2d(sigma2_regional_h,
+                                                          ls_regional, omega_sq);
                 T scaled_regional_j = safe_sqrt(S_regional_j) * beta_regional_j;
 
                 for (int ii = 0; ii < data.N; ii++) {
@@ -135,8 +139,8 @@ T compute_multiscale_gp_prior(const std::vector<T>& params, const ModelData& dat
             // scales apart, now through the prior's mass rather than a wall.
             //
             // This replaces a Uniform behind a hard `return -INFINITY` outside
-            // (lower, upper). That form had the two defects gcol33/tulpa#144
-            // fixed on the GP and SVC paths, which this block escaped only by
+            // (lower, upper). That form had the two defects since fixed on
+            // the GP and SVC paths, which this block escaped only by
             // being unreachable until its front door was wired: the rejection
             // sits inside an autodiff log-posterior, so a step outside the box
             // yields no usable gradient and NUTS books it as a divergence; and
@@ -144,7 +148,7 @@ T compute_multiscale_gp_prior(const std::vector<T>& params, const ModelData& dat
             // Uniform on phi itself, whose mean is the box centre -- with the
             // library defaults that put the regional prior mean at 5.5, several
             // times a unit-square domain's diameter. Measured at 82-88% of
-            // post-warmup draws divergent (gcol33/tulpa#244).
+            // post-warmup draws divergent.
             log_post = log_post + log_prior_range_pc_at_log(
                 log_phi_local, data.multiscale_gp_data.range_local_lower,
                 data.multiscale_gp_data.range_local_prior_alpha);
@@ -167,7 +171,7 @@ T compute_multiscale_gp_prior(const std::vector<T>& params, const ModelData& dat
                 // ms_gp_effect this branch would otherwise compute inline;
                 // here we add only the two z priors. Avoids the same
                 // field/hyperparameter funnel gp_parameterization documents,
-                // applied independently per scale (gcol33/tulpa#243).
+                // applied independently per scale.
                 //
                 // RSR is not supported on this path, matching
                 // compute_gp_spatial_prior's non-centered branch (RSR only
@@ -196,6 +200,19 @@ T compute_multiscale_gp_prior(const std::vector<T>& params, const ModelData& dat
 
                 // Apply RSR projection if enabled
                 if (data.has_rsr && !data.rsr_projection.empty()) {
+                    if (data.rsr_n != n_gp_local || data.rsr_n != n_gp_regional) {
+                        Rcpp::stop("RSR projection: rsr_n (%d) must equal both "
+                                   "multiscale field lengths (local %d, "
+                                   "regional %d).",
+                                   data.rsr_n, n_gp_local, n_gp_regional);
+                    }
+                    if (data.rsr_projection.size() <
+                            (std::size_t)data.rsr_n * (std::size_t)data.rsr_n) {
+                        Rcpp::stop("RSR projection: rsr_projection holds %d "
+                                   "entries but rsr_n = %d needs %d.",
+                                   (int)data.rsr_projection.size(), data.rsr_n,
+                                   data.rsr_n * data.rsr_n);
+                    }
                     std::vector<T> local_proj(data.rsr_n, T(0.0));
                     std::vector<T> regional_proj(data.rsr_n, T(0.0));
                     for (int ii = 0; ii < data.rsr_n; ii++) {
@@ -216,10 +233,29 @@ T compute_multiscale_gp_prior(const std::vector<T>& params, const ModelData& dat
                     sigma2_local_n, phi_local, sigma2_regional_n, phi_regional,
                     data.multiscale_gp_data);
 
-                // Precompute combined effect at observation level
+                // Precompute combined effect at observation level. The
+                // projection above can have changed the field length, so the
+                // observation map is checked against what it now indexes.
+                const std::vector<int>& obs_to_loc =
+                    data.multiscale_gp_data.obs_to_loc;
+                if ((int)obs_to_loc.size() < data.N) {
+                    Rcpp::stop("Multiscale GP: obs_to_loc has %d entries but "
+                               "the model has %d observations.",
+                               (int)obs_to_loc.size(), data.N);
+                }
+                const int n_field = (int)std::min(ms_gp_w_local.size(),
+                                                  ms_gp_w_regional.size());
+                for (int ii = 0; ii < data.N; ii++) {
+                    const int loc = obs_to_loc[ii];
+                    if (loc < 0 || loc >= n_field) {
+                        Rcpp::stop("Multiscale GP: obs_to_loc[%d] is %d; it "
+                                   "must lie in [0, %d).",
+                                   ii + 1, loc, n_field);
+                    }
+                }
                 ms_gp_effect.resize(data.N, T(0.0));
                 for (int ii = 0; ii < data.N; ii++) {
-                    int loc = data.multiscale_gp_data.obs_to_loc[ii];
+                    int loc = obs_to_loc[ii];
                     ms_gp_effect[ii] = ms_gp_w_local[loc] + ms_gp_w_regional[loc];
                 }
             }

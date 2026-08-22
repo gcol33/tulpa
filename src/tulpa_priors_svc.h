@@ -10,6 +10,7 @@
 #include <vector>
 #include <cmath>
 #include "autodiff_utils.h"
+#include "hsgp_spectral.h"
 #include "pc_prior.h"
 #include "hmc_svc_autodiff.h"
 
@@ -65,8 +66,7 @@ T compute_svc_prior(const std::vector<T>& params, const ModelData& data,
 
                     // Compute scaled beta: sqrt(S(eigenvalue_k, sigma2_j, ls_j)) * beta_jk
                     double omega_sq = data.svc_hsgp_data.eigenvalues[k];
-                    T S_k = sigma2_j * T(2.0 * M_PI) * ls_j * ls_j *
-                            safe_exp(T(-0.5) * ls_j * ls_j * T(omega_sq));
+                    T S_k = hsgp_spectral_density_2d(sigma2_j, ls_j, omega_sq);
                     T sqrt_S_k = safe_sqrt(S_k);
 
                     // Accumulate f_j[i] = sum_k phi[i,k] * sqrt_S_k * beta_jk
@@ -119,7 +119,7 @@ T compute_svc_prior(const std::vector<T>& params, const ModelData& data,
                 // the field/hyperparameter funnel the centered
                 // parameterization collapses under a diagonal mass matrix --
                 // the same fix as compute_gp_spatial_prior's gp_parameterization
-                // branch (gcol33/tulpa#243).
+                // branch.
                 //
                 // No z -> w Jacobian: z_j is a genuine auxiliary with its own
                 // N(0, I) prior and w_j is a deterministic function of

@@ -128,7 +128,7 @@ Each completed CCD / grid node (one inner Laplace solve) is cached to
 only the rest. \code{resume = FALSE} starts fresh. A file written for
 different data, layout, or grid is rejected (fingerprint mismatch).
 Default \code{NULL} (off).
-\item \code{subspace_debias}: subspace debias (gcol33/tulpa#304), \code{FALSE} by
+\item \code{subspace_debias}: subspace debias, \code{FALSE} by
 default. \code{TRUE} takes every default; a list overrides \code{band} (the
 inner-reliability floor a coordinate is selected at, default \code{"ok"}),
 \code{idx} (pin the corrected set explicitly, skipping the selector),

@@ -7,6 +7,8 @@
 #ifndef TULPA_PRIORS_GP_H
 #define TULPA_PRIORS_GP_H
 
+#include <Rcpp.h>
+#include <cstddef>
 #include <vector>
 #include <cmath>
 #include "autodiff_utils.h"
@@ -80,6 +82,17 @@ T compute_gp_spatial_prior(const std::vector<T>& params, const ModelData& data,
 
             // Apply RSR projection if enabled
             if (data.has_rsr && !data.rsr_projection.empty()) {
+                if (data.rsr_n != n_gp) {
+                    Rcpp::stop("RSR projection: rsr_n (%d) must equal the GP "
+                               "field length (%d).", data.rsr_n, n_gp);
+                }
+                if (data.rsr_projection.size() <
+                        (std::size_t)data.rsr_n * (std::size_t)data.rsr_n) {
+                    Rcpp::stop("RSR projection: rsr_projection holds %d entries "
+                               "but rsr_n = %d needs %d.",
+                               (int)data.rsr_projection.size(), data.rsr_n,
+                               data.rsr_n * data.rsr_n);
+                }
                 std::vector<T> w_projected(data.rsr_n, T(0.0));
                 for (int ii = 0; ii < data.rsr_n; ii++) {
                     for (int jj = 0; jj < data.rsr_n; jj++) {

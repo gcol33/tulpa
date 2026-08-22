@@ -20,7 +20,7 @@ namespace tulpa {
 // L = total number of tables created
 int sample_crt(int y, double r) {
   if (y <= 0) return 0;
-  if (r <= 0.0) return 0;  // Degenerate case: all at one table
+  if (r <= 0.0) return 0;  // Outside the support of r: no table is opened
 
   int L = 0;
 

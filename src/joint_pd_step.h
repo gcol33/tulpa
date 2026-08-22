@@ -47,6 +47,14 @@ inline constexpr int    JOINT_LM_MAX_TRIES    = 32;
 inline constexpr double JOINT_LM_RIDGE_INIT   = 1e-6;
 inline constexpr double JOINT_LM_RIDGE_GROWTH = 9.0;
 
+// Eigen-clamp floor: the smallest eigenvalue the clamped spectrum may hold,
+// as a fraction of the largest absolute eigenvalue, with an absolute lower
+// bound for a matrix whose whole spectrum is tiny. The relative form caps the
+// clamped matrix's condition number at 1 / JOINT_PSD_FLOOR_REL; the absolute
+// one keeps the floor away from zero when lam_max itself is below 1.
+inline constexpr double JOINT_PSD_FLOOR_REL = 1e-8;
+inline constexpr double JOINT_PSD_FLOOR_ABS = 1e-10;
+
 // Eigen-clamp step: solve H delta = grad from the symmetric eigendecomposition
 // of `Hd` with the spectrum clamped to a positive floor. `out_log_det`, when
 // non-null, receives the log-determinant of the clamped matrix. `out_modified`
@@ -62,7 +70,8 @@ inline bool pd_eigen_clamp_solve(
     if (es.info() != Eigen::Success) return false;
     Eigen::VectorXd ev = es.eigenvalues();
     const double lam_max = ev.cwiseAbs().maxCoeff();
-    const double floor = std::max(1e-8 * std::max(lam_max, 1.0), 1e-10);
+    const double floor = std::max(JOINT_PSD_FLOOR_REL * std::max(lam_max, 1.0),
+                                  JOINT_PSD_FLOOR_ABS);
     double log_det = 0.0;
     bool clamped = false;
     for (int i = 0; i < n_x; ++i) {

@@ -39,6 +39,7 @@
 #include <Rcpp.h>
 #include <cmath>
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -103,6 +104,22 @@ inline LatentBlock make_nngp_block(
                        "got %d).",
                        block_index + 1, k + 1, k + 1, N_k,
                        static_cast<int>(sidx.size()));
+        }
+        // Every consumer of block.idx tests the returned value against
+        // blk.size, so an out-of-range entry drops that row from the field
+        // silently in all of them. 0 is the "no field on this row" encoding.
+        for (int i = 0; i < N_k; i++) {
+            if (sidx[i] == NA_INTEGER || sidx[i] < 0 || sidx[i] > n_spatial) {
+                Rcpp::stop("Block %d (type 'nngp'): "
+                           "spatial_idx_per_arm[[%d]][%d] is %s; it must be 0 "
+                           "(no field on this row) or a 1-based index in "
+                           "[1, %d].",
+                           block_index + 1, k + 1, i + 1,
+                           sidx[i] == NA_INTEGER
+                               ? "NA"
+                               : std::to_string(sidx[i]).c_str(),
+                           n_spatial);
+            }
         }
         (*sidx_per_arm)[k] = sidx;
     }
@@ -177,10 +194,9 @@ inline LatentBlock make_nngp_block(
 
     // No dense `add_prior`: the NNGP prior is scattered through the sparse
     // builder only, and blocks_require_sparse() reads that off the block rather
-    // than every caller remembering to pass force_sparse. The dense twin was
-    // deleted in 0.0.124 -- it reproduced the same Lambda to ~1e-16 relative
-    // (gcol33/tulpa#278), so it was a second unexercised implementation, not a
-    // second answer.
+    // than every caller remembering to pass force_sparse. One scatter is the
+    // whole of the prior: a dense twin would be a second implementation of the
+    // same Lambda with nothing exercising it.
 
     block.log_prior = [cell_cache, start, n_spatial, nn, nn_idx, nn_order](
         const Rcpp::NumericVector& x, int k_grid

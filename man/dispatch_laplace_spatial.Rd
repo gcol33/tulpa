@@ -26,6 +26,6 @@ dispatch_laplace_spatial(
 \code{BuiltinFamilyResponse::weights} channel the non-spatial route uses, which
 scales each row's log-density, score and Fisher curvature by the same \code{w_i},
 so the mode these kernels return and the marginal precision
-\verb{.marginal_H_beta_*()} builds at it describe one model (gcol33/tulpa#385).
+\verb{.marginal_H_beta_*()} builds at it describe one model.
 }
 \keyword{internal}

@@ -33,7 +33,7 @@ this function samples.}
 correlated block (default \code{n_coefs + 1}, the minimal proper choice) and as
 the scalar inverse-gamma shape for every diagonal block (default 2). Must
 leave each block's prior proper -- unlike \code{\link[=tulpa_re_cov_nested]{tulpa_re_cov_nested()}} /
-\code{\link[=tulpa_eb]{tulpa_eb()}} (\code{hyperprior = "flat"} by default, gcol33/tulpa#268), the
+\code{\link[=tulpa_eb]{tulpa_eb()}} (\code{hyperprior = "flat"} by default), the
 \code{Sigma_m | b_m} conjugate draw here needs a proper Inverse-Wishart to
 sample from, so an improper flat prior is not an option; the minimal-\code{df}
 default is the closest analogue this sampler can offer.}

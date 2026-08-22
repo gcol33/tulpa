@@ -63,6 +63,23 @@ inline std::vector<double> as_weights_vec(
     return std::vector<double>(w.begin(), w.end());
 }
 
+// Copy the R-facing per-observation RE group index into the int vector the
+// spec marshalling takes. Empty when the model carries no RE term, so the
+// caller's `n_re_groups > 0` test alone decides whether the term is fitted.
+inline std::vector<int> as_re_group_vec(
+    const Rcpp::NumericVector& re_idx, int n_re_groups, int N
+) {
+    std::vector<int> re_group;
+    if (n_re_groups <= 0) return re_group;
+    if ((int)re_idx.size() != N) {
+        Rcpp::stop("length(re_idx) (%d) must equal length(y) (%d).",
+                   (int)re_idx.size(), N);
+    }
+    re_group.resize(N);
+    for (int i = 0; i < N; i++) re_group[i] = (int)re_idx[i];
+    return re_group;
+}
+
 // Convert an R-facing (1-based, possibly NULL) skew_idx into the 0-based probe
 // vector compute_inner_skew_gamma3 (inner_laplace_skew.h) expects, writing into
 // caller-owned `storage` and returning a pointer into it (nullptr when either
@@ -76,7 +93,18 @@ inline const std::vector<int>* unwrap_skew_idx(
     if (!compute_skew || skew_idx.isNull()) return nullptr;
     Rcpp::IntegerVector idx_r(skew_idx);
     storage.resize(idx_r.size());
-    for (int k = 0; k < idx_r.size(); k++) storage[k] = idx_r[k] - 1;
+    for (int k = 0; k < idx_r.size(); k++) {
+        // n_x is not in scope here, so the upper bound is left to
+        // inner_probe_column(); NA_INTEGER is INT_MIN, so subtracting 1 from it
+        // is signed overflow before any consumer sees the value.
+        if (idx_r[k] == NA_INTEGER || idx_r[k] < 1) {
+            Rcpp::stop("skew_idx[%d] is %s; latent indices are 1-based.",
+                       k + 1,
+                       idx_r[k] == NA_INTEGER ? "NA"
+                                              : std::to_string(idx_r[k]).c_str());
+        }
+        storage[k] = idx_r[k] - 1;
+    }
     return &storage;
 }
 
@@ -100,7 +128,15 @@ inline const SubspaceDebiasOptions* unwrap_debias(
     Rcpp::IntegerVector idx_r = spec["idx"];
     if (idx_r.size() == 0) return nullptr;
     storage.idx.resize(idx_r.size());
-    for (int k = 0; k < idx_r.size(); k++) storage.idx[k] = idx_r[k] - 1;
+    for (int k = 0; k < idx_r.size(); k++) {
+        if (idx_r[k] == NA_INTEGER || idx_r[k] < 1) {
+            Rcpp::stop("debias$idx[%d] is %s; latent indices are 1-based.",
+                       k + 1,
+                       idx_r[k] == NA_INTEGER ? "NA"
+                                              : std::to_string(idx_r[k]).c_str());
+        }
+        storage.idx[k] = idx_r[k] - 1;
+    }
     if (spec.containsElementNamed("n_iter")) storage.n_iter = Rcpp::as<int>(spec["n_iter"]);
     if (spec.containsElementNamed("warmup")) storage.n_warmup = Rcpp::as<int>(spec["warmup"]);
     if (spec.containsElementNamed("thin"))   storage.thin = Rcpp::as<int>(spec["thin"]);
@@ -202,7 +238,38 @@ inline void build_spec_family_inputs(
 ) {
     const int N = y.size();
     const int p = X.ncol();
-    const bool has_re = (n_re_groups > 0) && ((int)re_group_1based.size() == N);
+    if ((int)X.nrow() != N) {
+        Rcpp::stop("nrow(X) (%d) must equal length(y) (%d).",
+                   (int)X.nrow(), N);
+    }
+    if ((int)n_trials.size() != N) {
+        Rcpp::stop("length(n_trials) (%d) must equal length(y) (%d).",
+                   (int)n_trials.size(), N);
+    }
+    // A mismatched grouping vector would otherwise drop the whole RE term and
+    // return a converged fixed-effects fit for a model nobody asked for.
+    if (n_re_groups > 0 && (int)re_group_1based.size() != N) {
+        Rcpp::stop("length(re_idx) (%d) must equal length(y) (%d) when "
+                   "n_re_groups (%d) is positive.",
+                   (int)re_group_1based.size(), N, n_re_groups);
+    }
+    // Every caller writes log(sigma_re) into the params vector, so a
+    // non-positive scale starts the solve from a non-finite point.
+    if (n_re_groups > 0 && (!(sigma_re > 0.0) || !std::isfinite(sigma_re))) {
+        Rcpp::stop("sigma_re (%g) must be finite and positive.", sigma_re);
+    }
+    // The group index is 1-based with 0 meaning "no random effect on this row";
+    // the RE scatter reads re_group[i] - 1 with only the lower bound tested.
+    if (n_re_groups > 0) {
+        for (int i = 0; i < N; i++) {
+            const int g = re_group_1based[i];
+            if (g < 0 || g > n_re_groups) {
+                Rcpp::stop("re_idx[%d] (%d) must be 0 (no random effect) or a "
+                           "1-based index in [1, %d].", i + 1, g, n_re_groups);
+            }
+        }
+    }
+    const bool has_re = (n_re_groups > 0);
 
     ProcessData proc;
     proc.p = p;
@@ -271,13 +338,26 @@ inline void build_spec_family_inputs(
 inline void pack_to_spec_re_params(
     const double* pack, int q, bool correlated,
     std::vector<double>& log_sigma,    // out, length q
-    std::vector<double>& tanh_raw      // out, length q(q-1)/2 (empty if !correlated)
+    std::vector<double>& tanh_raw,     // out, length q(q-1)/2 (empty if !correlated)
+    const char* label = "random-effect covariance"
 ) {
     log_sigma.assign(q, 0.0);
     tanh_raw.clear();
     if (!correlated || q == 1) {
-        for (int c = 0; c < q; c++) log_sigma[c] = std::log(pack[c]);
+        for (int c = 0; c < q; c++) {
+            if (!(pack[c] > 0.0) || !std::isfinite(pack[c])) {
+                Rcpp::stop("%s: marginal SD %d must be finite and positive, got %g.",
+                           label, c + 1, pack[c]);
+            }
+            log_sigma[c] = std::log(pack[c]);
+        }
         return;
+    }
+    for (int i = 0, n_pack = q * (q + 1) / 2; i < n_pack; i++) {
+        if (!std::isfinite(pack[i])) {
+            Rcpp::stop("%s: packed Cholesky entry %d is not finite (%g).",
+                       label, i + 1, pack[i]);
+        }
     }
     // Unpack the column-major lower-triangular Cholesky L (Sigma = L L').
     std::vector<double> L((size_t)q * q, 0.0);
@@ -293,6 +373,11 @@ inline void pack_to_spec_re_params(
         double s = 0.0;
         for (int k = 0; k <= r; k++) s += L[(size_t)r * q + k] * L[(size_t)r * q + k];
         sd[r] = std::sqrt(s);
+        if (!(sd[r] > 0.0)) {
+            Rcpp::stop("%s: row %d of the packed Cholesky is all zero, so the "
+                       "marginal SD is 0 and the correlation is undefined.",
+                       label, r + 1);
+        }
         log_sigma[r] = std::log(sd[r]);
     }
     // Correlation Cholesky L_R = D^{-1} L (row r scaled by 1/sd_r). Inverting

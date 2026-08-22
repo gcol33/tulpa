@@ -255,6 +255,27 @@ inline void make_single_arm(
     Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
     Rcpp::Nullable<Rcpp::NumericVector> weights_nullable = R_NilValue
 ) {
+    if ((int)X.nrow() != N) {
+        Rcpp::stop("nrow(X) (%d) must equal n_obs (%d).", (int)X.nrow(), N);
+    }
+    if ((int)y.size() != N) {
+        Rcpp::stop("length(y) (%d) must equal n_obs (%d).", (int)y.size(), N);
+    }
+    if ((int)n_trials.size() != N) {
+        Rcpp::stop("length(n_trials) (%d) must equal n_obs (%d).",
+                   (int)n_trials.size(), N);
+    }
+    // The list-parsing path checks both of these per arm; a kernel that builds
+    // its single arm here indexes them exactly the same way.
+    if ((int)re_idx.size() != N) {
+        Rcpp::stop("length(re_idx) (%d) must equal n_obs (%d).",
+                   (int)re_idx.size(), N);
+    }
+    if ((int)spatial_idx.size() != N) {
+        Rcpp::stop("length(spatial_idx) (%d) must equal n_obs (%d).",
+                   (int)spatial_idx.size(), N);
+    }
+
     parsed.resize(1);
     ParsedArm& pa = parsed[0];
     pa.X           = X;

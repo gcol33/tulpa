@@ -41,6 +41,26 @@
 
 namespace tulpa {
 
+// The per-observation field-node map for a sampler-side GP spec is 0-based:
+// the R layer passes `obs_to_loc - 1`, and the log-posterior reads
+// `w[obs_to_loc[i]]` with no bound of its own.
+inline void check_obs_to_loc_0based(
+    const Rcpp::IntegerVector& otl, int n_obs, int n_loc, const char* who
+) {
+    if (static_cast<int>(otl.size()) != n_obs) {
+        Rcpp::stop("%s: length(obs_to_loc) (%d) must equal the number of "
+                   "observations (%d).", who,
+                   static_cast<int>(otl.size()), n_obs);
+    }
+    for (int i = 0; i < n_obs; i++) {
+        if (otl[i] == NA_INTEGER || otl[i] < 0 || otl[i] >= n_loc) {
+            Rcpp::stop("%s: obs_to_loc[%d] (%d) is outside [0, %d). The "
+                       "sampler-side node map is 0-based.", who, i + 1,
+                       otl[i], n_loc);
+        }
+    }
+}
+
 // Spec-solver-style inputs kept alive together: data borrows spec & resp (and
 // resp borrows y / n_trials), so the whole struct must outlive the kernel run.
 // `y` aliases the caller's NumericVector (no copy) -- it must outlive too.
@@ -239,6 +259,8 @@ inline void build_sampler_model_inputs(
                 Rcpp::as<Rcpp::IntegerVector>(sp["nn_order_inv"]);
             g.nn_order_inv.assign(nordi.begin(), nordi.end());
             Rcpp::IntegerVector otl = Rcpp::as<Rcpp::IntegerVector>(sp["obs_to_loc"]);
+            check_obs_to_loc_0based(otl, N, n_loc,
+                                    "gp() / nngp() under a sampler mode");
             g.obs_to_loc.assign(otl.begin(), otl.end());
             g.cov_type = static_cast<CovType>(Rcpp::as<int>(sp["cov_type"]));
             g.nu = Rcpp::as<double>(sp["nu"]);
@@ -262,7 +284,7 @@ inline void build_sampler_model_inputs(
             // compute_nngp_neighbors() helper, same aperm for
             // nn_neighbor_dist_*). msgp_parameterization mirrors
             // gp_parameterization -- non-centered by default, applied
-            // independently per scale (gcol33/tulpa#243).
+            // independently per scale.
             in.data.spatial_type = SpatialType::MULTISCALE_GP;
             auto& ms = in.data.multiscale_gp_data;
             Rcpp::NumericMatrix coords = Rcpp::as<Rcpp::NumericMatrix>(sp["coords"]);
@@ -275,6 +297,8 @@ inline void build_sampler_model_inputs(
                 ms.coords[2 * (std::size_t)i + 1] = coords(i, 1);
             }
             Rcpp::IntegerVector otl = Rcpp::as<Rcpp::IntegerVector>(sp["obs_to_loc"]);
+            check_obs_to_loc_0based(otl, N, n_loc,
+                                    "the multiscale GP sampler spec");
             ms.obs_to_loc.assign(otl.begin(), otl.end());
             ms.cov_type = static_cast<CovType>(Rcpp::as<int>(sp["cov_type"]));
 
@@ -325,7 +349,7 @@ inline void build_sampler_model_inputs(
             ms.range_regional_lower = Rcpp::as<double>(sp["range_regional_lower"]);
             ms.range_regional_upper = Rcpp::as<double>(sp["range_regional_upper"]);
             // PC range-prior tail mass per scale, anchored at that scale's own
-            // lower bound (gcol33/tulpa#244). Defaulted rather than required so
+            // lower bound. Defaulted rather than required so
             // a consumer-built spec predating the change still parses.
             ms.range_local_prior_alpha =
                 sp.containsElementNamed("range_local_prior_alpha")
@@ -630,7 +654,7 @@ inline void build_sampler_model_inputs(
         // w_j = f(z_j, sigma2_j, phi_j) and the stored draws are transformed
         // back on the way out. This removes the funnel that attenuates a weakly
         // identified field's amplitude, which is the regime consumer packages
-        // (occupancy, ...) fit in (gcol33/tulpa#243, #245).
+        // (occupancy, ...) fit in.
         in.data.svc_parameterization =
             sv.containsElementNamed("svc_parameterization")
                 ? Rcpp::as<int>(sv["svc_parameterization"]) : 1;
@@ -676,13 +700,12 @@ inline void build_sampler_model_inputs(
 // (range_*_lower, range_*_upper) with a hard -INFINITY, so for bounds
 // excluding 1 the chain started outside its own support, never moved, and
 // returned an all-zero field at a 100% divergence rate. That wall is gone --
-// each scale now carries a PC range prior proper on (0, inf)
-// (gcol33/tulpa#244) -- so phi = 1 is always a valid start and this is no
-// longer load-bearing. It stays because the bounds are the user's own
-// statement of where that scale lives, and starting a regional range of a few
-// units at 1 wastes warmup walking there. A caller-supplied init is left
-// alone: an explicit starting position is the caller's choice, including for
-// a resumed chain.
+// each scale now carries a PC range prior proper on (0, inf) -- so phi = 1 is
+// always a valid start and this is no longer load-bearing. It stays because
+// the bounds are the user's own statement of where that scale lives, and
+// starting a regional range of a few units at 1 wastes warmup walking there. A
+// caller-supplied init is left alone: an explicit starting position is the
+// caller's choice, including for a resumed chain.
 inline void init_bounded_support_params(std::vector<double>& q,
                                         const ModelData& data,
                                         const ParamLayout& layout) {

@@ -47,11 +47,11 @@ spatially-varying coefficient whose eta contribution is
 A default grid axis is a starting axis, not a hard ceiling: for \code{icar}
 (\code{tau_grid}) and \code{bym2} (\code{sigma_grid}) a posterior mode that rails a
 boundary node (\code{pareto_k_regime = "collapsed_edge"}) triggers one
-mode-Hessian recenter-and-refit (gcol33/tulpa#290), reported through
+mode-Hessian recenter-and-refit, reported through
 \code{outer_grid_placement} / \code{outer_grid_recenter_declined} -- see
 \code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}}'s return docs. An axis the caller pinned is
 never moved; mark a grid your own code defaulted with \code{\link[=auto_grid]{auto_grid()}} to keep
-the recenter live on it (gcol33/tulpa#293).}
+the recenter live on it.}
 
 \item{spec}{Optional \code{tulpa_temporal} or \code{tulpa_spatial} spec object
 (output of \code{\link[=temporal_rw1]{temporal_rw1()}}, \code{\link[=temporal_rw2]{temporal_rw2()}}, \code{\link[=temporal_ar1]{temporal_ar1()}},
@@ -115,8 +115,7 @@ FIXED inner Laplace, this scores whether that inner Gaussian
 approximation is itself a good fit to the latent-field conditional
 posterior. See \code{\link[=diagnostics]{diagnostics()}} for the combined whole-fit verdict.
 \item \code{within_cell} (\code{"box_uniform"}) -- the WITHIN-CELL construction the
-reported per-axis hyperparameter intervals are read with
-(gcol33/tulpa#357). The outer grid's weights say how much mass each cell
+reported per-axis hyperparameter intervals are read with. The outer grid's weights say how much mass each cell
 holds; they do not say how it is spread inside the cell, and a quantile
 needs both. \code{"box_uniform"} puts the cumulative FULL mass at each cell
 EDGE and interpolates between edges; \code{"chord"} puts the cumulative
@@ -125,8 +124,8 @@ the same masses over the same boxes with the knots moved half a cell,
 which measures as a whole order of convergence (2.00 against 1.04 on a
 fixture with a closed-form posterior).
 THE DEFAULT IS \code{"box_uniform"} since 0.0.188, decided on FIXED-TRUTH
-coverage at the placement the engine ships since gcol33/tulpa#361 made
-\code{auto_recenter = "resolve"} the default. Summed |coverage - nominal| over
+coverage at the placement the engine ships, with
+\code{auto_recenter = "resolve"} as the default. Summed |coverage - nominal| over
 nominal 0.95 / 0.80 / 0.50, chord against box-uniform: 0.2900 / 0.1233 on
 the pre-registered fixed-truth instrument, 0.2004 / 0.0361 over 4680
 truth-swept fits of the same fixture, and 0.2467 / 0.1572 over nine
@@ -145,7 +144,7 @@ declines on reports \code{"chord"} with a reason rather than erroring. Nothing
 else moves: point estimates, moments, draws and weights are untouched, and
 \code{"chord"} restores the previous report exactly.
 \item \code{skew_correct} (\code{TRUE}) -- consume the inner-Laplace expansion instead of
-only grading it (gcol33/tulpa#302, gcol33/tulpa#354): report
+only grading it: report
 Cornish-Fisher marginal quantiles at each coefficient's own \code{gamma_3},
 about the centre \code{gamma_1 + gamma_3 / 2} that Rue, Martino & Chopin
 (2009) eq. (22) implies, from \code{summary()} / \code{confint()} wherever the
@@ -154,12 +153,11 @@ the Gaussian quantiles everywhere else. It is post-processing on the
 reported quantiles: draws, modes and weights are untouched, so a fit run
 with it off is bit for bit the fit it was before. A coefficient whose
 location term could not be formed declines rather than reading it as zero.
-The band that bounded the relocation itself (\code{centre_unreliable},
-gcol33/tulpa#362) is off (\code{Inf}): scored over seven fixtures with an exact
+The band that bounded the relocation itself (\code{centre_unreliable}) is
+off (\code{Inf}): scored over seven fixtures with an exact
 reference, every finite cutoff declines the coefficients the correction
 helps most, because a large centre carrying a small \code{gamma_3} is uniformly
-weak correlation rather than an expansion out of its regime
-(gcol33/tulpa#376). \verb{$skew_correction} records the per-coefficient
+weak correlation rather than an expansion out of its regime. \verb{$skew_correction} records the per-coefficient
 \code{gamma_3}, \code{gamma_1} and the centre they form, the band, the inner
 importance k-hat, the combined band, the eligibility
 and the reason behind it; the \code{skew_applied} attribute on \code{summary()} /
@@ -168,7 +166,7 @@ a skew normal here instead; the series correction is the same-order
 alternative, and unlike a skew normal its skewness does not saturate
 inside the band it is applied on.
 
-MEASURED (gcol33/tulpa#346, gcol33/tulpa#354). Against exact quadrature
+MEASURED. Against exact quadrature
 quantiles of rare-event binomial-logit posteriors it cuts total absolute
 endpoint error 69.2\%, improving both endpoints in every case. Scored over
 the WHOLE marginal -- paired CRPS against the exact posterior in a
@@ -177,9 +175,9 @@ the uncorrected Laplace at t = -1.89, essentially all of the -0.01662 the
 exact posterior itself achieves, and its PIT re-enters the simultaneous
 SBC band. Applied about the Laplace mode instead of about
 \code{gamma_1 + gamma_3 / 2} the same reshaping scored +0.00775 at t = +3.54,
-a net loss; that centre is what gcol33/tulpa#354 supplied.
+a net loss; the location term is what supplies that centre.
 
-IT IS ON BY DEFAULT (gcol33/tulpa#364), so \code{summary()} / \code{confint()} on a
+IT IS ON BY DEFAULT, so \code{summary()} / \code{confint()} on a
 nested-Laplace fit report the corrected quantiles wherever the combined
 inner band admits the coefficient; \code{skew_correct = FALSE} restores the
 uncorrected report exactly. Scored against the mixture read a
@@ -192,8 +190,8 @@ help -- a coupled one, whose location term is unreachable -- reports what
 it reported before, to the bit.
 \item \code{subspace_debias} (\code{FALSE}) -- correct only the latent directions the
 inner-layer diagnostics flagged, by exact Metropolis, and leave the rest
-at their Gaussian conditional (gcol33/tulpa#304, extended to this backend
-by gcol33/tulpa#306). \code{TRUE} takes every default; a list overrides \code{band}
+at their Gaussian conditional. \code{TRUE} takes every default; a list
+overrides \code{band}
 (the inner-reliability floor a coordinate is selected at, default
 \code{"ok"}), \code{idx} (pin the corrected set explicitly, skipping the selector),
 \code{closure} / \code{closure_max} (grow the set by strongly coupled
@@ -210,8 +208,8 @@ the bands it was read from, and the per-cell acceptance rate. Requesting
 it turns \code{keep_grid_hessians} on, since the recombination reads exactly
 those per-cell pieces.
 \item \code{cila} (\code{FALSE}) -- corrected integrated Laplace, the second inner-layer
-debias (gcol33/tulpa#351, after Lai, Margossian and Sheldon,
-arXiv:2605.20345; wired to this backend by gcol33/tulpa#368). Where
+debias (after Lai, Margossian and Sheldon,
+arXiv:2605.20345). Where
 \code{subspace_debias} selects coordinates and runs exact Metropolis on them,
 this selects nothing: at every outer cell it draws \code{n_points} points from
 the whole inner Gaussian, weights each by the exact joint density it came
@@ -226,8 +224,7 @@ pre-correction pair is kept as \verb{$cila$laplace}. A cell whose inner solve
 factorized sparsely draws through the CHOLMOD factor's own triangular and
 permutation solves; an LDL' factor has no square root to draw with and is
 declined with \code{"sparse_factor_not_ll"}.
-\item \code{auto_recenter} (\code{TRUE}) -- outer-grid placement policy
-(gcol33/tulpa#289 / #290 / #361). \code{TRUE} re-centres the movable default
+\item \code{auto_recenter} (\code{TRUE}) -- outer-grid placement policy. \code{TRUE} re-centres the movable default
 axes on the posterior mode and refits when the grid either RAILS (an
 axis's own marginal is maximal at one of its own endpoints) or does not
 RESOLVE its posterior (an axis's node spacing exceeds 2 posterior SDs in

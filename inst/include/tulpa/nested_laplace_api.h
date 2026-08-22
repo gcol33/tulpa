@@ -59,21 +59,24 @@ namespace tulpa {
 // frees them via free_buffers().
 // ----------------------------------------------------------------------------
 struct NestedLaplaceShimResult {
-    int n_grid;
-    int n_x;
-    int store_modes;
-    double* log_marginal;  // [n_grid]
-    int*    n_iter;        // [n_grid]
-    double* modes;         // [n_grid * n_x] or nullptr
+    // Every member is default-initialized so free_buffers() is safe on an
+    // instance the shim never populated; its null tests are what decide
+    // whether a buffer is deleted.
+    int n_grid      = 0;
+    int n_x         = 0;
+    int store_modes = 0;
+    double* log_marginal = nullptr;  // [n_grid]
+    int*    n_iter       = nullptr;  // [n_grid]
+    double* modes        = nullptr;  // [n_grid * n_x] or nullptr
 
-    int     store_Q;        // output: 1 iff Q was populated
-    int     Q_n;            // output: == n_x when store_Q == 1, else 0
-    int*    Q_grid_nnz;     // [n_grid] or nullptr
-    int*    Q_p_offsets;    // [n_grid + 1] or nullptr
-    int*    Q_x_offsets;    // [n_grid + 1] or nullptr
-    int*    Q_p_flat;       // [n_grid * (Q_n + 1)] or nullptr
-    int*    Q_i_flat;       // [sum Q_grid_nnz] or nullptr
-    double* Q_x_flat;       // [sum Q_grid_nnz] or nullptr
+    int     store_Q     = 0;        // output: 1 iff Q was populated
+    int     Q_n         = 0;        // output: == n_x when store_Q == 1, else 0
+    int*    Q_grid_nnz  = nullptr;  // [n_grid] or nullptr
+    int*    Q_p_offsets = nullptr;  // [n_grid + 1] or nullptr
+    int*    Q_x_offsets = nullptr;  // [n_grid + 1] or nullptr
+    int*    Q_p_flat    = nullptr;  // [n_grid * (Q_n + 1)] or nullptr
+    int*    Q_i_flat    = nullptr;  // [sum Q_grid_nnz] or nullptr
+    double* Q_x_flat    = nullptr;  // [sum Q_grid_nnz] or nullptr
 
     void free_buffers() {
         if (log_marginal) { delete[] log_marginal; log_marginal = nullptr; }

@@ -19,13 +19,20 @@
 //   x[start + n_latent ... start + size)       ->  lambda_1, ..., lambda_n_arms
 // where size = n_latent + n_arms.
 //
-// Identifiability. A bilinear (u, lambda) product has two degeneracies:
+// Identifiability. A bilinear (u, lambda) product carries three degeneracies:
 //   (a) overall sign: (u, lambda) and (-u, -lambda) give identical eta.
 //   (b) overall scale: (c*u, lambda/c) and (u/c, c*lambda) give identical
 //       eta for any c != 0.
-// We pin both via tight Gaussian priors that act as soft anchors:
-//   * u_1     ~ N(0, eps^2)             (eps = anchor_eps, default 1e-3)
-//   * lambda_1 ~ N(1, eps^2)            (same anchor_eps)
+//   (c) field level: adding a constant a to every u_l shifts arm k's linear
+//       predictor by a * lambda_k, an arm-specific constant that arm's own
+//       intercept absorbs.
+// Two tight Gaussian priors act as soft anchors, one per group:
+//   * lambda_1 ~ N(1, eps^2)            (eps = anchor_eps, default 1e-3)
+//       pins (a) and (b) together: it penalizes lambda_1 = -1 and it
+//       penalizes lambda_1 = c for every c != 1, so neither the sign flip
+//       nor a rescaling by c leaves the density unchanged.
+//   * u_1     ~ N(0, eps^2)             (same anchor_eps)
+//       pins (c): it fixes the level of u against the arm intercepts.
 // The remaining latents carry the user-facing priors:
 //   * u_j     ~ N(0, sigma_u^2)         (sigma_u defaults to 1.0)
 //   * lambda_k ~ N(0, sigma_lambda^2)   (sigma_lambda defaults to 1.0)
@@ -105,9 +112,11 @@ inline LatentBlock make_latent_factor_block(
     // scatter dispatches on BILINEAR_FACTOR and reads obs_factor_lambda
     // below.
 
-    block.obs_factor_lambda = [obs_idx, u_start, lambda_start, n_latent](
+    block.obs_factor_lambda = [obs_idx, u_start, lambda_start, n_latent,
+                               n_arms](
         int i, int k_arm
     ) -> std::pair<int,int> {
+        if (k_arm < 0 || k_arm >= n_arms) return {-1, -1};
         int l = obs_idx(i, k_arm);
         if (l <= 0 || l > n_latent) return {-1, -1};
         return {u_start + (l - 1), lambda_start + k_arm};

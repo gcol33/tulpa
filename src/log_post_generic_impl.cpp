@@ -17,13 +17,24 @@ double compute_log_post_generic_spec_double(
     const ParamLayout& layout,
     bool skip_obs_loop
 ) {
+    // A malformed ModelData is raised rather than answered with a sentinel:
+    // 0 is a valid flat log-posterior and -Inf a rejected proposal, so either
+    // reads as a value and a sampler cannot tell it from one. The parallel
+    // chain loop wraps each chain in an exception barrier, so the raise
+    // reaches the caller from any thread.
     if (data.n_processes <= 0 || data.likelihood_spec == nullptr) {
-        return -INFINITY;
+        Rcpp::stop("tulpa: the log-posterior requires a generic LikelihoodSpec "
+                   "ModelData -- n_processes > 0 (got %d) and "
+                   "data.likelihood_spec set (%s).",
+                   data.n_processes,
+                   data.likelihood_spec == nullptr ? "null" : "set");
     }
 
     const auto* spec = static_cast<const tulpa::LikelihoodSpec*>(data.likelihood_spec);
     if (spec->ll_double == nullptr) {
-        return -INFINITY;
+        Rcpp::stop("tulpa: LikelihoodSpec '%s' ships no double-precision "
+                   "log-likelihood (ll_double), which the double log-posterior "
+                   "evaluator requires.", spec->name.c_str());
     }
 
     double log_post = compute_log_post_generic<double>(

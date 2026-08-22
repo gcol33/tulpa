@@ -24,10 +24,13 @@
 // Adding a gradient source means adding an arm here. There is no separate
 // predicate header and no specificity ordering to insert into.
 //
-// Included from hmc_gradient_dispatch.cpp inside namespace tulpa_hmc.
-
-#ifndef TULPA_HMC_GRADIENT_DISPATCH_H
-#define TULPA_HMC_GRADIENT_DISPATCH_H
+// NOT A HEADER. This is a textual fragment: it DEFINES two functions with
+// external linkage and is included, exactly once, from
+// hmc_gradient_dispatch.cpp inside `namespace tulpa_hmc`. Including it from a
+// second translation unit gives two definitions of each and fails at link
+// time, so there is no include guard to suggest otherwise -- a guard is
+// per-translation-unit and would not prevent that anyway. Declarations for
+// callers live in hmc_sampler_decls.h.
 
 GradientFn resolve_gradient_fn(GradientMode mode, const ModelData& data, const ParamLayout& layout) {
     (void)layout;  // no layout flag selects a gradient source
@@ -94,5 +97,3 @@ GradientFn resolve_prior_gradient_fn(GradientMode mode, const ModelData& data, c
 
     return &compute_gradient_prior_numerical;
 }
-
-#endif // TULPA_HMC_GRADIENT_DISPATCH_H

@@ -567,11 +567,8 @@ Rcpp::List cpp_laplace_fit_car_proper(
     const int N = y.size();
     const int p = X.ncol();
     const bool has_re = n_re_groups > 0;
-    std::vector<int> re_group;
-    if (has_re) {
-        re_group.resize(N);
-        for (int i = 0; i < N; i++) re_group[i] = (int)re_idx[i];
-    }
+    std::vector<int> re_group =
+        tulpa::as_re_group_vec(re_idx, n_re_groups, N);
     const int block_start = p + (has_re ? n_re_groups : 0);
     std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, N);
     std::vector<double> weights = tulpa::as_weights_vec(weights_nullable, N);
@@ -883,11 +880,8 @@ Rcpp::List cpp_laplace_fit_hsgp(
     if (lambda_eig.size() != M)
         Rcpp::stop("lambda_eig must have length ncol(phi_basis)");
     const bool has_re = n_re_groups > 0;
-    std::vector<int> re_group;
-    if (has_re) {
-        re_group.resize(N);
-        for (int i = 0; i < N; i++) re_group[i] = (int)re_idx[i];
-    }
+    std::vector<int> re_group =
+        tulpa::as_re_group_vec(re_idx, n_re_groups, N);
     const int block_start = p + (has_re ? n_re_groups : 0);
     std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, N);
     std::vector<double> weights = tulpa::as_weights_vec(weights_nullable, N);

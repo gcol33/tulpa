@@ -19,7 +19,7 @@ the attribute.
 \description{
 Declares that a setting shaping the outer hyperparameter grid carries a
 \emph{default} the caller computed, not a choice the user made. The auto-recenter
-pass (\code{outer_grid_placement}, gcol33/tulpa#289) leaves a user-pinned
+pass (\code{outer_grid_placement}) leaves a user-pinned
 setting exactly as given, and re-centres (or, for a prior, engages its own
 regularizer over) a marked one when the fit rails against its ceiling.
 
@@ -31,9 +31,9 @@ matrix of pre-paired coordinates the families whose axis is a matrix
 take (\code{mcar} / \code{miid}'s \code{logchol_grid}, \code{tgmrf}'s \code{theta_grid_built});
 \item a scalar grid-construction knob in \code{control}, for a driver that
 builds its axes rather than taking them (\code{fit_st_nested()}'s
-\code{n_grid_spatial}, \code{tau_upper}, ..., gcol33/tulpa#294);
+\code{n_grid_spatial}, \code{tau_upper}, ...);
 \item a \code{prior_sigma} hyperprior specification -- a list, e.g.
-\code{list("pc.prec", c(U = 3, alpha = 0.01))} (gcol33/tulpa#297).
+\code{list("pc.prec", c(U = 3, alpha = 0.01))}.
 }
 
 Wrapper packages are the intended caller: one that builds a default of its

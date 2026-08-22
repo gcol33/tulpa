@@ -156,7 +156,7 @@ static T initialize_generic_state(
         // reconstruct each scale's field w = f(z, sigma2, phi) and combine
         // them to the per-observation effect here, mirroring the GP block's
         // dispatch above. Dispatch is statically resolved on the AD type,
-        // same as GP/SVC (gcol33/tulpa#243).
+        // same as GP/SVC.
         if (data.msgp_parameterization == 1 && !data.msgp_is_hsgp) {
             if constexpr (std::is_same_v<T, double>) {
                 apply_msgp_nc_transform_double(params, data, layout, state.ms_gp_effect);
@@ -255,7 +255,7 @@ static T initialize_generic_state(
         // penalty are deterministic post-processing SVC needs done once, up
         // front, in T -- not per-observation -- so they run here rather than
         // inside compute_svc_prior. Dispatch is statically resolved on T, same
-        // as the GP block above (gcol33/tulpa#243).
+        // as the GP block above.
         if (data.svc_parameterization == 1 && !data.svc_is_hsgp &&
             data.svc_data.n_svc > 0) {
             std::vector<T> svc_w_flat;
@@ -270,7 +270,7 @@ static T initialize_generic_state(
             }
             // Identify each term's global level by CENTERING the reconstructed
             // field rather than by adding the soft sum-to-zero penalty the
-            // centered path uses (gcol33/tulpa#245).
+            // centered path uses.
             //
             // The penalty is -0.5 * lambda * (sum_i w_i)^2 with lambda set so
             // sd(sum w) = kappa * n, i.e. the field mean pinned at sd kappa =
@@ -289,8 +289,8 @@ static T initialize_generic_state(
             // likelihood-flat but is still pinned by its own unit-variance
             // prior, so NUTS samples it perfectly conditioned instead of
             // fighting it. This is the continuous-NNGP analogue of the
-            // hard-constrained identification gcol33/tulpa#242 moved the areal
-            // / weighted-entry blocks onto.
+            // hard-constrained identification the areal / weighted-entry
+            // blocks carry.
             const int svc_n = data.svc_data.n_obs;
             for (int j = 0; j < data.svc_data.n_svc; j++) {
                 T mean_j = T(0.0);
@@ -559,19 +559,36 @@ static void add_generic_st_effect(
 ) {
     if (!layout.has_spatiotemporal || state.st_delta.empty()) return;
 
+    // Both index conventions are 1-based, and a 0 means the row carries no
+    // spatiotemporal effect. Anything outside the field's own extent leaves
+    // the row at zero rather than reading past the delta vector.
     T effect = T(0.0);
     if (data.st_is_hsgp) {
-        const int t_st = data.spatiotemporal_data.t_idx[i] - 1;
-        const int M = data.st_hsgp_data.m_total;
+        const std::vector<int>& t_index = data.spatiotemporal_data.t_idx;
+        if (i >= (int)t_index.size()) return;
+        const int t_st = t_index[i] - 1;
         const int T_st = data.spatiotemporal_data.n_times;
+        if (t_st < 0 || t_st >= T_st) return;
+        const int M = data.st_hsgp_data.m_total;
+        const std::size_t phi_off = (std::size_t)i * (std::size_t)M;
+        if (phi_off + (std::size_t)M > data.st_hsgp_data.phi_flat.size()) return;
+        if (M > 0 &&
+            (std::size_t)(M - 1) * (std::size_t)T_st + (std::size_t)t_st
+                >= state.st_delta.size()) {
+            return;
+        }
         for (int j = 0; j < M; j++) {
             effect = effect
-                + T(data.st_hsgp_data.phi_flat[i * M + j])
-                * state.st_delta[j * T_st + t_st];
+                + T(data.st_hsgp_data.phi_flat[phi_off + (std::size_t)j])
+                * state.st_delta[(std::size_t)j * (std::size_t)T_st + (std::size_t)t_st];
         }
     } else {
-        const int st_idx = data.spatiotemporal_data.st_flat[i];
-        if (st_idx > 0) effect = state.st_delta[st_idx - 1];
+        const std::vector<int>& st_flat = data.spatiotemporal_data.st_flat;
+        if (i >= (int)st_flat.size()) return;
+        const int st_idx = st_flat[i];
+        if (st_idx > 0 && st_idx <= (int)state.st_delta.size()) {
+            effect = state.st_delta[st_idx - 1];
+        }
     }
     add_to_shared_processes(eta, data.sharing.st, data.n_processes, effect);
 }
@@ -641,8 +658,14 @@ T compute_log_post_generic(
     const void* model_response_data,
     bool skip_obs_loop = false
 ) {
+    // The process count sizes the per-observation eta buffer below, so a model
+    // wider than the buffer is a model this build cannot evaluate rather than
+    // an improbable point: -Inf would reject every proposal, leaving a chain
+    // that never moves and no diagnostic saying why.
     if (data.n_processes > MAX_PROCESSES) {
-        return T(-INFINITY);
+        Rcpp::stop("tulpa: ModelData declares %d processes; the generic "
+                   "log-posterior evaluates at most MAX_PROCESSES = %d.",
+                   data.n_processes, MAX_PROCESSES);
     }
 
     GenericLogPostState<T> state;

@@ -108,8 +108,10 @@ inline void raw_from_L(const double* L_flat, int n, double* raw_out) {
         for (int j = 0; j < i; j++) {
             double z = (s > 0.0) ? L_flat[(std::size_t)i * n + j] / std::sqrt(s)
                                  : 0.0;
-            if (z >  0.999999) z =  0.999999;
-            if (z < -0.999999) z = -0.999999;
+            // Negated comparisons so a NaN entry lands on a boundary instead
+            // of passing both tests and reaching atanh.
+            if (!(z > -0.999999)) z = -0.999999;
+            if (!(z <  0.999999)) z =  0.999999;
             raw_out[idx++] = std::atanh(z);
             s *= (1.0 - z * z);
         }

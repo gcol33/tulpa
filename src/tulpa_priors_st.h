@@ -11,6 +11,7 @@
 #include <vector>
 #include <cmath>
 #include "autodiff_utils.h"
+#include "hsgp_spectral.h" // single-source 2-D HSGP spectral density
 #include "hmc_temporal.h"  // single-source RW1/RW2 quadratic / cross forms
 #include "icar_kernel.h"   // count_graph_components (spatial rank)
 #include "tulpa/soft_sum_to_zero.h"   // s2z_precision
@@ -256,8 +257,8 @@ T compute_st_prior(const std::vector<T>& params, const ModelData& data,
 
             for (int j = 0; j < M; j++) {
                 double omega_sq = data.st_hsgp_data.eigenvalues[j];
-                T S_j = sigma2_st_hsgp * T(2.0 * M_PI) * lengthscale_st_hsgp * lengthscale_st_hsgp
-                    * safe_exp(T(-0.5) * lengthscale_st_hsgp * lengthscale_st_hsgp * T(omega_sq));
+                T S_j = hsgp_spectral_density_2d(sigma2_st_hsgp,
+                                                 lengthscale_st_hsgp, omega_sq);
                 T prec_j = tau_st / safe_max(S_j, T(1e-10));
 
                 // GMRF quadratic form: -0.5 * prec_j * delta_j' Q_t delta_j

@@ -9,6 +9,11 @@
 // run_sgld_sampler, and copies the result into a flat
 // SGSamplerShimResult buffer.
 
+// NOT A HEADER. This is a textual fragment with no include guard: it defines
+// functions with external linkage and is included, exactly once, from
+// tulpa_shims.cpp. Including it from a second translation unit gives two
+// definitions of each and fails at link time.
+
 #include <limits>
 
 #include "shim_guard.h"

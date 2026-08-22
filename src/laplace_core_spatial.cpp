@@ -14,6 +14,7 @@
 #include "icar_kernel.h"           // count_graph_components
 #include "laplace_spec_fit.h"     // spec-solver marshalling for the single-point fits
 #include "latent_block.h"
+#include "nested_laplace_grid.h"   // nl_check_unit_interval
 #include "linalg_fast.h"
 #include "sparse_hessian.h"
 #include <Rcpp.h>
@@ -57,13 +58,14 @@ Rcpp::List cpp_laplace_fit_spatial(
     tulpa::check_areal_inputs(adj_row_ptr, adj_col_idx, n_neighbors,
                               spatial_idx, N, n_spatial_units,
                               "cpp_laplace_fit_spatial");
+    if (!(tau_spatial > 0.0) || !std::isfinite(tau_spatial)) {
+        Rcpp::stop("cpp_laplace_fit_spatial: tau_spatial (%g) must be finite "
+                   "and positive.", tau_spatial);
+    }
     const int p = X.ncol();
     const bool has_re = n_re_groups > 0;
-    std::vector<int> re_group;
-    if (has_re) {
-        re_group.resize(N);
-        for (int i = 0; i < N; i++) re_group[i] = (int)re_idx[i];
-    }
+    std::vector<int> re_group =
+        tulpa::as_re_group_vec(re_idx, n_re_groups, N);
     const int block_start = p + (has_re ? n_re_groups : 0);
 
     std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, N);
@@ -149,13 +151,19 @@ Rcpp::List cpp_laplace_fit_bym2(
     tulpa::check_areal_inputs(adj_row_ptr, adj_col_idx, n_neighbors,
                               spatial_idx, N, n_spatial_units,
                               "cpp_laplace_fit_bym2");
+    tulpa::nl_check_unit_interval("rho", rho);
+    if (!(sigma_spatial > 0.0) || !std::isfinite(sigma_spatial)) {
+        Rcpp::stop("cpp_laplace_fit_bym2: sigma_spatial (%g) must be finite "
+                   "and positive.", sigma_spatial);
+    }
+    if (!(scale_factor > 0.0) || !std::isfinite(scale_factor)) {
+        Rcpp::stop("cpp_laplace_fit_bym2: scale_factor (%g) must be finite "
+                   "and positive.", scale_factor);
+    }
     const int p = X.ncol();
     const bool has_re = n_re_groups > 0;
-    std::vector<int> re_group;
-    if (has_re) {
-        re_group.resize(N);
-        for (int i = 0; i < N; i++) re_group[i] = (int)re_idx[i];
-    }
+    std::vector<int> re_group =
+        tulpa::as_re_group_vec(re_idx, n_re_groups, N);
     const int phi_start   = p + (has_re ? n_re_groups : 0);
     const int theta_start = phi_start + n_spatial_units;
 

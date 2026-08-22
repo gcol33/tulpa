@@ -23,7 +23,10 @@
 #include <cmath>
 #include <cstddef>
 #include <functional>
+#include <limits>
 #include <random>
+#include <stdexcept>
+#include <string>
 #include <vector>
 
 namespace tulpa {
@@ -174,7 +177,19 @@ inline void setup_mass(int dim, const std::vector<double>& mass_diag,
     mass.assign(dim, 1.0);
     inv_mass.assign(dim, 1.0);
     if (!mass_diag.empty()) {
+        if (static_cast<int>(mass_diag.size()) != dim) {
+            throw std::invalid_argument(
+                "tulpa MCLMC: mass_diag has " +
+                std::to_string(mass_diag.size()) +
+                " entries but the parameter vector has " +
+                std::to_string(dim) + ".");
+        }
         for (int i = 0; i < dim; i++) {
+            if (!(mass_diag[i] > 0.0) || !std::isfinite(mass_diag[i])) {
+                throw std::invalid_argument(
+                    "tulpa MCLMC: mass_diag[" + std::to_string(i + 1) +
+                    "] must be finite and positive.");
+            }
             mass[i] = mass_diag[i];
             inv_mass[i] = 1.0 / mass_diag[i];
         }
@@ -203,6 +218,15 @@ inline MCLMCResult mclmc_sample(
 ) {
     using namespace mclmc_detail;
 
+    if (dim < 1) {
+        throw std::invalid_argument(
+            "tulpa MCLMC: dim must be at least 1, got " + std::to_string(dim) + ".");
+    }
+    if (static_cast<int>(init.size()) != dim) {
+        throw std::invalid_argument(
+            "tulpa MCLMC: init has " + std::to_string(init.size()) +
+            " entries but dim is " + std::to_string(dim) + ".");
+    }
     std::vector<double> mass, inv_mass;
     setup_mass(dim, mass_diag, mass, inv_mass);
 
@@ -339,6 +363,15 @@ inline MCLMCResult mamclmc_sample(
 ) {
     using namespace mclmc_detail;
 
+    if (dim < 1) {
+        throw std::invalid_argument(
+            "tulpa MCLMC: dim must be at least 1, got " + std::to_string(dim) + ".");
+    }
+    if (static_cast<int>(init.size()) != dim) {
+        throw std::invalid_argument(
+            "tulpa MCLMC: init has " + std::to_string(init.size()) +
+            " entries but dim is " + std::to_string(dim) + ".");
+    }
     std::vector<double> mass, inv_mass;
     setup_mass(dim, mass_diag, mass, inv_mass);
 

@@ -87,11 +87,22 @@ inline double curvature3_block_step(double max_abs_eta, double max_abs_u) {
 // sized off the sup norms taken across the whole unit. Selected by
 // `per_arm_step = false` on the cell tensor, which exists so the per-block
 // policy can be measured against the coarser one rather than asserted.
+//
+// One step serves every block, so a single non-finite sup norm makes the shared
+// scale unreadable: it returns 0 (the same decline curvature3_block_step
+// returns on its own non-finite input) rather than sizing the step off the
+// finite entries and applying it to the block that could not be read.
 inline double curvature3_global_step(const std::vector<double>& max_abs_eta,
                                      const std::vector<double>& max_abs_u) {
     double e = 0.0, u = 0.0;
-    for (double v : max_abs_eta) if (std::isfinite(v)) e = std::max(e, v);
-    for (double v : max_abs_u)   if (std::isfinite(v)) u = std::max(u, v);
+    for (double v : max_abs_eta) {
+        if (!std::isfinite(v)) return 0.0;
+        e = std::max(e, v);
+    }
+    for (double v : max_abs_u) {
+        if (!std::isfinite(v)) return 0.0;
+        u = std::max(u, v);
+    }
     return curvature3_block_step(e, u);
 }
 
@@ -144,7 +155,7 @@ using UnitCubic3Fn = std::function<double(int, const double*, const double*)>;
 // The third-derivative oracle for one likelihood, in whichever of the two shapes
 // its unit takes. Exactly one of `scalar` (one eta per unit: l'''(eta_j)) and
 // `unit` (`n_coords` etas per unit: the contraction above) is set on success;
-// `declined` carries the gcol33/tulpa#296 vocabulary reason when neither is, and
+// `declined` carries the closed-vocabulary reason when neither is, and
 // is empty otherwise. Reported alongside the decision rather than re-derived by a
 // second predicate, so the reason and the decision cannot drift apart.
 struct Curvature3Oracle {

@@ -125,7 +125,7 @@ Non-spatial path only.}
 \item{skew_idx}{1-based latent indices to probe (in the \verb{[beta | random effects]} layout of \code{mode}). \code{NULL} with \code{compute_skew = TRUE} probes every
 latent index.}
 
-\item{debias}{Subspace debias (gcol33/tulpa#304): a list with \code{idx} (1-based
+\item{debias}{Subspace debias: a list with \code{idx} (1-based
 latent indices to correct by Metropolis along the Gaussian-conditional-mean
 surface through the mode) and optional \code{n_iter} / \code{warmup} / \code{thin}. The
 result then carries \code{debias_draws} (\verb{n_kept x length(idx)}, the sampled

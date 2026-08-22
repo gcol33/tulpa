@@ -18,6 +18,21 @@ Rcpp::List cpp_mclmc_test(
     bool adjusted = false
 ) {
     int dim = mu_target.size();
+    if (dim < 1) Rcpp::stop("cpp_mclmc_test: mu_target is empty.");
+    if ((int)sigma_target.size() != dim) {
+        Rcpp::stop("cpp_mclmc_test: sigma_target has length %d but mu_target "
+                   "has length %d.", (int)sigma_target.size(), dim);
+    }
+    if ((int)init.size() != dim) {
+        Rcpp::stop("cpp_mclmc_test: init has length %d but mu_target has "
+                   "length %d.", (int)init.size(), dim);
+    }
+    for (int i = 0; i < dim; i++) {
+        if (!(sigma_target[i] > 0.0) || !R_finite(sigma_target[i])) {
+            Rcpp::stop("cpp_mclmc_test: sigma_target[%d] must be finite and "
+                       "positive.", i + 1);
+        }
+    }
     std::vector<double> mu_t(mu_target.begin(), mu_target.end());
     std::vector<double> sig_t(sigma_target.begin(), sigma_target.end());
 
@@ -43,6 +58,10 @@ Rcpp::List cpp_mclmc_test(
 
     // Compute posterior means and standard deviations from draws
     int n_draws = static_cast<int>(result.draws.size());
+    if (n_draws < 2) {
+        Rcpp::stop("cpp_mclmc_test: the run kept %d draw(s); the posterior SD "
+                   "needs at least 2 (raise n_iter).", n_draws);
+    }
     Rcpp::NumericVector means(dim, 0.0);
     Rcpp::NumericVector sds(dim, 0.0);
 

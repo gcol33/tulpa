@@ -34,6 +34,7 @@
 #include "sparse_hessian.h"
 #include <Rcpp.h>
 #include <algorithm>
+#include <cstddef>
 #include <utility>
 #include <vector>
 
@@ -81,14 +82,29 @@ inline void resolve_indexed_dofs(
     } else if (blk.contrib_kind == BlockContribKind::INDEXED_MULTI) {
         if (!blk.obs_indices) return;
         blk.fill_obs_indices(i, k_arm, scratch);
-        // Translate block-local 1-based indices to global.
-        for (auto& [idx_local, w] : scratch) {
-            idx_local = blk.start + idx_local - 1;
+        // Translate block-local 1-based indices to global, dropping any that
+        // fall outside the block, the same test cell_arm_dofs applies. An
+        // out-of-block slot would enter the Hessian sparsity pattern.
+        std::size_t kept = 0;
+        for (std::size_t e = 0; e < scratch.size(); e++) {
+            const int l = scratch[e].first;
+            if (l > 0 && l <= blk.size) {
+                scratch[kept].first  = blk.start + l - 1;
+                scratch[kept].second = scratch[e].second;
+                kept++;
+            }
         }
+        scratch.resize(kept);
     } else if (blk.contrib_kind == BlockContribKind::BILINEAR_FACTOR) {
         if (!blk.obs_factor_lambda) return;
         auto [u_slot, lambda_slot] = blk.obs_factor_lambda(i, k_arm);
-        if (u_slot < 0 || lambda_slot < 0) return;
+        // The factory returns GLOBAL slots, so the bound is the block's own
+        // span rather than its size.
+        const int lo = blk.start, hi = blk.start + blk.size;
+        if (u_slot < lo || u_slot >= hi || lambda_slot < lo ||
+            lambda_slot >= hi) {
+            return;
+        }
         scratch.emplace_back(u_slot, 1.0);
         scratch.emplace_back(lambda_slot, 1.0);
     }
@@ -119,8 +135,8 @@ inline void resolve_indexed_dofs(
 // doesn't carry): that block's dofs still take part in a REAL cross-Hessian
 // entry against the other side whenever the spec's cross-Hessian for that
 // arm pair is nonzero, which section 3's per-arm walk cannot see (it never
-// pairs dofs across two different arms). This is the fix for gcol33/tulpa#270
-// (10592-124160 dropped contributions on occu_cover's coupled ICAR field
+// pairs dofs across two different arms). Without it the pattern drops
+// contributions (10592-124160 on occu_cover's coupled ICAR field
 // crossed with a correlated random-slope RE block, or with its own detection
 // arm beta under the rank-1 s2z fold path).
 inline void build_joint_hessian_pattern(

@@ -19,7 +19,7 @@ A data frame with one row per parameter -- \code{parameter}, \code{mean}, \code{
 \item{\code{pareto_k}}{the outer PSIS reliability k-hat (\code{NA} if not computed).}
 \item{\code{pareto_k_band}}{\code{"good"} / \code{"ok"} / \code{"unreliable"} / \code{NA}.}
 \item{\code{pareto_k_declined}, \code{pareto_k_declined_note}}{when \code{pareto_k} is
-\code{NA}, WHY (gcol33/tulpa#295): \code{"not_requested"}, \code{"not_applicable"},
+\code{NA}, WHY: \code{"not_requested"}, \code{"not_applicable"},
 \code{"unguessable_axis"} (naming the axis -- a permanent limitation of that
 family, so read \code{ess_grid} instead), \code{"draws_too_few"},
 \code{"grid_too_small"}, \code{"no_varying_axis"}, \code{"degenerate_proposal"}, or
@@ -57,8 +57,7 @@ on \code{inner_skew_max} by the general skewness-magnitude convention
 \item{\code{inner_skew_scored}, \code{inner_skew_probed}}{how many of the probed
 latent indices returned a finite \code{gamma_3} vs how many were probed.}
 \item{\code{inner_skew_declined}, \code{inner_skew_arms_declined},
-\code{inner_skew_declined_note}}{when nothing was scored, WHY
-(gcol33/tulpa#296): \code{"coupled_arm"} (STRUCTURAL -- the coupled arms have
+\code{inner_skew_declined_note}}{when nothing was scored, WHY: \code{"coupled_arm"} (STRUCTURAL -- the coupled arms have
 neither a per-observation sum nor a cell third-derivative tensor to
 read, so the outer k-hat is the only reliability number this fit has),
 \code{"curvature3_unavailable"}, \code{"no_finite_contribution"},
@@ -123,8 +122,7 @@ right-skewed hyperparameter tail and does not by itself invalidate the
 point estimates, which the grid quadrature governs.
 
 \code{outer_regime} qualifies what a high \code{pareto_k} means, and is the reason a
-bare threshold on \code{pareto_k} is not a reliability verdict
-(gcol33/tulpa#276). A sharp hyperparameter posterior collapses the grid onto
+bare threshold on \code{pareto_k} is not a reliability verdict. A sharp hyperparameter posterior collapses the grid onto
 ~1 cell (\code{ess_grid} near 1); the outer integration has then degenerated to a
 point evaluation at the modal hyperparameter, so \code{pareto_k} is scoring how
 well a Gaussian at that mode stands in for the hyperparameter marginal, not
@@ -154,7 +152,7 @@ fitted MAP grid cell, computed when \code{control$diagnose_skew = TRUE} (the
 default) on the fitting call. Reading a high \code{pareto_k} alone as "the fit
 is broken" conflates the two layers: an occu_cover batch flagged 42/78
 species "unreliable" on outer k-hat alone when their point estimates,
-governed by the healthy inner layer, were fine (gcol33/tulpa#272) -- the
+governed by the healthy inner layer, were fine -- the
 \code{reliability} attribute is the combined verdict that names which layer
 degrades, if either does.
 
@@ -169,8 +167,7 @@ nothing else here needs one: every reliability quantity above is read off the
 fit. So a fit that carries no draws -- a default single-block nested-Laplace
 fit, whose posterior is the retained outer-grid mixture rather than a sample
 -- reports the full band with an empty per-parameter body and \code{n_draws = NA},
-and records why in the \code{param_table_declined} attribute
-(gcol33/tulpa#348). \code{\link[=tulpa_posterior_draws]{tulpa_posterior_draws()}} samples that mixture where the
+and records why in the \code{param_table_declined} attribute. \code{\link[=tulpa_posterior_draws]{tulpa_posterior_draws()}} samples that mixture where the
 rows are wanted. The one case that still returns \code{NULL} is a fit with neither
 draws nor any reliability quantity, such as a plain Laplace fit with no outer
 grid to score.

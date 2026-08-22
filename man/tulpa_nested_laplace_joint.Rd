@@ -72,22 +72,20 @@ in \verb{[0.1, 3]}).
 (default \code{c(0.5, 0.8, 0.95, 0.99)}).
 }
 
-\code{sigma_grid}'s default is a starting axis, not a hard ceiling
-(gcol33/tulpa#289): when the fitted field-SD posterior mode rails the top
+\code{sigma_grid}'s default is a starting axis, not a hard ceiling: when the fitted field-SD posterior mode rails the top
 node (\code{pareto_k_regime = "collapsed_edge"}, see below), the driver
 re-centres the axis on a mode-Hessian and refits (up to two attempts, the
 second adding a light default PC(U=3, alpha=0.01) prior on sigma unless
 \code{prior_sigma} was pinned -- see there), so a sparse or strongly-identified species is
 not silently truncated at 3.0. This engages whether or not
-\code{control$diagnose_k} computed the full outer Pareto-k diagnostic
-(gcol33/tulpa#292): the mode-Hessian is reused from the diagnostic when it
+\code{control$diagnose_k} computed the full outer Pareto-k diagnostic: the mode-Hessian is reused from the diagnostic when it
 ran, or computed on its own (one extra batched finite-difference solve,
 only when the grid actually collapsed) when it did not -- so
 \code{diagnose_k = FALSE}, the default, does not leave a railed axis stuck. A
 \code{sigma_grid} the caller PINNED always wins: auto-recenter engages when the
 field is left \code{NULL}, when it is marked with \code{\link[=auto_grid]{auto_grid()}} (how a wrapper
-package declares an axis it defaulted rather than one the user chose,
-gcol33/tulpa#293), or when its nodes are exactly the engine's own default
+package declares an axis it defaulted rather than one the user chose), or
+when its nodes are exactly the engine's own default
 axis. Declines gracefully (keeps the fixed-grid fit) when another axis in
 the same grid has unguessable support (car_proper's \code{rho_car}); whichever
 way it declines, \code{outer_grid_recenter_declined} says which (see below).}
@@ -171,7 +169,7 @@ essentially harmless -- the lever is tail-shrinkage at small
 attempt engages the engine's own weakly-informative PC(U = 3,
 alpha = 0.01) prior, and a \code{prior_sigma} the caller PINNED suppresses
 that (the caller's prior stands). Pinning is decided by provenance, not
-presence (gcol33/tulpa#297): a spec marked with \code{\link[=auto_grid]{auto_grid()}}, or one
+presence: a spec marked with \code{\link[=auto_grid]{auto_grid()}}, or one
 equal by value to the engine's own default, is a default and does not
 suppress the escalation. When it does, the fit carries
 \code{outer_grid_prior_declined = "prior_pinned"}, so a second attempt that
@@ -342,7 +340,7 @@ nodes' own log-marginals stay within \code{skew_max} (the \code{gamma3_ok} band,
 \code{0.5}) of the quadratic the cloud was placed from, measured as a
 standardized cubic magnitude; above it the cell is put back as its own
 mass atom, which on a skewed outer target is measurably closer than the
-design (gcol33/tulpa#318). Engages only on the tensor path (the
+design. Engages only on the tensor path (the
 curvature stencil needs axis neighbours), at \verb{>= 4} transformable latent
 axes, with no active \code{phi_grid}; otherwise it is a no-op. The applied
 refinement is summarised on the result as \verb{$local_ccd_info}. Also driven
@@ -472,12 +470,11 @@ the outer hyperparameter-grid integration around a FIXED inner
 Laplace, this scores whether that inner Gaussian approximation is
 itself a good fit. A genuinely coupled arm (\code{cell_coupling != "separable"} on that arm, e.g. tulpaObs's \code{occu_cover}) has no per-obs
 likelihood for the separable formula to score; it is scored instead by
-the contraction of the cell third-derivative tensor
-(gcol33/tulpa#301), which differences the cross-arm Hessian the coupling
+the contraction of the cell third-derivative tensor, which differences the cross-arm Hessian the coupling
 spec already returns. A fit that can carry neither reports \code{NaN}, not a
 silently wrong 0, and \verb{$inner_skew_declined} says WHY -- \code{"coupled_arm"}
 marks arms the inner layer could not score at all, distinct from a
-diagnostic that was simply switched off (gcol33/tulpa#296) -- while
+diagnostic that was simply switched off -- while
 \verb{$inner_skew_arms_declined} names the arms with no oracle, including on a
 partially scored fit. See
 \code{\link[=diagnostics]{diagnostics()}} for the combined verdict. Wired
@@ -485,8 +482,7 @@ for both the single-block backends (icar/bym2/car_proper) and the
 multi-block path (a per-group RE, a trend field, or an arm-specific
 field block).
 \item \code{within_cell} (\code{"box_uniform"}) -- the WITHIN-CELL construction the
-reported per-axis hyperparameter intervals are read with
-(gcol33/tulpa#357). The outer grid's weights say how much mass each cell
+reported per-axis hyperparameter intervals are read with. The outer grid's weights say how much mass each cell
 holds; they do not say how it is spread inside the cell, and a quantile
 needs both. \code{"box_uniform"} puts the cumulative FULL mass at each cell
 EDGE and interpolates between edges; \code{"chord"} puts the cumulative
@@ -495,8 +491,8 @@ the same masses over the same boxes with the knots moved half a cell,
 which measures as a whole order of convergence (2.00 against 1.04 on a
 fixture with a closed-form posterior).
 THE DEFAULT IS \code{"box_uniform"} since 0.0.188, decided on FIXED-TRUTH
-coverage at the placement the engine ships since gcol33/tulpa#361 made
-\code{auto_recenter = "resolve"} the default. Summed |coverage - nominal| over
+coverage at the placement the engine ships, with
+\code{auto_recenter = "resolve"} as the default. Summed |coverage - nominal| over
 nominal 0.95 / 0.80 / 0.50, chord against box-uniform: 0.2900 / 0.1233 on
 the pre-registered fixed-truth instrument, 0.2004 / 0.0361 over 4680
 truth-swept fits of the same fixture, and 0.2467 / 0.1572 over nine
@@ -512,7 +508,7 @@ declines on reports \code{"chord"} with a reason rather than erroring. Nothing
 else moves: point estimates, moments, draws and weights are untouched, and
 \code{"chord"} restores the previous report exactly.
 \item \code{skew_correct} (\code{TRUE}) -- consume the inner-Laplace expansion instead of
-only grading it (gcol33/tulpa#302, gcol33/tulpa#354): report
+only grading it: report
 Cornish-Fisher marginal quantiles at each coefficient's own \code{gamma_3},
 about the centre \code{gamma_1 + gamma_3 / 2}, from \code{summary()} / \code{confint()}
 wherever the combined inner band (\code{gamma_3} and the inner importance
@@ -520,9 +516,9 @@ k-hat) says the leading-order expansion is in its regime, and the Gaussian
 quantiles everywhere else. It is post-processing on the reported
 quantiles: draws, modes and weights are untouched, so a fit run with it
 off is bit for bit the fit it was before. The band that bounded the
-relocation itself (\code{centre_unreliable}, gcol33/tulpa#362) is off (\code{Inf}):
+relocation itself (\code{centre_unreliable}) is off (\code{Inf}):
 every finite cutoff was measured to decline the coefficients the
-correction helps most (gcol33/tulpa#376).
+correction helps most.
 \verb{$skew_correction} records the per-coefficient \code{gamma_3}, \code{gamma_1} and
 the centre they form, the band, the k-hat, the combined
 band, the eligibility and the reason behind it; the \code{skew_applied}
@@ -531,24 +527,22 @@ the requested level. A FULLY COUPLED fit declines it: the location term's
 contraction against a covariance block is not reachable from the cell
 third-derivative oracle, and an absent \code{gamma_1} is never read as zero.
 Such a fit therefore reports what it reported before the default moved, to
-the bit -- a declined coefficient keeps the grid-mixture read
-(gcol33/tulpa#386). See \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}} for the measurement
+the bit -- a declined coefficient keeps the grid-mixture read. See \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}} for the measurement
 behind the default.
 \item \code{subspace_debias} (\code{FALSE}) -- correct only the latent directions the
 inner-layer diagnostics flagged, by exact Metropolis along the
 Gaussian-conditional-mean surface through each cell's mode, and leave the
-rest at their Gaussian conditional (gcol33/tulpa#304, extended to both
-joint paths by gcol33/tulpa#306). Settings and semantics are the ones
+rest at their Gaussian conditional. Settings and semantics are the ones
 documented on \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}}. On a fully coupled fit \code{gamma_3}
 is \code{NaN} for every arm, so the selector rests on the derivative-free
-inner Pareto-k-hat (gcol33/tulpa#303); where that also bands the
+inner Pareto-k-hat; where that also bands the
 coordinate reliable, \code{idx} pins the set explicitly. An EMPTY selection
 leaves the fit bit-for-bit identical to the plain path. A fit whose
 inner solve took the s2z rank-1 or the PSD eigen-clamp path carries no
 usable factor to build the surface from and is left uncorrected, the same
 two paths \code{diagnose_skew} declines on.
 \item \code{cila} (\code{FALSE}) -- corrected integrated Laplace, the second inner-layer
-debias (gcol33/tulpa#351, after Lai, Margossian and Sheldon,
+debias (after Lai, Margossian and Sheldon,
 arXiv:2605.20345). Where \code{subspace_debias} selects coordinates and runs
 exact Metropolis on them, this selects nothing: at every outer cell it
 draws \code{n_points} points from the whole inner Gaussian, weights each by the
@@ -564,18 +558,15 @@ a cell's particle set is too coarse to be a marginal at all and the
 request is refused. The correction reports DRAWS, so every
 coefficient-facing method reads them instead of the grid's Gaussian
 mixture, and the corrected per-cell masses become the fit's own
-\code{weights} / \code{log_marginal} with \code{weights_source} reporting \code{"cila"}
-(gcol33/tulpa#367); the pre-correction pair is kept as \verb{$cila$laplace}
+\code{weights} / \code{log_marginal} with \code{weights_source} reporting \code{"cila"}; the pre-correction pair is kept as \verb{$cila$laplace}
 and \verb{$cila$retained_mass} is the original share of the cells that
 produced a usable particle set. \verb{$cila} also carries the variant actually
 run and the PSIS grade (\code{pareto_k}, \code{rel_ess}) of the correction's own
 weights. A cell whose inner solve factorized SPARSELY draws through the
-CHOLMOD factor's own triangular and permutation solves
-(gcol33/tulpa#366); an LDL' factor carries no square root to draw with
+CHOLMOD factor's own triangular and permutation solves; an LDL' factor carries no square root to draw with
 and is declined with \code{"sparse_factor_not_ll"}.
 \item \code{auto_recenter} (\code{TRUE}) -- re-centre a default outer grid axis on its
-posterior mode and refit when the fit rails against a boundary node
-(gcol33/tulpa#289 / #290). \code{FALSE} integrates over the grid exactly as
+posterior mode and refit when the fit rails against a boundary node. \code{FALSE} integrates over the grid exactly as
 given, whatever it is, and records
 \code{outer_grid_recenter_declined = "auto_recenter_disabled"}. The joint
 rescues trigger on the whole grid's collapsed-edge regime rather than on
@@ -635,7 +626,7 @@ see the \code{diagnose_k} control knob). \code{pareto_k < 0.7} indicates the
 nested integration is reliable; \verb{>= 0.7} that the (skewed / heavy-
 tailed) hyperparameter posterior is misfit by the Gaussian grid and
 the fit should escalate to an exact debias.
-\item \code{pareto_k_declined} -- when \code{pareto_k} is \code{NA}, WHY (gcol33/tulpa#295):
+\item \code{pareto_k_declined} -- when \code{pareto_k} is \code{NA}, WHY:
 \code{"not_requested"} (\code{control$diagnose_k = FALSE}; nothing is wrong),
 \code{"unguessable_axis: <axis>"} (a support the engine will not guess, e.g.
 car_proper's \code{rho_car} -- a PERMANENT limitation of that family, so read
@@ -671,13 +662,12 @@ is bracketed. Axes the grid pins to one value are excluded (pinned, not
 at a boundary).
 \item \code{outer_grid_placement} -- \code{"fixed"} (the default \code{sigma_grid} axis was
 used as-is) or \code{"auto_recentered"} when a \code{collapsed_edge} on \code{sigma}
-triggered the mode-Hessian recenter-and-refit (gcol33/tulpa#289; see
-the \code{prior} argument above). \code{outer_grid_recenter_attempts} (integer)
+triggered the mode-Hessian recenter-and-refit (see the \code{prior}
+argument above). \code{outer_grid_recenter_attempts} (integer)
 and \code{outer_grid_prior_added} (logical: whether the light default
 PC(U=3, alpha=0.01) sigma prior was applied) are set alongside it, plus
 \code{outer_grid_prior_declined = "prior_pinned"} when a second attempt ran
-but the caller's pinned \code{prior_sigma} held that prior back
-(gcol33/tulpa#297).
+but the caller's pinned \code{prior_sigma} held that prior back.
 \item \code{outer_grid_recenter_declined} -- on a \code{"fixed"} placement, why the
 recenter did not run: \code{"grid_not_collapsed"} (the grid already brackets
 the mode -- the common case, no refit needed), \code{"axis_pinned"} (the
@@ -690,7 +680,7 @@ when the fit WAS recentred.
 \code{outer_grid_recenter_sd_used} -- on a recentred fit, one entry per moved
 axis: which mode-SD bound the placement hit (\code{"none"} / \code{"floor"} /
 \code{"ceiling"}), the SD the finite-difference stencil MEASURED, and the SD
-the axis was actually laid from (gcol33/tulpa#387). A clamped axis was
+the axis was actually laid from. A clamped axis was
 laid from a substituted spread rather than a measured one, and the
 reported interval is read off that span; the two used to be
 indistinguishable on the fit.
@@ -800,11 +790,11 @@ A mixed support still reports the weighted quantile, which measured best
 against a converged reference in both \code{design_mass} regimes; the share is
 the regime variable, since on that part of the support the quantile is
 bounded by the refined cells' own grid neighbourhoods rather than by the
-posterior (gcol33/tulpa#317). Every nested path stamps the pair, not only
+posterior. Every nested path stamps the pair, not only
 the multi-block driver.
 \item \code{within_cell_requested}, \code{theta_within_cell},
 \code{theta_within_cell_declined} -- the WITHIN-CELL construction the same
-intervals were read with (gcol33/tulpa#357). The kind above says what the
+intervals were read with. The kind above says what the
 integrator left; this says how each cell's mass was spread inside its own
 box when the grid was read back. \code{"box_uniform"} is the default and puts
 the cumulative full mass at each cell edge; \code{"chord"}
@@ -817,7 +807,7 @@ not be built falls back to \code{"chord"} on its own with the reason in
 \code{"boxes_do_not_tile"}, \code{"no_usable_node"}).
 \item \code{theta_cell_edge_coord}, \code{theta_cell_edge_declined} -- per axis, the
 COORDINATE that axis's outer cell edges were mirrored in, and why the
-support the axis declares did not produce them (gcol33/tulpa#377). A
+support the axis declares did not produce them. A
 declared support is authoritative: its mirrored edge is used when finite
 and inside it, and otherwise the axis reports its extreme grid
 coordinate -- which the containment test has already placed inside the
@@ -827,7 +817,7 @@ and a bound above 1 on a \code{unit} one. An axis that declares no support at
 all keeps the guess by design, but its mirrored edge is checked for
 being a representable double that brackets the coordinates, and falls
 back to the extreme grid coordinate with
-\code{"mirrored_edge_not_representable"} when it is not (gcol33/tulpa#379).
+\code{"mirrored_edge_not_representable"} when it is not.
 \code{theta_cell_edge_declined} is \code{NA} where nothing was declined.
 \item \code{outer_grid_cell_width}, \code{outer_grid_axis_sd}, \code{outer_grid_h_over_sd} --
 per axis, the cell width and the posterior SD in that axis's own
@@ -846,8 +836,7 @@ ratio, from the closed vocabulary \code{too_few_nodes}, \code{mode_at_edge},
 not interchangeable: \code{mode_at_edge} says the grid does not contain that
 axis's own posterior mode, which is a stronger statement about the fit
 than any ratio, and the whole-grid \code{resolved} verdict is withheld while
-one is present rather than being read off the axes that did score
-(gcol33/tulpa#401).
+one is present rather than being read off the axes that did score.
 \item \code{prune_cheap_log_marginal}, \code{prune_mask}, \code{prune_n_pruned},
 \code{prune_tol} -- present only when \code{prune = TRUE} and the safety gate did
 not fall back. Cheap-pass log-marginals at every cell, a logical mask

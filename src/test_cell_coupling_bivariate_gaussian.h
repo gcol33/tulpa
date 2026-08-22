@@ -17,17 +17,25 @@
 //   -d^2/d eta(1, 0)^2     = lam11
 //   -d^2/d eta(0, 0) d eta(1, 0) = lam01
 //
-// The constant `-0.5 * log(2 pi)^2 + 0.5 * log det Lambda` is added to the
+// The normalizing constant `-0.5 * k * log(2 pi) + 0.5 * log det Lambda`, at
+// k = 2 dimensions `-log(2 pi) + 0.5 * log det Lambda`, is added to the
 // returned log p_cell so the marginal-likelihood path is comparable across
-// Lambda values.
+// Lambda values. Lambda must be SPD: the constructor rejects a non-positive
+// determinant rather than dropping the term, which would leave a
+// plausible-looking log-density for a precision matrix that is not one.
 
 #ifndef TULPA_TEST_CELL_COUPLING_BIVARIATE_GAUSSIAN_H
 #define TULPA_TEST_CELL_COUPLING_BIVARIATE_GAUSSIAN_H
 
 #include "tulpa/cell_coupling.h"
 #include <cmath>
+#include <stdexcept>
 #include <string>
 #include <vector>
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 namespace tulpa {
 
@@ -36,8 +44,12 @@ public:
     TestBivariateGaussianCoupling(double lam00, double lam11, double lam01)
         : lam00_(lam00), lam11_(lam11), lam01_(lam01) {
         double det = lam00_ * lam11_ - lam01_ * lam01_;
-        log_const_ = -std::log(2.0 * M_PI)
-                     + ((det > 0.0) ? 0.5 * std::log(det) : 0.0);
+        if (!(det > 0.0) || !(lam00_ > 0.0)) {
+            throw std::invalid_argument(
+                "TestBivariateGaussianCoupling: Lambda must be positive "
+                "definite (lam00 > 0 and lam00*lam11 - lam01^2 > 0).");
+        }
+        log_const_ = -std::log(2.0 * M_PI) + 0.5 * std::log(det);
     }
 
     std::vector<int> arm_ids() const override { return {0, 1}; }

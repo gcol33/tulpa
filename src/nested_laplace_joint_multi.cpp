@@ -50,6 +50,7 @@
 // with the correct per-block layout; this kernel just reads the axes by
 // offset.
 
+#include "areal_input_check.h"    // check_areal_adjacency
 #include "bym2_mixing.h"           // BYM2_RHO_EPS + the mixing amplitudes
 #include "cell_coupling_registry.h"
 #include "cell_curvature3.h"        // coupled-cell gamma_3 tensor contraction
@@ -442,12 +443,25 @@ int build_joint_blocks_from_spec(
         }
     };
 
+    // The areal block types all hand their CSR triple to graph_partition and
+    // then to a factory that walks it as raw offsets, so each validates it
+    // through the shared boundary check first.
+    auto check_adjacency = [&](const Rcpp::IntegerVector& adj_rp,
+                               const Rcpp::IntegerVector& adj_ci,
+                               const Rcpp::IntegerVector& n_nbr,
+                               int size) {
+        const std::string who =
+            "Block " + std::to_string(block_index + 1) + " (type '" + type + "')";
+        tulpa::check_areal_adjacency(adj_rp, adj_ci, n_nbr, size, who.c_str());
+    };
+
     if (type == "icar") {
         int size = Rcpp::as<int>(bs["n_spatial_units"]);
         Rcpp::List spatial_idx_list = bs["spatial_idx"];
         Rcpp::IntegerVector adj_rp = bs["adj_row_ptr"];
         Rcpp::IntegerVector adj_ci = bs["adj_col_idx"];
         Rcpp::IntegerVector n_nbr  = bs["n_neighbors"];
+        check_adjacency(adj_rp, adj_ci, n_nbr, size);
         // Connected-component partition of the block's own graph: a replicated
         // CAR (`by =`) is L equal-size components, a genuine disconnected map is
         // unequal / non-contiguous components, and a connected field is the
@@ -559,6 +573,7 @@ int build_joint_blocks_from_spec(
         Rcpp::IntegerVector adj_rp = bs["adj_row_ptr"];
         Rcpp::IntegerVector adj_ci = bs["adj_col_idx"];
         Rcpp::IntegerVector nnbr   = bs["n_neighbors"];
+        check_adjacency(adj_rp, adj_ci, nnbr, n);
         Rcpp::List ci_list = bs["spatial_idx"];     // length n_arms
         Rcpp::List fw_list = bs["field_weight"];     // length p, each n_arms
         std::vector<Rcpp::IntegerVector> cell_idx;
@@ -617,6 +632,7 @@ int build_joint_blocks_from_spec(
         Rcpp::IntegerVector adj_rp = bs["adj_row_ptr"];
         Rcpp::IntegerVector adj_ci = bs["adj_col_idx"];
         Rcpp::IntegerVector n_nbr  = bs["n_neighbors"];
+        check_adjacency(adj_rp, adj_ci, n_nbr, size);
         double scale_factor = bs.containsElementNamed("scale_factor") ?
             Rcpp::as<double>(bs["scale_factor"]) : 1.0;
         int phi_start   = latent_offset;
@@ -736,6 +752,7 @@ int build_joint_blocks_from_spec(
         Rcpp::IntegerVector adj_rp = bs["adj_row_ptr"];
         Rcpp::IntegerVector adj_ci = bs["adj_col_idx"];
         Rcpp::IntegerVector n_nbr  = bs["n_neighbors"];
+        check_adjacency(adj_rp, adj_ci, n_nbr, size);
         int start = latent_offset;
 
         auto adj_rp_v = std::make_shared<std::vector<int>>(adj_rp.begin(), adj_rp.end());
@@ -1417,8 +1434,8 @@ Rcpp::List cpp_nested_laplace_joint_multi(
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue
 ) {
-    // Per-cell fixed-effect covariance retention (gcol33/tulpa#305), extracted
-    // inside each cell's own solve (gcol33/tulpa#307). `fixed_block_p` is the
+    // Per-cell fixed-effect covariance retention, extracted
+    // inside each cell's own solve. `fixed_block_p` is the
     // leading latent block size; zero extracts nothing.
     // `fixed_block_constraints` is a list of 1-based latent index vectors, one
     // per field sum-to-zero group, so the retained block is the constrained
@@ -2158,7 +2175,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
     // serial outer grid costs little; the inner per-observation eta reduction
     // still parallelises across n.threads.
     int n_outer = 1;
-    // The fixed-effect block extraction (gcol33/tulpa#307) needs its own
+    // The fixed-effect block extraction needs its own
     // CHOLMOD context per outer slot; build it here, single-threaded, and only
     // when the driver was asked for a block.
     const bool want_fixed_block = fixed_block && fixed_block->active();
@@ -2179,7 +2196,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
     // screen, which reads a per-worker `cheap_specs_pool` entry instead --
     // see is_cheap below). Coupled arms carry no per-obs oracle (it would score
     // the wrong, unused likelihood); they are scored by the cell tensor
-    // contraction assigned per solve below (gcol33/tulpa#301) whenever this fit
+    // contraction assigned per solve below whenever this fit
     // can carry one.
     const bool coupled_scored = any_coupling &&
         cell_curvature3_available(cell_coupling_spec.get(), coupled_arms, n_cells);
@@ -2294,7 +2311,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
                 // This assembly runs on every objective evaluation the line
                 // search and the inner debiases make, so at one thread
                 // tulpa_parallel_for takes a plain loop rather than entering
-                // libgomp for a team of one (gcol33/tulpa#365, #373). Each row
+                // libgomp for a team of one. Each row
                 // is independent, so the two routes compute the same numbers.
                 tulpa_parallel_for(n_threads_inner_eff, N_k, [&](int i) {
                     etas[k_arm][i] = row_eta(i);
@@ -2641,8 +2658,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
     // slot (mirrors specs_pool / db_buffers_pool -- each JointArmSpecs is
     // self-referential, so its curvature3 closures must be built from ITS OWN
     // views, not a shared copy). Coupled arms carry no per-obs oracle; the cell
-    // tensor contraction assigned into the owning slot per solve scores them
-    // (gcol33/tulpa#301).
+    // tensor contraction assigned into the owning slot per solve scores them.
     const bool coupled_scored = any_coupling &&
         cell_curvature3_available(cell_coupling_spec.get(), coupled_arms, n_cells);
     std::vector<JointCurvature3Oracles> skew_curvature3_fns_pool;

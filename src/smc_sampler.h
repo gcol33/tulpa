@@ -84,6 +84,12 @@ inline double compute_ess(const std::vector<double>& log_weights) {
 inline std::vector<int> systematic_resample(
     const std::vector<double>& weights, int N, std::mt19937& rng
 ) {
+    if (N <= 0 || static_cast<int>(weights.size()) < N) {
+        throw std::invalid_argument(
+            "tulpa SMC: systematic_resample needs N >= 1 and one weight per "
+            "particle (N = " + std::to_string(N) + ", weights = " +
+            std::to_string(weights.size()) + ").");
+    }
     std::uniform_real_distribution<double> unif(0.0, 1.0);
     double u = unif(rng) / N;
     std::vector<int> ancestors(N);

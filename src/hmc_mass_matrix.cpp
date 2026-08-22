@@ -22,6 +22,22 @@ bool DenseMassMatrix::update_from_covariance(const double* cov, int n_samples) {
   // loosest and stiffest directions is at most about 100:1.
   constexpr double MAX_COND = 1e4;
 
+  // Bounds on an adapted inverse-mass diagonal entry, i.e. on the posterior
+  // variance the sampler credits a coordinate with. A variance estimated from
+  // a short warmup window can come back near zero (a coordinate the chain has
+  // not moved on yet) or enormous (one it has just escaped a bad start along),
+  // and either drives the shared step size off the whole trajectory. The
+  // window is six orders of magnitude wide, so it binds only on those two
+  // pathologies and never on an estimate the window can support.
+  constexpr double INV_MASS_MIN = 1e-3;
+  constexpr double INV_MASS_MAX = 1e3;
+
+  // Absolute floor under the eigenvalue clip, for a spectrum whose largest
+  // eigenvalue is itself tiny: lambda_max / MAX_COND is then below the point
+  // where 1 / sqrt(lambda) is representable, so the relative clip alone would
+  // not keep the reconstructed mass finite.
+  constexpr double LAMBDA_FLOOR_ABS = 1e-8;
+
   Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> eig(C);
   if (eig.info() != Eigen::Success) {
     // Eigendecomposition failed; degrade to diagonal.
@@ -29,7 +45,7 @@ bool DenseMassMatrix::update_from_covariance(const double* cov, int n_samples) {
     adapted = true;
     for (int i = 0; i < n; i++) {
       double var_i = cov[static_cast<size_t>(i) * n + i];
-      inv_mass_diag[i] = std::max(1e-3, std::min(var_i, 1e3));
+      inv_mass_diag[i] = std::max(INV_MASS_MIN, std::min(var_i, INV_MASS_MAX));
       sqrt_mass_diag[i] = 1.0 / std::sqrt(inv_mass_diag[i]);
     }
     return false;
@@ -37,7 +53,7 @@ bool DenseMassMatrix::update_from_covariance(const double* cov, int n_samples) {
 
   Eigen::VectorXd evals = eig.eigenvalues();
   double lambda_max = evals.maxCoeff();
-  double lambda_floor = std::max(lambda_max / MAX_COND, 1e-8);
+  double lambda_floor = std::max(lambda_max / MAX_COND, LAMBDA_FLOOR_ABS);
   bool clipped = false;
   for (int i = 0; i < n; i++) {
     if (evals[i] < lambda_floor) {
@@ -63,7 +79,7 @@ bool DenseMassMatrix::update_from_covariance(const double* cov, int n_samples) {
     adapted = true;
     for (int i = 0; i < n; i++) {
       double var_i = cov[static_cast<size_t>(i) * n + i];
-      inv_mass_diag[i] = std::max(1e-3, std::min(var_i, 1e3));
+      inv_mass_diag[i] = std::max(INV_MASS_MIN, std::min(var_i, INV_MASS_MAX));
       sqrt_mass_diag[i] = 1.0 / std::sqrt(inv_mass_diag[i]);
     }
     return false;
@@ -81,16 +97,12 @@ bool DenseMassMatrix::update_from_covariance(const double* cov, int n_samples) {
   // Also update diagonal for fallback and find_reasonable_epsilon compatibility
   for (int i = 0; i < n; i++) {
     double var_i = C_cond(i, i);
-    inv_mass_diag[i] = std::max(1e-3, std::min(var_i, 1e3));
+    inv_mass_diag[i] = std::max(INV_MASS_MIN, std::min(var_i, INV_MASS_MAX));
     sqrt_mass_diag[i] = 1.0 / std::sqrt(inv_mass_diag[i]);
   }
 
   adapted = true;
   return true;
 }
-
-// =====================================================================
-// Parameter layout computation
-// =====================================================================
 
 }

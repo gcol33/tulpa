@@ -22,7 +22,7 @@ here. For the chain-only view used by convergence diagnostics, see
 \details{
 A fit that carries no draws returns \code{NULL} with a message naming its backend,
 the posterior representation it carries instead, and the accessor that turns
-that representation into draws where one exists (gcol33/tulpa#349) -- an
+that representation into draws where one exists -- an
 absent draws matrix is a property of the backend, not a failure of the
 accessor, and saying which is the difference between a diagnosable answer and
 a bare \code{NULL}.

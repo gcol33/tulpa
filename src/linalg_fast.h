@@ -6,10 +6,12 @@
 #define TULPA_LINALG_FAST_H
 
 #include "omp_threads.h"
+#include "tulpa/portable_math.h"
 #include <vector>
 #include <cmath>
 #include <cstring>
 #include <algorithm>
+#include <limits>
 #include <numeric>
 #include <stdexcept>
 #include <string>
@@ -38,7 +40,7 @@ namespace tulpa_linalg {
 // covariance was built from whatever the heap held behind the matrix. Nothing
 // crashed, because the read lands inside the R heap and returns a finite
 // double; the fit simply stopped being a function of its data, and moved with
-// the process's allocation history (gcol33/tulpa#389).
+// the process's allocation history.
 //
 // Templated on the matrix type rather than taking `Rcpp::NumericMatrix` so this
 // header stays free of the Rcpp dependency its other callers do not have; the
@@ -152,7 +154,7 @@ constexpr double kNngpVarFloor = 1e-10;
 // factor is the same bytes as a row-major upper-triangular one -- so a factor
 // read under the wrong convention does not crash, does not produce NaN, and
 // trips no dimension check. It solves against the transpose and returns a
-// plausible vector. That is what gcol33/tulpa#283 was, and it corrupted every
+// plausible vector. Consumed that way, a cuSOLVER factor corrupted every
 // NNGP fit with 51+ locations while staying finite and ordinary-looking.
 //
 // The layout is therefore a required template argument on every routine below
@@ -275,8 +277,8 @@ inline void nngp_moments_from_chol(const double* L, int n, int ld,
   // it is not -- and a bound floor is a strong signal, because 1/var_floor =
   // 1e10 lands directly on the NNGP precision's diagonal and asserts the node
   // is known to 1e-5 sd given its neighbours. It reads as near-determinism
-  // while usually meaning the factor is wrong: gcol33/tulpa#283 was a
-  // column-major cuSOLVER factor consumed row-major, which floored 47 of 150
+  // while usually meaning the factor is wrong: a column-major cuSOLVER factor
+  // consumed row-major floored 47 of 150
   // nodes on a fixture whose true minimum conditional variance is 2.5e-02.
   cond_var = std::max(var_floor, sigma2 - c_Cinv_c);
 }
@@ -581,27 +583,13 @@ inline double parallel_block_reduce(int N, int block_size, int n_threads, Func f
 // Numerical utilities
 // ============================================================================
 
-// Maximum safe argument for exp() to avoid overflow
-// exp(709) ≈ 8.2e307, exp(710) = inf
-constexpr double EXP_MAX_ARG = 700.0;
-
-// Minimum safe argument for exp() to avoid underflow to exact zero
-// exp(-745) ≈ 5e-324 (smallest subnormal), exp(-746) = 0
-constexpr double EXP_MIN_ARG = -700.0;
-
-// Safe exponential that prevents overflow/underflow
-// Returns exp(x) clamped to finite range
+// Safe exponential that prevents overflow/underflow. The bounds are
+// tulpa::math::EXP_ARG_MAX / EXP_ARG_MIN in tulpa/portable_math.h, the one
+// place the value path and the three autodiff paths take them from, so the
+// double kernels here clamp at exactly the same argument the templated log
+// posterior does.
 inline double safe_exp(double x) {
-  if (x > EXP_MAX_ARG) return std::exp(EXP_MAX_ARG);  // ~1e304
-  if (x < EXP_MIN_ARG) return std::exp(EXP_MIN_ARG);  // ~1e-304
-  return std::exp(x);
-}
-
-// Safe log that handles zero and negative inputs
-// Returns log(x) or -infinity for x <= 0
-inline double safe_log(double x) {
-  if (x <= 0.0) return -std::numeric_limits<double>::infinity();
-  return std::log(x);
+  return std::exp(tulpa::math::clamp_exp_arg(x));
 }
 
 // Clamp value to range [lo, hi]

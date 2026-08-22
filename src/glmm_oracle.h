@@ -39,11 +39,17 @@ inline GLMMFamily glmm_family_from_string(const std::string& f) {
 // linear predictor eta. The full normalizing constants are kept (so `l` is a
 // true log-density); only differences / curvature enter the MH ratio and the
 // marginal, but keeping them makes the routine self-contained and reusable.
-//   phi: gaussian residual VARIANCE (sd = sqrt(phi)); neg-binomial size r.
+//   phi_var: the family's dispersion read in the VARIANCE convention -- the
+//   residual variance for gaussian (sd = sqrt(phi_var)), the size r for
+//   neg-binomial, unused by binomial and poisson. laplace_family_link.h reads
+//   the same slot in the SD convention; the two readings differ for gaussian,
+//   and R converts between them at each boundary (.phi_to_kernel takes the
+//   registry's variance to the SD the Laplace kernels want, .phi_to_registry
+//   takes it back).
 struct GLMMElt { double l, d1, d2; };
 
 inline GLMMElt glmm_elt(GLMMFamily fam, double eta, double y,
-                        double n_trials, double phi) {
+                        double n_trials, double phi_var) {
     switch (fam) {
     case GLMMFamily::Binomial: {
         const double l1p = (eta > 0.0) ? eta + std::log1p(std::exp(-eta))
@@ -59,12 +65,12 @@ inline GLMMElt glmm_elt(GLMMFamily fam, double eta, double y,
     }
     case GLMMFamily::Gaussian: {
         const double r = y - eta;
-        const double l = -0.5 * std::log(2.0 * M_PI) - 0.5 * std::log(phi)
-                         - 0.5 * r * r / phi;
-        return { l, r / phi, -1.0 / phi };
+        const double l = -0.5 * std::log(2.0 * M_PI) - 0.5 * std::log(phi_var)
+                         - 0.5 * r * r / phi_var;
+        return { l, r / phi_var, -1.0 / phi_var };
     }
     case GLMMFamily::NegBin: {
-        const double rsz = phi;                 // size
+        const double rsz = phi_var;                 // size
         const double mu  = std::exp(eta);
         const double rm  = rsz + mu;
         const double l   = R::lgammafn(y + rsz) - R::lgammafn(rsz)
@@ -87,7 +93,7 @@ inline GLMMElt glmm_elt(GLMMFamily fam, double eta, double y,
 // ---------------------------------------------------------------------------
 struct SingleArmGLMMOracle : REGroupOracle {
     GLMMFamily fam;
-    double phi;
+    double phi_var;
     Eigen::MatrixXd X;                 // n x p fixed-effect design
     Eigen::MatrixXd Z;                 // n x nc this block's RE design
     Eigen::VectorXd y;                 // n
@@ -97,22 +103,50 @@ struct SingleArmGLMMOracle : REGroupOracle {
     Eigen::VectorXd xb;                // X beta, set by rebind
     Eigen::VectorXd offset;            // other blocks' RE contribution (n), default 0
 
-    SingleArmGLMMOracle(GLMMFamily fam_, double phi_,
+    SingleArmGLMMOracle(GLMMFamily fam_, double phi_var_,
                         Eigen::MatrixXd X_, Eigen::MatrixXd Z_,
                         const Eigen::VectorXi& idx /*1-based group per obs*/,
                         int ng, Eigen::VectorXd y_, Eigen::VectorXd ntrials_)
-        : fam(fam_), phi(phi_), X(std::move(X_)), Z(std::move(Z_)),
+        : fam(fam_), phi_var(phi_var_), X(std::move(X_)), Z(std::move(Z_)),
           y(std::move(y_)), ntrials(std::move(ntrials_)) {
         n_groups = ng;
         d        = static_cast<int>(Z.cols());
         n_theta  = static_cast<int>(X.cols());
         const int n = static_cast<int>(X.rows());
+        if (ng <= 0) {
+            throw std::runtime_error(
+                "tulpa GLMM oracle: n_groups must be positive, got "
+                + std::to_string(ng) + ".");
+        }
+        check_rows(static_cast<int>(Z.rows()), n, "Z");
+        check_rows(static_cast<int>(y.size()), n, "y");
+        check_rows(static_cast<int>(ntrials.size()), n, "n_trials");
+        check_rows(static_cast<int>(idx.size()), n, "idx");
         xb     = Eigen::VectorXd::Zero(n);
         offset = Eigen::VectorXd::Zero(n);
         rows_by_g.assign(ng, std::vector<int>());
+        // An observation outside [1, n_groups] would contribute to no group at
+        // all, so the fit would silently run on a subset of the data.
         for (int i = 0; i < idx.size(); ++i) {
-            const int g = idx(i) - 1;
-            if (g >= 0 && g < ng) rows_by_g[g].push_back(i);
+            const int gi = idx(i);
+            if (gi == NA_INTEGER || gi < 1 || gi > ng) {
+                throw std::runtime_error(
+                    "tulpa GLMM oracle: group index at row "
+                    + std::to_string(i + 1) + " is "
+                    + (gi == NA_INTEGER ? std::string("NA")
+                                        : std::to_string(gi))
+                    + "; it must lie in [1, " + std::to_string(ng) + "].");
+            }
+            rows_by_g[gi - 1].push_back(i);
+        }
+    }
+
+    static void check_rows(int got, int n, const char* nm) {
+        if (got != n) {
+            throw std::runtime_error(
+                std::string("tulpa GLMM oracle: ") + nm + " has " +
+                std::to_string(got) + " rows but the fixed-effect design has " +
+                std::to_string(n) + ".");
         }
     }
 
@@ -147,7 +181,7 @@ struct SingleArmGLMMOracle : REGroupOracle {
         for (int i : rows_by_g[g]) {
             const Eigen::RowVectorXd zr = Z.row(i);
             const double eta = xb(i) + offset(i) + zr.dot(bv);
-            const GLMMElt e = glmm_elt(fam, eta, y(i), ntrials(i), phi);
+            const GLMMElt e = glmm_elt(fam, eta, y(i), ntrials(i), phi_var);
             logL += e.l;
             gg.noalias() += e.d1 * zr.transpose();
             HH.noalias() += (-e.d2) * (zr.transpose() * zr);
@@ -163,7 +197,7 @@ struct SingleArmGLMMOracle : REGroupOracle {
             double s = 0.0;
             for (int i : rows_by_g[g]) {
                 const double eta = xb(i) + offset(i) + Z.row(i).dot(bv);
-                s += glmm_elt(fam, eta, y(i), ntrials(i), phi).l;
+                s += glmm_elt(fam, eta, y(i), ntrials(i), phi_var).l;
             }
             out[k] = s;
         }
@@ -174,7 +208,7 @@ struct SingleArmGLMMOracle : REGroupOracle {
         Eigen::VectorXd s = Eigen::VectorXd::Zero(n_theta);
         for (int i : rows_by_g[g]) {
             const double eta = xb(i) + offset(i) + Z.row(i).dot(bv);
-            const double d1 = glmm_elt(fam, eta, y(i), ntrials(i), phi).d1;
+            const double d1 = glmm_elt(fam, eta, y(i), ntrials(i), phi_var).d1;
             s.noalias() += d1 * X.row(i).transpose();
         }
         for (int j = 0; j < n_theta; ++j) dl[j] = s(j);

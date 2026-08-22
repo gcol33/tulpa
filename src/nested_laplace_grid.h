@@ -127,8 +127,20 @@ inline int nl_grid_axes_length(
 // A mixing-weight axis (the BYM2 rho) is a proportion. Outside [0, 1] both
 // bym2_sd_* square roots go NaN, which reaches the inner Newton through eta and
 // returns a NaN cell rather than an error.
+inline bool nl_in_unit_interval(double rho) {
+    return rho >= 0.0 && rho <= 1.0;
+}
+
+// The same axis supplied as a scalar by a fixed-hyperparameter entry point.
+inline void nl_check_unit_interval(const char* name, double rho) {
+    if (!nl_in_unit_interval(rho)) {
+        Rcpp::stop("`%s` is %g; a BYM2 mixing weight must lie in [0, 1].",
+                   name, rho);
+    }
+}
+
 inline void nl_grid_cell_unit_interval(const char* name, double rho, int k) {
-    if (!(rho >= 0.0 && rho <= 1.0)) {
+    if (!nl_in_unit_interval(rho)) {
         Rcpp::stop("`%s[%d]` is %g; a BYM2 mixing weight must lie in [0, 1].",
                    name, k + 1, rho);
     }
@@ -341,7 +353,7 @@ inline Rcpp::List run_nested_laplace_grid(
     Rcpp::List Q_x_per_grid(n_grid);
 
     // Per-cell inverse block, when the per-point solve was asked for one (the
-    // joint tier's fixed-effect retention, gcol33/tulpa#307). O(m^2) per cell
+    // joint tier's fixed-effect retention). O(m^2) per cell
     // and flat in the field size, so this is what a caller keeps instead of a
     // grid's worth of precisions. Every current requester asks for exactly one
     // block, so slot k holds that block as an m x m matrix.

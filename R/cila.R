@@ -1,6 +1,5 @@
 # =============================================================================
-# cila.R -- corrected integrated Laplace as an inner-layer DEBIAS
-# (gcol33/tulpa#351).
+# cila.R -- corrected integrated Laplace as an inner-layer DEBIAS.
 #
 # The engine's composition is nested approximation plus debias. Two inner
 # debiases now ship, and they differ in what they select rather than in what
@@ -29,7 +28,7 @@
 # produced them. The pre-correction pair is kept as `fit$cila$laplace$weights` /
 # `$log_marginal`. `fit$cila$cell_weights` and `$cell_log_marginal` are the
 # adopted vectors themselves, so pairing them with `fit$weights` cannot go
-# wrong: they are the same numbers (gcol33/tulpa#367).
+# wrong: they are the same numbers.
 #
 # HOW IT IS GRADED. The importance weights are the same object PSIS already
 # scores elsewhere in this engine, so `tulpa_psis()` fits them directly -- one
@@ -43,9 +42,9 @@
 
 # The recovered posterior of Proposition 5 is literally sum_i w_i delta_{z_i},
 # so at small M a truth outside the particle range gets PIT exactly 0 or 1 and
-# the reported marginal is an atom rather than a distribution. gcol33/tulpa#341
-# measured every variant leaving the simultaneous calibration band at M = 64 and
-# the iid one still leaving it at M = 256. The front door therefore floors the
+# the reported marginal is an atom rather than a distribution. Every variant
+# was measured leaving the simultaneous calibration band at M = 64, and the iid
+# one still leaving it at M = 256. The front door therefore floors the
 # effort rather than reporting a particle set too coarse to be a marginal.
 .CILA_MIN_POINTS <- 512L
 
@@ -79,8 +78,8 @@
         stop(sprintf(paste0("`control$cila$n_points` is %d; the correction ",
                             "reports a weighted particle set, which is not a ",
                             "usable marginal below %d points per cell ",
-                            "(gcol33/tulpa#341 measured the calibration band ",
-                            "leaving at M = 64 and M = 256)."),
+                            "(the calibration band was measured leaving at ",
+                            "M = 64 and M = 256)."),
                      n_points, .CILA_MIN_POINTS), call. = FALSE)
     }
     list(n_points = n_points,
@@ -106,10 +105,10 @@
 # corrected -- so a fit that WAS corrected can be told from one that was not
 # without re-reading the weights.
 #
-# `laplace` is the PRE-correction grid read, kept under a name that says so
-# (gcol33/tulpa#367). It is the only other grid weighting a corrected fit
-# carries: `cell_weights` / `cell_log_marginal` are the adopted ones, identical
-# to `fit$weights` / `fit$log_marginal` by construction.
+# `laplace` is the PRE-correction grid read, kept under a name that says so. It
+# is the only other grid weighting a corrected fit carries: `cell_weights` /
+# `cell_log_marginal` are the adopted ones, identical to `fit$weights` /
+# `fit$log_marginal` by construction.
 .cila_record <- function(cfg, declined = NA_character_, n_cells = NA_integer_,
                          n_declined = NA_integer_, variant_used = NA_character_,
                          fallback = NA_character_, pareto_k = NA_real_,
@@ -208,7 +207,7 @@
 # the fit settled on is only known once the first pass has run.
 #
 # `remoments(res) -> res` is the fitter's OWN hyperparameter-summary tail, run
-# again once the corrected grid read has been adopted (gcol33/tulpa#367). Each
+# again once the corrected grid read has been adopted. Each
 # fitter passes the sequence it already runs, so `theta_mean` / `theta_sd` /
 # `theta_median` / `theta_ci_*` are recomputed by the same code that produced
 # them rather than by a second summariser written for the correction.
@@ -257,7 +256,7 @@
     res$draws <- draws
     res$n_fixed <- res$n_fixed %||% p_fixed
 
-    # Adopt the corrected grid read (gcol33/tulpa#367). `fit$draws` are pooled
+    # Adopt the corrected grid read. `fit$draws` are pooled
     # from the corrected per-cell masses, so those masses ARE the fit's grid
     # posterior and the fit carries them under the name every reader of a grid
     # weighting already uses. The pre-correction pair travels under `$laplace`,
@@ -266,8 +265,8 @@
     # so no two same-shaped vectors on the fit disagree about the grid's mass.
     #
     # A cell that produced no usable particle set is dropped, and the read is
-    # then conditional on the cells that remain, the same convention
-    # gcol33/tulpa#342 settled for a repaired grid. `retained_mass` is the share
+    # then conditional on the cells that remain, the same convention a
+    # repaired grid takes. `retained_mass` is the share
     # of the ORIGINAL Laplace mass those cells carried, 1 on a complete grid, so
     # a reader tells the two apart from the fit alone.
     lm_adopt <- as.numeric(pool$cell_log_marginal)

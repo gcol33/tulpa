@@ -2,6 +2,11 @@
 // PG shims
 // ============================================================================
 
+// NOT A HEADER. This is a textual fragment with no include guard: it defines
+// functions with external linkage and is included, exactly once, from
+// tulpa_shims.cpp. Including it from a second translation unit gives two
+// definitions of each and fails at link time.
+
 #include "shim_guard.h"
 
 namespace {

@@ -25,8 +25,8 @@ spatial_gp(
 coordinate variables in the data. With \code{approx = "nngp"} the coordinate
 DIMENSION is however many are named: two for a map, one for a transect or
 a depth profile, three for a depth-resolved domain. The neighbour graph
-and the neighbour covariance both read every column (gcol33/tulpa#389,
-gcol33/tulpa#391). \code{approx = "hsgp"} takes exactly two, and so does any
+and the neighbour covariance both read every column. \code{approx = "hsgp"}
+takes exactly two, and so does any
 sampler mode, because both store coordinates at a fixed 2-D stride.}
 
 \item{approx}{GP approximation: \code{"nngp"} (default, a nearest-neighbour GP with

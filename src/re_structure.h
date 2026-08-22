@@ -13,6 +13,7 @@
 
 #include "tulpa/model_data.h"
 #include <Rcpp.h>
+#include <string>
 #include <vector>
 
 namespace tulpa {
@@ -39,6 +40,14 @@ inline void populate_re_structure(
     const std::vector<bool>& correlated
 ) {
     const int K = (int)re_ngroups.size();
+    if ((int)ncoefs.size() != K || (int)correlated.size() != K ||
+        (int)re_idx_list.size() != K) {
+        Rcpp::stop("RE structure malformed: re_ngroups (%d), ncoefs (%d), "
+                   "correlated (%d) and re_idx_list (%d) must all describe the "
+                   "same number of terms.",
+                   K, (int)ncoefs.size(), (int)correlated.size(),
+                   (int)re_idx_list.size());
+    }
 
     data.n_re_terms = K;
     data.re_n_groups_multi.assign(K, 0);
@@ -53,6 +62,10 @@ inline void populate_re_structure(
 
     const bool have_Z = re_Z_list.isNotNull();
     Rcpp::List zl = have_Z ? Rcpp::as<Rcpp::List>(re_Z_list) : Rcpp::List();
+    if (have_Z && (int)zl.size() != K) {
+        Rcpp::stop("re_Z_list has %d entries but there are %d RE terms.",
+                   (int)zl.size(), K);
+    }
 
     int total_re_groups = 0, total_re_params = 0;
     int total_sigma_params = 0, total_chol_params = 0;
@@ -61,10 +74,31 @@ inline void populate_re_structure(
     for (int t = 0; t < K; t++) {
         const int n_g = re_ngroups[t];
         const int q   = ncoefs[t];
+        if (n_g < 1) {
+            Rcpp::stop("RE term %d declares %d groups; it must declare at "
+                       "least 1.", t + 1, n_g);
+        }
+        if (q < 1) {
+            Rcpp::stop("RE term %d declares %d coefficients; it must declare "
+                       "at least 1.", t + 1, q);
+        }
         Rcpp::IntegerVector gi = Rcpp::as<Rcpp::IntegerVector>(re_idx_list[t]);
         if ((int)gi.size() != N) {
             Rcpp::stop("re_idx_list[[%d]] has length %d but N = %d.",
                        t + 1, (int)gi.size(), N);
+        }
+        // The eta assembly reads re_vals[offset + (gi - 1) * n_coefs], guarded
+        // only by gi > 0, so the upper bound has to hold here. 0 is the
+        // "no random effect on this row" encoding the assembly skips.
+        for (int i = 0; i < N; i++) {
+            if (gi[i] == NA_INTEGER || gi[i] < 0 || gi[i] > n_g) {
+                Rcpp::stop("re_idx_list[[%d]][%d] is %s; it must be 0 (no "
+                           "group) or a 1-based index in [1, %d].",
+                           t + 1, i + 1,
+                           gi[i] == NA_INTEGER ? "NA"
+                                               : std::to_string(gi[i]).c_str(),
+                           n_g);
+            }
         }
         const bool corr = (q > 1) && correlated[t];
 
@@ -78,6 +112,10 @@ inline void populate_re_structure(
             if (Z.nrow() != N) {
                 Rcpp::stop("re_Z_list[[%d]] has %d rows but N = %d.",
                            t + 1, Z.nrow(), N);
+            }
+            if (Z.ncol() < 1) {
+                Rcpp::stop("re_Z_list[[%d]] has no columns; the intercept "
+                           "test reads column 1.", t + 1);
             }
             has_int = true;
             for (int i = 0; i < N; i++) { if (Z(i, 0) != 1.0) { has_int = false; break; } }

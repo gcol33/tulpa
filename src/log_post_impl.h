@@ -46,23 +46,19 @@ T compute_log_post_impl(
     const ModelData& data,
     const ParamLayout& layout
 ) {
-    if (data.n_processes == 0 || data.likelihood_spec == nullptr) {
-        // A caller built ModelData without a LikelihoodSpec, which tulpa
-        // core does not support. Return T(0) as a defensive no-op so
-        // callers that defer error reporting to a downstream check
-        // (e.g. resolve_gradient_fn's Rcpp::stop) see a finite value.
-        return T(0);
-    }
-
+    // A malformed ModelData (no LikelihoodSpec, or no process) is raised by
+    // compute_log_post_generic_spec_double, so the predicate is asked in one
+    // place rather than answered with a different sentinel at each entry point.
     if constexpr (std::is_same_v<T, double>) {
         return compute_log_post_generic_spec_double(params, data, layout);
     } else {
         // Autodiff (arena, tape, forward) for the generic-spec path goes
         // through compute_gradient_generic_arena, which calls
-        // compute_log_post_generic<Var>(...) directly. compute_log_post_impl
-        // is therefore only reached with T = double in production; an
-        // autodiff call here is a logic error in the caller.
-        return T(0);
+        // compute_log_post_generic<Var>(...) directly, so an autodiff call
+        // here is a caller error and not a point to reject.
+        Rcpp::stop("tulpa: compute_log_post_impl is the double-precision "
+                   "log-posterior entry point; autodiff callers route through "
+                   "compute_gradient_generic_arena.");
     }
 }
 

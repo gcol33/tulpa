@@ -62,7 +62,7 @@ exactly as specified -- the per-axis policy names
 driver recentres on the grid's collapsed-edge regime rather than on a
 per-axis rail).
 
-The \verb{(tau_lower, tau_upper)} span (and, for \code{ar1}, \verb{(rho_lower, rho_upper)}) is a starting axis, not a hard ceiling (gcol33/tulpa#291):
+The \verb{(tau_lower, tau_upper)} span (and, for \code{ar1}, \verb{(rho_lower, rho_upper)}) is a starting axis, not a hard ceiling:
 when the fitted precision (or, for \code{ar1}, autocorrelation) posterior
 mode rails a boundary node (\code{pareto_k_regime = "collapsed_edge"}, see
 below), the driver fits a mode-Hessian via a derivative-free \code{optim()}
@@ -70,7 +70,7 @@ over the collapsed grid and refits a grid re-centred on it (one
 attempt).
 
 A grid knob PINS the axes it shapes, and a pin always wins -- but
-pinning is decided by value, not by presence (gcol33/tulpa#294): a knob
+pinning is decided by value, not by presence: a knob
 set to the engine's own default, or marked with \code{\link[=auto_grid]{auto_grid()}}, expresses
 no preference and leaves its axes free. That is what lets a wrapper
 package thread its own \code{n_grid}-style argument through \code{control} without
@@ -99,7 +99,7 @@ fixed-effect posterior (\code{draws} via the grid mixture), \code{spatial_effect
 nodes were therefore kept, and \code{outer_grid_recenter_sd_clamp} /
 \verb{_sd_raw} / \verb{_sd_used} -- per moved axis, which mode-SD bound the
 placement hit, the SD the stencil measured, and the SD the axis was laid
-from (gcol33/tulpa#387). A bound-decline is PER AXIS here: the axes the
+from. A bound-decline is PER AXIS here: the axes the
 mode-find did resolve are still re-placed, and
 \code{outer_grid_recenter_sd_declined} names the ones that kept their incoming
 nodes and on which bound, so a partially re-placed grid is not read as a

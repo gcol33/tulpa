@@ -7,6 +7,11 @@
 // over the caller's CSC arrays; nothing is copied or freed in the wrapper.
 // ============================================================================
 
+// NOT A HEADER. This is a textual fragment with no include guard: it defines
+// functions with external linkage and is included, exactly once, from
+// tulpa_shims.cpp. Including it from a second translation unit gives two
+// definitions of each and fails at link time.
+
 #include "cholmod_view.h"
 #include "shim_guard.h"
 

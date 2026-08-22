@@ -37,6 +37,19 @@ SEXP cpp_glmm_oracle_make(std::string family, double phi,
         new SingleArmGLMMOracle(fam, phi, Xe, Ze, ix, n_groups, ye, nt), true);
 }
 
+// Shape check for one block-spec field. `rows`/`cols` are what arrived,
+// `want_rows`/`want_cols` what the sweep indexes it by. A vector field passes
+// its length as `rows` and 1 as `cols`.
+static void check_block_dims(int m, const char* field,
+                             R_xlen_t rows, R_xlen_t cols,
+                             int want_rows, int want_cols) {
+    if ((int)rows != want_rows || (int)cols != want_cols) {
+        stop("cpp_re_cov_gibbs_sweep: block %d field `%s` is %d x %d, "
+             "expected %d x %d.", m + 1, field, (int)rows, (int)cols,
+             want_rows, want_cols);
+    }
+}
+
 // blocks: list of per-block specs, each a list with
 //   Z (n x nc), idx (n, 1-based), nc, full (logical), n_groups, nu0,
 //   Lambda0 (nc x nc, full only) or lambda0 (nc, diagonal only),
@@ -52,9 +65,12 @@ List cpp_re_cov_gibbs_sweep(std::string family, double phi,
 
     const GLMMFamily fam = glmm_family_from_string(family);
     const int M = blocks.size();
+    if (M < 1) stop("cpp_re_cov_gibbs_sweep: `blocks` must hold at least one block.");
     Eigen::MatrixXd Xe = as<Eigen::MatrixXd>(X);
     Eigen::VectorXd ye = as<Eigen::VectorXd>(y);
     Eigen::VectorXd nt = as<Eigen::VectorXd>(n_trials);
+    const int n = static_cast<int>(Xe.rows());
+    const int p = static_cast<int>(Xe.cols());
 
     std::vector<std::unique_ptr<SingleArmGLMMOracle>> owned;
     std::vector<SingleArmGLMMOracle*> oracles;
@@ -71,19 +87,45 @@ List cpp_re_cov_gibbs_sweep(std::string family, double phi,
         const bool full = as<bool>(bm["full"]);
         const int ng = as<int>(bm["n_groups"]);
 
+        if (nc < 1) {
+            stop("cpp_re_cov_gibbs_sweep: block %d has nc = %d; it must be >= 1.",
+                 m + 1, nc);
+        }
+        if (ng < 1) {
+            stop("cpp_re_cov_gibbs_sweep: block %d has n_groups = %d; it must be >= 1.",
+                 m + 1, ng);
+        }
+        check_block_dims(m, "Z", Z.rows(), Z.cols(), n, nc);
+
         owned.emplace_back(new SingleArmGLMMOracle(fam, phi, Xe, Z, idx, ng, ye, nt));
         oracles.push_back(owned.back().get());
 
         cb[m].nc = nc; cb[m].full = full; cb[m].n_groups = ng;
         cb[m].nu0 = as<double>(bm["nu0"]);
-        if (full) cb[m].Lambda0 = as<Eigen::MatrixXd>(bm["Lambda0"]);
-        else      cb[m].lambda0 = as<Eigen::VectorXd>(bm["lambda0"]);
+        if (full) {
+            cb[m].Lambda0 = as<Eigen::MatrixXd>(bm["Lambda0"]);
+            check_block_dims(m, "Lambda0", cb[m].Lambda0.rows(),
+                             cb[m].Lambda0.cols(), nc, nc);
+        } else {
+            cb[m].lambda0 = as<Eigen::VectorXd>(bm["lambda0"]);
+            check_block_dims(m, "lambda0", cb[m].lambda0.size(), 1, nc, 1);
+        }
 
         b0[m]     = as<Eigen::MatrixXd>(bm["b0"]);
         Sigma0[m] = as<Eigen::MatrixXd>(bm["Sigma0"]);
+        check_block_dims(m, "b0", b0[m].rows(), b0[m].cols(), ng, nc);
+        check_block_dims(m, "Sigma0", Sigma0[m].rows(), Sigma0[m].cols(), nc, nc);
         List lg = bm["Lg0"];
+        if (lg.size() != ng) {
+            stop("cpp_re_cov_gibbs_sweep: block %d Lg0 has %d entries, expected "
+                 "n_groups = %d.", m + 1, (int)lg.size(), ng);
+        }
         Lg0[m].resize(lg.size());
-        for (int g = 0; g < lg.size(); ++g) Lg0[m][g] = as<Eigen::MatrixXd>(lg[g]);
+        for (int g = 0; g < lg.size(); ++g) {
+            Lg0[m][g] = as<Eigen::MatrixXd>(lg[g]);
+            check_block_dims(m, "Lg0[[g]]", Lg0[m][g].rows(), Lg0[m][g].cols(),
+                             nc, nc);
+        }
     }
 
     GibbsConfig cfg;
@@ -93,6 +135,21 @@ List cpp_re_cov_gibbs_sweep(std::string family, double phi,
 
     Eigen::VectorXd b0v = as<Eigen::VectorXd>(beta0);
     Eigen::MatrixXd Lb  = as<Eigen::MatrixXd>(L_beta);
+
+    if ((int)b0v.size() != p) {
+        stop("cpp_re_cov_gibbs_sweep: beta0 has length %d, expected ncol(X) = %d.",
+             (int)b0v.size(), p);
+    }
+    if (Lb.rows() != p || Lb.cols() != p) {
+        stop("cpp_re_cov_gibbs_sweep: L_beta is %d x %d, expected %d x %d.",
+             (int)Lb.rows(), (int)Lb.cols(), p, p);
+    }
+    if ((int)cfg.beta_prior_mean.size() != p ||
+        (int)cfg.beta_prior_sd.size() != p) {
+        stop("cpp_re_cov_gibbs_sweep: beta_prior_mean (%d) and beta_prior_sd (%d) "
+             "must both have length ncol(X) = %d.",
+             (int)cfg.beta_prior_mean.size(), (int)cfg.beta_prior_sd.size(), p);
+    }
 
     GibbsOutput out = run_glmm_gibbs(oracles, cb, b0, Lg0, Sigma0, b0v, Lb, cfg);
 

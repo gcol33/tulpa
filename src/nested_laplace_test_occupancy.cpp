@@ -5,9 +5,9 @@
 // C++ -- the same role cpp_laplace_spec_test_family plays for the conditional
 // path.
 //
-// After L5, tulpa's family enum no longer carries the occupancy `det_prob`
-// hook. The marginalized single-season occupancy likelihood is supplied as a
-// model LikelihoodSpec instead: a detection indicator y_i in {0, 1} with mean
+// tulpa's family enum carries no occupancy `det_prob` hook: the marginalized
+// single-season occupancy likelihood arrives as a model LikelihoodSpec, a
+// detection indicator y_i in {0, 1} with mean
 // mu_i = q_i * sigma(eta_i), where sigma(eta_i) is the occupancy probability
 // and q_i in [0, 1] is the per-site probability of at least one detection given
 // occupancy (the latent occupancy state integrated out analytically). This
@@ -46,6 +46,18 @@ struct OccupancyResponse {
     std::vector<double> q;  // [N] per-site P(>=1 detection | occupied), in [0, 1]
 };
 
+// mu = q * sigma(eta) is held inside (eps, 1 - eps) so that log(mu) and
+// log(1 - mu) stay finite. Same magnitude as tulpa::math::PROB_EPS: at 1e-15
+// the log is -34.5, small enough to dominate any competing term and large
+// enough to stay well inside the double range.
+inline constexpr double OCC_MU_EPS = 1e-15;
+
+// Floor on the (1 - mu) denominator of the score and the expected information.
+// Looser than OCC_MU_EPS because it divides rather than being logged: at mu
+// exactly 1 - OCC_MU_EPS the quotient would be 1e15, which swamps the Newton
+// step, so the working weight is capped at 1e12 instead.
+inline constexpr double OCC_DENOM_FLOOR = 1e-12;
+
 inline double occ_sigma(double eta) {
     if (eta > 0) return 1.0 / (1.0 + std::exp(-eta));
     double e = std::exp(eta);
@@ -63,7 +75,7 @@ double occ_ll_double(
     const double q = r->q[i];
     if (q <= 0.0) return 0.0;
     double mu = q * occ_sigma(eta[0]);
-    mu = std::max(std::min(mu, 1.0 - 1e-15), 1e-15);
+    mu = std::max(std::min(mu, 1.0 - OCC_MU_EPS), OCC_MU_EPS);
     return r->y[i] ? std::log(mu) : std::log(1.0 - mu);
 }
 
@@ -81,7 +93,7 @@ void occ_eta_weights(
     if (q <= 0.0) { grad_eta[0] = 0.0; neg_hess_eta[0] = 0.0; return; }
     const double s     = occ_sigma(eta[0]);
     const double mu    = q * s;
-    const double denom = std::max(1.0 - mu, 1e-12);   // 1 - q sigma
+    const double denom = std::max(1.0 - mu, OCC_DENOM_FLOOR);  // 1 - q sigma
     grad_eta[0]     = (r->y[i] - mu) * (1.0 - s) / denom;
     neg_hess_eta[0] = q * s * (1.0 - s) * (1.0 - s) / denom;
 }

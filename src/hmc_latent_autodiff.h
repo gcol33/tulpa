@@ -64,7 +64,7 @@ T latent_sigma_log_prior(const std::vector<T>& log_sigma, double rate) {
     for (int k = 0; k < n_factors; ++k) {
         T sigma_k = safe_exp(log_sigma[k]);
         // Exponential prior on sigma with Jacobian
-        lp = lp + T(std::log(rate)) + log_sigma[k] - T(rate) * sigma_k;
+        lp = lp + T(safe_log(rate)) + log_sigma[k] - T(rate) * sigma_k;
     }
     return lp;
 }

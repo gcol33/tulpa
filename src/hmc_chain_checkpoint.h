@@ -97,13 +97,18 @@ namespace tulpa {
 
 using ChainCheckpoint = CheckpointLog<tulpa_hmc::HMCResultCpp>;
 
-// Keys are the chain index encoded as raw bytes (a chain is a "cell"); the
+// Keys are the chain index in its decimal spelling (a chain is a "cell"); the
 // fingerprint must already cover the data + sampler settings + per-chain seed so
 // a resume onto a file from a different run errors. n_chains keys.
+//
+// The decimal spelling rather than the int's object representation: the raw
+// bytes depend on endianness and on sizeof(int), so a file written on one host
+// and read on another with a different byte order would match chain 0 (all
+// zero bytes) and silently re-run every other chain.
 inline std::vector<std::string> chain_checkpoint_keys(int n_chains) {
     std::vector<std::string> keys(n_chains);
     for (int c = 0; c < n_chains; c++) {
-        keys[c].append(reinterpret_cast<const char*>(&c), sizeof(int));
+        keys[c] = std::to_string(c);
     }
     return keys;
 }
