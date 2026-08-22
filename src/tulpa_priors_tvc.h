@@ -41,8 +41,9 @@ T compute_tvc_prior(const std::vector<T>& params, const ModelData& data,
             tvc_tau[j] = safe_exp(log_tau);
 
             // PC prior on sigma = 1/sqrt(tau), on the sampled log-precision
-            // scale. P(sigma > 1) = 0.01.
-            log_post = log_post + log_prior_log_tau_pc(log_tau, 1.0, 0.01);
+            // scale, at the spec's own anchors: P(sigma > U) = alpha.
+            log_post = log_post + log_prior_log_tau_pc(
+                log_tau, data.tvc_sigma_prior_U, data.tvc_sigma_prior_alpha);
         }
 
         // Extract rho (AR1 correlation) parameters if AR1 structure

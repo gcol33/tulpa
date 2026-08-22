@@ -115,34 +115,34 @@ FIXED inner Laplace, this scores whether that inner Gaussian
 approximation is itself a good fit to the latent-field conditional
 posterior. See \code{\link[=diagnostics]{diagnostics()}} for the combined whole-fit verdict.
 \item \code{within_cell} (\code{"box_uniform"}) -- the WITHIN-CELL construction the
-reported per-axis hyperparameter intervals are read with. The outer grid's weights say how much mass each cell
-holds; they do not say how it is spread inside the cell, and a quantile
-needs both. \code{"box_uniform"} puts the cumulative FULL mass at each cell
-EDGE and interpolates between edges; \code{"chord"} puts the cumulative
-MID-mass at each cell coordinate and interpolates between coordinates --
-the same masses over the same boxes with the knots moved half a cell,
-which measures as a whole order of convergence (2.00 against 1.04 on a
-fixture with a closed-form posterior).
-THE DEFAULT IS \code{"box_uniform"} since 0.0.188, decided on FIXED-TRUTH
-coverage at the placement the engine ships, with
-\code{auto_recenter = "resolve"} as the default. Summed |coverage - nominal| over
-nominal 0.95 / 0.80 / 0.50, chord against box-uniform: 0.2900 / 0.1233 on
-the pre-registered fixed-truth instrument, 0.2004 / 0.0361 over 4680
-truth-swept fits of the same fixture, and 0.2467 / 0.1572 over nine
-(config, axis) rows spanning seven families, at 0.69 to 1.08x the width.
-The conditional-coverage swing that held the default back reads 0.110 at
-the shipped placement against 0.415 on the coarse pinned grid it was
-measured on, and at nominal 0.50 it is the same on both reads.
-\code{outer_grid_h_over_sd} is how wide a cell is on each axis (with
-\code{outer_grid_resolution_declined} naming why an axis carries no ratio, and
-\code{outer_grid_railed_axes} naming any axis whose nodes do not contain its
-own posterior mode), and
+reported per-axis hyperparameter intervals are read with. The outer
+grid's weights say how much mass each cell holds; they do not say how it
+is spread inside the cell, and a quantile needs both. \code{"box_uniform"}
+puts the cumulative FULL mass at each cell EDGE and interpolates between
+edges; \code{"chord"} puts the cumulative MID-mass at each cell coordinate
+and interpolates between coordinates -- the same masses over the same
+boxes with the knots moved half a cell, which measures as a whole order
+of convergence (2.00 against 1.04 on a fixture with a closed-form
+posterior). THE DEFAULT IS \code{"box_uniform"} since 0.0.188, decided on
+FIXED-TRUTH coverage at the placement the engine ships, with
+\code{auto_recenter = "resolve"} as the default. Summed
+|coverage - nominal| over nominal 0.95 / 0.80 / 0.50, chord against
+box-uniform: 0.2900 / 0.1233 on the pre-registered fixed-truth
+instrument, 0.2004 / 0.0361 over 4680 truth-swept fits of the same
+fixture, and 0.2467 / 0.1572 over nine (config, axis) rows spanning
+seven families, at 0.69 to 1.08x the width. The conditional-coverage
+swing that held the default back reads 0.110 at the shipped placement
+against 0.415 on the coarse pinned grid it was measured on, and at
+nominal 0.50 it is the same on both reads. \code{outer_grid_h_over_sd} is how
+wide a cell is on each axis (with \code{outer_grid_resolution_declined}
+naming why an axis carries no ratio, and \code{outer_grid_railed_axes} naming
+any axis whose nodes do not contain its own posterior mode), and
 \code{theta_within_cell} is what each axis was actually read with. Only a
-\code{"density"} support admits it -- a CCD design, a locally refined grid and
-a posterior sample are not cell partitions that tile -- and an axis it
-declines on reports \code{"chord"} with a reason rather than erroring. Nothing
-else moves: point estimates, moments, draws and weights are untouched, and
-\code{"chord"} restores the previous report exactly.
+\code{"density"} support admits it -- a CCD design, a locally refined grid
+and a posterior sample are not cell partitions that tile -- and an axis
+it declines on reports \code{"chord"} with a reason rather than erroring.
+Nothing else moves: point estimates, moments, draws and weights are
+untouched, and \code{"chord"} restores the previous report exactly.
 \item \code{skew_correct} (\code{TRUE}) -- consume the inner-Laplace expansion instead of
 only grading it: report
 Cornish-Fisher marginal quantiles at each coefficient's own \code{gamma_3},
@@ -157,14 +157,14 @@ The band that bounded the relocation itself (\code{centre_unreliable}) is
 off (\code{Inf}): scored over seven fixtures with an exact
 reference, every finite cutoff declines the coefficients the correction
 helps most, because a large centre carrying a small \code{gamma_3} is uniformly
-weak correlation rather than an expansion out of its regime. \verb{$skew_correction} records the per-coefficient
-\code{gamma_3}, \code{gamma_1} and the centre they form, the band, the inner
-importance k-hat, the combined band, the eligibility
-and the reason behind it; the \code{skew_applied} attribute on \code{summary()} /
-\code{confint()} records what was actually used at the requested level. RMC fit
-a skew normal here instead; the series correction is the same-order
-alternative, and unlike a skew normal its skewness does not saturate
-inside the band it is applied on.
+weak correlation rather than an expansion out of its regime.
+\verb{$skew_correction} records the per-coefficient \code{gamma_3}, \code{gamma_1} and
+the centre they form, the band, the inner importance k-hat, the combined
+band, the eligibility and the reason behind it; the \code{skew_applied}
+attribute on \code{summary()} / \code{confint()} records what was actually used at
+the requested level. RMC fit a skew normal here instead; the series
+correction is the same-order alternative, and unlike a skew normal its
+skewness does not saturate inside the band it is applied on.
 
 MEASURED. Against exact quadrature
 quantiles of rare-event binomial-logit posteriors it cuts total absolute
@@ -224,7 +224,8 @@ pre-correction pair is kept as \verb{$cila$laplace}. A cell whose inner solve
 factorized sparsely draws through the CHOLMOD factor's own triangular and
 permutation solves; an LDL' factor has no square root to draw with and is
 declined with \code{"sparse_factor_not_ll"}.
-\item \code{auto_recenter} (\code{TRUE}) -- outer-grid placement policy. \code{TRUE} re-centres the movable default
+\item \code{auto_recenter} (\code{TRUE}) -- outer-grid placement policy. \code{TRUE}
+re-centres the movable default
 axes on the posterior mode and refits when the grid either RAILS (an
 axis's own marginal is maximal at one of its own endpoints) or does not
 RESOLVE its posterior (an axis's node spacing exceeds 2 posterior SDs in

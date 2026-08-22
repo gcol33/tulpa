@@ -31,22 +31,26 @@ T compute_re_prior(const std::vector<T>& params, const ModelData& data,
     if (layout.has_re) {
         int n_terms = (data.n_re_terms > 0) ? data.n_re_terms : 1;
 
-        // Compute total RE size for pre-allocation
+        // Per-term dimensions, resolved once. The offset loop below needs them
+        // to size re_vals and the density loop needs the same two numbers, so
+        // they are stored rather than recomputed from the same ternaries.
+        std::vector<int> n_groups_per_term(n_terms);
+        std::vector<int> n_coefs_per_term(n_terms);
         int total_re_vals = 0;
         re_term_offsets.resize(n_terms);
         for (int t = 0; t < n_terms; t++) {
             re_term_offsets[t] = total_re_vals;
-            int n_groups_t = (n_terms > 1 || data.n_re_terms > 0)
-                             ? data.re_n_groups_multi[t] : data.n_re_groups;
-            int n_coefs_t = layout.has_re_slopes ? layout.re_n_coefs_multi[t] : 1;
-            total_re_vals += n_groups_t * n_coefs_t;
+            n_groups_per_term[t] = (n_terms > 1 || data.n_re_terms > 0)
+                                   ? data.re_n_groups_multi[t] : data.n_re_groups;
+            n_coefs_per_term[t] = layout.has_re_slopes
+                                  ? layout.re_n_coefs_multi[t] : 1;
+            total_re_vals += n_groups_per_term[t] * n_coefs_per_term[t];
         }
         re_vals.resize(total_re_vals, T(0.0));
 
         for (int t = 0; t < n_terms; t++) {
-            int n_groups_t = (n_terms > 1 || data.n_re_terms > 0)
-                             ? data.re_n_groups_multi[t] : data.n_re_groups;
-            int n_coefs_t = layout.has_re_slopes ? layout.re_n_coefs_multi[t] : 1;
+            int n_groups_t = n_groups_per_term[t];
+            int n_coefs_t = n_coefs_per_term[t];
             bool is_correlated = layout.has_re_slopes &&
                                  !layout.re_correlated_multi.empty() &&
                                  layout.re_correlated_multi[t];

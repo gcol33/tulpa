@@ -42,6 +42,7 @@
 #include "laplace_spatial_priors.h"
 #include "latent_block.h"
 #include "linalg_fast.h"
+#include "nested_laplace_grid.h"   // nl_check_positive
 #include "omp_threads.h"          // tulpa_parallel_for (serial route at one thread)
 #include "sparse_cholesky.h"
 #include <Rcpp.h>
@@ -1545,7 +1546,10 @@ Rcpp::List cpp_laplace_spec_test_gaussian(
 
     // Initialise params: zeros for latent, log(sigma_re) for the precision slot.
     std::vector<double> params(layout.total_params, 0.0);
-    if (has_re) params[layout.log_sigma_re_idx] = std::log(sigma_re);
+    if (has_re) {
+        tulpa::nl_check_positive("sigma_re", sigma_re);
+        params[layout.log_sigma_re_idx] = std::log(sigma_re);
+    }
 
     // Build re_group_1based slice for the impl.
     std::vector<int> re_group_1based;
@@ -1728,7 +1732,10 @@ Rcpp::List cpp_laplace_spec_test_gaussian2p(
     layout.total_params = next;
 
     std::vector<double> params(layout.total_params, 0.0);
-    if (has_re) params[layout.log_sigma_re_idx] = std::log(sigma_re);
+    if (has_re) {
+        tulpa::nl_check_positive("sigma_re", sigma_re);
+        params[layout.log_sigma_re_idx] = std::log(sigma_re);
+    }
 
     std::vector<int> re_group_1based;
     if (has_re) re_group_1based.assign(re_idx.begin(), re_idx.end());

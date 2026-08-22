@@ -67,7 +67,11 @@ when the latent field is stiff relative to a comparatively flat likelihood.
 Like the other schemes it applies to NUTS.
 
 The choice is process-global (like the gradient mode): set it once before
-fitting. It is read on the main thread at the start of sampling.
+fitting. It is read on the main thread at the start of sampling. Because it
+is process-global, a caller that changes it owns restoring it -- and an error
+between the two calls would leave the process on the other integrator.
+\code{\link[=with_tulpa_integrator]{with_tulpa_integrator()}} does both, restoring on error as well as on
+success.
 }
 \examples{
 tulpa_integrator()            # current integrator

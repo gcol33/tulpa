@@ -1,7 +1,10 @@
     // Store sample (flat row-major storage, single memcpy baseline; NC
     // blocks below overwrite their own z slice with the reconstructed field
     // w so stored draws carry w, not z -- keeping q itself as z for
-    // sampling). GP / SVC / multiscale-GP NC blocks are independent (a model
+    // sampling). The scales come off q through safe_exp, the same bounded map
+    // the log-posterior's own transform uses (nngp_nc_term_apply.cpp), so the
+    // stored field is the same function of q as the field the likelihood saw
+    // and a large draw gives a bounded reconstruction rather than Inf * 0. GP / SVC / multiscale-GP NC blocks are independent (a model
     // can carry more than one structured term at once), so each is applied
     // unconditionally to `row` rather than as mutually exclusive branches.
     if (!is_warmup) {
@@ -11,8 +14,8 @@
 
       // NC GP: transform z -> w for stored samples (keep q as z for sampling)
       if (data.gp_parameterization == 1 && data.has_gp && layout.is_gp) {
-          double sigma2_store = std::exp(q[layout.log_sigma2_gp_idx]);
-          double phi_store = std::exp(q[layout.log_phi_gp_idx]);
+          double sigma2_store = tulpa::math::safe_exp(q[layout.log_sigma2_gp_idx]);
+          double phi_store = tulpa::math::safe_exp(q[layout.log_phi_gp_idx]);
           // POD-pointer TLS (constant init, no thread-atexit destructor): a
           // lazily-initialized thread_local object here corrupts the heap
           // under the mingw toolchain when chains run in parallel. The
@@ -42,8 +45,8 @@
           int N_svc = sv.n_obs;
           for (int j = 0; j < sv.n_svc; j++) {
               int w0 = layout.svc_w_start + j * N_svc;
-              double sigma2_store = std::exp(q[layout.log_sigma2_svc_start + j]);
-              double phi_store = std::exp(q[layout.log_phi_svc_start + j]);
+              double sigma2_store = tulpa::math::safe_exp(q[layout.log_sigma2_svc_start + j]);
+              double phi_store = tulpa::math::safe_exp(q[layout.log_phi_svc_start + j]);
               tulpa_gp::nngp_nc_forward(&q[w0], sigma2_store, phi_store,
                                          svc_view, svc_ws_store);
               // Store the CENTERED field, matching what the non-centered
@@ -69,8 +72,8 @@
 
           const auto& ms = data.multiscale_gp_data;
           int N_local = ms.n_obs;
-          double sigma2_local_store = std::exp(q[layout.log_sigma2_gp_local_idx]);
-          double phi_local_store = std::exp(q[layout.log_phi_gp_local_idx]);
+          double sigma2_local_store = tulpa::math::safe_exp(q[layout.log_sigma2_gp_local_idx]);
+          double phi_local_store = tulpa::math::safe_exp(q[layout.log_phi_gp_local_idx]);
           tulpa_gp::nngp_nc_forward(&q[layout.gp_local_start], sigma2_local_store,
                                      phi_local_store, tulpa_gp::make_msgp_nc_view_local(ms),
                                      msgp_ws_store);
@@ -79,8 +82,8 @@
           }
 
           int N_regional = ms.n_obs;
-          double sigma2_regional_store = std::exp(q[layout.log_sigma2_gp_regional_idx]);
-          double phi_regional_store = std::exp(q[layout.log_phi_gp_regional_idx]);
+          double sigma2_regional_store = tulpa::math::safe_exp(q[layout.log_sigma2_gp_regional_idx]);
+          double phi_regional_store = tulpa::math::safe_exp(q[layout.log_phi_gp_regional_idx]);
           tulpa_gp::nngp_nc_forward(&q[layout.gp_regional_start], sigma2_regional_store,
                                      phi_regional_store, tulpa_gp::make_msgp_nc_view_regional(ms),
                                      msgp_ws_store);

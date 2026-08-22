@@ -1,5 +1,5 @@
 // autodiff.h
-// Reverse-mode automatic differentiation for ratiod
+// Reverse-mode automatic differentiation
 // Thread-safe implementation: Tape passed as parameter, no global state
 
 #ifndef TULPA_AUTODIFF_H

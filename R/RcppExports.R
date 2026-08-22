@@ -933,6 +933,10 @@ cpp_test_st_iv_log_post <- function(y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx
     .Call(`_tulpa_cpp_test_st_iv_log_post`, y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T, q, family, temporal, temporal_cyclic, st_parameterization, sigma_beta)
 }
 
+cpp_test_temporal_gp_density <- function(times, n_groups, field, log_sigma2, logit_phi, parameterization, phi_lower = 0.01, phi_upper = 10.0) {
+    .Call(`_tulpa_cpp_test_temporal_gp_density`, times, n_groups, field, log_sigma2, logit_phi, parameterization, phi_lower, phi_upper)
+}
+
 cpp_tgmrf_nuts_joint <- function(y, n_trials, X, obs_idx, family, phi, cpp_id, theta_dim, n_latent, beta_init, z_init, theta_init, M_inv_diag, epsilon0, n_iter, n_warmup, max_depth, target_accept, fd_step, verbose, seed, debug_gradient_check, gradient_check_tol, fd_check_step) {
     .Call(`_tulpa_cpp_tgmrf_nuts_joint`, y, n_trials, X, obs_idx, family, phi, cpp_id, theta_dim, n_latent, beta_init, z_init, theta_init, M_inv_diag, epsilon0, n_iter, n_warmup, max_depth, target_accept, fd_step, verbose, seed, debug_gradient_check, gradient_check_tol, fd_check_step)
 }

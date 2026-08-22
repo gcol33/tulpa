@@ -100,7 +100,7 @@ gradient-norm clip applied before every Adam step.
 
 \code{epsilon} pins the step size on the stochastic-gradient backends: \code{"sghmc"}
 runs its warmup step-size adapter only when no \code{epsilon} is supplied, and
-\code{"sgld"} runs its polynomial decay \verb{a * (b + t)^-gamma} only then, so a
+\code{"sgld"} runs its polynomial decay \code{a * (b + t)^-gamma} only then, so a
 supplied value is what the whole run samples at. On \code{"mclmc"} a
 non-positive \code{epsilon} selects the kernel's own adaptation. \code{alpha} is the
 SGHMC friction and \code{L} its leapfrog count; SGLD carries neither.

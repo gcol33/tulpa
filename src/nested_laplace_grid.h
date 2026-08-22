@@ -124,6 +124,34 @@ inline int nl_grid_axes_length(
     return n_grid;
 }
 
+// A scale or precision axis is strictly positive. Every density that reads one
+// takes its logarithm for the normalizer and divides by it for the field scale,
+// so a zero cell gives -Inf and a negative cell NaN -- inside the inner Newton
+// solve, as a cell whose marginal is simply not finite, with nothing naming the
+// axis. Checked once at the entry point, where the message can.
+inline void nl_check_positive(const char* name, double v) {
+    if (!(v > 0.0) || !R_finite(v)) {
+        Rcpp::stop("`%s` is %g; a scale or precision must be finite and "
+                   "strictly positive.", name, v);
+    }
+}
+
+inline void nl_grid_axes_positive(
+    std::initializer_list<std::pair<const char*, const Rcpp::NumericVector*>> axes
+) {
+    for (const auto& axis : axes) {
+        const Rcpp::NumericVector& v = *axis.second;
+        const int n = static_cast<int>(v.size());
+        for (int k = 0; k < n; k++) {
+            if (!(v[k] > 0.0) || !R_finite(v[k])) {
+                Rcpp::stop("`%s[%d]` is %g; a scale or precision axis must be "
+                           "finite and strictly positive at every grid cell.",
+                           axis.first, k + 1, v[k]);
+            }
+        }
+    }
+}
+
 // A mixing-weight axis (the BYM2 rho) is a proportion. Outside [0, 1] both
 // bym2_sd_* square roots go NaN, which reaches the inner Newton through eta and
 // returns a NaN cell rather than an error.

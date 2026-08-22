@@ -147,9 +147,11 @@ struct LikelihoodSpec {
     std::string name;
 
     // Templated likelihood for each AD mode
+    // Two, not three. AUTODIFF_FWD resolves to the arena path
+    // (hmc_gradient_dispatch.h), so a forward-dual slot would be filled by
+    // every spec and read by none.
     LikelihoodFn<double> ll_double = nullptr;
     LikelihoodFn<arena::Var> ll_arena = nullptr;
-    LikelihoodFn<::fwd::Dual> ll_fwd = nullptr;
 
     // H-mode: per-observation residual (optional, falls back to A_r if null)
     ResidualFn residual_fn = nullptr;

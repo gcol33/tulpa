@@ -62,7 +62,7 @@ struct DenseBasisActive {
 // Per-(arm, DENSE_BASIS block) scratch. One per outer-grid thread.
 // Buffers are resized lazily by scatter_dense_basis_block.
 //
-// Stage 2.2a (scatter index cache): the per-call H.add() map lookups for
+// Scatter index cache: the per-call H.add() map lookups for
 // the M*(M+1)/2 SYRK output, M*p_k GEMM output, and M*n_re_k per-group
 // RE writes are replaced with direct values[idx] += val writes via
 // precomputed flat-index arrays. The cache is built lazily and keyed on
@@ -98,6 +98,10 @@ struct DenseBasisScratch {
     // Cache key. -1 sentinel means "not yet built".
     const void* cache_H_ptr = nullptr;
     int cache_H_nnz   = -1;
+    // The builder's pattern generation: a re-init with a different pattern of
+    // equal nnz would otherwise satisfy the (pointer, nnz) key and reuse
+    // offsets that no longer point at the intended entries.
+    unsigned long long cache_H_gen = 0;
     int cache_blk_off = -1;   // blk.start + m_off (row anchor)
     int cache_M       = -1;
     int cache_p_k     = -1;
@@ -154,6 +158,7 @@ inline bool scatter_dense_basis_block(
     const bool cache_hit  =
         (scratch.cache_H_ptr   == H_ptr)
         && (scratch.cache_H_nnz   == H.nnz)
+        && (scratch.cache_H_gen   == H.pattern_generation)
         && (scratch.cache_blk_off == blk_off_row)
         && (scratch.cache_M       == M)
         && (scratch.cache_p_k     == p_k)
@@ -197,6 +202,7 @@ inline bool scatter_dense_basis_block(
 
         scratch.cache_H_ptr   = H_ptr;
         scratch.cache_H_nnz   = H.nnz;
+        scratch.cache_H_gen   = H.pattern_generation;
         scratch.cache_blk_off = blk_off_row;
         scratch.cache_M       = M;
         scratch.cache_p_k     = p_k;

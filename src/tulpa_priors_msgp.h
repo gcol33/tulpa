@@ -15,6 +15,7 @@
 #include "autodiff_utils.h"
 #include "hsgp_spectral.h"
 #include "hmc_gp_autodiff.h"
+#include "pc_prior.h"
 
 namespace tulpa {
 namespace priors {
@@ -46,23 +47,19 @@ T compute_multiscale_gp_prior(const std::vector<T>& params, const ModelData& dat
 
             int m_total = data.msgp_hsgp_data.m_total;
 
-            // PC priors on sigma for both scales
-            // PC (exponential) prior on sigma, sampled on x = log(sigma2). The
-            // change of variables is log|dsigma/dx| = 0.5*x - log2 (dsigma/dx =
-            // sigma/2), so the term is -log2 + 0.5*x; -log(2*sigma) would cancel
-            // the +log(sigma) and leave an extra 1/sigma. Matches the temporal
-            // PC prior form.
-            T sigma_local = safe_sqrt(sigma2_local_h);
-            double rate_local = -std::log(data.ms_sigma2_local_prior_alpha) / data.ms_sigma2_local_prior_U;
-            log_post = log_post + T(std::log(rate_local)) - T(rate_local) * sigma_local
-                     - T(std::log(2.0));
-            log_post = log_post + log_sigma2_local * T(0.5);  // Jacobian
+            // PC (exponential) prior on sigma for both scales, on the sampled
+            // log-variance coordinate: the shared pc_prior.h form, which is the
+            // base density plus the exact log|dsigma/dx| = -log2 + 0.5*x.
+            // Routing through it is also what puts the anchors behind
+            // pc_anchors_valid; the hand-inlined rate bypassed every guard.
+            log_post = log_post + log_prior_log_sigma2_pc(
+                log_sigma2_local,
+                data.ms_sigma2_local_prior_U, data.ms_sigma2_local_prior_alpha);
 
-            T sigma_regional = safe_sqrt(sigma2_regional_h);
-            double rate_regional = -std::log(data.ms_sigma2_regional_prior_alpha) / data.ms_sigma2_regional_prior_U;
-            log_post = log_post + T(std::log(rate_regional)) - T(rate_regional) * sigma_regional
-                     - T(std::log(2.0));
-            log_post = log_post + log_sigma2_regional * T(0.5);  // Jacobian
+            log_post = log_post + log_prior_log_sigma2_pc(
+                log_sigma2_regional,
+                data.ms_sigma2_regional_prior_U,
+                data.ms_sigma2_regional_prior_alpha);
 
             // LogNormal priors on lengthscales (centered at scale-appropriate ranges)
             T z_local = (log_ls_local - T(data.ms_log_ls_local_mean)) / T(data.ms_log_ls_local_sd);

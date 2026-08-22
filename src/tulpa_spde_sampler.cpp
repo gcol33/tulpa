@@ -141,15 +141,9 @@ T spde_glm_likelihood(
                  + y_i * eta_i;
         }
         case SpdeFamily::BETA: {
-            // mu and 1 - mu through inv_logit_pos, so both shapes stay
-            // strictly positive at any |eta|.
             T log_phi = params[layout.extra_offset];
-            T phi     = exp(log_phi);
-            T a       = phi * tulpa::math::inv_logit_pos(eta_i);
-            T b       = phi * tulpa::math::inv_logit_pos(T(0.0) - eta_i);
-            return lgamma(phi) - lgamma(a) - lgamma(b)
-                 + (a - T(1.0)) * T(sd->log_y[i])
-                 + (b - T(1.0)) * T(sd->log_1my[i]);
+            return tulpa::math::log_lik_beta_logit(eta_i, exp(log_phi),
+                                                   sd->log_y[i], sd->log_1my[i]);
         }
     }
     return T(0.0);
@@ -391,7 +385,6 @@ Rcpp::List cpp_tulpa_fit_spde_nuts(
     spec.n_processes       = 1;
     spec.ll_double         = spde_glm_likelihood<double>;
     spec.ll_arena          = spde_glm_likelihood<tulpa::arena::Var>;
-    spec.ll_fwd            = spde_glm_likelihood<::fwd::Dual>;
     spec.n_extra_params    = 1;  // log_phi
     spec.extra_prior       = spde_glm_log_phi_prior_double;
     spec.extra_prior_arena = spde_glm_log_phi_prior_arena;

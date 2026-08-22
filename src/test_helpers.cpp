@@ -1408,8 +1408,7 @@ List cpp_test_spde_nc_transform_fwd(
 // set of rank-1 sum-to-zero pins, and returns three independent computations of
 // log|B| plus the step error against a dense reference:
 //   * ld_block_schur  -- s2z_log_det_block_schur (the path under test);
-//   * ld_direct       -- s2z_log_det_direct (the CHOLMOD full-(A+11') reference,
-//                        itself validated dense-11'-vs-rank1 in ef208f0);
+//   * ld_direct       -- s2z_log_det_direct (the CHOLMOD full-(A+11') reference);
 //   * ld_dense        -- an independent Eigen LLT factorization of dense B;
 //   * max_dstep       -- max|delta_block_schur - B^{-1} grad| (Eigen LLT solve).
 // `A` is read as a full symmetric matrix; its lower-triangle nonzeros seed the
@@ -1709,9 +1708,9 @@ List cpp_test_miid_prior(
 }
 
 // ---------------------------------------------------------------------------
-// PC-prior scales (A4). Exposes every parameterization of the
-// shared PC prior so a test can verify each against the base sigma-density plus
-// a numerical change-of-variables Jacobian.
+// PC-prior scales. Exposes every parameterization of the shared PC prior so a
+// test can verify each against the base sigma-density plus a numerical
+// change-of-variables Jacobian.
 // [[Rcpp::export]]
 Rcpp::NumericVector cpp_pc_prior_scales(double sigma, double U, double alpha) {
   using namespace tulpa;

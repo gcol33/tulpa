@@ -250,3 +250,27 @@ prepare_coords <- function(coord_vars, data, scale_coords = FALSE) {
   }
   x
 }
+
+
+# Penalized-complexity anchors: P(sigma > U) = alpha calibrates the exponential
+# rate lambda = -log(alpha) / U, which exists only for U > 0 and alpha in
+# (0, 1). At alpha = 1 the rate is 0 and log(rate) is -Inf, so the prior is -Inf
+# at every value; above 1 it is negative and the density grows without bound.
+# Neither produces a message on its own -- it reaches a gradient as a number --
+# so every front door that takes a pair checks it here, where the message can
+# name the argument the user set. C++ carries the same predicate
+# (pc_anchors_valid, src/pc_prior.h) for specs assembled without this door.
+#' @keywords internal
+.check_pc_anchors <- function(U, alpha, arg_U, arg_alpha, where) {
+  if (!is.numeric(U) || length(U) != 1L || !is.finite(U) || U <= 0) {
+    stop(where, ": `", arg_U, "` must be a single positive number; got ",
+         format(U), ".", call. = FALSE)
+  }
+  if (!is.numeric(alpha) || length(alpha) != 1L || !is.finite(alpha) ||
+      alpha <= 0 || alpha >= 1) {
+    stop(where, ": `", arg_alpha, "` is the tail probability ",
+         "P(sigma > ", arg_U, ") and must lie in (0, 1); got ",
+         format(alpha), ".", call. = FALSE)
+  }
+  invisible(TRUE)
+}

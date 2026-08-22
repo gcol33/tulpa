@@ -23,10 +23,18 @@ inline double dcov_dphi(double d, double phi, double cov_val, double sigma2,
 // A location whose neighbour system cannot be formed conditions on nothing, so
 // its density is the marginal w_i ~ N(0, sigma2): this is that row's score in
 // w_i and its contribution to the d/d log sigma2 accumulator.
+//
+// The variance carries kGpVarFloor, the same floor vecchia_cond_grad applies to
+// every conditional variance on the main path. Without it the two conventions
+// sat in one function and the unfloored one was the FALLBACK -- reached when a
+// neighbour system could not be formed, which is where sigma2 is most likely to
+// be extreme, and where a divide by zero produces an Inf score rather than a
+// refusal.
 static inline void nngp_marginal_contrib(double wi, double sigma2,
                                          double& grad_w_i, double& grad_sigma2) {
-  grad_w_i += -wi / sigma2;
-  grad_sigma2 += 0.5 * (wi * wi / sigma2 - 1.0);
+  const double s2 = (sigma2 > kGpVarFloor) ? sigma2 : kGpVarFloor;
+  grad_w_i += -wi / s2;
+  grad_sigma2 += 0.5 * (wi * wi / s2 - 1.0);
 }
 
 // Fully analytical NNGP gradients: Eigen LLT + OpenMP parallelized. Reads the

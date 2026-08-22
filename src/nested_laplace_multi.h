@@ -219,7 +219,8 @@ inline Rcpp::List run_multi_block_nested_laplace(
     }
     const int total_params = n_x + (has_re ? 1 : 0);
     layout.total_params = total_params;
-    const double log_sigma_re = std::log(sigma_re);
+    if (has_re) tulpa::nl_check_positive("sigma_re", sigma_re);
+    const double log_sigma_re = has_re ? std::log(sigma_re) : 0.0;
 
     // Per-outer-thread NewtonScratch. omp_get_thread_num() returns 0 outside
     // parallel regions so the serial path correctly picks scratch_pool[0].

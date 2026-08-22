@@ -174,7 +174,7 @@ The single likelihood boundary consumed by every tier. Key members:
 |---|---|
 | `abi_version` | Set automatically to `TULPA_ABI_VERSION`. |
 | `n_processes`, `name` | Number of linear predictors; label. |
-| `ll_double`, `ll_arena`, `ll_fwd` | `LikelihoodFn<T>` for each AD mode (double / reverse-arena / forward-dual). |
+| `ll_double`, `ll_arena` | `LikelihoodFn<T>` for each AD mode (double / reverse-arena). `AUTODIFF_FWD` resolves to the arena path, so there is no separate forward-dual slot. |
 | `eta_weights_fn` | `EtaWeightsFn`: per-obs eta-space `grad_eta[k]` + `neg_hess_eta[k*np+l]`. **Must return the expected (Fisher) information, not the AD-observed Hessian**, so the Newton Hessian stays PD on non-canonical links. Required for the spec-driven Laplace / nested-Laplace path; ignored by NUTS/VI/ESS. |
 | `residual_fn`, `extra_grad_fn` | H-mode per-obs residual / extra-parameter gradients (optional). |
 | `n_extra_params`, `extend_layout`, `extra_prior`, `extra_prior_arena` | Model-specific extra parameters: count, `ParamLayout` extension, and prior contribution (double + arena-AD variants). |

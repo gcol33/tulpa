@@ -277,10 +277,11 @@ T compute_st_prior(const std::vector<T>& params, const ModelData& data,
             T sigma2_st_hsgp = safe_exp(params[layout.log_sigma2_st_hsgp_idx]);
             T lengthscale_st_hsgp = safe_exp(params[layout.log_lengthscale_st_hsgp_idx]);
 
-            // PC prior on sigma_st_hsgp, on the sampled log-variance scale.
-            // P(sigma > 1) = 0.01.
+            // PC prior on sigma_st_hsgp, on the sampled log-variance scale,
+            // at the spec's own anchors: P(sigma > U) = alpha.
             log_post = log_post + log_prior_log_sigma2_pc(
-                params[layout.log_sigma2_st_hsgp_idx], 1.0, 0.01);
+                params[layout.log_sigma2_st_hsgp_idx],
+                data.st_hsgp_sigma2_prior_U, data.st_hsgp_sigma2_prior_alpha);
 
             // LogNormal(0,1) on lengthscale
             T log_ls_st = params[layout.log_lengthscale_st_hsgp_idx];

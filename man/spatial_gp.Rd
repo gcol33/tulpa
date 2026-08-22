@@ -12,6 +12,8 @@ spatial_gp(
   nn = 15,
   m = 6,
   c = 1.5,
+  sigma_prior_U = 1,
+  sigma_prior_alpha = 0.01,
   shared = NULL,
   scale_coords = TRUE,
   parameterization = c("noncentered", "centered", "collapsed")
@@ -41,6 +43,12 @@ basis GP with \code{m} functions per dimension and boundary factor \code{c}).}
 \item{m}{Number of HSGP basis functions per dimension (\code{approx = "hsgp"}).}
 
 \item{c}{HSGP boundary factor, \verb{>= 1} (\code{approx = "hsgp"}).}
+
+\item{sigma_prior_U, sigma_prior_alpha}{Penalized-complexity prior on the
+field's marginal standard deviation (\code{approx = "hsgp"}), calibrated so that
+\code{P(sigma > sigma_prior_U) = sigma_prior_alpha}. Defaults to
+\code{P(sigma > 1) = 0.01}. \code{sigma_prior_U} must be positive and
+\code{sigma_prior_alpha} must lie in \verb{(0, 1)}.}
 
 \item{shared}{Whether the spatial effect is shared across processes in a
 multi-process model. \code{NULL} (default) shares the effect; \code{FALSE} fits

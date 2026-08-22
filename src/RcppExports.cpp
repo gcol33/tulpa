@@ -3986,6 +3986,24 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_test_temporal_gp_density
+Rcpp::List cpp_test_temporal_gp_density(Rcpp::NumericVector times, int n_groups, Rcpp::NumericVector field, double log_sigma2, double logit_phi, int parameterization, double phi_lower, double phi_upper);
+RcppExport SEXP _tulpa_cpp_test_temporal_gp_density(SEXP timesSEXP, SEXP n_groupsSEXP, SEXP fieldSEXP, SEXP log_sigma2SEXP, SEXP logit_phiSEXP, SEXP parameterizationSEXP, SEXP phi_lowerSEXP, SEXP phi_upperSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type times(timesSEXP);
+    Rcpp::traits::input_parameter< int >::type n_groups(n_groupsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type field(fieldSEXP);
+    Rcpp::traits::input_parameter< double >::type log_sigma2(log_sigma2SEXP);
+    Rcpp::traits::input_parameter< double >::type logit_phi(logit_phiSEXP);
+    Rcpp::traits::input_parameter< int >::type parameterization(parameterizationSEXP);
+    Rcpp::traits::input_parameter< double >::type phi_lower(phi_lowerSEXP);
+    Rcpp::traits::input_parameter< double >::type phi_upper(phi_upperSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_temporal_gp_density(times, n_groups, field, log_sigma2, logit_phi, parameterization, phi_lower, phi_upper));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_tgmrf_nuts_joint
 Rcpp::List cpp_tgmrf_nuts_joint(Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericMatrix X, Rcpp::IntegerVector obs_idx, std::string family, double phi, std::string cpp_id, int theta_dim, int n_latent, Rcpp::NumericVector beta_init, Rcpp::NumericVector z_init, Rcpp::NumericVector theta_init, Rcpp::NumericVector M_inv_diag, double epsilon0, int n_iter, int n_warmup, int max_depth, double target_accept, double fd_step, bool verbose, int seed, bool debug_gradient_check, double gradient_check_tol, double fd_check_step);
 RcppExport SEXP _tulpa_cpp_tgmrf_nuts_joint(SEXP ySEXP, SEXP n_trialsSEXP, SEXP XSEXP, SEXP obs_idxSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP cpp_idSEXP, SEXP theta_dimSEXP, SEXP n_latentSEXP, SEXP beta_initSEXP, SEXP z_initSEXP, SEXP theta_initSEXP, SEXP M_inv_diagSEXP, SEXP epsilon0SEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP max_depthSEXP, SEXP target_acceptSEXP, SEXP fd_stepSEXP, SEXP verboseSEXP, SEXP seedSEXP, SEXP debug_gradient_checkSEXP, SEXP gradient_check_tolSEXP, SEXP fd_check_stepSEXP) {
@@ -4674,6 +4692,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_test_st_iv_layout", (DL_FUNC) &_tulpa_cpp_test_st_iv_layout, 13},
     {"_tulpa_cpp_test_st_iv_gmrf_mass", (DL_FUNC) &_tulpa_cpp_test_st_iv_gmrf_mass, 15},
     {"_tulpa_cpp_test_st_iv_log_post", (DL_FUNC) &_tulpa_cpp_test_st_iv_log_post, 14},
+    {"_tulpa_cpp_test_temporal_gp_density", (DL_FUNC) &_tulpa_cpp_test_temporal_gp_density, 8},
     {"_tulpa_cpp_tgmrf_nuts_joint", (DL_FUNC) &_tulpa_cpp_tgmrf_nuts_joint, 24},
     {"_tulpa_cpp_tgmrf_registry_has", (DL_FUNC) &_tulpa_cpp_tgmrf_registry_has, 1},
     {"_tulpa_cpp_tgmrf_registry_size", (DL_FUNC) &_tulpa_cpp_tgmrf_registry_size, 0},

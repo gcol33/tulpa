@@ -7,6 +7,7 @@
 
 #include "hmc_sampler.h"
 #include "tulpa/likelihood.h"
+#include "pc_prior.h"
 
 namespace tulpa_hmc {
 
@@ -18,7 +19,7 @@ namespace tulpa_hmc {
 // set them fails here, once, before sampling -- rather than returning a fit
 // whose range came from the engine instead of the model.
 void require_range_prior_anchors(double U, double alpha, const char* term) {
-  if (!(U > 0.0) || !(alpha > 0.0) || !(alpha < 1.0)) {
+  if (!tulpa::pc_anchors_valid(U, alpha)) {
     Rcpp::stop("tulpa: %s() needs a PC prior on the range. Set "
                "`%s_phi_prior_U` > 0 and `%s_phi_prior_alpha` in (0, 1) on "
                "ModelData, encoding P(range < U) = alpha. The range is on the "

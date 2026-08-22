@@ -57,37 +57,37 @@ on \code{inner_skew_max} by the general skewness-magnitude convention
 \item{\code{inner_skew_scored}, \code{inner_skew_probed}}{how many of the probed
 latent indices returned a finite \code{gamma_3} vs how many were probed.}
 \item{\code{inner_skew_declined}, \code{inner_skew_arms_declined},
-\code{inner_skew_declined_note}}{when nothing was scored, WHY: \code{"coupled_arm"} (STRUCTURAL -- the coupled arms have
-neither a per-observation sum nor a cell third-derivative tensor to
-read, so the outer k-hat is the only reliability number this fit has),
+\code{inner_skew_declined_note}}{when nothing was scored, WHY:
+\code{"coupled_arm"} (STRUCTURAL -- the coupled arms have neither a
+per-observation sum nor a cell third-derivative tensor to read, so the
+outer k-hat is the only reliability number this fit has),
 \code{"curvature3_unavailable"}, \code{"no_finite_contribution"},
 \code{"no_probe_indices"}, \code{"not_requested"}, \code{"backend_unsupported"},
 \code{"solve_failed"}, or \code{"not_converged"} (the probe re-solve stopped
-short of a mode, so neither inner score has a point to read);
-the arms (1-based) a joint fit had no oracle for,
-which is also set on a PARTIALLY scored fit; and a one-line reading.}
-\item{\code{inner_pareto_k}, \code{inner_pareto_k_band}}{the inner-Laplace
-importance k-hat over the probed subspace, and its band on the same
-convention as the outer k-hat. Available wherever a mode was found,
-including a fit \code{gamma_3} cannot score.}
-\item{\code{inner_pareto_k_rel_ess}, \code{inner_pareto_k_is_ess}}{the smallest
-realized importance efficiency and effective sample size across the
-probed indices -- how much correcting the inner Gaussian actually
-needs, which is what makes the scale-free shape above readable.}
+short of a mode, so neither inner score has a point to read); the arms
+(1-based) a joint fit had no oracle for, which is also set on a
+PARTIALLY scored fit; and a one-line reading.} \item{\code{inner_pareto_k},
+\code{inner_pareto_k_band}}{the inner-Laplace importance k-hat over the
+probed subspace, and its band on the same convention as the outer
+k-hat. Available wherever a mode was found, including a fit \code{gamma_3}
+cannot score.} \item{\code{inner_pareto_k_rel_ess},
+\code{inner_pareto_k_is_ess}}{the smallest realized importance efficiency
+and effective sample size across the probed indices -- how much
+correcting the inner Gaussian actually needs, which is what makes the
+scale-free shape above readable.}
 \item{\code{inner_pareto_k_uniform}}{\code{TRUE} when no probed index carried a
-material correction, i.e. the inner Gaussian reproduces the conditional
-posterior over the sampled region.}
-\item{\code{inner_pareto_k_scored}, \code{inner_pareto_k_probed}}{how many probed
-indices returned a finite k-hat vs how many were probed.}
-\item{\code{inner_pareto_k_declined}, \code{inner_pareto_k_declined_note}}{when it
-is \code{NA}, WHY, from the same closed vocabulary the outer k-hat uses.}
-\item{\code{reliability}}{the combined whole-fit verdict: \code{"reliable"} only
-when both layers are good; otherwise names which layer is scoped or
-flags both as unreliable. The inner layer enters through the worse of
-its two scores, so a fit whose cubic term declined is still assessed.}
-}
-and a trailing \code{summary} attribute (a one-row data frame of the headline
-numbers) for printing.
+material correction, i.e. the inner Gaussian reproduces the
+conditional posterior over the sampled region.}
+\item{\code{inner_pareto_k_scored}, \code{inner_pareto_k_probed}}{how many
+probed indices returned a finite k-hat vs how many were probed.}
+\item{\code{inner_pareto_k_declined}, \code{inner_pareto_k_declined_note}}{when
+it is \code{NA}, WHY, from the same closed vocabulary the outer k-hat
+uses.} \item{\code{reliability}}{the combined whole-fit verdict:
+\code{"reliable"} only when both layers are good; otherwise names which
+layer is scoped or flags both as unreliable. The inner layer enters
+through the worse of its two scores, so a fit whose cubic term
+declined is still assessed.} } and a trailing \code{summary} attribute (a
+one-row data frame of the headline numbers) for printing.
 }
 \description{
 \ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#deprecated}{\figure{lifecycle-deprecated.svg}{options: alt='[Deprecated]'}}}{\strong{[Deprecated]}}
@@ -122,21 +122,22 @@ right-skewed hyperparameter tail and does not by itself invalidate the
 point estimates, which the grid quadrature governs.
 
 \code{outer_regime} qualifies what a high \code{pareto_k} means, and is the reason a
-bare threshold on \code{pareto_k} is not a reliability verdict. A sharp hyperparameter posterior collapses the grid onto
-~1 cell (\code{ess_grid} near 1); the outer integration has then degenerated to a
-point evaluation at the modal hyperparameter, so \code{pareto_k} is scoring how
-well a Gaussian at that mode stands in for the hyperparameter marginal, not
-how well a grid integrated it. Where the dominant cell is INTERIOR to the
-grid the collapse is benign -- the grid bracketed the mode, the estimate is
-empirical Bayes there, and only integrated hyperparameter uncertainty is
-missing. Where it sits at a grid BOUNDARY the grid may simply be too narrow:
-\code{grid_edge_axes} / \code{grid_edge_sides} name the axes to widen. On a fit whose
-\code{pareto_k} cleared the good band, the outer diagnostic also fits a
-skew-normal proposal and reports the marginal's estimated skewness as
-\code{outer_skew_max}, so an inflated k-hat that was purely the symmetric
-proposal's mismatch with a skewed variance-component marginal is both
-corrected and explained. A skew-normal has Gaussian tails, so this can never
-mask a genuinely heavy-tailed target.
+bare threshold on \code{pareto_k} is not a reliability verdict. A sharp
+hyperparameter posterior collapses the grid onto ~1 cell (\code{ess_grid} near
+1); the outer integration has then degenerated to a point evaluation at the
+modal hyperparameter, so \code{pareto_k} is scoring how well a Gaussian at that
+mode stands in for the hyperparameter marginal, not how well a grid
+integrated it. Where the dominant cell is INTERIOR to the grid the collapse
+is benign -- the grid bracketed the mode, the estimate is empirical Bayes
+there, and only integrated hyperparameter uncertainty is missing. Where it
+sits at a grid BOUNDARY the grid may simply be too narrow: \code{grid_edge_axes}
+/ \code{grid_edge_sides} name the axes to widen. On a fit whose \code{pareto_k}
+cleared the good band, the outer diagnostic also fits a skew-normal proposal
+and reports the marginal's estimated skewness as \code{outer_skew_max}, so an
+inflated k-hat that was purely the symmetric proposal's mismatch with a
+skewed variance-component marginal is both corrected and explained. A
+skew-normal has Gaussian tails, so this can never mask a genuinely
+heavy-tailed target.
 
 The grid quadrature reliability -- the effective sample size
 \code{ess_grid = 1 / sum(w_k^2)} of the outer integration weights and the largest
@@ -167,10 +168,11 @@ nothing else here needs one: every reliability quantity above is read off the
 fit. So a fit that carries no draws -- a default single-block nested-Laplace
 fit, whose posterior is the retained outer-grid mixture rather than a sample
 -- reports the full band with an empty per-parameter body and \code{n_draws = NA},
-and records why in the \code{param_table_declined} attribute. \code{\link[=tulpa_posterior_draws]{tulpa_posterior_draws()}} samples that mixture where the
-rows are wanted. The one case that still returns \code{NULL} is a fit with neither
-draws nor any reliability quantity, such as a plain Laplace fit with no outer
-grid to score.
+and records why in the \code{param_table_declined} attribute.
+\code{\link[=tulpa_posterior_draws]{tulpa_posterior_draws()}} samples that mixture where the rows are wanted.
+The one case that still returns \code{NULL} is a fit with neither draws nor any
+reliability quantity, such as a plain Laplace fit with no outer grid to
+score.
 }
 \section{Scope}{
 
@@ -225,8 +227,8 @@ diagnostics(fit)
 }
 }
 \references{
-Vehtari, Simpson, Gelman, Yao & Gabry (2024). Pareto smoothed importance
-sampling. \emph{JMLR} 25(72):1-58.
+Vehtari, Simpson, Gelman, Yao & Gabry (2024). Pareto smoothed
+importance sampling. \emph{JMLR} 25(72):1-58.
 
 Yao, Vehtari, Simpson & Gelman (2018). Yes, but did it work?: Evaluating
 variational inference. \emph{ICML}, PMLR 80:5581-5590.

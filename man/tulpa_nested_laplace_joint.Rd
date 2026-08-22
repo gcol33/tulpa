@@ -72,23 +72,24 @@ in \verb{[0.1, 3]}).
 (default \code{c(0.5, 0.8, 0.95, 0.99)}).
 }
 
-\code{sigma_grid}'s default is a starting axis, not a hard ceiling: when the fitted field-SD posterior mode rails the top
-node (\code{pareto_k_regime = "collapsed_edge"}, see below), the driver
-re-centres the axis on a mode-Hessian and refits (up to two attempts, the
-second adding a light default PC(U=3, alpha=0.01) prior on sigma unless
-\code{prior_sigma} was pinned -- see there), so a sparse or strongly-identified species is
-not silently truncated at 3.0. This engages whether or not
-\code{control$diagnose_k} computed the full outer Pareto-k diagnostic: the mode-Hessian is reused from the diagnostic when it
-ran, or computed on its own (one extra batched finite-difference solve,
-only when the grid actually collapsed) when it did not -- so
-\code{diagnose_k = FALSE}, the default, does not leave a railed axis stuck. A
-\code{sigma_grid} the caller PINNED always wins: auto-recenter engages when the
-field is left \code{NULL}, when it is marked with \code{\link[=auto_grid]{auto_grid()}} (how a wrapper
-package declares an axis it defaulted rather than one the user chose), or
-when its nodes are exactly the engine's own default
-axis. Declines gracefully (keeps the fixed-grid fit) when another axis in
-the same grid has unguessable support (car_proper's \code{rho_car}); whichever
-way it declines, \code{outer_grid_recenter_declined} says which (see below).}
+\code{sigma_grid}'s default is a starting axis, not a hard ceiling: when the
+fitted field-SD posterior mode rails the top node (\code{pareto_k_regime = "collapsed_edge"}, see below), the driver re-centres the axis on a
+mode-Hessian and refits (up to two attempts, the second adding a light
+default PC(U=3, alpha=0.01) prior on sigma unless \code{prior_sigma} was pinned
+-- see there), so a sparse or strongly-identified species is not silently
+truncated at 3.0. This engages whether or not \code{control$diagnose_k}
+computed the full outer Pareto-k diagnostic: the mode-Hessian is reused
+from the diagnostic when it ran, or computed on its own (one extra batched
+finite-difference solve, only when the grid actually collapsed) when it
+did not -- so \code{diagnose_k = FALSE}, the default, does not leave a railed
+axis stuck. A \code{sigma_grid} the caller PINNED always wins: auto-recenter
+engages when the field is left \code{NULL}, when it is marked with
+\code{\link[=auto_grid]{auto_grid()}} (how a wrapper package declares an axis it defaulted rather
+than one the user chose), or when its nodes are exactly
+the engine's own default axis. Declines gracefully (keeps the fixed-grid
+fit) when another axis in the same grid has unguessable support
+(car_proper's \code{rho_car}); whichever way it declines,
+\code{outer_grid_recenter_declined} says which (see below).}
 
 \item{copy}{Multi-block copy specification (multi-block \code{prior} only). For a
 single-block fit there is no \code{copy} argument: declare the copy coefficient
@@ -470,43 +471,44 @@ the outer hyperparameter-grid integration around a FIXED inner
 Laplace, this scores whether that inner Gaussian approximation is
 itself a good fit. A genuinely coupled arm (\code{cell_coupling != "separable"} on that arm, e.g. tulpaObs's \code{occu_cover}) has no per-obs
 likelihood for the separable formula to score; it is scored instead by
-the contraction of the cell third-derivative tensor, which differences the cross-arm Hessian the coupling
-spec already returns. A fit that can carry neither reports \code{NaN}, not a
-silently wrong 0, and \verb{$inner_skew_declined} says WHY -- \code{"coupled_arm"}
-marks arms the inner layer could not score at all, distinct from a
-diagnostic that was simply switched off -- while
-\verb{$inner_skew_arms_declined} names the arms with no oracle, including on a
-partially scored fit. See
+the contraction of the cell third-derivative tensor, which differences
+the cross-arm Hessian the coupling spec already returns. A fit that can
+carry neither reports \code{NaN}, not a silently wrong 0, and
+\verb{$inner_skew_declined} says WHY -- \code{"coupled_arm"} marks arms the inner
+layer could not score at all, distinct from a diagnostic that was simply
+switched off -- while \verb{$inner_skew_arms_declined} names the arms with no
+oracle, including on a partially scored fit. See
 \code{\link[=diagnostics]{diagnostics()}} for the combined verdict. Wired
 for both the single-block backends (icar/bym2/car_proper) and the
 multi-block path (a per-group RE, a trend field, or an arm-specific
 field block).
 \item \code{within_cell} (\code{"box_uniform"}) -- the WITHIN-CELL construction the
-reported per-axis hyperparameter intervals are read with. The outer grid's weights say how much mass each cell
-holds; they do not say how it is spread inside the cell, and a quantile
-needs both. \code{"box_uniform"} puts the cumulative FULL mass at each cell
-EDGE and interpolates between edges; \code{"chord"} puts the cumulative
-MID-mass at each cell coordinate and interpolates between coordinates --
-the same masses over the same boxes with the knots moved half a cell,
-which measures as a whole order of convergence (2.00 against 1.04 on a
-fixture with a closed-form posterior).
-THE DEFAULT IS \code{"box_uniform"} since 0.0.188, decided on FIXED-TRUTH
-coverage at the placement the engine ships, with
-\code{auto_recenter = "resolve"} as the default. Summed |coverage - nominal| over
-nominal 0.95 / 0.80 / 0.50, chord against box-uniform: 0.2900 / 0.1233 on
-the pre-registered fixed-truth instrument, 0.2004 / 0.0361 over 4680
-truth-swept fits of the same fixture, and 0.2467 / 0.1572 over nine
-(config, axis) rows spanning seven families, at 0.69 to 1.08x the width.
-The conditional-coverage swing that held the default back reads 0.110 at
-the shipped placement against 0.415 on the coarse pinned grid it was
-measured on, and at nominal 0.50 it is the same on both reads.
-\code{outer_grid_h_over_sd} is how wide a cell is on each axis, and
-\code{theta_within_cell} is what each axis was actually read with. Only a
-\code{"density"} support admits it -- a CCD design, a locally refined grid and
-a posterior sample are not cell partitions that tile -- and an axis it
-declines on reports \code{"chord"} with a reason rather than erroring. Nothing
-else moves: point estimates, moments, draws and weights are untouched, and
-\code{"chord"} restores the previous report exactly.
+reported per-axis hyperparameter intervals are read with. The outer
+grid's weights say how much mass each cell holds; they do not say how it
+is spread inside the cell, and a quantile needs both. \code{"box_uniform"}
+puts the cumulative FULL mass at each cell EDGE and interpolates between
+edges; \code{"chord"} puts the cumulative MID-mass at each cell coordinate
+and interpolates between coordinates -- the same masses over the same
+boxes with the knots moved half a cell, which measures as a whole order
+of convergence (2.00 against 1.04 on a fixture with a closed-form
+posterior). THE DEFAULT IS \code{"box_uniform"} since 0.0.188, decided on
+FIXED-TRUTH coverage at the placement the engine ships, with
+\code{auto_recenter = "resolve"} as the default. Summed
+|coverage - nominal| over nominal 0.95 / 0.80 / 0.50, chord against
+box-uniform: 0.2900 / 0.1233 on the pre-registered fixed-truth
+instrument, 0.2004 / 0.0361 over 4680 truth-swept fits of the same
+fixture, and 0.2467 / 0.1572 over nine (config, axis) rows spanning
+seven families, at 0.69 to 1.08x the width. The conditional-coverage
+swing that held the default back reads 0.110 at the shipped placement
+against 0.415 on the coarse pinned grid it was measured on, and at
+nominal 0.50 it is the same on both reads. \code{outer_grid_h_over_sd} is how
+wide a cell is on each axis, and \code{theta_within_cell} is what each axis
+was actually read with. Only a \code{"density"} support admits it -- a CCD
+design, a locally refined grid and a posterior sample are not cell
+partitions that tile -- and an axis it declines on reports \code{"chord"}
+with a reason rather than erroring. Nothing else moves: point estimates,
+moments, draws and weights are untouched, and \code{"chord"} restores the
+previous report exactly.
 \item \code{skew_correct} (\code{TRUE}) -- consume the inner-Laplace expansion instead of
 only grading it: report
 Cornish-Fisher marginal quantiles at each coefficient's own \code{gamma_3},
@@ -527,8 +529,8 @@ the requested level. A FULLY COUPLED fit declines it: the location term's
 contraction against a covariance block is not reachable from the cell
 third-derivative oracle, and an absent \code{gamma_1} is never read as zero.
 Such a fit therefore reports what it reported before the default moved, to
-the bit -- a declined coefficient keeps the grid-mixture read. See \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}} for the measurement
-behind the default.
+the bit -- a declined coefficient keeps the grid-mixture read. See
+\code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}} for the measurement behind the default.
 \item \code{subspace_debias} (\code{FALSE}) -- correct only the latent directions the
 inner-layer diagnostics flagged, by exact Metropolis along the
 Gaussian-conditional-mean surface through each cell's mode, and leave the
@@ -558,19 +560,20 @@ a cell's particle set is too coarse to be a marginal at all and the
 request is refused. The correction reports DRAWS, so every
 coefficient-facing method reads them instead of the grid's Gaussian
 mixture, and the corrected per-cell masses become the fit's own
-\code{weights} / \code{log_marginal} with \code{weights_source} reporting \code{"cila"}; the pre-correction pair is kept as \verb{$cila$laplace}
-and \verb{$cila$retained_mass} is the original share of the cells that
-produced a usable particle set. \verb{$cila} also carries the variant actually
-run and the PSIS grade (\code{pareto_k}, \code{rel_ess}) of the correction's own
-weights. A cell whose inner solve factorized SPARSELY draws through the
-CHOLMOD factor's own triangular and permutation solves; an LDL' factor carries no square root to draw with
-and is declined with \code{"sparse_factor_not_ll"}.
+\code{weights} / \code{log_marginal} with \code{weights_source} reporting \code{"cila"}; the
+pre-correction pair is kept as \verb{$cila$laplace} and \verb{$cila$retained_mass}
+is the original share of the cells that produced a usable particle set.
+\verb{$cila} also carries the variant actually run and the PSIS grade
+(\code{pareto_k}, \code{rel_ess}) of the correction's own weights. A cell whose
+inner solve factorized SPARSELY draws through the CHOLMOD factor's own
+triangular and permutation solves; an LDL' factor carries no square root
+to draw with and is declined with \code{"sparse_factor_not_ll"}.
 \item \code{auto_recenter} (\code{TRUE}) -- re-centre a default outer grid axis on its
-posterior mode and refit when the fit rails against a boundary node. \code{FALSE} integrates over the grid exactly as
-given, whatever it is, and records
-\code{outer_grid_recenter_declined = "auto_recenter_disabled"}. The joint
-rescues trigger on the whole grid's collapsed-edge regime rather than on
-a per-axis rail, so the per-axis policy names
+posterior mode and refit when the fit rails against a boundary node.
+\code{FALSE} integrates over the grid exactly as given, whatever it is, and
+records \code{outer_grid_recenter_declined = "auto_recenter_disabled"}. The
+joint rescues trigger on the whole grid's collapsed-edge regime rather
+than on a per-axis rail, so the per-axis policy names
 \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}} takes (\code{"rail"}, \code{"resolve"}, \code{"always"}) are
 refused here with an error rather than accepted and ignored.
 \item \code{max_grid_cells} (\code{2048L}) -- cell-count ceiling on a multi-block tensor

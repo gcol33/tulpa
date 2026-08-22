@@ -336,8 +336,8 @@
 # built in C++ by setup_hsgp_2d (the single source of truth) from the validated
 # per-observation coordinate matrix, so only (coords, m, c) cross the boundary;
 # the field is evaluated per observation, no obs->location map. The PC prior on
-# sigma and LogNormal on lengthscale are hardcoded in compute_hsgp_spatial_prior
-# (no data-driven anchor needed, unlike the NNGP range prior).
+# sigma carries the spec's own anchors, defaulting to P(sigma > 1) = 0.01; the
+# LogNormal on the lengthscale is fixed in compute_hsgp_spatial_prior.
 #' @keywords internal
 .hsgp_sampler_spec <- function(spatial) {
   cm <- spatial$coords_matrix
@@ -346,12 +346,17 @@
          "validates it via validate_hsgp().", call. = FALSE)
   }
   cm <- as.matrix(cm)
-  list(
+  out <- list(
     type   = "hsgp",
     coords = .coords_2col(cm, "hsgp() under a sampler mode"),
     m      = as.integer(spatial$m),
     c      = as.numeric(spatial$c)
   )
+  if (!is.null(spatial$sigma2_prior_U)) {
+    out$sigma2_prior_U     <- as.numeric(spatial$sigma2_prior_U)
+    out$sigma2_prior_alpha <- as.numeric(spatial$sigma2_prior_alpha)
+  }
+  out
 }
 
 
@@ -463,7 +468,9 @@
     tvc_indices = idx,
     X_tvc       = as.numeric(t(Xt)),                # row-major [n_obs x n_tvc]
     structure   = st,
-    cyclic      = isTRUE(temporal$cyclic)
+    cyclic      = isTRUE(temporal$cyclic),
+    sigma_prior_U     = as.numeric(temporal$sigma_prior_U %||% 1),
+    sigma_prior_alpha = as.numeric(temporal$sigma_prior_alpha %||% 0.01)
   )
 }
 

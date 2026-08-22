@@ -9,7 +9,9 @@ temporal_tvc(
   terms = 1,
   structure = c("rw1", "rw2", "ar1", "gp"),
   group_var = NULL,
-  shared = NULL
+  shared = NULL,
+  sigma_prior_U = 1,
+  sigma_prior_alpha = 0.01
 )
 }
 \arguments{
@@ -28,6 +30,12 @@ group-specific time-varying coefficients.}
 \item{shared}{Whether the effect is shared across processes in a
 multi-process model. \code{NULL} (default) shares it; \code{FALSE} fits
 process-specific effects and emits a warning.}
+
+\item{sigma_prior_U, sigma_prior_alpha}{Penalized-complexity prior on each
+varying coefficient's marginal standard deviation, calibrated so that
+\code{P(sigma > sigma_prior_U) = sigma_prior_alpha}. Defaults to
+\code{P(sigma > 1) = 0.01}. \code{sigma_prior_U} must be positive and
+\code{sigma_prior_alpha} must lie in \verb{(0, 1)}.}
 }
 \value{
 A \code{tulpa_tvc} object.

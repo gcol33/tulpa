@@ -89,7 +89,6 @@ static void build_funnel_model(
     spec.n_processes = 1;
     spec.ll_double = funnel_likelihood<double>;
     spec.ll_arena = funnel_likelihood<tulpa::arena::Var>;
-    spec.ll_fwd = funnel_likelihood<::fwd::Dual>;
     spec.n_extra_params = K + 1;  // v, x_1..x_K
 
     data.N = K;

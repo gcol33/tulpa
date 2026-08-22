@@ -156,9 +156,12 @@ static T initialize_generic_state(
         // CAR_proper is full rank, so its level is identified by the prior and
         // must not be centred away; only the intrinsic branches are.
         if (state.phi_spatial != nullptr && !layout.is_car_proper) {
+            // One direction, by design: see the rationale above
+            // icar_center_field. The component count is deliberately not an
+            // argument, so this call site does not read as though it were.
             priors::icar_center_field(
                 state.phi_spatial, data.n_spatial_units,
-                data.n_spatial_components, state.phi_spatial_centered);
+                state.phi_spatial_centered);
         }
     }
 

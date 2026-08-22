@@ -66,6 +66,56 @@ debias, or outer integration), not as standalone alternatives.
 - **Layout rule**: `ModelData` requires `n_processes > 0` and a `LikelihoodSpec`
   (ratio models live in tulpaRatio via that interface). New fields go in the
   stable sections — never insert before existing fields.
+- **Two AD slots on `LikelihoodSpec`, not three** (gcol33/tulpa#493, ABI 42).
+  `ll_double` and `ll_arena` only. `resolve_gradient_fn` dispatches on
+  `gradient_fn`, then `ll_arena`, then the numerical fallback, and
+  `AUTODIFF_FWD` resolves to the arena path, so a forward-dual slot was filled
+  by every spec and read by none — six `fwd::Dual` instantiations of likelihood
+  kernels that never ran, and an unexercised copy of a density is where a kernel
+  falls silently out of step with its siblings. Do not reintroduce one; route
+  the mode instead if forward mode is ever wanted.
+
+## Prior anchors, and where a bad one is caught
+
+Every PC prior in the package routes through `pc_prior.h`, whose calibration
+`lambda = -log(alpha) / U` exists for `U > 0` and `alpha` in `(0, 1)` only.
+Outside that the density is `-Inf` or NaN at every value of the scale, and it
+reaches a gradient as a number rather than as a message. `pc_anchors_valid` is
+the ONE predicate; the layers differ only in what they can do about it
+(gcol33/tulpa#499):
+
+- **R front doors** (`.check_pc_anchors`, `R/validate_helpers.R`) name the
+  argument the user set.
+- **The sampler entry** (`read_pc_anchors`, `sampler_model_data.h`) names the
+  spec, and is what reads an anchor pair off a spec list at all — a pair the
+  spec does not carry keeps the `ModelData` default.
+- **The templated density** falls back to a flat prior on sigma. It runs inside
+  gradient loops and OpenMP regions, where a throw is `std::terminate` rather
+  than an R error (gcol33/tulpa#459), so an error is not available to it. The
+  callers keep their change-of-variables terms, so an unvalidated path gets
+  flat-on-sigma carried correctly to its own coordinate, never a NaN.
+
+`nl_check_positive` / `nl_grid_axes_positive` (`nested_laplace_grid.h`) are the
+same convention for a scale or precision that reaches a logarithm — `sigma_re`,
+`tau_grid`, `sigma2_grid`, a lengthscale axis — checked at the entry point, the
+counterpart of `nl_grid_axis_unit_interval` for the BYM2 mixing weight.
+
+The HSGP, HSGP-ST and TVC scale priors hardcoded `P(sigma > 1) = 0.01` inline;
+they now read `ModelData` fields defaulted to exactly that, settable through
+`spatial_gp(approx = "hsgp", sigma_prior_U =, sigma_prior_alpha =)` and
+`temporal_tvc(sigma_prior_U =, sigma_prior_alpha =)` (gcol33/tulpa#506).
+
+**The two temporal-GP parameterizations are pinned to each other.** They differ
+by exactly the forward transform's log-determinant, which is what fixes the
+conditional variance both branches use: the non-centered branch reaches it
+through the transform's scale `a_t` and the centered branch through
+`cond_var_t`, and flooring different quantities leaves them orders of magnitude
+apart wherever the floor binds (a long lengthscale on a fine time grid). Both
+read one floored `ar1_one_minus_rho2`. `cpp_test_temporal_gp_density`
+(`src/test_temporal_gp_fixture.cpp`) drives the shipped density at either
+parameterization — the fixture builds the `ModelData` and the layout, not a
+second copy of the density — and `test-temporal-gp-parameterization.R` asserts
+the identity, including at a configuration where the floor binds at every step.
 
 ## Versioning
 

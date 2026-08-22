@@ -1,5 +1,93 @@
 # tulpa NEWS
 
+## 0.1.12
+
+* **`LikelihoodSpec::ll_fwd` is removed, and the ABI is 42** (#493). The slot
+  was assigned at six sites and read at none: `resolve_gradient_fn` dispatches
+  on `gradient_fn`, then `ll_arena`, then the numerical fallback, and
+  `AUTODIFF_FWD` is an explicit alias for the arena path. Each assignment forced
+  a `fwd::Dual` instantiation of a likelihood kernel that never ran, and an
+  unexercised copy of a density is where a kernel falls silently out of step
+  with its siblings. A model package assigning it now gets a compile error at
+  the assignment site, which is the outcome the removal is for.
+
+* **The PC prior's anchors are checked where they are set, and the density can
+  no longer emit a NaN** (#499). `lambda = -log(alpha) / U` exists for `U > 0`
+  and `alpha` in `(0, 1)` only: at `alpha = 1` the rate is 0 and `log(rate)` is
+  `-Inf`, so the prior is `-Inf` at every value of the scale and takes the whole
+  log-posterior with it; above 1 the rate is negative and the density is
+  improper and increasing. One predicate, `pc_anchors_valid`, now answers it,
+  and each door reports it in its own terms -- the R front doors name the
+  argument, the sampler entry names the spec, and the templated density, which
+  runs inside gradient loops and OpenMP regions where a throw is
+  `std::terminate`, falls back to a flat prior on sigma the way the SPDE
+  hyperprior already did.
+
+* **The HSGP, HSGP-ST and TVC scale priors take settable anchors** (#506). All
+  three hardcoded `P(sigma > 1) = 0.01` inline. `spatial_gp(approx = "hsgp")`
+  and `temporal_tvc()` take `sigma_prior_U` / `sigma_prior_alpha`, defaulting to
+  exactly those values, and the densities read `ModelData` fields rather than
+  literals.
+
+* **A scale or precision reaching a logarithm is validated at the entry point**
+  (#522). `nl_check_positive` / `nl_grid_axes_positive` reject a zero or
+  negative `sigma_re`, `tau_grid`, `sigma2_grid` or lengthscale axis with a
+  message naming it, instead of letting `-Inf` or NaN reach the inner Newton
+  solve as a cell whose marginal is simply not finite. The NNGP marginal
+  fallback in the gradient path carries `kGpVarFloor`, the floor the main path
+  already passes into `vecchia_cond_grad` -- the unfloored convention was the
+  FAILURE path, where `sigma2` is most likely to be extreme. The stored
+  non-centered draw and the log-posterior's own transform now take the same
+  bounded `safe_exp`, so the stored field is the same function of `q` as the
+  field the likelihood saw.
+
+* **The integrator selection can be scoped, and its substep count is bounded**
+  (#483). `with_tulpa_integrator(name, expr)` restores the previous selection on
+  error as well as on success; the selection is process-global, so a bare
+  `tulpa_integrator()` call leaves every later fit in the session on the new
+  scheme. `set_integrator_scheme` validates the name and the RESPA substep count
+  before any of its five globals moves, so a rejected call leaves the process on
+  the integrator it was already using rather than on a half-reset one.
+
+* **Both scatter index caches key on the builder's pattern generation** (#483).
+  They hold flat offsets into `values` resolved by `lookup(row, col)` and were
+  keyed on `(builder pointer, nnz)`, so two different patterns installed into
+  one builder with equal `nnz` would satisfy the key and hand back offsets
+  pointing at other entries -- a silently wrong Hessian the pattern guard's drop
+  counter cannot see, because the offset is valid, just not the one meant.
+  `TULPA_SCATTER_FORCE_PARALLEL` is read per call rather than once per process,
+  so `Sys.setenv()` between two fits takes effect.
+
+* **The AD likelihood ladder dispatches on an enum** (#512). It compared the
+  family code against up to twelve `std::string`s per observation per
+  reverse-mode sweep, on a quantity fixed for the whole fit; `prepare()` now
+  resolves it once and the ladder is a switch. That classification IS the
+  coverage list `builtin_family_has_ad()` reports, so the gate and the branches
+  cannot fall out of step. The negative-binomial ICAR Gibbs kernel builds its
+  adjacency into flat CSR once at entry, the form the binomial kernels already
+  take, instead of constructing an Rcpp proxy per unit per sweep, and its
+  `n_threads` argument now drives the per-row work the non-spatial kernel
+  already parallelizes.
+
+* **One beta density, one ICAR centring signature, one RE dimension pass**
+  (#506, #507). The beta log-density was written three times (the generic family
+  kernel, the beta sampler, the SPDE sampler) and is now
+  `tulpa::math::log_lik_beta_logit`; the multiscale-GP PC prior reimplemented
+  `log_prior_log_sigma2_pc` inline, which is also how it bypassed the anchor
+  guard; `icar_center_field` no longer takes the component count it ignores, so
+  the call site answers "one direction, by design" without opening the callee;
+  and `compute_re_prior` stores each term's group and coefficient counts instead
+  of recomputing the same two ternaries in the next loop.
+
+* **The centered and non-centered temporal GP are pinned to each other**
+  (#499). `cpp_test_temporal_gp_density` drives the shipped density at both
+  parameterizations, and `test-temporal-gp-parameterization.R` asserts they
+  differ by exactly the forward transform's log-determinant -- including at a
+  `(sigma, phi, dt)` where the `1 - rho^2` floor binds at every step, which is
+  the configuration no single determinant reconciles if the two branches floor
+  different quantities.
+
+
 ## 0.1.11
 
 * **The outer-grid measurement files state the within-cell read instead of

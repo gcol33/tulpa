@@ -226,7 +226,6 @@ static void build_gaussian_model(
     spec.n_processes = 1;
     spec.ll_double = gaussian_likelihood<double>;
     spec.ll_arena = gaussian_likelihood<tulpa::arena::Var>;
-    spec.ll_fwd = gaussian_likelihood<::fwd::Dual>;
     spec.n_extra_params = 1;  // log_sigma
 
     data.N = N;

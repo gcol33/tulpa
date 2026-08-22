@@ -22,6 +22,11 @@
 #' @param nn Number of nearest neighbours used in the NNGP approximation.
 #' @param m Number of HSGP basis functions per dimension (`approx = "hsgp"`).
 #' @param c HSGP boundary factor, `>= 1` (`approx = "hsgp"`).
+#' @param sigma_prior_U,sigma_prior_alpha Penalized-complexity prior on the
+#'   field's marginal standard deviation (`approx = "hsgp"`), calibrated so that
+#'   `P(sigma > sigma_prior_U) = sigma_prior_alpha`. Defaults to
+#'   `P(sigma > 1) = 0.01`. `sigma_prior_U` must be positive and
+#'   `sigma_prior_alpha` must lie in `(0, 1)`.
 #' @param shared Whether the spatial effect is shared across processes in a
 #'   multi-process model. `NULL` (default) shares the effect; `FALSE` fits
 #'   process-specific effects and emits a warning.
@@ -50,6 +55,8 @@ spatial_gp <- function(coords,
                        nn = 15,
                        m = 6,
                        c = 1.5,
+                       sigma_prior_U = 1,
+                       sigma_prior_alpha = 0.01,
                        shared = NULL,
                        scale_coords = TRUE,
                        parameterization = c("noncentered", "centered", "collapsed")) {
@@ -88,9 +95,14 @@ spatial_gp <- function(coords,
     if (!is.numeric(c) || length(c) != 1 || c < 1) {
       stop("`c` (boundary factor) must be >= 1", call. = FALSE)
     }
+    .check_pc_anchors(sigma_prior_U, sigma_prior_alpha,
+                      "sigma_prior_U", "sigma_prior_alpha",
+                      "gp(approx = \"hsgp\")")
     if (isFALSE(shared)) .warn_nonshared("spatial effects")
     return(structure(
       list(type = "hsgp", coord_vars = coord_vars, m = m, c = c,
+           sigma2_prior_U = as.numeric(sigma_prior_U),
+           sigma2_prior_alpha = as.numeric(sigma_prior_alpha),
            shared = shared, scale_coords = scale_coords,
            n_obs = NULL, coords_matrix = NULL),
       class = c("tulpa_hsgp", "tulpa_spatial", "list")))

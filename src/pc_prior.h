@@ -37,14 +37,34 @@
 
 namespace tulpa {
 
+// The calibration lambda = -log(alpha)/U is defined for U > 0 and alpha in
+// (0, 1) only. At alpha == 1 the rate is 0 and log(rate) is -Inf, so the prior
+// is -Inf at every sigma and takes the whole log-posterior with it; above 1 the
+// rate is negative, so log(rate) is NaN and -rate*sigma grows without bound;
+// at or below 0 the rate is +Inf. Each of those reaches a gradient as a number
+// rather than as a message, which is what this predicate exists to prevent.
+inline bool pc_anchors_valid(double U, double alpha) {
+  return U > 0.0 && alpha > 0.0 && alpha < 1.0;
+}
+
 // Exponential rate lambda calibrated so that P(sigma > U) = alpha.
 inline double pc_rate(double U, double alpha) {
   return -std::log(alpha) / U;
 }
 
 // Base density, over sigma itself. Every other scale is this plus a Jacobian.
+//
+// Anchors are fixed for the whole fit, so the message a user can act on comes
+// from the entry point that reads them (check_pc_anchors in
+// sampler_model_data.h names the argument). This runs inside gradient loops and
+// inside OpenMP regions, where a throw is std::terminate rather than an R
+// error, so it falls back to a flat prior on sigma the way the SPDE hyperprior
+// at tulpa_priors_spde.h does. The callers keep their change-of-variables
+// terms, so what an unvalidated path gets is flat-on-sigma carried correctly to
+// its own coordinate, never a NaN.
 template <typename T>
 inline T log_prior_sigma_pc(const T& sigma, double U, double alpha) {
+  if (!pc_anchors_valid(U, alpha)) return T(0.0);
   const double rate = pc_rate(U, alpha);
   return T(std::log(rate)) - T(rate) * sigma;
 }

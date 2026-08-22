@@ -42,9 +42,11 @@ T compute_hsgp_spatial_prior(const std::vector<T>& params, const ModelData& data
             hsgp_beta[j] = params[layout.hsgp_beta_start + j];
         }
 
-        // PC prior on sigma, on the sampled log-variance scale.
-        // P(sigma > 1) = 0.01.
-        log_post = log_post + log_prior_log_sigma2_pc(log_sigma2_hsgp, 1.0, 0.01);
+        // PC prior on sigma, on the sampled log-variance scale, at the
+        // spec's own anchors: P(sigma > U) = alpha.
+        log_post = log_post + log_prior_log_sigma2_pc(
+            log_sigma2_hsgp, data.hsgp_sigma2_prior_U,
+            data.hsgp_sigma2_prior_alpha);
 
         // LogNormal(0, 1) prior on lengthscale
         // log p(ell) = -0.5 * log(ell)^2  (Jacobian cancels)

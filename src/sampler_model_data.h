@@ -35,11 +35,37 @@
 #include "linalg_fast.h"                    // require_coords_2col
 #include "hmc_hsgp.h"                      // tulpa_hsgp::setup_hsgp_2d (HSGP basis)
 #include "hmc_sampler.h"                  // tulpa_hmc::compute_param_layout
+#include "pc_prior.h"                     // tulpa::pc_anchors_valid
 #include <Rcpp.h>
 #include <string>
 #include <vector>
 
 namespace tulpa {
+
+// Read a PC-prior anchor pair off a spec list, leaving the defaults in place
+// when the spec does not carry them, and reject a pair the calibration cannot
+// represent.
+//
+// lambda = -log(alpha)/U is defined for U > 0 and alpha in (0, 1) only. Outside
+// that the density is -Inf or NaN at every value of the scale, inside a
+// gradient, with nothing naming the parameter that caused it. The anchors are
+// fixed for the whole fit, so this is the one place the check can both throw
+// and say which argument was wrong -- pc_prior.h's own guard runs in AD code
+// and OpenMP regions, where it can only fall back to a flat prior.
+inline void read_pc_anchors(const Rcpp::List& spec,
+                            const char* key_U, const char* key_alpha,
+                            double& U, double& alpha, const char* what) {
+    if (spec.containsElementNamed(key_U))
+        U = Rcpp::as<double>(spec[key_U]);
+    if (spec.containsElementNamed(key_alpha))
+        alpha = Rcpp::as<double>(spec[key_alpha]);
+    if (!pc_anchors_valid(U, alpha)) {
+        Rcpp::stop("build_sampler_model_inputs: %s PC prior anchors must "
+                   "satisfy `%s` > 0 and 0 < `%s` < 1 (got %g and %g). The "
+                   "pair calibrates P(sigma > U) = alpha.",
+                   what, key_U, key_alpha, U, alpha);
+    }
+}
 
 // The per-observation field-node map for a sampler-side GP spec is 0-based:
 // the R layer passes `obs_to_loc - 1`, and the log-posterior reads
@@ -108,7 +134,6 @@ inline void build_sampler_model_inputs(
     in.spec = builtin_family_spec(family);
     if (builtin_family_has_ad(family)) {
         in.spec.ll_arena = &builtin_family_ll_ad<tulpa::arena::Var>;
-        in.spec.ll_fwd   = &builtin_family_ll_ad<::fwd::Dual>;
     }
 
     in.n_trials.assign(n_trials.begin(), n_trials.end());
@@ -268,13 +293,12 @@ inline void build_sampler_model_inputs(
             in.data.gp_parameterization =
                 sp.containsElementNamed("gp_parameterization")
                     ? Rcpp::as<int>(sp["gp_parameterization"]) : 1;
-            in.data.gp_phi_prior_U     = Rcpp::as<double>(sp["phi_prior_U"]);
-            in.data.gp_phi_prior_alpha = Rcpp::as<double>(sp["phi_prior_alpha"]);
-            if (sp.containsElementNamed("sigma2_prior_U"))
-                in.data.gp_sigma2_prior_U = Rcpp::as<double>(sp["sigma2_prior_U"]);
-            if (sp.containsElementNamed("sigma2_prior_alpha"))
-                in.data.gp_sigma2_prior_alpha =
-                    Rcpp::as<double>(sp["sigma2_prior_alpha"]);
+            read_pc_anchors(sp, "phi_prior_U", "phi_prior_alpha",
+                            in.data.gp_phi_prior_U, in.data.gp_phi_prior_alpha,
+                            "gp() range");
+            read_pc_anchors(sp, "sigma2_prior_U", "sigma2_prior_alpha",
+                            in.data.gp_sigma2_prior_U,
+                            in.data.gp_sigma2_prior_alpha, "gp() scale");
         } else if (stype == "multiscale") {
             // Multi-scale (local + regional) NNGP field. Two independent
             // GPData-shaped neighbour structures packed side by side in
@@ -360,14 +384,16 @@ inline void build_sampler_model_inputs(
 
             in.data.has_multiscale_gp = true;
             in.data.msgp_is_hsgp = false;
-            in.data.ms_sigma2_local_prior_U =
-                Rcpp::as<double>(sp["sigma2_local_prior_U"]);
-            in.data.ms_sigma2_local_prior_alpha =
-                Rcpp::as<double>(sp["sigma2_local_prior_alpha"]);
-            in.data.ms_sigma2_regional_prior_U =
-                Rcpp::as<double>(sp["sigma2_regional_prior_U"]);
-            in.data.ms_sigma2_regional_prior_alpha =
-                Rcpp::as<double>(sp["sigma2_regional_prior_alpha"]);
+            read_pc_anchors(sp, "sigma2_local_prior_U",
+                            "sigma2_local_prior_alpha",
+                            in.data.ms_sigma2_local_prior_U,
+                            in.data.ms_sigma2_local_prior_alpha,
+                            "multiscale local scale");
+            read_pc_anchors(sp, "sigma2_regional_prior_U",
+                            "sigma2_regional_prior_alpha",
+                            in.data.ms_sigma2_regional_prior_U,
+                            in.data.ms_sigma2_regional_prior_alpha,
+                            "multiscale regional scale");
             in.data.msgp_parameterization =
                 sp.containsElementNamed("msgp_parameterization")
                     ? Rcpp::as<int>(sp["msgp_parameterization"]) : 1;
@@ -420,6 +446,10 @@ inline void build_sampler_model_inputs(
             tulpa_hsgp::setup_hsgp_2d(flat, n_obs, m, cc, /*shared=*/true,
                                       in.data.hsgp_data);
             in.data.has_hsgp = true;
+            read_pc_anchors(sp, "sigma2_prior_U", "sigma2_prior_alpha",
+                            in.data.hsgp_sigma2_prior_U,
+                            in.data.hsgp_sigma2_prior_alpha,
+                            "gp(approx = \"hsgp\") scale");
         } else {
             Rcpp::stop("build_sampler_model_inputs: spatial type '%s' is not "
                        "supported on the sampler path (use 'icar'/'bym2'/"
@@ -582,10 +612,10 @@ inline void build_sampler_model_inputs(
                 (tp.containsElementNamed("parameterization") &&
                  Rcpp::as<std::string>(tp["parameterization"]) == "centered")
                 ? 0 : 1;
-            if (tp.containsElementNamed("sigma2_prior_U"))
-                in.data.temporal_gp_sigma2_prior_U = Rcpp::as<double>(tp["sigma2_prior_U"]);
-            if (tp.containsElementNamed("sigma2_prior_alpha"))
-                in.data.temporal_gp_sigma2_prior_alpha = Rcpp::as<double>(tp["sigma2_prior_alpha"]);
+            read_pc_anchors(tp, "sigma2_prior_U", "sigma2_prior_alpha",
+                            in.data.temporal_gp_sigma2_prior_U,
+                            in.data.temporal_gp_sigma2_prior_alpha,
+                            "temporal_gp() scale");
             if (tp.containsElementNamed("phi_prior_lower"))
                 in.data.temporal_gp_phi_prior_lower = Rcpp::as<double>(tp["phi_prior_lower"]);
             if (tp.containsElementNamed("phi_prior_upper"))
@@ -645,8 +675,9 @@ inline void build_sampler_model_inputs(
         s.cov_type = static_cast<CovType>(Rcpp::as<int>(sv["cov_type"]));
         in.data.has_svc = true;
         in.data.svc_is_hsgp = false;
-        in.data.svc_phi_prior_U     = Rcpp::as<double>(sv["phi_prior_U"]);
-        in.data.svc_phi_prior_alpha = Rcpp::as<double>(sv["phi_prior_alpha"]);
+        read_pc_anchors(sv, "phi_prior_U", "phi_prior_alpha",
+                        in.data.svc_phi_prior_U, in.data.svc_phi_prior_alpha,
+                        "spatial_svc() range");
         if (sv.containsElementNamed("sigma2_prior_scale"))
             in.data.svc_sigma2_prior_scale = Rcpp::as<double>(sv["sigma2_prior_scale"]);
         // svc_parameterization defaults to 1 (non-centered), matching the
@@ -687,6 +718,9 @@ inline void build_sampler_model_inputs(
                         "supported (use 'rw1'/'rw2'/'ar1').", st.c_str());
         t.cyclic = tv.containsElementNamed("cyclic") && Rcpp::as<bool>(tv["cyclic"]);
         tulpa_tvc::validate_tvc_data(t);
+        read_pc_anchors(tv, "sigma_prior_U", "sigma_prior_alpha",
+                        in.data.tvc_sigma_prior_U,
+                        in.data.tvc_sigma_prior_alpha, "tvc() scale");
         in.data.has_tvc = true;
     }
 

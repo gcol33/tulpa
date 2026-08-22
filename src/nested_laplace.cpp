@@ -353,6 +353,7 @@ Rcpp::List cpp_nested_laplace_icar(
                               spatial_idx, static_cast<int>(y.size()),
                               n_spatial_units,
                               "cpp_nested_laplace_icar");
+    tulpa::nl_grid_axes_positive({{"tau_grid", &tau_grid}});
     int n_grid = tau_grid.size();
     int N = y.size();
     int p = X.ncol();
@@ -430,6 +431,7 @@ Rcpp::List cpp_nested_laplace_bym2(
                               "cpp_nested_laplace_bym2");
     const int n_grid = tulpa::nl_grid_axes_length(
         "sigma_spatial_grid", sigma_spatial_grid, {{"rho_grid", &rho_grid}});
+    tulpa::nl_grid_axes_positive({{"sigma_spatial_grid", &sigma_spatial_grid}});
     tulpa::nl_grid_axis_unit_interval("rho_grid", rho_grid);
     int N = y.size();
     int p = X.ncol();
@@ -500,6 +502,7 @@ Rcpp::List cpp_nested_laplace_car_proper(
                               "cpp_nested_laplace_car_proper");
     const int n_grid = tulpa::nl_grid_axes_length(
         "tau_grid", tau_grid, {{"rho_grid", &rho_grid}});
+    tulpa::nl_grid_axes_positive({{"tau_grid", &tau_grid}});
     int N = y.size();
     int p = X.ncol();
     int spatial_start = p + n_re_groups;
@@ -590,7 +593,10 @@ Rcpp::List cpp_laplace_fit_car_proper(
         offset.empty() ? nullptr : offset.data());
 
     std::vector<double> params(in.layout.total_params, 0.0);
-    if (has_re) params[in.layout.log_sigma_re_idx] = std::log(sigma_re);
+    if (has_re) {
+        tulpa::nl_check_positive("sigma_re", sigma_re);
+        params[in.layout.log_sigma_re_idx] = std::log(sigma_re);
+    }
     if (x_init_nullable.isNotNull()) {
         Rcpp::NumericVector xi = Rcpp::as<Rcpp::NumericVector>(x_init_nullable);
         const int n_lat = block_start + n_spatial_units;
@@ -653,6 +659,8 @@ Rcpp::List cpp_nested_laplace_nngp(
 ) {
     const int n_grid = tulpa::nl_grid_axes_length(
         "sigma2_grid", sigma2_grid, {{"phi_gp_grid", &phi_gp_grid}});
+    tulpa::nl_grid_axes_positive({{"sigma2_grid", &sigma2_grid},
+                                  {"phi_gp_grid", &phi_gp_grid}});
     const int N = y.size();
     const int p = X.ncol();
     if (spatial_idx.size() != N)
@@ -767,6 +775,8 @@ Rcpp::List cpp_nested_laplace_hsgp(
 ) {
     const int n_grid = tulpa::nl_grid_axes_length(
         "sigma2_grid", sigma2_grid, {{"lengthscale_grid", &lengthscale_grid}});
+    tulpa::nl_grid_axes_positive({{"sigma2_grid", &sigma2_grid},
+                                  {"lengthscale_grid", &lengthscale_grid}});
     const int N = y.size();
     const int p = X.ncol();
     const int M = phi_basis.ncol();
@@ -908,7 +918,10 @@ Rcpp::List cpp_laplace_fit_hsgp(
         offset.empty() ? nullptr : offset.data());
 
     std::vector<double> params(in.layout.total_params, 0.0);
-    if (has_re) params[in.layout.log_sigma_re_idx] = std::log(sigma_re);
+    if (has_re) {
+        tulpa::nl_check_positive("sigma_re", sigma_re);
+        params[in.layout.log_sigma_re_idx] = std::log(sigma_re);
+    }
     if (x_init_nullable.isNotNull()) {
         Rcpp::NumericVector xi = Rcpp::as<Rcpp::NumericVector>(x_init_nullable);
         const int n_lat = block_start + M;
@@ -1312,6 +1325,7 @@ Rcpp::List cpp_nested_laplace_temporal(
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue
 ) {
+    tulpa::nl_grid_axes_positive({{"tau_grid", &tau_grid}});
     int n_grid = tau_grid.size();
     int N = y.size();
     int p = X.ncol();
@@ -1389,6 +1403,8 @@ Rcpp::List cpp_nested_laplace_st_icar(
     const int n_grid = tulpa::nl_grid_axes_length(
         "tau_spatial_grid", tau_spatial_grid,
         {{"tau_temporal_grid", &tau_temporal_grid}});
+    tulpa::nl_grid_axes_positive({{"tau_spatial_grid", &tau_spatial_grid},
+                                  {"tau_temporal_grid", &tau_temporal_grid}});
     Rcpp::NumericVector rho_t = nl_unwrap_rho_temporal(rho_temporal_grid);
     int s_start = X.ncol() + n_re_groups;
 
@@ -1460,6 +1476,8 @@ Rcpp::List cpp_nested_laplace_st_car_proper(
         "tau_spatial_grid", tau_spatial_grid,
         {{"rho_spatial_grid", &rho_spatial_grid},
          {"tau_temporal_grid", &tau_temporal_grid}});
+    tulpa::nl_grid_axes_positive({{"tau_spatial_grid", &tau_spatial_grid},
+                                  {"tau_temporal_grid", &tau_temporal_grid}});
     Rcpp::NumericVector rho_t = nl_unwrap_rho_temporal(rho_temporal_grid);
     int s_start = X.ncol() + n_re_groups;
 
@@ -1534,6 +1552,8 @@ Rcpp::List cpp_nested_laplace_st_bym2(
         "sigma_spatial_grid", sigma_spatial_grid,
         {{"rho_spatial_grid", &rho_spatial_grid},
          {"tau_temporal_grid", &tau_temporal_grid}});
+    tulpa::nl_grid_axes_positive({{"sigma_spatial_grid", &sigma_spatial_grid},
+                                  {"tau_temporal_grid", &tau_temporal_grid}});
     tulpa::nl_grid_axis_unit_interval("rho_spatial_grid", rho_spatial_grid);
     Rcpp::NumericVector rho_t = nl_unwrap_rho_temporal(rho_temporal_grid);
     int s_start = X.ncol() + n_re_groups;
@@ -1603,6 +1623,10 @@ Rcpp::List cpp_nested_laplace_st_hsgp(
     const int n_grid = tulpa::nl_grid_axes_length(
         "sigma2_spatial_grid", sigma2_spatial_grid,
         {{"lengthscale_spatial_grid", &lengthscale_spatial_grid},
+         {"tau_temporal_grid", &tau_temporal_grid}});
+    tulpa::nl_grid_axes_positive(
+        {{"sigma2_spatial_grid", &sigma2_spatial_grid},
+         {"lengthscale_spatial_grid", &lengthscale_spatial_grid},
          {"tau_temporal_grid", &tau_temporal_grid}});
     Rcpp::NumericVector rho_t = nl_unwrap_rho_temporal(rho_temporal_grid);
     int N = y.size();
@@ -1696,6 +1720,10 @@ Rcpp::List cpp_nested_laplace_st_nngp(
     const int n_grid = tulpa::nl_grid_axes_length(
         "sigma2_spatial_grid", sigma2_spatial_grid,
         {{"phi_gp_spatial_grid", &phi_gp_spatial_grid},
+         {"tau_temporal_grid", &tau_temporal_grid}});
+    tulpa::nl_grid_axes_positive(
+        {{"sigma2_spatial_grid", &sigma2_spatial_grid},
+         {"phi_gp_spatial_grid", &phi_gp_spatial_grid},
          {"tau_temporal_grid", &tau_temporal_grid}});
     Rcpp::NumericVector rho_t = nl_unwrap_rho_temporal(rho_temporal_grid);
     int N = y.size();

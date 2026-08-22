@@ -13,6 +13,7 @@
 #include "pg_rng.h"        // rpg_int, rpg_real
 #include "linalg_fast.h"   // shared small-dense Cholesky / NNGP solve core
 #include "omp_threads.h"   // tulpa_omp_team_size_req, tulpa_parallel_for
+#include "pc_prior.h"      // tulpa::log_prior_sigma2_pc
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -498,9 +499,7 @@ inline void pg_check_pc_prior(double U, double alpha, const char* name) {
 
 inline double pg_log_prior_sigma2_pc(double sigma2, double U, double alpha) {
   if (!(sigma2 > 0.0)) return R_NegInf;
-  const double lambda = -std::log(alpha) / U;
-  const double sigma = std::sqrt(sigma2);
-  return std::log(lambda) - lambda * sigma - std::log(2.0 * sigma);
+  return log_prior_sigma2_pc<double>(sigma2, U, alpha);
 }
 
 // Draw from N(mean, sd^2) truncated to (0, inf) (Robert 1995). Used for the

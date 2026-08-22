@@ -16,6 +16,11 @@
 #' @param shared Whether the effect is shared across processes in a
 #'   multi-process model. `NULL` (default) shares it; `FALSE` fits
 #'   process-specific effects and emits a warning.
+#' @param sigma_prior_U,sigma_prior_alpha Penalized-complexity prior on each
+#'   varying coefficient's marginal standard deviation, calibrated so that
+#'   `P(sigma > sigma_prior_U) = sigma_prior_alpha`. Defaults to
+#'   `P(sigma > 1) = 0.01`. `sigma_prior_U` must be positive and
+#'   `sigma_prior_alpha` must lie in `(0, 1)`.
 #'
 #' @return A `tulpa_tvc` object.
 #'
@@ -31,9 +36,13 @@ temporal_tvc <- function(time_var,
                          terms = 1,
                          structure = c("rw1", "rw2", "ar1", "gp"),
                          group_var = NULL,
-                         shared = NULL) {
+                         shared = NULL,
+                         sigma_prior_U = 1,
+                         sigma_prior_alpha = 0.01) {
 
   structure_type <- match.arg(structure)
+  .check_pc_anchors(sigma_prior_U, sigma_prior_alpha,
+                    "sigma_prior_U", "sigma_prior_alpha", "temporal_tvc()")
 
   if (!is.character(time_var) || length(time_var) != 1) {
     stop("`time_var` must be a single character string", call. = FALSE)
@@ -67,6 +76,8 @@ temporal_tvc <- function(time_var,
       terms_spec = terms_spec,
       structure = structure_type,
       shared = shared,
+      sigma_prior_U = as.numeric(sigma_prior_U),
+      sigma_prior_alpha = as.numeric(sigma_prior_alpha),
       # Filled in during validation
       n_times = NULL,
       n_groups = NULL,

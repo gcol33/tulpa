@@ -79,8 +79,7 @@ T icar_sum_to_zero_augment(const T* phi, const GraphPartition& partition)
 // covers all L directions so the prior is proper; the data covers the L - 1 the
 // centring leaves alone. The Laplace path centres the same single direction.
 template<typename T>
-void icar_center_field(const T* phi, int n_spatial_units,
-                       int /*n_components*/, std::vector<T>& out)
+void icar_center_field(const T* phi, int n_spatial_units, std::vector<T>& out)
 {
     out.assign(n_spatial_units, T(0.0));
     const T m = tulpa::s2z_component_mean(phi, 0, n_spatial_units);
@@ -101,7 +100,8 @@ T compute_spatial_icar_bym2_prior(const std::vector<T>& params, const ModelData&
 
         if (layout.is_bym2) {
             // Riebler reparameterization: sigma_total, rho -> sigma_s, sigma_u
-            T sigma_total_bym2 = safe_exp(params[layout.log_sigma_bym2_idx]);
+            T log_sigma = params[layout.log_sigma_bym2_idx];
+            T sigma_total_bym2 = safe_exp(log_sigma);
             T logit_rho_val = params[layout.logit_rho_bym2_idx];
             T rho_bym2 = T(1.0) / (T(1.0) + safe_exp(-logit_rho_val));
             sigma_s_bym2_out = sigma_total_bym2 * safe_sqrt(rho_bym2);
@@ -110,7 +110,6 @@ T compute_spatial_icar_bym2_prior(const std::vector<T>& params, const ModelData&
             theta_bym2_out = &params[layout.theta_bym2_start];
 
             // BYM2 Riebler: Half-Cauchy on sigma_total
-            T log_sigma = params[layout.log_sigma_bym2_idx];
             log_post = log_post + log_prior_half_cauchy(log_sigma, data.sigma_re_scale);
 
             // Uniform(0,1) = Beta(1,1) on rho with logit Jacobian:

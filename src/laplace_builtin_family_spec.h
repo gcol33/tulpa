@@ -24,6 +24,35 @@
 
 namespace tulpa {
 
+// Which branch of the AD likelihood ladder (builtin_family_ll_ad.h) a family
+// code selects. That ladder runs once per observation per reverse-mode sweep,
+// so comparing the code against up to twelve std::strings there is per-obs work
+// on a quantity fixed for the whole fit. This is the same classification
+// FamilyKind performs for the double path, over the AD ladder's own branches.
+enum class AdFamily : int {
+    UNRESOLVED,
+    GAUSSIAN, POISSON, BINOMIAL, NEG_BINOMIAL_2, NEG_BINOMIAL_1,
+    TRUNCATED_POISSON, TRUNCATED_NEG_BINOMIAL_2, BETA_BINOMIAL, STUDENT_T,
+    GAMMA, INVERSE_GAUSSIAN, LOGNORMAL, BETA
+};
+
+inline AdFamily ad_family_kind(const std::string& code) {
+    if (code == "poisson")                  return AdFamily::POISSON;
+    if (code == "binomial")                 return AdFamily::BINOMIAL;
+    if (code == "neg_binomial_2")           return AdFamily::NEG_BINOMIAL_2;
+    if (code == "neg_binomial_1")           return AdFamily::NEG_BINOMIAL_1;
+    if (code == "truncated_poisson")        return AdFamily::TRUNCATED_POISSON;
+    if (code == "truncated_neg_binomial_2") return AdFamily::TRUNCATED_NEG_BINOMIAL_2;
+    if (code == "beta_binomial")            return AdFamily::BETA_BINOMIAL;
+    if (code == "t")                        return AdFamily::STUDENT_T;
+    if (code == "gaussian")                 return AdFamily::GAUSSIAN;
+    if (code == "lognormal")                return AdFamily::LOGNORMAL;
+    if (code == "gamma")                    return AdFamily::GAMMA;
+    if (code == "inverse_gaussian")         return AdFamily::INVERSE_GAUSSIAN;
+    if (code == "beta")                     return AdFamily::BETA;
+    return AdFamily::UNRESOLVED;
+}
+
 // Per-observation response payload for a single-process built-in family.
 // The arrays are borrowed; they must outlive the fit. n_trials may be null
 // (treated as 1 everywhere), which is the non-binomial case.
@@ -32,6 +61,10 @@ struct BuiltinFamilyResponse {
     const int* n_trials = nullptr;   // [N] binomial denominators, or null (=> 1)
     int N = 0;
     std::string family;              // resolved against laplace_family_link.h
+    // The same code classified for the AD ladder, resolved by prepare()
+    // alongside fam. Until prepare() runs it is UNRESOLVED, which the ladder
+    // reports as an error rather than dispatching on a stale branch.
+    AdFamily ad_kind = AdFamily::UNRESOLVED;
     double phi = 1.0;                // dispersion / precision / size
     const double* weights = nullptr; // [N] per-obs likelihood weights, or null (=> 1)
     // Grouped beta sufficient statistics. When non-null and
@@ -73,6 +106,9 @@ struct BuiltinFamilyResponse {
     // phi is NOT read here: the grid rewrites it per cell (sync_dispersion),
     // and no family's eta-independent term depends on it.
     void prepare() {
+        // Ahead of the early return: the AD ladder dispatches on ad_kind for
+        // any response it is handed, including one carrying no y array.
+        ad_kind = ad_family_kind(family);
         if (!y || N <= 0) return;
         fam = resolve_family(family);
         ll_const.resize((size_t)N);

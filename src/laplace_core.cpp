@@ -15,6 +15,7 @@
 #include "linalg_fast.h"
 #include "gpu_nngp_laplace.h"
 #include "sparse_hessian.h"
+#include "nested_laplace_grid.h"   // nl_check_positive
 #include <Rcpp.h>
 #include <cmath>
 #include <algorithm>
@@ -138,7 +139,10 @@ Rcpp::List cpp_laplace_fit(
         in, y, n, X, re_group, n_re_groups, sigma_re, family, phi,
         /*sigma_beta=*/100.0, /*n_block_latent=*/0);
     std::vector<double> params(in.layout.total_params, 0.0);
-    if (in.layout.has_re) params[in.layout.log_sigma_re_idx] = std::log(sigma_re);
+    if (in.layout.has_re) {
+        tulpa::nl_check_positive("sigma_re", sigma_re);
+        params[in.layout.log_sigma_re_idx] = std::log(sigma_re);
+    }
     std::vector<int> skew_idx_vec;
     const std::vector<int>* skew_idx_ptr =
         tulpa::unwrap_skew_idx(compute_skew, skew_idx, skew_idx_vec);

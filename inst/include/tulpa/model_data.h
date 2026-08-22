@@ -130,8 +130,18 @@ namespace tulpa {
 // already use, anchored at each axis's declared lower bound. ModelData's
 // st_phi_space_prior_upper / st_phi_time_prior_upper are replaced by
 // st_phi_space_prior_alpha / st_phi_time_prior_alpha at the same slots.
+// 41 -> 42: LikelihoodSpec::ll_fwd is removed. It was assigned at six sites and
+// read at none -- resolve_gradient_fn dispatches on gradient_fn, then ll_arena,
+// then the numerical fallback, and AUTODIFF_FWD is an explicit alias for the
+// arena path -- so each assignment forced a fwd::Dual instantiation of a
+// likelihood kernel that never ran. An unexercised copy of a density is also
+// where a kernel silently falls out of step with its siblings. ModelData gained
+// hsgp_sigma2_prior_U / _alpha, st_hsgp_sigma2_prior_U / _alpha and
+// tvc_sigma_prior_U / _alpha (trailing doubles in their own sections),
+// defaulted to the (1, 0.01) anchors those three PC priors previously hardcoded
+// (gcol33/tulpa#493, gcol33/tulpa#506).
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 41;
+constexpr int TULPA_ABI_VERSION = 42;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)
@@ -369,6 +379,11 @@ struct ModelData {
     bool has_hsgp = false;
     int hsgp_m_per_dim = 15;
     double hsgp_boundary_factor = 1.5;
+    // PC prior on the field's marginal SD: P(sigma > hsgp_sigma2_prior_U) =
+    // hsgp_sigma2_prior_alpha. The default is the (1, 0.01) anchor the density
+    // used to hardcode, so an unset spec is unchanged.
+    double hsgp_sigma2_prior_U = 1.0;
+    double hsgp_sigma2_prior_alpha = 0.01;
 
     // SPDE (Stochastic PDE Matern, Lindgren–Rue 2011). Active when
     // spatial_type == SpatialType::SPDE. Holds the FEM topology, per-obs
@@ -453,6 +468,11 @@ struct ModelData {
     bool has_tvc = false;
     double tvc_tau_shape = 1.0;
     double tvc_tau_rate = 0.01;
+    // PC prior on each TVC field's marginal SD, carried to the sampled
+    // log-precision coordinate: P(sigma > tvc_sigma_prior_U) =
+    // tvc_sigma_prior_alpha. Default is the previously hardcoded (1, 0.01).
+    double tvc_sigma_prior_U = 1.0;
+    double tvc_sigma_prior_alpha = 0.01;
 
     // ================================================================
     // ZERO-INFLATION
@@ -489,6 +509,10 @@ struct ModelData {
     int st_parameterization = 0;
     double st_sigma2_prior_U = 1.0;
     double st_sigma2_prior_alpha = 0.01;
+    // PC prior on the HSGP-ST basis field's marginal SD, the spatiotemporal
+    // counterpart of hsgp_sigma2_prior_U. Default (1, 0.01) as before.
+    double st_hsgp_sigma2_prior_U = 1.0;
+    double st_hsgp_sigma2_prior_alpha = 0.01;
     // PC prior on each spatiotemporal-GP range, anchored at that axis's own
     // declared lower bound: P(range < st_phi_*_prior_lower) =
     // st_phi_*_prior_alpha. Same form the GP, SVC and multiscale-GP range

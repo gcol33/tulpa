@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <memory>
 
+#include "autodiff_utils.h"  // tulpa::math::safe_exp
 #include "hmc_gp.h"  // tulpa_gp::{NNGPNCView, NNGPNCWorkspace, nngp_nc_forward,
                      // nngp_nc_backward}
 
@@ -19,8 +20,8 @@ void apply_nngp_nc_term_double(
     const tulpa_gp::NNGPNCView& view,
     std::vector<double>&       w_out)
 {
-    const double sigma2 = std::exp(params[sigma2_idx]);
-    const double phi    = std::exp(params[phi_idx]);
+    const double sigma2 = tulpa::math::safe_exp(params[sigma2_idx]);
+    const double phi    = tulpa::math::safe_exp(params[phi_idx]);
 
     // POD-pointer TLS (constant init, no thread-atexit destructor): a
     // lazily-initialized thread_local object here corrupts the heap under the
@@ -44,8 +45,8 @@ std::vector<arena::Var> apply_nngp_nc_term_arena(
     // contributes at least one z slot).
     arena::Arena* ar = params[w_start].arena_;
 
-    const double sigma2 = std::exp(params[sigma2_idx].val());
-    const double phi    = std::exp(params[phi_idx].val());
+    const double sigma2 = tulpa::math::safe_exp(params[sigma2_idx].val());
+    const double phi    = tulpa::math::safe_exp(params[phi_idx].val());
 
     std::vector<double> z(N);
     for (int i = 0; i < N; i++) z[i] = params[w_start + i].val();

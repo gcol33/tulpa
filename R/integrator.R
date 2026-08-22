@@ -47,7 +47,11 @@
 #' Like the other schemes it applies to NUTS.
 #'
 #' The choice is process-global (like the gradient mode): set it once before
-#' fitting. It is read on the main thread at the start of sampling.
+#' fitting. It is read on the main thread at the start of sampling. Because it
+#' is process-global, a caller that changes it owns restoring it -- and an error
+#' between the two calls would leave the process on the other integrator.
+#' [with_tulpa_integrator()] does both, restoring on error as well as on
+#' success.
 #'
 #' @param name Integrator name: `"leapfrog"` (default), `"minerror2"`,
 #'   `"adaptive2"`, `"adaptive3"`, `"mts"`, `"yoshida4"`, `"yoshida6"`, or
@@ -72,9 +76,38 @@ tulpa_integrator <- function(name, mts_substeps = 4L) {
     stop("`name` must be a single integrator name", call. = FALSE)
   }
   if (!is.numeric(mts_substeps) || length(mts_substeps) != 1L ||
-      mts_substeps < 1L) {
+      !is.finite(mts_substeps) || mts_substeps < 1L) {
     stop("`mts_substeps` must be a single integer >= 1", call. = FALSE)
   }
   # C++ validates the name; errors on unknown.
   invisible(tulpa_set_integrator_cpp(name, as.integer(mts_substeps)))
+}
+
+
+#' Run an expression under a chosen symplectic integrator
+#'
+#' @description
+#' Evaluate `expr` with the integrator set to `name`, then restore whatever was
+#' selected before -- on an error as well as on success. The integrator
+#' selection is process-global, so a bare [tulpa_integrator()] call leaves every
+#' later fit in the session on the new scheme, and an error between setting and
+#' restoring leaves it there permanently.
+#'
+#' @param name Integrator name, as for [tulpa_integrator()].
+#' @param expr Expression to evaluate. Evaluated in the caller's environment.
+#' @param mts_substeps Inner prior-force substeps for `"mts"` (default 4).
+#'
+#' @return The value of `expr`.
+#'
+#' @examples
+#' with_tulpa_integrator("yoshida4", tulpa_integrator())
+#' tulpa_integrator()   # unchanged
+#'
+#' @seealso [tulpa_integrator()]
+#' @export
+with_tulpa_integrator <- function(name, expr, mts_substeps = 4L) {
+  previous <- tulpa_integrator()
+  tulpa_integrator(name, mts_substeps = mts_substeps)
+  on.exit(tulpa_integrator(previous), add = TRUE)
+  eval.parent(substitute(expr))
 }

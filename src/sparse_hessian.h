@@ -21,6 +21,10 @@
 #include <cmath>
 #include <cstdlib>
 #include <algorithm>
+#include <atomic>
+#include <limits>
+#include <set>
+#include <stdexcept>
 
 namespace tulpa {
 
@@ -86,10 +90,21 @@ public:
     std::vector<double> s2z_coupling;
     void set_s2z_coupling(std::vector<double> D) { s2z_coupling = std::move(D); }
 
+    // Bumped by every init(). The flat-write-index caches (scatter_dense_basis.h,
+    // scatter_indexed_cache.h) hold offsets into `values` resolved by
+    // lookup(row, col), and keyed on this builder's identity plus its shape.
+    // Two different patterns installed into the same builder object with equal
+    // nnz would satisfy such a key and hand back offsets pointing at other
+    // entries -- a silently wrong Hessian, and one the pattern guard's drop
+    // counter cannot see because the offset is valid, just not the one meant.
+    // The generation makes re-initialisation visible to every cache at once.
+    unsigned long long pattern_generation = 0;
+
     // Initialize from a list of (row, col) pairs that define the sparsity pattern.
     // Only lower triangle entries needed (row >= col).
     void init(int dim, const std::vector<std::pair<int,int>>& pattern) {
         n = dim;
+        ++pattern_generation;
 
         // Deduplicate and sort by (col, row). A pair outside [0, dim) is not
         // registered: col_ptr is sized dim + 1 and the CSC build below walks
@@ -107,7 +122,15 @@ public:
             unique_entries.insert({hi, lo});  // store as (row, col) with row >= col
         }
 
-        // Build CSC (column-major, lower triangle)
+        // Build CSC (column-major, lower triangle). The entry count indexes
+        // row_idx / values as an int everywhere below, so a pattern past
+        // INT_MAX is rejected rather than silently narrowed.
+        if (unique_entries.size() >
+            static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+            throw std::length_error(
+                "SparseHessianBuilder::init: sparsity pattern has more than "
+                "INT_MAX unique entries.");
+        }
         nnz = static_cast<int>(unique_entries.size());
         col_ptr.assign(n + 1, 0);
         row_idx.resize(nnz);
@@ -207,8 +230,7 @@ public:
     // if the entry is not in the pattern. Lower-triangle normalization
     // matches `add()`. Used by scatter callers that want to cache the
     // index once and then write via `values[idx] += val` directly,
-    // avoiding the per-write std::map lookup. Stage 2.2 scatter index
-    // cache.
+    // avoiding the per-write std::map lookup.
     int lookup(int row, int col) const {
         int lo = std::min(row, col);
         int hi = std::max(row, col);

@@ -66,18 +66,9 @@ T beta_likelihood(
 
     const auto* bd = static_cast<const BetaData*>(model_data);
 
-    // mu and 1 - mu through inv_logit_pos, so both beta shapes stay strictly
-    // positive at any |eta| and neither reaches lgamma(0).
-    T eta_i = eta[0];
-
     T log_phi = params[layout.extra_offset];
-    T phi     = exp(log_phi);
-    T a       = phi * tulpa::math::inv_logit_pos(eta_i);
-    T b       = phi * tulpa::math::inv_logit_pos(T(0.0) - eta_i);
-
-    return lgamma(phi) - lgamma(a) - lgamma(b)
-         + (a - T(1.0)) * T(bd->log_y[i])
-         + (b - T(1.0)) * T(bd->log_1my[i]);
+    return tulpa::math::log_lik_beta_logit(eta[0], exp(log_phi),
+                                           bd->log_y[i], bd->log_1my[i]);
 }
 
 // ============================================================================
@@ -166,7 +157,6 @@ Rcpp::List cpp_tulpa_fit_beta_nuts(
     spec.n_processes       = 1;
     spec.ll_double         = beta_likelihood<double>;
     spec.ll_arena          = beta_likelihood<tulpa::arena::Var>;
-    spec.ll_fwd            = beta_likelihood<::fwd::Dual>;
     spec.n_extra_params    = 1;  // log_phi
     spec.extra_prior       = beta_extra_prior_double;
     spec.extra_prior_arena = beta_extra_prior_arena;

@@ -415,6 +415,7 @@ Rcpp::NumericVector cpp_family_ad_terms(double y, int n_trials, double eta,
   r.family   = family;
   r.phi      = phi;
   r.phi2     = phi2;
+  r.prepare();
 
   const fwd::Dual e(eta, 1.0);
   const fwd::Dual ll = tulpa::builtin_family_base_ll_ad<fwd::Dual>(

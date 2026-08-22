@@ -507,6 +507,22 @@ inline T log_lik_poisson(int y, const T& mu) {
     return y * safe_log(mu) - mu - lgamma_fn(T(y + 1.0));
 }
 
+// Beta density under the logit link, given the precision phi and the response's
+// two logs. The single source of truth for every beta arm in the package: the
+// generic family kernel, the beta sampler and the SPDE sampler all read it, so
+// the shapes are held strictly positive by inv_logit_pos in exactly one place.
+// log_y and log_1my arrive precomputed because every caller floors and caches
+// them once per fit rather than per gradient evaluation.
+template<typename T>
+inline T log_lik_beta_logit(const T& eta, const T& phi,
+                            double log_y, double log_1my) {
+    const T a = inv_logit_pos(eta) * phi;
+    const T b = inv_logit_pos(T(0.0) - eta) * phi;
+    return lgamma_fn(phi) - lgamma_fn(a) - lgamma_fn(b)
+         + (a - T(1.0)) * T(log_y)
+         + (b - T(1.0)) * T(log_1my);
+}
+
 template<typename T>
 inline T log_lik_gamma(double y, const T& shape, const T& mu) {
     // Gamma(y | shape, rate) where rate = shape/mu (mean parameterization)

@@ -105,7 +105,10 @@ Rcpp::List cpp_laplace_fit_spatial(
     std::vector<tulpa::LatentBlock> blocks{ block };
 
     std::vector<double> params(in.layout.total_params, 0.0);
-    if (has_re) params[in.layout.log_sigma_re_idx] = std::log(sigma_re);
+    if (has_re) {
+        tulpa::nl_check_positive("sigma_re", sigma_re);
+        params[in.layout.log_sigma_re_idx] = std::log(sigma_re);
+    }
     // Warm start: the [beta | RE | spatial] latent occupies the leading
     // block_start + n_spatial_units params (contiguous before log_sigma_re).
     if (x_init_nullable.isNotNull()) {
@@ -235,7 +238,10 @@ Rcpp::List cpp_laplace_fit_bym2(
     std::vector<tulpa::LatentBlock> blocks{ phi_block, theta_block };
 
     std::vector<double> params(in.layout.total_params, 0.0);
-    if (has_re) params[in.layout.log_sigma_re_idx] = std::log(sigma_re);
+    if (has_re) {
+        tulpa::nl_check_positive("sigma_re", sigma_re);
+        params[in.layout.log_sigma_re_idx] = std::log(sigma_re);
+    }
 
     std::vector<int> skew_idx_vec;
     const std::vector<int>* skew_idx_ptr =

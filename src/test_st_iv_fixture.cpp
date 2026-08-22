@@ -164,7 +164,6 @@ void build_st_iv_model(
   spec.n_processes = 1;
   spec.ll_double = st_iv_likelihood<double>;
   spec.ll_arena = st_iv_likelihood<tulpa::arena::Var>;
-  spec.ll_fwd = st_iv_likelihood< ::fwd::Dual>;
   spec.eta_weights_fn = &st_iv_eta_weights;
   spec.n_extra_params = sd.gaussian ? 1 : 0;
   spec.extra_prior = sd.gaussian ? &st_iv_extra_prior : nullptr;

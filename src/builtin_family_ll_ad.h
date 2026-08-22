@@ -1,23 +1,25 @@
 // builtin_family_ll_ad.h
 // Autodiff-templated per-observation log-likelihood for the built-in GLM
-// families, so the ModelData sampler kernels get an analytic reverse-/forward-
-// mode gradient through the full latent vector (fixed effects + RE + spatial +
+// families, so the ModelData sampler kernels get an analytic reverse-mode
+// gradient through the full latent vector (fixed effects + RE + spatial +
 // temporal) instead of the numerical fallback. The double path's value still
 // comes from builtin_family_ll_double (laplace_builtin_family_spec.h); this
-// header supplies spec.ll_arena / spec.ll_fwd, which differ from that value only
-// by an eta-independent constant (the combinatorial / normalising terms), so the
+// header supplies spec.ll_arena, which differs from that value only by an
+// eta-independent constant (the combinatorial / normalising terms), so the
 // gradient stays consistent with the Hamiltonian's potential.
 //
 // Coverage: the default-link families whose log-density is a clean, AD-friendly
 // closed form built from the templated primitives in autodiff_utils.h --
 // gaussian (identity), poisson (log), binomial (logit), neg_binomial_2 (log),
-// gamma (log), inverse_gaussian (log), lognormal (identity), beta (logit) and
-// beta_binomial (logit).
+// neg_binomial_1 (log), gamma (log), inverse_gaussian (log), lognormal
+// (identity), t (identity), truncated_poisson (log),
+// truncated_neg_binomial_2 (log), beta (logit) and beta_binomial (logit).
+// builtin_family_has_ad() is the list that decides; this one follows it.
 // Each branch is the full log-density, so its value matches
 // builtin_family_ll_double exactly (not merely up to an eta-independent
 // constant). builtin_family_has_ad() gates which families set the AD callbacks;
 // any other family (or non-default link, e.g. binomial_probit -- the link suffix
-// is part of the family string) keeps ll_arena / ll_fwd null and falls back to
+// is part of the family string) keeps ll_arena null and falls back to
 // the numerical gradient.
 
 #ifndef TULPA_BUILTIN_FAMILY_LL_AD_H
@@ -41,16 +43,12 @@
 
 namespace tulpa {
 
-// Whether the AD likelihood below covers this family (exact, default-link only).
+// Whether the AD likelihood below covers this family (exact, default-link
+// only). The ladder dispatches on ad_family_kind, so that classification IS the
+// coverage list -- a second list beside it is how the gate and the branches
+// fall out of step.
 inline bool builtin_family_has_ad(const std::string& family) {
-    return family == "gaussian" || family == "poisson" ||
-           family == "binomial" || family == "neg_binomial_2" ||
-           family == "gamma" || family == "inverse_gaussian" ||
-           family == "lognormal" || family == "beta" ||
-           family == "beta_binomial" || family == "t" ||
-           family == "neg_binomial_1" ||
-           family == "truncated_poisson" ||
-           family == "truncated_neg_binomial_2";
+    return ad_family_kind(family) != AdFamily::UNRESOLVED;
 }
 
 // Unweighted base log-density at an arbitrary response value, templated over
@@ -63,59 +61,62 @@ inline T builtin_family_base_ll_ad(
 ) {
     using namespace tulpa::math;
     const double phi = r->phi;
-    const std::string& fam = r->family;
     const T* eta = &eta0;
 
-    if (fam == "poisson") {
+    // One switch on the code resolved by prepare(), not up to twelve
+    // std::string comparisons -- this runs once per observation per reverse
+    // sweep, on a quantity that is fixed for the whole fit.
+    switch (r->ad_kind) {
+    case AdFamily::POISSON: {
         return log_lik_poisson((int)yv, safe_exp(eta[0]));
     }
-    if (fam == "binomial") {
+    case AdFamily::BINOMIAL: {
         return log_lik_binomial((int)yv, nt, inv_logit(eta[0]));
     }
-    if (fam == "neg_binomial_2") {
+    case AdFamily::NEG_BINOMIAL_2: {
         return log_lik_negbin((int)yv, safe_exp(eta[0]), T(phi));
     }
-    if (fam == "neg_binomial_1") {
+    case AdFamily::NEG_BINOMIAL_1: {
         // Log link, variance mu (1 + phi). Shape r = mu / phi moves with the
         // mean, so r carries the eta dependence and the lgammas differentiate
         // through it; the log1p(phi) and log(phi) terms are eta-independent.
-        T r = safe_exp(eta[0]) * T(1.0 / phi);
-        return (lgamma_fn(T(yv) + r) - lgamma_fn(r)
+        T shape = safe_exp(eta[0]) * T(1.0 / phi);
+        return (lgamma_fn(T(yv) + shape) - lgamma_fn(shape)
              - T(std::lgamma(yv + 1.0))
-             - (T(yv) + r) * T(std::log1p(phi))
+             - (T(yv) + shape) * T(std::log1p(phi))
              + T(yv * std::log(phi)));
     }
-    if (fam == "truncated_poisson") {
+    case AdFamily::TRUNCATED_POISSON: {
         // Untruncated density minus the retained mass log(1 - exp(-mu)).
         T mu = safe_exp(eta[0]);
         return log_lik_poisson((int)yv, mu) - log1m_exp_fn(mu);
     }
-    if (fam == "truncated_neg_binomial_2") {
+    case AdFamily::TRUNCATED_NEG_BINOMIAL_2: {
         // Untruncated density minus log(1 - exp(-a)), a = phi log1p(mu/phi).
         T mu = safe_exp(eta[0]);
         T a  = log1p_fn(mu * T(1.0 / phi)) * T(phi);
         return log_lik_negbin((int)yv, mu, T(phi)) - log1m_exp_fn(a);
     }
-    if (fam == "beta_binomial") {
+    case AdFamily::BETA_BINOMIAL: {
         // Logit link, mu = P(success), phi = precision a + b. Exact AD log-lik.
         return log_lik_beta_binomial((int)yv, nt, inv_logit(eta[0]), T(phi));
     }
-    if (fam == "t") {
+    case AdFamily::STUDENT_T: {
         // Student-t location-scale (identity link): y ~ eta + phi * t_nu,
         // nu = phi2 (NaN => the robust default kStudentTDf), phi the scale.
         const double nu = std::isnan(r->phi2) ? kStudentTDf : r->phi2;
-        T r = (T(yv) - eta[0]) * T(1.0 / phi);
+        T z = (T(yv) - eta[0]) * T(1.0 / phi);
         return (T(std::lgamma((nu + 1.0) / 2.0) - std::lgamma(nu / 2.0)
                          - 0.5 * std::log(nu * M_PI * phi * phi))
-             - T(0.5 * (nu + 1.0)) * log1p_fn(r * r * T(1.0 / nu)));
+             - T(0.5 * (nu + 1.0)) * log1p_fn(z * z * T(1.0 / nu)));
     }
-    if (fam == "gaussian") {
+    case AdFamily::GAUSSIAN: {
         // Identity link: y ~ N(eta, phi^2). phi is the residual SD (held fixed).
         T resid = T(yv) - eta[0];
         return (T(-0.5 * std::log(2.0 * M_PI * phi * phi))
              - resid * resid * T(1.0 / (2.0 * phi * phi)));
     }
-    if (fam == "lognormal") {
+    case AdFamily::LOGNORMAL: {
         // Identity link on the log scale: log(y) ~ N(eta, phi^2). phi is the
         // log-scale SD. The -log(y) Jacobian is eta-independent (data constant).
         const double ly = std::log(std::max(yv, 1e-300));
@@ -123,14 +124,14 @@ inline T builtin_family_base_ll_ad(
         return (T(-ly - 0.5 * std::log(2.0 * M_PI * phi * phi))
              - resid * resid * T(1.0 / (2.0 * phi * phi)));
     }
-    if (fam == "gamma") {
+    case AdFamily::GAMMA: {
         // Log link: y ~ Gamma(shape = phi, mean = mu = exp(eta)).
         // ll = phi log phi - lgamma(phi) + (phi-1) log y - phi*eta - phi*y*exp(-eta).
         const double c = phi * std::log(phi) - std::lgamma(phi)
                        + (phi - 1.0) * std::log(std::max(yv, 1e-300));
         return (T(c) - T(phi) * eta[0] - T(phi * yv) * safe_exp(-eta[0]));
     }
-    if (fam == "inverse_gaussian") {
+    case AdFamily::INVERSE_GAUSSIAN: {
         // Log link: y ~ IG with mean mu = exp(eta) and variance phi*mu^3.
         // ll = -0.5 log(2 pi phi y^3) - (y-mu)^2 / (2 phi y mu^2). The response
         // is floored the way gamma and lognormal floor theirs, and the y^3 is
@@ -144,23 +145,26 @@ inline T builtin_family_base_ll_ad(
         return (T(c)
              - resid * resid * T(1.0 / (2.0 * phi * ysafe)) / (mu * mu));
     }
-    if (fam == "beta") {
+    case AdFamily::BETA: {
         // Logit link: y ~ Beta(a, b) with a = mu*phi, b = (1-mu)*phi,
         // mu = inv_logit(eta), phi the precision.
         // The response is floored at both ends, the way gamma and lognormal
         // floor theirs: an untouched log(0) is -Inf, and -Inf times the zero
         // adjoint of a data constant is NaN in the gradient rather than a
         // finite refusal in the value.
-        T a = inv_logit_pos(eta[0]) * T(phi);
-        T b = inv_logit_pos(T(0.0) - eta[0]) * T(phi);
         const double ly  = std::log(std::max(yv, 1e-300));
         const double l1y = std::log(std::max(1.0 - yv, 1e-300));
-        return (T(std::lgamma(phi)) - lgamma_fn(a) - lgamma_fn(b)
-             + (a - T(1.0)) * T(ly) + (b - T(1.0)) * T(l1y));
+        return log_lik_beta_logit(eta[0], T(phi), ly, l1y);
+    }
+    case AdFamily::UNRESOLVED:
+    default:
+        break;
     }
     Rcpp::stop("builtin_family_ll_ad: no AD likelihood for family '%s'. "
-               "builtin_family_has_ad() gates which families reach here, so "
-               "the two have fallen out of step.", fam.c_str());
+               "builtin_family_has_ad() gates which families reach here and "
+               "prepare() resolves the branch, so either the two have fallen "
+               "out of step or prepare() was not called.",
+               r->family.c_str());
 }
 
 // LikelihoodFn<T>: per-obs log-likelihood for a built-in family, templated over

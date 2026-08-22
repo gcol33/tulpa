@@ -1,6 +1,5 @@
 // scatter_indexed_cache.h
-// Stage 2.2b: per-obs INDEXED scatter index cache for the joint multi-arm
-// sparse path.
+// Per-obs INDEXED scatter index cache for the joint multi-arm sparse path.
 //
 // The per-obs scatter in `scatter_arm_obs_joint_multi_sparse` (see
 // nested_laplace_joint_multi.h) does ~10 SparseHessianBuilder::add() calls
@@ -13,7 +12,7 @@
 //
 // Scope:
 //   * Covers INDEXED_SINGLE and INDEXED_MULTI blocks.
-//   * DENSE_BASIS blocks are handled by scatter_dense_basis.h (Stage 2.2a).
+//   * DENSE_BASIS blocks are handled by scatter_dense_basis.h.
 //     When DENSE_BASIS is present alongside INDEXED blocks, the DB cross
 //     terms keep using the per-obs map-lookup path; the INDEXED cache
 //     handles its own subset.
@@ -114,6 +113,9 @@ struct ScatterIndexCache {
     // Validity key
     const void* cache_H_ptr = nullptr;
     int         cache_H_nnz = -1;
+    // See scatter_dense_basis.h: the builder's pattern generation closes the
+    // same-nnz re-init hole in the (pointer, nnz) key.
+    unsigned long long cache_H_gen = 0;
 
     std::vector<ArmIndexedCache> arm;
 };
@@ -139,6 +141,7 @@ inline void build_scatter_index_cache(
 
     cache.cache_H_ptr = static_cast<const void*>(&H);
     cache.cache_H_nnz = H.nnz;
+    cache.cache_H_gen = H.pattern_generation;
 
     cache.enabled         = true;
     cache.any_dense_basis = false;
@@ -370,6 +373,7 @@ inline bool scatter_index_cache_valid(
     if (!cache.enabled) return false;
     if (cache.cache_H_ptr != static_cast<const void*>(&H)) return false;
     if (cache.cache_H_nnz != H.nnz) return false;
+    if (cache.cache_H_gen != H.pattern_generation) return false;
     return true;
 }
 
@@ -557,10 +561,15 @@ inline void scatter_arm_obs_indexed_cached(
     // fill regardless of the cost guard. fill_ops omits the per-obs
     // arm_grad_hess cost, so the guard can under-count an expensive mixture arm
     // and stay serial; this override tests whether lifting the guard helps.
-    static const bool force_parallel = []() {
-        const char* e = std::getenv("TULPA_SCATTER_FORCE_PARALLEL");
-        return e != nullptr && e[0] == '1';
-    }();
+    //
+    // Read per call, not once per process. A function-local static would fix
+    // the value at the first scatter of the session, so Sys.setenv() between
+    // two fits would have no effect -- the opposite of what someone toggling a
+    // diagnostic expects. getenv on a hot path is a lookup in the process
+    // environment block, against a scatter that is at least O(nnz).
+    const char* force_parallel_env = std::getenv("TULPA_SCATTER_FORCE_PARALLEL");
+    const bool force_parallel =
+        force_parallel_env != nullptr && force_parallel_env[0] == '1';
     const bool go_parallel =
         n_threads > 1 && arm.N >= 1000 &&
         (force_parallel || fill_ops > 2 * reduce_ops);

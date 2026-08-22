@@ -575,9 +575,19 @@ List pg_negbin_gibbs_spatial(
   }
   if (n_re_groups > 0) pg_check_index(re_group, N, n_re_groups, "re_group");
   pg_check_index(spatial_group, N, n_spatial_units, "spatial_group");
-  pg_check_adjacency(adj_list, n_neighbors, n_spatial_units);
+  // Flat CSR once at entry, the same form the binomial ICAR kernels take. The
+  // adjacency is fixed for the whole run, so reading it as an Rcpp proxy per
+  // unit per sweep built n_iter * n_spatial_units R objects for a structure
+  // that never moves -- and the field sweeps below index it unchecked, which
+  // pg_build_adjacency validates once here instead.
+  const tulpa::PgAdjacency adj =
+      tulpa::pg_build_adjacency(adj_list, n_neighbors, n_spatial_units);
   pg_require_intercept(X, "negative-binomial ICAR spatial");
   const int n_save = tulpa::pg_n_save(n_iter, n_warmup, thin);
+  // The X * beta recomputations are the same independent per-row work the
+  // non-spatial negbin kernel parallelizes, and this kernel took n_threads and
+  // ran all of them serially.
+  const int team = tulpa_omp_team_size_req(n_threads, N);
 
   // Storage
   NumericMatrix beta_draws(n_save, p);
@@ -600,35 +610,12 @@ List pg_negbin_gibbs_spatial(
   double tau = 1.0;  // Spatial precision
   double r = r_init;
 
-  // Connected components of the adjacency graph (BFS). The ICAR pseudo-
-  // density is tau^{(S - k)/2} exp(-tau Q / 2) with k = number of graph
-  // components, so the tau posterior shape uses (S - k)/2; a disconnected
-  // adjacency (spatial(by=) replication makes this routine) with (S - 1)/2
-  // biases tau upward.
-  int n_components = 0;
-  {
-    std::vector<int> comp(n_spatial_units, -1);
-    std::vector<int> queue;
-    for (int s0 = 0; s0 < n_spatial_units; s0++) {
-      if (comp[s0] >= 0) continue;
-      comp[s0] = n_components;
-      queue.clear();
-      queue.push_back(s0);
-      while (!queue.empty()) {
-        int s = queue.back();
-        queue.pop_back();
-        IntegerVector neighbors = adj_list[s];
-        for (int j = 0; j < n_neighbors[s]; j++) {
-          int t = neighbors[j] - 1;
-          if (t >= 0 && t < n_spatial_units && comp[t] < 0) {
-            comp[t] = n_components;
-            queue.push_back(t);
-          }
-        }
-      }
-      n_components++;
-    }
-  }
+  // The ICAR pseudo-density is tau^{(S - k)/2} exp(-tau Q / 2) with k = number
+  // of graph components, so the tau posterior shape uses (S - k)/2; a
+  // disconnected adjacency (spatial(by=) replication makes this routine) with
+  // (S - 1)/2 biases tau upward. pg_build_adjacency counts the components on
+  // the CSR form it just built.
+  const int n_components = adj.n_components;
 
   NumericVector omega(N, 1.0);
   NumericVector kappa(N);
@@ -642,20 +629,16 @@ List pg_negbin_gibbs_spatial(
   for (int iter = 0; iter < n_iter; iter++) {
 
     // 1. Compute linear predictor
-    for (int i = 0; i < N; i++) {
+    tulpa_parallel_for(team, N, [&](int i) {
       X_beta[i] = 0.0;
       for (int j = 0; j < p; j++) {
         X_beta[i] += X(i, j) * beta[j];
       }
-      if (n_re_groups > 0) {
-        re_contrib[i] = re[re_group[i] - 1];
-      } else {
-        re_contrib[i] = 0.0;
-      }
+      re_contrib[i] = (n_re_groups > 0) ? re[re_group[i] - 1] : 0.0;
       spatial_contrib[i] = spatial[spatial_group[i] - 1];
       eta[i] = X_beta[i] + re_contrib[i] + spatial_contrib[i];
       kappa[i] = (y[i] - r) / 2.0;
-    }
+    });
 
     // 2. Sample omega ~ PG(y + r, eta) at the exact (real) shape.
     for (int i = 0; i < N; i++) {
@@ -670,12 +653,12 @@ List pg_negbin_gibbs_spatial(
     beta = update_beta(kappa, omega, X, offset, prior_beta_sd);
 
     // Recompute X_beta
-    for (int i = 0; i < N; i++) {
+    tulpa_parallel_for(team, N, [&](int i) {
       X_beta[i] = 0.0;
       for (int j = 0; j < p; j++) {
         X_beta[i] += X(i, j) * beta[j];
       }
-    }
+    });
 
     // 4. Update random effects
     if (n_re_groups > 0) {
@@ -730,13 +713,14 @@ List pg_negbin_gibbs_spatial(
     // Sample spatial effects with ICAR prior
     for (int s = 0; s < n_spatial_units; s++) {
       // ICAR: phi_s | phi_{-s} ~ N(mean of neighbors, 1/(tau * n_neighbors))
-      IntegerVector neighbors = adj_list[s];
-      int n_neigh = n_neighbors[s];
+      const int e0 = adj.row_ptr[s];
+      const int e1 = adj.row_ptr[s + 1];
+      const int n_neigh = e1 - e0;
 
       double neighbor_mean = 0.0;
       if (n_neigh > 0) {
-        for (int j = 0; j < n_neigh; j++) {
-          neighbor_mean += spatial[neighbors[j] - 1];
+        for (int e = e0; e < e1; e++) {
+          neighbor_mean += spatial[adj.col_idx[e]];
         }
         neighbor_mean /= n_neigh;
       }
@@ -763,12 +747,12 @@ List pg_negbin_gibbs_spatial(
       spatial[s] -= spatial_mean;
     }
     beta[0] += spatial_mean;
-    for (int i = 0; i < N; i++) {
+    tulpa_parallel_for(team, N, [&](int i) {
       X_beta[i] = 0.0;
       for (int j = 0; j < p; j++) {
         X_beta[i] += X(i, j) * beta[j];
       }
-    }
+    });
 
     // Update tau (spatial precision)
     // Prior: tau ~ Gamma(shape, rate)
@@ -776,9 +760,8 @@ List pg_negbin_gibbs_spatial(
     // adjacency components; Q = sum over edges (phi_i - phi_j)^2
     double Q = 0.0;
     for (int s = 0; s < n_spatial_units; s++) {
-      IntegerVector neighbors = adj_list[s];
-      for (int j = 0; j < n_neighbors[s]; j++) {
-        int t = neighbors[j] - 1;
+      for (int e = adj.row_ptr[s]; e < adj.row_ptr[s + 1]; e++) {
+        const int t = adj.col_idx[e];
         if (t > s) {  // Count each edge once
           double diff = spatial[s] - spatial[t];
           Q += diff * diff;
