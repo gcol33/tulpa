@@ -644,6 +644,7 @@ LaplaceResult laplace_newton_solve_joint_ll(
     // scatter built. A PD Hessian never reaches this, so every fit that
     // factorizes on the first attempt is unchanged.
     result.hessian_pd_at_mode = hessian_pd_at_mode;
+    result.pd_conditioned = !hessian_pd_at_mode;
     if (!hessian_pd_at_mode) {
         joint_pd_step_solve_dense_ridged(scratch.H, scratch.grad, scratch.delta,
                                          n_x, sparse_solver, use_sparse,

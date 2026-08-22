@@ -154,3 +154,137 @@ test_that("sparse path matches dense on joint CAR_proper", {
     )
     .expect_equiv_fits(fit_dense, fit_sparse)
 })
+
+# --- gcol33/tulpa#432: what the two paths EXPORT, not only what they report ---
+#
+# The comparisons above read log_marginal and the modes. The sparse loop also
+# hands out a precision (store_Q) and a fixed-effect covariance block, and it
+# used to hand out `H_builder` AFTER joint_pd_step_solve had run: in LM mode
+# that call loads the diagonal on every failed factorization and never takes the
+# load back off, so the export was of H + lambda I. A covariance read off that is
+# smaller than the one read off H, so the standard errors come out low with
+# nothing on the result saying so. The dense sibling gated the same export on a
+# clean factorization; the sparse loop, whose header says it mirrors it exactly,
+# carried no equivalent condition.
+#
+# The export is now a snapshot of the values the scatter left behind, taken
+# before the conditioning step, and `pd_conditioned` records whether that step
+# had to do anything.
+
+.expect_equiv_fixed <- function(fit_dense, fit_sparse, tol = 1e-7) {
+    sd_ <- summary(fit_dense)
+    ss_ <- summary(fit_sparse)
+    expect_equal(as.numeric(ss_$estimate), as.numeric(sd_$estimate),
+                 tolerance = tol, info = "fixed-effect estimates")
+    expect_equal(as.numeric(ss_$std.error), as.numeric(sd_$std.error),
+                 tolerance = tol, info = "fixed-effect standard errors")
+    expect_equal(as.numeric(ss_[["2.5%"]]), as.numeric(sd_[["2.5%"]]),
+                 tolerance = tol, info = "lower bounds")
+
+    # The retained per-cell fixed-effect precisions, which is what the summary
+    # marginalizes. Compared relatively: these run to 1e3 on this fixture.
+    expect_false(is.null(fit_dense$grid_hessians))
+    expect_false(is.null(fit_sparse$grid_hessians))
+    expect_length(fit_sparse$grid_hessians, length(fit_dense$grid_hessians))
+    for (k in seq_along(fit_dense$grid_hessians)) {
+        hd <- fit_dense$grid_hessians[[k]]
+        hs <- fit_sparse$grid_hessians[[k]]
+        expect_equal(dim(hs), dim(hd), info = paste("cell", k))
+        expect_lt(max(abs(hs - hd)) / max(abs(hd)), tol)
+    }
+}
+
+.fit_joint_pair <- function(prior, responses, ...) {
+    ctl <- utils::modifyList(
+        list(max_iter = 40L, tol = 1e-8, n_threads = 1L, verbose = FALSE,
+             keep_grid_hessians = TRUE, diagnose_k = FALSE, progress = FALSE),
+        list(...))
+    lapply(c(FALSE, TRUE), function(fs) {
+        tulpa_nested_laplace_joint(
+            responses = responses, prior = prior, copy = NULL,
+            control = utils::modifyList(ctl, list(force_sparse = fs)))
+    })
+}
+
+test_that("the two paths export the same fixed-effect block and precision", {
+    sim <- .sim_joint_small(seed = 12L, alpha_true = 1.0)
+    for (prior in list(
+            c(list(type = "icar", sigma_grid = c(0.5, 0.7)), sim$adj),
+            c(list(type = "bym2", sigma_grid = c(0.5, 0.6),
+                   rho_grid = c(0.7)), sim$adj),
+            c(list(type = "car_proper", sigma_grid = c(0.5),
+                   rho_car_grid = c(0.9, 0.95)), sim$adj))) {
+        fits <- .fit_joint_pair(prior, sim$responses)
+        .expect_equiv_fixed(fits[[1]], fits[[2]])
+    }
+})
+
+test_that("the export survives the sum-to-zero rank-1 storage", {
+    # With the augmentation's 1 1' left OFF the stored H and folded in at solve
+    # time instead, the sparse loop's factorization is of a matrix whose
+    # constant direction is unpinned -- the arrangement the export was taken
+    # from. TULPA_S2Z_DENSIFY_MAX = 0 forces it at any field size.
+    old <- Sys.getenv("TULPA_S2Z_DENSIFY_MAX", unset = NA)
+    on.exit(if (is.na(old)) Sys.unsetenv("TULPA_S2Z_DENSIFY_MAX")
+            else Sys.setenv(TULPA_S2Z_DENSIFY_MAX = old), add = TRUE)
+
+    sim   <- .sim_joint_small(seed = 12L, alpha_true = 1.0)
+    prior <- c(list(type = "icar", sigma_grid = c(0.5, 0.7)), sim$adj)
+
+    dense_store <- .fit_joint_pair(prior, sim$responses)[[2]]
+    Sys.setenv(TULPA_S2Z_DENSIFY_MAX = "0")
+    fits <- .fit_joint_pair(prior, sim$responses)
+    .expect_equiv_fixed(fits[[1]], fits[[2]], tol = 1e-6)
+
+    # ... and the rank-1 storage gives the same standard errors as storing the
+    # augmentation exactly, so the fold is not silently shrinking them.
+    expect_equal(as.numeric(summary(fits[[2]])$std.error),
+                 as.numeric(summary(dense_store)$std.error),
+                 tolerance = 1e-6)
+})
+
+test_that("a conditioned factorization is reported rather than silent", {
+    coupled_occ_register()
+    # The occupancy mixture's dark-cell term is not concave, so a fit stopped
+    # after one Newton iteration sits at a point whose Hessian is indefinite and
+    # the final factorization has to condition it. That is the state the export
+    # gate exists for, and the flag is what makes it readable from R.
+    d <- coupled_occ_data(seed = 500001L, n_cells = 100L, n_visits = 4L,
+                          b_occ = -2.5, b_det = -1.0)
+    fit_at <- function(fs, max_iter) suppressWarnings(tulpa_nested_laplace_joint(
+        responses = coupled_occ_arms(d, beta_prec = 0.25),
+        prior = coupled_occ_flat_prior(d),
+        cell_coupling = "test_occupancy_mixture",
+        control = list(max_iter = max_iter, tol = 1e-10, n_threads = 1L,
+                       keep_grid_hessians = TRUE, diagnose_k = FALSE,
+                       diagnose_skew = FALSE, auto_recenter = FALSE,
+                       progress = FALSE, force_sparse = fs)))
+
+    for (fs in c(FALSE, TRUE)) {
+        stalled <- fit_at(fs, 1L)
+        expect_false(as.logical(stalled$converged)[1L], info = paste("sparse", fs))
+        expect_true(all(stalled$pd_conditioned), info = paste("sparse", fs))
+        # Nothing conditioned reaches a coefficient table: the retention
+        # declines upstream, on the cause that stopped the solve.
+        expect_identical(stalled$grid_fixed_declined, "not_converged")
+        expect_true(all(is.na(coef(stalled))))
+
+        converged <- fit_at(fs, 300L)
+        expect_true(as.logical(converged$converged)[1L])
+        expect_false(any(converged$pd_conditioned), info = paste("sparse", fs))
+        expect_true(is.na(converged$grid_fixed_declined))
+    }
+})
+
+test_that("the two backends agree on whether they had to condition", {
+    # A verdict that depended on the backend would put the dense and sparse
+    # reads of one model into disagreement about whether its export is clean.
+    sim   <- .sim_joint_small(seed = 12L)
+    prior <- c(list(type = "icar", sigma_grid = c(0.5, 0.7)), sim$adj)
+    fits  <- .fit_joint_pair(prior, sim$responses)
+    expect_identical(as.logical(fits[[2]]$pd_conditioned),
+                     as.logical(fits[[1]]$pd_conditioned))
+    # This fixture factorizes on the first attempt, which is what makes it the
+    # control arm for the coupled test above.
+    expect_false(any(fits[[1]]$pd_conditioned))
+})

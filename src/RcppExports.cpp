@@ -2739,6 +2739,19 @@ BEGIN_RCPP
     return R_NilValue;
 END_RCPP
 }
+// cpp_test_log_det_signal
+Rcpp::List cpp_test_log_det_signal(Rcpp::NumericMatrix H_in, bool prefer_sparse, bool add_ridge);
+RcppExport SEXP _tulpa_cpp_test_log_det_signal(SEXP H_inSEXP, SEXP prefer_sparseSEXP, SEXP add_ridgeSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type H_in(H_inSEXP);
+    Rcpp::traits::input_parameter< bool >::type prefer_sparse(prefer_sparseSEXP);
+    Rcpp::traits::input_parameter< bool >::type add_ridge(add_ridgeSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_log_det_signal(H_in, prefer_sparse, add_ridge));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_test_leapfrog
 List cpp_test_leapfrog(NumericVector q_init, NumericVector p_init, double epsilon, int L);
 RcppExport SEXP _tulpa_cpp_test_leapfrog(SEXP q_initSEXP, SEXP p_initSEXP, SEXP epsilonSEXP, SEXP LSEXP) {
@@ -3766,6 +3779,19 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_test_hsgp_warm_start
+Rcpp::List cpp_test_hsgp_warm_start(bool has_hsgp, int n_basis, int n_spatial);
+RcppExport SEXP _tulpa_cpp_test_hsgp_warm_start(SEXP has_hsgpSEXP, SEXP n_basisSEXP, SEXP n_spatialSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< bool >::type has_hsgp(has_hsgpSEXP);
+    Rcpp::traits::input_parameter< int >::type n_basis(n_basisSEXP);
+    Rcpp::traits::input_parameter< int >::type n_spatial(n_spatialSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_hsgp_warm_start(has_hsgp, n_basis, n_spatial));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_test_lkj_build_L
 List cpp_test_lkj_build_L(NumericVector raw, int n);
 RcppExport SEXP _tulpa_cpp_test_lkj_build_L(SEXP rawSEXP, SEXP nSEXP) {
@@ -3904,6 +3930,57 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< int >::type start(startSEXP);
     Rcpp::traits::input_parameter< double >::type lambda_trend(lambda_trendSEXP);
     rcpp_result_gen = Rcpp::wrap(cpp_test_margin_mass_term(S, T, lambda_row, lambda_col, var, start, lambda_trend));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_test_nan_gradient_nuts
+Rcpp::List cpp_test_nan_gradient_nuts(bool plant_nan, int K, int n_iter, int n_warmup, int seed);
+RcppExport SEXP _tulpa_cpp_test_nan_gradient_nuts(SEXP plant_nanSEXP, SEXP KSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP seedSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< bool >::type plant_nan(plant_nanSEXP);
+    Rcpp::traits::input_parameter< int >::type K(KSEXP);
+    Rcpp::traits::input_parameter< int >::type n_iter(n_iterSEXP);
+    Rcpp::traits::input_parameter< int >::type n_warmup(n_warmupSEXP);
+    Rcpp::traits::input_parameter< int >::type seed(seedSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_nan_gradient_nuts(plant_nan, K, n_iter, n_warmup, seed));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_test_divergence_predicates
+Rcpp::List cpp_test_divergence_predicates(double log_prob, Rcpp::NumericVector q, Rcpp::NumericVector p, double H0, double H_new, double delta_max);
+RcppExport SEXP _tulpa_cpp_test_divergence_predicates(SEXP log_probSEXP, SEXP qSEXP, SEXP pSEXP, SEXP H0SEXP, SEXP H_newSEXP, SEXP delta_maxSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< double >::type log_prob(log_probSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type q(qSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type p(pSEXP);
+    Rcpp::traits::input_parameter< double >::type H0(H0SEXP);
+    Rcpp::traits::input_parameter< double >::type H_new(H_newSEXP);
+    Rcpp::traits::input_parameter< double >::type delta_max(delta_maxSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_divergence_predicates(log_prob, q, p, H0, H_new, delta_max));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_test_pg_nngp_conditional
+Rcpp::List cpp_test_pg_nngp_conditional(Rcpp::NumericMatrix coords, Rcpp::IntegerMatrix nn_idx, Rcpp::NumericMatrix nn_dist, Rcpp::IntegerVector nn_order, int n_spatial, int nn, Rcpp::NumericVector w, double sigma2, double phi, int cov_type);
+RcppExport SEXP _tulpa_cpp_test_pg_nngp_conditional(SEXP coordsSEXP, SEXP nn_idxSEXP, SEXP nn_distSEXP, SEXP nn_orderSEXP, SEXP n_spatialSEXP, SEXP nnSEXP, SEXP wSEXP, SEXP sigma2SEXP, SEXP phiSEXP, SEXP cov_typeSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type coords(coordsSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerMatrix >::type nn_idx(nn_idxSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type nn_dist(nn_distSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type nn_order(nn_orderSEXP);
+    Rcpp::traits::input_parameter< int >::type n_spatial(n_spatialSEXP);
+    Rcpp::traits::input_parameter< int >::type nn(nnSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type w(wSEXP);
+    Rcpp::traits::input_parameter< double >::type sigma2(sigma2SEXP);
+    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< int >::type cov_type(cov_typeSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_pg_nngp_conditional(coords, nn_idx, nn_dist, nn_order, n_spatial, nn, w, sigma2, phi, cov_type));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -4625,6 +4702,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_register_test_bivariate_gaussian_coupling", (DL_FUNC) &_tulpa_cpp_register_test_bivariate_gaussian_coupling, 3},
     {"_tulpa_cpp_register_test_occupancy_mixture_coupling", (DL_FUNC) &_tulpa_cpp_register_test_occupancy_mixture_coupling, 0},
     {"_tulpa_cpp_register_test_weighted_gaussian_coupling", (DL_FUNC) &_tulpa_cpp_register_test_weighted_gaussian_coupling, 1},
+    {"_tulpa_cpp_test_log_det_signal", (DL_FUNC) &_tulpa_cpp_test_log_det_signal, 3},
     {"_tulpa_cpp_test_leapfrog", (DL_FUNC) &_tulpa_cpp_test_leapfrog, 4},
     {"_tulpa_cpp_test_hamiltonian", (DL_FUNC) &_tulpa_cpp_test_hamiltonian, 2},
     {"_tulpa_cpp_test_log_sum_exp", (DL_FUNC) &_tulpa_cpp_test_log_sum_exp, 1},
@@ -4703,6 +4781,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_test_spde_nc_transform_Q", (DL_FUNC) &_tulpa_cpp_test_spde_nc_transform_Q, 8},
     {"_tulpa_cpp_test_tgmrf_block_spec", (DL_FUNC) &_tulpa_cpp_test_tgmrf_block_spec, 1},
     {"_tulpa_cpp_test_tgmrf_block_pattern", (DL_FUNC) &_tulpa_cpp_test_tgmrf_block_pattern, 1},
+    {"_tulpa_cpp_test_hsgp_warm_start", (DL_FUNC) &_tulpa_cpp_test_hsgp_warm_start, 3},
     {"_tulpa_cpp_test_lkj_build_L", (DL_FUNC) &_tulpa_cpp_test_lkj_build_L, 2},
     {"_tulpa_cpp_test_lkj_raw_from_L", (DL_FUNC) &_tulpa_cpp_test_lkj_raw_from_L, 1},
     {"_tulpa_cpp_test_lkj_density", (DL_FUNC) &_tulpa_cpp_test_lkj_density, 2},
@@ -4713,6 +4792,9 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_test_lowrank_mass_apply", (DL_FUNC) &_tulpa_cpp_test_lowrank_mass_apply, 8},
     {"_tulpa_cpp_test_lowrank_mass_momentum", (DL_FUNC) &_tulpa_cpp_test_lowrank_mass_momentum, 8},
     {"_tulpa_cpp_test_margin_mass_term", (DL_FUNC) &_tulpa_cpp_test_margin_mass_term, 7},
+    {"_tulpa_cpp_test_nan_gradient_nuts", (DL_FUNC) &_tulpa_cpp_test_nan_gradient_nuts, 5},
+    {"_tulpa_cpp_test_divergence_predicates", (DL_FUNC) &_tulpa_cpp_test_divergence_predicates, 6},
+    {"_tulpa_cpp_test_pg_nngp_conditional", (DL_FUNC) &_tulpa_cpp_test_pg_nngp_conditional, 10},
     {"_tulpa_cpp_test_st_iv_nuts", (DL_FUNC) &_tulpa_cpp_test_st_iv_nuts, 20},
     {"_tulpa_cpp_test_st_iv_layout", (DL_FUNC) &_tulpa_cpp_test_st_iv_layout, 13},
     {"_tulpa_cpp_test_st_iv_gmrf_mass", (DL_FUNC) &_tulpa_cpp_test_st_iv_gmrf_mass, 15},

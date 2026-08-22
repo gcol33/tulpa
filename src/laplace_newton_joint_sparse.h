@@ -435,6 +435,7 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
     // needs. On the sum-to-zero path the escalation `pd_conditioned` reports is
     // an artefact of the rank-1 pins being left off the STORED H, so the reading
     // there is the direct factor of the pinned matrix, which is the true one.
+    result.pd_conditioned = pd_conditioned;
     result.hessian_pd_at_mode =
         s2z_direct ? std::isfinite(s2z_log_det) : !pd_conditioned;
 

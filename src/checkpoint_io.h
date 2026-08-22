@@ -18,7 +18,7 @@
 // acceptable for a resume-on-the-same-machine workflow):
 //
 //   Header (once):
-//     char[8]  magic = "TLPACKP2"
+//     char[8]  magic          (the payload-layout tag, MAGIC below)
 //     uint64   fingerprint
 //   Record (appended per completed unit):
 //     uint32   key_len
@@ -269,7 +269,7 @@ public:
     // carries, so a file written by an older layout would otherwise be replayed
     // field-by-field into the new one and mis-parsed. A magic mismatch errors
     // and points the user at a fresh path.
-    static constexpr char MAGIC[8] = {'T','L','P','A','C','K','P','4'};
+    static constexpr char MAGIC[8] = {'T','L','P','A','C','K','P','5'};
 
     CheckpointLog(const std::string& path,
                   std::uint64_t fingerprint,

@@ -1,5 +1,82 @@
 # tulpa NEWS
 
+## 0.1.14
+
+* **The next ten audit issues are the tests they asked for** (#427, #428, #429,
+  #430, #432, #433, #435, #436, #437, #440). The `src/` work for all ten had
+  landed with earlier refactors; what none of them had is the arbiter each
+  checklist named, so nothing held the fix in place. Each is now pinned against
+  something outside the function that produces it.
+
+  - #430 one floor on `mu`. The generic mu-space route floors `mu` before
+    dividing by it, and the density and the score used to floor at 1e-15 and
+    1e-7: in the band between them the two are derivatives of different
+    functions, and `tulpa_laplace()` line-searches on the first and steps along
+    the second. `test-family-mu-floor.R` finite-differences the score against
+    the density across that band for `binomial_probit` / `_cloglog` / `beta_*`,
+    straddles the analytic floor so the density's clamp point and the score's
+    are shown to be one number, and pins the worked example: at `eta = -6` a
+    probit binomial's score is `dnorm(-6) / pnorm(-6)`, which a 1e-7 floor
+    misses by a factor of 101. Both curvature ladders are held to the weight by
+    the same finite difference.
+  - #435 the SPDE implicit-diff entry reports the Laplace marginal. Its shipped
+    test finite-differences the gradient against its own value, so it passes
+    with `0.5 log|Q(theta)|` dropped from both. `test-implicit-diff.R` now binds
+    the value to the same cell of `cpp_nested_laplace_spde` (1e-14 over six
+    cells) and the normalizer to `0.5 log|Q|` of the R-assembled precision, and
+    records that the term spans 200 nats over that grid with an exact
+    `d / d log_sigma` of `-n_mesh`.
+  - #440 the fractional rSPDE marginal. `test-spde-fractional-marginal.R`
+    rebuilds the whole marginal in R -- the determinant lemma on `B`, the
+    quadratic form through the `Pl` matvec, the stable binomial kernel -- and
+    matches it on the ordinary, weighted, confident-`eta` and zero-mass-node
+    branches, with the materialised-probability form kept as the negative
+    control that returns `-Inf` on the same fixture.
+  - #433 one neighbour-count rule. `test-nngp-row-neighbours.R` drives the SVC
+    and GP density twins on a row with an interior zero and shows it is read as
+    its leading run, that the count-every-positive reading is a different number
+    on the same fixture, and that an out-of-range or negative entry ends the row
+    rather than resolving `nn_order[-1]`.
+  - #437 the SPDE PC hyper prior at general `nu`. The shipped reference
+    hardcoded the `nu = 1` sigma map and ran only at `nu = 1`, so it passed
+    against either. `test-spde-nu-general.R` now reads `.spde_range_sigma()` and
+    runs at `nu` in {1, 2, 3}, with `nu = 2` reachable from `alpha = 3` with no
+    user action.
+  - #427 the GP Gibbs sweep draws from the FULL conditional.
+    `pg_nngp_field_conditional()` is the moment pair extracted out of the sweep
+    so the probe and the draw read one derivation, and
+    `test-pg-nngp-conditional.R` asserts it is row `i` of
+    `Lambda = (I - A)' D^-1 (I - A)` assembled densely in R. On the fixture 18
+    of 20 locations carry child terms, so the parent-only reading was the rule.
+  - #429 a non-finite gradient is a divergence. `test-nuts-nan-gradient.R`
+    drives a chain through `LikelihoodSpec::gradient_fn` whose log-posterior is
+    finite and whose gradient carries a NaN: every iteration is now reported
+    divergent, against a control arm that samples and diverges on nothing. The
+    two leaf predicates are driven directly.
+  - #436 a failed factorization is reported. `test-log-det-signal.R` hands the
+    dispatch and the dense core an indefinite and an exactly singular matrix on
+    both backends and asserts the `bool`, and that the 1e-10 base ridge does not
+    rescue an indefinite `H`.
+  - #428 the HSGP warm start reads its indices. `test-hsgp-warm-start-guard.R`
+    builds the `ModelData` no fitted path can produce -- `spatial_type = HSGP`
+    with `has_hsgp = FALSE` -- and pins that the flag and the indices disagree
+    there while the diagonal comes back intact.
+  - #432 the sparse joint export. `LaplaceResult` gains `pd_conditioned`,
+    recorded by both joint loops and emitted per cell, so a caller can tell an
+    export taken from a conditioned factorization apart from one that never
+    needed conditioning -- the sum-to-zero path's `hessian_pd_at_mode` reads the
+    direct factor of the pinned matrix and cannot answer that.
+    `test-nested-laplace-joint-sparse-equivalence.R` now compares the exported
+    fixed-effect block, the retained per-cell precisions and the standard errors
+    across the dense and sparse paths (icar / bym2 / car_proper, and with
+    `TULPA_S2Z_DENSIFY_MAX = 0` forcing the rank-1 sum-to-zero storage), and
+    shows `pd_conditioned` is TRUE exactly at a conditioned factorization and
+    that nothing conditioned reaches a coefficient table.
+
+  The checkpoint payload carries `pd_conditioned`, so `CheckpointLog::MAGIC` is
+  bumped: a file written by the previous layout would be replayed field by field
+  into the new one and mis-parsed.
+
 ## 0.1.13
 
 * **A tgmrf block's symbolic frame is the union over grid points** (#472). The

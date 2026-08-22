@@ -573,6 +573,10 @@ cpp_register_test_weighted_gaussian_coupling <- function(arm_ids) {
     invisible(.Call(`_tulpa_cpp_register_test_weighted_gaussian_coupling`, arm_ids))
 }
 
+cpp_test_log_det_signal <- function(H_in, prefer_sparse = FALSE, add_ridge = FALSE) {
+    .Call(`_tulpa_cpp_test_log_det_signal`, H_in, prefer_sparse, add_ridge)
+}
+
 cpp_test_leapfrog <- function(q_init, p_init, epsilon, L) {
     .Call(`_tulpa_cpp_test_leapfrog`, q_init, p_init, epsilon, L)
 }
@@ -885,6 +889,10 @@ cpp_test_tgmrf_block_pattern <- function(bs) {
     .Call(`_tulpa_cpp_test_tgmrf_block_pattern`, bs)
 }
 
+cpp_test_hsgp_warm_start <- function(has_hsgp, n_basis = 4L, n_spatial = 6L) {
+    .Call(`_tulpa_cpp_test_hsgp_warm_start`, has_hsgp, n_basis, n_spatial)
+}
+
 cpp_test_lkj_build_L <- function(raw, n) {
     .Call(`_tulpa_cpp_test_lkj_build_L`, raw, n)
 }
@@ -923,6 +931,18 @@ cpp_test_lowrank_mass_momentum <- function(inv_mass_diag, start, group_ptr, grou
 
 cpp_test_margin_mass_term <- function(S, T, lambda_row, lambda_col, var, start = 0L, lambda_trend = 0.0) {
     .Call(`_tulpa_cpp_test_margin_mass_term`, S, T, lambda_row, lambda_col, var, start, lambda_trend)
+}
+
+cpp_test_nan_gradient_nuts <- function(plant_nan, K = 3L, n_iter = 40L, n_warmup = 20L, seed = 1L) {
+    .Call(`_tulpa_cpp_test_nan_gradient_nuts`, plant_nan, K, n_iter, n_warmup, seed)
+}
+
+cpp_test_divergence_predicates <- function(log_prob, q, p, H0, H_new, delta_max = 1000.0) {
+    .Call(`_tulpa_cpp_test_divergence_predicates`, log_prob, q, p, H0, H_new, delta_max)
+}
+
+cpp_test_pg_nngp_conditional <- function(coords, nn_idx, nn_dist, nn_order, n_spatial, nn, w, sigma2, phi, cov_type = 0L) {
+    .Call(`_tulpa_cpp_test_pg_nngp_conditional`, coords, nn_idx, nn_dist, nn_order, n_spatial, nn, w, sigma2, phi, cov_type)
 }
 
 cpp_test_st_iv_nuts <- function(y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T, family = "poisson", temporal = "rw1", temporal_cyclic = FALSE, st_parameterization = 0L, mass_matrix = "diag", n_iter = 1000L, n_warmup = 500L, max_treedepth = 10L, adapt_delta = 0.8, seed = 1L, sigma_beta = 10.0, verbose = FALSE) {

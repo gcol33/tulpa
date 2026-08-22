@@ -372,6 +372,7 @@ inline Rcpp::List run_nested_laplace_grid(
     // cell for the same reason start_infeasible is: only the R side can report
     // it, and only if the grid says which cells it happened at.
     Rcpp::LogicalVector s2z_fallbacks(n_grid);
+    Rcpp::LogicalVector pd_conditioneds(n_grid);
     int mode_rows = store_modes ? n_grid : 0;
     Rcpp::NumericMatrix all_modes(mode_rows, store_modes ? n_x : 0);
 
@@ -404,6 +405,7 @@ inline Rcpp::List run_nested_laplace_grid(
         out["converged"] = convergeds;
         out["start_infeasible"] = start_infeasibles;
         out["s2z_log_det_fallback"] = s2z_fallbacks;
+        out["pd_conditioned"] = pd_conditioneds;
         if (store_modes) out["modes"] = all_modes;
         return out;
     }
@@ -977,6 +979,7 @@ inline Rcpp::List run_nested_laplace_grid(
         convergeds[k] = res.converged;
         start_infeasibles[k] = res.start_infeasible;
         s2z_fallbacks[k] = res.s2z_log_det_fallback;
+        pd_conditioneds[k] = res.pd_conditioned;
         if (store_modes) {
             int copy_n = std::min(n_x, static_cast<int>(res.mode.size()));
             for (int j = 0; j < copy_n; j++) all_modes(k, j) = res.mode[j];
@@ -1055,6 +1058,7 @@ inline Rcpp::List run_nested_laplace_grid(
     out["converged"] = convergeds;
     out["start_infeasible"] = start_infeasibles;
     out["s2z_log_det_fallback"] = s2z_fallbacks;
+    out["pd_conditioned"] = pd_conditioneds;
     if (store_modes) out["modes"] = all_modes;
     if (any_Q) {
         out["Q_csc_p_per_grid"] = Q_p_per_grid;

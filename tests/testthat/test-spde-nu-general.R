@@ -244,3 +244,85 @@ test_that("joint NUTS refuses an integer alpha it cannot differentiate (gcol33/t
     "alpha = 2"
   )
 })
+
+# --- #437: the joint-NUTS hyper prior reads the same map ---------------------
+
+test_that("the PC hyper prior maps (log_kappa, log_tau) to sigma at every nu", {
+  # compute_spde_hyper_prior is the only prior on (log_kappa, log_tau) in
+  # joint-NUTS mode, and it has to reach sigma through the same map the sampler
+  # reports sigma_draws with. The nu = 1 special case
+  # sigma = exp(-log_kappa - log_tau) / sqrt(4 pi) drops the nu inside the log
+  # and the nu factor on log_kappa, so the PC density P(sigma > sigma_0) =
+  # alpha_s is evaluated at a quantity that is not the field's marginal SD --
+  # the hyper posterior shifts by (nu - 1) log_kappa + 0.5 log(nu) in the
+  # exponent while the reported summaries stay on the correct map.
+  #
+  # The reference reads .spde_range_sigma(), the one R-side map, rather than
+  # writing the formula out again.
+  pc_ref <- function(log_kappa, log_tau, nu, range_0, alpha_r,
+                     sigma_0, alpha_s) {
+    rs    <- tulpa:::.spde_range_sigma(exp(log_kappa), exp(log_tau), nu)
+    range <- rs$range
+    sigma <- rs$sigma
+    lambda_r <- -log(alpha_r) * range_0
+    lambda_s <- -log(alpha_s) / sigma_0
+    log_pi_range <- log(lambda_r) - 2 * log(range) - lambda_r / range
+    log_pi_sigma <- log(lambda_s) - lambda_s * sigma
+    # log|J| = log_range + log_sigma: J is triangular for any nu, so the
+    # Jacobian is what the fix leaves alone.
+    log_pi_range + log_pi_sigma + log(range) + log(sigma)
+  }
+
+  grid <- expand.grid(log_kappa = c(-1.0, 0.0, 0.7, 1.5),
+                      log_tau   = c(-1.2, 0.0, 0.4),
+                      nu        = c(1, 2, 3))
+  for (i in seq_len(nrow(grid))) {
+    got <- tulpa:::cpp_spde_hyper_prior_probe(
+      log_kappa = grid$log_kappa[i], log_tau = grid$log_tau[i],
+      nu = grid$nu[i],
+      prior_range_0 = 0.2, prior_range_alpha = 0.05,
+      prior_sigma_0 = 1.0, prior_sigma_alpha = 0.05
+    )$prior_val
+    expect_equal(got,
+                 pc_ref(grid$log_kappa[i], grid$log_tau[i], grid$nu[i],
+                        range_0 = 0.2, alpha_r = 0.05,
+                        sigma_0 = 1.0, alpha_s = 0.05),
+                 tolerance = 1e-10,
+                 info = sprintf("nu=%g log_kappa=%g log_tau=%g",
+                                grid$nu[i], grid$log_kappa[i], grid$log_tau[i]))
+  }
+})
+
+test_that("nu != 1 moves the hyper prior away from the nu = 1 map", {
+  # The negative control for the test above: at nu = 1 the two references
+  # coincide, so a test run only at nu = 1 passes against either map. This
+  # states how far apart they are at nu = 2, which is reachable with no user
+  # action (cpp_tulpa_fit_spde_nuts defaults nu to alpha - 1, so alpha = 3
+  # gives nu = 2).
+  nu1_sigma_map <- function(log_kappa, log_tau) {
+    exp(-log_kappa - log_tau) / sqrt(4 * pi)
+  }
+  for (nu in c(2, 3)) {
+    lk <- 0.7; lt <- -0.4
+    rs <- tulpa:::.spde_range_sigma(exp(lk), exp(lt), nu)
+    expect_false(isTRUE(all.equal(rs$sigma, nu1_sigma_map(lk, lt))),
+                 info = sprintf("nu=%g", nu))
+  }
+  # ... and at nu = 1 they are the same number, so nothing about the default
+  # path moved.
+  expect_equal(tulpa:::.spde_range_sigma(exp(0.7), exp(-0.4), 1)$sigma,
+               nu1_sigma_map(0.7, -0.4), tolerance = 1e-14)
+})
+
+test_that("the hyper prior is flat when either hyper slot is absent", {
+  # compute_spde_hyper_prior reads params[log_tau_spde_idx] after checking
+  # log_kappa_spde_idx, so a layout carrying one slot and not the other used to
+  # index at -1. Both guards are in place; with joint_hypers off the layout
+  # reserves neither and the prior is flat.
+  expect_equal(
+    tulpa:::cpp_spde_hyper_prior_probe(
+      log_kappa = 0.3, log_tau = -0.2, nu = 2,
+      prior_range_0 = 0.2, prior_range_alpha = 0.05,
+      prior_sigma_0 = 1.0, prior_sigma_alpha = -1.0
+    )$prior_val, 0.0, tolerance = 1e-12)
+})

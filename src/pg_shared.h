@@ -417,6 +417,54 @@ inline double pg_nngp_parent_mean(const PgNngpTopology& top,
   return m;
 }
 
+// Precision and precision-weighted mean of the NNGP PRIOR's full conditional of
+// ordered position i, given every other value of the field.
+//
+// The joint density factorizes over the ordering as
+//   p(w) = prod_i N(w_i | B_i' w_{N(i)}, sigma2 F_i),
+// so the conditional of w_i picks up its own factor AND every factor j for
+// which i is a parent. The child terms are what make this the FULL conditional
+// rather than the parent-only one: each contributes B_j[t]^2 / (sigma2 F_j) to
+// the precision and B_j[t] (w_j - sum_{t' != t} B_j[t'] w_{N(j),t'}) /
+// (sigma2 F_j) to the mean numerator. Under a nearest-neighbour ordering most
+// of the field is a parent of something, so omitting them leaves the field
+// under-constrained and the sweep's invariant distribution is not the NNGP
+// posterior.
+//
+// The pair returned is exactly row i of Lambda = (I - A)' D^-1 (I - A): `prec`
+// is Lambda_ii and `mean_num` is -sum_{j != i} Lambda_ij w_j.
+struct PgNngpCond {
+  double prec = 0.0;
+  double mean_num = 0.0;
+};
+
+inline PgNngpCond pg_nngp_field_conditional(const PgNngpTopology& top,
+                                            const PgNngpFactors& fac,
+                                            const std::vector<double>& w,
+                                            double sigma2, int i) {
+  const int nn = top.nn;
+  PgNngpCond out;
+
+  out.prec     = 1.0 / (sigma2 * fac.F[i]);
+  out.mean_num = out.prec * pg_nngp_parent_mean(top, fac, w, i);
+
+  for (int e = top.child_ptr[i]; e < top.child_ptr[i + 1]; e++) {
+    const int j = top.child_pos[e];
+    const int t = top.child_slot[e];
+    const size_t jb = static_cast<size_t>(j) * nn;
+    const double b = fac.B[jb + t];
+    const double prec_j = 1.0 / (sigma2 * fac.F[j]);
+    double resid = w[top.orig[j]];
+    for (int t2 = 0; t2 < top.cnt[j]; t2++) {
+      if (t2 == t) continue;
+      resid -= fac.B[jb + t2] * w[top.parent_orig[jb + t2]];
+    }
+    out.prec     += b * b * prec_j;
+    out.mean_num += b * resid * prec_j;
+  }
+  return out;
+}
+
 // Standardized quadratic form sum_i (w_i - m_i)^2 / F_i of the NNGP joint
 // density at unit marginal variance.
 inline double pg_nngp_quadform(const PgNngpTopology& top,
@@ -763,35 +811,18 @@ inline void pg_nngp_scale_update(
     double prior_phi_lower, double prior_phi_upper
 ) {
   const PgNngpTopology& top = sc.top;
-  const int n = top.n, nn = top.nn;
+  const int n = top.n;
   pg_nngp_factors(sc.phi, cov_type, coords, nn_dist, top, sc.fac);
 
   for (int i = 0; i < n; i++) {
     const int obs_i = top.orig[i];
 
-    // Own factor.
-    double tau_post = 1.0 / (sc.sigma2 * sc.fac.F[i]);
-    double mean_num = tau_post * pg_nngp_parent_mean(top, sc.fac, sc.w, i);
-
-    // Factors in which this location is a parent.
-    for (int e = top.child_ptr[i]; e < top.child_ptr[i + 1]; e++) {
-      const int j = top.child_pos[e];
-      const int t = top.child_slot[e];
-      const size_t jb = static_cast<size_t>(j) * nn;
-      const double b = sc.fac.B[jb + t];
-      const double prec_j = 1.0 / (sc.sigma2 * sc.fac.F[j]);
-      double resid = sc.w[top.orig[j]];
-      for (int t2 = 0; t2 < top.cnt[j]; t2++) {
-        if (t2 == t) continue;
-        resid -= sc.fac.B[jb + t2] * sc.w[top.parent_orig[jb + t2]];
-      }
-      tau_post += b * b * prec_j;
-      mean_num += b * resid * prec_j;
-    }
+    const PgNngpCond pr =
+        pg_nngp_field_conditional(top, sc.fac, sc.w, sc.sigma2, i);
 
     // Polya-Gamma data term.
-    tau_post += sum_omega[obs_i];
-    mean_num += sum_resid[obs_i];
+    const double tau_post = pr.prec + sum_omega[obs_i];
+    const double mean_num = pr.mean_num + sum_resid[obs_i];
 
     sc.w[obs_i] = R::rnorm(mean_num / tau_post, 1.0 / std::sqrt(tau_post));
   }

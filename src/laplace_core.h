@@ -52,6 +52,18 @@ struct LaplaceResult {
   // succeeded, which is every solve at a PD Hessian.
   bool hessian_pd_at_mode = true;
 
+  // The final factorization had to condition the Hessian to succeed -- a
+  // cumulative diagonal load (the LM escalation ladder) or an eigenvalue clamp.
+  // Distinct from hessian_pd_at_mode, which on the sum-to-zero path reads the
+  // DIRECT factor of the pinned matrix instead: escalation is the normal case
+  // there, because the rank-1 pins are deliberately left off the stored H, so a
+  // conditioned solve on that path is not a solve at a non-PD point. What this
+  // records is the mechanical fact, so a caller can tell an export taken from a
+  // conditioned factorization apart from one that never needed conditioning.
+  // The exported precision and the fixed-effect block are snapshots taken
+  // BEFORE the escalation either way.
+  bool pd_conditioned = false;
+
   // The sum-to-zero log-determinant fell back. On that path the reported
   // -0.5 log|B| is read from a direct factor of B = H + sum_k coef_k 1_k 1_k',
   // the pinned matrix; where that factor cannot be formed both readers keep the
@@ -283,7 +295,8 @@ inline Rcpp::List laplace_result_to_list(const LaplaceResult& result) {
     Rcpp::Named("converged") = result.converged,
     Rcpp::Named("score_max") = result.score_max,
     Rcpp::Named("start_infeasible") = result.start_infeasible,
-    Rcpp::Named("hessian_pd_at_mode") = result.hessian_pd_at_mode
+    Rcpp::Named("hessian_pd_at_mode") = result.hessian_pd_at_mode,
+    Rcpp::Named("pd_conditioned") = result.pd_conditioned
   );
 
   // Marginal posterior-covariance blocks, when the solver was asked to extract
