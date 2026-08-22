@@ -506,11 +506,57 @@ outer_grid_weight_report <- function(dump, weights = NULL, floor = NULL,
                             logical(1)))
 }
 
+# --------------------------------------------------------------------------- #
+# The shared measurement fixture                                              #
+# --------------------------------------------------------------------------- #
+
+# Three crossed iid blocks on one gaussian arm, each with its own pinned
+# geometric `sigma_grid`, so the outer grid is a tensor of a size the caller
+# chooses and is identical from run to run. Every file that scores a candidate
+# read against this harness -- the box-mass rule, the barycentre place rule, the
+# descriptor plane -- fits the same model, so it is built once here rather than
+# copied into each.
+ogd_fixture_sim <- function(sd_true, seed = 4242L, G = 30L, N = 600L) {
+  set.seed(seed)
+  grp <- lapply(seq_along(sd_true), function(k) sample.int(G, N, replace = TRUE))
+  X <- cbind(1, stats::rnorm(N))
+  eta <- as.numeric(X %*% c(0.2, 0.6))
+  for (k in seq_along(sd_true)) {
+    eta <- eta + stats::rnorm(G, 0, sd_true[k])[grp[[k]]]
+  }
+  list(y = eta + stats::rnorm(N, 0, 0.5), X = X, grp = grp, N = N, G = G,
+       sd_true = sd_true)
+}
+
+# `within_cell` is STATED, not inherited (gcol33/tulpa#599). Every other input
+# to these measurements is pinned -- the seed, the grid, the integration rule --
+# and the within-cell construction is the one that was not, so a change to
+# `.NL_DIAG$within_cell` silently re-targeted what the recorded numbers measure.
+# The default here is the engine's own shipped read, so the rules are scored
+# against what a user gets; a file wanting the other read passes it and says so.
+ogd_fixture_fit <- function(sim, levels, spread = 3,
+                            within_cell = "box_uniform") {
+  prior <- lapply(seq_along(sim$grp), function(k) {
+    s <- sim$sd_true[k]
+    list(type = "iid", obs_idx = list(sim$grp[[k]]), n_units = sim$G,
+         sigma_grid = exp(seq(log(s / spread), log(s * spread),
+                              length.out = levels)))
+  })
+  suppressWarnings(tulpa_nested_laplace_joint(
+    responses = list(a = list(y = sim$y, n_trials = rep(1L, sim$N), X = sim$X,
+                              family = "gaussian", phi = 0.25)),
+    prior = prior,
+    control = list(n_threads = 1L, diagnose_k = FALSE, max_iter = 100L,
+                   tol = 1e-8, integration = "grid",
+                   within_cell = within_cell)))
+}
+
 for (.nm in c("OGD_PROBS", "OGD_PARTS", "outer_grid_dump", "outer_grid_load",
               "outer_grid_rebuild", "outer_grid_rebuild_fixed",
               "outer_grid_weights", "outer_grid_one_cell",
               "outer_grid_read_diff", "outer_grid_noise_floor",
-              "outer_grid_weight_report")) {
+              "outer_grid_weight_report", "ogd_fixture_sim",
+              "ogd_fixture_fit")) {
   assign(.nm, get(.nm), envir = globalenv())
 }
 rm(.nm)

@@ -484,3 +484,18 @@ test_that("every part the read is compared in carries a verdict", {
   expect_true(v[["endpoints"]])
   expect_false(v[["widths"]])
 })
+
+test_that("the shared fixture states the read the engine ships", {
+  # `ogd_fixture_fit()` pins `within_cell` instead of inheriting it, so a change
+  # to the engine default cannot silently re-target the numbers recorded against
+  # it (gcol33/tulpa#599). The pin is only the SHIPPED read while the two agree,
+  # which is what this holds: a default flip fails here, naming the files whose
+  # recorded numbers have to be re-measured before the pin is moved.
+  expect_identical(formals(ogd_fixture_fit)$within_cell,
+                   tulpa:::.nl_diag("within_cell"))
+  # And it reaches the fit, rather than being an argument the door drops.
+  f <- ogd_fixture_fit(ogd_fixture_sim(c(0.8, 0.5), seed = 7L), 3L,
+                       within_cell = "chord")
+  expect_identical(f$within_cell_requested, "chord")
+  expect_identical(outer_grid_dump(f)$within, "chord")
+})

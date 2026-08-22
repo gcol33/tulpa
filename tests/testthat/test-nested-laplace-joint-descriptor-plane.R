@@ -42,33 +42,6 @@
 # overshooting it does not. Nothing here is evidence that a correction should
 # ship.
 
-.dp_sim <- function(sd_true, seed, G = 30L, N = 600L) {
-  set.seed(seed)
-  grp <- lapply(seq_along(sd_true), function(k) sample.int(G, N, replace = TRUE))
-  X <- cbind(1, stats::rnorm(N))
-  eta <- as.numeric(X %*% c(0.2, 0.6))
-  for (k in seq_along(sd_true)) {
-    eta <- eta + stats::rnorm(G, 0, sd_true[k])[grp[[k]]]
-  }
-  list(y = eta + stats::rnorm(N, 0, 0.5), X = X, grp = grp, N = N, G = G,
-       sd_true = sd_true)
-}
-
-.dp_fit <- function(sim, levels, spread = 3) {
-  prior <- lapply(seq_along(sim$grp), function(k) {
-    s <- sim$sd_true[k]
-    list(type = "iid", obs_idx = list(sim$grp[[k]]), n_units = sim$G,
-         sigma_grid = exp(seq(log(s / spread), log(s * spread),
-                              length.out = levels)))
-  })
-  suppressWarnings(tulpa_nested_laplace_joint(
-    responses = list(a = list(y = sim$y, n_trials = rep(1L, sim$N), X = sim$X,
-                              family = "gaussian", phi = 0.25)),
-    prior = prior,
-    control = list(n_threads = 1L, diagnose_k = FALSE, max_iter = 100L,
-                   tol = 1e-8, integration = "grid")))
-}
-
 # Both descriptors of every cell that has a centred stencil, off the engine's
 # own per-cell routines rather than a second reading of the same quadratic.
 .dp_descr <- function(d) {
@@ -197,10 +170,10 @@
   if (!is.null(.dp_cache[[key]])) return(.dp_cache[[key]])
   cells <- list(); whole <- list()
   for (sd_ in seeds) {
-    sim <- .dp_sim(c(0.8, 0.5, 0.3), sd_)
-    ref <- outer_grid_rebuild(outer_grid_dump(.dp_fit(sim, 12L)))
+    sim <- ogd_fixture_sim(c(0.8, 0.5, 0.3), sd_)
+    ref <- outer_grid_rebuild(outer_grid_dump(ogd_fixture_fit(sim, 12L)))
     for (lv in c(4L, 5L)) {
-      r <- .dp_cells(outer_grid_dump(.dp_fit(sim, lv)), ref)
+      r <- .dp_cells(outer_grid_dump(ogd_fixture_fit(sim, lv)), ref)
       r$cells$seed <- sd_; r$cells$levels <- lv
       r$whole$seed <- sd_; r$whole$levels <- lv
       cells[[length(cells) + 1L]] <- r$cells
@@ -220,7 +193,7 @@
 
 test_that("a one-cell candidate differs from the fit's own state in one cell", {
   skip_on_cran()
-  d <- outer_grid_dump(.dp_fit(.dp_sim(c(0.8, 0.5, 0.3), 1L), 4L))
+  d <- outer_grid_dump(ogd_fixture_fit(ogd_fixture_sim(c(0.8, 0.5, 0.3), 1L), 4L))
   cand <- .dp_candidates(d)
   ds <- .dp_descr(d)
   c1 <- ds$cell[which.max(ds$R_M)]
@@ -407,11 +380,24 @@ test_that("the loc-versus-mass preference runs against the proposed partition", 
   got <- unlist(lapply(c(4L, 5L), function(lv)
     vapply(names(OGD_PARTS), function(p) rho(D[D$levels == lv, ], p), numeric(1))))
   got <- got[is.finite(got)]
+  # Measured under the read the engine ships (`ogd_fixture_fit()` states it
+  # rather than inheriting it -- gcol33/tulpa#599): +0.009 on the four-level
+  # endpoints, +0.375 on the four-level median and +0.082 on the five-level
+  # median, with the other three part-by-resolution cells carrying fewer than 25
+  # scorable rows. No cell is a usable rule on its own, and the typical one
+  # carries no signal at all.
   expect_gt(length(got), 2L)
-  # No cell of the six is a usable rule on its own, and the set does not agree
-  # on a direction.
   expect_lt(max(abs(got)), 0.6)
-  expect_true(any(got < 0))
+  expect_lt(stats::median(abs(got)), 0.2)
+  # How many cells are scorable, and which way the small ones lean, both move
+  # with the within-cell read: the row filter is the per-part floor, and the
+  # floor is read-dependent. Under `chord` four cells clear the row count and
+  # the set spans zero (-0.010, -0.217, +0.121 at four levels and -0.050 on the
+  # five-level median); under the shipped read
+  # three do and none is negative, the two smallest being +0.009 and +0.082.
+  # What survives both reads is the magnitude, which is the claim: a per-cell
+  # label that correlates with the preferred correction at |rho| < 0.4 does not
+  # partition the grid.
 })
 
 # --------------------------------------------------------------------------- #

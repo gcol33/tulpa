@@ -972,6 +972,21 @@ is not a cell width -- the same objection that makes `sample` decline. The
 measurement was taken on the outer hyperparameter axes and is not extended past
 them.
 
+**Any measurement scored against an outer grid has to STATE its within-cell
+read (gcol33/tulpa#599).** The two constructions place the same mass in the same
+cells and differ by half a cell in where inside one they place it, which on a
+coarse grid is the scale the LOCATION is resolved at -- so the resolution floor
+narrows on the widths and widens on the median, and which part of the read a
+candidate rule is shown to reach moves with it. Three measurement files
+(`test-nested-laplace-joint-box-mass.R`, `-barycentre.R`, `-descriptor-plane.R`)
+pinned every other input and let this one fall through to `.NL_DIAG$within_cell`,
+so 0.0.188's flip inverted what they measure while the rules themselves were
+untouched. They now share one fixture, `ogd_fixture_sim()` / `ogd_fixture_fit()`
+in `helper-outer-grid-dump.R`, whose `within_cell` argument defaults to the
+shipped read and is held EQUAL to `.NL_DIAG$within_cell` by
+`test-outer-grid-dump.R` -- a later flip fails there, naming the files to
+re-measure, instead of silently re-targeting them.
+
 ### The coordinate dimension is data, and there is one distance (gcol33/tulpa#389)
 
 `tulpa_linalg::coords_dist(coords, i, j)` (`src/linalg_fast.h`) is the ONLY

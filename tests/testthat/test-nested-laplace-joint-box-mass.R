@@ -330,33 +330,6 @@ test_that("a refined cell records the box mass beside the cloud's own", {
 # The measurement (gcol33/tulpa#322's harness, no fitting minutes)            #
 # --------------------------------------------------------------------------- #
 
-.bxm_sim <- function(sd_true, seed = 4242L, G = 30L, N = 600L) {
-  set.seed(seed)
-  grp <- lapply(seq_along(sd_true), function(k) sample.int(G, N, replace = TRUE))
-  X <- cbind(1, stats::rnorm(N))
-  eta <- as.numeric(X %*% c(0.2, 0.6))
-  for (k in seq_along(sd_true)) {
-    eta <- eta + stats::rnorm(G, 0, sd_true[k])[grp[[k]]]
-  }
-  list(y = eta + stats::rnorm(N, 0, 0.5), X = X, grp = grp, N = N, G = G,
-       sd_true = sd_true)
-}
-
-.bxm_fit <- function(sim, levels, spread = 3) {
-  prior <- lapply(seq_along(sim$grp), function(k) {
-    s <- sim$sd_true[k]
-    list(type = "iid", obs_idx = list(sim$grp[[k]]), n_units = sim$G,
-         sigma_grid = exp(seq(log(s / spread), log(s * spread),
-                              length.out = levels)))
-  })
-  suppressWarnings(tulpa_nested_laplace_joint(
-    responses = list(a = list(y = sim$y, n_trials = rep(1L, sim$N), X = sim$X,
-                              family = "gaussian", phi = 0.25)),
-    prior = prior,
-    control = list(n_threads = 1L, diagnose_k = FALSE, max_iter = 100L,
-                   tol = 1e-8, integration = "grid")))
-}
-
 # The candidate weight vector: the box multiplier entering as a per-cell design
 # weight, exactly the way the harness takes one.
 .bxm_weights <- function(d) {
@@ -377,7 +350,7 @@ test_that("a refined cell records the box mass beside the cloud's own", {
 
 test_that("the base grid's cells have equal volume, so Delta cancels", {
   skip_on_cran()
-  d <- outer_grid_dump(.bxm_fit(.bxm_sim(c(0.8, 0.5, 0.3)), 5L))
+  d <- outer_grid_dump(ogd_fixture_fit(ogd_fixture_sim(c(0.8, 0.5, 0.3)), 5L))
   # A geometric sigma grid is uniform in u = log sigma, so every interior cell
   # is congruent and the multiplier can enter without carrying Delta_c. Asserted
   # rather than assumed: on a grid whose cells differ in volume the same
@@ -394,12 +367,12 @@ test_that("the base grid's cells have equal volume, so Delta cancels", {
 
 test_that("the box rule's read is reported against what this grid can resolve", {
   skip_on_cran()
-  sim <- .bxm_sim(c(0.8, 0.5, 0.3))
+  sim <- ogd_fixture_sim(c(0.8, 0.5, 0.3))
 
   # A five-level tensor base: 125 cells, 27 of them interior on all three axes,
   # and those 27 carry 0.99999 of the integration weight, so the rule is scored
   # where the posterior actually is.
-  d5 <- outer_grid_dump(.bxm_fit(sim, 5L))
+  d5 <- outer_grid_dump(ogd_fixture_fit(sim, 5L))
   expect_null(d5$dnode)
   expect_identical(d5$support, "density")
   b5 <- .bxm_weights(d5)
@@ -408,25 +381,37 @@ test_that("the box rule's read is reported against what this grid can resolve", 
   expect_gt(sum(d5$weights[b5$bm$computed]), 0.999)
 
   r5 <- outer_grid_weight_report(d5, b5$w)
-  # Measured. endpoints 0.0329 against a floor of 0.1092, widths 0.0657 against
-  # 0.2158: the interval this grid reports does not move by as much as one step
-  # of coarsening moves it, so on this grid the rule is not shown to change the
-  # interval at all. The MEDIAN does move -- 0.0175 against a floor of 0.0024,
-  # seven times the resolution -- so the correction is real and it is the
-  # location, not the spread, that it reaches here.
+  # Measured under the read the engine ships. endpoints 0.0745 against a floor
+  # of 0.1287: the endpoints do not move by as much as one step of coarsening
+  # moves them. The WIDTHS do -- 0.1491 against a floor of 0.0882 -- and the
+  # median does not, 0.0124 against 0.0184, so on this grid the correction is
+  # real and it is the spread, not the location, that it reaches.
+  #
+  # Which part it reaches is a property of the within-cell read, not of the rule
+  # (gcol33/tulpa#599). Under `chord` the same fit answers the other way round:
+  # widths 0.0657 against a floor of 0.2158 and median 0.0175 against 0.0024, so
+  # the location moves and the spread does not. Both reads place the same mass
+  # in the same cells and differ in where inside a cell they place it, and on a
+  # five-level grid that is a half-cell -- which is the resolution these two
+  # parts are being read at. The floor itself moves with the read for the same
+  # reason (widths 0.2158 -> 0.0882, median 0.0024 -> 0.0184), so this is the
+  # resolution of the reported read changing rather than the rule's effect
+  # growing against a fixed one.
+  expect_gt(r5$diff$widths, r5$floor$widths)
+  expect_lt(r5$diff$median, r5$floor$median)
   expect_lt(r5$diff$endpoints, r5$floor$endpoints)
-  expect_lt(r5$diff$widths, r5$floor$widths)
-  expect_gt(r5$diff$median, r5$floor$median)
   expect_false(r5$above_floor[["endpoints"]])
-  expect_false(r5$above_floor[["widths"]])
-  expect_true(r5$above_floor[["median"]])
+  expect_true(r5$above_floor[["widths"]])
+  expect_false(r5$above_floor[["median"]])
 
   # Coarser, which is where a cell carries a real gradient: at four levels the
-  # same rule moves the endpoints 0.4618 against a floor of 0.2112, above what
+  # same rule moves the endpoints 0.3423 against a floor of 0.1712, above what
   # the grid resolves. The multiplier is not a small correction there -- the
   # steepest cell's log multiplier is 25.3 nats -- because a four-level grid puts
-  # whole nats of log-marginal across a single cell.
-  d4 <- outer_grid_dump(.bxm_fit(sim, 4L))
+  # whole nats of log-marginal across a single cell. This arm reads the same
+  # under either within-cell construction; it is the five-level arm above, where
+  # the effect sits at the grid's own resolution, that the read decides.
+  d4 <- outer_grid_dump(ogd_fixture_fit(sim, 4L))
   b4 <- .bxm_weights(d4)
   expect_identical(sum(b4$bm$computed), 8L)
   r4 <- outer_grid_weight_report(d4, b4$w)
@@ -442,17 +427,23 @@ test_that("where the read moves above the floor it moves toward the dense answer
   # enough for the read to be a property of the posterior -- twelve levels per
   # axis, 1728 cells -- against which both the midpoint atom and the box rule
   # are scored on the coarse grid.
-  sim <- .bxm_sim(c(0.8, 0.5, 0.3))
-  ref <- outer_grid_rebuild(outer_grid_dump(.bxm_fit(sim, 12L)))
+  sim <- ogd_fixture_sim(c(0.8, 0.5, 0.3))
+  ref <- outer_grid_rebuild(outer_grid_dump(ogd_fixture_fit(sim, 12L)))
 
-  d4 <- outer_grid_dump(.bxm_fit(sim, 4L))
+  d4 <- outer_grid_dump(ogd_fixture_fit(sim, 4L))
   e0 <- outer_grid_read_diff(ref, outer_grid_rebuild(d4))
   e1 <- outer_grid_read_diff(ref, outer_grid_rebuild(d4, .bxm_weights(d4)$w))
-  # Measured on the four-level grid: endpoint error 0.4067 -> 0.1516 and width
-  # error 0.8135 -> 0.1656, so the interval the coarse grid reports is roughly
-  # five times closer to the converged one. The median goes the other way,
-  # 0.1159 -> 0.2028: the rule redistributes mass toward the cell edges nearest
-  # the peak, which sharpens the spread and overshoots the location.
+  # Measured on the four-level grid: endpoint error 0.2014 -> 0.1838 and width
+  # error 0.3153 -> 0.0955, so the interval the coarse grid reports moves toward
+  # the converged one, by a third on the endpoints and threefold on the widths.
+  # The median goes the other way, 0.1540 -> 0.1761: the rule redistributes mass
+  # toward the cell edges nearest the peak, which sharpens the spread and
+  # overshoots the location.
+  #
+  # The box-uniform read already recovers part of what the rule recovers -- the
+  # same three errors read under `chord` start at 0.4067 / 0.8135 / 0.1158 -- so
+  # the rule has a smaller remaining gain here than it does against that read,
+  # and the endpoint margin is the thin one of the three.
   expect_lt(e1$endpoints, e0$endpoints)
   expect_lt(e1$widths, e0$widths)
   expect_gt(e1$median, e0$median)

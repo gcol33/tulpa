@@ -1,5 +1,33 @@
 # tulpa NEWS
 
+## 0.1.11
+
+* **The outer-grid measurement files state the within-cell read instead of
+  inheriting it** (#599). `test-nested-laplace-joint-box-mass.R`,
+  `-barycentre.R` and `-descriptor-plane.R` each carried a byte-identical copy
+  of the same three-block gaussian fixture and let `control$within_cell` fall
+  through to the engine default, so flipping that default to `box_uniform`
+  re-targeted what their recorded numbers measure. All three were red under
+  `NOT_CRAN=true`; the issue saw only one because the other two are
+  `skip_on_cran()` and the run that found it was `TULPA_FAST=1`.
+
+  The fixture is now `ogd_fixture_sim()` / `ogd_fixture_fit()` in
+  `helper-outer-grid-dump.R`, with `within_cell` an argument defaulting to the
+  shipped read, and `test-outer-grid-dump.R` asserts that default still equals
+  `.NL_DIAG$within_cell` -- so the next flip fails there, naming the files to
+  re-measure, rather than silently changing what they score.
+
+  Re-measured under the shipped read, the finding that moves is which PART of
+  the read a rule is shown to reach. The two constructions place the same mass
+  in the same cells and differ by half a cell in where inside one they place it,
+  which on these coarse grids is the scale the location is resolved at, so the
+  floor narrows on the widths (0.2158 -> 0.0882 at five levels) and widens on
+  the median (0.0024 -> 0.0184). The box-mass rule's reach moves from the
+  location to the spread; the barycentre placement's five-level median margin
+  falls from 22x the floor to 2.0x while its widths margin rises to 3.1x. The
+  rules are unchanged -- the box multiplier's per-cell values are identical
+  under both reads. Write-up: `dev_notes/issue599/RESULTS599.md`.
+
 ## 0.1.10
 
 * **The Type-IV RW2 kernel's site-specific linear trends are pinned** (#600).

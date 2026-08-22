@@ -350,33 +350,6 @@ test_that("a refined cell records its barycentre shift beside its box mass", {
 # The measurement (gcol33/tulpa#322's harness, no fitting minutes)            #
 # --------------------------------------------------------------------------- #
 
-.bar_sim <- function(sd_true, seed = 4242L, G = 30L, N = 600L) {
-  set.seed(seed)
-  grp <- lapply(seq_along(sd_true), function(k) sample.int(G, N, replace = TRUE))
-  X <- cbind(1, stats::rnorm(N))
-  eta <- as.numeric(X %*% c(0.2, 0.6))
-  for (k in seq_along(sd_true)) {
-    eta <- eta + stats::rnorm(G, 0, sd_true[k])[grp[[k]]]
-  }
-  list(y = eta + stats::rnorm(N, 0, 0.5), X = X, grp = grp, N = N, G = G,
-       sd_true = sd_true)
-}
-
-.bar_fit <- function(sim, levels, spread = 3) {
-  prior <- lapply(seq_along(sim$grp), function(k) {
-    s <- sim$sd_true[k]
-    list(type = "iid", obs_idx = list(sim$grp[[k]]), n_units = sim$G,
-         sigma_grid = exp(seq(log(s / spread), log(s * spread),
-                              length.out = levels)))
-  })
-  suppressWarnings(tulpa_nested_laplace_joint(
-    responses = list(a = list(y = sim$y, n_trials = rep(1L, sim$N), X = sim$X,
-                              family = "gaussian", phi = 0.25)),
-    prior = prior,
-    control = list(n_threads = 1L, diagnose_k = FALSE, max_iter = 100L,
-                   tol = 1e-8, integration = "grid")))
-}
-
 # The two candidates, each entering the harness the way that kind of rule does:
 # the mass multiplier as a per-cell design weight, the barycentre as a perturbed
 # coordinate matrix. Their combination is the pair.
@@ -395,7 +368,7 @@ test_that("a rebuild at its own coordinates returns the read the fit shipped", {
   # The round trip the coordinate argument has to satisfy before any candidate
   # placement measured through it means anything: own coordinates plus own
   # weights is the shipped read. Measured at 0 on every reported number.
-  d <- outer_grid_dump(.bar_fit(.bar_sim(c(0.8, 0.5, 0.3)), 5L))
+  d <- outer_grid_dump(ogd_fixture_fit(ogd_fixture_sim(c(0.8, 0.5, 0.3)), 5L))
   rb <- outer_grid_rebuild(d, d$weights, d$joint_grid)
   expect_equal(rb$median, d$reported$median, tolerance = 1e-12)
   expect_equal(rb$ci_lo, d$reported$ci_lo, tolerance = 1e-12)
@@ -413,11 +386,11 @@ test_that("a rebuild at its own coordinates returns the read the fit shipped", {
 
 test_that("the barycentre's read is reported against what this grid can resolve", {
   skip_on_cran()
-  sim <- .bar_sim(c(0.8, 0.5, 0.3))
+  sim <- ogd_fixture_sim(c(0.8, 0.5, 0.3))
 
   # Four levels, where a cell carries whole nats of gradient and the atom moves
   # most of the way to its own edge (largest shift 0.887 of a half-cell).
-  d4 <- outer_grid_dump(.bar_fit(sim, 4L))
+  d4 <- outer_grid_dump(ogd_fixture_fit(sim, 4L))
   bc4 <- .bar_place_g(d4)
   expect_identical(sum(bc4$computed), 8L)
   expect_identical(bc4$n_axes_declined, 0L)
@@ -427,21 +400,33 @@ test_that("the barycentre's read is reported against what this grid can resolve"
   expect_true(all(bc4$bary_shift[bc4$computed] <= 1))
 
   r4 <- outer_grid_weight_report(d4, joint_grid = bc4$joint_grid)
-  # Measured: endpoints 0.5292 against a floor of 0.2112, widths 1.0583 against
-  # 0.4218, median 0.0623 against 0.0420. The placement moves all three parts by
-  # more than one step of coarsening moves them, so on this grid the rule
-  # changes something the grid resolves.
-  expect_true(all(r4$above_floor))
+  # Measured under the read the engine ships (see `ogd_fixture_fit()`, which
+  # states it rather than inheriting it -- gcol33/tulpa#599). endpoints 0.2679
+  # against a floor of 0.1712 and widths 0.5357 against 0.3157: the placement
+  # moves the interval by more than one step of coarsening moves it. The median
+  # does not, 0.0910 against 0.1074, so on this grid the rule changes the
+  # interval and is not shown to change the location.
+  expect_true(r4$above_floor[["endpoints"]])
+  expect_true(r4$above_floor[["widths"]])
+  expect_false(r4$above_floor[["median"]])
 
   # Five levels, where the same grid already places its atoms close enough that
-  # the interval barely notices, and the median is where the rule reaches.
-  d5 <- outer_grid_dump(.bar_fit(sim, 5L))
+  # the interval barely notices.
+  d5 <- outer_grid_dump(ogd_fixture_fit(sim, 5L))
   bc5 <- .bar_place_g(d5)
   expect_identical(sum(bc5$computed), 27L)
   r5 <- outer_grid_weight_report(d5, joint_grid = bc5$joint_grid)
-  # Measured: median 0.0521 against a floor of 0.0024, 22x the resolution.
-  expect_gt(r5$diff$median, 20 * r5$floor$median)
-  expect_true(r5$above_floor[["median"]])
+  # Measured: all three parts above the floor, and the margins say which one the
+  # placement reaches -- widths 0.2746 against 0.0882, three times the
+  # resolution, against 2.0x on the median and 1.07x on the endpoints.
+  expect_true(all(r5$above_floor))
+  expect_gt(r5$diff$widths, 2.5 * r5$floor$widths)
+  # Which part carries the margin is a property of the within-cell read, not of
+  # the placement. Under `chord` the same fit answers the other way round: the
+  # median clears its floor 22x (0.0521 against 0.0024) while the endpoints and
+  # widths clear theirs 2.4x. Both reads put the same mass in the same cells and
+  # differ by half a cell in where inside one they place it, which on a grid
+  # this coarse is the scale the median is resolved at.
 })
 
 test_that("the pair is what moves both parts of the read toward the dense answer", {
@@ -451,8 +436,8 @@ test_that("the pair is what moves both parts of the read toward the dense answer
   # the read to be a property of the posterior -- twelve levels per axis, 1728
   # cells -- against which the shipped read and all three candidate rules are
   # scored on the coarse grid.
-  sim <- .bar_sim(c(0.8, 0.5, 0.3))
-  ref <- outer_grid_rebuild(outer_grid_dump(.bar_fit(sim, 12L)))
+  sim <- ogd_fixture_sim(c(0.8, 0.5, 0.3))
+  ref <- outer_grid_rebuild(outer_grid_dump(ogd_fixture_fit(sim, 12L)))
   err <- function(d, w, g) outer_grid_read_diff(ref, outer_grid_rebuild(d, w, g))
 
   # Four levels. Measured (endpoints / widths / median):
@@ -466,7 +451,7 @@ test_that("the pair is what moves both parts of the read toward the dense answer
   # the same fixture the direction is unanimous -- against the shipped read the
   # mass rule wins the endpoints and widths 5 of 5 and the median 0 of 5, while
   # the location rule and the pair win all three parts 5 of 5.
-  d4 <- outer_grid_dump(.bar_fit(sim, 4L))
+  d4 <- outer_grid_dump(ogd_fixture_fit(sim, 4L))
   w4 <- .bar_mass_w(d4); g4 <- .bar_place_g(d4)$joint_grid
   e0 <- err(d4, NULL, NULL)
   em <- err(d4, w4, NULL)
@@ -493,7 +478,7 @@ test_that("the pair is what moves both parts of the read toward the dense answer
   # the median, which it does by a factor of three. Over five seeds the pair is
   # the only candidate whose mean error falls on all three parts at this
   # resolution (0.1217 / 0.2379 / 0.0298 against 0.1322 / 0.2644 / 0.0421).
-  d5 <- outer_grid_dump(.bar_fit(sim, 5L))
+  d5 <- outer_grid_dump(ogd_fixture_fit(sim, 5L))
   e0 <- err(d5, NULL, NULL)
   el <- err(d5, NULL, .bar_place_g(d5)$joint_grid)
   expect_lt(el$median, e0$median / 2)
