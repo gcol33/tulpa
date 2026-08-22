@@ -2124,3 +2124,51 @@ Rcpp::List cpp_test_update_spatial_icar(
     Rcpp::_["isolated_prec"] = tulpa::PG_ICAR_ISOLATED_PREC
   );
 }
+
+// The precision the non-centered transform actually factors, as a CSC triple.
+//
+// The arbiter for gcol33/tulpa#590: the non-centered assembly and the Laplace
+// one (SpdeQBuilder) must produce the SAME Q on a mesh carrying a zero-mass
+// vertex, which is the whole point of the orphan ridge. Nothing else on the
+// transform's surface exposes Q, so a disagreement confined to the orphan's
+// row and column was invisible.
+// [[Rcpp::export]]
+Rcpp::List cpp_test_spde_nc_transform_Q(
+    Rcpp::NumericVector C0_diag,
+    Rcpp::NumericVector G1_x,
+    Rcpp::IntegerVector G1_i,
+    Rcpp::IntegerVector G1_p,
+    double log_kappa_val,
+    double log_tau_val,
+    Rcpp::Nullable<Rcpp::NumericVector> poles_nullable   = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericVector> weights_nullable = R_NilValue
+) {
+  using tulpa::SpdeNcTransform;
+  const int n = C0_diag.size();
+  std::vector<double> C0_d(C0_diag.begin(), C0_diag.end());
+  std::vector<double> G1_xv(G1_x.begin(), G1_x.end());
+  std::vector<int>    G1_iv(G1_i.begin(), G1_i.end());
+  std::vector<int>    G1_pv(G1_p.begin(), G1_p.end());
+  std::vector<double> poles_v, weights_v;
+  if (poles_nullable.isNotNull() && weights_nullable.isNotNull()) {
+    poles_v   = Rcpp::as<std::vector<double>>(poles_nullable);
+    weights_v = Rcpp::as<std::vector<double>>(weights_nullable);
+  }
+  SpdeNcTransform tx;
+  tx.init(n, C0_d, G1_xv, G1_iv, G1_pv, poles_v, weights_v);
+  Eigen::VectorXd z = Eigen::VectorXd::Zero(n);
+  tx.forward(z, std::exp(log_kappa_val), std::exp(log_tau_val));
+
+  const auto& Q = tx.last_Q;
+  const int nnz = static_cast<int>(Q.nonZeros());
+  Rcpp::NumericVector Qx(nnz);
+  Rcpp::IntegerVector Qi(nnz), Qp(n + 1);
+  for (int j = 0; j <= n; j++) Qp[j] = Q.outerIndexPtr()[j];
+  for (int e = 0; e < nnz; e++) {
+    Qx[e] = Q.valuePtr()[e];
+    Qi[e] = Q.innerIndexPtr()[e];
+  }
+  return Rcpp::List::create(Rcpp::Named("x") = Qx, Rcpp::Named("i") = Qi,
+                            Rcpp::Named("p") = Qp, Rcpp::Named("n") = n,
+                            Rcpp::Named("has_orphans") = tx.has_orphans);
+}

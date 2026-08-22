@@ -1,5 +1,42 @@
 # tulpa NEWS
 
+## 0.1.8
+
+* **The non-centered SPDE transform assembles the same precision as the Laplace
+  path** (#590). `SpdeNcTransform` built `Q = tau^2 K diag(1/C0) K` while
+  `SpdeQBuilder` builds the operator-chain expansion
+  `tau^2 (kappa^4 C0 + 2 kappa^2 G1 + G1 diag(1/C0) G1)`. Those are the same
+  matrix only where `C0 diag(1/C0) = I`, and the inverse mass is FLOORED to zero
+  at a zero-mass (orphan) mesh vertex, where the product drops the cross terms
+  `kappa^2 (C0 D G1 + G1 D C0)`. On such a mesh the non-centered NUTS path and
+  the Laplace path described different fields, by exactly
+  `tau^2 * 2 kappa^2 G1[j, ]` on the orphan's row and column -- 6.2% of the
+  largest entry of Q, on 5 of 79 rows of the fixture -- which is the
+  disagreement the orphan ridge exists to prevent. The transform now assembles
+  the expansion, and the two agree to 5.8e-16 relative on the orphan mesh and
+  the healthy one alike.
+
+  `G1 diag(1/C0) G1` carries neither kappa nor tau, so `init()` builds it once
+  and each proposal costs a scaled add in place of two sparse products. The
+  rational path collapses the same way: its per-pole terms differ in two scalars
+  only, `sum_k w_k (kappa^2 + r_k)^2` and `sum_k w_k (kappa^2 + r_k)`. Both
+  hyper derivatives become exact rather than resting on `C0 D = I`:
+  `d(kappa^4)/dlog_kappa = 4 kappa^4` and `d(2 kappa^2)/dlog_kappa = 4 kappa^2`
+  give `dQ/dlog_kappa = 4 kappa^2 tau^2 K` termwise, which is the closed form
+  `backward()` and `forward_with_tangent()` already applied.
+
+* **The SPDE boundary guards have a fixture** (#590, splitting #528 / #530 /
+  #534). `tests/testthat/test-spde-guards.R` reaches the orphan ridge on both
+  assemblies and on a Laplace fit and a non-centered adjoint over the same mesh,
+  and drives the four structural validators (`spde_validate_csc` / `_fem` /
+  `_projector` / `_operators`) through both R-callable SPDE entries with a
+  malformed length, column pointer and row index. Q is scored against an
+  independent R re-derivation and against `SpdeQBuilder` itself, with the
+  product form carried as a negative control: a regression back to it fails on
+  the orphan mesh and is silent on a healthy one. The indefinite-H guard in the
+  implicit-diff gradient is recorded there as deliberately untested, since no
+  valid input reaches it.
+
 ## 0.1.7
 
 * **A diagonal-plus-low-rank mass matrix, and the Type-IV interaction's

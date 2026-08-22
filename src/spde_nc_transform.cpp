@@ -91,6 +91,22 @@ void SpdeNcTransform::init(int n,
     G1.setFromTriplets(trips.begin(), trips.end());
     G1.makeCompressed();
 
+    // G1 diag(1/C0) G1 -- the top level of the alpha = 2 operator chain, and
+    // the only part of Q that carries neither kappa nor tau. Built once here;
+    // build_Q and build_Q_rational read it. The inverse mass is the FLOORED
+    // one (spde_zero_mass.h), so an orphan drops every path that runs through
+    // it out of this level, exactly as SpdeQBuilder's chain does.
+    {
+        SpMat GD = G1;
+        for (int j = 0; j < n; j++) {
+            for (SpMat::InnerIterator it(GD, j); it; ++it) {
+                it.valueRef() *= C0_inv_diag[j];
+            }
+        }
+        GDG = GD * G1;
+        GDG.makeCompressed();
+    }
+
     // Rational coefficients (Bolin et al. 2023). Empty -> integer alpha=2.
     if (poles.size() != weights.size()) {
         throw std::runtime_error("SpdeNcTransform::init: poles / weights "
@@ -189,39 +205,54 @@ SpdeNcTransform::SpMat SpdeNcTransform::build_K_shifted(double k2_eff) const {
     return K;
 }
 
-SpdeNcTransform::SpMat SpdeNcTransform::build_Q(const SpMat& K, double tau) const {
-    // K_DC = K * diag(1/C0): scale columns of K by 1/C0_diag[j].
-    SpMat K_DC = K;
-    for (int j = 0; j < n_mesh; j++) {
-        for (SpMat::InnerIterator it(K_DC, j); it; ++it) {
-            it.valueRef() *= C0_inv_diag[j];
-        }
+SpdeNcTransform::SpMat SpdeNcTransform::build_Q(double k2_eff, double tau) const {
+    // Q = tau^2 (k2^2 C + 2 k2 G + G diag(1/C0) G), the alpha = 2 term of the
+    // operator chain, which is what SpdeQBuilder assembles.
+    //
+    // NOT the product K diag(1/C0) K. The two are the same matrix only where
+    // C diag(1/C0) = I, and the inverse mass is FLOORED to zero at a zero-mass
+    // (orphan) mesh vertex (spde_zero_mass.h). At such a row the product drops
+    // the cross terms k2 (C D G + G D C) entirely, so the non-centered
+    // assembly and the Laplace one disagreed on exactly the orphan's row and
+    // column, by tau^2 * 2 k2 * G[j, .] -- which is the disagreement the orphan
+    // ridge exists to prevent (gcol33/tulpa#590).
+    //
+    // It also makes the hyper derivatives exact rather than approximately so:
+    // d(k2^2)/dlog_kappa = 4 k2^2 and d(2 k2)/dlog_kappa = 4 k2 give
+    // dQ/dlog_kappa = 4 kappa^2 tau^2 K with no appeal to C D = I, which is
+    // the closed form backward() and forward_with_tangent() already apply and
+    // the one implicit_diff.h uses on the Laplace side.
+    //
+    // G diag(1/C0) G carries no kappa, so init() builds it once.
+    SpMat Q = (2.0 * k2_eff) * G1 + GDG;
+    for (int i = 0; i < n_mesh; i++) {
+        Q.coeffRef(i, i) += k2_eff * k2_eff * C0_diag[i];
     }
-    SpMat Q = K_DC * K;
     Q *= (tau * tau);
     Q.makeCompressed();
     return Q;
 }
 
 SpdeNcTransform::SpMat SpdeNcTransform::build_Q_rational(double kappa, double tau) {
-    // Q = tau^2 sum_k w_k K_k diag(1/C0) K_k, with K_k = (kappa^2 + r_k) C0 + G1.
-    // Each per-pole term shares the alpha=2 build_Q pattern at a shifted k^2.
+    // Q = tau^2 sum_k w_k Q_k, with Q_k the alpha = 2 expansion build_Q
+    // applies at the shifted kappa^2 + r_k.
     const double k2   = kappa * kappa;
     const double tau2 = tau * tau;
 
-    SpMat Q;
+    // Each per-pole term is the same expansion at a shifted k^2, and the sum
+    // collapses termwise -- only two scalars depend on the poles:
+    //   sum_k w_k [ (k2 + r_k)^2 C + 2 (k2 + r_k) G + G D G ]
+    //     = (sum_k w_k (k2 + r_k)^2) C + 2 (sum_k w_k (k2 + r_k)) G + W G D G
     const int m = static_cast<int>(poles_.size());
+    double c_diag = 0.0, c_g = 0.0;
     for (int k = 0; k < m; k++) {
         const double k2_eff = k2 + poles_[k];
-        SpMat K_k = build_K_shifted(k2_eff);
-        // Reuse build_Q with tau = 1; we'll scale outside.
-        SpMat term = build_Q(K_k, 1.0);
-        term *= weights_[k];
-        if (Q.size() == 0) {
-            Q = term;
-        } else {
-            Q += term;
-        }
+        c_diag += weights_[k] * k2_eff * k2_eff;
+        c_g    += weights_[k] * k2_eff;
+    }
+    SpMat Q = (2.0 * c_g) * G1 + W_ * GDG;
+    for (int i = 0; i < n_mesh; i++) {
+        Q.coeffRef(i, i) += c_diag * C0_diag[i];
     }
     Q *= tau2;
     Q.makeCompressed();
@@ -252,7 +283,7 @@ Eigen::VectorXd SpdeNcTransform::forward(const Eigen::VectorXd& z,
         last_K = SpMat();
     } else {
         last_K = build_K(kappa);
-        last_Q = build_Q(last_K, tau);
+        last_Q = build_Q(kappa * kappa, tau);
         last_K_sum = SpMat();
     }
     if (has_orphans) {

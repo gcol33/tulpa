@@ -873,6 +873,10 @@ cpp_test_update_spatial_icar <- function(kappa, omega, offset, group, adj_list, 
     .Call(`_tulpa_cpp_test_update_spatial_icar`, kappa, omega, offset, group, adj_list, n_neighbors, n_units, tau, phi)
 }
 
+cpp_test_spde_nc_transform_Q <- function(C0_diag, G1_x, G1_i, G1_p, log_kappa_val, log_tau_val, poles_nullable = NULL, weights_nullable = NULL) {
+    .Call(`_tulpa_cpp_test_spde_nc_transform_Q`, C0_diag, G1_x, G1_i, G1_p, log_kappa_val, log_tau_val, poles_nullable, weights_nullable)
+}
+
 cpp_test_lkj_build_L <- function(raw, n) {
     .Call(`_tulpa_cpp_test_lkj_build_L`, raw, n)
 }

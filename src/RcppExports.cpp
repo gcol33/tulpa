@@ -3725,6 +3725,24 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_test_spde_nc_transform_Q
+Rcpp::List cpp_test_spde_nc_transform_Q(Rcpp::NumericVector C0_diag, Rcpp::NumericVector G1_x, Rcpp::IntegerVector G1_i, Rcpp::IntegerVector G1_p, double log_kappa_val, double log_tau_val, Rcpp::Nullable<Rcpp::NumericVector> poles_nullable, Rcpp::Nullable<Rcpp::NumericVector> weights_nullable);
+RcppExport SEXP _tulpa_cpp_test_spde_nc_transform_Q(SEXP C0_diagSEXP, SEXP G1_xSEXP, SEXP G1_iSEXP, SEXP G1_pSEXP, SEXP log_kappa_valSEXP, SEXP log_tau_valSEXP, SEXP poles_nullableSEXP, SEXP weights_nullableSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type C0_diag(C0_diagSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type G1_x(G1_xSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type G1_i(G1_iSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type G1_p(G1_pSEXP);
+    Rcpp::traits::input_parameter< double >::type log_kappa_val(log_kappa_valSEXP);
+    Rcpp::traits::input_parameter< double >::type log_tau_val(log_tau_valSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type poles_nullable(poles_nullableSEXP);
+    Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type weights_nullable(weights_nullableSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_spde_nc_transform_Q(C0_diag, G1_x, G1_i, G1_p, log_kappa_val, log_tau_val, poles_nullable, weights_nullable));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_test_lkj_build_L
 List cpp_test_lkj_build_L(NumericVector raw, int n);
 RcppExport SEXP _tulpa_cpp_test_lkj_build_L(SEXP rawSEXP, SEXP nSEXP) {
@@ -4634,6 +4652,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_test_lse_guard", (DL_FUNC) &_tulpa_cpp_test_lse_guard, 2},
     {"_tulpa_cpp_test_scalar_guard", (DL_FUNC) &_tulpa_cpp_test_scalar_guard, 3},
     {"_tulpa_cpp_test_update_spatial_icar", (DL_FUNC) &_tulpa_cpp_test_update_spatial_icar, 9},
+    {"_tulpa_cpp_test_spde_nc_transform_Q", (DL_FUNC) &_tulpa_cpp_test_spde_nc_transform_Q, 8},
     {"_tulpa_cpp_test_lkj_build_L", (DL_FUNC) &_tulpa_cpp_test_lkj_build_L, 2},
     {"_tulpa_cpp_test_lkj_raw_from_L", (DL_FUNC) &_tulpa_cpp_test_lkj_raw_from_L, 1},
     {"_tulpa_cpp_test_lkj_density", (DL_FUNC) &_tulpa_cpp_test_lkj_density, 2},

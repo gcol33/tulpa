@@ -4,9 +4,9 @@
 //
 // Setup. Q(kappa, tau) is the SPDE precision built from FEM matrices
 //   C0 (lumped mass, diagonal) and G1 (stiffness). Integer-alpha case
-//   (alpha = 2, nu = 1, d = 2):
+//   (alpha = 2, nu = 1, d = 2), as the operator-chain expansion:
 //     K = kappa^2 C0 + G1
-//     Q = tau^2 K diag(1/C0) K
+//     Q = tau^2 (kappa^4 C0 + 2 kappa^2 G1 + G1 diag(1/C0) G1)
 // Cholesky Q = L L^T. The non-centered transform takes a unit-Gaussian
 // auxiliary z and produces w = L^{-T} z. Used by joint NUTS over
 // (log_kappa, log_tau, z, ...): NUTS samples z ~ N(0, I) directly while
@@ -22,14 +22,23 @@
 //
 //   Integer alpha = 2 (default; poles empty):
 //       K = kappa^2 C0 + G1
-//       Q = tau^2 K diag(1/C0) K
+//       Q = tau^2 (kappa^4 C0 + 2 kappa^2 G1 + G1 diag(1/C0) G1)
 //
 //   Rational alpha (fractional nu; poles/weights from Bolin et al. 2023):
 //       K_k = (kappa^2 + r_k) C0 + G1
-//       Q   = tau^2 sum_k w_k K_k diag(1/C0) K_k
+//       Q   = tau^2 sum_k w_k ( (kappa^2 + r_k)^2 C0
+//                               + 2 (kappa^2 + r_k) G1 + G1 diag(1/C0) G1 )
 //
 //   In both cases the non-centered transform is w = L^{-T} z with
 //   L L^T = Q(kappa, tau).
+//
+//   The expansion is the definition, not a rearrangement of the product
+//   tau^2 K diag(1/C0) K. The two are the same matrix only where
+//   C0 diag(1/C0) = I, and the inverse mass is FLOORED to zero at a zero-mass
+//   (orphan) mesh vertex (spde_zero_mass.h), where the product drops the cross
+//   terms kappa^2 (C0 D G1 + G1 D C0). SpdeQBuilder assembles this same
+//   expansion, so the Laplace and non-centered paths describe one Q on every
+//   mesh.
 //
 // The adjoint preserves the same trace-collapsing structure (Murray 2016).
 // Only the closed forms for dQ/dlog_kappa change:
@@ -74,6 +83,10 @@ public:
     Eigen::VectorXd C0_inv_diag;
     SpMat           G1;
 
+    // G1 diag(1/C0) G1, the one theta-INDEPENDENT level of the operator chain.
+    // Built once by init() and reused at every (kappa, tau).
+    SpMat           GDG;
+
     // Theta-independent unit precision on zero-mass (orphan) mesh nodes, the
     // same ridge SpdeQBuilder places (spde_zero_mass.h). Without it a mesh
     // carrying a Steiner point the refiner never wired into a triangle gives a
@@ -101,8 +114,8 @@ public:
     SpMat   last_K;       // Integer: kappa^2 C0 + G1. Rational: unused.
     SpMat   last_K_sum;   // Rational: (kappa^2 W + R_sum) C0 + W G1.
                           // Integer:  unused (degenerates to last_K).
-    SpMat   last_Q;       // Integer:  tau^2 K D K.
-                          // Rational: tau^2 sum_k w_k K_k D K_k.
+    SpMat   last_Q;       // The assembled expansion at (last_kappa, last_tau),
+                          // plus the orphan ridge where the mesh carries one.
     SolverT llt;
     bool    factored = false;
     bool    fixed_mode = false;  // set by init_fixed.
@@ -147,10 +160,12 @@ public:
     // the rational forward to build K_k.
     SpMat build_K_shifted(double k2_eff) const;
 
-    // Integer-alpha Q: tau^2 K diag(1/C0) K.
-    SpMat build_Q(const SpMat& K, double tau) const;
+    // Integer-alpha Q at a shifted kappa^2, by the operator-chain EXPANSION
+    // tau^2 (k2^2 C0 + 2 k2 G1 + G1 diag(1/C0) G1) rather than the product
+    // tau^2 K diag(1/C0) K -- see the note on the definition.
+    SpMat build_Q(double k2_eff, double tau) const;
 
-    // Rational-alpha Q: tau^2 sum_k w_k K_k diag(1/C0) K_k.
+    // Rational-alpha Q: the same expansion summed over the poles.
     // Side effect: caches the (kappa^2 W + R_sum) C0 + W G1 matrix in
     // last_K_sum so backward() can read it without rebuilding.
     SpMat build_Q_rational(double kappa, double tau);

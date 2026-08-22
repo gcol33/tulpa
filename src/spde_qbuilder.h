@@ -72,10 +72,10 @@ struct SpdeQBuilder {
     // specifically (the rational assembly and the analytic dQ/dtheta kernel).
     std::vector<std::vector<double>> m_contrib;
     // Orphan ridge: per-entry contribution that is theta-independent. Equals
-    // 1.0 on the diagonal of orphan mesh nodes (nodes with C0_diag ~ 0 AND no
-    // off-diagonal G1 connectivity — i.e. vertices the mesh refiner inserted
-    // but never wired into a triangle). Adds a unit precision to those nodes
-    // so Q remains PD. Zero on every other entry.
+    // 1.0 on the diagonal of orphan mesh nodes: any node with C0_diag ~ 0,
+    // whether or not it still carries G1 connectivity (spde_zero_mass.h
+    // describes both flavours). Adds a unit precision to those nodes so Q
+    // remains PD. Zero on every other entry.
     std::vector<double> orphan_contrib;
     std::vector<double> Q_x;
 
