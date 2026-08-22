@@ -12,6 +12,9 @@
 #include "hmc_sampler_decls.h"        // ModelData, ParamLayout
 #include "hmc_sampler_mass_blocks.h"  // DenseMassMatrix, MassMatrixType
 
+#include <algorithm>
+#include <cmath>
+
 namespace tulpa_hmc {
 
 // =====================================================================
@@ -24,7 +27,27 @@ struct MassMatrixConfig {
   MassMatrixType effective_metric;
   bool auto_selected_diag;
   std::vector<std::pair<int,int>> block_specs;
+
+  // Whether the Type-IV precision-informed override runs at warmup end. The
+  // GMRF request resolves to a DIAG `effective_metric` plus this flag, so the
+  // per-step paths never see a fifth metric; what the request buys is one
+  // block of the diagonal being computed rather than accumulated.
+  bool st_gmrf = false;
+  // Empty when st_gmrf is true; otherwise why the request could not be
+  // honoured, from hmc_mass_st_gmrf.h's closed vocabulary. Non-empty with a
+  // GMRF request is what a user reads instead of a silent fallback.
+  const char* st_gmrf_declined = "";
 };
+
+// One clamp on an inverse-mass diagonal, shared by the structural warm start,
+// a caller-supplied metric and the Type-IV override. Outside this band the
+// metric is either singular or so wide that find_reasonable_epsilon cannot
+// recover, and the three sites disagreeing on where that band sits is the
+// copy-paste this replaces.
+inline double clamp_inv_mass(double v) {
+  if (!(v > 0.0) || !std::isfinite(v)) return 1.0;
+  return std::max(1e-3, std::min(v, 1e3));
+}
 
 // Select mass matrix type (AUTO resolution, block detection, DENSE override)
 // and initialize the DenseMassMatrix object.

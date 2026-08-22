@@ -127,7 +127,12 @@ enum class MassMatrixType : int {
     DIAG = 0,
     DENSE = 1,
     BLOCK_DIAG = 2,
-    AUTO = 3
+    AUTO = 3,
+    // A diagonal metric whose structured-field block is read from that block's
+    // own posterior precision instead of from the Welford accumulator. It
+    // resolves to DIAG before any leapfrog runs (see MassMatrixConfig), so no
+    // kinetic-energy, momentum or drift path branches on it.
+    GMRF = 4
 };
 
 // ============================================================================

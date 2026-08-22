@@ -8,6 +8,7 @@
 
 #include <Rcpp.h>
 
+#include "hmc_mass_st_gmrf.h"
 #include "hmc_sampler.h"
 
 namespace tulpa_hmc {
@@ -165,6 +166,29 @@ MassMatrixConfig select_and_init_mass_matrix(
   // Block specs for BLOCK_DIAG: (start_index, block_size) pairs
   std::vector<std::pair<int,int>> block_specs;
 
+  // GMRF: a diagonal metric whose Type-IV interaction block is read from that
+  // block's posterior precision at warmup end (hmc_mass_st_gmrf.h). Resolved
+  // here, before anything else looks at the metric, so no downstream path sees
+  // a fifth MassMatrixType. A model the override cannot serve keeps the plain
+  // adapted diagonal and carries the reason on the config -- the request is
+  // never silently dropped.
+  bool st_gmrf = false;
+  const char* st_gmrf_declined = "";
+  if (effective_metric == MassMatrixType::GMRF) {
+    st_gmrf_declined = st_gmrf_precondition(data, layout);
+    st_gmrf = (st_gmrf_declined[0] == 0);
+    effective_metric = MassMatrixType::DIAG;
+    if (verbose) {
+      if (st_gmrf) {
+        REprintf("  [GMRF] Type-IV precision-informed mass over params "
+                 "[%d,%d)\n", layout.st_delta_start, layout.st_delta_end);
+      } else {
+        REprintf("  [GMRF] declined (%s); using the adapted diagonal\n",
+                 st_gmrf_declined);
+      }
+    }
+  }
+
   if (effective_metric == MassMatrixType::AUTO) {
     // Small dense blocks capture the correlated hyperparameter groups a plain
     // diagonal misses, at O(block^2) cost instead of the O(n^2) a full DENSE
@@ -273,7 +297,8 @@ MassMatrixConfig select_and_init_mass_matrix(
     }
   }
 
-  return {effective_metric, auto_selected_diag, std::move(block_specs)};
+  return {effective_metric, auto_selected_diag, std::move(block_specs),
+          st_gmrf, st_gmrf_declined};
 }
 
 // Warm-start mass matrix diagonal from model structure.
@@ -395,7 +420,7 @@ void warm_start_mass_matrix(
   if (any_informed) {
     // Compute sqrt_mass from inv_mass
     for (int i = 0; i < n_params; i++) {
-      inv_m[i] = std::max(1e-3, std::min(inv_m[i], 1e3));
+      inv_m[i] = clamp_inv_mass(inv_m[i]);
       sqrt_m[i] = 1.0 / std::sqrt(inv_m[i]);
     }
     mass.set_diagonal(inv_m, sqrt_m);

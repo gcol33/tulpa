@@ -62,6 +62,11 @@
   MassMatrixType effective_metric = mm_config.effective_metric;
   bool auto_selected_diag = mm_config.auto_selected_diag;
   std::vector<std::pair<int,int>> block_specs = std::move(mm_config.block_specs);
+  const bool st_gmrf_mass = mm_config.st_gmrf;
+  // Reported on the result so a fit says which read produced its interaction
+  // block, whether or not the override ran.
+  const char* st_gmrf_declined = mm_config.st_gmrf_declined;
+  bool st_gmrf_applied = false;
 
   // Warm-start mass matrix diagonal from model structure
   warm_start_mass_matrix(mass, data, layout, n_params, verbose);
@@ -82,8 +87,7 @@
     std::vector<double> inv_m = inv_metric_init;
     std::vector<double> sqrt_m(n_params, 1.0);
     for (int i = 0; i < n_params; i++) {
-      // Same clamp as warm_start_mass_matrix: prevents singular/runaway metrics.
-      inv_m[i] = std::max(1e-3, std::min(inv_m[i], 1e3));
+      inv_m[i] = clamp_inv_mass(inv_m[i]);
       sqrt_m[i] = 1.0 / std::sqrt(inv_m[i]);
     }
     mass.set_diagonal(inv_m, sqrt_m);

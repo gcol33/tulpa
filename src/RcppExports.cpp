@@ -3813,6 +3813,104 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_test_st_iv_nuts
+Rcpp::List cpp_test_st_iv_nuts(Rcpp::NumericVector y, Rcpp::NumericMatrix X, Rcpp::IntegerVector s_idx, Rcpp::IntegerVector t_idx, Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx, int S, int T, std::string family, std::string temporal, int st_parameterization, std::string mass_matrix, int n_iter, int n_warmup, int max_treedepth, double adapt_delta, int seed, double sigma_beta, bool verbose);
+RcppExport SEXP _tulpa_cpp_test_st_iv_nuts(SEXP ySEXP, SEXP XSEXP, SEXP s_idxSEXP, SEXP t_idxSEXP, SEXP adj_row_ptrSEXP, SEXP adj_col_idxSEXP, SEXP SSEXP, SEXP TSEXP, SEXP familySEXP, SEXP temporalSEXP, SEXP st_parameterizationSEXP, SEXP mass_matrixSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP max_treedepthSEXP, SEXP adapt_deltaSEXP, SEXP seedSEXP, SEXP sigma_betaSEXP, SEXP verboseSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y(ySEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X(XSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type s_idx(s_idxSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type t_idx(t_idxSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type adj_row_ptr(adj_row_ptrSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type adj_col_idx(adj_col_idxSEXP);
+    Rcpp::traits::input_parameter< int >::type S(SSEXP);
+    Rcpp::traits::input_parameter< int >::type T(TSEXP);
+    Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
+    Rcpp::traits::input_parameter< std::string >::type temporal(temporalSEXP);
+    Rcpp::traits::input_parameter< int >::type st_parameterization(st_parameterizationSEXP);
+    Rcpp::traits::input_parameter< std::string >::type mass_matrix(mass_matrixSEXP);
+    Rcpp::traits::input_parameter< int >::type n_iter(n_iterSEXP);
+    Rcpp::traits::input_parameter< int >::type n_warmup(n_warmupSEXP);
+    Rcpp::traits::input_parameter< int >::type max_treedepth(max_treedepthSEXP);
+    Rcpp::traits::input_parameter< double >::type adapt_delta(adapt_deltaSEXP);
+    Rcpp::traits::input_parameter< int >::type seed(seedSEXP);
+    Rcpp::traits::input_parameter< double >::type sigma_beta(sigma_betaSEXP);
+    Rcpp::traits::input_parameter< bool >::type verbose(verboseSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_st_iv_nuts(y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T, family, temporal, st_parameterization, mass_matrix, n_iter, n_warmup, max_treedepth, adapt_delta, seed, sigma_beta, verbose));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_test_st_iv_layout
+Rcpp::List cpp_test_st_iv_layout(Rcpp::NumericVector y, Rcpp::NumericMatrix X, Rcpp::IntegerVector s_idx, Rcpp::IntegerVector t_idx, Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx, int S, int T, std::string family, std::string temporal, int st_parameterization, double sigma_beta);
+RcppExport SEXP _tulpa_cpp_test_st_iv_layout(SEXP ySEXP, SEXP XSEXP, SEXP s_idxSEXP, SEXP t_idxSEXP, SEXP adj_row_ptrSEXP, SEXP adj_col_idxSEXP, SEXP SSEXP, SEXP TSEXP, SEXP familySEXP, SEXP temporalSEXP, SEXP st_parameterizationSEXP, SEXP sigma_betaSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y(ySEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X(XSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type s_idx(s_idxSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type t_idx(t_idxSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type adj_row_ptr(adj_row_ptrSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type adj_col_idx(adj_col_idxSEXP);
+    Rcpp::traits::input_parameter< int >::type S(SSEXP);
+    Rcpp::traits::input_parameter< int >::type T(TSEXP);
+    Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
+    Rcpp::traits::input_parameter< std::string >::type temporal(temporalSEXP);
+    Rcpp::traits::input_parameter< int >::type st_parameterization(st_parameterizationSEXP);
+    Rcpp::traits::input_parameter< double >::type sigma_beta(sigma_betaSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_st_iv_layout(y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T, family, temporal, st_parameterization, sigma_beta));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_test_st_iv_gmrf_mass
+Rcpp::List cpp_test_st_iv_gmrf_mass(Rcpp::NumericVector y, Rcpp::NumericMatrix X, Rcpp::IntegerVector s_idx, Rcpp::IntegerVector t_idx, Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx, int S, int T, Rcpp::NumericVector q, std::string family, std::string temporal, int st_parameterization, double sigma_beta, bool with_eta_weights);
+RcppExport SEXP _tulpa_cpp_test_st_iv_gmrf_mass(SEXP ySEXP, SEXP XSEXP, SEXP s_idxSEXP, SEXP t_idxSEXP, SEXP adj_row_ptrSEXP, SEXP adj_col_idxSEXP, SEXP SSEXP, SEXP TSEXP, SEXP qSEXP, SEXP familySEXP, SEXP temporalSEXP, SEXP st_parameterizationSEXP, SEXP sigma_betaSEXP, SEXP with_eta_weightsSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y(ySEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X(XSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type s_idx(s_idxSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type t_idx(t_idxSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type adj_row_ptr(adj_row_ptrSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type adj_col_idx(adj_col_idxSEXP);
+    Rcpp::traits::input_parameter< int >::type S(SSEXP);
+    Rcpp::traits::input_parameter< int >::type T(TSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type q(qSEXP);
+    Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
+    Rcpp::traits::input_parameter< std::string >::type temporal(temporalSEXP);
+    Rcpp::traits::input_parameter< int >::type st_parameterization(st_parameterizationSEXP);
+    Rcpp::traits::input_parameter< double >::type sigma_beta(sigma_betaSEXP);
+    Rcpp::traits::input_parameter< bool >::type with_eta_weights(with_eta_weightsSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_st_iv_gmrf_mass(y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T, q, family, temporal, st_parameterization, sigma_beta, with_eta_weights));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_test_st_iv_log_post
+double cpp_test_st_iv_log_post(Rcpp::NumericVector y, Rcpp::NumericMatrix X, Rcpp::IntegerVector s_idx, Rcpp::IntegerVector t_idx, Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx, int S, int T, Rcpp::NumericVector q, std::string family, std::string temporal, int st_parameterization, double sigma_beta);
+RcppExport SEXP _tulpa_cpp_test_st_iv_log_post(SEXP ySEXP, SEXP XSEXP, SEXP s_idxSEXP, SEXP t_idxSEXP, SEXP adj_row_ptrSEXP, SEXP adj_col_idxSEXP, SEXP SSEXP, SEXP TSEXP, SEXP qSEXP, SEXP familySEXP, SEXP temporalSEXP, SEXP st_parameterizationSEXP, SEXP sigma_betaSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type y(ySEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X(XSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type s_idx(s_idxSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type t_idx(t_idxSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type adj_row_ptr(adj_row_ptrSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type adj_col_idx(adj_col_idxSEXP);
+    Rcpp::traits::input_parameter< int >::type S(SSEXP);
+    Rcpp::traits::input_parameter< int >::type T(TSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type q(qSEXP);
+    Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
+    Rcpp::traits::input_parameter< std::string >::type temporal(temporalSEXP);
+    Rcpp::traits::input_parameter< int >::type st_parameterization(st_parameterizationSEXP);
+    Rcpp::traits::input_parameter< double >::type sigma_beta(sigma_betaSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_st_iv_log_post(y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T, q, family, temporal, st_parameterization, sigma_beta));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_tgmrf_nuts_joint
 Rcpp::List cpp_tgmrf_nuts_joint(Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericMatrix X, Rcpp::IntegerVector obs_idx, std::string family, double phi, std::string cpp_id, int theta_dim, int n_latent, Rcpp::NumericVector beta_init, Rcpp::NumericVector z_init, Rcpp::NumericVector theta_init, Rcpp::NumericVector M_inv_diag, double epsilon0, int n_iter, int n_warmup, int max_depth, double target_accept, double fd_step, bool verbose, int seed, bool debug_gradient_check, double gradient_check_tol, double fd_check_step);
 RcppExport SEXP _tulpa_cpp_tgmrf_nuts_joint(SEXP ySEXP, SEXP n_trialsSEXP, SEXP XSEXP, SEXP obs_idxSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP cpp_idSEXP, SEXP theta_dimSEXP, SEXP n_latentSEXP, SEXP beta_initSEXP, SEXP z_initSEXP, SEXP theta_initSEXP, SEXP M_inv_diagSEXP, SEXP epsilon0SEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP max_depthSEXP, SEXP target_acceptSEXP, SEXP fd_stepSEXP, SEXP verboseSEXP, SEXP seedSEXP, SEXP debug_gradient_checkSEXP, SEXP gradient_check_tolSEXP, SEXP fd_check_stepSEXP) {
@@ -4493,6 +4591,10 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_test_compute_u_eff", (DL_FUNC) &_tulpa_cpp_test_compute_u_eff, 3},
     {"_tulpa_cpp_test_chol_nc_chain_rule", (DL_FUNC) &_tulpa_cpp_test_chol_nc_chain_rule, 6},
     {"_tulpa_cpp_test_correlation_from_L", (DL_FUNC) &_tulpa_cpp_test_correlation_from_L, 1},
+    {"_tulpa_cpp_test_st_iv_nuts", (DL_FUNC) &_tulpa_cpp_test_st_iv_nuts, 19},
+    {"_tulpa_cpp_test_st_iv_layout", (DL_FUNC) &_tulpa_cpp_test_st_iv_layout, 12},
+    {"_tulpa_cpp_test_st_iv_gmrf_mass", (DL_FUNC) &_tulpa_cpp_test_st_iv_gmrf_mass, 14},
+    {"_tulpa_cpp_test_st_iv_log_post", (DL_FUNC) &_tulpa_cpp_test_st_iv_log_post, 13},
     {"_tulpa_cpp_tgmrf_nuts_joint", (DL_FUNC) &_tulpa_cpp_tgmrf_nuts_joint, 24},
     {"_tulpa_cpp_tgmrf_registry_has", (DL_FUNC) &_tulpa_cpp_tgmrf_registry_has, 1},
     {"_tulpa_cpp_tgmrf_registry_size", (DL_FUNC) &_tulpa_cpp_tgmrf_registry_size, 0},

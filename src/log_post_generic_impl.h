@@ -618,6 +618,29 @@ static void generic_zi_oi_logits(
     }
 }
 
+// Linear predictor of observation i, every latent component included: the
+// precomputed fixed part plus the named effects and the spatiotemporal one.
+// `eta` is written, not accumulated, and must hold data.n_processes entries.
+//
+// The observation loop below and the eta-space working-weight pass
+// (hmc_mass_st_gmrf.cpp) both read eta at the same point of the model, so they
+// read it from here. A second assembly drifts silently: it produces a finite
+// eta whichever component it forgets.
+template<typename T>
+static inline void generic_eta_at(
+    int i,
+    const ModelData& data,
+    const ParamLayout& layout,
+    const GenericLogPostState<T>& state,
+    T* eta
+) {
+    for (int k = 0; k < data.n_processes; k++) {
+        eta[k] = state.eta_fixed[k][i];
+    }
+    add_generic_named_effects(i, eta, data, layout, state);
+    add_generic_st_effect(i, eta, data, layout, state);
+}
+
 template<typename T>
 static T compute_generic_likelihood_sum(
     const std::vector<T>& params,
@@ -631,12 +654,7 @@ static T compute_generic_likelihood_sum(
 
     for (int i = 0; i < data.N; i++) {
         T eta[MAX_PROCESSES];
-        for (int k = 0; k < data.n_processes; k++) {
-            eta[k] = state.eta_fixed[k][i];
-        }
-
-        add_generic_named_effects(i, eta, data, layout, state);
-        add_generic_st_effect(i, eta, data, layout, state);
+        generic_eta_at(i, data, layout, state, eta);
 
         T logit_zi;
         T logit_oi;

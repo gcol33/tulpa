@@ -1442,6 +1442,64 @@ reports `NA` from `coef()` / `confint()` / `summary()` with
 estimate. A non-PD Hessian at the returned point also withholds the stored
 precision and the fixed block, whose inverse is not a covariance there.
 
+### The Type-IV interaction metric, and what a diagonal one cannot do (gcol33/tulpa#585)
+
+`mass_matrix = "gmrf"` replaces the Welford-adapted variances over a Knorr-Held
+Type-IV `st_delta` block with `diag(Q^-1)` of that block's own posterior
+precision,
+
+    Q = tau (Q_s (x) Q_t) + diag(h_lik) + the two sum-to-zero margins,
+
+evaluated at the position each warmup mass window ends on. The metric stays
+DIAGONAL: `MassMatrixType::GMRF` resolves to `DIAG` plus a flag inside
+`select_and_init_mass_matrix` before anything else reads the metric, so no
+kinetic-energy, momentum, drift or U-turn path branches on it. `AUTO` never
+selects it, per the measurement below.
+
+`h_lik` is the per-observation eta-space curvature, reached through
+`LikelihoodSpec::eta_weights_fn` -- the IRLS callback `laplace_mode_spec_dense`
+drives. eta at each observation comes from `generic_eta_at()`
+(`log_post_generic_impl.h`), the same assembly the observation loop uses, so a
+latent component added to eta cannot be forgotten by one of the two.
+`st_type_iv_precision.h` owns the matrix form of the prior, which
+`tulpa_priors_st.h` owns as a quadratic form; the two are pinned to each other
+by test, since only the quadratic form is evaluated by the log-posterior.
+
+**Nothing in tulpa sets `ModelData::has_spatiotemporal`.** `spatiotemporal()`
+errors at the R door, and the whole Type-IV sampler path is a consumer-package
+configuration, which is why the deleted `SparseGMRFBlock` sat half-wired through
+four releases with no test able to see it. `src/test_st_iv_fixture.cpp` is the
+fixture that closes that: it fills a Type-IV `ModelData` directly, as a consumer
+would, and exposes the layout, the override, the log-posterior and a NUTS fit.
+Do NOT add to this area without a fixture case -- there is no other way in.
+
+**The measurement says the override does not beat the adapted diagonal, and
+says why.** 96 paired NUTS fits (6 configurations x 8 seeds x 2 metrics, the two
+arms sharing the data and the chain seed) separate the two arms on nothing:
+pooled geometric-mean ratio of leapfrog steps per effective sample 1.03
+(worst parameter), 0.91 (interaction block), 1.09 (beta / log_tau), every
+per-configuration sign test p > 0.47 against per-pair ratios spanning 0.18 to
+9.2. `dev_notes/issue585/`.
+
+The reason is not the sampler and needs no sampler to see. A diagonal metric can
+only rescale coordinates, so what matters is `cond(Q)` after the best diagonal
+rescaling. Measured on four configurations: `cond(Q)` = 1.3e5 to 2.1e5;
+after the marginal rescaling `diag(Q^-1)`, 1.1e5 to 2.0e5; after Jacobi
+`1/diag(Q)`, unchanged to four figures. Delete the S + T soft sum-to-zero margin
+directions and the same `Q` conditions at **11.5 to 51**. The entire stiffness
+is `s2z_precision(T) (I_S (x) J_T) + s2z_precision(S) (J_S (x) I_T)`, whose
+eigendirections are `1_S (x) a` and `b (x) 1_T` -- not coordinate-aligned, so no
+diagonal metric of any kind reaches them, and both arms sit at max treedepth.
+
+That also says what would work, and it is measured rather than asserted: a mass
+`M = D + s2z_precision(T) R'R + s2z_precision(S) C'C`, rank S + T over a
+diagonal, takes the same fits to `cond` **6.8 to 18.6** -- four orders of
+magnitude -- and its low-rank part is known in closed form from S and T with no
+factorization and no position. gcol33/tulpa#597 carries it.
+
+The Jacobi read was built, measured (it changes the conditioning by 0.0%) and
+deleted rather than shipped as a second metric name.
+
 ### Checkpoint / resume across every fitter (gcol33/tulpa#50)
 
 Every fitter with an outer loop of independent, expensive units supports

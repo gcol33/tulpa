@@ -80,6 +80,7 @@ inline const char* metric_name(MassMatrixType t) {
         case MassMatrixType::DENSE: return "DENSE";
         case MassMatrixType::BLOCK_DIAG: return "BLOCK_DIAG";
         case MassMatrixType::AUTO: return "AUTO";
+        case MassMatrixType::GMRF: return "GMRF";
     }
     return "UNKNOWN";
 }
@@ -94,14 +95,15 @@ inline MassMatrixType parse_metric_type(const std::string& name) {
         {"diag", MassMatrixType::DIAG},
         {"dense", MassMatrixType::DENSE},
         {"block_diag", MassMatrixType::BLOCK_DIAG},
-        {"auto", MassMatrixType::AUTO}
+        {"auto", MassMatrixType::AUTO},
+        {"gmrf", MassMatrixType::GMRF}
     };
     for (const auto& e : table) {
         if (name == e.name) return e.value;
     }
     throw std::invalid_argument(
         "mass_matrix must be one of \"diag\", \"dense\", \"block_diag\", "
-        "\"auto\"; got \"" + name + "\".");
+        "\"auto\", \"gmrf\"; got \"" + name + "\".");
 }
 
 // Global gradient mode + accessors. Defined in hmc_gradient_fallback.cpp.

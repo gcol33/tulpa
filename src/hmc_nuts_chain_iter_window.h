@@ -70,6 +70,41 @@
         use_mass_matrix = true;
       }
 
+      // Type-IV interaction: replace the Welford-adapted variances over the
+      // st_delta block with diag(Q^-1) of that block's own posterior
+      // precision, evaluated at the current position. Placed here rather than
+      // once at warmup end so the step-size restart below is calibrated for
+      // the metric the chain will actually run under, and so the terminal
+      // buffer tunes epsilon against a metric that no longer moves.
+      if (st_gmrf_mass) {
+        StGmrfMassResult gmrf = st_gmrf_inv_mass(q, data, layout);
+        if (gmrf.ok) {
+          for (int k = 0; k < (int)gmrf.inv_mass.size(); k++) {
+            const int j = layout.st_delta_start + k;
+            mass.inv_mass_diag[j] = clamp_inv_mass(gmrf.inv_mass[k]);
+            mass.sqrt_mass_diag[j] = 1.0 / std::sqrt(mass.inv_mass_diag[j]);
+          }
+          mass.adapted = true;
+          use_mass_matrix = true;
+          st_gmrf_applied = true;
+          if (verbose) {
+            REprintf("  [GMRF] Window %d (iter %d): %d block variances from "
+                     "Q^-1 (clamped curvature: %d, ridge: %.3g)\n",
+                     next_window_idx, iter, gmrf.n_block,
+                     gmrf.n_curvature_clamped, gmrf.ridge_applied);
+          }
+        } else {
+          // A window the override could not serve keeps that window's adapted
+          // diagonal. The reason is recorded rather than dropped, so a fit
+          // that fell back mid-warmup is not read as one that never asked.
+          st_gmrf_declined = gmrf.reason;
+          if (verbose) {
+            REprintf("  [GMRF] Window %d (iter %d): declined (%s)\n",
+                     next_window_idx, iter, gmrf.reason);
+          }
+        }
+      }
+
       // Temporal GP NC: z ~ N(0,1) by construction, so the optimal diagonal mass
       // is ~1.0. With limited warmup samples, noisy variance estimates for 20 z
       // params create unbalanced mass and a small epsilon. Fix z entries to 1.0 so

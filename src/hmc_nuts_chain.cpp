@@ -23,6 +23,7 @@
 
 #include <tulpa/nested_progress.h>
 
+#include "hmc_mass_st_gmrf.h"
 #include "hmc_sampler.h"
 #include "simp/adapt.h"  // step-adapted multistage constructors, resolved at
                          // warmup end (Eigen-heavy; kept out of the widely
@@ -105,6 +106,9 @@ HMCResultCpp run_hmc_chain_cpp(
   // resuming from it is what continues the trajectory.
   result.inv_metric_diag = mass.inv_mass_diag;
   result.final_position = q;
+
+  result.st_gmrf_applied = st_gmrf_applied;
+  result.st_gmrf_declined = st_gmrf_declined;
 
   // Diagnostic stats - only when verbose
   if (verbose) {

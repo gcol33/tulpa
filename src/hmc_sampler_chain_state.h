@@ -52,6 +52,13 @@ struct HMCResultCpp {
   std::vector<double> inv_metric_diag;
   std::vector<double> final_position;
 
+  // Type-IV precision-informed mass (mass_matrix = "gmrf"): whether the
+  // override actually set the interaction block, and the reason it did not
+  // where it did not. A chain reporting st_gmrf_applied = false with a reason
+  // sampled under the plain adapted diagonal.
+  bool st_gmrf_applied = false;
+  std::string st_gmrf_declined;
+
   // Collapsed mode draws (populated only when collapsed parameterization active)
   int n_gp_collapsed = 0;                         // N_gp if collapsed GP, 0 otherwise
   int n_icar_collapsed = 0;                        // S if collapsed ICAR/BYM2, 0 otherwise

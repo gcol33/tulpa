@@ -1,5 +1,41 @@
 # tulpa NEWS
 
+## 0.1.6
+
+* **The Type-IV spatiotemporal interaction has a precision-informed mass
+  metric, and a measurement saying it does not beat the adapted diagonal**
+  (#585). `mass_matrix = "gmrf"` replaces the Welford-adapted variances over an
+  `st_delta` block with `diag(Q^-1)` of that block's own posterior precision
+  `tau (Q_s (x) Q_t) + diag(h_lik)` plus the two sum-to-zero margins, at each
+  warmup mass window. The metric stays diagonal -- the request resolves to
+  `DIAG` plus a flag before any leapfrog path reads it -- and `AUTO` does not
+  select it. The likelihood curvature comes through
+  `LikelihoodSpec::eta_weights_fn`, which is what #547 removed the half-wired
+  version for lacking; a spec shipping none declines with a reason on the fit
+  rather than silently.
+
+  Scored on 96 paired NUTS fits (6 configurations x 8 seeds, the two arms
+  sharing the simulated data and the chain seed), leapfrog steps per effective
+  sample come out at a pooled geometric-mean ratio of 1.03 on the worst
+  parameter, 0.91 on the interaction block and 1.09 on the hyperparameters,
+  with every per-configuration sign test above p = 0.47 and per-pair ratios
+  spanning 0.18 to 9.2. The conditioning says
+  why, without a sampler: `cond(Q)` is 1.3e5 to 2.1e5 and neither diagonal read
+  moves it (`diag(Q^-1)` reaches 1.1e5, `1/diag(Q)` changes nothing), while
+  deleting the S + T soft sum-to-zero margin directions takes the same matrices
+  to 11.5 to 51. Those directions are `1_S (x) a` and `b (x) 1_T`, so no
+  diagonal metric reaches them. A mass carrying them as a rank-(S+T) term
+  reaches 6.8 to 18.6, which is #597.
+
+* **The Type-IV interaction path is testable from this package for the first
+  time** (#585). Nothing in tulpa sets `ModelData::has_spatiotemporal` and
+  `spatiotemporal()` errors at the R door, so no test could reach the
+  Knorr-Held sampler path at all. `src/test_st_iv_fixture.cpp` fills a Type-IV
+  `ModelData` directly, the way a consumer package does, and exposes its
+  layout, log-posterior, mass override and a NUTS fit. Every claim about the
+  new metric is scored against the numerical Hessian of the engine's own
+  log-posterior over the block.
+
 ## 0.1.5
 
 Behaviour changes, in the order they are most likely to affect a fit.
