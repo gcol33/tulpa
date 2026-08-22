@@ -138,6 +138,31 @@ inline T s2z_aug_quad(const T* phi, int start, int size, const T& tau) {
     return s2z_aug_quad(phi, start, static_cast<const int*>(nullptr), size, tau);
 }
 
+// Gradient of the augmented quadratic contribution w.r.t. each phi in the
+// component. The log-prior carries -0.5 * s2z_aug_quad, so a coordinate of the
+// component picks up
+//
+//     d/dphi_i [-0.5 * tau * s^2 / size] = -s2z_aug_coef(tau, size) * s,
+//
+// the SAME constant at every coordinate -- the augmentation couples the whole
+// component through its sum and through nothing else. Returned WITHOUT the
+// sign, so a caller adds `-` exactly where it adds `-0.5 *` for the quadratic.
+//
+// The gradient counterpart of s2z_aug_quad lives beside it so an analytic
+// kernel cannot pick up the augmented quadratic and miss its derivative, which
+// is the shape gcol33/tulpa#588 records.
+template <typename T>
+inline T s2z_aug_quad_grad(const T* phi, int start, const int* idx, int size,
+                           const T& tau) {
+    const T s = s2z_component_sum(phi, start, idx, size);
+    return s2z_aug_coef(tau, size) * s;
+}
+template <typename T>
+inline T s2z_aug_quad_grad(const T* phi, int start, int size, const T& tau) {
+    return s2z_aug_quad_grad(phi, start, static_cast<const int*>(nullptr), size,
+                             tau);
+}
+
 // Centre one component in place, returning the removed mean so the caller can
 // fold it into the intercept where the path keeps eta invariant.
 template <typename T>

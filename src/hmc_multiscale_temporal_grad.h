@@ -10,11 +10,48 @@
 #include <cstring>
 #include "hmc_temporal_multiscale.h"
 #include "hmc_tvc_grad.h"  // canonical rw1_grad_w used here in sigma2 form
+#include "tulpa/sum_to_zero.h"  // s2z_aug_quad / _quad_grad / _rank
 
 namespace tulpa_temporal_grad {
 
 using tulpa_temporal::MultiscaleTemporalData;
 using tulpa_temporal::TemporalType;
+
+// The sum-to-zero augmentation, as the intrinsic VALUE functions apply it
+// (tulpa_temporal::rw1_log_lik / rw2_log_lik with `augment`), split into the
+// three places a gradient has to follow it. The production log-posterior
+// evaluates the intrinsic arms augmented, so a gradient hard-wired to the
+// unaugmented form differentiates a density the engine does not evaluate: it
+// is short the constant every coordinate picks up from the augmentation's
+// squared component sum, and it normalizes at a rank one below the one the
+// value used.
+//
+// The three live together so the quadratic and the rank cannot move apart --
+// the same reason rw1_log_lik adds both inside one `if (augment)` rather than
+// leaving one of them to the caller.
+
+// Rank of the normalizer: the augmentation fills exactly the component's
+// constant direction, so it adds one pinned direction.
+inline int aug_rank(int rank_Q, bool augment) {
+    return augment ? tulpa::s2z_aug_rank(rank_Q, 1) : rank_Q;
+}
+
+// The quadratic form the normalizer's tau multiplies: the structure's own plus
+// the augmentation's squared component sum over the component size.
+inline double aug_quad(const double* phi, int n, double quad, bool augment) {
+    if (!augment) return quad;
+    return quad + tulpa::s2z_aug_quad(phi, 0, n, 1.0);
+}
+
+// The augmentation's contribution to d(log p)/d(phi_t): the same constant at
+// every coordinate, since the augmentation couples the component through its
+// sum and through nothing else.
+inline void add_s2z_aug_grad(const double* phi, int n, double tau,
+                             double* grad_phi, bool augment) {
+    if (!augment || n < 1) return;
+    const double g = tulpa::s2z_aug_quad_grad(phi, 0, n, tau);
+    for (int t = 0; t < n; t++) grad_phi[t] -= g;
+}
 
 // Structure to hold multiscale temporal gradient results
 // Pre-allocate with init() and reuse across iterations to avoid heap churn
@@ -43,12 +80,15 @@ struct MultiscaleTemporalGradients {
 //
 // Same gradient as tulpa_tvc::rw1_grad_w with tau = 1/sigma2; this
 // wrapper exists so multiscale temporal callers can pass sigma2 directly.
-inline void rw1_grad_phi(const double* phi, int n, double sigma2, double* grad_phi) {
-    tulpa_tvc::rw1_grad_w(phi, n, tulpa_temporal::variance_to_precision(sigma2),
-                          grad_phi);
+inline void rw1_grad_phi(const double* phi, int n, double sigma2,
+                         double* grad_phi, bool augment = false) {
+    const double tau = tulpa_temporal::variance_to_precision(sigma2);
+    tulpa_tvc::rw1_grad_w(phi, n, tau, grad_phi);
+    add_s2z_aug_grad(phi, n, tau, grad_phi, augment);
 }
 
-inline double rw1_grad_log_sigma2(const double* phi, int n, double sigma2) {
+inline double rw1_grad_log_sigma2(const double* phi, int n, double sigma2,
+                                  bool augment = false) {
     double quad = 0.0;
     for (int t = 1; t < n; t++) {
         double diff = phi[t] - phi[t-1];
@@ -57,8 +97,9 @@ inline double rw1_grad_log_sigma2(const double* phi, int n, double sigma2) {
     // d/d(sigma2) [log_GMRF] = -0.5*rank/sigma2 + 0.5*quad/sigma2^2
     // Chain rule: d/d(log_sigma2) = d/d(sigma2) * sigma2
     //           = -0.5*rank + 0.5*quad/sigma2
-    return -0.5 * tulpa_temporal::rw1_rank(n, false)
-         + 0.5 * quad * tulpa_temporal::variance_to_precision(sigma2);
+    const double tau = tulpa_temporal::variance_to_precision(sigma2);
+    return -0.5 * aug_rank(tulpa_temporal::rw1_rank(n, false), augment)
+         + 0.5 * tau * aug_quad(phi, n, quad, augment);
 }
 
 // =============================================================================
@@ -66,7 +107,8 @@ inline double rw1_grad_log_sigma2(const double* phi, int n, double sigma2) {
 // =============================================================================
 
 // Cyclic RW1: adds connection from last to first
-inline void rw1_cyclic_grad_phi(const double* phi, int n, double sigma2, double* grad_phi) {
+inline void rw1_cyclic_grad_phi(const double* phi, int n, double sigma2,
+                                double* grad_phi, bool augment = false) {
     if (n < 2) {
         for (int t = 0; t < n; t++) grad_phi[t] = 0.0;
         return;
@@ -92,9 +134,11 @@ inline void rw1_cyclic_grad_phi(const double* phi, int n, double sigma2, double*
         grad_phi[0]   += neg_inv_d;
         grad_phi[n-1] -= neg_inv_d;
     }
+    add_s2z_aug_grad(phi, n, inv_sigma2, grad_phi, augment);
 }
 
-inline double rw1_cyclic_grad_log_sigma2(const double* phi, int n, double sigma2) {
+inline double rw1_cyclic_grad_log_sigma2(const double* phi, int n, double sigma2,
+                                         bool augment = false) {
     // A ring of fewer than two nodes has no edge; the wrap term below reads
     // phi[n - 1], which is where an empty field would go out of bounds.
     if (n < 2) return 0.0;
@@ -110,8 +154,9 @@ inline double rw1_cyclic_grad_log_sigma2(const double* phi, int n, double sigma2
         double diff = phi[0] - phi[n-1];
         quad += diff * diff;
     }
-    return -0.5 * tulpa_temporal::rw1_rank(n, true)
-         + 0.5 * quad * tulpa_temporal::variance_to_precision(sigma2);
+    const double tau = tulpa_temporal::variance_to_precision(sigma2);
+    return -0.5 * aug_rank(tulpa_temporal::rw1_rank(n, true), augment)
+         + 0.5 * tau * aug_quad(phi, n, quad, augment);
 }
 
 // =============================================================================
@@ -121,12 +166,15 @@ inline double rw1_cyclic_grad_log_sigma2(const double* phi, int n, double sigma2
 // Same gradient as tulpa_tvc::rw2_grad_w with tau = 1/sigma2; this wrapper
 // exists so multiscale temporal callers can pass sigma2 directly, matching
 // rw1_grad_phi above.
-inline void rw2_grad_phi(const double* phi, int n, double sigma2, double* grad_phi) {
-    tulpa_tvc::rw2_grad_w(phi, n, tulpa_temporal::variance_to_precision(sigma2),
-                          grad_phi);
+inline void rw2_grad_phi(const double* phi, int n, double sigma2,
+                         double* grad_phi, bool augment = false) {
+    const double tau = tulpa_temporal::variance_to_precision(sigma2);
+    tulpa_tvc::rw2_grad_w(phi, n, tau, grad_phi);
+    add_s2z_aug_grad(phi, n, tau, grad_phi, augment);
 }
 
-inline double rw2_grad_log_sigma2(const double* phi, int n, double sigma2) {
+inline double rw2_grad_log_sigma2(const double* phi, int n, double sigma2,
+                                  bool augment = false) {
     double quad = 0.0;
     for (int t = 2; t < n; t++) {
         double d = phi[t] - 2.0 * phi[t-1] + phi[t-2];
@@ -134,8 +182,9 @@ inline double rw2_grad_log_sigma2(const double* phi, int n, double sigma2) {
     }
     // d/d(sigma2) = -0.5*rank/sigma2 + 0.5*quad/sigma2^2
     // Chain rule: d/d(log_sigma2) = d/d(sigma2) * sigma2
-    return -0.5 * tulpa_temporal::rw2_rank(n, false)
-         + 0.5 * quad * tulpa_temporal::variance_to_precision(sigma2);
+    const double tau = tulpa_temporal::variance_to_precision(sigma2);
+    return -0.5 * aug_rank(tulpa_temporal::rw2_rank(n, false), augment)
+         + 0.5 * tau * aug_quad(phi, n, quad, augment);
 }
 
 // =============================================================================

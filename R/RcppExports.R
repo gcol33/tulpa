@@ -549,8 +549,12 @@ cpp_stochastic_log_determinant <- function(Q_x, Q_i, Q_p, n, n_probes = 30L, n_l
     .Call(`_tulpa_cpp_stochastic_log_determinant`, Q_x, Q_i, Q_p, n, n_probes, n_lanczos, seed)
 }
 
-cpp_test_temporal_grad_equiv <- function(w, sigma2, rho) {
-    .Call(`_tulpa_cpp_test_temporal_grad_equiv`, w, sigma2, rho)
+cpp_test_temporal_grad_equiv <- function(w, sigma2, rho, augment = FALSE) {
+    .Call(`_tulpa_cpp_test_temporal_grad_equiv`, w, sigma2, rho, augment)
+}
+
+cpp_test_ar1_omr2_slope <- function(rho) {
+    .Call(`_tulpa_cpp_test_ar1_omr2_slope`, rho)
 }
 
 cpp_register_test_separable_bernoulli_coupling <- function() {

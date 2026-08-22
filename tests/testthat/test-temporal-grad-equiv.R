@@ -102,34 +102,65 @@ test_that("the AR1 rho gradient stays finite at the stationarity boundary", {
   iid  = list(val = "iid_val",  gphi = "iid_sig",  gls2 = "iid_dls2")
 )
 
+# `augment` is run in BOTH states (gcol33/tulpa#588). The production
+# log-posterior, multiscale_temporal_log_lik, evaluates every intrinsic arm
+# sum-to-zero augmented, so augment = TRUE is the pairing that has to hold for
+# the analytic kernels to be wirable at all; the flag drives the value and the
+# gradient together here, and a gradient that dropped the augmentation's
+# constant, or normalized at the unaugmented rank, fails on that arm alone.
 test_that("each multiscale value function is differentiated by its own gradient", {
   set.seed(23)
   rho <- 0.6
-  val <- function(field, w, sigma2) {
-    cpp_test_temporal_grad_equiv(w, sigma2, rho)[[field]]
+  val <- function(field, w, sigma2, aug) {
+    cpp_test_temporal_grad_equiv(w, sigma2, rho, aug)[[field]]
   }
+  for (aug in c(FALSE, TRUE)) {
   for (n in c(5L, 12L)) {
     w <- rnorm(n)
     for (sigma2 in c(1e-6, 1e-2, 1.0, 4.0)) {
-      g <- cpp_test_temporal_grad_equiv(w, sigma2, rho)
+      g <- cpp_test_temporal_grad_equiv(w, sigma2, rho, aug)
       for (nm in names(.tg_arms)) {
         a <- .tg_arms[[nm]]
-        info <- paste(nm, "n:", n, "sigma2:", sigma2)
+        info <- paste(nm, "n:", n, "sigma2:", sigma2, "augment:", aug)
 
         h <- 1e-5
-        fd_ls2 <- (val(a$val, w, sigma2 * exp(h)) -
-                     val(a$val, w, sigma2 * exp(-h))) / (2 * h)
+        fd_ls2 <- (val(a$val, w, sigma2 * exp(h), aug) -
+                     val(a$val, w, sigma2 * exp(-h), aug)) / (2 * h)
         expect_equal(g[[a$gls2]], fd_ls2, tolerance = 1e-6, info = info)
 
         fd_phi <- vapply(seq_len(n), function(i) {
           hw <- 1e-6 * max(1, abs(w[i]))
           wp <- w; wm <- w
           wp[i] <- wp[i] + hw; wm[i] <- wm[i] - hw
-          (val(a$val, wp, sigma2) - val(a$val, wm, sigma2)) / (2 * hw)
+          (val(a$val, wp, sigma2, aug) - val(a$val, wm, sigma2, aug)) / (2 * hw)
         }, numeric(1))
         expect_equal(g[[a$gphi]], fd_phi, tolerance = 1e-5, info = info)
       }
     }
+  }
+  }
+})
+
+test_that("augmenting moves the intrinsic arms and leaves the stationary ones", {
+  # The guard on the loop above: if `augment` were inert the paired check would
+  # pass in both states and say nothing. RW1 / cyclic RW1 / RW2 are augmented by
+  # the production density; AR1 and IID are not intrinsic and have no augmented
+  # form, so they must be untouched by the flag.
+  set.seed(588)
+  w <- rnorm(9)
+  off <- cpp_test_temporal_grad_equiv(w, 1.3, 0.6, FALSE)
+  on  <- cpp_test_temporal_grad_equiv(w, 1.3, 0.6, TRUE)
+  for (nm in c("rw1", "rw1c", "rw2")) {
+    a <- .tg_arms[[nm]]
+    expect_false(isTRUE(all.equal(off[[a$val]],  on[[a$val]])),  label = nm)
+    expect_false(isTRUE(all.equal(off[[a$gphi]], on[[a$gphi]])), label = nm)
+    expect_false(isTRUE(all.equal(off[[a$gls2]], on[[a$gls2]])), label = nm)
+  }
+  for (nm in c("ar1", "iid")) {
+    a <- .tg_arms[[nm]]
+    expect_identical(off[[a$val]],  on[[a$val]])
+    expect_identical(off[[a$gphi]], on[[a$gphi]])
+    expect_identical(off[[a$gls2]], on[[a$gls2]])
   }
 })
 
@@ -150,5 +181,47 @@ test_that("the AR1 logit-rho gradient differentiates the AR1 density", {
       expect_equal(got, (up - dn) / (2 * h), tolerance = 1e-5,
                    info = paste("sigma2:", sigma2, "rho:", rho))
     }
+  }
+})
+
+test_that("inside the stationary floor the rho gradient is the floored density's (#589)", {
+  # 1 - rho^2 is floored at 1e-10, so past |rho| = sqrt(1 - 1e-10) the
+  # stationary factor is a constant and the density no longer moves in rho
+  # through it. Only the AR residual sum does. The reported gradient is the
+  # derivative of the density that was EVALUATED, so both stationary terms drop
+  # out there rather than continuing smoothly -- the same convention
+  # var_floor_slope() carries for the NNGP conditional variance.
+  set.seed(589)
+  w <- rnorm(9)
+  to_rho <- function(l) 2 * stats::plogis(l) - 1
+  # Well inside the floored region: 1 - rho^2 = 1e-11 < 1e-10.
+  rho_in <- sqrt(1 - 1e-11)
+  for (sgn in c(1, -1)) {
+    rho <- sgn * rho_in
+    expect_lt(1 - rho^2, 1e-10)
+    l <- stats::qlogis((rho + 1) / 2)
+    h <- 1e-5
+    up <- cpp_test_temporal_grad_equiv(w, 1.0, to_rho(l + h))$ar1_val
+    dn <- cpp_test_temporal_grad_equiv(w, 1.0, to_rho(l - h))$ar1_val
+    got <- cpp_test_temporal_grad_equiv(w, 1.0, rho)$rho_sig
+    expect_equal(got, (up - dn) / (2 * h), tolerance = 1e-5,
+                 info = paste("rho:", rho))
+    # And it is bounded: -rho/1e-10 is about -1e10 before the logit factor.
+    expect_lt(abs(got), 1e3, label = paste("rho:", rho))
+  }
+})
+
+test_that("the stationary-factor slope is the exact derivative on both sides", {
+  # The helper is what makes the value and the gradient one function, so it is
+  # checked against a central difference of ar1_one_minus_rho2 itself.
+  for (rho in c(-0.9, -0.3, 0, 0.5, 0.9999)) {
+    h <- 1e-7
+    fd <- ((1 - (rho + h)^2) - (1 - (rho - h)^2)) / (2 * h)
+    expect_equal(cpp_test_ar1_omr2_slope(rho), fd, tolerance = 1e-6,
+                 info = paste("rho:", rho))
+  }
+  # Past the floor the value is constant, so the slope is exactly zero.
+  for (rho in c(sqrt(1 - 1e-11), -sqrt(1 - 1e-11), 1, -1)) {
+    expect_identical(cpp_test_ar1_omr2_slope(rho), 0)
   }
 })

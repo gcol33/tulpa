@@ -173,14 +173,19 @@ inline double ar1_grad_log_tau(const double* w, int n_times, double tau, double 
 inline double ar1_grad_logit_rho(const double* w, int n_times, double tau, double rho) {
     if (n_times < 1) return 0.0;
 
-    // d log p / d rho from stationary distribution:
-    // log p(w[0]) = 0.5*log(tau*(1-rho^2)) - 0.5*tau*(1-rho^2)*w[0]^2 + const
-    // d/d(rho) = -rho/(1-rho^2) + tau*rho*w[0]^2
-    // The denominator carries the shared AR1 stationary floor, the same factor
-    // ar1_log_density evaluates its own normalizer at, so the two do not floor
-    // 1 - rho^2 at different points.
+    // d log p / d rho from the stationary distribution:
+    //   log p(w[0]) = 0.5*log(tau*omr2) - 0.5*tau*omr2*w[0]^2 + const
+    //   d/d(rho)    = 0.5 * omr2' / omr2 - 0.5 * tau * omr2' * w[0]^2
+    // with omr2 = ar1_one_minus_rho2(rho) and omr2' its slope. Where the floor
+    // is slack, omr2' = -2 rho and this is the familiar
+    // -rho/(1-rho^2) + tau*rho*w[0]^2; past the floor omr2 is the constant
+    // 1e-10, so BOTH stationary terms are flat in rho and the slope takes them
+    // to zero. Writing -rho/omr2 unconditionally reports about -1e10 there,
+    // for a density that does not move.
     double one_m_rho2 = tulpa_temporal::ar1_one_minus_rho2(rho);
-    double grad_rho = tau * rho * w[0] * w[0] - rho / one_m_rho2;
+    double d_omr2 = tulpa_temporal::ar1_one_minus_rho2_slope(rho);
+    double grad_rho = 0.5 * d_omr2 / one_m_rho2
+                    - 0.5 * tau * d_omr2 * w[0] * w[0];
 
     // d log p / d rho from AR terms
     for (int t = 1; t < n_times; t++) {

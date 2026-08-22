@@ -128,6 +128,22 @@ inline T ar1_one_minus_rho2(const T& rho) {
   return tulpa::math::safe_max(T(1.0) - rho * rho, T(kAr1StationaryFloor));
 }
 
+// d(ar1_one_minus_rho2)/d(rho): -2 rho where the floor is slack, exactly 0
+// past it, because the floored value is the constant kAr1StationaryFloor and
+// carries no rho dependence at all.
+//
+// Every analytic rho gradient multiplies its unfloored term by this, so the
+// gradient reports the derivative of the density that was EVALUATED rather
+// than of the one the floor replaced -- the same convention
+// `var_floor_slope()` carries for the NNGP conditional variance, and what
+// `verify_gradient_runtime()`'s central difference of the value function is
+// entitled to see. Applying the unfloored -2 rho inside the floored region
+// makes the reported d/d rho of the stationary terms about -1e10 where the
+// density is flat in rho.
+inline double ar1_one_minus_rho2_slope(double rho) {
+  return (1.0 - rho * rho > kAr1StationaryFloor) ? -2.0 * rho : 0.0;
+}
+
 // Gaussian normalizer of a GMRF whose precision is tau * Q0 and whose Q0 has
 // `rank` non-null eigenvalues: 0.5 * rank * (log tau - log 2pi). Taken on the
 // log-precision, which is the coordinate every sampler carries.
