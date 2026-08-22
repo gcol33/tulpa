@@ -397,6 +397,19 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
       paste(utils::head(bad, 5L), collapse = ", "),
       if (length(bad) > 5L) ", ..." else ""), call. = FALSE)
   }
+  # A coordinate whose assembled variance was not positive is carried by the
+  # absolute PD backstop on Sigma, so the covariance reported for it came from
+  # that constant and not from the fitted parameter. It is surfaced rather than
+  # inherited: nothing else on the fit distinguishes "the variance really is
+  # this small" from "the jitter is what you are reading" (gcol33/tulpa#595).
+  sigma_jitter_floored <- as.logical(bl$sigma_jitter_floored)
+  if (any(sigma_jitter_floored)) {
+    warning(sprintf(
+      "tulpa_re_aghq: the assembled RE covariance had %d of %d diagonal entries at or below zero (coordinate%s %s); their variance is the PD backstop rather than a fitted value, so the BLUP variances on those coordinates are not a function of the parameter.",
+      sum(sigma_jitter_floored), length(sigma_jitter_floored),
+      if (sum(sigma_jitter_floored) > 1L) "s" else "",
+      paste(which(sigma_jitter_floored), collapse = ", ")), call. = FALSE)
+  }
   BHAT <- bl$bhat; BVAR <- bl$bvar; BCROSS <- bl$bcross; BCOV <- bl$bcov
   blup     <- lapply(seq_along(layout), function(m) BHAT[, coef_off[m] + seq_len(nc_terms[m]), drop = FALSE])
   blup_var <- lapply(seq_along(layout), function(m) BVAR[, coef_off[m] + seq_len(nc_terms[m]), drop = FALSE])
@@ -445,6 +458,9 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
     blup_var   = blup_var,
     blup_cross = blup_cross,
     blup_cross_available = bl$bcross_available,
+    # Per-coordinate: TRUE where the reported variance came from the PD
+    # backstop on Sigma rather than from the fitted parameter (#595).
+    sigma_jitter_floored = sigma_jitter_floored,
     blup_cov_g   = blup_cov_g,
     blup_cross_g = blup_cross_g,
     theta_cov  = V[seq_len(n_theta), seq_len(n_theta), drop = FALSE],

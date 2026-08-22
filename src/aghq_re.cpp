@@ -116,12 +116,19 @@ List cpp_aghq_blups(NumericVector par, SEXP oracle, IntegerVector nc, LogicalVec
     const Eigen::VectorXd eta   = pe.tail(pe.size() - nth);
 
     std::vector<Eigen::MatrixXd> Ls = recov_theta_to_L(eta, blocks);
-    Eigen::MatrixXd Sig = recov_block_diag_sigma(Ls, d);
+    // A coordinate whose assembled variance is not positive is carried by the
+    // absolute PD backstop, so the covariance reported for it did not come
+    // from the parameter. That is reported rather than inherited: it is the
+    // one case where the jitter IS the number being read (gcol33/tulpa#595).
+    std::vector<char> jitter_floored;
+    Eigen::MatrixXd Sig = recov_block_diag_sigma(Ls, d, &jitter_floored);
     const AghqSigmaFactor sf = aghq_sigma_factor(Sig, d);
     if (!sf.ok)
         stop("cpp_aghq_blups: the covariance at the supplied parameter is not "
              "positive definite (its Cholesky failed), so no BLUP can be "
              "extracted.");
+    LogicalVector JIT(d);
+    for (int i = 0; i < d; ++i) JIT(i) = (jitter_floored[i] != 0);
 
     orc->rebind(theta.data());
     const bool cross_ok = orc->has_theta_score() && nth > 0;
@@ -167,5 +174,6 @@ List cpp_aghq_blups(NumericVector par, SEXP oracle, IntegerVector nc, LogicalVec
     }
     return List::create(_["bhat"] = BHAT, _["bvar"] = BVAR, _["bcov"] = BCOV,
                         _["bcross"] = BCROSS, _["bcross_available"] = cross_ok,
-                        _["group_ok"] = GOK);
+                        _["group_ok"] = GOK,
+                        _["sigma_jitter_floored"] = JIT);
 }

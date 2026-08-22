@@ -47,26 +47,63 @@ test_that("cpp_aghq_blups solves every group when each precision factors", {
   expect_false(anyNA(bl$bcov))
 })
 
-test_that("a degenerate log-SD floors the covariance instead of failing to factor", {
-  # Sigma is built as L L' in log-Cholesky coordinates and then given a 1e-10
-  # diagonal jitter, so it is PD for every finite par: log-SD -500 underflows
-  # L L' to exactly 0 and the jitter is what the Cholesky then sees. The whole
-  # posterior variance is that jitter, and the solve reports success.
-  # With negH = 1 the posterior variance is 1 / (negH + 1 / Sigma), so at
-  # Sigma = jitter it is 1 / (1 + 1e10), not the jitter itself.
+test_that("the reported variance tracks a tiny log-SD instead of one constant", {
+  # Sigma is L L' in log-Cholesky coordinates plus a PD jitter. The jitter is
+  # RELATIVE to each diagonal entry (gcol33/tulpa#595), so it stays negligible
+  # at every representable scale: with negH = 1 the posterior variance is
+  # 1 / (1 + 1 / Sigma), and at a Sigma far below 1 that is Sigma itself.
+  # An ABSOLUTE 1e-10 jitter made this one constant across ten orders of
+  # magnitude of true variance.
+  orc <- .aghq_flat_oracle(2L)
+  for (log_sd in c(-100, -300)) {
+    sigma <- exp(2 * log_sd)
+    expect_gt(sigma, 0)                       # representable, so no backstop
+    bl <- cpp_aghq_blups(c(0, log_sd), orc, 1L, FALSE)
+    expect_true(all(bl$group_ok))
+    expect_false(any(bl$sigma_jitter_floored))
+    expect_equal(unname(bl$bvar[1L, 1L]), 1 / (1 + 1 / sigma),
+                 tolerance = 1e-9, info = paste("log_sd", log_sd))
+  }
+  # Two different degenerate values now give two different answers, which is
+  # the whole of what the absolute floor destroyed.
+  v100 <- cpp_aghq_blups(c(0, -100), orc, 1L, FALSE)$bvar[1L, 1L]
+  v300 <- cpp_aghq_blups(c(0, -300), orc, 1L, FALSE)$bvar[1L, 1L]
+  expect_gt(v100 / v300, 1e100)
+})
+
+test_that("a log-SD past underflow takes the backstop and says so", {
+  # Below about log-SD -372 the square underflows to exactly zero, which is the
+  # one case a relative jitter cannot serve: there the absolute backstop IS the
+  # covariance, and the reported variance is not a function of the parameter.
+  # That is reported rather than inherited.
   jitter   <- 1e-10
   expected <- 1 / (1 + 1 / jitter)
 
   orc <- .aghq_flat_oracle(2L)
-  bl  <- cpp_aghq_blups(c(0, -500), orc, 1L, FALSE)
-  expect_true(all(bl$group_ok))
-  expect_equal(unname(bl$bvar[1L, 1L]), expected, tolerance = 1e-12)
+  for (log_sd in c(-400, -500, -700)) {
+    expect_identical(exp(2 * log_sd), 0)      # the premise
+    bl <- cpp_aghq_blups(c(0, log_sd), orc, 1L, FALSE)
+    expect_true(all(bl$group_ok))
+    expect_true(all(bl$sigma_jitter_floored), info = paste("log_sd", log_sd))
+    expect_equal(unname(bl$bvar[1L, 1L]), expected, tolerance = 1e-12,
+                 info = paste("log_sd", log_sd))
+  }
+  # The flag is per-coordinate and is FALSE on an ordinary fit, so a reader can
+  # tell "the variance really is small" from "the jitter is what you are
+  # reading" without knowing the parameter.
+  ok <- cpp_aghq_blups(c(0, 0), orc, 1L, FALSE)
+  expect_length(ok$sigma_jitter_floored, 1L)
+  expect_false(any(ok$sigma_jitter_floored))
+})
 
-  # The floor is the jitter, not the log-SD: every degenerate value lands on the
-  # same number, so the reported variance stops tracking the parameter.
-  got <- vapply(c(-100, -300, -400, -700), function(log_sd)
-    unname(cpp_aghq_blups(c(0, log_sd), orc, 1L, FALSE)$bvar[1L, 1L]), numeric(1))
-  expect_equal(got, rep(expected, 4L), tolerance = 1e-12)
+test_that("only the underflowed coordinate of a diagonal block is flagged", {
+  # Two uncorrelated coordinates, one healthy and one past underflow: the flag
+  # names the coordinate, not the fit.
+  orc <- .aghq_flat_oracle(2L, 2L)
+  bl  <- cpp_aghq_blups(c(0, 0, -500), orc, 2L, FALSE)
+  expect_identical(as.logical(bl$sigma_jitter_floored), c(FALSE, TRUE))
+  expect_equal(unname(bl$bvar[1L, 1L]), 0.5, tolerance = 1e-10)
+  expect_equal(unname(bl$bvar[1L, 2L]), 1 / (1 + 1e10), tolerance = 1e-12)
 })
 
 test_that("a non-finite par declines through the per-group solve", {

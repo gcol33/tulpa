@@ -74,9 +74,31 @@ recov_theta_to_L(const Eigen::VectorXd& theta,
     return out;
 }
 
-// Block-diagonal Sigma (d x d) from per-block factors, with a tiny PD jitter.
+// PD jitter on the assembled Sigma, RELATIVE to each diagonal entry.
+//
+// L L' from log-Cholesky coordinates is already PD wherever the log-diagonal
+// exp(th) is positive, so the jitter's only real job is the corner where that
+// underflows to exactly zero. An ABSOLUTE jitter is therefore the wrong shape
+// for it twice over: a variance has no natural scale, so a fixed 1e-10 is
+// negligible next to a variance of 1 and is the ENTIRE quantity next to a
+// variance of 1e-20 -- measured on the BLUP extractor with a flat oracle, the
+// reported posterior variance was one constant across ten orders of magnitude
+// of true variance, and the solve reported success (gcol33/tulpa#595).
+//
+// Relative keeps it negligible at every representable scale. The absolute
+// backstop applies only where the diagonal is not positive at all, which is
+// the one case a relative jitter cannot serve, and that case is REPORTED:
+// there the covariance came from the constant rather than from the parameter,
+// and nothing else on the fit would say so.
+constexpr double kReCovJitterRel = 1e-12;
+constexpr double kReCovJitterAbs = 1e-10;
+
+// Block-diagonal Sigma (d x d) from per-block factors, with the PD jitter
+// above. `floored_out`, when non-null, is sized to d and marks the coordinates
+// that took the absolute backstop.
 inline Eigen::MatrixXd recov_block_diag_sigma(const std::vector<Eigen::MatrixXd>& Ls,
-                                              int d, double jitter = 1e-10) {
+                                              int d,
+                                              std::vector<char>* floored_out = nullptr) {
     Eigen::MatrixXd S = Eigen::MatrixXd::Zero(d, d);
     int pos = 0;
     for (const auto& L : Ls) {
@@ -84,7 +106,16 @@ inline Eigen::MatrixXd recov_block_diag_sigma(const std::vector<Eigen::MatrixXd>
         S.block(pos, pos, nc, nc) = L * L.transpose();
         pos += nc;
     }
-    S.diagonal().array() += jitter;
+    if (floored_out) floored_out->assign(d, 0);
+    for (int i = 0; i < d; ++i) {
+        const double sii = S(i, i);
+        if (sii > 0.0) {
+            S(i, i) = sii + kReCovJitterRel * sii;
+        } else {
+            S(i, i) = sii + kReCovJitterAbs;
+            if (floored_out) (*floored_out)[i] = 1;
+        }
+    }
     return S;
 }
 
