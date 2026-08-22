@@ -930,16 +930,21 @@ inline auto make_diagonal_precond(
 // Dense matrix operations (column-major storage, for mass matrix support)
 // ============================================================================
 
+// Row i of a symmetric column-major n×n matrix, dotted with x.
+static inline double sym_row_dot(const double* A, const double* x, int n, int i) {
+  double sum = 0.0;
+  for (int j = 0; j < n; j++) {
+    sum += A[j * n + i] * x[j];  // column-major: A[i,j] = A[j*n + i]
+  }
+  return sum;
+}
+
 // Symmetric matrix-vector product: y = A * x
 // A is n×n symmetric, stored column-major (only uses lower triangle logic
 // but reads full matrix for simplicity since it's symmetric)
 inline void symmatvec(const double* A, const double* x, double* y, int n) {
   for (int i = 0; i < n; i++) {
-    double sum = 0.0;
-    for (int j = 0; j < n; j++) {
-      sum += A[j * n + i] * x[j];  // column-major: A[i,j] = A[j*n + i]
-    }
-    y[i] = sum;
+    y[i] = sym_row_dot(A, x, n, i);
   }
 }
 
@@ -947,11 +952,7 @@ inline void symmatvec(const double* A, const double* x, double* y, int n) {
 inline double quadratic_form(const double* x, const double* A, int n) {
   double result = 0.0;
   for (int i = 0; i < n; i++) {
-    double Ax_i = 0.0;
-    for (int j = 0; j < n; j++) {
-      Ax_i += A[j * n + i] * x[j];
-    }
-    result += x[i] * Ax_i;
+    result += x[i] * sym_row_dot(A, x, n, i);
   }
   return result;
 }
@@ -960,11 +961,7 @@ inline double quadratic_form(const double* x, const double* A, int n) {
 inline void axpy_matvec(double alpha, const double* A, const double* x,
                         double* y, int n) {
   for (int i = 0; i < n; i++) {
-    double Ax_i = 0.0;
-    for (int j = 0; j < n; j++) {
-      Ax_i += A[j * n + i] * x[j];
-    }
-    y[i] += alpha * Ax_i;
+    y[i] += alpha * sym_row_dot(A, x, n, i);
   }
 }
 

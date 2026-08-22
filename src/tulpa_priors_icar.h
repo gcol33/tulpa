@@ -22,6 +22,29 @@ using namespace math;
 // 2. Spatial ICAR/BYM2 prior
 // ============================================================================
 
+// phi' Q phi for the adjacency in `data`, with Q = D - rho W: the degree term
+// summed over units, minus twice the cross term summed over each edge once
+// (the j > i test picks each edge from its lower-indexed endpoint). `rho` null
+// is the intrinsic case, rho == 1, where the cross term carries no coefficient.
+template<typename T>
+T icar_quad_form(const T* phi, const ModelData& data, const T* rho)
+{
+    T quad_form = T(0.0);
+    for (int i = 0; i < data.n_spatial_units; i++) {
+        quad_form = quad_form + T(data.n_neighbors[i]) * phi[i] * phi[i];
+        int row_start = data.adj_row_ptr[i];
+        int row_end = data.adj_row_ptr[i + 1];
+        for (int k = row_start; k < row_end; k++) {
+            int j = data.adj_col_idx[k];
+            if (j <= i) continue;
+            quad_form = rho
+                ? quad_form - T(2.0) * (*rho) * phi[i] * phi[j]
+                : quad_form - T(2.0) * phi[i] * phi[j];
+        }
+    }
+    return quad_form;
+}
+
 // Augmented intrinsic precision on a spatial field: Q_aug = Q + sum_c 1_c 1_c'
 // / J_c (see tulpa/sum_to_zero.h). Returns the addition to the quadratic form,
 // sum_c (sum_{i in c} phi_i)^2 / J_c, so the caller scales it by the same tau
@@ -92,23 +115,11 @@ T compute_spatial_icar_bym2_prior(const std::vector<T>& params, const ModelData&
 
             // Uniform(0,1) = Beta(1,1) on rho with logit Jacobian:
             // log p(logit_rho) = log(rho) + log(1-rho)
-            T rho_bym2_prior = T(1.0) / (T(1.0) + safe_exp(-logit_rho_val));
-            log_post = log_post + safe_log(rho_bym2_prior)
-                                + safe_log(T(1.0) - rho_bym2_prior);
+            log_post = log_post + safe_log(rho_bym2)
+                                + safe_log(T(1.0) - rho_bym2);
 
             // ICAR prior on phi_spatial
-            T quad_form = T(0.0);
-            for (int i = 0; i < data.n_spatial_units; i++) {
-                quad_form = quad_form + T(data.n_neighbors[i]) * phi_spatial_out[i] * phi_spatial_out[i];
-                int row_start = data.adj_row_ptr[i];
-                int row_end = data.adj_row_ptr[i + 1];
-                for (int k = row_start; k < row_end; k++) {
-                    int j = data.adj_col_idx[k];
-                    if (j > i) {
-                        quad_form = quad_form - T(2.0) * phi_spatial_out[i] * phi_spatial_out[j];
-                    }
-                }
-            }
+            T quad_form = icar_quad_form<T>(phi_spatial_out, data, nullptr);
             // Augmented Q_aug = Q + sum_c 1_c 1_c'/J_c. BYM2's phi is unit-scale
             // (tau = 1; the scale lives in sigma_s_bym2), so the augmentation
             // enters at coefficient 1 and there is no log-tau normalizer to
@@ -144,19 +155,7 @@ T compute_spatial_icar_bym2_prior(const std::vector<T>& params, const ModelData&
 
             // Quadratic form phi' Q(rho) phi = sum_i d_i phi_i^2
             //   - 2 rho sum_{i~j, j>i} phi_i phi_j.
-            T quad_form = T(0.0);
-            for (int i = 0; i < data.n_spatial_units; i++) {
-                quad_form = quad_form
-                    + T(data.n_neighbors[i]) * phi_spatial_out[i] * phi_spatial_out[i];
-                int row_start = data.adj_row_ptr[i];
-                int row_end = data.adj_row_ptr[i + 1];
-                for (int k = row_start; k < row_end; k++) {
-                    int j = data.adj_col_idx[k];
-                    if (j > i)
-                        quad_form = quad_form
-                            - T(2.0) * rho * phi_spatial_out[i] * phi_spatial_out[j];
-                }
-            }
+            T quad_form = icar_quad_form<T>(phi_spatial_out, data, &rho);
 
             // 0.5 * (n log tau + sum_i log(1 - rho mu_i)) - 0.5 tau phi'Q phi.
             T log_det = T(data.n_spatial_units) * log_tau;
@@ -172,18 +171,7 @@ T compute_spatial_icar_bym2_prior(const std::vector<T>& params, const ModelData&
             log_post = log_post + log_prior_gamma(log_tau, data.tau_spatial_shape, data.tau_spatial_rate);
 
             // ICAR prior on phi_spatial
-            T quad_form = T(0.0);
-            for (int i = 0; i < data.n_spatial_units; i++) {
-                quad_form = quad_form + T(data.n_neighbors[i]) * phi_spatial_out[i] * phi_spatial_out[i];
-                int row_start = data.adj_row_ptr[i];
-                int row_end = data.adj_row_ptr[i + 1];
-                for (int k = row_start; k < row_end; k++) {
-                    int j = data.adj_col_idx[k];
-                    if (j > i) {
-                        quad_form = quad_form - T(2.0) * phi_spatial_out[i] * phi_spatial_out[j];
-                    }
-                }
-            }
+            T quad_form = icar_quad_form<T>(phi_spatial_out, data, nullptr);
             // Augmented Q_aug = Q + sum_c 1_c 1_c'/J_c: each component's constant
             // direction carries tau rather than a separate pin precision, and
             // the field is centred per component on its way into eta, so the
@@ -199,11 +187,10 @@ T compute_spatial_icar_bym2_prior(const std::vector<T>& params, const ModelData&
             int J = data.n_spatial_units;
             int L = data.spatial_partition.n_components();
             if (L < 1) L = 1;
-            T log_tau_sp = params[layout.log_tau_spatial_idx];
             T quad_aug = quad_form + icar_sum_to_zero_augment(
                 phi_spatial_out, data.spatial_partition);
             log_post = log_post
-                     + T(0.5 * tulpa::s2z_aug_rank(J - L, L)) * log_tau_sp
+                     + T(0.5 * tulpa::s2z_aug_rank(J - L, L)) * log_tau
                      - T(0.5) * tau_spatial_out * quad_aug;
         }
     }

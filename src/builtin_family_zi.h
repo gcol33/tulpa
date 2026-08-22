@@ -84,6 +84,13 @@ inline T log_pi(const T& z) {
 template<typename T>
 inline T log1m_pi(const T& z) { return T(0.0) - tulpa::math::softplus(z); }
 
+// inv_logit(z), branching on the sign so neither exp() overflows: the positive
+// branch exponentiates -z, the negative branch exponentiates z.
+inline double pi_from_logit(double z) {
+    return (z >= 0.0) ? 1.0 / (1.0 + std::exp(-z))
+                      : std::exp(z) / (1.0 + std::exp(z));
+}
+
 // log(exp(a) + exp(b)) without intermediate overflow.
 template<typename T>
 inline T logspace_add(const T& a, const T& b) {

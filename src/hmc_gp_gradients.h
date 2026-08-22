@@ -20,6 +20,15 @@ inline double dcov_dphi(double d, double phi, double cov_val, double sigma2,
   return tulpa_svc::dcov_dphi_svc(d, phi, cov_val, sigma2, cov_type);
 }
 
+// A location whose neighbour system cannot be formed conditions on nothing, so
+// its density is the marginal w_i ~ N(0, sigma2): this is that row's score in
+// w_i and its contribution to the d/d log sigma2 accumulator.
+static inline void nngp_marginal_contrib(double wi, double sigma2,
+                                         double& grad_w_i, double& grad_sigma2) {
+  grad_w_i += -wi / sigma2;
+  grad_sigma2 += 0.5 * (wi * wi / sigma2 - 1.0);
+}
+
 // Fully analytical NNGP gradients: Eigen LLT + OpenMP parallelized. Reads the
 // cached nn_neighbor_dist (no coordinate recomputation) and fills C_mat
 // symmetrically. Complexity O(N * nn^3), Cholesky-dominated, parallelized
@@ -52,9 +61,8 @@ inline void gp_nngp_gradients(
   // First observation: marginal N(0, sigma2)
   int first_idx = gp_data.nn_order[0];
   if (first_idx < 0 || first_idx >= N) return;
-  double w0 = w[first_idx];
-  grads.grad_w[first_idx] = -w0 / sigma2;
-  grads.grad_log_sigma2 += 0.5 * (w0 * w0 / sigma2 - 1.0);
+  nngp_marginal_contrib(w[first_idx], sigma2, grads.grad_w[first_idx],
+                        grads.grad_log_sigma2);
 
   // Team size, and with it the number of chunks the rows are cut into
   int n_threads = tulpa_omp_team_size(N - 1);
@@ -113,9 +121,8 @@ inline void gp_nngp_gradients(
           (int)gp_data.nn_order.size());
 
       if (n_nb == 0) {
-        double wi = w[obs_idx];
-        my_grad_w[obs_idx] += -wi / sigma2;
-        tl_sigma2[t] += 0.5 * (wi * wi / sigma2 - 1.0);
+        nngp_marginal_contrib(w[obs_idx], sigma2, my_grad_w[obs_idx],
+                              tl_sigma2[t]);
         continue;
       }
 
@@ -136,9 +143,8 @@ inline void gp_nngp_gradients(
         nb_idx[j] = idx;
       }
       if (!ok) {
-        double wi = w[obs_idx];
-        my_grad_w[obs_idx] += -wi / sigma2;
-        tl_sigma2[t] += 0.5 * (wi * wi / sigma2 - 1.0);
+        nngp_marginal_contrib(w[obs_idx], sigma2, my_grad_w[obs_idx],
+                              tl_sigma2[t]);
         continue;
       }
 
@@ -158,9 +164,8 @@ inline void gp_nngp_gradients(
       Eigen::VectorXd alpha_vec(n_nb);
       if (!solve_neighbor_system(C_eigen, n_nb, c_eigen, alpha_vec, llt,
                                  gp_data.solver_config)) {
-        double wi = w[obs_idx];
-        my_grad_w[obs_idx] += -wi / sigma2;
-        tl_sigma2[t] += 0.5 * (wi * wi / sigma2 - 1.0);
+        nngp_marginal_contrib(w[obs_idx], sigma2, my_grad_w[obs_idx],
+                              tl_sigma2[t]);
         continue;
       }
 
@@ -168,9 +173,8 @@ inline void gp_nngp_gradients(
       Eigen::VectorXd beta_vec(n_nb);
       if (!solve_neighbor_system_second(C_eigen, n_nb, w_nb_eigen, beta_vec,
                                         llt, gp_data.solver_config)) {
-        double wi = w[obs_idx];
-        my_grad_w[obs_idx] += -wi / sigma2;
-        tl_sigma2[t] += 0.5 * (wi * wi / sigma2 - 1.0);
+        nngp_marginal_contrib(w[obs_idx], sigma2, my_grad_w[obs_idx],
+                              tl_sigma2[t]);
         continue;
       }
 

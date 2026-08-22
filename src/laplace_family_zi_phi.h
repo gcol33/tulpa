@@ -192,9 +192,7 @@ inline MixturePhiDeriv mixture_phi_deriv(
         return mixture_phi_deriv_declined();
     }
 
-    const double pi_z = (logit_zi >= 0.0)
-        ? 1.0 / (1.0 + std::exp(-logit_zi))
-        : std::exp(logit_zi) / (1.0 + std::exp(logit_zi));
+    const double pi_z = pi_from_logit(logit_zi);
     const double q  = 1.0 - pi_z;
     const double pq = pi_z * q;
     const double m1 = 1.0 - 2.0 * pi_z;
