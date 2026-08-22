@@ -1579,6 +1579,69 @@ Write-up: `dev_notes/issue597/RESULTS597.md`. Tests: `test-lowrank-mass.R`
 (storage and algebra against a dense `M`), `test-st-iv-margin-mass.R` (the
 Type-IV wiring, the parameterization's lambda scaling, and the conditioning).
 
+### The RW2 kernel is wider than a sum, and one predicate says so (gcol33/tulpa#600)
+
+`st_sum_to_zero_penalty` pins the Knorr-Held interaction along its row sums and
+its column sums, `S + T - 1` directions. That is EXACTLY
+`null(Q_s (x) Q_t)` when the temporal marginal is RW1. Under a NON-CYCLIC RW2
+one it is not:
+
+    null(Q_s (x) Q_t) = null(Q_s) (x) R^T + R^S (x) null(Q_t),
+
+and `null(Q_t)` gains the linear ramp, so the kernel is `T + 2S - 2` and the
+`S - 1` left over -- site-specific linear time trends summing to zero across
+sites -- carried NO prior curvature at all. The engine already held both
+numbers on the two sides of the same prior and they disagreed: the normalizer
+at `tulpa_priors_st.h:220` reads `rank_space * rank_time`, `8 * 2 = 16` against
+`ST = 36` on the 3x3 / T = 4 fixture, so it was written for a 20-dimensional
+kernel while the penalty beside it pinned 12.
+
+**The precision is forced, not chosen.** `s2z_precision(n)` holds the field
+MEAN -- the coefficient of the constant direction, `1' phi / 1' 1` -- at
+`sd = kappa`. `s2z_precision_weighted(u'u)` holds the coefficient of an
+arbitrary direction `u' phi / u' u` at the same sd, and at `u = 1` it IS
+`s2z_precision(n)`. The trend family is that at `u = v`, the centred ramp, so
+it is the u = 1 constant generalized rather than a second convention beside it.
+
+`st_needs_trend_pin()` (`src/st_null_space.h`) is the ONE predicate, read by
+the density (`tulpa_priors_st.h`), the sparse matrix form
+(`st_type_iv_precision.h`) and the mass override (`hmc_mass_st_gmrf.cpp`)
+alike. TYPE_II takes the same term by the same derivation (its kernel is
+`R^S (x) null(Q_t)`); TYPE_III's is already spanned by the column sums and
+TYPE_I is proper. **Cyclic RW2 gets nothing** -- a ramp is not periodic, so
+`rw2_rank` reports `T - 1` there and the kernel is the constants alone.
+
+**`hmc_mass_lowrank.h` is now generic over WEIGHTED group sums**, not indicator
+groups: a trend group covers the same coordinates a row group does and differs
+only in its weights, so weights are what make the family expressible at all
+rather than an optimization. `group_w` empty still means unit weights, filled
+by `factorize()`, so the hot loops never branch on it.
+
+**What it cost, measured on the engine's own log posterior.**
+`st_iv_num_hessian()` -- the arbiter #585 and #597 used -- gives
+`cond(M^-1 Q)` under `gmrf_margin` swept over `log_tau_st`. RW1 SATURATES at
+17.4, because every direction of the block eventually stiffens with `tau`. RW2
+grew LINEARLY in `tau` without bound -- 13.6 / 18.6 / 75.2 / 529 / 3900 over
+`log_tau` 0 to 6, a factor of 7.4 per factor of 7.4 in `tau` -- and now
+saturates at 25.4. The shipped assertion could not see it: it probed ONE
+position, `log_tau_st = 0.4`, where RW2 measured 18.58 against its own
+`cond_lr < 100`. `test-st-iv-margin-mass.R` now asserts the RATIO across two
+positions.
+
+**This closes gcol33/tulpa#598's one unexplained row.** On the same harness,
+fixture, seeds and settings, `pois_3x3_T4_rw2`'s divergences fall from 43.5 to
+8.4 per fit and, per EFFECTIVE sample -- the normalization that removes
+"diverges because it moves" -- from 5.48 to 0.627 against the adapted dense
+metric's 0.691. The 20x that "exploration alone does not account for" is gone.
+What remains is the `tau` funnel #598 section 1 established as real geometry
+(`d(log_tau) = +1.92`, positive on 6 of 6 fits), present in every arm. An RW1
+configuration is unchanged BIT FOR BIT across the fix, all three arms, which is
+what says the predicate is an exact no-op where it answers false.
+
+**`AUTO` still does not select `gmrf_margin`.** One configuration was
+re-measured, and the small fixtures still reach `ess_min` in the teens out of
+1000 draws in every arm. Write-up: `dev_notes/issue600/RESULTS600.md`.
+
 ### Checkpoint / resume across every fitter (gcol33/tulpa#50)
 
 Every fitter with an outer loop of independent, expensive units supports

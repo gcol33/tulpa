@@ -204,6 +204,10 @@ StGmrfMassResult st_gmrf_inv_mass(
 
   res.lambda_row = outer_scale * tulpa::s2z_precision(T);
   res.lambda_col = outer_scale * tulpa::s2z_precision(S);
+  res.lambda_trend =
+      tulpa_st::st_needs_trend_pin(st.type, st.temporal_type, st.temporal_cyclic)
+          ? outer_scale * tulpa_st::st_trend_precision(T)
+          : 0.0;
 
   Eigen::SparseMatrix<double> Q;
   if (!tulpa_st::st_type_iv_precision(data, S, T, kron_scale, outer_scale,

@@ -69,6 +69,29 @@ st_iv_gmrf <- function(f, q, with_eta_weights = TRUE) {
     with_eta_weights = with_eta_weights)
 }
 
+# The dense metric the engine's own reads describe: the precision-informed
+# diagonal plus every family the soft sum-to-zero penalty carries. One builder
+# because the margin tests score three different things against it, and a
+# second copy is a second place the trend family could be forgotten.
+st_iv_dense_mass <- function(gmrf, S, T) {
+  ST <- S * T
+  Rm <- matrix(0, S, ST); Cm <- matrix(0, T, ST)
+  for (s in seq_len(S)) Rm[s, ((s - 1) * T + 1):(s * T)] <- 1
+  for (tt in seq_len(T)) Cm[tt, seq(tt, ST, by = T)] <- 1
+  M <- diag(1 / gmrf$inv_mass) + gmrf$lambda_row * crossprod(Rm) +
+    gmrf$lambda_col * crossprod(Cm)
+  if (isTRUE(gmrf$lambda_trend > 0)) {
+    Tr <- matrix(0, S, ST)
+    v <- st_iv_trend(T)
+    for (s in seq_len(S)) Tr[s, ((s - 1) * T + 1):(s * T)] <- v
+    M <- M + gmrf$lambda_trend * crossprod(Tr)
+  }
+  M
+}
+
+# The centred ramp the RW2 kernel carries beside the constant.
+st_iv_trend <- function(T) seq_len(T) - (T + 1) / 2
+
 st_iv_lp <- function(f, q) {
   cpp_test_st_iv_log_post(
     f$y, f$X, f$s_idx, f$t_idx, f$adj_row_ptr, f$adj_col_idx, f$S, f$T,

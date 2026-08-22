@@ -1,5 +1,46 @@
 # tulpa NEWS
 
+## 0.1.10
+
+* **The Type-IV RW2 kernel's site-specific linear trends are pinned** (#600).
+  `st_sum_to_zero_penalty()` pinned the interaction along its row sums and its
+  column sums, `S + T - 1` directions, which is exactly `null(Q_s (x) Q_t)`
+  under an RW1 temporal marginal. Under a non-cyclic RW2 one the kernel gains
+  the linear ramp and is `T + 2S - 2`, so the `S - 1` site-specific time trends
+  summing to zero across sites carried no prior curvature at all. The engine
+  already held both numbers and they disagreed: the normalizer beside the
+  penalty reads `rank_space * rank_time`, which is `8 * 2 = 16` against
+  `ST = 36` on the 3x3 / T = 4 fixture, so it was written for a
+  20-dimensional kernel while the penalty pinned 12.
+
+  The penalty now carries a third family, each site's squared linear trend,
+  at the precision the s2z contract implies: `s2z_precision(n)` holds the field
+  MEAN -- the coefficient of the constant direction -- at `sd = kappa`, and
+  `s2z_precision_weighted(u'u)` holds the coefficient of an arbitrary direction
+  `u' phi / u' u` at the same sd, reducing to `s2z_precision(n)` exactly at
+  `u = 1`. One predicate, `st_needs_trend_pin()` (`src/st_null_space.h`),
+  answers where it applies, and the density, the sparse matrix form and the
+  precision-informed mass override all read it. TYPE_II takes the same term by
+  the same derivation; TYPE_III's kernel is already spanned by the column sums
+  and TYPE_I is proper. A CYCLIC RW2 gets nothing -- a ramp is not periodic, so
+  `rw2_rank` reports `T - 1` there -- and an RW1 fit is unchanged bit for bit.
+
+  Measured against the numerical Hessian of the engine's own log posterior,
+  `cond(M^-1 Q)` under `mass_matrix = "gmrf_margin"` grew LINEARLY in `tau`
+  without bound (13.6 / 18.6 / 75.2 / 529 / 3900 over `log_tau` 0 to 6) where
+  RW1 saturated at 17.4; it now saturates at 25.4. On the #598 harness the
+  RW2 fixture's divergences fall from 43.5 to 8.4 per fit and, per EFFECTIVE
+  sample, from 5.48 to 0.627 against the adapted dense metric's 0.691 --
+  closing the one finding gcol33/tulpa#598 could not account for. What remains
+  is the `tau` funnel every arm shares. `AUTO` still does not select
+  `gmrf_margin`.
+
+  The low-rank mass storage (`hmc_mass_lowrank.h`) is now generic over WEIGHTED
+  group sums rather than indicator groups, since a trend group covers the same
+  coordinates a row group does and differs only in its weights.
+  Consumer-package paths only: nothing in tulpa sets
+  `ModelData::has_spatiotemporal`.
+
 ## 0.1.9
 
 * **A cyclic Type-IV interaction is fitted under the cyclic Q_t** (#596).

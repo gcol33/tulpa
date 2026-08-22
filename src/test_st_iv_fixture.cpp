@@ -389,6 +389,7 @@ Rcpp::List cpp_test_st_iv_gmrf_mass(
       Rcpp::Named("n_curvature_clamped") = r.n_curvature_clamped,
       Rcpp::Named("lambda_row") = r.lambda_row,
       Rcpp::Named("lambda_col") = r.lambda_col,
+      Rcpp::Named("lambda_trend") = r.lambda_trend,
       Rcpp::Named("n_spatial") = r.n_spatial,
       Rcpp::Named("n_times") = r.n_times,
       Rcpp::Named("ridge_applied") = r.ridge_applied,

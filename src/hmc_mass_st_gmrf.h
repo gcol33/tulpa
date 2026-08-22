@@ -47,6 +47,11 @@ struct StGmrfMassResult {
   int    n_times = 0;
   double lambda_row = 0.0;        // s2z precision on each spatial unit's time sum
   double lambda_col = 0.0;        // s2z precision on each time's spatial sum
+  // Precision on each spatial unit's linear TREND, where the temporal kernel
+  // carries a ramp the two sums do not reach (st_null_space.h,
+  // gcol33/tulpa#600). Zero everywhere st_needs_trend_pin() answers false, and
+  // the mass term omits the family at zero.
+  double lambda_trend = 0.0;
 
   // Read by the benchmark harness, not by the sampler.
   int    n_block = 0;             // S * T

@@ -45,6 +45,22 @@ inline double s2z_precision(int n, double kappa = S2Z_KAPPA) {
     return 1.0 / (sd * sd);
 }
 
+// The same contract for a WEIGHTED sum u' phi. A plain sum holds the field
+// MEAN -- the coefficient of the constant direction, 1' phi / 1' 1 -- at
+// sd = kappa; the generalization holds the coefficient of an arbitrary
+// direction, u' phi / u' u, at the same sd, which is precision
+// 1 / (kappa * u'u)^2. At u = 1 that is u'u = n and this IS s2z_precision(n),
+// so the plain-sum constant is the u = 1 case of this one rather than a
+// second convention beside it.
+//
+// Needed because an intrinsic operator whose kernel is wider than the
+// constants leaves directions a sum cannot reach: an RW2 marginal's kernel
+// carries a linear ramp (see st_null_space.h, gcol33/tulpa#600).
+inline double s2z_precision_weighted(double u_sq, double kappa = S2Z_KAPPA) {
+    const double sd = kappa * (u_sq > 0.0 ? u_sq : 1.0);
+    return 1.0 / (sd * sd);
+}
+
 }  // namespace tulpa
 
 #endif  // TULPA_SOFT_SUM_TO_ZERO_H

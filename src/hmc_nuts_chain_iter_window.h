@@ -93,25 +93,29 @@
                      next_window_idx, iter, gmrf.n_block,
                      gmrf.n_curvature_clamped, gmrf.ridge_applied);
           }
-          // The two soft sum-to-zero margins as an explicit low-rank term on
-          // top of that diagonal. They are the stiffest directions in the
-          // block by three to four orders of magnitude and are linear
-          // combinations rather than coordinates, so this is the part of the
-          // geometry no diagonal metric reaches (gcol33/tulpa#597). Rebuilt
-          // every window because set_diagonal() above drops the previous term
-          // along with the diagonal it was built against.
+          // The soft sum-to-zero penalty's own directions as an explicit
+          // low-rank term on top of that diagonal. They are the stiffest
+          // directions in the block by three to four orders of magnitude and
+          // are linear combinations rather than coordinates, so this is the
+          // part of the geometry no diagonal metric reaches
+          // (gcol33/tulpa#597). The trend family rides the same term wherever
+          // the penalty carries one, since a metric spanning less than the
+          // penalty leaves a residual that grows with tau (gcol33/tulpa#600).
+          // Rebuilt every window because set_diagonal() above drops the
+          // previous term along with the diagonal it was built against.
           if (st_gmrf_margin_mass) {
             LowRankMassTerm term = make_margin_mass_term(
                 layout.st_delta_start, gmrf.n_spatial, gmrf.n_times,
                 gmrf.lambda_row, gmrf.lambda_col,
                 mass.inv_mass_diag.data() + layout.st_delta_start,
-                gmrf.n_block);
+                gmrf.n_block, gmrf.lambda_trend);
+            const int term_rank = term.rank();
             const bool ok = mass.install_lowrank(std::move(term));
             st_gmrf_margin_applied = ok;
             if (!ok) st_gmrf_declined = "lowrank_factorize_failed";
             if (verbose) {
               REprintf("  [GMRF] Window %d (iter %d): margin term rank %d %s\n",
-                       next_window_idx, iter, gmrf.n_spatial + gmrf.n_times,
+                       next_window_idx, iter, term_rank,
                        ok ? "installed" : "REFUSED (keeping the diagonal)");
             }
           }

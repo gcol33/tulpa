@@ -1,15 +1,19 @@
 // hmc_mass_lowrank.h
 // A mass matrix that is DIAGONAL PLUS LOW RANK over one contiguous parameter
-// block, with the low-rank directions given as GROUP SUMS.
+// block, with the low-rank directions given as WEIGHTED GROUP SUMS.
 //
 //   M_block = D + U Lambda U',   D = diag(1 / var),
 //
-// where column g of U is the indicator of a group of block coordinates, so
-// (U' x)_g = sum_{i in g} x_i. That is the shape every soft sum-to-zero
-// penalty in the engine contributes to a precision: `s2z_precision(n) *
-// (sum_i phi_i)^2` is one group over the whole field, and a Knorr-Held
-// Type-IV interaction pinned on both margins is S row groups plus T column
-// groups. Nothing here is Type-IV-specific -- the caller supplies the groups.
+// where column g of U is supported on a group of block coordinates and carries
+// one weight per member, so (U' x)_g = sum_{i in g} w_{g,i} x_i. That is the
+// shape every soft sum-to-zero penalty in the engine contributes to a
+// precision: `s2z_precision(n) * (sum_i phi_i)^2` is one unit-weight group
+// over the whole field, a Knorr-Held Type-IV interaction pinned on both
+// margins is S row groups plus T column groups, and the trend family a
+// non-cyclic RW2 kernel needs (st_null_space.h, gcol33/tulpa#600) is S more
+// groups whose weights are the centred ramp. The weights are what makes that
+// third family expressible: a trend is not an indicator. Nothing here is
+// Type-IV-specific -- the caller supplies the groups.
 //
 // WHY a diagonal cannot do this job. A diagonal metric only rescales
 // coordinates, so what it can reach is bounded by cond(Q) after the best
@@ -41,6 +45,8 @@
 
 #include <Eigen/Dense>
 
+#include "st_null_space.h"
+
 namespace tulpa_hmc {
 
 struct LowRankMassTerm {
@@ -49,9 +55,12 @@ struct LowRankMassTerm {
   int n = 0;
 
   // Groups as CSR over block-local coordinates: group g owns
-  // group_idx[group_ptr[g] .. group_ptr[g+1]).
+  // group_idx[group_ptr[g] .. group_ptr[g+1]), with the matching weight in
+  // group_w. Leaving group_w empty means every weight is 1 -- factorize()
+  // fills it, so the loops below never branch on it.
   std::vector<int> group_ptr;
   std::vector<int> group_idx;
+  std::vector<double> group_w;
 
   // One positive weight per group: the precision the penalty puts on that
   // group's sum, in the coordinate the sampler holds.
@@ -64,6 +73,7 @@ struct LowRankMassTerm {
   // Filled by factorize().
   std::vector<int> coord_ptr;   // transpose of the CSR: groups per coordinate
   std::vector<int> coord_grp;
+  std::vector<double> coord_w;
   Eigen::LLT<Eigen::MatrixXd> K_llt;   // Lambda^-1 + U' D^-1 U
   bool ready = false;
 
@@ -96,6 +106,11 @@ struct LowRankMassTerm {
     for (int e = 0; e < static_cast<int>(group_idx.size()); e++) {
       if (group_idx[e] < 0 || group_idx[e] >= n) return false;
     }
+    if (group_w.empty()) group_w.assign(group_idx.size(), 1.0);
+    if (group_w.size() != group_idx.size()) return false;
+    for (std::size_t e = 0; e < group_w.size(); e++) {
+      if (!std::isfinite(group_w[e])) return false;
+    }
 
     // Transpose: which groups each coordinate belongs to.
     coord_ptr.assign(n + 1, 0);
@@ -104,26 +119,30 @@ struct LowRankMassTerm {
     }
     for (int i = 0; i < n; i++) coord_ptr[i + 1] += coord_ptr[i];
     coord_grp.assign(group_idx.size(), 0);
+    coord_w.assign(group_idx.size(), 0.0);
     {
       std::vector<int> fill(coord_ptr.begin(), coord_ptr.end() - 1);
       for (int g = 0; g < k; g++) {
         for (int e = group_ptr[g]; e < group_ptr[g + 1]; e++) {
-          coord_grp[fill[group_idx[e]]++] = g;
+          const int slot = fill[group_idx[e]]++;
+          coord_grp[slot] = g;
+          coord_w[slot] = group_w[e];
         }
       }
     }
 
-    // K = Lambda^-1 + U' D^-1 U. Entry (a, b) is the variance summed over the
-    // coordinates both groups contain, so one pass over the transpose fills
-    // every pair without forming U.
+    // K = Lambda^-1 + U' D^-1 U. Entry (a, b) is the variance weighted by both
+    // groups' weights and summed over the coordinates both contain, so one
+    // pass over the transpose fills every pair without forming U.
     Eigen::MatrixXd K = Eigen::MatrixXd::Zero(k, k);
     for (int g = 0; g < k; g++) K(g, g) = 1.0 / lambda[g];
     for (int i = 0; i < n; i++) {
       const double v = var[i];
       for (int e1 = coord_ptr[i]; e1 < coord_ptr[i + 1]; e1++) {
         const int a = coord_grp[e1];
+        const double wa = v * coord_w[e1];
         for (int e2 = coord_ptr[i]; e2 < coord_ptr[i + 1]; e2++) {
-          K(a, coord_grp[e2]) += v;
+          K(a, coord_grp[e2]) += wa * coord_w[e2];
         }
       }
     }
@@ -146,7 +165,7 @@ struct LowRankMassTerm {
       double s = 0.0;
       for (int e = group_ptr[g]; e < group_ptr[g + 1]; e++) {
         const int i = group_idx[e];
-        s += var[i] * p[i];
+        s += group_w[e] * var[i] * p[i];
       }
       work_a[g] = s;
     }
@@ -154,7 +173,7 @@ struct LowRankMassTerm {
     for (int i = 0; i < n; i++) {
       double corr = 0.0;
       for (int e = coord_ptr[i]; e < coord_ptr[i + 1]; e++) {
-        corr += work_b[coord_grp[e]];
+        corr += coord_w[e] * work_b[coord_grp[e]];
       }
       out[i] = var[i] * (p[i] - corr);
     }
@@ -171,7 +190,7 @@ struct LowRankMassTerm {
       double s = 0.0;
       for (int e = group_ptr[g]; e < group_ptr[g + 1]; e++) {
         const int i = group_idx[e];
-        s += var[i] * p[i];
+        s += group_w[e] * var[i] * p[i];
       }
       work_a[g] = s;
     }
@@ -196,39 +215,67 @@ struct LowRankMassTerm {
     for (int g = 0; g < k; g++) {
       const double u = normal(rng) * std::sqrt(lambda[g]);
       for (int e = group_ptr[g]; e < group_ptr[g + 1]; e++) {
-        p[group_idx[e]] += u;
+        p[group_idx[e]] += group_w[e] * u;
       }
     }
   }
 };
 
-// The two-margin instance: block coordinates laid out as s * T + t (temporal
-// varying fastest, the convention SpatiotemporalData::st_flat carries), pinned
-// along the S row sums and the T column sums. `var` is the block's
-// inverse-mass diagonal, copied in.
+// The spatiotemporal instance: block coordinates laid out as s * T + t
+// (temporal varying fastest, the convention SpatiotemporalData::st_flat
+// carries), pinned along the S row sums and the T column sums, and along the S
+// per-site linear trends where the temporal kernel carries a ramp.
+// `lambda_trend <= 0` omits that family, which is every case
+// st_needs_trend_pin() answers false for. `var` is the block's inverse-mass
+// diagonal, copied in.
+//
+// The trend groups cover the same coordinates the row groups do and differ
+// only in their weights, which is why they need the weighted storage rather
+// than a second term.
 inline LowRankMassTerm make_margin_mass_term(
     int start, int S, int T,
     double lambda_row, double lambda_col,
-    const double* var, int n_var
+    const double* var, int n_var,
+    double lambda_trend = 0.0
 ) {
   LowRankMassTerm t;
   if (S <= 0 || T <= 0 || n_var != S * T) return t;   // rank 0: never ready
+  const bool trend = (lambda_trend > 0.0) && std::isfinite(lambda_trend);
+  const int k = S + T + (trend ? S : 0);
   t.start = start;
   t.n = S * T;
   t.var.assign(var, var + t.n);
-  t.lambda.reserve(S + T);
-  t.group_ptr.reserve(S + T + 1);
-  t.group_idx.reserve(2 * t.n);
+  t.lambda.reserve(k);
+  t.group_ptr.reserve(k + 1);
+  t.group_idx.reserve((trend ? 3 : 2) * t.n);
+  t.group_w.reserve((trend ? 3 : 2) * t.n);
   t.group_ptr.push_back(0);
-  for (int s = 0; s < S; s++) {                 // row sums: I_S (x) J_T
-    for (int tt = 0; tt < T; tt++) t.group_idx.push_back(s * T + tt);
+  auto close_group = [&](double lam) {
     t.group_ptr.push_back(static_cast<int>(t.group_idx.size()));
-    t.lambda.push_back(lambda_row);
+    t.lambda.push_back(lam);
+  };
+  for (int s = 0; s < S; s++) {                 // row sums: I_S (x) J_T
+    for (int tt = 0; tt < T; tt++) {
+      t.group_idx.push_back(s * T + tt);
+      t.group_w.push_back(1.0);
+    }
+    close_group(lambda_row);
   }
   for (int tt = 0; tt < T; tt++) {              // column sums: J_S (x) I_T
-    for (int s = 0; s < S; s++) t.group_idx.push_back(s * T + tt);
-    t.group_ptr.push_back(static_cast<int>(t.group_idx.size()));
-    t.lambda.push_back(lambda_col);
+    for (int s = 0; s < S; s++) {
+      t.group_idx.push_back(s * T + tt);
+      t.group_w.push_back(1.0);
+    }
+    close_group(lambda_col);
+  }
+  if (trend) {                                  // trends: I_S (x) v v'
+    for (int s = 0; s < S; s++) {
+      for (int tt = 0; tt < T; tt++) {
+        t.group_idx.push_back(s * T + tt);
+        t.group_w.push_back(tulpa_st::st_trend_weight(tt, T));
+      }
+      close_group(lambda_trend);
+    }
   }
   return t;
 }

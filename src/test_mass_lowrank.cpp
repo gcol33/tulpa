@@ -31,7 +31,8 @@ bool build_metric(
     int start,
     const Rcpp::IntegerVector& group_ptr,
     const Rcpp::IntegerVector& group_idx,
-    const Rcpp::NumericVector& lambda
+    const Rcpp::NumericVector& lambda,
+    const Rcpp::NumericVector& group_w
 ) {
   const int n_full = inv_mass_diag.size();
   mass.init(n_full, tulpa::MassMatrixType::DIAG);
@@ -49,6 +50,8 @@ bool build_metric(
   term.n = n_full - start;
   term.group_ptr.assign(group_ptr.begin(), group_ptr.end());
   term.group_idx.assign(group_idx.begin(), group_idx.end());
+  // Empty means unit weights, the indicator groups the term shipped with.
+  term.group_w.assign(group_w.begin(), group_w.end());
   term.lambda.assign(lambda.begin(), lambda.end());
   term.var.assign(inv_m.begin() + start, inv_m.end());
   return mass.install_lowrank(std::move(term));
@@ -65,11 +68,12 @@ Rcpp::List cpp_test_lowrank_mass_apply(
     Rcpp::IntegerVector group_idx,
     Rcpp::NumericVector lambda,
     Rcpp::NumericVector p,
-    double coeff = 0.37
+    double coeff = 0.37,
+    Rcpp::NumericVector group_w = Rcpp::NumericVector::create()
 ) {
   DenseMassMatrix mass;
   const bool ok = build_metric(mass, inv_mass_diag, start, group_ptr,
-                               group_idx, lambda);
+                               group_idx, lambda, group_w);
   const int n = inv_mass_diag.size();
   if (p.size() != n) Rcpp::stop("p must have length(inv_mass_diag) entries");
 
@@ -107,10 +111,12 @@ Rcpp::NumericMatrix cpp_test_lowrank_mass_momentum(
     Rcpp::IntegerVector group_idx,
     Rcpp::NumericVector lambda,
     int n_draws,
-    int seed = 1
+    int seed = 1,
+    Rcpp::NumericVector group_w = Rcpp::NumericVector::create()
 ) {
   DenseMassMatrix mass;
-  if (!build_metric(mass, inv_mass_diag, start, group_ptr, group_idx, lambda)) {
+  if (!build_metric(mass, inv_mass_diag, start, group_ptr, group_idx, lambda,
+                    group_w)) {
     Rcpp::stop("the low-rank term was refused");
   }
   const int n = inv_mass_diag.size();
@@ -130,11 +136,12 @@ Rcpp::NumericMatrix cpp_test_lowrank_mass_momentum(
 // [[Rcpp::export]]
 Rcpp::List cpp_test_margin_mass_term(
     int S, int T, double lambda_row, double lambda_col,
-    Rcpp::NumericVector var, int start = 0
+    Rcpp::NumericVector var, int start = 0, double lambda_trend = 0.0
 ) {
   std::vector<double> v(var.begin(), var.end());
   LowRankMassTerm term = tulpa_hmc::make_margin_mass_term(
-      start, S, T, lambda_row, lambda_col, v.data(), (int)v.size());
+      start, S, T, lambda_row, lambda_col, v.data(), (int)v.size(),
+      lambda_trend);
   const bool ok = term.factorize();
   return Rcpp::List::create(
       Rcpp::Named("ok") = ok,
@@ -143,5 +150,6 @@ Rcpp::List cpp_test_margin_mass_term(
       Rcpp::Named("n") = term.n,
       Rcpp::Named("group_ptr") = Rcpp::wrap(term.group_ptr),
       Rcpp::Named("group_idx") = Rcpp::wrap(term.group_idx),
+      Rcpp::Named("group_w") = Rcpp::wrap(term.group_w),
       Rcpp::Named("lambda") = Rcpp::wrap(term.lambda));
 }

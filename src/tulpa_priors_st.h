@@ -15,6 +15,7 @@
 #include "hmc_temporal.h"  // single-source RW1/RW2 quadratic / cross forms
 #include "icar_kernel.h"   // count_graph_components (spatial rank)
 #include "tulpa/soft_sum_to_zero.h"   // s2z_precision
+#include "st_null_space.h"            // st_trend_weight / st_needs_trend_pin
 #include "pc_prior.h"      // single-source PC prior on every sampled scale
 
 namespace tulpa {
@@ -95,12 +96,22 @@ T st_kronecker_temporal_quad(const std::vector<T>& delta, const ModelData& data,
     return total;
 }
 
-// Soft sum-to-zero on the S x T_st interaction: squared row and column sums.
-// The two margins need their own precisions -- a row sums T_st terms and a
-// column sums S terms, and s2z_precision pins each sum at sd = kappa * (its own
+// Soft sum-to-zero on the S x T_st interaction: squared row and column sums,
+// plus each site's squared linear TREND where the temporal kernel carries one.
+// The margins need their own precisions -- a row sums T_st terms and a column
+// sums S terms, and s2z_precision pins each sum at sd = kappa * (its own
 // length). One shared constant would leave the longer margin under-pinned.
+//
+// `add_trend` is st_needs_trend_pin()'s answer, threaded in rather than
+// re-derived here so the density, the matrix form and the mass override read
+// one predicate. Under a non-cyclic RW2 marginal the row and column sums span
+// S + T - 1 of the kernel's T + 2S - 2 dimensions, and the third family is the
+// S - 1 that would otherwise carry no prior curvature at all (st_null_space.h,
+// gcol33/tulpa#600). v is centred, so it is orthogonal to the row sums and
+// adds nothing where the kernel is the constants alone.
 template<typename T>
-T st_sum_to_zero_penalty(const std::vector<T>& delta, int S, int T_st)
+T st_sum_to_zero_penalty(const std::vector<T>& delta, int S, int T_st,
+                         bool add_trend = false)
 {
     T sum_s = T(0.0), sum_t = T(0.0);
     for (int s = 0; s < S; s++) {
@@ -117,8 +128,22 @@ T st_sum_to_zero_penalty(const std::vector<T>& delta, int S, int T_st)
         }
         sum_t = sum_t + col_sum * col_sum;
     }
-    return T(-0.5) * (T(tulpa::s2z_precision(T_st)) * sum_s
-                    + T(tulpa::s2z_precision(S)) * sum_t);
+    T penalty = T(-0.5) * (T(tulpa::s2z_precision(T_st)) * sum_s
+                         + T(tulpa::s2z_precision(S)) * sum_t);
+    if (add_trend) {
+        T sum_v = T(0.0);
+        for (int s = 0; s < S; s++) {
+            T trend = T(0.0);
+            for (int t = 0; t < T_st; t++) {
+                trend = trend
+                      + T(tulpa_st::st_trend_weight(t, T_st)) * delta[s * T_st + t];
+            }
+            sum_v = sum_v + trend * trend;
+        }
+        penalty = penalty
+                - T(0.5) * T(tulpa_st::st_trend_precision(T_st)) * sum_v;
+    }
+    return penalty;
 }
 
 template<typename T>
@@ -222,7 +247,12 @@ T compute_st_prior(const std::vector<T>& params, const ModelData& data,
             log_post = log_post + T(0.5 * (total_rank - ST_total)) * safe_log(tau_st);
 
             // Sum-to-zero on reconstructed delta
-            log_post = log_post + st_sum_to_zero_penalty(st_delta_nc, S, T_st);
+            log_post = log_post + st_sum_to_zero_penalty(
+                st_delta_nc, S, T_st,
+                tulpa_st::st_needs_trend_pin(
+                    data.spatiotemporal_data.type,
+                    data.spatiotemporal_data.temporal_type,
+                    data.spatiotemporal_data.temporal_cyclic));
 
             // Replace st_delta with reconstructed delta for observation loop
             st_delta = std::move(st_delta_nc);
@@ -360,7 +390,12 @@ T compute_st_prior(const std::vector<T>& params, const ModelData& data,
             }
 
             // Soft sum-to-zero constraint
-            log_post = log_post + st_sum_to_zero_penalty(st_delta, S, T_st);
+            log_post = log_post + st_sum_to_zero_penalty(
+                st_delta, S, T_st,
+                tulpa_st::st_needs_trend_pin(
+                    data.spatiotemporal_data.type,
+                    data.spatiotemporal_data.temporal_type,
+                    data.spatiotemporal_data.temporal_cyclic));
         }
     }
 

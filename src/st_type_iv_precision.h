@@ -24,6 +24,7 @@
 #include <Eigen/SparseCore>
 
 #include "tulpa/model_data.h"
+#include "st_null_space.h"
 #include "tulpa/soft_sum_to_zero.h"
 #include "tulpa/types.h"
 
@@ -53,10 +54,18 @@ inline std::size_t st_type_iv_triplet_count(const ModelData& data, int S, int T)
     const std::size_t n_blocks =
         Sz + (st.adj_col_idx.empty() ? 0 : st.adj_col_idx.size());
 
+    // The trend family, where the temporal kernel carries a ramp, has the row
+    // margin's shape -- one T x T block per spatial unit -- with v v' in place
+    // of J_T.
+    const std::size_t trend_emit =
+        st_needs_trend_pin(st.type, st.temporal_type, st.temporal_cyclic)
+            ? Sz * Tz * Tz : 0;
+
     return n_blocks * qt_emit       // tau * (Q_s (x) Q_t)
          + Sz * Tz                  // diag(h_lik) + ridge
          + Sz * Tz * Tz             // lambda_row * (I_S (x) J_T)
-         + Sz * Sz * Tz;            // lambda_col * (J_S (x) I_T)
+         + Sz * Sz * Tz             // lambda_col * (J_S (x) I_T)
+         + trend_emit;              // lambda_trend * (I_S (x) v v')
 }
 
 // Q_t on pattern: the RW1 / RW2 precision D' D. `cyclic` selects the same
@@ -115,8 +124,14 @@ inline void st_add_qt_entries(TemporalType type, int T, bool cyclic,
 //
 //   Q = kron_scale * (Q_s (x) Q_t)
 //     + h_scale * diag(h_lik)
-//     + s2z_scale * (lambda_row * (I_S (x) J_T) + lambda_col * (J_S (x) I_T))
+//     + s2z_scale * (lambda_row * (I_S (x) J_T) + lambda_col * (J_S (x) I_T)
+//                    + lambda_trend * (I_S (x) v v'))
 //     + ridge * I
+//
+// The trend family is present exactly where st_needs_trend_pin() says the
+// temporal kernel reaches past what the two sums pin (gcol33/tulpa#600); it
+// carries the same s2z_scale, being the same penalty read in the same
+// coordinate.
 //
 // The three scales are what separates the two parameterizations. Centered
 // (delta sampled): the prior carries tau, the likelihood and the penalty read
@@ -189,6 +204,18 @@ inline bool st_type_iv_precision(
             for (int s1 = 0; s1 < S; s1++) {
                 for (int s2 = 0; s2 < S; s2++) {
                     trip.emplace_back(s1 * T + t, s2 * T + t, lambda_col);
+                }
+            }
+        }
+        if (st_needs_trend_pin(st.type, st.temporal_type, st.temporal_cyclic)) {
+            const double lambda_trend = s2z_scale * st_trend_precision(T);
+            for (int s = 0; s < S; s++) {             // I_S (x) v v'
+                for (int t1 = 0; t1 < T; t1++) {
+                    const double v1 = st_trend_weight(t1, T);
+                    for (int t2 = 0; t2 < T; t2++) {
+                        trip.emplace_back(s * T + t1, s * T + t2,
+                                          lambda_trend * v1 * st_trend_weight(t2, T));
+                    }
                 }
             }
         }
