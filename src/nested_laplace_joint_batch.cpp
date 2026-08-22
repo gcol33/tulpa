@@ -129,8 +129,9 @@ inline void compute_eta_species(
 }
 
 // Per-species cell-coupling log-lik at the given per-arm etas (single-species
-// B=1 views into the species' eta + the species' y column of `buf`). Mirrors
-// eval_cell_coupling_log_lik but reads species s's y column.
+// B=1 views into the species eta + the species y column of `buf`). The cell
+// loop is eval_cell_coupling_log_lik_impl's; only where the response comes
+// from differs, which is what its arm_response callback is for.
 inline double species_cell_loglik(
     const CellCouplingSpec& spec,
     const std::vector<int>& coupled_arms,
@@ -141,72 +142,19 @@ inline double species_cell_loglik(
     const BatchArmBuffers& buf,
     int s
 ) {
-    const int n_coupled = (int) coupled_arms.size();
-    if (n_coupled == 0 || n_cells == 0) return 0.0;
-
-    std::vector<const double*> arm_eta_ptr(n_coupled);
-    std::vector<const double*> arm_y_ptr(n_coupled);
-    std::vector<const int*>    arm_n_trials_ptr(n_coupled);
-    std::vector<std::string>   family_holder(n_coupled);
-    std::vector<const char*>   arm_family_ptr(n_coupled);
-    std::vector<double>        arm_phi_vec(n_coupled);
-    for (int kk = 0; kk < n_coupled; kk++) {
-        int k = coupled_arms[kk];
-        arm_eta_ptr[kk]      = REAL(etas_s[k]);
-        arm_y_ptr[kk]        = buf.y[k].empty() ? nullptr
-                               : buf.y[k].data() + (std::size_t) s * buf.N[k];
-        // No species offset: trial counts are shared design (BatchArmBuffers).
-        arm_n_trials_ptr[kk] = buf.n_trials[k].empty() ? nullptr
-                                                       : buf.n_trials[k].data();
-        family_holder[kk]    = arms[k].family;
-        arm_family_ptr[kk]   = family_holder[kk].c_str();
-        arm_phi_vec[kk]      = buf.phi[(std::size_t) k * buf.B + s];
-    }
-
-    std::vector<int>            arm_row_count(n_coupled);
-    std::vector<const int*>     arm_rows_ptr(n_coupled);
-    std::vector<std::vector<double>> grad_buf(n_coupled), nh_buf(n_coupled);
-    std::vector<double*>        grad_ptr(n_coupled), nh_ptr(n_coupled);
-
-    // Outer cross-Hessian array with every inner block null. A spec is required
-    // to test the INNER pointer only, so an objective-only call supplies the
-    // outer array rather than a null one.
-    std::vector<double*>        cross_hess_null_inner(n_coupled, nullptr);
-    std::vector<double* const*> cross_hess_outer(n_coupled,
-                                                 cross_hess_null_inner.data());
-
-    double total = 0.0;
-    for (int c = 0; c < n_cells; c++) {
-        for (int kk = 0; kk < n_coupled; kk++) {
-            int rc = (int) cell_rows[kk][c].size();
-            arm_row_count[kk] = rc;
-            arm_rows_ptr[kk]  = cell_rows[kk][c].data();
-            if ((int) grad_buf[kk].size() < rc) {
-                grad_buf[kk].assign(rc, 0.0); nh_buf[kk].assign(rc, 0.0);
-            } else {
-                std::fill(grad_buf[kk].begin(), grad_buf[kk].begin() + rc, 0.0);
-                std::fill(nh_buf[kk].begin(), nh_buf[kk].begin() + rc, 0.0);
-            }
-            grad_ptr[kk] = grad_buf[kk].data();
-            nh_ptr[kk]   = nh_buf[kk].data();
-        }
-        CellEtas ev; ev.arm_eta_ptr = arm_eta_ptr.data(); ev.arm_rows = arm_rows_ptr.data();
-        ev.arm_row_count = arm_row_count.data(); ev.n_arms_ = n_coupled;
-        CellResponse yv; yv.arm_y = arm_y_ptr.data(); yv.arm_n_trials = arm_n_trials_ptr.data();
-        yv.arm_family = arm_family_ptr.data(); yv.arm_phi = arm_phi_vec.data();
-        yv.arm_rows = arm_rows_ptr.data(); yv.arm_row_count = arm_row_count.data();
-        yv.n_arms_ = n_coupled;
-        CellDerivs out; out.arm_grad = grad_ptr.data(); out.arm_neg_hess_diag = nh_ptr.data();
-        out.arm_cross_hess = cross_hess_outer.data();
-        out.arm_row_count = arm_row_count.data();
-        out.n_arms_ = n_coupled;
-        // Derivatives are discarded here, so the spec may skip its curvature
-        // work; the zero-filled diagonal buffers and the outer cross array are
-        // still supplied, which is what the CellDerivs contract promises.
-        out.grad_only = true;
-        total += spec.evaluate_cell(c, ev, yv, out);
-    }
-    return total;
+    return eval_cell_coupling_log_lik_impl(
+        spec, coupled_arms, cell_rows, n_cells, arms, etas_s,
+        [&](int kk, int k) {
+            (void) kk;
+            CellArmResponse r;
+            r.y = buf.y[k].empty() ? nullptr
+                  : buf.y[k].data() + (std::size_t) s * buf.N[k];
+            // No species offset: trial counts are shared design.
+            r.n_trials = buf.n_trials[k].empty() ? nullptr
+                                                 : buf.n_trials[k].data();
+            r.phi = buf.phi[(std::size_t) k * buf.B + s];
+            return r;
+        });
 }
 
 // Penalised per-species log-posterior at x (for the line search): cell-coupling

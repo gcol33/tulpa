@@ -472,14 +472,31 @@ inline void scatter_arm_obs_joint_multi(
 // rewritten in `arms` per cell by a concurrent thread's `prep_at_grid`; reading
 // the shared `arms[k].phi` lock-free here would race it.
 // nullptr keeps the direct `arms[k].phi` read for the serial / dense callers.
-inline double eval_cell_coupling_log_lik(
+// What a caller supplies per coupled arm besides its eta. The single-species
+// path reads it off the JointArm; the batched path reads species s's slice of
+// BatchArmBuffers. Everything else about the cell loop is the same, which is
+// why the loop below takes this rather than being written twice.
+struct CellArmResponse {
+    const double* y        = nullptr;
+    const int*    n_trials = nullptr;
+    double        phi      = 0.0;
+};
+
+// The cell-coupling log-likelihood at the given per-arm etas, summed over
+// cells. `arm_response(kk, k)` returns arm k's response for this evaluation.
+//
+// Derivatives are discarded here, so the spec may skip its curvature work; the
+// zero-filled diagonal buffers and the outer cross array are still supplied,
+// which is what the CellDerivs contract promises.
+template <class ArmResponseFn>
+inline double eval_cell_coupling_log_lik_impl(
     const CellCouplingSpec&                       spec,
     const std::vector<int>&                       coupled_arms,
     const std::vector<std::vector<std::vector<int>>>& cell_rows,
     int                                           n_cells,
     const std::vector<JointArm>&                  arms,
     const std::vector<Rcpp::NumericVector>&       etas,
-    const double*                                 phi_override = nullptr
+    ArmResponseFn&&                               arm_response
 ) {
     const int n_coupled = (int)coupled_arms.size();
     if (n_coupled == 0 || n_cells == 0) return 0.0;
@@ -492,12 +509,13 @@ inline double eval_cell_coupling_log_lik(
     std::vector<double>        arm_phi_vec(n_coupled);
     for (int kk = 0; kk < n_coupled; kk++) {
         int k = coupled_arms[kk];
+        const CellArmResponse r = arm_response(kk, k);
         arm_eta_ptr[kk]      = REAL(etas[k]);
-        arm_y_ptr[kk]        = arms[k].y.size()       > 0 ? REAL(arms[k].y)             : nullptr;
-        arm_n_trials_ptr[kk] = arms[k].n_trials.size()> 0 ? INTEGER(arms[k].n_trials)   : nullptr;
+        arm_y_ptr[kk]        = r.y;
+        arm_n_trials_ptr[kk] = r.n_trials;
         family_holder[kk]    = arms[k].family;
         arm_family_ptr[kk]   = family_holder[kk].c_str();
-        arm_phi_vec[kk]      = phi_override ? phi_override[kk] : arms[k].phi;
+        arm_phi_vec[kk]      = r.phi;
     }
 
     std::vector<int>            arm_row_count(n_coupled);
@@ -555,6 +573,29 @@ inline double eval_cell_coupling_log_lik(
         total += spec.evaluate_cell(c, etas_view, y_view, out);
     }
     return total;
+}
+
+// Single-species entry: the response is the arm's own, with `phi_override`
+// replacing the arm's dispersion when supplied.
+inline double eval_cell_coupling_log_lik(
+    const CellCouplingSpec&                       spec,
+    const std::vector<int>&                       coupled_arms,
+    const std::vector<std::vector<std::vector<int>>>& cell_rows,
+    int                                           n_cells,
+    const std::vector<JointArm>&                  arms,
+    const std::vector<Rcpp::NumericVector>&       etas,
+    const double*                                 phi_override = nullptr
+) {
+    return eval_cell_coupling_log_lik_impl(
+        spec, coupled_arms, cell_rows, n_cells, arms, etas,
+        [&](int kk, int k) {
+            CellArmResponse r;
+            r.y        = arms[k].y.size() > 0 ? REAL(arms[k].y) : nullptr;
+            r.n_trials = arms[k].n_trials.size() > 0
+                         ? INTEGER(arms[k].n_trials) : nullptr;
+            r.phi      = phi_override ? phi_override[kk] : arms[k].phi;
+            return r;
+        });
 }
 
 // Per-cell row index inversion. For each coupled arm kk (= index into
