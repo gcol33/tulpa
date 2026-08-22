@@ -2,10 +2,14 @@
 # Verify that the iterative CG / PCG NNGP solvers agree with the direct
 # Cholesky reference on log-likelihood and gradients for a small NNGP problem.
 #
-# The CG solver is wired in behind `spatial_gp(solver = "cg" | "pcg")`. The
-# Cholesky path remains the default. This test pins the dispatch contract:
-# at the same (w, sigma2, phi), all three solvers must produce numerically
-# equivalent log-lik and full gradient vectors (within iterative tolerance).
+# The solvers are reached through GPData::solver_config, which
+# cpp_test_gp_solver_dispatch sets directly. There is no front-door argument:
+# the system a solver choice governs is the k x k neighbour system with
+# k = nn (15 by default), and a Cholesky is both faster and exact at that size,
+# so gp() no longer offers the choice (gcol33/tulpa#542). This test pins the
+# dispatch contract for the kernels themselves: at the same (w, sigma2, phi),
+# all three solvers must produce numerically equivalent log-lik and full
+# gradient vectors (within iterative tolerance).
 
 build_nngp_neighbor_data <- function(coords, nn_k) {
   n_obs <- nrow(coords)
@@ -111,17 +115,14 @@ test_that("CG and Cholesky NNGP solvers agree on log-lik and gradients", {
   expect_equal(pcg$grad_log_phi, ref$grad_log_phi, tolerance = 1e-5)
 })
 
-test_that("spatial_gp accepts solver argument and stores it on the spec", {
-  spec_default <- spatial_gp(~ x + y)
-  expect_equal(spec_default$solver, "auto")
-
-  spec_chol <- spatial_gp(~ x + y, solver = "cholesky")
-  expect_equal(spec_chol$solver, "cholesky")
-
-  spec_cg <- spatial_gp(~ x + y, solver = "cg", cg_tol = 1e-8, cg_maxiter = 200L)
-  expect_equal(spec_cg$solver, "cg")
-  expect_equal(spec_cg$cg_tol, 1e-8)
-  expect_equal(spec_cg$cg_maxiter, 200L)
-
-  expect_error(spatial_gp(~ x + y, solver = "nonsense"))
+test_that("gp() offers no solver argument", {
+  # It was accepted, validated, stored and printed, and never reached
+  # GPData::solver_config, so every fit ran the Cholesky path whatever was
+  # asked for (gcol33/tulpa#542).
+  expect_false(any(c("solver", "cg_tol", "cg_maxiter") %in%
+                     names(formals(spatial_gp))))
+  spec <- spatial_gp(~ x + y)
+  expect_null(spec$solver)
+  expect_null(spec$cg_tol)
+  expect_null(spec$cg_maxiter)
 })

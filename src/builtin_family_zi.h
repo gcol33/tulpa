@@ -91,6 +91,35 @@ inline double pi_from_logit(double z) {
                       : std::exp(z) / (1.0 + std::exp(z));
 }
 
+// Derivatives of pi = inv_logit(z) in z, up to the fourth: out[n] = pi^(n),
+// with out[0] = pi itself. The logistic block of every zero-inflated mixture
+// needs this same ladder, and it is short enough that a second writing of it
+// is a second thing to keep correct rather than a convenience.
+inline void logit_pi_derivs(double pi_z, double* out) {
+    const double q  = 1.0 - pi_z;
+    const double pq = pi_z * q;
+    const double m1 = 1.0 - 2.0 * pi_z;
+    out[0] = pi_z;
+    out[1] = pq;
+    out[2] = pq * m1;
+    out[3] = pq * (m1 * m1 - 2.0 * pq);
+    out[4] = pq * m1 * (1.0 - 12.0 * pq);
+}
+
+// eta-derivatives of P0 = exp(L), where L is the log-density at y = 0 and
+// (s0, w0, w0p, w0pp) are (L', -L'', -L''', -L''''). The coefficients are the
+// complete Bell polynomials in those log-derivatives; `order` says how many
+// are wanted, so the third-order caller need not supply w0pp. out[0] = P0.
+inline void p0_eta_derivs(double P0, double s0, double w0, double w0p,
+                          double w0pp, int order, double* out) {
+    out[0] = P0;
+    if (order >= 1) out[1] = P0 * s0;
+    if (order >= 2) out[2] = P0 * (s0 * s0 - w0);
+    if (order >= 3) out[3] = P0 * (s0 * s0 * s0 - 3.0 * s0 * w0 - w0p);
+    if (order >= 4) out[4] = P0 * (s0 * s0 * s0 * s0 - 6.0 * s0 * s0 * w0
+                                   + 3.0 * w0 * w0 - 4.0 * s0 * w0p - w0pp);
+}
+
 // log(exp(a) + exp(b)) without intermediate overflow.
 template<typename T>
 inline T logspace_add(const T& a, const T& b) {

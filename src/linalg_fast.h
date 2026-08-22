@@ -446,13 +446,12 @@ inline void matvec(const double* X_flat, const double* beta,
 inline void matvec_add(const double* X_flat, const double* beta,
                        double* y, int N, int p) {
 
-  #ifdef _OPENMP
-  #pragma omp parallel for schedule(static) \
-      num_threads(tulpa_omp_team_size(N))
-  #endif
-  for (int i = 0; i < N; i++) {
+  // Same one-thread route as matvec above: rows write disjoint y slots, so
+  // the plain loop and the region are bit-identical, and a team of one skips
+  // libgomp instead of entering it to run the body serially anyway.
+  tulpa_parallel_for(tulpa_omp_team_size(N), N, [&](int i) {
     y[i] += dot_product(&X_flat[i * p], beta, p);
-  }
+  });
 }
 
 // Transposed matrix-vector multiply: y = X' * x
@@ -485,14 +484,10 @@ inline void compute_linear_predictors(
     const double* X_denom_flat, const double* beta_denom, int p_denom,
     double* eta_num, double* eta_denom, int N, int n_threads = 1) {
 
-  #ifdef _OPENMP
-  #pragma omp parallel for schedule(static) \
-      num_threads(tulpa_omp_team_size_req(n_threads, N))
-  #endif
-  for (int i = 0; i < N; i++) {
+  tulpa_parallel_for(tulpa_omp_team_size_req(n_threads, N), N, [&](int i) {
     eta_num[i] = dot_product(&X_num_flat[i * p_num], beta_num, p_num);
     eta_denom[i] = dot_product(&X_denom_flat[i * p_denom], beta_denom, p_denom);
-  }
+  });
 }
 
 // ============================================================================
@@ -505,17 +500,13 @@ inline void sparse_matvec_csr(
     const int* row_ptr, const int* col_idx, const double* values,
     const double* x, double* y, int n_rows) {
 
-  #ifdef _OPENMP
-  #pragma omp parallel for schedule(static) \
-      num_threads(tulpa_omp_team_size(n_rows))
-  #endif
-  for (int i = 0; i < n_rows; i++) {
+  tulpa_parallel_for(tulpa_omp_team_size(n_rows), n_rows, [&](int i) {
     double sum = 0.0;
     for (int k = row_ptr[i]; k < row_ptr[i + 1]; k++) {
       sum += values[k] * x[col_idx[k]];
     }
     y[i] = sum;
-  }
+  });
 }
 
 // Sparse quadratic form: x' * L * x for Laplacian L
@@ -892,11 +883,7 @@ inline auto make_se_kernel_matvec(
   return [=](const double* v, double* result) {
     const double inv_l2 = 1.0 / (lengthscale * lengthscale);
 
-    #ifdef _OPENMP
-    #pragma omp parallel for schedule(static) \
-        num_threads(tulpa_omp_team_size(N))
-    #endif
-    for (int i = 0; i < N; i++) {
+    tulpa_parallel_for(tulpa_omp_team_size(N), N, [&](int i) {
       double sum = 0.0;
       double xi = coords[2*i];
       double yi = coords[2*i + 1];
@@ -910,7 +897,7 @@ inline auto make_se_kernel_matvec(
         sum += kij * v[j];
       }
       result[i] = sum;
-    }
+    });
   };
 }
 

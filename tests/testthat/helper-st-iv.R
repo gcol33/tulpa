@@ -11,7 +11,8 @@
 # per (unit, time) cell.
 # ---------------------------------------------------------------------------
 st_iv_fixture <- function(S1 = 3, S2 = 3, T = 4, family = "poisson",
-                          temporal = "rw1", st_parameterization = 0,
+                          temporal = "rw1", temporal_cyclic = FALSE,
+                          st_parameterization = 0,
                           drop_edges_of = integer(), seed = 1) {
   S <- S1 * S2
   nb <- vector("list", S)
@@ -47,6 +48,7 @@ st_iv_fixture <- function(S1 = 3, S2 = 3, T = 4, family = "poisson",
        s_idx = as.integer(grid$s), t_idx = as.integer(grid$t),
        adj_row_ptr = as.integer(adj_row_ptr), adj_col_idx = adj_col_idx,
        S = S, T = T, family = family, temporal = temporal,
+       temporal_cyclic = temporal_cyclic,
        st_parameterization = st_parameterization)
 }
 
@@ -54,6 +56,7 @@ st_iv_layout <- function(f) {
   cpp_test_st_iv_layout(
     f$y, f$X, f$s_idx, f$t_idx, f$adj_row_ptr, f$adj_col_idx, f$S, f$T,
     family = f$family, temporal = f$temporal,
+    temporal_cyclic = f$temporal_cyclic,
     st_parameterization = f$st_parameterization)
 }
 
@@ -61,6 +64,7 @@ st_iv_gmrf <- function(f, q, with_eta_weights = TRUE) {
   cpp_test_st_iv_gmrf_mass(
     f$y, f$X, f$s_idx, f$t_idx, f$adj_row_ptr, f$adj_col_idx, f$S, f$T,
     q = q, family = f$family, temporal = f$temporal,
+    temporal_cyclic = f$temporal_cyclic,
     st_parameterization = f$st_parameterization,
     with_eta_weights = with_eta_weights)
 }
@@ -69,6 +73,7 @@ st_iv_lp <- function(f, q) {
   cpp_test_st_iv_log_post(
     f$y, f$X, f$s_idx, f$t_idx, f$adj_row_ptr, f$adj_col_idx, f$S, f$T,
     q = q, family = f$family, temporal = f$temporal,
+    temporal_cyclic = f$temporal_cyclic,
     st_parameterization = f$st_parameterization)
 }
 

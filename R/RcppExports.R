@@ -917,20 +917,20 @@ cpp_test_margin_mass_term <- function(S, T, lambda_row, lambda_col, var, start =
     .Call(`_tulpa_cpp_test_margin_mass_term`, S, T, lambda_row, lambda_col, var, start)
 }
 
-cpp_test_st_iv_nuts <- function(y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T, family = "poisson", temporal = "rw1", st_parameterization = 0L, mass_matrix = "diag", n_iter = 1000L, n_warmup = 500L, max_treedepth = 10L, adapt_delta = 0.8, seed = 1L, sigma_beta = 10.0, verbose = FALSE) {
-    .Call(`_tulpa_cpp_test_st_iv_nuts`, y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T, family, temporal, st_parameterization, mass_matrix, n_iter, n_warmup, max_treedepth, adapt_delta, seed, sigma_beta, verbose)
+cpp_test_st_iv_nuts <- function(y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T, family = "poisson", temporal = "rw1", temporal_cyclic = FALSE, st_parameterization = 0L, mass_matrix = "diag", n_iter = 1000L, n_warmup = 500L, max_treedepth = 10L, adapt_delta = 0.8, seed = 1L, sigma_beta = 10.0, verbose = FALSE) {
+    .Call(`_tulpa_cpp_test_st_iv_nuts`, y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T, family, temporal, temporal_cyclic, st_parameterization, mass_matrix, n_iter, n_warmup, max_treedepth, adapt_delta, seed, sigma_beta, verbose)
 }
 
-cpp_test_st_iv_layout <- function(y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T, family = "poisson", temporal = "rw1", st_parameterization = 0L, sigma_beta = 10.0) {
-    .Call(`_tulpa_cpp_test_st_iv_layout`, y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T, family, temporal, st_parameterization, sigma_beta)
+cpp_test_st_iv_layout <- function(y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T, family = "poisson", temporal = "rw1", temporal_cyclic = FALSE, st_parameterization = 0L, sigma_beta = 10.0) {
+    .Call(`_tulpa_cpp_test_st_iv_layout`, y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T, family, temporal, temporal_cyclic, st_parameterization, sigma_beta)
 }
 
-cpp_test_st_iv_gmrf_mass <- function(y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T, q, family = "poisson", temporal = "rw1", st_parameterization = 0L, sigma_beta = 10.0, with_eta_weights = TRUE) {
-    .Call(`_tulpa_cpp_test_st_iv_gmrf_mass`, y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T, q, family, temporal, st_parameterization, sigma_beta, with_eta_weights)
+cpp_test_st_iv_gmrf_mass <- function(y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T, q, family = "poisson", temporal = "rw1", temporal_cyclic = FALSE, st_parameterization = 0L, sigma_beta = 10.0, with_eta_weights = TRUE) {
+    .Call(`_tulpa_cpp_test_st_iv_gmrf_mass`, y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T, q, family, temporal, temporal_cyclic, st_parameterization, sigma_beta, with_eta_weights)
 }
 
-cpp_test_st_iv_log_post <- function(y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T, q, family = "poisson", temporal = "rw1", st_parameterization = 0L, sigma_beta = 10.0) {
-    .Call(`_tulpa_cpp_test_st_iv_log_post`, y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T, q, family, temporal, st_parameterization, sigma_beta)
+cpp_test_st_iv_log_post <- function(y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T, q, family = "poisson", temporal = "rw1", temporal_cyclic = FALSE, st_parameterization = 0L, sigma_beta = 10.0) {
+    .Call(`_tulpa_cpp_test_st_iv_log_post`, y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T, q, family, temporal, temporal_cyclic, st_parameterization, sigma_beta)
 }
 
 cpp_tgmrf_nuts_joint <- function(y, n_trials, X, obs_idx, family, phi, cpp_id, theta_dim, n_latent, beta_init, z_init, theta_init, M_inv_diag, epsilon0, n_iter, n_warmup, max_depth, target_accept, fd_step, verbose, seed, debug_gradient_check, gradient_check_tol, fd_check_step) {

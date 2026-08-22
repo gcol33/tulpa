@@ -12,9 +12,6 @@ spatial_gp(
   nn = 15,
   m = 6,
   c = 1.5,
-  solver = c("auto", "cholesky", "cg", "pcg", "gpu"),
-  cg_tol = 1e-06,
-  cg_maxiter = 100,
   shared = NULL,
   scale_coords = TRUE,
   parameterization = c("noncentered", "centered", "collapsed")
@@ -30,7 +27,7 @@ takes exactly two, and so does any
 sampler mode, because both store coordinates at a fixed 2-D stride.}
 
 \item{approx}{GP approximation: \code{"nngp"} (default, a nearest-neighbour GP with
-the \code{cov} / \code{nu} / \code{nn} / \code{solver} arguments) or \code{"hsgp"} (a Hilbert-space
+the \code{cov} / \code{nu} / \code{nn} arguments) or \code{"hsgp"} (a Hilbert-space
 basis GP with \code{m} functions per dimension and boundary factor \code{c}).}
 
 \item{cov}{Covariance function (NNGP only). One of \code{"exponential"} or
@@ -44,14 +41,6 @@ basis GP with \code{m} functions per dimension and boundary factor \code{c}).}
 \item{m}{Number of HSGP basis functions per dimension (\code{approx = "hsgp"}).}
 
 \item{c}{HSGP boundary factor, \verb{>= 1} (\code{approx = "hsgp"}).}
-
-\item{solver}{Linear solver for the GP. One of \code{"auto"}, \code{"cholesky"},
-\code{"cg"}, \code{"pcg"}, or \code{"gpu"}. \code{"gpu"} falls back to \code{"pcg"} when CUDA
-support is unavailable.}
-
-\item{cg_tol}{Convergence tolerance for the (preconditioned) CG solver.}
-
-\item{cg_maxiter}{Maximum number of (preconditioned) CG iterations.}
 
 \item{shared}{Whether the spatial effect is shared across processes in a
 multi-process model. \code{NULL} (default) shares the effect; \code{FALSE} fits

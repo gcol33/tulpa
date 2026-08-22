@@ -49,19 +49,25 @@ inline int st_spatial_rank(const ModelData& data, int S) {
 // sum_s n_neigh[s] * q_t(delta_s) - 2 * sum_{s<s2 adjacent} q_t(delta_s, delta_s2)
 // where q_t is the RW1/RW2 temporal (cross) quadratic form. Shared by the
 // non-centered (tau-free, on z) and centered (on delta) Type-IV paths.
+//
+// SpatiotemporalData::temporal_cyclic selects Q_t, in the diagonal and the
+// cross term alike: a cyclic Q_t carries the wrap-around edge in both, and the
+// rank the normalizer beside this reads (rw2_rank) is the rank of the operator
+// the flag selects.
 template<typename T>
 T st_kronecker_temporal_quad(const std::vector<T>& delta, const ModelData& data,
                              int S, int T_st)
 {
     const auto& st = data.spatiotemporal_data;
+    const bool cyclic = st.temporal_cyclic;
     T total = T(0.0);
     for (int s = 0; s < S; s++) {
         const T* d_s = delta.data() + s * T_st;
         T quad_s = T(0.0);
         if (st.temporal_type == TemporalType::RW1) {
-            quad_s = tulpa_temporal::rw1_quadratic_form(d_s, T_st, false);
+            quad_s = tulpa_temporal::rw1_quadratic_form(d_s, T_st, cyclic);
         } else if (st.temporal_type == TemporalType::RW2) {
-            quad_s = tulpa_temporal::rw2_quadratic_form(d_s, T_st, false);
+            quad_s = tulpa_temporal::rw2_quadratic_form(d_s, T_st, cyclic);
         }
         int n_neigh = st.n_neighbors.empty() ? 0 : st.n_neighbors[s];
         total = total + T(n_neigh) * quad_s;
@@ -75,9 +81,11 @@ T st_kronecker_temporal_quad(const std::vector<T>& delta, const ModelData& data,
                     const T* d_s2 = delta.data() + s2 * T_st;
                     T cross = T(0.0);
                     if (st.temporal_type == TemporalType::RW1) {
-                        cross = tulpa_temporal::rw1_cross_form(d_s, d_s2, T_st);
+                        cross = tulpa_temporal::rw1_cross_form(d_s, d_s2, T_st,
+                                                               cyclic);
                     } else if (st.temporal_type == TemporalType::RW2) {
-                        cross = tulpa_temporal::rw2_cross_form(d_s, d_s2, T_st);
+                        cross = tulpa_temporal::rw2_cross_form(d_s, d_s2, T_st,
+                                                               cyclic);
                     }
                     total = total - T(2.0) * cross;
                 }

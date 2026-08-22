@@ -71,6 +71,47 @@ struct GenericLogPostState {
     std::vector<std::vector<T>> eta_fixed;
 };
 
+// One dispatch for every non-centered block's field reconstruction.
+//
+// Each block ships one implementation per scalar type the generic log
+// posterior is instantiated with, and the choice is made at compile time. The
+// four blocks below (GP, multiscale GP, SPDE, SVC) differ only in which three
+// functions they name, so the ladder itself -- and the message an unsupported
+// type gets -- lives here rather than being copied once per block.
+//
+// `on_fwd` is null for a block with no forward-mode kernel: the generic path
+// samples via arena and verifies via numerical double, so most blocks need
+// none, and SPDE's closed-form tangent is the exception rather than the rule.
+template<typename T>
+static inline void dispatch_nc_transform(
+    const char* block,
+    const std::vector<T>& params,
+    const ModelData& data,
+    const ParamLayout& layout,
+    std::vector<T>& out,
+    void (*on_double)(const std::vector<double>&, const ModelData&,
+                      const ParamLayout&, std::vector<double>&),
+    void (*on_arena)(const std::vector<arena::Var>&, const ModelData&,
+                     const ParamLayout&, std::vector<arena::Var>&),
+    void (*on_fwd)(const std::vector< ::fwd::Dual>&, const ModelData&,
+                   const ParamLayout&, std::vector< ::fwd::Dual>&) = nullptr
+) {
+    if constexpr (std::is_same_v<T, double>) {
+        on_double(params, data, layout, out);
+    } else if constexpr (std::is_same_v<T, arena::Var>) {
+        on_arena(params, data, layout, out);
+    } else if constexpr (std::is_same_v<T, ::fwd::Dual>) {
+        if (on_fwd == nullptr) {
+            Rcpp::stop("%s non-centered: forward-mode AD is not supported (the "
+                       "generic path samples via arena and verifies via "
+                       "numerical double).", block);
+        }
+        on_fwd(params, data, layout, out);
+    } else {
+        Rcpp::stop("%s non-centered: AD type not supported.", block);
+    }
+}
+
 template<typename T>
 static inline void add_to_shared_processes(
     T* eta,
@@ -135,15 +176,9 @@ static T initialize_generic_state(
         // (AUTODIFF_FWD aliases to arena -- no forward-mode kernel), so no
         // fwd::Dual branch is needed.
         if (data.gp_parameterization == 1) {
-            if constexpr (std::is_same_v<T, double>) {
-                apply_gp_nc_transform_double(params, data, layout, state.gp_w);
-            } else if constexpr (std::is_same_v<T, arena::Var>) {
-                apply_gp_nc_transform_arena(params, data, layout, state.gp_w);
-            } else {
-                Rcpp::stop("GP non-centered: AD type not supported (the generic "
-                           "path samples via arena and verifies via numerical "
-                           "double).");
-            }
+            dispatch_nc_transform<T>("GP", params, data, layout, state.gp_w,
+                                     &apply_gp_nc_transform_double,
+                                     &apply_gp_nc_transform_arena);
         }
     }
 
@@ -158,15 +193,10 @@ static T initialize_generic_state(
         // dispatch above. Dispatch is statically resolved on the AD type,
         // same as GP/SVC.
         if (data.msgp_parameterization == 1 && !data.msgp_is_hsgp) {
-            if constexpr (std::is_same_v<T, double>) {
-                apply_msgp_nc_transform_double(params, data, layout, state.ms_gp_effect);
-            } else if constexpr (std::is_same_v<T, arena::Var>) {
-                apply_msgp_nc_transform_arena(params, data, layout, state.ms_gp_effect);
-            } else {
-                Rcpp::stop("Multiscale GP non-centered: AD type not supported "
-                           "(the generic path samples via arena and verifies "
-                           "via numerical double).");
-            }
+            dispatch_nc_transform<T>("Multiscale GP", params, data, layout,
+                                     state.ms_gp_effect,
+                                     &apply_msgp_nc_transform_double,
+                                     &apply_msgp_nc_transform_arena);
         }
     }
 
@@ -199,18 +229,11 @@ static T initialize_generic_state(
         //   arena::Var  : reverse-mode AD via custom_backward.
         //   fwd::Dual   : forward-mode AD via the closed-form tangent.
         if (data.spde_data.joint_hypers || data.spde_data.nc_fixed) {
-            if constexpr (std::is_same_v<T, double>) {
-                apply_spde_nc_transform_double(
-                    params, data, layout, state.spde_w);
-            } else if constexpr (std::is_same_v<T, arena::Var>) {
-                apply_spde_nc_transform_arena(
-                    params, data, layout, state.spde_w);
-            } else if constexpr (std::is_same_v<T, ::fwd::Dual>) {
-                apply_spde_nc_transform_fwd(
-                    params, data, layout, state.spde_w);
-            } else {
-                Rcpp::stop("SPDE joint-NUTS: AD type not supported.");
-            }
+            dispatch_nc_transform<T>("SPDE joint-NUTS", params, data, layout,
+                                     state.spde_w,
+                                     &apply_spde_nc_transform_double,
+                                     &apply_spde_nc_transform_arena,
+                                     &apply_spde_nc_transform_fwd);
         }
     }
 
@@ -259,15 +282,9 @@ static T initialize_generic_state(
         if (data.svc_parameterization == 1 && !data.svc_is_hsgp &&
             data.svc_data.n_svc > 0) {
             std::vector<T> svc_w_flat;
-            if constexpr (std::is_same_v<T, double>) {
-                apply_svc_nc_transform_double(params, data, layout, svc_w_flat);
-            } else if constexpr (std::is_same_v<T, arena::Var>) {
-                apply_svc_nc_transform_arena(params, data, layout, svc_w_flat);
-            } else {
-                Rcpp::stop("SVC non-centered: AD type not supported (the generic "
-                           "path samples via arena and verifies via numerical "
-                           "double).");
-            }
+            dispatch_nc_transform<T>("SVC", params, data, layout, svc_w_flat,
+                                     &apply_svc_nc_transform_double,
+                                     &apply_svc_nc_transform_arena);
             // Identify each term's global level by CENTERING the reconstructed
             // field rather than by adding the soft sum-to-zero penalty the
             // centered path uses.
@@ -674,7 +691,8 @@ T compute_log_post_generic(
     const ParamLayout& layout,
     LikelihoodFnT<T> likelihood_fn,
     const void* model_response_data,
-    bool skip_obs_loop = false
+    bool skip_obs_loop = false,
+    bool skip_prior = false
 ) {
     // The process count sizes the per-observation eta buffer below, so a model
     // wider than the buffer is a model this build cannot evaluate rather than
@@ -688,6 +706,13 @@ T compute_log_post_generic(
 
     GenericLogPostState<T> state;
     T log_post = initialize_generic_state(params, data, layout, state);
+    // The prior pass also BUILDS the state the observation loop reads, so
+    // `skip_prior` drops its value rather than skipping the pass. Recovering
+    // the log-likelihood as (full - prior-only) instead would cost a second
+    // full evaluation and cancel the prior in floating point, losing the
+    // precision a direct accumulation keeps wherever the prior is large next
+    // to the likelihood.
+    if (skip_prior) log_post = T(0.0);
     precompute_generic_fixed_eta(data, state);
 
     if (!skip_obs_loop) {
@@ -702,7 +727,8 @@ double compute_log_post_generic_spec_double(
     const std::vector<double>& params,
     const ModelData& data,
     const ParamLayout& layout,
-    bool skip_obs_loop = false);
+    bool skip_obs_loop = false,
+    bool skip_prior = false);
 
 extern template double compute_log_post_generic<double>(
     const std::vector<double>&,
@@ -710,6 +736,7 @@ extern template double compute_log_post_generic<double>(
     const ParamLayout&,
     LikelihoodFnT<double>,
     const void*,
+    bool,
     bool);
 
 #endif  // TULPA_LOG_POST_GENERIC_IMPL_H

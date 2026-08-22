@@ -271,5 +271,3 @@ struct LBFGSState {
         }
     }
 };
-
-// Parse solver string from R

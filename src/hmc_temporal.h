@@ -37,14 +37,20 @@ using tulpa::math::safe_log;
 // autodiff types (ad::Var, fwd::Dual, arena::Var) for gradient modes.
 // Pointer-based so strided per-group callers pass `phi + g * T_len`.
 
-// Sum of products of first differences of two series. With a == b this
-// is the acyclic part of phi' Q_RW1 phi; with a != b it is the
-// off-diagonal temporal term of a Kronecker (Q_s (x) Q_t) prior.
+// Sum of products of first differences of two series, a' Q_RW1 b. With
+// a == b this is phi' Q_RW1 phi; with a != b it is the off-diagonal
+// temporal term of a Kronecker (Q_s (x) Q_t) prior. `cyclic` adds the
+// wrap-around difference between the last and the first instant, so the
+// bilinear form and the quadratic form below carry one definition of the
+// wrap edge between them.
 template <typename T>
-inline T rw1_cross_form(const T* a, const T* b, int T_len) {
+inline T rw1_cross_form(const T* a, const T* b, int T_len, bool cyclic) {
   T quad = T(0.0);
   for (int t = 1; t < T_len; t++) {
     quad = quad + (a[t] - a[t - 1]) * (b[t] - b[t - 1]);
+  }
+  if (cyclic && T_len > 1) {
+    quad = quad + (a[0] - a[T_len - 1]) * (b[0] - b[T_len - 1]);
   }
   return quad;
 }
@@ -57,26 +63,26 @@ inline T rw1_quadratic_form(
     int T_len,
     bool cyclic
 ) {
-  T quad = rw1_cross_form(phi, phi, T_len);
-
-  // Cyclic: add edge from T to 1
-  if (cyclic && T_len > 1) {
-    T diff = phi[0] - phi[T_len - 1];
-    quad = quad + diff * diff;
-  }
-
-  return quad;
+  return rw1_cross_form(phi, phi, T_len, cyclic);
 }
 
-// Sum of products of second differences of two series (acyclic part of
-// the RW2 quadratic / Kronecker cross term).
+// Sum of products of second differences of two series, a' Q_RW2 b. As for
+// RW1, `cyclic` adds the two wrap-around second differences so the cross
+// form and the quadratic form share one definition of the wrap edges.
 template <typename T>
-inline T rw2_cross_form(const T* a, const T* b, int T_len) {
+inline T rw2_cross_form(const T* a, const T* b, int T_len, bool cyclic) {
+  if (T_len < 3) return T(0.0);
   T quad = T(0.0);
   for (int t = 2; t < T_len; t++) {
     T d2_a = a[t] - T(2.0) * a[t - 1] + a[t - 2];
     T d2_b = b[t] - T(2.0) * b[t - 1] + b[t - 2];
     quad = quad + d2_a * d2_b;
+  }
+  if (cyclic) {
+    quad = quad + (a[T_len - 2] - T(2.0) * a[T_len - 1] + a[0])
+                * (b[T_len - 2] - T(2.0) * b[T_len - 1] + b[0]);
+    quad = quad + (a[T_len - 1] - T(2.0) * a[0] + a[1])
+                * (b[T_len - 1] - T(2.0) * b[0] + b[1]);
   }
   return quad;
 }
@@ -89,19 +95,7 @@ inline T rw2_quadratic_form(
     int T_len,
     bool cyclic
 ) {
-  if (T_len < 3) return T(0.0);
-
-  T quad = rw2_cross_form(phi, phi, T_len);
-
-  // Cyclic: wrap around
-  if (cyclic) {
-    T diff2_1 = phi[T_len - 2] - T(2.0) * phi[T_len - 1] + phi[0];
-    quad = quad + diff2_1 * diff2_1;
-    T diff2_2 = phi[T_len - 1] - T(2.0) * phi[0] + phi[1];
-    quad = quad + diff2_2 * diff2_2;
-  }
-
-  return quad;
+  return rw2_cross_form(phi, phi, T_len, cyclic);
 }
 
 // Rank of the intrinsic-GMRF precision, defined in tulpa/sum_to_zero.h next to

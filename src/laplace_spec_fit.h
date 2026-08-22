@@ -174,28 +174,26 @@ inline const CilaOptions* unwrap_cila(
     return &storage;
 }
 
-// The request as a call-site temporary: `DebiasRequest(debias).ptr` owns the
-// unwrapped options for the duration of the full expression it appears in,
-// which is exactly the lifetime a driver call needs. Every nested kernel entry
-// forwards its `debias` argument this way, so the unwrap is one expression per
-// entry rather than a declaration plus a pointer plus a comment.
-struct DebiasRequest {
-    SubspaceDebiasOptions        opts;
-    const SubspaceDebiasOptions* ptr = nullptr;
-    explicit DebiasRequest(const Rcpp::Nullable<Rcpp::List>& spec) {
-        ptr = unwrap_debias(spec, opts);
+// An options request as a call-site temporary: `DebiasRequest(debias).ptr`
+// owns the unwrapped options for the duration of the full expression it
+// appears in, which is exactly the lifetime a driver call needs. Every nested
+// kernel entry forwards its `debias` / `cila` argument this way, so the unwrap
+// is one expression per entry rather than a declaration plus a pointer plus a
+// comment.
+//
+// One template over (options type, unwrap function) rather than one struct per
+// options type, so the next one is a typedef.
+template <class Options, const Options* (*Unwrap)(const Rcpp::Nullable<Rcpp::List>&, Options&)>
+struct OptionsRequest {
+    Options        opts;
+    const Options* ptr = nullptr;
+    explicit OptionsRequest(const Rcpp::Nullable<Rcpp::List>& spec) {
+        ptr = Unwrap(spec, opts);
     }
 };
 
-// The corrected-integrated-Laplace request as a call-site temporary, same
-// convention and same lifetime as DebiasRequest above.
-struct CilaRequest {
-    CilaOptions        opts;
-    const CilaOptions* ptr = nullptr;
-    explicit CilaRequest(const Rcpp::Nullable<Rcpp::List>& spec) {
-        ptr = unwrap_cila(spec, opts);
-    }
-};
+using DebiasRequest = OptionsRequest<SubspaceDebiasOptions, &unwrap_debias>;
+using CilaRequest   = OptionsRequest<CilaOptions, &unwrap_cila>;
 
 // Spec-solver inputs for a single-process built-in-family fit with an optional
 // single iid RE term, kept alive together: data borrows spec & resp (and resp

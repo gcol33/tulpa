@@ -42,8 +42,9 @@ inline std::size_t st_type_iv_triplet_count(const ModelData& data, int S, int T)
     const std::size_t Sz = (std::size_t)S, Tz = (std::size_t)T;
 
     // Entries st_add_qt_entries emits for one S-block: 4 per first difference
-    // (RW1), 9 per second difference (RW2). Both bounded above by the count
-    // below, which is what makes this an upper bound rather than an estimate.
+    // (RW1), 9 per second difference (RW2). An acyclic Q_t has T - 1 first
+    // differences (T - 2 second), a cyclic one adds the wrap rows to reach
+    // exactly T (T), so the counts below bound both settings.
     const std::size_t qt_emit =
         (st.temporal_type == TemporalType::RW2) ? (Tz * 9) : (Tz * 4);
 
@@ -58,21 +59,38 @@ inline std::size_t st_type_iv_triplet_count(const ModelData& data, int S, int T)
          + Sz * Sz * Tz;            // lambda_col * (J_S (x) I_T)
 }
 
-// Q_t on pattern: the RW1 / RW2 precision D' D for the ACYCLIC differences.
-// Acyclic unconditionally, because st_kronecker_temporal_quad passes
-// cyclic = false to rw1/rw2_quadratic_form whatever
-// SpatiotemporalData::temporal_cyclic says. This matches the density that is
-// EVALUATED, which is the operator a mass matrix has to be built from.
-inline void st_add_qt_entries(TemporalType type, int T,
+// Q_t on pattern: the RW1 / RW2 precision D' D. `cyclic` selects the same
+// operator SpatiotemporalData::temporal_cyclic selects in the density, adding
+// the wrap-around difference rows, so the matrix and the evaluated quadratic
+// form are the same Q_t.
+//
+// Each difference row is emitted as its own outer product, which is why the
+// wrap rows need no separate code path: they are the same stencil read at
+// indices that wrap.
+inline void st_add_qt_entries(TemporalType type, int T, bool cyclic,
                               std::vector<Eigen::Triplet<double>>& out,
                               int row_base, int col_base, double scale) {
+    // One difference row d = sum_k w[k] x[idx[k]] contributes
+    // scale * w[a] w[b] at (idx[a], idx[b]).
+    auto emit_row = [&](const int* idx, const double* w, int k) {
+        for (int a = 0; a < k; a++) {
+            for (int b = 0; b < k; b++) {
+                out.emplace_back(row_base + idx[a], col_base + idx[b],
+                                 scale * w[a] * w[b]);
+            }
+        }
+    };
+
     if (type == TemporalType::RW1) {
         // sum_{t=1}^{T-1} (a_t - a_{t-1})(b_t - b_{t-1}): D1' D1.
+        const double w[2] = {-1.0, 1.0};        // offsets t-1, t
         for (int t = 1; t < T; t++) {
-            out.emplace_back(row_base + t,     col_base + t,      scale);
-            out.emplace_back(row_base + t - 1, col_base + t - 1,  scale);
-            out.emplace_back(row_base + t,     col_base + t - 1, -scale);
-            out.emplace_back(row_base + t - 1, col_base + t,     -scale);
+            const int idx[2] = {t - 1, t};
+            emit_row(idx, w, 2);
+        }
+        if (cyclic && T > 1) {
+            const int idx[2] = {T - 1, 0};      // x_0 - x_{T-1}
+            emit_row(idx, w, 2);
         }
     } else if (type == TemporalType::RW2) {
         // sum_{t=2}^{T-1} d2_a[t] d2_b[t] with d2[t] = x_t - 2 x_{t-1} + x_{t-2}:
@@ -80,13 +98,14 @@ inline void st_add_qt_entries(TemporalType type, int T,
         if (T < 3) return;
         const double w[3] = {1.0, -2.0, 1.0};   // offsets t-2, t-1, t
         for (int t = 2; t < T; t++) {
-            for (int a = 0; a < 3; a++) {
-                for (int b = 0; b < 3; b++) {
-                    out.emplace_back(row_base + t - 2 + a,
-                                     col_base + t - 2 + b,
-                                     scale * w[a] * w[b]);
-                }
-            }
+            const int idx[3] = {t - 2, t - 1, t};
+            emit_row(idx, w, 3);
+        }
+        if (cyclic) {
+            const int wrap1[3] = {T - 2, T - 1, 0};
+            const int wrap2[3] = {T - 1, 0, 1};
+            emit_row(wrap1, w, 3);
+            emit_row(wrap2, w, 3);
         }
     }
 }
@@ -134,15 +153,15 @@ inline bool st_type_iv_precision(
     for (int s = 0; s < S; s++) {
         const int deg = st.n_neighbors.empty() ? 0 : st.n_neighbors[s];
         if (deg != 0) {
-            st_add_qt_entries(st.temporal_type, T, trip, s * T, s * T,
-                              kron_scale * (double)deg);
+            st_add_qt_entries(st.temporal_type, T, st.temporal_cyclic, trip,
+                              s * T, s * T, kron_scale * (double)deg);
         }
         if (st.adj_row_ptr.empty()) continue;
         for (int jj = st.adj_row_ptr[s]; jj < st.adj_row_ptr[s + 1]; jj++) {
             const int s2 = st.adj_col_idx[jj] - 1;   // stored 1-based
             if (s2 < 0 || s2 >= S) continue;
-            st_add_qt_entries(st.temporal_type, T, trip, s * T, s2 * T,
-                              -kron_scale);
+            st_add_qt_entries(st.temporal_type, T, st.temporal_cyclic, trip,
+                              s * T, s2 * T, -kron_scale);
         }
     }
 

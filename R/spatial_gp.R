@@ -13,7 +13,7 @@
 #'   takes exactly two, and so does any
 #'   sampler mode, because both store coordinates at a fixed 2-D stride.
 #' @param approx GP approximation: `"nngp"` (default, a nearest-neighbour GP with
-#'   the `cov` / `nu` / `nn` / `solver` arguments) or `"hsgp"` (a Hilbert-space
+#'   the `cov` / `nu` / `nn` arguments) or `"hsgp"` (a Hilbert-space
 #'   basis GP with `m` functions per dimension and boundary factor `c`).
 #' @param cov Covariance function (NNGP only). One of `"exponential"` or
 #'   `"matern"`.
@@ -22,11 +22,6 @@
 #' @param nn Number of nearest neighbours used in the NNGP approximation.
 #' @param m Number of HSGP basis functions per dimension (`approx = "hsgp"`).
 #' @param c HSGP boundary factor, `>= 1` (`approx = "hsgp"`).
-#' @param solver Linear solver for the GP. One of `"auto"`, `"cholesky"`,
-#'   `"cg"`, `"pcg"`, or `"gpu"`. `"gpu"` falls back to `"pcg"` when CUDA
-#'   support is unavailable.
-#' @param cg_tol Convergence tolerance for the (preconditioned) CG solver.
-#' @param cg_maxiter Maximum number of (preconditioned) CG iterations.
 #' @param shared Whether the spatial effect is shared across processes in a
 #'   multi-process model. `NULL` (default) shares the effect; `FALSE` fits
 #'   process-specific effects and emits a warning.
@@ -55,16 +50,12 @@ spatial_gp <- function(coords,
                        nn = 15,
                        m = 6,
                        c = 1.5,
-                       solver = c("auto", "cholesky", "cg", "pcg", "gpu"),
-                       cg_tol = 1e-6,
-                       cg_maxiter = 100,
                        shared = NULL,
                        scale_coords = TRUE,
                        parameterization = c("noncentered", "centered", "collapsed")) {
 
   approx <- match.arg(approx)
   cov <- match.arg(cov)
-  solver <- match.arg(solver)
   parameterization <- match.arg(parameterization)
 
   # Collapsed parameterization is deprecated (archived 2026-03-10)
@@ -77,20 +68,10 @@ spatial_gp <- function(coords,
     )
   }
 
-  # Check GPU availability if requested
-
-if (solver == "gpu" && !cpp_gpu_available()) {
-    warning("GPU solver requested but GPU support is not available. ",
-            "Falling back to PCG solver. ",
-            "To enable GPU support, reinstall tulpa with CUDA.",
-            call. = FALSE)
-    solver <- "pcg"
-  }
-
   coord_vars <- .parse_coord_spec(coords, "gp()", allow_nd = TRUE)
 
   # Hilbert-space approximation: a basis-function GP with `m` functions per
-  # dimension and boundary factor `c` (the NNGP cov/nu/nn/solver args do not
+  # dimension and boundary factor `c` (the NNGP cov/nu/nn args do not
   # apply). Returns a tulpa_hsgp spec.
   if (approx == "hsgp") {
     # The Hilbert-space basis is assembled on a 2-D domain and stored at a fixed
@@ -135,15 +116,6 @@ if (solver == "gpu" && !cpp_gpu_available()) {
   }
   nn <- as.integer(nn)
 
-  # Validate CG parameters
-  if (!is.numeric(cg_tol) || length(cg_tol) != 1 || cg_tol <= 0) {
-    stop("`cg_tol` must be a positive number", call. = FALSE)
-  }
-  if (!is.numeric(cg_maxiter) || length(cg_maxiter) != 1 || cg_maxiter < 1) {
-    stop("`cg_maxiter` must be a positive integer", call. = FALSE)
-  }
-  cg_maxiter <- as.integer(cg_maxiter)
-
   if (isFALSE(shared)) .warn_nonshared("spatial effects")
 
   structure(
@@ -153,9 +125,6 @@ if (solver == "gpu" && !cpp_gpu_available()) {
       cov = cov,
       nu = if (cov == "matern") nu else NULL,
       nn = nn,
-      solver = solver,
-      cg_tol = cg_tol,
-      cg_maxiter = cg_maxiter,
       shared = shared,
       scale_coords = scale_coords,
       parameterization = parameterization,
@@ -190,17 +159,6 @@ print.tulpa_gp <- function(x, ...) {
   }
   cat("Covariance:", cov_str, "\n")
   cat("Neighbors (NNGP):", x$nn, "\n")
-
-  # Solver info
-  solver_str <- switch(x$solver,
-    auto = "auto (Cholesky<2k, PCG<5k, GPU/CG for larger)",
-    cholesky = "Cholesky (exact, O(N*k^3))",
-    cg = sprintf("CG (iterative, tol=%.0e, maxiter=%d)", x$cg_tol, x$cg_maxiter),
-    pcg = sprintf("PCG (preconditioned, tol=%.0e, maxiter=%d)", x$cg_tol, x$cg_maxiter),
-    gpu = "GPU (CUDA/OpenCL batched Cholesky)",
-    x$solver
-  )
-  cat("Solver:", solver_str, "\n")
 
   cat("Shared:", if (!isFALSE(x$shared)) "Yes (enters both processes)" else "No", "\n")
 

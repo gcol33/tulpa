@@ -262,6 +262,15 @@ struct DenseMassMatrix {
   // Uses Eigen LLT for Cholesky decomposition
   bool update_from_covariance(const double* cov, int n_samples);
 
+  // The clamp on an adapted inverse-mass diagonal entry, and the two ways
+  // update_from_covariance leaves the metric. `diag_source` is a column-major
+  // n x n matrix whose diagonal is read; degrade_to_diag() is the same read
+  // plus the state a failed dense adaptation returns in, which is what makes
+  // the three exits of that function one line each rather than three copies of
+  // the clamp. Defined in hmc_mass_matrix.cpp beside the bounds they use.
+  void set_diag_from(const double* diag_source);
+  void degrade_to_diag(const double* diag_source);
+
   // Sample momentum: p ~ N(0, M) where M = C^{-1}
   // DIAG: p[i] = z * sqrt_mass_diag[i]
   // BLOCK_DIAG: diagonal for non-block params, L^{-T} z for block params

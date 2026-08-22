@@ -7,6 +7,7 @@
 #include "laplace_types.h"
 #include <Rcpp.h>
 #include <cmath>
+#include <vector>
 
 namespace tulpa {
 
@@ -75,8 +76,27 @@ namespace detail {
 inline double chol_at(const DenseMat& H, int j, int k)            { return H[j][k]; }
 inline double chol_at(const Rcpp::NumericMatrix& H, int j, int k) { return H(j, k); }
 
+// Element accessors for the FACTOR, the write side of chol_at(). The two
+// layouts the package stores L in -- an Rcpp::NumericMatrix and a column-major
+// raw buffer of leading dimension n -- differ in nothing but these two lines,
+// so the elimination below is written once.
+inline double chol_l(const Rcpp::NumericMatrix& L, int j, int k, int /*n*/) {
+    return L(j, k);
+}
+inline void chol_set_l(Rcpp::NumericMatrix& L, int j, int k, int /*n*/, double v) {
+    L(j, k) = v;
+}
+inline double chol_l(const double* L, int j, int k, int n) {
+    return L[j + k * n];
+}
+inline void chol_set_l(double* L, int j, int k, int n, double v) {
+    L[j + k * n] = v;
+}
+
 // Templated Cholesky factorization core: writes L (lower-triangular) and
-// log_det = log|H| from any matrix-like H supported by chol_at().
+// log_det = log|H| from any matrix-like H supported by chol_at() into any
+// factor layout supported by chol_set_l(). The raw-buffer instantiation
+// allocates nothing through Rcpp and is therefore the thread-safe one.
 //
 // Rank-deficient handling lives upstream: every Laplace callsite adds
 // `LAPLACE_UNIFORM_RIDGE * I` to H before calling here (see
@@ -84,112 +104,46 @@ inline double chol_at(const Rcpp::NumericMatrix& H, int j, int k) { return H(j, 
 // therefore assume H is PD; a non-positive pivot during elimination
 // surfaces as NaN through sqrt and propagates to log_det / delta so the
 // caller can detect it. There is no in-pivot clamp.
-template <class MatLike>
+template <class MatLike, class FactorLike>
 inline void cholesky_factorize_impl(
     const MatLike& H, int n,
-    Rcpp::NumericMatrix& L, double& log_det
-) {
-    log_det = 0.0;
-    for (int j = 0; j < n; j++) {
-        for (int k = 0; k <= j; k++) {
-            double sum = chol_at(H, j, k);
-            for (int i = 0; i < k; i++) sum -= L(j, i) * L(k, i);
-            if (j == k) {
-                // No in-pivot clamp: every callsite adds
-                // LAPLACE_UNIFORM_RIDGE * I upstream, so a non-positive
-                // pivot here means the upstream ridge wasn't applied
-                // (a bug) — let sqrt produce NaN and propagate.
-                L(j, k) = std::sqrt(sum);
-            } else {
-                L(j, k) = sum / L(k, k);
-            }
-        }
-    }
-    for (int j = 0; j < n; j++) {
-        log_det += std::log(L(j, j));
-    }
-    log_det *= 2.0;
-}
-
-// Raw-buffer variant. L_data is column-major, leading dimension n
-// (i.e. L(j,k) lives at L_data[j + k*n]). Thread-safe: no Rcpp allocation.
-template <class MatLike>
-inline void cholesky_factorize_impl_raw(
-    const MatLike& H, int n,
-    double* L_data, double& log_det
+    FactorLike& L, double& log_det
 ) {
     log_det = 0.0;
     for (int j = 0; j < n; j++) {
         for (int k = 0; k <= j; k++) {
             double sum = chol_at(H, j, k);
             for (int i = 0; i < k; i++) {
-                sum -= L_data[j + i * n] * L_data[k + i * n];
+                sum -= chol_l(L, j, i, n) * chol_l(L, k, i, n);
             }
             if (j == k) {
                 // No in-pivot clamp: every callsite adds
                 // LAPLACE_UNIFORM_RIDGE * I upstream, so a non-positive
                 // pivot here means the upstream ridge wasn't applied
-                // (a bug) — let sqrt produce NaN and propagate.
-                L_data[j + k * n] = std::sqrt(sum);
+                // (a bug) -- let sqrt produce NaN and propagate.
+                chol_set_l(L, j, k, n, std::sqrt(sum));
             } else {
-                L_data[j + k * n] = sum / L_data[k + k * n];
+                chol_set_l(L, j, k, n, sum / chol_l(L, k, k, n));
             }
         }
     }
     for (int j = 0; j < n; j++) {
-        log_det += std::log(L_data[j + j * n]);
+        log_det += std::log(chol_l(L, j, j, n));
     }
     log_det *= 2.0;
 }
 
+// Raw-buffer entry: L_data is column-major with leading dimension n (i.e.
+// L(j,k) lives at L_data[j + k*n]).
+template <class MatLike>
+inline void cholesky_factorize_impl_raw(
+    const MatLike& H, int n,
+    double* L_data, double& log_det
+) {
+    cholesky_factorize_impl(H, n, L_data, log_det);
+}
+
 } // namespace detail
-
-inline CholeskyResult dense_cholesky_solve(
-    const DenseMat& H, const DenseVec& rhs, int n
-) {
-    CholeskyResult res;
-    res.L = Rcpp::NumericMatrix(n, n);
-    res.delta = Rcpp::NumericVector(n);
-    res.success = true;
-
-    detail::cholesky_factorize_impl(H, n, res.L, res.log_det);
-
-    Rcpp::NumericVector z(n);
-    for (int j = 0; j < n; j++) {
-        double sum = rhs[j];
-        for (int k = 0; k < j; k++) sum -= res.L(j, k) * z[k];
-        z[j] = sum / res.L(j, j);
-    }
-
-    for (int j = n - 1; j >= 0; j--) {
-        double sum = z[j];
-        for (int k = j + 1; k < n; k++) sum -= res.L(k, j) * res.delta[k];
-        res.delta[j] = sum / res.L(j, j);
-    }
-
-    for (int j = 0; j < n; j++) {
-        if (!std::isfinite(res.delta[j])) {
-            res.success = false;
-            break;
-        }
-    }
-
-    return res;
-}
-
-inline void dense_cholesky_factorize(
-    const DenseMat& H, int n,
-    Rcpp::NumericMatrix& L, double& log_det
-) {
-    detail::cholesky_factorize_impl(H, n, L, log_det);
-}
-
-inline void dense_cholesky_factorize(
-    const Rcpp::NumericMatrix& H, int n,
-    Rcpp::NumericMatrix& L, double& log_det
-) {
-    detail::cholesky_factorize_impl(H, n, L, log_det);
-}
 
 // Solve (L L') out = rhs for an already-computed column-major lower-triangular
 // factor L_data (L(j,k) at L_data[j + k*n], k <= j). z_work is caller-supplied
@@ -220,6 +174,40 @@ inline bool chol_substitute_raw(
     }
     return true;
 }
+
+inline CholeskyResult dense_cholesky_solve(
+    const DenseMat& H, const DenseVec& rhs, int n
+) {
+    CholeskyResult res;
+    res.L = Rcpp::NumericMatrix(n, n);
+    res.delta = Rcpp::NumericVector(n);
+    res.success = true;
+
+    detail::cholesky_factorize_impl(H, n, res.L, res.log_det);
+
+    // Substitute through chol_substitute_raw, which the comment on it already
+    // calls the single source of truth. It reads a column-major factor, and an
+    // Rcpp::NumericMatrix IS column-major, so its buffer is passed directly.
+    std::vector<double> z_work(n);
+    res.success = chol_substitute_raw(REAL(res.L), n, rhs.data(),
+                                      REAL(res.delta), z_work.data());
+    return res;
+}
+
+inline void dense_cholesky_factorize(
+    const DenseMat& H, int n,
+    Rcpp::NumericMatrix& L, double& log_det
+) {
+    detail::cholesky_factorize_impl(H, n, L, log_det);
+}
+
+inline void dense_cholesky_factorize(
+    const Rcpp::NumericMatrix& H, int n,
+    Rcpp::NumericMatrix& L, double& log_det
+) {
+    detail::cholesky_factorize_impl(H, n, L, log_det);
+}
+
 
 // Raw-buffer solve: writes delta_out in-place, uses scratch.L/z, no Rcpp alloc.
 // Returns true if the back-substituted delta is finite. cholesky_factorize_impl_raw

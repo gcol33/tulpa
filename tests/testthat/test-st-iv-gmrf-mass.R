@@ -127,3 +127,38 @@ test_that("a Type-IV NUTS fit under mass_matrix = 'gmrf' installs the override",
   expect_false(fit_diag$st_gmrf_applied)
 })
 
+
+test_that("the cyclic flag reaches the interaction's quadratic form", {
+  # SpatiotemporalData::temporal_cyclic used to reach the rank in the
+  # normalizer and not the quadratic form beside it (gcol33/tulpa#596), so a
+  # cyclic RW2 interaction put rank_space * (T - 1) powers of tau in the
+  # target against an operator of rank rank_space * (T - 2). The wrap edges
+  # change the density at any position, so a flag that stops short of the
+  # quadratic form shows here as two identical log-posteriors.
+  f_acyc <- st_iv_fixture(family = "poisson", temporal = "rw2")
+  f_cyc  <- st_iv_fixture(family = "poisson", temporal = "rw2",
+                          temporal_cyclic = TRUE)
+  probe <- st_iv_layout(f_acyc)
+  set.seed(21)
+  q <- stats::rnorm(probe$n_params, sd = 0.3)
+  expect_false(isTRUE(all.equal(st_iv_lp(f_acyc, q), st_iv_lp(f_cyc, q))))
+
+  f1_acyc <- st_iv_fixture(family = "poisson", temporal = "rw1")
+  f1_cyc  <- st_iv_fixture(family = "poisson", temporal = "rw1",
+                           temporal_cyclic = TRUE)
+  expect_false(isTRUE(all.equal(st_iv_lp(f1_acyc, q), st_iv_lp(f1_cyc, q))))
+})
+
+test_that("diag(Q^-1) reproduces the log-posterior Hessian: cyclic RW1 and RW2", {
+  skip_on_cran()
+  # The assembly in st_type_iv_precision.h and the quadratic form in
+  # tulpa_priors_st.h are two writings of one operator, and the numerical
+  # Hessian reads the second. Scoring a cyclic fixture is what holds the
+  # assembly's wrap rows to the density's wrap edges.
+  expect_gmrf_matches_hessian(
+    st_iv_fixture(family = "poisson", temporal = "rw1", temporal_cyclic = TRUE))
+  expect_gmrf_matches_hessian(
+    st_iv_fixture(family = "poisson", temporal = "rw2", temporal_cyclic = TRUE))
+  expect_gmrf_matches_hessian(
+    st_iv_fixture(family = "gaussian", temporal = "rw2", temporal_cyclic = TRUE))
+})

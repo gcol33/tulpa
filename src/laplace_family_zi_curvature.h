@@ -122,11 +122,12 @@ inline MixtureCurvatureDeriv mixture_curvature_deriv(
     const double w0p = obs_curvature_deta_for_family(0.0, n_trials, eta_count,
                                                      family, phi, phi2);
 
-    // P0 = exp(L): P0' = P0 L', P0'' = P0(L'^2 + L''), P0''' = P0(L'^3 +
-    // 3 L' L'' + L'''), with L' = s0, L'' = -w0, L''' = -w0p.
-    const double P0_1 = P0 * s0;
-    const double P0_2 = P0 * (s0 * s0 - w0);
-    const double P0_3 = P0 * (s0 * s0 * s0 - 3.0 * s0 * w0 - w0p);
+    // P0 = exp(L) with L' = s0, L'' = -w0, L''' = -w0p.
+    double P0d[5];
+    p0_eta_derivs(P0, s0, w0, w0p, 0.0, /*order=*/3, P0d);
+    const double P0_1 = P0d[1];
+    const double P0_2 = P0d[2];
+    const double P0_3 = P0d[3];
 
     // D is the mixture density at y = 0, pi + (1 - pi) P0. It is non-positive
     // only where the arithmetic has already failed -- P0 underflowed and pi_z
@@ -249,13 +250,13 @@ inline MixtureCurvatureDeriv2 mixture_curvature_deriv2(
     const double w0pp = obs_curvature_deta2_for_family(0.0, n_trials, eta_count,
                                                        family, phi, phi2);
 
-    // P0 = exp(L) with L' = s0, L'' = -w0, L''' = -w0p, L'''' = -w0pp; the
-    // coefficients are the complete Bell polynomials.
-    const double P0_1 = P0 * s0;
-    const double P0_2 = P0 * (s0 * s0 - w0);
-    const double P0_3 = P0 * (s0 * s0 * s0 - 3.0 * s0 * w0 - w0p);
-    const double P0_4 = P0 * (s0 * s0 * s0 * s0 - 6.0 * s0 * s0 * w0
-                              + 3.0 * w0 * w0 - 4.0 * s0 * w0p - w0pp);
+    // P0 = exp(L) with L' = s0, L'' = -w0, L''' = -w0p, L'''' = -w0pp.
+    double P0d[5];
+    p0_eta_derivs(P0, s0, w0, w0p, w0pp, /*order=*/4, P0d);
+    const double P0_1 = P0d[1];
+    const double P0_2 = P0d[2];
+    const double P0_3 = P0d[3];
+    const double P0_4 = P0d[4];
 
     const double Dv = pi_z + q * P0;
     if (!(Dv > 0.0)) return mixture_curvature_deriv2_declined();
@@ -263,10 +264,12 @@ inline MixtureCurvatureDeriv2 mixture_curvature_deriv2(
     // pi is logistic in z alone; p0 depends on eta alone. Writing
     // D = p0 + pi (1 - p0), a pure eta-derivative is (1 - pi) p0^(m), a pure
     // z-derivative is pi^(n) (1 - p0), and a mixed one is -pi^(n) p0^(m).
-    const double pi1 = pq;
-    const double pi2 = pq * m1;
-    const double pi3 = pq * (m1 * m1 - 2.0 * pq);
-    const double pi4 = pq * m1 * (1.0 - 12.0 * pq);
+    double pid[5];
+    logit_pi_derivs(pi_z, pid);
+    const double pi1 = pid[1];
+    const double pi2 = pid[2];
+    const double pi3 = pid[3];
+    const double pi4 = pid[4];
     const double one_m_P0 = 1.0 - P0;
 
     double Dd[5][5];

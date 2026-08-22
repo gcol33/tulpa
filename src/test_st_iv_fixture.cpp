@@ -134,6 +134,7 @@ void build_st_iv_model(
     int S, int T,
     const std::string& family,
     const std::string& temporal,
+    bool temporal_cyclic,
     int st_parameterization,
     double sigma_beta,
     StIvData& sd,
@@ -204,7 +205,7 @@ void build_st_iv_model(
   st.n_params = S * T;
   st.temporal_type = (temporal == "rw2") ? tulpa::TemporalType::RW2
                                          : tulpa::TemporalType::RW1;
-  st.temporal_cyclic = false;
+  st.temporal_cyclic = temporal_cyclic;
 
   st.s_idx.assign(s_idx_r.begin(), s_idx_r.end());
   st.t_idx.assign(t_idx_r.begin(), t_idx_r.end());
@@ -247,6 +248,7 @@ Rcpp::List cpp_test_st_iv_nuts(
     int T,
     std::string family = "poisson",
     std::string temporal = "rw1",
+    bool temporal_cyclic = false,
     int st_parameterization = 0,
     std::string mass_matrix = "diag",
     int n_iter = 1000,
@@ -262,7 +264,8 @@ Rcpp::List cpp_test_st_iv_nuts(
   ModelData data;
   ParamLayout layout;
   build_st_iv_model(y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T,
-                    family, temporal, st_parameterization, sigma_beta,
+                    family, temporal, temporal_cyclic,
+                    st_parameterization, sigma_beta,
                     sd, spec, data, layout);
 
   const int n_params = layout.total_params;
@@ -316,6 +319,7 @@ Rcpp::List cpp_test_st_iv_layout(
     int T,
     std::string family = "poisson",
     std::string temporal = "rw1",
+    bool temporal_cyclic = false,
     int st_parameterization = 0,
     double sigma_beta = 10.0
 ) {
@@ -324,7 +328,8 @@ Rcpp::List cpp_test_st_iv_layout(
   ModelData data;
   ParamLayout layout;
   build_st_iv_model(y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T,
-                    family, temporal, st_parameterization, sigma_beta,
+                    family, temporal, temporal_cyclic,
+                    st_parameterization, sigma_beta,
                     sd, spec, data, layout);
   return Rcpp::List::create(
       Rcpp::Named("n_params") = layout.total_params,
@@ -351,6 +356,7 @@ Rcpp::List cpp_test_st_iv_gmrf_mass(
     Rcpp::NumericVector q,
     std::string family = "poisson",
     std::string temporal = "rw1",
+    bool temporal_cyclic = false,
     int st_parameterization = 0,
     double sigma_beta = 10.0,
     bool with_eta_weights = true
@@ -360,7 +366,8 @@ Rcpp::List cpp_test_st_iv_gmrf_mass(
   ModelData data;
   ParamLayout layout;
   build_st_iv_model(y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T,
-                    family, temporal, st_parameterization, sigma_beta,
+                    family, temporal, temporal_cyclic,
+                    st_parameterization, sigma_beta,
                     sd, spec, data, layout);
   // A spec shipping no IRLS callback is the decline path the generic
   // interface has to handle, so the fixture can drop it on request.
@@ -409,6 +416,7 @@ double cpp_test_st_iv_log_post(
     Rcpp::NumericVector q,
     std::string family = "poisson",
     std::string temporal = "rw1",
+    bool temporal_cyclic = false,
     int st_parameterization = 0,
     double sigma_beta = 10.0
 ) {
@@ -417,7 +425,8 @@ double cpp_test_st_iv_log_post(
   ModelData data;
   ParamLayout layout;
   build_st_iv_model(y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T,
-                    family, temporal, st_parameterization, sigma_beta,
+                    family, temporal, temporal_cyclic,
+                    st_parameterization, sigma_beta,
                     sd, spec, data, layout);
   if ((int)q.size() != layout.total_params) {
     Rcpp::stop("q has %d entries; the layout has %d parameters",

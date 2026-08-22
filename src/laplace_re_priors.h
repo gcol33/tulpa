@@ -38,27 +38,25 @@ struct BetaPrior {
     double mean_at(int j) const { return mean.empty() ? 0.0 : mean[j]; }
 };
 
+// Sink accessors, so the penalty below is written once for both the DenseMat /
+// DenseVec pair the sparse solvers carry and the Rcpp pair the dense ones do.
+// Adding a third sink needs one more pair of overloads here.
+inline void prior_sub_grad(DenseVec& g, int j, double v)            { g[j] -= v; }
+inline void prior_sub_grad(Rcpp::NumericVector& g, int j, double v) { g[j] -= v; }
+inline void prior_add_diag(DenseMat& H, int j, double v)            { H[j][j] += v; }
+inline void prior_add_diag(Rcpp::NumericMatrix& H, int j, double v) { H(j, j) += v; }
+
 // grad -= tau * (beta - mean); H += tau on the diagonal. Single source of
 // truth for the fixed-effect Gaussian penalty across every Laplace solver.
+template <class VecLike, class MatLike>
 inline void add_beta_prior(
-    DenseVec& grad, DenseMat& H,
+    VecLike& grad, MatLike& H,
     const Rcpp::NumericVector& x, int p, const BetaPrior& bp
 ) {
     for (int j = 0; j < p; j++) {
         double tau = bp.tau_at(j);
-        grad[j] -= tau * (x[j] - bp.mean_at(j));
-        H[j][j] += tau;
-    }
-}
-
-inline void add_beta_prior(
-    Rcpp::NumericVector& grad, Rcpp::NumericMatrix& H,
-    const Rcpp::NumericVector& x, int p, const BetaPrior& bp
-) {
-    for (int j = 0; j < p; j++) {
-        double tau = bp.tau_at(j);
-        grad[j] -= tau * (x[j] - bp.mean_at(j));
-        H(j, j) += tau;
+        prior_sub_grad(grad, j, tau * (x[j] - bp.mean_at(j)));
+        prior_add_diag(H, j, tau);
     }
 }
 
@@ -77,26 +75,16 @@ inline double log_prior_beta(
     return lp;
 }
 
+// The RE-group diagonal beside the fixed-effect penalty, same two sinks.
+template <class VecLike, class MatLike>
 inline void add_re_beta_priors(
-    DenseVec& grad, DenseMat& H,
+    VecLike& grad, MatLike& H,
     const Rcpp::NumericVector& x,
     int p, int n_re_groups, double tau_re
 ) {
     for (int g = 0; g < n_re_groups; g++) {
-        grad[p + g] -= tau_re * x[p + g];
-        H[p + g][p + g] += tau_re;
-    }
-    add_beta_prior(grad, H, x, p, BetaPrior());
-}
-
-inline void add_re_beta_priors(
-    Rcpp::NumericVector& grad, Rcpp::NumericMatrix& H,
-    const Rcpp::NumericVector& x,
-    int p, int n_re_groups, double tau_re
-) {
-    for (int g = 0; g < n_re_groups; g++) {
-        grad[p + g] -= tau_re * x[p + g];
-        H(p + g, p + g) += tau_re;
+        prior_sub_grad(grad, p + g, tau_re * x[p + g]);
+        prior_add_diag(H, p + g, tau_re);
     }
     add_beta_prior(grad, H, x, p, BetaPrior());
 }

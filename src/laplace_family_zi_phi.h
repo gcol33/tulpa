@@ -222,8 +222,8 @@ inline MixturePhiDeriv mixture_phi_deriv(
     }
 
     // pi^(n), the logistic block's own derivatives in z.
-    const double pid[5] = {pi_z, pq, pq * m1, pq * (m1 * m1 - 2.0 * pq),
-                           pq * m1 * (1.0 - 12.0 * pq)};
+    double pid[5];
+    logit_pi_derivs(pi_z, pid);
 
     // Dd[m][n][k] = d^(m+n+k) D / deta^m dz^n dphi^k, D = q B + pi. A pure
     // z-derivative differentiates q and pi together; anything touching eta or

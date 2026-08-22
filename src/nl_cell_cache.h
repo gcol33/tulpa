@@ -32,6 +32,7 @@
 #include <functional>
 #include <memory>
 #include <stdexcept>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -50,13 +51,30 @@ inline int nl_cell_cache_slots() {
 #endif
 }
 
-// Slot index of the calling thread, bounds-guarded for oversubscription.
+// Slot index of the calling thread.
+//
+// The slot count is fixed at construction from omp_get_max_threads(), so a
+// thread number past it means the cache is being read from a region wider
+// than the one it was sized for. Sending those threads to slot 0 would have
+// two of them claim and publish the same slot concurrently -- the exact race
+// the per-thread slots exist to prevent, and silent, since a claim over
+// another cell's payload still returns a well-formed T. The whole cache is
+// already a throwing interface (find() throws on an unheld cell), so the
+// out-of-range thread throws too rather than aliasing.
 inline int nl_cell_cache_self(int n_slots) {
     int t = 0;
 #ifdef _OPENMP
     t = omp_get_thread_num();
 #endif
-    return (t >= 0 && t < n_slots) ? t : 0;
+    if (t < 0 || t >= n_slots) {
+        throw std::runtime_error(
+            "tulpa NlCellCache: thread " + std::to_string(t) +
+            " has no slot (the cache holds " + std::to_string(n_slots) +
+            ", sized from omp_get_max_threads() at construction). A region "
+            "wider than that, or a nested region whose team numbering "
+            "restarts, would have two threads share one slot.");
+    }
+    return t;
 }
 
 template <typename T>

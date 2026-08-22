@@ -1,5 +1,56 @@
 # tulpa NEWS
 
+## 0.1.9
+
+* **A cyclic Type-IV interaction is fitted under the cyclic Q_t** (#596).
+  `st_kronecker_temporal_quad()` passed `cyclic = false` to the RW1 / RW2
+  kernels whatever `SpatiotemporalData::temporal_cyclic` said, while the GMRF
+  normalizer beside it read the flag through `rw2_rank`. A cyclic RW2
+  interaction therefore put `rank_space * (T - 1)` powers of `tau_st` in the
+  target against a quadratic form of rank `rank_space * (T - 2)`. The flag now
+  reaches the diagonal and the cross term alike: `rw1_cross_form` /
+  `rw2_cross_form` take it and carry the wrap-around differences, and the
+  quadratic forms are those cross forms at `a == b`, so the wrap edge has one
+  definition instead of two. `st_type_iv_precision()` emits the matching wrap
+  rows, each difference row being one outer product, so the mass override
+  assembles the operator the density evaluates. Consumer-package paths only:
+  nothing in tulpa sets `has_spatiotemporal`, so the Type-IV fixture is the
+  entry point, and it now takes `temporal_cyclic`.
+
+* **`gp()` no longer offers a linear solver** (#542). `solver`, `cg_tol` and
+  `cg_maxiter` were accepted, validated, stored on the spec and printed, and
+  never reached `GPData::solver_config`, so every fit ran the Cholesky path
+  whatever was asked for. The choice is not worth wiring: it governs only the
+  `k x k` neighbour system with `k = nn` (15 by default), where a Cholesky is
+  both exact and faster than CG. The kernels and their equivalence test stay,
+  reached through `GPSolverConfig`.
+
+* **An MCAR cell whose Sigma cannot be formed is infeasible, not silent**
+  (#569). An extreme log-Cholesky diagonal made `exp(ld)` infinite, the forward
+  substitution returned `1/Inf = 0`, and `Sigma^-1` came back a zero matrix: the
+  MCAR prior contributed nothing to the gradient or the Hessian while
+  `log|Sigma|` stayed finite. `mcar_sigma_inv_from_logchol()` now reports
+  feasibility, one `mcar_cell_sigma_inv()` reader serves the four closures and a
+  new `block.prep`, and the driver skips the cell as it does for every other
+  block factory.
+
+* **`NlCellCache` refuses a thread it has no slot for** (#566). An
+  out-of-range thread number was clamped to slot 0, so two threads would claim
+  and publish the same slot silently -- the race the per-thread slots exist to
+  prevent. It throws, matching `find()`.
+
+* **One writing of nine duplicated computations** (#523, #524, #536, #572).
+  The Cholesky elimination and its forward/back substitution, the CG and PCG
+  bodies and their copy-in branch, the adapted-diagonal clamp, the
+  fixed-effect prior scatter, the non-centered transform dispatch, the
+  options-request temporaries, the logistic derivative ladder and the Bell
+  coefficients of `P0` each had one definition again. `compute_log_lik_only()`
+  takes `skip_prior` instead of evaluating the log-posterior twice and
+  subtracting, which also stops the prior cancelling in floating point.
+  `matvec_add`, `compute_linear_predictors`, `sparse_matvec_csr` and
+  `make_se_kernel_matvec` route through `tulpa_parallel_for`, so a team of one
+  skips libgomp as `matvec` already did.
+
 ## 0.1.8
 
 * **The non-centered SPDE transform assembles the same precision as the Laplace

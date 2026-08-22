@@ -9,6 +9,33 @@
 
 namespace tulpa_hmc {
 
+// Bounds on an adapted inverse-mass diagonal entry, i.e. on the posterior
+// variance the sampler credits a coordinate with. A variance estimated from
+// a short warmup window can come back near zero (a coordinate the chain has
+// not moved on yet) or enormous (one it has just escaped a bad start along),
+// and either drives the shared step size off the whole trajectory. The
+// window is six orders of magnitude wide, so it binds only on those two
+// pathologies and never on an estimate the window can support.
+constexpr double INV_MASS_MIN = 1e-3;
+constexpr double INV_MASS_MAX = 1e3;
+
+// One clamp, read off the diagonal of a column-major n x n source.
+void DenseMassMatrix::set_diag_from(const double* diag_source) {
+  for (int i = 0; i < n; i++) {
+    double var_i = diag_source[static_cast<size_t>(i) * n + i];
+    inv_mass_diag[i] = std::max(INV_MASS_MIN, std::min(var_i, INV_MASS_MAX));
+    sqrt_mass_diag[i] = 1.0 / std::sqrt(inv_mass_diag[i]);
+  }
+}
+
+// The state a dense adaptation that could not complete leaves behind: the
+// clamped diagonal, and a metric that says it is diagonal.
+void DenseMassMatrix::degrade_to_diag(const double* diag_source) {
+  type = MassMatrixType::DIAG;
+  adapted = true;
+  set_diag_from(diag_source);
+}
+
 bool DenseMassMatrix::update_from_covariance(const double* cov, int n_samples) {
   // Map the covariance data into an Eigen matrix (column-major)
   Eigen::Map<const Eigen::MatrixXd> C(cov, n, n);
@@ -22,15 +49,6 @@ bool DenseMassMatrix::update_from_covariance(const double* cov, int n_samples) {
   // loosest and stiffest directions is at most about 100:1.
   constexpr double MAX_COND = 1e4;
 
-  // Bounds on an adapted inverse-mass diagonal entry, i.e. on the posterior
-  // variance the sampler credits a coordinate with. A variance estimated from
-  // a short warmup window can come back near zero (a coordinate the chain has
-  // not moved on yet) or enormous (one it has just escaped a bad start along),
-  // and either drives the shared step size off the whole trajectory. The
-  // window is six orders of magnitude wide, so it binds only on those two
-  // pathologies and never on an estimate the window can support.
-  constexpr double INV_MASS_MIN = 1e-3;
-  constexpr double INV_MASS_MAX = 1e3;
 
   // Absolute floor under the eigenvalue clip, for a spectrum whose largest
   // eigenvalue is itself tiny: lambda_max / MAX_COND is then below the point
@@ -41,13 +59,7 @@ bool DenseMassMatrix::update_from_covariance(const double* cov, int n_samples) {
   Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> eig(C);
   if (eig.info() != Eigen::Success) {
     // Eigendecomposition failed; degrade to diagonal.
-    type = MassMatrixType::DIAG;
-    adapted = true;
-    for (int i = 0; i < n; i++) {
-      double var_i = cov[static_cast<size_t>(i) * n + i];
-      inv_mass_diag[i] = std::max(INV_MASS_MIN, std::min(var_i, INV_MASS_MAX));
-      sqrt_mass_diag[i] = 1.0 / std::sqrt(inv_mass_diag[i]);
-    }
+    degrade_to_diag(cov);
     return false;
   }
 
@@ -75,13 +87,7 @@ bool DenseMassMatrix::update_from_covariance(const double* cov, int n_samples) {
   Eigen::LLT<Eigen::MatrixXd> llt(C_cond);
   if (llt.info() != Eigen::Success) {
     // Should not happen after eigenvalue clipping, but handle gracefully
-    type = MassMatrixType::DIAG;
-    adapted = true;
-    for (int i = 0; i < n; i++) {
-      double var_i = cov[static_cast<size_t>(i) * n + i];
-      inv_mass_diag[i] = std::max(INV_MASS_MIN, std::min(var_i, INV_MASS_MAX));
-      sqrt_mass_diag[i] = 1.0 / std::sqrt(inv_mass_diag[i]);
-    }
+    degrade_to_diag(cov);
     return false;
   }
 
@@ -95,11 +101,7 @@ bool DenseMassMatrix::update_from_covariance(const double* cov, int n_samples) {
               static_cast<size_t>(n) * n * sizeof(double));
 
   // Also update diagonal for fallback and find_reasonable_epsilon compatibility
-  for (int i = 0; i < n; i++) {
-    double var_i = C_cond(i, i);
-    inv_mass_diag[i] = std::max(INV_MASS_MIN, std::min(var_i, INV_MASS_MAX));
-    sqrt_mass_diag[i] = 1.0 / std::sqrt(inv_mass_diag[i]);
-  }
+  set_diag_from(C_cond.data());
 
   adapted = true;
   return true;

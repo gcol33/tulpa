@@ -57,11 +57,8 @@ double compute_log_lik_only(
     Rcpp::stop("tulpa: compute_log_lik_only requires a generic LikelihoodSpec "
                "ModelData (n_processes > 0 and data.likelihood_spec set).");
   }
-  const double lp = tulpa::compute_log_post_generic_spec_double(
-      params, data, layout, /*skip_obs_loop=*/false);
-  const double lpr = tulpa::compute_log_post_generic_spec_double(
-      params, data, layout, /*skip_obs_loop=*/true);
-  return lp - lpr;
+  return tulpa::compute_log_post_generic_spec_double(
+      params, data, layout, /*skip_obs_loop=*/false, /*skip_prior=*/true);
 }
 
 } // namespace tulpa_hmc

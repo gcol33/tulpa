@@ -15,7 +15,8 @@ double compute_log_post_generic_spec_double(
     const std::vector<double>& params,
     const ModelData& data,
     const ParamLayout& layout,
-    bool skip_obs_loop
+    bool skip_obs_loop,
+    bool skip_prior
 ) {
     // A malformed ModelData is raised rather than answered with a sentinel:
     // 0 is a valid flat log-posterior and -Inf a rejected proposal, so either
@@ -38,8 +39,9 @@ double compute_log_post_generic_spec_double(
     }
 
     double log_post = compute_log_post_generic<double>(
-        params, data, layout, spec->ll_double, data.model_response_data, skip_obs_loop);
-    if (spec->extra_prior != nullptr) {
+        params, data, layout, spec->ll_double, data.model_response_data,
+        skip_obs_loop, skip_prior);
+    if (!skip_prior && spec->extra_prior != nullptr) {
         log_post += spec->extra_prior(params, layout, data.model_response_data);
     }
     return log_post;
@@ -51,6 +53,7 @@ template double compute_log_post_generic<double>(
     const ParamLayout&,
     LikelihoodFnT<double>,
     const void*,
+    bool,
     bool);
 
 }  // namespace tulpa

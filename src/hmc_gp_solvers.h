@@ -9,6 +9,39 @@ inline GPSolver parse_gp_solver(const std::string& s) {
   return tulpa::parse_enum(s, table, GPSolver::AUTO);
 }
 
+// The iterative branch of both entries below: copy the leading n_nb x n_nb
+// block of C and the right-hand side into row-major scratch, solve, and write
+// the answer back. Function-local buffers: the system is k x k with k <= nn
+// (typically 10-20), so the allocation is negligible next to the solve, and
+// lazily-initialized thread_local vectors inside an OpenMP region corrupt the
+// heap under the mingw toolchain.
+inline bool cg_neighbor_solve(
+    const Eigen::MatrixXd& C_eigen, int n_nb,
+    const Eigen::VectorXd& rhs,
+    Eigen::VectorXd& out,
+    const GPSolverConfig& cfg,
+    bool preconditioned
+) {
+  std::vector<double> C_buf((size_t)n_nb * n_nb);
+  std::vector<double> b_buf(n_nb);
+  std::vector<double> x_buf(n_nb);
+  for (int j1 = 0; j1 < n_nb; j1++) {
+    for (int j2 = 0; j2 < n_nb; j2++) {
+      C_buf[j1 * n_nb + j2] = C_eigen(j1, j2);
+    }
+    b_buf[j1] = rhs(j1);
+  }
+  int it = preconditioned
+    ? dense_pcg_solve(C_buf.data(), n_nb, b_buf.data(), x_buf.data(),
+                      cfg.cg_tol, cfg.cg_maxiter)
+    : dense_cg_solve(C_buf.data(), n_nb, b_buf.data(), x_buf.data(),
+                     cfg.cg_tol, cfg.cg_maxiter);
+  if (it < 0) return false;
+  if (out.size() < n_nb) out.resize(n_nb);
+  for (int j = 0; j < n_nb; j++) out(j) = x_buf[j];
+  return true;
+}
+
 // -----------------------------------------------------------------------------
 // Neighbor-system solver dispatch
 // -----------------------------------------------------------------------------
@@ -21,7 +54,7 @@ inline GPSolver parse_gp_solver(const std::string& s) {
 // `llt` is reused as workspace by the Cholesky branch and ignored by CG.
 // Returns true on success, false on failure (non-PSD or CG non-convergence).
 //
-// CG is an explicit user choice (`spatial_gp(solver = "cg")`); we do NOT
+// CG is an explicit choice on GPSolverConfig; we do NOT
 // silently fall back to Cholesky on CG failure — the caller treats failure
 // the same way as a Cholesky non-PSD failure (typically: -INFINITY for
 // log-lik, or zero contribution for gradients), so HMC will reject the step.
@@ -35,29 +68,8 @@ inline bool solve_neighbor_system(
   GPSolver effective = cfg.effective_solver();
 
   if (effective == GPSolver::CG || effective == GPSolver::PCG) {
-    // CG path: copy the (top-left n_nb x n_nb) block of C into a row-major
-    // scratch buffer for the solver. Function-local buffers: the system is
-    // k x k with k <= nn (typically 10-20), so the allocation is negligible
-    // next to the solve, and lazily-initialized thread_local vectors inside
-    // an OpenMP region corrupt the heap under the mingw toolchain.
-    std::vector<double> C_buf((size_t)n_nb * n_nb);
-    std::vector<double> b_buf(n_nb);
-    std::vector<double> x_buf(n_nb);
-    for (int j1 = 0; j1 < n_nb; j1++) {
-      for (int j2 = 0; j2 < n_nb; j2++) {
-        C_buf[j1 * n_nb + j2] = C_eigen(j1, j2);
-      }
-      b_buf[j1] = c_eigen(j1);
-    }
-    int it = (effective == GPSolver::PCG)
-      ? dense_pcg_solve(C_buf.data(), n_nb, b_buf.data(), x_buf.data(),
-                        cfg.cg_tol, cfg.cg_maxiter)
-      : dense_cg_solve(C_buf.data(), n_nb, b_buf.data(), x_buf.data(),
-                       cfg.cg_tol, cfg.cg_maxiter);
-    if (it < 0) return false;
-    if (alpha_out.size() < n_nb) alpha_out.resize(n_nb);
-    for (int j = 0; j < n_nb; j++) alpha_out(j) = x_buf[j];
-    return true;
+    return cg_neighbor_solve(C_eigen, n_nb, c_eigen, alpha_out, cfg,
+                             effective == GPSolver::PCG);
   }
 
   // Default / Cholesky path
@@ -81,25 +93,8 @@ inline bool solve_neighbor_system_second(
   GPSolver effective = cfg.effective_solver();
 
   if (effective == GPSolver::CG || effective == GPSolver::PCG) {
-    // Function-local buffers for the same reason as solve_neighbor_system.
-    std::vector<double> C_buf((size_t)n_nb * n_nb);
-    std::vector<double> b_buf(n_nb);
-    std::vector<double> x_buf(n_nb);
-    for (int j1 = 0; j1 < n_nb; j1++) {
-      for (int j2 = 0; j2 < n_nb; j2++) {
-        C_buf[j1 * n_nb + j2] = C_eigen(j1, j2);
-      }
-      b_buf[j1] = rhs(j1);
-    }
-    int it = (effective == GPSolver::PCG)
-      ? dense_pcg_solve(C_buf.data(), n_nb, b_buf.data(), x_buf.data(),
-                        cfg.cg_tol, cfg.cg_maxiter)
-      : dense_cg_solve(C_buf.data(), n_nb, b_buf.data(), x_buf.data(),
-                       cfg.cg_tol, cfg.cg_maxiter);
-    if (it < 0) return false;
-    if (out.size() < n_nb) out.resize(n_nb);
-    for (int j = 0; j < n_nb; j++) out(j) = x_buf[j];
-    return true;
+    return cg_neighbor_solve(C_eigen, n_nb, rhs, out, cfg,
+                             effective == GPSolver::PCG);
   }
 
   if (out.size() < n_nb) out.resize(n_nb);

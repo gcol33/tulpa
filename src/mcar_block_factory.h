@@ -34,6 +34,7 @@
 #include <Rcpp.h>
 #include <vector>
 #include <cmath>
+#include <limits>
 
 namespace tulpa {
 
@@ -42,9 +43,34 @@ namespace tulpa {
 // R's .re_logchol_to_L): for j in 0..p-1, for i in j..p-1, theta holds
 // L[i][j], with the diagonal stored as log L[i][i]. Returns log|Sigma| via the
 // out-param (= 2 sum_i log L[i][i] = 2 sum of the diagonal coords).
-inline void mcar_sigma_inv_from_logchol(
+// A diagonal coordinate whose exponential leaves the representable range is an
+// INFEASIBLE cell, not a usable one. exp(ld) = Inf makes the forward
+// substitution below return 1/Inf = 0, so Sigma^-1 comes back all zeros and the
+// MCAR prior contributes nothing to the gradient or the Hessian while
+// log|Sigma| stays finite -- a silently vanishing prior. Underflow to 0 is the
+// mirror case: 1/0 = Inf poisons the whole row. The bound is half the
+// exponent range at each end, so that Sigma^-1 = M'M squares within range too.
+inline bool mcar_logchol_diag_ok(double ld) {
+    static const double hi = 0.5 * std::log(std::numeric_limits<double>::max());
+    static const double lo = 0.5 * std::log(std::numeric_limits<double>::min());
+    return std::isfinite(ld) && ld < hi && ld > lo;
+}
+
+// Returns false without touching `Sinv` / `log_det_Sigma` when any diagonal
+// coordinate is outside that range; the block's prep() reports the cell
+// infeasible on that answer, matching how the other factories decline.
+inline bool mcar_sigma_inv_from_logchol(
     const double* theta, int p, std::vector<double>& Sinv, double& log_det_Sigma
 ) {
+    {
+        int probe = 0;
+        for (int j = 0; j < p; ++j) {
+            for (int i = j; i < p; ++i) {
+                if (i == j && !mcar_logchol_diag_ok(theta[probe])) return false;
+                ++probe;
+            }
+        }
+    }
     std::vector<double> L((std::size_t) p * p, 0.0);
     log_det_Sigma = 0.0;
     int idx = 0;
@@ -80,6 +106,20 @@ inline void mcar_sigma_inv_from_logchol(
                 s += M[(std::size_t) k * p + a] * M[(std::size_t) k * p + b];
             Sinv[(std::size_t) a * p + b] = s;
         }
+    return true;
+}
+
+// Sigma^-1 and log|Sigma| for outer-grid cell k. One reader, so the prior
+// scatter, the log-prior and prep() all decide feasibility the same way.
+inline bool mcar_cell_sigma_inv(
+    const Rcpp::NumericMatrix& theta_grid, int k_grid, int axis0, int p,
+    std::vector<double>& Sinv, double& log_det_Sigma
+) {
+    std::vector<double> th((std::size_t) p * (p + 1) / 2);
+    for (int t = 0; t < (int) th.size(); ++t) {
+        th[t] = theta_grid(k_grid, axis0 + t);
+    }
+    return mcar_sigma_inv_from_logchol(th.data(), p, Sinv, log_det_Sigma);
 }
 
 // Q x_b for field b: (Q x_b)[i] = nnbr[i] x_b[i] - sum_{j~i} x_b[j].
@@ -221,10 +261,9 @@ inline LatentBlock make_mcar_block(
         const Rcpp::NumericVector& x, int k_grid
     ) {
         std::vector<double> Sinv; double log_det_Sigma;
-        {
-            std::vector<double> th(p * (p + 1) / 2);
-            for (int t = 0; t < (int) th.size(); ++t) th[t] = theta_grid(k_grid, axis0 + t);
-            mcar_sigma_inv_from_logchol(th.data(), p, Sinv, log_det_Sigma);
+        if (!mcar_cell_sigma_inv(theta_grid, k_grid, axis0, p,
+                                 Sinv, log_det_Sigma)) {
+            return;
         }
         // Gradient: grad[a*n+i] += -sum_b Sinv[a,b] (Q x_b)[i].
         std::vector<std::vector<double>> Qx(p, std::vector<double>(n));
@@ -336,10 +375,9 @@ inline LatentBlock make_mcar_block(
         const Rcpp::NumericVector& x, int k_grid
     ) -> double {
         std::vector<double> Sinv; double log_det_Sigma;
-        {
-            std::vector<double> th(p * (p + 1) / 2);
-            for (int t = 0; t < (int) th.size(); ++t) th[t] = theta_grid(k_grid, axis0 + t);
-            mcar_sigma_inv_from_logchol(th.data(), p, Sinv, log_det_Sigma);
+        if (!mcar_cell_sigma_inv(theta_grid, k_grid, axis0, p,
+                                 Sinv, log_det_Sigma)) {
+            return -INFINITY;
         }
         std::vector<std::vector<double>> Qx(p, std::vector<double>(n));
         for (int b = 0; b < p; ++b)
@@ -403,6 +441,16 @@ inline LatentBlock make_mcar_block(
         return folds;
     };
 
+
+    // A cell whose Sigma cannot be formed is INFEASIBLE, and the drivers
+    // already skip a cell whose prep() declines. Without this the four
+    // closures above would each return their own "contributes nothing", and a
+    // grid cell with a vanished prior reads as a finite, usable one.
+    block.prep = [p, axis0, theta_grid](int k_grid) -> bool {
+        std::vector<double> Sinv; double log_det_Sigma;
+        return mcar_cell_sigma_inv(theta_grid, k_grid, axis0, p,
+                                   Sinv, log_det_Sigma);
+    };
     return block;
 }
 
@@ -463,10 +511,9 @@ inline LatentBlock make_miid_block(
         const Rcpp::NumericVector& x, int k_grid
     ) {
         std::vector<double> Sinv; double log_det_Sigma;
-        {
-            std::vector<double> th(p * (p + 1) / 2);
-            for (int t = 0; t < (int) th.size(); ++t) th[t] = theta_grid(k_grid, axis0 + t);
-            mcar_sigma_inv_from_logchol(th.data(), p, Sinv, log_det_Sigma);
+        if (!mcar_cell_sigma_inv(theta_grid, k_grid, axis0, p,
+                                 Sinv, log_det_Sigma)) {
+            return;
         }
         // grad[a*n+i] += -sum_b Sinv[a,b] x[b*n+i].
         for (int a = 0; a < p; ++a)
@@ -503,10 +550,9 @@ inline LatentBlock make_miid_block(
         const Rcpp::NumericVector& x, int k_grid
     ) -> double {
         std::vector<double> Sinv; double log_det_Sigma;
-        {
-            std::vector<double> th(p * (p + 1) / 2);
-            for (int t = 0; t < (int) th.size(); ++t) th[t] = theta_grid(k_grid, axis0 + t);
-            mcar_sigma_inv_from_logchol(th.data(), p, Sinv, log_det_Sigma);
+        if (!mcar_cell_sigma_inv(theta_grid, k_grid, axis0, p,
+                                 Sinv, log_det_Sigma)) {
+            return -INFINITY;
         }
         double quad = 0.0;          // u'Pu = sum_{a,b} Sinv[a,b] sum_i u_{a,i} u_{b,i}
         for (int a = 0; a < p; ++a)
@@ -522,6 +568,16 @@ inline LatentBlock make_miid_block(
     };
 
     // No center (proper prior, anchored by the per-arm intercepts) and no prep.
+
+    // A cell whose Sigma cannot be formed is INFEASIBLE, and the drivers
+    // already skip a cell whose prep() declines. Without this the four
+    // closures above would each return their own "contributes nothing", and a
+    // grid cell with a vanished prior reads as a finite, usable one.
+    block.prep = [p, axis0, theta_grid](int k_grid) -> bool {
+        std::vector<double> Sinv; double log_det_Sigma;
+        return mcar_cell_sigma_inv(theta_grid, k_grid, axis0, p,
+                                   Sinv, log_det_Sigma);
+    };
     return block;
 }
 
