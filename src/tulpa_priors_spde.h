@@ -139,11 +139,14 @@ T compute_spde_hyper_prior(const std::vector<T>& params,
     if (layout.log_kappa_spde_idx < 0)      return T(0.0);
     if (layout.log_tau_spde_idx < 0)        return T(0.0);
 
+    // Anchors the PC calibration cannot represent fall back to a flat
+    // hyper-prior rather than emitting a -Inf or NaN inside a gradient; this is
+    // the one predicate every PC anchor in the package is read through
+    // (pc_prior.h), and the R and sampler doors that can name the offending
+    // argument check it before the fit starts.
     const auto& spde = data.spde_data;
-    if (spde.prior_range_0     <= 0.0 || spde.prior_range_alpha <= 0.0 ||
-        spde.prior_range_alpha >= 1.0 ||
-        spde.prior_sigma_0     <= 0.0 || spde.prior_sigma_alpha <= 0.0 ||
-        spde.prior_sigma_alpha >= 1.0) {
+    if (!pc_anchors_valid(spde.prior_range_0, spde.prior_range_alpha) ||
+        !pc_anchors_valid(spde.prior_sigma_0, spde.prior_sigma_alpha)) {
         return T(0.0);
     }
 
