@@ -339,7 +339,7 @@ inline Rcpp::List run_multi_block_nested_laplace(
                     [&](int idx, double w) { a[idx] += w; });
                 bool ok = true;
                 if (used_sparse_factor) {
-                    solver->solve(a.data(), z.data(), n_x);
+                    ok = solver->solve(a.data(), z.data(), n_x);
                 } else {
                     ok = chol_substitute_raw(scratch.chol.L.data(), n_x,
                                              a.data(), z.data(), zwork.data());

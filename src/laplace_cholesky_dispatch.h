@@ -67,9 +67,8 @@ inline bool dispatch_factor_solve_ridged(
         if (A) {
             if (!sparse_solver.analyzed()) sparse_solver.analyze(A);
             if (sparse_solver.factorize(A)) {
-                sparse_solver.solve(grad.data(), delta.data(), n_x);
-                ok = true;
-                for (int j = 0; j < n_x; j++) {
+                ok = sparse_solver.solve(grad.data(), delta.data(), n_x);
+                for (int j = 0; ok && j < n_x; j++) {
                     if (!std::isfinite(delta[j])) { ok = false; break; }
                 }
                 if (ok && log_det_out) *log_det_out = sparse_solver.log_determinant();

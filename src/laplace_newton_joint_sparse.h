@@ -131,7 +131,7 @@ inline bool joint_pd_step_solve(
             cholmod_sparse H_cholmod = H.as_cholmod(&solver.common());
             if (!solver.analyzed()) solver.analyze(&H_cholmod);
             if (!solver.factorize(&H_cholmod)) return false;
-            solver.solve(grad, delta, n_x);
+            if (!solver.solve(grad, delta, n_x)) return false;
             for (int i = 0; i < n_x; ++i)
                 if (!std::isfinite(delta[i])) return false;
             if (log_det) *log_det = solver.log_determinant();
@@ -327,9 +327,9 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
                                          used_block_schur, &scratch.s2z_block_schur_cache);
               have_factor = solve_ok && !used_block_schur;
           } else {
-              solver.solve(scratch.grad.data(), scratch.delta.data(), n_x);
-              solve_ok = true;
-              for (int j = 0; j < n_x; j++)
+              solve_ok = solver.solve(scratch.grad.data(),
+                                      scratch.delta.data(), n_x);
+              for (int j = 0; solve_ok && j < n_x; j++)
                   if (!std::isfinite(scratch.delta[j])) { solve_ok = false; break; }
               // A reuse step builds only the gradient, so H_builder lacks the
               // likelihood curvature and must NOT be factorized here. On the

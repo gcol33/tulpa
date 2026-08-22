@@ -105,7 +105,9 @@ inline SparseCholFactorizeFn get_sparse_chol_factorize_fn() {
 
 // ----------------------------------------------------------------------------
 // Solve A x = b using the current factorization. b and x have length n.
-// x may alias b. If the factor is invalid, fills x with zeros.
+// x may alias b. If the factor is invalid, fills x with NaN: zero solves
+// A x = b only for a zero b, and a caller testing a step against a tolerance
+// reads a zero fill as convergence.
 // ----------------------------------------------------------------------------
 typedef void (*SparseCholSolveFn)(
     sparse_chol_handle handle,
@@ -162,7 +164,10 @@ inline SparseCholSelInvDiagFn get_sparse_chol_sel_inv_diag_fn() {
 // Pure-function Takahashi partial inverse (no factorization required, no
 // handle). Caller supplies L = lower-triangular CSC of an LL^T factorisation
 // of Q. Z_out is filled column-major as a dense n*n with Q^{-1} on
-// pattern(L + L^T) and zeros elsewhere. Returns 1 on success, 0 on bad args.
+// pattern(L + L^T) and zeros elsewhere. Returns 1 on success, 0 on bad args
+// and on an L the recursion refuses: the diagonal must sit in the first slot
+// of each column, row indices must ascend strictly within a column, and every
+// pivot must be large enough to divide by. Z_out is left zeroed on a 0.
 // ----------------------------------------------------------------------------
 typedef int (*TakahashiPartialInverseDenseFn)(
     int n,

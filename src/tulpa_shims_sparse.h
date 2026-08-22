@@ -87,8 +87,12 @@ extern "C" void tulpa_sparse_chol_solve_impl(
     double* x,
     int n
 ) {
+    // NaN, not zero, on every failure: zero solves Ax = b only for a zero b,
+    // and a caller reading a zero step as convergence is the failure this
+    // guards. Matches the log-det shim, which already reports NaN.
     if (!handle) {
-        for (int i = 0; i < n; i++) x[i] = 0.0;
+        const double failed = std::numeric_limits<double>::quiet_NaN();
+        for (int i = 0; i < n; i++) x[i] = failed;
         return;
     }
     TULPA_SHIM_GUARD_BEGIN
@@ -137,8 +141,8 @@ extern "C" int tulpa_takahashi_partial_inverse_dense_impl(
 ) {
     if (n <= 0 || !L_col_ptr || !L_row_idx || !L_values || !Z_out) return 0;
     TULPA_SHIM_GUARD_BEGIN
-    tulpa::takahashi_partial_inverse_dense(n, L_col_ptr, L_row_idx, L_values, Z_out);
-    return 1;
+    return tulpa::takahashi_partial_inverse_dense(
+        n, L_col_ptr, L_row_idx, L_values, Z_out) ? 1 : 0;
     TULPA_SHIM_GUARD_END("tulpa_takahashi_partial_inverse_dense")
     return 0;
 }

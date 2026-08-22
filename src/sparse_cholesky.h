@@ -66,7 +66,15 @@ public:
 
     // Solve Ax = b using the current factorization.
     // b and x are dense vectors of length n.
-    void solve(const double* b, double* x, int n);
+    //
+    // Returns false when there is no usable factorization (factorize() has not
+    // run, or did not succeed) or CHOLMOD's solve fails, and fills x with NaN
+    // rather than zero. A zero vector solves Ax = b only for a zero b; a Newton
+    // loop testing max|delta| < tol reads a zero step as convergence, so a
+    // failed solve filled with zeros is reported as a converged fit. NaN trips
+    // the finiteness checks the callers already run, and the return value makes
+    // the failure readable without one.
+    bool solve(const double* b, double* x, int n);
 
     // Apply the inverse Cholesky square root of A to `ncol` standard normal
     // vectors at once: with A = P' L L' P, the columns of `x = P' L^-T eps`
@@ -87,7 +95,8 @@ public:
     double log_determinant() const;
 
     // Selected inversion (Takahashi equations): compute diagonal of A^{-1}
-    // from the Cholesky factor. O(nnz(L)) complexity.
+    // from the Cholesky factor. Costs what the recursion below costs; see the
+    // bound stated over takahashi_partial_inverse_csc().
     // Converts factor to simplicial LL' if currently supernodal.
     // Returns empty vector on failure, a failed conversion included.
     std::vector<double> selected_inversion_diagonal();
@@ -96,7 +105,8 @@ public:
     // Z = A^{-1} computed on pattern(L + L^T), the fill-in superset of A's
     // sparsity pattern. Returns a lookup keyed by ORIGINAL (pre-permutation)
     // (i, j): every (i, j) on A's nonzero pattern is present, since A's
-    // pattern is a subset of the factor's pattern. O(nnz(L)) complexity.
+    // pattern is a subset of the factor's pattern. Costs what the recursion
+    // below costs; see the bound stated over takahashi_partial_inverse_csc().
     // Converts factor to simplicial LL' if currently supernodal, and returns a
     // default-constructed SelectedInverse (n == 0) when that conversion fails.
     //
@@ -141,10 +151,9 @@ public:
     // Hessian H. On the FIRST call the sparsity pattern is discovered using
     // the supplied drop_tol (entries with |H[i][j]| <= drop_tol are dropped
     // off-diagonal), then cached for the lifetime of the solver. On
-    // subsequent calls the pattern is reused: only Ax is overwritten by
-    // reading H[Ai[idx]][j] for each cached non-zero. This skips the
-    // O(n^2) discovery scan and the per-iter malloc/free of cholmod_sparse,
-    // which dominate the inner Newton loop at n_x ~ 800 with banded H.
+    // subsequent calls the pattern is reused: only Ax is overwritten, which
+    // removes the per-iter malloc/free of cholmod_sparse that dominates the
+    // inner Newton loop at n_x ~ 800 with banded H.
     //
     // The returned pointer is owned by the solver and stable across calls.
     // Callers must NOT M_cholmod_free_sparse() it.
@@ -153,6 +162,16 @@ public:
     // (fixed across Newton iters, outer-grid cells, and hyperparameter
     // values). A reset() call clears the cached pattern; otherwise the
     // pattern is locked from the first refill.
+    //
+    // The discovery is numeric, so the contract is CHECKED rather than
+    // assumed: every call walks the whole lower triangle against the cached
+    // pattern, and an entry off it whose |H[i][j]| now exceeds drop_tol is
+    // counted through record_hessian_pattern_drop() -- the same channel a
+    // SparseHessianBuilder miss uses, which the enclosing driver's
+    // HessianPatternGuard raises on once its parallel region has joined.
+    // Without the check a cross term that happens to vanish at the first
+    // Newton iterate is absent from the pattern for the whole fit, and the
+    // Newton direction and log|H| come from a different matrix with no signal.
     cholmod_sparse* refill_from_dense(const DenseMat& H, int n, double drop_tol);
 
     // Drop the analyzed factor + cached sparse pattern. Next refill_from_dense
@@ -180,11 +199,30 @@ private:
 // position Lp[j] (first slot of the column). The recursion produces Z =
 // Q^{-1} on pattern(L); off-pattern entries of the true Q^{-1} are not
 // computed.
+//
+// Preconditions on L, all three load-bearing and all three checked at entry
+// (one pass over Lp / Li, cheap against the recursion itself) because these
+// are offered to callers holding a factor tulpa did not produce:
+//   - L[j,j] occupies the first slot of column j, i.e. Li[Lp[j]] == j;
+//   - row indices ascend strictly within a column, which the entry lookup
+//     relies on to stop early;
+//   - no duplicate row indices in a column.
+// A factor violating any of them produces silently wrong output otherwise, so
+// the recursion refuses it instead: false is returned and the output is left
+// zeroed. A Matrix::Cholesky simplicial factor (dCHMsimpl) satisfies all three.
+//
+// Cost is sum_j |col_j| * (|col_j| + average scan length within the searched
+// column), not O(nnz(L)): the inner entry lookup is a linear scan over another
+// column.
 // =====================================================================
 
 // Fill Zx_out (size = Lp[n]) with the Takahashi partial inverse on pattern(L).
 // Indexing matches L: Zx_out[idx] holds Z[Li[idx], j] for idx in [Lp[j], Lp[j+1]).
-void takahashi_partial_inverse_csc(
+// Returns false, leaving Zx_out zeroed, when a precondition above fails or a
+// pivot L[j,j] is too small to divide by; the column-wise recursion cannot be
+// completed past such a pivot, and reporting the columns that were reachable
+// would hand back zeros where a caller reads marginal variances.
+bool takahashi_partial_inverse_csc(
     int n,
     const int* Lp,
     const int* Li,
@@ -195,7 +233,8 @@ void takahashi_partial_inverse_csc(
 // Fill Z_out (size = n*n, column-major) with Z = Q^{-1} on pattern(L + L^T).
 // Off-pattern entries are zero. Symmetrises the lower triangle to upper.
 // Caller is responsible for allocating Z_out; it is fully overwritten.
-void takahashi_partial_inverse_dense(
+// Returns false, leaving Z_out zeroed, on the same failures as the CSC form.
+bool takahashi_partial_inverse_dense(
     int n,
     const int* Lp,
     const int* Li,

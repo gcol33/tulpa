@@ -10,6 +10,9 @@
 // All CHOLMOD calls must use M_cholmod_* names (or R_MATRIX_CHOLMOD() macro).
 
 #include "sparse_cholesky.h"
+#include "hessian_pattern_guard.h"
+
+#include <limits>
 
 // Include the Matrix stubs — this defines the actual function bodies
 // that call into the Matrix DLL at runtime. Must be in exactly one .cpp.
@@ -93,15 +96,28 @@ cholmod_sparse* SparseCholeskySolver::refill_from_dense(
         return A_owned_;
     }
 
-    // Subsequent calls: refill Ax in place from the cached (Ap, Ai).
-    // No allocator traffic, no n^2 discovery scan.
+    // Subsequent calls: refill Ax in place from the cached (Ap, Ai). No
+    // allocator traffic. The lower triangle is walked in full because the
+    // cached pattern came from the first H's VALUES: an entry that sat at or
+    // below drop_tol then has no slot, and its later contribution would be
+    // dropped with no signal. The cached column is consumed with a cursor as
+    // the scan passes its rows, so anything the scan reaches off the pattern is
+    // a contribution the factorization will not see -- counted where it would
+    // change the matrix, on the rule the discovery pass itself used.
     const int* Ap = static_cast<const int*>(A_owned_->p);
     const int* Ai = static_cast<const int*>(A_owned_->i);
     double* Ax    = static_cast<double*>(A_owned_->x);
     for (int j = 0; j < n; j++) {
+        int idx = Ap[j];
         const int end = Ap[j + 1];
-        for (int idx = Ap[j]; idx < end; idx++) {
-            Ax[idx] = H[Ai[idx]][j];
+        for (int i = j; i < n; i++) {
+            const double v = H[i][j];
+            if (idx < end && Ai[idx] == i) {
+                Ax[idx] = v;
+                idx++;
+            } else if (i == j || std::abs(v) > drop_tol) {
+                record_hessian_pattern_drop();
+            }
         }
     }
     return A_owned_;
@@ -144,10 +160,13 @@ std::size_t SparseCholeskySolver::analyzed_factor_bytes() const {
     return x_bytes + i_bytes + p_bytes;
 }
 
-void SparseCholeskySolver::solve(const double* b, double* x, int n) {
+bool SparseCholeskySolver::solve(const double* b, double* x, int n) {
+    // A failed solve fills NaN, never zero: zero is a valid step and reads as
+    // convergence to a caller testing max|delta| < tol. See the header.
+    const double failed = std::numeric_limits<double>::quiet_NaN();
     if (!factored_ || !factor_) {
-        for (int i = 0; i < n; i++) x[i] = 0.0;
-        return;
+        for (int i = 0; i < n; i++) x[i] = failed;
+        return false;
     }
 
     // Create dense RHS from raw pointer (stack-allocated, no CHOLMOD alloc)
@@ -164,13 +183,14 @@ void SparseCholeskySolver::solve(const double* b, double* x, int n) {
     // Solve Ax = b (CHOLMOD_A = 0: full solve using LL' or LDL')
     cholmod_dense* x_dense = M_cholmod_solve(CHOLMOD_A, factor_, &b_dense, &common_);
 
-    if (x_dense) {
-        double* xp = static_cast<double*>(x_dense->x);
-        for (int i = 0; i < n; i++) x[i] = xp[i];
-        M_cholmod_free_dense(&x_dense, &common_);
-    } else {
-        for (int i = 0; i < n; i++) x[i] = 0.0;
+    if (!x_dense) {
+        for (int i = 0; i < n; i++) x[i] = failed;
+        return false;
     }
+    double* xp = static_cast<double*>(x_dense->x);
+    for (int i = 0; i < n; i++) x[i] = xp[i];
+    M_cholmod_free_dense(&x_dense, &common_);
+    return true;
 }
 
 bool SparseCholeskySolver::apply_inv_chol_factor(const double* eps, double* x,
@@ -223,15 +243,40 @@ double SparseCholeskySolver::log_determinant() const {
 //
 // Z is symmetric, so Z[i,k] = Z[k,i] when needed.
 
-void takahashi_partial_inverse_csc(
+// The three structural preconditions the recursion below reads L under. One
+// pass over Lp / Li; cheap against the recursion, and the only thing standing
+// between a foreign factor and silently wrong marginal variances.
+static bool takahashi_valid_factor(int n, const int* Lp, const int* Li) {
+    if (n < 0 || Lp[0] != 0) return false;
+    for (int j = 0; j < n; j++) {
+        const int col_start = Lp[j];
+        const int col_end = Lp[j + 1];
+        if (col_end < col_start) return false;
+        if (col_start == col_end) continue;
+        // Diagonal in the first slot: the recursion reads L[j,j] as Lx[Lp[j]].
+        if (Li[col_start] != j) return false;
+        // Strictly ascending, which is both "sorted" and "no duplicates": the
+        // entry lookup stops at the first row index past the one it wants.
+        for (int s = col_start + 1; s < col_end; s++) {
+            if (Li[s] <= Li[s - 1]) return false;
+            if (Li[s] >= n) return false;
+        }
+    }
+    return true;
+}
+
+bool takahashi_partial_inverse_csc(
     int n,
     const int* Lp,
     const int* Li,
     const double* Lx,
     double* Zx_out
 ) {
+    if (n <= 0) return n == 0;
     int nnz = Lp[n];
     for (int idx = 0; idx < nnz; idx++) Zx_out[idx] = 0.0;
+
+    if (!takahashi_valid_factor(n, Lp, Li)) return false;
 
     for (int j = n - 1; j >= 0; j--) {
         int col_start = Lp[j];
@@ -239,7 +284,14 @@ void takahashi_partial_inverse_csc(
         if (col_start >= col_end) continue;
 
         double Ljj = Lx[col_start];
-        if (std::abs(Ljj) < 1e-15) continue;
+        // A pivot this small is not a column to skip: every later column's
+        // recursion reads Z entries from this one, so continuing produces a
+        // partial inverse whose zeros are indistinguishable from computed
+        // values, including a zero marginal variance at node j.
+        if (!(std::abs(Ljj) >= 1e-15)) {
+            for (int idx = 0; idx < nnz; idx++) Zx_out[idx] = 0.0;
+            return false;
+        }
         double Ljj_inv = 1.0 / Ljj;
 
         // Off-diagonal entries Z[i,j] for i > j (bottom-up within column j).
@@ -277,21 +329,24 @@ void takahashi_partial_inverse_csc(
         }
         Zx_out[col_start] = Ljj_inv * (Ljj_inv - sum_diag);
     }
+    return true;
 }
 
-void takahashi_partial_inverse_dense(
+bool takahashi_partial_inverse_dense(
     int n,
     const int* Lp,
     const int* Li,
     const double* Lx,
     double* Z_out
 ) {
+    // Zero the dense buffer first: a refused recursion leaves it zeroed rather
+    // than holding whatever the caller allocated.
+    for (size_t idx = 0; idx < (size_t)n * n; idx++) Z_out[idx] = 0.0;
+    if (n <= 0) return n == 0;
+
     int nnz = Lp[n];
     std::vector<double> Zx(nnz, 0.0);
-    takahashi_partial_inverse_csc(n, Lp, Li, Lx, Zx.data());
-
-    // Zero the dense buffer.
-    for (int idx = 0; idx < n * n; idx++) Z_out[idx] = 0.0;
+    if (!takahashi_partial_inverse_csc(n, Lp, Li, Lx, Zx.data())) return false;
 
     // Scatter Zx onto the dense layout (column-major) and mirror to upper.
     for (int j = 0; j < n; j++) {
@@ -302,6 +357,7 @@ void takahashi_partial_inverse_dense(
             Z_out[j + (size_t)i * n] = z;     // [j, i] (symmetric)
         }
     }
+    return true;
 }
 
 double SparseCholeskySolver::SelectedInverse::at(int i_orig, int j_orig) const {
@@ -369,7 +425,11 @@ SparseCholeskySolver::SelectedInverse SparseCholeskySolver::selected_inversion_f
     out.Lp.assign(Lp, Lp + n + 1);
     out.Li.assign(Li, Li + nnz);
     out.Zx.assign(nnz, 0.0);
-    takahashi_partial_inverse_csc(n, Lp, Li, Lx, out.Zx.data());
+    // A refused recursion (malformed factor, unusable pivot) returns the empty
+    // struct every caller already treats as failure, rather than a Z of zeros.
+    if (!takahashi_partial_inverse_csc(n, Lp, Li, Lx, out.Zx.data())) {
+        return SelectedInverse{};
+    }
 
     // original index -> permuted index (inverse of the factor's Perm).
     out.perm_inv.resize(n);

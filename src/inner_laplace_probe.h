@@ -54,7 +54,7 @@ inline bool inner_probe_column(int n_x, int i,
   std::fill(rhs.begin(), rhs.end(), 0.0);
   rhs[i] = 1.0;
   if (use_sparse) {
-    sparse_solver.solve(rhs.data(), v.data(), n_x);
+    if (!sparse_solver.solve(rhs.data(), v.data(), n_x)) return false;
     for (int k = 0; k < n_x; k++) {
       if (!std::isfinite(v[k])) return false;
     }

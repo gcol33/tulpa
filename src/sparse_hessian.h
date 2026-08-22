@@ -160,11 +160,21 @@ public:
     // Used to apply the uniform upstream regularization (see
     // `LAPLACE_UNIFORM_RIDGE` in laplace_cholesky.h) after scatter and
     // before factorization.
+    //
+    // Every Laplace factorize callsite depends on this ridge landing on EVERY
+    // column for positive-definiteness on a rank-deficient prior. A column with
+    // no (j, j) in its pattern cannot take it, which is a malformed pattern
+    // rather than a column to pass over, so the miss is counted through the
+    // same channel a scatter miss uses and the driver's HessianPatternGuard
+    // raises on it once its parallel region has joined. Raising here is not
+    // available: this runs inside those regions.
     void add_uniform_ridge(double ridge) {
         for (int j = 0; j < n; j++) {
             const int idx = col_ptr[j];
             if (idx < col_ptr[j + 1] && row_idx[idx] == j) {
                 values[idx] += ridge;
+            } else if (ridge != 0.0) {
+                record_hessian_pattern_drop();
             }
         }
     }

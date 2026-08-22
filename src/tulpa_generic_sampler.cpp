@@ -203,151 +203,6 @@ static std::vector<std::vector<double>> run_hmc_simple(
 }
 
 // ============================================================================
-// Rcpp entry point: fit a Gaussian GLM via generic tulpa interface
-// ============================================================================
-// [[Rcpp::export]]
-Rcpp::List cpp_tulpa_fit_gaussian(
-    Rcpp::NumericVector y_r,
-    Rcpp::NumericMatrix X_r,
-    double sigma_beta = 10.0,
-    int n_iter = 2000,
-    int n_warmup = 1000,
-    double step_size = 0.05,
-    int n_leapfrog = 10,
-    int seed = 42
-) {
-    const int N = y_r.size();
-    const int p = X_r.ncol();
-
-    if (N < 1) Rcpp::stop("cpp_tulpa_fit_gaussian: `y` is empty.");
-    if ((int)X_r.nrow() != N) {
-        Rcpp::stop("cpp_tulpa_fit_gaussian: nrow(X) (%d) must equal length(y) "
-                   "(%d).", (int)X_r.nrow(), N);
-    }
-    if (p < 1) Rcpp::stop("cpp_tulpa_fit_gaussian: `X` has no columns.");
-    if (n_iter < 1) {
-        Rcpp::stop("cpp_tulpa_fit_gaussian: n_iter (%d) must be at least 1.",
-                   n_iter);
-    }
-    if (n_warmup < 0 || n_warmup >= n_iter) {
-        Rcpp::stop("cpp_tulpa_fit_gaussian: n_warmup (%d) must be in "
-                   "[0, n_iter) with n_iter = %d.", n_warmup, n_iter);
-    }
-
-    // Set up model-specific response data
-    GaussianData gd;
-    gd.y.assign(y_r.begin(), y_r.end());
-
-    // Set up generic ModelData
-    ModelData data;
-    data.N = N;
-    data.n_processes = 1;
-    data.sigma_beta = sigma_beta;
-
-    // Process 0: the single linear predictor
-    tulpa::ProcessData proc;
-    proc.p = p;
-    proc.X_flat.resize(N * p);
-    for (int i = 0; i < N; i++) {
-        for (int j = 0; j < p; j++) {
-            proc.X_flat[i * p + j] = X_r(i, j);
-        }
-    }
-    data.processes.push_back(proc);
-    data.model_response_data = &gd;
-
-    // Sharing spec (trivial for single process)
-    data.sharing.init(1);
-
-    // ZI fields (not used)
-    data.zi_type = tulpa::ZIType::NONE;
-    data.p_zi = 0;
-    data.p_oi = 0;
-    data.zi_prior_sd = 1.0;
-    data.oi_prior_sd = 1.0;
-
-    // Set up ParamLayout
-    ParamLayout layout;
-    layout.process_beta_start.push_back(0);
-    layout.process_beta_count.push_back(p);
-
-    // Extra parameter: log(sigma) — the residual standard deviation
-    layout.extra_offset = p;
-    layout.n_extra_params = 1;
-    layout.total_params = p + 1;
-
-    // No RE, spatial, temporal, etc.
-    layout.has_re = false;
-    layout.has_zi = false;
-    layout.has_oi = false;
-
-    // Initial values: zeros for beta, log(1) = 0 for log_sigma
-    std::vector<double> init(layout.total_params, 0.0);
-
-    // Run HMC
-    auto samples = run_hmc_simple(
-        init, data, layout,
-        n_iter, n_warmup,
-        step_size, n_leapfrog,
-        static_cast<unsigned int>(seed)
-    );
-
-    int n_samples = static_cast<int>(samples.size());
-
-    // Convert to R matrix [n_samples x n_params]
-    Rcpp::NumericMatrix draws(n_samples, layout.total_params);
-    for (int s = 0; s < n_samples; s++) {
-        for (int j = 0; j < layout.total_params; j++) {
-            draws(s, j) = samples[s][j];
-        }
-    }
-
-    // Name columns
-    Rcpp::CharacterVector col_names(layout.total_params);
-    for (int j = 0; j < p; j++) {
-        col_names[j] = "beta[" + std::to_string(j + 1) + "]";
-    }
-    col_names[p] = "log_sigma";
-    Rcpp::colnames(draws) = col_names;
-
-    // Compute posterior means
-    Rcpp::NumericVector means(layout.total_params, 0.0);
-    for (int s = 0; s < n_samples; s++) {
-        for (int j = 0; j < layout.total_params; j++) {
-            means[j] += draws(s, j) / n_samples;
-        }
-    }
-    means.names() = col_names;
-
-    return Rcpp::List::create(
-        Rcpp::Named("draws") = draws,
-        Rcpp::Named("means") = means,
-        Rcpp::Named("n_samples") = n_samples,
-        Rcpp::Named("n_params") = layout.total_params,
-        Rcpp::Named("accept_rate") = -1.0  // Not tracked in simple version
-    );
-}
-
-// ============================================================================
-// Generic NUTS sampler for multi-process models
-// Uses tulpa's full NUTS backend with dual averaging and mass matrix adaptation.
-// Model packages provide a LikelihoodFn<double> via LikelihoodSpec.
-// ============================================================================
-
-// Forward declare from hmc_sampler.cpp
-// Default for inv_metric_init lives in hmc_sampler_funcs.h.
-namespace tulpa_hmc {
-    HMCResultCpp run_hmc_chain_cpp(
-        const std::vector<double>& q_init,
-        const ModelData& data,
-        const ParamLayout& layout,
-        int n_iter, int n_warmup, int L, int chain_id,
-        unsigned int seed, bool verbose, int max_treedepth,
-        MassMatrixType metric_type, double adapt_delta, int riemannian,
-        const std::vector<double>& inv_metric_init);
-}
-
-// ============================================================================
 // Shared Gaussian fixture: build the (GaussianData, LikelihoodSpec, ModelData,
 // ParamLayout) bundle from y/X. The caller owns gd/spec/data/layout as locals
 // so the pointers ModelData holds into gd/spec stay valid. Single source of
@@ -409,6 +264,112 @@ static Rcpp::CharacterVector gaussian_col_names(int p) {
     cn[p] = "log_sigma";
     return cn;
 }
+
+// ============================================================================
+// Rcpp entry point: fit a Gaussian GLM via generic tulpa interface
+// ============================================================================
+// [[Rcpp::export]]
+Rcpp::List cpp_tulpa_fit_gaussian(
+    Rcpp::NumericVector y_r,
+    Rcpp::NumericMatrix X_r,
+    double sigma_beta = 10.0,
+    int n_iter = 2000,
+    int n_warmup = 1000,
+    double step_size = 0.05,
+    int n_leapfrog = 10,
+    int seed = 42
+) {
+    const int N = y_r.size();
+    const int p = X_r.ncol();
+
+    if (N < 1) Rcpp::stop("cpp_tulpa_fit_gaussian: `y` is empty.");
+    if ((int)X_r.nrow() != N) {
+        Rcpp::stop("cpp_tulpa_fit_gaussian: nrow(X) (%d) must equal length(y) "
+                   "(%d).", (int)X_r.nrow(), N);
+    }
+    if (p < 1) Rcpp::stop("cpp_tulpa_fit_gaussian: `X` has no columns.");
+    if (n_iter < 1) {
+        Rcpp::stop("cpp_tulpa_fit_gaussian: n_iter (%d) must be at least 1.",
+                   n_iter);
+    }
+    if (n_warmup < 0 || n_warmup >= n_iter) {
+        Rcpp::stop("cpp_tulpa_fit_gaussian: n_warmup (%d) must be in "
+                   "[0, n_iter) with n_iter = %d.", n_warmup, n_iter);
+    }
+
+    // gd / spec are locals so the pointers ModelData holds into them stay
+    // valid for the whole fit. The layout comes from compute_param_layout via
+    // the shared fixture: it owns the ModelData -> layout rule, and a second
+    // hand-built copy here reads any field it does not set at whatever default
+    // ParamLayout happens to carry.
+    GaussianData gd;
+    tulpa::LikelihoodSpec spec;
+    ModelData data;
+    ParamLayout layout;
+    build_gaussian_model(y_r, X_r, sigma_beta, gd, spec, data, layout);
+
+    // Initial values: zeros for beta, log(1) = 0 for log_sigma
+    std::vector<double> init(layout.total_params, 0.0);
+
+    // Run HMC
+    auto samples = run_hmc_simple(
+        init, data, layout,
+        n_iter, n_warmup,
+        step_size, n_leapfrog,
+        static_cast<unsigned int>(seed)
+    );
+
+    int n_samples = static_cast<int>(samples.size());
+
+    // Convert to R matrix [n_samples x n_params]
+    Rcpp::NumericMatrix draws(n_samples, layout.total_params);
+    for (int s = 0; s < n_samples; s++) {
+        for (int j = 0; j < layout.total_params; j++) {
+            draws(s, j) = samples[s][j];
+        }
+    }
+
+    // Name columns
+    Rcpp::CharacterVector col_names = gaussian_col_names(p);
+    Rcpp::colnames(draws) = col_names;
+
+    // Compute posterior means
+    Rcpp::NumericVector means(layout.total_params, 0.0);
+    for (int s = 0; s < n_samples; s++) {
+        for (int j = 0; j < layout.total_params; j++) {
+            means[j] += draws(s, j) / n_samples;
+        }
+    }
+    means.names() = col_names;
+
+    return Rcpp::List::create(
+        Rcpp::Named("draws") = draws,
+        Rcpp::Named("means") = means,
+        Rcpp::Named("n_samples") = n_samples,
+        Rcpp::Named("n_params") = layout.total_params,
+        Rcpp::Named("accept_rate") = -1.0  // Not tracked in simple version
+    );
+}
+
+// ============================================================================
+// Generic NUTS sampler for multi-process models
+// Uses tulpa's full NUTS backend with dual averaging and mass matrix adaptation.
+// Model packages provide a LikelihoodFn<double> via LikelihoodSpec.
+// ============================================================================
+
+// Forward declare from hmc_sampler.cpp
+// Default for inv_metric_init lives in hmc_sampler_funcs.h.
+namespace tulpa_hmc {
+    HMCResultCpp run_hmc_chain_cpp(
+        const std::vector<double>& q_init,
+        const ModelData& data,
+        const ParamLayout& layout,
+        int n_iter, int n_warmup, int L, int chain_id,
+        unsigned int seed, bool verbose, int max_treedepth,
+        MassMatrixType metric_type, double adapt_delta, int riemannian,
+        const std::vector<double>& inv_metric_init);
+}
+
 
 // [[Rcpp::export]]
 Rcpp::List cpp_tulpa_fit_generic(
