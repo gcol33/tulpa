@@ -8,6 +8,7 @@
 #include <random>
 #include <vector>
 
+#include "hmc_mass_drift.h"
 #include "hmc_sampler.h"
 
 namespace tulpa_hmc {
@@ -20,42 +21,6 @@ namespace tulpa_hmc {
 double nuts_compute_hamiltonian_fast(double log_prob, const double* p,
                                      const DenseMassMatrix& mass, int n) {
   return -log_prob + mass.kinetic_energy(p);
-}
-
-// Drift: q += coeff * C * p, where C = M^{-1} carries the full mass structure
-// (identity / block-diagonal / diagonal / dense). Factored out of the leapfrog
-// step so every scheme's drift sub-steps reuse the same fused kernels. coeff is
-// the scheme's drift coefficient times the step size; for the default leapfrog
-// it is exactly the step size.
-static inline void apply_drift(
-    double coeff, double* q, const double* p,
-    const DenseMassMatrix& mass, double* scratch, int n) {
-  (void) scratch;
-  if (!mass.adapted) {
-    tulpa_linalg::axpy(coeff, p, q, n);
-  } else if (mass.type == MassMatrixType::BLOCK_DIAG) {
-    tulpa_linalg::axpy_weighted(coeff, mass.inv_mass_diag.data(), p, q, n);
-    for (const auto& blk : mass.blocks) {
-      if (blk.adapted) {
-        double tmp[4];
-        blk.matvec(p, tmp);
-        for (int i = 0; i < blk.size; i++) {
-          q[blk.start + i] += coeff * (tmp[i] - mass.inv_mass_diag[blk.start + i] * p[blk.start + i]);
-        }
-      }
-    }
-  } else if (mass.type == MassMatrixType::DIAG) {
-    tulpa_linalg::axpy_weighted(coeff, mass.inv_mass_diag.data(), p, q, n);
-  } else {
-    if (n >= 16) {
-      Eigen::Map<const Eigen::MatrixXd> Am(mass.inv_mass_dense.data(), n, n);
-      Eigen::Map<const Eigen::VectorXd> pv(p, n);
-      Eigen::Map<Eigen::VectorXd> qv(q, n);
-      qv.noalias() += coeff * (Am.selfadjointView<Eigen::Lower>() * pv);
-    } else {
-      tulpa_linalg::axpy_matvec(coeff, mass.inv_mass_dense.data(), p, q, n);
-    }
-  }
 }
 
 // In-place leapfrog step operating on a workspace slot.

@@ -1,5 +1,55 @@
 # tulpa NEWS
 
+## 0.1.7
+
+* **A diagonal-plus-low-rank mass matrix, and the Type-IV interaction's
+  sum-to-zero margins carried in it** (#597). `mass_matrix = "gmrf_margin"` is
+  the #585 precision-informed diagonal plus the block's two soft sum-to-zero
+  margins as an explicit rank-(S+T) term, `M = D + lambda_row R'R +
+  lambda_col C'C`, with both precisions fixed by S and T alone. Those
+  directions are `1_S (x) a` and `b (x) 1_T` -- linear combinations, not
+  coordinates -- which is what #585 measured as the whole of the block's
+  stiffness and as the part no diagonal metric of any kind can rescale. Like
+  `"gmrf"` it resolves to a diagonal metric plus the term before any leapfrog
+  path reads it, and `AUTO` selects neither.
+
+  The storage (`src/hmc_mass_lowrank.h`) is generic over GROUP-SUM directions
+  rather than over the Type-IV margins, so a single sum-to-zero on an ICAR /
+  RW1 / RW2 block is the one-group case of the same term. The inverse is
+  Woodbury on a k x k inner matrix, keeping the per-step cost
+  O(n + nnz(U) + k^2) against a dense metric's O(n^2), and the momentum draw
+  is a sum of two independent Gaussians rather than a factorization of `M`.
+
+  Scored on the #585 paired design -- 6 configurations x 8 seeds, arms sharing
+  the data and the chain seed -- at `adapt_delta = 0.95`: leapfrog steps per
+  effective sample come out at a pooled geometric-mean ratio of **0.040**
+  against the adapted diagonal (46 of 48 pairs, sign test p = 8.4e-12), raw
+  sampling leapfrog steps at 0.053 on 48 of 48 (p = 7.1e-15), with `ess_min`
+  rising at the same time and max-treedepth saturation -- 26% to 98% of
+  iterations on the diagonal arms -- disappearing entirely. The `"gmrf"` arm
+  of the same run reproduces #585's null (pooled 1.08, p = 0.67).
+
+  Two limits are on the record rather than smoothed over. At
+  `adapt_delta = 0.8` the non-centered configuration is unusable (250
+  divergences per 1000 iterations at an adapted step size of 2.06), which the
+  0.95 target repairs; and at 0.95 the three small 3x3 fixtures still show
+  divergences the diagonal does not, `pois_3x3_T4_rw2` worst at 43.5 per fit,
+  while the two largest configurations are clean in every arm. Whether that is
+  new pathology or newly visible pathology in chains the diagonal metric was
+  keeping stuck is not settled here and is carried as #598. Write-up:
+  `dev_notes/issue597/RESULTS597.md`.
+
+* **`apply_drift` is testable** (#597). The fused drift `q += c M^-1 p` the
+  zero-allocation NUTS loop takes moved from `hmc_nuts_optimized.cpp` into
+  `src/hmc_mass_drift.h`. It and `DenseMassMatrix::inv_mass_times_p` are the
+  two places a metric meets a momentum, and they are now pinned to each other
+  by test on every metric the engine can build.
+
+* The Knorr-Held Type-IV fixture's scaffolding moved from the top of
+  `test-st-iv-gmrf-mass.R` into `tests/testthat/helper-st-iv.R`, so the
+  precision-informed diagonal and the margin metric are scored against one copy
+  of the numerical-Hessian arbiter rather than two.
+
 ## 0.1.6
 
 * **The Type-IV spatiotemporal interaction has a precision-informed mass

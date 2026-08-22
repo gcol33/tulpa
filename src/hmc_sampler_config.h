@@ -33,6 +33,12 @@ struct MassMatrixConfig {
   // per-step paths never see a fifth metric; what the request buys is one
   // block of the diagonal being computed rather than accumulated.
   bool st_gmrf = false;
+  // Whether that diagonal additionally carries the interaction's two soft
+  // sum-to-zero margins as an explicit low-rank term (mass_matrix =
+  // "gmrf_margin"). Implies st_gmrf: the low-rank part rides on the same
+  // precision-informed diagonal, and the margin directions are the part of the
+  // block's stiffness a diagonal cannot reach at all (gcol33/tulpa#597).
+  bool st_gmrf_margin = false;
   // Empty when st_gmrf is true; otherwise why the request could not be
   // honoured, from hmc_mass_st_gmrf.h's closed vocabulary. Non-empty with a
   // GMRF request is what a user reads instead of a silent fallback.

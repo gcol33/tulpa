@@ -132,7 +132,14 @@ enum class MassMatrixType : int {
     // own posterior precision instead of from the Welford accumulator. It
     // resolves to DIAG before any leapfrog runs (see MassMatrixConfig), so no
     // kinetic-energy, momentum or drift path branches on it.
-    GMRF = 4
+    GMRF = 4,
+    // GMRF plus the field's soft sum-to-zero margin directions, carried as an
+    // explicit low-rank term on top of that diagonal (hmc_mass_lowrank.h).
+    // Those directions are linear combinations rather than coordinates, so
+    // they are the part of the block's stiffness no diagonal metric of any
+    // kind can rescale. Also resolves to DIAG, with the low-rank term riding
+    // as an overlay on the same DenseMassMatrix.
+    GMRF_MARGIN = 5
 };
 
 // ============================================================================

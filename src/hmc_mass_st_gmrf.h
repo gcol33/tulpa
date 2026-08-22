@@ -38,6 +38,16 @@ struct StGmrfMassResult {
   // st_delta_end - st_delta_start on success, empty otherwise.
   std::vector<double> inv_mass;
 
+  // The soft sum-to-zero margins, as the low-rank mass term reads them
+  // (hmc_mass_lowrank.h): the block is S row groups of length T plus T column
+  // groups of length S, with these precisions. Carried on the result rather
+  // than re-derived at the call site so the mass term and the Q the variances
+  // came from cannot disagree about the parameterization's scaling.
+  int    n_spatial = 0;
+  int    n_times = 0;
+  double lambda_row = 0.0;        // s2z precision on each spatial unit's time sum
+  double lambda_col = 0.0;        // s2z precision on each time's spatial sum
+
   // Read by the benchmark harness, not by the sampler.
   int    n_block = 0;             // S * T
   int    n_curvature_clamped = 0; // coordinates whose likelihood curvature was < 0

@@ -63,10 +63,12 @@
   bool auto_selected_diag = mm_config.auto_selected_diag;
   std::vector<std::pair<int,int>> block_specs = std::move(mm_config.block_specs);
   const bool st_gmrf_mass = mm_config.st_gmrf;
+  const bool st_gmrf_margin_mass = mm_config.st_gmrf_margin;
   // Reported on the result so a fit says which read produced its interaction
   // block, whether or not the override ran.
   const char* st_gmrf_declined = mm_config.st_gmrf_declined;
   bool st_gmrf_applied = false;
+  bool st_gmrf_margin_applied = false;
 
   // Warm-start mass matrix diagonal from model structure
   warm_start_mass_matrix(mass, data, layout, n_params, verbose);

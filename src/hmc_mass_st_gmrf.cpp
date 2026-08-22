@@ -15,6 +15,7 @@
 #include "hmc_sampler.h"            // ModelData / ParamLayout, LikelihoodSpec
 #include "log_post_impl.h"          // GenericLogPostState, generic_eta_at
 #include "sparse_cholesky.h"        // takahashi_partial_inverse_csc
+#include "tulpa/soft_sum_to_zero.h"  // s2z_precision
 #include "st_type_iv_precision.h"
 
 namespace tulpa_hmc {
@@ -119,6 +120,8 @@ StGmrfMassResult st_gmrf_inv_mass(
   const auto& st = data.spatiotemporal_data;
   const int S = st.n_spatial, T = st.n_times, ST = S * T;
   res.n_block = ST;
+  res.n_spatial = S;
+  res.n_times = T;
 
   if ((int)q.size() < layout.total_params) {
     res.reason = kLayoutMismatch;
@@ -198,6 +201,9 @@ StGmrfMassResult st_gmrf_inv_mass(
   const bool nc = (data.st_parameterization == 1);
   const double kron_scale = nc ? 1.0 : tau;
   const double outer_scale = nc ? (1.0 / tau) : 1.0;
+
+  res.lambda_row = outer_scale * tulpa::s2z_precision(T);
+  res.lambda_col = outer_scale * tulpa::s2z_precision(S);
 
   Eigen::SparseMatrix<double> Q;
   if (!tulpa_st::st_type_iv_precision(data, S, T, kron_scale, outer_scale,

@@ -57,6 +57,9 @@ struct HMCResultCpp {
   // where it did not. A chain reporting st_gmrf_applied = false with a reason
   // sampled under the plain adapted diagonal.
   bool st_gmrf_applied = false;
+  // Whether that diagonal additionally carried the interaction's two soft
+  // sum-to-zero margins as a low-rank term (mass_matrix = "gmrf_margin").
+  bool st_gmrf_margin_applied = false;
   std::string st_gmrf_declined;
 
   // Collapsed mode draws (populated only when collapsed parameterization active)

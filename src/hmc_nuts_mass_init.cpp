@@ -173,15 +173,22 @@ MassMatrixConfig select_and_init_mass_matrix(
   // adapted diagonal and carries the reason on the config -- the request is
   // never silently dropped.
   bool st_gmrf = false;
+  bool st_gmrf_margin = false;
   const char* st_gmrf_declined = "";
-  if (effective_metric == MassMatrixType::GMRF) {
+  if (effective_metric == MassMatrixType::GMRF ||
+      effective_metric == MassMatrixType::GMRF_MARGIN) {
+    st_gmrf_margin = (effective_metric == MassMatrixType::GMRF_MARGIN);
     st_gmrf_declined = st_gmrf_precondition(data, layout);
     st_gmrf = (st_gmrf_declined[0] == 0);
+    // The margin term rides on the precision-informed diagonal, so a declined
+    // precondition takes both halves of the request down together.
+    st_gmrf_margin = st_gmrf_margin && st_gmrf;
     effective_metric = MassMatrixType::DIAG;
     if (verbose) {
       if (st_gmrf) {
-        REprintf("  [GMRF] Type-IV precision-informed mass over params "
-                 "[%d,%d)\n", layout.st_delta_start, layout.st_delta_end);
+        REprintf("  [GMRF] Type-IV precision-informed mass%s over params "
+                 "[%d,%d)\n", st_gmrf_margin ? " + margins" : "",
+                 layout.st_delta_start, layout.st_delta_end);
       } else {
         REprintf("  [GMRF] declined (%s); using the adapted diagonal\n",
                  st_gmrf_declined);
@@ -298,7 +305,7 @@ MassMatrixConfig select_and_init_mass_matrix(
   }
 
   return {effective_metric, auto_selected_diag, std::move(block_specs),
-          st_gmrf, st_gmrf_declined};
+          st_gmrf, st_gmrf_margin, st_gmrf_declined};
 }
 
 // Warm-start mass matrix diagonal from model structure.

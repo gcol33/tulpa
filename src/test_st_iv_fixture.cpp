@@ -296,6 +296,7 @@ Rcpp::List cpp_test_st_iv_nuts(
       Rcpp::Named("epsilon") = res.epsilon,
       Rcpp::Named("inv_metric") = Rcpp::wrap(res.inv_metric_diag),
       Rcpp::Named("st_gmrf_applied") = res.st_gmrf_applied,
+      Rcpp::Named("st_gmrf_margin_applied") = res.st_gmrf_margin_applied,
       Rcpp::Named("st_gmrf_declined") = res.st_gmrf_declined);
 }
 
@@ -379,6 +380,10 @@ Rcpp::List cpp_test_st_iv_gmrf_mass(
       Rcpp::Named("inv_mass") = Rcpp::wrap(r.inv_mass),
       Rcpp::Named("n_block") = r.n_block,
       Rcpp::Named("n_curvature_clamped") = r.n_curvature_clamped,
+      Rcpp::Named("lambda_row") = r.lambda_row,
+      Rcpp::Named("lambda_col") = r.lambda_col,
+      Rcpp::Named("n_spatial") = r.n_spatial,
+      Rcpp::Named("n_times") = r.n_times,
       Rcpp::Named("ridge_applied") = r.ridge_applied,
       Rcpp::Named("log_det_Q") = r.log_det_Q,
       Rcpp::Named("st_delta_start") = layout.st_delta_start,

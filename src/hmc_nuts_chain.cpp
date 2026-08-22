@@ -108,6 +108,7 @@ HMCResultCpp run_hmc_chain_cpp(
   result.final_position = q;
 
   result.st_gmrf_applied = st_gmrf_applied;
+  result.st_gmrf_margin_applied = st_gmrf_margin_applied;
   result.st_gmrf_declined = st_gmrf_declined;
 
   // Diagnostic stats - only when verbose

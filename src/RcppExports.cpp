@@ -3813,6 +3813,56 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_test_lowrank_mass_apply
+Rcpp::List cpp_test_lowrank_mass_apply(Rcpp::NumericVector inv_mass_diag, int start, Rcpp::IntegerVector group_ptr, Rcpp::IntegerVector group_idx, Rcpp::NumericVector lambda, Rcpp::NumericVector p, double coeff);
+RcppExport SEXP _tulpa_cpp_test_lowrank_mass_apply(SEXP inv_mass_diagSEXP, SEXP startSEXP, SEXP group_ptrSEXP, SEXP group_idxSEXP, SEXP lambdaSEXP, SEXP pSEXP, SEXP coeffSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type inv_mass_diag(inv_mass_diagSEXP);
+    Rcpp::traits::input_parameter< int >::type start(startSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type group_ptr(group_ptrSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type group_idx(group_idxSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type lambda(lambdaSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type p(pSEXP);
+    Rcpp::traits::input_parameter< double >::type coeff(coeffSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_lowrank_mass_apply(inv_mass_diag, start, group_ptr, group_idx, lambda, p, coeff));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_test_lowrank_mass_momentum
+Rcpp::NumericMatrix cpp_test_lowrank_mass_momentum(Rcpp::NumericVector inv_mass_diag, int start, Rcpp::IntegerVector group_ptr, Rcpp::IntegerVector group_idx, Rcpp::NumericVector lambda, int n_draws, int seed);
+RcppExport SEXP _tulpa_cpp_test_lowrank_mass_momentum(SEXP inv_mass_diagSEXP, SEXP startSEXP, SEXP group_ptrSEXP, SEXP group_idxSEXP, SEXP lambdaSEXP, SEXP n_drawsSEXP, SEXP seedSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type inv_mass_diag(inv_mass_diagSEXP);
+    Rcpp::traits::input_parameter< int >::type start(startSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type group_ptr(group_ptrSEXP);
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type group_idx(group_idxSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type lambda(lambdaSEXP);
+    Rcpp::traits::input_parameter< int >::type n_draws(n_drawsSEXP);
+    Rcpp::traits::input_parameter< int >::type seed(seedSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_lowrank_mass_momentum(inv_mass_diag, start, group_ptr, group_idx, lambda, n_draws, seed));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_test_margin_mass_term
+Rcpp::List cpp_test_margin_mass_term(int S, int T, double lambda_row, double lambda_col, Rcpp::NumericVector var, int start);
+RcppExport SEXP _tulpa_cpp_test_margin_mass_term(SEXP SSEXP, SEXP TSEXP, SEXP lambda_rowSEXP, SEXP lambda_colSEXP, SEXP varSEXP, SEXP startSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< int >::type S(SSEXP);
+    Rcpp::traits::input_parameter< int >::type T(TSEXP);
+    Rcpp::traits::input_parameter< double >::type lambda_row(lambda_rowSEXP);
+    Rcpp::traits::input_parameter< double >::type lambda_col(lambda_colSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type var(varSEXP);
+    Rcpp::traits::input_parameter< int >::type start(startSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_margin_mass_term(S, T, lambda_row, lambda_col, var, start));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_test_st_iv_nuts
 Rcpp::List cpp_test_st_iv_nuts(Rcpp::NumericVector y, Rcpp::NumericMatrix X, Rcpp::IntegerVector s_idx, Rcpp::IntegerVector t_idx, Rcpp::IntegerVector adj_row_ptr, Rcpp::IntegerVector adj_col_idx, int S, int T, std::string family, std::string temporal, int st_parameterization, std::string mass_matrix, int n_iter, int n_warmup, int max_treedepth, double adapt_delta, int seed, double sigma_beta, bool verbose);
 RcppExport SEXP _tulpa_cpp_test_st_iv_nuts(SEXP ySEXP, SEXP XSEXP, SEXP s_idxSEXP, SEXP t_idxSEXP, SEXP adj_row_ptrSEXP, SEXP adj_col_idxSEXP, SEXP SSEXP, SEXP TSEXP, SEXP familySEXP, SEXP temporalSEXP, SEXP st_parameterizationSEXP, SEXP mass_matrixSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP max_treedepthSEXP, SEXP adapt_deltaSEXP, SEXP seedSEXP, SEXP sigma_betaSEXP, SEXP verboseSEXP) {
@@ -4591,6 +4641,9 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_test_compute_u_eff", (DL_FUNC) &_tulpa_cpp_test_compute_u_eff, 3},
     {"_tulpa_cpp_test_chol_nc_chain_rule", (DL_FUNC) &_tulpa_cpp_test_chol_nc_chain_rule, 6},
     {"_tulpa_cpp_test_correlation_from_L", (DL_FUNC) &_tulpa_cpp_test_correlation_from_L, 1},
+    {"_tulpa_cpp_test_lowrank_mass_apply", (DL_FUNC) &_tulpa_cpp_test_lowrank_mass_apply, 7},
+    {"_tulpa_cpp_test_lowrank_mass_momentum", (DL_FUNC) &_tulpa_cpp_test_lowrank_mass_momentum, 7},
+    {"_tulpa_cpp_test_margin_mass_term", (DL_FUNC) &_tulpa_cpp_test_margin_mass_term, 6},
     {"_tulpa_cpp_test_st_iv_nuts", (DL_FUNC) &_tulpa_cpp_test_st_iv_nuts, 19},
     {"_tulpa_cpp_test_st_iv_layout", (DL_FUNC) &_tulpa_cpp_test_st_iv_layout, 12},
     {"_tulpa_cpp_test_st_iv_gmrf_mass", (DL_FUNC) &_tulpa_cpp_test_st_iv_gmrf_mass, 14},

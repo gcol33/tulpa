@@ -901,6 +901,18 @@ cpp_test_correlation_from_L <- function(L) {
     .Call(`_tulpa_cpp_test_correlation_from_L`, L)
 }
 
+cpp_test_lowrank_mass_apply <- function(inv_mass_diag, start, group_ptr, group_idx, lambda, p, coeff = 0.37) {
+    .Call(`_tulpa_cpp_test_lowrank_mass_apply`, inv_mass_diag, start, group_ptr, group_idx, lambda, p, coeff)
+}
+
+cpp_test_lowrank_mass_momentum <- function(inv_mass_diag, start, group_ptr, group_idx, lambda, n_draws, seed = 1L) {
+    .Call(`_tulpa_cpp_test_lowrank_mass_momentum`, inv_mass_diag, start, group_ptr, group_idx, lambda, n_draws, seed)
+}
+
+cpp_test_margin_mass_term <- function(S, T, lambda_row, lambda_col, var, start = 0L) {
+    .Call(`_tulpa_cpp_test_margin_mass_term`, S, T, lambda_row, lambda_col, var, start)
+}
+
 cpp_test_st_iv_nuts <- function(y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T, family = "poisson", temporal = "rw1", st_parameterization = 0L, mass_matrix = "diag", n_iter = 1000L, n_warmup = 500L, max_treedepth = 10L, adapt_delta = 0.8, seed = 1L, sigma_beta = 10.0, verbose = FALSE) {
     .Call(`_tulpa_cpp_test_st_iv_nuts`, y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T, family, temporal, st_parameterization, mass_matrix, n_iter, n_warmup, max_treedepth, adapt_delta, seed, sigma_beta, verbose)
 }

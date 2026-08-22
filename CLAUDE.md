@@ -1495,10 +1495,89 @@ That also says what would work, and it is measured rather than asserted: a mass
 `M = D + s2z_precision(T) R'R + s2z_precision(S) C'C`, rank S + T over a
 diagonal, takes the same fits to `cond` **6.8 to 18.6** -- four orders of
 magnitude -- and its low-rank part is known in closed form from S and T with no
-factorization and no position. gcol33/tulpa#597 carries it.
+factorization and no position. That is `mass_matrix = "gmrf_margin"`, below.
 
 The Jacobi read was built, measured (it changes the conditioning by 0.0%) and
 deleted rather than shipped as a second metric name.
+
+### The metric that reaches the margins: diagonal plus rank S + T (gcol33/tulpa#597)
+
+`mass_matrix = "gmrf_margin"` is the #585 diagonal PLUS the block's two soft
+sum-to-zero margins as an explicit low-rank term,
+
+    M = D + lambda_row R'R + lambda_col C'C,
+
+`R` the row-sum operator (S x ST), `C` the column-sum operator (T x ST), both
+precisions fixed by S and T alone -- no position, no likelihood pass, no
+factorization. It resolves to `DIAG` plus the term the same way `"gmrf"`
+resolves to `DIAG` plus a flag, and `AUTO` selects neither.
+
+**The storage is generic over GROUP SUMS, not over the Type-IV margins**
+(`src/hmc_mass_lowrank.h`). Column g of `U` is the indicator of a group of
+block coordinates, which is the shape EVERY soft sum-to-zero penalty in the
+engine contributes: `s2z_precision(n) (sum_i phi_i)^2` on an intrinsic ICAR /
+RW1 / RW2 field is ONE group over the whole block, the interaction is S + T
+groups. `make_margin_mass_term()` is the two-margin builder on top of it. So
+extending this past the interaction is a caller supplying groups, not new
+storage -- which is the question gcol33/tulpa#597 asked to settle before the
+storage was written. Whether it HELPS those blocks is not measured.
+
+Three things the implementation gets from that shape. The inverse is Woodbury
+on a k x k inner matrix `Lambda^-1 + U' D^-1 U` (k = the group count), so
+`inv_mass_times_p` and `kinetic_energy` are O(n + nnz(U) + k^2) per leapfrog
+step against a dense metric's O(n^2), with one k x k factorization per metric
+install. That inner matrix is PD for any positive weights even though
+`U' D^-1 U` is singular here (the grand total sits in every group), because
+`Lambda^-1` is added to it. And the momentum draw is
+`p = D^(1/2) z1 + U Lambda^(1/2) z2` with `z1`, `z2` independent, whose
+covariance is `D + U Lambda U' = M` exactly -- a sum of two independent
+Gaussians, so no square root of the sum is formed. #597 records that
+construction as a trap to avoid; it is not one, and `test-lowrank-mass.R`
+scores the realized covariance against a dense `M` to say so.
+
+The term is an OVERLAY on the diagonal, not a fifth `MassMatrixType`: the three
+per-step methods take the diagonal answer everywhere and let each term rewrite
+its own block, and `set_diagonal()` / `init()` DROP the overlay, because a term
+carries its own copy of the diagonal it was built against. So a fit whose term
+is refused falls back to exactly the #585 metric. `apply_drift`
+(`src/hmc_mass_drift.h`, split out of `hmc_nuts_optimized.cpp` so a test can
+drive it) is the second place the metric meets a momentum; the two are pinned
+to each other by test rather than trusted to stay in step.
+
+**Measured on the same paired design #585 used** -- 6 configurations x 8 seeds,
+arms sharing the data and the chain seed, adding an arm being a configuration
+(`SWEEP585_METRICS`, `SWEEP585_ADAPT_DELTA`). At `adapt_delta = 0.95`,
+leapfrog steps per effective sample, `gmrf_margin` / `diag`: pooled geometric
+mean **0.0401**, 46 of 48 pairs, sign test p = 8.4e-12; raw sampling leapfrog
+steps 0.0529 on **48 of 48**, p = 7.1e-15. `ess_min` RISES at the same time
+(26.8 -> 83.5 on `pois_5x5_T4`), so the cheaper steps are not emptier ones.
+Max-treedepth saturation disappears: the diagonal arms hit the depth-10 cap on
+26% to 98% of iterations on every centered configuration and the margin arm
+hits it on none. The same shard set reproduces #585's null for the `"gmrf"`
+arm (pooled 1.08, p = 0.67), so the two live in one run.
+
+**Read that arm at 0.95, not at 0.8.** At `adapt_delta = 0.8` the NON-CENTERED
+configuration runs 250 divergences per 1000 iterations at an adapted step size
+of 2.06, with at least one chain whose every parameter had zero draw variance;
+at 0.95 it takes 1.25 against the plain diagonal's 32.6. The dual averaging
+was landing on a step size the geometry does not support once `tau` moves --
+non-centered puts `1 / tau` on both margin precisions while the metric is
+installed once per warmup window, where the centered parameterization's are
+tau-free.
+
+**Divergences on the SMALL fixtures are the open part.** At 0.95 the two
+largest configurations (96 and 100 interaction coordinates) are clean in every
+arm, and the three small centered 3x3 ones are not: `pois_3x3_T4_rw2` runs 43.5
+divergences per fit against the diagonal's 0.1, and gets WORSE at the tighter
+target rather than better. Whether that is new pathology or newly VISIBLE
+pathology is NOT settled by this sweep -- the diagonal arms on those fixtures
+sit at max treedepth with `ess_min` around 10 to 16 of 1000 draws, and a chain
+that does not explore a funnel does not diverge in it either. Carried as
+gcol33/tulpa#598; do not read the 20x cost win as clearance to default this
+metric on.
+Write-up: `dev_notes/issue597/RESULTS597.md`. Tests: `test-lowrank-mass.R`
+(storage and algebra against a dense `M`), `test-st-iv-margin-mass.R` (the
+Type-IV wiring, the parameterization's lambda scaling, and the conditioning).
 
 ### Checkpoint / resume across every fitter (gcol33/tulpa#50)
 

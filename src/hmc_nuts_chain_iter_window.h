@@ -93,11 +93,34 @@
                      next_window_idx, iter, gmrf.n_block,
                      gmrf.n_curvature_clamped, gmrf.ridge_applied);
           }
+          // The two soft sum-to-zero margins as an explicit low-rank term on
+          // top of that diagonal. They are the stiffest directions in the
+          // block by three to four orders of magnitude and are linear
+          // combinations rather than coordinates, so this is the part of the
+          // geometry no diagonal metric reaches (gcol33/tulpa#597). Rebuilt
+          // every window because set_diagonal() above drops the previous term
+          // along with the diagonal it was built against.
+          if (st_gmrf_margin_mass) {
+            LowRankMassTerm term = make_margin_mass_term(
+                layout.st_delta_start, gmrf.n_spatial, gmrf.n_times,
+                gmrf.lambda_row, gmrf.lambda_col,
+                mass.inv_mass_diag.data() + layout.st_delta_start,
+                gmrf.n_block);
+            const bool ok = mass.install_lowrank(std::move(term));
+            st_gmrf_margin_applied = ok;
+            if (!ok) st_gmrf_declined = "lowrank_factorize_failed";
+            if (verbose) {
+              REprintf("  [GMRF] Window %d (iter %d): margin term rank %d %s\n",
+                       next_window_idx, iter, gmrf.n_spatial + gmrf.n_times,
+                       ok ? "installed" : "REFUSED (keeping the diagonal)");
+            }
+          }
         } else {
           // A window the override could not serve keeps that window's adapted
           // diagonal. The reason is recorded rather than dropped, so a fit
           // that fell back mid-warmup is not read as one that never asked.
           st_gmrf_declined = gmrf.reason;
+          st_gmrf_margin_applied = false;
           if (verbose) {
             REprintf("  [GMRF] Window %d (iter %d): declined (%s)\n",
                      next_window_idx, iter, gmrf.reason);
@@ -152,7 +175,9 @@
       // Re-initialize step size with current mass matrix (A3)
       // Use dense-aware version when dense mass is adapted, so the step size
       // is calibrated for the rotated phase space (not just the diagonal).
-      if (use_mass_matrix && mass.type == MassMatrixType::DENSE && mass.adapted) {
+      if (use_mass_matrix &&
+          ((mass.type == MassMatrixType::DENSE && mass.adapted) ||
+           mass.has_lowrank())) {
         epsilon = find_reasonable_epsilon_dense(q, data, layout, rng, mass);
       } else if (use_mass_matrix) {
         epsilon = find_reasonable_epsilon(q, data, layout, rng, mass.inv_mass_diag);

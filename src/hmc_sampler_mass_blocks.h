@@ -15,6 +15,7 @@
 #include <Eigen/Dense>
 #include <RcppEigen.h>
 
+#include "hmc_mass_lowrank.h"   // LowRankMassTerm
 #include "hmc_sampler_decls.h"  // MassMatrixType (alias of tulpa::MassMatrixType)
 #include "linalg_fast.h"        // tulpa_linalg::tri_solve_lower_transpose, etc.
 
@@ -193,11 +194,36 @@ struct DenseMassMatrix {
   std::vector<MassBlock> blocks;
   std::vector<bool> in_block;  // in_block[i] = true if param i belongs to a block
 
+  // Diagonal + low rank over one or more contiguous blocks (hmc_mass_lowrank.h).
+  // An OVERLAY on the DIAG metric rather than a fifth type: the three per-step
+  // methods below take the diagonal answer everywhere and let each term rewrite
+  // its own block. A term's `var` is the same diagonal, so a fit whose term is
+  // dropped falls back to exactly the metric it would have run under.
+  std::vector<LowRankMassTerm> lowrank;
+
+  bool has_lowrank() const { return !lowrank.empty(); }
+  void clear_lowrank() { lowrank.clear(); }
+
+  // Install one term, factorizing it here. Refused unless the metric is
+  // diagonal: a low-rank overlay on a dense or block-diagonal base would
+  // silently double-count the block's covariance.
+  bool install_lowrank(LowRankMassTerm term) {
+    if (type != MassMatrixType::DIAG) return false;
+    if (term.start < 0 || term.start + term.n > n) return false;
+    if (!term.factorize()) return false;
+    for (auto& t : lowrank) {
+      if (t.start == term.start && t.n == term.n) { t = std::move(term); return true; }
+    }
+    lowrank.push_back(std::move(term));
+    return true;
+  }
+
 
   void init(int dim, MassMatrixType t) {
     n = dim;
     type = t;
     adapted = false;
+    lowrank.clear();
     inv_mass_diag.assign(dim, 1.0);
     sqrt_mass_diag.assign(dim, 1.0);
     scratch.resize(dim);
@@ -243,6 +269,13 @@ struct DenseMassMatrix {
   // Uses Eigen triangular solve for dense case (n>=16) for SIMD acceleration.
   void sample_momentum(double* p, std::mt19937& rng) const {
     std::normal_distribution<double> normal(0.0, 1.0);
+    if (has_lowrank()) {
+      for (int i = 0; i < n; i++) {
+        p[i] = normal(rng) * sqrt_mass_diag[i];
+      }
+      for (const auto& t : lowrank) t.sample_momentum(p, rng);
+      return;
+    }
     if (type == MassMatrixType::BLOCK_DIAG && adapted) {
       // First: diagonal for all params
       for (int i = 0; i < n; i++) {
@@ -282,6 +315,17 @@ struct DenseMassMatrix {
   // Kinetic energy: 0.5 * p^T * C * p  where C = M^{-1}
   // Uses Eigen BLAS for dense case (n>=16) for SIMD acceleration.
   double kinetic_energy(const double* p) const {
+    if (has_lowrank()) {
+      double ke = 0.0;
+      for (int i = 0; i < n; i++) ke += inv_mass_diag[i] * p[i] * p[i];
+      for (const auto& t : lowrank) {
+        for (int i = t.start; i < t.start + t.n; i++) {
+          ke -= inv_mass_diag[i] * p[i] * p[i];
+        }
+        ke += t.quadform(p);
+      }
+      return 0.5 * ke;
+    }
     if (type == MassMatrixType::BLOCK_DIAG && adapted) {
       double ke = 0.0;
       for (int i = 0; i < n; i++) {
@@ -314,6 +358,11 @@ struct DenseMassMatrix {
   // Result written to `result` buffer.
   // Uses Eigen BLAS for dense case (n>=16) for SIMD acceleration.
   void inv_mass_times_p(const double* p, double* result) const {
+    if (has_lowrank()) {
+      for (int i = 0; i < n; i++) result[i] = inv_mass_diag[i] * p[i];
+      for (const auto& t : lowrank) t.apply_inv(p, result);
+      return;
+    }
     if (type == MassMatrixType::BLOCK_DIAG && adapted) {
       for (int i = 0; i < n; i++) {
         result[i] = inv_mass_diag[i] * p[i];
@@ -354,6 +403,7 @@ struct DenseMassMatrix {
   // Used by SoftAbs per-trajectory metric retry. No shrinkage applied.
   void set_from_metric(const std::vector<double>& g_inv,
                        const std::vector<double>& l_g_inv) {
+    lowrank.clear();
     inv_mass_dense = g_inv;
     L_inv_mass = l_g_inv;
     for (int i = 0; i < n; i++) {
@@ -370,6 +420,9 @@ struct DenseMassMatrix {
   // When type==BLOCK_DIAG, diagonal is set normally; blocks are adapted separately
   // via their own Welford accumulators.
   void set_diagonal(const std::vector<double>& inv_m, const std::vector<double>& sqrt_m) {
+    // A term holds its own copy of the diagonal it was built against, so any
+    // write to that diagonal drops the overlay rather than leaving a stale one.
+    lowrank.clear();
     inv_mass_diag = inv_m;
     sqrt_mass_diag = sqrt_m;
     adapted = true;
