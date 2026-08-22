@@ -392,24 +392,52 @@ inline void nngp_nc_backward(
 
     // sigma2 likelihood gradient
     // dw[loc]/d(log sigma2) = (dd_i/d log sigma2) / (2 sqrt(d_i)) * z[loc].
-    // With d_i unfloored it is homogeneous of degree 1 in sigma2, so
-    // dd_i/d log sigma2 = d_i and the whole term collapses to
-    // 0.5 * sqrt(d_i) * z. Where the floor bound, d_i no longer tracks sigma2
-    // at that rate: the derivative is the raw variance scaled by the floor's
-    // own slope, which is 0 under Clamp.
+    //
+    // The conditional variance is NOT homogeneous of degree 1 in sigma2 once
+    // the neighbour covariance carries a diagonal nugget: the forward builds
+    // C = sigma2 R + jitter I against c = sigma2 r, so alpha = C^{-1} c moves
+    // with sigma2 as well. Differentiating d = sigma2 - c'alpha gives
+    //
+    //     dd/dsigma2 = 1 - 2 r'alpha + alpha' R alpha,
+    //
+    // and substituting r = c / sigma2 and R = (C - jitter I) / sigma2, with
+    // C alpha = c, collapses the whole expression to
+    //
+    //     dd/d log sigma2 = (sigma2 - c'alpha) - jitter * ||alpha||^2
+    //                     = d_raw - jitter * ||alpha||^2.
+    //
+    // At jitter = 0 the correction vanishes and d_raw is recovered, which is
+    // the homogeneous case. It is 1e-8 on the GP / multiscale-GP views and
+    // 1e-4 on the SVC one, and it enters relative to d_raw, so the term is
+    // invisible on the first and reaches 1e-2 relative on the second wherever
+    // the field is strongly correlated -- exactly where alpha is large and
+    // d_raw is small.
+    //
+    // Where the floor bound, the variance no longer tracks the raw one at all:
+    // the derivative carries the floor's own slope, which is 0 under Clamp and
+    // 0.01 under Blend. Unbound rows have slope 1 and d_i == d_raw, so the one
+    // expression serves both regimes.
     grad_log_sigma2_lik = 0.0;
     for (int i = 0; i < N; i++) {
-        int loc = view.nn_order[i];
-        if (ws.d_slope[i] >= 1.0) {
-            grad_log_sigma2_lik += adj[i] * 0.5 * ws.sqrt_d[i] * z[loc];
-        } else if (ws.sqrt_d[i] > 0.0) {
-            grad_log_sigma2_lik += adj[i] * ws.d_slope[i] * ws.d_raw[i] /
-                                   (2.0 * ws.sqrt_d[i]) * z[loc];
+        if (!(ws.sqrt_d[i] > 0.0)) continue;
+        const int loc = view.nn_order[i];
+        double alpha_sq = 0.0;
+        const int n_nb = ws.B_n_nb[i];
+        for (int j = 0; j < n_nb; j++) {
+            const double a_j = ws.B_flat[(std::size_t)i * nn + j];
+            alpha_sq += a_j * a_j;
         }
+        const double dd_dlog_sigma2 =
+            ws.d_slope[i] * (ws.d_raw[i] - view.jitter * alpha_sq);
+        grad_log_sigma2_lik +=
+            adj[i] * dd_dlog_sigma2 / (2.0 * ws.sqrt_d[i]) * z[loc];
     }
 
-    // phi gradients (likelihood + Jacobian) — OpenMP parallelized
-    // Each observation's phi contribution is independent.
+    // Per-row hyperparameter gradients (phi likelihood + phi Jacobian + the
+    // sigma2 channel that runs through alpha) — OpenMP parallelized. Each
+    // observation's contribution is independent, and all three read the same
+    // restored Cholesky factor and alpha, so they are accumulated in one pass
+    // rather than in a second loop that would rebuild both.
     grad_log_phi_lik = 0.0;
     grad_log_phi_jac = 0.0;
 
@@ -418,6 +446,7 @@ inline void nngp_nc_backward(
 
     std::vector<double> tl_phi_lik(n_threads, 0.0);
     std::vector<double> tl_phi_jac(n_threads, 0.0);
+    std::vector<double> tl_s2_alpha(n_threads, 0.0);
 
     struct BackwardWS {
         Eigen::MatrixXd L_eigen, C_eigen;
@@ -429,12 +458,13 @@ inline void nngp_nc_backward(
     };
     std::vector<BackwardWS> bws_vec(n_threads, BackwardWS(nn));
 
-    // One row's phi contribution, written once and driven from both routes.
-    // The workspace slot and the two accumulators are parameters rather than
-    // captures, so the parallel route hands each chunk its own slot and the
-    // serial route reuses slot 0 -- bws_vec is never copied onto a worker
-    // stack (the OpenMP worker-stack rule).
-    auto phi_row = [&](int i, BackwardWS& bw, double& acc_lik, double& acc_jac) {
+    // One row's hyperparameter contribution, written once and driven from both
+    // routes. The workspace slot and the three accumulators are parameters
+    // rather than captures, so the parallel route hands each chunk its own slot
+    // and the serial route reuses slot 0 -- bws_vec is never copied onto a
+    // worker stack (the OpenMP worker-stack rule).
+    auto hyper_row = [&](int i, BackwardWS& bw, double& acc_lik,
+                         double& acc_jac, double& acc_s2) {
         auto& L_eigen = bw.L_eigen;
         auto& C_eigen = bw.C_eigen;
         auto& c_eigen = bw.c_eigen;
@@ -475,6 +505,33 @@ inline void nngp_nc_backward(
             }
         }
 
+        auto L_restored = L_eigen.topLeftCorner(n_nb, n_nb);
+
+        // sigma2 channel through alpha. w_i = sum_j alpha_j w_nb_j +
+        // sqrt(d_i) z_i, and the reverse adjoint sweep above carries only the
+        // first term's dependence on the NEIGHBOURS. alpha itself moves with
+        // sigma2 whenever the neighbour covariance carries a nugget:
+        // differentiating alpha = C^{-1} c with C = sigma2 R + jitter I and
+        // c = sigma2 r gives dalpha/dsigma2 = C^{-1} r - C^{-1} R alpha, and
+        // the same substitution the d_i term uses collapses it to
+        //
+        //     dalpha/d log sigma2 = jitter * C^{-1} alpha,
+        //
+        // exactly zero at jitter = 0, which is why the homogeneous form never
+        // needed it. Its contribution to dw_i is (dalpha/d log sigma2)' w_nb.
+        if (view.jitter != 0.0) {
+            Eigen::VectorXd y_s2 = L_restored.triangularView<Eigen::Lower>()
+                                       .solve(alpha_eigen.head(n_nb));
+            Eigen::VectorXd Cinv_alpha =
+                L_restored.transpose().triangularView<Eigen::Upper>().solve(y_s2);
+            double dw_dlog_sigma2 = 0.0;
+            for (int j = 0; j < n_nb; j++) {
+                dw_dlog_sigma2 +=
+                    Cinv_alpha(j) * ws.w[ws.nb_idx_flat[i * nn + j]];
+            }
+            acc_s2 += adj[i] * view.jitter * dw_dlog_sigma2;
+        }
+
         // dC/dphi * alpha (using properly rebuilt C_mat for dcov_dphi)
         std::fill(dC_alpha.begin(), dC_alpha.begin() + n_nb, 0.0);
         for (int j1 = 0; j1 < n_nb; j1++) {
@@ -492,9 +549,10 @@ inline void nngp_nc_backward(
         // dalpha/dphi = C^{-1} (dc/dphi - dC/dphi * alpha)
         // Use Eigen triangular solve with cached L
         for (int j = 0; j < n_nb; j++) rhs_eigen(j) = dc_eigen(j) - dC_alpha[j];
-        auto L_sub = L_eigen.topLeftCorner(n_nb, n_nb);
-        Eigen::VectorXd y_temp = L_sub.triangularView<Eigen::Lower>().solve(rhs_eigen.head(n_nb));
-        dalpha_eigen.head(n_nb) = L_sub.transpose().triangularView<Eigen::Upper>().solve(y_temp);
+        Eigen::VectorXd y_temp = L_restored.triangularView<Eigen::Lower>()
+                                     .solve(rhs_eigen.head(n_nb));
+        dalpha_eigen.head(n_nb) =
+            L_restored.transpose().triangularView<Eigen::Upper>().solve(y_temp);
 
         // dd/dphi = -2 * dc' * alpha + alpha' * dC * alpha
         double alpha_dc = 0.0, alpha_dC_alpha = 0.0;
@@ -549,20 +607,23 @@ inline void nngp_nc_backward(
             const int lo = 1 + static_cast<int>(n_rows * t / teams);
             const int hi = 1 + static_cast<int>(n_rows * (t + 1) / teams);
             for (int i = lo; i < hi; i++) {
-                phi_row(i, bws_vec[t], tl_phi_lik[t], tl_phi_jac[t]);
+                hyper_row(i, bws_vec[t], tl_phi_lik[t], tl_phi_jac[t],
+                          tl_s2_alpha[t]);
             }
         }
     } else
     #endif
     {
         for (int i = 1; i < N; i++) {
-            phi_row(i, bws_vec[0], tl_phi_lik[0], tl_phi_jac[0]);
+            hyper_row(i, bws_vec[0], tl_phi_lik[0], tl_phi_jac[0],
+                      tl_s2_alpha[0]);
         }
     }
 
-    // Reduce thread-local phi accumulators
+    // Reduce thread-local accumulators
     for (int t = 0; t < n_threads; t++) {
-        grad_log_phi_lik += tl_phi_lik[t];
-        grad_log_phi_jac += tl_phi_jac[t];
+        grad_log_phi_lik    += tl_phi_lik[t];
+        grad_log_phi_jac    += tl_phi_jac[t];
+        grad_log_sigma2_lik += tl_s2_alpha[t];
     }
 }
