@@ -42,7 +42,17 @@ struct BatchArmBuffers {
     std::vector<std::vector<double>> etas;
     // y[k]: length N_k * B, species-major (coupled data arms). Built once.
     std::vector<std::vector<double>> y;
-    // n_trials[k]: length N_k * B (or empty). Built once.
+    // n_trials[k]: length N_k, or empty for a no-data arm. Built once.
+    //
+    // Trial counts are shared DESIGN, not per-species response: the B species
+    // differ in `y` / `y_pos` and in dispersion and in nothing else (the header
+    // note above), so every species of arm k reads arm k's own vector. That is
+    // why this buffer is NOT species-major the way `etas` / `y` are -- a
+    // per-species fill is not expressible, so a reader cannot silently pick up
+    // species 0's effort for every species. A consumer needing species-specific
+    // effort (a binomial arm whose trial counts differ by species) needs an
+    // `n_trials_batch` input alongside `y_batch` and a stride here, which
+    // changes the exported signature.
     std::vector<std::vector<int>> n_trials;
     // phi[k * B + s]: per-species dispersion for arm k. Built once / per grid.
     std::vector<double> phi;

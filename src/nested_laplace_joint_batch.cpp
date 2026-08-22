@@ -155,8 +155,9 @@ inline double species_cell_loglik(
         arm_eta_ptr[kk]      = REAL(etas_s[k]);
         arm_y_ptr[kk]        = buf.y[k].empty() ? nullptr
                                : buf.y[k].data() + (std::size_t) s * buf.N[k];
+        // No species offset: trial counts are shared design (BatchArmBuffers).
         arm_n_trials_ptr[kk] = buf.n_trials[k].empty() ? nullptr
-                               : buf.n_trials[k].data() + (std::size_t) s * buf.N[k];
+                                                       : buf.n_trials[k].data();
         family_holder[kk]    = arms[k].family;
         arm_family_ptr[kk]   = family_holder[kk].c_str();
         arm_phi_vec[kk]      = buf.phi[(std::size_t) k * buf.B + s];

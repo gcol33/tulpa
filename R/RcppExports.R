@@ -569,6 +569,10 @@ cpp_register_test_occupancy_mixture_coupling <- function() {
     invisible(.Call(`_tulpa_cpp_register_test_occupancy_mixture_coupling`))
 }
 
+cpp_register_test_weighted_gaussian_coupling <- function(arm_ids) {
+    invisible(.Call(`_tulpa_cpp_register_test_weighted_gaussian_coupling`, arm_ids))
+}
+
 cpp_test_leapfrog <- function(q_init, p_init, epsilon, L) {
     .Call(`_tulpa_cpp_test_leapfrog`, q_init, p_init, epsilon, L)
 }

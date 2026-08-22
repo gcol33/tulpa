@@ -1765,6 +1765,15 @@ Rcpp::List cpp_nested_laplace_joint_multi_batch(
         for (int s = 0; s < n_batch; s++)
             for (int i = 0; i < arms[k].N; i++)
                 buf.y[k][(std::size_t) s * arms[k].N + i] = ym(i, s);
+
+        // Trial counts are shared design, so this is the arm's own vector with
+        // no species stride. Filling it is what makes CellResponse::n_trials()
+        // readable at all on this path: both consumers take
+        // `buf.n_trials[k].data()` or a null pointer, and a binomial spec
+        // written against the documented CellResponse surface dereferences the
+        // null.
+        buf.n_trials[k].assign(arms[k].n_trials.begin(),
+                               arms[k].n_trials.end());
     }
 
     std::shared_ptr<tulpa::CellCouplingSpec> spec =

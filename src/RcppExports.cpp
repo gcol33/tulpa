@@ -2728,6 +2728,16 @@ BEGIN_RCPP
     return R_NilValue;
 END_RCPP
 }
+// cpp_register_test_weighted_gaussian_coupling
+void cpp_register_test_weighted_gaussian_coupling(Rcpp::IntegerVector arm_ids);
+RcppExport SEXP _tulpa_cpp_register_test_weighted_gaussian_coupling(SEXP arm_idsSEXP) {
+BEGIN_RCPP
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::IntegerVector >::type arm_ids(arm_idsSEXP);
+    cpp_register_test_weighted_gaussian_coupling(arm_ids);
+    return R_NilValue;
+END_RCPP
+}
 // cpp_test_leapfrog
 List cpp_test_leapfrog(NumericVector q_init, NumericVector p_init, double epsilon, int L);
 RcppExport SEXP _tulpa_cpp_test_leapfrog(SEXP q_initSEXP, SEXP p_initSEXP, SEXP epsilonSEXP, SEXP LSEXP) {
@@ -4400,6 +4410,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_register_test_separable_bernoulli_coupling", (DL_FUNC) &_tulpa_cpp_register_test_separable_bernoulli_coupling, 0},
     {"_tulpa_cpp_register_test_bivariate_gaussian_coupling", (DL_FUNC) &_tulpa_cpp_register_test_bivariate_gaussian_coupling, 3},
     {"_tulpa_cpp_register_test_occupancy_mixture_coupling", (DL_FUNC) &_tulpa_cpp_register_test_occupancy_mixture_coupling, 0},
+    {"_tulpa_cpp_register_test_weighted_gaussian_coupling", (DL_FUNC) &_tulpa_cpp_register_test_weighted_gaussian_coupling, 1},
     {"_tulpa_cpp_test_leapfrog", (DL_FUNC) &_tulpa_cpp_test_leapfrog, 4},
     {"_tulpa_cpp_test_hamiltonian", (DL_FUNC) &_tulpa_cpp_test_hamiltonian, 2},
     {"_tulpa_cpp_test_log_sum_exp", (DL_FUNC) &_tulpa_cpp_test_log_sum_exp, 1},

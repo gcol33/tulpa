@@ -13,6 +13,7 @@
 #include "test_cell_coupling_separable_bernoulli.h"
 #include "test_cell_coupling_bivariate_gaussian.h"
 #include "test_cell_coupling_occupancy_mixture.h"
+#include "test_cell_coupling_weighted_gaussian.h"
 
 #include <Rcpp.h>
 #include <memory>
@@ -41,5 +42,17 @@ void cpp_register_test_occupancy_mixture_coupling() {
     tulpa::register_cell_coupling(
         "test_occupancy_mixture",
         std::make_shared<tulpa::TestOccupancyMixtureCoupling>()
+    );
+}
+
+// `arm_ids` selects which arms the spec couples, so a fixture can couple two
+// at once -- the arrangement that makes the batched dispersion table's
+// [arm x species] layout arbitrable (gcol33/tulpa#592).
+// [[Rcpp::export]]
+void cpp_register_test_weighted_gaussian_coupling(Rcpp::IntegerVector arm_ids) {
+    tulpa::register_cell_coupling(
+        "test_weighted_gaussian",
+        std::make_shared<tulpa::TestWeightedGaussianCoupling>(
+            std::vector<int>(arm_ids.begin(), arm_ids.end()))
     );
 }
