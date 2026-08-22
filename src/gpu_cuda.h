@@ -564,7 +564,14 @@ inline bool cuda_batched_cholesky(
     for (int i = 0; i < batch_size; i++) ctx.free(d_matrices[i]);
     return false;
   }
-  ctx.copy_to_device(d_ptrs, d_matrix_ptrs.data(), batch_size * sizeof(double*));
+  // cuSOLVER dereferences the CONTENTS of this array as device pointers, so a
+  // failed copy hands it whatever the driver last left in the allocation.
+  if (!ctx.copy_to_device(d_ptrs, d_matrix_ptrs.data(),
+                          batch_size * sizeof(double*))) {
+    ctx.free(d_ptrs);
+    for (int i = 0; i < batch_size; i++) ctx.free(d_matrices[i]);
+    return false;
+  }
 
   // Allocate info array
   CUdeviceptr d_info = ctx.alloc(batch_size * sizeof(int));
@@ -661,28 +668,54 @@ inline bool cuda_batched_trsv_impl(
   std::vector<CUdeviceptr> d_L(batch_size), d_b(batch_size);
   std::vector<double*> d_L_ptrs(batch_size), d_b_ptrs(batch_size);
 
+  // Every transfer below is checked. A copy that fails leaves the allocation
+  // holding whatever the driver last placed there: for the payloads that is a
+  // finite, plausible, wrong solve returned as a success, and for the two
+  // pointer arrays it is cuBLAS dereferencing that content as device pointers.
+  auto free_payloads = [&]() {
+    for (int j = 0; j < batch_size; j++) {
+      if (d_L[j]) ctx.free(d_L[j]);
+      if (d_b[j]) ctx.free(d_b[j]);
+    }
+  };
+
   for (int i = 0; i < batch_size; i++) {
     d_L[i] = ctx.alloc(matrix_bytes);
     d_b[i] = ctx.alloc(vector_bytes);
     if (!d_L[i] || !d_b[i]) {
-      for (int j = 0; j <= i; j++) {
-        if (d_L[j]) ctx.free(d_L[j]);
-        if (d_b[j]) ctx.free(d_b[j]);
-      }
+      free_payloads();
       return false;
     }
     d_L_ptrs[i] = (double*)d_L[i];
     d_b_ptrs[i] = (double*)d_b[i];
 
-    ctx.copy_to_device(d_L[i], L_matrices[i].data(), matrix_bytes);
-    ctx.copy_to_device(d_b[i], b_vectors[i].data(), vector_bytes);
+    if (!ctx.copy_to_device(d_L[i], L_matrices[i].data(), matrix_bytes) ||
+        !ctx.copy_to_device(d_b[i], b_vectors[i].data(), vector_bytes)) {
+      free_payloads();
+      return false;
+    }
   }
 
   // Allocate pointer arrays
   CUdeviceptr d_L_ptr_array = ctx.alloc(batch_size * sizeof(double*));
   CUdeviceptr d_b_ptr_array = ctx.alloc(batch_size * sizeof(double*));
-  ctx.copy_to_device(d_L_ptr_array, d_L_ptrs.data(), batch_size * sizeof(double*));
-  ctx.copy_to_device(d_b_ptr_array, d_b_ptrs.data(), batch_size * sizeof(double*));
+  auto free_ptr_arrays = [&]() {
+    if (d_L_ptr_array) ctx.free(d_L_ptr_array);
+    if (d_b_ptr_array) ctx.free(d_b_ptr_array);
+  };
+  if (!d_L_ptr_array || !d_b_ptr_array) {
+    free_ptr_arrays();
+    free_payloads();
+    return false;
+  }
+  if (!ctx.copy_to_device(d_L_ptr_array, d_L_ptrs.data(),
+                          batch_size * sizeof(double*)) ||
+      !ctx.copy_to_device(d_b_ptr_array, d_b_ptrs.data(),
+                          batch_size * sizeof(double*))) {
+    free_ptr_arrays();
+    free_payloads();
+    return false;
+  }
 
   // The factor fills the ROW-major lower triangle, which is the COLUMN-major
   // UPPER triangle cuBLAS has to be pointed at. Naming the lower one here would
@@ -695,17 +728,16 @@ inline bool cuda_batched_trsv_impl(
   if (success) {
     // Copy results back
     for (int i = 0; i < batch_size; i++) {
-      ctx.copy_to_host(b_vectors[i].data(), d_b[i], vector_bytes);
+      if (!ctx.copy_to_host(b_vectors[i].data(), d_b[i], vector_bytes)) {
+        success = false;
+        break;
+      }
     }
   }
 
   // Cleanup
-  ctx.free(d_L_ptr_array);
-  ctx.free(d_b_ptr_array);
-  for (int i = 0; i < batch_size; i++) {
-    ctx.free(d_L[i]);
-    ctx.free(d_b[i]);
-  }
+  free_ptr_arrays();
+  free_payloads();
 
   return success;
 }

@@ -1725,7 +1725,11 @@ Rcpp::List run_multi_block_nested_laplace_joint(
     // Corrected integrated Laplace (inner_cila.h). Runs on every integrated
     // cell (never the cheap screen), so the corrected cell weights and
     // particles cover the whole outer grid.
-    const CilaOptions*               cila = nullptr
+    const CilaOptions*               cila = nullptr,
+    // Factorization backend of the dense inner Newton: 0 auto (size
+    // threshold), >0 CHOLMOD, <0 dense. Orthogonal to force_sparse above,
+    // which chooses between this driver and the sparse-assembly one.
+    int                              inner_sparse_override = 0
 );
 
 } // namespace tulpa

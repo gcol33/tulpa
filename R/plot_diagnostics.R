@@ -961,6 +961,7 @@ diagnostic_summary <- function(fit, quiet = FALSE) {
     worst_ess = NULL,
     e_bfmi = NA,
     pareto_k = NA_real_,
+    s2z_log_det_fallback_cells = 0L,
     outer_regime = NA_character_,
     interval_read = NA_character_,
     interval_design_mass = NA_real_,
@@ -1186,6 +1187,20 @@ diagnostic_summary <- function(fit, quiet = FALSE) {
       recommendations <- c(recommendations,
         "Inner Laplace optimization did not converge")
     }
+  }
+
+  # Outer-grid cells whose log-determinant came from the PD-enforced factor.
+  # Read outside the approximation-only block for the same reason the axis note
+  # below is: the flag rides the grid on every tier that produces one.
+  s2z_fb <- .tulpa_s2z_fallback_cells(fit)
+  if (!is.null(s2z_fb)) {
+    result$s2z_log_det_fallback_cells <- s2z_fb$n
+    status <- "WARN"
+    recommendations <- c(recommendations, sprintf(
+      paste("%d of %d outer-grid cells fell back to the PD-enforced",
+            "log-determinant: their weights come from a determinant of",
+            "H + lambda I rather than of the pinned sum-to-zero matrix."),
+      s2z_fb$n, s2z_fb$n_grid))
   }
 
   # Grid axes the resolved path could not read. Recorded on

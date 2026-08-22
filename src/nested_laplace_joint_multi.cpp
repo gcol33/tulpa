@@ -1432,7 +1432,8 @@ Rcpp::List cpp_nested_laplace_joint_multi(
     int                 fixed_block_p = 0,
     Rcpp::Nullable<Rcpp::List> fixed_block_constraints = R_NilValue,
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
-    Rcpp::Nullable<Rcpp::List> cila = R_NilValue
+    Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
+    int                 inner_sparse_override = 0
 ) {
     // Per-cell fixed-effect covariance retention, extracted
     // inside each cell's own solve. `fixed_block_p` is the
@@ -1685,7 +1686,8 @@ Rcpp::List cpp_nested_laplace_joint_multi(
         compute_skew, skew_idx_ptr,
         fixed_block_ptr,
         debias_ptr,
-        cila_ptr
+        cila_ptr,
+        inner_sparse_override
     );
     out["theta_grid"]   = theta_grid;
     out["axis_offsets"] = axis_offsets;
@@ -2100,7 +2102,11 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
     const std::vector<int>*          skew_probe_idx,
     const JointFixedBlockRequest*    fixed_block,
     const SubspaceDebiasOptions*     debias,
-    const CilaOptions*               cila) {
+    const CilaOptions*               cila,
+    // Factorization backend of the DENSE inner Newton: 0 auto, >0 CHOLMOD,
+    // <0 dense. Orthogonal to force_sparse, which chooses between this driver
+    // and the sparse-assembly one.
+    int                              inner_sparse_override) {
     const int n_arms = static_cast<int>(arms.size());
     if (static_cast<int>(parsed.size()) != n_arms) {
         Rcpp::stop("parsed and arms vectors must have the same length.");
@@ -2411,7 +2417,8 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
             is_cheap ? nullptr : fixed_block,
             is_cheap ? nullptr : debias,
             is_cheap ? nullptr : cila,
-            static_cast<std::uint64_t>(k_grid) + 1ULL
+            static_cast<std::uint64_t>(k_grid) + 1ULL,
+            inner_sparse_override
         );
     };
 

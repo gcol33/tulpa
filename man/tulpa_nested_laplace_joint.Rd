@@ -284,6 +284,10 @@ posterior CI under-coverage when truth sits near a grid edge.
 \item \code{var_of_means_consistency} (\code{TRUE}) -- run a post-integration
 consistency pass on the variance of the per-arm posterior means and
 attach \code{var_of_means_consistency_info}.
+\item \code{inner_factorization} (\code{"auto"}) -- which factorization the dense inner
+Newton applies to the Hessian it assembled: \code{"auto"} by the latent
+dimension, \code{"sparse"} for CHOLMOD, \code{"dense"} for the dense Cholesky.
+Independent of \code{force_sparse}, which selects the assembly path.
 \item \code{force_sparse} (\code{FALSE}) -- linear-algebra backend for the inner joint
 solve. \code{TRUE} / \code{FALSE} select the sparse or dense path outright,
 regardless of the dense/sparse heuristic. \code{"auto"} selects by the latent

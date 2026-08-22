@@ -75,10 +75,11 @@ inline double eval_penalized_log_lik(
 // The interpolated step is safeguarded to [0.1, 0.5] x the current step so one
 // backtrack lands on or near the line optimum where fixed halving needs several.
 // Falls back to halving when the direction is not ascent (slope <= 0) or the
-// model is degenerate / non-finite. Acceptance is monotone (objective non-
-// decreasing) and each trial step is <= 0.5 x the previous, so the converged
-// mode and the MAX_HALVING trial cap are identical to the pure-halving path;
-// only the trial sequence inside a backtrack differs.
+// model is degenerate / non-finite. A trial is accepted when its objective is
+// finite AND either improves on the incoming one up to the absolute slack below
+// or is the last trial. Each trial step is <= 0.5 x the previous, so the
+// MAX_HALVING trial cap is the pure-halving path's; only the trial sequence
+// inside a backtrack differs.
 //
 // A NON-FINITE trial objective is never accepted, at any trial including the
 // last. -Inf is the domain barrier of a constrained link (link_eta_in_domain in

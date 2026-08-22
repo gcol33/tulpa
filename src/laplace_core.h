@@ -52,6 +52,17 @@ struct LaplaceResult {
   // succeeded, which is every solve at a PD Hessian.
   bool hessian_pd_at_mode = true;
 
+  // The sum-to-zero log-determinant fell back. On that path the reported
+  // -0.5 log|B| is read from a direct factor of B = H + sum_k coef_k 1_k 1_k',
+  // the pinned matrix; where that factor cannot be formed both readers keep the
+  // PD-enforced log-determinant instead, which is a real determinant of
+  // H + lambda I after the LM escalation ladder and not of B. The escalation is
+  // the normal case on this path rather than the exception, so the two are not
+  // close, and the value weights the outer hyperparameter grid: a cell that fell
+  // back is reweighted against its neighbours. True where that happened, so the
+  // count is reportable instead of the substitution being silent.
+  bool s2z_log_det_fallback = false;
+
   // The solve never started: the penalized objective was non-finite at the
   // supplied latent start and the feasibility sweep (make_start_feasible) found
   // no interior point. This is distinct from converged = false, which means the

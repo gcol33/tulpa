@@ -855,6 +855,23 @@
   n_x > .FORCE_SPARSE_AUTO_NX
 }
 
+# Which factorization the DENSE inner joint Newton uses on the Hessian it has
+# already assembled densely. `force_sparse` above chooses the driver -- dense
+# assembly or sparse assembly; this chooses the solver inside the dense one, and
+# the two are independent. "auto" is the latent-dimension threshold, and the two
+# explicit settings are what drive one problem through both backends.
+.INNER_FACTORIZATION <- c("auto", "sparse", "dense")
+
+.resolve_inner_factorization <- function(x) {
+  if (is.null(x)) return(0L)
+  if (!is.character(x) || length(x) != 1L || !(x %in% .INNER_FACTORIZATION)) {
+    stop("`control$inner_factorization` must be one of ",
+         paste(dQuote(.INNER_FACTORIZATION, FALSE), collapse = ", "), ".",
+         call. = FALSE)
+  }
+  switch(x, auto = 0L, sparse = 1L, dense = -1L)
+}
+
 # Compute per-arm latent offsets so callers can decode `modes` back into
 # per-arm (beta, re) blocks plus the shared spatial block(s). For BYM2 the
 # spatial block is two sub-blocks (phi, theta); for ICAR/CAR_proper it's

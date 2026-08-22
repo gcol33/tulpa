@@ -247,9 +247,13 @@ LaplaceResult laplace_newton_solve_ll(
     // symmetrized and stored column-major.
     // Withheld where the Hessian at the returned point is not PD: its inverse
     // is not a covariance there.
+    //
+    // Nothing after the loop refactorizes, so this reading of which factor is
+    // live serves both the inverse-block extraction and the skew probes below.
+    const bool used_sparse_factor = use_sparse && sparse_solver.factored();
+
     if (inv_block_layout && !inv_block_layout->empty() &&
         result.hessian_pd_at_mode) {
-        bool used_sparse_factor = use_sparse && sparse_solver.factored();
         std::vector<double> z_work;
         if (!used_sparse_factor) z_work.assign(n_x, 0.0);
         auto solve_live = [&](const double* rhs, double* out) {
@@ -288,7 +292,6 @@ LaplaceResult laplace_newton_solve_ll(
     // belong to.
     std::vector<double> pre_center_x(n_x);
     for (int j = 0; j < n_x; j++) pre_center_x[j] = x[j];
-    const bool used_sparse_factor = use_sparse && sparse_solver.factored();
 
     if (compute_skew) {
         std::vector<int> all_idx;

@@ -808,9 +808,11 @@
                                       hessian_pd_mode, step_curvature_mode,
                                       max_iter, tol, inner_refresh,
                                       fixed_block_p = 0L,
-                                      fixed_block_constraints = NULL) {
+                                      fixed_block_constraints = NULL,
+                                      inner_sparse_override = 0L) {
     force(arms); force(cp); force(blocks_spec); force(axis_offsets); force(B)
     force(n_threads); force(force_sparse); force(cell_coupling)
+    force(inner_sparse_override)
     force(hessian_pd_mode); force(step_curvature_mode)
     force(max_iter); force(tol); force(inner_refresh)
     force(fixed_block_p); force(fixed_block_constraints)
@@ -872,7 +874,8 @@
                                       as.integer(fixed_block_p) else 0L,
             fixed_block_constraints = fixed_block_constraints,
             debias              = debias,
-            cila                = cila)
+            cila                = cila,
+            inner_sparse_override = as.integer(inner_sparse_override))
     }
 }
 
@@ -1034,6 +1037,7 @@
                                   tile_warm = TRUE,
                                   prune_tol = 0.0,
                                   force_sparse = FALSE,
+                                  inner_sparse_override = 0L,
                                   cell_coupling = "separable",
                                   hessian_pd_mode = 0L,
                                   step_curvature_mode = 0L,
@@ -1123,7 +1127,8 @@
         step_curvature_mode = step_curvature_mode,
         max_iter = max_iter, tol = tol, inner_refresh = inner_refresh,
         fixed_block_p = fixed_block_p,
-        fixed_block_constraints = fixed_block_constraints)
+        fixed_block_constraints = fixed_block_constraints,
+        inner_sparse_override = inner_sparse_override)
 
     # Per-latent-axis fine grid values (sorted unique), shared by the CCD and the
     # adaptive-lattice integrators to place / locate the outer nodes.

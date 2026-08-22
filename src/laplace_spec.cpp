@@ -60,6 +60,15 @@
 
 namespace tulpa {
 
+// Additive guard on a squared scale before it is inverted into a precision. A
+// scale of exactly zero is a point mass, which the inverted form cannot carry;
+// the guard turns it into a very large finite precision instead of infinity.
+constexpr double kPrecisionDenomGuard = 1e-300;
+
+// Below this, a centering fold moves the intercept by less than the rounding of
+// the values it is folded into, so the fold is skipped rather than applied.
+constexpr double kCenterFoldCutoff = 1e-15;
+
 namespace {
 
 // Layout helper: sub-vector that Newton actually moves on. For n_processes
@@ -289,7 +298,7 @@ inline void build_term_precision(
     log_det_Q = 0.0;
     if (!correlated || q == 1) {
         for (int c = 0; c < q; c++) {
-            double tau_c = 1.0 / (sigmas[c] * sigmas[c] + 1e-300);
+            double tau_c = 1.0 / (sigmas[c] * sigmas[c] + kPrecisionDenomGuard);
             Q_flat[(size_t)c * q + c] = tau_c;
             log_det_Q += std::log(tau_c);
         }
@@ -738,23 +747,13 @@ inline void scatter_spec(
                         if (zc == 0.0) continue;
                         double* row = H[row_base_t + c];
                         if (t == tp) {
-                            // Same term, same group? Block is on the
-                            // diagonal of the H lower triangle and we
-                            // need cp <= c.
-                            if (g == gp) {
-                                for (int cp = 0; cp <= c; cp++) {
-                                    row[row_base_tp + cp] +=
-                                        zc * z_term[tp][cp] * s_hess;
-                                }
-                            } else if (gp < g) {
-                                // Same term, gp < g: full q_tp row.
-                                for (int cp = 0; cp < qtp; cp++) {
-                                    row[row_base_tp + cp] +=
-                                        zc * z_term[tp][cp] * s_hess;
-                                }
+                            // A term reads one group per observation, so
+                            // tp == t carries gp == g: the block sits on the
+                            // diagonal of the H lower triangle and cp <= c.
+                            for (int cp = 0; cp <= c; cp++) {
+                                row[row_base_tp + cp] +=
+                                    zc * z_term[tp][cp] * s_hess;
                             }
-                            // gp > g: would be upper triangle for same
-                            // term; symmetrise pass handles it.
                         } else {
                             // Different term, tp < t: we are below the
                             // diagonal block by construction.
@@ -891,7 +890,7 @@ inline void scatter_spec(
     // ridge N(0, sigma_beta^2 I). bj is the global beta index across processes,
     // matching the length-p BetaPrior (single-process for the multi-RE caller).
     {
-        const double tau_scalar = 1.0 / (data.sigma_beta * data.sigma_beta + 1e-300);
+        const double tau_scalar = 1.0 / (data.sigma_beta * data.sigma_beta + kPrecisionDenomGuard);
         int bj = 0;
         for (int k = 0; k < np; k++) {
             const int off_k = L.latent_offset[k];
@@ -957,6 +956,14 @@ inline void scatter_spec(
     }
 }
 
+// The spec path's data log-likelihood, threaded the way compute_eta_spec and
+// the family-enum compute_total_log_lik are. It is evaluated once per
+// line-search trial, so the sum is the same shape as the eta assembly beside it
+// and reads the same n_threads. tulpa_parallel_sum cuts the range into
+// contiguous chunks, so at more than one thread the summation ORDER differs from
+// the serial one and the two agree to floating-point tolerance rather than
+// bitwise -- the invariant test-nested-laplace-joint-threading.R states for the
+// joint path.
 inline double total_log_lik_spec(
     const std::vector<double>& params,
     const std::vector<double>& eta_flat,
@@ -964,17 +971,16 @@ inline double total_log_lik_spec(
     const ParamLayout& layout,
     const LikelihoodSpec& spec,
     const void* response_data,
-    int N
+    int N,
+    int n_threads
 ) {
     const int np = data.n_processes;
-    double ll = 0.0;
-    for (int i = 0; i < N; i++) {
-        ll += spec.ll_double(
+    return tulpa_parallel_sum(n_threads, N, [&](int i) {
+        return spec.ll_double(
             i, &eta_flat[(std::ptrdiff_t)i * np], 0.0, 0.0,
             params, data, layout, response_data
         );
-    }
-    return ll;
+    });
 }
 
 inline double log_prior_latent(
@@ -990,7 +996,7 @@ inline double log_prior_latent(
     // Fixed-effect Gaussian log-prior (per-coef tau_j / mean_j when a BetaPrior
     // is supplied, else the scalar N(0, sigma_beta^2 I) ridge). Mirrors the
     // scatter beta-prior block so the mode and this log-density agree.
-    const double tau_scalar = 1.0 / (sigma_beta * sigma_beta + 1e-300);
+    const double tau_scalar = 1.0 / (sigma_beta * sigma_beta + kPrecisionDenomGuard);
     int bj = 0;
     for (int k = 0; k < L.np; k++) {
         for (int j = 0; j < L.beta_count[k]; j++, bj++) {
@@ -1170,7 +1176,7 @@ LaplaceResult spec_inner_solve(
             // level leaks into the integrated log-marginal.
             const double d_fac = blk.d_fac_at(k_grid);
             for (const auto& fold : blk.center(x)) {
-                if (std::abs(fold.amount) < 1e-15) continue;
+                if (std::abs(fold.amount) < kCenterFoldCutoff) continue;
                 if (fold.beta_offset < 0 || fold.beta_offset >= L.beta_count[0])
                     continue;
                 x[L.latent_offset[0] + fold.beta_offset] += d_fac * fold.amount;
@@ -1186,7 +1192,7 @@ LaplaceResult spec_inner_solve(
     auto log_lik_fn = [&](const Rcpp::NumericVector& eta) -> double {
         for (int i = 0; i < n_eta; i++) eta_flat[i] = eta[i];
         return total_log_lik_spec(params_work, eta_flat, data, layout,
-                                  spec, response_data, N);
+                                  spec, response_data, N, n_threads);
     };
 
     std::vector<double> x_init(n_x, 0.0);

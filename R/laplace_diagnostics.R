@@ -1344,6 +1344,22 @@
 # .nl_inner_skew_at_theta() attaches at fit time (see nested_laplace.R). NULL
 # when the fit never ran the diagnostic (control$diagnose_skew = FALSE, or a
 # backend that does not yet populate it).
+# How many outer-grid cells reported the reported log-determinant from the
+# PD-enforced factor instead of the pinned sum-to-zero matrix. On that path the
+# escalated matrix is H + lambda I rather than B = H + sum_k coef_k 1_k 1_k', so
+# a cell that fell back is weighted against its neighbours on a different
+# quantity. NULL where the fit carries no such vector -- every tier that does
+# not take the sum-to-zero route, and every fit produced before the flag
+# existed.
+.tulpa_s2z_fallback_cells <- function(fit) {
+  jf <- if (!is.null(fit$joint_fit)) fit$joint_fit else fit
+  v <- jf$s2z_log_det_fallback
+  if (is.null(v) || !length(v)) return(NULL)
+  n <- sum(as.logical(v), na.rm = TRUE)
+  if (n == 0L) return(NULL)
+  list(n = as.integer(n), n_grid = length(v))
+}
+
 .tulpa_inner_skew_reliability <- function(fit) {
   jf <- if (!is.null(fit$joint_fit)) fit$joint_fit else fit
   s <- .tulpa_inner_skew_summary(jf$inner_skew, jf$inner_skew_dropped %||% 0L)

@@ -292,6 +292,10 @@
 #'   * `var_of_means_consistency` (`TRUE`) -- run a post-integration
 #'     consistency pass on the variance of the per-arm posterior means and
 #'     attach `var_of_means_consistency_info`.
+#'   * `inner_factorization` (`"auto"`) -- which factorization the dense inner
+#'     Newton applies to the Hessian it assembled: `"auto"` by the latent
+#'     dimension, `"sparse"` for CHOLMOD, `"dense"` for the dense Cholesky.
+#'     Independent of `force_sparse`, which selects the assembly path.
 #'   * `force_sparse` (`FALSE`) -- linear-algebra backend for the inner joint
 #'     solve. `TRUE` / `FALSE` select the sparse or dense path outright,
 #'     regardless of the dense/sparse heuristic. `"auto"` selects by the latent
@@ -1132,6 +1136,8 @@ tulpa_nested_laplace_joint <- function(responses,
     adaptive_grid_max_passes  <- control$adaptive_grid_max_passes %||% 1L
     var_of_means_consistency  <- control$var_of_means_consistency %||% TRUE
     force_sparse              <- control$force_sparse %||% FALSE
+    inner_sparse_override     <- .resolve_inner_factorization(
+        control$inner_factorization)
     # Local CCD refinement of the multi-block outer grid. A
     # coarse tensor base grid is refined by a small curvature-aware node cloud on
     # a few high-weight, mutually non-adjacent cells, so the base grid can stay
@@ -1367,6 +1373,14 @@ tulpa_nested_laplace_joint <- function(responses,
         }
     }
 
+    # The override reaches the dense inner Newton through the multi-block
+    # driver's call factory only. Refusing it elsewhere is what keeps it from
+    # reading as a setting that was applied.
+    if (inner_sparse_override != 0L && !.is_multi_block_prior(prior)) {
+        stop("`control$inner_factorization` applies to the multi-block joint ",
+             "path; this fit takes the single-block one.", call. = FALSE)
+    }
+
     if (.is_multi_block_prior(prior)) {
         return(.joint_dispatch_multi(
             responses = responses, prior_list = prior, copy = copy,
@@ -1379,6 +1393,7 @@ tulpa_nested_laplace_joint <- function(responses,
             x_init = x_init, verbose = verbose, store_Q = store_Q,
             keep_grid_hessians = keep_grid_hessians,
             force_sparse = force_sparse,
+            inner_sparse_override = inner_sparse_override,
             cell_coupling = cell_coupling,
             hessian_pd_mode = hessian_pd_mode,
             step_curvature_mode = step_curvature_mode,

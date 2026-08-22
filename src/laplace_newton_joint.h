@@ -551,7 +551,14 @@ LaplaceResult laplace_newton_solve_joint_ll(
     // Distinguishes this cell's auxiliary stream from its neighbours' on an
     // outer grid; irrelevant for the deterministic net, load-bearing for the
     // randomized-QMC shifts.
-    std::uint64_t cila_cell_key = 0
+    std::uint64_t cila_cell_key = 0,
+    // sparse_override: 0 = auto (size threshold), >0 = force CHOLMOD, <0 =
+    // force the dense factorization. Same three states as the single-arm loop's
+    // parameter of the same name, and the same purpose: one joint problem can
+    // be driven through both factorization backends for an equivalence gate.
+    // The Hessian is assembled densely either way; this selects only what
+    // factorizes it.
+    int sparse_override = 0
 ) {
     LaplaceResult result;
     result.mode.assign(n_x, 0.0);
@@ -566,7 +573,9 @@ LaplaceResult laplace_newton_solve_joint_ll(
     } else {
         for (int j = 0; j < n_x; j++) x[j] = 0.0;
     }
-    bool use_sparse = (n_x >= SPARSE_THRESHOLD);
+    bool use_sparse = (sparse_override == 0)
+                          ? (n_x >= SPARSE_THRESHOLD)
+                          : (sparse_override > 0);
 
     SparseCholeskySolver local_solver;
     SparseCholeskySolver& sparse_solver = shared_solver ? *shared_solver : local_solver;

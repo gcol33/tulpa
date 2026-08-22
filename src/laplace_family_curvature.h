@@ -158,9 +158,8 @@ inline double curvature_deta_for_family(
         const double mu = std::max(tulpa_linalg::safe_exp(eta), 1e-15);
         double a, da, d2a;
         truncation_shape(family, mu, phi, &a, &da, &d2a);
-        const double q = std::exp(-a);
-        const double p = -std::expm1(-a);
-        const double ps = p > 1e-300 ? p : 1e-300;
+        const TruncationTerm t = truncation_term(a, da, d2a);
+        const double q = t.q, ps = t.p_safe;
         const double p2 = ps * ps, p3 = p2 * ps;
         const double term1 = d2a / ps - q * da * da / p2;
         const double term2 = q * da * (2.0 * d2a - da * da) / p2
@@ -180,13 +179,9 @@ inline double curvature_deta_for_family(
         return 0.0;
     }
     if (family == "tweedie") {
-        if (std::isnan(phi2)) {
-            Rcpp::stop("family 'tweedie' needs phi2 (the variance power p).");
-        }
         // w = mu^(2-p) / phi, log link
-        const double p = phi2;
-        const double mu = std::max(std::exp(eta), 1e-10);
-        return (2.0 - p) * std::pow(mu, 2.0 - p) / phi;
+        const TweedieParams tw = tweedie_params(phi2, eta);
+        return (2.0 - tw.p) * std::pow(tw.mu, 2.0 - tw.p) / phi;
     }
 
     // Generic mu-space route: w = dmu^2 / V(mu), so
@@ -240,9 +235,8 @@ inline double curvature_deta2_for_family(
         const double mu = std::max(tulpa_linalg::safe_exp(eta), 1e-15);
         double a, da, d2a, d3a;
         truncation_shape(family, mu, phi, &a, &da, &d2a, &d3a);
-        const double q = std::exp(-a);
-        const double p = -std::expm1(-a);
-        const double ps = p > 1e-300 ? p : 1e-300;
+        const TruncationTerm t = truncation_term(a, da, d2a);
+        const double q = t.q, p = t.p, ps = t.p_safe;
         const double p2 = ps * ps, p3 = p2 * ps, p4 = p3 * ps;
         const double f_a    = -da * q / p2 + da * da * q * (p + 2.0 * q) / p3;
         const double f_da   = 1.0 / ps - 2.0 * q * da / p2;
@@ -267,13 +261,10 @@ inline double curvature_deta2_for_family(
         return 0.0;
     }
     if (family == "tweedie") {
-        if (std::isnan(phi2)) {
-            Rcpp::stop("family 'tweedie' needs phi2 (the variance power p).");
-        }
         // dw/deta = (2-p) mu^(2-p)/phi, so d2w/deta2 = (2-p)^2 mu^(2-p)/phi
-        const double a = 2.0 - phi2;
-        const double mu = std::max(std::exp(eta), 1e-10);
-        return a * a * std::pow(mu, a) / phi;
+        const TweedieParams tw = tweedie_params(phi2, eta);
+        const double a = 2.0 - tw.p;
+        return a * a * std::pow(tw.mu, a) / phi;
     }
 
     // Generic mu-space route: w = dmu^2 / V(mu). With u = mu_eta, u1 = mu_eta2,
@@ -367,17 +358,8 @@ inline double obs_curvature_delta_deta_for_family(
         const double mu = std::max(tulpa_linalg::safe_exp(eta), 1e-15);
         double a, da, d2a, d3a;
         truncation_shape(family, mu, phi, &a, &da, &d2a, &d3a);
-        const double q  = std::exp(-a);
-        const double p  = -std::expm1(-a);
-        const double ps = p > 1e-300 ? p : 1e-300;
-        // p = 1 - e^-a, so its eta-derivatives follow from (a, da, d2a, d3a).
-        const double dp  = q * da;
-        const double d2p = q * (d2a - da * da);
-        const double d3p = q * (d3a - 3.0 * da * d2a + da * da * da);
-        // d3 log p = p'''/p - 3 p' p''/p^2 + 2 p'^3/p^3.
-        const double d3log_p = d3p / ps
-            - 3.0 * dp * d2p / (ps * ps)
-            + 2.0 * dp * dp * dp / (ps * ps * ps);
+        const double d3log_p = truncation_d3log_p(
+            truncation_term(a, da, d2a), da, d2a, d3a);
         return curvature_deta_for_family(y, n_trials, eta, "neg_binomial_2",
                                          phi, phi2)
              + d3log_p
@@ -425,7 +407,7 @@ inline double obs_curvature_delta_deta_for_family(
         // dW_obs/deta = 2 d (nu+1)(3 nu phi^2 - d^2) / D^3. The working weight
         // is constant in eta, so its own derivative contributes nothing and the
         // difference's derivative is W_obs's alone.
-        const double nu = std::isnan(phi2) ? kStudentTDf : phi2;
+        const double nu = student_t_df(phi2);
         const double d = y - eta;
         const double D = nu * phi * phi + d * d;
         return 2.0 * d * (nu + 1.0) * (3.0 * nu * phi * phi - d * d)
@@ -434,11 +416,8 @@ inline double obs_curvature_delta_deta_for_family(
     if (family == "tweedie") {
         // W_obs = mu^(1-p) [mu (2-p) + (p-1) y] / phi, whose eta-derivative
         // through dmu/deta = mu is mu^(1-p) [mu (2-p)^2 + (p-1)(1-p) y] / phi.
-        if (std::isnan(phi2)) {
-            Rcpp::stop("family 'tweedie' needs phi2 (the variance power p).");
-        }
-        const double p = phi2;
-        const double mu = std::max(std::exp(eta), 1e-10);
+        const TweedieParams tw = tweedie_params(phi2, eta);
+        const double p = tw.p, mu = tw.mu;
         const double m1p = std::pow(mu, 1.0 - p);
         const double dw_obs = m1p * (mu * (2.0 - p) * (2.0 - p)
                                      + (p - 1.0) * (1.0 - p) * y) / phi;

@@ -87,6 +87,57 @@ inline void check_obs_to_loc_0based(
     }
 }
 
+// A neighbour table arrives from R as `n_loc x nn` and is copied into a flat
+// buffer indexed by (i, j) against the `nn` the SAME spec carries in a separate
+// field. Rcpp::Matrix::operator()(i, j) resolves to i + nrows * j with no bounds
+// test, so a table whose shape disagrees with that `nn` reads past the SEXP data
+// block instead of erroring. Checked once here, where the field that is wrong
+// can still be named.
+inline void check_nn_tables(
+    const Rcpp::IntegerMatrix& idx, const Rcpp::NumericMatrix& dist,
+    int n_loc, int nn, const char* who,
+    const char* idx_field = "nn_idx", const char* dist_field = "nn_dist"
+) {
+    if (nn < 0) {
+        Rcpp::stop("%s: nn (%d) must be non-negative.", who, nn);
+    }
+    if (idx.nrow() != n_loc || idx.ncol() != nn) {
+        Rcpp::stop("%s: %s is %d x %d; must be %d x %d.", who, idx_field,
+                   static_cast<int>(idx.nrow()), static_cast<int>(idx.ncol()),
+                   n_loc, nn);
+    }
+    if (dist.nrow() != n_loc || dist.ncol() != nn) {
+        Rcpp::stop("%s: %s is %d x %d; must be %d x %d.", who, dist_field,
+                   static_cast<int>(dist.nrow()), static_cast<int>(dist.ncol()),
+                   n_loc, nn);
+    }
+}
+
+// A vector copied wholesale and then indexed downstream against a dimension the
+// spec carries elsewhere. The kernels that read these either guard by falling
+// back to -Inf or do not guard at all, so the length disagreement is worth an
+// error at the boundary rather than a fit that silently reports nothing.
+inline void check_vec_len(R_xlen_t got, R_xlen_t want,
+                          const char* who, const char* field) {
+    if (got != want) {
+        Rcpp::stop("%s: length(%s) is %d; must be %d.", who, field,
+                   static_cast<int>(got), static_cast<int>(want));
+    }
+}
+
+// The permutation and its inverse are read as location offsets, so both their
+// length and their values are part of the contract.
+inline void check_nn_order(const Rcpp::IntegerVector& ord, int n_loc,
+                           const char* who, const char* field) {
+    check_vec_len(ord.size(), n_loc, who, field);
+    for (int i = 0; i < n_loc; i++) {
+        if (ord[i] == NA_INTEGER || ord[i] < 0 || ord[i] >= n_loc) {
+            Rcpp::stop("%s: %s[%d] (%d) is outside [0, %d). The sampler-side "
+                       "ordering is 0-based.", who, field, i + 1, ord[i], n_loc);
+        }
+    }
+}
+
 // Spec-solver-style inputs kept alive together: data borrows spec & resp (and
 // resp borrows y / n_trials), so the whole struct must outlive the kernel run.
 // `y` aliases the caller's NumericVector (no copy) -- it must outlive too.
@@ -196,6 +247,13 @@ inline void build_sampler_model_inputs(
         Rcpp::IntegerVector nc   = Rcpp::as<Rcpp::IntegerVector>(re["ncoefs"]);
         Rcpp::LogicalVector cor  = Rcpp::as<Rcpp::LogicalVector>(re["correlated"]);
         const int K = ng.size();
+        // ncoefs, correlated and idx are read per term against this K. A short
+        // one silently produces a shorter layout that populate_re_structure then
+        // indexes per term, so the disagreement is named here instead.
+        static const char* const RE_WHO = "the random-effect sampler spec";
+        check_vec_len(nc.size(), K, RE_WHO, "ncoefs");
+        check_vec_len(cor.size(), K, RE_WHO, "correlated");
+        check_vec_len(idx_list.size(), K, RE_WHO, "idx");
         std::vector<int>  ngroups(ng.begin(), ng.end());
         std::vector<int>  ncoefs(nc.begin(), nc.end());
         std::vector<bool> correlated(K, false);
@@ -257,7 +315,8 @@ inline void build_sampler_model_inputs(
             in.data.spatial_type = SpatialType::GP;
             auto& g = in.data.gp_data;
             Rcpp::NumericMatrix coords = Rcpp::as<Rcpp::NumericMatrix>(sp["coords"]);
-            tulpa_linalg::require_coords_2col(coords, "gp() / nngp() under a sampler mode");
+            static const char* const GP_WHO = "gp() / nngp() under a sampler mode";
+            tulpa_linalg::require_coords_2col(coords, GP_WHO);
             const int n_loc = coords.nrow();
             g.n_obs = n_loc;
             g.nn = Rcpp::as<int>(sp["nn"]);
@@ -268,6 +327,7 @@ inline void build_sampler_model_inputs(
             }
             Rcpp::IntegerMatrix nnix = Rcpp::as<Rcpp::IntegerMatrix>(sp["nn_idx"]);
             Rcpp::NumericMatrix nnd  = Rcpp::as<Rcpp::NumericMatrix>(sp["nn_dist"]);
+            check_nn_tables(nnix, nnd, n_loc, g.nn, GP_WHO);
             g.nn_idx.resize((std::size_t)n_loc * g.nn);
             g.nn_dist.resize((std::size_t)n_loc * g.nn);
             for (int i = 0; i < n_loc; ++i)
@@ -277,11 +337,18 @@ inline void build_sampler_model_inputs(
                 }
             Rcpp::NumericVector nnnd =
                 Rcpp::as<Rcpp::NumericVector>(sp["nn_neighbor_dist"]);
+            // Read as nn_neighbor_dist[i * nn * nn + j1 * nn + j2]: the
+            // neighbour-pair distance block, one nn x nn matrix per location.
+            check_vec_len(nnnd.size(),
+                          (R_xlen_t)n_loc * g.nn * g.nn,
+                          GP_WHO, "nn_neighbor_dist");
             g.nn_neighbor_dist.assign(nnnd.begin(), nnnd.end());
             Rcpp::IntegerVector nord = Rcpp::as<Rcpp::IntegerVector>(sp["nn_order"]);
+            check_nn_order(nord, n_loc, GP_WHO, "nn_order");
             g.nn_order.assign(nord.begin(), nord.end());
             Rcpp::IntegerVector nordi =
                 Rcpp::as<Rcpp::IntegerVector>(sp["nn_order_inv"]);
+            check_nn_order(nordi, n_loc, GP_WHO, "nn_order_inv");
             g.nn_order_inv.assign(nordi.begin(), nordi.end());
             Rcpp::IntegerVector otl = Rcpp::as<Rcpp::IntegerVector>(sp["obs_to_loc"]);
             check_obs_to_loc_0based(otl, N, n_loc,
@@ -320,9 +387,9 @@ inline void build_sampler_model_inputs(
                 ms.coords[2 * (std::size_t)i]     = coords(i, 0);
                 ms.coords[2 * (std::size_t)i + 1] = coords(i, 1);
             }
+            static const char* const MS_WHO = "the multiscale GP sampler spec";
             Rcpp::IntegerVector otl = Rcpp::as<Rcpp::IntegerVector>(sp["obs_to_loc"]);
-            check_obs_to_loc_0based(otl, N, n_loc,
-                                    "the multiscale GP sampler spec");
+            check_obs_to_loc_0based(otl, N, n_loc, MS_WHO);
             ms.obs_to_loc.assign(otl.begin(), otl.end());
             ms.cov_type = static_cast<CovType>(Rcpp::as<int>(sp["cov_type"]));
 
@@ -330,6 +397,8 @@ inline void build_sampler_model_inputs(
             {
                 Rcpp::IntegerMatrix nnix = Rcpp::as<Rcpp::IntegerMatrix>(sp["nn_idx_local"]);
                 Rcpp::NumericMatrix nnd  = Rcpp::as<Rcpp::NumericMatrix>(sp["nn_dist_local"]);
+                check_nn_tables(nnix, nnd, n_loc, ms.nn_local, MS_WHO,
+                                "nn_idx_local", "nn_dist_local");
                 ms.nn_idx_local.resize((std::size_t)n_loc * ms.nn_local);
                 ms.nn_dist_local.resize((std::size_t)n_loc * ms.nn_local);
                 for (int i = 0; i < n_loc; ++i)
@@ -339,11 +408,16 @@ inline void build_sampler_model_inputs(
                     }
                 Rcpp::NumericVector nnnd =
                     Rcpp::as<Rcpp::NumericVector>(sp["nn_neighbor_dist_local"]);
+                check_vec_len(nnnd.size(),
+                              (R_xlen_t)n_loc * ms.nn_local * ms.nn_local,
+                              MS_WHO, "nn_neighbor_dist_local");
                 ms.nn_neighbor_dist_local.assign(nnnd.begin(), nnnd.end());
                 Rcpp::IntegerVector nord = Rcpp::as<Rcpp::IntegerVector>(sp["nn_order_local"]);
+                check_nn_order(nord, n_loc, MS_WHO, "nn_order_local");
                 ms.nn_order_local.assign(nord.begin(), nord.end());
                 Rcpp::IntegerVector nordi =
                     Rcpp::as<Rcpp::IntegerVector>(sp["nn_order_inv_local"]);
+                check_nn_order(nordi, n_loc, MS_WHO, "nn_order_inv_local");
                 ms.nn_order_inv_local.assign(nordi.begin(), nordi.end());
             }
 
@@ -351,6 +425,8 @@ inline void build_sampler_model_inputs(
             {
                 Rcpp::IntegerMatrix nnix = Rcpp::as<Rcpp::IntegerMatrix>(sp["nn_idx_regional"]);
                 Rcpp::NumericMatrix nnd  = Rcpp::as<Rcpp::NumericMatrix>(sp["nn_dist_regional"]);
+                check_nn_tables(nnix, nnd, n_loc, ms.nn_regional, MS_WHO,
+                                "nn_idx_regional", "nn_dist_regional");
                 ms.nn_idx_regional.resize((std::size_t)n_loc * ms.nn_regional);
                 ms.nn_dist_regional.resize((std::size_t)n_loc * ms.nn_regional);
                 for (int i = 0; i < n_loc; ++i)
@@ -360,11 +436,16 @@ inline void build_sampler_model_inputs(
                     }
                 Rcpp::NumericVector nnnd =
                     Rcpp::as<Rcpp::NumericVector>(sp["nn_neighbor_dist_regional"]);
+                check_vec_len(nnnd.size(),
+                              (R_xlen_t)n_loc * ms.nn_regional * ms.nn_regional,
+                              MS_WHO, "nn_neighbor_dist_regional");
                 ms.nn_neighbor_dist_regional.assign(nnnd.begin(), nnnd.end());
                 Rcpp::IntegerVector nord = Rcpp::as<Rcpp::IntegerVector>(sp["nn_order_regional"]);
+                check_nn_order(nord, n_loc, MS_WHO, "nn_order_regional");
                 ms.nn_order_regional.assign(nord.begin(), nord.end());
                 Rcpp::IntegerVector nordi =
                     Rcpp::as<Rcpp::IntegerVector>(sp["nn_order_inv_regional"]);
+                check_nn_order(nordi, n_loc, MS_WHO, "nn_order_inv_regional");
                 ms.nn_order_inv_regional.assign(nordi.begin(), nordi.end());
             }
 
@@ -644,9 +725,13 @@ inline void build_sampler_model_inputs(
         Rcpp::List sv = Rcpp::as<Rcpp::List>(svc_spec);
         auto& s = in.data.svc_data;
         Rcpp::NumericMatrix coords = Rcpp::as<Rcpp::NumericMatrix>(sv["coords"]);
-        tulpa_linalg::require_coords_2col(coords, "svc() under a sampler mode");
+        static const char* const SVC_WHO = "svc() under a sampler mode";
+        tulpa_linalg::require_coords_2col(coords, SVC_WHO);
         const int n_obs = coords.nrow();
         const int n_svc = Rcpp::as<int>(sv["n_svc"]);
+        if (n_svc < 0) {
+            Rcpp::stop("%s: n_svc (%d) must be non-negative.", SVC_WHO, n_svc);
+        }
         s.n_obs = n_obs;
         s.n_svc = n_svc;
         s.nn = Rcpp::as<int>(sv["nn"]);
@@ -657,6 +742,7 @@ inline void build_sampler_model_inputs(
         }
         Rcpp::IntegerMatrix nnix = Rcpp::as<Rcpp::IntegerMatrix>(sv["nn_idx"]);
         Rcpp::NumericMatrix nnd  = Rcpp::as<Rcpp::NumericMatrix>(sv["nn_dist"]);
+        check_nn_tables(nnix, nnd, n_obs, s.nn, SVC_WHO);
         s.nn_idx.resize((std::size_t)n_obs * s.nn);
         s.nn_dist.resize((std::size_t)n_obs * s.nn);
         for (int i = 0; i < n_obs; ++i)
@@ -665,12 +751,16 @@ inline void build_sampler_model_inputs(
                 s.nn_dist[(std::size_t)i * s.nn + j] = nnd(i, j);
             }
         Rcpp::IntegerVector nord = Rcpp::as<Rcpp::IntegerVector>(sv["nn_order"]);
+        check_nn_order(nord, n_obs, SVC_WHO, "nn_order");
         s.nn_order.assign(nord.begin(), nord.end());
         Rcpp::IntegerVector nordi = Rcpp::as<Rcpp::IntegerVector>(sv["nn_order_inv"]);
+        check_nn_order(nordi, n_obs, SVC_WHO, "nn_order_inv");
         s.nn_order_inv.assign(nordi.begin(), nordi.end());
         Rcpp::IntegerVector svci = Rcpp::as<Rcpp::IntegerVector>(sv["svc_indices"]);
+        check_vec_len(svci.size(), n_svc, SVC_WHO, "svc_indices");
         s.svc_indices.assign(svci.begin(), svci.end());
         Rcpp::NumericVector xsvc = Rcpp::as<Rcpp::NumericVector>(sv["X_svc"]);
+        check_vec_len(xsvc.size(), (R_xlen_t)n_obs * n_svc, SVC_WHO, "X_svc");
         s.X_svc.assign(xsvc.begin(), xsvc.end());   // row-major [n_obs x n_svc]
         s.cov_type = static_cast<CovType>(Rcpp::as<int>(sv["cov_type"]));
         in.data.has_svc = true;
@@ -702,13 +792,21 @@ inline void build_sampler_model_inputs(
         t.n_times = Rcpp::as<int>(tv["n_times"]);
         t.n_tvc   = Rcpp::as<int>(tv["n_tvc"]);
         t.n_groups = Rcpp::as<int>(tv["n_groups"]);
+        static const char* const TVC_WHO = "temporal_tvc() under a sampler mode";
+        if (t.n_tvc < 0) {
+            Rcpp::stop("%s: n_tvc (%d) must be non-negative.", TVC_WHO, t.n_tvc);
+        }
         Rcpp::IntegerVector ti = Rcpp::as<Rcpp::IntegerVector>(tv["time_index"]);
+        check_vec_len(ti.size(), N, TVC_WHO, "time_index");
         t.time_index.assign(ti.begin(), ti.end());
         Rcpp::IntegerVector gi = Rcpp::as<Rcpp::IntegerVector>(tv["group_index"]);
+        check_vec_len(gi.size(), N, TVC_WHO, "group_index");
         t.group_index.assign(gi.begin(), gi.end());
         Rcpp::IntegerVector tvci = Rcpp::as<Rcpp::IntegerVector>(tv["tvc_indices"]);
+        check_vec_len(tvci.size(), t.n_tvc, TVC_WHO, "tvc_indices");
         t.tvc_indices.assign(tvci.begin(), tvci.end());
         Rcpp::NumericVector xtvc = Rcpp::as<Rcpp::NumericVector>(tv["X_tvc"]);
+        check_vec_len(xtvc.size(), (R_xlen_t)N * t.n_tvc, TVC_WHO, "X_tvc");
         t.X_tvc.assign(xtvc.begin(), xtvc.end());   // row-major [n_obs x n_tvc]
         std::string st = Rcpp::as<std::string>(tv["structure"]);
         if (st == "rw1")      t.structure = TemporalType::RW1;

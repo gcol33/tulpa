@@ -28,95 +28,8 @@
 
 using namespace Rcpp;
 
-namespace tulpa {
-
 // =====================================================================
-// GP / NNGP helpers (moved from inline, unchanged)
-// =====================================================================
-
-inline double compute_cov_exp_laplace(double d, double sigma2, double phi) {
-    if (d < 1e-10) return sigma2;
-    return sigma2 * std::exp(-d / phi);
-}
-
-inline double compute_cov_matern15_laplace(double d, double sigma2, double phi) {
-    if (d < 1e-10) return sigma2;
-    double x = std::sqrt(3.0) * d / phi;
-    return sigma2 * (1.0 + x) * std::exp(-x);
-}
-
-inline double compute_cov_matern25_laplace(double d, double sigma2, double phi) {
-    if (d < 1e-10) return sigma2;
-    double x = std::sqrt(5.0) * d / phi;
-    return sigma2 * (1.0 + x + x * x / 3.0) * std::exp(-x);
-}
-
-inline double compute_cov_laplace(double d, double sigma2, double phi, int cov_type) {
-    if (cov_type == 0) return compute_cov_exp_laplace(d, sigma2, phi);
-    if (cov_type == 1) return compute_cov_matern15_laplace(d, sigma2, phi);
-    return compute_cov_matern25_laplace(d, sigma2, phi);
-}
-
-inline void nngp_conditional_laplace(
-    int obs_idx, int i,
-    const std::vector<double>& w,
-    double sigma2, double phi_gp, int cov_type,
-    const NumericMatrix& coords,
-    const IntegerMatrix& nn_idx, const NumericMatrix& nn_dist,
-    const IntegerVector& nn_order, int nn,
-    double& cond_mean, double& cond_var
-) {
-    int n_neighbors = 0;
-    for (int j = 0; j < nn; j++) {
-        if (nn_idx(i, j) > 0) n_neighbors++;
-    }
-    if (n_neighbors == 0) {
-        cond_mean = 0.0;
-        cond_var = sigma2;
-        return;
-    }
-    // The positive neighbour indices are front-contiguous by construction; the
-    // loops below index columns 0..n_neighbors-1 as the neighbours. Guard an
-    // interior zero (a malformed neighbour row) that would index nn_order[-1].
-    for (int j = 0; j < n_neighbors; j++) {
-        if (nn_idx(i, j) <= 0) { cond_mean = 0.0; cond_var = sigma2; return; }
-    }
-
-    std::vector<double> c_vec(n_neighbors);
-    std::vector<double> C_mat(n_neighbors * n_neighbors);
-
-    for (int j = 0; j < n_neighbors; j++) {
-        c_vec[j] = compute_cov_laplace(nn_dist(i, j), sigma2, phi_gp, cov_type);
-    }
-    for (int j1 = 0; j1 < n_neighbors; j1++) {
-        int nn_orig1 = nn_order[nn_idx(i, j1) - 1];
-        for (int j2 = 0; j2 < n_neighbors; j2++) {
-            int nn_orig2 = nn_order[nn_idx(i, j2) - 1];
-            if (j1 == j2) {
-                C_mat[j1 * n_neighbors + j2] = sigma2;
-            } else {
-                double d12 = tulpa_linalg::coords_dist(coords, nn_orig1, nn_orig2);
-                C_mat[j1 * n_neighbors + j2] = compute_cov_laplace(d12, sigma2, phi_gp, cov_type);
-            }
-        }
-    }
-
-    // Gather neighbor values in c_vec order, then shared factor/solve core
-    std::vector<double> w_nb(n_neighbors);
-    for (int j = 0; j < n_neighbors; j++) {
-        int nn_orig = nn_order[nn_idx(i, j) - 1];
-        w_nb[j] = w[nn_orig];
-    }
-    tulpa_linalg::nngp_conditional_moments(
-        C_mat.data(), c_vec.data(), w_nb.data(), n_neighbors, sigma2,
-        tulpa_linalg::kNngpNugget, tulpa_linalg::kNngpVarFloor,
-        cond_mean, cond_var);
-}
-
-} // namespace tulpa
-
-// =====================================================================
-// R exports (call into tulpa:: functions defined above)
+// R exports
 // =====================================================================
 
 // [[Rcpp::export]]
@@ -494,6 +407,7 @@ Rcpp::NumericMatrix cpp_laplace_sample(
     return samples;
 }
 
-// Spatial / BYM2 / RSR mode finders + their R exports moved to laplace_core_spatial.cpp.
-// GP / Multiscale GP / Multiscale temporal mode finders + their R exports moved to laplace_core_gp.cpp.
-// Nested Laplace and SPDE code lives in nested_laplace.cpp and spde_laplace.cpp.
+// Spatial / BYM2 / RSR mode finders and their R exports live in
+// laplace_core_spatial.cpp, the GP / multiscale GP / multiscale temporal ones in
+// laplace_core_gp.cpp, and nested Laplace / SPDE in nested_laplace.cpp and
+// spde_laplace.cpp.

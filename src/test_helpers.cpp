@@ -21,6 +21,7 @@
 #include "sparse_hessian.h"
 #include "sparse_cholesky.h"
 #include "mcar_block_factory.h"
+#include "tgmrf_block_factory.h"
 #include "gpu_nngp_laplace.h"
 #include "laplace_spatial_priors.h"
 #include "mem_budget.h"
@@ -2170,4 +2171,59 @@ Rcpp::List cpp_test_spde_nc_transform_Q(
   return Rcpp::List::create(Rcpp::Named("x") = Qx, Rcpp::Named("i") = Qi,
                             Rcpp::Named("p") = Qp, Rcpp::Named("n") = n,
                             Rcpp::Named("has_orphans") = tx.has_orphans);
+}
+
+// ---------------------------------------------------------------------------
+// tgmrf block spec validation (gcol33/tulpa#472).
+//
+// make_tgmrf_block is reached from the joint multi-block front door, which
+// hands it the R block spec unchanged. Building the block from a spec directly
+// is what lets a test assert that a field whose shape disagrees with n_latent
+// is named, without standing up a whole joint fit around it. Returns the block
+// size on success.
+// [[Rcpp::export]]
+int cpp_test_tgmrf_block_spec(Rcpp::List bs) {
+  const int size = Rcpp::as<int>(bs["n_latent"]);
+  Rcpp::List Q_p_list = bs["Q_csc_p_per_grid"];
+  Rcpp::List Q_i_list = bs["Q_csc_i_per_grid"];
+  Rcpp::List Q_x_list = bs["Q_csc_x_per_grid"];
+  Rcpp::NumericVector logdet_Q_v = bs["logdet_Q_per_grid"];
+  Rcpp::NumericVector log_pi_v   = bs["log_prior_theta_per_grid"];
+
+  tulpa::LatentBlock block = tulpa::make_tgmrf_block(
+      /*start=*/0, size,
+      [](int, int) -> int { return 1; },
+      Q_p_list, Q_i_list, Q_x_list, logdet_Q_v, log_pi_v,
+      /*block_index=*/0);
+  return block.size;
+}
+
+// The symbolic frame the block reports, as 1-based (row, col) pairs. The
+// builder is initialized from this once per fit and DISCARDS any write outside
+// it, so what the frame covers is the whole of whether a grid point's prior
+// reaches the Hessian.
+// [[Rcpp::export]]
+Rcpp::List cpp_test_tgmrf_block_pattern(Rcpp::List bs) {
+  const int size = Rcpp::as<int>(bs["n_latent"]);
+  Rcpp::List Q_p_list = bs["Q_csc_p_per_grid"];
+  Rcpp::List Q_i_list = bs["Q_csc_i_per_grid"];
+  Rcpp::List Q_x_list = bs["Q_csc_x_per_grid"];
+  Rcpp::NumericVector logdet_Q_v = bs["logdet_Q_per_grid"];
+  Rcpp::NumericVector log_pi_v   = bs["log_prior_theta_per_grid"];
+
+  tulpa::LatentBlock block = tulpa::make_tgmrf_block(
+      /*start=*/0, size,
+      [](int, int) -> int { return 1; },
+      Q_p_list, Q_i_list, Q_x_list, logdet_Q_v, log_pi_v,
+      /*block_index=*/0);
+
+  std::vector<std::pair<int, int>> pat;
+  if (block.add_prior_pattern) block.add_prior_pattern(pat);
+  Rcpp::IntegerVector row(pat.size()), col(pat.size());
+  for (std::size_t t = 0; t < pat.size(); t++) {
+    row[t] = pat[t].first + 1;
+    col[t] = pat[t].second + 1;
+  }
+  return Rcpp::List::create(Rcpp::Named("row") = row,
+                            Rcpp::Named("col") = col);
 }

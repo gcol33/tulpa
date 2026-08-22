@@ -405,6 +405,9 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
             s2z_log_det = s2z_log_det_direct(H_builder, H_builder.s2z_rank1,
                                              /*fallback=*/S2Z_NA,
                                              &scratch.s2z_log_det_cache);
+        // Neither reader could form a factor of the pinned matrix, so the
+        // PD-enforced value below stands in for it.
+        result.s2z_log_det_fallback = !std::isfinite(s2z_log_det);
     }
     // The values as the scatter left them, plus the base ridge. joint_pd_step_solve
     // below loads the diagonal further on every failed factorization and never

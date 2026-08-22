@@ -33,6 +33,51 @@ namespace tulpa {
 // heavy-tailed drop-in for Gaussian.
 constexpr double kStudentTDf = 4.0;
 
+// P(Y > 0) held off zero. Every ratio in TruncationTerm divides by it, and a
+// zero-truncated family reaches p = 0 in the limit of a vanishing mean.
+constexpr double kProbFloor = 1e-300;
+
+// mu floor on the tweedie log link, which reads mu^(p-1) in a denominator and
+// mu^(2-p) in the weight; at mu = 0 one of the two diverges for every p in
+// (1, 2).
+constexpr double kTweedieMuFloor = 1e-10;
+
+// Width in log space of the tweedie event-count series: summation stops once a
+// term falls this many nats below the running peak, where it can no longer move
+// the log-sum-exp at double precision.
+constexpr double kTweedieSeriesNats = 37.0;
+
+// Curvature floor on the censored / truncated gaussian arms. Both cores are
+// log-concave in eta, so a non-positive reading is roundoff at a flat tail; the
+// floor is what keeps the Newton Hessian PD there.
+constexpr double kCensoredCurvFloor = 1e-12;
+
+// The Student-t degrees of freedom in force: phi2 where the second dispersion
+// channel carries one, kStudentTDf where it does not.
+inline double student_t_df(double phi2) {
+    return std::isnan(phi2) ? kStudentTDf : phi2;
+}
+
+// The tweedie variance power. Required: mu^p has no sensible default, so a
+// missing phi2 is an error rather than a substitution.
+inline double tweedie_power(double phi2) {
+    if (std::isnan(phi2)) {
+        Rcpp::stop("family 'tweedie' needs phi2 (the variance power p).");
+    }
+    return phi2;
+}
+
+// The tweedie power together with the floored mean at eta, which is what every
+// branch reading the log link needs.
+struct TweedieParams {
+    double p;
+    double mu;
+};
+
+inline TweedieParams tweedie_params(double phi2, double eta) {
+    return {tweedie_power(phi2), std::max(std::exp(eta), kTweedieMuFloor)};
+}
+
 struct FamilyLink {
     std::string family;
     std::string link;
@@ -519,7 +564,7 @@ inline double log_lik_mu(double y, double mu, double phi, const std::string& fam
 // dominating index j_max = y^(2-p) / (phi (2-p)) until terms fall 37 nats
 // below the running peak. Mirrors .tweedie_loglik in R/family_loglik.R.
 inline double log_lik_tweedie(double y, double mu, double phi, double p) {
-    mu = std::max(mu, 1e-10);
+    mu = std::max(mu, kTweedieMuFloor);
     const double lam = std::pow(mu, 2.0 - p) / (phi * (2.0 - p));
     if (y < 0.0) return R_NegInf;
     if (y <= 0.0) return -lam;
@@ -539,13 +584,13 @@ inline double log_lik_tweedie(double y, double mu, double phi, double p) {
         const double lt = logterm((double)n);
         terms.push_back(lt);
         if (lt > lmax) lmax = lt;
-        if (lt < lmax - 37.0) break;
+        if (lt < lmax - kTweedieSeriesNats) break;
     }
     for (int n = n0 - 1; n >= 1; --n) {
         const double lt = logterm((double)n);
         terms.push_back(lt);
         if (lt > lmax) lmax = lt;
-        if (lt < lmax - 37.0) break;
+        if (lt < lmax - kTweedieSeriesNats) break;
     }
     double s = 0.0;
     for (double lt : terms) s += std::exp(lt - lmax);
@@ -571,7 +616,11 @@ inline double log_lik_tweedie(double y, double mu, double phi, double p) {
 // from drifting apart, which is the failure mode a per-family copy invites.
 // Mirrors truncated_poisson / truncated_neg_binomial_2 in R/family_loglik.R.
 struct TruncationTerm {
+    double q;         // P(Y = 0) = exp(-a)
     double p;         // P(Y > 0) = 1 - exp(-a)
+    double p_safe;    // p floored at kProbFloor: the denominator of every ratio
+    double dp;        // d P(Y > 0) / d eta
+    double d2p;       // d2 P(Y > 0) / d eta2
     double log_p;     // log P(Y > 0)
     double dlog_p;    // d log P(Y > 0) / d eta
     double d2log_p;   // d2 log P(Y > 0) / d eta2
@@ -585,12 +634,16 @@ inline bool is_zero_truncated(const std::string& family) {
 
 inline TruncationTerm truncation_term(double a, double da, double d2a) {
     TruncationTerm t;
-    const double q = std::exp(-a);              // P(Y = 0)
+    t.q = std::exp(-a);                         // P(Y = 0)
     t.p = -std::expm1(-a);
-    const double psafe = t.p > 1e-300 ? t.p : 1e-300;
+    t.p_safe = t.p > kProbFloor ? t.p : kProbFloor;
+    const double q = t.q;
+    const double psafe = t.p_safe;
     t.log_p = tulpa::math::log1m_exp(a);
     const double dp  = q * da;
     const double d2p = q * (d2a - da * da);
+    t.dp  = dp;
+    t.d2p = d2p;
     t.dlog_p  = dp / psafe;
     t.d2log_p = (d2p * psafe - dp * dp) / (psafe * psafe);
     // Var(y | y > 0) through the link: positive for every a > 0, so the Newton
@@ -598,6 +651,18 @@ inline TruncationTerm truncation_term(double a, double da, double d2a) {
     // which carries y).
     t.e_weight = da / psafe - q * da * da / (psafe * psafe);
     return t;
+}
+
+// d3 log P(Y > 0) / d eta3, the next rung on the same (q, p) the term carries.
+// Separate from TruncationTerm because only the observed-curvature ladder needs
+// it and it is the one piece that reads the third shape derivative d3a.
+inline double truncation_d3log_p(const TruncationTerm& t,
+                                 double da, double d2a, double d3a) {
+    const double ps  = t.p_safe;
+    const double d3p = t.q * (d3a - 3.0 * da * d2a + da * da * da);
+    return d3p / ps
+         - 3.0 * t.dp * t.d2p / (ps * ps)
+         + 2.0 * t.dp * t.dp * t.dp / (ps * ps * ps);
 }
 
 // (a, da, d2a) for a truncated family at the current eta, and the third
@@ -700,7 +765,7 @@ inline GradHess grad_hess_for_family_core(
         // Score is exact; the working weight is the constant Fisher information
         // (nu+1)/((nu+3) phi^2), which is positive and needs no Fisher fallback
         // (unlike the redescending observed information of the heavy tails).
-        const double nu = std::isnan(phi2) ? kStudentTDf : phi2;
+        const double nu = student_t_df(phi2);
         double resid = y - eta;
         double grad = (nu + 1.0) * resid / (nu * phi * phi + resid * resid);
         return {grad, (nu + 1.0) / ((nu + 3.0) * phi * phi)};
@@ -709,11 +774,8 @@ inline GradHess grad_hess_for_family_core(
         // Compound Poisson-gamma (log link), phi2 = power p in (1, 2). EDM
         // score through the log link, (y - mu)/(phi mu^(p-1)); expected
         // Fisher weight mu^(2-p)/phi. Always positive, no fallback needed.
-        if (std::isnan(phi2)) {
-            Rcpp::stop("family 'tweedie' needs phi2 (the variance power p).");
-        }
-        const double p = phi2;
-        double mu = std::max(std::exp(eta), 1e-10);
+        const TweedieParams tw = tweedie_params(phi2, eta);
+        const double p = tw.p, mu = tw.mu;
         return {(y - mu) / (phi * std::pow(mu, p - 1.0)),
                 std::pow(mu, 2.0 - p) / phi};
     }
@@ -801,17 +863,14 @@ inline double log_lik_for_family_core(
              - tulpa::math::portable_lgamma(a) - tulpa::math::portable_lgamma(b) + tulpa::math::portable_lgamma(a + b);
     }
     if (kind == FamilyKind::STUDENT_T) {
-        const double nu = std::isnan(phi2) ? kStudentTDf : phi2;
+        const double nu = student_t_df(phi2);
         double r = (y - eta) / phi;
         return tulpa::math::portable_lgamma((nu + 1.0) / 2.0) - tulpa::math::portable_lgamma(nu / 2.0)
              - 0.5 * std::log(nu * M_PI * phi * phi)
              - 0.5 * (nu + 1.0) * std::log1p(r * r / nu);
     }
     if (kind == FamilyKind::TWEEDIE) {
-        if (std::isnan(phi2)) {
-            Rcpp::stop("family 'tweedie' needs phi2 (the variance power p).");
-        }
-        return log_lik_tweedie(y, std::exp(eta), phi, phi2);
+        return log_lik_tweedie(y, std::exp(eta), phi, tweedie_power(phi2));
     }
 
     // Domain barrier for the eta > 0 links. -Inf here is what stops the Newton
@@ -1013,7 +1072,7 @@ inline GradHess obs_grad_hess_for_family(
         // scale. grad_hess_for_family keeps the constant Fisher form for Newton
         // for exactly that reason; this is the true curvature the mode Jacobian
         // is governed by.
-        const double nu = std::isnan(phi2) ? kStudentTDf : phi2;
+        const double nu = student_t_df(phi2);
         const double d = y - eta;
         const double D = nu * phi * phi + d * d;
         return {(nu + 1.0) * d / D,
@@ -1024,11 +1083,8 @@ inline GradHess obs_grad_hess_for_family(
         // it gives mu^(1-p) [mu + (p-1)(y - mu)] / phi, which is
         // mu(2-p) + (p-1) y over phi mu^(p-1) -- positive for every y >= 0 with
         // p in (1, 2). At y = mu it collapses to the registered working weight.
-        if (std::isnan(phi2)) {
-            Rcpp::stop("family 'tweedie' needs phi2 (the variance power p).");
-        }
-        const double p = phi2;
-        const double mu = std::max(std::exp(eta), 1e-10);
+        const TweedieParams tw = tweedie_params(phi2, eta);
+        const double p = tw.p, mu = tw.mu;
         const double m1p = std::pow(mu, 1.0 - p);
         return {(y - mu) * m1p / phi,
                 m1p * (mu + (p - 1.0) * (y - mu)) / phi};
@@ -1176,7 +1232,7 @@ inline IntervalGaussian interval_gaussian_core(double lower, double upper,
     // An interval carrying no mass -- upper <= lower -- is outside the support.
     // -Inf is what the line search refuses, so the solve backtracks off it
     // instead of reporting it as a mode.
-    if (!(logP > R_NegInf)) return { R_NegInf, 0.0, 1e-12 };
+    if (!(logP > R_NegInf)) return { R_NegInf, 0.0, kCensoredCurvFloor };
 
     const double lpl = lo_open ? R_NegInf : portable_dnorm_log(zl);
     const double lpu = hi_open ? R_NegInf : portable_dnorm_log(zu);
@@ -1203,7 +1259,7 @@ inline IntervalGaussian interval_gaussian_core(double lower, double upper,
         : d2P.sign * std::exp(d2P.log_mag - logP) * inv_s * inv_s;
 
     double nh = g * g - Pdd_over_P;
-    if (nh < 1e-12) nh = 1e-12;   // log-concave; guard roundoff at the flat tail
+    if (nh < kCensoredCurvFloor) nh = kCensoredCurvFloor;
 
     return { logP, g, nh };
 }
@@ -1273,7 +1329,7 @@ inline TruncatedGaussian truncated_gaussian_core(double y, double u_upper,
     // lambda * (a + lambda): guard the 0 * Inf at a = +Inf (lambda = 0 there).
     const double curv_term = (lambda == 0.0) ? 0.0 : lambda * (a + lambda);
     double nh = (1.0 - curv_term) * inv_s * inv_s;
-    if (nh < 1e-12) nh = 1e-12;   // log-concave; guard roundoff at the flat tail
+    if (nh < kCensoredCurvFloor) nh = kCensoredCurvFloor;
 
     return { ll, grad, nh };
 }

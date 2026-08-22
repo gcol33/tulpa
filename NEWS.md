@@ -1,5 +1,83 @@
 # tulpa NEWS
 
+## 0.1.13
+
+* **A tgmrf block's symbolic frame is the union over grid points** (#472). The
+  `SparseHessianBuilder` is initialized once per fit, and the frame was read off
+  grid point 0 alone under an R-side convention that every grid point's Q shares
+  one pattern. An assembled Q loses entries at a parameter value that zeroes
+  them -- an AR1 Q at `rho = 0` is diagonal, and Matrix drops an assigned zero
+  from the pattern -- so grid point 0 can be the sparser one, and on the SPARSE
+  path `SparseHessianBuilder::add` then discarded every off-diagonal the other
+  grid points carried. `add_prior_pattern` now emits the union, so a grid point
+  sparser than the frame writes into structural zeros and nothing is dropped.
+  The dense path assembles directly into the matrix and was never affected.
+
+* **`control$inner_factorization` drives the dense joint inner Newton's
+  factorization backend** (#471). `"auto"` (the default, the latent-dimension
+  threshold), `"sparse"` (CHOLMOD) and `"dense"` select what factorizes the
+  Hessian the dense joint driver has already assembled -- the three states the
+  single-arm loop's `sparse_override` carries. It is independent of
+  `control$force_sparse`, which chooses which driver ASSEMBLES the Hessian. The
+  new `test-joint-inner-factorization.R` runs one joint problem through both
+  backends and holds them to factorization noise. The control reaches the
+  multi-block joint path; a single-block fit that sets it now errors rather than
+  ignoring it.
+
+* **An outer-grid cell that fell back to the PD-enforced log-determinant is
+  counted and reported** (#601). On the sum-to-zero path the reported
+  `-0.5 log|B|` is read from a direct factor of the pinned matrix
+  `B = H + sum_k coef_k 1_k 1_k'`; where that factor cannot be formed, both
+  readers keep the PD-enforced value, which is a determinant of `H + lambda I`
+  after the LM escalation ladder. That value weights the outer hyperparameter
+  grid, so a cell that fell back is reweighted against its neighbours -- and
+  nothing said so. `LaplaceResult` now carries `s2z_log_det_fallback`, the grid
+  carries it per cell, and `diagnostic_summary()` reports the count once per fit
+  and raises the status to WARN. The checkpoint format carries the flag, so its
+  header magic is bumped to `TLPACKP4` and an older log is rejected rather than
+  misread.
+
+* **The sampler and tgmrf block builders check the dimensions they index R
+  arrays with** (#472). `build_sampler_model_inputs` read `nn` from one spec
+  field and then indexed `nn_idx` / `nn_dist` against it with no check that the
+  tables carry that shape, and copied `nn_neighbor_dist`, `nn_order`,
+  `nn_order_inv`, `X_svc`, `X_tvc`, `time_index`, `group_index` and
+  `svc_indices` wholesale before indexing them at a length taken from elsewhere;
+  the random-effect branch read `ncoefs` / `correlated` / `idx` per term against
+  a count taken from `ngroups`. `make_tgmrf_block` checked `p_k` against
+  `n_latent` but never `i_k` / `x_k` against `p_k[n_latent]`, nor that a row
+  index is in range -- and the dense prior scatter writes at that row index. All
+  of them now error naming the field that disagrees, and an empty per-grid list
+  is refused instead of being read at grid point 0.
+
+* **Every CUDA host-to-device copy is checked** (#474). One of seven call sites
+  in `gpu_cuda.h` read `copy_to_device`'s return. A failed copy leaves the
+  allocation holding whatever the driver last placed there: for the payload
+  buffers that is a plausible wrong result returned as a success, and for the
+  three device pointer arrays it is cuSOLVER and cuBLAS dereferencing that
+  content as device pointers. The read-back path had the same split and is
+  checked too.
+
+* **`total_log_lik_spec` is threaded** (#471). The spec path's data
+  log-likelihood ran serially inside the objective closure -- once per
+  line-search trial -- while the eta assembly beside it and the family-enum
+  `compute_total_log_lik` both took `n_threads`. It now reads the same
+  `n_threads` through `tulpa_parallel_sum`. At more than one thread the
+  summation order differs from the serial one, which is the tolerance-level
+  invariant `test-nested-laplace-joint-threading.R` states.
+
+* Maintenance across the Laplace shard (#470, #471): 78 lines of GP covariance
+  helpers with no caller are deleted; the same-term random-effect cross block
+  drops two branches that cannot be reached (a term reads one group per
+  observation, so `t == tp` carries `g == gp`); `used_sparse_factor` is computed
+  once instead of twice; the tweedie parameter resolve, the Student-t degrees of
+  freedom and the truncated families' `(q, p)` derivatives are each one helper
+  instead of six, four and three copies; and the probability floor, the tweedie
+  mean floor and series width, the censored-arm curvature floor, the precision
+  denominator guard and the centering fold cutoff are named constants. The
+  backtracking line search's doc now states the acceptance test it actually
+  applies.
+
 ## 0.1.12
 
 * **`LikelihoodSpec::ll_fwd` is removed, and the ABI is 42** (#493). The slot
