@@ -17,7 +17,7 @@
 // absent from the likelihood entirely: it is a free N(0, 1/tau) draw that
 // integrates out, rather than a stiff direction the sampler still has to
 // traverse. This is what INLA's `constr=TRUE` and Stan's `sum_to_zero_vector`
-// do (gcol33/tulpa#241).
+// do.
 //
 // Two consequences, both load-bearing:
 //
@@ -30,7 +30,7 @@
 //   2. CENTRING IS NOT OPTIONAL. The augmented constant direction carries
 //      precision tau (order 1), where the soft penalty this replaced carried
 //      1/(kappa*J)^2 (400 at J = 50). Augmenting a path that does NOT centre
-//      leaves the level ~400x freer than before, which is the aliasing of #241
+//      leaves the level ~400x freer than before, which is the same aliasing
 //      made worse. A path either does both or neither.
 //
 // Equivalence: integrating the n_components freed constants contributes

@@ -32,7 +32,7 @@
 }
 
 # =============================================================================
-# Inner-Laplace skewness diagnostic (gcol33/tulpa#272) -- the layer pareto_k
+# Inner-Laplace skewness diagnostic -- the layer pareto_k
 # above does NOT cover: whether the Gaussian (inner) Laplace approximation to
 # the latent-field conditional posterior pi(x_i | theta, y) is itself a good
 # fit, as opposed to whether the OUTER hyperparameter grid integrates that
@@ -47,8 +47,8 @@
 # derivative -- see build_spec_curvature3_oracle) and is never conflated with 0
 # ("no skew"). A likelihood whose unit reads several linear predictors at once --
 # a zero-inflation mixture, a cell-coupled `occu_cover` -- is scored through the
-# widened contraction of the third-derivative tensor (src/curvature3_contract.h,
-# gcol33/tulpa#301) rather than declined.
+# widened contraction of the third-derivative tensor
+# (src/curvature3_contract.h) rather than declined.
 # =============================================================================
 
 # Band a single |gamma_3| magnitude. Thresholds follow the common
@@ -66,10 +66,10 @@
   "unreliable"
 }
 
-# --- inner-skew decline reasons (gcol33/tulpa#296) ---------------------------
+# --- inner-skew decline reasons ---------------------------
 #
 # `gamma_3` is careful never to return a silently-wrong 0 for a non-computable
-# skewness -- every decline is NaN (#272). But NaN says only "not computable",
+# skewness -- every decline is NaN. But NaN says only "not computable",
 # and the reasons are not interchangeable: a fit whose coupled arms have no
 # scorable path at all leaves the outer k-hat as the only reliability number,
 # while a failed finite difference is specific to one fit and a disabled knob is
@@ -103,9 +103,9 @@
 #                          AT it, so neither exists there. This is what a fit
 #                          whose inner Newton stalled reports, instead of
 #                          `backend_unsupported` -- the backend computes gamma_3
-#                          on every converged solve of the same model
-#                          (gcol33/tulpa#344). The kernel settles it where it can
-#                          see it; the probe re-solve settles it otherwise.
+#                          on every converged solve of the same model. The
+#                          kernel settles it where it can see it; the probe
+#                          re-solve settles it otherwise.
 #   pd_eigen_clamp         sparse joint only: the fit ran under
 #                          `control$hessian = "psd"`, whose inner step
 #                          eigen-solves a densified Hessian and leaves no CHOLMOD
@@ -120,14 +120,14 @@
 # Coupling several processes in ONE likelihood is no longer a reason of its own:
 # a multi-process `LikelihoodSpec` (a ZI mixture) is scored by the
 # per-observation tensor contraction, so the former `"coupled_likelihood"` has no
-# producer left and is gone from the vocabulary (gcol33/tulpa#301).
+# producer left and is gone from the vocabulary.
 #
 # Structural reasons are the ones a reader must act on differently: for those
 # fits the outer k-hat is the only reliability number available.
 .INNER_SKEW_STRUCTURAL <- c("coupled_arm")
 
 # =============================================================================
-# Inner-Laplace importance k-hat (gcol33/tulpa#303) -- the second score on the
+# Inner-Laplace importance k-hat -- the second score on the
 # SAME inner layer, and the one that survives where the cubic term declines.
 #
 # `gamma_3` above expands the joint log density along the Gaussian
@@ -315,8 +315,7 @@
 # to expand about and no Gaussian at a mode for the inner k-hat to treat as a
 # proposal, whatever the backend supports. Reporting `backend_unsupported` there
 # names a capability the backend has -- it computes gamma_3 on every converged
-# solve of the same model -- and sends a reader to the wrong layer
-# (gcol33/tulpa#344).
+# solve of the same model -- and sends a reader to the wrong layer.
 .inner_skew_attach_probe <- function(res, out) {
     if (is.null(out)) return(.inner_skew_decline(res, "backend_unsupported"))
     conv <- out$converged
@@ -486,8 +485,8 @@
 # skewness) band into a single whole-fit verdict: reliable only when BOTH
 # layers are reliable; otherwise "scoped", naming which layer(s) degrade, so
 # the caller never reads a high outer k-hat (say) as "the whole fit is
-# broken" when the inner layer is fine, or vice versa -- the framing #272
-# was filed to fix (42/78 occu_cover species read as "broken" on outer k-hat
+# broken" when the inner layer is fine, or vice versa -- the framing this
+# layering exists to fix (42/78 occu_cover species read as "broken" on outer k-hat
 # alone when their point estimates, governed by the inner layer, were fine).
 #
 # A layer can also be "na" -- never assessed (gamma_3 not wired for a coupled
@@ -495,19 +494,19 @@
 # support transform) -- which must never collapse into the SAME string as
 # "assessed and good", or a batch consumer reading the verdict off many fits
 # cannot tell "outer bad, inner genuinely fine" from "outer bad, inner never
-# checked" (gcol33/tulpa#274). Every combination naming an "na" layer says so
+# checked". Every combination naming an "na" layer says so
 # explicitly ("... not assessed"), so `grepl("not assessed", reliability)`
 # reliably separates the two.
-# An "na" layer is further split by WHY it was not assessed (gcol33/tulpa#295,
-# #296): a layer that CANNOT be assessed for this model or family -- a coupled
+# An "na" layer is further split by WHY it was not assessed: a layer that
+# CANNOT be assessed for this model or family -- a coupled
 # multi-process likelihood has no per-observation term gamma_3 can score, and a
 # car_proper `rho_car` axis has no support the outer k-hat may guess -- will
 # never become assessable, so the verdict says so rather than implying a rerun
 # with the right knob would fill it in. The `"not assessed"` wording is kept in
-# every such verdict (a documented `grepl("not assessed", ...)` contract from
-# gcol33/tulpa#274), with the permanence as a qualifier on top.
+# every such verdict (a documented `grepl("not assessed", ...)` contract),
+# with the permanence as a qualifier on top.
 #
-# The INNER layer carries two scores, not one (gcol33/tulpa#303): the cubic
+# The INNER layer carries two scores, not one: the cubic
 # term gamma_3 and the importance k-hat, both read off the same probed
 # conditional-mean curve through the same joint density. `.tulpa_inner_layer()`
 # resolves them into the one band this verdict is built on -- the worse of the
@@ -628,7 +627,7 @@
   # The probe is its own function so its `return(NULL)` guards return from IT.
   # A `return()` inside a tryCatch() expression evaluates in the ENCLOSING
   # function's frame, so written inline those guards returned NULL as the whole
-  # fit instead of skipping the probe (gcol33/tulpa#298).
+  # fit instead of skipping the probe.
   probe <- function() {
     if (dispatch_kind == "multi") {
       tg <- res$theta_grid
@@ -669,7 +668,7 @@
 }
 
 # =============================================================================
-# Inner-Laplace skew CORRECTION (gcol33/tulpa#302) -- the consumer of gamma_3.
+# Inner-Laplace skew CORRECTION -- the consumer of gamma_3.
 #
 # Everything above SCORES the inner Gaussian. Rue, Martino & Chopin (2009)
 # Sec 3.2.3 compute the same terms in order to correct the marginal, and
@@ -691,7 +690,7 @@
 #
 # THE CENTRE, AND WHERE IT DIFFERS FROM THEIRS. eq. (22) does not have mean
 # zero: expanding it gives E[z] = gamma_1 + gamma_3 / 2, so the reshaped variate
-# is placed there (gcol33/tulpa#354, src/cornish_fisher.h). RMC constrain their
+# is placed there (src/cornish_fisher.h). RMC constrain their
 # skew normal to mean gamma^(1) instead, setting aside the contribution the
 # cubic term makes to the mean. The centre used here is the one their own
 # expansion implies, measured against exact quadrature rather than adopted.
@@ -773,7 +772,7 @@
   .nl_probe_to_fixed(as.numeric(g), fit[["inner_skew_idx"]], p)
 }
 
-# gamma_1 per FIXED EFFECT (gcol33/tulpa#354), read through the same probe
+# gamma_1 per FIXED EFFECT, read through the same probe
 # correspondence. A fit whose kernel declined the location term carries none, so
 # every coefficient is NA -- "not computable", which the correction reads as a
 # decline rather than as a zero shift.
@@ -805,14 +804,14 @@
 # final per-level decision is `.nl_skew_marginal()`'s and is reported as an
 # attribute on the summary it produced.
 #
-# THE GATE IS THE COMBINED INNER BAND, NOT gamma_3 ALONE (gcol33/tulpa#346). The
+# THE GATE IS THE COMBINED INNER BAND, NOT gamma_3 ALONE. The
 # inner layer carries two scores of the same Gaussian approximation -- the cubic
-# term and the importance k-hat (#303) -- and a coefficient the k-hat calls
+# term and the importance k-hat -- and a coefficient the k-hat calls
 # unreliable is one whose inner Gaussian misfits the conditional posterior in
 # ways a leading-order cubic term does not describe. Measured on the rare-event
 # binomial-logit fixture of `test-inner-skew-correction.R`, gamma_3 alone admits
 # every replicate while the combined band is `unreliable` on 38% of them, driven
-# by the k-hat; those are the same fits gcol33/tulpa#304 selects for exact
+# by the k-hat; those are the same fits the subspace debias selects for exact
 # sampling, so reading the two scores differently in the two places had one fit
 # judged reliable enough to correct and unreliable enough to resample.
 #
@@ -829,12 +828,12 @@
 #                          gamma_3 does not
 #   gamma1_not_computable  no location term at this coefficient (NaN, never 0);
 #                          `inner_skew_gamma1_declined` on the fit says why the
-#                          kernel could not produce one (gcol33/tulpa#354)
-#   centre_unreliable      |gamma_1 + gamma_3 / 2| at or past the CENTRE band
-#                          (gcol33/tulpa#362). The correction relocates the
+#                          kernel could not produce one
+#   centre_unreliable      |gamma_1 + gamma_3 / 2| at or past the CENTRE band.
+#                          The correction relocates the
 #                          marginal by that many standard errors, so banding
 #                          |gamma_3| alone bounds only the reshaping. The
-#                          shipped cutoff is `Inf` (gcol33/tulpa#376), so this
+#                          shipped cutoff is `Inf`, so this
 #                          reason is reachable only at a caller-supplied finite
 #                          `max_abs_centre`; it is retained, along with its
 #                          place in the precedence below, because the cutoff is
@@ -982,7 +981,7 @@
 .tulpa_psis_reliability <- function(fit) {
   jf <- if (!is.null(fit$joint_fit)) fit$joint_fit else fit
   k  <- jf$pareto_k %||% NA_real_
-  # WHY it is NA, when it is (gcol33/tulpa#295). A backend with no outer
+  # WHY it is NA, when it is. A backend with no outer
   # hyperparameter grid at all (SMC, VI, ...) records no reason of its own,
   # because it never reached the diagnostic -- name that case here rather than
   # leave the reader with a bare NA.
@@ -997,7 +996,7 @@
        pareto_k_declined = declined)
 }
 
-# Outer-integration REGIME of a nested-Laplace fit (gcol33/tulpa#276), read
+# Outer-integration REGIME of a nested-Laplace fit, read
 # from the fields `.joint_attach_pareto_k_regime()` stores at fit time.
 #
 # `pareto_k` alone cannot separate two very different situations, and a bare
@@ -1048,11 +1047,11 @@
   NULL
 }
 
-# Outer-grid PLACEMENT of a nested-Laplace fit (gcol33/tulpa#361, #370): which
+# Outer-grid PLACEMENT of a nested-Laplace fit: which
 # default axes do not contain their own posterior mode, and what the engine did
 # about it.
 #
-# The neighbour above reads the #276 REGIME, a joint property of the whole
+# The neighbour above reads the grid REGIME, a joint property of the whole
 # tensor. This reads the per-axis one: an axis whose own marginal is maximal at
 # an endpoint has its mode at or beyond that endpoint, and the span is
 # integrating a tail at any spacing. The two disagree exactly where a crossed
@@ -1088,7 +1087,7 @@
                   ": the default span did not contain that axis's posterior ",
                   "mode, so the reported grid is not the default one")
     # A bound the mode SD hit is not a spread the stencil measured, and the
-    # interval is read off the span it produced (gcol33/tulpa#387).
+    # interval is read off the span it produced.
     cl  <- pl$clamped %||% character(0)
     hit <- if (!length(cl) || is.null(names(cl))) character(0) else
       names(cl)[cl %in% c("ceiling", "floor")]
@@ -1110,10 +1109,10 @@
 }
 
 # What the reported per-axis hyperparameter intervals were read off, and how much
-# of the support underneath them is a quadrature design rather than posterior mass
-# (gcol33/tulpa#317). NULL for a fit that does not record it.
+# of the support underneath them is a quadrature design rather than posterior
+# mass. NULL for a fit that does not record it.
 #
-# `within_cell` is the second half of the same question (gcol33/tulpa#357): the
+# `within_cell` is the second half of the same question: the
 # node-set kind says what the integrator LEFT, the within-cell construction says
 # how each cell's mass was spread inside its own box when the grid was read
 # back. A fit carries one per axis, so a grid whose partition could not be built
@@ -1131,7 +1130,7 @@
        within_cell_declined =
          as.character(jf$theta_within_cell_declined %||% character(0)),
        within_cell_axes = names(wc) %||% character(0),
-       # One layer further down (gcol33/tulpa#377): the COORDINATE each axis's
+       # One layer further down: the COORDINATE each axis's
        # outer cell edges were mirrored in, and why a declared support's own
        # mirror did not produce them. A declined axis reports the conservative
        # edge -- its extreme coordinate -- rather than a guessed one outside the
@@ -1163,8 +1162,8 @@
   ed   <- ir$edge_declined
   # The vocabulary splits in two, and the two say different things about the
   # bound. `.NL_EDGE_FALLBACK` are the reasons whose edges ARE the extreme
-  # coordinates -- a declared support's mirror that left it (gcol33/tulpa#377)
-  # and a mirror that left the double range (gcol33/tulpa#379) -- so the bound
+  # coordinates -- a declared support's mirror that left it
+  # and a mirror that left the double range -- so the bound
   # is conservative. The other two set a DECLARATION aside, after which the
   # guess ran and its mirror stood, so the bound is a guessed edge and not a
   # conservative one. Reporting the second pair as running to the extreme
@@ -1188,7 +1187,7 @@
       "values instead"))
   }
   # The note fires on a fit read with something OTHER than the engine's own
-  # default, whichever that is (gcol33/tulpa#357). Naming the default here as a
+  # default, whichever that is. Naming the default here as a
   # literal is what made it say "rather than the default 'chord'" on a fit that
   # had just been read with the default.
   req <- ir$within_cell_requested
@@ -1219,7 +1218,7 @@
   out
 }
 
-# The RESOLUTION of a fit's outer grid (gcol33/tulpa#357): per axis, the cell
+# The RESOLUTION of a fit's outer grid: per axis, the cell
 # width and the posterior SD in that axis's own coordinate, and their ratio.
 #
 # The neighbours above read WHAT the interval was built from. This reads how
@@ -1239,7 +1238,7 @@
   }
   railed <- jf$outer_grid_railed_axes %||% character(0)
   # `resolved` is a claim about the WHOLE grid, so an axis that could not be
-  # scored withholds it rather than being skipped over (gcol33/tulpa#401). A fit
+  # scored withholds it rather than being skipped over. A fit
   # where nothing scored still reports -- what it reports is that nothing could
   # be, which is the case a NULL return used to make indistinguishable from a
   # fit that carries no resolution at all.
@@ -1260,7 +1259,7 @@
 # below `grid_resolved`, where the cells are narrower than the posterior they
 # discretize and the within-cell construction stops mattering.
 #
-# An UNSCORED axis is reported first and separately (gcol33/tulpa#401). Reporting
+# An UNSCORED axis is reported first and separately. Reporting
 # only the coarsest SCORED axis pointed the reader at a healthy axis while the
 # one whose grid did not contain its own mode went unmentioned, and told them to
 # add nodes to the wrong one.
@@ -1299,7 +1298,7 @@
   out
 }
 
-# The grid axes a fit's own resolved path could not read (gcol33/tulpa#352).
+# The grid axes a fit's own resolved path could not read.
 # The nested-Laplace front doors record them on `$axis_fields_dropped`; every
 # reader goes through here, so the record has ONE reading and a fit with nothing
 # dropped is silent in `diagnostic_summary()`, `print()` and `summary()` alike.
@@ -1313,7 +1312,7 @@
 
 # One sentence per dropped axis: the field, the block that carried it, and the
 # axis the resolved path integrated instead. The path is named with the same
-# label the refusal uses (`.NL_AXIS_PATH_LABEL`), so the two halves of #352 --
+# label the refusal uses (`.NL_AXIS_PATH_LABEL`), so the two halves --
 # the pin that errors and the default that is dropped -- read alike.
 .tulpa_axis_dropped_note <- function(rec) {
   if (is.null(rec) || !nrow(rec)) return(NULL)
@@ -1350,7 +1349,7 @@
   s <- .tulpa_inner_skew_summary(jf$inner_skew, jf$inner_skew_dropped %||% 0L)
   reason <- jf$inner_skew_declined %||% NA_character_
   arms   <- as.integer(jf$inner_skew_arms_declined %||% integer(0))
-  # A fit that computed NOTHING still reports WHY (gcol33/tulpa#296), so an
+  # A fit that computed NOTHING still reports WHY, so an
   # unscorable model class is distinguishable from a disabled knob.
   if (is.null(s)) {
     if (is.na(reason[1L])) return(NULL)
@@ -1406,7 +1405,7 @@
 # the PSIS / grid-quadrature headline as attributes. Documented user-side under
 # `?laplace_diagnostics`.
 #
-# DRAWS ARE NEEDED FOR THE BODY, NOT THE HEADLINE (gcol33/tulpa#348). Every
+# DRAWS ARE NEEDED FOR THE BODY, NOT THE HEADLINE. Every
 # reliability quantity below -- the outer PSIS k-hat and its regime, the grid
 # quadrature ESS, the inner-Laplace gamma_3 and importance k-hat, and the
 # combined verdict -- is read off `fit` at fit time and needs no posterior
@@ -1498,8 +1497,8 @@
     attr(tab, "grid_placement_note")   <- .tulpa_grid_placement_note(placement)
   }
   # What the reported per-axis hyperparameter intervals were read off, and how
-  # finely the node set they came from divides the posterior (gcol33/tulpa#317,
-  # #357). Both are properties of the OUTER read rather than of the inner solve,
+  # finely the node set they came from divides the posterior. Both are
+  # properties of the OUTER read rather than of the inner solve,
   # and neither had a consumer before: `.tulpa_interval_read_note()` was written
   # for the mixed support and never surfaced anywhere.
   if (!is.null(iread)) {
@@ -1602,22 +1601,22 @@
 #' point estimates, which the grid quadrature governs.
 #'
 #' `outer_regime` qualifies what a high `pareto_k` means, and is the reason a
-#' bare threshold on `pareto_k` is not a reliability verdict
-#' (gcol33/tulpa#276). A sharp hyperparameter posterior collapses the grid onto
-#' ~1 cell (`ess_grid` near 1); the outer integration has then degenerated to a
-#' point evaluation at the modal hyperparameter, so `pareto_k` is scoring how
-#' well a Gaussian at that mode stands in for the hyperparameter marginal, not
-#' how well a grid integrated it. Where the dominant cell is INTERIOR to the
-#' grid the collapse is benign -- the grid bracketed the mode, the estimate is
-#' empirical Bayes there, and only integrated hyperparameter uncertainty is
-#' missing. Where it sits at a grid BOUNDARY the grid may simply be too narrow:
-#' `grid_edge_axes` / `grid_edge_sides` name the axes to widen. On a fit whose
-#' `pareto_k` cleared the good band, the outer diagnostic also fits a
-#' skew-normal proposal and reports the marginal's estimated skewness as
-#' `outer_skew_max`, so an inflated k-hat that was purely the symmetric
-#' proposal's mismatch with a skewed variance-component marginal is both
-#' corrected and explained. A skew-normal has Gaussian tails, so this can never
-#' mask a genuinely heavy-tailed target.
+#' bare threshold on `pareto_k` is not a reliability verdict. A sharp
+#' hyperparameter posterior collapses the grid onto ~1 cell (`ess_grid` near
+#' 1); the outer integration has then degenerated to a point evaluation at the
+#' modal hyperparameter, so `pareto_k` is scoring how well a Gaussian at that
+#' mode stands in for the hyperparameter marginal, not how well a grid
+#' integrated it. Where the dominant cell is INTERIOR to the grid the collapse
+#' is benign -- the grid bracketed the mode, the estimate is empirical Bayes
+#' there, and only integrated hyperparameter uncertainty is missing. Where it
+#' sits at a grid BOUNDARY the grid may simply be too narrow: `grid_edge_axes`
+#' / `grid_edge_sides` name the axes to widen. On a fit whose `pareto_k`
+#' cleared the good band, the outer diagnostic also fits a skew-normal proposal
+#' and reports the marginal's estimated skewness as `outer_skew_max`, so an
+#' inflated k-hat that was purely the symmetric proposal's mismatch with a
+#' skewed variance-component marginal is both corrected and explained. A
+#' skew-normal has Gaussian tails, so this can never mask a genuinely
+#' heavy-tailed target.
 #'
 #' The grid quadrature reliability -- the effective sample size
 #' `ess_grid = 1 / sum(w_k^2)` of the outer integration weights and the largest
@@ -1633,7 +1632,7 @@
 #' default) on the fitting call. Reading a high `pareto_k` alone as "the fit
 #' is broken" conflates the two layers: an occu_cover batch flagged 42/78
 #' species "unreliable" on outer k-hat alone when their point estimates,
-#' governed by the healthy inner layer, were fine (gcol33/tulpa#272) -- the
+#' governed by the healthy inner layer, were fine -- the
 #' `reliability` attribute is the combined verdict that names which layer
 #' degrades, if either does.
 #'
@@ -1648,11 +1647,11 @@
 #' fit. So a fit that carries no draws -- a default single-block nested-Laplace
 #' fit, whose posterior is the retained outer-grid mixture rather than a sample
 #' -- reports the full band with an empty per-parameter body and `n_draws = NA`,
-#' and records why in the `param_table_declined` attribute
-#' (gcol33/tulpa#348). [tulpa_posterior_draws()] samples that mixture where the
-#' rows are wanted. The one case that still returns `NULL` is a fit with neither
-#' draws nor any reliability quantity, such as a plain Laplace fit with no outer
-#' grid to score.
+#' and records why in the `param_table_declined` attribute.
+#' [tulpa_posterior_draws()] samples that mixture where the rows are wanted.
+#' The one case that still returns `NULL` is a fit with neither draws nor any
+#' reliability quantity, such as a plain Laplace fit with no outer grid to
+#' score.
 #'
 #' @section Scope:
 #' The PSIS `pareto_k` diagnoses the OUTER (hyperparameter) integration: whether
@@ -1701,7 +1700,7 @@
 #'     \item{`pareto_k`}{the outer PSIS reliability k-hat (`NA` if not computed).}
 #'     \item{`pareto_k_band`}{`"good"` / `"ok"` / `"unreliable"` / `NA`.}
 #'     \item{`pareto_k_declined`, `pareto_k_declined_note`}{when `pareto_k` is
-#'       `NA`, WHY (gcol33/tulpa#295): `"not_requested"`, `"not_applicable"`,
+#'       `NA`, WHY: `"not_requested"`, `"not_applicable"`,
 #'       `"unguessable_axis"` (naming the axis -- a permanent limitation of that
 #'       family, so read `ess_grid` instead), `"draws_too_few"`,
 #'       `"grid_too_small"`, `"no_varying_axis"`, `"degenerate_proposal"`, or
@@ -1739,41 +1738,41 @@
 #'     \item{`inner_skew_scored`, `inner_skew_probed`}{how many of the probed
 #'       latent indices returned a finite `gamma_3` vs how many were probed.}
 #'     \item{`inner_skew_declined`, `inner_skew_arms_declined`,
-#'       `inner_skew_declined_note`}{when nothing was scored, WHY
-#'       (gcol33/tulpa#296): `"coupled_arm"` (STRUCTURAL -- the coupled arms have
-#'       neither a per-observation sum nor a cell third-derivative tensor to
-#'       read, so the outer k-hat is the only reliability number this fit has),
+#'       `inner_skew_declined_note`}{when nothing was scored, WHY:
+#'       `"coupled_arm"` (STRUCTURAL -- the coupled arms have neither a
+#'       per-observation sum nor a cell third-derivative tensor to read, so the
+#'       outer k-hat is the only reliability number this fit has),
 #'       `"curvature3_unavailable"`, `"no_finite_contribution"`,
 #'       `"no_probe_indices"`, `"not_requested"`, `"backend_unsupported"`,
 #'       `"solve_failed"`, or `"not_converged"` (the probe re-solve stopped
-#'       short of a mode, so neither inner score has a point to read);
-#'       the arms (1-based) a joint fit had no oracle for,
-#'       which is also set on a PARTIALLY scored fit; and a one-line reading.}
-#'     \item{`inner_pareto_k`, `inner_pareto_k_band`}{the inner-Laplace
-#'       importance k-hat over the probed subspace, and its band on the same
-#'       convention as the outer k-hat. Available wherever a mode was found,
-#'       including a fit `gamma_3` cannot score.}
-#'     \item{`inner_pareto_k_rel_ess`, `inner_pareto_k_is_ess`}{the smallest
-#'       realized importance efficiency and effective sample size across the
-#'       probed indices -- how much correcting the inner Gaussian actually
-#'       needs, which is what makes the scale-free shape above readable.}
-#'     \item{`inner_pareto_k_uniform`}{`TRUE` when no probed index carried a
-#'       material correction, i.e. the inner Gaussian reproduces the conditional
-#'       posterior over the sampled region.}
-#'     \item{`inner_pareto_k_scored`, `inner_pareto_k_probed`}{how many probed
-#'       indices returned a finite k-hat vs how many were probed.}
-#'     \item{`inner_pareto_k_declined`, `inner_pareto_k_declined_note`}{when it
-#'       is `NA`, WHY, from the same closed vocabulary the outer k-hat uses.}
-#'     \item{`reliability`}{the combined whole-fit verdict: `"reliable"` only
-#'       when both layers are good; otherwise names which layer is scoped or
-#'       flags both as unreliable. The inner layer enters through the worse of
-#'       its two scores, so a fit whose cubic term declined is still assessed.}
-#'   }
-#'   and a trailing `summary` attribute (a one-row data frame of the headline
-#'   numbers) for printing.
+#'       short of a mode, so neither inner score has a point to read); the arms
+#'       (1-based) a joint fit had no oracle for, which is also set on a
+#'       PARTIALLY scored fit; and a one-line reading.} \item{`inner_pareto_k`,
+#'       `inner_pareto_k_band`}{the inner-Laplace importance k-hat over the
+#'       probed subspace, and its band on the same convention as the outer
+#'       k-hat. Available wherever a mode was found, including a fit `gamma_3`
+#'       cannot score.} \item{`inner_pareto_k_rel_ess`,
+#'       `inner_pareto_k_is_ess`}{the smallest realized importance efficiency
+#'       and effective sample size across the probed indices -- how much
+#'       correcting the inner Gaussian actually needs, which is what makes the
+#'       scale-free shape above readable.}
+#'       \item{`inner_pareto_k_uniform`}{`TRUE` when no probed index carried a
+#'       material correction, i.e. the inner Gaussian reproduces the
+#'       conditional posterior over the sampled region.}
+#'       \item{`inner_pareto_k_scored`, `inner_pareto_k_probed`}{how many
+#'       probed indices returned a finite k-hat vs how many were probed.}
+#'       \item{`inner_pareto_k_declined`, `inner_pareto_k_declined_note`}{when
+#'       it is `NA`, WHY, from the same closed vocabulary the outer k-hat
+#'       uses.} \item{`reliability`}{the combined whole-fit verdict:
+#'       `"reliable"` only when both layers are good; otherwise names which
+#'       layer is scoped or flags both as unreliable. The inner layer enters
+#'       through the worse of its two scores, so a fit whose cubic term
+#'       declined is still assessed.} } and a trailing `summary` attribute (a
+#'       one-row data frame of the headline numbers) for printing.
+#'
 #' @references
-#' Vehtari, Simpson, Gelman, Yao & Gabry (2024). Pareto smoothed importance
-#'   sampling. \emph{JMLR} 25(72):1-58.
+#' Vehtari, Simpson, Gelman, Yao & Gabry (2024). Pareto smoothed
+#'   importance sampling. \emph{JMLR} 25(72):1-58.
 #'
 #' Yao, Vehtari, Simpson & Gelman (2018). Yes, but did it work?: Evaluating
 #'   variational inference. \emph{ICML}, PMLR 80:5581-5590.
@@ -1826,7 +1825,7 @@ print.laplace_diagnostics <- function(x, ...) {
     cat("  two layers: the outer hyperparameter-grid integration, and the",
         "inner Gaussian Laplace on the latent field\n")
   } else {
-    # The inner layer is unscored -- say WHY (gcol33/tulpa#296). Attributing a
+    # The inner layer is unscored -- say WHY. Attributing a
     # structural impossibility to `control$diagnose_skew` sent readers looking
     # for a knob they never touched.
     cat("Nested-Laplace OUTER-integration reliability (i.i.d. draws)\n")
@@ -1839,7 +1838,7 @@ print.laplace_diagnostics <- function(x, ...) {
     cat(sprintf("  outer PSIS pareto_k = %.3f (%s); IS-ESS = %.1f\n",
                 k, band, attr(x, "pareto_k_is_ess")))
   } else {
-    # Every decline path says which one it was (gcol33/tulpa#295) instead of
+    # Every decline path says which one it was instead of
     # the old "not run or proposal degenerate" disjunction.
     knote <- attr(x, "pareto_k_declined_note")
     cat("  outer PSIS pareto_k = NA",

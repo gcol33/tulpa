@@ -24,26 +24,15 @@ namespace tulpa {
 
 inline constexpr double SPARSE_DROP_TOL_DISPATCH = 1e-12;
 
-// Thread-safety contract (experiment, 2026-05-19):
+// Thread-safety contract:
 //
-// We previously wrapped both dispatch paths in `omp critical(tulpa_cholmod)`
-// on the assumption that CHOLMOD-via-Matrix routes allocations through R's
-// GC and is therefore unsafe under concurrent threads. The dense fallback
-// path also allocated Rcpp::NumericMatrix scratch, which IS unsafe under
-// threads (Rf_allocVector touches R's GC).
-//
-// Closer reading of Matrix 1.7+ headers shows CHOLMOD 5.x moved its
-// allocator hooks off `cholmod_common` and onto the global SuiteSparse_config.
-// M_cholmod_start only overrides `Common->error_handler`, not the allocator.
-// So *if* SuiteSparse_config keeps its system-malloc defaults in Matrix's
-// build, per-thread `cholmod_common` instances are thread-safe out of the
-// box and the critical section was masking the Rcpp-scratch unsafety in the
-// dense fallback.
-//
-// This file now uses raw `std::vector<double>` scratch in the dense fallback
-// (no R allocations on the parallel hot path) and runs the CHOLMOD calls
-// uncritical. If CHOLMOD-via-Matrix still races, the test harness will fail
-// and we'll know we need to bundle SuiteSparse or switch to Eigen.
+// Both dispatch paths run without a critical section. CHOLMOD 5.x holds its
+// allocator hooks on the global SuiteSparse_config rather than on
+// `cholmod_common`, and M_cholmod_start overrides only `Common->error_handler`,
+// so a per-thread `cholmod_common` is safe as long as SuiteSparse_config keeps
+// its system-malloc defaults in Matrix's build. The dense fallback allocates
+// raw `std::vector<double>` scratch, never an Rcpp vector: Rf_allocVector
+// touches R's GC and is not safe off the main thread.
 
 // Factor H and solve H * delta = grad. Try sparse CHOLMOD first if
 // `prefer_sparse`, fall back to the dense hand-rolled Cholesky on any failure.
@@ -52,11 +41,11 @@ inline constexpr double SPARSE_DROP_TOL_DISPATCH = 1e-12;
 // Both paths see `H + LAPLACE_UNIFORM_RIDGE * I`. The uniform upstream ridge
 // guarantees positive-definiteness even on rank-deficient priors (ICAR, RW1,
 // RW2, ...) so dense and sparse factor the same matrix and agree on
-// log_det / mode to numerical tolerance. Replaces the asymmetric dense
-// pivot clamp (`if (sum <= 0) sum = 1e-6`) AND the sparse simplicial-LDL'
-// + dbound retry path; both were activated on different pivot subsets in
-// different elimination orders and produced O(1)-O(10) log_marginal
-// divergence on doubly rank-deficient inputs.
+// log_det / mode to numerical tolerance. Neither path carries a pivot clamp or
+// an LDL' retry of its own: a per-path repair fires on different pivot subsets
+// in different elimination orders, which makes the two paths factor different
+// matrices and diverge by O(1)-O(10) in log_marginal on a doubly
+// rank-deficient input.
 // Factor an H that ALREADY carries its diagonal ridge and solve H delta = grad.
 // `log_det_out`, when non-null, receives log|H| from whichever factor succeeded.
 // Split out of dispatch_factor_solve below so a caller escalating the diagonal

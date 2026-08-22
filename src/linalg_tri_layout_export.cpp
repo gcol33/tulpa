@@ -1,16 +1,13 @@
 // linalg_tri_layout_export.cpp
-// Probes for the layout contract of the shared small-dense Cholesky core
-// (gcol33/tulpa#285).
+// Probes for the layout contract of the shared small-dense Cholesky core.
 //
-// linalg_fast.h used to ship two triangular-solve pairs with opposite storage
-// conventions and names that said neither: chol_forward_solve / chol_back_solve
-// indexed row-major, tri_solve_lower / tri_solve_upper_transpose column-major.
-// The two are related by transposition, so a factor handed to the wrong pair
-// solves against the transpose and returns a plausible vector -- no crash, no
-// NaN, no dimension check. gcol33/tulpa#283 was that failure on a cuSOLVER
-// factor.
+// A lower-triangular factor stored column-major is the same bytes as an
+// upper-triangular one stored row-major, so a factor handed to a solve written
+// for the other convention solves against the transpose and returns a plausible
+// vector -- no crash, no NaN, no dimension check. A cuSOLVER factor consumed
+// the wrong way round is the case that happens on.
 //
-// The solves now take the layout as a required template argument. These exports
+// The solves take the layout as a required template argument. These exports
 // let test-tri-solve-layout.R pin what each convention reads, and pin that the
 // two disagree in exactly the transposed way, so a buffer built for one and
 // consumed by the other stays detectable rather than plausible.
@@ -84,7 +81,7 @@ Rcpp::NumericVector cpp_test_chol_factor(Rcpp::NumericVector Abuf, int n,
 }
 
 // NNGP kriging moments from an already-factored neighbour covariance, under
-// `layout`. This is the call whose layout gcol33/tulpa#283 got wrong.
+// `layout`. This is the call the cuSOLVER factor's layout was got wrong on.
 // [[Rcpp::export]]
 Rcpp::List cpp_test_nngp_moments(Rcpp::NumericVector Lbuf, int n,
                                  Rcpp::NumericVector c_vec,

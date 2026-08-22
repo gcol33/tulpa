@@ -35,7 +35,7 @@ assert_columns_exist <- function(vars, data, role = "Required") {
 #'
 #' `allow_nd` is the arity policy, and it differs by what the spec ends up in
 #' rather than by taste. The nested-Laplace NNGP/GP kernels read every
-#' coordinate column (gcol33/tulpa#389) and the neighbour construction now
+#' coordinate column and the neighbour construction now
 #' matches them, so a 1-D domain -- a transect, a depth profile -- and a 3-D one
 #' are real models there. The HSGP basis and every SAMPLER spec store
 #' coordinates at a fixed 2-D stride and cannot represent anything else.
@@ -68,7 +68,7 @@ assert_columns_exist <- function(vars, data, role = "Required") {
 #'
 #' Over every column the matrix carries, so the coordinate dimension is the
 #' caller's. The neighbour SELECTION this serves and the neighbour COVARIANCE
-#' the kernels build from it read the same metric (gcol33/tulpa#389).
+#' the kernels build from it read the same metric.
 #'
 #' @param mat Coordinate matrix `[n x d]`.
 #' @param pt Length-`d` coordinate.
@@ -86,8 +86,7 @@ assert_columns_exist <- function(vars, data, role = "Required") {
 #' A coordinate matrix reaches C++ as a plain numeric matrix, so `scale()`'s
 #' centre/scale attributes and any dimnames have to come off first. Its ARITY is
 #' data, not something this step decides: the nested-Laplace NNGP/GP kernels and
-#' the GP field predictor read whatever coordinate dimension they are given
-#' (gcol33/tulpa#389).
+#' the GP field predictor read whatever coordinate dimension they are given.
 #' @keywords internal
 #' @noRd
 .coords_plain <- function(x) {
@@ -104,7 +103,7 @@ assert_columns_exist <- function(vars, data, role = "Required") {
 #' an `n x 1` matrix is recycled so that column 2 equals column 1 and every
 #' location lands on the diagonal, and an `n x 3` matrix is truncated to its
 #' first two columns. Both are a different geometry accepted in silence, which
-#' is the same class of defect as the out-of-bounds read in gcol33/tulpa#389.
+#' is the same class of defect as an out-of-bounds coordinate-column read.
 #'
 #' @param x Coordinate matrix.
 #' @param what What to name in the error, e.g. `"gp()"`.

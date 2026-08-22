@@ -91,7 +91,7 @@
 #' @param skew_idx 1-based latent indices to probe (in the `[beta | random
 #'   effects]` layout of `mode`). `NULL` with `compute_skew = TRUE` probes every
 #'   latent index.
-#' @param debias Subspace debias (gcol33/tulpa#304): a list with `idx` (1-based
+#' @param debias Subspace debias: a list with `idx` (1-based
 #'   latent indices to correct by Metropolis along the Gaussian-conditional-mean
 #'   surface through the mode) and optional `n_iter` / `warmup` / `thin`. The
 #'   result then carries `debias_draws` (`n_kept x length(idx)`, the sampled
@@ -749,7 +749,7 @@ tulpa_laplace <- function(y, n_trials, X,
 #' `BuiltinFamilyResponse::weights` channel the non-spatial route uses, which
 #' scales each row's log-density, score and Fisher curvature by the same `w_i`,
 #' so the mode these kernels return and the marginal precision
-#' `.marginal_H_beta_*()` builds at it describe one model (gcol33/tulpa#385).
+#' `.marginal_H_beta_*()` builds at it describe one model.
 #' @keywords internal
 dispatch_laplace_spatial <- function(y, n_trials, X, re_idx, n_re_groups,
                                      sigma_re, spatial, family, phi,

@@ -118,7 +118,7 @@ inline Rcpp::List run_multi_block_nested_laplace(
     // .nl_inner_skew_at_theta() in R/laplace_diagnostics.R.
     bool compute_skew = false,
     const std::vector<int>* skew_probe_idx = nullptr,
-    // Subspace debias (subspace_debias.h, gcol33/tulpa#304/#306). Unlike the
+    // Subspace debias (subspace_debias.h). Unlike the
     // diagnostics above this runs on EVERY integrated cell, because the
     // correction it produces enters the reported marginal as a mixture over the
     // outer grid -- one node's corrected shape is not the grid's. The cheap
@@ -126,7 +126,7 @@ inline Rcpp::List run_multi_block_nested_laplace(
     // reaches the sampler, so the grid is unchanged and consumes no random
     // number.
     const SubspaceDebiasOptions* debias = nullptr,
-    // Corrected integrated Laplace (inner_cila.h, gcol33/tulpa#351). Runs on
+    // Corrected integrated Laplace (inner_cila.h). Runs on
     // every fully-solved cell for the same reason the debias does -- the
     // corrected marginal is a reweighting of each cell's own particle set, so
     // all of them travel out -- and never on the cheap warm-start screen. Its

@@ -316,6 +316,12 @@ inline GibbsOutput run_glmm_gibbs(
         }
     }
 
+    // Both rates are counted over the RECORDED draws, not over every
+    // post-warmup proposal, so at thin > 1 they rest on one sweep in `thin`.
+    // The estimator is unbiased either way and the rate reported belongs to the
+    // draws returned; the cost is variance, which is why a rate far from the
+    // Roberts-Rosenthal target at a large `thin` is worth re-reading at
+    // thin = 1.
     out.accept_beta = (n_kept > 0) ? static_cast<double>(acc_beta_rec) / n_kept : 0.0;
     out.accept_b    = (n_b_rec > 0) ? static_cast<double>(acc_b_rec) / n_b_rec
                                     : std::numeric_limits<double>::quiet_NaN();

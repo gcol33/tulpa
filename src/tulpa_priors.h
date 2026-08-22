@@ -1,8 +1,7 @@
 // tulpa_priors.h
 // Umbrella header: re-exports the 12 sliced prior headers. The split mirrors
-// the laplace_helpers.h decomposition (commit 1fa2a45) so each prior family
-// lives in a focused file while downstream callers (#include "tulpa_priors.h")
-// see no API change.
+// the laplace_helpers.h decomposition, so each prior family lives in a focused
+// file while downstream callers (#include "tulpa_priors.h") see no API change.
 //
 // Prerequisite: ModelData and ParamLayout must be defined before this
 // header (normally via hmc_sampler.h).

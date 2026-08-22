@@ -240,7 +240,7 @@ void tulpa_register_tgmrf_callables(DllInfo* dll);
 // Defined in cell_coupling_registry.cpp — registers the
 // tulpa_register_cell_coupling C callable that user DLLs use to insert
 // CellCouplingSpec subclasses into tulpa's process-global registry at
-// load time (Change 2b).
+// load time.
 void tulpa_register_cell_coupling_callables(DllInfo* dll);
 
 // [[Rcpp::init]]

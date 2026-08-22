@@ -1,6 +1,6 @@
 // inner_cila.h
 //
-// Corrected integrated Laplace (gcol33/tulpa#351): an importance-sampling
+// Corrected integrated Laplace: an importance-sampling
 // DEBIAS applied to the inner layer, after Lai, Margossian & Sheldon,
 // arXiv:2605.20345 eq (4)-(7) and the Sec 6 / Proposition 5 weighted-particle
 // recovery of the latent field.
@@ -23,7 +23,7 @@
 // and the same live factor, and both read the density through the Newton loop's
 // own penalized-objective closure -- which is why the two share
 // inner_laplace_probe.h's solve and this file needs no likelihood knowledge
-// either. But gcol33/tulpa#303's k-hat is deliberately restricted to ONE
+// either. But the inner importance k-hat is deliberately restricted to ONE
 // dimension per probed index: it walks the Gaussian-conditional-mean curve
 // x(t) = mode + (t / sigma_i^2) v_i with every other coordinate pinned at its
 // conditional mean, because an importance k-hat over n_x coordinates would
@@ -245,7 +245,7 @@ inline CilaOutcome compute_inner_cila(
   if (use_sparse) {
     // A draw is P' L^-T eps against the SAME factor the solve left resident, so
     // the sparse cell proposes from its own inner Gaussian with no
-    // refactorization (gcol33/tulpa#366). Only an LL' factor has a square root
+    // refactorization. Only an LL' factor has a square root
     // on that route; a simplicial LDL' fallback says so instead of drawing from
     // the wrong covariance.
     if (!sparse_solver.factored()) {

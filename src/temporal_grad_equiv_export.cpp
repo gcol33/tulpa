@@ -1,17 +1,15 @@
 // temporal_grad_equiv_export.cpp
-// Equivalence probe for the analytic temporal gradient kernels (A7).
+// Equivalence probe for the analytic temporal gradient kernels.
 //
-// The RW1 / RW2 / AR1 gradients were written twice: tulpa_tvc::*_grad_w in the
-// precision (tau) parameterization, and tulpa_temporal_grad::*_grad_phi in the
-// variance (sigma2) one. Only RW1 had been unified into a wrapper; the RW2 and
-// AR1 copies were independent transcriptions that had already drifted on their
-// guards (the sigma2 copies guarded n < 3 / n == 1 and the tau copies did not,
-// which left two out-of-bounds accesses in the tau side).
+// The RW1 / RW2 / AR1 gradients are reachable in two parameterizations:
+// tulpa_tvc::*_grad_w in the precision (tau) one, which is the canonical
+// kernel, and tulpa_temporal_grad::*_grad_phi in the variance (sigma2) one,
+// which wraps it at tau = 1/sigma2.
 //
-// Neither header is reached from a compiled translation unit today, so nothing
-// would catch a wrong wrapper -- the code would not even be compiled. Including
-// them here builds them, and the export lets test-temporal-grad-equiv.R assert
-// the sigma2 wrappers agree with the canonical tau kernels at tau = 1/sigma2.
+// Neither header is reached from a compiled translation unit, so without this
+// file a wrong wrapper would not even be compiled. Including them here builds
+// them, and the export lets test-temporal-grad-equiv.R assert the sigma2
+// wrappers agree with the canonical tau kernels at tau = 1/sigma2.
 //
 // The export also returns the multiscale VALUE functions and the analytic
 // d/d log(sigma2) beside them, so the test can central-difference the density

@@ -1,19 +1,18 @@
 // nl_field_identity_export.cpp
-// Equivalence probe for NlFieldIdentity (gcol33/tulpa#286).
+// Equivalence probe for NlFieldIdentity.
 //
-// The eleven cpp_nested_laplace_* entry points used to fold their structural
-// fingerprint by hand, which put the same byte-fold loops in eleven places.
 // NlFieldIdentity (nested_laplace_checkpoint.h) names each structural group
-// once and the entry points chain the groups they carry.
+// once, and the eleven cpp_nested_laplace_* entry points chain the groups they
+// carry rather than each folding its own fingerprint by hand.
 //
 // That fingerprint keys the grid checkpoint, so its VALUE is a contract: a
 // resumed run loads a cell only when the seed matches, and a seed that shifts
 // silently invalidates every checkpoint on disk while a seed that stops
 // distinguishing two structures makes a resume reuse cells it should not. The
-// reference sequences below are the folds the entry points wrote by hand,
-// transcribed verbatim, and test-nl-field-identity.R checks the builder
-// reproduces each one bit for bit. The duplication is deliberate here: in a
-// test the second copy is the oracle.
+// reference sequences below are an independent hand-written fold of each
+// field model's structural inputs, and test-nl-field-identity.R checks the
+// builder reproduces each one bit for bit. The duplication is deliberate here:
+// in a test the second copy is the oracle.
 
 #include <Rcpp.h>
 

@@ -609,7 +609,7 @@ tulpa_dispatch <- function(mode,
   reg <- if (!is.null(fit$backend)) BACKEND_REGISTRY[[fit$backend]] else NULL
   fit$draws_kind <- fit$draws_kind %||% draws_kind %||% reg$emits
 
-  # Axis fields the fit's own path could not read (gcol33/tulpa#352), published
+  # Axis fields the fit's own path could not read, published
   # for the duration of the fit by the nested-Laplace front doors.
   fit$axis_fields_dropped <- fit$axis_fields_dropped %||%
     getOption("tulpa.nl_axis_dropped", NULL)
@@ -864,7 +864,7 @@ auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_laten
   # fixed-effect default below. re_cov_gibbs already treats a scalar `(1 | g)`
   # term as the degenerate c = 1 covariance block, so a random-intercept-only
   # model is routed here exactly like a random-slope model -- no
-  # special-casing by term shape (gcol33/tulpa#267). An explicit
+  # special-casing by term shape. An explicit
   # mode = "laplace" / "mala" / ... still conditions on sigma_re (defaulting
   # to 1, with a warning) when the caller names it directly; only the auto
   # default changes.

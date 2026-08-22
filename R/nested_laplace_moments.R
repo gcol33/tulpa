@@ -96,7 +96,7 @@
 # geometry rather than an unknown tail. Clamping there reports an interval the
 # read cannot place its own outer half-cell of mass inside -- measured, on a
 # prior-predictive experiment whose grid tiles the prior, as a PIT atom at 0 and
-# 1 of exactly the outer half-cell mass (gcol33/tulpa#353). The half-spacing is
+# 1 of exactly the outer half-cell mass. The half-spacing is
 # mirrored in `log` when every value is positive, which is where a scale grid is
 # equally spaced and where the edge cannot cross zero, and in the value itself
 # otherwise -- the same `all(vals > 0)` test `.nl_laplace_at_mode_sd_axis()`
@@ -106,7 +106,7 @@
 #
 # On weights that are a QUADRATURE DESIGN (`ccd_weights()`) the cumulative sum is
 # not a CDF at all, and clamping reports the design's own extent as a posterior
-# interval (gcol33/tulpa#308); `"na"` withholds the number instead. Such a
+# interval; `"na"` withholds the number instead. Such a
 # support is summarized by `.nl_moment_quantile()`, which uses the moments the
 # design does deliver.
 .nl_wtd_quantile <- function(values, weights, probs,
@@ -142,7 +142,7 @@
   }, numeric(1L))
 }
 
-# The interior read's overflow guard (gcol33/tulpa#381).
+# The interior read's overflow guard.
 #
 # `stats::approx`'s linear interpolant is `y0 + (y1 - y0) * t`, which forms the
 # DIFFERENCE before scaling it. Two adjacent knots more than the double range
@@ -157,15 +157,15 @@
 # reads (40000 node sets x five declarations x three outside policies x seven
 # probabilities, `dev_notes/issue381/measure381.out`) 21.49% of them move, by up
 # to 4.07e-10 relatively where the difference cancels. Three fixes on this exact
-# path (gcol33/tulpa#377, gcol33/tulpa#378, gcol33/tulpa#379) are pinned on
+# path are pinned on
 # `identical()` against the read this function returns, so the convex form is
 # reached ONLY where the straight one already failed to return a double. Every
 # read that returned one keeps the one it returned, byte for byte.
 #
 # Overflow of the difference is the ONLY way the straight form leaves the double
 # range between finite knots, so a bracket whose knots are not both finite is a
-# different defect -- gcol33/tulpa#379's, an unrepresentable mirrored cell edge,
-# already fixed at its source -- and is reported unchanged rather than repaired
+# different defect -- an unrepresentable mirrored cell edge, handled at its
+# source -- and is reported unchanged rather than repaired
 # here.
 .nl_interp_repair <- function(p, v, q, y) {
   # `approx` collapses tied `x` to the mean of their `y` before interpolating,
@@ -228,7 +228,7 @@
 # the mirroring is well defined on. A `positive` quantity mirrors in log and a
 # `unbounded` one in the value itself, which is what this did before it was
 # given the domain; `unit` mirrors in logit and `correlation` in atanh, and
-# those two are the reason for the argument (gcol33/tulpa#369).
+# those two are the reason for the argument.
 #
 # Without the domain the coordinate was guessed from the values -- log whenever
 # they were all positive -- and a proportion axis is all positive, so a BYM2
@@ -239,7 +239,7 @@
 # eigenvalue interval): a guessed edge is what that case had, and inventing a
 # support for it would be worse than the edge it has.
 #
-# A DECLARED SUPPORT IS NOT OVERRULED BY THE GUESS (gcol33/tulpa#377). The guess
+# A DECLARED SUPPORT IS NOT OVERRULED BY THE GUESS. The guess
 # is for an axis whose support nothing named; where a caller DID name one and
 # the named coordinate's mirrored edge is unusable, the guess is not filling a
 # gap, it is contradicting a declaration -- and it is precisely what produces the
@@ -265,9 +265,9 @@
 #     edges bracket the coordinates, so a coordinate outside the support puts the
 #     edge outside it too, and the declaration is the thing that is wrong.
 #
-# THE GUESS'S OWN MIRROR IS CHECKED TOO (gcol33/tulpa#379). Restricting the guess
-# to undeclared axes is what gcol33/tulpa#377 is; it left the surviving branch
-# still not looking at what it produced. The linear mirror needs the extreme
+# THE GUESS'S OWN MIRROR IS CHECKED TOO. Restricting the guess
+# to undeclared axes leaves the surviving branch still not looking at what it
+# produced. The linear mirror needs the extreme
 # coordinate plus half its own spacing to stay in the double range, and on an
 # undeclared axis carrying the top of that range it does not: `c(1, 1e300,
 # double.xmax)` mirrored to `Inf` and the DEFAULT chord read reported `Inf` as a
@@ -289,9 +289,9 @@
 #
 # What is NOT guarded is a finite in-order edge the guess placed somewhere the
 # axis's real support would not have -- an undeclared all-positive axis whose log
-# mirror underflows to exactly 0 keeps that 0. That is the gcol33/tulpa#377
-# boundary from the other side: with no declaration there is no support to
-# measure the edge against, and inventing one is what #377 refused to do for
+# mirror underflows to exactly 0 keeps that 0. That is the same boundary from
+# the other side: with no declaration there is no support to measure the edge
+# against, and inventing one is what the engine refuses to do for
 # `car_proper`'s `rho_car`.
 #
 # The invariant that leaves is the one worth asserting: whenever every
@@ -305,7 +305,7 @@
 # The same construction, returning the COORDINATE it settled on alongside the
 # edges it produced. The coordinate is not recoverable from the edges -- the
 # guard falls back when a mapped edge is non-finite or leaves the support -- and
-# the box-uniform read (gcol33/tulpa#357) has to bisect the interior spacings in
+# the box-uniform read has to bisect the interior spacings in
 # the SAME coordinate the outer half-cells were mirrored in, or the partition it
 # tiles the axis with is not one partition. So the choice is made once, here,
 # and both readers take it from the same return.
@@ -314,10 +314,9 @@
 # the edges, from the closed vocabulary `.NL_EDGE_DECLINED` -- NA when the
 # coordinate's own mirror stood, which on an undeclared axis includes the guess,
 # since a guess where nothing was declared is the design and not a decline. A
-# guess whose mirror is not a representable edge IS one, and says so
-# (gcol33/tulpa#379). That pair is the reason field gcol33/tulpa#293 requires of
-# a silent-disable path, and it travels out to the fit through
-# `.nl_summary_quantile_read()`.
+# guess whose mirror is not a representable edge IS one, and says so. That pair
+# is the reason field a silent-disable path requires, and
+# it travels out to the fit through `.nl_summary_quantile_read()`.
 .nl_cell_partition <- function(v, domain = NA_character_) {
   n <- length(v)
   lin <- .NL_DOMAIN_TRANSFORM$unbounded
@@ -361,10 +360,10 @@
   part(lin, "unbounded", c(v[1L], v[n]), "mirrored_edge_not_representable")
 }
 
-# Why a mirrored edge did not produce the outer edges of a cell partition
-# (gcol33/tulpa#377, gcol33/tulpa#379). A closed vocabulary, held to this list by
-# `test-nl-interval-support.R` the same way `outside` is held to
-# `.nl_wtd_quantile()`'s and `within` to `.NL_WITHIN_CELL`.
+# Why a mirrored edge did not produce the outer edges of a cell partition. A
+# closed vocabulary, held to this list by `test-nl-interval-support.R` the same
+# way `outside` is held to `.nl_wtd_quantile()`'s and `within` to
+# `.NL_WITHIN_CELL`.
 .NL_EDGE_DECLINED <- c("mirrored_edge_outside_domain",
                        "nodes_outside_declared_domain",
                        "unknown_domain",
@@ -401,17 +400,17 @@
 # the lower edge of cell k + 1, one number serving both, so there is no gap for
 # mass to leave through and no overlap for it to be counted in twice. That is
 # the property separating a within-cell reconstruction from barycentring
-# (gcol33/tulpa#331 moved the atoms and contracted the support; nothing moves
+# (barycentring moves the atoms and contracts the support; nothing moves
 # here). What is NOT automatic is that the edges come out finite and strictly
 # increasing -- a degenerate coordinate, or a node set the declared support does
 # not contain, can produce a zero-width or inverted box, and a box of zero width
 # would put a cell's whole mass on a point. So that is checked, and a partition
 # that fails it returns NULL for the caller to DECLINE on rather than erroring
-# (gcol33/tulpa#293: a silent-disable path needs a reason, and an error is not a
+# (a silent-disable path needs a reason, and an error is not a
 # behaviour a reported interval can take).
 #
-# A partition whose outer edges are the extreme COORDINATES -- the
-# gcol33/tulpa#377 decline, where the declared domain's mirror was unusable --
+# A partition whose outer edges are the extreme COORDINATES -- the decline
+# taken where the declared domain's mirror was unusable --
 # still tiles: edge k serves both neighbours exactly as before, and the two outer
 # boxes are half-width with their coordinate on the boundary rather than inside.
 # That is the same conservatism the chord read's own clamp takes, so both reads
@@ -425,11 +424,11 @@
 # `.nl_box_quantile()` can report that partition's own coordinate and decline
 # without computing it twice.
 #
-# The interior midpoint is `a / 2 + b / 2` and not `(a + b) / 2`
-# (gcol33/tulpa#378): the sum is formed before the halving, so two coordinates
-# near the top of the double range take it to `Inf` and the whole partition is
-# declined for a midpoint that is perfectly representable. Only the LINEAR
-# coordinate reaches that -- `log` / `qlogis` / `atanh` land inside about
+# The interior midpoint is `a / 2 + b / 2` and not `(a + b) / 2`: the sum is
+# formed before the halving, so two coordinates near the top of the double
+# range take it to `Inf` and the whole partition is declined for a midpoint
+# that is perfectly representable. Only the LINEAR coordinate reaches that --
+# `log` / `qlogis` / `atanh` land inside about
 # +/- 745 and cannot overflow when added -- so it is the `unbounded`
 # declaration and the undeclared axis whose values are not all positive.
 #
@@ -461,7 +460,7 @@
 # non-finite where the mirrored half-spacing genuinely leaves the range, and a
 # spacing below the coordinate's own resolution still collapses a box to zero
 # width -- so a partition that is not finite and strictly increasing returns
-# NULL for the caller to DECLINE on (gcol33/tulpa#293).
+# NULL for the caller to DECLINE on.
 .nl_box_edges_from <- function(part, v) {
   n <- length(v)
   if (n < 2L) return(NULL)
@@ -472,8 +471,8 @@
   e
 }
 
-# The BOX-UNIFORM within-cell read (gcol33/tulpa#337, measured in #353 and
-# #357): each cell's shipped mass spread uniformly across its own box instead of
+# The BOX-UNIFORM within-cell read: each cell's shipped mass spread uniformly
+# across its own box instead of
 # placed at its coordinate.
 #
 # The shipped `chord` read puts the cumulative MID-mass `cumsum(w) - w / 2` at
@@ -485,7 +484,7 @@
 # (`dev_notes/issue353/RESULTS.md` section 2.3).
 #
 # THE PARTITION COMES FROM THE GRID, THE MASSES FROM THE WEIGHTS -- which is
-# what gcol33/tulpa#337's own "keep the masses, tile the axis" says, and the two
+# what "keep the masses, tile the axis" says, and the two
 # have to be taken from different places. A cell whose integration weight
 # underflows to exactly 0 still SITS on the axis, and its coordinate is what
 # fixes its neighbour's box edge; dropping it from the partition shrinks that
@@ -603,7 +602,7 @@
 # design weight across them is not a CDF, and a discrete weighted quantile over
 # them returns an interval bounded by the design's own extent -- at k
 # parameters, `theta_hat +/- 1.1 sqrt(k) sd`, whose Gaussian coverage is
-# `2 Phi(1.1 sqrt(k)) - 1` no matter how much data there is (gcol33/tulpa#308).
+# `2 Phi(1.1 sqrt(k)) - 1` no matter how much data there is.
 #
 # The moments ARE delivered, so the interval comes from them: the first two
 # weighted moments on the domain's unbounded coordinate define a Gaussian there
@@ -636,28 +635,28 @@
 # The node-set KINDS a summary can be taken off, and the outer-edge policy each
 # one's geometry implies. One table rather than a chain of branches, so a kind
 # is named in exactly one place and a caller reading the tag can tell which
-# geometry it has (gcol33/tulpa#358).
+# geometry it has.
 #
 # `density` -- a tensor grid. The weights are proportional to posterior mass and
 # the values are CELL REPRESENTATIVES of a partition with known spacing, so the
 # cumulative sum is a CDF and the extreme cell's mass reaches half a spacing past
 # its coordinate: the read runs to the outer cells' own edges
-# (`outside = "extend"`, gcol33/tulpa#353).
+# (`outside = "extend"`).
 #
 # `sample` -- equal-weight posterior DRAWS, what `tulpa_re_cov_gibbs()`'s sweep
 # produces. The cumulative sum is a CDF here too, so the interior read is the
 # same weighted quantile, but the values are ORDER STATISTICS rather than cell
 # representatives: beyond the largest draw nothing is known about the tail, and
 # half the gap between the two extreme draws is not a cell width. So the outer
-# edge CLAMPS, the convention a sample takes. This is the distinction
-# gcol33/tulpa#358 separates out; it binds only a probability outside
+# edge CLAMPS, the convention a sample takes. That distinction
+# binds only a probability outside
 # `[1 / (2 n), 1 - 1 / (2 n)]`, which is why nothing measured moves at the
 # 0.025 / 0.5 / 0.975 the backends report.
 #
 # `moment_rule` -- a central-composite design. Its weights reproduce the
 # integrand's moments and the node positions carry no mass, so a cumulative sum
 # is not a CDF at all and the interval comes from the moments on the quantity's
-# own `domain` (gcol33/tulpa#308). It carries no `outside` policy because it
+# own `domain`. It carries no `outside` policy because it
 # never reaches the quantile read. A `moment_rule` quantity whose domain is NA
 # has a support the engine will not guess -- a proper-CAR correlation on the
 # adjacency eigenvalue interval -- and reports NA rather than the design's
@@ -666,7 +665,7 @@
 # `mixed` -- see below; it takes `density`'s policy on purpose.
 #
 # THE SECOND FIELD, `within`, is the set of WITHIN-CELL constructions the kind
-# ADMITS (gcol33/tulpa#357). Order carries no meaning: the engine's default is
+# ADMITS. Order carries no meaning: the engine's default is
 # `.nl_diag("within_cell")` and lives in one place, and a kind that does not
 # admit it falls back to `chord`, which every kind admits -- so what this field
 # has to guarantee is membership, not an ordering. It is a second field
@@ -719,18 +718,18 @@
 # Median and interval of one quantity, given what KIND of node set carries it.
 #
 # `support = "mixed"` is the locally CCD-refined grid, the one node set that is
-# part cell masses and part quadrature design (gcol33/tulpa#311): the carried-over
+# part cell masses and part quadrature design: the carried-over
 # base cells hold their own mass, the refined cells' replacement clouds hold a
 # partition-of-unity share of theirs placed at the design's radius. On the design
 # part a cumulative sum is not a CDF, so the quantile there reads closer to the
-# design's own per-axis extent than to a posterior property (gcol33/tulpa#317).
+# design's own per-axis extent than to a posterior property.
 # It still takes the weighted quantile, because that is what measured best:
 # scored against the converged m = 13 tensor reference on the four-axis
 # multi-block fixture (noise floor 0.01716 on the endpoints, 0.03853 on the
 # widths), summed absolute endpoint error over seven base grids is 0.63446 for
 # the quantile against 0.73159 for collapsing each design block to its mean,
 # 0.74464 for splitting the read into a mass CDF plus a per-cell moment-matched
-# Gaussian, and 1.20402 for the #308 moment read; on analytic outer targets whose
+# Gaussian, and 1.20402 for the moment read; on analytic outer targets whose
 # axis quantiles are known in closed form the same ordering holds in the
 # design-dominated regime. So the value of naming the support is that the fit can
 # SAY it is mixed and how much of the weight is design (`theta_interval_read` /
@@ -738,12 +737,12 @@
 # is why `"mixed"` takes the SAME `outside` policy as `"density"` and not the
 # conservative one its design nodes would argue for: the tag records provenance,
 # and a refined fit reading its interval off a different construction from the
-# unrefined fit of the same model is the defect gcol33/tulpa#317 named.
+# unrefined fit of the same model is the defect this avoids.
 #
 # The single dispatcher for every consumer of the summaries, so a caller names
 # its support and its domain and inherits the rest.
 #
-# `within` names the WITHIN-CELL construction (gcol33/tulpa#357). `"box_uniform"`
+# `within` names the WITHIN-CELL construction. `"box_uniform"`
 # is the shipped read and the default, taken where the support admits it and the
 # partition builds; anything else falls back to the chord read and the reason
 # travels out of `.nl_summary_quantile_read()`. `"mixed"` is one such fallback:
@@ -774,7 +773,7 @@
       # The `domain` reaches the CDF read too, not only the moment rule: the
       # outer half-cell an `extend` support adds is mirrored in the quantity's
       # own coordinate, so a bounded quantity's interval cannot leave its
-      # support (gcol33/tulpa#369). A `clamp` support never forms an edge and
+      # support. A `clamp` support never forms an edge and
       # ignores it.
       if (identical(outside, "extend")) {
         ep <- .nl_extend_partition(values, weights, domain)
@@ -808,14 +807,13 @@
 # rule, a Gibbs sweep leaves draws, and the tensor grid and its adaptive subset
 # discretize the density. A locally CCD-refined grid carries both kinds at once
 # and reports `"grid"`, so the per-cell `weight_kind` tag decides ahead of the
-# producer name (gcol33/tulpa#317) -- otherwise a mixed support is read as a
+# producer name -- otherwise a mixed support is read as a
 # homogeneous density one and nothing downstream can tell.
 #
 # `"sample"` is the same distinction one layer up from `.NL_SUPPORT`: a sampler
 # and a grid both leave a (value, weight) set whose cumulative sum is a CDF, and
 # only the producer knows whether the values are order statistics or cell
-# representatives, so the producer names itself and the read follows
-# (gcol33/tulpa#358).
+# representatives, so the producer names itself and the read follows.
 .nl_node_support <- function(integration, weight_kind = NULL) {
   if (length(weight_kind) > 1L) {
     kinds <- unique(weight_kind[!is.na(weight_kind)])
@@ -922,7 +920,7 @@
 }
 
 # Fixed-effect credible bounds on a nested-Laplace fit, and the provenance of
-# whichever read produced them (gcol33/tulpa#336).
+# whichever read produced them.
 #
 # The grid defines a Gaussian mixture per coefficient (see
 # `.nested_fixed_moments()`). Its mean and variance are linear functionals and
@@ -933,7 +931,7 @@
 # already reports the per-group posterior with. `estimate`, `std.error` and
 # `vcov()` are untouched: they are the moments either way.
 #
-# WHY THE #302 SKEW CORRECTION IS NOT COMPOSED WITH THIS. Its gamma_3 is
+# WHY THE SKEW CORRECTION IS NOT COMPOSED WITH THIS. Its gamma_3 is
 # computed by re-dispatching the kernel at the single fitted MAP cell, so the
 # fit retains one gamma_3 per coefficient and not one per cell. The composed
 # marginal sum_k w_k F^CF_kj is therefore not identified by retained state: it
@@ -945,17 +943,16 @@
 # privileges one component with no approximation theorem behind it. So a
 # CORRECTED coefficient keeps the read it was measured on, and `declined` says
 # why the mixture read did not run there. The two corrections address different
-# non-Gaussianities: this one across cells, #302 within the MAP cell.
+# non-Gaussianities: this one across cells, the other within the MAP cell.
 #
-# A DECLINED coefficient is a different case and keeps the mixture read
-# (gcol33/tulpa#386). There is no #302 read to preserve at a coefficient the
-# correction refuses, so falling back to the collapsed Gaussian would give up
-# the across-cell shape for nothing -- and on a fit where every coefficient
-# declines (a coupled one, whose gamma_1 is not reachable) it would move every
-# bound while correcting none. Enabling the correction moves exactly the
-# coefficients it applies to, which `skew_applied` names per row and
-# `interval_source` names as `"skew_map_cell/mixture_cdf"` when both reads are
-# in play.
+# A DECLINED coefficient is a different case and keeps the mixture read. There
+# is no corrected read to preserve at a coefficient the correction refuses, so
+# falling back to the collapsed Gaussian would give up the across-cell shape
+# for nothing -- and on a fit where every coefficient declines (a coupled one,
+# whose gamma_1 is not reachable) it would move every bound while correcting
+# none. Enabling the correction moves exactly the coefficients it applies to,
+# which `skew_applied` names per row and `interval_source` names as
+# `"skew_map_cell/mixture_cdf"` when both reads are in play.
 #
 # A GRID THAT DROPPED A POSITIVE-WEIGHT CELL still gets the mixture read. The
 # moments renormalize over the cells that retained a block, so the components
@@ -964,7 +961,7 @@
 # CONDITIONAL ON THE RETAINED CELLS, not the full grid's, which the dropped mass
 # is gone from either way. `mass` travels with the result and is the original
 # retained share of the grid weight, so a caller reading the bounds can always
-# tell a complete grid from a repaired one (gcol33/tulpa#342).
+# tell a complete grid from a repaired one.
 #
 # `mom` is the `.nested_fixed_moments()` list, `idx` the reported coefficient
 # columns, `est` / `se` their moments, `probs` the requested levels, `sc` the
@@ -1001,13 +998,14 @@
   }
   if (!isTRUE(sc$enabled)) return(base)
 
-  # A CORRECTED coefficient takes the #302 read, which cannot be composed with
-  # the mixture (above). A DECLINED one has no #302 read at all, so it keeps
+  # A CORRECTED coefficient takes the skew-corrected read, which cannot be
+  # composed with the mixture (above). A DECLINED one has none at all, so it
+  # keeps
   # whatever the fit reports with the correction off -- the base read, not the
   # collapsed Gaussian. Enabling the correction therefore moves exactly the
   # coefficients it applies to, which is what lets it be a default: a fit whose
   # every coefficient declines (a coupled one, where gamma_1 is not reachable)
-  # reports the same bounds either way (gcol33/tulpa#386).
+  # reports the same bounds either way.
   mg <- .nl_skew_marginal(est, se, .nl_skew_gamma3_eligible(sc)[idx],
                           .nl_skew_gamma1_eligible(sc)[idx], probs,
                           enabled = TRUE)
@@ -1055,20 +1053,20 @@
 # axis. A `"moment_rule"` support needs it to form its interval at all (an axis
 # whose support the engine will not guess carries NA and reports NA); a
 # `"density"` / `"mixed"` one needs it to place its outer cell edges inside the
-# quantity's support (gcol33/tulpa#369), so it is supplied WHATEVER the support
+# quantity's support, so it is supplied WHATEVER the support
 # rather than only for the design read.
 #
 # `within` is the requested within-cell construction, and the returned `within`
-# / `within_declined` say what each axis actually got (gcol33/tulpa#357): an
+# / `within_declined` say what each axis actually got: an
 # axis whose partition could not be built falls back to the chord read on its
 # own rather than taking the whole fit with it, so a fit can carry a mixture of
 # constructions and still say which produced each interval.
 #
-# `edge_coord` / `edge_declined` are the same statement one layer down
-# (gcol33/tulpa#377): the COORDINATE that axis's outer half-cells were mirrored
-# in, and -- when the axis declared a support whose own mirror was not usable --
-# why the declared one did not produce them. They come from whichever read ran,
-# since the chord and box reads take their partitions off different atom sets.
+# `edge_coord` / `edge_declined` are the same statement one layer down: the
+# COORDINATE that axis's outer half-cells were mirrored in, and -- when the
+# axis declared a support whose own mirror was not usable -- why the declared
+# one did not produce them. They come from whichever read ran, since the chord
+# and box reads take their partitions off different atom sets.
 .nl_axis_quantiles <- function(tg, log_marginal, refining = NULL,
                                 probs = c(0.025, 0.5, 0.975),
                                 weights = NULL,
@@ -1107,9 +1105,9 @@
   # than a bound the design supports -- and on a diffuse axis that is the common
   # case, not the exception: measured over 48 (cap, span, node-count, policy)
   # rungs on two fixtures the 95% bound sits outside the nodes on 56% to 90% of
-  # fits at EVERY setting, while the 50% bound never does (gcol33/tulpa#390).
+  # fits at EVERY setting, while the 50% bound never does.
   # Recorded rather than corrected, and per axis, because which it is changes
-  # what the number means: the same #293 rule that makes a declined placement
+  # what the number means: the same rule that makes a declined placement
   # say so.
   onn <- setNames(rep(NA_character_, n_ax), nms)
   if (is.null(refining)) refining <- rep("", nrow(tg))
@@ -1166,7 +1164,7 @@
 # `.nl_cell_partition()` lays the boxes out in, so the ratio is a pure number
 # and a geometric sigma axis is measured in log where its spacing is constant.
 #
-# WHY A FIT REPORTS THIS (gcol33/tulpa#357). Every within-cell construction
+# WHY A FIT REPORTS THIS. Every within-cell construction
 # resolves an interval endpoint to within one cell, so the realized coverage of
 # a reported interval depends on WHERE inside its cell the unknown truth fell,
 # and how much it depends on that is governed by `h / sd`. Measured on the
@@ -1185,7 +1183,7 @@
 # marginal in the same coordinate.
 #
 # An axis that could not be scored says WHY, in `declined`, from the closed
-# vocabulary `.NL_AXIS_SD_REASONS` (gcol33/tulpa#401). The reasons are not
+# vocabulary `.NL_AXIS_SD_REASONS`. The reasons are not
 # interchangeable: `mode_at_edge` is the grid failing to contain that axis's own
 # posterior mode, a stronger statement about the fit than any ratio, while
 # `too_few_nodes` is an axis too short to fit a parabola on. Reported per axis
@@ -1241,14 +1239,14 @@
 # node-set KIND, the design share underneath it, the within-cell CONSTRUCTION
 # per axis and why a requested one declined, the COORDINATE each axis's outer
 # cell edges were mirrored in and why a declared support's own mirror did not
-# produce them (gcol33/tulpa#377), and the per-axis resolution the
+# produce them, and the per-axis resolution the
 # construction's position sensitivity is governed by.
 #
 # The kind is filled only when the producer has not already named it: the
 # multi-block joint driver stamps `theta_interval_read` before the moments run
 # (it is the one path whose support is not homogeneous), and every other path --
 # single-block, joint single-block, registry, ST -- leaves a plain tensor grid
-# and had nothing stamped at all until gcol33/tulpa#357, so a reader could not
+# and had nothing stamped at all, so a reader could not
 # distinguish "density" from "this fit does not say". `.nl_node_support()` is
 # the same call `.ogd_support()` was falling back to for exactly that reason.
 # The resolution is reported only for a `density` support. It is a statement
@@ -1277,9 +1275,9 @@
   }
   # An axis whose grid does not contain its own mode is a placement fact, and
   # `.nl_axis_rail()` reads it off the stored weights alone. Attached here so a
-  # CALLER-PINNED grid reports it too (gcol33/tulpa#401): the rescue that used to
-  # be its only attach point never runs on one, which is the placement the
-  # gcol33/tulpa#293 rule most needs said out loud.
+  # CALLER-PINNED grid reports it too: the rescue that used to
+  # be its only attach point never runs on one, which is the placement that
+  # most needs its provenance said out loud.
   res$outer_grid_railed_axes <- res$outer_grid_railed_axes %||%
     .nl_railed_axes(res)
   res
@@ -1328,7 +1326,7 @@
 # taken only on the default coordinate, where it is the one that applies.
 #
 # The five conditions that withhold the number are DISTINGUISHABLE, and a bare
-# `NA_real_` conflated them (gcol33/tulpa#401). `mode_at_edge` in particular is
+# `NA_real_` conflated them. `mode_at_edge` in particular is
 # not a missing measurement: it says the grid does not contain the axis's own
 # posterior mode, which is a stronger statement about the fit than any ratio
 # this function could return. The reason rides on the NA as an attribute so

@@ -80,7 +80,7 @@ tulpa_posterior_draws.tulpa_nested_laplace <- function(fit, idx = NULL,
     # The posterior IS the retained mixture: `.nested_fixed_moments()` is the one
     # marginalizer every nested-tier read goes through, so sampling reads exactly
     # the components `summary()` / `confint()` report from and the two answers
-    # cannot drift apart (gcol33/tulpa#347).
+    # cannot drift apart.
     mom <- .nested_fixed_moments(fit)
     if (is.null(mom)) {
         stop("tulpa_posterior_draws(): this fit retains no per-cell ",
@@ -134,7 +134,7 @@ tulpa_posterior_draws.tulpa_nested_laplace <- function(fit, idx = NULL,
     } else paste0("beta", idx)
     attr(out, "draws_kind") <- "iid"
     attr(out, "scope") <- "fixed"
-    # Same provenance the interval read carries (gcol33/tulpa#342): a grid that
+    # Same provenance the interval read carries: a grid that
     # dropped a positive-weight cell is sampled conditional on the cells that
     # remain, and `retained_mass` below 1 is how a reader tells that apart from a
     # complete grid.

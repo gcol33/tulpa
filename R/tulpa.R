@@ -313,7 +313,7 @@
     range_regional_upper      = as.numeric(spatial$range_regional[2]),
     # Each scale's range carries the PC prior the GP path uses, anchored at
     # that scale's own declared lower bound: P(range < lower) = alpha. The
-    # bounds are no longer a hard box (gcol33/tulpa#244); they state the
+    # bounds are no longer a hard box; they state the
     # plausible interval, the lower end anchors the prior, and the pair places
     # the sampler's starting range.
     range_local_prior_alpha    = 0.05,
@@ -325,7 +325,7 @@
     # Non-centered (z ~ N(0, I) per scale, each field reconstructed as
     # w = f(z, sigma2, phi)) avoids the field/hyperparameter funnel
     # gp_parameterization / svc_parameterization document, independently per
-    # scale (gcol33/tulpa#243).
+    # scale.
     msgp_parameterization = if (noncentered) 1L else 0L
   )
 }
@@ -433,8 +433,7 @@
     # w_j = f(z_j, sigma2_j, phi_j), which removes the funnel that attenuates a
     # weakly identified field's amplitude (sd ratio 0.98 against 0.33 centered,
     # on the one-trial binomial fixture, at a tenth of the cost). Only usable
-    # once gcol33/tulpa#245 stopped the soft sum-to-zero pin from fighting the
-    # reparameterization (gcol33/tulpa#243).
+    # once the soft sum-to-zero pin stopped fighting the reparameterization.
     svc_parameterization =
       if (identical(spatial$parameterization, "centered")) 0L else 1L
   )
@@ -638,7 +637,7 @@
     }
     # Each random-effect term becomes an `iid` latent block, so its SD is
     # integrated on the outer grid alongside the other blocks' hyperparameters
-    # rather than conditioned at a scalar (#265). The driver's native
+    # rather than conditioned at a scalar. The driver's native
     # re_idx / n_re_groups / sigma_re channel conditions, which on a formula whose
     # other structure IS integrated made the RE the one variance component the fit
     # never estimated -- and at the default sigma_re = 1, a number the data never
@@ -1199,8 +1198,8 @@
       # (time_values) on top of the per-observation index the discrete kernels
       # use. Everything else the kernel needs -- which covariance, its
       # smoothness / period, the parameterization -- rides along, since a
-      # covariance choice that reaches no further than the spec object is the
-      # gcol33/tulpa#288 defect.
+      # covariance choice that reaches no further than the spec object is
+      # silently run as something else.
       n_groups <- as.integer(temporal$n_groups %||% 1L)
       temporal_spec_arg <- list(
         type             = "gp",
@@ -2008,7 +2007,7 @@ tulpa <- function(formula, data,
   # random-intercept-only models (no slopes) keep the scalar-sigma_re design
   # path via .bundle_to_re_list when an explicit conditional mode names it
   # (`mode = "laplace"` / `"mala"` / ...); auto routes them to the
-  # covariance-integrating backend too (see auto_select_mode(), gcol33/tulpa#267),
+  # covariance-integrating backend too (see auto_select_mode()),
   # so `re_terms` and `has_re` are computed once, above, ahead of mode
   # selection, and reused here.
   has_slope <- has_re &&
@@ -2192,12 +2191,12 @@ tulpa <- function(formula, data,
   # a misleading "conditioning" message.
   # `nested_laplace` is in the exempt list because it no longer conditions: each
   # RE term becomes an `iid` latent block whose SD is integrated on the outer grid
-  # alongside the other blocks' hyperparameters (#265). A `sigma_re` supplied
+  # alongside the other blocks' hyperparameters. A `sigma_re` supplied
   # explicitly still conditions there, via the one-point grid the iid registry
   # entry documents, so it is passed through rather than defaulted here.
   # A `warning()`, not a `message()`, so a script that promotes warnings (or a
   # chunk that traps them) actually sees that a variance component was fixed
-  # rather than estimated (gcol33/tulpa#267, same sub-issue as #265).
+  # rather than estimated.
   if (K > 0L &&
       !sel$backend %in% c("gibbs", "re_cov_nested", "re_cov_gibbs", "eb", "agq",
                           "nested_laplace") &&

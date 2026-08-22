@@ -294,7 +294,7 @@
 # with the units of x.
 #
 # The threshold is set where the neglected term starts to MATTER, not where the
-# mode stops being pristine. Measured on the fixtures of gcol33/tulpa#255
+# mode stops being pristine. Measured
 # (dev_notes/probe_inner_stationarity.R), the assembled dm/dlog_phi loses
 # accuracy at roughly eight times the relative mode error, so 1e-6 here bounds
 # the outer gradient at ~1e-5 relative -- below anything an outer optimizer can
@@ -327,7 +327,7 @@
   #
   # The remedy is only named where there IS one: a solve that ran out of
   # iterations gets more, but one that reported convergence stopped on its own
-  # stall detector at this residual (gcol33/tulpa#260) and a larger max_iter
+  # stall detector at this residual and a larger max_iter
   # changes nothing.
   warning(structure(
     class = c("tulpa_unsettled_mode", "warning", "condition"),

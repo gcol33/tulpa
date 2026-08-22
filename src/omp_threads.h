@@ -62,7 +62,7 @@ inline int tulpa_omp_team_size_req(int n_requested, int n_work_items) {
 //
 // A region entered with a team of one -- whether by num_threads(1) or by an
 // `if(...)` clause that turns out false -- serialises the BODY but still enters
-// libgomp, and that entry is not free: gcol33/tulpa#365 measured 7.6 us of it
+// libgomp, and that entry is not free: 7.6 us of it was measured
 // per objective evaluation on the joint path, 28% of the per-auxiliary-draw
 // cost of the corrected integrated Laplace. It is paid on every line-search
 // trial of every Newton solve and on every sweep of a Gibbs sampler, so a
@@ -74,8 +74,8 @@ inline int tulpa_omp_team_size_req(int n_requested, int n_work_items) {
 // the same order.
 //
 // The pragma lives in this function, so a caller's locals never live across a
-// region in their own frame (the OpenMP worker-stack rule the gcol33/tulpa#253
-// note states). `body` is called by reference and is never copied.
+// region in their own frame, which is the OpenMP worker-stack rule.
+// `body` is called by reference and is never copied.
 
 template <typename Body>
 inline void tulpa_parallel_for(int team, int n, Body&& body) {
@@ -99,7 +99,7 @@ inline void tulpa_parallel_for(int team, int n, Body&& body) {
 // each thread finishes. Floating-point addition is not associative, so the sum
 // lands an ulp or two apart from one run to the next, and the Newton loop's
 // convergence test and line search amplify that into ~1e-13 on a fit's
-// log_marginal (gcol33/tulpa#374).
+// log_marginal.
 //
 // So the range is cut into `team` contiguous chunks HERE, by index arithmetic,
 // each chunk summed left to right into its own slot, and the slots added in

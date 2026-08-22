@@ -920,17 +920,17 @@ plot_energy_base <- function(energy, energy_diff, e_bfmi, status) {
 #'   \item{pareto_k, quad_ess}{approximation fits only: the outer PSIS k-hat,
 #'     or the grid quadrature ESS when no k-hat was produced}
 #'   \item{pareto_k_declined}{approximation fits only, and only when there is no
-#'     k-hat: WHY (gcol33/tulpa#295) -- `"not_requested"` and
+#'     k-hat: WHY -- `"not_requested"` and
 #'     `"unguessable_axis: <axis>"` are benign or permanent,
 #'     `"degenerate_proposal"` and `"grid_too_small"` are signals about the fit,
 #'     and `"internal_inconsistency"` is an engine bug and raises the status to
 #'     `"WARN"`}
 #'   \item{inner_skew_max, inner_skew_declined}{approximation fits only: the
 #'     largest scored inner-Laplace `|gamma_3|`, or why nothing was scored
-#'     (gcol33/tulpa#296 -- `"coupled_arm"` marks arms the inner layer could
+#'     (`"coupled_arm"` marks arms the inner layer could
 #'     score neither per observation nor through the cell tensor)}
 #'   \item{axis_fields_dropped}{data frame of grid axes the fit's own resolved
-#'     path could not read and dropped as engine defaults (gcol33/tulpa#352):
+#'     path could not read and dropped as engine defaults:
 #'     one row per field, with the block, family, path and the axis that path
 #'     integrated instead. Absent whenever every supplied axis was used}
 #'   \item{recommendations}{Character vector of recommendations}
@@ -1054,7 +1054,7 @@ diagnostic_summary <- function(fit, quiet = FALSE) {
     jf <- if (!is.null(fit$joint_fit)) fit$joint_fit else fit
     # Outer-integration regime: read off the stored grid weights, so it is
     # available whether or not the k-hat diagnostic ran, and it qualifies what a
-    # high k-hat means (gcol33/tulpa#276). Reported BEFORE the k-hat line so a
+    # high k-hat means. Reported BEFORE the k-hat line so a
     # collapsed grid is not read as a failed integration.
     rgm <- .tulpa_outer_regime(fit)
     result$outer_regime <- if (is.null(rgm)) NA_character_ else rgm$regime
@@ -1067,8 +1067,7 @@ diagnostic_summary <- function(fit, quiet = FALSE) {
     # What the reported hyperparameter intervals were read off. A homogeneous
     # support is already named by `integration`; the locally refined grid is the
     # one that carries both kinds, and the share on the design part is the regime
-    # variable for how much of the interval is a moment rule read as a CDF
-    # (gcol33/tulpa#317).
+    # variable for how much of the interval is a moment rule read as a CDF.
     ir <- .tulpa_interval_read(fit)
     if (!is.null(ir)) {
       result$interval_read <- ir$read
@@ -1109,7 +1108,7 @@ diagnostic_summary <- function(fit, quiet = FALSE) {
           paste(parts, collapse = ", ")))
       }
     } else {
-      # WHY there is no k-hat (gcol33/tulpa#295): "you turned it off", "this
+      # WHY there is no k-hat: "you turned it off", "this
       # family can never be scored" and "the outer proposal degenerated" all
       # arrived here as a bare NA before, and the last two are signals worth
       # acting on. An internal inconsistency is an engine bug, so it WARNs.
@@ -1136,7 +1135,7 @@ diagnostic_summary <- function(fit, quiet = FALSE) {
     }
 
     # The inner (latent-field) Laplace layer, and why it went unscored when it
-    # did (gcol33/tulpa#296) -- a model class that can never be scored reads
+    # did -- a model class that can never be scored reads
     # differently from a diagnostic that was switched off.
     isk <- .tulpa_inner_skew_reliability(fit)
     if (!is.null(isk)) {
@@ -1155,7 +1154,7 @@ diagnostic_summary <- function(fit, quiet = FALSE) {
       }
     }
 
-    # The second score on the same inner layer (gcol33/tulpa#303): the
+    # The second score on the same inner layer: the
     # importance k-hat, which needs no likelihood derivative and so answers
     # where gamma_3 declines.
     ikk <- .tulpa_inner_k_reliability(fit)
@@ -1189,7 +1188,7 @@ diagnostic_summary <- function(fit, quiet = FALSE) {
     }
   }
 
-  # Grid axes the resolved path could not read (gcol33/tulpa#352). Recorded on
+  # Grid axes the resolved path could not read. Recorded on
   # every tier, so it is read outside the approximation-only block above; a fit
   # that used every supplied axis carries nothing and this stays silent.
   axis_dropped <- .tulpa_axis_dropped(fit)

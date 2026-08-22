@@ -6,7 +6,7 @@
 // custom_backward wiring (dw -> dz, dlog_sigma2, dlog_phi via the hand-derived
 // tulpa_gp::nngp_nc_forward / nngp_nc_backward pair) is identical regardless
 // of which model package's field the term belongs to, so it lives here once
-// rather than once per caller (gcol33/tulpa#243).
+// rather than once per caller.
 //
 //   double      : forward only. No AD, no adjoint recording.
 //   arena::Var  : records a custom_backward block into the arena so

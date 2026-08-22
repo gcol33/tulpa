@@ -203,7 +203,7 @@ sn_quantile <- function(p, sn, tol = 1e-10, max_iter = 60L) {
 
 
 # ============================================================================
-# Skew-normal as an IMPORTANCE-PROPOSAL family (gcol33/tulpa#276).
+# Skew-normal as an IMPORTANCE-PROPOSAL family.
 #
 # The outer Pareto-k-hat scores the hyperparameter posterior against a Gaussian
 # proposal. A variance-component marginal stays right-skewed even after the log

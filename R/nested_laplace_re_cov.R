@@ -303,7 +303,7 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
   }
 }
 
-# Hyperprior convention on the scale of a Gaussian latent block (gcol33/tulpa#268).
+# Hyperprior convention on the scale of a Gaussian latent block.
 #
 # icar / rw1 / rw2 / ar1(tau) / iid, the nested-Laplace path's own scale axes
 # (build_blocks_from_spec in src/nested_laplace_multi.cpp; the single-block
@@ -409,10 +409,10 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
 # `.NL_SUPPORT` table. The grid integrator's tensor cells are `"density"`, its
 # central-composite design is `"moment_rule"` (the node positions carry no mass,
 # so the interval comes from the moments via `.nl_moment_quantile()` on each
-# quantity's own domain, gcol33/tulpa#308), and the Gibbs sweep's equal-weight
+# quantity's own domain), and the Gibbs sweep's equal-weight
 # posterior draws are `"sample"` -- a CDF like the grid, but over order
 # statistics rather than cell representatives, so it clamps at the extremes
-# instead of mirroring a half-cell it does not have (gcol33/tulpa#358). The mean
+# instead of mirroring a half-cell it does not have. The mean
 # and SD columns are the same weighted moments in every case.
 .re_cov_derived_summary <- function(Sig_node_list, w, layout,
                                     support = .NL_SUPPORT_KINDS) {
@@ -422,7 +422,7 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
   probs <- c(0.025, 0.5, 0.975)
 
   # The WITHIN-CELL read is pinned to `chord` here, which is NOT the engine
-  # default (gcol33/tulpa#357). `x` is a DERIVED quantity evaluated at the
+  # default. `x` is a DERIVED quantity evaluated at the
   # nodes -- `sigma_i`, `rho_ij`, `Sigma_ij` -- so its values are function
   # values, not the integration design's own cell coordinates on the axis being
   # reported. A box read needs a partition that tiles the reported axis, and
@@ -464,7 +464,7 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
 # node-level quantities (e.g. the hyperparameter log-prior for power-scaling)
 # can be aligned draw-by-draw.
 #
-# `debias_nodes` / `debias_idx` (gcol33/tulpa#304) replace the Gaussian block of
+# `debias_nodes` / `debias_idx` replace the Gaussian block of
 # the SELECTED fixed-effect coordinates with the node's Metropolis draws, the
 # rest of the block following from the Gaussian conditional
 # (`.subspace_node_draws`). Everything else about the mixture -- which nodes are
@@ -533,10 +533,10 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
   list(draws = out, picks = picks)
 }
 
-# Draws of the NON-fixed latent coordinates the subspace sampler moved
-# (gcol33/tulpa#314) -- the random effects a closure or an explicit probe pulled
-# into S, which `.re_cov_nested_beta_draws()` drops because they are not
-# reported coefficients.
+# Draws of the NON-fixed latent coordinates the subspace sampler moved -- the
+# random effects a closure or an explicit probe pulled into S, which
+# `.re_cov_nested_beta_draws()` drops because they are not reported
+# coefficients.
 #
 # The node mixture is REUSED rather than redrawn: `picks` is the very vector
 # `.re_cov_nested_beta_draws()` returned, one node index per draw sampled from
@@ -825,7 +825,7 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
   # re-solve at theta_hat, which reports the mode).
   #
   # `compute_skew` / `debias` are the two inner-layer extras the subspace debias
-  # needs (gcol33/tulpa#304): the first turns the node solve into the reliability
+  # needs: the first turns the node solve into the reliability
   # probe the selector reads, the second hands it the selected index set so the
   # flagged coordinates come back as Metropolis draws instead of a Gaussian.
   # Both default off, so every existing caller solves exactly what it did.
@@ -1569,7 +1569,7 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
 #'       only the rest. `resume = FALSE` starts fresh. A file written for
 #'       different data, layout, or grid is rejected (fingerprint mismatch).
 #'       Default `NULL` (off).
-#'     \item `subspace_debias`: subspace debias (gcol33/tulpa#304), `FALSE` by
+#'     \item `subspace_debias`: subspace debias, `FALSE` by
 #'       default. `TRUE` takes every default; a list overrides `band` (the
 #'       inner-reliability floor a coordinate is selected at, default `"ok"`),
 #'       `idx` (pin the corrected set explicitly, skipping the selector),
@@ -1697,7 +1697,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
 
   # --- subspace debias: which latent directions need the exact sampler? -----
   # One probe solve at the fitted MAP covariance, scored by the inner-layer
-  # diagnostics, decides S once for the whole fit (gcol33/tulpa#304). Selecting
+  # diagnostics, decides S once for the whole fit. Selecting
   # per node would make the correction's scope a function of the integration
   # design, and would leave nothing auditable to record; the MAP cell is where
   # the weight is and is the cell every other inner-layer probe in the engine
@@ -1904,7 +1904,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   # posterior is too skewed / heavy-tailed for the grid (>= 0.7). Run after the
   # draw synthesis and with the RNG state restored, so existing draws are
   # bit-for-bit unchanged whether or not the diagnostic is requested.
-  # A decline says which one it was rather than a bare NA (gcol33/tulpa#295).
+  # A decline says which one it was rather than a bare NA.
   pareto_k <- NA_real_; k_is_ess <- NA_real_
   k_declined <- if (!isTRUE(diagnose_k)) .k_decline_label(.k_decline("not_requested"))
                 else .k_decline_label(.k_decline("no_varying_axis",
@@ -1943,7 +1943,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     # an empty table indistinguishable from a model with no random effects.
     re_nodes     = re_nodes,
     re_var_nodes = re_var_nodes,
-    # The sampled per-group coordinates (gcol33/tulpa#314): one column per
+    # The sampled per-group coordinates: one column per
     # random effect the subspace debias selected, `re_debias_idx` giving its
     # position within the random-effect block. ranef() reports these rows
     # empirically and the rest from the Gaussian mixture above, saying per row

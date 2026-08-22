@@ -38,11 +38,11 @@
 #'   A default grid axis is a starting axis, not a hard ceiling: for `icar`
 #'   (`tau_grid`) and `bym2` (`sigma_grid`) a posterior mode that rails a
 #'   boundary node (`pareto_k_regime = "collapsed_edge"`) triggers one
-#'   mode-Hessian recenter-and-refit (gcol33/tulpa#290), reported through
+#'   mode-Hessian recenter-and-refit, reported through
 #'   `outer_grid_placement` / `outer_grid_recenter_declined` -- see
 #'   [tulpa_nested_laplace_joint()]'s return docs. An axis the caller pinned is
 #'   never moved; mark a grid your own code defaulted with [auto_grid()] to keep
-#'   the recenter live on it (gcol33/tulpa#293).
+#'   the recenter live on it.
 #' @param re_idx Optional 1-based RE group index per obs (defaults to no RE).
 #' @param n_re_groups RE group count (default 0).
 #' @param sigma_re RE standard deviation (default 1).
@@ -80,37 +80,36 @@
 #'     approximation is itself a good fit to the latent-field conditional
 #'     posterior. See [diagnostics()] for the combined whole-fit verdict.
 #'   * `within_cell` (`"box_uniform"`) -- the WITHIN-CELL construction the
-#'     reported per-axis hyperparameter intervals are read with
-#'     (gcol33/tulpa#357). The outer grid's weights say how much mass each cell
-#'     holds; they do not say how it is spread inside the cell, and a quantile
-#'     needs both. `"box_uniform"` puts the cumulative FULL mass at each cell
-#'     EDGE and interpolates between edges; `"chord"` puts the cumulative
-#'     MID-mass at each cell coordinate and interpolates between coordinates --
-#'     the same masses over the same boxes with the knots moved half a cell,
-#'     which measures as a whole order of convergence (2.00 against 1.04 on a
-#'     fixture with a closed-form posterior).
-#'     THE DEFAULT IS `"box_uniform"` since 0.0.188, decided on FIXED-TRUTH
-#'     coverage at the placement the engine ships since gcol33/tulpa#361 made
-#'     `auto_recenter = "resolve"` the default. Summed |coverage - nominal| over
-#'     nominal 0.95 / 0.80 / 0.50, chord against box-uniform: 0.2900 / 0.1233 on
-#'     the pre-registered fixed-truth instrument, 0.2004 / 0.0361 over 4680
-#'     truth-swept fits of the same fixture, and 0.2467 / 0.1572 over nine
-#'     (config, axis) rows spanning seven families, at 0.69 to 1.08x the width.
-#'     The conditional-coverage swing that held the default back reads 0.110 at
-#'     the shipped placement against 0.415 on the coarse pinned grid it was
-#'     measured on, and at nominal 0.50 it is the same on both reads.
-#'     `outer_grid_h_over_sd` is how wide a cell is on each axis (with
-#'     `outer_grid_resolution_declined` naming why an axis carries no ratio, and
-#'     `outer_grid_railed_axes` naming any axis whose nodes do not contain its
-#'     own posterior mode), and
+#'     reported per-axis hyperparameter intervals are read with. The outer
+#'     grid's weights say how much mass each cell holds; they do not say how it
+#'     is spread inside the cell, and a quantile needs both. `"box_uniform"`
+#'     puts the cumulative FULL mass at each cell EDGE and interpolates between
+#'     edges; `"chord"` puts the cumulative MID-mass at each cell coordinate
+#'     and interpolates between coordinates -- the same masses over the same
+#'     boxes with the knots moved half a cell, which measures as a whole order
+#'     of convergence (2.00 against 1.04 on a fixture with a closed-form
+#'     posterior). THE DEFAULT IS `"box_uniform"` since 0.0.188, decided on
+#'     FIXED-TRUTH coverage at the placement the engine ships, with
+#'     `auto_recenter = "resolve"` as the default. Summed
+#'     |coverage - nominal| over nominal 0.95 / 0.80 / 0.50, chord against
+#'     box-uniform: 0.2900 / 0.1233 on the pre-registered fixed-truth
+#'     instrument, 0.2004 / 0.0361 over 4680 truth-swept fits of the same
+#'     fixture, and 0.2467 / 0.1572 over nine (config, axis) rows spanning
+#'     seven families, at 0.69 to 1.08x the width. The conditional-coverage
+#'     swing that held the default back reads 0.110 at the shipped placement
+#'     against 0.415 on the coarse pinned grid it was measured on, and at
+#'     nominal 0.50 it is the same on both reads. `outer_grid_h_over_sd` is how
+#'     wide a cell is on each axis (with `outer_grid_resolution_declined`
+#'     naming why an axis carries no ratio, and `outer_grid_railed_axes` naming
+#'     any axis whose nodes do not contain its own posterior mode), and
 #'     `theta_within_cell` is what each axis was actually read with. Only a
-#'     `"density"` support admits it -- a CCD design, a locally refined grid and
-#'     a posterior sample are not cell partitions that tile -- and an axis it
-#'     declines on reports `"chord"` with a reason rather than erroring. Nothing
-#'     else moves: point estimates, moments, draws and weights are untouched, and
-#'     `"chord"` restores the previous report exactly.
+#'     `"density"` support admits it -- a CCD design, a locally refined grid
+#'     and a posterior sample are not cell partitions that tile -- and an axis
+#'     it declines on reports `"chord"` with a reason rather than erroring.
+#'     Nothing else moves: point estimates, moments, draws and weights are
+#'     untouched, and `"chord"` restores the previous report exactly.
 #'   * `skew_correct` (`TRUE`) -- consume the inner-Laplace expansion instead of
-#'     only grading it (gcol33/tulpa#302, gcol33/tulpa#354): report
+#'     only grading it: report
 #'     Cornish-Fisher marginal quantiles at each coefficient's own `gamma_3`,
 #'     about the centre `gamma_1 + gamma_3 / 2` that Rue, Martino & Chopin
 #'     (2009) eq. (22) implies, from `summary()` / `confint()` wherever the
@@ -119,21 +118,20 @@
 #'     reported quantiles: draws, modes and weights are untouched, so a fit run
 #'     with it off is bit for bit the fit it was before. A coefficient whose
 #'     location term could not be formed declines rather than reading it as zero.
-#'     The band that bounded the relocation itself (`centre_unreliable`,
-#'     gcol33/tulpa#362) is off (`Inf`): scored over seven fixtures with an exact
+#'     The band that bounded the relocation itself (`centre_unreliable`) is
+#'     off (`Inf`): scored over seven fixtures with an exact
 #'     reference, every finite cutoff declines the coefficients the correction
 #'     helps most, because a large centre carrying a small `gamma_3` is uniformly
-#'     weak correlation rather than an expansion out of its regime
-#'     (gcol33/tulpa#376). `$skew_correction` records the per-coefficient
-#'     `gamma_3`, `gamma_1` and the centre they form, the band, the inner
-#'     importance k-hat, the combined band, the eligibility
-#'     and the reason behind it; the `skew_applied` attribute on `summary()` /
-#'     `confint()` records what was actually used at the requested level. RMC fit
-#'     a skew normal here instead; the series correction is the same-order
-#'     alternative, and unlike a skew normal its skewness does not saturate
-#'     inside the band it is applied on.
+#'     weak correlation rather than an expansion out of its regime.
+#'     `$skew_correction` records the per-coefficient `gamma_3`, `gamma_1` and
+#'     the centre they form, the band, the inner importance k-hat, the combined
+#'     band, the eligibility and the reason behind it; the `skew_applied`
+#'     attribute on `summary()` / `confint()` records what was actually used at
+#'     the requested level. RMC fit a skew normal here instead; the series
+#'     correction is the same-order alternative, and unlike a skew normal its
+#'     skewness does not saturate inside the band it is applied on.
 #'
-#'     MEASURED (gcol33/tulpa#346, gcol33/tulpa#354). Against exact quadrature
+#'     MEASURED. Against exact quadrature
 #'     quantiles of rare-event binomial-logit posteriors it cuts total absolute
 #'     endpoint error 69.2%, improving both endpoints in every case. Scored over
 #'     the WHOLE marginal -- paired CRPS against the exact posterior in a
@@ -142,9 +140,9 @@
 #'     exact posterior itself achieves, and its PIT re-enters the simultaneous
 #'     SBC band. Applied about the Laplace mode instead of about
 #'     `gamma_1 + gamma_3 / 2` the same reshaping scored +0.00775 at t = +3.54,
-#'     a net loss; that centre is what gcol33/tulpa#354 supplied.
+#'     a net loss; the location term is what supplies that centre.
 #'
-#'     IT IS ON BY DEFAULT (gcol33/tulpa#364), so `summary()` / `confint()` on a
+#'     IT IS ON BY DEFAULT, so `summary()` / `confint()` on a
 #'     nested-Laplace fit report the corrected quantiles wherever the combined
 #'     inner band admits the coefficient; `skew_correct = FALSE` restores the
 #'     uncorrected report exactly. Scored against the mixture read a
@@ -157,8 +155,8 @@
 #'     it reported before, to the bit.
 #'   * `subspace_debias` (`FALSE`) -- correct only the latent directions the
 #'     inner-layer diagnostics flagged, by exact Metropolis, and leave the rest
-#'     at their Gaussian conditional (gcol33/tulpa#304, extended to this backend
-#'     by gcol33/tulpa#306). `TRUE` takes every default; a list overrides `band`
+#'     at their Gaussian conditional. `TRUE` takes every default; a list
+#'     overrides `band`
 #'     (the inner-reliability floor a coordinate is selected at, default
 #'     `"ok"`), `idx` (pin the corrected set explicitly, skipping the selector),
 #'     `closure` / `closure_max` (grow the set by strongly coupled
@@ -175,8 +173,8 @@
 #'     it turns `keep_grid_hessians` on, since the recombination reads exactly
 #'     those per-cell pieces.
 #'   * `cila` (`FALSE`) -- corrected integrated Laplace, the second inner-layer
-#'     debias (gcol33/tulpa#351, after Lai, Margossian and Sheldon,
-#'     arXiv:2605.20345; wired to this backend by gcol33/tulpa#368). Where
+#'     debias (after Lai, Margossian and Sheldon,
+#'     arXiv:2605.20345). Where
 #'     `subspace_debias` selects coordinates and runs exact Metropolis on them,
 #'     this selects nothing: at every outer cell it draws `n_points` points from
 #'     the whole inner Gaussian, weights each by the exact joint density it came
@@ -191,8 +189,8 @@
 #'     factorized sparsely draws through the CHOLMOD factor's own triangular and
 #'     permutation solves; an LDL' factor has no square root to draw with and is
 #'     declined with `"sparse_factor_not_ll"`.
-#'   * `auto_recenter` (`TRUE`) -- outer-grid placement policy
-#'     (gcol33/tulpa#289 / #290 / #361). `TRUE` re-centres the movable default
+#'   * `auto_recenter` (`TRUE`) -- outer-grid placement policy. `TRUE`
+#'     re-centres the movable default
 #'     axes on the posterior mode and refits when the grid either RAILS (an
 #'     axis's own marginal is maximal at one of its own endpoints) or does not
 #'     RESOLVE its posterior (an axis's node spacing exceeds 2 posterior SDs in
@@ -307,13 +305,13 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   tol                <- control$tol %||% 1e-6
   n_threads          <- control$n_threads %||% 1L
   x_init             <- control$x_init
-  # Subspace debias (gcol33/tulpa#306). The correction reports per-cell DRAWS
+  # Subspace debias. The correction reports per-cell DRAWS
   # instead of the Gaussian-mixture moments, and those are built from the same
   # per-cell fixed-effect mode + precision `.nested_fixed_moments()` reads, so
   # requesting it turns that retention on: without it there is nothing to
   # recombine the sampled coordinates with.
   sd_cfg             <- .subspace_debias_config(control$subspace_debias)
-  # Corrected integrated Laplace (gcol33/tulpa#351), the second inner debias.
+  # Corrected integrated Laplace, the second inner debias.
   # Same shape as the subspace one: a second pass over the settled grid whose
   # per-cell particles are pooled into the reported draws.
   cila_cfg           <- .cila_config(control$cila)
@@ -324,7 +322,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   skew_idx           <- control$skew_idx
   skew_correct       <- isTRUE(control$skew_correct %||% .nl_diag("skew_correct"))
   # Which WITHIN-CELL construction the reported per-axis hyperparameter
-  # intervals are read off (gcol33/tulpa#357). A numerical reconstruction of the
+  # intervals are read off. A numerical reconstruction of the
   # integration design the fit already ran, so it sits beside `integration` /
   # `local_ccd` / `skew_correct` in `control` rather than in the signature,
   # which carries only statistical arguments. The default is
@@ -372,12 +370,12 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     stop("`prior` must be a list (single block) or list-of-lists (multi-block).",
          call. = FALSE)
   }
-  # Outer-axis provenance (gcol33/tulpa#293): record which grid axes the caller
+  # Outer-axis provenance: record which grid axes the caller
   # declared as defaults with `auto_grid()` -- the registry rescue below reads
   # it -- and strip the markers so every downstream consumer sees plain grids.
   .prov <- .nl_grid_provenance(prior)
   prior <- .prov$prior
-  # And refuse an axis this path cannot read (gcol33/tulpa#352): a grid field
+  # And refuse an axis this path cannot read: a grid field
   # some OTHER driver spells the same family with is neither integrated nor
   # reported here, so a pinned one is an error and a defaulted one is recorded.
   .op_axis <- .nl_publish_axis_dropped(
@@ -432,11 +430,11 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     res <- .nl_attach_pareto_k(res, prior, cargs_no_ckpt, "multi", NULL,
                                likelihood, k_samples, compute = diagnose_k)
 
-    # The same placement pass the single-block path runs, over the block list
-    # (gcol33/tulpa#361). Every axis is block-prefixed here, so a moved block is
-    # re-crossed on its own fields and its neighbours keep theirs; a prior whose
-    # blocks the family table does not cover declines with a reason rather than
-    # leaving the fit with no placement record at all.
+    # The same placement pass the single-block path runs, over the block list.
+    # Every axis is block-prefixed here, so a moved block is re-crossed on its
+    # own fields and its neighbours keep theirs; a prior whose blocks the
+    # family table does not cover declines with a reason rather than leaving
+    # the fit with no placement record at all.
     multi_rescue <- .nl_registry_grid_rescue(
       res, NULL, prior,
       refit = function(prior_i) {
@@ -512,9 +510,9 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   res <- .nl_attach_pareto_k(res, prior, cargs_no_ckpt, "single", type, NULL,
                              k_samples, compute = diagnose_k)
 
-  # Auto-recenter a railed default outer axis (gcol33/tulpa#290, the registry
-  # generalization of #289's joint-path fix, extended over the family table in
-  # #361): a single mode-Hessian recenter-and-refit when the fixed default axis
+  # Auto-recenter a railed default outer axis (the registry
+  # generalization of the joint-path fix, extended over the family table):
+  # a single mode-Hessian recenter-and-refit when the fixed default axis
   # does not contain its own mode. A no-op (zero extra fit) unless it actually
   # did; a PINNED axis always wins (`.nl_axis_is_pinned()`: a grid the caller
   # named and neither marked with `auto_grid()` nor equal to the engine's own
@@ -584,12 +582,12 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   res$pareto_k        <- NA_real_
   res$pareto_k_is_ess <- NA_real_
   res$pareto_k_scope  <- "outer (hyperparameter) Gaussian proposal"
-  # The outer-integration regime (gcol33/tulpa#276) is read off the stored grid
+  # The outer-integration regime is read off the stored grid
   # weights, so it costs nothing and is attached on every path -- including the
   # ones that DECLINE the k-hat below, where knowing the grid collapsed (and
   # whether against a boundary) is the only outer signal left.
   res <- .joint_attach_pareto_k_regime(res)
-  # Every decline below says which one it was (gcol33/tulpa#295).
+  # Every decline below says which one it was.
   decline <- function(reason, detail = NULL) {
     .k_attach_declined(res, .k_decline(reason, detail))
   }
@@ -667,7 +665,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 # path that consumes them. The C++ kernels read those vectors positionally with
 # no bounds check, so a block naming a field wrongly -- a typo, a stale name
 # after a rename, a block copied from a different family -- arrives with a
-# zero-length vector and takes the session down (gcol33/tulpa#299). Checking
+# zero-length vector and takes the session down. Checking
 # presence at the R boundary turns that into a message naming the fields.
 #
 # Path keys:
@@ -1513,7 +1511,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 # Resolve the hard cap for one fit. `control$max_grid_cells = <n>` moves the
 # ceiling in either direction: the default refuses the accidental blow-up, and a
 # deliberate converged tensor reference grid (4 axes x 7 levels = 2401 cells) is
-# a run a caller can knowingly ask for (gcol33/tulpa#343). The front doors
+# a run a caller can knowingly ask for. The front doors
 # publish the resolved value on the scoped `tulpa.nl_max_grid_cells` option, so
 # every grid built inside the fit -- the multi-block dispatch, the joint
 # multi-block dispatch, the k-hat re-evaluations -- reads one ceiling without
@@ -1562,7 +1560,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
                                theta_grid_override = NULL,
                                compute_skew = FALSE, skew_idx = NULL,
                                debias = NULL,
-                               # Corrected integrated Laplace (gcol33/tulpa#351):
+                               # Corrected integrated Laplace:
                                # the kernel-facing request list, off by default.
                                cila = NULL) {
   # Inject a default obs_idx for any tgmrf block that didn't supply one.

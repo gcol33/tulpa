@@ -1,6 +1,6 @@
 // cell_curvature3.h
 //
-// The third-derivative tensor of a CELL-COUPLED log-density (gcol33/tulpa#301),
+// The third-derivative tensor of a CELL-COUPLED log-density,
 // contracted against the inner-Laplace probe direction.
 //
 // A `CellCouplingSpec` replaces a cell's per-observation sum with one
@@ -30,7 +30,7 @@
 // Blocks the spec does not declare in `dense_cross_pairs()` are absent, which is
 // the spec asserting that pair contributes nothing at this cell.
 //
-// DECLINES with `curvature3_unavailable` -- the #296 vocabulary reason for "this
+// DECLINES with `curvature3_unavailable` -- the vocabulary reason for "this
 // likelihood ships no way to reach a third derivative", not the structural
 // "coupled_likelihood" -- when there is no spec, no coupled arm, or no cell to
 // walk. A cell whose differenced Hessian comes back non-finite takes the whole
@@ -374,7 +374,7 @@ inline bool cell_curvature3_available(const CellCouplingSpec* spec,
     return spec != nullptr && !coupled_arms.empty() && n_cells > 0;
 }
 
-// Build the contraction. `reason` (optional out-parameter) is set to the #296
+// Build the contraction. `reason` (optional out-parameter) is set to the
 // vocabulary reason when no oracle could be built, "" otherwise.
 inline CellCubic3Fn build_cell_curvature3_tensor(CellCurvature3Inputs in,
                                                  const char** reason = nullptr) {

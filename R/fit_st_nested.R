@@ -56,7 +56,7 @@
 #'   per-axis rail).
 #'
 #'   The `(tau_lower, tau_upper)` span (and, for `ar1`, `(rho_lower,
-#'   rho_upper)`) is a starting axis, not a hard ceiling (gcol33/tulpa#291):
+#'   rho_upper)`) is a starting axis, not a hard ceiling:
 #'   when the fitted precision (or, for `ar1`, autocorrelation) posterior
 #'   mode rails a boundary node (`pareto_k_regime = "collapsed_edge"`, see
 #'   below), the driver fits a mode-Hessian via a derivative-free `optim()`
@@ -64,7 +64,7 @@
 #'   attempt).
 #'
 #'   A grid knob PINS the axes it shapes, and a pin always wins -- but
-#'   pinning is decided by value, not by presence (gcol33/tulpa#294): a knob
+#'   pinning is decided by value, not by presence: a knob
 #'   set to the engine's own default, or marked with [auto_grid()], expresses
 #'   no preference and leaves its axes free. That is what lets a wrapper
 #'   package thread its own `n_grid`-style argument through `control` without
@@ -92,7 +92,7 @@
 #'   nodes were therefore kept, and `outer_grid_recenter_sd_clamp` /
 #'   `_sd_raw` / `_sd_used` -- per moved axis, which mode-SD bound the
 #'   placement hit, the SD the stencil measured, and the SD the axis was laid
-#'   from (gcol33/tulpa#387). A bound-decline is PER AXIS here: the axes the
+#'   from. A bound-decline is PER AXIS here: the axes the
 #'   mode-find did resolve are still re-placed, and
 #'   `outer_grid_recenter_sd_declined` names the ones that kept their incoming
 #'   nodes and on which bound, so a partially re-placed grid is not read as a
@@ -191,22 +191,21 @@ fit_st_nested <- function(y, X, spatial_idx, adjacency, temporal_idx, n_times,
   out$theta_grid  <- as.matrix(grid)
   out$theta_names <- colnames(grid)
   out$weights <- .nl_normalise_weights_safe(out$log_marginal, "spatiotemporal grid")
-  # Outer-grid collapse visibility + recenter (gcol33/tulpa#276, #290, #291):
+  # Outer-grid collapse visibility + recenter:
   # tau_lower/tau_upper's default [0.25, 16] span (and, for ar1, the default
   # rho_lower/rho_upper) is a starting axis, not a hard ceiling, the same
   # contract every other nested-Laplace family's default grid carries. A
   # from-scratch mode-Hessian recenter-and-refit engages when the grid
   # collapses onto a boundary (`pareto_k_regime = "collapsed_edge"`) and no
   # grid knob was explicitly overridden; see `.st_auto_grid_rescue()`
-  # (R/fit_st_nested_auto_grid.R) for the optim()-based mode-find this file
-  # had none of before #291.
+  # (R/fit_st_nested_auto_grid.R) for the optim()-based mode-find it uses.
   out <- .joint_attach_pareto_k_regime(out)
   out <- .st_auto_grid_rescue(out, kernel, kargs, spatial_type, temporal_type,
                               n_gs, n_gt, n_grho, tau_lo, tau_hi, control,
                               rho_spatial_val = rho_spatial_val)
   out$outer_grid_placement <- out$outer_grid_placement %||% "fixed"
-  # Within-cell construction for the reported per-axis intervals
-  # (gcol33/tulpa#357); the default is `.nl_diag("within_cell")`.
+  # Within-cell construction for the reported per-axis intervals; the default
+  # is `.nl_diag("within_cell")`.
   within_cell <- .nl_within_cell_mode(control$within_cell)
   out <- .nl_posterior_moments(out, "st", within = within_cell)
   out <- .nl_attach_grid_hessians(out, ncol(X))

@@ -1,6 +1,6 @@
 // family_terms_export.cpp
 // Per-observation (loglik, grad, curvature) probes for the family kernels that
-// are maintained in parallel (A9).
+// are maintained in parallel.
 //
 // The same per-family math lives in several kernels because each serves a
 // different backend: laplace_family_link.h (the Laplace/Newton dispatch),
@@ -11,9 +11,9 @@
 //   * `phi` is the residual SD in laplace_family_link.h and the residual
 //     VARIANCE in glmm_oracle.h. The R layer bridges this at each boundary
 //     (fit_laplace.R sqrt()s it; agq.R squares sigma_eps). Nothing in C++
-//     enforces it, and both readings are finite and well-behaved -- exactly how
-//     the 0.0.73 bug (laplace and mala silently fitting different models at
-//     phi != 1) went unnoticed.
+//     enforces it, and both readings are finite and well-behaved, so a
+//     mismatch surfaces only as two backends fitting different models at
+//     phi != 1.
 //   * glmm_oracle.h returns the signed d2/deta2; the Laplace side returns the
 //     negated Hessian.
 //

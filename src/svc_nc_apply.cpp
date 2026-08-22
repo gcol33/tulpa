@@ -3,7 +3,7 @@
 // terms. See svc_nc_apply.h for the contract. Every term shares the SVCData
 // neighbour topology and gets its own (sigma2_j, phi_j); each term delegates
 // to the shared per-term applier (nngp_nc_term_apply.h), the same primitive
-// gp_nc_apply.cpp uses for its single field (gcol33/tulpa#243).
+// gp_nc_apply.cpp uses for its single field.
 
 #include "svc_nc_apply.h"
 

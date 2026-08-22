@@ -1,6 +1,6 @@
 // nngp_nc_term_apply.cpp
 // Implementation of the shared per-term non-centered NNGP applier. See
-// nngp_nc_term_apply.h for the contract (gcol33/tulpa#243).
+// nngp_nc_term_apply.h for the contract.
 
 #include "nngp_nc_term_apply.h"
 

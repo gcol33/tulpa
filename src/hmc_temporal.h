@@ -232,4 +232,4 @@ inline double sum_to_zero_penalty(const double* phi, int T) {
 
 } // namespace tulpa_temporal
 
-#endif // QUOTR_HMC_TEMPORAL_H
+#endif // TULPA_HMC_TEMPORAL_H

@@ -116,12 +116,12 @@ fit_spde_nested_grid <- function(spde_log_marginal, sp, n_grid, spatial,
     } else .spde_pareto_k(u_hat, Lk, spde_log_marginal, sp, k_samples)
   }
 
-  # Outer-grid collapse visibility (gcol33/tulpa#276, #290). This span is
+  # Outer-grid collapse visibility. This span is
   # already centred on the PC-prior mode (mode * 0.3 to mode * 3), unlike
   # the other families' universal fixed ceiling, but a data mode far from
   # the prior's can still rail it -- and `method = "grid"` is an explicit
   # opt-in (fit_spde()'s default `control$method` is already `"ccd"`, the
-  # mode-Hessian path #289/#290 ask for), so this attaches the diagnostic
+  # mode-Hessian path the auto-recenter uses), so this attaches the diagnostic
   # rather than silently overriding the user's chosen method with a refit.
   regime <- .joint_attach_pareto_k_regime(
     list(theta_grid = cbind(range = grid$range, sigma = grid$sigma),

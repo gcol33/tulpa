@@ -69,7 +69,7 @@
 // oracle shapes reach this file through Curvature3Oracle (per-observation) and
 // CellCubic3Fn (per coupled cell).
 //
-// THE LOCATION TERM gamma_1 (gcol33/tulpa#354). eq. (18) is the NUMERATOR of
+// THE LOCATION TERM gamma_1. eq. (18) is the NUMERATOR of
 // eq. (12); the denominator contributes -(1/2) log|H_{-i,-i}(x_i)| to the log
 // density, and the first-order coefficient of THAT along the same curve is the
 // paper's gamma^(1) (eq. 19-21). In the general representation the moving
@@ -126,7 +126,7 @@
 // `scalar` oracle), which covers every built-in family and every single-process
 // LikelihoodSpec, and DECLINES (NaN, never 0) for a unit reading several linear
 // predictors at once. The expansion there is unchanged and the contraction
-// widens exactly as the cubic one did in gcol33/tulpa#301:
+// widens exactly as the cubic one does:
 //
 //   gamma_1(i) = (1/2) [ (1/sigma_i) sum_units sum_{a,b,c} T^{abc} S_u^{ab} u^c
 //                        - gamma_3(i) ],
@@ -138,7 +138,7 @@
 // from them and is left unattempted rather than approximated. Note the
 // contraction itself is CHEAPER than the cubic one: by
 // sum_{abc} T^{abc} S^{ab} u^c = <S, d/ds L''(e + s u)>_F it is ONE central
-// difference of the unit's Hessian per unit, against gcol33/tulpa#301's 2K.
+// difference of the unit's Hessian per unit, against the cubic term's 2K.
 //
 // WHAT BUILDING IT WOULD BUY, measured before anyone starts. On the coupled
 // occupancy fixture the location term was computed OUTSIDE the engine from the
@@ -204,7 +204,7 @@ struct InnerSkewOutcome {
   std::vector<double> gamma1;
   std::string         gamma1_declined;
   int n_nonfinite_dropped = 0;     // (i, j) contributions skipped for a non-finite l'''_j
-  // Why NOTHING was computable, when nothing was (gcol33/tulpa#296). Empty
+  // Why NOTHING was computable, when nothing was. Empty
   // when at least one index scored. A NaN says only "not computable"; the
   // reasons behind it are not interchangeable -- a coupled multi-process
   // likelihood may ship no way to reach a third derivative at all, while a
@@ -320,7 +320,7 @@ inline bool inner_skew_any_scored(const std::vector<double>& gamma3) {
 }
 
 // Third-derivative oracles for a joint fit, carried WITH the reason any arm has
-// none (gcol33/tulpa#296). Built by build_joint_curvature3_fns
+// none. Built by build_joint_curvature3_fns
 // (laplace_newton_joint.h); the reason travels with the oracles rather than
 // being re-derived downstream, so a decline can never lose its explanation on
 // the way to the fit object.
@@ -329,7 +329,7 @@ inline bool inner_skew_any_scored(const std::vector<double>& gamma3) {
 // contribution IS a separable per-observation sum. `cell_cubic`, when set,
 // covers the arms a CellCouplingSpec took over: their per-obs sum is excluded
 // from the joint log-lik (`skip_arm`), and the cell tensor contraction replaces
-// it here (gcol33/tulpa#301). The two are disjoint by construction -- an arm is
+// it here. The two are disjoint by construction -- an arm is
 // either summed per observation or routed through the cell branch -- so they add
 // rather than double-count.
 struct JointCurvature3Oracles {
@@ -357,7 +357,7 @@ struct JointCurvature3Oracles {
 // `accumulate(dropped, any_finite, cross, cross_ok)` returns the un-normalised
 // cubic sum for the current index; it must leave `any_finite` false when nothing
 // finite reached it, so the index stays NaN rather than reading acc/sigma_i^3 ==
-// 0 ("perfectly Gaussian") -- the silently-wrong 0 gcol33/tulpa#272 fixed.
+// 0 ("perfectly Gaussian"), which would be silently wrong.
 // `cross` is the companion sum sum_j l_j''' s_j u_{i,j} gamma_1 reads, and
 // `cross_ok` says whether EVERY contribution reached it (a widened unit or
 // coupled cell contributes to the cubic sum and not to this one, so a fit
@@ -559,15 +559,15 @@ inline InnerSkewOutcome compute_inner_skew_gamma3(
 // through `oracles.cell_cubic` instead: the cell tensor contraction of
 // cell_curvature3.h, added once per probed index over all cells. The two terms
 // partition the arms, so they add rather than double-count. Without a cell
-// oracle a coupled arm simply contributes nothing, which is the pre-#301
-// behaviour and still what a spec whose CellDerivs Hessian cannot be read gets.
+// oracle a coupled arm simply contributes nothing, which is what a spec whose
+// CellDerivs Hessian cannot be read gets.
 //
 // eta_buf0 / eta_buf1 are the per-arm scratch (NewtonScratchJoint's `etas` /
 // `etas_tmp`), one Rcpp::NumericVector per arm sized to that arm's N.
 // `oracles.arms` has one entry per arm (parallel to eta_buf0), and
 // `oracles.declined` / `oracles.arms_declined` carry WHY an arm has none, so a
 // partially or fully declined fit says which arms were left out and for what
-// reason (gcol33/tulpa#296).
+// reason.
 template <typename ComputeEtaJointFn>
 inline InnerSkewOutcome compute_inner_skew_gamma3_joint(
     int n_x,

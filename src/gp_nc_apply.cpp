@@ -2,7 +2,7 @@
 // Implementation of the non-centered NNGP transform application. See
 // gp_nc_apply.h for the contract. Both flavours delegate to the shared
 // per-term applier (nngp_nc_term_apply.h) -- GP is a single term over the
-// GPData-native NNGPNCView (gcol33/tulpa#243).
+// GPData-native NNGPNCView.
 
 #include "gp_nc_apply.h"
 

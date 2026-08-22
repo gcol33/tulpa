@@ -22,7 +22,7 @@
 // field, coupled across fields by Sigma^-1 -- the augmented Sigma^-1 (x) 11'/J_c
 // folded by the sparse solver's block-Schur path (set_s2z_coupling), with the
 // level folded out by `center` into each field's aliased coefficient. This is
-// #241's augment-and-centre carried onto the coupled MCAR field.
+// the augment-and-centre scheme carried onto the coupled MCAR field.
 
 #ifndef TULPA_MCAR_BLOCK_FACTORY_H
 #define TULPA_MCAR_BLOCK_FACTORY_H
@@ -264,7 +264,7 @@ inline LatentBlock make_mcar_block(
         // sum_c 1_c 1_c'/J_c per field, coupled across fields by Sigma^-1, so
         //   P_aug = Sigma^-1 (x) Q_aug = P + Sigma^-1 (x) sum_c 1_c 1_c'/J_c.
         // Each per-field per-component constant then carries the field's own
-        // (Sinv-scaled) precision instead of the old stiff soft pin -- #241's
+        // (Sinv-scaled) precision instead of a stiff soft pin -- the
         // augment-and-centre on the coupled MCAR field. It is a rank-(p L) update
         // U D U': one indicator vector 1_{(a,c)} per (field a, component c) with
         // the dense field coupling D[(a,c),(b,c)] = Sinv[a,b]/J_c, folded by the

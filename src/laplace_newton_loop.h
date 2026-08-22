@@ -357,7 +357,7 @@ inline double newton_trust_scale(NewtonConvState& st, double decrement) {
 // rate r, the decrement then shrinks by r^2, and any r >= 0.707 reads as a
 // stall. That is not hypothetical -- neg_binomial_1's quasi-likelihood weight
 // mu / (1 + phi) sits far below the observed curvature at large phi, and on the
-// random-intercept fixture of gcol33/tulpa#255 the measured rate reaches the
+// random-intercept fixture the measured rate reaches the
 // 0.707 boundary between phi = 3 (0.57) and phi = 4 (0.70), then passes it
 // outright at phi = 6 (0.93). That is exactly where those fits began returning a
 // mode whose score was 7e-04 rather than 1e-11, silently costing the exact outer

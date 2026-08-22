@@ -556,18 +556,18 @@
              max_iter_override = NULL, n_threads_outer = 1L,
              inner_refresh_override = NULL, tol_override = NULL,
              x_init_per_cell = NULL,
-             # Inner-Laplace skewness diagnostic (gcol33/tulpa#272), opt-in
+             # Inner-Laplace skewness diagnostic, opt-in
              # like `store_extras`. Off by default so every existing caller
              # (adaptive-grid refinement, the outer Pareto-k re-evaluation)
              # is unaffected; .nlj_inner_skew_at_theta() is the only caller
              # that sets it, at a single (MAP) row of `new_cells`.
              compute_skew = FALSE, skew_idx = NULL,
-             # Subspace debias (gcol33/tulpa#306): the kernel-facing request
+             # Subspace debias: the kernel-facing request
              # list. Off by default, so every existing caller re-solves exactly
              # what it did; `.nl_subspace_debias_attach()` is the only caller
              # that sets it, over the fit's whole settled grid.
              debias = NULL,
-             # Corrected integrated Laplace (gcol33/tulpa#351): the
+             # Corrected integrated Laplace: the
              # kernel-facing request list, off by default for the same reason.
              cila = NULL) {
         new_grids <- .joint_grids_from_cells(new_cells, cp)
@@ -721,7 +721,7 @@
 }
 
 # ----------------------------------------------------------------------------
-# Per-cell fixed-effect mode + precision for a joint fit (gcol33/tulpa#305).
+# Per-cell fixed-effect mode + precision for a joint fit.
 #
 # `.nested_fixed_moments()` (R/methods_generic.R) marginalizes the fixed effects
 # over the outer grid by the law of total variance, and reads one representation
@@ -738,7 +738,7 @@
 # latent indices `1:n_fixed` -- the same span `.joint_fixed_layout()` names.
 #
 # The per-cell block arrives on `$cov_block_per_grid`, extracted by the inner
-# Newton loop inside each cell's own solve (gcol33/tulpa#307) through the same
+# Newton loop inside each cell's own solve through the same
 # `extract_inner_vcov_block_cell()` the R-level `cpp_joint_inner_vcov_blocks()`
 # drives, so the block is the constrained covariance the fit's own posterior
 # draws are generated from -- the field sum-to-zero groups go in with the kernel
@@ -760,8 +760,7 @@
     # Read before the retention checks below, because it is upstream of them: a
     # cell whose inner solve never reached a mode has no fixed-effect
     # covariance to hand over, so the retention would report the absence it
-    # trips over first and name a step downstream of the real cause
-    # (gcol33/tulpa#344).
+    # trips over first and name a step downstream of the real cause.
     if (!.nested_any_weighted_converged(res)) return(decline("not_converged"))
 
     V <- res$cov_block_per_grid
@@ -789,7 +788,7 @@
         # `.nested_fixed_moments()` to skip. The slot is SKIPPED rather than
         # assigned NULL: `l[[k]] <- NULL` removes the element, which on a
         # trailing empty cell shortens the list below `n_grid` and takes the
-        # whole marginalization down on the length check (gcol33/tulpa#345).
+        # whole marginalization down on the length check.
         if (is.null(Hk)) {
             if (is.finite(w[k]) && w[k] > 0) {
                 return(decline("cell_block_unavailable"))

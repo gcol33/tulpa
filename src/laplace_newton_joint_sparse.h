@@ -68,8 +68,8 @@ struct NewtonScratchJointSparse {
     // the s2z large-field path (A_FF pattern + symbolic factor + scatter slots).
     S2ZBlockSchurCache s2z_block_schur_cache;
 
-    // CHOLMOD context for the per-cell fixed-effect block extraction
-    // (gcol33/tulpa#307). See the twin member on NewtonScratchJoint.
+    // CHOLMOD context for the per-cell fixed-effect block extraction. See the
+    // twin member on NewtonScratchJoint.
     std::unique_ptr<SparseCholeskySolver> extract_solver;
 
     void allocate(int n_x, const std::vector<JointArm>& arms,
@@ -218,7 +218,7 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
     bool compute_skew = false,
     const std::vector<int>* skew_probe_idx = nullptr,
     const JointCurvature3Oracles* curvature3_fns = nullptr,
-    // Per-cell fixed-effect covariance block (gcol33/tulpa#307). Read off the
+    // Per-cell fixed-effect covariance block. Read off the
     // builder's own CSC -- the working Hessian is already in that layout, so on
     // this path the block costs no precision copy at all. The extraction
     // factorizes that CSC itself rather than reusing the loop's live factor,
@@ -227,14 +227,14 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
     // bytes store_Q would hand out is what makes the block available on every
     // path and identical to what cpp_joint_inner_vcov_blocks() returns.
     const JointFixedBlockRequest* fixed_block = nullptr,
-    // Subspace debias (subspace_debias.h, gcol33/tulpa#304/#306). Built from the
+    // Subspace debias (subspace_debias.h). Built from the
     // same live factor as the diagnostics above and so declined on exactly the
     // same two paths, for the same reason: the s2z rank-1 correction and the PSD
     // eigen-clamp both leave `solver` holding a factor of a different matrix.
     const SubspaceDebiasOptions* debias = nullptr,
-    // Corrected integrated Laplace (inner_cila.h, gcol33/tulpa#351). A draw
+    // Corrected integrated Laplace (inner_cila.h). A draw
     // from the inner Gaussian is P' L^-T applied to a standard normal vector,
-    // which the live CHOLMOD factor supplies directly (gcol33/tulpa#366); an
+    // which the live CHOLMOD factor supplies directly; an
     // LDL' factor has no such square root and is declined by name.
     const CilaOptions* cila = nullptr,
     std::uint64_t cila_cell_key = 0
@@ -486,8 +486,7 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
             result.inner_skew_gamma1_declined = "curvature3_unavailable";
         }
 
-        // The likelihood-agnostic inner k-hat over the same probed subspace
-        // (gcol33/tulpa#303).
+        // The likelihood-agnostic inner k-hat over the same probed subspace.
         if (skew_factor_valid) {
             InnerISOutcome is_out = compute_inner_is_curve(
                 n_x, pre_center_x, unused_dense_chol, solver, /*use_sparse=*/true,

@@ -79,7 +79,15 @@ safe_exp(const T& x) {
     return arena::exp(x);
 }
 
-// log - double version
+// log - double version.
+//
+// At or below zero the value is the finite sentinel -1e10, not -infinity. The
+// log posterior is a sum: one -infinity term takes the whole objective and
+// every gradient computed through it to -infinity or NaN, which leaves a
+// sampler no direction to step back along. A large finite penalty keeps the
+// objective ordered and the step recoverable. All four instantiations below
+// use the same sentinel, so the double instantiation the runtime gradient
+// check differences is the same function of its argument as the autodiff ones.
 template<typename T>
 inline typename std::enable_if<!is_autodiff<T>::value, T>::type
 safe_log(T x) {
@@ -719,11 +727,14 @@ inline T log_prior_half_cauchy(const T& log_sigma, double scale) {
     return -safe_log(T(1.0) + ratio * ratio) + log_sigma;
 }
 
-// Capped half-Cauchy on sigma. Same as log_prior_half_cauchy but rejects
-// any sigma above sigma_max by returning -INFINITY. Pre-release salvage
-// logs flagged the capped version as materially more stable on
-// high-variance seeds for binomial GLMM RE σ; identical to half-Cauchy
-// on the supported region. Pass sigma_max <= 0 to disable the cap.
+// Capped half-Cauchy on sigma: log_prior_half_cauchy on the supported region,
+// -INFINITY above sigma_max. Pass sigma_max <= 0 to disable the cap.
+//
+// The cap is a hard box on a sampled quantity, so a step above sigma_max has
+// no gradient for the sampler to recover along and is reported as a
+// divergence. Where a bound on sigma is wanted under HMC, prefer the smooth
+// route this file already carries: sample an unconstrained u and evaluate at
+// bounded_from_logit(u, 0, sigma_max) with log_jacobian_bounded().
 template<typename T>
 inline T log_prior_capped_half_cauchy(const T& log_sigma,
                                       double scale,

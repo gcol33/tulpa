@@ -58,7 +58,7 @@ struct BuiltinFamilyResponse {
     double phi2 = std::numeric_limits<double>::quiet_NaN();
 
     // `family` resolved once, and the eta-independent part of each
-    // observation's log-density evaluated once (gcol33/tulpa#372). Both are
+    // observation's log-density evaluated once. Both are
     // owned, not borrowed, so a response copied into a per-arm or per-thread
     // pool carries its own -- the callbacks below read them by value.
     FamilyResolved fam;

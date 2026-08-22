@@ -1,17 +1,17 @@
 # fit_st_nested_auto_grid.R
 # ------------------------------------------------------------------------------
-# Auto mode-Hessian outer-grid recenter for fit_st_nested() (gcol33/tulpa#291).
+# Auto mode-Hessian outer-grid recenter for fit_st_nested().
 #
 # fit_st_nested()'s tensor grid (tau_spatial x tau_temporal [x rho]) is a
 # fixed default axis, not a hard ceiling -- the SAME "starting axis, not a
-# ceiling" contract every other nested-Laplace family's default grid carries
-# (gcol33/tulpa#289, #290). Unlike those families, this driver had NO
-# mode-find machinery at all to reuse (no CCD, no registry k-hat FD-Hessian,
-# no SPDE method), so this builds one from scratch: a derivative-free
-# optim(..., hessian = TRUE) over the unconstrained per-axis coordinate,
-# mirroring the no-analytic-gradient fallback branch of .re_cov_theta_fit()
-# (R/nested_laplace_re_cov.R) -- the closest existing precedent in this
-# codebase for a from-scratch outer mode-find.
+# ceiling" contract every other nested-Laplace family's default grid carries.
+# Unlike those families, this driver had NO mode-find machinery at all to reuse
+# (no CCD, no registry k-hat FD-Hessian, no SPDE method), so this builds one
+# from scratch: a derivative-free optim(..., hessian = TRUE) over the
+# unconstrained per-axis coordinate, mirroring the no-analytic-gradient
+# fallback branch of .re_cov_theta_fit() (R/nested_laplace_re_cov.R) -- the
+# closest existing precedent in this codebase for a from-scratch outer
+# mode-find.
 # ------------------------------------------------------------------------------
 
 # Which axes are free to move: the two precision axes always are; the
@@ -41,7 +41,7 @@
 # provenance: a wrapper that exposes its own `n_grid` argument defaulted to the
 # engine's value threads that value into `control` on every fit, and reading
 # that as an override made the recenter inert for every fit it makes
-# (gcol33/tulpa#294, the #293 shape one level down).
+# (the same presence-is-not-provenance shape one level down).
 #
 # Each knob is mapped to the axis or axes it SHAPES, so a pin is per-axis rather
 # than all-or-nothing: `tau_lower` / `tau_upper` are the shared bounds of both
@@ -62,7 +62,7 @@
 # The incoming span of one ST axis in ITS OWN unconstraining coordinate, which
 # for `rho` is `.st_axis_fwd()`'s (-1, 1) map rather than the engine registry's
 # (0, 1) one -- the reference span the shared clamp's `"relative"` ceiling caps
-# a re-placement against (gcol33/tulpa#387).
+# a re-placement against.
 .nl_axis_span_u_st <- function(res, axis) {
     v <- .nl_rescue_axis_nodes(res, axis)
     if (is.null(v)) return(NA_real_)
@@ -250,7 +250,7 @@
     kept <- function(field) sort(unique(as.numeric(kargs[[field]])))
 
     # The mode SD clamp, its policy and the state it reports are the engine's
-    # shared ones (`.nl_recenter_sd_clamp()`, gcol33/tulpa#387) on every axis
+    # shared ones (`.nl_recenter_sd_clamp()`) on every axis
     # this driver re-places, `rho` included -- the `clamp_axis()` box above
     # bounds the RANGE and is a separate guard.
     clamps  <- character(0)

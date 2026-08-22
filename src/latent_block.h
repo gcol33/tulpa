@@ -138,31 +138,25 @@ struct LatentBlock {
     // effective coefficient on x[idx].
     std::function<double(int /*k_grid*/)> d_fac;
 
-    // REQUIRED. Every block factory sets `d_fac` unconditionally, so this is a
-    // contract rather than a default, and reading it goes through here so the
-    // contract lives in ONE place (gcol33/tulpa#394). The invocation sites used
-    // to disagree: eight called `d_fac(k)` directly and four guarded it with
-    // `d_fac ? d_fac(k) : 1.0`, on the SAME block vector -- so a block that ever
-    // did omit it would have been silently amplitude-1.0 down one path and an
-    // uncaught `std::bad_function_call` down another.
     // The ONLY way to invoke `obs_indices`, because it carries the scratch
-    // contract (gcol33/tulpa#395). The buffer is `static thread_local` and
-    // reused across the whole observation loop, so an implementation that
-    // appended instead of replacing would not merely duplicate within one
-    // observation -- every stale (index, weight) pair would be scattered into
-    // eta as though it belonged to the current row, growing with position in
-    // the loop. That is a silent wrong answer, not a crash.
-    //
-    // The contract used to sit in a comment asking IMPLEMENTATIONS to clear,
-    // and four of eleven call sites cleared defensively anyway while seven
-    // relied on it. Clearing HERE makes it unforgettable on both sides, and
-    // means a new block kind cannot get it wrong at all.
+    // contract: the output buffer is cleared HERE rather than by each
+    // implementation. The buffer is `static thread_local` and reused across the
+    // whole observation loop, so an implementation that appended instead of
+    // replacing would not merely duplicate within one observation -- every
+    // stale (index, weight) pair would be scattered into eta as though it
+    // belonged to the current row, growing with position in the loop. That is a
+    // silent wrong answer, not a crash.
     void fill_obs_indices(int i, int k_arm,
                           std::vector<std::pair<int, double>>& out) const {
         out.clear();
         obs_indices(i, k_arm, out);
     }
 
+    // The ONLY way to read `d_fac`, so its contract lives in ONE place. `d_fac`
+    // is REQUIRED: every block factory sets it unconditionally. A block that
+    // omitted it would otherwise be silently amplitude-1.0 wherever a call site
+    // guarded the read and an uncaught `std::bad_function_call` wherever one
+    // did not, on the same block vector.
     double d_fac_at(int k_grid) const {
         if (!d_fac) {
             throw std::logic_error(

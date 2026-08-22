@@ -417,7 +417,7 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
   # (`cpp_aghq_blups`'s mode-finding solves every term's coefficients for a
   # group jointly, one Newton step over the combined vector) -- `blup_var`
   # alone cannot express it, and drawing the terms independently repeats the
-  # gcol33/tulpaObs#226 bug one level deeper (inside a group instead of
+  # cross-term bug one level deeper (inside a group instead of
   # between the community mean and a group). NA throughout when
   # `blup_cross_available` is FALSE, matching `blup_cross`.
   n_groups <- dim(BCOV)[1L]

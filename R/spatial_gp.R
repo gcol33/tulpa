@@ -9,8 +9,8 @@
 #'   coordinate variables in the data. With `approx = "nngp"` the coordinate
 #'   DIMENSION is however many are named: two for a map, one for a transect or
 #'   a depth profile, three for a depth-resolved domain. The neighbour graph
-#'   and the neighbour covariance both read every column (gcol33/tulpa#389,
-#'   gcol33/tulpa#391). `approx = "hsgp"` takes exactly two, and so does any
+#'   and the neighbour covariance both read every column. `approx = "hsgp"`
+#'   takes exactly two, and so does any
 #'   sampler mode, because both store coordinates at a fixed 2-D stride.
 #' @param approx GP approximation: `"nngp"` (default, a nearest-neighbour GP with
 #'   the `cov` / `nu` / `nn` / `solver` arguments) or `"hsgp"` (a Hilbert-space
@@ -525,8 +525,8 @@ validate_gp <- function(gp, data) {
   }
 
   # Extract coordinates over however many were named. The NNGP/GP kernels and
-  # the neighbour construction both read every coordinate column
-  # (gcol33/tulpa#389), so the extraction must not decide the dimension either.
+  # the neighbour construction both read every coordinate column, so the
+  # extraction must not decide the dimension either.
   coords <- as.matrix(data[, gp$coord_vars, drop = FALSE])
   storage.mode(coords) <- "double"
 

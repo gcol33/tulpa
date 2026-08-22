@@ -38,7 +38,7 @@ struct ParamLayout {
 
     // ================================================================
     // GENERIC MULTI-PROCESS LAYOUT
-    // Always used (the legacy ratio branch was removed in Phase D).
+    // Always used: there is no alternative layout.
     // ================================================================
     std::vector<int> process_beta_start;
     std::vector<int> process_beta_count;

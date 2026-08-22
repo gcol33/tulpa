@@ -18,8 +18,7 @@
 // The N(0,I) prior on each scale's z and the hyperparameter priors are added
 // in compute_multiscale_gp_prior (templated); this file only fills
 // ms_gp_effect_out with the combined, reconstructed field. No z -> w Jacobian
-// enters the target, for the same reason gp_nc_apply.h documents
-// (gcol33/tulpa#243).
+// enters the target, for the same reason gp_nc_apply.h documents.
 
 #ifndef TULPA_MSGP_NC_APPLY_H
 #define TULPA_MSGP_NC_APPLY_H

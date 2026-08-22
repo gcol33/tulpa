@@ -370,7 +370,7 @@ tulpa_hyper_grid <- function(hyper_specs, inner_fit,
   theta_sd   <- rc$theta_sd
 
   # Each axis's support as the caller DECLARED it, so the outer cell edges the
-  # interval extends to land inside it (gcol33/tulpa#369). An axis with no
+  # interval extends to land inside it. An axis with no
   # `bounds` (and not `log_scale`) reports NA and keeps the coordinate the edge
   # rule guesses from the values.
   qs <- .nl_axis_quantiles(

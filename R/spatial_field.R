@@ -604,14 +604,14 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
   # Which outer integrator actually ran decides how a median and interval are
   # read off the nodes: a tensor grid's uniform cells discretize the density, so
   # their cumulative weight is a CDF; the CCD forced above is a moment rule, so
-  # the interval comes from the moments on each quantity's own domain
-  # (gcol33/tulpa#310). `sigma = 1 / sqrt(tau)` is positive whatever the block;
-  # `rho` takes the domain the axis registry gives it, and an axis the registry
-  # will not guess reports NA rather than the design's extent. The domain is
-  # supplied under EITHER read: the density one places its outer cell edges in
-  # the quantity's own coordinate with it (gcol33/tulpa#369).
+  # the interval comes from the moments on each quantity's own domain. `sigma =
+  # 1 / sqrt(tau)` is positive whatever the block; `rho` takes the domain the
+  # axis registry gives it, and an axis the registry will not guess reports NA
+  # rather than the design's extent. The domain is supplied under EITHER read:
+  # the density one places its outer cell edges in the quantity's own
+  # coordinate with it.
   support <- .nl_node_support(jfit$integration, jfit$weight_kind)
-  # And the fit's own within-cell construction (gcol33/tulpa#357), so the field
+  # And the fit's own within-cell construction, so the field
   # hyperparameter summary and the fit's `theta_ci_*` are one read.
   within <- .nl_within_cell_mode(jfit$within_cell_requested)
   doms <- stats::setNames(.joint_axis_domains(jfit), colnames(tg))
@@ -698,7 +698,7 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
     # each (the marginalize-derived-quantities rule). Reuses the RE-covariance
     # log-Cholesky -> Sigma and derived-matrix helpers, including the per-column
     # domain they carry, so a CCD-integrated grid reports the moment-matched
-    # interval rather than the design's own extent (gcol33/tulpa#310).
+    # interval rather than the design's own extent.
     m <- p_fields * (p_fields + 1L) / 2L
     axis_nm <- character(m); tt <- 1L
     for (j in seq_len(p_fields)) for (i in j:p_fields) {

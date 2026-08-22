@@ -5,11 +5,11 @@
 //
 // `mu` / `sigma` are the Gaussian inner-Laplace marginal centre and scale of
 // each coordinate, `gamma3` its leading-order Edgeworth skewness (NaN where the
-// cubic term was not computable), `gamma1` the location term (gcol33/tulpa#354;
-// NaN where it was not computable, which declines the coordinate rather than
+// cubic term was not computable), `gamma1` the location term (NaN where it
+// was not computable, which declines the coordinate rather than
 // standing in for zero), and `z` the standard-normal quantiles of the requested
 // probabilities. `max_abs_gamma3` bands the shape and `max_abs_centre` the
-// centre gamma_1 + gamma_3 / 2 (gcol33/tulpa#362); both are
+// centre gamma_1 + gamma_3 / 2; both are
 // `cornish_fisher_eligible()`'s, so one predicate decides and this loop only
 // adds the level-dependent monotonicity check on top of it.
 // Returns the [length(mu) x length(z)] quantile matrix and, per

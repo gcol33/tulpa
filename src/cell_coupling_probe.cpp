@@ -182,7 +182,7 @@ Rcpp::List cpp_cell_coupling_evaluate(std::string name,
 }
 
 // The cubic contraction of a registered spec's cell third-derivative tensor
-// against one direction (gcol33/tulpa#301), on one cell, outside any solve.
+// against one direction, on one cell, outside any solve.
 //
 // The engine reaches this through the joint Newton's inner-skew probe, where the
 // direction is the eta response to v_i = Sigma e_i and the result is one term of

@@ -199,8 +199,8 @@ compare_models <- function(..., criterion = c("waic", "loo", "loglik")) {
 #
 # A transformed entry also names the DOMAIN of the quantity it produces, which
 # is what a moment-matched interval is formed on when the grid is a quadrature
-# design rather than a discretized density (`.nl_summary_quantile`,
-# gcol33/tulpa#312). A standard deviation and a range are `positive` whatever
+# design rather than a discretized density (`.nl_summary_quantile`).
+# A standard deviation and a range are `positive` whatever
 # axis they came from. An identity entry carries no domain of its own and takes
 # the AXIS's, from the same registry the outer Pareto-k unconstrains with, so a
 # proper-CAR `rho` on the adjacency eigenvalue interval is declined rather than
@@ -260,14 +260,14 @@ compare_models <- function(..., criterion = c("waic", "loo", "loglik")) {
   if (length(keep) == 0L) return(NULL)
   # The outer integrator decides how a quantile may be read off these weights: a
   # tensor grid's uniform cells discretize the density, a CCD is a moment rule
-  # whose node positions carry no mass of their own (gcol33/tulpa#312).
+  # whose node positions carry no mass of their own.
   support <- .nl_node_support(object$integration, object$weight_kind)
   # Supplied whatever the support: a moment rule needs the domain to form its
   # interval at all, and a density read needs it to place its outer cell edges
-  # inside the quantity's own support (gcol33/tulpa#369).
+  # inside the quantity's own support.
   doms <- .joint_axis_domains(object)
   # And the WITHIN-CELL construction the fit's own reported intervals were read
-  # with (gcol33/tulpa#357), so a derived-axis summary and `theta_ci_lo` /
+  # with, so a derived-axis summary and `theta_ci_lo` /
   # `theta_ci_hi` on the same fit cannot be built two different ways.
   within <- .nl_within_cell_mode(object$within_cell_requested)
   rows <- lapply(keep, function(j) {

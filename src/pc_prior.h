@@ -12,10 +12,8 @@
 // Samplers parameterize the scale differently (sigma, variance sigma2, log
 // variance, precision tau = 1/sigma^2, log precision, log sigma). Each needs
 // the density on ITS scale, i.e. the base density plus the log-Jacobian of
-// sigma with respect to the sampled coordinate. Deriving that chain per site is
-// what produced the tulpa_priors_tvc.h (+2*log_tau) and tulpa_priors_hsgp.h
-// (missing +log(sigma)) errors, so every scale is provided here and derived
-// once:
+// sigma with respect to the sampled coordinate. Every scale is provided here
+// and its chain derived once, so no call site derives its own:
 //
 //   scale          sigma(x)          log|dsigma/dx|
 //   ------------------------------------------------------------------
@@ -148,7 +146,8 @@ inline T log_prior_range_pc(const T& range, double U, double alpha) {
 // instead leaves the tail flat in log_sigma2 -- the density stops decaying as
 // sigma2 grows, so the prior is improper and the marginal SD is bounded only
 // by the likelihood. Included, the density integrates to the half-Cauchy
-// normalizer pi/2 (asserted in test-pc-prior.R).
+// normalizer s * pi / 2, whatever coordinate it is integrated in (asserted in
+// test-pc-prior.R over scale in c(0.5, 1.0, 2.5)).
 template <typename T>
 inline T log_prior_sigma_half_cauchy(const T& sigma, double scale) {
   return -math::safe_log(T(1.0) + sigma * sigma / T(scale * scale));

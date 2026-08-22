@@ -15,7 +15,7 @@
 //
 // The forward map w_j = f(z_j, sigma2_j, phi_j) is the same NNGP
 // autoregressive whitening inverse gp_nc_apply.cpp uses; see that file's
-// header comment for the no-Jacobian reasoning (gcol33/tulpa#243). The N(0,I)
+// header comment for the no-Jacobian reasoning. The N(0,I)
 // prior on each z_j and the hyperparameter priors are added in
 // compute_svc_prior (templated); this file only fills svc_w_out with the
 // reconstructed terms and wires each term's likelihood gradient back onto

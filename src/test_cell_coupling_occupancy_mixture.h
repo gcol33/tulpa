@@ -1,7 +1,7 @@
 // test_cell_coupling_occupancy_mixture.h
 // Test-only CellCouplingSpec exposing a two-arm occupancy mixture: the
 // smallest genuinely NON-SEPARABLE per-cell density the engine can fit
-// entirely on its own (gcol33/tulpa#300).
+// entirely on its own.
 //
 // ============================================================================
 // The density
@@ -46,7 +46,7 @@
 // above is written with its sign flipped. The (arm 0, arm 1) block and the
 // (arm 1, arm 1) off-diagonal block are both filled DENSELY -- the rank-1
 // self-cross shortcut the header documents is deliberately not taken here, so
-// the finite-difference third-derivative tensor gcol33/tulpa#301 needs has a
+// the finite-difference third-derivative tensor has a
 // full explicit Hessian to difference.
 //
 // Registered under the name "test_occupancy_mixture" by

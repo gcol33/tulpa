@@ -32,19 +32,19 @@
 #     a 25-node rule (at d = 4) while every unrefined sibling keeps the base
 #     grid's single atom, and the cloud's nodes sit nearer the peak than the
 #     cell's own coordinate did, so the refined cell's share rises. That
-#     asymmetry is real and is what `log_mass_ratio` reports per cell
-#     (gcol33/tulpa#323). What it costs was MEASURED by coverage rather than
-#     argued from the grid (gcol33/tulpa#320): over 150 seeds on a four-axis
-#     coarse-grid fixture fit twice on the same data, pooled fixed-effect
-#     coverage is 0.9667 refined against 0.9667 unrefined at nominal 0.95 and
-#     0.8000 against 0.8067 at 0.80, on a standard error of 0.0126. The width
-#     does move the way the asymmetry predicts -- the intercept's mean 95%
-#     interval is 0.9% narrower with refinement on -- and that buys 0 of 300
-#     trials at 0.95 and -1 at 0.80. The measurement bounds the calibration cost
-#     under a percentage point; it does not resolve it to zero, 150 seeds having
-#     no power below about one seed. So the estimator asymmetry stands as a known
-#     and instrumented property of this refinement rather than a defect it is
-#     worth spending an inner-solve budget to remove (gcol33/tulpa#319).
+#     asymmetry is real and is what `log_mass_ratio` reports per cell. What it
+#     costs was MEASURED by coverage rather than argued from the grid: over 150
+#     seeds on a four-axis coarse-grid fixture fit twice on the same data,
+#     pooled fixed-effect coverage is 0.9667 refined against 0.9667 unrefined
+#     at nominal 0.95 and 0.8000 against 0.8067 at 0.80, on a standard error of
+#     0.0126. The width does move the way the asymmetry predicts -- the
+#     intercept's mean 95% interval is 0.9% narrower with refinement on -- and
+#     that buys 0 of 300 trials at 0.95 and -1 at 0.80. The measurement bounds
+#     the calibration cost under a percentage point; it does not resolve it to
+#     zero, 150 seeds having no power below about one seed. So the estimator
+#     asymmetry stands as a known and instrumented property of this refinement
+#     rather than a defect it is worth spending an inner-solve budget to
+#     remove.
 #
 #     On the hyperparameter axis the same re-estimation is the point: the
 #     `sigma_1` interval is more than fourfold sharper (0.2399 against 1.0591 on
@@ -52,8 +52,7 @@
 #     150 of 150 against a nominal 0.95, so what the refined cell's rising share
 #     removes there is conservative-side slack a four-level grid left behind.
 #
-#     Those are the rates after gcol33/tulpa#332. The table this paragraph
-#     carried until then (0.8800 / 0.7300, a 2.9% narrowing, 149 of 150) was
+#     An earlier table (0.8800 / 0.7300, a 2.9% narrowing, 149 of 150) was
 #     measured on a fixture that drew its gaussian response at residual VARIANCE
 #     `phi` and handed the same number to a direct door reading it as a residual
 #     SD, so every gaussian arm was fitted at a quarter of its own variance. That
@@ -70,7 +69,7 @@
 #     from the cell's inner mode. The stencil reaches the corner neighbours as
 #     well as the axis ones, so the scale is the MARGINAL spread per axis; the
 #     diagonal alone gives the conditional spread, which on a correlated
-#     posterior is narrower (gcol33/tulpa#316).
+#     posterior is narrower.
 #
 # The cloud earns the cell only where the cell's own outer log-marginal is close
 # to the quadratic the cloud was placed from. A central composite design
@@ -78,7 +77,7 @@
 # nodes' measured log-marginals against that quadratic is the part of the cell
 # the design cannot represent, and it is available from the nodes already
 # evaluated. Above `skew_max` on that score the cell is put back as its own mass
-# atom (.joint_local_ccd_misfit(), gcol33/tulpa#318): on an outer target that is
+# atom (.joint_local_ccd_misfit()): on an outer target that is
 # quadratic in the transformed coordinate the score is identically zero and the
 # refinement is untouched, while on a skewed one the design reports its own
 # geometry rather than the cell's mass and the atom is measurably closer.
@@ -96,7 +95,7 @@
 # measured from the cell's coordinate in units of the marginal spread the
 # whitening used, carried for refined and declined cells alike. Nothing is gated
 # on it -- a gradient across the cell is a cross-cell estimator question, an axis
-# orthogonal to the local shape `skew_max` reads (gcol33/tulpa#321).
+# orthogonal to the local shape `skew_max` reads.
 #
 # That norm is a displacement and not yet a comparable one: it says nothing about
 # how sharply the cell's log-marginal falls away in the direction the gradient
@@ -109,7 +108,7 @@
 # predicts the log-density gains by moving the expansion centre to the cell's own
 # fitted peak. It declines to NA where -H is not positive definite: a cell whose
 # fitted quadratic is not concave has no interior peak to be displaced from, and
-# the ratio would report a number carrying no such reading (gcol33/tulpa#324).
+# the ratio would report a number carrying no such reading.
 #
 # The third axis is mass, and neither a shape score nor a centring score reaches
 # it. A refined cell carries two estimates of its own mass -- the coarse atom
@@ -123,8 +122,7 @@
 # rules of different degree on the SAME region, their difference the indicator.
 # This grid computes both rules, so the indicator is free. `log_mass_ratio`, the
 # two masses it is formed from, and `max_node_weight` -- the share the single
-# largest node takes of its own cell's refined mass -- are recorded per cell
-# (gcol33/tulpa#323).
+# largest node takes of its own cell's refined mass -- are recorded per cell.
 #
 # The three scores are orthogonal, and a cell can fail any one of them with the
 # other two clean: `misfit` is non-quadraticity (can the design represent the
@@ -148,7 +146,7 @@
 # whose `0.5 g'A^-1 g` is precisely `mode_gain`, the nats the atom drops. It
 # costs no inner solve: `g` and the diagonal of `A` are the first and second
 # divided differences of the SAME three points the curvature already came from
-# (`.joint_local_ccd_diff3()`), all of them base-grid values (gcol33/tulpa#326).
+# (`.joint_local_ccd_diff3()`), all of them base-grid values.
 #
 # Two things about the form. First, it is the exact box integral and not the
 # second-order expansion of the integrand,
@@ -175,7 +173,7 @@
 # been right in exact arithmetic. A bare count cannot be acted on, so each
 # declined axis reports its own reason, per axis for the same reason the factor
 # is per axis, and the tally rides alongside `n_axes_declined` rather than
-# replacing it (gcol33/tulpa#334). The barycentre carries a fourth, the in-box
+# replacing it. The barycentre carries a fourth, the in-box
 # guard: the first moment of a positive density over the box lies in the box
 # analytically, so an atom the arithmetic puts outside its own cell says the
 # quadrature failed, not that the cell has no barycentre.
@@ -186,16 +184,16 @@
 # `.nl_summary_quantile()`), so a cell whose log-marginal carries a gradient
 # contributes its whole mass at a point that mass is not centred on. Correcting
 # the mass alone gives such a cell the right weight in the wrong place, and the
-# two fail independently -- a cell can have either one right and the other wrong
-# (gcol33/tulpa#327). The place is the same local quadratic's first moment over
-# the same box, so per axis it is the doubly-truncated normal mean
-#   mu = g/a, s = a^(-1/2), alpha = (-h_lo - mu)/s, beta = (h_hi - mu)/s,
-#   ubar = mu + s (phi(alpha) - phi(beta)) / (Phi(beta) - Phi(alpha)),
-# reducing to the cell's own coordinate exactly at `g = 0`, which is the whole
-# content of the current placement. It reads the same `(g, A)` off the same
-# stencil, so like the mass it costs no inner solve, and it declines per axis for
-# the same reason: the first moment over a BOUNDED box is finite at either sign
-# of `a_i`, so a convex axis is integrated rather than throwing the cell away.
+# two fail independently -- a cell can have either one right and the other
+# wrong. The place is the same local quadratic's first moment over the same
+# box, so per axis it is the doubly-truncated normal mean mu = g/a, s =
+# a^(-1/2), alpha = (-h_lo - mu)/s, beta = (h_hi - mu)/s, ubar = mu + s
+# (phi(alpha) - phi(beta)) / (Phi(beta) - Phi(alpha)), reducing to the cell's
+# own coordinate exactly at `g = 0`, which is the whole content of the current
+# placement. It reads the same `(g, A)` off the same stencil, so like the mass
+# it costs no inner solve, and it declines per axis for the same reason: the
+# first moment over a BOUNDED box is finite at either sign of `a_i`, so a
+# convex axis is integrated rather than throwing the cell away.
 #
 # Two properties of it are load-bearing. The barycentre lies INSIDE the cell's
 # box -- it is the first moment of a positive density over that box -- so an atom
@@ -205,7 +203,7 @@
 # only: `v` IS the outer coordinate, so its barycentre is a property of outer
 # cell geometry alone. A fixed effect is not summarised this way at all --
 # `.nested_fixed_moments()` marginalizes each cell's OWN `(beta_k, Vb_k)` from
-# its own inner solve (gcol33/tulpa#305) -- so moving that cell's location asks
+# its own inner solve -- so moving that cell's location asks
 # what `beta` would have been at the moved point, which is another inner solve or
 # an interpolation across cells. Anything reported on a fixed effect stays where
 # its own solve put it.
@@ -216,10 +214,9 @@
 # `log(M_c^(Q) / M_c^(0))` is defined on every interior cell of the base grid at
 # zero solves, including the cells the budget will never reach. What ranks the
 # candidates for that budget today is the cell's own integration weight `w_c`,
-# and the question is whether the free ratio should replace it
-# (gcol33/tulpa#328). It should not. The measurement is worth recording anyway,
-# because the predictor is good and it is the ranking that fails to follow from
-# it.
+# and the question is whether the free ratio should replace it. It should not.
+# The measurement is worth recording anyway, because the predictor is good and
+# it is the ranking that fails to follow from it.
 #
 # Measured over 2509 refined cells: 784 from 52 four-axis joint fits (crossed
 # iid blocks on gaussian / binomial / poisson arms, and two coupled ICAR fields
@@ -274,8 +271,9 @@
 # and summed width error 675.02 against 681.38, on 419.98 / 823.53 for not
 # refining at all: the two rankings differ on 190 of the 468, and the gap
 # between their totals is under a tenth of what refining buys at all.
-# Through the #322 harness on 24 four-axis fits (8 seeds x 3 budgets, four-level
-# base against a six-level reference) the two arms' endpoint reads differ by
+# Through the one-cell harness on 24 four-axis fits (8 seeds x 3 budgets,
+# four-level base against a six-level reference) the two arms' endpoint reads
+# differ by
 # 0.7360 summed against a noise floor of 7.1268 and their widths by 1.4275
 # against 14.2302, above the floor in 0 of 24 configurations either way, so that
 # grid does not resolve the choice at all. The MEDIAN it does resolve, above the
@@ -327,8 +325,8 @@
 # the reference in isolation is scored without the nonlinearity the read is made
 # of. It is read instead by a ONE-CELL INTERVENTION -- the shipped grid with
 # cell `c` alone corrected, re-read whole through `.nl_axis_quantiles()` and
-# scored against a fine-grid reference fit of the same model (the
-# gcol33/tulpa#322 harness; `outer_grid_one_cell()` restricts a whole-grid
+# scored against a fine-grid reference fit of the same model
+# (`outer_grid_one_cell()` restricts a whole-grid
 # candidate to one cell). Measured that way over 2520 cells from 216 fits (1680
 # cells from 144 gaussian-arm fits at three grid spreads, 840 from 72
 # binomial-arm fits, four- and five-level bases against twelve-level
@@ -374,8 +372,8 @@
 # grid). Correcting every cell and correcting each cell are different
 # operations.
 #
-# Two bounds on what a favourable plane could have licensed, both from
-# gcol33/tulpa#331's coverage measurement of the whole-grid barycentre rule, and
+# Two bounds on what a favourable plane could have licensed, both from the
+# coverage measurement of the whole-grid barycentre rule, and
 # the first is why the two measurements do not contradict each other. A one-cell
 # intervention CANNOT see the failure that rule has: the gradient points toward
 # the peak in every cell, so applying the barycentre everywhere moves every atom
@@ -399,17 +397,16 @@
 #
 # Both descriptors therefore stay per-cell readings, as the box ratio already
 # did, and which correction to apply stays a whole-grid choice, gated by
-# coverage rather than by grid accuracy (gcol33/tulpa#333, gcol33/tulpa#331).
+# coverage rather than by grid accuracy.
 #
-# The three negative results above -- no better refinement ranking
-# (gcol33/tulpa#328), no per-cell choice of correction (gcol33/tulpa#333), no
-# whole-grid rule worth promoting (gcol33/tulpa#331) -- have one mechanism
-# between them, and it is worth stating once rather than rediscovering.
-# POSTERIOR MASS DOMINATES EVERY LEVEL OF THIS GRID. `|M_1 - M_0|` factorizes as
-# `w_c |exp(r_c) - 1|` with the factors orders of magnitude apart, so the
-# incumbent weight ranking is already the mass-movement ranking; the same
-# imbalance is why unweighted cell categories explain nothing, cells not being
-# equally consequential; and it is why a rule's ranking reverses with
+# The three negative results above -- no better refinement ranking, no per-cell
+# choice of correction, no whole-grid rule worth promoting -- have one
+# mechanism between them, and it is worth stating once rather than
+# rediscovering. POSTERIOR MASS DOMINATES EVERY LEVEL OF THIS GRID. `|M_1 -
+# M_0|` factorizes as `w_c |exp(r_c) - 1|` with the factors orders of magnitude
+# apart, so the incumbent weight ranking is already the mass-movement ranking;
+# the same imbalance is why unweighted cell categories explain nothing, cells
+# not being equally consequential; and it is why a rule's ranking reverses with
 # resolution, since what moves between a four- and a five-level base is not
 # WHICH cells exist but how much weight sits on the steep ones (integration-
 # weighted mean `R_M` 3.3417 against 1.0483, on plane occupancy that is
@@ -429,8 +426,8 @@
 # statistic to reach for is a posterior-WEIGHTED steepness distribution
 # (`E_w[R_M]`, `P_w(R_M > r)`) rather than another cell-level descriptor: the
 # 3.3417 against 1.0483 above is already the distinction the unweighted plane
-# missed. It is explanatory only -- which rule ships is a coverage question
-# (gcol33/tulpa#331) -- and nothing here computes it.
+# missed. It is explanatory only -- which rule ships is a coverage question --
+# and nothing here computes it.
 #
 # The node cloud of each refined cell is clamped to the cell's Voronoi half-box
 # (half the distance to each neighbour on each axis), so clouds of distinct cells
@@ -556,7 +553,7 @@
 # other axis held at the cell. The summary reports MARGINAL spreads, and on a
 # correlated outer posterior -- a sigma-alpha copy ridge is one -- the two differ
 # by sqrt(H_jj (H^-1)_jj), so a design scaled by the conditional spread stands in
-# for a posterior narrower than the marginal it is read as (gcol33/tulpa#316).
+# for a posterior narrower than the marginal it is read as.
 # The mixed second derivatives that close the gap come from the cell's own
 # CORNER grid neighbours -- the axis neighbour OF an axis neighbour, which a cell
 # interior on every axis always has, and which the tensor base already evaluated
@@ -1075,7 +1072,7 @@
 #
 #   the grid stores physical theta on a geometric grid while the quadratic the
 #   barycentre comes from is fitted in `u = log theta` (which is why
-#   `log_marginal` needs no Jacobian on that axis, gcol33/tulpa#179), so `ubar`
+#   `log_marginal` needs no Jacobian on that axis), so `ubar`
 #   is a mean in `u` and `exp(E[u]) != E[exp(u)]`;
 #
 #   the quantile read does not want a mean. Its atom is a REPRESENTATIVE POINT
@@ -1173,7 +1170,7 @@
 # cell's own peak sits from the cell's coordinate, in the same marginal-spread
 # units the whitening put the design in. `misfit` cannot see it by construction,
 # the linear term having its own columns, so an off-centre but exactly quadratic
-# cell scores zero misfit at any `offset` (gcol33/tulpa#321).
+# cell scores zero misfit at any `offset`.
 #
 # `mode_gain` is that same displacement in the cell's own curvature units. The
 # design identifies the full quadratic, so the whitened Hessian is in the same
@@ -1183,7 +1180,7 @@
 # from moving the expansion centre to the cell's fitted peak. Comparable across
 # cells whose curvature differs, which `offset` is not; `offset` is kept because
 # it is the unscaled reading and survives cases the scaled one cannot be formed
-# in (gcol33/tulpa#324).
+# in.
 #
 # All three NA when the design cannot identify the quadratic at all, which the
 # caller treats the same as a failing score: an unverified local Gaussian.
@@ -1313,15 +1310,14 @@
 #   f0           CCD factorial-corner radius per whitened axis (INLA default 1.1).
 #   skew_max     a cell keeps its cloud only while `.joint_local_ccd_misfit()`'s
 #                `misfit` stays below this; above it the cell is put back as its
-#                own mass atom (gcol33/tulpa#318). The same call's `offset` /
+#                own mass atom. The same call's `offset` /
 #                `mode_gain`, and the cell's coarse-vs-refined mass comparison,
-#                are recorded for every cell either way and gate nothing
-#                (gcol33/tulpa#321, #323, #324).
+#                are recorded for every cell either way and gate nothing.
 #   verbose      announce the refinement summary.
 #   cov_blocks   length-n list of per-cell fixed-effect covariance blocks, or
 #                NULL. Carried cell-for-cell exactly like `modes`, so a refined
 #                grid keeps the retention aligned with the weights it is
-#                integrated against (gcol33/tulpa#307) instead of declining.
+#                integrated against instead of declining.
 #
 # Returns list(joint_grid, log_marginal, modes, cov_blocks, dnode, info) with the
 # refined cells replaced by their node clouds, or NULL when refinement declines
@@ -1388,10 +1384,10 @@
     # share, which is a different number: the cloud's nodes sit nearer the peak
     # than the cell's own coordinate did, so refining a cell raises the share
     # the refined region holds. Reporting both says how concentrated the base
-    # grid already was, separately from how much the refinement concentrated it
-    # (gcol33/tulpa#316). The gap between the two is the cross-cell estimator
-    # asymmetry the header describes; `log_mass_ratio` is its per-cell reading
-    # and coverage bounds what it costs (gcol33/tulpa#319, gcol33/tulpa#320).
+    # grid already was, separately from how much the refinement concentrated
+    # it. The gap between the two is the cross-cell estimator asymmetry the
+    # header describes; `log_mass_ratio` is its per-cell reading and coverage
+    # bounds what it costs.
     cell_share      <- numeric(0)
     refined         <- integer(0)
     misfit          <- numeric(0)
@@ -1402,9 +1398,8 @@
     declined_offset <- numeric(0)
     declined_gain   <- numeric(0)
     # The per-cell recordings that gate nothing, on both sides of the gate: the
-    # coarse-vs-refined mass comparison (gcol33/tulpa#323), the box-integral mass
-    # (gcol33/tulpa#326), the barycentre shift (gcol33/tulpa#327) and the two
-    # per-axis decline tallies those last two carry (gcol33/tulpa#334).
+    # coarse-vs-refined mass comparison, the box-integral mass, the barycentre
+    # shift and the two per-axis decline tallies those last two carry.
     # Accumulated as a list of named readings so the two sides stay one code
     # path and a reading added to it is reported on both.
     rec_kept     <- list()
@@ -1424,7 +1419,7 @@
         #
         # The scale is the MARGINAL spread where the corner stencil gives one,
         # since that is what the per-axis summary reads; the diagonal stencil's
-        # conditional spread is the fallback (gcol33/tulpa#316).
+        # conditional spread is the fallback.
         half <- pmin(cc$half_lo, cc$half_hi)
         sd_design <- pmin(cc$sd_marginal %||% cc$sd, half / node_reach)
         u_nodes <- sweep(z_off %*% diag(sd_design, d, d), 2L, u_c, FUN = "+")
@@ -1448,40 +1443,37 @@
         # The cloud stands in for the cell's mass only while the cell's own outer
         # log-marginal is close to the quadratic the cloud was placed from. Where
         # it is not, the design reports its own geometry instead of the cell's
-        # mass and the cell is measurably better off as the atom it was
-        # (gcol33/tulpa#318). The score is read off the nodes just evaluated, so
-        # the decision costs no further solve -- the ones already spent are the
-        # price of finding out. Passing it says the design can represent the
-        # cell's shape, and only that: the same fit's `offset` / `mode_gain` are
-        # how far the cell's own peak sits from the coordinate the cloud was
-        # centred on -- unscaled, and in the cell's own curvature units -- which a
-        # third-order score cannot see and which nothing here gates on
-        # (gcol33/tulpa#321, #324).
+        # mass and the cell is measurably better off as the atom it was. The
+        # score is read off the nodes just evaluated, so the decision costs no
+        # further solve -- the ones already spent are the price of finding out.
+        # Passing it says the design can represent the cell's shape, and only
+        # that: the same fit's `offset` / `mode_gain` are how far the cell's
+        # own peak sits from the coordinate the cloud was centred on --
+        # unscaled, and in the cell's own curvature units -- which a
+        # third-order score cannot see and which nothing here gates on.
         fit_c <- .joint_local_ccd_misfit(rbind(u_c, u_nodes), u_c,
                                          c(log_marginal[c], lm_off),
                                          cc$sd_marginal %||% cc$sd)
         # Both mass estimates of this cell are now in hand -- the coarse atom the
         # base grid gave it and the cloud its own nodes give it -- so their
         # comparison is arithmetic, and it is recorded whichever way the gate
-        # goes: the nodes were evaluated before the score was read
-        # (gcol33/tulpa#323).
+        # goes: the nodes were evaluated before the score was read.
         rec_c <- .joint_local_ccd_mass(c(delta_centre, delta_off),
                                        c(log_marginal[c], lm_off), dn_w[c])
         # A third reading of the same cell's mass, and the only one of the three
         # that needs no node at all: the base grid's own neighbours already give
         # the local quadratic, and integrating it over the cell's box instead of
-        # evaluating it at the centre is the correction the midpoint atom drops
-        # (gcol33/tulpa#326). Recorded beside the cloud's ratio so the two
-        # re-estimates of the same atom are read together. `bary_shift` is the
-        # place half of the same quadratic -- the largest share of its own
-        # half-cell any axis's atom moves under the barycentre
-        # (gcol33/tulpa#327) -- and the two are read together for the same
-        # reason: a cell can be given the right mass at the wrong place.
-        # Both readings carry their own per-axis decline tally, which travels
-        # with them: a multiplier formed on three of four axes and one formed on
-        # all four are different readings, and which gate the fourth fell at
-        # says whether the cell's quadratic was degenerate or its arithmetic was
-        # refused (gcol33/tulpa#334).
+        # evaluating it at the centre is the correction the midpoint atom
+        # drops. Recorded beside the cloud's ratio so the two re-estimates of
+        # the same atom are read together. `bary_shift` is the place half of
+        # the same quadratic -- the largest share of its own half-cell any
+        # axis's atom moves under the barycentre -- and the two are read
+        # together for the same reason: a cell can be given the right mass at
+        # the wrong place. Both readings carry their own per-axis decline
+        # tally, which travels with them: a multiplier formed on three of four
+        # axes and one formed on all four are different readings, and which
+        # gate the fourth fell at says whether the cell's quadratic was
+        # degenerate or its arithmetic was refused.
         bm_c <- .joint_local_ccd_cell_box_mass(cc)
         bc_c <- .joint_local_ccd_cell_bary(cc)
         rec_c <- c(rec_c,
@@ -1580,9 +1572,9 @@
     # holds the mass of its own cell; a node of a replacement cloud holds a
     # partition-of-unity share of its cell's mass, placed at the design's radius
     # rather than where that share sits. The two are on the same footing for the
-    # moments (which is what the design reproduces) and not for a cumulative sum
-    # (gcol33/tulpa#311), so the grid says which it carries instead of leaving a
-    # consumer to read one kind off `integration`.
+    # moments (which is what the design reproduces) and not for a cumulative
+    # sum, so the grid says which it carries instead of leaving a consumer to
+    # read one kind off `integration`.
     out_kind <- c(rep("mass", length(keep)),
                   rep("design", nrow(out_grid) - length(keep)))
 

@@ -59,9 +59,9 @@ bool extract_inner_vcov_block_cell(
     std::vector<double>& out_block
 );
 
-// The joint tier's per-cell fixed-effect retention (gcol33/tulpa#305), asked for
+// The joint tier's per-cell fixed-effect retention, asked for
 // on the inner Newton loop itself rather than off a grid-wide store of every
-// cell's precision (gcol33/tulpa#307).
+// cell's precision.
 //
 // `p` is the leading latent block -- both joint layouts stack every arm's
 // coefficients as a contiguous prefix, so the fixed effects are latent indices

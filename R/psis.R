@@ -23,7 +23,7 @@
 
 .PSIS_MIN_EVAL <- 25L
 
-# --- outer Pareto-k decline reasons (gcol33/tulpa#295) -----------------------
+# --- outer Pareto-k decline reasons -----------------------
 #
 # The outer k-hat has many places it can decline, and every one of them used to
 # arrive as the single value `pareto_k = NA` -- so "you turned the diagnostic
@@ -523,7 +523,7 @@ tulpa_psis <- function(log_ratios, tail_points = NULL) {
   out
 }
 
-# Validation aperture (gcol33/tulpa#356). When `tulpa.kdiag.capture` holds an
+# Validation aperture. When `tulpa.kdiag.capture` holds an
 # environment, a fit stashes there the importance log-ratios its REPORTED outer
 # k-hat was fitted on, so an external check reproduces that number exactly:
 #
@@ -588,7 +588,7 @@ tulpa_psis <- function(log_ratios, tail_points = NULL) {
 # Grid path for a single positive-scale axis whose default grid is geometric
 # (uniform in `u = log theta`, e.g. exp(seq(log a, log b))). The integrator
 # weights that grid with plain softmax(log_marginal) and applies NO volume
-# element (nested_laplace.R, "no user-scale volume element is applied"; the #179
+# element (nested_laplace.R, "no user-scale volume element is applied"; the
 # CAR_proper recovery confirms adding one biases the scale posterior), so
 # exp(log_marginal) IS the unnormalized u-space posterior density. The Gaussian
 # proposal is fit to the grid posterior in that same `u` coordinate, so the

@@ -70,7 +70,7 @@
 .K_DIAG_MIX_BW    <- 0.5
 .K_DIAG_MIX_FLOOR <- 1e-3
 
-# Skew-normal rescue for the outer Pareto-k (gcol33/tulpa#276)
+# Skew-normal rescue for the outer Pareto-k
 # A hyperparameter marginal on a variance component stays
 # right-skewed even after the log unconstraining transform, and a SYMMETRIC
 # Gaussian proposal against a skewed target has a heavy importance-ratio tail
@@ -103,8 +103,8 @@
 # the share of RNG states in which the skew proposal was adopted ran: no
 # significance screen 18%, a two-SE screen 5%, a three-SE screen 0%. Because a
 # batch consumer bins fits on the REPORTED number, a proposal source that flaps
-# with the RNG seed is itself a defect -- the failure mode gcol33/tulpa#276 is
-# about -- so the screen is set where spurious adoption vanishes. Sensitivity is
+# with the RNG seed is itself a defect, so the screen is set where spurious
+# adoption vanishes. Sensitivity is
 # given up only at small draw counts, where the k-hat being rescued is too noisy
 # to act on anyway.
 .K_DIAG_SKEW_Z <- 3
@@ -413,7 +413,7 @@
     }
     # NA marks an axis whose support is not safely guessable. Returned rather
     # than collapsed to NULL so a caller can NAME the offending axis in its
-    # decline reason (gcol33/tulpa#295) instead of reporting a bare NA k-hat.
+    # decline reason instead of reporting a bare NA k-hat.
     vapply(axes, tag_one, character(1))
 }
 
@@ -476,7 +476,7 @@
 
 # Whole-fit view of the same walk: every axis must be transformable, so a fit
 # carrying an unguessable one (car_proper's `rho_car`, a non-BYM2 `rho`)
-# DECLINES, naming the axes that stopped it (gcol33/tulpa#295).
+# DECLINES, naming the axes that stopped it.
 .joint_pareto_axis_tags <- function(res) {
     tags <- .joint_axis_tags_raw(res)
     if (.k_is_decline(tags)) return(tags)
@@ -570,7 +570,7 @@
     which(ax_var > var_tol)
 }
 
-# Regime of the outer integration grid (gcol33/tulpa#276): does the grid
+# Regime of the outer integration grid: does the grid
 # actually INTEGRATE hyperparameter uncertainty, and if not, is its dominant
 # cell interior to the grid or against a boundary?
 #
@@ -580,8 +580,8 @@
 # points), so the outer integration has degenerated to a point evaluation --
 # empirical Bayes at the modal hyperparameter -- and the outer Pareto-k-hat is
 # then scoring how well a Gaussian at that mode stands in for the hyperparameter
-# marginal, NOT how well a grid integrated it. That distinction is the whole of
-# gcol33/tulpa#276: a bare k-hat threshold reads the two as the same failure.
+# marginal, NOT how well a grid integrated it. That distinction matters: a
+# bare k-hat threshold reads the two as the same failure.
 #
 # Where the grid HAS collapsed, the dominant cell's position matters and is a
 # one-liner on the stored nodes:
@@ -709,9 +709,9 @@
 # / dimension, plus `u_grid` (the grid rows forward-transformed to the
 # unconstrained coordinate `tags` describes). Single source for
 # `.joint_pareto_prepare()`'s weighted-moment proposal and the
-# diagnose_k-independent placement path (`.joint_attach_pareto_k_placement()`,
-# gcol33/tulpa#292), both of which need the same u-space grid before they
-# diverge on what they do with it. Declines (a `.k_decline()`, gcol33/tulpa#295)
+# diagnose_k-independent placement path (`.joint_attach_pareto_k_placement()`),
+# both of which need the same u-space grid before they
+# diverge on what they do with it. Declines (a `.k_decline()`)
 # when the grid / weights are unusable or a forward transform produces a
 # non-finite value, distinguishing a fit whose weights carry no mass
 # (`grid_too_small`) from a layout fault (`internal_inconsistency`).
@@ -750,7 +750,7 @@
 # `.joint_pareto_prepare()`'s degenerate-grid-weight fallback (engaged during
 # the full outer-k diagnostic) and the diagnose_k-independent placement path
 # (`.joint_attach_pareto_k_placement()`) that recenters a collapsed axis
-# WITHOUT running the diagnostic (gcol33/tulpa#292). `refit_log_marginal` as in
+# WITHOUT running the diagnostic. `refit_log_marginal` as in
 # `.joint_pareto_mode_cov()`. Returns `list(u_mode=, cov=)` or NULL when the FD
 # curvature is unusable.
 .joint_pareto_grid_mode_cov <- function(tg, w, u_grid, tags, cn, d,
@@ -771,7 +771,7 @@
 # over the axes it spans, and engages the delta-collapse FD rescue
 # Returns the proposal summary the scorer draws
 # from, or a `.k_decline()` (an axis with unguessable support, an unusable grid /
-# weight vector, a sub-floor sample budget -- each named, gcol33/tulpa#295).
+# weight vector, a sub-floor sample budget -- each named).
 # The joint k and the opt-in per-arm
 # k score this SAME (u_hat, Su) summary, differing only in
 # which axes are allowed to vary -- so the grid build, proposal splice and rescue
@@ -897,8 +897,8 @@
 # `.nested_is_pareto_k`). Does NOT manage the RNG -- the driver saves / restores
 # it once around all scoring so the fit's draws are bit-for-bit unchanged.
 #
-# Importance-sampling k-hat with moment-matching refinement (
-# after Paananen, Piironen, Burkner & Vehtari 2021, Stat. Comput. 31:16). The
+# Importance-sampling k-hat with moment-matching refinement (after Paananen,
+# Piironen, Burkner & Vehtari 2021, Stat. Comput. 31:16). The
 # initial proposal is the integration-node covariance (or the mode-Hessian / CCD
 # curvature). When the grid is sharply concentrated that covariance is estimated
 # from few effective cells and can mis-scale the proposal -- too wide scatters
@@ -1089,7 +1089,7 @@
 }
 
 # Per-axis centred moments of the outer target in the WHITENED coordinate of the
-# Gaussian proposal that produced the draws (gcol33/tulpa#276).
+# Gaussian proposal that produced the draws.
 #
 # `U` are the proposal's importance draws and `log_weights` their PSIS-smoothed
 # log weights, so the weighted moments estimate the TARGET's moments (importance
@@ -1129,7 +1129,7 @@
     list(mu = mu, sd = sd, skew = g, n_eff = 1 / sum(w^2))
 }
 
-# Score the outer Pareto-k against a SKEW-NORMAL proposal (gcol33/tulpa#276):
+# Score the outer Pareto-k against a SKEW-NORMAL proposal:
 # the product of |vary| univariate skew-normals in the whitened coordinate of
 # the Gaussian proposal `(u_c, L_v)`, each matched to `mom`'s corresponding
 # whitened mean / sd / skewness. Draws are mapped back as
@@ -1166,7 +1166,7 @@
          lr = lr[fin])
 }
 
-# Skew-normal rescue pass (gcol33/tulpa#276). Runs after the Gaussian / mixture
+# Skew-normal rescue pass. Runs after the Gaussian / mixture
 # dispatch has chosen a proposal, and only when that choice is still above the
 # good band -- so a fit whose Gaussian proposal already fits pays nothing.
 #
@@ -1279,11 +1279,11 @@
 # Full outer Pareto-k proposal dispatch: the symmetric choice above (grid-moment
 # / mode-Hessian / moment-matched Gaussian, or the grid mixture where the grid
 # is spread and covers the posterior), then the skew-normal rescue
-# (gcol33/tulpa#276) on top of it. The rescue is last because it is the most
+# on top of it. The rescue is last because it is the most
 # expensive and the least often needed: it fires only when the symmetric choice
 # is still above the good band, which is exactly the collapsed-grid regime where
 # the mixture cannot help. Returns list(best, source[, outer_skew]), or a
-# `.k_decline()` (gcol33/tulpa#295) separating "the grid pins every axis, so
+# `.k_decline()` separating "the grid pins every axis, so
 # there is no direction to sample along" from "the proposal could not be built
 # or its GPD shape came back non-finite". Shared by the joint k and the per-arm k.
 .joint_pareto_score_dispatch <- function(prep, vary, refit_log_marginal, n_samples,
@@ -1396,7 +1396,7 @@
     # candidates (each moment-matching pass, the grid mixture, the skew-normal
     # rescue) and kept one; the per-arm passes below score more. Writing here,
     # after the choice and before those, is what makes the aperture reproduce
-    # the number the fit reports (gcol33/tulpa#356).
+    # the number the fit reports.
     .kdiag_capture(joint$best$lr, tail_points = k_tail_points,
                    scope = paste0("joint nested (", joint$source, ")"))
     out <- list(pareto_k = ju$pareto_k, is_ess = ju$is_ess,
@@ -1415,7 +1415,7 @@
                 # unconstrained coordinate, exactly as fit to score this k-hat
                 # (grid-weighted moments, or the mode-Hessian / delta-collapse
                 # FD rescue -- see .joint_pareto_prepare()). Exposed so an
-                # outer-grid rescue (gcol33/tulpa#289) can re-center a
+                # outer-grid rescue can re-center a
                 # collapsed axis from the SAME (mode, H) rather than
                 # re-optimizing.
                 mode_u     = prep$u_hat,
@@ -1588,12 +1588,11 @@
     res
 }
 
-# Attach the outer-integration REGIME and the outer hyperparameter skewness
-# (gcol33/tulpa#276) -- the context that keeps a bare `pareto_k` threshold from
-# being the whole story. Single source for both joint attach paths, and called
-# whether or not the k-hat diagnostic ran: the regime is read off the stored
-# grid weights, so it costs nothing and is available even with
-# `control$diagnose_k = FALSE`.
+# Attach the outer-integration REGIME and the outer hyperparameter skewness --
+# the context that keeps a bare `pareto_k` threshold from being the whole
+# story. Single source for both joint attach paths, and called whether or not
+# the k-hat diagnostic ran: the regime is read off the stored grid weights, so
+# it costs nothing and is available even with `control$diagnose_k = FALSE`.
 #
 #   * `pareto_k_regime` -- "spread" / "collapsed_interior" / "collapsed_edge".
 #   * `pareto_k_grid_edge_axes` / `pareto_k_grid_edge_sides` -- which axes the
@@ -1611,11 +1610,11 @@
 }
 
 # Placement-only mode-Hessian for a collapsed outer grid, computed
-# INDEPENDENTLY of whether the full outer Pareto-k diagnostic ran
-# (gcol33/tulpa#292). At `control$diagnose_k = FALSE` (the default) the full
-# diagnostic in `.joint_pareto_k()` never executes, so `res$pareto_k_mode_u` /
-# `cov_u` / `axis_tags` / `axis_names` -- what the #289/#290 auto-recenter
-# rescues (`.joint_sigma_grid_rescue()` / `.joint_multi_sigma_grid_rescue()` in
+# INDEPENDENTLY of whether the full outer Pareto-k diagnostic ran. At
+# `control$diagnose_k = FALSE` (the default) the full diagnostic in
+# `.joint_pareto_k()` never executes, so `res$pareto_k_mode_u` / `cov_u` /
+# `axis_tags` / `axis_names` -- what the auto-recenter rescues
+# (`.joint_sigma_grid_rescue()` / `.joint_multi_sigma_grid_rescue()` in
 # `R/nested_laplace_auto_grid.R`) consume to recentre a railed axis -- are
 # never attached, so a fit that collapses onto a field-SD ceiling stays railed
 # even though `SIGMA_GRID = "auto"` was requested.
@@ -1741,9 +1740,9 @@
 # inner threads. Attaches `pareto_k` / `pareto_k_is_ess` / `pareto_k_scope`;
 # with `diagnose_k = FALSE` the fields are present but NA -- but
 # `pareto_k_mode_u` / `cov_u` / `axis_tags` / `axis_names` are still populated
-# on a collapsed-edge grid via the diagnose_k-independent placement path
-# (gcol33/tulpa#292), so the #289/#290 auto-recenter rescue in
-# `R/nested_laplace_auto_grid.R` engages regardless of `diagnose_k`.
+# on a collapsed-edge grid via the diagnose_k-independent placement path, so
+# the auto-recenter rescue in `R/nested_laplace_auto_grid.R` engages
+# regardless of `diagnose_k`.
 .joint_attach_pareto_k_single <- function(res, kernel_fn, hp_fn,
                                           max_iter = 50L,
                                           diagnose_k = TRUE, diagnose_draws = 500L,
@@ -1793,7 +1792,7 @@
     }
 
     if (!isTRUE(diagnose_k)) {
-        # Placement-only recenter curvature (gcol33/tulpa#292): cheap (one
+        # Placement-only recenter curvature: cheap (one
         # batched FD-stencil solve, only when the grid actually collapsed on a
         # boundary) even though the full diagnostic below never runs.
         res <- .k_attach_declined(res, .k_decline("not_requested"))

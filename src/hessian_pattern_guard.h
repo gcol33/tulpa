@@ -9,8 +9,8 @@
 // Laplace log-determinant, the marginal standard errors and the exact outer
 // gradient without tripping any shape, finiteness or PD check, so the only
 // symptom is a recovery test drifting -- the hardest signal here to attribute.
-// The invariant has broken twice: unequal / non-contiguous areal components
-// (#241) and weighted-entry blocks (#242).
+// Unequal / non-contiguous areal components and weighted-entry blocks are the
+// two structures whose pattern is easiest to get wrong.
 //
 // Detection is a counter rather than a throw at the write because the scatter
 // runs inside OpenMP parallel regions, where an exception escaping the
@@ -25,18 +25,15 @@
 //
 // PLACEMENT RULE: a HessianPatternGuard must NOT be declared in a function whose
 // own body contains an `#pragma omp parallel` region. Put it in that function's
-// CALLER instead. Holding one across the outer grid's parallel region in
-// `run_nested_laplace_grid` -- an object live on both sides of the region, ended
-// by a call that can throw -- costs enough additional stack on the OpenMP worker
-// threads (whose stacks are far smaller than the main thread's) to overflow them
-// once a process has run enough fits: the whole test suite died with
-// STATUS_STACK_OVERFLOW on the multi-threaded joint grid while every one of those
-// files passed standalone. Moving the same guard up into the three callers of
-// that grid (`run_multi_block_nested_laplace`,
-// `run_multi_block_nested_laplace_joint`, and the sparse impl) keeps identical
-// coverage and the suite completes. A pragma inside a LAMBDA in the function body
-// is fine -- that region belongs to the lambda's operator(), not to the frame
-// holding the guard.
+// CALLER instead. An object live on both sides of such a region, ended by a call
+// that can throw, costs enough additional stack on the OpenMP worker threads
+// (whose stacks are far smaller than the main thread's) to overflow them once a
+// process has run enough fits. The guards over the outer grid therefore sit in
+// the three callers of `run_nested_laplace_grid`
+// (`run_multi_block_nested_laplace`, `run_multi_block_nested_laplace_joint`, and
+// the sparse impl), which is identical coverage. A pragma inside a LAMBDA in the
+// function body is fine -- that region belongs to the lambda's operator(), not
+// to the frame holding the guard.
 //
 // The write path is sized so detection costs the scatter nothing. scatter_slot()
 // stays trivially inlinable, the counter is a namespace-scope inline variable so

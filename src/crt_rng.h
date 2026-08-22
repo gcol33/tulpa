@@ -27,10 +27,14 @@ namespace tulpa {
 //
 // Properties:
 //   - E[L | y, r] = r * (psi(y + r) - psi(r)) where psi is digamma
-//   - E[L | y, r] ≈ r * log(1 + y/r) for large y
+//   - E[L | y, r] ~ r * log(1 + y/r) for large y
 //   - When y = 0, L = 0 deterministically
-//   - When r → ∞, L → y (every customer gets own table)
-//   - When r → 0, L → 1{y > 0} (all customers at one table)
+//   - As r -> Inf, L -> y (every customer gets own table)
+//   - As r -> 0+, L -> 1{y > 0} (all customers at one table)
+//
+// r <= 0 is outside the support of the concentration parameter. sample_crt()
+// returns 0 there, which is a guard on an invalid argument rather than the
+// r -> 0+ limit above.
 //
 // ---------------------------------------------------------------------
 

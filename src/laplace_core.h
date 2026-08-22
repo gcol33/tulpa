@@ -98,7 +98,7 @@ struct LaplaceResult {
   // (i, observation) contributions skipped for a non-finite third
   // derivative -- a nonzero count does not invalidate the other entries, but
   // is surfaced so the caller can say how many were skipped.
-  // WHY nothing was computable, when nothing was (gcol33/tulpa#296). NaN alone
+  // WHY nothing was computable, when nothing was. NaN alone
   // says "not computable" without separating a structural impossibility (a
   // coupled multi-process likelihood has no single per-observation term this
   // formula scores, so it can NEVER be scored) from a transient one (a
@@ -119,7 +119,7 @@ struct LaplaceResult {
   // `inner_skew_arms_declined` lists the joint arms with no oracle at all
   // (0-based here, 1-based on the R side), so a PARTIALLY scored joint fit
   // names which arms were left out.
-  // The companion LOCATION term (gcol33/tulpa#354): `inner_skew_gamma1[k]` is
+  // The companion LOCATION term: `inner_skew_gamma1[k]` is
   // Rue, Martino & Chopin's gamma^(1) at the same latent index, the first-order
   // coefficient of eq. (12)'s DENOMINATOR along the same conditional-mean curve.
   // Same layout, same NaN-means-not-computable rule. Empty when the pass did not
@@ -134,7 +134,7 @@ struct LaplaceResult {
   std::string         inner_skew_declined;
   std::vector<int>    inner_skew_arms_declined;
 
-  // Inner-Laplace importance k-hat raw material (gcol33/tulpa#303, see
+  // Inner-Laplace importance k-hat raw material (see
   // src/inner_laplace_is.h). Populated alongside the skewness diagnostic, from
   // the same probe indices and the same conditional-curve solve, but needing no
   // likelihood derivative at all -- so it is available where the cubic term
@@ -149,7 +149,7 @@ struct LaplaceResult {
   std::vector<double> inner_is_sigma;
   std::string         inner_is_declined;
 
-  // Subspace debias (gcol33/tulpa#304, see src/subspace_debias.h). Populated
+  // Subspace debias (see src/subspace_debias.h). Populated
   // only when the solver is called with a non-empty index set: the Metropolis
   // draws of x_S - mode_S along the Gaussian-conditional-mean surface through
   // the mode, laid out column-major as [n_kept x q] against `debias_idx`
@@ -173,7 +173,7 @@ struct LaplaceResult {
   double              debias_scale = 0.0;
   std::string         debias_declined;
 
-  // Corrected integrated Laplace (gcol33/tulpa#351, see src/inner_cila.h).
+  // Corrected integrated Laplace (see src/inner_cila.h).
   // Populated only when the solver is called with an active request: the M
   // unnormalized log importance ratios of draws from this cell's inner
   // Gaussian, the leading latent prefix of each draw (`cila_fixed`,

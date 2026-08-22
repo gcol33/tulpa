@@ -116,15 +116,15 @@ Rcpp::NumericVector cpp_test_gp_nngp_twins(Rcpp::NumericVector w, double sigma2,
                                      Rcpp::_["ad"]  = ll_ad);
 }
 
-// Non-centered NNGP transform: hand-derived backward vs central differences
-// (gcol33/tulpa#243). The transform is w = f(z, sigma2, phi); with a scalar
-// loss L(z, log_sigma2, log_phi) = sum(a_i w_i) the analytic reverse pass
-// nngp_nc_backward (called with dL/dw = a) returns dL/dz, dL/d(log_sigma2) and
-// dL/d(log_phi) -- the exact quantities the arena custom_backward injects on
-// the sampling path. grad_z here is the likelihood/transform gradient only
-// (the -z prior is the caller's, so it is absent). We compare each against a
-// central difference of the forward. The z->w log-Jacobian derivative
-// (grad_log_phi_jac) is not part of this loss and is not checked.
+// Non-centered NNGP transform: hand-derived backward vs central differences.
+// The transform is w = f(z, sigma2, phi); with a scalar loss L(z, log_sigma2,
+// log_phi) = sum(a_i w_i) the analytic reverse pass nngp_nc_backward (called
+// with dL/dw = a) returns dL/dz, dL/d(log_sigma2) and dL/d(log_phi) -- the
+// exact quantities the arena custom_backward injects on the sampling path.
+// grad_z here is the likelihood/transform gradient only (the -z prior is the
+// caller's, so it is absent). We compare each against a central difference of
+// the forward. The z->w log-Jacobian derivative (grad_log_phi_jac) is not part
+// of this loss and is not checked.
 // [[Rcpp::export]]
 Rcpp::List cpp_test_nngp_nc_grad(Rcpp::NumericVector z,
                                  double log_sigma2, double log_phi,
@@ -285,9 +285,9 @@ static Rcpp::List nngp_nc_grad_probe(const tulpa_gp::NNGPNCView& view, int N,
 
 // Non-centered NNGP transform on the SVC neighbour topology (coords-fallback
 // pair_dist branch, no cached nn_neighbor_dist): hand-derived backward vs
-// central differences, same scalar-loss construction as cpp_test_nngp_nc_grad
-// (gcol33/tulpa#243). Exercises the OTHER branch of NNGPNCView::pair_dist --
-// cpp_test_nngp_nc_grad only exercises the cached-table branch.
+// central differences, same scalar-loss construction as cpp_test_nngp_nc_grad.
+// Exercises the OTHER branch of NNGPNCView::pair_dist -- cpp_test_nngp_nc_grad
+// only exercises the cached-table branch.
 // [[Rcpp::export]]
 Rcpp::List cpp_test_svc_nngp_nc_grad(Rcpp::NumericVector z,
                                      double log_sigma2, double log_phi,
@@ -306,11 +306,11 @@ Rcpp::List cpp_test_svc_nngp_nc_grad(Rcpp::NumericVector z,
 
 // Non-centered NNGP transform on one scale of a MultiscaleGPData (cached
 // nn_neighbor_dist, the same fast path GPData uses): hand-derived backward vs
-// central differences, same construction as cpp_test_nngp_nc_grad
-// (gcol33/tulpa#243). `scale` selects "local" or "regional" -- both share the
-// same transform code (make_msgp_nc_view_{local,regional} only pick different
-// MultiscaleGPData fields), so one export covers both by argument rather than
-// duplicating the function.
+// central differences, same construction as cpp_test_nngp_nc_grad. `scale`
+// selects "local" or "regional" -- both share the same transform code
+// (make_msgp_nc_view_{local,regional} only pick different MultiscaleGPData
+// fields), so one export covers both by argument rather than duplicating the
+// function.
 // [[Rcpp::export]]
 Rcpp::List cpp_test_msgp_nngp_nc_grad(Rcpp::NumericVector z,
                                       double log_sigma2, double log_phi,

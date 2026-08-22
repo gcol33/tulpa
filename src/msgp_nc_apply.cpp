@@ -3,7 +3,7 @@
 // multi-scale (local + regional) GP field. See msgp_nc_apply.h for the
 // contract. Each scale delegates to the shared per-term applier
 // (nngp_nc_term_apply.h), the same primitive gp_nc_apply.cpp and
-// svc_nc_apply.cpp use (gcol33/tulpa#243).
+// svc_nc_apply.cpp use.
 
 #include "msgp_nc_apply.h"
 

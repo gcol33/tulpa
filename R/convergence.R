@@ -289,7 +289,7 @@
 #'
 #' A fit that carries no draws returns `NULL` with a message naming its backend,
 #' the posterior representation it carries instead, and the accessor that turns
-#' that representation into draws where one exists (gcol33/tulpa#349) -- an
+#' that representation into draws where one exists -- an
 #' absent draws matrix is a property of the backend, not a failure of the
 #' accessor, and saying which is the difference between a diagnosable answer and
 #' a bare `NULL`.
@@ -318,7 +318,7 @@ posterior_sample <- function(fit) {
 # What to say about a fit that carries no `$draws`. Names the backend, the
 # posterior representation the fit DOES carry, and the accessor that samples it
 # where there is one -- the same standard the Pareto-k / gamma_3 declines are
-# held to (gcol33/tulpa#293, #295, #296): a withheld answer records why.
+# held to: a withheld answer records why.
 #' @keywords internal
 .tulpa_no_draws_note <- function(fit, caller) {
   backend <- if (is.list(fit)) fit$backend %||% NA_character_ else NA_character_

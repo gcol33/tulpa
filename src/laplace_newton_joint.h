@@ -90,7 +90,7 @@ struct JointArm {
     // of `copy = list(arm, alpha_grid)` into `responses[[X]]$field_coef =
     // list(name = "alpha", grid = G)`.)
     double              field_coef = 1.0;
-    // Per-arm cell coupling (Change 2b).
+    // Per-arm cell coupling.
     //   coupled = true  -> the inner Newton skips this arm's per-obs scatter;
     //                      the CellCouplingSpec's evaluate_cell() writes its
     //                      gradient + (diagonal) Hessian contribution per cell,
@@ -264,7 +264,7 @@ inline double compute_total_log_lik_joint(
         // This loop is the data log-lik of every objective evaluation the
         // Newton line search and the inner debiases make, so at one thread
         // tulpa_parallel_sum reduces serially rather than entering libgomp
-        // for a team of one (gcol33/tulpa#365, #373).
+        // for a team of one.
         total += tulpa_parallel_sum(n_threads, N, [&](int i) {
             double eta_i = eta[i];
             return v.spec->ll_double(i, &eta_i, zd, zd,
@@ -285,13 +285,12 @@ inline double compute_total_log_lik_joint(
 // spec. Every other arm gets build_spec_curvature3_oracle(*view.spec, ...).
 //
 // `coupled_scored` says the caller will supply the cell tensor contraction
-// (cell_curvature3.h) covering those arms, which is what scores them instead
-// (gcol33/tulpa#301). A coupled arm is then not declined at all -- it is
-// carried by the other term -- so it neither appears in `arms_declined` nor
-// contributes a fit-level reason. At `coupled_scored = false` it reads
-// "coupled_arm" as before.
+// (cell_curvature3.h) covering those arms, which is what scores them instead.
+// A coupled arm is then not declined at all -- it is carried by the other term
+// -- so it neither appears in `arms_declined` nor contributes a fit-level
+// reason. At `coupled_scored = false` it reads "coupled_arm" as before.
 //
-// The REASON each arm declined travels with the oracles (gcol33/tulpa#296).
+// The REASON each arm declined travels with the oracles.
 // `declined` is the fit-level reason when no arm has an oracle at all -- the
 // single reason when the arms agree on it, or the distinct reasons joined when
 // they do not.
@@ -456,12 +455,11 @@ struct NewtonScratchJoint {
     DenseVec  delta;             // size n_x, zeroed per iter
     DenseCholeskyScratch chol;   // raw L/z buffers for dense fallback
 
-    // CHOLMOD context for the per-cell fixed-effect block extraction
-    // (gcol33/tulpa#307). Separate from the loop's own solver: the extraction
-    // resets and re-analyzes, which would throw away the pattern cache the
-    // Newton iterations rely on. Built here, single-threaded, only when the
-    // driver asked for the block -- one CHOLMOD common per outer thread, never
-    // one per grid cell.
+    // CHOLMOD context for the per-cell fixed-effect block extraction. Separate
+    // from the loop's own solver: the extraction resets and re-analyzes, which
+    // would throw away the pattern cache the Newton iterations rely on. Built
+    // here, single-threaded, only when the driver asked for the block -- one
+    // CHOLMOD common per outer thread, never one per grid cell.
     std::unique_ptr<SparseCholeskySolver> extract_solver;
 
     void allocate(int n_x, const std::vector<JointArm>& arms,
@@ -516,9 +514,9 @@ LaplaceResult laplace_newton_solve_joint_ll(
     // observed Hessian is indefinite wherever the mixture term is not concave,
     // which for the occupancy mixture is any sparse-detection data set at the
     // x = 0 start; without a conditioner the Cholesky yields a non-finite step,
-    // nothing is accepted, and the loop reports the start vector as its mode
-    // (gcol33/tulpa#344). LM (the default) reduces to the plain Newton step
-    // wherever H is already PD.
+    // nothing is accepted, and the loop reports the start vector as its mode.
+    // LM (the default) reduces to the plain Newton step wherever H is already
+    // PD.
     JointPDMode pd_mode = JointPDMode::LM,
     // Inner-Laplace skewness diagnostic (inner_laplace_skew.h), opt-in like
     // store_Q. curvature3_fns carries one per-observation oracle per arm plus the
@@ -534,18 +532,18 @@ LaplaceResult laplace_newton_solve_joint_ll(
     bool compute_skew = false,
     const std::vector<int>* skew_probe_idx = nullptr,
     const JointCurvature3Oracles* curvature3_fns = nullptr,
-    // Per-cell fixed-effect covariance block (gcol33/tulpa#307). Extracted from
+    // Per-cell fixed-effect covariance block. Extracted from
     // this cell's precision here, so the caller no longer has to keep every
     // cell's precision alive to read it afterwards. Independent of store_Q: a
     // fit that did not ask for the precision still gets the block, and one that
     // did gets both. nullptr / p == 0 extracts nothing.
     const JointFixedBlockRequest* fixed_block = nullptr,
-    // Subspace debias (subspace_debias.h, gcol33/tulpa#304/#306). Runs on the
+    // Subspace debias (subspace_debias.h). Runs on the
     // same pre-centering iterate and the same live factor the two inner
     // diagnostics probe, since that is the point log_marginal belongs to. Empty
     // or absent leaves the solve untouched and consumes no random number.
     const SubspaceDebiasOptions* debias = nullptr,
-    // Corrected integrated Laplace (inner_cila.h, gcol33/tulpa#351). Runs on
+    // Corrected integrated Laplace (inner_cila.h). Runs on
     // the same pre-centering iterate and the same live factor, and presents its
     // draws under the same centering fold the reported mode carries. Absent or
     // inactive leaves the solve untouched.
@@ -691,9 +689,9 @@ LaplaceResult laplace_newton_solve_joint_ll(
                 result.inner_skew_gamma1_declined = "curvature3_unavailable";
             }
 
-            // The likelihood-agnostic inner k-hat over the same probed subspace
-            // (gcol33/tulpa#303). Evaluated at the pre-centering iterate for the
-            // same reason gamma_3 is: that is the point the live factor and the
+            // The likelihood-agnostic inner k-hat over the same probed
+            // subspace. Evaluated at the pre-centering iterate for the same
+            // reason gamma_3 is: that is the point the live factor and the
             // reported log_marginal belong to.
             InnerISOutcome is_out = compute_inner_is_curve(
                 n_x, pre_center_x, scratch.chol, sparse_solver,

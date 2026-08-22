@@ -1,5 +1,6 @@
 // laplace_profile.cpp
-// R-facing entry points for the per-thread Laplace phase accumulator.
+// R-facing entry points for the Laplace phase accumulator, which is
+// process-global and mutex-guarded.
 // See laplace_profile.h for the underlying mechanism.
 
 #include "laplace_profile.h"

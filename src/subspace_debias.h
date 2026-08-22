@@ -1,6 +1,6 @@
 // subspace_debias.h
 //
-// Subspace debias (gcol33/tulpa#304): exact Metropolis correction applied to
+// Subspace debias: exact Metropolis correction applied to
 // ONLY the latent coordinates the inner-layer diagnostics flagged, with the rest
 // carried at their Gaussian conditional.
 //
@@ -223,6 +223,11 @@ inline SubspaceDebiasOutcome compute_subspace_debias(
 
   for (int k = 0; k < n_x; k++) x_buf[k] = mode[k];   // restore
   out.n_kept = kept;
+  // Acceptance is counted over the RECORDED draws, not over every post-warmup
+  // proposal, so at thin > 1 it rests on one sweep in `thin`. The estimator is
+  // unbiased either way and the reported rate is the one that belongs to the
+  // draws returned; the cost is variance, which is why a run reporting a rate
+  // far from `target` at a large `thin` is worth re-reading at thin = 1.
   out.accept = (kept > 0) ? static_cast<double>(acc_rec) / kept
                           : std::numeric_limits<double>::quiet_NaN();
   out.scale = scale;

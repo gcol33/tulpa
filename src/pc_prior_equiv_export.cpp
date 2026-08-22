@@ -2,13 +2,12 @@
 // Probes for the d = 2 PC range prior and the bounded-parameter map
 
 //
-// The range density existed three times: the SPDE hyper-prior in
-// tulpa_priors_spde.h, the R nested path (pc_prior_log_density in
-// fit_spde_nested.R), and an unwired log_prior_phi_pc in hmc_gp_log_lik.h that
-// set rate = -log(alpha)/U where its own derivation gives -log(alpha)*U. The GP
-// and SVC paths used none of them: both placed a Uniform on phi behind a hard
-// -INFINITY wall, which gives NUTS no gradient to recover from and railed phi
-// to the prior mean. Every path now routes through pc_prior.h.
+// Every path that needs the range density routes through pc_prior.h: the SPDE
+// hyper-prior in tulpa_priors_spde.h, the GP and SVC sampler paths, and the R
+// nested path (pc_prior_log_density in fit_spde_nested.R). The rate is
+// -log(alpha) * U. The sampler paths place the prior on phi through the
+// bounded map rather than behind a hard -INFINITY wall, so NUTS keeps a
+// gradient everywhere it can step.
 //
 // These exports let test-pc-prior.R check the shared helper against the R
 // implementation, which is the independently written twin, and check the

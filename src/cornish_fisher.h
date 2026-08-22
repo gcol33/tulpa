@@ -15,7 +15,7 @@
 // (Cornish & Fisher 1938; Johnson, Kotz & Balakrishnan 1994 Ch. 12), so the
 // corrected marginal quantile is mu_i + sigma_i {m_i + w(z_p; gamma_3(i))}.
 //
-// THE CENTRE m_i (gcol33/tulpa#354). w is the quantile function of a variable
+// THE CENTRE m_i. w is the quantile function of a variable
 // with MEAN ZERO, unit variance and skewness g. The expansion it inverts is RMC
 // eq. (22),
 //
@@ -31,7 +31,7 @@
 // The second is induced by the cubic term itself. Dropping it -- which placing
 // w's mean-zero variable at mu_i does -- asserts E[z] = 0, i.e. gamma_1 =
 // -gamma_3 / 2, which is a claim about the location term rather than an absence
-// of one. That was the measured defect in gcol33/tulpa#346: on its intercept-only
+// of one. That is the measured defect: on its intercept-only
 // fixture gamma_1 is identically 0 (every eta reads the one latent coordinate, so
 // var(eta_j | x_i) = 0), the whole missing centre is gamma_3 / 2, and the
 // reshaping applied about mu_i was a net loss on the whole marginal while a plain
@@ -122,7 +122,7 @@ inline bool cornish_fisher_monotone(double g, double z_lo, double z_hi) {
 //     centre, which propagates it;
 //   * |gamma_3| at or past `max_abs_gamma3` is the SHAPE band, past which the
 //     leading-order expansion is being extrapolated out of its regime;
-//   * |m| at or past `max_abs_centre` is the CENTRE band (gcol33/tulpa#362).
+//   * |m| at or past `max_abs_centre` is the CENTRE band.
 //     The reported quantile is mu_i + sigma_i {m_i + w(z_p; gamma_3)}, so the
 //     correction relocates the marginal by m_i standard errors and the shape
 //     band alone bounds only half of what it does. The shipped cutoff is `Inf`,
@@ -130,7 +130,7 @@ inline bool cornish_fisher_monotone(double g, double z_lo, double z_hi) {
 //     reference, a large |m| carrying a small |gamma_3| is uniformly WEAK
 //     correlation rather than a strong direction being extrapolated, so every
 //     finite cutoff declines the coefficients the correction helps most
-//     (gcol33/tulpa#376; the ladder and the derivation are in R/settings.R).
+//     (the ladder and the derivation are in R/settings.R).
 //     The predicate keeps the parameter, so a finite value restores the band
 //     on every path at once.
 inline bool cornish_fisher_in_band(double gamma1, double gamma3,

@@ -48,9 +48,9 @@
                                          svc_view, svc_ws_store);
               // Store the CENTERED field, matching what the non-centered
               // log-post fed into svc_eta -- that path identifies each term's
-              // level by centering rather than by the soft sum-to-zero penalty
-              // (gcol33/tulpa#245), so an uncentered draw would report a
-              // different field than the one the likelihood saw.
+              // level by centering rather than by the soft sum-to-zero
+              // penalty, so an uncentered draw would report a different field
+              // than the one the likelihood saw.
               double mean_j = 0.0;
               for (int i = 0; i < N_svc; i++) mean_j += svc_ws_store.w[i];
               mean_j /= (double)N_svc;

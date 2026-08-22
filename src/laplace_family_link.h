@@ -1,5 +1,12 @@
 // laplace_family_link.h
 // Family/link dispatch and per-observation likelihood utilities.
+//
+// `phi` throughout this header is the family's dispersion read in the SD
+// convention: the residual SD for gaussian and lognormal, and the family's own
+// shape / size / precision / scale elsewhere. glmm_oracle.h reads the same slot
+// in the VARIANCE convention, so the two disagree wherever .phi_is_variance()
+// is true (gaussian, lognormal); R converts at each boundary with
+// .phi_to_kernel() and .phi_to_registry().
 
 #ifndef TULPA_LAPLACE_FAMILY_LINK_H
 #define TULPA_LAPLACE_FAMILY_LINK_H

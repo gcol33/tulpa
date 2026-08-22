@@ -1,4 +1,4 @@
-# Shared mode-Hessian outer-axis recentering (gcol33/tulpa#289, #290, #293).
+# Shared mode-Hessian outer-axis recentering.
 #
 # Every nested-Laplace family builds its outer hyperparameter grid from a
 # FIXED default axis in original coordinates (`.NL_GRID` / `.NL_FAMILY_AXES`,
@@ -14,7 +14,7 @@
 # `R/nested_laplace_joint_pareto_k.R`) rather than re-optimizing -- it lays a
 # new log-spaced grid centred at the mode. This is placement, not a second
 # optimizer: callers detect the collapse (the `pareto_k_regime` diagnostic
-# every family already attaches, gcol33/tulpa#276), recentre once, and
+# every family already attaches), recentre once, and
 # refit; a second attempt composes a light default PC(U, alpha) prior
 # (`.NL_RECENTER$sigma_pc_prior`, R/settings.R) for genuinely unidentified
 # cases where the mode itself keeps running rather than settling on finite
@@ -51,15 +51,14 @@
 #                   `.nl_axis_h_over_sd()`). Both tests read the weights the fit
 #                   already stored, so a grid that brackets and resolves its
 #                   mode costs nothing beyond them.
-#   "rail"          the rail test alone, which is what TRUE meant before
-#                   gcol33/tulpa#361 settled the sizing half.
+#   "rail"          the rail test alone, without the sizing half.
 #   FALSE           the grid is integrated exactly as given, whatever it is.
 #   "always"        every movable default axis is recentred whatever the fit
 #                   did.
 #
 # A recentred axis is `mode +/- span * sd` over `n_pts` nodes, so it is
 # `h / sd = 1.25` BY CONSTRUCTION, against a census median of 3.9 on the fixed
-# spans (gcol33/tulpa#357, #361).
+# spans.
 #
 # The default is "resolve" and not "always" for COST, and the two are closer
 # than the coverage table alone reads. They agree seed for seed on five of the
@@ -67,7 +66,7 @@
 # already resolve their own posterior (NNGP, median `h / sd` 1.81 and 1.50),
 # where "resolve" fires on 39.5% of seeds against 97.5% and covers 0.530 /
 # 0.500 at the 50% level against 0.135 / 0.385. Coverage is what arbitrates a
-# placement rule (gcol33/tulpa#331), so that row favours "resolve" -- but the
+# placement rule, so that row favours "resolve" -- but the
 # reference read on a dense pinned axis that CONTAINS the posterior says
 # "always" is the nearest read of it there (log-scale distance 0.208 / 0.243
 # against 0.394 / 0.452), and that the fixture's posterior itself sits 0.62 /
@@ -106,7 +105,7 @@
 # also derives a second axis from it, or feeds the same vector to several
 # blocks) writes a non-NULL `prior$sigma_grid` on a fit where the user named no
 # grid at all, and `!is.null()` reads that as an override
-# (gcol33/tulpa#293: every `occu_cover()` fit's auto-recenter was inert for
+# (every `occu_cover()` fit's auto-recenter was inert for
 # exactly this reason). Provenance is only known to the layer that CHOSE the
 # values, so `auto_grid()` lets that layer say so.
 
@@ -115,7 +114,7 @@
 #' @description
 #' Declares that a setting shaping the outer hyperparameter grid carries a
 #' *default* the caller computed, not a choice the user made. The auto-recenter
-#' pass (\code{outer_grid_placement}, gcol33/tulpa#289) leaves a user-pinned
+#' pass (\code{outer_grid_placement}) leaves a user-pinned
 #' setting exactly as given, and re-centres (or, for a prior, engages its own
 #' regularizer over) a marked one when the fit rails against its ceiling.
 #'
@@ -127,9 +126,9 @@
 #'     take (`mcar` / `miid`'s `logchol_grid`, `tgmrf`'s `theta_grid_built`);
 #'   \item a scalar grid-construction knob in `control`, for a driver that
 #'     builds its axes rather than taking them (`fit_st_nested()`'s
-#'     `n_grid_spatial`, `tau_upper`, ..., gcol33/tulpa#294);
+#'     `n_grid_spatial`, `tau_upper`, ...);
 #'   \item a `prior_sigma` hyperprior specification -- a list, e.g.
-#'     `list("pc.prec", c(U = 3, alpha = 0.01))` (gcol33/tulpa#297).
+#'     `list("pc.prec", c(U = 3, alpha = 0.01))`.
 #' }
 #'
 #' Wrapper packages are the intended caller: one that builds a default of its
@@ -165,7 +164,7 @@ auto_grid <- function(x) {
         # In place, not `as.numeric()`: two families store their axis as a
         # matrix of pre-paired coordinates (`mcar` / `miid`'s `logchol_grid`,
         # `tgmrf`'s `theta_grid_built`), and flattening one destroys the axis
-        # the caller is declaring (gcol33/tulpa#360).
+        # the caller is declaring.
         storage.mode(x) <- "double"
         if (!length(x) || anyNA(x)) {
             stop("`auto_grid()` takes a non-empty numeric grid with no NA.",
@@ -188,11 +187,11 @@ auto_grid <- function(x) {
 is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 
 # Is a supplied `prior_sigma` a PIN? The prior-spec counterpart of
-# `.nl_axis_is_pinned()` (gcol33/tulpa#297). The second recenter attempt exists
+# `.nl_axis_is_pinned()`. The second recenter attempt exists
 # to engage the weakly-informative PC prior on a mode with no finite curvature
 # to settle on, and it must not be suppressed by a wrapper package that stamps a
-# `prior_sigma` of its own -- the same presence-is-not-provenance mistake #293
-# fixed one field over. Absent, marked with `auto_grid()`, or equal by value to
+# `prior_sigma` of its own -- the same presence-is-not-provenance mistake one
+# field over. Absent, marked with `auto_grid()`, or equal by value to
 # the engine's own `.NL_RECENTER$sigma_pc_prior` are all defaults; anything else
 # is a deliberate choice the rescue leaves alone.
 .nl_prior_sigma_is_pinned <- function(prior_sigma) {
@@ -296,8 +295,8 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 # as the path that defaulted the axis: a joint areal fit carries
 # `type = "icar"` on a block whose `sigma_grid` default comes from
 # `.joint_areal`, while the icar REGISTRY entry defaults a precision axis and no
-# `sigma_grid` at all. Inferring would silently answer "pinned" there, which is
-# gcol33/tulpa#293 again one layer down. Unnarrowed (`NULL`) compares against
+# `sigma_grid` at all. Inferring would silently answer "pinned" there, reading
+# an engine default as a user pin. Unnarrowed (`NULL`) compares against
 # every family's binding for the field, which errs toward recognising a default.
 .nl_axis_is_pinned <- function(block, field, auto_fields = character(0),
                                type = NULL) {
@@ -308,7 +307,7 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
     !.nl_axis_matches_default(g, field, type)
 }
 
-# --- axis consumption (gcol33/tulpa#352) --------------------------------------
+# --- axis consumption --------------------------------------
 #
 # A grid field the resolved path does not read must not pass in silence. Which
 # fields a path reads is `.NL_PATH_AXES` (`R/settings.R`), so this is one check
@@ -325,7 +324,7 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 # (`.NL_AXIS_EQUIV`) -- how to write the same grid in the axis that path reads.
 # An axis that IS an engine default carries nothing a pin would add, so refusing
 # it would be a false alarm; it is dropped, and the drop is RECORDED on the fit
-# (`$axis_fields_dropped`) rather than left invisible, per gcol33/tulpa#293.
+# (`$axis_fields_dropped`) rather than left invisible.
 
 .NL_AXIS_PATH_LABEL <- c(
     registry     = paste0("the nested-Laplace registry path (`tulpa_nested_laplace()`, ",
@@ -400,7 +399,7 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 # payload carrier like a prior block -- it names an arm, a block, and the copy
 # coefficient's axis -- so anything numeric beyond these is a grid the driver
 # cannot act on, and gets the same provenance-split verdict the block check
-# above gives an unread axis (gcol33/tulpaObs#192: a `sigma_pos_grid` from the
+# above gives an unread axis (a `sigma_pos_grid` from the
 # retired (sigma_occ, sigma_pos) parameterization reached this spec and was
 # neither read nor reported, so a pinned amplitude axis fell back to the
 # engine's own default with a bit-identical `log_marginal`).
@@ -535,7 +534,7 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 .nl_fit_n_blocks <- function(res) length(res$blocks %||% list())
 
 # Did the collapsed grid rail on `axis`? Reads the `pareto_k_grid_edge_axes`
-# every family attaches regardless of `diagnose_k` (gcol33/tulpa#276, #292).
+# every family attaches regardless of `diagnose_k`.
 .nl_edge_axis_hit <- function(res, axis, block_index = NULL) {
     ea <- res$pareto_k_grid_edge_axes %||% character(0)
     if (!length(ea)) return(FALSE)
@@ -555,13 +554,13 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
     NA_integer_
 }
 
-# --- axis rails (gcol33/tulpa#361) --------------------------------------------
+# --- axis rails --------------------------------------------
 #
-# `.nl_edge_axis_hit()` above asks the #276 question: did the WHOLE grid
+# `.nl_edge_axis_hit()` above asks the collapse question: did the WHOLE grid
 # collapse onto one cell, and does that cell sit on a node. That is a joint
 # quantity over the tensor -- `ess_grid = 1 / sum(w^2)` across every cell -- so
 # on a crossed grid a second axis carrying spread lifts it past the collapse
-# threshold while one axis is hard against its own boundary. The gcol33/tulpa#357
+# threshold while one axis is hard against its own boundary. The support
 # census's 100-region BYM2 fixture measures `ess_grid = 1.928` against a
 # threshold of 2: whether its railed `rho` axis is seen at all rests on 0.072 of
 # an effective cell, and on a number the `rho` marginal barely enters.
@@ -607,7 +606,7 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 # huge mode SD, and a grid laid over it is coarser than the one it replaced.
 #
 # The guard reads the boundary node's weight against what a FLAT marginal would
-# put there, `1 / m`, rather than against a fixed share (gcol33/tulpa#375). The
+# put there, `1 / m`, rather than against a fixed share. The
 # two differ by exactly the node count, and that is the whole defect: an axis's
 # weights are a distribution over its OWN nodes, so the same posterior read at
 # more nodes carries less on any one of them and a fixed share turns a longer
@@ -656,8 +655,7 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 # Every axis of a fit that is railed, as `axis:side`, whether or not any rescue
 # covers it. Recorded on the fit (`$outer_grid_railed_axes`) so a span that does
 # not contain its own posterior mode is visible instead of silently integrating
-# a tail -- the gcol33/tulpa#293 rule that a placement the engine leaves alone
-# has to say so.
+# a tail: a placement the engine leaves alone has to say so.
 .nl_railed_axes <- function(res) {
     tg <- res$theta_grid
     if (is.null(tg) || is.null(res$log_marginal)) return(character(0))
@@ -676,7 +674,7 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
     res
 }
 
-# Why the registry rescue covers no axis of `type` (gcol33/tulpa#370). Two
+# Why the registry rescue covers no axis of `type`. Two
 # distinguishable answers, and returning unstamped conflated them with a fit the
 # rescue never applied to:
 #
@@ -684,7 +682,7 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 #     rescue could place, but some other axis of the same grid has a support the
 #     transform registry will not guess (car_proper's `rho_car` on the adjacency
 #     eigenvalue interval), and `.nl_registry_axis_mode_cov()` declines for the
-#     WHOLE fit rather than per axis. Naming the blocking axis is #295's
+#     WHOLE fit rather than per axis. Naming the blocking axis is the decline
 #     convention and is what tells a caller that pinning it themselves unblocks
 #     the rest.
 #   * `"family_out_of_scope"` -- nothing about this fit's axis geometry is in
@@ -718,15 +716,15 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 # `"no_usable_curvature"` (the mode-Hessian the recenter needs was unavailable
 # or degenerate), `"sd_ceiling_unresolved"` / `"sd_floor_unresolved"` (the
 # stencil returned a curvature past one of the mode-SD bounds, so an axis laid
-# from it would be laid from a substituted spread rather than a measured one --
-# gcol33/tulpa#387; only under the declining clamp policies),
+# from it would be laid from a substituted spread rather than a measured one;
+# only under the declining clamp policies),
 # `"auto_recenter_disabled"` (`control$auto_recenter = FALSE`,
 # the way to hold ANY grid -- the engine's own default axis included -- exactly
 # where it is), `"grid_knobs_overridden"` (the spatiotemporal driver's
 # grid-construction knobs were set explicitly), `"refit_failed"` (the recentred
 # grid did not solve), `"unguessable_axis: <names>"` / `"family_out_of_scope"`
-# (the registry rescue covers no axis of this family -- gcol33/tulpa#370, which
-# is what returning UNSTAMPED used to look like). Absent on a fit that WAS
+# (the registry rescue covers no axis of this family, which is what returning
+# UNSTAMPED used to look like). Absent on a fit that WAS
 # recentred, and never stamped by
 # a rescue whose prior shape it does not apply to -- a fit carries the reason
 # from the one rescue that could have run, not a tally of the others declining.
@@ -755,7 +753,7 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 # degenerate mixture), so a node that saturates to a boundary in double
 # precision is dropped rather than laid down; too few survivors declines.
 #
-# THE CLAMP IS NOT A MEASUREMENT (gcol33/tulpa#387). Whenever a bound binds, the
+# THE CLAMP IS NOT A MEASUREMENT. Whenever a bound binds, the
 # axis is laid from a number the engine substituted for a curvature the stencil
 # could not read, and the two cases are otherwise indistinguishable on the fit.
 # `.nl_recenter_sd_clamp()` is the one place either bound is applied, so what
@@ -915,7 +913,7 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 }
 
 
-# Single-block joint auto-recenter rescue (gcol33/tulpa#289). `res` is the
+# Single-block joint auto-recenter rescue. `res` is the
 # just-completed single-block fit (bym2 / icar / car_proper); `refit(prior_i,
 # prior_sigma_i)` reruns the SAME fit with a modified prior / prior_sigma and
 # returns the new result (already carrying its own `pareto_k_regime`, since
@@ -1004,10 +1002,10 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
     out
 }
 
-# Mode + FD-Hessian covariance of a REGISTRY fit's outer grid
-# (gcol33/tulpa#290) -- the standalone `tulpa_nested_laplace()` counterpart
-# of the joint path's `.joint_pareto_prepare()` delta-collapse rescue,
-# reusing the SAME generic tagging (`.joint_pareto_block_tags()`, read through
+# Mode + FD-Hessian covariance of a REGISTRY fit's outer grid -- the standalone
+# `tulpa_nested_laplace()` counterpart of the joint path's
+# `.joint_pareto_prepare()` delta-collapse rescue, reusing the SAME generic
+# tagging (`.joint_pareto_block_tags()`, read through
 # `.nl_registry_axis_tags()`) and FD-Hessian machinery
 # (`.joint_pareto_mode_cov()`) rather than a fresh implementation. `tags` is
 # one transform tag per grid column; `refit_log_marginal(theta_mat)`
@@ -1041,14 +1039,14 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
     list(u_mode = u_mode, cov = cov_h, tags = tags, col_names = cn)
 }
 
-# Multi-block joint auto-recenter rescue (gcol33/tulpa#289/#290), the
+# Multi-block joint auto-recenter rescue, the
 # multi-block counterpart of `.joint_sigma_grid_rescue()`. Scope: a COPY
 # block's own scalar `sigma` axis (icar / bym2 / car_proper / rw1 / rw2 /
 # ar1 / iid copy blocks all build it via the identical
 # `p$sigma_grid %||% .nl_grid_axis("field_sd")` default -- see
 # `.joint_block_axis_grid()`, `R/nested_laplace_joint_multi.R`), the
 # donor field amplitude a copy coefficient scales -- the exact axis role
-# gcol33/tulpa#289's driver (`occu_cover`) hits. A non-copy block's axis
+# `occu_cover` hits. A non-copy block's axis
 # (RW1/RW2 tau, MCAR's log-Cholesky Sigma, ...) reuses
 # `.NL_REGISTRY`/`.nl_block_axis_grid()` and is out of scope here (a
 # materially larger, per-block-type surface than the single shared "donor
@@ -1136,9 +1134,9 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 # named `"theta"` while `theta_names` still says `"tau"`; a multi-block grid
 # prefixes every axis `b<k>.`).
 #
-# Every axis a family lists is movable on its own. Before gcol33/tulpa#361 the
-# entry named ONE recentrable axis and carried the family's other axis as a
-# passenger, re-crossed unchanged, so BYM2's `rho_grid` was detected against its
+# Every axis a family lists is movable on its own. Naming ONE recentrable axis
+# and carrying the family's other axis as a passenger, re-crossed unchanged,
+# left BYM2's `rho_grid` detected against its
 # 0.95 ceiling (`pareto_k_grid_edge_axes` names it) and then left there -- with
 # the fit recording `grid_not_collapsed`, which is not what happened. Field
 # order follows `.NL_FAMILY_AXES` (`R/settings.R`), the same order
@@ -1150,7 +1148,7 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 # the FD stencil differences the whole grid in it (`.joint_pareto_mode_cov()`),
 # so one unguessable axis takes the fit's curvature with it. The five registry
 # families absent below are absent for a stated reason, and each records it on
-# the fit rather than passing in silence (gcol33/tulpa#370):
+# the fit rather than passing in silence:
 #
 #   * car_proper (`rho` on the adjacency eigenvalue interval), ar1 (`rho` an
 #     autocorrelation on (-1, 1)) and hsgp_mo (`rho` a cross-output
@@ -1242,8 +1240,8 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 
 # Write an `[S x d]` theta matrix back onto the prior's own grid fields, so the
 # FD stencil's re-evaluation runs the kernel at exactly those coordinates. One
-# generic write over `.NL_REGISTRY_AXIS_FIELD` -- before gcol33/tulpa#361 the
-# call site branched on `type == "icar"` / `"bym2"` by hand and silently
+# generic write over `.NL_REGISTRY_AXIS_FIELD`. A call site branching on
+# `type == "icar"` / `"bym2"` by hand silently
 # ignored `theta_mat` for every other family, which returned the fit's OWN
 # log-marginal at the wrong length and made the curvature unusable.
 .nl_registry_write_theta <- function(blocks, theta_mat, cn, multi = FALSE) {
@@ -1279,14 +1277,13 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
     sort(unique(as.numeric(tg[, j])))
 }
 
-# Standalone (non-joint) `tulpa_nested_laplace()` registry rescue
-# (gcol33/tulpa#290, gcol33/tulpa#361) -- the registry generalization of
-# `.joint_sigma_grid_rescue()`. Scope: every axis `.NL_REGISTRY_AXIS_FIELD`
-# lists, on every block of the prior, each moved on its own rail in whichever
-# coordinate the engine's transform registry gives it (`log` for a scale,
-# `logit01` for the BYM2 mixing weight). The families it does NOT cover, and
-# why each declines rather than passing in silence, are written out on that
-# table.
+# Standalone (non-joint) `tulpa_nested_laplace()` registry rescue -- the
+# registry generalization of `.joint_sigma_grid_rescue()`. Scope: every axis
+# `.NL_REGISTRY_AXIS_FIELD` lists, on every block of the prior, each moved on
+# its own rail in whichever coordinate the engine's transform registry gives it
+# (`log` for a scale, `logit01` for the BYM2 mixing weight). The families it
+# does NOT cover, and why each declines rather than passing in silence, are
+# written out on that table.
 #
 # `multi = TRUE` says `prior` is a BLOCK LIST rather than one block, which is
 # the only difference between the two `tulpa_nested_laplace()` paths here: the
@@ -1298,7 +1295,7 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 # One recenter attempt (not the joint path's two): the "runaway mode needs
 # a regularizing prior" pathology `.joint_sigma_grid_rescue()`'s second
 # attempt targets is specific to a donor/copy-coupled fit pushing toward
-# near-separation (gcol33/tulpa#289's actual driver); a standalone
+# near-separation; a standalone
 # single-response fit has no such coupling, so a geometry-only recenter is
 # the proportionate fix here.
 #
@@ -1315,7 +1312,7 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
     out <- list(res = res, prior = prior)
     # The rail REPORT is taken before anything can decline, so a fit says which
     # of its axes do not contain their own mode whether or not this rescue is
-    # allowed to, able to, or built to move them (gcol33/tulpa#370). It reads
+    # allowed to, able to, or built to move them. It reads
     # stored weights and needs neither curvature nor a scope entry.
     out$res <- .nl_attach_railed_axes(out$res)
 
@@ -1343,8 +1340,8 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
     }
 
     # A prior that pins EVERY axis the table lists leaves the rescue nothing to
-    # move whatever the fit did, which is the answer #290 gave and the one a
-    # caller holding their own grid expects.
+    # move whatever the fit did, which is the answer the joint path gives and
+    # the one a caller holding their own grid expects.
     pinned <- vapply(slots, function(s) .nl_axis_is_pinned(
         blocks[[s$block]], s$field, .nl_auto_fields_at(auto, bidx(s)),
         type = s$type), logical(1))
@@ -1364,7 +1361,7 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
         # the family's axes it re-places.
         #
         #   "rail"     fire on a railed axis, and move the railed axes alone --
-        #              the placement half of gcol33/tulpa#361 as it shipped.
+        #              the placement half alone.
         #   "resolve"  fire on a railed OR an under-resolved axis, and move all
         #              of them: the stencil and the refit are paid once per fit,
         #              not once per axis, so the question the trigger asks is

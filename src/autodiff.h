@@ -631,15 +631,18 @@ inline std::vector<double> get_adjoints(const std::vector<Var>& vars) {
 }
 
 // ---------------------------------------------------------------------
-// Backward compatibility: global tape functions (deprecated)
-// These are provided for transition but should not be used in new code
+// The global tape
+//
+// `Var(double)` records onto the thread's active TapeScope when there is one
+// and onto `global_tape` otherwise (autodiff.cpp), so the global tape is the
+// fallback for code that records outside a scope. It is process-wide and not
+// thread-safe: a tape that several threads record onto interleaves their
+// nodes, so any parallel or reentrant recording takes a TapeScope instead.
 // ---------------------------------------------------------------------
 
-// Deprecated global tape pointer - DO NOT USE IN NEW CODE
-// Kept only for backward compatibility during transition
 extern Tape* global_tape;
 
-// Deprecated: use TapeScope or create_tape() instead
+// Replace the global tape with a fresh, empty one, discarding whatever it held.
 inline void init_tape() {
   if (global_tape != nullptr) {
     delete global_tape;
@@ -647,7 +650,8 @@ inline void init_tape() {
   global_tape = new Tape();
 }
 
-// Deprecated: use TapeScope or delete_tape() instead
+// Release the global tape. `Var(double)` outside a TapeScope then records onto
+// a null tape, so call init_tape() before recording again.
 inline void clear_tape() {
   if (global_tape != nullptr) {
     delete global_tape;
@@ -655,14 +659,12 @@ inline void clear_tape() {
   }
 }
 
-// Deprecated: Var constructor using global tape
-// Use Var(tape, value) instead
+// A Var recorded onto the global tape explicitly, whatever scope is active.
 inline Var make_var_global(double value) {
   return Var(global_tape, value);
 }
 
-// Deprecated: make_vars using global tape
-// Use make_vars(tape, values) instead
+// make_vars() on the global tape; the two-argument overload names its tape.
 inline std::vector<Var> make_vars(const std::vector<double>& values) {
   return make_vars(global_tape, values);
 }

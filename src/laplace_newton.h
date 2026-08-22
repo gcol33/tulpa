@@ -112,10 +112,10 @@ LaplaceResult laplace_newton_solve_ll(
     // store_Q. The caller builds the third-derivative oracle (family ladder,
     // a LikelihoodSpec finite-difference wrapper, or the per-observation tensor
     // contraction of a multi-process spec) because this loop is otherwise
-    // likelihood-agnostic; the oracle carries its own decline reason
-    // (gcol33/tulpa#296), so a likelihood that ships no third derivative does not
-    // report as an unset knob. skew_probe_idx == nullptr with
-    // compute_skew = true probes every latent index.
+    // likelihood-agnostic; the oracle carries its own decline reason, so a
+    // likelihood that ships no third derivative does not report as an unset
+    // knob. skew_probe_idx == nullptr with compute_skew = true probes every
+    // latent index.
     bool compute_skew = false,
     const std::vector<int>* skew_probe_idx = nullptr,
     const Curvature3Oracle* curvature3 = nullptr,
@@ -125,7 +125,7 @@ LaplaceResult laplace_newton_solve_ll(
     // empty index set never reaches the sampler, so the solve is unchanged and
     // consumes no random number.
     const SubspaceDebiasOptions* debias = nullptr,
-    // Corrected integrated Laplace (inner_cila.h, gcol33/tulpa#351). Runs on the
+    // Corrected integrated Laplace (inner_cila.h). Runs on the
     // pre-centering iterate and the same live factor, and presents its draws
     // under the same centering fold the reported mode carries.
     const CilaOptions* cila = nullptr,
@@ -210,7 +210,7 @@ LaplaceResult laplace_newton_solve_ll(
 
     // log_marginal belongs to the Newton mode, so everything that enters it is
     // evaluated at the uncentered iterate and `center_effects_fn` runs last,
-    // over the reported mode alone (gcol33/tulpa#371). The fold each caller
+    // over the reported mode alone. The fold each caller
     // applies preserves eta, so the data log-lik is the same either way, but the
     // log-prior is not: a proper field prior (AR1, proper CAR) is not
     // shift-invariant, and even an intrinsic one moves the beta ridge through
@@ -319,7 +319,7 @@ LaplaceResult laplace_newton_solve_ll(
             // along the same conditional-mean curve the cubic term just walked.
             // It reads the joint density through the loop's own penalized
             // objective, so it does not depend on the third-derivative oracle
-            // and stands where gamma_3 declines (gcol33/tulpa#303).
+            // and stands where gamma_3 declines.
             InnerISOutcome is_out = compute_inner_is_curve(
                 n_x, pre_center_x, scratch.chol, sparse_solver,
                 used_sparse_factor, eval_objective, x, probe

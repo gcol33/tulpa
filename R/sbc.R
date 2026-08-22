@@ -29,8 +29,7 @@
 # fixed truth the CRPS column is a descriptive loss and is labelled as one.
 #
 # PROVENANCE. Sections 1 to 6 were written and arbitrated as
-# `tests/testthat/helper-sbc.R` under gcol33/tulpa#335, gcol33/tulpa#339 and
-# gcol33/tulpa#350, and were moved here unchanged by gcol33/tulpa#380 so the
+# `tests/testthat/helper-sbc.R`, and were moved here unchanged so the
 # scorer has ONE implementation: the tests now read these functions rather than
 # a parallel private copy. The band, the within-atom PIT and both CRPS closed
 # forms are held against closed forms, brute-force simulation, numerical
@@ -39,8 +38,8 @@
 # fixtures, the only parts that call a fitter -- stayed there.
 #
 # LAYOUT. 1 predictive shapes, 2 PIT, 3 CRPS, 4 the simultaneous band, 5 the
-# prior-SBC driver, 6 the posterior-SBC driver (gcol33/tulpa#339), 7 the
-# exported front door `sbc()` and its methods (gcol33/tulpa#380).
+# prior-SBC driver, 6 the posterior-SBC driver, 7 the
+# exported front door `sbc()` and its methods.
 
 # ---------------------------------------------------------------------------
 # 1. Predictive distributions
@@ -674,7 +673,7 @@ sbc_crps_compare <- function(res, baseline) {
 #   pool(data_obs, rep)     the augmented data set
 #   arms(fit, data)         named arms of predictives, as in section 5
 #
-# THE DRIVER SPLITS THE TWO RNG STREAMS (gcol33/tulpa#350). `draw_theta` gets
+# THE DRIVER SPLITS THE TWO RNG STREAMS. `draw_theta` gets
 # the replicate's seed `s` and `simulate` gets `.sbc_rep_seed(s)`, so the obvious
 # `set.seed(seed)` at the top of each callback is the CORRECT fixture. Handing
 # both the same seed instead makes the replicate's group effects and residuals

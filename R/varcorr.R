@@ -79,7 +79,7 @@ VarCorr <- function(x, sigma = 1, ...) UseMethod("VarCorr")
 
 
 # Integrated RE SDs from the nested path, where each term is an `iid` latent
-# block and its SD is one axis of the outer grid (#265). `re_block_index` says
+# block and its SD is one axis of the outer grid. `re_block_index` says
 # which block each term became; the axis is named `b<block>.sigma` in
 # `theta_names`, matching the driver's own axis labelling.
 #

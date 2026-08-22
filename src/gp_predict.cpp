@@ -26,10 +26,9 @@
 // new_coords    : n_new x d prediction coordinates.
 // unique_coords : n_loc x d fitted (unique) location coordinates. The
 //                 coordinate dimension is whatever the caller supplied and
-//                 must match the fit, which is dimension-general since
-//                 gcol33/tulpa#389 -- a predictor pinned to two columns
-//                 would read a different metric than the fit it predicts
-//                 from.
+//                 must match the fit, which is dimension-general -- a
+//                 predictor pinned to two columns would read a different
+//                 metric than the fit it predicts from.
 // field_grid    : n_grid x n_loc, per-cell posterior-mean field at the unique
 //                 locations (in unique_coords row order).
 // sigma2_grid, phi_grid, weights : length n_grid hyperparameter grid + weights.

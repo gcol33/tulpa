@@ -164,7 +164,7 @@
 #'   correlated block (default `n_coefs + 1`, the minimal proper choice) and as
 #'   the scalar inverse-gamma shape for every diagonal block (default 2). Must
 #'   leave each block's prior proper -- unlike [tulpa_re_cov_nested()] /
-#'   [tulpa_eb()] (`hyperprior = "flat"` by default, gcol33/tulpa#268), the
+#'   [tulpa_eb()] (`hyperprior = "flat"` by default), the
 #'   `Sigma_m | b_m` conjugate draw here needs a proper Inverse-Wishart to
 #'   sample from, so an improper flat prior is not an option; the minimal-`df`
 #'   default is the closest analogue this sampler can offer.
@@ -377,8 +377,8 @@ tulpa_re_cov_gibbs <- function(y, n_trials = NULL, X, re_terms,
   # The sweep leaves DRAWS, not a cell partition: equal-weight order statistics
   # whose cumulative sum is a CDF, but beyond the extreme draw the tail is
   # unknown rather than half a spacing wide. Naming the producer is what routes
-  # the read to the clamp instead of a grid's outer half-cell
-  # (gcol33/tulpa#358); `.nl_node_support()` makes that one decision.
+  # the read to the clamp instead of a grid's outer half-cell;
+  # `.nl_node_support()` makes that one decision.
   integration <- "sample"
   summ <- .re_cov_derived_summary(Sigma_draws, w, layout,
                                   support = .nl_node_support(integration))

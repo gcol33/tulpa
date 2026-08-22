@@ -5,6 +5,7 @@
 #define TULPA_LAPLACE_TYPES_H
 
 #include "laplace_core.h"
+#include <algorithm>
 #include <cstddef>
 #include <vector>
 
@@ -12,14 +13,11 @@ namespace tulpa {
 
 using DenseVec = std::vector<double>;
 
-// Row-major flat-backed dense matrix. Compile-shim for `H[i][j]` syntax
-// over a single contiguous `std::vector<double>(n*n)`. The previous
-// `std::vector<std::vector<double>>` layout cost (n+1) mallocs per
-// allocation site -- one for the outer vector and one per row -- and
-// scattered rows across the heap so column traversals of the Hessian
-// were pointer-chases with no spatial locality. The flat backing pays
-// one malloc per matrix and gives row-stride-contiguous accumulation
-// in the scatter hot path.
+// Row-major flat-backed dense matrix, offering `H[i][j]` syntax over a single
+// contiguous `std::vector<double>(n*n)`. One malloc per matrix, and rows laid
+// end to end, so the scatter hot path accumulates row-stride-contiguously and
+// a column traversal of the Hessian is a strided walk over one allocation
+// rather than a pointer chase across n of them.
 //
 // Currently only the (n, n) square shapes used by the engine (Newton
 // Hessians) are needed. `init` in the std::vector-compatible ctor /

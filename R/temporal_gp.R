@@ -386,7 +386,7 @@ temporal_gp <- function(time_var,
   # exists at nu in {1/2, 3/2, 5/2}; general nu needs a Bessel function of the
   # second kind and there is no autodiff-friendly form of it here. Rejecting is
   # the point: an unsupported nu used to be accepted and then run as
-  # exponential (gcol33/tulpa#288).
+  # exponential.
   if (cov == "matern") {
     if (!is.numeric(nu) || length(nu) != 1 || nu <= 0) {
       stop("`nu` must be a positive number for Matern covariance", call. = FALSE)

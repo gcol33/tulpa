@@ -43,8 +43,8 @@
     )
     # This caller only needs "can every axis be unconstrained" -- a decline of
     # any kind (unguessable support, an inconsistent layout) means no, so it
-    # collapses back to NULL rather than carrying the reason (gcol33/tulpa#295:
-    # the reason is for the FIT's k-hat field, not for the CCD design).
+    # collapses back to NULL rather than carrying the reason (which is for the
+    # FIT's k-hat field, not for the CCD design).
     tags <- .joint_pareto_axis_tags(pseudo)
     if (.k_is_decline(tags)) NULL else tags
 }
@@ -305,8 +305,8 @@
 
 # Why a requested CCD fell back to the tensor grid. One entry per `return`
 # below, so the caller records a named reason on the fit instead of leaving a
-# consumer to read the choice off the absence of a field (gcol33/tulpa#315,
-# the convention #293-#297 established):
+# consumer to read the choice off the absence of a field (the established
+# convention):
 #
 #   "axis_count"          fewer transformable latent axes than the mode's
 #                         threshold -- decided by .joint_ccd_engage(), so it is

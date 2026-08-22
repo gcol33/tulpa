@@ -10,9 +10,10 @@
 # the reported Pareto-k usable threshold `0.7` in seven. Copy-pasted defaults
 # drift: one site gets tuned and the others silently do not, and nothing in the
 # package can then state what its own default IS -- which is precisely how
-# gcol33/tulpa#293 stayed invisible (the auto-recenter had to recognise the
-# engine's own default axis coming back in through a consumer's prior, and the
-# only way to recognise it was to have ONE place that defines it).
+# a consumer-stamped engine default stayed invisible (the auto-recenter had to
+# recognise the engine's own default axis coming back in through a consumer's
+# prior, and the only way to recognise it was to have ONE place that defines
+# it).
 #
 # THE RULE. A number that answers "what does the engine do when the user says
 # nothing?" lives here and nowhere else. Consumers of a default call the
@@ -94,7 +95,7 @@
     # the structured end where areal data usually sits.
     #
     # The span reaches 0.999 because a BOUNDED axis's SPAN and its RESOLUTION
-    # are not interchangeable (gcol33/tulpa#361): the `outside = "extend"` read
+    # are not interchangeable: the `outside = "extend"` read
     # mirrors the outer cell edge in the axis's own logit coordinate, so an axis
     # topping out at 0.95 cannot report an upper bound above
     # plogis(logit(0.95) + 0.5 (logit(0.95) - logit(0.8))) = 0.97642 whatever
@@ -141,7 +142,7 @@
     # interval. A separate entry rather than a shape of `car_rho`, because the
     # two axes are built from different information; it is here so the single-
     # block and multi-block joint backends read one binding rather than each
-    # restating the nodes (gcol33/tulpa#361). Deliberately NOT bound to a
+    # restating the nodes. Deliberately NOT bound to a
     # `.NL_FAMILY_AXES` field: `.nl_axis_matches_default()` reads that table,
     # and binding it would silently reclassify a caller's identical nodes from
     # a pin to a default.
@@ -212,7 +213,7 @@
 #   * axis PROVENANCE (`.nl_axis_matches_default()`,
 #     `R/nested_laplace_auto_grid.R`), which has to recognise the engine's own
 #     default coming back in through a caller's prior and treat it as a default
-#     rather than a user pin (gcol33/tulpa#293).
+#     rather than a user pin.
 #
 # Before this table the second layer carried a hand-maintained list of two
 # fields (`sigma_grid`, `tau_grid`) and could not see any of the others; now
@@ -262,7 +263,7 @@
 # which fields a resolved path READS, which is the other half of the same
 # question and the half a caller gets wrong: a family whose paths parameterize
 # it differently accepts one spelling on one driver and ignores it on another
-# (gcol33/tulpa#352 -- a `sigma_grid` on an icar block reached the multi-block
+# (a `sigma_grid` on an icar block reached the multi-block
 # driver, which integrates `tau_grid`, and neither took effect nor said so).
 #
 # `.NL_PATH_AXES[[path]][[family]]` is the COMPLETE set of grid fields that
@@ -387,8 +388,8 @@
 
 # --- outer-grid auto-recentering ---------------------------------------------
 #
-# Policy for the mode-Hessian recenter of a railed default axis (gcol33/tulpa
-# #289 / #290 / #291 / #293, see `R/nested_laplace_auto_grid.R`).
+# Policy for the mode-Hessian recenter of a railed default axis
+# (see `R/nested_laplace_auto_grid.R`).
 .NL_RECENTER <- list(
     # Nodes in a recentred axis, and how many mode-SDs it spans either side.
     n_pts     = 5L,
@@ -400,7 +401,7 @@
     # real spread), a ceiling so a near-flat direction does not fling nodes to
     # implausible extremes.
     #
-    # Both values were swept and both are KEPT (gcol33/tulpa#387). The ceiling
+    # Both values were swept and both are KEPT. The ceiling
     # is close to inert: over 268 axis reads it binds on 2, on neither of the
     # well-identified families, and across a ladder spanning a factor of 15
     # (0.4 to 6) the summed coverage deviation moves 0.2843 to 0.3071 and the
@@ -411,7 +412,7 @@
     # fits, identically at 0.8 / 1.5 / 2 / 3, so what moves across that ladder
     # is where the outer-cell extrapolation lands.
     #
-    # SETTLED at gcol33/tulpa#390, and the fixture did not have to be rebuilt --
+    # SETTLED, and the fixture did not have to be rebuilt --
     # the LEVEL was the problem. Over 48 (cap, span, n_pts, clamp policy) rungs
     # on two ceiling-reaching fixtures at 200 seeds, the reported bound leaves
     # the node range on 56-90% of fits at nominal 0.95 at EVERY setting, and on
@@ -438,13 +439,13 @@
     #
     # The earlier reading that the ceiling produces 95% widths in the hundreds
     # came from the one row that reaches it, `nngp_120`, whose fits are not
-    # reproducible (gcol33/tulpa#389: 72 of 120 differ between two passes of the
+    # reproducible (72 of 120 differ between two passes of the
     # same seeds in one process). The floor's own ladder is on
     # `sd_floor_policy` below.
     min_sd_u  = 0.15,
     max_sd_u  = 3,
 
-    # What the pass DOES when that ceiling binds (gcol33/tulpa#387).
+    # What the pass DOES when that ceiling binds.
     #
     # A clamp is not a spread the stencil measured -- it is the stencil failing
     # to resolve a direction, with a number substituted for what it could not
@@ -457,15 +458,15 @@
     #              0.0.186).
     #   "decline"  keep the incoming span and record
     #              `outer_grid_recenter_declined = "sd_ceiling_unresolved"` --
-    #              the gcol33/tulpa#293 rule, that a placement the engine
-    #              declines to make has to say so rather than be
-    #              indistinguishable from one that was not needed.
+    #              a placement the engine declines to make has to say so
+    #              rather than be indistinguishable from one that was not
+    #              needed.
     #   "relative" cap the recentred span by the INCOMING axis's own span in the
     #              same coordinate, so a direction the stencil could not resolve
     #              re-places within the range the caller's own grid already
     #              covered instead of past it.
     #
-    # MEASURED (gcol33/tulpa#387, `dev_notes/issue387/analyse_policy387.R`), 200
+    # MEASURED (`dev_notes/issue387/analyse_policy387.R`), 200
     # fixed-truth seeds on each of six configurations x two placement policies,
     # arms paired seed by seed and differing only in this setting. Summed
     # |coverage - nominal| over nominal 0.95 / 0.80 / 0.50 at the shipped
@@ -507,8 +508,8 @@
 
     # The `h / sd` above which an axis counts as UNDER-RESOLVED and is worth
     # re-placing even though it contains its own mode -- the trigger of the
-    # default placement policy (`.nl_recenter_mode()` `"resolve"`,
-    # gcol33/tulpa#361). `h / sd` is the median node spacing in the axis's own
+    # default placement policy (`.nl_recenter_mode()` `"resolve"`).
+    # `h / sd` is the median node spacing in the axis's own
     # unconstraining coordinate over the marginal SD in that coordinate, read
     # off the weights the fit already stored, so the test itself costs nothing.
     #
@@ -541,8 +542,8 @@
     resolve_mult = 2,
 
     # How far above a FLAT marginal the boundary node's own weight has to sit
-    # before the axis counts as railed against that boundary (`.nl_axis_rail()`,
-    # gcol33/tulpa#361, #375). A marginal maximal at a boundary node has its mode
+    # before the axis counts as railed against that boundary
+    # (`.nl_axis_rail()`). A marginal maximal at a boundary node has its mode
     # at or beyond it, which is the statement; this is the materiality guard that
     # keeps a merely uneven -- or numerically flat -- marginal from being moved
     # onto curvature it does not have.
@@ -550,14 +551,14 @@
     # The comparison is against `1 / m` for an `m`-node axis, not against a
     # constant share. A share is not comparable across node counts: the same
     # posterior read at more nodes spreads its weight over more of them, so a
-    # fixed share makes a LONGER axis a WEAKER detector (gcol33/tulpa#375
-    # measures the shipped 0.5 share firing on 12 / 10 / 6 / 3 / 0 of the same
-    # 20 railed fits as the span's node count goes 4 / 5 / 6 / 8 / 12). Relative
+    # fixed share makes a LONGER axis a WEAKER detector: the shipped 0.5 share
+    # fires on 12 / 10 / 6 / 3 / 0 of the same 20 railed fits as the span's
+    # node count goes 4 / 5 / 6 / 8 / 12. Relative
     # to uniform the same reads are 12 / 11 / 10 / 10 / 10, against 12 / 11 / 10
     # / 10 / 10 fits whose marginal is maximal at the top node at all.
     #
     # `2` is the retired 0.5 share at the four nodes it was tuned on, so the
-    # calibration is transported rather than re-chosen, and both of #357's two
+    # calibration is transported rather than re-chosen, and both
     # railed configurations still clear it (4.000 on the 144-cell ICAR lattice's
     # `tau`, 2.511 on the 100-region BYM2's `rho`).
     edge_mass_mult = 2,
@@ -629,42 +630,42 @@
 # usual skewness-magnitude convention (Bulmer 1979) -- a general reading of
 # "moderate" / "substantial" skew, NOT a Rue-Martino-Chopin cutoff.
 #
-# `gamma3_ok` is also the local-CCD refinement's engagement gate
-# (gcol33/tulpa#318): a refined outer cell keeps its node cloud only while the
-# standardized cubic magnitude of its own log-marginal, read off the design's own
-# nodes, stays below it. That is the same convention on the same kind of
-# quantity, one layer out -- a standardized third-order departure from the
-# Gaussian the approximation was placed from -- so it is one number, not two.
-# Where it belongs is measured, not inherited: across an eight-family ladder of
-# analytic outer targets (an equicorrelated Gaussian and Gaussian copulas with
-# Gamma(1 .. 64) marginals, 48 configurations each, scored as absolute endpoint
-# error against closed-form axis quantiles), 0.5 is the only threshold on the
-# ladder 0.01 .. 2 that improves or ties EVERY family against refining
-# unconditionally. Lower values score better pooled (0.175 gives 337.41 against
-# 340.14) by regressing on the two least skewed families; higher ones regress on
-# the moderately skewed. See the settings note beside the gate.
+# `gamma3_ok` is also the local-CCD refinement's engagement gate: a refined
+# outer cell keeps its node cloud only while the standardized cubic magnitude
+# of its own log-marginal, read off the design's own nodes, stays below it.
+# That is the same convention on the same kind of quantity, one layer out -- a
+# standardized third-order departure from the Gaussian the approximation was
+# placed from -- so it is one number, not two. Where it belongs is measured,
+# not inherited: across an eight-family ladder of analytic outer targets (an
+# equicorrelated Gaussian and Gaussian copulas with Gamma(1 .. 64) marginals,
+# 48 configurations each, scored as absolute endpoint error against closed-form
+# axis quantiles), 0.5 is the only threshold on the ladder 0.01 .. 2 that
+# improves or ties EVERY family against refining unconditionally. Lower values
+# score better pooled (0.175 gives 337.41 against 340.14) by regressing on the
+# two least skewed families; higher ones regress on the moderately skewed. See
+# the settings note beside the gate.
 #
-# `inner_k_material_ess` is the materiality floor for the INNER Pareto-k
-# (gcol33/tulpa#303). A Pareto shape index is scale-free: it describes the SHAPE
-# of the importance-weight tail and says nothing about its size, so where the
-# inner Gaussian already reproduces the conditional posterior over the sampled
-# region the weights are uniform, there is no tail for the generalized Pareto to
-# describe, and the shape returned is fitted to the residual wiggle. Measured on
-# the engine's own fixtures at 256 draws: a gaussian-family coefficient, where
-# the inner Laplace is EXACT and gamma_3 is exactly 0, reads k-hat 0.19 / 0.26
-# with realized IS efficiency 1.000; a balanced binomial intercept (N = 500,
-# S = 230, gamma_3 = -0.007) reads 0.640 at efficiency 0.99998. Both are noise
-# on a proposal that needs no correction, and banding them would flag healthy
-# fits -- the failure gcol33/tulpa#272 exists to stop. The k-hat is therefore
-# banded only on probed indices whose realized IS efficiency `is_ess / n_draws`
-# falls BELOW this floor, i.e. where correcting the proposal costs at least half
-# a percent of the sample; the raw shape is reported either way.
+# `inner_k_material_ess` is the materiality floor for the INNER Pareto-k. A
+# Pareto shape index is scale-free: it describes the SHAPE of the
+# importance-weight tail and says nothing about its size, so where the inner
+# Gaussian already reproduces the conditional posterior over the sampled region
+# the weights are uniform, there is no tail for the generalized Pareto to
+# describe, and the shape returned is fitted to the residual wiggle. Measured
+# on the engine's own fixtures at 256 draws: a gaussian-family coefficient,
+# where the inner Laplace is EXACT and gamma_3 is exactly 0, reads k-hat 0.19 /
+# 0.26 with realized IS efficiency 1.000; a balanced binomial intercept (N =
+# 500, S = 230, gamma_3 = -0.007) reads 0.640 at efficiency 0.99998. Both are
+# noise on a proposal that needs no correction, and banding them would flag
+# healthy fits, the failure these diagnostics exist to stop. The k-hat is
+# therefore banded only on probed indices whose realized IS efficiency `is_ess
+# / n_draws` falls BELOW this floor, i.e. where correcting the proposal costs
+# at least half a percent of the sample; the raw shape is reported either way.
 #
 # `skew_correct` decides whether the inner-Laplace marginal quantiles are
-# corrected (gcol33/tulpa#302) rather than only graded: a Cornish-Fisher
+# corrected rather than only graded: a Cornish-Fisher
 # reshaping at each coordinate's own gamma_3 about the centre gamma_1 +
-# gamma_3 / 2 (gcol33/tulpa#354), gated to the `good` / `ok` bands of the
-# COMBINED inner band (gamma_3 and the importance k-hat, gcol33/tulpa#346) by
+# gamma_3 / 2, gated to the `good` / `ok` bands of the
+# COMBINED inner band (gamma_3 and the importance k-hat) by
 # `gamma3_unreliable` and `k_usable` above.
 #
 # MEASURED. Against exact quadrature quantiles of rare-event binomial-logit
@@ -676,11 +677,11 @@
 # Laplace at t = -1.89, essentially all of the -0.01662 the exact posterior
 # itself achieves, with SBC uniformity moving 0.0833 -> 0.0329 against the exact
 # reference's 0.0290 and the PIT re-entering the simultaneous band at p = 0.089
-# (gcol33/tulpa#346, the section-4 gate in test-inner-skew-correction.R).
+# (the section-4 gate in test-inner-skew-correction.R).
 #
-# THE CENTRE IS WHAT MADE THE DIFFERENCE. Until gcol33/tulpa#354 the reshaping
-# was applied about the Laplace mode, i.e. about a mean-zero standardized
-# variate. RMC eq. (22) does not have mean zero: expanding it gives
+# THE CENTRE IS WHAT MADE THE DIFFERENCE. Reshaping about the Laplace mode
+# places a mean-zero standardized variate there. RMC eq. (22) does not have
+# mean zero: expanding it gives
 # E[z] = gamma_1 + gamma_3 / 2, so placing the reshaped variate at mu_i asserts
 # gamma_1 = -gamma_3 / 2 rather than an absent location term. On the same 400
 # replicates that read scored +0.00775 at t = +3.54, a NET LOSS, and it is kept
@@ -695,17 +696,17 @@
 # multi-process unit, a field past the eta-variance solve budget) DECLINES the
 # whole correction rather than reading the absent gamma_1 as zero.
 #
-# IT IS ON BY DEFAULT (gcol33/tulpa#364); `control$skew_correct = FALSE` restores
+# IT IS ON BY DEFAULT; `control$skew_correct = FALSE` restores
 # the uncorrected report per fit, exactly. Three things had to hold, each
-# measured on the fixtures above after gcol33/tulpa#376 removed the centre band
-# and gcol33/tulpa#386 put a declined coefficient back on the mixture read
+# measured on the fixtures above with the centre band removed and a declined
+# coefficient back on the mixture read
 # (dev_notes/issue364/RESULTS.md).
 #
 # THE FLIP SURVIVES THE SHIPPED GATE. Scored against the read a default-OFF fit
-# gives -- the gcol33/tulpa#336 grid mixture -- on 400 prior-predictive
+# gives -- the grid mixture -- on 400 prior-predictive
 # replicates: the rare-event intercept t = -1.895, and the small-group Bernoulli
 # design's two coefficients t = -3.765 and t = -3.201, against +3.54 / +6.12 /
-# +4.64 for the pre-gcol33/tulpa#354 read that had no location term.
+# +4.64 for the earlier read that had no location term.
 #
 # COVERAGE HOLDS ACROSS MODEL CLASSES. Twelve configurations -- the six built-in
 # families on the single-block driver, a rare-event small-group binomial, a
@@ -740,18 +741,18 @@
 # location term), a coefficient the importance k-hat flags, a coefficient past
 # the shape band and a non-nested fit all report bounds identical to the
 # correction-off fit, to 0.000e+00, while an eligible coefficient on the same fit
-# moves by 0.397. That took gcol33/tulpa#386; without it every one of those
-# classes moved.
+# moves by 0.397. That takes the per-row composition against the mixture read;
+# without it every one of those classes moved.
 #
 # `centre_unreliable` is the CENTRE band's cutoff, the counterpart of
-# `gamma3_unreliable` on the other term of the same expansion (gcol33/tulpa#362).
+# `gamma3_unreliable` on the other term of the same expansion.
 # The reported quantile is mu_i + sigma_i {m_i + w(z_p; gamma_3)} with
 # m_i = gamma_1 + gamma_3 / 2, so the correction RELOCATES the marginal by m_i
 # standard errors and a band on |gamma_3| alone bounds only the reshaping. Past
 # the cutoff a coefficient reports the Gaussian quantiles and records
 # `centre_unreliable`.
 #
-# IT IS `Inf`: THE BAND IS OFF (gcol33/tulpa#376). It shipped at 1.20, chosen as
+# IT IS `Inf`: THE BAND IS OFF. It shipped at 1.20, chosen as
 # the smallest cutoff that declined nothing the correction was MEASURED to help,
 # on four fixtures none of which could reach it. Three fixtures that do reach it
 # were then built, on two sampling designs, and on every one of them the band
@@ -763,9 +764,9 @@
 # MEASURED, on seven fixtures with an exact reference -- 6220 coefficient-seeds,
 # 3600 of them admitted -- every one gated by the SHIPPED combined inner band
 # (dev_notes/issue362, dev_notes/issue376): the rare-event binomial-logit
-# intercept of gcol33/tulpa#346, the small-group Bernoulli RE fit with a real
-# outer grid of gcol33/tulpa#341, two rare-event binomial-logit designs carrying
-# a SLOPE, and three small-group POISSON RE designs (gcol33/tulpa#364) which are
+# intercept, the small-group Bernoulli RE fit with a real outer grid, two
+# rare-event binomial-logit designs carrying
+# a SLOPE, and three small-group POISSON RE designs which are
 # the ones that reach past 1.20 at all. Each candidate cutoff is scored as the
 # PAIRED CRPS difference between the banded and the unbanded correction on the
 # same fits, so the number is what the band COSTS:
@@ -817,7 +818,7 @@
 # produced is paid for at the rate above on the regimes that do occur.
 #
 # `debias_select_band` is the floor the SUBSPACE DEBIAS selector reads the inner
-# bands at (gcol33/tulpa#304): a probed coordinate whose combined inner band is
+# bands at: a probed coordinate whose combined inner band is
 # at or above it is sampled exactly, the rest stay at their Gaussian
 # conditional. It is "ok", i.e. one step BELOW the `unreliable` band the
 # reporting layer flags on, and the reason is a measured property of the
@@ -856,7 +857,7 @@
 # reports draws instead of moments and this is their count -- Monte Carlo error
 # on a reported quantile, not a property of the correction.
 # `within_cell` is the default WITHIN-CELL construction for the reported
-# per-axis hyperparameter intervals (gcol33/tulpa#357), and `grid_resolved` is
+# per-axis hyperparameter intervals, and `grid_resolved` is
 # the cell-width-to-posterior-SD ratio below which the choice stops mattering.
 #
 # The outer grid's cell weights say how much mass each cell holds; they do not
@@ -877,22 +878,22 @@
 # exact tie, 0.9933 and 0.9067 both 0.0433 from nominal -- at 0.46 to 0.92x the
 # width (`dev_notes/issue357/RESULTS.md` sections 4 and 6.6).
 #
-# THE DEFAULT IS `box_uniform` (gcol33/tulpa#357, 0.0.188), decided on
-# FIXED-TRUTH coverage -- gcol33/tulpa#337's own pre-registered instrument -- at
-# the placement the engine ships, which is what changed. Until gcol33/tulpa#361
-# the default axes were laid without reference to the posterior, and every
+# THE DEFAULT IS `box_uniform` (0.0.188), decided on
+# FIXED-TRUTH coverage -- the pre-registered instrument for this choice -- at
+# the placement the engine ships, which is what changed. Before the placement
+# pass the default axes were laid without reference to the posterior, and every
 # earlier measurement of this choice was taken on a grid pinned coarser than any
 # a user now gets. Three fixed-truth sweeps on current main
 # (`dev_notes/issue357/RESULTS357C.md`), summed |coverage - nominal| over
 # nominal 0.95 / 0.80 / 0.50, chord against box-uniform:
 #
-#   #337's instrument, truth 0.7, 300 seeds, engine placement  0.2900   0.1233
+#   the instrument, truth 0.7, 300 seeds, engine placement     0.2900   0.1233
 #   the same fixture truth-swept, 4680 fits the axis contained  0.2004   0.0361
 #   nine (config, axis) rows over seven families, 200 seeds ea. 0.2467   0.1572
 #
 # Box-uniform is nearer nominal on 6 of those 9 rows and at all three levels of
 # the other two, at 0.69 to 1.08x the width. The one arrangement it still loses
-# on is the five-level pinned grid #337 recorded its failure on, where that
+# on is the five-level pinned grid the failure was recorded on, where that
 # fixture's truth of 0.7 falls at fraction 0.9870 of its cell -- the worst
 # position in the box sweep. The four-level grid is coarser and ties, the
 # seven- and nine-level grids are finer and box-uniform wins, so what fails there
@@ -952,10 +953,10 @@
 #  * `spde` -- `fit_spde_nested_ccd()` over (log range, log sigma). `factr`
 #    1e5 rather than the 1e7 default, which accepted the prior mode unchanged
 #    on weakly informative problems. `ndeps` 1e-2 measured across 1e-4 to 5e-2
-#    on both the analytic fixture and a real inner-Laplace marginal
-#    (gcol33/tulpa#403): every step up to 2.5e-2 returns convergence 0 on Linux
-#    and Windows alike and agrees bit for bit, and on the real marginal 1e-2
-#    reaches the same mode in the same evaluation count at a lower objective.
+#    on both the analytic fixture and a real inner-Laplace marginal: every step
+#    up to 2.5e-2 returns convergence 0 on Linux and Windows alike and agrees
+#    bit for bit, and on the real marginal 1e-2 reaches the same mode in the
+#    same evaluation count at a lower objective.
 #
 #  * `st` -- `fit_st_nested()`'s auto-grid over (tau_spatial, tau_temporal,
 #    rho). `ndeps` 1e-3 is `optim()`'s own default, written out so the step

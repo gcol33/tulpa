@@ -791,17 +791,17 @@
              inner_refresh_   = NULL,
              compute_skew     = FALSE,
              skew_idx         = NULL,
-             # Per-cell fixed-effect covariance retention (gcol33/tulpa#307).
+             # Per-cell fixed-effect covariance retention.
              # Off by default so the mode-find, the Pareto-k re-solve batch and
              # the skew probe -- none of which contribute an integrated cell --
              # never pay for it; the grid solve and the local-CCD node solves
              # switch it on.
              fixed_block      = FALSE,
-             # Subspace debias (gcol33/tulpa#306): the kernel-facing request
+             # Subspace debias: the kernel-facing request
              # list, off by default so no existing call site re-solves anything
              # different.
              debias           = NULL,
-             # Corrected integrated Laplace (gcol33/tulpa#351): the
+             # Corrected integrated Laplace: the
              # kernel-facing request list, off by default for the same reason.
              cila             = NULL) {
         .cpp_joint_multi(
@@ -842,8 +842,8 @@
 # (`R/nested_laplace_joint_pareto_k.R`). Same `diagnose_k = FALSE` behaviour:
 # `pareto_k` / `pareto_k_is_ess` stay NA, but `pareto_k_mode_u` / `cov_u` /
 # `axis_tags` / `axis_names` are still populated on a collapsed-edge grid via
-# the diagnose_k-independent placement path (gcol33/tulpa#292), so the
-# #289/#290 auto-recenter rescue engages regardless of `diagnose_k`.
+# the diagnose_k-independent placement path, so the
+# auto-recenter rescue engages regardless of `diagnose_k`.
 .joint_attach_pareto_k_multi <- function(res, call_kernel,
                                          axis_offsets, B, arm_names,
                                          fn_sigma, fn_alpha, fn_phi = NULL,
@@ -891,7 +891,7 @@
     }
 
     if (!isTRUE(diagnose_k)) {
-        # Placement-only recenter curvature (gcol33/tulpa#292): cheap (one
+        # Placement-only recenter curvature: cheap (one
         # batched FD-stencil solve, only when the grid actually collapsed on a
         # boundary) even though the full diagnostic below never runs. `proposal`
         # (the CCD mode-Hessian, when the CCD grid path built one) is threaded
@@ -922,10 +922,10 @@
     res
 }
 
-# Inner-Laplace skewness diagnostic (gcol33/tulpa#272) for the multi-block
+# Inner-Laplace skewness diagnostic for the multi-block
 # joint driver -- the multi-block analogue of
-# .nlj_inner_skew_at_theta() (R/nested_laplace_joint.R), completing the
-# checklist item gcol33/tulpa#273 left open. Reuses `call_kernel` (the SAME
+# .nlj_inner_skew_at_theta() (R/nested_laplace_joint.R). Reuses
+# `call_kernel` (the SAME
 # closure the outer Pareto-k diagnostic and the adaptive-grid refinement
 # already call), re-dispatched at the fitted MAP grid cell with
 # `compute_skew = TRUE`: one extra deterministic Newton solve, no importance
@@ -1066,11 +1066,11 @@
         .joint_multi_layout(arms, prepared)$n_x
     })
 
-    # Per-cell fixed-effect covariance retention (gcol33/tulpa#305). Both the
+    # Per-cell fixed-effect covariance retention. Both the
     # block size and the field sum-to-zero groups are fixed by the latent layout,
     # which is known before the first solve, so the request is built here and the
     # kernel extracts each cell's block inside that cell's own solve
-    # (gcol33/tulpa#307) instead of the grid keeping every precision.
+    # instead of the grid keeping every precision.
     fixed_layout <- .joint_fixed_layout(responses)
     fb_layout    <- .joint_multi_layout(arms, prepared)
     fixed_block_p <- if (isTRUE(keep_grid_hessians))
@@ -1129,7 +1129,7 @@
     ccd_proposal          <- NULL
 
     ccd_requested <- .joint_ccd_engage(integration, d_axes)
-    # Why a CCD the caller asked for did not run (gcol33/tulpa#315). NA when
+    # Why a CCD the caller asked for did not run. NA when
     # nothing was declined, so `fit$integration == "grid"` is never the only
     # trace of a request the engine turned down. An explicit
     # `integration = "ccd"` below the axis threshold declines here; every other
@@ -1281,7 +1281,7 @@
         n_cells <- nrow(idx)
         # The CCD is only a remedy for the cell count while it is still
         # available. Once this fit has already declined one, advising the caller
-        # to set the option they set is noise (gcol33/tulpa#315), so the advice
+        # to set the option they set is noise, so the advice
         # names the decline instead.
         remedy <- if (is.na(integration_declined))
             "Reduce per-block grid sizes or set control$integration = \"ccd\"." else
@@ -1458,7 +1458,7 @@
                 weight_kind      <- ref$weight_kind
                 # The node solves carry their own fixed-effect block, so the
                 # refined grid keeps the retention aligned with the weights it
-                # is integrated against (gcol33/tulpa#307). The per-cell
+                # is integrated against. The per-cell
                 # precision is not carried, which is why refinement engages only
                 # when store_Q is off -- the gate above.
                 res$cov_block_per_grid <- ref$cov_blocks
@@ -1473,9 +1473,9 @@
     res$integration  <- integration_used
     # What the caller asked for, and why it did not run. `integration` alone
     # names the integrator that RAN, so a fit reporting "grid" cannot say
-    # whether the tensor grid was chosen or fallen back to
-    # (gcol33/tulpa#315). `.nl_node_support()` keys the interval construction
-    # off `integration`, so the difference is one a consumer can act on.
+    # whether the tensor grid was chosen or fallen back to.
+    # `.nl_node_support()` keys the interval construction off `integration`, so
+    # the difference is one a consumer can act on.
     res$integration_requested <- integration
     res$integration_declined  <- integration_declined
     # Integration weights fold in the CCD design weights (`dnode`); for the
@@ -1488,14 +1488,14 @@
     # `weights` afterwards is a division by exp(log_marginal), which loses its
     # scale and is undefined on a cell whose inner solve returned no finite
     # marginal, so the grid state a weight-construction experiment reads is
-    # recorded rather than reconstructed (gcol33/tulpa#322).
+    # recorded rather than reconstructed.
     res$dnode        <- dnode
     is_ccd <- identical(integration_used, "ccd")
     # What kind of weight each cell carries. `integration` names the integrator
     # that ran, which describes a homogeneous support: a tensor cell holds the
     # mass of its own cell, a CCD node holds a design weight. A locally refined
     # grid is the one case with both, so it says so per cell rather than leaving
-    # a consumer to read one kind off `integration` (gcol33/tulpa#311).
+    # a consumer to read one kind off `integration`.
     res$weight_kind <- weight_kind %||%
         rep(if (is_ccd) "design" else "mass", nrow(joint_grid))
     if (!is.null(local_ccd_info)) {
@@ -1516,21 +1516,21 @@
     # cells is already the calibrated SD. It therefore takes the same weighted-
     # moment path, not the lattice refit.
     # A refinement whose every candidate cell was put back as a mass atom
-    # (gcol33/tulpa#318) leaves a plain tensor grid, so it takes the density path
+    # leaves a plain tensor grid, so it takes the density path
     # its cells carry rather than the design-weighted one it asked for.
     is_design_weighted <- is_ccd || use_adaptive ||
         (!is.null(local_ccd_info) && local_ccd_info$n_design_nodes > 0L)
     # The median and interval per axis are read off whatever node set the
     # integrator left. The global CCD is a MOMENT RULE -- its nodes reproduce the
     # integrand's moments and carry no mass -- so a cumulative sum over them is
-    # not a CDF and the interval comes from the moments instead
-    # (gcol33/tulpa#309). The adaptive lattice keeps a cell per unit of mass, so
-    # its cumulative weight is a CDF. A locally CCD-refined grid is neither: it
-    # is part cell masses and part design, and says so rather than passing for a
-    # density grid (gcol33/tulpa#317). What it REPORTS is still the weighted
-    # quantile -- that measured best against a converged reference in both
-    # design_mass regimes, see `.nl_summary_quantile` -- so naming the support
-    # changes what the fit can tell a caller, not the numbers.
+    # not a CDF and the interval comes from the moments instead. The adaptive
+    # lattice keeps a cell per unit of mass, so its cumulative weight is a CDF.
+    # A locally CCD-refined grid is neither: it is part cell masses and part
+    # design, and says so rather than passing for a density grid. What it
+    # REPORTS is still the weighted quantile -- that measured best against a
+    # converged reference in both design_mass regimes, see
+    # `.nl_summary_quantile` -- so naming the support changes what the fit can
+    # tell a caller, not the numbers.
     prov <- .nl_interval_provenance(integration_used, res$weight_kind,
                                     res$weights)
     res$theta_interval_read        <- prov$read
@@ -1582,11 +1582,11 @@
     fixed <- .joint_fixed_layout(responses)
     res <- .nl_skew_correction_attach(res, fixed$n_fixed, skew_correct)
     tm$mark("diagnostics")
-    # Per-cell fixed-effect mode + precision for the grid marginalization
-    # (gcol33/tulpa#305). Local-CCD refinement invalidates the stored cells, so
-    # a fit it engaged on records that reason instead.
+    # Per-cell fixed-effect mode + precision for the grid marginalization.
+    # Local-CCD refinement invalidates the stored cells, so a fit it engaged on
+    # records that reason instead.
     res <- .joint_finalize_grid_fixed(res, fixed$n_fixed, keep_grid_hessians)
-    # Subspace debias (gcol33/tulpa#306), over the settled grid, through the
+    # Subspace debias, over the settled grid, through the
     # same `call_kernel` the skew probe and the Pareto-k batch re-dispatch with.
     res <- .nl_subspace_debias_attach(
         res, subspace_debias,
@@ -1596,7 +1596,7 @@
                                                         arm_names),
             debias = req)),
         p_fixed = fixed$n_fixed, beta_names = fixed$names)
-    # Corrected integrated Laplace (gcol33/tulpa#351), over the same settled
+    # Corrected integrated Laplace, over the same settled
     # grid and through the same `call_kernel`.
     res <- .nl_cila_attach(
         res, cila,
@@ -1813,7 +1813,7 @@
     # axis, not just alpha.
     # Supplied whatever the support: a moment rule needs the domain to form its
     # interval at all, and a density read needs it to place its outer cell edges
-    # inside the quantity's own support (gcol33/tulpa#369).
+    # inside the quantity's own support.
     domains <- .joint_axis_domains(list(theta_grid = joint_grid,
                                         axis_offsets = axis_offsets,
                                         blocks = prepared))

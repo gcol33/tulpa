@@ -68,7 +68,7 @@ LaplaceResult spec_inner_solve(
     // correct by Metropolis, selected from a previous solve's inner-layer
     // bands. nullptr or empty leaves the solve untouched.
     const SubspaceDebiasOptions* debias = nullptr,
-    // Corrected integrated Laplace (inner_cila.h, gcol33/tulpa#351), with the
+    // Corrected integrated Laplace (inner_cila.h), with the
     // per-cell stream key. nullptr or a zero point count leaves the solve
     // untouched.
     const CilaOptions* cila = nullptr,

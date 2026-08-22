@@ -1,6 +1,6 @@
 // inner_laplace_is.h
 //
-// Inner-Laplace importance k-hat (gcol33/tulpa#303): the likelihood-agnostic
+// Inner-Laplace importance k-hat: the likelihood-agnostic
 // reliability number for the inner layer.
 //
 // WHAT IT SCORES. The inner Gaussian at a fixed theta IS an importance

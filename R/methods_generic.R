@@ -146,7 +146,7 @@
 # Components: `mu` / `var` are n_kept x p (a row is one cell), `w` the matching
 # cell weights. A mean and a variance are linear functionals of the mixture and
 # survive the collapse to one Gaussian; a quantile does not, which is why the
-# components are kept rather than only the moments (gcol33/tulpa#336).
+# components are kept rather than only the moments.
 #
 # mu_g / V_g are the per-grid fixed-effect mode / covariance retained under
 # keep_grid_hessians (V_g = solve(grid_hessians[[g]])); w_g are the normalized
@@ -154,7 +154,7 @@
 #
 # One marginalizer for every nested tier: `tulpa_nested_laplace()` fills the
 # pair from its own per-cell precision, and both `tulpa_nested_laplace_joint()`
-# paths fill it through `.joint_attach_grid_fixed()` (gcol33/tulpa#305).
+# paths fill it through `.joint_attach_grid_fixed()`.
 #
 # A cell with zero integration weight contributes nothing to either moment, so
 # it is skipped rather than multiplied in -- a pruned cell that carries no
@@ -165,7 +165,7 @@
 # dropped positive-weight cell gives exactly the moments of a grid that never
 # held it, and the mass it carried is gone rather than redistributed back into
 # the answer. Without the renormalization a dropped positive-weight cell shrinks
-# the mean toward the origin by exactly the dropped mass (gcol33/tulpa#342).
+# the mean toward the origin by exactly the dropped mass.
 #
 # `mass` is the ORIGINAL retained share of the grid weight -- 1 on a complete
 # grid, less on one that dropped a positive-weight cell -- so a reader can tell
@@ -221,7 +221,7 @@
 # -- the solver's own record of where it stopped, which the warm-start chain and
 # the refinement passes need -- and that vector is not an estimate of anything.
 # Every report that AVERAGES per-cell modes gates on this so the raw start
-# cannot surface as a coefficient (gcol33/tulpa#344).
+# cannot surface as a coefficient.
 #
 # A fit carrying no convergence flag answers "all readable": an absent flag is a
 # backend that does not report one, not evidence of a stalled solve.
@@ -301,8 +301,8 @@
       est <- mom$mean[idx]
       se  <- sqrt(pmax(diag(mom$cov)[idx], 0))
       # The bounds invert the Gaussian mixture the grid defines rather than
-      # reading them off the collapsed Gaussian (gcol33/tulpa#336), except on a
-      # fit carrying the #302 skew correction, which keeps the MAP-cell read it
+      # reading them off the collapsed Gaussian, except on a
+      # fit carrying the skew correction, which keeps the MAP-cell read it
       # was measured on. `.nl_fixed_interval()` owns that choice and reports
       # which read ran; `applied` travels with the table so the reporting
       # methods can say which coefficients were skew-corrected.
@@ -323,8 +323,7 @@
     # inner solve reached a mode. A stalled cell reports the vector its Newton
     # started from, so averaging it in reports a number that estimates nothing;
     # with no readable cell left the estimate is NA and `interval_declined` says
-    # why, which is what makes the non-convergence impossible to read past
-    # (gcol33/tulpa#344).
+    # why, which is what makes the non-convergence impossible to read past.
     n_cell <- nrow(object$modes)
     w_all  <- if (length(object$weights) == n_cell) as.numeric(object$weights)
               else rep(1, n_cell)
@@ -770,7 +769,7 @@ ranef <- function(object, ...) UseMethod("ranef")
 }
 
 # Overlay the random effects the subspace debias sampled onto a
-# Gaussian-mixture per-group table (gcol33/tulpa#314).
+# Gaussian-mixture per-group table.
 #
 # A coordinate the selector pulled into S is moved by the Metropolis sampler at
 # every integration node, and `tulpa_re_cov_nested()` recombines it on the node
@@ -879,7 +878,7 @@ ranef.tulpa_fit <- function(object, ...) {
     p      <- object$n_fixed %||% 0L
     M      <- object$modes
     n_tail <- ncol(M) - p
-    # RE terms carried as `iid` latent blocks (#265) share the latent vector with
+    # RE terms carried as `iid` latent blocks share the latent vector with
     # the field / smoother blocks, so the tail after the fixed block is wider than
     # the RE layout and the exact-width guard below cannot fire. The RE blocks are
     # appended LAST, which is what makes them addressable without knowing any

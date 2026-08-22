@@ -1,6 +1,5 @@
 # =============================================================================
-# subspace_debias.R -- the reliability band as the debias SELECTOR
-# (gcol33/tulpa#304).
+# subspace_debias.R -- the reliability band as the debias SELECTOR.
 #
 # The engine's stated composition is that exact MCMC corrects only the residual
 # directions the deterministic approximation is biased in. Before this the
@@ -316,7 +315,7 @@
 }
 
 # The escalation itself, for a backend that integrates an outer hyperparameter
-# grid (gcol33/tulpa#306). One selector, one recombination, one record.
+# grid. One selector, one recombination, one record.
 #
 # The selector's input is ALREADY on the fit: `control$diagnose_skew` (on by
 # default) re-dispatches the kernel at the fitted MAP cell and attaches
