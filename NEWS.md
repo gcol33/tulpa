@@ -1,5 +1,105 @@
 # tulpa NEWS
 
+## 0.1.5
+
+Behaviour changes, in the order they are most likely to affect a fit.
+
+* **A failed sparse solve is no longer reported as a converged fit** (#510).
+  `SparseCholeskySolver::solve()` was `void` and zero-filled on failure, and
+  every Newton caller tested only that the step was finite -- a zero step is
+  finite and satisfies `max|delta| < tol`, so a null CHOLMOD solve came back as
+  a converged fit with the mode left wherever the iteration happened to be.
+  `solve()` returns a status and fills `NaN`, and the four Newton call sites
+  consume it. `refill_from_dense()` no longer discovers its sparsity pattern
+  from the first Hessian's VALUES, which let a coincidental near-zero in the
+  first cell fix the pattern for every later one; an off-pattern entry now goes
+  to the pattern-drop counter. The two Takahashi entry points validate their
+  documented preconditions and refuse an unusable pivot rather than continuing
+  past it. Consumers linking against the C API: `tulpa_sparse_chol_solve` fills
+  `NaN`, not zero, on a bad handle or a failed solve; no signature or struct
+  layout changed.
+
+* **An exact-NUTS GP, SVC or multiscale-GP fit is now reproducible at a fixed
+  seed** (#587). `nngp_nc_backward`'s range-gradient loop ran a dynamic OpenMP
+  schedule while writing into the slot the thread number names, so the
+  summation order -- and with it the last bits of every draw -- was a property
+  of the run rather than of the data. Two runs of one call at the same seed
+  differed by 5.2e-04. The rows are now cut into contiguous per-thread chunks
+  summed in chunk order. Draws from a multi-threaded fit move once, to a value
+  that no longer depends on the thread schedule.
+
+* **`control$epsilon` is honoured on the SGHMC and SGLD backends** (#576,
+  #577). SGHMC enabled its warmup step-size adapter unconditionally and SGLD
+  never disabled its polynomial decay, so a supplied step size was accepted and
+  then overwritten -- every value produced the same chain. Both adapters now
+  run only when the caller names no step size. A call supplying none is
+  unchanged.
+
+* **`control$n_threads` is refused on the sampler route** rather than accepted
+  and dropped (#587). `OMP_NUM_THREADS` remains the way to cap the team.
+
+* **The negative-binomial Gibbs kernels evaluate an exact density** (#495).
+  Three different `eta` clamps and two probability floors are gone, replaced by
+  the closed form `y*eta - (y + r)*log(1 + exp(eta))`, branch-stable on the
+  sign of `eta`; the clamps could not be made consistent, because the
+  augmentation was drawn at the clamped predictor while the coefficient update
+  solved the conditional the unclamped one defines. Three undocumented
+  magnitude boxes on the coefficients, random effects and their scale are
+  removed, so the chain targets the posterior rather than a truncation of it;
+  the documented dispersion bound stays. With `store_eta = TRUE` the saved
+  linear predictor is the end-of-sweep state, where it was previously one sweep
+  behind the coefficients beside it.
+
+* **Both negative-binomial kernels require an intercept** (#497), where they
+  previously shifted `eta` by a per-sweep constant on a design whose first
+  column is not all-ones, and wrote out of bounds on a zero-column design.
+
+* **The SPDE implicit-difference gradient carries its total-derivative term**
+  (#583). `H` reads the mode through the likelihood curvature, so `log|H|`
+  depends on the hyperparameters twice and the envelope theorem does not cancel
+  the mode's own derivative out of the determinant. It now agrees with its
+  finite difference; it was 5-10% away.
+
+* **Fixed-hyperparameter and sampler-side entry points validate the indices and
+  lengths R hands them** (#500, #503, #504, #516, #521, #522, #529, #532, #556,
+  #559, #562, #564, #566, #569, #570). An out-of-bounds read on the R heap does
+  not crash -- it returns a finite double and the fit stops being a function of
+  its data -- so these are silent-wrong-answer paths, not crashes. Among them:
+  a gradient buffer sized from the wrong argument (an out-of-bounds write), a
+  random-effect group index with no upper bound anywhere, a covariance packer
+  reaching `atanh` on a `NaN` that passed both of its one-sided clamps, and a
+  GLMM oracle that dropped an out-of-range group instead of rejecting it and
+  fitted a subset.
+
+* **A malformed `ModelData` raises instead of returning a log posterior**
+  (#563). One entry point returned `0` and another `-INFINITY`; a zero log
+  posterior is indistinguishable from a valid flat one.
+
+* Areal priors: the ICAR-BYM2 log and square-root sites are guarded, so the
+  double path and its autodiff twin no longer describe different models at the
+  mixing boundary (#485); the areal input validator is wired into the
+  sampler-side ingestion, not only the Laplace entries (#501); and the
+  multi-block BYM2 entry rejects a mixing weight outside the unit interval, as
+  its two sibling entries already did (#532).
+
+* Temporal priors: one stationary floor behind every AR1 arm, including three
+  gradient sites that used a raw factor and so scaled by a negative number past
+  the boundary (#514); the temporal-GP centered and non-centered branches read
+  one conditional variance (#499).
+
+* GPU: the batched triangular solves read the wrong triangle and computed only
+  the diagonal inverse (#478); device information is enumerated rather than
+  reported from placeholders (#480). Unverified at runtime -- no CUDA device
+  was available -- and the affected entry points have no production caller.
+
+* SVC: one prior on the marginal standard deviation across both bases, where
+  the Hilbert-space branch previously selected a different prior from the basis
+  flag (#487).
+
+* Documentation: `gcol33/tulpa#NNN` references are removed from code comments
+  and roxygen (#575), and eight comments describing code that is no longer
+  there are corrected (#568, #574, #525, #537).
+
 ## 0.1.4
 
 * **The NUTS metric is reachable from the sampler front door** (#545).
