@@ -1036,6 +1036,18 @@ inline bool family_has_compiled_impl(const std::string& code) {
     return mu_space_family_supported(parse_family_link(code).family);
 }
 
+// The two families whose closed forms read a per-observation BOUND rather than
+// the point response: interval_gaussian takes (lower, upper], truncated_gaussian
+// takes the ceiling. Both have compiled log-density, score and curvature
+// (log_lik_/grad_hess_interval_gaussian and their truncated counterparts), but
+// neither has a mu-space parameterisation -- the bound, not mu, is what the
+// density is a function of -- so family_has_compiled_impl(), which asks the
+// mu-space ladder, answers false for them. A caller that reaches the closed
+// forms through the response payload's bound arrays asks this instead.
+inline bool family_reads_response_bounds(const std::string& code) {
+    return code == "interval_gaussian" || code == "truncated_gaussian";
+}
+
 inline GradHess obs_grad_hess_for_family(
     double y, int n_trials, double eta,
     const std::string& family, double phi,

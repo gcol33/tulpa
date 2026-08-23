@@ -118,6 +118,24 @@ struct BuiltinFamilyResponse {
             Rcpp::stop("family 'tweedie' needs phi2 (the variance power p); "
                        "the likelihood carries none.");
         }
+        // Same hoist for the bound-reading families. Their closed forms are
+        // reached by the callbacks' `bound pointer && family` branches; a
+        // payload carrying no bound falls past those into the mu-space ladder,
+        // which does not carry these families and raises from inside the
+        // reduction. The bound is what the density is a function of, so its
+        // absence is a construction error either way -- named here rather than
+        // as an unrelated dispatch failure.
+        if (family_reads_response_bounds(family)) {
+            const bool have = (family == "truncated_gaussian")
+                ? (trunc_upper != nullptr)
+                : (lower != nullptr && upper != nullptr);
+            if (!have) {
+                Rcpp::stop("family '%s' needs its per-observation bound(s) on "
+                           "the response (`trunc_upper` for truncated_gaussian, "
+                           "`lower` / `upper` for interval_gaussian); the "
+                           "likelihood carries none.", family.c_str());
+            }
+        }
         // Ahead of the early return: the AD ladder dispatches on ad_kind for
         // any response it is handed, including one carrying no y array.
         ad_kind = ad_family_kind(family);
@@ -263,7 +281,12 @@ inline LikelihoodSpec builtin_family_spec(const std::string& family,
     // An unregistered family reaches unknown_family_stop from there, and an
     // exception leaving a structured block is std::terminate, so the name is
     // checked here -- on the calling thread, once, at construction.
-    if (!family_has_compiled_impl(family)) {
+    //
+    // Both callbacks below branch on the response payload's bound arrays before
+    // they reach the mu-space ladder, so the bound-reading families are compiled
+    // here even though the ladder does not carry them.
+    if (!family_has_compiled_impl(family) &&
+        !family_reads_response_bounds(family)) {
         unknown_family_stop("builtin_family_spec", family);
     }
     LikelihoodSpec spec;
