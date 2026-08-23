@@ -87,13 +87,10 @@ test_that("log1m_exp is accurate on both sides of its split", {
 test_that("no Rmath call survives on the family parallel path", {
     # The swap is only as good as its coverage: a reintroduced R::lgammafn in
     # either family header puts an R error path back inside the reduction.
-    src <- c(
-        readLines(testthat::test_path("..", "..", "src", "laplace_family_link.h"),
-                  warn = FALSE),
-        readLines(testthat::test_path("..", "..", "src",
-                                      "laplace_family_curvature.h"),
-                  warn = FALSE)
-    )
-    skip_if(length(src) == 0, "sources not available (installed-package run)")
+    hdr <- testthat::test_path("..", "..", "src",
+                               c("laplace_family_link.h",
+                                 "laplace_family_curvature.h"))
+    skip_if_not(all(file.exists(hdr)), "package sources not available")
+    src <- unlist(lapply(hdr, readLines, warn = FALSE))
     expect_equal(grep("R::", src, fixed = TRUE, value = TRUE), character(0))
 })
