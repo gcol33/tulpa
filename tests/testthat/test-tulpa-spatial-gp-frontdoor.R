@@ -58,10 +58,20 @@ test_that("mode = nested_laplace integrates an NNGP field through tulpa()", {
   w  <- fit$weights
   bm <- do.call(rbind, lapply(fit$grid_modes, function(m) m[1:2]))
   beta_hat <- as.numeric(crossprod(w, bm))
-  # The NNGP field has no sum-to-zero constraint, so the intercept aliases with
-  # the field's overall level -> wider band by construction; the slope is clean.
-  expect_lt(abs(beta_hat[1] - s$beta[1]), 0.5)   # intercept
-  expect_lt(abs(beta_hat[2] - s$beta[2]), 0.3)   # slope
+
+  # The NNGP field carries no sum-to-zero constraint, so the intercept alone is
+  # NOT identified: the field absorbs an arbitrary level and the intercept
+  # takes the rest. What the data pins is the sum, and the simulator centers the
+  # true field, so `beta0 + mean(field)` estimates beta[1] directly.
+  #
+  # Measured over 14 seeds: the intercept alone drifts by mean +0.21 (sd 0.30,
+  # max 0.69) and its error tracks the negative of the fitted field level almost
+  # exactly, while the sum sits at mean +0.03 (sd 0.08, max 0.17). A band on the
+  # intercept alone is therefore a seed lottery -- 0.5 fails on 4 of those 14 --
+  # and the sum is the quantity worth a tight one.
+  field_level <- sum(w * rowMeans(fit$modes[, -(1:2), drop = FALSE]))
+  expect_lt(abs((beta_hat[1] + field_level) - s$beta[1]), 0.25)  # identified level
+  expect_lt(abs(beta_hat[2] - s$beta[2]), 0.3)                   # slope
 })
 
 test_that("mode = laplace fits a GP field alongside a (1 | g) RE term (issue #74)", {

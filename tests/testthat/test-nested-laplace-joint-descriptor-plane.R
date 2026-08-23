@@ -325,25 +325,53 @@ test_that("the plane position does not select which correction a cell wants", {
 
   # The colour is PER PART: the three parts of the read disagreed on the winner
   # for the whole grid in gcol33/tulpa#327 and they disagree per cell here too.
-  # Measured over the 144-fit sweep, the best label per quadrant buys nothing
-  # over the single best label overall: the gain is exactly +0.0000 in 23 of the
-  # 30 scored combinations (three `R_L` variants x two resolvability gates x the
-  # parts with enough resolved cells) and never exceeds +0.0256. A 3 x 3 tercile
-  # partition instead of the 2 x 2 median split does not help either (largest
-  # gain +0.0408, on 98 cells).
+  # Over the sweep the best label per quadrant buys nothing over the single best
+  # label overall: the gain is exactly +0.0000 in 8 of the 12 scored
+  # combinations (three `R_L` variants x two resolutions x the parts with enough
+  # resolved cells).
+  #
+  # `gain` is scored IN SAMPLE -- the per-quadrant argmax is read off the same
+  # cells -- so its null is not 0 and it grows as the stratum shrinks: four
+  # quadrants over 29 resolved cells is ~7 cells per bin, where picking the best
+  # label in each bin buys ~0.09 from noise alone and the null's 95th percentile
+  # is 0.1724. A fixed ceiling cannot separate that from signal at one n and be
+  # meaningful at another, so each gain is scored against ITS OWN permutation
+  # null (quadrant labels shuffled, winners held). Measured: the largest gain,
+  # 0.1724 on `widths` at four levels, sits at p = 0.11, and its two siblings at
+  # p = 0.33 and 0.44 -- the plane carries nothing there. The only nominally
+  # small p is `median` at five levels (gain 0.0112, p = 0.034), which is an
+  # eighth the size of the four-level gains and does not survive twelve
+  # simultaneous tests.
   #
   # What the plane does carry is a shift in the MIX -- the median plane's
   # contingency is significant at both resolutions (p < 1e-4, Cramer V 0.2078 /
   # 0.1882) -- but the argmax is the same in every quadrant, which is what a
   # per-cell rule would have to move.
+  gain_at <- function(q, wins) {
+    tb <- table(q, wins)
+    sum(apply(tb, 1L, max)) / sum(tb) - max(table(wins)) / length(wins)
+  }
+  set.seed(327L)
+  n_perm <- 999L
+  scored <- 0L
   for (p in names(OGD_PARTS)) for (lv in c(4L, 5L)) {
     s <- D[D$levels == lv, ]
+    s <- s[s[[paste0("win_", p)]] != "unresolved", , drop = FALSE]
+    if (nrow(s) < 20L) next
+    wins <- s[[paste0("win_", p)]]
     for (rl in c("R_L", "R_L_max", "R_L_A")) {
-      g <- .dp_quad_gain(s, p, rl)
-      if (is.null(g)) next
-      expect_lt(g$gain, 0.10)
+      q <- .dp_quad(s, rl)
+      obs <- gain_at(q, wins)
+      null <- replicate(n_perm, gain_at(sample(q), wins))
+      scored <- scored + 1L
+      # Bonferroni over the twelve scored combinations at a family alpha of
+      # 0.05. A plane that genuinely selected the correction would clear this
+      # on the strata where the grid resolves the question, not miss it on all
+      # twelve.
+      expect_gt(mean(null >= obs), 0.05 / 12)
     }
   }
+  expect_identical(scored, 12L)
 
   # And the winner is dominated by one label wherever the grid resolves the
   # question at all. At four levels that label is `both` on all three parts
