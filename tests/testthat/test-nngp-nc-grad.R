@@ -151,10 +151,19 @@ test_that("the sigma2 gradient tracks the nugget across coordinate arities", {
   inv <- integer(d$N); inv[order0 + 1L] <- seq_len(d$N) - 1L
   set.seed(11)
   z <- rnorm(d$N); a <- rnorm(d$N)
-  res <- cpp_test_svc_nngp_nc_grad(
+  run <- function(eps) cpp_test_svc_nngp_nc_grad(
     z = z, log_sigma2 = log(0.4), log_phi = log(0.6), a = a,
     coords = flat, nn_idx = ni$nn_idx, nn_dist = ni$nn_dist,
-    nn_order = order0, nn_order_inv = inv, cov_type = 1L, fd_eps = 1e-6)
+    nn_order = order0, nn_order_inv = inv, cov_type = 1L, fd_eps = eps)
+  # The central difference trades truncation against cancellation, and on this
+  # fixture its error is smallest near 1e-4: an order of magnitude either side
+  # costs one to three digits, so the step the gradient is scored against is
+  # the one where the reference itself is accurate. The spread across the
+  # neighbouring steps says the reference has settled before it is used.
+  res <- run(1e-4)
+  fd <- vapply(c(1e-3, 1e-4, 1e-5),
+               function(e) run(e)$grad_log_sigma2_fd, numeric(1))
+  expect_lt(max(abs(fd - fd[2])) / abs(fd[2]), 1e-6)
   expect_equal(res$grad_log_sigma2, res$grad_log_sigma2_fd, tolerance = 1e-7)
   expect_equal(res$grad_log_phi, res$grad_log_phi_fd, tolerance = 1e-7)
   expect_equal(res$grad_z, res$grad_z_fd, tolerance = 1e-7)
