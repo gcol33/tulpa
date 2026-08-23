@@ -32,10 +32,15 @@ tulpa_nested_laplace(
 Type-specific fields:
 \itemize{
 \item icar:  \code{spatial_idx}, \code{n_spatial_units}, \code{adj_row_ptr}, \code{adj_col_idx},
-\code{n_neighbors} (CSR adjacency, 0-based); optional \code{tau_grid};
-optional \code{svc_weight} (one weight per observation) to make it a
-spatially-varying coefficient whose eta contribution is
-\code{svc_weight[i] * z[spatial_idx[i]]} rather than \code{z[spatial_idx[i]]}.
+\code{n_neighbors} (CSR adjacency, 0-based); optional \code{tau_grid}.
+}
+
+Any block accepts an optional \code{svc_weight}, one weight per observation,
+which makes it a varying coefficient: observation \code{i} contributes
+\code{svc_weight[i] * f_i} instead of \code{f_i}, where \code{f_i} is the block's field
+at that row (\code{z[spatial_idx[i]]} for an areal block, \verb{(A u)_i} for an
+SPDE one). Absent, the field enters unweighted.
+\itemize{
 \item bym2:  same adjacency; \code{scale_factor}; optional \code{sigma_grid}, \code{rho_grid}.
 \item car_proper: same adjacency; optional \code{tau_grid}, \code{rho_grid},
 \code{rho_bounds = c(lower, upper)} (defaults to (0, 1)).

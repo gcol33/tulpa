@@ -98,9 +98,9 @@
           // directions in the block by three to four orders of magnitude and
           // are linear combinations rather than coordinates, so this is the
           // part of the geometry no diagonal metric reaches
-          // (gcol33/tulpa#597). The trend family rides the same term wherever
+          //. The trend family rides the same term wherever
           // the penalty carries one, since a metric spanning less than the
-          // penalty leaves a residual that grows with tau (gcol33/tulpa#600).
+          // penalty leaves a residual that grows with tau.
           // Rebuilt every window because set_diagonal() above drops the
           // previous term along with the diagonal it was built against.
           if (st_gmrf_margin_mass) {

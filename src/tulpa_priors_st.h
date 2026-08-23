@@ -106,8 +106,8 @@ T st_kronecker_temporal_quad(const std::vector<T>& delta, const ModelData& data,
 // re-derived here so the density, the matrix form and the mass override read
 // one predicate. Under a non-cyclic RW2 marginal the row and column sums span
 // S + T - 1 of the kernel's T + 2S - 2 dimensions, and the third family is the
-// S - 1 that would otherwise carry no prior curvature at all (st_null_space.h,
-// gcol33/tulpa#600). v is centred, so it is orthogonal to the row sums and
+// S - 1 that would otherwise carry no prior curvature at all
+// (st_null_space.h). v is centred, so it is orthogonal to the row sums and
 // adds nothing where the kernel is the constants alone.
 template<typename T>
 T st_sum_to_zero_penalty(const std::vector<T>& delta, int S, int T_st,

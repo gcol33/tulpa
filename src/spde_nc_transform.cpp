@@ -215,7 +215,7 @@ SpdeNcTransform::SpMat SpdeNcTransform::build_Q(double k2_eff, double tau) const
     // the cross terms k2 (C D G + G D C) entirely, so the non-centered
     // assembly and the Laplace one disagreed on exactly the orphan's row and
     // column, by tau^2 * 2 k2 * G[j, .] -- which is the disagreement the orphan
-    // ridge exists to prevent (gcol33/tulpa#590).
+    // ridge exists to prevent.
     //
     // It also makes the hyper derivatives exact rather than approximately so:
     // d(k2^2)/dlog_kappa = 4 k2^2 and d(2 k2)/dlog_kappa = 4 k2 give

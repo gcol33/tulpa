@@ -2,7 +2,7 @@
 // Test-only CellCouplingSpec that reads the two pieces of the batched
 // CellResponse surface no other in-repo spec touches: the per-species
 // dispersion `phi(k, s)` and the per-row trial count `n_trials(k, j)`
-// (gcol33/tulpa#592, gcol33/tulpa#591).
+//.
 //
 // The batched driver lays the dispersion table as `buf.phi[k * n_batch + s]`
 // and its two readers re-key it independently -- the fused scatter builds

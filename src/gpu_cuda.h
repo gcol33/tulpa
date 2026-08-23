@@ -260,7 +260,7 @@ public:
   // `initialized_ == false`, both run `load_libraries()` / `load_functions()`
   // -- which write the library handles and function pointers this object hands
   // out -- and `cuInit_` is called twice. `instance()`'s static is already
-  // thread-safe to CONSTRUCT; that says nothing about this (gcol33/tulpa#393).
+  // thread-safe to CONSTRUCT; that says nothing about this.
   //
   // Latent rather than live at the time of writing: every entry that can build
   // an NNGP block passes `n_threads_outer = 1` as a hardcoded literal, and the

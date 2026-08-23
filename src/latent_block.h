@@ -174,9 +174,10 @@ struct LatentBlock {
     // d_fac(k_grid) directly). The single-arm driver does not call arm_scale.
     std::function<double(int /*k_arm*/, int /*k_grid*/)> arm_scale;
 
-    // Per-arm per-row design weight on the block's eta contribution (joint
-    // driver, INDEXED_SINGLE only). Multiplied into the block-local weight of
-    // observation i in arm k_arm, so its eta contribution becomes
+    // Per-arm per-row design weight on the block's eta contribution, read on
+    // every contribution kind by every walker through block_row_weight() below.
+    // Multiplied into the block-local weight of observation i in arm k_arm, so
+    // its eta contribution becomes
     //   eta_i += arm_scale(k_arm, k_grid) * d_fac(k_grid)
     //            * row_weight(i, k_arm) * x[start + idx(i, k_arm) - 1].
     // This is the areal-block analogue of the HSGP `svc_column` row-scaling:
@@ -224,14 +225,13 @@ struct LatentBlock {
 
     // ----- Sparse-builder fields -----
     //
-    // Every existing factory defaults to INDEXED_SINGLE + ADJACENCY, matching
-    // the historical block registry shape (one block-local DOF per obs, sparse
-    // adjacency-graph prior). Factories for SPDE / HSGP / NNGP / latent
-    // factors / tgmrf override these in Stage 1.3.
+    // The defaults describe an areal block: one block-local DOF per
+    // observation, reached through `idx`, with a sparse adjacency-graph prior.
+    // The SPDE / HSGP / NNGP / latent-factor / tgmrf factories set their own.
     //
-    // The dense `add_prior` field above is kept as the legacy path used by the
-    // dense fallback (n_x < SPARSE_THRESHOLD). `add_prior_sparse` below is the
-    // new path used at scale. Both must agree on values when both are present.
+    // `add_prior` above is the dense route, taken when n_x < SPARSE_THRESHOLD;
+    // `add_prior_sparse` below is the sparse one. Both must agree on values
+    // when both are present.
 
     BlockContribKind contrib_kind = BlockContribKind::INDEXED_SINGLE;
     PriorFillKind    prior_kind   = PriorFillKind::ADJACENCY;
@@ -258,7 +258,7 @@ struct LatentBlock {
         basis_eval;
 
     // DENSE_BASIS only. Batched view of the per-arm basis matrix for the
-    // SYRK / GEMM scatter path (Stage 2.1).
+    // SYRK / GEMM scatter path.
     //
     //   data           : row-major (N_k * m_per_arm) buffer of the RAW basis
     //                    Phi_k (NOT pre-scaled by sqrt_S); the scatter helper
@@ -283,7 +283,7 @@ struct LatentBlock {
     // solve.
     //
     // Optional: when this callback is empty the per-obs `basis_eval` path is
-    // used (current behavior pre-Stage 2.1). Both should agree on values.
+    // used instead. Both must agree on values.
     struct DenseBasisBatch {
         const double* data              = nullptr;
         const double* sqrt_S            = nullptr;
@@ -342,6 +342,41 @@ inline bool blocks_require_sparse(const std::vector<LatentBlock>& blocks) {
         if (b.add_prior_sparse && !b.add_prior) return true;
     }
     return false;
+}
+
+// The block's per-row design weight at observation i on arm k_arm, 1 where the
+// block declares none. Every walker over the block list reads it through this
+// one accessor: a weighted block whose contribution kind is INDEXED_MULTI or
+// DENSE_BASIS is as weighted as an INDEXED_SINGLE one, and a walker that read
+// the member on one branch only would fit the unweighted model with nothing to
+// say so.
+inline double block_row_weight(const LatentBlock& blk, int i, int k_arm) {
+    return blk.row_weight ? blk.row_weight(i, k_arm) : 1.0;
+}
+
+// Which convention each block's reported field follows.
+//
+// TRUE where the block carries a post-hoc centerer: its levels are reported
+// sum-to-zero, with the constant that was removed folded into an intercept, so
+// the field and the intercept are a different split of the same eta. FALSE
+// where the field is reported as the Newton mode found it.
+//
+// The rule is the prior's rank. An intrinsic prior (ICAR, BYM2's structured
+// component, RW1 / RW2) has a null direction that the data cannot identify
+// against the intercept, and centering picks the representative of it; a
+// full-rank prior (proper CAR, AR1, IID) has none, so there is nothing to
+// choose and the mode is reported unmoved. Recorded on the fit rather than
+// left to be inferred from the block type, so comparing two fits of the same
+// field -- a copy block against a non-copy one, a temporal field against a
+// spatial one -- does not silently compare two splits.
+inline Rcpp::LogicalVector block_center_flags(
+    const std::vector<LatentBlock>& blocks
+) {
+    Rcpp::LogicalVector out((R_xlen_t)blocks.size());
+    for (std::size_t b = 0; b < blocks.size(); b++) {
+        out[(R_xlen_t)b] = static_cast<bool>(blocks[b].center);
+    }
+    return out;
 }
 
 } // namespace tulpa

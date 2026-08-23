@@ -67,6 +67,7 @@
 #include "nested_laplace_joint_core.h"
 #include "nested_laplace_joint_multi.h"
 #include "unit_precision_block.h"
+#include "car_proper_block.h"
 #include "nested_laplace_joint_batch.h"   // fused batched scatter
 #include "sparse_hessian.h"
 #include "hsgp_block_factory.h"
@@ -775,131 +776,50 @@ int build_joint_blocks_from_spec(
         check_adjacency(adj_rp, adj_ci, n_nbr, size);
         int start = latent_offset;
 
-        auto adj_rp_v = std::make_shared<std::vector<int>>(adj_rp.begin(), adj_rp.end());
-        auto adj_ci_v = std::make_shared<std::vector<int>>(adj_ci.begin(), adj_ci.end());
-        auto n_nbr_v  = std::make_shared<std::vector<int>>(n_nbr.begin(),  n_nbr.end());
-        // Per-cell log|Q(rho)| cache (nl_cell_cache.h):
-        // block.prep runs lock-free in the parallel joint grid driver, so a
-        // shared scalar would race a concurrent cell's log_prior read. prep
-        // publishes the cell's value; log_prior finds it by cell id, which
-        // stays correct even when the reader runs on a stolen-task thread.
-        auto log_det_Q_rho =
-            std::make_shared<tulpa::NlCellCache<double>>();
-
         tulpa::LatentBlock block;
         block.start = start;
         block.size  = size;
         block.idx   = make_per_arm_idx_fn(spatial_idx_list, n_arms,
                                             "spatial_idx", block_index, arms_ptr);
         block.row_weight = make_per_arm_row_weight_fn(bs, n_arms, block_index, arms_ptr);
+        block.d_fac = [](int) -> double { return 1.0; };
 
+        // The two branches differ only in which theta_grid columns carry the
+        // cell's (tau, rho) and in how the per-arm amplitude is applied; the
+        // five prior callbacks are the shared proper-CAR set. Neither centers:
+        // Q is full rank, so the field carries no null direction to identify
+        // against the intercept, and `block_centered` on the fit reports that.
+        int axis_rho_car;
         if (is_copy_block) {
             require_axes(3);  // (sigma_donor, sigma_copy, rho_car)
-            block.d_fac = [](int) -> double { return 1.0; };
+            // tau = 1: the donor / copy amplitudes ride arm_scale instead.
+            axis_rho_car = axis0 + 2;
             block.arm_scale = make_copy_arm_scale_fn(
                 copy_arm, axis0, axis0 + 1, theta_grid, arms_ptr);
-            int axis_rho_car = axis0 + 2;
-            block.prep = [size, axis_rho_car, theta_grid,
-                           adj_rp_v, adj_ci_v, n_nbr_v, log_det_Q_rho](
-                int k_grid) -> bool {
-                double rho_car = theta_grid(k_grid, axis_rho_car);
-                std::vector<double> Qmat = tulpa_car_proper::compute_car_precision(
-                    size, *adj_rp_v, *adj_ci_v, *n_nbr_v, rho_car);
-                double ld_val = tulpa_car_proper::car_log_det(size, Qmat);
-                log_det_Q_rho->claim() = ld_val;
-                log_det_Q_rho->publish(k_grid);
-                return std::isfinite(ld_val);
-            };
-            block.add_prior = [start, size, axis_rho_car, theta_grid,
-                                adj_rp, adj_ci, n_nbr](
-                tulpa::DenseVec& grad, tulpa::DenseMat& H,
-                const Rcpp::NumericVector& x, int k_grid) {
-                tulpa::add_car_proper_prior(grad, H, x, start, size,
-                                             /*tau=*/1.0,
-                                             theta_grid(k_grid, axis_rho_car),
-                                             adj_rp, adj_ci, n_nbr);
-            };
-            block.add_prior_sparse = [start, size, axis_rho_car, theta_grid,
-                                       adj_rp, adj_ci, n_nbr](
-                tulpa::SparseHessianBuilder& H, tulpa::DenseVec& grad,
-                const Rcpp::NumericVector& x, int k_grid) {
-                tulpa::add_car_proper_prior_sparse(
-                    grad, H, x, start, size,
-                    /*tau=*/1.0,
-                    theta_grid(k_grid, axis_rho_car),
-                    adj_rp, adj_ci, n_nbr);
-            };
-            block.log_prior = [start, size, axis_rho_car, theta_grid,
-                                adj_rp, adj_ci, n_nbr, log_det_Q_rho](
-                const Rcpp::NumericVector& x, int k_grid) -> double {
-                return tulpa::log_prior_car_proper(
-                    x, start, size, /*tau=*/1.0,
-                    theta_grid(k_grid, axis_rho_car),
-                    log_det_Q_rho->find(k_grid),
-                    adj_rp, adj_ci, n_nbr);
-            };
-            // Proper CAR has a full-rank Q, so the field carries no null
-            // direction to identify and nothing is centered. Same rule on the
-            // non-copy branch below and on ar1.
+            tulpa::set_car_proper_block_priors(
+                block, start, size,
+                [](int) { return 1.0; },
+                [theta_grid, axis_rho_car](int k) {
+                    return theta_grid(k, axis_rho_car);
+                },
+                adj_rp, adj_ci, n_nbr);
         } else {
             require_axes(2);  // (tau, rho_car) - single-arm conventions
-            block.d_fac = [](int) -> double { return 1.0; };
-            int axis_tau     = axis0;
-            int axis_rho_car = axis0 + 1;
-            block.prep = [size, axis_rho_car, theta_grid,
-                           adj_rp_v, adj_ci_v, n_nbr_v, log_det_Q_rho](
-                int k_grid) -> bool {
-                double rho_car = theta_grid(k_grid, axis_rho_car);
-                std::vector<double> Qmat = tulpa_car_proper::compute_car_precision(
-                    size, *adj_rp_v, *adj_ci_v, *n_nbr_v, rho_car);
-                double ld_val = tulpa_car_proper::car_log_det(size, Qmat);
-                log_det_Q_rho->claim() = ld_val;
-                log_det_Q_rho->publish(k_grid);
-                return std::isfinite(ld_val);
-            };
-            block.add_prior = [start, size, axis_tau, axis_rho_car, theta_grid,
-                                adj_rp, adj_ci, n_nbr](
-                tulpa::DenseVec& grad, tulpa::DenseMat& H,
-                const Rcpp::NumericVector& x, int k_grid) {
-                tulpa::add_car_proper_prior(grad, H, x, start, size,
-                                             theta_grid(k_grid, axis_tau),
-                                             theta_grid(k_grid, axis_rho_car),
-                                             adj_rp, adj_ci, n_nbr);
-            };
-            block.add_prior_sparse = [start, size, axis_tau, axis_rho_car,
-                                       theta_grid, adj_rp, adj_ci, n_nbr](
-                tulpa::SparseHessianBuilder& H, tulpa::DenseVec& grad,
-                const Rcpp::NumericVector& x, int k_grid) {
-                tulpa::add_car_proper_prior_sparse(
-                    grad, H, x, start, size,
-                    theta_grid(k_grid, axis_tau),
-                    theta_grid(k_grid, axis_rho_car),
-                    adj_rp, adj_ci, n_nbr);
-            };
-            block.log_prior = [start, size, axis_tau, axis_rho_car, theta_grid,
-                                adj_rp, adj_ci, n_nbr, log_det_Q_rho](
-                const Rcpp::NumericVector& x, int k_grid) -> double {
-                return tulpa::log_prior_car_proper(
-                    x, start, size, theta_grid(k_grid, axis_tau),
-                    theta_grid(k_grid, axis_rho_car),
-                    log_det_Q_rho->find(k_grid),
-                    adj_rp, adj_ci, n_nbr);
-            };
-            // Full-rank Q: the field mean is identified by the prior, so
-            // centering would be a reparameterization that reports a point
-            // other than the Newton mode. Centering is reserved for the
-            // intrinsic blocks (icar, bym2's structured component, rw1 / rw2),
-            // whose null direction has to be pinned somewhere.
+            const int axis_tau = axis0;
+            axis_rho_car = axis0 + 1;
+            tulpa::set_car_proper_block_priors(
+                block, start, size,
+                [theta_grid, axis_tau](int k) { return theta_grid(k, axis_tau); },
+                [theta_grid, axis_rho_car](int k) {
+                    return theta_grid(k, axis_rho_car);
+                },
+                adj_rp, adj_ci, n_nbr);
             if (any_nontrivial_field_coef) {
                 block.arm_scale = make_field_coef_arm_scale_fn(arms_ptr);
             }
         }
         block.contrib_kind = tulpa::BlockContribKind::INDEXED_SINGLE;
         block.prior_kind   = tulpa::PriorFillKind::ADJACENCY;
-        block.add_prior_pattern = [start, size, adj_rp, adj_ci](
-            std::vector<std::pair<int,int>>& out) {
-            tulpa::add_car_pattern(out, start, size, adj_rp, adj_ci);
-        };
         blocks.push_back(block);
         return start + size;
     }
@@ -1553,8 +1473,9 @@ Rcpp::List cpp_nested_laplace_joint_multi(
     std::vector<int> tile_ids_vec;
     if (tile_ids.isNotNull()) {
         Rcpp::IntegerVector iv(tile_ids);
-        // Empty IntegerVector is interpreted as "no tiles" and falls back
-        // to Phase 1 (single-tier) behaviour inside run_nested_laplace_grid.
+        // Empty IntegerVector is interpreted as "no tiles": every cell is
+        // then warm-started from the single global pilot inside
+        // run_nested_laplace_grid.
         if (iv.size() > 0) {
             if (iv.size() != n_grid) {
                 Rcpp::stop("tile_ids must have length n_grid (%d), got %d.",
@@ -1709,8 +1630,9 @@ Rcpp::List cpp_nested_laplace_joint_multi(
         cila_ptr,
         inner_sparse_override
     );
-    out["theta_grid"]   = theta_grid;
-    out["axis_offsets"] = axis_offsets;
+    out["theta_grid"]      = theta_grid;
+    out["axis_offsets"]    = axis_offsets;
+    out["block_centered"]  = tulpa::block_center_flags(blocks);
     return out;
 }
 
@@ -2132,7 +2054,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
         Rcpp::stop("parsed and arms vectors must have the same length.");
     }
 
-    // Cell-coupling setup (Layer B.1). Resolve the spec's coupled-arm
+    // Cell-coupling setup. Resolve the spec's coupled-arm
     // set, validate it agrees with the per-arm `coupled` flags, and
     // invert each coupled arm's `cell_obs_map` into per-cell row lists
     // once for the whole fit.
@@ -2553,10 +2475,10 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
     // slot 0, size a memory guard from its nnz, clamp the outer width, then
     // REPLICATE slot 0 across every remaining full-solve and cheap-pass slot by
     // copy. The pattern enumeration + dedup is the dominant pre-grid cost at EVA
-    // scale and was previously redone for every outer thread AND every cheap
-    // worker -- 2 x n_outer full rebuilds, all serial, so a wide coupled field
-    // (e.g. occu_cover's 3-arm cell-coupled fields) spent minutes
-    // single-threaded before the parallel grid even started.
+    // scale, all of it serial, so building it once per outer thread and once per
+    // cheap worker would put minutes of single-threaded work in front of a wide
+    // coupled field (e.g. occu_cover's 3-arm cell-coupled fields) before the
+    // parallel grid started.
     // The pattern is fit-level invariant; a builder copy shares the read-only
     // entry_map (shared_ptr, O(1)) and deep-copies only the per-thread CSC
     // arrays + the mutable `values`, so the copies cost a memcpy rather than a
@@ -2570,21 +2492,21 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
                                   coupled_arms, cell_rows, n_cells); }
     {
         const size_t nnz = H_builders[0].values.size();
-        // Per-thread working set after the build-once + copy refactor: each
-        // builder's own row_idx(int) + values(double) CSC arrays, plus the
-        // CHOLMOD factor each concurrent solve carries. The entry_map (~48 B per
-        // nonzero) is stored ONCE and shared across every builder
-        //, so it no longer scales the per-thread budget.
+        // Per-thread working set: each builder's own row_idx(int) +
+        // values(double) CSC arrays, plus the CHOLMOD factor each concurrent
+        // solve carries. The entry_map (~48 B per nonzero) is stored ONCE and
+        // shared across every builder, so it does not scale with the thread
+        // count.
         const size_t per_builder = nnz * (sizeof(int) + sizeof(double));
         // Measure the factor the inner solve will actually allocate rather than
         // guessing its fill-in: a one-time supernodal symbolic analyze of the
         // joint Hessian pattern (the same as_cholmod view + supernodal
         // cholmod_common the solve uses) yields the true L->x size. 2D-mesh
         // Cholesky fill-in is superlinear (nnz(L) grows faster than nnz(Q)), so
-        // the previous flat 2x-nnz(Q) guess under-counted a fine SPDE field and
-        // let the clamp over-provision outer threads. The analyze is symbolic
-        // (no numeric values needed) and runs once in serial setup. Falls back
-        // to the 2x-nnz estimate only if the analyze produces no factor.
+        // a flat multiple of nnz(Q) under-counts a fine SPDE field and lets the
+        // clamp over-provision outer threads. The analyze is symbolic (no
+        // numeric values needed) and runs once in serial setup. Falls back to a
+        // 2x-nnz estimate only if the analyze produces no factor.
         size_t per_factor;
         {
             SparseCholeskySolver sizing_solver;

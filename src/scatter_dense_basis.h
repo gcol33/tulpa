@@ -1,9 +1,8 @@
 // scatter_dense_basis.h
 // Batched BLAS-3 scatter for DENSE_BASIS LatentBlock contributions.
 //
-// Stage 2.1 of the Stage 2 perf plan. Replaces the per-obs scalar inner
-// loops for HSGP / HSGP-MO / HSGP-SVC. For one arm at one outer-grid cell,
-// scatters:
+// Takes the per-obs scalar inner loops for HSGP / HSGP-MO / HSGP-SVC into
+// BLAS-3 calls. For one arm at one outer-grid cell, scatters:
 //   * H[block, block] += d_eff^2 * Q_k^T diag(neg_hess) Q_k         (SYRK)
 //   * H[block, beta]  += d_eff   * Q_k^T diag(neg_hess) X           (GEMM)
 //   * H[block, RE_g]  += d_eff   * sum_{i in g} neg_hess_i Q_k(i,:) (per-group accumulate)

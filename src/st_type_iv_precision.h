@@ -129,7 +129,7 @@ inline void st_add_qt_entries(TemporalType type, int T, bool cyclic,
 //     + ridge * I
 //
 // The trend family is present exactly where st_needs_trend_pin() says the
-// temporal kernel reaches past what the two sums pin (gcol33/tulpa#600); it
+// temporal kernel reaches past what the two sums pin; it
 // carries the same s2z_scale, being the same penalty read in the same
 // coordinate.
 //

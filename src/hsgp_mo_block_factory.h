@@ -1,7 +1,7 @@
 // hsgp_mo_block_factory.h
 // Build a LatentBlock for a multi-output (K-output) Hilbert-space Gaussian-
 // process field — co-regionalization HSGP — plugged into the joint multi-
-// arm nested-Laplace driver (Stage 1.7).
+// arm nested-Laplace driver.
 //
 // Model.
 //   K = n_arms correlated latent fields f_1(s), ..., f_K(s) share the same
@@ -222,7 +222,7 @@ inline LatentBlock make_hsgp_mo_block(
         }
     };
 
-    // Batched view for the SYRK / GEMM scatter path (Stage 2.1).
+    // Batched view for the SYRK / GEMM scatter path.
     // Per-arm Phi is N_k x m_total; lands at slot k_arm * m_total inside the
     // K*M block (output-major). Sigma cross-output coupling is handled
     // separately via add_prior_sparse, not here.

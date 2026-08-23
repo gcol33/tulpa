@@ -41,6 +41,8 @@
 #include "hsgp_block_factory.h"             // make_hsgp_block
 #include "laplace_spec_fit.h"               // build_spec_family_inputs + laplace_mode_spec_dense_solve
 #include "nngp_block_factory.h"             // make_nngp_block
+#include "unit_precision_block.h"           // set_unit_precision_block_priors
+#include "car_proper_block.h"                // set_car_proper_block_priors
 #include "sparse_hessian.h"     // SparseHessianBuilder
 #include <Rcpp.h>
 #include <algorithm>
@@ -103,11 +105,11 @@ inline std::vector<tulpa::LatentBlock> make_icar_latent_blocks(
     const Rcpp::IntegerVector& n_neighbors
 ) {
     // The ICAR null space is one constant per connected component, so the
-    // augmentation has to pin that many directions and the normalizer count
-    // that many. Left at the default 1 this path pinned a disconnected field
-    // (spatial(by=) replication) once over the whole vector and claimed a J - 1
-    // rank, while the sampler and the Polya-Gamma kernels both derive the true
-    // count from the same adjacency.
+    // augmentation pins that many directions and the normalizer counts that
+    // many. A disconnected field (spatial(by=) replication) therefore needs the
+    // component count read from the adjacency, which is what the sampler and
+    // the Polya-Gamma kernels derive it from too; a single whole-vector pin
+    // would leave the remaining components' levels free and overstate the rank.
     const tulpa::GraphPartition sp_part = tulpa::graph_partition(
         n_units, adj_row_ptr.begin(), adj_col_idx.begin());
 
@@ -158,65 +160,23 @@ inline std::vector<tulpa::LatentBlock> make_car_proper_latent_blocks(
     const Rcpp::IntegerVector& adj_col_idx,
     const Rcpp::IntegerVector& n_neighbors
 ) {
-    // Adjacency CSR copied into std::vector for the dense log|Q(rho)| helper;
-    // owned by shared_ptr so the prep / log_prior closures outlive this factory.
-    auto adj_rp_v = std::make_shared<std::vector<int>>(
-        adj_row_ptr.begin(), adj_row_ptr.end());
-    auto adj_ci_v = std::make_shared<std::vector<int>>(
-        adj_col_idx.begin(), adj_col_idx.end());
-    auto n_nbr_v  = std::make_shared<std::vector<int>>(
-        n_neighbors.begin(), n_neighbors.end());
-    // Per-cell log|Q(rho)| (nl_cell_cache.h). The single-arm kernels run the
-    // outer grid serially today, but nothing at the type level prevents this
-    // block from meeting a parallel grid; cell-keyed state costs nothing and
-    // removes the hazard.
-    auto log_det_Q_rho = std::make_shared<tulpa::NlCellCache<double>>();
-
     tulpa::LatentBlock block;
     block.start = start;
     block.size  = n_units;
     block.idx   = [&spatial_idx](int i, int /*k_arm*/) { return spatial_idx[i]; };
     block.d_fac = [](int) { return 1.0; };
-    block.prep  = [n_units, &rho_grid, adj_rp_v, adj_ci_v, n_nbr_v,
-                   log_det_Q_rho](int k) -> bool {
-        std::vector<double> Qmat = tulpa_car_proper::compute_car_precision(
-            n_units, *adj_rp_v, *adj_ci_v, *n_nbr_v, rho_grid[k]);
-        double ld_val = tulpa_car_proper::car_log_det(n_units, Qmat);
-        log_det_Q_rho->claim() = ld_val;
-        log_det_Q_rho->publish(k);
-        return std::isfinite(ld_val);
-    };
-    block.add_prior = [start, n_units, &tau_grid, &rho_grid,
-                       &adj_row_ptr, &adj_col_idx, &n_neighbors]
-                      (tulpa::DenseVec& grad, tulpa::DenseMat& H,
-                       const Rcpp::NumericVector& x, int k) {
-        tulpa::add_car_proper_prior(grad, H, x, start, n_units,
-                                     tau_grid[k], rho_grid[k],
-                                     adj_row_ptr, adj_col_idx, n_neighbors);
-    };
-    block.log_prior = [start, n_units, &tau_grid, &rho_grid,
-                       &adj_row_ptr, &adj_col_idx, &n_neighbors, log_det_Q_rho]
-                      (const Rcpp::NumericVector& x, int k) {
-        return tulpa::log_prior_car_proper(x, start, n_units,
-                                             tau_grid[k], rho_grid[k],
-                                             log_det_Q_rho->find(k),
-                                             adj_row_ptr, adj_col_idx, n_neighbors);
-    };
-    block.center = [start, n_units](Rcpp::NumericVector& x) {
-        return tulpa::center_intercept(x, start, n_units);
-    };
-    block.add_prior_pattern = [start, n_units, &adj_row_ptr, &adj_col_idx]
-                              (std::vector<std::pair<int,int>>& out) {
-        tulpa::add_car_pattern(out, start, n_units, adj_row_ptr, adj_col_idx);
-    };
-    block.add_prior_sparse = [start, n_units, &tau_grid, &rho_grid,
-                              &adj_row_ptr, &adj_col_idx, &n_neighbors]
-                             (tulpa::SparseHessianBuilder& H, tulpa::DenseVec& grad,
-                              const Rcpp::NumericVector& x, int k) {
-        tulpa::add_car_proper_prior_sparse(grad, H, x, start, n_units,
-                                             tau_grid[k], rho_grid[k],
-                                             adj_row_ptr, adj_col_idx, n_neighbors);
-    };
+    // The five prior callbacks are the shared proper-CAR set; this entry's
+    // (tau, rho) come straight off its own two grids. No centerer: Q is full
+    // rank, so the field carries no null direction to identify against the
+    // intercept. One rule across every driver -- center an intrinsic prior
+    // (ICAR, BYM2's structured component, RW1 / RW2), leave a full-rank one
+    // (proper CAR, AR1, IID) at its mode -- and `block_centered` on the fit
+    // reports which a block took.
+    tulpa::set_car_proper_block_priors(
+        block, start, n_units,
+        [tau_grid](int k) { return tau_grid[k]; },
+        [rho_grid](int k) { return rho_grid[k]; },
+        adj_row_ptr, adj_col_idx, n_neighbors);
     return { block };
 }
 
@@ -291,33 +251,8 @@ inline std::vector<tulpa::LatentBlock> make_bym2_latent_blocks(
     theta_block.d_fac = [&sigma_spatial_grid, &rho_grid](int k) {
         return sigma_spatial_grid[k] * tulpa::bym2_sd_unstructured(rho_grid[k]);
     };
-    theta_block.add_prior = [theta_start, n_s]
-                            (tulpa::DenseVec& grad, tulpa::DenseMat& H,
-                             const Rcpp::NumericVector& x, int /*k*/) {
-        for (int s = 0; s < n_s; s++) {
-            int idx = theta_start + s;
-            grad[idx] -= x[idx];
-            H[idx][idx] += 1.0;
-        }
-    };
-    theta_block.log_prior = [theta_start, n_s](const Rcpp::NumericVector& x, int /*k*/) {
-        double lp = 0.0;
-        for (int s = 0; s < n_s; s++) {
-            lp -= 0.5 * x[theta_start + s] * x[theta_start + s];
-        }
-        lp -= 0.5 * n_s * std::log(2.0 * M_PI);
-        return lp;
-    };
+    tulpa::set_unit_precision_block_priors(theta_block, theta_start, n_s);
     // theta_block.center left empty (IID, identifiability anchored by intercept).
-    theta_block.add_prior_sparse = [theta_start, n_s]
-                                   (tulpa::SparseHessianBuilder& H, tulpa::DenseVec& grad,
-                                    const Rcpp::NumericVector& x, int /*k*/) {
-        for (int s = 0; s < n_s; s++) {
-            int idx = theta_start + s;
-            grad[idx] -= x[idx];
-            H.add(idx, idx, 1.0);
-        }
-    };
     // theta has no off-diagonal prior pattern (the pattern builder contributes
     // the diagonal for every block index unconditionally).
 
@@ -576,9 +511,8 @@ Rcpp::List cpp_laplace_fit_car_proper(
     std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, N);
     std::vector<double> weights = tulpa::as_weights_vec(weights_nullable, N);
 
-    // One-cell (tau, rho) grids; make_car_proper_latent_blocks captures them by
-    // reference (and runs the log|D - rho W| determinant in block.prep), so they
-    // must outlive the solve.
+    // One-cell (tau, rho) grids. The block's callbacks hold their own handles
+    // on these (and run the log|D - rho W| determinant in block.prep).
     Rcpp::NumericVector tau_grid = Rcpp::NumericVector::create(tau_spatial);
     Rcpp::NumericVector rho_grid = Rcpp::NumericVector::create(rho);
     std::vector<tulpa::LatentBlock> blocks = make_car_proper_latent_blocks(
@@ -588,7 +522,8 @@ Rcpp::List cpp_laplace_fit_car_proper(
     tulpa::SpecFamilyInputs in;
     tulpa::build_spec_family_inputs(
         in, y, n, X, re_group, n_re_groups, sigma_re, family, phi,
-        /*sigma_beta=*/100.0, /*n_block_latent=*/n_spatial_units,
+        /*sigma_beta=*/tulpa::DEFAULT_SIGMA_BETA,
+        /*n_block_latent=*/n_spatial_units,
         weights.empty() ? nullptr : weights.data(),
         offset.empty() ? nullptr : offset.data());
 
@@ -913,7 +848,7 @@ Rcpp::List cpp_laplace_fit_hsgp(
     tulpa::SpecFamilyInputs in;
     tulpa::build_spec_family_inputs(
         in, y, n, X, re_group, n_re_groups, sigma_re, family, phi,
-        /*sigma_beta=*/100.0, /*n_block_latent=*/M,
+        /*sigma_beta=*/tulpa::DEFAULT_SIGMA_BETA, /*n_block_latent=*/M,
         weights.empty() ? nullptr : weights.data(),
         offset.empty() ? nullptr : offset.data());
 
@@ -1156,9 +1091,15 @@ inline tulpa::LatentBlock make_temporal_latent_block(
     block.log_prior         = ops_t.log_prior;
     block.add_prior_pattern = ops_t.add_prior_pattern;
     block.add_prior_sparse  = ops_t.add_prior_sparse;
-    block.center = [start, n_units](Rcpp::NumericVector& x) {
-        return tulpa::center_intercept(x, start, n_units);
-    };
+    // RW1 and RW2 are intrinsic -- one constant per walk, and with several
+    // groups only the one GLOBAL level confounds the intercept, so a single
+    // whole-block centering is what identifies it. AR1 is proper at |rho| < 1
+    // and has no null direction, so it keeps its own mode.
+    if (temporal_type != "ar1") {
+        block.center = [start, n_units](Rcpp::NumericVector& x) {
+            return tulpa::center_intercept(x, start, n_units);
+        };
+    }
     return block;
 }
 
@@ -1168,9 +1109,9 @@ inline tulpa::LatentBlock make_temporal_latent_block(
 // [beta | re | spatial block(s) | temporal block]. Dispatches dense/sparse
 // through run_multi_block_nested_laplace_joint -- one spec-driven inner solve
 // and one beta/RE convention, so the dense and sparse paths agree by
-// construction. This retires the bespoke run_spatial_x_indexed_temporal_*
-// driver (and its family-enum scatter) for the areal families: the spatial x
-// temporal Hessian is just two INDEXED_SINGLE blocks sharing observations,
+// construction. No areal-family-specific driver is needed for it: the
+// spatial x temporal Hessian is just two INDEXED_SINGLE blocks sharing
+// observations,
 // which scatter_arm_obs_joint_multi already assembles (block x block cross
 // terms via each block's own idx). `blocks` holds the spatial block(s) then the
 // temporal block; their callbacks capture the caller's Rcpp vectors, which
@@ -1613,7 +1554,6 @@ Rcpp::List cpp_nested_laplace_st_hsgp(
     int max_iter = 50, double tol = 1e-6, int n_threads = 1,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
     bool store_Q = false,
-    bool force_sparse = false,
     std::string checkpoint_path = "",
     bool compute_skew = false,
     Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
@@ -1637,9 +1577,6 @@ Rcpp::List cpp_nested_laplace_st_hsgp(
     if (lambda_eig.size() != M)
         Rcpp::stop("lambda_eig must have length ncol(phi_basis)");
     int s_start = p + n_re_groups;
-    (void) force_sparse;  // HSGP is DENSE_BASIS -> the joint driver always takes
-                          // the sparse path; the legacy force_sparse knob is moot.
-
     // theta_grid for the HSGP block: (log_sigma2, log_lengthscale), matching the
     // pure-spatial HSGP entry (PC priors applied in log space upstream).
     Rcpp::NumericMatrix theta_grid(n_grid, 2);
@@ -1710,7 +1647,6 @@ Rcpp::List cpp_nested_laplace_st_nngp(
     int max_iter = 50, double tol = 1e-6, int n_threads = 1,
     Rcpp::Nullable<Rcpp::NumericVector> x_init_nullable = R_NilValue,
     bool store_Q = false,
-    bool force_sparse = false,
     std::string checkpoint_path = "",
     bool compute_skew = false,
     Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
@@ -1733,9 +1669,6 @@ Rcpp::List cpp_nested_laplace_st_nngp(
     if (coords.nrow() != n_spatial)
         Rcpp::stop("nrow(coords) must equal n_spatial");
     int s_start = p + n_re_groups;
-    (void) force_sparse;  // NNGP's prior is sparse-native -> the joint driver
-                          // always takes the sparse path; force_sparse is moot.
-
     // theta_grid for the NNGP block: (sigma2, phi_gp), matching the pure-spatial
     // NNGP entry (linear, not log).
     Rcpp::NumericMatrix theta_grid(n_grid, 2);

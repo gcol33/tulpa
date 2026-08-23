@@ -18,6 +18,7 @@
 #include "tulpa/param_layout.h"
 #include "laplace_family_link.h"
 #include "builtin_family_zi.h"
+#include <cmath>
 #include <limits>
 #include <string>
 #include <vector>
@@ -106,6 +107,17 @@ struct BuiltinFamilyResponse {
     // phi is NOT read here: the grid rewrites it per cell (sync_dispersion),
     // and no family's eta-independent term depends on it.
     void prepare() {
+        // The tweedie variance power has no default, so tweedie_power() stops
+        // on a NaN phi2 -- per observation, from inside whichever OpenMP
+        // reduction the callbacks are evaluated in, where an escaping
+        // exception is std::terminate rather than an R error. Raised here
+        // instead: prepare() runs once, on the calling thread, before any
+        // solve, and is the first point that sees the family and phi2
+        // together. Same hoist as the two compute_total_log_lik entries.
+        if (family == "tweedie" && std::isnan(phi2)) {
+            Rcpp::stop("family 'tweedie' needs phi2 (the variance power p); "
+                       "the likelihood carries none.");
+        }
         // Ahead of the early return: the AD ladder dispatches on ad_kind for
         // any response it is handed, including one carrying no y array.
         ad_kind = ad_family_kind(family);

@@ -1,5 +1,120 @@
 # tulpa NEWS
 
+## 0.1.16
+
+* **A block's per-row design weight is read on every contribution kind**
+  (#463). `LatentBlock::row_weight` -- the `svc_weight` that makes a field a
+  varying coefficient -- was evaluated in one branch of each block walker, the
+  one-cell-per-row areal kind. A block reaching its latent through a projector
+  (SPDE, INDEXED_MULTI) or a basis (HSGP, DENSE_BASIS) dropped it. Both walkers
+  dropped it identically, so eta, the gradient and the Hessian stayed mutually
+  consistent and no finite-difference check could see it: the fit was simply the
+  unweighted model, returned with nothing on the object to say so.
+  `block_row_weight()` now lives beside the block definition and every walker --
+  the single-arm spec eta and scatter, the joint eta, the joint scatter, the
+  cached indexed plan and the coupled-row collector -- folds it into the block
+  amplitude ahead of the kind split. Unset is 1.0, so an unweighted block is
+  bit-identical. `cpp_nested_laplace_multi` reads `svc_weight` once for every
+  block type rather than inside the `icar` branch, and `tulpa_nested_laplace()`
+  accepts it on any block it builds; the weight's length is checked against the
+  observation count. Tests: `test-block-row-weight.R`, which pins the layer the
+  weight enters at by fitting the same model with the projector pre-scaled by
+  hand.
+
+* **One centering rule for latent blocks, recorded on the fit** (#458). Whether
+  a field is reported sum-to-zero (with the removed constant folded into an
+  intercept) or at its own mode differed by block type and, within `car_proper`,
+  by whether the block was a copy. The rule is now the prior's rank everywhere:
+  an intrinsic prior (ICAR, BYM2's structured component, RW1 / RW2) has a null
+  direction the data cannot identify against the intercept and is centered; a
+  full-rank one (proper CAR, AR1, IID) has none and keeps its mode. Centering a
+  full-rank field reports a (field, intercept) pair whose joint posterior
+  density is below the mode's -- the fold preserves eta, so the shift moves both
+  priors away from their argmax. `block_centered` on the returned list says
+  which convention each block took, so comparing two fits of the same field does
+  not silently compare two splits. `log_marginal`, the standard errors and eta
+  are unchanged: every driver evaluates them at the pre-centering iterate.
+
+* **`interval_gaussian` no longer reports a floored plateau as a mode** (#462).
+  The interval probability was differenced on the natural scale and floored at
+  `1e-300`. Once both `pnorm` tails underflow -- about 38 sigma out, which a
+  poorly scaled predictor or a bad warm start reaches transiently -- the kernel
+  returned a finite log-density, an exactly zero gradient and a floored positive
+  curvature. The line search accepts a finite objective and the convergence test
+  reads `max|grad| == 0` as a mode, so the solve stopped there and built its
+  log-marginal from the floor constants. The probability is now formed in log
+  space (the difference taken in whichever tail keeps its exponent) and the
+  gradient and curvature as ratios of logs, so a far interval returns a gradient
+  of order `(edge - eta) / sigma^2` pointing back at it. An empty interval
+  returns `-Inf`, which the line search backtracks off.
+
+* **Rmath is gone from the family parallel path** (#461). `lgammafn`, `lchoose`,
+  `digamma`, `trigamma`, `psigamma` and `pnorm` raise their domain and range
+  paths through R's `warning()` / `error()`, which touch R's global error state
+  and can longjmp -- out of an OpenMP structured block, which is
+  `std::terminate`. `tulpa/portable_math.h` now covers every routine the family
+  log-likelihood and curvature ladders reach, and neither header calls into
+  Rmath any more. `test-portable-math.R` scores each replacement against R's own
+  over the argument ranges the families use, including across the recurrence
+  switch where the asymptotic series is at its weakest, and fails if an `R::`
+  call reappears in either header.
+
+* **An unregistered family, and tweedie without its variance power, are raised
+  on the calling thread** (#459). Both stops sit in per-observation code that
+  runs inside a reduction. The family-enum entries hoisted theirs already; the
+  `LikelihoodSpec` route now checks the tweedie variance power in
+  `BuiltinFamilyResponse::prepare()`, which runs once, serially, before any
+  solve and is the first point that sees the family and `phi2` together.
+
+* **The observed-curvature second derivative declines instead of guessing**
+  (#464). `obs_curvature_deta2_for_family()` summed the working curvature's
+  second eta-derivative with the observed-minus-working delta's. Where the
+  delta's second derivative is unregistered that term contributes zero and the
+  sum is the working answer wearing the observed one's name -- finite and
+  smooth, and wrong by exactly the delta, which is what the closed-form outer
+  Hessian, the hyperparameter standard errors and the grid weights are then
+  built from. It now returns NaN there, as `curvature3_obs_for_family()` already
+  did, and `mixture_curvature_deriv2()` declines in all five fields at once
+  rather than leaving one finite field readable. `cpp_family_obs_curvature_deta2`
+  exposes the value and the gate together.
+
+* **`CheckpointLog`'s readers take the mutex its writer takes** (#460). `save()`
+  locked; `has()` and `get()` did not, so the class as documented invited a
+  reader on one worker to walk a bucket array another worker's `emplace` was
+  rehashing. The current consumer snapshots the log serially before its parallel
+  region, so nothing raced; the lock is what lets the next one do otherwise.
+  `n_loaded()` had no caller and is gone.
+
+* **Dead surface removed from the nested-Laplace entries** (#466).
+  `force_sparse` was an exported argument of `cpp_nested_laplace_st_hsgp` and
+  `cpp_nested_laplace_st_nngp` that both discarded -- an argument the generated
+  R wrappers advertised with a default while three sibling entries with the same
+  signature honoured it. Dropped from both. `TULPA_COUPLING_FORCE_PARALLEL`,
+  which takes the chunked coupling reduce on every cell so a small grid
+  exercises the parallel path, is documented at `?tulpa-envvars` alongside
+  `TULPA_GRID_WORKSTEAL` and tested: `test-coupling-force-parallel.R` runs a
+  coupled fit in two subprocesses and asserts the two answers are identical.
+
+* **Six pieces of the nested-Laplace kernels written twice or three times, now
+  written once** (#465). The copy-spec parse (three copies, two of which had
+  lost validity checks), the unit-precision IID prior (three), the per-cell
+  coupled arm views (two), `center_joint` / `log_prior_joint` (two) and the
+  proper-CAR block construction (two, plus the joint branch's own copy /
+  non-copy pair) each meet at one definition: `resolve_copy_arm_of_block()`,
+  `set_unit_precision_block_priors()`, `CoupledArmViews`,
+  `center_joint_blocks()` / `log_prior_joint_blocks()` and
+  `set_car_proper_block_priors()`. The eleven grid entry-point tails are not
+  collapsed -- see the note in #465.
+
+* **`src/` comments describe the code, not the repository's history** (#467).
+  `src/` ships in the tarball, so its comments are public. Every issue-tracker
+  reference, planning-stage token (`Stage 1.3`, `Change 2b`, `Layer B.1`) and
+  account of what the code used to do is rewritten to state the current rule and
+  its reason. The stale claim that the cross-arm Hessian and the sparse coupled
+  twin had not landed is gone; both are present. `DEFAULT_SIGMA_BETA` joins
+  `DEFAULT_TAU_BETA` so the same weak fixed-effect prior has one definition in
+  the two parameterizations the kernels read it in, tied by a static assertion.
+
 ## 0.1.15
 
 * **The next ten audit issues, and the one that was still a live drop**

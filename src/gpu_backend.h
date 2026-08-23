@@ -113,7 +113,7 @@ inline bool gpu_available() {
 }  // namespace tulpa_gpu
 
 // The CUDA implementation is compiled in by DEFAULT, and there is exactly ONE
-// definition of it in the program (gcol33/tulpa#396).
+// definition of it in the program.
 //
 // It used to be opt-in behind TULPA_ENABLE_CUDA, which neither Makevars ever
 // defined -- so this header's includers compiled the STUBS below, while

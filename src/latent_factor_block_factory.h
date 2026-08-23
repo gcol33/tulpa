@@ -1,6 +1,6 @@
 // latent_factor_block_factory.h
 // Build a LatentBlock for a F=1 latent factor field shared across arms,
-// with per-arm loadings jointly optimized in the latent vector (Stage 1.6a).
+// with per-arm loadings jointly optimized in the latent vector.
 //
 // Model.
 //   eta_i (in arm k_arm) += u[obs_idx_per_arm[k_arm](i)] * lambda[k_arm]

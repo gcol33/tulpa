@@ -149,8 +149,7 @@ inline T s2z_aug_quad(const T* phi, int start, int size, const T& tau) {
 // sign, so a caller adds `-` exactly where it adds `-0.5 *` for the quadratic.
 //
 // The gradient counterpart of s2z_aug_quad lives beside it so an analytic
-// kernel cannot pick up the augmented quadratic and miss its derivative, which
-// is the shape gcol33/tulpa#588 records.
+// kernel cannot pick up the augmented quadratic and miss its derivative.
 template <typename T>
 inline T s2z_aug_quad_grad(const T* phi, int start, const int* idx, int size,
                            const T& tau) {

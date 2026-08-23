@@ -149,6 +149,33 @@ bool cpp_family_has_curvature_2nd_derivative(std::string family) {
   return tulpa::has_curvature_2nd_derivative(family);
 }
 
+// The same second eta-derivative for the OBSERVED curvature W_obs = -l''(eta),
+// which is the working weight plus the family's own delta. Where the delta's
+// second derivative is unregistered the sum would be the working-curvature
+// answer wearing the observed one's name, so the entry returns NaN; `exact`
+// reports the same decision as a flag, making the gate readable from R rather
+// than only inferable from a NaN.
+// [[Rcpp::export]]
+Rcpp::NumericVector cpp_family_obs_curvature_deta2(double y, int n_trials,
+                                                   double eta,
+                                                   std::string family,
+                                                   double phi,
+                                                   double phi2 = NA_REAL) {
+  const bool ok = tulpa::has_curvature_2nd_derivative(family) &&
+                  tulpa::has_obs_curvature_delta_2nd_derivative(family);
+  return Rcpp::NumericVector::create(
+      Rcpp::_["d2w_obs_deta2"] = tulpa::obs_curvature_deta2_for_family(
+          y, n_trials, eta, family, phi, phi2),
+      Rcpp::_["exact"]         = ok ? 1.0 : 0.0);
+}
+
+// Whether obs_curvature_deta2_for_family() is exact for this family.
+// [[Rcpp::export]]
+bool cpp_family_has_obs_curvature_2nd_derivative(std::string family) {
+  return tulpa::has_curvature_2nd_derivative(family) &&
+         tulpa::has_obs_curvature_delta_2nd_derivative(family);
+}
+
 // Whether the Newton working weight already IS the observed curvature, so the
 // observed-minus-working difference is the zero function. What separates a
 // family whose delta is exactly zero from one whose delta merely happens to be

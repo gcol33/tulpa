@@ -279,15 +279,19 @@ inline void build_scatter_index_cache(
             int a = 0;
             for (int b = 0; b < B; b++) {
                 const LatentBlock& blk = blocks[b];
+                // The per-row SVC weight multiplies the block-local weight on
+                // every indexed kind: an SPDE (INDEXED_MULTI) field carries it
+                // across its mesh nodes as an areal one carries it on its
+                // single cell. Unset -> 1.0, leaving the unweighted plan
+                // byte-identical.
+                const double rw = block_row_weight(blk, i, k_arm);
                 if (blk.contrib_kind == BlockContribKind::INDEXED_SINGLE) {
                     if (!blk.idx) continue;
                     int l = blk.idx(i, k_arm);
                     if (l > 0 && l <= blk.size) {
-                        double w = blk.row_weight ? blk.row_weight(i, k_arm)
-                                                  : 1.0;
                         ac.active_dof_global[act_cursor + a] = blk.start + l - 1;
                         ac.active_block_idx [act_cursor + a] = b;
-                        ac.active_local_w   [act_cursor + a] = w;
+                        ac.active_local_w   [act_cursor + a] = rw;
                         a++;
                     }
                 } else if (blk.contrib_kind == BlockContribKind::INDEXED_MULTI) {
@@ -297,7 +301,7 @@ inline void build_scatter_index_cache(
                         if (l > 0 && l <= blk.size) {
                             ac.active_dof_global[act_cursor + a] = blk.start + l - 1;
                             ac.active_block_idx [act_cursor + a] = b;
-                            ac.active_local_w   [act_cursor + a] = w_local;
+                            ac.active_local_w   [act_cursor + a] = w_local * rw;
                             a++;
                         }
                     }

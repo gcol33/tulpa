@@ -39,6 +39,7 @@
 #include "nested_laplace_multi.h"
 #include "spde_block_factory.h"
 #include "tgmrf_block_factory.h"
+#include "unit_precision_block.h"
 #include "tulpa/nested_likelihood.h"
 #include "hmc_car_proper.h"
 #include <Rcpp.h>
@@ -53,34 +54,12 @@
 
 namespace {
 
-// Standard-normal prior on a contiguous latent block, x_s ~ N(0, 1) with the
-// block's scale carried by d_fac. Shared by BYM2's unstructured component and
-// the iid block, which are the same density.
-void add_standard_normal_block_prior(tulpa::DenseVec& grad, tulpa::DenseMat& H,
-                                     const Rcpp::NumericVector& x,
-                                     int start, int size) {
-    for (int s = 0; s < size; s++) {
-        const int idx = start + s;
-        grad[idx] -= x[idx];
-        H[idx][idx] += 1.0;
-    }
-}
-
-double log_prior_standard_normal_block(const Rcpp::NumericVector& x,
-                                       int start, int size) {
-    double lp = 0.0;
-    for (int s = 0; s < size; s++) {
-        lp -= 0.5 * x[start + s] * x[start + s];
-    }
-    lp -= 0.5 * size * std::log(2.0 * M_PI);
-    return lp;
-}
-
-
 // Push the LatentBlock(s) for one block-spec entry. Returns the new
 // latent_offset after appending this block's sub-vector(s) to the joint
-// latent vector layout.
-int build_blocks_from_spec(
+// latent vector layout. Wrapped by build_blocks_from_spec below, which
+// installs the spec's optional per-row design weight on whatever this
+// appended.
+int build_blocks_of_type(
     const Rcpp::List& bs,
     const Rcpp::NumericMatrix& theta_grid,
     int axis0,                // starting column in theta_grid for this block's axes
@@ -111,29 +90,11 @@ int build_blocks_from_spec(
         const tulpa::GraphPartition sp_part = tulpa::graph_partition(
             size, adj_rp.begin(), adj_ci.begin());
 
-        // Optional per-row design weight (spatially-varying coefficient): when
-        // present, obs i's eta contribution is weight[i] * z[idx(i)] rather than
-        // z[idx(i)], the areal f(cell, weight, ...) of an SVC field. Absent ->
-        // uniform weight 1 (byte-identical to the plain intercept field). Read
-        // into an owning std::shared_ptr<vector<double>> so the row_weight
-        // closure carries no Rcpp object across the (copied) LatentBlock.
-        std::shared_ptr<std::vector<double>> svc_w;
-        if (bs.containsElementNamed("svc_weight") &&
-            !Rf_isNull(bs["svc_weight"])) {
-            Rcpp::NumericVector w = bs["svc_weight"];
-            svc_w = std::make_shared<std::vector<double>>(w.begin(), w.end());
-        }
-
         tulpa::LatentBlock block;
         block.start = start;
         block.size  = size;
         block.idx   = [spatial_idx](int i, int /*k_arm*/) { return spatial_idx[i]; };
         block.d_fac = [](int) { return 1.0; };
-        if (svc_w) {
-            block.row_weight = [svc_w](int i, int /*k_arm*/) {
-                return (*svc_w)[i];
-            };
-        }
         block.add_prior = [start, size, axis0, theta_grid, adj_rp, adj_ci, n_nbr, sp_part](
             tulpa::DenseVec& grad, tulpa::DenseMat& H,
             const Rcpp::NumericVector& x, int k) {
@@ -212,15 +173,7 @@ int build_blocks_from_spec(
             double rho_k   = theta_grid(k, axis0 + 1);
             return sigma_k * tulpa::bym2_sd_unstructured(rho_k);
         };
-        theta_block.add_prior = [theta_start, size](
-            tulpa::DenseVec& grad, tulpa::DenseMat& H,
-            const Rcpp::NumericVector& x, int) {
-            add_standard_normal_block_prior(grad, H, x, theta_start, size);
-        };
-        theta_block.log_prior = [theta_start, size](
-            const Rcpp::NumericVector& x, int) {
-            return log_prior_standard_normal_block(x, theta_start, size);
-        };
+        tulpa::set_unit_precision_block_priors(theta_block, theta_start, size);
         blocks.push_back(theta_block);
         return theta_start + size;
     }
@@ -274,9 +227,8 @@ int build_blocks_from_spec(
                                                  log_det_Q_rho->find(k),
                                                  adj_rp, adj_ci, n_nbr);
         };
-        block.center = [start, size](Rcpp::NumericVector& x) {
-            return tulpa::center_intercept(x, start, size);
-        };
+        // Full-rank prior: no null direction to identify, so the field is
+        // reported at its own mode. See make_car_proper_latent_blocks.
         blocks.push_back(block);
         return start + size;
     }
@@ -400,9 +352,8 @@ int build_blocks_from_spec(
             double rho = theta_grid(k, axis0 + 1);
             return tulpa::log_prior_ar1(x, start, size, tau, rho);
         };
-        block.center = [start, size](Rcpp::NumericVector& x) {
-            return tulpa::center_intercept(x, start, size);
-        };
+        // AR1 is proper at |rho| < 1: full rank, so no centering. Same rule as
+        // proper CAR above and as the joint multi-arm driver.
         blocks.push_back(block);
         return start + size;
     }
@@ -448,14 +399,7 @@ int build_blocks_from_spec(
         block.d_fac = [axis0, theta_grid](int k) {
             return theta_grid(k, axis0);
         };
-        block.add_prior = [start, size](
-            tulpa::DenseVec& grad, tulpa::DenseMat& H,
-            const Rcpp::NumericVector& x, int) {
-            add_standard_normal_block_prior(grad, H, x, start, size);
-        };
-        block.log_prior = [start, size](const Rcpp::NumericVector& x, int) {
-            return log_prior_standard_normal_block(x, start, size);
-        };
+        tulpa::set_unit_precision_block_priors(block, start, size);
         // No center: x is anchored by the global intercept already.
         blocks.push_back(block);
         return start + size;
@@ -463,6 +407,50 @@ int build_blocks_from_spec(
 
     Rcpp::stop("Unknown block type '%s' in cpp_nested_laplace_multi", type.c_str());
     return latent_offset;
+}
+
+// Build one block-spec entry and install its optional per-row design weight.
+//
+// `svc_weight` (one weight per observation) turns the block into a spatially
+// varying coefficient: obs i's eta contribution becomes weight[i] * <the
+// block's field at i> instead of the field itself. It is read here rather than
+// inside a type branch because the walkers apply it to every contribution kind
+// -- an SPDE block reaching its mesh nodes through A is as weightable as an
+// areal block reaching one cell -- so reading it per type would decide which
+// field can be varying by where the read was written. The weights are copied
+// into an owning shared_ptr so the closure carries no Rcpp object across the
+// (copied) LatentBlock.
+int build_blocks_from_spec(
+    const Rcpp::List& bs,
+    const Rcpp::NumericMatrix& theta_grid,
+    int axis0,
+    int axis_count,
+    int latent_offset,
+    int N,
+    std::vector<tulpa::LatentBlock>& blocks
+) {
+    const std::size_t first = blocks.size();
+    const int next_offset = build_blocks_of_type(bs, theta_grid, axis0,
+                                                 axis_count, latent_offset,
+                                                 blocks);
+    if (!bs.containsElementNamed("svc_weight") ||
+        Rf_isNull(bs["svc_weight"])) {
+        return next_offset;
+    }
+    Rcpp::NumericVector w = bs["svc_weight"];
+    if (w.size() != N) {
+        Rcpp::stop("Block type '%s': svc_weight has length %d, expected %d "
+                   "(one weight per observation).",
+                   Rcpp::as<std::string>(bs["type"]).c_str(),
+                   static_cast<int>(w.size()), N);
+    }
+    auto svc_w = std::make_shared<std::vector<double>>(w.begin(), w.end());
+    for (std::size_t b = first; b < blocks.size(); b++) {
+        blocks[b].row_weight = [svc_w](int i, int /*k_arm*/) {
+            return (*svc_w)[i];
+        };
+    }
+    return next_offset;
 }
 
 } // namespace
@@ -513,7 +501,7 @@ Rcpp::List cpp_nested_laplace_multi(
         int axis0 = axis_offsets[b];
         int axis_count = axis_offsets[b + 1] - axis0;
         latent_offset = build_blocks_from_spec(
-            bs, theta_grid, axis0, axis_count, latent_offset, blocks
+            bs, theta_grid, axis0, axis_count, latent_offset, N, blocks
         );
     }
 
@@ -602,7 +590,8 @@ Rcpp::List cpp_nested_laplace_multi(
         tulpa::DebiasRequest(debias).ptr,
         tulpa::CilaRequest(cila).ptr
     );
-    out["theta_grid"]   = theta_grid;
-    out["axis_offsets"] = axis_offsets;
+    out["theta_grid"]     = theta_grid;
+    out["axis_offsets"]   = axis_offsets;
+    out["block_centered"] = tulpa::block_center_flags(blocks);
     return out;
 }

@@ -196,7 +196,7 @@ inline Rcpp::List run_multi_block_nested_laplace(
     data.n_processes         = 1;
     data.processes.push_back(proc);
     data.N                   = N;
-    data.sigma_beta          = 100.0;   // tau_beta = 1e-4 == DEFAULT_TAU_BETA
+    data.sigma_beta          = DEFAULT_SIGMA_BETA;  // == 1 / DEFAULT_TAU_BETA
     data.likelihood_spec     = spec_ptr;
     data.model_response_data = resp_ptr;
     data.sharing.init(1);

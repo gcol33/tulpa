@@ -55,7 +55,7 @@ inline double s2z_precision(int n, double kappa = S2Z_KAPPA) {
 //
 // Needed because an intrinsic operator whose kernel is wider than the
 // constants leaves directions a sum cannot reach: an RW2 marginal's kernel
-// carries a linear ramp (see st_null_space.h, gcol33/tulpa#600).
+// carries a linear ramp (see st_null_space.h).
 inline double s2z_precision_weighted(double u_sq, double kappa = S2Z_KAPPA) {
     const double sd = kappa * (u_sq > 0.0 ? u_sq : 1.0);
     return 1.0 / (sd * sd);

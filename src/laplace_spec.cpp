@@ -481,12 +481,19 @@ inline void compute_eta_spec(
         std::vector<double> blk_basis;
         for (int b = 0; b < L.n_blocks; b++) {
             const LatentBlock& blk = (*L.blocks)[b];
+            // Per-row design weight (SVC field): weight[i] * z[.], folded into
+            // the block amplitude once, ahead of the kind split, so an SPDE
+            // (INDEXED_MULTI) or HSGP (DENSE_BASIS) block carries it as an
+            // areal (INDEXED_SINGLE) one does. Unset -> 1.0, and multiplying
+            // the amplitude by exactly 1.0 leaves the unweighted path
+            // byte-identical.
+            const double d_b = d_fac_cache[b] * block_row_weight(blk, i, 0);
             if (blk.contrib_kind == BlockContribKind::INDEXED_MULTI) {
                 blk.fill_obs_indices(i, /*k_arm=*/0, blk_multi);
                 for (const auto& nw : blk_multi) {
                     int l = nw.first;
                     if (l >= 1 && l <= L.block_size[b]) {
-                        blk_eff += d_fac_cache[b] * nw.second
+                        blk_eff += d_b * nw.second
                                  * params[L.block_param_start[b] + l - 1];
                     }
                 }
@@ -500,18 +507,11 @@ inline void compute_eta_spec(
                 const double* xp = &params[L.block_param_start[b]];
                 double acc = 0.0;
                 for (int l = 0; l < sz; l++) acc += blk_basis[l] * xp[l];
-                blk_eff += d_fac_cache[b] * acc;
+                blk_eff += d_b * acc;
             } else {
                 int l = blk.idx(i, /*k_arm=*/0);
                 if (l >= 1 && l <= L.block_size[b]) {
-                    // Per-row design weight (SVC field): weight[i] * z[idx]. The
-                    // joint multi-arm driver already carries this; mirror it on
-                    // the single-arm spec path so an areal varying-coefficient
-                    // field (e.g. a spatial trend) enters eta correctly. Empty
-                    // row_weight -> 1.0 (byte-identical to a plain field).
-                    double w = blk.row_weight ? blk.row_weight(i, /*k_arm=*/0) : 1.0;
-                    blk_eff += d_fac_cache[b] * w
-                             * params[L.block_param_start[b] + l - 1];
+                    blk_eff += d_b * params[L.block_param_start[b] + l - 1];
                 }
             }
         }
@@ -788,7 +788,12 @@ inline void scatter_spec(
             blk_contrib.clear();
             for (int b = 0; b < L.n_blocks; b++) {
                 const LatentBlock& blk = (*L.blocks)[b];
-                const double d_b = blk_dfac[b];
+                // The per-row SVC weight rides the block amplitude, so the
+                // contribution weight a_c is d_fac * weight[i] on every kind:
+                // grad scales by weight and the block x block Hessian by
+                // weight^2 through the existing chain rule, exactly as the
+                // joint multi-arm scatter does. Unset -> 1.0.
+                const double d_b = blk_dfac[b] * block_row_weight(blk, i, 0);
                 if (blk.contrib_kind == BlockContribKind::INDEXED_MULTI) {
                     blk.fill_obs_indices(i, /*k_arm=*/0, blk_multi_scratch);
                     for (const auto& nw : blk_multi_scratch) {
@@ -817,16 +822,8 @@ inline void scatter_spec(
                 } else {
                     int l = blk.idx(i, /*k_arm=*/0);
                     if (l >= 1 && l <= L.block_size[b]) {
-                        // Per-row design weight (SVC field): the contribution
-                        // weight is d_fac * weight[i], so grad scales by weight
-                        // and the block x block Hessian by weight^2 through the
-                        // chain rule (a_c folds the weight at exactly one layer,
-                        // matching the joint multi-arm scatter). Empty
-                        // row_weight -> 1.0 (byte-identical to a plain field).
-                        double w = blk.row_weight ? blk.row_weight(i, /*k_arm=*/0)
-                                                  : 1.0;
                         blk_contrib.emplace_back(
-                            L.block_latent_offset[b] + l - 1, d_b * w);
+                            L.block_latent_offset[b] + l - 1, d_b);
                     }
                 }
             }

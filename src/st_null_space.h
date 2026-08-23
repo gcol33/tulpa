@@ -15,7 +15,7 @@
 // carry no prior curvature at all: at the fixture's own position their
 // posterior is held by the likelihood alone while every other direction
 // stiffens with tau, so cond(M^-1 Q) under any metric built from the two
-// margins grows linearly in tau without bound (gcol33/tulpa#600).
+// margins grows linearly in tau without bound.
 //
 // The engine already reported the right dimension on the other side of the
 // same prior: tulpa_priors_st.h's normalizer reads rank_space * rank_time,

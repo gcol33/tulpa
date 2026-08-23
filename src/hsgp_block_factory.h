@@ -155,7 +155,7 @@ inline LatentBlock make_hsgp_block(
         }
     };
 
-    // Batched view for the SYRK / GEMM scatter path (Stage 2.1).
+    // Batched view for the SYRK / GEMM scatter path.
     // Raw Phi (cached at factory time) + cell k_grid's sqrt_S.
     // m_offset_in_block = 0 for single-output HSGP.
     auto n_obs_cache = std::make_shared<std::vector<int>>(

@@ -84,19 +84,17 @@ inline const bool kGridWorkstealEnabled = nl_env_not_zero("TULPA_GRID_WORKSTEAL"
 inline const bool kCouplingForceParallel =
     nl_env_present("TULPA_COUPLING_FORCE_PARALLEL");
 
+// Initial capacity of the two chain scratch buffers. Pure allocation hints:
+// both grow on demand and nothing depends on the value. One cell's rank-1
+// self-cross touches at most its own rows, a row's chain at most one entry per
+// latent block, so these are sized for the common case and never a bound.
+inline constexpr int kCellChainScratchHint = 64;
+inline constexpr int kRowChainScratchHint  = 32;
+
 // Cell count below which the chunked coupling scatter is not worth its
 // per-chunk partial gradient and Hessian buffers (each a full copy of the
 // joint values array), so the serial pass runs instead.
 inline constexpr int kCouplingWorkstealMinCells = 64;
-
-// Per-arm per-row design weight on an INDEXED_SINGLE block (areal SVC).
-// Returns 1.0 when the block carries no row_weight, so the no-weight path is
-// byte-identical. The weight enters the block-local weight that multiplies
-// x[cell] at row i of arm k_arm; the per-block d_eff (arm_scale * d_fac)
-// amplitude is applied on top, unchanged.
-inline double block_row_weight(const LatentBlock& blk, int i, int k_arm) {
-    return blk.row_weight ? blk.row_weight(i, k_arm) : 1.0;
-}
 
 // Threshold below which a centering fold is skipped: the level the centerer
 // removed is numerically zero, so folding it would only perturb the coefficient
@@ -196,13 +194,16 @@ inline void collect_coupled_row_latents(
     for (int b = 0; b < B; b++) {
         if (d_eff_cache[b] == 0.0) continue;
         const LatentBlock& blk = blocks[b];
+        // Per-row SVC weight folded into the amplitude ahead of the kind
+        // split; 1.0 where the block declares none.
+        const double d_b = d_eff_cache[b] * block_row_weight(blk, i, k_arm);
         if (blk.contrib_kind == BlockContribKind::INDEXED_MULTI) {
             if (!blk.obs_indices) continue;
             blk.fill_obs_indices(i, k_arm, multi_scratch);
             for (const auto& jw : multi_scratch) {
                 const int l = jw.first;
                 if (l > 0 && l <= blk.size) {
-                    const double w = d_eff_cache[b] * jw.second;
+                    const double w = d_b * jw.second;
                     if (w == 0.0) continue;
                     out_idx.push_back(blk.start + l - 1);
                     out_w.push_back(w);
@@ -212,7 +213,7 @@ inline void collect_coupled_row_latents(
             if (!blk.idx) continue;
             const int l_b = blk.idx(i, k_arm);
             if (l_b > 0 && l_b <= blk.size) {
-                const double w = d_eff_cache[b] * block_row_weight(blk, i, k_arm);
+                const double w = d_b;
                 if (w == 0.0) continue;
                 out_idx.push_back(blk.start + l_b - 1);
                 out_w.push_back(w);
@@ -482,6 +483,113 @@ struct CellArmResponse {
     double        phi      = 0.0;
 };
 
+// Per-solve views over the coupled arms, and the per-cell slices of them.
+//
+// Both walkers over the coupled cells -- the objective-only evaluation and the
+// scatter -- need the same two things: per-arm pointers that are stable across
+// cells (eta, y, n_trials, family, phi) and per-arm slices that are rebuilt at
+// every cell (the row list, its length, and zeroed gradient / curvature
+// buffers). Written out twice they were line for line identical, which is one
+// definition of the CellEtas / CellResponse / CellDerivs contract per caller.
+//
+// `bind_cell` grows each buffer monotonically and zeroes only the prefix in
+// use, so a run over cells of varying size allocates at the largest cell seen
+// and not once per cell.
+struct CoupledArmViews {
+    int n_coupled = 0;
+
+    // Stable across cells.
+    std::vector<const double*> eta_ptr;
+    std::vector<const double*> y_ptr;
+    std::vector<const int*>    n_trials_ptr;
+    std::vector<std::string>   family_holder;   // owns what family_ptr points at
+    std::vector<const char*>   family_ptr;
+    std::vector<double>        phi;
+
+    // Rebuilt per cell by bind_cell().
+    std::vector<int>                 row_count;
+    std::vector<const int*>          rows_ptr;
+    std::vector<std::vector<double>> grad_buf;
+    std::vector<std::vector<double>> neg_hess_diag_buf;
+    std::vector<double*>             grad_ptr;
+    std::vector<double*>             neg_hess_diag_ptr;
+
+    template <class ArmResponseFn>
+    CoupledArmViews(const std::vector<int>&                 coupled_arms,
+                    const std::vector<JointArm>&            arms,
+                    const std::vector<Rcpp::NumericVector>& etas,
+                    ArmResponseFn&&                         arm_response)
+        : n_coupled((int)coupled_arms.size()),
+          eta_ptr(n_coupled), y_ptr(n_coupled), n_trials_ptr(n_coupled),
+          family_holder(n_coupled), family_ptr(n_coupled), phi(n_coupled),
+          row_count(n_coupled), rows_ptr(n_coupled),
+          grad_buf(n_coupled), neg_hess_diag_buf(n_coupled),
+          grad_ptr(n_coupled), neg_hess_diag_ptr(n_coupled) {
+        for (int kk = 0; kk < n_coupled; kk++) {
+            const int k = coupled_arms[kk];
+            const CellArmResponse r = arm_response(kk, k);
+            eta_ptr[kk]       = REAL(etas[k]);
+            y_ptr[kk]         = r.y;
+            n_trials_ptr[kk]  = r.n_trials;
+            family_holder[kk] = arms[k].family;
+            family_ptr[kk]    = family_holder[kk].c_str();
+            phi[kk]           = r.phi;
+        }
+    }
+
+    void bind_cell(int c,
+                   const std::vector<std::vector<std::vector<int>>>& cell_rows) {
+        for (int kk = 0; kk < n_coupled; kk++) {
+            const int rc = (int)cell_rows[kk][c].size();
+            row_count[kk] = rc;
+            rows_ptr[kk]  = cell_rows[kk][c].data();
+            if ((int)grad_buf[kk].size() < rc) {
+                grad_buf[kk].assign(rc, 0.0);
+                neg_hess_diag_buf[kk].assign(rc, 0.0);
+            } else {
+                std::fill(grad_buf[kk].begin(), grad_buf[kk].begin() + rc, 0.0);
+                std::fill(neg_hess_diag_buf[kk].begin(),
+                          neg_hess_diag_buf[kk].begin() + rc, 0.0);
+            }
+            grad_ptr[kk]          = grad_buf[kk].data();
+            neg_hess_diag_ptr[kk] = neg_hess_diag_buf[kk].data();
+        }
+    }
+
+    CellEtas etas_view() {
+        CellEtas v;
+        v.arm_eta_ptr   = eta_ptr.data();
+        v.arm_rows      = rows_ptr.data();
+        v.arm_row_count = row_count.data();
+        v.n_arms_       = n_coupled;
+        return v;
+    }
+
+    CellResponse response_view() {
+        CellResponse v;
+        v.arm_y         = y_ptr.data();
+        v.arm_n_trials  = n_trials_ptr.data();
+        v.arm_family    = family_ptr.data();
+        v.arm_phi       = phi.data();
+        v.arm_rows      = rows_ptr.data();
+        v.arm_row_count = row_count.data();
+        v.n_arms_       = n_coupled;
+        return v;
+    }
+};
+
+// The arm's own response, with `phi_override` (the batched multi-species path's
+// per-arm dispersion) replacing the arm's when supplied. The single-response
+// shape both coupled walkers take.
+inline CellArmResponse coupled_arm_own_response(const JointArm& arm, int kk,
+                                                const double* phi_override) {
+    CellArmResponse r;
+    r.y        = arm.y.size() > 0 ? REAL(arm.y) : nullptr;
+    r.n_trials = arm.n_trials.size() > 0 ? INTEGER(arm.n_trials) : nullptr;
+    r.phi      = phi_override ? phi_override[kk] : arm.phi;
+    return r;
+}
+
 // The cell-coupling log-likelihood at the given per-arm etas, summed over
 // cells. `arm_response(kk, k)` returns arm k's response for this evaluation.
 //
@@ -501,29 +609,8 @@ inline double eval_cell_coupling_log_lik_impl(
     const int n_coupled = (int)coupled_arms.size();
     if (n_coupled == 0 || n_cells == 0) return 0.0;
 
-    std::vector<const double*> arm_eta_ptr(n_coupled);
-    std::vector<const double*> arm_y_ptr(n_coupled);
-    std::vector<const int*>    arm_n_trials_ptr(n_coupled);
-    std::vector<std::string>   family_holder(n_coupled);
-    std::vector<const char*>   arm_family_ptr(n_coupled);
-    std::vector<double>        arm_phi_vec(n_coupled);
-    for (int kk = 0; kk < n_coupled; kk++) {
-        int k = coupled_arms[kk];
-        const CellArmResponse r = arm_response(kk, k);
-        arm_eta_ptr[kk]      = REAL(etas[k]);
-        arm_y_ptr[kk]        = r.y;
-        arm_n_trials_ptr[kk] = r.n_trials;
-        family_holder[kk]    = arms[k].family;
-        arm_family_ptr[kk]   = family_holder[kk].c_str();
-        arm_phi_vec[kk]      = r.phi;
-    }
-
-    std::vector<int>            arm_row_count(n_coupled);
-    std::vector<const int*>     arm_rows_ptr(n_coupled);
-    std::vector<std::vector<double>> arm_grad_buf(n_coupled);
-    std::vector<std::vector<double>> arm_neg_hess_diag_buf(n_coupled);
-    std::vector<double*>        arm_grad_ptr(n_coupled);
-    std::vector<double*>        arm_neg_hess_diag_ptr(n_coupled);
+    CoupledArmViews views(coupled_arms, arms, etas,
+                          std::forward<ArmResponseFn>(arm_response));
 
     // Outer cross-Hessian array with every inner block null. A spec is required
     // to test the INNER pointer only, so an objective-only call supplies the
@@ -534,40 +621,14 @@ inline double eval_cell_coupling_log_lik_impl(
 
     double total = 0.0;
     for (int c = 0; c < n_cells; c++) {
-        for (int kk = 0; kk < n_coupled; kk++) {
-            int rc = (int)cell_rows[kk][c].size();
-            arm_row_count[kk] = rc;
-            arm_rows_ptr[kk]  = cell_rows[kk][c].data();
-            if ((int)arm_grad_buf[kk].size() < rc) {
-                arm_grad_buf[kk].assign(rc, 0.0);
-                arm_neg_hess_diag_buf[kk].assign(rc, 0.0);
-            } else {
-                std::fill(arm_grad_buf[kk].begin(),
-                          arm_grad_buf[kk].begin() + rc, 0.0);
-                std::fill(arm_neg_hess_diag_buf[kk].begin(),
-                          arm_neg_hess_diag_buf[kk].begin() + rc, 0.0);
-            }
-            arm_grad_ptr[kk]          = arm_grad_buf[kk].data();
-            arm_neg_hess_diag_ptr[kk] = arm_neg_hess_diag_buf[kk].data();
-        }
-        CellEtas etas_view;
-        etas_view.arm_eta_ptr   = arm_eta_ptr.data();
-        etas_view.arm_rows      = arm_rows_ptr.data();
-        etas_view.arm_row_count = arm_row_count.data();
-        etas_view.n_arms_       = n_coupled;
-        CellResponse y_view;
-        y_view.arm_y           = arm_y_ptr.data();
-        y_view.arm_n_trials    = arm_n_trials_ptr.data();
-        y_view.arm_family      = arm_family_ptr.data();
-        y_view.arm_phi         = arm_phi_vec.data();
-        y_view.arm_rows        = arm_rows_ptr.data();
-        y_view.arm_row_count   = arm_row_count.data();
-        y_view.n_arms_         = n_coupled;
+        views.bind_cell(c, cell_rows);
+        CellEtas     etas_view = views.etas_view();
+        CellResponse y_view    = views.response_view();
         CellDerivs out;
-        out.arm_grad           = arm_grad_ptr.data();
-        out.arm_neg_hess_diag  = arm_neg_hess_diag_ptr.data();
+        out.arm_grad           = views.grad_ptr.data();
+        out.arm_neg_hess_diag  = views.neg_hess_diag_ptr.data();
         out.arm_cross_hess     = cross_hess_outer.data();
-        out.arm_row_count      = arm_row_count.data();
+        out.arm_row_count      = views.row_count.data();
         out.n_arms_            = n_coupled;
         out.grad_only          = true;
         total += spec.evaluate_cell(c, etas_view, y_view, out);
@@ -589,12 +650,7 @@ inline double eval_cell_coupling_log_lik(
     return eval_cell_coupling_log_lik_impl(
         spec, coupled_arms, cell_rows, n_cells, arms, etas,
         [&](int kk, int k) {
-            CellArmResponse r;
-            r.y        = arms[k].y.size() > 0 ? REAL(arms[k].y) : nullptr;
-            r.n_trials = arms[k].n_trials.size() > 0
-                         ? INTEGER(arms[k].n_trials) : nullptr;
-            r.phi      = phi_override ? phi_override[kk] : arms[k].phi;
-            return r;
+            return coupled_arm_own_response(arms[k], kk, phi_override);
         });
 }
 
@@ -879,35 +935,16 @@ inline void scatter_cell_coupling_branch_impl(
         }
     }
 
-    // Per-cell pointer arrays for the CellEtas/Response/Derivs views.
-    // Reused across cells -- the per-arm pointers themselves are stable
-    // across cells (etas / family / phi); only the per-arm row slice
-    // changes per cell.
-    std::vector<const double*> arm_eta_ptr(n_coupled);
-    std::vector<const double*> arm_y_ptr(n_coupled);
-    std::vector<const int*>    arm_n_trials_ptr(n_coupled);
-    std::vector<std::string>   family_holder(n_coupled);
-    std::vector<const char*>   arm_family_ptr(n_coupled);
-    std::vector<double>        arm_phi_vec(n_coupled);
-    for (int kk = 0; kk < n_coupled; kk++) {
-        int k = coupled_arms[kk];
-        arm_eta_ptr[kk]      = REAL(etas[k]);
-        arm_y_ptr[kk]        = arms[k].y.size()       > 0 ? REAL(arms[k].y)             : nullptr;
-        arm_n_trials_ptr[kk] = arms[k].n_trials.size()> 0 ? INTEGER(arms[k].n_trials)   : nullptr;
-        family_holder[kk]    = arms[k].family;
-        arm_family_ptr[kk]   = family_holder[kk].c_str();
-        arm_phi_vec[kk]      = phi_override ? phi_override[kk] : arms[k].phi;
-    }
-
-    // Per-cell scratch (row counts + row pointer arrays + derivative
-    // buffers). Sized at construction; capacity grows monotonically as
-    // larger cells are encountered.
-    std::vector<int>            arm_row_count(n_coupled);
-    std::vector<const int*>     arm_rows_ptr(n_coupled);
-    std::vector<std::vector<double>> arm_grad_buf(n_coupled);
-    std::vector<std::vector<double>> arm_neg_hess_diag_buf(n_coupled);
-    std::vector<double*>        arm_grad_ptr(n_coupled);
-    std::vector<double*>        arm_neg_hess_diag_ptr(n_coupled);
+    // Per-arm views and the per-cell slices of them: the same holder the
+    // objective-only walker uses, so the two cannot describe the cell
+    // differently.
+    CoupledArmViews views(coupled_arms, arms, etas,
+                          [&](int kk, int k) {
+                              return coupled_arm_own_response(arms[k], kk,
+                                                              phi_override);
+                          });
+    std::vector<int>&        arm_row_count = views.row_count;
+    std::vector<const int*>& arm_rows_ptr  = views.rows_ptr;
 
     // Per-cell cross-arm Hessian scratch. arm_cross_hess[kk][ll] is a
     // J_kk x J_ll row-major buffer (kk <= ll only; kk > ll left nullptr
@@ -933,7 +970,7 @@ inline void scatter_cell_coupling_branch_impl(
     std::vector<std::vector<double>> rank1_vec_buf(n_coupled);
     std::vector<double*>             rank1_vec_ptr(n_coupled, nullptr);
     std::vector<ArmRowChainEntry>    rank1_u_scratch;
-    rank1_u_scratch.reserve(64);   // capacity hint; grows as cells demand
+    rank1_u_scratch.reserve(kCellChainScratchHint);
 
     // Per-row chain scratch reused across rows / pairs.
     std::vector<int>    active_idx;
@@ -942,8 +979,8 @@ inline void scatter_cell_coupling_branch_impl(
     active_d.reserve(B);
     std::vector<ArmRowChainEntry> chain_k_scratch;
     std::vector<ArmRowChainEntry> chain_l_scratch;
-    chain_k_scratch.reserve(32);   // capacity hints; grow as rows demand
-    chain_l_scratch.reserve(32);
+    chain_k_scratch.reserve(kRowChainScratchHint);
+    chain_l_scratch.reserve(kRowChainScratchHint);
 
     // Which (kk, ll) dense cross-Hessian slabs to allocate. The spec declares the
     // pairs it actually writes densely; a self block it emits as the rank-1
@@ -962,22 +999,9 @@ inline void scatter_cell_coupling_branch_impl(
     }
 
     for (int c = c0; c < cend; c++) {
+        views.bind_cell(c, cell_rows);
         for (int kk = 0; kk < n_coupled; kk++) {
-            int rc = (int)cell_rows[kk][c].size();
-            arm_row_count[kk] = rc;
-            arm_rows_ptr[kk]  = cell_rows[kk][c].data();
-            if ((int)arm_grad_buf[kk].size() < rc) {
-                arm_grad_buf[kk].assign(rc, 0.0);
-                arm_neg_hess_diag_buf[kk].assign(rc, 0.0);
-            } else {
-                std::fill(arm_grad_buf[kk].begin(),
-                          arm_grad_buf[kk].begin() + rc, 0.0);
-                std::fill(arm_neg_hess_diag_buf[kk].begin(),
-                          arm_neg_hess_diag_buf[kk].begin() + rc, 0.0);
-            }
-            arm_grad_ptr[kk]          = arm_grad_buf[kk].data();
-            arm_neg_hess_diag_ptr[kk] = arm_neg_hess_diag_buf[kk].data();
-
+            const int rc = arm_row_count[kk];
             // Rank-1 self-cross descriptor: re-zero the coefficient (the spec
             // sets it only when it declares the (kk, kk) block rank-1) and grow
             // the rc_k weight buffer. Its contents are only read when the spec
@@ -1012,24 +1036,12 @@ inline void scatter_cell_coupling_branch_impl(
             }
         }
 
-        CellEtas etas_view;
-        etas_view.arm_eta_ptr   = arm_eta_ptr.data();
-        etas_view.arm_rows      = arm_rows_ptr.data();
-        etas_view.arm_row_count = arm_row_count.data();
-        etas_view.n_arms_       = n_coupled;
-
-        CellResponse y_view;
-        y_view.arm_y           = arm_y_ptr.data();
-        y_view.arm_n_trials    = arm_n_trials_ptr.data();
-        y_view.arm_family      = arm_family_ptr.data();
-        y_view.arm_phi         = arm_phi_vec.data();
-        y_view.arm_rows        = arm_rows_ptr.data();
-        y_view.arm_row_count   = arm_row_count.data();
-        y_view.n_arms_         = n_coupled;
+        CellEtas     etas_view = views.etas_view();
+        CellResponse y_view    = views.response_view();
 
         CellDerivs out;
-        out.arm_grad             = arm_grad_ptr.data();
-        out.arm_neg_hess_diag    = arm_neg_hess_diag_ptr.data();
+        out.arm_grad             = views.grad_ptr.data();
+        out.arm_neg_hess_diag    = views.neg_hess_diag_ptr.data();
         out.arm_cross_hess       = cross_hess_outer.data();
         out.arm_row_count        = arm_row_count.data();
         out.n_arms_              = n_coupled;
@@ -1045,8 +1057,8 @@ inline void scatter_cell_coupling_branch_impl(
             int k  = coupled_arms[kk];
             int rc = arm_row_count[kk];
             const int*    rows = arm_rows_ptr[kk];
-            const double* g    = arm_grad_buf[kk].data();
-            const double* h    = arm_neg_hess_diag_buf[kk].data();
+            const double* g    = views.grad_buf[kk].data();
+            const double* h    = views.neg_hess_diag_buf[kk].data();
             for (int j = 0; j < rc; j++) {
                 scatter_row(
                     rows[j], g[j], h[j],
@@ -1366,7 +1378,10 @@ inline void scatter_arm_obs_joint_multi_sparse(
 
         for (int b = 0; b < B; b++) {
             const LatentBlock& blk = blocks[b];
-            const double d_eff = d_eff_cache[b];
+            // The per-row SVC weight folds into the block amplitude ahead of
+            // the kind split, so every kind carries it. Unset -> 1.0, which
+            // leaves an unweighted block's amplitude bit-identical.
+            const double d_eff = d_eff_cache[b] * block_row_weight(blk, i, k_arm);
             // Field_coef = 0 arms (or any block with arm_scale * d_fac == 0)
             // contribute nothing to gradient or Hessian for this arm; skip
             // the per-block resolution work entirely.
@@ -1574,15 +1589,18 @@ inline void compute_eta_joint_sparse_dispatch(
             }
             for (int b = 0; b < B; b++) {
                 const LatentBlock& blk = blocks[b];
-                const double d_e = d_eff[b][k_arm];
+                // Same fold as the scatter walkers: the per-row SVC weight
+                // rides the block amplitude on every kind, and is 1.0 where
+                // the block declares none.
+                const double d_e = d_eff[b][k_arm]
+                                 * block_row_weight(blk, i, k_arm);
                 if (d_e == 0.0) continue;
                 switch (blk.contrib_kind) {
                 case BlockContribKind::INDEXED_SINGLE: {
                     if (!blk.idx) break;
                     int l = blk.idx(i, k_arm);
                     if (l > 0 && l <= blk.size) {
-                        e += d_e * block_row_weight(blk, i, k_arm)
-                                 * x[blk.start + l - 1];
+                        e += d_e * x[blk.start + l - 1];
                     }
                     break;
                 }

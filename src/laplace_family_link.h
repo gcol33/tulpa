@@ -130,7 +130,7 @@ enum class FamilyKind : int {
 };
 
 // A family code resolved once, so the per-observation entry points below carry
-// no string work at all (gcol33/tulpa#372). The ladders they replace compared
+// no string work at all. The ladders they replace compared
 // the code against every special family in turn and then called
 // parse_family_link, which builds two std::strings and a concatenated prefix
 // per call -- per observation, per objective evaluation. Both entry points take
@@ -190,7 +190,7 @@ inline FamilyResolved resolve_family(const std::string& code) {
 // splits into `kernel + const` (laplace_likelihoods.h), and zero for every
 // other kind. A fit evaluates this once per observation and hands the value
 // back to log_lik_for_family, which adds it in the same place and the same
-// order the full density did (gcol33/tulpa#372).
+// order the full density did.
 inline double log_lik_const_for_kind(double y, int n_trials, FamilyKind kind) {
     switch (kind) {
     case FamilyKind::BINOMIAL:
@@ -819,7 +819,7 @@ inline GradHess grad_hess_for_family(
 // Poisson -lgamma(y+1), zero elsewhere -- and it is ADDED in the same position
 // and the same order the full densities in laplace_likelihoods.h add it, so a
 // caller holding a precomputed value reproduces them bit for bit
-// (gcol33/tulpa#372). `fl` and `pos_eta_domain` are read only on the GENERIC
+//. `fl` and `pos_eta_domain` are read only on the GENERIC
 // branch; every other kind may pass a null `fl`.
 inline double log_lik_for_family_core(
     double y, int n_trials, double eta, FamilyKind kind, const FamilyLink* fl,
@@ -1375,7 +1375,7 @@ inline double compute_total_log_lik(
 }
 
 // The same sum with the family resolved and its eta-independent per-observation
-// terms already evaluated (gcol33/tulpa#372). This is the form the Newton line
+// terms already evaluated. This is the form the Newton line
 // search reaches, so nothing in the loop body touches a string or an lgamma
 // that does not move with eta; FamilyLogLik below owns the precompute.
 inline double compute_total_log_lik(

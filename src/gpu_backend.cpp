@@ -21,7 +21,7 @@ bool cpp_gpu_available() {
 // at RUN time. This asks what was COMPILED, and it is exported because the two
 // used to be indistinguishable: gpu_backend.h and gpu_nngp_laplace.h defined
 // the same `inline` functions differently, so which one every caller got was a
-// link-order accident that nothing could report (gcol33/tulpa#396).
+// link-order accident that nothing could report.
 //
 // This translation unit reaches it through gpu_backend.h and the NNGP kernels
 // reach it through gpu_cuda.h, so a test asserting they AGREE is what pins the

@@ -10,7 +10,7 @@
 // precision: `s2z_precision(n) * (sum_i phi_i)^2` is one unit-weight group
 // over the whole field, a Knorr-Held Type-IV interaction pinned on both
 // margins is S row groups plus T column groups, and the trend family a
-// non-cyclic RW2 kernel needs (st_null_space.h, gcol33/tulpa#600) is S more
+// non-cyclic RW2 kernel needs (st_null_space.h) is S more
 // groups whose weights are the centred ramp. The weights are what makes that
 // third family expressible: a trend is not an indicator. Nothing here is
 // Type-IV-specific -- the caller supplies the groups.
@@ -23,7 +23,7 @@
 // -- and 11.5 to 51 on the subspace with the margin directions deleted. The
 // margin eigendirections are 1_S (x) a and b (x) 1_T, linear combinations
 // rather than coordinates, which is why no diagonal reaches them and why the
-// remedy has to carry those directions explicitly (gcol33/tulpa#597).
+// remedy has to carry those directions explicitly.
 //
 // COST. The inverse is Woodbury on a k x k inner matrix, k = the number of
 // groups:
@@ -203,10 +203,10 @@ struct LowRankMassTerm {
   // p = D^(1/2) z1 + U Lambda^(1/2) z2 with z1, z2 independent standard
   // normals has covariance D + U Lambda U' = M EXACTLY: it is a sum of two
   // independent Gaussians, so no square root of the sum is needed and none is
-  // formed. (gcol33/tulpa#597 records this construction as a trap. It is not
-  // one -- test-lowrank-mass.R scores the realized covariance against M and
-  // pins the algebra -- and the reading it was written against, taking the two
-  // terms as a claimed factorization of M^(1/2), is what the sum is not.)
+  // formed. test-lowrank-mass.R scores the realized covariance against M, so
+  // the algebra is pinned rather than asserted. What the two terms are NOT is
+  // a factorization of M^(1/2); reading them that way is where a square root
+  // of the sum would seem to be required.
   void sample_momentum(double* p_full, std::mt19937& rng) const {
     std::normal_distribution<double> normal(0.0, 1.0);
     double* p = p_full + start;

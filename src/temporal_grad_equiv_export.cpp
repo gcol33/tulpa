@@ -20,7 +20,7 @@
 // `augment` selects the sum-to-zero augmented intrinsic arms, which is what
 // multiscale_temporal_log_lik evaluates on the production path, and it drives
 // BOTH the value and the gradient here so the finite difference sees the same
-// density the kernel claims (gcol33/tulpa#588). The tau-parameterized
+// density the kernel claims. The tau-parameterized
 // tulpa_tvc kernels have no augmented form, so the cross-parameterization
 // columns are meaningful at augment = false only.
 
@@ -94,7 +94,7 @@ Rcpp::List cpp_test_temporal_grad_equiv(Rcpp::NumericVector w, double sigma2,
 }
 
 // The stationary-factor slope on its own, so the test can check the piece that
-// makes the value and the rho gradient one function (gcol33/tulpa#589) against
+// makes the value and the rho gradient one function against
 // a central difference of the factor itself, rather than only through the
 // assembled density.
 // [[Rcpp::export]]

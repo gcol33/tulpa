@@ -878,7 +878,7 @@ double cpp_test_s2z_precision(int n, double kappa) {
 // Multiscale temporal log-prior probe. The multiscale block is populated only
 // by consumer packages (has_multiscale_temporal is never set on tulpa's own
 // front door), so this is the only place tulpa can assert that its intrinsic
-// trend and seasonal arms are pinned to sum-to-zero (gcol33/tulpa#241).
+// trend and seasonal arms are pinned to sum-to-zero.
 // [[Rcpp::export]]
 double cpp_test_multiscale_temporal_log_lik(
     NumericVector trend, NumericVector seasonal, NumericVector short_term,
@@ -1823,13 +1823,13 @@ Rcpp::List cpp_spatial_partition_probe(int n_units,
 }
 
 // =====================================================================
-// SPDE FEM assembly probe (gcol33/tulpa#280)
+// SPDE FEM assembly probe
 // =====================================================================
 // Assembles Q at the requested operator order and returns it as CSC, so the
 // testthat layer can compare the compiled binomial expansion against an
 // independently built K (C^-1 K)^(alpha-1) at each integer alpha. Also returns
 // the (kappa, tau) the shared Matern conversion produces for the given nu
-// (gcol33/tulpa#279), so both formulas are checked at one call site.
+//, so both formulas are checked at one call site.
 // [[Rcpp::export]]
 List cpp_test_spde_assemble(
     Rcpp::NumericVector C0_diag,
@@ -1858,7 +1858,7 @@ List cpp_test_spde_assemble(
 
 // ---------------------------------------------------------------------------
 // NNGP prior scatter, next to the pieces needed to rebuild Lambda
-// independently (gcol33/tulpa#278).
+// independently.
 //
 // Runs batch_nngp_scatter, then applies the prior scatter to the (alpha, cv)
 // it returned. Handing back the filled Hessian alongside those coefficients
@@ -2083,7 +2083,7 @@ List cpp_test_scalar_guard(std::string fn, double x, double p = 2.0) {
 
 // ---------------------------------------------------------------------------
 // One ICAR field sweep, exposed so the full conditional can be scored against
-// its analytic form (gcol33/tulpa#423).
+// its analytic form.
 //
 // The sweep is Gauss-Seidel: unit j's conditional mean reads the neighbours the
 // sweep has already reached at their new values and every other neighbour at
@@ -2127,8 +2127,8 @@ Rcpp::List cpp_test_update_spatial_icar(
 
 // The precision the non-centered transform actually factors, as a CSC triple.
 //
-// The arbiter for gcol33/tulpa#590: the non-centered assembly and the Laplace
-// one (SpdeQBuilder) must produce the SAME Q on a mesh carrying a zero-mass
+// The arbiter that the non-centered assembly and the Laplace
+// one (SpdeQBuilder) produce the SAME Q on a mesh carrying a zero-mass
 // vertex, which is the whole point of the orphan ridge. Nothing else on the
 // transform's surface exposes Q, so a disagreement confined to the orphan's
 // row and column was invisible.
@@ -2174,7 +2174,7 @@ Rcpp::List cpp_test_spde_nc_transform_Q(
 }
 
 // ---------------------------------------------------------------------------
-// tgmrf block spec validation (gcol33/tulpa#472).
+// tgmrf block spec validation.
 //
 // make_tgmrf_block is reached from the joint multi-block front door, which
 // hands it the R block spec unchanged. Building the block from a spec directly

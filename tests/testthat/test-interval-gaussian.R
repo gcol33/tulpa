@@ -84,3 +84,59 @@ test_that("a finite bound far from eta stays finite (no Inf * 0 = NaN)", {
     expect_true(is.finite(out[["grad"]]))
     expect_true(is.finite(out[["neg_hess"]]) && out[["neg_hess"]] >= 0)
 })
+
+test_that("an interval far below eta keeps a gradient pointing back to it", {
+    # gcol33/tulpa#462: the probability was differenced on the natural scale and
+    # floored at 1e-300, so once both pnorm tails underflowed the kernel
+    # returned a finite ll, an exactly zero gradient and a floored positive
+    # curvature -- a plateau of the floor. The line search accepts a finite
+    # objective and newton_converged reads max|grad| == 0 as a mode, so a solve
+    # that wandered out here reported convergence at a point that is not one.
+    sg  <- 0.4
+    eta <- 0.0
+    for (mult in c(20, 38, 50, 120, 400)) {
+        lo <- eta + mult * sg
+        hi <- lo + sg
+        out <- tulpa:::cpp_interval_gaussian_terms(lo, hi, eta, sg)
+
+        expect_true(is.finite(out[["ll"]]), info = paste("mult", mult))
+        expect_lt(out[["ll"]], -100)
+        # The interval sits ABOVE eta, so increasing eta increases the mass:
+        # the gradient is strictly positive and of order (lo - eta) / sigma^2.
+        expect_gt(out[["grad"]], 0)
+        expect_gt(abs(out[["grad"]]), 1)
+        expect_gt(out[["neg_hess"]], 0)
+    }
+
+    # Mirror image below eta: the gradient turns around.
+    below <- tulpa:::cpp_interval_gaussian_terms(-50 * sg - sg, -50 * sg, 0, sg)
+    expect_lt(below[["grad"]], 0)
+    expect_true(is.finite(below[["ll"]]))
+})
+
+test_that("the deep-tail gradient matches the one-sided Mills ratio", {
+    # Far outside a narrow interval the mass is dominated by the near edge, so
+    # d logP / d eta -> (edge - eta) / sigma^2 to leading order. That is an
+    # independent reference for a regime where a finite difference of the R
+    # log-mass cannot be formed (both pnorm values underflow to 0).
+    sg <- 0.5; eta <- 0.0
+    for (mult in c(45, 60, 100)) {
+        lo <- mult * sg
+        out <- tulpa:::cpp_interval_gaussian_terms(lo, lo + 1e-3 * sg, eta, sg)
+        expect_equal(out[["grad"]], (lo - eta) / sg^2, tolerance = 1e-2,
+                     info = paste("mult", mult))
+        # log P ~ log(width) + log phi(z) for a narrow interval.
+        z <- (lo - eta) / sg
+        expect_equal(out[["ll"]],
+                     log(1e-3 * sg) - 0.5 * z^2 - 0.5 * log(2 * pi) - log(sg),
+                     tolerance = 1e-2)
+    }
+})
+
+test_that("an empty interval is refused rather than floored", {
+    # upper <= lower carries no mass: -Inf is what the line search backtracks
+    # off, where a floored finite value would be accepted as a trial point.
+    out <- tulpa:::cpp_interval_gaussian_terms(1.0, 1.0, 0.0, 1.0)
+    expect_equal(out[["ll"]], -Inf)
+    expect_equal(out[["grad"]], 0)
+})

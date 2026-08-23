@@ -83,7 +83,7 @@ recov_theta_to_L(const Eigen::VectorXd& theta,
 // negligible next to a variance of 1 and is the ENTIRE quantity next to a
 // variance of 1e-20 -- measured on the BLUP extractor with a flat oracle, the
 // reported posterior variance was one constant across ten orders of magnitude
-// of true variance, and the solve reported success (gcol33/tulpa#595).
+// of true variance, and the solve reported success.
 //
 // Relative keeps it negligible at every representable scale. The absolute
 // backstop applies only where the diagonal is not positive at all, which is

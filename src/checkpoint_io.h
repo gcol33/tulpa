@@ -329,12 +329,22 @@ public:
         }
     }
 
+    // Every accessor takes mu_, not save() alone: an emplace that rehashes
+    // relocates the bucket array a concurrent find() is walking. References to
+    // the elements themselves survive a rehash (the map is node-based), so
+    // get() may hand its reference out past the lock. The current consumer
+    // reads the log serially before its parallel region and only save()s from
+    // a worker; locking the readers is what lets the next one do otherwise.
     bool has(int k) const {
         if (k < 0 || k >= static_cast<int>(keys_.size())) return false;
+        std::lock_guard<std::mutex> lock(mu_);
         return loaded_.find(keys_[k]) != loaded_.end();
     }
 
-    const Payload& get(int k) const { return loaded_.at(keys_[k]); }
+    const Payload& get(int k) const {
+        std::lock_guard<std::mutex> lock(mu_);
+        return loaded_.at(keys_[k]);
+    }
 
     // Append unit k's completed result. Thread-safe: the outer loop may call
     // this from inside an OpenMP parallel region.
@@ -355,12 +365,6 @@ public:
         out_.write(reinterpret_cast<const char*>(&chk), sizeof(chk));
         out_.flush();
         loaded_.emplace(key, res);
-    }
-
-    int n_loaded() const {
-        int n = 0;
-        for (const auto& k : keys_) if (loaded_.find(k) != loaded_.end()) n++;
-        return n;
     }
 
 private:
@@ -426,7 +430,7 @@ private:
     std::vector<std::string>                 keys_;
     std::unordered_map<std::string, Payload> loaded_;
     std::ofstream                            out_;
-    std::mutex                               mu_;
+    mutable std::mutex                       mu_;
 };
 
 template <typename Payload>

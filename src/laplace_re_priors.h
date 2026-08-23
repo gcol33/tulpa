@@ -14,10 +14,18 @@
 
 namespace tulpa {
 
-// Default fixed-effect prior precision: beta_j ~ N(0, 1e4), i.e. sd = 100.
-// This is the historical weak prior every Laplace solver applied inline;
-// keeping it here makes it a single named constant.
-inline constexpr double DEFAULT_TAU_BETA = 1e-4;
+// The weak default fixed-effect prior, beta_j ~ N(0, 100^2), in the two
+// parameterizations the kernels read it in: the nested-Laplace prior helpers
+// take a precision, the spec path takes an SD on ModelData::sigma_beta. Both
+// are defined here so a change to the default cannot move only one of them.
+inline constexpr double DEFAULT_TAU_BETA   = 1e-4;
+inline constexpr double DEFAULT_SIGMA_BETA = 100.0;
+static_assert(DEFAULT_SIGMA_BETA * DEFAULT_SIGMA_BETA * DEFAULT_TAU_BETA
+                  - 1.0 < 1e-12 &&
+              1.0 - DEFAULT_SIGMA_BETA * DEFAULT_SIGMA_BETA * DEFAULT_TAU_BETA
+                  < 1e-12,
+              "DEFAULT_SIGMA_BETA and DEFAULT_TAU_BETA must describe the same "
+              "prior: tau = 1 / sigma^2.");
 
 // Floor added to sigma_re^2 before inverting it into a precision, so a zero or
 // near-zero random-effect SD yields a large but finite tau_re instead of a

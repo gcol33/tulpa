@@ -1,7 +1,8 @@
 // mem_budget.h
-// Memory-budget arithmetic for the outer-grid thread clamp, factored out of the
-// nested-Laplace grid drivers so the "budget against free RAM, not installed"
-// decision is single-sourced and unit-testable independent of a running fit.
+// Memory-budget arithmetic for the outer-grid thread clamp. It lives here
+// rather than in the nested-Laplace grid drivers so the "budget against free
+// RAM, not installed" rule has one definition and is testable independent of a
+// running fit.
 #ifndef TULPA_MEM_BUDGET_H
 #define TULPA_MEM_BUDGET_H
 
@@ -18,11 +19,11 @@ constexpr double kOuterThreadRamFraction = 0.6;
 // Bytes the replicated per-outer-thread state may occupy, given the detected
 // available (free + reclaimable) and total installed RAM in bytes.
 //
-// Sizing against AVAILABLE, not total, is the fix for the over-provisioning that
-// pushed a loaded machine into swap / OOM: half of a 64 GB install is 32 GB even
-// when only 40 GB is free and 23 GB is already committed. A safety fraction of
-// free RAM is used when it is known; the fallbacks (half of total, then a fixed
-// 2 GB) cover platforms / conditions where a query returns 0.
+// The fraction applies to AVAILABLE rather than installed RAM, because a
+// loaded machine can have most of what is installed already committed, and a
+// budget taken from the installed figure over-provisions the thread pool into
+// swap. The fallbacks (half of total, then a fixed 2 GB) cover platforms and
+// conditions where the availability query returns 0.
 inline std::size_t outer_thread_mem_budget(std::size_t avail_bytes,
                                            std::size_t total_bytes) {
   if (avail_bytes > 0) {

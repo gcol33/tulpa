@@ -12,7 +12,7 @@ double neg_hess_log_lik_gaussian(double y, double eta, double phi);
 
 // The binomial and Poisson log-densities each split into an eta-dependent
 // kernel and a per-observation constant, so a fit can evaluate the constant
-// once instead of on every objective evaluation (gcol33/tulpa#372). The full
+// once instead of on every objective evaluation. The full
 // densities below are `kernel + const` in that order, so a caller holding a
 // precomputed constant reproduces them bit for bit.
 double log_lik_binomial_kernel(int y, int n, double eta);

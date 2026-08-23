@@ -152,7 +152,7 @@ inline T multiscale_temporal_log_lik(
   // Trend and seasonal are both intrinsic and both enter the SAME linear
   // predictor, so each carries a constant null direction that is unidentified
   // against the intercept and against the other component. Both are augmented
-  // (gcol33/tulpa#241) -- Q -> Q + 11'/n, with compute_temporal_eta centring
+  // -- Q -> Q + 11'/n, with compute_temporal_eta centring
   // each arm before it reaches eta -- so the direction is removed rather than
   // penalised. The short-term arm is proper (AR1/IID), identifies its own
   // level, and is left alone.

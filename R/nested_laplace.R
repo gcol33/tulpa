@@ -24,10 +24,13 @@
 #'   `type` one of \{"icar", "bym2", "car_proper", "rw1", "rw2", "ar1"\}.
 #'   Type-specific fields:
 #'   * icar:  `spatial_idx`, `n_spatial_units`, `adj_row_ptr`, `adj_col_idx`,
-#'           `n_neighbors` (CSR adjacency, 0-based); optional `tau_grid`;
-#'           optional `svc_weight` (one weight per observation) to make it a
-#'           spatially-varying coefficient whose eta contribution is
-#'           `svc_weight[i] * z[spatial_idx[i]]` rather than `z[spatial_idx[i]]`.
+#'           `n_neighbors` (CSR adjacency, 0-based); optional `tau_grid`.
+#'
+#'   Any block accepts an optional `svc_weight`, one weight per observation,
+#'   which makes it a varying coefficient: observation `i` contributes
+#'   `svc_weight[i] * f_i` instead of `f_i`, where `f_i` is the block's field
+#'   at that row (`z[spatial_idx[i]]` for an areal block, `(A u)_i` for an
+#'   SPDE one). Absent, the field enters unweighted.
 #'   * bym2:  same adjacency; `scale_factor`; optional `sigma_grid`, `rho_grid`.
 #'   * car_proper: same adjacency; optional `tau_grid`, `rho_grid`,
 #'           `rho_bounds = c(lower, upper)` (defaults to (0, 1)).
@@ -1319,6 +1322,16 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 .nl_block_spec_for_cpp <- function(p, block_joint_grid = NULL) {
   type <- tolower(p$type)
   .nl_check_block_fields(p, c("axis", "multi"))
+  # Optional per-observation design weight, attached after the type branch has
+  # built the spec: it turns any block into a varying coefficient whose eta
+  # contribution is svc_weight[i] * <the block's field at i>, and the C++ side
+  # honours it on every contribution kind. Reading it per type would decide
+  # which fields can vary by where the read happens to be written.
+  .with_svc <- function(out) {
+    if (is.null(p$svc_weight)) return(out)
+    out$svc_weight <- as.numeric(p$svc_weight)
+    out
+  }
   if (type %in% c("icar", "bym2", "car_proper")) {
     out <- list(
       type            = type,
@@ -1331,14 +1344,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     if (type == "bym2") {
       out$scale_factor <- as.numeric(p$scale_factor %||% 1.0)
     }
-    # Optional per-observation design weight: an areal varying-coefficient
-    # (SVC) field whose eta contribution is svc_weight[i] * z[spatial_idx[i]].
-    # The icar block builder reads it as LatentBlock::row_weight. Only icar
-    # carries it on this path; absent -> a plain intercept field.
-    if (type == "icar" && !is.null(p$svc_weight)) {
-      out$svc_weight <- as.numeric(p$svc_weight)
-    }
-    out
+    .with_svc(out)
   } else if (type %in% c("rw1", "rw2", "ar1")) {
     out <- list(
       type         = type,
@@ -1346,13 +1352,13 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
       n_times      = as.integer(p$n_times)
     )
     if (type %in% c("rw1", "rw2")) out$cyclic <- isTRUE(p$cyclic)
-    out
+    .with_svc(out)
   } else if (type == "iid") {
-    list(
+    .with_svc(list(
       type    = "iid",
       obs_idx = as.integer(p$obs_idx),
       n_units = as.integer(p$n_units)
-    )
+    ))
   } else if (type == "spde") {
     # FEM mesh + projection. The C++ side wraps the single A CSC in a length-1
     # per-arm list and builds the LatentBlock via make_spde_block. Optional
@@ -1374,7 +1380,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
       out$rational_poles   <- as.numeric(p$rational_poles)
       out$rational_weights <- as.numeric(p$rational_weights)
     }
-    out
+    .with_svc(out)
   } else if (type == "tgmrf") {
     # Precompute Q(theta_k) for every joint-grid row and pack CSC triples +
     # logdet + log p(theta_k). The C++ side reads them directly at grid

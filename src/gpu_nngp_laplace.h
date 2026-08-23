@@ -225,7 +225,7 @@ inline void batch_nngp_scatter(
         // identity on the diagonal: `sum_k L[j][k]^2 == C[j][j]`, plus a
         // positive pivot. That is O(n_nb^2) per matrix against the O(n_nb^3)
         // the factorization itself costs, so full coverage stays an order below
-        // the work being verified (gcol33/tulpa#392).
+        // the work being verified.
         if (chol_ok) {
             for (int b = 0; b < batch_size && chol_ok; b++) {
                 const auto& L = C_mats[b];
@@ -346,7 +346,7 @@ inline void batch_nngp_scatter(
 // independently assembled (I - A)' D⁻¹ (I - A) in test-nngp-prior-scatter.R.
 // Compare it RELATIVELY: Λ's entries scale as 1/cond_var, so a fixture where
 // the conditional variance collapses puts them at 1e13 and an absolute
-// comparison reads machine epsilon as a large discrepancy (gcol33/tulpa#278).
+// comparison reads machine epsilon as a large discrepancy.
 template <typename DenseVec, typename SparseBuilder>
 inline void apply_nngp_full_prior_sparse(
     DenseVec& grad, SparseBuilder& H,

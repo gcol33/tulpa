@@ -205,9 +205,9 @@ T compute_temporal_prior(const std::vector<T>& params, const ModelData& data,
             log_post = log_post + log_prior_gamma(log_tau, data.tau_temporal_shape, data.tau_temporal_rate);
 
             // RW1 and RW2 are intrinsic, and this path carried no sum-to-zero
-            // term at all, so the field level was free to wander against the
-            // intercept -- the defect gcol33/tulpa#241 records, which the
-            // spatial and multiscale fields already fixed.
+            // term at all, so the field level would be free to wander
+            // against the intercept, as it is on any intrinsic field left
+            // unpinned.
             //
             // Exactly ONE direction is augmented: the single GLOBAL constant,
             // the only one confounded with the intercept. With several groups

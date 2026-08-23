@@ -119,7 +119,7 @@ List cpp_aghq_blups(NumericVector par, SEXP oracle, IntegerVector nc, LogicalVec
     // A coordinate whose assembled variance is not positive is carried by the
     // absolute PD backstop, so the covariance reported for it did not come
     // from the parameter. That is reported rather than inherited: it is the
-    // one case where the jitter IS the number being read (gcol33/tulpa#595).
+    // one case where the jitter IS the number being read.
     std::vector<char> jitter_floored;
     Eigen::MatrixXd Sig = recov_block_diag_sigma(Ls, d, &jitter_floored);
     const AghqSigmaFactor sf = aghq_sigma_factor(Sig, d);

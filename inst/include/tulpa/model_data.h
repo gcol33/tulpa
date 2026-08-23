@@ -67,17 +67,13 @@ namespace tulpa {
 // 28 -> 29: added the `tulpa_register_cell_coupling` registered C callable
 // (signature `tulpa::RegisterCellCouplingFn` in <tulpa/cell_coupling.h>)
 // + the process-global CellCouplingSpec registry that backs the new
-// `tulpa_nested_laplace_joint(cell_coupling = "<name>")` argument
-// (Change 2b, Layer A). New callable + new R-side
-// argument; no struct layout change. The inner-Newton per-cell branch
-// that actually drives a non-separable spec lands with Layer B.
+// `tulpa_nested_laplace_joint(cell_coupling = "<name>")` argument.
+// New callable + new R-side argument; no struct layout change.
 //
 // 29 -> 30: added `coupled` (bool) + `cell_obs_map` (IntegerVector) to
 // `JointArm` (src/laplace_newton_joint.h) and the inner-Newton dense
 // per-cell branch that dispatches coupled arms to the registered
-// CellCouplingSpec's `evaluate_cell` (Change 2b,
-// Layer B.1). Single-arm path; sparse twin + cross-arm Hessian land
-// with B.2 alongside tulpaObs `OccuCoverLognormalCoupling`.
+// CellCouplingSpec's `evaluate_cell`.
 //
 // 30 -> 31: added the `CurvatureMode` enum + `CellDerivs.curvature` field
 // (<tulpa/cell_coupling.h>) backing `control$hessian = "fisher"`
@@ -110,18 +106,18 @@ namespace tulpa {
 // one trailing container field in the spatial section.
 // 37 -> 38: added svc_parameterization / msgp_parameterization (int,
 // 0=centered/1=non-centered) alongside the existing gp_parameterization --
-// the same field/hyperparameter funnel fix (gcol33/tulpa#243), extended to
+// the same field/hyperparameter funnel fix, extended to
 // the SVC and multiscale-GP NNGP latent blocks. ModelData grew two trailing
 // int fields (svc / multiscale-gp sections).
 // 38 -> 39: MultiscaleGPData gained range_local_prior_alpha /
 // range_regional_prior_alpha (double). The multi-scale range prior moved off a
 // Uniform behind a hard -INFINITY box onto the per-scale PC prior the GP and
 // SVC paths already use, anchored at each scale's declared lower bound
-// (gcol33/tulpa#244).
+//.
 // 39 -> 40: no layout or callable change. ModelData gained
 // set_spatial_adjacency() and compute_param_layout now enforces the invariant
 // it maintains -- a field whose partition does not describe its adjacency is
-// rejected instead of silently pinning nothing (gcol33/tulpaRatio#19). The bump
+// rejected instead of silently pinning nothing. The bump
 // is what turns a consumer built against 39, which assigns the CSR arrays and
 // no partition, into a "rebuild required" at first NUTS use rather than an
 // error about a C++ method its user never called.
@@ -139,7 +135,7 @@ namespace tulpa {
 // hsgp_sigma2_prior_U / _alpha, st_hsgp_sigma2_prior_U / _alpha and
 // tvc_sigma_prior_U / _alpha (trailing doubles in their own sections),
 // defaulted to the (1, 0.01) anchors those three PC priors previously hardcoded
-// (gcol33/tulpa#493, gcol33/tulpa#506).
+//.
 // ============================================================================
 constexpr int TULPA_ABI_VERSION = 42;
 
@@ -370,7 +366,7 @@ struct ModelData {
     // per scale, each field reconstructed w = f(z, sigma2, phi) by
     // compute_multiscale_gp_prior + apply_msgp_nc_transform_* on the sampling
     // path, storage transformed the same way gp_parameterization is. Same
-    // funnel fix, applied independently per scale (gcol33/tulpa#243). Default
+    // funnel fix, applied independently per scale. Default
     // 0 (struct); the sampler builder defaults it to 1 (NNGP path only).
     int msgp_parameterization = 0;      // 0=centered, 1=non-centered
 
@@ -425,7 +421,7 @@ struct ModelData {
     // field/hyperparameter funnel gp_parameterization documents. The struct
     // default stays 0 so non-sampling constructors are unaffected; the
     // sampler builder defaults it to 1 (NNGP path only -- HSGP SVC is already
-    // non-centered by construction). See gcol33/tulpa#243.
+    // non-centered by construction).
     int svc_parameterization = 0;       // 0=centered, 1=non-centered
 
     // ================================================================

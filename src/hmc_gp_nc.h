@@ -30,7 +30,7 @@
 // builds, so the two consumers of each -- the log-post transform
 // (gp/svc/msgp_nc_apply.cpp) and the draw-storage transform
 // (hmc_nuts_chain_iter_store.h) -- read the same field mapping
-// (gcol33/tulpa#243).
+//.
 struct NNGPNCView {
     int n_obs = 0, nn = 0;
     const int* nn_idx = nullptr;              // [n_obs x nn], 1-based, 0 = no neighbor
