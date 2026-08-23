@@ -170,14 +170,15 @@ test_that("nested-Laplace BYM2 sigma tracks the field amplitude", {
   skip_if_not_slow()
   S <- 40L; reps <- 12L; adj <- .chain_adj(S)
   sidx <- rep(seq_len(S), each = reps); N <- length(sidx)
+  gr <- expand.grid(sig = exp(seq(log(0.3), log(2.5), length.out = 6)),
+                    rho = c(0.3, 0.5, 0.7, 0.9))   # paired (equal-length)
   bym2_sigma <- function(amp, seed) {
     phi <- .structured_field(S, seed); set.seed(seed + 1L)
     y <- rbinom(N, 1L, plogis(-0.2 + amp * phi[sidx]))
     prior <- list(type = "bym2", spatial_idx = sidx, n_spatial_units = S,
                   adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
                   n_neighbors = adj$n_neighbors, scale_factor = 1.0,
-                  sigma_grid = exp(seq(log(0.3), log(2.5), length.out = 6)),
-                  rho_grid = c(0.3, 0.5, 0.7, 0.9))
+                  sigma_grid = gr$sig, rho_grid = gr$rho)
     fit <- suppressWarnings(tulpa_nested_laplace(
       as.integer(y), rep(1L, N), matrix(1, N, 1), prior = prior,
       family = "binomial", control = list(diagnose_k = FALSE)))
@@ -195,17 +196,17 @@ test_that("nested-Laplace BYM2 sigma tracks the field amplitude", {
 test_that("nested-Laplace NNGP marginalized CI covers (sigma2, phi_gp)", {
   skip_if_not_slow()
   sigma2_true <- 0.8; phi_true <- 0.35
-  s2_grid <- exp(seq(log(0.2), log(2.0), length.out = 6))
-  pg_grid <- exp(seq(log(0.12), log(0.9), length.out = 6))
+  gr <- expand.grid(s2 = exp(seq(log(0.2), log(2.0), length.out = 6)),
+                    pg = exp(seq(log(0.12), log(0.9), length.out = 6)))
   n_seed <- .nlsr_n_seed()
   s2_cov <- pg_cov <- logical(n_seed)
   for (s in seq_len(n_seed)) {
     d  <- .gp_dataset_gauss(120L, sigma2_true, phi_true, noise_sd = 0.2, seed = 700L + s)
     nb <- .nngp_neighbors(d$coords, 10L)
-    prior <- list(type = "nngp", coords = nb$coords_ord, nn_idx = nb$nn_idx,
+    prior <- list(type = "nngp", coords = d$coords, nn_idx = nb$nn_idx,
                   nn_dist = nb$nn_dist, nn_order = nb$nn_order_0 + 1L,
                   n_spatial = d$n, nn = nb$n_neighbors, cov_type = 0L,
-                  sigma2_grid = s2_grid, phi_gp_grid = pg_grid)
+                  sigma2_grid = gr$s2, phi_gp_grid = gr$pg)
     fit <- suppressWarnings(tulpa_nested_laplace(
       d$y, rep(1L, d$n), matrix(1, d$n, 1), prior = prior,
       family = "gaussian", phi = 0.2, control = list(diagnose_k = FALSE)))
