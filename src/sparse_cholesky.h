@@ -158,20 +158,20 @@ public:
     // The returned pointer is owned by the solver and stable across calls.
     // Callers must NOT M_cholmod_free_sparse() it.
     //
-    // Stability contract: the H sparsity pattern must be model-structural
-    // (fixed across Newton iters, outer-grid cells, and hyperparameter
-    // values). A reset() call clears the cached pattern; otherwise the
-    // pattern is locked from the first refill.
+    // The discovery is numeric, so the first H's VALUES decide the pattern,
+    // and that is a property of one iterate rather than of the model. Every
+    // call therefore walks the whole lower triangle against the cached
+    // pattern; an entry off it whose |H[i][j]| now exceeds drop_tol GROWS the
+    // pattern (union with the cached one, so growth is monotone) and drops the
+    // analyzed factor, which the dispatch rebuilds because analyzed() then
+    // reads false. Discarding the entry instead would factor a matrix missing
+    // that curvature, and the Newton direction, log|H| and the standard errors
+    // would all inherit it. Only a failed reallocation falls back to
+    // discarding, and that path records record_hessian_pattern_drop() so the
+    // enclosing driver's HessianPatternGuard still raises.
     //
-    // The discovery is numeric, so the contract is CHECKED rather than
-    // assumed: every call walks the whole lower triangle against the cached
-    // pattern, and an entry off it whose |H[i][j]| now exceeds drop_tol is
-    // counted through record_hessian_pattern_drop() -- the same channel a
-    // SparseHessianBuilder miss uses, which the enclosing driver's
-    // HessianPatternGuard raises on once its parallel region has joined.
-    // Without the check a cross term that happens to vanish at the first
-    // Newton iterate is absent from the pattern for the whole fit, and the
-    // Newton direction and log|H| come from a different matrix with no signal.
+    // A reset() call clears the cached pattern outright, for a solver reused
+    // across genuinely different models.
     cholmod_sparse* refill_from_dense(const DenseMat& H, int n, double drop_tol);
 
     // Drop the analyzed factor + cached sparse pattern. Next refill_from_dense
@@ -180,6 +180,12 @@ public:
     void reset();
 
 private:
+    // Allocate A_owned_ over the union of `keep`'s pattern (null for the first
+    // discovery) and H's above-tolerance entries, fill the values, and drop any
+    // analyzed factor. False on allocation failure, leaving A_owned_ untouched.
+    bool build_owned_pattern(const DenseMat& H, int n, double drop_tol,
+                             cholmod_sparse* keep);
+
     cholmod_common common_;
     cholmod_factor* factor_;
     cholmod_sparse* A_owned_;

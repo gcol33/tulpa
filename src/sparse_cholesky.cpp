@@ -61,52 +61,123 @@ void SparseCholeskySolver::reset() {
     factored_ = false;
 }
 
+// Allocate A_owned_ over the union of `keep`'s pattern (may be null) and the
+// entries of H above drop_tol, and fill the values from H. Every diagonal is
+// always present. Both row lists ascend within a column, so the union is a
+// two-cursor merge. Any previously analyzed factor belongs to the old pattern
+// and is dropped; the dispatch re-analyzes on the next call because
+// analyzed() then reads false.
+bool SparseCholeskySolver::build_owned_pattern(
+    const DenseMat& H, int n, double drop_tol, cholmod_sparse* keep
+) {
+    const int* Kp = keep ? static_cast<const int*>(keep->p) : nullptr;
+    const int* Ki = keep ? static_cast<const int*>(keep->i) : nullptr;
+
+    auto in_keep = [&](int j, int& cursor, int i) {
+        if (!Kp) return false;
+        const int kend = Kp[j + 1];
+        while (cursor < kend && Ki[cursor] < i) cursor++;
+        return cursor < kend && Ki[cursor] == i;
+    };
+
+    size_t nnz = 0;
+    for (int j = 0; j < n; j++) {
+        int cursor = Kp ? Kp[j] : 0;
+        for (int i = j; i < n; i++) {
+            if (i == j || std::abs(H[i][j]) > drop_tol || in_keep(j, cursor, i))
+                nnz++;
+        }
+    }
+
+    cholmod_sparse* A = M_cholmod_allocate_sparse(
+        n, n, nnz, 1, 1, -1, CHOLMOD_REAL, &common_
+    );
+    if (!A) return false;
+
+    int* Ap = static_cast<int*>(A->p);
+    int* Ai = static_cast<int*>(A->i);
+    double* Ax = static_cast<double*>(A->x);
+
+    size_t idx = 0;
+    for (int j = 0; j < n; j++) {
+        Ap[j] = static_cast<int>(idx);
+        int cursor = Kp ? Kp[j] : 0;
+        for (int i = j; i < n; i++) {
+            if (i == j || std::abs(H[i][j]) > drop_tol || in_keep(j, cursor, i)) {
+                Ai[idx] = i;
+                Ax[idx] = H[i][j];
+                idx++;
+            }
+        }
+    }
+    Ap[n] = static_cast<int>(idx);
+
+    if (factor_) {
+        M_cholmod_free_factor(&factor_, &common_);
+        factor_ = nullptr;
+    }
+    analyzed_ = false;
+    factored_ = false;
+    if (A_owned_) M_cholmod_free_sparse(&A_owned_, &common_);
+    A_owned_ = A;
+    return true;
+}
+
 cholmod_sparse* SparseCholeskySolver::refill_from_dense(
     const DenseMat& H, int n, double drop_tol
 ) {
     if (!A_owned_) {
-        // First call: discover pattern, allocate, fill values.
-        size_t nnz = 0;
-        for (int j = 0; j < n; j++) {
-            for (int i = j; i < n; i++) {
-                if (i == j || std::abs(H[i][j]) > drop_tol) nnz++;
-            }
-        }
-        A_owned_ = M_cholmod_allocate_sparse(
-            n, n, nnz, 1, 1, -1, CHOLMOD_REAL, &common_
-        );
-        if (!A_owned_) return nullptr;
-
-        int* Ap = static_cast<int*>(A_owned_->p);
-        int* Ai = static_cast<int*>(A_owned_->i);
-        double* Ax = static_cast<double*>(A_owned_->x);
-
-        size_t idx = 0;
-        for (int j = 0; j < n; j++) {
-            Ap[j] = static_cast<int>(idx);
-            for (int i = j; i < n; i++) {
-                if (i == j || std::abs(H[i][j]) > drop_tol) {
-                    Ai[idx] = i;
-                    Ax[idx] = H[i][j];
-                    idx++;
-                }
-            }
-        }
-        Ap[n] = static_cast<int>(idx);
-        return A_owned_;
+        // First call: discover the pattern from this H and cache it.
+        return build_owned_pattern(H, n, drop_tol, nullptr) ? A_owned_ : nullptr;
     }
 
     // Subsequent calls: refill Ax in place from the cached (Ap, Ai). No
     // allocator traffic. The lower triangle is walked in full because the
-    // cached pattern came from the first H's VALUES: an entry that sat at or
-    // below drop_tol then has no slot, and its later contribution would be
-    // dropped with no signal. The cached column is consumed with a cursor as
-    // the scan passes its rows, so anything the scan reaches off the pattern is
-    // a contribution the factorization will not see -- counted where it would
-    // change the matrix, on the rule the discovery pass itself used.
+    // cached pattern came from the first H's VALUES, and that is a property of
+    // one iterate rather than of the model: an entry at or below drop_tol then
+    // has no slot, yet the same entry can carry real curvature at another
+    // Newton iterate, outer-grid cell or hyperparameter value. A varying-
+    // coefficient block is the ordinary case -- its cross terms scale with the
+    // per-row design weight and the block amplitude, so which of them clear the
+    // tolerance changes from cell to cell.
+    //
+    // So an entry found off the pattern GROWS the pattern rather than being
+    // discarded. Growth is monotone (the union keeps every cached entry), so it
+    // converges after the first few cells and costs one reallocation and one
+    // re-analyze each time. Discarding instead would factor a matrix that is
+    // missing curvature, and the Newton direction, log|H| and the standard
+    // errors would all inherit it.
     const int* Ap = static_cast<const int*>(A_owned_->p);
     const int* Ai = static_cast<const int*>(A_owned_->i);
     double* Ax    = static_cast<double*>(A_owned_->x);
+    bool grow = false;
+    for (int j = 0; j < n && !grow; j++) {
+        int idx = Ap[j];
+        const int end = Ap[j + 1];
+        for (int i = j; i < n; i++) {
+            const double v = H[i][j];
+            if (idx < end && Ai[idx] == i) {
+                idx++;
+            } else if (i == j || std::abs(v) > drop_tol) {
+                grow = true;
+                break;
+            }
+        }
+    }
+
+    if (grow) {
+        // Union with the cached pattern, so an entry that mattered at an
+        // earlier cell keeps its slot even where it vanishes at this one.
+        if (build_owned_pattern(H, n, drop_tol, A_owned_)) return A_owned_;
+        // Out of memory for the grown pattern. Keep the cached one and record
+        // what it cannot hold, so the enclosing HessianPatternGuard reports a
+        // factorization that is missing curvature instead of it passing
+        // silently.
+        Ap = static_cast<const int*>(A_owned_->p);
+        Ai = static_cast<const int*>(A_owned_->i);
+        Ax = static_cast<double*>(A_owned_->x);
+    }
+
     for (int j = 0; j < n; j++) {
         int idx = Ap[j];
         const int end = Ap[j + 1];
