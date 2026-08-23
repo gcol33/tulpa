@@ -99,8 +99,14 @@ test_that("GP (NNGP) nested Laplace covers the marginal SD and range", {
     K <- sigma2 * exp(-D / phi) + diag(1e-8, n)
     f <- as.numeric(t(chol(K)) %*% rnorm(n)); f <- f - mean(f)
     d <- data.frame(y = rpois(n, exp(0.2 + f)), lon = co[, 1], lat = co[, 2])
+    # The coordinates are already on the unit square, and spatial_range()
+    # reports the range in the units the fit worked in -- standardizing them
+    # would put the reported range on a different scale from rng_true, which
+    # is 3 * phi in the units the field was simulated in. sigma is invariant
+    # to that rescaling, so only the range assertion can see it.
     fit <- tulpa(y ~ 1, data = d, family = "poisson",
-                 spatial = spatial_gp(~ lon + lat, nn = 10L),
+                 spatial = spatial_gp(~ lon + lat, nn = 10L,
+                                      scale_coords = FALSE),
                  mode = "nested_laplace")
     sr <- spatial_range(fit); qn <- .qcols(sr)
     list(sigma = as.numeric(sr["sigma", qn]), range = as.numeric(sr["range", qn]))
