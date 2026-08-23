@@ -204,6 +204,71 @@ test_that("cloglog matches stats::binomial on relative tolerance into the tail",
   expect_equal(lad[eta < -40, "linkinv"], exp(deep), tolerance = 1e-12)
 })
 
+# --------------------------------------------------------------------------- #
+# cauchit's lower tail (gcol33/tulpa#602)                                       #
+#                                                                              #
+# mu = 0.5 + atan(eta) / pi recovers the tail from a subtraction against 0.5,  #
+# so it loses a digit per decade of |eta|. atan(x) + atan(1/x) = pi/2 gives    #
+# each tail directly: atan(-1/eta) / pi below zero, 1 - atan(1/eta) / pi above #
+# it. Same defect as cloglog above, milder -- cauchit's tail decays like       #
+# 1 / (pi |eta|), so the value never underflows to 0, it just runs out of      #
+# correct digits.                                                              #
+#                                                                              #
+# `linkinv` is one function behind both binomial_cauchit and beta_cauchit, so  #
+# reading cpp_link_ladder covers the two.                                      #
+# --------------------------------------------------------------------------- #
+
+test_that("cauchit matches stats::pcauchy on relative tolerance into both tails", {
+  eta <- c(-1e9, -1e8, -1e7, -1e6, -1e5, -1e3, -37, -3, -0.5, 0,
+           0.5, 3, 37, 1e3, 1e5, 1e6, 1e7, 1e8, 1e9)
+  lad <- cpp_link_ladder(eta, "cauchit")
+
+  expect_equal(lad[, "linkinv"], stats::pcauchy(eta), tolerance = 1e-15)
+  expect_equal(lad[, "mu_eta"],  stats::dcauchy(eta), tolerance = 1e-15)
+
+  # In the deep lower tail mu -> 1 / (pi |eta|) to first order; that is the
+  # quantity the cancelling form is recovering from 0.5.
+  deep <- eta[eta <= -1e5]
+  expect_equal(lad[eta <= -1e5, "linkinv"], 1 / (pi * abs(deep)),
+               tolerance = 1e-9)
+
+  # The ladder is known to be sensitive: the cancelling form it replaces is
+  # wrong at these etas by orders of magnitude more than the tolerance above,
+  # and worse the further out it is read.
+  cancelling <- 0.5 + atan(deep) / pi
+  rel <- abs(cancelling - stats::pcauchy(deep)) / stats::pcauchy(deep)
+  expect_gt(max(rel), 1e-9)
+  expect_true(all(diff(rel[order(abs(deep))]) > 0))
+})
+
+test_that("the cauchit derivative ladder is its own finite difference", {
+  eta <- c(-30, -10, -3, -0.5, 0, 0.7, 1.8, 12)
+  h <- 1e-5
+  lad <- function(e) cpp_link_ladder(e, "cauchit")
+  for (j in seq_along(eta)) {
+    e <- eta[j]
+    d1 <- (lad(e + h)[1, "linkinv"] - lad(e - h)[1, "linkinv"]) / (2 * h)
+    d2 <- (lad(e + h)[1, "mu_eta"]  - lad(e - h)[1, "mu_eta"])  / (2 * h)
+    d3 <- (lad(e + h)[1, "mu_eta2"] - lad(e - h)[1, "mu_eta2"]) / (2 * h)
+    expect_equal(unname(lad(e)[1, "mu_eta"]),  unname(d1), tolerance = 1e-6)
+    expect_equal(unname(lad(e)[1, "mu_eta2"]), unname(d2), tolerance = 1e-6)
+    expect_equal(unname(lad(e)[1, "mu_eta3"]), unname(d3), tolerance = 1e-6)
+  }
+})
+
+test_that("the R cauchit link reads the same tails as the kernel", {
+  eta <- c(-1e9, -1e6, -1e5, -3, 0, 3, 1e5, 1e6, 1e9)
+  lk <- tulpa:::.LINKS$cauchit
+  expect_equal(lk$linkinv(eta), unname(cpp_link_ladder(eta, "cauchit")[, "linkinv"]),
+               tolerance = 1e-15)
+  expect_equal(lk$mu_eta(eta), stats::dcauchy(eta), tolerance = 1e-15)
+
+  # linkfun is the inverse, and a mu that far into the tail is where
+  # tan(pi * (mu - 0.5)) loses the argument it is meant to recover.
+  mu <- c(1e-12, 1e-8, 1e-4, 0.3, 0.5, 0.7, 1 - 1e-4)
+  expect_equal(lk$linkinv(lk$linkfun(mu)), mu, tolerance = 1e-13)
+})
+
 test_that("the cloglog derivative ladder is its own finite difference", {
   # mu_eta2 / mu_eta3 carry the same cancellation risk one and two derivatives
   # in (-expm1(eta) is the second's stable form), and both reach a gradient.

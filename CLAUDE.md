@@ -59,7 +59,9 @@ debias, or outer integration), not as standalone alternatives.
    per driver (`src/nl_entry_inputs.h`), so a knob added to a driver is added to
    the bundle and the runner rather than to eleven entry tails.
    `test-nl-entry-forwarding.R` asserts every shared argument is observable in
-   the fit at all eleven entries.
+   the fit at all eleven entries; and `check_arg_length` (`laplace_spec_fit.h`)
+   is the one place an entry refuses an R argument whose length does not match
+   the one it will be indexed by.
 6. **Statistical args vs `control` knobs**: front-door fitters (`tulpa()`, `tulpa_nested_laplace()`, `tulpa_nested_laplace_joint()`) carry only statistical arguments in their signature; all perf / numerical / tuning knobs live in a single `control = list()` (e.g. `control$re_cov`, `n_threads`, `max_iter`, `tol`, `adaptive_grid`, `prune`, `integration`, ...). Pre-release: no deprecation shims -- moved knobs hard-error.
 
 ## C++ Interface

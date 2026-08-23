@@ -79,8 +79,8 @@
     positive_eta = FALSE
   ),
   cauchit = list(
-    linkfun = function(mu) tan(pi * (mu - 0.5)),
-    linkinv = function(eta) 0.5 + atan(eta) / pi,
+    linkfun = function(mu) stats::qcauchy(mu),
+    linkinv = function(eta) stats::pcauchy(eta),
     mu_eta  = function(eta) 1 / (pi * (1 + eta^2)),
     positive_eta = FALSE
   ),

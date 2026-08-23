@@ -1,5 +1,58 @@
 # tulpa NEWS
 
+## 0.1.18
+
+* **A bounded link builds its tail rather than recovering it** (#602). Cauchit's
+  `linkinv` was `0.5 + atan(eta) / pi`, which in the lower tail subtracts two
+  nearly-equal quantities and loses a digit per decade of `|eta|`: measured
+  against `pcauchy`, relative error `5.5e-12` at `eta = -1e5` rising to `2.0e-07`
+  at `-1e9`. `atan(x) + atan(1/x) = pi/2` gives each tail directly --
+  `atan(-1/eta) / pi` below zero, `1 - atan(1/eta) / pi` above it -- which is
+  equal to the old expression in exact arithmetic and free of the cancellation.
+  `linkinv` is one function behind the generic family route, so this reaches the
+  density, the score, the Newton working weight and both curvature ladders for
+  `binomial_cauchit` and `beta_cauchit` alike. The R-side registry
+  (`.LINKS$cauchit`) now reads `stats::pcauchy` / `stats::qcauchy`, matching how
+  probit and logit already read `pnorm` / `plogis`. `mu_eta` and the higher
+  derivatives were stable and are unchanged.
+
+  The convention this follows is stated once above `linkinv`: a bounded link's
+  tail is built, never recovered. logit branches on the sign of eta, cloglog
+  uses `-expm1` (#454), cauchit uses the arctangent identity. The stable form
+  differs per link, so there is nothing to factor out -- the rule is what is
+  shared. Tests: `test-family-link.R`, reading the ladder against `pcauchy` on
+  relative tolerance and pinning that the cancelling form it replaces is wrong
+  by orders of magnitude more, and worse the further out it is read.
+
+* **`cpp_laplace_fit_multi_re` checks the length of every argument it indexes**
+  (#469). `Rcpp::Vector::operator[]`, `Matrix::operator()` and
+  `List::operator[]` are unchecked, and this entry sizes its loops from `y` (or
+  from the RE term count read off `re_ngroups`) and then indexes `X`, `n`,
+  `weights`, `offset`, `re_ncoefs`, `re_sigma_list` and `x_init`, each supplied
+  separately. A short one was read past the end of its allocation: nothing
+  crashed, the solve converged, and the result carried no sign of which numbers
+  came from the data -- the same failure mode as the NNGP coordinate read in
+  #389. All seven are now checked. `cpp_laplace_fit` already reached its checks
+  through `as_re_group_vec` and `build_spec_family_inputs`.
+
+  `check_arg_length` is the one place either entry raises that error, so the two
+  no longer carry their own copies of the message. Tests:
+  `test-laplace-arg-lengths.R`, which also pins that each argument is still
+  accepted at its own length and that supplying all of them reproduces the base
+  fit.
+
+* **The copy-spec checks are pinned at all three entry points** (#465 item 1).
+  `resolve_copy_arm_of_block` restored the two checks its clones had lost, but
+  nothing asserted they fire. `test-joint-block-spec-guards.R` now drives each
+  of the three entries -- `cpp_nested_laplace_joint_multi`, its batch sibling,
+  and `build_joint_layout` through `cpp_test_joint_pattern` -- with an unequal
+  pair, an out-of-range block, an out-of-range arm and a block claimed twice,
+  and holds the no-copy sentinel to being no copy at all.
+
+* Closed #468 with no code change: the sparse joint Newton loop's
+  factorization-failure fallback stopped diverging from the shared one at
+  12b641d. Both drivers call `newton_damped_fallback` and `newton_step_tail`.
+
 ## 0.1.17
 
 * **The eleven nested-Laplace grid entries share one tail** (#603, closing the

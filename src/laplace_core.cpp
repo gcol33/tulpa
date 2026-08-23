@@ -107,6 +107,15 @@ Rcpp::List cpp_laplace_fit_multi_re(
     const int p = X.ncol();
     const int K = re_ngroups.size();
 
+    // This entry marshals ModelData by hand rather than through
+    // build_spec_family_inputs, so the length checks that path carries are made
+    // here. Everything below indexes by N or by K, both read off arguments the
+    // caller supplies separately.
+    tulpa::check_arg_length(X.nrow(), N, "nrow(X)", "length(y)");
+    tulpa::check_arg_length(n.size(), N, "length(n)", "length(y)");
+    tulpa::check_arg_length(re_sigma_list.size(), K, "length(re_sigma_list)",
+                            "length(re_ngroups)");
+
     // --- Zero inflation: the spec-Laplace shim passes 0.0 for the `logit_zi`
     //     callback argument, so the ZI linear predictor is carried as a second
     //     PROCESS (eta[1] = X_zi beta_zi) rather than through data.zi_type's
@@ -188,6 +197,7 @@ Rcpp::List cpp_laplace_fit_multi_re(
     const double* w_ptr = nullptr;
     if (weights.isNotNull()) {
         Rcpp::NumericVector wv = Rcpp::as<Rcpp::NumericVector>(weights);
+        tulpa::check_arg_length(wv.size(), N, "length(weights)", "length(y)");
         w_store.assign(wv.begin(), wv.end());
         w_ptr = w_store.data();
     }
@@ -196,6 +206,8 @@ Rcpp::List cpp_laplace_fit_multi_re(
     std::vector<int> ncoefs(K, 1);
     if (re_ncoefs.isNotNull()) {
         Rcpp::IntegerVector nc = Rcpp::as<Rcpp::IntegerVector>(re_ncoefs);
+        tulpa::check_arg_length(nc.size(), K, "length(re_ncoefs)",
+                                "length(re_ngroups)");
         for (int t = 0; t < K; t++) ncoefs[t] = nc[t];
     }
 
@@ -208,6 +220,7 @@ Rcpp::List cpp_laplace_fit_multi_re(
             proc.X_flat[(size_t)i * p + j] = X(i, j);
     if (offset.isNotNull()) {
         Rcpp::NumericVector ov = Rcpp::as<Rcpp::NumericVector>(offset);
+        tulpa::check_arg_length(ov.size(), N, "length(offset)", "length(y)");
         proc.offset.assign(ov.begin(), ov.end());
     }
 
@@ -343,6 +356,14 @@ Rcpp::List cpp_laplace_fit_multi_re(
     }
     if (x_init.isNotNull()) {
         Rcpp::NumericVector xi = Rcpp::as<Rcpp::NumericVector>(x_init);
+        // The warm start is [beta | per-term RE effects]; the RE half is only
+        // known once populate_re_structure has resolved each term's groups and
+        // coefficients, which is why the length is checked here.
+        R_xlen_t need = p_total;
+        for (int t = 0; t < K; t++)
+            need += (R_xlen_t)data.re_n_groups_multi[t] * data.re_n_coefs[t];
+        tulpa::check_arg_length(xi.size(), need, "length(x_init)",
+                                "the latent dimension");
         int off = 0;
         for (int j = 0; j < p_total; j++) params[j] = xi[off++];
         for (int t = 0; t < K; t++) {

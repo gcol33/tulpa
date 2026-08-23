@@ -95,9 +95,8 @@ test_that("cauchit's score reads the same mu its density reports", {
   # finite difference of the density is dominated by cancellation. The reference
   # is built from the mu the density itself reports (y = 1, n = 1 makes the
   # log-likelihood log(mu)), which is what this file is about: one mu behind
-  # both. It is deliberately not pcauchy(eta) -- the engine's cauchit linkinv is
-  # 0.5 + atan(eta) / pi, which loses digits to cancellation out here, and that
-  # is a separate defect from the floor.
+  # both. Whether that mu is the accurate one is the link's question, answered
+  # against pcauchy in test-family-link.R.
   for (e in c(-1e6, -1e7, -1e8)) {
     r  <- cpp_family_terms(1, 1L, e, "binomial_cauchit", 1)
     mu <- exp(r[["log_lik"]])

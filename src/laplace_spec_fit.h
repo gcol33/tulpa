@@ -63,6 +63,20 @@ inline std::vector<double> as_weights_vec(
     return std::vector<double>(w.begin(), w.end());
 }
 
+// One length check for an R argument an entry point then indexes by some OTHER
+// argument's length. `Rcpp::Vector::operator[]`, `Matrix::operator()` and
+// `List::operator[]` are all unchecked, so a short argument is read past the
+// end of its allocation and the solve returns a converged answer built on
+// whatever the R heap held there -- no warning, and nothing on the result to
+// say which numbers came from the data.
+inline void check_arg_length(R_xlen_t actual, R_xlen_t expected,
+                             const char* what, const char* against) {
+    if (actual != expected) {
+        Rcpp::stop("%s (%d) must equal %s (%d).",
+                   what, (int)actual, against, (int)expected);
+    }
+}
+
 // Copy the R-facing per-observation RE group index into the int vector the
 // spec marshalling takes. Empty when the model carries no RE term, so the
 // caller's `n_re_groups > 0` test alone decides whether the term is fitted.
@@ -71,10 +85,7 @@ inline std::vector<int> as_re_group_vec(
 ) {
     std::vector<int> re_group;
     if (n_re_groups <= 0) return re_group;
-    if ((int)re_idx.size() != N) {
-        Rcpp::stop("length(re_idx) (%d) must equal length(y) (%d).",
-                   (int)re_idx.size(), N);
-    }
+    check_arg_length(re_idx.size(), N, "length(re_idx)", "length(y)");
     re_group.resize(N);
     for (int i = 0; i < N; i++) re_group[i] = (int)re_idx[i];
     return re_group;
@@ -236,14 +247,8 @@ inline void build_spec_family_inputs(
 ) {
     const int N = y.size();
     const int p = X.ncol();
-    if ((int)X.nrow() != N) {
-        Rcpp::stop("nrow(X) (%d) must equal length(y) (%d).",
-                   (int)X.nrow(), N);
-    }
-    if ((int)n_trials.size() != N) {
-        Rcpp::stop("length(n_trials) (%d) must equal length(y) (%d).",
-                   (int)n_trials.size(), N);
-    }
+    check_arg_length(X.nrow(), N, "nrow(X)", "length(y)");
+    check_arg_length(n_trials.size(), N, "length(n_trials)", "length(y)");
     // A mismatched grouping vector would otherwise drop the whole RE term and
     // return a converged fixed-effects fit for a model nobody asked for.
     if (n_re_groups > 0 && (int)re_group_1based.size() != N) {

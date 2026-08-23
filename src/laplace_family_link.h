@@ -236,6 +236,13 @@ inline double safe_pos_eta(double eta) {
     return eta < kEtaFloor ? kEtaFloor : eta;
 }
 
+// A link whose mu is bounded has a tail that gets small, and the textbook form
+// of every one of them recovers that tail by subtracting two nearly-equal
+// quantities. The convention here is that a tail is BUILT, never recovered:
+// logit branches on the sign of eta, cloglog uses -expm1, cauchit uses
+// atan(x) + atan(1/x) = pi/2. The stable form differs per link -- there is no
+// shared expression to factor out -- but the rule does not, and a link added
+// without it loses a digit per decade of |eta| where the tail is the answer.
 inline double linkinv(double eta, const std::string& link) {
     if (link == "identity") return eta;
     if (link == "log") return tulpa_linalg::safe_exp(eta);
@@ -246,7 +253,16 @@ inline double linkinv(double eta, const std::string& link) {
         return e / (1.0 + e);
     }
     if (link == "probit") return tulpa::math::portable_pnorm(eta);
-    if (link == "cauchit") return 0.5 + std::atan(eta) / M_PI;
+    // atan(x) + atan(1/x) = pi/2 for x > 0, so each tail has a form that
+    // builds it directly instead of recovering it from 0.5. The two branches
+    // are exactly equal to `0.5 + atan(eta) / pi` in exact arithmetic; what
+    // they avoid is the cancellation against 0.5, which costs a digit per
+    // decade of |eta| once the tail is the small quantity.
+    if (link == "cauchit") {
+        if (eta < 0.0) return std::atan(-1.0 / eta) / M_PI;
+        if (eta > 0.0) return 1.0 - std::atan(1.0 / eta) / M_PI;
+        return 0.5;
+    }
     // -expm1(-a) keeps full relative accuracy for every a > 0; 1 - exp(-a)
     // cancels as a -> 0 and rounds to exactly 0 once exp(eta) falls below the
     // double spacing at 1, which is mu = 0, outside the support of every

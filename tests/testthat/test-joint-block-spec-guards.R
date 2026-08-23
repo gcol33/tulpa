@@ -31,6 +31,75 @@ skip_on_cran()
         axis_offsets = as.integer(c(0, n_axes)))
 }
 
+# The three entry points that resolve a (copy_arms, copy_blocks) pair, each as
+# a function of that pair alone. cpp_test_joint_pattern stands in for
+# build_joint_layout, which cpp_test_joint_logpost_grad also reaches.
+.bsg_copy_entries <- function(arms, bs, n_axes = 1L) {
+    base <- list(arms_list = arms, blocks_spec = list(bs),
+                 theta_grid = matrix(0.5, 1, n_axes),
+                 axis_offsets = as.integer(c(0, n_axes)))
+    N <- length(arms[[1]]$y)
+    list(
+        build_joint_layout = function(ca, cb) do.call(
+            cpp_test_joint_pattern,
+            c(base, list(copy_arms = ca, copy_blocks = cb))),
+        cpp_nested_laplace_joint_multi = function(ca, cb) do.call(
+            cpp_nested_laplace_joint_multi,
+            c(base, list(copy_arms = ca, copy_blocks = cb))),
+        cpp_nested_laplace_joint_multi_batch = function(ca, cb) do.call(
+            cpp_nested_laplace_joint_multi_batch,
+            c(base, list(copy_arms = ca, copy_blocks = cb,
+                         n_batch = 1L, y_batch = list(rep(0.0, N)),
+                         phi_batch = matrix(1.0, 1L, length(arms)))))
+    )
+}
+
+# --------------------------------------------------------------------------- #
+# (gcol33/tulpa#465 item 1) The copy-spec checks are the same at all three     #
+# entry points                                                                 #
+#                                                                              #
+# The pair was parsed in three places and two of the copies had lost checks:   #
+# an out-of-range arm id was written straight into copy_arm_of_block and       #
+# reached the block factories as an arm index, and build_joint_layout indexed  #
+# copy_arms by copy_blocks' length with no guarantee the two matched.          #
+# resolve_copy_arm_of_block is now the one parser; this pins that each of its  #
+# four checks reaches each entry, so a future copy cannot quietly drop one.    #
+# --------------------------------------------------------------------------- #
+
+test_that("every entry point applies all four copy-spec checks", {
+    adj <- .bsg_adj()
+    bs  <- c(list(type = "icar", spatial_idx = list(1:3)), adj)
+    entries <- .bsg_copy_entries(list(.bsg_arm(matrix(1.0, 3L, 1L))), bs)
+
+    # B = 1 block, n_arms = 1, so 5 is out of range as a block and 7 as an arm.
+    bad <- list(
+        unequal_length  = list(c(0L, 0L), 0L,          "must have equal length"),
+        block_range     = list(0L,        5L,          "copy_block index .* out of range"),
+        arm_range       = list(7L,        0L,          "copy_arm index .* out of range"),
+        block_twice     = list(c(0L, 0L), c(0L, 0L),   "more than once")
+    )
+    for (nm in names(entries)) {
+        for (case in names(bad)) {
+            expect_error(entries[[nm]](bad[[case]][[1]], bad[[case]][[2]]),
+                         bad[[case]][[3]],
+                         info = paste(nm, "did not apply the", case, "check"))
+        }
+    }
+})
+
+test_that("the no-copy sentinel is not a copy block at any entry point", {
+    # -1 is how a caller with no copy block spells it, and it must survive all
+    # four checks: a range test that read it as a block index would refuse
+    # every ordinary fit.
+    adj <- .bsg_adj()
+    bs  <- c(list(type = "icar", spatial_idx = list(1:3)), adj)
+    entries <- .bsg_copy_entries(list(.bsg_arm(matrix(1.0, 3L, 1L))), bs)
+    pat <- entries$build_joint_layout(-1L, -1L)
+    expect_equal(pat$n_x, 1L + 3L)
+    # An empty pair is the same statement.
+    expect_equal(entries$build_joint_layout(integer(0), integer(0))$n_x, 1L + 3L)
+})
+
 # --------------------------------------------------------------------------- #
 # (gcol33/tulpa#450) The uniform centering fold lands on an intercept          #
 #                                                                              #
