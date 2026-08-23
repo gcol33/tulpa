@@ -54,6 +54,7 @@ Suggests:
     rmarkdown,
     posterior (>= 1.5.0),
     loo (>= 2.7.0),
+    rstantools,
     lme4,
     nlme,
     lmtest,
