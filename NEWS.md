@@ -1,5 +1,39 @@
 # tulpa NEWS
 
+## 0.1.17
+
+* **The eleven nested-Laplace grid entries share one tail** (#603, closing the
+  last item of #465). Each entry used to build its own checkpoint, resolve its
+  own skew-probe indices, unwrap its own debias / CILA options and write out its
+  driver's full argument block, so the argument order the three drivers expect
+  was written eleven times and an argument added to one of them had to be
+  threaded through every site by hand. That is how `force_sparse` came to be
+  live at one spatio-temporal entry and discarded at two. `NlEntryInputs`
+  (`src/nl_entry_inputs.h`) now carries the eighteen shared response, design and
+  control arguments, and one runner per driver -- `nl_run_multi_block_entry`,
+  `nl_run_joint_sparse_entry` and `run_st_spatial_entry` -- owns the checkpoint,
+  the unwraps, the driver call and the axis attachment. An entry supplies its
+  field: the structural fingerprint, its blocks, its grid axes and the axes it
+  reports back.
+
+  Collecting the bundle is one argument-free macro rather than a per-site
+  aggregate initializer. The package builds at C++17, where an aggregate
+  initializer of sixteen members -- several adjacent `int`s, several adjacent
+  `double`s -- can be mis-ordered at one of eleven sites without the compiler
+  seeing it, and the resulting fit would run at the wrong iteration budget or
+  the wrong tolerance. Every entry declares these arguments under identical
+  names, so one member-by-member token sequence binds them at all eleven sites
+  and cannot bind `max_iter` to `n_threads`.
+
+  Behaviour is unchanged: the entries' existing test files are the gate, and
+  `test-nl-entry-forwarding.R` is the new arbiter for the failure the
+  duplication produced. It drives all eleven entries and asserts each shared
+  argument is observable in the fit -- `max_iter` caps the iteration count,
+  `x_init` moves a capped solve's mode, `store_Q` / `compute_skew` / `debias` /
+  `cila` each add their fields, and the twelve that enter the checkpoint
+  fingerprint each make a resume against a written checkpoint refuse. A build
+  with one bundle member dropped fails it at all eleven entries.
+
 ## 0.1.16
 
 * **A block's per-row design weight is read on every contribution kind**

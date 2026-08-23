@@ -52,7 +52,14 @@ debias, or outer integration), not as standalone alternatives.
 2. **Gradient progression N→A→A_r→H** (Tier 1 / NUTS only): Never skip stages. All modes remain available.
 3. **Runtime gradient verification**: Before NUTS sampling, verify active gradient against numerical.
 4. **Model packages own their likelihood**: tulpa assembles linear predictors; model packages compute log-likelihood.
-5. **No copy-paste logic**: Shared sub-computations in helpers, not duplicated across specialized functions. Conventions that keep this single-sourced: log-prior helpers are named `log_prior_*` (e.g. `log_prior_car_proper`, `log_prior_sigma2_pc`); the column-major Rcpp matrix builder `build_matrix_colmajor` is one template over the element type; the spatially-/temporally-varying-coefficient `print`/`summary` methods delegate to `.print_varying_coef` / `.summary_varying_coef` in `R/varying_coef.R`; and multi-block prior detection is the single `.is_multi_block_prior` predicate.
+5. **No copy-paste logic**: Shared sub-computations in helpers, not duplicated across specialized functions. Conventions that keep this single-sourced: log-prior helpers are named `log_prior_*` (e.g. `log_prior_car_proper`, `log_prior_sigma2_pc`); the column-major Rcpp matrix builder `build_matrix_colmajor` is one template over the element type; the spatially-/temporally-varying-coefficient `print`/`summary` methods delegate to `.print_varying_coef` / `.summary_varying_coef` in `R/varying_coef.R`; multi-block prior detection is the single `.is_multi_block_prior` predicate;
+   and every `cpp_nested_laplace_*` outer-grid entry hands its shared response
+   and control arguments to its driver as one `tulpa::NlEntryInputs`, collected
+   by the argument-free `TULPA_NL_ENTRY_INPUTS` macro and consumed by one runner
+   per driver (`src/nl_entry_inputs.h`), so a knob added to a driver is added to
+   the bundle and the runner rather than to eleven entry tails.
+   `test-nl-entry-forwarding.R` asserts every shared argument is observable in
+   the fit at all eleven entries.
 6. **Statistical args vs `control` knobs**: front-door fitters (`tulpa()`, `tulpa_nested_laplace()`, `tulpa_nested_laplace_joint()`) carry only statistical arguments in their signature; all perf / numerical / tuning knobs live in a single `control = list()` (e.g. `control$re_cov`, `n_threads`, `max_iter`, `tol`, `adaptive_grid`, `prune`, `integration`, ...). Pre-release: no deprecation shims -- moved knobs hard-error.
 
 ## C++ Interface
