@@ -129,7 +129,12 @@ it agrees with the objective only as \code{n_quad} grows.}
 }
 \value{
 A list with: \code{theta} (refined fixed parameters), \code{Sigma_list}
-(refined per-term covariance), \code{blup} / \code{blup_var} (per-term \verb{n_groups x n_coefs} posterior mean / variance of the RE), \code{blup_cross} (per-term
+(refined per-term covariance), \code{blup} / \code{blup_var} (per-term \verb{n_groups x n_coefs} posterior mean / variance of the RE), \code{group_ok} (logical, length
+\code{n_groups}: \code{FALSE} where that group's mode search or precision
+factorization failed, which is what the \code{NA} rows of \code{blup}, \code{blup_var},
+\code{blup_cov_g} and \code{blup_cross_g} mean -- a caller conditions its per-group
+reads on this rather than on trapping the accompanying warning),
+\code{blup_cross} (per-term
 \verb{n_groups x n_theta x n_coefs} array: the mode/theta cross-Hessian block
 \code{Bf}, \verb{-d^2 ell_g / d theta db} at each group's mode, in the same
 negative-Hessian sign convention as the posterior precision underlying

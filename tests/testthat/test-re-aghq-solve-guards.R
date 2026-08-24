@@ -142,3 +142,91 @@ test_that("the AGHQ node-count request is validated before it is broadcast", {
   expect_error(cpp_aghq_objective(c(0, 0), orc, 1L, FALSE, c(3L, 3L), 1.0),
                "length")
 })
+
+# ---------------------------------------------------------------------------
+# The solve status reaches the CALLER (gcol33/tulpa#605). `cpp_aghq_blups`
+# already reports it per group; what is tested here is that
+# `tulpa_re_aghq()` hands it on, so a consumer conditions its per-group reads
+# on a logical vector instead of parsing indices out of a warning message.
+# ---------------------------------------------------------------------------
+
+# Small binomial GLMM with a random intercept -- one fit, a few groups.
+.aghq_group_ok_fixture <- function(seed = 4L, ng = 12L, n_per = 6L) {
+  set.seed(seed)
+  N <- ng * n_per
+  g <- rep(seq_len(ng), each = n_per)
+  x <- rnorm(N); X <- cbind(1, x); nt <- rep(3L, N)
+  u <- rnorm(ng, 0, 0.7)
+  y <- rbinom(N, nt, plogis(0.3 + 0.7 * x + u[g]))
+  l1pe <- function(z) ifelse(z > 0, z + log1p(exp(-z)), log1p(exp(z)))
+  site <- function(theta) {
+    eta_fixed <- as.numeric(X %*% theta)
+    list(eta_re = eta_fixed,
+         deriv = function(rows, eta) {
+           p <- plogis(eta)
+           list(logL = y[rows] * eta - nt[rows] * l1pe(eta),
+                d1 = y[rows] - nt[rows] * p, d2 = -nt[rows] * p * (1 - p))
+         },
+         lmat = function(rows, ETA) y[rows] * ETA - nt[rows] * l1pe(ETA))
+  }
+  list(ng = ng, n = N, idx = g, site = site)
+}
+
+.aghq_group_ok_fit <- function(fx) {
+  tulpa_re_aghq(
+    theta0   = c(0, 0),
+    re_terms = list(list(idx = fx$idx, n_groups = fx$ng, n_coefs = 1L)),
+    Sigma0   = list(matrix(0.25, 1, 1)),
+    make_site = fx$site, n_obs = fx$n, n_quad = 3L)
+}
+
+test_that("tulpa_re_aghq reports group_ok on a fit whose every group solved", {
+  skip_on_cran()
+  fx  <- .aghq_group_ok_fixture()
+  fit <- expect_silent(.aghq_group_ok_fit(fx))
+
+  expect_type(fit$group_ok, "logical")
+  expect_length(fit$group_ok, fx$ng)
+  expect_true(all(fit$group_ok))
+  # The flag is what the NA rows would mean, so an all-TRUE fit carries none.
+  expect_false(anyNA(fit$blup[[1L]]))
+  expect_false(anyNA(fit$blup_var[[1L]]))
+  expect_false(any(vapply(fit$blup_cov_g, anyNA, logical(1))))
+})
+
+test_that("a failed group is a field on the fit, not only a warning", {
+  skip_on_cran()
+  # Every group of the fixture above solves, and a group that does NOT solve
+  # takes the objective to its -1e10 penalty at the same parameter -- so the
+  # optimizer never returns a point carrying one. The status is injected at the
+  # extractor instead, which is exactly the boundary the return value crosses;
+  # what the compiled side does with a genuinely unsolvable group is pinned by
+  # the first test in this file.
+  bad  <- 2L
+  real <- cpp_aghq_blups
+  fail_one <- function(par, oracle, nc, full) {
+    bl <- real(par, oracle, nc, full)
+    bl$group_ok[bad] <- FALSE
+    bl$bhat[bad, ] <- NA_real_
+    bl$bvar[bad, ] <- NA_real_
+    bl$bcov[bad, , ] <- NA_real_
+    bl
+  }
+  testthat::local_mocked_bindings(cpp_aghq_blups = fail_one, .package = "tulpa")
+
+  fx <- .aghq_group_ok_fixture()
+  expect_warning(fit <- .aghq_group_ok_fit(fx),
+                 "per-group posterior solve failed for 1 of 12 groups")
+
+  expect_length(fit$group_ok, fx$ng)
+  expect_false(fit$group_ok[bad])
+  expect_true(all(fit$group_ok[-bad]))
+
+  # The flag explains exactly the NA entries, and no others: a caller dropping
+  # the groups it marks drops every unusable row and keeps every usable one.
+  expect_true(all(is.na(fit$blup[[1L]][bad, ])))
+  expect_false(anyNA(fit$blup[[1L]][-bad, , drop = FALSE]))
+  expect_true(all(is.na(fit$blup_var[[1L]][bad, ])))
+  expect_true(all(is.na(fit$blup_cov_g[[bad]])))
+  expect_false(any(vapply(fit$blup_cov_g[-bad], anyNA, logical(1))))
+})

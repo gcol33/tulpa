@@ -1,5 +1,17 @@
 # tulpa NEWS
 
+## 0.1.21
+
+* **The per-group AGHQ solve status is on the fit.** `tulpa_re_aghq()` computed
+  `group_ok` from `cpp_aghq_blups()`, raised a warning naming the first few
+  failed groups, and then discarded it, so a caller could learn WHICH groups
+  came back `NA` only by trapping the warning and parsing indices out of its
+  message text. It is now returned alongside the per-group quantities whose
+  `NA` entries it explains -- `blup`, `blup_var`, `blup_cov_g`, `blup_cross_g`
+  -- as a logical of length `n_groups`, so a consumer conditions its reads on
+  it. The detection itself is unchanged; only the reporting channel is new
+  (gcol33/tulpa#605).
+
 ## 0.1.20
 
 * **The bound-reading families pass the compiled-impl gate.**

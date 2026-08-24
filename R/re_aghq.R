@@ -140,7 +140,12 @@
 #'
 #' @return A list with: `theta` (refined fixed parameters), `Sigma_list`
 #'   (refined per-term covariance), `blup` / `blup_var` (per-term `n_groups x
-#'   n_coefs` posterior mean / variance of the RE), `blup_cross` (per-term
+#'   n_coefs` posterior mean / variance of the RE), `group_ok` (logical, length
+#'   `n_groups`: `FALSE` where that group's mode search or precision
+#'   factorization failed, which is what the `NA` rows of `blup`, `blup_var`,
+#'   `blup_cov_g` and `blup_cross_g` mean -- a caller conditions its per-group
+#'   reads on this rather than on trapping the accompanying warning),
+#'   `blup_cross` (per-term
 #'   `n_groups x n_theta x n_coefs` array: the mode/theta cross-Hessian block
 #'   `Bf`, `-d^2 ell_g / d theta db` at each group's mode, in the same
 #'   negative-Hessian sign convention as the posterior precision underlying
@@ -389,11 +394,16 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
   # `group_ok[g]` FALSE, rather than the numbers a failed decomposition's solve
   # would otherwise return.
   bl   <- cpp_aghq_blups(opt$par, orc, nc_terms, full_vec)
-  if (!all(bl$group_ok)) {
-    bad <- which(!bl$group_ok)
+  # The status travels on the fit as `group_ok`, not only in the warning below:
+  # a caller taking `blup[[m]][g, ]` needs to know which rows are trustworthy,
+  # and a warning is the one channel it cannot read without parsing indices out
+  # of the message text (gcol33/tulpa#605).
+  group_ok <- as.logical(bl$group_ok)
+  if (!all(group_ok)) {
+    bad <- which(!group_ok)
     warning(sprintf(
-      "tulpa_re_aghq: the per-group posterior solve failed for %d of %d groups (%s%s); their blup, blup_var, blup_cov_g and blup_cross_g entries are NA.",
-      length(bad), length(bl$group_ok),
+      "tulpa_re_aghq: the per-group posterior solve failed for %d of %d groups (%s%s); their blup, blup_var, blup_cov_g and blup_cross_g entries are NA. The full status is `group_ok` on the returned fit.",
+      length(bad), length(group_ok),
       paste(utils::head(bad, 5L), collapse = ", "),
       if (length(bad) > 5L) ", ..." else ""), call. = FALSE)
   }
@@ -456,6 +466,9 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
     Sigma_list = Sigma_list,
     blup       = blup,
     blup_var   = blup_var,
+    # Per group: TRUE where the posterior solve succeeded. FALSE is what the NA
+    # rows of blup / blup_var / blup_cov_g / blup_cross_g mean (#605).
+    group_ok   = group_ok,
     blup_cross = blup_cross,
     blup_cross_available = bl$bcross_available,
     # Per-coordinate: TRUE where the reported variance came from the PD
