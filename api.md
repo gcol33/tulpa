@@ -150,7 +150,7 @@ composite design nodes + whitening map for high-dimensional outer integration),
 
 # Part 2 -- C++ model-package API (`LinkingTo: tulpa`)
 
-A model package (tulpaObs, tulpaRatio, tulpaGlmm) supplies its **likelihood**;
+A model package (tulpaObs, tulpaRatio) supplies its **likelihood**;
 tulpa assembles the linear predictors and runs every inference tier. Exported
 headers live in `inst/include/tulpa/`; add `LinkingTo: tulpa` to the model
 package `DESCRIPTION`.
