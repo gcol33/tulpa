@@ -1,5 +1,30 @@
 # tulpa NEWS
 
+## 0.1.20
+
+* **The bound-reading families pass the compiled-impl gate.**
+  `builtin_family_spec()` refuses any family `family_has_compiled_impl()` does
+  not recognise, and that predicate asks the mu-space ladder.
+  `interval_gaussian` and `truncated_gaussian` are not on it: their densities
+  are functions of a per-observation bound rather than of mu, and the spec's
+  callbacks reach their closed forms through the response payload's bound arrays
+  instead. Both were refused at construction despite being fully compiled
+  (`log_lik_`/`grad_hess_interval_gaussian` and their truncated counterparts),
+  which took down every joint-arm fit declaring one -- on the only route those
+  families have. `family_reads_response_bounds()` names the pair and the gate
+  consults it beside the ladder.
+
+  The same branch has a second side: a payload declaring one of these families
+  but carrying no bound fell past the callbacks' bound branches into the ladder,
+  which does not carry them and raises from inside an OpenMP reduction --
+  `std::terminate` rather than an R error. `prepare()` now checks the bound is
+  present on the calling thread, beside the tweedie `phi2` check that is there
+  for the same reason. Tests: `test-bound-family-joint-arm.R`, covering both
+  sides of the branch.
+
+* **`rstantools` is declared.** The test suite reaches one borrowed generic from
+  it; it was used without being named in `DESCRIPTION`.
+
 ## 0.1.18
 
 * **A bounded link builds its tail rather than recovering it** (#602). Cauchit's
