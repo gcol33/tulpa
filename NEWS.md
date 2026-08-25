@@ -1,5 +1,15 @@
 # tulpa NEWS
 
+## 0.1.23
+
+* **`tulpa_re_aghq()` returns the optimizer's evaluation counts.** The joint
+  driver is one `stats::optim` call, and nothing on the fit said how much work
+  it took, so a consumer reporting that had only `NA` to report on a fit it had
+  just declared converged (gcol33/tulpaObs#281). `counts` is `optim`'s own
+  `function` / `gradient` vector, passed through verbatim: BFGS counts
+  evaluations rather than iterations, and relabelling them would have made the
+  number say something it does not.
+
 ## 0.1.22
 
 * **The AGHQ failure sentinel is refused as an optimum, and it is named once.**

@@ -175,7 +175,10 @@
 #'   packing), `joint_cov` (the whole `(n_theta + n_chol)` inverse Hessian),
 #'   `log_marginal`
 #'   (the AGHQ marginal log-likelihood at the optimum, excluding any ridge),
-#'   `n_quad`, `lkj_eta`, and `converged`. RE terms that do not share one
+#'   `n_quad`, `lkj_eta`, `converged`, and `counts` (`stats::optim`'s own
+#'   `function` / `gradient` evaluation counts, so a caller reporting how much
+#'   work the fit took has a number to report rather than `NA`). RE terms that
+#'   do not share one
 #'   grouping factor are an input error and stop. Three conditions warn and
 #'   return `NULL` (caller keeps its prior fit): a singular / non-finite
 #'   optimum, an objective that is already undefined at the starting parameters
@@ -525,7 +528,12 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
     log_marginal = log_marginal,
     n_quad     = n_quad,
     lkj_eta    = lkj_eta,
-    converged  = isTRUE(opt$convergence == 0L)
+    converged  = isTRUE(opt$convergence == 0L),
+    # stats::optim's own evaluation counts, verbatim (BFGS reports evaluations,
+    # not iterations). A caller reporting the effort behind a fit has nothing
+    # else to read: the joint driver is one optim call, so without this its
+    # report is NA on a fit it declares converged (gcol33/tulpaObs#281).
+    counts     = opt$counts
   )
 }
 

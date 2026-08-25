@@ -194,6 +194,21 @@ test_that("tulpa_re_aghq reports group_ok on a fit whose every group solved", {
   expect_false(any(vapply(fit$blup_cov_g, anyNA, logical(1))))
 })
 
+test_that("the optimizer's evaluation counts reach the caller", {
+  skip_on_cran()
+  # The joint driver is one stats::optim call, so a consumer reporting the work
+  # behind a fit has nothing to read unless the counts are handed on -- which is
+  # why tulpaObs reported NA iterations on a fit it declared converged
+  # (gcol33/tulpaObs#281). BFGS counts EVALUATIONS, and they are passed through
+  # verbatim under optim's own names rather than relabelled as iterations.
+  fx  <- .aghq_group_ok_fixture()
+  fit <- .aghq_group_ok_fit(fx)
+  expect_true(fit$converged)
+  expect_true(all(c("function", "gradient") %in% names(fit$counts)))
+  expect_gt(fit$counts[["function"]], 0)
+  expect_true(all(is.finite(fit$counts)))
+})
+
 test_that("a failed group is a field on the fit, not only a warning", {
   skip_on_cran()
   # Every group of the fixture above solves, and a group that does NOT solve

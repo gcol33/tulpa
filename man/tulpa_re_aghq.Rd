@@ -163,7 +163,10 @@ for a boundary test on a weakly-identified variance component),
 packing), \code{joint_cov} (the whole \code{(n_theta + n_chol)} inverse Hessian),
 \code{log_marginal}
 (the AGHQ marginal log-likelihood at the optimum, excluding any ridge),
-\code{n_quad}, \code{lkj_eta}, and \code{converged}. RE terms that do not share one
+\code{n_quad}, \code{lkj_eta}, \code{converged}, and \code{counts} (\code{stats::optim}'s own
+\code{function} / \code{gradient} evaluation counts, so a caller reporting how much
+work the fit took has a number to report rather than \code{NA}). RE terms that
+do not share one
 grouping factor are an input error and stop. Three conditions warn and
 return \code{NULL} (caller keeps its prior fit): a singular / non-finite
 optimum, an objective that is already undefined at the starting parameters
