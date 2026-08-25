@@ -25,6 +25,16 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_aghq_fail_penalty
+double cpp_aghq_fail_penalty();
+RcppExport SEXP _tulpa_cpp_aghq_fail_penalty() {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    rcpp_result_gen = Rcpp::wrap(cpp_aghq_fail_penalty());
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_aghq_objective
 double cpp_aghq_objective(NumericVector par, SEXP oracle, IntegerVector nc, LogicalVector full, IntegerVector n_quad, double lkj_eta);
 RcppExport SEXP _tulpa_cpp_aghq_objective(SEXP parSEXP, SEXP oracleSEXP, SEXP ncSEXP, SEXP fullSEXP, SEXP n_quadSEXP, SEXP lkj_etaSEXP) {
@@ -4627,6 +4637,7 @@ END_RCPP
 
 static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_aghq_make_rclosure_oracle", (DL_FUNC) &_tulpa_cpp_aghq_make_rclosure_oracle, 4},
+    {"_tulpa_cpp_aghq_fail_penalty", (DL_FUNC) &_tulpa_cpp_aghq_fail_penalty, 0},
     {"_tulpa_cpp_aghq_objective", (DL_FUNC) &_tulpa_cpp_aghq_objective, 6},
     {"_tulpa_cpp_aghq_objective_grad", (DL_FUNC) &_tulpa_cpp_aghq_objective_grad, 6},
     {"_tulpa_cpp_aghq_blups", (DL_FUNC) &_tulpa_cpp_aghq_blups, 4},

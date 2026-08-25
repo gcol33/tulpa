@@ -164,8 +164,12 @@ packing), \code{joint_cov} (the whole \code{(n_theta + n_chol)} inverse Hessian)
 \code{log_marginal}
 (the AGHQ marginal log-likelihood at the optimum, excluding any ridge),
 \code{n_quad}, \code{lkj_eta}, and \code{converged}. RE terms that do not share one
-grouping factor are an input error and stop; a singular / non-finite
-optimum warns and returns \code{NULL} (caller keeps its prior fit).
+grouping factor are an input error and stop. Three conditions warn and
+return \code{NULL} (caller keeps its prior fit): a singular / non-finite
+optimum, an objective that is already undefined at the starting parameters
+(some group's solve fails there, so there is nothing to descend), and an
+optimum whose objective is the failure sentinel rather than an attained
+marginal likelihood -- the last two report which groups failed.
 }
 \description{
 Refines a generalized linear mixed model's fixed effects and random-effect

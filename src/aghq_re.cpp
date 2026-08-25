@@ -36,6 +36,12 @@ SEXP cpp_aghq_make_rclosure_oracle(Function builder, int n_groups, int d, int n_
     return XPtr<REGroupOracle>(new RClosureOracle(builder, n_groups, d, n_theta), true);
 }
 
+// The failure sentinel the two objective entry points below report, exposed so
+// the R optimizer wrappers test an attained objective against the producer's own
+// constant instead of a literal (see kAghqFailPenalty).
+// [[Rcpp::export]]
+double cpp_aghq_fail_penalty() { return kAghqFailPenalty; }
+
 // AGHQ ML-II objective sum_g log M_g + LKJ at par = [theta ; log-Chol Sigma].
 // Returns a large finite penalty on a failed solve so stats::optim rejects it.
 // `n_quad` is per covariance block (length 1 broadcasts to every block, length
@@ -50,7 +56,7 @@ double cpp_aghq_objective(NumericVector par, SEXP oracle, IntegerVector nc,
     Eigen::VectorXd pe(par.size());
     for (int i = 0; i < par.size(); ++i) pe(i) = par(i);
     AghqValueGrad r = aghq_objective_grad(*orc, pe, blocks, grid, lkj_eta, /*want_grad=*/false);
-    return r.ok ? r.f : -1e10;
+    return r.ok ? r.f : kAghqFailPenalty;
 }
 
 // AGHQ objective AND its analytic gradient w.r.t. par = [theta ; log-Chol Sigma]
@@ -74,7 +80,7 @@ List cpp_aghq_objective_grad(NumericVector par, SEXP oracle, IntegerVector nc,
     AghqValueGrad r = aghq_objective_grad(*orc, pe, blocks, grid, lkj_eta, /*want_grad=*/true);
     NumericVector grad(r.grad.size());
     for (int i = 0; i < (int)r.grad.size(); ++i) grad(i) = r.grad(i);
-    return List::create(_["f"]    = r.ok ? r.f : -1e10,
+    return List::create(_["f"]    = r.ok ? r.f : kAghqFailPenalty,
                         _["grad"] = grad,
                         _["ok"]   = r.ok);
 }

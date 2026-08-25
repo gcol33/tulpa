@@ -32,6 +32,15 @@ namespace tulpa {
 
 using RowMat = Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>;
 
+// The value the AGHQ objective entry points report when a group's solve failed.
+// It is a SENTINEL, not a log-likelihood: stats::optim needs a finite number to
+// reject (an infinity reaches its finite-difference gradient as NaN), so the
+// failure is encoded as a value no attained objective reaches. Every producer
+// and every consumer -- both R entry points and the R optimizer wrappers, which
+// read it through cpp_aghq_fail_penalty() -- takes it from here, so a fit is
+// never tested against a literal written a second time (gcol33/tulpa#606).
+constexpr double kAghqFailPenalty = -1e10;
+
 // Tensor quadrature grid (probabilist's GHQ), precomputed once per fit. Each axis
 // carries its own node count, so a heterogeneous stack of covariance blocks can
 // use fewer nodes on the cheap (scalar nuisance) blocks than on the correlated

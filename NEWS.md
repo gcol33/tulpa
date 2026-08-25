@@ -1,5 +1,25 @@
 # tulpa NEWS
 
+## 0.1.22
+
+* **The AGHQ failure sentinel is refused as an optimum, and it is named once.**
+  `cpp_aghq_objective()` reports `-1e10` where a group's solve failed -- a
+  finite value, since `stats::optim` needs one to reject. Nothing checked
+  whether the accepted optimum carried it, and it is finite, so it passed every
+  downstream guard: `log_marginal` came back as the sentinel (a consumer adds
+  that to other terms and weights a grid with it), `theta_cov` was the
+  finite-difference curvature of the penalty rather than of a likelihood, and
+  `reltol = 1e-9` against `|f| = 1e10` is an absolute tolerance of 10 nats, so
+  a run that started in the failure region declared convergence after one step
+  of whatever ridge was in play. `tulpa_re_aghq()` now refuses such a run twice
+  -- at the starting parameters, where the groups behind it can still be named,
+  and at the optimizer's own stopping point -- returning `NULL` with a warning
+  that names them, and `agq_fit()` errors instead of reporting the sentinel as
+  a log-likelihood. The value itself is `kAghqFailPenalty` in
+  `src/aghq_re_core.h`, read across the language boundary through
+  `cpp_aghq_fail_penalty()`, so neither the C++ producers nor the R consumers
+  write the literal (gcol33/tulpa#606).
+
 ## 0.1.21
 
 * **The per-group AGHQ solve status is on the fit.** `tulpa_re_aghq()` computed

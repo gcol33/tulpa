@@ -176,8 +176,12 @@
 #'   `log_marginal`
 #'   (the AGHQ marginal log-likelihood at the optimum, excluding any ridge),
 #'   `n_quad`, `lkj_eta`, and `converged`. RE terms that do not share one
-#'   grouping factor are an input error and stop; a singular / non-finite
-#'   optimum warns and returns `NULL` (caller keeps its prior fit).
+#'   grouping factor are an input error and stop. Three conditions warn and
+#'   return `NULL` (caller keeps its prior fit): a singular / non-finite
+#'   optimum, an objective that is already undefined at the starting parameters
+#'   (some group's solve fails there, so there is nothing to descend), and an
+#'   optimum whose objective is the failure sentinel rather than an attained
+#'   marginal likelihood -- the last two report which groups failed.
 #' @references
 #' Pinheiro & Bates (1995). Approximations to the log-likelihood function in
 #' the nonlinear mixed-effects model. \emph{Journal of Computational and
@@ -342,6 +346,28 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
            else cpp_aghq_make_rclosure_oracle(build_oracle, ng, dtot, n_theta)
   ridge <- if (is.finite(theta_prior_sd)) 0.5 / theta_prior_sd^2 else 0
 
+  # A group whose solve fails takes the whole objective to the failure sentinel,
+  # and optim only ever moves to a point it has accepted as an IMPROVEMENT -- so
+  # a run can finish on the sentinel only by starting on it, and then whatever it
+  # reports is the shape of the R-side ridge / PC prior alone. Worse, `reltol`
+  # is relative: at |f| = 1e10 a tolerance of 1e-9 is 10 nats, so such a run
+  # declares convergence after one hair of a step rather than searching
+  # (gcol33/tulpa#606). Refuse it here, where the groups behind it can still be
+  # named, instead of returning a fit whose numbers are the start point.
+  par0 <- c(theta0, re_par0)
+  if (.aghq_is_fail(cpp_aghq_objective(par0, orc, nc_terms, full_vec,
+                                       n_quad, lkj_eta))) {
+    gok <- .aghq_group_status(par0, orc, nc_terms, full_vec)
+    warning("tulpa_re_aghq: the AGHQ objective is not defined at the starting ",
+            "parameters -- the per-group solve failed for ",
+            if (is.null(gok)) "at least one group"
+            else .aghq_failed_group_phrase(gok),
+            ", so there is nothing for the optimizer to descend. Returning ",
+            "NULL (a different warm start, covariance start, or group ",
+            "configuration is needed).", call. = FALSE)
+    return(NULL)
+  }
+
   # Optional PC prior on the RE-block marginal SDs. It touches only the RE-
   # covariance coordinates (the second `re_par` slice of `par`), so it enters the
   # objective as `+ log p_sigma(re_par)` (we minimize the negative). The per-block
@@ -369,6 +395,28 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
     opt <- stats::optim(c(theta0, re_par0), negf, method = "BFGS", hessian = TRUE,
                         control = list(maxit = max_iter, reltol = 1e-9))
   }
+  # Pure AGHQ marginal at the optimum, for callers reporting log-lik. Evaluate
+  # at lkj_eta = 1 (uniform LKJ) so the reported value excludes the (eta - 1)
+  # log|R| penalty as well as the ridge -- otherwise a fit with lkj_eta > 1
+  # carries a penalty term that differs across models and biases LRT / AIC
+  # comparisons. The optimization still used the caller's lkj_eta above.
+  log_marginal <- cpp_aghq_objective(opt$par, orc, nc_terms, full_vec,
+                                     n_quad, 1.0)
+  # It is read BEFORE the Hessian, because the sentinel is finite: an optimum
+  # carrying it passes every downstream check while `log_marginal` is a sentinel
+  # a consumer adds to other terms, and `theta_cov` is the finite-difference
+  # curvature of the penalty rather than of a likelihood (#606).
+  if (.aghq_is_fail(log_marginal)) {
+    gok <- .aghq_group_status(opt$par, orc, nc_terms, full_vec)
+    warning("tulpa_re_aghq: the optimizer stopped at a parameter where the ",
+            "AGHQ objective is undefined -- the per-group solve failed for ",
+            if (is.null(gok)) "at least one group"
+            else .aghq_failed_group_phrase(gok),
+            ". Its value is the failure sentinel, not a marginal likelihood, ",
+            "so no fit is reported; returning NULL.", call. = FALSE)
+    return(NULL)
+  }
+
   V <- tryCatch(solve(opt$hessian), error = function(e) NULL)
   if (is.null(V) || any(!is.finite(opt$par))) {
     warning("tulpa_re_aghq: the joint optimum is singular or non-finite ",
@@ -380,14 +428,6 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
   theta_ref  <- opt$par[seq_len(n_theta)]
   L_list     <- .re_cov_theta_to_L_list(opt$par[-seq_len(n_theta)], layout)
   Sigma_list <- lapply(L_list, tcrossprod)
-  # Pure AGHQ marginal at the optimum, for callers reporting log-lik. Evaluate
-  # at lkj_eta = 1 (uniform LKJ) so the reported value excludes the (eta - 1)
-  # log|R| penalty as well as the ridge -- otherwise a fit with lkj_eta > 1
-  # carries a penalty term that differs across models and biases LRT / AIC
-  # comparisons. The optimization still used the caller's lkj_eta above.
-  log_marginal <- cpp_aghq_objective(opt$par, orc, nc_terms, full_vec,
-                                     n_quad, 1.0)
-
   # Per-group BLUPs + marginal variances at the optimum. The engine returns the
   # prior fallback for empty groups (mode 0, variance diag(Sigma)). A group whose
   # mode search or precision factorization failed comes back NA with
@@ -400,12 +440,11 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
   # of the message text (gcol33/tulpa#605).
   group_ok <- as.logical(bl$group_ok)
   if (!all(group_ok)) {
-    bad <- which(!group_ok)
-    warning(sprintf(
-      "tulpa_re_aghq: the per-group posterior solve failed for %d of %d groups (%s%s); their blup, blup_var, blup_cov_g and blup_cross_g entries are NA. The full status is `group_ok` on the returned fit.",
-      length(bad), length(group_ok),
-      paste(utils::head(bad, 5L), collapse = ", "),
-      if (length(bad) > 5L) ", ..." else ""), call. = FALSE)
+    warning("tulpa_re_aghq: the per-group posterior solve failed for ",
+            .aghq_failed_group_phrase(group_ok),
+            "; their blup, blup_var, blup_cov_g and blup_cross_g entries are ",
+            "NA. The full status is `group_ok` on the returned fit.",
+            call. = FALSE)
   }
   # A coordinate whose assembled variance was not positive is carried by the
   # absolute PD backstop on Sigma, so the covariance reported for it came from
@@ -594,6 +633,38 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
   }
 }
 
+# TRUE when `f` is the AGHQ objective's failure sentinel rather than an attained
+# objective. The number itself is the compiled producer's
+# (`kAghqFailPenalty`, src/aghq_re_core.h); nothing here writes it. The test is
+# `<=` because the sentinel is what a failed solve reports EXACTLY, and no
+# marginal log-likelihood reaches -1e10 -- a value at or below it is the
+# sentinel, whatever arithmetic an R-side ridge or PC prior did to it after.
+.aghq_is_fail <- function(f) !is.finite(f) || f <= cpp_aghq_fail_penalty()
+
+# "%d of %d groups (1, 2, ...)" -- the phrase naming which per-group solves
+# failed, shared by the post-fit warning and the refusal at the start point so
+# the two cannot describe the same status differently.
+.aghq_failed_group_phrase <- function(group_ok) {
+  bad <- which(!group_ok)
+  sprintf("%d of %d groups (%s%s)", length(bad), length(group_ok),
+          paste(utils::head(bad, 5L), collapse = ", "),
+          if (length(bad) > 5L) ", ..." else "")
+}
+
+# The per-group solve status at `par`, or NULL when even that could not be read.
+# Used to name the groups behind a failed objective; a failure this reports is
+# the same event the objective's sentinel is (both read aghq_group_solve, the
+# extractor asking for strictly less), so it explains the sentinel rather than
+# being a second opinion on it.
+.aghq_group_status <- function(par, orc, nc_terms, full_vec) {
+  ok <- tryCatch(as.logical(cpp_aghq_blups(par, orc, nc_terms, full_vec)$group_ok),
+                 error = function(e) NULL)
+  # All-TRUE does not explain a failed objective (the extractor asks for the
+  # weaker of the two solves, so it can succeed where the objective's Cholesky
+  # of C did not). Report nothing rather than a "0 of N groups ()" phrase.
+  if (is.null(ok) || all(ok)) NULL else ok
+}
+
 # Shared optim closures for the full-par analytic-gradient AGHQ path. The
 # returned functions are NEGATED for minimization. `ridge` adds a mean-zero
 # Gaussian ridge `ridge * sum(par[1:n_theta]^2)` (ridge = 0.5 / sd^2) on the
@@ -607,7 +678,7 @@ tulpa_re_aghq <- function(theta0, re_terms, Sigma0,
   list(
     fn = function(par) {
       r <- eval_at(par)
-      f <- if (isTRUE(r$ok)) r$f else -1e10
+      f <- if (isTRUE(r$ok)) r$f else cpp_aghq_fail_penalty()
       -f + (if (ridge > 0) ridge * sum(par[seq_len(n_theta)]^2) else 0)
     },
     gr = function(par) {

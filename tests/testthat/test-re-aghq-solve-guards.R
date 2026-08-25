@@ -230,3 +230,84 @@ test_that("a failed group is a field on the fit, not only a warning", {
   expect_true(all(is.na(fit$blup_cov_g[[bad]])))
   expect_false(any(vapply(fit$blup_cov_g[-bad], anyNA, logical(1))))
 })
+
+# ---------------------------------------------------------------------------
+# The failure sentinel is not an objective value (gcol33/tulpa#606).
+# cpp_aghq_objective() reports a large finite penalty where a group's solve
+# failed, so that stats::optim rejects the point. A fit built ON that value
+# reports the sentinel as a log-likelihood, derives its covariance from the
+# finite-difference curvature of the penalty, and -- since `reltol` is relative
+# to |f| = 1e10 -- can declare convergence after one hair of a step.
+# ---------------------------------------------------------------------------
+
+test_that("the sentinel R tests against is the one the objective reports", {
+  # No literal on the R side: the value is the compiled producer's.
+  orc <- .aghq_flat_oracle(4L, 1L, function(g) if (g == 2L) -10 else 1)
+  expect_identical(cpp_aghq_objective(c(0, 0), orc, 1L, FALSE, 5L, 1.0),
+                   cpp_aghq_fail_penalty())
+  expect_identical(cpp_aghq_objective_grad(c(0, 0), orc, 1L, FALSE, 5L, 1.0)$f,
+                   cpp_aghq_fail_penalty())
+  # And a solvable configuration is on the other side of the predicate.
+  expect_true(.aghq_is_fail(cpp_aghq_fail_penalty()))
+  expect_true(.aghq_is_fail(NaN))
+  expect_false(.aghq_is_fail(cpp_aghq_objective(c(0, 0), .aghq_flat_oracle(3L),
+                                                1L, FALSE, 5L, 1.0)))
+})
+
+test_that("tulpa_re_aghq refuses a start point the objective is undefined at", {
+  skip_on_cran()
+  # Group 2's information is negative enough that its penalized precision does
+  # not factor at any covariance the optimizer reaches, so every evaluation of
+  # the objective is the sentinel.
+  ng  <- 6L
+  orc <- .aghq_flat_oracle(ng, 1L, function(g) if (g == 2L) -1e6 else 1)
+  run <- function(...) tulpa_re_aghq(
+    theta0 = log(10), re_terms = list(list(n_groups = ng, n_coefs = 1L)),
+    Sigma0 = list(matrix(0.25, 1, 1)), oracle = orc, n_quad = 3L, ...)
+
+  expect_warning(fit <- run(), "not defined at the starting parameters")
+  expect_null(fit)
+  # The refusal names the group, so a caller is told what to change.
+  expect_warning(run(), "1 of 6 groups (2)", fixed = TRUE)
+
+  # The ridge is what made this reachable in the wild: with one, the penalty
+  # surface is no longer flat in every coordinate, so the singular-Hessian
+  # guard downstream does not catch it. This is the tulpaObs configuration
+  # (`nmix_laplace_re()` passes theta_prior_sd = 100).
+  expect_warning(fit <- run(theta_prior_sd = 100),
+                 "not defined at the starting parameters")
+  expect_null(fit)
+
+  # The contrast: a fixture whose groups all solve is fit, and what it reports
+  # as a marginal likelihood is on the other side of the predicate. (The flat
+  # oracle above cannot serve as that arm -- with every group repaired its
+  # objective is constant in theta, which the singular-Hessian guard refuses
+  # for its own reasons.)
+  fx <- .aghq_group_ok_fixture()
+  ok <- .aghq_group_ok_fit(fx)
+  expect_false(is.null(ok))
+  expect_false(.aghq_is_fail(ok$log_marginal))
+  expect_true(all(ok$group_ok))
+})
+
+test_that("agq_fit errors rather than reporting the sentinel as a log-likelihood", {
+  skip_on_cran()
+  set.seed(7)
+  ng <- 8L; npg <- 5L; n <- ng * npg
+  g <- rep(seq_len(ng), each = npg)
+  X <- cbind(1, rnorm(n))
+  y <- rpois(n, exp(0.4 + 0.3 * X[, 2]))
+
+  # The built-in GLMM families keep every per-group precision PD, so the
+  # sentinel is unreachable through the data; it is injected at the objective,
+  # which is the value optim reports back through opt$value.
+  testthat::local_mocked_bindings(
+    cpp_aghq_objective = function(par, oracle, nc, full, n_quad, lkj_eta)
+      cpp_aghq_fail_penalty(),
+    .package = "tulpa")
+
+  expect_error(
+    agq_fit(y = y, X = X, group = g, n_groups = ng, family = "poisson",
+            n_quad = 1L),
+    "failure sentinel")
+})

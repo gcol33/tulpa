@@ -55,6 +55,10 @@
 #'   * `inference_tier`: `2L`.
 #'   * `backend`: `"agq"`.
 #'
+#'   An optimum at which the AGHQ objective is undefined (some group's solve
+#'   fails there, so its value is the failure sentinel rather than a marginal
+#'   likelihood) is an error naming the groups, not a returned fit.
+#'
 #' @references
 #' Pinheiro, J. C., & Bates, D. M. (1995). Approximations to the
 #' log-likelihood function in the nonlinear mixed-effects model.
@@ -142,6 +146,23 @@ agq_fit <- function(y, X, group,
       -cpp_aghq_objective(par, orc, 1L, FALSE, as.integer(n_quad), 1.0)
     opt <- stats::optim(par = par_init, fn = negf, method = "BFGS", hessian = TRUE,
                         control = list(maxit = max_iter, reltol = tol))
+  }
+
+  # The objective reports a finite failure sentinel where a group's solve did
+  # not succeed, and optim only moves to points it accepted -- so a run ending
+  # on the sentinel started on it, and `log_marginal = -opt$value` would be that
+  # sentinel while `cov` is the finite-difference curvature of the penalty
+  # (gcol33/tulpa#606). There is no fit to report, so this errors rather than
+  # returning one whose numbers are the starting values.
+  if (.aghq_is_fail(-opt$value)) {
+    gok <- .aghq_group_status(opt$par, orc, 1L, FALSE)
+    stop("agq_fit: the AGHQ objective is undefined at the optimizer's own ",
+         "stopping point -- the per-group solve failed for ",
+         if (is.null(gok)) "at least one group"
+         else .aghq_failed_group_phrase(gok),
+         ". Its value is the failure sentinel, not a marginal likelihood. Try ",
+         "a different `beta_init` / `sigma_init`, or a lower `n_quad`.",
+         call. = FALSE)
   }
 
   sigma_hat <- exp(opt$par[p + 1L])

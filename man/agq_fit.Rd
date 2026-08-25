@@ -66,6 +66,10 @@ fitted values.
 \item \code{inference_tier}: \code{2L}.
 \item \code{backend}: \code{"agq"}.
 }
+
+An optimum at which the AGHQ objective is undefined (some group's solve
+fails there, so its value is the failure sentinel rather than a marginal
+likelihood) is an error naming the groups, not a returned fit.
 }
 \description{
 Marginal-likelihood approximation for a generalised linear mixed

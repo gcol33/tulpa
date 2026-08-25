@@ -5,6 +5,10 @@ cpp_aghq_make_rclosure_oracle <- function(builder, n_groups, d, n_theta) {
     .Call(`_tulpa_cpp_aghq_make_rclosure_oracle`, builder, n_groups, d, n_theta)
 }
 
+cpp_aghq_fail_penalty <- function() {
+    .Call(`_tulpa_cpp_aghq_fail_penalty`)
+}
+
 cpp_aghq_objective <- function(par, oracle, nc, full, n_quad, lkj_eta) {
     .Call(`_tulpa_cpp_aghq_objective`, par, oracle, nc, full, n_quad, lkj_eta)
 }
