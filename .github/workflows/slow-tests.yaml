@@ -1,8 +1,7 @@
 name: slow-tests
 
 # The tier holding the statistical evidence: sampler chains, multi-seed
-# recovery, interval coverage. Hours, so it runs on a schedule and on demand
-# rather than on push.
+# recovery, interval coverage. Hours, so it runs on demand rather than on push.
 #
 # One job per file. The cost is concentrated in a few files, and as a single
 # job the tier reports nothing at all when one of them runs past the cap --
@@ -10,8 +9,6 @@ name: slow-tests
 # reports.
 
 on:
-  schedule:
-    - cron: '0 3 * * 6'
   workflow_dispatch:
 
 permissions:
