@@ -57,22 +57,18 @@ temporal_rtr <- function(temporal, restrict_to) {
 #' @return A `tulpa_temporal_posterior` object
 #'
 #' @examples
-#' \dontrun{
-#' # Fit model with multi-scale temporal effects (not run - experimental)
+#' \donttest{
 #' set.seed(131)
-#' df <- data.frame(
-#'   year = 1:40,
-#'   x = rnorm(40),
-#'   count = rpois(40, lambda = 22),
-#'   effort = rgamma(40, shape = 4.5, rate = 1)
-#' )
+#' df <- data.frame(year = 1:40, x = rnorm(40))
+#' df$count <- rpois(40, exp(1 + 0.2 * df$x))
 #'
 #' fit <- tulpa(
-#'   count | effort ~ x,
+#'   count ~ x,
 #'   data = df,
-#'   family = tulpaRatio::tulpa_poisson_gamma(),
+#'   family = "poisson",
 #'   temporal = temporal_multiscale("year", trend = "rw2", seasonal = 12),
-#'   iter = 200, warmup = 100, chains = 1
+#'   mode = "exact",
+#'   control = list(n_iter = 200L, n_warmup = 100L, seed = 1L)
 #' )
 #'
 #' # Extract all temporal effects
@@ -102,20 +98,41 @@ temporal <- function(object, component = "all", summary = FALSE,
 
 #' @rdname temporal
 #' @export
+# The temporal field read back off the fit's own draws. The sampler names a
+# multiscale block by its component (`trend[k]` / `seasonal[k]` /
+# `short_term[k]`) and a single field `phi_temporal[k]`
+# (src/sampler_model_data.h); neither carries the layout, which is why the
+# validated spec is read alongside. NULL when any active component is absent,
+# so a partial read surfaces as "draws not found" instead of a short list.
+.temporal_draws_from_fit <- function(object, info) {
+  if (!inherits(info, "tulpa_temporal_multiscale")) {
+    return(.draws_by_prefix(object$draws, "phi_temporal"))
+  }
+  out <- lapply(info$components, function(cmp)
+    .draws_by_prefix(object$draws, cmp))
+  names(out) <- info$components
+  if (!length(out) || any(vapply(out, is.null, logical(1)))) return(NULL)
+  out
+}
+
+
 temporal.tulpa_fit <- function(object, component = "all", summary = FALSE,
                                 probs = c(0.025, 0.5, 0.975), ...) {
 
   # Check if model has temporal effects
   if (is.null(object$temporal)) {
     stop("Model was not fitted with temporal effects.\n",
-         "Use `temporal` argument in tulpa() to specify temporal structure.",
-         call. = FALSE)
+         "Pass `temporal = temporal_rw1() / temporal_rw2() / temporal_ar1() / ",
+         "temporal_multiscale(...)` to tulpa().", call. = FALSE)
   }
 
   temp_info <- object$temporal
 
   # Get temporal draws from model
   temp_draws <- object$.internal$temporal_draws
+  if (is.null(temp_draws)) {
+    temp_draws <- .temporal_draws_from_fit(object, temp_info)
+  }
 
   if (is.null(temp_draws)) {
     stop("Temporal draws not found in model output", call. = FALSE)

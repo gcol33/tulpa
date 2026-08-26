@@ -2,7 +2,7 @@
 % Please edit documentation in R/temporal_rtr_posteriors.R
 \name{temporal}
 \alias{temporal}
-\alias{temporal.tulpa_fit}
+\alias{.temporal_draws_from_fit}
 \title{Extract temporal effects from a fitted model}
 \usage{
 temporal(
@@ -13,13 +13,7 @@ temporal(
   ...
 )
 
-\method{temporal}{tulpa_fit}(
-  object,
-  component = "all",
-  summary = FALSE,
-  probs = c(0.025, 0.5, 0.975),
-  ...
-)
+.temporal_draws_from_fit(object, info)
 }
 \arguments{
 \item{object}{A \code{tulpa_fit} object fitted with \code{temporal} argument}
@@ -52,22 +46,18 @@ covariate column. \code{structure} is one of \code{"rw1"} (default), \code{"rw2"
 \code{"ar1"}; only the double bar \code{||} (independent fields) is supported.
 }
 \examples{
-\dontrun{
-# Fit model with multi-scale temporal effects (not run - experimental)
+\donttest{
 set.seed(131)
-df <- data.frame(
-  year = 1:40,
-  x = rnorm(40),
-  count = rpois(40, lambda = 22),
-  effort = rgamma(40, shape = 4.5, rate = 1)
-)
+df <- data.frame(year = 1:40, x = rnorm(40))
+df$count <- rpois(40, exp(1 + 0.2 * df$x))
 
 fit <- tulpa(
-  count | effort ~ x,
+  count ~ x,
   data = df,
-  family = tulpaRatio::tulpa_poisson_gamma(),
+  family = "poisson",
   temporal = temporal_multiscale("year", trend = "rw2", seasonal = 12),
-  iter = 200, warmup = 100, chains = 1
+  mode = "exact",
+  control = list(n_iter = 200L, n_warmup = 100L, seed = 1L)
 )
 
 # Extract all temporal effects

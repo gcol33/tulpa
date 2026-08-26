@@ -34,33 +34,26 @@ Extract posterior distributions of temporally-varying coefficients (TVCs)
 from a fitted tulpa model with TVC specification.
 }
 \examples{
-\dontrun{
-# Generate synthetic data (not run - TVC experimental)
+\donttest{
 set.seed(160)
-df <- data.frame(
-  year = rep(2015:2024, each = 5),
-  x = rnorm(50),
-  count = rpois(50, lambda = 18),
-  effort = rgamma(50, shape = 3.5, rate = 1)
-)
+n_t <- 10L; reps <- 5L
+walk <- cumsum(rnorm(n_t, 0, 0.35)); walk <- walk - mean(walk)
+year <- rep(seq_len(n_t), each = reps)
+df <- data.frame(year = year, x = rnorm(length(year)))
+df$count <- rpois(nrow(df), exp(0.3 + (0.5 + walk[year]) * df$x))
 
-# Fit model with TVC
+# The slope on `x` walks in time; TVC is exact-mode only.
 fit <- tulpa(
-  count | effort ~ x,
+  count ~ x,
   data = df,
-  family = tulpaRatio::tulpa_poisson_gamma(),
-  tvc = temporal_tvc("year", terms = c(1, 2)),
-  backend = "hmc",
-  iter = 200,
-  warmup = 100,
-  chains = 1
+  family = "poisson",
+  temporal = temporal_tvc("year", terms = ~ x - 1, structure = "rw1"),
+  mode = "exact",
+  control = list(n_iter = 200L, n_warmup = 100L, seed = 1L)
 )
 
-# Extract TVC posteriors
 tvc_post <- tvc(fit)
 summary(tvc_post)
-
-# Plot temporal evolution
 plot(tvc_post, "x")
 }
 

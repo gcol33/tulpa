@@ -373,28 +373,23 @@ compute_nngp_neighbors <- function(coords, k) {
 #' - `term_names`: Names of SVC terms
 #'
 #' @examples
-#' \dontrun{
-#' # Generate synthetic spatial data (not run - SVC not fully supported)
+#' \donttest{
 #' set.seed(303)
-#' n <- 40
-#' df <- data.frame(
-#'   lon = runif(n, 0, 10),
-#'   lat = runif(n, 0, 10),
-#'   depth = rnorm(n),
-#'   count = rpois(n, 20),
-#'   effort = rgamma(n, shape = 4, rate = 1)
-#' )
+#' n <- 25L
+#' df <- data.frame(lon = runif(n), lat = runif(n), x = rnorm(n))
+#' bsurf <- 0.9 * sin(2.8 * df$lon) + 0.7 * cos(2.2 * df$lat)
+#' df$count <- rpois(n, exp(0.2 + (0.8 + bsurf) * df$x))
 #'
-#' # Fit model with SVC
+#' # The varying slope on `x` is a spatial field; SVC is exact-mode only.
 #' fit <- tulpa(
-#'   count | effort ~ depth,
+#'   count ~ x,
 #'   data = df,
-#'   family = tulpaRatio::tulpa_poisson_gamma(),
-#'   svc = spatial_svc(~ lon + lat, terms = c(1, 2)),
-#'   iter = 200, warmup = 100, chains = 1
+#'   family = "poisson",
+#'   spatial = spatial_svc(~ lon + lat, terms = ~ x - 1, nn = 5L),
+#'   mode = "exact",
+#'   control = list(n_iter = 80L, n_warmup = 40L, seed = 1L)
 #' )
 #'
-#' # Extract SVC posteriors
 #' svc_post <- svc(fit)
 #' summary(svc_post)
 #' }
@@ -418,9 +413,12 @@ svc.tulpa_fit <- function(object, terms = NULL, summary = FALSE,
     info_class = "tulpa_svc",
     not_fitted_msg = paste0(
       "Model was not fitted with spatially-varying coefficients.\n",
-      "Use `svc` argument in tulpa() to specify SVCs."),
+      "Pass `spatial = spatial_svc(...)` to tulpa() with `mode = \"exact\"`."),
     draws_field = "svc_draws",
     names_field = "svc_names",
+    field_slot = "spatial",
+    draws_prefix = "svc_w",
+    n_units_field = "n_obs",
     build_result = function(info, draws, term_names) {
       structure(
         list(

@@ -253,33 +253,26 @@ validate_tvc <- function(tvc, data, X) {
 #' - `term_names`: Names of TVC terms
 #'
 #' @examples
-#' \dontrun{
-#' # Generate synthetic data (not run - TVC experimental)
+#' \donttest{
 #' set.seed(160)
-#' df <- data.frame(
-#'   year = rep(2015:2024, each = 5),
-#'   x = rnorm(50),
-#'   count = rpois(50, lambda = 18),
-#'   effort = rgamma(50, shape = 3.5, rate = 1)
-#' )
+#' n_t <- 10L; reps <- 5L
+#' walk <- cumsum(rnorm(n_t, 0, 0.35)); walk <- walk - mean(walk)
+#' year <- rep(seq_len(n_t), each = reps)
+#' df <- data.frame(year = year, x = rnorm(length(year)))
+#' df$count <- rpois(nrow(df), exp(0.3 + (0.5 + walk[year]) * df$x))
 #'
-#' # Fit model with TVC
+#' # The slope on `x` walks in time; TVC is exact-mode only.
 #' fit <- tulpa(
-#'   count | effort ~ x,
+#'   count ~ x,
 #'   data = df,
-#'   family = tulpaRatio::tulpa_poisson_gamma(),
-#'   tvc = temporal_tvc("year", terms = c(1, 2)),
-#'   backend = "hmc",
-#'   iter = 200,
-#'   warmup = 100,
-#'   chains = 1
+#'   family = "poisson",
+#'   temporal = temporal_tvc("year", terms = ~ x - 1, structure = "rw1"),
+#'   mode = "exact",
+#'   control = list(n_iter = 200L, n_warmup = 100L, seed = 1L)
 #' )
 #'
-#' # Extract TVC posteriors
 #' tvc_post <- tvc(fit)
 #' summary(tvc_post)
-#'
-#' # Plot temporal evolution
 #' plot(tvc_post, "x")
 #' }
 #'
@@ -296,15 +289,30 @@ tvc <- function(object, terms = NULL, summary = FALSE,
 #' @export
 tvc.tulpa_fit <- function(object, terms = NULL, summary = FALSE,
                            probs = c(0.025, 0.5, 0.975), ...) {
+  # `tulpa_tvc_posterior` carries a [draws, time, term] field and no group
+  # axis, while a grouped fit's flat layout is (group, term, time). Reshaping
+  # it into the ungrouped shape would report the first group as though it were
+  # the whole field, so a grouped fit is refused here rather than collapsed.
+  info <- .varying_coef_info(object, c("tvc", "temporal"), "tulpa_tvc")
+  if (!is.null(info) && is.null(object$.internal$tvc_draws) &&
+      isTRUE((info$n_groups %||% 1L) > 1L)) {
+    stop("tvc() cannot summarize a grouped TVC field (group_var = \"",
+         info$group_var, "\", ", info$n_groups, " groups): the posterior it ",
+         "returns has no group dimension. Read the `tvc_w[...]` draws ",
+         "directly, laid out group-major over (term, time).", call. = FALSE)
+  }
   .extract_varying_coef(
     object, terms, summary, probs,
     slot = "tvc",
     info_class = "tulpa_tvc",
     not_fitted_msg = paste0(
       "Model was not fitted with temporally-varying coefficients.\n",
-      "Use `tvc` argument in tulpa() to specify TVCs."),
+      "Pass `temporal = temporal_tvc(...)` to tulpa() with `mode = \"exact\"`."),
     draws_field = "tvc_draws",
     names_field = "tvc_names",
+    field_slot = "temporal",
+    draws_prefix = "tvc_w",
+    n_units_field = "n_times",
     build_result = function(info, draws, term_names) {
       structure(
         list(

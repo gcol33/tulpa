@@ -40,16 +40,67 @@
 
 # build_result(info, draws, term_names) constructs the variant-specific
 # posterior object from the (possibly subset) draws and names.
+
+# The fit slot a validated field spec lands in. tulpa() attaches every spatial
+# spec at `$spatial` and every temporal one at `$temporal`, so a varying-
+# coefficient spec is found there; a model package assembling its own fit may
+# instead attach it under the accessor's own name (`$svc` / `$tvc`). Both are
+# looked up and whichever carries `info_class` wins, so one accessor serves
+# both assemblies.
+.varying_coef_info <- function(object, slots, info_class) {
+  for (s in slots) {
+    info <- object[[s]]
+    if (!is.null(info) && inherits(info, info_class)) return(info)
+  }
+  NULL
+}
+
+# The `<prefix>[k]` columns of a draw matrix, ordered by k rather than by the
+# order they happen to sit in. The one place a latent block is read back out of
+# `fit$draws` by the name the sampler gave it. NULL when there are none.
+.draws_by_prefix <- function(draws, prefix) {
+  if (is.null(draws)) return(NULL)
+  cn <- colnames(draws)
+  if (is.null(cn)) return(NULL)
+  pat <- paste0("^", prefix, "\\[([0-9]+)\\]$")
+  hit <- grep(pat, cn)
+  if (!length(hit)) return(NULL)
+  k <- as.integer(sub(pat, "\\1", cn[hit]))
+  as.matrix(draws[, hit[order(k)], drop = FALSE])
+}
+
+# Read the flattened field out of the fit's own draw matrix.
+#
+# The flat layout the eta assembly indexes is observation-fastest within a term
+# for SVC (`w_flat[j * n_obs + i]`, src/hmc_svc.h) and time-fastest within a
+# (group, term) for TVC (`w_flat[(g * n_tvc + j) * n_times + t]`,
+# src/hmc_tvc.h). Units vary fastest and terms next in both, which is exactly
+# the fill order of an [n_draws, n_units, n_terms] array, so the leading
+# n_units * n_terms columns are reshaped rather than permuted. Returns NULL
+# when the fit does not carry that many.
+.varying_coef_draws <- function(object, prefix, n_units, n_terms) {
+  m <- .draws_by_prefix(object$draws, prefix)
+  n <- n_units * n_terms
+  if (is.null(m) || ncol(m) < n) return(NULL)
+  array(m[, seq_len(n), drop = FALSE], dim = c(nrow(m), n_units, n_terms))
+}
+
 .extract_varying_coef <- function(object, terms, summary, probs,
                                   slot, info_class, not_fitted_msg,
-                                  draws_field, names_field, build_result) {
-  info <- object[[slot]]
-  if (is.null(info) || !inherits(info, info_class)) {
+                                  draws_field, names_field, build_result,
+                                  field_slot = NULL, draws_prefix = NULL,
+                                  n_units_field = NULL) {
+  info <- .varying_coef_info(object, c(slot, field_slot), info_class)
+  if (is.null(info)) {
     stop(not_fitted_msg, call. = FALSE)
   }
 
   term_names <- info[[names_field]]
   draws <- object$.internal[[draws_field]]
+  if (is.null(draws) && !is.null(draws_prefix)) {
+    draws <- .varying_coef_draws(object, draws_prefix,
+                                 info[[n_units_field]], length(term_names))
+  }
   if (is.null(draws)) {
     stop(toupper(slot), " draws not found in model output", call. = FALSE)
   }

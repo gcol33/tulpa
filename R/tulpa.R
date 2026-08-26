@@ -2295,6 +2295,11 @@ tulpa <- function(formula, data,
     # coordinates (HSGP basis / GP-NNGP conditional mean). fit_spde already sets
     # $spatial; the nested gp/nngp/hsgp path does not, so fill it here.
     if (!is.null(spatial_spec)) fit$spatial <- fit$spatial %||% spatial_spec
+    # The temporal spec rides along for the same reason, and for the
+    # accessors: temporal() / tvc() read the field layout (time levels, term
+    # names, components) off the fit, and the draw columns the sampler emits
+    # -- trend[k], tvc_w[u] -- carry no layout of their own.
+    if (!is.null(temporal_spec)) fit$temporal <- fit$temporal %||% temporal_spec
     # Smoother metadata for smooth_effects(): node locations plus the block
     # sizes needed to index the latent tail of the per-grid modes.
     if (length(smooth_specs) > 0L) {
