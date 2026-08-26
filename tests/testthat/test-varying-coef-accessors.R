@@ -165,6 +165,10 @@ test_that("the accessors refuse a fit that carries no such field", {
   # A field of the other kind is not read as this one.
   expect_error(tvc(svc_fixture()), "temporally-varying")
   expect_error(svc(tvc_fixture()), "spatially-varying")
+
+  # A TVC spec occupies the same `temporal =` slot a field would, so temporal()
+  # now reaches it. It names tvc() rather than failing on the absent field.
+  expect_error(temporal(tvc_fixture()), "Use tvc\\(\\) to read them")
 })
 
 

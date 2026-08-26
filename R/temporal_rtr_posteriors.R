@@ -128,6 +128,15 @@ temporal.tulpa_fit <- function(object, component = "all", summary = FALSE,
 
   temp_info <- object$temporal
 
+  # A TVC spec rides the same `temporal =` slot, and carries varying
+  # coefficients rather than a temporal field, so it has no phi_temporal to
+  # summarize. Name the accessor that reads it instead of failing further down
+  # on the absent draws.
+  if (inherits(temp_info, "tulpa_tvc")) {
+    stop("This fit carries temporally-varying coefficients, not a temporal ",
+         "field. Use tvc() to read them.", call. = FALSE)
+  }
+
   # Get temporal draws from model
   temp_draws <- object$.internal$temporal_draws
   if (is.null(temp_draws)) {
