@@ -96,8 +96,6 @@ temporal <- function(object, component = "all", summary = FALSE,
 }
 
 
-#' @rdname temporal
-#' @export
 # The temporal field read back off the fit's own draws. The sampler names a
 # multiscale block by its component (`trend[k]` / `seasonal[k]` /
 # `short_term[k]`) and a single field `phi_temporal[k]`
@@ -116,6 +114,8 @@ temporal <- function(object, component = "all", summary = FALSE,
 }
 
 
+#' @rdname temporal
+#' @export
 temporal.tulpa_fit <- function(object, component = "all", summary = FALSE,
                                 probs = c(0.025, 0.5, 0.975), ...) {
 

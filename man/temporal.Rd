@@ -2,7 +2,7 @@
 % Please edit documentation in R/temporal_rtr_posteriors.R
 \name{temporal}
 \alias{temporal}
-\alias{.temporal_draws_from_fit}
+\alias{temporal.tulpa_fit}
 \title{Extract temporal effects from a fitted model}
 \usage{
 temporal(
@@ -13,7 +13,13 @@ temporal(
   ...
 )
 
-.temporal_draws_from_fit(object, info)
+\method{temporal}{tulpa_fit}(
+  object,
+  component = "all",
+  summary = FALSE,
+  probs = c(0.025, 0.5, 0.975),
+  ...
+)
 }
 \arguments{
 \item{object}{A \code{tulpa_fit} object fitted with \code{temporal} argument}
