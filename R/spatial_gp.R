@@ -307,9 +307,9 @@ validate_hsgp_multiscale <- function(spatial, data) {
 #' )
 #' print(ms)
 #'
-#' \dontrun{
+#' \donttest{
 #' set.seed(101)
-#' n <- 60
+#' n <- 25
 #' df <- data.frame(
 #'   lon = runif(n, 0, 10),
 #'   lat = runif(n, 0, 10),
@@ -327,10 +327,12 @@ validate_hsgp_multiscale <- function(spatial, data) {
 #'   spatial = spatial_multiscale(
 #'     ~ lon + lat,
 #'     range_local = c(0.1, 0.5),
-#'     range_regional = c(1, 5)
+#'     range_regional = c(1, 5),
+#'     nn_local = 5L,
+#'     nn_regional = 8L
 #'   ),
 #'   mode = "exact",
-#'   control = list(n_iter = 200L, n_warmup = 100L)
+#'   control = list(n_iter = 60L, n_warmup = 30L, seed = 1L)
 #' )
 #' summary(fit)
 #' }

@@ -37,10 +37,12 @@ Extract posterior distributions of spatiotemporal interaction effects
 from a fitted tulpa model.
 }
 \examples{
-\donttest{
-# After fitting a model with spatiotemporal interaction...
-# st_effects <- spatiotemporal_effects(fit)
-# summary(st_effects)
+\dontrun{
+# `fit` carries a Knorr-Held interaction block, which no tulpa backend
+# fits: the spec comes from a model package that configures the
+# interaction itself (see spatiotemporal() for what the engine does fit).
+st_effects <- spatiotemporal_effects(fit, format = "summary")
+head(st_effects)
 }
 
 }

@@ -458,9 +458,32 @@ get_palette_scale <- function(palette, na_color, legend_title, geom = "fill") {
 #' @return A patchwork object (if patchwork is installed) or a list of ggplots.
 #'
 #' @examples
-#' # See plot_map() examples for fitting a spatial model
-#' # plot_map_panel(fit)
-#' # plot_map_panel(fit, ncol = 1)
+#' \donttest{
+#' if (requireNamespace("ggplot2", quietly = TRUE)) {
+#'   set.seed(123)
+#'   n_sites <- 20
+#'   df <- data.frame(
+#'     y = rbinom(n_sites, 20, 0.4),
+#'     elevation = rnorm(n_sites),
+#'     site = factor(seq_len(n_sites)),
+#'     lon = runif(n_sites),
+#'     lat = runif(n_sites)
+#'   )
+#'   adj <- matrix(0, n_sites, n_sites)
+#'   for (i in 1:(n_sites - 1)) adj[i, i + 1] <- adj[i + 1, i] <- 1
+#'   fit <- tulpa(
+#'     y ~ elevation + spatial(site),
+#'     data = df,
+#'     family = "binomial",
+#'     n_trials = rep(20L, n_sites),
+#'     spatial = spatial_car(adj, group_var = "site"),
+#'     mode = "laplace"
+#'   )
+#'   cc <- df[, c("lon", "lat")]
+#'   plot_map_panel(fit, coords = cc)
+#'   plot_map_panel(fit, coords = cc, ncol = 1)
+#' }
+#' }
 #'
 #' @export
 plot_map_panel <- function(x, newdata = NULL, ncol = 2, ...) {

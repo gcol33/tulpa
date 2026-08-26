@@ -100,7 +100,7 @@
 #' g3 <- adjacency(grid, id = "cell", offsets = list(c(1, 0), c(0, 1)))
 #'
 #' # Use it in a model: graph stays explicit and inspectable
-#' # spatial(graph = g$adjacency, formula = ~ 1 || cell_idx)
+#' spatial(graph = g$adjacency, formula = ~ 1 || cell_idx)
 #'
 #' # Remap observation data (original cell ids -> 1:n node indices) by key
 #' obs <- data.frame(cell = c("c5", "c1", "c5", "c9"))

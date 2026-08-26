@@ -179,9 +179,16 @@ plot_rhat_base <- function(diag, threshold) {
 #' - Red: ESS < threshold/2
 #'
 #' @examples
-#' # See plot_rhat() examples for fitting a model
-#' # plot_ess(fit)
-#' # plot_ess(fit, type = "tail")
+#' \donttest{
+#' set.seed(123)
+#' df <- data.frame(x = rnorm(60))
+#' df$y <- rpois(60, exp(0.5 + 0.3 * df$x))
+#' fit <- tulpa(y ~ x, data = df, family = "poisson", mode = "hmc",
+#'              control = list(n_iter = 500L, warmup = 250L, n_chains = 2L,
+#'                             seed = 1L))
+#' plot_ess(fit)
+#' plot_ess(fit, type = "tail")
+#' }
 #'
 #' @seealso [plot_rhat()], [diagnostic_summary()], [diagnostics()]
 #' @export
@@ -299,9 +306,16 @@ plot_ess_base <- function(diag, threshold, type) {
 #' poor mixing.
 #'
 #' @examples
-#' # See plot_rhat() examples for fitting a model
-#' # plot_acf(fit)
-#' # plot_acf(fit, pars = c("beta_num[1]", "sigma_re"))
+#' \donttest{
+#' set.seed(123)
+#' df <- data.frame(x = rnorm(60))
+#' df$y <- rpois(60, exp(0.5 + 0.3 * df$x))
+#' fit <- tulpa(y ~ x, data = df, family = "poisson", mode = "hmc",
+#'              control = list(n_iter = 500L, warmup = 250L, n_chains = 2L,
+#'                             seed = 1L))
+#' plot_acf(fit)
+#' plot_acf(fit, lags = 10)
+#' }
 #'
 #' @seealso [plot_ess()], [diagnostics()]
 #' @export
@@ -426,9 +440,16 @@ plot_acf_base <- function(draws, pars, lags) {
 #' - Regions where divergences cluster (indicating problematic geometry)
 #'
 #' @examples
-#' # See plot_rhat() examples for fitting a model
-#' # plot_pairs(fit)
-#' # plot_pairs(fit, pars = c("sigma_re", "phi_num", "phi_denom"))
+#' \donttest{
+#' set.seed(123)
+#' df <- data.frame(x = rnorm(60))
+#' df$y <- rpois(60, exp(0.5 + 0.3 * df$x))
+#' fit <- tulpa(y ~ x, data = df, family = "poisson", mode = "hmc",
+#'              control = list(n_iter = 500L, warmup = 250L, n_chains = 2L,
+#'                             seed = 1L))
+#' plot_pairs(fit)
+#' plot_pairs(fit, n_pars = 2)
+#' }
 #'
 #' @seealso [plot_divergences()], [diagnostics()]
 #' @export
@@ -600,9 +621,16 @@ plot_pairs_base <- function(draws_df, pars, has_divergent, alpha) {
 #' - Multi-modality
 #'
 #' @examples
-#' # See plot_rhat() examples for fitting a model
-#' # plot_divergences(fit)
-#' # plot_divergences(fit, type = "scatter")
+#' \donttest{
+#' set.seed(123)
+#' df <- data.frame(x = rnorm(60))
+#' df$y <- rpois(60, exp(0.5 + 0.3 * df$x))
+#' fit <- tulpa(y ~ x, data = df, family = "poisson", mode = "hmc",
+#'              control = list(n_iter = 500L, warmup = 250L, n_chains = 2L,
+#'                             seed = 1L))
+#' plot_divergences(fit)
+#' plot_divergences(fit, type = "scatter")
+#' }
 #'
 #' @seealso [plot_pairs()], [n_divergent()]
 #' @export
@@ -801,8 +829,15 @@ plot_divergences_scatter <- function(draws_df, pars) {
 #' indicate the sampler may not be exploring the full posterior.
 #'
 #' @examples
-#' # See plot_rhat() examples for fitting a model
-#' # plot_energy(fit)
+#' \donttest{
+#' set.seed(123)
+#' df <- data.frame(x = rnorm(60))
+#' df$y <- rpois(60, exp(0.5 + 0.3 * df$x))
+#' fit <- tulpa(y ~ x, data = df, family = "poisson", mode = "hmc",
+#'              control = list(n_iter = 500L, warmup = 250L, n_chains = 2L,
+#'                             seed = 1L))
+#' plot_energy(fit)
+#' }
 #'
 #' @seealso [diagnostic_summary()], [check_diagnostics()]
 #' @export
@@ -937,9 +972,16 @@ plot_energy_base <- function(energy, energy_diff, e_bfmi, status) {
 #' }
 #'
 #' @examples
-#' # See plot_rhat() examples for fitting a model
-#' # ds <- diagnostic_summary(fit)
-#' # print(ds)
+#' \donttest{
+#' set.seed(123)
+#' df <- data.frame(x = rnorm(60))
+#' df$y <- rpois(60, exp(0.5 + 0.3 * df$x))
+#' fit <- tulpa(y ~ x, data = df, family = "poisson", mode = "hmc",
+#'              control = list(n_iter = 500L, warmup = 250L, n_chains = 2L,
+#'                             seed = 1L))
+#' ds <- diagnostic_summary(fit)
+#' print(ds)
+#' }
 #'
 #' @seealso [check_diagnostics()], [diagnostics()], [plot_diagnostics()]
 #' @export
@@ -1326,8 +1368,15 @@ print.tulpa_diagnostic_summary <- function(x, ...) {
 #' - Bottom right: Energy (HMC) or ACF (other)
 #'
 #' @examples
-#' # See plot_rhat() examples for fitting a model
-#' # plot_diagnostics(fit)
+#' \donttest{
+#' set.seed(123)
+#' df <- data.frame(x = rnorm(60))
+#' df$y <- rpois(60, exp(0.5 + 0.3 * df$x))
+#' fit <- tulpa(y ~ x, data = df, family = "poisson", mode = "hmc",
+#'              control = list(n_iter = 500L, warmup = 250L, n_chains = 2L,
+#'                             seed = 1L))
+#' plot_diagnostics(fit)
+#' }
 #'
 #' @seealso [diagnostic_summary()], [plot_rhat()], [plot_ess()]
 #' @export
@@ -1433,8 +1482,15 @@ plot_diagnostics <- function(fit, pars = NULL) {
 #' converged.
 #'
 #' @examples
-#' # See plot_rhat() examples for fitting a model
-#' # geweke_test(fit)
+#' \donttest{
+#' set.seed(123)
+#' df <- data.frame(x = rnorm(60))
+#' df$y <- rpois(60, exp(0.5 + 0.3 * df$x))
+#' fit <- tulpa(y ~ x, data = df, family = "poisson", mode = "hmc",
+#'              control = list(n_iter = 500L, warmup = 250L, n_chains = 2L,
+#'                             seed = 1L))
+#' geweke_test(fit)
+#' }
 #'
 #' @seealso [diagnostics()], [check_diagnostics()]
 #' @export
@@ -1602,8 +1658,15 @@ n_divergent <- function(fit) {
 #'   for a non-chain (approximation) fit where Rhat/ESS do not apply.
 #'
 #' @examples
-#' # See plot_rhat() examples for fitting a model
-#' # check_diagnostics(fit)
+#' \donttest{
+#' set.seed(123)
+#' df <- data.frame(x = rnorm(60))
+#' df$y <- rpois(60, exp(0.5 + 0.3 * df$x))
+#' fit <- tulpa(y ~ x, data = df, family = "poisson", mode = "hmc",
+#'              control = list(n_iter = 500L, warmup = 250L, n_chains = 2L,
+#'                             seed = 1L))
+#' check_diagnostics(fit)
+#' }
 #'
 #' @seealso [diagnostic_summary()], [diagnostics()], [n_divergent()]
 #' @export

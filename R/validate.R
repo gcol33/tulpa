@@ -38,7 +38,9 @@ NULL
 #' fit <- tulpa(y ~ x + (1 | site), data = df, family = "poisson",
 #'              mode = "hmc", control = list(n_iter = 500, warmup = 250))
 #' # Density overlay (dispatches to the model package's pp_check method).
-#' # pp_check(fit, type = "dens_overlay")
+#' if (requireNamespace("bayesplot", quietly = TRUE)) {
+#'   pp_check(fit, type = "dens_overlay")
+#' }
 #' }
 #'
 #' @export
