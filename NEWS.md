@@ -1,5 +1,41 @@
 # tulpa NEWS
 
+## 0.2.0
+
+* **`svc()`, `tvc()` and `temporal()` can read the fits `tulpa()` produces**
+  (gcol33/tulpa#607, #608, #609). All three accessors looked for the field spec
+  at `$svc` / `$tvc` and the posterior at `$.internal$*_draws`, and the front
+  door #158 wired sets neither: it attaches the spatial spec at `$spatial` and
+  puts the field in `$draws` under the name the sampler gave it. So every
+  accessor errored on every fit the engine could make, and told the user to
+  pass an `svc =` / `tvc =` argument that `tulpa()` does not have. `tulpa()`
+  now attaches the validated temporal spec beside the spatial one, and the
+  accessors read the spec from either slot and the field out of `$draws`. The
+  reshape follows the flat layout the eta assembly indexes -- observation-
+  fastest within a term for SVC, time-fastest within a (group, term) for TVC --
+  so a coefficient lands on the unit it belongs to; `test-varying-coef-
+  accessors.R` checks each element against the column the sampler wrote it to,
+  which is the assertion the front-door tests were missing (they read
+  `colnames(fit$draws)` and never called the accessor). A grouped TVC field is
+  refused rather than reported as its first group, since
+  `tulpa_tvc_posterior` carries no group axis.
+
+* **The compile cache is reportable without being created, and clearable.**
+  `tulpa_cache_dir()` takes `create = FALSE` (the default) and only reports the
+  path; the directory appears where a compile needs it. New
+  `tulpa_cache_clear(older_than =)` removes cached builds -- the cache holds
+  build artefacts only, so an entry it drops is rebuilt by the next
+  `tgmrf_cpp()` call on the same source.
+
+* Examples: thirteen help pages carried their example as commented-out code,
+  eleven of them entirely, and now fit a small model and call the function.
+  The SVC, TVC and multi-scale-temporal examples were written against argument
+  names (`svc =`, `tvc =`, `iter =`, `chains =`) that the front door does not
+  take and would have errored if run; they use the current API and run. The
+  labels calling SVC and TVC unsupported or experimental are gone.
+
+* `Language: en-US` declared in DESCRIPTION.
+
 ## 0.1.23
 
 * **`tulpa_re_aghq()` returns the optimizer's evaluation counts.** The joint

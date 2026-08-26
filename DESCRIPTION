@@ -1,6 +1,6 @@
 Package: tulpa
 Title: Template Unified Latent Process Architecture for Bayesian Hierarchical Models
-Version: 0.1.23
+Version: 0.2.0
 Authors@R: c(
     person("Gilles", "Colling", , "gilles.colling051@gmail.com", role = c("aut", "cre", "cph"),
            comment = c(ORCID = "0000-0003-3070-6066")),
@@ -28,6 +28,7 @@ Description: A general-purpose engine for fitting Bayesian hierarchical models
     through a templated C++ callback interface.
 License: MIT + file LICENSE
 Encoding: UTF-8
+Language: en-US
 Roxygen: list(markdown = TRUE)
 SystemRequirements: C++17
 Depends:

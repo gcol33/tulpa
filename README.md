@@ -5,7 +5,7 @@
 [![Lifecycle: experimental](https://lifecycle.r-lib.org/articles/figures/lifecycle-experimental.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![R >= 4.1](https://img.shields.io/badge/R-%3E%3D%204.1-blue.svg)](https://cran.r-project.org/)
-[![C++17](https://img.shields.io/badge/C%2B%2B-17-00599C.svg?logo=cplusplus&logoColor=white)](https://en.cppreference.com/w/cpp/17)
+[![C++17](https://img.shields.io/badge/C%2B%2B-17-00599C.svg?logo=cplusplus&logoColor=white)](https://en.cppreference.com/cpp/17)
 
 **A Bayesian hierarchical modelling engine that splits the posterior: a deterministic approximation (Laplace, EP, VI, Pathfinder) handles the well-behaved Gaussian-latent blocks, and exact MCMC corrects only the directions where that approximation is biased.** Autodiff, the samplers, and the spatial / temporal / covariance machinery are templated C++.
 

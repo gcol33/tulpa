@@ -36,11 +36,26 @@
   named subset of the sampler and coverage tier runs there on a schedule.
   Both tiers are run in full by the maintainer before each release.
 
-* A small number of examples remain in \dontrun{}. Each either references
-  symbols the user supplies (a per-model E-step / M-step callback pair, a
-  compiled latent block, a mesh-backed SPDE spec) and so has nothing to
-  execute, or requires an observation likelihood from a companion model
-  package that is not on CRAN (tulpaRatio).
+* Eight examples remain in \dontrun{}. Six reference symbols the user supplies
+  (a per-model E-step / M-step callback pair, a compiled latent block, a
+  mesh-backed SPDE spec, an outer-grid inner fitter) and so have nothing to
+  execute. One (spatiotemporal_effects) needs a Knorr-Held interaction block,
+  which no backend in this package fits -- spatiotemporal() errors by design
+  and says so -- so the fit can only come from a companion model package. One
+  (tulpa_cache_clear) would delete the caller's own cached builds. Everything
+  else that is slow rather than unrunnable is in \donttest{}.
+
+* tgmrf_cpp() compiles a user-supplied C++ latent block and caches the result
+  under tools::R_user_dir("tulpa", "cache") (R/tgmrf_cpp.R). Nothing is
+  written unless a compile happens: tulpa_cache_dir() reports the path and
+  creates nothing (create = FALSE by default), and the directory is made at
+  the point of compilation. The contents are user-manageable through
+  tulpa_cache_clear(older_than = ), which is documented alongside it; the
+  cache holds build artefacts only, so a removed entry is rebuilt on the next
+  call for the same source. No example, vignette or test writes there --
+  tgmrf_cpp()'s example is in \dontrun{}, tulpa_cache_clear()'s likewise, and
+  tulpa_cache_dir()'s only prints the path. Everything else the package writes
+  goes to a path the user passed (a checkpoint file) or to tempdir().
 
 * The vignettes fit models, which does not fit inside the ten-minute check
   budget. Each vignette sets `eval` from NOT_CRAN in its setup chunk, so the
