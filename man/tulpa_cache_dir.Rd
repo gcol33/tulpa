@@ -4,12 +4,26 @@
 \alias{tulpa_cache_dir}
 \title{Default cache directory for \code{tgmrf_cpp()}-compiled DLLs}
 \usage{
-tulpa_cache_dir()
+tulpa_cache_dir(create = FALSE)
+}
+\arguments{
+\item{create}{Create the directory if it is missing. \code{FALSE} (the default)
+only reports the path.}
 }
 \value{
 Absolute path (character) to the cache directory.
 }
 \description{
-Returns a per-user cache directory under
-\code{tools::R_user_dir("tulpa", "cache")} and creates it if missing.
+Reports the per-user directory under \code{tools::R_user_dir("tulpa", "cache")}
+where \code{\link[=tgmrf_cpp]{tgmrf_cpp()}} keeps the objects it compiles. Reporting the path does
+not create it: the directory appears the first time a compile needs it, and
+\code{\link[=tulpa_cache_clear]{tulpa_cache_clear()}} removes what it holds.
+}
+\examples{
+# Where compiled tgmrf_cpp() blocks are cached. Reporting creates nothing.
+tulpa_cache_dir()
+
+}
+\seealso{
+\code{\link[=tulpa_cache_clear]{tulpa_cache_clear()}} to remove cached objects.
 }

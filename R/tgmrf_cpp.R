@@ -263,15 +263,69 @@ tgmrf_cpp <- function(cpp_file, id, init,
 #' Default cache directory for `tgmrf_cpp()`-compiled DLLs
 #'
 #' @description
-#' Returns a per-user cache directory under
-#' `tools::R_user_dir("tulpa", "cache")` and creates it if missing.
+#' Reports the per-user directory under `tools::R_user_dir("tulpa", "cache")`
+#' where [tgmrf_cpp()] keeps the objects it compiles. Reporting the path does
+#' not create it: the directory appears the first time a compile needs it, and
+#' [tulpa_cache_clear()] removes what it holds.
+#'
+#' @param create Create the directory if it is missing. `FALSE` (the default)
+#'   only reports the path.
 #'
 #' @return Absolute path (character) to the cache directory.
+#'
+#' @seealso [tulpa_cache_clear()] to remove cached objects.
+#'
+#' @examples
+#' # Where compiled tgmrf_cpp() blocks are cached. Reporting creates nothing.
+#' tulpa_cache_dir()
+#'
 #' @export
-tulpa_cache_dir <- function() {
+tulpa_cache_dir <- function(create = FALSE) {
   d <- tools::R_user_dir("tulpa", "cache")
-  if (!dir.exists(d)) dir.create(d, recursive = TRUE, showWarnings = FALSE)
+  if (isTRUE(create) && !dir.exists(d)) {
+    dir.create(d, recursive = TRUE, showWarnings = FALSE)
+  }
   d
+}
+
+#' Remove compiled blocks from the tgmrf_cpp() cache
+#'
+#' @description
+#' Deletes cached compilation output under [tulpa_cache_dir()]. The cache holds
+#' build artefacts only -- a removed entry is rebuilt by the next [tgmrf_cpp()]
+#' call on the same source -- so it can be emptied at any time.
+#'
+#' @param older_than Remove only entries whose last modification is more than
+#'   this many days ago. `0` (the default) removes every entry.
+#'
+#' @return The number of entries removed, invisibly.
+#'
+#' @seealso [tulpa_cache_dir()] for the location.
+#'
+#' @examples
+#' \dontrun{
+#' # Deletes the caller's own cached builds, so it is not run on check.
+#' tulpa_cache_clear()              # empty the cache
+#' tulpa_cache_clear(older_than = 30)  # keep the last 30 days
+#' }
+#'
+#' @export
+tulpa_cache_clear <- function(older_than = 0) {
+  if (!is.numeric(older_than) || length(older_than) != 1L ||
+      is.na(older_than) || older_than < 0) {
+    stop("`older_than` must be a single non-negative number of days.",
+         call. = FALSE)
+  }
+  d <- tulpa_cache_dir()
+  if (!dir.exists(d)) return(invisible(0L))
+  entries <- list.files(d, all.files = TRUE, no.. = TRUE, full.names = TRUE)
+  if (older_than > 0 && length(entries)) {
+    age_days <- as.numeric(Sys.time() - file.mtime(entries), units = "days")
+    entries <- entries[!is.na(age_days) & age_days > older_than]
+  }
+  if (!length(entries)) return(invisible(0L))
+  unlink(entries, recursive = TRUE, force = TRUE)
+  invisible(length(entries))
 }
 
 # -- Internal accessors over the Rcpp-exported registry helpers ----------------
