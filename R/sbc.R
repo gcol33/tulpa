@@ -1297,7 +1297,7 @@ plot.sbc <- function(x, arm = NULL, quantity = NULL, folded = FALSE, ...) {
   on.exit(graphics::par(op), add = TRUE)
   nr <- ceiling(sqrt(nrow(r)))
   nc <- ceiling(nrow(r) / nr)
-  graphics::par(mfrow = c(nr, nc), mar = c(4, 4, 2.5, 1))
+  graphics::par(mfrow = c(nr, nc), mar = c(4, 4, 3.6, 1))
   for (i in seq_len(nrow(r))) {
     sel <- x$pit$arm == r$arm[i] & x$pit$quantity == r$quantity[i]
     u <- x$pit$pit[sel]
@@ -1310,18 +1310,19 @@ plot.sbc <- function(x, arm = NULL, quantity = NULL, folded = FALSE, ...) {
     # The ECDF DIFFERENCE, which is the standard SBC read: a calibrated sample
     # wanders around zero inside the band.
     graphics::plot(range(at), range(c(band$ecdf_lo - at, band$ecdf_hi - at)),
-                   type = "n", xlab = "PIT", ylab = "ECDF - uniform",
-                   main = sprintf("%s / %s%s", r$arm[i], r$quantity[i],
-                                  if (folded) " (folded)" else ""))
+                   type = "n", xlab = "PIT", ylab = "ECDF - uniform")
+    graphics::title(main = sprintf("%s / %s%s", r$arm[i], r$quantity[i],
+                                   if (folded) " (folded)" else ""),
+                    line = 1.9, cex.main = 1)
+    graphics::mtext(sprintf("p = %.3g%s", r$p_unif[i],
+                            if (r$inside[i]) "" else ", outside band"),
+                    side = 3, line = 0.5, cex = 0.75)
     graphics::polygon(c(at, rev(at)),
                       c(band$ecdf_lo - at, rev(band$ecdf_hi - at)),
                       col = grDevices::grey(0.9), border = NA)
     graphics::abline(h = 0, col = "grey40")
     graphics::lines(c(0, us, 1), c(0, seq_len(n) / n, 1) - c(0, us, 1),
                     type = "s")
-    graphics::mtext(sprintf("p = %.3g%s", r$p_unif[i],
-                            if (r$inside[i]) "" else "  OUTSIDE"),
-                    side = 3, line = 0.2, cex = 0.75)
   }
   invisible(x)
 }

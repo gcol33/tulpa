@@ -29,6 +29,12 @@
   the level. The unreachable plain-double `compute_svc_eta` and
   `svc_sum_to_zero_penalty` in `hmc_svc.h` are deleted.
 
+* **`plot.sbc()` keeps the uniformity p-value clear of the panel title.** The
+  `p` line is drawn with `mtext()` under a title set at `line = 1.9` in a top
+  margin widened to suit, so on a grid of panels the two no longer overprint.
+  A panel whose ECDF leaves the band reads `, outside band` rather than
+  `OUTSIDE`.
+
 * **`svc()`, `tvc()` and `temporal()` can read the fits `tulpa()` produces**
   (gcol33/tulpa#607, #608, #609). All three accessors looked for the field spec
   at `$svc` / `$tvc` and the posterior at `$.internal$*_draws`, and the front
