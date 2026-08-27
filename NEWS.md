@@ -35,6 +35,14 @@
   A panel whose ECDF leaves the band reads `, outside band` rather than
   `OUTSIDE`.
 
+* **`outer_regime = "collapsed_interior"` is documented by what the collapse
+  costs.** The `laplace_diagnostics()` return-value entry called an interior
+  collapse "benign". It now states that the fit is empirical Bayes at the
+  mode: the point estimates are sound and hyperparameter uncertainty is not
+  integrated. That is what the regime note printed with the fit already says,
+  and what the Details section spells out; only the one-line summary was
+  short enough to be read as an all-clear.
+
 * **`svc()`, `tvc()` and `temporal()` can read the fits `tulpa()` produces**
   (gcol33/tulpa#607, #608, #609). All three accessors looked for the field spec
   at `$svc` / `$tvc` and the posterior at `$.internal$*_draws`, and the front

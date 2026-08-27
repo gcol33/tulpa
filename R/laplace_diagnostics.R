@@ -1728,7 +1728,8 @@
 #'     \item{`outer_regime`}{`"spread"` / `"collapsed_interior"` /
 #'       `"collapsed_edge"` -- whether the outer grid integrated hyperparameter
 #'       uncertainty at all, and if not whether its dominant cell is interior
-#'       (benign) or against a grid boundary (widen it).}
+#'       (empirical Bayes at the mode: point estimates sound, hyperparameter
+#'       uncertainty not integrated) or against a grid boundary (widen it).}
 #'     \item{`grid_edge_axes`, `grid_edge_sides`}{for an edge collapse, the axes
 #'       the dominant cell sits against and on which side.}
 #'     \item{`outer_skew_max`}{largest estimated |skewness| of the hyperparameter
