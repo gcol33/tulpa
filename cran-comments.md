@@ -9,12 +9,16 @@
 ## Test environments
 
 * local: Windows 11, R 4.6.0
-* win-builder: R-devel, R-release
 * GitHub Actions, on every push: ubuntu-latest (R-release and R-devel),
-  macos-latest (R-release), windows-latest (R-release), all compiled with
-  -ffp-contract=off
+  macos-latest (R-release), windows-latest (R-release and R-devel), all
+  compiled with -ffp-contract=off
 * Linux: Rocky Linux 9.8, R 4.5.2, gcc 14.3, built at the x86-64 baseline
   with -ffp-contract=off
+
+win-builder was unreachable while this submission was prepared: connections to
+win-builder.r-project.org were refused or timed out from two independent
+networks over several hours. The Windows r-devel check was run on GitHub
+Actions (windows-latest, R-devel) instead, alongside the Linux r-devel job.
 
 ## Notes
 
