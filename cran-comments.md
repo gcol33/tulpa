@@ -32,9 +32,9 @@
   retains a small runnable form where feasible. Recovery and sampler tests
   are gated by testthat's skip_on_cran() and by the package's own tier
   variables (NOT_CRAN, TULPA_SLOW_TESTS). A named subset of the recovery
-  tier runs on every push in GitHub Actions, on Linux and on macOS, and a
-  named subset of the sampler and coverage tier runs there on a schedule.
-  Both tiers are run in full by the maintainer before each release.
+  tier runs on every push in GitHub Actions, on Linux and on macOS, and the
+  sampler and coverage tier runs there on request, one job per file. Both
+  tiers are run in full by the maintainer before each release.
 
 * Eight examples remain in \dontrun{}. Six reference symbols the user supplies
   (a per-model E-step / M-step callback pair, a compiled latent block, a

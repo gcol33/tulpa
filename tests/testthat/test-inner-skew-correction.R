@@ -41,12 +41,26 @@ test_that("the Cornish-Fisher quantile is the series it claims to be", {
 
   # Zero skewness AND zero location term is the Gaussian quantile exactly, not
   # approximately: the correction must be inert where the inner Laplace is exact
-  # (a gaussian-family coefficient reads both as 0 by construction).
+  # (a gaussian-family coefficient reads both as 0 by construction). At
+  # gamma_3 = gamma_1 = 0 the centre and the reshaping term are both zero, so
+  # the applied row must come out of `mu + sigma w` bit for bit the same as a
+  # declined one. Both sides are the same routine, so no compiler's fused
+  # multiply-add can separate them.
   out0 <- tulpa:::cpp_cornish_fisher_quantile(mu = -0.3, sigma = 1.7, gamma3 = 0,
                                               gamma1 = 0, z = z,
                                               max_abs_gamma3 = 1,
                                               max_abs_centre = 1.2)
-  expect_identical(as.numeric(out0$q), -0.3 + 1.7 * z)
+  dec0 <- tulpa:::cpp_cornish_fisher_quantile(mu = -0.3, sigma = 1.7,
+                                              gamma3 = NA_real_,
+                                              gamma1 = NA_real_, z = z,
+                                              max_abs_gamma3 = 1,
+                                              max_abs_centre = 1.2)
+  expect_false(dec0$applied)
+  expect_identical(as.numeric(out0$q), as.numeric(dec0$q))
+  # And that row is the Gaussian quantile. R rounds `mu + sigma z` twice where a
+  # contracting compiler rounds it once, so the value is read to within a few
+  # units in the last place rather than to the bit.
+  expect_equal(as.numeric(out0$q), -0.3 + 1.7 * z, tolerance = 1e-15)
   expect_true(out0$applied)
 
   # At a symmetric level the whole correction is a relocation: the reshaping term
@@ -163,7 +177,15 @@ test_that(".nl_skew_marginal is inert when the correction is switched off", {
   mu <- c(0.4, -1.2); sd <- c(0.5, 0.9); g <- c(0.6, -0.7); g1 <- c(0.05, -0.03)
   off <- .nl_skew_marginal(mu, sd, g, g1, probs, enabled = FALSE)
   expect_identical(off$applied, c(FALSE, FALSE))
-  expect_identical(off$q, matrix(mu, 2L, 2L) + outer(sd, stats::qnorm(probs)))
+  # Switching the correction off is the same read as a coefficient whose terms
+  # were not computable: same routine, same arithmetic, so bit for bit.
+  absent <- .nl_skew_marginal(mu, sd, rep(NA_real_, 2), rep(NA_real_, 2), probs,
+                              enabled = TRUE)
+  expect_identical(off$q, absent$q)
+  # R rounds `mu + sd z` twice where a contracting compiler rounds it once, so
+  # the value is read to within a few units in the last place, not to the bit.
+  expect_equal(off$q, matrix(mu, 2L, 2L) + outer(sd, stats::qnorm(probs)),
+               tolerance = 1e-15)
   on <- .nl_skew_marginal(mu, sd, g, g1, probs, enabled = TRUE)
   expect_identical(on$applied, c(TRUE, TRUE))
   expect_false(isTRUE(all.equal(on$q, off$q)))
