@@ -10,7 +10,7 @@
 #include <cmath>
 #include <algorithm>
 #include <Rcpp.h>
-#include "tulpa/soft_sum_to_zero.h"  // s2z_precision
+#include "tulpa/sum_to_zero.h"  // s2z_centre_blocks
 #include "tulpa/svc_data.h"
 #include "tulpa/types.h"
 #include "linalg_fast.h"  // shared small-dense Cholesky / NNGP solve core
@@ -198,56 +198,10 @@ inline double nngp_log_lik(
 // SVC contribution to linear predictor
 // -----------------------------------------------------------------------------
 
-// Compute SVC contribution to linear predictor for all observations
-// eta_svc[i] = sum_j X_svc[i,j] * w_j[i]
-inline void compute_svc_eta(
-    const std::vector<double>& w_flat,  // n_obs x n_svc flattened
-    const SVCData& svc_data,
-    std::vector<double>& eta_svc         // Output: length n_obs
-) {
-  int N = svc_data.n_obs;
-  int n_svc = svc_data.n_svc;
-
-  std::fill(eta_svc.begin(), eta_svc.end(), 0.0);
-
-  for (int i = 0; i < N; i++) {
-    for (int j = 0; j < n_svc; j++) {
-      // w_flat is stored as [w1[1..N], w2[1..N], ...]
-      double w_ij = w_flat[j * N + i];
-      double x_ij = svc_data.X_svc[i * n_svc + j];
-      eta_svc[i] += x_ij * w_ij;
-    }
-  }
-}
-
-// -----------------------------------------------------------------------------
-// Sum-to-zero constraint for identifiability
-// -----------------------------------------------------------------------------
-
-// Apply soft sum-to-zero constraint on SVC weights (for each SVC term).
-// Without this, beta and mean(w) are not separately identifiable. Written on
-// the sum at the shared precision, so mean(w) is pinned at sd = kappa; see the
-// autodiff twin in hmc_svc_autodiff.h.
-inline double svc_sum_to_zero_penalty(
-    const std::vector<double>& w_flat,
-    const SVCData& svc_data
-) {
-  int n_obs = svc_data.n_obs;
-  int n_svc = svc_data.n_svc;
-
-  const double lambda = tulpa::s2z_precision(n_obs);
-  double penalty = 0.0;
-
-  for (int j = 0; j < n_svc; j++) {
-    double sum = 0.0;
-    for (int i = 0; i < n_obs; i++) {
-      sum += w_flat[j * n_obs + i];
-    }
-    penalty -= 0.5 * lambda * sum * sum;
-  }
-
-  return penalty;
-}
+// The linear predictor contribution and the level identification that goes with
+// it are templated in hmc_svc_autodiff.h (compute_svc_eta / svc_center_eta):
+// (sigma2, phi) are sampled, so every path through them carries an AD scalar
+// and a plain-double copy would only be a second version of the same function.
 
 // -----------------------------------------------------------------------------
 // Prior on GP hyperparameters

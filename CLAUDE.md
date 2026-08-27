@@ -161,6 +161,47 @@ coverage). CRAN runs tier 1 only.
 - Heavy multi-recovery files can SIGKILL (exit 137) under a background test
   harness; run decisive files individually rather than the full suite at once.
 
+## A varying coefficient's level: centre a proper field, pin an intrinsic one
+
+A varying-coefficient term contributes `eta_i += x_i w(s_i)`, so `w -> w + c`
+together with `beta -> beta - c` leaves eta EXACTLY unchanged whatever the
+covariate. That alias has to go before the field reaches the likelihood, and
+which instrument removes it depends on whether the field's own prior is proper
+(gcol33/tulpaRatio#25):
+
+- **Intrinsic** (ICAR, RW1, RW2, the interactions built from them): the constant
+  direction carries no prior at all, so one has to be supplied. That is
+  `sum_to_zero.h`'s augment-and-centre, and `soft_sum_to_zero.h`'s
+  `s2z_precision(n)` is the soft form it replaced.
+- **Proper** (an NNGP / GP field, a TVC AR1, a TYPE_I interaction): the constant
+  direction already carries a prior, precision `1' Sigma^-1 1`. Nothing needs
+  supplying; the direction needs REMOVING from the likelihood, which is what
+  centring the field on its way into eta does. `s2z_centre_blocks` is the whole
+  instrument, and a penalty on the sum is not a weaker version of it -- it
+  stiffens a direction the sampler still has to traverse, at curvature
+  `lambda n^2` against the field's own `1 / sigma^2`. There is also no constant
+  that would make one right: matched to the field's own prior on the sum,
+  `lambda = 1 / (1' Sigma 1)`, it is a term the field prior already carries;
+  anything else is a second, unstated prior on the level.
+
+Both SVC parameterizations go through `svc_center_eta` (`hmc_svc_autodiff.h`),
+so the centring and the eta it feeds are one function and no path can build eta
+from an uncentred field. The stored draws are centred to match
+(`hmc_nuts_chain_iter_store.h`), under either parameterization.
+
+**The non-centered path is where this is load-bearing, and the centered path is
+where it was NOT the defect.** On `w = L z` a penalty on the sum becomes
+`-0.5 lambda (v'z)^2` with `v = L'1`, whose stiffness rides the Vecchia cascade
+-- large for early-ordered `z`, small for late ones -- so it is anisotropic
+against the unit-variance prior on `z` and no diagonal mass matrix reaches it;
+that is what collapsed the field amplitude and produced #144's divergence storm.
+On the CENTERED path the same penalty was measured and does NOT misbehave:
+paired arms on the poisson SVC fixture, 4 chains x 400 iterations, penalty
+against centring, `beta_x` 1.661 / 1.654 against a truth of 1.650 at n = 80 and
+1.632 / 1.598 against 1.647 at n = 120, Rhat 1.04 / 1.02 and 1.03 / 1.04, no
+divergences either way. It is unified because one construction should identify
+one alias, not because the other was breaking.
+
 ## Boundary: What Belongs in tulpa vs Model Packages
 
 **tulpa owns** (generic, model-agnostic):

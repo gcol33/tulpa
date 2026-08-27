@@ -31,35 +31,33 @@
           }
       }
 
-      // NC SVC: same transform, once per term (NNGP path only -- HSGP SVC
-      // is already non-centered by construction and carries no z block here).
-      if (data.svc_parameterization == 1 && data.has_svc && layout.has_svc &&
-          !data.svc_is_hsgp) {
+      // SVC (NNGP path only -- HSGP SVC carries basis coefficients, not a
+      // field, and no z block here). Under the non-centered parameterization
+      // the stored slice is the reconstructed w rather than the sampled z;
+      // under the centered one it is already w. Either way it is stored
+      // CENTERED, matching what the log-post fed into svc_eta -- the level is
+      // identified by centering, so an uncentered draw would report a
+      // different field than the one the likelihood saw.
+      if (data.has_svc && layout.has_svc && !data.svc_is_hsgp) {
           static thread_local tulpa_gp::NNGPNCWorkspace* svc_ws_store_p = nullptr;
           if (!svc_ws_store_p) svc_ws_store_p = new tulpa_gp::NNGPNCWorkspace();
           tulpa_gp::NNGPNCWorkspace& svc_ws_store = *svc_ws_store_p;
 
           const auto& sv = data.svc_data;
+          const bool nc = (data.svc_parameterization == 1);
           const tulpa_gp::NNGPNCView svc_view = tulpa_gp::make_svc_nc_view(sv);
 
           int N_svc = sv.n_obs;
           for (int j = 0; j < sv.n_svc; j++) {
               int w0 = layout.svc_w_start + j * N_svc;
-              double sigma2_store = tulpa::math::safe_exp(q[layout.log_sigma2_svc_start + j]);
-              double phi_store = tulpa::math::safe_exp(q[layout.log_phi_svc_start + j]);
-              tulpa_gp::nngp_nc_forward(&q[w0], sigma2_store, phi_store,
-                                         svc_view, svc_ws_store);
-              // Store the CENTERED field, matching what the non-centered
-              // log-post fed into svc_eta -- that path identifies each term's
-              // level by centering rather than by the soft sum-to-zero
-              // penalty, so an uncentered draw would report a different field
-              // than the one the likelihood saw.
-              double mean_j = 0.0;
-              for (int i = 0; i < N_svc; i++) mean_j += svc_ws_store.w[i];
-              mean_j /= (double)N_svc;
-              for (int i = 0; i < N_svc; i++) {
-                  row[w0 + i] = svc_ws_store.w[i] - mean_j;
+              if (nc) {
+                  double sigma2_store = tulpa::math::safe_exp(q[layout.log_sigma2_svc_start + j]);
+                  double phi_store = tulpa::math::safe_exp(q[layout.log_phi_svc_start + j]);
+                  tulpa_gp::nngp_nc_forward(&q[w0], sigma2_store, phi_store,
+                                             svc_view, svc_ws_store);
+                  for (int i = 0; i < N_svc; i++) row[w0 + i] = svc_ws_store.w[i];
               }
+              (void)tulpa::s2z_centre_component(row, w0, N_svc);
           }
       }
 

@@ -2,6 +2,33 @@
 
 ## 0.2.0
 
+* **A varying coefficient's level is identified by centring on both SVC
+  parameterizations** (gcol33/tulpaRatio#25). A term contributes
+  `eta_i += x_i w(s_i)`, so `w -> w + c` with `beta -> beta - c` leaves eta
+  exactly unchanged and the alias has to be removed before the field reaches
+  the likelihood. An NNGP field's prior is PROPER, so its constant direction
+  already carries a prior (precision `1' Sigma^-1 1`) and needs no penalty
+  supplying one -- it needs removing from the likelihood, which is what
+  centring does. The non-centered path already centred; the centered one
+  carried a soft penalty on the sum at `s2z_precision(n_obs)` instead. Both now
+  go through `svc_center_eta`, and the stored draws are centred under either,
+  so `svc_w` sums to zero exactly rather than being pinned near zero.
+
+  Measured, paired arms on the poisson SVC fixture differing only in the
+  constraint, 4 chains x 400 iterations: the penalty was NOT misbehaving on the
+  centered path. `beta_x` 1.661 (penalty) against 1.654 (centring) at n = 80
+  and 1.632 against 1.598 at n = 120, truths 1.650 and 1.647; Rhat 1.04 / 1.02
+  and 1.03 / 1.04; no divergences either way. The change is one construction
+  for one alias, not a repair of a measured defect.
+
+  `s2z_centre_blocks()` (`tulpa/sum_to_zero.h`) is the single centring the four
+  sites that had hand-written the mean subtraction now share, and that header
+  carries the proper-vs-intrinsic derivation, including why no constant makes a
+  ridge right: matched to the field's own prior on the sum it is a term the
+  field prior already carries, and anything else is a second, unstated prior on
+  the level. The unreachable plain-double `compute_svc_eta` and
+  `svc_sum_to_zero_penalty` in `hmc_svc.h` are deleted.
+
 * **`svc()`, `tvc()` and `temporal()` can read the fits `tulpa()` produces**
   (gcol33/tulpa#607, #608, #609). All three accessors looked for the field spec
   at `$svc` / `$tvc` and the posterior at `$.internal$*_draws`, and the front

@@ -238,36 +238,27 @@ void compute_svc_eta(
 }
 
 // =============================================================================
-// Sum-to-zero constraint for identifiability
+// Identification of each term's global level
 // =============================================================================
 
-// Apply soft sum-to-zero constraint on SVC weights (for each SVC term).
-// Without this, beta and mean(w) are not separately identifiable. Written on
-// the sum, at the same precision every other intrinsic field uses, so the
-// pinned mean(w) carries sd = kappa: the earlier mean form
-// -0.5 * lambda_mean * n_obs * mean(w)^2 is the identity
-// -0.5 * (lambda_mean / n_obs) * sum^2, i.e. the same penalty with the
-// precision divided by n_obs, and is not a separate kind of constraint.
+// beta_j and mean(w_j) are not separately identifiable: the term contributes
+// eta_i += X_svc[i,j] * w_j(s_i), so w_j -> w_j + c and beta_j -> beta_j - c
+// leaves eta exactly unchanged. An NNGP field is PROPER, so that direction
+// already carries a prior and needs no penalty supplying one; it needs only to
+// be removed from the likelihood, which is what centring w_j on its way into
+// eta does. See tulpa/sum_to_zero.h for why a penalty on the sum is the wrong
+// instrument on a proper field.
+//
+// The centring and the eta it feeds are one function so no path can compute
+// svc_eta from an uncentred field.
 template<typename T>
-T svc_sum_to_zero_penalty(
-    const std::vector<T>& w_flat,
-    const SVCData& svc_data
+void svc_center_eta(
+    std::vector<T>& w_flat,          // n_svc x n_obs, term-major; centred in place
+    const SVCData& svc_data,
+    std::vector<T>& eta_svc          // Output: length n_obs
 ) {
-    int n_obs = svc_data.n_obs;
-    int n_svc = svc_data.n_svc;
-
-    const double lambda = tulpa::s2z_precision(n_obs);
-    T penalty = T(0.0);
-
-    for (int j = 0; j < n_svc; j++) {
-        T sum = T(0.0);
-        for (int i = 0; i < n_obs; i++) {
-            sum = sum + w_flat[j * n_obs + i];
-        }
-        penalty = penalty - T(0.5 * lambda) * sum * sum;
-    }
-
-    return penalty;
+    tulpa::s2z_centre_blocks(w_flat.data(), svc_data.n_svc, svc_data.n_obs);
+    compute_svc_eta(w_flat, svc_data, eta_svc);
 }
 
 } // namespace tulpa_svc_ad

@@ -148,12 +148,12 @@ T compute_svc_prior(const std::vector<T>& params, const ModelData& data,
                     log_post = log_post + tulpa_svc_ad::nngp_log_lik(w_j, svc_sigma2[j], svc_phi[j], data.svc_data);
                 }
 
-                // Soft sum-to-zero constraint
-                log_post = log_post + tulpa_svc_ad::svc_sum_to_zero_penalty(svc_w_flat, data.svc_data);
-
-                // Precompute SVC contribution to linear predictor
-                svc_eta.resize(n_obs, T(0.0));
-                tulpa_svc_ad::compute_svc_eta(svc_w_flat, data.svc_data, svc_eta);
+                // Identify each term's level by centring it on its way into
+                // eta, the same way the non-centered branch does: the NNGP
+                // prior above is already proper on the constant direction, so
+                // what the alias with beta_j needs is that direction removed
+                // from the likelihood, not a second prior stiffening it.
+                tulpa_svc_ad::svc_center_eta(svc_w_flat, data.svc_data, svc_eta);
             }
         }
     }

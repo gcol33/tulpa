@@ -66,6 +66,25 @@ test_that("svc exact NUTS allocates the per-term field (structural)", {
   expect_equal(ncol(fit$draws), 4L + 40L)           # 2 fixed + 2 hypers + field
 })
 
+test_that("both svc parameterizations report an exactly centred field", {
+  skip_if_not_slow()
+  s <- make_svc_pois(n = 40L)
+  for (par in c("noncentered", "centered")) {
+    fit <- tulpa(y ~ x, data = s$d, family = "poisson",
+                 spatial = spatial_svc(~ lon + lat, terms = ~ x - 1, nn = 5L,
+                                       parameterization = par),
+                 mode = "exact",
+                 control = list(n_iter = 120L, n_warmup = 60L, seed = 1L))
+    W <- fit$draws[, grep("^svc_w\\[", colnames(fit$draws)), drop = FALSE]
+    # The term's level is identified by CENTRING the field on its way into eta,
+    # under either parameterization, so every draw's field sums to zero exactly.
+    # A penalty on the sum leaves it merely near zero instead -- at
+    # s2z_precision(n) the pinned mean carries sd = 1e-3, which this bound
+    # separates from the centred field by ten orders of magnitude.
+    expect_lt(max(abs(rowMeans(W))), 1e-12)
+  }
+})
+
 test_that("svc exact NUTS recovers the varying-coefficient surface", {
   skip_if_not_slow()
   s <- make_svc_pois()

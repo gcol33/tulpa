@@ -22,6 +22,7 @@
 #endif
 
 #include <tulpa/nested_progress.h>
+#include <tulpa/sum_to_zero.h>  // s2z_centre_component (NC field storage)
 
 #include "hmc_mass_st_gmrf.h"
 #include "hmc_sampler.h"

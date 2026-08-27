@@ -171,6 +171,41 @@ inline T s2z_centre_component(T* phi, int start, int size) {
     return m;
 }
 
+// Centre each of `n_blocks` equally sized contiguous blocks on its own mean,
+// the layout a field carrying one block per varying-coefficient term has.
+template <typename T>
+inline void s2z_centre_blocks(T* phi, int n_blocks, int block_size) {
+    for (int b = 0; b < n_blocks; ++b)
+        (void)s2z_centre_component(phi, b * block_size, block_size);
+}
+
+// A PROPER field -- an NNGP or GP field, a TVC AR1, a TYPE_I spatiotemporal
+// interaction -- takes the CENTRING half of the construction above and not the
+// augmentation. Its constant direction already carries a prior, precision
+// 1' Sigma^-1 1, so there is nothing to supply; what is missing is only the
+// removal of that direction from the likelihood, where it aliases with the
+// coefficient the field rides on. A varying coefficient contributes
+// eta_i += x_i w_i, so w -> w + c 1 together with beta -> beta - c leaves eta
+// EXACTLY unchanged, for any covariate: the alias is a flat direction of the
+// likelihood, not a nearly-flat one.
+//
+// A soft penalty on the sum is the wrong instrument for a proper field in a
+// way it is not for an intrinsic one, because the direction it stiffens is one
+// the sampler still has to traverse. -0.5 * lambda * (sum_i w_i)^2 contributes
+// curvature lambda * n^2 along the alias while the field's own directions carry
+// curvature of order 1 / sigma^2. At s2z_precision(n) that is 1 / kappa^2 = 1e6
+// however large the field, so the posterior conditions at ~1e6 and a step size
+// holding the aliased direction stable is ~1e-3 of the one the rest of the
+// field needs; under a treedepth cap the trajectory then covers a thousandth of
+// the distance it has to. Centring removes the direction instead of stiffening
+// it: the likelihood never sees it, the field's own prior keeps it proper, and
+// the geometry the sampler works in is the field's.
+//
+// The constant a ridge would need is not recoverable by scaling either. Written
+// so it matches the field's own prior on the sum, lambda = 1 / (1' Sigma 1),
+// the penalty is the term the field prior ALREADY carries, so it double-counts;
+// written at anything else it is a second, unstated prior on the level.
+
 }  // namespace tulpa
 
 #endif  // TULPA_SUM_TO_ZERO_H
