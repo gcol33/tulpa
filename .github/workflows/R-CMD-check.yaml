@@ -1,6 +1,6 @@
 name: R-CMD-check
 
-# Checks a BUILT TARBALL on all four platforms at the tier CRAN runs, so a
+# Checks a BUILT TARBALL on every platform at the tier CRAN runs, so a
 # failure that only a non-Windows toolchain can produce -- an optimizer status
 # code that differs by platform, a graphics device that cannot start on a
 # headless machine, a fused multiply-add changing the last bit of a comparison
@@ -39,6 +39,7 @@ jobs:
           - { os: ubuntu-latest,  r: 'devel',   manual: '0' }
           - { os: macos-latest,   r: 'release', manual: '0' }
           - { os: windows-latest, r: 'release', manual: '0' }
+          - { os: windows-latest, r: 'devel',   manual: '0' }
 
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
@@ -58,6 +59,14 @@ jobs:
       - name: TinyTeX
         if: matrix.manual == '1'
         uses: r-lib/actions/setup-tinytex@v2
+
+      # The DESCRIPTION spell check inside the incoming-feasibility check runs
+      # only where aspell finds a program to call; with none installed it is
+      # skipped and the check reports no misspelled words either way.
+      - name: Spell-checker
+        if: runner.os == 'Linux'
+        shell: bash
+        run: sudo apt-get update -qq && sudo apt-get install -y aspell aspell-en
 
       - name: Check
         run: Rscript .github/scripts/check.R
