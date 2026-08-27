@@ -33,5 +33,6 @@
 ^tgmrf\.html$
 ^_doc_install\.R$
 ^_reinstall_full\.R$
+^_check_cran\.R$
 ^\.pkgdown-stash$
 ^.*\.done$
