@@ -1,3 +1,39 @@
+# tulpa 0.2.3
+
+* **The parallel-equivalence fixtures test the construct the engine ships.**
+  `tulpa_parallel_sum()` cuts a range into contiguous chunks by index
+  arithmetic and adds the chunk totals in chunk order, precisely so nothing
+  about a sum is left to the runtime, and every hot loop was moved onto it. The
+  two fixtures behind `test-parallel-equivalence.R` were left on a raw
+  `reduction(+:)` clause, so the two failures they produce on Windows arm64 are
+  on a construct that ships nowhere -- and nothing in the report could say so,
+  because the two were never computed side by side. Both are now computed over
+  the same values in the same call, beside the per-element results, the
+  requested thread count, the resolved team size and the team the loop actually
+  ran on. The reduction tolerance is the summation bound the values themselves
+  imply rather than a fixed constant, which on these fixtures is 2.6e-11 and
+  1.0e-10 absolute -- tighter than the 1e-10 relative tolerance that failed, so
+  this is a stricter reading of the same probes (gcol33/tulpa#610).
+
+* **`parallel_block_reduce()` no longer carries a `reduction(+:)` clause.** It
+  was the last one in the tree outside the test fixtures, in the package's own
+  linear-algebra header, named for the job `tulpa_parallel_sum()` does and
+  carrying the construct that job exists to avoid. It has no caller, so nothing
+  was non-reproducible; it is where the next caller would have picked it up
+  (gcol33/tulpa#618).
+
+* **CI checks the arithmetic the package actually ships.**
+  `-ffp-contract=off` pins a C++ result and the same expression in R to the
+  same rounding, which is what makes a numeric assertion comparable across the
+  matrix -- but with it on every job, nothing in CI compiled the arithmetic
+  CRAN and r-universe build. 0.2.0 was green on all four platforms and then
+  failed `checking tests` on every aarch64 r-universe build. `fp-contract` is
+  now an input on the `build-env` action, and macOS arm64 -- the only platform
+  in the matrix where FMA is reachable, since it is baseline on aarch64 and
+  absent from the generic x86-64 the others compile for -- runs both ways. A
+  failure the unpinned job alone shows is the contraction; one both show is the
+  algorithm (gcol33/tulpa#611).
+
 # tulpa 0.2.2
 
 * **`tulpa_nested_laplace()` refuses a non-finite response instead of blaming

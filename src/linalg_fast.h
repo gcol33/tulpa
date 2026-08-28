@@ -552,22 +552,22 @@ inline double block_reduce(int N, int block_size, Func f) {
   return total;
 }
 
-// Parallel block reduce
+// Parallel block reduce. The block totals are summed through
+// tulpa_parallel_sum, which cuts the block range into contiguous chunks by
+// index arithmetic and adds the chunk totals in chunk order. A raw
+// `reduction(+:)` clause here would leave the combination order to the runtime,
+// which is the non-reproducibility tulpa_parallel_sum exists to remove -- and
+// this was the last one in the tree (gcol33/tulpa#618).
 template<typename Func>
 inline double parallel_block_reduce(int N, int block_size, int n_threads, Func f) {
-  double total = 0.0;
-  int n_blocks = (N + block_size - 1) / block_size;
+  const int n_blocks = (N + block_size - 1) / block_size;
+  const int team = tulpa_omp_team_size_req(n_threads, n_blocks);
 
-  #ifdef _OPENMP
-  #pragma omp parallel for reduction(+:total)       num_threads(tulpa_omp_team_size_req(n_threads, n_blocks))
-  #endif
-  for (int b = 0; b < n_blocks; b++) {
-    int start = b * block_size;
-    int end = std::min(start + block_size, N);
-    total += f(start, end);
-  }
-
-  return total;
+  return tulpa_parallel_sum(team, n_blocks, [&](int b) {
+    const int start = b * block_size;
+    const int end = std::min(start + block_size, N);
+    return f(start, end);
+  });
 }
 
 // ============================================================================

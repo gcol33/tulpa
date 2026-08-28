@@ -927,14 +927,53 @@ double cpp_test_multiscale_temporal_log_lik(
 
 #include "omp_threads.h"
 
-// These three probes run in R CMD check, where _R_CHECK_LIMIT_CORES_ caps the
+// Whether this build compiled with OpenMP. Without it every probe below runs
+// serially at any requested count, so a test can say that rather than reporting
+// a thread-count independence it never exercised.
+inline bool tulpa_test_has_openmp() {
+#ifdef _OPENMP
+  return true;
+#else
+  return false;
+#endif
+}
+
+// These probes run in R CMD check, where _R_CHECK_LIMIT_CORES_ caps the
 // permitted team at two, so each takes its requested count through
-// tulpa_omp_team_size_req rather than as a num_threads clause of its own. The
-// requested count is still reported, so a test can see request and team apart.
+// tulpa_omp_team_size_req rather than as a num_threads clause of its own.
+//
+// Each reduction is computed TWICE over the same values, because the two
+// constructs answer different questions (gcol33/tulpa#610):
+//
+//   `sum_shipped`  tulpa_parallel_sum, what every hot loop in the engine sums
+//                  through. It cuts the range into `team` contiguous chunks by
+//                  index arithmetic and adds the chunk totals in chunk order,
+//                  so the answer is a function of (team, n) alone and nothing
+//                  about it is left to the runtime.
+//   `sum_omp_red`  a raw `reduction(+:)` clause, which leaves both the
+//                  partition and the order the private copies are combined in
+//                  to the runtime. The engine retired it; the only one left in
+//                  the tree is in an uncalled helper.
+//
+// A platform where these disagree therefore says WHICH construct disagrees,
+// which is what a bare `reduction(+:)` probe could not: it is the reason a
+// Windows arm64 divergence could not be told apart from the arithmetic the
+// package ships.
+//
+// The team the loop actually ran on is reported beside the count that was
+// requested and the count tulpa_omp_team_size_req resolved, so a difference
+// traced to a team size is not read as a difference in the sum.
+
+// Team size observed from inside a region: thread 0 is the single writer and
+// nothing reads `used` until the region's implicit barrier has passed.
+#ifdef _OPENMP
+#define TULPA_OBSERVE_TEAM(used)   do { if (omp_get_thread_num() == 0) (used) = omp_get_num_threads(); } while (0)
+#else
+#define TULPA_OBSERVE_TEAM(used) do { (used) = 1; } while (0)
+#endif
 
 // [[Rcpp::export]]
 List cpp_test_parallel_dot_products(NumericMatrix X, NumericVector y, int n_threads) {
-  // Test OpenMP parallel reduction with multiple dot products
   int N = X.nrow();
   int p = X.ncol();
 
@@ -945,21 +984,38 @@ List cpp_test_parallel_dot_products(NumericMatrix X, NumericVector y, int n_thre
     }
   }
 
+  const int team = tulpa_omp_team_size_req(n_threads, N);
+  const double* yb = y.begin();
+  const double* Xb = X_flat.data();
   NumericVector results(N);
+  double* res = results.begin();
+
+  int used = 0;
   double total_sum = 0.0;
 
 #ifdef _OPENMP
-  #pragma omp parallel for reduction(+:total_sum) schedule(static) num_threads(tulpa_omp_team_size_req(n_threads, N))
+  #pragma omp parallel for reduction(+:total_sum) schedule(static) num_threads(team)
 #endif
   for (int i = 0; i < N; i++) {
-    double dot = tulpa_linalg::dot_product(&X_flat[i * p], y.begin(), p);
-    results[i] = dot;
+    TULPA_OBSERVE_TEAM(used);
+    double dot = tulpa_linalg::dot_product(Xb + i * p, yb, p);
+    res[i] = dot;
     total_sum += dot;
   }
 
+  const double shipped = tulpa_parallel_sum(team, N, [&](int i) {
+    return tulpa_linalg::dot_product(Xb + i * p, yb, p);
+  });
+
   return List::create(
     Named("results") = results,
-    Named("total_sum") = total_sum
+    Named("total_sum") = total_sum,
+    Named("sum_omp_red") = total_sum,
+    Named("sum_shipped") = shipped,
+    Named("n_threads_requested") = n_threads,
+    Named("n_threads_team") = team,
+    Named("n_threads_used") = used,
+    Named("openmp") = tulpa_test_has_openmp()
   );
 }
 
@@ -969,23 +1025,49 @@ List cpp_test_parallel_likelihood(
     NumericVector mu,
     int n_threads
 ) {
-  // Test OpenMP parallel reduction for likelihood computation
   int N = y.size();
+  const int team = tulpa_omp_team_size_req(n_threads, N);
+  const int* yb = y.begin();
+  const double* mb = mu.begin();
+
+  // The per-observation terms are kept, not just their sum. std::lgamma writes
+  // the global `signgam`, so on an implementation holding that per process
+  // rather than per thread it is not reentrant, and a term computed wrongly
+  // under concurrency and a sum combined in a different order both show up as
+  // a thread-count-dependent total. Reporting the terms separates them: they
+  // are independent per-element writes, so they must be identical at every
+  // thread count, and a difference there is the libm call rather than the
+  // reduction (gcol33/tulpa#610).
+  std::vector<double> term(static_cast<std::size_t>(N), 0.0);
+  double* tb = term.data();
+
+  int used = 0;
   double log_lik = 0.0;
 
 #ifdef _OPENMP
-  #pragma omp parallel for reduction(+:log_lik) schedule(static) num_threads(tulpa_omp_team_size_req(n_threads, N))
+  #pragma omp parallel for reduction(+:log_lik) schedule(static) num_threads(team)
 #endif
   for (int i = 0; i < N; i++) {
-    // Poisson log-likelihood
-    if (mu[i] > 0) {
-      log_lik += y[i] * std::log(mu[i]) - mu[i] - std::lgamma(y[i] + 1);
+    TULPA_OBSERVE_TEAM(used);
+    double t = 0.0;
+    if (mb[i] > 0) {
+      t = yb[i] * std::log(mb[i]) - mb[i] - std::lgamma(yb[i] + 1.0);
     }
+    tb[i] = t;
+    log_lik += t;
   }
+
+  const double shipped = tulpa_parallel_sum(team, N, [&](int i) { return tb[i]; });
 
   return List::create(
     Named("log_lik") = log_lik,
-    Named("n_threads_requested") = n_threads
+    Named("sum_omp_red") = log_lik,
+    Named("sum_shipped") = shipped,
+    Named("terms") = NumericVector(term.begin(), term.end()),
+    Named("n_threads_requested") = n_threads,
+    Named("n_threads_team") = team,
+    Named("n_threads_used") = used,
+    Named("openmp") = tulpa_test_has_openmp()
   );
 }
 

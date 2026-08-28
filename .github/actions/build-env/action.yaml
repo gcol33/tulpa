@@ -1,8 +1,11 @@
 name: build-env
 description: >
   R, the compile cache, and the arithmetic baseline the engine is built under.
-  Every job here goes through this, so the four platforms compile the same
-  source the same way and a difference between them is the platform.
+  Every job here goes through this, so the platforms compile the same source
+  the same way and a difference between them is the platform -- except for the
+  one input a job is allowed to vary, `fp-contract`, which is what decides
+  whether the job checks a pinned comparison or the arithmetic the package
+  actually ships.
 
 inputs:
   r-version:
@@ -21,6 +24,13 @@ inputs:
     description: Suffix separating one job's compile cache from another's.
     required: false
     default: default
+  fp-contract:
+    description: >
+      `off` pins the arithmetic with -ffp-contract=off so a C++ result and the
+      same expression in R round identically; `default` leaves the compiler
+      alone, which is what CRAN and r-universe build. See the step below.
+    required: false
+    default: 'off'
 
 runs:
   using: composite
@@ -37,8 +47,25 @@ runs:
     # where the separate operations carry two. Every equivalence assertion that
     # compares a C++ result against the same arithmetic in R then reads the
     # runner's instruction set rather than the algorithm. -ffp-contract=off
-    # holds both sides to the same rounding on every platform here, including
-    # the arm64 macOS runner.
+    # holds both sides to the same rounding.
+    #
+    # It is an input rather than a constant because the two readings it
+    # separates are both wanted, and setting it everywhere gave neither
+    # (gcol33/tulpa#611): with the flag on every job, nothing in CI compiled
+    # the arithmetic the package ships, on any platform. 0.2.0 was green on all
+    # four and then failed `checking tests` on every aarch64 r-universe build,
+    # which compiles without it -- and macOS arm64 is a CRAN check flavour, so
+    # that was a submission rejection the matrix was there to prevent.
+    #
+    #   off      the algorithm, with rounding held to R's. A failure here is a
+    #            difference in what the code computes.
+    #   default  what CRAN and r-universe build. A failure here that the pinned
+    #            job does not reproduce is the contraction, not the algorithm.
+    #
+    # Whether either binds depends on the target: FMA is baseline on aarch64
+    # and is not in the generic x86-64 the runners compile for, which is why
+    # the divergence appeared on arm64 alone. So the pair is worth running
+    # where it separates something, and the matrix pairs them on macOS.
     #
     # -march is deliberately NOT set. Both Linux runners already target the
     # x86-64 baseline a CRAN binary is built for, so naming it changes no code
@@ -53,18 +80,28 @@ runs:
     # compiles take the same flags and the same cache.
     - name: Arithmetic baseline
       shell: bash
+      env:
+        FP_CONTRACT: ${{ inputs.fp-contract }}
       run: |
+        case "$FP_CONTRACT" in
+          off|default) ;;
+          *) echo "fp-contract must be 'off' or 'default', got '$FP_CONTRACT'" >&2
+             exit 1 ;;
+        esac
         mk="$RUNNER_TEMP/tulpa-makevars"
         : > "$mk"
-        for v in CFLAGS CXXFLAGS CXX11FLAGS CXX14FLAGS CXX17FLAGS CXX20FLAGS; do
-          echo "$v += -ffp-contract=off" >> "$mk"
-        done
+        if [ "$FP_CONTRACT" = "off" ]; then
+          for v in CFLAGS CXXFLAGS CXX11FLAGS CXX14FLAGS CXX17FLAGS CXX20FLAGS; do
+            echo "$v += -ffp-contract=off" >> "$mk"
+          done
+        fi
         if command -v cygpath >/dev/null 2>&1; then
           mk_r=$(cygpath -m "$mk")
         else
           mk_r="$mk"
         fi
         echo "R_MAKEVARS_USER=$mk_r" >> "$GITHUB_ENV"
+        echo "fp-contract: $FP_CONTRACT"
         cat "$mk"
 
     # The engine is 99 translation units over 177 headers, so a cold build is
@@ -94,8 +131,9 @@ runs:
       uses: actions/cache@v4
       with:
         path: ~/.ccache
-        key: ccache-${{ runner.os }}-${{ inputs.r-version }}-${{ inputs.cache-key }}-${{ github.sha }}
+        key: ccache-${{ runner.os }}-${{ inputs.r-version }}-${{ inputs.cache-key }}-fp${{ inputs.fp-contract }}-${{ github.sha }}
         restore-keys: |
+          ccache-${{ runner.os }}-${{ inputs.r-version }}-${{ inputs.cache-key }}-fp${{ inputs.fp-contract }}-
           ccache-${{ runner.os }}-${{ inputs.r-version }}-${{ inputs.cache-key }}-
           ccache-${{ runner.os }}-${{ inputs.r-version }}-
 

@@ -6,6 +6,15 @@ name: R-CMD-check
 # headless machine, a fused multiply-add changing the last bit of a comparison
 # -- surfaces here rather than at submission.
 #
+# The FMA case is what `fp` in the matrix is for. FMA is baseline on aarch64
+# and absent from the generic x86-64 the other runners compile for, so macOS is
+# the only platform here where contraction is reachable at all, and it runs
+# twice: pinned with -ffp-contract=off, and once as CRAN and r-universe build
+# it. A failure the unpinned job alone shows is the contraction; one both show
+# is the algorithm. With the flag on every job neither reading was available,
+# which is how 0.2.0 went out green and failed on every aarch64 r-universe
+# build (gcol33/tulpa#611).
+#
 # One job additionally builds the reference manual. The Rd LaTeX pass is the
 # only thing that reads typographic Unicode in the roxygen sources, and the
 # local check runs with --no-manual.
@@ -28,18 +37,19 @@ permissions:
 
 jobs:
   check:
-    name: ${{ matrix.os }} (${{ matrix.r }})
+    name: ${{ matrix.os }} (${{ matrix.r }}, fp-contract ${{ matrix.fp }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-latest,  r: 'release', manual: '1' }
-          - { os: ubuntu-latest,  r: 'devel',   manual: '0' }
-          - { os: macos-latest,   r: 'release', manual: '0' }
-          - { os: windows-latest, r: 'release', manual: '0' }
-          - { os: windows-latest, r: 'devel',   manual: '0' }
+          - { os: ubuntu-latest,  r: 'release', manual: '1', fp: 'off' }
+          - { os: ubuntu-latest,  r: 'devel',   manual: '0', fp: 'off' }
+          - { os: macos-latest,   r: 'release', manual: '0', fp: 'off' }
+          - { os: macos-latest,   r: 'release', manual: '0', fp: 'default' }
+          - { os: windows-latest, r: 'release', manual: '0', fp: 'off' }
+          - { os: windows-latest, r: 'devel',   manual: '0', fp: 'off' }
 
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
@@ -53,6 +63,7 @@ jobs:
         with:
           r-version: ${{ matrix.r }}
           cache-key: check
+          fp-contract: ${{ matrix.fp }}
           extra-packages: |
             any::rcmdcheck
 
@@ -75,7 +86,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: check-${{ matrix.os }}-${{ matrix.r }}
+          name: check-${{ matrix.os }}-${{ matrix.r }}-fp-${{ matrix.fp }}
           path: check
           if-no-files-found: warn
           retention-days: 30
