@@ -1,3 +1,29 @@
+# tulpa 0.2.2
+
+* **`tulpa_nested_laplace()` refuses a non-finite response instead of blaming
+  itself for one.** `.assert_finite_model_inputs()` was wired into three doors
+  by hand and not into this one, so an NA response was absorbed rather than
+  rejected: every grid cell returned `converged = FALSE` with `log_marginal =
+  0`, the softmax over those weights was uniform, a fit came back, and the
+  grid-Hessian retention then found no `Q` on any cell and reported the user's
+  own missing data to them as "This is a tulpa bug; please report." The guard
+  now runs inside `.validate_glm_design()`, the one validator every `(y, X,
+  n_trials)` door goes through, so `tulpa_gibbs()`, `fit_st_nested()` and the
+  `re_cov` fitters are covered by the same fix and a door added later inherits
+  it (gcol33/tulpa#613).
+
+* **The outer Pareto-k diagnostic no longer trips the caller-facing grid-size
+  warning.** The re-evaluation substitutes `control$k_samples` (default 200)
+  importance draws for the block's grid axis and re-dispatches through the
+  ordinary fitter, so a 7-node fit warned that its grid had 200 cells and
+  advised reducing per-block grid sizes -- advice about a number the caller did
+  not choose and that remedy does not reach. `.nl_internal_batch()` is the one
+  predicate separating an internal batch from a grid the caller asked for, and
+  the joint side reaches it through `.joint_with_quiet_opts()`, which already
+  quiets the checkpoint and the progress bar for the same class of leak. The
+  hard cell cap is deliberately not gated: it is a resource ceiling, and an
+  internal batch costs exactly what a user one does (gcol33/tulpa#614).
+
 # tulpa 0.2.1
 
 * **The calibration surface is documented.** `sbc()` and the predictive shapes

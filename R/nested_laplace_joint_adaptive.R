@@ -56,7 +56,12 @@
 .joint_with_quiet_opts <- function(expr) {
     op <- options(
         tulpa.nl_checkpoint = list(path = "", resume = TRUE),
-        tulpa.nl_progress   = .nl_progress_args(list(progress = FALSE)))
+        tulpa.nl_progress   = .nl_progress_args(list(progress = FALSE)),
+        # Third leak of the same class as the two above: the soft-cap cell-count
+        # warning is advice to whoever chose the count, and every call site of
+        # this wrapper is an internal re-dispatch whose count the caller did not
+        # choose (gcol33/tulpa#614).
+        tulpa.nl_internal_batch = TRUE)
     on.exit(options(op), add = TRUE)
     force(expr)
 }

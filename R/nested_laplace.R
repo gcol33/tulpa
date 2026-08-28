@@ -635,13 +635,18 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
                    paste0("non-positive node on the log axis ", gfs)))
   }
 
+  # The batch is the diagnostic's own importance sample, not a grid the caller
+  # chose, so it runs with the internal-batch flag set: the cell-count advice
+  # would name a number `control$k_samples` sets and offer a remedy that does
+  # not reach it (gcol33/tulpa#614).
   refit <- function(theta_mat) {
     blk2 <- blk; blk2[[gfs]] <- as.numeric(theta_mat[, 1L])
     prior2 <- if (is.list(prior) && is.null(prior$type)) list(blk2) else blk2
     lm <- tryCatch(
-      if (dispatch_kind == "multi")
-        .nl_dispatch_multi(cargs, prior2, likelihood = likelihood)$log_marginal
-      else .nl_dispatch(type, cargs, prior2)$log_marginal,
+      .nl_with_internal_batch(
+        if (dispatch_kind == "multi")
+          .nl_dispatch_multi(cargs, prior2, likelihood = likelihood)$log_marginal
+        else .nl_dispatch(type, cargs, prior2)$log_marginal),
       error = function(e) rep(-Inf, nrow(theta_mat)))
     if (length(lm) != nrow(theta_mat)) rep(-Inf, nrow(theta_mat)) else lm
   }
@@ -1514,6 +1519,33 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 # Hard cap on the same count, and the default value of `control$max_grid_cells`.
 .NL_MULTI_GRID_HARD_CAP <- 2048L
 
+# Whether the dispatch currently running is an INTERNAL batch rather than the
+# grid the caller asked for. The soft-cap warning above is advice addressed to
+# whoever chose the cell count, and on an internal batch that is not the caller:
+# the outer Pareto-k diagnostic re-evaluates `log_marginal` at `k_samples`
+# (default 200) importance draws by substituting them for the block's grid axis,
+# so a 7-node fit warned about 200 cells and advised reducing per-block grid
+# sizes, which does not reach the number in the message
+# (gcol33/tulpa#614). The HARD cap is deliberately not gated: it is a resource
+# ceiling the front door publishes so every re-dispatch enforces the caller's
+# value, and an internal batch is exactly as expensive as a user one.
+#
+# Transported on an option rather than an argument because the two warning sites
+# sit behind different dispatchers -- `.nl_dispatch_multi()` takes `cargs`, the
+# joint multi-block driver does not -- which is the same reason
+# `tulpa.nl_progress` and `tulpa.nl_checkpoint` are options.
+.nl_internal_batch <- function() {
+  isTRUE(getOption("tulpa.nl_internal_batch", FALSE))
+}
+
+# Run `expr` with that flag set. Nests and restores, so an internal batch that
+# itself re-dispatches stays internal.
+.nl_with_internal_batch <- function(expr) {
+  op <- options(tulpa.nl_internal_batch = TRUE)
+  on.exit(options(op), add = TRUE)
+  force(expr)
+}
+
 # Resolve the hard cap for one fit. `control$max_grid_cells = <n>` moves the
 # ceiling in either direction: the default refuses the accidental blow-up, and a
 # deliberate converged tensor reference grid (4 axes x 7 levels = 2401 cells) is
@@ -1616,7 +1648,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     .nl_check_grid_cap(
       n_cells, .nl_max_grid_cells(),
       "Reduce per-block grid sizes or wait for CCD integration support.")
-    if (n_cells > .NL_MULTI_GRID_WARN) {
+    if (n_cells > .NL_MULTI_GRID_WARN && !.nl_internal_batch()) {
       warning(sprintf(
         "Joint multi-block grid has %d cells (>%d). Each cell costs one inner Newton solve; reduce per-block grid sizes if this is slow. CCD integration is a follow-up.",
         n_cells, .NL_MULTI_GRID_WARN

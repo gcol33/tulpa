@@ -874,19 +874,28 @@ family_names <- function() names(.FAMILY_OPS)
 #' Reject non-finite fitting inputs.
 #'
 #' The design is built with `na.action = na.pass`, so a missing predictor or
-#' response survives into `X` / `y`. tulpa() does not drop incomplete cases, so
-#' an NA/NaN/Inf would propagate into the C++ kernels as a NaN estimate. Fail
+#' response survives into `X` / `y`. No fitter drops incomplete cases, so an
+#' NA/NaN/Inf would propagate into the C++ kernels as a NaN estimate. Fail
 #' loudly with the offending row instead.
+#'
+#' Reached from [tulpa()], from the direct beta-only doors, and from
+#' [.validate_glm_design()], which is what carries it to every fitter taking a
+#' `(y, X, n_trials)` bundle.
+#'
+#' @param X,y Design matrix and response; either may be `NULL` to skip that arm.
+#' @param where Caller name for the message prefix, or `NULL` for none.
 #' @keywords internal
-.assert_finite_model_inputs <- function(X, y) {
+.assert_finite_model_inputs <- function(X, y, where = NULL) {
+  pre <- if (is.null(where)) "" else paste0(where, ": ")
   if (!is.null(X)) {
     ok_row <- if (is.matrix(X)) .all_finite_rows(X) else is.finite(X)
     if (!all(ok_row)) {
       bad <- which(!ok_row)
       stop(sprintf(paste0(
-        "Non-finite value(s) in the model matrix (%d row(s), first at row %d). ",
-        "tulpa() does not drop incomplete cases; remove or impute NA/NaN/Inf ",
-        "in the predictors before fitting."), length(bad), bad[1L]),
+        "%sNon-finite value(s) in the model matrix (%d row(s), first at row ",
+        "%d). tulpa does not drop incomplete cases; remove or impute ",
+        "NA/NaN/Inf in the predictors before fitting."),
+        pre, length(bad), bad[1L]),
         call. = FALSE)
     }
   }
@@ -894,9 +903,9 @@ family_names <- function() names(.FAMILY_OPS)
     bad <- which(!is.finite(as.numeric(y)))
     if (length(bad)) {
       stop(sprintf(paste0(
-        "Non-finite value(s) in the response (%d, first at row %d). Remove or ",
-        "impute NA/NaN/Inf in the response before fitting."),
-        length(bad), bad[1L]), call. = FALSE)
+        "%sNon-finite value(s) in the response (%d, first at row %d). Remove ",
+        "or impute NA/NaN/Inf in the response before fitting."),
+        pre, length(bad), bad[1L]), call. = FALSE)
     }
   }
   invisible(TRUE)

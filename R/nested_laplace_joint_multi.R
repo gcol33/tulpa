@@ -1331,7 +1331,7 @@
             sprintf("Reduce per-block grid sizes; CCD integration declined (%s).",
                     integration_declined)
         .nl_check_grid_cap(n_cells, .nl_max_grid_cells(), remedy)
-        if (n_cells > .NL_MULTI_GRID_WARN) {
+        if (n_cells > .NL_MULTI_GRID_WARN && !.nl_internal_batch()) {
             warning(sprintf(
                 "Joint multi-block grid has %d cells (>%d). Each cell costs one inner Newton solve. %s",
                 n_cells, .NL_MULTI_GRID_WARN, remedy
