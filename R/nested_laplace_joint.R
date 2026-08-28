@@ -1135,6 +1135,7 @@ tulpa_nested_laplace_joint <- function(responses,
     adaptive_grid_edge_thresh <- control$adaptive_grid_edge_thresh %||% 0.02
     adaptive_grid_max_passes  <- control$adaptive_grid_max_passes %||% 1L
     var_of_means_consistency  <- control$var_of_means_consistency %||% TRUE
+    copy_atom_mass            <- control$copy_atom_mass %||% .TULPA_COPY_ATOM_MASS
     force_sparse              <- control$force_sparse %||% FALSE
     inner_sparse_override     <- .resolve_inner_factorization(
         control$inner_factorization)
@@ -1531,7 +1532,9 @@ tulpa_nested_laplace_joint <- function(responses,
     # back into `res$modes` / `res$n_iter` / `res$Q_csc_*_per_grid` so
     # downstream code (`.nl_posterior_moments`, `.nl_refit_axis_sd_laplace`,
     # the modes / Q consumers) reads the refined values unchanged.
-    specs <- .joint_axis_specs(grids, cp)
+    specs <- .joint_axis_specs(grids, cp, user_prior_axes = c(
+        if (!is.null(fn_sigma)) "sigma", if (!is.null(fn_alpha)) "alpha",
+        if (!is.null(fn_phi))   "phi"), copy_atom_mass = copy_atom_mass)
     kernel_fn <- .joint_make_kernel_fn(arms, prior, cp, backend, max_iter,
                                         tol, n_threads, x_init, store_Q,
                                         arm_names,
@@ -1572,7 +1575,9 @@ tulpa_nested_laplace_joint <- function(responses,
 
     res$theta_grid  <- theta_grid_M
     res$theta_names <- colnames(res$theta_grid)
-    res$weights     <- .nl_normalise_weights_safe(res$log_marginal, "outer grid")
+    res$log_quad    <- .hyper_log_quad_weights(res$theta_grid, specs)
+    res$weights     <- .nl_normalise_weights_safe(res$log_marginal, "outer grid",
+                                                  log_quad = res$log_quad)
     res             <- .nl_posterior_moments(res, paste0("joint_", type),
                                              within = within_cell)
     res             <- .joint_recalibrate_axis_moments(res)
@@ -1612,7 +1617,10 @@ tulpa_nested_laplace_joint <- function(responses,
                                               extras_list, refining_axis)
             res$theta_grid  <- theta_grid_M
             res$theta_names <- colnames(res$theta_grid)
-            res$weights     <- .nl_normalise_weights_safe(res$log_marginal, "outer grid")
+            res$log_quad    <- .hyper_log_quad_weights(res$theta_grid, specs)
+            res$weights     <- .nl_normalise_weights_safe(res$log_marginal,
+                                                          "outer grid",
+                                                          log_quad = res$log_quad)
             res             <- .nl_posterior_moments(res, paste0("joint_", type),
                                                      within = within_cell)
             res             <- .joint_recalibrate_axis_moments(res)
@@ -1620,6 +1628,17 @@ tulpa_nested_laplace_joint <- function(responses,
         }
         res$var_of_means_consistency_info <- consistency$info
         tm$mark("grid")                      # consistency-pass inner solves
+    }
+    # The copy scale's point mass, reported beside the posterior mass left on
+    # it. A point mass competes against a continuum, so how much of a "no
+    # coupling" read is prior and how much is data is not visible from the
+    # posterior alone; both numbers are needed to say.
+    if ("alpha" %in% colnames(res$theta_grid)) {
+        av <- as.numeric(res$theta_grid[, "alpha"])
+        wv <- res$weights
+        wv[is.na(wv)] <- 0
+        res$copy_atom <- list(prior_mass = copy_atom_mass,
+                              posterior_mass = sum(wv[av == 0]))
     }
     res$arm_layout  <- backend$layout(arms, prior)
     res$prior       <- prior

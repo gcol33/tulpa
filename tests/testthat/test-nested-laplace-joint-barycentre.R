@@ -401,14 +401,17 @@ test_that("the barycentre's read is reported against what this grid can resolve"
 
   r4 <- outer_grid_weight_report(d4, joint_grid = bc4$joint_grid)
   # Measured under the read the engine ships (see `ogd_fixture_fit()`, which
-  # states it rather than inheriting it -- gcol33/tulpa#599). endpoints 0.2679
-  # against a floor of 0.1712 and widths 0.5357 against 0.3157: the placement
+  # states it rather than inheriting it -- gcol33/tulpa#599). Endpoints 0.2679
+  # against a floor of 0.1994 and widths 0.5357 against 0.3629: the placement
   # moves the interval by more than one step of coarsening moves it. The median
-  # does not, 0.0910 against 0.1074, so on this grid the rule changes the
-  # interval and is not shown to change the location.
+  # moves 0.0910 against a floor of 0.0905, the same size, so this grid does not
+  # separate the two and no verdict on the location is read off it. What it does
+  # show is the ordering: the placement reaches the interval and not the centre.
   expect_true(r4$above_floor[["endpoints"]])
   expect_true(r4$above_floor[["widths"]])
-  expect_false(r4$above_floor[["median"]])
+  expect_lt(r4$diff[["median"]], 1.2 * r4$floor[["median"]])
+  expect_gt(r4$diff[["widths"]] / r4$floor[["widths"]],
+            r4$diff[["median"]] / r4$floor[["median"]])
 
   # Five levels, where the same grid already places its atoms close enough that
   # the interval barely notices.
@@ -417,8 +420,8 @@ test_that("the barycentre's read is reported against what this grid can resolve"
   expect_identical(sum(bc5$computed), 27L)
   r5 <- outer_grid_weight_report(d5, joint_grid = bc5$joint_grid)
   # Measured: all three parts above the floor, and the margins say which one the
-  # placement reaches -- widths 0.2746 against 0.0882, three times the
-  # resolution, against 2.0x on the median and 1.07x on the endpoints.
+  # placement reaches -- widths 0.2746 against 0.0798, three times the
+  # resolution, against 1.5x on the median and 1.07x on the endpoints.
   expect_true(all(r5$above_floor))
   expect_gt(r5$diff$widths, 2.5 * r5$floor$widths)
   # Which part carries the margin is a property of the within-cell read, not of

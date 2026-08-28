@@ -1399,9 +1399,17 @@
 # means to ~0 and undercovers.
 .nl_refit_axis_sd_laplace <- function(res, refining = NULL) {
   if (is.null(res$theta_grid) || is.null(res$log_marginal)) return(res)
+  # The per-axis marginal is an integral against the outer prior measure, so the
+  # node weights belong in it. Without them the curvature at the mode is read
+  # off the node counts instead, and moves when refinement changes the spacing.
+  lm_eff <- res$log_marginal
+  if (!is.null(res$log_quad) && length(res$log_quad) == length(lm_eff)) {
+    lm_eff <- lm_eff + res$log_quad
+    lm_eff[is.na(lm_eff)] <- -Inf
+  }
   tg <- res$theta_grid
   if (!is.matrix(tg)) {
-    marg <- .nl_axis_marginal_logdensity(as.numeric(tg), res$log_marginal)
+    marg <- .nl_axis_marginal_logdensity(as.numeric(tg), lm_eff)
     sd_lam <- .nl_laplace_at_mode_sd_axis(marg$vals, marg$log_marg)
     if (is.finite(sd_lam)) res$theta_sd <- sd_lam
     return(res)
@@ -1414,7 +1422,7 @@
       if (!col %in% names(res$theta_sd)) next
       keep <- refining == "" | refining == col |
               refining == paste0("consistency_", col)
-      marg <- .nl_axis_marginal_logdensity(tg[, col], res$log_marginal, keep)
+      marg <- .nl_axis_marginal_logdensity(tg[, col], lm_eff, keep)
       sd_lam <- .nl_laplace_at_mode_sd_axis(marg$vals, marg$log_marg)
       if (is.finite(sd_lam)) res$theta_sd[[col]] <- sd_lam
     }
@@ -1430,7 +1438,7 @@
         col_name <- if (!is.null(col_names)) col_names[col_ix] else ""
         keep <- refining == "" | refining == col_name |
                 refining == paste0("consistency_", col_name)
-        marg <- .nl_axis_marginal_logdensity(tg[, col_ix], res$log_marginal,
+        marg <- .nl_axis_marginal_logdensity(tg[, col_ix], lm_eff,
                                               keep)
         sd_lam <- .nl_laplace_at_mode_sd_axis(marg$vals, marg$log_marg)
         if (is.finite(sd_lam)) res$block_moments[[b]]$sd[[j]] <- sd_lam

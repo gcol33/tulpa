@@ -1523,7 +1523,10 @@
     res$integration_declined  <- integration_declined
     # Integration weights fold in the CCD design weights (`dnode`); for the
     # tensor grid `dnode` is NULL and this is the plain log-marginal softmax.
-    res$weights      <- .joint_integration_weights(res$log_marginal, dnode)
+    res$log_quad     <- .hyper_log_quad_weights(
+        res$theta_grid, .joint_axis_specs_from_grid(res$theta_grid))
+    res$weights      <- .joint_integration_weights(res$log_marginal, dnode,
+                                                   log_quad = res$log_quad)
     # The outer design weight each cell carries, kept beside the integration
     # weight it was folded into: absent on a tensor base (uniform cell weight),
     # the CCD design weights on a global CCD, the partition-of-unity shares of

@@ -25,6 +25,15 @@
 #                                   points to the open interior.
 #   refinable   logical(1)           opt in to adaptive-grid refinement and the
 #                                   var-of-means consistency pass on this axis.
+#   slab_bounds numeric(2) | NULL    fixed support of the continuum prior. The
+#                                   measure is normalised over it, so it is a
+#                                   prior choice and refinement may not leave
+#                                   it. NULL means the node span is the support
+#                                   (legacy, data-dependent).
+#   atom_mass   numeric(1) | NULL    prior probability of a zero level on a
+#                                   log-scale axis (a point mass outside the
+#                                   log continuum). Required when the grid
+#                                   carries a 0; NULL otherwise.
 
 #' Describe one outer-grid hyperparameter axis
 #'
@@ -47,6 +56,19 @@
 #' @param bounds Numeric vector of length 2 giving the natural support
 #'   `(lower, upper)` of the axis, e.g. `c(0, Inf)` for `sigma`, `c(0, 1)`
 #'   for a BYM2 mixing coefficient. `NULL` (default) is unbounded.
+#' @param slab_bounds Numeric `c(lower, upper)`, or `NULL` (default). Fixed
+#'   support of the continuum part of the prior. A flat measure on a log axis is
+#'   improper, so the truncation bounds are what make it a proper density and
+#'   they are therefore a prior choice: the weights normalise over `slab_bounds`
+#'   and refinement is not allowed to move outside it. `NULL` leaves the node
+#'   span acting as the support, which makes the prior depend on where
+#'   refinement put the outermost node.
+#' @param atom_mass Numeric in `[0, 1)`, or `NULL` (default). Prior probability
+#'   of the zero level on a log-scale axis. A `0` is a point mass, not a point
+#'   of the log continuum, so its prior share has to be declared rather than
+#'   inherited from the node count; the continuum nodes then share
+#'   `1 - atom_mass` by quadrature weight. Required when `grid` contains a `0`
+#'   on a `log_scale` axis.
 #' @param refinable Logical. When `TRUE`, the axis participates in the
 #'   adaptive-grid and var-of-means consistency passes (when those are
 #'   enabled at the driver level). Spatial prior amplitudes (`sigma`) are
@@ -62,7 +84,8 @@
 #' @export
 hyper_axis_spec <- function(name, grid, log_prior = NULL,
                             log_scale = FALSE, bounds = NULL,
-                            refinable = FALSE) {
+                            refinable = FALSE, atom_mass = NULL,
+                            slab_bounds = NULL) {
   if (!is.character(name) || length(name) != 1L || !nzchar(name)) {
     stop("`name` must be a non-empty character string.", call. = FALSE)
   }
@@ -95,9 +118,27 @@ hyper_axis_spec <- function(name, grid, log_prior = NULL,
            call. = FALSE)
     }
   }
+  if (!is.null(atom_mass)) {
+    atom_mass <- as.numeric(atom_mass)
+    if (length(atom_mass) != 1L || !is.finite(atom_mass) ||
+        atom_mass < 0 || atom_mass >= 1) {
+      stop(sprintf("Axis '%s': `atom_mass` must be a single value in [0, 1).",
+                   name), call. = FALSE)
+    }
+  }
+  if (!is.null(slab_bounds)) {
+    slab_bounds <- as.numeric(slab_bounds)
+    if (length(slab_bounds) != 2L || !all(is.finite(slab_bounds)) ||
+        slab_bounds[1L] >= slab_bounds[2L]) {
+      stop(sprintf("Axis '%s': `slab_bounds` must be finite `c(lower, upper)` ",
+                   name), "with lower < upper.", call. = FALSE)
+    }
+  }
   out <- list(
-    name      = name,
-    grid      = grid,
+    name        = name,
+    grid        = grid,
+    atom_mass   = atom_mass,
+    slab_bounds = slab_bounds,
     log_prior = log_prior,
     log_scale = log_scale,
     bounds    = bounds,

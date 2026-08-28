@@ -461,9 +461,14 @@
 .joint_recalibrate_axis_moments <- function(res) {
     if (is.null(res$refining_axis) || all(res$refining_axis == "")) return(res)
     if (is.null(res$theta_grid) || !is.matrix(res$theta_grid)) return(res)
+    lm_eff <- res$log_marginal
+    if (!is.null(res$log_quad) && length(res$log_quad) == length(lm_eff)) {
+        lm_eff <- lm_eff + res$log_quad
+        lm_eff[is.na(lm_eff)] <- -Inf
+    }
     moments <- .hyper_recalibrate_axis_moments(
         theta_grid    = res$theta_grid,
-        log_marginal  = res$log_marginal,
+        log_marginal  = lm_eff,
         refining_axis = res$refining_axis,
         theta_mean    = res$theta_mean,
         theta_sd      = res$theta_sd
@@ -498,14 +503,23 @@
 # Hardcoded metadata captures what the legacy joint helpers `.axis_is_log_scale`,
 # `.axis_bounds`, `.refinable_axes`, `.axis_refinement_order` encoded by name --
 # the same set, in one place.
-.joint_axis_specs <- function(grids, cp) {
+# `user_prior_axes` names the axes the caller supplied a regularizing hyperprior
+# for. Those keep the flat-over-declared-span measure, because the user's prior
+# is applied separately through `hp_fn` and applying the engine's declared
+# density as well would put two priors on one axis.
+.joint_axis_specs <- function(grids, cp, user_prior_axes = character(0),
+                              copy_atom_mass = .TULPA_COPY_ATOM_MASS) {
     has_alpha <- cp$has_copy && length(grids$alpha) > 0L
     axes <- names(grids)
     if (!has_alpha) axes <- setdiff(axes, "alpha")
     lapply(axes, function(a) {
-        log_scale <- a %in% c("sigma", "alpha", "tau", "sigma2",
+        # A multi-block grid prefixes its axes (`b1.sigma`), so the scale and
+        # point-mass metadata are resolved on the bare axis name. Which axes
+        # refine, and in what order, stays keyed on the full name.
+        bare <- sub("^b[0-9]+[.]", "", a)
+        log_scale <- bare %in% c("sigma", "alpha", "tau", "sigma2",
                                 "phi_gp", "lengthscale") ||
-                     startsWith(a, "phi_")
+                     startsWith(bare, "phi_")
         bounds <- if (a == "sigma")            c(0, Inf)
                   else if (a == "alpha")        c(0, Inf)
                   else if (a == "rho")          c(0, 1)
@@ -524,8 +538,49 @@
             refinable = refinable
         )
         spec$refine_priority <- refine_priority
+        # The copy scale carries an explicit zero level ("no coupling"), which
+        # is a point mass rather than part of the log continuum, so it needs a
+        # declared prior probability. Fixing it here keeps it independent of how
+        # many continuum nodes the grid ends up with.
+        if (identical(bare, "alpha")) spec$atom_mass <- copy_atom_mass
+        # A flat measure on a log axis is improper, so the support is a prior
+        # choice. The incoming grid is what the user declared, so the support is
+        # its span widened by half a node step at each end: that is the region
+        # the initial nodes already tile, so an unrefined grid integrates what it
+        # always did, and fixing it here, ahead of any refinement, is what keeps
+        # the measure independent of the data.
+        pos <- sort(unique(spec$grid[spec$grid > 0]))
+        user_prior <- bare %in% user_prior_axes || a %in% user_prior_axes
+        if (log_scale && length(pos) >= 2L) {
+            if (identical(bare, "alpha") && !user_prior) {
+                # The copy scale is the axis a user cannot be expected to bracket
+                # in advance, and the one carrying the point mass the continuum
+                # is weighed against. It therefore gets a proper density over the
+                # whole positive line rather than a span: refinement can then
+                # follow the posterior out as far as it needs to, and still be
+                # integrating the measure declared here, before the fit.
+                spec$slab_log_density <- .hyper_copy_slab_density(max(pos))
+            } else {
+                bd <- .hyper_default_coord_bounds(.hyper_axis_coord(pos, spec))
+                spec$slab_bounds <- exp(bd)
+            }
+        }
         spec
     })
+}
+
+# Axis specs for a grid that is already assembled, keyed off its column names.
+# The multi-block driver builds its grid before any spec list exists, so it
+# recovers the same metadata from the columns rather than carrying a second
+# description of the same axes.
+.joint_axis_specs_from_grid <- function(theta_grid) {
+    if (is.null(theta_grid) || is.null(colnames(theta_grid))) return(NULL)
+    theta_grid <- as.matrix(theta_grid)
+    grids <- stats::setNames(
+        lapply(colnames(theta_grid),
+               function(a) sort(unique(as.numeric(theta_grid[, a])))),
+        colnames(theta_grid))
+    .joint_axis_specs(grids, list(has_copy = TRUE))
 }
 
 # Convert a generic `new_cells` matrix [n_new x n_axes] back to the joint

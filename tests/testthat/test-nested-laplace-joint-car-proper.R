@@ -167,11 +167,28 @@ test_that("joint CAR_proper recovers per-arm betas and locates the alpha mode", 
     expect_lt(abs(slope_occ - sim$truth$beta_occ[2]), 0.30)
     expect_lt(abs(slope_pos - sim$truth$beta_pos[2]), 0.30)
 
-    # Looser bound than BYM2/ICAR: random-walk-simulated phi is a poor match
-    # to proper-CAR's conditional structure on a 1D chain, so the inferred
-    # alpha wanders within the {0, 0.5, 1, 1.5} grid. The alpha=0 reduction
-    # test above pins down the kernel math; this bound only has to exclude a
-    # collapse onto either grid edge (0 or 1.5+).
-    alpha_mean <- fit$theta_mean[["alpha"]]
-    expect_lt(abs(alpha_mean - 1.0), 0.75)
+    # Random-walk-simulated phi is a poor match to proper-CAR's conditional
+    # structure on a 1D chain, so this fixture identifies alpha only weakly.
+    # Under the default prior the copy scale carries a point mass at zero
+    # holding half the prior, and a point mass beats a continuum whenever the
+    # likelihood is this flat, so most of the posterior lands on the atom.
+    expect_gt(fit$copy_atom$posterior_mass, 0.5)
+    expect_identical(fit$copy_atom$prior_mass, 0.5)
+
+    # That read is the prior's, not the data's, and the way to show it is to
+    # refit with the atom nearly removed: the same likelihood then locates the
+    # mode near the truth. This is the sensitivity the copy-scale atom needs
+    # reported alongside it, and the pair is what makes a "no coupling" read
+    # interpretable rather than an artefact of how much prior sits on a point.
+    fit_thin <- tulpa_nested_laplace_joint(
+        responses = list(
+            occ = arm_occ,
+            pos = modifyList(arm_pos, list(
+                field_coef = list(name = "alpha", grid = c(0, 0.5, 1.0, 1.5))))
+        ),
+        prior = prior,
+        control = list(copy_atom_mass = 0.01)
+    )
+    expect_lt(fit_thin$copy_atom$posterior_mass, fit$copy_atom$posterior_mass)
+    expect_lt(abs(fit_thin$theta_mean[["alpha"]] - 1.0), 0.75)
 })

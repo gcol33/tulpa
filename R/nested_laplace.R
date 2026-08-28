@@ -1207,7 +1207,21 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 # unguarded variant -- a single `max(lm)` over a grid with one +Inf / NaN cell
 # would collapse every weight to NaN and break the grid sampler. `what` names
 # the grid in the degenerate-case warning.
-.nl_normalise_weights_safe <- function(lm, what = "grids / data") {
+# `log_quad` adds the per-cell log quadrature weight of the outer grid (see
+# R/hyper_quadrature.R), so posterior weight is likelihood times prior mass
+# rather than likelihood alone. Callers integrating over a hyperparameter grid
+# pass it; callers weighting something that is not a quadrature rule leave it
+# NULL.
+.nl_normalise_weights_safe <- function(lm, what = "grids / data",
+                                       log_quad = NULL) {
+  if (!is.null(log_quad)) {
+    if (length(log_quad) != length(lm)) {
+      stop(sprintf("`log_quad` has length %d but `lm` has length %d (%s).",
+                   length(log_quad), length(lm), what), call. = FALSE)
+    }
+    lm <- lm + log_quad
+    lm[is.na(lm)] <- -Inf
+  }
   finite_lm <- lm[is.finite(lm)]
   if (length(finite_lm) == 0L) {
     warning(sprintf("All grid points returned non-finite log_marginal -- check %s.", what),

@@ -505,8 +505,16 @@
 # inner Newton returns NaN log_marginal, and an unguarded max() would propagate
 # that NaN to every weight, poisoning the whole vector (the dense tensor path is
 # the one tulpa_posterior_draws / theta_mean read directly).
-.joint_integration_weights <- function(log_marginal, dnode = NULL) {
-    if (is.null(dnode)) return(.nl_normalise_weights_safe(log_marginal, "outer grid"))
+# `log_quad` is the tensor grid's per-cell prior mass (R/hyper_quadrature.R). It
+# applies only where the nodes ARE the tensor rule; a CCD design carries its own
+# integration weights in `dnode`, which already encode the volume each node
+# stands for, so folding cell widths in on top would count it twice.
+.joint_integration_weights <- function(log_marginal, dnode = NULL,
+                                       log_quad = NULL) {
+    if (is.null(dnode)) {
+        return(.nl_normalise_weights_safe(log_marginal, "outer grid",
+                                          log_quad = log_quad))
+    }
     fin <- is.finite(log_marginal)
     if (!any(fin)) return(rep(NA_real_, length(log_marginal)))
     w <- dnode * exp(log_marginal - max(log_marginal[fin]))
