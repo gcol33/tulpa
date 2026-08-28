@@ -19,6 +19,28 @@
   exp(seq(log(lo), log(hi), length.out = n))
 }
 
+# Integration coordinates of the spatiotemporal outer grid, declared where the
+# grid is built. `.st_log_grid()` lays the two precisions out log-spaced and the
+# AR1 correlation evenly, so those are the coordinates their cell widths are
+# measured on and an unrefined grid carries equal weights. A recentred grid
+# keeps the same coordinates and only moves the nodes.
+.nl_st_axis_specs <- function(theta_grid) {
+    if (is.null(theta_grid) || is.null(colnames(theta_grid))) return(NULL)
+    tg <- as.matrix(theta_grid)
+    lapply(colnames(tg), function(a) {
+        lv <- sort(unique(as.numeric(tg[, a])))
+        log_scale <- startsWith(a, "tau")
+        spec <- hyper_axis_spec(name = a, grid = lv, log_scale = log_scale,
+                                bounds = if (log_scale) c(0, Inf) else NULL,
+                                refinable = FALSE)
+        pos <- lv[lv > 0]
+        if (log_scale && length(pos) >= 2L)
+            spec$slab_bounds <- exp(.hyper_default_coord_bounds(log(pos)))
+        spec
+    })
+}
+
+
 #' Fit an additive spatiotemporal GLM by nested Laplace
 #'
 #' @description
@@ -190,7 +212,12 @@ fit_st_nested <- function(y, X, spatial_idx, adjacency, temporal_idx, n_times,
 
   out$theta_grid  <- as.matrix(grid)
   out$theta_names <- colnames(grid)
-  out$weights <- .nl_normalise_weights_safe(out$log_marginal, "spatiotemporal grid")
+  st_specs <- .nl_st_axis_specs(out$theta_grid)
+  out$log_quad     <- .hyper_log_quad_weights(out$theta_grid, st_specs)
+  out$axis_support <- .hyper_grid_supports(out$theta_grid, st_specs)
+  out$weights <- .nl_normalise_weights_safe(out$log_marginal,
+                                            "spatiotemporal grid",
+                                            log_quad = out$log_quad)
   # Outer-grid collapse visibility + recenter:
   # tau_lower/tau_upper's default [0.25, 16] span (and, for ar1, the default
   # rho_lower/rho_upper) is a starting axis, not a hard ceiling, the same

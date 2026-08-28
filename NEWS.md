@@ -1,4 +1,4 @@
-# tulpa 0.3.0
+# tulpa 0.2.1
 
 * **The outer hyperparameter grid is a quadrature rule for a declared prior,
   not the prior itself.** Every node carried the same prior weight, so a grid
@@ -35,7 +35,21 @@
   every node weighed the same and became a difference in the weights once they
   tracked spacing.
 
-# tulpa 0.2.1
+* **Every path that turns `log_marginal` into posterior weights carries the same
+  measure.** The single-block and multi-block `tulpa_nested_laplace()` paths and
+  both spatiotemporal paths formed their weights from the log-marginal alone, so
+  the declared prior reached only the joint path. All of them now go through
+  `.nl_grid_log_quad()`, and each fit records the span its quadrature integrated
+  in `fit$axis_support` so a second engine can read it rather than rebuild it.
+
+* **An axis's integration coordinate is declared where its grid is built.**
+  `.hyper_axis_scale()` covers the axes the joint and single-block dispatchers
+  name, `.nl_st_axis_specs()` declares the spatiotemporal ones beside
+  `.st_log_grid()`, and an axis neither covers carries no quadrature weight at
+  all, which leaves its nodes equally weighted. Reading the coordinate off the
+  node spacing instead would let the data choose the measure, and treating the
+  log-spaced `tau_spatial` / `tau_temporal` axes as linear moved the
+  spatiotemporal grid's weights.
 
 * **`tulpa_nested_laplace()` refuses a non-finite response instead of blaming
   itself for one.** `.assert_finite_model_inputs()` was wired into three doors

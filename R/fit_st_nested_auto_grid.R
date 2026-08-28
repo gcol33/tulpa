@@ -358,7 +358,12 @@
 
     refit$theta_grid  <- as.matrix(new_grid)
     refit$theta_names <- colnames(new_grid)
-    refit$weights <- .nl_normalise_weights_safe(refit$log_marginal, "spatiotemporal grid")
+    st_specs <- .nl_st_axis_specs(refit$theta_grid)
+    refit$log_quad     <- .hyper_log_quad_weights(refit$theta_grid, st_specs)
+    refit$axis_support <- .hyper_grid_supports(refit$theta_grid, st_specs)
+    refit$weights <- .nl_normalise_weights_safe(refit$log_marginal,
+                                                "spatiotemporal grid",
+                                                log_quad = refit$log_quad)
     refit <- .joint_attach_pareto_k_regime(refit)
     refit$outer_grid_placement         <- "auto_recentered"
     refit$outer_grid_recenter_attempts <- 1L

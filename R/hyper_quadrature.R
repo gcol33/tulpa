@@ -145,6 +145,69 @@
   function(x) log(lambda) - lambda * x
 }
 
+# Integration coordinate of an engine axis, by name: TRUE where the grid is laid
+# out log-spaced, FALSE where it is laid out evenly, and NA for a name this table
+# does not cover.
+#
+# An axis's coordinate is a property of how its grid was built, so it is declared
+# rather than read off the node values -- inferring it from the spacing would let
+# the data choose the measure. A caller that builds its own grid declares its own
+# specs (`.nl_st_axis_specs()` is the spatiotemporal one); this table is for the
+# axes the joint and single-block dispatchers name.
+#
+# NA is the safe answer, not an error: an axis nobody has classified carries no
+# quadrature weight, so its nodes stay equally weighted.
+.hyper_axis_scale <- function(bare) {
+  if (startsWith(bare, "rho")) return(FALSE)
+  if (bare %in% c("sigma", "sigma2", "alpha", "tau", "range", "lengthscale",
+                  "s1", "s2", "phi", "phi_gp") ||
+      startsWith(bare, "sigma") || startsWith(bare, "tau") ||
+      startsWith(bare, "phi_")) return(TRUE)
+  NA
+}
+
+# Natural-scale support of one axis's continuum: the interval its levels tile on
+# the integration coordinate. `slab_bounds` where the axis declares a span, half
+# a node step beyond the outermost levels otherwise. This is the region the outer
+# quadrature actually reaches, so a sampler asked to target the same measure is
+# bounded here and not at the outermost node.
+#
+# Returns NULL for an axis with fewer than two continuum levels, which is the
+# pinned case the caller leaves out of the sampled vector.
+.hyper_axis_support <- function(levels, spec) {
+  levels <- sort(unique(as.numeric(levels)))
+  levels <- levels[is.finite(levels)]
+  cont <- if (isTRUE(spec$log_scale)) levels[levels > 0] else levels
+  if (length(cont) < 2L) return(NULL)
+  if (!is.null(spec$slab_bounds)) {
+    bd <- sort(as.numeric(spec$slab_bounds))
+    inside <- cont >= bd[1L] & cont <= bd[2L]
+    if (sum(inside) < 2L) return(NULL)
+    return(bd)
+  }
+  bd <- .hyper_default_coord_bounds(.hyper_axis_coord(cont, spec))
+  if (isTRUE(spec$log_scale)) exp(bd) else bd
+}
+
+# The support of every axis in `specs` that carries one, as a named list of
+# natural-scale intervals. Stored on the fit so a second engine reads the span
+# this fit integrated rather than rebuilding it from a grid that refinement may
+# since have extended.
+.hyper_grid_supports <- function(theta_grid, specs) {
+  if (is.null(theta_grid) || is.null(specs)) return(NULL)
+  theta_grid <- as.matrix(theta_grid)
+  axis_names <- colnames(theta_grid)
+  out <- list()
+  for (spec in specs) {
+    a <- spec$name
+    if (!a %in% axis_names) next
+    sup <- .hyper_axis_support(theta_grid[, a], spec)
+    if (!is.null(sup)) out[[a]] <- sup
+  }
+  if (length(out) == 0L) return(NULL)
+  out
+}
+
 # Declared atom mass for one axis, or NULL where the axis carries no point mass.
 .hyper_axis_atom_mass <- function(spec) {
   if (is.null(spec$atom_mass)) return(NULL)
@@ -166,6 +229,7 @@
   for (spec in specs) {
     a <- spec$name
     if (!a %in% axis_names) next
+    if (isTRUE(spec$unweighted)) next
     v <- as.numeric(theta_grid[, a])
     lw <- .hyper_axis_level_weights(v, spec, .hyper_axis_atom_mass(spec))
     levels <- sort(unique(v))
@@ -192,4 +256,18 @@
          call. = FALSE)
   }
   x
+}
+
+# Per-cell log quadrature weight for a grid whose axis specs the caller does not
+# hold. Every path that turns `log_marginal` into posterior weights goes through
+# here, so the prior mass a cell carries is decided in one place: on an evenly
+# spaced grid the weights are equal and this is the rule the engine has always
+# applied, and on an uneven one it is the spacing that differs rather than the
+# measure.
+.nl_grid_log_quad <- function(theta_grid, specs = NULL,
+                              copy_slab = "exponential") {
+  if (is.null(theta_grid) || is.null(colnames(theta_grid))) return(NULL)
+  if (is.null(specs))
+    specs <- .joint_axis_specs_from_grid(theta_grid, copy_slab = copy_slab)
+  .hyper_log_quad_weights(theta_grid, specs)
 }

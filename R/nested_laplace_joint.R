@@ -1388,6 +1388,7 @@ tulpa_nested_laplace_joint <- function(responses,
             responses = responses, prior_list = prior, copy = copy,
             phi_grid = phi_grid,
             fn_sigma = fn_sigma, fn_alpha = fn_alpha, fn_phi = fn_phi,
+            copy_atom_mass = copy_atom_mass, copy_slab = copy_slab,
             max_iter = max_iter, tol = tol, n_threads = n_threads,
             n_threads_outer = n_threads_outer,
             tile_warm = tile_warm,
@@ -1577,7 +1578,8 @@ tulpa_nested_laplace_joint <- function(responses,
 
     res$theta_grid  <- theta_grid_M
     res$theta_names <- colnames(res$theta_grid)
-    res$log_quad    <- .hyper_log_quad_weights(res$theta_grid, specs)
+    res$log_quad     <- .hyper_log_quad_weights(res$theta_grid, specs)
+    res$axis_support <- .hyper_grid_supports(res$theta_grid, specs)
     res$weights     <- .nl_normalise_weights_safe(res$log_marginal, "outer grid",
                                                   log_quad = res$log_quad)
     res             <- .nl_posterior_moments(res, paste0("joint_", type),
@@ -1619,7 +1621,8 @@ tulpa_nested_laplace_joint <- function(responses,
                                               extras_list, refining_axis)
             res$theta_grid  <- theta_grid_M
             res$theta_names <- colnames(res$theta_grid)
-            res$log_quad    <- .hyper_log_quad_weights(res$theta_grid, specs)
+            res$log_quad     <- .hyper_log_quad_weights(res$theta_grid, specs)
+            res$axis_support <- .hyper_grid_supports(res$theta_grid, specs)
             res$weights     <- .nl_normalise_weights_safe(res$log_marginal,
                                                           "outer grid",
                                                           log_quad = res$log_quad)
