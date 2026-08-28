@@ -176,3 +176,20 @@
   }
   out
 }
+
+# Accepted shapes for the copy scale's continuum measure. "exponential" is the
+# penalized-complexity density above; "flat" makes the axis flat in log alpha
+# over the declared span, the measure the other log-scale axes carry.
+.TULPA_COPY_SLAB_CHOICES <- c("exponential", "flat")
+
+.hyper_check_copy_slab <- function(x) {
+  if (is.null(x)) return("exponential")
+  if (!is.character(x) || length(x) != 1L || is.na(x) ||
+      !x %in% .TULPA_COPY_SLAB_CHOICES) {
+    stop(sprintf("`copy_slab` must be one of %s.",
+                 paste(sprintf('"%s"', .TULPA_COPY_SLAB_CHOICES),
+                       collapse = " or ")),
+         call. = FALSE)
+  }
+  x
+}

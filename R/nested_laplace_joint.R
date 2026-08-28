@@ -1136,6 +1136,7 @@ tulpa_nested_laplace_joint <- function(responses,
     adaptive_grid_max_passes  <- control$adaptive_grid_max_passes %||% 1L
     var_of_means_consistency  <- control$var_of_means_consistency %||% TRUE
     copy_atom_mass            <- control$copy_atom_mass %||% .TULPA_COPY_ATOM_MASS
+    copy_slab                 <- .hyper_check_copy_slab(control$copy_slab)
     force_sparse              <- control$force_sparse %||% FALSE
     inner_sparse_override     <- .resolve_inner_factorization(
         control$inner_factorization)
@@ -1534,7 +1535,8 @@ tulpa_nested_laplace_joint <- function(responses,
     # the modes / Q consumers) reads the refined values unchanged.
     specs <- .joint_axis_specs(grids, cp, user_prior_axes = c(
         if (!is.null(fn_sigma)) "sigma", if (!is.null(fn_alpha)) "alpha",
-        if (!is.null(fn_phi))   "phi"), copy_atom_mass = copy_atom_mass)
+        if (!is.null(fn_phi))   "phi"), copy_atom_mass = copy_atom_mass,
+        copy_slab = copy_slab)
     kernel_fn <- .joint_make_kernel_fn(arms, prior, cp, backend, max_iter,
                                         tol, n_threads, x_init, store_Q,
                                         arm_names,

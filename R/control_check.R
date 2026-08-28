@@ -111,7 +111,7 @@ tulpa_check_control <- function(control, allowed, where) {
       "adaptive_grid_max_frac", "adaptive_grid_max_passes",
       "adaptive_grid_min_cells", "adaptive_grid_stride",
       "var_of_means_consistency", "var_of_means_tolerance",
-      "copy_atom_mass",
+      "copy_atom_mass", "copy_slab",
       "diagnose_k", "k_samples", "k_threads", "k_quality", "k_refine",
       "k_max_rounds", "k_bootstrap", "k_tail_points", "k_conf_bands",
       "diagnose_skew", "skew_idx", "skew_correct", "auto_recenter",

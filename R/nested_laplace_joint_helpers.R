@@ -508,7 +508,9 @@
 # is applied separately through `hp_fn` and applying the engine's declared
 # density as well would put two priors on one axis.
 .joint_axis_specs <- function(grids, cp, user_prior_axes = character(0),
-                              copy_atom_mass = .TULPA_COPY_ATOM_MASS) {
+                              copy_atom_mass = .TULPA_COPY_ATOM_MASS,
+                              copy_slab = "exponential") {
+    copy_slab <- .hyper_check_copy_slab(copy_slab)
     has_alpha <- cp$has_copy && length(grids$alpha) > 0L
     axes <- names(grids)
     if (!has_alpha) axes <- setdiff(axes, "alpha")
@@ -552,13 +554,19 @@
         pos <- sort(unique(spec$grid[spec$grid > 0]))
         user_prior <- bare %in% user_prior_axes || a %in% user_prior_axes
         if (log_scale && length(pos) >= 2L) {
-            if (identical(bare, "alpha") && !user_prior) {
+            copy_exp_slab <- identical(bare, "alpha") && !user_prior &&
+                             identical(copy_slab, "exponential")
+            if (copy_exp_slab) {
                 # The copy scale is the axis a user cannot be expected to bracket
                 # in advance, and the one carrying the point mass the continuum
                 # is weighed against. It therefore gets a proper density over the
                 # whole positive line rather than a span: refinement can then
                 # follow the posterior out as far as it needs to, and still be
                 # integrating the measure declared here, before the fit.
+                #
+                # `copy_slab = "flat"` takes the other branch instead, so the
+                # copy scale is flat in log alpha over the span its declared
+                # nodes tile, the same measure sigma and phi carry.
                 spec$slab_log_density <- .hyper_copy_slab_density(max(pos))
             } else {
                 bd <- .hyper_default_coord_bounds(.hyper_axis_coord(pos, spec))
