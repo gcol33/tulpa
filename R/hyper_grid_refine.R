@@ -86,7 +86,9 @@
   if (length(finite_lm) == 0L) return(list())
   lm_max_total <- max(finite_lm)
   weights      <- .nl_normalise_weights_safe(log_marginal,
-                                              what = "adaptive_grid edge scores")
+                                              what = "adaptive_grid edge scores",
+                                              log_quad = .hyper_log_quad_weights(
+                                                  theta_grid, specs))
   if (all(is.na(weights))) return(list())
   out <- list()
   per_level_max <- function(lm_at_lev) {
@@ -143,6 +145,12 @@
   pts <- if (isTRUE(extend_ok)) c(densify, extend1, extend2) else densify
   if (!is.null(bounds)) {
     pts <- pts[pts > bounds[1L] & pts < bounds[2L]]
+  }
+  # The declared prior support is fixed, so a node outside it would carry zero
+  # weight and only cost an inner solve.
+  slab <- spec$slab_bounds
+  if (!is.null(slab)) {
+    pts <- pts[pts >= slab[1L] & pts <= slab[2L]]
   }
   keep <- vapply(pts, function(p) {
     all(abs(lev - p) > 1e-8 * max(1, abs(p)))
@@ -436,7 +444,9 @@
     # with the current grid rows.
     iter_weights <- weights
     if (is.null(iter_weights) || length(iter_weights) != length(log_marginal)) {
-      iter_weights <- .nl_normalise_weights_safe(log_marginal, "refinement grid")
+      iter_weights <- .nl_normalise_weights_safe(
+          log_marginal, "refinement grid",
+          log_quad = .hyper_log_quad_weights(theta_grid, specs))
     }
     overall_mode_idx <- which.max(log_marginal)
     axis_vals <- as.numeric(theta_grid[, axis])

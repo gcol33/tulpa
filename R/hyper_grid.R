@@ -296,7 +296,9 @@ tulpa_hyper_grid <- function(hyper_specs, inner_fit,
   }
 
   # Initial weighted moments (also needed by the consistency pass).
-  weights <- .nl_normalise_weights_safe(log_marginal, what = "hyper-grid cells")
+  weights <- .nl_normalise_weights_safe(
+    log_marginal, what = "hyper-grid cells",
+    log_quad = .hyper_log_quad_weights(theta_grid, specs))
   weights_for_summary <- weights
   weights_for_summary[is.na(weights_for_summary)] <- 0
 
@@ -341,8 +343,9 @@ tulpa_hyper_grid <- function(hyper_specs, inner_fit,
       log_prior_cell <- if (is.null(hp_fn)) rep(0, nrow(theta_grid))
                         else hp_fn(theta_grid)
       # Re-derive weights / moments / Laplace-SD on the merged grid.
-      weights <- .nl_normalise_weights_safe(log_marginal,
-                                             what = "hyper-grid cells")
+      weights <- .nl_normalise_weights_safe(
+        log_marginal, what = "hyper-grid cells",
+        log_quad = .hyper_log_quad_weights(theta_grid, specs))
       weights_for_summary <- weights
       weights_for_summary[is.na(weights_for_summary)] <- 0
       if (sum(weights_for_summary) > 0) {

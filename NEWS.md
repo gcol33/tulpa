@@ -1,5 +1,41 @@
 # tulpa 0.2.1
 
+* **The outer hyperparameter grid is a quadrature rule for a declared prior,
+  not the prior itself.** Every node carried the same prior weight, so a grid
+  that gained nodes after seeing the data carried a different measure than the
+  one it started with. On a coupled `occu_cover` fixture the copy axis went from
+  6 nodes to 11 and its span from `[0, 3]` to `[0, 16.4]`, which moved the point
+  mass at `alpha = 0` from a sixth of the prior to an eleventh and moved the
+  posterior mean of `alpha` by 18 %. Nodes now carry an integration weight built
+  from their spacing (`R/hyper_quadrature.R`), so placing them differently
+  changes the quadrature error and nothing else. On an evenly spaced grid the
+  weights are equal, which is the rule the engine already applied, so an
+  unrefined grid is unchanged.
+
+* **The copy scale carries a declared prior.** `p(alpha) = w0 * delta_0 +
+  (1 - w0) * Exponential(lambda)`, with `w0 = 0.5` and `lambda` set to put 5 %
+  of the prior above the largest node of the grid the caller declares, which is
+  `Exponential(1)` on the default grid. Both parts are fixed before the fit, so
+  refinement may follow the posterior past the declared nodes and still be
+  integrating the measure it started with. `control$copy_atom_mass` sets `w0`,
+  and a caller-supplied `prior_alpha` replaces the declared density rather than
+  compounding with it. `sigma` and the dispersion axes keep a flat measure over
+  their declared span.
+
+* **`fit$copy_atom` reports the point mass at `alpha = 0` against the posterior
+  mass left on it.** A point mass competes with a continuum, so a posterior
+  concentrated at zero can come from either the data or `w0`, and the two
+  numbers together are what separate them. On a weakly identifying fixture the
+  default `w0 = 0.5` leaves 0.81 of the posterior on the atom against a true
+  `alpha` of 1; at `copy_atom_mass = 0.01` the same likelihood locates the mode.
+
+* **Multi-block axes resolve their scale metadata on the bare axis name.**
+  `.joint_axis_specs()` matched `sigma` and `alpha` exactly, so a multi-block
+  grid's `b1.sigma` fell through to the natural scale. This was invisible while
+  every node weighed the same and became a difference in the weights once they
+  tracked spacing.
+
+
 * **`tulpa_nested_laplace()` refuses a non-finite response instead of blaming
   itself for one.** `.assert_finite_model_inputs()` was wired into three doors
   by hand and not into this one, so an NA response was absorbed rather than
