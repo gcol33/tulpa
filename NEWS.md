@@ -1,3 +1,15 @@
+# tulpa 0.2.4
+
+* **`plot.sbc()`'s arguments are documented by the block attached to it.** An
+  internal helper had been inserted between the `@param` tags and the function,
+  so the `#` comment opening it ended the roxygen block and the tags attached
+  to the helper, which carries no title and discards them without a warning.
+  `man/sbc.Rd` still listed the four arguments only because it predated the
+  move: regenerating the documentation deleted them, and the next `R CMD check`
+  after that would have reported `Undocumented arguments in documentation
+  object 'sbc'` -- a WARNING, on whichever unrelated commit happened to run
+  `document()` (gcol33/tulpa#619).
+
 # tulpa 0.2.3
 
 * **The parallel-equivalence fixtures test the construct the engine ships.**

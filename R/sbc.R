@@ -1282,10 +1282,6 @@ print.sbc_summary <- function(x, ...) {
   invisible(x)
 }
 
-#' @param x An `sbc` result.
-#' @param arm,quantity Optional character vectors selecting which panels to
-#'   draw. Default draws every (arm, quantity).
-#' @param folded Plot the folded PIT instead of the raw one.
 # The p-value and band verdict annotating one panel. It has to read the SAME
 # sample the panel draws: the fold is the read that catches a symmetric
 # dispersion error the raw ECDF cancels, so a folded panel carrying the raw
@@ -1297,6 +1293,10 @@ print.sbc_summary <- function(x, ...) {
   sprintf("p = %.3g%s", p, if (ok) "" else ", outside band")
 }
 
+#' @param x An `sbc` result.
+#' @param arm,quantity Optional character vectors selecting which panels to
+#'   draw. Default draws every (arm, quantity).
+#' @param folded Plot the folded PIT instead of the raw one.
 #' @rdname sbc
 #' @export
 plot.sbc <- function(x, arm = NULL, quantity = NULL, folded = FALSE, ...) {

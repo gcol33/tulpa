@@ -4,12 +4,22 @@
 \alias{.assert_finite_model_inputs}
 \title{Reject non-finite fitting inputs.}
 \usage{
-.assert_finite_model_inputs(X, y)
+.assert_finite_model_inputs(X, y, where = NULL)
+}
+\arguments{
+\item{X, y}{Design matrix and response; either may be \code{NULL} to skip that arm.}
+
+\item{where}{Caller name for the message prefix, or \code{NULL} for none.}
 }
 \description{
 The design is built with \code{na.action = na.pass}, so a missing predictor or
-response survives into \code{X} / \code{y}. tulpa() does not drop incomplete cases, so
-an NA/NaN/Inf would propagate into the C++ kernels as a NaN estimate. Fail
+response survives into \code{X} / \code{y}. No fitter drops incomplete cases, so an
+NA/NaN/Inf would propagate into the C++ kernels as a NaN estimate. Fail
 loudly with the offending row instead.
+}
+\details{
+Reached from \code{\link[=tulpa]{tulpa()}}, from the direct beta-only doors, and from
+\code{\link[=.validate_glm_design]{.validate_glm_design()}}, which is what carries it to every fitter taking a
+\verb{(y, X, n_trials)} bundle.
 }
 \keyword{internal}

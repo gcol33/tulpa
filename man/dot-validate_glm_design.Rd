@@ -22,4 +22,14 @@ Shared by the flagship drivers (\code{tulpa_nested_laplace()}, \code{tulpa_gibbs
 \code{re_cov} fitters) so \code{nrow(X) == length(y)} and \code{length(n_trials) == length(y)} are enforced in one place -- otherwise a mismatched \code{n_trials}
 (\code{as.integer(NULL)} -> \code{integer(0)}) reaches the C++ kernel silently.
 }
+\details{
+The finite-input guard is enforced here too, which is what carries it to
+every door taking this bundle. Left to each door it was wired into three of
+them and not into \code{tulpa_nested_laplace()}, where an NA response is not
+rejected but absorbed: every grid cell returns \code{converged = FALSE} with
+\code{log_marginal = 0}, the softmax over those weights is uniform, a fit comes
+back, and the retention step then finds no \code{Q} on any cell and reports the
+user's own missing data to them as a package defect
+(gcol33/tulpa#613).
+}
 \keyword{internal}
