@@ -519,9 +519,8 @@
         # point-mass metadata are resolved on the bare axis name. Which axes
         # refine, and in what order, stays keyed on the full name.
         bare <- sub("^b[0-9]+[.]", "", a)
-        log_scale <- bare %in% c("sigma", "alpha", "tau", "sigma2",
-                                "phi_gp", "lengthscale") ||
-                     startsWith(bare, "phi_")
+        scale_known <- .hyper_axis_scale(bare)
+        log_scale <- isTRUE(scale_known)
         bounds <- if (a == "sigma")            c(0, Inf)
                   else if (a == "alpha")        c(0, Inf)
                   else if (a == "rho")          c(0, 1)
@@ -540,6 +539,9 @@
             refinable = refinable
         )
         spec$refine_priority <- refine_priority
+        # An axis this table does not classify keeps equal node weights, which
+        # is what the engine integrated before any coordinate was declared.
+        if (is.na(scale_known)) spec$unweighted <- TRUE
         # The copy scale carries an explicit zero level ("no coupling"), which
         # is a point mass rather than part of the log continuum, so it needs a
         # declared prior probability. Fixing it here keeps it independent of how
@@ -581,14 +583,15 @@
 # The multi-block driver builds its grid before any spec list exists, so it
 # recovers the same metadata from the columns rather than carrying a second
 # description of the same axes.
-.joint_axis_specs_from_grid <- function(theta_grid) {
+.joint_axis_specs_from_grid <- function(theta_grid,
+                                        copy_slab = "exponential") {
     if (is.null(theta_grid) || is.null(colnames(theta_grid))) return(NULL)
     theta_grid <- as.matrix(theta_grid)
     grids <- stats::setNames(
         lapply(colnames(theta_grid),
                function(a) sort(unique(as.numeric(theta_grid[, a])))),
         colnames(theta_grid))
-    .joint_axis_specs(grids, list(has_copy = TRUE))
+    .joint_axis_specs(grids, list(has_copy = TRUE), copy_slab = copy_slab)
 }
 
 # Convert a generic `new_cells` matrix [n_new x n_axes] back to the joint

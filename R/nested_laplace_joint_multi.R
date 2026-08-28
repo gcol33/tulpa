@@ -1061,6 +1061,8 @@
                                   adaptive_stride = 2L,
                                   adaptive_max_frac = 0.75,
                                   adaptive_min_cells = 48,
+                                  copy_atom_mass = .TULPA_COPY_ATOM_MASS,
+                                  copy_slab = "exponential",
                                   timer = NULL) {
     tm <- timer %||% .tulpa_timer()
     integration <- match.arg(integration, c("auto", "ccd", "grid",
@@ -1521,10 +1523,18 @@
     # the difference is one a consumer can act on.
     res$integration_requested <- integration
     res$integration_declined  <- integration_declined
-    # Integration weights fold in the CCD design weights (`dnode`); for the
-    # tensor grid `dnode` is NULL and this is the plain log-marginal softmax.
-    res$log_quad     <- .hyper_log_quad_weights(
-        res$theta_grid, .joint_axis_specs_from_grid(res$theta_grid))
+    # Integration weights fold in the CCD design weights (`dnode`) and, on the
+    # tensor grid, the per-cell prior mass of the node each cell sits at. A CCD
+    # design carries its own volume in `dnode`, so `log_quad` applies to the
+    # tensor path alone.
+    multi_specs      <- .joint_axis_specs_from_grid(res$theta_grid,
+                                                    copy_slab = copy_slab)
+    multi_specs      <- lapply(multi_specs, function(sp) {
+        if (!is.null(sp$atom_mass)) sp$atom_mass <- copy_atom_mass
+        sp
+    })
+    res$log_quad     <- .hyper_log_quad_weights(res$theta_grid, multi_specs)
+    res$axis_support <- .hyper_grid_supports(res$theta_grid, multi_specs)
     res$weights      <- .joint_integration_weights(res$log_marginal, dnode,
                                                    log_quad = res$log_quad)
     # The outer design weight each cell carries, kept beside the integration

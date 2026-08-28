@@ -501,10 +501,16 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 
   # Integrate exp(log_marginal) over the outer grid. `log_marginal` is the
   # inner marginal in the internal (log-scale) hyperparameter parameterization
-  # the grid is laid out on, so the grid nodes are equally-weighted quadrature
-  # points and no user-scale volume element is applied -- adding one biases the
-  # scale-hyperparameter posterior (confirmed by CAR_proper (tau, rho) recovery).
-  res$weights <- .nl_normalise_weights_safe(res$log_marginal, "outer grid")
+  # the grid is laid out on, and each cell carries the prior mass of the node it
+  # sits at: its cell width on that coordinate times the axis's declared density
+  # (R/hyper_quadrature.R). On an evenly spaced grid the widths are equal and
+  # this reduces to the plain marginal softmax, so where the nodes fall changes
+  # the quadrature error and not the measure being integrated.
+  res$log_quad     <- .nl_grid_log_quad(res$theta_grid)
+  res$axis_support <- .hyper_grid_supports(
+    res$theta_grid, .joint_axis_specs_from_grid(res$theta_grid))
+  res$weights <- .nl_normalise_weights_safe(res$log_marginal, "outer grid",
+                                            log_quad = res$log_quad)
   res <- .nl_posterior_moments(res, type, within = within_cell)
   if (isTRUE(keep_grid_hessians)) {
     res <- .nl_attach_grid_hessians(res, p_fixed)
@@ -526,7 +532,11 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     refit = function(prior_i) {
       r <- .nl_dispatch(type, cargs, prior_i)
       r <- .nl_apply_ar1_rho_prior(r, type, prior_i)
-      r$weights <- .nl_normalise_weights_safe(r$log_marginal, "outer grid")
+      r$log_quad     <- .nl_grid_log_quad(r$theta_grid)
+      r$axis_support <- .hyper_grid_supports(
+        r$theta_grid, .joint_axis_specs_from_grid(r$theta_grid))
+      r$weights <- .nl_normalise_weights_safe(r$log_marginal, "outer grid",
+                                              log_quad = r$log_quad)
       r <- .nl_posterior_moments(r, type, within = within_cell)
       if (isTRUE(keep_grid_hessians)) r <- .nl_attach_grid_hessians(r, p_fixed)
       .nl_attach_pareto_k(r, prior_i, cargs_no_ckpt, "single", type, NULL,
@@ -1724,7 +1734,12 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   out$log_marginal <- out$log_marginal +
     .nl_multi_spde_log_prior(prepared, axis_offsets, joint_grid)
 
-  out$weights      <- .nl_normalise_weights_safe(out$log_marginal, "multi-block outer grid")
+  out$log_quad     <- .nl_grid_log_quad(out$theta_grid)
+  out$axis_support <- .hyper_grid_supports(
+    out$theta_grid, .joint_axis_specs_from_grid(out$theta_grid))
+  out$weights      <- .nl_normalise_weights_safe(out$log_marginal,
+                                                 "multi-block outer grid",
+                                                 log_quad = out$log_quad)
   out <- .nl_posterior_moments_multi(out, prepared, axis_offsets, joint_grid,
                                      within = match.arg(within_cell))
   out
