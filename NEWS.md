@@ -1,71 +1,4 @@
-# tulpa 0.2.5
-
-* **The Windows arm64 parallel failure is the OpenMP reduction losing a
-  thread's contribution, and no fit goes through it.** Read off the r-universe
-  R-release build's own numbers: `log_lik = -669.2` against a true -898.6, and
-  the missing 229.417 is, to the four figures the report printed, exactly the
-  last chunk of a 4-thread static split (chunk sums -221.97 / -219.51 / -227.70
-  / -229.44; dropping the fourth gives -669.18). One private copy was not added
-  in. The iterations ran -- the same build passed the per-element `results`
-  identity at every thread count -- so what failed is the combination the
-  runtime performs at the end of the region, which is the one step
-  `tulpa_parallel_sum()` never asks it for: it writes its slots from the loop
-  body and adds them in a serial loop afterwards. It is intermittent, failing
-  both probes in one build and one in the next. So `sum_shipped` carries the
-  verdict and `sum_omp_red` is reported with a warning naming the difference
-  and the bound: a red suite there would be a third-party runtime defect on a
-  construct no fit can reach, which is the noise that made the report hard to
-  read (gcol33/tulpa#610).
-
-# tulpa 0.2.4
-
-* **`plot.sbc()`'s arguments are documented by the block attached to it.** An
-  internal helper had been inserted between the `@param` tags and the function,
-  so the `#` comment opening it ended the roxygen block and the tags attached
-  to the helper, which carries no title and discards them without a warning.
-  `man/sbc.Rd` still listed the four arguments only because it predated the
-  move: regenerating the documentation deleted them, and the next `R CMD check`
-  after that would have reported `Undocumented arguments in documentation
-  object 'sbc'` -- a WARNING, on whichever unrelated commit happened to run
-  `document()` (gcol33/tulpa#619).
-
-# tulpa 0.2.3
-
-* **The parallel-equivalence fixtures test the construct the engine ships.**
-  `tulpa_parallel_sum()` cuts a range into contiguous chunks by index
-  arithmetic and adds the chunk totals in chunk order, precisely so nothing
-  about a sum is left to the runtime, and every hot loop was moved onto it. The
-  two fixtures behind `test-parallel-equivalence.R` were left on a raw
-  `reduction(+:)` clause, so the two failures they produce on Windows arm64 are
-  on a construct that ships nowhere -- and nothing in the report could say so,
-  because the two were never computed side by side. Both are now computed over
-  the same values in the same call, beside the per-element results, the
-  requested thread count, the resolved team size and the team the loop actually
-  ran on. The reduction tolerance is the summation bound the values themselves
-  imply rather than a fixed constant, which on these fixtures is 2.6e-11 and
-  1.0e-10 absolute -- tighter than the 1e-10 relative tolerance that failed, so
-  this is a stricter reading of the same probes (gcol33/tulpa#610).
-
-* **`parallel_block_reduce()` no longer carries a `reduction(+:)` clause.** It
-  was the last one in the tree outside the test fixtures, in the package's own
-  linear-algebra header, named for the job `tulpa_parallel_sum()` does and
-  carrying the construct that job exists to avoid. It has no caller, so nothing
-  was non-reproducible; it is where the next caller would have picked it up
-  (gcol33/tulpa#618).
-
-* **CI checks the arithmetic the package actually ships.**
-  `-ffp-contract=off` pins a C++ result and the same expression in R to the
-  same rounding, which is what makes a numeric assertion comparable across the
-  matrix -- but with it on every job, nothing in CI compiled the arithmetic
-  CRAN and r-universe build. 0.2.0 was green on all four platforms and then
-  failed `checking tests` on every aarch64 r-universe build. `fp-contract` is
-  now an input on the `build-env` action, and macOS arm64 -- the only platform
-  in the matrix where FMA is reachable, since it is baseline on aarch64 and
-  absent from the generic x86-64 the others compile for -- runs both ways. A
-  failure the unpinned job alone shows is the contraction; one both show is the
-  algorithm (gcol33/tulpa#611).
-
-# tulpa 0.2.2
+# tulpa 0.2.1
 
 * **`tulpa_nested_laplace()` refuses a non-finite response instead of blaming
   itself for one.** `.assert_finite_model_inputs()` was wired into three doors
@@ -91,7 +24,59 @@
   hard cell cap is deliberately not gated: it is a resource ceiling, and an
   internal batch costs exactly what a user one does (gcol33/tulpa#614).
 
-# tulpa 0.2.1
+* **The Windows arm64 parallel failure is the OpenMP reduction losing a
+  thread's contribution, and no fit goes through it.** `tulpa_parallel_sum()`
+  cuts a range into contiguous chunks by index arithmetic and adds the chunk
+  totals in chunk order, precisely so nothing about a sum is left to the
+  runtime, and every hot loop was moved onto it -- but the two fixtures behind
+  `test-parallel-equivalence.R` were left on a raw `reduction(+:)` clause, so
+  the failures they produced were on a construct that ships nowhere. Read off
+  the r-universe R-release build's own numbers: `log_lik = -669.2` against a
+  true -898.6, and the missing 229.417 is, to the four figures the report
+  printed, exactly the last chunk of a 4-thread static split (chunk sums
+  -221.97 / -219.51 / -227.70 / -229.44; dropping the fourth gives -669.18).
+  One private copy was not added in. The iterations ran -- the same build
+  passed the per-element `results` identity at every thread count -- so what
+  failed is the combination the runtime performs at the end of the region,
+  which is the one step `tulpa_parallel_sum()` never asks it for. Both
+  constructs are now computed over the same values in the same call, beside the
+  per-observation results, the requested thread count, the resolved team size
+  and the team the loop actually ran on; the reduction tolerance is the
+  summation bound the values imply rather than a fixed constant (2.6e-11 and
+  1.0e-10 absolute here, against the 1e-10 relative that failed, so the shipped
+  construct is held more strictly than before); and `sum_shipped` carries the
+  verdict while `sum_omp_red` warns with the numbers, since a red suite there
+  would be a third-party runtime defect on a construct no fit can reach
+  (gcol33/tulpa#610).
+
+* **`parallel_block_reduce()` no longer carries a `reduction(+:)` clause.** It
+  was the last one in the tree outside the test fixtures, in the package's own
+  linear-algebra header, named for the job `tulpa_parallel_sum()` does and
+  carrying the construct that job exists to avoid. It has no caller, so nothing
+  was non-reproducible; it is where the next caller would have picked it up
+  (gcol33/tulpa#618).
+
+* **CI checks the arithmetic the package actually ships.**
+  `-ffp-contract=off` pins a C++ result and the same expression in R to the
+  same rounding, which is what makes a numeric assertion comparable across the
+  matrix -- but with it on every job, nothing in CI compiled the arithmetic
+  CRAN and r-universe build. 0.2.0 was green on all four platforms and then
+  failed `checking tests` on every aarch64 r-universe build. `fp-contract` is
+  now an input on the `build-env` action, and macOS arm64 -- the only platform
+  in the matrix where FMA is reachable, since it is baseline on aarch64 and
+  absent from the generic x86-64 the others compile for -- runs both ways. A
+  failure the unpinned job alone shows is the contraction; one both show is the
+  algorithm (gcol33/tulpa#611).
+
+* **`plot.sbc()`'s arguments are documented by the block attached to it.** An
+  internal helper had been inserted between the `@param` tags and the function,
+  so the `#` comment opening it ended the roxygen block and the tags attached
+  to the helper, which carries no title and discards them without a warning.
+  `man/sbc.Rd` still listed the four arguments only because it predated the
+  move: regenerating the documentation deleted them, and the next `R CMD check`
+  after that would have reported `Undocumented arguments in documentation
+  object 'sbc'` -- a WARNING, on whichever unrelated commit happened to run
+  `document()` (gcol33/tulpa#619).
 
 * **The calibration surface is documented.** `sbc()` and the predictive shapes
   it consumes shipped exported and tested, and appeared in no reference index,
