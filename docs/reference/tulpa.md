@@ -131,7 +131,13 @@ tulpa(
 
 - beta_prior:
 
-  Optional `list(mean, sd)` Gaussian prior on the fixed effects.
+  Optional `list(mean, sd)` Gaussian prior on the fixed effects. `NULL`
+  takes the engine default, `prior_normal(0, 2.5)`, on every backend
+  that carries a fixed-effect prior – the prior is a modelling
+  statement, so the backend `mode = "auto"` selects does not change it.
+  The nested-Laplace and SPDE paths hold their own field-conditional
+  prior and reject a supplied `beta_prior`. The resolved prior is
+  reported on the fit as `$beta_prior`.
 
 - re_prior:
 

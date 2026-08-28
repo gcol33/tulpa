@@ -14,7 +14,7 @@ tulpa_ordinal(
   formula,
   data,
   link = c("logit", "probit"),
-  beta_prior = list(mean = 0, sd = 10),
+  beta_prior = .tulpa_default_beta_prior("ordinal"),
   cut_prior_sd = 10,
   control = list()
 )
@@ -38,8 +38,8 @@ tulpa_ordinal(
 - beta_prior:
 
   Fixed-effect prior as `list(mean, sd)`: a mean-zero (`mean = 0`)
-  Gaussian ridge on every coefficient with scalar SD `sd` (default
-  `list(mean = 0, sd = 10)`).
+  Gaussian ridge on every coefficient with scalar SD `sd` (default the
+  engine default, `prior_normal(0, 2.5)`).
 
 - cut_prior_sd:
 
@@ -73,8 +73,8 @@ y <- ordered(apply(P, 1, function(pr) sample.int(4L, 1L, prob = pr)))
 fit <- tulpa_ordinal(y ~ x, data = data.frame(y = y, x = x))
 fit$coefficients; fit$cutpoints
 #>         x 
-#> 0.8405203 
+#> 0.8391392 
 #>        1|2        2|3        3|4 
-#> -1.0610870  0.4514727  1.9835059 
+#> -1.0608612  0.4512822  1.9829574 
 # }
 ```

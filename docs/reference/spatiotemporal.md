@@ -8,6 +8,11 @@ Specify a spatiotemporal interaction effect for tulpa models. The
 interaction captures structured or unstructured deviation from the
 additive spatial + temporal model.
 
+No tulpa backend fits an interaction term, so this constructor errors.
+The additive space-time model is fitted by
+`tulpa(spatial = , temporal = )` and by
+[`fit_st_nested()`](https://gillescolling.com/tulpa/reference/fit_st_nested.md).
+
 ## Usage
 
 ``` r
@@ -60,7 +65,7 @@ spatiotemporal(
 
 ## Value
 
-A `tulpa_spatiotemporal` object
+Nothing: the call always signals an error.
 
 ## Details
 
@@ -143,83 +148,3 @@ variation in disease risk. Statistics in Medicine, 19(17-18), 2555-2567.
 [`spatial_gp()`](https://gillescolling.com/tulpa/reference/spatial_gp.md),
 [`temporal_rw1()`](https://gillescolling.com/tulpa/reference/temporal_rw1.md),
 [`temporal_ar1()`](https://gillescolling.com/tulpa/reference/temporal_ar1.md)
-
-## Examples
-
-``` r
-# Create adjacency matrix for 10 regions
-adj <- matrix(0, 10, 10)
-for (i in 1:9) adj[i, i+1] <- adj[i+1, i] <- 1
-
-# Type I: Unstructured interaction
-st1 <- spatiotemporal(
-  spatial = spatial_car(adj, level = "group", group_var = "region"),
-  temporal = temporal_rw1("year"),
-  type = "I"
-)
-print(st1)
-#> tulpa Spatiotemporal Interaction Specification
-#> ===============================================
-#> 
-#> Interaction type: Type I: Unstructured (IID) 
-#> 
-#> Spatial component:
-#>   Type: tulpa_spatial 
-#>   Group variable: region 
-#> 
-#> Temporal component:
-#>   Type: rw1 
-#>   Time variable: year 
-#> 
-#> Shared: Yes (enters both processes) 
-
-# Type IV: Fully structured interaction
-st4 <- spatiotemporal(
-  spatial = spatial_car(adj, level = "group", group_var = "region"),
-  temporal = temporal_rw1("year"),
-  type = "IV"
-)
-print(st4)
-#> tulpa Spatiotemporal Interaction Specification
-#> ===============================================
-#> 
-#> Interaction type: Type IV: Fully structured (Kronecker) 
-#> 
-#> Spatial component:
-#>   Type: tulpa_spatial 
-#>   Group variable: region 
-#> 
-#> Temporal component:
-#>   Type: rw1 
-#>   Time variable: year 
-#> 
-#> Shared: Yes (enters both processes) 
-
-if (FALSE) { # \dontrun{
-# Generate synthetic spatiotemporal data (not run - experimental)
-set.seed(123)
-n_regions <- 10
-n_years <- 8
-df <- expand.grid(
-  region = 1:n_regions,
-  year = 2015:(2015 + n_years - 1)
-)
-df$x <- rnorm(nrow(df))
-df$count <- rpois(nrow(df), lambda = 20)
-df$effort <- rgamma(nrow(df), shape = 4, rate = 1)
-
-# Fit model with spatiotemporal interaction
-fit <- tulpa(
-  count | effort ~ x,
-  data = df,
-  family = tulpaRatio::tulpa_poisson_gamma(),
-  spatiotemporal = spatiotemporal(
-    spatial = spatial_car(adj, level = "group", group_var = "region"),
-    temporal = temporal_rw1("year"),
-    type = "IV"
-  ),
-  iter = 200, warmup = 100, chains = 1
-)
-summary(fit)
-} # }
-```

@@ -13,7 +13,7 @@ native multinomial kernel.
 tulpa_multinomial(
   formula,
   data,
-  beta_prior = list(mean = 0, sd = 10),
+  beta_prior = .tulpa_default_beta_prior("multinomial"),
   control = list()
 )
 ```
@@ -32,9 +32,9 @@ tulpa_multinomial(
 - beta_prior:
 
   Fixed-effect prior as `list(mean, sd)`: a mean-zero (`mean = 0`)
-  Gaussian ridge on every coefficient with scalar SD `sd` (default
-  `list(mean = 0, sd = 10)`). A finite SD keeps the mode finite under
-  separation.
+  Gaussian ridge on every coefficient with scalar SD `sd` (default the
+  engine default, `prior_normal(0, 2.5)`). A finite SD keeps the mode
+  finite under separation.
 
 - control:
 
@@ -64,6 +64,6 @@ y <- factor(apply(P, 1, function(pr) sample.int(3L, 1L, prob = pr)))
 fit <- tulpa_multinomial(y ~ x, data = data.frame(y = y, x = x))
 coef(fit)
 #> 1:(Intercept)           1:x 2:(Intercept)           2:x 
-#>    0.68664932    0.73377877   -0.08564341   -0.70336296 
+#>    0.68497843    0.73214926   -0.08534429   -0.70081396 
 # }
 ```

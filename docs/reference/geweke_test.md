@@ -46,6 +46,21 @@ not converged.
 ## Examples
 
 ``` r
-# See plot_rhat() examples for fitting a model
-# geweke_test(fit)
+# \donttest{
+set.seed(123)
+df <- data.frame(x = rnorm(60))
+df$y <- rpois(60, exp(0.5 + 0.3 * df$x))
+fit <- tulpa(y ~ x, data = df, family = "poisson", mode = "hmc",
+             control = list(n_iter = 500L, warmup = 250L, n_chains = 2L,
+                            seed = 1L))
+geweke_test(fit)
+#> Geweke Convergence Diagnostic
+#> =============================
+#> 
+#>    parameter z_score p_value
+#>  (Intercept)   1.638  0.1014
+#>            x  -3.688  0.0002
+#> 
+#> Warning: 1 parameter(s) have |z| > 2 (potential non-convergence)
+# }
 ```

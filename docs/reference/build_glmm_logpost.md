@@ -11,7 +11,7 @@ build_glmm_logpost(
   sigma_re = NULL,
   n_trials = NULL,
   phi = 1,
-  beta_prior = list(mean = 0, sd = 2.5),
+  beta_prior = .tulpa_default_beta_prior("glmm_logpost"),
   weights = NULL,
   phi2 = NULL
 )
@@ -46,7 +46,7 @@ build_glmm_logpost(
 - beta_prior:
 
   `list(mean, sd)` Gaussian prior on the fixed effects (scalars,
-  recycled). Default `list(mean = 0, sd = 2.5)`.
+  recycled). Defaults to the engine default, `prior_normal(0, 2.5)`.
 
 - weights:
 

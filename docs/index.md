@@ -8,7 +8,7 @@ experimental](https://lifecycle.r-lib.org/articles/figures/lifecycle-experimenta
 MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![R \>=
 4.1](https://img.shields.io/badge/R-%3E%3D%204.1-blue.svg)](https://cran.r-project.org/)
-[![C++17](https://img.shields.io/badge/C%2B%2B-17-00599C.svg?logo=cplusplus&logoColor=white)](https://en.cppreference.com/w/cpp/17)
+[![C++17](https://img.shields.io/badge/C%2B%2B-17-00599C.svg?logo=cplusplus&logoColor=white)](https://en.cppreference.com/cpp/17)
 
 **A Bayesian hierarchical modelling engine that splits the posterior: a
 deterministic approximation (Laplace, EP, VI, Pathfinder) handles the
@@ -274,6 +274,41 @@ Posterior-predictive checks (`pp_check`, `check_model`), residual tests
 spatial/temporal diagnostics (`moran_i`, `durbin_watson`,
 `tulpa_variogram`) round out the surface.
 
+## Calibration, validated
+
+Those diagnostics score one fit. Whether a backend’s posteriors are
+*calibrated* is a question no single fit answers, and coverage answers
+it weakly: counting how often a 95% interval contains the truth reads
+one point of the marginal CDF.
+[`sbc()`](https://gillescolling.com/tulpa/reference/sbc.md) reads the
+whole CDF.
+
+``` r
+
+res <- sbc("prior_predictive", simulator = sim, fitter = arms, n_sim = 200)
+res                            # KS, the simultaneous band, the folded read, CRPS
+summary(res, baseline = "map") # paired proper-score ranking, seed by seed
+plot(res, folded = TRUE)       # PIT ECDF difference against the band
+```
+
+Both experiments ship: ordinary SBC averaged over the prior (Talts et
+al. 2018), and calibration conditional on an observed data set
+(Sailynoja et al. 2026), which needs no proper prior. The band is a
+*simultaneous* one, calibrated by bisection against the exact crossing
+probability of the uniform order statistics — a pointwise binomial band
+holds all 100 order statistics together only 44.71% of the time.
+Discrete quantities are randomized within their atom, so a grid
+hyperparameter and a continuous coefficient share one reference. The
+premises each experiment rests on are checked rather than assumed, and
+each guard’s conclusion travels on the result.
+
+Read the per-fit reliability band as a screen and this as the verdict:
+measured over fifteen configurations, the two disagree in both
+directions — a fit with a clean Pareto-k̂ of 0.196 and both inner scores
+in the `good` band fails calibration at `p = 2.3e-13`, and one with a k̂
+of 1.413 passes at `p = 0.17`. See [Validating
+calibration](https://gillescolling.com/tulpa/articles/sbc.html).
+
 ## Model packages
 
 `tulpa` ships the engine. Observation likelihoods live in companion
@@ -318,7 +353,7 @@ install.packages("pak")
 pak::pak("gcol33/tulpa")
 
 # Pin a release
-pak::pak("gcol33/tulpa@v0.1.0")
+pak::pak("gcol33/tulpa@v0.2.0")
 ```
 
 `pak` resolves the dependency tree, including `tulpaMesh` (on CRAN, used
@@ -330,39 +365,41 @@ tools on macOS, `r-base-dev` on Linux.
 
 Getting started:
 
-- [Quickstart](https://gcol33.github.io/tulpa/articles/quickstart.html)
+- [Quickstart](https://gillescolling.com/tulpa/articles/quickstart.html)
 - [Data
-  formatting](https://gcol33.github.io/tulpa/articles/data-formatting.html)
+  formatting](https://gillescolling.com/tulpa/articles/data-formatting.html)
 
 Inference:
 
 - [Inference
-  modes](https://gcol33.github.io/tulpa/articles/inference-modes.html)
-- [Priors](https://gcol33.github.io/tulpa/articles/priors.html)
+  modes](https://gillescolling.com/tulpa/articles/inference-modes.html)
+- [Priors](https://gillescolling.com/tulpa/articles/priors.html)
 - [Random slopes and free
-  covariances](https://gcol33.github.io/tulpa/articles/random-slopes.html)
+  covariances](https://gillescolling.com/tulpa/articles/random-slopes.html)
 - [EM +
-  Laplace](https://gcol33.github.io/tulpa/articles/em-laplace.html)
+  Laplace](https://gillescolling.com/tulpa/articles/em-laplace.html)
 - [Model
-  comparison](https://gcol33.github.io/tulpa/articles/model-comparison.html)
+  comparison](https://gillescolling.com/tulpa/articles/model-comparison.html)
 - [Reliability and
-  Pareto-k](https://gcol33.github.io/tulpa/articles/reliability-pareto-k.html)
+  Pareto-k](https://gillescolling.com/tulpa/articles/reliability-pareto-k.html)
+- [Validating calibration: simulation-based
+  calibration](https://gillescolling.com/tulpa/articles/sbc.html)
 
 Latent structure:
 
 - [Spatial
-  models](https://gcol33.github.io/tulpa/articles/spatial-models.html)
+  models](https://gillescolling.com/tulpa/articles/spatial-models.html)
 - [Temporal
-  models](https://gcol33.github.io/tulpa/articles/temporal-models.html)
+  models](https://gillescolling.com/tulpa/articles/temporal-models.html)
 
 Extending the engine:
 
 - [Custom GMRF latent
-  blocks](https://gcol33.github.io/tulpa/articles/tgmrf.html)
+  blocks](https://gillescolling.com/tulpa/articles/tgmrf.html)
 - [Checkpoint and
-  resume](https://gcol33.github.io/tulpa/articles/checkpoint.html)
+  resume](https://gillescolling.com/tulpa/articles/checkpoint.html)
 
-The [function reference](https://gcol33.github.io/tulpa/reference/)
+The [function reference](https://gillescolling.com/tulpa/reference/)
 lists every fitter, accessor, and diagnostic;
 [`?tulpa`](https://gillescolling.com/tulpa/reference/tulpa.md) is the
 front door.
@@ -399,7 +436,7 @@ MIT (see the LICENSE file).
   author = {Colling, Gilles},
   title  = {tulpa: Template Unified Latent Process Architecture for Bayesian Hierarchical Models},
   year   = {2026},
-  note   = {R package version 0.1.0},
+  note   = {R package version 0.2.0},
   url    = {https://github.com/gcol33/tulpa}
 }
 ```

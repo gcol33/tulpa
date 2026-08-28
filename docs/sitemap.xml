@@ -10,6 +10,7 @@
 <url><loc>https://gillescolling.com/tulpa/articles/quickstart.html</loc></url>
 <url><loc>https://gillescolling.com/tulpa/articles/random-slopes.html</loc></url>
 <url><loc>https://gillescolling.com/tulpa/articles/reliability-pareto-k.html</loc></url>
+<url><loc>https://gillescolling.com/tulpa/articles/sbc.html</loc></url>
 <url><loc>https://gillescolling.com/tulpa/articles/spatial-models.html</loc></url>
 <url><loc>https://gillescolling.com/tulpa/articles/temporal-models.html</loc></url>
 <url><loc>https://gillescolling.com/tulpa/articles/tgmrf.html</loc></url>
@@ -62,6 +63,7 @@
 <url><loc>https://gillescolling.com/tulpa/reference/dispatch_gibbs_temporal.html</loc></url>
 <url><loc>https://gillescolling.com/tulpa/reference/dispatch_laplace_spatial.html</loc></url>
 <url><loc>https://gillescolling.com/tulpa/reference/dot-assert_finite_model_inputs.html</loc></url>
+<url><loc>https://gillescolling.com/tulpa/reference/dot-beta_prior_fields.html</loc></url>
 <url><loc>https://gillescolling.com/tulpa/reference/dot-beta_prior_ridge_sd.html</loc></url>
 <url><loc>https://gillescolling.com/tulpa/reference/dot-build_warm_start.html</loc></url>
 <url><loc>https://gillescolling.com/tulpa/reference/dot-canonical_family.html</loc></url>
@@ -298,11 +300,13 @@
 <url><loc>https://gillescolling.com/tulpa/reference/tgmrf_cpp.html</loc></url>
 <url><loc>https://gillescolling.com/tulpa/reference/tidy.tulpa_fit.html</loc></url>
 <url><loc>https://gillescolling.com/tulpa/reference/TIER_META.html</loc></url>
+<url><loc>https://gillescolling.com/tulpa/reference/tulpa-envvars.html</loc></url>
 <url><loc>https://gillescolling.com/tulpa/reference/tulpa-package.html</loc></url>
 <url><loc>https://gillescolling.com/tulpa/reference/tulpa.html</loc></url>
 <url><loc>https://gillescolling.com/tulpa/reference/tulpa_bar_field_replicate.html</loc></url>
 <url><loc>https://gillescolling.com/tulpa/reference/tulpa_bar_field_specs.html</loc></url>
 <url><loc>https://gillescolling.com/tulpa/reference/tulpa_build_model_data.html</loc></url>
+<url><loc>https://gillescolling.com/tulpa/reference/tulpa_cache_clear.html</loc></url>
 <url><loc>https://gillescolling.com/tulpa/reference/tulpa_cache_dir.html</loc></url>
 <url><loc>https://gillescolling.com/tulpa/reference/tulpa_check_control.html</loc></url>
 <url><loc>https://gillescolling.com/tulpa/reference/tulpa_criteria.html</loc></url>
@@ -369,6 +373,7 @@
 <url><loc>https://gillescolling.com/tulpa/reference/validate_tvc.html</loc></url>
 <url><loc>https://gillescolling.com/tulpa/reference/VarCorr.html</loc></url>
 <url><loc>https://gillescolling.com/tulpa/reference/vcov.tulpa_fit.html</loc></url>
+<url><loc>https://gillescolling.com/tulpa/reference/with_tulpa_integrator.html</loc></url>
 <url><loc>https://gillescolling.com/tulpa/reference/zi_loglik.html</loc></url>
 <url><loc>https://gillescolling.com/tulpa/reference/zi_neg_hessian.html</loc></url>
 <url><loc>https://gillescolling.com/tulpa/reference/zi_response_mean.html</loc></url>

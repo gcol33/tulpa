@@ -15,9 +15,8 @@ spatial_gp(
   nn = 15,
   m = 6,
   c = 1.5,
-  solver = c("auto", "cholesky", "cg", "pcg", "gpu"),
-  cg_tol = 1e-06,
-  cg_maxiter = 100,
+  sigma_prior_U = 1,
+  sigma_prior_alpha = 0.01,
   shared = NULL,
   scale_coords = TRUE,
   parameterization = c("noncentered", "centered", "collapsed")
@@ -32,16 +31,15 @@ spatial_gp(
   variables in the data. With `approx = "nngp"` the coordinate DIMENSION
   is however many are named: two for a map, one for a transect or a
   depth profile, three for a depth-resolved domain. The neighbour graph
-  and the neighbour covariance both read every column (gcol33/tulpa#389,
-  gcol33/tulpa#391). `approx = "hsgp"` takes exactly two, and so does
-  any sampler mode, because both store coordinates at a fixed 2-D
-  stride.
+  and the neighbour covariance both read every column. `approx = "hsgp"`
+  takes exactly two, and so does any sampler mode, because both store
+  coordinates at a fixed 2-D stride.
 
 - approx:
 
   GP approximation: `"nngp"` (default, a nearest-neighbour GP with the
-  `cov` / `nu` / `nn` / `solver` arguments) or `"hsgp"` (a Hilbert-space
-  basis GP with `m` functions per dimension and boundary factor `c`).
+  `cov` / `nu` / `nn` arguments) or `"hsgp"` (a Hilbert-space basis GP
+  with `m` functions per dimension and boundary factor `c`).
 
 - cov:
 
@@ -64,19 +62,13 @@ spatial_gp(
 
   HSGP boundary factor, `>= 1` (`approx = "hsgp"`).
 
-- solver:
+- sigma_prior_U, sigma_prior_alpha:
 
-  Linear solver for the GP. One of `"auto"`, `"cholesky"`, `"cg"`,
-  `"pcg"`, or `"gpu"`. `"gpu"` falls back to `"pcg"` when CUDA support
-  is unavailable.
-
-- cg_tol:
-
-  Convergence tolerance for the (preconditioned) CG solver.
-
-- cg_maxiter:
-
-  Maximum number of (preconditioned) CG iterations.
+  Penalized-complexity prior on the field's marginal standard deviation
+  (`approx = "hsgp"`), calibrated so that
+  `P(sigma > sigma_prior_U) = sigma_prior_alpha`. Defaults to
+  `P(sigma > 1) = 0.01`. `sigma_prior_U` must be positive and
+  `sigma_prior_alpha` must lie in `(0, 1)`.
 
 - shared:
 
@@ -117,7 +109,6 @@ spatial_gp(~ lon + lat)
 #> Coordinates: lon, lat 
 #> Covariance: exponential 
 #> Neighbors (NNGP): 15 
-#> Solver: auto (Cholesky<2k, PCG<5k, GPU/CG for larger) 
 #> Shared: Yes (enters both processes) 
 spatial_gp(~ lon + lat, cov = "matern", nu = 1.5)
 #> tulpa Gaussian Process spatial specification
@@ -126,6 +117,5 @@ spatial_gp(~ lon + lat, cov = "matern", nu = 1.5)
 #> Coordinates: lon, lat 
 #> Covariance: matern (nu = 1.5) 
 #> Neighbors (NNGP): 15 
-#> Solver: auto (Cholesky<2k, PCG<5k, GPU/CG for larger) 
 #> Shared: Yes (enters both processes) 
 ```

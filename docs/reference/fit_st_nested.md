@@ -101,17 +101,16 @@ fit_st_nested(
   the grid's collapsed-edge regime rather than on a per-axis rail).
 
   The `(tau_lower, tau_upper)` span (and, for `ar1`,
-  `(rho_lower, rho_upper)`) is a starting axis, not a hard ceiling
-  (gcol33/tulpa#291): when the fitted precision (or, for `ar1`,
-  autocorrelation) posterior mode rails a boundary node
-  (`pareto_k_regime = "collapsed_edge"`, see below), the driver fits a
-  mode-Hessian via a derivative-free
+  `(rho_lower, rho_upper)`) is a starting axis, not a hard ceiling: when
+  the fitted precision (or, for `ar1`, autocorrelation) posterior mode
+  rails a boundary node (`pareto_k_regime = "collapsed_edge"`, see
+  below), the driver fits a mode-Hessian via a derivative-free
   [`optim()`](https://rdrr.io/r/stats/optim.html) over the collapsed
   grid and refits a grid re-centred on it (one attempt).
 
   A grid knob PINS the axes it shapes, and a pin always wins – but
-  pinning is decided by value, not by presence (gcol33/tulpa#294): a
-  knob set to the engine's own default, or marked with
+  pinning is decided by value, not by presence: a knob set to the
+  engine's own default, or marked with
   [`auto_grid()`](https://gillescolling.com/tulpa/reference/auto_grid.md),
   expresses no preference and leaves its axes free. That is what lets a
   wrapper package thread its own `n_grid`-style argument through
@@ -143,12 +142,12 @@ also carries `outer_grid_pinned_axes`, the axes whose knobs were pinned
 and whose nodes were therefore kept, and `outer_grid_recenter_sd_clamp`
 / `_sd_raw` / `_sd_used` – per moved axis, which mode-SD bound the
 placement hit, the SD the stencil measured, and the SD the axis was laid
-from (gcol33/tulpa#387). A bound-decline is PER AXIS here: the axes the
-mode-find did resolve are still re-placed, and
-`outer_grid_recenter_sd_declined` names the ones that kept their
-incoming nodes and on which bound, so a partially re-placed grid is not
-read as a fully re-placed one. With every free axis declined the pass
-reports the grid as the fixed one it still is.
+from. A bound-decline is PER AXIS here: the axes the mode-find did
+resolve are still re-placed, and `outer_grid_recenter_sd_declined` names
+the ones that kept their incoming nodes and on which bound, so a
+partially re-placed grid is not read as a fully re-placed one. With
+every free axis declined the pass reports the grid as the fixed one it
+still is.
 
 ## See also
 

@@ -80,7 +80,7 @@ fit <- tulpa(y ~ latent(temporal_ar(d$t, p = 3)), data = d,
              family = "gaussian", mode = "nested_laplace")
 #> Warning: Joint multi-block grid has 625 cells (>50). Each cell costs one inner Newton solve; reduce per-block grid sizes if this is slow. CCD integration is a follow-up.
 #> [nested-laplace] 1/625 cells (0%) | elapsed 0s | ETA >=3s | 0.00s/cells
-#> [nested-laplace] 531/625 cells (85%) | elapsed 2s | ETA ~0s | 0.00s/cells
+#> [nested-laplace] 510/625 cells (82%) | elapsed 2s | ETA ~0s | 0.00s/cells
 #> [nested-laplace] 625/625 cells (100%) | elapsed 2s | ETA done | 0.00s/cells
 # }
 ```

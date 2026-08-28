@@ -374,4 +374,9 @@ arm2_beta | ... ]` latent layout carried on `fit$arm_layout`); `diagnose_skew
 - The inference-modes vignette runs the reliability ladder from a Laplace fit
   through an exact debias, and shows the k-hat on a random-effect covariance
   fit.
+- `vignette("sbc")` is the instrument this one screens for. Everything above
+  scores ONE fit; `sbc()` scores whether the backend's posteriors are
+  calibrated across the generative model, and the two verdicts have been
+  measured to disagree in both directions, so a clean band here is a screen
+  rather than a calibration result.
 ```

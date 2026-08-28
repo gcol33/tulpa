@@ -20,7 +20,7 @@ Mean-precision parameterisation, default logit link:
 tulpa_nuts_beta(
   y,
   X,
-  beta_prior = list(mean = 0, sd = 10),
+  beta_prior = .tulpa_default_beta_prior("beta_nuts"),
   log_phi_prior_sd = 3,
   log_phi_init = 0,
   control = list()
@@ -40,8 +40,8 @@ tulpa_nuts_beta(
 - beta_prior:
 
   Fixed-effect prior as `list(mean, sd)`: a mean-zero (`mean = 0`)
-  Gaussian on each coefficient with SD `sd` (default
-  `list(mean = 0, sd = 10)`).
+  Gaussian on each coefficient with SD `sd` (default the engine default,
+  `prior_normal(0, 2.5)`).
 
 - log_phi_prior_sd:
 
@@ -94,7 +94,7 @@ y <- rbeta(n, mu * phi, (1 - mu) * phi)
 # \donttest{
 fit <- tulpa_nuts_beta(y, X, control = list(n_iter = 500L, n_warmup = 250L))
 colMeans(fit$draws)
-#>   beta[1]   beta[2]   log_phi 
-#> 0.1027667 0.6715871 2.1620029 
+#>    beta[1]    beta[2]    log_phi 
+#> 0.08856396 0.66671059 2.16537679 
 # }
 ```

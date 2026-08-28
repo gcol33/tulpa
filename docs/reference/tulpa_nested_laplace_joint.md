@@ -99,28 +99,28 @@ tulpa_nested_laplace_joint(
   - **car_proper**: same as icar plus `rho_car_grid` (default
     `c(0.5, 0.8, 0.95, 0.99)`).
 
-  `sigma_grid`'s default is a starting axis, not a hard ceiling
-  (gcol33/tulpa#289): when the fitted field-SD posterior mode rails the
-  top node (`pareto_k_regime = "collapsed_edge"`, see below), the driver
+  `sigma_grid`'s default is a starting axis, not a hard ceiling: when
+  the fitted field-SD posterior mode rails the top node
+  (`pareto_k_regime = "collapsed_edge"`, see below), the driver
   re-centres the axis on a mode-Hessian and refits (up to two attempts,
   the second adding a light default PC(U=3, alpha=0.01) prior on sigma
   unless `prior_sigma` was pinned – see there), so a sparse or
   strongly-identified species is not silently truncated at 3.0. This
   engages whether or not `control$diagnose_k` computed the full outer
-  Pareto-k diagnostic (gcol33/tulpa#292): the mode-Hessian is reused
-  from the diagnostic when it ran, or computed on its own (one extra
-  batched finite-difference solve, only when the grid actually
-  collapsed) when it did not – so `diagnose_k = FALSE`, the default,
-  does not leave a railed axis stuck. A `sigma_grid` the caller PINNED
-  always wins: auto-recenter engages when the field is left `NULL`, when
-  it is marked with
+  Pareto-k diagnostic: the mode-Hessian is reused from the diagnostic
+  when it ran, or computed on its own (one extra batched
+  finite-difference solve, only when the grid actually collapsed) when
+  it did not – so `diagnose_k = FALSE`, the default, does not leave a
+  railed axis stuck. A `sigma_grid` the caller PINNED always wins:
+  auto-recenter engages when the field is left `NULL`, when it is marked
+  with
   [`auto_grid()`](https://gillescolling.com/tulpa/reference/auto_grid.md)
   (how a wrapper package declares an axis it defaulted rather than one
-  the user chose, gcol33/tulpa#293), or when its nodes are exactly the
-  engine's own default axis. Declines gracefully (keeps the fixed-grid
-  fit) when another axis in the same grid has unguessable support
-  (car_proper's `rho_car`); whichever way it declines,
-  `outer_grid_recenter_declined` says which (see below).
+  the user chose), or when its nodes are exactly the engine's own
+  default axis. Declines gracefully (keeps the fixed-grid fit) when
+  another axis in the same grid has unguessable support (car_proper's
+  `rho_car`); whichever way it declines, `outer_grid_recenter_declined`
+  says which (see below).
 
 - copy:
 
@@ -211,7 +211,7 @@ tulpa_nested_laplace_joint(
   attempt engages the engine's own weakly-informative PC(U = 3, alpha =
   0.01) prior, and a `prior_sigma` the caller PINNED suppresses that
   (the caller's prior stands). Pinning is decided by provenance, not
-  presence (gcol33/tulpa#297): a spec marked with
+  presence: a spec marked with
   [`auto_grid()`](https://gillescolling.com/tulpa/reference/auto_grid.md),
   or one equal by value to the engine's own default, is a default and
   does not suppress the escalation. When it does, the fit carries
@@ -354,6 +354,12 @@ tulpa_nested_laplace_joint(
     consistency pass on the variance of the per-arm posterior means and
     attach `var_of_means_consistency_info`.
 
+  - `inner_factorization` (`"auto"`) – which factorization the dense
+    inner Newton applies to the Hessian it assembled: `"auto"` by the
+    latent dimension, `"sparse"` for CHOLMOD, `"dense"` for the dense
+    Cholesky. Independent of `force_sparse`, which selects the assembly
+    path.
+
   - `force_sparse` (`FALSE`) – linear-algebra backend for the inner
     joint solve. `TRUE` / `FALSE` select the sparse or dense path
     outright, regardless of the dense/sparse heuristic. `"auto"` selects
@@ -420,11 +426,11 @@ tulpa_nested_laplace_joint(
     of the quadratic the cloud was placed from, measured as a
     standardized cubic magnitude; above it the cell is put back as its
     own mass atom, which on a skewed outer target is measurably closer
-    than the design (gcol33/tulpa#318). Engages only on the tensor path
-    (the curvature stencil needs axis neighbours), at `>= 4`
-    transformable latent axes, with no active `phi_grid`; otherwise it
-    is a no-op. The applied refinement is summarised on the result as
-    `$local_ccd_info`. Also driven automatically by `k_refine = "ccd"`.
+    than the design. Engages only on the tensor path (the curvature
+    stencil needs axis neighbours), at `>= 4` transformable latent axes,
+    with no active `phi_grid`; otherwise it is a no-op. The applied
+    refinement is summarised on the result as `$local_ccd_info`. Also
+    driven automatically by `k_refine = "ccd"`.
 
   - `adaptive_grid_cutoff` (`10`), `adaptive_grid_stride` (`2L`),
     `adaptive_grid_max_frac` (`0.75`), `adaptive_grid_min_cells` (`48`)
@@ -576,53 +582,51 @@ tulpa_nested_laplace_joint(
     fit. A genuinely coupled arm (`cell_coupling != "separable"` on that
     arm, e.g. tulpaObs's `occu_cover`) has no per-obs likelihood for the
     separable formula to score; it is scored instead by the contraction
-    of the cell third-derivative tensor (gcol33/tulpa#301), which
-    differences the cross-arm Hessian the coupling spec already returns.
-    A fit that can carry neither reports `NaN`, not a silently wrong 0,
-    and `$inner_skew_declined` says WHY – `"coupled_arm"` marks arms the
+    of the cell third-derivative tensor, which differences the cross-arm
+    Hessian the coupling spec already returns. A fit that can carry
+    neither reports `NaN`, not a silently wrong 0, and
+    `$inner_skew_declined` says WHY – `"coupled_arm"` marks arms the
     inner layer could not score at all, distinct from a diagnostic that
-    was simply switched off (gcol33/tulpa#296) – while
-    `$inner_skew_arms_declined` names the arms with no oracle, including
-    on a partially scored fit. See
+    was simply switched off – while `$inner_skew_arms_declined` names
+    the arms with no oracle, including on a partially scored fit. See
     [`diagnostics()`](https://gillescolling.com/tulpa/reference/diagnostics.md)
     for the combined verdict. Wired for both the single-block backends
     (icar/bym2/car_proper) and the multi-block path (a per-group RE, a
     trend field, or an arm-specific field block).
 
   - `within_cell` (`"box_uniform"`) – the WITHIN-CELL construction the
-    reported per-axis hyperparameter intervals are read with
-    (gcol33/tulpa#357). The outer grid's weights say how much mass each
-    cell holds; they do not say how it is spread inside the cell, and a
-    quantile needs both. `"box_uniform"` puts the cumulative FULL mass
-    at each cell EDGE and interpolates between edges; `"chord"` puts the
-    cumulative MID-mass at each cell coordinate and interpolates between
-    coordinates – the same masses over the same boxes with the knots
-    moved half a cell, which measures as a whole order of convergence
-    (2.00 against 1.04 on a fixture with a closed-form posterior). THE
-    DEFAULT IS `"box_uniform"` since 0.0.188, decided on FIXED-TRUTH
-    coverage at the placement the engine ships since gcol33/tulpa#361
-    made `auto_recenter = "resolve"` the default. Summed \|coverage -
-    nominal\| over nominal 0.95 / 0.80 / 0.50, chord against
-    box-uniform: 0.2900 / 0.1233 on the pre-registered fixed-truth
-    instrument, 0.2004 / 0.0361 over 4680 truth-swept fits of the same
-    fixture, and 0.2467 / 0.1572 over nine (config, axis) rows spanning
-    seven families, at 0.69 to 1.08x the width. The conditional-coverage
-    swing that held the default back reads 0.110 at the shipped
-    placement against 0.415 on the coarse pinned grid it was measured
-    on, and at nominal 0.50 it is the same on both reads.
-    `outer_grid_h_over_sd` is how wide a cell is on each axis, and
-    `theta_within_cell` is what each axis was actually read with. Only a
-    `"density"` support admits it – a CCD design, a locally refined grid
-    and a posterior sample are not cell partitions that tile – and an
-    axis it declines on reports `"chord"` with a reason rather than
-    erroring. Nothing else moves: point estimates, moments, draws and
-    weights are untouched, and `"chord"` restores the previous report
-    exactly.
+    reported per-axis hyperparameter intervals are read with. The outer
+    grid's weights say how much mass each cell holds; they do not say
+    how it is spread inside the cell, and a quantile needs both.
+    `"box_uniform"` puts the cumulative FULL mass at each cell EDGE and
+    interpolates between edges; `"chord"` puts the cumulative MID-mass
+    at each cell coordinate and interpolates between coordinates – the
+    same masses over the same boxes with the knots moved half a cell,
+    which measures as a whole order of convergence (2.00 against 1.04 on
+    a fixture with a closed-form posterior). THE DEFAULT IS
+    `"box_uniform"` since 0.0.188, decided on FIXED-TRUTH coverage at
+    the placement the engine ships, with `auto_recenter = "resolve"` as
+    the default. Summed \|coverage - nominal\| over nominal 0.95 / 0.80
+    / 0.50, chord against box-uniform: 0.2900 / 0.1233 on the
+    pre-registered fixed-truth instrument, 0.2004 / 0.0361 over 4680
+    truth-swept fits of the same fixture, and 0.2467 / 0.1572 over nine
+    (config, axis) rows spanning seven families, at 0.69 to 1.08x the
+    width. The conditional-coverage swing that held the default back
+    reads 0.110 at the shipped placement against 0.415 on the coarse
+    pinned grid it was measured on, and at nominal 0.50 it is the same
+    on both reads. `outer_grid_h_over_sd` is how wide a cell is on each
+    axis, and `theta_within_cell` is what each axis was actually read
+    with. Only a `"density"` support admits it – a CCD design, a locally
+    refined grid and a posterior sample are not cell partitions that
+    tile – and an axis it declines on reports `"chord"` with a reason
+    rather than erroring. Nothing else moves: point estimates, moments,
+    draws and weights are untouched, and `"chord"` restores the previous
+    report exactly.
 
   - `skew_correct` (`TRUE`) – consume the inner-Laplace expansion
-    instead of only grading it (gcol33/tulpa#302, gcol33/tulpa#354):
-    report Cornish-Fisher marginal quantiles at each coefficient's own
-    `gamma_3`, about the centre `gamma_1 + gamma_3 / 2`, from
+    instead of only grading it: report Cornish-Fisher marginal quantiles
+    at each coefficient's own `gamma_3`, about the centre
+    `gamma_1 + gamma_3 / 2`, from
     [`summary()`](https://rdrr.io/r/base/summary.html) /
     [`confint()`](https://rdrr.io/r/stats/confint.html) wherever the
     combined inner band (`gamma_3` and the inner importance k-hat) says
@@ -630,72 +634,70 @@ tulpa_nested_laplace_joint(
     quantiles everywhere else. It is post-processing on the reported
     quantiles: draws, modes and weights are untouched, so a fit run with
     it off is bit for bit the fit it was before. The band that bounded
-    the relocation itself (`centre_unreliable`, gcol33/tulpa#362) is off
-    (`Inf`): every finite cutoff was measured to decline the
-    coefficients the correction helps most (gcol33/tulpa#376).
-    `$skew_correction` records the per-coefficient `gamma_3`, `gamma_1`
-    and the centre they form, the band, the k-hat, the combined band,
-    the eligibility and the reason behind it; the `skew_applied`
-    attribute on [`summary()`](https://rdrr.io/r/base/summary.html) /
+    the relocation itself (`centre_unreliable`) is off (`Inf`): every
+    finite cutoff was measured to decline the coefficients the
+    correction helps most. `$skew_correction` records the
+    per-coefficient `gamma_3`, `gamma_1` and the centre they form, the
+    band, the k-hat, the combined band, the eligibility and the reason
+    behind it; the `skew_applied` attribute on
+    [`summary()`](https://rdrr.io/r/base/summary.html) /
     [`confint()`](https://rdrr.io/r/stats/confint.html) records what was
     actually used at the requested level. A FULLY COUPLED fit declines
     it: the location term's contraction against a covariance block is
     not reachable from the cell third-derivative oracle, and an absent
     `gamma_1` is never read as zero. Such a fit therefore reports what
     it reported before the default moved, to the bit – a declined
-    coefficient keeps the grid-mixture read (gcol33/tulpa#386). See
+    coefficient keeps the grid-mixture read. See
     [`tulpa_nested_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace.md)
     for the measurement behind the default.
 
   - `subspace_debias` (`FALSE`) – correct only the latent directions the
     inner-layer diagnostics flagged, by exact Metropolis along the
     Gaussian-conditional-mean surface through each cell's mode, and
-    leave the rest at their Gaussian conditional (gcol33/tulpa#304,
-    extended to both joint paths by gcol33/tulpa#306). Settings and
-    semantics are the ones documented on
+    leave the rest at their Gaussian conditional. Settings and semantics
+    are the ones documented on
     [`tulpa_nested_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace.md).
     On a fully coupled fit `gamma_3` is `NaN` for every arm, so the
-    selector rests on the derivative-free inner Pareto-k-hat
-    (gcol33/tulpa#303); where that also bands the coordinate reliable,
-    `idx` pins the set explicitly. An EMPTY selection leaves the fit
-    bit-for-bit identical to the plain path. A fit whose inner solve
-    took the s2z rank-1 or the PSD eigen-clamp path carries no usable
-    factor to build the surface from and is left uncorrected, the same
-    two paths `diagnose_skew` declines on.
+    selector rests on the derivative-free inner Pareto-k-hat; where that
+    also bands the coordinate reliable, `idx` pins the set explicitly.
+    An EMPTY selection leaves the fit bit-for-bit identical to the plain
+    path. A fit whose inner solve took the s2z rank-1 or the PSD
+    eigen-clamp path carries no usable factor to build the surface from
+    and is left uncorrected, the same two paths `diagnose_skew` declines
+    on.
 
   - `cila` (`FALSE`) – corrected integrated Laplace, the second
-    inner-layer debias (gcol33/tulpa#351, after Lai, Margossian and
-    Sheldon, arXiv:2605.20345). Where `subspace_debias` selects
-    coordinates and runs exact Metropolis on them, this selects nothing:
-    at every outer cell it draws `n_points` points from the whole inner
-    Gaussian, weights each by the exact joint density it came from, and
-    reports the weighted particles. The cell marginals and the latent
-    posterior both converge to the exact ones as the effort grows, so
-    `n_points` is the only dial. `TRUE` takes the defaults; a list
-    overrides `n_points` (`1024L`), `variant` (`"qmc"`, a Sobol net;
-    `"is"` for iid draws, `"rqmc"` for the net under `n_shift` random
-    shifts), `n_shift` (`8L`), `n_draws` (the reported draw count) and
-    `seed` (the auxiliary stream, engine-owned so requesting the
-    correction leaves every other posterior draw unchanged). Below 512
-    points a cell's particle set is too coarse to be a marginal at all
-    and the request is refused. The correction reports DRAWS, so every
+    inner-layer debias (after Lai, Margossian and Sheldon,
+    arXiv:2605.20345). Where `subspace_debias` selects coordinates and
+    runs exact Metropolis on them, this selects nothing: at every outer
+    cell it draws `n_points` points from the whole inner Gaussian,
+    weights each by the exact joint density it came from, and reports
+    the weighted particles. The cell marginals and the latent posterior
+    both converge to the exact ones as the effort grows, so `n_points`
+    is the only dial. `TRUE` takes the defaults; a list overrides
+    `n_points` (`1024L`), `variant` (`"qmc"`, a Sobol net; `"is"` for
+    iid draws, `"rqmc"` for the net under `n_shift` random shifts),
+    `n_shift` (`8L`), `n_draws` (the reported draw count) and `seed`
+    (the auxiliary stream, engine-owned so requesting the correction
+    leaves every other posterior draw unchanged). Below 512 points a
+    cell's particle set is too coarse to be a marginal at all and the
+    request is refused. The correction reports DRAWS, so every
     coefficient-facing method reads them instead of the grid's Gaussian
     mixture, and the corrected per-cell masses become the fit's own
-    `weights` / `log_marginal` with `weights_source` reporting `"cila"`
-    (gcol33/tulpa#367); the pre-correction pair is kept as
-    `$cila$laplace` and `$cila$retained_mass` is the original share of
-    the cells that produced a usable particle set. `$cila` also carries
-    the variant actually run and the PSIS grade (`pareto_k`, `rel_ess`)
-    of the correction's own weights. A cell whose inner solve factorized
+    `weights` / `log_marginal` with `weights_source` reporting `"cila"`;
+    the pre-correction pair is kept as `$cila$laplace` and
+    `$cila$retained_mass` is the original share of the cells that
+    produced a usable particle set. `$cila` also carries the variant
+    actually run and the PSIS grade (`pareto_k`, `rel_ess`) of the
+    correction's own weights. A cell whose inner solve factorized
     SPARSELY draws through the CHOLMOD factor's own triangular and
-    permutation solves (gcol33/tulpa#366); an LDL' factor carries no
-    square root to draw with and is declined with
-    `"sparse_factor_not_ll"`.
+    permutation solves; an LDL' factor carries no square root to draw
+    with and is declined with `"sparse_factor_not_ll"`.
 
   - `auto_recenter` (`TRUE`) – re-centre a default outer grid axis on
     its posterior mode and refit when the fit rails against a boundary
-    node (gcol33/tulpa#289 / \#290). `FALSE` integrates over the grid
-    exactly as given, whatever it is, and records
+    node. `FALSE` integrates over the grid exactly as given, whatever it
+    is, and records
     `outer_grid_recenter_declined = "auto_recenter_disabled"`. The joint
     rescues trigger on the whole grid's collapsed-edge regime rather
     than on a per-axis rail, so the per-axis policy names
@@ -770,8 +772,8 @@ A list of class
   hyperparameter posterior is misfit by the Gaussian grid and the fit
   should escalate to an exact debias.
 
-- `pareto_k_declined` – when `pareto_k` is `NA`, WHY (gcol33/tulpa#295):
-  `"not_requested"` (`control$diagnose_k = FALSE`; nothing is wrong),
+- `pareto_k_declined` – when `pareto_k` is `NA`, WHY: `"not_requested"`
+  (`control$diagnose_k = FALSE`; nothing is wrong),
   `"unguessable_axis: <axis>"` (a support the engine will not guess,
   e.g. car_proper's `rho_car` – a PERMANENT limitation of that family,
   so read the quadrature ESS instead), `"draws_too_few"`,
@@ -810,13 +812,12 @@ A list of class
 
 - `outer_grid_placement` – `"fixed"` (the default `sigma_grid` axis was
   used as-is) or `"auto_recentered"` when a `collapsed_edge` on `sigma`
-  triggered the mode-Hessian recenter-and-refit (gcol33/tulpa#289; see
-  the `prior` argument above). `outer_grid_recenter_attempts` (integer)
-  and `outer_grid_prior_added` (logical: whether the light default
-  PC(U=3, alpha=0.01) sigma prior was applied) are set alongside it,
-  plus `outer_grid_prior_declined = "prior_pinned"` when a second
-  attempt ran but the caller's pinned `prior_sigma` held that prior back
-  (gcol33/tulpa#297).
+  triggered the mode-Hessian recenter-and-refit (see the `prior`
+  argument above). `outer_grid_recenter_attempts` (integer) and
+  `outer_grid_prior_added` (logical: whether the light default PC(U=3,
+  alpha=0.01) sigma prior was applied) are set alongside it, plus
+  `outer_grid_prior_declined = "prior_pinned"` when a second attempt ran
+  but the caller's pinned `prior_sigma` held that prior back.
 
 - `outer_grid_recenter_declined` – on a `"fixed"` placement, why the
   recenter did not run: `"grid_not_collapsed"` (the grid already
@@ -832,10 +833,10 @@ A list of class
   `outer_grid_recenter_sd_used` – on a recentred fit, one entry per
   moved axis: which mode-SD bound the placement hit (`"none"` /
   `"floor"` / `"ceiling"`), the SD the finite-difference stencil
-  MEASURED, and the SD the axis was actually laid from
-  (gcol33/tulpa#387). A clamped axis was laid from a substituted spread
-  rather than a measured one, and the reported interval is read off that
-  span; the two used to be indistinguishable on the fit.
+  MEASURED, and the SD the axis was actually laid from. A clamped axis
+  was laid from a substituted spread rather than a measured one, and the
+  reported interval is read off that span; the two used to be
+  indistinguishable on the fit.
 
 - `pareto_k_outer_skew` – per-axis skewness of the hyperparameter
   marginal in the proposal's whitened coordinate, present only when a
@@ -953,15 +954,15 @@ A list of class
   quantile, which measured best against a converged reference in both
   `design_mass` regimes; the share is the regime variable, since on that
   part of the support the quantile is bounded by the refined cells' own
-  grid neighbourhoods rather than by the posterior (gcol33/tulpa#317).
-  Every nested path stamps the pair, not only the multi-block driver.
+  grid neighbourhoods rather than by the posterior. Every nested path
+  stamps the pair, not only the multi-block driver.
 
 - `within_cell_requested`, `theta_within_cell`,
   `theta_within_cell_declined` – the WITHIN-CELL construction the same
-  intervals were read with (gcol33/tulpa#357). The kind above says what
-  the integrator left; this says how each cell's mass was spread inside
-  its own box when the grid was read back. `"box_uniform"` is the
-  default and puts the cumulative full mass at each cell edge; `"chord"`
+  intervals were read with. The kind above says what the integrator
+  left; this says how each cell's mass was spread inside its own box
+  when the grid was read back. `"box_uniform"` is the default and puts
+  the cumulative full mass at each cell edge; `"chord"`
   (`control$within_cell`) puts the cumulative mid-mass at each cell
   coordinate, the same masses over the same boxes with the knots moved
   half a cell. The construction is recorded per axis, and an axis whose
@@ -971,18 +972,18 @@ A list of class
 
 - `theta_cell_edge_coord`, `theta_cell_edge_declined` – per axis, the
   COORDINATE that axis's outer cell edges were mirrored in, and why the
-  support the axis declares did not produce them (gcol33/tulpa#377). A
-  declared support is authoritative: its mirrored edge is used when
-  finite and inside it, and otherwise the axis reports its extreme grid
-  coordinate – which the containment test has already placed inside the
-  support – rather than falling through to a coordinate guessed from the
-  node values, which is what put a lower bound of 0 on a `positive` axis
-  and a bound above 1 on a `unit` one. An axis that declares no support
-  at all keeps the guess by design, but its mirrored edge is checked for
-  being a representable double that brackets the coordinates, and falls
-  back to the extreme grid coordinate with
-  `"mirrored_edge_not_representable"` when it is not (gcol33/tulpa#379).
-  `theta_cell_edge_declined` is `NA` where nothing was declined.
+  support the axis declares did not produce them. A declared support is
+  authoritative: its mirrored edge is used when finite and inside it,
+  and otherwise the axis reports its extreme grid coordinate – which the
+  containment test has already placed inside the support – rather than
+  falling through to a coordinate guessed from the node values, which is
+  what put a lower bound of 0 on a `positive` axis and a bound above 1
+  on a `unit` one. An axis that declares no support at all keeps the
+  guess by design, but its mirrored edge is checked for being a
+  representable double that brackets the coordinates, and falls back to
+  the extreme grid coordinate with `"mirrored_edge_not_representable"`
+  when it is not. `theta_cell_edge_declined` is `NA` where nothing was
+  declined.
 
 - `outer_grid_cell_width`, `outer_grid_axis_sd`, `outer_grid_h_over_sd`
   – per axis, the cell width and the posterior SD in that axis's own
@@ -994,6 +995,16 @@ A list of class
   they discretize and the two constructions converge to each other. NA
   on an axis whose own marginal is maximal at an endpoint, which is the
   placement question `outer_grid_railed_axes` reports.
+
+- `outer_grid_resolution_declined` – per axis, why that axis carries no
+  ratio, from the closed vocabulary `too_few_nodes`, `mode_at_edge`,
+  `coord_not_finite`, `spacing_not_finite`, `stencil_degenerate`,
+  `curvature_not_negative`; `NA` on an axis that scored. The reasons are
+  not interchangeable: `mode_at_edge` says the grid does not contain
+  that axis's own posterior mode, which is a stronger statement about
+  the fit than any ratio, and the whole-grid `resolved` verdict is
+  withheld while one is present rather than being read off the axes that
+  did score.
 
 - `prune_cheap_log_marginal`, `prune_mask`, `prune_n_pruned`,
   `prune_tol` – present only when `prune = TRUE` and the safety gate did

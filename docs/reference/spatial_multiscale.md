@@ -162,9 +162,9 @@ print(ms)
 #> Covariance: exponential 
 #> Shared: Yes (enters both processes) 
 
-if (FALSE) { # \dontrun{
+# \donttest{
 set.seed(101)
-n <- 60
+n <- 25
 df <- data.frame(
   lon = runif(n, 0, 10),
   lat = runif(n, 0, 10),
@@ -182,11 +182,17 @@ fit <- tulpa(
   spatial = spatial_multiscale(
     ~ lon + lat,
     range_local = c(0.1, 0.5),
-    range_regional = c(1, 5)
+    range_regional = c(1, 5),
+    nn_local = 5L,
+    nn_regional = 8L
   ),
   mode = "exact",
-  control = list(n_iter = 200L, n_warmup = 100L)
+  control = list(n_iter = 60L, n_warmup = 30L, seed = 1L)
 )
 summary(fit)
-} # }
+#>               estimate std.error        2.5%     97.5%
+#> (Intercept) 0.94597840 0.3710487  0.15697851 1.5176985
+#> depth       0.22858182 0.1292459  0.01878731 0.4725801
+#> temp        0.04685671 0.1172341 -0.18428174 0.2186235
+# }
 ```

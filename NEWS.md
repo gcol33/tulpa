@@ -1,6 +1,61 @@
-# tulpa NEWS
+# tulpa 0.2.1
 
-## 0.2.0
+* **The calibration surface is documented.** `sbc()` and the predictive shapes
+  it consumes shipped exported and tested, and appeared in no reference index,
+  no vignette and no README section, so the only way to find them was to read
+  `NAMESPACE`. `vignette("sbc")` is the new article: both experiments run
+  end to end on a nested-Laplace fit, with the deliberately mis-scaled control
+  arm the run has to reject, the guards each experiment's premises are checked
+  by, and the measured disagreement between this and the per-fit reliability
+  band in both directions (gcol33/tulpa#339). `api.md` gains the matching
+  section, and the README a `Calibration, validated` one.
+
+* **Every export is in the reference index.** `_pkgdown.yml` listed 63 of 164
+  exports and swept the rest into `internal` through the
+  `lacks_concepts()` catch-all, so `sbc()`, `tulpa_laplace()`, `tulpa_eb()`,
+  `tulpa_ep()`, `tulpa_posterior_draws()`, every prior builder, every
+  `plot_*()` and the whole `as_draws` / `ranef` / `tidy` / `glance` interop
+  surface were absent from the published index. Nothing user-facing is hidden
+  now; the sections gained are `Priors`, `Reading a fit`, `Calibration`,
+  `Plots`, and `Outer-grid integration and utilities`. The two
+  `has_concept("spatial")` / `has_concept("temporal")` selectors matched
+  nothing -- no Rd in the package carries a `\concept{}` -- and the explicit
+  lists that were doing the work are kept.
+
+* **A folded SBC panel reads the folded verdict.** `plot.sbc(folded = TRUE)`
+  drew the folded ECDF and annotated it with the RAW p-value and the RAW band
+  verdict. The fold exists to catch a symmetric dispersion error the raw ECDF
+  cancels, so the one case it matters for is exactly the one the mislabelling
+  broke: a panel visibly outside the band reporting `inside`. Both reads now
+  come from one `.sbc_panel_note()` (gcol33/tulpa#612).
+
+* `api.md` named `spatial_hsgp()`, `find_latent_terms()`, `no_latent_terms()`
+  and `parse_bar_term()` as public. The first does not exist -- the
+  Hilbert-space basis is `spatial_gp(approx = "hsgp")` -- and the other three
+  are internal. Thirty-eight exports it did not name are now listed, including
+  `tulpa_re_aghq()`, `fit_st_nested()`, `tulpa_hyper_grid()`,
+  `tulpa_multinomial()` / `tulpa_ordinal()`, `temporal_ar()` / `temporal_ar2()`,
+  `VarCorr()`, `posterior_sample()` / `mcmc_draws()`, `diagnostics()` and
+  `laplace_diagnostics()`.
+
+* **The published changelog was an empty page.** pkgdown reads a version
+  heading as `# <package> <version>`; this file used `## <version>` under a
+  `# tulpa NEWS` title, which `build_news()` reports as *no version headings
+  found* and renders as a `Changelog` heading with nothing under it. All 225
+  entries are now `# tulpa <version>`, which is also the form
+  `usethis::use_news_md()` writes and R's own NEWS.md reader parses
+  (225 versions, none with an `NA` version) (gcol33/tulpa#615).
+
+* **The site build refused a correct build once the changelog rendered.**
+  `pkgdown/build_site.R` asserts that `CLAUDE.md` / `AGENTS.md` / `api.md` /
+  `todo.md` reach neither `docs/` nor the search index, and tested the second
+  by searching `search.json` for the string `AGENTS.html`. The release note
+  describing that guard contains that string, so the guard failed on its own
+  documentation. It now matches a search entry's `path` (gcol33/tulpa#616).
+
+* The README's release pin and citation still read `0.1.0`.
+
+# tulpa 0.2.0
 
 * **A varying coefficient's level is identified by centring on both SVC
   parameterizations** (gcol33/tulpaRatio#25). A term contributes
@@ -77,7 +132,7 @@
 
 * `Language: en-US` declared in DESCRIPTION.
 
-## 0.1.23
+# tulpa 0.1.23
 
 * **`tulpa_re_aghq()` returns the optimizer's evaluation counts.** The joint
   driver is one `stats::optim` call, and nothing on the fit said how much work
@@ -87,7 +142,7 @@
   evaluations rather than iterations, and relabelling them would have made the
   number say something it does not.
 
-## 0.1.22
+# tulpa 0.1.22
 
 * **The AGHQ failure sentinel is refused as an optimum, and it is named once.**
   `cpp_aghq_objective()` reports `-1e10` where a group's solve failed -- a
@@ -107,7 +162,7 @@
   `cpp_aghq_fail_penalty()`, so neither the C++ producers nor the R consumers
   write the literal (gcol33/tulpa#606).
 
-## 0.1.21
+# tulpa 0.1.21
 
 * **The per-group AGHQ solve status is on the fit.** `tulpa_re_aghq()` computed
   `group_ok` from `cpp_aghq_blups()`, raised a warning naming the first few
@@ -119,7 +174,7 @@
   it. The detection itself is unchanged; only the reporting channel is new
   (gcol33/tulpa#605).
 
-## 0.1.20
+# tulpa 0.1.20
 
 * **The bound-reading families pass the compiled-impl gate.**
   `builtin_family_spec()` refuses any family `family_has_compiled_impl()` does
@@ -144,7 +199,7 @@
 * **`rstantools` is declared.** The test suite reaches one borrowed generic from
   it; it was used without being named in `DESCRIPTION`.
 
-## 0.1.18
+# tulpa 0.1.18
 
 * **A bounded link builds its tail rather than recovering it** (#602). Cauchit's
   `linkinv` was `0.5 + atan(eta) / pi`, which in the lower tail subtracts two
@@ -197,7 +252,7 @@
   factorization-failure fallback stopped diverging from the shared one at
   12b641d. Both drivers call `newton_damped_fallback` and `newton_step_tail`.
 
-## 0.1.17
+# tulpa 0.1.17
 
 * **The eleven nested-Laplace grid entries share one tail** (#603, closing the
   last item of #465). Each entry used to build its own checkpoint, resolve its
@@ -231,7 +286,7 @@
   fingerprint each make a resume against a written checkpoint refuse. A build
   with one bundle member dropped fails it at all eleven entries.
 
-## 0.1.16
+# tulpa 0.1.16
 
 * **A block's per-row design weight is read on every contribution kind**
   (#463). `LatentBlock::row_weight` -- the `svc_weight` that makes a field a
@@ -346,7 +401,7 @@
   `DEFAULT_TAU_BETA` so the same weak fixed-effect prior has one definition in
   the two parameterizations the kernels read it in, tied by a static assertion.
 
-## 0.1.15
+# tulpa 0.1.15
 
 * **The next ten audit issues, and the one that was still a live drop**
   (#445, #447, #448, #450, #452, #453, #454, #455, #456, #457). Nine had their
@@ -401,7 +456,7 @@
     two function-local statics) were verified against the current tree and
     already carry their fix and, where one is expressible from R, their test.
 
-## 0.1.14
+# tulpa 0.1.14
 
 * **The next ten audit issues are the tests they asked for** (#427, #428, #429,
   #430, #432, #433, #435, #436, #437, #440). The `src/` work for all ten had
@@ -478,7 +533,7 @@
   bumped: a file written by the previous layout would be replayed field by field
   into the new one and mis-parsed.
 
-## 0.1.13
+# tulpa 0.1.13
 
 * **A tgmrf block's symbolic frame is the union over grid points** (#472). The
   `SparseHessianBuilder` is initialized once per fit, and the frame was read off
@@ -556,7 +611,7 @@
   backtracking line search's doc now states the acceptance test it actually
   applies.
 
-## 0.1.12
+# tulpa 0.1.12
 
 * **`LikelihoodSpec::ll_fwd` is removed, and the ABI is 42** (#493). The slot
   was assigned at six sites and read at none: `resolve_gradient_fn` dispatches
@@ -644,7 +699,7 @@
   different quantities.
 
 
-## 0.1.11
+# tulpa 0.1.11
 
 * **The outer-grid measurement files state the within-cell read instead of
   inheriting it** (#599). `test-nested-laplace-joint-box-mass.R`,
@@ -672,7 +727,7 @@
   rules are unchanged -- the box multiplier's per-cell values are identical
   under both reads. Write-up: `dev_notes/issue599/RESULTS599.md`.
 
-## 0.1.10
+# tulpa 0.1.10
 
 * **The Type-IV RW2 kernel's site-specific linear trends are pinned** (#600).
   `st_sum_to_zero_penalty()` pinned the interaction along its row sums and its
@@ -713,7 +768,7 @@
   Consumer-package paths only: nothing in tulpa sets
   `ModelData::has_spatiotemporal`.
 
-## 0.1.9
+# tulpa 0.1.9
 
 * **A cyclic Type-IV interaction is fitted under the cyclic Q_t** (#596).
   `st_kronecker_temporal_quad()` passed `cyclic = false` to the RW1 / RW2
@@ -764,7 +819,7 @@
   `make_se_kernel_matvec` route through `tulpa_parallel_for`, so a team of one
   skips libgomp as `matvec` already did.
 
-## 0.1.8
+# tulpa 0.1.8
 
 * **The non-centered SPDE transform assembles the same precision as the Laplace
   path** (#590). `SpdeNcTransform` built `Q = tau^2 K diag(1/C0) K` while
@@ -801,7 +856,7 @@
   implicit-diff gradient is recorded there as deliberately untested, since no
   valid input reaches it.
 
-## 0.1.7
+# tulpa 0.1.7
 
 * **A diagonal-plus-low-rank mass matrix, and the Type-IV interaction's
   sum-to-zero margins carried in it** (#597). `mass_matrix = "gmrf_margin"` is
@@ -851,7 +906,7 @@
   precision-informed diagonal and the margin metric are scored against one copy
   of the numerical-Hessian arbiter rather than two.
 
-## 0.1.6
+# tulpa 0.1.6
 
 * **The Type-IV spatiotemporal interaction has a precision-informed mass
   metric, and a measurement saying it does not beat the adapted diagonal**
@@ -887,7 +942,7 @@
   new metric is scored against the numerical Hessian of the engine's own
   log-posterior over the block.
 
-## 0.1.5
+# tulpa 0.1.5
 
 Behaviour changes, in the order they are most likely to affect a fit.
 
@@ -987,7 +1042,7 @@ Behaviour changes, in the order they are most likely to affect a fit.
   and roxygen (#575), and eight comments describing code that is no longer
   there are corrected (#568, #574, #525, #537).
 
-## 0.1.4
+# tulpa 0.1.4
 
 * **The NUTS metric is reachable from the sampler front door** (#545).
   `select_and_init_mass_matrix` resolved AUTO, detected the mass blocks and
@@ -1067,7 +1122,7 @@ Behaviour changes, in the order they are most likely to affect a fit.
   history, dated benchmark tables and a stale "known heisenbug" note that told
   the reader to avoid the only GP density there is are out of the code.
 
-## 0.1.3
+# tulpa 0.1.3
 
 * **The correlation Cholesky covers the whole cone** (#431, #443). The raw
   parameters of a correlated random-effect term were mapped by
@@ -1169,7 +1224,7 @@ Behaviour changes, in the order they are most likely to affect a fit.
 * Multi-chain stochastic-sampler results guard the `log_lik` copy against a
   short vector the way the VI/ESS shim already did (#439).
 
-## 0.1.2
+# tulpa 0.1.2
 
 * **The BYM2 outer grid checks its mixing-weight axis** (#421).
   `cpp_nested_laplace_bym2` fixed the cell count from `sigma_spatial_grid`
@@ -1213,7 +1268,7 @@ Behaviour changes, in the order they are most likely to affect a fit.
   `C + kNngpNugget * I`, the matrix the kernel factorizes, read off the
   scatter's own return rather than written into the test (#578).
 
-## 0.1.1
+# tulpa 0.1.1
 
 * **One default fixed-effect prior, resolved at the front door** (#408).
   `tulpa()` substituted `sd = 2.5`, `10` or `100` on the fixed effects
@@ -1291,7 +1346,7 @@ Behaviour changes, in the order they are most likely to affect a fit.
   that flowed through `tulpa()` as an unrestricted model, or errored about an
   unrelated field. `fit_st_nested()` is the spatiotemporal entry point.
 
-## 0.1.0
+# tulpa 0.1.0
 
 First CRAN release. The engine's surface is unchanged from 0.0.198; this
 version number marks the release rather than a feature change.
@@ -1397,7 +1452,7 @@ version number marks the release rather than a feature change.
   duration of the build and asserts they reached neither `docs/` nor
   `search.json`.
 
-## 0.0.198
+# tulpa 0.0.198
 
 * **`tulpa_re_aghq()` returns the mode/theta cross-Hessian block** (#398).
   Adds `blup_cross` (Bf) to the return value: the per-group `-d^2 ell_g /
@@ -1429,7 +1484,7 @@ version number marks the release rather than a feature change.
   construction on a toy model with deliberately collinear RE terms; the new
   diagonal is byte-identical to the pre-existing `blup_var`.
 
-## 0.0.197
+# tulpa 0.0.197
 
 * **Fix: the batched joint nested-Laplace driver's DENSE path could converge a
   species to a different mode than its own independent fit** (gcol33/tulpa#397).
@@ -1451,7 +1506,7 @@ version number marks the release rather than a feature change.
   `joint_pd_step_solve_dense` with `JointPDMode::LM`, mirroring the
   single-species driver and the batch driver's own sparse branch exactly.
 
-## 0.0.196
+# tulpa 0.0.196
 
 * **The simulation-based-calibration and goodness-of-fit entry points are S3
   generics**, so a downstream package registers a method on its own fit object
@@ -1472,7 +1527,7 @@ version number marks the release rather than a feature change.
 * `test_uniformity()` muffles only the ties warning a discrete response
   produces, rather than every warning the Kolmogorov-Smirnov test can raise.
 
-## 0.0.195
+# tulpa 0.0.195
 
 * **A reported hyperparameter bound that left the node range now says so**
   (gcol33/tulpa#390). An endpoint past the outermost NODE is produced by the
@@ -1501,7 +1556,7 @@ version number marks the release rather than a feature change.
   `n_pts` are kept with it: nine nodes moves 50% coverage FURTHER from nominal
   while costing proportionally more inner solves.
 
-## 0.0.194
+# tulpa 0.0.194
 
 * **CUDA is used when a device is available, and there is now exactly one
   definition of the batched-CUDA backend** (gcol33/tulpa#396).
@@ -1536,7 +1591,7 @@ version number marks the release rather than a feature change.
   and the gcol33/tulpa#389 determinism arbiter passes with the CUDA backend
   live on a device-equipped machine.
 
-## 0.0.193
+# tulpa 0.0.193
 
 * **`LatentBlock::d_fac` is read through one accessor that carries its
   contract** (gcol33/tulpa#394). Twelve call sites read this grid-dependent eta
@@ -1569,7 +1624,7 @@ version number marks the release rather than a feature change.
   is an OpenMP parallel-for and the block prep that reaches this deliberately
   runs outside its critical section.
 
-## 0.0.192
+# tulpa 0.0.192
 
 * **Every factor in a batched NNGP Cholesky is verified, not one of them**
   (gcol33/tulpa#392). `batch_nngp_scatter` hands the neighbour covariances to
@@ -1587,7 +1642,7 @@ version number marks the release rather than a feature change.
   costs, so full coverage sits an order below the work it verifies. The exact
   one-matrix CPU cross-check stays alongside it as the layout check.
 
-## 0.0.191
+# tulpa 0.0.191
 
 * **`gp(approx = "nngp")` takes the coordinate dimension you give it**
   (gcol33/tulpa#391). 0.0.190 made the NNGP neighbour COVARIANCE read every
@@ -1613,7 +1668,7 @@ version number marks the release rather than a feature change.
   mode take exactly 2, because both store coordinates at a fixed 2-D stride, and
   they say so with the dimension they were given.
 
-## 0.0.190
+# tulpa 0.0.190
 
 * **An NNGP fit is a function of its data again: the neighbour covariance was
   built from an out-of-bounds read** (gcol33/tulpa#389). Three NNGP
@@ -1680,7 +1735,7 @@ version number marks the release rather than a feature change.
   that row is inadmissible -- but the row itself should be re-measured before it
   is cited (gcol33/tulpa#390).
 
-## 0.0.189
+# tulpa 0.0.189
 
 * **A recentred outer axis whose mode SD hit the CEILING now declines the
   placement and keeps its incoming span** (gcol33/tulpa#387). A clamp is not a
@@ -1747,7 +1802,7 @@ version number marks the release rather than a feature change.
   fixed one it still is. A decline for any other reason is a failure of the
   mode-find itself and still takes the pass down.
 
-## 0.0.188
+# tulpa 0.0.188
 
 * **Reported hyperparameter intervals are read with the box-uniform within-cell
   construction by default** (gcol33/tulpa#357). The outer grid's weights say how
@@ -1798,7 +1853,7 @@ version number marks the release rather than a feature change.
   coordinates on the reported axis, so a box partition of them would assert a
   property nothing measured. The RE-covariance backends are unchanged.
 
-## 0.0.187
+# tulpa 0.0.187
 
 * **The outer-grid placement pass reaches every registry family whose axes
   carry a coordinate, and every one it does not reach says why**
@@ -1870,7 +1925,7 @@ version number marks the release rather than a feature change.
   grid's collapsed-edge regime, so none of the three has a measured meaning
   there.
 
-## 0.0.186
+# tulpa 0.0.186
 
 * **Behaviour change: `control$skew_correct` now defaults to `TRUE`**
   (gcol33/tulpa#364). `summary()` and `confint()` on a nested-Laplace fit report
@@ -1930,7 +1985,7 @@ version number marks the release rather than a feature change.
   fit moves by 0.397. That required gcol33/tulpa#386 in 0.0.185; without it every
   one of those classes moved.
 
-## 0.0.185
+# tulpa 0.0.185
 
 * The CENTRE band on the inner-Laplace skew correction is off
   (`.NL_DIAG$centre_unreliable = Inf`, gcol33/tulpa#376). It shipped at 1.20 in
@@ -1984,7 +2039,7 @@ version number marks the release rather than a feature change.
   `"skew_map_cell"` when every row was corrected, `"skew_map_cell/mixture_cdf"`
   when both reads are in play, and the base source when none was.
 
-## 0.0.184
+# tulpa 0.0.184
 
 * `weights` reaches the spatial mode-finding, not only the marginal precision
   built at it (gcol33/tulpa#385). `dispatch_laplace_spatial()` carried no
@@ -2026,7 +2081,7 @@ version number marks the release rather than a feature change.
 
   Evidence in dev_notes/issue385/.
 
-## 0.0.183
+# tulpa 0.0.183
 
 * An EM soft label travels on `weights`, not on a fractional `y`
   (gcol33/tulpa#383). `tulpa_em_laplace()`'s own zero-inflated-Poisson example
@@ -2075,7 +2130,7 @@ version number marks the release rather than a feature change.
   conditions away, `V_between > 0` and `V_total > V_within`, and that is what
   the block now asserts.
 
-## 0.0.182
+# tulpa 0.0.182
 
 * `sbc(experiment = "posterior")` reports the pooling premise from the guard's
   own state rather than asserting it (gcol33/tulpa#380). The driver calls
@@ -2084,7 +2139,7 @@ version number marks the release rather than a feature change.
   field that cannot say "not reached" hides a path that was never taken. It now
   reads `state$checked`, the same way `fresh_groups` already read its own.
 
-## 0.0.181
+# tulpa 0.0.181
 
 * `R CMD check` is clean again (gcol33/tulpa#382). Three pre-existing defects,
   none related to the code they sat next to, and each a one-line fix.
@@ -2105,7 +2160,7 @@ version number marks the release rather than a feature change.
   wall clock and differs between two identical runs by construction. The
   assertion now drops that attribute and keeps the experiment.
 
-## 0.0.180
+# tulpa 0.0.180
 
 * **New: `sbc()`**, one exported front door for simulation-based calibration
   (gcol33/tulpa#380). The SBC machinery from gcol33/tulpa#335, gcol33/tulpa#339
@@ -2148,7 +2203,7 @@ version number marks the release rather than a feature change.
   assumed when it is not. Whether the simulator drew those groups' effects
   independently is not observable from outside the callback and is not claimed.
 
-## 0.0.179
+# tulpa 0.0.179
 
 * The chord read's own interior interpolation no longer reports `Inf` as a
   bound (gcol33/tulpa#381). `.nl_wtd_quantile()` delegates the interior to
@@ -2173,7 +2228,7 @@ version number marks the release rather than a feature change.
   bounds 9504 -> 0, finite pre-fix reads that moved 0, repaired bounds outside
   their own bracket 0, mis-ordered reads 0.
 
-## 0.0.178
+# tulpa 0.0.178
 
 * An undeclared axis's mirrored cell edge is guarded the way a declared one's
   is, so a reported interval bound cannot come back `Inf` or `NaN`
@@ -2235,7 +2290,7 @@ version number marks the release rather than a feature change.
   `.tulpa_interval_read_note()` fired for all of them reported the second pair as
   running to the extreme coordinate, which is the opposite of what happened.
 
-## 0.0.177
+# tulpa 0.0.177
 
 * The box builder's interior midpoint is formed as `a / 2 + b / 2` rather than
   `(a + b) / 2`, so a partition whose every edge is a representable double is
@@ -2292,7 +2347,7 @@ version number marks the release rather than a feature change.
   interior box already pinned. A new randomized `identical()` sweep over all
   four domains holds the bisector to the sum form's own numbers.
 
-## 0.0.176
+# tulpa 0.0.176
 
 * A DECLARED hyperparameter support is no longer overruled by the coordinate
   guess that sits under it, so a reported outer cell edge cannot leave the
@@ -2358,7 +2413,7 @@ version number marks the release rather than a feature change.
   `positive`, that same node set now has a finite in-support partition and the
   box read no longer declines on it.
 
-## 0.0.175
+# tulpa 0.0.175
 
 * Box-uniform is promoted to a selectable WITHIN-CELL construction behind the
   existing `support` taxonomy, and the position sensitivity it carries is
@@ -2467,7 +2522,7 @@ version number marks the release rather than a feature change.
   Evidence: `dev_notes/issue357/RESULTS.md`, `common357b.R`, `boxpos357b.R`,
   `coarse357b.R`, `analyse357b.R`, `identity357.R`, `unit357.R`.
 
-## 0.0.174
+# tulpa 0.0.174
 
 * The skew correction's centre band carries what it is measured to cost
   (gcol33/tulpa#376). `.NL_DIAG$centre_unreliable = 1.20` was chosen in
@@ -2491,7 +2546,7 @@ version number marks the release rather than a feature change.
   its justification in `R/settings.R` now records the enlarged measurement, the
   derivation, and the price the band is being paid for.
 
-## 0.0.173
+# tulpa 0.0.173
 
 * A fit reaches the skew correction's centre band from its own data, and the
   decline path is tested there (gcol33/tulpa#364). The band
@@ -2509,7 +2564,7 @@ version number marks the release rather than a feature change.
   groups of 2 the band declines 178 of 300 intercept-seeds, every one with the
   shape band and the combined inner band both admitting.
 
-## 0.0.172
+# tulpa 0.0.172
 
 * The rail detector's materiality guard is read on a node-count-free scale
   (gcol33/tulpa#375). `.nl_axis_rail()` required the boundary node to carry at
@@ -2531,7 +2586,7 @@ version number marks the release rather than a feature change.
   loses 0 / 0 / 1 at the 95 / 80 / 50% levels, and the 95% coverage at
   `rho = 0.9999` goes 0.000 to 0.167 where the detector had never fired at all.
 
-## 0.0.171
+# tulpa 0.0.171
 
 * The default BYM2 mixing-weight axis reaches 0.999 (gcol33/tulpa#361). On a
   BOUNDED axis a coarse span and a short span are not interchangeable: the
@@ -2583,7 +2638,7 @@ version number marks the release rather than a feature change.
   their rescues trigger on the whole grid's collapsed-edge regime, not on a
   per-axis rail, so `"always"` has no measured meaning there.
 
-## 0.0.170
+# tulpa 0.0.170
 
 * A joint fit is reproducible bit for bit at any thread count
   (gcol33/tulpa#374). `reduction(+:)` leaves the order its per-thread private
@@ -2621,7 +2676,7 @@ version number marks the release rather than a feature change.
   observations. Rows where all three arms run the same code move by up to 17% in
   the same capture, so the 3% is at the edge of what the instrument resolves.
 
-## 0.0.169
+# tulpa 0.0.169
 
 * A one-thread OpenMP region is no longer entered at all on any loop reached
   per objective evaluation, per Newton iteration or per Gibbs sweep
@@ -2664,7 +2719,7 @@ version number marks the release rather than a feature change.
   caller's frame instead of an outlined region body. Per auxiliary draw at
   N = 48: 9.96 -> 7.27, 8.97 -> 6.58 and 9.91 -> 7.77 us.
 
-## 0.0.168
+# tulpa 0.0.168
 
 * The eta-independent part of a built-in family's log-density is now evaluated
   once per observation per FIT rather than once per observation per objective
@@ -2700,7 +2755,7 @@ version number marks the release rather than a feature change.
   binomial, 0.230 -> 0.138 us gaussian, 0.189 -> 0.118 us poisson. Per
   auxiliary draw at N = 48 that is 9.9 -> 6.4, 11.3 -> 6.4 and 10.3 -> 5.7 us.
 
-## 0.0.167
+# tulpa 0.0.167
 
 * The single-arm nested-Laplace loop reports its log-marginal at the Newton
   mode (gcol33/tulpa#371). `laplace_newton_solve_ll` applied
@@ -2722,7 +2777,7 @@ version number marks the release rather than a feature change.
 * `tests/testthat/test-cila.R` holds the non-joint gaussian arbiter to the
   joint file's 1e-9, where it read 3.4e-07 before, and pins `score_max`.
 
-## 0.0.166
+# tulpa 0.0.166
 
 * A reported hyperparameter interval stays inside the quantity's own support
   (gcol33/tulpa#369). gcol33/tulpa#353 gave the density read
@@ -2808,7 +2863,7 @@ version number marks the release rather than a feature change.
   likelihood -- 93% of the cost at that size, and not reachable by batching the
   density call.
 
-## 0.0.165
+# tulpa 0.0.165
 
 * The inner-Laplace skew correction's CENTRE is banded, not only its shape
   (gcol33/tulpa#362). The reported quantile is
@@ -2840,7 +2895,7 @@ version number marks the release rather than a feature change.
   rare-event intercept, -3.77 / -3.20 on the small-group RE fit, against
   gcol33/tulpa#302's +3.54 / +6.12 / +4.64).
 
-## 0.0.164
+# tulpa 0.0.164
 
 * A default outer axis that does not contain its own posterior mode is detected
   per axis and moved (gcol33/tulpa#361). The auto-recenter
@@ -2940,7 +2995,7 @@ version number marks the release rather than a feature change.
   `"redispatch_failed"`, or the first cell's own reason where nothing usable
   came back.
 
-## 0.0.163
+# tulpa 0.0.163
 
 * `auto_grid()` coerces in place instead of through `as.numeric()`, so a
   MATRIX-valued axis survives the mark (gcol33/tulpa#360). Two families store
@@ -2968,7 +3023,7 @@ version number marks the release rather than a feature change.
   `log_marginal`. `.NL_COPY_SPEC_FIELDS` is the read-field set, held against
   the resolver's own body by a source lint.
 
-## 0.0.162
+# tulpa 0.0.162
 
 * A node set that is an MCMC SAMPLE is named as one, and no longer borrows a
   cell partition's outer half-cell (gcol33/tulpa#358). `support = "density"`
@@ -3018,7 +3073,7 @@ version number marks the release rather than a feature change.
   joint path, the only one that scores a proposal it can discard. No reported
   k-hat moves: the aperture consumes no RNG and the scoring is untouched.
 
-## 0.0.161
+# tulpa 0.0.161
 
 * The inner-Laplace LOCATION term `gamma_1` is computed, and the skew
   correction is applied about the centre it defines (gcol33/tulpa#354). Rue,
@@ -3057,7 +3112,7 @@ version number marks the release rather than a feature change.
   `gamma1_not_computable` rather than being corrected about an assumed centre.
   The default stays `FALSE`.
 
-## 0.0.160
+# tulpa 0.0.160
 
 * A fit whose supplied grid axis went unused says so through its own readers
   (gcol33/tulpa#355). gcol33/tulpa#352 records the drop on
@@ -3074,7 +3129,7 @@ version number marks the release rather than a feature change.
   unchanged. This is the read half of the gcol33/tulpa#293 rule that a
   silent-disable path needs a reason field.
 
-## 0.0.159
+# tulpa 0.0.159
 
 * The hyperparameter-axis interval reaches the outer cells' own edges instead of
   stopping at the extreme grid coordinate (gcol33/tulpa#353).
@@ -3147,7 +3202,7 @@ version number marks the release rather than a feature change.
   log posterior, with the old setting asserted PD as the control -- rather than
   reaching it by luck.
 
-## 0.0.158
+# tulpa 0.0.158
 
 * A grid axis the resolved path cannot read is refused or recorded, never
   dropped in silence (gcol33/tulpa#352). A `sigma_grid` on an icar block reached
@@ -3232,7 +3287,7 @@ version number marks the release rather than a feature change.
   handing back a pair `.nested_fixed_moments()` silently returns `NULL` on with
   `grid_fixed_declined` reporting `NA`.
 
-## 0.0.157
+# tulpa 0.0.157
 
 * `tulpa_posterior_draws()` serves a single-block nested-Laplace fit
   (gcol33/tulpa#347). The posterior of such a fit IS the outer-grid Gaussian
@@ -3272,7 +3327,7 @@ version number marks the release rather than a feature change.
   power-scaling) go through the silent accessors, so a fallback does not narrate
   itself.
 
-## 0.0.156
+# tulpa 0.0.156
 
 * `control$max_grid_cells` sets the multi-block outer-grid cell ceiling
   (gcol33/tulpa#343), defaulting to the 2048 that was hard-wired. The cap is a
@@ -3329,7 +3384,7 @@ version number marks the release rather than a feature change.
   cannot be simulated under one parameterization and scored under another.
   Bit-identical across all six families.
 
-## 0.0.155
+# tulpa 0.0.155
 
 * Simulation-based calibration and a strictly proper score join the fixed-truth
   recovery sweeps as posterior arbiters (gcol33/tulpa#335). Coverage at one or
@@ -3368,7 +3423,7 @@ version number marks the release rather than a feature change.
   log-likelihood rank at ks = 0.17 while its intercept marginal stays inside.
   `dev_notes/issue335/RESULTS.md`.
 
-## 0.0.154
+# tulpa 0.0.154
 
 * `.nested_fixed_moments()` renormalizes the grid weights over the cells that
   retained a fixed-effect block (gcol33/tulpa#342). It normalized over the whole
@@ -3389,7 +3444,7 @@ version number marks the release rather than a feature change.
   unchanged from #342: a healthy fit retains every cell, so no reported number
   moves on one.
 
-## 0.0.153
+# tulpa 0.0.153
 
 * A nested-Laplace fit's fixed-effect credible bounds are the quantiles of the
   Gaussian mixture its outer grid defines, `sum_k w_k N(mu_kj, V_kjj)`, instead
@@ -3438,7 +3493,7 @@ version number marks the release rather than a feature change.
   posterior the engine had already computed, and the two agreed closely wherever
   the grid was near-Gaussian in the fixed-effect marginal.
 
-## 0.0.152
+# tulpa 0.0.152
 
 * Neither free outer cell rule is promoted, decided by coverage rather than by
   grid accuracy (gcol33/tulpa#331). 200 seeds at each of three resolutions, all
@@ -3485,7 +3540,7 @@ version number marks the release rather than a feature change.
   through the closed form by construction, since its error bound sits under the
   in-box slack.
 
-## 0.0.151
+# tulpa 0.0.151
 
 * The gaussian recovery fixture no longer fits at a quarter of its own residual
   variance (gcol33/tulpa#332). `recov_draw_y()` drew `rnorm(N, 0, sqrt(phi))` --
@@ -3565,7 +3620,7 @@ version number marks the release rather than a feature change.
   and a floor without gaining a verdict -- which is how the median, the one part
   the gcol33/tulpa#326 rule moves, had none.
 
-## 0.0.150
+# tulpa 0.0.150
 
 * The cross-cell estimator asymmetry in local-CCD refinement is documented as a
   known and instrumented property rather than left reading as an expected
@@ -3576,7 +3631,7 @@ version number marks the release rather than a feature change.
   says so, points at `log_mass_ratio` as the per-cell reading, and records what
   the asymmetry costs in coverage rather than in grid-internal metrics.
 
-## 0.0.149
+# tulpa 0.0.149
 
 * A CI-coverage gate now reaches local-CCD refinement (gcol33/tulpa#320). The
   joint recovery fixture builds one `iid` block, so it has one latent axis and
@@ -3602,7 +3657,7 @@ version number marks the release rather than a feature change.
   second level and the width effect are read through the shared harness rather
   than a parallel one.
 
-## 0.0.148
+# tulpa 0.0.148
 
 * A locally refined cell now reports the ratio of the two estimates of its own
   mass it already carries (gcol33/tulpa#323): the coarse atom
@@ -3632,7 +3687,7 @@ version number marks the release rather than a feature change.
   non-quadraticity, `offset` / `mode_gain` are off-centring, `log_mass_ratio` is
   mass correction, and `skew_max` reads `misfit` and nothing else.
 
-## 0.0.147
+# tulpa 0.0.147
 
 * The outer-grid dump / rebuild harness is in the test suite
   (`tests/testthat/helper-outer-grid-dump.R`, gcol33/tulpa#322). A candidate
@@ -3660,7 +3715,7 @@ version number marks the release rather than a feature change.
   `exp(log_marginal)`, which loses the scale and is undefined on a cell whose
   inner solve returned no finite marginal.
 
-## 0.0.146
+# tulpa 0.0.146
 
 * The local-CCD cubic misfit score now reports the whitened gradient its own
   least-squares fit already estimated, and the refinement carries it per cell as
@@ -3675,7 +3730,7 @@ version number marks the release rather than a feature change.
   a gradient across the cell is a cross-cell estimator question, orthogonal to
   the local shape `skew_max` reads.
 
-## 0.0.145
+# tulpa 0.0.145
 
 * Local CCD refinement of the joint outer grid now keeps a refined cell's node
   cloud only where the cell's own outer log-marginal is close to the quadratic
@@ -3966,7 +4021,7 @@ version number marks the release rather than a feature change.
   fit that already asked for one and was turned down, and names the decline
   instead.
 
-## 0.0.144
+# tulpa 0.0.144
 
 * **The subspace debias reaches the grid and joint nested backends**
   (gcol33/tulpa#306, the follow-up to #304). `control$subspace_debias` is now
@@ -4088,7 +4143,7 @@ version number marks the release rather than a feature change.
   gamma_3-derived `$skew_correction` record two commits later. The record is
   diagnostic-derived, so it is stripped alongside them (gcol33/tulpa#313).
 
-## 0.0.143
+# tulpa 0.0.143
 
 * **The joint tier's fixed-effect block is extracted inside each cell's own
   solve** (gcol33/tulpa#307). Filling `$grid_modes` / `$grid_hessians` on a joint
@@ -4128,7 +4183,7 @@ version number marks the release rather than a feature change.
   `extract_inner_vcov_block_cell()` drives it against a factorized cell with the
   constraint; the joint loops go through the latter.
 
-## 0.0.142
+# tulpa 0.0.142
 
 * **A joint fit reports uncertainty on its fixed effects** (gcol33/tulpa#305).
   `summary()`, `confint()` and `vcov()` on a `tulpa_nested_laplace_joint()` fit
@@ -4186,7 +4241,7 @@ version number marks the release rather than a feature change.
   weight. A pruned cell with no retained block previously turned the whole
   marginalized covariance into `NA`.
 
-## 0.0.141
+# tulpa 0.0.141
 
 * **The reliability band is now the debias SELECTOR: exact MCMC runs on only the
   misfit directions** (gcol33/tulpa#304). Escalation used to be whole-fit and
@@ -4314,7 +4369,7 @@ version number marks the release rather than a feature change.
   one uniform per test whatever the ratio is, which is what keeps the migrated
   Gibbs sweep's RNG stream unchanged.
 
-## 0.0.140
+# tulpa 0.0.140
 
 * **`gamma_3` is now consumed, not only graded: the inner-Laplace marginals can
   be skew-corrected** (gcol33/tulpa#302). The cubic term was computed, banded
@@ -4366,7 +4421,7 @@ version number marks the release rather than a feature change.
   `tests/testthat/test-inner-skew-correction.R`, and a paired
   corrected-vs-Gaussian coverage gate in `test-nested-laplace-recovery.R`.
 
-## 0.0.139
+# tulpa 0.0.139
 
 * **`gamma_3` now scores coupled multi-predictor likelihoods instead of
   declining on them** (gcol33/tulpa#301). The cubic Edgeworth term assumed a
@@ -4428,7 +4483,7 @@ version number marks the release rather than a feature change.
   direct numerical third derivative of its own log-density and the step policy
   measured rather than asserted (`tests/testthat/test-cell-curvature3.R`).
 
-## 0.0.138
+# tulpa 0.0.138
 
 * **The inner Laplace layer now has a likelihood-agnostic reliability number**
   (gcol33/tulpa#303). `gamma_3` scores the inner Gaussian by expanding the joint
@@ -4493,7 +4548,7 @@ version number marks the release rather than a feature change.
   declined fit the only field carrying the `inner_pareto_k` prefix is the reason
   string, which `$` would partial-match into the k-hat.
 
-## 0.0.137
+# tulpa 0.0.137
 
 * **The engine can now test its own coupled likelihood paths** (gcol33/tulpa#300).
   `CellCouplingSpec` has been virtual-dispatched per cell since the joint driver
@@ -4546,7 +4601,7 @@ version number marks the release rather than a feature change.
   agreement) and four blocks in `tests/testthat/test-inner-skew.R`. Shared
   scaffolding is in `tests/testthat/helper-coupled-fixture.R`.
 
-## 0.0.136
+# tulpa 0.0.136
 
 * **The joint nested-Laplace grid no longer returns numbers that depend on what
   else the machine was doing.** Two identical fits could disagree in their last
@@ -4583,7 +4638,7 @@ version number marks the release rather than a feature change.
   report different widths, that is the explanation for a shift in their last
   bits.
 
-## 0.0.135
+# tulpa 0.0.135
 
 * **A prior block missing its required fields now errors instead of segfaulting
   the session** (gcol33/tulpa#299). Each `.NL_REGISTRY` entry declares, per
@@ -4604,7 +4659,7 @@ version number marks the release rather than a feature change.
   lints both converters' sources so a field read unconditionally by a branch but
   left undeclared fails the suite.
 
-## 0.0.134
+# tulpa 0.0.134
 
 * **`fit_st_nested()`'s auto-recenter no longer switches itself off when a grid
   knob is set to the engine's own default value** (gcol33/tulpa#294). The
@@ -4684,7 +4739,7 @@ version number marks the release rather than a feature change.
   `res` replaced by `NULL` by a diagnostic that was only meant to decline. The
   probe is now its own function.
 
-## 0.0.133
+# tulpa 0.0.133
 
 * **Every engine default now lives in one file (`R/settings.R`).** A default
   outer hyperparameter axis used to be written where it was consumed, so the
@@ -4733,7 +4788,7 @@ version number marks the release rather than a feature change.
   `.nl_grid_axis("gmrf_tau")` / `.nl_grid_axis("field_sd")`. Pre-release, so no
   shim.
 
-## 0.0.132
+# tulpa 0.0.132
 
 * **The #289/#290/#291 auto-recenter now fires for wrapper-package fits: axis
   provenance replaces field presence (#293).** The rescue's guard was
@@ -4784,7 +4839,7 @@ version number marks the release rather than a feature change.
   agrees with the defaulted-grid fit's on a collapsed grid). Use
   `control$auto_recenter = FALSE` to hold a grid where it is.
 
-## 0.0.131
+# tulpa 0.0.131
 
 * **The 0.0.130 auto-recenter now also engages under the default
   `diagnose_k = FALSE`, and covers `fit_st_nested()`'s spatiotemporal grid
@@ -4812,7 +4867,7 @@ version number marks the release rather than a feature change.
     grid-construction knob (`tau_lower`/`tau_upper`/`n_grid_*`/`rho_lower`/
     `rho_upper`) was set explicitly.
 
-## 0.0.130
+# tulpa 0.0.130
 
 * **Outer hyperparameter grids auto-recenter on a collapsed boundary instead
   of railing silently (#289, #290).** Every nested-Laplace family built its
@@ -4851,7 +4906,7 @@ version number marks the release rather than a feature change.
   spatiotemporal grid got the diagnostic only, since it has no existing
   mode-find machinery to reuse -- tracked as #291.
 
-## 0.0.129
+# tulpa 0.0.129
 
 * **`temporal_gp()` now reaches a fitter (#287).** The constructor was
   exported, documented, and carried a `tulpa()` worked example, but `tulpa()`
@@ -4892,7 +4947,7 @@ version number marks the release rather than a feature change.
   would have passed before this), that Matern `nu = 0.5` reproduces the
   exponential fit to the bit, and that the periodic kernel tracks its period.
 
-## 0.0.128
+# tulpa 0.0.128
 
 * **The nested-Laplace entry points no longer each carry their own fingerprint
   and skew boilerplate (#286).** `cpp_nested_laplace_*` was already well
@@ -4932,7 +4987,7 @@ version number marks the release rather than a feature change.
   No behaviour change: the entry points shed 225 lines of plumbing, and the
   fingerprint values and returned lists are identical.
 
-## 0.0.127
+# tulpa 0.0.127
 
 * **1015 lines of unreachable C++ removed from `src/` (#284).** Four headers
   and a set of functions nothing called. Each was checked by grepping the whole
@@ -4965,7 +5020,7 @@ version number marks the release rather than a feature change.
   calls it as `H_inv.at(...)`, which a search for the qualified name misses. It
   stays.
 
-## 0.0.126
+# tulpa 0.0.126
 
 * **The small-dense Cholesky core takes its storage layout as a required
   argument (#285).** `linalg_fast.h` shipped two triangular-solve pairs on
@@ -4997,7 +5052,7 @@ version number marks the release rather than a feature change.
   checks it on matched and mismatched buffers, including the cuSOLVER-shaped
   one whose opposite triangle still holds the input.
 
-## 0.0.125
+# tulpa 0.0.125
 
 * **The batched CUDA Cholesky returned a column-major factor that every
   consumer read row-major (#283).** `batch_nngp_scatter` hands the NNGP
@@ -5027,7 +5082,7 @@ version number marks the release rather than a feature change.
   and GPU paths are held to the same answer. A fixture that stays under 50
   locations exercises only the path that was already right.
 
-## 0.0.124
+# tulpa 0.0.124
 
 * **The NNGP prior scatter is checked against the matrix it claims to build
   (#278).** `apply_nngp_full_prior_dense` and `apply_nngp_full_prior_sparse`
@@ -5048,7 +5103,7 @@ version number marks the release rather than a feature change.
   turned out to be a symptom rather than the cause -- see 0.0.125, where the
   broken CUDA factor behind it is fixed and nothing floors on that fixture.
 
-## 0.0.123
+# tulpa 0.0.123
 
 * **The last standalone Newton loop is gone (#282).** #277 left
   `cpp_laplace_fit_spde_precomputed` -- the fixed-hyperparameter fit behind the
@@ -5075,7 +5130,7 @@ version number marks the release rather than a feature change.
   residual movement is confined to the auxiliary-weight directions the rational
   precision leaves unidentified.
 
-## 0.0.122
+# tulpa 0.0.122
 
 * **The SPDE FEM assembly builds the operator order it was asked for (#280).**
   `SpdeQBuilder::rebuild()` branched `if (alpha == 1) ... else <alpha 2>`, so
@@ -5113,7 +5168,7 @@ version number marks the release rather than a feature change.
   `alpha = 1..4`, the conversion against the closed-form marginal variance, and
   a `nu = 2` field end to end.
 
-## 0.0.121
+# tulpa 0.0.121
 
 * **`cpp_laplace_fit_gp` and `cpp_laplace_fit_spde` are now one-cell runs of
   the shared machinery (#277).** Both were fixed-hyperparameter spatial kernels
@@ -5162,7 +5217,7 @@ version number marks the release rather than a feature change.
   (`kappa = sqrt(8 nu) / range` is 0 and `tau` is infinite); this is the verdict
   `cpp_nested_laplace_spde()` has always returned there.
 
-## 0.0.120
+# tulpa 0.0.120
 
 * **Outer `pareto_k` no longer over-flags collapsed-grid fits (#276).** On a
   sharp hyperparameter posterior the outer grid collapses onto ~1 cell, the
@@ -5224,7 +5279,7 @@ version number marks the release rather than a feature change.
   Owen's T by quadrature per point, which is right for a few reported quantiles
   and unusable for hundreds of proposal draws).
 
-## 0.0.119
+# tulpa 0.0.119
 
 * **`gamma_3` wired through the SPDE / GP bespoke Newton pair (#273 item
   3).** `cpp_laplace_fit_gp`, `cpp_laplace_fit_spde` and
@@ -5240,7 +5295,7 @@ version number marks the release rather than a feature change.
   kernels' existing surface. #273 item 2 (the coupled non-separable
   cubic-term derivation) remains open.
 
-## 0.0.118
+# tulpa 0.0.118
 
 * **`gamma_3` wired through the joint multi-block dispatch (#273).** The
   inner-Laplace skewness diagnostic #272 shipped for every single-arm kernel
@@ -5281,7 +5336,7 @@ version number marks the release rather than a feature change.
   mcar, rw1/rw2/ar1, iid, miid, tgmrf, lf) and raises a clear error naming
   the block, the arm, and the expected/actual counts.
 
-## 0.0.117
+# tulpa 0.0.117
 
 * **Inner-Laplace skewness diagnostic: score the layer outer Pareto-k-hat
   doesn't cover (#272).** `pareto_k` scores the OUTER hyperparameter-grid
@@ -5313,7 +5368,7 @@ version number marks the release rather than a feature change.
   coupled-arm cubic-term derivation, the SPDE/GP bespoke large-`n` Newton
   pair) tracked in #273.
 
-## 0.0.116
+# tulpa 0.0.116
 
 * **Stale test fixed, no engine bug (#271).** `test-tulpa-entry-nested.R`'s
   "more than one random-intercept term alongside a block errors" test
@@ -5332,7 +5387,7 @@ version number marks the release rather than a feature change.
   (routing, `re_block_index`, and bit-exact equivalence to the direct
   multi-block `tulpa_nested_laplace()` call).
 
-## 0.0.115
+# tulpa 0.0.115
 
 * **The joint Hessian sparsity pattern now covers a latent block reached by
   only one side of a coupled arm pair (#270).** `HessianPatternGuard`
@@ -5360,7 +5415,7 @@ version number marks the release rather than a feature change.
   test-coupling spec (`test-cell-coupling-cross-hess.R`), independent of
   tulpaObs.
 
-## 0.0.114
+# tulpa 0.0.114
 
 * **`mode = "auto"` no longer conditions a random-effect term's SD at 1 (#267).**
   `tulpa(y ~ x + (1 | g))` on the default mode reported `sd = 1, source =
@@ -5396,7 +5451,7 @@ version number marks the release rather than a feature change.
   (`prior_df = n_coefs + 1`), documented as the closest analogue. See
   `vignette("priors")`.
 
-## 0.0.113
+# tulpa 0.0.113
 
 * **A random-effect term on the nested path has its SD integrated instead of
   conditioned at 1 (#265).** `tulpa(y ~ s(x) + (1 | site))` reported
@@ -5443,7 +5498,7 @@ version number marks the release rather than a feature change.
   #268, deliberately not bundled here: a PC prior on the `iid` axis alone would
   trade the cross-path inconsistency for one inside a single fit.
 
-## 0.0.112
+# tulpa 0.0.112
 
 * **An explicit `mode` is no longer silently overridden by a structural redirect
   (#266).** `tulpa(y ~ s(x) + (1 | site), mode = "eb")` fitted `nested_laplace`
@@ -5487,7 +5542,7 @@ version number marks the release rather than a feature change.
   live one. A reader grepping for the ST rank found the wrong copy first, which
   is the shape that made gcol33/tulpaRatio#12 possible.
 
-## 0.0.111
+# tulpa 0.0.111
 
 * **`ranef()` reports the per-group posterior on both RE-covariance backends
   (#264).** It returned a 0-row data frame for a fit from either integrator --
@@ -5522,7 +5577,7 @@ version number marks the release rather than a feature change.
   stated `fit$ranef_unavailable` reason. `?ranef` documents what each backend
   reports and why.
 
-## 0.0.110
+# tulpa 0.0.110
 
 * **`tglmm()` and `tgam()` are removed; `tulpa()` fits both model classes.**
   The two doors dispatched through `tulpa()` and returned a byte-identical fit,
@@ -5558,7 +5613,7 @@ version number marks the release rather than a feature change.
   partial match there while it would silently resolve on a nested fit. A
   conditioning fit is still labelled `conditioned`.
 
-## 0.0.109
+# tulpa 0.0.109
 
 * **The intrinsic RW rank is exported, so a linking package can consume it
   instead of carrying its own copy (gcol33/tulpaRatio#12).** `rw1_rank()` and
@@ -5570,7 +5625,7 @@ version number marks the release rather than a feature change.
   `tau` posterior. `tulpa_temporal::rw1_rank` / `rw2_rank` keep resolving, so
   the engine's own call sites are unchanged.
 
-## 0.0.108
+# tulpa 0.0.108
 
 * **An areal field's component partition is now set with its adjacency, so a
   consumer cannot leave the field unidentified (gcol33/tulpaRatio#19).** The
@@ -5664,7 +5719,7 @@ version number marks the release rather than a feature change.
   `Hw^-1 Ho` at the mode, i.e. how far the working weight understates the true
   curvature) and `bigscale` (the residual table above).
 
-## 0.0.106
+# tulpa 0.0.106
 
 * **The Newton stall test no longer reads slow convergence as a converged mode
   (gcol33/tulpa#255).** `newton_converged()` carried a rescue path for an
@@ -5732,7 +5787,7 @@ version number marks the release rather than a feature change.
   is `TLPACKP2`. A file written by an earlier version errors with the existing
   "point `checkpoint$path` at a fresh path" message instead of being misparsed.
 
-## 0.0.105
+# tulpa 0.0.105
 
 * **The zero-inflation refusal names every family the gate admits
   (gcol33/tulpa#250).** The kernel guard stops on
@@ -5769,7 +5824,7 @@ version number marks the release rather than a feature change.
   `select_inference_mode()` already builds from the registry. Correct today,
   stale the moment a tier is added.
 
-## 0.0.104
+# tulpa 0.0.104
 
 * **The dispersion convention follows the base family, not the spelling
   (gcol33/tulpa#256).** `phi` is the residual VARIANCE for the normal families
@@ -5804,7 +5859,7 @@ version number marks the release rather than a feature change.
   derived from the registry (`.phi2_backends()`) rather than restated in the
   refusal message.
 
-## 0.0.103
+# tulpa 0.0.103
 
 * **`estimate_phi` covers every front-door family that has a dispersion
   (gcol33/tulpa#247).** It was offered for twelve and carried a derivative for
@@ -5889,7 +5944,7 @@ version number marks the release rather than a feature change.
   drift; zero-inflated `beta_binomial` is admitted by that (it has both an atom
   at zero and, now, an observed curvature).
 
-## 0.0.102
+# tulpa 0.0.102
 
 * **Out-of-pattern Hessian writes are detected instead of silently discarded
   (gcol33/tulpa#249).** `SparseHessianBuilder::add()` dropped any contribution
@@ -5927,7 +5982,7 @@ version number marks the release rather than a feature change.
   counter on both write paths, the raise, the zero-versus-nonzero distinction,
   and a real fit.
 
-## 0.0.101
+# tulpa 0.0.101
 
 * **`portable_math.h` compiles for downstream packages on macOS again
   (bugfix).** The header returns `std::pair` from `portable_digamma_lgamma()`
@@ -5939,7 +5994,7 @@ version number marks the release rather than a feature change.
   tulpaObs's macOS `R CMD check` down at `count_grouped_oracle.o`. The header
   now includes `<utility>` itself. Header-only change, no behaviour anywhere.
 
-## 0.0.100
+# tulpa 0.0.100
 
 Warm-starting the sampler from a cheaper fit of the same model.
 
@@ -6463,7 +6518,7 @@ Fixed:
   passing it in `control` to `tulpa_eb()` directly errors rather than being
   accepted and ignored.
 
-## 0.0.97
+# tulpa 0.0.97
 
 The soft sum-to-zero constant that identifies intrinsic latent fields, moved
 onto the reference idiom and single-sourced (#241).
@@ -6505,7 +6560,7 @@ Internal:
   per-component precision. `test-mcar-prior.R`'s reference now reads the same
   helper the C++ does rather than hard-coding the value.
 
-## 0.0.96
+# tulpa 0.0.96
 
 A settable prior on the zero-inflation coefficients, and the correctness fix
 that finding it turned up.
@@ -6549,7 +6604,7 @@ Fixed:
   the identity at a prior far from the default to show it is a property of the
   likelihood and not of the default scale.
 
-## 0.0.95
+# tulpa 0.0.95
 
 One diagnostic front door, selected by draws provenance.
 
@@ -6584,7 +6639,7 @@ Fixed:
   the new `diagnostics()` example now use `mode = "smc"`, a deterministic
   backend that does emit draws.
 
-## 0.0.94
+# tulpa 0.0.94
 
 Empirical Bayes over random-effect covariances, and the lme4 / posterior
 accessor surface.
@@ -6664,7 +6719,7 @@ Correctness:
   now warns rather than being reported as a fitted value -- the low end is the
   classic empirical-Bayes collapse to `sigma = 0`.
 
-## 0.0.93
+# tulpa 0.0.93
 
 Zero inflation as a composition over the count families, and compiled kernels
 for the last three families that had none.
@@ -6751,7 +6806,7 @@ Correctness:
   `inst/include/tulpa/autodiff_fwd.h` serving a single include, and is deleted
   rather than left to diverge once `expm1` landed.
 
-## 0.0.92
+# tulpa 0.0.92
 
 Audit fixes (0.0.91 review, issues #228-#239).
 
@@ -6798,7 +6853,7 @@ Clean-up:
   in `spatial_gp.R` (#236); single-sourced the natural-scale hyperparameter
   transforms shared by `spatial_range()` / `temporal_corr()` (#237).
 
-## 0.0.91
+# tulpa 0.0.91
 
 Audit fixes (0.0.90 review, issues #218-#227).
 
@@ -6871,7 +6926,7 @@ Audit fixes (0.0.90 review, issues #218-#227).
   sampler and autodiff sources and repaired truncated comment fragments in the
   joint Pareto-k module.
 
-## 0.0.90
+# tulpa 0.0.90
 
 Audit fixes (0.0.89 review, issues #207-#217).
 
@@ -6952,7 +7007,7 @@ Audit fixes (0.0.89 review, issues #207-#217).
   was tightened from 1e-4 to 1e-12 (the estimators match `posterior::` to
   ~8e-16).
 
-## 0.0.89
+# tulpa 0.0.89
 
 Audit fixes (0.0.88 review, issues #193-#206).
 
@@ -7001,7 +7056,7 @@ Audit fixes (0.0.88 review, issues #193-#206).
   removed, and the multi-block CAR_proper log-det cache made cell-keyed
   (`NlCellCache`) to match the single-block path.
 
-## 0.0.88
+# tulpa 0.0.88
 
 * **SoftAbs divergence-retry invariance test (#189).** The post-warmup SoftAbs
   retry re-runs a diverged NUTS trajectory under a frozen Hessian-based metric
@@ -7015,7 +7070,7 @@ Audit fixes (0.0.88 review, issues #193-#206).
   invariance holds empirically -- 24-seed paired |t| < 0.4 on every summary,
   divergences 735 -> 8, no posterior shift.
 
-## 0.0.87
+# tulpa 0.0.87
 
 Bug fixes and cleanups from a second whole-repo audit (issues #176-192).
 
@@ -7070,7 +7125,7 @@ already in the internal log-scale parameterization, so equal-weight grid
 integration is correctly calibrated and adding a user-scale Jacobian biases the
 scale posterior.
 
-## 0.0.86
+# tulpa 0.0.86
 
 Bug fixes from a whole-repo audit.
 
@@ -7147,7 +7202,7 @@ Warnings and cleanups.
   design-principle / improvement enumerations (`principle #5`, `improvement #1`)
   were preserved.
 
-## 0.0.85
+# tulpa 0.0.85
 
 Per-block quadrature order and an optional variance-component prior on the AGHQ
 path.
@@ -7175,7 +7230,7 @@ path.
   curvature there, keeping the joint optimum non-singular without materially
   shifting an identified fit. R-only, no ABI change.
 
-## 0.0.84
+# tulpa 0.0.84
 
 Checkpoint fix (#161).
 
@@ -7191,7 +7246,7 @@ Checkpoint fix (#161).
   checkpoint. A resumed fit stays byte-identical to an uninterrupted one; fits
   with `diagnose_k = FALSE` are unaffected.
 
-## 0.0.83
+# tulpa 0.0.83
 
 Front-door API convention cleanup (#156, fully closed) and the
 missing-front-door features (#158, fully closed). **ABI break**
@@ -7266,7 +7321,7 @@ log-determinant; downstream packages must rebuild.
   Recovers the varying-coefficient surface / trajectory on simulated data
   (cor > 0.94).
 
-## 0.0.82 (2026-07-15)
+# tulpa 0.0.82 (2026-07-15)
 
 The sampled spatial range gets a real prior. **ABI break**
 (`TULPA_ABI_VERSION` 33 -> 34); downstream packages must rebuild, and any
@@ -7363,7 +7418,7 @@ anchors (see the last bullet).
   `TULPA_ABI_VERSION` remains a compiled constant by design: it describes the
   DLL a model package linked against, not the metadata beside it.
 
-## 0.0.81 (2026-07-15)
+# tulpa 0.0.81 (2026-07-15)
 
 Third deep-audit pass: statistical, memory-safety, and backend-consistency
 fixes surfaced by a fan-out code audit.
@@ -7546,7 +7601,7 @@ fixes surfaced by a fan-out code audit.
   the other component's contribution. The two-process negbin kernel now draws the
   exact real Polya-Gamma shape (`rpg_real`).
 
-## 0.0.80 (2026-07-14)
+# tulpa 0.0.80 (2026-07-14)
 
 CRAN-preparation release.
 
@@ -7666,7 +7721,7 @@ CRAN-preparation release.
 * Test suite: heavy fit / sampler blocks are `skip_on_cran()`-gated; vignette
   sampler chunks shrunk to CRAN-friendly iteration counts.
 
-## 0.0.79 (2026-07-12)
+# tulpa 0.0.79 (2026-07-12)
 
 * `integration = "grid_adaptive"` now declines to the dense tensor BEFORE any
   inner solve when the outer grid is small (fewer than `control$adaptive_grid_min_cells`
@@ -7678,7 +7733,7 @@ CRAN-preparation release.
   the same wall-clock. The adaptive integrator earns its speedup only on large
   outer grids whose hyperparameter posterior concentrates.
 
-## 0.0.78 (2026-07-12)
+# tulpa 0.0.78 (2026-07-12)
 
 * New outer-grid integrator `integration = "grid_adaptive"` for the multi-block
   joint nested-Laplace driver, the low-dimensional companion to the CCD. It seeds
@@ -7699,7 +7754,7 @@ CRAN-preparation release.
   `1 <= d <= 3` latent axes, where the CCD mode-find is not worth it but a dense
   tensor still pays a full inner solve for every near-zero-weight cell.
 
-## 0.0.77 (2026-07-10)
+# tulpa 0.0.77 (2026-07-10)
 
 * The outer-grid thread memory clamp in the sparse joint nested-Laplace driver
   now budgets against the memory that is actually **free**, not the installed
@@ -7737,7 +7792,7 @@ CRAN-preparation release.
   alongside the existing `total_ram_bytes()`, exposed to R for diagnostics as
   `cpp_available_ram_bytes()` / `cpp_total_ram_bytes()`.
 
-## 0.0.76 (2026-07-10)
+# tulpa 0.0.76 (2026-07-10)
 
 * The coupled-cell scatter in the sparse joint nested-Laplace driver (the
   `occu_cover()` hot loop, about 94% of runtime on a large fit) runs in parallel
@@ -7760,7 +7815,7 @@ CRAN-preparation release.
   regularizes the tail without that bias. The sigma-pos-prior recovery test
   asserts the retuned, measured behaviour.
 
-## 0.0.75 (2026-07-08)
+# tulpa 0.0.75 (2026-07-08)
 
 * SPDE field prediction standard errors (`predict(se.fit = TRUE)` with the field
   included) are computed by a streaming C++ kernel (`cpp_spde_field_se`) that
@@ -7775,7 +7830,7 @@ CRAN-preparation release.
   phases. This halves the pre-grid setup working set at a given
   `control$n_threads_outer`; fits are numerically identical.
 
-## 0.0.74 (2026-07-07)
+# tulpa 0.0.74 (2026-07-07)
 
 * `adjacency()` gains a settable neighbourhood. `order = k` extends the grid /
   raster stencil to the k-th ring: queen keeps every cell within Chebyshev
@@ -7788,7 +7843,7 @@ CRAN-preparation release.
   (default) and `offsets = NULL` reproduce the previous queen / rook graphs
   byte-for-byte.
 
-## 0.0.73 (2026-07-07)
+# tulpa 0.0.73 (2026-07-07)
 
 * Posterior prediction: `posterior_predict()` draws replicated responses from
   the posterior predictive (per-draw linear predictor -- fixed and random
@@ -7845,7 +7900,7 @@ CRAN-preparation release.
   observation processes owned by model packages via `LikelihoodSpec`; the
   engine keeps only the generic interval/truncated gaussian kernels.
 
-## 0.0.72 (2026-07-07)
+# tulpa 0.0.72 (2026-07-07)
 
 * New approximation-layer fitters:
   - `tulpa_ep()`: Expectation Propagation for GLMs with a Gaussian coefficient
@@ -7899,7 +7954,7 @@ CRAN-preparation release.
   to `R/nested_laplace_moments.R`, and the Polya-Gamma Gibbs dispatch plus the
   `tulpa_gibbs()` front door to `R/fit_gibbs.R`.
 
-## 0.0.71 (2026-07-06)
+# tulpa 0.0.71 (2026-07-06)
 
 * `cpp_laplace_fit_spatial()` and `cpp_laplace_fit_bym2()` gain a `force_sparse`
   argument (0 = size threshold, 1 = force sparse, -1 = force dense) threaded to
@@ -7915,7 +7970,7 @@ CRAN-preparation release.
   silently reproducing its own new draws (`test-integrator.R`,
   `tools/gen_leapfrog_ref.R`).
 
-## 0.0.70 (2026-07-06)
+# tulpa 0.0.70 (2026-07-06)
 
 * `tulpa_integrator("adaptive2")` / `"adaptive3"` cap the warmup-end curvature
   estimate at `DENSE_MAX_PARAMS` (200) parameters. Above that bound the
@@ -7927,7 +7982,7 @@ CRAN-preparation release.
   `p + 1` gradient sweeps at warmup end. Default leapfrog, the fixed schemes, and
   any model at or below the bound are unchanged.
 
-## 0.0.69 (2026-07-06)
+# tulpa 0.0.69 (2026-07-06)
 
 * `tulpa_integrator("adaptive2")` and `"adaptive3"` wire the SIMP step-adapted
   minimum-error integrators into NUTS. Each chain resolves its multistage
@@ -7966,7 +8021,7 @@ CRAN-preparation release.
   integrator decls now include only `simp/scheme.h`, so the Eigen-heavy headers
   do not enter every translation unit.
 
-## 0.0.67 (2026-07-03)
+# tulpa 0.0.67 (2026-07-03)
 
 * The SIMP integrator headers are now vendored into `src/simp/` (snapshot via
   `vendor_simp.sh`) instead of pulled in through `LinkingTo: SIMP`. tulpa builds
@@ -7976,7 +8031,7 @@ CRAN-preparation release.
   the snapshot after updating SIMP. No behaviour change: `tulpa_integrator()`
   and the schemes are identical.
 
-## 0.0.66 (2026-07-03)
+# tulpa 0.0.66 (2026-07-03)
 
 * `tulpa_integrator("minerror2")` selects the two-stage minimum-error
   integrator from SIMP 0.2.0. Its coefficient cancels the leading energy error
@@ -7986,7 +8041,7 @@ CRAN-preparation release.
   linear-Gaussian recovery test and is the recommended advanced integrator for
   near-Gaussian posteriors. Requires `SIMP (>= 0.2.0)`.
 
-## 0.0.65 (2026-07-03)
+# tulpa 0.0.65 (2026-07-03)
 
 * The HMC / NUTS trajectory integrator is now backed by the SIMP symplectic
   integrator library (`LinkingTo: SIMP`). Both leapfrog steppers (the in-place
@@ -8003,7 +8058,7 @@ CRAN-preparation release.
   step-size stability threshold interacts poorly with dual-averaging
   adaptation). See `?tulpa_integrator` and `test-integrator.R`.
 
-## 0.0.64 (2026-07-01)
+# tulpa 0.0.64 (2026-07-01)
 
 * `tulpa_pit()` runs in C++ (`cpp_tulpa_pit`), and the leave-one-out PIT
   weighting is exposed as `cpp_psis_loo_pit` -- per-observation PSIS leave-one-out
@@ -8012,7 +8067,7 @@ CRAN-preparation release.
   order. Both draw from R's RNG stream in the same order as their former R
   bodies, so results are byte-identical under a fixed seed (test-pit-cpp.R).
 
-## 0.0.63 (2026-07-01)
+# tulpa 0.0.63 (2026-07-01)
 
 * `tulpa_psis()` runs its deterministic core -- the Zhang-Stephens generalized-
   Pareto tail fit and the Pareto smoothing of the upper-tail log weights -- in a
@@ -8023,7 +8078,7 @@ CRAN-preparation release.
   reproducible; each per-observation LOO fit and each bootstrap refit is now the
   C++ path. Byte-close to the former R body (~1e-12).
 
-## 0.0.62 (2026-06-30)
+# tulpa 0.0.62 (2026-06-30)
 
 * `tulpa_nested_laplace_joint()` gains `prior_phi`, a regularizing hyperprior on
   the per-arm dispersion axes declared through `phi_grid` (a Beta precision, a
@@ -8034,7 +8089,7 @@ CRAN-preparation release.
   see the regularized posterior; with no `phi_grid` it is a no-op. Threads
   through the single- and multi-block paths (gcol33/tulpa#139).
 
-## 0.0.61 (2026-06-23)
+# tulpa 0.0.61 (2026-06-23)
 
 * New `control$local_ccd` refines a multi-block tensor outer grid with local
   central-composite-design node clouds (`R/nested_laplace_joint_ccd_local.R`):
@@ -8064,7 +8119,7 @@ CRAN-preparation release.
   conservation, and the escalation path are pinned by
   `test-nested-laplace-joint-ccd-local.R`.
 
-## 0.0.60 (2026-06-23)
+# tulpa 0.0.60 (2026-06-23)
 
 * Joint nested-Laplace CCD outer integration is now robust to a sharply-peaked,
   ill-conditioned hyperparameter posterior -- the shape a joint occu_cover fit
@@ -8088,7 +8143,7 @@ CRAN-preparation release.
   expensive inner Laplace) the line search no longer serialises the mode-find;
   the accepted step is the same the sequential backtrack would take.
 
-## 0.0.59 (2026-06-22)
+# tulpa 0.0.59 (2026-06-22)
 
 * New `adjacency()` front door builds the symmetric graph that `spatial()` and
   `spatial_car()` consume, so areal models no longer need a hand-coded
@@ -8112,7 +8167,7 @@ CRAN-preparation release.
   `tulpa_adjacency` object directly (unwrapping its `$adjacency`), in addition
   to a bare matrix.
 
-## 0.0.57 (2026-06-22)
+# tulpa 0.0.57 (2026-06-22)
 
 * Joint nested-Laplace cell loop: a `CellCouplingSpec` can now declare, via the
   new `dense_cross_pairs(n_coupled, rank1_self_supported)` virtual, which
@@ -8128,7 +8183,7 @@ CRAN-preparation release.
   even before). Removes a `std::bad_alloc` on grids with a very high-visit cell
   (e.g. an all-undetected cell with tens of thousands of plots).
 
-## 0.0.56 (2026-06-21)
+# tulpa 0.0.56 (2026-06-21)
 
 * `k_quality` escalation is now driven by adaptive integration-grid refinement
   rather than diagnostic-draw doubling (gcol33/tulpa#131). When the outer
@@ -8149,7 +8204,7 @@ CRAN-preparation release.
   -- is now pinned by a direct unit test, not only indirectly via the band
   threshold.
 
-## 0.0.55 (2026-06-21)
+# tulpa 0.0.55 (2026-06-21)
 
 * The outer Pareto-k proposal refinement (moment matching, gcol33/tulpa#119) is
   allowed more passes. Proposal refinement is a separate step from the bare
@@ -8162,7 +8217,7 @@ CRAN-preparation release.
   usable band and still falling. A fit that already fits, or one whose moment
   matching has plateaued, pays the same as before.
 
-## 0.0.54 (2026-06-20)
+# tulpa 0.0.54 (2026-06-20)
 
 * `control$k_quality` now climbs the reliability ladder (gcol33/tulpa#131). When
   an `"ok"` / `"good"` target is not confidently reached on the first fit, the
@@ -8177,7 +8232,7 @@ CRAN-preparation release.
   into an internal engine driven by the escalation front door, with no change to
   the fit itself for the default `k_quality = "report"`.
 
-## 0.0.53 (2026-06-20)
+# tulpa 0.0.53 (2026-06-20)
 
 * Fixed: the outer Pareto-k no longer under-reports when the hyperparameter
   posterior is heavier or wider than the integration grid (gcol33/tulpa#130). The
@@ -8192,7 +8247,7 @@ CRAN-preparation release.
   moment-matched Gaussian, so the collapsed-grid path (gcol33/tulpa#117) is
   unaffected. The skipped bad-case recovery test is restored.
 
-## 0.0.52 (2026-06-20)
+# tulpa 0.0.52 (2026-06-20)
 
 * New `control$k_quality` reliability front door for the joint nested-Laplace
   outer Pareto-k (gcol33/tulpa#129). A single statement of the reliability the fit
@@ -8207,7 +8262,7 @@ CRAN-preparation release.
   and the integration-refinement rung (`k_refine`) are tracked in
   gcol33/tulpa#131. The reliability vignette covers the new front door.
 
-## 0.0.51 (2026-06-20)
+# tulpa 0.0.51 (2026-06-20)
 
 * Outer Pareto-k reliability bands are now sample-size dependent (gcol33/tulpa#128).
   The usable upper boundary is `min(1 - 1/log10(S), 0.7)` for `S` importance draws
@@ -8226,7 +8281,7 @@ CRAN-preparation release.
   grid is in fact too narrow). A fix that bounds the refinement to the grid is
   tracked; the bad-case recovery test is skipped meanwhile.
 
-## 0.0.50 (2026-06-19)
+# tulpa 0.0.50 (2026-06-19)
 
 * Joint nested-Laplace outer Pareto-k: replaced the adaptive batched reporting
   (#123/#124) with a single-batch + bootstrap uncertainty (gcol33/tulpa#127). The
@@ -8263,7 +8318,7 @@ CRAN-preparation release.
   draw-count-dependent usable boundary `min(1 - 1/log10(S), 0.7)`, the bootstrap
   band-confidence flag, and the reliability ladder from reporting to debiasing.
 
-## 0.0.49 (2026-06-19)
+# tulpa 0.0.49 (2026-06-19)
 
 * Joint nested-Laplace outer Pareto-k: adaptive batched reporting with a proper
   Monte Carlo standard error and a band-resolution flag (gcol33/tulpa#124). The
@@ -8294,7 +8349,7 @@ CRAN-preparation release.
   two batches). The `1/sqrt(B)` rule reduces the seed-to-seed variance, not the
   GPD k-hat's small-sample bias (controlled by `k_samples`, kept `>= 200`).
 
-## 0.0.48 (2026-06-19)
+# tulpa 0.0.48 (2026-06-19)
 
 * Joint nested-Laplace outer Pareto-k: opt-in batched reporting
   (gcol33/tulpa#123). The outer k-hat is a noisy estimator -- a generalized
@@ -8319,7 +8374,7 @@ CRAN-preparation release.
   the already opt-in / slow diagnostic; a handful of batches (5-10) gives an
   honest min/max range.
 
-## 0.0.47 (2026-06-19)
+# tulpa 0.0.47 (2026-06-19)
 
 * New built-in `truncated_gaussian` family (gcol33/tulpa#122): an
   upper-truncated Gaussian latent, the bounded-support sibling of the
@@ -8347,7 +8402,7 @@ CRAN-preparation release.
   gradient/Hessian, the PSD data-free information identity, and overflow safety
   are checked in `test-multinomial-logit.R`.
 
-## 0.0.46 (2026-06-18)
+# tulpa 0.0.46 (2026-06-18)
 
 * Joint nested-Laplace outer Pareto-k: grid-mixture (basin) importance proposal
   (gcol33/tulpa#121). The engine represents the hyperparameter posterior as the
@@ -8377,7 +8432,7 @@ CRAN-preparation release.
   0.81, peaks flagged unreliable) to a stable usable band (max ~0.47 across seeds,
   median ~0.16) with a roughly two-fold higher importance-sampling effective size.
 
-## 0.0.45 (2026-06-18)
+# tulpa 0.0.45 (2026-06-18)
 
 * `tulpa_criteria()` gains a `group` argument that sets the LOO unit explicitly
   (gcol33/tulpa#118). A column of `log_lik` is the leave-one-out fold; with
@@ -8410,7 +8465,7 @@ CRAN-preparation release.
   more arms; the single-block shared-field layout declines rather than
   mis-attribute its axes.
 
-## 0.0.44 (2026-06-18)
+# tulpa 0.0.44 (2026-06-18)
 
 * New built-in `interval_gaussian` family: an interval-censored Gaussian latent
   (an ordered probit with KNOWN thresholds). The latent value is
@@ -8447,7 +8502,7 @@ CRAN-preparation release.
   refine it, rather than over-widening the proposal with the local mode curvature
   of a non-Gaussian outer marginal.
 
-## 0.0.43 (2026-06-18)
+# tulpa 0.0.43 (2026-06-18)
 
 * Joint nested-Laplace outer Pareto-k: the collapsed-grid mode-Hessian rescue
   (gcol33/tulpa#116) now engages when a hyperparameter axis is pinned
@@ -8480,7 +8535,7 @@ CRAN-preparation release.
   `tulpa.kdiag.percell` (default TRUE; falls back to the re-order, then the
   broadcast mode, when grid modes are unavailable).
 
-## 0.0.42 (2026-06-18)
+# tulpa 0.0.42 (2026-06-18)
 
 * Faster joint nested-Laplace outer Pareto-k diagnostic (gcol33/tulpa#118).
   Profiling the joint occu_cover diagnostic showed the dominant cost is the
@@ -8516,7 +8571,7 @@ CRAN-preparation release.
   byte-for-byte exact diagnostic, and `tulpa.kdiag.capture` exposes the importance
   log-ratios for an external cross-check.
 
-## 0.0.41 (2026-06-18)
+# tulpa 0.0.41 (2026-06-18)
 
 * Mode-Hessian outer Pareto-k proposal for the joint nested-Laplace backend
   (gcol33/tulpa#116). The outer `pareto_k` diagnostic built its importance
@@ -8548,7 +8603,7 @@ CRAN-preparation release.
       well-conditioned tensor collapse (quad-ESS = 1.00): `grid_moment` k = 0.895
       (unreliable) -> `mode_hessian` k = 0.543 (reliable).
 
-## 0.0.40 (2026-06-17)
+# tulpa 0.0.40 (2026-06-17)
 
 * Outer-grid progress reporter (`tulpa_progress::GridProgress`, the
   nested-Laplace grid and parallel NUTS sampler): two fixes for long detached /
@@ -8608,7 +8663,7 @@ CRAN-preparation release.
   uses the physical performance-core count (capped at 2 under R CMD check), and
   an integer pins the width.
 
-## 0.0.38 (2026-06-17)
+# tulpa 0.0.38 (2026-06-17)
 
 * `laplace_diagnostics()`: a front-door diagnostic for deterministic
   (i.i.d.-draw) nested-Laplace fits, the class `mcmc_diagnostics()` declines to
@@ -8630,18 +8685,18 @@ CRAN-preparation release.
   honour `n_threads_outer` (previously hardcoded to one thread), giving a
   5.8-7.7x speedup on `diagnose.k = TRUE` fits with k-hat unchanged.
 
-## 0.0.37 (2026-06-16)
+# tulpa 0.0.37 (2026-06-16)
 
 * build: the `tulpaMesh` dependency floor is raised to `tulpaMesh (>= 0.1.3)`,
   locking it to the current tulpaMesh release. The `Remotes` install reference was
   already `gcol33/tulpaMesh@v0.1.3`.
 
-## 0.0.36 (2026-06-16)
+# tulpa 0.0.36 (2026-06-16)
 
 * Maintenance release. No user-facing changes; the version is bumped to keep the
   tulpa and tulpaObs release tags in step.
 
-## 0.0.35 (2026-06-16)
+# tulpa 0.0.35 (2026-06-16)
 
 * test(tiers): the test suite is now organized into three explicit cost tiers,
   single-sourced in `tests/testthat/helper-tiers.R`: tier 1 structural (ungated,
@@ -8654,7 +8709,7 @@ CRAN-preparation release.
   The default and CRAN runs are unchanged.
 * build: bump `LinkingTo: gcol33/tulpaMesh` to `v0.1.3`.
 
-## 0.0.34 (2026-06-12)
+# tulpa 0.0.34 (2026-06-12)
 
 * feat(nested-laplace-joint): `cpp_joint_inner_vcov_blocks` now defaults
   `field_marginal = TRUE` (and `n_threads = 1`). The cheap selected-inversion
@@ -8677,7 +8732,7 @@ CRAN-preparation release.
   `arm_neg_hess_diag` so the assembled Hessian matches the dense path to machine
   precision.
 
-## 0.0.33 (2026-06-12)
+# tulpa 0.0.33 (2026-06-12)
 
 * perf(nested-laplace-joint): the joint post-grid inner-covariance extraction is
   now a single parallel C++ primitive, `cpp_joint_inner_vcov_blocks`
@@ -8693,7 +8748,7 @@ CRAN-preparation release.
   forms the full block (the betas-only callers). Numerically identical to the
   former dense path on the read sub-blocks (`test-joint-inner-vcov.R`).
 
-## 0.0.32 (2026-06-12)
+# tulpa 0.0.32 (2026-06-12)
 
 * refactor(linalg): the small-dense lower-Cholesky factorization, triangular
   solves, log-determinant, and NNGP conditional (kriging) moments are now a
@@ -8716,7 +8771,7 @@ CRAN-preparation release.
   arm-level `spatial_idx`; the multi-block path still fills a zero placeholder --
   the only behavioral split, now an explicit policy argument.
 
-## 0.0.31 (2026-06-12)
+# tulpa 0.0.31 (2026-06-12)
 
 * fix(laplace): `tulpa_laplace(..., weights=)` now scales the log-likelihood by
   the per-observation weight, matching the already-weighted score and Fisher
@@ -8735,7 +8790,7 @@ CRAN-preparation release.
   a 4-cell surplus grid; `test-nested-laplace-joint-threading.R` locks in the
   invariance.
 
-## 0.0.30 (2026-06-10)
+# tulpa 0.0.30 (2026-06-10)
 
 * refactor(spde): the fractional rSPDE Laplace marginal moves from R to C++
   (`cpp_spde_fractional_logmarginal`, Eigen). The well-conditioned `B` /
@@ -8857,7 +8912,7 @@ CRAN-preparation release.
   log-prior equals the sum of the `L` independent single-component log-priors.
   A connected graph is the `n_components = 1` case, byte-identical to before.
 
-## 0.0.28 (2026-06-09)
+# tulpa 0.0.28 (2026-06-09)
 
 * feat(spatial): the separable-MCAR areal block can now be COPIED across arms in
   the joint multi-block driver. A correlated `(intercept, slope)` field sharing a
@@ -8876,7 +8931,7 @@ CRAN-preparation release.
   correlation) and the copy `alpha` against simulated truth
   (test-nested-laplace-joint-multi-copy.R).
 
-## 0.0.27 (2026-06-09)
+# tulpa 0.0.27 (2026-06-09)
 
 * feat(formula): the varying-coefficient bar column-expansion is now public.
   `tulpa_bar_field_specs(~ 1 + w || node, data)` expands an lme4-style bar into
@@ -8891,7 +8946,7 @@ CRAN-preparation release.
   constructor are refactored onto the shared bar recognizer so the engine and
   any consumer cannot drift (gcol33/tulpa#93).
 
-## 0.0.26 (2026-06-08)
+# tulpa 0.0.26 (2026-06-08)
 
 * fix(spatial): `fit_spde(method = "ccd")` now actually runs the central-
   composite design. `fit_spde_nested_ccd()` took `optimHess()` of the negative
@@ -8904,7 +8959,7 @@ CRAN-preparation release.
   design instead of the 25-node grid. A weakly-identified axis still falls back
   to the grid via the existing mode and Hessian guards (gcol33/tulpa#92).
 
-## 0.0.25 (2026-06-08)
+# tulpa 0.0.25 (2026-06-08)
 
 * feat(spatial): the correlated areal field (separable MCAR,
   `spatial(graph, ~ ... | cell)`) now integrates its cross-covariance `Sigma`
@@ -8929,7 +8984,7 @@ CRAN-preparation release.
   every cross-correlation `rho_ij` with covering CIs at p = 2 and p = 3
   (test-spatial-mcar.R).
 
-## 0.0.24 (2026-06-08)
+# tulpa 0.0.24 (2026-06-08)
 
 * feat(spatial): `spatial(graph, ~ 1 + x | cell)` (a single bar `|`) builds
   correlated areal varying-coefficient fields -- a separable multivariate CAR
@@ -8953,7 +9008,7 @@ CRAN-preparation release.
   case); general `p > 2` fits through the same path with a coarser raw
   log-Cholesky grid.
 
-## 0.0.23 (2026-06-08)
+# tulpa 0.0.23 (2026-06-08)
 
 * feat(temporal): `temporal(formula = ~ 1 + x || time, structure = "rw1")`
   declares inline temporally varying-coefficient fields in a `tulpa()` model
@@ -8975,7 +9030,7 @@ CRAN-preparation release.
   inline-field fitters share one engine (`.bar_field_fit_core`) and one bar
   column-expansion helper, so the two paths cannot drift.
 
-## 0.0.22 (2026-06-08)
+# tulpa 0.0.22 (2026-06-08)
 
 * feat(spatial): `spatial(graph, ~ ... || cell, proper = TRUE)` builds proper
   CAR varying-coefficient fields, where each field's precision is
@@ -8992,7 +9047,7 @@ CRAN-preparation release.
   single `|` with `proper = TRUE` (correlated proper CAR) remains a separate
   model.
 
-## 0.0.21 (2026-06-08)
+# tulpa 0.0.21 (2026-06-08)
 
 * perf/fix(nested-laplace): the sparse sum-to-zero large-field inner solve now
   takes the exact block-Schur Newton step instead of escalating a
@@ -9014,7 +9069,7 @@ CRAN-preparation release.
   `max|dmode| = max|dlogmarg| = max|dQ| = 0` at a 412-cell field) and locked by a
   direct block-Schur-vs-dense-LLT log-determinant + step unit test.
 
-## 0.0.20 (2026-06-08)
+# tulpa 0.0.20 (2026-06-08)
 
 * feat(spatial): `spatial(graph, formula = ~ 1 + time || cell)` declares areal
   varying-coefficient fields inline in a `tulpa()` model formula, the way a
@@ -9037,7 +9092,7 @@ CRAN-preparation release.
   `proper = TRUE` (reserved). The bare `spatial(col)` areal-naming term and the
   `spatial =` constructor path are unchanged.
 
-## 0.0.19 (2026-06-08)
+# tulpa 0.0.19 (2026-06-08)
 
 * feat(progress): the nested-Laplace outer-grid progress line now shows the
   active outer-thread count, e.g. `... | 0.06s/cells | 28 threads`, whenever the
@@ -9051,7 +9106,7 @@ CRAN-preparation release.
   `threads` argument carrying the same field. Serial loops leave the count at 1
   and omit the field; their lines are byte-for-byte unchanged.
 
-## 0.0.18 (2026-06-08)
+# tulpa 0.0.18 (2026-06-08)
 
 * feat(spde): fractional-nu SPDE fields gain a fixed-hyperparameter NUTS path
   (#85, #87). The rational (BRASIL) approximation is sampled with the
@@ -9068,7 +9123,7 @@ CRAN-preparation release.
 * test(joint): the coupled-cell path composes a shared field with a per-group
   random effect (#86).
 
-## 0.0.17 (2026-06-07)
+# tulpa 0.0.17 (2026-06-07)
 
 * docs(vignettes): correctness pass against the current API. Corrected the
   nested-fit `logLik()` / `compare_models()` description (a nested fit returns the
@@ -9081,13 +9136,13 @@ CRAN-preparation release.
 * build: drop the precompiled-header mechanism; each translation unit parses
   RcppEigen directly.
 
-## 0.0.16 (2026-06-07)
+# tulpa 0.0.16 (2026-06-07)
 
 * Tagged release of the grouped beta sufficient-statistic joint interface
   (`slog_y` / `slog_1my`, added in 0.0.15) so consumer packages can pin a
   released engine; consumed by tulpaObs `aggregate.pos`. No engine code change.
 
-## 0.0.15 (2026-06-07)
+# tulpa 0.0.15 (2026-06-07)
 
 * feat(laplace): the joint nested-Laplace engine accepts optional grouped beta
   sufficient statistics on a built-in `beta` arm. When an arm carries `slog_y` /
@@ -9102,7 +9157,7 @@ CRAN-preparation release.
   `laplace_family_link.h` are the single source. This is the engine backing for
   tulpaObs's `aggregate.pos` cover-arm reduction (gcol33/tulpaObs#49).
 
-## 0.0.14 (2026-06-06)
+# tulpa 0.0.14 (2026-06-06)
 
 * refactor: remove structural duplication flagged by a code-rot scan, with no
   change in behavior. `.is_multi_block_prior` is now a single predicate (the
@@ -9114,7 +9169,7 @@ CRAN-preparation release.
   follow the dominant `log_prior_*` naming (`log_prior_car_proper`,
   `log_prior_sigma2_pc`), retiring a dead wrapper.
 
-## 0.0.13 (2026-06-06)
+# tulpa 0.0.13 (2026-06-06)
 
 * fix(check): clears every `R CMD check --as-cran` ERROR and WARNING. The
   joint-NUTS fractional-nu test now asserts the rejection at the fit call --
@@ -9129,7 +9184,7 @@ CRAN-preparation release.
   rejected ("created and used with differing settings") and re-parsed in every
   translation unit -- restoring the PCH speedup (cold compile ~70s -> ~61s).
 
-## 0.0.12 (2026-06-06)
+# tulpa 0.0.12 (2026-06-06)
 
 * feat(progress): unified iteration progress + ETA across every fitting loop
   -- the C++ outer grids (nested-Laplace, joint, sparse SPDE), the NUTS
@@ -9147,7 +9202,7 @@ CRAN-preparation release.
   top-level fit ticks.
 * docs(api): document `tulpa_profile()`, the inner sparse-Laplace phase timer.
 
-## 0.0.11 (2026-06-06)
+# tulpa 0.0.11 (2026-06-06)
 
 * feat(samplers): thread random-effect, areal-spatial, and temporal latent
   structure through the model-agnostic ModelData sampler kernels --
@@ -9171,7 +9226,7 @@ CRAN-preparation release.
   multi-RE fit and the sampler builder. Continuous spatial (gp / nngp / hsgp),
   CAR_proper, and SPDE fields keep their dedicated paths.
 
-## 0.0.10 (2026-06-05)
+# tulpa 0.0.10 (2026-06-05)
 
 * Fix a data race in the threaded sparse joint outer-grid nested-Laplace driver
   (`run_multi_block_nested_laplace_joint_sparse_impl`). The cell-coupling
@@ -9188,7 +9243,7 @@ CRAN-preparation release.
   220-region BYM2 beta-cover fit is identical serial vs `n_threads_outer = 6` to
   ~1e-10.
 
-## 0.0.9 (2026-06-03)
+# tulpa 0.0.9 (2026-06-03)
 
 * feat(offset): thread `offset()` terms through the SPDE, spatial-Laplace, and
   ModelData-sampler paths of `tulpa()` (gcol33/tulpa#72). A fixed log-exposure /
@@ -9288,7 +9343,7 @@ CRAN-preparation release.
   to `>= 3` axes; `"grid"` always forces the tensor product. (Previously the
   default engaged the CCD at `>= 3` axes.)
 
-## 0.0.8 (2026-06-02)
+# tulpa 0.0.8 (2026-06-02)
 
 * feat(nested-laplace): CCD outer integration for the joint multi-block path
   (gcol33/tulpa#59). `control$integration = "ccd"` (default for >= 3
@@ -9324,7 +9379,7 @@ CRAN-preparation release.
   closed-form / gradient unit tests only; the default still runs the full
   recovery suite.
 
-## 0.0.7 (2026-06-01)
+# tulpa 0.0.7 (2026-06-01)
 
 * feat: grid-cell / per-unit **checkpoint/resume across every fitter with an
   expensive outer loop** (gcol33/tulpa#50). A killed or rebooted fit reloads the
@@ -9365,7 +9420,7 @@ CRAN-preparation release.
   sub-floor decline also covers `tulpa_nested_laplace()`, `tulpa_re_cov_nested()`
   and `fit_spde()` through the shared PSIS cores.
 
-## 0.0.6
+# tulpa 0.0.6
 
 * `tulpa_re_cov_nested()` documents its outer accuracy-diagnostic controls
   `diagnose_k` (default `TRUE`) and `k_samples` (default 200) in the help page.
@@ -9375,7 +9430,7 @@ CRAN-preparation release.
   model-adapter home in tulpaObs (`ms_abun`); the generic engine retains the
   structure-agnostic `make_site`/`make_group` equivalence checks.
 
-## 0.0.5
+# tulpa 0.0.5
 
 * feat(nested-laplace): fits now record wall-clock runtime on the returned
   object as `fit$timing` (gcol33/tulpa#48). A named numeric of seconds carrying
@@ -9480,7 +9535,7 @@ CRAN-preparation release.
   is assembled into the joint Hessian (`tulpa_register_cell_coupling` C
   callable, default `"separable"` always available).
 
-## 0.0.2
+# tulpa 0.0.2
 
 * feat: `tulpa_re_aghq()` -- a callback-driven adaptive Gauss-Hermite refinement
   of a grouped random-effect covariance. Generalizes `agq_fit()` (intercept-only
@@ -9495,7 +9550,7 @@ CRAN-preparation release.
   exact-marginal log-likelihood, with SEs from the marginal Hessian. Recovery
   tests in `tests/testthat/test-re-aghq.R`.
 
-## 0.0.3 (2026-05-28)
+# tulpa 0.0.3 (2026-05-28)
 
 * feat(nested-laplace): `tulpa_nested_laplace_joint()` now reports the outer
   Pareto-k-hat accuracy diagnostic (`$pareto_k`, `$pareto_k_is_ess`) over its
@@ -9848,7 +9903,7 @@ CRAN-preparation release.
   `[beta (p)] [re (n_re_groups)] [w_mesh (n_mesh)]`.
   `TULPA_ABI_VERSION` bumped **13 → 14**; downstream packages must rebuild.
 
-## 2026-05-13 — ABI v13: Phase D — delete legacy ratio path
+# tulpa 2026-05-13 — ABI v13: Phase D — delete legacy ratio path
 
 Closes the tulpaRatio migration tracker (gcol33/tulpa#15). After v12
 gated the legacy ratio body of `compute_log_post_impl<T>` behind a
@@ -9943,7 +9998,7 @@ Downstream rebuild notes:
 * `tulpaGlmm` Day-22+ already targets the generic path; rebuild
   against v13.
 
-## 2026-05-12 — ABI v12: generic-layout safety in compute_log_post_impl + ESS port
+# tulpa 2026-05-12 — ABI v12: generic-layout safety in compute_log_post_impl + ESS port
 
 * `TULPA_ABI_VERSION` bumped **11 → 12**. Downstream packages must
   rebuild against the v12 headers.
@@ -9987,7 +10042,7 @@ Downstream rebuild notes:
   call `tulpa::get_ess_fn()(...)` end-to-end on a generic-layout
   `ModelData` without segfaulting.
 
-## 2026-05-12 — ABI v11: caller-supplied inv-mass diagonal for NUTS
+# tulpa 2026-05-12 — ABI v11: caller-supplied inv-mass diagonal for NUTS
 
 * `TULPA_ABI_VERSION` bumped **10 → 11**. Downstream packages must
   rebuild against the v11 headers.
@@ -10018,7 +10073,7 @@ Downstream rebuild notes:
   `tulpaRatio` need to be reinstalled against v11 — both already
   updated to pass `nullptr` for the new parameter (no logic change).
 
-## 2026-05-11 — NNGP Laplace: full off-diagonal precision scatter
+# tulpa 2026-05-11 — NNGP Laplace: full off-diagonal precision scatter
 
 * `laplace_mode_gp` (and the spatial-only / ST-combo NNGP entries in
   `nested_laplace.cpp`) now assemble the **full NNGP precision matrix**
@@ -10056,7 +10111,7 @@ Downstream rebuild notes:
   Downstream packages must rebuild against this commit to pick up the
   new behaviour (no source changes required).
 
-## 2026-05-11 — nested-Laplace ST family: 5 more indexed × indexed combos
+# tulpa 2026-05-11 — nested-Laplace ST family: 5 more indexed × indexed combos
 
 * Adds five additional joint spatial × temporal nested-Laplace shims,
   built on the same `run_two_indexed_nested_laplace` driver and joint
@@ -10081,7 +10136,7 @@ Downstream rebuild notes:
   resolved via `R_GetCCallable` at first use; downstream packages
   rebuilt against ABI v9 pick them up automatically.
 
-## 2026-05-11 — nested-Laplace joint spatial × temporal (ICAR × AR1)
+# tulpa 2026-05-11 — nested-Laplace joint spatial × temporal (ICAR × AR1)
 
 * New shim `tulpa_nested_laplace_st_icar_ar1` for joint nested-Laplace
   inference with an ICAR spatial field AND an AR1 temporal field in the
@@ -10101,7 +10156,7 @@ Downstream rebuild notes:
 * `TULPA_ABI_VERSION` bumped 8 → 9. Downstream packages must be rebuilt
   against this header set.
 
-## 2026-05-11 — nested-Laplace HSGP returns modes + store_Q
+# tulpa 2026-05-11 — nested-Laplace HSGP returns modes + store_Q
 
 * `tulpa_nested_laplace_hsgp` now sets `store_modes = 1` (was 0) and
   gained a `store_Q` flag matching the rest of the nested-Laplace family.
@@ -10121,7 +10176,7 @@ Downstream rebuild notes:
 * `TULPA_ABI_VERSION` bumped 7 → 8. Downstream packages (tulpaGlmm,
   tulpaObs) must be rebuilt against the updated headers.
 
-## 2026-05-11 — nested-Laplace BYM2 returns modes + store_Q
+# tulpa 2026-05-11 — nested-Laplace BYM2 returns modes + store_Q
 
 * `tulpa_nested_laplace_bym2` now sets `store_modes = 1` (was 0) and
   gained a `store_Q` flag matching the rest of the nested-Laplace family.
@@ -10141,7 +10196,7 @@ Downstream rebuild notes:
 * `TULPA_ABI_VERSION` bumped 6 → 7. Downstream packages (tulpaGlmm,
   tulpaObs) must be rebuilt against the updated headers.
 
-## 2026-05-11 — nested-Laplace store_Q on RW1/RW2/AR1/CAR_proper
+# tulpa 2026-05-11 — nested-Laplace store_Q on RW1/RW2/AR1/CAR_proper
 
 * `tulpa_nested_laplace_rw1`, `tulpa_nested_laplace_rw2`,
   `tulpa_nested_laplace_ar1`, and `tulpa_nested_laplace_car_proper` now
@@ -10157,7 +10212,7 @@ Downstream rebuild notes:
 * `TULPA_ABI_VERSION` bumped 5 → 6. Downstream packages (tulpaGlmm,
   tulpaObs) must be rebuilt against the updated headers.
 
-## 2026-05-06 — Takahashi partial inverse as a registered C-callable
+# tulpa 2026-05-06 — Takahashi partial inverse as a registered C-callable
 
 * New free function `tulpa::takahashi_partial_inverse_dense(n, Lp, Li, Lx,
   Z_out)` in `sparse_cholesky.{h,cpp}` runs the Takahashi recursion on a
@@ -10177,7 +10232,7 @@ Downstream rebuild notes:
   packages that want the new shim need only rebuild against the updated
   `sparse_solver_api.h`.
 
-## 2026-05-05 — multi-term + slope REs on the spec-Laplace path
+# tulpa 2026-05-05 — multi-term + slope REs on the spec-Laplace path
 
 * `tulpa_laplace_spec_dense` (and its public C ABI shim) now accepts the
   full multi-term, multi-coefficient RE structure populated by `populate_re`

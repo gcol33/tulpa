@@ -9,7 +9,7 @@ Fits y ~ Normal(X \* beta, sigma) with HMC sampling.
 tulpa_gaussian(
   formula,
   data,
-  beta_prior = list(mean = 0, sd = 10),
+  beta_prior = .tulpa_default_beta_prior("gaussian"),
   control = list()
 )
 ```
@@ -27,8 +27,8 @@ tulpa_gaussian(
 - beta_prior:
 
   Fixed-effect prior as `list(mean, sd)`: a mean-zero (`mean = 0`)
-  Gaussian on every coefficient with SD `sd` (default
-  `list(mean = 0, sd = 10)`).
+  Gaussian on every coefficient with SD `sd` (default the engine
+  default, `prior_normal(0, 2.5)`).
 
 - control:
 

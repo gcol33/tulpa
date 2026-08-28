@@ -27,10 +27,10 @@ The posterior draws matrix/array, or `NULL` if the fit carries none.
 
 A fit that carries no draws returns `NULL` with a message naming its
 backend, the posterior representation it carries instead, and the
-accessor that turns that representation into draws where one exists
-(gcol33/tulpa#349) – an absent draws matrix is a property of the
-backend, not a failure of the accessor, and saying which is the
-difference between a diagnosable answer and a bare `NULL`.
+accessor that turns that representation into draws where one exists – an
+absent draws matrix is a property of the backend, not a failure of the
+accessor, and saying which is the difference between a diagnosable
+answer and a bare `NULL`.
 
 ## See also
 

@@ -188,21 +188,20 @@ tulpa_re_cov_nested(
     layout, or grid is rejected (fingerprint mismatch). Default `NULL`
     (off).
 
-  - `subspace_debias`: subspace debias (gcol33/tulpa#304), `FALSE` by
-    default. `TRUE` takes every default; a list overrides `band` (the
-    inner-reliability floor a coordinate is selected at, default
-    `"ok"`), `idx` (pin the corrected set explicitly, skipping the
-    selector), `probe` (the latent indices scored, default the fixed
-    effects), `closure` (`FALSE`, `TRUE`, or a partial-correlation
-    threshold: grow the set by the precision-graph neighbours it is
-    strongly coupled to), `closure_max`, and the sampler budget `n_iter`
-    / `warmup` / `thin`. When the selected set is non-empty, each
-    integration node reports the selected fixed-effect coordinates from
-    a Metropolis sample of the exact conditional along the
-    Gaussian-conditional-mean surface, and the rest from the Gaussian
-    conditional given them; an EMPTY set leaves the fit bit-for-bit
-    identical to the plain path. What was selected is recorded in
-    `subspace_debias` on the returned fit.
+  - `subspace_debias`: subspace debias, `FALSE` by default. `TRUE` takes
+    every default; a list overrides `band` (the inner-reliability floor
+    a coordinate is selected at, default `"ok"`), `idx` (pin the
+    corrected set explicitly, skipping the selector), `probe` (the
+    latent indices scored, default the fixed effects), `closure`
+    (`FALSE`, `TRUE`, or a partial-correlation threshold: grow the set
+    by the precision-graph neighbours it is strongly coupled to),
+    `closure_max`, and the sampler budget `n_iter` / `warmup` / `thin`.
+    When the selected set is non-empty, each integration node reports
+    the selected fixed-effect coordinates from a Metropolis sample of
+    the exact conditional along the Gaussian-conditional-mean surface,
+    and the rest from the Gaussian conditional given them; an EMPTY set
+    leaves the fit bit-for-bit identical to the plain path. What was
+    selected is recorded in `subspace_debias` on the returned fit.
 
 ## Value
 

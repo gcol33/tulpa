@@ -158,8 +158,8 @@ hmc <- tulpa(y ~ x, data = df, family = "poisson", mode = "hmc",
                             seed = 1L))
 diagnostics(hmc)
 #>     parameter     rhat ess_bulk ess_tail
-#> 1 (Intercept) 1.014642 197.9488 161.7800
-#> 2           x 1.004987 212.5692 188.2444
+#> 1 (Intercept) 1.019236 235.0473 194.7569
+#> 2           x 1.015787 169.8574 145.9035
 
 # deterministic fit -> PSIS approximation reliability
 smc <- tulpa(y ~ x, data = df, family = "poisson", mode = "smc")
@@ -173,8 +173,8 @@ diagnostics(smc)
 #>   2 parameters, 1000 draws; per-parameter rhat / ESS below are
 #>   i.i.d.-draw Monte-Carlo diagnostics (not chain mixing).
 #> 
-#>     parameter      mean         sd ess_bulk  ess_tail     rhat
-#> 1 (Intercept) 0.5490270 0.06048940 39.74858  5.075363 1.201487
-#> 2           x 0.3361729 0.06419277 71.19093 23.416814 1.173983
+#>     parameter      mean         sd  ess_bulk ess_tail     rhat
+#> 1 (Intercept) 0.5126089 0.08280063 13.694927 10.54004 1.215278
+#> 2           x 0.3939599 0.10680048  2.465115 14.93489 1.359931
 # }
 ```

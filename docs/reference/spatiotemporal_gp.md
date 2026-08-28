@@ -5,6 +5,10 @@ Unlike separable models where the covariance factors as \\C_s \otimes
 C_t\\, non-separable models allow for direct space-time interaction in
 the covariance.
 
+No tulpa backend fits a joint space-time covariance, so this constructor
+errors. A spatial GP alongside a temporal field is fitted by
+`tulpa(spatial = spatial_gp(...), temporal = ...)`.
+
 ## Usage
 
 ``` r
@@ -62,7 +66,7 @@ spatiotemporal_gp(
 
 ## Value
 
-A `tulpa_st_gp` object
+Nothing: the call always signals an error.
 
 ## Details
 
@@ -88,25 +92,3 @@ space-time data. Journal of the American Statistical Association,
 Cressie, N., & Huang, H. C. (1999). Classes of nonseparable,
 spatio-temporal stationary covariance functions. Journal of the American
 Statistical Association, 94(448), 1330-1340.
-
-## Examples
-
-``` r
-# Non-separable spatiotemporal GP
-st_gp <- spatiotemporal_gp(
-  ~ lon + lat,
-  time_var = "year",
-  nonsep_type = "gneiting"
-)
-print(st_gp)
-#> tulpa Non-Separable Spatiotemporal GP
-#> ======================================
-#> 
-#> Coordinates: lon, lat 
-#> Time variable: year 
-#> Spatial covariance: exponential 
-#> Temporal covariance: exponential 
-#> Non-separability: Gneiting non-separable 
-#> Neighbors (NNGP): 15 
-#> Shared: Yes 
-```

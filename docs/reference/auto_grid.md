@@ -2,10 +2,9 @@
 
 Declares that a setting shaping the outer hyperparameter grid carries a
 *default* the caller computed, not a choice the user made. The
-auto-recenter pass (`outer_grid_placement`, gcol33/tulpa#289) leaves a
-user-pinned setting exactly as given, and re-centres (or, for a prior,
-engages its own regularizer over) a marked one when the fit rails
-against its ceiling.
+auto-recenter pass (`outer_grid_placement`) leaves a user-pinned setting
+exactly as given, and re-centres (or, for a prior, engages its own
+regularizer over) a marked one when the fit rails against its ceiling.
 
 Three kinds of setting take the mark:
 
@@ -17,10 +16,10 @@ Three kinds of setting take the mark:
 - a scalar grid-construction knob in `control`, for a driver that builds
   its axes rather than taking them
   ([`fit_st_nested()`](https://gillescolling.com/tulpa/reference/fit_st_nested.md)'s
-  `n_grid_spatial`, `tau_upper`, ..., gcol33/tulpa#294);
+  `n_grid_spatial`, `tau_upper`, ...);
 
 - a `prior_sigma` hyperprior specification – a list, e.g.
-  `list("pc.prec", c(U = 3, alpha = 0.01))` (gcol33/tulpa#297).
+  `list("pc.prec", c(U = 3, alpha = 0.01))`.
 
 Wrapper packages are the intended caller: one that builds a default of
 its own – because it derives a second axis from it, hands the same

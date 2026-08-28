@@ -28,7 +28,7 @@ tulpa_sample_glmm(
   tvc_spec = NULL,
   zi_spec = NULL,
   sigma_re_scale = 2.5,
-  sigma_beta = 10,
+  sigma_beta = .tulpa_prior_sd("sample_glmm"),
   warm_start = NULL,
   control = list()
 )
@@ -121,22 +121,59 @@ tulpa_sample_glmm(
   List of kernel tuning knobs (`n_iter`, `warmup`, `seed`, `sigma_beta`,
   `n_chains`, `max_treedepth`, `adapt_delta`, `epsilon`, `L`,
   `batch_size`, `alpha`, `n_particles`, `n_mcmc_steps`, `ess_threshold`,
-  `vi_variant`, `vi_mc_samples`, `vi_max_iter`, `n_draws`, `verbose`).
+  `vi_variant`, `vi_mc_samples`, `vi_max_iter`, `vi_max_grad_norm`,
+  `n_draws`, `verbose`, `mass_matrix`).
 
-  The elliptical-slice kernel takes five more, all prefixed `ess_` and
+  `mass_matrix` selects the NUTS/HMC metric: `"diag"` (the default),
+  `"dense"`, `"block_diag"`, or `"auto"`. Under `"auto"` the kernel
+  reads the parameter layout and gives each correlated hyperparameter
+  group its own small dense block – the BYM2 and GP `(log sigma, phi)`
+  pairs, the multiscale-temporal variances, a correlated random-slope
+  term's Cholesky coordinates – while an ICAR or latent-factor model
+  small enough for the `O(p^2)` per-step cost takes a full dense metric.
+  `"block_diag"` additionally blocks the temporal-GP and HSGP
+  hyperparameter pairs, which `"auto"` leaves to the diagonal. Backends
+  other than `"hmc"` carry no metric and reject a non-default value.
+
+  `vi_max_iter` and `vi_mc_samples` both bound a loop that has to run at
+  least once – the optimisation loop whose ELBO history is the fit's
+  only record, and the reparameterisation average every gradient divides
+  by – so values below 1 are rejected. `vi_max_grad_norm` (default 10)
+  is the gradient-norm clip applied before every Adam step.
+
+  `epsilon` pins the step size on the stochastic-gradient backends:
+  `"sghmc"` runs its warmup step-size adapter only when no `epsilon` is
+  supplied, and `"sgld"` runs its polynomial decay `a * (b + t)^-gamma`
+  only then, so a supplied value is what the whole run samples at. On
+  `"mclmc"` a non-positive `epsilon` selects the kernel's own
+  adaptation. `alpha` is the SGHMC friction and `L` its leapfrog count;
+  SGLD carries neither.
+
+  The SGHMC discretisation is calibrated for small
+  `epsilon^2 * lambda_max`, and inflates every posterior SD above that;
+  the acceptance statistic its adapter targets is computed from a
+  log-posterior ratio the sampler never accepts or rejects on, so it
+  does not measure that error. A sharply informative design wants an
+  `epsilon` chosen by hand.
+
+  The elliptical-slice kernel takes four more, all prefixed `ess_` and
   all inert on other backends. Note that `ess_threshold` above is SMC's
   resampling threshold and not one of them – the two unrelated senses of
   "ESS" are why these carry the prefix. `ess_adapt_during_warmup`
-  (default `FALSE`) adapts the proposal covariance during warmup;
-  `ess_adapt_interval` (default 50) is how often it is refreshed and
-  `ess_use_cholesky` (default `TRUE`) how it is factorized, so **both
-  act only while adapting** and setting either alone changes nothing.
-  `ess_joint_sigma_re` toggles the joint `(log_sigma_re, re)` rescaling
-  move, which defaults to on whenever a random-effect term is present
-  because the two are strongly anti-correlated under the centered
-  parameterization and mix poorly when moved separately; forcing it off
-  is how one demonstrates that. `ess_joint_proposal_sd` (default 0.1) is
-  that move's step.
+  (default `FALSE`) adapts the random-walk proposal SDs on the
+  non-Gaussian parameters during warmup and `ess_adapt_interval`
+  (default 50) is how many sweeps sit between those updates, so it
+  **acts only while adapting**. `ess_joint_sigma_re` toggles the joint
+  `(log_sigma_re, re)` rescaling move, which defaults to on whenever a
+  random-effect term is present because the two are strongly
+  anti-correlated under the centered parameterization and mix poorly
+  when moved separately; forcing it off is how one demonstrates that.
+  `ess_joint_proposal_sd` (default 0.1) is that move's step.
+
+  The elliptical-slice kernel draws from R's own RNG, so `control$seed`
+  does not reach it: [`set.seed()`](https://rdrr.io/r/base/Random.html)
+  before the call is what reproduces an ESS run. Every other backend
+  carries `control$seed` into its own generator.
 
 ## Value
 

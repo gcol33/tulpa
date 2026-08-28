@@ -81,10 +81,15 @@ build_site_without_internal_md <- function(root = ".",
     stop("internal pages reached docs/: ", paste(leaked, collapse = ", "),
          call. = FALSE)
   }
+  # Match the `path` of a search entry, not the text of one. The changelog
+  # describes this guard, so a bare substring search finds `AGENTS.html` in the
+  # prose of the release that added it and refuses a correct build.
   idx <- file.path(root, "docs", "search.json")
   if (file.exists(idx)) {
-    pat <- paste(gsub("\\.", "\\\\.", html), collapse = "|")
-    if (any(grepl(pat, readLines(idx, warn = FALSE)))) {
+    txt <- paste(readLines(idx, warn = FALSE), collapse = "")
+    pat <- sprintf("\"path\"[[:space:]]*:[[:space:]]*\"[^\"]*/(%s)\"",
+                   paste(gsub("\\.", "\\\\.", html), collapse = "|"))
+    if (grepl(pat, txt)) {
       stop("internal pages reached the search index", call. = FALSE)
     }
   }

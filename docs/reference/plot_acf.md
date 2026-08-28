@@ -47,7 +47,16 @@ poor mixing.
 ## Examples
 
 ``` r
-# See plot_rhat() examples for fitting a model
-# plot_acf(fit)
-# plot_acf(fit, pars = c("beta_num[1]", "sigma_re"))
+# \donttest{
+set.seed(123)
+df <- data.frame(x = rnorm(60))
+df$y <- rpois(60, exp(0.5 + 0.3 * df$x))
+fit <- tulpa(y ~ x, data = df, family = "poisson", mode = "hmc",
+             control = list(n_iter = 500L, warmup = 250L, n_chains = 2L,
+                            seed = 1L))
+plot_acf(fit)
+
+plot_acf(fit, lags = 10)
+
+# }
 ```

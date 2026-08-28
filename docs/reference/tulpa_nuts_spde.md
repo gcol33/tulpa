@@ -35,7 +35,7 @@ tulpa_nuts_spde(
   prior_sigma = NULL,
   log_kappa_init = NULL,
   log_tau_init = NULL,
-  beta_prior = list(mean = 0, sd = 10),
+  beta_prior = .tulpa_default_beta_prior("spde_nuts"),
   log_phi_prior_sd = 3,
   log_phi_init = 0,
   control = list()
@@ -111,8 +111,8 @@ tulpa_nuts_spde(
 - beta_prior:
 
   Fixed-effect prior as `list(mean, sd)`: a mean-zero (`mean = 0`)
-  Gaussian on each coefficient with SD `sd` (default
-  `list(mean = 0, sd = 10)`).
+  Gaussian on each coefficient with SD `sd` (default the engine default,
+  `prior_normal(0, 2.5)`).
 
 - log_phi_prior_sd:
 

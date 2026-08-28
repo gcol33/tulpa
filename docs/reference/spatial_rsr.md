@@ -87,7 +87,6 @@ print(rsr)
 #> Coordinates: lon, lat 
 #> Covariance: exponential 
 #> Neighbors (NNGP): 15 
-#> Solver: auto (Cholesky<2k, PCG<5k, GPU/CG for larger) 
 #> Shared: Yes (enters both processes) 
 #> 
 #> Restricted Spatial Regression (RSR):
@@ -116,7 +115,7 @@ fit <- tulpa(
 )
 summary(fit)
 #>               estimate  std.error       2.5%       97.5%
-#> (Intercept) -0.3041358 0.11279820 -0.5456689 -0.07648903
-#> x            0.5197550 0.06365316  0.4031921  0.64072967
+#> (Intercept) -0.3172248 0.11295433 -0.5502363 -0.09914267
+#> x            0.5278281 0.06516213  0.4022617  0.65216922
 # }
 ```

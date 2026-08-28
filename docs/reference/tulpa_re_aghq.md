@@ -218,11 +218,16 @@ tulpa_re_aghq(
 
 A list with: `theta` (refined fixed parameters), `Sigma_list` (refined
 per-term covariance), `blup` / `blup_var` (per-term `n_groups x n_coefs`
-posterior mean / variance of the RE), `blup_cross` (per-term
-`n_groups x n_theta x n_coefs` array: the mode/theta cross-Hessian block
-`Bf`, `-d^2 ell_g / d theta db` at each group's mode, in the same
-negative-Hessian sign convention as the posterior precision underlying
-`blup_var` – so a joint draw of `theta` and a group's RE `b_g` uses
+posterior mean / variance of the RE), `group_ok` (logical, length
+`n_groups`: `FALSE` where that group's mode search or precision
+factorization failed, which is what the `NA` rows of `blup`, `blup_var`,
+`blup_cov_g` and `blup_cross_g` mean – a caller conditions its per-group
+reads on this rather than on trapping the accompanying warning),
+`blup_cross` (per-term `n_groups x n_theta x n_coefs` array: the
+mode/theta cross-Hessian block `Bf`, `-d^2 ell_g / d theta db` at each
+group's mode, in the same negative-Hessian sign convention as the
+posterior precision underlying `blup_var` – so a joint draw of `theta`
+and a group's RE `b_g` uses
 `b_g | theta ~ N(blup_g - Cinv_g %*% t(Bf_g) %*% (theta_draw - theta), Cinv_g)`
 with `Cinv_g` the group's `n_coefs x n_coefs` posterior covariance
 block. `NA` throughout when `blup_cross_available` is `FALSE`: the
@@ -238,11 +243,26 @@ group's terms are found jointly and can carry real posterior covariance
 BETWEEN terms (e.g. an abundance-arm and a detection-arm term sharing
 one grouping factor); same `NA`-when-unavailable rule as `blup_cross`),
 `theta_cov` / `theta_se` (fixed-parameter covariance / SE from the
-marginal Hessian), `log_marginal` (the AGHQ marginal log-likelihood at
-the optimum, excluding any ridge), `n_quad`, `lkj_eta`, and `converged`.
-RE terms that do not share one grouping factor are an input error and
-stop; a singular / non-finite optimum warns and returns `NULL` (caller
-keeps its prior fit).
+marginal Hessian), `re_par` / `re_par_cov` / `re_par_se` (the
+RE-covariance coordinates the optimizer carried – log-Cholesky for a
+full block, log-SD for a diagonal one – with their block of the same
+inverse Hessian, so `SE(log sigma)` is available for a boundary test on
+a weakly-identified variance component), `re_par_layout` (per block:
+`label`, `nc`, `full`, the `index` range into `re_par` and the `coord`
+names, so a caller does not reconstruct the packing), `joint_cov` (the
+whole `(n_theta + n_chol)` inverse Hessian), `log_marginal` (the AGHQ
+marginal log-likelihood at the optimum, excluding any ridge), `n_quad`,
+`lkj_eta`, `converged`, and `counts`
+([`stats::optim`](https://rdrr.io/r/stats/optim.html)'s own `function` /
+`gradient` evaluation counts, so a caller reporting how much work the
+fit took has a number to report rather than `NA`). RE terms that do not
+share one grouping factor are an input error and stop. Three conditions
+warn and return `NULL` (caller keeps its prior fit): a singular /
+non-finite optimum, an objective that is already undefined at the
+starting parameters (some group's solve fails there, so there is nothing
+to descend), and an optimum whose objective is the failure sentinel
+rather than an attained marginal likelihood – the last two report which
+groups failed.
 
 ## References
 

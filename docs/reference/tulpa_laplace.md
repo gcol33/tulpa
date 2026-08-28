@@ -194,14 +194,14 @@ tulpa_laplace(
 
 - debias:
 
-  Subspace debias (gcol33/tulpa#304): a list with `idx` (1-based latent
-  indices to correct by Metropolis along the Gaussian-conditional-mean
-  surface through the mode) and optional `n_iter` / `warmup` / `thin`.
-  The result then carries `debias_draws` (`n_kept x length(idx)`, the
-  sampled `x_S - mode_S`), `debias_sigma_ss` (the inner Laplace's own
-  marginal covariance of `x_S`), `debias_accept` and `debias_idx`.
-  `NULL` (default) or an empty `idx` leaves the solve bit-for-bit as it
-  was and consumes no random number. Non-spatial path only.
+  Subspace debias: a list with `idx` (1-based latent indices to correct
+  by Metropolis along the Gaussian-conditional-mean surface through the
+  mode) and optional `n_iter` / `warmup` / `thin`. The result then
+  carries `debias_draws` (`n_kept x length(idx)`, the sampled
+  `x_S - mode_S`), `debias_sigma_ss` (the inner Laplace's own marginal
+  covariance of `x_S`), `debias_accept` and `debias_idx`. `NULL`
+  (default) or an empty `idx` leaves the solve bit-for-bit as it was and
+  consumes no random number. Non-spatial path only.
 
 ## Value
 

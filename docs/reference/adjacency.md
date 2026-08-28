@@ -223,7 +223,16 @@ g3 <- adjacency(grid, id = "cell", offsets = list(c(1, 0), c(0, 1)))
 #> adjacency(): custom stencil was not symmetric; symmetrized to an undirected graph for the ICAR/CAR field (12 reverse edge(s) added). A directed neighbourhood cannot be represented by an undirected field.
 
 # Use it in a model: graph stays explicit and inspectable
-# spatial(graph = g$adjacency, formula = ~ 1 || cell_idx)
+spatial(graph = g$adjacency, formula = ~ 1 || cell_idx)
+#> tulpa areal varying-coefficient field
+#> =====================================
+#> 
+#> Structure: ICAR (Besag) 
+#> Graph nodes: 9 
+#> Graph node index: cell_idx 
+#> Fields: independent (|| -> separate precision per coefficient)
+#> Expands to 1 CAR field(s) (one per design-matrix column):
+#>   cell_idx.Intercept
 
 # Remap observation data (original cell ids -> 1:n node indices) by key
 obs <- data.frame(cell = c("c5", "c1", "c5", "c9"))

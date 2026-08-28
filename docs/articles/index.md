@@ -20,6 +20,8 @@
   covariance](https://gillescolling.com/tulpa/articles/random-slopes.md):
 - [Reliability of nested approximations: reading the outer
   Pareto-k](https://gillescolling.com/tulpa/articles/reliability-pareto-k.md):
+- [Validating calibration: simulation-based
+  calibration](https://gillescolling.com/tulpa/articles/sbc.md):
 - [Spatial fields in
   tulpa](https://gillescolling.com/tulpa/articles/spatial-models.md):
 - [Temporal random-walk effects with

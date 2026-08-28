@@ -77,6 +77,11 @@ NUTS.
 
 The choice is process-global (like the gradient mode): set it once
 before fitting. It is read on the main thread at the start of sampling.
+Because it is process-global, a caller that changes it owns restoring it
+– and an error between the two calls would leave the process on the
+other integrator.
+[`with_tulpa_integrator()`](https://gillescolling.com/tulpa/reference/with_tulpa_integrator.md)
+does both, restoring on error as well as on success.
 
 ## Examples
 

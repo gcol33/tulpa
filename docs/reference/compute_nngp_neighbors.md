@@ -13,7 +13,7 @@ compute_nngp_neighbors(coords, k)
 
 - coords:
 
-  N x 2 matrix of coordinates
+  N x d matrix of coordinates
 
 - k:
 

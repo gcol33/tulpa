@@ -12,7 +12,9 @@ temporal_tvc(
   terms = 1,
   structure = c("rw1", "rw2", "ar1", "gp"),
   group_var = NULL,
-  shared = NULL
+  shared = NULL,
+  sigma_prior_U = 1,
+  sigma_prior_alpha = 0.01
 )
 ```
 
@@ -43,6 +45,14 @@ temporal_tvc(
   Whether the effect is shared across processes in a multi-process
   model. `NULL` (default) shares it; `FALSE` fits process-specific
   effects and emits a warning.
+
+- sigma_prior_U, sigma_prior_alpha:
+
+  Penalized-complexity prior on each varying coefficient's marginal
+  standard deviation, calibrated so that
+  `P(sigma > sigma_prior_U) = sigma_prior_alpha`. Defaults to
+  `P(sigma > 1) = 0.01`. `sigma_prior_U` must be positive and
+  `sigma_prior_alpha` must lie in `(0, 1)`.
 
 ## Value
 

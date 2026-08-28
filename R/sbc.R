@@ -1286,6 +1286,17 @@ print.sbc_summary <- function(x, ...) {
 #' @param arm,quantity Optional character vectors selecting which panels to
 #'   draw. Default draws every (arm, quantity).
 #' @param folded Plot the folded PIT instead of the raw one.
+# The p-value and band verdict annotating one panel. It has to read the SAME
+# sample the panel draws: the fold is the read that catches a symmetric
+# dispersion error the raw ECDF cancels, so a folded panel carrying the raw
+# verdict reports "inside" over a curve visibly outside the band, which is
+# exactly the case the fold exists for.
+.sbc_panel_note <- function(r, i, folded) {
+  p  <- if (folded) r$p_unif_folded[i] else r$p_unif[i]
+  ok <- if (folded) r$inside_folded[i] else r$inside[i]
+  sprintf("p = %.3g%s", p, if (ok) "" else ", outside band")
+}
+
 #' @rdname sbc
 #' @export
 plot.sbc <- function(x, arm = NULL, quantity = NULL, folded = FALSE, ...) {
@@ -1314,8 +1325,7 @@ plot.sbc <- function(x, arm = NULL, quantity = NULL, folded = FALSE, ...) {
     graphics::title(main = sprintf("%s / %s%s", r$arm[i], r$quantity[i],
                                    if (folded) " (folded)" else ""),
                     line = 1.9, cex.main = 1)
-    graphics::mtext(sprintf("p = %.3g%s", r$p_unif[i],
-                            if (r$inside[i]) "" else ", outside band"),
+    graphics::mtext(.sbc_panel_note(r, i, folded),
                     side = 3, line = 0.5, cex = 0.75)
     graphics::polygon(c(at, rev(at)),
                       c(band$ecdf_lo - at, rev(band$ecdf_hi - at)),

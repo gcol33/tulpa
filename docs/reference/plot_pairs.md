@@ -61,7 +61,16 @@ Pairs plots help identify:
 ## Examples
 
 ``` r
-# See plot_rhat() examples for fitting a model
-# plot_pairs(fit)
-# plot_pairs(fit, pars = c("sigma_re", "phi_num", "phi_denom"))
+# \donttest{
+set.seed(123)
+df <- data.frame(x = rnorm(60))
+df$y <- rpois(60, exp(0.5 + 0.3 * df$x))
+fit <- tulpa(y ~ x, data = df, family = "poisson", mode = "hmc",
+             control = list(n_iter = 500L, warmup = 250L, n_chains = 2L,
+                            seed = 1L))
+plot_pairs(fit)
+
+plot_pairs(fit, n_pars = 2)
+
+# }
 ```

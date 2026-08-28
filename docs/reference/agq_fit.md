@@ -120,6 +120,10 @@ A list with class `tulpa_fit` carrying:
 
 - `backend`: `"agq"`.
 
+An optimum at which the AGHQ objective is undefined (some group's solve
+fails there, so its value is the failure sentinel rather than a marginal
+likelihood) is an error naming the groups, not a returned fit.
+
 ## Tier
 
 Tier 2 (Structured). AGQ is exact in the limit `n_quad -> infinity` but

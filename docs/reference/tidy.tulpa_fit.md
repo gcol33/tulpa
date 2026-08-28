@@ -37,7 +37,7 @@ df$y <- rpois(100, exp(0.3 * df$x))
 fit <- tulpa(y ~ x + (1 | g), data = df, family = "poisson")
 tidy(fit)
 #>          term   estimate std.error   conf.low  conf.high
-#> 1 (Intercept) -0.4313563 0.2164659 -0.8888351 -0.0045039
-#> 2           x  0.4551711 0.1187153  0.1987443  0.6760596
+#> 1 (Intercept) -0.3983527 0.1879319 -0.7853436 -0.0338085
+#> 2           x  0.4268313 0.1204830  0.1762052  0.6631028
 # }
 ```

@@ -296,6 +296,21 @@ test_that("print, summary, plot and diagnostics read the result", {
   expect_true(file.exists(pf))
   expect_error(plot(res, arm = "nosucharm"), "no \\(arm, quantity\\) selected")
 
+  # A panel's annotation reads the sample the panel draws. A folded panel
+  # carrying the raw p-value and the raw band verdict is the fold's own failure
+  # mode: it reports "inside" over a curve outside the band, on exactly the
+  # symmetric dispersion error the raw ECDF cancels. The columns are read off
+  # `res$report`, whose folded p-value is `p_unif_folded`; `p_folded` is the
+  # name the PRINT method renames it to, and reading that here would be
+  # `NULL[i]`, a zero-length label rather than a wrong one.
+  expect_true(all(c("p_unif", "inside", "p_unif_folded", "inside_folded") %in%
+                    names(res$report)))
+  r <- data.frame(p_unif = 0.90, inside = TRUE,
+                  p_unif_folded = 0.0001, inside_folded = FALSE)
+  expect_identical(.sbc_panel_note(r, 1L, folded = FALSE), "p = 0.9")
+  expect_identical(.sbc_panel_note(r, 1L, folded = TRUE),
+                   "p = 0.0001, outside band")
+
   d <- diagnostics(res)
   expect_true(all(c("arm", "quantity", "inside", "p_unif") %in% names(d)))
   expect_identical(attr(d, "experiment"), "prior_predictive")

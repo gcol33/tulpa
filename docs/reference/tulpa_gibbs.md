@@ -13,7 +13,7 @@ tulpa_gibbs(
   group,
   n_groups,
   family = "binomial",
-  beta_prior = list(mean = 0, sd = 10),
+  beta_prior = .tulpa_default_beta_prior("gibbs"),
   prior_sigma_scale = 2.5,
   spatial = NULL,
   temporal = NULL,
@@ -50,9 +50,9 @@ tulpa_gibbs(
 - beta_prior:
 
   Fixed-effect prior as `list(mean, sd)`: a mean-zero (`mean = 0`)
-  Gaussian on every coefficient with SD `sd` (default
-  `list(mean = 0, sd = 10)`). The Polya-Gamma sampler uses a mean-zero
-  prior, so a non-zero `mean` errors.
+  Gaussian on every coefficient with SD `sd` (default the engine
+  default, `prior_normal(0, 2.5)`). The Polya-Gamma sampler uses a
+  mean-zero prior, so a non-zero `mean` errors.
 
 - prior_sigma_scale:
 
@@ -94,9 +94,11 @@ tulpa_gibbs(
 
   A named list of numerical / tuning knobs (statistical arguments stay
   in the signature above): `n_iter` (default 2000), `warmup` (default
-  1000), `thin` (default 1), `seed` (`NULL` draws from the session RNG;
-  the Polya-Gamma kernels use R's RNG, so a seed makes the fit
-  reproducible), `verbose` (default FALSE), `n_threads` (default 1).
+  1000), `thin` (default 1, applied on every route including the spatial
+  and temporal ones; the run keeps `ceiling((n_iter - warmup) / thin)`
+  draws), `seed` (`NULL` draws from the session RNG; the Polya-Gamma
+  kernels use R's RNG, so a seed makes the fit reproducible), `verbose`
+  (default FALSE), `n_threads` (default 1).
 
 ## Value
 
@@ -111,6 +113,12 @@ random-walk Metropolis-Hastings step on `log(r)` whose stationary
 support is bounded to `r` in `[0.1, 500]`; data favouring a dispersion
 outside that range pile up at the boundary.
 
+Every sampler that centres a latent effect – the negative-binomial
+kernels, and the binomial kernels carrying a `spatial` or `temporal`
+field – adds the removed level to the first coefficient, which leaves
+`eta` unchanged only when the first column of `X` is an all-ones
+intercept. Those routes error on a design without one.
+
 ## Examples
 
 ``` r
@@ -124,6 +132,6 @@ y <- rbinom(n, 1, plogis(X %*% c(-0.2, 0.5) + b[grp]))
 fit <- tulpa_gibbs(y, rep(1L, n), X, grp, G, family = "binomial",
                    control = list(n_iter = 500L, warmup = 250L))
 colMeans(fit$beta)
-#> [1] 0.05346681 0.52102042
+#> [1] 0.05113498 0.47895299
 # }
 ```

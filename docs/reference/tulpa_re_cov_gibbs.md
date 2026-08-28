@@ -20,7 +20,7 @@ tulpa_re_cov_gibbs(
   phi = 1,
   prior_df = NULL,
   prior_scale = NULL,
-  beta_prior = list(mean = 0, sd = 100),
+  beta_prior = .tulpa_default_beta_prior("re_cov_gibbs"),
   control = list()
 )
 ```
@@ -52,10 +52,10 @@ tulpa_re_cov_gibbs(
   [`tulpa_re_cov_nested()`](https://gillescolling.com/tulpa/reference/tulpa_re_cov_nested.md)
   /
   [`tulpa_eb()`](https://gillescolling.com/tulpa/reference/tulpa_eb.md)
-  (`hyperprior = "flat"` by default, gcol33/tulpa#268), the
-  `Sigma_m | b_m` conjugate draw here needs a proper Inverse-Wishart to
-  sample from, so an improper flat prior is not an option; the
-  minimal-`df` default is the closest analogue this sampler can offer.
+  (`hyperprior = "flat"` by default), the `Sigma_m | b_m` conjugate draw
+  here needs a proper Inverse-Wishart to sample from, so an improper
+  flat prior is not an option; the minimal-`df` default is the closest
+  analogue this sampler can offer.
 
 - prior_scale:
 
@@ -65,10 +65,9 @@ tulpa_re_cov_gibbs(
 
 - beta_prior:
 
-  Gaussian fixed-effect prior as `list(mean, sd)` (default
-  `list(mean = 0, sd = 100)`, weak by design for the debias sampler).
-  Scalar `mean` / `sd` are recycled to `ncol(X)`; a length-`ncol(X)`
-  vector sets a per-coefficient prior.
+  Gaussian fixed-effect prior as `list(mean, sd)` (default the engine
+  default, `prior_normal(0, 2.5)`). Scalar `mean` / `sd` are recycled to
+  `ncol(X)`; a length-`ncol(X)` vector sets a per-coefficient prior.
 
 - control:
 

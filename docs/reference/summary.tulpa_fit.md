@@ -62,3 +62,8 @@ field, path, integrates, reason). It is `NULL` whenever every supplied
 axis was used, which is the ordinary case;
 [`diagnostic_summary()`](https://gillescolling.com/tulpa/reference/diagnostic_summary.md)
 reads the same record in sentences.
+
+A `beta_prior` attribute carries the Gaussian fixed-effect prior the fit
+ran under, as `list(mean, sd)`. It is the engine default,
+`prior_normal(0, 2.5)`, whenever the caller supplied none, and `NULL` on
+the paths that express no Gaussian prior on the fixed effects.

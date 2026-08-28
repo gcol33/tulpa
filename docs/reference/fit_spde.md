@@ -125,6 +125,18 @@ fit_spde(
   - `k_samples`: importance draws for `diagnose_k`. Default 200, each
     one extra batched SPDE marginal evaluation.
 
+  - `mode_find`: tuning for the outer `(range, sigma)` mode-find under
+    `method = "ccd"`, as `list(factr =, ndeps =, maxit =)`; supply any
+    subset. `ndeps` is the central-difference step for
+    [`optim()`](https://rdrr.io/r/stats/optim.html)'s numerical gradient
+    on the log scale (default 1e-2): it must clear the inner solver's
+    convergence tolerance, and a step wide enough that its truncation
+    error exceeds the reduction the line search chases near a flat
+    optimum leaves L-BFGS-B aborting at the mode it just reached, in
+    which case the CCD design declines to the rectangular grid. `factr`
+    is the relative-reduction stop in units of `.Machine$double.eps`
+    (default 1e5); `maxit` the iteration cap (default 300).
+
   - `max_iter`: maximum Newton iterations. Default 100.
 
   - `tol`: Newton convergence tolerance. Default 1e-6.
@@ -183,6 +195,6 @@ if (requireNamespace("fmesher", quietly = TRUE)) {
   fit <- fit_spde(y = y, X = cbind(1, x), spatial = spec, family = "poisson")
   fit$nested$range_mean
 }
-#> [1] 0.07126084
+#> [1] 0.07126109
 # }
 ```

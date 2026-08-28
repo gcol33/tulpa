@@ -24,7 +24,7 @@ dispatch_gibbs_spatial(
   iter,
   warmup,
   thin = 1L,
-  prior_beta_sd = 10,
+  prior_beta_sd = .tulpa_prior_sd("gibbs"),
   prior_sigma_re_scale = 2.5,
   verbose = FALSE,
   n_threads = 1L

@@ -1,25 +1,41 @@
-﻿url: https://gillescolling.com/tulpa/
+url: https://gillescolling.com/tulpa/
 
 template:
   bootstrap: 5
 
 reference:
 - title: Front door
-  desc: The main fitter and its inference-mode / prior helpers.
+  desc: The main fitter, its formula surface, and the mode / family helpers.
   contents:
   - tulpa
+  - tulpa_parse_formula
+  - findbars
+  - nobars
   - inference_mode_info
-  - tulpa_priors
+  - validate_mode
+  - tulpa_family
+  - tulpa_gaussian
+  - tulpa_build_model_data
+  - tulpa_simulate
 - title: Tier 2 -- structured approximations
   desc: Laplace, nested Laplace, and the free-Sigma random-effect backends.
   contents:
+  - tulpa_laplace
+  - tulpa_laplace_beta
   - tulpa_nested_laplace
   - tulpa_nested_laplace_joint
+  - fit_st_nested
+  - tulpa_hyper_grid
   - tulpa_re_cov_nested
+  - tulpa_re_aghq
+  - tulpa_eb
   - tulpa_em_laplace
   - tulpa_em_mc
   - agq_fit
   - fit_spde
+  - tulpa_ep
+  - tulpa_multinomial
+  - tulpa_ordinal
   - imh_laplace
 - title: Tier 1 -- exact MCMC and debias
   contents:
@@ -30,7 +46,11 @@ reference:
   - tulpa_tgmrf
   - tgmrf
   - tgmrf_cpp
+  - tulpa_cache_dir
+  - tulpa_cache_clear
   - mala
+  - tulpa_integrator
+  - with_tulpa_integrator
 - title: Other approximations
   contents:
   - pathfinder
@@ -38,32 +58,60 @@ reference:
 - title: Latent structure
   desc: Spatial, temporal, and varying-coefficient constructors.
   contents:
-  - has_concept("spatial")
-  - has_concept("temporal")
+  - spatial
   - spatial_car
+  - spatial_car_proper
   - spatial_bym2
   - spatial_gp
+  - spatial_multiscale
   - spatial_svc
   - spatial_rsr
   - spatial_spde
+  - spatial_spde_custom
   - temporal_rw1
   - temporal_rw2
   - temporal_ar1
+  - temporal_ar2
+  - temporal_ar
+  - temporal_gp
   - temporal_multiscale
   - temporal_tvc
   - temporal_rtr
   - spatiotemporal
+  - spatiotemporal_gp
   - svc
   - tvc
   - latent
   - latent_factor
   - adjacency
+  - check_adjacency
+  - node_index
+  - compute_nngp_neighbors
+  - tulpa_bar_field_specs
+  - tulpa_bar_field_replicate
+  - tulpa_is_spatial_bar
+- title: Priors
+  desc: The prior surface and the individual prior builders.
+  contents:
+  - tulpa_priors
+  - priors_default
+  - prior_from_spec
+  - prior_normal
+  - prior_beta
+  - prior_gamma
+  - prior_exponential
+  - prior_half_cauchy
+  - prior_half_normal
+  - prior_pc
+  - re_cov_pc_lkj_prior
 - title: Methods, criteria, and prediction
   contents:
   - tulpa_criteria
+  - criteria_doors
   - tulpa_kfold
   - tulpa_reloo
   - tulpa_psis
+  - tulpa_loglik
   - bayes_R2
   - tulpa_powerscale_sensitivity
   - compare_models
@@ -71,21 +119,87 @@ reference:
   - posterior_predict
   - pp_check
   - prior_predict
-- title: Diagnostics
+  - reexports
+- title: Reading a fit
+  desc: >
+    Accessors for a fitted model: the coefficient surface, the posterior draws
+    in whatever representation the backend produced, and the extracted latent
+    effects.
   contents:
+  - fixef
+  - ranef
+  - VarCorr
+  - posterior_sample
+  - mcmc_draws
+  - tulpa_posterior_draws
+  - tulpa_draws_array
+  - as_draws
+  - temporal
+  - spatiotemporal_effects
+  - smooth_effects
+  - latent_factors
+- title: Diagnostics
+  desc: >
+    Convergence for sampled fits, approximation reliability for deterministic
+    ones, and the residual / goodness-of-fit surface both share.
+  contents:
+  - diagnostics
   - mcmc_diagnostics
+  - laplace_diagnostics
   - check_diagnostics
   - diagnostic_summary
-  - laplace_diagnostics
+  - select_main_params
+  - n_divergent
   - geweke_test
   - moran_i
   - durbin_watson
   - tulpa_variogram
   - pit_residuals
+  - tulpa_pit
+  - test_uniformity
+  - test_dispersion
+  - test_outliers
+  - test_zero_inflation
   - check_model
   - spatial_range
   - temporal_corr
   - post_hoc_lm
+- title: Calibration
+  desc: >
+    Simulation-based calibration. Where the diagnostics above score one fit,
+    these score whether an inference algorithm's posteriors are calibrated
+    across the generative model, by reading the whole marginal CDF.
+  contents:
+  - sbc
+  - sbc_predictive
+- title: Plots
+  contents:
+  - plot_rhat
+  - plot_ess
+  - plot_acf
+  - plot_energy
+  - plot_divergences
+  - plot_pairs
+  - plot_diagnostics
+  - plot_map
+  - plot_map_panel
+- title: Outer-grid integration and utilities
+  desc: >
+    The node designs the outer hyperparameter integration is laid on, the
+    axis-provenance surface, and the small numerical helpers.
+  contents:
+  - ccd_grid
+  - ccd_weights
+  - ccd_to_theta
+  - hyper_axis_spec
+  - auto_grid
+  - is_auto_grid
+  - rubins_pool
+  - sn_cdf
+  - sn_quantile
+  - sn_match
+  - tulpa_profile
+  - tulpa_check_control
 - title: internal
   contents:
   - lacks_concepts(c("spatial", "temporal"))

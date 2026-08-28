@@ -64,6 +64,6 @@ f2 <- tulpa(y ~ 1, data = df, family = "poisson", mode = "hmc",
 ma <- model_average(full = f1, null = f2, weights = "waic")
 ma$weights
 #>       full       null 
-#> 0.91222791 0.08777209 
+#> 0.91729264 0.08270736 
 # }
 ```

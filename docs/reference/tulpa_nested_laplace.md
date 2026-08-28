@@ -62,9 +62,13 @@ tulpa_nested_laplace(
 
   - icar: `spatial_idx`, `n_spatial_units`, `adj_row_ptr`,
     `adj_col_idx`, `n_neighbors` (CSR adjacency, 0-based); optional
-    `tau_grid`; optional `svc_weight` (one weight per observation) to
-    make it a spatially-varying coefficient whose eta contribution is
-    `svc_weight[i] * z[spatial_idx[i]]` rather than `z[spatial_idx[i]]`.
+    `tau_grid`.
+
+  Any block accepts an optional `svc_weight`, one weight per
+  observation, which makes it a varying coefficient: observation `i`
+  contributes `svc_weight[i] * f_i` instead of `f_i`, where `f_i` is the
+  block's field at that row (`z[spatial_idx[i]]` for an areal block,
+  `(A u)_i` for an SPDE one). Absent, the field enters unweighted.
 
   - bym2: same adjacency; `scale_factor`; optional `sigma_grid`,
     `rho_grid`.
@@ -80,13 +84,13 @@ tulpa_nested_laplace(
   A default grid axis is a starting axis, not a hard ceiling: for `icar`
   (`tau_grid`) and `bym2` (`sigma_grid`) a posterior mode that rails a
   boundary node (`pareto_k_regime = "collapsed_edge"`) triggers one
-  mode-Hessian recenter-and-refit (gcol33/tulpa#290), reported through
+  mode-Hessian recenter-and-refit, reported through
   `outer_grid_placement` / `outer_grid_recenter_declined` – see
   [`tulpa_nested_laplace_joint()`](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace_joint.md)'s
   return docs. An axis the caller pinned is never moved; mark a grid
   your own code defaulted with
   [`auto_grid()`](https://gillescolling.com/tulpa/reference/auto_grid.md)
-  to keep the recenter live on it (gcol33/tulpa#293).
+  to keep the recenter live on it.
 
 - spec:
 
@@ -187,27 +191,29 @@ tulpa_nested_laplace(
     for the combined whole-fit verdict.
 
   - `within_cell` (`"box_uniform"`) – the WITHIN-CELL construction the
-    reported per-axis hyperparameter intervals are read with
-    (gcol33/tulpa#357). The outer grid's weights say how much mass each
-    cell holds; they do not say how it is spread inside the cell, and a
-    quantile needs both. `"box_uniform"` puts the cumulative FULL mass
-    at each cell EDGE and interpolates between edges; `"chord"` puts the
-    cumulative MID-mass at each cell coordinate and interpolates between
-    coordinates – the same masses over the same boxes with the knots
-    moved half a cell, which measures as a whole order of convergence
-    (2.00 against 1.04 on a fixture with a closed-form posterior). THE
-    DEFAULT IS `"box_uniform"` since 0.0.188, decided on FIXED-TRUTH
-    coverage at the placement the engine ships since gcol33/tulpa#361
-    made `auto_recenter = "resolve"` the default. Summed \|coverage -
-    nominal\| over nominal 0.95 / 0.80 / 0.50, chord against
-    box-uniform: 0.2900 / 0.1233 on the pre-registered fixed-truth
-    instrument, 0.2004 / 0.0361 over 4680 truth-swept fits of the same
-    fixture, and 0.2467 / 0.1572 over nine (config, axis) rows spanning
-    seven families, at 0.69 to 1.08x the width. The conditional-coverage
-    swing that held the default back reads 0.110 at the shipped
-    placement against 0.415 on the coarse pinned grid it was measured
-    on, and at nominal 0.50 it is the same on both reads.
-    `outer_grid_h_over_sd` is how wide a cell is on each axis, and
+    reported per-axis hyperparameter intervals are read with. The outer
+    grid's weights say how much mass each cell holds; they do not say
+    how it is spread inside the cell, and a quantile needs both.
+    `"box_uniform"` puts the cumulative FULL mass at each cell EDGE and
+    interpolates between edges; `"chord"` puts the cumulative MID-mass
+    at each cell coordinate and interpolates between coordinates – the
+    same masses over the same boxes with the knots moved half a cell,
+    which measures as a whole order of convergence (2.00 against 1.04 on
+    a fixture with a closed-form posterior). THE DEFAULT IS
+    `"box_uniform"` since 0.0.188, decided on FIXED-TRUTH coverage at
+    the placement the engine ships, with `auto_recenter = "resolve"` as
+    the default. Summed \|coverage - nominal\| over nominal 0.95 / 0.80
+    / 0.50, chord against box-uniform: 0.2900 / 0.1233 on the
+    pre-registered fixed-truth instrument, 0.2004 / 0.0361 over 4680
+    truth-swept fits of the same fixture, and 0.2467 / 0.1572 over nine
+    (config, axis) rows spanning seven families, at 0.69 to 1.08x the
+    width. The conditional-coverage swing that held the default back
+    reads 0.110 at the shipped placement against 0.415 on the coarse
+    pinned grid it was measured on, and at nominal 0.50 it is the same
+    on both reads. `outer_grid_h_over_sd` is how wide a cell is on each
+    axis (with `outer_grid_resolution_declined` naming why an axis
+    carries no ratio, and `outer_grid_railed_axes` naming any axis whose
+    nodes do not contain its own posterior mode), and
     `theta_within_cell` is what each axis was actually read with. Only a
     `"density"` support admits it – a CCD design, a locally refined grid
     and a posterior sample are not cell partitions that tile – and an
@@ -217,11 +223,10 @@ tulpa_nested_laplace(
     exactly.
 
   - `skew_correct` (`TRUE`) – consume the inner-Laplace expansion
-    instead of only grading it (gcol33/tulpa#302, gcol33/tulpa#354):
-    report Cornish-Fisher marginal quantiles at each coefficient's own
-    `gamma_3`, about the centre `gamma_1 + gamma_3 / 2` that Rue,
-    Martino & Chopin (2009) eq. (22) implies, from
-    [`summary()`](https://rdrr.io/r/base/summary.html) /
+    instead of only grading it: report Cornish-Fisher marginal quantiles
+    at each coefficient's own `gamma_3`, about the centre
+    `gamma_1 + gamma_3 / 2` that Rue, Martino & Chopin (2009) eq. (22)
+    implies, from [`summary()`](https://rdrr.io/r/base/summary.html) /
     [`confint()`](https://rdrr.io/r/stats/confint.html) wherever the
     combined inner band says the leading-order expansion is in its
     regime, and the Gaussian quantiles everywhere else. It is
@@ -229,15 +234,14 @@ tulpa_nested_laplace(
     are untouched, so a fit run with it off is bit for bit the fit it
     was before. A coefficient whose location term could not be formed
     declines rather than reading it as zero. The band that bounded the
-    relocation itself (`centre_unreliable`, gcol33/tulpa#362) is off
-    (`Inf`): scored over seven fixtures with an exact reference, every
-    finite cutoff declines the coefficients the correction helps most,
-    because a large centre carrying a small `gamma_3` is uniformly weak
-    correlation rather than an expansion out of its regime
-    (gcol33/tulpa#376). `$skew_correction` records the per-coefficient
-    `gamma_3`, `gamma_1` and the centre they form, the band, the inner
-    importance k-hat, the combined band, the eligibility and the reason
-    behind it; the `skew_applied` attribute on
+    relocation itself (`centre_unreliable`) is off (`Inf`): scored over
+    seven fixtures with an exact reference, every finite cutoff declines
+    the coefficients the correction helps most, because a large centre
+    carrying a small `gamma_3` is uniformly weak correlation rather than
+    an expansion out of its regime. `$skew_correction` records the
+    per-coefficient `gamma_3`, `gamma_1` and the centre they form, the
+    band, the inner importance k-hat, the combined band, the eligibility
+    and the reason behind it; the `skew_applied` attribute on
     [`summary()`](https://rdrr.io/r/base/summary.html) /
     [`confint()`](https://rdrr.io/r/stats/confint.html) records what was
     actually used at the requested level. RMC fit a skew normal here
@@ -245,19 +249,19 @@ tulpa_nested_laplace(
     unlike a skew normal its skewness does not saturate inside the band
     it is applied on.
 
-    MEASURED (gcol33/tulpa#346, gcol33/tulpa#354). Against exact
-    quadrature quantiles of rare-event binomial-logit posteriors it cuts
-    total absolute endpoint error 69.2%, improving both endpoints in
-    every case. Scored over the WHOLE marginal – paired CRPS against the
-    exact posterior in a 400-replicate prior-predictive experiment – it
-    reads -0.01643 against the uncorrected Laplace at t = -1.89,
-    essentially all of the -0.01662 the exact posterior itself achieves,
-    and its PIT re-enters the simultaneous SBC band. Applied about the
-    Laplace mode instead of about `gamma_1 + gamma_3 / 2` the same
-    reshaping scored +0.00775 at t = +3.54, a net loss; that centre is
-    what gcol33/tulpa#354 supplied.
+    MEASURED. Against exact quadrature quantiles of rare-event
+    binomial-logit posteriors it cuts total absolute endpoint error
+    69.2%, improving both endpoints in every case. Scored over the WHOLE
+    marginal – paired CRPS against the exact posterior in a
+    400-replicate prior-predictive experiment – it reads -0.01643
+    against the uncorrected Laplace at t = -1.89, essentially all of the
+    -0.01662 the exact posterior itself achieves, and its PIT re-enters
+    the simultaneous SBC band. Applied about the Laplace mode instead of
+    about `gamma_1 + gamma_3 / 2` the same reshaping scored +0.00775 at
+    t = +3.54, a net loss; the location term is what supplies that
+    centre.
 
-    IT IS ON BY DEFAULT (gcol33/tulpa#364), so
+    IT IS ON BY DEFAULT, so
     [`summary()`](https://rdrr.io/r/base/summary.html) /
     [`confint()`](https://rdrr.io/r/stats/confint.html) on a
     nested-Laplace fit report the corrected quantiles wherever the
@@ -274,8 +278,7 @@ tulpa_nested_laplace(
 
   - `subspace_debias` (`FALSE`) – correct only the latent directions the
     inner-layer diagnostics flagged, by exact Metropolis, and leave the
-    rest at their Gaussian conditional (gcol33/tulpa#304, extended to
-    this backend by gcol33/tulpa#306). `TRUE` takes every default; a
+    rest at their Gaussian conditional. `TRUE` takes every default; a
     list overrides `band` (the inner-reliability floor a coordinate is
     selected at, default `"ok"`), `idx` (pin the corrected set
     explicitly, skipping the selector), `closure` / `closure_max` (grow
@@ -294,9 +297,8 @@ tulpa_nested_laplace(
     the recombination reads exactly those per-cell pieces.
 
   - `cila` (`FALSE`) – corrected integrated Laplace, the second
-    inner-layer debias (gcol33/tulpa#351, after Lai, Margossian and
-    Sheldon, arXiv:2605.20345; wired to this backend by
-    gcol33/tulpa#368). Where `subspace_debias` selects coordinates and
+    inner-layer debias (after Lai, Margossian and Sheldon,
+    arXiv:2605.20345). Where `subspace_debias` selects coordinates and
     runs exact Metropolis on them, this selects nothing: at every outer
     cell it draws `n_points` points from the whole inner Gaussian,
     weights each by the exact joint density it came from, and reports
@@ -312,18 +314,17 @@ tulpa_nested_laplace(
     own triangular and permutation solves; an LDL' factor has no square
     root to draw with and is declined with `"sparse_factor_not_ll"`.
 
-  - `auto_recenter` (`TRUE`) – outer-grid placement policy
-    (gcol33/tulpa#289 / \#290 / \#361). `TRUE` re-centres the movable
-    default axes on the posterior mode and refits when the grid either
-    RAILS (an axis's own marginal is maximal at one of its own
-    endpoints) or does not RESOLVE its posterior (an axis's node spacing
-    exceeds 2 posterior SDs in its own coordinate). Both tests read the
-    weights the fit already stored, so a grid that brackets and resolves
-    its mode costs nothing beyond them; when the pass does fire it is a
-    second full grid solve plus a finite-difference mode/Hessian
-    stencil. A recentred axis is `mode +/- 2.5 sd` over 5 nodes, a cell
-    width of 1.25 posterior SDs by construction, against a census median
-    of 3.9 on the fixed spans.
+  - `auto_recenter` (`TRUE`) – outer-grid placement policy. `TRUE`
+    re-centres the movable default axes on the posterior mode and refits
+    when the grid either RAILS (an axis's own marginal is maximal at one
+    of its own endpoints) or does not RESOLVE its posterior (an axis's
+    node spacing exceeds 2 posterior SDs in its own coordinate). Both
+    tests read the weights the fit already stored, so a grid that
+    brackets and resolves its mode costs nothing beyond them; when the
+    pass does fire it is a second full grid solve plus a
+    finite-difference mode/Hessian stencil. A recentred axis is
+    `mode +/- 2.5 sd` over 5 nodes, a cell width of 1.25 posterior SDs
+    by construction, against a census median of 3.9 on the fixed spans.
 
     Measured over 200 fixed-truth seeds on each of six configurations
     (icar chain / icar lattice / rw1 / bym2 / iid / nngp), the default

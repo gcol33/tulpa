@@ -182,6 +182,21 @@ check_model(fit)               # posterior-predictive + residual diagnostics
 
 Posterior-predictive checks (`pp_check`, `check_model`), residual tests (`pit_residuals`, `test_dispersion`, `test_zero_inflation`), and spatial/temporal diagnostics (`moran_i`, `durbin_watson`, `tulpa_variogram`) round out the surface.
 
+## Calibration, validated
+
+Those diagnostics score one fit. Whether a backend's posteriors are *calibrated* is a question no single fit answers, and coverage answers it weakly: counting how often a 95% interval contains the truth reads one point of the marginal CDF. `sbc()` reads the whole CDF.
+
+```r
+res <- sbc("prior_predictive", simulator = sim, fitter = arms, n_sim = 200)
+res                            # KS, the simultaneous band, the folded read, CRPS
+summary(res, baseline = "map") # paired proper-score ranking, seed by seed
+plot(res, folded = TRUE)       # PIT ECDF difference against the band
+```
+
+Both experiments ship: ordinary SBC averaged over the prior (Talts et al. 2018), and calibration conditional on an observed data set (Sailynoja et al. 2026), which needs no proper prior. The band is a *simultaneous* one, calibrated by bisection against the exact crossing probability of the uniform order statistics — a pointwise binomial band holds all 100 order statistics together only 44.71% of the time. Discrete quantities are randomized within their atom, so a grid hyperparameter and a continuous coefficient share one reference. The premises each experiment rests on are checked rather than assumed, and each guard's conclusion travels on the result.
+
+Read the per-fit reliability band as a screen and this as the verdict: measured over fifteen configurations, the two disagree in both directions — a fit with a clean Pareto-k̂ of 0.196 and both inner scores in the `good` band fails calibration at `p = 2.3e-13`, and one with a k̂ of 1.413 passes at `p = 0.17`. See [Validating calibration](https://gillescolling.com/tulpa/articles/sbc.html).
+
 ## Model packages
 
 `tulpa` ships the engine. Observation likelihoods live in companion packages that link against it via `LinkingTo: tulpa`: a model package supplies a templated `LikelihoodSpec` and a little data encoding, and inherits the spatial, temporal, prior, and inference machinery.
@@ -209,7 +224,7 @@ install.packages("pak")
 pak::pak("gcol33/tulpa")
 
 # Pin a release
-pak::pak("gcol33/tulpa@v0.1.0")
+pak::pak("gcol33/tulpa@v0.2.0")
 ```
 
 `pak` resolves the dependency tree, including `tulpaMesh` (on CRAN, used for SPDE mesh construction). `tulpa` compiles its C++ backend on first install, so a C++17 toolchain is required: Rtools on Windows, Xcode CLI tools on macOS, `r-base-dev` on Linux.
@@ -229,6 +244,7 @@ Inference:
 - [EM + Laplace](https://gillescolling.com/tulpa/articles/em-laplace.html)
 - [Model comparison](https://gillescolling.com/tulpa/articles/model-comparison.html)
 - [Reliability and Pareto-k](https://gillescolling.com/tulpa/articles/reliability-pareto-k.html)
+- [Validating calibration: simulation-based calibration](https://gillescolling.com/tulpa/articles/sbc.html)
 
 Latent structure:
 
@@ -267,7 +283,7 @@ MIT (see the LICENSE file).
   author = {Colling, Gilles},
   title  = {tulpa: Template Unified Latent Process Architecture for Bayesian Hierarchical Models},
   year   = {2026},
-  note   = {R package version 0.1.0},
+  note   = {R package version 0.2.0},
   url    = {https://github.com/gcol33/tulpa}
 }
 ```

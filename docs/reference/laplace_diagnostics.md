@@ -38,23 +38,23 @@ right-skewed hyperparameter tail and does not by itself invalidate the
 point estimates, which the grid quadrature governs.
 
 `outer_regime` qualifies what a high `pareto_k` means, and is the reason
-a bare threshold on `pareto_k` is not a reliability verdict
-(gcol33/tulpa#276). A sharp hyperparameter posterior collapses the grid
-onto ~1 cell (`ess_grid` near 1); the outer integration has then
-degenerated to a point evaluation at the modal hyperparameter, so
-`pareto_k` is scoring how well a Gaussian at that mode stands in for the
-hyperparameter marginal, not how well a grid integrated it. Where the
-dominant cell is INTERIOR to the grid the collapse is benign – the grid
-bracketed the mode, the estimate is empirical Bayes there, and only
-integrated hyperparameter uncertainty is missing. Where it sits at a
-grid BOUNDARY the grid may simply be too narrow: `grid_edge_axes` /
-`grid_edge_sides` name the axes to widen. On a fit whose `pareto_k`
-cleared the good band, the outer diagnostic also fits a skew-normal
-proposal and reports the marginal's estimated skewness as
-`outer_skew_max`, so an inflated k-hat that was purely the symmetric
-proposal's mismatch with a skewed variance-component marginal is both
-corrected and explained. A skew-normal has Gaussian tails, so this can
-never mask a genuinely heavy-tailed target.
+a bare threshold on `pareto_k` is not a reliability verdict. A sharp
+hyperparameter posterior collapses the grid onto ~1 cell (`ess_grid`
+near 1); the outer integration has then degenerated to a point
+evaluation at the modal hyperparameter, so `pareto_k` is scoring how
+well a Gaussian at that mode stands in for the hyperparameter marginal,
+not how well a grid integrated it. Where the dominant cell is INTERIOR
+to the grid the collapse is benign – the grid bracketed the mode, the
+estimate is empirical Bayes there, and only integrated hyperparameter
+uncertainty is missing. Where it sits at a grid BOUNDARY the grid may
+simply be too narrow: `grid_edge_axes` / `grid_edge_sides` name the axes
+to widen. On a fit whose `pareto_k` cleared the good band, the outer
+diagnostic also fits a skew-normal proposal and reports the marginal's
+estimated skewness as `outer_skew_max`, so an inflated k-hat that was
+purely the symmetric proposal's mismatch with a skewed
+variance-component marginal is both corrected and explained. A
+skew-normal has Gaussian tails, so this can never mask a genuinely
+heavy-tailed target.
 
 The grid quadrature reliability – the effective sample size
 `ess_grid = 1 / sum(w_k^2)` of the outer integration weights and the
@@ -70,9 +70,9 @@ the fitted MAP grid cell, computed when `control$diagnose_skew = TRUE`
 (the default) on the fitting call. Reading a high `pareto_k` alone as
 "the fit is broken" conflates the two layers: an occu_cover batch
 flagged 42/78 species "unreliable" on outer k-hat alone when their point
-estimates, governed by the healthy inner layer, were fine
-(gcol33/tulpa#272) – the `reliability` attribute is the combined verdict
-that names which layer degrades, if either does.
+estimates, governed by the healthy inner layer, were fine – the
+`reliability` attribute is the combined verdict that names which layer
+degrades, if either does.
 
 Each parameter row also carries the rank-normalized split-Rhat and bulk
 / tail effective sample size of the draws (Vehtari et al. 2021). On
@@ -87,7 +87,7 @@ read off the fit. So a fit that carries no draws – a default
 single-block nested-Laplace fit, whose posterior is the retained
 outer-grid mixture rather than a sample – reports the full band with an
 empty per-parameter body and `n_draws = NA`, and records why in the
-`param_table_declined` attribute (gcol33/tulpa#348).
+`param_table_declined` attribute.
 [`tulpa_posterior_draws()`](https://gillescolling.com/tulpa/reference/tulpa_posterior_draws.md)
 samples that mixture where the rows are wanted. The one case that still
 returns `NULL` is a fit with neither draws nor any reliability quantity,
@@ -125,12 +125,12 @@ A data frame with one row per parameter – `parameter`, `mean`, `sd`,
 
 - `pareto_k_declined`, `pareto_k_declined_note`:
 
-  when `pareto_k` is `NA`, WHY (gcol33/tulpa#295): `"not_requested"`,
-  `"not_applicable"`, `"unguessable_axis"` (naming the axis – a
-  permanent limitation of that family, so read `ess_grid` instead),
-  `"draws_too_few"`, `"grid_too_small"`, `"no_varying_axis"`,
-  `"degenerate_proposal"`, or `"internal_inconsistency"` (an engine bug
-  worth reporting), plus a one-line reading of it.
+  when `pareto_k` is `NA`, WHY: `"not_requested"`, `"not_applicable"`,
+  `"unguessable_axis"` (naming the axis – a permanent limitation of that
+  family, so read `ess_grid` instead), `"draws_too_few"`,
+  `"grid_too_small"`, `"no_varying_axis"`, `"degenerate_proposal"`, or
+  `"internal_inconsistency"` (an engine bug worth reporting), plus a
+  one-line reading of it.
 
 - `pareto_k_is_ess`:
 
@@ -144,8 +144,9 @@ A data frame with one row per parameter – `parameter`, `mean`, `sd`,
 
   `"spread"` / `"collapsed_interior"` / `"collapsed_edge"` – whether the
   outer grid integrated hyperparameter uncertainty at all, and if not
-  whether its dominant cell is interior (benign) or against a grid
-  boundary (widen it).
+  whether its dominant cell is interior (empirical Bayes at the mode:
+  point estimates sound, hyperparameter uncertainty not integrated) or
+  against a grid boundary (widen it).
 
 - `grid_edge_axes`, `grid_edge_sides`:
 
@@ -200,9 +201,9 @@ A data frame with one row per parameter – `parameter`, `mean`, `sd`,
 - `inner_skew_declined`, `inner_skew_arms_declined`,
   `inner_skew_declined_note`:
 
-  when nothing was scored, WHY (gcol33/tulpa#296): `"coupled_arm"`
-  (STRUCTURAL – the coupled arms have neither a per-observation sum nor
-  a cell third-derivative tensor to read, so the outer k-hat is the only
+  when nothing was scored, WHY: `"coupled_arm"` (STRUCTURAL – the
+  coupled arms have neither a per-observation sum nor a cell
+  third-derivative tensor to read, so the outer k-hat is the only
   reliability number this fit has), `"curvature3_unavailable"`,
   `"no_finite_contribution"`, `"no_probe_indices"`, `"not_requested"`,
   `"backend_unsupported"`, `"solve_failed"`, or `"not_converged"` (the
@@ -334,8 +335,8 @@ diagnostics(fit)
 #>   2 parameters, 1000 draws; per-parameter rhat / ESS below are
 #>   i.i.d.-draw Monte-Carlo diagnostics (not chain mixing).
 #> 
-#>     parameter       mean        sd  ess_bulk   ess_tail    rhat
-#> 1 (Intercept) -0.2211598 0.1958737  5.089701 523.989494 1.14106
-#> 2           x  0.3789681 0.2517347 16.199446   3.885598 1.11132
+#>     parameter       mean        sd ess_bulk ess_tail     rhat
+#> 1 (Intercept) -0.3239187 0.1806756 19.74593 40.14727 1.107996
+#> 2           x  0.4047345 0.1642653 41.91750 18.53311 1.041535
 # }
 ```
