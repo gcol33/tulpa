@@ -1,3 +1,22 @@
+# tulpa 0.2.5
+
+* **The Windows arm64 parallel failure is the OpenMP reduction losing a
+  thread's contribution, and no fit goes through it.** Read off the r-universe
+  R-release build's own numbers: `log_lik = -669.2` against a true -898.6, and
+  the missing 229.417 is, to the four figures the report printed, exactly the
+  last chunk of a 4-thread static split (chunk sums -221.97 / -219.51 / -227.70
+  / -229.44; dropping the fourth gives -669.18). One private copy was not added
+  in. The iterations ran -- the same build passed the per-element `results`
+  identity at every thread count -- so what failed is the combination the
+  runtime performs at the end of the region, which is the one step
+  `tulpa_parallel_sum()` never asks it for: it writes its slots from the loop
+  body and adds them in a serial loop afterwards. It is intermittent, failing
+  both probes in one build and one in the next. So `sum_shipped` carries the
+  verdict and `sum_omp_red` is reported with a warning naming the difference
+  and the bound: a red suite there would be a third-party runtime defect on a
+  construct no fit can reach, which is the noise that made the report hard to
+  read (gcol33/tulpa#610).
+
 # tulpa 0.2.4
 
 * **`plot.sbc()`'s arguments are documented by the block attached to it.** An
