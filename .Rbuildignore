@@ -36,3 +36,4 @@
 ^_check_cran\.R$
 ^\.pkgdown-stash$
 ^.*\.done$
+^\.Rprofile$
