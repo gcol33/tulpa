@@ -149,11 +149,17 @@ so the prior shrinks the tail without biasing the modal cell when
 the data identifies it: default-friendly choice on \eqn{\sigma} is
 \code{c(U = 1.0, alpha = 0.01)} (donor amplitude); on the dimensionless
 copy coefficient \eqn{\alpha} the recommended choice is
-\code{c(U = 8.0, alpha = 0.01)}. Too small a \code{U} over-shrinks the copy
-coefficient past the modal cell and, through the \code{alpha * sigma} copy
-axis, inflates the coupled donor amplitude \code{sigma} -- e.g. on a fixture
-with truth \eqn{\alpha = 1}, \code{c(U = 2.0, alpha = 0.01)} pulls the
-\eqn{\alpha} posterior below 1 and lifts \code{sigma} above its truth.
+\code{c(U = 4.0, alpha = 0.01)}. What counts as strong is set by the
+measure the axis already carries: a log-scale axis with no prior is
+flat in \verb{log theta}, which is a \code{1/theta} shrinkage on the natural
+scale, so a PC prior only shrinks harder than the no-prior baseline
+once \code{lambda = -log(alpha)/U} is large enough to beat it. Too small a
+\code{U} over-shrinks the copy coefficient past the modal cell and, through
+the \code{alpha * sigma} copy axis, inflates the coupled donor amplitude
+\code{sigma}: on a fixture with truth \eqn{\alpha = 1} and \code{sigma = 0.6},
+\code{c(U = 2.0, alpha = 0.01)} pulls the \eqn{\alpha} geometric mean to
+0.93 and lifts \code{sigma} to 0.68, and \code{c(U = 0.25, alpha = 0.01)} to
+0.51 and 0.94.
 \item \code{list("half_normal", scale)} -- half-normal with scale \code{scale > 0}.
 Sharper tail decay than PC; use when stronger regularization is
 desired and the truth is well inside the prior.

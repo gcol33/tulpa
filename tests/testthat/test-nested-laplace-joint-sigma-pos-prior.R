@@ -13,17 +13,32 @@
 #   (1) the flat-prior baseline carries the documented small-n_pos
 #       upward bias on alpha (sanity check that the fixture exercises
 #       the regime tulpa#22 targets),
-#   (2) the documented-default pc.prec(U=2.0, alpha=0.01) cuts the
-#       alpha geometric bias meaningfully (target on this fixture:
-#       <= 9%; calibrated for the (sigma, alpha) reparam, where U is the
-#       upper end of plausible alpha values rather than the truth itself
-#       -- the prior test sweep dated 2026-05-20 found U=1.0 overshrinks
-#       past truth and inflates the cross-axis sigma by ~+13%, so the
-#       recommended default on the alpha domain shifted to U=2.0),
-#   (3) a stronger half_normal(scale=0.5) gives at least 15% relative
-#       reduction vs flat,
+#   (2) the documented-default pc.prec(U=4.0, alpha=0.01) cuts the
+#       alpha geometric bias without over-shrinking past truth,
+#   (3) half_normal(scale=1.0) does the same, more strongly,
 #   (4) the regularizer on alpha does not corrupt the well-identified
 #       donor-arm amplitude sigma (cross-axis coupling check).
+#
+# What U means here is set by the measure the alpha axis carries with no
+# prior: the axis is integrated on log alpha, so the flat default is
+# already a 1/alpha shrinkage, and a PC prior only shrinks harder than the
+# baseline once lambda = -log(a)/U is large enough to beat it. That is why
+# the recommended U is not "the upper end of plausible alpha" alone.
+# Swept on this fixture's own 50 seeds (dev_notes/audit0830/
+# sweep_alpha_prior.R), alpha geometric bias against truth 1.0, with the
+# coupled donor sigma against its truth of 0.6:
+#
+#   flat  +0.056 (sigma 0.644)   pc U=1  -0.205 (0.746)   hn 0.25 -0.373
+#   pc U=8 +0.116 (0.614)        pc U=2  -0.071 (0.683)   hn 0.5  -0.161
+#   pc U=4 +0.049 (0.635)        pc U=0.5 -0.350 (0.838)  hn 1    +0.040
+#                                pc U=0.25 -0.491 (0.941) hn 2    +0.148
+#
+# Monotone in U, crossing truth near U ~ 3.4, and the over-shrinking arms
+# reproduce tulpa#22's cross-axis mechanism exactly: pulling alpha below 1
+# lifts the coupled sigma above 0.6, up to 0.94 at U=0.25. The defaults
+# moved from U=8 / scale=2 to U=4 / scale=1 when the joint driver's priors
+# stopped being integrated in the wrong coordinate (gcol33/tulpa#625); the
+# earlier numbers were calibrated against a realised prior of pi(a)/a.
 #
 # Skipped on CRAN: 30 joint BYM2 fits x 3 prior settings cost ~30-40s.
 
@@ -128,9 +143,9 @@ test_that("alpha hyperprior gently reduces small-n_pos bias without corrupting s
         sim <- .simulate_d7_pp(seeds[i])
         f_flat <- .fit_pp(sim, adj, prior_alpha = NULL)
         f_pc   <- .fit_pp(sim, adj,
-                          prior_alpha = list("pc.prec", c(8.0, 0.01)))
+                          prior_alpha = list("pc.prec", c(4.0, 0.01)))
         f_hn   <- .fit_pp(sim, adj,
-                          prior_alpha = list("half_normal", 2.0))
+                          prior_alpha = list("half_normal", 1.0))
         alpha_flat[i] <- f_flat$theta_median[["alpha"]]
         alpha_pc[i]   <- f_pc$theta_median[["alpha"]]
         alpha_hn[i]   <- f_hn$theta_median[["alpha"]]
@@ -147,30 +162,39 @@ test_that("alpha hyperprior gently reduces small-n_pos bias without corrupting s
     gb_hn   <- geom_bias(alpha_hn,   1.0)
 
     info_str <- sprintf(
-        "geom_bias alpha: flat=%.3f pc.prec(U=8)=%.3f half_normal(2)=%.3f | mean sigma: flat=%.3f pc=%.3f",
+        "geom_bias alpha: flat=%.3f pc.prec(U=4)=%.3f half_normal(1)=%.3f | mean sigma: flat=%.3f pc=%.3f",
         gb_flat, gb_pc, gb_hn, mean(sig_flat), mean(sig_pc)
     )
 
     # (1) Sanity: the fixture exercises the small-n_pos regime, so the flat
-    #     baseline carries a small upward bias on alpha (measured ~0.09).
+    #     baseline carries a small upward bias on alpha (measured 0.056).
     expect_gt(gb_flat, 0.02, label = info_str)
 
-    # (2) The recommended default pc.prec(U=8, alpha=0.01) shrinks the bias
-    #     toward zero (measured ~0.03) without over-shrinking past the truth.
+    # (2) The recommended default pc.prec(U=4, alpha=0.01) shrinks the bias
+    #     toward zero (measured 0.049) without over-shrinking past the truth.
     #     A too-small U drives the alpha median below 1 and, through the
-    #     alpha * sigma copy axis, inflates the coupled donor sigma; U=8 keeps
+    #     alpha * sigma copy axis, inflates the coupled donor sigma; U=4 keeps
     #     alpha on the correct side of the truth.
     expect_lt(abs(gb_pc), 0.09, label = info_str)   # bias stays small
     expect_gt(gb_pc, -0.05, label = info_str)       # no over-shrink past truth
 
-    # (3) half_normal(scale = 2.0) is likewise gentle: it regularizes the tail
-    #     without over-shrinking (measured ~0.06 bias).
+    # (3) half_normal(scale = 1.0) is likewise gentle: it regularizes the tail
+    #     without over-shrinking (measured 0.040 bias).
     expect_lt(abs(gb_hn), 0.12, label = info_str)
     expect_gt(gb_hn, -0.05, label = info_str)
 
+    # (5) tulpa#22's claim itself, which the bounds above do not test: the
+    #     regularizer BUYS something against the axis's own no-prior measure.
+    #     Both fits are deterministic on these seeds, so this is an exact
+    #     comparison, not a sampling one (measured 0.049 and 0.040 against
+    #     0.056). It is the assertion that fails if a default is recommended
+    #     that shrinks less than the flat axis already does.
+    expect_lt(abs(gb_pc), abs(gb_flat), label = info_str)
+    expect_lt(abs(gb_hn), abs(gb_flat), label = info_str)
+
     # (4) The alpha regularizer leaves the well-identified donor amplitude
-    #     sigma near its truth of 0.6 (measured ~0.64 under pc.prec(U=8)); the
-    #     flat baseline recovers sigma to ~0.62.
+    #     sigma near its truth of 0.6 (measured 0.635 under pc.prec(U=4)); the
+    #     flat baseline recovers sigma to 0.644.
     expect_lt(abs(mean(sig_pc) - 0.6),   0.12, label = info_str)
     expect_lt(abs(mean(sig_flat) - 0.6), 0.10, label = info_str)
 })

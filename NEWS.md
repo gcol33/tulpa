@@ -1,5 +1,50 @@
 # tulpa 0.2.1
 
+* **A declared hyperprior meets the outer grid in one coordinate, and a
+  declared point mass keeps the prior probability it declares.** Three ways the
+  same rule was stated twice. The joint driver's `prior_sigma` / `prior_alpha` /
+  `prior_phi` families are documented as densities on the axis's natural scale
+  and were added straight to `log_marginal`, whose cell widths are measured on
+  the axis's integration coordinate, so the realised prior was
+  `pi(theta) / theta` rather than `pi(theta)`: on a 9-node geometric `sigma`
+  grid a `pc.prec(U = 2, alpha = 0.05)` put 22.7 % of its mass on the smallest
+  node where the declared prior puts 4.3 %. The change of variables now happens
+  in one place, `.hyper_prior_carry()`, shared by that fold, the generic
+  driver's, and the axis quadrature, and the joint path reproduces the closed-
+  form cell probabilities of its own declared prior to quadrature error
+  (max 0.0034, from 0.184). A density on an axis describes that axis's
+  CONTINUUM, so it is no longer read at the zero level of an axis carrying an
+  `atom_mass` -- where the change of variables had made it `log(0)`, giving the
+  atom zero weight whatever the declared mass said, and where a density finite
+  at the origin instead reweighted the atom against the continuum, so the
+  declared split was not the split the fit integrated. The continuum's declared
+  density now sets its SHAPE and `1 - atom_mass` sets its share, and
+  `.hyper_atom_fold_scale()` weighs the atom on the continuum's own scale where
+  the density is folded into `log_marginal` rather than carried in the weights.
+  A declared `atom_mass` is therefore the prior probability the fit integrates,
+  whatever the density is and however far the nodes reach
+  (gcol33/tulpa#624, gcol33/tulpa#625, gcol33/tulpa#626).
+
+* **The recommended `prior_alpha` on the copy scale moves from
+  `c(U = 8.0, alpha = 0.01)` to `c(U = 4.0, alpha = 0.01)`, and the
+  half-normal from scale 2 to 1.** The old numbers were calibrated against a
+  realised prior of `pi(a)/a`, so correcting the coordinate moves the whole `U`
+  scale. What sets it is the measure the axis carries with no prior at all: the
+  copy scale is integrated on `log alpha`, so its flat default is already a
+  `1/alpha` shrinkage, and a PC prior shrinks harder than that baseline only
+  once `lambda` is large enough to beat it. Swept over `U` on
+  `test-nested-laplace-joint-sigma-pos-prior.R`'s own fixture and 50 seeds
+  (alpha truth 1.0, coupled sigma truth 0.6), the alpha geometric bias is
+  monotone in `U` and crosses truth near `U ~ 3.4`: flat +0.056, `U = 8`
+  +0.116, `U = 4` +0.049, `U = 2` -0.071, `U = 0.25` -0.491. `U = 8` now shrinks
+  LESS than the axis's own no-prior measure, which is why it read as a
+  regression rather than a stale constant. The over-shrinking arms reproduce
+  gcol33/tulpa#22's cross-axis mechanism unchanged -- pulling alpha below its
+  truth lifts the coupled donor `sigma` above 0.6, to 0.94 at `U = 0.25` -- so
+  the recommendation's REASONING stands and only its calibration moved. The
+  test now also asserts what #22 actually claims, that the regularizer beats
+  the flat axis, which no bound in it had been testing.
+
 * **A reported per-axis `theta_sd` comes from the estimator that axis's own
   resolution calls for.** It was the 3-point parabola at the modal node
   wherever that fit, which reads the curvature at the mode: a Gaussian summary,

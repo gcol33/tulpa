@@ -19,6 +19,41 @@
   if (isTRUE(spec$log_scale)) log(v) else as.numeric(v)
 }
 
+# Carry a declared log-density to the coordinate the outer grid integrates on.
+#
+# `coord` names the coordinate `fn` is a density on. A density on the natural
+# scale of a log-scale axis meets cell widths measured in log, so it picks up
+# the change of variables `p(x) dx = p(x) x d(log x)`; a density already on the
+# integration coordinate is carried through as written, and on a linear axis the
+# two coincide. Every path that turns a declared density into a weight -- the
+# axis quadrature here, the generic driver's `log_marginal` fold, the joint
+# driver's -- goes through this, so the rule is stated once.
+#
+# A value the density cannot score (an error, a non-finite return) is -Inf: the
+# level carries no prior mass.
+.hyper_prior_carry <- function(x, fn, log_scale = FALSE, coord = "natural") {
+  x <- as.numeric(x)
+  ld <- vapply(x, function(v) {
+    out <- tryCatch(fn(v), error = function(e) NA_real_)
+    if (length(out) != 1L || !is.finite(out)) NA_real_ else as.numeric(out)
+  }, numeric(1))
+  if (identical(coord, "natural") && isTRUE(log_scale)) {
+    lx <- suppressWarnings(log(x))
+    ld <- ld + ifelse(is.finite(lx), lx, -Inf)
+  }
+  ld[is.na(ld)] <- -Inf
+  ld
+}
+
+# Is this level the axis's point mass rather than a point of its continuum?
+# A zero on a log-scale axis that declares an `atom_mass`; nothing otherwise.
+.hyper_is_atom_level <- function(x, spec) {
+  if (is.null(spec$atom_mass) || !isTRUE(spec$log_scale)) {
+    return(rep(FALSE, length(x)))
+  }
+  as.numeric(x) == 0
+}
+
 # Node cell widths on the integration coordinate, clipped to a fixed interval.
 #
 # Each node owns the half-interval to its neighbour on either side; the outermost
@@ -97,22 +132,22 @@
 
   dens <- spec$slab_log_density
   if (is.null(dens)) {
-    # Flat over the declared span. The widths already tile it, so normalising
-    # them is the same as dividing by the span.
-    cw <- width / sum(width)
+    # Flat over the declared span: the widths themselves are the shape.
+    cw <- width
   } else {
-    # Declared density, carried to the integration coordinate: on a log axis
-    # p(x) dx = p(x) x d(log x).
-    ld <- vapply(x, function(v) as.numeric(dens(v)), numeric(1))
-    if (isTRUE(spec$log_scale)) ld <- ld + log(x)
-    # Deliberately not renormalised. `dens` is a proper density, so these widths
-    # times densities sum to the share of it the nodes actually reach. Leaving
-    # that below one is what makes a grid that covers more of the prior carry
-    # more weight against the atom, instead of the atom's share depending on how
-    # far the nodes happen to stop.
+    # Declared density, carried to the coordinate the widths are measured on.
+    ld <- .hyper_prior_carry(x, dens, spec$log_scale,
+                             spec$slab_log_density_coord %||% "natural")
     cw <- width * exp(ld)
     cw[!is.finite(cw)] <- 0
   }
+  # The density shapes the continuum; it does not set how much of the axis the
+  # continuum holds. That is `1 - atom_mass`, declared before the fit, so the
+  # shape is normalised and the split cannot move when nodes are added, when a
+  # grid stops short of the density's tail, or when the density is rescaled.
+  tot <- sum(cw)
+  cw <- if (is.finite(tot) && tot > 0) cw / tot
+        else rep(1 / length(cw), length(cw))
 
   if (has_atom) {
     a <- as.numeric(atom_mass)
@@ -120,12 +155,33 @@
       stop(sprintf("Axis '%s': `atom_mass` must lie in [0, 1).", spec$name),
            call. = FALSE)
     }
-    w[is_atom] <- a
+    w[is_atom] <- a * .hyper_atom_fold_scale(x, cw, spec)
     w[cont]    <- (1 - a) * cw
   } else {
     w[cont] <- cw
   }
   stats::setNames(w, nm)
+}
+
+# Scale the atom is weighed against the continuum on.
+#
+# An axis's `log_prior` is a density on its continuum, and the driver folds it
+# into `log_marginal`, so every continuum cell picks up `exp(lp)` downstream
+# while the atom -- which is not a point of that continuum, and is why the
+# axis declares its prior probability rather than integrating it -- picks up
+# nothing. Weighing the atom at the continuum's density-weighted mean puts the
+# two on one scale, so the declared split is the split the fit integrates
+# whatever the density is (gcol33/tulpa#624, gcol33/tulpa#626).
+#
+# 1 where the axis declares no such density, and where the density leaves the
+# whole continuum with no mass -- there the atom holds the axis on its own.
+.hyper_atom_fold_scale <- function(x, cw, spec) {
+  fn <- spec$log_prior
+  if (is.null(fn)) return(1)
+  lp <- .hyper_prior_carry(x, fn, spec$log_scale,
+                           spec$log_prior_coord %||% "integration")
+  s <- sum(cw * exp(lp))
+  if (!is.finite(s) || s <= 0) 1 else s
 }
 
 # Prior probability of the copy scale's "no coupling" point mass: equal odds on

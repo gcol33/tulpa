@@ -500,11 +500,15 @@
 # Hardcoded metadata captures what the legacy joint helpers `.axis_is_log_scale`,
 # `.axis_bounds`, `.refinable_axes`, `.axis_refinement_order` encoded by name --
 # the same set, in one place.
-# `user_prior_axes` names the axes the caller supplied a regularizing hyperprior
-# for. Those keep the flat-over-declared-span measure, because the user's prior
-# is applied separately through `hp_fn` and applying the engine's declared
-# density as well would put two priors on one axis.
-.joint_axis_specs <- function(grids, cp, user_prior_axes = character(0),
+# `user_priors` carries the caller's regularizing hyperpriors, named by the axis
+# each applies to (`sigma`, `alpha`, `phi` -- the last matching every `phi_<arm>`
+# axis), matching how `.joint_hp_vec_for_grids()` folds them into
+# `log_marginal`. An axis with one keeps the flat-over-declared-span measure,
+# because applying the engine's declared density as well would put two priors on
+# one axis, and carries the density on the spec so the axis quadrature knows
+# what the fold will apply -- which is what lets a declared point mass keep its
+# prior probability (`.hyper_atom_fold_scale()`).
+.joint_axis_specs <- function(grids, cp, user_priors = NULL,
                               copy_atom_mass = .TULPA_COPY_ATOM_MASS,
                               copy_slab = "exponential") {
     copy_slab <- .hyper_check_copy_slab(copy_slab)
@@ -551,7 +555,17 @@
         # always did, and fixing it here, ahead of any refinement, is what keeps
         # the measure independent of the data.
         pos <- sort(unique(spec$grid[spec$grid > 0]))
-        user_prior <- bare %in% user_prior_axes || a %in% user_prior_axes
+        user_fn <- if (identical(a, "sigma")) user_priors$sigma
+                   else if (identical(a, "alpha")) user_priors$alpha
+                   else if (startsWith(a, "phi_")) user_priors$phi
+                   else NULL
+        user_prior <- !is.null(user_fn)
+        if (user_prior) {
+            # The joint driver's hyperprior families are densities on the axis's
+            # natural scale.
+            spec$log_prior <- user_fn
+            spec$log_prior_coord <- "natural"
+        }
         if (log_scale && length(pos) >= 2L) {
             copy_exp_slab <- identical(bare, "alpha") && !user_prior &&
                              identical(copy_slab, "exponential")

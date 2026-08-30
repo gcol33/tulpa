@@ -157,11 +157,17 @@
 #'     the data identifies it: default-friendly choice on \eqn{\sigma} is
 #'     `c(U = 1.0, alpha = 0.01)` (donor amplitude); on the dimensionless
 #'     copy coefficient \eqn{\alpha} the recommended choice is
-#'     `c(U = 8.0, alpha = 0.01)`. Too small a `U` over-shrinks the copy
-#'     coefficient past the modal cell and, through the `alpha * sigma` copy
-#'     axis, inflates the coupled donor amplitude `sigma` -- e.g. on a fixture
-#'     with truth \eqn{\alpha = 1}, `c(U = 2.0, alpha = 0.01)` pulls the
-#'     \eqn{\alpha} posterior below 1 and lifts `sigma` above its truth.
+#'     `c(U = 4.0, alpha = 0.01)`. What counts as strong is set by the
+#'     measure the axis already carries: a log-scale axis with no prior is
+#'     flat in `log theta`, which is a `1/theta` shrinkage on the natural
+#'     scale, so a PC prior only shrinks harder than the no-prior baseline
+#'     once `lambda = -log(alpha)/U` is large enough to beat it. Too small a
+#'     `U` over-shrinks the copy coefficient past the modal cell and, through
+#'     the `alpha * sigma` copy axis, inflates the coupled donor amplitude
+#'     `sigma`: on a fixture with truth \eqn{\alpha = 1} and `sigma = 0.6`,
+#'     `c(U = 2.0, alpha = 0.01)` pulls the \eqn{\alpha} geometric mean to
+#'     0.93 and lifts `sigma` to 0.68, and `c(U = 0.25, alpha = 0.01)` to
+#'     0.51 and 0.94.
 #'   * `list("half_normal", scale)` -- half-normal with scale `scale > 0`.
 #'     Sharper tail decay than PC; use when stronger regularization is
 #'     desired and the truth is well inside the prior.
@@ -1536,10 +1542,9 @@ tulpa_nested_laplace_joint <- function(responses,
     # back into `res$modes` / `res$n_iter` / `res$Q_csc_*_per_grid` so
     # downstream code (`.nl_posterior_moments`, `.nl_attach_axis_sd`,
     # the modes / Q consumers) reads the refined values unchanged.
-    specs <- .joint_axis_specs(grids, cp, user_prior_axes = c(
-        if (!is.null(fn_sigma)) "sigma", if (!is.null(fn_alpha)) "alpha",
-        if (!is.null(fn_phi))   "phi"), copy_atom_mass = copy_atom_mass,
-        copy_slab = copy_slab)
+    specs <- .joint_axis_specs(grids, cp,
+        user_priors = list(sigma = fn_sigma, alpha = fn_alpha, phi = fn_phi),
+        copy_atom_mass = copy_atom_mass, copy_slab = copy_slab)
     kernel_fn <- .joint_make_kernel_fn(arms, prior, cp, backend, max_iter,
                                         tol, n_threads, x_init, store_Q,
                                         arm_names,

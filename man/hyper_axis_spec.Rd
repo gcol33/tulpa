@@ -49,7 +49,11 @@ of the zero level on a log-scale axis. A \code{0} is a point mass, not a point
 of the log continuum, so its prior share has to be declared rather than
 inherited from the node count; the continuum nodes then share
 \code{1 - atom_mass} by quadrature weight. Required when \code{grid} contains a \code{0}
-on a \code{log_scale} axis.}
+on a \code{log_scale} axis. A \code{log_prior} on such an axis is a density on the
+continuum: it is not evaluated at the zero level and it shapes the
+continuum's share without moving the declared split, so \code{atom_mass} is
+the prior probability the fit integrates whatever the density is
+(gcol33/tulpa#624, gcol33/tulpa#626).}
 
 \item{slab_bounds}{Numeric \code{c(lower, upper)}, or \code{NULL} (default). Fixed
 support of the continuum part of the prior. A flat measure on a log axis is
@@ -66,10 +70,10 @@ widths measured on the axis's INTEGRATION coordinate (\verb{log x} on a
 \code{log_scale} axis), so \code{"integration"} is carried through as written and is
 what the flat default's zero contribution is flat on. \code{"natural"} declares
 a density on \code{x} itself -- a PC prior, \code{dexp}, \code{dgamma} -- and the engine
-adds the change of variables \code{log(x)} on a \code{log_scale} axis, the same way
-\code{slab_log_density} is carried across in \code{.hyper_axis_level_weights()}.
-Inert on a linear axis, where the two coordinates coincide
-(gcol33/tulpa#623).}
+adds the change of variables \code{log(x)} on a \code{log_scale} axis. Every path
+that meets a declared density carries it across in one place
+(\code{.hyper_prior_carry()}). Inert on a linear axis, where the two
+coordinates coincide (gcol33/tulpa#623).}
 }
 \value{
 An object of class \code{tulpa_hyper_axis_spec} (a validated list with

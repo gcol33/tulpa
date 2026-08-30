@@ -14,7 +14,9 @@
 #   grid        numeric              the per-axis candidate values (the outer
 #                                   integration nodes on this axis).
 #   log_prior   function(x) | NULL   optional log-prior density on the axis.
-#                                   `NULL` -> flat.
+#                                   `NULL` -> flat. On an axis with an
+#                                   `atom_mass` it describes the continuum
+#                                   only.
 #   log_prior_coord "integration"|"natural"  which coordinate `log_prior` is a
 #                                   density on. Default "integration", which is
 #                                   what a zero contribution (the flat default)
@@ -62,10 +64,10 @@
 #'   `log_scale` axis), so `"integration"` is carried through as written and is
 #'   what the flat default's zero contribution is flat on. `"natural"` declares
 #'   a density on `x` itself -- a PC prior, `dexp`, `dgamma` -- and the engine
-#'   adds the change of variables `log(x)` on a `log_scale` axis, the same way
-#'   `slab_log_density` is carried across in `.hyper_axis_level_weights()`.
-#'   Inert on a linear axis, where the two coordinates coincide
-#'   (gcol33/tulpa#623).
+#'   adds the change of variables `log(x)` on a `log_scale` axis. Every path
+#'   that meets a declared density carries it across in one place
+#'   (`.hyper_prior_carry()`). Inert on a linear axis, where the two
+#'   coordinates coincide (gcol33/tulpa#623).
 #' @param log_scale Logical. Does the axis live naturally on a log scale
 #'   (`sigma`, `tau`, `lengthscale`, ...)? Drives geometric vs arithmetic
 #'   spacing in refinement and log-axis quantile fits. Default `FALSE`.
@@ -84,7 +86,11 @@
 #'   of the log continuum, so its prior share has to be declared rather than
 #'   inherited from the node count; the continuum nodes then share
 #'   `1 - atom_mass` by quadrature weight. Required when `grid` contains a `0`
-#'   on a `log_scale` axis.
+#'   on a `log_scale` axis. A `log_prior` on such an axis is a density on the
+#'   continuum: it is not evaluated at the zero level and it shapes the
+#'   continuum's share without moving the declared split, so `atom_mass` is
+#'   the prior probability the fit integrates whatever the density is
+#'   (gcol33/tulpa#624, gcol33/tulpa#626).
 #' @param refinable Logical. When `TRUE`, the axis participates in the
 #'   adaptive-grid and var-of-means consistency passes (when those are
 #'   enabled at the driver level). Spatial prior amplitudes (`sigma`) are

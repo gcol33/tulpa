@@ -66,18 +66,37 @@ test_that("copy_slab = 'exponential' is the default and is unchanged by it", {
   expect_false(is.null(ax$slab_log_density))
 
   # The declared density, integrated on the log coordinate: rate put so that 5 %
-  # of the prior sits above the largest declared node.
+  # of the prior sits above the largest declared node. The density sets the
+  # SHAPE of the continuum; how much of the axis the continuum holds is
+  # `1 - atom_mass`, declared before the fit, so the shape is normalised.
   pos <- GEO_ALPHA[GEO_ALPHA > 0]
   lambda <- -log(0.05) / max(pos)
   u <- log(pos)
   edges <- c(u[1L] - diff(u[1:2]) / 2, (u[-length(u)] + u[-1L]) / 2,
              u[length(u)] + diff(u[(length(u) - 1L):length(u)]) / 2)
   expected <- diff(edges) * lambda * exp(-lambda * pos) * pos
+  expected <- expected / sum(expected)
   w <- .hyper_axis_level_weights(GEO_ALPHA, ax, .TULPA_COPY_ATOM_MASS)
   expect_equal(unname(w[-1L]), (1 - .TULPA_COPY_ATOM_MASS) * expected)
 
   # Not flat: the continuum weights fall away as alpha grows.
   expect_gt(stats::sd(unname(w[-1L])), 0)
+})
+
+test_that("the declared atom mass is the split, whatever the nodes reach", {
+  # The exponential slab has support (0, Inf), so no node set reaches all of it.
+  # Where the outermost node stops is a resolution choice; the prior probability
+  # of "no coupling" is a modelling one, declared as `atom_mass`. Extending the
+  # grid must therefore change the quadrature error, not the split
+  # (gcol33/tulpa#626).
+  for (grid in list(GEO_ALPHA,
+                    c(0, exp(seq(log(0.1), log(3), length.out = 9))),
+                    c(0, exp(seq(log(0.01), log(30), length.out = 7))))) {
+    ax <- alpha_axis(.joint_axis_specs(list(alpha = grid), CP))
+    w  <- .hyper_axis_level_weights(grid, ax, .TULPA_COPY_ATOM_MASS)
+    expect_equal(sum(w), 1)
+    expect_equal(unname(w[1L]), .TULPA_COPY_ATOM_MASS)
+  }
 })
 
 test_that("copy_atom_mass = 0 removes the point mass under either slab", {

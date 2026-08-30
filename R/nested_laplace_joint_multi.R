@@ -739,14 +739,12 @@
     out
 }
 
-# Add the regularizing (sigma, alpha) hyperprior to a per-cell log-marginal
-# vector for a multi-block `joint_grid`. With multiple copy blocks the prior
-# is baked on the first block carrying a (sigma, alpha) axis pair. Single
-# source of truth for the main dispatch and the Pareto-k re-evaluation.
-.joint_multi_add_hp <- function(log_marginal, joint_grid, axis_offsets, B,
-                                fn_sigma, fn_alpha, fn_phi = NULL) {
-    if (is.null(fn_sigma) && is.null(fn_alpha) && is.null(fn_phi))
-        return(log_marginal)
+# Which columns of a multi-block `joint_grid` each hyperprior applies to.
+# Named `sigma` / `alpha` for the first block carrying that axis, plus every
+# `phi_<arm>` column. Single source of the mapping, so the fold below and the
+# axis quadrature (`.joint_multi_hp_specs()`) name the same columns.
+.joint_multi_hp_cols <- function(joint_grid, axis_offsets, B,
+                                 fn_sigma, fn_alpha, fn_phi = NULL) {
     view_map <- integer(0)
     for (b_idx in seq_len(B)) {
         cols_b  <- (axis_offsets[b_idx] + 1L):axis_offsets[b_idx + 1L]
@@ -760,14 +758,57 @@
             view_map["alpha"] <- cols_b[i_alpha]
         }
     }
+    if (is.null(fn_sigma)) view_map <- view_map[names(view_map) != "sigma"]
+    if (is.null(fn_alpha)) view_map <- view_map[names(view_map) != "alpha"]
     # phi_<arm> dispersion axes are not block-prefixed; carry them straight
     # through so a single `fn_phi` re-weights each on the joint grid.
-    phi_cols <- if (is.null(fn_phi)) character(0)
-                else grep("^phi_", colnames(joint_grid), value = TRUE)
-    if (length(view_map) == 0L && length(phi_cols) == 0L) return(log_marginal)
-    view <- joint_grid[, c(view_map, match(phi_cols, colnames(joint_grid))),
-                       drop = FALSE]
-    colnames(view) <- c(names(view_map), phi_cols)
+    phi_cols <- if (is.null(fn_phi)) integer(0)
+                else match(grep("^phi_", colnames(joint_grid), value = TRUE),
+                           colnames(joint_grid))
+    if (length(phi_cols)) names(phi_cols) <- colnames(joint_grid)[phi_cols]
+    c(view_map, phi_cols)
+}
+
+# Attach each hyperprior to the axis spec of the column it applies to, so the
+# axis quadrature knows what the fold below will apply to that axis. That is
+# what keeps the copy scale's declared point mass at its declared prior
+# probability (`.hyper_atom_fold_scale()`).
+.joint_multi_hp_specs <- function(specs, joint_grid, axis_offsets, B,
+                                  fn_sigma, fn_alpha, fn_phi = NULL) {
+    if (is.null(specs)) return(specs)
+    if (is.null(fn_sigma) && is.null(fn_alpha) && is.null(fn_phi)) return(specs)
+    cols <- .joint_multi_hp_cols(joint_grid, axis_offsets, B,
+                                 fn_sigma, fn_alpha, fn_phi)
+    if (length(cols) == 0L) return(specs)
+    named <- colnames(joint_grid)[cols]
+    fns <- list(sigma = fn_sigma, alpha = fn_alpha)
+    lapply(specs, function(sp) {
+        j <- match(sp$name, named)
+        if (is.na(j)) return(sp)
+        role <- names(cols)[j]
+        fn <- if (role %in% names(fns)) fns[[role]] else fn_phi
+        if (is.null(fn)) return(sp)
+        # The joint driver's hyperprior families are densities on the axis's
+        # natural scale.
+        sp$log_prior <- fn
+        sp$log_prior_coord <- "natural"
+        sp
+    })
+}
+
+# Add the regularizing (sigma, alpha) hyperprior to a per-cell log-marginal
+# vector for a multi-block `joint_grid`. With multiple copy blocks the prior
+# is baked on the first block carrying a (sigma, alpha) axis pair. Single
+# source of truth for the main dispatch and the Pareto-k re-evaluation.
+.joint_multi_add_hp <- function(log_marginal, joint_grid, axis_offsets, B,
+                                fn_sigma, fn_alpha, fn_phi = NULL) {
+    if (is.null(fn_sigma) && is.null(fn_alpha) && is.null(fn_phi))
+        return(log_marginal)
+    cols <- .joint_multi_hp_cols(joint_grid, axis_offsets, B,
+                                 fn_sigma, fn_alpha, fn_phi)
+    if (length(cols) == 0L) return(log_marginal)
+    view <- joint_grid[, cols, drop = FALSE]
+    colnames(view) <- names(cols)
     hp <- .joint_hp_vec_for_grids(view, fn_sigma, fn_alpha, fn_phi)
     if (!is.null(hp) && length(hp) == length(log_marginal)) {
         log_marginal <- log_marginal + hp
@@ -1549,6 +1590,9 @@
         if (!is.null(sp$atom_mass)) sp$atom_mass <- copy_atom_mass
         sp
     })
+    multi_specs      <- .joint_multi_hp_specs(multi_specs, joint_grid,
+                                              axis_offsets, B,
+                                              fn_sigma, fn_alpha, fn_phi)
     res$log_quad     <- .hyper_log_quad_weights(res$theta_grid, multi_specs)
     res$axis_support <- .hyper_grid_supports(res$theta_grid, multi_specs)
     res$weights      <- .joint_integration_weights(res$log_marginal, dnode,

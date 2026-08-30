@@ -26,11 +26,12 @@
 #       pi(theta) = (2/(scale*sqrt(2*pi))) exp(-theta^2/(2*scale^2))
 #    Calibrated by `scale`. Sharper decay than PC.
 #
-# Both densities accept the closed half-line [0, Inf) so the theta=0 grid
-# cell carries a finite prior contribution (PC: log(lambda); half-normal:
-# log(2/(scale*sqrt(2*pi)))). Both are normalized log-densities -- the
-# additive constant is shared across grid cells, doesn't bias moments,
-# and is kept for downstream log-evidence consumers.
+# Both are normalized log-densities on the NATURAL scale of their axis --
+# the coordinate the calibration above is stated on -- so the engine carries
+# them to the axis's integration coordinate before they meet cell widths
+# measured there (gcol33/tulpa#625). Both accept the closed half-line
+# [0, Inf); the copy scale's zero is a declared point mass rather than a
+# point of the log continuum, and the density does not describe it.
 #
 # Returns NULL for spec = NULL (flat prior, no contribution). Returns
 # a function(theta) -> log_density (vectorised, theta >= 0) otherwise.
@@ -99,21 +100,38 @@
 # A single `fn_phi` re-weights every `phi_<arm>` axis on the grid, the
 # way `fn_sigma` re-weights any sigma-named axis.
 .joint_hp_vec_for_grids <- function(theta_grid, fn_sigma, fn_alpha,
-                                    fn_phi = NULL) {
+                                    fn_phi = NULL,
+                                    copy_atom_mass = .TULPA_COPY_ATOM_MASS) {
     if (is.null(fn_sigma) && is.null(fn_alpha) && is.null(fn_phi)) return(NULL)
     if (is.null(theta_grid) || !is.matrix(theta_grid)) return(NULL)
     n <- nrow(theta_grid)
     out <- numeric(n)
     cn <- colnames(theta_grid)
+    add <- function(out, col, fn, atom_mass = NULL) {
+        # The axis's integration coordinate is the one `.joint_axis_specs()`
+        # declares for it, resolved on the bare name a multi-block grid
+        # prefixes. `NA` (an axis no table classifies) carries no quadrature
+        # weight either, so its nodes stay on their own scale.
+        bare <- sub("^b[0-9]+[.]", "", col)
+        log_scale <- isTRUE(.hyper_axis_scale(bare))
+        v <- as.numeric(theta_grid[, col])
+        cj <- .hyper_prior_carry(v, fn, log_scale, "natural")
+        # The copy scale's zero is the declared "no coupling" point mass. The
+        # density describes the continuum, so it is not read there and the
+        # declared split stands (gcol33/tulpa#624, gcol33/tulpa#626).
+        cj[.hyper_is_atom_level(
+            v, list(atom_mass = atom_mass, log_scale = log_scale))] <- 0
+        out + cj
+    }
     if (!is.null(fn_sigma) && "sigma" %in% cn) {
-        out <- out + fn_sigma(as.numeric(theta_grid[, "sigma"]))
+        out <- add(out, "sigma", fn_sigma)
     }
     if (!is.null(fn_alpha) && "alpha" %in% cn) {
-        out <- out + fn_alpha(as.numeric(theta_grid[, "alpha"]))
+        out <- add(out, "alpha", fn_alpha, atom_mass = copy_atom_mass)
     }
     if (!is.null(fn_phi)) {
         for (col in grep("^phi_", cn, value = TRUE)) {
-            out <- out + fn_phi(as.numeric(theta_grid[, col]))
+            out <- add(out, col, fn_phi)
         }
     }
     out

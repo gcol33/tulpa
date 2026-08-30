@@ -33,7 +33,8 @@
          spi_pos = as.integer(spi_pos), sd_pos = sd_pos)
 }
 
-.fit_pp <- function(sim, adj, phi_axis, prior_phi = NULL) {
+.fit_pp <- function(sim, adj, phi_axis, prior_phi = NULL,
+                    consistency = TRUE) {
     arm_occ <- list(y = as.numeric(sim$occur), n_trials = rep(1L, sim$N),
                     X = sim$Xocc, spatial_idx = sim$spatial_idx,
                     re_idx = rep(0, sim$N), n_re_groups = 0L, sigma_re = 1.0,
@@ -51,24 +52,35 @@
         responses = list(occ = arm_occ, pos = arm_pos),
         prior = prior, phi_grid = list(pos = phi_axis),
         prior_phi = prior_phi,
-        control = list(diagnose_k = FALSE))
+        control = list(diagnose_k = FALSE,
+                       var_of_means_consistency = consistency))
 }
 
-test_that("prior_phi adds exactly the PC log-density to every phi cell", {
+test_that("prior_phi adds the PC log-density on the axis's own coordinate", {
     skip_on_cran()
     sim <- .simulate_joint_pp(N = 400, n_s = 30, sd_pos = 0.3, seed = 919)
     adj <- .chain_adj_pp(sim$n_s)
     phi_axis <- exp(seq(log(0.08), log(1.0), length.out = 9))
 
     U <- 1.0; a <- 0.01; lambda <- -log(a) / U
-    flat <- .fit_pp(sim, adj, phi_axis, prior_phi = NULL)
-    pc   <- .fit_pp(sim, adj, phi_axis, prior_phi = list("pc.prec", c(U, a)))
+    # The consistency pass appends slice cells, and where it appends them
+    # depends on the weights, so the two fits would not share a grid. This
+    # assertion is about what the prior adds at a cell, so the grid is pinned.
+    flat <- .fit_pp(sim, adj, phi_axis, prior_phi = NULL, consistency = FALSE)
+    pc   <- .fit_pp(sim, adj, phi_axis, prior_phi = list("pc.prec", c(U, a)),
+                    consistency = FALSE)
 
     expect_true("phi_pos" %in% colnames(flat$theta_grid))
     # Same grid in both fits, so the only difference in log_marginal is the
     # added prior density at each cell's phi.
     expect_identical(flat$theta_grid[, "phi_pos"], pc$theta_grid[, "phi_pos"])
-    expected_add <- log(lambda) - lambda * pc$theta_grid[, "phi_pos"]
+    # `pc.prec` is a density on phi, and `phi_pos` is integrated on log phi
+    # (`.hyper_axis_scale()`), so what the fold adds is that density carried
+    # to the axis's own coordinate: p(phi) dphi = p(phi) phi d(log phi)
+    # (gcol33/tulpa#625). The phi = 1 cell is the arbiter -- log(1) is 0, so
+    # it is the one cell the two readings agree on, to the bit.
+    phi <- pc$theta_grid[, "phi_pos"]
+    expected_add <- log(lambda) - lambda * phi + log(phi)
     delta <- pc$log_marginal - flat$log_marginal
     expect_equal(unname(delta), unname(expected_add), tolerance = 1e-9)
 })
