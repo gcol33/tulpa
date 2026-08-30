@@ -1,5 +1,74 @@
 # tulpa 0.2.1
 
+* **A reported per-axis `theta_sd` comes from the estimator that axis's own
+  resolution calls for.** It was the 3-point parabola at the modal node
+  wherever that fit, which reads the curvature at the mode: a Gaussian summary,
+  and one that moves with the spacing of the three nodes it reads. On the copy
+  axis of a coupled `occu_cover` fit it measured 0.150 against 0.294 on two
+  grids over one data set, and sat four times below the spread it stood in for.
+  The report is now the weighted spread of the axis marginal wherever the axis
+  is resolved, and the parabola only where the marginal has collapsed onto too
+  few nodes to have a spread -- the case it was added for, where the weighted
+  read is a floor at zero. The two regimes are separated by the axis's own
+  quadrature effective sample size, read off the weights, so the choice is not
+  one estimator judging the other: `.nl_diag("axis_sd_ess")` carries the
+  threshold and the ladder it was measured off. On a Gamma(1.5, 2) marginal the
+  weighted read spans 2.26 to 2.30 across three grids where the parabola spans
+  1.16 to 1.88. `theta_sd_source` / `theta_sd_ess` /
+  `theta_sd_stencil_declined` travel on the fit, so which estimator produced a
+  reported SD is a property of the fit. The choice is made in
+  `.nl_posterior_moments()`, so every nested path reports one rule: the
+  single-block and spatiotemporal paths always reported the weighted read, a
+  floor at zero on a collapsed axis, and the joint paths carried their own call.
+  A design-weighted grid keeps the weighted read whatever its ESS, since a
+  central-composite design's nodes are not a per-axis lattice for a parabola to
+  read; that is recorded as `design_weighted` rather than left implicit.
+
+* **The var-of-means consistency pass triggers on the axis ESS, not on one SD
+  estimator compared against the other.** Its old test was the weighted SD
+  against the parabola, which with the weighted read now reported would have
+  been the estimator against itself and the pass would never have fired. It
+  asks the question it is actually about -- how many nodes the marginal spreads
+  over -- and keeps the parabola as the SCALE its new points are placed at,
+  which is the regime that estimator is right in. `control$var_of_means_
+  tolerance` is replaced by `control$var_of_means_min_ess`; the moved knob
+  hard-errors.
+
+* **An outer axis holding weight on a boundary node is named, whether or not
+  its mode sits there.** Both producers of an edge label tested the MODE: the
+  rail returns early unless the boundary node is the axis marginal's argmax,
+  and the grid regime returned `"spread"` without inspecting an axis as soon as
+  `ess_grid >= 2`. So an axis with a third of its marginal on its last node and
+  its mode one node in was reported clean, while truncating its own tail
+  exactly as a railed one does. `outer_grid_edge_mass_axes` (and the regime's
+  `edge_mass_axes` / `_sides`, read in every regime) is the second label, in the
+  rail's own currency -- the boundary node's weight against what a flat marginal
+  would put there, so the threshold means the same at any node count.
+  `.nl_diag("edge_mass_lift")` carries it: `1` is where the boundary node
+  carries what a flat marginal would, and over 1400 arrangements of four
+  marginal shapes it names none that leaves less than 0.7 % of its own marginal
+  outside the span, at a false-alarm rate of 0.011 against "more than 5 %
+  outside". `railed` keeps its own stronger statement, that the span does not
+  contain the axis's own mode.
+
+* **The axis marginal every one of those labels reads carries the grid's
+  measure.** `.nl_axis_marginal_w()` normalised `log_marginal` alone, so a rail,
+  a resolution read and a reported mean were taken against three-quarters of
+  the same object on a grid whose spacing is not uniform.
+
+* **Refinement may not move a declared support.** The consistency pass's slice
+  points are clipped to `slab_bounds` the way the extension proposals already
+  are, so a node outside the declared prior support is not solved for a cell
+  that would carry zero weight. An axis whose posterior presses on that support
+  reports it through the boundary-mass label above.
+
+* `hyper_axis_spec(log_prior = )` documents the coordinate it is read on: the
+  contribution enters `log_marginal`, which is weighted by cell widths measured
+  on the axis's integration coordinate, so on a `log_scale` axis the function is
+  a density on `log x`. A caller declaring one on the natural scale adds
+  `log(x)`. No behaviour change; gcol33/tulpa#623 asks whether it should instead
+  be carried across the way `slab_log_density` is.
+
 * **The outer hyperparameter grid is a quadrature rule for a declared prior,
   not the prior itself.** Every node carried the same prior weight, so a grid
   that gained nodes after seeing the data carried a different measure than the

@@ -453,12 +453,12 @@
 # `theta_grid` using only cells that vary that column -- cartesian cells
 # (`refining_axis == ""`) plus same-axis slice cells.
 #
-# Joint theta_mean / theta_sd come from `.nl_posterior_moments` and are
-# left in place for axes with no foreign slice cells (the recompute is a
-# no-op there). The original `theta_mean` / `theta_sd` are overwritten
-# in place rather than augmented -- downstream callers should read the
-# axis marginal, not the cartesian-only joint moment.
-.joint_recalibrate_axis_moments <- function(res) {
+# Joint theta_mean comes from `.nl_posterior_moments` and is left in place for
+# axes with no foreign slice cells (the recompute is a no-op there). It is
+# overwritten in place rather than augmented -- downstream callers should read
+# the axis marginal, not the cartesian-only joint moment. The SD over the same
+# mask is `.nl_attach_axis_sd()`'s, inside `.nl_posterior_moments()`.
+.joint_recalibrate_axis_mean <- function(res) {
     if (is.null(res$refining_axis) || all(res$refining_axis == "")) return(res)
     if (is.null(res$theta_grid) || !is.matrix(res$theta_grid)) return(res)
     lm_eff <- res$log_marginal
@@ -466,15 +466,12 @@
         lm_eff <- lm_eff + res$log_quad
         lm_eff[is.na(lm_eff)] <- -Inf
     }
-    moments <- .hyper_recalibrate_axis_moments(
+    res$theta_mean <- .hyper_recalibrate_axis_mean(
         theta_grid    = res$theta_grid,
         log_marginal  = lm_eff,
         refining_axis = res$refining_axis,
-        theta_mean    = res$theta_mean,
-        theta_sd      = res$theta_sd
+        theta_mean    = res$theta_mean
     )
-    res$theta_mean <- moments$theta_mean
-    res$theta_sd   <- moments$theta_sd
     res
 }
 
@@ -488,8 +485,8 @@
 
 # Alpha refinement piggybacks on the generic consistency pass: alpha
 # appears in `.hyper_refinable_names`, and `.hyper_consistency_pass`
-# fires whenever the joint-grid alpha SD falls short of the Laplace-at-
-# mode alpha SD on its own axis. No bespoke helper.
+# fires whenever the alpha marginal spreads over too few nodes to carry a
+# spread. No bespoke helper.
 
 
 # Generic axis-spec adapter (Step 3).
@@ -762,8 +759,8 @@
 }
 
 # Glue refined extras + log_marginal + refining_axis back into the joint
-# kernel result. Downstream `.joint_recalibrate_axis_moments` /
-# `.nl_posterior_moments` / `.nl_refit_axis_sd_laplace` read `res$modes`,
+# kernel result. Downstream `.joint_recalibrate_axis_mean` /
+# `.nl_posterior_moments` / `.nl_attach_axis_sd` read `res$modes`,
 # `res$log_marginal`, `res$refining_axis` directly; this keeps them in sync
 # after refinement without touching their implementations.
 .joint_glue_extras_to_res <- function(res, theta_grid_matrix, log_marginal,

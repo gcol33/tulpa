@@ -110,13 +110,19 @@ tulpa_check_control <- function(control, allowed, where) {
       "adaptive_grid", "adaptive_grid_cutoff", "adaptive_grid_edge_thresh",
       "adaptive_grid_max_frac", "adaptive_grid_max_passes",
       "adaptive_grid_min_cells", "adaptive_grid_stride",
-      "var_of_means_consistency", "var_of_means_tolerance",
+      "var_of_means_consistency", "var_of_means_min_ess",
       "copy_atom_mass", "copy_slab",
       "diagnose_k", "k_samples", "k_threads", "k_quality", "k_refine",
       "k_max_rounds", "k_bootstrap", "k_tail_points", "k_conf_bands",
       "diagnose_skew", "skew_idx", "skew_correct", "auto_recenter",
       "subspace_debias", "cila", "max_grid_cells", "within_cell",
       "checkpoint", progress),
+    # `tulpa_hyper_grid()`'s own surface: the refinement / consistency passes
+    # it drives and nothing else, since the inner solve is the caller's own
+    # callback and takes no knobs from here.
+    hyper_grid = c("adaptive_grid", "adaptive_grid_edge_thresh",
+                   "adaptive_grid_max_passes", "var_of_means_consistency",
+                   "var_of_means_min_ess"),
     spde = c("method", "n_grid", "max_iter", "tol", "n_threads",
              "diagnose_k", "k_samples", "checkpoint", "mode_find"),
     re_cov_nested = c("integration", "n_per_axis", "span", "n_draws", "seed",

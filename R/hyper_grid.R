@@ -169,11 +169,14 @@
 #'   * `adaptive_grid_edge_thresh` (`0.02`) -- per-axis trigger threshold.
 #'   * `adaptive_grid_max_passes` (`1L`) -- cap on refinement passes.
 #'   * `var_of_means_consistency` (`FALSE`) -- run a post-integration
-#'     consistency pass: for refinable axes whose joint-grid var-of-means
-#'     undershoots the Laplace-at-mode SD by more than `tolerance`, append
-#'     Laplace-guided slice points at `theta_mean +/- {0.7, 1.5} * theta_sd`
-#'     pinned at the modal cell. One kernel call per axis.
-#'   * `var_of_means_tolerance` (`0.7`) -- consistency-pass trigger ratio.
+#'     consistency pass: for refinable axes whose marginal has collapsed onto
+#'     too few nodes to carry a spread, append Laplace-guided slice points at
+#'     `theta_mean +/- {0.7, 1.5} * sd` pinned at the modal cell, `sd` being
+#'     the parabola at the modal node. One kernel call per axis.
+#'   * `var_of_means_min_ess` (`.nl_diag("axis_sd_ess")`) -- the quadrature
+#'     effective sample size an axis marginal has to reach for the pass to
+#'     leave it alone. Read off the weights, so the trigger is not one SD
+#'     estimator compared against the other.
 #'
 #' @return A list of class `c("tulpa_hyper_grid", "tulpa_fit", "list")` with:
 #'   * `theta_grid` -- numeric matrix `[n_cells x n_axes]` of outer-grid
@@ -188,8 +191,14 @@
 #'   * `weights` -- numeric `[n_cells]` summing to 1 (or all `NA` with a
 #'     warning when no cell carries finite mass).
 #'   * `theta_mean`, `theta_sd` -- named numeric vectors; weighted posterior
-#'     mean and SD per axis. SDs refit via the 3-point Laplace-at-mode
-#' parabola where possible.
+#'     mean and SD per axis. Each SD comes from the estimator its axis's own
+#'     resolution calls for -- the weighted spread of the axis marginal where
+#'     it is resolved, the 3-point parabola at the modal node where the
+#'     marginal has collapsed onto too few nodes to have a spread.
+#'   * `theta_sd_source`, `theta_sd_ess`, `theta_sd_stencil_declined` --
+#'     per axis, which estimator produced the SD, the quadrature effective
+#'     sample size that decided it, and (where the parabola was wanted and
+#'     could not be formed) why it declined.
 #'   * `theta_median`, `theta_ci_lo`, `theta_ci_hi` -- named numeric vectors;
 #'     weighted-quantile median and 2.5 / 97.5\% empirical CI per axis
 #'     (the recommended summary for right-skewed scale-like axes).
@@ -237,11 +246,13 @@ tulpa_hyper_grid <- function(hyper_specs, inner_fit,
   specs <- .hyper_axis_specs_normalise(hyper_specs)
   axis_names <- vapply(specs, `[[`, character(1), "name")
 
+  tulpa_check_control(control, .CONTROL_KEYS$hyper_grid, "tulpa_hyper_grid")
   adaptive_grid             <- isTRUE(control$adaptive_grid)
   adaptive_grid_edge_thresh <- control$adaptive_grid_edge_thresh %||% 0.02
   adaptive_grid_max_passes  <- control$adaptive_grid_max_passes %||% 1L
   var_of_means_consistency  <- isTRUE(control$var_of_means_consistency)
-  var_of_means_tolerance    <- control$var_of_means_tolerance %||% 0.7
+  var_of_means_min_ess      <- control$var_of_means_min_ess %||%
+                               .nl_diag("axis_sd_ess")
 
   # State shared across kernel_fn invocations: pins beta dim / names on the
   # first successful cell and accumulates n_failed across passes.
@@ -296,9 +307,9 @@ tulpa_hyper_grid <- function(hyper_specs, inner_fit,
   }
 
   # Initial weighted moments (also needed by the consistency pass).
+  log_quad <- .hyper_log_quad_weights(theta_grid, specs)
   weights <- .nl_normalise_weights_safe(
-    log_marginal, what = "hyper-grid cells",
-    log_quad = .hyper_log_quad_weights(theta_grid, specs))
+    log_marginal, what = "hyper-grid cells", log_quad = log_quad)
   weights_for_summary <- weights
   weights_for_summary[is.na(weights_for_summary)] <- 0
 
@@ -310,12 +321,6 @@ tulpa_hyper_grid <- function(hyper_specs, inner_fit,
       as.numeric(crossprod(weights_for_summary, theta_grid^2)) -
         theta_mean^2))
   }
-  res_partial <- list(theta_grid = theta_grid,
-                      log_marginal = log_marginal,
-                      theta_sd = theta_sd)
-  res_partial <- .nl_refit_axis_sd_laplace(res_partial,
-                                            refining = refining_axis)
-  theta_sd <- res_partial$theta_sd
 
   consistency_info <- NULL
   if (var_of_means_consistency) {
@@ -326,9 +331,8 @@ tulpa_hyper_grid <- function(hyper_specs, inner_fit,
       refining_axis = refining_axis,
       specs         = specs,
       theta_mean    = theta_mean,
-      theta_sd      = theta_sd,
       kernel_fn     = kernel_fn,
-      tolerance     = var_of_means_tolerance,
+      min_ess       = var_of_means_min_ess,
       hp_fn         = hp_fn,
       weights       = weights_for_summary
     )
@@ -342,10 +346,10 @@ tulpa_hyper_grid <- function(hyper_specs, inner_fit,
       # its end -> NA into the returned $log_prior (as the refine pass does).
       log_prior_cell <- if (is.null(hp_fn)) rep(0, nrow(theta_grid))
                         else hp_fn(theta_grid)
-      # Re-derive weights / moments / Laplace-SD on the merged grid.
+      # Re-derive weights / moments on the merged grid.
+      log_quad <- .hyper_log_quad_weights(theta_grid, specs)
       weights <- .nl_normalise_weights_safe(
-        log_marginal, what = "hyper-grid cells",
-        log_quad = .hyper_log_quad_weights(theta_grid, specs))
+        log_marginal, what = "hyper-grid cells", log_quad = log_quad)
       weights_for_summary <- weights
       weights_for_summary[is.na(weights_for_summary)] <- 0
       if (sum(weights_for_summary) > 0) {
@@ -354,23 +358,25 @@ tulpa_hyper_grid <- function(hyper_specs, inner_fit,
           as.numeric(crossprod(weights_for_summary, theta_grid^2)) -
             theta_mean^2))
       }
-      res_partial$theta_grid   <- theta_grid
-      res_partial$log_marginal <- log_marginal
-      res_partial$theta_sd     <- theta_sd
-      res_partial <- .nl_refit_axis_sd_laplace(res_partial,
-                                                refining = refining_axis)
-      theta_sd <- res_partial$theta_sd
     }
     consistency_info <- consistency$info
   }
 
-  # Per-axis moment recalibration when slice cells are present (slice cells
-  # for axis Y are pinned at modal non-Y values; including them in axis X's
-  # marginal collapses X to a point).
-  rc <- .hyper_recalibrate_axis_moments(theta_grid, log_marginal,
-                                         refining_axis, theta_mean, theta_sd)
-  theta_mean <- rc$theta_mean
-  theta_sd   <- rc$theta_sd
+  # Per-axis mean recalibration when slice cells are present (slice cells for
+  # axis Y are pinned at modal non-Y values; including them in axis X's marginal
+  # collapses X to a point). The SD is read off the same masked marginal one
+  # step below, so only the mean is recalibrated here.
+  theta_mean <- .hyper_recalibrate_axis_mean(theta_grid, log_marginal,
+                                              refining_axis, theta_mean,
+                                              log_quad = log_quad)
+
+  # The reported per-axis SD, each from the estimator its own resolution calls
+  # for. Last, so it reads the final grid and the final measure.
+  res_partial <- .nl_attach_axis_sd(
+    list(theta_grid = theta_grid, log_marginal = log_marginal,
+         log_quad = log_quad, theta_sd = theta_sd),
+    refining = refining_axis)
+  theta_sd <- res_partial$theta_sd
 
   # Each axis's support as the caller DECLARED it, so the outer cell edges the
   # interval extends to land inside it. An axis with no
@@ -456,6 +462,9 @@ tulpa_hyper_grid <- function(hyper_specs, inner_fit,
     weights        = weights,
     theta_mean     = theta_mean,
     theta_sd       = theta_sd,
+    theta_sd_source = res_partial$theta_sd_source,
+    theta_sd_ess    = res_partial$theta_sd_ess,
+    theta_sd_stencil_declined = res_partial$theta_sd_stencil_declined,
     theta_median   = theta_median,
     theta_ci_lo    = theta_ci_lo,
     theta_ci_hi    = theta_ci_hi,

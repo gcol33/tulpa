@@ -35,12 +35,18 @@ uncertainty at all, and if not whether its dominant cell is interior
 uncertainty not integrated) or against a grid boundary (widen it).}
 \item{\code{grid_edge_axes}, \code{grid_edge_sides}}{for an edge collapse, the axes
 the dominant cell sits against and on which side.}
+\item{\code{grid_edge_mass_axes}}{axes holding material weight on one of
+their own boundary nodes, as \code{axis:side} --
+that axis truncates its own marginal there whether or not its mode sits
+on the node, which is the weaker and more common statement
+\code{grid_railed_axes} cannot make. Read in every regime, a spread grid
+included.}
 \item{\code{outer_skew_max}}{largest estimated |skewness| of the hyperparameter
 marginal, computed only when the k-hat triggered the skew-normal
 proposal rescue (\code{NA} means the Gaussian proposal already fit, not
 "symmetric and unchecked").}
-\item{\code{outer_regime_note}}{a one-line reading of a collapsed regime, or
-absent on a spread grid.}
+\item{\code{outer_regime_note}}{a one-line reading of a collapsed regime or of
+boundary mass on an axis, absent on a spread grid carrying neither.}
 \item{\code{grid_railed_axes}}{outer axes whose OWN marginal is maximal at one
 of their own endpoints, as \code{axis:side} -- the span does not contain that
 axis's posterior mode, so its marginal is a truncated tail at any

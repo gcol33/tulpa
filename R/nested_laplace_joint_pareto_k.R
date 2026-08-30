@@ -616,6 +616,15 @@
     ess <- 1 / sum(wn^2)
     out <- list(ess_grid = ess, n_grid = nrow(tg), max_weight = max(wn),
                 edge_axes = character(0), edge_sides = character(0))
+    # The boundary-MASS read is taken in every regime, before the collapse
+    # short-circuit. A well-spread grid still truncates whatever its outermost
+    # node's marginal does not reach, so gating this on `ess_grid` reported such
+    # a grid clean (gcol33/tulpa#622). `edge_axes` below keeps its own, stronger
+    # and collapse-specific meaning: the dominant CELL sits at a boundary.
+    em <- .nl_edge_mass_axes(res)
+    parts <- strsplit(em, ":", fixed = TRUE)
+    out$edge_mass_axes  <- vapply(parts, `[[`, character(1), 1L)
+    out$edge_mass_sides <- vapply(parts, `[[`, character(1), 2L)
     if (ess >= .K_DIAG_COLLAPSE_ESS) {
         out$regime <- "spread"
         return(out)
@@ -1597,6 +1606,10 @@
 #   * `pareto_k_regime` -- "spread" / "collapsed_interior" / "collapsed_edge".
 #   * `pareto_k_grid_edge_axes` / `pareto_k_grid_edge_sides` -- which axes the
 #     collapsed mode sits against, and on which side.
+#   * `pareto_k_grid_edge_mass_axes` / `_sides` -- which axes hold material
+#     weight on one of their own boundary nodes, and on which side. Read in
+#     every regime, since a well-spread grid truncates its own marginal just as
+#     a collapsed one does.
 #   * `pareto_k_outer_skew` -- per-axis skewness of the hyperparameter marginal
 #     in the proposal's whitened coordinate, estimated only when the rescue pass
 #     ran (a high k-hat), so `NULL` on a fit whose Gaussian proposal already fit.
@@ -1605,6 +1618,10 @@
     res$pareto_k_regime          <- if (is.null(rg)) NA_character_ else rg$regime
     res$pareto_k_grid_edge_axes  <- if (is.null(rg)) character(0) else rg$edge_axes
     res$pareto_k_grid_edge_sides <- if (is.null(rg)) character(0) else rg$edge_sides
+    res$pareto_k_grid_edge_mass_axes  <-
+        if (is.null(rg)) character(0) else rg$edge_mass_axes
+    res$pareto_k_grid_edge_mass_sides <-
+        if (is.null(rg)) character(0) else rg$edge_mass_sides
     res$pareto_k_outer_skew      <- if (is.null(kd)) NULL else kd$outer_skew
     res
 }

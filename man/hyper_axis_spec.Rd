@@ -25,7 +25,12 @@ Cartesian product across axes.}
 
 \item{log_prior}{Optional \verb{function(x)} returning the scalar log prior
 density at axis value \code{x}. \code{NULL} (default) is a flat / improper prior
-(zero log-prior contribution).}
+(zero log-prior contribution). The contribution is added to the cell's
+\code{log_marginal}, which the integrator weights by cell widths measured on the
+axis's INTEGRATION coordinate, so on a \code{log_scale} axis the function is read
+as a density on \verb{log x}: a caller declaring one on the natural scale adds
+\code{log(x)} to it. Same convention as the outer Pareto-k target, which applies
+no volume element on a positive-scale axis either.}
 
 \item{log_scale}{Logical. Does the axis live naturally on a log scale
 (\code{sigma}, \code{tau}, \code{lengthscale}, ...)? Drives geometric vs arithmetic

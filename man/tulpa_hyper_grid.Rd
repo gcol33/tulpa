@@ -72,11 +72,14 @@ contribute on the right scale.
 \item \code{adaptive_grid_edge_thresh} (\code{0.02}) -- per-axis trigger threshold.
 \item \code{adaptive_grid_max_passes} (\code{1L}) -- cap on refinement passes.
 \item \code{var_of_means_consistency} (\code{FALSE}) -- run a post-integration
-consistency pass: for refinable axes whose joint-grid var-of-means
-undershoots the Laplace-at-mode SD by more than \code{tolerance}, append
-Laplace-guided slice points at \verb{theta_mean +/- \{0.7, 1.5\} * theta_sd}
-pinned at the modal cell. One kernel call per axis.
-\item \code{var_of_means_tolerance} (\code{0.7}) -- consistency-pass trigger ratio.
+consistency pass: for refinable axes whose marginal has collapsed onto
+too few nodes to carry a spread, append Laplace-guided slice points at
+\verb{theta_mean +/- \{0.7, 1.5\} * sd} pinned at the modal cell, \code{sd} being
+the parabola at the modal node. One kernel call per axis.
+\item \code{var_of_means_min_ess} (\code{.nl_diag("axis_sd_ess")}) -- the quadrature
+effective sample size an axis marginal has to reach for the pass to
+leave it alone. Read off the weights, so the trigger is not one SD
+estimator compared against the other.
 }}
 }
 \value{
@@ -94,8 +97,14 @@ all axes have \code{log_prior = NULL}.
 \item \code{weights} -- numeric \verb{[n_cells]} summing to 1 (or all \code{NA} with a
 warning when no cell carries finite mass).
 \item \code{theta_mean}, \code{theta_sd} -- named numeric vectors; weighted posterior
-mean and SD per axis. SDs refit via the 3-point Laplace-at-mode
-parabola where possible.
+mean and SD per axis. Each SD comes from the estimator its axis's own
+resolution calls for -- the weighted spread of the axis marginal where
+it is resolved, the 3-point parabola at the modal node where the
+marginal has collapsed onto too few nodes to have a spread.
+\item \code{theta_sd_source}, \code{theta_sd_ess}, \code{theta_sd_stencil_declined} --
+per axis, which estimator produced the SD, the quadrature effective
+sample size that decided it, and (where the parabola was wanted and
+could not be formed) why it declined.
 \item \code{theta_median}, \code{theta_ci_lo}, \code{theta_ci_hi} -- named numeric vectors;
 weighted-quantile median and 2.5 / 97.5\\% empirical CI per axis
 (the recommended summary for right-skewed scale-like axes).

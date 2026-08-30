@@ -194,6 +194,13 @@
   if (!is.null(bounds)) {
     pts <- pts[pts > bounds[1L] & pts < bounds[2L]]
   }
+  # The declared prior support is fixed, so a node outside it would carry zero
+  # weight and only cost an inner solve -- the same clip the extension proposals
+  # take.
+  slab <- spec$slab_bounds
+  if (!is.null(slab)) {
+    pts <- pts[pts >= slab[1L] & pts <= slab[2L]]
+  }
   if (length(pts) == 0L) return(numeric(0))
   keep <- vapply(pts, function(p) {
     if (is_log) !any(abs(log(lev) - log(p)) < 0.05)
@@ -421,14 +428,27 @@
        extras = extras, refining_axis = refining_axis, info = info)
 }
 
+# Repopulate an axis whose marginal has collapsed onto too few nodes to carry a
+# spread, by appending slice points at `mu +/- {0.7, 1.5} * sd` around the modal
+# cell.
+#
+# The trigger is the axis's own quadrature effective sample size, read off the
+# weights the fit integrates with. It used to be the weighted SD compared
+# against the parabola at the modal node, which is one SD estimator judging the
+# other: with the reported SD now the weighted one wherever the axis is resolved
+# (gcol33/tulpa#621), that comparison would have been the estimator against
+# itself and the pass would never fire. The ESS answers the question the pass is
+# actually asking -- how many nodes the marginal spreads over -- and the parabola
+# stays as the SCALE the new points are placed at, which is the regime it is
+# right in.
 .hyper_consistency_pass <- function(theta_grid, log_marginal, extras,
                                     refining_axis, specs, theta_mean,
-                                    theta_sd, kernel_fn,
-                                    tolerance = 0.7, hp_fn = NULL,
-                                    weights = NULL) {
+                                    kernel_fn,
+                                    min_ess = .nl_diag("axis_sd_ess"),
+                                    hp_fn = NULL, weights = NULL) {
   refinable <- .hyper_refinable_names(specs)
   info <- list(axes = character(0), n_added = integer(0),
-               vom_before = numeric(0), sd_laplace = numeric(0))
+               ess_before = numeric(0), sd_laplace = numeric(0))
   n_added_total <- 0L
   if (length(refinable) == 0L) {
     return(list(theta_grid = theta_grid, log_marginal = log_marginal,
@@ -436,22 +456,23 @@
                 info = NULL, n_added = 0L))
   }
   for (axis in refinable) {
-    sd_lap <- theta_sd[[axis]] %||% NA_real_
-    mu     <- theta_mean[[axis]] %||% NA_real_
-    if (!is.finite(sd_lap) || !is.finite(mu) || sd_lap <= 0) next
+    mu <- theta_mean[[axis]] %||% NA_real_
+    if (!is.finite(mu)) next
     # Refinement on a previous axis grows theta_grid / log_marginal, so the
-    # weights and the mode index are recomputed each iteration to stay aligned
-    # with the current grid rows.
-    iter_weights <- weights
-    if (is.null(iter_weights) || length(iter_weights) != length(log_marginal)) {
-      iter_weights <- .nl_normalise_weights_safe(
-          log_marginal, "refinement grid",
-          log_quad = .hyper_log_quad_weights(theta_grid, specs))
+    # log quadrature weights and the mode index are recomputed each iteration to
+    # stay aligned with the current grid rows.
+    log_quad <- .hyper_log_quad_weights(theta_grid, specs)
+    lm_eff <- log_marginal
+    if (!is.null(log_quad) && length(log_quad) == length(lm_eff)) {
+      lm_eff <- lm_eff + log_quad
+      lm_eff[is.na(lm_eff)] <- -Inf
     }
     overall_mode_idx <- which.max(log_marginal)
-    axis_vals <- as.numeric(theta_grid[, axis])
-    vom_sd    <- .nl_wtd_mean_sd(axis_vals, iter_weights)$sd
-    if (vom_sd >= tolerance * sd_lap) next
+    marg <- .nl_axis_marginal_logdensity(as.numeric(theta_grid[, axis]), lm_eff)
+    ess  <- .nl_axis_quad_ess(marg$log_marg)
+    if (is.finite(ess) && ess >= min_ess) next
+    sd_lap <- as.numeric(.nl_laplace_at_mode_sd_axis(marg$vals, marg$log_marg))
+    if (!is.finite(sd_lap) || sd_lap <= 0) next
 
     lev  <- sort(unique(as.numeric(theta_grid[, axis])))
     spec <- .hyper_spec_by_name(specs, axis)
@@ -473,7 +494,7 @@
     refining_axis <- step$refining_axis
     info$axes        <- c(info$axes, axis)
     info$n_added     <- c(info$n_added, step$n_new)
-    info$vom_before  <- c(info$vom_before, vom_sd)
+    info$ess_before  <- c(info$ess_before, ess)
     info$sd_laplace  <- c(info$sd_laplace, sd_lap)
     n_added_total    <- n_added_total + step$n_new
   }
@@ -484,15 +505,23 @@
 }
 
 # ============================================================================
-# Per-axis moment recalibration when slice cells are present. Weighted
-# mean / SD on each axis over its own refinement slice (own-axis and
-# consistency cells), skipping axes with no foreign-slice contamination.
+# Per-axis MEAN recalibration when slice cells are present. Weighted mean on
+# each axis over its own refinement slice (own-axis and consistency cells),
+# skipping axes with no foreign-slice contamination.
+#
+# `log_marginal` is the integrand the weights are built from, so a caller that
+# holds the grid's quadrature weights passes them as `log_quad` and the mean is
+# taken against the measure the grid integrates rather than against its node
+# counts. The SD over the same masked marginal is `.nl_attach_axis_sd()`'s, so
+# it is not computed a second time here.
 # ============================================================================
-.hyper_recalibrate_axis_moments <- function(theta_grid, log_marginal,
-                                            refining_axis, theta_mean,
-                                            theta_sd) {
-  if (is.null(refining_axis) || all(refining_axis == "")) {
-    return(list(theta_mean = theta_mean, theta_sd = theta_sd))
+.hyper_recalibrate_axis_mean <- function(theta_grid, log_marginal,
+                                         refining_axis, theta_mean,
+                                         log_quad = NULL) {
+  if (is.null(refining_axis) || all(refining_axis == "")) return(theta_mean)
+  if (!is.null(log_quad) && length(log_quad) == length(log_marginal)) {
+    log_marginal <- log_marginal + log_quad
+    log_marginal[is.na(log_marginal)] <- -Inf
   }
   cols <- colnames(theta_grid)
   for (col in cols) {
@@ -504,9 +533,7 @@
     if (!is.finite(m)) next
     w    <- exp(lm_k - m); w <- w / sum(w)
     vals <- theta_grid[keep, col]
-    ms   <- .nl_wtd_mean_sd(vals, w)
-    theta_mean[[col]] <- ms$mean
-    theta_sd[[col]]   <- ms$sd
+    theta_mean[[col]] <- .nl_wtd_mean_sd(vals, w)$mean
   }
-  list(theta_mean = theta_mean, theta_sd = theta_sd)
+  theta_mean
 }

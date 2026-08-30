@@ -986,9 +986,76 @@
     tune[[par]]
 }
 
+# `axis_sd_ess` is the quadrature effective sample size an outer axis has to
+# reach on its own marginal before its reported SD is read off the WEIGHTS
+# rather than off a parabola at the modal node.
+#
+# The two estimators answer different questions. The weighted SD integrates the
+# axis marginal against the measure the nodes carry, so it is consistent as the
+# grid refines and it is the spread of the posterior the fit actually holds. The
+# 3-point parabola reads the curvature at the mode, so it is a Gaussian summary
+# and it moves with the spacing of the three nodes it reads. Neither is right
+# everywhere: on a grid whose mass has collapsed onto one node the weighted read
+# is a floor at zero, which is the case the parabola was added for.
+#
+# The separating statistic has to come off the WEIGHTS, so that the choice is
+# not one estimator judging the other. `ess = 1 / sum(p^2)` over the axis's own
+# level shares is that statistic: it counts the nodes the marginal actually
+# spreads over, so it is low exactly where a discrete spread is not a spread.
+#
+# MEASURED (`dev_notes/issue621/probe_ess_threshold.R`), sweeping node spacing
+# `h / sd` 0.25 to 4 and the mode's offset inside its cell 0 to 0.9, on a
+# Gaussian axis marginal -- where the parabola is exact by construction, so it
+# says what the weighted read COSTS -- and on a skewed one, where the parabola
+# targets a different number. Worst relative error over every arrangement
+# clearing each threshold:
+#
+#   threshold   weighted (gaussian)  weighted (skew)   parabola (skew)
+#     1.5             1.00                0.526             0.92
+#     2.5             8.5e-04             0.303             0.92
+#     3               9.8e-06             0.074             0.92
+#     4               7.5e-11             0.025             0.92
+#
+# Below 2.5 the weighted read is up to 100 % wrong on a Gaussian and the
+# parabola is exact, so that is the regime the parabola serves; at 3 the
+# weighted read is exact on a Gaussian to 1e-05 and within 7.4 % on a skewed
+# marginal, against the parabola's 92 %. Across grids of ONE skewed density at
+# `ess >= 3` the weighted read spans 0.974 to 1.074 of the truth while the
+# parabola spans 0.080 to 0.642, which is the grid dependence gcol33/tulpa#621
+# reports as a factor of two on a copy axis.
+# `edge_mass_lift` is how far above a FLAT marginal an outer axis's boundary
+# node has to sit before the axis is NAMED as holding boundary mass
+# (`.nl_axis_edge_mass()`, `$outer_grid_edge_mass_axes`). Same currency as the
+# rail's `.NL_RECENTER$edge_mass_mult`, `lift = m * w_edge`, and for the same
+# reason: a fixed share of the marginal makes a longer axis a weaker detector of
+# the same posterior. The two thresholds are separate because the labels are:
+# the rail is a rescue TRIGGER on an axis whose span misses its own mode, and
+# this is a report on an axis that truncates its own marginal whatever the
+# argmax does.
+#
+# `1` is the point at which the boundary node carries what a flat marginal would
+# put there, and it is read off the mass such a grid leaves OUTSIDE its span
+# (`dev_notes/issue622/probe_edge_mass_lift.R`: 1400 arrangements over four
+# marginal shapes, five node counts and 35 spans, the reference being the mass
+# beyond the outer CELL EDGE, which is what a reported interval extends to):
+#
+#   lift >= 0.75   410 arrangements   least truncated 0.0074   median 0.258
+#   lift >= 1.00   338               least truncated 0.0074   median 0.540
+#   lift >= 1.25   287               least truncated 0.0304   median 0.726
+#
+# Against "more than 5 % of the marginal left outside", a lift of 1 catches 60 %
+# of the truncating arrangements at a false-alarm rate of 0.011, and the worst
+# arrangement it names falsely leaves 4.6 % outside -- i.e. just under the
+# definition. It is a one-sided read: a high lift means the span truncates, a low
+# one does not certify that it does not, which is why it is reported rather than
+# acted on. On gcol33/tulpa#622's own cases the lifts are 0.62 (the observed
+# fit), 1.80, 3.06 and 3.96, so the two the issue asks to see named are named and
+# the near-flat one is not.
 .NL_DIAG <- list(
     within_cell          = "box_uniform",
     grid_resolved        = 1,
+    axis_sd_ess          = 3,
+    edge_mass_lift       = 1,
     k_usable             = 0.7,
     k_samples            = 200L,
     gamma3_ok            = 0.5,

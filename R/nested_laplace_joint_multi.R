@@ -1611,14 +1611,6 @@
         res, prepared, axis_offsets, joint_grid, cp,
         int_weights = if (is_design_weighted) res$weights else NULL,
         support = prov$read, within = within_cell)
-    if (!is_design_weighted) {
-        # Replace per-axis var-of-means SDs with Laplace-at-mode SDs at the
-        # modal cell. The 3-point grid-profile fit needs the
-        # regular per-axis lattice; on the scattered CCD design the weighted
-        # var-of-means over the design IS the calibrated SD (the corrected
-        # design weights reproduce the Gaussian moments), so it is kept as is.
-        res <- .nl_refit_axis_sd_laplace(res)
-    }
     res$arm_layout    <- .joint_multi_layout(arms, prepared)
     res$blocks        <- prepared
     res$prior         <- prior_list
@@ -1683,7 +1675,6 @@
                 r, prepared, axis_offsets, joint_grid, cp,
                 int_weights = if (is_design_weighted) r$weights else NULL,
                 support = prov$read, within = within_cell)
-            if (!is_design_weighted) r <- .nl_refit_axis_sd_laplace(r)
             r
         })
     res$timing <- tm$timing()

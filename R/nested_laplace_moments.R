@@ -26,6 +26,10 @@
     res$theta_mean <- ms$mean
     res$theta_sd   <- ms$sd
   }
+  # Each axis's SD then comes from the estimator its own resolution calls for.
+  # Here rather than at each driver, so one rule serves every nested path and a
+  # fit says which estimator produced its number.
+  res <- .nl_attach_axis_sd(res)
   doms <- .nl_axis_domains(res, type)
   qs <- .nl_axis_quantiles(tg, res$log_marginal, res$refining_axis,
                            domains = doms, within = within)
@@ -1042,7 +1046,7 @@
 # -- those cells pin the current axis at a single non-varying value, so
 # including them oversamples that value. Cartesian cells, same-axis
 # slice cells, and same-axis consistency cells are kept. This is the
-# same per-axis mask used by `.joint_recalibrate_axis_moments` for the
+# same per-axis mask used by `.joint_recalibrate_axis_mean` for the
 # mean/SD path.
 #
 # Returns list(median = named_vec, ci_lo = named_vec, ci_hi = named_vec).
@@ -1252,7 +1256,7 @@
 # about a CELL PARTITION's spacing, and the other kinds do not have one: a
 # central-composite design's nodes carry no cells, a locally refined grid's
 # clouds sit inside one base cell, and a sample's values are draws. The SD side
-# is the same 3-point lattice profile `.nl_refit_axis_sd_laplace()` is skipped
+# is the same 3-point lattice profile `.nl_attach_axis_sd()` is skipped
 # for on a design-weighted grid, for the same reason.
 .nl_attach_interval_provenance <- function(res, qs, tg, domains = NULL) {
   prov <- .nl_interval_provenance(res$integration, res$weight_kind,
@@ -1279,6 +1283,11 @@
   # most needs its provenance said out loud.
   res$outer_grid_railed_axes <- res$outer_grid_railed_axes %||%
     .nl_railed_axes(res)
+  # And the weaker, separate statement: an axis holding material weight on a
+  # boundary node truncates its own marginal there whether or not the mode sits
+  # on it, so it is named on its own rather than only when it also rails.
+  res$outer_grid_edge_mass_axes <- res$outer_grid_edge_mass_axes %||%
+    .nl_edge_mass_axes(res)
   res
 }
 
@@ -1391,13 +1400,97 @@
   }
 }
 
-# Replace `theta_sd` (and `block_moments[[b]]$sd` when present) entries
-# with the Laplace-at-mode SD wherever the 3-point fit succeeds. Axes
-# with the mode at an edge or wrong-signed curvature keep their var-of-
-# means SD. Grid-spacing-independent: fixes the symptom where a sharply
-# peaked marginal log-likelihood on a coarse grid collapses var-of-
-# means to ~0 and undercovers.
-.nl_refit_axis_sd_laplace <- function(res, refining = NULL) {
+# Quadrature effective sample size of one axis's marginal: `1 / sum(p^2)` over
+# the level shares the outer weights put on it. It counts the nodes the marginal
+# actually spreads over, so it is the statistic that separates a grid holding a
+# spread from one whose mass has collapsed onto a node -- read off the WEIGHTS,
+# which is what lets it decide between two estimators without being one of them.
+#
+# `NA_real_` where no level carries finite mass.
+.nl_axis_quad_ess <- function(log_marg) {
+  if (!length(log_marg)) return(NA_real_)
+  m <- max(log_marg)
+  if (!is.finite(m)) return(NA_real_)
+  p <- exp(log_marg - m)
+  s <- sum(p)
+  if (!is.finite(s) || s <= 0) return(NA_real_)
+  p <- p / s
+  1 / sum(p^2)
+}
+
+# Which estimator produced a reported axis SD.
+.NL_AXIS_SD_SOURCE <- c("weighted", "stencil")
+
+# The SD to report for ONE axis, and which estimator produced it.
+#
+# `vals` / `log_marg` are that axis's marginal: one level per entry, the log
+# density the outer weights put on it (the quadrature weight included, so the
+# spread is read against the measure the nodes integrate). The weighted SD is
+# the spread of that marginal and is the report wherever the axis is resolved;
+# the parabola at the modal node is the report where it is not, which is the
+# collapsed-onto-one-node case it was added for and the only one where a
+# discrete spread is not a spread. `.nl_diag("axis_sd_ess")` carries the
+# measured threshold and the ladder it came off.
+#
+# `stencil_ok = FALSE` withholds the parabola entirely. A design-weighted grid
+# is the case: a central-composite design's nodes are not a per-axis lattice, so
+# a 3-point profile across them is not the curvature of anything, while the
+# corrected design weights reproduce the Gaussian moments and the weighted read
+# IS the calibrated SD there.
+#
+# Returns the SD, its source, the ESS the choice was made on, and -- where the
+# parabola was wanted and could not be formed -- the reason it declined, so a
+# fit that fell back to the weighted read on an unresolved axis says so rather
+# than reporting a floor as a spread.
+.nl_axis_sd_choice <- function(vals, log_marg, log_axis = NULL, coord = NULL,
+                               min_ess = .nl_diag("axis_sd_ess"),
+                               stencil_ok = TRUE) {
+  out <- list(sd = NA_real_, source = NA_character_, ess = NA_real_,
+              declined = NA_character_)
+  if (!length(vals)) return(out)
+  ess <- .nl_axis_quad_ess(log_marg)
+  out$ess <- ess
+  m <- max(log_marg)
+  if (is.finite(m)) {
+    w <- exp(log_marg - m)
+    sw <- sum(w)
+    if (is.finite(sw) && sw > 0) {
+      out$sd <- .nl_wtd_mean_sd(vals, w / sw)$sd
+      out$source <- "weighted"
+    }
+  }
+  resolved <- is.finite(ess) && ess >= min_ess
+  if (resolved && is.finite(out$sd)) return(out)
+  if (!isTRUE(stencil_ok)) {
+    out$declined <- "design_weighted"
+    return(out)
+  }
+  sd_sten <- .nl_laplace_at_mode_sd_axis(vals, log_marg, log_axis = log_axis,
+                                         coord = coord)
+  if (is.finite(sd_sten)) {
+    out$sd     <- as.numeric(sd_sten)
+    out$source <- "stencil"
+  } else {
+    out$declined <- .nl_axis_sd_reason(sd_sten)
+  }
+  out
+}
+
+# Report `theta_sd` (and `block_moments[[b]]$sd` when present) per axis, each
+# from the estimator its own resolution calls for (`.nl_axis_sd_choice()`).
+#
+# Called from `.nl_posterior_moments()`, so every nested path -- single-block,
+# spatiotemporal, joint, joint multi-block -- reports one rule, and separately
+# by `tulpa_hyper_grid()`, which assembles its own moments.
+#
+# Every axis is read off its OWN marginal under the `refining` slice mask, so a
+# fit carrying refinement slices for another axis does not have them counted
+# into this one's spread. `theta_sd_source` / `theta_sd_ess` /
+# `theta_sd_stencil_declined` travel on the fit, so which estimator produced a
+# reported SD is a property of the fit rather than of the reader's assumption.
+.nl_attach_axis_sd <- function(res, refining = NULL) {
+  # A design-weighted grid carries no per-axis lattice for a parabola to read.
+  stencil_ok <- !any(res$weight_kind %in% "design")
   if (is.null(res$theta_grid) || is.null(res$log_marginal)) return(res)
   # The per-axis marginal is an integral against the outer prior measure, so the
   # node weights belong in it. Without them the curvature at the mode is read
@@ -1410,29 +1503,41 @@
   tg <- res$theta_grid
   if (!is.matrix(tg)) {
     marg <- .nl_axis_marginal_logdensity(as.numeric(tg), lm_eff)
-    sd_lam <- .nl_laplace_at_mode_sd_axis(marg$vals, marg$log_marg)
-    if (is.finite(sd_lam)) res$theta_sd <- sd_lam
+    ch <- .nl_axis_sd_choice(marg$vals, marg$log_marg, stencil_ok = stencil_ok)
+    if (is.finite(ch$sd)) res$theta_sd <- ch$sd
+    res$theta_sd_source <- ch$source
+    res$theta_sd_ess    <- ch$ess
+    res$theta_sd_stencil_declined <- ch$declined
     return(res)
   }
   if (is.null(refining)) refining <- res$refining_axis
   if (is.null(refining)) refining <- rep("", nrow(tg))
   col_names <- colnames(tg)
   if (!is.null(col_names) && !is.null(res$theta_sd)) {
+    src <- stats::setNames(rep(NA_character_, length(col_names)), col_names)
+    ess <- stats::setNames(rep(NA_real_, length(col_names)), col_names)
+    dec <- src
     for (col in col_names) {
       if (!col %in% names(res$theta_sd)) next
       keep <- refining == "" | refining == col |
               refining == paste0("consistency_", col)
       marg <- .nl_axis_marginal_logdensity(tg[, col], lm_eff, keep)
-      sd_lam <- .nl_laplace_at_mode_sd_axis(marg$vals, marg$log_marg)
-      if (is.finite(sd_lam)) res$theta_sd[[col]] <- sd_lam
+      ch <- .nl_axis_sd_choice(marg$vals, marg$log_marg,
+                               stencil_ok = stencil_ok)
+      if (is.finite(ch$sd)) res$theta_sd[[col]] <- ch$sd
+      src[[col]] <- ch$source
+      ess[[col]] <- ch$ess
+      dec[[col]] <- ch$declined
     }
+    res$theta_sd_source <- src
+    res$theta_sd_ess    <- ess
+    res$theta_sd_stencil_declined <- dec
   }
   if (!is.null(res$block_moments)) {
     for (b in seq_along(res$block_moments)) {
       bm <- res$block_moments[[b]]
       axis_cols <- bm$axis_cols
       if (is.null(axis_cols) || length(axis_cols) == 0L) next
-      bare <- names(bm$sd)
       for (j in seq_along(axis_cols)) {
         col_ix <- axis_cols[j]
         col_name <- if (!is.null(col_names)) col_names[col_ix] else ""
@@ -1440,8 +1545,10 @@
                 refining == paste0("consistency_", col_name)
         marg <- .nl_axis_marginal_logdensity(tg[, col_ix], lm_eff,
                                               keep)
-        sd_lam <- .nl_laplace_at_mode_sd_axis(marg$vals, marg$log_marg)
-        if (is.finite(sd_lam)) res$block_moments[[b]]$sd[[j]] <- sd_lam
+        ch <- .nl_axis_sd_choice(marg$vals, marg$log_marg,
+                                 stencil_ok = stencil_ok)
+        if (is.finite(ch$sd)) res$block_moments[[b]]$sd[[j]] <- ch$sd
+        res$block_moments[[b]]$sd_source[j] <- ch$source
       }
     }
   }

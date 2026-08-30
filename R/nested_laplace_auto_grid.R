@@ -585,6 +585,13 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
     j <- match(axis, cn)
     if (is.na(j) && ncol(tg) == 1L) j <- 1L
     if (is.na(j) || length(lm) != nrow(tg)) return(NULL)
+    # The axis marginal is an integral against the outer prior measure, so the
+    # cells' quadrature weights belong in it -- the same correction the reported
+    # moments take, so a rail and a mean are read off one marginal.
+    if (!is.null(res$log_quad) && length(res$log_quad) == length(lm)) {
+        lm <- lm + res$log_quad
+        lm[is.na(lm)] <- -Inf
+    }
     m <- .nl_axis_marginal_logdensity(as.numeric(tg[, j]), lm)
     if (length(m$vals) < 2L) return(NULL)
     top <- max(m$log_marg)
@@ -672,6 +679,61 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 .nl_attach_railed_axes <- function(res) {
     res$outer_grid_railed_axes <- .nl_railed_axes(res)
     res
+}
+
+# --- boundary MASS ------------------------------------------------------------
+#
+# The rail above asks whether the span contains the axis's own MODE. An axis can
+# hold a large share of its marginal on a boundary node with the mode one node
+# in, and that is the same truncation: whatever the marginal does past the outer
+# node is unrepresented either way, and the mode's position does not say how much
+# of it there is. Read on its own, the rail reports such a grid clean
+# (gcol33/tulpa#622).
+#
+# So this is a SECOND label rather than a widening of the first: `railed` keeps
+# its stronger statement ("the span does not contain its own mode") and
+# `edge_mass` names an axis whose boundary node carries material weight whatever
+# the argmax does. Both ends are tested, since a marginal can press on either.
+#
+# The currency is the rail's own `lift = m * w_edge`, the boundary node's weight
+# against what a flat marginal would put there, for the reason the rail carries
+# it: a fixed share makes a longer axis a weaker detector of the same posterior.
+# `.nl_diag("edge_mass_lift")` carries the threshold and what it was read off.
+#
+# Returns a list of `list(side, mass, lift, node)`, empty when neither end
+# qualifies.
+.nl_axis_edge_mass <- function(res, axis,
+                               lift_mult = .nl_diag("edge_mass_lift")) {
+    mw <- .nl_axis_marginal_w(res, axis)
+    if (is.null(mw)) return(list())
+    m <- length(mw$w)
+    out <- list()
+    for (k in c(1L, m)) {
+        lift <- m * mw$w[k]
+        if (!is.finite(lift) || lift < lift_mult) next
+        out[[length(out) + 1L]] <- list(
+            side = if (k == 1L) "lower" else "upper",
+            mass = mw$w[k], lift = lift, node = mw$vals[k])
+    }
+    out
+}
+
+# Every axis of a fit holding material weight on one of its own boundary nodes,
+# as `axis:side`. Recorded on the fit (`$outer_grid_edge_mass_axes`) beside the
+# railed axes, so a span that truncates its own marginal is named whether or not
+# it also fails to contain its mode.
+.nl_edge_mass_axes <- function(res) {
+    tg <- res$theta_grid
+    if (is.null(tg) || is.null(res$log_marginal)) return(character(0))
+    cn <- if (is.matrix(tg)) colnames(tg) else (res$theta_names %||% "theta")
+    if (is.null(cn)) return(character(0))
+    hits <- character(0)
+    for (a in cn) {
+        for (e in .nl_axis_edge_mass(res, a)) {
+            hits <- c(hits, paste0(a, ":", e$side))
+        }
+    }
+    hits
 }
 
 # Why the registry rescue covers no axis of `type`. Two

@@ -1534,7 +1534,7 @@ tulpa_nested_laplace_joint <- function(responses,
     #                    `extras[[anchor]]$mode`.
     # After refinement `.joint_glue_extras_to_res` puts the merged extras
     # back into `res$modes` / `res$n_iter` / `res$Q_csc_*_per_grid` so
-    # downstream code (`.nl_posterior_moments`, `.nl_refit_axis_sd_laplace`,
+    # downstream code (`.nl_posterior_moments`, `.nl_attach_axis_sd`,
     # the modes / Q consumers) reads the refined values unchanged.
     specs <- .joint_axis_specs(grids, cp, user_prior_axes = c(
         if (!is.null(fn_sigma)) "sigma", if (!is.null(fn_alpha)) "alpha",
@@ -1586,20 +1586,16 @@ tulpa_nested_laplace_joint <- function(responses,
                                                   log_quad = res$log_quad)
     res             <- .nl_posterior_moments(res, paste0("joint_", type),
                                              within = within_cell)
-    res             <- .joint_recalibrate_axis_moments(res)
-    # Replace per-axis var-of-means SDs with Laplace-at-mode SDs where the
-    # 3-point parabolic fit at the modal cell succeeds.
-    res             <- .nl_refit_axis_sd_laplace(res)
+    res             <- .joint_recalibrate_axis_mean(res)
     tm$mark("postproc")
 
     # Var-of-means consistency pass. Sharply peaked axes (gaussian
     # noise SD, beta phi at high n_pos) collapse joint weight onto a
-    # single grid cell, so downstream `sum(w*x^2) - mean^2` underestimates
-    # SD even when `theta_sd` (Laplace-at-mode) is correct. Add slice
-    # points at `theta_mean +/- k*theta_sd` to repopulate the Laplace
-    # support; var-of-means on the merged grid converges to Laplace SD,
-    # which lets downstream packages use the legacy `weights * theta_grid`
-    # pattern without reaching into `theta_sd` directly.
+    # single grid cell, so `sum(w*x^2) - mean^2` on that axis is a floor at
+    # zero rather than a spread. Add slice points at `mu +/- k * sd` around
+    # the modal cell -- `sd` the parabola at the modal node, the estimator
+    # that is right in exactly that regime -- so the merged grid carries the
+    # support the spread is read off.
     if (isTRUE(var_of_means_consistency)) {
         consistency <- .hyper_consistency_pass(
             theta_grid    = theta_grid_M,
@@ -1608,9 +1604,7 @@ tulpa_nested_laplace_joint <- function(responses,
             refining_axis = refining_axis,
             specs         = specs,
             theta_mean    = res$theta_mean,
-            theta_sd      = res$theta_sd,
             kernel_fn     = kernel_fn,
-            tolerance     = 0.7,
             hp_fn         = hp_fn,
             weights       = res$weights
         )
@@ -1630,8 +1624,7 @@ tulpa_nested_laplace_joint <- function(responses,
                                                           log_quad = res$log_quad)
             res             <- .nl_posterior_moments(res, paste0("joint_", type),
                                                      within = within_cell)
-            res             <- .joint_recalibrate_axis_moments(res)
-            res             <- .nl_refit_axis_sd_laplace(res)
+            res             <- .joint_recalibrate_axis_mean(res)
         }
         res$var_of_means_consistency_info <- consistency$info
         tm$mark("grid")                      # consistency-pass inner solves
@@ -1692,10 +1685,9 @@ tulpa_nested_laplace_joint <- function(responses,
         redispatch = function(req) .joint_with_quiet_opts(
             kernel_fn(res$theta_grid, cila = req)),
         p_fixed = fixed$n_fixed, beta_names = fixed$names,
-        remoments = function(r) .nl_refit_axis_sd_laplace(
-            .joint_recalibrate_axis_moments(
-                .nl_posterior_moments(r, paste0("joint_", type),
-                                      within = within_cell))))
+        remoments = function(r) .joint_recalibrate_axis_mean(
+            .nl_posterior_moments(r, paste0("joint_", type),
+                                  within = within_cell)))
     res$timing <- tm$timing()
     res <- .joint_attach_diagnose_cost(res, diagnose_k, diagnose_draws)
     .finalize_fit(res, backend = "nested_laplace_joint",

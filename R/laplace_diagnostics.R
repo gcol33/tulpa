@@ -1020,31 +1020,51 @@
   if (is.null(rg)) return(NULL)
   sk <- jf$pareto_k_outer_skew
   sk <- if (is.null(sk) || !any(is.finite(sk))) NA_real_ else max(abs(sk[is.finite(sk)]))
-  list(regime         = as.character(rg),
-       edge_axes      = jf$pareto_k_grid_edge_axes  %||% character(0),
-       edge_sides     = jf$pareto_k_grid_edge_sides %||% character(0),
-       outer_skew_max = sk)
+  list(regime          = as.character(rg),
+       edge_axes       = jf$pareto_k_grid_edge_axes  %||% character(0),
+       edge_sides      = jf$pareto_k_grid_edge_sides %||% character(0),
+       edge_mass_axes  = jf$pareto_k_grid_edge_mass_axes  %||% character(0),
+       edge_mass_sides = jf$pareto_k_grid_edge_mass_sides %||% character(0),
+       outer_skew_max  = sk)
 }
 
 # One-line reading of an outer regime, for `print` and `diagnostic_summary()`.
-# Returns NULL for a spread grid (nothing to explain) or an unknown regime.
+# Returns NULL for a spread grid carrying no boundary mass (nothing to explain)
+# or an unknown regime.
+#
+# A grid that spreads can still truncate its own marginal at a boundary node, so
+# that note is produced in every regime (gcol33/tulpa#622) and is appended to
+# the collapse notes rather than replacing them.
 .tulpa_outer_regime_note <- function(rg) {
   if (is.null(rg) || is.na(rg$regime)) return(NULL)
+  mass_note <- NULL
+  if (length(rg$edge_mass_axes)) {
+    mass_note <- paste0(
+      "outer grid holds material weight on a boundary node of ",
+      paste(sprintf("%s (%s)", rg$edge_mass_axes, rg$edge_mass_sides),
+            collapse = ", "),
+      ": that axis truncates its own marginal there, whether or not its mode ",
+      "sits on the node -- widen it and refit to see what is outside")
+  }
+  if (identical(rg$regime, "spread")) return(mass_note)
+  with_mass <- function(x) if (is.null(mass_note)) x else paste0(x, "; ", mass_note)
   if (identical(rg$regime, "collapsed_interior")) {
-    return(paste("outer grid collapsed onto an interior mode: hyperparameter",
-                 "uncertainty is not integrated (empirical Bayes at the mode);",
-                 "pareto_k here scores the mode-Gaussian's fit to the",
-                 "hyperparameter marginal, not the point estimates"))
+    return(with_mass(paste(
+      "outer grid collapsed onto an interior mode: hyperparameter",
+      "uncertainty is not integrated (empirical Bayes at the mode);",
+      "pareto_k here scores the mode-Gaussian's fit to the",
+      "hyperparameter marginal, not the point estimates")))
   }
   if (identical(rg$regime, "collapsed_edge")) {
     ax <- if (length(rg$edge_axes))
       paste(sprintf("%s (%s)", rg$edge_axes, rg$edge_sides), collapse = ", ")
       else "an axis"
-    return(paste0("outer grid collapsed against a boundary node on ", ax,
-                  ": the grid may be too narrow -- widen that axis and refit ",
-                  "to confirm the mode is bracketed"))
+    return(with_mass(paste0(
+      "outer grid collapsed against a boundary node on ", ax,
+      ": the grid may be too narrow -- widen that axis and refit ",
+      "to confirm the mode is bracketed")))
   }
-  NULL
+  mass_note
 }
 
 # Outer-grid PLACEMENT of a nested-Laplace fit: which
@@ -1070,6 +1090,7 @@
   cl <- jf$outer_grid_recenter_sd_clamp
   list(placement = as.character(placed %||% NA_character_),
        railed    = as.character(railed %||% character(0)),
+       edge_mass = as.character(jf$outer_grid_edge_mass_axes %||% character(0)),
        moved     = as.character(jf$outer_grid_recenter_axes %||% character(0)),
        clamped   = if (is.null(cl)) character(0) else
                      stats::setNames(as.character(cl), names(cl)),
@@ -1099,7 +1120,18 @@
     }
     return(msg)
   }
-  if (!length(pl$railed)) return(NULL)
+  if (!length(pl$railed)) {
+    # The weaker statement, on a fit whose axes all contain their own mode: an
+    # axis can still hold material weight on a boundary node, and truncate its
+    # marginal there (gcol33/tulpa#622).
+    em <- pl$edge_mass %||% character(0)
+    if (!length(em)) return(NULL)
+    return(paste0("outer grid axis holding weight on its own boundary node on ",
+                  paste(em, collapse = ", "),
+                  ": that axis truncates its marginal there even though its ",
+                  "mode is inside the span -- widen it and refit to see what ",
+                  "is outside"))
+  }
   ax <- paste(pl$railed, collapse = ", ")
   why <- if (is.na(pl$declined)) "" else
     paste0(" (not moved: ", pl$declined, ")")
@@ -1502,12 +1534,22 @@
     attr(tab, "outer_regime")    <- regime$regime
     attr(tab, "grid_edge_axes")  <- regime$edge_axes
     attr(tab, "grid_edge_sides") <- regime$edge_sides
+    # One spelling for the boundary-mass label, `axis:side`, the same
+    # `grid_railed_axes` carries -- the two are read side by side.
+    attr(tab, "grid_edge_mass_axes") <- if (length(regime$edge_mass_axes))
+      paste0(regime$edge_mass_axes, ":", regime$edge_mass_sides) else
+      character(0)
     attr(tab, "outer_skew_max")  <- regime$outer_skew_max
     attr(tab, "outer_regime_note") <- .tulpa_outer_regime_note(regime)
   }
   if (!is.null(placement)) {
     attr(tab, "grid_placement")        <- placement$placement
     attr(tab, "grid_railed_axes")      <- placement$railed
+    # A fit that carries no regime (the single-block nested paths) still reports
+    # its boundary mass, off the field the provenance attach stamped.
+    if (!length(attr(tab, "grid_edge_mass_axes"))) {
+      attr(tab, "grid_edge_mass_axes") <- placement$edge_mass
+    }
     attr(tab, "grid_recentred_axes")   <- placement$moved
     attr(tab, "grid_placement_declined") <- placement$declined
     attr(tab, "grid_placement_note")   <- .tulpa_grid_placement_note(placement)
@@ -1732,12 +1774,18 @@
 #'       uncertainty not integrated) or against a grid boundary (widen it).}
 #'     \item{`grid_edge_axes`, `grid_edge_sides`}{for an edge collapse, the axes
 #'       the dominant cell sits against and on which side.}
+#'     \item{`grid_edge_mass_axes`}{axes holding material weight on one of
+#'       their own boundary nodes, as `axis:side` --
+#'       that axis truncates its own marginal there whether or not its mode sits
+#'       on the node, which is the weaker and more common statement
+#'       `grid_railed_axes` cannot make. Read in every regime, a spread grid
+#'       included.}
 #'     \item{`outer_skew_max`}{largest estimated |skewness| of the hyperparameter
 #'       marginal, computed only when the k-hat triggered the skew-normal
 #'       proposal rescue (`NA` means the Gaussian proposal already fit, not
 #'       "symmetric and unchecked").}
-#'     \item{`outer_regime_note`}{a one-line reading of a collapsed regime, or
-#'       absent on a spread grid.}
+#'     \item{`outer_regime_note`}{a one-line reading of a collapsed regime or of
+#'       boundary mass on an axis, absent on a spread grid carrying neither.}
 #'     \item{`grid_railed_axes`}{outer axes whose OWN marginal is maximal at one
 #'       of their own endpoints, as `axis:side` -- the span does not contain that
 #'       axis's posterior mode, so its marginal is a truncated tail at any
