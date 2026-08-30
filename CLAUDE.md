@@ -1179,6 +1179,45 @@ is not a cell width -- the same objection that makes `sample` decline. The
 measurement was taken on the outer hyperparameter axes and is not extended past
 them.
 
+### The draw budget moves the outer k-hat, not just its interval (gcol33/tulpa#631)
+
+`control$k_samples` was documented as the outer k-hat's precision knob. It is
+not, under the automatic PSIS tail rule. `.psis_tail_len(S) = min(S/5,
+3 sqrt(S))` fits a tail FRACTION of `3 / sqrt(S)` once `S` passes 225 -- 13.6%
+at 500 draws, 1.3% at 50000 -- so a larger budget describes a DEEPER quantile of
+the weight distribution rather than the same one more precisely. On a synthetic
+heavy-tailed outer target the reported shape runs 0.57 / 1.41 / 3.53 / 7.94 over
+500 to 50000 draws, crossing every band the engine reads.
+
+**The estimator is not what moves.** `tulpa_psis()` reproduces `loo::psis()` to
+1e-13 at every one of those budgets, and a closed-form Pareto control (Gaussian
+target under a narrower Gaussian proposal, exact index `1/(1 - sq^2/sp^2)`) is
+FLAT across the same range. Held at a fixed tail fraction the k-hat stops moving
+and the seed spread narrows -- 0.569 / 0.702 / 0.708 / 0.692 at 13.6%, against a
+range of more than 7 under the automatic rule. The Hill estimator on the same
+order statistics stays between 0.02 and 0.36 throughout, and a regression of the
+log-ratio on the squared whitened radius is near zero over the realized range:
+the weights are nearly bounded where they were actually sampled, and the tail
+index of such a ratio is a function of DEPTH, which the automatic rule lets the
+budget choose silently.
+
+What this changed: the `k_quality` escalation's precision rung (gcol33/tulpa#627)
+doubles `k_samples` on a bootstrap-CI miss, and under the automatic rule that
+rung MOVED THE ESTIMAND -- the one thing #627's design says the variance-mover
+must not do. It now pins the GPD tail size to the fraction the fit's own first
+pass used, so the extra draws sharpen the same number. The fraction is at most
+1/5 by construction, so it never trips the 20% cap warning, and an explicit
+`control$k_tail_points` is left alone.
+
+What this did NOT change: the outer-k default is still the published rule, not a
+fixed fraction. No single fraction preserves both shipped defaults (`k_samples`
+is 200 on `tulpa_re_cov_nested()`, where the `S/5` cap binds at 20%, and 500 on
+the joint and grid paths, at 13.6%), and which fraction is statistically better
+is a bias-variance question this measurement does not answer. `tulpa_psis()`'s
+own default stays the reference rule, so the `loo::psis` equivalence oracle is
+untouched. Write-up `dev_notes/issue631/RESULTS631.md`; tests
+`test-outer-k-budget.R`.
+
 **Any measurement scored against an outer grid has to STATE its within-cell
 read (gcol33/tulpa#599).** The two constructions place the same mass in the same
 cells and differ by half a cell in where inside one they place it, which on a

@@ -1,3 +1,31 @@
+# tulpa 0.2.5
+
+* **`control$k_samples` moves the outer Pareto-k-hat, not just its interval
+  (gcol33/tulpa#631).** It was documented as the estimate's precision knob. Under
+  the automatic PSIS tail rule `min(S/5, 3 sqrt(S))` the fitted tail FRACTION
+  shrinks as `3 / sqrt(S)`, so a larger budget describes a deeper quantile of the
+  weight distribution: on a synthetic heavy-tailed outer target the reported
+  shape runs 0.57 / 1.41 / 3.53 / 7.94 over 500 to 50000 draws. The estimator is
+  not what moves -- `tulpa_psis()` reproduces `loo::psis()` to 1e-13 at every one
+  of those budgets, a closed-form Pareto control is flat across the same range,
+  and holding the tail fraction gives 0.569 / 0.702 / 0.708 / 0.692 with the seed
+  spread narrowing.
+
+* **The `k_quality` escalation's precision rung no longer moves the estimand.**
+  That rung doubles `k_samples` on a miss whose bootstrap CI straddles a band
+  boundary, and it is the fallback precisely because it should only narrow the
+  interval around whatever the k-hat already is. It now pins the GPD tail size to
+  the fraction the fit's own first pass used, so the extra draws sharpen the same
+  number. An explicit `control$k_tail_points` is left alone, and the pinned
+  fraction is at most 1/5 by construction, so the 20% cap warning never fires.
+
+* The `k_samples` documentation on `tulpa_nested_laplace_joint()`,
+  `tulpa_re_cov_nested()` and the PSIS core is corrected to say what the knob
+  does. The outer-k default remains the published tail rule rather than a fixed
+  fraction; `dev_notes/issue631/RESULTS631.md` records why, and
+  `tulpa_psis()`'s own default is unchanged so the `loo::psis` equivalence
+  oracle still holds.
+
 # tulpa 0.2.4
 
 * **One proposal-candidate dispatch behind all four outer-k backends

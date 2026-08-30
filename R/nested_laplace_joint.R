@@ -441,8 +441,16 @@
 #'     per-axis transforms: `log` for positive scales, logit for the BYM2 mixing
 #'     weight, identity for the copy coefficient \eqn{\alpha}). `k_samples`
 #'     is the number of importance draws, each one an extra inner joint solve, and
-#'     is the diagnostic's precision knob: a tighter k-hat needs MORE actual tail
-#'     ratios, so increase `k_samples` (not `k_bootstrap`). The draws are
+#'     is where more tail information comes from: a tighter k-hat needs MORE
+#'     actual tail ratios, so increase `k_samples` (not `k_bootstrap`). It is not
+#'     a pure precision knob, though. Under the automatic PSIS tail rule
+#'     (`min(S/5, 3 sqrt(S))`) the fitted tail FRACTION shrinks as `3 / sqrt(S)`,
+#'     so a larger budget describes a DEEPER quantile of the weight distribution
+#'     and the reported k-hat can move materially -- measured on a synthetic
+#'     heavy-tailed outer target, 0.57 at 500 draws and 7.94 at 50000
+#'     (gcol33/tulpa#631). Set `k_tail_points` in proportion to `k_samples` to
+#'     hold the fraction and get a strictly sharper estimate of the same number;
+#'     the `k_quality` escalation's draw rung does exactly that. The draws are
 #'     RNG-restored so the fit's modes / draws are unchanged. A fit carrying an
 #'     axis whose support is not safely known (CAR_proper's `rho_car`) declines to
 #'     the quadrature-ESS fallback (`pareto_k = NA`). `FALSE` skips the diagnostic.
@@ -1121,9 +1129,31 @@ tulpa_nested_laplace_joint <- function(responses,
                 # one pass. The refinement switches are turned on by the branch
                 # below, never here, and a caller who asked for `adaptive_grid`
                 # themselves keeps it.
+                #
+                # The GPD tail size is PINNED to the fraction the fit's own
+                # first pass used. The automatic PSIS rule is
+                # `min(S/5, 3 sqrt(S))`, so the fitted tail FRACTION shrinks as
+                # `3 / sqrt(S)`: left to itself, buying draws would fit the
+                # shape at a deeper quantile of the weight distribution rather
+                # than fit the same one more precisely -- it would move the
+                # estimand, which is the one thing this rung must not do
+                # (gcol33/tulpa#631). Measured on synthetic outer targets, the
+                # automatic rule takes a k-hat from 0.57 to 7.94 over a 100x
+                # budget while a held fraction holds it at 0.57 to 0.69 with the
+                # seed spread narrowing. The fraction is at most 1/5 by
+                # construction, so this never trips the 20% cap warning.
                 n_draws_r <- n_draws_r + 1L
-                ctrl$k_samples <- as.integer(ceiling(
-                    .nl_diag("k_precision_growth") * (res$diagnose_draws %||% 500L)))
+                k_prev <- as.integer(res$diagnose_draws %||% 500L)
+                k_next <- as.integer(ceiling(
+                    .nl_diag("k_precision_growth") * k_prev))
+                tp_prev <- res$pareto_k_tail_points
+                if (is.null(ctrl$k_tail_points) && length(tp_prev) == 1L &&
+                    is.finite(tp_prev) && k_prev > 0L) {
+                    ctrl$k_tail_points <- max(
+                        .PSIS_MIN_EVAL,
+                        as.integer(floor(k_next * (tp_prev / k_prev))))
+                }
+                ctrl$k_samples <- k_next
             } else {
                 passes <- passes + 1L
                 if (is_ccd_refine) {

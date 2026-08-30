@@ -221,7 +221,14 @@
 # body ratios into the tail: lower variance but a BIASED k-hat and a falsely
 # reassuring CI). This cap is SILENT; the user-facing warning (with the requested
 # vs used counts) is raised once by the diagnostic driver, not per bootstrap
-# replicate. `tail_points` is not a precision knob; the draw count `S` is.
+# replicate. `tail_points` is not a precision knob; the draw count `S` supplies
+# the tail information. Note that `S` is not a pure precision knob either: this
+# rule's tail FRACTION is `3 / sqrt(S)` once `S` passes 225, so growing `S` moves
+# the fit to a deeper quantile as well as giving it more points, and on a ratio
+# whose log grows super-linearly in the whitened radius the reported shape moves
+# with it (gcol33/tulpa#631). A caller that needs a budget-stable number passes
+# `tail_points` proportional to `S`. The default here stays the published rule,
+# so `tulpa_psis()` continues to reproduce `loo::psis()` exactly.
 .psis_tail_len <- function(S, tail_points = NULL) {
   if (is.null(tail_points)) {
     return(as.integer(ceiling(min(0.2 * S, 3 * sqrt(S)))))

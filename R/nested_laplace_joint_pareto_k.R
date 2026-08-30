@@ -952,9 +952,14 @@
 # finite log-ratios; the k-hat's sampling uncertainty is then estimated by
 # bootstrapping those ratios (`k_bootstrap` replicates, re-fitting the GPD tail at
 # the resolved `tail_points`), which adds NO inner solves. `control$k_samples` is
-# the precision knob (more actual tail ratios => tighter k); `k_bootstrap` only
-# quantifies the current estimate's instability and cannot create tail
-# information. `k_tail_points` (NULL = the automatic PSIS rule) is an expert
+# where more tail information comes from (more actual tail ratios); `k_bootstrap`
+# only quantifies the current estimate's instability and cannot create tail
+# information. `k_samples` is NOT a pure precision knob at the automatic tail
+# rule: `min(S/5, 3 sqrt(S))` fits a fraction that shrinks as `3 / sqrt(S)`, so a
+# larger budget reads a deeper quantile of the weight distribution and can move
+# the k-hat by several units (gcol33/tulpa#631). Holding `tail_points` in
+# proportion to `k_samples` holds the estimand and makes the extra draws pure
+# precision, which is what the k_quality draw rung does. `k_tail_points` (NULL = the automatic PSIS rule) is an expert
 # tail-threshold control, capped at the 20%-of-draws ceiling with one warning. The
 # per-arm pass scores + bootstraps each arm the same way.
 #

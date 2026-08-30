@@ -41,9 +41,10 @@ for (sp in SPECS) {
     for (n in BUDGETS) {
         prep <- tp$.joint_pareto_prepare(res, refit, n, NULL)
         vary <- tp$.joint_pareto_vary_axes(prep$Su)
+        spec <- tp$.joint_cand_spec(prep, vary, refit)
         for (sd_i in 1:10) {
             set.seed(sd_i)
-            g <- tp$.joint_pareto_score(prep, vary, refit, n)
+            g <- tp$.k_score_gaussian(spec, n)
             gm <- g$gm %||% g
             i <- i + 1L
             num <- function(x) if (is.null(x) || !length(x)) NA_real_ else as.numeric(x)[1]

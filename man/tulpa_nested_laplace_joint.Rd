@@ -432,8 +432,16 @@ hyperparameter posterior against the proposal the integrator fits (mixed
 per-axis transforms: \code{log} for positive scales, logit for the BYM2 mixing
 weight, identity for the copy coefficient \eqn{\alpha}). \code{k_samples}
 is the number of importance draws, each one an extra inner joint solve, and
-is the diagnostic's precision knob: a tighter k-hat needs MORE actual tail
-ratios, so increase \code{k_samples} (not \code{k_bootstrap}). The draws are
+is where more tail information comes from: a tighter k-hat needs MORE
+actual tail ratios, so increase \code{k_samples} (not \code{k_bootstrap}). It is not
+a pure precision knob, though. Under the automatic PSIS tail rule
+(\verb{min(S/5, 3 sqrt(S))}) the fitted tail FRACTION shrinks as \code{3 / sqrt(S)},
+so a larger budget describes a DEEPER quantile of the weight distribution
+and the reported k-hat can move materially -- measured on a synthetic
+heavy-tailed outer target, 0.57 at 500 draws and 7.94 at 50000
+(gcol33/tulpa#631). Set \code{k_tail_points} in proportion to \code{k_samples} to
+hold the fraction and get a strictly sharper estimate of the same number;
+the \code{k_quality} escalation's draw rung does exactly that. The draws are
 RNG-restored so the fit's modes / draws are unchanged. A fit carrying an
 axis whose support is not safely known (CAR_proper's \code{rho_car}) declines to
 the quadrature-ESS fallback (\code{pareto_k = NA}). \code{FALSE} skips the diagnostic.
