@@ -62,12 +62,18 @@
   that would carry zero weight. An axis whose posterior presses on that support
   reports it through the boundary-mass label above.
 
-* `hyper_axis_spec(log_prior = )` documents the coordinate it is read on: the
-  contribution enters `log_marginal`, which is weighted by cell widths measured
-  on the axis's integration coordinate, so on a `log_scale` axis the function is
-  a density on `log x`. A caller declaring one on the natural scale adds
-  `log(x)`. No behaviour change; gcol33/tulpa#623 asks whether it should instead
-  be carried across the way `slab_log_density` is.
+* **A declared axis prior says which coordinate it is a density on.** An outer
+  axis prior could be declared two ways and the two were read on two
+  coordinates: `slab_log_density` is carried across explicitly (`+ log(x)` on a
+  log axis) while a spec's `log_prior` entered `log_marginal`, which is weighted
+  by cell widths measured on the integration coordinate -- so a caller writing
+  `dexp(sigma)` got a prior tilted by `1 / sigma`.
+  `hyper_axis_spec(log_prior_coord = )` names the coordinate:
+  `"integration"` (the default, and what every existing fit was taken under,
+  since it is also what the flat default's zero contribution is flat on) or
+  `"natural"`, which declares a density on the axis value and picks up the
+  change of variables. Inert on a linear axis, where the two coincide
+  (gcol33/tulpa#623).
 
 * **The outer hyperparameter grid is a quadrature rule for a declared prior,
   not the prior itself.** Every node carried the same prior weight, so a grid

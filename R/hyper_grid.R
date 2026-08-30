@@ -97,6 +97,16 @@
         out <- tryCatch(pj(v), error = function(e) NA_real_)
         if (length(out) != 1L || !is.finite(out)) NA_real_ else as.numeric(out)
       }, numeric(1))
+      # A density declared on the NATURAL coordinate meets cell widths measured
+      # on the integration one, so it picks up the change of variables here --
+      # the same `+ log(x)` `.hyper_axis_level_weights()` applies to a declared
+      # `slab_log_density`. A density declared on the integration coordinate,
+      # the default, is carried through as written.
+      if (identical(specs[[j]]$log_prior_coord, "natural") &&
+          isTRUE(specs[[j]]$log_scale)) {
+        lx <- suppressWarnings(log(as.numeric(vals)))
+        cj <- cj + ifelse(is.finite(lx), lx, -Inf)
+      }
       cj[is.na(cj)] <- -Inf
       contrib <- contrib + cj
     }

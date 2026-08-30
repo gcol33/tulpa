@@ -159,3 +159,45 @@ test_that("tulpa_hyper_grid refuses an unknown control knob", {
                      control = list(var_of_means_tolerance = 0.7)),
     "Unknown control knob")
 })
+
+test_that("log_prior_coord says which coordinate the declared prior lives on", {
+  # `Exponential(1)` written as a density on sigma. Read on the integration
+  # coordinate (the default) the nodes integrate it as a density on log sigma;
+  # declared `"natural"` they integrate the density the caller wrote, because
+  # the change of variables is carried across the way `slab_log_density`'s is.
+  flat <- function(hypers) list(log_marginal = 0)
+  ref <- function(coord) {
+    u <- seq(log(SLAB[1L]), log(SLAB[2L]), length.out = 400001L)
+    s <- exp(u)
+    lw <- LOG_PRIOR(s) + if (coord == "natural") u else 0
+    w <- exp(lw - max(lw)); w <- w / sum(w)
+    sum(w * s)
+  }
+  got <- function(coord) {
+    sp <- list(hyper_axis_spec("sigma", grid = slab_grid(41L), log_scale = TRUE,
+                               bounds = c(0, Inf), log_prior = LOG_PRIOR,
+                               slab_bounds = SLAB, log_prior_coord = coord))
+    tulpa_hyper_grid(sp, flat, combine = "none",
+                     n_draws = 0L)$theta_mean[["sigma"]]
+  }
+  for (coord in c("integration", "natural")) {
+    expect_lt(abs(got(coord) - ref(coord)) / ref(coord), 0.01, label = coord)
+  }
+  # The two readings are different measures, so the test is not vacuous.
+  expect_gt(got("natural"), 1.15 * got("integration"))
+
+  # The default is the reading every existing fit was taken under.
+  expect_identical(hyper_axis_spec("s", grid = c(1, 2))$log_prior_coord,
+                   "integration")
+  expect_error(hyper_axis_spec("s", grid = c(1, 2), log_prior_coord = "log"),
+               "should be one of")
+  # Inert on a linear axis, where the two coordinates coincide.
+  lin <- function(coord) {
+    sp <- list(hyper_axis_spec("m", grid = seq(-2, 2, length.out = 9L),
+                               log_prior = function(x) stats::dnorm(x, 0, 1,
+                                                                    log = TRUE),
+                               log_prior_coord = coord))
+    tulpa_hyper_grid(sp, flat, combine = "none", n_draws = 0L)$theta_sd[["m"]]
+  }
+  expect_identical(lin("natural"), lin("integration"))
+})

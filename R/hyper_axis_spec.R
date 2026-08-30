@@ -13,9 +13,12 @@
 #                                   grid matrix and in posterior summaries.
 #   grid        numeric              the per-axis candidate values (the outer
 #                                   integration nodes on this axis).
-#   log_prior   function(x) | NULL   optional log-prior density on the axis, on
-#                                   its INTEGRATION coordinate (log x for a
-#                                   log-scale axis). `NULL` -> flat.
+#   log_prior   function(x) | NULL   optional log-prior density on the axis.
+#                                   `NULL` -> flat.
+#   log_prior_coord "integration"|"natural"  which coordinate `log_prior` is a
+#                                   density on. Default "integration", which is
+#                                   what a zero contribution (the flat default)
+#                                   is flat on.
 #   log_scale   logical(1)           does the axis live naturally on a log
 #                                   scale (sigma, tau, lengthscale, ...)?
 #                                   Drives geometric vs arithmetic spacing in
@@ -50,12 +53,19 @@
 #'   Cartesian product across axes.
 #' @param log_prior Optional `function(x)` returning the scalar log prior
 #'   density at axis value `x`. `NULL` (default) is a flat / improper prior
-#'   (zero log-prior contribution). The contribution is added to the cell's
-#'   `log_marginal`, which the integrator weights by cell widths measured on the
-#'   axis's INTEGRATION coordinate, so on a `log_scale` axis the function is read
-#'   as a density on `log x`: a caller declaring one on the natural scale adds
-#'   `log(x)` to it. Same convention as the outer Pareto-k target, which applies
-#'   no volume element on a positive-scale axis either.
+#'   (zero log-prior contribution). `log_prior_coord` says which coordinate the
+#'   function is a density on.
+#' @param log_prior_coord One of `"integration"` (default) or `"natural"`,
+#'   naming the coordinate `log_prior` is a density on. The contribution is
+#'   added to the cell's `log_marginal`, which the integrator weights by cell
+#'   widths measured on the axis's INTEGRATION coordinate (`log x` on a
+#'   `log_scale` axis), so `"integration"` is carried through as written and is
+#'   what the flat default's zero contribution is flat on. `"natural"` declares
+#'   a density on `x` itself -- a PC prior, `dexp`, `dgamma` -- and the engine
+#'   adds the change of variables `log(x)` on a `log_scale` axis, the same way
+#'   `slab_log_density` is carried across in `.hyper_axis_level_weights()`.
+#'   Inert on a linear axis, where the two coordinates coincide
+#'   (gcol33/tulpa#623).
 #' @param log_scale Logical. Does the axis live naturally on a log scale
 #'   (`sigma`, `tau`, `lengthscale`, ...)? Drives geometric vs arithmetic
 #'   spacing in refinement and log-axis quantile fits. Default `FALSE`.
@@ -83,7 +93,7 @@
 #'   Default `FALSE`.
 #'
 #' @return An object of class `tulpa_hyper_axis_spec` (a validated list with
-#'   the eight fields above).
+#'   the nine fields above).
 #'
 #' @seealso [tulpa_hyper_grid()].
 #' @keywords internal
@@ -91,7 +101,9 @@
 hyper_axis_spec <- function(name, grid, log_prior = NULL,
                             log_scale = FALSE, bounds = NULL,
                             refinable = FALSE, atom_mass = NULL,
-                            slab_bounds = NULL) {
+                            slab_bounds = NULL,
+                            log_prior_coord = c("integration", "natural")) {
+  log_prior_coord <- match.arg(log_prior_coord)
   if (!is.character(name) || length(name) != 1L || !nzchar(name)) {
     stop("`name` must be a non-empty character string.", call. = FALSE)
   }
@@ -146,6 +158,7 @@ hyper_axis_spec <- function(name, grid, log_prior = NULL,
     atom_mass   = atom_mass,
     slab_bounds = slab_bounds,
     log_prior = log_prior,
+    log_prior_coord = log_prior_coord,
     log_scale = log_scale,
     bounds    = bounds,
     refinable = isTRUE(refinable)

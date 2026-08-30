@@ -12,7 +12,8 @@ hyper_axis_spec(
   bounds = NULL,
   refinable = FALSE,
   atom_mass = NULL,
-  slab_bounds = NULL
+  slab_bounds = NULL,
+  log_prior_coord = c("integration", "natural")
 )
 }
 \arguments{
@@ -25,12 +26,8 @@ Cartesian product across axes.}
 
 \item{log_prior}{Optional \verb{function(x)} returning the scalar log prior
 density at axis value \code{x}. \code{NULL} (default) is a flat / improper prior
-(zero log-prior contribution). The contribution is added to the cell's
-\code{log_marginal}, which the integrator weights by cell widths measured on the
-axis's INTEGRATION coordinate, so on a \code{log_scale} axis the function is read
-as a density on \verb{log x}: a caller declaring one on the natural scale adds
-\code{log(x)} to it. Same convention as the outer Pareto-k target, which applies
-no volume element on a positive-scale axis either.}
+(zero log-prior contribution). \code{log_prior_coord} says which coordinate the
+function is a density on.}
 
 \item{log_scale}{Logical. Does the axis live naturally on a log scale
 (\code{sigma}, \code{tau}, \code{lengthscale}, ...)? Drives geometric vs arithmetic
@@ -61,10 +58,22 @@ they are therefore a prior choice: the weights normalise over \code{slab_bounds}
 and refinement is not allowed to move outside it. \code{NULL} leaves the node
 span acting as the support, which makes the prior depend on where
 refinement put the outermost node.}
+
+\item{log_prior_coord}{One of \code{"integration"} (default) or \code{"natural"},
+naming the coordinate \code{log_prior} is a density on. The contribution is
+added to the cell's \code{log_marginal}, which the integrator weights by cell
+widths measured on the axis's INTEGRATION coordinate (\verb{log x} on a
+\code{log_scale} axis), so \code{"integration"} is carried through as written and is
+what the flat default's zero contribution is flat on. \code{"natural"} declares
+a density on \code{x} itself -- a PC prior, \code{dexp}, \code{dgamma} -- and the engine
+adds the change of variables \code{log(x)} on a \code{log_scale} axis, the same way
+\code{slab_log_density} is carried across in \code{.hyper_axis_level_weights()}.
+Inert on a linear axis, where the two coordinates coincide
+(gcol33/tulpa#623).}
 }
 \value{
 An object of class \code{tulpa_hyper_axis_spec} (a validated list with
-the eight fields above).
+the nine fields above).
 }
 \description{
 Builds a single axis spec for \code{\link[=tulpa_hyper_grid]{tulpa_hyper_grid()}}. Carries the candidate
