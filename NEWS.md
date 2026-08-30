@@ -1,3 +1,30 @@
+# tulpa 0.2.3
+
+* **What an outer Pareto-k-hat measures, measured (gcol33/tulpa#629).** The
+  `k_quality` ladder was thought to be unable to reach a genuinely SKEWED
+  hyperparameter posterior, with the proposal-side rescues
+  (`.joint_pareto_score_mixture` / `_skew`) as the untouched lever for it.
+  Neither half holds. Skewness is not what a k-hat measures -- the importance
+  ratio against a Gaussian proposal stays bounded on a skew-normal target, which
+  reads a median grid-moment k-hat of 0.224 at true skewness 0.851 and -0.073 at
+  0.967 -- so the skew-normal rescue is scored on 0-5.3% of rows and adopted on
+  0-1.7%, and where it is scored (on a heavy tail, the shape that DOES defeat a
+  Gaussian proposal) it reads worse than the Gaussian it was asked to rescue.
+  Over 165 synthetic configurations the largest gain any un-adopted candidate
+  offers on a miss cell is 0.089, crossing no band boundary, so no proposal-side
+  rung is added to `k_refine`; and every target reaches the good band on some
+  grid, including one at true skewness 6.74 and excess kurtosis 141, so the
+  escalation does not gain a decline rung either. One thing the sweep does say
+  about the shipped `"grid"` rung: on a heavy tail, densifying a too-narrow grid
+  moves the k-hat monotonically the wrong way while widening fixes it, so the
+  boundary-extension half is what earns its place. No behaviour change; the
+  verdict is pinned in `tests/testthat/test-outer-proposal-lever.R` and written
+  up in `dev_notes/issue629/RESULTS629.md`. Two findings from the same
+  measurement are filed rather than folded in: three of the four outer-k
+  backends score a single proposal candidate and read a worse band on 27% of
+  configurations (gcol33/tulpa#630), and the reported k-hat moves with
+  `control$k_samples`, documented as a precision knob only (gcol33/tulpa#631).
+
 # tulpa 0.2.2
 
 * **The `k_quality` escalation reads which lever its miss actually takes, and

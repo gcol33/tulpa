@@ -500,6 +500,54 @@ multi-chain producer (`run_hmc_parallel_chains_cpp`, exposed via
 `tests/testthat/test-generic-sampler.R` ("mcmc_diagnostics consumes a native
 multi-chain fit").
 
+### What an outer k-hat measures, and which lever moves it (gcol33/tulpa#629)
+
+**Skewness is not what an outer k-hat measures; a heavy TAIL is.** The
+importance ratio against a Gaussian proposal stays bounded on a skew-normal
+target -- Gaussian tail on one side, lighter on the other -- so a genuinely
+skewed hyperparameter posterior reads a GOOD k-hat: median grid-moment k-hat
+0.224 at true skewness 0.851 and -0.073 at true skewness 0.967, over 11
+synthetic single-axis targets x 15 grids x 20 seeds at the shipped
+`k_samples = 500`. `.joint_pareto_score_skew` is therefore scored on 0-5.3% of
+rows and adopted on 0-1.7%, and where it IS scored -- above the good band, i.e.
+on a heavy tail -- it reads WORSE than the Gaussian it was asked to rescue
+(median 0.80 to 1.19 against 0.46 to 0.57). Its own header says a skew-normal
+cannot absorb a heavy tail; the measurement adds that the case it CAN absorb
+does not produce a bad k-hat to begin with.
+
+So there is no proposal-side rung to add to `k_refine`: over 165 cells the
+largest gain any un-adopted candidate offers over the shipped choice on a miss
+cell is **0.089**, crossing no band boundary, and the four cells offering any
+gain are ones where the mixture cannot be BUILT because the grid is too coarse.
+Nor should the escalation DECLINE on a skewed posterior -- every target in the
+sweep reaches the good band on some grid, including one at true skewness 6.74
+and excess kurtosis 141.
+
+**Densifying and widening are not the same lever, and only one works on a heavy
+tail.** On `heavy(df=2)` at half-width 3, going 5 -> 41 nodes moves the
+grid-moment k-hat monotonically the WRONG way (1.304 -> 2.092); widening to
+half-width 12 takes it to 0.077. The shipped `"grid"` rung extends the boundary
+where integrand mass piles at an edge AND densifies the interior, so it carries
+the half that works -- a rung that only densified would move such a fit
+backwards.
+
+**Read a candidate comparison at CELL level, never at row level.** Taking
+`min(k_mix, k_skew)` per row and calling the difference a gain is a selection
+over two noisy estimates: it manufactures 68 "materially improvable" rows at a
+median gain of 0.307 that all disappear under the 20-seed median.
+
+The four backends do NOT agree on this. `.nested_grid_pareto_k`,
+`.spde_pareto_k` and `.nested_outer_pareto_k` each call `.nested_is_pareto_k`
+ONCE and report the raw grid-moment Gaussian -- no moment matching, no mixture,
+no rescue, no `proposal_source`. Over the same 165 cells they read `unreliable`
+on 53 where the joint dispatch reads it on 8 (median k-hat 1.159 -> 0.736 ->
+0.259 across the three layers), so 45 cells (27%) get a different band from
+which backend ran them: gcol33/tulpa#630. That the reported k-hat also moves
+with `control$k_samples`, a knob documented as affecting precision only, is
+gcol33/tulpa#631; a closed-form Pareto control is flat across the same budgets,
+so the estimator wiring is not what moves. Every number above is read at
+`k_samples = 500`. Tests: `test-outer-proposal-lever.R`.
+
 ### Inner-Laplace reliability: gamma_3 (gcol33/tulpa#272)
 
 The counterpart layer to Pareto-k-hat above: k-hat scores the OUTER
