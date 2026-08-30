@@ -1,3 +1,44 @@
+# tulpa 0.2.4
+
+* **One proposal-candidate dispatch behind all four outer-k backends
+  (gcol33/tulpa#630).** An outer Pareto-k-hat scores a PROPOSAL, so what it
+  reports depends on which proposal families were offered.
+  `tulpa_nested_laplace_joint()` scored four and kept the best;
+  `tulpa_nested_laplace()`, `fit_spde()` and `tulpa_re_cov_nested()` each called
+  the importance-sampling core once and reported the raw first pass. The
+  candidate layer now lives in `R/outer_pareto_candidates.R` on a
+  backend-agnostic contract (`.k_cand_spec()`), and each backend supplies a spec
+  rather than a scorer. A spec with no integration nodes -- `fit_spde(method =
+  "ccd")`, `tulpa_re_cov_nested()` -- withholds the grid mixture rather than
+  reading a design spacing as a grid resolution, and keeps its radius cap at
+  `Inf` as before. The joint path is unchanged bit for bit, asserted by
+  re-running gcol33/tulpa#629's 3300-configuration sweep against its committed
+  baseline. Over that issue's 165 synthetic cells the single-candidate read
+  calls 53 `unreliable` where the full dispatch calls 8, median k-hat 1.159 ->
+  0.736 -> 0.259.
+
+* **A small-group binary RE-covariance k-hat was mostly the proposal's scale,
+  not a skewed posterior.** On `test-psis.R`'s tiny-binary fixture (25 groups x
+  3 binary observations) the proposal as the mode-find places it scores 14.6 to
+  49.1 over five seeds; re-estimated from its own importance-weighted moments it
+  scores 0.29 to 0.78 on four of them, with one genuinely beyond a Gaussian's
+  reach at 39.4. The package documented the high value as a correct signal; that
+  note is corrected, and the arbiter test now asserts the repair and its limits
+  instead of a separation that does not survive.
+
+* **New reported fields on every nested backend: `pareto_k_proposal_source` and
+  `pareto_k_first_pass`.** The first names which proposal family produced the
+  reported k-hat; the second is the k-hat of the proposal exactly as the backend
+  placed it, before refinement. A large gap says the nodes are badly scaled
+  around the hyperparameter posterior even where the verdict is fine -- the
+  "poor integration versus non-Gaussian posterior" distinction gcol33/tulpa#629
+  asked for. `pareto_k_proposal_source` also reports which integrator actually
+  ran: a `fit_spde(method = "ccd")` fit that fell back to the grid path says so.
+
+* `.k_dispatch()` declines below the PSIS floor before any candidate runs, so a
+  sub-floor `control$k_samples` no longer pays target evaluations to discover it
+  cannot fit a GPD tail.
+
 # tulpa 0.2.3
 
 * **What an outer Pareto-k-hat measures, measured (gcol33/tulpa#629).** The

@@ -89,8 +89,9 @@ test_that("skewness beyond the skew-normal ceiling is clamped, not refused", {
   prep  <- .osk_prep()
   refit <- function(theta_mat)
     shape_z((log(as.numeric(theta_mat[, 1])) - .osk_U0) / .osk_S) - log(.osk_S)
-  set.seed(seed); g <- .joint_pareto_score(prep, 1L, refit, n)
-  set.seed(seed); d <- .joint_pareto_score_dispatch(prep, 1L, refit, n)
+  spec <- .joint_cand_spec(prep, 1L, refit)
+  set.seed(seed); g <- .k_score_gaussian(spec, n)
+  set.seed(seed); d <- .k_dispatch(spec, n)
   list(gauss = g$pareto_k, k = d$best$pareto_k, src = d$source, skew = d$outer_skew)
 }
 
@@ -152,7 +153,7 @@ test_that("the significance screen keeps a gaussian target off the skew proposal
                  log = TRUE) - log(s_t)
   src <- vapply(seq_len(40), function(i) {
     set.seed(500L + i)
-    .joint_pareto_score_dispatch(prep, 1L, refit, 200L)$source %||% NA_character_
+    .k_dispatch(.joint_cand_spec(prep, 1L, refit), 200L)$source %||% NA_character_
   }, character(1))
   expect_true(any(!is.na(src)))                 # the pass really ran
   expect_false(any(stats::na.omit(src) == "skew_normal"))
@@ -173,7 +174,7 @@ test_that("weighted moments are read in the proposal's whitened coordinate", {
   set.seed(7)
   u_c <- 2.5; L <- matrix(0.4, 1, 1)
   U <- matrix(stats::rnorm(4e4, u_c, 0.4), ncol = 1)
-  m <- .joint_pareto_wtd_moments(U, rep(0, nrow(U)), u_c, L)
+  m <- .k_wtd_moments(U, rep(0, nrow(U)), u_c, L)
   expect_equal(m$mu[1],   0, tolerance = 0.02)
   expect_equal(m$sd[1],   1, tolerance = 0.02)
   expect_equal(m$skew[1], 0, tolerance = 0.05)

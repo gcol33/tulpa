@@ -245,6 +245,13 @@
 #'   * `pareto_k`, `pareto_k_is_ess`: outer Pareto-\eqn{\hat{k}} and its
 #'     importance-sampling ESS (`NA` when not computed for the grid; see
 #'     `control$diagnose_k`).
+#'   * `pareto_k_proposal_source`, `pareto_k_first_pass`: which proposal family
+#'     the reported k-hat came from (the outer k-hat is scored against several
+#'     candidates and the best is kept), and the k-hat of the FIRST pass -- the
+#'     proposal exactly as this backend placed it, before any candidate refined
+#'     or replaced it. A large gap between the two says the nodes are badly
+#'     scaled around the hyperparameter posterior even though the verdict is
+#'     fine; no gap says the placement was already right.
 #'   * `inner_skew`, `inner_skew_idx`, `inner_skew_dropped`: the inner-Laplace
 #'     skewness diagnostic (gamma_3) at each scored latent index and its
 #'     1-based index, plus a count of (index, observation) contributions
@@ -667,6 +674,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   if (is.null(kd)) return(decline("degenerate_proposal", "the scorer errored"))
   res$pareto_k <- kd$pareto_k
   res$pareto_k_is_ess <- kd$is_ess
+  res$pareto_k_proposal_source <- kd$proposal_source %||% NA_character_
+  res$pareto_k_first_pass <- kd$first_pass_k %||% NA_real_
   .k_attach_declined(res, kd)
 }
 

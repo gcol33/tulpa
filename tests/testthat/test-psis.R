@@ -385,7 +385,7 @@ test_that("outer k-hat declines (NA) for a multi-block nested fit", {
 # real-fit test but fail this one.                                             #
 # --------------------------------------------------------------------------- #
 
-test_that("outer k-hat orders well-identified below tiny-binary RE-covariance fits", {
+test_that("a tiny-binary RE-covariance k-hat is a proposal scale, not a skewed posterior", {
   skip_on_cran()
 
   # hyperprior = "pc_lkj" opted in explicitly (default is "flat", gcol33/
@@ -393,9 +393,19 @@ test_that("outer k-hat orders well-identified below tiny-binary RE-covariance fi
   # well-identified and a pathological fit, which is the PC prior's shrinkage
   # behavior at small G, not the flat-in-log default's.
   #
+  # This test used to assert that the two regimes separate by orders of
+  # magnitude, on the reading that a small-group binary variance-component
+  # posterior is genuinely skewed and its huge k-hat is therefore a correct
+  # signal. Measured per candidate layer (gcol33/tulpa#630,
+  # dev_notes/issue630/RESULTS630.md), it was not: the separation was the
+  # PROPOSAL, mis-scaled on the tiny side, and it disappears once the proposal
+  # is re-estimated from its own PSIS-weighted moments -- a candidate the joint
+  # path has always scored and this backend did not. So what is asserted here is
+  # the repair and its two limits, which is what a regression would undo.
+  #
   # (a) Well-identified: 30 groups x 25 gaussian obs each, correlated random
-  # slope. The Sigma posterior is near-Gaussian, so the Gaussian grid proposal
-  # is correctable -> low k-hat.
+  # slope. The Sigma posterior is near-Gaussian, so the proposal as PLACED
+  # already fits and refinement has little to do.
   k_well <- function(seed) {
     set.seed(seed); G <- 30L; per <- 25L; n <- G * per
     grp <- rep(seq_len(G), each = per); x <- rnorm(n)
@@ -405,10 +415,10 @@ test_that("outer k-hat orders well-identified below tiny-binary RE-covariance fi
                 correlated = TRUE)
     tulpa_re_cov_nested(y, rep(1L, n), cbind(1, x), rt, family = "gaussian",
                         phi = 0.25, hyperprior = "pc_lkj",
-                        control = list(diagnose_k = TRUE, k_samples = 150L))$pareto_k
+                        control = list(diagnose_k = TRUE, k_samples = 150L))
   }
-  # (b) Tiny binary groups: 25 groups x 3 binary obs each. The variance-component
-  # posterior is strongly skewed (the IS ratio is heavy-tailed) -> high k-hat.
+  # (b) Tiny binary groups: 25 groups x 3 binary obs each. The proposal as
+  # placed is badly scaled there, so its FIRST-PASS k-hat blows up.
   k_tiny <- function(seed) {
     set.seed(seed); G <- 25L; per <- 3L; n <- G * per
     grp <- rep(seq_len(G), each = per); x <- rnorm(n)
@@ -418,20 +428,35 @@ test_that("outer k-hat orders well-identified below tiny-binary RE-covariance fi
                 correlated = TRUE)
     tulpa_re_cov_nested(y, rep(1L, n), cbind(1, x), rt, family = "binomial",
                         hyperprior = "pc_lkj",
-                        control = list(diagnose_k = TRUE, k_samples = 150L))$pareto_k
+                        control = list(diagnose_k = TRUE, k_samples = 150L))
   }
 
-  ka <- vapply(1:5, function(s) k_well(100L + s), numeric(1))
-  kb <- vapply(1:5, function(s) k_tiny(200L + s), numeric(1))
+  fa <- lapply(1:5, function(s) k_well(100L + s))
+  fb <- lapply(1:5, function(s) k_tiny(200L + s))
+  get <- function(fits, nm) vapply(fits, function(f) f[[nm]], numeric(1))
+  ka  <- get(fa, "pareto_k");            kb  <- get(fb, "pareto_k")
+  fpa <- get(fa, "pareto_k_first_pass"); fpb <- get(fb, "pareto_k_first_pass")
 
-  # The diagnostic discriminates: the tiny-binary regime sits FAR above the
-  # well-identified one and above the 0.7 escalation threshold. The separation
-  # (typically two orders of magnitude) is the robust invariant; a hard 0.7 on
-  # the well-identified side is left out because the GPD tail estimate is noisy
-  # at k_samples = 150, and a tiny-binary k-hat may legitimately be Inf (an
-  # improper-heavy variance posterior the proposal cannot correct).
-  expect_true(all(is.finite(ka)))             # well-identified: finite, correctable
-  expect_true(all(kb > 0.7))                  # tiny-binary: every fit flagged (Inf ok)
-  expect_lt(median(ka), 2.0)                  # well-identified far from the heavy regime
-  expect_gt(median(kb), 3 * median(ka))       # the ordering, with a wide margin
+  # 1. The first pass reproduces the old reading: the placement IS bad on the
+  #    tiny side and fine on the well-identified one. That half was real.
+  expect_true(all(is.finite(fpa)))
+  expect_lt(median(fpa), 2.0)
+  expect_gt(median(fpb), 5 * median(fpa))
+
+  # 2. Refinement repairs it. Every well-identified fit stays finite, and the
+  #    tiny-binary median falls by more than an order of magnitude off its own
+  #    first pass -- so the huge number was the proposal's scale, not the
+  #    posterior's shape.
+  expect_true(all(is.finite(ka)))
+  expect_lt(median(ka), 2.0)
+  expect_lt(median(kb), median(fpb) / 10)
+
+  # 3. The regime is not uniformly benign, and the report says which fits are
+  #    which: at least one tiny-binary fit is beyond any Gaussian's reach and
+  #    keeps a k-hat past the escalation threshold, while the well-identified
+  #    arm never needs the mixture or the rescue.
+  expect_gt(max(kb), .nl_diag("k_usable"))
+  expect_true(all(vapply(c(fa, fb), function(f)
+    f$pareto_k_proposal_source %in% c("mode_hessian", "moment_matched"),
+    logical(1))))
 })

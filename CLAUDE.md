@@ -440,9 +440,18 @@ integration is reliable; >= 0.7 => the (skewed / heavy-tailed) hyperparameter
 posterior is misfit by the Gaussian grid and the fit should escalate to the
 Gibbs debias. Controlled by `diagnose_k` (default TRUE) / `k_samples`
 (default 200, each one extra inner Laplace solve); computed after the draw
-synthesis with the RNG restored, so draws are bit-for-bit unchanged. NOTE:
-small-group binary RE-covariance posteriors are genuinely skewed, so a high
-k-hat there is a correct signal, not a defect.
+synthesis with the RNG restored, so draws are bit-for-bit unchanged.
+
+**A high k-hat on a small-group binary RE-covariance fit was read as a correct
+signal -- the posterior being genuinely skewed -- and it was mostly the
+PROPOSAL's scale (gcol33/tulpa#630).** On `test-psis.R`'s own tiny-binary
+fixture, 25 groups x 3 binary observations, the proposal as the mode-find places
+it scores 14.6 / 15.1 / 24.3 / 39.4 / 49.1 over five seeds; re-estimated from
+its own PSIS-smoothed importance-weighted moments it scores 0.29 / 0.61 / 0.63 /
+0.78 / 39.4. Four of five were a mis-scaled proposal, one is genuinely beyond a
+Gaussian's reach, and the report now separates them. The skew-normal rescue is
+never reached on that fixture: it fires only above the good band, which moment
+matching has already cleared. See "One candidate dispatch" below.
 
 `tulpa_nested_laplace()` (the grid-integrated path) computes the same outer
 k-hat via `.nl_attach_pareto_k()` + `.nested_grid_pareto_k()`: it re-evaluates
@@ -547,6 +556,56 @@ with `control$k_samples`, a knob documented as affecting precision only, is
 gcol33/tulpa#631; a closed-form Pareto control is flat across the same budgets,
 so the estimator wiring is not what moves. Every number above is read at
 `k_samples = 500`. Tests: `test-outer-proposal-lever.R`.
+
+### One candidate dispatch behind all four outer-k backends (gcol33/tulpa#630)
+
+An outer k-hat scores a PROPOSAL, so what it reports depends on which proposal
+families were offered. `R/outer_pareto_candidates.R` is the one candidate layer:
+`.k_cand_spec()` is the backend-agnostic contract (the target closure `lt`, the
+Gaussian `(u_hat, Su)`, the integration nodes `(u_grid, w)` where the backend
+has them, the `proposal_source`, the axis `names` -- all already restricted to
+the subspace being scored, so no scorer indexes an axis set), `.k_dispatch()` is
+the choice, `.k_dispatch_report()` adds the reported fields and writes the
+`.kdiag_capture()` aperture from the SELECTED proposal. Four candidates,
+cheapest first, each gated on the previous still missing the good band:
+grid-moment Gaussian, moment-matched Gaussian, grid mixture, skew-normal rescue.
+The minimum is kept, so a candidate can never make a fit read worse.
+
+**A spec with no node set withholds the mixture rather than inventing one.** The
+mixture's bump width is a grid RESOLUTION; a CCD design's spacing is not one. So
+`fit_spde(method = "ccd")` and `tulpa_re_cov_nested()` offer the Gaussian,
+moment matching and the rescue, and their radius cap stays `Inf` -- which is
+what those paths always did. `.joint_cand_spec()` is the joint path's adapter;
+everything joint-specific (the per-axis support registry, the pinned axes, the
+mode-Hessian splice) is resolved before the spec is built.
+
+Until 0.2.4 only the joint path scored more than one candidate. Over the 165
+synthetic cells of gcol33/tulpa#629, the raw first pass reads `unreliable` on
+53 where the full dispatch reads it on 8 (moment matching rescues 18 of them,
+the two rescues 27 more), median k-hat 1.159 -> 0.736 -> 0.259, and 45 cells
+(27%) change band. Realized on fits: the RE-covariance change above; 6 of 15
+`tulpa_nested_laplace()` ICAR fits adopt a different candidate with 2 crossing a
+band; `fit_spde()` unchanged on its fixtures. The joint path is BIT-IDENTICAL,
+asserted by re-running #629's 3300-configuration sweep against its committed
+baseline -- every column, including the adopted source.
+
+**Two reported fields answer different questions.**
+`pareto_k_proposal_source` names the family behind the number;
+`pareto_k_first_pass` is the k-hat of the proposal exactly as the backend placed
+it. A large gap says the NODES are badly scaled around the posterior even though
+the verdict is fine; no gap says the placement was already right. That is the
+"is the integration poor, or is the posterior not Gaussian" distinction
+gcol33/tulpa#629 item (3) asked for. The source field also reports which
+integrator actually ran: two of three `fit_spde(method = "ccd")` fits report
+`grid_moment`, because `fit_spde_nested_ccd()` falls back to the grid path in
+three documented cases.
+
+`.k_dispatch()` declines below `.PSIS_MIN_EVAL` before any candidate runs -- the
+mixture samples its components before scoring, so without that guard a sub-floor
+budget would pay target evaluations to discover it cannot fit a GPD. Tests:
+`test-outer-proposal-lever.R` (the contract, the no-grid spec, the floor),
+`test-psis.R` (the RE-covariance arbiter). Write-up:
+`dev_notes/issue630/RESULTS630.md`.
 
 ### Inner-Laplace reliability: gamma_3 (gcol33/tulpa#272)
 

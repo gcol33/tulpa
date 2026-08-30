@@ -285,6 +285,13 @@ A list with:
 \item \code{pareto_k}, \code{pareto_k_is_ess}: outer Pareto-\eqn{\hat{k}} and its
 importance-sampling ESS (\code{NA} when not computed for the grid; see
 \code{control$diagnose_k}).
+\item \code{pareto_k_proposal_source}, \code{pareto_k_first_pass}: which proposal family
+the reported k-hat came from (the outer k-hat is scored against several
+candidates and the best is kept), and the k-hat of the FIRST pass -- the
+proposal exactly as this backend placed it, before any candidate refined
+or replaced it. A large gap between the two says the nodes are badly
+scaled around the hyperparameter posterior even though the verdict is
+fine; no gap says the placement was already right.
 \item \code{inner_skew}, \code{inner_skew_idx}, \code{inner_skew_dropped}: the inner-Laplace
 skewness diagnostic (gamma_3) at each scored latent index and its
 1-based index, plus a count of (index, observation) contributions

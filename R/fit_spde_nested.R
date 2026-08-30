@@ -42,7 +42,16 @@ pc_prior_log_density <- function(range, sigma, prior_range, prior_sigma) {
 # weights use, so no extra Jacobian is needed -- the SPDE integrator already
 # works on the log scale. Both axes are positive, so the transform is
 # unambiguous. Runs with the RNG restored so the fit is unperturbed.
-.spde_pareto_k <- function(theta_hat, L_scale, spde_log_marginal, sp, n_samples) {
+#
+# Scored through the shared candidate dispatch
+# (R/outer_pareto_candidates.R). `u_grid` / `w` are the integration nodes, which
+# the GRID method has and whose weighted moments its proposal IS -- so the grid
+# mixture is offered there. The CCD method's proposal is the mode-find's own
+# Gaussian, so it passes neither and the mixture declines rather than reading a
+# design spacing as a grid resolution.
+.spde_pareto_k <- function(theta_hat, L_scale, spde_log_marginal, sp, n_samples,
+                           u_grid = NULL, w = NULL,
+                           proposal_source = "mode_hessian") {
   lt <- function(U) {
     r <- exp(U[, 1L]); s <- exp(U[, 2L])
     lm <- tryCatch(spde_log_marginal(r, s)$log_marginal,
@@ -51,17 +60,19 @@ pc_prior_log_density <- function(range, sigma, prior_range, prior_sigma) {
     lm + pc_prior_log_density(r, s, sp$prior_range, sp$prior_sigma)
   }
   kd <- .with_preserved_seed(
-    tryCatch(.nested_is_pareto_k(theta_hat, L_scale, lt, n_samples),
-             error = function(e) NULL)
+    tryCatch(.k_dispatch_report(
+      .k_cand_spec(lt = lt, u_hat = theta_hat,
+                   Su = L_scale %*% t(L_scale), u_grid = u_grid, w = w,
+                   proposal_source = proposal_source),
+      n_samples, scope = "fit_spde (log range, log sigma)"),
+      error = function(e) NULL)
   )
   if (is.null(kd)) {
     list(pareto_k = NA_real_, is_ess = NA_real_,
+         proposal_source = NA_character_,
          declined = .k_decline_label(.k_decline("degenerate_proposal",
                                                "the scorer errored")))
-  } else {
-    .kdiag_capture(kd$lr, scope = "fit_spde (log range, log sigma)")
-    kd
-  }
+  } else kd
 }
 
 # ---------------------------------------------------------------------
@@ -113,7 +124,9 @@ fit_spde_nested_grid <- function(spde_log_marginal, sp, n_grid, spatial,
       list(pareto_k = NA_real_, is_ess = NA_real_,
            declined = .k_decline_label(.k_decline("degenerate_proposal",
                                                   "grid-moment covariance not positive definite")))
-    } else .spde_pareto_k(u_hat, Lk, spde_log_marginal, sp, k_samples)
+    } else .spde_pareto_k(u_hat, Lk, spde_log_marginal, sp, k_samples,
+                          u_grid = u_grid, w = weights,
+                          proposal_source = "grid_moment")
   }
 
   # Outer-grid collapse visibility. This span is
@@ -135,6 +148,8 @@ fit_spde_nested_grid <- function(spde_log_marginal, sp, n_grid, spatial,
     pareto_k = kd$pareto_k,
     pareto_k_is_ess = kd$is_ess,
     pareto_k_declined = .k_reason_of(kd),
+    pareto_k_proposal_source = kd$proposal_source %||% NA_character_,
+    pareto_k_first_pass = kd$first_pass_k %||% NA_real_,
     pareto_k_scope = "outer (range, sigma) Gaussian proposal",
     pareto_k_regime          = regime$pareto_k_regime,
     pareto_k_grid_edge_axes  = regime$pareto_k_grid_edge_axes,
@@ -294,6 +309,8 @@ fit_spde_nested_ccd <- function(spde_log_marginal,
     pareto_k         = kd$pareto_k,
     pareto_k_is_ess  = kd$is_ess,
     pareto_k_declined = .k_reason_of(kd),
+    pareto_k_proposal_source = kd$proposal_source %||% NA_character_,
+    pareto_k_first_pass = kd$first_pass_k %||% NA_real_,
     pareto_k_scope   = "outer (range, sigma) Gaussian proposal",
     nested = list(
       method        = "ccd",

@@ -80,6 +80,11 @@
 #'     \item `spatial`: the spatial specification (for prediction)
 #'     \item `pareto_k`, `pareto_k_is_ess`: outer Pareto-\eqn{\hat{k}} and its
 #'       importance-sampling ESS (`NA` when `diagnose_k = FALSE`)
+#'     \item `pareto_k_proposal_source`, `pareto_k_first_pass`: which proposal
+#'       family the reported k-hat came from (several candidates are scored and
+#'       the best kept), and the k-hat of the first pass -- the proposal exactly
+#'       as placed, before refinement. A large gap says the placement is poor
+#'       even where the verdict is fine.
 #'     \item `nested`: nested Laplace results (if used)
 #'   }
 #'

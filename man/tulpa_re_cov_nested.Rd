@@ -112,7 +112,13 @@ the integration nodes in \code{posterior}, independent of \code{n_draws}.
 \item \code{seed}: optional integer seed for the fixed-effect draw synthesis.
 \item \code{diagnose_k}: if \code{TRUE} (default), compute the outer Pareto k-hat
 accuracy diagnostic for the Gaussian proposal over the hyperparameters,
-returned as \code{pareto_k}.
+returned as \code{pareto_k}. Several proposal candidates are scored and the
+best is kept: \code{pareto_k_proposal_source} names which one produced the
+reported number and \code{pareto_k_first_pass} is the k-hat of the proposal
+exactly as the mode-find placed it, before refinement. A large gap
+between the two says the placement is poor even where the verdict is
+fine -- on a small-group binary fit the first pass runs 15 to 49 where
+the reported k-hat is 0.3 to 0.8.
 \item \code{k_samples}: importance draws for the \code{diagnose_k} estimate
 (default 200).
 \item \code{max_iter}, \code{tol}, \code{n_threads}: inner-solve controls (see

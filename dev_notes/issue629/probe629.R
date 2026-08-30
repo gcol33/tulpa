@@ -2,7 +2,7 @@
 # SINGLE-GAUSSIAN candidate, on a hyperparameter posterior a rescue candidate
 # fits materially better, actually occur?
 #
-# The shipped dispatch (.joint_pareto_score_dispatch) already scores three
+# The shipped dispatch (.k_dispatch) already scores three
 # proposal families and adopts the best, but each rescue sits behind a gate:
 #   * the grid mixture is SCORED only when proposal_source == "grid_moment" AND
 #     the grid-moment k is at or above the good band, and ADOPTED only when the
@@ -76,9 +76,9 @@ mk_refit <- function(tg) function(theta_mat) tg$lg(log(theta_mat[, 1]))
 # re-deriving them from a fresh seed and comparing two different realizations.
 
 REC <- new.env(parent = emptyenv())
-orig <- list(score   = tp$.joint_pareto_score,
-             mixture = tp$.joint_pareto_score_mixture,
-             skew    = tp$.joint_pareto_score_skew)
+orig <- list(score   = tp$.k_score_gaussian,
+             mixture = tp$.k_score_mixture,
+             skew    = tp$.k_score_skew)
 
 wrap <- function(name, fn) function(...) {
     out <- fn(...)
@@ -86,9 +86,9 @@ wrap <- function(name, fn) function(...) {
     REC[[paste0(name, "_called")]] <- TRUE
     out
 }
-utils::assignInNamespace(".joint_pareto_score",         wrap("g",   orig$score),   ns = "tulpa")
-utils::assignInNamespace(".joint_pareto_score_mixture", wrap("mix", orig$mixture), ns = "tulpa")
-utils::assignInNamespace(".joint_pareto_score_skew",    wrap("sk",  orig$skew),    ns = "tulpa")
+utils::assignInNamespace(".k_score_gaussian", wrap("g",   orig$score),   ns = "tulpa")
+utils::assignInNamespace(".k_score_mixture",  wrap("mix", orig$mixture), ns = "tulpa")
+utils::assignInNamespace(".k_score_skew",     wrap("sk",  orig$skew),    ns = "tulpa")
 
 SINGLE_GAUSS <- c("grid_moment", "moment_matched", "mode_hessian")
 
@@ -103,9 +103,10 @@ score_all <- function(tg, n_nodes, half_width, n_samples = 500L, seed = 1L) {
     vary <- tp$.joint_pareto_vary_axes(prep$Su)
     if (!length(vary)) return(na_row("no_varying_axis"))
 
+    spec <- tp$.joint_cand_spec(prep, vary, refit)
     rm(list = ls(REC), envir = REC)
     set.seed(seed)
-    shipped <- tp$.joint_pareto_score_dispatch(prep, vary, refit, n_samples)
+    shipped <- tp$.k_dispatch(spec, n_samples)
     if (tp$.k_is_decline(shipped)) return(na_row(tp$.k_reason_of(shipped)))
 
     g   <- REC$g
@@ -114,16 +115,14 @@ score_all <- function(tg, n_nodes, half_width, n_samples = 500L, seed = 1L) {
 
     # Counterfactuals for the candidates the dispatch never scored: continue the
     # SAME stream the shipped run left behind, so nothing is re-seeded.
-    mom <- if (!is.null(g)) tp$.joint_pareto_wtd_moments(g$U, g$log_weights,
-                                                         g$prop_u, g$prop_L)
+    mom <- if (!is.null(g)) tp$.k_wtd_moments(g$U, g$log_weights,
+                                              g$prop_u, g$prop_L)
            else NULL
     if (!mix_scored) {
-        mix <- tryCatch(orig$mixture(prep, vary, refit, n_samples),
-                        error = function(e) NULL)
+        mix <- tryCatch(orig$mixture(spec, n_samples), error = function(e) NULL)
     }
     if (!sk_scored && !is.null(mom)) {
-        sk <- tryCatch(orig$skew(prep, vary, refit, n_samples,
-                                 g$prop_u, g$prop_L, mom),
+        sk <- tryCatch(orig$skew(spec, n_samples, g$prop_u, g$prop_L, mom),
                        error = function(e) NULL)
     }
 
@@ -132,7 +131,7 @@ score_all <- function(tg, n_nodes, half_width, n_samples = 500L, seed = 1L) {
 
     covered <- NA
     if (!is.null(mix) && !is.null(g)) {
-        of <- tp$.joint_pareto_hull_weight(
+        of <- tp$.k_hull_weight(
             g$gm_U %||% g$U, g$gm_lw %||% g$log_weights,
             mix$lo - tp$.K_DIAG_HULL_PAD * mix$s,
             mix$hi + tp$.K_DIAG_HULL_PAD * mix$s)

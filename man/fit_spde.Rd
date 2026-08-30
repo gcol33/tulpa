@@ -112,6 +112,11 @@ A list with:
 \item \code{spatial}: the spatial specification (for prediction)
 \item \code{pareto_k}, \code{pareto_k_is_ess}: outer Pareto-\eqn{\hat{k}} and its
 importance-sampling ESS (\code{NA} when \code{diagnose_k = FALSE})
+\item \code{pareto_k_proposal_source}, \code{pareto_k_first_pass}: which proposal
+family the reported k-hat came from (several candidates are scored and
+the best kept), and the k-hat of the first pass -- the proposal exactly
+as placed, before refinement. A large gap says the placement is poor
+even where the verdict is fine.
 \item \code{nested}: nested Laplace results (if used)
 }
 }

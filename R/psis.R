@@ -403,17 +403,25 @@ tulpa_psis <- function(log_ratios, tail_points = NULL) {
     lt <- log_target(Umat[i, ])
     if (is.finite(lt)) lt else -Inf
   }, numeric(1))
-  kd <- .nested_is_pareto_k(theta_hat, L_scale, batched,
-                            n_samples = n_samples, radius_cap = Inf)
-  .kdiag_capture(kd$lr, scope = "re_cov nested (hyperparameter Gaussian)")
-  kd
+  # The proposal is the mode-find's own Gaussian, not a set of integration
+  # nodes, so the spec carries no grid: the mixture candidate declines (its bump
+  # width is a grid RESOLUTION, which a CCD design does not have) and the radius
+  # cap stays Inf, which is what this path always used. Moment matching and the
+  # skew-normal rescue apply unchanged.
+  .k_dispatch_report(
+    .k_cand_spec(lt = batched, u_hat = theta_hat,
+                 Su = L_scale %*% t(L_scale),
+                 proposal_source = "mode_hessian"),
+    n_samples, scope = "re_cov nested")
 }
 
 # Outer Pareto-k-hat for a grid-integrated nested fit (the generic
 # `tulpa_nested_laplace` path), where the inner marginal is evaluated by a
 # BATCHED re-fit rather than a per-sample closure. Fits a Gaussian proposal to
-# the hyperparameter posterior in the proposal's coordinate, draws `n_samples`,
-# re-evaluates the target in ONE call, and PSIS-smooths log p_target - log q.
+# the hyperparameter posterior in the proposal's coordinate and hands it to the
+# shared candidate dispatch (R/outer_pareto_candidates.R) with the integration
+# nodes attached, so the grid mixture is available here exactly as on the joint
+# path -- the proposal IS the grid's weighted moments.
 # The caller supplies the target so it matches whatever density the integrator
 # actually weights (any change-of-variables Jacobian is the caller's job); the
 # proposal's normalizing constant is common to every draw and drops under PSIS.
@@ -603,22 +611,17 @@ tulpa_psis <- function(log_ratios, tail_points = NULL) {
   cen   <- sweep(u_grid, 2L, u_hat)
   Su    <- crossprod(cen * weights, cen)                     # weighted covariance
   Su    <- (Su + t(Su)) / 2
-  L <- tryCatch(t(chol(Su)), error = function(e) NULL)
-  if (is.null(L)) {
-    # The grid-weighted covariance is not positive definite -- a collapsed or
-    # single-cell grid leaves nothing to place a proposal with.
-    return(list(pareto_k = NA_real_, is_ess = NA_real_, n_eval = 0L,
-                declined = "degenerate_proposal"))
-  }
-
   lt <- function(U) {
     lm <- refit_log_marginal(exp(U))
     if (length(lm) != nrow(U)) return(rep(NA_real_, nrow(U)))
     lm                                                       # already the u-space target
   }
-  radius_cap <- .nested_grid_radius_cap(u_grid, u_hat, L)
-  kd <- .nested_is_pareto_k(u_hat, L, lt, n_samples, radius_cap = radius_cap)
-  .kdiag_capture(kd$lr,
-                 scope = "nested_laplace grid (single positive-scale axis)")
-  kd
+  # A grid-weighted covariance that is not positive definite -- a collapsed or
+  # single-cell grid -- leaves nothing to place a proposal with; the Cholesky
+  # is attempted inside the scorer, so that case arrives as a
+  # `degenerate_proposal` decline rather than being caught twice.
+  .k_dispatch_report(
+    .k_cand_spec(lt = lt, u_hat = u_hat, Su = Su, u_grid = u_grid,
+                 w = weights, proposal_source = "grid_moment"),
+    n_samples, scope = "nested_laplace grid (single positive-scale axis)")
 }

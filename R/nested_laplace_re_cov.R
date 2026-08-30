@@ -1553,7 +1553,13 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
 #'     \item `seed`: optional integer seed for the fixed-effect draw synthesis.
 #'     \item `diagnose_k`: if `TRUE` (default), compute the outer Pareto k-hat
 #'       accuracy diagnostic for the Gaussian proposal over the hyperparameters,
-#'       returned as `pareto_k`.
+#'       returned as `pareto_k`. Several proposal candidates are scored and the
+#'       best is kept: `pareto_k_proposal_source` names which one produced the
+#'       reported number and `pareto_k_first_pass` is the k-hat of the proposal
+#'       exactly as the mode-find placed it, before refinement. A large gap
+#'       between the two says the placement is poor even where the verdict is
+#'       fine -- on a small-group binary fit the first pass runs 15 to 49 where
+#'       the reported k-hat is 0.3 to 0.8.
 #'     \item `k_samples`: importance draws for the `diagnose_k` estimate
 #'       (default 200).
 #'     \item `max_iter`, `tol`, `n_threads`: inner-solve controls (see
@@ -1905,7 +1911,8 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   # draw synthesis and with the RNG state restored, so existing draws are
   # bit-for-bit unchanged whether or not the diagnostic is requested.
   # A decline says which one it was rather than a bare NA.
-  pareto_k <- NA_real_; k_is_ess <- NA_real_
+  pareto_k <- NA_real_; k_is_ess <- NA_real_; k_source <- NA_character_
+  k_first  <- NA_real_
   k_declined <- if (!isTRUE(diagnose_k)) .k_decline_label(.k_decline("not_requested"))
                 else .k_decline_label(.k_decline("no_varying_axis",
                                                  "no free covariance coordinate"))
@@ -1921,6 +1928,8 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
                                                 "the scorer errored"))
     } else {
       pareto_k <- kd$pareto_k; k_is_ess <- kd$is_ess
+      k_source   <- kd$proposal_source %||% NA_character_
+      k_first    <- kd$first_pass_k %||% NA_real_
       k_declined <- .k_reason_of(kd)
     }
   }
@@ -1935,6 +1944,8 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     pareto_k    = pareto_k,
     pareto_k_is_ess = k_is_ess,
     pareto_k_declined = k_declined,
+    pareto_k_proposal_source = k_source,
+    pareto_k_first_pass = k_first,
     pareto_k_scope  = "outer (hyperparameter) Gaussian proposal",
     # Per-node random-effect posterior: mode and marginal variance of every
     # (term, group, coefficient), one row per integration node. ranef() mixes

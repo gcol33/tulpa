@@ -269,8 +269,9 @@ test_that("the grid-mixture proposal beats the single Gaussian on a skewed grid"
     prep <- tulpa:::.joint_pareto_prepare(res, refit, 600L, NULL)
     expect_identical(prep$proposal_source, "grid_moment")
     vary <- tulpa:::.joint_pareto_vary_axes(prep$Su)
-    set.seed(1); g <- tulpa:::.joint_pareto_score(prep, vary, refit, 600L)
-    set.seed(1); mx <- tulpa:::.joint_pareto_score_mixture(prep, vary, refit, 600L)
+    spec <- tulpa:::.joint_cand_spec(prep, vary, refit)
+    set.seed(1); g  <- tulpa:::.k_score_gaussian(spec, 600L)
+    set.seed(1); mx <- tulpa:::.k_score_mixture(spec, 600L)
     expect_false(is.null(mx))
     expect_lt(mx$pareto_k, g$pareto_k)       # mixture improves the tail shape
     expect_lt(mx$pareto_k, 0.7)              # ... into the usable band
@@ -314,7 +315,8 @@ test_that("a grid-width deficiency stays unreliable: the reported k is never the
     vary <- tulpa:::.joint_pareto_vary_axes(prep$Su)
 
     set.seed(203)
-    g <- tulpa:::.joint_pareto_score(prep, vary, refit_wide, 4000L)
+    g <- tulpa:::.k_score_gaussian(
+        tulpa:::.joint_cand_spec(prep, vary, refit_wide), 4000L)
     # The grid-moment proposal -- the engine's faithful single-Gaussian summary of
     # what it integrates over -- is unreliable: the grid is too narrow.
     expect_gte(g$gm$pareto_k, 0.7)
@@ -327,7 +329,8 @@ test_that("a grid-width deficiency stays unreliable: the reported k is never the
     # The dispatched verdict: adopt the faithful within-grid proposal, stay
     # unreliable, and NOT report the moment-matched Gaussian.
     set.seed(203)
-    disp <- tulpa:::.joint_pareto_score_dispatch(prep, vary, refit_wide, 4000L)
+    disp <- tulpa:::.k_dispatch(
+        tulpa:::.joint_cand_spec(prep, vary, refit_wide), 4000L)
     expect_identical(disp$source, "grid_mixture")
     expect_false(identical(disp$source, "moment_matched"))
     expect_gte(disp$best$pareto_k, 0.7)
