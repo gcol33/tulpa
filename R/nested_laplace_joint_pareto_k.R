@@ -998,9 +998,10 @@
 # rather than a Gaussian's mismatch to a skewed marginal. Per-axis bump SD is
 # `bw * (largest adjacent grid gap on that axis)`, falling back to the
 # grid-weighted SD where an axis keeps a single distinct value. Draws `n_samples`
-# (= `diagnose_draws`) points, the single user-facing precision knob: the
-# mixture's tail-shape k-hat needs a long enough tail to be stable, so raise
-# `diagnose_draws` for a tighter estimate. The draws stay near the grid cells, so
+# points -- the resolved `control$k_samples`, carried internally and reported as
+# `diagnose_draws`: the mixture's tail-shape k-hat needs a long enough tail to be
+# stable, so a tighter estimate takes a larger `control$k_samples`. The draws
+# stay near the grid cells, so
 # no inner Newton stalls. Returns
 # list(pareto_k, is_ess, refined = FALSE, lr, s, lo, hi) -- `lr` the raw finite
 # importance log-ratios (for the k bootstrap), `s` the per-axis bump SD and
@@ -1316,7 +1317,8 @@
 # same `tail_points` (`k_bootstrap` replicates), which is free -- no new inner
 # solves -- and estimator-agnostic. Bootstrap measures how UNSTABLE the current
 # tail estimate is; it cannot create tail information. A tighter k needs more
-# ACTUAL tail ratios, i.e. a larger `diagnose_draws`, NOT a larger `k_bootstrap`.
+# ACTUAL tail ratios, i.e. a larger `control$k_samples`, NOT a larger
+# `control$k_bootstrap`.
 # Returns the point k, IS-ESS, tail size used, bootstrap SE / 95% CI, closed-form
 # (GPD-shape MLE asymptotic) SE cross-check, and the band-confidence flag (the
 # bootstrap CI within one reliability band). Falls back to the scoring-pass point
@@ -1341,11 +1343,12 @@
 # the fit's draws are bit-for-bit unchanged.
 #
 # Uncertainty. The canonical pass scores the chosen proposal
-# ONCE over `n_samples` (= `diagnose_draws`) importance draws and returns its raw
+# ONCE over `n_samples` importance draws -- the resolved `control$k_samples`,
+# reported as `diagnose_draws` -- and returns its raw
 # finite log-ratios; the k-hat's sampling uncertainty is then estimated by
 # bootstrapping those ratios (`k_bootstrap` replicates, re-fitting the GPD tail at
-# the resolved `tail_points`), which adds NO inner solves. `diagnose_draws` is the
-# precision knob (more actual tail ratios => tighter k); `k_bootstrap` only
+# the resolved `tail_points`), which adds NO inner solves. `control$k_samples` is
+# the precision knob (more actual tail ratios => tighter k); `k_bootstrap` only
 # quantifies the current estimate's instability and cannot create tail
 # information. `k_tail_points` (NULL = the automatic PSIS rule) is an expert
 # tail-threshold control, capped at the 20%-of-draws ceiling with one warning. The
@@ -1380,8 +1383,8 @@
         if (tp_req > cap) {
             warning(sprintf(paste0(
                 "k_tail_points = %d exceeds the 20%% PSIS tail cap; using %d ",
-                "instead. Increase diagnose_draws, not k_bootstrap, to obtain ",
-                "more tail information."), tp_req, cap), call. = FALSE)
+                "instead. Increase control$k_samples, not control$k_bootstrap, ",
+                "to obtain more tail information."), tp_req, cap), call. = FALSE)
         }
     }
 
@@ -1695,7 +1698,24 @@
 # bands the diagnostic used, and reports an honest reached / best / reason quartet
 # against the requested quality intent. NEVER silently downgrades: when the fit
 # cannot confidently meet the requested band it returns the band it did reach plus
-# the reason it fell short. `conf_bands` is an explicit override; when NULL it uses
+# the reason it fell short.
+#
+# A miss is CLASSIFIED, not just reported, because the two causes take different
+# levers and the escalation loop reads which one it is (`k_quality_miss`):
+#   * `"resolution"` -- the k-hat sits CONFIDENTLY outside the requested band.
+#     The Gaussian proposal the grid places itself with does not fit the
+#     hyperparameter posterior, which is a property of the integration grid, so
+#     refining the grid is the lever.
+#   * `"precision"` -- the bootstrap CI STRADDLES a band boundary. The point
+#     estimate may already be inside the requested band; what prevents
+#     confirming it is the width of the interval, i.e. the variance of the
+#     k-hat ESTIMATOR. That is reduced by fitting the GPD tail on more actual
+#     tail ratios, which no grid refinement touches, so it is the miss that
+#     still has a lever once refinement is exhausted.
+# `NA_character_` when there is no miss to classify (the band was reached, the
+# intent carried no target band, or the diagnostic did not run).
+#
+# `conf_bands` is an explicit override; when NULL it uses
 # the bands the uncertainty pass recorded (`res$pareto_k_conf_bands`, at the
 # realised finite-draw count, matching the band-confidence flag), else the
 # sample-size-dependent default at `diagnose_draws`. Called for both the single-
@@ -1706,6 +1726,7 @@
     res$k_quality_reached   <- NA
     res$k_quality_best      <- NA_character_
     res$k_quality_reason    <- NA_character_
+    res$k_quality_miss      <- NA_character_
 
     if (identical(k_quality, "none") || !isTRUE(diagnose_k)) {
         res$k_quality_reason <- if (identical(k_quality, "none")) "diagnostic disabled"
@@ -1737,10 +1758,12 @@
     target  <- if (identical(k_quality, "good")) 0L else 1L
     reached <- conf && bi <= target
     res$k_quality_reached <- reached
+    res$k_quality_miss    <- if (reached) NA_character_
+                             else if (!conf) "precision" else "resolution"
     res$k_quality_reason  <-
         if (reached) "requested band reached"
         else if (!conf)
-            "k-hat interval crosses a band boundary; raise diagnose_draws or refine the grid"
+            "k-hat interval crosses a band boundary; raise control$k_samples or refine the grid"
         else "k-hat confidently outside the requested band; the integration is genuinely less reliable"
     res
 }

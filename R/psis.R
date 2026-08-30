@@ -126,7 +126,7 @@
             if (!is.null(detail)) paste0(" (", detail, ")") else "",
             "; k-hat is permanently unavailable for this family -- read the",
             " quadrature ESS instead"),
-        draws_too_few = "too few importance draws to fit the GPD tail; raise diagnose_draws",
+        draws_too_few = "too few importance draws to fit the GPD tail; raise control$k_samples",
         grid_too_small = with_detail("the outer grid / weights cannot support a proposal"),
         no_varying_axis = "every outer axis is pinned to a single value; there is nothing to sample along",
         degenerate_proposal = with_detail(

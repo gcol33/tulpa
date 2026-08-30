@@ -402,15 +402,21 @@
 #'     (to `800L` / `2000L`, unless you set it) so the bootstrap CI can resolve it.
 #'     `"none"` disables the diagnostic. The fit carries an honest verdict --
 #'     `k_quality_requested`, `k_quality_reached`, `k_quality_best`,
-#'     `k_quality_reason`, `k_quality_rounds` -- and never silently downgrades: if
-#'     the requested band is not confidently met it reports the band actually
-#'     reached and why. For `"ok"` / `"good"`, when the first fit does not reach
-#'     the band the engine escalates by REFINING THE INTEGRATION GRID, driven by
-#'     the bad \eqn{\hat{k}} (see `k_refine`): each round widens / densifies the
-#'     grid where the posterior mass escapes its current bounds and re-diagnoses,
-#'     up to `k_max_rounds` times. This is the actual fix for a grid-width
-#'     deficiency; `k_samples` is the separate knob that sharpens the
-#'     \eqn{\hat{k}} ESTIMATE and is not escalated here.
+#'     `k_quality_miss`, `k_quality_reason`, `k_quality_rounds`,
+#'     `k_quality_k_trace` -- and never silently downgrades: if the requested band
+#'     is not confidently met it reports the band actually reached and why.
+#'     For `"ok"` / `"good"`, when the first fit does not reach the band the
+#'     engine escalates by REFINING THE INTEGRATION GRID (see `k_refine`),
+#'     widening / densifying it where the posterior mass escapes its current
+#'     bounds and re-diagnosing, up to `k_max_rounds` rounds. Refinement is the
+#'     first lever on either kind of miss because it lowers \eqn{\hat{k}}
+#'     itself rather than the uncertainty around it. Once refinement is
+#'     exhausted -- no boundary mass left to chase -- what remains depends on
+#'     the miss (`k_quality_miss`): a `"resolution"` miss (\eqn{\hat{k}}
+#'     confidently outside the band) ends the chase, while a `"precision"` miss
+#'     (the bootstrap CI straddling a boundary, so \eqn{\hat{k}} may already be
+#'     inside the band) spends its remaining rounds doubling the
+#'     importance-draw budget, the one lever refinement does not touch.
 #'   * `k_refine` (`"grid"`) -- the integration-refinement rung for `k_quality`
 #'     `"ok"` / `"good"`. `"grid"` (default) re-fits with adaptive grid refinement
 #'     (`adaptive_grid`) each escalation round, driven by the bad \eqn{\hat{k}}, so
@@ -423,10 +429,12 @@
 #'     curvature stencil needs axis neighbours) and engages only on the
 #'     multi-block path at >= 4 transformable latent axes. `"none"` disables
 #'     refinement: the band is reported but not chased.
-#'   * `k_max_rounds` (`2L`) -- the grid-refinement round budget for `k_quality`
-#'     `"ok"` / `"good"`: the maximum number of refine-and-re-fit rounds after the
-#'     first fit. Each round allows one more refinement pass than the last. `0L`
-#'     disables escalation (single-shot, the band is reported but not chased).
+#'   * `k_max_rounds` (`2L`) -- the escalation round budget for `k_quality`
+#'     `"ok"` / `"good"`: the maximum number of re-fit rounds after the first fit.
+#'     A refinement round allows one more pass than the last refinement round
+#'     did; a round taken after refinement is exhausted leaves the grid where it
+#'     stands and doubles the importance-draw budget instead. `0L` disables
+#'     escalation (single-shot, the band is reported but not chased).
 #'   * `diagnose_k` (`TRUE`), `k_samples` (`500L`) -- compute the outer
 #'     Pareto-\eqn{\hat{k}} accuracy diagnostic by importance-sampling the joint
 #'     hyperparameter posterior against the proposal the integrator fits (mixed
@@ -443,7 +451,6 @@
 #'     in `pareto_k_by_arm`, to localise which arm drives a tail-heavy joint k; the
 #'     joint k itself is unchanged. Per-arm k is defined for the multi-block layout
 #'     with two or more arms and declines for the single-block shared-field layout.
-#'     The legacy `k_samples` name is accepted as an alias for `k_samples`.
 #'   * `k_threads` (`NULL`) -- outer-thread width for the diagnostic's importance
 #'     batch. The `k_samples` re-solves are independent and run after the grid
 #'     (every core free), each solved single-threaded once the batch saturates the
@@ -742,15 +749,29 @@
 #'      `pareto_k_by_arm_ci_high`, `pareto_k_by_arm_se_formula`,
 #'      `pareto_k_by_arm_tail_points` and `pareto_k_by_arm_band_confident`.
 #'   * `k_quality_requested`, `k_quality_reached`, `k_quality_best`,
-#'      `k_quality_reason`, `k_quality_rounds` -- the reliability verdict for the
+#'      `k_quality_miss`, `k_quality_reason`, `k_quality_rounds`,
+#'      `k_quality_k_trace` -- the reliability verdict for the
 #' `control$k_quality` intent. `k_quality_requested`
-#'      echoes the intent; `k_quality_best` is the band actually achieved
+#'      echoes the intent; `k_quality_best` is the band THIS fit reached
 #'      (`"good"` / `"ok"` / `"unreliable"`, or `"uncertain"` when the bootstrap CI
-#'      crosses a boundary); `k_quality_reached` is `TRUE`/`FALSE` for an `"ok"` /
+#'      crosses a boundary) -- the band of the returned fit, not the best band
+#'      seen while escalating, which `k_quality_k_trace` carries;
+#'      `k_quality_reached` is `TRUE`/`FALSE` for an `"ok"` /
 #'      `"good"` target (`NA` for `"report"` / `"none"`), never silently
-#'      downgraded; `k_quality_reason` records why it stopped; and
+#'      downgraded; `k_quality_miss` classifies a miss as `"resolution"` (the
+#'      \eqn{\hat{k}} confidently outside the band -- a grid deficiency) or
+#'      `"precision"` (the bootstrap CI straddling a boundary -- the estimator's
+#'      variance), `NA` when there is no miss to classify, and is what the
+#'      escalation reads once refinement is exhausted; `k_quality_reason`
+#'      records why it stopped;
 #'      `k_quality_rounds` is the number of escalation re-fits performed (`0` when
-#'      the first fit sufficed or escalation was off).
+#'      the first fit sufficed or escalation was off); and `k_quality_k_trace` is
+#'      the outer \eqn{\hat{k}} round by round, starting at the first fit's, so a
+#'      chase that did not descend monotonically is visible. The refinement rungs
+#'      rebuild the proposal from the grid they just changed, so a rising trace is
+#'      a re-founded proposal on a strictly larger grid rather than a worse fit,
+#'      which is why the LAST round is returned rather than the lowest-\eqn{\hat{k}}
+#'      one.
 #'   * `adaptive_grid_info` -- when `adaptive_grid = TRUE`, a list with
 #'      `triggered_axes` (character) and `n_points_added` (integer)
 #'      describing the refinement passes. NULL otherwise.
@@ -1031,13 +1052,26 @@ tulpa_nested_laplace_joint <- function(responses,
 
     res$k_quality_rounds     <- res$k_quality_rounds %||% 0L
     res$outer_grid_placement <- res$outer_grid_placement %||% "fixed"
+    res$k_quality_k_trace    <- res$pareto_k
 
     if (k_quality %in% c("ok", "good") && isTRUE(diagnose_k) &&
         k_max_rounds > 0L && k_refine %in% c("grid", "ccd")) {
-        # A bad outer k means the integration grid does not faithfully represent
-        # the hyperparameter posterior. Two refinement rungs, both driven by the
-        # bad k and re-diagnosed each round until the requested band is confidently
-        # reached or the round budget is spent:
+        # A miss has two causes, and the ladder is ordered by which lever
+        # reduces which quantity -- not by which cause the verdict named.
+        #
+        # Refining the grid lowers the k-hat ITSELF: the proposal is rebuilt
+        # from a grid that now covers the posterior better. Buying importance
+        # draws lowers only the k-hat ESTIMATOR's variance -- it narrows the
+        # bootstrap CI around whatever the k-hat already is. Refinement
+        # therefore goes FIRST on either miss: on a "resolution" miss it is the
+        # only lever, and on a "precision" miss (the CI straddling a band
+        # boundary) it can move the underlying k INTO the band rather than
+        # merely resolving whether it was already there. Measured on the
+        # fixture in `test-nested-laplace-joint-pareto-k.R`, which reaches the
+        # good band from an "uncertain" first fit by refining and does not by
+        # sharpening.
+        #
+        # The two refinement rungs, re-diagnosed each round:
         #   * "grid" -- the grid's bounds let posterior mass escape: each round
         #     runs the adaptive boundary-extension / interior-densification pass
         #     (R/hyper_grid_refine.R) where the integrand mass piles at an edge,
@@ -1047,41 +1081,84 @@ tulpa_nested_laplace_joint <- function(responses,
         #     non-adjacent cells with local curvature-aware CCD node clouds
         #     (R/nested_laplace_joint_ccd_local.R). A tensor base is forced (the
         #     finite-difference curvature stencil needs axis neighbours).
-        # Raising k_samples would only sharpen the SAME k against the SAME
-        # grid, never refine it, so it is NOT the escalation lever -- it stays the
-        # separate estimate-precision knob (control$k_samples).
+        # When refinement stops producing -- no boundary mass left to chase, no
+        # peaked interior cell to split -- the rung is EXHAUSTED, and that is
+        # where the two causes finally separate. On a "resolution" miss nothing
+        # remains: the k-hat is confidently outside the band and the grid cannot
+        # be improved, so the loop stops and says so. On a "precision" miss the
+        # estimate is still ambiguous and there IS a lever left, the one
+        # refinement never touched: fit the GPD tail on more actual tail ratios.
+        # Those rounds buy draws (`k_precision_growth` x the realised budget)
+        # and hold the grid where the last refinement left it. Stopping there
+        # instead -- which is what a loop reading only "reached / not reached"
+        # does -- abandons a fit whose integration may already meet the request,
+        # for want of the cheaper half of the diagnostic.
+        #
+        # The refinement level advances on refinement rounds only, counted by
+        # `passes` rather than by `round`, so a draw round does not silently
+        # skip a pass. `k_quality_k_trace` records the k-hat the chase actually
+        # walked, round by round: the refinement rungs rebuild the proposal from
+        # the grid they just changed, so a rising trace is a re-founded proposal
+        # on a strictly larger grid rather than a worse fit, and the trace is
+        # what makes that visible instead of leaving only the last round's
+        # number.
         is_ccd_refine <- identical(k_refine, "ccd")
         refined_field <- if (is_ccd_refine) "local_ccd_info" else "adaptive_grid_info"
-        if (is_ccd_refine) {
-            ctrl$integration <- "grid"
-            lc_base      <- if (is.list(control$local_ccd)) control$local_ccd else list()
-            lc_max_cells <- as.integer(lc_base$max_cells %||% 6L)
-        } else {
-            ctrl$adaptive_grid <- TRUE
-        }
-        round <- 0L
+        lc_base      <- if (is.list(control$local_ccd)) control$local_ccd else list()
+        lc_max_cells <- as.integer(lc_base$max_cells %||% 6L)
+        round     <- 0L
+        passes    <- 0L                            # refinement level so far
+        n_draws_r <- 0L                            # rounds spent on tail ratios
+        exhausted <- FALSE                         # refinement has nothing left
+        k_trace   <- res$pareto_k
         while (!isTRUE(res$k_quality_reached) && round < k_max_rounds) {
             round <- round + 1L
-            if (is_ccd_refine) {
-                ctrl$local_ccd <- utils::modifyList(
-                    lc_base, list(max_cells = round * lc_max_cells))
+            draws_round <- exhausted
+            if (draws_round) {
+                # Buy tail ratios and leave `ctrl`'s integration settings
+                # exactly where the last refinement round left them, so the
+                # round holds the grid rather than advancing it by the default
+                # one pass. The refinement switches are turned on by the branch
+                # below, never here, and a caller who asked for `adaptive_grid`
+                # themselves keeps it.
+                n_draws_r <- n_draws_r + 1L
+                ctrl$k_samples <- as.integer(ceiling(
+                    .nl_diag("k_precision_growth") * (res$diagnose_draws %||% 500L)))
             } else {
-                ctrl$adaptive_grid_max_passes <- round
+                passes <- passes + 1L
+                if (is_ccd_refine) {
+                    ctrl$integration <- "grid"
+                    ctrl$local_ccd   <- utils::modifyList(
+                        lc_base, list(max_cells = passes * lc_max_cells))
+                } else {
+                    ctrl$adaptive_grid            <- TRUE
+                    ctrl$adaptive_grid_max_passes <- passes
+                }
             }
             res <- attach_q(.tulpa_nl_joint_once(responses, prior, copy, phi_grid,
                                                  prior_sigma, prior_alpha, prior_phi,
                                                  cell_coupling, ctrl))
             res$k_quality_rounds <- round
-            if (!isTRUE(res$k_quality_reached) && is.null(res[[refined_field]])) {
-                # The refinement produced no info object, so further rounds add
-                # nothing. For the CCD rung this means no peaked interior cell
-                # was found. For the grid rung it means the grid was not extended
-                # this round -- either no boundary mass beyond the current width,
-                # or (on a multi-block fit) the boolean adaptive_grid rung does
-                # not engage the multi-block flood integrator, which is selected
-                # by control$integration = "grid_adaptive". So the message states
-                # what happened without asserting the bad k is definitely not a
-                # grid deficiency.
+            k_trace <- c(k_trace, res$pareto_k)
+            if (!isTRUE(res$k_quality_reached) && !draws_round &&
+                is.null(res[[refined_field]])) {
+                # The refinement produced no info object, so no further round
+                # can add a node. For the CCD rung this means no peaked interior
+                # cell was found. For the grid rung it means the grid was not
+                # extended this round -- either no boundary mass beyond the
+                # current width, or (on a multi-block fit) the boolean
+                # adaptive_grid rung does not engage the multi-block flood
+                # integrator, which is selected by control$integration =
+                # "grid_adaptive".
+                exhausted <- TRUE
+                if (identical(res$k_quality_miss, "precision")) {
+                    # What is left is the interval's width, not the grid, and
+                    # that lever is untouched. Keep going on tail ratios.
+                    next
+                }
+                # A confidently-bad k-hat on a grid that cannot be refined. The
+                # message states what happened without asserting the bad k is
+                # definitely not a grid deficiency.
                 res$k_quality_reason <- if (is_ccd_refine) paste0(
                     "local CCD found no peaked interior cell to refine (needs a ",
                     ">= 4-axis multi-block tensor grid); the bad k is not a ",
@@ -1093,10 +1170,17 @@ tulpa_nested_laplace_joint <- function(responses,
                 break
             }
         }
-        if (!isTRUE(res$k_quality_reached) && round >= k_max_rounds)
+        if (!isTRUE(res$k_quality_reached) && round >= k_max_rounds) {
+            # Name what the budget was actually spent on, so a caller raising
+            # k_max_rounds knows which lever the extra rounds will pull.
+            rung <- if (is_ccd_refine) "local-CCD-refinement" else "grid-refinement"
             res$k_quality_reason <- sprintf(
-                "requested band not confirmed within the k_max_rounds %s budget",
-                if (is_ccd_refine) "local-CCD-refinement" else "grid-refinement")
+                "requested band not confirmed within the k_max_rounds budget (%s)",
+                if (n_draws_r == 0L) sprintf("%d %s", passes, rung)
+                else if (passes == 0L) sprintf("%d draw-budget", n_draws_r)
+                else sprintf("%d %s + %d draw-budget", passes, rung, n_draws_r))
+        }
+        res$k_quality_k_trace <- k_trace
     }
     res
 }

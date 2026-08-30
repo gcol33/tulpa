@@ -661,6 +661,22 @@
 # / n_draws` falls BELOW this floor, i.e. where correcting the proposal costs
 # at least half a percent of the sample; the raw shape is reported either way.
 #
+# `k_precision_growth` is the factor the `k_quality` escalation multiplies the
+# importance-draw budget by once grid refinement is EXHAUSTED and the miss that
+# remains is a precision miss. A `k_quality` miss has two causes: the k-hat can
+# sit CONFIDENTLY outside the requested band (the grid does not represent the
+# hyperparameter posterior), or its bootstrap CI can STRADDLE a band boundary
+# (the point estimate may already be inside the band and only the interval's
+# width prevents confirming it). Refinement is tried first on BOTH, because it
+# lowers the k-hat itself rather than the noise around it and so can move an
+# ambiguous k INTO the band; the draw budget is what is left when the grid has
+# nothing more to give and the estimate is still ambiguous. The standard error
+# of a GPD shape estimate falls as `1 / sqrt(S)`, so a constant factor buys a
+# constant proportional narrowing per round: at 2 the CI narrows by ~29% per
+# round, which crosses a band boundary for an estimate not already sitting on
+# it, while keeping the round's cost -- one inner Laplace solve per draw -- to
+# one doubling.
+#
 # `skew_correct` decides whether the inner-Laplace marginal quantiles are
 # corrected rather than only graded: a Cornish-Fisher
 # reshaping at each coordinate's own gamma_3 about the centre gamma_1 +
@@ -1062,6 +1078,7 @@
     gamma3_unreliable    = 1.0,
     centre_unreliable    = Inf,
     inner_k_material_ess = 0.995,
+    k_precision_growth   = 2,
     skew_correct         = TRUE,
     debias_select_band   = "ok",
     debias_closure_pcor  = 0.5,

@@ -1,3 +1,57 @@
+# tulpa 0.2.2
+
+* **The `k_quality` escalation reads which lever its miss actually takes, and
+  keeps chasing when refinement runs out.** A miss has two causes: the outer
+  Pareto-k-hat can sit CONFIDENTLY outside the requested band (the integration
+  grid does not represent the hyperparameter posterior), or its bootstrap CI can
+  STRADDLE a band boundary (the point estimate may already be inside the band and
+  only the interval's width prevents confirming it). The loop read only
+  `reached / not reached` and answered both by refining the grid. Refining is
+  correct first on either -- it lowers the k-hat itself rather than the noise
+  around it, and can move an ambiguous k INTO the band, which is what the shipped
+  fixture measures -- but when refinement reports it added nothing, the two
+  separate. A confidently-bad k-hat on a grid that cannot be refined ends the
+  chase as before; an ambiguous one now spends its remaining rounds on the lever
+  refinement never touches, doubling the importance-draw budget so the GPD tail
+  is fitted on more actual tail ratios. Previously such a fit was abandoned with
+  rounds still in its budget, its integration possibly already meeting the
+  request. `.joint_attach_k_quality()` classifies every miss as
+  `k_quality_miss = "resolution"` / `"precision"` (`NA` when there is nothing to
+  classify) and the loop reads that classification rather than re-deriving it.
+
+* Two settings the escalation needed made explicit rather than implied. The
+  refinement switches (`adaptive_grid`, `integration = "grid"`) are set inside
+  the refinement branch, not once before the loop: set before it, a round meant
+  to hold the grid still advanced it by the default one pass. The refinement
+  level counts refinement rounds (`passes`), not loop rounds, so a draw round no
+  longer burns a pass. `k_precision_growth` (2) joins `R/settings.R` with its
+  derivation -- a GPD shape estimate's standard error falls as `1 / sqrt(S)`, so
+  a constant factor is a constant proportional narrowing per round.
+
+* **A fit records the chase, and says which read produced its band.**
+  `k_quality_k_trace` is the outer k-hat round by round, starting at the first
+  fit's, so a chase that did not descend monotonically is visible instead of
+  leaving only the last round's number. The LAST round is returned, not the
+  lowest-k one: the refinement passes are nested, so each round's grid is a
+  strict superset of the last and each round's proposal is rebuilt from the grid
+  that round changed -- returning a smaller grid because a differently-built
+  proposal scored better would be optimising the diagnostic rather than the fit.
+  `k_quality_best` is documented as the band of the RETURNED fit accordingly.
+
+* **Three user-facing messages named a knob that hard-errors.**
+  `control$diagnose_draws` was renamed to `control$k_samples` and the joint front
+  door stops on the old name, but the shared PSIS decline vocabulary
+  (`draws_too_few`, surfaced through `pareto_k_declined` / `diagnostic_summary()`
+  on every nested-Laplace backend), the `k_tail_points` tail-cap warning, and the
+  `k_quality` band-confidence reason each still told the reader to raise it. The
+  roxygen also carried `"the legacy k_samples name is accepted as an alias for
+  k_samples"`, self-referential and false -- there is no alias. All corrected to
+  `control$k_samples`, along with the internal comments that called
+  `diagnose_draws` "the user-facing precision knob" and were what those messages
+  were written from; `fit$diagnose_draws` remains the returned field's name. A
+  source lint in `test-settings.R` fails on an imperative aimed at a dead knob
+  name.
+
 # tulpa 0.2.1
 
 * **A declared hyperprior meets the outer grid in one coordinate, and a

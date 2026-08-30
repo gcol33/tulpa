@@ -302,3 +302,42 @@ test_that("the reported Pareto-k threshold is read, never restated", {
     }
     expect_identical(offenders, character(0))
 })
+
+test_that("no user-facing text tells the caller to set a knob that hard-errors", {
+    r_dir <- test_path("..", "..", "R")
+    skip_if_not(dir.exists(r_dir), "package sources not available")
+
+    # `control$diagnose_draws` was renamed to `control$k_samples` and the joint
+    # front door hard-errors on the old name, so a message or a doc line telling
+    # the reader to raise it sends them into that error. Two shipped for a while
+    # -- the PSIS decline vocabulary and the tail-cap warning -- because the
+    # rename swept the code and not the prose.
+    #
+    # The pattern is an IMPERATIVE aimed at the knob. Naming `diagnose_draws` as
+    # a returned FIELD (`fit$diagnose_draws` is real) or quoting the old name in
+    # the rename error itself is legitimate and must keep passing.
+    dead <- c("diagnose_draws", "diagnose_cost")
+    verbs <- "(raise|increase|lower|bump|set|use|pass|supply)"
+    files <- list.files(r_dir, pattern = "\\.R$", full.names = TRUE)
+
+    offenders <- character(0)
+    for (f in files) {
+        code <- readLines(f, warn = FALSE)
+        for (k in dead) {
+            pat <- paste0(verbs, "\\s+\\W{0,3}(control\\$)?", k, "\\b")
+            hits <- grep(pat, code, value = TRUE, ignore.case = TRUE)
+            if (length(hits)) {
+                offenders <- c(offenders, paste0(basename(f), ": ", trimws(hits)))
+            }
+        }
+    }
+    expect_identical(offenders, character(0))
+
+    # And the knob the reader IS meant to reach exists on every front door that
+    # reports the diagnostic, under one name, reached the same way.
+    for (fn in c("tulpa_nested_laplace", "tulpa_nested_laplace_joint",
+                 "tulpa_re_cov_nested", "fit_spde")) {
+        expect_true("control" %in% names(formals(getExportedValue("tulpa", fn))),
+                    info = fn)
+    }
+})

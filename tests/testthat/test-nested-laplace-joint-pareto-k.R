@@ -746,6 +746,104 @@ test_that("control$k_refine / k_max_rounds validation (gcol33/tulpa#131)", {
             control = list(k_max_rounds = -1L)), "k_max_rounds")
 })
 
+test_that("k_quality classifies the miss the escalation reads (gcol33/tulpa#131)", {
+    # The verdict reads only the k-hat, the bootstrap band-confidence flag and
+    # the bands, so the classification is exercised without a fit.
+    mk <- function(k, conf) list(pareto_k = k, pareto_k_band_confident = conf,
+                                 pareto_k_conf_bands = c(0.5, 0.7))
+    att <- function(k, conf, q, diag = TRUE)
+        .joint_attach_k_quality(mk(k, conf), q, diagnose_k = diag,
+                                diagnose_draws = 500L)
+
+    # Reached: there is no miss to classify.
+    r <- att(0.2, TRUE, "good")
+    expect_true(r$k_quality_reached)
+    expect_true(is.na(r$k_quality_miss))
+
+    # Confidently outside the requested band: the integration grid is the lever.
+    r <- att(0.9, TRUE, "good")
+    expect_false(r$k_quality_reached)
+    expect_identical(r$k_quality_miss, "resolution")
+
+    # The bootstrap CI straddles a boundary: the k-hat ESTIMATOR is the lever,
+    # whatever the point estimate is -- here it already sits in the good band and
+    # the fit still misses, which is the case grid refinement cannot fix.
+    r <- att(0.2, FALSE, "good")
+    expect_false(r$k_quality_reached)
+    expect_identical(r$k_quality_miss, "precision")
+    expect_identical(r$k_quality_best, "uncertain")
+    expect_match(r$k_quality_reason, "k_samples")   # names a knob that exists
+
+    # "ok" admits the second band, so the same k-hat is a miss under "good" and
+    # not under "ok" -- the classification follows the target, not the k-hat.
+    expect_identical(att(0.6, TRUE, "good")$k_quality_miss, "resolution")
+    expect_true(is.na(att(0.6, TRUE, "ok")$k_quality_miss))
+
+    # No target band, and no diagnostic: nothing to classify either way.
+    expect_true(is.na(att(0.9, TRUE, "report")$k_quality_miss))
+    expect_true(is.na(att(0.9, TRUE, "good", diag = FALSE)$k_quality_miss))
+})
+
+test_that("refinement goes first, and a precision miss survives its exhaustion (gcol33/tulpa#131)", {
+    skip_if_not_slow()
+    # The local-CCD rung cannot engage on a single-block fit (it needs a >= 4-axis
+    # multi-block tensor grid), so refinement is exhausted on the FIRST round --
+    # a deterministic way to reach the branch that decides what happens after.
+    # A small draw budget keeps the bootstrap CI wide enough for the precision
+    # miss to be the live case.
+    sim <- .jpk_sim(seed = 41)
+    adj <- .jpk_chain_adj(sim$n_s)
+    prior <- list(type = "icar", n_spatial_units = adj$n_spatial_units,
+                  adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
+                  n_neighbors = adj$n_neighbors, sigma_grid = c(0.3, 0.5, 0.8))
+    arms <- .jpk_arms_alpha(sim, c(0, 0.5, 1.0))
+    ctrl <- list(k_quality = "ok", k_samples = 200L, k_refine = "ccd")
+
+    probe <- tulpa_nested_laplace_joint(responses = arms, prior = prior,
+               control = modifyList(ctrl, list(k_max_rounds = 0L)))
+    skip_if(isTRUE(probe$k_quality_reached),
+            "the first fit already reached the band; no escalation to observe")
+    expect_true(probe$k_quality_miss %in% c("precision", "resolution"))
+    expect_identical(probe$diagnose_draws, 200L)
+
+    esc <- tulpa_nested_laplace_joint(responses = arms, prior = prior,
+             control = modifyList(ctrl, list(k_max_rounds = 2L)))
+    expect_gte(esc$k_quality_rounds, 1L)
+    expect_length(esc$k_quality_k_trace, esc$k_quality_rounds + 1L)
+
+    if (isTRUE(esc$k_quality_reached) || esc$diagnose_draws > 200L) {
+        # Refinement had nothing to add and the miss was the interval's width,
+        # so the rounds that followed bought tail ratios -- the lever refinement
+        # never touches. The budget doubles per such round and nothing else.
+        expect_true(esc$diagnose_draws %in% c(400L, 800L))
+        expect_gt(esc$k_quality_rounds, 1L)
+    } else {
+        # A confidently-bad k-hat on a grid the rung cannot refine: the chase
+        # stops on the first round and says which rung ran out, and the caller's
+        # draw budget is not spent on a miss more draws cannot resolve.
+        expect_identical(esc$k_quality_rounds, 1L)
+        expect_identical(esc$diagnose_draws, 200L)
+        expect_match(esc$k_quality_reason, "local CCD")
+    }
+})
+
+test_that("k_quality_k_trace records the chase round by round (gcol33/tulpa#131)", {
+    sim <- .jpk_sim(seed = 95)
+    adj <- .jpk_chain_adj(sim$n_s)
+    prior <- list(type = "icar", n_spatial_units = adj$n_spatial_units,
+                  adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
+                  n_neighbors = adj$n_neighbors, sigma_grid = c(0.4, 0.9))
+    arms <- .jpk_arms_alpha(sim, c(0.5, 1.0))
+
+    # Escalation off: the trace exists and is the single fit's own k-hat, so a
+    # reader never has to tell "no chase" from "field absent".
+    fit <- tulpa_nested_laplace_joint(responses = arms, prior = prior,
+             control = list(k_quality = "report", k_samples = 200L))
+    expect_identical(fit$k_quality_rounds, 0L)
+    expect_length(fit$k_quality_k_trace, 1L)
+    expect_identical(fit$k_quality_k_trace, fit$pareto_k)
+})
+
 test_that("k_refine = 'grid' refines the integration grid driven by bad k and lowers the outer k (gcol33/tulpa#131)", {
     skip_if_not_slow()
     # A grid that sits below the field's posterior support: the first fit does not
@@ -780,4 +878,13 @@ test_that("k_refine = 'grid' refines the integration grid driven by bad k and lo
     expect_lt(fit1$pareto_k, fit0$pareto_k)
     expect_true(isTRUE(fit1$k_quality_reached))
     expect_identical(fit1$k_quality_best, "good")
+
+    # The trace carries one k-hat per round plus the first fit's, and ends on
+    # the k-hat the returned fit reports -- the last round is what is returned,
+    # not the lowest-k one, because each round's proposal is rebuilt from the
+    # grid that round changed.
+    expect_length(fit1$k_quality_k_trace, fit1$k_quality_rounds + 1L)
+    expect_identical(fit1$k_quality_k_trace[[fit1$k_quality_rounds + 1L]],
+                     fit1$pareto_k)
+    expect_identical(fit0$k_quality_k_trace, fit0$pareto_k)
 })

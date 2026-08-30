@@ -393,15 +393,21 @@ confidently usable, resp. good) and raise the default \code{k_samples}
 (to \code{800L} / \code{2000L}, unless you set it) so the bootstrap CI can resolve it.
 \code{"none"} disables the diagnostic. The fit carries an honest verdict --
 \code{k_quality_requested}, \code{k_quality_reached}, \code{k_quality_best},
-\code{k_quality_reason}, \code{k_quality_rounds} -- and never silently downgrades: if
-the requested band is not confidently met it reports the band actually
-reached and why. For \code{"ok"} / \code{"good"}, when the first fit does not reach
-the band the engine escalates by REFINING THE INTEGRATION GRID, driven by
-the bad \eqn{\hat{k}} (see \code{k_refine}): each round widens / densifies the
-grid where the posterior mass escapes its current bounds and re-diagnoses,
-up to \code{k_max_rounds} times. This is the actual fix for a grid-width
-deficiency; \code{k_samples} is the separate knob that sharpens the
-\eqn{\hat{k}} ESTIMATE and is not escalated here.
+\code{k_quality_miss}, \code{k_quality_reason}, \code{k_quality_rounds},
+\code{k_quality_k_trace} -- and never silently downgrades: if the requested band
+is not confidently met it reports the band actually reached and why.
+For \code{"ok"} / \code{"good"}, when the first fit does not reach the band the
+engine escalates by REFINING THE INTEGRATION GRID (see \code{k_refine}),
+widening / densifying it where the posterior mass escapes its current
+bounds and re-diagnosing, up to \code{k_max_rounds} rounds. Refinement is the
+first lever on either kind of miss because it lowers \eqn{\hat{k}}
+itself rather than the uncertainty around it. Once refinement is
+exhausted -- no boundary mass left to chase -- what remains depends on
+the miss (\code{k_quality_miss}): a \code{"resolution"} miss (\eqn{\hat{k}}
+confidently outside the band) ends the chase, while a \code{"precision"} miss
+(the bootstrap CI straddling a boundary, so \eqn{\hat{k}} may already be
+inside the band) spends its remaining rounds doubling the
+importance-draw budget, the one lever refinement does not touch.
 \item \code{k_refine} (\code{"grid"}) -- the integration-refinement rung for \code{k_quality}
 \code{"ok"} / \code{"good"}. \code{"grid"} (default) re-fits with adaptive grid refinement
 (\code{adaptive_grid}) each escalation round, driven by the bad \eqn{\hat{k}}, so
@@ -414,10 +420,12 @@ direction rather than too narrow; it forces a tensor base grid (the
 curvature stencil needs axis neighbours) and engages only on the
 multi-block path at >= 4 transformable latent axes. \code{"none"} disables
 refinement: the band is reported but not chased.
-\item \code{k_max_rounds} (\code{2L}) -- the grid-refinement round budget for \code{k_quality}
-\code{"ok"} / \code{"good"}: the maximum number of refine-and-re-fit rounds after the
-first fit. Each round allows one more refinement pass than the last. \code{0L}
-disables escalation (single-shot, the band is reported but not chased).
+\item \code{k_max_rounds} (\code{2L}) -- the escalation round budget for \code{k_quality}
+\code{"ok"} / \code{"good"}: the maximum number of re-fit rounds after the first fit.
+A refinement round allows one more pass than the last refinement round
+did; a round taken after refinement is exhausted leaves the grid where it
+stands and doubles the importance-draw budget instead. \code{0L} disables
+escalation (single-shot, the band is reported but not chased).
 \item \code{diagnose_k} (\code{TRUE}), \code{k_samples} (\code{500L}) -- compute the outer
 Pareto-\eqn{\hat{k}} accuracy diagnostic by importance-sampling the joint
 hyperparameter posterior against the proposal the integrator fits (mixed
@@ -434,7 +442,6 @@ hyperparameter axes (the other arms held at their posterior mean), reported
 in \code{pareto_k_by_arm}, to localise which arm drives a tail-heavy joint k; the
 joint k itself is unchanged. Per-arm k is defined for the multi-block layout
 with two or more arms and declines for the single-block shared-field layout.
-The legacy \code{k_samples} name is accepted as an alias for \code{k_samples}.
 \item \code{k_threads} (\code{NULL}) -- outer-thread width for the diagnostic's importance
 batch. The \code{k_samples} re-solves are independent and run after the grid
 (every core free), each solved single-threaded once the batch saturates the
@@ -732,15 +739,29 @@ uncertainty: \code{pareto_k_by_arm_se_boot}, \code{pareto_k_by_arm_ci_low} /
 \code{pareto_k_by_arm_ci_high}, \code{pareto_k_by_arm_se_formula},
 \code{pareto_k_by_arm_tail_points} and \code{pareto_k_by_arm_band_confident}.
 \item \code{k_quality_requested}, \code{k_quality_reached}, \code{k_quality_best},
-\code{k_quality_reason}, \code{k_quality_rounds} -- the reliability verdict for the
+\code{k_quality_miss}, \code{k_quality_reason}, \code{k_quality_rounds},
+\code{k_quality_k_trace} -- the reliability verdict for the
 \code{control$k_quality} intent. \code{k_quality_requested}
-echoes the intent; \code{k_quality_best} is the band actually achieved
+echoes the intent; \code{k_quality_best} is the band THIS fit reached
 (\code{"good"} / \code{"ok"} / \code{"unreliable"}, or \code{"uncertain"} when the bootstrap CI
-crosses a boundary); \code{k_quality_reached} is \code{TRUE}/\code{FALSE} for an \code{"ok"} /
+crosses a boundary) -- the band of the returned fit, not the best band
+seen while escalating, which \code{k_quality_k_trace} carries;
+\code{k_quality_reached} is \code{TRUE}/\code{FALSE} for an \code{"ok"} /
 \code{"good"} target (\code{NA} for \code{"report"} / \code{"none"}), never silently
-downgraded; \code{k_quality_reason} records why it stopped; and
+downgraded; \code{k_quality_miss} classifies a miss as \code{"resolution"} (the
+\eqn{\hat{k}} confidently outside the band -- a grid deficiency) or
+\code{"precision"} (the bootstrap CI straddling a boundary -- the estimator's
+variance), \code{NA} when there is no miss to classify, and is what the
+escalation reads once refinement is exhausted; \code{k_quality_reason}
+records why it stopped;
 \code{k_quality_rounds} is the number of escalation re-fits performed (\code{0} when
-the first fit sufficed or escalation was off).
+the first fit sufficed or escalation was off); and \code{k_quality_k_trace} is
+the outer \eqn{\hat{k}} round by round, starting at the first fit's, so a
+chase that did not descend monotonically is visible. The refinement rungs
+rebuild the proposal from the grid they just changed, so a rising trace is
+a re-founded proposal on a strictly larger grid rather than a worse fit,
+which is why the LAST round is returned rather than the lowest-\eqn{\hat{k}}
+one.
 \item \code{adaptive_grid_info} -- when \code{adaptive_grid = TRUE}, a list with
 \code{triggered_axes} (character) and \code{n_points_added} (integer)
 describing the refinement passes. NULL otherwise.
