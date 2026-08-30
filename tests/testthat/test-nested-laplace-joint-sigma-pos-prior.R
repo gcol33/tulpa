@@ -20,10 +20,14 @@
 #       donor-arm amplitude sigma (cross-axis coupling check).
 #
 # What U means here is set by the measure the alpha axis carries with no
-# prior: the axis is integrated on log alpha, so the flat default is
-# already a 1/alpha shrinkage, and a PC prior only shrinks harder than the
-# baseline once lambda = -log(a)/U is large enough to beat it. That is why
-# the recommended U is not "the upper end of plausible alpha" alone.
+# prior, and that is not flat: with no prior_alpha the copy scale takes the
+# engine's own exponential slab, rate read off the declared grid by putting
+# 5 % of the prior above its largest node. This fixture's grid reaches
+# alpha = 2.0, so the slab is lambda = 1.50 -- the strength of a PC prior at
+# U = 3.07. A prior_alpha REPLACES that slab, so it shrinks harder than the
+# default only once its own lambda = -log(a)/U beats 1.50, which is what the
+# crossing below measures. That is why the recommended U is not "the upper
+# end of plausible alpha" alone.
 # Swept on this fixture's own 50 seeds (dev_notes/audit0830/
 # sweep_alpha_prior.R), alpha geometric bias against truth 1.0, with the
 # coupled donor sigma against its truth of 0.6:

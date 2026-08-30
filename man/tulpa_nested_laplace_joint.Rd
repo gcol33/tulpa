@@ -150,10 +150,13 @@ the data identifies it: default-friendly choice on \eqn{\sigma} is
 \code{c(U = 1.0, alpha = 0.01)} (donor amplitude); on the dimensionless
 copy coefficient \eqn{\alpha} the recommended choice is
 \code{c(U = 4.0, alpha = 0.01)}. What counts as strong is set by the
-measure the axis already carries: a log-scale axis with no prior is
-flat in \verb{log theta}, which is a \code{1/theta} shrinkage on the natural
-scale, so a PC prior only shrinks harder than the no-prior baseline
-once \code{lambda = -log(alpha)/U} is large enough to beat it. Too small a
+measure the axis already carries, and on the copy scale that is not
+flat: with no \code{prior_alpha} it takes the engine's own exponential
+slab, whose rate puts 5 \% of the prior above the largest declared
+node (\code{control$copy_slab}). A \code{prior_alpha} REPLACES that slab, so it
+shrinks harder than the default only once its own
+\code{lambda = -log(alpha)/U} beats the slab's -- on a copy grid reaching
+\code{alpha = 2}, \code{lambda = 1.50}, the strength of \code{U = 3.07}. Too small a
 \code{U} over-shrinks the copy coefficient past the modal cell and, through
 the \code{alpha * sigma} copy axis, inflates the coupled donor amplitude
 \code{sigma}: on a fixture with truth \eqn{\alpha = 1} and \code{sigma = 0.6},

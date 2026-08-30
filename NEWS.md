@@ -29,16 +29,25 @@
   `c(U = 8.0, alpha = 0.01)` to `c(U = 4.0, alpha = 0.01)`, and the
   half-normal from scale 2 to 1.** The old numbers were calibrated against a
   realised prior of `pi(a)/a`, so correcting the coordinate moves the whole `U`
-  scale. What sets it is the measure the axis carries with no prior at all: the
-  copy scale is integrated on `log alpha`, so its flat default is already a
-  `1/alpha` shrinkage, and a PC prior shrinks harder than that baseline only
-  once `lambda` is large enough to beat it. Swept over `U` on
+  scale. What sets it is the measure the axis carries with no prior at all,
+  and on the copy scale that is not flat: with no `prior_alpha` the axis takes
+  the engine's own exponential slab, whose rate is read off the declared grid
+  by putting 5 % of the prior above its largest node. On this fixture's alpha
+  grid (largest node 2.0) that is `lambda = 1.50`, the strength of a PC prior
+  at `U = 3.07`. A user `prior_alpha` REPLACES that slab rather than adding to
+  it, so it shrinks harder than the default only once its own
+  `lambda = -log(alpha)/U` beats 1.50 -- which is why the bias crosses truth
+  near the slab's own strength and why `U = 8` (`lambda = 0.58`) reads as
+  anti-shrinking. Swept over `U` on
   `test-nested-laplace-joint-sigma-pos-prior.R`'s own fixture and 50 seeds
   (alpha truth 1.0, coupled sigma truth 0.6), the alpha geometric bias is
   monotone in `U` and crosses truth near `U ~ 3.4`: flat +0.056, `U = 8`
   +0.116, `U = 4` +0.049, `U = 2` -0.071, `U = 0.25` -0.491. `U = 8` now shrinks
   LESS than the axis's own no-prior measure, which is why it read as a
-  regression rather than a stale constant. The over-shrinking arms reproduce
+  regression rather than a stale constant. Nothing in tulpaObs sets these
+  knobs: `control$prior.sigma` / `.alpha` / `.phi` are forwarded only when a
+  caller supplies them, so no downstream default was calibrated against the
+  old measure. The over-shrinking arms reproduce
   gcol33/tulpa#22's cross-axis mechanism unchanged -- pulling alpha below its
   truth lifts the coupled donor `sigma` above 0.6, to 0.94 at `U = 0.25` -- so
   the recommendation's REASONING stands and only its calibration moved. The
