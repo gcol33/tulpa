@@ -779,8 +779,10 @@ otherwise one of \code{"axis_count"} (fewer transformable latent axes than the
 requested mode's threshold), \code{"unguessable_axis"} (a CAR_proper
 \code{rho_car} or a non-BYM2 \code{rho}), \code{"degenerate_axis"} (a single-valued
 axis), \code{"modefind_ridge"} / \code{"modefind_boundary"} /
-\code{"modefind_degenerate"} / \code{"modefind_failed"}, \code{"hessian_singular"} or
-\code{"hessian_not_pd"}. Multi-block fits only.
+\code{"modefind_degenerate"} / \code{"modefind_failed"}, \code{"hessian_singular"},
+\code{"hessian_not_pd"}, \code{"copy_atom_components"} (more copy atoms than the
+design splits into, see \code{copy_atom_mass}) or \code{"copy_atom_mass"} (a
+declared atom mass outside \verb{[0, 1)}). Multi-block fits only.
 \item \code{weight_kind} -- one entry per outer-grid cell, \code{"mass"} or \code{"design"}.
 A tensor cell holds the mass of its own cell and a CCD node holds a
 design weight, so a fit integrated by one rule reports one value

@@ -51,6 +51,42 @@
   log-spaced `tau_spatial` / `tau_temporal` axes as linear moved the
   spatiotemporal grid's weights.
 
+* **The CCD designs a copy scale on the coordinate its measure lives on, and
+  splits at the atom.** `.joint_ccd_grid()` took the copy `alpha` from the
+  outer Pareto-k registry, where it is carried as an unconstrained real, and
+  placed an affine design on it. That coordinate has no positivity, so design
+  nodes ran below zero: on a two-block coupled fixture, five of twenty-five
+  cells were solved at a negative copy scale, a sign-flipped coupling outside
+  the model's support. Nor did any node land at `alpha = 0`, so "no coupling"
+  carried no posterior weight on the CCD path at all while the tensor rule
+  integrated it as a level. The continuum is now designed in `log alpha`, and
+  because a copy scale is a point mass at zero beside that continuum, the outer
+  posterior over `n` such axes is a mixture of `2^n` components: one design per
+  subset of couplings switched off, combined by the prior mass each
+  configuration declares (`control$copy_atom_mass`). The two-block fixture goes
+  from 25 nodes to 64, against 144 for the tensor grid it replaces. A grid with
+  no copy atom is a single component and is designed as before, on the same
+  nodes. Past `2^n = 8` components the CCD declines to the tensor rule
+  (`copy_atom_components`). A split design hands the outer Pareto-k no
+  mode-Hessian proposal: its components are built in `log alpha` while the
+  diagnostic unconstrains the same grid on the identity coordinate, the only one
+  that represents the `alpha = 0` cells, and one Gaussian is not a mixture
+  either way. The diagnostic keeps its grid-weighted proposal, which the split's
+  spread of components supports; `pareto_k_proposal_source` reads `grid_moment`
+  on those fits.
+
+* **A grid column holding one value across every cell is a fixed setting, not
+  an axis of the grid.** `.joint_axis_specs_from_grid()` built an integration
+  axis for every column of `theta_grid`, so a constant column was handed to the
+  quadrature as a coordinate to integrate over. A constant contributes the same
+  factor to every cell and cancels when the weights are normalised, and some
+  such columns are not quantities to integrate at all: a Poisson count grid
+  carries an `r = Inf` node to pin the negative-binomial size, which
+  `.nl_grid_log_quad()` then rejected as a non-finite grid. Constant columns are
+  dropped before a spec is built for them, so a pinned sentinel leaves the
+  weights identical to the same grid without it, and a held-but-finite setting
+  shifts every cell by one common constant.
+
 * **`tulpa_nested_laplace()` refuses a non-finite response instead of blaming
   itself for one.** `.assert_finite_model_inputs()` was wired into three doors
   by hand and not into this one, so an NA response was absorbed rather than

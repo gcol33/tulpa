@@ -591,6 +591,14 @@
         lapply(colnames(theta_grid),
                function(a) sort(unique(as.numeric(theta_grid[, a])))),
         colnames(theta_grid))
+    # A column holding one value across every cell is a fixed setting rather
+    # than an axis of the grid: it contributes the same factor to every cell,
+    # which cancels when the weights are normalised. Some are not quantities to
+    # integrate at all, such as the `r = Inf` node a Poisson count grid carries
+    # to pin the negative-binomial size, so they are dropped before an axis spec
+    # is built for them.
+    grids <- grids[vapply(grids, function(g) length(g) > 1L, logical(1))]
+    if (length(grids) == 0L) return(NULL)
     .joint_axis_specs(grids, list(has_copy = TRUE), copy_slab = copy_slab)
 }
 

@@ -10,7 +10,9 @@ hyper_axis_spec(
   log_prior = NULL,
   log_scale = FALSE,
   bounds = NULL,
-  refinable = FALSE
+  refinable = FALSE,
+  atom_mass = NULL,
+  slab_bounds = NULL
 )
 }
 \arguments{
@@ -39,10 +41,25 @@ enabled at the driver level). Spatial prior amplitudes (\code{sigma}) are
 typically left at the user-specified grid (\code{refinable = FALSE}); the
 copy coefficient \code{alpha} and per-arm dispersion \code{phi} typically opt in.
 Default \code{FALSE}.}
+
+\item{atom_mass}{Numeric in \verb{[0, 1)}, or \code{NULL} (default). Prior probability
+of the zero level on a log-scale axis. A \code{0} is a point mass, not a point
+of the log continuum, so its prior share has to be declared rather than
+inherited from the node count; the continuum nodes then share
+\code{1 - atom_mass} by quadrature weight. Required when \code{grid} contains a \code{0}
+on a \code{log_scale} axis.}
+
+\item{slab_bounds}{Numeric \code{c(lower, upper)}, or \code{NULL} (default). Fixed
+support of the continuum part of the prior. A flat measure on a log axis is
+improper, so the truncation bounds are what make it a proper density and
+they are therefore a prior choice: the weights normalise over \code{slab_bounds}
+and refinement is not allowed to move outside it. \code{NULL} leaves the node
+span acting as the support, which makes the prior depend on where
+refinement put the outermost node.}
 }
 \value{
 An object of class \code{tulpa_hyper_axis_spec} (a validated list with
-the six fields above).
+the eight fields above).
 }
 \description{
 Builds a single axis spec for \code{\link[=tulpa_hyper_grid]{tulpa_hyper_grid()}}. Carries the candidate

@@ -77,7 +77,7 @@
 #'   Default `FALSE`.
 #'
 #' @return An object of class `tulpa_hyper_axis_spec` (a validated list with
-#'   the six fields above).
+#'   the eight fields above).
 #'
 #' @seealso [tulpa_hyper_grid()].
 #' @keywords internal

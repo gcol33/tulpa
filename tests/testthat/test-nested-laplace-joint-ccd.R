@@ -349,6 +349,137 @@ test_that("every recorded decline reason is one of the named ones", {
     expect_true(all(c("axis_count", "unguessable_axis", "degenerate_axis",
                       "modefind_ridge", "modefind_boundary",
                       "modefind_degenerate", "modefind_failed",
-                      "hessian_singular", "hessian_not_pd") %in%
+                      "hessian_singular", "hessian_not_pd",
+                      "copy_atom_components", "copy_atom_mass") %in%
                     tulpa:::.CCD_DECLINE_REASONS))
+})
+
+test_that("the CCD designs a copy scale on its declared log coordinate", {
+    expect_identical(
+        tulpa:::.joint_ccd_coord_tags(c("b1.sigma", "b1.alpha", "phi_pos"),
+                                      c("log", "identity", "log")),
+        c("log", "log", "log"))
+    # Only a copy scale whose levels carry the "no coupling" node splits the
+    # design; one bracketing the continuum alone stays a single component.
+    expect_identical(
+        tulpa:::.joint_ccd_atom_axes(c("b1.sigma", "b1.alpha", "b2.alpha"),
+                                     list(c(0.5, 1), c(0, 0.5), c(0.5, 1))),
+        2L)
+    expect_identical(
+        tulpa:::.joint_ccd_atom_axes(c("sigma", "rho"), list(c(0.5, 1), c(0, 1))),
+        integer(0))
+})
+
+test_that("a copy atom splits the CCD into one design per coupling configuration", {
+    skip_on_cran()
+    sim <- .sim_joint_ccd(2024L, N = 800L, n_s = 40L)
+    sp  <- list(sim$responses$occ$spatial_idx, sim$responses$pos$spatial_idx)
+    blk <- .bym2_copy_block(sim$adj, c(0.3, 0.6, 1.0), c(0.3, 0.7, 0.9), sp)
+    fit <- tulpa_nested_laplace_joint(
+        sim$responses, list(blk),
+        copy = list(arm = "pos", block = 1L, alpha_grid = c(0, 0.3, 0.7, 1.2)),
+        control = list(integration = "ccd", diagnose_k = FALSE,
+                       var_of_means_consistency = FALSE))
+    expect_identical(fit$integration, "ccd")
+    acol <- grep("alpha$", colnames(fit$theta_grid), value = TRUE)
+    expect_length(acol, 1L)
+    al <- as.numeric(fit$theta_grid[, acol])
+    # The design coordinate is log alpha, so no node leaves the support.
+    expect_true(all(al >= 0))
+    # The "no coupling" atom is reachable, which a single affine design over
+    # the three axes never places.
+    expect_true(any(al == 0))
+    # 3-axis continuum design (1 + 2*3 + 2^3) plus the 2-axis design at
+    # alpha = 0 (1 + 2*2 + 2^2).
+    expect_identical(nrow(fit$theta_grid), 24L)
+    # Each component carries the prior mass its configuration declares, so the
+    # atom's design weights sum to the declared atom mass and the whole design
+    # to one.
+    expect_equal(sum(fit$dnode), 1, tolerance = 1e-10)
+    expect_equal(sum(fit$dnode[al == 0]), tulpa:::.TULPA_COPY_ATOM_MASS,
+                 tolerance = 1e-10)
+})
+
+test_that("a split CCD matches a fine tensor grid carrying the same atom", {
+    skip_on_cran()
+    # The mixture the split integrates is the one the tensor rule integrates as
+    # levels, so the two agree on the posterior of the copy scale -- including
+    # the share of it sitting on "no coupling", which the unsplit design could
+    # not reach at all.
+    sim <- .sim_joint_ccd(7L, N = 4000L, n_s = 40L)
+    sp  <- list(sim$responses$occ$spatial_idx, sim$responses$pos$spatial_idx)
+
+    fit_ccd <- tulpa_nested_laplace_joint(
+        sim$responses,
+        list(.bym2_copy_block(sim$adj, c(0.3, 0.6, 1.0), c(0.3, 0.7, 0.9), sp)),
+        copy = list(arm = "pos", block = 1L,
+                    alpha_grid = c(0, 0.3, 0.7, 1.2)),
+        control = list(integration = "ccd", diagnose_k = FALSE,
+                       var_of_means_consistency = FALSE))
+    expect_identical(fit_ccd$integration, "ccd")
+
+    fine <- .bym2_copy_block(sim$adj,
+                             exp(seq(log(0.2), log(2.0), length.out = 7)),
+                             seq(0.05, 0.95, length.out = 7), sp)
+    fit_fine <- suppressWarnings(tulpa_nested_laplace_joint(
+        sim$responses, list(fine),
+        copy = list(arm = "pos", block = 1L,
+                    alpha_grid = c(0, seq(0.1, 2.0, length.out = 7))),
+        control = list(integration = "grid", diagnose_k = FALSE,
+                       var_of_means_consistency = FALSE)))
+
+    rel <- function(nm) abs(fit_ccd$theta_mean[[nm]] - fit_fine$theta_mean[[nm]]) /
+                        max(abs(fit_fine$theta_mean[[nm]]), 0.1)
+    expect_lt(rel("b1.sigma"), 0.12)
+    expect_lt(rel("b1.alpha"), 0.12)
+
+    # The atom is reachable: the split places cells at alpha = 0 and gives them
+    # the prior mass they declare, so the two rules agree on how much posterior
+    # ends up there. This fixture couples strongly, so both send ~0 to "no
+    # coupling" -- which the unsplit design could not report, having never
+    # evaluated it.
+    at <- function(f) {
+        a <- as.numeric(f$theta_grid[, grep("alpha$", colnames(f$theta_grid))])
+        list(prior = sum((f$dnode %||% rep(1, length(a)))[a == 0]),
+             post  = sum(f$weights[a == 0]))
+    }
+    expect_gt(at(fit_ccd)$prior, 0)
+    expect_lt(abs(at(fit_ccd)$post - at(fit_fine)$post), 0.15)
+})
+
+test_that("a split CCD keeps a usable outer Pareto-k on its grid proposal", {
+    skip_on_cran()
+    sim <- .sim_joint_ccd(2024L, N = 800L, n_s = 40L)
+    sp  <- list(sim$responses$occ$spatial_idx, sim$responses$pos$spatial_idx)
+    blk <- .bym2_copy_block(sim$adj, c(0.3, 0.6, 1.0), c(0.3, 0.7, 0.9), sp)
+    fit <- tulpa_nested_laplace_joint(
+        sim$responses, list(blk),
+        copy = list(arm = "pos", block = 1L, alpha_grid = c(0, 0.3, 0.7, 1.2)),
+        control = list(integration = "ccd", diagnose_k = TRUE,
+                       var_of_means_consistency = FALSE))
+    expect_identical(fit$integration, "ccd")
+    # The mode-Hessian splice is withheld on a split design, so the diagnostic
+    # reports the grid-built proposal it actually used rather than one that
+    # silently did not take.
+    expect_false(identical(fit$pareto_k_proposal_source, "mode_hessian"))
+    expect_true(fit$pareto_k_proposal_source %in%
+                c("grid_moment", "grid_mixture"))
+    expect_true(is.finite(fit$pareto_k))
+})
+
+test_that("a copy atom's design mass follows control$copy_atom_mass", {
+    skip_on_cran()
+    sim <- .sim_joint_ccd(2024L, N = 800L, n_s = 40L)
+    sp  <- list(sim$responses$occ$spatial_idx, sim$responses$pos$spatial_idx)
+    blk <- .bym2_copy_block(sim$adj, c(0.3, 0.6, 1.0), c(0.3, 0.7, 0.9), sp)
+    fit <- tulpa_nested_laplace_joint(
+        sim$responses, list(blk),
+        copy = list(arm = "pos", block = 1L, alpha_grid = c(0, 0.3, 0.7, 1.2)),
+        control = list(integration = "ccd", diagnose_k = FALSE,
+                       var_of_means_consistency = FALSE,
+                       copy_atom_mass = 0.2))
+    expect_identical(fit$integration, "ccd")
+    acol <- grep("alpha$", colnames(fit$theta_grid), value = TRUE)
+    al <- as.numeric(fit$theta_grid[, acol])
+    expect_equal(sum(fit$dnode[al == 0]), 0.2, tolerance = 1e-10)
 })

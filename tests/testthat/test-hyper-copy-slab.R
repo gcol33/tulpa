@@ -134,6 +134,25 @@ test_that("a grid-derived spec list keeps the exponential default", {
   expect_identical(ax$atom_mass, .TULPA_COPY_ATOM_MASS)
 })
 
+test_that("a column fixed across every cell is not an axis of the grid", {
+  tau <- exp(seq(log(0.1), log(5), length.out = 4L))
+  bare  <- cbind(tau = tau)
+  # A Poisson count grid pins the negative-binomial size at `Inf` so the kernel
+  # takes its Poisson branch. That node is a setting, not a value to integrate.
+  pinned <- cbind(tau = tau, r = Inf)
+  expect_identical(.nl_grid_log_quad(pinned), .nl_grid_log_quad(bare))
+
+  # A fixed finite column is inert for the same reason: it is the same factor in
+  # every cell, so it cancels when the weights are normalised.
+  held <- .nl_grid_log_quad(cbind(tau = tau, r = 7))
+  expect_equal(held - held[1L],
+               .nl_grid_log_quad(bare) - .nl_grid_log_quad(bare)[1L])
+
+  # An axis that both varies and leaves the reals is still rejected.
+  expect_error(.nl_grid_log_quad(cbind(tau = tau, r = c(1, 2, 3, Inf))),
+               "must be a non-empty numeric vector of finite values")
+})
+
 test_that("control_check admits copy_slab on the joint method", {
   allowed <- .CONTROL_KEYS$nested_laplace_joint
   expect_true("copy_slab" %in% allowed)

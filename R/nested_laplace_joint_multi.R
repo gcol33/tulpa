@@ -1225,9 +1225,13 @@
             if (length(mode) && all(is.finite(mode))) ccd_warm <<- mode
         }
 
+        # The same atom mass the axis specs below declare, so the mixture the
+        # design splits into is weighted by the prior the grid is integrated
+        # against.
         ccd <- .joint_ccd_grid(axis_names, axis_offsets, prepared, axis_values,
                                eval_logpost, verbose = verbose,
-                               set_warm = set_warm)
+                               set_warm = set_warm,
+                               atom_mass = copy_atom_mass)
         if (is.null(ccd$grid)) {
             use_ccd <- FALSE
             integration_declined <- as.character(ccd$declined %||% "modefind_failed")
@@ -1239,10 +1243,22 @@
             # joint_grid (axis_names, in order); phi crosses as a separate
             # tensor on top. Carry the mode-Hessian Gaussian over those axes for
             # the outer Pareto-k.
-            ccd_proposal <- list(u_hat   = ccd$u_hat,
-                                 L_scale = ccd$L_scale,
-                                 tags    = ccd$tags,
-                                 cols    = seq_len(d_axes))
+            #
+            # A design that split at a copy atom has no such Gaussian to carry.
+            # Its components are built in log alpha, while the diagnostic
+            # unconstrains the SAME grid on the identity coordinate -- the only
+            # one that represents the alpha = 0 cells the split places. One
+            # Gaussian does not describe a mixture either way, so the diagnostic
+            # keeps its grid-weighted proposal, which the split's spread of
+            # components supports.
+            if (isTRUE(ccd$atom_split)) {
+                ccd_proposal <- NULL
+            } else {
+                ccd_proposal <- list(u_hat   = ccd$u_hat,
+                                     L_scale = ccd$L_scale,
+                                     tags    = ccd$tags,
+                                     cols    = seq_len(d_axes))
+            }
         }
     }
 

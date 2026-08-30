@@ -321,26 +321,67 @@
 #   "modefind_failed"     the mode-find did not converge.
 #   "hessian_singular"    the outer Hessian would not invert.
 #   "hessian_not_pd"      its inverse has no Cholesky factor.
+#   "copy_atom_components" more copy atoms than the component cap: the mixture
+#                         below expands into 2^n designs, and past the cap the
+#                         tensor rule is the cheaper one.
+#   "copy_atom_mass"      the declared atom mass is not a probability.
 .CCD_DECLINE_REASONS <- c("axis_count", "unguessable_axis", "degenerate_axis",
                           "modefind_ridge", "modefind_boundary",
                           "modefind_degenerate", "modefind_failed",
-                          "hessian_singular", "hessian_not_pd")
+                          "hessian_singular", "hessian_not_pd",
+                          "copy_atom_components", "copy_atom_mass")
 
-# Build the CCD node grid for the joint multi-block path. `eval_logpost` maps a
-# user-facing [S x d] theta matrix (columns = `axis_names`) to a length-S
-# log-posterior vector (inner log-marginal + baked hyperprior). `axis_values`
-# is a length-d list of the per-axis grid values the user supplied (used to set
-# the mode-find box and the initial point). Returns
-#   list(grid, dnode, u_hat, L_scale, tags)
-# with `grid` the [n_node x d] physical node matrix (colnames = axis_names) and
-# `dnode` the corrected CCD design weights, or `list(declined = <reason>)` to
-# fall back to the tensor grid. A caller tests `is.null(x$grid)`.
-.joint_ccd_grid <- function(axis_names, axis_offsets, prepared, axis_values,
-                            eval_logpost, verbose = FALSE, set_warm = NULL) {
-    d <- length(axis_names)
+# The coordinate each CCD axis is DESIGNED on.
+#
+# `.joint_pareto_block_tags()` answers the neighbouring question for the outer
+# Pareto-k proposal, where a copy `alpha` is carried as an unconstrained real:
+# there the nodes already exist and the tag only says how to reweight them. A
+# CCD places nodes instead, so it needs the coordinate the axis's declared
+# measure lives on. `.joint_axis_specs()` declares the copy scale a point mass
+# at 0 plus a log continuum on (0, Inf), so its continuum is designed in
+# log alpha; an affine design on the identity coordinate puts nodes at negative
+# alpha, which is outside the model's support.
+.joint_ccd_coord_tags <- function(axis_names, tags) {
+    tags[sub("^b[0-9]+\\.", "", axis_names) == "alpha"] <- "log"
+    tags
+}
+
+# The copy-scale axes whose supplied levels carry the "no coupling" atom.
+.joint_ccd_atom_axes <- function(axis_names, axis_values) {
+    bare <- sub("^b[0-9]+\\.", "", axis_names)
+    has_zero <- vapply(axis_values,
+                       function(v) any(as.numeric(v) == 0), logical(1))
+    unname(which(bare == "alpha" & has_zero))
+}
+
+# Cap on the mixture components an atom-carrying grid expands into (2^n_atom).
+.JOINT_CCD_MAX_COMPONENTS <- 8L
+
+# One mixture component: a CCD over the `free` axes with the `pinned` copy
+# axes held at alpha = 0. Returns the component's [n_node x d] node matrix in
+# FULL width (pinned columns zero) with its design weights, or
+# `list(declined = <reason>)`.
+.joint_ccd_component <- function(free, pinned, axis_names, tags, axis_values,
+                                 eval_logpost, verbose = FALSE,
+                                 set_warm = NULL) {
+    d  <- length(axis_names)
+    dk <- length(free)
     declined <- function(reason) list(declined = reason)
-    tags <- .joint_ccd_axis_tags(axis_names, axis_offsets, prepared)
-    if (is.null(tags)) return(declined("unguessable_axis"))
+
+    # Widen a design over the free axes back to the full axis set. The pinned
+    # copy axes are exactly zero here, which is the "no coupling" node the
+    # tensor rule carries as a level.
+    fill <- function(M_free, n) {
+        M <- matrix(0, n, d, dimnames = list(NULL, axis_names))
+        if (dk > 0L) M[, free] <- M_free
+        M
+    }
+    # Every copy axis switched off: the component is the single cell at the
+    # origin of the copy coordinates, carrying its whole prior mass.
+    if (dk == 0L) {
+        return(list(grid = fill(NULL, 1L), dnode = 1,
+                    u_hat = numeric(0), L_scale = matrix(0, 0L, 0L)))
+    }
 
     # u-space search box, generously wider than the supplied per-axis grid
     # range so the mode-find can reach a posterior mode that sits beyond the
@@ -349,7 +390,7 @@
     # runs to a numerically-infeasible hyperparameter; the box also bounds the
     # mode-find, and a mode pinned to its (wide) edge is treated as a runaway /
     # boundary fit and declined to the tensor grid.
-    u_vals <- lapply(seq_len(d), function(j)
+    u_vals <- lapply(free, function(j)
         .joint_pareto_fwd(tags[j], as.numeric(axis_values[[j]])))
     lower0 <- vapply(u_vals, min, numeric(1))
     upper0 <- vapply(u_vals, max, numeric(1))
@@ -371,11 +412,11 @@
 
     # Map a u-space matrix to physical theta (per-axis inverse transform).
     u_to_theta <- function(U) {
-        M <- matrix(0, nrow(U), ncol(U), dimnames = list(NULL, axis_names))
-        for (j in seq_len(ncol(U))) {
-            M[, j] <- .joint_pareto_inv(tags[j], U[, j])$theta
+        M <- matrix(0, nrow(U), dk)
+        for (j in seq_len(dk)) {
+            M[, j] <- .joint_pareto_inv(tags[free[j]], U[, j])$theta
         }
-        M
+        fill(M, nrow(U))
     }
     eval1 <- function(U) {
         out <- eval_logpost(u_to_theta(U))
@@ -426,7 +467,7 @@
     # uses a per-axis step calibrated to the local curvature (a single fixed step
     # cannot resolve a sharp field-SD axis beside a wide / weakly-curved one), then
     # runs the mode-find to convergence from there.
-    got <- try_modefind(u0, rep(0.1, d), max_rounds = 8L)
+    got <- try_modefind(u0, rep(0.1, dk), max_rounds = 8L)
     if (is.null(got$u_hat)) {
         u_seed <- .joint_ccd_grid_seed(u0, u_vals, eval1)
         h_cal  <- .joint_ccd_calibrate_step(u_seed, eval1, span)
@@ -459,15 +500,102 @@
     # with the matching corrected design weights (single source of truth with
     # the SPDE / RE-cov paths; see ccd_grid.R). Map z -> u_hat + L z, clamp to
     # the box, inverse-transform to physical theta.
-    ccd   <- ccd_grid(d, f_0 = sqrt(d) * 1.1)
+    ccd   <- ccd_grid(dk, f_0 = sqrt(dk) * 1.1)
     dnode <- ccd_weights(ccd)
     u_grid <- ccd_to_theta(ccd$z, u_hat, L_scale)
-    for (j in seq_len(d)) {
+    for (j in seq_len(dk)) {
         u_grid[, j] <- pmin(pmax(u_grid[, j], lower[j]), upper[j])
     }
-    grid <- u_to_theta(u_grid)
-    list(grid = grid, dnode = dnode, u_hat = u_hat, L_scale = L_scale,
-         tags = tags)
+    list(grid = u_to_theta(u_grid), dnode = dnode, u_hat = u_hat,
+         L_scale = L_scale)
+}
+
+# Build the CCD node grid for the joint multi-block path. `eval_logpost` maps a
+# user-facing [S x d] theta matrix (columns = `axis_names`) to a length-S
+# log-posterior vector (inner log-marginal + baked hyperprior). `axis_values`
+# is a length-d list of the per-axis grid values the user supplied (used to set
+# the mode-find box and the initial point). Returns
+#   list(grid, dnode, u_hat, L_scale, tags)
+# with `grid` the [n_node x d] physical node matrix (colnames = axis_names) and
+# `dnode` the corrected CCD design weights, or `list(declined = <reason>)` to
+# fall back to the tensor grid. A caller tests `is.null(x$grid)`.
+#
+# A copy `alpha` carries a point mass at 0 beside its log continuum
+# (`.joint_axis_specs()`), so the outer posterior over a grid with `n_atom` such
+# axes is a MIXTURE of 2^n_atom components -- one per subset of copy couplings
+# switched off. An affine CCD is a single Gaussian and represents one of them,
+# so the design is built per component and the components are combined by the
+# prior mass their configuration declares. Without the split the atom is
+# unreachable: no design node lands exactly at alpha = 0, so "no coupling"
+# carries no posterior weight at all, while the tensor rule integrates it as a
+# level.
+.joint_ccd_grid <- function(axis_names, axis_offsets, prepared, axis_values,
+                            eval_logpost, verbose = FALSE, set_warm = NULL,
+                            atom_mass = .TULPA_COPY_ATOM_MASS) {
+    d <- length(axis_names)
+    declined <- function(reason) list(declined = reason)
+    tags <- .joint_ccd_axis_tags(axis_names, axis_offsets, prepared)
+    if (is.null(tags)) return(declined("unguessable_axis"))
+    tags <- .joint_ccd_coord_tags(axis_names, tags)
+
+    atom   <- .joint_ccd_atom_axes(axis_names, axis_values)
+    n_atom <- length(atom)
+    if (bitwShiftL(1L, n_atom) > .JOINT_CCD_MAX_COMPONENTS) {
+        if (verbose)
+            message("tulpa CCD: ", n_atom, " copy atoms expand into ",
+                    bitwShiftL(1L, n_atom), " designs; using the tensor grid.")
+        return(declined("copy_atom_components"))
+    }
+
+    a <- as.numeric(atom_mass)
+    if (n_atom > 0L && (length(a) != 1L || !is.finite(a) || a < 0 || a >= 1)) {
+        return(declined("copy_atom_mass"))
+    }
+
+    # The design coordinate reaches the continuum only, so the box is set from
+    # the positive levels; the atom enters as its own component.
+    cont_values <- axis_values
+    for (j in atom) {
+        v <- as.numeric(axis_values[[j]])
+        cont_values[[j]] <- v[v > 0]
+    }
+    if (any(vapply(cont_values, length, integer(1)) == 0L)) {
+        return(declined("degenerate_axis"))
+    }
+
+    # Subsets of the copy axes, as bit patterns: component `m` switches off
+    # every copy axis whose bit is set.
+    offs <- lapply(seq_len(bitwShiftL(1L, n_atom)) - 1L, function(m)
+        if (n_atom == 0L) integer(0)
+        else atom[bitwAnd(bitwShiftR(m, seq_len(n_atom) - 1L), 1L) == 1L])
+
+    grids  <- vector("list", length(offs))
+    dnodes <- vector("list", length(offs))
+    full   <- NULL
+    for (i in seq_along(offs)) {
+        off  <- offs[[i]]
+        free <- setdiff(seq_len(d), off)
+        cmp  <- .joint_ccd_component(free, off, axis_names, tags, cont_values,
+                                     eval_logpost, verbose = verbose,
+                                     set_warm = set_warm)
+        # A component carries declared prior mass, so one that cannot be
+        # designed cannot be dropped: the whole CCD declines to the tensor rule,
+        # which integrates every component as levels.
+        if (is.null(cmp$grid))
+            return(declined(cmp$declined %||% "modefind_failed"))
+        mass <- if (n_atom == 0L) 1
+                else prod(ifelse(atom %in% off, a, 1 - a))
+        grids[[i]]  <- cmp$grid
+        dnodes[[i]] <- cmp$dnode * mass
+        if (length(off) == 0L) full <- cmp
+    }
+
+    # `u_hat` / `L_scale` describe the all-continuum component, the one defined
+    # on all d axes. `atom_split` says whether there are others beside it, which
+    # is what decides if a single Gaussian describes the design at all.
+    list(grid = do.call(rbind, grids), dnode = unlist(dnodes),
+         u_hat = full$u_hat, L_scale = full$L_scale, tags = tags,
+         atom_split = n_atom > 0L)
 }
 
 # Announce the engaged outer integrator under verbose, at selection time

@@ -790,8 +790,10 @@
 #'      requested mode's threshold), `"unguessable_axis"` (a CAR_proper
 #'      `rho_car` or a non-BYM2 `rho`), `"degenerate_axis"` (a single-valued
 #'      axis), `"modefind_ridge"` / `"modefind_boundary"` /
-#'      `"modefind_degenerate"` / `"modefind_failed"`, `"hessian_singular"` or
-#'      `"hessian_not_pd"`. Multi-block fits only.
+#'      `"modefind_degenerate"` / `"modefind_failed"`, `"hessian_singular"`,
+#'      `"hessian_not_pd"`, `"copy_atom_components"` (more copy atoms than the
+#'      design splits into, see `copy_atom_mass`) or `"copy_atom_mass"` (a
+#'      declared atom mass outside `[0, 1)`). Multi-block fits only.
 #'   * `weight_kind` -- one entry per outer-grid cell, `"mass"` or `"design"`.
 #'      A tensor cell holds the mass of its own cell and a CCD node holds a
 #'      design weight, so a fit integrated by one rule reports one value
