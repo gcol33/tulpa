@@ -183,7 +183,16 @@
 # nodes otherwise, with `prepend` nodes in front. Errors on a data-dependent
 # entry -- those need arguments the table cannot hold, so their callers read
 # the shape parameters with `.nl_grid_par()` and build the axis themselves.
-.nl_grid_axis <- function(key) {
+# `n` re-reads the declared axis at a different RESOLUTION: same `lo` / `hi`
+# and the same `prepend` atom, more nodes between them. It is the knob that
+# separates "integrate this more accurately" from "integrate something else"
+# (gcol33/tulpa#633), which matters wherever an axis carries prior structure a
+# caller must not displace -- `copy_alpha` is the atom at 0 plus the slab over
+# [0.1, 3], and replacing it with a raw numeric grid changes what is being
+# integrated rather than how well. `n` counts the SLAB nodes, so the returned
+# length is `n + length(prepend)`. An axis declared as explicit `nodes` has no
+# resolution to vary and refuses.
+.nl_grid_axis <- function(key, n = NULL) {
     spec <- .NL_GRID[[key]]
     if (is.null(spec)) {
         stop("Unknown default grid axis '", key, "'. Known: ",
@@ -194,10 +203,22 @@
              "with .nl_grid_par() and build the axis at the call site.",
              call. = FALSE)
     }
+    if (!is.null(n)) {
+        n <- suppressWarnings(as.integer(n))
+        if (length(n) != 1L || is.na(n) || n < 1L) {
+            stop("Grid axis resolution `n` must be a single integer >= 1.",
+                 call. = FALSE)
+        }
+        if (!is.null(spec$nodes)) {
+            stop("Default grid axis '", key, "' is declared as explicit nodes, ",
+                 "so it has no resolution to raise.", call. = FALSE)
+        }
+    }
     ax <- if (!is.null(spec$nodes)) {
         as.numeric(spec$nodes)
     } else {
-        exp(seq(log(spec$lo), log(spec$hi), length.out = as.integer(spec$n)))
+        exp(seq(log(spec$lo), log(spec$hi),
+                length.out = as.integer(n %||% spec$n)))
     }
     if (!is.null(spec$prepend)) ax <- c(as.numeric(spec$prepend), ax)
     ax

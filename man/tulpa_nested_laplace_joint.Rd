@@ -98,7 +98,17 @@ On the multi-block path \code{copy} is an unnamed list of specs --
 \code{list(list(arm, block, alpha_grid),...)} -- coupling N distinct shared
 latent fields, each onto its own arm with its own \eqn{\alpha} axis,
 integrated over the product outer grid. Each spec must name a distinct
-block. The copy block may be any of \code{icar} / \code{bym2} / \code{car_proper} / \code{rw1}
+block.
+
+The \eqn{\alpha} axis takes EITHER \code{alpha_grid}, which states its nodes, OR
+\code{alpha_n} (\code{field_coef$n} on the single-block path), which re-reads the
+engine's own axis at a higher RESOLUTION -- more nodes between the same
+bounds, keeping the atom at 0 that gives the "no copy" base model posterior
+mass. They are different requests and supplying both is an error. Use
+\code{alpha_n} to integrate the same axis more accurately: it is the only outer
+axis a copy fit could not otherwise raise, since stating nodes for it also
+restates the prior structure it carries (gcol33/tulpa#633).
+The copy block may be any of \code{icar} / \code{bym2} / \code{car_proper} / \code{rw1}
 / \code{rw2} / \code{ar1} / \code{iid}; blocks with their own per-arm scaling (\code{lf},
 \code{hsgp_mo}) or a precomputed precision (\code{tgmrf}) do not take a copy. A
 copy block's own \code{sigma_grid} (the donor field amplitude, same default

@@ -1,5 +1,28 @@
 # tulpa 0.2.6
 
+* **The copy coefficient's outer axis can be integrated more finely without
+  restating its prior (gcol33/tulpa#633).** It was the one outer axis a copy fit
+  could not raise: `alpha_grid` REPLACES the nodes, and the axis carries prior
+  structure -- the atom at 0 that gives the "no copy" base model posterior mass,
+  plus a log-spaced slab -- so a caller who only wanted a finer integration had
+  to restate the prior to get one, and consumers close the grid off entirely
+  under `copy()` for that reason. `alpha_n` (`field_coef$n` on the single-block
+  path) re-reads the engine's own axis at a higher RESOLUTION: same bounds, same
+  atom, more nodes between them. Supplying both it and `alpha_grid` is an error
+  rather than a silent ranking. Underneath, `.nl_grid_axis(key, n =)` re-reads
+  any declared axis at a different resolution and refuses on one declared as
+  explicit nodes, which has no resolution to vary.
+
+* **The saturation is in the placement, not the prune.** Measured engine-side
+  rather than through the consumer package, since the axis is the engine's:
+  raising the donor `sigma_grid` from 13 to 29 nodes leaves the alpha axis at
+  its declared 6 at every setting and grid ESS at 1.7 / 3.1 / 4.3 while the cell
+  count more than doubles, and `prune = TRUE` reproduces the same node counts
+  and the same ESS to the digit. With the resolution raised alongside, ESS runs
+  2.3 / 6.8 / 12.5. Whether the engine should instead solve for a declared ESS
+  floor -- the issue's second open question -- is not answered by this and is
+  not implied by it.
+
 * **`control$k_samples` is a precision knob again (gcol33/tulpa#631).** It was
   documented as one and was not: under the published PSIS tail rule
   `min(S/5, 3 sqrt(S))` the fitted tail FRACTION shrinks as `3 / sqrt(S)`, so a

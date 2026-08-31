@@ -302,10 +302,12 @@
 #     multiplier always applied to that arm's field amplitude. For arms with
 #     a hyperparam-driven coefficient this is 1 (the hyperparam carries the
 #     coefficient).
-#   * `field_coef_axis` NULL or list(name = , grid = ) -- when set, this arm
-#     declares a hyperparam-driven field coefficient. The driver maps that
+#   * `field_coef_axis` NULL or list(name = , grid = , n = ) -- when set, this
+#     arm declares a hyperparam-driven field coefficient. The driver maps that
 #     declaration to the existing `copy = list(arm, alpha_grid)` plumbing
-#     (at most one such axis is supported).
+#     (at most one such axis is supported). `grid` states the axis's nodes; `n`
+#     re-reads the engine's own axis at a higher resolution instead
+#     (gcol33/tulpa#633), keeping its atom at 0 and its slab bounds.
 .normalise_arm_field_coef <- function(a, k) {
     fc <- a$field_coef
     if (is.null(fc)) {
@@ -324,7 +326,7 @@
     }
     if (is.character(fc) && length(fc) == 1L) {
         a$field_coef_const <- 1.0
-        a$field_coef_axis  <- list(name = fc, grid = NULL)
+        a$field_coef_axis  <- list(name = fc, grid = NULL, alpha_n = NULL)
         return(a)
     }
     if (is.list(fc)) {
@@ -342,8 +344,20 @@
                      call. = FALSE)
             }
         }
+        # `[[` and not `$`: `$` PARTIAL-matches on a list, so `fc$n` resolves
+        # to `fc$name` on every spec that names its coefficient and feeds a
+        # character into the integer check below.
+        an <- fc[["n"]]
+        if (!is.null(an)) {
+            an <- suppressWarnings(as.integer(an))
+            if (length(an) != 1L || is.na(an) || an < 1L) {
+                stop("Arm ", k, ": `field_coef$n` must be a single integer ",
+                     ">= 1.", call. = FALSE)
+            }
+        }
         a$field_coef_const <- 1.0
-        a$field_coef_axis  <- list(name = as.character(nm), grid = gr)
+        a$field_coef_axis  <- list(name = as.character(nm), grid = gr,
+                                   alpha_n = an)
         return(a)
     }
     stop("Arm ", k, ": `field_coef` must be NULL, a numeric scalar, a single ",
@@ -429,10 +443,8 @@
     }
     k_axis <- which(has_axis_per_arm)
     spec   <- axes[[k_axis]]
-    alpha_axis <- spec$grid
-    if (is.null(alpha_axis)) {
-        alpha_axis <- .nl_grid_axis("copy_alpha")
-    }
+    alpha_axis <- .nl_copy_alpha_axis(spec[["grid"]], spec[["alpha_n"]],
+                                      what = paste0("Arm ", k_axis))
     if (length(alpha_axis) == 0L) {
         stop("Arm ", k_axis, ": `field_coef$grid` must have at least one ",
              "non-negative value.", call. = FALSE)

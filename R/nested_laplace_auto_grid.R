@@ -403,7 +403,34 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 # retired (sigma_occ, sigma_pos) parameterization reached this spec and was
 # neither read nor reported, so a pinned amplitude axis fell back to the
 # engine's own default with a bit-identical `log_marginal`).
-.NL_COPY_SPEC_FIELDS <- c("arm", "block", "alpha_grid")
+.NL_COPY_SPEC_FIELDS <- c("arm", "block", "alpha_grid", "alpha_n")
+
+# Resolve a copy spec's alpha axis. `alpha_grid` REPLACES the axis (the caller
+# states the nodes, and with them the prior structure the axis carries);
+# `alpha_n` re-reads the engine's declared axis at a higher RESOLUTION, keeping
+# the atom at 0 and the slab bounds. They answer different questions, so
+# supplying both is refused rather than silently ranked (gcol33/tulpa#633).
+#
+# Why the resolution knob has to exist: the alpha axis is the one outer axis a
+# copy fit cannot raise. Measured engine-side on an ICAR chain with a gaussian
+# copy arm, raising the donor `sigma_grid` from 13 to 29 nodes leaves the alpha
+# axis at its declared 6 at every setting and the grid ESS at 1.7 / 3.1 / 4.3,
+# while supplying the alpha nodes explicitly takes it to 2.5 / 7.6 / 14.4. The
+# saturation is in the PLACEMENT, not in the prune: `prune = TRUE` reproduces
+# the same node counts and the same ESS to the digit
+# (`dev_notes/issue633/probe_alpha_engine.R`).
+.nl_copy_alpha_axis <- function(alpha_grid, alpha_n, what = "copy") {
+    has_grid <- !is.null(alpha_grid) && length(alpha_grid) > 0L
+    has_n    <- !is.null(alpha_n) && length(alpha_n) > 0L
+    if (has_grid && has_n) {
+        stop(what, ": give `alpha_grid` OR `alpha_n`, not both -- `alpha_grid` ",
+             "states the axis's nodes, `alpha_n` re-reads the engine's own axis ",
+             "at a higher resolution, and the two are different requests.",
+             call. = FALSE)
+    }
+    if (has_grid) return(as.numeric(alpha_grid))
+    .nl_grid_axis("copy_alpha", n = if (has_n) alpha_n else NULL)
+}
 
 .nl_copy_spec_refusal <- function(spec_index, field, type) {
     paste0(

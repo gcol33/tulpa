@@ -1276,6 +1276,41 @@ shipped read and is held EQUAL to `.NL_DIAG$within_cell` by
 `test-outer-grid-dump.R` -- a later flip fails there, naming the files to
 re-measure, instead of silently re-targeting them.
 
+### An axis's NODES and its RESOLUTION are different requests (gcol33/tulpa#633)
+
+`copy_alpha` carries prior structure -- the atom at 0, which is what gives the
+"no copy" base model posterior mass, plus a log-spaced slab over [0.1, 3] -- so
+`alpha_grid`, which STATES the nodes, also restates that structure. It was the
+only way to change the axis, which made it the one outer axis a copy fit could
+not integrate more finely: consumers close their own `alpha.grid` off under
+`copy()` precisely to stop two sources of truth, leaving no route at all.
+
+`alpha_n` (`field_coef$n` on the single-block path) re-reads the engine's axis
+at a higher RESOLUTION: same bounds, same atom, more nodes between them. Both
+together is an error, not a silent ranking. `.nl_copy_alpha_axis()` is the one
+resolver behind both joint paths, and `.nl_grid_axis(key, n =)` generalizes it
+to any declared axis, refusing one declared as explicit `nodes` -- there is no
+resolution to vary between nodes someone wrote down.
+
+**The saturation was in the PLACEMENT, not the prune**, which is what #633 left
+open. Measured engine-side rather than through the consumer -- an engine defect
+needs an engine fixture, or only a consumer can see it: on an ICAR chain with a
+gaussian copy arm, raising the donor `sigma_grid` 13 -> 21 -> 29 leaves the alpha
+axis at its declared 6 nodes at every setting and grid ESS at 1.7 / 3.1 / 4.3
+while the cell count more than doubles, and `prune = TRUE` reproduces both to
+the digit. With the resolution raised alongside, 2.3 / 6.8 / 12.5.
+
+Not claimed: that the axis auto-densifies from its own posterior sharpness. No
+outer axis does -- they are re-PLACED by the mode-Hessian recenter, not
+re-resolved -- and whether the engine should instead solve for a declared ESS
+floor is #633's second open question, untouched. Write-up
+`dev_notes/issue633/RESULTS633B.md`; tests `test-copy-alpha-resolution.R`.
+
+**`$` partial-matches on a list.** Reading the new field as `fc$n` resolved to
+`fc$name` on every spec that names its coefficient, feeding a character into an
+integer check and erroring every existing `field_coef = list(name = , grid = )`
+fixture. Spec-field reads are `[[`.
+
 ### The coordinate dimension is data, and there is one distance (gcol33/tulpa#389)
 
 `tulpa_linalg::coords_dist(coords, i, j)` (`src/linalg_fast.h`) is the ONLY

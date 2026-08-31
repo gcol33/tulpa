@@ -88,13 +88,11 @@
              "Blocks with their own per-arm scaling (lf, hsgp_mo) or a ",
              "precomputed precision (tgmrf) do not take a copy.", call. = FALSE)
     }
-    if (!is.null(spec$alpha_grid)) {
-        alpha_axis <- as.numeric(spec$alpha_grid)
-    } else {
-        # Default: a small log-spaced alpha grid with 0 included so the
-        # "no copy" base model carries posterior mass when supported.
-        alpha_axis <- .nl_grid_axis("copy_alpha")
-    }
+    # `alpha_grid` states the nodes; `alpha_n` raises the resolution of the
+    # engine's own axis, which carries 0 (so the "no copy" base model keeps
+    # posterior mass) plus a log-spaced slab.
+    alpha_axis <- .nl_copy_alpha_axis(spec[["alpha_grid"]], spec[["alpha_n"]],
+                                      what = "`copy`")
     if (length(alpha_axis) == 0L) {
         stop("`copy$alpha_grid` must have at least one non-negative value.",
              call. = FALSE)
