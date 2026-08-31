@@ -1,5 +1,29 @@
 # tulpa 0.2.6
 
+* **The outer-k candidate dispatch is unchanged at the default budget, verified
+  on 3300 configurations (gcol33/tulpa#634).** gcol33/tulpa#629's synthetic sweep
+  re-run on current main is BIT-IDENTICAL to its committed baseline across all
+  3300 rows and all 24 columns, adopted proposal source included -- the same
+  standard gcol33/tulpa#630 used, and the strongest available statement that the
+  tail-rule change above does not move a default fit. Along the way the
+  skew-normal rescue was measured rather than assumed: it is adopted on 7 of
+  3300 rows, scored on 34, improves the k-hat by a median 0.106 where adopted,
+  and crosses a reported band on **none** of them. Every adopted row is a
+  target whose true skewness is exactly 0, so the gate is firing on
+  sample-skewness noise in a heavy tail rather than on asymmetry. Reading
+  `pareto_k_proposal_source == "skew_normal"` as "this fit needed a skew
+  correction" over-reads it.
+
+* **One documentation claim corrected.** The candidate dispatch was described as
+  keeping the minimum over all four candidates, so that none could make a fit
+  read worse. It keeps the better of each rung and its input, which is not the
+  same: the mixture is compared to the GRID-MOMENT Gaussian rather than the
+  moment-matched one, deliberately, so that a refined Gaussian which got under
+  the mixture only by widening past the grid cannot mask a grid-width
+  deficiency. A fit can therefore report a mixture at 1.161 with a
+  moment-matched Gaussian of 0.889 in hand, which happens on 1 of the 3300
+  sweep cells.
+
 * **The copy coefficient's outer axis can be integrated more finely without
   restating its prior (gcol33/tulpa#633).** It was the one outer axis a copy fit
   could not raise: `alpha_grid` REPLACES the nodes, and the axis carries prior

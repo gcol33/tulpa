@@ -569,7 +569,15 @@ the choice, `.k_dispatch_report()` adds the reported fields and writes the
 `.kdiag_capture()` aperture from the SELECTED proposal. Four candidates,
 cheapest first, each gated on the previous still missing the good band:
 grid-moment Gaussian, moment-matched Gaussian, grid mixture, skew-normal rescue.
-The minimum is kept, so a candidate can never make a fit read worse.
+Each rung keeps the better of itself and what it was handed, so a rung can
+never make a fit read worse than the rung before it. That is NOT the same as
+reporting the minimum over all four, and the exception is deliberate: the
+mixture is compared to the GRID-MOMENT Gaussian, not the moment-matched one,
+because a refined Gaussian that got under the mixture only by widening past the
+grid is not a faithful within-grid reading and must not mask a grid-width
+deficiency. So a fit can report a mixture at 1.161 with a moment-matched
+Gaussian of 0.889 in hand -- measured, 1 of the 3300 sweep cells
+(gcol33/tulpa#634).
 
 **A spec with no node set withholds the mixture rather than inventing one.** The
 mixture's bump width is a grid RESOLUTION; a CCD design's spacing is not one. So
