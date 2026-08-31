@@ -1439,6 +1439,71 @@ when NOTHING moved. A decline for any other reason is a failure of the mode-find
 and still takes the pass down. Tests: `test-recenter-sd-clamp.R`,
 `test-fit-st-nested-auto-grid.R`.
 
+### Placement is a cheap question paid for with an expensive grid (gcol33/tulpa#636)
+
+Placement reads two things -- the argmax cell and an FD curvature stencil at it
+-- and reads both off `log_marginal`. It reads NEITHER off the integration the
+detecting pass paid for, so when a placement fires every inner Newton solve of
+the grid it detected on is discarded: 120 cells at 25.2 s/cell on the reported
+`occu_cover` fit, before the placed grid's own 120.
+
+`control$recenter_pilot` (joint front door, default `FALSE`) detects on a
+THINNED grid over the same spans -- both endpoints kept plus at most
+`.NL_RECENTER$pilot_n = 3` nodes between them -- and solves the full grid once,
+at the placed axes. **The rescues need no change for this**, which is the whole
+reason it is a caller-side wiring rather than a rewrite: each already detects on
+the fit it is handed and writes onto the prior it is handed, so
+`(pilot fit, full prior)` places the full grid. `R/nested_laplace_pilot.R`.
+
+With `F` full cells, `P` pilot cells, `S` stencil cells and a firing rate `p`,
+the un-piloted cost is `F + p (S + F)` against the pilot's `P + p S + F`, so it
+pays exactly when `P < p F`. `p` is a property of the WORKLOAD -- every species
+of #636's 78-species run fires -- which is why this is a knob and not a policy.
+Measured over 48 paired seeds on a `(sigma, alpha, phi)` donor + copy fixture:
+0.78x the cells solved on the configuration placing on 10 of 12 seeds, 1.29x on
+the one that never places.
+
+**A coarse detector is not the same detector, and the asymmetry is built in.**
+The collapse trigger is `ess_grid < 2`, which falls with the cell count, so a
+pilot fires somewhat more readily -- the two arms disagreed on 9 of 48 pairs,
+every one the pilot placing where the full grid did not, 7 of the 9 reaching a
+HIGHER maximum inner log-marginal (+0.35 to +2.14 nats) and 2 losing 0.46 and
+0.72. It cannot go the other way: a pilot whose placement declines is followed
+by the full fit, which then gets its own detection through the same rescue pair,
+so the pilot is a PRE-SCREEN that can only ADD a placement. A fit declining both
+is bit-identical to the un-piloted one, asserted at `tolerance = 0`.
+
+Scope is the joint path. The registry stores a family's axes PRE-PAIRED
+(`.nl_fill_family_axes()` crosses them into one row per tuple), so thinning them
+per axis there would re-pair the grid rather than thin it. `.NL_PATH_CROSSES`
+declares that property beside the `.NL_PATH_AXES` table that declares which
+fields each path reads; `.nl_pilot_block()` is its only consumer, and a block on
+a paired path is left whole and named in `outer_grid_pilot$axes_kept`. A copy
+coefficient is thinned by RESOLUTION (`alpha_n` / `field_coef$n`, #633) and
+never by subsampling -- its atom-plus-slab is prior structure, so a subsample of
+a STATED axis states a different axis.
+
+**A recentred axis's reported `h / sd` is NOT the layout's 1.25, and the two
+were read as one number.** The layout's ratio is in PLACEMENT SDs: the axis is
+`mode +/- span * sd_used` over `n_pts` nodes, so its spacing is `1.25 * sd_used`.
+`.nl_axis_h_over_sd()` divides that by the grid-WEIGHTED posterior SD the placed
+grid realizes, so what it reports is `1.25 * sd_used / sd_realized` -- equal to
+1.25 only where the placement SD is the one the weights realize. Wherever
+`.nl_recenter_sd_clamp()` SUBSTITUTED a bound it is not, and the floor
+`min_sd_u = 0.15` exists precisely to widen an axis sharper than it. Measured:
+the floor bound on 18 of 18 placed fits, `sd_raw` median 0.0543 against the
+substituted 0.15, realized 0.0489, reported 3.83 -- and `1.25 * 0.15 / 0.0489 =
+3.83`. A reported 6.03 is `sd_raw = 0.031`, inside the fixture's own range
+(2.37 to 6.79). The placement is still working there: the same axis un-recentred
+reads a median 55.2. An axis NO rescue moves (a copy `alpha`, a caller-pinned
+dispersion axis) carries no such relation at all -- median 1605 and 1.95 on the
+same fixture -- so a large reading there is a sharp posterior on a fixed axis,
+not a mis-sized one.
+
+`.nl_grid_ess(w)` is now the one read of a grid's quadrature ESS, behind
+`.joint_pareto_grid_regime()` and `diagnostic_summary()` alike. Write-up
+`dev_notes/issue636/RESULTS636.md`; tests `test-recenter-pilot.R`.
+
 ### Three posterior arbiters, and coverage is only one (gcol33/tulpa#335)
 
 Binary coverage at one or two nominal levels reads one or two points of the

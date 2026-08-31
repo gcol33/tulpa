@@ -625,6 +625,35 @@
 #'     than on a per-axis rail, so the per-axis policy names
 #'     [tulpa_nested_laplace()] takes (`"rail"`, `"resolve"`, `"always"`) are
 #'     refused here with an error rather than accepted and ignored.
+#'   * `recenter_pilot` (`FALSE`) -- detect the placement above on a THINNED
+#'     grid rather than on the full one. Placement reads two things, the argmax
+#'     cell and an FD curvature stencil at it, and reads both off
+#'     `log_marginal`; neither is read off the integration the detecting pass
+#'     paid for, so every inner Newton solve of that pass is discarded the
+#'     moment a placement fires. With the pilot on, the detecting grid keeps
+#'     each axis's endpoints and at most `TRUE`'s three nodes between them (an
+#'     integer names its own resolution), and the full grid is solved once, at
+#'     the placed axes.
+#'
+#'     Off by default because the trade is a property of the WORKLOAD. With `F`
+#'     full cells, `P` pilot cells and a firing rate `p`, the un-piloted cost is
+#'     `F + p (S + F)` against the pilot's `P + p S + F`, so the pilot pays
+#'     exactly when `P < p F`. Measured on a 3-axis (sigma, alpha, phi) donor +
+#'     copy fixture over 48 paired seeds: 0.78x the cells solved on the
+#'     configuration that places on 10 of 12 seeds, and 1.29x on the one that
+#'     never places.
+#'
+#'     A coarse detector is not the same detector. The collapse trigger is
+#'     `ess_grid < 2`, which falls with the cell count, so a pilot fires
+#'     somewhat more readily than the full grid: on that same sweep the two
+#'     disagreed on 9 of 48 pairs, every one of them the pilot placing where the
+#'     full grid did not, and 7 of the 9 reached a HIGHER maximum inner
+#'     log-marginal after placing (+0.35 to +2.14 nats) while 2 lost 0.46 and
+#'     0.72. It cannot go the other way: a declined pilot is followed by the
+#'     full fit, which then gets its own detection, so the pilot only ever adds
+#'     a placement. A fit that declines both is bit-identical to the same fit
+#'     with the knob off. What the pilot detected on is recorded in
+#'     `outer_grid_pilot`.
 #'   * `max_grid_cells` (`2048L`) -- cell-count ceiling on a multi-block tensor
 #'     outer grid, refused with an error above it. Each cell is one inner
 #'     Newton solve, so the default catches per-block grids that multiplied out
@@ -727,6 +756,15 @@
 #'      mode-Hessian the recenter needs was unavailable or degenerate, e.g. a
 #'      car_proper grid whose `rho_car` axis has unguessable support). Absent
 #'      when the fit WAS recentred.
+#'   * `outer_grid_pilot` -- present only when `control$recenter_pilot` ran: the
+#'      pilot's resolution (`n_pilot`), its cell count (`cells`), the axes it
+#'      thinned (`axes`) and those it could not (`axes_kept`), and what the
+#'      placement was DECIDED from -- the pilot's own `regime`, `ess_grid` and
+#'      `edge_axes`. The reported grid is never the grid the trigger was read
+#'      on, so a two-pass fit is legible from the object rather than only from
+#'      the progress log. `outer_grid_pilot_declined = "pilot_placement_declined"`
+#'      records a pilot whose detection placed nothing and which was therefore
+#'      followed by the full fit and the full fit's own detection.
 #'   * `outer_grid_recenter_sd_clamp`, `outer_grid_recenter_sd_raw`,
 #'      `outer_grid_recenter_sd_used` -- on a recentred fit, one entry per moved
 #'      axis: which mode-SD bound the placement hit (`"none"` / `"floor"` /
@@ -1027,9 +1065,45 @@ tulpa_nested_laplace_joint <- function(responses,
     auto_recenter <- !isFALSE(control$auto_recenter)
 
     ctrl <- control
-    res  <- attach_q(.tulpa_nl_joint_once(responses, prior, copy, phi_grid,
-                                          prior_sigma, prior_alpha, prior_phi,
-                                          cell_coupling, ctrl))
+    fit_once <- function(prior_i, prior_sigma_i, ctrl_i = ctrl,
+                         phi_grid_i = phi_grid, copy_i = copy,
+                         responses_i = responses)
+        attach_q(.tulpa_nl_joint_once(responses_i, prior_i, copy_i, phi_grid_i,
+                                      prior_sigma_i, prior_alpha, prior_phi,
+                                      cell_coupling, ctrl_i))
+
+    # Placement pilot (gcol33/tulpa#636). Placement reads an argmax cell and an
+    # FD curvature stencil, and reads them off `log_marginal` -- not off the
+    # integration the detecting pass paid for, every cell of which is discarded
+    # the moment a placement fires. With the pilot on, the DETECTING grid is a
+    # thinned read of the same spans and the full grid is solved once, at the
+    # placed axes. The rescues below are untouched by this: each detects on the
+    # fit it is handed and writes onto the PRIOR it is handed, so passing the
+    # pilot fit alongside the full prior places the full grid. What the pilot
+    # obliges this caller to add is the other half -- a pilot grid is too coarse
+    # to integrate, so a placement that declines is followed by the full fit the
+    # pilot stood in for (`pilot_fallback` below).
+    cp_pilot <- tryCatch(.resolve_copy_multi(copy, responses, prior),
+                         error = function(e) NULL)
+    pilot <- .nl_recenter_pilot(
+        prior, phi_grid, copy, responses,
+        copy_blocks = as.integer(cp_pilot$copy_blocks_zero %||% integer(0)) + 1L,
+        n = .nl_pilot_n(control), enabled = auto_recenter)
+
+    res <- if (isTRUE(pilot$active)) {
+        fit_once(pilot$prior, prior_sigma, .nl_pilot_control(ctrl),
+                 pilot$phi_grid, pilot$copy, pilot$responses)
+    } else {
+        fit_once(prior, prior_sigma)
+    }
+    # What the pilot DETECTED on, kept before its fit is replaced: the trigger
+    # is read off a grid nothing downstream will hold, so without this a fit
+    # placed from a pilot cannot say what the placement was decided from.
+    pilot_detect <- if (!isTRUE(pilot$active)) NULL else list(
+        cells      = nrow(res$theta_grid),
+        regime     = res$pareto_k_regime,
+        ess_grid   = .nl_grid_ess(res$weights),
+        edge_axes  = res$pareto_k_grid_edge_axes)
     res$k_quality_rounds <- 0L
     res$outer_grid_placement <- res$outer_grid_placement %||% "fixed"
 
@@ -1037,36 +1111,62 @@ tulpa_nested_laplace_joint <- function(responses,
     # k_quality escalation below: that loop assumes the grid's BOUNDS are
     # right and only needs densifying / refining, so a mis-centred axis
     # (mode beyond the fixed ceiling) must be fixed first, not densified.
-    # A no-op (zero extra fit) unless the first fit actually railed on
+    # A no-op (zero extra fit) unless the detecting fit actually railed on
     # sigma; `prior` / `prior_sigma` are reassigned to the recentered
     # values so escalation, if it still runs, continues from there.
-    rescue <- .joint_sigma_grid_rescue(
-        res, prior, prior_sigma,
-        refit = function(prior_i, prior_sigma_i)
-            attach_q(.tulpa_nl_joint_once(responses, prior_i, copy, phi_grid,
-                                          prior_sigma_i, prior_alpha, prior_phi,
-                                          cell_coupling, ctrl)),
-        auto = prov$auto, enabled = auto_recenter)
+    #
+    # The two rescues are mutually exclusive -- each declines immediately on the
+    # other's prior shape, the single-block one on a block list and the
+    # multi-block one on anything with no copy -- so chaining them
+    # unconditionally is safe, and the pair is one step: DETECT on `res_i`,
+    # place onto `prior_i`, refit. Detecting fit and placed prior are separate
+    # arguments, which is what lets a pilot fit stand in for the first without
+    # either rescue knowing a pilot exists.
+    run_rescues <- function(res_i, prior_i, prior_sigma_i) {
+        r1 <- .joint_sigma_grid_rescue(
+            res_i, prior_i, prior_sigma_i,
+            refit = function(p, ps) fit_once(p, ps),
+            auto = prov$auto, enabled = auto_recenter)
+        cp_i <- tryCatch(.resolve_copy_multi(copy, responses, r1$prior),
+                         error = function(e) NULL)
+        r2 <- .joint_multi_sigma_grid_rescue(
+            r1$res, r1$prior, copy, cp_i, r1$prior_sigma,
+            refit = function(p, ps) fit_once(p, ps),
+            auto = prov$auto, enabled = auto_recenter)
+        r2
+    }
+
+    rescue      <- run_rescues(res, prior, prior_sigma)
     res         <- rescue$res
     prior       <- rescue$prior
     prior_sigma <- rescue$prior_sigma
 
-    # Multi-block counterpart: a copy block's own scalar sigma axis
-    # (mutually exclusive with the single-block rescue above -- each
-    # declines immediately on the other's prior shape, so chaining them
-    # unconditionally is safe).
-    cp_resolved <- tryCatch(.resolve_copy_multi(copy, responses, prior),
-                            error = function(e) NULL)
-    rescue_multi <- .joint_multi_sigma_grid_rescue(
-        res, prior, copy, cp_resolved, prior_sigma,
-        refit = function(prior_i, prior_sigma_i)
-            attach_q(.tulpa_nl_joint_once(responses, prior_i, copy, phi_grid,
-                                          prior_sigma_i, prior_alpha, prior_phi,
-                                          cell_coupling, ctrl)),
-        auto = prov$auto, enabled = auto_recenter)
-    res         <- rescue_multi$res
-    prior       <- rescue_multi$prior
-    prior_sigma <- rescue_multi$prior_sigma
+    # The pilot's other half. A placement that fired has already produced a full
+    # fit at the placed axes; one that DECLINED has left `res` on the pilot's own
+    # coarse grid, which nothing may integrate -- the fit the caller asked for is
+    # the full grid the pilot stood in for. That full fit then gets its OWN
+    # detection, which is what keeps the pilot a pure PRE-screen: a coarse grid
+    # can only ADD a placement, never cost one, so a fit is never placed less
+    # well than the same fit with the knob off. When the full grid declines too
+    # (the common case), the second detection reads stored weights and costs
+    # nothing, and the fit is bit-identical to the un-piloted one.
+    if (isTRUE(pilot$active)) {
+        if (!identical(res$outer_grid_placement, "auto_recentered")) {
+            res         <- fit_once(prior, prior_sigma)
+            res$k_quality_rounds     <- 0L
+            res$outer_grid_placement <- res$outer_grid_placement %||% "fixed"
+            rescue      <- run_rescues(res, prior, prior_sigma)
+            res         <- rescue$res
+            prior       <- rescue$prior
+            prior_sigma <- rescue$prior_sigma
+            pilot_placed <- FALSE
+        } else {
+            pilot_placed <- TRUE
+        }
+        res <- .nl_pilot_attach(res, pilot, pilot_detect,
+                                declined = if (pilot_placed) NULL else
+                                    "pilot_placement_declined")
+    }
 
     res$k_quality_rounds     <- res$k_quality_rounds %||% 0L
     res$outer_grid_placement <- res$outer_grid_placement %||% "fixed"

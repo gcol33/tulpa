@@ -274,10 +274,20 @@ test_that("a fit with nothing dropped carries no record", {
 }
 
 test_that("the read-field set is the set the copy resolver actually reads", {
-    src <- paste(deparse(body(tulpa:::.resolve_one_copy_spec)), collapse = "\n")
-    pat  <- "spec[$][A-Za-z_][A-Za-z0-9_]*"
-    read <- unique(regmatches(src, gregexpr(pat, src))[[1L]])
-    read <- substring(read, 6L)
+    # BOTH spellings of a spec read count. `$` PARTIAL-matches on a list, so
+    # gcol33/tulpa#633 moved the axis reads to `[[` -- and a rule keyed to `$`
+    # alone then saw a resolver reading nothing but `arm` and `block`, which is
+    # the stale-lint shape gcol33/tulpa#632 recorded on `k_samples`: a rule keyed
+    # to one spelling stops seeing the site the moment the code changes spelling.
+    # Keyed to the READ, not to one operator.
+    src  <- paste(deparse(body(tulpa:::.resolve_one_copy_spec)), collapse = "\n")
+    pats <- c("spec[$]([A-Za-z_][A-Za-z0-9_]*)",
+              "spec\\[\\[\"([A-Za-z_][A-Za-z0-9_]*)\"\\]\\]")
+    read <- unique(unlist(lapply(pats, function(p) {
+        m <- regmatches(src, gregexpr(p, src))[[1L]]
+        if (!length(m)) return(character(0))
+        sub(p, "\\1", m)
+    }), use.names = FALSE))
     expect_setequal(read, tulpa:::.NL_COPY_SPEC_FIELDS)
 })
 

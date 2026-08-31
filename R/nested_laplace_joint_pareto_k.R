@@ -613,7 +613,7 @@
     ok <- is.finite(w) & w > 0
     if (!any(ok) || sum(w[ok]) <= 0) return(NULL)
     wn <- w; wn[!ok] <- 0; wn <- wn / sum(wn)
-    ess <- 1 / sum(wn^2)
+    ess <- .nl_grid_ess(wn)
     out <- list(ess_grid = ess, n_grid = nrow(tg), max_weight = max(wn),
                 edge_axes = character(0), edge_sides = character(0))
     # The boundary-MASS read is taken in every regime, before the collapse

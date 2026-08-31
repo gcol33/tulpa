@@ -1418,6 +1418,23 @@
   1 / sum(p^2)
 }
 
+# The same statistic over a WHOLE grid rather than one axis's marginal: the
+# number of cells the outer integration effectively averages over, from the
+# integration weights themselves. Non-finite and non-positive weights are
+# dropped rather than propagated -- a cell the grid gave no mass is not a cell
+# the integration averaged over -- so this is defined on a repaired grid too.
+#
+# `NA_real_` when no cell carries finite positive mass.
+.nl_grid_ess <- function(w) {
+  if (is.null(w) || !length(w)) return(NA_real_)
+  w <- as.numeric(w)
+  w[!is.finite(w) | w <= 0] <- 0
+  s <- sum(w)
+  if (!is.finite(s) || s <= 0) return(NA_real_)
+  w <- w / s
+  1 / sum(w^2)
+}
+
 # Which estimator produced a reported axis SD.
 .NL_AXIS_SD_SOURCE <- c("weighted", "stencil")
 

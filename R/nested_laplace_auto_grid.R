@@ -56,9 +56,36 @@
 #   "always"        every movable default axis is recentred whatever the fit
 #                   did.
 #
-# A recentred axis is `mode +/- span * sd` over `n_pts` nodes, so it is
-# `h / sd = 1.25` BY CONSTRUCTION, against a census median of 3.9 on the fixed
+# A recentred axis is `mode +/- span * sd_used` over `n_pts` nodes, so its
+# spacing is `1.25` PLACEMENT SDs, against a census median of 3.9 on the fixed
 # spans.
+#
+# THAT IS NOT WHAT `.nl_axis_h_over_sd()` REPORTS, and the two were read as one
+# number (gcol33/tulpa#636). The reported ratio divides the spacing by the
+# grid-WEIGHTED posterior SD the placed grid realizes, so on a recentred axis it
+# is
+#
+#   h / sd_realized = 1.25 * sd_used / sd_realized,
+#
+# which is 1.25 only where the placement SD is the one the weights then realize.
+# Wherever `.nl_recenter_sd_clamp()` SUBSTITUTED a bound it is not: the floor
+# `min_sd_u` exists precisely to widen an axis whose measured curvature is
+# sharper than it, so a floor-clamped placement reports
+# `1.25 * min_sd_u / sd_raw` and is LARGER than 1.25 by exactly the factor the
+# floor widened by. Measured on a (sigma, alpha, phi) donor + copy fixture, 18
+# placed fits, the floor binding on all 18: `sd_raw` median 0.0543 against the
+# substituted 0.15, realized weighted SD 0.0489, reported ratio 3.83 -- and
+# `1.25 * 0.15 / 0.0489 = 3.83`. A reported 6.03 is `sd_raw = 0.031`. The
+# placement is still doing its work there: the same axis un-recentred reads a
+# median 55.2 on the same fixture. `outer_grid_recenter_sd_clamp` / `_sd_raw` /
+# `_sd_used` are what separate a substituted spread from a measured one on the
+# fit, and a recentred axis's reported ratio cannot be read without them.
+#
+# An axis NO rescue moves -- a copy `alpha`, a caller-pinned per-arm dispersion
+# axis -- carries no such relation at all: its ratio is whatever its own fixed
+# nodes and its own posterior make it (median 1605 and 1.95 on the same
+# fixture), and reading a large one there as a placement failure mistakes a
+# sharp posterior on a fixed axis for a mis-sized one.
 #
 # The default is "resolve" and not "always" for COST, and the two are closer
 # than the coverage table alone reads. They agree seed for seed on five of the

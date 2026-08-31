@@ -340,6 +340,44 @@
     )
 )
 
+# Whether a path CROSSES the axis fields above itself, or takes them already
+# paired. The registry stores a family's axes PRE-PAIRED -- `.nl_fill_family_axes()`
+# expands them into one row per tuple and every field then has length n_cells --
+# while the joint backends (`.joint_cartesian()`) and the copy block
+# (`.joint_block_axis_grid()`'s `expand.grid`) take one axis per field and cross
+# them. The difference is invisible in the field values: two length-20 vectors
+# are a 20-cell paired grid on one path and a 400-cell crossed one on another.
+# Anything rewriting a field per axis has to know which (`.nl_pilot_block()`),
+# so the property is declared beside the fields rather than inferred at each
+# call site.
+.NL_PATH_CROSSES <- c(registry = FALSE, joint_single = TRUE, copy = TRUE)
+
+.nl_path_crosses <- function(path) {
+    path <- as.character(path %||% "")
+    if (!path %in% names(.NL_PATH_CROSSES)) return(FALSE)
+    isTRUE(unname(.NL_PATH_CROSSES[[path]]))
+}
+
+# The default-axis KEY a (path, family) lays on `field` -- the read half of
+# `.nl_path_axis_fields()`, which names the fields but not where their defaults
+# come from. Path pseudo-types are consulted in the order the path declares
+# them, then the family's own binding, so a field a path re-parameterizes
+# (`.joint_areal`'s `sigma_grid`) resolves to the path's axis and not the
+# family's. NULL when no table binds the field.
+.nl_path_axis_key <- function(type, path = "registry", field) {
+    type <- tolower(type %||% "")
+    spec <- .NL_PATH_AXES[[path]][[type]]
+    toks <- if (is.null(spec)) character(0) else
+        vapply(spec, function(tok) if (identical(tok, ".registry")) type else tok,
+               character(1))
+    for (tk in unique(c(toks, type))) {
+        if (!tk %in% names(.NL_FAMILY_AXES)) next
+        k <- .nl_family_axis_key(tk, field)
+        if (!is.null(k)) return(k)
+    }
+    NULL
+}
+
 # Exact conversions between two spellings of ONE axis, for the paths that
 # parameterize a family differently. Only pairs the ENGINE ITSELF converts are
 # listed: `.joint_call_kernel_via_multi()`
@@ -609,7 +647,17 @@
     # retired fixed-grid ceiling, so the shrinkage is felt only PAST where the
     # old default axis already stopped; `P(sigma > 3) = 0.01` leaves a
     # data-identified mode essentially untouched.
-    sigma_pc_prior = list("pc.prec", c(U = 3, alpha = 0.01))
+    sigma_pc_prior = list("pc.prec", c(U = 3, alpha = 0.01)),
+
+    # Per-axis node count of a PLACEMENT PILOT (`control$recenter_pilot = TRUE`,
+    # `R/nested_laplace_pilot.R`). Placement reads two things off a grid -- the
+    # argmax cell and the FD curvature at it -- and neither needs the resolution
+    # the INTEGRATION needs, so a pilot answers the placement question on a
+    # thinned grid over the same spans and the full grid is solved once, at the
+    # placed axes. Three is the floor that still carries an interior node on
+    # every axis, which is what the rail test reads; a coarser pilot would make
+    # every node a boundary.
+    pilot_n = 3L
 )
 
 # `options(tulpa.recenter.<par> = )` overrides one entry, the same seam the

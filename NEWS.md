@@ -1,3 +1,43 @@
+# tulpa 0.2.7
+
+* **The outer-grid placement pass no longer has to be paid for with a full grid
+  (gcol33/tulpa#636).** Placement reads an argmax cell and an FD curvature
+  stencil, both off `log_marginal`, and neither off the integration the
+  detecting pass paid for -- so a placement that fires discards every inner
+  Newton solve of the grid it detected on. `control$recenter_pilot` on
+  `tulpa_nested_laplace_joint()` (default `FALSE`) detects on a THINNED grid over
+  the same spans -- both endpoints kept plus at most three nodes between them --
+  and solves the full grid once, at the placed axes. The rescues are unchanged:
+  each already detects on the fit it is handed and writes onto the prior it is
+  handed. Measured over 48 paired seeds on a `(sigma, alpha, phi)` donor + copy
+  fixture: 0.78x the cells solved where the placement fires on 10 of 12 seeds,
+  1.29x where it never fires, so the knob is off by default and pays exactly
+  when the pilot's cells cost less than the firing rate times the full grid.
+
+* **The pilot is a pre-screen, so it can only ADD a placement.** A pilot whose
+  detection places nothing is followed by the full fit, which then gets its own
+  detection through the same rescue pair; a fit declining both is bit-identical
+  to the same fit with the knob off. A coarse grid does fire somewhat more
+  readily (the trigger is `ess_grid < 2`, which falls with the cell count): over
+  the same sweep the arms disagreed on 9 of 48 pairs, every one the pilot placing
+  where the full grid did not, 7 of the 9 reaching a higher maximum inner
+  log-marginal. `outer_grid_pilot` records the pilot's resolution, cells, thinned
+  and kept axes, and the regime / ESS / edge axes it DECIDED from -- the reported
+  grid is never the grid the trigger was read on.
+
+* **A recentred axis's reported `h / sd` is `1.25 * sd_used / sd_realized`, not
+  1.25.** The node layout's ratio is in PLACEMENT SDs; `.nl_axis_h_over_sd()`
+  divides by the weighted posterior SD the placed grid realizes, so the two agree
+  only where the placement SD is the one the weights realize. Wherever the mode-SD
+  clamp SUBSTITUTED a bound they cannot: the floor exists to widen an axis sharper
+  than it. Measured, floor binding on 18 of 18 placed fits, `sd_raw` median 0.0543
+  against the substituted 0.15 and a realized 0.0489, reported 3.83. The comment
+  claiming 1.25 "by construction" is corrected, and the identity is pinned by
+  test. An axis no rescue moves carries no such relation at all.
+
+* `.nl_grid_ess()` is the one read of a grid's quadrature effective sample size,
+  behind `.joint_pareto_grid_regime()` and `diagnostic_summary()` alike.
+
 # tulpa 0.2.6
 
 * **A NUTS chain that ends by an exception no longer leaves the progress

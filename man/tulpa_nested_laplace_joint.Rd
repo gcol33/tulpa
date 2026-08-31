@@ -614,6 +614,35 @@ joint rescues trigger on the whole grid's collapsed-edge regime rather
 than on a per-axis rail, so the per-axis policy names
 \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}} takes (\code{"rail"}, \code{"resolve"}, \code{"always"}) are
 refused here with an error rather than accepted and ignored.
+\item \code{recenter_pilot} (\code{FALSE}) -- detect the placement above on a THINNED
+grid rather than on the full one. Placement reads two things, the argmax
+cell and an FD curvature stencil at it, and reads both off
+\code{log_marginal}; neither is read off the integration the detecting pass
+paid for, so every inner Newton solve of that pass is discarded the
+moment a placement fires. With the pilot on, the detecting grid keeps
+each axis's endpoints and at most \code{TRUE}'s three nodes between them (an
+integer names its own resolution), and the full grid is solved once, at
+the placed axes.
+
+Off by default because the trade is a property of the WORKLOAD. With \code{F}
+full cells, \code{P} pilot cells and a firing rate \code{p}, the un-piloted cost is
+\code{F + p (S + F)} against the pilot's \verb{P + p S + F}, so the pilot pays
+exactly when \verb{P < p F}. Measured on a 3-axis (sigma, alpha, phi) donor +
+copy fixture over 48 paired seeds: 0.78x the cells solved on the
+configuration that places on 10 of 12 seeds, and 1.29x on the one that
+never places.
+
+A coarse detector is not the same detector. The collapse trigger is
+\code{ess_grid < 2}, which falls with the cell count, so a pilot fires
+somewhat more readily than the full grid: on that same sweep the two
+disagreed on 9 of 48 pairs, every one of them the pilot placing where the
+full grid did not, and 7 of the 9 reached a HIGHER maximum inner
+log-marginal after placing (+0.35 to +2.14 nats) while 2 lost 0.46 and
+0.72. It cannot go the other way: a declined pilot is followed by the
+full fit, which then gets its own detection, so the pilot only ever adds
+a placement. A fit that declines both is bit-identical to the same fit
+with the knob off. What the pilot detected on is recorded in
+\code{outer_grid_pilot}.
 \item \code{max_grid_cells} (\code{2048L}) -- cell-count ceiling on a multi-block tensor
 outer grid, refused with an error above it. Each cell is one inner
 Newton solve, so the default catches per-block grids that multiplied out
@@ -717,6 +746,15 @@ default rather than a choice), or \code{"no_usable_curvature"} (the
 mode-Hessian the recenter needs was unavailable or degenerate, e.g. a
 car_proper grid whose \code{rho_car} axis has unguessable support). Absent
 when the fit WAS recentred.
+\item \code{outer_grid_pilot} -- present only when \code{control$recenter_pilot} ran: the
+pilot's resolution (\code{n_pilot}), its cell count (\code{cells}), the axes it
+thinned (\code{axes}) and those it could not (\code{axes_kept}), and what the
+placement was DECIDED from -- the pilot's own \code{regime}, \code{ess_grid} and
+\code{edge_axes}. The reported grid is never the grid the trigger was read
+on, so a two-pass fit is legible from the object rather than only from
+the progress log. \code{outer_grid_pilot_declined = "pilot_placement_declined"}
+records a pilot whose detection placed nothing and which was therefore
+followed by the full fit and the full fit's own detection.
 \item \code{outer_grid_recenter_sd_clamp}, \code{outer_grid_recenter_sd_raw},
 \code{outer_grid_recenter_sd_used} -- on a recentred fit, one entry per moved
 axis: which mode-SD bound the placement hit (\code{"none"} / \code{"floor"} /

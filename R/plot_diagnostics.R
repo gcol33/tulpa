@@ -1165,7 +1165,7 @@ diagnostic_summary <- function(fit, quiet = FALSE) {
       }
       w <- jf$weights
       if (!is.null(w) && length(w) > 1L && is.finite(sum(w))) {
-        result$quad_ess <- sum(w)^2 / sum(w^2)
+        result$quad_ess <- .nl_grid_ess(w)
         recommendations <- c(recommendations, sprintf(
           paste("Quadrature ESS = %.1f of %d grid nodes (no sampled Pareto",
                 "k-hat for this backend); validate with debias / coverage checks."),
