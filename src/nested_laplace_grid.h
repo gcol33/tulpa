@@ -65,9 +65,18 @@
 //
 // The pilot cell is never pruned. Tile pilots whose cells are themselves
 // pruned skip their Tier-2 solve; Tier-3 cells in that tile then fall back
-// to the global pilot mode as warm-start. The cheap sweep runs serially
-// after the pilot solve and before any parallel region — callers can use
-// the same scratch buffers without thread-safety concerns.
+// to the global pilot mode as warm-start. The cheap sweep's backbone is
+// sequential: each cheap solve is warm-started from the previous screened
+// cell's quasi-mode, so the per-cell step budget only has to correct the
+// drift between lattice-adjacent cells. Breaking the chain is what costs ranking fidelity
+// (a fixed-pilot one-step screen mis-ranks far cells by O(1e5)), so
+// parallelism is bought by splitting the chain per tile rather than by
+// removing it: given tile metadata and n_threads_outer > 1, the sweep chains
+// the tile pilots serially (Phase A) and then runs each tile's own chain
+// concurrently (Phase B, an omp parallel for over tiles), for a concurrency
+// of min(n_tiles, n_threads_outer). The cheap evaluator therefore runs inside
+// a parallel region and must select a per-worker solver + scratch by the
+// `worker` slot it is passed -- see the CheapEval contract below.
 //
 // Result post-processing (filling the Rcpp::List) happens single-threaded
 // after the parallel region. Per-cell LaplaceResult objects use only
@@ -276,9 +285,17 @@ inline Rcpp::List nl_grid_cell_to_result_list(const Rcpp::List& grid, int k) {
 // n_threads_outer = 1 (default): serial loop with mode chaining
 //   (prev_mode <- res.mode after each cell). Bitwise identical to the
 //   serial mode-chained result.
-// n_threads_outer > 1: pilot solve at the centre cell first, then
-//   #pragma omp parallel for over all cells warm-started from the pilot mode.
-//   Pilot cell's result is reused (no double-solve).
+// n_threads_outer > 1: pilot solve at the centre cell first, its result
+//   reused (no double-solve), then one of two parallel passes depending on
+//   whether the caller supplied tile metadata (`tile_ids` of length n_grid
+//   and a non-empty `tile_pilot_cells`):
+//     without tiles: a flat #pragma omp parallel for over every cell, each
+//       warm-started from the global pilot mode.
+//     with tiles: Tier 2 solves one pilot per tile in parallel, warm-started
+//       from the global pilot; Tier 3 then solves the remaining cells in
+//       parallel, each warm-started from its own tile's pilot mode (falling
+//       back to the global pilot where that tile's pilot was pruned or
+//       out of range).
 // CheapEval is any callable with signature
 //   LaplaceResult(int k, const std::vector<double>& warm_start, int n_steps,
 //                 int worker)

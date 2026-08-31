@@ -2382,12 +2382,13 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
     // in as `warm`, so each cheap solve only corrects the residual drift
     // between adjacent lattice cells (much cheaper and far more
     // rank-faithful than a one-step screen from a single distant pilot).
-    // The cheap pass runs serially after the pilot solve and before any
-    // parallel region, so a dedicated solver + scratch per worker slot keep it
-    // isolated from the parallel fan-out's pool (the pool's entries are
-    // reserved for the inner Newton on survivors). One set per outer worker so
-    // the per-tile cheap chains can run concurrently; CHOLMOD's
-    // cholmod_common is not thread-safe.
+    // The cheap pass runs after the pilot solve and before the full pass's
+    // parallel fan-out, but is not itself serial: given tile metadata and more
+    // than one outer thread, the driver chains the tile pilots serially and
+    // then runs the per-tile chains concurrently. So these are one set per
+    // outer worker slot -- CHOLMOD's cholmod_common is not thread-safe -- and
+    // they stay separate from the fan-out's pool, whose entries are reserved
+    // for the inner Newton on survivors.
     std::vector<SparseCholeskySolver> cheap_solvers(n_cheap_workers);
     std::vector<NewtonScratchJoint> cheap_scratches(n_cheap_workers);
     for (auto& cs : cheap_scratches) cs.allocate(n_x, arms);
@@ -2461,9 +2462,12 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
     // the Newton scratch, the per-arm likelihood specs (whose built-in
     // dispersion the phi-grid axis rewrites per cell), the scatter index cache,
     // and the DENSE_BASIS scratch -- so each outer thread gets its own. The
-    // cheap-screen sweep runs serially (before any parallel region), so its
-    // resources stay a single set. n_outer == 1 reproduces the prior serial
-    // path exactly (one pool slot, used by every cell).
+    // cheap-screen sweep is not serial either -- it chains per-tile across the
+    // same outer workers -- so it is worker-indexed the same way and SHARES
+    // these pools slot for slot, the two phases being disjoint in time; only
+    // its CHOLMOD solvers are separate. See the note at the `cheap_solvers`
+    // declaration below. n_outer == 1 reproduces the prior serial path exactly
+    // (one pool slot, used by every cell).
     //
     // The subspace sampler draws from R's RNG (rwmh.h), which is neither
     // reentrant nor schedule-independent, so a debiased grid is integrated
