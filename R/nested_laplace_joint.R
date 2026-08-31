@@ -1143,7 +1143,7 @@ tulpa_nested_laplace_joint <- function(responses,
                 # seed spread narrowing. The fraction is at most 1/5 by
                 # construction, so this never trips the 20% cap warning.
                 n_draws_r <- n_draws_r + 1L
-                k_prev <- as.integer(res$diagnose_draws %||% 500L)
+                k_prev <- as.integer(res$diagnose_draws %||% .nl_diag("k_samples"))
                 k_next <- as.integer(ceiling(
                     .nl_diag("k_precision_growth") * k_prev))
                 tp_prev <- res$pareto_k_tail_points
@@ -1319,7 +1319,7 @@ tulpa_nested_laplace_joint <- function(responses,
     # the outer Pareto-k is scored ONCE over this many importance draws, and a
     # tighter k needs MORE actual tail ratios, i.e. a larger `k_samples`.
     diagnose_draws_user       <- control$k_samples
-    diagnose_draws            <- diagnose_draws_user %||% 500L
+    diagnose_draws            <- diagnose_draws_user %||% .nl_diag("k_samples")
     if (length(diagnose_draws) != 1L || is.na(diagnose_draws) ||
         diagnose_draws != round(diagnose_draws) || diagnose_draws < 1L) {
         stop("`control$k_samples` must be a single integer >= 1.", call. = FALSE)
@@ -1329,7 +1329,8 @@ tulpa_nested_laplace_joint <- function(responses,
     # resolve the requested band (a tighter CI needs more actual tail ratios); an
     # explicit `k_samples` is always respected.
     if (is.null(diagnose_draws_user) && k_quality %in% c("ok", "good"))
-        diagnose_draws <- if (identical(k_quality, "good")) 2000L else 800L
+        diagnose_draws <- as.integer(.nl_diag(
+            if (identical(k_quality, "good")) "k_samples_good" else "k_samples_ok"))
     # Outer-thread width for the diagnostic's importance batch.
     # The `diagnose_draws` re-solves are independent and run after the grid (all
     # cores free), each solved single-threaded, so widening this pool is a
@@ -1350,7 +1351,7 @@ tulpa_nested_laplace_joint <- function(responses,
     # against for `pareto_k_band_confident`; NULL (default) uses the
     # sample-size-dependent boundaries c(0.5, min(1 - 1/log10(S), 0.7)) at the
     # realised draw count S.
-    k_bootstrap               <- control$k_bootstrap %||% 1000L
+    k_bootstrap               <- control$k_bootstrap %||% .nl_diag("k_bootstrap")
     if (length(k_bootstrap) != 1L || is.na(k_bootstrap) ||
         k_bootstrap != round(k_bootstrap) || k_bootstrap < 0L) {
         stop("`control$k_bootstrap` must be a single integer >= 0.", call. = FALSE)

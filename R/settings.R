@@ -15,6 +15,18 @@
 # prior, and the only way to recognise it was to have ONE place that defines
 # it).
 #
+# The outer-k draw budget is the worked example of the drift outrunning the
+# fix (gcol33/tulpa#632). It was consolidated here as `k_samples = 200L` and
+# three of the four backends were swept onto the accessor, but the joint path
+# had renamed its own variable to `diagnose_draws` and raised the value to
+# `500L` (gcol33/tulpa#127), so it matched neither the name nor the number the
+# sweep and its lint were looking for and kept a second default for four
+# releases -- one that banded fits differently, since the budget fixes the PSIS
+# tail fraction. A source lint keyed to a LITERAL only catches the copies that
+# have not been renamed yet; `test-settings.R` therefore keys this family on
+# the concept and separately evaluates each entry point's default against the
+# table.
+#
 # THE RULE. A number that answers "what does the engine do when the user says
 # nothing?" lives here and nowhere else. Consumers of a default call the
 # accessor; they never restate the number. Everything here is a plain value or a
@@ -626,6 +638,35 @@
 # `plot_pareto_k()`, `tulpa_reloo()`, the PSIS-LOO warning, the timing verdict)
 # and the Pareto-k proposal loop's own early stop.
 #
+# `k_samples` is the outer Pareto-k's importance-draw budget, one value across
+# all four backends that report the diagnostic. It has to be one value because
+# the k-hat is read against the FIXED bands `k_usable` and `gamma3_*` above:
+# under gcol33/tulpa#631 the budget sets the PSIS tail FRACTION as well as the
+# precision -- `.psis_tail_len(S) = min(S/5, 3 sqrt(S))` gives 20.0% at 200 and
+# 13.6% at 500 -- so two backends scoring the same hyperparameter posterior at
+# two budgets characterise it at two different quantiles of the weight
+# distribution and can report different bands for it (gcol33/tulpa#632).
+#
+# 500 rather than 200, on the record rather than on preference. The joint path
+# was raised from 200 to 500 at gcol33/tulpa#127 (609f262) when outer scoring
+# stopped being adaptive-batched: with the proposal scored ONCE, the single
+# budget carries the whole estimate instead of a batch of it. Every backend
+# scores single-batch now, so that reason covers all four. 13.6% is also the
+# fraction gcol33/tulpa#631 measured the k-hat to be stable at, and the one
+# every shipped outer-k number -- the whole gcol33/tulpa#629 and #630 corpus,
+# including #630's bit-identity baseline -- was read at. At 200 the `S/5` cap
+# binds, which is the published rule's cap rather than the rule itself.
+#
+# What it costs: the grid, SPDE and RE-covariance paths go from 200 to 500
+# inner Laplace solves when `diagnose_k` is on, since one draw is one off-grid
+# re-solve. `control$k_samples` sets it per fit on every front door.
+#
+# `k_samples_ok` / `k_samples_good` are the same budget raised at the entry to a
+# `k_quality` run, where the bootstrap CI has to resolve a named band before the
+# escalation ladder starts; `k_precision_growth` below is what the ladder then
+# multiplies by. They live here for the reason the base value does -- they were
+# written inline at the joint front door, which is how the base value drifted.
+#
 # `gamma3_ok` / `gamma3_unreliable` band the inner-Laplace skewness on the
 # usual skewness-magnitude convention (Bulmer 1979) -- a general reading of
 # "moderate" / "substantial" skew, NOT a Rue-Martino-Chopin cutoff.
@@ -1073,7 +1114,10 @@
     axis_sd_ess          = 3,
     edge_mass_lift       = 1,
     k_usable             = 0.7,
-    k_samples            = 200L,
+    k_samples            = 500L,
+    k_samples_ok         = 800L,
+    k_samples_good       = 2000L,
+    k_bootstrap          = 1000L,
     gamma3_ok            = 0.5,
     gamma3_unreliable    = 1.0,
     centre_unreliable    = Inf,

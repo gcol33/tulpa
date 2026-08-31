@@ -81,7 +81,7 @@ Hessian-based design. \code{"grid"} uses a rectangular grid in
 Pareto-\eqn{\hat{k}} accuracy diagnostic (\verb{$pareto_k}) by importance
 sampling the joint \verb{(range, sigma)} posterior on the log scale against
 the Gaussian proposal that orients the integration. See \code{\link[=tulpa_psis]{tulpa_psis()}}.
-\item \code{k_samples}: importance draws for \code{diagnose_k}. Default 200, each
+\item \code{k_samples}: importance draws for \code{diagnose_k}. Default 500, each
 one extra batched SPDE marginal evaluation.
 \item \code{mode_find}: tuning for the outer \verb{(range, sigma)} mode-find under
 \code{method = "ccd"}, as \code{list(factr =, ndeps =, maxit =)}; supply any

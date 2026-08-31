@@ -101,7 +101,7 @@ on the return list as \verb{$grid_hessians} (list of dense \eqn{p\times p}
 matrices) and \verb{$grid_modes} (list of length-\eqn{p} vectors). Used
 downstream by simplified-Laplace (SLA) callers to assemble skew-aware
 marginals -- see the cumulant pooling in \code{\link[=rubins_pool]{rubins_pool()}}.
-\item \code{diagnose_k} (\code{TRUE}), \code{k_samples} (\code{200L}) -- compute the outer
+\item \code{diagnose_k} (\code{TRUE}), \code{k_samples} (\code{500L}) -- compute the outer
 Pareto-\eqn{\hat{k}} accuracy diagnostic (\verb{$pareto_k}) by importance
 sampling the hyperparameter posterior against the Gaussian proposal
 fitted to the grid, drawing \code{k_samples} extra inner-marginal evaluations.

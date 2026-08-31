@@ -104,7 +104,16 @@ test_that("the default axes are exactly these values", {
 
     # Diagnostic / recenter / spatiotemporal defaults.
     expect_equal(tulpa:::.nl_diag("k_usable"), 0.7)
-    expect_identical(tulpa:::.nl_diag("k_samples"), 200L)
+    # ONE outer-k draw budget across all four backends (gcol33/tulpa#632). 500,
+    # not the 200 this held before: the joint path was raised to it at
+    # gcol33/tulpa#127 when outer scoring stopped being adaptive-batched, and it
+    # is the budget every shipped outer-k number was read at. Under
+    # gcol33/tulpa#631 this also fixes the PSIS tail fraction (13.6%), so it is
+    # not a pure cost knob and a change to it moves reported k-hats.
+    expect_identical(tulpa:::.nl_diag("k_samples"), 500L)
+    expect_identical(tulpa:::.nl_diag("k_samples_ok"), 800L)
+    expect_identical(tulpa:::.nl_diag("k_samples_good"), 2000L)
+    expect_identical(tulpa:::.nl_diag("k_bootstrap"), 1000L)
     expect_equal(tulpa:::.nl_diag("gamma3_ok"), 0.5)
     expect_equal(tulpa:::.nl_diag("gamma3_unreliable"), 1.0)
     # The two skew-correction defaults, both decided on measurement and both
@@ -275,12 +284,24 @@ test_that("the reported Pareto-k threshold is read, never restated", {
     }
     expect_identical(offenders, character(0))
 
-    # And the k_samples default likewise.
+    # And the outer-k draw budget likewise (gcol33/tulpa#632). This rule used to
+    # read `k_samples\\s*(=|<-|%||%)\\s*200`, keyed to ONE name and ONE literal,
+    # and that is exactly how the joint path drifted: gcol33/tulpa#127 renamed
+    # the internal variable to `diagnose_draws` and raised the default to 500 in
+    # the same commit, so the site was invisible to a rule looking for the name
+    # `k_samples` next to the number 200. The rule is keyed to the CONCEPT
+    # instead -- any budget in this family defaulted to a numeric literal
+    # anywhere but the settings file -- so a future rename cannot walk out from
+    # under it. `n_samples` matches only against a literal, which leaves the
+    # unrelated uses (`n_samples = nrow(draws)`, the reported draw count, the
+    # `cpp_laplace_sample()` argument) alone.
     offenders <- character(0)
     for (f in files) {
         code <- readLines(f, warn = FALSE)
         code <- code[!grepl("^\\s*#|^#'", code)]
-        hits <- grep("k_samples\\s*(=|<-|%\\|\\|%)\\s*200", code, value = TRUE)
+        hits <- grep(paste0("(k_samples|diagnose_draws|n_samples|k_bootstrap)",
+                            "\\s*(=|<-|%\\|\\|%)\\s*[0-9]"),
+                     code, value = TRUE)
         if (length(hits)) {
             offenders <- c(offenders, paste0(basename(f), ": ", trimws(hits)))
         }
@@ -340,4 +361,40 @@ test_that("no user-facing text tells the caller to set a knob that hard-errors",
         expect_true("control" %in% names(formals(getExportedValue("tulpa", fn))),
                     info = fn)
     }
+})
+
+test_that("every outer-k entry point defaults to the registry's draw budget", {
+    # The source lint above catches a budget written as a literal. It cannot
+    # catch a SECOND registry-shaped default that reads a different key, and it
+    # says nothing about what the defaults evaluate to -- which is the half that
+    # mattered in gcol33/tulpa#632, where four backends scored the same
+    # hyperparameter posterior at two budgets. Under gcol33/tulpa#631 the budget
+    # fixes the PSIS tail FRACTION (20.0% at 200, 13.6% at 500) and the k-hat is
+    # read against the fixed `k_usable` band, so two live defaults are two
+    # different quantiles of the weight distribution and can band a fit
+    # differently for no reason the fit records.
+    ns  <- asNamespace("tulpa")
+    ref <- tulpa:::.nl_diag("k_samples")
+
+    entries <- list(
+        .joint_pareto_k                = "n_samples",
+        .nested_outer_pareto_k         = "n_samples",
+        .nested_is_pareto_k            = "n_samples",
+        .nested_grid_pareto_k          = "n_samples",
+        .joint_attach_pareto_k_single  = "diagnose_draws",
+        .joint_attach_pareto_k_multi   = "diagnose_draws",
+        .joint_dispatch_multi          = "diagnose_draws"
+    )
+    for (fn in names(entries)) {
+        arg <- entries[[fn]]
+        f <- get(fn, envir = ns)
+        expect_true(arg %in% names(formals(f)), info = fn)
+        expect_identical(eval(formals(f)[[arg]], envir = ns), ref, info = fn)
+    }
+
+    # And the two `k_quality` entry budgets sit above the base one: the ladder
+    # they start is a raise, so an inversion here would make naming a target
+    # band LOWER the budget that has to resolve it.
+    expect_gt(tulpa:::.nl_diag("k_samples_ok"),   ref)
+    expect_gt(tulpa:::.nl_diag("k_samples_good"), tulpa:::.nl_diag("k_samples_ok"))
 })

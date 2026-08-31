@@ -400,7 +400,7 @@ tulpa_psis <- function(log_ratios, tail_points = NULL) {
 # whose cap now folds the far tail back in whenever it would matter
 
 .nested_outer_pareto_k <- function(log_target, theta_hat, L_scale,
-                                   n_samples = 200L) {
+                                   n_samples = .nl_diag("k_samples")) {
   # The per-sample closure is the length-1 case of the batched target the shared
   # core (.nested_is_pareto_k) drives; wrap it (non-finite -> -Inf, matching the
   # old drop) and evaluate every draw (radius_cap = Inf). The sampling transform
@@ -450,7 +450,7 @@ tulpa_psis <- function(log_ratios, tail_points = NULL) {
 # envelope, the capture aperture, the PSIS call -- is identical either way, so
 # there is one importance-sampling k-hat in the engine rather than two.
 .nested_is_pareto_k <- function(theta_hat, L_scale, log_target_batched,
-                                n_samples = 200L, radius_cap = Inf,
+                                n_samples = .nl_diag("k_samples"), radius_cap = Inf,
                                 return_draws = FALSE, tail_points = NULL,
                                 Z = NULL) {
   d <- length(theta_hat)
@@ -613,7 +613,7 @@ tulpa_psis <- function(log_ratios, tail_points = NULL) {
 # `refit_log_marginal(theta_mat)` maps an S x d CONSTRAINED grid to its S inner
 # log-marginals. Restricted by the caller to a single all-positive-scale axis.
 .nested_grid_pareto_k <- function(u_grid, weights, refit_log_marginal,
-                                  n_samples = 200L) {
+                                  n_samples = .nl_diag("k_samples")) {
   u_hat <- as.numeric(crossprod(weights, u_grid))            # weighted mean
   cen   <- sweep(u_grid, 2L, u_hat)
   Su    <- crossprod(cen * weights, cen)                     # weighted covariance

@@ -120,7 +120,7 @@ between the two says the placement is poor even where the verdict is
 fine -- on a small-group binary fit the first pass runs 15 to 49 where
 the reported k-hat is 0.3 to 0.8.
 \item \code{k_samples}: importance draws for the \code{diagnose_k} estimate
-(default 200). Raising it supplies more tail ratios but also moves the
+(default 500). Raising it supplies more tail ratios but also moves the
 automatic PSIS tail rule to a deeper quantile, so the reported k-hat can
 shift as well as sharpen (gcol33/tulpa#631); pass \code{k_tail_points} in
 proportion to hold the estimand.

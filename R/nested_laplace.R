@@ -64,7 +64,7 @@
 #'     matrices) and `$grid_modes` (list of length-\eqn{p} vectors). Used
 #'     downstream by simplified-Laplace (SLA) callers to assemble skew-aware
 #'     marginals -- see the cumulant pooling in [rubins_pool()].
-#'   * `diagnose_k` (`TRUE`), `k_samples` (`200L`) -- compute the outer
+#'   * `diagnose_k` (`TRUE`), `k_samples` (`500L`) -- compute the outer
 #'     Pareto-\eqn{\hat{k}} accuracy diagnostic (`$pareto_k`) by importance
 #'     sampling the hyperparameter posterior against the Gaussian proposal
 #'     fitted to the grid, drawing `k_samples` extra inner-marginal evaluations.
@@ -1556,9 +1556,9 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 # grid the caller asked for. The soft-cap warning above is advice addressed to
 # whoever chose the cell count, and on an internal batch that is not the caller:
 # the outer Pareto-k diagnostic re-evaluates `log_marginal` at `k_samples`
-# (default 200) importance draws by substituting them for the block's grid axis,
-# so a 7-node fit warned about 200 cells and advised reducing per-block grid
-# sizes, which does not reach the number in the message
+# importance draws by substituting them for the block's grid axis, so a 7-node
+# fit warned about a cell count the diagnostic's own budget set and advised
+# reducing per-block grid sizes, which does not reach the number in the message
 # (gcol33/tulpa#614). The HARD cap is deliberately not gated: it is a resource
 # ceiling the front door publishes so every re-dispatch enforces the caller's
 # value, and an internal batch is exactly as expensive as a user one.

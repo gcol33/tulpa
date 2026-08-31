@@ -1561,7 +1561,7 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
 #'       fine -- on a small-group binary fit the first pass runs 15 to 49 where
 #'       the reported k-hat is 0.3 to 0.8.
 #'     \item `k_samples`: importance draws for the `diagnose_k` estimate
-#'       (default 200). Raising it supplies more tail ratios but also moves the
+#'       (default 500). Raising it supplies more tail ratios but also moves the
 #'       automatic PSIS tail rule to a deeper quantile, so the reported k-hat can
 #'       shift as well as sharpen (gcol33/tulpa#631); pass `k_tail_points` in
 #'       proportion to hold the estimand.

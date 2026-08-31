@@ -50,7 +50,7 @@
 #'       Pareto-\eqn{\hat{k}} accuracy diagnostic (`$pareto_k`) by importance
 #'       sampling the joint `(range, sigma)` posterior on the log scale against
 #'       the Gaussian proposal that orients the integration. See [tulpa_psis()].
-#'     \item `k_samples`: importance draws for `diagnose_k`. Default 200, each
+#'     \item `k_samples`: importance draws for `diagnose_k`. Default 500, each
 #'       one extra batched SPDE marginal evaluation.
 #'     \item `mode_find`: tuning for the outer `(range, sigma)` mode-find under
 #'       `method = "ccd"`, as `list(factr =, ndeps =, maxit =)`; supply any

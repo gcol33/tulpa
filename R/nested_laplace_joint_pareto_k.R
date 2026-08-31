@@ -973,9 +973,11 @@
 # no genuinely-varying axis) plus per-arm `by_arm_se_boot` / `by_arm_ci_low` /
 # `by_arm_ci_high` / `by_arm_se_formula` / `by_arm_tail_points` /
 # `by_arm_band_confident`.
-.joint_pareto_k <- function(res, refit_log_marginal, n_samples = 500L,
+.joint_pareto_k <- function(res, refit_log_marginal,
+                            n_samples = .nl_diag("k_samples"),
                             proposal = NULL, arm_axes = NULL,
-                            k_bootstrap = 1000L, k_tail_points = NULL,
+                            k_bootstrap = .nl_diag("k_bootstrap"),
+                            k_tail_points = NULL,
                             k_conf_bands = NULL) {
     na_out <- function(x) list(pareto_k = NA_real_, is_ess = NA_real_,
                                proposal_source = NA_character_,
@@ -1395,10 +1397,11 @@
 # regardless of `diagnose_k`.
 .joint_attach_pareto_k_single <- function(res, kernel_fn, hp_fn,
                                           max_iter = 50L,
-                                          diagnose_k = TRUE, diagnose_draws = 500L,
+                                          diagnose_k = TRUE,
+                                          diagnose_draws = .nl_diag("k_samples"),
                                           n_threads_outer = 1L,
                                           pareto_k_by_arm = FALSE,
-                                          k_bootstrap = 1000L,
+                                          k_bootstrap = .nl_diag("k_bootstrap"),
                                           k_tail_points = NULL,
                                           k_conf_bands = NULL) {
     res$pareto_k        <- NA_real_

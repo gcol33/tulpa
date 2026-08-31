@@ -930,10 +930,12 @@
                                          axis_offsets, B, arm_names,
                                          fn_sigma, fn_alpha, fn_phi = NULL,
                                          max_iter, tol,
-                                         diagnose_k = TRUE, diagnose_draws = 500L,
+                                         diagnose_k = TRUE,
+                                         diagnose_draws = .nl_diag("k_samples"),
                                          n_threads_outer = 1L, proposal = NULL,
                                          pareto_k_by_arm = FALSE,
-                                         k_bootstrap = 1000L, k_tail_points = NULL,
+                                         k_bootstrap = .nl_diag("k_bootstrap"),
+                                         k_tail_points = NULL,
                                          k_conf_bands = NULL) {
     res$pareto_k        <- NA_real_
     res$pareto_k_is_ess <- NA_real_
@@ -1083,10 +1085,10 @@
                                   hessian_pd_mode = 0L,
                                   step_curvature_mode = 0L,
                                   diagnose_k = TRUE,
-                                  diagnose_draws = 500L,
+                                  diagnose_draws = .nl_diag("k_samples"),
                                   pareto_k_by_arm = FALSE,
                                   pareto_k_threads = NULL,
-                                  k_bootstrap = 1000L,
+                                  k_bootstrap = .nl_diag("k_bootstrap"),
                                   k_tail_points = NULL,
                                   k_conf_bands = NULL,
                                   diagnose_skew = TRUE,

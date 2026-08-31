@@ -439,7 +439,7 @@ Gaussian proposal the integrator places its CCD/grid with (`theta_hat`,
 integration is reliable; >= 0.7 => the (skewed / heavy-tailed) hyperparameter
 posterior is misfit by the Gaussian grid and the fit should escalate to the
 Gibbs debias. Controlled by `diagnose_k` (default TRUE) / `k_samples`
-(default 200, each one extra inner Laplace solve); computed after the draw
+(default 500, each one extra inner Laplace solve); computed after the draw
 synthesis with the RNG restored, so draws are bit-for-bit unchanged.
 
 **A high k-hat on a small-group binary RE-covariance fit was read as a correct
@@ -467,7 +467,7 @@ that. Scoped to a single-block,
 single positive-scale-axis grid (`.NL_POS_GRID`: `sigma`, `tau`, `sigma2`,
 `phi_gp`, ...); multi-block, multi-axis, or bounded-parameter grids (a
 correlation `rho_grid`) DECLINE to `pareto_k = NA` rather than apply a guessed
-support transform. Same `control$diagnose_k` (default TRUE) / `k_samples` (200)
+support transform. Same `control$diagnose_k` (default TRUE) / `k_samples` (500)
 knobs, RNG-restored.
 
 `fit_spde()` also computes the outer k-hat over `(range, sigma)` (both positive,
@@ -501,7 +501,7 @@ partition is reconstructed), and `.joint_pareto_k` defers to the shared
 support is the adjacency eigenvalue interval) is the unguessable axis: a fit
 carrying one DECLINES to quad-ESS (`pareto_k = NA`) rather than apply a guessed
 transform -- never a wrong k-hat. Gated by `control$diagnose_k` (default TRUE) /
-`k_samples` (200), RNG-restored. The parallel-NUTS
+`k_samples` (500), RNG-restored. The parallel-NUTS
 multi-chain producer (`run_hmc_parallel_chains_cpp`, exposed via
 `cpp_tulpa_fit_generic_chains`) emits the `(draws, chain_id, n_chains)` layout
 `.tulpa_chain_list()` reads, verified end-to-end against `posterior` in
@@ -1210,13 +1210,32 @@ pass used, so the extra draws sharpen the same number. The fraction is at most
 `control$k_tail_points` is left alone.
 
 What this did NOT change: the outer-k default is still the published rule, not a
-fixed fraction. No single fraction preserves both shipped defaults (`k_samples`
-is 200 on `tulpa_re_cov_nested()`, where the `S/5` cap binds at 20%, and 500 on
-the joint and grid paths, at 13.6%), and which fraction is statistically better
-is a bias-variance question this measurement does not answer. `tulpa_psis()`'s
-own default stays the reference rule, so the `loo::psis` equivalence oracle is
-untouched. Write-up `dev_notes/issue631/RESULTS631.md`; tests
-`test-outer-k-budget.R`.
+fixed fraction. Which fraction is statistically better is a bias-variance
+question this measurement does not answer, and picking one by what it preserves
+is not an answer to it. `tulpa_psis()`'s own default stays the reference rule,
+so the `loo::psis` equivalence oracle is untouched. Write-up
+`dev_notes/issue631/RESULTS631.md`; tests `test-outer-k-budget.R`.
+
+**There is now ONE budget to hold a fraction against (gcol33/tulpa#632).** The
+blocker on that fix was that the engine had two defaults: the joint path
+hardcoded `500L` in six places while its three siblings read
+`.nl_diag("k_samples")`, which was `200L`. Since the budget sets the tail
+FRACTION (20.0% at 200 where the `S/5` cap binds, 13.6% at 500) and the k-hat is
+read against the FIXED `k_usable` band, the same hyperparameter posterior was
+characterised at two different quantiles depending on which backend scored it.
+The registry now holds one value, 500 -- the joint path's, raised there at
+gcol33/tulpa#127 when outer scoring stopped being adaptive-batched and the
+single budget started carrying the whole estimate, and the budget every shipped
+outer-k number was read at. `k_samples_ok` / `k_samples_good` (the `k_quality`
+entry budgets) and `k_bootstrap` moved with it.
+
+The drift is instructive about the lint that missed it: `test-settings.R` looked
+for `k_samples` next to the literal `200`, and gcol33/tulpa#127 had renamed the
+joint variable to `diagnose_draws` and raised it to 500 in the same commit, so
+the site was invisible to a rule keyed to one name and one number. The rule is
+keyed to the CONCEPT now, and a companion test evaluates every entry point's
+default against the registry, since a source lint cannot see a second
+registry-shaped default that reads a different key.
 
 **Any measurement scored against an outer grid has to STATE its within-cell
 read (gcol33/tulpa#599).** The two constructions place the same mass in the same

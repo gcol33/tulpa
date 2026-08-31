@@ -1,3 +1,43 @@
+# tulpa 0.2.6
+
+* **One outer-k draw budget across the four backends that report it
+  (gcol33/tulpa#632).** `R/settings.R` opens by naming copy-pasted defaults as
+  the defect it exists to remove and lists `k_samples` among the five it
+  consolidated, but the joint path never read it: `500L` was hardcoded at the
+  front door, at the escalation's fallback, and in four entry-point signatures,
+  while `tulpa_nested_laplace()`, `fit_spde()` and `tulpa_re_cov_nested()` read
+  `.nl_diag("k_samples")`, which was `200L`. That is not cosmetic. Under
+  gcol33/tulpa#631 the budget sets the PSIS tail FRACTION as well as the
+  precision -- 20.0% at 200, where the `S/5` cap binds, against 13.6% at 500 --
+  and the k-hat is read against the FIXED `k_usable` band, so the same
+  hyperparameter posterior scored on two backends was characterised at two
+  different quantiles of the weight distribution and could be banded
+  differently for a reason the fit did not record.
+
+* **The one value is 500**, which raises the grid, SPDE and RE-covariance
+  default from 200. It is the joint path's, and it is on the record rather than
+  on preference: the joint path was raised from 200 to 500 at gcol33/tulpa#127
+  when outer scoring stopped being adaptive-batched and the single budget
+  started carrying the whole estimate instead of a batch of it -- a reason that
+  covers all four backends now that they all score single-batch -- and 13.6% is
+  both the fraction gcol33/tulpa#631 measured the k-hat to be stable at and the
+  one every shipped outer-k number, the whole gcol33/tulpa#629 and #630 corpus
+  included, was read at. It costs those three paths 500 rather than 200 inner
+  Laplace solves when `diagnose_k` is on, since one draw is one off-grid
+  re-solve; `control$k_samples` sets it per fit on every front door.
+  `k_samples_ok` / `k_samples_good` (the budgets a `k_quality` target starts
+  from, `800L` / `2000L`) and `k_bootstrap` (`1000L`, unchanged in value) moved
+  into the registry with it.
+
+* **The lint that missed it is re-keyed to the concept.** `test-settings.R`
+  searched for `k_samples` next to the literal `200`; gcol33/tulpa#127 renamed
+  the joint variable to `diagnose_draws` and raised it to `500` in the same
+  commit, so the drift walked out from under a rule keyed to one name and one
+  number. The rule now rejects any budget in this family defaulted to a numeric
+  literal outside the settings file, and a companion test evaluates every entry
+  point's default against the registry -- a source lint cannot see a second
+  registry-shaped default that reads a different key.
+
 # tulpa 0.2.5
 
 * **`control$k_samples` moves the outer Pareto-k-hat, not just its interval

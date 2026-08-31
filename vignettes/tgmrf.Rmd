@@ -421,7 +421,7 @@ For the outer approximation on a structured-tier fit, the relevant
 number is the Pareto-$\hat{k}$, the iid-fit counterpart of Rhat. The
 nested-Laplace fit reports `$pareto_k` and `$pareto_k_is_ess`: the
 integrator fits a Gaussian proposal to the hyperparameter posterior,
-importance-samples it (`control$k_samples`, default `200L`, each one
+importance-samples it (`control$k_samples`, default `500L`, each one
 extra inner solve), and fits a generalised Pareto tail to the importance
 ratios. A $\hat{k} < 0.7$ means the Gaussian grid characterises the
 hyperparameter posterior well and the nested integration is reliable.
@@ -473,7 +473,7 @@ budget and the diagnostic cost. `control$max_iter` (default `50L`) and
 only if cells fail to converge. `control$n_threads` (default `1L`) sets
 OpenMP threads inside each inner solve, useful when `n_latent` is large.
 `control$diagnose_k` (default `TRUE`) and `control$k_samples` (default
-`200L`) control the Pareto-$\hat{k}$ computation; set `diagnose_k = FALSE`
+`500L`) control the Pareto-$\hat{k}$ computation; set `diagnose_k = FALSE`
 to skip the extra inner solves when you do not need the accuracy gate.
 The `bounds` you set on the block itself define the grid extent and the
 hard wall for IMH and NUTS. Set them generously enough to contain the
