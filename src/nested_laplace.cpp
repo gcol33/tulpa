@@ -269,7 +269,7 @@ Rcpp::List cpp_nested_laplace_icar(
     Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
-    double prune_tol = 0.0, int screen_iters = 5,
+    double prune_tol = 0.0, int screen_iters = 2,
     bool compute_fitted_var = true
 ) {
     tulpa::check_areal_inputs(adj_row_ptr, adj_col_idx, n_neighbors,
@@ -326,7 +326,7 @@ Rcpp::List cpp_nested_laplace_bym2(
     Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
-    double prune_tol = 0.0, int screen_iters = 5,
+    double prune_tol = 0.0, int screen_iters = 2,
     bool compute_fitted_var = true
 ) {
     tulpa::check_areal_inputs(adj_row_ptr, adj_col_idx, n_neighbors,
@@ -378,7 +378,7 @@ Rcpp::List cpp_nested_laplace_car_proper(
     Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
-    double prune_tol = 0.0, int screen_iters = 5,
+    double prune_tol = 0.0, int screen_iters = 2,
     bool compute_fitted_var = true
 ) {
     tulpa::check_areal_inputs(adj_row_ptr, adj_col_idx, n_neighbors,
@@ -519,7 +519,7 @@ Rcpp::List cpp_nested_laplace_nngp(
     Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
-    double prune_tol = 0.0, int screen_iters = 5,
+    double prune_tol = 0.0, int screen_iters = 2,
     bool compute_fitted_var = true
 ) {
     const int n_grid = tulpa::nl_grid_axes_length(
@@ -607,7 +607,7 @@ Rcpp::List cpp_nested_laplace_hsgp(
     Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
-    double prune_tol = 0.0, int screen_iters = 5,
+    double prune_tol = 0.0, int screen_iters = 2,
     bool compute_fitted_var = true
 ) {
     const int n_grid = tulpa::nl_grid_axes_length(
@@ -1139,7 +1139,7 @@ Rcpp::List cpp_nested_laplace_temporal(
     Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
-    double prune_tol = 0.0, int screen_iters = 5,
+    double prune_tol = 0.0, int screen_iters = 2,
     bool compute_fitted_var = true
 ) {
     tulpa::nl_grid_axes_positive({{"tau_grid", &tau_grid}});
@@ -1193,7 +1193,7 @@ Rcpp::List cpp_nested_laplace_st_icar(
     Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
-    double prune_tol = 0.0, int screen_iters = 5,
+    double prune_tol = 0.0, int screen_iters = 2,
     bool compute_fitted_var = true
 ) {
     tulpa::check_areal_inputs(adj_row_ptr, adj_col_idx, n_neighbors,
@@ -1253,7 +1253,7 @@ Rcpp::List cpp_nested_laplace_st_car_proper(
     Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
-    double prune_tol = 0.0, int screen_iters = 5,
+    double prune_tol = 0.0, int screen_iters = 2,
     bool compute_fitted_var = true
 ) {
     tulpa::check_areal_inputs(adj_row_ptr, adj_col_idx, n_neighbors,
@@ -1317,7 +1317,7 @@ Rcpp::List cpp_nested_laplace_st_bym2(
     Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
-    double prune_tol = 0.0, int screen_iters = 5,
+    double prune_tol = 0.0, int screen_iters = 2,
     bool compute_fitted_var = true
 ) {
     tulpa::check_areal_inputs(adj_row_ptr, adj_col_idx, n_neighbors,
@@ -1380,7 +1380,7 @@ Rcpp::List cpp_nested_laplace_st_hsgp(
     Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
-    double prune_tol = 0.0, int screen_iters = 5,
+    double prune_tol = 0.0, int screen_iters = 2,
     bool compute_fitted_var = true
 ) {
     const int n_grid = tulpa::nl_grid_axes_length(
@@ -1461,7 +1461,7 @@ Rcpp::List cpp_nested_laplace_st_nngp(
     Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
-    double prune_tol = 0.0, int screen_iters = 5,
+    double prune_tol = 0.0, int screen_iters = 2,
     bool compute_fitted_var = true
 ) {
     const int n_grid = tulpa::nl_grid_axes_length(

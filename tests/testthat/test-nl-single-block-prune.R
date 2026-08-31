@@ -156,8 +156,9 @@ test_that(".nl_prune_gate replaces a screen it distrusts with the full grid", {
   expect_identical(tulpa:::.nl_prune_gate(screened, 0, resolve_full), screened)
   expect_identical(calls, 0L)
 
-  out <- expect_warning(
-    tulpa:::.nl_prune_gate(screened, 1e-3, resolve_full),
+  out <- NULL
+  expect_warning(
+    out <- tulpa:::.nl_prune_gate(screened, 1e-3, resolve_full),
     "cheap-pass prune is unreliable")
   expect_identical(calls, 1L)
   expect_true(out$prune_fallback_triggered)

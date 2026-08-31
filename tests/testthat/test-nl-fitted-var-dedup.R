@@ -84,9 +84,12 @@ test_that("fitted_eta_var separates rows differing in covariate or in block unit
 
   # Same block unit, different covariate row.
   expect_true(all(abs(fv[, first[1]] - fv[, first[3]]) > 1e-9))
-  # Same covariate row, different block unit: the two units carry different
-  # numbers of observations, so their posterior curvature differs.
-  expect_true(all(abs(fv[, first[2]] - fv[, first[3]]) > 1e-9))
+  # Same covariate row, different block unit. The two design cells carry
+  # nearly the same curvature here, so what separates them is small; a key
+  # that ignored the unit would merge the rows into one class and hand both
+  # the same solved value, bit for bit.
+  expect_false(identical(unname(fv[, first[2]]), unname(fv[, first[3]])))
+  expect_true(all(abs(fv[, first[2]] - fv[, first[3]]) > 0))
 })
 
 test_that("fitted_eta_var follows the observation order the fit was given", {

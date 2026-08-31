@@ -1,3 +1,47 @@
+# tulpa 0.2.8
+
+* **A single-block outer cell's cost is the per-row predictive-variance loop,
+  and it is now both cheaper and optional (gcol33/tulpa#638).** The loop fills
+  `fitted_eta_var` with one back-solve per observation per cell, and it is the
+  whole of the path's size dependence: with it switched off the per-cell cost is
+  flat in N (0.225 to 0.254 s over N = 900 to 10800 on a 30x30 ICAR lattice,
+  11 cells, serial), with it on it is `0.217 + 4.685e-4 N`. Two changes. A row's
+  loading vector is `(X row, RE group, per-block index and weight)`, none of
+  which moves with the outer cell, so rows agreeing on all of it carry the same
+  vector at every cell and the driver now solves one of them and hands the value
+  to the rest -- an intercept-only design with 900 distinct rows of 5400 costs
+  0.244 of what its N predicts and 1.047 of what its distinct count predicts,
+  4.07x. And `control$fitted_var = FALSE` skips the pass outright for a caller
+  that reads only `fitted_eta`, 21x at N = 10800. The key is compared on exact
+  bit patterns with every merge confirmed element-by-element, so a hash
+  collision cannot fuse two rows. `SparseCholeskySolver` also gained a
+  workspace-reusing `cholmod_solve2` path, so the back-solves no longer allocate
+  and free per call.
+
+* **Cheap-pass grid screening is reachable from `tulpa_nested_laplace()`
+  (gcol33/tulpa#639).** Both entry runners hardcoded `prune_tol = 0.0`, so the
+  eleven single-block entries could not screen even though the shared driver,
+  the `CheapEval` closure and the safety gate were all built for them -- and
+  this is the path where a cell is expensive enough for screening to pay.
+  `control$prune`, `$prune_tol`, `$screen_iters` and `$fitted_var` now thread
+  through to every entry, under the same `.joint_prune_safety_gate` the joint
+  front door applies, so a single-block fit cannot silently return a pruned
+  answer either. The gate's warning now names the front door the fit came in
+  through.
+
+* **The cheap screen's depth is a control knob with a measured default of 2,
+  down from a hardcoded 5 (gcol33/tulpa#640).** The screen runs on every cell
+  and only has to RANK them, and each cell is warm-started from its
+  already-screened lattice neighbour, so every step above what the ranking needs
+  is paid on the whole grid including the cells it keeps. Over four fixtures at
+  depths 1/2/3/5 the answer does not move -- Spearman 1.000 against the full
+  solve, argmax kept, at most 1.2e-3 of the true posterior mass dropped, fixed
+  effects within 4.8e-5, safety gate never fired -- while the cost does: on the
+  fixture that isolates the screen's own price, depth 5 is a net loss at 0.75x
+  where depth 1 is 1.33x. The default is 2 rather than 1 because a small 8-cell
+  ICAR fixture ranked at Spearman 0.976 on one step and 1.000 on two. Set it per
+  fit with `control$screen_iters`; pruning itself remains opt-in.
+
 # tulpa 0.2.7
 
 * **The outer-grid placement pass no longer has to be paid for with a full grid

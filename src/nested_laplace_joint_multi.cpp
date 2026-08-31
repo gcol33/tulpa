@@ -1379,7 +1379,7 @@ Rcpp::List cpp_nested_laplace_joint_multi(
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
     int                 inner_sparse_override = 0,
-    int                 screen_iters = 5   // cheap-screen Newton steps per cell
+    int                 screen_iters = 2   // cheap-screen Newton steps per cell
 ) {
     // Per-cell fixed-effect covariance retention, extracted
     // inside each cell's own solve. `fixed_block_p` is the

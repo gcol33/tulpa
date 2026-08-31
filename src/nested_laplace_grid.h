@@ -337,7 +337,7 @@ struct NoCheapEval {
 // Engine default for the number of inner Newton steps per cell in the cheap
 // screening sweep, used when the caller supplies no `screen_iters`. See the
 // cost-against-ranking-fidelity note at the top of this file.
-static const int CHEAP_SCREEN_ITERS = 5;
+static const int CHEAP_SCREEN_ITERS = 2;
 
 template<typename SolveAtTheta, typename CheapEval = NoCheapEval>
 inline Rcpp::List run_nested_laplace_grid(

@@ -1227,7 +1227,7 @@
 # avoids.
 .NL_SCREEN <- list(
     prune_tol = 1e-3,
-    iters     = 5L
+    iters     = 2L
 )
 
 .nl_screen <- function(par) {

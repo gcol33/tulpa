@@ -1504,6 +1504,65 @@ not a mis-sized one.
 `.joint_pareto_grid_regime()` and `diagnostic_summary()` alike. Write-up
 `dev_notes/issue636/RESULTS636.md`; tests `test-recenter-pilot.R`.
 
+### A cell's cost is the predictive-variance loop, and the screen is now reachable and priced (gcol33/tulpa#638, #639, #640)
+
+On the single-block path the dominant per-cell cost is not the inner Newton
+solve. It is the per-row loop filling `fitted_eta_var`: one back-solve per
+observation per cell. Switch it off and the per-cell cost is FLAT in N (0.225
+to 0.254 s over N = 900 to 10800 on a 30x30 ICAR lattice, 11 cells, serial);
+leave it on and it is affine, `0.217 + 4.685e-4 N`. So the loop is the whole of
+the size dependence, and `control$fitted_var = FALSE` is 21x at N = 10800.
+Newton iterations are 8% of a cell, which is why the continuation and
+inexact-Newton levers that look like the obvious ones are competing for the
+small half.
+
+**The loop's cost is set by DISTINCT loading vectors, not by N.** A row's
+loading vector is `(X row, RE group, per-block index and weight)` and none of
+it moves with the outer cell -- only the per-block scalar `d_fac_b(k)` does,
+and it scales every entry that block contributes at every row alike. So two
+rows agreeing on all of it carry the SAME vector at every cell, and the driver
+solves one and hands the value to the rest. That is falsifiable against the
+affine line above, and it holds: an intercept-only design with 900 distinct
+rows of 5400 costs 0.244 of what its N predicts and **1.047 of what its
+distinct count predicts**, 4.07x. Where every row is distinct the dedup buys
+nothing, by construction -- it is not a faster solve, it is the observation
+that the solve was being repeated. The key is compared on exact IEEE bit
+patterns and every merge is confirmed element-by-element, so a hash collision
+costs a comparison and cannot fuse two rows.
+
+**The cheap screen was hardcoded off on every single-block entry** -- both
+runners in `nl_entry_inputs.h` passed `prune_tol = 0.0` -- so the one path
+where a cell is expensive enough for screening to pay was the one path that
+could not screen. `control$prune` / `$prune_tol` / `$screen_iters` /
+`$fitted_var` now thread through `TULPA_NL_ENTRY_INPUTS` to all eleven entries,
+under the same `.joint_prune_safety_gate` the joint door applies, so a
+single-block fit can no more return a silently pruned answer than a joint one.
+
+**The screen's depth is a cost-against-ranking trade, and 5 was the wrong side
+of it.** The screen only has to RANK cells and each is warm-started from its
+already-screened neighbour, so every step above what the ranking needs is paid
+on the whole grid including the cells it keeps. Measured over four fixtures at
+depths 1/2/3/5: Spearman 1.000 against the full solve, argmax kept, at most
+1.2e-3 of the true mass dropped, fixed effects within 4.8e-5, gate never fired
+-- the same answer at every depth. What moves is cost, and on the fixture that
+isolates the screen's own price (single-block with the variance pass off) depth
+5 is a NET LOSS at 0.75x while depth 1 is 1.33x. `.NL_SCREEN$iters` is 2, not 1:
+on a small 8-cell ICAR fixture depth 1 scored Spearman 0.976 where depth 2
+scored 1.000, matching the issue's own 0.9989-against-1.0000. Pruning stays
+opt-in, so the default reaches only a caller who asked to screen.
+
+Read row 3 of that table with care: with the variance pass ON the screen looks
+good at any depth for a reason that is not about the screen, since `cheap_eval`
+runs with `want_var = false` and so skips the O(N) loop the full solve pays.
+
+`.NL_SCREEN` (`R/settings.R`) is the one registry for both numbers, and the
+depth lives at 24 C++ sites besides -- `CHEAP_SCREEN_ITERS` plus the Rcpp entry
+literals, which cannot read an R registry. `test-settings.R` pins all three
+together, so a partial move fails loudly rather than leaving the engine with
+two defaults the way `k_samples` did. Tests: `test-nl-fitted-var-dedup.R`,
+`test-nl-single-block-prune.R`, `test-screen-depth.R`, and the cheap-screen
+block of `test-nl-entry-forwarding.R` at all eleven entries.
+
 ### Three posterior arbiters, and coverage is only one (gcol33/tulpa#335)
 
 Binary coverage at one or two nominal levels reads one or two points of the

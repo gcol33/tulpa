@@ -145,7 +145,7 @@ test_that("the default axes are exactly these values", {
     # trade paid on every cell of the grid, so it is a number the engine's
     # throughput rests on and a change to it has to be deliberate.
     expect_equal(tulpa:::.nl_screen("prune_tol"), 1e-3)
-    expect_identical(tulpa:::.nl_screen("iters"), 5L)
+    expect_identical(tulpa:::.nl_screen("iters"), 2L)
 
     expect_error(tulpa:::.nl_diag("nope"), "Unknown diagnostic setting")
     expect_error(tulpa:::.nl_screen("nope"), "Unknown screening setting")
