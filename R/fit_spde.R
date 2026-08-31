@@ -51,7 +51,13 @@
 #'       sampling the joint `(range, sigma)` posterior on the log scale against
 #'       the Gaussian proposal that orients the integration. See [tulpa_psis()].
 #'     \item `k_samples`: importance draws for `diagnose_k`. Default 500, each
-#'       one extra batched SPDE marginal evaluation.
+#'       one extra batched SPDE marginal evaluation. It is a precision knob:
+#'       the GPD tail size is held at the fraction the default budget implies,
+#'       so a larger budget sharpens the same k-hat rather than moving it to a
+#'       deeper quantile of the weight distribution (gcol33/tulpa#631).
+#'     \item `k_tail_points`: expert override for that tail size, in upper-tail
+#'       order statistics. Silently capped at 20% of the draws, beyond which
+#'       body ratios enter the tail and bias the shape.
 #'     \item `mode_find`: tuning for the outer `(range, sigma)` mode-find under
 #'       `method = "ccd"`, as `list(factr =, ndeps =, maxit =)`; supply any
 #'       subset. `ndeps` is the central-difference step for `optim()`'s
@@ -154,6 +160,7 @@ fit_spde <- function(y, X, spatial,
   n_grid     <- as.integer(control$n_grid %||% 5L)
   diagnose_k <- isTRUE(control$diagnose_k %||% TRUE)
   k_samples  <- as.integer(control$k_samples %||% .nl_diag("k_samples"))
+  k_tail_pts <- control$k_tail_points
   mode_find  <- .nl_mode_find_tuning("spde", control)
   max_iter   <- as.integer(control$max_iter %||% 100L)
   tol        <- control$tol %||% 1e-6
@@ -269,7 +276,8 @@ fit_spde <- function(y, X, spatial,
   fit <- if (nested_laplace && (is.null(range) || is.null(sigma))) {
     if (method == "grid") {
       fit_spde_nested_grid(spde_log_marginal, sp, n_grid, spatial,
-                           diagnose_k = diagnose_k, k_samples = k_samples)
+                           diagnose_k = diagnose_k, k_samples = k_samples,
+                           k_tail_points = k_tail_pts)
     } else {
       fit_spde_nested_ccd(spde_log_marginal,
                                  fit_spde_single = function(r, s) {
@@ -286,6 +294,7 @@ fit_spde <- function(y, X, spatial,
                                  },
                                  sp = sp, spatial = spatial,
                           diagnose_k = diagnose_k, k_samples = k_samples,
+                          k_tail_points = k_tail_pts,
                           mode_find = mode_find)
     }
   } else {

@@ -1561,10 +1561,13 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = c(3, 0.05), eta = 2,
 #'       fine -- on a small-group binary fit the first pass runs 15 to 49 where
 #'       the reported k-hat is 0.3 to 0.8.
 #'     \item `k_samples`: importance draws for the `diagnose_k` estimate
-#'       (default 500). Raising it supplies more tail ratios but also moves the
-#'       automatic PSIS tail rule to a deeper quantile, so the reported k-hat can
-#'       shift as well as sharpen (gcol33/tulpa#631); pass `k_tail_points` in
-#'       proportion to hold the estimand.
+#'       (default 500). It is a precision knob: the GPD tail size is held at
+#'       the fraction that default budget implies, so raising it supplies more
+#'       tail ratios for the SAME estimand rather than moving the fit to a
+#'       deeper quantile of the weight distribution (gcol33/tulpa#631).
+#'     \item `k_tail_points`: expert override for that tail size, in upper-tail
+#'       order statistics. Silently capped at 20% of the draws, beyond which
+#'       body ratios enter the tail and bias the shape.
 #'     \item `max_iter`, `tol`, `n_threads`: inner-solve controls (see
 #'       [tulpa_laplace()]).
 #'     \item `outer_maxit`: iteration budget for the mode-finding step that
@@ -1671,6 +1674,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   seed        <- control$seed
   diagnose_k  <- isTRUE(control$diagnose_k %||% TRUE)
   k_samples   <- as.integer(control$k_samples %||% .nl_diag("k_samples"))
+  k_tail_points <- control$k_tail_points
   max_iter    <- as.integer(control$max_iter %||% 100L)
   tol         <- control$tol %||% 1e-8
   n_threads   <- as.integer(control$n_threads %||% 1L)
@@ -1924,7 +1928,8 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
       .nested_outer_pareto_k(
         log_target = function(th) inner_logmarg(.re_cov_theta_to_L_list(th, layout)) +
           log_prior_theta(th),
-        theta_hat = theta_hat, L_scale = L_scale, n_samples = k_samples),
+        theta_hat = theta_hat, L_scale = L_scale, n_samples = k_samples,
+        tail_points = k_tail_points),
       error = function(e) NULL))
     if (is.null(kd)) {
       k_declined <- .k_decline_label(.k_decline("degenerate_proposal",

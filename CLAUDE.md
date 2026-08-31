@@ -1209,12 +1209,36 @@ pass used, so the extra draws sharpen the same number. The fraction is at most
 1/5 by construction, so it never trips the 20% cap warning, and an explicit
 `control$k_tail_points` is left alone.
 
-What this did NOT change: the outer-k default is still the published rule, not a
-fixed fraction. Which fraction is statistically better is a bias-variance
-question this measurement does not answer, and picking one by what it preserves
-is not an answer to it. `tulpa_psis()`'s own default stays the reference rule,
-so the `loo::psis` equivalence oracle is untouched. Write-up
-`dev_notes/issue631/RESULTS631.md`; tests `test-outer-k-budget.R`.
+**The outer paths now hold the fraction, and the fraction is inherited rather
+than chosen.** `.k_outer_tail_points()` (`R/psis.R`), resolved once in
+`.k_dispatch()` -- gcol33/tulpa#630's single candidate loop, so all four backends
+inherit it -- takes `floor(n * .psis_tail_len(ref) / ref)` at
+`ref = .nl_diag("k_samples")` and floors it under the published rule. A DEFAULT
+fit is bit-for-bit unchanged on every backend: the helper returns `NULL` at the
+reference budget, so the explicit-request path and its 20% cap are never
+entered. `tulpa_psis()`'s own default stays the published rule, so the
+`loo::psis` equivalence oracle is untouched.
+
+The `max()` is load-bearing. Below the reference budget the published rule is in
+its `S / 5` regime and is the MORE generous of the two -- 40 tail points at 200
+draws against the fraction's 27 -- so taking the fraction as a REPLACEMENT buys
+a stable estimand by making every cheap diagnostic noisier, measured as a
+per-arm k-hat crossing its band on `test-joint-pareto-k-proposal.R`'s 200-draw
+fixture. Floored, no budget is fitted on fewer tail points than before and the
+fraction is confined to `[13.5%, 20%]` over a 500x range instead of collapsing
+to 1.3% at 50000 draws.
+
+Which fraction is statistically better is still a bias-variance question this
+does not answer, and it does not need to: the property bought is that one fit's
+band does not depend on another fit's cost knob. **A skewed target was never
+what put a fit in the bad band.** `test-outer-skew-rescue.R` asserted that a
+skewness-0.9 target reads unreliable and is repaired by the skew-normal rescue;
+measured across budgets it reads 0.017 at the shipped budget and 1.627 at 10000
+draws under the published rule, so the fixture reached the rescue only by
+scoring at eight times the default. That is the #629 finding from the other
+side. With the read stabilized the rescue is not adopted on any fixture in the
+repo (gcol33/tulpa#634). Write-ups `dev_notes/issue631/RESULTS631.md` and
+`RESULTS631B.md`; tests `test-outer-k-budget.R`.
 
 **There is now ONE budget to hold a fraction against (gcol33/tulpa#632).** The
 blocker on that fix was that the engine had two defaults: the joint path

@@ -90,23 +90,39 @@ test_that("skewness beyond the skew-normal ceiling is clamped, not refused", {
   refit <- function(theta_mat)
     shape_z((log(as.numeric(theta_mat[, 1])) - .osk_U0) / .osk_S) - log(.osk_S)
   spec <- .joint_cand_spec(prep, 1L, refit)
-  set.seed(seed); g <- .k_score_gaussian(spec, n)
+  # The first-pass Gaussian is scored at the tail size the DISPATCH will use,
+  # not at the automatic rule's: scoring the two arms under different tail rules
+  # compares the rules rather than the proposals (gcol33/tulpa#631).
+  tp <- .k_outer_tail_points(n)
+  set.seed(seed); g <- .k_score_gaussian(spec, n, tail_points = tp)
   set.seed(seed); d <- .k_dispatch(spec, n)
   list(gauss = g$pareto_k, k = d$best$pareto_k, src = d$source, skew = d$outer_skew)
 }
 
-test_that("a skewed hyperparameter marginal is repaired by the skew proposal", {
+test_that("a skewed marginal needs no rescue, at any budget", {
   skip_on_cran()
-  # Standardized to skewness 0.9 -- the fat-right-shoulder shape a variance
-  # component actually has. No Gaussian matched in mean/sd covers that right
-  # tail, so the symmetric k-hat is inflated with the fit itself being fine.
+  # This asserted the opposite until gcol33/tulpa#631's tail rule landed: that a
+  # skewness-0.9 target reads UNRELIABLE on a symmetric proposal and is repaired
+  # by the skew-normal one. Measured, that reading was the BUDGET, not the
+  # target. Under the automatic PSIS rule the same target climbs
+  # 0.017 / 0.290 / 0.597 / 0.914 / 1.627 over 500 to 10000 draws, crossing both
+  # bands, and this fixture only reached the rescue because it scores at 4000 --
+  # eight times the shipped budget. At the shipped budget it reads 0.017.
+  #
+  # That is gcol33/tulpa#629's finding from the other side: a Gaussian proposal's
+  # importance ratio stays BOUNDED on a skew-normal target (Gaussian tail one
+  # side, lighter the other), so skewness alone does not inflate an outer k-hat
+  # -- a heavy tail does. With the tail fraction held, the read agrees with the
+  # default-budget read at every budget and no rescue is called for.
   sn9 <- .sn_prop_from_moments(0, 1, 0.9)
-  r <- .osk_score(function(z) .sn_prop_logpdf(matrix(z, ncol = 1), sn9))
-  expect_gt(r$gauss, 0.7)                       # symmetric proposal: unreliable
-  expect_identical(r$src, "skew_normal")
-  expect_lt(r$k, r$gauss - 0.15)                # materially repaired
-  expect_lt(r$k, 0.7)                           # verdict flips to usable
-  expect_gt(r$skew[[1]], 0.5)                   # and the reason is reported
+  shape <- function(z) .sn_prop_logpdf(matrix(z, ncol = 1), sn9)
+  ks <- vapply(c(500L, 2000L, 4000L, 10000L),
+               function(n) .osk_score(shape, n = n)$k, numeric(1))
+  expect_true(all(ks < .nl_diag("gamma3_ok")),
+              info = paste(round(ks, 3), collapse = " "))   # good band throughout
+  expect_lt(max(ks) - min(ks), 0.25)                        # and budget-stable
+  # No rescue: there is no bad band to rescue it out of.
+  expect_false(identical(.osk_score(shape, n = 4000L)$src, "skew_normal"))
 })
 
 test_that("a symmetric heavy tail is left flagged (the rescue does not engage)", {
@@ -122,8 +138,14 @@ test_that("a skewed HEAVY tail runs the rescue and rejects it", {
   # The decisive no-laundering case: skewness clears the gate, so the skew
   # proposal is actually built and scored -- and must lose, because its Gaussian
   # tails cannot cover a heavy one. "Evaluated and rejected", not "skipped".
+  #
+  # The tilt is `z`, not `3 z`, since gcol33/tulpa#631's held tail fraction: at
+  # the stronger tilt moment matching now clears this target into the good band
+  # (k-hat 0.277) and the dispatch stops before the rescue, so the case would
+  # test nothing. At this tilt the Gaussian still reads 0.743 with skewness
+  # 0.583, which is what puts the rescue on the table at all.
   r <- .osk_score(function(z) log(2) + stats::dt(z, df = 2, log = TRUE) +
-                    stats::pnorm(3 * z, log.p = TRUE))
+                    stats::pnorm(z, log.p = TRUE))
   expect_gt(abs(r$skew[[1]]), 0.2)
   expect_false(identical(r$src, "skew_normal"))
   expect_gte(r$k, r$gauss - 1e-9)

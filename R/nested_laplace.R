@@ -68,6 +68,11 @@
 #'     Pareto-\eqn{\hat{k}} accuracy diagnostic (`$pareto_k`) by importance
 #'     sampling the hyperparameter posterior against the Gaussian proposal
 #'     fitted to the grid, drawing `k_samples` extra inner-marginal evaluations.
+#'     `k_samples` is a precision knob: the GPD tail size is held at the
+#'     fraction the default budget implies, so a larger budget sharpens the
+#'     same k-hat instead of moving it to a deeper quantile of the weight
+#'     distribution (gcol33/tulpa#631). `k_tail_points` overrides that tail
+#'     size directly (capped at 20% of the draws).
 #'     Computed for a single-block, single positive-scale-axis grid; left `NA`
 #'     (with the grid's quadrature ESS as the fallback diagnostic) for
 #'     multi-block, multi-axis, or bounded-parameter grids. See [tulpa_psis()].
@@ -328,6 +333,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   keep_grid_hessians <- isTRUE(control$keep_grid_hessians) || !is.null(sd_cfg)
   diagnose_k         <- isTRUE(control$diagnose_k %||% TRUE)
   k_samples          <- as.integer(control$k_samples %||% .nl_diag("k_samples"))
+  k_tail_points      <- control$k_tail_points
   diagnose_skew      <- isTRUE(control$diagnose_skew %||% TRUE)
   skew_idx           <- control$skew_idx
   skew_correct       <- isTRUE(control$skew_correct %||% .nl_diag("skew_correct"))
@@ -438,7 +444,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     }
     tm$mark("postproc")
     res <- .nl_attach_pareto_k(res, prior, cargs_no_ckpt, "multi", NULL,
-                               likelihood, k_samples, compute = diagnose_k)
+                               likelihood, k_samples, compute = diagnose_k,
+                               tail_points = k_tail_points)
 
     # The same placement pass the single-block path runs, over the block list.
     # Every axis is block-prefixed here, so a moved block is re-crossed on its
@@ -453,7 +460,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
                                 within_cell = within_cell)
         if (isTRUE(keep_grid_hessians)) r <- .nl_attach_grid_hessians(r, p_fixed)
         .nl_attach_pareto_k(r, prior_i, cargs_no_ckpt, "multi", NULL,
-                            likelihood, k_samples, compute = diagnose_k)
+                            likelihood, k_samples, compute = diagnose_k,
+                            tail_points = k_tail_points)
       },
       refit_log_marginal = function(prior_i, theta_mat) {
         o <- .nl_dispatch_multi(cargs_no_ckpt, prior_i, likelihood = likelihood,
@@ -524,7 +532,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   }
   tm$mark("postproc")
   res <- .nl_attach_pareto_k(res, prior, cargs_no_ckpt, "single", type, NULL,
-                             k_samples, compute = diagnose_k)
+                             k_samples, compute = diagnose_k,
+                             tail_points = k_tail_points)
 
   # Auto-recenter a railed default outer axis (the registry
   # generalization of the joint-path fix, extended over the family table):
@@ -547,7 +556,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
       r <- .nl_posterior_moments(r, type, within = within_cell)
       if (isTRUE(keep_grid_hessians)) r <- .nl_attach_grid_hessians(r, p_fixed)
       .nl_attach_pareto_k(r, prior_i, cargs_no_ckpt, "single", type, NULL,
-                          k_samples, compute = diagnose_k)
+                          k_samples, compute = diagnose_k,
+                          tail_points = k_tail_points)
     },
     refit_log_marginal = function(prior_i, theta_mat) {
       blk2 <- .nl_registry_write_theta(
@@ -598,7 +608,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 # `refit` re-evaluates the inner marginal at a substituted grid through the SAME
 # driver `res` came from; run with the RNG restored so the fit is unperturbed.
 .nl_attach_pareto_k <- function(res, prior, cargs, dispatch_kind, type,
-                                likelihood, n_samples, compute = TRUE) {
+                                likelihood, n_samples, compute = TRUE,
+                                tail_points = NULL) {
   res$pareto_k        <- NA_real_
   res$pareto_k_is_ess <- NA_real_
   res$pareto_k_scope  <- "outer (hyperparameter) Gaussian proposal"
@@ -669,7 +680,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   }
 
   kd <- .with_preserved_seed(tryCatch(
-    .nested_grid_pareto_k(matrix(log(tg), ncol = 1L), res$weights, refit, n_samples),
+    .nested_grid_pareto_k(matrix(log(tg), ncol = 1L), res$weights, refit,
+                          n_samples, tail_points = tail_points),
     error = function(e) NULL))
   if (is.null(kd)) return(decline("degenerate_proposal", "the scorer errored"))
   res$pareto_k <- kd$pareto_k

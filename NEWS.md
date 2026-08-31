@@ -1,5 +1,47 @@
 # tulpa 0.2.6
 
+* **`control$k_samples` is a precision knob again (gcol33/tulpa#631).** It was
+  documented as one and was not: under the published PSIS tail rule
+  `min(S/5, 3 sqrt(S))` the fitted tail FRACTION shrinks as `3 / sqrt(S)`, so a
+  larger budget described a DEEPER quantile of the weight distribution rather
+  than the same one more precisely, and two fits of one model differing only in
+  their budget could report different reliability bands. The four outer
+  backends now resolve their tail size through `.k_outer_tail_points()`, which
+  holds the fraction the default budget implies. The fraction is INHERITED from
+  `.nl_diag("k_samples")` rather than chosen, so a default fit is bit-for-bit
+  unchanged on every backend -- the helper returns `NULL` there and the
+  explicit-request path, with its 20% cap and cap warning, is never entered.
+  Resolved once in `.k_dispatch()`, the single candidate loop gcol33/tulpa#630
+  put behind all four backends. `tulpa_psis()`'s own default stays the published
+  rule, so the `loo::psis()` equivalence oracle is untouched.
+
+* **The held fraction is a FLOOR under the published rule, not a replacement.**
+  Below the reference budget the published rule is in its `S/5` regime and is
+  the more generous of the two -- 40 tail points at 200 draws against the
+  fraction's 27 -- so replacing it would have bought a stable estimand by making
+  every cheap diagnostic noisier. Measured cost of getting that wrong: a per-arm
+  k-hat crossing its reported band on the 200-draw fixture in
+  `test-joint-pareto-k-proposal.R`. Under the floor no budget is fitted on fewer
+  tail points than before, and the fitted fraction is confined to `[13.5%, 20%]`
+  over a 500x range of budgets instead of collapsing to 1.3% at 50000 draws.
+
+* **`k_tail_points` now exists on the backends whose documentation named it.**
+  It was a joint-path knob only, while `tulpa_re_cov_nested()`, `fit_spde()` and
+  `tulpa_nested_laplace()` documented it as the way to hold the estimand -- so
+  following that advice hard-errored on an unknown control knob. All four accept
+  it and thread it to the shared PSIS core.
+
+* **A skewed hyperparameter marginal needs no rescue, and the fixture that said
+  otherwise was reading its own budget.** `test-outer-skew-rescue.R` asserted
+  that a skewness-0.9 target reads unreliable on a symmetric proposal and is
+  repaired by the skew-normal one. Measured across budgets, that target reads
+  0.017 at the shipped budget and climbs to 1.627 at 10000 draws under the
+  published rule; the fixture reached the rescue only because it scores at 4000.
+  This is gcol33/tulpa#629's result -- skewness does not inflate an outer k-hat,
+  a heavy tail does -- arriving from the other side. The test now asserts the
+  measured property. That the rescue is consequently not adopted on any fixture
+  in the repo is recorded as gcol33/tulpa#634.
+
 * **One outer-k draw budget across the four backends that report it
   (gcol33/tulpa#632).** `R/settings.R` opens by naming copy-pasted defaults as
   the defect it exists to remove and lists `k_samples` among the five it

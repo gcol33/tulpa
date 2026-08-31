@@ -51,7 +51,8 @@ pc_prior_log_density <- function(range, sigma, prior_range, prior_sigma) {
 # design spacing as a grid resolution.
 .spde_pareto_k <- function(theta_hat, L_scale, spde_log_marginal, sp, n_samples,
                            u_grid = NULL, w = NULL,
-                           proposal_source = "mode_hessian") {
+                           proposal_source = "mode_hessian",
+                           tail_points = NULL) {
   lt <- function(U) {
     r <- exp(U[, 1L]); s <- exp(U[, 2L])
     lm <- tryCatch(spde_log_marginal(r, s)$log_marginal,
@@ -64,7 +65,8 @@ pc_prior_log_density <- function(range, sigma, prior_range, prior_sigma) {
       .k_cand_spec(lt = lt, u_hat = theta_hat,
                    Su = L_scale %*% t(L_scale), u_grid = u_grid, w = w,
                    proposal_source = proposal_source),
-      n_samples, scope = "fit_spde (log range, log sigma)"),
+      n_samples, tail_points = tail_points,
+      scope = "fit_spde (log range, log sigma)"),
       error = function(e) NULL)
   )
   if (is.null(kd)) {
@@ -81,7 +83,8 @@ pc_prior_log_density <- function(range, sigma, prior_range, prior_sigma) {
 # ---------------------------------------------------------------------
 fit_spde_nested_grid <- function(spde_log_marginal, sp, n_grid, spatial,
                                  diagnose_k = TRUE,
-                                 k_samples = .nl_diag("k_samples")) {
+                                 k_samples = .nl_diag("k_samples"),
+                                 k_tail_points = NULL) {
   range_mode <- sp$prior_range[1]
   sigma_mode <- sp$prior_sigma[1]
 
@@ -126,7 +129,8 @@ fit_spde_nested_grid <- function(spde_log_marginal, sp, n_grid, spatial,
                                                   "grid-moment covariance not positive definite")))
     } else .spde_pareto_k(u_hat, Lk, spde_log_marginal, sp, k_samples,
                           u_grid = u_grid, w = weights,
-                          proposal_source = "grid_moment")
+                          proposal_source = "grid_moment",
+                          tail_points = k_tail_points)
   }
 
   # Outer-grid collapse visibility. This span is
@@ -180,6 +184,7 @@ fit_spde_nested_ccd <- function(spde_log_marginal,
                                 sp, spatial,
                                 diagnose_k = TRUE,
                                 k_samples = .nl_diag("k_samples"),
+                                k_tail_points = NULL,
                                 mode_find = .nl_mode_find_tuning("spde")) {
   range_mode <- sp$prior_range[1]
   sigma_mode <- sp$prior_sigma[1]
@@ -223,7 +228,8 @@ fit_spde_nested_ccd <- function(spde_log_marginal,
             "(degenerate or hit prior bounds); falling back to the ",
             "rectangular grid.")
     return(fit_spde_nested_grid(spde_log_marginal, sp, n_grid = 5L, spatial,
-                                diagnose_k = diagnose_k, k_samples = k_samples))
+                                diagnose_k = diagnose_k, k_samples = k_samples,
+                                k_tail_points = k_tail_points))
   }
   theta_hat <- op$par
   range_hat <- exp(theta_hat[1])
@@ -246,14 +252,16 @@ fit_spde_nested_ccd <- function(spde_log_marginal,
     warning("nested-Laplace Hessian is degenerate at the mode ",
             "(condition unfit for CCD); falling back to the rectangular grid.")
     return(fit_spde_nested_grid(spde_log_marginal, sp, n_grid = 5L, spatial,
-                                diagnose_k = diagnose_k, k_samples = k_samples))
+                                diagnose_k = diagnose_k, k_samples = k_samples,
+                                k_tail_points = k_tail_points))
   }
   sigma_post <- tryCatch(solve(prec), error = function(e) NULL)
   if (is.null(sigma_post)) {
     warning("nested-Laplace Hessian inverse failed; ",
             "falling back to the rectangular grid.")
     return(fit_spde_nested_grid(spde_log_marginal, sp, n_grid = 5L, spatial,
-                                diagnose_k = diagnose_k, k_samples = k_samples))
+                                diagnose_k = diagnose_k, k_samples = k_samples,
+                                k_tail_points = k_tail_points))
   }
   L <- t(chol(sigma_post))   # sigma_post = L L^T
 
@@ -292,7 +300,8 @@ fit_spde_nested_ccd <- function(spde_log_marginal,
   # L = chol of the posterior covariance) as the importance proposal -- the same
   # Gaussian the CCD design is oriented by.
   kd <- if (isTRUE(diagnose_k)) {
-    .spde_pareto_k(theta_hat, L, spde_log_marginal, sp, k_samples)
+    .spde_pareto_k(theta_hat, L, spde_log_marginal, sp, k_samples,
+                   tail_points = k_tail_points)
   } else list(pareto_k = NA_real_, is_ess = NA_real_,
               declined = .k_decline_label(.k_decline("not_requested")))
 

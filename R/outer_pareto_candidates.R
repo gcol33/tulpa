@@ -78,6 +78,10 @@
                                first_pass_k = NA_real_, outer_skew = NULL,
                                declined = .k_reason_of(x))
     if (is.null(spec)) return(na_out(.k_decline("degenerate_proposal")))
+    # Resolved HERE as well as inside `.k_dispatch()` so the capture below
+    # records the tail size actually used; `.k_outer_tail_points()` is
+    # idempotent, so the second resolution is a no-op.
+    tail_points <- .k_outer_tail_points(n_samples, tail_points)
     out <- .k_dispatch(spec, n_samples, tail_points = tail_points)
     if (.k_is_decline(out)) return(na_out(out))
     lr <- out$best$lr
@@ -492,6 +496,10 @@
     # would sample and evaluate the (expensive) target before finding that out,
     # so the floor is read once here rather than in each scorer.
     if (as.integer(n_samples) < .PSIS_MIN_EVAL) return(.k_decline("draws_too_few"))
+    # The outer k-hat's estimand must not move with its own draw budget
+    # (gcol33/tulpa#631); every backend reaches the candidate loop through
+    # here, so the budget-stable tail size is resolved once, for all four.
+    tail_points <- .k_outer_tail_points(n_samples, tail_points)
     g <- .k_score_gaussian(spec, n_samples, tail_points = tail_points)
     chosen <- .k_score_symmetric(spec, g, n_samples, tail_points = tail_points)
     out <- .k_skew_rescue(chosen, g, spec, n_samples, tail_points = tail_points)

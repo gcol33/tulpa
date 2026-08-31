@@ -72,3 +72,107 @@ test_that("holding the tail fraction makes the budget a precision knob", {
     }
     expect_lt(spread(50000L, tp(50000L)), spread(500L, tp(500L)))
 })
+
+# --- the resolved rule the outer paths actually use --------------------------
+#
+# The two blocks above establish the PROPERTY (the automatic rule moves the
+# number, a held fraction does not). These pin the RULE the four outer backends
+# now resolve their tail size by (gcol33/tulpa#631, unblocked by #632's single
+# default): `.k_outer_tail_points()`.
+
+test_that("the default budget is the published rule, exactly", {
+    # The whole safety of the change: at the shipped budget the helper returns
+    # NULL, so `tulpa_psis()` takes its own default and a default fit is
+    # unchanged to the bit. The explicit-request path -- and its 20% cap -- is
+    # not entered at all.
+    ref <- tulpa:::.nl_diag("k_samples")
+    expect_null(tulpa:::.k_outer_tail_points(ref))
+    expect_null(tulpa:::.k_outer_tail_points(as.numeric(ref)))
+
+    # An explicit request is honoured and the helper is idempotent, which is
+    # what lets `.k_dispatch_report()` and `.k_dispatch()` both resolve.
+    expect_identical(tulpa:::.k_outer_tail_points(ref, 42L), 42L)
+    expect_identical(tulpa:::.k_outer_tail_points(4000L, 42L), 42L)
+    expect_identical(
+        tulpa:::.k_outer_tail_points(4000L, tulpa:::.k_outer_tail_points(4000L)),
+        tulpa:::.k_outer_tail_points(4000L))
+})
+
+test_that("away from the default the tail FRACTION is held, not the rule", {
+    ref  <- tulpa:::.nl_diag("k_samples")
+    frac <- tulpa:::.psis_tail_len(ref) / ref
+
+    # Held: the realized fraction tracks the reference wherever the budget is
+    # large enough that neither the floor nor the 20% cap binds.
+    for (n in c(1000L, 2000L, 10000L, 50000L)) {
+        tp <- tulpa:::.k_outer_tail_points(n)
+        expect_equal(tp / n, frac, tolerance = 1e-3, info = n)
+        # and it stays under the defensive cap, so the cap warning never fires
+        expect_lte(tp, floor(0.2 * n))
+    }
+
+    # Not the published rule: that fraction shrinks as 3/sqrt(S).
+    expect_lt(tulpa:::.psis_tail_len(50000L) / 50000, frac / 2)
+})
+
+test_that("the held fraction is what makes the budget a precision knob", {
+    # The measurement of gcol33/tulpa#631, re-read through the shipped helper
+    # rather than through a hand-passed tail size: the same heavy-tailed target,
+    # the same draws, scored under the automatic rule and under the resolved
+    # one. The automatic rule crosses bands; the resolved rule does not.
+    ns <- c(500L, 2000L, 10000L, 50000L)
+    auto <- vapply(ns, function(n) .kb_median(n), numeric(1))
+    held <- vapply(ns, function(n)
+        .kb_median(n, tail_points = tulpa:::.k_outer_tail_points(n)), numeric(1))
+
+    # The automatic rule climbs monotonically and leaves every band.
+    expect_true(all(diff(auto) > 0))
+    expect_lt(auto[1], tulpa:::.nl_diag("k_usable"))
+    expect_gt(auto[length(auto)], 4)
+
+    # The resolved rule holds the estimand: everything within a band's width of
+    # the value read at the default budget, and no band boundary crossed.
+    expect_true(all(abs(held - held[1]) < 0.2),
+                info = paste(round(held, 3), collapse = " "))
+    expect_identical(length(unique(held > tulpa:::.nl_diag("k_usable"))), 1L)
+})
+
+test_that("every outer backend resolves the same tail size", {
+    # gcol33/tulpa#630 made `.k_dispatch()` the one candidate loop behind all
+    # four backends, so resolving there is what gives all four the same rule.
+    # Scored on one spec at two budgets: the k-hat moves less than a band.
+    set.seed(11)
+    lt <- function(U) stats::dt(U[, 1L] / 0.4, df = 8, log = TRUE)
+    spec <- tulpa:::.k_cand_spec(lt = lt, u_hat = 0, Su = matrix(0.4^2, 1, 1),
+                                 proposal_source = "mode_hessian")
+    k <- vapply(c(500L, 5000L), function(n) {
+        set.seed(4); tulpa:::.k_dispatch(spec, n)$best$pareto_k
+    }, numeric(1))
+    expect_true(all(is.finite(k)))
+    expect_lt(abs(k[2] - k[1]), 0.35)
+})
+
+test_that("the held fraction is a floor, so no budget gets a noisier fit", {
+    # Taking the held fraction as a REPLACEMENT for the published rule buys a
+    # stable estimand by making cheap diagnostics noisier: below the reference
+    # budget the published rule is in its `S/5` regime and is the more generous
+    # of the two (40 tail points at 200 draws against the fraction's 27). It is
+    # therefore a floor. Measured cost of getting this wrong: a per-arm k-hat
+    # crossing the reported band on the 200-draw fixture in
+    # test-joint-pareto-k-proposal.R.
+    for (n in c(50L, 100L, 200L, 400L, 500L, 600L, 2000L, 20000L)) {
+        tp <- tulpa:::.k_outer_tail_points(n)
+        used <- if (is.null(tp)) tulpa:::.psis_tail_len(n) else tp
+        expect_true(used >= tulpa:::.psis_tail_len(n), info = n)
+    }
+
+    # And the fraction is confined rather than shrinking without bound: the
+    # published rule runs 20% -> 1.3% over this range, the resolved one does not
+    # leave [13%, 20%].
+    fr <- vapply(c(100L, 500L, 2000L, 10000L, 50000L), function(n) {
+        tp <- tulpa:::.k_outer_tail_points(n)
+        (if (is.null(tp)) tulpa:::.psis_tail_len(n) else tp) / n
+    }, numeric(1))
+    expect_true(all(fr >= 0.13 & fr <= 0.20), info = paste(round(fr, 4), collapse = " "))
+    expect_lt(tulpa:::.psis_tail_len(50000L) / 50000, 0.02)   # what it replaces
+})

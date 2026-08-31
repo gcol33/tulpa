@@ -120,10 +120,13 @@ between the two says the placement is poor even where the verdict is
 fine -- on a small-group binary fit the first pass runs 15 to 49 where
 the reported k-hat is 0.3 to 0.8.
 \item \code{k_samples}: importance draws for the \code{diagnose_k} estimate
-(default 500). Raising it supplies more tail ratios but also moves the
-automatic PSIS tail rule to a deeper quantile, so the reported k-hat can
-shift as well as sharpen (gcol33/tulpa#631); pass \code{k_tail_points} in
-proportion to hold the estimand.
+(default 500). It is a precision knob: the GPD tail size is held at
+the fraction that default budget implies, so raising it supplies more
+tail ratios for the SAME estimand rather than moving the fit to a
+deeper quantile of the weight distribution (gcol33/tulpa#631).
+\item \code{k_tail_points}: expert override for that tail size, in upper-tail
+order statistics. Silently capped at 20\% of the draws, beyond which
+body ratios enter the tail and bias the shape.
 \item \code{max_iter}, \code{tol}, \code{n_threads}: inner-solve controls (see
 \code{\link[=tulpa_laplace]{tulpa_laplace()}}).
 \item \code{outer_maxit}: iteration budget for the mode-finding step that

@@ -241,6 +241,56 @@
   min(req, as.integer(floor(0.2 * S)))
 }
 
+# The OUTER diagnostic's GPD tail size, resolved from its draw budget
+# (gcol33/tulpa#631). `.psis_tail_len()` above stays the published rule and is
+# what `tulpa_psis()` defaults to, because there `S` is a posterior sample size:
+# fixed for a given fit, and growing it legitimately buys a deeper, purer view
+# of the tail. Here `S` is `control$k_samples`, a COST knob the user and the
+# `k_quality` escalation both turn, and the k-hat it produces is read against
+# the FIXED `k_usable` band. Under the published rule the fitted tail fraction
+# is `3 / sqrt(S)` past `S = 225`, so raising the budget moves the fit to a
+# deeper quantile of the weight distribution: measured on a synthetic
+# heavy-tailed outer target the reported shape runs 0.57 / 1.41 / 3.53 / 7.94
+# over 500 to 50000 draws, crossing every band the engine reads. A knob
+# documented as buying precision was choosing the estimand.
+#
+# So the outer paths hold the FRACTION the shipped budget implies, and only the
+# precision moves with the budget. The fraction is not tuned -- it is inherited
+# from `.nl_diag("k_samples")`, so the DEFAULT fit is the published rule
+# evaluated at the default budget, unchanged to the bit (`NULL` is returned
+# there, so the explicit-request path is not even entered). Which fraction is
+# statistically best is a bias-variance question this does not answer and does
+# not need to: the point is that one fit's number does not depend on another
+# fit's budget.
+#
+# The held fraction is taken as a FLOOR under the published rule, never as a
+# replacement for it, so no budget is fitted on fewer tail points than it is
+# today. That matters below the reference budget, where the published rule is in
+# its `S / 5` regime and is the MORE generous of the two: at 200 draws it fits
+# 40 points against the held fraction's 27, and taking the fraction there would
+# have bought a stable estimand by making every cheap diagnostic noisier -- a
+# real cost, measured as a per-arm k-hat crossing the band on
+# `test-joint-pareto-k-proposal.R`'s 200-draw fixture. Under `max()` the fitted
+# fraction is confined to `[13.6%, 20%]` at every budget instead of shrinking
+# without bound (1.3% at 50000, 0.7% at 200000), which is the whole of the
+# defect, and the 20% ceiling is the published rule's own.
+#
+# This is the same rule the `k_quality` precision rung applies to its own
+# doubling (gcol33/tulpa#627), lifted to the budget itself, so that naming a
+# target band -- or paying for a cheaper diagnostic -- does not silently ask a
+# different question.
+.k_outer_tail_points <- function(n_samples, tail_points = NULL) {
+  if (!is.null(tail_points)) return(tail_points)     # idempotent: honour a request
+  ref <- suppressWarnings(as.integer(.nl_diag("k_samples")))
+  n   <- suppressWarnings(as.integer(n_samples))
+  if (length(n) != 1L || is.na(n) || n < 1L ||
+      length(ref) != 1L || is.na(ref) || ref < 1L) return(NULL)
+  held <- as.integer(floor(n * (.psis_tail_len(ref) / ref)))
+  auto <- .psis_tail_len(n)
+  if (held <= auto) return(NULL)                     # the published rule, exactly
+  max(.PSIS_MIN_EVAL, held)
+}
+
 # Reliability band index of a k-hat under configurable boundaries `bands` (sorted
 # ascending, e.g. c(0.5, 0.7) -> intervals (-Inf, 0.5] / (0.5, 0.7] / (0.7, Inf)
 # = 0 / 1 / 2). A boundary value falls in the LOWER interval (strict `>`), so
@@ -400,7 +450,8 @@ tulpa_psis <- function(log_ratios, tail_points = NULL) {
 # whose cap now folds the far tail back in whenever it would matter
 
 .nested_outer_pareto_k <- function(log_target, theta_hat, L_scale,
-                                   n_samples = .nl_diag("k_samples")) {
+                                   n_samples = .nl_diag("k_samples"),
+                                   tail_points = NULL) {
   # The per-sample closure is the length-1 case of the batched target the shared
   # core (.nested_is_pareto_k) drives; wrap it (non-finite -> -Inf, matching the
   # old drop) and evaluate every draw (radius_cap = Inf). The sampling transform
@@ -419,7 +470,7 @@ tulpa_psis <- function(log_ratios, tail_points = NULL) {
     .k_cand_spec(lt = batched, u_hat = theta_hat,
                  Su = L_scale %*% t(L_scale),
                  proposal_source = "mode_hessian"),
-    n_samples, scope = "re_cov nested")
+    n_samples, tail_points = tail_points, scope = "re_cov nested")
 }
 
 # Outer Pareto-k-hat for a grid-integrated nested fit (the generic
@@ -613,7 +664,8 @@ tulpa_psis <- function(log_ratios, tail_points = NULL) {
 # `refit_log_marginal(theta_mat)` maps an S x d CONSTRAINED grid to its S inner
 # log-marginals. Restricted by the caller to a single all-positive-scale axis.
 .nested_grid_pareto_k <- function(u_grid, weights, refit_log_marginal,
-                                  n_samples = .nl_diag("k_samples")) {
+                                  n_samples = .nl_diag("k_samples"),
+                                  tail_points = NULL) {
   u_hat <- as.numeric(crossprod(weights, u_grid))            # weighted mean
   cen   <- sweep(u_grid, 2L, u_hat)
   Su    <- crossprod(cen * weights, cen)                     # weighted covariance

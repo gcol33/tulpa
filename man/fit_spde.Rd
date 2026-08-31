@@ -82,7 +82,13 @@ Pareto-\eqn{\hat{k}} accuracy diagnostic (\verb{$pareto_k}) by importance
 sampling the joint \verb{(range, sigma)} posterior on the log scale against
 the Gaussian proposal that orients the integration. See \code{\link[=tulpa_psis]{tulpa_psis()}}.
 \item \code{k_samples}: importance draws for \code{diagnose_k}. Default 500, each
-one extra batched SPDE marginal evaluation.
+one extra batched SPDE marginal evaluation. It is a precision knob:
+the GPD tail size is held at the fraction the default budget implies,
+so a larger budget sharpens the same k-hat rather than moving it to a
+deeper quantile of the weight distribution (gcol33/tulpa#631).
+\item \code{k_tail_points}: expert override for that tail size, in upper-tail
+order statistics. Silently capped at 20\% of the draws, beyond which
+body ratios enter the tail and bias the shape.
 \item \code{mode_find}: tuning for the outer \verb{(range, sigma)} mode-find under
 \code{method = "ccd"}, as \code{list(factr =, ndeps =, maxit =)}; supply any
 subset. \code{ndeps} is the central-difference step for \code{optim()}'s

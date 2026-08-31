@@ -45,14 +45,19 @@ test_that(".nested_grid_pareto_k target carries no change-of-variables Jacobian"
   lt_nojac   <- function(U) refit(exp(U))
   lt_withjac <- function(U) refit(exp(U)) + rowSums(U)
 
+  # The references call the IS core directly, so they bypass the tail size the
+  # front door resolves from the budget (gcol33/tulpa#631: 81 points at 600
+  # draws, against the automatic rule's 74). Hand them the same one, or the
+  # comparison measures the tail rule instead of the Jacobian it is here for.
+  tp <- tulpa:::.k_outer_tail_points(600L)
   set.seed(202)
   got <- tulpa:::.nested_grid_pareto_k(u_grid, w, refit, n_samples = 600L)$pareto_k
   set.seed(202)
   ref_nojac <- tulpa:::.nested_is_pareto_k(u_hat, L, lt_nojac, n_samples = 600L,
-                                           radius_cap = rcap)$pareto_k
+                                           radius_cap = rcap, tail_points = tp)$pareto_k
   set.seed(202)
   ref_withjac <- tulpa:::.nested_is_pareto_k(u_hat, L, lt_withjac, n_samples = 600L,
-                                             radius_cap = rcap)$pareto_k
+                                             radius_cap = rcap, tail_points = tp)$pareto_k
 
   expect_equal(got, ref_nojac, tolerance = 1e-9)
   expect_false(isTRUE(all.equal(ref_nojac, ref_withjac, tolerance = 1e-6)))

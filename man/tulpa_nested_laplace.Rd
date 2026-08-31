@@ -105,6 +105,11 @@ marginals -- see the cumulant pooling in \code{\link[=rubins_pool]{rubins_pool()
 Pareto-\eqn{\hat{k}} accuracy diagnostic (\verb{$pareto_k}) by importance
 sampling the hyperparameter posterior against the Gaussian proposal
 fitted to the grid, drawing \code{k_samples} extra inner-marginal evaluations.
+\code{k_samples} is a precision knob: the GPD tail size is held at the
+fraction the default budget implies, so a larger budget sharpens the
+same k-hat instead of moving it to a deeper quantile of the weight
+distribution (gcol33/tulpa#631). \code{k_tail_points} overrides that tail
+size directly (capped at 20\% of the draws).
 Computed for a single-block, single positive-scale-axis grid; left \code{NA}
 (with the grid's quadrature ESS as the fallback diagnostic) for
 multi-block, multi-axis, or bounded-parameter grids. See \code{\link[=tulpa_psis]{tulpa_psis()}}.

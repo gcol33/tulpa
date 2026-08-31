@@ -97,6 +97,7 @@ tulpa_check_control <- function(control, allowed, where) {
   keys <- list(
     nested_laplace = c("max_iter", "tol", "n_threads", "x_init",
                        "keep_grid_hessians", "diagnose_k", "k_samples",
+                       "k_tail_points",
                        "diagnose_skew", "skew_idx", "skew_correct",
                        "auto_recenter", "subspace_debias", "cila",
                        "max_grid_cells", "within_cell",
@@ -124,11 +125,12 @@ tulpa_check_control <- function(control, allowed, where) {
                    "adaptive_grid_max_passes", "var_of_means_consistency",
                    "var_of_means_min_ess"),
     spde = c("method", "n_grid", "max_iter", "tol", "n_threads",
-             "diagnose_k", "k_samples", "checkpoint", "mode_find"),
+             "diagnose_k", "k_samples", "k_tail_points", "checkpoint",
+             "mode_find"),
     re_cov_nested = c("integration", "n_per_axis", "span", "n_draws", "seed",
                       "max_iter", "tol", "n_threads", "diagnose_k",
-                      "k_samples", "checkpoint", "outer_maxit",
-                      "subspace_debias"),
+                      "k_samples", "k_tail_points", "checkpoint",
+                      "outer_maxit", "subspace_debias"),
     re_cov_gibbs = c("n_iter", "warmup", "thin", "seed", "max_iter", "tol",
                      "n_threads"),
     # EB stops at the maximizer, so beyond the inner-solve knobs and the outer
