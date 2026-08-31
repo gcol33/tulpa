@@ -215,8 +215,8 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
   std::unique_ptr<::tulpa_progress::GridProgress> shared_progress;
   if (!g_active_grid_progress) {
     shared_progress = make_nuts_progress(n_iter * n_chains, n_chains);
-    if (shared_progress) g_active_grid_progress = shared_progress.get();
   }
+  ActiveGridProgressScope progress_scope(shared_progress.get());
 
   // Thread-safe autodiff: each chain creates its own tape via TapeScope (RAII),
   // so all gradient modes (N, A, A_t, H) run in parallel.
@@ -254,10 +254,7 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
       }
     }
     if (chain_failed.load()) {
-      if (shared_progress) {
-        g_active_grid_progress->finish();
-        g_active_grid_progress = nullptr;
-      }
+      if (shared_progress) shared_progress->finish();
       Rcpp::stop("NUTS chain failed: %s",
                  chain_err.empty() ? "unknown error" : chain_err.c_str());
     }
@@ -287,10 +284,7 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
   }
 #endif
 
-  if (shared_progress) {
-    g_active_grid_progress->finish();
-    g_active_grid_progress = nullptr;
-  }
+  if (shared_progress) shared_progress->finish();
 
   if (verbose && n_chains > 1) {
     // Per-chain verbose is off for a multi-chain run; report per-chain now.

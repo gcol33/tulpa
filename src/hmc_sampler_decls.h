@@ -168,6 +168,30 @@ const std::string& get_integrator_name();
 // -> no progress. Defined in hmc_nuts_parallel.cpp.
 extern ::tulpa_progress::GridProgress* g_active_grid_progress;
 
+// Owns `g_active_grid_progress` for a scope. The reporter itself is a local
+// unique_ptr in the frame that built it, so clearing the global only on the
+// normal exit path leaves it pointing at a destroyed object whenever a chain
+// leaves by an exception -- Rcpp::stop from a model's log-posterior, a
+// Cholesky failure in a non-centered field transform, bad_alloc from a
+// per-chain buffer. The next NUTS run in the process then reads a non-null
+// pointer, skips building its own reporter, and ticks freed memory once per
+// iteration. Tying the global's lifetime to a destructor closes every exit at
+// once, including ones added later.
+//
+// Declare it AFTER the unique_ptr it points into, so the global is cleared
+// before the object it names is destroyed.
+struct ActiveGridProgressScope {
+    explicit ActiveGridProgressScope(::tulpa_progress::GridProgress* p)
+        : owned_(p != nullptr) {
+        if (owned_) g_active_grid_progress = p;
+    }
+    ~ActiveGridProgressScope() { if (owned_) g_active_grid_progress = nullptr; }
+    ActiveGridProgressScope(const ActiveGridProgressScope&) = delete;
+    ActiveGridProgressScope& operator=(const ActiveGridProgressScope&) = delete;
+private:
+    bool owned_;
+};
+
 // Build a progress reporter for a NUTS run from the scoped `tulpa.nl_progress`
 // R option. MUST be called on the main thread (it reads an R option). Returns
 // nullptr when neither the console nor a heartbeat file is wanted. `total` is

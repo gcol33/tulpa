@@ -1,5 +1,21 @@
 # tulpa 0.2.6
 
+* **A NUTS chain that ends by an exception no longer leaves the progress
+  reporter registered (gcol33/tulpa#635).** `g_active_grid_progress` is a
+  process-global raw pointer to a reporter owned by a local `unique_ptr`, and
+  both places that set it cleared it only on the normal exit path. Any exception
+  in between -- a model's `Rcpp::stop` from its own gradient, a non-centered
+  field transform reporting `Q` not positive definite, `bad_alloc` from a
+  per-chain buffer -- destroyed the reporter with the frame and left the global
+  naming it. The next NUTS run in that process read the non-null pointer, took
+  it for an already-active reporter, declined to build its own, and ticked the
+  freed object once per iteration. `ActiveGridProgressScope` now ties the
+  global's lifetime to the frame that owns the reporter, closing every exit at
+  once. Measured before and after: unfixed, the pointer is still set once a
+  chain has been killed by a planted gradient exception and the following chain
+  is denied a reporter of its own; fixed, it is cleared and the following chain
+  builds one.
+
 * **The outer-k candidate dispatch is unchanged at the default budget, verified
   on 3300 configurations (gcol33/tulpa#634).** gcol33/tulpa#629's synthetic sweep
   re-run on current main is BIT-IDENTICAL to its committed baseline across all

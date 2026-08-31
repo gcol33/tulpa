@@ -4025,6 +4025,30 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_test_nuts_gradient_throws
+void cpp_test_nuts_gradient_throws(int throw_after, int K, int n_iter, int n_warmup, int seed);
+RcppExport SEXP _tulpa_cpp_test_nuts_gradient_throws(SEXP throw_afterSEXP, SEXP KSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP seedSEXP) {
+BEGIN_RCPP
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< int >::type throw_after(throw_afterSEXP);
+    Rcpp::traits::input_parameter< int >::type K(KSEXP);
+    Rcpp::traits::input_parameter< int >::type n_iter(n_iterSEXP);
+    Rcpp::traits::input_parameter< int >::type n_warmup(n_warmupSEXP);
+    Rcpp::traits::input_parameter< int >::type seed(seedSEXP);
+    cpp_test_nuts_gradient_throws(throw_after, K, n_iter, n_warmup, seed);
+    return R_NilValue;
+END_RCPP
+}
+// cpp_test_nuts_progress_active
+bool cpp_test_nuts_progress_active();
+RcppExport SEXP _tulpa_cpp_test_nuts_progress_active() {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    rcpp_result_gen = Rcpp::wrap(cpp_test_nuts_progress_active());
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_test_divergence_predicates
 Rcpp::List cpp_test_divergence_predicates(double log_prob, Rcpp::NumericVector q, Rcpp::NumericVector p, double H0, double H_new, double delta_max);
 RcppExport SEXP _tulpa_cpp_test_divergence_predicates(SEXP log_probSEXP, SEXP qSEXP, SEXP pSEXP, SEXP H0SEXP, SEXP H_newSEXP, SEXP delta_maxSEXP) {
@@ -4876,6 +4900,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_test_lowrank_mass_momentum", (DL_FUNC) &_tulpa_cpp_test_lowrank_mass_momentum, 8},
     {"_tulpa_cpp_test_margin_mass_term", (DL_FUNC) &_tulpa_cpp_test_margin_mass_term, 7},
     {"_tulpa_cpp_test_nan_gradient_nuts", (DL_FUNC) &_tulpa_cpp_test_nan_gradient_nuts, 5},
+    {"_tulpa_cpp_test_nuts_gradient_throws", (DL_FUNC) &_tulpa_cpp_test_nuts_gradient_throws, 5},
+    {"_tulpa_cpp_test_nuts_progress_active", (DL_FUNC) &_tulpa_cpp_test_nuts_progress_active, 0},
     {"_tulpa_cpp_test_divergence_predicates", (DL_FUNC) &_tulpa_cpp_test_divergence_predicates, 6},
     {"_tulpa_cpp_test_pg_nngp_conditional", (DL_FUNC) &_tulpa_cpp_test_pg_nngp_conditional, 10},
     {"_tulpa_cpp_test_st_iv_nuts", (DL_FUNC) &_tulpa_cpp_test_st_iv_nuts, 20},

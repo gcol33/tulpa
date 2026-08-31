@@ -961,6 +961,14 @@ cpp_test_nan_gradient_nuts <- function(plant_nan, K = 3L, n_iter = 40L, n_warmup
     .Call(`_tulpa_cpp_test_nan_gradient_nuts`, plant_nan, K, n_iter, n_warmup, seed)
 }
 
+cpp_test_nuts_gradient_throws <- function(throw_after = 30L, K = 3L, n_iter = 40L, n_warmup = 20L, seed = 1L) {
+    invisible(.Call(`_tulpa_cpp_test_nuts_gradient_throws`, throw_after, K, n_iter, n_warmup, seed))
+}
+
+cpp_test_nuts_progress_active <- function() {
+    .Call(`_tulpa_cpp_test_nuts_progress_active`)
+}
+
 cpp_test_divergence_predicates <- function(log_prob, q, p, H0, H_new, delta_max = 1000.0) {
     .Call(`_tulpa_cpp_test_divergence_predicates`, log_prob, q, p, H0, H_new, delta_max)
 }
