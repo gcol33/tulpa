@@ -264,6 +264,65 @@ bool SparseCholeskySolver::solve(const double* b, double* x, int n) {
     return true;
 }
 
+void SparseCholeskySolver::SolveWorkspace::release() {
+    if (common_) {
+        if (X_) M_cholmod_free_dense(&X_, common_);
+        if (Y_) M_cholmod_free_dense(&Y_, common_);
+        if (E_) M_cholmod_free_dense(&E_, common_);
+    }
+    X_ = nullptr;
+    Y_ = nullptr;
+    E_ = nullptr;
+    common_ = nullptr;
+}
+
+SparseCholeskySolver::SolveWorkspace::~SolveWorkspace() {
+    release();
+}
+
+bool SparseCholeskySolver::solve(const double* b, double* x, int n,
+                                 SolveWorkspace& ws) {
+    // Same NaN-on-failure contract as the allocating solve above.
+    const double failed = std::numeric_limits<double>::quiet_NaN();
+    if (!factored_ || !factor_) {
+        for (int i = 0; i < n; i++) x[i] = failed;
+        return false;
+    }
+    // A handle allocated against another solver's cholmod_common cannot be
+    // resized or freed against this one. Refusing keeps the failure inside the
+    // return value; this runs inside OpenMP regions, where a throw is
+    // std::terminate rather than an R error.
+    if (ws.common_ && ws.common_ != &common_) {
+        for (int i = 0; i < n; i++) x[i] = failed;
+        return false;
+    }
+    ws.common_ = &common_;
+
+    // Dense RHS over the caller's buffer (stack-allocated, no CHOLMOD alloc).
+    cholmod_dense b_dense;
+    b_dense.nrow = n;
+    b_dense.ncol = 1;
+    b_dense.nzmax = n;
+    b_dense.d = n;
+    b_dense.x = const_cast<double*>(b);
+    b_dense.z = nullptr;
+    b_dense.xtype = CHOLMOD_REAL;
+    b_dense.dtype = CHOLMOD_DOUBLE;
+
+    // CHOLMOD_A: full solve using LL' or LDL'. cholmod_solve2 allocates each
+    // handle that is still null and resizes one that no longer fits, so the
+    // first call pays the allocation and the rest reuse it.
+    int ok = M_cholmod_solve2(CHOLMOD_A, factor_, &b_dense,
+                              &ws.X_, &ws.Y_, &ws.E_, &common_);
+    if (!ok || !ws.X_ || !ws.X_->x) {
+        for (int i = 0; i < n; i++) x[i] = failed;
+        return false;
+    }
+    const double* xp = static_cast<const double*>(ws.X_->x);
+    for (int i = 0; i < n; i++) x[i] = xp[i];
+    return true;
+}
+
 bool SparseCholeskySolver::apply_inv_chol_factor(const double* eps, double* x,
                                                  int n, int ncol) {
     if (!factored_ || !factor_ || n <= 0 || ncol <= 0) return false;

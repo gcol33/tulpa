@@ -276,6 +276,39 @@ grid, refused with an error above it. Each cell is one inner Newton
 solve, so the default catches a per-block grid that multiplied out to a
 run nobody asked for; a deliberate converged tensor reference grid (4
 axes at 7 levels is 2401 cells) raises it here.
+\item \code{prune} (\code{FALSE}), \code{prune_tol} (\code{1e-3}), \code{screen_iters} (\code{5L}) --
+opt-in cheap-pass screening of the outer grid. When \code{prune = TRUE}, the
+driver first sweeps the lattice running a \code{screen_iters}-step inner
+Newton per cell, each warm-started from the previous screened cell's
+quasi-mode, computes a screening Laplace log-marginal, softmax-normalises
+it, and skips the full inner Newton on every cell whose screened weight
+is below \code{prune_tol}. The neighbour warm-start keeps each cheap mode near
+its cell's own mode, so the cheap ranking tracks the full-solve ranking
+even where the latent mode moves across the grid. Pruned cells get
+\code{log_marginal = -Inf}, \code{n_iter = 0} and inherit the pilot mode; the pilot
+cell is never pruned. A safety gate falls back to the full grid (with a
+warning) whenever the cheap-screen argmax disagrees with the full-solve
+argmax, or the kept posterior collapses onto a cell the screen badly
+mis-estimated, so a silently-wrong pruned posterior is impossible.
+\code{prune_tol} must be a finite numeric in \verb{[0, 1)} and \code{screen_iters} a
+single integer \verb{>= 1}; both are validated whatever \code{prune} says. Keep the
+tolerance conservative (\verb{<= 1e-3}); screening pays in proportion to the
+per-cell cost it avoids, so it helps most on a grid with many low-mass
+tail cells. Pruning is OPT-IN: the default \code{FALSE} solves every cell,
+which is correct whatever the grid looks like. \code{prune} / \code{prune_tol}
+reach both the single-block and the multi-block dispatch; the screening
+DEPTH is declared by the single-block kernels only, so a multi-block
+prior refuses a pinned \code{screen_iters} rather than accepting it and
+ignoring it.
+\item \code{fitted_var} (\code{TRUE}) -- fill the per-row predictive variance
+\code{fitted_eta_var}, the companion of \code{fitted_eta} a caller marginalises the
+per-row linear predictor with. It costs one back-solve per distinct
+loading vector per cell, which on a design with few repeated rows is the
+dominant cost of a cell, so a caller reading only \code{fitted_eta} or the
+coefficient summaries sets \code{FALSE} and the fit then carries no
+\code{fitted_eta_var}. Declared by the single-block kernels only; a
+multi-block prior refuses \code{FALSE} rather than accepting it and ignoring
+it.
 }}
 }
 \value{
@@ -304,6 +337,13 @@ dropped for a non-finite third derivative (see \code{control$diagnose_skew}).
 \item \code{timing}: named numeric of wall-clock seconds (\code{total}, \code{setup},
 \code{grid}, \code{postproc}, \code{diagnostics}); the \code{grid} phase is the inner
 Laplace pass that scales with grid size. Surfaced one-line in \code{print}.
+\item \code{prune_cheap_log_marginal}, \code{prune_mask}, \code{prune_n_pruned}, \code{prune_tol}:
+present only when \code{control$prune = TRUE} and the safety gate did not
+trip -- the cheap-screen log-marginal per cell, the logical mask of
+pruned cells, the pruned-cell count, and the threshold actually applied.
+\item \code{prune_fallback_triggered}, \code{prune_fallback_reason}: present only when
+the gate did trip; the rest of the fit is then the full-grid result and
+the reason string records which check fired.
 \item \code{prior}: echoed input.
 }
 }

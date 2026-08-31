@@ -1,22 +1,28 @@
 # Every cpp_nested_laplace_* outer-grid entry forwards the shared response and
 # control arguments it declares to its driver.
 #
-# The eleven entries hand the same eighteen arguments to one of three drivers.
+# The eleven entries hand the same twenty-one arguments to one of three drivers.
 # An argument an entry DECLARES but drops on the way to the driver reaches R as
 # a silently ignored setting: the fit runs, and it runs at the default iteration
 # budget, tolerance or checkpoint. Nothing downstream reads the argument back,
 # so a fit at the wrong budget is indistinguishable from a fit at the right one
 # unless something asserts the setting changed the result.
 #
-# Two observable channels cover the eighteen between them:
+# Three observable channels cover the twenty-one between them:
 #
-#   - Six change what the RESULT carries: max_iter caps n_iter, x_init moves it,
-#     store_Q / compute_skew / debias / cila each add their own fields.
+#   - Eight change what the RESULT carries: max_iter caps n_iter, x_init moves
+#     it, store_Q / compute_skew / debias / cila each add their own fields, and
+#     a positive prune_tol turns on the cheap-screen report that screen_iters
+#     then moves.
 #   - Twelve enter the CHECKPOINT FINGERPRINT (make_nl_grid_checkpoint): y, n,
 #     X, re_idx, n_re_groups, sigma_re, family, phi, max_iter, tol, the offset,
 #     and the grid axes. Writing a checkpoint and then re-running against the
 #     same file with one of them perturbed must be refused, which is what says
 #     the perturbed value reached the fingerprint.
+#   - One, compute_fitted_var, REMOVES a result field: the per-row predictive
+#     variance is filled by the LatentBlock driver, so the switch drops
+#     `fitted_eta_var` at the entries that report one and is inert at the
+#     entries whose driver never reported one.
 #
 # n_threads is the one shared argument with no observable: the drivers are
 # required to return the same numbers at any thread count.
@@ -239,6 +245,39 @@ for (.case in .nlf_cases()) local({
     expect_true("cila_log_marginal" %in% names(cil))
   })
 
+  test_that(paste(case$name, "forwards the cheap-screen arguments"), {
+    skip_on_cran()
+    base <- do.call(case$fn, case$args)
+    expect_false("prune_mask" %in% names(base))
+
+    # A tolerance this far below any cell's normalised screening weight prunes
+    # nothing, so what the presence of the report says is that the screen RAN.
+    screened <- do.call(case$fn, modifyList(
+      case$args, list(prune_tol = 1e-12)))
+    expect_true("prune_mask" %in% names(screened))
+    expect_true("prune_cheap_log_marginal" %in% names(screened))
+    expect_equal(screened$prune_tol, 1e-12)
+    expect_equal(length(screened$prune_cheap_log_marginal),
+                 length(base$log_marginal))
+
+    # The screen ranks cells by the Laplace log-marginal at the quasi-mode its
+    # own step budget reaches, so a one-step screen and a converged one do not
+    # report the same cheap log-marginals.
+    shallow <- do.call(case$fn, modifyList(
+      case$args, list(prune_tol = 1e-12, screen_iters = 1L)))
+    deep <- do.call(case$fn, modifyList(
+      case$args, list(prune_tol = 1e-12, screen_iters = 30L)))
+    expect_false(isTRUE(all.equal(shallow$prune_cheap_log_marginal,
+                                  deep$prune_cheap_log_marginal)))
+
+    # The per-row predictive variance is the LatentBlock driver's; where an
+    # entry reports one, switching it off removes it and moves nothing else.
+    novar <- do.call(case$fn, modifyList(
+      case$args, list(compute_fitted_var = FALSE)))
+    expect_false("fitted_eta_var" %in% names(novar))
+    expect_equal(novar$log_marginal, base$log_marginal)
+  })
+
   test_that(paste(case$name, "fingerprints every shared response argument"), {
     skip_on_cran()
     path <- tempfile(fileext = ".ckpt")
@@ -272,4 +311,26 @@ for (.case in .nlf_cases()) local({
       )
     }
   })
+})
+
+test_that("compute_fitted_var is the switch on the driver that fills it", {
+  skip_on_cran()
+  cases <- .nlf_cases()
+  named <- setNames(cases, vapply(cases, function(x) x$name, character(1)))
+
+  # icar reaches run_multi_block_nested_laplace, the one driver that reports a
+  # per-row predictive variance: it is there by default and gone when asked for.
+  icar_on <- do.call(named$icar$fn, named$icar$args)
+  expect_true("fitted_eta_var" %in% names(icar_on))
+  expect_equal(dim(icar_on$fitted_eta_var),
+               c(length(icar_on$log_marginal), length(named$icar$args$y)))
+  icar_off <- do.call(named$icar$fn, modifyList(
+    named$icar$args, list(compute_fitted_var = FALSE)))
+  expect_false("fitted_eta_var" %in% names(icar_off))
+  expect_equal(icar_off$log_marginal, icar_on$log_marginal)
+
+  # nngp reaches the joint-sparse driver, which reports no per-row variance at
+  # all, so the switch has nothing to remove there.
+  nngp_on <- do.call(named$nngp$fn, named$nngp$args)
+  expect_false("fitted_eta_var" %in% names(nngp_on))
 })

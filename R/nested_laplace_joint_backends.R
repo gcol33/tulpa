@@ -325,13 +325,15 @@
 #
 # `res` is the pruned kernel result (already carries the prune_* fields).
 # `resolve_full` is a zero-argument thunk re-running the SAME kernel call with
-# `prune_tol = 0` (the full grid). Returns either `res` (gate passed) or the
+# `prune_tol = 0` (the full grid). `fn` is the front door the fit came in
+# through, so the warning names the function whose `control` the reader set. Returns either `res` (gate passed) or the
 # full-grid result (gate tripped). When the gate trips, the returned result
 # carries `prune_fallback_triggered = TRUE` and `prune_fallback_reason`.
 .joint_prune_safety_gate <- function(res, resolve_full,
                                       gap_abs_floor = 5.0,
                                       gap_frac = 0.5,
-                                      ess_collapse_frac = 0.05) {
+                                      ess_collapse_frac = 0.05,
+                                      fn = "tulpa_nested_laplace_joint()") {
     # No prune ran (prune off, prune_tol = 0, or single-cell grid): nothing
     # to gate. The kernel only emits prune_mask when it actually screened.
     if (is.null(res$prune_mask)) return(res)
@@ -365,8 +367,8 @@
         "kept posterior collapses onto a cell whose cheap-vs-full log-marginal gap is large"
     }
     warning(sprintf(
-        "tulpa_nested_laplace_joint(): cheap-pass prune is unreliable for this fit (%s); falling back to the full grid. Set control$prune = FALSE to silence this, or leave it -- the full grid is correct.",
-        reason), call. = FALSE)
+        "%s: cheap-pass prune is unreliable for this fit (%s); falling back to the full grid. Set control$prune = FALSE to silence this, or leave it -- the full grid is correct.",
+        fn, reason), call. = FALSE)
 
     full <- resolve_full()
     full$prune_fallback_triggered <- TRUE

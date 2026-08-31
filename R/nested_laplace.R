@@ -239,6 +239,39 @@
 #'     solve, so the default catches a per-block grid that multiplied out to a
 #'     run nobody asked for; a deliberate converged tensor reference grid (4
 #'     axes at 7 levels is 2401 cells) raises it here.
+#'   * `prune` (`FALSE`), `prune_tol` (`1e-3`), `screen_iters` (`5L`) --
+#'     opt-in cheap-pass screening of the outer grid. When `prune = TRUE`, the
+#'     driver first sweeps the lattice running a `screen_iters`-step inner
+#'     Newton per cell, each warm-started from the previous screened cell's
+#'     quasi-mode, computes a screening Laplace log-marginal, softmax-normalises
+#'     it, and skips the full inner Newton on every cell whose screened weight
+#'     is below `prune_tol`. The neighbour warm-start keeps each cheap mode near
+#'     its cell's own mode, so the cheap ranking tracks the full-solve ranking
+#'     even where the latent mode moves across the grid. Pruned cells get
+#'     `log_marginal = -Inf`, `n_iter = 0` and inherit the pilot mode; the pilot
+#'     cell is never pruned. A safety gate falls back to the full grid (with a
+#'     warning) whenever the cheap-screen argmax disagrees with the full-solve
+#'     argmax, or the kept posterior collapses onto a cell the screen badly
+#'     mis-estimated, so a silently-wrong pruned posterior is impossible.
+#'     `prune_tol` must be a finite numeric in `[0, 1)` and `screen_iters` a
+#'     single integer `>= 1`; both are validated whatever `prune` says. Keep the
+#'     tolerance conservative (`<= 1e-3`); screening pays in proportion to the
+#'     per-cell cost it avoids, so it helps most on a grid with many low-mass
+#'     tail cells. Pruning is OPT-IN: the default `FALSE` solves every cell,
+#'     which is correct whatever the grid looks like. `prune` / `prune_tol`
+#'     reach both the single-block and the multi-block dispatch; the screening
+#'     DEPTH is declared by the single-block kernels only, so a multi-block
+#'     prior refuses a pinned `screen_iters` rather than accepting it and
+#'     ignoring it.
+#'   * `fitted_var` (`TRUE`) -- fill the per-row predictive variance
+#'     `fitted_eta_var`, the companion of `fitted_eta` a caller marginalises the
+#'     per-row linear predictor with. It costs one back-solve per distinct
+#'     loading vector per cell, which on a design with few repeated rows is the
+#'     dominant cost of a cell, so a caller reading only `fitted_eta` or the
+#'     coefficient summaries sets `FALSE` and the fit then carries no
+#'     `fitted_eta_var`. Declared by the single-block kernels only; a
+#'     multi-block prior refuses `FALSE` rather than accepting it and ignoring
+#'     it.
 #'
 #' @return A list with:
 #'   * `theta_grid`: matrix or vector of grid hyperparameter values.
@@ -264,6 +297,13 @@
 #'   * `timing`: named numeric of wall-clock seconds (`total`, `setup`,
 #'     `grid`, `postproc`, `diagnostics`); the `grid` phase is the inner
 #'     Laplace pass that scales with grid size. Surfaced one-line in `print`.
+#'   * `prune_cheap_log_marginal`, `prune_mask`, `prune_n_pruned`, `prune_tol`:
+#'     present only when `control$prune = TRUE` and the safety gate did not
+#'     trip -- the cheap-screen log-marginal per cell, the logical mask of
+#'     pruned cells, the pruned-cell count, and the threshold actually applied.
+#'   * `prune_fallback_triggered`, `prune_fallback_reason`: present only when
+#'     the gate did trip; the rest of the fit is then the full-grid result and
+#'     the reason string records which check fired.
 #'   * `prior`: echoed input.
 #'
 #' @param spec Optional `tulpa_temporal` or `tulpa_spatial` spec object
@@ -320,6 +360,19 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   tol                <- control$tol %||% 1e-6
   n_threads          <- control$n_threads %||% 1L
   x_init             <- control$x_init
+  # Cheap-pass outer-grid screening. The kernels read a positive tolerance as
+  # "screen the lattice and prune", so the user-facing `prune` toggle gates it:
+  # FALSE always solves every cell, TRUE screens at `prune_tol`. Both the
+  # tolerance and the screening depth are validated whatever `prune` says, so a
+  # misspecified value is reported where the user set it rather than at the next
+  # fit that happens to switch pruning on.
+  prune              <- isTRUE(control$prune %||% FALSE)
+  prune_tol          <- .nl_check_prune_tol(
+    control$prune_tol %||% .nl_screen("prune_tol"))
+  prune_tol_eff      <- if (prune) prune_tol else 0
+  screen_iters       <- .nl_check_screen_iters(
+    control$screen_iters %||% .nl_screen("iters"))
+  fitted_var         <- isTRUE(control$fitted_var %||% TRUE)
   # Subspace debias. The correction reports per-cell DRAWS
   # instead of the Gaussian-mixture moments, and those are built from the same
   # per-cell fixed-effect mode + precision `.nested_fixed_moments()` reads, so
@@ -425,19 +478,49 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     n_threads = as.integer(n_threads),
     x_init_nullable = x_init,
     store_Q = isTRUE(keep_grid_hessians),
-    checkpoint_path = .ckpt$path
+    checkpoint_path = .ckpt$path,
+    prune_tol = prune_tol_eff,
+    screen_iters = screen_iters,
+    compute_fitted_var = fitted_var
   )
 
-  # cargs without the checkpoint, for the k-hat diagnostic re-evaluations.
-  cargs_no_ckpt <- utils::modifyList(cargs, list(checkpoint_path = ""))
+  # cargs without the checkpoint, for the k-hat diagnostic re-evaluations, and
+  # without the prune: a screened cell carries `log_marginal = -Inf`, which is
+  # not the inner marginal the importance ratio and the placement stencil read.
+  # They evaluate the grid they are handed, so every cell of it has to be solved.
+  cargs_no_ckpt <- utils::modifyList(
+    cargs, list(checkpoint_path = "", prune_tol = 0))
 
   p_fixed <- ncol(X)
 
   if (.is_multi_block_prior(prior)) {
+    # The multi-block entry takes the prune tolerance but declares neither the
+    # screening depth nor the per-row variance switch, so a pinned one is
+    # refused here rather than accepted and ignored.
+    if (!is.null(control$screen_iters)) {
+      stop("`control$screen_iters` applies to a single-block `prior`; ",
+           "this fit takes the multi-block dispatch.", call. = FALSE)
+    }
+    if (!is.null(control$fitted_var) && !isTRUE(control$fitted_var)) {
+      stop("`control$fitted_var` applies to a single-block `prior`; ",
+           "this fit takes the multi-block dispatch.", call. = FALSE)
+    }
     tm$mark("setup")
-    res <- .nl_dispatch_multi(cargs, prior, likelihood = likelihood,
-                              progress = .nl_progress_args(control),
-                              within_cell = within_cell)
+    # Every full-grid solve of this fit -- the first one and the placement
+    # pass's refit -- is screened at the same tolerance and gated the same way,
+    # so no reported grid is a pruned one whose screen ranking was unreliable.
+    solve_grid_multi <- function(prior_i) {
+      .nl_prune_gate(
+        .nl_dispatch_multi(cargs, prior_i, likelihood = likelihood,
+                           progress = .nl_progress_args(control),
+                           within_cell = within_cell),
+        prune_tol_eff,
+        function() .nl_dispatch_multi(
+          utils::modifyList(cargs, list(prune_tol = 0)), prior_i,
+          likelihood = likelihood, progress = .nl_progress_args(control),
+          within_cell = within_cell))
+    }
+    res <- solve_grid_multi(prior)
     tm$mark("grid")
     if (isTRUE(keep_grid_hessians)) {
       res <- .nl_attach_grid_hessians(res, p_fixed)
@@ -455,9 +538,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     multi_rescue <- .nl_registry_grid_rescue(
       res, NULL, prior,
       refit = function(prior_i) {
-        r <- .nl_dispatch_multi(cargs, prior_i, likelihood = likelihood,
-                                progress = .nl_progress_args(control),
-                                within_cell = within_cell)
+        r <- solve_grid_multi(prior_i)
         if (isTRUE(keep_grid_hessians)) r <- .nl_attach_grid_hessians(r, p_fixed)
         .nl_attach_pareto_k(r, prior_i, cargs_no_ckpt, "multi", NULL,
                             likelihood, k_samples, compute = diagnose_k,
@@ -510,7 +591,19 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   }
   type <- tolower(prior$type)
   tm$mark("setup")
-  res <- .nl_dispatch(type, cargs, prior)
+  # Every full-grid solve of this fit -- the first one and the placement pass's
+  # refit -- is screened at the same tolerance and gated the same way, so no
+  # reported grid is a pruned one whose screen ranking was unreliable. The gate
+  # reads the kernel's own log-marginal, before the AR1 rho prior is folded in,
+  # which is the quantity the cheap screen ranked.
+  solve_grid <- function(prior_i) {
+    .nl_prune_gate(
+      .nl_dispatch(type, cargs, prior_i),
+      prune_tol_eff,
+      function() .nl_dispatch(type, utils::modifyList(cargs, list(prune_tol = 0)),
+                              prior_i))
+  }
+  res <- solve_grid(prior)
   res <- .nl_apply_ar1_rho_prior(res, type, prior)
   tm$mark("grid")
 
@@ -546,7 +639,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   registry_rescue <- .nl_registry_grid_rescue(
     res, type, prior,
     refit = function(prior_i) {
-      r <- .nl_dispatch(type, cargs, prior_i)
+      r <- solve_grid(prior_i)
       r <- .nl_apply_ar1_rho_prior(r, type, prior_i)
       r$log_quad     <- .nl_grid_log_quad(r$theta_grid)
       r$axis_support <- .hyper_grid_supports(
@@ -591,6 +684,38 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   .finalize_fit(res, backend = "nested_laplace",
                 n_fixed = p_fixed, fixed_names = colnames(X),
                 extra_class = c("tulpa_nested_laplace", "list"))
+}
+
+# --- cheap-pass screening knobs ---------------------------------------------
+#
+# The kernels read a tolerance in [0, 1) and a screening depth of at least one
+# Newton step. A value outside either range is a caller error rather than
+# something to clamp: a clamped tolerance reads back off the fit as a setting
+# that was applied.
+.nl_check_prune_tol <- function(x) {
+  if (length(x) != 1L || !is.numeric(x) || !is.finite(x) || x < 0 || x >= 1) {
+    stop("`prune_tol` must be a finite numeric in [0, 1).", call. = FALSE)
+  }
+  as.numeric(x)
+}
+
+.nl_check_screen_iters <- function(x) {
+  if (length(x) != 1L || !is.numeric(x) || !is.finite(x) || x < 1 ||
+      x > .Machine$integer.max || x != round(x)) {
+    stop("`screen_iters` must be a single integer >= 1.", call. = FALSE)
+  }
+  as.integer(x)
+}
+
+# Gate one screened grid solve. At a zero tolerance nothing was screened and
+# the kernel result is returned untouched, so a fit with pruning off takes the
+# same path it always did. Otherwise the shared cheap-pass gate decides whether
+# the kept set can be trusted, re-running `resolve_full` (the same solve at
+# `prune_tol = 0`) when it cannot.
+.nl_prune_gate <- function(res, prune_tol, resolve_full) {
+  if (prune_tol <= 0) return(res)
+  .joint_prune_safety_gate(res, resolve_full = resolve_full,
+                           fn = "tulpa_nested_laplace()")
 }
 
 # Positive-scale hyperparameter grid fields: one log-transform unconstrains
@@ -1730,6 +1855,10 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     n_threads   = cargs$n_threads,
     x_init_nullable = cargs$x_init_nullable,
     store_Q     = isTRUE(cargs$store_Q),
+    # Cheap-pass screening tolerance; 0 (the default) solves every cell. A
+    # single-cell re-dispatch inherits it harmlessly -- the driver screens only
+    # a grid with more than one cell.
+    prune_tol   = as.numeric(cargs$prune_tol %||% 0),
     likelihood  = likelihood,
     progress          = isTRUE(progress$progress),
     progress_every    = as.integer(progress$progress_every),

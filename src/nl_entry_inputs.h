@@ -38,7 +38,10 @@ inline Rcpp::NumericVector nl_unwrap_x_init(
 }
 
 // The arguments every cpp_nested_laplace_* grid entry declares, under the names
-// it declares them under. The runners below read the drivers' inputs from here.
+// it declares them under: the response and design, the inner Newton budget, the
+// warm start, the checkpoint, the diagnostics and their probe indices, the
+// debias / CILA requests, and the outer-grid cheap-pass screening knobs.
+// The runners below read the drivers' inputs from here.
 struct NlEntryInputs {
     Rcpp::NumericVector y;
     Rcpp::IntegerVector n_trials;
@@ -61,6 +64,15 @@ struct NlEntryInputs {
     // Carried only by the entries that take one. It moves every cell's mode, so
     // it enters the checkpoint fingerprint.
     Rcpp::Nullable<Rcpp::NumericVector> offset   = R_NilValue;
+    // Outer-grid cheap-pass screening. A positive tolerance makes the driver
+    // rank the lattice with a short warm-started inner Newton of
+    // `screen_iters` steps per cell and skip the full solve on cells whose
+    // screened weight falls below it; zero runs every cell. The screen skips
+    // the per-row fitted-variance pass, which `compute_fitted_var` also
+    // controls for the full solve.
+    double prune_tol          = 0.0;
+    int    screen_iters       = CHEAP_SCREEN_ITERS;
+    bool   compute_fitted_var = true;
 
     int N() const { return static_cast<int>(y.size()); }
     int p() const { return X.ncol(); }
@@ -112,11 +124,12 @@ inline Rcpp::List nl_run_multi_block_entry(
         blocks,
         in.family, in.phi, in.max_iter, in.tol, in.n_threads,
         /*store_modes=*/true, in.x_init,
-        in.store_Q, /*n_threads_outer=*/1, /*prune_tol=*/0.0,
+        in.store_Q, /*n_threads_outer=*/1, in.prune_tol,
         /*ext_spec=*/nullptr, /*ext_response=*/nullptr,
         /*progress=*/nullptr, run.ckpt.get(),
         in.compute_skew, run.skew_idx_ptr,
-        run.debias_req.ptr, run.cila_req.ptr
+        run.debias_req.ptr, run.cila_req.ptr,
+        in.screen_iters, in.compute_fitted_var
     );
     nl_attach_axes(out, out_axes);
     return out;
@@ -144,7 +157,7 @@ inline Rcpp::List nl_run_joint_sparse_entry(
         /*prep_at_grid=*/nullptr,
         /*tile_ids=*/std::vector<int>(),
         /*tile_pilot_cells=*/std::vector<int>(),
-        /*prune_tol=*/0.0,
+        in.prune_tol,
         /*cell_coupling_spec=*/nullptr,
         /*coupled_arms=*/std::vector<int>(),
         /*cell_rows=*/std::vector<std::vector<std::vector<int>>>(),
@@ -154,7 +167,8 @@ inline Rcpp::List nl_run_joint_sparse_entry(
         /*progress=*/nullptr, run.ckpt.get(),
         /*x_init_per_cell=*/std::vector<double>(),
         in.compute_skew, run.skew_idx_ptr,
-        /*fixed_block=*/nullptr, run.debias_req.ptr, run.cila_req.ptr
+        /*fixed_block=*/nullptr, run.debias_req.ptr, run.cila_req.ptr,
+        in.screen_iters
     );
     nl_attach_axes(out, out_axes);
     return out;
@@ -188,6 +202,9 @@ inline Rcpp::List nl_run_joint_sparse_entry(
         nl_in_.skew_idx        = skew_idx;                                 \
         nl_in_.debias          = debias;                                   \
         nl_in_.cila            = cila;                                     \
+        nl_in_.prune_tol          = prune_tol;                             \
+        nl_in_.screen_iters       = screen_iters;                          \
+        nl_in_.compute_fitted_var = compute_fitted_var;                    \
         return nl_in_;                                                     \
     }())
 

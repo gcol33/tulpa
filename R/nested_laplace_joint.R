@@ -280,6 +280,14 @@
 #'     Stacks with `n_threads_outer`. `prune_tol` must be in `[0, 1)`. Keep it
 #'     conservative (`<= 1e-3`); pruning helps most when the grid has many
 #'     low-mass tail cells. Default `FALSE` (the full grid is correct).
+#'   * `screen_iters` (`5L`) -- inner Newton steps the cheap screen takes per
+#'     cell, read only when `prune = TRUE`. The screen only has to RANK the
+#'     cells, and each one is warm-started from its already-screened lattice
+#'     neighbour, so its quasi-mode is near the cell's own mode after very few
+#'     steps. Every step is paid on every cell of the grid, including the cells
+#'     the screen keeps and then solves in full, so a depth above what the
+#'     ranking needs makes screening cost more than the solves it avoids. Must
+#'     be a single integer `>= 1`.
 #'   * `x_init` (`NULL`) -- warm-start for the first grid point's inner solve.
 #'   * `verbose` (`FALSE`) -- when `TRUE`, announce the engaged outer integrator
 #'     for a multi-block prior in one line at selection time (see `integration`),
@@ -944,10 +952,11 @@
 #'      than any ratio, and the whole-grid `resolved` verdict is withheld while
 #'      one is present rather than being read off the axes that did score.
 #'   * `prune_cheap_log_marginal`, `prune_mask`, `prune_n_pruned`,
-#'      `prune_tol` -- present only when `prune = TRUE` and the safety gate did
-#'      not fall back. Cheap-pass log-marginals at every cell, a logical mask
-#'      of pruned cells, the pruned-cell count, and the threshold actually
-#'      applied. Pruned cells have `log_marginal = -Inf` so they get zero
+#'      `prune_tol`, `prune_screen_iters` -- present only when `prune = TRUE`
+#'      and the safety gate did not fall back. Cheap-pass log-marginals at every
+#'      cell, a logical mask of pruned cells, the pruned-cell count, the
+#'      threshold actually applied, and the screening depth the driver actually
+#'      ran at. Pruned cells have `log_marginal = -Inf` so they get zero
 #'      weight under `.nl_normalise_weights_safe`.
 #'   * `prune_fallback_triggered`, `prune_fallback_reason` -- present only when
 #'      the safety gate fell back to the full grid. The returned fit is the
@@ -1361,7 +1370,8 @@ tulpa_nested_laplace_joint <- function(responses,
     n_threads_outer           <- control$n_threads_outer %||% 1L
     tile_warm                 <- control$tile_warm %||% TRUE
     prune                     <- control$prune %||% FALSE
-    prune_tol                 <- control$prune_tol %||% 1e-3
+    prune_tol                 <- control$prune_tol %||% .nl_screen("prune_tol")
+    screen_iters              <- control$screen_iters %||% .nl_screen("iters")
     x_init                    <- control$x_init
     verbose                   <- control$verbose %||% FALSE
     store_Q                   <- control$store_Q %||% FALSE
@@ -1610,6 +1620,27 @@ tulpa_nested_laplace_joint <- function(responses,
                  call. = FALSE)
         }
     }
+
+    # Cheap-screen depth. Validated whatever `prune` says, so a misspecified
+    # value is reported where the user set it rather than at the next fit that
+    # happens to switch pruning on.
+    if (length(screen_iters) != 1L || !is.numeric(screen_iters) ||
+        !is.finite(screen_iters) || screen_iters < 1 ||
+        screen_iters > .Machine$integer.max ||
+        screen_iters != round(screen_iters)) {
+        stop("`screen_iters` must be a single integer >= 1.", call. = FALSE)
+    }
+    screen_iters <- as.integer(screen_iters)
+
+    # Cheap-screen depth reaches the cpp entry on the same scoped-option
+    # transport as progress and the checkpoint: the entry is called through the
+    # polymorphic backends (`backend$call_kernel`), the multi-block dispatch and
+    # the refinement closures, so one option reaches every kernel call of this
+    # fit instead of one scalar threaded through each of those signatures.
+    # `.cpp_joint_multi` reads it at the cpp boundary. Restored on exit so the
+    # option never leaks past the fit.
+    .op_screen <- options(tulpa.nl_screen_iters = screen_iters)
+    on.exit(options(.op_screen), add = TRUE)
 
     # The override reaches the dense inner Newton through the multi-block
     # driver's call factory only. Refusing it elsewhere is what keeps it from
@@ -1988,21 +2019,26 @@ tulpa_nested_laplace_joint <- function(responses,
     .inner_skew_attach_probe(res, out)
 }
 
-# Thin wrapper over cpp_nested_laplace_joint_multi that injects the outer-grid
-# progress knobs from the scoped `tulpa.nl_progress` option set
-# by tulpa_nested_laplace_joint. Every backend / refinement call site routes
-# through here, so progress reaches the cpp entry without threading four scalars
-# through the polymorphic backend interface. Option unset -> progress = FALSE.
+# Thin wrapper over cpp_nested_laplace_joint_multi that injects the fit-scoped
+# knobs set by tulpa_nested_laplace_joint: the outer-grid progress reporter
+# (`tulpa.nl_progress`), the grid-cell checkpoint file (`tulpa.nl_checkpoint`)
+# and the cheap-screen depth (`tulpa.nl_screen_iters`). Every backend /
+# refinement call site routes through here, so these reach the cpp entry without
+# threading scalars through the polymorphic backend interface. Options unset ->
+# progress = FALSE, no checkpoint, and the engine's own screening depth.
 .cpp_joint_multi <- function(...) {
   p <- getOption("tulpa.nl_progress", NULL)
   if (is.null(p)) p <- .nl_progress_args(list(progress = FALSE))
   cp <- getOption("tulpa.nl_checkpoint", NULL)
   checkpoint_path <- if (is.list(cp)) as.character(cp$path) else ""
+  si <- getOption("tulpa.nl_screen_iters", NULL)
+  if (is.null(si)) si <- .nl_screen("iters")
   do.call(cpp_nested_laplace_joint_multi,
           c(list(...),
             list(progress          = isTRUE(p$progress),
                  progress_every    = as.integer(p$progress_every),
                  progress_throttle = as.numeric(p$progress_throttle),
                  progress_file     = as.character(p$progress_file),
-                 checkpoint_path   = checkpoint_path)))
+                 checkpoint_path   = checkpoint_path,
+                 screen_iters      = as.integer(si))))
 }

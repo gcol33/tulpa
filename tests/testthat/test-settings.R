@@ -141,7 +141,14 @@ test_that("the default axes are exactly these values", {
     expect_identical(tulpa:::.nl_st_default("n_spatial"), 4L)
     expect_equal(tulpa:::.nl_st_default("tau_upper"), 16)
 
+    # Cheap-pass grid screening. `iters` is a cost-against-ranking-fidelity
+    # trade paid on every cell of the grid, so it is a number the engine's
+    # throughput rests on and a change to it has to be deliberate.
+    expect_equal(tulpa:::.nl_screen("prune_tol"), 1e-3)
+    expect_identical(tulpa:::.nl_screen("iters"), 5L)
+
     expect_error(tulpa:::.nl_diag("nope"), "Unknown diagnostic setting")
+    expect_error(tulpa:::.nl_screen("nope"), "Unknown screening setting")
     expect_error(tulpa:::.nl_recenter("nope"), "Unknown recenter setting")
     expect_error(tulpa:::.nl_st_default("nope"), "Unknown spatiotemporal")
 })
@@ -308,6 +315,31 @@ test_that("the reported Pareto-k threshold is read, never restated", {
     }
     expect_identical(offenders, character(0))
 
+    # The cheap-screen defaults likewise: the weight below which a cell is
+    # dropped and the number of Newton steps the screen takes on every cell.
+    # Keyed to the CONCEPT, so a rename cannot walk out from under it, and to a
+    # NONZERO literal, because `prune_tol = 0` is the sentinel that turns
+    # screening off entirely rather than a restatement of the default.
+    # `RcppExports.R` is generated from the cpp entry's own formals, where an
+    # Rcpp attribute default has to be a literal; the test below pins that
+    # literal to the registry instead.
+    offenders <- character(0)
+    for (f in setdiff(files, file.path(r_dir, "RcppExports.R"))) {
+        code <- readLines(f, warn = FALSE)
+        code <- code[!grepl("^\\s*#|^#'", code)]
+        pat <- paste0("(prune_tol|screen_iters)\\s*(=|<-|%\\|\\|%)\\s*",
+                      "([0-9][0-9.eE+-]*L?)")
+        hits <- grep(pat, code, value = TRUE)
+        for (h in hits) {
+            lit <- sub(paste0("^.*", pat, ".*$"), "\\3", h)
+            val <- suppressWarnings(as.numeric(sub("L$", "", lit)))
+            if (!is.na(val) && val != 0) {
+                offenders <- c(offenders, paste0(basename(f), ": ", trimws(h)))
+            }
+        }
+    }
+    expect_identical(offenders, character(0))
+
     # The gamma_3 bands: a comparison of a skewness magnitude against the
     # literal band edges. `.tulpa_inner_skew_summary()` restated both after
     # `.tulpa_gamma3_band()` was already reading them.
@@ -397,4 +429,28 @@ test_that("every outer-k entry point defaults to the registry's draw budget", {
     # band LOWER the budget that has to resolve it.
     expect_gt(tulpa:::.nl_diag("k_samples_ok"),   ref)
     expect_gt(tulpa:::.nl_diag("k_samples_good"), tulpa:::.nl_diag("k_samples_ok"))
+})
+
+test_that("the cheap-screen depth is one value across the R and C++ defaults", {
+    # The screening depth exists at three points -- the registry the front door
+    # reads, the literal the cpp entry declares (an Rcpp attribute default has
+    # to be a literal, so it cannot read the engine constant), and the engine
+    # constant the grid driver falls back to. A fit's cost and its cheap ranking
+    # both move with it, so two live values would mean the same grid screened at
+    # two depths depending on which layer supplied the number.
+    ref <- as.integer(tulpa:::.nl_screen("iters"))
+
+    # The cpp entry's own default, as the generated R wrapper carries it.
+    entry <- formals(tulpa:::cpp_nested_laplace_joint_multi)$screen_iters
+    expect_false(is.null(entry))
+    expect_identical(as.integer(eval(entry)), ref)
+
+    # And the engine constant behind it.
+    src <- test_path("..", "..", "src", "nested_laplace_grid.h")
+    skip_if_not(file.exists(src), "package sources not available")
+    line <- grep("static const int CHEAP_SCREEN_ITERS",
+                 readLines(src, warn = FALSE), value = TRUE)
+    expect_length(line, 1L)
+    expect_identical(
+        as.integer(sub(".*=\\s*([0-9]+).*", "\\1", line)), ref)
 })

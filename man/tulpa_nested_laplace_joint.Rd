@@ -273,6 +273,14 @@ badly mis-estimated, so a silently-wrong pruned posterior is impossible.
 Stacks with \code{n_threads_outer}. \code{prune_tol} must be in \verb{[0, 1)}. Keep it
 conservative (\verb{<= 1e-3}); pruning helps most when the grid has many
 low-mass tail cells. Default \code{FALSE} (the full grid is correct).
+\item \code{screen_iters} (\code{5L}) -- inner Newton steps the cheap screen takes per
+cell, read only when \code{prune = TRUE}. The screen only has to RANK the
+cells, and each one is warm-started from its already-screened lattice
+neighbour, so its quasi-mode is near the cell's own mode after very few
+steps. Every step is paid on every cell of the grid, including the cells
+the screen keeps and then solves in full, so a depth above what the
+ranking needs makes screening cost more than the solves it avoids. Must
+be a single integer \verb{>= 1}.
 \item \code{x_init} (\code{NULL}) -- warm-start for the first grid point's inner solve.
 \item \code{verbose} (\code{FALSE}) -- when \code{TRUE}, announce the engaged outer integrator
 for a multi-block prior in one line at selection time (see \code{integration}),
@@ -933,10 +941,11 @@ axis's own posterior mode, which is a stronger statement about the fit
 than any ratio, and the whole-grid \code{resolved} verdict is withheld while
 one is present rather than being read off the axes that did score.
 \item \code{prune_cheap_log_marginal}, \code{prune_mask}, \code{prune_n_pruned},
-\code{prune_tol} -- present only when \code{prune = TRUE} and the safety gate did
-not fall back. Cheap-pass log-marginals at every cell, a logical mask
-of pruned cells, the pruned-cell count, and the threshold actually
-applied. Pruned cells have \code{log_marginal = -Inf} so they get zero
+\code{prune_tol}, \code{prune_screen_iters} -- present only when \code{prune = TRUE}
+and the safety gate did not fall back. Cheap-pass log-marginals at every
+cell, a logical mask of pruned cells, the pruned-cell count, the
+threshold actually applied, and the screening depth the driver actually
+ran at. Pruned cells have \code{log_marginal = -Inf} so they get zero
 weight under \code{.nl_normalise_weights_safe}.
 \item \code{prune_fallback_triggered}, \code{prune_fallback_reason} -- present only when
 the safety gate fell back to the full grid. The returned fit is the

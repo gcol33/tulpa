@@ -47,13 +47,20 @@
 //      with `log_marginal = -inf`, `n_iter = 0`, `mode = pilot_mode`) and
 //      runs the full pass only on survivors.
 //
-// The neighbour warm-start sweep keeps every cheap mode near its true mode:
-// a single global pilot is a poor warm-start for cells whose inner latent
-// mode moves substantially across the grid (large spatial fields, wide
-// sigma/rho/alpha ranges), so a fixed-pilot one-step screen mis-ranks far
-// cells by O(1e5) log-units and can prune the true posterior mode. The
-// chained sweep with CHEAP_SCREEN_ITERS Newton steps per cell makes the
-// cheap ranking faithful to the full-solve ranking.
+// The screen only has to RANK the cells: what it does with a cell's screening
+// log-marginal is compare it against the others, never report it. Each cell is
+// warm-started from its already-screened lattice neighbour rather than from a
+// single global pilot, so the quasi-mode it lands on is near its own cell's
+// mode after very few Newton steps even where the inner latent mode moves
+// substantially across the grid (large spatial fields, wide sigma/rho/alpha
+// ranges).
+//
+// `screen_iters` is therefore a cost-against-ranking-fidelity trade rather than
+// a convergence budget. Every step is paid on every cell of the grid, including
+// the cells the screen goes on to keep and solve in full, while the full solves
+// it avoids are themselves neighbour-warm-started and converge in a handful of
+// iterations. A depth above what the ranking needs makes screening cost more
+// than the solves it saves.
 //
 // Safety gate: after the full pass, the driver compares the cheap-screen
 // argmax (over all cells) against the full-solve argmax (over kept cells)
@@ -92,6 +99,7 @@
 #include "sparse_cholesky.h"
 #include <tulpa/nested_progress.h>
 #include <Rcpp.h>
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <limits>
@@ -326,10 +334,9 @@ struct NoCheapEval {
     }
 };
 
-// Number of inner Newton steps per cell in the cheap screening sweep. With
-// neighbour warm-starts across the lattice this is enough to converge the
-// cheap mode to its cell's true mode for ranking purposes while staying far
-// cheaper than the full inner solve (which iterates to `tol`).
+// Engine default for the number of inner Newton steps per cell in the cheap
+// screening sweep, used when the caller supplies no `screen_iters`. See the
+// cost-against-ranking-fidelity note at the top of this file.
 static const int CHEAP_SCREEN_ITERS = 5;
 
 template<typename SolveAtTheta, typename CheapEval = NoCheapEval>
@@ -345,8 +352,14 @@ inline Rcpp::List run_nested_laplace_grid(
     double prune_tol = 0.0,
     tulpa_progress::GridProgress* progress = nullptr,
     GridCheckpoint* ckpt = nullptr,
-    const std::vector<double>& x_init_per_cell = std::vector<double>()
+    const std::vector<double>& x_init_per_cell = std::vector<double>(),
+    // Inner Newton steps per cell in the cheap screening sweep. Appended last
+    // so every existing positional call site keeps its meaning.
+    int screen_iters = CHEAP_SCREEN_ITERS
 ) {
+    // At least one step: a zero-step screen would rank every cell at the
+    // warm-start it inherited rather than at its own quasi-mode.
+    const int screen_steps = std::max(1, screen_iters);
     // Tile partition, validated once. A cell whose tile id falls outside
     // [0, n_tiles) joins no tile: the cheap screen never reaches it, its
     // cheap_lm stays -inf, and it is pruned out of the posterior with
@@ -570,7 +583,7 @@ inline Rcpp::List run_nested_laplace_grid(
 
         // Cheap-pass pruning: a chained sweep over the lattice that keeps
         // every cheap mode near its cell's true mode. Each cell runs a short
-        // (CHEAP_SCREEN_ITERS-step) inner Newton warm-started from the
+        // (screen_steps-step) inner Newton warm-started from the
         // previous screened cell's quasi-mode — lattice-adjacent along the
         // fastest axis of the Cartesian product — instead of one step from a
         // fixed global pilot. The pilot mode seeds the sweep so cell 0 is not
@@ -615,7 +628,7 @@ inline Rcpp::List run_nested_laplace_grid(
                 for (int k = 0; k < n_grid; k++) {
                     if (ckpt_done[k]) { use_loaded_for_chain(k, warm); continue; }
                     LaplaceResult cr =
-                        cheap_eval(k, warm, CHEAP_SCREEN_ITERS, /*worker=*/0);
+                        cheap_eval(k, warm, screen_steps, /*worker=*/0);
                     cheap_lm[k] = cr.log_marginal;
                     // Chain the warm-start only across feasible cells; an
                     // infeasible cell (prep failed, log_marginal = -inf) leaves
@@ -666,7 +679,7 @@ inline Rcpp::List run_nested_laplace_grid(
                             continue;
                         }
                         LaplaceResult cr =
-                            cheap_eval(kp, warm, CHEAP_SCREEN_ITERS, /*worker=*/0);
+                            cheap_eval(kp, warm, screen_steps, /*worker=*/0);
                         cheap_lm[kp] = cr.log_marginal;
                         if (std::isfinite(cr.log_marginal) &&
                             static_cast<int>(cr.mode.size()) == n_x) {
@@ -701,7 +714,7 @@ inline Rcpp::List run_nested_laplace_grid(
                                 continue;
                             }
                             LaplaceResult cr =
-                                cheap_eval(k, warm, CHEAP_SCREEN_ITERS, worker);
+                                cheap_eval(k, warm, screen_steps, worker);
                             cheap_lm[k] = cr.log_marginal;
                             if (std::isfinite(cr.log_marginal) &&
                                 static_cast<int>(cr.mode.size()) == n_x) {
@@ -1142,6 +1155,7 @@ inline Rcpp::List run_nested_laplace_grid(
         out["prune_mask"]                = pruned_out;
         out["prune_n_pruned"]           = n_cells_pruned;
         out["prune_tol"]                = prune_tol;
+        out["prune_screen_iters"]       = screen_steps;
 
         // ---- Safety gate -------------------------------------------------
         // The full pass only ran on survivors, so the full-solve argmax is

@@ -1338,6 +1338,11 @@ inline std::vector<int> resolve_copy_arm_of_block(
 
 } // namespace
 
+// `screen_iters` is the number of inner Newton steps the cheap screening sweep
+// takes per cell, read only when `prune_tol > 0`. Its engine default is
+// tulpa::CHEAP_SCREEN_ITERS; the literal below restates it because an Rcpp
+// attribute default has to be a literal.
+
 // [[Rcpp::export]]
 Rcpp::List cpp_nested_laplace_joint_multi(
     Rcpp::List          arms_list,
@@ -1373,7 +1378,8 @@ Rcpp::List cpp_nested_laplace_joint_multi(
     Rcpp::Nullable<Rcpp::List> fixed_block_constraints = R_NilValue,
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
-    int                 inner_sparse_override = 0
+    int                 inner_sparse_override = 0,
+    int                 screen_iters = 5   // cheap-screen Newton steps per cell
 ) {
     // Per-cell fixed-effect covariance retention, extracted
     // inside each cell's own solve. `fixed_block_p` is the
@@ -1628,7 +1634,8 @@ Rcpp::List cpp_nested_laplace_joint_multi(
         fixed_block_ptr,
         debias_ptr,
         cila_ptr,
-        inner_sparse_override
+        inner_sparse_override,
+        screen_iters
     );
     out["theta_grid"]      = theta_grid;
     out["axis_offsets"]    = axis_offsets;
@@ -2048,7 +2055,8 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
     // Factorization backend of the DENSE inner Newton: 0 auto, >0 CHOLMOD,
     // <0 dense. Orthogonal to force_sparse, which chooses between this driver
     // and the sparse-assembly one.
-    int                              inner_sparse_override) {
+    int                              inner_sparse_override,
+    int                              screen_iters) {
     const int n_arms = static_cast<int>(arms.size());
     if (static_cast<int>(parsed.size()) != n_arms) {
         Rcpp::stop("parsed and arms vectors must have the same length.");
@@ -2115,7 +2123,8 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
             cell_coupling_spec, coupled_arms, cell_rows, n_cells, pd_mode,
             step_curvature, hessian_refresh, n_threads_outer, progress,
             checkpoint, x_init_per_cell,
-            compute_skew, skew_probe_idx, fixed_block, debias, cila
+            compute_skew, skew_probe_idx, fixed_block, debias, cila,
+            screen_iters
         );
     }
 
@@ -2409,7 +2418,8 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
     Rcpp::List out = run_nested_laplace_grid(
         n_grid, n_x, solve_at_theta, x_init, store_modes, n_outer,
         tile_ids, tile_pilot_cells,
-        cheap_eval, prune_tol, progress, checkpoint, x_init_per_cell
+        cheap_eval, prune_tol, progress, checkpoint, x_init_per_cell,
+        screen_iters
     );
     pattern_guard.check("the joint nested-Laplace outer grid");
     return out;
@@ -2446,7 +2456,8 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
     const std::vector<int>*          skew_probe_idx,
     const JointFixedBlockRequest*    fixed_block,
     const SubspaceDebiasOptions*     debias,
-    const CilaOptions*               cila
+    const CilaOptions*               cila,
+    int                              screen_iters
 ) {
     const int n_arms = static_cast<int>(arms.size());
     const int B      = static_cast<int>(blocks.size());
@@ -2909,7 +2920,8 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
         n_grid, n_x, solve_at_theta, x_init, store_modes,
         /*n_outer=*/n_outer,
         tile_ids, tile_pilot_cells,
-        cheap_eval, prune_tol, progress, checkpoint, x_init_per_cell
+        cheap_eval, prune_tol, progress, checkpoint, x_init_per_cell,
+        screen_iters
     );
     pattern_guard.check("the sparse joint nested-Laplace outer grid");
     // Report the outer width the solve actually ran at. It is what the memory

@@ -76,6 +76,49 @@ public:
     // the failure readable without one.
     bool solve(const double* b, double* x, int n);
 
+    // Reusable scratch for the workspace-holding solve below.
+    //
+    // CHOLMOD's cholmod_solve allocates the dense solution plus two internal
+    // work blocks and frees them on every call. cholmod_solve2 keeps all three
+    // in caller-held handles instead, so a run of back-solves against one
+    // factor -- the per-observation predictive variances of a nested-Laplace
+    // cell are thousands of them -- allocates on the first solve and reuses
+    // thereafter.
+    //
+    // The handles are CHOLMOD objects owned by ONE solver's cholmod_common, so
+    // a workspace binds to the first solver it is used with and must not
+    // outlive it; a solve through a different solver is refused rather than
+    // freeing a handle against a foreign common. cholmod_common is not
+    // reentrant, so a workspace belongs to the same thread as its solver: give
+    // each worker its own.
+    class SolveWorkspace {
+    public:
+        SolveWorkspace() = default;
+        ~SolveWorkspace();
+
+        // Non-copyable (owns CHOLMOD resources)
+        SolveWorkspace(const SolveWorkspace&) = delete;
+        SolveWorkspace& operator=(const SolveWorkspace&) = delete;
+
+        // Free the handles and unbind, so the workspace can be reused with a
+        // different solver. Also what the destructor runs.
+        void release();
+
+    private:
+        friend class SparseCholeskySolver;
+        cholmod_dense* X_ = nullptr;   // solution, sized by cholmod_solve2
+        cholmod_dense* Y_ = nullptr;   // CHOLMOD internal workspace
+        cholmod_dense* E_ = nullptr;   // CHOLMOD internal workspace
+        cholmod_common* common_ = nullptr;  // borrowed from the bound solver
+    };
+
+    // Solve Ax = b through cholmod_solve2, holding CHOLMOD's dense solution and
+    // internal workspace in `ws` across calls. Same contract as the allocating
+    // solve above: x is filled with NaN and false returned when there is no
+    // usable factorization or CHOLMOD's solve fails, and additionally when `ws`
+    // is already bound to a different solver.
+    bool solve(const double* b, double* x, int n, SolveWorkspace& ws);
+
     // Apply the inverse Cholesky square root of A to `ncol` standard normal
     // vectors at once: with A = P' L L' P, the columns of `x = P' L^-T eps`
     // have covariance A^-1, so a caller holding a factored Hessian can draw

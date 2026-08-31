@@ -1210,6 +1210,33 @@
 }
 
 
+
+# --- cheap-pass grid screening -----------------------------------------------
+#
+# The outer driver can rank every cell with a short warm-started Newton run and
+# skip the full inner solve wherever the screening weight is negligible. Two
+# numbers set that: the weight below which a cell is dropped, and how many
+# Newton steps the screen takes per cell.
+#
+# `iters` is a cost-vs-fidelity trade, not a convergence budget: the screen only
+# has to RANK the cells, and every cell it ranks is warm-started from its
+# already-screened lattice neighbour, so the quasi-mode it lands on is close to
+# the cell's own mode after very few steps. Each extra step is paid on every
+# cell of the grid, including the ones the screen goes on to keep, so a depth
+# above what the ranking needs makes screening cost more than the solves it
+# avoids.
+.NL_SCREEN <- list(
+    prune_tol = 1e-3,
+    iters     = 5L
+)
+
+.nl_screen <- function(par) {
+    if (!par %in% names(.NL_SCREEN)) {
+        stop("Unknown screening setting '", par, "'.", call. = FALSE)
+    }
+    .NL_SCREEN[[par]]
+}
+
 # --- default fixed-effect prior ----------------------------------------------
 #
 # The Gaussian prior a fitter puts on the fixed effects when the caller supplies
