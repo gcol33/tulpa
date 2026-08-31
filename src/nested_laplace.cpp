@@ -40,7 +40,8 @@
 #include "hmc_hsgp_kernels.h"  // Eigen-free spectral density only
 #include "hsgp_block_factory.h"             // make_hsgp_block
 #include "laplace_spec_fit.h"               // build_spec_family_inputs + laplace_mode_spec_dense_solve
-#include "nl_entry_inputs.h"                // NlEntryInputs + the per-driver runners
+#include "nl_entry_inputs.h"
+#include "nested_laplace_entries.h"                // NlEntryInputs + the per-driver runners
 #include "nngp_block_factory.h"             // make_nngp_block
 #include "unit_precision_block.h"           // set_unit_precision_block_priors
 #include "car_proper_block.h"                // set_car_proper_block_priors

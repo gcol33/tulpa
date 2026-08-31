@@ -248,7 +248,15 @@ extern "C" void tulpa_nested_laplace_icar_impl(
                 in.yv, in.nv, in.Xm, in.rv, n_re_groups, sigma_re,
                 sidx, n_spatial_units, arp, aci, nn,
                 tg, in.fam, phi, max_iter, tol, n_threads,
-                x0, store_Q != 0);
+                x0, store_Q != 0,
+                "" /* checkpoint_path */,
+                false /* compute_skew */,
+                R_NilValue /* skew_idx */,
+                R_NilValue /* debias */,
+                R_NilValue /* cila */,
+                0.0 /* prune_tol */,
+                2 /* screen_iters */,
+                true /* compute_fitted_var */);
         });
     TULPA_SHIM_GUARD_END("tulpa_nested_laplace_icar")
 }
@@ -282,7 +290,15 @@ extern "C" void tulpa_nested_laplace_bym2_impl(
                 sidx, n_spatial_units, arp, aci, nn,
                 scale_factor, sg, rg,
                 in.fam, phi, max_iter, tol, n_threads,
-                x0, store_Q != 0);
+                x0, store_Q != 0,
+                "" /* checkpoint_path */,
+                false /* compute_skew */,
+                R_NilValue /* skew_idx */,
+                R_NilValue /* debias */,
+                R_NilValue /* cila */,
+                0.0 /* prune_tol */,
+                2 /* screen_iters */,
+                true /* compute_fitted_var */);
         });
     TULPA_SHIM_GUARD_END("tulpa_nested_laplace_bym2")
 }
@@ -314,7 +330,15 @@ extern "C" void tulpa_nested_laplace_car_proper_impl(
                 in.yv, in.nv, in.Xm, in.rv, n_re_groups, sigma_re,
                 sidx, n_spatial_units, arp, aci, nn,
                 tg, rg, in.fam, phi, max_iter, tol, n_threads,
-                x0, store_Q != 0);
+                x0, store_Q != 0,
+                "" /* checkpoint_path */,
+                false /* compute_skew */,
+                R_NilValue /* skew_idx */,
+                R_NilValue /* debias */,
+                R_NilValue /* cila */,
+                0.0 /* prune_tol */,
+                2 /* screen_iters */,
+                true /* compute_fitted_var */);
         });
     TULPA_SHIM_GUARD_END("tulpa_nested_laplace_car_proper")
 }
@@ -347,7 +371,15 @@ extern "C" void tulpa_nested_laplace_temporal_impl(
                 tv, n_times, std::string(temporal_type ? temporal_type : "rw1"),
                 tg, rg, (cyclic != 0),
                 in.fam, phi, /*n_groups=*/1, max_iter, tol, n_threads,
-                x0, store_Q != 0);
+                x0, store_Q != 0,
+                "" /* checkpoint_path */,
+                false /* compute_skew */,
+                R_NilValue /* skew_idx */,
+                R_NilValue /* debias */,
+                R_NilValue /* cila */,
+                0.0 /* prune_tol */,
+                2 /* screen_iters */,
+                true /* compute_fitted_var */);
         });
     TULPA_SHIM_GUARD_END("tulpa_nested_laplace_temporal")
 }
@@ -386,7 +418,16 @@ extern "C" void tulpa_nested_laplace_nngp_impl(
                 sidx, cm, nim, ndm, nord, n_spatial, nn,
                 s2g, phg, cov_type,
                 in.fam, phi, max_iter, tol, n_threads,
-                x0, store_Q != 0);
+                x0, store_Q != 0,
+                "" /* checkpoint_path */,
+                false /* compute_skew */,
+                R_NilValue /* skew_idx */,
+                R_NilValue /* offset_nullable */,
+                R_NilValue /* debias */,
+                R_NilValue /* cila */,
+                0.0 /* prune_tol */,
+                2 /* screen_iters */,
+                true /* compute_fitted_var */);
         });
     TULPA_SHIM_GUARD_END("tulpa_nested_laplace_nngp")
 }
@@ -417,7 +458,15 @@ extern "C" void tulpa_nested_laplace_hsgp_impl(
                 in.yv, in.nv, in.Xm, in.rv, n_re_groups, sigma_re,
                 pb, le, s2g, lsg,
                 in.fam, phi, max_iter, tol, n_threads,
-                x0, store_Q != 0);
+                x0, store_Q != 0,
+                "" /* checkpoint_path */,
+                false /* compute_skew */,
+                R_NilValue /* skew_idx */,
+                R_NilValue /* debias */,
+                R_NilValue /* cila */,
+                0.0 /* prune_tol */,
+                2 /* screen_iters */,
+                true /* compute_fitted_var */);
         });
     TULPA_SHIM_GUARD_END("tulpa_nested_laplace_hsgp")
 }
@@ -467,7 +516,16 @@ extern "C" void tulpa_nested_laplace_st_icar_impl(
                 tsg,
                 std::string(temporal_type), ttg, rtg, (cyclic != 0),
                 in.fam, phi, max_iter, tol, n_threads,
-                x0, store_Q != 0);
+                x0, store_Q != 0,
+                false /* force_sparse */,
+                "" /* checkpoint_path */,
+                false /* compute_skew */,
+                R_NilValue /* skew_idx */,
+                R_NilValue /* debias */,
+                R_NilValue /* cila */,
+                0.0 /* prune_tol */,
+                2 /* screen_iters */,
+                true /* compute_fitted_var */);
         });
     TULPA_SHIM_GUARD_END("tulpa_nested_laplace_st_icar")
 }
@@ -510,7 +568,16 @@ extern "C" void tulpa_nested_laplace_st_car_proper_impl(
                 tsg, rsg,
                 std::string(temporal_type), ttg, rtg, (cyclic != 0),
                 in.fam, phi, max_iter, tol, n_threads,
-                x0, store_Q != 0);
+                x0, store_Q != 0,
+                false /* force_sparse */,
+                "" /* checkpoint_path */,
+                false /* compute_skew */,
+                R_NilValue /* skew_idx */,
+                R_NilValue /* debias */,
+                R_NilValue /* cila */,
+                0.0 /* prune_tol */,
+                2 /* screen_iters */,
+                true /* compute_fitted_var */);
         });
     TULPA_SHIM_GUARD_END("tulpa_nested_laplace_st_car_proper")
 }
@@ -555,7 +622,16 @@ extern "C" void tulpa_nested_laplace_st_bym2_impl(
                 ssg, rsg,
                 std::string(temporal_type), ttg, rtg, (cyclic != 0),
                 in.fam, phi, max_iter, tol, n_threads,
-                x0, store_Q != 0);
+                x0, store_Q != 0,
+                false /* force_sparse */,
+                "" /* checkpoint_path */,
+                false /* compute_skew */,
+                R_NilValue /* skew_idx */,
+                R_NilValue /* debias */,
+                R_NilValue /* cila */,
+                0.0 /* prune_tol */,
+                2 /* screen_iters */,
+                true /* compute_fitted_var */);
         });
     TULPA_SHIM_GUARD_END("tulpa_nested_laplace_st_bym2")
 }
@@ -597,7 +673,15 @@ extern "C" void tulpa_nested_laplace_st_hsgp_impl(
                 s2g, lsg,
                 std::string(temporal_type), ttg, rtg, (cyclic != 0),
                 in.fam, phi, max_iter, tol, n_threads,
-                x0, store_Q != 0);
+                x0, store_Q != 0,
+                "" /* checkpoint_path */,
+                false /* compute_skew */,
+                R_NilValue /* skew_idx */,
+                R_NilValue /* debias */,
+                R_NilValue /* cila */,
+                0.0 /* prune_tol */,
+                2 /* screen_iters */,
+                true /* compute_fitted_var */);
         });
     TULPA_SHIM_GUARD_END("tulpa_nested_laplace_st_hsgp")
 }
@@ -645,7 +729,15 @@ extern "C" void tulpa_nested_laplace_st_nngp_impl(
                 s2g, phg,
                 std::string(temporal_type), ttg, rtg, (cyclic != 0),
                 in.fam, phi, max_iter, tol, n_threads,
-                x0, store_Q != 0);
+                x0, store_Q != 0,
+                "" /* checkpoint_path */,
+                false /* compute_skew */,
+                R_NilValue /* skew_idx */,
+                R_NilValue /* debias */,
+                R_NilValue /* cila */,
+                0.0 /* prune_tol */,
+                2 /* screen_iters */,
+                true /* compute_fitted_var */);
         });
     TULPA_SHIM_GUARD_END("tulpa_nested_laplace_st_nngp")
 }
@@ -707,7 +799,11 @@ extern "C" void tulpa_nested_laplace_spde_impl(
                 rng, sig, nu,
                 in.fam, phi, max_iter, tol, n_threads,
                 x0, poles_n, weights_n,
-                store_Q != 0);
+                store_Q != 0,
+                "" /* checkpoint_path */,
+                R_NilValue /* offset_nullable */,
+                false /* compute_skew */,
+                R_NilValue /* skew_idx */);
         });
     TULPA_SHIM_GUARD_END("tulpa_nested_laplace_spde")
 }
