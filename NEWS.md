@@ -1,3 +1,27 @@
+# tulpa 0.2.9
+
+* **The #317 mixed-read gate scored its three arms under two different
+  outer-edge policies, and its pins predated the flip that caused it
+  (gcol33/tulpa#643, gcol33/tulpa#644).** `cc3e8ed` moved
+  `.NL_SUPPORT$mixed$outside` from `"clamp"` to `"extend"` so that a locally
+  refined fit and the unrefined fit of the same model could not report intervals
+  built two different ways. The gate in
+  `test-nested-laplace-joint-ccd-local.R` was not re-measured with it -- that
+  commit's own sweep ran at `local_ccd = NULL`, so the arm it scored was the
+  density path and the arm that moved was `mixed` -- and its `mixed` totals rose
+  from 3.18024 / 2.69889 to 3.46157 / 3.14443, taking `:785` red under the slow
+  tier while staying invisible at `TULPA_FAST=1`.
+
+  Its two comparators had meanwhile stayed on an inline `outside = "clamp"`, so
+  the comparison varied the collapse construction and the edge policy together
+  when it exists to isolate the first. All three arms now go through the one
+  dispatch at the one within-cell construction. Scored on a common policy the
+  gate's verdict holds either way and the margin is wider under the shipped one
+  (`lo`: mixed 3.14443 against 4.79910 and 4.48729, where under `clamp` it is
+  2.69889 against 3.92249 and 3.83155), so what moved is the margin and not the
+  finding. Bisected across 205 commits, and the pins are re-measured rather than
+  regenerated: the comment records both the flip and the alignment.
+
 # tulpa 0.2.8
 
 * **A single-block outer cell's cost is the per-row predictive-variance loop,

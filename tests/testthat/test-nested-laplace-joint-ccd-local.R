@@ -721,6 +721,14 @@ test_that("a locally refined fit says what its interval was read off", {
     f(v[use], w[use] / sum(w[use]), cell[use])
   }, numeric(3L)))
 
+  # All three arms are read off the same dispatch at the same within-cell
+  # construction, so what varies between them is the collapse construction and
+  # nothing else. `mixed` declines the box-uniform default and falls back to the
+  # chord read, so the comparators ask for chord too; naming a policy inline
+  # here is what let them drift apart the last time the construction moved.
+  dens   <- function(v, ww)
+    tulpa:::.nl_summary_quantile(v, ww, probs, "unbounded", "density",
+                                 within = "chord")
   mixed  <- per_axis(function(v, ww, cc)
     tulpa:::.nl_summary_quantile(v, ww, probs, "unbounded", "mixed"))
   moment <- per_axis(function(v, ww, cc)
@@ -734,13 +742,13 @@ test_that("a locally refined fit says what its interval was read off", {
       vv  <- c(vv, sum(ww[ix] * v[ix]) / tot)
       wv  <- c(wv, tot)
     }
-    tulpa:::.nl_wtd_quantile(vv, wv, probs, outside = "clamp")
+    dens(vv, wv)
   })
   w0 <- tulpa:::.joint_integration_weights(tg$lm, NULL)
   base <- t(vapply(seq_len(ncol(tg$grid)), function(j) {
     v   <- as.numeric(tg$grid[, j])
     use <- is.finite(v) & is.finite(w0) & w0 > 0
-    tulpa:::.nl_wtd_quantile(v[use], w0[use] / sum(w0[use]), probs, "clamp")
+    dens(v[use], w0[use] / sum(w0[use]))
   }, numeric(3L)))
 
   ex <- matrix(rep(tg$exact, each = nrow(mixed)), nrow = nrow(mixed))
@@ -773,16 +781,22 @@ test_that("the mixed read beats the alternatives on both sides of design_mass", 
   expect_gte(nrow(lo), 15L)
 
   # Summed absolute endpoint error against the exact quantiles. Measured:
-  # design_mass >= 0.5 (19 configurations) mixed 3.18024, collapsed 15.72792,
-  # unrefined 17.80607; design_mass < 0.5 (17) mixed 2.69889, collapsed 3.92249,
-  # unrefined 3.83155.
+  # design_mass >= 0.5 (19 configurations) mixed 3.46157, collapsed 16.29057,
+  # unrefined 18.05801; design_mass < 0.5 (17) mixed 3.14443, collapsed 4.79910,
+  # unrefined 4.48729.
+  #
+  # The mixed totals rose from 3.18024 / 2.69889 when the mixed support moved to
+  # `outside = "extend"` alongside the density one, and the comparator totals
+  # from 15.72792 / 17.80607 / 3.92249 / 3.83155 when they were aligned onto the
+  # same dispatch. The ordering below holds under either policy applied to all
+  # three arms; it is the margin, not the verdict, that moves.
   for (part in list(hi, lo)) {
     tot <- colSums(part[, c("mixed", "moment", "collapsed", "base")])
     expect_lt(tot[["mixed"]], tot[["collapsed"]])
     expect_lt(tot[["mixed"]], tot[["base"]])
   }
-  expect_lt(sum(hi$mixed), 3.5)
-  expect_lt(sum(lo$mixed), 3.0)
+  expect_lt(sum(hi$mixed), 3.8)
+  expect_lt(sum(lo$mixed), 3.5)
 
   # The moment read wins on THIS target because a Gaussian moment match is its
   # exact family here, which is why the win does not carry (see below).
@@ -792,7 +806,7 @@ test_that("the mixed read beats the alternatives on both sides of design_mass", 
 test_that("the moment read's advantage is the family, not the support", {
   skip_if_not_slow()
   # Same correlation, same refinement, skewed marginals. Measured over 27
-  # configurations: mixed 24.59641 against moment 39.93958. The mixed total is
+  # configurations: mixed 28.52885 against moment 39.85826. The mixed total is
   # off the GATED refinement (gcol33/tulpa#318); unconditional refinement on this
   # target gives 26.24674.
   s <- .lccd_gate_sweep(gamma_shape = 2, reaches = c(1.5, 2, 3))
