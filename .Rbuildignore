@@ -37,3 +37,4 @@
 ^\.pkgdown-stash$
 ^.*\.done$
 ^\.Rprofile$
+^man-roxygen$
