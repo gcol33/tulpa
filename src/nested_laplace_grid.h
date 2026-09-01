@@ -334,12 +334,26 @@ struct NoCheapEval {
     }
 };
 
+// Refill hook for per-cell state the checkpoint payload does not carry.
+// Called once per checkpoint-loaded cell, with the cell index, the mode the
+// payload restored and a solver to factorize against. A caller holding per-cell
+// state OUTSIDE `LaplaceResult` -- the per-row predictive variance the
+// single-block driver packs into its own buffer -- has nowhere else to fill it,
+// because a loaded cell never reaches `solve_at_theta`. Without the hook that
+// buffer keeps whatever it was initialised to, and a 0 there reads as zero
+// predictive variance rather than as an absent value.
+struct NoResumeRefill {
+    void operator()(int, const std::vector<double>&,
+                    SparseCholeskySolver*) const {}
+};
+
 // Engine default for the number of inner Newton steps per cell in the cheap
 // screening sweep, used when the caller supplies no `screen_iters`. See the
 // cost-against-ranking-fidelity note at the top of this file.
 static const int CHEAP_SCREEN_ITERS = 2;
 
-template<typename SolveAtTheta, typename CheapEval = NoCheapEval>
+template<typename SolveAtTheta, typename CheapEval = NoCheapEval,
+         typename ResumeRefill = NoResumeRefill>
 inline Rcpp::List run_nested_laplace_grid(
     int n_grid, int n_x,
     SolveAtTheta solve_at_theta,
@@ -355,7 +369,11 @@ inline Rcpp::List run_nested_laplace_grid(
     const std::vector<double>& x_init_per_cell = std::vector<double>(),
     // Inner Newton steps per cell in the cheap screening sweep. Appended last
     // so every existing positional call site keeps its meaning.
-    int screen_iters = CHEAP_SCREEN_ITERS
+    int screen_iters = CHEAP_SCREEN_ITERS,
+    // Per-cell state to reconstruct for a checkpoint-loaded cell. See
+    // NoResumeRefill; the default is a no-op, so a caller keeping nothing
+    // outside `LaplaceResult` is unaffected.
+    ResumeRefill resume_refill = ResumeRefill{}
 ) {
     // At least one step: a zero-step screen would rank every cell at the
     // warm-start it inherited rather than at its own quasi-mode.
@@ -497,6 +515,18 @@ inline Rcpp::List run_nested_laplace_grid(
                 cell_results[k] = ckpt->get(k);
                 ckpt_done[k] = 1;
                 n_loaded++;
+            }
+        }
+        // State the payload cannot carry is rebuilt here, after the whole
+        // preload so the hook sees a fully populated `cell_results`, and
+        // serially against one solver -- the same shape the serial solve path
+        // below takes. It costs one factorization at the restored mode per
+        // loaded cell, against the full solve resume exists to avoid.
+        if (n_loaded) {
+            SparseCholeskySolver refill_solver;
+            for (int k = 0; k < n_grid; k++) {
+                if (ckpt_done[k])
+                    resume_refill(k, cell_results[k].mode, &refill_solver);
             }
         }
     }

@@ -64,6 +64,54 @@ test_that("single-block nested-Laplace checkpoint == un-checkpointed + resumes",
     "fingerprint")
 })
 
+# The equivalence above reads the fields `LaplaceResult` carries, which is
+# exactly why it could not see gcol33/tulpa#646: the per-row predictive variance
+# lives in the grid driver's own buffer, so `ckpt_serialize` has no way to carry
+# it and a loaded cell used to come back holding the buffer's initial 0. A 0
+# there is not an absent value -- a caller marginalising the
+# (fitted_eta, fitted_eta_var) pair as a grid mixture reads it as a cell of zero
+# predictive variance and understates the reported variance in proportion to the
+# resumed mass. Both the all-loaded and the partly-loaded grid are checked: the
+# torn tail is what a killed run actually comes back as, and it is the case
+# where loaded and freshly solved cells have to agree with each other.
+test_that("a resumed cell reports the predictive variance, not the buffer's 0", {
+  set.seed(11L)
+  n_s <- 20L; N <- 160L
+  adj <- .ck_chain_adj(n_s)
+  w <- as.numeric(arima.sim(n = n_s, list(ar = 0.6))) * 0.7; w <- w - mean(w)
+  sidx <- sample(n_s, N, replace = TRUE); x <- rnorm(N)
+  y <- rbinom(N, 1, plogis(0.3 + 0.5 * x + w[sidx]))
+  X <- cbind(1, x)
+  prior <- c(list(type = "icar", tau_grid = 1 / c(0.5, 0.8, 1.2, 1.8)^2,
+                  spatial_idx = sidx), adj)
+  fit <- function(ck = NULL) {
+    ctrl <- list(diagnose_k = FALSE)
+    if (!is.null(ck)) ctrl$checkpoint <- ck
+    tulpa_nested_laplace(y = y, n_trials = rep(1L, N), X = X, prior = prior,
+                         family = "binomial", control = ctrl)
+  }
+  path <- tempfile(fileext = ".ckpt"); on.exit(unlink(path), add = TRUE)
+
+  f_plain <- fit()
+  v0 <- f_plain$fitted_eta_var
+  expect_false(is.null(v0))
+  # The uninterrupted fit is the reference, so it has to carry a variance in
+  # every cell for the comparison below to be able to fail.
+  expect_true(all(is.finite(v0)))
+  expect_false(any(apply(v0, 1L, function(r) all(r == 0))))
+
+  invisible(fit(list(path = path, resume = FALSE)))
+  f_all <- fit(list(path = path, resume = TRUE))   # every cell loaded
+  expect_false(any(apply(f_all$fitted_eta_var, 1L, function(r) all(r == 0))))
+  expect_equal(f_all$fitted_eta_var, v0, tolerance = 1e-12)
+
+  b <- readBin(path, "raw", n = file.size(path))
+  writeBin(b[seq_len(as.integer(length(b) * 0.6))], path)
+  f_mix <- fit(list(path = path, resume = TRUE))   # loaded + freshly solved
+  expect_false(any(apply(f_mix$fitted_eta_var, 1L, function(r) all(r == 0))))
+  expect_equal(f_mix$fitted_eta_var, v0, tolerance = 1e-12)
+})
+
 # --- RE-covariance nested CCD -----------------------------------------------
 
 test_that("RE-cov nested CCD checkpoint == un-checkpointed + resumes", {

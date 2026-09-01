@@ -526,6 +526,33 @@ inline Rcpp::List run_multi_block_nested_laplace(
                                    /*allow_probe=*/true);
     };
 
+    // A checkpoint carries the `LaplaceResult`; the per-row predictive variance
+    // lives in this driver's own buffer, so a loaded cell never reaches the
+    // pass that fills it. NaN goes down first, because the buffer's initial 0
+    // is a silently-wrong "zero predictive variance" a grid mixture reads as a
+    // real number and understates the reported variance by, in proportion to
+    // the resumed mass -- the engine's convention everywhere else is that a
+    // decline returns NaN precisely so this cannot happen.
+    //
+    // The refill then re-solves at the restored mode with ZERO Newton steps.
+    // The loop cannot move the iterate, and the post-loop factorization every
+    // solve ends with still runs, so the factor the back-solves read is the one
+    // the original solve read at the same point: the refilled row is
+    // bit-identical to the uninterrupted fit's, which is what "a resumed fit
+    // equals the uninterrupted one" already promises for every other field.
+    auto resume_refill = [&](int k, const std::vector<double>& mode,
+                             SparseCholeskySolver* solver) {
+        if (!want_fitted_var ||
+            static_cast<std::size_t>(k + 1) * N > fitted_var_buf.size()) return;
+        const std::size_t base = static_cast<std::size_t>(k) * N;
+        std::fill(fitted_var_buf.begin() + base,
+                  fitted_var_buf.begin() + base + N,
+                  std::numeric_limits<double>::quiet_NaN());
+        if (static_cast<int>(mode.size()) != n_x) return;
+        solve_at_theta_impl(k, mode, solver, /*max_iter_use=*/0, nullptr,
+                            /*want_var=*/true, /*allow_probe=*/false);
+    };
+
     // Cheap-pass screening: a short inner Newton run warm-started from the
     // neighbour quasi-mode the driver chains across the lattice, returning
     // the quasi-mode and the Laplace log-marginal at it. Calling
@@ -556,7 +583,8 @@ inline Rcpp::List run_multi_block_nested_laplace(
         /*tile_ids=*/std::vector<int>(),
         /*tile_pilot_cells=*/std::vector<int>(),
         cheap_eval, prune_tol, progress, ckpt,
-        /*x_init_per_cell=*/std::vector<double>(), screen_iters
+        /*x_init_per_cell=*/std::vector<double>(), screen_iters,
+        resume_refill
     );
     pattern_guard.check("the single-block nested-Laplace outer grid");
 
