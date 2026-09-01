@@ -17,7 +17,13 @@
 #' @param sigma Marginal standard deviation. If NULL, uses nested Laplace.
 #' @param nested_laplace Logical. If TRUE (default when range/sigma are NULL),
 #'   use nested Laplace approximation over hyperparameters.
-#' @param phi Dispersion parameter (negbin only).
+#' @param phi Dispersion passed to the family, in the compiled-kernel
+#'   convention: for `gaussian` / `lognormal` this is the residual SD (the
+#'   variance is `phi^2`), for `neg_binomial_2` the size, `gamma` the shape,
+#'   `beta` the precision, `t` the scale; `binomial` / `poisson` ignore it.
+#'   The [tulpa()] and [tulpa_laplace()] front doors take the residual
+#'   VARIANCE instead and convert at the kernel boundary, so one model is
+#'   `phi` there and `sqrt(phi)` here.
 #' @param offset Optional fixed additive term on the linear predictor
 #'   (`eta = offset + X beta + A w`), length `length(y)`; `NULL` -> no offset.
 #' @param re_idx,n_re_groups,sigma_re Optional single iid random-intercept

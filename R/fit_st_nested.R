@@ -62,7 +62,13 @@
 #' @param temporal_type `"ar1"` (default), `"rw1"`, or `"rw2"`.
 #' @param family Response family (see [family_names()]).
 #' @param n_trials Binomial denominators, or `NULL` (= 1).
-#' @param phi Dispersion passed to the family.
+#' @param phi Dispersion passed to the family, in the compiled-kernel
+#'   convention: for `gaussian` / `lognormal` this is the residual SD (the
+#'   variance is `phi^2`), for `neg_binomial_2` the size, `gamma` the shape,
+#'   `beta` the precision, `t` the scale; `binomial` / `poisson` ignore it.
+#'   The [tulpa()] and [tulpa_laplace()] front doors take the residual
+#'   VARIANCE instead and convert at the kernel boundary, so one model is
+#'   `phi` there and `sqrt(phi)` here.
 #' @param cyclic Logical; wrap the temporal field (seasonal). Default `FALSE`.
 #' @param re_idx,n_re_groups,sigma_re Optional single iid random-intercept term
 #'   alongside the fields (conditioned on `sigma_re`); `n_re_groups = 0` (default)

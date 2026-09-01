@@ -34,7 +34,11 @@ laplace_gp_at(
 
 \item{family}{Distribution family.}
 
-\item{phi}{Dispersion parameter (negbin / gamma only).}
+\item{phi}{Dispersion in the compiled-kernel convention: for \code{gaussian} /
+\code{lognormal} the residual SD (variance is \code{phi^2}), for \code{neg_binomial_2}
+the size, \code{gamma} the shape, \code{beta} the precision, \code{t} the scale;
+\code{binomial} / \code{poisson} ignore it. Callers hand this the already-converted
+value (\code{\link[=tulpa_laplace]{tulpa_laplace()}} passes \code{sqrt(phi)} for the variance families).}
 
 \item{sigma2_gp}{Marginal variance (NULL -> 1.0).}
 

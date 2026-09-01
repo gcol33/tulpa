@@ -875,7 +875,11 @@ dispatch_laplace_spatial <- function(y, n_trials, X, re_idx, n_re_groups,
 #' @param X Fixed-effects design matrix.
 #' @param spatial A `tulpa_spatial` object of type `"spde"`.
 #' @param family Distribution family.
-#' @param phi Dispersion parameter (negbin / gamma only).
+#' @param phi Dispersion in the compiled-kernel convention: for `gaussian` /
+#'   `lognormal` the residual SD (variance is `phi^2`), for `neg_binomial_2`
+#'   the size, `gamma` the shape, `beta` the precision, `t` the scale;
+#'   `binomial` / `poisson` ignore it. Callers hand this the already-converted
+#'   value ([tulpa_laplace()] passes `sqrt(phi)` for the variance families).
 #' @param range Spatial range (NULL -> use `spatial$prior_range[1]`).
 #' @param sigma Marginal SD (NULL -> use `spatial$prior_sigma[1]`).
 #' @param max_iter Newton iterations.
@@ -997,7 +1001,11 @@ gp_cov_type_for_laplace <- function(spatial) {
 #' @param X Fixed-effects design matrix.
 #' @param spatial A `tulpa_gp` spec, validated (i.e., `neighbor_info` populated).
 #' @param family Distribution family.
-#' @param phi Dispersion parameter (negbin / gamma only).
+#' @param phi Dispersion in the compiled-kernel convention: for `gaussian` /
+#'   `lognormal` the residual SD (variance is `phi^2`), for `neg_binomial_2`
+#'   the size, `gamma` the shape, `beta` the precision, `t` the scale;
+#'   `binomial` / `poisson` ignore it. Callers hand this the already-converted
+#'   value ([tulpa_laplace()] passes `sqrt(phi)` for the variance families).
 #' @param sigma2_gp Marginal variance (NULL -> 1.0).
 #' @param phi_gp Range / decay parameter (NULL -> 1.0).
 #' @param max_iter Newton iterations.

@@ -26,7 +26,12 @@ must equal \code{length(bundle$re_terms)}. Ignored when there are no RE terms.}
 
 \item{n_trials}{Binomial denominators (or \code{NULL}).}
 
-\item{phi}{Dispersion/precision passed to the family.}
+\item{phi}{Dispersion passed to the family (held fixed), in the R family
+registry convention: for \code{gaussian} / \code{lognormal} this is the residual
+VARIANCE (matching \code{\link[=tulpa]{tulpa()}} and \code{\link[=tulpa_laplace]{tulpa_laplace()}}), for
+\code{neg_binomial_2} the size, \code{gamma} the shape, \code{beta} the precision, \code{t}
+the scale; \code{binomial} / \code{poisson} ignore it. The compiled-kernel doors
+(\code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}}, \code{\link[=fit_spde]{fit_spde()}}) take the residual SD instead.}
 
 \item{beta_prior}{\code{list(mean, sd)} Gaussian prior on the fixed effects
 (scalars, recycled). Defaults to the engine default, \code{prior_normal(0, 2.5)}.}

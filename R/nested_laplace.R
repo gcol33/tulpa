@@ -50,7 +50,13 @@
 #' @param n_re_groups RE group count (default 0).
 #' @param sigma_re RE standard deviation (default 1).
 #' @param family `"binomial"`, `"poisson"`, `"neg_binomial_2"`, etc.
-#' @param phi Dispersion (negbin/gamma).
+#' @param phi Dispersion passed to the family, in the compiled-kernel
+#'   convention: for `gaussian` / `lognormal` this is the residual SD (the
+#'   variance is `phi^2`), for `neg_binomial_2` the size, `gamma` the shape,
+#'   `beta` the precision, `t` the scale; `binomial` / `poisson` ignore it.
+#'   The [tulpa()] and [tulpa_laplace()] front doors take the residual
+#'   VARIANCE instead and convert at the kernel boundary, so one model is
+#'   `phi` there and `sqrt(phi)` here.
 #' @param control Optional list of perf/numerical tuning knobs (statistical
 #'   arguments stay top-level), following the `control` convention of
 #'   [tulpa()]. Recognised elements (defaults in parentheses):
@@ -272,6 +278,20 @@
 #'     `fitted_eta_var`. Declared by the single-block kernels only; a
 #'     multi-block prior refuses `FALSE` rather than accepting it and ignoring
 #'     it.
+#'   * `fitted_var_mass` (`1`) -- the share of the screened surviving mass whose
+#'     cells get that pass. A cell's per-row variance reaches the report only
+#'     through the grid mixture, weighted by that cell's mass, so a surviving
+#'     cell at weight `1e-6` pays the whole back-solve pass to move the reported
+#'     variance in its sixth digit. Below `1` the driver ranks the survivors by
+#'     the SAME screened weight the prune already trusts to discard a cell
+#'     outright, runs the pass on the smallest prefix carrying that share, and
+#'     leaves the other cells' `fitted_eta_var` rows `NaN` -- they are still
+#'     solved in full, so this is strictly weaker than pruning. `fitted_var_cells`
+#'     names the rows that hold a variance (1-based), and a caller marginalising
+#'     the mixture renormalises over them, exactly as a repaired grid is read
+#'     conditional on the cells it retained. Requires `prune = TRUE`, which is
+#'     what produces a ranking before any full solve, and is refused by the
+#'     multi-block dispatch.
 #'
 #' @return A list with:
 #'   * `theta_grid`: matrix or vector of grid hyperparameter values.
@@ -373,6 +393,23 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   screen_iters       <- .nl_check_screen_iters(
     control$screen_iters %||% .nl_screen("iters"))
   fitted_var         <- isTRUE(control$fitted_var %||% TRUE)
+  # The per-row variance pass is the dominant per-cell cost, and a cell's
+  # variance reaches the report only through the grid mixture weighted by that
+  # cell's mass. Below 1 the driver runs the pass on the highest-weight cells
+  # carrying that share of the SCREENED surviving mass and leaves the rest NaN.
+  # It reads the screen's ranking, so it needs `prune = TRUE`; asking for it
+  # without one is refused rather than silently ignored.
+  fitted_var_mass    <- .nl_check_fitted_var_mass(
+    control$fitted_var_mass %||% 1)
+  if (fitted_var_mass < 1 && !prune) {
+    stop("`control$fitted_var_mass` ranks cells by the cheap screen's ",
+         "weights, so it requires `control$prune = TRUE`.", call. = FALSE)
+  }
+  if (fitted_var_mass < 1 && !fitted_var) {
+    stop("`control$fitted_var_mass` selects which cells get the per-row ",
+         "variance pass; `control$fitted_var = FALSE` switches the pass off ",
+         "entirely. Set one or the other.", call. = FALSE)
+  }
   # Subspace debias. The correction reports per-cell DRAWS
   # instead of the Gaussian-mixture moments, and those are built from the same
   # per-cell fixed-effect mode + precision `.nested_fixed_moments()` reads, so
@@ -481,7 +518,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     checkpoint_path = .ckpt$path,
     prune_tol = prune_tol_eff,
     screen_iters = screen_iters,
-    compute_fitted_var = fitted_var
+    compute_fitted_var = fitted_var,
+    fitted_var_mass = fitted_var_mass
   )
 
   # cargs without the checkpoint, for the k-hat diagnostic re-evaluations, and
@@ -503,6 +541,10 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     }
     if (!is.null(control$fitted_var) && !isTRUE(control$fitted_var)) {
       stop("`control$fitted_var` applies to a single-block `prior`; ",
+           "this fit takes the multi-block dispatch.", call. = FALSE)
+    }
+    if (fitted_var_mass < 1) {
+      stop("`control$fitted_var_mass` applies to a single-block `prior`; ",
            "this fit takes the multi-block dispatch.", call. = FALSE)
     }
     tm$mark("setup")
@@ -695,6 +737,13 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 .nl_check_prune_tol <- function(x) {
   if (length(x) != 1L || !is.numeric(x) || !is.finite(x) || x < 0 || x >= 1) {
     stop("`prune_tol` must be a finite numeric in [0, 1).", call. = FALSE)
+  }
+  as.numeric(x)
+}
+
+.nl_check_fitted_var_mass <- function(x) {
+  if (length(x) != 1L || !is.numeric(x) || !is.finite(x) || x <= 0 || x > 1) {
+    stop("`fitted_var_mass` must be a finite numeric in (0, 1].", call. = FALSE)
   }
   as.numeric(x)
 }

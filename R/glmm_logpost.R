@@ -39,7 +39,12 @@
 #' @param sigma_re Numeric vector of random-effect SDs, one per RE term. Length
 #'   must equal `length(bundle$re_terms)`. Ignored when there are no RE terms.
 #' @param n_trials Binomial denominators (or `NULL`).
-#' @param phi Dispersion/precision passed to the family.
+#' @param phi Dispersion passed to the family (held fixed), in the R family
+#'   registry convention: for `gaussian` / `lognormal` this is the residual
+#'   VARIANCE (matching [tulpa()] and [tulpa_laplace()]), for
+#'   `neg_binomial_2` the size, `gamma` the shape, `beta` the precision, `t`
+#'   the scale; `binomial` / `poisson` ignore it. The compiled-kernel doors
+#'   ([tulpa_nested_laplace()], [fit_spde()]) take the residual SD instead.
 #' @param beta_prior `list(mean, sd)` Gaussian prior on the fixed effects
 #'   (scalars, recycled). Defaults to the engine default, `prior_normal(0, 2.5)`.
 #' @param weights Optional per-observation likelihood weights (length `n_obs`):

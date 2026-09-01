@@ -44,7 +44,13 @@ integrate over range and sigma.}
 \item{nested_laplace}{Logical. If TRUE (default when range/sigma are NULL),
 use nested Laplace approximation over hyperparameters.}
 
-\item{phi}{Dispersion parameter (negbin only).}
+\item{phi}{Dispersion passed to the family, in the compiled-kernel
+convention: for \code{gaussian} / \code{lognormal} this is the residual SD (the
+variance is \code{phi^2}), for \code{neg_binomial_2} the size, \code{gamma} the shape,
+\code{beta} the precision, \code{t} the scale; \code{binomial} / \code{poisson} ignore it.
+The \code{\link[=tulpa]{tulpa()}} and \code{\link[=tulpa_laplace]{tulpa_laplace()}} front doors take the residual
+VARIANCE instead and convert at the kernel boundary, so one model is
+\code{phi} there and \code{sqrt(phi)} here.}
 
 \item{offset}{Optional fixed additive term on the linear predictor
 (\verb{eta = offset + X beta + A w}), length \code{length(y)}; \code{NULL} -> no offset.}

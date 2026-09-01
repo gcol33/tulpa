@@ -1,3 +1,27 @@
+# tulpa 0.2.10
+
+* **`phi` means two different things on two sets of doors, and only some of
+  them said so (gcol33/tulpa#645).** The R family registry parameterizes
+  `gaussian` / `lognormal` by the residual VARIANCE and the compiled kernels
+  by the residual SD; `.phi_to_kernel()` converts between them at exactly two
+  call sites, `tulpa()` and `tulpa_laplace()`. Every other door hands `phi` to
+  its consumer raw, so one model is `phi` on those front doors and
+  `sqrt(phi)` on `tulpa_nested_laplace()`, `fit_st_nested()` and `fit_spde()`,
+  and a reader taking one for the other is out by a factor of `phi`.
+  `tulpa_nested_laplace()` documented `phi` as "Dispersion (negbin/gamma)",
+  naming the two families where the value is neither convention and staying
+  silent on gaussian; `fit_spde()` and the internal `laplace_spde_at()` /
+  `laplace_gp_at()` said "negbin only" / "negbin / gamma only" for a `phi`
+  the shipped tests pass `sqrt(0.05)` to on a gaussian fit;
+  `fit_st_nested()`, `tulpa_ep()` and `build_glmm_logpost()` said only
+  "passed to the family". Each now names its convention, the per-family
+  reading and the counterpart door. `tulpa_ep()` and `build_glmm_logpost()`
+  evaluate the R registry, so their `phi` is the variance; the rest are
+  kernel doors and take the SD. `tulpa_nested_laplace_joint()`,
+  `tulpa_sample_glmm()`, `fit_spde_nuts()` and `tulpa_laplace()` already said
+  so and are unchanged. Documentation only: no argument, default or
+  numerical behaviour moved.
+
 # tulpa 0.2.9
 
 * **The #317 mixed-read gate scored its three arms under two different
