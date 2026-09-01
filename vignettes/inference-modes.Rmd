@@ -189,7 +189,7 @@ nL <- 60000L
 xL <- rnorm(nL)
 dL <- data.frame(y = 0.5 + 1.2 * xL + rnorm(nL, sd = 0.8), x = xL)
 fit_big <- tulpa(y ~ x, data = dL, family = "gaussian", mode = "auto",
-                 phi = 0.8)
+                 phi = 0.8^2)
 c(backend = fit_big$backend, tier = fit_big$inference_tier)
 fit_big$selection_reason
 ```

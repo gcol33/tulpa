@@ -116,7 +116,7 @@ Monte Carlo error.
 
 ```{r fit-gaussian}
 fit <- tulpa(y ~ x, data = df, family = "gaussian",
-             mode = "laplace", phi = 0.8)
+             mode = "laplace", phi = 0.8^2)
 coef(fit)
 ```
 
@@ -155,8 +155,8 @@ depends on the family. For `gaussian` it is the residual variance, for
 `neg_binomial_2` the size parameter that sets overdispersion, for `beta` the
 precision. The Laplace and sampler paths both condition on the value you
 pass: they treat `phi` as known and fit everything else given it. Here the
-true residual standard deviation is 0.8, so `phi = 0.8` is the matching
-value. When you do not know `phi` in advance, the nested-Laplace and EM
+true residual standard deviation is 0.8, so the matching value is its
+square, `phi = 0.8^2`. When you do not know `phi` in advance, the nested-Laplace and EM
 layers integrate it rather than fixing it, which the inference vignettes
 walk through; for a first fit, passing a plausible value is enough to get
 estimates and intervals you can sanity-check.
@@ -204,7 +204,7 @@ df$y <- 0.5 + 1.2 * df$x + u[g] + rnorm(n, sd = 0.8)
 df$g <- g
 
 fit_re <- tulpa(y ~ x + (1 | g), data = df, family = "gaussian",
-                mode = "laplace", sigma_re = 0.6, phi = 0.8)
+                mode = "laplace", sigma_re = 0.6, phi = 0.8^2)
 coef(fit_re)
 ```
 
@@ -271,10 +271,10 @@ model adding the slope, and a model adding the random intercept on top of the
 slope. Each is a single `tulpa()` call differing only in the formula.
 
 ```{r compare}
-m0 <- tulpa(y ~ 1,     data = df, family = "gaussian", mode = "laplace", phi = 0.8)
-m1 <- tulpa(y ~ x,     data = df, family = "gaussian", mode = "laplace", phi = 0.8)
+m0 <- tulpa(y ~ 1,     data = df, family = "gaussian", mode = "laplace", phi = 0.8^2)
+m1 <- tulpa(y ~ x,     data = df, family = "gaussian", mode = "laplace", phi = 0.8^2)
 m2 <- tulpa(y ~ x + (1 | g), data = df, family = "gaussian",
-            mode = "laplace", sigma_re = 0.6, phi = 0.8)
+            mode = "laplace", sigma_re = 0.6, phi = 0.8^2)
 compare_models(intercept = m0, slope = m1, slope_re = m2, criterion = "loglik")
 ```
 

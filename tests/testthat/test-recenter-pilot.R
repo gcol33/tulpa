@@ -168,7 +168,11 @@ test_that("a pilot with nothing left to thin is not a pilot", {
     list(responses = list(occ = occ, cov = cov), adj = .pilot_chain_adj(n_s))
 }
 
-.pilot_phi <- list(occ = NULL, cov = exp(seq(log(0.2), log(1.5), length.out = 4)))
+# A `phi_grid` axis carries the arm's dispersion in the engine's one
+# convention, so for a gaussian arm its nodes are residual VARIANCES: the four
+# below span residual SD 0.2 to 1.5.
+.pilot_phi <- list(occ = NULL,
+                   cov = exp(seq(log(0.2), log(1.5), length.out = 4))^2)
 
 .pilot_fit <- function(sim, prior, pilot, extra = list()) {
     ctrl <- c(list(diagnose_k = FALSE, progress = FALSE), extra)

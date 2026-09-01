@@ -78,7 +78,9 @@ mk_arm <- function(m, fam) {
   lin <- 0.2 + 0.5 * x + 0.8 * field[si]
   y   <- if (fam == "binomial") rbinom(m, 1L, plogis(lin)) else lin + rnorm(m, 0, 0.5)
   list(y = as.numeric(y), n_trials = rep(1L, m), X = cbind(1, x),
-       spatial_idx = si, family = fam, phi = if (fam == "gaussian") 0.5 else 1)
+       spatial_idx = si, family = fam,
+       # residual VARIANCE; the gaussian arm is simulated at residual SD 0.5
+       phi = if (fam == "gaussian") 0.5^2 else 1)
 }
 
 prior <- list(type = "icar", n_spatial_units = S,

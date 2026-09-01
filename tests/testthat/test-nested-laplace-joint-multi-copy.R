@@ -415,8 +415,9 @@ test_that("joint multi-block recovers a COPIED correlated MCAR block (Sigma + al
         prior = list(mcar_block),
         copy = list(arm = "b", block = 1L,
                     alpha_grid = c(0, exp(seq(log(0.3), log(3), length.out = 6)))),
-        phi_grid = list(a = exp(seq(log(0.2), log(0.8), length.out = 4)),
-                        b = exp(seq(log(0.2), log(0.8), length.out = 4))),
+        # Residual VARIANCE nodes spanning residual SD 0.2 to 0.8.
+        phi_grid = list(a = exp(seq(log(0.2), log(0.8), length.out = 4))^2,
+                        b = exp(seq(log(0.2), log(0.8), length.out = 4))^2),
         control = list(max_iter = 60L, tol = 1e-6, integration = "ccd",
                        store_Q = TRUE, progress = FALSE)))
 

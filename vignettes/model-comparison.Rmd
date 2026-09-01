@@ -127,7 +127,7 @@ y0 <- 0.5 + 1.2 * x + rnorm(n, sd = 0.8)
 df <- data.frame(y = y0, x = x)
 
 fit <- tulpa(y ~ x, data = df, family = "gaussian",
-             mode = "laplace", phi = 0.8)
+             mode = "laplace", phi = 0.8^2)
 logLik(fit)
 ```
 
@@ -181,13 +181,13 @@ adds the second covariate `z`. Each fit is a single Laplace solve.
 
 ```{r fit-ladder}
 m0 <- tulpa(y ~ 1, data = dat, family = "gaussian",
-            mode = "laplace", phi = 0.8)
+            mode = "laplace", phi = 0.8^2)
 m1 <- tulpa(y ~ x, data = dat, family = "gaussian",
-            mode = "laplace", phi = 0.8)
+            mode = "laplace", phi = 0.8^2)
 m2 <- tulpa(y ~ x + (1 | g), data = dat, family = "gaussian",
-            mode = "laplace", sigma_re = 0.7, phi = 0.8)
+            mode = "laplace", sigma_re = 0.7, phi = 0.8^2)
 m3 <- tulpa(y ~ x + z + (1 | g), data = dat, family = "gaussian",
-            mode = "laplace", sigma_re = 0.7, phi = 0.8)
+            mode = "laplace", sigma_re = 0.7, phi = 0.8^2)
 ```
 
 Pull the evidence from each and lay it side by side. The differences
@@ -249,7 +249,7 @@ term `w` is independent of `y` by construction.
 ```{r noise-term}
 dat$w <- rnorm(n)
 m4 <- tulpa(y ~ x + z + w + (1 | g), data = dat, family = "gaussian",
-            mode = "laplace", sigma_re = 0.7, phi = 0.8)
+            mode = "laplace", sigma_re = 0.7, phi = 0.8^2)
 c(full = round(as.numeric(logLik(m3)), 2),
   plus_noise = round(as.numeric(logLik(m4)), 2),
   gain = round(as.numeric(logLik(m4)) - as.numeric(logLik(m3)), 2))
@@ -331,9 +331,9 @@ changed between the two specifications.
 
 ```{r non-nested}
 mx <- tulpa(y ~ x, data = dat, family = "gaussian",
-            mode = "laplace", phi = 0.8)
+            mode = "laplace", phi = 0.8^2)
 mz <- tulpa(y ~ z, data = dat, family = "gaussian",
-            mode = "laplace", phi = 0.8)
+            mode = "laplace", phi = 0.8^2)
 compare_models(x_only = mx, z_only = mz, criterion = "loglik")
 ```
 
@@ -612,7 +612,7 @@ A short set of habits covers most comparison work:
   random-effect variances, integrate them through the nested-Laplace
   path instead of fixing them by hand.
 - **Know what conditioning on a hyperparameter costs.** When you pass
-  `sigma_re = 0.7` or `phi = 0.8`, the marginal likelihood is the
+  `sigma_re = 0.7` or `phi = 0.8^2`, the marginal likelihood is the
   evidence given that value, not integrated over it. The Gaussian
   random-effect offsets and the fixed effects are integrated out; the
   variance and the residual scale are held. That is exactly the right

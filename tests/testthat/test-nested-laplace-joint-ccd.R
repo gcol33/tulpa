@@ -178,7 +178,8 @@ test_that("CCD rides the latent axes and crosses an active phi tensor (gcol33/tu
     sim <- .sim_joint_ccd(2024L, N = 800L, n_s = 40L)
     sp  <- list(sim$responses$occ$spatial_idx, sim$responses$pos$spatial_idx)
     blk <- .bym2_copy_block(sim$adj, c(0.3, 0.6, 1.0), c(0.3, 0.7, 0.9), sp)
-    phi_axis <- c(0.4, 0.6)
+    # The dispersion axis is the residual VARIANCE: residual SD 0.4 and 0.6.
+    phi_axis <- c(0.4, 0.6)^2
     fit <- tulpa_nested_laplace_joint(
         sim$responses, list(blk),
         copy = list(arm = "pos", block = 1L, alpha_grid = c(0.3, 0.7, 1.2)),
@@ -201,7 +202,8 @@ test_that("CCD x phi matches the tensor grid x phi in the tighter-posterior regi
     skip_on_cran()
     sim <- .sim_joint_ccd(7L, N = 4000L, n_s = 40L)
     sp  <- list(sim$responses$occ$spatial_idx, sim$responses$pos$spatial_idx)
-    phi_axis <- exp(seq(log(0.3), log(0.8), length.out = 4))
+    # Residual VARIANCE nodes spanning residual SD 0.3 to 0.8.
+    phi_axis <- exp(seq(log(0.3), log(0.8), length.out = 4))^2
 
     fit_ccd <- tulpa_nested_laplace_joint(
         sim$responses,

@@ -1,3 +1,42 @@
+# tulpa 0.2.11
+
+* **Every R-level `phi` is the residual VARIANCE for `gaussian` / `lognormal`
+  (gcol33/tulpa#650).** It was the variance at `tulpa()`, `tulpa_laplace()`,
+  `tulpa_ep()` and `build_glmm_logpost()` and the residual SD at
+  `tulpa_nested_laplace()`, `fit_st_nested()`, `fit_spde()`, the
+  `tulpa_nested_laplace_joint()` arms and their `phi_grid`,
+  `tulpa_sample_glmm()`, the `laplace_*_at()` helpers and the rational-SPDE
+  helpers, so one model was `phi` at one door and `sqrt(phi)` at another.
+  `.phi_to_kernel()` is now called once per function, adjacent to the kernel
+  call that wants the SD; the joint tier converts at its single C++ boundary,
+  covering the arm scalar, the per-arm `phi_grid` override and the
+  `[n_arms x n_batch]` `phi_batch`. The compiled surface is not uniformly SD,
+  so the conversion is not blanket: `cpp_glmm_oracle_make` and
+  `cpp_re_cov_gibbs_sweep` take the variance and are handed `phi` raw, and
+  `truncated_gaussian`, `interval_gaussian` and `inverse_gaussian` are their own
+  families rather than variance families. `fit_spde()` stores `$phi` in that one
+  convention instead of `$phi_kernel`. **This changes what an existing call
+  means**: a script passing a residual SD to any of the flipped doors now states
+  its square, and passes `phi^2` to describe the same model.
+
+* **A `phi_grid` axis is the residual variance too, and the fixtures that carry
+  one were left on the SD scale (gcol33/tulpa#650, gcol33/tulpa#649).** An entry
+  in `phi_grid` overrides the arm's scalar `phi` outright, so squaring the
+  scalar alone is a no-op on any fixture with an axis and the axis is the only
+  thing the kernel reads. Seven test fixtures and four vignettes are restated on
+  the variance scale, each describing the model it describes.
+  `test-nested-laplace-joint-phi-grid.R` was `skip_on_cran()`-gated and reading
+  7 FAIL / 7 PASS: every recovery assertion in it compared a posterior mean over
+  a variance axis against a true SD. `test-recenter-pilot.R`'s fixture had
+  stopped collapsing its outer grid -- ESS 1.53 -> 4.95 against a `< 2` trigger
+  -- so its placement never fired and the `h / sd` identity block was measuring
+  nothing.
+
+  The engine is unchanged across this. Built clean at `66e5f60` and at the fixed
+  fixtures and run on the same outer grid, every cell whose coordinates match
+  exactly returns a bit-identical `log_marginal`; the cells that differ are the
+  adaptive-refinement nodes, whose coordinates differ because the phi axis does.
+
 # tulpa 0.2.10
 
 * **`phi` means two different things on two sets of doors, and only some of

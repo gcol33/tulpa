@@ -86,7 +86,8 @@ test_that("sparse parallel path matches serial (no phi axis)", {
 test_that("sparse parallel path matches serial (phi_grid axis)", {
     skip_if_not(parallel::detectCores() >= 2L, "needs multi-core")
     n_outer <- max(2L, min(4L, parallel::detectCores() - 1L))
-    phi_grid <- list(pos = c(0.35, 0.5, 0.7))
+    # Residual VARIANCE nodes: residual SD 0.35, 0.5 and 0.7.
+    phi_grid <- list(pos = c(0.35, 0.5, 0.7)^2)
     for (seed in 7300L + seq_len(3L)) {
         sim <- .spar_sim(seed)
         .spar_expect_equiv(.spar_fit(sim, 1L, phi_grid),

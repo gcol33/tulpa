@@ -1,15 +1,17 @@
-# Joint nested-Laplace: phi_grid as a residual-SD hyperparameter axis.
+# Joint nested-Laplace: phi_grid as a residual-VARIANCE hyperparameter axis.
 #
-# `phi_grid` lifts each Gaussian/lognormal arm's residual SD off the
+# `phi_grid` lifts each Gaussian/lognormal arm's dispersion off the
 # parse-time scalar onto the outer grid. The kernel rewrites `arm.phi`
 # at each grid point before the inner Newton solve, and `phi_<arm>`
-# enters the joint posterior alongside (sigma, rho, alpha).
+# enters the joint posterior alongside (sigma, rho, alpha). `phi` is the
+# residual VARIANCE at every R-level door, so an axis written from a
+# residual SD span is stated squared and recovers `sd^2`.
 #
 # Two recovery tests:
-#   1. Gaussian copy arm — phi_grid recovers true residual SD.
+#   1. Gaussian copy arm — phi_grid recovers true residual variance.
 #   2. Lognormal copy arm — first-class lognormal family with
 #      `eta = E[log y]` and `-log(y)` Jacobian; phi_grid recovers
-#      true residual SD on the log scale.
+#      true residual variance on the log scale.
 #
 # Both pin (sigma, rho, alpha) at truth on a tight grid to
 # isolate the phi_pos axis — the failure mode here is mis-identification
@@ -77,12 +79,13 @@
 
 
 # --------------------------------------------------------------------------- #
-# 1. Gaussian arm: phi_grid recovers true residual SD                         #
+# 1. Gaussian arm: phi_grid recovers true residual variance                   #
 # --------------------------------------------------------------------------- #
 
-test_that("phi_grid on gaussian copy arm recovers true residual SD", {
+test_that("phi_grid on gaussian copy arm recovers true residual variance", {
     skip_on_cran()
-    sd_pos_true <- 0.3
+    sd_pos_true  <- 0.3
+    var_pos_true <- sd_pos_true^2
     sim <- .simulate_joint_pg(N = 500, n_s = 30,
                               sigma = 0.6, rho = 0.7,
                               alpha_true = 1.0, sd_pos = sd_pos_true,
@@ -112,7 +115,8 @@ test_that("phi_grid on gaussian copy arm recovers true residual SD", {
         rho_grid   = sim$truth$rho
     )
 
-    phi_axis <- exp(seq(log(0.08), log(1.0), length.out = 9))
+    # Residual VARIANCE nodes spanning residual SD 0.08 to 1.0.
+    phi_axis <- exp(seq(log(0.08), log(1.0), length.out = 9))^2
     fit <- tulpa_nested_laplace_joint(
         responses = list(
             occ = arm_occ,
@@ -126,9 +130,9 @@ test_that("phi_grid on gaussian copy arm recovers true residual SD", {
     expect_true("phi_pos" %in% colnames(fit$theta_grid))
     expect_true(all(is.finite(fit$log_marginal)))
 
-    # Posterior mean recovers true sd_pos within ~25% relative.
+    # Posterior mean recovers the true residual variance within ~25% relative.
     phi_mean <- fit$theta_mean[["phi_pos"]]
-    expect_lt(abs(phi_mean - sd_pos_true) / sd_pos_true, 0.25)
+    expect_lt(abs(phi_mean - var_pos_true) / var_pos_true, 0.25)
 
     # Mode of the phi_pos marginal is near truth (within one grid step).
     df <- data.frame(phi = fit$theta_grid[, "phi_pos"], lm = fit$log_marginal)
@@ -137,20 +141,21 @@ test_that("phi_grid on gaussian copy arm recovers true residual SD", {
         if (any(sel)) max(df$lm[sel]) else -Inf
     }, numeric(1))
     best_phi <- phi_axis[which.max(max_per_phi)]
-    # Truth (0.3) lies between phi_axis grid points; require best cell within
+    # Truth (0.09) lies between phi_axis grid points; require best cell within
     # one log-step of truth.
     log_step <- diff(log(phi_axis))[1]
-    expect_lt(abs(log(best_phi) - log(sd_pos_true)), 1.1 * log_step)
+    expect_lt(abs(log(best_phi) - log(var_pos_true)), 1.1 * log_step)
 })
 
 
 # --------------------------------------------------------------------------- #
-# 2. Lognormal arm: phi_grid recovers true log-scale residual SD              #
+# 2. Lognormal arm: phi_grid recovers true log-scale residual variance        #
 # --------------------------------------------------------------------------- #
 
-test_that("phi_grid on lognormal copy arm recovers true log-scale residual SD", {
+test_that("phi_grid on lognormal copy arm recovers true log-scale residual variance", {
     skip_on_cran()
-    sd_pos_true <- 0.4  # SD on the log scale
+    sd_pos_true  <- 0.4  # SD on the log scale
+    var_pos_true <- sd_pos_true^2
     sim <- .simulate_joint_pg(N = 500, n_s = 30,
                               sigma = 0.6, rho = 0.7,
                               alpha_true = 1.0, sd_pos = sd_pos_true,
@@ -181,7 +186,8 @@ test_that("phi_grid on lognormal copy arm recovers true log-scale residual SD", 
         rho_grid   = sim$truth$rho
     )
 
-    phi_axis <- exp(seq(log(0.1), log(1.2), length.out = 9))
+    # Residual VARIANCE nodes spanning log-scale residual SD 0.1 to 1.2.
+    phi_axis <- exp(seq(log(0.1), log(1.2), length.out = 9))^2
     fit <- tulpa_nested_laplace_joint(
         responses = list(
             occ = arm_occ,
@@ -195,7 +201,7 @@ test_that("phi_grid on lognormal copy arm recovers true log-scale residual SD", 
     expect_true(all(is.finite(fit$log_marginal)))
 
     phi_mean <- fit$theta_mean[["phi_pos"]]
-    expect_lt(abs(phi_mean - sd_pos_true) / sd_pos_true, 0.25)
+    expect_lt(abs(phi_mean - var_pos_true) / var_pos_true, 0.25)
 
     df <- data.frame(phi = fit$theta_grid[, "phi_pos"], lm = fit$log_marginal)
     max_per_phi <- vapply(phi_axis, function(p) {
@@ -204,7 +210,7 @@ test_that("phi_grid on lognormal copy arm recovers true log-scale residual SD", 
     }, numeric(1))
     best_phi <- phi_axis[which.max(max_per_phi)]
     log_step <- diff(log(phi_axis))[1]
-    expect_lt(abs(log(best_phi) - log(sd_pos_true)), 1.1 * log_step)
+    expect_lt(abs(log(best_phi) - log(var_pos_true)), 1.1 * log_step)
 })
 
 
@@ -231,7 +237,7 @@ test_that("lognormal == gaussian(log y) at any (sigma, rho, alpha, phi)", {
     common_pos <- list(
         n_trials = rep(1L, n_pos), X = sim$Xpos, spatial_idx = sim$spi_pos,
         re_idx = rep(0, n_pos), n_re_groups = 0L, sigma_re = 1.0,
-        phi = sim$truth$sd_pos
+        phi = sim$truth$sd_pos^2
     )
     arm_pos_ln <- c(list(y = sim$y_pos,           family = "lognormal"),
                      common_pos)
@@ -293,7 +299,8 @@ test_that("lognormal == gaussian(log y) at any (sigma, rho, alpha, phi)", {
 
 test_that("Laplace-at-mode SD lifts phi_pos SD above var-of-means on sharp peaks", {
     skip_on_cran()
-    sd_pos_true <- 0.3
+    sd_pos_true  <- 0.3
+    var_pos_true <- sd_pos_true^2
     sim <- .simulate_joint_pg(N = 400, n_s = 25,
                               sigma = 0.6, rho = 0.7,
                               alpha_true = 1.0, sd_pos = sd_pos_true,
@@ -310,7 +317,7 @@ test_that("Laplace-at-mode SD lifts phi_pos SD above var-of-means on sharp peaks
         y = sim$y_pos, n_trials = rep(1L, length(sim$y_pos)),
         X = sim$Xpos, spatial_idx = sim$spi_pos,
         re_idx = rep(0, length(sim$y_pos)), n_re_groups = 0L, sigma_re = 1.0,
-        family = "gaussian", phi = sd_pos_true
+        family = "gaussian", phi = var_pos_true
     )
     prior <- list(
         type = "bym2",
@@ -321,10 +328,11 @@ test_that("Laplace-at-mode SD lifts phi_pos SD above var-of-means on sharp peaks
         rho_grid   = c(0.5, 0.7, 0.9)
     )
 
-    # 7-point grid spanning sd_pos/3 .. sd_pos*3 — the legacy default that
-    # collapsed var-of-means to 0 in tulpaObs's family_cover_hurdle.
+    # 7-point grid spanning residual SD sd_pos/3 .. sd_pos*3, stated as the
+    # residual VARIANCE the engine reads — the legacy default that collapsed
+    # var-of-means to 0 in tulpaObs's family_cover_hurdle.
     phi_axis <- exp(seq(log(sd_pos_true / 3), log(sd_pos_true * 3),
-                         length.out = 7))
+                         length.out = 7))^2
     # var_of_means_consistency adds slice cells until var-of-means
     # converges to the Laplace-at-mode SD by design (gcol33/tulpa#21).
     # Disable it here so the test isolates the original mechanism: the
@@ -348,14 +356,15 @@ test_that("Laplace-at-mode SD lifts phi_pos SD above var-of-means on sharp peaks
     phi_mean <- sum(w_full * phi_grid)
     var_of_means <- sqrt(max(0, sum(w_full * phi_grid^2) - phi_mean^2))
 
-    # Asymptotic frequentist SD as a sanity reference for the lift.
+    # Asymptotic frequentist SD of the residual-VARIANCE estimate,
+    # `sigma^2 sqrt(2 / n)`, as a sanity reference for the lift.
     n_pos <- length(sim$y_pos)
-    sd_asymp <- sd_pos_true / sqrt(2 * n_pos)
+    se_asymp <- var_pos_true * sqrt(2 / n_pos)
 
-    expect_lt(abs(phi_mean - sd_pos_true) / sd_pos_true, 0.20)
+    expect_lt(abs(phi_mean - var_pos_true) / var_pos_true, 0.20)
     # Pre-fix: var_of_means ~ 0; post-fix: theta_sd within 4x of asymp SD
     # and at least 10x larger than the collapsed var-of-means.
     expect_gt(fit$theta_sd[["phi_pos"]], 10 * var_of_means)
-    expect_lt(fit$theta_sd[["phi_pos"]], 5 * sd_asymp)
-    expect_gt(fit$theta_sd[["phi_pos"]], 0.2 * sd_asymp)
+    expect_lt(fit$theta_sd[["phi_pos"]], 5 * se_asymp)
+    expect_gt(fit$theta_sd[["phi_pos"]], 0.2 * se_asymp)
 })

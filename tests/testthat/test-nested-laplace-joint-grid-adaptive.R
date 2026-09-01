@@ -153,7 +153,8 @@ test_that("grid_adaptive folds a phi axis into the lattice and matches dense", {
     sp  <- list(sim$responses$occ$spatial_idx, sim$responses$pos$spatial_idx)
     blk <- .bym2_copy_block_ga(sim$adj, c(0.3, 0.6, 1.0, 1.7, 2.8),
                                c(0.2, 0.5, 0.8), sp)
-    phi_axis <- exp(seq(log(0.15), log(1.5), length.out = 5))
+    # Residual VARIANCE nodes spanning residual SD 0.15 to 1.5.
+    phi_axis <- exp(seq(log(0.15), log(1.5), length.out = 5))^2
     mk <- function(integ) tulpa_nested_laplace_joint(
         sim$responses, list(blk),
         copy = list(arm = "pos", block = 1L, alpha_grid = c(0.4, 0.8, 1.3, 1.9)),
