@@ -179,6 +179,49 @@ test_that(".nl_prune_gate keeps a screen it trusts", {
     screened)
 })
 
+# The per-cell fixed-effect retention was written against a grid where every
+# cell is solved, and gcol33/tulpa#639 made the other combination reachable on
+# this front door: a pruned cell holds no precision, so
+# `.nl_attach_grid_hessians()` used to hand its empty CSC to
+# `Matrix::sparseMatrix()` and abort the whole fit. The slot has to stay BLANK
+# rather than be dropped -- assigning NULL removes the element, and a list
+# shorter than `weights` fails `.nested_fixed_moments()`'s length check and NAs
+# the entire coefficient table (gcol33/tulpa#345).
+test_that("keep_grid_hessians survives a prune that drops cells", {
+  skip_on_cran()
+  f <- .nlp_fixture()
+  p <- .nlp_fit(f, list(prune = TRUE, prune_tol = 1e-3,
+                        keep_grid_hessians = TRUE))
+  skip_if(isTRUE(p$prune_fallback_triggered),
+          "the gate replaced the screen, so no cell was pruned")
+
+  n_grid <- length(p$weights)
+  expect_length(p$grid_hessians, n_grid)
+  expect_length(p$grid_modes, n_grid)
+
+  blank <- vapply(p$grid_hessians, is.null, logical(1))
+  # A cell without a retained precision is exactly a cell the screen dropped,
+  # and a dropped cell carries log_marginal = -Inf, hence zero weight -- so
+  # nothing the report reads was in one.
+  expect_true(any(blank))
+  expect_identical(which(blank), which(p$weights == 0))
+  expect_identical(which(blank), which(vapply(p$grid_modes, is.null, logical(1))))
+
+  # The report is available and whole: the retention declines nothing, and the
+  # mass is 1 because the blank cells held none.
+  ci <- confint(p)
+  expect_true(all(is.finite(as.matrix(ci))))
+  expect_true(is.na(attr(ci, "interval_declined")))
+  expect_equal(attr(ci, "retained_mass"), 1)
+
+  # Against the unpruned grid: the difference is the mass the screen dropped,
+  # not an artifact of the retention.
+  full <- .nlp_fit(f, list(prune = FALSE, keep_grid_hessians = TRUE))
+  expect_equal(unname(coef(p)), unname(coef(full)), tolerance = 1e-3)
+  expect_equal(unname(as.matrix(ci)), unname(as.matrix(confint(full))),
+               tolerance = 1e-3)
+})
+
 test_that("a multi-block prior refuses the knobs its entry does not declare", {
   f <- .nlp_fixture()
   multi <- f
