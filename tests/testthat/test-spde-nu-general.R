@@ -224,7 +224,7 @@ test_that("fit_spde runs the nu = 2 operator end to end (gcol33/tulpa#279, #280)
   eta <- as.numeric(spec$A %*% w)
   y <- rnorm(n_obs, mean = 0.5 + eta, sd = 0.3)
 
-  fit <- fit_spde(y, matrix(1, n_obs, 1), spec, family = "gaussian", phi = 0.09,
+  fit <- fit_spde(y, matrix(1, n_obs, 1), spec, family = "gaussian", phi = 0.0081,
                   control = list(n_grid = 7L))
   expect_true(fit$converged)
   expect_true(all(is.finite(fit$log_marginal)))

@@ -74,12 +74,7 @@
 #' @param formula Model formula.
 #' @param data A data frame.
 #' @param family Character family name (see [family_names()]).
-#' @param phi Dispersion passed to the family (held fixed), in the R family
-#'   registry convention: for `gaussian` / `lognormal` this is the residual
-#'   VARIANCE (matching [tulpa()] and [tulpa_laplace()]), for
-#'   `neg_binomial_2` the size, `gamma` the shape, `beta` the precision, `t`
-#'   the scale; `binomial` / `poisson` ignore it. The compiled-kernel doors
-#'   ([tulpa_nested_laplace()], [fit_spde()]) take the residual SD instead.
+#' @template phi
 #' @param phi2 Optional second dispersion (Student-t degrees of freedom for
 #'   `family = "t"`; default 4 when `NULL`).
 #' @param n_trials Binomial denominators (length `nrow(data)`), or `NULL` (= 1).

@@ -40,7 +40,7 @@ fit_fvdedup <- function(d, sigma_grid = c(0.5, 1.0, 2.0)) {
     y = d$y, n_trials = rep(1L, d$N), X = d$X,
     prior = list(list(type = "iid", obs_idx = d$unit,
                       n_units = d$n_units, sigma_grid = sigma_grid)),
-    family = "gaussian", phi = 0.09,
+    family = "gaussian", phi = 0.0081,
     control = list(max_iter = 100L, tol = 1e-10, n_threads = 1L,
                    diagnose_k = FALSE, diagnose_skew = FALSE,
                    auto_recenter = FALSE)

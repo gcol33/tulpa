@@ -90,7 +90,7 @@ skip_on_cran()
         a1 = list(y = as.numeric(y1), n_trials = rep(1L, sim$N1),
                   X = X1, family = "binomial", phi = 1.0),
         a2 = list(y = as.numeric(y2), n_trials = rep(1L, sim$N2),
-                  X = X2, family = "gaussian", phi = 0.5)
+                  X = X2, family = "gaussian", phi = 0.25)
     )
 }
 

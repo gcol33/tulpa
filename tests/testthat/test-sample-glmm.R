@@ -52,7 +52,7 @@ test_that("NUTS recovers poisson and gaussian fixed effects", {
   expect_lt(max(abs(unname(fp$means) - mlp)), 0.10)
 
   yg <- 1.0 - 0.7 * x + rnorm(n, 0, 0.8)
-  fg <- tulpa_sample_glmm(yg, rep(1L, n), X, "gaussian", "hmc", phi = 0.64,
+  fg <- tulpa_sample_glmm(yg, rep(1L, n), X, "gaussian", "hmc", phi = 0.4096,
                           control = list(n_iter = 1500L, warmup = 750L,
                                          n_chains = 2L, seed = 6L))
   mlg <- unname(coef(lm(yg ~ x)))

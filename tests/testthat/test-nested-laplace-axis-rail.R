@@ -257,7 +257,7 @@ test_that("a BYM2 fit whose mixing weight rails is moved off its ceiling", {
                  diagnose_k = FALSE, diagnose_skew = FALSE)
     fit_held <- suppressWarnings(tulpa_nested_laplace(
         y = y, n_trials = rep(1L, length(y)), X = X, prior = prior,
-        family = "gaussian", phi = sqrt(0.5),
+        family = "gaussian", phi = 0.5,
         control = c(ctrl, list(auto_recenter = FALSE))))
     # `"rail"` is the placement policy this block is about -- move an axis that
     # does not contain its own mode. (The engine's default also re-places an
@@ -266,7 +266,7 @@ test_that("a BYM2 fit whose mixing weight rails is moved off its ceiling", {
     # and by the `fit_resolve` block below.)
     fit <- suppressWarnings(tulpa_nested_laplace(
         y = y, n_trials = rep(1L, length(y)), X = X, prior = prior,
-        family = "gaussian", phi = sqrt(0.5),
+        family = "gaussian", phi = 0.5,
         control = c(ctrl, list(auto_recenter = "rail"))))
 
     # Held where it is, the axis stops at 0.95 with its marginal still climbing.
@@ -297,7 +297,7 @@ test_that("a BYM2 fit whose mixing weight rails is moved off its ceiling", {
                        .rail_chain_adj(S))
     fit_default <- suppressWarnings(tulpa_nested_laplace(
         y = y, n_trials = rep(1L, length(y)), X = X, prior = default_prior,
-        family = "gaussian", phi = sqrt(0.5),
+        family = "gaussian", phi = 0.5,
         control = c(ctrl, list(auto_recenter = "rail"))))
     expect_identical(max(fit_default$theta_grid[, "rho"]), 0.999)
     # It contains its own mode, so nothing rails and no refit is spent.
@@ -317,7 +317,7 @@ test_that("a BYM2 fit whose mixing weight rails is moved off its ceiling", {
     # inside its support either way.
     fit_resolve <- suppressWarnings(tulpa_nested_laplace(
         y = y, n_trials = rep(1L, length(y)), X = X, prior = default_prior,
-        family = "gaussian", phi = sqrt(0.5), control = ctrl))
+        family = "gaussian", phi = 0.5, control = ctrl))
     expect_identical(fit_resolve$outer_grid_placement, "auto_recentered")
     expect_identical(fit_resolve$outer_grid_railed_axes, character(0))
     expect_gt(.nl_axis_h_over_sd(fit_default, "sigma", "log"),
@@ -360,11 +360,11 @@ test_that("auto_recenter = \"always\" recentres an axis that did not rail", {
 
     fit <- suppressWarnings(tulpa_nested_laplace(
         y = y, n_trials = rep(1L, length(y)), X = X, prior = prior,
-        family = "gaussian", phi = sqrt(0.5),
+        family = "gaussian", phi = 0.5,
         control = c(ctrl, list(auto_recenter = "rail"))))
     always <- suppressWarnings(tulpa_nested_laplace(
         y = y, n_trials = rep(1L, length(y)), X = X, prior = prior,
-        family = "gaussian", phi = sqrt(0.5),
+        family = "gaussian", phi = 0.5,
         control = c(ctrl, list(auto_recenter = "always"))))
 
     # The default axis contains its own mode, so the rail-gated policy leaves
@@ -388,7 +388,7 @@ test_that("auto_recenter = \"always\" recentres an axis that did not rail", {
     pinned$tau_grid <- c(1, 2, 4, 8)
     held <- suppressWarnings(tulpa_nested_laplace(
         y = y, n_trials = rep(1L, length(y)), X = X, prior = pinned,
-        family = "gaussian", phi = sqrt(0.5),
+        family = "gaussian", phi = 0.5,
         control = c(ctrl, list(auto_recenter = "always"))))
     expect_identical(held$outer_grid_placement, "fixed")
     expect_identical(held$outer_grid_recenter_declined, "axis_pinned")
@@ -397,7 +397,7 @@ test_that("auto_recenter = \"always\" recentres an axis that did not rail", {
     expect_error(
         suppressWarnings(tulpa_nested_laplace_joint(
             responses = list(list(y = y, n_trials = rep(1L, length(y)), X = X,
-                                  family = "gaussian", phi = sqrt(0.5))),
+                                  family = "gaussian", phi = 0.5)),
             prior = c(list(type = "icar", n_spatial_units = S,
                            spatial_idx = idx), .rail_chain_adj(S)),
             control = c(ctrl, list(auto_recenter = "always")))),

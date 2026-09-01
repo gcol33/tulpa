@@ -109,7 +109,7 @@ test_that("NUTS recovers a gaussian temporal AR1 model", {
   tp_spec <- list(type = "ar1", time_idx = as.integer(seq_len(Tn)),
                   n_times = Tn, n_groups = 1L, group_idx = NULL, cyclic = FALSE)
   fit <- tulpa_sample_glmm(yt, NULL, Xt, "gaussian", "hmc", temporal_spec = tp_spec,
-                           phi = 0.3, fixed_names = c("(Intercept)", "xt"),
+                           phi = 0.09, fixed_names = c("(Intercept)", "xt"),
                            control = list(n_iter = 1200L, warmup = 600L,
                                           n_chains = 2L, seed = 9L))
   m <- fit$means

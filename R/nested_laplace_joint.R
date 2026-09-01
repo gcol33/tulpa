@@ -139,10 +139,10 @@
 #'
 #'   Family-specific interpretation of `arm$phi` (the parse-time scalar
 #'   and the grid values):
-#'   * `gaussian` -- residual SD (variance is `phi^2`). Use `phi_grid` to
-#'     estimate the residual SD as a hyperparameter instead of pinning
-#'     it pre-fit.
-#'   * `lognormal` -- residual SD on the log scale; identical kernel
+#'   * `gaussian` -- residual VARIANCE, the one engine convention (the SD is
+#'     `sqrt(phi)`). Use `phi_grid` to estimate it as a hyperparameter
+#'     instead of pinning it pre-fit.
+#'   * `lognormal` -- residual variance on the log scale; identical kernel
 #'     parameterization as `gaussian` plus the `-log(y)` Jacobian.
 #'   * `neg_binomial_2` -- dispersion (variance is `mu + mu^2/phi`).
 #'   * `beta` -- precision (variance is `mu(1-mu)/(1+phi)`).
@@ -2034,7 +2034,7 @@ tulpa_nested_laplace_joint <- function(responses,
   si <- getOption("tulpa.nl_screen_iters", NULL)
   if (is.null(si)) si <- .nl_screen("iters")
   do.call(cpp_nested_laplace_joint_multi,
-          c(list(...),
+          c(.joint_phi_args_to_kernel(list(...)),
             list(progress          = isTRUE(p$progress),
                  progress_every    = as.integer(p$progress_every),
                  progress_throttle = as.numeric(p$progress_throttle),

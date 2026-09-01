@@ -201,7 +201,7 @@ test_that("a real caller-pinned fit carries both fields", {
                      n_neighbors = as.integer(nn),
                      tau_grid = 1 / c(0.4, 0.8, 1.6, 3.2)^2,
                      spatial_idx = idx),
-        family = "gaussian", phi = 0.25,
+        family = "gaussian", phi = 0.0625,
         control = list(max_iter = 40L, tol = 1e-6, diagnose_k = FALSE,
                        diagnose_skew = FALSE)))
 

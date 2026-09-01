@@ -129,10 +129,10 @@ parse-time scalar \code{responses[[k]]$phi}.
 Family-specific interpretation of \code{arm$phi} (the parse-time scalar
 and the grid values):
 \itemize{
-\item \code{gaussian} -- residual SD (variance is \code{phi^2}). Use \code{phi_grid} to
-estimate the residual SD as a hyperparameter instead of pinning
-it pre-fit.
-\item \code{lognormal} -- residual SD on the log scale; identical kernel
+\item \code{gaussian} -- residual VARIANCE, the one engine convention (the SD is
+\code{sqrt(phi)}). Use \code{phi_grid} to estimate it as a hyperparameter
+instead of pinning it pre-fit.
+\item \code{lognormal} -- residual variance on the log scale; identical kernel
 parameterization as \code{gaussian} plus the \code{-log(y)} Jacobian.
 \item \code{neg_binomial_2} -- dispersion (variance is \code{mu + mu^2/phi}).
 \item \code{beta} -- precision (variance is \code{mu(1-mu)/(1+phi)}).

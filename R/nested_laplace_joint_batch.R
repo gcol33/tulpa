@@ -63,8 +63,10 @@ tulpa_nl_joint_batch <- function(responses, prior, copy = NULL,
                                  cell_coupling = "separable",
                                  store_Q = TRUE) {
   m <- .tulpa_nl_joint_marshal(responses, prior, copy)
+  ka <- .joint_phi_args_to_kernel(list(arms_list = m$arms,
+                                       phi_batch = phi_batch))
   res <- cpp_nested_laplace_joint_multi_batch(
-    arms_list          = m$arms,
+    arms_list          = ka$arms_list,
     copy_arms          = as.integer(m$cp$copy_arms_zero),
     copy_blocks        = as.integer(m$cp$copy_blocks_zero),
     blocks_spec        = m$blocks_spec,
@@ -72,7 +74,7 @@ tulpa_nl_joint_batch <- function(responses, prior, copy = NULL,
     axis_offsets       = m$axis_offsets,
     n_batch            = as.integer(n_batch),
     y_batch            = y_batch,
-    phi_batch          = phi_batch,
+    phi_batch          = ka$phi_batch,
     max_iter           = as.integer(max_iter),
     tol                = as.numeric(tol),
     cell_coupling_name = as.character(cell_coupling),

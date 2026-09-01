@@ -148,7 +148,7 @@ test_that("a newly-covered family recentres end to end and honours a pin", {
             y = y, n_trials = rep(1L, length(y)), X = X,
             prior = utils::modifyList(
                 list(type = "rw1", temporal_idx = idx, n_times = Tn), extra),
-            family = "gaussian", phi = 0.7,
+            family = "gaussian", phi = 0.49,
             control = utils::modifyList(
                 list(max_iter = 200L, tol = 1e-8, n_threads = 1L,
                      diagnose_k = FALSE, diagnose_skew = FALSE), ctrl)))
@@ -178,7 +178,7 @@ test_that("an out-of-scope family names the axis that blocked it", {
     fit <- suppressWarnings(tulpa_nested_laplace(
         y = y, n_trials = rep(1L, length(y)), X = X,
         prior = list(type = "ar1", temporal_idx = idx, n_times = Tn),
-        family = "gaussian", phi = 0.7,
+        family = "gaussian", phi = 0.49,
         control = list(max_iter = 200L, tol = 1e-8, n_threads = 1L,
                        diagnose_k = FALSE, diagnose_skew = FALSE,
                        auto_recenter = "always")))
@@ -200,7 +200,7 @@ test_that("a multi-block registry fit always records a placement", {
     fit_iid <- function(ctrl = list()) suppressWarnings(tulpa_nested_laplace(
         y = y, n_trials = rep(1L, length(y)), X = X,
         prior = list(list(type = "iid", obs_idx = idx, n_units = G)),
-        family = "gaussian", phi = 0.7,
+        family = "gaussian", phi = 0.49,
         control = utils::modifyList(
             list(max_iter = 200L, tol = 1e-8, n_threads = 1L, progress = FALSE,
                  diagnose_k = FALSE, diagnose_skew = FALSE), ctrl)))

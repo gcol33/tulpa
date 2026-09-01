@@ -402,8 +402,8 @@ test_that("joint multi-block recovers a COPIED correlated MCAR block (Sigma + al
     eta2 <- -0.2 + alpha_true * (u[cell] + x2 * s[cell])
     y1 <- rnorm(N, eta1, 0.4); y2 <- rnorm(N, eta2, 0.4)
 
-    arm1 <- list(y = y1, X = cbind(1, x1), family = "gaussian", phi = 0.4)
-    arm2 <- list(y = y2, X = cbind(1, x2), family = "gaussian", phi = 0.4)
+    arm1 <- list(y = y1, X = cbind(1, x1), family = "gaussian", phi = 0.16)
+    arm2 <- list(y = y2, X = cbind(1, x2), family = "gaussian", phi = 0.16)
     mcar_block <- list(
         type = "mcar", n_spatial_units = n_s, n_fields = 2L,
         adj_row_ptr = adj_rp, adj_col_idx = adj_ci, n_neighbors = as.integer(nn),

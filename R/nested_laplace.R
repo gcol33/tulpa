@@ -50,13 +50,7 @@
 #' @param n_re_groups RE group count (default 0).
 #' @param sigma_re RE standard deviation (default 1).
 #' @param family `"binomial"`, `"poisson"`, `"neg_binomial_2"`, etc.
-#' @param phi Dispersion passed to the family, in the compiled-kernel
-#'   convention: for `gaussian` / `lognormal` this is the residual SD (the
-#'   variance is `phi^2`), for `neg_binomial_2` the size, `gamma` the shape,
-#'   `beta` the precision, `t` the scale; `binomial` / `poisson` ignore it.
-#'   The [tulpa()] and [tulpa_laplace()] front doors take the residual
-#'   VARIANCE instead and convert at the kernel boundary, so one model is
-#'   `phi` there and `sqrt(phi)` here.
+#' @template phi
 #' @param control Optional list of perf/numerical tuning knobs (statistical
 #'   arguments stay top-level), following the `control` convention of
 #'   [tulpa()]. Recognised elements (defaults in parentheses):
@@ -478,7 +472,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     n_re_groups = as.integer(n_re_groups),
     sigma_re = as.numeric(sigma_re),
     family = family,
-    phi = as.numeric(phi),
+    phi = .phi_to_kernel(family, as.numeric(phi)),
     max_iter = as.integer(max_iter),
     tol = as.numeric(tol),
     n_threads = as.integer(n_threads),

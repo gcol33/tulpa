@@ -48,7 +48,7 @@ skip_on_cran()
     arm_pos <- list(y = sim$y_pos, n_trials = rep(1L, length(sim$y_pos)),
                     X = sim$Xpos, spatial_idx = sim$spi_pos,
                     re_idx = rep(0, length(sim$y_pos)), n_re_groups = 0L,
-                    sigma_re = 1.0, family = "gaussian", phi = 0.5)
+                    sigma_re = 1.0, family = "gaussian", phi = 0.25)
     prior <- list(type = "bym2", n_spatial_units = adj$n_spatial_units,
                   adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
                   n_neighbors = adj$n_neighbors, scale_factor = 1.0,
@@ -121,7 +121,7 @@ test_that("inner parallel scatter matches serial on a single outer cell", {
     arm_pos <- list(y = y_pos, n_trials = rep(1L, length(y_pos)), X = Xpos,
                     spatial_idx = spi_pos, re_idx = rep(0, length(y_pos)),
                     n_re_groups = 0L, sigma_re = 1.0, family = "gaussian",
-                    phi = 0.5)
+                    phi = 0.25)
     prior <- list(type = "icar", n_spatial_units = adj$n_spatial_units,
                   adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
                   n_neighbors = adj$n_neighbors, sigma_grid = 1.0)  # 1 cell

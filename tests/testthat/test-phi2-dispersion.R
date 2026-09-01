@@ -88,7 +88,7 @@ test_that("gaussian phi means the residual variance on every backend", {
 
   # ModelData NUTS: the posterior SD must match the variance convention.
   fit2 <- tulpa_sample_glmm(y, NULL, X, family = "gaussian", backend = "hmc",
-                            phi = 2,   # the DIRECT door takes the residual SD
+                            phi = 4,   # the residual variance, as at every door
                             control = list(n_iter = 3000L, warmup = 1000L,
                                            n_chains = 2L, seed = 1L))
   sd_ref <- sqrt(diag(solve(crossprod(X) / 4)))

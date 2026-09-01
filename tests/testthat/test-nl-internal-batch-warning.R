@@ -58,7 +58,7 @@ test_that("the Pareto-k re-evaluation does not warn about the caller's grid (#61
       prior = list(list(type = "iid", obs_idx = region, n_units = 6L,
                         sigma_grid = exp(seq(log(0.2), log(1.5),
                                              length.out = n_nodes)))),
-      family = "gaussian", phi = 0.7,
+      family = "gaussian", phi = 0.49,
       control = utils::modifyList(list(progress = FALSE), list(...)))
   }
 

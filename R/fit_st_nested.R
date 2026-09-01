@@ -62,13 +62,7 @@
 #' @param temporal_type `"ar1"` (default), `"rw1"`, or `"rw2"`.
 #' @param family Response family (see [family_names()]).
 #' @param n_trials Binomial denominators, or `NULL` (= 1).
-#' @param phi Dispersion passed to the family, in the compiled-kernel
-#'   convention: for `gaussian` / `lognormal` this is the residual SD (the
-#'   variance is `phi^2`), for `neg_binomial_2` the size, `gamma` the shape,
-#'   `beta` the precision, `t` the scale; `binomial` / `poisson` ignore it.
-#'   The [tulpa()] and [tulpa_laplace()] front doors take the residual
-#'   VARIANCE instead and convert at the kernel boundary, so one model is
-#'   `phi` there and `sqrt(phi)` here.
+#' @template phi
 #' @param cyclic Logical; wrap the temporal field (seasonal). Default `FALSE`.
 #' @param re_idx,n_re_groups,sigma_re Optional single iid random-intercept term
 #'   alongside the fields (conditioned on `sigma_re`); `n_re_groups = 0` (default)
@@ -202,7 +196,8 @@ fit_st_nested <- function(y, X, spatial_idx, adjacency, temporal_idx, n_times,
     temporal_type = temporal_type,
     tau_temporal_grid = as.numeric(grid$tau_temporal),
     rho_temporal_grid = as.numeric(grid$rho),
-    cyclic = isTRUE(cyclic), family = family, phi = as.numeric(phi),
+    cyclic = isTRUE(cyclic), family = family,
+    phi = .phi_to_kernel(family, as.numeric(phi)),
     max_iter = as.integer(control$max_iter %||% 50L),
     tol = as.numeric(control$tol %||% 1e-6),
     n_threads = as.integer(control$n_threads %||% 1L),

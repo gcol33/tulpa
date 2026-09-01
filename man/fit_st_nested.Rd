@@ -44,13 +44,12 @@ fit_st_nested(
 
 \item{n_trials}{Binomial denominators, or \code{NULL} (= 1).}
 
-\item{phi}{Dispersion passed to the family, in the compiled-kernel
-convention: for \code{gaussian} / \code{lognormal} this is the residual SD (the
-variance is \code{phi^2}), for \code{neg_binomial_2} the size, \code{gamma} the shape,
-\code{beta} the precision, \code{t} the scale; \code{binomial} / \code{poisson} ignore it.
-The \code{\link[=tulpa]{tulpa()}} and \code{\link[=tulpa_laplace]{tulpa_laplace()}} front doors take the residual
-VARIANCE instead and convert at the kernel boundary, so one model is
-\code{phi} there and \code{sqrt(phi)} here.}
+\item{phi}{Dispersion passed to the family, held fixed. One convention at
+every door: for \code{gaussian} / \code{lognormal} this is the residual VARIANCE
+(the SD is \code{sqrt(phi)}), for \code{neg_binomial_2} the size, \code{gamma} the
+shape, \code{beta} the precision, \code{t} the scale; \code{binomial} and \code{poisson}
+ignore it. The compiled kernels parameterize the two variance families by
+the residual SD and are handed \code{sqrt(phi)} at the boundary.}
 
 \item{cyclic}{Logical; wrap the temporal field (seasonal). Default \code{FALSE}.}
 

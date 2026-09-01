@@ -164,7 +164,7 @@ test_that("a pilot with nothing left to thin is not a pilot", {
     cov <- list(y = y2, n_trials = rep(1L, N2), X = X2,
                 spatial_idx = as.integer(s2), re_idx = rep(0, N2),
                 n_re_groups = 0L, sigma_re = 1.0, family = "gaussian",
-                phi = 0.5, field_coef = "alpha")
+                phi = 0.25, field_coef = "alpha")
     list(responses = list(occ = occ, cov = cov), adj = .pilot_chain_adj(n_s))
 }
 

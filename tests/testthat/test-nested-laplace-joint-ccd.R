@@ -42,7 +42,7 @@
             pos = list(y = y_pos, n_trials = rep(1L, length(y_pos)), X = Xpos,
                        spatial_idx = spi_pos, re_idx = rep(0, length(y_pos)),
                        n_re_groups = 0L, sigma_re = 1.0,
-                       family = "gaussian", phi = 0.5)))
+                       family = "gaussian", phi = 0.25)))
 }
 
 .bym2_copy_block <- function(adj, sigma_grid, rho_grid, sp) {

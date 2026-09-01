@@ -22,12 +22,12 @@ tulpa_ep(
 
 \item{family}{Character family name (see \code{\link[=family_names]{family_names()}}).}
 
-\item{phi}{Dispersion passed to the family (held fixed), in the R family
-registry convention: for \code{gaussian} / \code{lognormal} this is the residual
-VARIANCE (matching \code{\link[=tulpa]{tulpa()}} and \code{\link[=tulpa_laplace]{tulpa_laplace()}}), for
-\code{neg_binomial_2} the size, \code{gamma} the shape, \code{beta} the precision, \code{t}
-the scale; \code{binomial} / \code{poisson} ignore it. The compiled-kernel doors
-(\code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}}, \code{\link[=fit_spde]{fit_spde()}}) take the residual SD instead.}
+\item{phi}{Dispersion passed to the family, held fixed. One convention at
+every door: for \code{gaussian} / \code{lognormal} this is the residual VARIANCE
+(the SD is \code{sqrt(phi)}), for \code{neg_binomial_2} the size, \code{gamma} the
+shape, \code{beta} the precision, \code{t} the scale; \code{binomial} and \code{poisson}
+ignore it. The compiled kernels parameterize the two variance families by
+the residual SD and are handed \code{sqrt(phi)} at the boundary.}
 
 \item{phi2}{Optional second dispersion (Student-t degrees of freedom for
 \code{family = "t"}; default 4 when \code{NULL}).}

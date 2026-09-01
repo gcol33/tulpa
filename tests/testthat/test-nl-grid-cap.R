@@ -173,7 +173,7 @@ test_that("a raised ceiling integrates a grid past the default, end to end", {
              n_re_groups = 0L, sigma_re = 1.0, family = "binomial", phi = 1.0),
     b = list(y = y2, n_trials = rep(1L, N), X = X,
              spatial_idx = as.integer(iA), re_idx = rep(0, N),
-             n_re_groups = 0L, sigma_re = 1.0, family = "gaussian", phi = 0.5))
+             n_re_groups = 0L, sigma_re = 1.0, family = "gaussian", phi = 0.25))
   prior <- list(
     list(type = "icar", n_spatial_units = n_s,
          adj_row_ptr = adjA$adj_row_ptr, adj_col_idx = adjA$adj_col_idx,

@@ -32,7 +32,7 @@ is corrupted in a range-dependent way by the rational precision's wide spectrum
 \verb{B = (A_eff Pl^\{-1\}) C (A_eff Pl^\{-1\})' + X X'/tau_beta}, built through the
 operator factor \code{Pl} (cond = sqrt cond(Q)), never an explicit \code{Q} inverse.
 Gaussian is the exact conjugate marginal; non-gaussian uses the det-lemma at the
-precomputed Laplace mode. \code{phi} is the Gaussian residual SD (variance \code{phi^2}),
-consistent with the integer path and the engine family convention.
+precomputed Laplace mode. \code{phi} follows the one engine convention (the
+Gaussian residual variance) and is converted at the kernel calls below.
 }
 \keyword{internal}

@@ -385,7 +385,7 @@ test_that("a BYM2 fit reports a mixing weight inside (0, 1)", {
     for (recenter in c(FALSE, TRUE)) {
         fit <- suppressWarnings(tulpa_nested_laplace(
             y = y, n_trials = rep(1L, length(y)), X = X, prior = prior,
-            family = "gaussian", phi = sqrt(0.5),
+            family = "gaussian", phi = 0.5,
             control = c(ctrl, list(auto_recenter = recenter))))
         rho_hi <- as.numeric(fit$theta_ci_hi[["rho"]])
         rho_lo <- as.numeric(fit$theta_ci_lo[["rho"]])
@@ -422,7 +422,7 @@ test_that("a family the placement rescue covers no axis of says which axis block
         y = y, n_trials = rep(1L, length(y)), X = X,
         prior = c(list(type = "car_proper", n_spatial_units = S,
                        spatial_idx = idx), .supp_chain_adj(S)),
-        family = "gaussian", phi = sqrt(0.5),
+        family = "gaussian", phi = 0.5,
         control = list(max_iter = 200L, tol = 1e-9, n_threads = 1L,
                        diagnose_k = FALSE, diagnose_skew = FALSE)))
 
@@ -526,7 +526,7 @@ test_that("the outside-nodes record travels on a fitted object", {
   f <- suppressWarnings(tulpa_nested_laplace(
     y = y, n_trials = rep(1L, length(idx)), X = X,
     prior = list(list(type = "iid", obs_idx = idx, n_units = n_g)),
-    family = "gaussian", phi = 0.25,
+    family = "gaussian", phi = 0.0625,
     control = list(max_iter = 100L, tol = 1e-8, n_threads = 1L,
                    progress = FALSE, diagnose_k = FALSE, diagnose_skew = FALSE)))
   expect_true("theta_ci_outside_nodes" %in% names(f))

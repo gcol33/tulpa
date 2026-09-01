@@ -59,7 +59,7 @@
   arm_pos <- list(y = y_pos, n_trials = rep(1L, length(y_pos)),
                   X = Xpos, spatial_idx = spi_pos,
                   re_idx = rep(0, length(y_pos)), n_re_groups = 0L,
-                  sigma_re = 1.0, family = "gaussian", phi = 0.3)
+                  sigma_re = 1.0, family = "gaussian", phi = 0.09)
   prior <- list(type = "icar", n_spatial_units = adj$n_spatial_units,
                 adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,
                 n_neighbors = adj$n_neighbors,

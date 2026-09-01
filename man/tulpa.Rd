@@ -62,10 +62,12 @@ row). Supported on the non-spatial Laplace path (\code{mode = "laplace"}) and
 the log-posterior samplers (\code{mala}, \code{imh_laplace}, \code{pathfinder}); other
 backends reject weights loudly.}
 
-\item{phi}{Dispersion/precision passed to the family (residual variance for
-gaussian and lognormal, size for neg_binomial_2, precision for beta,
-scale for t). The variance convention holds across every backend; the
-SD-parameterized compiled kernels receive \code{sqrt(phi)} at the boundary.}
+\item{phi}{Dispersion passed to the family, held fixed. One convention at
+every door: for \code{gaussian} / \code{lognormal} this is the residual VARIANCE
+(the SD is \code{sqrt(phi)}), for \code{neg_binomial_2} the size, \code{gamma} the
+shape, \code{beta} the precision, \code{t} the scale; \code{binomial} and \code{poisson}
+ignore it. The compiled kernels parameterize the two variance families by
+the residual SD and are handed \code{sqrt(phi)} at the boundary.}
 
 \item{estimate_phi}{Estimate the dispersion from the data instead of
 conditioning on \code{phi}, which then supplies the starting value. \code{log(phi)}

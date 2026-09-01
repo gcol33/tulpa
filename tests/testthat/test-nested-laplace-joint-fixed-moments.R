@@ -95,7 +95,7 @@ test_that("a coupled multi-block joint fit reports the exact fixed-effect covari
       pos = list(y = y_pos, n_trials = rep(1L, length(y_pos)), X = Xpos,
                  spatial_idx = spi, re_idx = rep(0, length(y_pos)),
                  n_re_groups = 0L, sigma_re = 1.0, family = "gaussian",
-                 phi = 0.5)))
+                 phi = 0.25)))
 }
 
 .j305_icar_fit <- function(d, ...) {

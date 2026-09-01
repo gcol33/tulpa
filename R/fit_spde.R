@@ -17,13 +17,7 @@
 #' @param sigma Marginal standard deviation. If NULL, uses nested Laplace.
 #' @param nested_laplace Logical. If TRUE (default when range/sigma are NULL),
 #'   use nested Laplace approximation over hyperparameters.
-#' @param phi Dispersion passed to the family, in the compiled-kernel
-#'   convention: for `gaussian` / `lognormal` this is the residual SD (the
-#'   variance is `phi^2`), for `neg_binomial_2` the size, `gamma` the shape,
-#'   `beta` the precision, `t` the scale; `binomial` / `poisson` ignore it.
-#'   The [tulpa()] and [tulpa_laplace()] front doors take the residual
-#'   VARIANCE instead and convert at the kernel boundary, so one model is
-#'   `phi` there and `sqrt(phi)` here.
+#' @template phi
 #' @param offset Optional fixed additive term on the linear predictor
 #'   (`eta = offset + X beta + A w`), length `length(y)`; `NULL` -> no offset.
 #' @param re_idx,n_re_groups,sigma_re Optional single iid random-intercept
@@ -271,7 +265,7 @@ fit_spde <- function(y, X, spatial,
       G1_x = sp$G1_x, G1_i = sp$G1_i, G1_p = sp$G1_p,
       range_grid = range_vec, sigma_grid = sigma_vec,
       nu = sp$nu,
-      family = family, phi = phi,
+      family = family, phi = .phi_to_kernel(family, phi),
       max_iter = max_iter, tol = tol, n_threads = n_threads,
       checkpoint_path = .ckpt$path,
       offset_nullable = offset
@@ -332,10 +326,10 @@ fit_spde <- function(y, X, spatial,
   }
 
   # Prediction support (predict.tulpa_fit se.fit): the family and the
-  # kernel-convention dispersion (gaussian/lognormal: residual SD -- the
-  # front-door tulpa() fit additionally carries $phi as the variance).
-  fit$family     <- fit$family %||% family
-  fit$phi_kernel <- phi
+  # dispersion, in the one engine convention (gaussian / lognormal: the
+  # residual variance), the same `$phi` a front-door tulpa() fit carries.
+  fit$family <- fit$family %||% family
+  fit$phi    <- phi
 
   # Fixed-effect mode + marginal curvature so the generic accessors (coef /
   # summary / confint / vcov / predict) work on a direct or auto-mode SPDE
@@ -361,15 +355,12 @@ fit_spde <- function(y, X, spatial,
     fit$sigma           <- fit$sigma %||% sigma_hy
   }
   if (!is.null(fit$mode)) {
-    # glmm_weights follows the R-registry dispersion convention (variance
-    # for gaussian / lognormal); this door's `phi` is the kernel SD.
-    phi_w <- .phi_to_registry(family, phi)
     range_hy <- fit$range %||% fit$nested$range_mean %||% fit$nested$range_best
     sigma_hy <- fit$sigma %||% fit$nested$sigma_mean %||% fit$nested$sigma_best
     fit$H_beta <- fit$H_beta %||% tryCatch(
       .marginal_H_beta_spde(
         mode = fit$mode, X = X, spatial = sp,
-        family = family, phi = phi_w,
+        family = family, phi = phi,
         n_trials = n_trials, offset = offset,
         range_val = range_hy, sigma_val = sigma_hy,
         re_idx = no_re_idx, n_re_groups = no_re_n_groups, sigma_re = no_re_sigma

@@ -201,7 +201,7 @@ test_that("every decline reason a retained-pair-less result can carry is stated"
       pos = list(y = y_pos, n_trials = rep(1L, length(y_pos)), X = Xpos,
                  spatial_idx = as.integer(spi), re_idx = rep(0, length(y_pos)),
                  n_re_groups = 0L, sigma_re = 1.0, family = "gaussian",
-                 phi = 0.3,
+                 phi = 0.09,
                  field_coef = list(name = "alpha", grid = c(0.2, 0.4, 0.6)))),
     prior = list(type = "icar", n_spatial_units = n_s,
                  adj_row_ptr = as.integer(c(0L, cumsum(n_nb))),

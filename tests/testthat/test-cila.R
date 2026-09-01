@@ -28,7 +28,7 @@ cila_gaussian_fit <- function(cila = NULL, seed = 11L, n_group = 8L,
               force_sparse = force_sparse)
   if (!is.null(cila)) ctl$cila <- cila
   suppressWarnings(tulpa_nested_laplace_joint(
-    responses = list(list(y = y, X = X, family = "gaussian", phi = 0.25,
+    responses = list(list(y = y, X = X, family = "gaussian", phi = 0.0625,
                           beta_prior_prec = rep(0.16, 2))),
     prior = list(list(type = "iid", obs_idx = as.integer(region),
                       n_units = n_group,
@@ -343,7 +343,7 @@ cila_nonjoint_fit <- function(cila = NULL, seed = 3L, n_time = 10L,
     prior = list(type = "rw1", temporal_idx = as.integer(tidx),
                  n_times = n_time,
                  tau_grid = exp(seq(log(0.5), log(12), length.out = 4))),
-    family = "gaussian", phi = 0.5, control = ctl))
+    family = "gaussian", phi = 0.25, control = ctl))
 }
 
 test_that("tulpa_nested_laplace() accepts the correction", {

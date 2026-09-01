@@ -253,8 +253,8 @@ rational_spde_coefficients <- function(nu, m = 4L, lambda_range = c(1e-4, 1e4)) 
 #' `B = (A_eff Pl^{-1}) C (A_eff Pl^{-1})' + X X'/tau_beta`, built through the
 #' operator factor `Pl` (cond = sqrt cond(Q)), never an explicit `Q` inverse.
 #' Gaussian is the exact conjugate marginal; non-gaussian uses the det-lemma at the
-#' precomputed Laplace mode. `phi` is the Gaussian residual SD (variance `phi^2`),
-#' consistent with the integer path and the engine family convention.
+#' precomputed Laplace mode. `phi` follows the one engine convention (the
+#' Gaussian residual variance) and is converted at the kernel calls below.
 #'
 #' @return A list with `log_marginal`, `n_iter`, `converged`, and the assembly.
 #' @keywords internal
@@ -263,6 +263,7 @@ rational_spde_coefficients <- function(nu, m = 4L, lambda_range = c(1e-4, 1e4)) 
                                         offset, tau_beta = 1e-4) {
   n     <- length(y)
   p     <- ncol(X)
+  phi_kernel <- .phi_to_kernel(family, phi)
   asm   <- .spde_assemble_at(spatial, range, sigma, order = order)
   n_sub <- length(asm$keep)
 
@@ -281,7 +282,7 @@ rational_spde_coefficients <- function(nu, m = 4L, lambda_range = c(1e-4, 1e4)) 
       n_obs = n, n_mesh = n_sub,
       Q_p = Qg@p, Q_i = Qg@i, Q_x = Qg@x,
       Aeff_x = asm$A_eff@x, Aeff_i = asm$A_eff@i, Aeff_p = asm$A_eff@p,
-      family = family, phi = phi,
+      family = family, phi = phi_kernel,
       max_iter = as.integer(max_iter), tol = tol,
       n_threads = as.integer(n_threads),
       offset_nullable = if (is.null(offset)) NULL else as.numeric(offset)),
@@ -299,7 +300,7 @@ rational_spde_coefficients <- function(nu, m = 4L, lambda_range = c(1e-4, 1e4)) 
     y = as.numeric(y), X = as.matrix(X),
     A_eff = asm$A_eff, Pl = asm$Pl,
     C0sub = as.numeric(spatial$C0_diag)[asm$keep],
-    family = family, phi = phi,
+    family = family, phi = phi_kernel,
     beta_hat = as.numeric(beta_hat), x_hat = as.numeric(x_hat),
     n_trials = as.integer(n_trials),
     offset_nullable = if (is.null(offset)) NULL else as.numeric(offset),
@@ -330,6 +331,7 @@ rational_spde_coefficients <- function(nu, m = 4L, lambda_range = c(1e-4, 1e4)) 
                                         order = 2L) {
   asm <- .spde_assemble_at(spatial, range, sigma, order = order)
   Qg  <- as(asm$Q, "generalMatrix")
+  phi_kernel <- .phi_to_kernel(family, phi)
   n_sub <- length(asm$keep)
 
   if (is.null(re_idx)) re_idx <- rep(0L, length(y))
@@ -344,7 +346,7 @@ rational_spde_coefficients <- function(nu, m = 4L, lambda_range = c(1e-4, 1e4)) 
     n_obs = length(y), n_mesh = n_sub,
     Q_p = Qg@p, Q_i = Qg@i, Q_x = Qg@x,
     Aeff_x = asm$A_eff@x, Aeff_i = asm$A_eff@i, Aeff_p = asm$A_eff@p,
-    family = family, phi = phi,
+    family = family, phi = phi_kernel,
     max_iter = as.integer(max_iter), tol = tol,
     n_threads = as.integer(n_threads),
     offset_nullable = if (is.null(offset)) NULL else as.numeric(offset),

@@ -54,7 +54,7 @@
     pos = list(y = sim$y_pos, n_trials = rep(1L, length(sim$y_pos)),
                X = sim$Xpos, spatial_idx = sim$spi_pos,
                re_idx = rep(0, length(sim$y_pos)), n_re_groups = 0L,
-               sigma_re = 1.0, family = "gaussian", phi = 0.5,
+               sigma_re = 1.0, family = "gaussian", phi = 0.25,
                field_coef = list(name = "alpha", grid = alpha_grid))
   )
 }

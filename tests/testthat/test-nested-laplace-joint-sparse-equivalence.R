@@ -61,7 +61,7 @@ skip_on_cran()
                        spatial_idx = s_idx_2,
                        re_idx = rep(0L, N), n_re_groups = 0L,
                        sigma_re = 1.0,
-                       family = "gaussian", phi = 0.4)
+                       family = "gaussian", phi = 0.16)
         )
     )
 }

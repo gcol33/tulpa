@@ -51,7 +51,7 @@
         y = sim$y_pos, n_trials = rep(1L, length(sim$y_pos)),
         X = sim$Xpos, spatial_idx = sim$spi_pos,
         re_idx = rep(0, length(sim$y_pos)), n_re_groups = 0L, sigma_re = 1.0,
-        family = "gaussian", phi = 0.5
+        family = "gaussian", phi = 0.25
     )
     prior <- list(
         type = "bym2", n_spatial_units = adj$n_spatial_units,
@@ -80,7 +80,7 @@
         y = sim$y_pos, n_trials = rep(1L, length(sim$y_pos)),
         X = sim$Xpos, spatial_idx = sim$spi_pos,
         re_idx = rep(0, length(sim$y_pos)), n_re_groups = 0L, sigma_re = 1.0,
-        family = "gaussian", phi = 0.5
+        family = "gaussian", phi = 0.25
     )
     prior <- list(
         type = "bym2", n_spatial_units = adj$n_spatial_units,
@@ -125,7 +125,7 @@
     arm_pos <- list(y = y_pos, n_trials = rep(1L, length(y_pos)), X = Xpos,
                     spatial_idx = rep(0L, length(y_pos)),
                     re_idx = rep(0, length(y_pos)), n_re_groups = 0L,
-                    sigma_re = 1.0, family = "gaussian", phi = 0.5)
+                    sigma_re = 1.0, family = "gaussian", phi = 0.25)
     prior <- list(
         list(type = "rw1", temporal_idx = list(t_idx, t_pos), n_times = n_t,
              tau_grid = c(0.5, 1.0, 2.0)),

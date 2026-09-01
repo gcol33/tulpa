@@ -494,7 +494,7 @@ test_that("a globally CCD-integrated fit is design-weighted throughout", {
   sg <- exp(seq(log(0.1), log(2), length.out = 7))
   fitc <- suppressWarnings(tulpa_nested_laplace_joint(
     responses = list(a = list(y = y, n_trials = rep(1L, N), X = X,
-                              family = "gaussian", phi = 0.25)),
+                              family = "gaussian", phi = 0.0625)),
     prior = lapply(grp, function(g)
       list(type = "iid", obs_idx = list(g), n_units = G, sigma_grid = sg)),
     control = list(integration = "ccd", n_threads = 1L, diagnose_k = FALSE,

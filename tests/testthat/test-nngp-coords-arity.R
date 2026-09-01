@@ -93,7 +93,7 @@ test_that("an NNGP fit is a function of its data, at any coordinate dimension", 
       y = y, n_trials = rep(1L, length(idx)), X = X,
       prior = list(type = "nngp", coords = co, nn_idx = ni, nn_dist = nd,
                    n_spatial = n, nn = nn, spatial_idx = idx, cov_type = 0L),
-      family = "gaussian", phi = 0.5,
+      family = "gaussian", phi = 0.25,
       control = list(max_iter = 100L, tol = 1e-8, n_threads = 1L,
                      progress = FALSE, diagnose_k = FALSE,
                      diagnose_skew = FALSE)))
@@ -148,7 +148,7 @@ test_that("the nested-Laplace NNGP kernel reads three coordinate columns", {
       y = y, n_trials = rep(1L, length(idx)), X = X,
       prior = list(type = "nngp", coords = co, nn_idx = ni, nn_dist = nd,
                    n_spatial = n, nn = nn, spatial_idx = idx, cov_type = 0L),
-      family = "gaussian", phi = 0.5,
+      family = "gaussian", phi = 0.25,
       control = list(max_iter = 100L, tol = 1e-8, n_threads = 1L,
                      progress = FALSE, diagnose_k = FALSE,
                      diagnose_skew = FALSE)))$log_marginal

@@ -460,7 +460,7 @@ test_that("tulpa_nested_laplace_joint() scores real gamma_3 for a separable 2-ar
               sigma_re = 1.0, family = "binomial", phi = 1.0),
     pos = list(y = y_pos, n_trials = rep(1L, length(y_pos)), X = Xpos,
               spatial_idx = spi_pos, re_idx = rep(0, length(y_pos)),
-              n_re_groups = 0L, sigma_re = 1.0, family = "gaussian", phi = 0.5,
+              n_re_groups = 0L, sigma_re = 1.0, family = "gaussian", phi = 0.25,
               field_coef = list(name = "alpha", grid = c(0.5, 1.0, 1.5)))
   )
 
@@ -538,7 +538,7 @@ test_that("tulpa_nested_laplace_joint() wires gamma_3 through the multi-block di
               n_re_groups = 0L, sigma_re = 1.0, family = "binomial", phi = 1.0),
     pos = list(y = y_pos, n_trials = rep(1L, length(y_pos)), X = Xpos,
               spatial_idx = as.integer(iAp), re_idx = rep(0, length(y_pos)),
-              n_re_groups = 0L, sigma_re = 1.0, family = "gaussian", phi = 0.5))
+              n_re_groups = 0L, sigma_re = 1.0, family = "gaussian", phi = 0.25))
   prior <- list(
     list(type = "icar", n_spatial_units = n_s,
          adj_row_ptr = adjA$adj_row_ptr, adj_col_idx = adjA$adj_col_idx,

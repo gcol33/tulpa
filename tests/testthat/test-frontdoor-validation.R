@@ -137,7 +137,7 @@ test_that("tulpa_nested_laplace() refuses a non-finite response (#613)", {
   call_nl <- function(y, X) {
     tulpa_nested_laplace(
       y = y, n_trials = rep(1L, N), X = X, prior = prior,
-      family = "gaussian", phi = 0.7,
+      family = "gaussian", phi = 0.49,
       control = list(keep_grid_hessians = TRUE, progress = FALSE))
   }
 

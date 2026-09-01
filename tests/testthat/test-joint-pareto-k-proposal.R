@@ -440,7 +440,7 @@ test_that("a multi-block CCD fit sources the k-hat from the mode Hessian", {
                    n_re_groups = 0L, sigma_re = 1.0, family = "binomial", phi = 1.0),
         pos = list(y = yp, n_trials = rep(1L, length(yp)), X = Xp,
                    spatial_idx = as.integer(iAp), re_idx = rep(0, length(yp)),
-                   n_re_groups = 0L, sigma_re = 1.0, family = "gaussian", phi = 0.5))
+                   n_re_groups = 0L, sigma_re = 1.0, family = "gaussian", phi = 0.25))
     prior <- list(
         list(type = "icar", n_spatial_units = nA, adj_row_ptr = aA$adj_row_ptr,
              adj_col_idx = aA$adj_col_idx, n_neighbors = aA$n_neighbors,
@@ -485,7 +485,7 @@ test_that("a collapsed tensor fit recovers a usable k-hat (grid-moment + moment 
                    n_re_groups = 0L, sigma_re = 1.0, family = "binomial", phi = 1.0),
         pos = list(y = yp, n_trials = rep(1L, length(yp)), X = Xp,
                    spatial_idx = as.integer(sp), re_idx = rep(0, length(yp)),
-                   n_re_groups = 0L, sigma_re = 1.0, family = "gaussian", phi = 0.4))
+                   n_re_groups = 0L, sigma_re = 1.0, family = "gaussian", phi = 0.16))
     prior <- list(list(
         type = "icar", n_spatial_units = n_s, adj_row_ptr = adj$adj_row_ptr,
         adj_col_idx = adj$adj_col_idx, n_neighbors = adj$n_neighbors,
@@ -530,7 +530,7 @@ test_that("diagnose_k = 'by_arm' adds per-arm k and leaves the joint k unchanged
                    n_re_groups = 0L, sigma_re = 1.0, family = "binomial", phi = 1.0),
         pos = list(y = yp, n_trials = rep(1L, length(yp)), X = Xp,
                    spatial_idx = as.integer(iAp), re_idx = rep(0, length(yp)),
-                   n_re_groups = 0L, sigma_re = 1.0, family = "gaussian", phi = 0.5))
+                   n_re_groups = 0L, sigma_re = 1.0, family = "gaussian", phi = 0.25))
     prior <- list(
         list(type = "icar", n_spatial_units = nA, adj_row_ptr = aA$adj_row_ptr,
              adj_col_idx = aA$adj_col_idx, n_neighbors = aA$n_neighbors,

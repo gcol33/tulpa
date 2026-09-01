@@ -92,7 +92,7 @@ skip_on_cran()
             occ = list(y = as.numeric(y1), n_trials = rep(1L, N1),
                        X = X1, family = "binomial", phi = 1.0),
             pos = list(y = as.numeric(y2), n_trials = rep(1L, N2),
-                       X = X2, family = "gaussian", phi = 0.3)
+                       X = X2, family = "gaussian", phi = 0.09)
         )
     )
 }

@@ -29,10 +29,7 @@
 #' @param family Character family name (see [family_names()]).
 #' @param backend One of `"hmc"`, `"ess"`, `"sghmc"`, `"sgld"`, `"mclmc"`,
 #'   `"smc"`, `"vi"`.
-#' @param phi Dispersion/precision passed to the family (held fixed). The
-#'   kernel parameterization: for `gaussian` / `lognormal` this is the residual
-#'   SD (the [tulpa()] front door passes `sqrt(phi)`, its `phi` being the
-#'   variance); for `t` the scale.
+#' @template phi
 #' @param phi2 Optional second dispersion: the Student-t degrees of freedom
 #'   (`family = "t"`; default 4 when `NULL`).
 #' @param offset Optional fixed additive term on the linear predictor
@@ -156,7 +153,7 @@ tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
     X          = X,
     family     = family,
     backend    = backend,
-    phi        = as.numeric(phi),
+    phi        = .phi_to_kernel(family, as.numeric(phi)),
     sigma_beta = as.numeric(sigma_beta),
     n_iter     = as.integer(n_iter),
     n_warmup   = as.integer(warmup),

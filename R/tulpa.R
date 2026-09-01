@@ -601,13 +601,6 @@
       backend, paste(.phi2_backends(), collapse = ", ")), call. = FALSE)
   }
 
-  # tulpa()'s `phi` for gaussian / lognormal is the residual VARIANCE (the
-  # R-side registry convention); the compiled kernels behind the nested /
-  # spde / modeldata backends parameterize by the residual SD. Convert once
-  # at this boundary (tulpa_laplace converts internally; the re_cov / agq
-  # paths already consume the variance).
-  phi_sd <- .phi_to_kernel(family, phi)
-
   if (input == "nested") {
     if (backend != "nested_laplace") {
       stop(sprintf(paste0(
@@ -713,7 +706,7 @@
       n_re_groups = 0L,
       sigma_re    = 1.0,
       family      = family,
-      phi         = phi_sd,
+      phi         = phi,
       # Forward only the keys the inner fitter reads: front-door-only knobs
       # (grid shape, backend selection) were consumed above and would trip
       # tulpa_nested_laplace()'s own whitelist.
@@ -778,7 +771,7 @@
       range          = NULL,
       sigma          = NULL,
       nested_laplace = TRUE,
-      phi            = phi_sd,
+      phi            = phi,
       offset         = bundle$offset,
       re_idx         = spde_re_idx,
       n_re_groups    = spde_re_n,
@@ -1035,9 +1028,6 @@
              "random-effect / spatial / temporal / latent(...) term(s), or use ",
              "mode = 'laplace' / 'mala' / 'auto'.", call. = FALSE)
       }
-      # EP consumes the residual VARIANCE directly for gaussian (its tilted
-      # moments use phi = variance), matching tulpa()'s phi convention -- so pass
-      # phi, not the sd-converted phi_sd.
       return(list(
         y          = bundle$y,
         X          = bundle$X,
@@ -1281,7 +1271,7 @@
       X             = bundle$X,
       family        = family,
       backend       = backend,
-      phi           = phi_sd,
+      phi           = phi,
       phi2          = phi2,
       offset        = bundle$offset,
       fixed_names   = bundle$fixed_names,
@@ -1404,10 +1394,7 @@
 #'   row). Supported on the non-spatial Laplace path (`mode = "laplace"`) and
 #'   the log-posterior samplers (`mala`, `imh_laplace`, `pathfinder`); other
 #'   backends reject weights loudly.
-#' @param phi Dispersion/precision passed to the family (residual variance for
-#'   gaussian and lognormal, size for neg_binomial_2, precision for beta,
-#'   scale for t). The variance convention holds across every backend; the
-#'   SD-parameterized compiled kernels receive `sqrt(phi)` at the boundary.
+#' @template phi
 #' @param estimate_phi Estimate the dispersion from the data instead of
 #'   conditioning on `phi`, which then supplies the starting value. `log(phi)`
 #'   joins the empirical-Bayes maximization as one further coordinate carrying

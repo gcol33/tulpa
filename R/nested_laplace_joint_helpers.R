@@ -1010,3 +1010,39 @@
     }
     out
 }
+
+# The one R -> compiled-kernel dispersion boundary for the joint tier. Every
+# R-level `phi` in the package is the engine convention (gaussian / lognormal:
+# the residual VARIANCE); the kernels parameterize those two families by the
+# residual SD. An arm carries its own family, so the arm scalar, the per-arm
+# outer-grid override (`phi_grid_per_arm`) and the per-species batch matrix
+# (`phi_batch`, [n_arms x n_batch]) all convert against the same family here
+# rather than at each of the joint entries.
+#' @keywords internal
+.joint_phi_args_to_kernel <- function(args) {
+    arms <- args$arms_list
+    if (is.null(arms)) return(args)
+    fams <- vapply(arms, function(a) as.character(a$family %||% ""), character(1))
+    for (k in seq_along(arms)) {
+        arms[[k]]$phi <- .phi_to_kernel(fams[k], as.numeric(arms[[k]]$phi %||% 1.0))
+    }
+    args$arms_list <- arms
+    g <- args$phi_grid_per_arm
+    if (!is.null(g)) {
+        for (k in seq_along(g)) {
+            if (!is.null(g[[k]])) {
+                g[[k]] <- .phi_to_kernel(fams[k], as.numeric(g[[k]]))
+            }
+        }
+        args$phi_grid_per_arm <- g
+    }
+    pb <- args$phi_batch
+    if (!is.null(pb)) {
+        pb <- as.matrix(pb)
+        for (k in seq_len(nrow(pb))) {
+            pb[k, ] <- .phi_to_kernel(fams[k], as.numeric(pb[k, ]))
+        }
+        args$phi_batch <- pb
+    }
+    args
+}

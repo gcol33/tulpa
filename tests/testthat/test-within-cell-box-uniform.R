@@ -416,7 +416,7 @@ test_that("a fit selects the construction, reports it, and stays byte-identical 
                auto_recenter = FALSE)
   fit <- function(wc) suppressWarnings(tulpa_nested_laplace_joint(
     responses = list(a = list(y = y, n_trials = rep(1L, N), X = X,
-                              family = "gaussian", phi = sqrt(0.5))),
+                              family = "gaussian", phi = 0.5)),
     prior = list(list(type = "iid", obs_idx = list(g), n_units = G,
                       sigma_grid = sg)),
     control = if (is.null(wc)) ctrl else c(ctrl, list(within_cell = wc))))

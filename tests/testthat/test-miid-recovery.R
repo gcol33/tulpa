@@ -97,7 +97,7 @@ test_that("iid svc_weight all-ones is identical to the unweighted iid block", {
   y <- rnorm(N, 0.1 + 0.4 * x + iota[grp], 0.3)
   arm <- list(y = y, n_trials = rep(1L, N), X = cbind(1, x),
               re_idx = rep(0, N), n_re_groups = 0L, sigma_re = 1.0,
-              family = "gaussian", phi = 0.3)
+              family = "gaussian", phi = 0.09)
 
   base <- list(type = "iid", n_units = G, obs_idx = list(grp),
                sigma_grid = c(0.3, 0.5, 0.8))
@@ -168,7 +168,7 @@ test_that("miid p=1 matches the scalar iid block on the inner log-marginal", {
   y <- rnorm(N, -0.2 + 0.5 * x + iota[grp], 0.3)
   arm <- list(y = y, n_trials = rep(1L, N), X = cbind(1, x),
               re_idx = rep(0, N), n_re_groups = 0L, sigma_re = 1.0,
-              family = "gaussian", phi = 0.3)
+              family = "gaussian", phi = 0.09)
 
   s_vals <- c(0.3, 0.45, 0.6, 0.8, 1.1)
 

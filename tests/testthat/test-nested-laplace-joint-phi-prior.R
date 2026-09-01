@@ -60,7 +60,7 @@ test_that("prior_phi adds the PC log-density on the axis's own coordinate", {
     skip_on_cran()
     sim <- .simulate_joint_pp(N = 400, n_s = 30, sd_pos = 0.3, seed = 919)
     adj <- .chain_adj_pp(sim$n_s)
-    phi_axis <- exp(seq(log(0.08), log(1.0), length.out = 9))
+    phi_axis <- exp(seq(log(0.08), log(1.0), length.out = 9))^2
 
     U <- 1.0; a <- 0.01; lambda <- -log(a) / U
     # The consistency pass appends slice cells, and where it appends them
@@ -89,10 +89,10 @@ test_that("a sharp half-normal prior_phi shrinks the phi posterior toward zero",
     skip_on_cran()
     sim <- .simulate_joint_pp(N = 400, n_s = 30, sd_pos = 0.3, seed = 919)
     adj <- .chain_adj_pp(sim$n_s)
-    phi_axis <- exp(seq(log(0.08), log(1.0), length.out = 9))
+    phi_axis <- exp(seq(log(0.08), log(1.0), length.out = 9))^2
 
     flat <- .fit_pp(sim, adj, phi_axis, prior_phi = NULL)
-    hn   <- .fit_pp(sim, adj, phi_axis, prior_phi = list("half_normal", 0.15))
+    hn   <- .fit_pp(sim, adj, phi_axis, prior_phi = list("half_normal", 0.0225))
     expect_lt(hn$theta_mean[["phi_pos"]], flat$theta_mean[["phi_pos"]])
 })
 
@@ -101,11 +101,11 @@ test_that("prior_phi recovers true dispersion when the data identifies it", {
     sd_true <- 0.3
     sim <- .simulate_joint_pp(N = 600, n_s = 30, sd_pos = sd_true, seed = 451)
     adj <- .chain_adj_pp(sim$n_s)
-    phi_axis <- exp(seq(log(0.08), log(1.0), length.out = 9))
+    phi_axis <- exp(seq(log(0.08), log(1.0), length.out = 9))^2
     # A weak PC prior with U above truth is essentially harmless when n_pos
     # identifies phi.
     fit <- .fit_pp(sim, adj, phi_axis, prior_phi = list("pc.prec", c(1.0, 0.01)))
-    expect_lt(abs(fit$theta_mean[["phi_pos"]] - sd_true) / sd_true, 0.3)
+    expect_lt(abs(fit$theta_mean[["phi_pos"]] - sd_true^2) / sd_true^2, 0.3)
 })
 
 test_that("prior_phi is a no-op when no phi_grid is declared", {
@@ -120,7 +120,7 @@ test_that("prior_phi is a no-op when no phi_grid is declared", {
         arm_pos <- list(y = sim$y_pos, n_trials = rep(1L, length(sim$y_pos)),
                         X = sim$Xpos, spatial_idx = sim$spi_pos,
                         re_idx = rep(0, length(sim$y_pos)), n_re_groups = 0L,
-                        sigma_re = 1.0, family = "gaussian", phi = 0.3,
+                        sigma_re = 1.0, family = "gaussian", phi = 0.09,
                         field_coef = list(name = "alpha", grid = 1))
         prior <- list(type = "bym2", n_spatial_units = adj$n_spatial_units,
                       adj_row_ptr = adj$adj_row_ptr, adj_col_idx = adj$adj_col_idx,

@@ -1140,14 +1140,13 @@ plot.tulpa_fit <- function(x, type = c("density", "trace", "pairs", "smooth"),
                                   as.numeric(object$weights), nn, cty))
 }
 
-# The variance-convention dispersion of an SPDE fit, for the R-side working
-# weights: a front-door tulpa() fit stores `$phi` (the variance); a direct
-# fit_spde() fit stores the kernel-convention `$phi_kernel` (gaussian /
-# lognormal: the residual SD).
+# The dispersion of an SPDE fit, for the R-side working weights. Every door
+# stores `$phi` in the one engine convention (gaussian / lognormal: the
+# residual variance), so a front-door tulpa() fit and a direct fit_spde() fit
+# read the same way.
 #' @keywords internal
 .spde_phi_variance <- function(object) {
-  if (!is.null(object$phi)) return(object$phi)
-  .phi_to_registry(object$family %||% "", object$phi_kernel %||% 1.0)
+  object$phi %||% 1.0
 }
 
 # Linear-predictor SE at query points for an SPDE fit with the field included:

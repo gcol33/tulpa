@@ -209,7 +209,7 @@ test_that("nested-Laplace NNGP marginalized CI covers (sigma2, phi_gp)", {
                   sigma2_grid = gr$s2, phi_gp_grid = gr$pg)
     fit <- suppressWarnings(tulpa_nested_laplace(
       d$y, rep(1L, d$n), matrix(1, d$n, 1), prior = prior,
-      family = "gaussian", phi = 0.2, control = list(diagnose_k = FALSE)))
+      family = "gaussian", phi = 0.04, control = list(diagnose_k = FALSE)))
     s2_cov[s] <- sigma2_true >= fit$theta_ci_lo[["sigma2"]] &&
                  sigma2_true <= fit$theta_ci_hi[["sigma2"]]
     pg_cov[s] <- phi_true >= fit$theta_ci_lo[["phi_gp"]] &&

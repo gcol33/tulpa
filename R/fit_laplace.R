@@ -36,10 +36,7 @@
 #'     present these take precedence over `sigma`; the off-diagonal enters both
 #'     the joint Hessian (mode finding) and the marginal fixed-effect SE.
 #' @param family Character: `"binomial"`, `"poisson"`, `"neg_binomial_2"`, `"gaussian"`
-#' @param phi Dispersion parameter. For `gaussian` / `lognormal` this is the
-#'   residual VARIANCE (matching the R-side family registry and [tulpa()]);
-#'   the SD-parameterized compiled kernels receive `sqrt(phi)` internally.
-#'   For `neg_binomial_2` the size, `beta` the precision, `t` the scale.
+#' @template phi
 #' @param phi2 Optional second dispersion: the Student-t degrees of freedom
 #'   (`family = "t"`; default 4 when `NULL`). Non-spatial path only.
 #' @param spatial Optional spatial specification (tulpa_spatial object)
@@ -152,12 +149,6 @@ tulpa_laplace <- function(y, n_trials, X,
   n_fixed <- ncol(X)
   family <- .canonical_family(family)
 
-  # tulpa_laplace's `phi` is the residual VARIANCE for gaussian / lognormal
-  # (the convention of the R-side registry, which builds H_beta below); the
-  # compiled kernels parameterize by the residual SD. Convert once here so the
-  # mode-finding and the Hessian describe the same model (the kernel expects the
-  # SD, not the variance).
-  phi_kernel <- .phi_to_kernel(family, phi)
   if (!is.null(phi2)) {
     .phi2_or_stop(family, phi2)
     if (!is.null(spatial)) {
@@ -241,7 +232,7 @@ tulpa_laplace <- function(y, n_trials, X,
     }
     result <- dispatch_laplace_spatial(
       y, n_trials, X, re_idx, n_re_groups, sigma_re,
-      spatial, family, phi_kernel, max_iter, tol, n_threads, offset = offset,
+      spatial, family, phi, max_iter, tol, n_threads, offset = offset,
       weights = weights
     )
   } else {
@@ -302,7 +293,7 @@ tulpa_laplace <- function(y, n_trials, X,
       re_ngroups = re_ngroups,
       re_sigma_list = re_sigma_list,
       family = family,
-      phi = phi_kernel,
+      phi = .phi_to_kernel(family, phi),
       max_iter = as.integer(max_iter),
       tol = tol,
       n_threads = as.integer(n_threads),
@@ -769,6 +760,9 @@ dispatch_laplace_spatial <- function(y, n_trials, X, re_idx, n_re_groups,
   spatial_type <- spatial$type
   off_arg <- if (is.null(offset)) NULL else as.numeric(offset)
   wt_arg  <- if (is.null(weights)) NULL else as.numeric(weights)
+  # The two kernels called directly below take the SD for the variance
+  # families; the `laplace_*_at()` helpers convert at their own kernel call.
+  phi_kernel <- .phi_to_kernel(family, phi)
 
   if (spatial_type %in% c("icar", "car")) {
     adj <- spatial$adjacency
@@ -784,7 +778,7 @@ dispatch_laplace_spatial <- function(y, n_trials, X, re_idx, n_re_groups,
       adj_col_idx = as.integer(adj_sparse$col_idx),
       n_neighbors = as.integer(adj_sparse$n_neighbors),
       tau_spatial = 1.0,
-      family = family, phi = phi,
+      family = family, phi = phi_kernel,
       max_iter = as.integer(max_iter), tol = tol,
       n_threads = as.integer(n_threads),
       offset_nullable = off_arg,
@@ -805,7 +799,7 @@ dispatch_laplace_spatial <- function(y, n_trials, X, re_idx, n_re_groups,
       n_neighbors = as.integer(adj_sparse$n_neighbors),
       sigma_spatial = 1.0, rho = 0.5,
       scale_factor = spatial$scale_factor %||% 1.0,
-      family = family, phi = phi,
+      family = family, phi = phi_kernel,
       max_iter = as.integer(max_iter), tol = tol,
       n_threads = as.integer(n_threads),
       offset_nullable = off_arg,
@@ -875,11 +869,7 @@ dispatch_laplace_spatial <- function(y, n_trials, X, re_idx, n_re_groups,
 #' @param X Fixed-effects design matrix.
 #' @param spatial A `tulpa_spatial` object of type `"spde"`.
 #' @param family Distribution family.
-#' @param phi Dispersion in the compiled-kernel convention: for `gaussian` /
-#'   `lognormal` the residual SD (variance is `phi^2`), for `neg_binomial_2`
-#'   the size, `gamma` the shape, `beta` the precision, `t` the scale;
-#'   `binomial` / `poisson` ignore it. Callers hand this the already-converted
-#'   value ([tulpa_laplace()] passes `sqrt(phi)` for the variance families).
+#' @template phi
 #' @param range Spatial range (NULL -> use `spatial$prior_range[1]`).
 #' @param sigma Marginal SD (NULL -> use `spatial$prior_sigma[1]`).
 #' @param max_iter Newton iterations.
@@ -936,7 +926,7 @@ laplace_spde_at <- function(y, n_trials, X, spatial,
       C0_diag = spatial$C0_diag,
       G1_x = spatial$G1_x, G1_i = spatial$G1_i, G1_p = spatial$G1_p,
       kappa = kappa, tau_spde = tau_spde,
-      family = family, phi = phi, alpha = alpha,
+      family = family, phi = .phi_to_kernel(family, phi), alpha = alpha,
       max_iter = as.integer(max_iter), tol = tol,
       n_threads = as.integer(n_threads),
       rational_poles_nullable = if (!rat$is_integer) rat$poles else NULL,
@@ -1001,11 +991,7 @@ gp_cov_type_for_laplace <- function(spatial) {
 #' @param X Fixed-effects design matrix.
 #' @param spatial A `tulpa_gp` spec, validated (i.e., `neighbor_info` populated).
 #' @param family Distribution family.
-#' @param phi Dispersion in the compiled-kernel convention: for `gaussian` /
-#'   `lognormal` the residual SD (variance is `phi^2`), for `neg_binomial_2`
-#'   the size, `gamma` the shape, `beta` the precision, `t` the scale;
-#'   `binomial` / `poisson` ignore it. Callers hand this the already-converted
-#'   value ([tulpa_laplace()] passes `sqrt(phi)` for the variance families).
+#' @template phi
 #' @param sigma2_gp Marginal variance (NULL -> 1.0).
 #' @param phi_gp Range / decay parameter (NULL -> 1.0).
 #' @param max_iter Newton iterations.
@@ -1060,7 +1046,7 @@ laplace_gp_at <- function(y, n_trials, X, spatial,
     phi_gp = phi_gp,
     cov_type = cov_type,
     family = family,
-    phi = phi,
+    phi = .phi_to_kernel(family, phi),
     max_iter = as.integer(max_iter),
     tol = tol,
     n_threads = as.integer(n_threads),
@@ -1113,7 +1099,7 @@ laplace_car_proper_at <- function(y, n_trials, X, spatial,
     adj_row_ptr = as.integer(csr$row_ptr), adj_col_idx = as.integer(csr$col_idx),
     n_neighbors = as.integer(csr$n_neighbors),
     tau_spatial = as.numeric(tau), rho = as.numeric(rho),
-    family = family, phi = phi,
+    family = family, phi = .phi_to_kernel(family, phi),
     max_iter = as.integer(max_iter), tol = tol, n_threads = as.integer(n_threads),
     offset_nullable = if (is.null(offset)) NULL else as.numeric(offset),
     weights_nullable = if (is.null(weights)) NULL else as.numeric(weights)
@@ -1159,7 +1145,7 @@ laplace_hsgp_at <- function(y, n_trials, X, spatial,
     n_re_groups = as.integer(n_re_groups), sigma_re = sigma_re,
     phi_basis = basis$phi_basis, lambda_eig = basis$lambda_eig,
     sigma2 = as.numeric(sigma2), lengthscale = as.numeric(lengthscale),
-    family = family, phi = phi,
+    family = family, phi = .phi_to_kernel(family, phi),
     max_iter = as.integer(max_iter), tol = tol, n_threads = as.integer(n_threads),
     offset_nullable = if (is.null(offset)) NULL else as.numeric(offset),
     weights_nullable = if (is.null(weights)) NULL else as.numeric(weights)

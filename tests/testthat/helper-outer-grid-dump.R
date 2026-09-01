@@ -544,7 +544,7 @@ ogd_fixture_fit <- function(sim, levels, spread = 3,
   })
   suppressWarnings(tulpa_nested_laplace_joint(
     responses = list(a = list(y = sim$y, n_trials = rep(1L, sim$N), X = sim$X,
-                              family = "gaussian", phi = 0.25)),
+                              family = "gaussian", phi = 0.0625)),
     prior = prior,
     control = list(n_threads = 1L, diagnose_k = FALSE, max_iter = 100L,
                    tol = 1e-8, integration = "grid",
