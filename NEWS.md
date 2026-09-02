@@ -1,4 +1,4 @@
-# tulpa 0.3.0
+# tulpa 0.2.14
 
 ## The outer grid says what it did
 
