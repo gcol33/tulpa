@@ -21,6 +21,13 @@
 # `n_j` enters as a replicate weight, so weight w at dispersion phi is exactly
 # weight 1 at dispersion phi / w -- the trial-count read is pinned by an
 # identity rather than by a tolerance.
+#
+# `phi` there is what reaches `CellResponse::phi()`, which `cell_coupling.h`
+# documents as the gaussian SD and this fixture uses as its own density's
+# variance. `phi_batch` at the R door is the residual VARIANCE and is converted
+# at the C++ boundary, so a door value of `p^2` is what puts `p` in that slot
+# (gcol33/tulpa#659: the identity was written before that convention and read
+# `sqrt(p)` for two weeks without the suite being run).
 
 skip_on_cran()
 
@@ -96,13 +103,28 @@ test_that("a batched spec can read n_trials without dereferencing null", {
 })
 
 test_that("a trial count of w is a dispersion of phi / w, exactly", {
-  sim <- sim <- .wg_sim()
+  sim <- .wg_sim()
   phi <- 0.7
+  # The identity is a statement about the fixture's OWN dispersion, which is
+  # whatever reaches `CellResponse::phi()` -- documented in `cell_coupling.h` as
+  # the gaussian SD, and used as the variance of this fixture's own density. The
+  # R door takes the residual VARIANCE and converts at the C++ boundary
+  # (`.joint_phi_args_to_kernel()`), so the door value that puts `p` in that slot
+  # is `p^2` (gcol33/tulpa#659). Stated on the door's own axis rather than
+  # pre-squared numbers, so a further convention change moves one expression.
+  # Stating it this way also pins the conversion ITSELF, which nothing else
+  # did: the identity needs `slot(light) == slot(heavy) / w`, and only a LINEAR
+  # door satisfies that from a squared argument. Drop the conversion and the
+  # slots are `p^2` against `p^2 / 4`; make it a cube root and they are 0.788
+  # against 0.497 where 0.394 is wanted. Either fails here.
+  door <- function(p) p^2
   # Arm a at weight 2 and dispersion phi; arm b left at weight 1 so only one
   # arm's weighting moves and the identity is not a global rescale.
-  heavy <- .wg_fit(sim, rbind(rep(phi, sim$n_batch), rep(phi, sim$n_batch)),
+  heavy <- .wg_fit(sim, rbind(rep(door(phi), sim$n_batch),
+                              rep(door(phi), sim$n_batch)),
                    trials_a = 2L, trials_b = 1L)
-  light <- .wg_fit(sim, rbind(rep(phi / 2, sim$n_batch), rep(phi, sim$n_batch)),
+  light <- .wg_fit(sim, rbind(rep(door(phi / 2), sim$n_batch),
+                              rep(door(phi), sim$n_batch)),
                    trials_a = 1L, trials_b = 1L)
 
   # The gradient and the curvature are w/phi either way, so the modes coincide.
