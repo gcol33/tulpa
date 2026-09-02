@@ -1,4 +1,7 @@
-# tulpa 0.2.15
+# tulpa 0.3.0
+
+Closes every open engine issue. 0.2.14 closed seven of eleven; the remaining
+four are below.
 
 ## The CCD curvature-reuse path is measured, and removed
 
