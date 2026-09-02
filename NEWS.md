@@ -1,3 +1,15 @@
+# tulpa 0.2.13
+
+* **`logLik()` resolved `df` to 0 whenever `n_fixed` was unset, so `AIC()` and
+  `BIC()` came back identical.** The count was picked with a `%||%` chain over
+  `length()` calls -- `n_fixed %||% length(mode) %||% length(means)` -- and
+  `length(NULL)` is `0`, not `NULL`, so the chain accepted the zero at its
+  middle term and the `means` fallback was unreachable. Both information
+  criteria then carried no parameter penalty and reduced to `-2 logLik`, which
+  is finite and plausible and ranks nothing. Resolved from the first candidate
+  that yields a positive count instead; the priority (`n_fixed`, then `mode`,
+  then `means`) is unchanged (#654).
+
 # tulpa 0.2.12
 
 * **A refined grid's per-cell lists were sized from cell 1, which a cheap-pass
