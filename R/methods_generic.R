@@ -625,8 +625,15 @@ logLik.tulpa_fit <- function(object, ...) {
       lm
     }
   } else NA_real_
-  attr(ll, "df")   <- object$n_fixed %||% length(object$mode) %||%
-    length(object$means)
+  # Free-parameter count for the AIC / BIC penalty, from the first source the
+  # fit actually carries. NOT a `%||%` chain over `length()` calls: `length(NULL)`
+  # is 0, not NULL, so such a chain stops at the first ABSENT candidate and every
+  # later fallback is unreachable -- a fit with no `n_fixed` and no `mode` came
+  # back with df = 0, which zeroes both penalties and makes AIC and BIC
+  # identical. Take the first candidate that resolves to a positive count.
+  df_candidates <- c(object$n_fixed, length(object$mode), length(object$means))
+  df_candidates <- df_candidates[is.finite(df_candidates) & df_candidates > 0]
+  attr(ll, "df")   <- if (length(df_candidates)) as.integer(df_candidates[1L]) else 0L
   attr(ll, "nobs") <- object$N %||% NA_integer_
   class(ll) <- "logLik"
   ll
