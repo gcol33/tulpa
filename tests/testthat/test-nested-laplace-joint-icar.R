@@ -151,7 +151,9 @@ test_that("joint ICAR recovers per-arm betas and locates the alpha mode", {
         y = sim$y_pos, n_trials = rep(1L, length(sim$y_pos)),
         X = sim$Xpos, spatial_idx = sim$spi_pos,
         re_idx = rep(0, length(sim$y_pos)), n_re_groups = 0L, sigma_re = 1.0,
-        family = "gaussian", phi = sim$truth$sd_pos
+        # The door reads the residual VARIANCE (657f179), and the
+        # simulator draws at `sd_pos` (gcol33/tulpa#661).
+        family = "gaussian", phi = sim$truth$sd_pos^2
     )
     prior <- list(
         type = "icar",

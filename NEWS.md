@@ -1,5 +1,29 @@
 # tulpa 0.2.15
 
+## One dispersion convention, in the fixtures too
+
+* **`657f179` moved every door to the residual variance and four fixtures were
+  left describing the SD** (gcol33/tulpa#661, gcol33/tulpa#659). The recovery
+  suite's own convention pin fired, as its header says it exists to
+  ("so a change on the door's side fails loudly here instead of silently
+  rescaling every gaussian fixture"), and the three failures beside it were that
+  rescaling: a seed-specific measurement taken at residual variance 0.5 and
+  re-read at 0.7071, and two joint alpha gates handed `sd_pos` where the door
+  reads `sd_pos^2` -- a 41% over-statement of the residual scale, which the ICAR
+  block's own comment names as what makes alpha unidentifiable. The engine has
+  crossed this seam twice in opposite directions: gcol33/tulpa#332 was the same
+  crossing the other way, costing a slope interval a factor of 1.4079 against
+  `sqrt(2)` and coverage 146/150 -> 120/150.
+
+* The SBC harness was crossed the same way and its `phi_crossed` NEGATIVE
+  CONTROL had swapped roles with its main arm; `test-sbc-crps.R` reads 8 failures
+  against the unconverted helper and none against the converted one.
+
+* The simulators now read the conversion from the engine
+  (`.phi_to_kernel()`) rather than restating it, so a further move of the
+  convention moves every fixture's draw with it instead of rescaling it
+  silently. The fixture constants stay in the door's own convention.
+
 ## One axis marginal, three measures
 
 * **A boundary-truncation label was weakened by the very thing it was asked

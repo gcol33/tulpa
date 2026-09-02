@@ -1509,6 +1509,42 @@ not a mis-sized one.
 `.joint_pareto_grid_regime()` and `diagnostic_summary()` alike. Write-up
 `dev_notes/issue636/RESULTS636.md`; tests `test-recenter-pilot.R`.
 
+### A fixture states phi in the door's convention, and asks the engine for the SD (gcol33/tulpa#661, #659)
+
+`657f179` made every R-level `phi` the residual VARIANCE for gaussian and
+lognormal, converted to the SD the kernel wants inside each door. It converted 46
+test files on the ground that "fixtures reaching a flipped door carry `phi^2` so
+each describes the model it described before". Five it did not reach are the
+whole of gcol33/tulpa#661 and gcol33/tulpa#659, and they are one defect, not
+four:
+
+- the recovery suite's own convention PIN, which fired exactly as its header says
+  it exists to ("a change on the door's side fails loudly here instead of
+  silently rescaling every gaussian fixture");
+- a seed-specific measurement in the same file, taken at residual variance 0.5
+  and re-read at 0.7071 -- the silent rescaling, from the other end;
+- two joint alpha gates handed `sd_pos` where the door reads `sd_pos^2`, a 41%
+  over-statement of the residual scale, which the ICAR block's own comment names
+  as what makes alpha unidentifiable;
+- the batched cell-coupling identity (#659), bisected to the same commit;
+- and `helper-sbc.R`, whose `phi_crossed` NEGATIVE CONTROL had swapped roles with
+  its main arm -- 8 failures in `test-sbc-crps.R` against the unconverted helper,
+  0 against the converted one.
+
+**The engine has crossed this seam twice, in opposite directions.**
+gcol33/tulpa#332 was the same generator/inference crossing the other way, costing
+a slope interval a factor of 1.4079 against `sqrt(2)` and coverage
+146/150 -> 120/150. So the fixtures no longer RESTATE the convention: a harness
+states `phi` in the door's own convention, hands it over unconverted, and asks
+the engine for the SD its `rnorm()` / `dnorm()` wants through the doors' own
+`.phi_to_kernel()`. Both `phi_crossed` controls cross by that same call, so they
+face whichever way the door does. A further move of the convention then moves
+every fixture's draw with it instead of rescaling it silently.
+
+Every test file reaching a flipped door with a gaussian or lognormal arm that
+`657f179` did not convert -- 33 of them -- was re-run at tier 2 afterwards, with
+no other failure in the class. Write-up `dev_notes/issue661/RESULTS661.md`.
+
 ### One axis marginal, three measures (gcol33/tulpa#660)
 
 `53a2ef9` folded the cells' quadrature weights into `.nl_axis_marginal_w()` for

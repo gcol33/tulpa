@@ -55,7 +55,23 @@
 # ---------------------------------------------------------------------------
 
 SBC_GRID <- exp(seq(log(0.2), log(1.5), length.out = 7))
-SBC_PHI  <- 0.7
+# `phi` in this harness is stated in the DOOR's own convention and handed over
+# unconverted, which since `657f179` is the residual variance. 0.49 is the 0.7
+# residual SD these fixtures have always simulated at, so the model is the one
+# they always described (gcol33/tulpa#661).
+#
+# Nothing here restates that convention. Every place the harness needs the SD an
+# `rnorm()` or a `dnorm()` wants, it asks the engine for it through
+# `.phi_to_kernel()` -- the same call the doors make -- and the exact posterior
+# derives its variance from the same place. So a further move of the convention
+# moves the simulator with it, instead of silently rescaling every gaussian
+# fixture the way it did twice (gcol33/tulpa#332 one way, #661 the other).
+SBC_PHI  <- 0.49
+
+# The residual SD and residual VARIANCE behind a `phi` written in the door's
+# convention, whatever that convention currently is.
+sbc_resid_sd  <- function(phi) .phi_to_kernel("gaussian", phi)
+sbc_resid_var <- function(phi) sbc_resid_sd(phi)^2
 SBC_BETA <- c(-0.2, 0.7)
 
 # `nr` regions of `spr` observations each. The default is deliberately small:
@@ -73,19 +89,23 @@ sbc_sim_gaussian <- function(seed, nr = 6L, spr = 4L, phi = SBC_PHI,
   x <- stats::rnorm(N)
   X <- cbind(1, x)
   u <- stats::rnorm(nr, 0, sigma)
-  y <- as.numeric(X %*% beta) + u[region] + stats::rnorm(N, 0, phi)
+  y <- as.numeric(X %*% beta) + u[region] +
+       stats::rnorm(N, 0, sbc_resid_sd(phi))
   list(seed = seed, y = y, X = X, region = as.integer(region), N = N, nr = nr,
        spr = spr, phi = phi, grid = grid,
        theta = c(beta1 = beta[1], beta2 = beta[2], sigma = sigma))
 }
 
-# Exact per-cell quantities for the balanced design. V = sigma^2 Z Z' + phi^2 I
-# is block diagonal with blocks phi^2 I_m + sigma^2 J_m, so V^-1 = a I - b J per
-# block and every quadratic form is a group sum.
+# Exact per-cell quantities for the balanced design. V = sigma^2 Z Z' + phi I is
+# block diagonal with blocks phi I_m + sigma^2 J_m, so V^-1 = a I - b J per block
+# and every quadratic form is a group sum. `pv` is the residual VARIANCE behind
+# whatever convention `phi` is written in -- the same quantity `sigma^2` is on
+# the other term.
 .sbc_exact_cell <- function(d, sigma, phi = d$phi) {
   m <- d$spr
-  a <- 1 / phi^2
-  b <- sigma^2 / (phi^2 * (phi^2 + m * sigma^2))
+  pv <- sbc_resid_var(phi)
+  a <- 1 / pv
+  b <- sigma^2 / (pv * (pv + m * sigma^2))
   X <- d$X; y <- d$y
   Xs <- rowsum(X, d$region)
   ys <- as.numeric(rowsum(y, d$region))
@@ -95,7 +115,7 @@ sbc_sim_gaussian <- function(seed, nr = 6L, spr = 4L, phi = SBC_PHI,
   Vb <- solve(XtVX)
   bh <- as.numeric(Vb %*% XtVy)
   G <- nrow(Xs); N <- length(y); p <- ncol(X)
-  logdetV <- G * ((m - 1) * log(phi^2) + log(phi^2 + m * sigma^2))
+  logdetV <- G * ((m - 1) * log(pv) + log(pv + m * sigma^2))
   # The marginal likelihood with the flat beta integrated out.
   lml <- -0.5 * logdetV - 0.5 * as.numeric(determinant(XtVX, TRUE)$modulus) -
     0.5 * (ytVy - sum(XtVy * bh)) - 0.5 * (N - p) * log(2 * pi)
@@ -184,8 +204,10 @@ sbc_loglik_rank <- function(d, mu, cov, w, phi = d$phi, n_ref = 200L,
 #   collapsed    the same two moments as one Gaussian (the pre-#336 read)
 #   wide         collapsed with its SD multiplied by `bad_factor`
 #   narrow       collapsed with its SD divided by `bad_factor`
-#   phi_crossed  a SECOND solve at phi^2 where the door reads a residual SD --
-#                the gcol33/tulpa#332 generator / inference convention crossing
+#   phi_crossed  a SECOND solve at sqrt(phi) where the door reads the residual
+#                VARIANCE -- the gcol33/tulpa#332 generator / inference
+#                convention crossing, restated on the door's own axis after
+#                657f179 moved it (gcol33/tulpa#661)
 # `wide`, `narrow` and `phi_crossed` are the known-bad controls: a calibration
 # harness that cannot fail is worthless, so a deliberately mis-scaled posterior
 # has to land outside the band.
@@ -216,8 +238,11 @@ sbc_arms_gaussian <- function(d, bad_factor = 1.25, n_ref = 200L,
     wide      = coll(bad_factor),
     narrow    = coll(1 / bad_factor))
   if (phi_crossed) {
-    arms$phi_crossed <- mk(sbc_engine_post(sbc_fit_nested(d, phi = d$phi^2)),
-                           phi = d$phi^2)
+    # The broken control: hand the door the OTHER convention's number, which is
+    # the kernel's, which is what `.phi_to_kernel()` returns.
+    crossed <- .phi_to_kernel("gaussian", d$phi)
+    arms$phi_crossed <- mk(sbc_engine_post(sbc_fit_nested(d, phi = crossed)),
+                           phi = crossed)
   }
   arms
 }
@@ -311,7 +336,7 @@ sbc_psbc_gaussian <- function(d_obs, read = c("exact", "engine"),
       X <- cbind(1, stats::rnorm(N))
       u <- stats::rnorm(nr_rep, 0, theta[["sigma"]])
       y <- as.numeric(X %*% c(theta[["beta1"]], theta[["beta2"]])) +
-        u[region] + stats::rnorm(N, 0, d_obs$phi)
+        u[region] + stats::rnorm(N, 0, sbc_resid_sd(d_obs$phi))
       list(y = y, X = X, region = region, nr = nr_rep)
     },
     pool = function(obs, rep) {
@@ -382,7 +407,7 @@ sbc_draw_y <- function(family, eta, ntr, phi) {
   switch(family,
     poisson        = stats::rpois(N, exp(eta)),
     binomial       = stats::rbinom(N, ntr, stats::plogis(eta)),
-    gaussian       = eta + stats::rnorm(N, 0, phi),
+    gaussian       = eta + stats::rnorm(N, 0, sbc_resid_sd(phi)),
     neg_binomial_2 = stats::rnbinom(N, mu = exp(eta), size = phi),
     gamma          = stats::rgamma(N, shape = phi, rate = phi / exp(eta)),
     beta           = {
@@ -396,7 +421,7 @@ sbc_obs_loglik <- function(family, y, eta, ntr, phi) {
   switch(family,
     poisson        = stats::dpois(y, exp(eta), log = TRUE),
     binomial       = stats::dbinom(y, ntr, stats::plogis(eta), log = TRUE),
-    gaussian       = stats::dnorm(y, eta, phi, log = TRUE),
+    gaussian       = stats::dnorm(y, eta, sbc_resid_sd(phi), log = TRUE),
     neg_binomial_2 = stats::dnbinom(y, mu = exp(eta), size = phi, log = TRUE),
     gamma          = stats::dgamma(y, shape = phi, rate = phi / exp(eta),
                                    log = TRUE),
