@@ -1177,6 +1177,13 @@
 # acted on. On gcol33/tulpa#622's own cases the lifts are 0.62 (the observed
 # fit), 1.80, 3.06 and 3.96, so the two the issue asks to see named are named and
 # the near-flat one is not.
+#
+# Those arrangements are equally spaced, so their cells all carry one width and
+# the sweep sizes the threshold in a currency no cell width enters. That is the
+# currency `.nl_axis_edge_mass()` reads it in: the "span" measure keeps the
+# widths a node's own spacing gives it and drops only the domain closure of the
+# outermost cell, which is not a width the sweep could have seen
+# (gcol33/tulpa#660).
 .NL_DIAG <- list(
     within_cell          = "box_uniform",
     grid_resolved        = 1,

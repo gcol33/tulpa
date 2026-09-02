@@ -159,3 +159,70 @@ test_that("a fit whose axes all contain their mode still reports boundary mass",
   pl$edge_mass <- character(0)
   expect_null(.tulpa_grid_placement_note(pl))
 })
+
+# --- which measure the label reads (gcol33/tulpa#660) -------------------------
+
+# A bounded axis whose naive half-step mirror reaches past its own support. The
+# outermost cell is the one `.hyper_domain_clamp()` shortens, and it is the one
+# the label is asking about.
+.em_rho_fit <- function(lm, rho = seq(0.2, 0.95, length.out = 4L)) {
+  tg <- matrix(rho, ncol = 1L, dimnames = list(NULL, "rho"))
+  list(theta_grid = tg, log_marginal = lm,
+       log_quad = .nl_grid_log_quad(tg))
+}
+
+test_that("the boundary label does not weaken where the axis's support closes", {
+  # Rising toward the ceiling, and enough of the marginal on the last node to
+  # clear the lift threshold on the axis's own spacing.
+  f <- .em_rho_fit(log(c(0.15, 0.20, 0.32, 0.33)))
+
+  span <- .nl_axis_marginal_w(f, "rho", measure = "span")
+  post <- .nl_axis_marginal_w(f, "rho", measure = "posterior")
+  m <- length(span$w)
+  lift_span <- m * span$w[m]
+  lift_post <- m * post$w[m]
+
+  # The clamp shortens the top cell, so the same marginal reads lower against
+  # the measure the fit integrates -- and it reads lower across the threshold.
+  expect_gt(lift_span, lift_post)
+  expect_gte(lift_span, .nl_diag("edge_mass_lift"))
+  expect_lt(lift_post, .nl_diag("edge_mass_lift"))
+
+  # The label is the span read, so the axis is named.
+  expect_identical(.nl_edge_mass_axes(f), "rho:upper")
+})
+
+test_that("the span measure drops the closure and nothing else", {
+  f <- .em_rho_fit(log(c(0.15, 0.20, 0.32, 0.33)))
+  expect_equal(.nl_axis_measure_quad(f, "span"),
+               .nl_grid_log_quad(f$theta_grid, close_domain = FALSE))
+  # Exactly one cell's WIDTH differs. The level weights are normalized, so
+  # every other cell moves by the one shared renormalization constant -- which
+  # a softmax over the axis cancels -- and the clamped end moves by more.
+  d <- .nl_axis_measure_quad(f, "span") - .nl_axis_measure_quad(f, "posterior")
+  m <- length(d)
+  expect_true(all(abs(d[-m] - d[1L]) < 1e-12))
+  expect_gt(d[m], d[1L])
+
+  # An axis whose mirror stays inside its own domain has nothing to drop, so
+  # the two measures are identical to the bit -- which is what keeps the
+  # wide-outer-cell case above reading the spacing it is about.
+  g <- list(theta_grid = matrix(c(0.15, 0.2, 0.25, 0.3, 2.0), ncol = 1L,
+                                dimnames = list(NULL, "sigma")),
+            log_marginal = c(-2, -1, 0, -1, -1.6))
+  g$log_quad <- .nl_grid_log_quad(g$theta_grid)
+  expect_identical(.nl_axis_measure_quad(g, "span"),
+                   .nl_axis_measure_quad(g, "posterior"))
+})
+
+test_that("the three measures are the three questions", {
+  f <- .em_rho_fit(log(c(0.15, 0.20, 0.32, 0.33)))
+  # A fit carrying no measure reads the same under all three.
+  bare <- f; bare$log_quad <- NULL
+  for (msr in .NL_AXIS_MEASURE) {
+    expect_identical(.nl_axis_marginal_w(bare, "rho", measure = msr)$w,
+                     .nl_axis_marginal_w(bare, "rho", measure = "inner")$w)
+  }
+  # And the rail reads the density, so no measure enters it at all.
+  expect_identical(.nl_axis_rail(f, "rho"), .nl_axis_rail(bare, "rho"))
+})

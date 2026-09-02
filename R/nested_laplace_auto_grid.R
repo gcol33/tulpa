@@ -60,8 +60,8 @@
 # spacing is `1.25` PLACEMENT SDs, against a census median of 3.9 on the fixed
 # spans.
 #
-# THAT IS NOT WHAT `.nl_axis_h_over_sd()` REPORTS, and the two were read as one
-# number (gcol33/tulpa#636). The reported ratio divides the spacing by the
+# THAT IS NOT WHAT `.nl_axis_h_over_sd()` COMPUTES, and the two were read as one
+# number (gcol33/tulpa#636). The trigger's ratio divides the spacing by the
 # grid-WEIGHTED posterior SD the placed grid realizes, so on a recentred axis it
 # is
 #
@@ -80,6 +80,22 @@
 # median 55.2 on the same fixture. `outer_grid_recenter_sd_clamp` / `_sd_raw` /
 # `_sd_used` are what separate a substituted spread from a measured one on the
 # fit, and a recentred axis's reported ratio cannot be read without them.
+#
+# The FIT'S OWN `outer_grid_h_over_sd` is a third quantity again, and the two
+# are not interchangeable (gcol33/tulpa#660). That field is filled by
+# `.nl_axis_resolution()` (`R/nested_laplace_moments.R`), whose denominator is
+# the three-point Laplace-at-mode SD of the UNWEIGHTED marginal -- a local
+# curvature, which is finite on an axis whose weights have collapsed onto one
+# node where the trigger's moment spread is 0 and the ratio `Inf`, and which
+# declines `mode_at_edge` on a railed axis the trigger scores a number for.
+# Measured on twelve axes of BYM2 and ICAR fits (`dev_notes/issue660/
+# probe660b.R`): both finite on eight, equal on none, field-over-trigger median
+# 1.0012 and range 0.0000 to 1.3793, six orders apart on a collapsed BYM2
+# `sigma`. The two are kept because they answer differently on purpose -- the
+# trigger has to fire on a collapsed axis, and the report has to decline what it
+# cannot score -- so read the derivation above against `.nl_axis_h_over_sd()`,
+# which is what `test-recenter-pilot.R` asserts it on, and not against the
+# field.
 #
 # An axis NO rescue moves -- a copy `alpha`, a caller-pinned per-arm dispersion
 # axis -- carries no such relation at all: its ratio is whatever its own fixed
@@ -626,8 +642,43 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 # that happens exactly when the mode is AT or BEYOND that endpoint, so the span
 # does not contain it and the axis integrates a tail at any spacing.
 
+# The three measures one axis's marginal can be read against. They differ only
+# in which cell widths the nodes are weighed by, and each answers a different
+# question (gcol33/tulpa#660):
+#
+#   "posterior"  the cells' own quadrature weights, closed inside the axis's
+#                declared domain -- the measure the fit integrates and the one
+#                every reported mean, interval and spread has to carry.
+#   "span"       the same widths with the outermost cell left on its naive
+#                half-step mirror. Where the support closes is prior-side
+#                bookkeeping; a detector asking how much of the marginal the
+#                span leaves out must not weaken because the boundary it is
+#                looking at is the boundary the parameter stops at.
+#   "inner"      no measure at all: the likelihood the grid measured. What an
+#                ARGMAX question reads, since a mode is a property of the
+#                density and not of the cells it is tiled with.
+.NL_AXIS_MEASURE <- c("posterior", "span", "inner")
+
+# The cells' log quadrature weights under `measure`, or NULL for none.
+#
+# The "span" weights are rebuilt from the grid rather than stored, and the
+# rebuild is the SAME call every producer fills `log_quad` with
+# (`.nl_grid_log_quad()` on the grid alone, no caller specs), with the domain
+# closure switched off -- so the two differ in the outermost cell and in
+# nothing else.
+.nl_axis_measure_quad <- function(res, measure) {
+    switch(measure,
+           posterior = res$log_quad,
+           inner     = NULL,
+           span      = if (is.null(res$log_quad)) NULL else
+                           .nl_grid_log_quad(res$theta_grid,
+                                             close_domain = FALSE))
+}
+
 # One axis's marginal over its own sorted distinct nodes, normalized.
-.nl_axis_marginal_w <- function(res, axis, quad = TRUE) {
+.nl_axis_marginal_w <- function(res, axis,
+                                measure = c("posterior", "span", "inner")) {
+    measure <- match.arg(measure)
     tg <- res$theta_grid
     lm <- res$log_marginal
     if (is.null(tg) || is.null(lm)) return(NULL)
@@ -639,13 +690,9 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
     j <- match(axis, cn)
     if (is.na(j) && ncol(tg) == 1L) j <- 1L
     if (is.na(j) || length(lm) != nrow(tg)) return(NULL)
-    # `quad` selects WHICH marginal. With the cells' quadrature weights folded
-    # in this is the posterior marginal, the integral against the outer prior
-    # measure, and it is what every posterior summary of the axis reads. Without
-    # them it is the inner marginal alone -- the likelihood the grid measured,
-    # carrying no measure and so no cell width.
-    if (quad && !is.null(res$log_quad) && length(res$log_quad) == length(lm)) {
-        lm <- lm + res$log_quad
+    lq <- .nl_axis_measure_quad(res, measure)
+    if (!is.null(lq) && length(lq) == length(lm)) {
+        lm <- lm + lq
         lm[is.na(lm)] <- -Inf
     }
     m <- .nl_axis_marginal_logdensity(as.numeric(tg[, j]), lm)
@@ -694,7 +741,7 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 # 3.02 at m = 4 / 5 / 6 / 8 / 12) where its share collapses (0.68 / 0.56 / 0.48
 # / 0.37 / 0.25).
 .nl_axis_rail <- function(res, axis, edge_mult = .nl_recenter("edge_mass_mult")) {
-    mw <- .nl_axis_marginal_w(res, axis, quad = FALSE)
+    mw <- .nl_axis_marginal_w(res, axis, measure = "inner")
     if (is.null(mw)) return(NULL)
     m <- length(mw$w)
     k <- which.max(mw$w)
@@ -716,9 +763,24 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 # on (fewer than two nodes, a node outside its own support), and the caller
 # treats that as unresolved too rather than silently reporting a grid it could
 # not score.
+#
+# It reads the "posterior" measure, and unlike the two labels above that is not
+# a close call: the denominator is a SPREAD, the spread of the distribution the
+# fit reports its intervals from, and that distribution is the one weighed by
+# the cells (gcol33/tulpa#660). The trigger's threshold
+# `.NL_RECENTER$resolve_mult` was nevertheless calibrated at cc9ef82
+# (2026-08-10), twenty days before `53a2ef9` folded those weights in, so what it
+# was sized against is the unweighted read. Re-measured across 240 axis-
+# configurations spanning both -- ICAR precision axes at eight node counts and
+# BYM2 (sigma, rho) grids at four ceilings x four node counts
+# (`dev_notes/issue660/probe660[bc].R`) -- the two reads flip the fire decision
+# on NONE of them, and on a single-axis log-spaced grid they are equal to the
+# bit, because a uniform coordinate spacing gives every cell the same width and
+# a constant shifts no softmax. The ratio spans 0.78 to 1.34 where they differ,
+# which is inside the 1.6 headroom the threshold was chosen with.
 .nl_axis_h_over_sd <- function(res, axis, tag) {
     if (length(tag) != 1L || is.na(tag)) return(NA_real_)
-    mw <- .nl_axis_marginal_w(res, axis)
+    mw <- .nl_axis_marginal_w(res, axis, measure = "posterior")
     if (is.null(mw) || length(mw$vals) < 2L) return(NA_real_)
     u <- as.numeric(.joint_pareto_fwd(tag, mw$vals))
     if (any(!is.finite(u))) return(NA_real_)
@@ -770,11 +832,32 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 # it: a fixed share makes a longer axis a weaker detector of the same posterior.
 # `.nl_diag("edge_mass_lift")` carries the threshold and what it was read off.
 #
+# It reads the "span" measure, and which half of the measure that drops is the
+# whole of the choice (gcol33/tulpa#660). This is a MASS question, so the cell
+# widths belong in it: an outer node owning a wide cell holds mass its node
+# count does not see, and reading the bare node weights would delete that. What
+# does NOT belong is `.hyper_domain_clamp()`, which shortens the outermost cell
+# when the naive mirror would reach past the axis's declared support -- a
+# statement about where the parameter stops existing, applied to the one cell
+# the detector is asking about, and moved by a knob it is not asking about.
+#
+# Measured over 192 BYM2 (sigma, rho) axis-configurations, 6 data sets x 4 rho
+# ceilings x 4 node counts (`dev_notes/issue660/probe660d.R`), lift ratios to
+# the bare-node read:
+#
+#   with the clamp (as shipped 53a2ef9 .. 0.2.14)   median 0.7826   min 0.5100
+#   with the mirror left standing                   1.0000 on every row
+#
+# So on that family the clamp is the ENTIRE difference, and it is one-sided:
+# thirteen axes lost the label under it and none gained one. `1/0.51` is the
+# half-width an open domain's midpoint rule leaves the outermost cell, which is
+# the largest a single clamp can be.
+#
 # Returns a list of `list(side, mass, lift, node)`, empty when neither end
 # qualifies.
 .nl_axis_edge_mass <- function(res, axis,
                                lift_mult = .nl_diag("edge_mass_lift")) {
-    mw <- .nl_axis_marginal_w(res, axis)
+    mw <- .nl_axis_marginal_w(res, axis, measure = "span")
     if (is.null(mw)) return(list())
     m <- length(mw$w)
     out <- list()

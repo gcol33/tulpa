@@ -204,7 +204,8 @@
 # `atom_mass` is the prior probability of the zero level on an axis that carries
 # one. It is declared, so it does not move when refinement changes how many
 # continuum nodes there are, and the continuum carries `1 - atom_mass`.
-.hyper_axis_level_weights <- function(levels, spec, atom_mass = NULL) {
+.hyper_axis_level_weights <- function(levels, spec, atom_mass = NULL,
+                                      close_domain = TRUE) {
   levels <- sort(unique(as.numeric(levels)))
   K <- length(levels)
   if (K == 0L) return(numeric(0))
@@ -246,7 +247,13 @@
   # rule placed them, so the measure is never normalised over a region the
   # parameter does not live on and the weights cannot disagree with the
   # support about where the outermost cell ends.
-  bd <- .hyper_domain_clamp(bd, u, spec)
+  #
+  # `close_domain = FALSE` leaves the naive half-step mirror standing. That is
+  # not a second measure to integrate against -- nothing reports it and no
+  # posterior is normalised over it -- it is the measure a boundary DETECTOR
+  # reads, which must not weaken because the axis's support happens to close
+  # where it is looking (`.nl_axis_marginal_w(measure = "span")`).
+  if (close_domain) bd <- .hyper_domain_clamp(bd, u, spec)
   width <- .hyper_cell_widths(u, bd[1L], bd[2L])
 
   dens <- spec$slab_log_density
@@ -423,7 +430,7 @@
 #
 # Returns a zero vector when no axis contributes, so a caller can add it
 # unconditionally.
-.hyper_log_quad_weights <- function(theta_grid, specs) {
+.hyper_log_quad_weights <- function(theta_grid, specs, close_domain = TRUE) {
   if (is.null(theta_grid) || is.null(specs)) return(NULL)
   theta_grid <- as.matrix(theta_grid)
   n <- nrow(theta_grid)
@@ -435,7 +442,8 @@
     if (!a %in% axis_names) next
     if (isTRUE(spec$unweighted)) next
     v <- as.numeric(theta_grid[, a])
-    lw <- .hyper_axis_level_weights(v, spec, .hyper_axis_atom_mass(spec))
+    lw <- .hyper_axis_level_weights(v, spec, .hyper_axis_atom_mass(spec),
+                                    close_domain = close_domain)
     levels <- sort(unique(v))
     idx <- match(v, levels)
     contrib <- log(as.numeric(lw)[idx])
@@ -469,9 +477,10 @@
 # applied, and on an uneven one it is the spacing that differs rather than the
 # measure.
 .nl_grid_log_quad <- function(theta_grid, specs = NULL,
-                              copy_slab = "exponential") {
+                              copy_slab = "exponential",
+                              close_domain = TRUE) {
   if (is.null(theta_grid) || is.null(colnames(theta_grid))) return(NULL)
   if (is.null(specs))
     specs <- .joint_axis_specs_from_grid(theta_grid, copy_slab = copy_slab)
-  .hyper_log_quad_weights(theta_grid, specs)
+  .hyper_log_quad_weights(theta_grid, specs, close_domain = close_domain)
 }

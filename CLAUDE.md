@@ -1487,8 +1487,13 @@ a STATED axis states a different axis.
 were read as one number.** The layout's ratio is in PLACEMENT SDs: the axis is
 `mode +/- span * sd_used` over `n_pts` nodes, so its spacing is `1.25 * sd_used`.
 `.nl_axis_h_over_sd()` divides that by the grid-WEIGHTED posterior SD the placed
-grid realizes, so what it reports is `1.25 * sd_used / sd_realized` -- equal to
-1.25 only where the placement SD is the one the weights realize. Wherever
+grid realizes, so what it computes is `1.25 * sd_used / sd_realized` -- equal to
+1.25 only where the placement SD is the one the weights realize. That is the
+PLACEMENT TRIGGER's quantity, not the fit's `outer_grid_h_over_sd`, which
+`.nl_axis_resolution()` fills from the three-point Laplace-at-mode SD of the
+UNWEIGHTED marginal; over twelve axes the two are equal on none, ratio median
+1.0012 and range 0.0000 to 1.3793, and six orders apart on a collapsed axis
+(gcol33/tulpa#660). Wherever
 `.nl_recenter_sd_clamp()` SUBSTITUTED a bound it is not, and the floor
 `min_sd_u = 0.15` exists precisely to widen an axis sharper than it. Measured:
 the floor bound on 18 of 18 placed fits, `sd_raw` median 0.0543 against the
@@ -1503,6 +1508,53 @@ not a mis-sized one.
 `.nl_grid_ess(w)` is now the one read of a grid's quadrature ESS, behind
 `.joint_pareto_grid_regime()` and `diagnostic_summary()` alike. Write-up
 `dev_notes/issue636/RESULTS636.md`; tests `test-recenter-pilot.R`.
+
+### One axis marginal, three measures (gcol33/tulpa#660)
+
+`53a2ef9` folded the cells' quadrature weights into `.nl_axis_marginal_w()` for
+every caller at once. Three callers read that marginal and they are asking three
+different questions, so `measure =` names which one rather than a `quad` flag
+deciding for all of them:
+
+- **`"inner"`** -- no measure at all, the likelihood the grid measured.
+  `.nl_axis_rail()` reads it, because an argmax is a property of the DENSITY and
+  not of the cells it is tiled with. That is #657's fix and its calibration
+  (2.5106 against the documented 2.511) is read there.
+- **`"span"`** -- the cell widths a node's own spacing gives it, with the
+  outermost cell left on its naive half-step mirror. `.nl_axis_edge_mass()`
+  reads it. The label is a MASS question so the widths belong (a far outer node
+  owning a wide cell holds mass its node count does not see, which is what
+  `test-outer-grid-edge-mass.R:135` pins); `.hyper_domain_clamp()` does not,
+  because where the support closes is prior-side bookkeeping applied to the one
+  cell the detector is asking about.
+- **`"posterior"`** -- the measure the fit integrates, closed inside the domain.
+  Every reported mean, interval and spread carries it, and so does the
+  `"resolve"` placement trigger `.nl_axis_h_over_sd()`, whose denominator is the
+  spread of the distribution the fit reports intervals from.
+
+**The clamp was the entire deflation, and it is one-sided.** Over 192 BYM2
+`(sigma, rho)` axis-configurations the shipped boundary lift runs at median
+0.7826 of the bare-node read and as low as 0.5100 -- `1/0.51` being the
+half-width an open domain's midpoint rule leaves the outermost cell -- while the
+same weights with the mirror left standing reproduce the bare read on all 192
+rows. Thirteen axes lost the `edge_mass` label under the clamp and none gained
+one, so the detector could only ever hide a truncation.
+
+**The resolve trigger's threshold predates the folding by 20 days and survives
+it**: 0 fire-decision flips over 240 axis-configurations, ratio 0.777 to 1.341,
+and exactly equal on any single-axis log-spaced grid (a uniform coordinate
+spacing gives every cell one width, and a constant shifts no softmax).
+
+**`h / sd` names three different quantities and two of them were read as one.**
+The fit's `outer_grid_h_over_sd` is `.nl_axis_resolution()`'s three-point
+Laplace-at-mode SD of the unweighted marginal; `.nl_axis_h_over_sd()` is the
+weighted moment spread. Over twelve axes they are equal on none, ratio median
+1.0012 and range 0.0000 to 1.3793, six orders apart on a collapsed axis, and the
+field declines `mode_at_edge` where the trigger returns a number. Both are kept
+-- the trigger has to fire on a collapsed axis and the report has to decline what
+it cannot score -- so read #636's `1.25 * sd_used / sd_realized` derivation
+against the trigger, which is where `test-recenter-pilot.R` asserts it. Write-up
+`dev_notes/issue660/RESULTS660.md`; tests `test-outer-grid-edge-mass.R`.
 
 ### A cell's cost is the predictive-variance loop, and the screen is now reachable and priced (gcol33/tulpa#638, #639, #640)
 

@@ -1,3 +1,34 @@
+# tulpa 0.2.15
+
+## One axis marginal, three measures
+
+* **A boundary-truncation label was weakened by the very thing it was asked
+  about** (gcol33/tulpa#660). `53a2ef9` folded the outer cells' quadrature
+  weights into the axis marginal for every caller at once; #657 put the rail
+  back on the unweighted read and the other two callers were never re-asked.
+  `.nl_axis_edge_mass()` names an axis holding material weight on a boundary
+  node, and the weights include `.hyper_domain_clamp()`, which SHORTENS the
+  outermost cell when the naive half-step mirror would reach past the axis's
+  declared support -- so a bounded axis read weakest exactly at the boundary the
+  label is about. Measured over 192 BYM2 `(sigma, rho)` configurations: the
+  shipped lift runs at median 0.7826 of the unweighted read and as low as
+  0.5100, thirteen axes lost the label and none gained one. The label now reads
+  a third measure, `"span"`, which keeps the widths a node's own spacing gives
+  it -- an outer node owning a wide cell holds mass its node count does not see
+  -- and drops only the domain closure. `.nl_axis_marginal_w(measure =)` names
+  which of the three each caller wants; the rail keeps `"inner"` and every
+  reported mean, interval and spread keeps `"posterior"`.
+
+* The `"resolve"` placement trigger was checked against the same folding and is
+  unchanged: its threshold was calibrated twenty days before it, and over 240
+  axis-configurations the two reads flip no fire decision (ratio 0.777 to 1.341,
+  and equal to the bit on any single-axis log-spaced grid).
+
+* `outer_grid_h_over_sd` on a fit and `.nl_axis_h_over_sd()` are two different
+  quantities, and the comment describing the first was written about the second.
+  They agree on none of twelve measured axes and sit six orders apart on a
+  collapsed one. Both are kept and both now say what they are.
+
 # tulpa 0.2.14
 
 ## The outer grid says what it did
