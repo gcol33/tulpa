@@ -627,7 +627,7 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 # does not contain it and the axis integrates a tail at any spacing.
 
 # One axis's marginal over its own sorted distinct nodes, normalized.
-.nl_axis_marginal_w <- function(res, axis) {
+.nl_axis_marginal_w <- function(res, axis, quad = TRUE) {
     tg <- res$theta_grid
     lm <- res$log_marginal
     if (is.null(tg) || is.null(lm)) return(NULL)
@@ -639,10 +639,12 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
     j <- match(axis, cn)
     if (is.na(j) && ncol(tg) == 1L) j <- 1L
     if (is.na(j) || length(lm) != nrow(tg)) return(NULL)
-    # The axis marginal is an integral against the outer prior measure, so the
-    # cells' quadrature weights belong in it -- the same correction the reported
-    # moments take, so a rail and a mean are read off one marginal.
-    if (!is.null(res$log_quad) && length(res$log_quad) == length(lm)) {
+    # `quad` selects WHICH marginal. With the cells' quadrature weights folded
+    # in this is the posterior marginal, the integral against the outer prior
+    # measure, and it is what every posterior summary of the axis reads. Without
+    # them it is the inner marginal alone -- the likelihood the grid measured,
+    # carrying no measure and so no cell width.
+    if (quad && !is.null(res$log_quad) && length(res$log_quad) == length(lm)) {
         lm <- lm + res$log_quad
         lm[is.na(lm)] <- -Inf
     }
@@ -666,19 +668,33 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 # and moved onto curvature it does not have -- a near-flat direction returns a
 # huge mode SD, and a grid laid over it is coarser than the one it replaced.
 #
+# Both clauses read the INNER marginal, the likelihood the grid measured, with
+# the cells' quadrature weights left out. A rail asks whether the span stops
+# short of where the data are still pulling the marginal, and the answer must
+# not move when the outer prior's cells are re-apportioned: a cell width is a
+# property of the node spacing and of where the axis's own domain closes the
+# outermost cell (`.hyper_domain_clamp()`), and the boundary cell is precisely
+# the one both of those shorten. Folding the widths in makes the detector
+# weakest at the boundary it is being asked about -- on the 100-region BYM2
+# `rho` fixture the same railed configuration reads 2.511 on the inner marginal
+# against 2.099 with the widths folded in, and the shortened boundary cell of a
+# clamped support takes the latter to 1.696, below a threshold calibrated at
+# 2.511. The posterior summaries of the axis keep the weighted marginal, which
+# is what a reported mean or interval has to carry.
+#
 # The guard reads the boundary node's weight against what a FLAT marginal would
 # put there, `1 / m`, rather than against a fixed share. The
 # two differ by exactly the node count, and that is the whole defect: an axis's
 # weights are a distribution over its OWN nodes, so the same posterior read at
 # more nodes carries less on any one of them and a fixed share turns a longer
 # axis into a weaker detector. `lift = m * w[k]` is 1 for a flat marginal at any
-# node count and any spacing, so the threshold means the same thing wherever it
-# is applied. Measured on a BYM2 `rho` posterior held past a fixed span, the
+# node count, so the threshold means the same thing wherever it is applied.
+# Measured on a BYM2 `rho` posterior held past a fixed span, the
 # lift of a railed fit is flat in the node count (2.70 / 2.81 / 2.87 / 2.94 /
 # 3.02 at m = 4 / 5 / 6 / 8 / 12) where its share collapses (0.68 / 0.56 / 0.48
 # / 0.37 / 0.25).
 .nl_axis_rail <- function(res, axis, edge_mult = .nl_recenter("edge_mass_mult")) {
-    mw <- .nl_axis_marginal_w(res, axis)
+    mw <- .nl_axis_marginal_w(res, axis, quad = FALSE)
     if (is.null(mw)) return(NULL)
     m <- length(mw$w)
     k <- which.max(mw$w)
@@ -844,9 +860,20 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 # recentred, and never stamped by
 # a rescue whose prior shape it does not apply to -- a fit carries the reason
 # from the one rescue that could have run, not a tally of the others declining.
+#
+# `outer_grid_recenter_declined_pruned` says whether the fit the decline was
+# read off had been cheap-pass screened. The two are different events with the
+# same reason string: `"no_usable_curvature"` on a full grid is a posterior the
+# stencil could not read, while the same reason on a screened grid can be the
+# screen having removed the cells the stencil reads -- pruning pays off exactly
+# when the posterior is concentrated, and concentration is what collapses the
+# kept set. Recorded on every decline, TRUE or FALSE, so a reader tells them
+# apart from the fit rather than from the absence of a field.
 .nl_decline_recenter <- function(res, reason) {
     if (identical(res$outer_grid_placement, "auto_recentered")) return(res)
     res$outer_grid_recenter_declined <- reason
+    res$outer_grid_recenter_declined_pruned <-
+        isTRUE(any(as.logical(res$prune_mask), na.rm = TRUE))
     res
 }
 

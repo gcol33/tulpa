@@ -1,3 +1,164 @@
+# tulpa 0.3.0
+
+## The outer grid says what it did
+
+* **`n_threads_outer` was clamped to `omp_get_max_threads()` with no signal, so
+  a 10x reduction in the parallelism a caller asked for left no trace**
+  (gcol33/tulpa#651). The clamp is correct and stays -- `NlCellCache` sizes its
+  slot array from `omp_get_max_threads()`, so an unclamped `num_threads(n)`
+  would map excess workers onto slot 0 and corrupt the shared CHOLMOD factor.
+  What was missing was the report: a clamped-to-1 run and a serial-by-design run
+  printed byte-identical progress lines. A fit whose realised width is below the
+  requested one now says so once, naming the binding cap and how to lift it, and
+  records `n_threads_outer_requested` / `n_threads_outer_realised` so a timing
+  going into a report can state what it actually ran at. Measured motivation: a
+  25 km `occu_cover` fit launched at `n_threads_outer = 10` under
+  `OMP_NUM_THREADS=1` ran 32.5 h at 99% of one core and produced no checkpoint.
+
+* **The CCD mode-find ran for hours printing nothing, so a working fit and a
+  hung process were indistinguishable** (gcol33/tulpa#652). The progress reporter
+  belongs to the outer-grid loop, which the mode-find runs *before*, and at
+  `d = 4` one round is 33 full inner solves. The seed pass, each calibration
+  round and each mode-find round now emit a heartbeat on the fit's own
+  `progress` switch, carrying the spend against the ceiling, the step size, the
+  log-posterior and per-eval timing; a configured `progress_file` carries the
+  outer reporter's own four-number format, so a detached placement phase is no
+  longer an empty file.
+
+## Placing a design is now budgeted, and screening can no longer hide a collapse
+
+* **CCD placement cost was unbounded by the integration it replaces**
+  (gcol33/tulpa#653). Every reason in `.CCD_DECLINE_REASONS` was about whether a
+  Gaussian design is *definable*; none was about whether placing it is worth it,
+  so an expensive model could spend up to ~1976 inner solves at `d = 4` placing
+  a 25-node design. `control$ccd_budget` (default 1) caps the placement at the
+  tensor grid it would otherwise integrate: break-even, so a successful
+  placement never costs more than the integration it replaces and a failed one
+  caps the waste at the same number. It declines with
+  `integration_declined = "placement_budget"` up front when even the cheapest
+  placement cannot fit, and mid-placement when the spend reaches the ceiling.
+  The cost is reported as `ccd_modefind_evals` / `_budget` / `_rounds` /
+  `_seconds`. `control$ccd_stencil_reuse` (default `FALSE`, and **unmeasured**)
+  trades a stencil's mixed corners for an SR1 secant update, keeping the
+  diagonal measured and the design's closing curvature a genuine finite
+  difference; it is off by default because its value has not been measured on a
+  real fit, which is the remaining open half of the issue.
+
+* **`control$prune = TRUE` could return a displaced posterior and report a grid
+  boundary as an estimate, tripping neither safety-gate trigger**
+  (gcol33/tulpa#656). Three separate defects, all fixed:
+  - The screen kept so few cells that the placement pass had no curvature to
+    read, declined `no_usable_curvature`, and left the axis on its default span
+    with the mass on the top node -- a reported `sigma` of exactly 3.000 that was
+    the top of an un-recentred axis rather than an estimate. The screen now
+    floors the kept set at `.NL_SCREEN$min_keep` (5): a central second difference
+    needs 3 collinear nodes, so 5 is the smallest floor under which no axis can
+    be a point mass.
+  - `prune_tol` is a normalised weight and loses resolution on a steep surface.
+    `control$prune_log_gap` states the cut in **nats** instead, and a fit reports
+    the realised cut (`prune_log_gap_cut`) against the spread of the whole
+    screened surface (`prune_cheap_lm_spread`) -- a cut of 6.9 nats against a
+    spread of 98000 is the pathology, now readable off the fit.
+  - The gate's gap threshold was computed from the spread of the cells that
+    survived, so a trigger meant to bound the error from the discarded set was
+    scaled by the set it was validating. It now reads the screen's own cut: an
+    error exceeding the margin cells were discarded by is large enough to have
+    moved one across it.
+  A screened fit whose placement declines for want of curvature now warns and
+  refits on the full grid rather than reporting the boundary.
+
+  `?tulpa_nested_laplace` claimed a silently-wrong pruned posterior was
+  impossible. It was not, and that sentence is gone: the gate bounds a
+  *mis-ranking* among the cells that were solved, and a cell it discarded and
+  never solved is outside what it can see.
+
+## A bounded axis has a domain, and a stated axis is a bound
+
+* **`.hyper_axis_support()` returned 1.010 as the support of a spatial
+  correlation** (gcol33/tulpa#657). The half-node-step rule extrapolated past the
+  end of the parameter's own domain: `rho_car`'s default nodes
+  `c(0.5, 0.8, 0.95, 0.99)` closed at 1.01, and a sampler taking that support as
+  its flat prior reaches a region where the proper-CAR loading is numerically
+  intrinsic. The node spacing is **not** what was wrong -- `.hyper_axis_level_weights()`
+  exists so an unevenly placed node set integrates the *declared* measure, and
+  flat-in-logit would be improper on a bounded domain and put as much mass on
+  the last percent below 1 as on the whole middle. The **cell closure** was
+  wrong. One rule now: an outer cell owns half the distance to whatever comes
+  next on that side, the next node or the boundary. A domain registry
+  (`.NL_AXIS_DOMAIN`) makes the class unreachable rather than fixed once.
+
+  **This moves outer weights** on any fit carrying a correlation axis whose top
+  cell reached past 1: `rho_car`'s outermost prior weight falls 0.0606 to 0.0388,
+  BYM2 `rho`'s 0.00944 to 0.00527. Point estimates and modes are unaffected; the
+  grid-marginalised posterior moves. An evenly spaced grid whose top node crowds
+  the boundary no longer gets equal weights, which is deliberate -- its top cell
+  cannot extend past 1.
+
+  Also fixed here: `rho` names four different parameters (BYM2 mixing,
+  proper-CAR, AR1, and the multi-output cross-field correlation), so the
+  name-keyed `c(0, 1)` domain was a false claim that made the shipped `hsgp_mo`
+  default grid unconstructible. Axis bounds now resolve through the one registry.
+
+* **A caller-stated outer-grid axis was extended anyway, so "these are the
+  nodes" could not be expressed** (gcol33/tulpa#658). Refinability was decided by
+  axis NAME, so a stated copy axis opted into the adaptive-grid passes whether
+  or not the caller wrote its nodes down: a user stating `c(0.2, 0.5)` got a fit
+  integrating `[0.020, 4.94]`, about 100x the range they asked for, reported
+  nowhere. A stated axis is now a **bound**. It is still refined -- more finely,
+  inside the range given -- and a mode outside it shows up as mass at the edge
+  instead of moving the range. `control$axis_refine = c(alpha = "none" |
+  "densify" | "extend")` sets it per axis; `auto_grid()` on the nodes marks an
+  axis a wrapper package computed as engine-placed, so it keeps extending. A fit
+  reports `axis_span` per axis, separating the refinement term from the exact
+  half-node-step term (`k / (k - 1)` of the stated range: 2x at two nodes,
+  1.125x at nine).
+
+  **This narrows some existing fits.** Any fit that stated an axis and relied on
+  `adaptive_grid = TRUE` extending it now integrates the stated range. It also
+  reaches the var-of-means consistency pass, which runs by default on every joint
+  fit and not only under `adaptive_grid = TRUE`; and since the engine has no
+  default for `phi_grid`, every `phi_*` axis counts as stated. Restore the old
+  behaviour per axis with `axis_refine = c(alpha = "extend")`.
+
+## Hyperpriors reach every block they name
+
+* **`prior_alpha` and `prior_sigma` on a multi-block joint grid regularized only
+  the first block carrying the axis, silently** (gcol33/tulpa#655). A fit copying
+  two blocks got block 1 shrunk and block 2 flat with no message. One spec now
+  reaches **every** block carrying that axis, and a per-block list
+  (`list(list(block = 1, prior = ...), ...)`, keyed the way the multi-block copy
+  spec already keys its amplitude side) regularizes blocks differently. Naming a
+  block that carries no such axis is an error listing the blocks that do. The
+  fold needed no new machinery -- it is per-axis-spec by construction, so N
+  blocks is N independent folds; under the old code block 2's atom was never
+  reached at all. A fit records what was applied in `hyperprior_axes`.
+
+  **This changes results** for a direct `tulpa_nested_laplace_joint()` caller who
+  passed one spec to a grid carrying that axis on several blocks. Broadcast
+  rather than refusal is what keeps the engine's own
+  `.joint_multi_sigma_grid_rescue()` coherent: it sets a scalar `prior_sigma` on
+  a multi-block grid and refits, and fires exactly on the multi-copy-block
+  collapsed-edge fits this issue is about.
+
+## Fixed in passing
+
+* **Rail detection was riding on prior mass placed outside the parameter's
+  domain.** `.nl_axis_rail()`'s marginal folds the outer prior's cell masses, and
+  the domain closure above shortens exactly the cell at the boundary being
+  tested, which moved the argmax to an interior node and stopped a railed BYM2
+  mixing weight being detected at all. The rail now reads the inner marginal,
+  which carries no cell widths and is invariant to both the domain closure and
+  to refinement subdividing cells; the two clauses, the `lift = m * w[k]` form
+  and the threshold of 2 are unchanged. This was latent before this release:
+  `#375` calibrated the guard at 2.511 on the 100-region BYM2 `rho` fixture, and
+  a later change folding `log_quad` into the same marginal moved the measured
+  quantity to 2.099 without re-tuning the threshold, leaving 5% of headroom. The
+  detector now reads 2.5106 with the domain closure on or off.
+
+* Axis `bounds` on a multi-block joint grid resolved on the block-prefixed name
+  while the scale and point-mass metadata resolved on the bare one, so `b1.sigma`
+  and `b1.rho` carried no domain at all.
+
 # tulpa 0.2.13
 
 * **`logLik()` resolved `df` to 0 whenever `n_fixed` was unset, so `AIC()` and

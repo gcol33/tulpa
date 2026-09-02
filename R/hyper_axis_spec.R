@@ -31,6 +31,11 @@
 #                                   points to the open interior.
 #   refinable   logical(1)           opt in to adaptive-grid refinement and the
 #                                   var-of-means consistency pass on this axis.
+#   extend      logical(1)           may those passes place a node PAST the
+#                                   outermost declared node? `FALSE` confines
+#                                   them to the span the declared nodes cover,
+#                                   so the axis is refined more finely and never
+#                                   widened. Read only when `refinable`.
 #   slab_bounds numeric(2) | NULL    fixed support of the continuum prior. The
 #                                   measure is normalised over it, so it is a
 #                                   prior choice and refinement may not leave
@@ -73,7 +78,11 @@
 #'   spacing in refinement and log-axis quantile fits. Default `FALSE`.
 #' @param bounds Numeric vector of length 2 giving the natural support
 #'   `(lower, upper)` of the axis, e.g. `c(0, Inf)` for `sigma`, `c(0, 1)`
-#'   for a BYM2 mixing coefficient. `NULL` (default) is unbounded.
+#'   for a BYM2 mixing coefficient. `NULL` (default) is unbounded. A finite
+#'   endpoint is treated as OPEN: it is the value the parameterisation
+#'   degenerates at, so refinement clamps new points to the interior and the
+#'   axis's quadrature cells and reported support are closed strictly inside
+#'   it rather than half a node step past the outermost node.
 #' @param slab_bounds Numeric `c(lower, upper)`, or `NULL` (default). Fixed
 #'   support of the continuum part of the prior. A flat measure on a log axis is
 #'   improper, so the truncation bounds are what make it a proper density and
@@ -97,9 +106,16 @@
 #'   typically left at the user-specified grid (`refinable = FALSE`); the
 #'   copy coefficient `alpha` and per-arm dispersion `phi` typically opt in.
 #'   Default `FALSE`.
+#' @param extend Logical. On a refinable axis, may the passes place a node
+#'   beyond the outermost value in `grid`? `TRUE` (default) lets refinement
+#'   follow the posterior out past the declared span, which is what an axis the
+#'   engine placed wants. `FALSE` confines every new node to the interior of the
+#'   declared span: the axis is integrated more finely over exactly the range
+#'   given, and a mode outside it shows up as mass at the edge instead of moving
+#'   the range. Inert when `refinable = FALSE`.
 #'
 #' @return An object of class `tulpa_hyper_axis_spec` (a validated list with
-#'   the nine fields above).
+#'   the fields listed above).
 #'
 #' @seealso [tulpa_hyper_grid()].
 #' @keywords internal
@@ -108,10 +124,15 @@ hyper_axis_spec <- function(name, grid, log_prior = NULL,
                             log_scale = FALSE, bounds = NULL,
                             refinable = FALSE, atom_mass = NULL,
                             slab_bounds = NULL,
-                            log_prior_coord = c("integration", "natural")) {
+                            log_prior_coord = c("integration", "natural"),
+                            extend = TRUE) {
   log_prior_coord <- match.arg(log_prior_coord)
   if (!is.character(name) || length(name) != 1L || !nzchar(name)) {
     stop("`name` must be a non-empty character string.", call. = FALSE)
+  }
+  if (length(extend) != 1L || is.na(suppressWarnings(as.logical(extend)))) {
+    stop(sprintf("Axis '%s': `extend` must be a single TRUE or FALSE.", name),
+         call. = FALSE)
   }
   grid <- as.numeric(grid)
   if (length(grid) < 1L || any(!is.finite(grid))) {
@@ -167,7 +188,8 @@ hyper_axis_spec <- function(name, grid, log_prior = NULL,
     log_prior_coord = log_prior_coord,
     log_scale = log_scale,
     bounds    = bounds,
-    refinable = isTRUE(refinable)
+    refinable = isTRUE(refinable),
+    extend    = isTRUE(as.logical(extend))
   )
   class(out) <- c("tulpa_hyper_axis_spec", "list")
   out

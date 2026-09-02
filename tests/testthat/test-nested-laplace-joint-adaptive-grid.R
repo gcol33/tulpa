@@ -112,10 +112,13 @@ test_that("adaptive_grid = FALSE leaves grid and result unchanged", {
 test_that("adaptive_grid = TRUE extends alpha when boundary carries mass", {
     skip_on_cran()
     sim <- .simulate_joint_icar_strong(seed = 6)
-    fit_F <- .fit_joint_icar(sim, alpha_grid = c(0.2, 0.4, 0.6),
-                              adaptive_grid = FALSE)
-    fit_T <- .fit_joint_icar(sim, alpha_grid = c(0.2, 0.4, 0.6),
-                              adaptive_grid = TRUE)
+    # `auto_grid()` declares these nodes a default rather than a statement of
+    # where the fit integrates, which is what makes the axis extendable: a grid
+    # the caller wrote down plainly is a bound and is only densified
+    # (gcol33/tulpa#658, asserted in test-joint-axis-refinable.R).
+    ag <- auto_grid(c(0.2, 0.4, 0.6))
+    fit_F <- .fit_joint_icar(sim, alpha_grid = ag, adaptive_grid = FALSE)
+    fit_T <- .fit_joint_icar(sim, alpha_grid = ag, adaptive_grid = TRUE)
 
     # Refinement metadata is populated.
     expect_false(is.null(fit_T$adaptive_grid_info))

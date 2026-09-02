@@ -737,34 +737,195 @@
     out
 }
 
-# Which columns of a multi-block `joint_grid` each hyperprior applies to.
-# Named `sigma` / `alpha` for the first block carrying that axis, plus every
-# `phi_<arm>` column. Single source of the mapping, so the fold below and the
-# axis quadrature (`.joint_multi_hp_specs()`) name the same columns.
+# --- regularizing hyperpriors on a multi-block grid ------------------------
+#
+# `prior_sigma` and `prior_alpha` name a ROLE -- the donor field amplitude and
+# the copy coefficient -- and a multi-block grid can carry that role on several
+# blocks at once: an occurrence field copied onto two arms carries `b1.alpha`
+# and `b2.alpha`. Two shapes state which axes one density reaches.
+#
+#   * ONE spec, `list(<family>, <params>)`: the density applies to EVERY block
+#     axis of that role. That is the reading `prior_phi` already takes across
+#     the per-arm dispersion axes, and the one a single-block grid's single
+#     axis cannot distinguish. Each axis carries its own copy of the density
+#     and each axis's atom / continuum split is normalised against that axis's
+#     own cell widths -- `.hyper_atom_fold_scale()` reads one spec's own
+#     `log_prior` against its own continuum -- so N axes take N independent
+#     applications and no normalizer is shared between blocks.
+#   * A LIST of per-block entries, `list(list(block = , prior = ), ...)`, keyed
+#     by 1-based block index the way a multi-block `copy` spec keys its blocks.
+#     A block the list does not name carries no density on that axis.
+#
+# Parsing returns NULL (flat), one density function (the first shape), or a
+# `tulpa_block_hyperprior`: density functions named by block index.
+
+# One named element of a list, NULL where the list carries no such name.
+.joint_hp_field <- function(x, name) {
+    i <- match(name, names(x))
+    if (is.na(i)) NULL else x[[i]]
+}
+
+# Is `spec` the per-block shape? Every element of the scalar shape is a family
+# name or a parameter vector; every element of this one is a list naming a
+# block.
+.joint_is_block_hyperprior <- function(spec) {
+    if (!is.list(spec) || length(spec) == 0L) return(FALSE)
+    all(vapply(spec, function(e) is.list(e) && "block" %in% names(e),
+               logical(1)))
+}
+
+# Parse a `prior_sigma` / `prior_alpha` argument. `multi_block` says whether
+# the fit's `prior` is a list of blocks: the per-block shape names blocks of
+# such a list, so on the single-block path it is refused rather than read as a
+# malformed family spec.
+.joint_parse_hyperprior <- function(spec, axis_label, multi_block = FALSE) {
+    if (is.null(spec)) return(NULL)
+    if (!.joint_is_block_hyperprior(spec)) {
+        return(.joint_parse_sigma_prior(spec, axis_label))
+    }
+    if (!isTRUE(multi_block)) {
+        stop("`", axis_label, "` is a per-block list, which names blocks of a ",
+             "list-of-blocks `prior`; this fit takes the single-block joint ",
+             "path, where the axis is unique. Pass the spec itself, e.g. ",
+             "list(\"pc.prec\", c(U, alpha)).", call. = FALSE)
+    }
+    out <- list()
+    for (i in seq_along(spec)) {
+        e <- spec[[i]]
+        b <- .joint_hp_field(e, "block")
+        if (length(b) != 1L || !is.numeric(b) || !is.finite(b) ||
+            b != round(b) || b < 1) {
+            stop("`", axis_label, "[[", i, "]]$block` must be a single 1-based ",
+                 "block index into `prior`.", call. = FALSE)
+        }
+        key <- as.character(as.integer(b))
+        if (key %in% names(out)) {
+            stop("`", axis_label, "` names block ", key, " twice. Each block ",
+                 "takes at most one hyperprior on a given axis.", call. = FALSE)
+        }
+        p <- .joint_hp_field(e, "prior")
+        if (is.null(p)) {
+            stop("`", axis_label, "[[", i, "]]` names block ", key, " but ",
+                 "carries no `prior` field. Each entry is ",
+                 "list(block = <index>, prior = list(<family>, <params>)).",
+                 call. = FALSE)
+        }
+        out[[key]] <- .joint_parse_sigma_prior(
+            p, sprintf("%s[[%d]]$prior", axis_label, i))
+    }
+    structure(out, class = "tulpa_block_hyperprior")
+}
+
+# The density one hyperprior applies to block `b`: the stated density wherever
+# the caller stated one, that block's own entry where the caller keyed the
+# prior per block, NULL where neither reaches this block.
+.joint_hp_fn_for_block <- function(fn, b) {
+    if (is.null(fn)) return(NULL)
+    if (is.function(fn)) return(fn)
+    .joint_hp_field(fn, as.character(b))
+}
+
+# The block indices a per-block hyperprior names. A stated single density names
+# none -- it reaches every block carrying the axis -- so this is `integer(0)`
+# for it as well as for an absent prior.
+.joint_hp_named_blocks <- function(fn) {
+    if (is.null(fn) || is.function(fn)) return(integer(0))
+    as.integer(names(fn))
+}
+
+# The grid column carrying one axis role in each block that has it, named by
+# 1-based block index. A block with no axes at all (a latent-factor block
+# carries a 1 x 0 grid) contributes none: its column span is empty, which
+# `seq.int(length.out =)` reads as empty where a `from:to` range would run
+# backwards into the neighbouring block's columns.
+.joint_block_axis_cols <- function(axis_names, axis_offsets, B, role) {
+    out <- integer(0)
+    for (b_idx in seq_len(B)) {
+        n_b <- axis_offsets[b_idx + 1L] - axis_offsets[b_idx]
+        if (n_b <= 0L) next
+        cols_b <- seq.int(axis_offsets[b_idx] + 1L, length.out = n_b)
+        i <- match(role, sub("^b[0-9]+\\.", "", axis_names[cols_b]))
+        if (is.na(i)) next
+        out[as.character(b_idx)] <- cols_b[i]
+    }
+    out
+}
+
+# Which columns of a multi-block `joint_grid` each hyperprior applies to, and
+# with which density. One entry per applied (column, role): `col` indexes the
+# grid, `role` is `"sigma"` / `"alpha"` / `"phi"`, `block` is the 1-based block
+# index (NA for a per-arm phi axis) and `fn` the density folded onto it.
+# Single source of the mapping, so the fold below and the axis quadrature
+# (`.joint_multi_hp_specs()`) name the same columns and the same densities.
 .joint_multi_hp_cols <- function(joint_grid, axis_offsets, B,
                                  fn_sigma, fn_alpha, fn_phi = NULL) {
-    view_map <- integer(0)
-    for (b_idx in seq_len(B)) {
-        cols_b  <- (axis_offsets[b_idx] + 1L):axis_offsets[b_idx + 1L]
-        bare_b  <- sub("^b[0-9]+\\.", "", colnames(joint_grid)[cols_b])
-        i_sigma <- match("sigma", bare_b)
-        i_alpha <- match("alpha", bare_b)
-        if (!is.na(i_sigma) && is.na(view_map["sigma"])) {
-            view_map["sigma"] <- cols_b[i_sigma]
-        }
-        if (!is.na(i_alpha) && is.na(view_map["alpha"])) {
-            view_map["alpha"] <- cols_b[i_alpha]
+    cn  <- colnames(joint_grid)
+    out <- list()
+    fns <- list(sigma = fn_sigma, alpha = fn_alpha)
+    for (role in c("sigma", "alpha")) {
+        if (is.null(fns[[role]])) next
+        cols <- .joint_block_axis_cols(cn, axis_offsets, B, role)
+        for (k in seq_along(cols)) {
+            b_idx <- as.integer(names(cols)[k])
+            fn    <- .joint_hp_fn_for_block(fns[[role]], b_idx)
+            if (is.null(fn)) next
+            out[[length(out) + 1L]] <- list(col = as.integer(cols[[k]]),
+                                            role = role, block = b_idx, fn = fn)
         }
     }
-    if (is.null(fn_sigma)) view_map <- view_map[names(view_map) != "sigma"]
-    if (is.null(fn_alpha)) view_map <- view_map[names(view_map) != "alpha"]
     # phi_<arm> dispersion axes are not block-prefixed; carry them straight
     # through so a single `fn_phi` re-weights each on the joint grid.
-    phi_cols <- if (is.null(fn_phi)) integer(0)
-                else match(grep("^phi_", colnames(joint_grid), value = TRUE),
-                           colnames(joint_grid))
-    if (length(phi_cols)) names(phi_cols) <- colnames(joint_grid)[phi_cols]
-    c(view_map, phi_cols)
+    if (!is.null(fn_phi)) {
+        for (j in grep("^phi_", cn)) {
+            out[[length(out) + 1L]] <- list(col = as.integer(j), role = "phi",
+                                            block = NA_integer_, fn = fn_phi)
+        }
+    }
+    out
+}
+
+# Which axes each regularizing hyperprior reaches, and refusal of a per-block
+# entry naming a block that carries no axis of that role. Read off the axis
+# layout, so a mis-keyed prior is refused before the first inner solve rather
+# than applied to nothing. Returns NULL when no hyperprior is active, else one
+# record per role: the scope the caller stated it at, the blocks it reaches and
+# the grid columns those are.
+.joint_check_multi_hyperpriors <- function(axis_names, axis_offsets, B,
+                                           fn_sigma, fn_alpha) {
+    roles <- list(prior_sigma = "sigma", prior_alpha = "alpha")
+    fns   <- list(prior_sigma = fn_sigma, prior_alpha = fn_alpha)
+    out   <- list()
+    for (label in names(roles)) {
+        fn <- fns[[label]]
+        if (is.null(fn)) next
+        role    <- roles[[label]]
+        cols    <- .joint_block_axis_cols(axis_names, axis_offsets, B, role)
+        carried <- as.integer(names(cols))
+        unnamed <- setdiff(.joint_hp_named_blocks(fn), carried)
+        if (length(unnamed)) {
+            stop("`", label, "` names block",
+                 if (length(unnamed) > 1L) "s " else " ",
+                 paste(unnamed, collapse = ", "),
+                 ", which carr", if (length(unnamed) > 1L) "y" else "ies",
+                 " no `", role, "` axis. ",
+                 if (length(carried))
+                     paste0("The blocks carrying one are ",
+                            paste(carried, collapse = ", "),
+                            " (grid column",
+                            if (length(carried) > 1L) "s " else " ",
+                            paste(axis_names[cols], collapse = ", "), ").")
+                 else paste0("No block of this fit carries a `", role,
+                             "` axis."),
+                 call. = FALSE)
+        }
+        applied <- if (is.function(fn)) carried
+                   else intersect(carried, .joint_hp_named_blocks(fn))
+        out[[role]] <- list(
+            scope  = if (is.function(fn)) "every_block" else "per_block",
+            blocks = as.integer(applied),
+            axes   = as.character(axis_names[cols[as.character(applied)]]))
+    }
+    if (length(out) == 0L) NULL else out
 }
 
 # Attach each hyperprior to the axis spec of the column it applies to, so the
@@ -775,42 +936,57 @@
                                   fn_sigma, fn_alpha, fn_phi = NULL) {
     if (is.null(specs)) return(specs)
     if (is.null(fn_sigma) && is.null(fn_alpha) && is.null(fn_phi)) return(specs)
-    cols <- .joint_multi_hp_cols(joint_grid, axis_offsets, B,
-                                 fn_sigma, fn_alpha, fn_phi)
-    if (length(cols) == 0L) return(specs)
-    named <- colnames(joint_grid)[cols]
-    fns <- list(sigma = fn_sigma, alpha = fn_alpha)
+    entries <- .joint_multi_hp_cols(joint_grid, axis_offsets, B,
+                                    fn_sigma, fn_alpha, fn_phi)
+    if (length(entries) == 0L) return(specs)
+    named <- colnames(joint_grid)[vapply(entries, function(e) e[["col"]],
+                                         integer(1))]
     lapply(specs, function(sp) {
         j <- match(sp$name, named)
         if (is.na(j)) return(sp)
-        role <- names(cols)[j]
-        fn <- if (role %in% names(fns)) fns[[role]] else fn_phi
-        if (is.null(fn)) return(sp)
         # The joint driver's hyperprior families are densities on the axis's
         # natural scale.
-        sp$log_prior <- fn
+        sp$log_prior <- entries[[j]][["fn"]]
         sp$log_prior_coord <- "natural"
         sp
     })
 }
 
 # Add the regularizing (sigma, alpha) hyperprior to a per-cell log-marginal
-# vector for a multi-block `joint_grid`. With multiple copy blocks the prior
-# is baked on the first block carrying a (sigma, alpha) axis pair. Single
-# source of truth for the main dispatch and the Pareto-k re-evaluation.
+# vector for a multi-block `joint_grid`. Each applied axis is folded through
+# the SAME `.joint_hp_vec_for_grids()` the single-block path uses, one column
+# at a time, so the atom / continuum reading of a copy scale's zero is that
+# axis's own. The per-axis contributions are summed before the one addition to
+# `log_marginal`, so a grid carrying a single axis of each role reproduces the
+# whole-view call to the bit. Single source of truth for the main dispatch and
+# the Pareto-k re-evaluation.
 .joint_multi_add_hp <- function(log_marginal, joint_grid, axis_offsets, B,
                                 fn_sigma, fn_alpha, fn_phi = NULL) {
     if (is.null(fn_sigma) && is.null(fn_alpha) && is.null(fn_phi))
         return(log_marginal)
-    cols <- .joint_multi_hp_cols(joint_grid, axis_offsets, B,
-                                 fn_sigma, fn_alpha, fn_phi)
-    if (length(cols) == 0L) return(log_marginal)
-    view <- joint_grid[, cols, drop = FALSE]
-    colnames(view) <- names(cols)
-    hp <- .joint_hp_vec_for_grids(view, fn_sigma, fn_alpha, fn_phi)
-    if (!is.null(hp) && length(hp) == length(log_marginal)) {
-        log_marginal <- log_marginal + hp
+    entries <- .joint_multi_hp_cols(joint_grid, axis_offsets, B,
+                                    fn_sigma, fn_alpha, fn_phi)
+    if (length(entries) == 0L) return(log_marginal)
+    hp_total <- NULL
+    for (e in entries) {
+        role <- e[["role"]]
+        view <- joint_grid[, e[["col"]], drop = FALSE]
+        # The role IS the column name `.joint_hp_vec_for_grids()` reads, except
+        # for a dispersion axis, which it finds by its own `phi_<arm>` name.
+        colnames(view) <- if (identical(role, "phi")) {
+            colnames(joint_grid)[e[["col"]]]
+        } else {
+            role
+        }
+        hp <- .joint_hp_vec_for_grids(
+            view,
+            fn_sigma = if (identical(role, "sigma")) e[["fn"]] else NULL,
+            fn_alpha = if (identical(role, "alpha")) e[["fn"]] else NULL,
+            fn_phi   = if (identical(role, "phi"))   e[["fn"]] else NULL)
+        if (is.null(hp) || length(hp) != length(log_marginal)) next
+        hp_total <- if (is.null(hp_total)) hp else hp_total + hp
     }
+    if (!is.null(hp_total)) log_marginal <- log_marginal + hp_total
     log_marginal
 }
 
@@ -1140,6 +1316,23 @@
     }))
     d_axes <- as.integer(axis_offsets[B + 1L])
 
+    # Which axes the regularizing hyperpriors reach. Read off the axis layout,
+    # before the first inner solve, so a per-block entry naming a block that
+    # carries no such axis is refused rather than paid for.
+    hyperprior_axes <- .joint_check_multi_hyperpriors(
+        as.character(axis_names), axis_offsets, B, fn_sigma, fn_alpha)
+    if (isTRUE(verbose)) {
+        for (role in names(hyperprior_axes)) {
+            rec <- hyperprior_axes[[role]]
+            if (length(rec$axes) > 1L && identical(rec$scope, "every_block")) {
+                message("tulpa joint: prior_", role, " applies to ",
+                        paste(rec$axes, collapse = ", "),
+                        " (one spec, every block carrying the axis). ",
+                        "Key it per block to regularize them differently.")
+            }
+        }
+    }
+
     blocks_spec <- lapply(seq_along(prepared), function(b) {
         .joint_block_spec_for_cpp(prepared[[b]], n_arms, b, arms = arms)
     })
@@ -1224,6 +1417,11 @@
     if (identical(integration, "ccd") && !ccd_requested) {
         integration_declined <- "axis_count"
     }
+    # What placing the design cost, in inner solves. Carried on the placement's
+    # own return so a decline reports what it had already paid, and NULL where
+    # no placement ran -- a fit that placed nothing reports no cost rather than
+    # a zero, which would read as a placement that was free.
+    ccd_cost <- NULL
     use_ccd <- ccd_requested
     if (use_ccd) {
         axis_values <- latent_axis_values
@@ -1273,6 +1471,8 @@
                                eval_logpost, verbose = verbose,
                                set_warm = set_warm,
                                atom_mass = copy_atom_mass)
+        ccd_cost <- ccd[c("modefind_evals", "modefind_budget",
+                          "modefind_rounds", "modefind_seconds")]
         if (is.null(ccd$grid)) {
             use_ccd <- FALSE
             integration_declined <- as.character(ccd$declined %||% "modefind_failed")
@@ -1572,6 +1772,11 @@
     res$theta_grid   <- joint_grid
     res$theta_names  <- colnames(joint_grid)
     res$axis_offsets <- axis_offsets
+    # Which grid axes each regularizing hyperprior was folded onto, and whether
+    # the caller stated it once (every block carrying that axis) or per block.
+    # NULL where the fit carries none, so a flat fit reports nothing rather
+    # than an empty record.
+    res$hyperprior_axes <- hyperprior_axes
     res$integration  <- integration_used
     # What the caller asked for, and why it did not run. `integration` alone
     # names the integrator that RAN, so a fit reporting "grid" cannot say
@@ -1580,6 +1785,10 @@
     # the difference is one a consumer can act on.
     res$integration_requested <- integration
     res$integration_declined  <- integration_declined
+    res$ccd_modefind_evals    <- ccd_cost$modefind_evals
+    res$ccd_modefind_budget   <- ccd_cost$modefind_budget
+    res$ccd_modefind_rounds   <- ccd_cost$modefind_rounds
+    res$ccd_modefind_seconds  <- ccd_cost$modefind_seconds
     # Integration weights fold in the CCD design weights (`dnode`) and, on the
     # tensor grid, the per-cell prior mass of the node each cell sits at. A CCD
     # design carries its own volume in `dnode`, so `log_quad` applies to the

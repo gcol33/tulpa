@@ -1225,9 +1225,25 @@
 # cell of the grid, including the ones the screen goes on to keep, so a depth
 # above what the ranking needs makes screening cost more than the solves it
 # avoids.
+#
+# `min_keep` is the floor on how many cells the screen leaves to the full pass,
+# whatever the tolerance says. The tolerance is a normalised weight, so what it
+# cuts at is a gap in nats, `-(log(prune_tol) + log(Z))`; the whole range a
+# caller would type is a few tens of nats, and on a log-marginal surface
+# spanning thousands the screen keeps one cell at every setting. A kept set of
+# one is a point mass: the placement pass reads a curvature stencil off the
+# cells that were solved, finds none, and the axis is reported where it was laid
+# rather than where the posterior is. A central second difference along one axis
+# needs three collinear nodes, so five is the argmax cell plus a two-sided
+# neighbourhood on the two axes an outer grid most often carries.
+#
+# The value is mirrored by `CHEAP_SCREEN_MIN_KEEP` in `src/nested_laplace_grid.h`
+# -- the driver applies it, and a C++ constant cannot read this registry -- and
+# the two are pinned together by test.
 .NL_SCREEN <- list(
     prune_tol = 1e-3,
-    iters     = 2L
+    iters     = 2L,
+    min_keep  = 5L
 )
 
 .nl_screen <- function(par) {
@@ -1285,4 +1301,140 @@
 # fitter's `beta_prior` argument takes.
 .tulpa_default_beta_prior <- function(consumer = "tulpa") {
     list(mean = 0, sd = .tulpa_prior_sd(consumer))
+}
+
+# --- how far refinement may move an outer axis --------------------------------
+#
+# The adaptive-grid and var-of-means passes add nodes to an outer axis after the
+# first grid has been solved. How far they may move it is a three-rung ladder:
+#
+#   "none"     the axis takes no refinement nodes at all.
+#   "densify"  nodes may be added strictly inside the span the axis's declared
+#              nodes already cover; none may be placed past either end node.
+#   "extend"   nodes may also be placed beyond the end nodes, one and two
+#              declared steps out (`.hyper_propose_axis_extension()`).
+#
+# Which rung an axis starts on is a question of PROVENANCE, not of axis name. A
+# caller who wrote the nodes down stated where the fit integrates, so refinement
+# resolves that range more finely and does not leave it; a mode outside it shows
+# up as mass at the edge. An axis the engine placed carries no such statement, so
+# refinement may follow the posterior out. `auto_grid()` is how a wrapper package
+# that computed a default of its own says which side its axis is on -- the same
+# marker the recentring pass reads, so one declaration answers both questions.
+.NL_AXIS_REFINE_MODES <- c("none", "densify", "extend")
+
+.NL_AXIS_REFINE <- list(
+    stated = "densify",
+    placed = "extend"
+)
+
+.nl_axis_refine <- function(par) {
+    if (!par %in% names(.NL_AXIS_REFINE)) {
+        stop("Unknown axis-refinement setting '", par, "'.", call. = FALSE)
+    }
+    .NL_AXIS_REFINE[[par]]
+}
+
+# --- natural domain of a bounded outer axis ----------------------------------
+#
+# The set of values an axis's parameter is DEFINED on. This is a fact of the
+# parameterisation, not of any grid: a proper-CAR precision `Q = D - rho W` is
+# positive definite only for `rho < 1 / lambda_max`, and `lambda_max(D^-1 W)` is
+# 1 on any connected graph, so 1 bounds that axis above whatever the adjacency
+# is. A quadrature rule may place its nodes anywhere inside such a domain, but
+# the cell EDGES it closes the outermost nodes with are an extrapolation half a
+# node step past them, and an extrapolation has no reason of its own to stay
+# inside. Declaring the domain is what lets `.hyper_axis_support()` refuse to
+# report a support outside it (gcol33/tulpa#657), so the class of bug is
+# unreachable rather than repaired one axis at a time.
+#
+# Keyed on the BARE axis name -- a multi-block grid prefixes its columns with
+# the block that owns them (`b1.rho_car`) -- so every claim here has to hold for
+# that name on every path that uses it. `rho` names four different parameters
+# across the families: the BYM2 mixing weight on (0, 1), the proper-CAR
+# correlation on the adjacency eigenvalue interval, the AR1 autocorrelation and
+# a multi-output cross-field correlation on (-1, 1). Their upper end is 1 in all
+# four; their lower ends disagree (0, `1 / lambda_min`, -1), and `1 / lambda_min`
+# can sit below -1, so only the upper end is stated here. A spec built by a
+# block that knows which of the four it holds declares the tighter interval
+# itself through `hyper_axis_spec(bounds = )`, and the two are intersected.
+#
+# `open` says whether the endpoint is a member of the domain. Every endpoint
+# here is open: it is the value at which the parameterisation degenerates -- a
+# singular `Q` at `rho = 1`, a zero scale -- so a support reaching it is one no
+# sampler can be handed. A closed endpoint would be one the model can be
+# evaluated AT; the field exists so such an axis is expressible in this table
+# rather than as a branch in the support rule.
+#
+# `.positive` is not an axis name (the leading dot marks a pseudo-entry, as in
+# `.NL_FAMILY_AXES`): it is the domain of every axis integrated in log.
+# `.hyper_axis_scale()` already holds which names those are, and a quantity
+# integrated in log is a positive one, so membership is read off that function
+# rather than from a second name list drifting against it.
+.NL_AXIS_DOMAIN <- list(
+    rho       = list(bounds = c(-Inf, 1),  open = c(TRUE, TRUE)),
+    rho_car   = list(bounds = c(-Inf, 1),  open = c(TRUE, TRUE)),
+    .positive = list(bounds = c(0, Inf),   open = c(TRUE, TRUE))
+)
+
+.nl_axis_domain_entry <- function(key) {
+    if (!key %in% names(.NL_AXIS_DOMAIN)) {
+        stop("Unknown axis domain '", key, "'.", call. = FALSE)
+    }
+    .NL_AXIS_DOMAIN[[key]]
+}
+
+# --- joint CCD placement cost ------------------------------------------------
+#
+# What PLACING a central composite design costs, in the only unit that matters
+# on an expensive model: inner Newton solves. The mode-find behind
+# `.joint_ccd_grid()` reads the outer log-posterior through the same solve the
+# outer grid pays for once per cell, so a placement round is not bookkeeping --
+# it is `1 + 2d + 4 C(d, 2)` full inner solves, 33 of them at `d = 4`, and the
+# round caps below bound how many rounds a placement takes without knowing what
+# a round costs. Left at the caps alone, placement can spend roughly 1976 solves
+# at `d = 4` to place a 25-node design.
+#
+# `evals_per_cell` states the ceiling in the currency the caller already has:
+# the tensor grid the design replaces. At `1` a placement may not spend more
+# inner solves than integrating that tensor grid would have, so a placement that
+# succeeds never costs more than the integration it avoids and one that runs out
+# caps the wasted spend at the same number rather than at the round caps'
+# worst case.
+#
+# `budget_floor` exempts the DESIGNED first attempt (`first_rounds` rounds from
+# the grid-median seed, plus its closing stencil). That attempt is the path the
+# CCD was built for and its cost does not grow with the grid, so a small tensor
+# grid would otherwise decline every placement on arithmetic that only bounds
+# the ESCALATION -- the joint-grid seed, the step calibration and the
+# `max_rounds` rescue mode-find, which is where the unbounded cost lives. Set it
+# `FALSE` to make `evals_per_cell` a hard cap on the whole placement.
+#
+# The five loop caps live here rather than as literal argument defaults because
+# the budget is PROJECTED from them: the up-front decline computes the cheapest
+# placement that could still produce a design, and it has to read the same
+# numbers the loops run on.
+#
+# `stencil_reuse` is the curvature-reuse path: an axial-only stencil plus a
+# symmetric rank-1 secant update of the off-diagonal block between full
+# refreshes, `1 + 2d` evaluations a round instead of `1 + 2d + 4 C(d, 2)`. It is
+# OFF because its effect on the walk has not been measured; the default is the
+# full stencil every round.
+.CCD_PLACEMENT <- list(
+    evals_per_cell   = 1,
+    budget_floor     = TRUE,
+    first_rounds     = 8L,
+    max_rounds       = 30L,
+    calibrate_rounds = 4L,
+    seed_max_pts     = 256L,
+    max_halve        = 6L,
+    stencil_reuse    = FALSE,
+    refresh_every    = 4L
+)
+
+.ccd_placement <- function(par) {
+    if (!par %in% names(.CCD_PLACEMENT)) {
+        stop("Unknown CCD placement setting '", par, "'.", call. = FALSE)
+    }
+    .CCD_PLACEMENT[[par]]
 }

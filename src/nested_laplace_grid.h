@@ -42,10 +42,21 @@
 //      product), and computes a screening log-marginal at the resulting
 //      quasi-mode,
 //   3) softmax-normalises the screening log-marginals over the full grid
-//      and marks cells with weight < prune_tol as pruned,
+//      and marks cells with weight < prune_tol as pruned, then restores the
+//      highest-ranked of them until at least `CHEAP_SCREEN_MIN_KEEP` cells
+//      survive,
 //   4) skips the full inner Newton on pruned cells (filling their result
 //      with `log_marginal = -inf`, `n_iter = 0`, `mode = pilot_mode`) and
 //      runs the full pass only on survivors.
+//
+// The tolerance is a NORMALISED WEIGHT, so what it cuts at is a gap in nats:
+// `-(log(prune_tol) + log(Z))` below the best cheap cell. The whole range a
+// caller would type (1e-3 to 1e-12) is 7 to 28 nats of that gap, which on a
+// surface spanning thousands of nats is one sliver and returns the same kept
+// set at every setting. `prune_log_gap_cut` reports the realised cut and
+// `prune_cheap_lm_spread` the surface it was applied to, so the two together
+// say whether the tolerance had any resolution on this grid. The kept-set
+// floor is what keeps the answer usable where it had none.
 //
 // The screen only has to RANK the cells: what it does with a cell's screening
 // log-marginal is compare it against the others, never report it. Each cell is
@@ -352,6 +363,27 @@ struct NoResumeRefill {
 // cost-against-ranking-fidelity note at the top of this file.
 static const int CHEAP_SCREEN_ITERS = 2;
 
+// Floor on the number of cells the screen leaves to the full pass, whatever the
+// tolerance says. The screen ranks cells; the placement pass that runs after the
+// fit reads a finite-difference curvature stencil off the cells that were
+// SOLVED, and a kept set of one carries no second difference on any axis, so
+// the placement declines for want of curvature and the axis is reported where
+// it was laid rather than where the posterior is. That happens on a grid whose
+// posterior is concentrated, which is exactly the grid screening is worth doing
+// on, so the tolerance alone cannot be what decides it.
+//
+// A central second difference along one axis needs three collinear nodes.
+// Five is the argmax cell plus a two-sided neighbourhood on the two axes an
+// outer grid most often carries, and it is the smallest floor under which no
+// axis of such a grid can be a point mass. It does not GUARANTEE a full
+// stencil -- the floor keeps the highest-ranked cells, not a star of a chosen
+// shape -- so a placement can still decline, and the R layer records that a
+// decline happened on a screened grid.
+//
+// Five full solves against the 1-2 a collapsed screen leaves is a cost the
+// screening is not measured against: the cells it skips number in the hundreds.
+static const int CHEAP_SCREEN_MIN_KEEP = 5;
+
 template<typename SolveAtTheta, typename CheapEval = NoCheapEval,
          typename ResumeRefill = NoResumeRefill>
 inline Rcpp::List run_nested_laplace_grid(
@@ -475,6 +507,11 @@ inline Rcpp::List run_nested_laplace_grid(
     // the ETA projects over the parallel grid rather than the serial pilot rate
     // and the console line shows the active outer-thread count.
     if (progress) progress->set_width(n_threads_outer);
+    // The same number on the result, because the progress line is not a record:
+    // its thread suffix is printed only above one thread, so a request clamped
+    // to one and a serial run by design print the same line. A benchmark
+    // recording a per-cell time needs the width the grid actually ran at.
+    const int n_threads_outer_realised = n_threads_outer;
 
     // Stage results in POD containers; merge to Rcpp slots after parallelism.
     std::vector<LaplaceResult> cell_results(n_grid);
@@ -585,6 +622,13 @@ inline Rcpp::List run_nested_laplace_grid(
     // n_cells_pruned is reported back to the caller for the R-side toggle.
     std::vector<unsigned char> pruned(n_grid, 0);
     int n_cells_pruned = 0;
+    // Cells the kept-set floor put back after the tolerance dropped them.
+    int n_floor_restored = 0;
+    // The screen's realised cut, in nats below the best cheap cell, and the
+    // spread of the whole screened surface. Both reported, so a caller reads
+    // what the tolerance meant on THIS grid instead of inferring it.
+    double prune_log_gap_cut = NA_REAL;
+    double prune_cheap_spread = NA_REAL;
     std::vector<double> cheap_lm;  // size n_grid when prune_active
     int cheap_argmax = -1;          // cell with the largest cheap log-marginal
 
@@ -772,13 +816,38 @@ inline Rcpp::List run_nested_laplace_grid(
                     if (std::isfinite(v)) Z += std::exp(v - m);
                 }
             }
+            // The tolerance is a normalised weight, so the gap in nats it
+            // actually cuts at is `-(log(prune_tol) + log(Z))`: a cell is
+            // dropped once it falls that far below the best cheap cell. On a
+            // log-marginal surface spanning thousands of nats that cut is a
+            // sliver, which is what makes the same kept set come back at every
+            // tolerance a caller would type. It is reported below so the cut is
+            // readable from the fit rather than inferred from the tolerance.
+            const double log_tol = std::log(prune_tol);
+            const double log_Z   = (Z > 0.0) ? std::log(Z)
+                                   : -std::numeric_limits<double>::infinity();
             for (int k = 0; k < n_grid; k++) {
                 if (k == k_pilot) continue;
                 if (ckpt_done[k]) continue;  // completed cells are never pruned
                 double w = (std::isfinite(cheap_lm[k]) && Z > 0.0)
                            ? std::exp(cheap_lm[k] - m) / Z
                            : 0.0;
-                if (w < prune_tol) {
+                bool drop;
+                if (w > 0.0) {
+                    drop = (w < prune_tol);
+                } else if (std::isfinite(cheap_lm[k]) && std::isfinite(m) &&
+                           Z > 0.0) {
+                    // exp(cheap_lm[k] - m) underflowed to zero, which compares
+                    // below every positive tolerance and so flattens the knob
+                    // past a gap of ~745 nats. The same comparison in log space
+                    // is exact there, and agrees with the weight form wherever
+                    // the weight is representable, so a tolerance small enough
+                    // to reach such a cell reaches it.
+                    drop = ((cheap_lm[k] - m) < (log_tol + log_Z));
+                } else {
+                    drop = true;   // infeasible cell: no cheap log-marginal
+                }
+                if (drop) {
                     pruned[k] = 1;
                     n_cells_pruned++;
                     LaplaceResult r;
@@ -790,6 +859,63 @@ inline Rcpp::List run_nested_laplace_grid(
                     r.log_det_Q = 0.0;
                     cell_results[k] = r;
                 }
+            }
+
+            // Kept-set floor. Restore the highest-ranked dropped cells until
+            // `min_keep` cells will be solved in full, so the placement pass
+            // downstream has more than a point mass to read a curvature off and
+            // the full pass has more than the screen's own top cell to
+            // disagree with it on. A grid whose tolerance already keeps that
+            // many is untouched, so this is a no-op wherever the screen was not
+            // collapsing.
+            //
+            // Only a cell with a finite cheap log-marginal is restorable: an
+            // infeasible cell has no mode to solve at and would come back
+            // -Inf, so a grid holding too few feasible cells stays below the
+            // floor and reports how many it could restore.
+            const int min_keep = std::min(n_grid, CHEAP_SCREEN_MIN_KEEP);
+            int n_kept_cells = n_grid - n_cells_pruned;
+            if (n_kept_cells < min_keep) {
+                std::vector<int> restorable;
+                for (int k = 0; k < n_grid; k++) {
+                    if (pruned[k] && std::isfinite(cheap_lm[k])) {
+                        restorable.push_back(k);
+                    }
+                }
+                // Rank by the cheap log-marginal, ties by cell index, so the
+                // restored set is a function of the screen alone.
+                std::sort(restorable.begin(), restorable.end(),
+                          [&](int a, int b) {
+                              if (cheap_lm[a] != cheap_lm[b]) {
+                                  return cheap_lm[a] > cheap_lm[b];
+                              }
+                              return a < b;
+                          });
+                for (std::size_t i = 0;
+                     i < restorable.size() && n_kept_cells < min_keep; i++) {
+                    const int k = restorable[i];
+                    pruned[k] = 0;
+                    n_cells_pruned--;
+                    n_kept_cells++;
+                    n_floor_restored++;
+                }
+            }
+            prune_log_gap_cut = (std::isfinite(log_tol) && std::isfinite(log_Z))
+                                ? -(log_tol + log_Z)
+                                : NA_REAL;
+            // Spread of the WHOLE screened surface, the scale a cheap-vs-full
+            // mis-estimate has to be judged against: the spread of the cells
+            // the screen kept is a property of the set the gate is meant to
+            // validate, and cannot bound the error on the set it discarded.
+            {
+                double lo =  std::numeric_limits<double>::infinity();
+                double hi = -std::numeric_limits<double>::infinity();
+                for (double v : cheap_lm) {
+                    if (!std::isfinite(v)) continue;
+                    if (v < lo) lo = v;
+                    if (v > hi) hi = v;
+                }
+                prune_cheap_spread = (hi >= lo) ? (hi - lo) : NA_REAL;
             }
         }
         // Pruned and checkpoint-loaded cells get no full solve, so they are
@@ -1119,6 +1245,7 @@ inline Rcpp::List run_nested_laplace_grid(
     out["start_infeasible"] = start_infeasibles;
     out["s2z_log_det_fallback"] = s2z_fallbacks;
     out["pd_conditioned"] = pd_conditioneds;
+    out["n_threads_outer_realised"] = n_threads_outer_realised;
     if (store_modes) out["modes"] = all_modes;
     if (any_Q) {
         out["Q_csc_p_per_grid"] = Q_p_per_grid;
@@ -1186,6 +1313,15 @@ inline Rcpp::List run_nested_laplace_grid(
         out["prune_n_pruned"]           = n_cells_pruned;
         out["prune_tol"]                = prune_tol;
         out["prune_screen_iters"]       = screen_steps;
+        // What the tolerance cut at (nats below the best cheap cell), what the
+        // screened surface spans, the floor that was applied and how many cells
+        // it put back. The first two are the pair a caller reads to see whether
+        // the tolerance had any resolution on this grid at all.
+        out["prune_log_gap_cut"]        = prune_log_gap_cut;
+        out["prune_cheap_lm_spread"]    = prune_cheap_spread;
+        out["prune_min_keep"]           = std::min(n_grid,
+                                                   CHEAP_SCREEN_MIN_KEEP);
+        out["prune_n_floor_restored"]   = n_floor_restored;
 
         // ---- Safety gate -------------------------------------------------
         // The full pass only ran on survivors, so the full-solve argmax is

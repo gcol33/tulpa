@@ -13,7 +13,8 @@ hyper_axis_spec(
   refinable = FALSE,
   atom_mass = NULL,
   slab_bounds = NULL,
-  log_prior_coord = c("integration", "natural")
+  log_prior_coord = c("integration", "natural"),
+  extend = TRUE
 )
 }
 \arguments{
@@ -35,7 +36,11 @@ spacing in refinement and log-axis quantile fits. Default \code{FALSE}.}
 
 \item{bounds}{Numeric vector of length 2 giving the natural support
 \verb{(lower, upper)} of the axis, e.g. \code{c(0, Inf)} for \code{sigma}, \code{c(0, 1)}
-for a BYM2 mixing coefficient. \code{NULL} (default) is unbounded.}
+for a BYM2 mixing coefficient. \code{NULL} (default) is unbounded. A finite
+endpoint is treated as OPEN: it is the value the parameterisation
+degenerates at, so refinement clamps new points to the interior and the
+axis's quadrature cells and reported support are closed strictly inside
+it rather than half a node step past the outermost node.}
 
 \item{refinable}{Logical. When \code{TRUE}, the axis participates in the
 adaptive-grid and var-of-means consistency passes (when those are
@@ -74,10 +79,18 @@ adds the change of variables \code{log(x)} on a \code{log_scale} axis. Every pat
 that meets a declared density carries it across in one place
 (\code{.hyper_prior_carry()}). Inert on a linear axis, where the two
 coordinates coincide (gcol33/tulpa#623).}
+
+\item{extend}{Logical. On a refinable axis, may the passes place a node
+beyond the outermost value in \code{grid}? \code{TRUE} (default) lets refinement
+follow the posterior out past the declared span, which is what an axis the
+engine placed wants. \code{FALSE} confines every new node to the interior of the
+declared span: the axis is integrated more finely over exactly the range
+given, and a mode outside it shows up as mass at the edge instead of moving
+the range. Inert when \code{refinable = FALSE}.}
 }
 \value{
 An object of class \code{tulpa_hyper_axis_spec} (a validated list with
-the nine fields above).
+the fields listed above).
 }
 \description{
 Builds a single axis spec for \code{\link[=tulpa_hyper_grid]{tulpa_hyper_grid()}}. Carries the candidate

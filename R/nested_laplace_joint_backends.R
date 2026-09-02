@@ -318,10 +318,21 @@
 #      pruned). The kernel flags this in `prune_argmax_disagree`.
 #   2) cheap-vs-full gap collapse: the kept set's posterior collapses onto one
 #      cell (low quadrature ESS) AND the cheap screen badly mis-estimated that
-#      cell's log-marginal (`prune_cheap_full_gap` large relative to the spread
-#      of full log-marginals across kept cells). A large gap on the cell the
-#      whole posterior sits on means the screen could just as easily have
-#      ranked it below the threshold and pruned it.
+#      cell's log-marginal (`prune_cheap_full_gap` large relative to the margin
+#      the screen discarded cells by). A large gap on the cell the whole
+#      posterior sits on means the screen could just as easily have ranked it
+#      below the threshold and pruned it.
+#
+# What the gap is judged against is the screen's own CUT, `prune_log_gap_cut`:
+# the number of nats below the best cheap cell at which the tolerance started
+# dropping cells. An error larger than that cut is an error large enough to have
+# moved a dropped cell across it, which is exactly the failure the trigger is
+# for. The spread of the log-marginals across KEPT cells cannot serve: it is a
+# property of the set the gate is meant to validate, so on a steep surface it
+# makes the threshold enormous (a 340-nat mis-estimate judged small against a
+# 49000-nat threshold read off a 98000-nat kept spread) and the trigger cannot
+# bound the error on the set it discarded. A result carrying no cut -- an older
+# kernel, or a hand-built one -- falls back to the kept spread.
 #
 # `res` is the pruned kernel result (already carries the prune_* fields).
 # `resolve_full` is a zero-argument thunk re-running the SAME kernel call with
@@ -352,7 +363,12 @@
         ess <- if (sum(w^2, na.rm = TRUE) > 0) (sum(w, na.rm = TRUE)^2) / sum(w^2, na.rm = TRUE) else 1
         lm_kept <- lm[kept]
         lm_spread <- if (n_kept > 1L) diff(range(lm_kept)) else 0
-        gap_thresh <- max(gap_abs_floor, gap_frac * lm_spread)
+        cut <- res$prune_log_gap_cut
+        gap_thresh <- if (length(cut) == 1L && is.finite(cut) && cut > 0) {
+            max(gap_abs_floor, cut)
+        } else {
+            max(gap_abs_floor, gap_frac * lm_spread)
+        }
         gap_collapse <- (ess <= max(1.0, ess_collapse_frac * n_kept)) &&
                         (res$prune_cheap_full_gap > gap_thresh)
     }

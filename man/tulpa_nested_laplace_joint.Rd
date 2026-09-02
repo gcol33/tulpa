@@ -185,6 +185,29 @@ essentially harmless -- the lever is tail-shrinkage at small
 \code{prior_sigma} applies on any \code{sigma}-named axis.
 }
 
+WHICH AXES ONE SPEC REACHES. A list-of-blocks \code{prior} can carry the same
+axis on several blocks at once -- two copied fields carry \code{b1.alpha} and
+\code{b2.alpha}, and each copy block carries its own donor \verb{b<k>.sigma}. One
+spec applies to EVERY block carrying the axis it names, each block taking
+its own independent copy of the density (its atom / continuum split is
+normalised against its own axis, so nothing is shared between blocks).
+To regularize the blocks differently, or only some of them, key the prior
+by block the way a multi-block \code{copy} spec does:
+
+\if{html}{\out{<div class="sourceCode">}}\preformatted{prior_alpha = list(
+  list(block = 1, prior = list("pc.prec", c(4.0, 0.01))),
+  list(block = 2, prior = list("half_normal", 2.0))
+)
+}\if{html}{\out{</div>}}
+
+A block the list does not name carries no prior on that axis. An entry
+naming a block that carries no such axis is an error, and the message
+names the blocks that do. The per-block shape is a multi-block one: on a
+single-block \code{prior}, where the axis is unique, pass the spec itself.
+A fit reports what it applied in \code{hyperprior_axes}: one record per role
+with the scope the caller stated it at (\code{"every_block"} / \code{"per_block"}),
+the block indices reached, and the grid columns those are.
+
 \code{prior_sigma} also interacts with the auto-recenter above: its second
 attempt engages the engine's own weakly-informative PC(U = 3,
 alpha = 0.01) prior, and a \code{prior_sigma} the caller PINNED suppresses
@@ -250,6 +273,13 @@ dispatched across \code{n_threads_outer} threads with its own CHOLMOD solver
 and NewtonScratch (inner OpenMP auto-disabled). \code{1L} is serial, chained
 warm-starts -- bitwise identical to the pre-speedup driver. Recommended
 on multi-core workstations: \code{parallel::detectCores() - 1L}.
+It is a REQUEST: the driver clamps it to the team the OpenMP environment
+hands out (\code{omp_get_max_threads()}, \code{OMP_THREAD_LIMIT}, and the check
+farm's core cap), because the per-cell block cache sizes its slot array
+from that same number. A job script exporting \code{OMP_NUM_THREADS=1} to pin
+the INNER threads therefore runs the outer grid serially whatever is
+asked for here; the fit says so once, in a message, and records the pair
+in \code{n_threads_outer_requested} / \code{n_threads_outer_realised}.
 \item \code{tile_warm} (\code{TRUE}) -- when \code{n_threads_outer > 1} and a copy block is
 present, group outer cells into tiles sharing every axis except the copy
 coefficient \code{alpha}, solve one warm Tier-2 per tile from the centre
@@ -266,13 +296,28 @@ sweep keeps every cheap mode near its cell's true mode, so the cheap
 ranking is faithful to the full-solve ranking even when the inner latent
 mode moves substantially across the grid. Pruned cells get
 \code{log_marginal = -Inf}, \code{n_iter = 0}, and inherit the pilot mode; the
-pilot cell is never pruned. A safety gate falls back to the full grid
-(with a warning) if the cheap-screen argmax disagrees with the
-full-solve argmax or the kept posterior collapses onto a cell the screen
-badly mis-estimated, so a silently-wrong pruned posterior is impossible.
-Stacks with \code{n_threads_outer}. \code{prune_tol} must be in \verb{[0, 1)}. Keep it
-conservative (\verb{<= 1e-3}); pruning helps most when the grid has many
-low-mass tail cells. Default \code{FALSE} (the full grid is correct).
+pilot cell is never pruned, and at least \code{prune_min_keep} cells (5) are
+solved in full whatever the tolerance says -- the highest-ranked dropped
+cells are restored up to that floor, because the outer grid placement
+pass reads a finite-difference curvature off the cells that were SOLVED
+and a kept set of one carries none. Two fallbacks to the full grid, each
+with a warning: the cheap-pass safety gate (the cheap-screen argmax
+disagrees with the full-solve argmax, or the kept posterior collapses
+onto a cell the screen mis-estimated by more than the margin it discarded
+cells by), and a screened fit whose grid placement declined for want of
+curvature. Neither bounds the error from a cell that was discarded and
+never solved: the gate compares the screen against the cells it kept.
+Stacks with \code{n_threads_outer}. \code{prune_tol} must be in \verb{[0, 1)}. Default
+\code{FALSE} (the full grid is correct).
+\item \code{prune_log_gap} (unset) -- the screening cut in nats: keep every cell
+within this many nats of the best screened cell. \code{prune_tol} is a
+normalised weight, so what it cuts at is the gap
+\code{-(log(prune_tol) + log(Z))}, and the whole range a caller would type is
+a few tens of nats -- on an outer surface spanning thousands every
+setting returns the same kept set. It reaches the kernel as
+\code{prune_tol = exp(-gap)}, so the realised cut is the requested gap less
+\code{log(Z)}; the fit reports the realised value in \code{prune_log_gap_cut}.
+Setting both this and \code{prune_tol} is an error.
 \item \code{screen_iters} (\code{5L}) -- inner Newton steps the cheap screen takes per
 cell, read only when \code{prune = TRUE}. The screen only has to RANK the
 cells, and each one is warm-started from its already-screened lattice
@@ -308,6 +353,24 @@ edge score is \verb{max(marginal_weight_at_boundary, exp(max_log_marginal_at _bo
 and integrand truncation; \code{0.02} is ~4 log units of decay.
 \code{adaptive_grid_max_passes} caps the passes (one usually suffices). Fixes
 posterior CI under-coverage when truth sits near a grid edge.
+
+How far a given axis may be moved depends on where its nodes came from.
+An axis whose nodes the CALLER wrote down -- \code{copy$alpha_grid} /
+\code{field_coef$grid}, an entry of \code{phi_grid} -- states where the fit
+integrates, so refinement densifies it and never places a node past
+either end node; a mode outside that range shows up as mass at the edge.
+An axis the ENGINE placed (\code{alpha_n} / \code{field_coef$n}, or no nodes given)
+carries no such statement, so refinement may follow the posterior out
+past its ends. Nodes a wrapper package computed as a default of its own
+are declared with \code{\link[=auto_grid]{auto_grid()}} and count as engine-placed.
+\item \code{axis_refine} (\code{NULL}) -- per-axis override of the rule above, named by
+outer-grid axis (\code{"alpha"}, \code{"phi_<arm>"}): \code{"none"} (the axis takes no
+refinement nodes), \code{"densify"} (nodes inside the declared span only) or
+\code{"extend"} (nodes past the end nodes too). A single unnamed value applies
+to every refinable axis. An unknown axis name, or a request for nodes on
+an axis this driver does not refine, is an error rather than a silent
+no-op. Read only when \code{adaptive_grid = TRUE} or
+\code{var_of_means_consistency = TRUE}.
 \item \code{var_of_means_consistency} (\code{TRUE}) -- run a post-integration
 consistency pass on the variance of the per-arm posterior means and
 attach \code{var_of_means_consistency_info}.
@@ -355,6 +418,31 @@ resolved integrator is also returned on the joint result as
 \verb{$integration}, alongside \verb{$integration_requested} and
 \verb{$integration_declined} (see Value), so a fallback is on the fit itself
 and not only in a verbose message.
+\item \code{ccd_budget} (\code{1}) -- ceiling on what PLACING a CCD may spend, as a
+multiple of the tensor grid the design replaces. Every mode-find probe is
+one full inner Newton solve, the same solve an outer grid cell costs, and
+a placement round is \verb{1 + 2d + 4 C(d, 2)} of them (33 at \code{d = 4}), so at
+the round caps alone a placement can spend far more than the integration
+it avoids. At \code{1} a placement plus its design costs no more than that
+tensor grid; the fit declines to the tensor grid with
+\code{integration_declined = "placement_budget"} when the ceiling is reached,
+and reports what it spent as \code{ccd_modefind_evals} (see Value). \code{Inf}
+places without a ceiling. \code{ccd_budget_floor} (\code{TRUE}) exempts the
+designed first attempt -- the eight rounds from the grid-median seed,
+whose cost is set by the axis count and not by the grid -- so the ceiling
+bounds the escalation (grid seed, step calibration, the 30-round rescue
+mode-find) rather than the path the CCD was built for; \code{FALSE} makes
+\code{ccd_budget} a hard cap on the whole placement.
+\item \code{ccd_stencil_reuse} (\code{FALSE}) -- how the mode-find gets its curvature.
+\code{FALSE} measures a full finite-difference Hessian every round. \code{TRUE}
+measures the centre, the \verb{2d} axials and their diagonal curvature each
+round and carries the off-diagonal block by a symmetric rank-1 secant
+update, refreshing a full stencil every \code{ccd_refresh_every} (\code{4L}) rounds,
+whenever the secant safeguard refuses the update, and whenever a reused
+model stops producing a step. The design is oriented by a full stencil
+either way, so the reuse changes the walk and not the curvature the
+nodes are placed with. Its effect on the walk is unmeasured; \code{FALSE}
+reproduces the default numerics exactly.
 \item \code{local_ccd} (\code{NULL}) -- local CCD refinement of a multi-block tensor grid.
 \code{TRUE} (defaults) or a \code{list(max_cells =, f0 =, skew_max =)} refines a few high-weight,
 mutually non-adjacent interior cells, replacing each with a small
@@ -738,6 +826,16 @@ collapse, which axes the dominant cell sits against and on which side
 (\code{"lower"} / \code{"upper"}); widen those axes and refit to confirm the mode
 is bracketed. Axes the grid pins to one value are excluded (pinned, not
 at a boundary).
+\item \code{axis_span} -- per outer axis, the span the fit worked over and the two
+terms that separate it from the nodes it was given: \code{nodes} (the range
+of the axis's initial continuum nodes), \code{declared} (their support, i.e.
+those nodes plus the half node step the outermost cells own -- for \code{k}
+equally spaced nodes that is \code{k / (k - 1)} times the node range on the
+axis's integration coordinate, so 2x at two nodes and 1.125x at nine),
+\code{integrated} (the support after refinement, the same interval
+\code{axis_support} reports), \code{refine} (the mode refinement ran under:
+\code{"none"} / \code{"densify"} / \code{"extend"}) and \code{n_nodes} (initial and final
+continuum node counts).
 \item \code{outer_grid_placement} -- \code{"fixed"} (the default \code{sigma_grid} axis was
 used as-is) or \code{"auto_recentered"} when a \code{collapsed_edge} on \code{sigma}
 triggered the mode-Hessian recenter-and-refit (see the \code{prior}
@@ -875,8 +973,20 @@ requested mode's threshold), \code{"unguessable_axis"} (a CAR_proper
 axis), \code{"modefind_ridge"} / \code{"modefind_boundary"} /
 \code{"modefind_degenerate"} / \code{"modefind_failed"}, \code{"hessian_singular"},
 \code{"hessian_not_pd"}, \code{"copy_atom_components"} (more copy atoms than the
-design splits into, see \code{copy_atom_mass}) or \code{"copy_atom_mass"} (a
-declared atom mass outside \verb{[0, 1)}). Multi-block fits only.
+design splits into, see \code{copy_atom_mass}), \code{"copy_atom_mass"} (a
+declared atom mass outside \verb{[0, 1)}) or \code{"placement_budget"} (placing
+the design would cost more inner solves than integrating the tensor grid
+it replaces; see the \code{ccd_budget} control knob). Multi-block fits only.
+\item \code{ccd_modefind_evals}, \code{ccd_modefind_budget}, \code{ccd_modefind_rounds},
+\code{ccd_modefind_seconds} -- what PLACING the CCD cost: inner Newton solves
+spent by the mode-find (seed, step calibration and every round of every
+mixture component), the ceiling they were spent against, the rounds
+taken and the wall-clock seconds. Present on any multi-block fit that
+attempted a placement, including one that declined -- a decline reports
+what it had already paid -- and absent when no placement was attempted,
+which is not the same as a placement that cost nothing. Read alongside
+\verb{$integration} to judge whether the CCD earned its design on this model
+rather than arguing it from the round caps.
 \item \code{weight_kind} -- one entry per outer-grid cell, \code{"mass"} or \code{"design"}.
 A tensor cell holds the mass of its own cell and a CCD node holds a
 design weight, so a fit integrated by one rule reports one value
@@ -947,10 +1057,22 @@ cell, a logical mask of pruned cells, the pruned-cell count, the
 threshold actually applied, and the screening depth the driver actually
 ran at. Pruned cells have \code{log_marginal = -Inf} so they get zero
 weight under \code{.nl_normalise_weights_safe}.
+\item \code{prune_log_gap_cut}, \code{prune_cheap_lm_spread}, \code{prune_min_keep},
+\code{prune_n_floor_restored} -- the screen read on the scale it operates on:
+how many nats below the best screened cell the tolerance cut at, how
+many nats the screened surface spans, the kept-cell floor applied, and
+how many cells that floor put back. A cut that is a sliver of the spread
+is a tolerance with no resolution on this grid.
 \item \code{prune_fallback_triggered}, \code{prune_fallback_reason} -- present only when
-the safety gate fell back to the full grid. The returned fit is the
-full-grid (unpruned) result; the reason string records which gate
-condition tripped.
+a fallback to the full grid fired. The returned fit is the full-grid
+(unpruned) result; the reason string records whether the cheap-pass
+safety gate tripped or the screened grid left the placement pass no
+curvature.
+\item \code{n_threads_outer_requested}, \code{n_threads_outer_realised} -- the outer-grid
+width asked for and the width the grid ran at. The driver clamps the
+request to the team the OpenMP environment hands out, so a fit launched
+under \code{OMP_NUM_THREADS=1} with \code{n_threads_outer = 10} runs serial; the
+pair is what a timing has to be recorded against.
 }
 }
 \description{

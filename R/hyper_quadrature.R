@@ -78,6 +78,120 @@
   c(u[1L] - (u[2L] - u[1L]) / 2, u[K] + (u[K] - u[K - 1L]) / 2)
 }
 
+# The bare axis name. A multi-block grid prefixes each column with the block
+# that owns it (`b1.rho_car`), and every declaration keyed by axis name is keyed
+# on the name without that prefix.
+.hyper_axis_bare <- function(name) {
+  sub("^b[0-9]+[.]", "", as.character(name %||% ""))
+}
+
+# Natural-scale domain of one axis as `list(bounds, open)`, or NULL where
+# nothing is declared and the axis is treated as unbounded.
+#
+# Two declarations can reach the same axis and both are claims about the same
+# set, so the answer is their INTERSECTION rather than a precedence between
+# them. `.NL_AXIS_DOMAIN` states what the axis NAME fixes on every path that
+# uses it; a spec's own `bounds` states what the block that built the spec knows
+# in addition, which is how the BYM2 mixing weight gets its (0, 1) where the
+# name `rho` alone can only say the upper end. Intersecting keeps both true
+# statements and can only tighten, which is the safe direction for an interval
+# a support is refused outside of.
+#
+# A finite endpoint of a spec's `bounds` is treated as OPEN, for the same reason
+# every entry of the registry is: a declared natural support ends where the
+# parameterisation degenerates -- a zero scale, a singular `Q` -- so the
+# endpoint itself is not a value the fit can be evaluated at.
+.hyper_axis_domain <- function(spec) {
+  bare <- .hyper_axis_bare(spec[["name"]])
+  d <- if (nzchar(bare)) .NL_AXIS_DOMAIN[[bare]] else NULL
+  if (is.null(d) && isTRUE(.hyper_axis_scale(bare))) {
+    d <- .NL_AXIS_DOMAIN[[".positive"]]
+  }
+  lo <- -Inf; hi <- Inf; open <- c(TRUE, TRUE); declared <- FALSE
+  if (!is.null(d)) {
+    lo <- d$bounds[1L]; hi <- d$bounds[2L]; open <- d$open; declared <- TRUE
+  }
+  b <- spec[["bounds"]]
+  if (!is.null(b) && length(b) == 2L && !anyNA(b)) {
+    b <- as.numeric(b)
+    if (b[1L] > lo) { lo <- b[1L]; open[1L] <- TRUE }
+    if (b[2L] < hi) { hi <- b[2L]; open[2L] <- TRUE }
+    declared <- TRUE
+  }
+  if (!declared || (!is.finite(lo) && !is.finite(hi))) return(NULL)
+  list(bounds = c(lo, hi), open = open)
+}
+
+# Close a node set's outer cells inside the axis's declared domain.
+#
+# `bd` is the outer edge pair on the axis's integration coordinate and `u` the
+# nodes on that same coordinate. An edge half a node step beyond the outermost
+# node is a property of the node SPACING and knows nothing about where the
+# parameter stops existing, so on a grid graded toward a boundary it steps past
+# it: the proper-CAR nodes `c(0.5, 0.8, 0.95, 0.99)` close at `rho = 1.01`,
+# which is not a correlation, and a sampler told to target the same measure
+# takes that as the flat prior's support (gcol33/tulpa#657).
+#
+# An edge outside the domain is replaced by the midpoint between the outermost
+# node and the boundary, on the same coordinate. That is the half-step rule
+# again with the boundary standing in for the next node, so the edge is never
+# moved FURTHER out than the naive one, and on an open boundary it lands
+# strictly inside: the outermost node is inside, so the midpoint of the two is.
+# On a closed boundary the edge is the boundary itself. Exact equality with an
+# open boundary is therefore a violation and is pulled in; equality with a
+# closed one stands.
+#
+# A node already outside the declared domain contradicts the declaration. The
+# convention there is the one `.nl_cell_partition()` takes on the reporting
+# side: set the declaration aside rather than move the data, so the naive edge
+# stands. That is decided PER SIDE, because the two ends are separate claims and
+# a grid contradicting one says nothing about the other -- a proper-CAR axis laid
+# on an adjacency eigenvalue interval reaches below zero, which contradicts a
+# lower bound of 0 while leaving 1 as true an upper bound as it was.
+.hyper_domain_clamp <- function(bd, u, spec) {
+  dom <- .hyper_axis_domain(spec)
+  if (is.null(dom) || length(u) < 1L) return(bd)
+  b <- suppressWarnings(.hyper_axis_coord(dom$bounds, spec))
+  if (length(b) != 2L || anyNA(b)) return(bd)
+  inside <- function(x, k) {
+    if (!is.finite(b[k])) return(rep(TRUE, length(x)))
+    if (k == 1L) {
+      if (dom$open[1L]) x > b[1L] else x >= b[1L]
+    } else {
+      if (dom$open[2L]) x < b[2L] else x <= b[2L]
+    }
+  }
+  ends <- c(u[1L], u[length(u)])
+  for (k in 1:2) {
+    if (!is.finite(b[k]) || !all(inside(u, k)) || inside(bd[k], k)) next
+    e <- if (dom$open[k]) (ends[k] + b[k]) / 2 else b[k]
+    if (!is.finite(e)) e <- ends[k]
+    bd[k] <- e
+  }
+  bd
+}
+
+# The `bounds` an engine-named axis carries on its spec: the natural support
+# its NAME fixes, and nothing more. Read by the joint spec builder so the spec
+# and the support rule cannot come to hold two different name-keyed claims
+# about the same axis -- `rho` names a BYM2 mixing weight on (0, 1) in one
+# family and an AR1 or multi-output cross-field correlation reaching below zero
+# in two others, so a spec declaring (0, 1) by name alone refuses a grid those
+# families lay legitimately.
+.hyper_spec_bounds <- function(bare) {
+  d <- .hyper_axis_domain(list(name = bare))
+  if (is.null(d)) NULL else d$bounds
+}
+
+# Coordinate bounds the cells of one node set tile: the half-node-step
+# extrapolation, closed inside the axis's declared domain. The ONE construction
+# behind both the level weights and the reported support, so the interval the
+# prior is normalised over and the interval a sampler is told the quadrature
+# reached are the same interval.
+.hyper_axis_coord_bounds <- function(u, spec) {
+  .hyper_domain_clamp(.hyper_default_coord_bounds(u), u, spec)
+}
+
 # Prior weight per level on one axis.
 #
 # The rule is cell width times declared density on the integration coordinate.
@@ -128,6 +242,11 @@
   u  <- .hyper_axis_coord(x, spec)
   bd <- if (is.null(slab)) .hyper_default_coord_bounds(u)
         else sort(.hyper_axis_coord(slab, spec))
+  # The outer cells are closed inside the axis's declared domain whichever
+  # rule placed them, so the measure is never normalised over a region the
+  # parameter does not live on and the weights cannot disagree with the
+  # support about where the outermost cell ends.
+  bd <- .hyper_domain_clamp(bd, u, spec)
   width <- .hyper_cell_widths(u, bd[1L], bd[2L])
 
   dens <- spec$slab_log_density
@@ -211,6 +330,24 @@
 # specs (`.nl_st_axis_specs()` is the spatiotemporal one); this table is for the
 # axes the joint and single-block dispatchers name.
 #
+# A BOUNDED axis -- a correlation, a mixing weight -- is integrated on its
+# NATURAL coordinate, and that is a statement about the measure rather than
+# about the nodes. A scale has no natural unit, so its non-informative measure
+# is the multiplicative one and it is spaced and integrated in log; a
+# correlation's domain is bounded and its endpoints are models in their own
+# right (independence at one end, an intrinsic field at the other), so the
+# uniform measure on that domain is proper and is what the flat default means.
+# The logit measure is improper on the same domain and puts as much prior mass
+# on the last percent below 1 -- where a proper-CAR field is numerically
+# intrinsic -- as on the whole middle of the range.
+#
+# Node PLACEMENT is a separate choice and is not evidence about the coordinate:
+# `.hyper_axis_level_weights()` gives every node the width of the cell it owns,
+# so a grid graded toward a boundary, where the inner marginal changes fastest,
+# integrates the same declared measure as an evenly spaced one. What the
+# outermost cell is closed with is the axis's declared DOMAIN
+# (`.hyper_domain_clamp()`), not an extrapolation of the node spacing.
+#
 # NA is the safe answer, not an error: an axis nobody has classified carries no
 # quadrature weight, so its nodes stay equally weighted.
 .hyper_axis_scale <- function(bare) {
@@ -228,6 +365,12 @@
 # quadrature actually reaches, so a sampler asked to target the same measure is
 # bounded here and not at the outermost node.
 #
+# Either rule is closed inside the axis's declared domain, so a bounded axis --
+# a correlation, a mixing weight, a probability -- never reports a support
+# containing a value its parameter cannot take. The invariant is the one
+# `.nl_cell_edges()` states on the reporting side: whenever every level lies
+# inside a declared domain, both ends of the returned interval do too.
+#
 # Returns NULL for an axis with fewer than two continuum levels, which is the
 # pinned case the caller leaves out of the sampled vector.
 .hyper_axis_support <- function(levels, spec) {
@@ -235,13 +378,18 @@
   levels <- levels[is.finite(levels)]
   cont <- if (isTRUE(spec$log_scale)) levels[levels > 0] else levels
   if (length(cont) < 2L) return(NULL)
+  u <- .hyper_axis_coord(cont, spec)
   if (!is.null(spec$slab_bounds)) {
-    bd <- sort(as.numeric(spec$slab_bounds))
-    inside <- cont >= bd[1L] & cont <= bd[2L]
-    if (sum(inside) < 2L) return(NULL)
-    return(bd)
+    nat <- sort(as.numeric(spec$slab_bounds))
+    if (sum(cont >= nat[1L] & cont <= nat[2L]) < 2L) return(NULL)
+    bd <- sort(.hyper_axis_coord(nat, spec))
+    cl <- .hyper_domain_clamp(bd, u, spec)
+    # A declared span already inside the domain is returned exactly as
+    # declared, rather than round-tripped through the integration coordinate.
+    if (identical(cl, bd)) return(nat)
+    return(if (isTRUE(spec$log_scale)) exp(cl) else cl)
   }
-  bd <- .hyper_default_coord_bounds(.hyper_axis_coord(cont, spec))
+  bd <- .hyper_axis_coord_bounds(u, spec)
   if (isTRUE(spec$log_scale)) exp(bd) else bd
 }
 

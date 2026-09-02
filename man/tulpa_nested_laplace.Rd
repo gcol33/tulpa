@@ -291,20 +291,36 @@ is below \code{prune_tol}. The neighbour warm-start keeps each cheap mode near
 its cell's own mode, so the cheap ranking tracks the full-solve ranking
 even where the latent mode moves across the grid. Pruned cells get
 \code{log_marginal = -Inf}, \code{n_iter = 0} and inherit the pilot mode; the pilot
-cell is never pruned. A safety gate falls back to the full grid (with a
-warning) whenever the cheap-screen argmax disagrees with the full-solve
-argmax, or the kept posterior collapses onto a cell the screen badly
-mis-estimated, so a silently-wrong pruned posterior is impossible.
+cell is never pruned, and at least \code{prune_min_keep} cells (5) are solved
+in full whatever the tolerance says -- the highest-ranked dropped cells
+are restored up to that floor, because the outer grid placement pass
+reads a finite-difference curvature off the cells that were SOLVED and a
+kept set of one carries none. A safety gate falls back to the full grid
+(with a warning) whenever the cheap-screen argmax disagrees with the
+full-solve argmax, or the kept posterior collapses onto a cell the screen
+mis-estimated by more than the margin it discarded cells by. The gate
+bounds a MIS-RANKING, not the whole error: it compares the screen against
+the cells that were solved, so a cell it discarded and never solved is
+outside what it can see. The default \code{prune = FALSE} is the setting under
+which no such question arises.
 \code{prune_tol} must be a finite numeric in \verb{[0, 1)} and \code{screen_iters} a
-single integer \verb{>= 1}; both are validated whatever \code{prune} says. Keep the
-tolerance conservative (\verb{<= 1e-3}); screening pays in proportion to the
-per-cell cost it avoids, so it helps most on a grid with many low-mass
-tail cells. Pruning is OPT-IN: the default \code{FALSE} solves every cell,
-which is correct whatever the grid looks like. \code{prune} / \code{prune_tol}
-reach both the single-block and the multi-block dispatch; the screening
-DEPTH is declared by the single-block kernels only, so a multi-block
-prior refuses a pinned \code{screen_iters} rather than accepting it and
-ignoring it.
+single integer \verb{>= 1}; both are validated whatever \code{prune} says. Pruning
+is OPT-IN: the default \code{FALSE} solves every cell, which is correct
+whatever the grid looks like. \code{prune} / \code{prune_tol} reach both the
+single-block and the multi-block dispatch; the screening DEPTH is
+declared by the single-block kernels only, so a multi-block prior refuses
+a pinned \code{screen_iters} rather than accepting it and ignoring it.
+\item \code{prune_log_gap} (unset) -- the screening cut stated in nats instead of as
+a normalised weight: keep every cell within this many nats of the best
+screened cell. \code{prune_tol} is a weight, so what it cuts at is the gap
+\code{-(log(prune_tol) + log(Z))}, and the whole range a caller would type
+(\code{1e-3} to \code{1e-12}) is 7 to 28 nats of it -- on an outer surface whose
+log-marginal spans thousands of nats every setting returns the same kept
+set. Stating the gap directly keeps the knob's resolution wherever the
+surface is steep. It reaches the kernel as \code{prune_tol = exp(-gap)}, so
+the realised cut is the requested gap less \code{log(Z)}, at most \code{log(n_grid)}
+nats narrower; the fit reports the realised value. Setting both this and
+\code{prune_tol} is an error -- they state one cut in two units.
 \item \code{fitted_var} (\code{TRUE}) -- fill the per-row predictive variance
 \code{fitted_eta_var}, the companion of \code{fitted_eta} a caller marginalises the
 per-row linear predictor with. It costs one back-solve per distinct
@@ -346,6 +362,12 @@ Laplace pass that scales with grid size. Surfaced one-line in \code{print}.
 present only when \code{control$prune = TRUE} and the safety gate did not
 trip -- the cheap-screen log-marginal per cell, the logical mask of
 pruned cells, the pruned-cell count, and the threshold actually applied.
+\item \code{prune_log_gap_cut}, \code{prune_cheap_lm_spread}, \code{prune_min_keep},
+\code{prune_n_floor_restored}: the same screen read on the scale it operates
+on -- how many nats below the best screened cell the tolerance cut at,
+how many nats the screened surface spans, the kept-cell floor applied,
+and how many cells that floor put back. A cut that is a sliver of the
+spread is a tolerance with no resolution on this grid.
 \item \code{prune_fallback_triggered}, \code{prune_fallback_reason}: present only when
 the gate did trip; the rest of the fit is then the full-grid result and
 the reason string records which check fired.

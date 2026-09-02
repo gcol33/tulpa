@@ -308,6 +308,8 @@
 #     (at most one such axis is supported). `grid` states the axis's nodes; `n`
 #     re-reads the engine's own axis at a higher resolution instead
 #     (gcol33/tulpa#633), keeping its atom at 0 and its slab bounds.
+#     `grid_auto` records whether a stated `grid` carried the `auto_grid()`
+#     marker, which is the provenance the refinement rule reads.
 .normalise_arm_field_coef <- function(a, k) {
     fc <- a$field_coef
     if (is.null(fc)) {
@@ -326,7 +328,8 @@
     }
     if (is.character(fc) && length(fc) == 1L) {
         a$field_coef_const <- 1.0
-        a$field_coef_axis  <- list(name = fc, grid = NULL, alpha_n = NULL)
+        a$field_coef_axis  <- list(name = fc, grid = NULL, alpha_n = NULL,
+                                   grid_auto = FALSE)
         return(a)
     }
     if (is.list(fc)) {
@@ -336,6 +339,12 @@
                  "`name`.", call. = FALSE)
         }
         gr <- fc$grid
+        # `as.numeric()` drops attributes, so the `auto_grid()` marker -- a
+        # wrapper package declaring these nodes a default of its own rather than
+        # a user's choice -- is read off the value before it is coerced and
+        # carried on the resolved axis, where the refinement provenance rule
+        # reads it.
+        gr_auto <- is_auto_grid(gr)
         if (!is.null(gr)) {
             gr <- as.numeric(gr)
             if (length(gr) == 0L || any(!is.finite(gr)) || any(gr < 0)) {
@@ -357,7 +366,7 @@
         }
         a$field_coef_const <- 1.0
         a$field_coef_axis  <- list(name = as.character(nm), grid = gr,
-                                   alpha_n = an)
+                                   alpha_n = an, grid_auto = gr_auto)
         return(a)
     }
     stop("Arm ", k, ": `field_coef` must be NULL, a numeric scalar, a single ",
@@ -501,6 +510,151 @@
 # spread. No bespoke helper.
 
 
+# --- which axes the joint grid carries, and how far each may be refined -------
+#
+# The axes one `grids` list produces specs for. The alpha column is present in
+# the paired-vector representation whether or not a copy arm was declared, so a
+# fit with no copy drops it.
+.joint_spec_axis_names <- function(grids, cp) {
+    axes <- names(grids)
+    has_alpha <- isTRUE(cp$has_copy) && length(grids$alpha) > 0L
+    if (!has_alpha) axes <- setdiff(axes, "alpha")
+    axes
+}
+
+# Which axes the joint refinement machinery can place nodes on at all. This is
+# a property of the DRIVER -- the copy coefficient and the per-arm dispersions
+# are the axes its passes know how to propose on -- not of where the nodes came
+# from, which is the separate question `.joint_axis_is_stated()` answers.
+.joint_axis_refine_eligible <- function(axis) {
+    identical(axis, "alpha") || startsWith(axis, "phi_")
+}
+
+# One entry of the user-facing `phi_grid` argument, by arm name. The argument is
+# either named by arm or positional over `arm_names`, and the axis it produces
+# is `phi_<arm name>` either way.
+.joint_phi_grid_entry <- function(phi_grid, arm, arm_names = NULL) {
+    if (!is.list(phi_grid) || !length(phi_grid)) return(NULL)
+    if (!is.null(names(phi_grid))) {
+        if (!arm %in% names(phi_grid)) return(NULL)
+        return(phi_grid[[arm]])
+    }
+    k <- match(arm, arm_names %||% character(0))
+    if (is.na(k) || k > length(phi_grid)) return(NULL)
+    phi_grid[[k]]
+}
+
+# Did the CALLER write this axis's nodes down?
+#
+# A stated axis is a statement about where the fit integrates, so refinement
+# resolves it more finely and does not leave it; an axis the engine placed
+# carries no such statement. Three things count as engine-placed, matching the
+# provenance vocabulary the recentring pass already uses
+# (`.nl_axis_is_pinned()`): no nodes given at all (the copy axis resolved from
+# `alpha_n`, or from the engine default), nodes marked with `auto_grid()` by a
+# wrapper package that computed a default of its own, and nodes that ARE the
+# engine's own default axis, which carry nothing a statement would add.
+.joint_axis_is_stated <- function(axis, arms, phi_grid = NULL,
+                                  arm_names = NULL) {
+    if (identical(axis, "alpha")) {
+        for (a in arms) {
+            fc <- a$field_coef_axis
+            if (is.null(fc)) next
+            g <- fc$grid
+            if (is.null(g) || !length(g)) return(FALSE)
+            if (isTRUE(fc$grid_auto)) return(FALSE)
+            return(!.nl_axis_matches_default(g, "alpha_grid", ".copy"))
+        }
+        return(FALSE)
+    }
+    if (startsWith(axis, "phi_")) {
+        v <- .joint_phi_grid_entry(phi_grid, sub("^phi_", "", axis), arm_names)
+        if (is.null(v) || length(v) < 2L) return(FALSE)
+        return(!is_auto_grid(v))
+    }
+    FALSE
+}
+
+# The refinement mode of every axis of one joint grid, as a named character
+# vector over `.NL_AXIS_REFINE_MODES`. Eligible axes take the provenance
+# default; everything else takes "none". `user` -- the caller's
+# `control$axis_refine`, already validated -- overrides per axis.
+.joint_axis_refine_modes <- function(grids, cp, arms, phi_grid = NULL,
+                                     arm_names = NULL, user = NULL) {
+    axes <- .joint_spec_axis_names(grids, cp)
+    out  <- stats::setNames(rep("none", length(axes)), axes)
+    for (a in axes) {
+        if (!.joint_axis_refine_eligible(a)) next
+        out[[a]] <- if (.joint_axis_is_stated(a, arms, phi_grid, arm_names))
+            .nl_axis_refine("stated") else .nl_axis_refine("placed")
+    }
+    if (!is.null(user)) {
+        for (a in intersect(names(user), axes)) out[[a]] <- user[[a]]
+    }
+    out
+}
+
+# Validate `control$axis_refine` against the axes this fit actually has.
+#
+# Accepts a named character vector (or list) keyed by axis name, or one unnamed
+# value applying to every eligible axis. An unknown axis name is an error rather
+# than a silent no-op, and so is asking for nodes on an axis the driver's passes
+# cannot place any on: a knob that quietly does nothing is how a caller comes to
+# believe a range was honoured when it was not.
+.joint_check_axis_refine <- function(x, axis_names) {
+    if (is.null(x)) return(NULL)
+    if (is.list(x)) x <- unlist(x, use.names = TRUE)
+    if (!is.character(x) || !length(x) || anyNA(x)) {
+        stop("`control$axis_refine` must be a character vector of ",
+             paste(sprintf('"%s"', .NL_AXIS_REFINE_MODES), collapse = " / "),
+             ", named by outer-grid axis.", call. = FALSE)
+    }
+    bad <- setdiff(unique(unname(x)), .NL_AXIS_REFINE_MODES)
+    if (length(bad)) {
+        stop("`control$axis_refine`: unknown mode ",
+             paste(shQuote(bad), collapse = ", "), ". Use one of ",
+             paste(sprintf('"%s"', .NL_AXIS_REFINE_MODES), collapse = ", "),
+             ".", call. = FALSE)
+    }
+    eligible <- axis_names[vapply(axis_names, .joint_axis_refine_eligible,
+                                  logical(1))]
+    nm <- names(x)
+    if (is.null(nm) || !all(nzchar(nm))) {
+        if (length(x) != 1L) {
+            stop("`control$axis_refine` must be named by axis, or a single ",
+                 "mode applying to every refinable axis.", call. = FALSE)
+        }
+        if (!length(eligible)) return(NULL)
+        return(stats::setNames(rep(unname(x), length(eligible)), eligible))
+    }
+    unknown <- setdiff(nm, axis_names)
+    if (length(unknown)) {
+        stop("`control$axis_refine` names axes this fit does not have: ",
+             paste(shQuote(unknown), collapse = ", "), ". Its axes are ",
+             paste(shQuote(axis_names), collapse = ", "), ".", call. = FALSE)
+    }
+    wrong <- nm[!nm %in% eligible & x != "none"]
+    if (length(wrong)) {
+        stop("`control$axis_refine`: ",
+             paste(shQuote(wrong), collapse = ", "),
+             " cannot take refinement nodes on this driver, so only \"none\" ",
+             "applies there. The axes it refines are ",
+             if (length(eligible)) paste(shQuote(eligible), collapse = ", ")
+             else "none of this fit's", ".", call. = FALSE)
+    }
+    x
+}
+
+# The mode one axis ends up at. Absent provenance -- a spec list rebuilt from an
+# assembled grid, which no refinement pass reads -- keeps the driver's
+# eligibility as the answer.
+.joint_axis_refine_mode <- function(axis_refine, axis) {
+    if (!is.null(axis_refine) && axis %in% names(axis_refine)) {
+        return(as.character(axis_refine[[axis]]))
+    }
+    if (.joint_axis_refine_eligible(axis)) .nl_axis_refine("placed") else "none"
+}
+
 # Generic axis-spec adapter (Step 3).
 #
 # Builds the list of `hyper_axis_spec` objects the generic refinement / consistency
@@ -510,8 +664,11 @@
 # with the sorted unique levels keeps the spec object self-describing.
 #
 # Hardcoded metadata captures what the legacy joint helpers `.axis_is_log_scale`,
-# `.axis_bounds`, `.refinable_axes`, `.axis_refinement_order` encoded by name --
-# the same set, in one place.
+# `.axis_bounds`, `.axis_refinement_order` encoded by name -- the same set, in
+# one place. `axis_refine` carries the one piece of metadata that is NOT a
+# property of the axis's name: how far each axis may be refined, which follows
+# from where its nodes came from and so is resolved by
+# `.joint_axis_refine_modes()` at the front door.
 # `user_priors` carries the caller's regularizing hyperpriors, named by the axis
 # each applies to (`sigma`, `alpha`, `phi` -- the last matching every `phi_<arm>`
 # axis), matching how `.joint_hp_vec_for_grids()` folds them into
@@ -522,25 +679,26 @@
 # prior probability (`.hyper_atom_fold_scale()`).
 .joint_axis_specs <- function(grids, cp, user_priors = NULL,
                               copy_atom_mass = .TULPA_COPY_ATOM_MASS,
-                              copy_slab = "exponential") {
+                              copy_slab = "exponential",
+                              axis_refine = NULL) {
     copy_slab <- .hyper_check_copy_slab(copy_slab)
-    has_alpha <- cp$has_copy && length(grids$alpha) > 0L
-    axes <- names(grids)
-    if (!has_alpha) axes <- setdiff(axes, "alpha")
+    axes <- .joint_spec_axis_names(grids, cp)
     lapply(axes, function(a) {
-        # A multi-block grid prefixes its axes (`b1.sigma`), so the scale and
-        # point-mass metadata are resolved on the bare axis name. Which axes
-        # refine, and in what order, stays keyed on the full name.
+        # A multi-block grid prefixes its axes (`b1.sigma`), so the scale, the
+        # domain and the point-mass metadata are resolved on the bare axis name:
+        # an axis's support does not change because the block it is laid on is
+        # the second one. Which axes refine, and in what order, stays keyed on
+        # the full name.
         bare <- sub("^b[0-9]+[.]", "", a)
         scale_known <- .hyper_axis_scale(bare)
         log_scale <- isTRUE(scale_known)
-        bounds <- if (a == "sigma")            c(0, Inf)
-                  else if (a == "alpha")        c(0, Inf)
-                  else if (a == "rho")          c(0, 1)
-                  else if (a == "rho_car")      c(-Inf, 1)
-                  else if (startsWith(a, "phi_")) c(0, Inf)
-                  else NULL
-        refinable <- a == "alpha" || startsWith(a, "phi_")
+        bounds <- .hyper_spec_bounds(bare)
+        # How far refinement may move this axis: whether it participates at all,
+        # and whether it may place a node past the nodes it was given. Both come
+        # from `axis_refine`, resolved from the caller's provenance one level up
+        # -- deciding by axis NAME would opt a caller's stated nodes into being
+        # extended (gcol33/tulpa#658).
+        mode <- .joint_axis_refine_mode(axis_refine, a)
         refine_priority <- if (a == "alpha") 1L
                            else if (startsWith(a, "phi_")) 2L
                            else 100L
@@ -549,7 +707,8 @@
             grid      = sort(unique(as.numeric(grids[[a]]))),
             log_scale = log_scale,
             bounds    = bounds,
-            refinable = refinable
+            refinable = !identical(mode, "none"),
+            extend    = identical(mode, "extend")
         )
         spec$refine_priority <- refine_priority
         # An axis this table does not classify keeps equal node weights, which
@@ -623,6 +782,62 @@
     grids <- grids[vapply(grids, function(g) length(g) > 1L, logical(1))]
     if (length(grids) == 0L) return(NULL)
     .joint_axis_specs(grids, list(has_copy = TRUE), copy_slab = copy_slab)
+}
+
+# The continuum levels of one axis: its distinct finite values, with the zero
+# level dropped on a log-scale axis, where it is the point mass rather than a
+# point of the continuum. The same convention `.hyper_axis_support()` applies
+# before it measures a span.
+.joint_axis_continuum_levels <- function(v, spec) {
+    v <- sort(unique(as.numeric(v)))
+    v <- v[is.finite(v)]
+    if (isTRUE(spec$log_scale)) v <- v[v > 0]
+    v
+}
+
+# The span each outer axis was integrated over, and the two terms that separate
+# it from the nodes the caller wrote down.
+#
+# `axis_support` reports the interval the quadrature finally reached, which is
+# the number a reader needs and not one they can decompose: it carries both the
+# half node step the outermost cells own -- `k / (k - 1)` times the node range on
+# the axis's integration coordinate, for `k` equally spaced nodes, so 2x at two
+# nodes and 1.125x at nine -- and whatever refinement added past the end nodes.
+# Reported side by side the two terms are readable off the fit:
+#
+#   nodes       range of the axis's continuum nodes, before any refinement pass
+#   declared    support of that initial node set (the nodes plus the half step)
+#   integrated  support after refinement; identical to `axis_support`
+#   refine      the mode that governed how far refinement could move the axis
+#   n_nodes     continuum node count, initial and final
+#
+# An axis with fewer than two continuum levels has no span to report and is left
+# out, matching what `.hyper_grid_supports()` does with it.
+.joint_axis_span <- function(theta_grid_init, theta_grid_final, specs) {
+    if (is.null(theta_grid_init) || is.null(specs)) return(NULL)
+    theta_grid_init  <- as.matrix(theta_grid_init)
+    theta_grid_final <- if (is.null(theta_grid_final)) theta_grid_init
+                        else as.matrix(theta_grid_final)
+    out <- list()
+    for (spec in specs) {
+        a <- spec$name
+        if (!a %in% colnames(theta_grid_init)) next
+        lev0 <- .joint_axis_continuum_levels(theta_grid_init[, a], spec)
+        if (length(lev0) < 2L) next
+        lev1 <- if (a %in% colnames(theta_grid_final))
+            .joint_axis_continuum_levels(theta_grid_final[, a], spec) else lev0
+        mode <- if (!isTRUE(spec$refinable)) "none"
+                else if (.hyper_axis_may_extend(spec)) "extend" else "densify"
+        out[[a]] <- list(
+            nodes      = range(lev0),
+            declared   = .hyper_axis_support(theta_grid_init[, a], spec),
+            integrated = .hyper_axis_support(theta_grid_final[, a], spec),
+            refine     = mode,
+            n_nodes    = c(initial = length(lev0), final = length(lev1))
+        )
+    }
+    if (!length(out)) return(NULL)
+    out
 }
 
 # Convert a generic `new_cells` matrix [n_new x n_axes] back to the joint

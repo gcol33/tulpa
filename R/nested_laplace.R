@@ -249,20 +249,36 @@
 #'     its cell's own mode, so the cheap ranking tracks the full-solve ranking
 #'     even where the latent mode moves across the grid. Pruned cells get
 #'     `log_marginal = -Inf`, `n_iter = 0` and inherit the pilot mode; the pilot
-#'     cell is never pruned. A safety gate falls back to the full grid (with a
-#'     warning) whenever the cheap-screen argmax disagrees with the full-solve
-#'     argmax, or the kept posterior collapses onto a cell the screen badly
-#'     mis-estimated, so a silently-wrong pruned posterior is impossible.
+#'     cell is never pruned, and at least `prune_min_keep` cells (5) are solved
+#'     in full whatever the tolerance says -- the highest-ranked dropped cells
+#'     are restored up to that floor, because the outer grid placement pass
+#'     reads a finite-difference curvature off the cells that were SOLVED and a
+#'     kept set of one carries none. A safety gate falls back to the full grid
+#'     (with a warning) whenever the cheap-screen argmax disagrees with the
+#'     full-solve argmax, or the kept posterior collapses onto a cell the screen
+#'     mis-estimated by more than the margin it discarded cells by. The gate
+#'     bounds a MIS-RANKING, not the whole error: it compares the screen against
+#'     the cells that were solved, so a cell it discarded and never solved is
+#'     outside what it can see. The default `prune = FALSE` is the setting under
+#'     which no such question arises.
 #'     `prune_tol` must be a finite numeric in `[0, 1)` and `screen_iters` a
-#'     single integer `>= 1`; both are validated whatever `prune` says. Keep the
-#'     tolerance conservative (`<= 1e-3`); screening pays in proportion to the
-#'     per-cell cost it avoids, so it helps most on a grid with many low-mass
-#'     tail cells. Pruning is OPT-IN: the default `FALSE` solves every cell,
-#'     which is correct whatever the grid looks like. `prune` / `prune_tol`
-#'     reach both the single-block and the multi-block dispatch; the screening
-#'     DEPTH is declared by the single-block kernels only, so a multi-block
-#'     prior refuses a pinned `screen_iters` rather than accepting it and
-#'     ignoring it.
+#'     single integer `>= 1`; both are validated whatever `prune` says. Pruning
+#'     is OPT-IN: the default `FALSE` solves every cell, which is correct
+#'     whatever the grid looks like. `prune` / `prune_tol` reach both the
+#'     single-block and the multi-block dispatch; the screening DEPTH is
+#'     declared by the single-block kernels only, so a multi-block prior refuses
+#'     a pinned `screen_iters` rather than accepting it and ignoring it.
+#'   * `prune_log_gap` (unset) -- the screening cut stated in nats instead of as
+#'     a normalised weight: keep every cell within this many nats of the best
+#'     screened cell. `prune_tol` is a weight, so what it cuts at is the gap
+#'     `-(log(prune_tol) + log(Z))`, and the whole range a caller would type
+#'     (`1e-3` to `1e-12`) is 7 to 28 nats of it -- on an outer surface whose
+#'     log-marginal spans thousands of nats every setting returns the same kept
+#'     set. Stating the gap directly keeps the knob's resolution wherever the
+#'     surface is steep. It reaches the kernel as `prune_tol = exp(-gap)`, so
+#'     the realised cut is the requested gap less `log(Z)`, at most `log(n_grid)`
+#'     nats narrower; the fit reports the realised value. Setting both this and
+#'     `prune_tol` is an error -- they state one cut in two units.
 #'   * `fitted_var` (`TRUE`) -- fill the per-row predictive variance
 #'     `fitted_eta_var`, the companion of `fitted_eta` a caller marginalises the
 #'     per-row linear predictor with. It costs one back-solve per distinct
@@ -301,6 +317,12 @@
 #'     present only when `control$prune = TRUE` and the safety gate did not
 #'     trip -- the cheap-screen log-marginal per cell, the logical mask of
 #'     pruned cells, the pruned-cell count, and the threshold actually applied.
+#'   * `prune_log_gap_cut`, `prune_cheap_lm_spread`, `prune_min_keep`,
+#'     `prune_n_floor_restored`: the same screen read on the scale it operates
+#'     on -- how many nats below the best screened cell the tolerance cut at,
+#'     how many nats the screened surface spans, the kept-cell floor applied,
+#'     and how many cells that floor put back. A cut that is a sliver of the
+#'     spread is a tolerance with no resolution on this grid.
 #'   * `prune_fallback_triggered`, `prune_fallback_reason`: present only when
 #'     the gate did trip; the rest of the fit is then the full-grid result and
 #'     the reason string records which check fired.
@@ -367,8 +389,11 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   # misspecified value is reported where the user set it rather than at the next
   # fit that happens to switch pruning on.
   prune              <- isTRUE(control$prune %||% FALSE)
-  prune_tol          <- .nl_check_prune_tol(
-    control$prune_tol %||% .nl_screen("prune_tol"))
+  # `prune_log_gap` states the same cut in nats -- the units the screened
+  # surface is measured in -- and replaces the tolerance when set.
+  prune_tol          <- .nl_prune_tol_from_control(
+    control,
+    .nl_check_prune_tol(control$prune_tol %||% .nl_screen("prune_tol")))
   prune_tol_eff      <- if (prune) prune_tol else 0
   screen_iters       <- .nl_check_screen_iters(
     control$screen_iters %||% .nl_screen("iters"))

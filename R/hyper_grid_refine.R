@@ -62,6 +62,39 @@
 .hyper_axis_is_log_scale <- function(spec) isTRUE(spec$log_scale)
 .hyper_axis_bounds <- function(spec) spec$bounds
 
+# May refinement place a node PAST the outermost declared node on this axis?
+# A spec that predates the field says nothing about it and keeps the historical
+# answer.
+.hyper_axis_may_extend <- function(spec) !identical(spec$extend, FALSE)
+
+# The interval new nodes are confined to on an axis that may not be extended:
+# the span the axis's DECLARED nodes cover, on the natural scale. `spec$grid`
+# holds those nodes -- refinement appends to `theta_grid`, never to the spec --
+# so this is the range the caller wrote down however many passes have run.
+# A log-scale axis's zero level is its point mass rather than a point of the
+# continuum, so the span is taken over the positive nodes.
+# NULL where the axis may be extended, and where fewer than two continuum nodes
+# leave no interior to place anything in.
+.hyper_axis_node_limit <- function(spec) {
+  if (.hyper_axis_may_extend(spec)) return(NULL)
+  g <- as.numeric(spec$grid)
+  g <- g[is.finite(g)]
+  if (.hyper_axis_is_log_scale(spec)) g <- g[g > 0]
+  if (length(g) < 2L) return(c(NA_real_, NA_real_))
+  range(g)
+}
+
+# Drop proposed nodes that fall outside the declared span. A no-op on an axis
+# that may be extended; on one that may not, this is the whole of what makes a
+# stated axis a bound, so every proposal path goes through it rather than each
+# restating the comparison.
+.hyper_clip_to_node_limit <- function(pts, spec) {
+  lim <- .hyper_axis_node_limit(spec)
+  if (is.null(lim)) return(pts)
+  if (anyNA(lim)) return(pts[0])
+  pts[pts >= lim[1L] & pts <= lim[2L]]
+}
+
 # Refinement-order priority. Defaults to declaration order; callers may
 # attach `refine_priority` (integer, smaller = earlier) to a spec to override.
 .hyper_axis_refinement_order <- function(axes, specs) {
@@ -119,7 +152,8 @@
 # Identical to the joint driver's `.propose_axis_extension` /
 # `.propose_interior_densification` but reading log_scale / bounds from `spec`.
 # ============================================================================
-.hyper_propose_axis_extension <- function(spec, lev, side, extend_ok = TRUE) {
+.hyper_propose_axis_extension <- function(spec, lev, side,
+                                          extend_ok = .hyper_axis_may_extend(spec)) {
   log_scale <- .hyper_axis_is_log_scale(spec)
   bounds    <- .hyper_axis_bounds(spec)
   mid <- if (log_scale)
@@ -143,6 +177,7 @@
                  else            extend1 - (neighbour - edge)
   }
   pts <- if (isTRUE(extend_ok)) c(densify, extend1, extend2) else densify
+  pts <- .hyper_clip_to_node_limit(pts, spec)
   if (!is.null(bounds)) {
     pts <- pts[pts > bounds[1L] & pts < bounds[2L]]
   }
@@ -158,6 +193,8 @@
   pts[keep]
 }
 
+# Every point here is a midpoint between two existing levels, so it lies inside
+# the span whatever the axis's extension setting; no clip is needed.
 .hyper_propose_interior_densification <- function(spec, lev, mode_idx,
                                                   do_left = FALSE,
                                                   do_right = FALSE) {
@@ -190,6 +227,9 @@
   } else {
     pts <- mu + c(-1.5, -0.7, 0.7, 1.5) * sd
   }
+  # The consistency pass places its points at a multiple of the modal SD, which
+  # reaches past the declared span whenever the marginal is wide relative to it.
+  pts <- .hyper_clip_to_node_limit(pts, spec)
   bounds <- .hyper_axis_bounds(spec)
   if (!is.null(bounds)) {
     pts <- pts[pts > bounds[1L] & pts < bounds[2L]]
@@ -305,14 +345,14 @@
   if (!tr_min && !tr_max && !wide_left && !wide_right) return(NULL)
   packs <- list()
   if (tr_max) {
-    pts <- .hyper_propose_axis_extension(spec, lev, "max", extend_ok = TRUE)
+    pts <- .hyper_propose_axis_extension(spec, lev, "max")
     pk  <- .hyper_new_mode_tracked_triples(theta_grid, log_marginal, NULL,
                                             axis_name, pts,
                                             anchor_lev = lev[n_lev])
     if (!is.null(pk)) packs[[length(packs) + 1L]] <- pk
   }
   if (tr_min) {
-    pts <- .hyper_propose_axis_extension(spec, lev, "min", extend_ok = TRUE)
+    pts <- .hyper_propose_axis_extension(spec, lev, "min")
     pk  <- .hyper_new_mode_tracked_triples(theta_grid, log_marginal, NULL,
                                             axis_name, pts,
                                             anchor_lev = lev[1L])
