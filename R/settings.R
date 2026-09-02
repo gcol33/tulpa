@@ -1422,11 +1422,17 @@
 # placement that could still produce a design, and it has to read the same
 # numbers the loops run on.
 #
-# `stencil_reuse` is the curvature-reuse path: an axial-only stencil plus a
-# symmetric rank-1 secant update of the off-diagonal block between full
-# refreshes, `1 + 2d` evaluations a round instead of `1 + 2d + 4 C(d, 2)`. It is
-# OFF because its effect on the walk has not been measured; the default is the
-# full stencil every round.
+# The mode-find measures a FULL finite-difference stencil every round. A
+# curvature-reuse path -- an axial-only stencil plus a symmetric rank-1 secant
+# update of the off-diagonal block between refreshes, `1 + 2d` evaluations a
+# round instead of `1 + 2d + 4 C(d, 2)` -- shipped in 0.2.14 opt-in and was
+# measured and REMOVED in 0.2.15 (gcol33/tulpa#662): over 16 paired fits it
+# spent no fewer inner solves (evals ratio 1.046 at d = 3, 1.000 at d = 4,
+# winning 0 of 8 and 2 of 8 pairs) because the secant model lengthened the walk
+# by roughly the per-round saving, and it centred the design somewhere worse --
+# the best inner log-marginal on the design fell by up to 7.5 nats at d = 3 and
+# 16.3 at d = 4. Do not reintroduce one without re-reading
+# `dev_notes/issue662/RESULTS662.md`.
 .CCD_PLACEMENT <- list(
     evals_per_cell   = 1,
     budget_floor     = TRUE,
@@ -1434,9 +1440,7 @@
     max_rounds       = 30L,
     calibrate_rounds = 4L,
     seed_max_pts     = 256L,
-    max_halve        = 6L,
-    stencil_reuse    = FALSE,
-    refresh_every    = 4L
+    max_halve        = 6L
 )
 
 .ccd_placement <- function(par) {

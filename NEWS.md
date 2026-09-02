@@ -1,5 +1,30 @@
 # tulpa 0.2.15
 
+## The CCD curvature-reuse path is measured, and removed
+
+* **`control$ccd_stencil_reuse` shipped in 0.2.14 opt-in and unmeasured, and the
+  measurement does not support it** (gcol33/tulpa#662). It replaced the full
+  `1 + 2d + 4*C(d,2)` finite-difference stencil on most mode-find rounds with an
+  axial one plus an SR1 secant update of the off-diagonal block. Over 16 paired
+  joint fits -- same data, same seed, the knob the only difference -- it spent
+  **no fewer inner solves** (evals ratio 1.046 at `d = 3`, winning 0 of 8 pairs;
+  1.000 at `d = 4`, 2 of 8), because the secant model produces worse steps and
+  the walk runs 1.6x longer, spending the per-round saving again on rounds. That
+  refutes the projection it shipped on, which assumed the same number of rounds
+  in both arms.
+
+* It also **centred the design somewhere worse**, which is the failure mode the
+  issue named: the best inner log-marginal on the design fell by up to 7.5 nats
+  at `d = 3` and 16.3 at `d = 4`, moving the reported fixed effects by up to
+  1.6e-02, their standard errors by up to 1.1e-02, and the grid's quadrature ESS
+  from 8.35 to 6.92. The closing stencil is always a full one, so the design's
+  SCALE is measured either way and only its CENTRE moves -- which is why nothing
+  inside the placement could see it.
+
+* `control$ccd_stencil_reuse` and `control$ccd_refresh_every` are removed and
+  refused at the door rather than ignored. The mode-find measures a full stencil
+  every round, which is what every shipped fit already did.
+
 ## One dispersion convention, in the fixtures too
 
 * **`657f179` moved every door to the residual variance and four fixtures were

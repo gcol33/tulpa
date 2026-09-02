@@ -174,17 +174,6 @@
     if (!is.null(control$ccd_budget_floor)) {
         cfg$budget_floor <- isTRUE(control$ccd_budget_floor)
     }
-    if (!is.null(control$ccd_stencil_reuse)) {
-        cfg$stencil_reuse <- isTRUE(control$ccd_stencil_reuse)
-    }
-    if (!is.null(control$ccd_refresh_every)) {
-        v <- suppressWarnings(as.integer(control$ccd_refresh_every))
-        if (length(v) != 1L || is.na(v) || v < 1L) {
-            stop("`control$ccd_refresh_every` must be a single integer >= 1.",
-                 call. = FALSE)
-        }
-        cfg$refresh_every <- v
-    }
     cfg
 }
 
@@ -278,8 +267,8 @@
 
 # The axial half of a stencil: the centre and the 2d points at +/- h_j e_j, with
 # the keys the derivative readers index them by. Shared by the full stencil and
-# by the axial-only stencil the curvature-reuse path takes, so the point layout
-# and the key convention have one definition.
+# by the step calibration, so the point layout and the key convention have one
+# definition.
 .ccd_axial_rows <- function(u, h) {
     d <- length(u)
     rows <- list(u)                    # 1: centre
@@ -347,57 +336,6 @@
         H[j, i] <- hij
     }
     list(f0 = as.numeric(der$f0), grad = der$grad, hess = H)
-}
-
-# The axial-only stencil of the curvature-reuse path: 1 + 2d evaluations, the
-# value, the gradient and the measured diagonal curvature. The off-diagonal
-# block it does not measure is carried by the secant update below.
-.joint_ccd_axial_stencil <- function(u, eval1, h) {
-    d  <- length(u)
-    ax <- .ccd_axial_rows(u, h)
-    U <- do.call(rbind, ax$rows)
-    f <- eval1(U)
-    names(f) <- ax$key
-    der <- .ccd_axial_derivs(f, h, d)
-    list(f0 = as.numeric(der$f0), grad = der$grad, hdiag = der$hdiag)
-}
-
-# Symmetric rank-1 secant update of the outer curvature, used only by the
-# curvature-reuse path. BFGS does not apply here: it maintains a definite
-# approximation and requires `s'y > 0`, which a log-posterior's negative-definite
-# curvature does not give, and the mode-find has to keep working on the
-# indefinite curvature a ridge produces. SR1 carries no such requirement and is
-# the standard quasi-Newton update for an indefinite Hessian.
-#
-# The DIAGONAL is not inferred: it is overwritten with the round's own axial
-# second differences. Only the off-diagonal block is carried by the secant, so
-# the reuse trades the 4 * C(d, 2) mixed corners for an update and leaves every
-# measured quantity measured.
-#
-# Returns NULL when the standard SR1 safeguard refuses the update -- the
-# denominator small relative to the vectors it is formed from, where the rank-1
-# correction is numerically meaningless. The caller then pays for a full
-# stencil rather than carrying a stale model.
-.joint_ccd_sr1_offdiag <- function(H, s, y, hdiag, safeguard = 1e-8) {
-    if (is.null(H) || any(!is.finite(H)) || any(!is.finite(s)) ||
-        any(!is.finite(y)) || any(!is.finite(hdiag))) return(NULL)
-    r  <- y - as.numeric(H %*% s)
-    nr <- sqrt(sum(r^2))
-    ns <- sqrt(sum(s^2))
-    if (nr <= .Machine$double.eps * max(1, sqrt(sum(y^2)))) {
-        # The carried curvature already predicts this round's gradient change:
-        # there is no correction to make, and forming one would be 0 / 0.
-        Hn <- H
-    } else {
-        den <- sum(r * s)
-        if (!is.finite(den) || den == 0 ||
-            abs(den) < safeguard * nr * ns) return(NULL)
-        Hn <- H + outer(r, r) / den
-        Hn <- 0.5 * (Hn + t(Hn))
-    }
-    if (any(!is.finite(Hn))) return(NULL)
-    diag(Hn) <- hdiag
-    Hn
 }
 
 # Per-axis finite-difference step calibrated to each axis's local curvature, so
@@ -556,9 +494,7 @@
                                 tol = 1e-3,
                                 max_halve = .ccd_placement("max_halve"),
                                 trust = NULL,
-                                on_accept = NULL, meter = NULL,
-                                reuse = FALSE,
-                                refresh_every = .ccd_placement("refresh_every")) {
+                                on_accept = NULL, meter = NULL) {
     d <- length(u0)
     if (is.null(trust)) trust <- rep(Inf, d)
     fail <- function(u, H, f) {
@@ -575,53 +511,15 @@
     }
     H <- NULL
     converged <- FALSE
-    # Curvature-reuse state (the `reuse` path only): the previous round's point
-    # and gradient feed the secant update, `since_full` counts rounds since the
-    # last measured off-diagonal block, and `force_full` demands a measured one
-    # on the next round.
-    u_prev     <- NULL
-    g_prev     <- NULL
-    since_full <- 0L
-    force_full <- FALSE
     for (iter in seq_len(max_rounds)) {
-        want_full <- !isTRUE(reuse) || force_full || is.null(H) ||
-                     is.null(g_prev) || since_full >= refresh_every
-        force_full <- FALSE
-        st <- tryCatch(
-            if (want_full) .joint_ccd_fd_stencil(u, eval1, h)
-            else .joint_ccd_axial_stencil(u, eval1, h),
-            error = .ccd_rethrow_budget)
-        if (is.null(st) || any(!is.finite(st$grad)))
-            return(fail(u, H, f_u))
-        if (want_full) {
-            if (any(!is.finite(st$hess))) return(fail(u, H, f_u))
-            H <- st$hess
-            since_full <- 0L
-        } else {
-            if (any(!is.finite(st$hdiag))) return(fail(u, H, f_u))
-            H_up <- .joint_ccd_sr1_offdiag(H, u - u_prev, st$grad - g_prev,
-                                           st$hdiag)
-            if (is.null(H_up)) {
-                # The secant refused: measure the curvature rather than carry a
-                # stale off-diagonal block into the step.
-                st <- tryCatch(.joint_ccd_fd_stencil(u, eval1, h),
-                               error = .ccd_rethrow_budget)
-                if (is.null(st) || any(!is.finite(st$grad)) ||
-                    any(!is.finite(st$hess))) return(fail(u, H, f_u))
-                H <- st$hess
-                since_full <- 0L
-                want_full  <- TRUE
-            } else {
-                H <- H_up
-                since_full <- since_full + 1L
-            }
-        }
-        u_prev <- u
-        g_prev <- st$grad
+        st <- tryCatch(.joint_ccd_fd_stencil(u, eval1, h),
+                       error = .ccd_rethrow_budget)
+        if (is.null(st) || any(!is.finite(st$grad)) ||
+            any(!is.finite(st$hess))) return(fail(u, H, f_u))
+        H <- st$hess
         # Fast decline on a ridge / flat curvature: the centre Hessian already
         # tells us the Gaussian CCD scale is ill-defined, so bail BEFORE the
-        # expensive backtracking line search. Read on the first round, which
-        # always measures a full stencil.
+        # expensive backtracking line search.
         if (iter == 1L && !.joint_ccd_outer_hess_ok(H)) {
             .ccd_meter_beat(meter, "declined",
                             "outer curvature flat / ridged")
@@ -662,10 +560,6 @@
         .ccd_meter_beat(meter, sprintf("round %d/%d", iter, as.integer(max_rounds)),
                         sprintf("|step| %.3g | logpost %.7g", delta, f_u))
         if (delta < tol) {
-            # A reused curvature model that stops producing a step has not shown
-            # a mode: its off-diagonal block was inferred, so the next round
-            # measures one and convergence is decided on measured curvature.
-            if (!want_full) { force_full <- TRUE; next }
             converged <- TRUE
             break
         }
@@ -830,9 +724,7 @@
         mf <- .joint_ccd_modefind(u_start, eval1, lower, upper, h_step,
                                   trust = trust, on_accept = on_accept,
                                   max_rounds = max_rounds, meter = meter,
-                                  max_halve = cfg$max_halve,
-                                  reuse = isTRUE(cfg$stencil_reuse),
-                                  refresh_every = cfg$refresh_every)
+                                  max_halve = cfg$max_halve)
         if (is.null(mf) || !identical(mf$status, "ok"))
             return(list(reason = if (!is.null(mf) && identical(mf$status, "ridge"))
                                  "ridge" else "fail"))

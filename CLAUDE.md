@@ -1509,6 +1509,36 @@ not a mis-sized one.
 `.joint_pareto_grid_regime()` and `diagnostic_summary()` alike. Write-up
 `dev_notes/issue636/RESULTS636.md`; tests `test-recenter-pilot.R`.
 
+### The CCD mode-find measures a full stencil every round (gcol33/tulpa#662)
+
+A curvature-reuse path -- an axial-only stencil (`1 + 2d`) plus an SR1 secant
+update of the off-diagonal block between refreshes -- shipped in 0.2.14 opt-in
+and unmeasured, and was measured and REMOVED in 0.2.15. Over 16 paired joint
+fits, the knob the only difference:
+
+- **No saving.** Evals ratio 1.046 at `d = 3` (0 of 8 pairs won) and 1.000 at
+  `d = 4` (2 of 8). The per-round saving is real -- 19 stencil points against 7
+  at `d = 3`, 33 against 9 at `d = 4` -- and is spent again on rounds, the walk
+  running 1.6x longer because the secant model produces worse steps. The
+  projection it shipped on (roughly 672 evals against 1200 at 30 rounds) assumed
+  the same round count in both arms, which is the thing that is false.
+- **A worse placement.** The best inner log-marginal on the design fell by up to
+  7.5 nats at `d = 3` and 16.3 at `d = 4`, with the reported fixed effects moving
+  up to 1.6e-02, their SEs up to 1.1e-02, and grid ESS 8.35 -> 6.92.
+
+**The design's SCALE is measured and its CENTRE is not, which is why nothing
+inside the placement could see this.** The closing stencil is always a full one,
+so `L_scale` is a genuine FD Hessian in both arms and every internal check the
+placement makes passes; only the point it is centred on moved. A cheaper
+curvature has to be scored on where the walk ENDS, never on what the design
+reports about itself.
+
+Two things the sweep settled on the side: a `d = 2` grid declines the CCD
+entirely and integrates the tensor, so there is no mode-find to make cheaper;
+and a per-arm `phi_grid` axis is crossed OUTSIDE the design (45 cells against 15,
+the same mode-find), so it does not raise the dimension a stencil pays for.
+Write-up `dev_notes/issue662/RESULTS662.md`.
+
 ### A fixture states phi in the door's convention, and asks the engine for the SD (gcol33/tulpa#661, #659)
 
 `657f179` made every R-level `phi` the residual VARIANCE for gaussian and

@@ -433,16 +433,6 @@ whose cost is set by the axis count and not by the grid -- so the ceiling
 bounds the escalation (grid seed, step calibration, the 30-round rescue
 mode-find) rather than the path the CCD was built for; \code{FALSE} makes
 \code{ccd_budget} a hard cap on the whole placement.
-\item \code{ccd_stencil_reuse} (\code{FALSE}) -- how the mode-find gets its curvature.
-\code{FALSE} measures a full finite-difference Hessian every round. \code{TRUE}
-measures the centre, the \verb{2d} axials and their diagonal curvature each
-round and carries the off-diagonal block by a symmetric rank-1 secant
-update, refreshing a full stencil every \code{ccd_refresh_every} (\code{4L}) rounds,
-whenever the secant safeguard refuses the update, and whenever a reused
-model stops producing a step. The design is oriented by a full stencil
-either way, so the reuse changes the walk and not the curvature the
-nodes are placed with. Its effect on the walk is unmeasured; \code{FALSE}
-reproduces the default numerics exactly.
 \item \code{local_ccd} (\code{NULL}) -- local CCD refinement of a multi-block tensor grid.
 \code{TRUE} (defaults) or a \code{list(max_cells =, f0 =, skew_max =)} refines a few high-weight,
 mutually non-adjacent interior cells, replacing each with a small

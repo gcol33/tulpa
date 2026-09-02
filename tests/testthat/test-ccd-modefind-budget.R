@@ -173,10 +173,15 @@ test_that("the placement registry holds the loop caps the projection reads", {
     expect_identical(tulpa:::.ccd_placement("max_halve"), 6L)
     expect_equal(tulpa:::.ccd_placement("evals_per_cell"), 1)
     expect_true(tulpa:::.ccd_placement("budget_floor"))
-    # The curvature-reuse path is off by default: its effect on the walk is
-    # unmeasured, so the shipped numerics are the full stencil every round.
-    expect_false(tulpa:::.ccd_placement("stencil_reuse"))
-    expect_identical(tulpa:::.ccd_placement("refresh_every"), 4L)
+    # The curvature-reuse path shipped in 0.2.14 opt-in, was measured against a
+    # full stencil every round, and was removed in 0.2.15: it spent no fewer
+    # inner solves and centred the design somewhere worse (gcol33/tulpa#662).
+    # The knob is gone from the registry AND refused at the door, so a caller
+    # still passing it is told rather than silently ignored.
+    expect_false("stencil_reuse" %in% names(tulpa:::.CCD_PLACEMENT))
+    expect_false("refresh_every" %in% names(tulpa:::.CCD_PLACEMENT))
+    expect_error(tulpa:::.ccd_placement("stencil_reuse"),
+                 "Unknown CCD placement")
     expect_error(tulpa:::.ccd_placement("no_such_knob"), "Unknown CCD placement")
     # The loop defaults ARE the registry, not a second copy beside it.
     expect_identical(formals(tulpa:::.joint_ccd_modefind)$max_rounds,
@@ -193,20 +198,23 @@ test_that("control knobs resolve onto the registry, and bad ones are refused", {
     expect_identical(tulpa:::.ccd_placement_args(list()),
                      as.list(tulpa:::.CCD_PLACEMENT))
     cfg <- tulpa:::.ccd_placement_args(
-        list(ccd_budget = 0.5, ccd_budget_floor = FALSE,
-             ccd_stencil_reuse = TRUE, ccd_refresh_every = 3L))
+        list(ccd_budget = 0.5, ccd_budget_floor = FALSE))
     expect_equal(cfg$evals_per_cell, 0.5)
     expect_false(cfg$budget_floor)
-    expect_true(cfg$stencil_reuse)
-    expect_identical(cfg$refresh_every, 3L)
+    # The removed knobs resolve onto nothing, and the front door refuses them.
+    expect_null(tulpa:::.ccd_placement_args(
+        list(ccd_stencil_reuse = TRUE))$stencil_reuse)
+    expect_error(
+        tulpa_check_control(list(ccd_stencil_reuse = TRUE),
+                            tulpa:::.CONTROL_KEYS$nested_laplace_joint,
+                            "tulpa_nested_laplace_joint"),
+        "ccd_stencil_reuse")
     # Everything the caller did not name keeps the registry's value.
     expect_identical(cfg$max_rounds, tulpa:::.ccd_placement("max_rounds"))
     expect_error(tulpa:::.ccd_placement_args(list(ccd_budget = -1)),
                  "ccd_budget")
     expect_error(tulpa:::.ccd_placement_args(list(ccd_budget = c(1, 2))),
                  "ccd_budget")
-    expect_error(tulpa:::.ccd_placement_args(list(ccd_refresh_every = 0L)),
-                 "ccd_refresh_every")
     # Inf is the documented way to place without a ceiling.
     expect_identical(
         tulpa:::.ccd_placement_args(list(ccd_budget = Inf))$evals_per_cell, Inf)
@@ -536,71 +544,36 @@ test_that("a placement outside a fit narrates nothing", {
 })
 
 
-# --- 6. the curvature-reuse switch (the opt-in half of #653) -----------------
+# --- 6. the finite-difference stencil ---------------------------------------
+#
+# 0.2.14 shipped a curvature-reuse path here -- an axial-only stencil plus an SR1
+# secant update of the off-diagonal block -- opt-in and unmeasured. It was
+# measured over 16 paired fits and removed (gcol33/tulpa#662): it spent no fewer
+# inner solves, because the secant model lengthened the walk by roughly the
+# per-round saving, and it centred the design somewhere worse. What survives is
+# the assertion the reuse test carried about the FULL stencil, which is now the
+# only one the mode-find takes.
 
-test_that("stencil reuse buys its rounds with axial-only batches", {
-    fx <- .ccd_bud_fixture()
-    r_full <- .ccd_bud_rec(); r_reuse <- .ccd_bud_rec()
-    full <- tulpa:::.joint_ccd_grid(
-        fx$axis_names, fx$axis_offsets, fx$prepared, fx$axis_values,
-        .ccd_bud_eval(fx$tags, fx$mode, fx$prec, r_full),
-        cfg = .ccd_bud_cfg(evals_per_cell = Inf))
-    reuse <- tulpa:::.joint_ccd_grid(
-        fx$axis_names, fx$axis_offsets, fx$prepared, fx$axis_values,
-        .ccd_bud_eval(fx$tags, fx$mode, fx$prec, r_reuse),
-        cfg = .ccd_bud_cfg(evals_per_cell = Inf, stencil_reuse = TRUE))
-    # The reuse path issues the 1 + 2d axial batch the full path never does.
-    expect_false(9 %in% r_full$sizes)
-    expect_true(9 %in% r_reuse$sizes)
-    # It reaches the same outer mode, and the design is oriented by a full
-    # stencil either way, so the centre and the scale agree.
-    expect_null(reuse$declined)
-    expect_equal(reuse$u_hat, full$u_hat, tolerance = 1e-6)
-    expect_equal(reuse$L_scale, full$L_scale, tolerance = 1e-6)
-    # The default is the full stencil every round: the reuse must be asked for.
-    expect_false(tulpa:::.CCD_PLACEMENT$stencil_reuse)
-})
-
-test_that("the secant update keeps the measured diagonal and refuses a degenerate step", {
-    H <- matrix(c(-2, 0.3, 0.3, -1), 2L)
-    s <- c(0.2, -0.1)
-    # An exact quadratic's curvature already predicts the gradient change, so
-    # there is no correction to make and forming one would be 0 / 0.
-    y <- as.numeric(H %*% s)
-    up <- tulpa:::.joint_ccd_sr1_offdiag(H, s, y, hdiag = c(-2.5, -1.5))
-    expect_false(is.null(up))
-    expect_equal(diag(up), c(-2.5, -1.5))
-    expect_equal(up[1L, 2L], H[1L, 2L])
-    expect_equal(up[1L, 2L], up[2L, 1L])
-    # A genuine secant correction moves the off-diagonal and stays symmetric.
-    up2 <- tulpa:::.joint_ccd_sr1_offdiag(H, s, y + c(0.5, -0.4),
-                                          hdiag = c(-2, -1))
-    expect_false(is.null(up2))
-    expect_equal(up2[1L, 2L], up2[2L, 1L])
-    expect_equal(diag(up2), c(-2, -1))
-    # No step, and non-finite inputs, are refused rather than propagated.
-    expect_null(tulpa:::.joint_ccd_sr1_offdiag(H, c(0, 0), c(1, 1), c(-1, -1)))
-    expect_null(tulpa:::.joint_ccd_sr1_offdiag(H, s, c(NA_real_, 1), c(-1, -1)))
-    expect_null(tulpa:::.joint_ccd_sr1_offdiag(NULL, s, y, c(-1, -1)))
-})
-
-test_that("the axial stencil reads the same value and gradient as the full one", {
+test_that("the full stencil reads an exact quadratic's own gradient and Hessian", {
     m    <- c(0.4, -0.3, 0.2)
     prec <- c(2, 3, 1.5)
     ev   <- .ccd_bud_quad_eval(m, prec)
     u    <- c(0.1, 0.05, -0.2)
     h    <- rep(0.1, 3L)
     fullst <- tulpa:::.joint_ccd_fd_stencil(u, ev, h)
-    axst   <- tulpa:::.joint_ccd_axial_stencil(u, ev, h)
-    expect_equal(axst$f0, fullst$f0)
-    expect_equal(axst$grad, fullst$grad)
-    expect_equal(axst$hdiag, diag(fullst$hess))
-    # The full stencil is unchanged by the shared row builder: an exact
-    # quadratic's finite-difference curvature is its own Hessian.
     expect_equal(fullst$hess, -diag(prec), tolerance = 1e-6)
     expect_equal(fullst$grad, -prec * (u - m), tolerance = 1e-6)
+    # One batched call, `1 + 2d + 4 * C(d, 2)` points: the centre, the axials
+    # and the mixed corners, so every inner solve in a round fans out across the
+    # outer-grid threads.
+    sizes <- integer(0)
+    ev_rec <- function(U) {
+        sizes <<- c(sizes, nrow(matrix(U, ncol = length(m))))
+        ev(U)
+    }
+    tulpa:::.joint_ccd_fd_stencil(u, ev_rec, h)
+    expect_identical(sizes, as.integer(1L + 2L * 3L + 4L * choose(3L, 2L)))
 })
-
 
 # --- 7. the whole transport, on a fit ----------------------------------------
 
