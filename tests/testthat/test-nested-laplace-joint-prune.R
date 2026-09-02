@@ -212,3 +212,43 @@ test_that("prune composes with outer-grid parallelism", {
     expect_lt(max(abs(fit_p$theta_sd - fit_s$theta_sd)), 1e-3,
               label = "parallel vs serial theta_sd")
 })
+
+
+test_that("a refined grid's per-cell lists track it when the first cell was pruned", {
+  # A pruned cell is never solved, so it carries no precision and no covariance
+  # block. Deciding from cell 1 whether the fit holds them at all reads a
+  # pruned cell whenever the screen dropped the grid's first corner: the
+  # per-cell lists are then left at the pre-refinement length while the grid
+  # grows, and `tulpa_posterior_draws()` refuses the fit it is handed.
+  res <- list(
+    log_marginal       = c(-Inf, -1, -2),
+    modes              = rbind(c(NA_real_, NA_real_), c(0.1, 0.2), c(0.3, 0.4)),
+    n_iter             = c(0L, 4L, 5L),
+    Q_csc_p_per_grid   = list(NULL, 0:2, 0:2),
+    Q_csc_i_per_grid   = list(NULL, 0:1, 0:1),
+    Q_csc_x_per_grid   = list(NULL, c(1, 1), c(1, 1)),
+    cov_block_per_grid = list(NULL, diag(2), diag(2)))
+  extras <- .joint_init_extras_from_res(res)
+  expect_null(extras[[1L]]$Q_csc_p)
+
+  # One refinement cell, solved like any other.
+  extras <- c(extras, list(list(mode = c(0.5, 0.6), n_iter = 3L,
+                                Q_csc_p = 0:2, Q_csc_i = 0:1,
+                                Q_csc_x = c(1, 1), cov_block = diag(2))))
+  grid <- cbind(sigma = c(0.3, 0.6, 0.9, 0.75))
+  out  <- .joint_glue_extras_to_res(res, grid, c(res$log_marginal, -1.5),
+                                    extras, rep("", 4L))
+
+  expect_identical(out$n_grid, 4L)
+  expect_length(out$Q_csc_p_per_grid, 4L)
+  expect_length(out$Q_csc_i_per_grid, 4L)
+  expect_length(out$Q_csc_x_per_grid, 4L)
+  expect_length(out$cov_block_per_grid, 4L)
+  expect_identical(nrow(out$modes), 4L)
+  expect_length(out$n_iter, 4L)
+
+  # The pruned cell keeps its empty slot: it is skipped by the mixture, not
+  # filled in.
+  expect_null(out$Q_csc_p_per_grid[[1L]])
+  expect_null(out$cov_block_per_grid[[1L]])
+})

@@ -1,3 +1,21 @@
+# tulpa 0.2.12
+
+* **A refined grid's per-cell lists were sized from cell 1, which a cheap-pass
+  screen can leave empty.** `.joint_glue_extras_to_res()` decided whether a
+  joint fit carries per-cell modes, iteration counts, precision triplets and
+  covariance blocks by testing `extras[[1]]` alone. Which side data a fit holds
+  is a property of the FIT (`store_Q`, the kernel's own outputs), but which
+  CELLS hold it is not: `prune = TRUE` never solves a screened-out cell, so
+  that cell has no mode, no precision and no covariance block whatever the fit
+  stored. When the screen dropped the grid's first corner, the test read a
+  pruned cell, the rewrite was skipped, and the lists stayed at their
+  pre-refinement length while the grid grew under adaptive refinement.
+  `tulpa_posterior_draws()` builds its mixture from those per-cell precisions
+  and refuses a list that does not index the grid, so prediction stopped on a
+  fit that had otherwise converged. Each list is now sized from the first cell
+  that actually carries the field; a pruned cell keeps its empty slot and is
+  skipped by the mixture rather than filled in.
+
 # tulpa 0.2.11
 
 * **Every R-level `phi` is the residual VARIANCE for `gaussian` / `lognormal`

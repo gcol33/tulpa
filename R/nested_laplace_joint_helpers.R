@@ -784,34 +784,55 @@
     })
 }
 
+# The first cell carrying `field`, or 0 when none does.
+#
+# Which per-cell side data a fit holds is a property of the FIT (`store_Q`, the
+# kernel's own outputs), but which cells hold it is not: a cheap-pass pruned
+# cell is never solved, so it has no mode, no precision and no covariance
+# block, whatever the fit stored. Reading cell 1 to decide for the whole list
+# reads a pruned cell whenever the screen dropped the grid's first corner.
+.joint_extras_first_with <- function(extras, field) {
+    for (k in seq_along(extras)) {
+        if (!is.null(extras[[k]][[field]])) return(k)
+    }
+    0L
+}
+
 # Glue refined extras + log_marginal + refining_axis back into the joint
 # kernel result. Downstream `.joint_recalibrate_axis_mean` /
 # `.nl_posterior_moments` / `.nl_attach_axis_sd` read `res$modes`,
 # `res$log_marginal`, `res$refining_axis` directly; this keeps them in sync
 # after refinement without touching their implementations.
+#
+# Every per-cell list is rewritten from `extras`, which the refinement passes
+# extend cell for cell with the grid. A list left behind indexes the grid the
+# fit had BEFORE refinement, and the per-cell precisions are what
+# `tulpa_posterior_draws()` builds its mixture from, so a stale one stops
+# prediction on a fit that otherwise converged.
 .joint_glue_extras_to_res <- function(res, theta_grid_matrix, log_marginal,
                                       extras, refining_axis) {
     res$log_marginal  <- log_marginal
     res$n_grid        <- nrow(theta_grid_matrix)
     res$refining_axis <- refining_axis
     if (is.null(extras) || length(extras) == 0L) return(res)
-    if (!is.null(extras[[1L]]$mode)) {
-        n_x <- length(extras[[1L]]$mode)
+    k_mode <- .joint_extras_first_with(extras, "mode")
+    if (k_mode > 0L) {
+        n_x <- length(extras[[k_mode]]$mode)
         res$modes <- do.call(rbind, lapply(extras, function(e) {
             if (is.null(e$mode)) rep(NA_real_, n_x) else as.numeric(e$mode)
         }))
     }
-    if (!is.null(extras[[1L]]$n_iter)) {
+    if (.joint_extras_first_with(extras, "n_iter") > 0L) {
         res$n_iter <- vapply(extras, function(e) {
             if (is.null(e$n_iter)) NA_integer_ else as.integer(e$n_iter)
         }, integer(1))
     }
-    if (!is.null(extras[[1L]]$Q_csc_p)) {
+    if (.joint_extras_first_with(extras, "Q_csc_p") > 0L) {
         res$Q_csc_p_per_grid <- lapply(extras, `[[`, "Q_csc_p")
         res$Q_csc_i_per_grid <- lapply(extras, `[[`, "Q_csc_i")
         res$Q_csc_x_per_grid <- lapply(extras, `[[`, "Q_csc_x")
     }
-    if (!is.null(extras[[1L]]$cov_block)) {
+    if (.joint_extras_first_with(extras, "cov_block") > 0L) {
         res$cov_block_per_grid <- lapply(extras, `[[`, "cov_block")
     }
     res
