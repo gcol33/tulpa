@@ -132,12 +132,22 @@ tulpa_nested_laplace_joint(
   `list(list(arm, block, alpha_grid),...)` – coupling N distinct shared
   latent fields, each onto its own arm with its own \\\alpha\\ axis,
   integrated over the product outer grid. Each spec must name a distinct
-  block. The copy block may be any of `icar` / `bym2` / `car_proper` /
-  `rw1` / `rw2` / `ar1` / `iid`; blocks with their own per-arm scaling
-  (`lf`, `hsgp_mo`) or a precomputed precision (`tgmrf`) do not take a
-  copy. A copy block's own `sigma_grid` (the donor field amplitude, same
-  default ceiling as the single-block `prior$sigma_grid` above)
-  auto-recenters on `collapsed_edge` the same way, one block per
+  block.
+
+  The \\\alpha\\ axis takes EITHER `alpha_grid`, which states its nodes,
+  OR `alpha_n` (`field_coef$n` on the single-block path), which re-reads
+  the engine's own axis at a higher RESOLUTION – more nodes between the
+  same bounds, keeping the atom at 0 that gives the "no copy" base model
+  posterior mass. They are different requests and supplying both is an
+  error. Use `alpha_n` to integrate the same axis more accurately: it is
+  the only outer axis a copy fit could not otherwise raise, since
+  stating nodes for it also restates the prior structure it carries
+  (gcol33/tulpa#633). The copy block may be any of `icar` / `bym2` /
+  `car_proper` / `rw1` / `rw2` / `ar1` / `iid`; blocks with their own
+  per-arm scaling (`lf`, `hsgp_mo`) or a precomputed precision (`tgmrf`)
+  do not take a copy. A copy block's own `sigma_grid` (the donor field
+  amplitude, same default ceiling as the single-block `prior$sigma_grid`
+  above) auto-recenters on `collapsed_edge` the same way, one block per
   attempt.
 
 - phi_grid:
@@ -156,11 +166,11 @@ tulpa_nested_laplace_joint(
   Family-specific interpretation of `arm$phi` (the parse-time scalar and
   the grid values):
 
-  - `gaussian` – residual SD (variance is `phi^2`). Use `phi_grid` to
-    estimate the residual SD as a hyperparameter instead of pinning it
-    pre-fit.
+  - `gaussian` – residual VARIANCE, the one engine convention (the SD is
+    `sqrt(phi)`). Use `phi_grid` to estimate it as a hyperparameter
+    instead of pinning it pre-fit.
 
-  - `lognormal` – residual SD on the log scale; identical kernel
+  - `lognormal` – residual variance on the log scale; identical kernel
     parameterization as `gaussian` plus the `-log(y)` Jacobian.
 
   - `neg_binomial_2` – dispersion (variance is `mu + mu^2/phi`).
@@ -190,12 +200,20 @@ tulpa_nested_laplace_joint(
     without biasing the modal cell when the data identifies it:
     default-friendly choice on \\\sigma\\ is `c(U = 1.0, alpha = 0.01)`
     (donor amplitude); on the dimensionless copy coefficient \\\alpha\\
-    the recommended choice is `c(U = 8.0, alpha = 0.01)`. Too small a
-    `U` over-shrinks the copy coefficient past the modal cell and,
-    through the `alpha * sigma` copy axis, inflates the coupled donor
-    amplitude `sigma` – e.g. on a fixture with truth \\\alpha = 1\\,
-    `c(U = 2.0, alpha = 0.01)` pulls the \\\alpha\\ posterior below 1
-    and lifts `sigma` above its truth.
+    the recommended choice is `c(U = 4.0, alpha = 0.01)`. What counts as
+    strong is set by the measure the axis already carries, and on the
+    copy scale that is not flat: with no `prior_alpha` it takes the
+    engine's own exponential slab, whose rate puts 5 % of the prior
+    above the largest declared node (`control$copy_slab`). A
+    `prior_alpha` REPLACES that slab, so it shrinks harder than the
+    default only once its own `lambda = -log(alpha)/U` beats the slab's
+    – on a copy grid reaching `alpha = 2`, `lambda = 1.50`, the strength
+    of `U = 3.07`. Too small a `U` over-shrinks the copy coefficient
+    past the modal cell and, through the `alpha * sigma` copy axis,
+    inflates the coupled donor amplitude `sigma`: on a fixture with
+    truth \\\alpha = 1\\ and `sigma = 0.6`, `c(U = 2.0, alpha = 0.01)`
+    pulls the \\\alpha\\ geometric mean to 0.93 and lifts `sigma` to
+    0.68, and `c(U = 0.25, alpha = 0.01)` to 0.51 and 0.94.
 
   - `list("half_normal", scale)` – half-normal with scale `scale > 0`.
     Sharper tail decay than PC; use when stronger regularization is
@@ -206,6 +224,30 @@ tulpa_nested_laplace_joint(
     `n_pos >= ~200`) the prior is essentially harmless – the lever is
     tail-shrinkage at small `n_pos`. `prior_alpha` only applies when
     `copy` is active; `prior_sigma` applies on any `sigma`-named axis.
+
+  WHICH AXES ONE SPEC REACHES. A list-of-blocks `prior` can carry the
+  same axis on several blocks at once – two copied fields carry
+  `b1.alpha` and `b2.alpha`, and each copy block carries its own donor
+  `b<k>.sigma`. One spec applies to EVERY block carrying the axis it
+  names, each block taking its own independent copy of the density (its
+  atom / continuum split is normalised against its own axis, so nothing
+  is shared between blocks). To regularize the blocks differently, or
+  only some of them, key the prior by block the way a multi-block `copy`
+  spec does:
+
+      prior_alpha = list(
+        list(block = 1, prior = list("pc.prec", c(4.0, 0.01))),
+        list(block = 2, prior = list("half_normal", 2.0))
+      )
+
+  A block the list does not name carries no prior on that axis. An entry
+  naming a block that carries no such axis is an error, and the message
+  names the blocks that do. The per-block shape is a multi-block one: on
+  a single-block `prior`, where the axis is unique, pass the spec
+  itself. A fit reports what it applied in `hyperprior_axes`: one record
+  per role with the scope the caller stated it at (`"every_block"` /
+  `"per_block"`), the block indices reached, and the grid columns those
+  are.
 
   `prior_sigma` also interacts with the auto-recenter above: its second
   attempt engages the engine's own weakly-informative PC(U = 3, alpha =
@@ -282,7 +324,15 @@ tulpa_nested_laplace_joint(
     CHOLMOD solver and NewtonScratch (inner OpenMP auto-disabled). `1L`
     is serial, chained warm-starts – bitwise identical to the
     pre-speedup driver. Recommended on multi-core workstations:
-    `parallel::detectCores() - 1L`.
+    `parallel::detectCores() - 1L`. It is a REQUEST: the driver clamps
+    it to the team the OpenMP environment hands out
+    (`omp_get_max_threads()`, `OMP_THREAD_LIMIT`, and the check farm's
+    core cap), because the per-cell block cache sizes its slot array
+    from that same number. A job script exporting `OMP_NUM_THREADS=1` to
+    pin the INNER threads therefore runs the outer grid serially
+    whatever is asked for here; the fit says so once, in a message, and
+    records the pair in `n_threads_outer_requested` /
+    `n_threads_outer_realised`.
 
   - `tile_warm` (`TRUE`) – when `n_threads_outer > 1` and a copy block
     is present, group outer cells into tiles sharing every axis except
@@ -302,14 +352,40 @@ tulpa_nested_laplace_joint(
     cell's true mode, so the cheap ranking is faithful to the full-solve
     ranking even when the inner latent mode moves substantially across
     the grid. Pruned cells get `log_marginal = -Inf`, `n_iter = 0`, and
-    inherit the pilot mode; the pilot cell is never pruned. A safety
-    gate falls back to the full grid (with a warning) if the
-    cheap-screen argmax disagrees with the full-solve argmax or the kept
-    posterior collapses onto a cell the screen badly mis-estimated, so a
-    silently-wrong pruned posterior is impossible. Stacks with
-    `n_threads_outer`. `prune_tol` must be in `[0, 1)`. Keep it
-    conservative (`<= 1e-3`); pruning helps most when the grid has many
-    low-mass tail cells. Default `FALSE` (the full grid is correct).
+    inherit the pilot mode; the pilot cell is never pruned, and at least
+    `prune_min_keep` cells (5) are solved in full whatever the tolerance
+    says – the highest-ranked dropped cells are restored up to that
+    floor, because the outer grid placement pass reads a
+    finite-difference curvature off the cells that were SOLVED and a
+    kept set of one carries none. Two fallbacks to the full grid, each
+    with a warning: the cheap-pass safety gate (the cheap-screen argmax
+    disagrees with the full-solve argmax, or the kept posterior
+    collapses onto a cell the screen mis-estimated by more than the
+    margin it discarded cells by), and a screened fit whose grid
+    placement declined for want of curvature. Neither bounds the error
+    from a cell that was discarded and never solved: the gate compares
+    the screen against the cells it kept. Stacks with `n_threads_outer`.
+    `prune_tol` must be in `[0, 1)`. Default `FALSE` (the full grid is
+    correct).
+
+  - `prune_log_gap` (unset) – the screening cut in nats: keep every cell
+    within this many nats of the best screened cell. `prune_tol` is a
+    normalised weight, so what it cuts at is the gap
+    `-(log(prune_tol) + log(Z))`, and the whole range a caller would
+    type is a few tens of nats – on an outer surface spanning thousands
+    every setting returns the same kept set. It reaches the kernel as
+    `prune_tol = exp(-gap)`, so the realised cut is the requested gap
+    less `log(Z)`; the fit reports the realised value in
+    `prune_log_gap_cut`. Setting both this and `prune_tol` is an error.
+
+  - `screen_iters` (`5L`) – inner Newton steps the cheap screen takes
+    per cell, read only when `prune = TRUE`. The screen only has to RANK
+    the cells, and each one is warm-started from its already-screened
+    lattice neighbour, so its quasi-mode is near the cell's own mode
+    after very few steps. Every step is paid on every cell of the grid,
+    including the cells the screen keeps and then solves in full, so a
+    depth above what the ranking needs makes screening cost more than
+    the solves it avoids. Must be a single integer `>= 1`.
 
   - `x_init` (`NULL`) – warm-start for the first grid point's inner
     solve.
@@ -349,6 +425,27 @@ tulpa_nested_laplace_joint(
     ~4 log units of decay. `adaptive_grid_max_passes` caps the passes
     (one usually suffices). Fixes posterior CI under-coverage when truth
     sits near a grid edge.
+
+    How far a given axis may be moved depends on where its nodes came
+    from. An axis whose nodes the CALLER wrote down – `copy$alpha_grid`
+    / `field_coef$grid`, an entry of `phi_grid` – states where the fit
+    integrates, so refinement densifies it and never places a node past
+    either end node; a mode outside that range shows up as mass at the
+    edge. An axis the ENGINE placed (`alpha_n` / `field_coef$n`, or no
+    nodes given) carries no such statement, so refinement may follow the
+    posterior out past its ends. Nodes a wrapper package computed as a
+    default of its own are declared with
+    [`auto_grid()`](https://gillescolling.com/tulpa/reference/auto_grid.md)
+    and count as engine-placed.
+
+  - `axis_refine` (`NULL`) – per-axis override of the rule above, named
+    by outer-grid axis (`"alpha"`, `"phi_<arm>"`): `"none"` (the axis
+    takes no refinement nodes), `"densify"` (nodes inside the declared
+    span only) or `"extend"` (nodes past the end nodes too). A single
+    unnamed value applies to every refinable axis. An unknown axis name,
+    or a request for nodes on an axis this driver does not refine, is an
+    error rather than a silent no-op. Read only when
+    `adaptive_grid = TRUE` or `var_of_means_consistency = TRUE`.
 
   - `var_of_means_consistency` (`TRUE`) – run a post-integration
     consistency pass on the variance of the per-arm posterior means and
@@ -406,6 +503,23 @@ tulpa_nested_laplace_joint(
     alongside `$integration_requested` and `$integration_declined` (see
     Value), so a fallback is on the fit itself and not only in a verbose
     message.
+
+  - `ccd_budget` (`1`) – ceiling on what PLACING a CCD may spend, as a
+    multiple of the tensor grid the design replaces. Every mode-find
+    probe is one full inner Newton solve, the same solve an outer grid
+    cell costs, and a placement round is `1 + 2d + 4 C(d, 2)` of them
+    (33 at `d = 4`), so at the round caps alone a placement can spend
+    far more than the integration it avoids. At `1` a placement plus its
+    design costs no more than that tensor grid; the fit declines to the
+    tensor grid with `integration_declined = "placement_budget"` when
+    the ceiling is reached, and reports what it spent as
+    `ccd_modefind_evals` (see Value). `Inf` places without a ceiling.
+    `ccd_budget_floor` (`TRUE`) exempts the designed first attempt – the
+    eight rounds from the grid-median seed, whose cost is set by the
+    axis count and not by the grid – so the ceiling bounds the
+    escalation (grid seed, step calibration, the 30-round rescue
+    mode-find) rather than the path the CCD was built for; `FALSE` makes
+    `ccd_budget` a hard cap on the whole placement.
 
   - `local_ccd` (`NULL`) – local CCD refinement of a multi-block tensor
     grid. `TRUE` (defaults) or a `list(max_cells =, f0 =, skew_max =)`
@@ -470,17 +584,23 @@ tulpa_nested_laplace_joint(
     default `k_samples` (to `800L` / `2000L`, unless you set it) so the
     bootstrap CI can resolve it. `"none"` disables the diagnostic. The
     fit carries an honest verdict – `k_quality_requested`,
-    `k_quality_reached`, `k_quality_best`, `k_quality_reason`,
-    `k_quality_rounds` – and never silently downgrades: if the requested
-    band is not confidently met it reports the band actually reached and
-    why. For `"ok"` / `"good"`, when the first fit does not reach the
-    band the engine escalates by REFINING THE INTEGRATION GRID, driven
-    by the bad \\\hat{k}\\ (see `k_refine`): each round widens /
-    densifies the grid where the posterior mass escapes its current
-    bounds and re-diagnoses, up to `k_max_rounds` times. This is the
-    actual fix for a grid-width deficiency; `k_samples` is the separate
-    knob that sharpens the \\\hat{k}\\ ESTIMATE and is not escalated
-    here.
+    `k_quality_reached`, `k_quality_best`, `k_quality_miss`,
+    `k_quality_reason`, `k_quality_rounds`, `k_quality_k_trace` – and
+    never silently downgrades: if the requested band is not confidently
+    met it reports the band actually reached and why. For `"ok"` /
+    `"good"`, when the first fit does not reach the band the engine
+    escalates by REFINING THE INTEGRATION GRID (see `k_refine`),
+    widening / densifying it where the posterior mass escapes its
+    current bounds and re-diagnosing, up to `k_max_rounds` rounds.
+    Refinement is the first lever on either kind of miss because it
+    lowers \\\hat{k}\\ itself rather than the uncertainty around it.
+    Once refinement is exhausted – no boundary mass left to chase – what
+    remains depends on the miss (`k_quality_miss`): a `"resolution"`
+    miss (\\\hat{k}\\ confidently outside the band) ends the chase,
+    while a `"precision"` miss (the bootstrap CI straddling a boundary,
+    so \\\hat{k}\\ may already be inside the band) spends its remaining
+    rounds doubling the importance-draw budget, the one lever refinement
+    does not touch.
 
   - `k_refine` (`"grid"`) – the integration-refinement rung for
     `k_quality` `"ok"` / `"good"`. `"grid"` (default) re-fits with
@@ -496,11 +616,13 @@ tulpa_nested_laplace_joint(
     path at \>= 4 transformable latent axes. `"none"` disables
     refinement: the band is reported but not chased.
 
-  - `k_max_rounds` (`2L`) – the grid-refinement round budget for
-    `k_quality` `"ok"` / `"good"`: the maximum number of
-    refine-and-re-fit rounds after the first fit. Each round allows one
-    more refinement pass than the last. `0L` disables escalation
-    (single-shot, the band is reported but not chased).
+  - `k_max_rounds` (`2L`) – the escalation round budget for `k_quality`
+    `"ok"` / `"good"`: the maximum number of re-fit rounds after the
+    first fit. A refinement round allows one more pass than the last
+    refinement round did; a round taken after refinement is exhausted
+    leaves the grid where it stands and doubles the importance-draw
+    budget instead. `0L` disables escalation (single-shot, the band is
+    reported but not chased).
 
   - `diagnose_k` (`TRUE`), `k_samples` (`500L`) – compute the outer
     Pareto-\\\hat{k}\\ accuracy diagnostic by importance-sampling the
@@ -508,19 +630,27 @@ tulpa_nested_laplace_joint(
     fits (mixed per-axis transforms: `log` for positive scales, logit
     for the BYM2 mixing weight, identity for the copy coefficient
     \\\alpha\\). `k_samples` is the number of importance draws, each one
-    an extra inner joint solve, and is the diagnostic's precision knob:
-    a tighter k-hat needs MORE actual tail ratios, so increase
-    `k_samples` (not `k_bootstrap`). The draws are RNG-restored so the
-    fit's modes / draws are unchanged. A fit carrying an axis whose
-    support is not safely known (CAR_proper's `rho_car`) declines to the
-    quadrature-ESS fallback (`pareto_k = NA`). `FALSE` skips the
-    diagnostic. `"by_arm"` additionally computes a k-hat restricted to
-    each arm's hyperparameter axes (the other arms held at their
-    posterior mean), reported in `pareto_k_by_arm`, to localise which
-    arm drives a tail-heavy joint k; the joint k itself is unchanged.
-    Per-arm k is defined for the multi-block layout with two or more
-    arms and declines for the single-block shared-field layout. The
-    legacy `k_samples` name is accepted as an alias for `k_samples`.
+    an extra inner joint solve, and is where more tail information comes
+    from: a tighter k-hat needs MORE actual tail ratios, so increase
+    `k_samples` (not `k_bootstrap`). It is not a pure precision knob,
+    though. Under the automatic PSIS tail rule (`min(S/5, 3 sqrt(S))`)
+    the fitted tail FRACTION shrinks as `3 / sqrt(S)`, so a larger
+    budget describes a DEEPER quantile of the weight distribution and
+    the reported k-hat can move materially – measured on a synthetic
+    heavy-tailed outer target, 0.57 at 500 draws and 7.94 at 50000
+    (gcol33/tulpa#631). Set `k_tail_points` in proportion to `k_samples`
+    to hold the fraction and get a strictly sharper estimate of the same
+    number; the `k_quality` escalation's draw rung does exactly that.
+    The draws are RNG-restored so the fit's modes / draws are unchanged.
+    A fit carrying an axis whose support is not safely known
+    (CAR_proper's `rho_car`) declines to the quadrature-ESS fallback
+    (`pareto_k = NA`). `FALSE` skips the diagnostic. `"by_arm"`
+    additionally computes a k-hat restricted to each arm's
+    hyperparameter axes (the other arms held at their posterior mean),
+    reported in `pareto_k_by_arm`, to localise which arm drives a
+    tail-heavy joint k; the joint k itself is unchanged. Per-arm k is
+    defined for the multi-block layout with two or more arms and
+    declines for the single-block shared-field layout.
 
   - `k_threads` (`NULL`) – outer-thread width for the diagnostic's
     importance batch. The `k_samples` re-solves are independent and run
@@ -705,6 +835,36 @@ tulpa_nested_laplace_joint(
     takes (`"rail"`, `"resolve"`, `"always"`) are refused here with an
     error rather than accepted and ignored.
 
+  - `recenter_pilot` (`FALSE`) – detect the placement above on a THINNED
+    grid rather than on the full one. Placement reads two things, the
+    argmax cell and an FD curvature stencil at it, and reads both off
+    `log_marginal`; neither is read off the integration the detecting
+    pass paid for, so every inner Newton solve of that pass is discarded
+    the moment a placement fires. With the pilot on, the detecting grid
+    keeps each axis's endpoints and at most `TRUE`'s three nodes between
+    them (an integer names its own resolution), and the full grid is
+    solved once, at the placed axes.
+
+    Off by default because the trade is a property of the WORKLOAD. With
+    `F` full cells, `P` pilot cells and a firing rate `p`, the
+    un-piloted cost is `F + p (S + F)` against the pilot's
+    `P + p S + F`, so the pilot pays exactly when `P < p F`. Measured on
+    a 3-axis (sigma, alpha, phi) donor + copy fixture over 48 paired
+    seeds: 0.78x the cells solved on the configuration that places on 10
+    of 12 seeds, and 1.29x on the one that never places.
+
+    A coarse detector is not the same detector. The collapse trigger is
+    `ess_grid < 2`, which falls with the cell count, so a pilot fires
+    somewhat more readily than the full grid: on that same sweep the two
+    disagreed on 9 of 48 pairs, every one of them the pilot placing
+    where the full grid did not, and 7 of the 9 reached a HIGHER maximum
+    inner log-marginal after placing (+0.35 to +2.14 nats) while 2 lost
+    0.46 and 0.72. It cannot go the other way: a declined pilot is
+    followed by the full fit, which then gets its own detection, so the
+    pilot only ever adds a placement. A fit that declines both is
+    bit-identical to the same fit with the knob off. What the pilot
+    detected on is recorded in `outer_grid_pilot`.
+
   - `max_grid_cells` (`2048L`) – cell-count ceiling on a multi-block
     tensor outer grid, refused with an error above it. Each cell is one
     inner Newton solve, so the default catches per-block grids that
@@ -810,6 +970,17 @@ A list of class
   mode is bracketed. Axes the grid pins to one value are excluded
   (pinned, not at a boundary).
 
+- `axis_span` – per outer axis, the span the fit worked over and the two
+  terms that separate it from the nodes it was given: `nodes` (the range
+  of the axis's initial continuum nodes), `declared` (their support,
+  i.e. those nodes plus the half node step the outermost cells own – for
+  `k` equally spaced nodes that is `k / (k - 1)` times the node range on
+  the axis's integration coordinate, so 2x at two nodes and 1.125x at
+  nine), `integrated` (the support after refinement, the same interval
+  `axis_support` reports), `refine` (the mode refinement ran under:
+  `"none"` / `"densify"` / `"extend"`) and `n_nodes` (initial and final
+  continuum node counts).
+
 - `outer_grid_placement` – `"fixed"` (the default `sigma_grid` axis was
   used as-is) or `"auto_recentered"` when a `collapsed_edge` on `sigma`
   triggered the mode-Hessian recenter-and-refit (see the `prior`
@@ -828,6 +999,17 @@ A list of class
   (the mode-Hessian the recenter needs was unavailable or degenerate,
   e.g. a car_proper grid whose `rho_car` axis has unguessable support).
   Absent when the fit WAS recentred.
+
+- `outer_grid_pilot` – present only when `control$recenter_pilot` ran:
+  the pilot's resolution (`n_pilot`), its cell count (`cells`), the axes
+  it thinned (`axes`) and those it could not (`axes_kept`), and what the
+  placement was DECIDED from – the pilot's own `regime`, `ess_grid` and
+  `edge_axes`. The reported grid is never the grid the trigger was read
+  on, so a two-pass fit is legible from the object rather than only from
+  the progress log.
+  `outer_grid_pilot_declined = "pilot_placement_declined"` records a
+  pilot whose detection placed nothing and which was therefore followed
+  by the full fit and the full fit's own detection.
 
 - `outer_grid_recenter_sd_clamp`, `outer_grid_recenter_sd_raw`,
   `outer_grid_recenter_sd_used` – on a recentred fit, one entry per
@@ -873,15 +1055,28 @@ A list of class
   `pareto_k_by_arm_tail_points` and `pareto_k_by_arm_band_confident`.
 
 - `k_quality_requested`, `k_quality_reached`, `k_quality_best`,
-  `k_quality_reason`, `k_quality_rounds` – the reliability verdict for
-  the `control$k_quality` intent. `k_quality_requested` echoes the
-  intent; `k_quality_best` is the band actually achieved (`"good"` /
-  `"ok"` / `"unreliable"`, or `"uncertain"` when the bootstrap CI
-  crosses a boundary); `k_quality_reached` is `TRUE`/`FALSE` for an
-  `"ok"` / `"good"` target (`NA` for `"report"` / `"none"`), never
-  silently downgraded; `k_quality_reason` records why it stopped; and
+  `k_quality_miss`, `k_quality_reason`, `k_quality_rounds`,
+  `k_quality_k_trace` – the reliability verdict for the
+  `control$k_quality` intent. `k_quality_requested` echoes the intent;
+  `k_quality_best` is the band THIS fit reached (`"good"` / `"ok"` /
+  `"unreliable"`, or `"uncertain"` when the bootstrap CI crosses a
+  boundary) – the band of the returned fit, not the best band seen while
+  escalating, which `k_quality_k_trace` carries; `k_quality_reached` is
+  `TRUE`/`FALSE` for an `"ok"` / `"good"` target (`NA` for `"report"` /
+  `"none"`), never silently downgraded; `k_quality_miss` classifies a
+  miss as `"resolution"` (the \\\hat{k}\\ confidently outside the band –
+  a grid deficiency) or `"precision"` (the bootstrap CI straddling a
+  boundary – the estimator's variance), `NA` when there is no miss to
+  classify, and is what the escalation reads once refinement is
+  exhausted; `k_quality_reason` records why it stopped;
   `k_quality_rounds` is the number of escalation re-fits performed (`0`
-  when the first fit sufficed or escalation was off).
+  when the first fit sufficed or escalation was off); and
+  `k_quality_k_trace` is the outer \\\hat{k}\\ round by round, starting
+  at the first fit's, so a chase that did not descend monotonically is
+  visible. The refinement rungs rebuild the proposal from the grid they
+  just changed, so a rising trace is a re-founded proposal on a strictly
+  larger grid rather than a worse fit, which is why the LAST round is
+  returned rather than the lowest-\\\hat{k}\\ one.
 
 - `adaptive_grid_info` – when `adaptive_grid = TRUE`, a list with
   `triggered_axes` (character) and `n_points_added` (integer) describing
@@ -934,8 +1129,25 @@ A list of class
   latent axes than the requested mode's threshold), `"unguessable_axis"`
   (a CAR_proper `rho_car` or a non-BYM2 `rho`), `"degenerate_axis"` (a
   single-valued axis), `"modefind_ridge"` / `"modefind_boundary"` /
-  `"modefind_degenerate"` / `"modefind_failed"`, `"hessian_singular"` or
-  `"hessian_not_pd"`. Multi-block fits only.
+  `"modefind_degenerate"` / `"modefind_failed"`, `"hessian_singular"`,
+  `"hessian_not_pd"`, `"copy_atom_components"` (more copy atoms than the
+  design splits into, see `copy_atom_mass`), `"copy_atom_mass"` (a
+  declared atom mass outside `[0, 1)`) or `"placement_budget"` (placing
+  the design would cost more inner solves than integrating the tensor
+  grid it replaces; see the `ccd_budget` control knob). Multi-block fits
+  only.
+
+- `ccd_modefind_evals`, `ccd_modefind_budget`, `ccd_modefind_rounds`,
+  `ccd_modefind_seconds` – what PLACING the CCD cost: inner Newton
+  solves spent by the mode-find (seed, step calibration and every round
+  of every mixture component), the ceiling they were spent against, the
+  rounds taken and the wall-clock seconds. Present on any multi-block
+  fit that attempted a placement, including one that declined – a
+  decline reports what it had already paid – and absent when no
+  placement was attempted, which is not the same as a placement that
+  cost nothing. Read alongside `$integration` to judge whether the CCD
+  earned its design on this model rather than arguing it from the round
+  caps.
 
 - `weight_kind` – one entry per outer-grid cell, `"mass"` or `"design"`.
   A tensor cell holds the mass of its own cell and a CCD node holds a
@@ -1007,16 +1219,31 @@ A list of class
   did score.
 
 - `prune_cheap_log_marginal`, `prune_mask`, `prune_n_pruned`,
-  `prune_tol` – present only when `prune = TRUE` and the safety gate did
-  not fall back. Cheap-pass log-marginals at every cell, a logical mask
-  of pruned cells, the pruned-cell count, and the threshold actually
-  applied. Pruned cells have `log_marginal = -Inf` so they get zero
-  weight under `.nl_normalise_weights_safe`.
+  `prune_tol`, `prune_screen_iters` – present only when `prune = TRUE`
+  and the safety gate did not fall back. Cheap-pass log-marginals at
+  every cell, a logical mask of pruned cells, the pruned-cell count, the
+  threshold actually applied, and the screening depth the driver
+  actually ran at. Pruned cells have `log_marginal = -Inf` so they get
+  zero weight under `.nl_normalise_weights_safe`.
+
+- `prune_log_gap_cut`, `prune_cheap_lm_spread`, `prune_min_keep`,
+  `prune_n_floor_restored` – the screen read on the scale it operates
+  on: how many nats below the best screened cell the tolerance cut at,
+  how many nats the screened surface spans, the kept-cell floor applied,
+  and how many cells that floor put back. A cut that is a sliver of the
+  spread is a tolerance with no resolution on this grid.
 
 - `prune_fallback_triggered`, `prune_fallback_reason` – present only
-  when the safety gate fell back to the full grid. The returned fit is
-  the full-grid (unpruned) result; the reason string records which gate
-  condition tripped.
+  when a fallback to the full grid fired. The returned fit is the
+  full-grid (unpruned) result; the reason string records whether the
+  cheap-pass safety gate tripped or the screened grid left the placement
+  pass no curvature.
+
+- `n_threads_outer_requested`, `n_threads_outer_realised` – the
+  outer-grid width asked for and the width the grid ran at. The driver
+  clamps the request to the team the OpenMP environment hands out, so a
+  fit launched under `OMP_NUM_THREADS=1` with `n_threads_outer = 10`
+  runs serial; the pair is what a timing has to be recorded against.
 
 ## (sigma, alpha) parameterization
 
@@ -1067,10 +1294,6 @@ prior <- list(type = "icar", n_spatial_units = S,
 fit <- tulpa_nested_laplace_joint(
   responses = list(occ = mk_arm(200L, "binomial"), pos = mk_arm(200L, "gaussian")),
   prior = prior)
-#> [nested-laplace-joint] 1/3 cells (33%) | elapsed 0s | ETA >=0s | 0.00s/cells
-#> [nested-laplace-joint] 3/3 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
 fit$theta_mean        # shared field amplitude, integrated across both arms
-#>     sigma 
-#> 0.3147239 
 # }
 ```

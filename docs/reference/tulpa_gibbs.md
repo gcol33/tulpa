@@ -132,6 +132,5 @@ y <- rbinom(n, 1, plogis(X %*% c(-0.2, 0.5) + b[grp]))
 fit <- tulpa_gibbs(y, rep(1L, n), X, grp, G, family = "binomial",
                    control = list(n_iter = 500L, warmup = 250L))
 colMeans(fit$beta)
-#> [1] 0.05113498 0.47895299
 # }
 ```

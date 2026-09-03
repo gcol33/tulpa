@@ -87,7 +87,6 @@ does both, restoring on error as well as on success.
 
 ``` r
 tulpa_integrator()            # current integrator
-#> [1] "leapfrog"
 old <- tulpa_integrator("yoshida4")
 tulpa_integrator(old)         # restore
 ```

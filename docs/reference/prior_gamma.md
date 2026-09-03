@@ -30,7 +30,5 @@ Mean = shape/rate, Variance = shape/rate^2.
 
 ``` r
 prior_gamma(2, 0.1)  # Mean = 20, weakly informative
-#> Gamma(2.00, 0.10)  [mean = 20.00]
 prior_gamma(1, 1)    # Exponential(1)
-#> Gamma(1.00, 1.00)  [mean = 1.00]
 ```

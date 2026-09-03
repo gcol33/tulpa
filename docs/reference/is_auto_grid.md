@@ -28,7 +28,5 @@ marker.
 
 ``` r
 is_auto_grid(auto_grid(c(0.5, 1, 2)))
-#> [1] TRUE
 is_auto_grid(c(0.5, 1, 2))
-#> [1] FALSE
 ```

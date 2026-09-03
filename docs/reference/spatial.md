@@ -116,14 +116,4 @@ for (i in 1:9) adj[i, i + 1] <- adj[i + 1, i] <- 1
 # Spatial intercept plus a spatially varying time slope
 f <- spatial(graph = adj, formula = ~ 1 + time || cell)
 print(f)
-#> tulpa areal varying-coefficient field
-#> =====================================
-#> 
-#> Structure: ICAR (Besag) 
-#> Graph nodes: 10 
-#> Graph node index: cell 
-#> Fields: independent (|| -> separate precision per coefficient)
-#> Expands to 2 CAR field(s) (one per design-matrix column):
-#>   cell.Intercept
-#>   cell.time
 ```

@@ -81,17 +81,6 @@ rsr <- spatial_rsr(
   restrict_to = ~ depth + temp
 )
 print(rsr)
-#> tulpa Gaussian Process spatial specification
-#> =============================================
-#> 
-#> Coordinates: lon, lat 
-#> Covariance: exponential 
-#> Neighbors (NNGP): 15 
-#> Shared: Yes (enters both processes) 
-#> 
-#> Restricted Spatial Regression (RSR):
-#>   Orthogonal to: ~depth + temp 
-#>   (Spatial effect constrained to be orthogonal to covariate space)
 
 # \donttest{
 # Areal binomial data on a chain of regions, covariate spatially confounded
@@ -114,8 +103,5 @@ fit <- tulpa(
   control = list(n_iter = 500L, warmup = 250L)
 )
 summary(fit)
-#>               estimate  std.error       2.5%       97.5%
-#> (Intercept) -0.3172248 0.11295433 -0.5502363 -0.09914267
-#> x            0.5278281 0.06516213  0.4022617  0.65216922
 # }
 ```

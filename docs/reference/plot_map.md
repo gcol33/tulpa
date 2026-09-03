@@ -155,6 +155,5 @@ if (requireNamespace("ggplot2", quietly = TRUE)) {
   plot_map(fit, what = "uncertainty", coords = cc)
   plot_map_panel(fit, coords = cc)                # both side by side
 }
-
 # }
 ```

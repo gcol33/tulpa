@@ -79,6 +79,5 @@ d$y <- rpois(120, exp(0.4 + 0.6 * d$x))
 fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace")
 rl  <- tulpa_reloo(fit, data = d)
 rl$elpd_loo
-#> [1] -187.9474
 # }
 ```

@@ -86,11 +86,12 @@ tulpa_laplace(
 
 - phi:
 
-  Dispersion parameter. For `gaussian` / `lognormal` this is the
-  residual VARIANCE (matching the R-side family registry and
-  [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md)); the
-  SD-parameterized compiled kernels receive `sqrt(phi)` internally. For
-  `neg_binomial_2` the size, `beta` the precision, `t` the scale.
+  Dispersion passed to the family, held fixed. One convention at every
+  door: for `gaussian` / `lognormal` this is the residual VARIANCE (the
+  SD is `sqrt(phi)`), for `neg_binomial_2` the size, `gamma` the shape,
+  `beta` the precision, `t` the scale; `binomial` and `poisson` ignore
+  it. The compiled kernels parameterize the two variance families by the
+  residual SD and are handed `sqrt(phi)` at the boundary.
 
 - phi2:
 
@@ -238,5 +239,4 @@ eta <- X %*% c(-0.3, 0.8)
 y <- rbinom(n, 1, plogis(eta))
 fit <- tulpa_laplace(y, rep(1L, n), X, family = "binomial")
 fit$mode          # posterior mode of the fixed effects
-#> [1] -0.4406277  0.4822831
 ```

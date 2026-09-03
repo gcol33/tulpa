@@ -91,5 +91,4 @@ fam <- tulpa_family(
 df <- data.frame(y = rep(0, 20), x = rnorm(20))
 pp <- prior_predict(y ~ x, fam, df, n_draws = 50, seed = 1)
 length(pp$y)  # 50
-#> [1] 50
 ```

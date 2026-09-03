@@ -61,7 +61,5 @@ set.seed(1)
 # Well-behaved importance ratios: k-hat is small.
 ps <- tulpa_psis(rnorm(2000))
 ps$pareto_k
-#> [1] 0.3195261
 ps$is_ess
-#> [1] 686.8121
 ```

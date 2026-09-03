@@ -197,50 +197,19 @@ grid$cell <- paste0("c", seq_len(nrow(grid)))
 g <- adjacency(grid, x_coord = "x", y_coord = "y", id = "cell",
                type = "queen")
 g
-#> <tulpa_adjacency>
-#>   nodes: 9  edges: 20  (queen contiguity)
-#>   neighbours per node: min 3, mean 4.44, max 8
-#>   cell size: x = 1, y = 1
-#>   pass $adjacency to spatial(graph = ) and node_index() to remap data
 g$adjacency
-#> 9 x 9 sparse Matrix of class "dgCMatrix"
-#>                        
-#>  [1,] . 1 . 1 1 . . . .
-#>  [2,] 1 . 1 1 1 1 . . .
-#>  [3,] . 1 . . 1 1 . . .
-#>  [4,] 1 1 . . 1 . 1 1 .
-#>  [5,] 1 1 1 1 . 1 1 1 1
-#>  [6,] . 1 1 . 1 . . 1 1
-#>  [7,] . . . 1 1 . . 1 .
-#>  [8,] . . . 1 1 1 1 . 1
-#>  [9,] . . . . 1 1 . 1 .
 
 # Second-order (24-neighbour) queen contiguity: any order is settable
 g2 <- adjacency(grid, id = "cell", order = 2)
 
 # Advanced: a custom stencil (symmetrized for the undirected field)
 g3 <- adjacency(grid, id = "cell", offsets = list(c(1, 0), c(0, 1)))
-#> adjacency(): custom stencil was not symmetric; symmetrized to an undirected graph for the ICAR/CAR field (12 reverse edge(s) added). A directed neighbourhood cannot be represented by an undirected field.
 
 # Use it in a model: graph stays explicit and inspectable
 spatial(graph = g$adjacency, formula = ~ 1 || cell_idx)
-#> tulpa areal varying-coefficient field
-#> =====================================
-#> 
-#> Structure: ICAR (Besag) 
-#> Graph nodes: 9 
-#> Graph node index: cell_idx 
-#> Fields: independent (|| -> separate precision per coefficient)
-#> Expands to 1 CAR field(s) (one per design-matrix column):
-#>   cell_idx.Intercept
 
 # Remap observation data (original cell ids -> 1:n node indices) by key
 obs <- data.frame(cell = c("c5", "c1", "c5", "c9"))
 obs$cell_idx <- node_index(g, obs$cell)
 obs
-#>   cell cell_idx
-#> 1   c5        5
-#> 2   c1        1
-#> 3   c5        5
-#> 4   c9        9
 ```

@@ -67,9 +67,4 @@ y  <- rnorm(40)
 mu <- matrix(rnorm(200 * 40, sd = 0.2), 200, 40)
 ll <- dnorm(matrix(y, 200, 40, byrow = TRUE), mean = mu, log = TRUE)
 cpo(ll)
-#> tulpa model criteria  (200 draws x 40 observations)
-#>   LOOIC          107.8  (SE 7.3)
-#>   elpd_loo       -53.9  (SE 3.7)
-#>   p_loo            1.4
-#>   LPML           -53.9
 ```

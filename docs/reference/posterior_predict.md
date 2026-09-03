@@ -79,6 +79,5 @@ d <- data.frame(y = rpois(100, 4), x = rnorm(100))
 fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace")
 yrep <- posterior_predict(fit, ndraws = 100)
 dim(yrep)  # 100 x 100
-#> [1] 100 100
 # }
 ```

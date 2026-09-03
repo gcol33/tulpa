@@ -73,7 +73,5 @@ d <- data.frame(x = rnorm(200))
 d$y <- rnorm(200, 2 * d$x, 1)
 fit <- tulpa(y ~ x, data = d, family = "gaussian", mode = "laplace", phi = 1)
 bayes_R2(fit)
-#>     estimate  std.error      2.5%    97.5%
-#> R2 0.7710357 0.01427852 0.7395732 0.797705
 # }
 ```

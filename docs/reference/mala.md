@@ -124,7 +124,5 @@ log_post <- function(t) -0.5 * sum((t - c(1, 2))^2)
 grad <- function(t) -(t - c(1, 2))
 fit <- mala(log_post, grad, init = c(0, 0), n_iter = 1000)
 colMeans(fit$draws)  # near c(1, 2)
-#> [1] 1.086552 2.030870
 fit$mean_accept      # should adapt toward 0.574
-#> [1] 0.604
 ```

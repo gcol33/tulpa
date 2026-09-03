@@ -70,10 +70,4 @@ site <- data.frame(
 fit <- post_hoc_lm(psi_hat ~ trait, data = site,
                    weights = 1 / site$se^2, n_boot = 200L)
 fit
-#> Post-hoc linear model
-#> R-squared: 0.979
-#> 
-#>         term   estimate  std.error statistic      p.value    conf.low conf.high
-#>  (Intercept) 0.03719919 0.03517469  1.057556 0.3498961569 -0.02738938 0.1066280
-#>        trait 0.18719050 0.01375560 13.608312 0.0001688337  0.15826786 0.2128769
 ```

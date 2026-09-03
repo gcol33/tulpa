@@ -92,10 +92,5 @@ fit <- tulpa(y ~ x, data = df, family = "poisson")
 if (requireNamespace("posterior", quietly = TRUE)) {
   posterior::summarise_draws(as_draws(fit))
 }
-#> # A tibble: 2 × 10
-#>   variable  mean median     sd    mad    q5   q95  rhat ess_bulk ess_tail
-#>   <chr>    <dbl>  <dbl>  <dbl>  <dbl> <dbl> <dbl> <dbl>    <dbl>    <dbl>
-#> 1 param1   0.549  0.549 0.0883 0.0831 0.398 0.685 1.00      433.     457.
-#> 2 param2   0.293  0.295 0.0886 0.0938 0.141 0.441 1.000     345.     485.
 # }
 ```

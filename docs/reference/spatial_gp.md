@@ -103,19 +103,5 @@ for areal spatial effects.
 ``` r
 # GP spatial specification from coordinate columns
 spatial_gp(~ lon + lat)
-#> tulpa Gaussian Process spatial specification
-#> =============================================
-#> 
-#> Coordinates: lon, lat 
-#> Covariance: exponential 
-#> Neighbors (NNGP): 15 
-#> Shared: Yes (enters both processes) 
 spatial_gp(~ lon + lat, cov = "matern", nu = 1.5)
-#> tulpa Gaussian Process spatial specification
-#> =============================================
-#> 
-#> Coordinates: lon, lat 
-#> Covariance: matern (nu = 1.5) 
-#> Neighbors (NNGP): 15 
-#> Shared: Yes (enters both processes) 
 ```

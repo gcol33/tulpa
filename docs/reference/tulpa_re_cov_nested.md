@@ -166,10 +166,23 @@ tulpa_re_cov_nested(
 
   - `diagnose_k`: if `TRUE` (default), compute the outer Pareto k-hat
     accuracy diagnostic for the Gaussian proposal over the
-    hyperparameters, returned as `pareto_k`.
+    hyperparameters, returned as `pareto_k`. Several proposal candidates
+    are scored and the best is kept: `pareto_k_proposal_source` names
+    which one produced the reported number and `pareto_k_first_pass` is
+    the k-hat of the proposal exactly as the mode-find placed it, before
+    refinement. A large gap between the two says the placement is poor
+    even where the verdict is fine – on a small-group binary fit the
+    first pass runs 15 to 49 where the reported k-hat is 0.3 to 0.8.
 
   - `k_samples`: importance draws for the `diagnose_k` estimate (default
-    200).
+    500). It is a precision knob: the GPD tail size is held at the
+    fraction that default budget implies, so raising it supplies more
+    tail ratios for the SAME estimand rather than moving the fit to a
+    deeper quantile of the weight distribution (gcol33/tulpa#631).
+
+  - `k_tail_points`: expert override for that tail size, in upper-tail
+    order statistics. Silently capped at 20% of the draws, beyond which
+    body ratios enter the tail and bias the shape.
 
   - `max_iter`, `tol`, `n_threads`: inner-solve controls (see
     [`tulpa_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_laplace.md)).
@@ -343,8 +356,5 @@ re_term <- list(idx = grp, n_groups = G, n_coefs = 2L, Z = cbind(1, x),
 fit <- tulpa_re_cov_nested(y, rep(1L, n), cbind(1, x), re_term,
                            family = "binomial")
 fit$Sigma_mean        # marginalized RE covariance
-#>            [,1]       [,2]
-#> [1,]  0.5216258 -0.1553363
-#> [2,] -0.1553363  0.4318963
 # }
 ```

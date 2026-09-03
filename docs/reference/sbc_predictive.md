@@ -81,39 +81,6 @@ rank against a continuous uniform is the classic silent SBC bug.
 
 ``` r
 sbc_normal(0.3, 0.1)
-#> $kind
-#> [1] "mixture"
-#> 
-#> $mu
-#> [1] 0.3
-#> 
-#> $var
-#> [1] 0.01
-#> 
-#> $w
-#> [1] 1
-#> 
 sbc_mixture(mu = c(0, 1), var = c(1, 4), w = c(0.7, 0.3))
-#> $kind
-#> [1] "mixture"
-#> 
-#> $mu
-#> [1] 0 1
-#> 
-#> $var
-#> [1] 1 4
-#> 
-#> $w
-#> [1] 0.7 0.3
-#> 
 sbc_discrete(support = c(0.5, 1, 2), probs = c(0.2, 0.5, 0.3))
-#> $kind
-#> [1] "discrete"
-#> 
-#> $support
-#> [1] 0.5 1.0 2.0
-#> 
-#> $probs
-#> [1] 0.2 0.5 0.3
-#> 
 ```

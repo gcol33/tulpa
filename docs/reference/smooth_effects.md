@@ -39,6 +39,5 @@ d$y <- rpois(300, exp(0.3 + sin(2 * d$x)))
 fit <- tulpa(y ~ s(x), data = d, family = "poisson")
 sm <- smooth_effects(fit)
 plot(sm$x, sm$estimate, type = "l")
-
 # }
 ```

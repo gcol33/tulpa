@@ -116,13 +116,15 @@ tulpa_hyper_grid(
   - `adaptive_grid_max_passes` (`1L`) – cap on refinement passes.
 
   - `var_of_means_consistency` (`FALSE`) – run a post-integration
-    consistency pass: for refinable axes whose joint-grid var-of-means
-    undershoots the Laplace-at-mode SD by more than `tolerance`, append
-    Laplace-guided slice points at
-    `theta_mean +/- {0.7, 1.5} * theta_sd` pinned at the modal cell. One
-    kernel call per axis.
+    consistency pass: for refinable axes whose marginal has collapsed
+    onto too few nodes to carry a spread, append Laplace-guided slice
+    points at `theta_mean +/- {0.7, 1.5} * sd` pinned at the modal cell,
+    `sd` being the parabola at the modal node. One kernel call per axis.
 
-  - `var_of_means_tolerance` (`0.7`) – consistency-pass trigger ratio.
+  - `var_of_means_min_ess` (`.nl_diag("axis_sd_ess")`) – the quadrature
+    effective sample size an axis marginal has to reach for the pass to
+    leave it alone. Read off the weights, so the trigger is not one SD
+    estimator compared against the other.
 
 ## Value
 
@@ -145,8 +147,15 @@ A list of class `c("tulpa_hyper_grid", "tulpa_fit", "list")` with:
   warning when no cell carries finite mass).
 
 - `theta_mean`, `theta_sd` – named numeric vectors; weighted posterior
-  mean and SD per axis. SDs refit via the 3-point Laplace-at-mode
-  parabola where possible.
+  mean and SD per axis. Each SD comes from the estimator its axis's own
+  resolution calls for – the weighted spread of the axis marginal where
+  it is resolved, the 3-point parabola at the modal node where the
+  marginal has collapsed onto too few nodes to have a spread.
+
+- `theta_sd_source`, `theta_sd_ess`, `theta_sd_stencil_declined` – per
+  axis, which estimator produced the SD, the quadrature effective sample
+  size that decided it, and (where the parabola was wanted and could not
+  be formed) why it declined.
 
 - `theta_median`, `theta_ci_lo`, `theta_ci_hi` – named numeric vectors;
   weighted-quantile median and 2.5 / 97.5\\ (the recommended summary for

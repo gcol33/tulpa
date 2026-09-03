@@ -94,5 +94,4 @@ theta <- list(
 )
 sim <- tulpa_simulate(y ~ x, fam, df, theta = theta, n_sims = 3, seed = 1)
 length(sim$y)  # 3
-#> [1] 3
 ```

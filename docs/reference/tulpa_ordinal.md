@@ -72,9 +72,5 @@ Fm <- plogis(outer(-eta, cuts, "+")); P <- cbind(Fm, 1) - cbind(0, Fm)
 y <- ordered(apply(P, 1, function(pr) sample.int(4L, 1L, prob = pr)))
 fit <- tulpa_ordinal(y ~ x, data = data.frame(y = y, x = x))
 fit$coefficients; fit$cutpoints
-#>         x 
-#> 0.8391392 
-#>        1|2        2|3        3|4 
-#> -1.0608612  0.4512822  1.9829574 
 # }
 ```

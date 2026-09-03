@@ -106,5 +106,4 @@ draws <- matrix(rnorm(2000, mean = y * 100 / 101, sd = sqrt(100 / 101)),
                 ncol = 1)
 bs <- bridge_sampling(draws, log_post)
 bs$log_marginal  # should match dnorm(y, 0, sqrt(101), log = TRUE)
-#> [1] -3.238743
 ```

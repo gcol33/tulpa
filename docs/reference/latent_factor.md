@@ -138,59 +138,15 @@ single-response in-formula latent Gaussian block
 ``` r
 # Basic latent factor (single shared factor)
 latent_factor()
-#> Latent factor specification
-#> ===========================
-#> 
-#> Number of factors: 1 
-#> Shared: Yes (enters all processes) 
-#> Constraint: sum_to_zero 
-#> Scale: Yes 
-#> 
-#> Factor SD prior:
-#>   PC prior: P(x > 1.00) = 0.010
-#>     => Exponential(4.605)
 
 # Two latent factors
 latent_factor(n_factors = 2)
-#> Latent factor specification
-#> ===========================
-#> 
-#> Number of factors: 2 
-#> Shared: Yes (enters all processes) 
-#> Constraint: sum_to_zero 
-#> Scale: Yes 
-#> 
-#> Factor SD prior:
-#>   PC prior: P(x > 1.00) = 0.010
-#>     => Exponential(4.605)
 
 # Custom prior (more regularization)
 latent_factor(n_factors = 1, prior = prior_pc(U = 0.5, alpha = 0.01))
-#> Latent factor specification
-#> ===========================
-#> 
-#> Number of factors: 1 
-#> Shared: Yes (enters all processes) 
-#> Constraint: sum_to_zero 
-#> Scale: Yes 
-#> 
-#> Factor SD prior:
-#>   PC prior: P(x > 0.50) = 0.010
-#>     => Exponential(9.210)
 
 # Numerator-only factor (not shared)
 latent_factor(n_factors = 1, shared = FALSE)
-#> Latent factor specification
-#> ===========================
-#> 
-#> Number of factors: 1 
-#> Shared: No (first process only) 
-#> Constraint: sum_to_zero 
-#> Scale: Yes 
-#> 
-#> Factor SD prior:
-#>   PC prior: P(x > 1.00) = 0.010
-#>     => Exponential(4.605)
 
 # The spec is consumed by a ratio / multi-arm model package (tulpaRatio owns
 # the two-arm `species | total ~ ...` formula and the negbin/negbin ratio

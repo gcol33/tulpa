@@ -294,6 +294,5 @@ y <- rpois(n, exp(0.3 + 0.5 * x + b[grp]))
 re_term <- list(idx = grp, n_groups = G, n_coefs = 1L)
 fit <- tulpa_eb(y, NULL, cbind(1, x), re_term, family = "poisson")
 fit$map$sigma          # empirical-Bayes RE standard deviation
-#> [1] 0.7681137
 # }
 ```

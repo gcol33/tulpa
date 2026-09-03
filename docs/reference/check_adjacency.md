@@ -46,12 +46,4 @@ to construct a graph,
 adj <- matrix(0, 4, 4)
 for (i in 1:3) adj[i, i + 1] <- adj[i + 1, i] <- 1
 check_adjacency(adj)
-#> <adjacency check>
-#>   square:    ok (4 x 4)
-#>   symmetric: ok
-#>   zero diag: ok
-#>   binary:    ok
-#>   isolated:  0 node(s)
-#>   edges:     3
-#>   overall:   ok
 ```

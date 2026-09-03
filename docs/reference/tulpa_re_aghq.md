@@ -298,6 +298,5 @@ fit <- tulpa_re_aghq(theta0 = c(0, 0),
                      Sigma0 = list(matrix(0.25, 1, 1)),
                      make_site = make_binom_site(X, y, nt), n_obs = n, n_quad = 5L)
 sqrt(fit$Sigma_list[[1]][1, 1])     # adaptive-GHQ RE standard deviation
-#> [1] 0.796036
 # }
 ```

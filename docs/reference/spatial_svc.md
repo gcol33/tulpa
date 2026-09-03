@@ -93,13 +93,4 @@ for a spatial random effect (rather than a varying coefficient).
 ``` r
 # Intercept that varies smoothly over space
 spatial_svc(~ lon + lat)
-#> tulpa spatially-varying coefficients
-#> =====================================
-#> 
-#> Coordinates: lon, lat 
-#> Covariance: exponential 
-#> Neighbors (NNGP): 15 
-#> Shared: Yes (enters both processes) 
-#> 
-#> Terms: columns  1 
 ```

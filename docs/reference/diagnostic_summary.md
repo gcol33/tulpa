@@ -95,46 +95,6 @@ fit <- tulpa(y ~ x, data = df, family = "poisson", mode = "hmc",
              control = list(n_iter = 500L, warmup = 250L, n_chains = 2L,
                             seed = 1L))
 ds <- diagnostic_summary(fit)
-#> 
-#> === tulpa Diagnostic Summary ===
-#> 
-#> Backend: hmc 
-#> Status: WARN
-#> 
-#> Divergent transitions: 0
-#> 
-#> Parameters with Rhat > 1.01:
-#>    parameter  rhat
-#>  (Intercept) 1.015
-#> 
-#> Parameters with ESS < 400:
-#>    parameter ess_bulk ess_tail
-#>            x      175      198
-#>  (Intercept)      183      174
-#> 
-#> Recommendations:
-#>   - Rhat > 1.01: Run more iterations or chains 
-#>   - ESS < 400: Run more iterations or use thinning 
 print(ds)
-#> 
-#> === tulpa Diagnostic Summary ===
-#> 
-#> Backend: hmc 
-#> Status: WARN
-#> 
-#> Divergent transitions: 0
-#> 
-#> Parameters with Rhat > 1.01:
-#>    parameter  rhat
-#>  (Intercept) 1.015
-#> 
-#> Parameters with ESS < 400:
-#>    parameter ess_bulk ess_tail
-#>            x      175      198
-#>  (Intercept)      183      174
-#> 
-#> Recommendations:
-#>   - Rhat > 1.01: Run more iterations or chains 
-#>   - ESS < 400: Run more iterations or use thinning 
 # }
 ```

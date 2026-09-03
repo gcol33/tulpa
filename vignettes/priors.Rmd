@@ -1,4 +1,4 @@
-﻿---
+---
 title: "Specifying and checking priors"
 output: rmarkdown::html_vignette
 vignette: >
@@ -649,6 +649,8 @@ look like data the process could produce, the scale is in range.
 - `?tulpa_priors`, `?prior_normal`, `?prior_pc` and the other `prior_*`
   constructor pages.
 - `?prior_predict` and `?tulpa_family` for prior predictive simulation.
+
 - The getting-started vignette for fitting, prediction, and model comparison.
+
 - Simpson, D., Rue, H., Riebler, A., Martins, T. G., & Sorbye, S. H. (2017).
   Penalising model component complexity. *Statistical Science*, 32(1), 1-28.

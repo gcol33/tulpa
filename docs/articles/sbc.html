@@ -10,7 +10,22 @@
 <link href="../deps/bootstrap-5.3.8/bootstrap.min.css" rel="stylesheet">
 <script src="../deps/bootstrap-5.3.8/bootstrap.bundle.min.js"></script><link href="../deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet">
 <link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet">
-<script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><meta property="og:title" content="Validating calibration: simulation-based calibration">
+<script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><link href="../extra.css" rel="stylesheet">
+<meta property="og:title" content="Validating calibration: simulation-based calibration">
+<script>
+(function () {
+  var D = String.fromCharCode(36);
+  window.MathJax = {
+    tex: {
+      inlineMath: [[D, D], ["\\(", "\\)"]],
+      displayMath: [[D + D, D + D], ["\\[", "\\]"]]
+    },
+    chtml: { linebreaks: { automatic: true, width: "90% container" } },
+    svg: { linebreaks: { automatic: true, width: "90% container" } },
+    options: { renderActions: { addMenu: [] } }
+  };
+})();
+</script>
 </head>
 <body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
@@ -20,7 +35,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.2.1</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -30,7 +45,7 @@
     <div id="navbar" class="collapse navbar-collapse ms-3">
       <ul class="navbar-nav me-auto">
 <li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
-<li class="active nav-item dropdown">
+<li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
 <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpoint and resume long fits</a></li>
@@ -208,7 +223,30 @@ band.</p>
 <span>           fitter     <span class="op">=</span> <span class="va">arms</span>,</span>
 <span>           n_sim      <span class="op">=</span> <span class="fl">200L</span>,</span>
 <span>           flat_prior <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"beta1"</span>, <span class="st">"beta2"</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="va">res</span></span></code></pre></div>
+<span><span class="va">res</span></span>
+<span><span class="co">#&gt; Simulation-based calibration -- prior_predictive, 200 simulations</span></span>
+<span><span class="co">#&gt;   band: 0.95 simultaneous (equal local levels, exact crossing probability)</span></span>
+<span><span class="co">#&gt;   CRPS: proper posterior score</span></span>
+<span><span class="co">#&gt;   proper prior: verified over 10 probed simulations; flat prior asserted for beta1, beta2</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;        arm quantity   n     ks inside p_unif inside_folded p_folded     crps</span></span>
+<span><span class="co">#&gt;    mixture    beta1 200 0.0426   TRUE  0.746          TRUE   0.5120 0.173650</span></span>
+<span><span class="co">#&gt;    mixture    beta2 200 0.0667   TRUE  0.202         FALSE   0.0379 0.095863</span></span>
+<span><span class="co">#&gt;    mixture    sigma 200 0.0785   TRUE  0.285          TRUE   0.0986 0.106190</span></span>
+<span><span class="co">#&gt;  collapsed    beta1 200 0.0541   TRUE  0.568          TRUE   0.1180 0.173570</span></span>
+<span><span class="co">#&gt;  collapsed    beta2 200 0.0713   TRUE  0.397          TRUE   0.0915 0.095918</span></span>
+<span><span class="co">#&gt;     narrow    beta1 200 0.0679   TRUE  0.335          TRUE   0.3150 0.173820</span></span>
+<span><span class="co">#&gt;     narrow    beta2 200 0.0522   TRUE  0.569          TRUE   0.5030 0.095476</span></span>
+<span><span class="co">#&gt;  crps_se</span></span>
+<span><span class="co">#&gt;  0.01030</span></span>
+<span><span class="co">#&gt;  0.00442</span></span>
+<span><span class="co">#&gt;  0.00698</span></span>
+<span><span class="co">#&gt;  0.01010</span></span>
+<span><span class="co">#&gt;  0.00439</span></span>
+<span><span class="co">#&gt;  0.01110</span></span>
+<span><span class="co">#&gt;  0.00496</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; 7 of 7 (arm, quantity) reads inside the band; outside the band: mixture/beta2.</span></span></code></pre></div>
 <p><code>flat_prior</code> is a guard doing its job. Ordinary SBC draws
 the truth from the prior, so an improper prior has nothing to draw from,
 and the nested-Laplace door puts no prior on the fixed effects.
@@ -250,7 +288,35 @@ here.</p>
 <p><code>summary(baseline = )</code> pairs the CRPS seed by seed against
 one arm.</p>
 <div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">res</span>, baseline <span class="op">=</span> <span class="st">"mixture"</span><span class="op">)</span></span></code></pre></div>
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">res</span>, baseline <span class="op">=</span> <span class="st">"mixture"</span><span class="op">)</span></span>
+<span><span class="co">#&gt; Simulation-based calibration -- prior_predictive, 200 simulations</span></span>
+<span><span class="co">#&gt;   CRPS: proper posterior score</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;        arm quantity   n     ks inside p_unif inside_folded p_folded     crps</span></span>
+<span><span class="co">#&gt;    mixture    beta1 200 0.0426   TRUE  0.746          TRUE   0.5120 0.173650</span></span>
+<span><span class="co">#&gt;    mixture    beta2 200 0.0667   TRUE  0.202         FALSE   0.0379 0.095863</span></span>
+<span><span class="co">#&gt;    mixture    sigma 200 0.0785   TRUE  0.285          TRUE   0.0986 0.106190</span></span>
+<span><span class="co">#&gt;  collapsed    beta1 200 0.0541   TRUE  0.568          TRUE   0.1180 0.173570</span></span>
+<span><span class="co">#&gt;  collapsed    beta2 200 0.0713   TRUE  0.397          TRUE   0.0915 0.095918</span></span>
+<span><span class="co">#&gt;     narrow    beta1 200 0.0679   TRUE  0.335          TRUE   0.3150 0.173820</span></span>
+<span><span class="co">#&gt;     narrow    beta2 200 0.0522   TRUE  0.569          TRUE   0.5030 0.095476</span></span>
+<span><span class="co">#&gt;  crps_se</span></span>
+<span><span class="co">#&gt;  0.01030</span></span>
+<span><span class="co">#&gt;  0.00442</span></span>
+<span><span class="co">#&gt;  0.00698</span></span>
+<span><span class="co">#&gt;  0.01010</span></span>
+<span><span class="co">#&gt;  0.00439</span></span>
+<span><span class="co">#&gt;  0.01110</span></span>
+<span><span class="co">#&gt;  0.00496</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; Paired CRPS against arm 'mixture' (negative delta = better)</span></span>
+<span><span class="co">#&gt;  quantity       arm   n      delta     t worse_frac   p_sign</span></span>
+<span><span class="co">#&gt;     beta1 collapsed 200 -7.729e-05 -0.16      0.620 0.000845</span></span>
+<span><span class="co">#&gt;     beta1    narrow 200  1.715e-04  0.18      0.375 0.000499</span></span>
+<span><span class="co">#&gt;     beta2 collapsed 200  5.578e-05  0.27      0.505 0.944000</span></span>
+<span><span class="co">#&gt;     beta2    narrow 200 -3.865e-04 -0.61      0.385 0.001400</span></span>
+<span><span class="co">#&gt;   delta with its t is the proper-score verdict; p_sign is a more</span></span>
+<span><span class="co">#&gt;   powerful detector of a difference but is not itself proper.</span></span></code></pre></div>
 <p><code>delta</code> with its <code>t</code> is the proper-score
 verdict; a negative <code>delta</code> is the arm scoring better.
 <code>p_sign</code> is more powerful at detecting that two arms differ
@@ -273,8 +339,10 @@ sweep is not offered as an experiment, and
 </h2>
 <div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/graphics/plot.default.html" class="external-link">plot</a></span><span class="op">(</span><span class="va">res</span>, arm <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"mixture"</span>, <span class="st">"narrow"</span><span class="op">)</span>, quantity <span class="op">=</span> <span class="st">"beta2"</span><span class="op">)</span></span></code></pre></div>
+<p><img src="sbc_files/figure-html/plot-raw-1.png" class="r-plt" alt="PIT ECDF difference from uniform against the simultaneous band" width="672"></p>
 <div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/graphics/plot.default.html" class="external-link">plot</a></span><span class="op">(</span><span class="va">res</span>, arm <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"mixture"</span>, <span class="st">"narrow"</span><span class="op">)</span>, quantity <span class="op">=</span> <span class="st">"beta2"</span>, folded <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span></code></pre></div>
+<p><img src="sbc_files/figure-html/plot-folded-1.png" class="r-plt" alt="Folded PIT ECDF difference from uniform against the simultaneous band" width="672"></p>
 <p>The plot draws the ECDF <strong>difference</strong> from uniform, so
 a calibrated read is a flat line at zero inside the band. The
 under-dispersed arm bows away from it, and the bow is larger folded than
@@ -346,7 +414,26 @@ score all carry over, and it needs no proper prior at all.</p>
 <span>  group_ids <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">data</span><span class="op">)</span> <span class="va">data</span><span class="op">$</span><span class="va">region</span><span class="op">)</span></span></code></pre></div>
 <div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">pres</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/sbc.html">sbc</a></span><span class="op">(</span><span class="st">"posterior"</span>, model <span class="op">=</span> <span class="va">model</span>, n_sim <span class="op">=</span> <span class="fl">200L</span><span class="op">)</span></span>
-<span><span class="va">pres</span></span></code></pre></div>
+<span><span class="va">pres</span></span>
+<span><span class="co">#&gt; Simulation-based calibration -- posterior, 200 simulations</span></span>
+<span><span class="co">#&gt;   band: 0.95 simultaneous (equal local levels, exact crossing probability)</span></span>
+<span><span class="co">#&gt;   CRPS: proper posterior score (updating prior = posterior at y_obs)</span></span>
+<span><span class="co">#&gt;   pooling: verified; fresh groups: verified (disjoint group labels)</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;      arm quantity   n     ks inside  p_unif inside_folded p_folded     crps</span></span>
+<span><span class="co">#&gt;  mixture    beta1 200 0.0474   TRUE 0.53500          TRUE 0.167000 0.086533</span></span>
+<span><span class="co">#&gt;  mixture    beta2 200 0.0513   TRUE 0.77900          TRUE 0.470000 0.069730</span></span>
+<span><span class="co">#&gt;  mixture    sigma 200 0.0729   TRUE 0.52100          TRUE 0.431000 0.060628</span></span>
+<span><span class="co">#&gt;   narrow    beta1 200 0.0612  FALSE 0.01730         FALSE 0.001610 0.086355</span></span>
+<span><span class="co">#&gt;   narrow    beta2 200 0.0612  FALSE 0.00395         FALSE 0.000447 0.069845</span></span>
+<span><span class="co">#&gt;  crps_se</span></span>
+<span><span class="co">#&gt;  0.00485</span></span>
+<span><span class="co">#&gt;  0.00371</span></span>
+<span><span class="co">#&gt;  0.00406</span></span>
+<span><span class="co">#&gt;  0.00526</span></span>
+<span><span class="co">#&gt;  0.00408</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; 3 of 5 (arm, quantity) reads inside the band; outside the band: narrow/beta1, narrow/beta2.</span></span></code></pre></div>
 <p>The driver hands <code>draw_theta</code> and <code>simulate</code>
 different seeds, so <code>set.seed(seed)</code> at the top of each is
 the correct fixture. Giving both the same seed makes the replicate’s
@@ -361,7 +448,10 @@ under test.</p>
 not SBC, so each has a guard, and each guard’s conclusion travels on the
 result.</p>
 <div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/utils/str.html" class="external-link">str</a></span><span class="op">(</span><span class="va">pres</span><span class="op">$</span><span class="va">premises</span><span class="op">)</span></span></code></pre></div>
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/utils/str.html" class="external-link">str</a></span><span class="op">(</span><span class="va">pres</span><span class="op">$</span><span class="va">premises</span><span class="op">)</span></span>
+<span><span class="co">#&gt; List of 2</span></span>
+<span><span class="co">#&gt;  $ pooling     : chr "verified"</span></span>
+<span><span class="co">#&gt;  $ fresh_groups: chr "verified (disjoint group labels)"</span></span></code></pre></div>
 <p><strong>The augmented posterior conditions on both data
 sets.</strong> Fitting the replicate alone is ordinary SBC under a
 hand-made prior. <code><a href="../reference/sbc.html">sbc()</a></code> refuses a <code>pool()</code>
@@ -416,7 +506,24 @@ makes a pass the weaker one.</p>
 calibration result.</p>
 <div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu">fit_one</span><span class="op">(</span><span class="va">d_obs</span>, diagnose <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
-<span><span class="fu"><a href="../reference/diagnostics.html">diagnostics</a></span><span class="op">(</span><span class="va">fit</span>, sbc <span class="op">=</span> <span class="va">res</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu"><a href="../reference/diagnostics.html">diagnostics</a></span><span class="op">(</span><span class="va">fit</span>, sbc <span class="op">=</span> <span class="va">res</span><span class="op">)</span></span>
+<span><span class="co">#&gt; Nested-Laplace WHOLE-FIT reliability (i.i.d. draws)</span></span>
+<span><span class="co">#&gt;   two layers: the outer hyperparameter-grid integration, and the inner Gaussian Laplace on the latent field</span></span>
+<span><span class="co">#&gt;   outer PSIS pareto_k = 0.790 (unreliable); IS-ESS = 63.1</span></span>
+<span><span class="co">#&gt;   outer grid quadrature ESS = 4.30 of 7 cells (max weight 0.309)</span></span>
+<span><span class="co">#&gt;   note: outer grid holds material weight on a boundary node of b1.sigma (lower): that axis truncates its own marginal there, whether or not its mode sits on the node -- widen it and refit to see what is outside</span></span>
+<span><span class="co">#&gt;   note: outer grid axis maximal at its own boundary on b1.sigma:lower (not moved: auto_recenter_disabled): the span does not contain that axis's mode, so its marginal is a truncated tail at any spacing -- widen or pin that axis and refit</span></span>
+<span><span class="co">#&gt;   note: outer grid resolution could not be scored on b1.sigma (mode_at_edge): 0 of 1 axes carry a cell-width / posterior-SD ratio, so the grid is not established as resolved on the rest -- an axis reading `mode_at_edge` is one whose nodes do not contain its own posterior mode, which no spacing statement can be made about</span></span>
+<span><span class="co">#&gt;   note: outer grid does not contain its own posterior mode on b1.sigma:lower: that axis's extreme node carries the modal mass, so its reported bound is an extrapolation off the end of the design -- widen the axis rather than adding nodes inside it</span></span>
+<span><span class="co">#&gt;   inner Laplace max |gamma_3| = 0.000 (good), scored 2/2 latents</span></span>
+<span><span class="co">#&gt;   inner Laplace importance pareto_k = 0.275 (good), min IS efficiency 1.0000, scored 2/2 latents</span></span>
+<span><span class="co">#&gt;     the importance weights are uniform on every probed index: the inner</span></span>
+<span><span class="co">#&gt;     Gaussian reproduces the conditional posterior over the sampled region,</span></span>
+<span><span class="co">#&gt;     so the shape above describes no correction and is not banded</span></span>
+<span><span class="co">#&gt;   whole-fit verdict: scoped: outer (hyperparameter) integration flagged</span></span>
+<span><span class="co">#&gt;   calibration (SBC, prior_predictive): outside the band: mixture/beta2</span></span>
+<span><span class="co">#&gt;   per-parameter columns: none.</span></span>
+<span><span class="co">#&gt;     the fit carries no posterior draws, so the per-parameter mean / sd / ESS / rhat columns are empty; tulpa_posterior_draws(fit) samples the retained outer-grid mixture if a sample is wanted</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a>
@@ -462,7 +569,7 @@ Statistical Association</em> <strong>102</strong>, 359-378.</p>
 </div>
 
 <div class="pkgdown-footer-right">
-  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.0.</p>
+  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.1.</p>
 </div>
 
     </footer>

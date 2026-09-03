@@ -68,7 +68,5 @@ attribute.
 ``` r
 prior <- list(type = "icar", sigma_grid = auto_grid(c(0.1, 0.5, 1, 2, 3)))
 is_auto_grid(prior$sigma_grid)
-#> [1] TRUE
 is_auto_grid(auto_grid(list("pc.prec", c(U = 3, alpha = 0.01))))
-#> [1] TRUE
 ```

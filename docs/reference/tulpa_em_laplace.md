@@ -251,10 +251,7 @@ m_step_encode <- function(weights, ...) {
 
 res <- tulpa_em_laplace(e_step, m_step_encode, verbose = FALSE)
 res$converged
-#> [1] TRUE
 plogis(res$fits$occ$mode[1])    # P(non-structural), truth 0.7
-#> [1] 0.7041959
 exp(res$fits$abund$mode[1])     # abundance mean, truth 4
-#> [1] 3.872501
 # }
 ```

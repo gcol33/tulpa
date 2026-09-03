@@ -69,7 +69,12 @@ fit_spde(
 
 - phi:
 
-  Dispersion parameter (negbin only).
+  Dispersion passed to the family, held fixed. One convention at every
+  door: for `gaussian` / `lognormal` this is the residual VARIANCE (the
+  SD is `sqrt(phi)`), for `neg_binomial_2` the size, `gamma` the shape,
+  `beta` the precision, `t` the scale; `binomial` and `poisson` ignore
+  it. The compiled kernels parameterize the two variance families by the
+  residual SD and are handed `sqrt(phi)` at the boundary.
 
 - offset:
 
@@ -122,8 +127,16 @@ fit_spde(
     against the Gaussian proposal that orients the integration. See
     [`tulpa_psis()`](https://gillescolling.com/tulpa/reference/tulpa_psis.md).
 
-  - `k_samples`: importance draws for `diagnose_k`. Default 200, each
-    one extra batched SPDE marginal evaluation.
+  - `k_samples`: importance draws for `diagnose_k`. Default 500, each
+    one extra batched SPDE marginal evaluation. It is a precision knob:
+    the GPD tail size is held at the fraction the default budget
+    implies, so a larger budget sharpens the same k-hat rather than
+    moving it to a deeper quantile of the weight distribution
+    (gcol33/tulpa#631).
+
+  - `k_tail_points`: expert override for that tail size, in upper-tail
+    order statistics. Silently capped at 20% of the draws, beyond which
+    body ratios enter the tail and bias the shape.
 
   - `mode_find`: tuning for the outer `(range, sigma)` mode-find under
     `method = "ccd"`, as `list(factr =, ndeps =, maxit =)`; supply any
@@ -165,6 +178,12 @@ A list with:
 - `pareto_k`, `pareto_k_is_ess`: outer Pareto-\\\hat{k}\\ and its
   importance-sampling ESS (`NA` when `diagnose_k = FALSE`)
 
+- `pareto_k_proposal_source`, `pareto_k_first_pass`: which proposal
+  family the reported k-hat came from (several candidates are scored and
+  the best kept), and the k-hat of the first pass – the proposal exactly
+  as placed, before refinement. A large gap says the placement is poor
+  even where the verdict is fine.
+
 - `nested`: nested Laplace results (if used)
 
 ## References
@@ -195,6 +214,5 @@ if (requireNamespace("fmesher", quietly = TRUE)) {
   fit <- fit_spde(y = y, X = cbind(1, x), spatial = spec, family = "poisson")
   fit$nested$range_mean
 }
-#> [1] 0.07126109
 # }
 ```

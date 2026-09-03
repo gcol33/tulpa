@@ -10,7 +10,22 @@
 <link href="../deps/bootstrap-5.3.8/bootstrap.min.css" rel="stylesheet">
 <script src="../deps/bootstrap-5.3.8/bootstrap.bundle.min.js"></script><link href="../deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet">
 <link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet">
-<script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><meta property="og:title" content="Temporal random-walk effects with tulpa">
+<script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><link href="../extra.css" rel="stylesheet">
+<meta property="og:title" content="Temporal random-walk effects with tulpa">
+<script>
+(function () {
+  var D = String.fromCharCode(36);
+  window.MathJax = {
+    tex: {
+      inlineMath: [[D, D], ["\\(", "\\)"]],
+      displayMath: [[D + D, D + D], ["\\[", "\\]"]]
+    },
+    chtml: { linebreaks: { automatic: true, width: "90% container" } },
+    svg: { linebreaks: { automatic: true, width: "90% container" } },
+    options: { renderActions: { addMenu: [] } }
+  };
+})();
+</script>
 </head>
 <body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
@@ -20,7 +35,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.2.1</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -30,7 +45,7 @@
     <div id="navbar" class="collapse navbar-collapse ms-3">
       <ul class="navbar-nav me-auto">
 <li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
-<li class="active nav-item dropdown">
+<li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
 <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpoint and resume long fits</a></li>
@@ -352,14 +367,19 @@ no <code>temporal(col)</code> term in the formula.</p>
 <code class="sourceCode R"><span><span class="va">tspec</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/temporal_rw1.html">temporal_rw1</a></span><span class="op">(</span><span class="st">"time"</span><span class="op">)</span></span>
 <span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">df</span>, family <span class="op">=</span> <span class="st">"binomial"</span>,</span>
 <span>             temporal <span class="op">=</span> <span class="va">tspec</span>, mode <span class="op">=</span> <span class="st">"auto"</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
+<span><span class="co">#&gt; (Intercept)           x </span></span>
+<span><span class="co">#&gt;  -0.2132393   0.8881760</span></span></code></pre></div>
 <p>The slope lands near the true
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0.9</mn><annotation encoding="application/x-tex">0.9</annotation></semantics></math>.
 The intercept reads near zero with a very wide interval, the sum-to-zero
 constraint at work, covered below. How was the fit routed?</p>
 <div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>backend <span class="op">=</span> <span class="va">fit</span><span class="op">$</span><span class="va">backend</span>, tier <span class="op">=</span> <span class="va">fit</span><span class="op">$</span><span class="va">inference_tier</span><span class="op">)</span></span>
-<span><span class="va">fit</span><span class="op">$</span><span class="va">selection_reason</span></span></code></pre></div>
+<span><span class="co">#&gt;          backend             tier </span></span>
+<span><span class="co">#&gt; "nested_laplace"              "2"</span></span>
+<span><span class="va">fit</span><span class="op">$</span><span class="va">selection_reason</span></span>
+<span><span class="co">#&gt; [1] "temporal rw1 field; nested-Laplace integration"</span></span></code></pre></div>
 <p><code>mode = "auto"</code> recognised the temporal field, turned the
 RW1 into its chain ICAR block, and sent it to the nested-Laplace backend
 (Tier 2). That backend puts a grid over the smoothing precision
@@ -385,10 +405,25 @@ through a wider slope interval rather than a falsely confident one.
 <code><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary()</a></code> gives the fixed-effect table with marginalized
 standard errors and credible bounds.</p>
 <div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span></code></pre></div>
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
+<span><span class="co">#&gt;               estimate  std.error       2.5%       97.5%</span></span>
+<span><span class="co">#&gt; (Intercept) -0.2132393 0.10488702 -0.4227211 -0.01157154</span></span>
+<span><span class="co">#&gt; x            0.8881760 0.08880567  0.7320449  1.08015672</span></span></code></pre></div>
 <p><code><a href="https://rdrr.io/r/stats/confint.html" class="external-link">confint()</a></code> returns the same bounds as a matrix.</p>
 <div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/stats/confint.html" class="external-link">confint</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span></code></pre></div>
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/stats/confint.html" class="external-link">confint</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
+<span><span class="co">#&gt;                   2.5%       97.5%</span></span>
+<span><span class="co">#&gt; (Intercept) -0.4227211 -0.01157154</span></span>
+<span><span class="co">#&gt; x            0.7320449  1.08015672</span></span>
+<span><span class="co">#&gt; attr(,"skew_applied")</span></span>
+<span><span class="co">#&gt; (Intercept)           x </span></span>
+<span><span class="co">#&gt;        TRUE        TRUE </span></span>
+<span><span class="co">#&gt; attr(,"interval_source")</span></span>
+<span><span class="co">#&gt; [1] "skew_map_cell"</span></span>
+<span><span class="co">#&gt; attr(,"interval_declined")</span></span>
+<span><span class="co">#&gt; [1] "skew_correct: gamma_3 is retained at the MAP cell only, so the mixture components carry no per-cell skew to compose; the coefficients it declines keep the read they would have had"</span></span>
+<span><span class="co">#&gt; attr(,"retained_mass")</span></span>
+<span><span class="co">#&gt; [1] 1</span></span></code></pre></div>
 <div class="section level3">
 <h3 id="extracting-the-temporal-trend">Extracting the temporal trend<a class="anchor" aria-label="anchor" href="#extracting-the-temporal-trend"></a>
 </h3>
@@ -409,7 +444,8 @@ is the weight-averaged mode in the column for that time point.</p>
 <span><span class="va">phi_hat</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">vapply</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">T_pts</span><span class="op">)</span>,</span>
 <span>                  <span class="kw">function</span><span class="op">(</span><span class="va">u</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">w</span> <span class="op">*</span> <span class="va">fit</span><span class="op">$</span><span class="va">modes</span><span class="op">[</span>, <span class="va">nf</span> <span class="op">+</span> <span class="va">u</span><span class="op">]</span><span class="op">)</span>,</span>
 <span>                  <span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">numeric</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">phi_hat</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">phi_hat</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [1] 0.247 0.604 0.822 0.976 1.259 1.373</span></span></code></pre></div>
 <p>The offset <code>nf + u</code> skips the <code>nf</code> fixed-effect
 columns and lands on the field column for time
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>u</mi><annotation encoding="application/x-tex">u</annotation></semantics></math>.
@@ -444,11 +480,13 @@ both before comparing.</p>
 <span><span class="fu"><a href="https://rdrr.io/r/graphics/lines.html" class="external-link">lines</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">T_pts</span><span class="op">)</span>, <span class="va">phi_hat</span> <span class="op">-</span> <span class="fu"><a href="https://rdrr.io/r/base/mean.html" class="external-link">mean</a></span><span class="op">(</span><span class="va">phi_hat</span><span class="op">)</span>, col <span class="op">=</span> <span class="st">"darkorange"</span>, lwd <span class="op">=</span> <span class="fl">2</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/graphics/legend.html" class="external-link">legend</a></span><span class="op">(</span><span class="st">"topright"</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"truth"</span>, <span class="st">"estimate"</span><span class="op">)</span>,</span>
 <span>       col <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"black"</span>, <span class="st">"darkorange"</span><span class="op">)</span>, lwd <span class="op">=</span> <span class="fl">2</span>, bty <span class="op">=</span> <span class="st">"n"</span><span class="op">)</span></span></code></pre></div>
+<p><img src="temporal-models_files/figure-html/trend-plot-1.png" class="r-plt" alt="Estimated RW1 trend across time points overlaid on the true simulated trend" width="576"></p>
 <p>The estimate tracks the sine wave it was built from, smoothed a touch
 where the prior pulls neighbours together. The correlation between the
 two confirms it.</p>
 <div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/cor.html" class="external-link">cor</a></span><span class="op">(</span><span class="va">phi_hat</span>, <span class="va">trend</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span></span></code></pre></div>
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/cor.html" class="external-link">cor</a></span><span class="op">(</span><span class="va">phi_hat</span>, <span class="va">trend</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [1] 0.971</span></span></code></pre></div>
 <p>The smoothing precision
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>τ</mi><annotation encoding="application/x-tex">\tau</annotation></semantics></math>
 controls how tightly the walk hugs a straight line, and the fit reports
@@ -458,7 +496,9 @@ posterior mean of the field’s hyperparameter, with
 <div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>mean <span class="op">=</span> <span class="va">fit</span><span class="op">$</span><span class="va">theta_mean</span>,</span>
 <span>  lower <span class="op">=</span> <span class="va">fit</span><span class="op">$</span><span class="va">theta_ci_lo</span>,</span>
-<span>  upper <span class="op">=</span> <span class="va">fit</span><span class="op">$</span><span class="va">theta_ci_hi</span><span class="op">)</span></span></code></pre></div>
+<span>  upper <span class="op">=</span> <span class="va">fit</span><span class="op">$</span><span class="va">theta_ci_hi</span><span class="op">)</span></span>
+<span><span class="co">#&gt;        mean lower.value upper.value </span></span>
+<span><span class="co">#&gt;    8.687384    2.811919   21.330535</span></span></code></pre></div>
 <p>A larger
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>τ</mi><annotation encoding="application/x-tex">\tau</annotation></semantics></math>
 means a stiffer walk. Here the interval excludes the very large values
@@ -513,7 +553,9 @@ trend is not separately identified from
 so the sum-to-zero constraint hands the intercept a near-flat posterior
 and its standard error sits at roughly the prior width.</p>
 <div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span><span class="op">[</span><span class="st">"(Intercept)"</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"estimate"</span>, <span class="st">"std.error"</span><span class="op">)</span><span class="op">]</span></span></code></pre></div>
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span><span class="op">[</span><span class="st">"(Intercept)"</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"estimate"</span>, <span class="st">"std.error"</span><span class="op">)</span><span class="op">]</span></span>
+<span><span class="co">#&gt;               estimate std.error</span></span>
+<span><span class="co">#&gt; (Intercept) -0.2132393  0.104887</span></span></code></pre></div>
 <p>That large standard error is a feature of the parameterisation, not a
 sign the fit failed. Interpret slopes, which are identified and
 marginalized; do not read the intercept as an estimate of the overall
@@ -549,7 +591,10 @@ unidentified level rather than by covariate uncertainty.</p>
 <div class="sourceCode" id="cb13"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">nd</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>x <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq</a></span><span class="op">(</span><span class="op">-</span><span class="fl">2</span>, <span class="fl">2</span>, length.out <span class="op">=</span> <span class="fl">50</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="va">pr</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">fit</span>, newdata <span class="op">=</span> <span class="va">nd</span>, type <span class="op">=</span> <span class="st">"link"</span>, se.fit <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">pr</span>, <span class="fl">2</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">pr</span>, <span class="fl">2</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span></span>
+<span><span class="co">#&gt;      fit se.fit  lower  upper</span></span>
+<span><span class="co">#&gt; 1 -1.990  0.210 -2.401 -1.578</span></span>
+<span><span class="co">#&gt; 2 -1.917  0.204 -2.316 -1.518</span></span></code></pre></div>
 <p>The informative quantity is how the prediction <em>changes</em> with
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>x</mi><annotation encoding="application/x-tex">x</annotation></semantics></math>,
 which is the slope and its tight interval, not the absolute height of
@@ -565,6 +610,7 @@ out and the slope’s uncertainty is what remains.</p>
 <span>        <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">ctr</span> <span class="op">-</span> <span class="va">band</span>, <span class="fu"><a href="https://rdrr.io/r/base/rev.html" class="external-link">rev</a></span><span class="op">(</span><span class="va">ctr</span> <span class="op">+</span> <span class="va">band</span><span class="op">)</span><span class="op">)</span>,</span>
 <span>        col <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/grDevices/adjustcolor.html" class="external-link">adjustcolor</a></span><span class="op">(</span><span class="st">"steelblue"</span>, <span class="fl">0.25</span><span class="op">)</span>, border <span class="op">=</span> <span class="cn">NA</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/graphics/lines.html" class="external-link">lines</a></span><span class="op">(</span><span class="va">nd</span><span class="op">$</span><span class="va">x</span>, <span class="va">ctr</span>, lwd <span class="op">=</span> <span class="fl">2</span><span class="op">)</span></span></code></pre></div>
+<p><img src="temporal-models_files/figure-html/predict-plot-1.png" class="r-plt" alt="Centred link-scale prediction across x with the covariate slope and its credible band" width="576"></p>
 <p>The band is narrow because the slope is well identified, even though
 the line’s absolute position is not. Centring is the right move
 precisely because the quantity of interest is a contrast: the difference
@@ -593,7 +639,8 @@ returns the approximate log marginal likelihood, the quantity to compare
 across specifications.</p>
 <div class="sourceCode" id="cb15"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">m_nt</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">df</span>, family <span class="op">=</span> <span class="st">"binomial"</span>, mode <span class="op">=</span> <span class="st">"laplace"</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">as.numeric</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/logLik.html" class="external-link">logLik</a></span><span class="op">(</span><span class="va">m_nt</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">as.numeric</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/logLik.html" class="external-link">logLik</a></span><span class="op">(</span><span class="va">m_nt</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [1] -576.4314</span></span></code></pre></div>
 <p>A nested fit integrates over a grid of
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>τ</mi><annotation encoding="application/x-tex">\tau</annotation></semantics></math>,
 so its <code>$log_marginal</code> is a vector with one entry per grid
@@ -602,7 +649,9 @@ likelihood, a log-sum-exp over that vector.</p>
 <div class="sourceCode" id="cb16"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">lse</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">v</span><span class="op">)</span> <span class="op">{</span> <span class="va">m</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">max</a></span><span class="op">(</span><span class="va">v</span><span class="op">)</span>; <span class="va">m</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">log</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="va">v</span> <span class="op">-</span> <span class="va">m</span><span class="op">)</span><span class="op">)</span><span class="op">)</span> <span class="op">}</span></span>
 <span><span class="va">evidence_temporal</span> <span class="op">&lt;-</span> <span class="fu">lse</span><span class="op">(</span><span class="va">fit</span><span class="op">$</span><span class="va">log_marginal</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>no_temporal <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">as.numeric</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/logLik.html" class="external-link">logLik</a></span><span class="op">(</span><span class="va">m_nt</span><span class="op">)</span><span class="op">)</span>, temporal <span class="op">=</span> <span class="va">evidence_temporal</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>no_temporal <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">as.numeric</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/logLik.html" class="external-link">logLik</a></span><span class="op">(</span><span class="va">m_nt</span><span class="op">)</span><span class="op">)</span>, temporal <span class="op">=</span> <span class="va">evidence_temporal</span><span class="op">)</span></span>
+<span><span class="co">#&gt; no_temporal    temporal </span></span>
+<span><span class="co">#&gt;   -576.4314   -514.8424</span></span></code></pre></div>
 <p>The temporal model carries substantially higher evidence, matching
 the fact that a trend really was in the data.
 <code><a href="../reference/compare_models.html">compare_models()</a></code> ranks fits by a shared criterion, reading
@@ -611,7 +660,10 @@ each one’s <code><a href="https://rdrr.io/r/stats/logLik.html" class="external
 <code class="sourceCode R"><span><span class="va">cmp</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/compare_models.html">compare_models</a></span><span class="op">(</span>no_temporal <span class="op">=</span> <span class="va">m_nt</span>,</span>
 <span>                      temporal <span class="op">=</span> <span class="va">fit</span>,</span>
 <span>                      criterion <span class="op">=</span> <span class="st">"loglik"</span><span class="op">)</span></span>
-<span><span class="va">cmp</span></span></code></pre></div>
+<span><span class="va">cmp</span></span>
+<span><span class="co">#&gt;         model n_params    logLik</span></span>
+<span><span class="co">#&gt; 1 no_temporal        2 -576.4314</span></span>
+<span><span class="co">#&gt; 2    temporal        2 -514.8424</span></span></code></pre></div>
 <p>On the nested temporal fit <code><a href="https://rdrr.io/r/stats/logLik.html" class="external-link">logLik()</a></code> returns the
 integrated evidence, the log-sum-exp of <code>$log_marginal</code>
 computed above, so <code><a href="../reference/compare_models.html">compare_models()</a></code> carries one row per
@@ -643,7 +695,9 @@ the trend and slope, swap the binary draw for a Gaussian one.</p>
 <span><span class="va">dfg</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>y <span class="op">=</span> <span class="va">yg</span>, x <span class="op">=</span> <span class="va">x</span>, time <span class="op">=</span> <span class="va">time</span><span class="op">)</span></span>
 <span><span class="va">fitg</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">dfg</span>, family <span class="op">=</span> <span class="st">"gaussian"</span>,</span>
 <span>              temporal <span class="op">=</span> <span class="va">tspec</span>, mode <span class="op">=</span> <span class="st">"auto"</span>, phi <span class="op">=</span> <span class="fl">0.5</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fitg</span><span class="op">)</span><span class="op">[</span><span class="st">"x"</span><span class="op">]</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fitg</span><span class="op">)</span><span class="op">[</span><span class="st">"x"</span><span class="op">]</span></span>
+<span><span class="co">#&gt;         x </span></span>
+<span><span class="co">#&gt; 0.9227363</span></span></code></pre></div>
 <p>The slope again recovers near
 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0.9</mn><annotation encoding="application/x-tex">0.9</annotation></semantics></math>,
 and the same field-extraction recipe lifts the trend out of
@@ -706,7 +760,9 @@ differences for a smoother trend than RW1:</p>
 <div class="sourceCode" id="cb19"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">fit_rw2</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">df</span>, family <span class="op">=</span> <span class="st">"binomial"</span>,</span>
 <span>                 temporal <span class="op">=</span> <span class="fu"><a href="../reference/temporal_rw2.html">temporal_rw2</a></span><span class="op">(</span><span class="st">"time"</span><span class="op">)</span>, mode <span class="op">=</span> <span class="st">"auto"</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_rw2</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_rw2</span><span class="op">)</span></span>
+<span><span class="co">#&gt; (Intercept)           x </span></span>
+<span><span class="co">#&gt;  -0.2127041   0.8958525</span></span></code></pre></div>
 <p><code><a href="../reference/temporal_ar1.html">temporal_ar1()</a></code> is a stationary, full-rank alternative
 with an estimated correlation parameter rather than an intrinsic walk.
 Panel trends through <code>group_var=</code> fit a separate walk per
@@ -740,14 +796,13 @@ later wiring.</p>
 <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a>
 </h2>
 <ul>
-<li>
-<code><a href="../reference/temporal_rw1.html">?temporal_rw1</a></code>: constructor reference.</li>
-<li>The spatial vignette: the same nested-Laplace path on an areal ICAR
-field.</li>
-<li>The <code><a href="../reference/tgmrf.html">tgmrf()</a></code> vignette: building a custom GMRF latent
-block, including a periodic AR(1), end to end.</li>
-<li>The inference-modes vignette: what the Tier-2 nested-Laplace
-guarantee means.</li>
+<li><p><code><a href="../reference/temporal_rw1.html">?temporal_rw1</a></code>: constructor reference.</p></li>
+<li><p>The spatial vignette: the same nested-Laplace path on an areal
+ICAR field.</p></li>
+<li><p>The <code><a href="../reference/tgmrf.html">tgmrf()</a></code> vignette: building a custom GMRF latent
+block, including a periodic AR(1), end to end.</p></li>
+<li><p>The inference-modes vignette: what the Tier-2 nested-Laplace
+guarantee means.</p></li>
 </ul>
 </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
@@ -761,7 +816,7 @@ guarantee means.</li>
 </div>
 
 <div class="pkgdown-footer-right">
-  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.0.</p>
+  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.1.</p>
 </div>
 
     </footer>

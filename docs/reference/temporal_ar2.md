@@ -67,8 +67,5 @@ for (t in 3:Tt) w[t] <- 0.5 * w[t-1] + 0.3 * w[t-2] + rnorm(1, 0, 0.4)
 d <- data.frame(t = seq_len(Tt), y = w + rnorm(Tt, 0, 0.3))
 fit <- tulpa(y ~ latent(temporal_ar2(d$t)), data = d, family = "gaussian",
              mode = "nested_laplace")
-#> Warning: Joint multi-block grid has 125 cells (>50). Each cell costs one inner Newton solve; reduce per-block grid sizes if this is slow. CCD integration is a follow-up.
-#> [nested-laplace] 1/125 cells (1%) | elapsed 0s | ETA >=0s | 0.00s/cells
-#> [nested-laplace] 125/125 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
 # }
 ```

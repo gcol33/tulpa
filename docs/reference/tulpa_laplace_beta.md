@@ -107,5 +107,4 @@ mu <- plogis(X %*% c(0.2, 0.7)); phi <- 8
 y <- rbeta(n, mu * phi, (1 - mu) * phi)
 fit <- tulpa_laplace_beta(y, X)
 fit$mode
-#> [1] 0.1156379 0.6452995
 ```

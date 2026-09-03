@@ -39,7 +39,12 @@ tulpa_ep(
 
 - phi:
 
-  Dispersion / precision passed to the family (held fixed).
+  Dispersion passed to the family, held fixed. One convention at every
+  door: for `gaussian` / `lognormal` this is the residual VARIANCE (the
+  SD is `sqrt(phi)`), for `neg_binomial_2` the size, `gamma` the shape,
+  `beta` the precision, `t` the scale; `binomial` and `poisson` ignore
+  it. The compiled kernels parameterize the two variance families by the
+  residual SD and are handed `sqrt(phi)` at the boundary.
 
 - phi2:
 
@@ -92,7 +97,5 @@ d <- data.frame(x = rnorm(200))
 d$y <- rbinom(200, 1, plogis(-0.3 + 0.8 * d$x))
 fit <- tulpa_ep(y ~ x, data = d, family = "binomial")
 coef(fit)
-#> (Intercept)           x 
-#>  -0.4432535   0.4887355 
 # }
 ```

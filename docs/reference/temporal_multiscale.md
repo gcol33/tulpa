@@ -71,15 +71,4 @@ for single-scale temporal priors.
 ``` r
 # Trend + annual seasonal cycle + AR1 short-term component on monthly data
 temporal_multiscale("month", trend = "rw2", seasonal = 12, short_term = "ar1")
-#> tulpa Multi-Scale temporal specification
-#> =========================================
-#> 
-#> Time variable: month 
-#> 
-#> Components:
-#>   Trend: RW2 (second-order random walk, smooth) 
-#>   Seasonal: Period = 12 (cyclic RW1)
-#>   Short-term: AR(1) (autocorrelated residuals) 
-#> 
-#> Shared: Yes (enters both processes) 
 ```

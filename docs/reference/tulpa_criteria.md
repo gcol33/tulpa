@@ -123,19 +123,5 @@ y  <- rnorm(40)
 mu <- matrix(rnorm(200 * 40, sd = 0.2), 200, 40)
 ll <- dnorm(matrix(y, 200, 40, byrow = TRUE), mean = mu, log = TRUE)
 tulpa_criteria(ll)
-#> tulpa model criteria  (200 draws x 40 observations)
-#>   WAIC           107.7  (SE 7.3)
-#>   elpd_waic      -53.9  (SE 3.7)
-#>   p_waic           1.4  (SE 0.3)
-#>   LOOIC          107.8  (SE 7.3)
-#>   elpd_loo       -53.9  (SE 3.7)
-#>   p_loo            1.4
-#>   LPML           -53.9
-#>   DIC               NA
-#>   p_DIC             NA
 tulpa_criteria(ll, criteria = "waic", pointwise = TRUE)$pointwise[1:3, ]
-#>   obs       lppd  elpd_waic      p_waic
-#> 1   1 -1.1272129 -1.1439778 0.016764831
-#> 2   2 -0.9525029 -0.9546593 0.002156456
-#> 3   3 -1.2680835 -1.3033304 0.035246901
 ```

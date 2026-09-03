@@ -153,6 +153,14 @@ A data frame with one row per parameter – `parameter`, `mean`, `sd`,
   for an edge collapse, the axes the dominant cell sits against and on
   which side.
 
+- `grid_edge_mass_axes`:
+
+  axes holding material weight on one of their own boundary nodes, as
+  `axis:side` – that axis truncates its own marginal there whether or
+  not its mode sits on the node, which is the weaker and more common
+  statement `grid_railed_axes` cannot make. Read in every regime, a
+  spread grid included.
+
 - `outer_skew_max`:
 
   largest estimated \|skewness\| of the hyperparameter marginal,
@@ -162,7 +170,8 @@ A data frame with one row per parameter – `parameter`, `mean`, `sd`,
 
 - `outer_regime_note`:
 
-  a one-line reading of a collapsed regime, or absent on a spread grid.
+  a one-line reading of a collapsed regime or of boundary mass on an
+  axis, absent on a spread grid carrying neither.
 
 - `grid_railed_axes`:
 
@@ -326,17 +335,5 @@ y <- rbinom(n, 1, plogis(-0.2 + 0.6 * x))
 fit <- tulpa(y ~ x, data.frame(y = y, x = x), family = "binomial",
              mode = "smc")
 diagnostics(fit)
-#> Nested-Laplace OUTER-integration reliability (i.i.d. draws)
-#>   scope: the outer hyperparameter-grid integration; the latent-field
-#>   Laplace is a separate, unscored layer.
-#>   outer PSIS pareto_k = NA:
-#>     this fit's outer grid is not one the k-hat is defined on (this backend has no outer hyperparameter grid)
-#>   whole-fit verdict: not computed (outer integration not assessed; inner Laplace not assessed)
-#>   2 parameters, 1000 draws; per-parameter rhat / ESS below are
-#>   i.i.d.-draw Monte-Carlo diagnostics (not chain mixing).
-#> 
-#>     parameter       mean        sd ess_bulk ess_tail     rhat
-#> 1 (Intercept) -0.3239187 0.1806756 19.74593 40.14727 1.107996
-#> 2           x  0.4047345 0.1642653 41.91750 18.53311 1.041535
 # }
 ```

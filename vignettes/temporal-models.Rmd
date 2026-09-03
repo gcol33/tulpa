@@ -1,4 +1,4 @@
-﻿---
+---
 title: "Temporal random-walk effects with tulpa"
 output: rmarkdown::html_vignette
 vignette: >
@@ -620,7 +620,9 @@ kernels exist for later wiring.
 ## See also
 
 - `?temporal_rw1`: constructor reference.
+
 - The spatial vignette: the same nested-Laplace path on an areal ICAR field.
+
 - The `tgmrf()` vignette: building a custom GMRF latent block, including a
   periodic AR(1), end to end.
 - The inference-modes vignette: what the Tier-2 nested-Laplace guarantee means.

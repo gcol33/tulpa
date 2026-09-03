@@ -10,7 +10,22 @@
 <link href="../deps/bootstrap-5.3.8/bootstrap.min.css" rel="stylesheet">
 <script src="../deps/bootstrap-5.3.8/bootstrap.bundle.min.js"></script><link href="../deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet">
 <link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet">
-<script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><meta property="og:title" content="Specifying and checking priors">
+<script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><link href="../extra.css" rel="stylesheet">
+<meta property="og:title" content="Specifying and checking priors">
+<script>
+(function () {
+  var D = String.fromCharCode(36);
+  window.MathJax = {
+    tex: {
+      inlineMath: [[D, D], ["\\(", "\\)"]],
+      displayMath: [[D + D, D + D], ["\\[", "\\]"]]
+    },
+    chtml: { linebreaks: { automatic: true, width: "90% container" } },
+    svg: { linebreaks: { automatic: true, width: "90% container" } },
+    options: { renderActions: { addMenu: [] } }
+  };
+})();
+</script>
 </head>
 <body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
@@ -20,7 +35,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.2.1</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -30,7 +45,7 @@
     <div id="navbar" class="collapse navbar-collapse ms-3">
       <ul class="navbar-nav me-auto">
 <li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
-<li class="active nav-item dropdown">
+<li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
 <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpoint and resume long fits</a></li>
@@ -122,7 +137,9 @@ effects, which live on the link scale and can take either sign. The
 default is <code>prior_normal(0, 2.5)</code>.</p>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/prior_normal.html">prior_normal</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">2.5</span><span class="op">)</span></span>
-<span><span class="fu"><a href="../reference/prior_normal.html">prior_normal</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">1</span><span class="op">)</span></span></code></pre></div>
+<span><span class="co">#&gt; Normal(0.00, 2.50)</span></span>
+<span><span class="fu"><a href="../reference/prior_normal.html">prior_normal</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">1</span><span class="op">)</span></span>
+<span><span class="co">#&gt; Normal(0.00, 1.00)</span></span></code></pre></div>
 <p>The mean sets where the prior is centred and the standard deviation
 sets how far it reaches. On a logit or log link, a standard deviation of
 2.5 already covers a wide range of multiplicative effects, so this is
@@ -150,9 +167,13 @@ other positive quantity need a prior with support on the positive
 half-line. tulpa offers four.</p>
 <div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/prior_half_normal.html">prior_half_normal</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span>
+<span><span class="co">#&gt; Half-Normal(1.00)</span></span>
 <span><span class="fu"><a href="../reference/prior_half_cauchy.html">prior_half_cauchy</a></span><span class="op">(</span><span class="fl">2.5</span><span class="op">)</span></span>
+<span><span class="co">#&gt; Half-Cauchy(2.50)</span></span>
 <span><span class="fu"><a href="../reference/prior_gamma.html">prior_gamma</a></span><span class="op">(</span><span class="fl">2</span>, <span class="fl">0.1</span><span class="op">)</span></span>
-<span><span class="fu"><a href="../reference/prior_exponential.html">prior_exponential</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span></code></pre></div>
+<span><span class="co">#&gt; Gamma(2.00, 0.10)  [mean = 20.00]</span></span>
+<span><span class="fu"><a href="../reference/prior_exponential.html">prior_exponential</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span>
+<span><span class="co">#&gt; Exponential(1.00)  [mean = 1.00]</span></span></code></pre></div>
 <p><code>prior_half_normal(sd)</code> folds a mean-zero normal at the
 origin: light tails, firm shrinkage toward small values.
 <code>prior_half_cauchy(scale)</code> has the same mode at zero but much
@@ -184,7 +205,9 @@ component off is a live possibility.</p>
 <div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>half_normal_mean <span class="op">=</span> <span class="fu"><a href="../reference/prior_half_normal.html">prior_half_normal</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span><span class="op">$</span><span class="va">sd</span> <span class="op">*</span> <span class="fu"><a href="https://rdrr.io/r/base/MathFun.html" class="external-link">sqrt</a></span><span class="op">(</span><span class="fl">2</span> <span class="op">/</span> <span class="va">pi</span><span class="op">)</span>,</span>
 <span>  exponential_mean <span class="op">=</span> <span class="fl">1</span> <span class="op">/</span> <span class="fu"><a href="../reference/prior_exponential.html">prior_exponential</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span><span class="op">$</span><span class="va">rate</span>,</span>
-<span>  gamma_mean       <span class="op">=</span> <span class="fu"><a href="../reference/prior_gamma.html">prior_gamma</a></span><span class="op">(</span><span class="fl">2</span>, <span class="fl">0.1</span><span class="op">)</span><span class="op">$</span><span class="va">shape</span> <span class="op">/</span> <span class="fu"><a href="../reference/prior_gamma.html">prior_gamma</a></span><span class="op">(</span><span class="fl">2</span>, <span class="fl">0.1</span><span class="op">)</span><span class="op">$</span><span class="va">rate</span><span class="op">)</span></span></code></pre></div>
+<span>  gamma_mean       <span class="op">=</span> <span class="fu"><a href="../reference/prior_gamma.html">prior_gamma</a></span><span class="op">(</span><span class="fl">2</span>, <span class="fl">0.1</span><span class="op">)</span><span class="op">$</span><span class="va">shape</span> <span class="op">/</span> <span class="fu"><a href="../reference/prior_gamma.html">prior_gamma</a></span><span class="op">(</span><span class="fl">2</span>, <span class="fl">0.1</span><span class="op">)</span><span class="op">$</span><span class="va">rate</span><span class="op">)</span></span>
+<span><span class="co">#&gt; half_normal_mean exponential_mean       gamma_mean </span></span>
+<span><span class="co">#&gt;        0.7978846        1.0000000       20.0000000</span></span></code></pre></div>
 </div>
 <div class="section level3">
 <h3 id="the-pc-prior">The PC prior<a class="anchor" aria-label="anchor" href="#the-pc-prior"></a>
@@ -196,7 +219,11 @@ the recommended choice for variance components. You give it a value
 <code>P(parameter &gt; U) = alpha</code>.</p>
 <div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/prior_pc.html">prior_pc</a></span><span class="op">(</span>U <span class="op">=</span> <span class="fl">1</span>, alpha <span class="op">=</span> <span class="fl">0.01</span><span class="op">)</span></span>
-<span><span class="fu"><a href="../reference/prior_pc.html">prior_pc</a></span><span class="op">(</span>U <span class="op">=</span> <span class="fl">0.5</span>, alpha <span class="op">=</span> <span class="fl">0.05</span><span class="op">)</span></span></code></pre></div>
+<span><span class="co">#&gt; PC prior: P(x &gt; 1.00) = 0.010</span></span>
+<span><span class="co">#&gt;   =&gt; Exponential(4.605)</span></span>
+<span><span class="fu"><a href="../reference/prior_pc.html">prior_pc</a></span><span class="op">(</span>U <span class="op">=</span> <span class="fl">0.5</span>, alpha <span class="op">=</span> <span class="fl">0.05</span><span class="op">)</span></span>
+<span><span class="co">#&gt; PC prior: P(x &gt; 0.50) = 0.050</span></span>
+<span><span class="co">#&gt;   =&gt; Exponential(5.991)</span></span></code></pre></div>
 <p>The print-out shows both the readable statement and the exponential
 it reduces to: the rate is <code>-log(alpha) / U</code>. The
 penalised-complexity idea, from Simpson et al. (2017), treats a model
@@ -252,7 +279,10 @@ a too-wide <code>sigma</code> prior inflates.</p>
 <span><span class="va">pp_wide</span>  <span class="op">&lt;-</span> <span class="fu"><a href="../reference/prior_predict.html">prior_predict</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="op">(</span><span class="fl">1</span> <span class="op">|</span> <span class="va">g</span><span class="op">)</span>, family <span class="op">=</span> <span class="va">bin</span>, data <span class="op">=</span> <span class="va">gdat</span>,</span>
 <span>  n_draws <span class="op">=</span> <span class="fl">200</span>, priors <span class="op">=</span> <span class="fu"><a href="../reference/tulpa_priors.html">tulpa_priors</a></span><span class="op">(</span>sigma <span class="op">=</span> <span class="fu"><a href="../reference/prior_pc.html">prior_pc</a></span><span class="op">(</span><span class="fl">5</span>, <span class="fl">0.01</span><span class="op">)</span><span class="op">)</span>, seed <span class="op">=</span> <span class="fl">7</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">rbind</a></span><span class="op">(</span>tight <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/quantile.html" class="external-link">quantile</a></span><span class="op">(</span><span class="fu">group_spread</span><span class="op">(</span><span class="va">pp_tight</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.5</span>, <span class="fl">0.9</span>, <span class="fl">0.99</span><span class="op">)</span><span class="op">)</span>,</span>
-<span>      wide  <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/quantile.html" class="external-link">quantile</a></span><span class="op">(</span><span class="fu">group_spread</span><span class="op">(</span><span class="va">pp_wide</span><span class="op">)</span>,  <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.5</span>, <span class="fl">0.9</span>, <span class="fl">0.99</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
+<span>      wide  <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/quantile.html" class="external-link">quantile</a></span><span class="op">(</span><span class="fu">group_spread</span><span class="op">(</span><span class="va">pp_wide</span><span class="op">)</span>,  <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.5</span>, <span class="fl">0.9</span>, <span class="fl">0.99</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt;              50%       90%       99%</span></span>
+<span><span class="co">#&gt; tight 0.08188838 0.1307099 0.1557274</span></span>
+<span><span class="co">#&gt; wide  0.12642536 0.2664106 0.3764848</span></span></code></pre></div>
 <p>Under the tight default the between-group spread of probabilities
 stays small; under the wide prior the upper draws scatter group means
 across most of the unit interval before any data are seen. If you
@@ -268,8 +298,11 @@ band and lets the groups earn their variance.</p>
 interval or the BYM2 mixing proportion.</p>
 <div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/prior_beta.html">prior_beta</a></span><span class="op">(</span><span class="fl">1</span>, <span class="fl">1</span><span class="op">)</span></span>
+<span><span class="co">#&gt; Beta(1.00, 1.00)  [mean = 0.50]</span></span>
 <span><span class="fu"><a href="../reference/prior_beta.html">prior_beta</a></span><span class="op">(</span><span class="fl">2</span>, <span class="fl">2</span><span class="op">)</span></span>
-<span><span class="fu"><a href="../reference/prior_beta.html">prior_beta</a></span><span class="op">(</span><span class="fl">5</span>, <span class="fl">2</span><span class="op">)</span></span></code></pre></div>
+<span><span class="co">#&gt; Beta(2.00, 2.00)  [mean = 0.50]</span></span>
+<span><span class="fu"><a href="../reference/prior_beta.html">prior_beta</a></span><span class="op">(</span><span class="fl">5</span>, <span class="fl">2</span><span class="op">)</span></span>
+<span><span class="co">#&gt; Beta(5.00, 2.00)  [mean = 0.71]</span></span></code></pre></div>
 <p><code>prior_beta(1, 1)</code> is uniform on the interval.
 <code>prior_beta(2, 2)</code> is symmetric and peaked at 0.5. Pushing
 the first shape above the second, as in <code>prior_beta(5, 2)</code>,
@@ -381,7 +414,26 @@ constructors stay in step.</p>
 <p><code><a href="../reference/tulpa_priors.html">tulpa_priors()</a></code> with no arguments returns the package
 defaults. Print it to see all five slots at once.</p>
 <div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="../reference/tulpa_priors.html">tulpa_priors</a></span><span class="op">(</span><span class="op">)</span></span></code></pre></div>
+<code class="sourceCode R"><span><span class="fu"><a href="../reference/tulpa_priors.html">tulpa_priors</a></span><span class="op">(</span><span class="op">)</span></span>
+<span><span class="co">#&gt; tulpa prior specification</span></span>
+<span><span class="co">#&gt; =========================</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; Fixed effects (beta):</span></span>
+<span><span class="co">#&gt;   Normal(0.00, 2.50)</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; Random effect SD (sigma):</span></span>
+<span><span class="co">#&gt;   PC prior: P(x &gt; 1.00) = 0.010</span></span>
+<span><span class="co">#&gt;     =&gt; Exponential(4.605)</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; Overdispersion (phi):</span></span>
+<span><span class="co">#&gt;   PC prior: P(x &gt; 10.00) = 0.010</span></span>
+<span><span class="co">#&gt;     =&gt; Exponential(0.461)</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; Temporal autocorrelation (rho_temporal):</span></span>
+<span><span class="co">#&gt;   Beta(2.00, 2.00)  [mean = 0.50]</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; Spatial proportion (rho_spatial):</span></span>
+<span><span class="co">#&gt;   Beta(1.00, 1.00)  [mean = 0.50]</span></span></code></pre></div>
 <p>The defaults read as follows. Fixed effects get
 <code>prior_normal(0, 2.5)</code>, wide enough to let coefficients roam
 across the plausible link-scale range without being flat. Random-effect
@@ -397,13 +449,57 @@ with no lean toward structured or unstructured variation.</p>
 sentence of interpretation and the customisation entry point for each
 slot.</p>
 <div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="../reference/priors_default.html">priors_default</a></span><span class="op">(</span><span class="op">)</span></span></code></pre></div>
+<code class="sourceCode R"><span><span class="fu"><a href="../reference/priors_default.html">priors_default</a></span><span class="op">(</span><span class="op">)</span></span>
+<span><span class="co">#&gt; Default priors for tulpa models</span></span>
+<span><span class="co">#&gt; ================================</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; These defaults apply to all families unless overridden.</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; Fixed effects (beta):</span></span>
+<span><span class="co">#&gt;   Normal(0, 2.5)</span></span>
+<span><span class="co">#&gt;   Interpretation: Coefficients roughly in [-5, 5] on link scale</span></span>
+<span><span class="co">#&gt;   Customization: prior_normal(mean, sd)</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; Random effect SD (sigma):</span></span>
+<span><span class="co">#&gt;   PC prior: P(sigma &gt; 1) = 0.01</span></span>
+<span><span class="co">#&gt;   Interpretation: Favors smaller variance components</span></span>
+<span><span class="co">#&gt;   Customization: prior_pc(U, alpha) or prior_half_normal(sd)</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; Overdispersion (phi) [negbin/poisson_gamma only]:</span></span>
+<span><span class="co">#&gt;   PC prior: P(phi &gt; 10) = 0.01</span></span>
+<span><span class="co">#&gt;   Interpretation: NB2 size; keeps phi finite (allows overdispersion),</span></span>
+<span><span class="co">#&gt;                   phi -&gt; Inf is the Poisson limit</span></span>
+<span><span class="co">#&gt;   Customization: prior_pc(U, alpha) or prior_gamma(shape, rate)</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; Family-specific notes:</span></span>
+<span><span class="co">#&gt;   negbin_negbin: Uses phi for both processes</span></span>
+<span><span class="co">#&gt;   binomial: No overdispersion parameter (unless beta_binomial)</span></span>
+<span><span class="co">#&gt;   poisson_gamma: Uses phi for gamma shape parameter</span></span></code></pre></div>
 <p>Change one slot by naming it; the rest stay at their defaults.</p>
 <div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/tulpa_priors.html">tulpa_priors</a></span><span class="op">(</span></span>
 <span>  beta  <span class="op">=</span> <span class="fu"><a href="../reference/prior_normal.html">prior_normal</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">1</span><span class="op">)</span>,</span>
 <span>  sigma <span class="op">=</span> <span class="fu"><a href="../reference/prior_pc.html">prior_pc</a></span><span class="op">(</span>U <span class="op">=</span> <span class="fl">0.5</span>, alpha <span class="op">=</span> <span class="fl">0.01</span><span class="op">)</span></span>
-<span><span class="op">)</span></span></code></pre></div>
+<span><span class="op">)</span></span>
+<span><span class="co">#&gt; tulpa prior specification</span></span>
+<span><span class="co">#&gt; =========================</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; Fixed effects (beta):</span></span>
+<span><span class="co">#&gt;   Normal(0.00, 1.00)</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; Random effect SD (sigma):</span></span>
+<span><span class="co">#&gt;   PC prior: P(x &gt; 0.50) = 0.010</span></span>
+<span><span class="co">#&gt;     =&gt; Exponential(9.210)</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; Overdispersion (phi):</span></span>
+<span><span class="co">#&gt;   PC prior: P(x &gt; 10.00) = 0.010</span></span>
+<span><span class="co">#&gt;     =&gt; Exponential(0.461)</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; Temporal autocorrelation (rho_temporal):</span></span>
+<span><span class="co">#&gt;   Beta(2.00, 2.00)  [mean = 0.50]</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; Spatial proportion (rho_spatial):</span></span>
+<span><span class="co">#&gt;   Beta(1.00, 1.00)  [mean = 0.50]</span></span></code></pre></div>
 <p>Because each slot validates its argument, passing something that is
 not a <code>tulpa_prior</code> object fails early with a clear message
 rather than surfacing deep inside a fit.</p>
@@ -469,7 +565,9 @@ by the likelihood.</p>
 <div class="sourceCode" id="cb13"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">fit_weak</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">df</span>, family <span class="op">=</span> <span class="st">"gaussian"</span>,</span>
 <span>                  mode <span class="op">=</span> <span class="st">"laplace"</span>, phi <span class="op">=</span> <span class="fl">1.5</span><span class="op">^</span><span class="fl">2</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_weak</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_weak</span><span class="op">)</span></span>
+<span><span class="co">#&gt; (Intercept)           x </span></span>
+<span><span class="co">#&gt;   0.5898086   1.4185493</span></span></code></pre></div>
 <p>Now impose a tight prior that says the slope is near zero: mean 0 and
 a small standard deviation. The intercept keeps a loose prior, so only
 the slope is pulled.</p>
@@ -477,7 +575,9 @@ the slope is pulled.</p>
 <code class="sourceCode R"><span><span class="va">fit_tight</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">df</span>, family <span class="op">=</span> <span class="st">"gaussian"</span>,</span>
 <span>                   mode <span class="op">=</span> <span class="st">"laplace"</span>, phi <span class="op">=</span> <span class="fl">1.5</span><span class="op">^</span><span class="fl">2</span>,</span>
 <span>                   beta_prior <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>mean <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">0</span><span class="op">)</span>, sd <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">10</span>, <span class="fl">0.2</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_tight</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_tight</span><span class="op">)</span></span>
+<span><span class="co">#&gt; (Intercept)           x </span></span>
+<span><span class="co">#&gt;   0.7566181   0.2777332</span></span></code></pre></div>
 <p>The slope under the tight prior sits well below its weakly informed
 value: the prior at zero and the likelihood at the data strike a
 compromise, and the small prior standard deviation gives the prior most
@@ -487,7 +587,10 @@ of the weight. Put the two fits side by side.</p>
 <span>  term  <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_weak</span><span class="op">)</span><span class="op">)</span>,</span>
 <span>  weak  <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_weak</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span>,</span>
 <span>  tight <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_tight</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span></span>
-<span><span class="op">)</span></span></code></pre></div>
+<span><span class="op">)</span></span>
+<span><span class="co">#&gt;                    term  weak tight</span></span>
+<span><span class="co">#&gt; (Intercept) (Intercept) 0.590 0.757</span></span>
+<span><span class="co">#&gt; x                     x 1.419 0.278</span></span></code></pre></div>
 <p>This is regularisation made explicit. Shrinking a coefficient toward
 a value accepts a little bias in exchange for lower variance, which is
 worth doing when the data cannot pin the coefficient down on their own.
@@ -495,7 +598,11 @@ The credible intervals tell the same story from the uncertainty
 side.</p>
 <div class="sourceCode" id="cb16"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/stats/confint.html" class="external-link">confint</a></span><span class="op">(</span><span class="va">fit_weak</span><span class="op">)</span><span class="op">[</span><span class="st">"x"</span>, <span class="op">]</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/stats/confint.html" class="external-link">confint</a></span><span class="op">(</span><span class="va">fit_tight</span><span class="op">)</span><span class="op">[</span><span class="st">"x"</span>, <span class="op">]</span></span></code></pre></div>
+<span><span class="co">#&gt;      2.5%     97.5% </span></span>
+<span><span class="co">#&gt; 0.6240249 2.2130736</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/stats/confint.html" class="external-link">confint</a></span><span class="op">(</span><span class="va">fit_tight</span><span class="op">)</span><span class="op">[</span><span class="st">"x"</span>, <span class="op">]</span></span>
+<span><span class="co">#&gt;        2.5%       97.5% </span></span>
+<span><span class="co">#&gt; -0.07380275  0.62926923</span></span></code></pre></div>
 <p>The tight prior narrows the slope’s interval and shifts it toward
 zero. A vector <code>sd</code> lets you regularise some coefficients
 hard while leaving others free, which is the usual pattern: pin nuisance
@@ -553,12 +660,19 @@ slope wander far enough to produce astronomically large counts.</p>
 <span>  <span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, family <span class="op">=</span> <span class="va">pois</span>, data <span class="op">=</span> <span class="va">dat</span>, n_draws <span class="op">=</span> <span class="fl">200</span>,</span>
 <span>  priors <span class="op">=</span> <span class="fu"><a href="../reference/tulpa_priors.html">tulpa_priors</a></span><span class="op">(</span>beta <span class="op">=</span> <span class="fu"><a href="../reference/prior_normal.html">prior_normal</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">5</span><span class="op">)</span><span class="op">)</span>, seed <span class="op">=</span> <span class="fl">1</span></span>
 <span><span class="op">)</span></span>
-<span><span class="va">pp_vague</span></span></code></pre></div>
+<span><span class="va">pp_vague</span></span>
+<span><span class="co">#&gt; tulpa prior predictive draws</span></span>
+<span><span class="co">#&gt; ============================</span></span>
+<span><span class="co">#&gt; Family:     poisson </span></span>
+<span><span class="co">#&gt; Processes:  y </span></span>
+<span><span class="co">#&gt; Draws:      200 </span></span>
+<span><span class="co">#&gt; Obs:        60</span></span></code></pre></div>
 <p>The returned object holds one simulated dataset per draw in
 <code>pp_vague$y</code>. Look at the largest count any draw
 produced.</p>
 <div class="sourceCode" id="cb20"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">max</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">vapply</a></span><span class="op">(</span><span class="va">pp_vague</span><span class="op">$</span><span class="va">y</span>, <span class="va">max</span>, <span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">numeric</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">max</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">vapply</a></span><span class="op">(</span><span class="va">pp_vague</span><span class="op">$</span><span class="va">y</span>, <span class="va">max</span>, <span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">numeric</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [1] 1.998827e+23</span></span></code></pre></div>
 <p>That number is far past anything a real count process would produce.
 The prior is too vague: it places real mass on data the model should
 consider impossible. Tighten the fixed-effect prior to a standard
@@ -568,7 +682,8 @@ deviation of 1 and redraw.</p>
 <span>  <span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, family <span class="op">=</span> <span class="va">pois</span>, data <span class="op">=</span> <span class="va">dat</span>, n_draws <span class="op">=</span> <span class="fl">200</span>,</span>
 <span>  priors <span class="op">=</span> <span class="fu"><a href="../reference/tulpa_priors.html">tulpa_priors</a></span><span class="op">(</span>beta <span class="op">=</span> <span class="fu"><a href="../reference/prior_normal.html">prior_normal</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">1</span><span class="op">)</span><span class="op">)</span>, seed <span class="op">=</span> <span class="fl">1</span></span>
 <span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">max</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">vapply</a></span><span class="op">(</span><span class="va">pp_ok</span><span class="op">$</span><span class="va">y</span>, <span class="va">max</span>, <span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">numeric</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">max</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">vapply</a></span><span class="op">(</span><span class="va">pp_ok</span><span class="op">$</span><span class="va">y</span>, <span class="va">max</span>, <span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">numeric</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [1] 757</span></span></code></pre></div>
 <p>The largest simulated count now sits in a range a count model can
 take seriously. Quantiles across all draws sharpen the contrast.</p>
 <div class="sourceCode" id="cb22"><pre class="downlit sourceCode r">
@@ -577,7 +692,10 @@ take seriously. Quantiles across all draws sharpen the contrast.</p>
 <span><span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">rbind</a></span><span class="op">(</span></span>
 <span>  vague    <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/quantile.html" class="external-link">quantile</a></span><span class="op">(</span><span class="va">vague_all</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.5</span>, <span class="fl">0.9</span>, <span class="fl">0.99</span><span class="op">)</span><span class="op">)</span>,</span>
 <span>  sensible <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/quantile.html" class="external-link">quantile</a></span><span class="op">(</span><span class="va">ok_all</span>,    <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.5</span>, <span class="fl">0.9</span>, <span class="fl">0.99</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="op">)</span></span></code></pre></div>
+<span><span class="op">)</span></span>
+<span><span class="co">#&gt;          50%    90%       99%</span></span>
+<span><span class="co">#&gt; vague      1 5471.2 141786616</span></span>
+<span><span class="co">#&gt; sensible   1    5.0        26</span></span></code></pre></div>
 <p>The median is modest under both priors, but the upper tail under the
 vague prior is orders of magnitude heavier. The vague prior sits at the
 right centre and fails on its width: the damage hides in the tail, where
@@ -590,8 +708,10 @@ everything else.</p>
 <code class="sourceCode R"><span><span class="va">pp_capped</span> <span class="op">&lt;-</span> <span class="va">pp_vague</span></span>
 <span><span class="va">pp_capped</span><span class="op">$</span><span class="va">y</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">lapply</a></span><span class="op">(</span><span class="va">pp_vague</span><span class="op">$</span><span class="va">y</span>, <span class="kw">function</span><span class="op">(</span><span class="va">yi</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">pmin</a></span><span class="op">(</span><span class="va">yi</span>, <span class="fl">200</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/graphics/plot.default.html" class="external-link">plot</a></span><span class="op">(</span><span class="va">pp_capped</span>, max_draws <span class="op">=</span> <span class="fl">40</span><span class="op">)</span></span></code></pre></div>
+<p><img src="priors_files/figure-html/pp-plot-1.png" class="r-plt" alt="Prior predictive draws under a vague Normal(0, 5) prior" width="576"></p>
 <div class="sourceCode" id="cb24"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/graphics/plot.default.html" class="external-link">plot</a></span><span class="op">(</span><span class="va">pp_ok</span>, max_draws <span class="op">=</span> <span class="fl">40</span><span class="op">)</span></span></code></pre></div>
+<p><img src="priors_files/figure-html/pp-plot-ok-1.png" class="r-plt" alt="Prior predictive draws under a sensible Normal(0, 1) prior" width="576"></p>
 <p>The sensible-prior draws cluster in a believable band; the
 vague-prior draws, even capped, spread across the full range. Reading
 the <code>$y</code> numbers and the overlay together is the check: if
@@ -616,6 +736,7 @@ the tight default keeps it compact.</p>
 <span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/labs.html" class="external-link">labs</a></span><span class="op">(</span>x <span class="op">=</span> <span class="st">"SD of group-mean probabilities"</span>, y <span class="op">=</span> <span class="st">"Prior predictive density"</span><span class="op">)</span> <span class="op">+</span></span>
 <span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/theme.html" class="external-link">theme</a></span><span class="op">(</span>panel.background <span class="op">=</span> <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/element.html" class="external-link">element_rect</a></span><span class="op">(</span>fill <span class="op">=</span> <span class="st">"transparent"</span><span class="op">)</span>,</span>
 <span>        plot.background  <span class="op">=</span> <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/element.html" class="external-link">element_rect</a></span><span class="op">(</span>fill <span class="op">=</span> <span class="st">"transparent"</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
+<p><img src="priors_files/figure-html/pc-pp-plot-1.png" class="r-plt" alt="Between-group spread under two PC priors on sigma" width="576"></p>
 <p>Reading this plot is the variance-component analogue of the count
 check: the question is whether the spread the prior expects between
 groups matches what you would believe before seeing the data, and the
@@ -716,18 +837,16 @@ range.</p>
 <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a>
 </h2>
 <ul>
-<li>
-<code><a href="../reference/tulpa_priors.html">?tulpa_priors</a></code>, <code><a href="../reference/prior_normal.html">?prior_normal</a></code>,
+<li><p><code><a href="../reference/tulpa_priors.html">?tulpa_priors</a></code>, <code><a href="../reference/prior_normal.html">?prior_normal</a></code>,
 <code><a href="../reference/prior_pc.html">?prior_pc</a></code> and the other <code>prior_*</code> constructor
-pages.</li>
-<li>
-<code><a href="../reference/prior_predict.html">?prior_predict</a></code> and <code><a href="../reference/tulpa_family.html">?tulpa_family</a></code> for prior
-predictive simulation.</li>
-<li>The getting-started vignette for fitting, prediction, and model
-comparison.</li>
-<li>Simpson, D., Rue, H., Riebler, A., Martins, T. G., &amp; Sorbye, S.
-H. (2017). Penalising model component complexity. <em>Statistical
-Science</em>, 32(1), 1-28.</li>
+pages.</p></li>
+<li><p><code><a href="../reference/prior_predict.html">?prior_predict</a></code> and <code><a href="../reference/tulpa_family.html">?tulpa_family</a></code> for
+prior predictive simulation.</p></li>
+<li><p>The getting-started vignette for fitting, prediction, and model
+comparison.</p></li>
+<li><p>Simpson, D., Rue, H., Riebler, A., Martins, T. G., &amp; Sorbye,
+S. H. (2017). Penalising model component complexity. <em>Statistical
+Science</em>, 32(1), 1-28.</p></li>
 </ul>
 </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
@@ -741,7 +860,7 @@ Science</em>, 32(1), 1-28.</li>
 </div>
 
 <div class="pkgdown-footer-right">
-  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.0.</p>
+  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.1.</p>
 </div>
 
     </footer>

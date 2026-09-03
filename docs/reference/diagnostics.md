@@ -157,24 +157,9 @@ hmc <- tulpa(y ~ x, data = df, family = "poisson", mode = "hmc",
              control = list(n_iter = 500L, warmup = 250L, n_chains = 2L,
                             seed = 1L))
 diagnostics(hmc)
-#>     parameter     rhat ess_bulk ess_tail
-#> 1 (Intercept) 1.019236 235.0473 194.7569
-#> 2           x 1.015787 169.8574 145.9035
 
 # deterministic fit -> PSIS approximation reliability
 smc <- tulpa(y ~ x, data = df, family = "poisson", mode = "smc")
 diagnostics(smc)
-#> Nested-Laplace OUTER-integration reliability (i.i.d. draws)
-#>   scope: the outer hyperparameter-grid integration; the latent-field
-#>   Laplace is a separate, unscored layer.
-#>   outer PSIS pareto_k = NA:
-#>     this fit's outer grid is not one the k-hat is defined on (this backend has no outer hyperparameter grid)
-#>   whole-fit verdict: not computed (outer integration not assessed; inner Laplace not assessed)
-#>   2 parameters, 1000 draws; per-parameter rhat / ESS below are
-#>   i.i.d.-draw Monte-Carlo diagnostics (not chain mixing).
-#> 
-#>     parameter      mean         sd  ess_bulk ess_tail     rhat
-#> 1 (Intercept) 0.5126089 0.08280063 13.694927 10.54004 1.215278
-#> 2           x 0.3939599 0.10680048  2.465115 14.93489 1.359931
 # }
 ```

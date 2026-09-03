@@ -39,6 +39,8 @@ fit <- tulpa(y ~ x + spatial(region), data = df, family = "binomial",
              mode = "laplace",
              control = list(checkpoint = list(path = ckpt, resume = FALSE)))
 coef(fit)
+#> (Intercept)           x 
+#>  0.08647794  0.19906346
 ```
 
 The grid cells are now on disk:
@@ -46,6 +48,7 @@ The grid cells are now on disk:
 ``` r
 
 file.exists(ckpt) && file.info(ckpt)$size > 0
+#> [1] FALSE
 ```
 
 ## Resume
@@ -62,6 +65,7 @@ fit2 <- tulpa(y ~ x + spatial(region), data = df, family = "binomial",
               mode = "laplace",
               control = list(checkpoint = list(path = ckpt, resume = TRUE)))
 all.equal(coef(fit), coef(fit2))
+#> [1] TRUE
 ```
 
 ## What the fingerprint protects

@@ -42,6 +42,12 @@ object to read it back.
 
 pf <- tulpa_parse_formula(y ~ x + z + (1 | g) + (1 + x || site))
 pf
+#> tulpa parsed formula
+#>   Response: y 
+#>   Fixed: y ~ x + z 
+#>   Random effects: 2 term(s)
+#>     ( 1 | g )
+#>     ( 1 + x || site )
 ```
 
 The print method separates the response from the fixed formula and lists
@@ -72,6 +78,12 @@ df <- data.frame(
   site = factor(sample(paste0("s", 1:4), n, replace = TRUE))
 )
 str(df)
+#> 'data.frame':    200 obs. of  5 variables:
+#>  $ y   : int  3 1 3 3 4 2 2 1 4 3 ...
+#>  $ x   : num  -0.658 -0.523 0.191 0.401 0.667 ...
+#>  $ z   : num  1.443 -1.113 1.123 0.757 -1.058 ...
+#>  $ g   : Factor w/ 6 levels "a","b","c","d",..: 1 1 3 4 5 2 4 1 2 6 ...
+#>  $ site: Factor w/ 4 levels "s1","s2","s3",..: 2 3 1 2 3 2 2 1 3 1 ...
 ```
 
 Pass the parsed formula and the data to
@@ -84,6 +96,8 @@ fields the backends read.
 
 bundle <- tulpa_build_model_data(pf, df)
 names(bundle)
+#> [1] "y"           "n_trials"    "X"           "offset"      "re_terms"   
+#> [6] "n_obs"       "n_fixed"     "n_re_terms"  "fixed_names"
 ```
 
 The design matrix `X` is the ordinary `model.matrix` output for the
@@ -93,8 +107,14 @@ expands factors into contrasts, and labels its columns.
 ``` r
 
 dim(bundle$X)
+#> [1] 200   3
 colnames(bundle$X)
+#> [1] "(Intercept)" "x"           "z"
 head(bundle$X, 3)
+#>   (Intercept)          x         z
+#> 1           1 -0.6576350  1.443229
+#> 2           1 -0.5229726 -1.112515
+#> 3           1  0.1911304  1.123357
 ```
 
 The response `y` comes from evaluating the left side of `~` against the
@@ -107,6 +127,8 @@ and `fixed_names` echoes the design columns.
 
 c(n_obs = bundle$n_obs, n_fixed = bundle$n_fixed,
   n_re_terms = bundle$n_re_terms)
+#>      n_obs    n_fixed n_re_terms 
+#>        200          3          2
 ```
 
 When [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md)
@@ -131,7 +153,19 @@ term has slopes. Read the first term, the random intercept `(1 | g)`.
 
 re1 <- bundle$re_terms[[1]]
 re1[c("group_var", "n_groups", "n_coefs", "has_intercept")]
+#> $group_var
+#> [1] "g"
+#> 
+#> $n_groups
+#> [1] 6
+#> 
+#> $n_coefs
+#> [1] 1
+#> 
+#> $has_intercept
+#> [1] TRUE
 re1$levels
+#> [1] "a" "b" "c" "d" "e" "f"
 ```
 
 `group_idx` is the heart of it. Each observation gets an integer
@@ -143,7 +177,11 @@ implicit vector of ones.
 ``` r
 
 head(re1$group_idx, 12)
+#>  [1] 1 1 3 4 5 2 4 1 2 6 5 6
 table(re1$group_idx)
+#> 
+#>  1  2  3  4  5  6 
+#> 27 31 40 40 31 31
 ```
 
 The second term, `(1 + x || site)`, adds a random slope on `x`. Its
@@ -155,7 +193,25 @@ the double bar asked for independent effects.
 
 re2 <- bundle$re_terms[[2]]
 re2[c("group_var", "n_groups", "n_coefs", "correlated")]
+#> $group_var
+#> [1] "site"
+#> 
+#> $n_groups
+#> [1] 4
+#> 
+#> $n_coefs
+#> [1] 2
+#> 
+#> $correlated
+#> [1] FALSE
 head(re2$slope_matrix)
+#>            x
+#> 1 -0.6576350
+#> 2 -0.5229726
+#> 3  0.1911304
+#> 4  0.4008339
+#> 5  0.6667822
+#> 6 -0.6768624
 ```
 
 Group levels come from factor levels, so the way you build a factor
@@ -192,7 +248,9 @@ before fitting rather than after.
 
 pn <- tulpa_parse_formula(y ~ x + (1 | g/site))
 pn$n_re_terms
+#> [1] 2
 vapply(pn$random_effects, `[[`, character(1), "group_var")
+#> [1] "g"      "g:site"
 ```
 
 ## Binomial denominators and offsets
@@ -214,6 +272,7 @@ db$fail <- 15 - db$succ
 pf_b   <- tulpa_parse_formula(cbind(succ, fail) ~ x)
 bun_b  <- tulpa_build_model_data(pf_b, db)
 head(bun_b$y, 3)
+#> [1] 3 8 7
 ```
 
 When the denominators live in their own vector, keep the response as the
@@ -233,10 +292,13 @@ db$tot <- 15L
 fit_b <- tulpa(succ ~ x, data = db, family = "binomial",
                n_trials = db$tot, mode = "laplace")
 coef(fit_b)
+#> (Intercept)           x 
+#>  -0.2868062   0.8230279
 
 fit_cbind <- tulpa(cbind(succ, fail) ~ x, data = db, family = "binomial",
                    mode = "laplace")
 max(abs(coef(fit_cbind) - coef(fit_b)))
+#> [1] 0
 ```
 
 An offset is a known additive term on the linear-predictor scale, fixed
@@ -255,7 +317,9 @@ dp$y <- rpois(n, dp$expo * exp(0.1 + 0.5 * dp$x))
 pf_o  <- tulpa_parse_formula(y ~ x + offset(log(expo)))
 bun_o <- tulpa_build_model_data(pf_o, dp)
 head(bun_o$offset, 4)
+#> [1] 1.97118068 1.59092806 0.09973003 1.87423420
 colnames(bun_o$X)
+#> [1] "(Intercept)" "x"
 ```
 
 The offset column is `log(expo)` evaluated row by row, and `X` holds
@@ -270,6 +334,8 @@ free coefficient.
 fit_o <- tulpa(y ~ x + offset(log(expo)), data = dp,
                family = "poisson", mode = "laplace")
 coef(fit_o)
+#> (Intercept)           x 
+#>   0.1037010   0.4749073
 ```
 
 ## Validation and errors
@@ -284,6 +350,8 @@ stops and quotes the offending name.
 
 bad <- tulpa_parse_formula(y ~ x + (1 | region))
 tulpa_build_model_data(bad, df)
+#> Error:
+#> ! Grouping variable 'region' not found in data
 ```
 
 A response that cannot be found is reported the same way, against the
@@ -292,6 +360,8 @@ label that appeared on the left of `~`.
 ``` r
 
 tulpa_build_model_data(tulpa_parse_formula(count ~ x), df)
+#> Error:
+#> ! Response 'count' not found in data
 ```
 
 The special terms check their own shape at parse time. A `spatial(...)`
@@ -302,6 +372,8 @@ intended form.
 ``` r
 
 tulpa_parse_formula(y ~ spatial(x, g))
+#> Error:
+#> ! spatial(...) takes exactly one bare column name, e.g. spatial(region).
 ```
 
 A spatial term also has a partner requirement that surfaces at fit time.
@@ -313,6 +385,8 @@ argument. Leaving it out stops the fit with guidance on what to pass.
 ``` r
 
 tulpa(y ~ x + spatial(g), data = df, family = "poisson", mode = "laplace")
+#> Error:
+#> ! Formula has a spatial(g) term but the structure spec `spatial=` was not supplied (e.g. list(type = 'icar', adjacency = W) or spatial_gp(~ lon + lat)).
 ```
 
 These checks share a habit worth leaning on. The formula declares

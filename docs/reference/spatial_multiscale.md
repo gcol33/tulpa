@@ -145,22 +145,6 @@ ms <- spatial_multiscale(
   range_regional = c(1, 5)
 )
 print(ms)
-#> tulpa Multi-Scale spatial specification
-#> ========================================
-#> 
-#> Coordinates: lon, lat 
-#> Scales: local + regional 
-#> 
-#> Local scale:
-#>   Range prior: [0.1, 0.5]
-#>   Neighbors: 10 
-#> 
-#> Regional scale:
-#>   Range prior: [1, 5]
-#>   Neighbors: 30 
-#> 
-#> Covariance: exponential 
-#> Shared: Yes (enters both processes) 
 
 # \donttest{
 set.seed(101)
@@ -190,9 +174,5 @@ fit <- tulpa(
   control = list(n_iter = 60L, n_warmup = 30L, seed = 1L)
 )
 summary(fit)
-#>               estimate std.error        2.5%     97.5%
-#> (Intercept) 0.94597840 0.3710487  0.15697851 1.5176985
-#> depth       0.22858182 0.1292459  0.01878731 0.4725801
-#> temp        0.04685671 0.1172341 -0.18428174 0.2186235
 # }
 ```

@@ -54,11 +54,4 @@ set.seed(1)
 coords <- cbind(runif(50), runif(50))
 resid  <- rnorm(50)
 moran_i(resid, coords)
-#> 
-#>  Moran's I (inverse-distance weights)
-#> 
-#> data:  resid
-#> Moran's I = -0.07788, Expected I = -0.020408, p-value = 0.6056
-#> alternative hypothesis: two.sided
-#> 
 ```

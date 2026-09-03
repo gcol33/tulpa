@@ -63,7 +63,5 @@ P <- cbind(exp(eta), 1); P <- P / rowSums(P)
 y <- factor(apply(P, 1, function(pr) sample.int(3L, 1L, prob = pr)))
 fit <- tulpa_multinomial(y ~ x, data = data.frame(y = y, x = x))
 coef(fit)
-#> 1:(Intercept)           1:x 2:(Intercept)           2:x 
-#>    0.68497843    0.73214926   -0.08534429   -0.70081396 
 # }
 ```

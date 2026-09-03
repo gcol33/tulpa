@@ -184,8 +184,5 @@ fit <- tulpa_re_cov_gibbs(y, rep(1L, n), cbind(1, x), re_term,
                           family = "binomial",
                           control = list(n_iter = 300L, warmup = 150L))
 fit$Sigma_mean        # exact-debias RE covariance posterior mean
-#>             [,1]        [,2]
-#> [1,]  0.48897898 -0.08635451
-#> [2,] -0.08635451  0.42945640
 # }
 ```

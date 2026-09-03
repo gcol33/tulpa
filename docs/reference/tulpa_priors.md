@@ -76,110 +76,16 @@ approach to constructing priors. Statistical Science, 32(1), 1-28.
 ``` r
 # Default priors
 tulpa_priors()
-#> tulpa prior specification
-#> =========================
-#> 
-#> Fixed effects (beta):
-#>   Normal(0.00, 2.50)
-#> 
-#> Random effect SD (sigma):
-#>   PC prior: P(x > 1.00) = 0.010
-#>     => Exponential(4.605)
-#> 
-#> Overdispersion (phi):
-#>   PC prior: P(x > 10.00) = 0.010
-#>     => Exponential(0.461)
-#> 
-#> Temporal autocorrelation (rho_temporal):
-#>   Beta(2.00, 2.00)  [mean = 0.50]
-#> 
-#> Spatial proportion (rho_spatial):
-#>   Beta(1.00, 1.00)  [mean = 0.50]
 
 # Custom fixed effect prior
 tulpa_priors(beta = prior_normal(0, 1))
-#> tulpa prior specification
-#> =========================
-#> 
-#> Fixed effects (beta):
-#>   Normal(0.00, 1.00)
-#> 
-#> Random effect SD (sigma):
-#>   PC prior: P(x > 1.00) = 0.010
-#>     => Exponential(4.605)
-#> 
-#> Overdispersion (phi):
-#>   PC prior: P(x > 10.00) = 0.010
-#>     => Exponential(0.461)
-#> 
-#> Temporal autocorrelation (rho_temporal):
-#>   Beta(2.00, 2.00)  [mean = 0.50]
-#> 
-#> Spatial proportion (rho_spatial):
-#>   Beta(1.00, 1.00)  [mean = 0.50]
 
 # Tighter random effect prior
 tulpa_priors(sigma = prior_pc(U = 0.5, alpha = 0.01))
-#> tulpa prior specification
-#> =========================
-#> 
-#> Fixed effects (beta):
-#>   Normal(0.00, 2.50)
-#> 
-#> Random effect SD (sigma):
-#>   PC prior: P(x > 0.50) = 0.010
-#>     => Exponential(9.210)
-#> 
-#> Overdispersion (phi):
-#>   PC prior: P(x > 10.00) = 0.010
-#>     => Exponential(0.461)
-#> 
-#> Temporal autocorrelation (rho_temporal):
-#>   Beta(2.00, 2.00)  [mean = 0.50]
-#> 
-#> Spatial proportion (rho_spatial):
-#>   Beta(1.00, 1.00)  [mean = 0.50]
 
 # Half-Cauchy for random effect SD
 tulpa_priors(sigma = prior_half_cauchy(2.5))
-#> tulpa prior specification
-#> =========================
-#> 
-#> Fixed effects (beta):
-#>   Normal(0.00, 2.50)
-#> 
-#> Random effect SD (sigma):
-#>   Half-Cauchy(2.50)
-#> 
-#> Overdispersion (phi):
-#>   PC prior: P(x > 10.00) = 0.010
-#>     => Exponential(0.461)
-#> 
-#> Temporal autocorrelation (rho_temporal):
-#>   Beta(2.00, 2.00)  [mean = 0.50]
-#> 
-#> Spatial proportion (rho_spatial):
-#>   Beta(1.00, 1.00)  [mean = 0.50]
 
 # Informative prior for temporal correlation
 tulpa_priors(rho_temporal = prior_beta(5, 2))  # Prior mode at ~0.8
-#> tulpa prior specification
-#> =========================
-#> 
-#> Fixed effects (beta):
-#>   Normal(0.00, 2.50)
-#> 
-#> Random effect SD (sigma):
-#>   PC prior: P(x > 1.00) = 0.010
-#>     => Exponential(4.605)
-#> 
-#> Overdispersion (phi):
-#>   PC prior: P(x > 10.00) = 0.010
-#>     => Exponential(0.461)
-#> 
-#> Temporal autocorrelation (rho_temporal):
-#>   Beta(5.00, 2.00)  [mean = 0.71]
-#> 
-#> Spatial proportion (rho_spatial):
-#>   Beta(1.00, 1.00)  [mean = 0.50]
 ```

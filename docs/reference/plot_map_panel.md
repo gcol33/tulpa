@@ -60,6 +60,5 @@ if (requireNamespace("ggplot2", quietly = TRUE)) {
   plot_map_panel(fit, coords = cc)
   plot_map_panel(fit, coords = cc, ncol = 1)
 }
-
 # }
 ```

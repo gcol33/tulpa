@@ -23,5 +23,4 @@ A `tulpa_prior` object
 
 ``` r
 prior_half_cauchy(2.5)
-#> Half-Cauchy(2.50)
 ```

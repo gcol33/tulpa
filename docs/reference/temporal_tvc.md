@@ -70,12 +70,4 @@ for the underlying temporal priors.
 ``` r
 # Intercept that drifts as a first-order random walk over year
 temporal_tvc("year", structure = "rw1")
-#> tulpa temporally-varying coefficients
-#> ======================================
-#> 
-#> Time variable: year 
-#> Structure: RW1 (first-order random walk) 
-#> Shared: Yes (enters both processes) 
-#> 
-#> Terms: columns  1 
 ```

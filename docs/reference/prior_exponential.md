@@ -22,5 +22,4 @@ A `tulpa_prior` object
 
 ``` r
 prior_exponential(1)
-#> Exponential(1.00)  [mean = 1.00]
 ```

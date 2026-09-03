@@ -106,8 +106,9 @@ y0 <- 0.5 + 1.2 * x + rnorm(n, sd = 0.8)
 df <- data.frame(y = y0, x = x)
 
 fit <- tulpa(y ~ x, data = df, family = "gaussian",
-             mode = "laplace", phi = 0.8)
+             mode = "laplace", phi = 0.8^2)
 logLik(fit)
+#> 'log Lik.' -607.015 (df=2)
 ```
 
 The `logLik` object carries two attributes worth knowing. `df` is the
@@ -119,6 +120,8 @@ data.
 ``` r
 
 c(df = attr(logLik(fit), "df"), nobs = attr(logLik(fit), "nobs"))
+#>   df nobs 
+#>    2  500
 ```
 
 A subtle point about the tiers. On the Laplace tier
@@ -164,13 +167,13 @@ adds the second covariate `z`. Each fit is a single Laplace solve.
 ``` r
 
 m0 <- tulpa(y ~ 1, data = dat, family = "gaussian",
-            mode = "laplace", phi = 0.8)
+            mode = "laplace", phi = 0.8^2)
 m1 <- tulpa(y ~ x, data = dat, family = "gaussian",
-            mode = "laplace", phi = 0.8)
+            mode = "laplace", phi = 0.8^2)
 m2 <- tulpa(y ~ x + (1 | g), data = dat, family = "gaussian",
-            mode = "laplace", sigma_re = 0.7, phi = 0.8)
+            mode = "laplace", sigma_re = 0.7, phi = 0.8^2)
 m3 <- tulpa(y ~ x + z + (1 | g), data = dat, family = "gaussian",
-            mode = "laplace", sigma_re = 0.7, phi = 0.8)
+            mode = "laplace", sigma_re = 0.7, phi = 0.8^2)
 ```
 
 Pull the evidence from each and lay it side by side. The differences
@@ -185,6 +188,11 @@ ll <- c(intercept = as.numeric(logLik(m0)),
         full      = as.numeric(logLik(m3)))
 data.frame(model = names(ll), logLik = round(ll, 1),
            gain = c(NA, round(diff(ll), 1)))
+#>               model  logLik  gain
+#> intercept intercept -1391.9    NA
+#> slope         slope  -941.2 450.6
+#> slope_re   slope_re  -855.9  85.3
+#> full           full  -642.9 213.0
 ```
 
 Every step up the ladder lifts the evidence, and by a wide margin. The
@@ -218,6 +226,9 @@ ggplot(pd, aes(model, rel)) +
         plot.background  = element_rect(fill = "transparent", colour = NA))
 ```
 
+![Bar chart of cumulative log evidence by ladder
+rung](model-comparison_files/figure-html/ladder-plot-1.png)
+
 The first step, from intercept to slope, dominates the figure, which
 matches the table: the `x` coefficient is large and the sample is wide
 enough to pin it down. The random intercept and the second covariate add
@@ -235,10 +246,12 @@ extra term `w` is independent of `y` by construction.
 
 dat$w <- rnorm(n)
 m4 <- tulpa(y ~ x + z + w + (1 | g), data = dat, family = "gaussian",
-            mode = "laplace", sigma_re = 0.7, phi = 0.8)
+            mode = "laplace", sigma_re = 0.7, phi = 0.8^2)
 c(full = round(as.numeric(logLik(m3)), 2),
   plus_noise = round(as.numeric(logLik(m4)), 2),
   gain = round(as.numeric(logLik(m4)) - as.numeric(logLik(m3)), 2))
+#>       full plus_noise       gain 
+#>    -642.89    -650.75      -7.86
 ```
 
 The noise covariate buys a gain near zero, often slightly negative once
@@ -261,6 +274,11 @@ criterion.
 
 compare_models(intercept = m0, slope = m1,
                slope_re = m2, full = m3, criterion = "loglik")
+#>       model n_params     logLik
+#> 1 intercept        1 -1391.8648
+#> 2     slope        2  -941.2206
+#> 3  slope_re        2  -855.8723
+#> 4      full        3  -642.8906
 ```
 
 The table reports the model name, the parameter count, and the log
@@ -300,6 +318,10 @@ b0 <- tulpa(y ~ 1,     data = dfb, family = "binomial", mode = "laplace")
 b1 <- tulpa(y ~ x,     data = dfb, family = "binomial", mode = "laplace")
 b2 <- tulpa(y ~ x + z, data = dfb, family = "binomial", mode = "laplace")
 compare_models(intercept = b0, x = b1, xz = b2, criterion = "loglik")
+#>       model n_params    logLik
+#> 1 intercept        1 -344.6861
+#> 2         x        2 -306.2109
+#> 3        xz        3 -273.5314
 ```
 
 Both covariates were in the generating process, and the evidence climbs
@@ -322,10 +344,13 @@ together everything that changed between the two specifications.
 ``` r
 
 mx <- tulpa(y ~ x, data = dat, family = "gaussian",
-            mode = "laplace", phi = 0.8)
+            mode = "laplace", phi = 0.8^2)
 mz <- tulpa(y ~ z, data = dat, family = "gaussian",
-            mode = "laplace", phi = 0.8)
+            mode = "laplace", phi = 0.8^2)
 compare_models(x_only = mx, z_only = mz, criterion = "loglik")
+#>    model n_params     logLik
+#> 1 x_only        2  -941.2206
+#> 2 z_only        2 -1183.6772
 ```
 
 The `x`-only model wins, which fits the simulation: `x` carries the
@@ -344,6 +369,8 @@ ladder: adding `z` to the `x`-only model raised the evidence.
 gain <- as.numeric(logLik(b2)) - as.numeric(logLik(b1))
 c(log_evidence_gain = round(gain, 2),
   evidence_ratio    = round(exp(gain), 1))
+#> log_evidence_gain    evidence_ratio 
+#>      3.268000e+01      1.557836e+14
 ```
 
 The evidence ratio is the Bayes factor for the larger model against the
@@ -419,6 +446,8 @@ draws    <- matrix(rnorm(4000, y_obs * 100 / 101, post_sd), ncol = 1)
 bs <- bridge_sampling(draws, log_post)
 c(bridge = round(bs$log_marginal, 3),
   exact  = round(dnorm(y_obs, 0, sqrt(101), log = TRUE), 3))
+#> bridge  exact 
+#> -3.238 -3.238
 ```
 
 The two numbers land within a few thousandths, which is the calibration
@@ -445,6 +474,8 @@ tier carries no draws.
 ``` r
 
 glance(m3)
+#>   n_fixed n_samples    logLik n_divergent mean_accept converged
+#> 1       3        NA -642.8906          NA          NA      TRUE
 ```
 
 Stack the ladder into one frame by binding the per-model rows. This
@@ -459,6 +490,11 @@ the per-fit detail such as convergence.
 do.call(rbind, Map(function(m, nm) cbind(model = nm, glance(m)),
                    list(m0, m1, m2, m3),
                    c("intercept", "slope", "slope_re", "full")))
+#>       model n_fixed n_samples     logLik n_divergent mean_accept converged
+#> 1 intercept       1        NA -1391.8648          NA          NA      TRUE
+#> 2     slope       2        NA  -941.2206          NA          NA      TRUE
+#> 3  slope_re       2        NA  -855.8723          NA          NA      TRUE
+#> 4      full       3        NA  -642.8906          NA          NA      TRUE
 ```
 
 The `converged` column is the one to scan before trusting any evidence
@@ -483,6 +519,10 @@ what the winner actually estimated.
 ``` r
 
 tidy(m3)
+#>          term  estimate  std.error  conf.low conf.high
+#> 1 (Intercept) 0.5126657 0.18437812 0.1512912 0.8740402
+#> 2           x 1.1448159 0.03737826 1.0715558 1.2180759
+#> 3           z 0.7753158 0.03688746 0.7030177 0.8476139
 ```
 
 The slope on `x` sits near its true 1.2 and the slope on `z` near its
@@ -527,6 +567,8 @@ plain fit, and it says so:
 ``` r
 
 loo::waic(b2)
+#> Error in `UseMethod()`:
+#> ! no applicable method for 'waic' applied to an object of class "tulpa_fit"
 ```
 
 The message names the missing piece: a stored pointwise log-likelihood.
@@ -573,7 +615,10 @@ does.
 ma <- model_average(slope = m1, slope_re = m2, full = m3,
                     weights = "waic")
 ma$weights
+#>        slope     slope_re         full 
+#> 1.418900e-21 1.449109e-30 1.000000e+00
 head(round(ma$averaged, 3))
+#> [1]  0.608 -2.693  1.149  2.399  0.153 -0.007
 ```
 
 The weights are genuine WAIC weights:
@@ -637,7 +682,7 @@ A short set of habits covers most comparison work:
   random-effect variances, integrate them through the nested-Laplace
   path instead of fixing them by hand.
 - **Know what conditioning on a hyperparameter costs.** When you pass
-  `sigma_re = 0.7` or `phi = 0.8`, the marginal likelihood is the
+  `sigma_re = 0.7` or `phi = 0.8^2`, the marginal likelihood is the
   evidence given that value, not integrated over it. The Gaussian
   random-effect offsets and the fixed effects are integrated out; the
   variance and the residual scale are held. That is exactly the right

@@ -1,4 +1,4 @@
-﻿---
+---
 title: "Inference modes: the three tiers and how to choose one"
 output: rmarkdown::html_vignette
 vignette: >
@@ -551,6 +551,7 @@ needs, move up a tier and pay for the stronger guarantee on purpose.
 - `inference_mode_info()` prints the full tier and backend map, with the
   R-callable and C-ABI-only backends tagged.
 - The quickstart vignette covers the fitting workflow.
+
 - The `tgmrf()` vignette runs the same tier ladder on a user-defined latent
   block, from nested Laplace through exact sampling.
 - `?mala`, `?pathfinder`, `?imh_laplace` for the low-level sampler

@@ -1,4 +1,4 @@
-﻿---
+---
 title: "User-defined GMRF latent blocks with tgmrf()"
 output: rmarkdown::html_vignette
 vignette: >
@@ -553,8 +553,11 @@ approximation is biased, without rewriting anything.
 ## What `tgmrf()` does not require
 
 - No gradient code. The score in `z` is closed-form from `Q`.
+
 - No Hessian code. The Hessian in `z` is just `-Q`.
+
 - No autodiff. Hyperparameter gradients are finite-difference.
+
 - No C++. The R closure path reaches every tier.
 
 The `tgmrf_cpp()` constructor offers a templated-C++ backend with the
@@ -569,7 +572,11 @@ parser, inference layers, methods) treat the two paths identically.
 ## See also
 
 - `?tgmrf`: constructor reference.
+
 - `?tgmrf_cpp`: compiled-C++ backend with the same S3 contract.
+
 - `?tulpa_nested_laplace`: Tier-2 grid integrator.
+
 - `?tulpa_tgmrf_imh`, `?tulpa_tgmrf_nuts`, `?tulpa_tgmrf_vi`: adapter family.
+
 - `inst/examples/tgmrf_periodic_ar1.R`: runnable script form of this vignette.

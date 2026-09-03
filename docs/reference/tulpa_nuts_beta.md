@@ -94,7 +94,5 @@ y <- rbeta(n, mu * phi, (1 - mu) * phi)
 # \donttest{
 fit <- tulpa_nuts_beta(y, X, control = list(n_iter = 500L, n_warmup = 250L))
 colMeans(fit$draws)
-#>    beta[1]    beta[2]    log_phi 
-#> 0.08856396 0.66671059 2.16537679 
 # }
 ```

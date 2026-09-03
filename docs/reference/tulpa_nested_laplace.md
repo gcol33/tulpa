@@ -128,7 +128,12 @@ tulpa_nested_laplace(
 
 - phi:
 
-  Dispersion (negbin/gamma).
+  Dispersion passed to the family, held fixed. One convention at every
+  door: for `gaussian` / `lognormal` this is the residual VARIANCE (the
+  SD is `sqrt(phi)`), for `neg_binomial_2` the size, `gamma` the shape,
+  `beta` the precision, `t` the scale; `binomial` and `poisson` ignore
+  it. The compiled kernels parameterize the two variance families by the
+  residual SD and are handed `sqrt(phi)` at the boundary.
 
 - likelihood:
 
@@ -166,14 +171,18 @@ tulpa_nested_laplace(
     skew-aware marginals – see the cumulant pooling in
     [`rubins_pool()`](https://gillescolling.com/tulpa/reference/rubins_pool.md).
 
-  - `diagnose_k` (`TRUE`), `k_samples` (`200L`) – compute the outer
+  - `diagnose_k` (`TRUE`), `k_samples` (`500L`) – compute the outer
     Pareto-\\\hat{k}\\ accuracy diagnostic (`$pareto_k`) by importance
     sampling the hyperparameter posterior against the Gaussian proposal
     fitted to the grid, drawing `k_samples` extra inner-marginal
-    evaluations. Computed for a single-block, single positive-scale-axis
-    grid; left `NA` (with the grid's quadrature ESS as the fallback
-    diagnostic) for multi-block, multi-axis, or bounded-parameter grids.
-    See
+    evaluations. `k_samples` is a precision knob: the GPD tail size is
+    held at the fraction the default budget implies, so a larger budget
+    sharpens the same k-hat instead of moving it to a deeper quantile of
+    the weight distribution (gcol33/tulpa#631). `k_tail_points`
+    overrides that tail size directly (capped at 20% of the draws).
+    Computed for a single-block, single positive-scale-axis grid; left
+    `NA` (with the grid's quadrature ESS as the fallback diagnostic) for
+    multi-block, multi-axis, or bounded-parameter grids. See
     [`tulpa_psis()`](https://gillescolling.com/tulpa/reference/tulpa_psis.md).
 
   - `diagnose_skew` (`TRUE`), `skew_idx` (`NULL`) – compute the
@@ -363,6 +372,61 @@ tulpa_nested_laplace(
     tensor reference grid (4 axes at 7 levels is 2401 cells) raises it
     here.
 
+  - `prune` (`FALSE`), `prune_tol` (`1e-3`), `screen_iters` (`5L`) –
+    opt-in cheap-pass screening of the outer grid. When `prune = TRUE`,
+    the driver first sweeps the lattice running a `screen_iters`-step
+    inner Newton per cell, each warm-started from the previous screened
+    cell's quasi-mode, computes a screening Laplace log-marginal,
+    softmax-normalises it, and skips the full inner Newton on every cell
+    whose screened weight is below `prune_tol`. The neighbour warm-start
+    keeps each cheap mode near its cell's own mode, so the cheap ranking
+    tracks the full-solve ranking even where the latent mode moves
+    across the grid. Pruned cells get `log_marginal = -Inf`,
+    `n_iter = 0` and inherit the pilot mode; the pilot cell is never
+    pruned, and at least `prune_min_keep` cells (5) are solved in full
+    whatever the tolerance says – the highest-ranked dropped cells are
+    restored up to that floor, because the outer grid placement pass
+    reads a finite-difference curvature off the cells that were SOLVED
+    and a kept set of one carries none. A safety gate falls back to the
+    full grid (with a warning) whenever the cheap-screen argmax
+    disagrees with the full-solve argmax, or the kept posterior
+    collapses onto a cell the screen mis-estimated by more than the
+    margin it discarded cells by. The gate bounds a MIS-RANKING, not the
+    whole error: it compares the screen against the cells that were
+    solved, so a cell it discarded and never solved is outside what it
+    can see. The default `prune = FALSE` is the setting under which no
+    such question arises. `prune_tol` must be a finite numeric in
+    `[0, 1)` and `screen_iters` a single integer `>= 1`; both are
+    validated whatever `prune` says. Pruning is OPT-IN: the default
+    `FALSE` solves every cell, which is correct whatever the grid looks
+    like. `prune` / `prune_tol` reach both the single-block and the
+    multi-block dispatch; the screening DEPTH is declared by the
+    single-block kernels only, so a multi-block prior refuses a pinned
+    `screen_iters` rather than accepting it and ignoring it.
+
+  - `prune_log_gap` (unset) – the screening cut stated in nats instead
+    of as a normalised weight: keep every cell within this many nats of
+    the best screened cell. `prune_tol` is a weight, so what it cuts at
+    is the gap `-(log(prune_tol) + log(Z))`, and the whole range a
+    caller would type (`1e-3` to `1e-12`) is 7 to 28 nats of it – on an
+    outer surface whose log-marginal spans thousands of nats every
+    setting returns the same kept set. Stating the gap directly keeps
+    the knob's resolution wherever the surface is steep. It reaches the
+    kernel as `prune_tol = exp(-gap)`, so the realised cut is the
+    requested gap less `log(Z)`, at most `log(n_grid)` nats narrower;
+    the fit reports the realised value. Setting both this and
+    `prune_tol` is an error – they state one cut in two units.
+
+  - `fitted_var` (`TRUE`) – fill the per-row predictive variance
+    `fitted_eta_var`, the companion of `fitted_eta` a caller
+    marginalises the per-row linear predictor with. It costs one
+    back-solve per distinct loading vector per cell, which on a design
+    with few repeated rows is the dominant cost of a cell, so a caller
+    reading only `fitted_eta` or the coefficient summaries sets `FALSE`
+    and the fit then carries no `fitted_eta_var`. Declared by the
+    single-block kernels only; a multi-block prior refuses `FALSE`
+    rather than accepting it and ignoring it.
+
 ## Value
 
 A list with:
@@ -383,6 +447,14 @@ A list with:
   importance-sampling ESS (`NA` when not computed for the grid; see
   `control$diagnose_k`).
 
+- `pareto_k_proposal_source`, `pareto_k_first_pass`: which proposal
+  family the reported k-hat came from (the outer k-hat is scored against
+  several candidates and the best is kept), and the k-hat of the FIRST
+  pass – the proposal exactly as this backend placed it, before any
+  candidate refined or replaced it. A large gap between the two says the
+  nodes are badly scaled around the hyperparameter posterior even though
+  the verdict is fine; no gap says the placement was already right.
+
 - `inner_skew`, `inner_skew_idx`, `inner_skew_dropped`: the
   inner-Laplace skewness diagnostic (gamma_3) at each scored latent
   index and its 1-based index, plus a count of (index, observation)
@@ -392,6 +464,23 @@ A list with:
 - `timing`: named numeric of wall-clock seconds (`total`, `setup`,
   `grid`, `postproc`, `diagnostics`); the `grid` phase is the inner
   Laplace pass that scales with grid size. Surfaced one-line in `print`.
+
+- `prune_cheap_log_marginal`, `prune_mask`, `prune_n_pruned`,
+  `prune_tol`: present only when `control$prune = TRUE` and the safety
+  gate did not trip – the cheap-screen log-marginal per cell, the
+  logical mask of pruned cells, the pruned-cell count, and the threshold
+  actually applied.
+
+- `prune_log_gap_cut`, `prune_cheap_lm_spread`, `prune_min_keep`,
+  `prune_n_floor_restored`: the same screen read on the scale it
+  operates on – how many nats below the best screened cell the tolerance
+  cut at, how many nats the screened surface spans, the kept-cell floor
+  applied, and how many cells that floor put back. A cut that is a
+  sliver of the spread is a tolerance with no resolution on this grid.
+
+- `prune_fallback_triggered`, `prune_fallback_reason`: present only when
+  the gate did trip; the rest of the fit is then the full-grid result
+  and the reason string records which check fired.
 
 - `prior`: echoed input.
 
@@ -418,6 +507,5 @@ prior <- list(type = "icar", n_spatial_units = S, spatial_idx = idx,
 fit <- tulpa_nested_laplace(y, rep(1L, n), cbind(1, x), prior = prior,
                             family = "binomial")
 fit$theta_mean        # marginalized ICAR precision
-#> [1] 5.742009
 # }
 ```

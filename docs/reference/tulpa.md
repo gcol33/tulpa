@@ -95,10 +95,12 @@ tulpa(
 
 - phi:
 
-  Dispersion/precision passed to the family (residual variance for
-  gaussian and lognormal, size for neg_binomial_2, precision for beta,
-  scale for t). The variance convention holds across every backend; the
-  SD-parameterized compiled kernels receive `sqrt(phi)` at the boundary.
+  Dispersion passed to the family, held fixed. One convention at every
+  door: for `gaussian` / `lognormal` this is the residual VARIANCE (the
+  SD is `sqrt(phi)`), for `neg_binomial_2` the size, `gamma` the shape,
+  `beta` the precision, `t` the scale; `binomial` and `poisson` ignore
+  it. The compiled kernels parameterize the two variance families by the
+  residual SD and are handed `sqrt(phi)` at the boundary.
 
 - estimate_phi:
 
@@ -355,13 +357,7 @@ d <- data.frame(
 )
 # Random-intercept logistic GLMM, Laplace tier.
 fit <- tulpa(y ~ x + (1 | g), data = d, family = "binomial", mode = "laplace")
-#> Warning: tulpa(): `sigma_re` not supplied; conditioning on sigma_re = 1 for each of the 1 RE term(s). Pass `sigma_re` to override.
 coef(fit)
-#> (Intercept)           x 
-#>  -0.4031451   0.1952674 
 summary(fit)
-#>               estimate std.error        2.5%     97.5%
-#> (Intercept) -0.4031451 0.3251204 -1.04036939 0.2340792
-#> x            0.1952674 0.1382947 -0.07578526 0.4663201
 # }
 ```

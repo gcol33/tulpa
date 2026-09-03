@@ -1,4 +1,4 @@
-﻿---
+---
 title: "Getting started with tulpa"
 output: rmarkdown::html_vignette
 vignette: >
@@ -795,6 +795,7 @@ A few rules of thumb for everyday use:
 - Priors and prior predictive checks: the priors vignette and
   `prior_predict()`.
 - User-defined latent structure: the `tgmrf()` vignette.
+
 - Model comparison by marginal likelihood, WAIC, and LOO: the
   model-comparison vignette.
 - Posterior-predictive checks, WAIC, and LOO on a full observation model:

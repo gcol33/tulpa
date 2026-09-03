@@ -140,10 +140,4 @@ periodic_ar1 <- function(n) {
 
 blk <- periodic_ar1(20)
 print(blk)
-#> <tgmrf> "periodic_ar1"
-#>   n_latent : 20
-#>   theta    : 2 dim (log_sigma, atanh_rho)
-#>   init     : 0, 0
-#>   Q nnz    : 20 (5% of dense)
-#>   backend  : r
 ```

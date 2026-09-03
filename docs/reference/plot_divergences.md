@@ -56,8 +56,6 @@ fit <- tulpa(y ~ x, data = df, family = "poisson", mode = "hmc",
              control = list(n_iter = 500L, warmup = 250L, n_chains = 2L,
                             seed = 1L))
 plot_divergences(fit)
-#> No divergent transitions to plot
 plot_divergences(fit, type = "scatter")
-#> No divergent transitions to plot
 # }
 ```

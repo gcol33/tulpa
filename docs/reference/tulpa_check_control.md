@@ -42,6 +42,4 @@ key registry rather than reimplementing the check.
 ``` r
 tulpa_check_control(list(max_iter = 50), c("max_iter", "tol"), "my_fit")
 try(tulpa_check_control(list(max_itr = 50), c("max_iter", "tol"), "my_fit"))
-#> Error : Unknown control knob(s) for my_fit(): 'max_itr'.
-#> Allowed: max_iter, tol.
 ```

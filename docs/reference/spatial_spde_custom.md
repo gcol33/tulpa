@@ -31,7 +31,7 @@ spatial_spde_custom(
 - A:
 
   Projection matrix (n_obs x n_mesh sparse matrix, e.g. from
-  [`fmesher::fm_basis()`](https://inlabru-org.github.io/fmesher/reference/fm_basis.html)).
+  `fmesher::fm_basis()`).
 
 - nu:
 

@@ -42,8 +42,4 @@ g <- adjacency(grid, id = "cell")
 obs <- data.frame(cell = c("c5", "c1", "c9"))
 obs$cell_idx <- node_index(g, obs$cell)
 obs
-#>   cell cell_idx
-#> 1   c5        5
-#> 2   c1        1
-#> 3   c9        9
 ```

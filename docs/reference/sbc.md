@@ -286,33 +286,5 @@ fitter <- function(d) {
 }
 res <- sbc("prior_predictive", simulator = sim, fitter = fitter, n_sim = 60L)
 res
-#> Simulation-based calibration -- prior_predictive, 60 simulations
-#>   band: 0.95 simultaneous (equal local levels, exact crossing probability)
-#>   CRPS: proper posterior score
-#>   proper prior: verified over 10 probed simulations
-#> 
-#>     arm quantity  n     ks inside   p_unif inside_folded p_folded    crps
-#>   exact       mu 60 0.1239   TRUE 1.72e-01          TRUE    0.466 0.19496
-#>  narrow       mu 60 0.2662  FALSE 1.22e-15         FALSE    0.000 0.21762
-#>  crps_se
-#>   0.0166
-#>   0.0215
-#> 
-#> 1 of 2 (arm, quantity) reads inside the band; outside the band: narrow/mu.
 summary(res, baseline = "exact")
-#> Simulation-based calibration -- prior_predictive, 60 simulations
-#>   CRPS: proper posterior score
-#> 
-#>     arm quantity  n     ks inside   p_unif inside_folded p_folded    crps
-#>   exact       mu 60 0.1239   TRUE 1.72e-01          TRUE    0.466 0.19496
-#>  narrow       mu 60 0.2662  FALSE 1.22e-15         FALSE    0.000 0.21762
-#>  crps_se
-#>   0.0166
-#>   0.0215
-#> 
-#> Paired CRPS against arm 'exact' (negative delta = better)
-#>  quantity    arm  n   delta   t worse_frac p_sign
-#>        mu narrow 60 0.02267 4.3      0.633 0.0519
-#>   delta with its t is the proper-score verdict; p_sign is a more
-#>   powerful detector of a difference but is not itself proper.
 ```

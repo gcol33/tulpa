@@ -10,7 +10,22 @@
 <link href="../deps/bootstrap-5.3.8/bootstrap.min.css" rel="stylesheet">
 <script src="../deps/bootstrap-5.3.8/bootstrap.bundle.min.js"></script><link href="../deps/font-awesome-6.5.2/css/all.min.css" rel="stylesheet">
 <link href="../deps/font-awesome-6.5.2/css/v4-shims.min.css" rel="stylesheet">
-<script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><meta property="og:title" content="The data a tulpa model expects">
+<script src="../deps/headroom-0.11.0/headroom.min.js"></script><script src="../deps/headroom-0.11.0/jQuery.headroom.min.js"></script><script src="../deps/bootstrap-toc-1.0.1/bootstrap-toc.min.js"></script><script src="../deps/clipboard.js-2.0.11/clipboard.min.js"></script><script src="../deps/search-1.0.0/autocomplete.jquery.min.js"></script><script src="../deps/search-1.0.0/fuse.min.js"></script><script src="../deps/search-1.0.0/mark.min.js"></script><!-- pkgdown --><script src="../pkgdown.js"></script><link href="../extra.css" rel="stylesheet">
+<meta property="og:title" content="The data a tulpa model expects">
+<script>
+(function () {
+  var D = String.fromCharCode(36);
+  window.MathJax = {
+    tex: {
+      inlineMath: [[D, D], ["\\(", "\\)"]],
+      displayMath: [[D + D, D + D], ["\\[", "\\]"]]
+    },
+    chtml: { linebreaks: { automatic: true, width: "90% container" } },
+    svg: { linebreaks: { automatic: true, width: "90% container" } },
+    options: { renderActions: { addMenu: [] } }
+  };
+})();
+</script>
 </head>
 <body>
     <a href="#main" class="visually-hidden-focusable">Skip to contents</a>
@@ -20,7 +35,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.2.1</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -30,7 +45,7 @@
     <div id="navbar" class="collapse navbar-collapse ms-3">
       <ul class="navbar-nav me-auto">
 <li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
-<li class="active nav-item dropdown">
+<li class="nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
 <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpoint and resume long fits</a></li>
@@ -109,7 +124,13 @@ itself arriving through the <code>spatial=</code> argument.</p>
 parsed object to read it back.</p>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">pf</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa_parse_formula.html">tulpa_parse_formula</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="va">z</span> <span class="op">+</span> <span class="op">(</span><span class="fl">1</span> <span class="op">|</span> <span class="va">g</span><span class="op">)</span> <span class="op">+</span> <span class="op">(</span><span class="fl">1</span> <span class="op">+</span> <span class="va">x</span> <span class="op">||</span> <span class="va">site</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="va">pf</span></span></code></pre></div>
+<span><span class="va">pf</span></span>
+<span><span class="co">#&gt; tulpa parsed formula</span></span>
+<span><span class="co">#&gt;   Response: y </span></span>
+<span><span class="co">#&gt;   Fixed: y ~ x + z </span></span>
+<span><span class="co">#&gt;   Random effects: 2 term(s)</span></span>
+<span><span class="co">#&gt;     ( 1 | g )</span></span>
+<span><span class="co">#&gt;     ( 1 + x || site )</span></span></code></pre></div>
 <p>The print method separates the response from the fixed formula and
 lists each random-effect term in its canonical form. The bar operator is
 shown as <code>|</code> or <code>||</code>, so a glance confirms whether
@@ -137,7 +158,13 @@ factors.</p>
 <span>  g    <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/factor.html" class="external-link">factor</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="va">letters</span><span class="op">[</span><span class="fl">1</span><span class="op">:</span><span class="fl">6</span><span class="op">]</span>, <span class="va">n</span>, replace <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span><span class="op">)</span>,</span>
 <span>  site <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/factor.html" class="external-link">factor</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/sample.html" class="external-link">sample</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste0</a></span><span class="op">(</span><span class="st">"s"</span>, <span class="fl">1</span><span class="op">:</span><span class="fl">4</span><span class="op">)</span>, <span class="va">n</span>, replace <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/utils/str.html" class="external-link">str</a></span><span class="op">(</span><span class="va">df</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/r/utils/str.html" class="external-link">str</a></span><span class="op">(</span><span class="va">df</span><span class="op">)</span></span>
+<span><span class="co">#&gt; 'data.frame':    200 obs. of  5 variables:</span></span>
+<span><span class="co">#&gt;  $ y   : int  3 1 3 3 4 2 2 1 4 3 ...</span></span>
+<span><span class="co">#&gt;  $ x   : num  -0.658 -0.523 0.191 0.401 0.667 ...</span></span>
+<span><span class="co">#&gt;  $ z   : num  1.443 -1.113 1.123 0.757 -1.058 ...</span></span>
+<span><span class="co">#&gt;  $ g   : Factor w/ 6 levels "a","b","c","d",..: 1 1 3 4 5 2 4 1 2 6 ...</span></span>
+<span><span class="co">#&gt;  $ site: Factor w/ 4 levels "s1","s2","s3",..: 2 3 1 2 3 2 2 1 3 1 ...</span></span></code></pre></div>
 <p>Pass the parsed formula and the data to
 <code><a href="../reference/tulpa_build_model_data.html">tulpa_build_model_data()</a></code>. The result is a list with the
 response vector, the fixed-effects design matrix, an offset slot, the
@@ -145,15 +172,23 @@ parsed random-effect terms, and a few count fields the backends
 read.</p>
 <div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">bundle</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa_build_model_data.html">tulpa_build_model_data</a></span><span class="op">(</span><span class="va">pf</span>, <span class="va">df</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">bundle</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">bundle</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [1] "y"           "n_trials"    "X"           "offset"      "re_terms"   </span></span>
+<span><span class="co">#&gt; [6] "n_obs"       "n_fixed"     "n_re_terms"  "fixed_names"</span></span></code></pre></div>
 <p>The design matrix <code>X</code> is the ordinary
 <code>model.matrix</code> output for the fixed formula. It carries the
 intercept column unless you drop it, expands factors into contrasts, and
 labels its columns.</p>
 <div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/dim.html" class="external-link">dim</a></span><span class="op">(</span><span class="va">bundle</span><span class="op">$</span><span class="va">X</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [1] 200   3</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/colnames.html" class="external-link">colnames</a></span><span class="op">(</span><span class="va">bundle</span><span class="op">$</span><span class="va">X</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">bundle</span><span class="op">$</span><span class="va">X</span>, <span class="fl">3</span><span class="op">)</span></span></code></pre></div>
+<span><span class="co">#&gt; [1] "(Intercept)" "x"           "z"</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">bundle</span><span class="op">$</span><span class="va">X</span>, <span class="fl">3</span><span class="op">)</span></span>
+<span><span class="co">#&gt;   (Intercept)          x         z</span></span>
+<span><span class="co">#&gt; 1           1 -0.6576350  1.443229</span></span>
+<span><span class="co">#&gt; 2           1 -0.5229726 -1.112515</span></span>
+<span><span class="co">#&gt; 3           1  0.1911304  1.123357</span></span></code></pre></div>
 <p>The response <code>y</code> comes from evaluating the left side of
 <code>~</code> against the data, so a bare name, a transformation like
 <code>log(y)</code>, or a <code>cbind(...)</code> pair all resolve
@@ -163,7 +198,9 @@ backends need up front, and <code>fixed_names</code> echoes the design
 columns.</p>
 <div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>n_obs <span class="op">=</span> <span class="va">bundle</span><span class="op">$</span><span class="va">n_obs</span>, n_fixed <span class="op">=</span> <span class="va">bundle</span><span class="op">$</span><span class="va">n_fixed</span>,</span>
-<span>  n_re_terms <span class="op">=</span> <span class="va">bundle</span><span class="op">$</span><span class="va">n_re_terms</span><span class="op">)</span></span></code></pre></div>
+<span>  n_re_terms <span class="op">=</span> <span class="va">bundle</span><span class="op">$</span><span class="va">n_re_terms</span><span class="op">)</span></span>
+<span><span class="co">#&gt;      n_obs    n_fixed n_re_terms </span></span>
+<span><span class="co">#&gt;        200          3          2</span></span></code></pre></div>
 <p>When <code><a href="../reference/tulpa.html">tulpa()</a></code> runs a full fit it calls these two
 functions for you, then attaches the design back onto the returned
 object as <code>$model_matrix</code> and records
@@ -186,7 +223,19 @@ the random intercept <code>(1 | g)</code>.</p>
 <div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">re1</span> <span class="op">&lt;-</span> <span class="va">bundle</span><span class="op">$</span><span class="va">re_terms</span><span class="op">[[</span><span class="fl">1</span><span class="op">]</span><span class="op">]</span></span>
 <span><span class="va">re1</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"group_var"</span>, <span class="st">"n_groups"</span>, <span class="st">"n_coefs"</span>, <span class="st">"has_intercept"</span><span class="op">)</span><span class="op">]</span></span>
-<span><span class="va">re1</span><span class="op">$</span><span class="va">levels</span></span></code></pre></div>
+<span><span class="co">#&gt; $group_var</span></span>
+<span><span class="co">#&gt; [1] "g"</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; $n_groups</span></span>
+<span><span class="co">#&gt; [1] 6</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; $n_coefs</span></span>
+<span><span class="co">#&gt; [1] 1</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; $has_intercept</span></span>
+<span><span class="co">#&gt; [1] TRUE</span></span>
+<span><span class="va">re1</span><span class="op">$</span><span class="va">levels</span></span>
+<span><span class="co">#&gt; [1] "a" "b" "c" "d" "e" "f"</span></span></code></pre></div>
 <p><code>group_idx</code> is the heart of it. Each observation gets an
 integer pointing at one of the <code>n_groups</code> levels, and the
 order of <code>levels</code> fixes which integer means which group. A
@@ -194,7 +243,11 @@ random intercept has <code>n_coefs = 1</code> and no slope matrix, since
 the design column is an implicit vector of ones.</p>
 <div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">re1</span><span class="op">$</span><span class="va">group_idx</span>, <span class="fl">12</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/table.html" class="external-link">table</a></span><span class="op">(</span><span class="va">re1</span><span class="op">$</span><span class="va">group_idx</span><span class="op">)</span></span></code></pre></div>
+<span><span class="co">#&gt;  [1] 1 1 3 4 5 2 4 1 2 6 5 6</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/table.html" class="external-link">table</a></span><span class="op">(</span><span class="va">re1</span><span class="op">$</span><span class="va">group_idx</span><span class="op">)</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt;  1  2  3  4  5  6 </span></span>
+<span><span class="co">#&gt; 27 31 40 40 31 31</span></span></code></pre></div>
 <p>The second term, <code>(1 + x || site)</code>, adds a random slope on
 <code>x</code>. Its coefficient count rises to two (an intercept and the
 slope), the slope column shows up in <code>slope_matrix</code>, and
@@ -203,7 +256,25 @@ asked for independent effects.</p>
 <div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">re2</span> <span class="op">&lt;-</span> <span class="va">bundle</span><span class="op">$</span><span class="va">re_terms</span><span class="op">[[</span><span class="fl">2</span><span class="op">]</span><span class="op">]</span></span>
 <span><span class="va">re2</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"group_var"</span>, <span class="st">"n_groups"</span>, <span class="st">"n_coefs"</span>, <span class="st">"correlated"</span><span class="op">)</span><span class="op">]</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">re2</span><span class="op">$</span><span class="va">slope_matrix</span><span class="op">)</span></span></code></pre></div>
+<span><span class="co">#&gt; $group_var</span></span>
+<span><span class="co">#&gt; [1] "site"</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; $n_groups</span></span>
+<span><span class="co">#&gt; [1] 4</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; $n_coefs</span></span>
+<span><span class="co">#&gt; [1] 2</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; $correlated</span></span>
+<span><span class="co">#&gt; [1] FALSE</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">re2</span><span class="op">$</span><span class="va">slope_matrix</span><span class="op">)</span></span>
+<span><span class="co">#&gt;            x</span></span>
+<span><span class="co">#&gt; 1 -0.6576350</span></span>
+<span><span class="co">#&gt; 2 -0.5229726</span></span>
+<span><span class="co">#&gt; 3  0.1911304</span></span>
+<span><span class="co">#&gt; 4  0.4008339</span></span>
+<span><span class="co">#&gt; 5  0.6667822</span></span>
+<span><span class="co">#&gt; 6 -0.6768624</span></span></code></pre></div>
 <p>Group levels come from factor levels, so the way you build a factor
 controls the group ordering and which groups exist at all. If a level is
 present in the factor but never observed, it still counts toward
@@ -234,7 +305,9 @@ fitting rather than after.</p>
 <div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">pn</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa_parse_formula.html">tulpa_parse_formula</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="op">(</span><span class="fl">1</span> <span class="op">|</span> <span class="va">g</span><span class="op">/</span><span class="va">site</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="va">pn</span><span class="op">$</span><span class="va">n_re_terms</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">vapply</a></span><span class="op">(</span><span class="va">pn</span><span class="op">$</span><span class="va">random_effects</span>, <span class="va">`[[`</span>, <span class="fu"><a href="https://rdrr.io/r/base/character.html" class="external-link">character</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span>, <span class="st">"group_var"</span><span class="op">)</span></span></code></pre></div>
+<span><span class="co">#&gt; [1] 2</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">vapply</a></span><span class="op">(</span><span class="va">pn</span><span class="op">$</span><span class="va">random_effects</span>, <span class="va">`[[`</span>, <span class="fu"><a href="https://rdrr.io/r/base/character.html" class="external-link">character</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span>, <span class="st">"group_var"</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [1] "g"      "g:site"</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="binomial-denominators-and-offsets">Binomial denominators and offsets<a class="anchor" aria-label="anchor" href="#binomial-denominators-and-offsets"></a>
@@ -253,7 +326,8 @@ matrix.</p>
 <span></span>
 <span><span class="va">pf_b</span>   <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa_parse_formula.html">tulpa_parse_formula</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span><span class="va">succ</span>, <span class="va">fail</span><span class="op">)</span> <span class="op">~</span> <span class="va">x</span><span class="op">)</span></span>
 <span><span class="va">bun_b</span>  <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa_build_model_data.html">tulpa_build_model_data</a></span><span class="op">(</span><span class="va">pf_b</span>, <span class="va">db</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">bun_b</span><span class="op">$</span><span class="va">y</span>, <span class="fl">3</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">bun_b</span><span class="op">$</span><span class="va">y</span>, <span class="fl">3</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [1] 3 8 7</span></span></code></pre></div>
 <p>When the denominators live in their own vector, keep the response as
 the success count and hand the trials to <code><a href="../reference/tulpa.html">tulpa()</a></code> through
 <code>n_trials</code>, a vector with one entry per row. This is the
@@ -269,10 +343,13 @@ neither route.</p>
 <span><span class="va">fit_b</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">succ</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">db</span>, family <span class="op">=</span> <span class="st">"binomial"</span>,</span>
 <span>               n_trials <span class="op">=</span> <span class="va">db</span><span class="op">$</span><span class="va">tot</span>, mode <span class="op">=</span> <span class="st">"laplace"</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_b</span><span class="op">)</span></span>
+<span><span class="co">#&gt; (Intercept)           x </span></span>
+<span><span class="co">#&gt;  -0.2868062   0.8230279</span></span>
 <span></span>
 <span><span class="va">fit_cbind</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span><span class="va">succ</span>, <span class="va">fail</span><span class="op">)</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">db</span>, family <span class="op">=</span> <span class="st">"binomial"</span>,</span>
 <span>                   mode <span class="op">=</span> <span class="st">"laplace"</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">max</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/MathFun.html" class="external-link">abs</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_cbind</span><span class="op">)</span> <span class="op">-</span> <span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_b</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">max</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/MathFun.html" class="external-link">abs</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_cbind</span><span class="op">)</span> <span class="op">-</span> <span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_b</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [1] 0</span></span></code></pre></div>
 <p>An offset is a known additive term on the linear-predictor scale,
 fixed at coefficient one rather than estimated, and exposure in a rate
 model is the common case: a Poisson count observed over a varying window
@@ -287,7 +364,9 @@ appears as a fitted column.</p>
 <span><span class="va">pf_o</span>  <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa_parse_formula.html">tulpa_parse_formula</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/stats/offset.html" class="external-link">offset</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">log</a></span><span class="op">(</span><span class="va">expo</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="va">bun_o</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa_build_model_data.html">tulpa_build_model_data</a></span><span class="op">(</span><span class="va">pf_o</span>, <span class="va">dp</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">bun_o</span><span class="op">$</span><span class="va">offset</span>, <span class="fl">4</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/colnames.html" class="external-link">colnames</a></span><span class="op">(</span><span class="va">bun_o</span><span class="op">$</span><span class="va">X</span><span class="op">)</span></span></code></pre></div>
+<span><span class="co">#&gt; [1] 1.97118068 1.59092806 0.09973003 1.87423420</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/colnames.html" class="external-link">colnames</a></span><span class="op">(</span><span class="va">bun_o</span><span class="op">$</span><span class="va">X</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [1] "(Intercept)" "x"</span></span></code></pre></div>
 <p>The offset column is <code>log(expo)</code> evaluated row by row, and
 <code>X</code> holds only the intercept and <code>x</code>. The
 transformation inside <code>offset(...)</code> runs as written, so the
@@ -298,7 +377,9 @@ coefficient.</p>
 <div class="sourceCode" id="cb14"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">fit_o</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/stats/offset.html" class="external-link">offset</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">log</a></span><span class="op">(</span><span class="va">expo</span><span class="op">)</span><span class="op">)</span>, data <span class="op">=</span> <span class="va">dp</span>,</span>
 <span>               family <span class="op">=</span> <span class="st">"poisson"</span>, mode <span class="op">=</span> <span class="st">"laplace"</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_o</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_o</span><span class="op">)</span></span>
+<span><span class="co">#&gt; (Intercept)           x </span></span>
+<span><span class="co">#&gt;   0.1037010   0.4749073</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="validation-and-errors">Validation and errors<a class="anchor" aria-label="anchor" href="#validation-and-errors"></a>
@@ -310,17 +391,23 @@ called <code>g</code> in the data but the formula asks for
 <code>region</code>: the build stops and quotes the offending name.</p>
 <div class="sourceCode" id="cb15"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">bad</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa_parse_formula.html">tulpa_parse_formula</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="op">(</span><span class="fl">1</span> <span class="op">|</span> <span class="va">region</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="fu"><a href="../reference/tulpa_build_model_data.html">tulpa_build_model_data</a></span><span class="op">(</span><span class="va">bad</span>, <span class="va">df</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu"><a href="../reference/tulpa_build_model_data.html">tulpa_build_model_data</a></span><span class="op">(</span><span class="va">bad</span>, <span class="va">df</span><span class="op">)</span></span>
+<span><span class="co">#&gt; <span style="color: #BBBB00; font-weight: bold;">Error</span><span style="font-weight: bold;">:</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BBBB00;">!</span> Grouping variable 'region' not found in data</span></span></code></pre></div>
 <p>A response that cannot be found is reported the same way, against the
 label that appeared on the left of <code>~</code>.</p>
 <div class="sourceCode" id="cb16"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="../reference/tulpa_build_model_data.html">tulpa_build_model_data</a></span><span class="op">(</span><span class="fu"><a href="../reference/tulpa_parse_formula.html">tulpa_parse_formula</a></span><span class="op">(</span><span class="va">count</span> <span class="op">~</span> <span class="va">x</span><span class="op">)</span>, <span class="va">df</span><span class="op">)</span></span></code></pre></div>
+<code class="sourceCode R"><span><span class="fu"><a href="../reference/tulpa_build_model_data.html">tulpa_build_model_data</a></span><span class="op">(</span><span class="fu"><a href="../reference/tulpa_parse_formula.html">tulpa_parse_formula</a></span><span class="op">(</span><span class="va">count</span> <span class="op">~</span> <span class="va">x</span><span class="op">)</span>, <span class="va">df</span><span class="op">)</span></span>
+<span><span class="co">#&gt; <span style="color: #BBBB00; font-weight: bold;">Error</span><span style="font-weight: bold;">:</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BBBB00;">!</span> Response 'count' not found in data</span></span></code></pre></div>
 <p>The special terms check their own shape at parse time. A
 <code>spatial(...)</code> term wraps exactly one bare column name, so a
 call with the wrong arity is caught before any data is touched, with a
 message that shows the intended form.</p>
 <div class="sourceCode" id="cb17"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="../reference/tulpa_parse_formula.html">tulpa_parse_formula</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="fu"><a href="../reference/spatial.html">spatial</a></span><span class="op">(</span><span class="va">x</span>, <span class="va">g</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
+<code class="sourceCode R"><span><span class="fu"><a href="../reference/tulpa_parse_formula.html">tulpa_parse_formula</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="fu"><a href="../reference/spatial.html">spatial</a></span><span class="op">(</span><span class="va">x</span>, <span class="va">g</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt; <span style="color: #BBBB00; font-weight: bold;">Error</span><span style="font-weight: bold;">:</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BBBB00;">!</span> spatial(...) takes exactly one bare column name, e.g. spatial(region).</span></span></code></pre></div>
 <p>A spatial term also has a partner requirement that surfaces at fit
 time. Naming a unit column with <code>spatial(col)</code> tells tulpa
 where each row sits, but the field structure (the adjacency for an areal
@@ -328,7 +415,9 @@ model, coordinates for a continuous one) arrives through the
 <code>spatial=</code> argument. Leaving it out stops the fit with
 guidance on what to pass.</p>
 <div class="sourceCode" id="cb18"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="fu"><a href="../reference/spatial.html">spatial</a></span><span class="op">(</span><span class="va">g</span><span class="op">)</span>, data <span class="op">=</span> <span class="va">df</span>, family <span class="op">=</span> <span class="st">"poisson"</span>, mode <span class="op">=</span> <span class="st">"laplace"</span><span class="op">)</span></span></code></pre></div>
+<code class="sourceCode R"><span><span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="fu"><a href="../reference/spatial.html">spatial</a></span><span class="op">(</span><span class="va">g</span><span class="op">)</span>, data <span class="op">=</span> <span class="va">df</span>, family <span class="op">=</span> <span class="st">"poisson"</span>, mode <span class="op">=</span> <span class="st">"laplace"</span><span class="op">)</span></span>
+<span><span class="co">#&gt; <span style="color: #BBBB00; font-weight: bold;">Error</span><span style="font-weight: bold;">:</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BBBB00;">!</span> Formula has a spatial(g) term but the structure spec `spatial=` was not supplied (e.g. list(type = 'icar', adjacency = W) or spatial_gp(~ lon + lat)).</span></span></code></pre></div>
 <p>These checks share a habit worth leaning on. The formula declares
 intent, the data supplies the columns, and the builder reconciles the
 two before anything numeric happens. When a fit fails to start, parsing
@@ -364,7 +453,7 @@ arguments.</li>
 </div>
 
 <div class="pkgdown-footer-right">
-  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.0.</p>
+  <p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.1.</p>
 </div>
 
     </footer>

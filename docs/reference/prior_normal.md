@@ -26,7 +26,5 @@ A `tulpa_prior` object
 
 ``` r
 prior_normal(0, 2.5)
-#> Normal(0.00, 2.50)
 prior_normal(0, 1)
-#> Normal(0.00, 1.00)
 ```
