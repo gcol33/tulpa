@@ -1,5 +1,5 @@
 Package: tulpa
-Title: Template Unified Latent Process Architecture for Bayesian Hierarchical Models
+Title: Templated Unified Library for Posterior Approximation in Bayesian Hierarchical Models
 Version: 0.3.0
 Authors@R: c(
     person("Gilles", "Colling", , "gilles.colling051@gmail.com", role = c("aut", "cre", "cph"),

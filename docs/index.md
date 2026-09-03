@@ -434,7 +434,7 @@ MIT (see the LICENSE file).
 ``` bibtex
 @Manual{tulpa,
   author = {Colling, Gilles},
-  title  = {tulpa: Template Unified Latent Process Architecture for Bayesian Hierarchical Models},
+  title  = {tulpa: Templated Unified Library for Posterior Approximation in Bayesian Hierarchical Models},
   year   = {2026},
   note   = {R package version 0.2.0},
   url    = {https://github.com/gcol33/tulpa}

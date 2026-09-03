@@ -8,7 +8,7 @@ note <- sprintf("R package version %s", meta$Version)
 
 bibentry(
   bibtype = "Manual",
-  title   = "{tulpa}: Template Unified Latent Process Architecture for Bayesian Hierarchical Models",
+  title   = "{tulpa}: Templated Unified Library for Posterior Approximation in Bayesian Hierarchical Models",
   author  = person("Gilles", "Colling",
                    comment = c(ORCID = "0000-0003-3070-6066")),
   year    = year,
@@ -16,7 +16,7 @@ bibentry(
   url     = "https://github.com/gcol33/tulpa",
   textVersion = paste0(
     "Colling, G. (", year, "). ",
-    "tulpa: Template Unified Latent Process Architecture for Bayesian ",
+    "tulpa: Templated Unified Library for Posterior Approximation in Bayesian ",
     "Hierarchical Models. ", note, ". ",
     "https://github.com/gcol33/tulpa"
   )

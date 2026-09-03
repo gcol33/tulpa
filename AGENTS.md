@@ -1,4 +1,4 @@
-# TULPA — Template Unified Latent Process Architecture
+# TULPA — Templated Unified Library for Posterior Approximation
 
 General-purpose Bayesian hierarchical modelling engine (v0.1.0). Engine
 extracted from numdenom, which has since been renamed tulpaRatio.
@@ -1561,4 +1561,4 @@ driven entry point. No DSL, no parser, no codegen.
 Engine extracted from numdenom (82K lines, faster than Stan on all 18
 benchmarks); numdenom was then renamed tulpaRatio as the engine became the
 hub of the `tulpa*` ecosystem.
-Name: Twin Peaks reference + acronym (Template Unified Latent Process Architecture).
+Name: Twin Peaks reference + acronym (Templated Unified Library for Posterior Approximation).

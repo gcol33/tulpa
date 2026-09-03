@@ -16,12 +16,12 @@
 Source:
 [`inst/CITATION`](https://github.com/gcol33/tulpa/blob/HEAD/inst/CITATION)
 
-Colling, G. (2026). tulpa: Template Unified Latent Process Architecture
-for Bayesian Hierarchical Models. R package version 0.2.1.
+Colling, G. (2026). tulpa: Templated Unified Library for Posterior Approximation
+in Bayesian Hierarchical Models. R package version 0.2.1.
 https://github.com/gcol33/tulpa
 
     @Manual{,
-      title = {{tulpa}: Template Unified Latent Process Architecture for Bayesian Hierarchical Models},
+      title = {{tulpa}: Templated Unified Library for Posterior Approximation in Bayesian Hierarchical Models},
       author = {Gilles Colling},
       year = {2026},
       note = {R package version 0.2.1},

@@ -1,4 +1,4 @@
-# tulpa: Template Unified Latent Process Architecture for Bayesian Hierarchical Models
+# tulpa: Templated Unified Library for Posterior Approximation in Bayesian Hierarchical Models
 
 A general-purpose engine for fitting Bayesian hierarchical models with
 spatial fields, temporal effects, spatially varying coefficients, and
