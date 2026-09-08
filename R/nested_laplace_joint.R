@@ -149,6 +149,16 @@
 #'   * `gamma`, `inverse_gaussian` -- shape / dispersion.
 #'   * `binomial`, `poisson` -- ignored.
 #'
+#'   A dispersion axis is PLACED like a prior block's scale axis when the caller
+#'   declares it a default with [auto_grid()] -- `phi_grid = list(pos =
+#'   auto_grid(nodes))`. The engine has no default dispersion axis of its own,
+#'   so an unmarked vector is read as a pin and integrated exactly as written;
+#'   the fit records that per axis in `outer_grid_axis_declined`. Marked, the
+#'   axis is re-laid on `mode +/- span * sd` from the same mode/Hessian stencil
+#'   the field-SD axes are placed from, which on a span wide enough to hold no
+#'   node near the posterior is the difference between an estimate and an
+#'   endpoint.
+#'
 #'   Each `phi_<arm>` axis is appended to the Cartesian product and
 #'   varies slowest (within-spatial warm starts hold). The axis appears
 #'   as a regular hyperparameter in `theta_grid`, `theta_mean`, and
@@ -706,10 +716,15 @@
 #'     posterior mode and refit when the fit rails against a boundary node.
 #'     `FALSE` integrates over the grid exactly as given, whatever it is, and
 #'     records `outer_grid_recenter_declined = "auto_recenter_disabled"`. The
-#'     joint rescues trigger on the whole grid's collapsed-edge regime rather
-#'     than on a per-axis rail, so the per-axis policy names
+#'     joint FIELD rescues trigger on the whole grid's collapsed-edge regime
+#'     rather than on a per-axis rail, so the per-axis policy names
 #'     [tulpa_nested_laplace()] takes (`"rail"`, `"resolve"`, `"always"`) are
-#'     refused here with an error rather than accepted and ignored.
+#'     refused here with an error rather than accepted and ignored. A per-arm
+#'     dispersion axis (`phi_grid`) is the exception and fires on its own
+#'     sizing: it is crossed onto the tensor independently of the field's
+#'     geometry, so whether the field's grid collapsed says nothing about
+#'     whether the dispersion axis brackets its own posterior. `FALSE` holds
+#'     that axis too.
 #'   * `recenter_pilot` (`FALSE`) -- detect the placement above on a THINNED
 #'     grid rather than on the full one. Placement reads two things, the argmax
 #'     cell and an FD curvature stencil at it, and reads both off
@@ -851,6 +866,13 @@
 #'      mode-Hessian the recenter needs was unavailable or degenerate, e.g. a
 #'      car_proper grid whose `rho_car` axis has unguessable support). Absent
 #'      when the fit WAS recentred.
+#'   * `outer_grid_axis_declined` -- the same question PER AXIS, as a named
+#'      character vector. The slot above holds one reason for the whole fit and
+#'      is written only while the fit is unplaced, so on a fit whose field-SD
+#'      axis moved and whose dispersion axis did not it says `auto_recentered`
+#'      and nothing about the axis that stayed -- which is the axis
+#'      `grid_coarsest_axis` then names. Currently written by the per-arm
+#'      dispersion pass; absent on a fit carrying no such axis.
 #'   * `outer_grid_pilot` -- present only when `control$recenter_pilot` ran: the
 #'      pilot's resolution (`n_pilot`), its cell count (`cells`), the axes it
 #'      thinned (`axes`) and those it could not (`axes_kept`), and what the
@@ -1162,6 +1184,16 @@ tulpa_nested_laplace_joint <- function(responses,
     # the record; everything else reads plain grids.
     prov  <- .nl_grid_provenance(prior)
     prior <- prov$prior
+    # The same question for the per-arm dispersion axes, which live on
+    # `phi_grid` rather than on a prior block (gcol33/tulpa#663). Taken BEFORE
+    # `.normalise_phi_grid()`, which coerces each entry with `as.numeric()` and
+    # would drop the marker; normalising here rather than leaving it to
+    # `.tulpa_nl_joint_once()` (which does it again, idempotently) is what gives
+    # the rescue below a stable `phi_grid[[arm]]` write target whichever spelling
+    # the caller used.
+    arm_names <- names(responses) %||% paste0("arm", seq_along(responses))
+    phi_prov  <- .nl_phi_provenance(phi_grid, arm_names)
+    phi_grid  <- .normalise_phi_grid(phi_prov$phi_grid, arm_names)
     # Refuse an axis the resolved per-block path cannot read, and record a
     # dropped default.
     .op_axis <- .nl_publish_axis_dropped(
@@ -1191,13 +1223,22 @@ tulpa_nested_laplace_joint <- function(responses,
     outer_threads <- .nl_outer_threads(control$n_threads_outer %||% 1L,
                                        fn = "tulpa_nested_laplace_joint()")
 
+    # The dispersion axes `.joint_phi_grid_rescue()` is allowed to move, named
+    # as the grid names them. Handed to every fit so the placement stencil knows
+    # to compute a curvature for them on a grid that concentrated without
+    # railing; empty when the caller pinned every one, which is the gate that
+    # keeps a pinned fit paying nothing for a pass that could not run.
+    phi_movable <- if (!auto_recenter) character(0) else
+        paste0("phi_", intersect(phi_prov$auto, names(phi_grid) %||% character(0)))
+
     ctrl <- control
     fit_once <- function(prior_i, prior_sigma_i, ctrl_i = ctrl,
                          phi_grid_i = phi_grid, copy_i = copy,
                          responses_i = responses)
         attach_q(.tulpa_nl_joint_once(responses_i, prior_i, copy_i, phi_grid_i,
                                       prior_sigma_i, prior_alpha, prior_phi,
-                                      cell_coupling, ctrl_i))
+                                      cell_coupling, ctrl_i,
+                                      placement_axes = phi_movable))
 
     # Placement pilot (gcol33/tulpa#636). Placement reads an argmax cell and an
     # FD curvature stencil, and reads them off `log_marginal` -- not off the
@@ -1249,24 +1290,39 @@ tulpa_nested_laplace_joint <- function(responses,
     # place onto `prior_i`, refit. Detecting fit and placed prior are separate
     # arguments, which is what lets a pilot fit stand in for the first without
     # either rescue knowing a pilot exists.
-    run_rescues <- function(res_i, prior_i, prior_sigma_i, ctrl_i = ctrl) {
+    #
+    # The third moves a per-arm dispersion axis, which is orthogonal to both:
+    # it reads `phi_grid` rather than the prior, so a fit can have its field SD
+    # placed by one of the pair AND its dispersion placed here, and the two
+    # records merge rather than overwrite (`.nl_carry_recenter_stamps()`).
+    run_rescues <- function(res_i, prior_i, prior_sigma_i, phi_i = phi_grid,
+                            ctrl_i = ctrl) {
         r1 <- .joint_sigma_grid_rescue(
             res_i, prior_i, prior_sigma_i,
-            refit = function(p, ps) fit_once(p, ps, ctrl_i = ctrl_i),
+            refit = function(p, ps) fit_once(p, ps, ctrl_i = ctrl_i,
+                                             phi_grid_i = phi_i),
             auto = prov$auto, enabled = auto_recenter)
         cp_i <- tryCatch(.resolve_copy_multi(copy, responses, r1$prior),
                          error = function(e) NULL)
         r2 <- .joint_multi_sigma_grid_rescue(
             r1$res, r1$prior, copy, cp_i, r1$prior_sigma,
-            refit = function(p, ps) fit_once(p, ps, ctrl_i = ctrl_i),
+            refit = function(p, ps) fit_once(p, ps, ctrl_i = ctrl_i,
+                                             phi_grid_i = phi_i),
             auto = prov$auto, enabled = auto_recenter)
-        r2
+        r3 <- .joint_phi_grid_rescue(
+            r2$res, phi_i,
+            refit = function(pg) fit_once(r2$prior, r2$prior_sigma,
+                                          ctrl_i = ctrl_i, phi_grid_i = pg),
+            auto = phi_prov$auto, enabled = auto_recenter)
+        list(res = r3$res, prior = r2$prior, prior_sigma = r2$prior_sigma,
+             phi_grid = r3$phi_grid)
     }
 
     rescue      <- run_rescues(res, prior, prior_sigma)
     res         <- rescue$res
     prior       <- rescue$prior
     prior_sigma <- rescue$prior_sigma
+    phi_grid    <- rescue$phi_grid
 
     # The pilot's other half. A placement that fired has already produced a full
     # fit at the placed axes; one that DECLINED has left `res` on the pilot's own
@@ -1286,6 +1342,7 @@ tulpa_nested_laplace_joint <- function(responses,
             res         <- rescue$res
             prior       <- rescue$prior
             prior_sigma <- rescue$prior_sigma
+            phi_grid    <- rescue$phi_grid
             pilot_placed <- FALSE
         } else {
             pilot_placed <- TRUE
@@ -1312,6 +1369,7 @@ tulpa_nested_laplace_joint <- function(responses,
             rr <- run_rescues(r, prior, prior_sigma, ctrl_i = ctrl_full)
             prior       <<- rr$prior
             prior_sigma <<- rr$prior_sigma
+            phi_grid    <<- rr$phi_grid
             rr$res
         })
         ctrl <- ctrl_full
@@ -1477,7 +1535,8 @@ tulpa_nested_laplace_joint <- function(responses,
 .tulpa_nl_joint_once <- function(responses, prior, copy = NULL, phi_grid = NULL,
                                  prior_sigma = NULL, prior_alpha = NULL,
                                  prior_phi = NULL,
-                                 cell_coupling = "separable", control = list()) {
+                                 cell_coupling = "separable", control = list(),
+                                 placement_axes = character(0)) {
     tm <- .tulpa_timer()
     # Resolve and validate the cell-coupling spec name against the C++
     # registry (separable default is auto-registered on first touch). The
@@ -1842,6 +1901,7 @@ tulpa_nested_laplace_joint <- function(responses,
             adaptive_stride = adaptive_stride,
             adaptive_max_frac = adaptive_max_frac,
             adaptive_min_cells = adaptive_min_cells,
+            placement_axes = placement_axes,
             timer = tm
         ))
     }
@@ -2097,7 +2157,8 @@ tulpa_nested_laplace_joint <- function(responses,
                                          pareto_k_by_arm = pareto_k_by_arm,
                                          k_bootstrap = k_bootstrap,
                                          k_tail_points = k_tail_points,
-                                         k_conf_bands = k_conf_bands)
+                                         k_conf_bands = k_conf_bands,
+                                         placement_axes = placement_axes)
     res <- .nlj_inner_skew_at_theta(res, kernel_fn, skew_idx,
                                     compute = diagnose_skew)
     fixed <- .joint_fixed_layout(responses)

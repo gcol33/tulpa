@@ -140,6 +140,15 @@ parameterization as \code{gaussian} plus the \code{-log(y)} Jacobian.
 \item \code{binomial}, \code{poisson} -- ignored.
 }
 
+A dispersion axis is PLACED like a prior block's scale axis when the caller
+declares it a default with \code{\link[=auto_grid]{auto_grid()}} -- \code{phi_grid = list(pos = auto_grid(nodes))}. The engine has no default dispersion axis of its own,
+so an unmarked vector is read as a pin and integrated exactly as written;
+the fit records that per axis in \code{outer_grid_axis_declined}. Marked, the
+axis is re-laid on \verb{mode +/- span * sd} from the same mode/Hessian stencil
+the field-SD axes are placed from, which on a span wide enough to hold no
+node near the posterior is the difference between an estimate and an
+endpoint.
+
 Each \verb{phi_<arm>} axis is appended to the Cartesian product and
 varies slowest (within-spatial warm starts hold). The axis appears
 as a regular hyperparameter in \code{theta_grid}, \code{theta_mean}, and
@@ -696,10 +705,15 @@ to draw with and is declined with \code{"sparse_factor_not_ll"}.
 posterior mode and refit when the fit rails against a boundary node.
 \code{FALSE} integrates over the grid exactly as given, whatever it is, and
 records \code{outer_grid_recenter_declined = "auto_recenter_disabled"}. The
-joint rescues trigger on the whole grid's collapsed-edge regime rather
-than on a per-axis rail, so the per-axis policy names
+joint FIELD rescues trigger on the whole grid's collapsed-edge regime
+rather than on a per-axis rail, so the per-axis policy names
 \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}} takes (\code{"rail"}, \code{"resolve"}, \code{"always"}) are
-refused here with an error rather than accepted and ignored.
+refused here with an error rather than accepted and ignored. A per-arm
+dispersion axis (\code{phi_grid}) is the exception and fires on its own
+sizing: it is crossed onto the tensor independently of the field's
+geometry, so whether the field's grid collapsed says nothing about
+whether the dispersion axis brackets its own posterior. \code{FALSE} holds
+that axis too.
 \item \code{recenter_pilot} (\code{FALSE}) -- detect the placement above on a THINNED
 grid rather than on the full one. Placement reads two things, the argmax
 cell and an FD curvature stencil at it, and reads both off
@@ -842,6 +856,13 @@ default rather than a choice), or \code{"no_usable_curvature"} (the
 mode-Hessian the recenter needs was unavailable or degenerate, e.g. a
 car_proper grid whose \code{rho_car} axis has unguessable support). Absent
 when the fit WAS recentred.
+\item \code{outer_grid_axis_declined} -- the same question PER AXIS, as a named
+character vector. The slot above holds one reason for the whole fit and
+is written only while the fit is unplaced, so on a fit whose field-SD
+axis moved and whose dispersion axis did not it says \code{auto_recentered}
+and nothing about the axis that stayed -- which is the axis
+\code{grid_coarsest_axis} then names. Currently written by the per-arm
+dispersion pass; absent on a fit carrying no such axis.
 \item \code{outer_grid_pilot} -- present only when \code{control$recenter_pilot} ran: the
 pilot's resolution (\code{n_pilot}), its cell count (\code{cells}), the axes it
 thinned (\code{axes}) and those it could not (\code{axes_kept}), and what the

@@ -1270,9 +1270,20 @@
 # attached by `.joint_attach_pareto_k_regime()` regardless of `diagnose_k`) --
 # so this is zero extra cost for the common fit whose grid already brackets
 # the mode.
+#
+# `extra_axes` names axes whose OWN placement pass may want the curvature on a
+# grid that did not rail -- the per-arm dispersion axes a
+# `.joint_phi_grid_rescue()` can move (gcol33/tulpa#663). Its trigger is the
+# axis's own sizing rather than the whole grid's regime, so gating this on
+# `collapsed_edge` alone left every `collapsed_interior` fit with no curvature
+# to place from. The extra test reads stored weights
+# (`.nl_placement_axis_wanted()`), so a fit with no movable dispersion axis --
+# the caller passes none -- runs exactly the gate it used to.
 .joint_attach_pareto_k_placement <- function(res, refit_log_marginal,
-                                             proposal = NULL) {
-    if (!identical(res$pareto_k_regime, "collapsed_edge")) return(res)
+                                             proposal = NULL,
+                                             extra_axes = character(0)) {
+    if (!identical(res$pareto_k_regime, "collapsed_edge") &&
+        !.nl_placement_axis_wanted(res, extra_axes)) return(res)
     prep <- .joint_pareto_prepare(res, refit_log_marginal, .PSIS_MIN_EVAL, proposal)
     if (.k_is_decline(prep)) return(res)
     res$pareto_k_mode_u     <- prep$u_hat
@@ -1403,7 +1414,8 @@
                                           pareto_k_by_arm = FALSE,
                                           k_bootstrap = .nl_diag("k_bootstrap"),
                                           k_tail_points = NULL,
-                                          k_conf_bands = NULL) {
+                                          k_conf_bands = NULL,
+                                          placement_axes = character(0)) {
     res$pareto_k        <- NA_real_
     res$pareto_k_is_ess <- NA_real_
     res$pareto_k_scope  <- "outer (hyperparameter) Gaussian proposal"
@@ -1449,7 +1461,8 @@
         # batched FD-stencil solve, only when the grid actually collapsed on a
         # boundary) even though the full diagnostic below never runs.
         res <- .k_attach_declined(res, .k_decline("not_requested"))
-        return(.joint_attach_pareto_k_placement(res, solve_fn))
+        return(.joint_attach_pareto_k_placement(res, solve_fn,
+                                                extra_axes = placement_axes))
     }
 
     # Per-cell warm start (each draw from its nearest stored grid mode) is the

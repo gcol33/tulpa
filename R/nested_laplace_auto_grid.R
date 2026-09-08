@@ -103,6 +103,14 @@
 # fixture), and reading a large one there as a placement failure mistakes a
 # sharp posterior on a fixed axis for a mis-sized one.
 #
+# A DECLARED per-arm dispersion axis is no longer in that set
+# (`.joint_phi_grid_rescue()`, gcol33/tulpa#663): marked with `auto_grid()` it
+# is placed like a field SD, and left unmarked it is a pin whose ratio means
+# what the paragraph above says it means. Which of the two a given axis is, is
+# recorded on the fit per axis (`outer_grid_axis_declined`), because the
+# whole-fit `outer_grid_recenter_declined` slot holds the reason from ONE rescue
+# and says nothing about an axis a different one left alone.
+#
 # The default is "resolve" and not "always" for COST, and the two are closer
 # than the coverage table alone reads. They agree seed for seed on five of the
 # six measured configurations; they differ on the one whose default axes
@@ -161,12 +169,14 @@
 #' setting exactly as given, and re-centres (or, for a prior, engages its own
 #' regularizer over) a marked one when the fit rails against its ceiling.
 #'
-#' Three kinds of setting take the mark:
+#' Four kinds of setting take the mark:
 #' \itemize{
 #'   \item a grid axis on a nested-Laplace `prior` block (`sigma_grid`,
 #'     `tau_grid`, ...) -- a numeric vector of nodes, or the `[n_cells x k]`
 #'     matrix of pre-paired coordinates the families whose axis is a matrix
 #'     take (`mcar` / `miid`'s `logchol_grid`, `tgmrf`'s `theta_grid_built`);
+#'   \item an entry of [tulpa_nested_laplace_joint()]'s `phi_grid` -- one arm's
+#'     dispersion axis;
 #'   \item a scalar grid-construction knob in `control`, for a driver that
 #'     builds its axes rather than taking them (`fit_st_nested()`'s
 #'     `n_grid_spatial`, `tau_upper`, ...);
@@ -180,7 +190,8 @@
 #' otherwise be indistinguishable from a user who pinned that setting
 #' deliberately. Mark it and the rescue stays live. A setting whose value is
 #' exactly the engine's own default is recognised without a mark; anything else
-#' needs one.
+#' needs one -- and a dispersion axis ALWAYS needs one, since the engine has no
+#' default of its own to recognise it against.
 #'
 #' The mark is an attribute, so it is dropped by `sort()`, `[`, `c()` and
 #' `as.numeric()`: build the value first, mark it last.
@@ -1347,6 +1358,248 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
         res$outer_grid_prior_declined      <-
             if (attempt >= 2L && prior_pinned) "prior_pinned" else NULL
         out <- list(res = res, prior = cur_prior, prior_sigma = cur_prior_sigma)
+    }
+    out$res <- .nl_decline_recenter(out$res, reason)
+    out
+}
+
+# --- per-arm dispersion axes -------------------------------------------------
+#
+# A `phi_grid` axis is a hyperparameter of an ARM, not of a prior block, so it
+# is in no entry of `.NL_REGISTRY_AXIS_FIELD` and the two sigma rescues above
+# walk past it. Everything else it needs is already here: the transform registry
+# tags a `phi_<arm>` column `"log"` (`.joint_pareto_block_tags()`), the outer
+# mode/Hessian stencil varies it like any other column (`.joint_grids_from_cells()`
+# hands `grids$phi_<arm>` straight back to `.joint_phi_grid_per_arm()`), and the
+# node layout, clamp policy and decline vocabulary are the shared helpers above.
+# So what this adds is a slot source and a write target, not a second placement
+# machine (gcol33/tulpa#663).
+#
+# The axes are read off the FIT rather than off the argument: `phi_grid` accepts
+# a named or a positional list and treats a length-1 entry as no axis at all, so
+# the `phi_<arm>` columns the grid actually carries are the authority on which
+# arms have one. The driver normalises the argument to the named form before the
+# first fit, which is what lets the write target be `phi_grid[[arm]]`.
+.nl_phi_axis_slots <- function(res, phi_grid) {
+    cn <- colnames(res$theta_grid) %||% character(0)
+    nm <- cn[startsWith(cn, "phi_")]
+    if (!length(nm) || !is.list(phi_grid)) return(list())
+    arms <- sub("^phi_", "", nm)
+    keep <- arms %in% (names(phi_grid) %||% character(0))
+    lapply(which(keep), function(i)
+        list(arm = arms[i], axis = nm[i]))
+}
+
+# The provenance predicate for a dispersion axis. `.nl_axis_is_pinned()`'s third
+# branch -- nodes equal to the engine's own default read as a default -- has no
+# counterpart here ON PURPOSE: the engine has no default dispersion axis. An arm
+# with no `phi_grid` entry carries the parse-time scalar `phi` and no axis at
+# all, so every axis that exists was written by a caller, and the ONLY thing
+# separating a wrapper's computed default from a user's pin is whether that
+# caller said so with `auto_grid()`.
+.nl_phi_axis_is_pinned <- function(arm, auto_arms) !(arm %in% auto_arms)
+
+# Which arms of a `phi_grid` argument carry the `auto_grid()` marker, and the
+# argument with the markers removed. Read at the front door, BEFORE
+# `.normalise_phi_grid()` -- that helper coerces each entry with `as.numeric()`,
+# which drops the attribute the marker lives in. A positional list is keyed
+# through `arm_names` so the record is by arm either way.
+.nl_phi_provenance <- function(phi_grid, arm_names) {
+    if (!is.list(phi_grid) || !length(phi_grid)) {
+        return(list(phi_grid = phi_grid, auto = character(0)))
+    }
+    nm <- names(phi_grid)
+    keys <- if (!is.null(nm)) nm else
+        arm_names[seq_len(min(length(phi_grid), length(arm_names)))]
+    auto <- character(0)
+    for (k in seq_along(phi_grid)) {
+        v <- phi_grid[[k]]
+        if (is.null(v)) next            # `attr<-`(NULL, ...) DELETES the element
+        if (k <= length(keys) && is_auto_grid(v)) auto <- c(auto, keys[k])
+        attr(v, "tulpa_auto_grid") <- NULL
+        phi_grid[[k]] <- v
+    }
+    list(phi_grid = phi_grid, auto = auto)
+}
+
+# Would a placement pass on `axes` fire on this fit? The `"resolve"` trigger,
+# read off the weights the fit already stored, so asking costs nothing.
+#
+# The diagnose_k-independent placement stencil
+# (`.joint_attach_pareto_k_placement()`) exists for the two sigma rescues, whose
+# own trigger is the whole grid's `collapsed_edge` regime -- so it only computes
+# a mode and Hessian on such a grid. A dispersion axis is crossed onto the
+# tensor independently of the field's geometry and fires on its OWN sizing, and
+# `collapsed_interior` (weight concentrated, but the modal cell interior on every
+# axis) is precisely the regime the reported case sat in: the field SD axis had
+# been placed, the dispersion axis was 55 posterior SDs per cell, and no
+# curvature had been computed for either. This is what the placement path asks
+# to decide whether to compute one anyway.
+.nl_placement_axis_wanted <- function(res, axes) {
+    if (!length(axes)) return(FALSE)
+    cn <- colnames(res$theta_grid) %||% character(0)
+    for (a in intersect(axes, cn)) {
+        if (.nl_edge_axis_hit(res, a)) return(TRUE)
+        if (!is.null(.nl_axis_rail(res, a))) return(TRUE)
+        hs <- .nl_axis_h_over_sd(res, a, "log")
+        if (!is.finite(hs) || hs > .nl_recenter("resolve_mult")) return(TRUE)
+    }
+    FALSE
+}
+
+# A rescue refits through the ordinary driver, so the fit it hands back carries
+# no placement record at all. When two rescues fire on one fit the later one
+# would therefore report itself as the only axis placed. Carry the earlier
+# record forward and append: the per-axis vectors merge by name, the attempt
+# counter sums (it counts extra fits), and the prior-escalation flags stay with
+# whichever rescue set them.
+.nl_carry_recenter_stamps <- function(new_res, prev_res) {
+    if (!identical(prev_res$outer_grid_placement, "auto_recentered")) return(new_res)
+    merge_named <- function(old, new) {
+        if (is.null(old)) return(new)
+        keep <- setdiff(names(old), names(new))
+        c(old[keep], new)
+    }
+    for (f in c("outer_grid_recenter_sd_clamp", "outer_grid_recenter_sd_used",
+                "outer_grid_recenter_sd_raw")) {
+        new_res[[f]] <- merge_named(prev_res[[f]], new_res[[f]])
+    }
+    new_res$outer_grid_recenter_axes <- unique(c(
+        prev_res$outer_grid_recenter_axes, new_res$outer_grid_recenter_axes))
+    new_res$outer_grid_recenter_attempts <-
+        (prev_res$outer_grid_recenter_attempts %||% 0L) +
+        (new_res$outer_grid_recenter_attempts %||% 0L)
+    if (is.null(new_res$outer_grid_prior_added)) {
+        new_res$outer_grid_prior_added <- prev_res$outer_grid_prior_added
+    }
+    if (is.null(new_res$outer_grid_prior_declined)) {
+        new_res$outer_grid_prior_declined <- prev_res$outer_grid_prior_declined
+    }
+    new_res
+}
+
+# PER-AXIS decline record, beside the whole-fit `outer_grid_recenter_declined`.
+# The whole-fit slot holds the reason from the ONE rescue that could have run
+# and is written only while the fit is unplaced, so on a fit where the field SD
+# axis moved and a dispersion axis did not it says `auto_recentered` and nothing
+# about the axis that stayed. That is the fit whose own `grid_coarsest_axis`
+# names the unmoved axis, so the reason it did not move has to survive the
+# placement of a different one.
+.nl_decline_axis <- function(res, axis, reason) {
+    rec <- res$outer_grid_axis_declined %||% character(0)
+    rec[axis] <- reason
+    res$outer_grid_axis_declined <- rec
+    res
+}
+
+# Per-arm dispersion auto-recenter rescue. `res` is the just-completed fit;
+# `phi_grid` the NORMALISED (named-by-arm, markers stripped) argument that
+# produced it; `refit(phi_grid_i)` reruns the fit at a modified one. `auto` is
+# the arm-name record `.nl_phi_provenance()` took at the front door.
+#
+# Trigger is per axis and matches the registry path's `"resolve"` policy rather
+# than the two sigma rescues' whole-grid `collapsed_edge` regime: a dispersion
+# axis is crossed onto the tensor independently of the field's own geometry, so
+# whether the field's grid collapsed says nothing about whether this axis is
+# sized to its own posterior. It fires on an axis that RAILS (its own marginal
+# maximal at one of its own endpoints) or that does not RESOLVE its own
+# posterior (`h / sd` past `.NL_RECENTER$resolve_mult`), and moves every
+# unpinned dispersion axis when either does -- the mode/Hessian stencil and the
+# refit are paid once per fit, not once per axis.
+#
+# Declines leave `res` and `phi_grid` untouched and record the reason per axis
+# (`.nl_decline_axis()`) as well as on the fit.
+.joint_phi_grid_rescue <- function(res, phi_grid, refit,
+                                   auto = character(0), enabled = TRUE,
+                                   max_attempts = .nl_recenter("max_attempts_joint")) {
+    out <- list(res = res, phi_grid = phi_grid)
+    slots <- .nl_phi_axis_slots(res, phi_grid)
+    if (!length(slots)) return(out)
+    axis_of <- function(s) s$axis
+    mark <- function(r, reason) {
+        for (s in slots) r <- .nl_decline_axis(r, axis_of(s), reason)
+        .nl_decline_recenter(r, reason)
+    }
+    if (!isTRUE(enabled)) {
+        out$res <- mark(res, "auto_recenter_disabled")
+        return(out)
+    }
+    pinned <- vapply(slots, function(s) .nl_phi_axis_is_pinned(s$arm, auto),
+                     logical(1))
+    if (all(pinned)) {
+        for (s in slots) out$res <- .nl_decline_axis(out$res, axis_of(s),
+                                                     "axis_pinned")
+        out$res <- .nl_decline_recenter(out$res, "axis_pinned")
+        return(out)
+    }
+
+    cur     <- phi_grid
+    attempt <- 0L
+    placed  <- character(0)
+    reason  <- "grid_resolves_posterior"
+    while (attempt < max_attempts) {
+        fire <- vapply(slots, function(s) {
+            if (.nl_edge_axis_hit(res, s$axis)) return(TRUE)
+            if (!is.null(.nl_axis_rail(res, s$axis))) return(TRUE)
+            hs <- .nl_axis_h_over_sd(res, s$axis, "log")
+            !is.finite(hs) || hs > .nl_recenter("resolve_mult")
+        }, logical(1))
+        if (!any(fire)) break
+
+        moved   <- list()
+        moved_axes <- character(0)
+        clamps  <- character(0)
+        sd_used <- numeric(0)
+        sd_raw  <- numeric(0)
+        declines <- character(0)
+        for (i in which(!pinned)) {
+            s  <- slots[[i]]
+            rc <- .nl_axis_recenter_from_fit_full(
+                res$pareto_k_mode_u, res$pareto_k_cov_u,
+                res$pareto_k_axis_tags, res$pareto_k_axis_names, s$axis,
+                ref_nodes = .nl_rescue_axis_nodes(res, s$axis))
+            # The RAW SD is recorded even for an axis this attempt could not
+            # place -- that reading is what says whether declining was right.
+            sd_raw[s$axis] <- rc$sd_raw
+            if (is.null(rc$nodes)) {
+                clamps[s$axis] <- rc$sd_clamp
+                declines <- c(declines, rc$reason)
+                next
+            }
+            clamps[s$axis]  <- rc$sd_clamp
+            sd_used[s$axis] <- rc$sd_used
+            moved_axes      <- c(moved_axes, s$axis)
+            moved[[s$arm]]  <- rc$nodes
+        }
+        if (!length(moved)) {
+            reason <- if (length(unique(declines)) == 1L) unique(declines) else
+                "no_usable_curvature"
+            break
+        }
+
+        for (arm in names(moved)) cur[[arm]] <- moved[[arm]]
+        attempt <- attempt + 1L
+        prev <- res
+        res  <- refit(cur)
+        res$outer_grid_placement         <- "auto_recentered"
+        res$outer_grid_recenter_attempts <- attempt
+        # The axes this attempt actually LAID, not the ones it targeted: a
+        # movable axis whose curvature came back unusable is reported as
+        # declined below, and listing it here would silence that.
+        res$outer_grid_recenter_axes     <- moved_axes
+        res$outer_grid_recenter_sd_clamp <- clamps
+        res$outer_grid_recenter_sd_used  <- sd_used
+        res$outer_grid_recenter_sd_raw   <- sd_raw
+        res  <- .nl_carry_recenter_stamps(res, prev)
+        placed <- moved_axes
+        out  <- list(res = res, phi_grid = cur)
+    }
+    # An axis the pass left alone says why, whether or not a sibling moved.
+    for (i in seq_along(slots)) {
+        if (axis_of(slots[[i]]) %in% placed) next
+        out$res <- .nl_decline_axis(
+            out$res, axis_of(slots[[i]]),
+            if (pinned[i]) "axis_pinned" else reason)
     }
     out$res <- .nl_decline_recenter(out$res, reason)
     out

@@ -1110,7 +1110,8 @@
                                          pareto_k_by_arm = FALSE,
                                          k_bootstrap = .nl_diag("k_bootstrap"),
                                          k_tail_points = NULL,
-                                         k_conf_bands = NULL) {
+                                         k_conf_bands = NULL,
+                                         placement_axes = character(0)) {
     res$pareto_k        <- NA_real_
     res$pareto_k_is_ess <- NA_real_
     res$pareto_k_scope  <- "outer (hyperparameter) Gaussian proposal"
@@ -1155,7 +1156,8 @@
         # (the CCD mode-Hessian, when the CCD grid path built one) is threaded
         # through here too -- it is available independent of `diagnose_k`.
         res <- .k_attach_declined(res, .k_decline("not_requested"))
-        return(.joint_attach_pareto_k_placement(res, solve_fn, proposal = proposal))
+        return(.joint_attach_pareto_k_placement(res, solve_fn, proposal = proposal,
+                                                extra_axes = placement_axes))
     }
 
     # Per-cell warm start (nearest grid mode, serial + parallel) when modes are
@@ -1280,6 +1282,7 @@
                                   adaptive_min_cells = 48,
                                   copy_atom_mass = .TULPA_COPY_ATOM_MASS,
                                   copy_slab = "exponential",
+                                  placement_axes = character(0),
                                   timer = NULL) {
     tm <- timer %||% .tulpa_timer()
     integration <- match.arg(integration, c("auto", "ccd", "grid",
@@ -1893,7 +1896,8 @@
                                         pareto_k_by_arm = pareto_k_by_arm,
                                         k_bootstrap = k_bootstrap,
                                         k_tail_points = k_tail_points,
-                                        k_conf_bands = k_conf_bands)
+                                        k_conf_bands = k_conf_bands,
+                                        placement_axes = placement_axes)
     res <- .nlj_multi_inner_skew_at_theta(res, call_kernel, arm_names,
                                           skew_idx, compute = diagnose_skew)
     fixed <- .joint_fixed_layout(responses)

@@ -1,3 +1,67 @@
+# tulpa 0.3.1
+
+## A per-arm dispersion axis is placed like a prior block's scale axis
+
+* **`phi_grid` axes were outside the outer-grid placement machinery, and the
+  fit's own diagnostic named one as its coarsest** (gcol33/tulpa#663).
+  `.NL_REGISTRY_AXIS_FIELD` enumerates the axes a rescue may move keyed by
+  spatial prior BLOCK type; a dispersion axis is a hyperparameter of an ARM and
+  is in no entry, so no rescue walked it. On a 12,179-cell `occu_cover()` fit
+  the reported `grid_coarsest_axis` was `phi_pos` at `h / sd = 55.79` against
+  4.93 for the auto-placed field SD, `grid_resolved = FALSE`, and the
+  dispersion posterior sat at 7.746 with no node within a factor of two of it --
+  naming as coarsest the one axis nothing could move, with advice (add nodes)
+  that would have taken ~170 of them.
+
+  `.joint_phi_grid_rescue()` now moves it. Everything the placement needs was
+  already there -- the transform registry tags a `phi_<arm>` column `"log"`,
+  and the FD stencil's re-evaluation already varies it, since
+  `.joint_grids_from_cells()` hands `grids$phi_<arm>` straight back to
+  `.joint_phi_grid_per_arm()` -- so what is new is a slot source, a provenance
+  read and a write target, not a second placement machine. It fires on the
+  axis's OWN sizing (railed, or `h / sd` past `.NL_RECENTER$resolve_mult`)
+  rather than on the whole grid's `collapsed_edge` regime, because a dispersion
+  axis is crossed onto the tensor independently of the field's geometry.
+
+* **The placement stencil now runs on a `collapsed_interior` grid** when a
+  movable dispersion axis wants it. `.joint_attach_pareto_k_placement()` exists
+  for the two field rescues, whose trigger IS `collapsed_edge`, so it computed a
+  mode and Hessian only on such a grid -- and the reported fit was
+  `collapsed_interior` (weight concentrated, modal cell interior on every axis),
+  which is why no curvature existed to place from. The extra test reads stored
+  weights (`.nl_placement_axis_wanted()`) and a caller naming no movable axis
+  runs exactly the gate it ran before.
+
+* **Provenance decides, as everywhere else.** The engine has no default
+  dispersion axis, so `.nl_axis_is_pinned()`'s "equal to the engine's own
+  default" branch has no counterpart here: an axis marked with `auto_grid()` is
+  a default and is placed, an unmarked one is a pin and is integrated exactly as
+  written. `control$auto_recenter = FALSE` holds it like any other.
+
+  Measured on a BYM2 + Gaussian copy-arm fixture (spatial hyperparameters pinned
+  at truth, four nodes over residual SD 0.02 to 2, true `phi` 0.09): pinned,
+  `h / sd` 98.2 and a posterior mean of 0.1745; marked, a posterior mean of
+  0.0898. The placement is the estimate, not only the report.
+
+## Reporting
+
+* **`outer_grid_axis_declined`** records why the placement pass left an axis
+  alone, PER AXIS. The whole-fit `outer_grid_recenter_declined` carries the
+  reason from the one rescue that could have run and is written only while the
+  fit is unplaced, so a fit whose field-SD axis moved and whose dispersion axis
+  did not said `auto_recentered` and nothing about the axis its own
+  `grid_coarsest_axis` was naming. `diagnostic_summary()`'s resolution note
+  reads it and reports the lever that applies -- the pin, not the node count.
+
+* **`n_grid` counts the cells SOLVED**, not the ones that kept usable weight.
+  `.tulpa_grid_reliability()` filtered non-positive weights and then took
+  `length()` of what survived, so a posterior sharp enough to underflow all but
+  one of 124 cells reported `outer grid quadrature ESS = 1.00 of 1 cells` -- a
+  one-cell grid integrated perfectly, rather than a 124-cell grid collapsed onto
+  one of them. `ess_grid` and `max_weight` are unchanged (dropping zero weights
+  moves neither); `rel_ess_grid` is now the share of the solved grid the
+  quadrature uses.
+
 # tulpa 0.3.0
 
 Closes every open engine issue. 0.2.14 closed seven of eleven; the remaining

@@ -23,12 +23,14 @@ pass (\code{outer_grid_placement}) leaves a user-pinned
 setting exactly as given, and re-centres (or, for a prior, engages its own
 regularizer over) a marked one when the fit rails against its ceiling.
 
-Three kinds of setting take the mark:
+Four kinds of setting take the mark:
 \itemize{
 \item a grid axis on a nested-Laplace \code{prior} block (\code{sigma_grid},
 \code{tau_grid}, ...) -- a numeric vector of nodes, or the \verb{[n_cells x k]}
 matrix of pre-paired coordinates the families whose axis is a matrix
 take (\code{mcar} / \code{miid}'s \code{logchol_grid}, \code{tgmrf}'s \code{theta_grid_built});
+\item an entry of \code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}}'s \code{phi_grid} -- one arm's
+dispersion axis;
 \item a scalar grid-construction knob in \code{control}, for a driver that
 builds its axes rather than taking them (\code{fit_st_nested()}'s
 \code{n_grid_spatial}, \code{tau_upper}, ...);
@@ -42,7 +44,8 @@ several blocks, or exposes its own argument with a default -- would
 otherwise be indistinguishable from a user who pinned that setting
 deliberately. Mark it and the rescue stays live. A setting whose value is
 exactly the engine's own default is recognised without a mark; anything else
-needs one.
+needs one -- and a dispersion axis ALWAYS needs one, since the engine has no
+default of its own to recognise it against.
 
 The mark is an attribute, so it is dropped by \code{sort()}, \code{[}, \code{c()} and
 \code{as.numeric()}: build the value first, mark it last.

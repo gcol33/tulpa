@@ -27,7 +27,9 @@ family, so read \code{ess_grid} instead), \code{"draws_too_few"},
 one-line reading of it.}
 \item{\code{pareto_k_is_ess}}{importance-sampling ESS on the smoothed weights.}
 \item{\code{ess_grid}, \code{n_grid}, \code{rel_ess_grid}, \code{max_weight}}{grid quadrature
-reliability.}
+reliability. \code{n_grid} counts the cells SOLVED, so a posterior sharp
+enough to underflow all but one of them reads \verb{ess_grid = 1.00 of 124 cells} rather than of one, and \code{rel_ess_grid} is the share of the
+solved grid the quadrature actually uses.}
 \item{\code{outer_regime}}{\code{"spread"} / \code{"collapsed_interior"} /
 \code{"collapsed_edge"} -- whether the outer grid integrated hyperparameter
 uncertainty at all, and if not whether its dominant cell is interior

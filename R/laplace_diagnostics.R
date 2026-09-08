@@ -957,14 +957,24 @@
 # `ess_grid = 1 / sum(w_k^2)`, its share of the cell count `rel_ess_grid`, the
 # largest single weight, and the number of grid cells. NULL when the fit
 # carries no outer-grid weights.
+#
+# `n_grid` counts the cells the fit SOLVED, not the ones that kept usable
+# weight (gcol33/tulpa#663). The two coincide on a healthy grid and diverge on
+# exactly the fit this band exists to flag: a posterior sharp enough to underflow
+# every cell but one leaves `length(w) == 1` after the filter, and reporting that
+# as the cell count read as a one-cell grid integrated perfectly rather than a
+# 124-cell grid collapsed onto one of them. `ess_grid` and `max_weight` are
+# unaffected either way -- dropping zero weights changes neither `sum(w^2)` nor
+# `max(w)` -- so only the denominator moved, and `rel_ess_grid` now measures the
+# share of the solved grid the quadrature actually uses.
 .tulpa_grid_reliability <- function(fit) {
   jf <- if (!is.null(fit$joint_fit)) fit$joint_fit else fit
-  w <- jf$weights
-  if (is.null(w)) return(NULL)
-  w <- w[is.finite(w) & w > 0]
+  w_all <- jf$weights
+  if (is.null(w_all)) return(NULL)
+  w <- w_all[is.finite(w_all) & w_all > 0]
   if (length(w) == 0L) return(NULL)
   w <- w / sum(w)
-  n_grid <- length(w)
+  n_grid <- length(w_all)
   ess <- 1 / sum(w^2)
   list(ess_grid = ess, n_grid = n_grid,
        rel_ess_grid = ess / n_grid, max_weight = max(w))
@@ -1280,11 +1290,44 @@
        max       = if (any(ok)) max(r[ok]) else NA_real_,
        coarsest  = if (any(ok)) nm[ok][which.max(r[ok])] else NA_character_,
        declined  = dec,
+       # Why the placement pass left an axis where it was, per axis
+       # (`.nl_decline_axis()`). The note below reads it on the COARSEST axis:
+       # "add nodes on that axis" is the right advice for an axis the engine
+       # could have placed and did not need to, and the wrong advice for one it
+       # was not allowed to -- there the lever is the pin, not the node count
+       # (gcol33/tulpa#663).
+       axis_declined = jf$outer_grid_axis_declined %||% character(0),
        unscored  = nm[!ok],
        railed    = railed,
        n_scored  = sum(ok),
        n_axes    = length(r),
        resolved  = all(ok) && all(r[ok] <= .nl_diag("grid_resolved")))
+}
+
+# The lever a caller actually has on the coarsest axis, given why the placement
+# pass left it alone. NULL when the pass never spoke about that axis, which is
+# the ordinary case -- an axis no rescue was built for, or a fit whose grid was
+# never a placement candidate -- and the generic advice stands.
+.tulpa_grid_axis_lever <- function(rs) {
+  ax <- rs$coarsest
+  if (is.na(ax) || !length(rs$axis_declined)) return(NULL)
+  if (!ax %in% names(rs$axis_declined)) return(NULL)
+  why <- rs$axis_declined[[ax]]
+  if (is.null(why) || is.na(why)) return(NULL)
+  switch(
+    why,
+    axis_pinned = paste0(
+      "the auto-placement pass reads that axis as PINNED, so it was left ",
+      "exactly where it was declared: mark it with `auto_grid()` (or drop it ",
+      "and let the engine place it) to have the pass size it to the posterior ",
+      "instead of adding nodes by hand"),
+    auto_recenter_disabled = paste0(
+      "`control$auto_recenter = FALSE` holds every axis where it was ",
+      "declared, this one included"),
+    no_usable_curvature = paste0(
+      "the auto-placement pass could not read a curvature to re-place that ",
+      "axis from, so it was left where it was declared"),
+    paste0("the auto-placement pass declined to move that axis (", why, ")"))
 }
 
 # Reading of a resolution. NULL when every axis scored AND every one is at or
@@ -1318,13 +1361,15 @@
       "rather than adding nodes inside it"))
   }
   if (!is.na(rs$max) && rs$max > .nl_diag("grid_resolved")) {
+    lever <- .tulpa_grid_axis_lever(rs)
     out <- c(out, paste0(
       "outer grid coarser than its own posterior on ", rs$coarsest,
       " (cell width / posterior SD = ", sprintf("%.2f", rs$max),
       ", both in that axis's own coordinate): the reported interval's ",
       "endpoints are resolved to within one cell, so part of their width ",
       "and their realized coverage are properties of where the grid fell ",
-      "rather than of the posterior -- add nodes on that axis to reduce it"))
+      "rather than of the posterior -- ",
+      lever %||% "add nodes on that axis to reduce it"))
   }
   if (!length(out)) return(NULL)
   out
@@ -1766,7 +1811,10 @@
 #'       one-line reading of it.}
 #'     \item{`pareto_k_is_ess`}{importance-sampling ESS on the smoothed weights.}
 #'     \item{`ess_grid`, `n_grid`, `rel_ess_grid`, `max_weight`}{grid quadrature
-#'       reliability.}
+#'       reliability. `n_grid` counts the cells SOLVED, so a posterior sharp
+#'       enough to underflow all but one of them reads `ess_grid = 1.00 of 124
+#'       cells` rather than of one, and `rel_ess_grid` is the share of the
+#'       solved grid the quadrature actually uses.}
 #'     \item{`outer_regime`}{`"spread"` / `"collapsed_interior"` /
 #'       `"collapsed_edge"` -- whether the outer grid integrated hyperparameter
 #'       uncertainty at all, and if not whether its dominant cell is interior
