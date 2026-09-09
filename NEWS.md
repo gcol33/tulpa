@@ -1,5 +1,78 @@
 # tulpa 0.3.2
 
+## A covariate transform is carried through the formula strippers unchanged
+
+* **`nobars()` / `no_latent_terms()` / `no_special_terms()` rebuilt every call
+  from at most two positional children, discarding argument names and any third
+  argument** (gcol33/tulpa#664). `nobars()` runs on every formula, so the damage
+  reached every backend: `poly(x, 2, raw = TRUE)` was refitted as the ORTHOGONAL
+  basis (coefficients 6.16 / -0.14 against `lm()`'s 0.47 / -0.009 on a
+  200-row fixture), `splines::ns(x, df = 3)` became a backtick-quoted
+  `` `splines::ns`(x, 0.5) `` that errors "could not find function", and
+  `scale(center =)`, `log(base =)`, `cut(breaks =)`, `bs(degree =)` all lost
+  their named arguments silently. The three strippers are now one walker,
+  `.strip_rhs()`, which descends the formula OPERATOR tree (`.FORMULA_OPS`)
+  and treats every other call as a leaf: head, arguments and names carried
+  through as they stand. A raw polynomial now reproduces `lm()` to 1e-3.
+
+## The chain checkpoint fingerprint covers the data, not only its shape
+
+* **A resume against a different data set of the same shape returned the earlier
+  fit's draws** (gcol33/tulpa#683). `run_hmc_parallel_chains_cpp` folded
+  `n_iter, n_warmup, L, n_chains, seed, max_treedepth, metric_type, adapt_delta,
+  riemannian, layout.total_params, data.N` plus the per-chain init and metric,
+  and never the contents of `y`, `X` or the offset, so every chain read as
+  already complete and `identical(fit1$draws, fit2$draws)` was `TRUE` across two
+  different responses. Both `hmc_chain_checkpoint.h` and the CLAUDE.md
+  checkpoint section stated the guarantee the code did not provide.
+* The response lives behind `ModelData::model_response_data`, an opaque pointer
+  owned by the model package, so no field-by-field fold reaches it. What is
+  reachable is the quantity the chains sample: `fold_target_identity()`
+  evaluates the log posterior at engine-fixed probe positions (chain 0's init
+  plus splitmix64 perturbations of it, never R's stream), which reads the
+  response through the likelihood the fit will use, the designs and offsets
+  through eta, and every prior hyperparameter `ModelData` carries. The perturbed
+  probes are what make the DESIGN visible -- at `beta = 0` the design drops out
+  of eta -- and a changed `X` of the same shape is now refused too. A model with
+  no generic `LikelihoodSpec` warns that its fingerprint covers settings and
+  dimensions only rather than claiming more. Requesting a checkpoint still moves
+  no draw: a same-data resume is bit-for-bit identical.
+* The nested-Laplace grid checkpoint already folded `y` and `X` by value
+  (`make_nl_grid_checkpoint`, since the #431-#451 batch); this closes the chain
+  half.
+
+## The temporal node index is checked where the areal one is
+
+* **`temporal_idx` was validated at no entry** (gcol33/tulpa#685). `block.idx`
+  reads `temporal_idx[i]` for every `i < N` through `Rcpp::IntegerVector::
+  operator[]`, which is unchecked pointer arithmetic, so a vector shorter than
+  `N` read past the allocation and returned a finite, session-dependent
+  `log_marginal`; an out-of-range, zero, negative or `NA` value was dropped by
+  the eta walk's own guard and contributed nothing to that row, silently.
+* `check_latent_obs_index()` (`src/areal_input_check.h`) is now the one gate for
+  every per-observation latent index, with `check_areal_site_index()` and the
+  new `check_temporal_index()` as its two named callers. The temporal check runs
+  inside `make_temporal_latent_block()` -- the one place every temporal-carrying
+  entry builds its block, so `cpp_nested_laplace_temporal` and all five `st_*`
+  entries inherit it rather than each calling it -- and at the three index reads
+  of `cpp_nested_laplace_multi`, which had the same gap on its own `spatial_idx`
+  and `temporal_idx`.
+
+## One spatial gate at the front door, whichever way the spec arrives
+
+* **A bare `spatial = list(type =, adjacency =)` never reached
+  `.validate_adjacency_arg()`, so an asymmetric graph fitted silently**
+  (gcol33/tulpa#670). The ICAR precision built from an asymmetric `W` is not the
+  ICAR of any graph. The check now runs on whatever `spatial$adjacency` holds,
+  and is idempotent (a graph a `spatial_*()` constructor already passed is not
+  re-reported), so the two entry styles meet at one gate.
+* **`type = "ICAR"` errored "not yet supported in Laplace"** (gcol33/tulpa#671).
+  `tulpa()` lowercased the type for its own branch and handed the raw string to
+  `select_inference_mode()`, whose comparisons are case-sensitive. The type is
+  normalised once at the door and written back onto the spec, so every consumer
+  reads the canonical spelling; `"ICAR"` and `"icar"` now give identical
+  coefficients.
+
 ## A placement rescue no longer deletes the checkpoint its own fit wrote
 
 * **`control$checkpoint` with `resume = FALSE` reset the file once per outer-grid

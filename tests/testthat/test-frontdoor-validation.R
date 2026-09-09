@@ -184,3 +184,57 @@ test_that("the guard reaches every door sharing .validate_glm_design (#613)", {
   expect_error(.validate_glm_design(y, X, rep(1L, N), "a_new_door"),
                "a_new_door: Non-finite")
 })
+
+# ============================================================================
+# One spatial gate, whichever way the spec arrives (gcol33/tulpa#670, #671)
+# ============================================================================
+
+.sp_frontdoor_data <- function(n_units = 10L, n_obs = 100L) {
+  set.seed(4L)
+  data.frame(s = factor(rep(seq_len(n_units), length.out = n_obs)),
+             x = rnorm(n_obs), yb = rbinom(n_obs, 1L, 0.5))
+}
+
+.sp_chain_W <- function(n) {
+  W <- matrix(0, n, n)
+  for (i in seq_len(n - 1L)) { W[i, i + 1L] <- 1; W[i + 1L, i] <- 1 }
+  W
+}
+
+test_that("a bare-list adjacency passes the same graph check as a constructor", {
+  d <- .sp_frontdoor_data()
+  W <- .sp_chain_W(10L)
+  asym <- W
+  asym[lower.tri(asym)] <- 0
+  expect_error(
+    tulpa(yb ~ x + spatial(s), data = d, family = "binomial",
+          spatial = list(type = "icar", adjacency = asym), mode = "laplace"),
+    "symmetric")
+  expect_no_error(
+    tulpa(yb ~ x + spatial(s), data = d, family = "binomial",
+          spatial = list(type = "icar", adjacency = W), mode = "laplace"))
+})
+
+test_that("the graph is reported once, not once per gate", {
+  d <- .sp_frontdoor_data()
+  seen <- character(0)
+  withCallingHandlers(
+    tulpa(yb ~ x + spatial(s), data = d, family = "binomial",
+          spatial = spatial_car(adjacency = .sp_chain_W(10L) * 2, level = "obs"),
+          mode = "laplace"),
+    warning = function(w) {
+      seen <<- c(seen, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    })
+  expect_equal(sum(grepl("weighted graph", seen)), 1L)
+})
+
+test_that("spatial$type is normalised once, before the selector reads it", {
+  d <- .sp_frontdoor_data()
+  W <- .sp_chain_W(10L)
+  up <- tulpa(yb ~ x + spatial(s), data = d, family = "binomial",
+              spatial = list(type = "ICAR", adjacency = W), mode = "laplace")
+  lo <- tulpa(yb ~ x + spatial(s), data = d, family = "binomial",
+              spatial = list(type = "icar", adjacency = W), mode = "laplace")
+  expect_equal(coef(up), coef(lo))
+})

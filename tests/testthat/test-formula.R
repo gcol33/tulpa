@@ -386,3 +386,48 @@ test_that("slope construction can find user-scope helpers via formula env", {
   md <- tulpa_build_model_data(pf, df)
   expect_equal(md$re_terms[[1]]$n_coefs, 2L)
 })
+
+# ============================================================================
+# The RHS strippers walk the operator tree only (gcol33/tulpa#664)
+#
+# nobars() runs on every formula, so a stripper that rebuilds a covariate
+# transform from two positional children silently refits a different model.
+# ============================================================================
+
+test_that("a covariate transform passes through the strippers unchanged", {
+  keep <- list(
+    quote(y ~ poly(x, 2, raw = TRUE)),
+    quote(y ~ splines::ns(x, knots = 0.5)),
+    quote(y ~ cut(x, breaks = 3)),
+    quote(y ~ scale(x, center = FALSE)),
+    quote(y ~ log(x, base = 2)),
+    quote(y ~ x + I(x^2) * w)
+  )
+  for (f in keep) {
+    expect_identical(nobars(f), f, info = deparse(f))
+    expect_identical(no_latent_terms(f), f, info = deparse(f))
+    expect_identical(no_special_terms(f, "spatial"), f, info = deparse(f))
+  }
+})
+
+test_that("the strippers still remove what they own, transform beside it", {
+  expect_equal(nobars(quote(y ~ x + (1 | g) + poly(z, 3, raw = TRUE))),
+               quote(y ~ x + poly(z, 3, raw = TRUE)))
+  expect_equal(nobars(quote(y ~ x + (1 | g) + (z || h))), quote(y ~ x))
+  expect_equal(no_latent_terms(quote(y ~ x + latent(b) + cut(z, breaks = 3))),
+               quote(y ~ x + cut(z, breaks = 3)))
+  expect_equal(no_special_terms(quote(y ~ x + spatial(s) + log(z, base = 2)),
+                                "spatial"),
+               quote(y ~ x + log(z, base = 2)))
+})
+
+test_that("a raw polynomial is fitted raw, not orthogonal", {
+  set.seed(1L)
+  n <- 200L
+  d <- data.frame(x = rnorm(n))
+  d$yn <- 1 + 0.5 * d$x + rnorm(n, sd = 0.3)
+  fit <- tulpa(yn ~ poly(x, 2, raw = TRUE), data = d, mode = "laplace")
+  ref <- coef(lm(yn ~ poly(x, 2, raw = TRUE), data = d))
+  expect_equal(unname(coef(fit)), unname(ref), tolerance = 1e-3)
+  expect_equal(names(coef(fit)), names(ref))
+})

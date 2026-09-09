@@ -1,5 +1,7 @@
 // areal_input_check.h
-// One boundary check for the areal (ICAR / BYM2 / proper-CAR) entry points.
+// One boundary check for the areal (ICAR / BYM2 / proper-CAR) entry points, and
+// for every other per-observation latent index they share the read pattern with
+// (the temporal node index, check_temporal_index below).
 //
 // Every one of them takes the CSR adjacency, the per-site neighbour count and
 // the per-observation site index straight from R and hands them to the scatter,
@@ -72,6 +74,37 @@ inline void check_areal_adjacency(
     }
 }
 
+// Validate a per-observation latent index: one entry per observation, each
+// naming a node of the block it indexes. `what` is the argument name so the
+// message says which one the caller got wrong. Every per-observation index a
+// LatentBlock reads is checked here -- the areal site index and the temporal
+// node index alike -- because they are read the same way (unchecked pointer
+// arithmetic over N, then `x[start + idx(i, k) - 1]`) and fail the same way.
+inline void check_latent_obs_index(
+    const Rcpp::IntegerVector& idx,
+    int n_obs,
+    int n_units,
+    const char* who,
+    const char* what
+) {
+    if (static_cast<int>(idx.size()) != n_obs) {
+        Rcpp::stop("%s: length(%s) (%d) must equal the number of "
+                   "observations (%d).", who, what,
+                   static_cast<int>(idx.size()), n_obs);
+    }
+    for (int i = 0; i < n_obs; i++) {
+        if (Rcpp::IntegerVector::is_na(idx[i])) {
+            Rcpp::stop("%s: %s[%d] is NA. Every observation names a node.",
+                       who, what, i + 1);
+        }
+        if (idx[i] < 1 || idx[i] > n_units) {
+            Rcpp::stop("%s: %s[%d] (%d) is outside [1, %d]. Node "
+                       "indices are 1-based.", who, what, i + 1, idx[i],
+                       n_units);
+        }
+    }
+}
+
 // Validate the per-observation site index. Separate from the adjacency check so
 // an entry that carries no spatial_idx (or carries several) calls it per index
 // vector.
@@ -81,18 +114,22 @@ inline void check_areal_site_index(
     int n_spatial_units,
     const char* who
 ) {
-    if (static_cast<int>(spatial_idx.size()) != n_obs) {
-        Rcpp::stop("%s: length(spatial_idx) (%d) must equal the number of "
-                   "observations (%d).", who,
-                   static_cast<int>(spatial_idx.size()), n_obs);
-    }
-    for (int i = 0; i < n_obs; i++) {
-        if (spatial_idx[i] < 1 || spatial_idx[i] > n_spatial_units) {
-            Rcpp::stop("%s: spatial_idx[%d] (%d) is outside [1, %d]. Site "
-                       "indices are 1-based.", who, i + 1, spatial_idx[i],
-                       n_spatial_units);
-        }
-    }
+    check_latent_obs_index(spatial_idx, n_obs, n_spatial_units, who,
+                           "spatial_idx");
+}
+
+// Validate the per-observation temporal node index. The temporal block spans
+// n_groups * n_times nodes (one walk per group), and the entries read it for
+// every observation, so both the length and the range are the block's
+// (gcol33/tulpa#685).
+inline void check_temporal_index(
+    const Rcpp::IntegerVector& temporal_idx,
+    int n_obs,
+    int n_temporal_nodes,
+    const char* who
+) {
+    check_latent_obs_index(temporal_idx, n_obs, n_temporal_nodes, who,
+                           "temporal_idx");
 }
 
 // Both halves, for the common entry that takes one adjacency and one site index.

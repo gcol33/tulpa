@@ -53,6 +53,53 @@ findbars <- function(term) {
   c(findbars(term[[2]]), findbars(term[[3]]))
 }
 
+# ----------------------------------------------------------------------------
+# One walker behind every RHS stripper.
+#
+# The tree the strippers rewrite is the formula's OPERATOR tree: the heads in
+# `.FORMULA_OPS` are the only ones that combine model terms, so they are the
+# only ones a stripper descends through. Every other call -- a covariate
+# transform such as `poly(x, 2, raw = TRUE)`, `splines::ns(x, df = 3)`,
+# `cut(x, breaks = b)` -- is a LEAF: it is carried through as it stands, head,
+# arguments, argument names and all. Rebuilding such a call from
+# `call(deparse(head), term[[2]], term[[3]])` discarded every argument name and
+# every argument past the second, and turned a namespaced head into a
+# backtick-quoted name (gcol33/tulpa#664).
+#
+# `drop` is the predicate that decides which terms this stripper removes; it is
+# read before the operator test, so a matching call is removed wherever it sits
+# and a non-matching one is never recursed into.
+# ----------------------------------------------------------------------------
+.FORMULA_OPS <- c("~", "+", "-", "*", "/", ":", "^", "%in%", "(", "|", "||")
+
+.strip_rhs <- function(term, drop) {
+  if (is.name(term) || !is.language(term)) return(term)
+  if (isTRUE(drop(term))) return(NULL)
+  if (!is.call(term)) return(term)
+
+  op <- term[[1]]
+  if (!is.name(op) || !(as.character(op) %in% .FORMULA_OPS)) return(term)
+
+  if (length(term) == 2L) {
+    nb <- .strip_rhs(term[[2]], drop)
+    if (is.null(nb)) return(NULL)
+    return(as.call(list(op, nb)))
+  }
+
+  nb_left  <- .strip_rhs(term[[2]], drop)
+  nb_right <- .strip_rhs(term[[3]], drop)
+
+  if (is.null(nb_left) && is.null(nb_right)) return(NULL)
+  if (is.null(nb_left))  return(nb_right)
+  if (is.null(nb_right)) return(nb_left)
+
+  as.call(list(op, nb_left, nb_right))
+}
+
+.is_bar_call <- function(x) {
+  is.call(x) && (identical(x[[1]], as.name("|")) || identical(x[[1]], as.name("||")))
+}
+
 #' Remove all bar terms from a formula's parse tree
 #'
 #' Recursively rewrites the formula AST, removing any `|` or `||` nodes
@@ -63,32 +110,10 @@ findbars <- function(term) {
 #' @keywords internal
 #' @export
 nobars <- function(term) {
-  if (is.name(term) || !is.language(term)) return(term)
-
-  if (term[[1]] == as.name("(")) {
-    inner <- term[[2]]
-    if (is.call(inner) && (inner[[1]] == as.name("|") || inner[[1]] == as.name("||"))) {
-      return(NULL)
-    }
-    nb <- nobars(inner)
-    if (is.null(nb)) return(NULL)
-    return(call("(", nb))
-  }
-
-  if (length(term) == 2) {
-    nb <- nobars(term[[2]])
-    if (is.null(nb)) return(NULL)
-    return(call(deparse(term[[1]]), nb))
-  }
-
-  nb_left  <- nobars(term[[2]])
-  nb_right <- nobars(term[[3]])
-
-  if (is.null(nb_left) && is.null(nb_right)) return(NULL)
-  if (is.null(nb_left))  return(nb_right)
-  if (is.null(nb_right)) return(nb_left)
-
-  call(deparse(term[[1]]), nb_left, nb_right)
+  .strip_rhs(term, function(x) {
+    is.call(x) && identical(x[[1]], as.name("(")) && length(x) >= 2L &&
+      .is_bar_call(x[[2]])
+  })
 }
 
 # ============================================================================
@@ -136,33 +161,9 @@ find_latent_terms <- function(term) {
 #'   if nothing remains.
 #' @keywords internal
 no_latent_terms <- function(term) {
-  if (is.name(term) || !is.language(term)) return(term)
-
-  if (is.call(term) && identical(term[[1]], as.name("latent")) &&
-      length(term) == 2L) {
-    return(NULL)
-  }
-
-  if (identical(term[[1]], as.name("("))) {
-    inner_nb <- no_latent_terms(term[[2]])
-    if (is.null(inner_nb)) return(NULL)
-    return(call("(", inner_nb))
-  }
-
-  if (length(term) == 2L) {
-    nb <- no_latent_terms(term[[2]])
-    if (is.null(nb)) return(NULL)
-    return(call(deparse(term[[1]]), nb))
-  }
-
-  nb_left  <- no_latent_terms(term[[2]])
-  nb_right <- no_latent_terms(term[[3]])
-
-  if (is.null(nb_left) && is.null(nb_right)) return(NULL)
-  if (is.null(nb_left))  return(nb_right)
-  if (is.null(nb_right)) return(nb_left)
-
-  call(deparse(term[[1]]), nb_left, nb_right)
+  .strip_rhs(term, function(x) {
+    is.call(x) && identical(x[[1]], as.name("latent")) && length(x) == 2L
+  })
 }
 
 # ----------------------------------------------------------------------------
@@ -199,27 +200,10 @@ find_special_terms <- function(term, fname, pred = NULL) {
 # nothing remains). `pred` mirrors find_special_terms: a matched-name call is
 # atomic -- stripped when owned, kept verbatim (never recursed into) when not.
 no_special_terms <- function(term, fname, pred = NULL) {
-  if (is.name(term) || !is.language(term)) return(term)
-  if (is.call(term) && identical(term[[1]], as.name(fname))) {
-    if (is.null(pred) || isTRUE(pred(term))) return(NULL)
-    return(term)
-  }
-  if (identical(term[[1]], as.name("("))) {
-    inner <- no_special_terms(term[[2]], fname, pred)
-    if (is.null(inner)) return(NULL)
-    return(call("(", inner))
-  }
-  if (length(term) == 2L) {
-    nb <- no_special_terms(term[[2]], fname, pred)
-    if (is.null(nb)) return(NULL)
-    return(call(deparse(term[[1]]), nb))
-  }
-  nb_left  <- no_special_terms(term[[2]], fname, pred)
-  nb_right <- no_special_terms(term[[3]], fname, pred)
-  if (is.null(nb_left) && is.null(nb_right)) return(NULL)
-  if (is.null(nb_left))  return(nb_right)
-  if (is.null(nb_right)) return(nb_left)
-  call(deparse(term[[1]]), nb_left, nb_right)
+  .strip_rhs(term, function(x) {
+    is.call(x) && identical(x[[1]], as.name(fname)) &&
+      (is.null(pred) || isTRUE(pred(x)))
+  })
 }
 
 # Distinguish the two `spatial(...)` forms. The inline varying-coefficient field

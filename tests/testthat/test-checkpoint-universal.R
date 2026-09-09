@@ -243,3 +243,54 @@ test_that("the RE group assignment separates two fingerprints in its second half
   run(g1, FALSE)
   expect_error(run(g2, TRUE), "fingerprint")
 })
+
+# ============================================================================
+# The chain fingerprint covers the DATA, not only its shape (gcol33/tulpa#683)
+#
+# The response lives behind an opaque pointer, so the fingerprint folds the
+# target the chains sample -- evaluated at engine-fixed probe positions -- and a
+# resume against a different data set of the same shape is refused instead of
+# returning the earlier fit's draws under the new data's name.
+# ============================================================================
+
+test_that("a resume against different data of the same shape is refused", {
+  set.seed(11L)
+  X  <- cbind(1, rnorm(60))
+  y1 <- rpois(60, exp( 0.5 + 0.4 * X[, 2]))
+  y2 <- rpois(60, exp(-1.5 - 1.2 * X[, 2]))
+  cp <- file.path(tempdir(), "ckpt-683.bin")
+  on.exit(unlink(cp), add = TRUE)
+  unlink(cp)
+  run <- function(y, path) cpp_tulpa_fit_generic_chains(
+    as.numeric(y), X, 2L, n_iter = 120L, n_warmup = 60L, seed = 5L,
+    checkpoint_path = path)
+
+  f1 <- run(y1, cp)
+  expect_error(run(y2, cp), "fingerprint mismatch")
+
+  # The same data still resumes, bit for bit: the probe is deterministic and
+  # takes nothing from R's RNG stream.
+  f1b <- run(y1, cp)
+  expect_identical(f1$draws, f1b$draws)
+
+  # And it is the DATA that separates them, not the file: y2 fits normally on
+  # its own path, to its own answer.
+  f2 <- run(y2, file.path(tempdir(), "ckpt-683b.bin"))
+  on.exit(unlink(file.path(tempdir(), "ckpt-683b.bin")), add = TRUE)
+  expect_false(isTRUE(all.equal(colMeans(f1$draws), colMeans(f2$draws))))
+})
+
+test_that("a changed design of the same shape is refused too", {
+  set.seed(12L)
+  X1 <- cbind(1, rnorm(50))
+  X2 <- cbind(1, rnorm(50))
+  y  <- rpois(50, 3)
+  cp <- file.path(tempdir(), "ckpt-683c.bin")
+  on.exit(unlink(cp), add = TRUE)
+  unlink(cp)
+  run <- function(X, path) cpp_tulpa_fit_generic_chains(
+    as.numeric(y), X, 2L, n_iter = 120L, n_warmup = 60L, seed = 3L,
+    checkpoint_path = path)
+  run(X1, cp)
+  expect_error(run(X2, cp), "fingerprint mismatch")
+})

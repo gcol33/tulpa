@@ -948,9 +948,14 @@ inline tulpa::LatentBlock make_temporal_latent_block(
     const std::string& temporal_type,
     const Rcpp::NumericVector& tau_grid,
     const Rcpp::NumericVector& rho_grid,
-    bool cyclic
+    bool cyclic,
+    int n_obs, const char* who
 ) {
     const int n_units = n_groups * n_times;
+    // block.idx below is read for every i < N with no bound of its own, so the
+    // index is checked HERE -- the one place every temporal-carrying entry
+    // builds its block -- rather than at each of the six entries.
+    tulpa::check_temporal_index(temporal_idx, n_obs, n_units, who);
     IndexedPriorOps ops_t = make_temporal_ops(temporal_type, start, n_groups,
                                               n_times, tau_grid, rho_grid, cyclic);
     tulpa::LatentBlock block;
@@ -1070,13 +1075,14 @@ inline Rcpp::List run_st_spatial_entry(
     const Rcpp::NumericVector& tau_temporal_grid,
     const Rcpp::NumericVector& rho_t, bool cyclic,
     bool force_sparse,
-    const tulpa::NlAxisOut& out_axes
+    const tulpa::NlAxisOut& out_axes,
+    const char* who
 ) {
     const int t_start = in.p() + in.n_re_groups + spatial_latent_dim;
     // Space-time front door is single-walk temporal (no panel grouping yet).
     blocks.push_back(make_temporal_latent_block(
         t_start, /*n_groups=*/1, n_times, temporal_idx, temporal_type,
-        tau_temporal_grid, rho_t, cyclic));
+        tau_temporal_grid, rho_t, cyclic, in.N(), who));
 
     tulpa::NlEntryRun run(in, struct_seed, ckpt_axes);
     Rcpp::List out = run_indexed_st_nested_laplace_joint(
@@ -1153,7 +1159,8 @@ Rcpp::List cpp_nested_laplace_temporal(
     // run_multi_block call below.
     std::vector<tulpa::LatentBlock> blocks{ make_temporal_latent_block(
         temporal_start, n_groups, n_times, temporal_idx, temporal_type,
-        tau_grid, rho_grid, cyclic) };
+        tau_grid, rho_grid, cyclic, static_cast<int>(y.size()),
+        "cpp_nested_laplace_temporal") };
 
     // rho is an ar1 coordinate; rw1 / rw2 pass an empty grid and report only tau.
     tulpa::NlAxisOut out_axes{{"tau_grid", tau_grid}};
@@ -1223,7 +1230,8 @@ Rcpp::List cpp_nested_laplace_st_icar(
         /*spatial_latent_dim=*/n_spatial_units, spatial_idx, std::move(blocks),
         temporal_idx, n_times, temporal_type, tau_temporal_grid, rho_t, cyclic,
         force_sparse,
-        {{"tau_spatial_grid", tau_spatial_grid}});
+        {{"tau_spatial_grid", tau_spatial_grid}},
+        "cpp_nested_laplace_st_icar");
 }
 
 // ---- CAR_proper (spatial) --------------------------------------------------
@@ -1285,7 +1293,8 @@ Rcpp::List cpp_nested_laplace_st_car_proper(
         temporal_idx, n_times, temporal_type, tau_temporal_grid, rho_t, cyclic,
         force_sparse,
         {{"tau_spatial_grid", tau_spatial_grid},
-         {"rho_spatial_grid", rho_spatial_grid}});
+         {"rho_spatial_grid", rho_spatial_grid}},
+        "cpp_nested_laplace_st_car_proper");
 }
 
 // ---- BYM2 (spatial) --------------------------------------------------------
@@ -1351,7 +1360,8 @@ Rcpp::List cpp_nested_laplace_st_bym2(
         temporal_idx, n_times, temporal_type, tau_temporal_grid, rho_t, cyclic,
         force_sparse,
         {{"sigma_spatial_grid", sigma_spatial_grid},
-         {"rho_spatial_grid", rho_spatial_grid}});
+         {"rho_spatial_grid", rho_spatial_grid}},
+        "cpp_nested_laplace_st_bym2");
 }
 
 // ---- HSGP (spatial) --------------------------------------------------------
@@ -1431,7 +1441,8 @@ Rcpp::List cpp_nested_laplace_st_hsgp(
         temporal_idx, n_times, temporal_type, tau_temporal_grid, rho_t, cyclic,
         /*force_sparse=*/true,
         {{"sigma2_spatial_grid", sigma2_spatial_grid},
-         {"lengthscale_spatial_grid", lengthscale_spatial_grid}});
+         {"lengthscale_spatial_grid", lengthscale_spatial_grid}},
+        "cpp_nested_laplace_st_hsgp");
 }
 
 // ---- NNGP (spatial) --------------------------------------------------------
@@ -1510,5 +1521,6 @@ Rcpp::List cpp_nested_laplace_st_nngp(
         temporal_idx, n_times, temporal_type, tau_temporal_grid, rho_t, cyclic,
         /*force_sparse=*/true,
         {{"sigma2_spatial_grid", sigma2_spatial_grid},
-         {"phi_gp_spatial_grid", phi_gp_spatial_grid}});
+         {"phi_gp_spatial_grid", phi_gp_spatial_grid}},
+        "cpp_nested_laplace_st_nngp");
 }

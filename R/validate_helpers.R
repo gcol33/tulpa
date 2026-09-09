@@ -217,6 +217,12 @@ prepare_coords <- function(coord_vars, data, scale_coords = FALSE) {
 #' @noRd
 .validate_adjacency_arg <- function(x, arg = "adjacency") {
   if (inherits(x, "tulpa_adjacency")) return(x$adjacency)
+  # The gate is idempotent: a spec built by a spatial_*() constructor carries a
+  # graph this has already passed, and the front door re-runs it on whatever
+  # `spatial$adjacency` holds so a bare list reaches the same check
+  # (gcol33/tulpa#670). Re-reporting the structural warnings on the second pass
+  # would say the same thing twice about one graph.
+  if (isTRUE(attr(x, "tulpa_adjacency_checked"))) return(x)
   if (!is.matrix(x) && !inherits(x, "Matrix")) {
     stop("`", arg, "` must be a matrix (dense or sparse).", call. = FALSE)
   }
@@ -248,6 +254,7 @@ prepare_coords <- function(coord_vars, data, scale_coords = FALSE) {
             "ICAR/CAR field is improper on disconnected nodes.",
             call. = FALSE)
   }
+  attr(x, "tulpa_adjacency_checked") <- TRUE
   x
 }
 

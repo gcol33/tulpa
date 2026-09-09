@@ -1732,8 +1732,23 @@ tulpa <- function(formula, data,
       stop("`spatial$type` is required (e.g. 'icar', 'bym2', 'car', 'spde', 'gp').",
            call. = FALSE)
     }
-    spatial_type <- spatial_spec$type
-    sp_lc <- tolower(spatial_type)
+    # One normalisation of the type string, before any consumer reads it. The
+    # branches here lowercase it and select_inference_mode() compares it
+    # case-sensitively, so an un-normalised `type = "ICAR"` reached the selector
+    # as a type it does not know and was reported as unsupported
+    # (gcol33/tulpa#671). Writing it back means the spec carries the canonical
+    # spelling wherever it travels.
+    spatial_type <- tolower(spatial_spec$type)
+    spatial_spec$type <- spatial_type
+    # An adjacency reaching the door as a bare list never passed a constructor,
+    # so the graph check runs on whatever `spatial$adjacency` holds, whichever
+    # way it got here (gcol33/tulpa#670). The check is idempotent, so a spec
+    # built by spatial_icar() / spatial_car() is not re-reported.
+    if (!is.null(spatial_spec$adjacency)) {
+      spatial_spec$adjacency <-
+        .validate_adjacency_arg(spatial_spec$adjacency, "spatial$adjacency")
+    }
+    sp_lc <- spatial_type
     # RSR is an areal field (icar/car) carrying a projection modifier: the spec
     # keeps the underlying $type but flags $rsr (spatial_rsr()). Route it as its
     # own gibbs-only areal type so it reaches the RSR Polya-Gamma sampler instead

@@ -2282,6 +2282,46 @@ re-evaluations run with it stripped so they do not pollute the file); a
 `test-checkpoint-universal.R` (single-block, RE-cov, per-chain NUTS:
 equivalence, resume-loads-nothing, torn-tail re-solve, fingerprint mismatch).
 
+### One walker per stripper, and it descends the OPERATOR tree only
+
+`nobars()`, `no_latent_terms()` and `no_special_terms()` are one function,
+`.strip_rhs(term, drop)` (`R/formula.R`), differing only in the `drop`
+predicate. It recurses through `.FORMULA_OPS` -- the heads that combine model
+terms -- and treats every OTHER call as a leaf, carried through as it stands.
+Rebuilding a leaf from `call(deparse(term[[1]]), term[[2]], term[[3]])`
+discarded every argument name and every argument past the second, so
+`poly(x, 2, raw = TRUE)` was refitted as the orthogonal basis and
+`splines::ns(x, df = 3)` became a backtick-quoted name that errors
+(gcol33/tulpa#664). `nobars()` runs on every formula, so that reached every
+backend, not only the RE paths.
+
+### Where a per-observation index is checked, and what the checkpoint folds
+
+Two boundaries the engine crosses on trust, both closed at the one place the
+value is TAKEN rather than at each entry:
+
+- **`check_latent_obs_index()`** (`src/areal_input_check.h`) is the one gate for
+  every per-observation latent index -- `check_areal_site_index()` and
+  `check_temporal_index()` are its two named callers. `block.idx` is read for
+  every row through unchecked pointer arithmetic, and the eta walk's own
+  `l > 0 && l <= size` guard makes an out-of-range value contribute NOTHING to
+  that row instead of failing, so an unchecked index is either a heap read or a
+  silently dropped term (gcol33/tulpa#389, #685). The temporal check lives
+  inside `make_temporal_latent_block()`, which is why `cpp_nested_laplace_temporal`
+  and all five `st_*` entries inherit it.
+- **`fold_target_identity()`** (`src/hmc_nuts_parallel.cpp`) is what makes a
+  chain checkpoint's fingerprint cover the DATA. The response is behind
+  `ModelData::model_response_data`, opaque to the engine, so a field-by-field
+  fold cannot reach it and a fingerprint over dimensions alone accepted a resume
+  onto another data set of the same shape and returned the earlier fit's draws
+  (gcol33/tulpa#683). The fold is the TARGET instead: the log posterior at
+  engine-fixed probe positions, which reads the response through the likelihood,
+  the designs through eta, and every prior hyperparameter the model carries.
+  Probes are chain 0's init plus splitmix64 perturbations of it -- never R's
+  stream, so a checkpointed fit is bit-for-bit the uncheckpointed one -- and the
+  perturbed ones are what make the design visible, since at `beta = 0` the
+  design drops out of eta.
+
 ### Matrix CHOLMOD Fix
 
 tulpa's `R_init_tulpa` calls `M_cholmod_start` which requires Matrix's

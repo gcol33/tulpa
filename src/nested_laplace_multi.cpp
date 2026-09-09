@@ -29,6 +29,7 @@
 // One block-spec maps to ONE input-list element but may push 1 or 2
 // LatentBlocks into the vector (BYM2 is the only 2-block expansion).
 
+#include "areal_input_check.h"     // check_latent_obs_index
 #include "bym2_mixing.h"           // BYM2_RHO_EPS + the mixing amplitudes
 #include "laplace_re_priors.h"
 #include "laplace_spatial_priors.h"
@@ -65,9 +66,20 @@ int build_blocks_of_type(
     int axis0,                // starting column in theta_grid for this block's axes
     int axis_count,           // number of axes used by this block
     int latent_offset,
+    int n_obs,                // rows every block.idx below is read for
     std::vector<tulpa::LatentBlock>& blocks
 ) {
     std::string type = Rcpp::as<std::string>(bs["type"]);
+
+    // Every block.idx below is read for each of the n_obs rows and indexes the
+    // latent vector at `start + idx(i) - 1`, both without a bound of their own,
+    // so each per-observation index is checked where it is TAKEN from the spec
+    // (gcol33/tulpa#685).
+    auto check_idx = [&](const Rcpp::IntegerVector& idx, int n_units,
+                         const char* what) {
+        tulpa::check_latent_obs_index(idx, n_obs, n_units,
+                                      "cpp_nested_laplace_multi", what);
+    };
 
     auto require_axes = [&](int needed) {
         if (axis_count != needed) {
@@ -80,6 +92,7 @@ int build_blocks_of_type(
         require_axes(1);
         int size = Rcpp::as<int>(bs["n_spatial_units"]);
         Rcpp::IntegerVector spatial_idx = bs["spatial_idx"];
+        check_idx(spatial_idx, size, "blocks_spec$spatial_idx");
         Rcpp::IntegerVector adj_rp      = bs["adj_row_ptr"];
         Rcpp::IntegerVector adj_ci      = bs["adj_col_idx"];
         Rcpp::IntegerVector n_nbr       = bs["n_neighbors"];
@@ -119,6 +132,7 @@ int build_blocks_of_type(
         require_axes(2);
         int size = Rcpp::as<int>(bs["n_spatial_units"]);
         Rcpp::IntegerVector spatial_idx = bs["spatial_idx"];
+        check_idx(spatial_idx, size, "blocks_spec$spatial_idx");
         Rcpp::IntegerVector adj_rp      = bs["adj_row_ptr"];
         Rcpp::IntegerVector adj_ci      = bs["adj_col_idx"];
         Rcpp::IntegerVector n_nbr       = bs["n_neighbors"];
@@ -182,6 +196,7 @@ int build_blocks_of_type(
         require_axes(2);
         int size = Rcpp::as<int>(bs["n_spatial_units"]);
         Rcpp::IntegerVector spatial_idx = bs["spatial_idx"];
+        check_idx(spatial_idx, size, "blocks_spec$spatial_idx");
         Rcpp::IntegerVector adj_rp      = bs["adj_row_ptr"];
         Rcpp::IntegerVector adj_ci      = bs["adj_col_idx"];
         Rcpp::IntegerVector n_nbr       = bs["n_neighbors"];
@@ -285,6 +300,7 @@ int build_blocks_of_type(
         require_axes(1);
         int size = Rcpp::as<int>(bs["n_times"]);
         Rcpp::IntegerVector temporal_idx = bs["temporal_idx"];
+        check_idx(temporal_idx, size, "blocks_spec$temporal_idx");
         bool cyclic = bs.containsElementNamed("cyclic") &&
                       Rcpp::as<bool>(bs["cyclic"]);
         int start = latent_offset;
@@ -332,6 +348,7 @@ int build_blocks_of_type(
         require_axes(2);
         int size = Rcpp::as<int>(bs["n_times"]);
         Rcpp::IntegerVector temporal_idx = bs["temporal_idx"];
+        check_idx(temporal_idx, size, "blocks_spec$temporal_idx");
         int start = latent_offset;
 
         tulpa::LatentBlock block;
@@ -432,7 +449,7 @@ int build_blocks_from_spec(
     const std::size_t first = blocks.size();
     const int next_offset = build_blocks_of_type(bs, theta_grid, axis0,
                                                  axis_count, latent_offset,
-                                                 blocks);
+                                                 N, blocks);
     if (!bs.containsElementNamed("svc_weight") ||
         Rf_isNull(bs["svc_weight"])) {
         return next_offset;
