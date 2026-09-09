@@ -553,7 +553,29 @@ void run_spde_laplace(
         // prior_lognorm = 0.5 log|Q(theta)|: the SPDE prior normalizer, supplied
         // by the caller (constant in x). Required whenever this fit's
         // log_marginal is compared across (range, sigma); see spde_logdet.h.
-        return prior_lognorm - 0.5 * qf;
+        double lp = prior_lognorm - 0.5 * qf;
+
+        // Every term the SCATTER applies, this objective applies too.
+        // `spde_scatter` is handed DEFAULT_TAU_BETA and puts the weak
+        // fixed-effect ridge into the gradient and the Hessian, so an objective
+        // without its density and normalizer is not the function that gradient
+        // differentiates -- the mismatch gcol33/tulpa#698 removed on the joint
+        // path, in the one loop that path does not go through. It also puts
+        // this entry's log_marginal a constant p * 0.5 * log(tau_beta / 2pi)
+        // below the nested SPDE grid's for the same model, which is the
+        // cross-entry identity test-implicit-diff.R asserts.
+        constexpr double LOG_2PI = 1.8378770664093454835606594728112;
+        for (int j = 0; j < p; j++) {
+            lp -= 0.5 * DEFAULT_TAU_BETA * x[j] * x[j];
+            lp += 0.5 * (std::log(DEFAULT_TAU_BETA) - LOG_2PI);
+        }
+        // The RE normalizer, on the same rule: it moves with sigma_re, so a
+        // marginal without it is not comparable across RE scales. The one
+        // caller today passes n_re_groups = 0, so this is a no-op at present.
+        if (n_re_groups > 0) {
+            lp += 0.5 * n_re_groups * (std::log(tau_re) - LOG_2PI);
+        }
+        return lp;
     };
 
     LaplaceResult result = laplace_newton_solve(
