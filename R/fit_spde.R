@@ -270,7 +270,7 @@ fit_spde <- function(y, X, spatial,
       return(list(log_marginal = lm, n_iter = ni))
     }
     res <- cpp_nested_laplace_spde(
-      y = y, n = n_trials, X = X,
+      y = y, n_trials = n_trials, X = X,
       re_idx = no_re_idx, n_re_groups = no_re_n_groups,
       sigma_re = no_re_sigma,
       A_x = sp$A_x, A_i = sp$A_i, A_p = sp$A_p,

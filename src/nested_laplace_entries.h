@@ -392,7 +392,7 @@ Rcpp::List cpp_nested_laplace_st_nngp(
 
 Rcpp::List cpp_nested_laplace_spde(
     Rcpp::NumericVector y,
-    Rcpp::IntegerVector n,
+    Rcpp::IntegerVector n_trials,
     Rcpp::NumericMatrix X,
     Rcpp::NumericVector re_idx,
     int n_re_groups,

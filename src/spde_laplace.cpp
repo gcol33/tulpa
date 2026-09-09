@@ -231,7 +231,7 @@ Rcpp::List cpp_laplace_fit_spde_precomputed(
 
 // [[Rcpp::export]]
 Rcpp::List cpp_nested_laplace_spde(
-    Rcpp::NumericVector y, Rcpp::IntegerVector n,
+    Rcpp::NumericVector y, Rcpp::IntegerVector n_trials,
     Rcpp::NumericMatrix X,
     Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re,
     Rcpp::NumericVector A_x, Rcpp::IntegerVector A_i, Rcpp::IntegerVector A_p,
@@ -304,7 +304,7 @@ Rcpp::List cpp_nested_laplace_spde(
     {
         tulpa::JointArm& a = arms[0];
         a.y        = y;
-        a.n_trials = n;
+        a.n_trials = n_trials;
         a.family   = family;
         a.phi      = phi;
         a.N        = N;
@@ -366,6 +366,13 @@ Rcpp::List cpp_nested_laplace_spde(
     // nor a screen depth: control$prune / $prune_tol / $screen_iters and the
     // debias were all unreachable on the SPDE grid, and a knob added to the
     // bundle would not have reached it either (gcol33/tulpa#699).
+    // TULPA_NL_ENTRY_INPUTS is argument-free by design -- it assigns member by
+    // member in one token sequence, so an entry cannot bind the wrong local --
+    // and it reads the trials vector as `n`, the name the other eleven grid
+    // entries give that argument. This entry's R-facing name is `n_trials` and
+    // stays that way: it is passed by name from the SPDE fixtures, which hand
+    // the SAME list to cpp_laplace_fit_spde(), where `n_trials` is correct.
+    const Rcpp::IntegerVector& n = n_trials;
     tulpa::NlEntryInputs nl_in = TULPA_NL_ENTRY_INPUTS;
     nl_in.offset = offset_nullable;
 
