@@ -211,9 +211,13 @@
 
 # Pack a validated tulpa_gp (nngp) spec into the ModelData sampler's GP
 # spatial_spec (mode = "exact" continuous-field NUTS). The sampler's GP prior
-# requires a PC range anchor, which spatial_gp() does not expose, so a
+# requires a PC RANGE anchor, which spatial_gp() does not expose, so a
 # weakly-informative data-driven default is derived here (P(range < U) = alpha,
-# U = median nearest-neighbour spacing). Index conventions match the hmc_gp
+# U = median nearest-neighbour spacing). The AMPLITUDE anchor it does expose,
+# and this reads it: the pair was hardcoded to (2.0, 0.05) here against the
+# engine's own (1.0, 0.01) -- one PC anchor with two defaults in two files, and
+# a user setting it on an NNGP spec silently got neither
+# (gcol33/tulpa#700). Index conventions match the hmc_gp
 # kernels: field at unique-location order, nn_order 0-based (validated ordering
 # is 1-based), nn_neighbor_dist row-major [i, j1, j2].
 #' @keywords internal
@@ -243,8 +247,8 @@
     nu               = as.numeric(spatial$nu %||% 1.5),
     phi_prior_U      = as.numeric(U),
     phi_prior_alpha  = 0.05,
-    sigma2_prior_U   = 2.0,
-    sigma2_prior_alpha = 0.05,
+    sigma2_prior_U     = as.numeric(spatial$sigma2_prior_U %||% 1),
+    sigma2_prior_alpha = as.numeric(spatial$sigma2_prior_alpha %||% 0.01),
     # Non-centered (z ~ N(0, I), field reconstructed as w = f(z, sigma2, phi))
     # is the default: the centered parameterization funnels the field amplitude
     # against (sigma2, phi) under NUTS. "collapsed" is deprecated and falls back
@@ -857,8 +861,7 @@
         # `control$re_cov = "aghq"` is the nested integrator with an AGHQ inner
         # marginal: n_quad defaults to 9 there, to the plain joint Laplace (1)
         # otherwise. An explicit control$n_quad always wins.
-        re_cov_method <- match.arg(control$re_cov %||% "nested",
-                                   c("nested", "gibbs", "aghq"))
+        re_cov_method <- .re_cov_method(control, "nested")
         n_quad <- as.integer(control$n_quad %||%
                                (if (re_cov_method == "aghq") 9L else 1L))
         return(c(common, list(
@@ -1574,6 +1577,28 @@ tulpa <- function(formula, data,
     stop("`estimate_phi` must be TRUE or FALSE.", call. = FALSE)
   }
 
+  # Argument shapes, before anything indexes them. Each of these is a plausible
+  # user mistake that used to surface an R internal from deep inside the call --
+  # "the condition has length > 1", "argument is of length zero",
+  # "is.numeric(y) || is.integer(y) is not TRUE" -- naming no argument
+  # (gcol33/tulpa#679).
+  if (inherits(family, "family")) family <- .family_object_to_name(family)
+  if (!is.character(family) || length(family) != 1L || is.na(family)) {
+    stop("`family` must be a single family name (a string), or a stats::family ",
+         "object. See ?tulpa for the accepted names.", call. = FALSE)
+  }
+  if (is.null(mode) || !is.character(mode) || length(mode) != 1L || is.na(mode)) {
+    stop("`mode` must be a single string: 'auto', a tier name, or a backend ",
+         "name. See ?tulpa.", call. = FALSE)
+  }
+  if (!inherits(formula, "formula") || length(formula) != 3L) {
+    stop("`formula` must be two-sided, e.g. y ~ x. A one-sided formula names ",
+         "no response to fit.", call. = FALSE)
+  }
+  if (is.data.frame(data) && nrow(data) == 0L) {
+    stop("`data` has no rows.", call. = FALSE)
+  }
+
   # Categorical responses are families, not separate verbs: the front door
   # routes them to the multinomial / cumulative-link Laplace drivers. The link
   # rides the family string ("ordinal_probit"), matching the engine's
@@ -1642,6 +1667,31 @@ tulpa <- function(formula, data,
            call. = FALSE)
     }
     n_trials <- bundle$n_trials
+  }
+
+  # One R-side reading of `n_trials`, so every door answers the same
+  # (gcol33/tulpa#677). It used to be checked only at the C++ boundary, which
+  # `laplace` reaches and `mala` / `imh_laplace` do not: a scalar was an error
+  # on one door and a recycled vector on the others, and a `n_trials` handed to
+  # a non-binomial family was read by nothing at all -- no signal for a user who
+  # meant a binomial and typed poisson.
+  if (!is.null(n_trials)) {
+    if (!.family_base(family) %in% c("binomial", "beta_binomial")) {
+      stop(sprintf(paste0(
+        "`n_trials` is the binomial denominator and is not read by ",
+        "family = '%s'. Drop it, or use family = 'binomial'."), family),
+        call. = FALSE)
+    }
+    n_trials <- as.integer(n_trials)
+    if (length(n_trials) == 1L) n_trials <- rep(n_trials, bundle$n_obs)
+    if (length(n_trials) != bundle$n_obs) {
+      stop(sprintf(paste0(
+        "`n_trials` must have length 1 (recycled) or nrow(data) (%d); got %d."),
+        bundle$n_obs, length(n_trials)), call. = FALSE)
+    }
+    if (any(!is.na(n_trials) & n_trials < 1L)) {
+      stop("`n_trials` must be a positive integer count.", call. = FALSE)
+    }
   }
 
   # Zero inflation: a second linear predictor for the structural-zero logit.
@@ -1973,7 +2023,17 @@ tulpa <- function(formula, data,
   sel <- select_inference_mode(
     mode, family = fam_obj, n_obs = bundle$n_obs,
     has_spatial = has_spatial, has_temporal = has_temporal, has_latent = has_latent,
-    spatial_type = spatial_type, temporal = temporal_spec, has_re = has_re
+    spatial_type = spatial_type, temporal = temporal_spec, has_re = has_re,
+    # The per-call features a backend can refuse at dispatch. Without them the
+    # auto selector picked backends that then errored on the very call that
+    # selected them (gcol33/tulpa#666, #681).
+    feat = list(
+      offset     = !is.null(bundle$offset) && any(bundle$offset != 0),
+      weights    = !is.null(weights),
+      ziformula  = !is.null(bundle$X_zi),
+      phi2       = !is.null(phi2),
+      n_re_terms = length(re_terms)
+    )
   )
 
   # Spatially- / temporally-varying coefficients are sampled only by the
@@ -2051,30 +2111,44 @@ tulpa <- function(formula, data,
   }
 
   slope_scalar_backends <- c("laplace", "mala", "pathfinder", "imh_laplace")
-  if (has_slope && sel$backend %in% slope_scalar_backends) {
+  # A slope term MUST have its covariance integrated -- there is no scalar
+  # sigma_re to condition on -- and a caller who NAMES an integrator gets one
+  # whatever the term shape. `control$re_cov` used to be read only in the slope
+  # case, so on a `(1 | g)` model any value, including a typo, was accepted with
+  # no effect and the fit silently conditioned at sigma_re = 1
+  # (gcol33/tulpa#668). The default path is unchanged: an unset knob still
+  # redirects only for a slope.
+  if (has_re && (has_slope || !is.null(control$re_cov)) &&
+      sel$backend %in% slope_scalar_backends) {
     default_re_cov <- if (sel$backend == "laplace") "nested" else "gibbs"
-    re_cov_method <- match.arg(control$re_cov %||% default_re_cov,
-                               c("nested", "gibbs", "aghq"))
+    re_cov_method <- .re_cov_method(control, default_re_cov)
     backend <- if (re_cov_method == "gibbs") "re_cov_gibbs" else "re_cov_nested"
     # notify = FALSE: a slope term has no scalar `sigma_re` for the requested
     # conditional mode to condition on, so this is the documented route for the
     # structure rather than a capability taken away. Recorded on the fit, not
     # warned about on every such fit.
+    why <- if (has_slope) "random-slope term(s) present"
+           else sprintf("control$re_cov = '%s' requested", re_cov_method)
     sel <- .sel_redirect(sel, backend, sprintf(
-      "random-slope term(s) present; RE covariance(s) integrated via %s (%d block(s))",
-      backend, length(re_terms)), notify = FALSE)
+      "%s; RE covariance(s) integrated via %s (%d block(s))",
+      why, backend, length(re_terms)), notify = FALSE)
   }
-  # Warn once whenever the fit determines the RE covariance itself -- by
-  # integrating it (re_cov_nested / re_cov_gibbs, reached via the redirect above
-  # or by name) or by maximizing over it (eb) -- and a scalar `sigma_re` was
-  # also supplied, since it is silently unused there. EB warns on every model,
-  # not just random-slope ones: it estimates a scalar (1 | g) SD too.
-  if (!is.null(sigma_re) &&
-      (sel$backend == "eb" ||
-       (has_slope && sel$backend %in% c("re_cov_nested", "re_cov_gibbs")))) {
-    verb <- if (sel$backend == "eb") "estimated" else "integrated"
+  # Warn once whenever the fit DETERMINES the RE scale itself -- by integrating
+  # it (re_cov_nested / re_cov_gibbs, reached via the redirect above or by
+  # name), by sampling it (gibbs, and every ModelData sampler, which put
+  # log_sigma_re in the latent vector) or by maximizing over it (eb, agq) -- and
+  # a scalar `sigma_re` was also supplied, since it is silently unused there.
+  # `?tulpa` promised this warning for all of them and only two routes gave it
+  # (gcol33/tulpa#669); the list is the registry-derived one so the doc and the
+  # code have a single referent.
+  if (!is.null(sigma_re) && has_re &&
+      sel$backend %in% .re_scale_estimating_backends()) {
+    verb <- switch(sel$backend,
+                   eb = , agq = "estimated",
+                   re_cov_nested = , re_cov_gibbs = "integrated",
+                   "sampled")
     warning(sprintf(paste0(
-      "`sigma_re` is ignored for mode = '%s': the RE covariance is %s, not ",
+      "`sigma_re` is ignored for mode = '%s': the RE scale is %s, not ",
       "conditioned on a scalar SD. Drop `sigma_re`, or use mode = 'laplace' to ",
       "condition on it."), sel$backend, verb), call. = FALSE)
   }

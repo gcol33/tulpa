@@ -971,6 +971,28 @@ family_names <- function() names(.FAMILY_OPS)
   tnbinom2          = "truncated_neg_binomial_2"
 )
 
+# A stats::family() object as the engine's family name.
+#
+# `family = binomial()` is the natural thing to reach for and used to reach an
+# `if (family == ...)` on a five-element list, erroring "the condition has
+# length > 1" (gcol33/tulpa#679). The link rides the name in this engine's own
+# `<base>_<link>` convention, so a non-canonical link is carried rather than
+# silently fitted at the canonical one.
+#' @keywords internal
+.family_object_to_name <- function(fam) {
+  nm <- tolower(fam$family %||% "")
+  if (!nzchar(nm)) {
+    stop("`family` object carries no $family name.", call. = FALSE)
+  }
+  canon <- c(binomial = "logit", poisson = "log", gaussian = "identity",
+             gamma = "inverse", inverse.gaussian = "1/mu^2")
+  lk <- fam$link
+  if (!is.null(lk) && nm %in% names(canon) && !identical(lk, unname(canon[nm]))) {
+    return(paste0(nm, "_", lk))
+  }
+  nm
+}
+
 #' Resolve a family spelling to its canonical registry name.
 #'
 #' A no-op for a canonical name, for a `<family>_<link>` code, and for anything

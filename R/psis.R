@@ -279,6 +279,33 @@
 # doubling (gcol33/tulpa#627), lifted to the budget itself, so that naming a
 # target band -- or paying for a cheaper diagnostic -- does not silently ask a
 # different question.
+# The user-facing half of the 20% PSIS tail ceiling.
+#
+# `.tulpa_psis_k_uncertainty()` applies the cap SILENTLY, by design, so the
+# per-replicate bootstrap re-fits do not each warn. Something has to say it once
+# per fit, and until gcol33/tulpa#692 only the joint driver did -- so on the
+# single-block, SPDE and RE-covariance paths a `control$k_tail_points` past the
+# ceiling was reduced with no signal at all. Called once per fit by each
+# backend's own attach point, never inside `.k_dispatch()`, which runs once per
+# scored subspace.
+#' @keywords internal
+.k_tail_cap_warn <- function(tail_points, n_samples) {
+  if (is.null(tail_points)) return(invisible(NULL))
+  tp <- suppressWarnings(as.integer(tail_points))
+  n  <- suppressWarnings(as.integer(n_samples))
+  if (length(tp) != 1L || is.na(tp) || length(n) != 1L || is.na(n)) {
+    return(invisible(NULL))
+  }
+  cap <- as.integer(floor(0.2 * n))
+  if (tp > cap) {
+    warning(sprintf(paste0(
+      "k_tail_points = %d exceeds the 20%% PSIS tail cap; using %d instead. ",
+      "Increase control$k_samples, not control$k_bootstrap, to obtain more ",
+      "tail information."), tp, cap), call. = FALSE)
+  }
+  invisible(NULL)
+}
+
 .k_outer_tail_points <- function(n_samples, tail_points = NULL) {
   if (!is.null(tail_points)) return(tail_points)     # idempotent: honour a request
   ref <- suppressWarnings(as.integer(.nl_diag("k_samples")))
@@ -466,6 +493,7 @@ tulpa_psis <- function(log_ratios, tail_points = NULL) {
   # width is a grid RESOLUTION, which a CCD design does not have) and the radius
   # cap stays Inf, which is what this path always used. Moment matching and the
   # skew-normal rescue apply unchanged.
+  .k_tail_cap_warn(tail_points, n_samples)
   .k_dispatch_report(
     .k_cand_spec(lt = batched, u_hat = theta_hat,
                  Su = L_scale %*% t(L_scale),
@@ -679,8 +707,12 @@ tulpa_psis <- function(log_ratios, tail_points = NULL) {
   # single-cell grid -- leaves nothing to place a proposal with; the Cholesky
   # is attempted inside the scorer, so that case arrives as a
   # `degenerate_proposal` decline rather than being caught twice.
+  .k_tail_cap_warn(tail_points, n_samples)
   .k_dispatch_report(
     .k_cand_spec(lt = lt, u_hat = u_hat, Su = Su, u_grid = u_grid,
                  w = weights, proposal_source = "grid_moment"),
-    n_samples, scope = "nested_laplace grid (single positive-scale axis)")
+    # `tail_points` was accepted here and dropped, so an explicit request never
+    # reached the scorer on this path at all (gcol33/tulpa#692).
+    n_samples, tail_points = tail_points,
+    scope = "nested_laplace grid (single positive-scale axis)")
 }

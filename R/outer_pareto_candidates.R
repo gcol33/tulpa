@@ -91,6 +91,11 @@
     list(pareto_k = out$best$pareto_k, is_ess = out$best$is_ess,
          n_eval = length(lr), lr = lr, proposal_source = out$source,
          first_pass_k = out$first_pass_k %||% NA_real_,
+         # The GPD tail the reported shape was fitted on. Three of the four
+         # backends recorded nothing about it, so a raised or capped tail was
+         # invisible on every path but the joint one (gcol33/tulpa#692).
+         tail_points = if (is.null(tail_points)) .psis_tail_len(length(lr))
+                       else as.integer(tail_points),
          outer_skew = out$outer_skew, declined = NA_character_)
 }
 

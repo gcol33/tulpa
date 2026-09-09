@@ -686,7 +686,11 @@ tulpa_parse_formula <- function(formula) {
     stop("`ziformula` must be a one-sided formula, e.g. ~ 1 or ~ x.",
          call. = FALSE)
   }
-  if (any(grepl("\\|", deparse(ziformula[[2L]])))) {
+  # findbars() is the AST walk this file already owns, two hundred lines above.
+  # A regex on deparsed code false-positives on a `|` inside a string literal or
+  # an operator name, and the `any()` was papering over a deparse that wraps a
+  # long line (gcol33/tulpa#680).
+  if (length(findbars(ziformula)) > 0L) {
     stop("`ziformula` takes fixed effects only; random effects in the ",
          "zero-inflation predictor are not supported.", call. = FALSE)
   }

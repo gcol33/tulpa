@@ -12,7 +12,8 @@ auto_select_mode(
   has_latent,
   temporal = NULL,
   spatial_type = NULL,
-  has_re = FALSE
+  has_re = FALSE,
+  feat = list()
 )
 }
 \description{

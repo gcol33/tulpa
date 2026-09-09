@@ -1,5 +1,118 @@
 # tulpa 0.3.2
 
+## Front-door arguments the door documented and did not honour
+
+* **`re_prior$hyperprior` was rejected as an unknown key** (gcol33/tulpa#667),
+  though `?tulpa` documents it and the front door reads it: `.RE_PRIOR_KEYS` did
+  not list it and `tulpa_check_control()` runs first.
+* **`control$re_cov` was read only when a term carried a slope**
+  (gcol33/tulpa#668), so on a `(1 | g)` model any value -- including a typo --
+  was accepted, had no effect, and the fit silently conditioned at
+  `sigma_re = 1`. It is validated on every call now and, when the caller names
+  an integrator, honoured on any random-effect model; an unset knob still
+  redirects only for a slope, so the default path is unchanged.
+* **`sigma_re` was dropped in silence by agq / gibbs / hmc** (gcol33/tulpa#669)
+  while `?tulpa` promised those backends warn. The warning reads one
+  registry-derived list of the backends that DETERMINE the RE scale -- by
+  integrating, sampling or maximizing over it -- so the doc and the code have a
+  single referent.
+* **`n_trials` was read differently by different doors** (gcol33/tulpa#677): a
+  scalar errored at the C++ boundary on `laplace` and was recycled on `mala` /
+  `imh_laplace`, and one handed to a non-binomial family was read by nothing at
+  all -- no signal for a user who meant a binomial and typed poisson. One R-side
+  check now recycles a scalar, refuses a wrong length, and refuses the argument
+  on a family that does not have denominators.
+* **Five front-door misuses surfaced an R internal naming no argument**
+  (gcol33/tulpa#679): `family = binomial()` gave "the condition has length > 1",
+  `mode = NULL` gave "argument is of length zero", a one-sided formula gave
+  "is.numeric(y) || is.integer(y) is not TRUE", and an empty `data` gave "no
+  non-missing arguments to max". A `stats::family()` object is now accepted --
+  a non-canonical link rides the name in the engine's own `<base>_<link>`
+  convention rather than being silently fitted at the canonical one -- and the
+  other four are named.
+* **`.zi_design()` detected random effects with a regex on deparsed code**
+  (gcol33/tulpa#680), which false-positives on a `|` inside a string literal and
+  whose `any()` was papering over a deparse that wraps a long line. It walks the
+  AST with `findbars()`, two hundred lines above in the same file.
+
+## Spec constructors: one check, one anchor
+
+* **`spatial_gp(sigma_prior_U =, sigma_prior_alpha =)` was accepted on the NNGP
+  branch and silently dropped** (gcol33/tulpa#700): only the HSGP branch
+  validated and stored them, and `.gp_sampler_spec()` hardcoded `(2.0, 0.05)`
+  against the engine's own `(1.0, 0.01)` -- one PC anchor with two defaults in
+  two files. The NNGP spec carries the anchors, the sampler reads them, and the
+  default is the engine's. **An NNGP fit under a sampler mode that did not set
+  the anchors moves from `P(sigma > 2) = 0.05` to `P(sigma > 1) = 0.01`**, which
+  is the prior `spatial_gp()`'s own argument defaults have always advertised.
+* **`spatial_multiscale(nu =)` was unvalidated** (gcol33/tulpa#701) while its
+  sibling rejected anything but 1.5 or 2.5, so an unsupported smoothness was
+  stored at construction and failed deep in the fit. `.check_matern_nu()` is the
+  shared check.
+* **The inline `temporal()` constructor ignored `shared = FALSE`**
+  (gcol33/tulpa#702) while its spatial twin warned -- the asymmetry
+  `.warn_nonshared()` was centralised to remove.
+
+## Build
+
+* `Rplots.pdf` is in `.Rbuildignore` (gcol33/tulpa#682). It is what a plotting
+  call in a non-interactive session leaves behind, so it reappears after any
+  `Rscript` or test-file run that draws, and `.gitignore` -- which is where it
+  was listed -- is not read by `R CMD build`.
+
+## The outer k-hat's tail is resolved once per fit, and every backend records it
+
+* **The joint path chose its proposal at the budget-stable tail and reported a
+  k-hat refitted at the published rule** (gcol33/tulpa#690), so
+  `control$k_samples` still moved the reported number -- the one property
+  gcol33/tulpa#631 exists to hold. `.k_dispatch()` resolves the held fraction
+  internally, and `.joint_pareto_uncertainty()` then re-fitted the shape at the
+  raw request, which is the published rule whenever the caller named nothing:
+  the reported k was a different quantile of the weight distribution from the
+  one the choice was made on. The joint driver resolves once at the top now and
+  hands the resolved value to every scorer and every re-fit. `.k_outer_tail_points()`
+  is idempotent and returns `NULL` at the reference budget, so a default fit is
+  unchanged.
+* **`by_arm_k` had the same split** (gcol33/tulpa#691), so a per-arm k-hat was
+  not comparable with the `pareto_k` printed beside it on the same fit.
+* **Three of the four backends recorded no tail size and raised no cap warning**
+  (gcol33/tulpa#692). `.tulpa_psis_k_uncertainty()` applies the 20% ceiling
+  silently, by design, so the bootstrap re-fits do not each warn -- and only the
+  joint driver said it once per fit, leaving a `control$k_tail_points` past the
+  ceiling reduced with no signal on the single-block, SPDE and RE-covariance
+  paths. `.k_tail_cap_warn()` is the shared warning, called once per fit by each
+  backend's attach point, and `.k_dispatch_report()` reports the tail it fitted
+  on, which every fit now carries as `pareto_k_tail_points`. The single-block
+  grid path also accepted a `tail_points` argument and dropped it, so an
+  explicit request never reached its scorer at all.
+
+## mode = "auto" never picks a backend that errors on the call that selected it
+
+* **The selector answered from the model's shape and could not see the per-call
+  features a backend refuses.** A backend now declares its restrictions in
+  `BACKEND_REGISTRY` -- the families it fits, whether it carries an offset, how
+  many random-effect terms its sweep updates -- and `.auto_backend_ok()` is the
+  one predicate the selector consults, reading those fields and the existing
+  registry-derived `.zi_backends()` / `.phi2_backends()` sets. Declaring a
+  restriction is a registry edit rather than another condition in the selector.
+* **Every random-effect formula was routed to `re_cov_gibbs`**
+  (gcol33/tulpa#666), which then refused an offset, weights, a `ziformula`, a
+  `phi2`, or a gamma / beta / t family at dispatch. Auto takes the exact debias
+  where it fits and falls through to `re_cov_nested` -- the deterministic
+  integration of the same covariance -- where it does not. A plain
+  `(1 | g)` model still gets the Gibbs debias, unchanged.
+* **A binomial areal model with two random intercepts was routed to the
+  Polya-Gamma spatial Gibbs sampler** (gcol33/tulpa#681), which updates one RE
+  block alongside the field and says so at dispatch, while
+  `mode = "nested_laplace"` fits the same model. The sweep's limit is
+  `max_re_terms` on its registry entry now.
+* **`temporal_gp()` and `temporal_multiscale()` had no auto branch at all**
+  (gcol33/tulpa#672): the selector has arms for rw1 / rw2 / ar1, so the fall
+  through redirected to nested Laplace, the one door that refuses a
+  continuous-time temporal field. They route to the exact ModelData sampler
+  they are wired for, the same way a spatially- or temporally-varying
+  coefficient already does.
+
 ## A reported diagnostic says what it is, and what it could not establish
 
 * **A VI fit's uncomputed Pareto k-hat read as a clean pass** (gcol33/tulpa#709).

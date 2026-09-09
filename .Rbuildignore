@@ -38,3 +38,5 @@
 ^.*\.done$
 ^\.Rprofile$
 ^man-roxygen$
+^Rplots\.pdf$
+^tests/testthat/Rplots\.pdf$

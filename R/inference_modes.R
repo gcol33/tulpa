@@ -161,6 +161,10 @@ BACKEND_REGISTRY <- list(
   ),
   gibbs = list(
     emits = "chain",
+    # The Polya-Gamma spatial sweep updates ONE random-intercept block
+    # alongside the field, so a second (1 | g) term is refused at dispatch and
+    # auto must not pick it for such a model (gcol33/tulpa#681).
+    max_re_terms = 1L,
     tier = "exact", input = "design", fitter = "tulpa_gibbs",
     families = c("binomial", "neg_binomial_2"),
     cabi = NULL,
@@ -172,7 +176,11 @@ BACKEND_REGISTRY <- list(
   re_cov_gibbs = list(
     emits = "chain",
     tier = "exact", input = "design", fitter = "tulpa_re_cov_gibbs",
-    families = NULL, cabi = NULL,
+    # The four restrictions its own dispatch enforces, declared here so the auto
+    # selector can see them: auto sent every RE-bearing formula straight to this
+    # backend, which then refused the call (gcol33/tulpa#666).
+    families = c("binomial", "poisson", "gaussian", "neg_binomial_2"),
+    carries_offset = FALSE, cabi = NULL,
     note = paste("Correlated random-slope term (1 + x | g): exact",
                  "Metropolis-within-Gibbs debias of the RE covariance Sigma.",
                  "Auto-selected from the Laplace path with control$re_cov = 'gibbs'")
@@ -688,7 +696,8 @@ select_inference_mode <- function(mode,
                                   has_latent = FALSE,
                                   spatial_type = NULL,
                                   temporal = NULL,
-                                  has_re = FALSE) {
+                                  has_re = FALSE,
+                                  feat = list()) {
 
   mode <- tolower(mode)
 
@@ -725,7 +734,7 @@ select_inference_mode <- function(mode,
   # is the router doing its job, not an override of anything the caller asked for.
   if (mode == "auto") {
     sel <- auto_select_mode(family, n_obs, has_spatial, has_temporal, has_latent, temporal,
-                            spatial_type, has_re = has_re)
+                            spatial_type, has_re = has_re, feat = feat)
     sel$requested <- "auto"
     sel$explicit  <- FALSE
     return(sel)
@@ -758,7 +767,12 @@ select_inference_mode <- function(mode,
 #'
 #' @keywords internal
 auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_latent, temporal = NULL,
-                             spatial_type = NULL, has_re = FALSE) {
+                             spatial_type = NULL, has_re = FALSE,
+                             feat = list()) {
+  # `feat` carries the per-call features a backend can refuse at dispatch; see
+  # .auto_backend_ok(). The `spatial` flag is set from has_spatial so a caller
+  # cannot pass the two inconsistently.
+  feat$spatial <- isTRUE(has_spatial)
 
   # Latent prior blocks (`latent(tgmrf(...))`) integrate their hyperparameters
   # via nested Laplace -- the designed Tier 2 hot path for latent Gaussian
@@ -786,6 +800,21 @@ auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_laten
     return(list(
       mode = "exact", backend = "hmc", tier = 1L, tier_name = "Exact",
       reason = sprintf("%s-varying coefficients (exact ModelData NUTS)", vc)
+    ))
+  }
+
+  # A continuous-time temporal GP and the multi-scale temporal field are
+  # sampler-path only: their hyperparameters are sampled jointly with the field
+  # and there is no nested-Laplace kernel laying a grid over a dense T x T
+  # Gaussian. auto used to fall through to the temporal branch below, which has
+  # arms for rw1 / rw2 / ar1 only, and tulpa() then redirected to nested Laplace
+  # -- the one door that refuses them (gcol33/tulpa#672).
+  t_type <- tolower((temporal$type %||% "")[1])
+  if (t_type %in% c("gp", "multiscale", "temporal_multiscale")) {
+    return(list(
+      mode = "exact", backend = "hmc", tier = 1L, tier_name = "Exact",
+      reason = sprintf("continuous-time temporal field (%s); exact ModelData NUTS",
+                       t_type)
     ))
   }
 
@@ -826,7 +855,7 @@ auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_laten
     # (the design-input Gibbs backend is redirected there), so Gibbs is reachable
     # from auto only when there is no temporal field.
     if (spatial_type %in% c("icar", "bym2", "rsr") && identical(fam_nm, "binomial") &&
-        !has_temporal) {
+        !has_temporal && .auto_backend_ok("gibbs", family, feat)) {
       return(list(
         mode = "exact", backend = "gibbs", tier = 1L, tier_name = "Exact",
         reason = sprintf("%s spatial model (binomial Polya-Gamma Gibbs)", spatial_type)
@@ -869,11 +898,24 @@ auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_laten
   # to 1, with a warning) when the caller names it directly; only the auto
   # default changes.
   if (has_re) {
-    return(list(
-      mode = "exact", backend = "re_cov_gibbs", tier = 1L, tier_name = "Exact",
-      reason = paste("random-effect term(s); RE covariance(s) integrated via",
-                     "exact Metropolis-within-Gibbs debias")
-    ))
+    # The exact debias first, the deterministic integration second: both infer
+    # the covariance, and the second is what carries an offset, a ziformula, a
+    # second dispersion and the families the Gibbs sweep does not.
+    if (.auto_backend_ok("re_cov_gibbs", family, feat)) {
+      return(list(
+        mode = "exact", backend = "re_cov_gibbs", tier = 1L, tier_name = "Exact",
+        reason = paste("random-effect term(s); RE covariance(s) integrated via",
+                       "exact Metropolis-within-Gibbs debias")
+      ))
+    }
+    if (.auto_backend_ok("re_cov_nested", family, feat)) {
+      return(list(
+        mode = "structured", backend = "re_cov_nested", tier = 2L,
+        tier_name = "Structured",
+        reason = paste("random-effect term(s); RE covariance(s) integrated via",
+                       "nested Laplace (the exact debias does not carry this call)")
+      ))
+    }
   }
 
   # Default: Tier 1 (Exact). Both MALA and NUTS (backend "hmc", via
@@ -884,6 +926,57 @@ auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_laten
     mode = "exact", backend = "mala", tier = 1L, tier_name = "Exact",
     reason = "default (MALA gradient sampler; mode = 'exact' selects NUTS)"
   ))
+}
+
+
+# Can `backend` take this CALL, not just this model?
+#
+# `backend_supports_family()` answers the family half. The other half is the
+# per-call features a backend refuses at dispatch -- an offset, weights, a
+# ziformula, a second dispersion, more random-effect terms than its sweep
+# updates -- and the auto selector could not see any of them, so it picked
+# backends that then errored on the very call that selected them
+# (gcol33/tulpa#666, #681). Every restriction is read from the registry or from
+# the registry-derived capability sets, never restated here, so declaring one is
+# a registry edit rather than another condition in the selector.
+#
+# `feat` is a named list of logical flags plus `n_re_terms`; an absent flag is
+# FALSE.
+#' @keywords internal
+.auto_backend_ok <- function(backend, family, feat = list()) {
+  if (!backend_supports_family(backend, family)) return(FALSE)
+  reg <- BACKEND_REGISTRY[[backend]]
+  if (is.null(reg)) return(FALSE)
+  on <- function(k) isTRUE(feat[[k]])
+  if (on("offset") && identical(reg$carries_offset, FALSE)) return(FALSE)
+  if (on("ziformula") && !backend %in% .zi_backends()) return(FALSE)
+  if (on("phi2") && !backend %in% .phi2_backends()) return(FALSE)
+  # Weights run through a log-posterior sampler, or through the non-spatial
+  # Laplace kernel; the spatial qualification is a property of the CALL, so it
+  # travels in `feat` rather than in the registry.
+  if (on("weights") &&
+      !(identical(reg$input, "logpost") ||
+        (identical(backend, "laplace") && !on("spatial")))) return(FALSE)
+  mx <- reg$max_re_terms
+  if (!is.null(mx) && isTRUE((feat$n_re_terms %||% 0L) > mx)) return(FALSE)
+  TRUE
+}
+
+
+# Backends that DETERMINE the random-effect scale rather than conditioning on a
+# supplied one.
+#
+# `?tulpa` says a `sigma_re` handed to one of these is ignored "with a warning",
+# and only the EB and random-slope routes warned: agq / gibbs / hmc dropped the
+# value silently (gcol33/tulpa#669). Kept as one list, read by the warning, so
+# the doc's claim has a single referent.
+#' @keywords internal
+.re_scale_estimating_backends <- function() {
+  c("eb", "agq", "gibbs", "re_cov_nested", "re_cov_gibbs", "re_aghq",
+    names(BACKEND_REGISTRY)[vapply(
+      BACKEND_REGISTRY,
+      function(b) identical(b$input, "modeldata"),
+      logical(1))])
 }
 
 

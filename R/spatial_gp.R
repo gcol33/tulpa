@@ -1,3 +1,22 @@
+# The Matern smoothness the NNGP paths are wired for.
+#
+# `gp_cov_type()` maps nu to one kernel code and rejects anything else, so a
+# constructor that stores an unsupported nu only defers the error into the fit.
+# `spatial_gp()` checked it and its two siblings did not, so
+# `spatial_multiscale(nu = 7)` was accepted at construction (gcol33/tulpa#701).
+#' @keywords internal
+.check_matern_nu <- function(nu, where = "Matern NNGP") {
+  if (!is.numeric(nu) || length(nu) != 1 || is.na(nu) || nu <= 0) {
+    stop("`nu` must be a positive number for Matern covariance", call. = FALSE)
+  }
+  if (!isTRUE(all.equal(nu, 1.5)) && !isTRUE(all.equal(nu, 2.5))) {
+    stop(where, " supports nu in {1.5, 2.5}; got nu = ", format(nu),
+         ". Use nu = 1.5 or 2.5, or cov = \"exponential\" for nu = 0.5.",
+         call. = FALSE)
+  }
+  invisible(nu)
+}
+
 #' Gaussian process spatial structure (NNGP)
 #'
 #' @description
@@ -48,6 +67,7 @@
 #' spatial_gp(~ lon + lat, cov = "matern", nu = 1.5)
 #'
 #' @export
+
 spatial_gp <- function(coords,
                        approx = c("nngp", "hsgp"),
                        cov = c("exponential", "matern"),
@@ -108,19 +128,7 @@ spatial_gp <- function(coords,
       class = c("tulpa_hsgp", "tulpa_spatial", "list")))
   }
 
-  # Validate nu for Matern. The NNGP fit path is wired only for nu in
-  # {1.5, 2.5} (gp_cov_type), so reject the rest here rather than
-  # deep in the fit. nu = 0.5 is the exponential kernel -- use cov = "exponential".
-  if (cov == "matern") {
-    if (!is.numeric(nu) || length(nu) != 1 || nu <= 0) {
-      stop("`nu` must be a positive number for Matern covariance", call. = FALSE)
-    }
-    if (!isTRUE(all.equal(nu, 1.5)) && !isTRUE(all.equal(nu, 2.5))) {
-      stop("Matern NNGP supports nu in {1.5, 2.5}; got nu = ", format(nu),
-           ". Use nu = 1.5 or 2.5, or cov = \"exponential\" for nu = 0.5.",
-           call. = FALSE)
-    }
-  }
+  if (cov == "matern") .check_matern_nu(nu)
 
   # Validate nn
   if (!is.numeric(nn) || length(nn) != 1 || nn < 1) {
@@ -130,12 +138,20 @@ spatial_gp <- function(coords,
 
   if (isFALSE(shared)) .warn_nonshared("spatial effects")
 
+  # The door accepts these on either branch; only the HSGP branch stored them,
+  # so an NNGP user's anchors were neither used nor refused and the sampler
+  # applied a hardcoded pair of its own (gcol33/tulpa#700).
+  .check_pc_anchors(sigma_prior_U, sigma_prior_alpha,
+                    "sigma_prior_U", "sigma_prior_alpha", "gp()")
+
   structure(
     list(
       type = "gp",
       coord_vars = coord_vars,
       cov = cov,
       nu = if (cov == "matern") nu else NULL,
+      sigma2_prior_U = as.numeric(sigma_prior_U),
+      sigma2_prior_alpha = as.numeric(sigma_prior_alpha),
       nn = nn,
       shared = shared,
       scale_coords = scale_coords,
@@ -359,6 +375,7 @@ spatial_multiscale <- function(coords,
 
   approx <- match.arg(approx)
   cov <- match.arg(cov)
+  if (cov == "matern") .check_matern_nu(nu, "Matern multi-scale NNGP")
   sampler <- match.arg(sampler)
 
   coord_vars <- .parse_coord_spec(coords, "multiscale()")

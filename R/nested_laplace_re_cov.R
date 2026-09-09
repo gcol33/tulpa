@@ -1919,7 +1919,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   # bit-for-bit unchanged whether or not the diagnostic is requested.
   # A decline says which one it was rather than a bare NA.
   pareto_k <- NA_real_; k_is_ess <- NA_real_; k_source <- NA_character_
-  k_first  <- NA_real_
+  k_first  <- NA_real_; k_tp <- NA_integer_
   k_declined <- if (!isTRUE(diagnose_k)) .k_decline_label(.k_decline("not_requested"))
                 else .k_decline_label(.k_decline("no_varying_axis",
                                                  "no free covariance coordinate"))
@@ -1938,6 +1938,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
       pareto_k <- kd$pareto_k; k_is_ess <- kd$is_ess
       k_source   <- kd$proposal_source %||% NA_character_
       k_first    <- kd$first_pass_k %||% NA_real_
+      k_tp       <- kd$tail_points %||% NA_integer_
       k_declined <- .k_reason_of(kd)
     }
   }
@@ -1954,6 +1955,9 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     pareto_k_declined = k_declined,
     pareto_k_proposal_source = k_source,
     pareto_k_first_pass = k_first,
+    # The GPD tail the shape was fitted on. A raised or capped tail was
+    # invisible on this path (gcol33/tulpa#692).
+    pareto_k_tail_points = k_tp,
     pareto_k_scope  = "outer (hyperparameter) Gaussian proposal",
     # Per-node random-effect posterior: mode and marginal variance of every
     # (term, group, coefficient), one row per integration node. ranef() mixes

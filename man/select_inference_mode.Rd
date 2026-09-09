@@ -13,7 +13,8 @@ select_inference_mode(
   has_latent = FALSE,
   spatial_type = NULL,
   temporal = NULL,
-  has_re = FALSE
+  has_re = FALSE,
+  feat = list()
 )
 }
 \arguments{

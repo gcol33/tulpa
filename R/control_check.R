@@ -192,8 +192,23 @@ tulpa_check_control <- function(control, allowed, where) {
   keys
 })
 
+# The RE-covariance integrator a call asks for, validated once.
+#
+# Read at two sites with two different defaults, so the value is resolved here
+# rather than `match.arg`-ed at each (gcol33/tulpa#668). Validation is
+# unconditional: a typo errors even where the caller's model would not have been
+# redirected, instead of being accepted and ignored.
+#' @keywords internal
+.re_cov_method <- function(control, default) {
+  match.arg(control$re_cov %||% default, c("nested", "gibbs", "aghq"))
+}
+
 # Valid keys for the `re_prior = list()` statistical argument on tulpa(): the
 # random-effect / variance-component hyperpriors that used to hide in control.
 #' @keywords internal
+# `hyperprior` was documented in ?tulpa and read by the front door
+# (R/tulpa.R, the re_cov_nested / eb branches) and omitted here, so
+# tulpa_check_control() -- which runs first -- rejected the documented key
+# (gcol33/tulpa#667).
 .RE_PRIOR_KEYS <- c("prior_sigma", "eta", "prior_df", "prior_scale",
-                    "prior_sigma_scale", "sigma_re_scale")
+                    "prior_sigma_scale", "sigma_re_scale", "hyperprior")

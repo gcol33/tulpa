@@ -838,6 +838,9 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   res$pareto_k_is_ess <- kd$is_ess
   res$pareto_k_proposal_source <- kd$proposal_source %||% NA_character_
   res$pareto_k_first_pass <- kd$first_pass_k %||% NA_real_
+  # The GPD tail the shape was fitted on. A raised or capped tail was
+  # invisible on this path (gcol33/tulpa#692).
+  res$pareto_k_tail_points <- kd$tail_points %||% NA_integer_
   .k_attach_declined(res, kd)
 }
 

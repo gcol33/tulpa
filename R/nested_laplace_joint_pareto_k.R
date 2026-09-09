@@ -985,19 +985,21 @@
     prep <- .joint_pareto_prepare(res, refit_log_marginal, n_samples, proposal)
     if (.k_is_decline(prep)) return(na_out(prep))
 
-    # Resolve the GPD tail-size request once: an explicit
-    # `k_tail_points` beyond the 20%-of-draws ceiling is capped, with a single
-    # user-facing warning HERE so the per-replicate bootstrap re-fits stay silent.
+    # Resolve the GPD tail-size request ONCE, here, and hand the resolved value
+    # to every scorer and every re-fit below (gcol33/tulpa#690, #691).
+    #
+    # `.k_dispatch()` resolves the budget-stable tail size internally, so it
+    # CHOSE its proposal at the held fraction; `.joint_pareto_uncertainty()`
+    # then re-fitted the shape at the raw request, which is the published rule
+    # whenever the caller named nothing. The reported k was therefore a
+    # different quantile of the weight distribution from the one the choice was
+    # made on, and it moved with `control$k_samples` again -- the one property
+    # gcol33/tulpa#631 exists to hold. `.k_outer_tail_points()` is idempotent,
+    # so passing the resolved value back into `.k_dispatch()` is a no-op, and at
+    # the reference budget it returns NULL and every number here is unchanged.
     tp_req <- if (is.null(k_tail_points)) NA_integer_ else as.integer(k_tail_points)
-    if (is.finite(tp_req)) {
-        cap <- as.integer(floor(0.2 * as.integer(n_samples)))
-        if (tp_req > cap) {
-            warning(sprintf(paste0(
-                "k_tail_points = %d exceeds the 20%% PSIS tail cap; using %d ",
-                "instead. Increase control$k_samples, not control$k_bootstrap, ",
-                "to obtain more tail information."), tp_req, cap), call. = FALSE)
-        }
-    }
+    .k_tail_cap_warn(k_tail_points, n_samples)
+    k_tail_points <- .k_outer_tail_points(n_samples, k_tail_points)
 
     .preserve_seed_in_frame()
 

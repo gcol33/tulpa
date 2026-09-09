@@ -63,6 +63,12 @@
          "slopes, e.g. ~ 1 + x || time.", call. = FALSE)
   }
 
+  # The same input warned or stayed silent depending only on which inline field
+  # constructor it went to: spatial() called this and its temporal twin did not
+  # (gcol33/tulpa#702), which is the asymmetry the helper was centralised to
+  # remove.
+  if (isFALSE(shared)) .warn_nonshared("temporal effects")
+
   structure(
     list(
       type          = "temporal_field",

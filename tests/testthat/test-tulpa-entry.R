@@ -58,12 +58,20 @@ test_that("tulpa(mode = 'ess'/'hmc') fits a fixed-effect GLM end to end", {
   n <- 400L; x <- rnorm(n)
   d <- data.frame(y = rbinom(n, 1L, plogis(-0.3 + 0.8 * x)), x = x)
   for (m in c("ess", "hmc")) {
-    fit <- tulpa(y ~ x, d, family = "binomial", mode = m,
-                 control = list(n_iter = 1000L, warmup = 500L, n_chains = 2L))
+    ctl <- list(n_iter = 1000L, warmup = 500L)
+    # n_chains is read by the NUTS kernel only; every other backend returns one
+    # set of draws and now refuses it rather than ignoring it
+    # (gcol33/tulpa#704).
+    if (m == "hmc") ctl$n_chains <- 2L
+    fit <- tulpa(y ~ x, d, family = "binomial", mode = m, control = ctl)
     expect_s3_class(fit, "tulpa_fit")
     expect_equal(fit$backend, m)
     expect_true(all(is.finite(fit$means)))
   }
+  expect_error(
+    tulpa(y ~ x, d, family = "binomial", mode = "ess",
+          control = list(n_iter = 100L, warmup = 50L, n_chains = 2L)),
+    "only read by the NUTS")
 })
 
 test_that("correlated random slopes: logpost path works, Laplace path integrates Sigma", {
