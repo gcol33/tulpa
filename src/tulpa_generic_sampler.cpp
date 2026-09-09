@@ -462,6 +462,10 @@ Rcpp::List cpp_tulpa_fit_generic(
         Rcpp::Named("accept_prob") = Rcpp::wrap(result.accept_prob),
         Rcpp::Named("divergent") = Rcpp::wrap(result.divergent),
         Rcpp::Named("treedepth") = Rcpp::wrap(result.treedepth),
+        // Post-warmup saturation count. Written and checkpointed but read by
+        // nothing until gcol33/tulpa#703.
+        Rcpp::Named("n_max_treedepth") = result.n_max_treedepth,
+        Rcpp::Named("n_softabs_rescued") = result.n_softabs_rescued,
         Rcpp::Named("sampler") = result.sampler.empty() ? "nuts" : result.sampler,
         Rcpp::Named("epsilon") = result.epsilon,
         // Warm-start / resume outputs

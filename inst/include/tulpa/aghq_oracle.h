@@ -30,6 +30,20 @@
 
 namespace tulpa {
 
+// LAYOUT RULE: a consumer package subclasses this in its own src/ and the
+// engine calls through the vtable, so the ORDER of the virtuals is exported
+// layout under the same rule as a struct field. Adding or reordering one shifts
+// every later slot for a consumer that was not rebuilt, and check_abi_version()
+// cannot see it because the two version numbers still agree. New virtuals go at
+// the END, and any change here bumps TULPA_ABI_VERSION.
+//
+// This was violated once: commit 6c0cad5 inserted has_theta_score() between
+// theta_score() and theta_obs_info() with the version left at 40, so a
+// consumer built before it would have had theta_obs_info() land on
+// has_theta_score() (gcol33/tulpa#689). The ABI has since moved 40 -> 41 -> 42
+// -> 43 for unrelated reasons, so no such build can still bind; the rule is
+// written down here because nothing in this header said a virtual was an ABI
+// event.
 struct REGroupOracle {
     int n_groups = 0;   // number of groups G
     int d        = 0;   // RE dimension per group (sum of block n_coefs)

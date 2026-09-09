@@ -1,5 +1,66 @@
 # tulpa 0.3.2
 
+## Counters that counted the wrong thing, and a rescue that erased what it rescued
+
+* **A SoftAbs-rescued divergence was erased from the report**
+  (gcol33/tulpa#695). On a post-warmup divergence the chain re-runs the
+  trajectory under a frozen SoftAbs metric at up to three halved step sizes and,
+  on the first non-divergent retry, cleared `divergent` -- so the event never
+  reached `result.divergent[]`, `n_divergent(fit)` or `diagnostic_summary()`,
+  and its only trace was a `verbose` print. The flag stays TRUE (the trajectory
+  the chain was asked for did diverge) and the rescue is reported beside it as
+  `n_softabs_rescued`, so a reader can tell a rescued divergence from one that
+  was not.
+  The retry's other half is a real limitation and is now named as one: its
+  transition kernel is chosen CONDITIONAL on the first trajectory's outcome and
+  repeats until it succeeds, with no delayed-rejection correction, so the
+  mixture is not invariant for the target. It is opt-in (`riemannian = 1`) and
+  says so; the documented `riemannian == -1` "auto for BYM2/ICAR + dense mass"
+  branch is deleted, because no caller could select it and an auto path into a
+  non-invariant kernel is not something to leave one flag value away.
+* **`n_max_treedepth` counted warmup iterations and reached no reader**
+  (gcol33/tulpa#703). Treedepth saturation while `epsilon` is still adapting is
+  normal, so the count was inflated by design; it is post-warmup now, summed
+  over chains, and returned to R beside the per-sample `treedepth` vector that
+  covers the same iterations.
+* Both counters ride the chain checkpoint, so its payload-layout tag moves
+  `TLPACKP5` -> `TLPACKP6`: an existing chain-checkpoint file errors and points
+  at a fresh path rather than being replayed field-by-field into the new layout.
+
+## Dead code that could still be revived wrong
+
+* **`NoCheapEval` returned a `LaplaceResult` with three indeterminate fields**
+  (gcol33/tulpa#705): it default-constructs one and sets `log_marginal` alone,
+  and `LaplaceResult` declared no initializers, so `log_det_Q`, `n_iter` and
+  `converged` were read from whatever the stack held. Latent today --
+  `prune_active` requires `cheap_eval_supplied`, which is false exactly when
+  `CheapEval` is `NoCheapEval` -- and closed by in-class initializers, which
+  every other construction site overwrites.
+* **Four fixed-effect prior helpers were dead and the driver contract named two
+  of them** (gcol33/tulpa#706). `add_re_beta_priors` hardcoded `BetaPrior()`, so
+  reviving it would have silently dropped a caller-supplied `beta_prior`; every
+  prior on that path routes through `spec_inner_solve`. The helpers and the two
+  sink accessors that existed only for them are gone, and
+  `nested_laplace_multi.h`'s contract says where the priors actually come from.
+* **`REGroupOracle`'s LAYOUT RULE is written down** (gcol33/tulpa#689). A
+  consumer subclasses it and the engine calls through the vtable, so the ORDER
+  of the virtuals is exported layout under the same rule as a struct field --
+  and `check_abi_version()` cannot see a violation, because the two version
+  numbers still agree. Commit `6c0cad5` inserted `has_theta_score()` mid-vtable
+  with the version left at 40; the ABI has since moved to 43 for unrelated
+  reasons, so no such build can still bind, and the rule is now stated in the
+  header that exports it.
+
+## Reporting and comments
+
+* The single-block `field_coef` branch of the placement pilot recorded a moved
+  alpha axis and not a left-alone one, so `outer_grid_pilot$axes_kept`
+  under-reported (gcol33/tulpa#707) -- an unrecorded decline that a performance
+  knob changes, which is the shape `axes_kept` exists to prevent.
+* `.CONTROL_KEYS$tulpa`'s comment described key sets that no longer carry the
+  names it named (gcol33/tulpa#708). The subtraction is defensive, not active,
+  and the comment says so.
+
 ## Front-door arguments the door documented and did not honour
 
 * **`re_prior$hyperprior` was rejected as an unknown key** (gcol33/tulpa#667),

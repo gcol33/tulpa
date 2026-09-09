@@ -14,6 +14,7 @@
   result.n_sample = n_sample;
   result.chain_id = chain_id;
   result.n_max_treedepth = 0;
+  result.n_softabs_rescued = 0;
 
   // Collapsed GP: allocate w* storage
   if (data.gp_collapsed && data.has_gp) {
@@ -228,18 +229,22 @@
   int nuts_probe_maxd = 0;  // Count of maxd hits in probe window
   bool nuts_probing = use_nuts && (L == 0);  // Only probe when using NUTS by default
 
-  // SoftAbs divergence retry: compute local Hessian-based metric on divergent
-  // trajectories and retry. Only active for BYM2/ICAR + dense mass (auto) or
-  // when explicitly forced on.
-  bool use_softabs_retry = false;
-  if (riemannian == 1) {
-    use_softabs_retry = true;
-  } else if (riemannian == -1) {
-    // Auto: enable for BYM2/ICAR with dense mass
-    use_softabs_retry = (mass.type == MassMatrixType::DENSE &&
-                         (data.spatial_type == SpatialType::BYM2 ||
-                          data.spatial_type == SpatialType::ICAR));
-  }
+  // SoftAbs divergence retry: on a post-warmup divergence, re-run the
+  // trajectory under a frozen Hessian-based metric at up to three halved step
+  // sizes and keep the first non-divergent one.
+  //
+  // APPROXIMATE, and opt-in only for that reason (gcol33/tulpa#695). The
+  // transition kernel is chosen CONDITIONAL on the first trajectory's outcome
+  // and the retry repeats until it succeeds, with no delayed-rejection
+  // correction, so the resulting mixture is not invariant for the target. Every
+  // production entry passes riemannian = 0 and does not reach it; a caller who
+  // sets riemannian = 1 is asking for the rescue and gets a chain whose
+  // stationary distribution is not exactly the posterior.
+  //
+  // The `riemannian == -1` "auto for BYM2/ICAR + dense mass" branch is gone: no
+  // caller could select it, and an auto path into a non-invariant kernel is not
+  // something to leave one flag value away.
+  bool use_softabs_retry = (riemannian == 1);
   // Disable if not using NUTS (SoftAbs retry only makes sense with NUTS)
   if (!use_nuts) use_softabs_retry = false;
   int softabs_retries = 0;

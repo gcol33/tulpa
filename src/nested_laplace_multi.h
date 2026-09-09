@@ -7,12 +7,13 @@
 // The driver assembles the inner solve at each outer-grid point k as:
 //
 //   eta_i  = X_i β + RE_g(i) + Σ_b d_fac_b(k) * x[start_b + idx_b(i) - 1]
-//   grad/H from the spec solver's observation scatter (β, RE)
+//   grad/H from the spec solver's observation scatter (β, RE), which carries
+//          the fixed-effect and RE-group priors itself
 //          + accumulate_latent_cross_terms (latent, latent x β, latent x RE)
 //          + Σ_b add_prior_b(k)
-//          + add_re_beta_priors
 //   center : each block's centerer applied to its sub-vector
-//   log_prior = Σ_b log_prior_b(k) + compute_log_prior_re
+//   log_prior = Σ_b log_prior_b(k), the RE normalizer coming from the same
+//          spec solve
 //
 // Per-block prep is invoked once at grid point k before the inner solve; if
 // any block reports infeasible (e.g. proper CAR with rho outside the PD

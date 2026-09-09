@@ -174,12 +174,18 @@ tulpa_check_control <- function(control, allowed, where) {
   # modeldata routes, so its surface is the union plus its own
   # backend-selection and conditioning knobs.
   # tulpa()'s control surface is the union of the backends it dispatches, minus
-  # the statistical hyperpriors -- those now ride the `re_prior` / `beta_prior`
+  # the statistical hyperpriors -- those ride the `re_prior` / `beta_prior`
   # signature arguments (design principle 6: statistical args in the signature,
-  # tuning knobs in control). The re_cov_nested / re_cov_gibbs sets still list
-  # prior_sigma / eta / prior_df / prior_scale for their DIRECT callers; the
-  # union drops them so tulpa(control = list(prior_sigma = )) errors and points
-  # the user to re_prior.
+  # tuning knobs in control), so `tulpa(control = list(prior_sigma = ))` errors
+  # and points the user at `re_prior`.
+  #
+  # The subtraction is defensive rather than active: `prior_sigma` / `eta` /
+  # `prior_df` / `prior_scale` are SIGNATURE arguments of the re_cov fitters,
+  # not control knobs, so no key set in the union carries them today and the
+  # setdiff removes nothing. It stays so that adding one to a backend's set
+  # cannot re-open a door on tulpa()'s. (The comment used to say those sets
+  # "still list" them, which sent the next reader looking for key sets that do
+  # not exist -- gcol33/tulpa#708.)
   .tulpa_hyperprior_keys <- c("prior_sigma", "eta", "prior_df", "prior_scale",
                               "sigma_re_scale", "prior_sigma_scale")
   keys$tulpa <- sort(unique(setdiff(c(

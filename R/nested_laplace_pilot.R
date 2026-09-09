@@ -221,9 +221,15 @@
         for (k in seq_along(responses)) {
             r <- .nl_pilot_field_coef(responses[[k]], n)
             responses[[k]] <- r$arm
-            if (isTRUE(r$moved)) {
-                moved <- c(moved, paste0("alpha.", names(responses)[k] %||% k))
-            }
+            # Both outcomes, the way the copy branch above records them: an
+            # axis the pilot leaves whole is what `axes_kept` exists to report,
+            # and the single-block field_coef branch recorded only the moved
+            # case, so an alpha axis left at full resolution left no trace
+            # (gcol33/tulpa#707). An unrecorded decline that a performance knob
+            # changes is gcol33/tulpa#317's defect again.
+            lbl <- paste0("alpha.", names(responses)[k] %||% k)
+            if (isTRUE(r$moved)) moved <- c(moved, lbl)
+            else kept <- c(kept, lbl)
         }
     }
 
