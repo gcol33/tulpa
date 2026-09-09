@@ -1,5 +1,73 @@
 # tulpa 0.3.2
 
+## The control surface: one check per door, one home per default
+
+* **`fit_st_nested()` had no control-key check** (gcol33/tulpa#673), so a
+  misspelling (`rho_spatail`, `n_thread`) was accepted in silence and the fit
+  ran at the default. It calls `tulpa_check_control()` against a
+  `.CONTROL_KEYS$st_nested` set like every other nested door now, and the two
+  knobs it reads without documenting them -- `rho_spatial` and `within_cell` --
+  are in the `@param control` block. `rho_spatial`'s default moves out of an
+  inline literal into `.NL_ST_GRID`, where the rest of that driver's grid
+  defaults already live.
+* **`control$sigma_eps` was a second spelling of `phi`, in the other
+  convention** (gcol33/tulpa#675): an SD against the residual VARIANCE every
+  other door reads. It is refused by name, with a message saying which argument
+  to use, rather than arriving as a generic "unknown control knob".
+  `control$marginal` stays where it is and is now documented for what it is: the
+  one statistical knob in `control`, scoped to `mode = "eb"`, turning on the
+  marginal-Laplace covariance correction. (Promoting it to a `tulpa()` formal is
+  a live option; it would be a formal that means nothing on fifteen of sixteen
+  backends, so it is left as a documented exception.)
+* **The `tulpa()` dispatch restated defaults the backend signatures already
+  carry** (gcol33/tulpa#676) -- mala's `n_iter` / `warmup` / `epsilon`,
+  pathfinder's `n_draws`, imh's `n_iter` / `scale`, agq's `n_quad` /
+  `sigma_init` / `max_iter` / `tol` -- so the same number lived in two files and
+  a bump on one side would have been invisible from the other, which is the
+  drift gcol33/tulpa#632 measured on `k_samples`. A knob the caller did not set
+  is omitted (`.drop_null()`), so the fitter's own formal supplies it.
+* **Doc drift in `?tulpa` and `?tulpa_nested_laplace`** (gcol33/tulpa#678,
+  gcol33/tulpa#674): `sigma_re` said "message" where the code warns and listed
+  the backends that ignore it incompletely; the latent-block section claimed at
+  most one `(1 | g)` term may accompany the blocks, which is the Polya-Gamma
+  spatial Gibbs sampler's restriction and not the nested path's;
+  `@param temporal` listed three of the five temporal constructors;
+  `@param control` named four knobs of the roughly hundred accepted;
+  `screen_iters` was documented as `5L` against an engine default of `2L`
+  (gcol33/tulpa#640 measured the depth down); and `checkpoint` plus the four
+  `progress*` keys were accepted and undocumented.
+
+## One log-marginal convention, and one entry bundle
+
+* **The two grid-entry families reported `log_marginal` on two conventions**
+  (gcol33/tulpa#698). `log_prior_per_arm_re()` dropped the weak default
+  fixed-effect prior -- on the ground that a joint log-marginal should stay
+  comparable to two single-arm fits -- while the single-arm spec path
+  (`laplace_spec.cpp`) included it. icar / bym2 / car_proper / temporal route to
+  the spec path and nngp / hsgp / the five `st_*` to the joint one, so
+  `compare_models()` or `logLik()` across the two families read a constant
+  offset as evidence. It also left the joint objective missing a term its own
+  gradient and Hessian applied, which is the exact failure the informative-prior
+  note beside it describes.
+  **The mode does not move** -- the gradient already carried the term -- and
+  softmax cell weights within a fit are unchanged, because the shift is common
+  to every cell. What moves is the reported `log_marginal` on the joint-path
+  entries, by the weak prior's density and normalizer at the mode. The two
+  families now agree cell for cell on the same ICAR model
+  (`test-entry-conventions.R`).
+* **`cpp_nested_laplace_spde` was the one grid entry outside
+  `TULPA_NL_ENTRY_INPUTS`** (gcol33/tulpa#699). It hand-rolled its driver call,
+  so it hardcoded `prune_tol = 0.0` and passed neither the subspace debias, CILA
+  nor a screen depth: `control$prune` / `$prune_tol` / `$prune_log_gap` /
+  `$screen_iters` / `$fitted_var` and the debias were all unreachable on the
+  SPDE grid, and a knob added to the bundle would not have reached it either --
+  the drift `nl_entry_inputs.h`'s own header says the bundle exists to prevent,
+  and the same class as gcol33/tulpa#639's hardcoded-off screen. It goes through
+  the shared bundle and `nl_run_joint_sparse_entry()` now, `fit_spde()` resolves
+  the knobs exactly as `tulpa_nested_laplace()` does, and a test asserts all
+  twelve entries carry them. Its `n_trials` argument is renamed `n`, the name
+  every other grid entry uses.
+
 ## Counters that counted the wrong thing, and a rescue that erased what it rescued
 
 * **A SoftAbs-rescued divergence was erased from the report**

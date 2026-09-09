@@ -686,7 +686,12 @@
     tau_lower  = 0.25,
     tau_upper  = 16,
     rho_lower  = 0.1,
-    rho_upper  = 0.9
+    rho_upper  = 0.9,
+    # The proper-CAR mixing value the `car_proper` spatial axis is HELD at --
+    # a one-point axis on this driver, so the value is part of the model. It was
+    # an inline literal in fit_st_nested() (gcol33/tulpa#673); a selector gets
+    # one default, in one place.
+    rho_spatial = 0.9
 )
 
 .nl_st_default <- function(par) {

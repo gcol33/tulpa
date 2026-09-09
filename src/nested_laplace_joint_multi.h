@@ -20,7 +20,8 @@
 //           arm_scale_b(k_arm, k) * d_fac_b(k) * delta_b
 //           to preserve eta after centering rank-deficient blocks.
 //
-//   log_prior: Σ_b log_prior_b(k) + log_prior_per_arm_re(x, parsed)
+//   log_prior: Σ_b log_prior_b(k) + log_prior_per_arm_re(x, parsed),
+//              which carries every beta / RE term the gradient does
 //
 // Per-block prep is invoked once at grid point k before the inner solve. If
 // any block reports infeasible (e.g. proper-CAR with rho outside the PD

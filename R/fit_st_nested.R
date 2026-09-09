@@ -75,7 +75,11 @@
 #'   exactly as specified -- the per-axis policy names
 #'   [tulpa_nested_laplace()] takes are refused here with an error, since this
 #'   driver recentres on the grid's collapsed-edge regime rather than on a
-#'   per-axis rail).
+#'   per-axis rail), `rho_spatial` (the proper-CAR mixing value the
+#'   `car_proper` axis is held at, default `.NL_ST_GRID$rho_spatial`) and
+#'   `within_cell` (`"box_uniform"` / `"chord"`, the within-cell construction
+#'   the reported per-axis intervals are read with; defaults to
+#'   `.NL_DIAG$within_cell`, as on every other nested door).
 #'
 #'   The `(tau_lower, tau_upper)` span (and, for `ar1`, `(rho_lower,
 #'   rho_upper)`) is a starting axis, not a hard ceiling:
@@ -142,6 +146,10 @@ fit_st_nested <- function(y, X, spatial_idx, adjacency, temporal_idx, n_times,
                           cyclic = FALSE,
                           re_idx = NULL, n_re_groups = 0L, sigma_re = 1.0,
                           control = list()) {
+  # Every other nested door checks its control keys; this one did not, so a
+  # misspelling (`rho_spatail`, `n_thread`) was accepted in silence and the fit
+  # ran at the default (gcol33/tulpa#673).
+  tulpa_check_control(control, .CONTROL_KEYS$st_nested, "fit_st_nested")
   spatial_type  <- match.arg(spatial_type)
   temporal_type <- match.arg(temporal_type)
   X <- as.matrix(X)
@@ -205,7 +213,9 @@ fit_st_nested <- function(y, X, spatial_idx, adjacency, temporal_idx, n_times,
   )
   # bym2 needs a scale_factor; car_proper an rho_spatial_grid. Keep to the
   # kernels' documented defaults for those extra axes here (icar is the base).
-  rho_spatial_val <- control$rho_spatial %||% 0.9
+  # The default is one registry entry, not a literal here: a selector gets one
+  # default, in one place (gcol33/tulpa#673).
+  rho_spatial_val <- control$rho_spatial %||% .nl_st_default("rho_spatial")
   if (spatial_type == "car_proper") {
     kargs$rho_spatial_grid <- rep(rho_spatial_val, nrow(grid))
   }

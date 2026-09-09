@@ -392,7 +392,7 @@ Rcpp::List cpp_nested_laplace_st_nngp(
 
 Rcpp::List cpp_nested_laplace_spde(
     Rcpp::NumericVector y,
-    Rcpp::IntegerVector n_trials,
+    Rcpp::IntegerVector n,
     Rcpp::NumericMatrix X,
     Rcpp::NumericVector re_idx,
     int n_re_groups,
@@ -421,7 +421,12 @@ Rcpp::List cpp_nested_laplace_spde(
     std::string checkpoint_path,
     Rcpp::Nullable<Rcpp::NumericVector> offset_nullable,
     bool compute_skew,
-    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx,
+    Rcpp::Nullable<Rcpp::List> debias,
+    Rcpp::Nullable<Rcpp::List> cila,
+    double prune_tol,
+    int screen_iters,
+    bool compute_fitted_var
 );
 
 #endif // TULPA_NESTED_LAPLACE_ENTRIES_H

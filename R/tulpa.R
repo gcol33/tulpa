@@ -1001,23 +1001,26 @@
              "`beta_prior`, or use mode = 'laplace' for a Gaussian prior.",
              call. = FALSE)
       }
-      # phi is the residual variance for gaussian; sigma_eps is its sd (binomial
-      # / poisson ignore it). control$sigma_eps overrides.
-      return(list(
+      # `phi` is the residual VARIANCE at every door (gcol33/tulpa#560);
+      # agq_fit() takes the SD. One conversion, no second spelling:
+      # `control$sigma_eps` used to override here, which put the same quantity
+      # in `control` under a second name AND in the other convention
+      # (gcol33/tulpa#675). It is refused by name below.
+      return(.drop_null(list(
         y          = bundle$y,
         X          = bundle$X,
         group      = as.integer(re[[1]]$group_idx),
         n_groups   = re[[1]]$n_groups,
         family     = family,
         n_trials   = n_trials,
-        sigma_eps  = control$sigma_eps %||% (if (!is.null(phi)) sqrt(phi) else 1.0),
-        n_quad     = control$n_quad %||% 7L,
+        sigma_eps  = if (!is.null(phi)) sqrt(phi) else 1.0,
+        n_quad     = control$n_quad,
         beta_init  = control$beta_init,
-        sigma_init = control$sigma_init %||% 1.0,
-        max_iter   = control$max_iter %||% 200L,
-        tol        = control$tol %||% 1e-6,
-        verbose    = control$verbose %||% FALSE
-      ))
+        sigma_init = control$sigma_init,
+        max_iter   = control$max_iter,
+        tol        = control$tol,
+        verbose    = control$verbose
+      )))
     }
     if (backend == "ep") {
       # Expectation Propagation: a fixed-effect GLM with a mean-zero Gaussian
@@ -1051,36 +1054,40 @@
                             n_trials = n_trials, phi = phi,
                             beta_prior = beta_prior_default,
                             weights = weights, phi2 = phi2)
+    # A knob the caller did not set is OMITTED, so the backend's own formal
+    # supplies it: restating `n_iter = control$n_iter %||% 2000L` here put the
+    # same default in two files, and a bump on one side would have been
+    # invisible from the other -- the drift gcol33/tulpa#632 measured on
+    # `k_samples` (gcol33/tulpa#676).
     if (backend == "mala") {
-      return(list(
+      return(.drop_null(list(
         log_posterior = m$log_posterior,
         grad_log_posterior = m$grad_log_posterior,
         init = m$init,
-        n_iter = control$n_iter %||% 2000L,
-        warmup = control$warmup %||% (control$n_iter %||% 2000L) %/% 2L,
-        epsilon = control$epsilon %||% 0.1
-      ))
+        n_iter = control$n_iter,
+        warmup = control$warmup,
+        epsilon = control$epsilon
+      )))
     }
     if (backend == "pathfinder") {
-      return(list(
+      return(.drop_null(list(
         log_posterior = m$log_posterior,
         init = m$init,
         grad_log_posterior = m$grad_log_posterior,
-        n_draws = control$n_draws %||% 1000L
-      ))
+        n_draws = control$n_draws
+      )))
     }
     if (backend == "imh_laplace") {
       # Independence MH with a Laplace proposal: needs the MAP + precision.
       mp <- .glmm_mode_precision(m)
-      n_iter <- control$n_iter %||% 2000L
-      return(list(
+      return(.drop_null(list(
         log_posterior = m$log_posterior,
         mode = mp$mode,
         hessian = mp$precision,
-        n_iter = n_iter,
-        warmup = control$warmup %||% (n_iter %/% 2L),
-        scale = control$scale %||% 1.0
-      ))
+        n_iter = control$n_iter,
+        warmup = control$warmup,
+        scale = control$scale
+      )))
     }
     stop(sprintf(paste0(
       "Backend '%s' is reachable but not yet wired through tulpa(). Call its ",
@@ -1357,10 +1364,12 @@
 #' * **Latent prior blocks** (`latent(tgmrf(...))`) route to the nested-Laplace
 #'   path (Tier 2), which integrates over the block hyperparameters. `mode =
 #'   "auto"` and `"structured"` select it automatically when latent blocks are
-#'   present; `mode = "nested_laplace"` forces it. At most one random-intercept
-#'   `(1 | g)` term may accompany the blocks (model richer grouping as an `iid`
-#'   block). Joint multi-arm nested models cannot be expressed by a
-#'   single-response formula -- call [tulpa_nested_laplace_joint()] directly.
+#'   present; `mode = "nested_laplace"` forces it. Several random-intercept
+#'   `(1 | g)` terms may accompany the blocks; the one-term restriction belongs
+#'   to the Polya-Gamma spatial Gibbs sampler (`mode = "gibbs"`), which updates
+#'   one RE block alongside the field. Joint multi-arm nested models cannot be
+#'   expressed by a single-response formula -- call
+#'   [tulpa_nested_laplace_joint()] directly.
 #' * The ModelData sampler kernels (`"hmc"`, `"ess"`, `"sghmc"`, `"sgld"`,
 #'   `"mclmc"`, `"smc"`, `"vi"`) thread the full latent vector -- fixed effects,
 #'   random effects (all forms), areal spatial (`icar` / `bym2`), and temporal
@@ -1388,9 +1397,11 @@
 #'   because its intervals are conditional on that estimate rather than marginal
 #'   over it.
 #' @param sigma_re Random-effect SDs to condition on: length 1 (recycled) or one
-#'   per RE term. Defaults to 1 per term with a message. Ignored by the backends
-#'   that determine the covariance themselves (`"eb"`, `re_cov_nested`,
-#'   `re_cov_gibbs`, `gibbs`, `agq`), which warn if it is supplied anyway.
+#'   per RE term. Defaults to 1 per term with a warning. Ignored by every
+#'   backend that DETERMINES the RE scale itself -- by integrating it
+#'   (`re_cov_nested`, `re_cov_gibbs`), sampling it (`gibbs` and the ModelData
+#'   samplers, which carry `log_sigma_re` in the latent vector) or maximizing
+#'   over it (`eb`, `agq`) -- and supplying it there warns.
 #' @param n_trials Binomial denominators (length `nrow(data)`), or `NULL`.
 #' @param weights Optional observation weights (non-negative numeric vector,
 #'   length `nrow(data)`): each observation's log-likelihood contribution is
@@ -1497,13 +1508,30 @@
 #'   * `mode = "gibbs"` routes the areal `icar`/`bym2` cases through the binomial
 #'     Polya-Gamma samplers (Tier 1 exact); `mode = "auto"` picks this for a
 #'     binomial `icar`/`bym2` field.
-#' @param temporal Optional temporal field spec ([temporal_rw1()],
-#'   [temporal_rw2()], or [temporal_ar1()]), integrated by nested Laplace. A
-#'   plain field routes the single-block temporal kernel; a `group_var` panel
-#'   spec fits a separate walk per group sharing one hyperparameter; combined
-#'   with an areal `spatial` field it forms an additive space-time joint prior.
-#' @param control Optional list of backend tuning arguments (e.g. `n_iter`,
-#'   `warmup`, `epsilon` for `mala`; `n_draws` for `pathfinder`).
+#' @param temporal Optional temporal field spec, integrated by nested Laplace
+#'   for the discrete walks and sampled for the continuous ones:
+#'   [temporal_rw1()], [temporal_rw2()], [temporal_ar1()] (nested Laplace);
+#'   [temporal_gp()] and [temporal_multiscale()], which are sampler-path only --
+#'   their hyperparameters are sampled jointly with the field, so `mode = "auto"`
+#'   routes them to the exact ModelData sampler. A plain field routes the
+#'   single-block temporal kernel; a `group_var` panel spec fits a separate walk
+#'   per group sharing one hyperparameter; combined with an areal `spatial`
+#'   field it forms an additive space-time joint prior.
+#' @param control Optional list of backend tuning arguments. Each backend
+#'   accepts its own set, checked at the door: `n_iter` / `warmup` / `epsilon`
+#'   (`mala`), `n_draws` (`pathfinder`), `n_chains` / `max_treedepth` /
+#'   `adapt_delta` / `mass_matrix` (`hmc`), the outer-grid knobs
+#'   `?tulpa_nested_laplace` documents (`n_per_axis`, `prune`, `screen_iters`,
+#'   `diagnose_k`, `within_cell`, `checkpoint`, the `progress*` family, ...),
+#'   and `re_cov` (`"nested"` / `"gibbs"` / `"aghq"`), which selects the
+#'   RE-covariance integrator on any random-effect model.
+#'
+#'   One statistical knob lives here rather than in the signature: `marginal`
+#'   (`mode = "eb"` only) turns on the marginal-Laplace covariance correction,
+#'   which widens the reported intervals to account for the hyperparameter
+#'   uncertainty EB conditions on. It is a formal argument of [tulpa_eb()] and
+#'   is forwarded from `control` by `tulpa()` alone, so it has no meaning on any
+#'   other backend and is refused there. See [tulpa_eb()].
 #' @param ... Reserved for future statistical arguments. Nothing is read from
 #'   it today, so any entry errors: a stray name here is a misspelled argument
 #'   or a tuning knob that belongs in `control`.
@@ -1569,6 +1597,13 @@ tulpa <- function(formula, data,
     stop(sprintf(
       "unknown argument(s) to tulpa(): %s. Tuning knobs go in `control = list()`.",
       paste(nm, collapse = ", ")), call. = FALSE)
+  }
+  # Named before the whitelist so a moved knob says where it went rather than
+  # arriving as "unknown control knob" (gcol33/tulpa#675).
+  if ("sigma_eps" %in% names(control)) {
+    stop("`control$sigma_eps` is the gaussian residual SD, a second spelling ",
+         "of the `phi` argument in the other convention. Pass `phi` (the ",
+         "residual VARIANCE) instead.", call. = FALSE)
   }
   tulpa_check_control(control, .CONTROL_KEYS$tulpa, "tulpa")
   tulpa_check_control(re_prior, .RE_PRIOR_KEYS, "tulpa (re_prior)")

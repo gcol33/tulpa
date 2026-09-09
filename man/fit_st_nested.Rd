@@ -65,7 +65,11 @@ is no RE term.}
 exactly as specified -- the per-axis policy names
 \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}} takes are refused here with an error, since this
 driver recentres on the grid's collapsed-edge regime rather than on a
-per-axis rail).
+per-axis rail), \code{rho_spatial} (the proper-CAR mixing value the
+\code{car_proper} axis is held at, default \code{.NL_ST_GRID$rho_spatial}) and
+\code{within_cell} (\code{"box_uniform"} / \code{"chord"}, the within-cell construction
+the reported per-axis intervals are read with; defaults to
+\code{.NL_DIAG$within_cell}, as on every other nested door).
 
 The \verb{(tau_lower, tau_upper)} span (and, for \code{ar1}, \verb{(rho_lower, rho_upper)}) is a starting axis, not a hard ceiling:
 when the fitted precision (or, for \code{ar1}, autocorrelation) posterior

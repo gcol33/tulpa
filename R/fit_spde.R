@@ -166,6 +166,20 @@ fit_spde <- function(y, X, spatial,
   tol        <- control$tol %||% 1e-6
   n_threads  <- as.integer(control$n_threads %||% 1L)
   checkpoint <- control$checkpoint
+  # The cheap screen, the per-row predictive-variance loop and the two
+  # correction requests, resolved exactly as tulpa_nested_laplace() resolves
+  # them. They were unreachable on this path until the SPDE entry went through
+  # the shared bundle (gcol33/tulpa#699), which hardcoded prune_tol = 0.
+  prune       <- isTRUE(control$prune %||% FALSE)
+  prune_tol   <- .nl_prune_tol_from_control(
+    control,
+    .nl_check_prune_tol(control$prune_tol %||% .nl_screen("prune_tol")))
+  prune_tol_eff <- if (prune) prune_tol else 0
+  screen_it   <- .nl_check_screen_iters(
+    control$screen_iters %||% .nl_screen("iters"))
+  fitted_var  <- isTRUE(control$fitted_var %||% TRUE)
+  debias_req  <- control$subspace_debias
+  cila_req    <- control$cila
 
   if (!is.null(offset)) {
     offset <- as.numeric(offset)
@@ -256,7 +270,7 @@ fit_spde <- function(y, X, spatial,
       return(list(log_marginal = lm, n_iter = ni))
     }
     res <- cpp_nested_laplace_spde(
-      y = y, n_trials = n_trials, X = X,
+      y = y, n = n_trials, X = X,
       re_idx = no_re_idx, n_re_groups = no_re_n_groups,
       sigma_re = no_re_sigma,
       A_x = sp$A_x, A_i = sp$A_i, A_p = sp$A_p,
@@ -268,7 +282,10 @@ fit_spde <- function(y, X, spatial,
       family = family, phi = .phi_to_kernel(family, phi),
       max_iter = max_iter, tol = tol, n_threads = n_threads,
       checkpoint_path = .ckpt$path,
-      offset_nullable = offset
+      offset_nullable = offset,
+      debias = debias_req, cila = cila_req,
+      prune_tol = prune_tol_eff, screen_iters = screen_it,
+      compute_fitted_var = fitted_var
     )
     res
   }

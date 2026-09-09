@@ -281,7 +281,18 @@ grid, refused with an error above it. Each cell is one inner Newton
 solve, so the default catches a per-block grid that multiplied out to a
 run nobody asked for; a deliberate converged tensor reference grid (4
 axes at 7 levels is 2401 cells) raises it here.
-\item \code{prune} (\code{FALSE}), \code{prune_tol} (\code{1e-3}), \code{screen_iters} (\code{5L}) --
+\item \code{checkpoint} (\code{list(path =, resume =)}) -- grid-cell checkpoint /
+resume. Each solved outer cell is appended to \code{path}, keyed by its
+hyperparameter coordinate; \code{resume = TRUE} loads the finished cells and
+solves only the rest, and a fingerprint mismatch (different data,
+settings or grid) errors rather than resuming onto a stale result. See
+\code{?tulpa_nested_laplace} "Checkpoint / resume".
+\item \code{progress}, \code{progress.every}, \code{progress.file}, \code{progress.throttle} --
+the outer-grid progress reporter: whether to print, how often (in
+cells), where to, and the minimum seconds between lines.
+\item \code{prune} (\code{FALSE}), \code{prune_tol} (\code{1e-3}), \code{screen_iters}
+(\code{.NL_SCREEN$iters}, 2 -- the doc said 5 while the engine read 2, which
+is what gcol33/tulpa#640 measured the depth down to) --
 opt-in cheap-pass screening of the outer grid. When \code{prune = TRUE}, the
 driver first sweeps the lattice running a \code{screen_iters}-step inner
 Newton per cell, each warm-started from the previous screened cell's

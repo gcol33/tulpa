@@ -314,8 +314,15 @@ test_that("the precomputed SPDE latent is not sum-to-zero centred", {
 #   log lik + log p(x | Q) + log p(b | tau_re) - 0.5 log|H| + (n_x/2) log(2 pi)
 # with log p(x | Q) = 0.5 log|Q| - 0.5 x'Qx  (the constant -(n/2) log(2 pi) is
 # dropped, being theta-independent) and the RE block carrying its FULL normalizer
-# 0.5 G (log tau_re - log 2 pi), which does move with sigma_re. The weak
-# fixed-effect ridge enters the Hessian but not the log-prior.
+# 0.5 G (log tau_re - log 2 pi), which does move with sigma_re, and the weak
+# fixed-effect ridge carrying its own density and normalizer.
+#
+# That last term used to be in the Hessian and not in the log-prior, which is
+# what made this path's log_marginal incomparable with the spec path's
+# (gcol33/tulpa#698): the joint objective was missing a term its own gradient
+# applied. The reference below carries it for the same reason the RE block's
+# normalizer is here -- the formula the engine evaluates is the one this
+# reproduces.
 .spde_pre_expected_lm <- function(fx, fit) {
   p <- fx$p
   n_x <- p + fx$n_re_groups + fx$n
@@ -335,6 +342,13 @@ test_that("the precomputed SPDE latent is not sum-to-zero centred", {
     log_prior <- log_prior - 0.5 * tau_re * sum(b^2) +
       0.5 * fx$n_re_groups * (log(tau_re) - log(2 * pi))
   }
+  # The weak default fixed-effect prior, at the precision
+  # laplace_re_priors.h's DEFAULT_TAU_BETA states (sd 100).
+  tau_beta <- 1e-4
+  bcoef <- fit$mode[seq_len(p)]
+  log_prior <- log_prior - 0.5 * tau_beta * sum(bcoef^2) +
+    0.5 * p * (log(tau_beta) - log(2 * pi))
+
   log_lik + log_prior - 0.5 * fit$log_det_Q + 0.5 * n_x * log(2 * pi)
 }
 

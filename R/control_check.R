@@ -128,9 +128,18 @@ tulpa_check_control <- function(control, allowed, where) {
     hyper_grid = c("adaptive_grid", "adaptive_grid_edge_thresh",
                    "adaptive_grid_max_passes", "var_of_means_consistency",
                    "var_of_means_min_ess"),
+    st_nested = c("n_grid_spatial", "n_grid_temporal", "n_grid_rho",
+                  "tau_lower", "tau_upper", "rho_lower", "rho_upper",
+                  "rho_spatial", "max_iter", "tol", "n_threads",
+                  "auto_recenter", "within_cell"),
     spde = c("method", "n_grid", "max_iter", "tol", "n_threads",
              "diagnose_k", "k_samples", "k_tail_points", "checkpoint",
-             "mode_find"),
+             "mode_find",
+             # Reachable since the SPDE grid entry went through the shared
+             # entry bundle (gcol33/tulpa#699); it hand-rolled its driver call
+             # and hardcoded prune_tol = 0 before that.
+             "prune", "prune_tol", "prune_log_gap", "screen_iters",
+             "fitted_var", "subspace_debias", "cila"),
     re_cov_nested = c("integration", "n_per_axis", "span", "n_draws", "seed",
                       "max_iter", "tol", "n_threads", "diagnose_k",
                       "k_samples", "k_tail_points", "checkpoint",
@@ -193,10 +202,22 @@ tulpa_check_control <- function(control, allowed, where) {
     keys$re_cov_nested, keys$re_cov_gibbs, keys$eb,
     keys$sample_glmm, keys$ep, keys$nuts_spde,
     c("re_cov", "n_quad", "sigma_init", "beta_init",
-      "sigma_eps", "scale", "method")
+      "scale", "method")
   ), .tulpa_hyperprior_keys)))
   keys
 })
+
+# Drop the entries a caller did not set, so a `do.call` onto a fitter takes
+# that fitter's OWN formal default rather than one restated at the dispatch
+# site. Restating them put the same default in two files, where a bump on one
+# side is invisible from the other -- the drift gcol33/tulpa#632 measured on
+# `k_samples`, in the shape gcol33/tulpa#676 found it.
+#
+# NULL is the "unset" marker throughout `control`, so an argument a fitter
+# genuinely takes as NULL (an absent init) is unaffected: it means the same
+# thing either way.
+#' @keywords internal
+.drop_null <- function(x) x[!vapply(x, is.null, logical(1))]
 
 # The RE-covariance integrator a call asks for, validated once.
 #

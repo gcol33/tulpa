@@ -48,9 +48,11 @@ because its intervals are conditional on that estimate rather than marginal
 over it.}
 
 \item{sigma_re}{Random-effect SDs to condition on: length 1 (recycled) or one
-per RE term. Defaults to 1 per term with a message. Ignored by the backends
-that determine the covariance themselves (\code{"eb"}, \code{re_cov_nested},
-\code{re_cov_gibbs}, \code{gibbs}, \code{agq}), which warn if it is supplied anyway.}
+per RE term. Defaults to 1 per term with a warning. Ignored by every
+backend that DETERMINES the RE scale itself -- by integrating it
+(\code{re_cov_nested}, \code{re_cov_gibbs}), sampling it (\code{gibbs} and the ModelData
+samplers, which carry \code{log_sigma_re} in the latent vector) or maximizing
+over it (\code{eb}, \code{agq}) -- and supplying it there warns.}
 
 \item{n_trials}{Binomial denominators (length \code{nrow(data)}), or \code{NULL}.}
 
@@ -177,14 +179,31 @@ Polya-Gamma samplers (Tier 1 exact); \code{mode = "auto"} picks this for a
 binomial \code{icar}/\code{bym2} field.
 }}
 
-\item{temporal}{Optional temporal field spec (\code{\link[=temporal_rw1]{temporal_rw1()}},
-\code{\link[=temporal_rw2]{temporal_rw2()}}, or \code{\link[=temporal_ar1]{temporal_ar1()}}), integrated by nested Laplace. A
-plain field routes the single-block temporal kernel; a \code{group_var} panel
-spec fits a separate walk per group sharing one hyperparameter; combined
-with an areal \code{spatial} field it forms an additive space-time joint prior.}
+\item{temporal}{Optional temporal field spec, integrated by nested Laplace
+for the discrete walks and sampled for the continuous ones:
+\code{\link[=temporal_rw1]{temporal_rw1()}}, \code{\link[=temporal_rw2]{temporal_rw2()}}, \code{\link[=temporal_ar1]{temporal_ar1()}} (nested Laplace);
+\code{\link[=temporal_gp]{temporal_gp()}} and \code{\link[=temporal_multiscale]{temporal_multiscale()}}, which are sampler-path only --
+their hyperparameters are sampled jointly with the field, so \code{mode = "auto"}
+routes them to the exact ModelData sampler. A plain field routes the
+single-block temporal kernel; a \code{group_var} panel spec fits a separate walk
+per group sharing one hyperparameter; combined with an areal \code{spatial}
+field it forms an additive space-time joint prior.}
 
-\item{control}{Optional list of backend tuning arguments (e.g. \code{n_iter},
-\code{warmup}, \code{epsilon} for \code{mala}; \code{n_draws} for \code{pathfinder}).}
+\item{control}{Optional list of backend tuning arguments. Each backend
+accepts its own set, checked at the door: \code{n_iter} / \code{warmup} / \code{epsilon}
+(\code{mala}), \code{n_draws} (\code{pathfinder}), \code{n_chains} / \code{max_treedepth} /
+\code{adapt_delta} / \code{mass_matrix} (\code{hmc}), the outer-grid knobs
+\code{?tulpa_nested_laplace} documents (\code{n_per_axis}, \code{prune}, \code{screen_iters},
+\code{diagnose_k}, \code{within_cell}, \code{checkpoint}, the \verb{progress*} family, ...),
+and \code{re_cov} (\code{"nested"} / \code{"gibbs"} / \code{"aghq"}), which selects the
+RE-covariance integrator on any random-effect model.
+
+One statistical knob lives here rather than in the signature: \code{marginal}
+(\code{mode = "eb"} only) turns on the marginal-Laplace covariance correction,
+which widens the reported intervals to account for the hyperparameter
+uncertainty EB conditions on. It is a formal argument of \code{\link[=tulpa_eb]{tulpa_eb()}} and
+is forwarded from \code{control} by \code{tulpa()} alone, so it has no meaning on any
+other backend and is refused there. See \code{\link[=tulpa_eb]{tulpa_eb()}}.}
 
 \item{...}{Reserved for future statistical arguments. Nothing is read from
 it today, so any entry errors: a stray name here is a misspelled argument
@@ -240,10 +259,12 @@ rather than conditioning on \code{sigma_re}; tune it via
 \code{re_prior$prior_sigma_scale} and a mean-zero \code{beta_prior}.
 \item \strong{Latent prior blocks} (\code{latent(tgmrf(...))}) route to the nested-Laplace
 path (Tier 2), which integrates over the block hyperparameters. \code{mode = "auto"} and \code{"structured"} select it automatically when latent blocks are
-present; \code{mode = "nested_laplace"} forces it. At most one random-intercept
-\code{(1 | g)} term may accompany the blocks (model richer grouping as an \code{iid}
-block). Joint multi-arm nested models cannot be expressed by a
-single-response formula -- call \code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}} directly.
+present; \code{mode = "nested_laplace"} forces it. Several random-intercept
+\code{(1 | g)} terms may accompany the blocks; the one-term restriction belongs
+to the Polya-Gamma spatial Gibbs sampler (\code{mode = "gibbs"}), which updates
+one RE block alongside the field. Joint multi-arm nested models cannot be
+expressed by a single-response formula -- call
+\code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}} directly.
 \item The ModelData sampler kernels (\code{"hmc"}, \code{"ess"}, \code{"sghmc"}, \code{"sgld"},
 \code{"mclmc"}, \code{"smc"}, \code{"vi"}) thread the full latent vector -- fixed effects,
 random effects (all forms), areal spatial (\code{icar} / \code{bym2}), and temporal

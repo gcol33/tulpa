@@ -370,17 +370,33 @@ inline void add_per_arm_beta_re_priors_sparse(
         [&H](int i, double prec) { H.add(i, i, prec); });
 }
 
-// Per-arm RE + beta log-prior contribution. The weak default beta prior
-// (tau_beta) is dropped so the joint log-marginal stays comparable to two
-// single-arm fits. An INFORMATIVE per-arm beta prior (beta_prior_prec set by
-// the consumer) IS included: it must enter the penalized objective so the
-// inner Newton's line search accepts the prior-driven steps that
-// add_per_arm_beta_re_priors writes into the gradient. Without this the
-// gradient pulls beta toward the prior mean while the objective (likelihood
-// only) rejects the step, pinning beta at the unpenalized MLE -- which at the
+// Per-arm RE + beta log-prior contribution.
+//
+// EVERY term add_per_arm_beta_re_priors writes into the gradient and Hessian is
+// written here too, at the same precisions. The weak default beta prior
+// (tau_beta) used to be dropped, on the ground that a joint log-marginal should
+// stay comparable to two single-arm fits -- but the single-arm spec path
+// (laplace_spec.cpp) INCLUDES it, so the two entry families reported
+// `log_marginal` on two conventions and a compare_models() or logLik() across
+// them was reading a constant offset as evidence (gcol33/tulpa#698). It also
+// left the joint objective missing a term its own gradient applies, which is
+// the exact failure the informative-prior note below describes.
+//
+// An INFORMATIVE per-arm beta prior (beta_prior_prec set by the consumer) was
+// already included, and for the same reason: it must enter the penalized
+// objective so the inner Newton's line search accepts the prior-driven steps
+// add_per_arm_beta_re_priors writes into the gradient. Without this the gradient
+// pulls beta toward the prior mean while the objective (likelihood only)
+// rejects the step, pinning beta at the unpenalized MLE -- which at the
 // occupancy psi-p boundary runs to +Inf (occu_cover coupling).
+//
+// The mode does not move: the gradient and Hessian already carried this term.
+// The reported `log_marginal` does, by the density and normalizer of the weak
+// prior at the mode, and softmax cell weights within a fit are unchanged
+// because the shift is common to every cell.
 inline double log_prior_per_arm_re(const Rcpp::NumericVector& x,
-                                    const std::vector<ParsedArm>& parsed) {
+                                    const std::vector<ParsedArm>& parsed,
+                                    double tau_beta = DEFAULT_TAU_BETA) {
     constexpr double LOG_2PI = 1.8378770664093454835606594728112;
     double lp = 0.0;
     for (const ParsedArm& pa : parsed) {
@@ -391,15 +407,21 @@ inline double log_prior_per_arm_re(const Rcpp::NumericVector& x,
         if (pa.n_re_groups > 0) {
             lp += 0.5 * pa.n_re_groups * (std::log(pa.tau_re) - LOG_2PI);
         }
-        if ((int)pa.beta_prior_prec.size() == pa.p) {
-            for (int j = 0; j < pa.p; j++) {
-                const double prec = pa.beta_prior_prec[j];
-                const double mean = ((int)pa.beta_prior_mean.size() == pa.p)
-                                    ? pa.beta_prior_mean[j] : 0.0;
-                const double d = x[pa.beta_start + j] - mean;
-                lp -= 0.5 * prec * d * d;
-                lp += 0.5 * (std::log(prec) - LOG_2PI);
-            }
+        // Mirrors add_per_arm_beta_re_priors_impl's own choice of precision:
+        // the consumer's per-coefficient prior where it supplied one, the weak
+        // default otherwise.
+        const bool has_prior = ((int)pa.beta_prior_prec.size() == pa.p);
+        for (int j = 0; j < pa.p; j++) {
+            const double prec = has_prior ? pa.beta_prior_prec[j] : tau_beta;
+            // tau = 0 (sd = Inf) is a flat improper prior: no density and no
+            // normalizer, and 0.5*log(0) would poison both the log-marginal and
+            // the line-search objective.
+            if (prec == 0.0) continue;
+            const double mean = ((int)pa.beta_prior_mean.size() == pa.p)
+                                ? pa.beta_prior_mean[j] : 0.0;
+            const double d = x[pa.beta_start + j] - mean;
+            lp -= 0.5 * prec * d * d;
+            lp += 0.5 * (std::log(prec) - LOG_2PI);
         }
     }
     return lp;

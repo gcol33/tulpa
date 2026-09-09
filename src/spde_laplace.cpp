@@ -18,6 +18,7 @@
 #include "nested_laplace_joint_multi.h"
 #include "spde_block_factory.h"
 #include "spde_qbuilder.h"
+#include "nl_entry_inputs.h"
 #include <Rcpp.h>
 #include <string>
 #include <vector>
@@ -230,7 +231,7 @@ Rcpp::List cpp_laplace_fit_spde_precomputed(
 
 // [[Rcpp::export]]
 Rcpp::List cpp_nested_laplace_spde(
-    Rcpp::NumericVector y, Rcpp::IntegerVector n_trials,
+    Rcpp::NumericVector y, Rcpp::IntegerVector n,
     Rcpp::NumericMatrix X,
     Rcpp::NumericVector re_idx, int n_re_groups, double sigma_re,
     Rcpp::NumericVector A_x, Rcpp::IntegerVector A_i, Rcpp::IntegerVector A_p,
@@ -248,7 +249,12 @@ Rcpp::List cpp_nested_laplace_spde(
     std::string checkpoint_path = "",
     Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
     bool compute_skew = false,
-    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
+    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
+    double prune_tol = 0.0,
+    int screen_iters = 2,
+    bool compute_fitted_var = true
 ) {
     int N = n_obs;
     int p = X.ncol();
@@ -298,7 +304,7 @@ Rcpp::List cpp_nested_laplace_spde(
     {
         tulpa::JointArm& a = arms[0];
         a.y        = y;
-        a.n_trials = n_trials;
+        a.n_trials = n;
         a.family   = family;
         a.phi      = phi;
         a.N        = N;
@@ -337,10 +343,6 @@ Rcpp::List cpp_nested_laplace_spde(
         use_rational, rat_poles, rat_weights
     ));
 
-    Rcpp::NumericVector x_init;
-    if (x_init_nullable.isNotNull())
-        x_init = Rcpp::as<Rcpp::NumericVector>(x_init_nullable);
-
     // Grid-cell checkpoint/resume. Structure fingerprint folds
     // the SPDE FEM operators (A, C0, G1), nu, and any rational coefficients;
     // keys are the paired (range, sigma) grid coordinates.
@@ -358,35 +360,19 @@ Rcpp::List cpp_nested_laplace_spde(
     sfp.fold_pod(use_rational);
     if (!rat_poles.empty())   sfp.fold(rat_poles.data(),   rat_poles.size() * sizeof(double));
     if (!rat_weights.empty()) sfp.fold(rat_weights.data(), rat_weights.size() * sizeof(double));
-    auto ckpt = tulpa::make_nl_grid_checkpoint(
-        checkpoint_path, sfp.value(), max_iter, tol, y, n_trials, X, re_idx,
-        n_re_groups, sigma_re, family, phi, {range_grid, sigma_grid},
-        offset_nullable);
+    // The shared entry bundle and its runner, the way the other ten grid
+    // entries reach their driver. This one hand-rolled the call, so it
+    // hardcoded prune_tol = 0.0 and passed neither the subspace debias, CILA
+    // nor a screen depth: control$prune / $prune_tol / $screen_iters and the
+    // debias were all unreachable on the SPDE grid, and a knob added to the
+    // bundle would not have reached it either (gcol33/tulpa#699).
+    tulpa::NlEntryInputs nl_in = TULPA_NL_ENTRY_INPUTS;
+    nl_in.offset = offset_nullable;
 
-    std::vector<int> skew_idx_vec;
-    const std::vector<int>* skew_idx_ptr =
-        tulpa::unwrap_skew_idx(compute_skew, skew_idx, skew_idx_vec);
-
-    Rcpp::List out = tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
-        n_grid, arms, parsed, blocks, n_x,
-        max_iter, tol, n_threads,
-        /*store_modes=*/true, x_init, store_Q,
-        /*prep_at_grid=*/nullptr,
-        /*tile_ids=*/std::vector<int>(),
-        /*tile_pilot_cells=*/std::vector<int>(),
-        /*prune_tol=*/0.0,
-        /*cell_coupling_spec=*/nullptr,
-        /*coupled_arms=*/std::vector<int>(),
-        /*cell_rows=*/std::vector<std::vector<std::vector<int>>>(),
-        /*n_cells=*/0,
-        tulpa::JointPDMode::LM, tulpa::CurvatureMode::Observed,
-        /*hessian_refresh=*/1, /*n_threads_outer=*/1,
-        /*progress=*/nullptr, ckpt.get(),
-        /*x_init_per_cell=*/std::vector<double>(),
-        compute_skew, skew_idx_ptr
-    );
-    out["range_grid"] = range_grid;
-    out["sigma_grid"] = sigma_grid;
+    Rcpp::List out = tulpa::nl_run_joint_sparse_entry(
+        nl_in, n_grid, sfp.value(), {range_grid, sigma_grid},
+        arms, parsed, blocks, n_x,
+        {{"range_grid", range_grid}, {"sigma_grid", sigma_grid}});
     out["nu"] = nu;
     return out;
 }

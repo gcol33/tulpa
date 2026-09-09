@@ -239,7 +239,18 @@
 #'     solve, so the default catches a per-block grid that multiplied out to a
 #'     run nobody asked for; a deliberate converged tensor reference grid (4
 #'     axes at 7 levels is 2401 cells) raises it here.
-#'   * `prune` (`FALSE`), `prune_tol` (`1e-3`), `screen_iters` (`5L`) --
+#'   * `checkpoint` (`list(path =, resume =)`) -- grid-cell checkpoint /
+#'     resume. Each solved outer cell is appended to `path`, keyed by its
+#'     hyperparameter coordinate; `resume = TRUE` loads the finished cells and
+#'     solves only the rest, and a fingerprint mismatch (different data,
+#'     settings or grid) errors rather than resuming onto a stale result. See
+#'     `?tulpa_nested_laplace` "Checkpoint / resume".
+#'   * `progress`, `progress.every`, `progress.file`, `progress.throttle` --
+#'     the outer-grid progress reporter: whether to print, how often (in
+#'     cells), where to, and the minimum seconds between lines.
+#'   * `prune` (`FALSE`), `prune_tol` (`1e-3`), `screen_iters`
+#'     (`.NL_SCREEN$iters`, 2 -- the doc said 5 while the engine read 2, which
+#'     is what gcol33/tulpa#640 measured the depth down to) --
 #'     opt-in cheap-pass screening of the outer grid. When `prune = TRUE`, the
 #'     driver first sweeps the lattice running a `screen_iters`-step inner
 #'     Newton per cell, each warm-started from the previous screened cell's

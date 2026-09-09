@@ -803,7 +803,12 @@ extern "C" void tulpa_nested_laplace_spde_impl(
                 "" /* checkpoint_path */,
                 R_NilValue /* offset_nullable */,
                 false /* compute_skew */,
-                R_NilValue /* skew_idx */);
+                R_NilValue /* skew_idx */,
+                R_NilValue /* debias */,
+                R_NilValue /* cila */,
+                0.0 /* prune_tol: solve every cell */,
+                2 /* screen_iters */,
+                true /* compute_fitted_var */);
         });
     TULPA_SHIM_GUARD_END("tulpa_nested_laplace_spde")
 }
