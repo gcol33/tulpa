@@ -1231,6 +1231,18 @@ tulpa_nested_laplace_joint <- function(responses,
     phi_movable <- if (!auto_recenter) character(0) else
         paste0("phi_", intersect(phi_prov$auto, names(phi_grid) %||% character(0)))
 
+    # Grid-cell checkpoint. `resume = FALSE` starts THIS FIT over, so any prior
+    # file is removed once, here, before the first solve. An outer-grid
+    # placement rescue refits, so the per-solve `.tulpa_nl_joint_once()` runs
+    # several times within one fit; taking the removal there deleted the cells
+    # an earlier solve of the same fit had already written, and a later resume
+    # then re-appended the whole pre-placement grid on top of the survivors.
+    .ckpt_fit <- .nl_checkpoint_args(control)
+    if (nzchar(.ckpt_fit$path) && !isTRUE(.ckpt_fit$resume) &&
+        file.exists(.ckpt_fit$path)) {
+        file.remove(.ckpt_fit$path)
+    }
+
     ctrl <- control
     fit_once <- function(prior_i, prior_sigma_i, ctrl_i = ctrl,
                          phi_grid_i = phi_grid, copy_i = copy,
@@ -1780,18 +1792,16 @@ tulpa_nested_laplace_joint <- function(responses,
 
     # Grid-cell checkpoint/resume. Threaded to the cpp
     # boundary via a scoped option, like progress, so every backend / adaptive-
-    # refinement kernel call within this fit shares one checkpoint file. On a
-    # fresh run (resume = FALSE) any prior file is removed once here, before the
-    # first kernel call, so the several within-fit calls all append rather than
-    # truncate each other. A resume (the default) keeps the file and the C++
-    # layer loads its completed cells.
+    # refinement kernel call within this fit shares one checkpoint file. A
+    # `resume = FALSE` run starts over from an empty file; that removal belongs
+    # to the fit, not to one solve, so it is taken by the caller
+    # (`tulpa_nested_laplace_joint()`) before the first solve. This function
+    # runs once per SOLVE -- a placement rescue refits -- and only publishes the
+    # path. A resume (the default) keeps the file and the C++ layer loads its
+    # completed cells.
     .ckpt <- .nl_checkpoint_args(control)
     .op_checkpoint <- options(tulpa.nl_checkpoint = .ckpt)
     on.exit(options(.op_checkpoint), add = TRUE)
-    if (nzchar(.ckpt$path) && !isTRUE(.ckpt$resume) &&
-        file.exists(.ckpt$path)) {
-        file.remove(.ckpt$path)
-    }
 
     # Multi-block outer-grid cell ceiling, on the same scoped-option transport:
     # the tensor grid is built inside .joint_dispatch_multi() and again on each

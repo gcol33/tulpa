@@ -261,6 +261,47 @@ test_that("resume = FALSE starts over rather than resuming stale data", {
     .ck_expect_equiv(fit_b_plain, fit_b_fresh)
 })
 
+test_that("a placement rescue keeps the checkpoint the same fit wrote", {
+    # An outer-grid placement rescue REFITS, so one fit runs several outer-grid
+    # solves. `resume = FALSE` starts the FIT over, not each solve within it:
+    # taking that removal per solve deleted the cells the pre-placement solve
+    # had just written, so a crash-resume lost the most expensive pass, and the
+    # next run re-appended the whole pre-placement grid on top of the survivors.
+    fx   <- .pgp_fixture()
+    path <- tempfile(fileext = ".ckpt")
+    fixed_path <- tempfile(fileext = ".ckpt")
+    on.exit(unlink(c(path, fixed_path)), add = TRUE)
+
+    ck <- function(resume, p = path, extra = list())
+        tulpa_nested_laplace_joint(
+            responses = fx$responses, prior = fx$prior,
+            phi_grid = list(pos = auto_grid(.PGP_COARSE)),
+            control = utils::modifyList(
+                list(max_iter = 50L, tol = 1e-8, n_threads = 1L,
+                     verbose = FALSE, diagnose_k = FALSE,
+                     checkpoint = list(path = p, resume = resume)), extra))
+
+    fit1  <- ck(FALSE)
+    size1 <- file.size(path)
+    # Not vacuous: the bug needs a rescue, so a fit that placed nothing would
+    # pass the rest of this while testing none of it.
+    expect_identical(fit1$outer_grid_placement, "auto_recentered")
+    expect_true("phi_pos" %in% fit1$outer_grid_recenter_axes)
+
+    # Measured against the same fit with placement off, which solves the
+    # declared grid ALONE: keeping the pre- AND post-placement cells is what
+    # makes the placed run's file the larger of the two.
+    ck(FALSE, p = fixed_path, extra = list(auto_recenter = FALSE))
+    expect_gt(size1, file.size(fixed_path))
+
+    # Every cell the resume needs is on disk, so it loads all of them and
+    # appends nothing.
+    fit2 <- ck(TRUE)
+    .ck_expect_equiv(fit1, fit2)
+    expect_equal(file.size(path), size1,
+                 info = "resume re-appended the pre-placement grid")
+})
+
 test_that("checkpoint is equivalent on the parallel outer-grid path", {
     sim <- .ck_sim_joint(seed = 16L)
     prior <- c(list(type = "icar", sigma_grid = c(0.4, 0.6, 0.8, 1.0, 1.2)),

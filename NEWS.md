@@ -1,3 +1,27 @@
+# tulpa 0.3.2
+
+## A placement rescue no longer deletes the checkpoint its own fit wrote
+
+* **`control$checkpoint` with `resume = FALSE` reset the file once per outer-grid
+  SOLVE, not once per fit** (gcol33/tulpaObs#316). An outer-grid placement
+  rescue refits, so `.tulpa_nl_joint_once()` runs several times within one fit;
+  it held the reset, and the post-rescue solve therefore removed every cell the
+  pre-placement solve had just written. Two consequences: a crash-resume lost
+  the widest, most expensive pass, and a later `resume = TRUE` run re-solved and
+  re-appended that whole pre-placement grid on top of the cells that survived,
+  growing the file about 2.4x per run with no duplicate keys and an unchanged
+  `log_marginal`. The reset moved up to `tulpa_nested_laplace_joint()`, the one
+  frame that spans every solve of a fit; the per-solve function now only
+  publishes the path.
+* The defect is reachable from any of the three placement rescues, so it
+  predates the dispersion axis; `phi_grid` becoming movable in 0.3.1 is what
+  gave the cover-hurdle fits a rescue that fires, and therefore what surfaced
+  it.
+* `tests/testthat/helper-phi-placement.R` -- the placement fixture moved out of
+  `test-phi-grid-placement.R` so the checkpoint file can build a fit that
+  actually triggers a rescue. A regression test that cannot see one placed is
+  worthless, so the new block asserts `outer_grid_placement` first.
+
 # tulpa 0.3.1
 
 ## A per-arm dispersion axis is placed like a prior block's scale axis
