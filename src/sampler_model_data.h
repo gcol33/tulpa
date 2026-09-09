@@ -158,7 +158,7 @@ inline void build_sampler_model_inputs(
     const Rcpp::NumericVector& y,
     const Rcpp::IntegerVector& n_trials,
     const Rcpp::NumericMatrix& X,
-    const std::string& family, double phi, double sigma_beta,
+    const std::string& family, double phi, double phi2, double sigma_beta,
     const std::vector<double>& offset,        // empty => no offset
     double sigma_re_scale,
     const Rcpp::Nullable<Rcpp::List>& re_spec,
@@ -193,6 +193,12 @@ inline void build_sampler_model_inputs(
     in.resp.N        = N;
     in.resp.family   = family;
     in.resp.phi      = phi;
+    // Before prepare(), not after: prepare() is where a family that NEEDS a
+    // second dispersion reads it, and tweedie hard-errors when it is NaN there.
+    // Assigning it on the way out left family = "tweedie" unreachable on every
+    // sampler backend (gcol33/tulpa#694). NA_REAL is a NaN and means "family
+    // default" for the families that have one (e.g. t df = 4).
+    in.resp.phi2     = phi2;
     in.resp.weights  = nullptr;
     in.resp.prepare();
 

@@ -1003,6 +1003,8 @@
   list(pareto_k = k,
        pareto_k_is_ess = jf$pareto_k_is_ess %||% NA_real_,
        pareto_k_scope = jf$pareto_k_scope %||% NA_character_,
+       pareto_k_proposal_source = jf$pareto_k_proposal_source %||% NA_character_,
+       pareto_k_first_pass = jf$pareto_k_first_pass %||% NA_real_,
        pareto_k_declined = declined)
 }
 
@@ -1453,33 +1455,37 @@
   c(s, list(declined = reason[1L], arms_declined = arms))
 }
 
-# Per-parameter posterior summary + i.i.d.-draw Monte-Carlo diagnostics on a
+# Per-parameter posterior summary + i.i.d.-draw Monte-Carlo error on a
 # [n_draws x n_par] draws matrix. Returns a data frame with `parameter`, `mean`,
-# `sd`, `ess_bulk`, `ess_tail`, `rhat`. The split-Rhat / ESS estimators are the
-# convergence.R ones (Vehtari et al. 2021); on i.i.d. draws split-Rhat sits at
-# ~1 and ESS ~ n_draws, so these certify the summaries are not MC-limited rather
-# than diagnosing chain mixing.
-.tulpa_iid_param_table <- function(draws, pars = NULL) {
+# `sd`, `n_draws`, `mcse_mean`.
+#
+# It carries NO `rhat` / `ess_bulk` / `ess_tail` (gcol33/tulpa#713). The
+# draws-provenance gate withholds those on a non-chain fit precisely because
+# they are vacuous there -- split-Rhat sits at ~1 and ESS at ~n_draws by
+# construction -- and this table is where it dispatches instead, so emitting
+# them again under their own names hands them straight back to
+# `check_diagnostics()`, `plot_rhat()` and any programmatic read. A prose
+# disclaimer in the print method does not reach those.
+#
+# `mcse_mean` is the quantity the vacuous columns were standing in for: on
+# independent draws the Monte-Carlo error of the reported mean is sd/sqrt(n),
+# which says directly whether a summary is draw-limited.
+.tulpa_iid_param_table <- function(draws, pars = NULL, fit = NULL) {
   draws <- as.matrix(draws)
-  nm <- colnames(draws)
-  if (is.null(nm)) nm <- paste0("param", seq_len(ncol(draws)))
+  nm <- .tulpa_draw_names(colnames(draws), fit, ncol(draws))
   keep <- if (is.null(pars)) seq_along(nm) else which(nm %in% pars)
   if (length(keep) == 0L) return(NULL)
   n <- nrow(draws)
   out <- data.frame(parameter = nm[keep],
                     mean = NA_real_, sd = NA_real_,
-                    ess_bulk = NA_real_, ess_tail = NA_real_,
-                    rhat = NA_real_,
+                    n_draws = n, mcse_mean = NA_real_,
                     stringsAsFactors = FALSE, row.names = NULL)
   for (i in seq_along(keep)) {
     x <- draws[, keep[i]]
     out$mean[i] <- mean(x)
     out$sd[i]   <- stats::sd(x)
-    if (n >= 4L && is.finite(out$sd[i]) && out$sd[i] > 0) {
-      sims <- matrix(x, ncol = 1L)
-      out$ess_bulk[i] <- tryCatch(.tulpa_ess_bulk(sims), error = function(e) NA_real_)
-      out$ess_tail[i] <- tryCatch(.tulpa_ess_tail(sims), error = function(e) NA_real_)
-      out$rhat[i]     <- tryCatch(.tulpa_rhat(sims),     error = function(e) NA_real_)
+    if (n >= 2L && is.finite(out$sd[i])) {
+      out$mcse_mean[i] <- out$sd[i] / sqrt(n)
     }
   }
   out
@@ -1523,7 +1529,8 @@
   k          <- psis$pareto_k
 
   draws <- .fit_draws(fit)
-  tab <- if (is.null(draws)) NULL else .tulpa_iid_param_table(draws, pars = pars)
+  tab <- if (is.null(draws)) NULL else
+    .tulpa_iid_param_table(draws, pars = pars, fit = fit)
   param_declined <- NA_character_
   if (is.null(draws)) {
     has_band <- !is.null(grid) || !is.null(inner) || !is.null(inner_k) ||
@@ -1536,7 +1543,7 @@
     }
     param_declined <- paste(
       "the fit carries no posterior draws, so the per-parameter mean / sd /",
-      "ESS / rhat columns are empty; tulpa_posterior_draws(fit) samples the",
+      "per-parameter columns are empty; tulpa_posterior_draws(fit) samples the",
       "retained outer-grid mixture if a sample is wanted")
     tab <- .tulpa_iid_param_table_empty()
   } else if (is.null(tab)) {
@@ -1553,6 +1560,13 @@
   attr(tab, "pareto_k_band")   <- outer_band
   attr(tab, "pareto_k_is_ess") <- psis$pareto_k_is_ess
   attr(tab, "scope")           <- psis$pareto_k_scope
+  # Which proposal family produced the number, and what the backend's own
+  # placement scored before any rescue. The GAP between the two is the
+  # actionable reading -- a large one says the nodes are badly scaled around the
+  # posterior even though the verdict is fine -- and neither field reached this
+  # table, so a rescued fit read as unconditionally clean (gcol33/tulpa#715).
+  attr(tab, "pareto_k_proposal_source") <- psis$pareto_k_proposal_source
+  attr(tab, "pareto_k_first_pass")      <- psis$pareto_k_first_pass
   if (!is.na(psis$pareto_k_declined)) {
     attr(tab, "pareto_k_declined")      <- psis$pareto_k_declined
     attr(tab, "pareto_k_declined_note") <- .k_decline_note(psis$pareto_k_declined)
@@ -1798,7 +1812,9 @@
 #'   i.i.d. approximation sample (`$draws_kind == "iid"`).
 #' @param pars Optional character vector of parameter names to restrict to.
 #' @return A data frame with one row per parameter -- `parameter`, `mean`, `sd`,
-#'   `ess_bulk`, `ess_tail`, `rhat` -- carrying attributes:
+#'   `n_draws`, `mcse_mean` -- carrying attributes. There is deliberately no
+#'   `rhat` / `ess_*` column: those are what the draws-provenance gate withholds
+#'   on a non-chain fit, and this table is where it dispatches instead.
 #'   \describe{
 #'     \item{`pareto_k`}{the outer PSIS reliability k-hat (`NA` if not computed).}
 #'     \item{`pareto_k_band`}{`"good"` / `"ok"` / `"unreliable"` / `NA`.}
@@ -1950,6 +1966,19 @@ print.laplace_diagnostics <- function(x, ...) {
   if (is.finite(k)) {
     cat(sprintf("  outer PSIS pareto_k = %.3f (%s); IS-ESS = %.1f\n",
                 k, band, attr(x, "pareto_k_is_ess")))
+    # Which proposal family the number came from, and what the backend's own
+    # placement scored before any rescue. A large gap says the NODES are badly
+    # scaled around the posterior even though the verdict is fine; no gap says
+    # the placement was already right (gcol33/tulpa#715).
+    src <- attr(x, "pareto_k_proposal_source")
+    fp  <- attr(x, "pareto_k_first_pass")
+    if (!is.null(src) && !is.na(src)) {
+      cat(sprintf("    proposal: %s%s\n", src,
+                  if (!is.null(fp) && is.finite(fp))
+                    sprintf("; as the backend placed it, %.3f (%s)",
+                            fp, .tulpa_khat_band(fp))
+                  else ""))
+    }
   } else {
     # Every decline path says which one it was instead of
     # the old "not run or proposal degenerate" disjunction.
@@ -2026,9 +2055,10 @@ print.laplace_diagnostics <- function(x, ...) {
     cat("  per-parameter columns: none.\n    ", pdecl, "\n", sep = "")
     return(invisible(x))
   }
-  cat(sprintf("  %d parameters, %d draws; per-parameter rhat / ESS below are\n",
+  cat(sprintf("  %d parameters, %d draws; mcse_mean below is the i.i.d.\n",
               nrow(x), if (is.null(s)) NA_integer_ else s$n_draws))
-  cat("  i.i.d.-draw Monte-Carlo diagnostics (not chain mixing).\n\n")
+  cat("  Monte-Carlo error of each reported mean (not chain mixing:\n")
+  cat("  Rhat and ESS are not defined for these draws).\n\n")
   print(as.data.frame(x), ...)
   invisible(x)
 }

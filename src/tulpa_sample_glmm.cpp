@@ -163,8 +163,8 @@ Rcpp::List cpp_vi_elbo_grad(
     tulpa::SamplerModelInputs in;
     std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, N);
     tulpa::build_sampler_model_inputs(
-        in, y, n_trials, X, family, phi, sigma_beta, offset, /*sigma_re_scale=*/2.5,
-        R_NilValue, R_NilValue, R_NilValue);
+        in, y, n_trials, X, family, phi, /*phi2=*/NA_REAL, sigma_beta, offset,
+        /*sigma_re_scale=*/2.5, R_NilValue, R_NilValue, R_NilValue);
     const int D = in.layout.total_params;
 
     std::mt19937 rng((unsigned int)seed);
@@ -316,9 +316,8 @@ Rcpp::List cpp_tulpa_sample_glmm(
     tulpa::SamplerModelInputs in;
     std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, N);
     tulpa::build_sampler_model_inputs(
-        in, y, n_trials, X, family, phi, sigma_beta, offset, sigma_re_scale,
+        in, y, n_trials, X, family, phi, phi2, sigma_beta, offset, sigma_re_scale,
         re_spec, spatial_spec, temporal_spec, svc_spec, tvc_spec, zi_spec);
-    in.resp.phi2 = phi2;   // NA_REAL is a NaN => family default (e.g. t df = 4)
     const int D = in.layout.total_params;
     std::vector<double> init(D, 0.0);
     tulpa::init_bounded_support_params(init, in.data, in.layout);
@@ -568,7 +567,14 @@ Rcpp::List cpp_tulpa_sample_glmm(
             Rcpp::Named("draws") = draws, Rcpp::Named("means") = col_means(draws),
             Rcpp::Named("n_samples") = draws.nrow(), Rcpp::Named("n_params") = D,
             Rcpp::Named("elbo") = res.final_elbo,
-            Rcpp::Named("pareto_k") = res.psis_k,
+            // -1 is the kernel's "not computed" sentinel (vi_types.h), and it
+            // is FINITE: passed through, .tulpa_khat_band() read it as a k-hat
+            // and banded it "good", so a diagnostic that never ran reported a
+            // clean pass (gcol33/tulpa#709). A genuine shape CAN be negative,
+            // so the sentinel is translated here, at the one place it is known
+            // to be one, rather than guarded downstream by a sign test.
+            Rcpp::Named("pareto_k") =
+                (res.psis_k < 0.0) ? NA_REAL : res.psis_k,
             Rcpp::Named("converged") = res.converged,
             Rcpp::Named("sampler") = "vi");
         return out;

@@ -2,7 +2,7 @@
 % Please edit documentation in R/methods_generic.R
 \name{logLik.tulpa_fit}
 \alias{logLik.tulpa_fit}
-\title{Log-likelihood at the posterior mean}
+\title{The fit's log-scale goodness quantity}
 \usage{
 \method{logLik}{tulpa_fit}(object, ...)
 }
@@ -12,8 +12,29 @@
 \item{...}{Ignored.}
 }
 \value{
-A \code{logLik} object.
+A \code{logLik} object with a \code{quantity} attribute.
 }
 \description{
-Log-likelihood at the posterior mean
+What this returns depends on the tier, because the three tiers can report
+three different things and none of them can report the others:
+}
+\details{
+\describe{
+\item{sampler fits}{the mean log POSTERIOR over the draws
+(\code{quantity = "log_posterior_mean"}) -- the prior is included.}
+\item{Laplace fits}{the log MARGINAL LIKELIHOOD at the fitted
+hyperparameters (\code{"log_marginal_likelihood"}).}
+\item{nested-Laplace fits}{the log EVIDENCE, the log-sum-exp over the
+outer grid (\code{"log_evidence"}) -- the hyperparameters have already been
+integrated out.}
+}
+
+The returned object carries a \code{quantity} attribute naming which one it is.
+The three are on different scales and must not be ranked against each other:
+\code{compare_models(criterion = "loglik")} refuses a set of fits that disagree on
+it, and \code{criterion = "waic"} / \code{"loo"} score the same predictive quantity on
+every tier. For the same reason, \code{AIC()} / \code{BIC()} on a nested-Laplace fit
+penalise a value that has already integrated the hyperparameters out; read
+the evidence itself, or use an information criterion built on the pointwise
+predictive density.
 }

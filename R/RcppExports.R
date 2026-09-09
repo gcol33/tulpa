@@ -581,6 +581,10 @@ cpp_test_ar1_omr2_slope <- function(rho) {
     .Call(`_tulpa_cpp_test_ar1_omr2_slope`, rho)
 }
 
+cpp_test_ccallable_resolves <- function(name) {
+    .Call(`_tulpa_cpp_test_ccallable_resolves`, name)
+}
+
 cpp_register_test_separable_bernoulli_coupling <- function() {
     invisible(.Call(`_tulpa_cpp_register_test_separable_bernoulli_coupling`))
 }

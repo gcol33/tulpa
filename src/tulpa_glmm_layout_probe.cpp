@@ -74,7 +74,8 @@ Rcpp::List cpp_tulpa_glmm_layout(
     tulpa::SamplerModelInputs in;
     std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, N);
     tulpa::build_sampler_model_inputs(
-        in, y, n_trials, X, family, phi, sigma_beta, offset, sigma_re_scale,
+        in, y, n_trials, X, family, phi, /*phi2=*/NA_REAL, sigma_beta, offset,
+        sigma_re_scale,
         re_spec, spatial_spec, temporal_spec, svc_spec, tvc_spec, zi_spec);
 
     const ParamLayout& L = in.layout;

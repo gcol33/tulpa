@@ -201,7 +201,18 @@ agq_fit <- function(y, X, group,
     inference_mode = "structured",
     inference_tier = 2L,
     backend = "agq",
-    param_names = par_names
+    param_names = par_names,
+    # AGQ integrates each group's effect OUT of the marginal likelihood, so
+    # there is no per-group posterior to report -- the same situation
+    # tulpa_re_aghq(n_quad > 1) records. Without the reason, ranef() found no
+    # `re[` columns in the 0-row draws matrix and returned an empty frame,
+    # indistinguishable from a model with no random effects at all
+    # (gcol33/tulpa#710).
+    ranef_unavailable = paste(
+      "adaptive Gauss-Hermite quadrature integrates each group's effect out of",
+      "the marginal likelihood, so the fit holds sigma_re and not the per-group",
+      "effects. Use mode = 're_cov_gibbs' or 're_cov_nested' for ranef()."),
+    n_fixed = p
   )
   class(fit) <- c("tulpa_agq_fit", "tulpa_fit")
   fit

@@ -1,5 +1,97 @@
 # tulpa 0.3.2
 
+## A reported diagnostic says what it is, and what it could not establish
+
+* **A VI fit's uncomputed Pareto k-hat read as a clean pass** (gcol33/tulpa#709).
+  The kernel initialises `psis_k` to a `-1` "not computed" sentinel, and `-1` is
+  FINITE, so the decline branch written for exactly this case (`!is.finite(k)`)
+  was never reached and `.tulpa_khat_band(-1)` returned `"good"`. A genuine
+  Pareto shape can be negative, so the sentinel is translated to `NA` at the one
+  place it is known to be one -- the kernel's own result assembly -- rather than
+  guarded downstream by a sign test.
+* **The approximation-reliability table emitted `rhat` / `ess_bulk` / `ess_tail`
+  on i.i.d. draws** (gcol33/tulpa#713), which are the quantities the
+  draws-provenance gate withholds on a non-chain fit precisely because they are
+  vacuous there -- and this table is where the gate DISPATCHES. A prose
+  disclaimer in the print method does not reach `check_diagnostics()`,
+  `plot_rhat()` or a programmatic read; the column names do. The table now
+  carries `n_draws` and `mcse_mean`, the quantity the vacuous columns were
+  standing in for.
+* **Chain diagnostics labelled every row `param1..paramN` on mala /
+  imh_laplace / pathfinder / vi** (gcol33/tulpa#714), which store an unnamed
+  `$draws` matrix beside a fully populated `$param_names`. A warning reading
+  "Parameters with Rhat > 1.01: param3" could not be traced back to a
+  coefficient without counting columns by hand. `.tulpa_draw_names()` is the one
+  resolver -- the matrix's own names, then the fit's, then positional -- behind
+  the chain table, the i.i.d. table, `tulpa_draws_array()` and the pooled-draws
+  accessor.
+* **`pareto_k_proposal_source` and `pareto_k_first_pass` never reached
+  `diagnostics()`** (gcol33/tulpa#715), though both are stamped on the fit and
+  documented in the fitters' `@return`. The GAP between the reported k-hat and
+  the first pass is the actionable number -- a large one says the nodes are
+  badly scaled around the posterior even though the verdict is fine -- so a fit
+  rescued by a later proposal candidate read as unconditionally clean.
+* **`sbc()` reported `proper_prior = "verified"` on a run that probed nothing**
+  (gcol33/tulpa#716). The guard returns early with `n_probe = 0` when every
+  scored quantity is of the `"rank"` kind. `.sbc_premise_proper_prior()` is now
+  the one place that word is chosen, and the print method drops the
+  "over 0 probed simulations" count rather than pairing it with a verification.
+
+## Accessors that returned the wrong shape, or the wrong quantity
+
+* **`logLik()` returned three incomparable quantities under one name**
+  (gcol33/tulpa#712): a mean log POSTERIOR over draws (sampler tier), a log
+  MARGINAL LIKELIHOOD (Laplace), and a log EVIDENCE with the hyperparameters
+  already integrated out (nested) -- `-201.2` / `-210.3` / `-216.2` on the same
+  data and formula -- and `compare_models(criterion = "loglik")` ranked them in
+  one table, making a model choice on an artefact of which tier fitted each. The
+  value each tier can give is still the best available there, so it is returned;
+  it now carries a `quantity` attribute, `compare_models()` refuses a set that
+  disagrees on it and names what each reported, and `?logLik.tulpa_fit` says
+  which tier gives which and why `AIC()` / `BIC()` on a nested fit penalise a
+  value that has already integrated the hyperparameters out.
+* **`glance()` returned one row per outer grid cell on a nested fit**
+  (gcol33/tulpa#711), against the documented single-row broom contract: a
+  nested fit's `$converged` is a per-cell logical vector, and `data.frame()`
+  recycled every other column to its length. A
+  `do.call(rbind, lapply(fits, glance))` therefore produced a table whose row
+  count depended on each fit's grid size.
+* **`VarCorr()` errored and `ranef()` returned an empty frame on every AGQ fit**
+  (gcol33/tulpa#710). `agq_fit()` ships a 0-ROW draws matrix, so
+  `.varcorr_from_draws()` took `colMeans()` of nothing, built `diag(NaN, 1)` and
+  errored out of `all(sd_m > 0)` -- which `.print_re_section()`'s `tryCatch`
+  swallowed, printing the fit with no Random-effects section while the estimated
+  `sigma_re` sat on it. `.varcorr_from_point_sigma()` reads that estimate,
+  `.re_draws_mat()` no longer hands back a 0-row tail as RE draws, and the fit
+  carries `ranef_unavailable` naming why AGQ has no per-group posterior --
+  an empty table being indistinguishable from a model with no random effects.
+
+## Reachability: a family, a backend argument, and a shipped C callable
+
+* **`family = "tweedie"` was unreachable on every sampler backend**
+  (gcol33/tulpa#694). `build_sampler_model_inputs()` calls `resp.prepare()`,
+  which hard-errors when the family is tweedie and `phi2` is NaN, and the caller
+  assigned `phi2` only afterwards -- so it was always NaN at that point. `phi2`
+  is a builder argument now, set before `prepare()`.
+* **`control$n_chains` was silently ignored by every backend except NUTS**
+  (gcol33/tulpa#704): a caller asking for four chains got one particle set with
+  no `chain_id` and no signal. The same function already hard-refuses
+  `mass_matrix` and a warm start on those backends, so this is refused beside
+  them, in R where a default is still distinguishable from a request.
+* **`tulpa_sample_glmm()` stamped neither backend nor draws kind**
+  (gcol33/tulpa#693), and the provenance gate treats an untagged fit as a chain
+  -- so `mcmc_diagnostics()` computed Rhat and ESS on SMC particles and VI
+  draws. It closes through `.finalize_fit()` now, which reads `emits` off the
+  registry.
+* **`inst/include/tulpa/joint_nested_laplace_api.h` advertised a C callable
+  registered nowhere** (gcol33/tulpa#688). `R_GetCCallable` on an unregistered
+  name is a hard R error, so a `LinkingTo: tulpa` package compiled cleanly
+  against the header and died in its user's session at the first call. The
+  header is deleted -- no consumer includes it, and no shim behind it exists --
+  and `test-ccallable-registry.R` now scrapes every `R_GetCCallable` name out of
+  the INSTALLED headers and asserts each resolves, so a header added without its
+  registration fails in this suite instead of downstream.
+
 ## One covariance code names one kernel, on every path
 
 * **A Matern `nu = 2.5` request was fitted with the Gaussian kernel on every

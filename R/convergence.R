@@ -399,7 +399,7 @@ mcmc_draws <- function(fit) {
   if (is.null(draws)) return(NULL)
   if (length(dim(draws)) == 3L) {
     d  <- dim(draws)
-    pn <- dimnames(draws)[[3L]] %||% paste0("param", seq_len(d[3L]))
+    pn <- .tulpa_draw_names(dimnames(draws)[[3L]], fit, d[3L])
     # [iter, chain, param] is column-major with iter fastest, so reshaping to
     # nrow = iter * chain stacks each parameter's pooled draws into one column.
     m <- matrix(as.numeric(draws), nrow = d[1L] * d[2L], ncol = d[3L])
@@ -467,6 +467,21 @@ tulpa_draws_array <- function(fit) {
   arr
 }
 
+# Column names for a draws matrix, in the order they are trustworthy: the
+# matrix's own, then the fit's `$param_names`, then positional. Several backends
+# (mala, imh_laplace, pathfinder, vi) store an UNNAMED draws matrix alongside a
+# fully populated `$param_names`, so reading colnames() alone reported every row
+# as param1..paramN and a warning list of "Rhat > 1.01: param3" could not be
+# traced back to a coefficient without counting columns by hand
+# (gcol33/tulpa#714).
+#' @keywords internal
+.tulpa_draw_names <- function(nm, fit, p) {
+  if (!is.null(nm) && length(nm) == p) return(nm)
+  pn <- fit$param_names
+  if (!is.null(pn) && length(pn) >= p) return(as.character(pn)[seq_len(p)])
+  paste0("param", seq_len(p))
+}
+
 # The array assembly without the user-facing note, for the internal callers that
 # probe for draws and already have a designed fallback (the `posterior` interop
 # conversion, k-fold, power-scaling). One body, two doors: the front door reports
@@ -477,8 +492,7 @@ tulpa_draws_array <- function(fit) {
   if (is.null(chain_list)) return(NULL)
   n_iter <- min(vapply(chain_list, nrow, integer(1)))
   p  <- ncol(chain_list[[1L]])
-  nm <- colnames(chain_list[[1L]])
-  if (is.null(nm)) nm <- paste0("param", seq_len(p))
+  nm <- .tulpa_draw_names(colnames(chain_list[[1L]]), fit, p)
   arr <- array(
     NA_real_, dim = c(n_iter, length(chain_list), p),
     dimnames = list(NULL, NULL, nm)
@@ -502,8 +516,7 @@ get_draws_array <- function(fit) list(draws = tulpa_draws_array(fit))
   if (is.null(chain_list) || nrow(chain_list[[1L]]) < 4L) return(NULL)
 
   p  <- ncol(chain_list[[1L]])
-  nm <- colnames(chain_list[[1L]])
-  if (is.null(nm)) nm <- paste0("param", seq_len(p))
+  nm <- .tulpa_draw_names(colnames(chain_list[[1L]]), fit, p)
   keep <- if (is.null(pars)) seq_len(p) else which(nm %in% pars)
   if (length(keep) == 0L) return(NULL)
 

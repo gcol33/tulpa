@@ -69,7 +69,9 @@
 #'
 #' @param ... Named `tulpa_fit` objects.
 #' @param criterion `"waic"` (default), `"loo"`, or `"loglik"`.
-#' @return A data frame. For `"loglik"`: `model`, `n_params`, `logLik`. For
+#' @return A data frame. For `"loglik"`: `model`, `n_params`, `logLik`,
+#'   `quantity` (which of the three log-scale quantities the tier reports; fits
+#'   that disagree on it are refused rather than ranked). For
 #' `"waic"` / `"loo"` (ranked best-first): `model`, `elpd`, `se_elpd`,
 #' `p_eff`, `ic` (`-2 * elpd`), `delta` (elpd gap to the best model),
 #' `se_diff` (SE of that pointwise elpd difference), and `weight` (the
@@ -91,15 +93,33 @@ compare_models <- function(..., criterion = c("waic", "loo", "loglik")) {
   models <- .name_models(list(...))
 
   if (criterion == "loglik") {
-  rows <- lapply(names(models), function(nm) {
-    fit <- models[[nm]]
-    ll <- tryCatch(as.numeric(logLik(fit)), error = function(e) NA_real_)
-    n_par <- fit$n_params %||% fit$n_fixed %||%
-      (if (is.matrix(fit$draws)) ncol(fit$draws) else NA_integer_)
-      data.frame(model = nm, n_params = n_par, logLik = ll,
-                      stringsAsFactors = FALSE)
-  })
-    return(do.call(rbind, rows))
+    rows <- lapply(names(models), function(nm) {
+      fit <- models[[nm]]
+      l <- tryCatch(logLik(fit), error = function(e) NULL)
+      n_par <- fit$n_params %||% fit$n_fixed %||%
+        (if (is.matrix(fit$draws)) ncol(fit$draws) else NA_integer_)
+      data.frame(model = nm, n_params = n_par,
+                 logLik = if (is.null(l)) NA_real_ else as.numeric(l),
+                 quantity = if (is.null(l)) NA_character_
+                            else attr(l, "quantity") %||% NA_character_,
+                 stringsAsFactors = FALSE)
+    })
+    out <- do.call(rbind, rows)
+    # A mean log posterior, a log marginal likelihood and a log evidence are
+    # three different quantities on three different scales, and ranking them in
+    # one table is a model choice made on an artefact of which tier fitted each
+    # (gcol33/tulpa#712). Refuse rather than order them.
+    q <- unique(out$quantity[!is.na(out$quantity)])
+    if (length(q) > 1L) {
+      stop("compare_models(criterion = \"loglik\") was given fits reporting ",
+           "different quantities under logLik(): ",
+           paste(sprintf("%s = %s", out$model, out$quantity), collapse = ", "),
+           ". They are not on one scale -- a log evidence has already ",
+           "integrated the hyperparameters out. Use criterion = \"waic\" or ",
+           "\"loo\", which score the same predictive quantity on every tier.",
+           call. = FALSE)
+    }
+    return(out)
   }
 
   per     <- lapply(models, .model_criterion, criterion = criterion)

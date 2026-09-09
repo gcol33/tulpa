@@ -112,6 +112,26 @@ VarCorr <- function(x, sigma = 1, ...) UseMethod("VarCorr")
 }
 
 
+# The point-estimated RE SD a marginal-likelihood fit carries. A backend that
+# maximizes the marginal likelihood (agq_fit) holds sigma_re as an estimate and
+# no draws of it at all, so every draws-based source above returns NULL and the
+# 0-row matrix they were handed produced NaN, then diag(NaN, 1), then an error
+# out of `all(sd_m > 0)` that .print_re_section's tryCatch swallowed -- printing
+# the fit with no Random-effects section while the estimate sat on it
+# (gcol33/tulpa#710). Scalar terms only: a point estimate of a single SD is the
+# whole covariance of a `(1 | g)` term, and there is nothing to say about a
+# slope block's correlations from one number.
+#' @keywords internal
+.varcorr_from_point_sigma <- function(object, layout) {
+  s <- object$sigma_re
+  if (is.null(s) || !is.numeric(s) || length(s) != length(layout)) return(NULL)
+  if (anyNA(s) || any(!is.finite(s)) || any(s < 0)) return(NULL)
+  nc <- vapply(layout, function(rt) as.integer(rt$n_coefs %||% 1L), integer(1))
+  if (any(nc != 1L)) return(NULL)
+  lapply(s, function(si) matrix(si^2, 1L, 1L))
+}
+
+
 # Posterior-mean covariance from a sampler fit. `log_sigma_re[...]` columns hold
 # the log SDs; averaging exp() of the draws is the posterior mean SD, which is
 # not exp(mean(log sigma)) -- the difference is the whole reason to average on
@@ -184,6 +204,10 @@ VarCorr.tulpa_fit <- function(x, sigma = 1, ...) {
   if (is.null(cov_list)) {
     cov_list <- .varcorr_from_draws(x, layout)
     src <- "sampled"
+  }
+  if (is.null(cov_list)) {
+    cov_list <- .varcorr_from_point_sigma(x, layout)
+    src <- "estimated"
   }
   if (is.null(cov_list)) {
     cov_list <- .varcorr_from_conditioned(x, layout)

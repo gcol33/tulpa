@@ -208,8 +208,11 @@ test_that("diagnostics() reports the band on a fit with no draws", {
 
   expect_s3_class(d, "laplace_diagnostics")
   expect_equal(nrow(d), 0L)
-  expect_identical(names(d), c("parameter", "mean", "sd", "ess_bulk",
-                               "ess_tail", "rhat"))
+  # No rhat / ess_* columns: those are what the provenance gate withholds on a
+  # non-chain fit, and this table is where it dispatches instead
+  # (gcol33/tulpa#713).
+  expect_identical(names(d), c("parameter", "mean", "sd", "n_draws",
+                               "mcse_mean"))
 
   # The headline the guard used to withhold: a k-hat past the escalation
   # threshold is reported, banded, and folded into the verdict.

@@ -134,6 +134,18 @@ tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
                    length(offset), N), call. = FALSE)
     }
   }
+  # Only the NUTS branch reads n_chains; every other kernel returns one set of
+  # draws with no chain_id. The same function already hard-refuses mass_matrix
+  # and a warm start on those backends, so silence on n_chains was an omission
+  # (gcol33/tulpa#704): a caller asking for four chains got one particle set and
+  # no signal. Refuse it here, where a default is still distinguishable from a
+  # request.
+  if (!is.null(control$n_chains) && !backend %in% c("nuts", "hmc")) {
+    stop("`control$n_chains` is only read by the NUTS/HMC kernel; backend '",
+         backend, "' returns a single set of draws. Drop it, or use ",
+         "backend = 'hmc'.", call. = FALSE)
+  }
+
   n_iter  <- control$n_iter %||% 2000L
   warmup  <- control$warmup %||% (n_iter %/% 2L)
   vi_max_iter   <- as.integer(control$vi_max_iter %||% 10000L)
@@ -213,6 +225,11 @@ tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
     nm <- fixed_names %||% colnames(X) %||% paste0("beta", seq_len(ncol(X)))
   }
   res$param_names <- nm
-  class(res) <- c("tulpa_sample_fit", "tulpa_fit")
-  res
+  # The draws-provenance gate reads fit$backend to learn whether these draws are
+  # an MCMC chain, and treats an untagged fit as one. Closing without the stamp
+  # had mcmc_diagnostics() computing Rhat and ESS on SMC particles and VI draws
+  # (gcol33/tulpa#693) -- the quantities the gate exists to withhold.
+  .finalize_fit(res, backend = backend,
+                param_names = nm,
+                extra_class = "tulpa_sample_fit")
 }

@@ -341,3 +341,16 @@ test_that("a fit's reliability table carries the calibration verdict alongside",
   expect_true(any(grepl("calibration \\(SBC", out)))
   expect_error(diagnostics(fit, sbc = "not an sbc result"), "takes an `sbc`")
 })
+
+test_that("proper_prior is not 'verified' on a run that probed nothing", {
+  # gcol33/tulpa#716: .sbc_check_proper_prior() returns early with n_probe = 0
+  # when every scored quantity is of the "rank" kind, having probed no truth at
+  # all, and the premise was hardcoded "verified". The 0 does disclose it to a
+  # careful reader; the word that survives into a summary is "verified".
+  expect_identical(
+    tulpa:::.sbc_premise_proper_prior(list(n_probe = 3L)), "verified")
+  expect_false(
+    grepl("verified", tulpa:::.sbc_premise_proper_prior(list(n_probe = 0L))))
+  expect_match(tulpa:::.sbc_premise_proper_prior(list(n_probe = 0L)),
+               "not applicable")
+})

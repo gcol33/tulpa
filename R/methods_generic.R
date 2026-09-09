@@ -120,7 +120,10 @@
 #' @keywords internal
 .re_draws_mat <- function(object) {
   nf <- object$n_fixed %||% 0L
-  if (is.matrix(object$draws) && ncol(object$draws) > nf) {
+  # A 0-row draws matrix carries no posterior at all; handing its tail back as
+  # RE draws gave colMeans() of nothing, i.e. NaN estimates (gcol33/tulpa#710).
+  if (is.matrix(object$draws) && nrow(object$draws) > 0L &&
+      ncol(object$draws) > nf) {
     return(object$draws[, (nf + 1L):ncol(object$draws), drop = FALSE])
   }
   if (is.matrix(object$re) && ncol(object$re) >= 1L) return(object$re)
@@ -594,13 +597,47 @@ vcov.tulpa_fit <- function(object, ...) {
   V
 }
 
-#' Log-likelihood at the posterior mean
+#' The fit's log-scale goodness quantity
+#'
+#' What this returns depends on the tier, because the three tiers can report
+#' three different things and none of them can report the others:
+#'
+#' \describe{
+#'   \item{sampler fits}{the mean log POSTERIOR over the draws
+#'     (`quantity = "log_posterior_mean"`) -- the prior is included.}
+#'   \item{Laplace fits}{the log MARGINAL LIKELIHOOD at the fitted
+#'     hyperparameters (`"log_marginal_likelihood"`).}
+#'   \item{nested-Laplace fits}{the log EVIDENCE, the log-sum-exp over the
+#'     outer grid (`"log_evidence"`) -- the hyperparameters have already been
+#'     integrated out.}
+#' }
+#'
+#' The returned object carries a `quantity` attribute naming which one it is.
+#' The three are on different scales and must not be ranked against each other:
+#' `compare_models(criterion = "loglik")` refuses a set of fits that disagree on
+#' it, and `criterion = "waic"` / `"loo"` score the same predictive quantity on
+#' every tier. For the same reason, `AIC()` / `BIC()` on a nested-Laplace fit
+#' penalise a value that has already integrated the hyperparameters out; read
+#' the evidence itself, or use an information criterion built on the pointwise
+#' predictive density.
 #'
 #' @param object A `tulpa_fit` object.
 #' @param ... Ignored.
-#' @return A `logLik` object.
+#' @return A `logLik` object with a `quantity` attribute.
 #' @export
 logLik.tulpa_fit <- function(object, ...) {
+  # WHICH quantity this is. The three tiers return three different things --
+  # a mean log POSTERIOR over draws, a log MARGINAL LIKELIHOOD, and a log
+  # EVIDENCE with the hyperparameters already integrated out -- and they are not
+  # comparable with each other (gcol33/tulpa#712). The value each tier can give
+  # is still the best one available there, so it is returned; what changes is
+  # that it now says what it is, and `compare_models(criterion = "loglik")`
+  # refuses to rank two fits that disagree.
+  quantity <- if (!is.null(object$log_prob)) "log_posterior_mean"
+              else if (!is.null(object$log_marginal))
+                (if (length(object$log_marginal) > 1L) "log_evidence"
+                 else "log_marginal_likelihood")
+              else NA_character_
   ll <- if (!is.null(object$log_prob)) {
     mean(object$log_prob, na.rm = TRUE)
   } else if (!is.null(object$log_marginal)) {
@@ -635,6 +672,7 @@ logLik.tulpa_fit <- function(object, ...) {
   df_candidates <- df_candidates[is.finite(df_candidates) & df_candidates > 0]
   attr(ll, "df")   <- if (length(df_candidates)) as.integer(df_candidates[1L]) else 0L
   attr(ll, "nobs") <- object$N %||% NA_integer_
+  attr(ll, "quantity") <- quantity
   class(ll) <- "logLik"
   ll
 }
@@ -691,7 +729,13 @@ glance.tulpa_fit <- function(x, ...) {
     logLik      = as.numeric(logLik(x)),
     n_divergent = if (!is.null(x$divergent)) sum(x$divergent) else NA_integer_,
     mean_accept = x$mean_accept %||% (if (!is.null(x$accept_prob)) mean(x$accept_prob) else NA_real_),
-    converged   = x$converged %||% NA,
+    # A nested fit's $converged is per outer grid cell, and a vector here
+    # recycles every other column to its length -- so glance() returned one row
+    # per cell against a documented single-row contract, and a
+    # do.call(rbind, lapply(fits, glance)) silently produced a table whose row
+    # count depended on each fit's grid size (gcol33/tulpa#711). Reduce it the
+    # way .nested_any_weighted_converged() already reads it.
+    converged   = all(x$converged %||% NA),
     stringsAsFactors = FALSE
   )
 }

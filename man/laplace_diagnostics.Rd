@@ -14,7 +14,9 @@ i.i.d. approximation sample (\verb{$draws_kind == "iid"}).}
 }
 \value{
 A data frame with one row per parameter -- \code{parameter}, \code{mean}, \code{sd},
-\code{ess_bulk}, \code{ess_tail}, \code{rhat} -- carrying attributes:
+\code{n_draws}, \code{mcse_mean} -- carrying attributes. There is deliberately no
+\code{rhat} / \verb{ess_*} column: those are what the draws-provenance gate withholds
+on a non-chain fit, and this table is where it dispatches instead.
 \describe{
 \item{\code{pareto_k}}{the outer PSIS reliability k-hat (\code{NA} if not computed).}
 \item{\code{pareto_k_band}}{\code{"good"} / \code{"ok"} / \code{"unreliable"} / \code{NA}.}

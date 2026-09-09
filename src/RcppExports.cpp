@@ -2810,6 +2810,17 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_test_ccallable_resolves
+bool cpp_test_ccallable_resolves(std::string name);
+RcppExport SEXP _tulpa_cpp_test_ccallable_resolves(SEXP nameSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< std::string >::type name(nameSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_ccallable_resolves(name));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_register_test_separable_bernoulli_coupling
 void cpp_register_test_separable_bernoulli_coupling();
 RcppExport SEXP _tulpa_cpp_register_test_separable_bernoulli_coupling() {
@@ -4869,6 +4880,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_stochastic_log_determinant", (DL_FUNC) &_tulpa_cpp_stochastic_log_determinant, 7},
     {"_tulpa_cpp_test_temporal_grad_equiv", (DL_FUNC) &_tulpa_cpp_test_temporal_grad_equiv, 4},
     {"_tulpa_cpp_test_ar1_omr2_slope", (DL_FUNC) &_tulpa_cpp_test_ar1_omr2_slope, 1},
+    {"_tulpa_cpp_test_ccallable_resolves", (DL_FUNC) &_tulpa_cpp_test_ccallable_resolves, 1},
     {"_tulpa_cpp_register_test_separable_bernoulli_coupling", (DL_FUNC) &_tulpa_cpp_register_test_separable_bernoulli_coupling, 0},
     {"_tulpa_cpp_register_test_bivariate_gaussian_coupling", (DL_FUNC) &_tulpa_cpp_register_test_bivariate_gaussian_coupling, 3},
     {"_tulpa_cpp_register_test_occupancy_mixture_coupling", (DL_FUNC) &_tulpa_cpp_register_test_occupancy_mixture_coupling, 0},

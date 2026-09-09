@@ -93,3 +93,32 @@ test_that("tweedie validation fires", {
   expect_identical(
     tulpa:::family_loglik(0, -1, "tweedie", phi = 1, phi2 = 1.5), -Inf)
 })
+
+test_that("family = 'tweedie' is reachable on the sampler backends", {
+  # gcol33/tulpa#694: build_sampler_model_inputs() called resp.prepare(), which
+  # hard-errors when family == "tweedie" && isnan(phi2), and the caller assigned
+  # phi2 only AFTERWARDS -- so it was always NaN there and the family was
+  # unreachable on every sampler backend, hmc included.
+  skip_on_cran()
+  set.seed(7)
+  n <- 120L
+  x <- rnorm(n)
+  mu <- exp(0.4 + 0.5 * x); phi <- 1.0; p <- 1.6
+  lam <- mu^(2 - p) / (phi * (2 - p))
+  a <- (2 - p) / (p - 1); b <- mu^(1 - p) / (phi * (p - 1))
+  nev <- rpois(n, lam)
+  y <- ifelse(nev > 0, rgamma(n, shape = nev * a, rate = b), 0)
+  d <- data.frame(y = y, x = x)
+
+  fit <- tulpa(y ~ x, data = d, family = "tweedie", phi2 = p, mode = "hmc",
+               control = list(n_iter = 60L, warmup = 30L, n_chains = 1L,
+                              seed = 1L))
+  expect_s3_class(fit, "tulpa_fit")
+  expect_true(all(is.finite(coef(fit))))
+
+  # The error it used to raise is still raised when phi2 is genuinely absent.
+  expect_error(tulpa(y ~ x, data = d, family = "tweedie", mode = "hmc",
+                     control = list(n_iter = 20L, warmup = 10L, n_chains = 1L,
+                                    seed = 1L)),
+               "phi2|variance power")
+})
