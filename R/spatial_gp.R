@@ -109,7 +109,7 @@ spatial_gp <- function(coords,
   }
 
   # Validate nu for Matern. The NNGP fit path is wired only for nu in
-  # {1.5, 2.5} (gp_cov_type_for_laplace), so reject the rest here rather than
+  # {1.5, 2.5} (gp_cov_type), so reject the rest here rather than
   # deep in the fit. nu = 0.5 is the exponential kernel -- use cov = "exponential".
   if (cov == "matern") {
     if (!is.numeric(nu) || length(nu) != 1 || nu <= 0) {

@@ -94,17 +94,25 @@ test_that("laplace_gp_at refuses an unvalidated spec with a clear error", {
   )
 })
 
-test_that("gp_cov_type_for_laplace maps cov + nu correctly", {
-  expect_equal(gp_cov_type_for_laplace(list(cov = "exponential")), 0L)
-  expect_equal(gp_cov_type_for_laplace(list(cov = "matern", nu = 1.5)), 1L)
-  expect_equal(gp_cov_type_for_laplace(list(cov = "matern", nu = 2.5)), 2L)
+test_that("gp_cov_type maps cov + nu correctly", {
+  expect_equal(gp_cov_type(list(cov = "exponential")), 0L)
+  expect_equal(gp_cov_type(list(cov = "matern", nu = 1.5)), 1L)
+  # 4, not 2: 2 is the Gaussian kernel in tulpa::CovType, and handing a
+  # Matern-5/2 request that code is what fitted it as a squared exponential on
+  # every sampler mode (gcol33/tulpa#686).
+  expect_equal(gp_cov_type(list(cov = "matern", nu = 2.5)), 4L)
 
   # Reject unsupported covariances with an actionable error.
-  expect_error(gp_cov_type_for_laplace(list(cov = "matern", nu = 0.5)),
+  expect_error(gp_cov_type(list(cov = "matern", nu = 0.5)),
                "Matern with nu in")
-  expect_error(gp_cov_type_for_laplace(list(cov = "gaussian")),
+  # The one code names the same kernel on the Laplace scatter, the PG sweep and
+  # the sampler, so a fit and a prediction from it are the same model.
+  expect_equal(cpp_test_compute_cov(0.7, 2.0, 1.3, 4L),
+               2.0 * (1 + sqrt(5) * 0.7 / 1.3 + (sqrt(5) * 0.7 / 1.3)^2 / 3) *
+                 exp(-sqrt(5) * 0.7 / 1.3))
+  expect_error(gp_cov_type(list(cov = "gaussian")),
                "exponential.*matern")
-  expect_error(gp_cov_type_for_laplace(list(cov = "spherical")),
+  expect_error(gp_cov_type(list(cov = "spherical")),
                "exponential.*matern")
 })
 

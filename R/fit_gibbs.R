@@ -211,7 +211,7 @@ dispatch_gibbs_spatial <- function(y, n_trials, X, re_group, n_re_groups,
       nn             = nn_in$nn,
       sigma2_gp_init = spatial$sigma2_gp %||% 1.0,
       phi_gp_init    = spatial$phi_gp %||% 1.0,
-      cov_type       = gp_cov_type_for_laplace(spatial)
+      cov_type       = gp_cov_type(spatial)
     )))
   } else if (spatial_type %in% c("multiscale", "multiscale_gp")) {
     # Both scales reuse the shared NNGP kriging conditional
@@ -244,7 +244,7 @@ dispatch_gibbs_spatial <- function(y, n_trials, X, re_group, n_re_groups,
       phi_local_init       = mean(rl),
       sigma2_regional_init = 1.0,
       phi_regional_init    = mean(rr),
-      cov_type             = gp_cov_type_for_laplace(spatial),
+      cov_type             = gp_cov_type(spatial),
       prior_phi_local_lower    = rl[1], prior_phi_local_upper    = rl[2],
       prior_phi_regional_lower = rr[1], prior_phi_regional_upper = rr[2]
     )))

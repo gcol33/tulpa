@@ -69,3 +69,33 @@ test_that("a chain whose gradient is NaN reports every iteration divergent", {
   expect_identical(clean$n_divergent, 0L)
   expect_gt(clean$n_moved, 0L)
 })
+
+test_that("run_hmc_chain_cpp verifies the gradient on a direct entry", {
+  # gcol33/tulpa#684: the check sat in two callers -- the R wrapper and the
+  # multi-chain producer -- while six production sites entered
+  # run_hmc_chain_cpp directly, including the R_RegisterCCallable a LinkingTo
+  # consumer reaches for backend "hmc". A consumer's hand-coded
+  # spec->gradient_fn was checked when it asked for several chains and
+  # unchecked when it asked for one.
+  #
+  # This probe IS such a direct entry. With the gate live, the planted NaN is
+  # caught before the first trajectory and the chain falls back to numerical
+  # gradients, so it samples instead of standing still.
+  expect_warning(
+    gated <- cpp_test_nan_gradient_nuts(plant_nan = TRUE, bypass_gate = FALSE),
+    "Gradient mismatch"
+  )
+  expect_gt(gated$n_moved, 0L)
+  expect_true(all(is.finite(gated$draws)))
+  expect_lt(gated$n_divergent, gated$n_samples)
+
+  # Bypassing it reproduces the pre-fix behaviour, which is what the test above
+  # measures: the same planted NaN, unchecked, leaves the chain stuck.
+  stuck <- cpp_test_nan_gradient_nuts(plant_nan = TRUE, bypass_gate = TRUE)
+  expect_identical(stuck$n_moved, 0L)
+
+  # A clean gradient passes the gate and is not reported as a mismatch.
+  expect_silent(
+    ok <- cpp_test_nan_gradient_nuts(plant_nan = FALSE, bypass_gate = FALSE))
+  expect_gt(ok$n_moved, 0L)
+})

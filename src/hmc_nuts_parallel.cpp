@@ -231,17 +231,11 @@ std::vector<HMCResultCpp> run_hmc_parallel_chains_cpp(
   // return so it does not leak into the next fit.
   GradientModeFitScope grad_mode_scope;
 
-  // Runtime gradient check on chain 0's init: compare the active gradient
-  // against numerical BEFORE spawning parallel chains. Single-threaded here,
-  // so the R API and g_gradient_mode mutation are safe; the decision then
-  // applies to every chain.
-  if (g_gradient_mode != GradientMode::NUMERICAL) {
-    bool grad_ok = verify_gradient_runtime(q_init_per_chain[0], data, layout, 1e-4);
-    if (!grad_ok) {
-      g_gradient_mode = GradientMode::NUMERICAL;
-      REprintf("[tulpa] Falling back to numerical gradients for all chains.\n");
-    }
-  }
+  // Runtime gradient check on chain 0's init, BEFORE spawning parallel chains:
+  // single-threaded here, so the R API and the mode mutation are safe, and the
+  // decision then applies to every chain. The per-chain gate inside
+  // run_hmc_chain_cpp sees the flag this sets and re-checks nothing.
+  ensure_gradient_verified(q_init_per_chain[0], data, layout);
 
   std::vector<HMCResultCpp> cpp_results(n_chains);
 

@@ -4,10 +4,13 @@
 \alias{.assert_finite_model_inputs}
 \title{Reject non-finite fitting inputs.}
 \usage{
-.assert_finite_model_inputs(X, y, where = NULL)
+.assert_finite_model_inputs(X, y, n_trials = NULL, offset = NULL, where = NULL)
 }
 \arguments{
 \item{X, y}{Design matrix and response; either may be \code{NULL} to skip that arm.}
+
+\item{n_trials, offset}{Per-observation binomial denominators and offset, or
+\code{NULL} to skip that arm.}
 
 \item{where}{Caller name for the message prefix, or \code{NULL} for none.}
 }
@@ -21,5 +24,10 @@ loudly with the offending row instead.
 Reached from \code{\link[=tulpa]{tulpa()}}, from the direct beta-only doors, and from
 \code{\link[=.validate_glm_design]{.validate_glm_design()}}, which is what carries it to every fitter taking a
 \verb{(y, X, n_trials)} bundle.
+
+Every per-observation numeric the kernels index is checked here, not only
+the design and the response: \code{n_trials} and the offset enter eta and the
+likelihood the same way, and an NA in either came back as a silent all-zero
+coefficient vector on the Laplace door (gcol33/tulpa#665).
 }
 \keyword{internal}

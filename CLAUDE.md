@@ -50,7 +50,14 @@ debias, or outer integration), not as standalone alternatives.
 
 1. **Tier system encodes correctness, not hot path.** Tier 1 (exact MCMC), Tier 2 (Laplace), Tier 3 (VI). Hot path is consumer-dependent — for Gaussian-latent hierarchical workloads the typical path is Tier 2 with optional Tier 1 debiasing. Auto mode never silently chooses Tier 3.
 2. **Gradient progression N→A→A_r→H** (Tier 1 / NUTS only): Never skip stages. All modes remain available.
-3. **Runtime gradient verification**: Before NUTS sampling, verify active gradient against numerical.
+3. **Runtime gradient verification**: Before NUTS sampling, verify active
+   gradient against numerical. The gate is `ensure_gradient_verified()` inside
+   `run_hmc_chain_cpp` -- the one function every NUTS entry reaches, so no door
+   can bypass it. It runs once per fit (`g_gradient_verified` travels with
+   `GradientModeFitScope`) and skips inside an across-chain OpenMP region, where
+   the producer has already run it on the main thread. Placed in the CALLERS it
+   reached 2 of 8 entries, missing the C-ABI consumers use for a single chain
+   (gcol33/tulpa#684).
 4. **Model packages own their likelihood**: tulpa assembles linear predictors; model packages compute log-likelihood.
 5. **No copy-paste logic**: Shared sub-computations in helpers, not duplicated across specialized functions. Conventions that keep this single-sourced: log-prior helpers are named `log_prior_*` (e.g. `log_prior_car_proper`, `log_prior_sigma2_pc`); the column-major Rcpp matrix builder `build_matrix_colmajor` is one template over the element type; the spatially-/temporally-varying-coefficient `print`/`summary` methods delegate to `.print_varying_coef` / `.summary_varying_coef` in `R/varying_coef.R`; multi-block prior detection is the single `.is_multi_block_prior` predicate;
    and every `cpp_nested_laplace_*` outer-grid entry hands its shared response
@@ -1318,6 +1325,29 @@ floor is #633's second open question, untouched. Write-up
 `fc$name` on every spec that names its coefficient, feeding a character into an
 integer check and erroring every existing `field_coef = list(name = , grid = )`
 fixture. Spec-field reads are `[[`.
+
+### One covariance code names one kernel (gcol33/tulpa#686)
+
+`inst/include/tulpa/cov_kernel.h` holds the isotropic spatial kernels and their
+phi-derivative, dispatched by `tulpa::CovType`, and it is what the exact-NUTS
+NNGP/SVC kernels, the Laplace NNGP neighbour scatter, the Polya-Gamma sweep and
+the field predictor all read. That is what makes a fit and a prediction from
+that fit the same model: `cpp_gp_field_predict()` evaluates the code stored on
+the fit, so a code whose meaning depends on which path reads it is a silently
+different kernel at predict time.
+
+The integer used to carry two meanings. `gp_cov_type_for_laplace()` returned
+`2` for Matern 5/2 -- the Laplace scatter's own numbering -- and the three
+sampler specs handed that value to a cast into `CovType`, where `2` is
+`GAUSSIAN`. So every sampler mode fitted `nu = 2.5` with `exp(-(d/phi)^2)`, and
+nothing errored: `cov = "gaussian"` is unreachable through `spatial_gp()`'s
+`match.arg`, so `nu = 2.5` was the ONLY route to that kernel.
+
+**The smoothness lives IN the code**, `MATERN52 = 4` beside `MATERN32 = 1`,
+rather than in a `nu` field beside it -- `GPData::nu` was stored and never read,
+which is what let the dispatch round every Matern to 3/2. `gp_cov_type()`
+(`R/fit_laplace.R`) is the one R-side mapper, returning 0 / 1 / 4, and 0..3 keep
+their values because consumer packages map their own `cov` string onto them.
 
 ### The coordinate dimension is data, and there is one distance (gcol33/tulpa#389)
 

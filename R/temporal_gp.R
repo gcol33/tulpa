@@ -506,10 +506,24 @@ validate_temporal_gp <- function(temporal, data) {
     stop("Time variable contains missing values", call. = FALSE)
   }
 
-  # Scale time values if requested
+  # Scale time values if requested. `period` is a LAG, stated by the user in
+  # the raw time units, and the kernel evaluates it against these values -- so
+  # it has to make the same trip. Centring cancels in a lag; the divisor does
+  # not, and leaving it untransformed is what collapsed a monthly period = 12
+  # against a scaled lag range of ~3 (gcol33/tulpa#687). `period` keeps the
+  # declared number so it prints and validates as the user wrote it;
+  # `period_scaled` is that period in the units time_values now carries, and is
+  # what every fit path reads.
+  time_scale <- 1
   if (temporal$scale_coords) {
-    time_vals <- as.vector(scale(time_vals))
+    scaled <- scale(time_vals)
+    time_scale <- as.numeric(attr(scaled, "scaled:scale"))
+    if (!is.finite(time_scale) || time_scale <= 0) time_scale <- 1
+    time_vals <- as.vector(scaled)
   }
+  temporal$time_scale <- time_scale
+  temporal$period_scaled <-
+    if (is.null(temporal$period)) NULL else as.numeric(temporal$period) / time_scale
 
   temporal$n_obs <- N
 

@@ -14,6 +14,7 @@
 #include "linalg_fast.h"   // shared small-dense Cholesky / NNGP solve core
 #include "omp_threads.h"   // tulpa_omp_team_size_req, tulpa_parallel_for
 #include "pc_prior.h"      // tulpa::log_prior_sigma2_pc
+#include "tulpa/cov_kernel.h"  // cov_value: the one kernel per cov_type code
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -353,17 +354,10 @@ inline void pg_nngp_factors(double phi_gp, int cov_type,
   out.B.assign(static_cast<size_t>(n) * nn, 0.0);
   out.F.assign(n, 1.0);
 
+  // Unit marginal variance: the sweep scales by sigma2 itself.
   auto compute_cov = [phi_gp, cov_type](double d) {
     if (d < 1e-10) return 1.0;
-    if (cov_type == 0) {
-      return std::exp(-d / phi_gp);
-    } else if (cov_type == 1) {
-      const double x = std::sqrt(3.0) * d / phi_gp;
-      return (1.0 + x) * std::exp(-x);
-    } else {
-      const double x = std::sqrt(5.0) * d / phi_gp;
-      return (1.0 + x + x * x / 3.0) * std::exp(-x);
-    }
+    return cov_value(d, 1.0, phi_gp, static_cast<CovType>(cov_type));
   };
 
   std::vector<double> c_vec, C_mat, L, zeros;

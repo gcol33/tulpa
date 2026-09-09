@@ -136,8 +136,17 @@ namespace tulpa {
 // tvc_sigma_prior_U / _alpha (trailing doubles in their own sections),
 // defaulted to the (1, 0.01) anchors those three PC priors previously hardcoded
 //.
+// 42 -> 43: tulpa::CovType gained MATERN52 = 4, and every path that turns a
+// cov_type code into a covariance now reads the one dispatch in
+// tulpa/cov_kernel.h. The code a Matern nu = 2.5 request maps to therefore
+// moves from 2 to 4: 2 was the Laplace NNGP scatter's private meaning for
+// Matern 5/2 and the sampler's meaning for the Gaussian kernel at the same
+// time, so a Matern-5/2 request handed to a sampler mode was fitted with
+// exp(-(d/phi)^2) and a Matern-5/2 fit predicted with it too. A consumer
+// passing a raw cov_type integer must re-read it against the enum; the bump is
+// what makes that a "rebuild required" rather than a silently different kernel.
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 42;
+constexpr int TULPA_ABI_VERSION = 43;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)

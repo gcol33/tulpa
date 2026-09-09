@@ -1,5 +1,88 @@
 # tulpa 0.3.2
 
+## One covariance code names one kernel, on every path
+
+* **A Matern `nu = 2.5` request was fitted with the Gaussian kernel on every
+  sampler mode** (gcol33/tulpa#686). The integer had two meanings:
+  `gp_cov_type_for_laplace()` returned `2L` for Matern-5/2, the Laplace NNGP
+  scatter's private code for it, and `.gp_sampler_spec()` / `.msgp_sampler_spec()`
+  / `.svc_sampler_spec()` handed that same value to a cast into `tulpa::CovType`,
+  where `2` is `GAUSSIAN`. So `spatial_gp(cov = "matern", nu = 2.5)` under
+  `mode = "hmc"` sampled `exp(-(d/phi)^2)`, and `predict()` on a Matern-5/2
+  Laplace fit used it too, since `cpp_gp_field_predict()` reads the fit's stored
+  code through the sampler kernel. Nothing errored, because `cov = "gaussian"`
+  is unreachable through the door's `match.arg`: `nu = 2.5` was the only way to
+  reach that kernel and it happened silently. `CovType` now carries
+  `MATERN52 = 4` and the kernels themselves live in one exported header,
+  `inst/include/tulpa/cov_kernel.h`, read by the exact-NUTS NNGP/SVC kernels,
+  the Laplace NNGP scatter, the Polya-Gamma sweep and the field predictor alike
+  -- so the smoothness travels IN the code and no path reads a `nu` beside it to
+  learn which kernel it is evaluating. `gp_cov_type()` (renamed from
+  `gp_cov_type_for_laplace()`, since it is no longer the Laplace path's own
+  mapping) returns 0 / 1 / 4. **ABI break** (`TULPA_ABI_VERSION` 42 -> 43): a
+  consumer passing a raw `cov_type` integer must re-read it against the enum,
+  and the bump is what makes that a rebuild rather than a different kernel.
+
+## A periodic temporal GP's period is stated in the units the kernel sees
+
+* **`temporal_gp(cov = "periodic", period =)` collapsed to nothing under the
+  default `scale_coords = TRUE`** (gcol33/tulpa#687). `validate_temporal_gp()`
+  standardizes the time axis and the kernel evaluates `sin(pi * d / period)`
+  against those scaled lags, while `period` travelled untouched: on a 60-month
+  series with `period = 12` the maximum scaled lag is 3.32 against a period of
+  12, over which the sine is monotone and small, so the fitted kernel had no
+  periodic structure in it at all. `period` is a LAG and now makes the same trip
+  the axis does. The declared number is left on the spec, so it prints and
+  validates as the user wrote it; `period_scaled` is that period in the
+  kernel's own units and is what the fit reads.
+
+## The two HSGP-ST prior defects the Kronecker branch's fixes did not reach
+
+* **Under a non-cyclic RW2 marginal the HSGP-ST branch left each basis
+  function's linear-ramp direction with no prior at all** (gcol33/tulpa#697).
+  `rw2_quadratic_form` annihilates a ramp and a penalty on the sum reaches the
+  constant only, so `M` improper directions rode into the target unpenalized --
+  the defect gcol33/tulpa#600 fixed for the Kronecker and Type-II paths, in the
+  one branch it did not touch. The ramp pin is now read from the same predicate:
+  `temporal_has_trend_null()` is the RW2 fact by itself and `st_needs_trend_pin()`
+  is that fact plus the interaction structure, so the density, the matrix form
+  and the mass override still share one answer.
+* **A cyclic HSGP-ST scaled its log-precision by a cyclic-aware rank while
+  evaluating an acyclic operator beside it** (gcol33/tulpa#696): `rank_t = T - 1`
+  powers of `prec_j` against a quadratic form of rank `T - 2`, per basis
+  function. This is gcol33/tulpa#596's defect in the sibling branch. Both now
+  read the fit's own `temporal_cyclic`.
+* `src/test_st_hsgp_prior.cpp` is the fixture that makes the branch reachable
+  from R at all -- nothing in tulpa sets `ModelData::has_spatiotemporal`, so a
+  consumer-shaped `ModelData` is the only way in, as it is for the Type-IV
+  fixture beside it. It drives the shipped density, not a copy.
+
+## Every per-observation input passes the finite guard
+
+* **`n_trials` and the offset were not checked** (gcol33/tulpa#665).
+  `tulpa()` guarded `X` and `y` alone, and `tulpa_laplace()` -- a front door in
+  its own right, which does not route through `.validate_glm_design()` --
+  guarded neither. An `NA` in either reached the kernel and came back as an
+  all-zero coefficient vector with no error and no warning. Both arms are now
+  in `.assert_finite_model_inputs()` and both doors call it with them.
+
+## No NUTS entry can start a trajectory on an unverified gradient
+
+* **Runtime gradient verification ran on 2 of 8 NUTS entries**
+  (gcol33/tulpa#684). The check sat in `run_hmc_chain()` (the R wrapper) and
+  `run_hmc_parallel_chains_cpp()`, while `run_hmc_chain_cpp` was entered
+  directly from six other production sites -- including
+  `tulpa_run_nuts_generic`, the `R_RegisterCCallable` a `LinkingTo` consumer
+  reaches for `backend = "hmc"`. A consumer's hand-coded `spec->gradient_fn` was
+  therefore checked when it asked for several chains and unchecked when it asked
+  for one, which is the reverse of what design principle 3 says. The gate is now
+  `ensure_gradient_verified()` inside `run_hmc_chain_cpp` itself: it skips inside
+  an across-chain OpenMP region (where the producer has already run it on the
+  main thread and an R warning would be unsafe) and skips when the fit in scope
+  has already been verified, so the check runs once per fit however many chains
+  it runs. `g_gradient_verified` travels with `GradientModeFitScope`, so a
+  fallback is still confined to the fit that triggered it.
+
 ## A covariate transform is carried through the formula strippers unchanged
 
 * **`nobars()` / `no_latent_terms()` / `no_special_terms()` rebuilt every call

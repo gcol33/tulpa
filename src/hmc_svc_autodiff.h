@@ -40,6 +40,13 @@ inline T cov_matern32(double d, const T& sigma2, const T& phi) {
     return sigma2 * (T(1.0) + r) * safe_exp(-r);
 }
 
+// Matern 5/2 covariance: sigma^2 * (1 + x + x^2/3) * exp(-x), x = sqrt(5)*d/phi
+template<typename T>
+inline T cov_matern52(double d, const T& sigma2, const T& phi) {
+    T x = T(std::sqrt(5.0) * d) / phi;
+    return sigma2 * (T(1.0) + x + x * x / T(3.0)) * safe_exp(-x);
+}
+
 // Gaussian (squared exponential) covariance: sigma^2 * exp(-(d/phi)^2)
 template<typename T>
 inline T cov_gaussian(double d, const T& sigma2, const T& phi) {
@@ -62,8 +69,10 @@ inline T compute_cov(double d, const T& sigma2, const T& phi, CovType cov_type) 
     switch (cov_type) {
         case CovType::EXPONENTIAL:
             return cov_exponential(d, sigma2, phi);
-        case CovType::MATERN:
+        case CovType::MATERN32:
             return cov_matern32(d, sigma2, phi);
+        case CovType::MATERN52:
+            return cov_matern52(d, sigma2, phi);
         case CovType::GAUSSIAN:
             return cov_gaussian(d, sigma2, phi);
         case CovType::SPHERICAL:

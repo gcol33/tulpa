@@ -9,6 +9,7 @@
 #include "gpu_backend.h"  // single entry point; it owns the CUDA/stub choice
 #include "linalg_fast.h"  // shared small-dense Cholesky / NNGP solve core
 #include "nngp_cond.h"    // nngp_row_neighbours: the shared left-packed scan
+#include "tulpa/cov_kernel.h"  // cov_value: the one kernel per cov_type code
 #include <Rcpp.h>
 #include <algorithm>
 #include <vector>
@@ -26,13 +27,7 @@ namespace tulpa {
 // no covariance is ever formed from a non-positive parameter.
 inline double nngp_cov_gpu(double d, double sigma2, double phi, int cov_type) {
     if (d < 1e-10) return sigma2;
-    if (cov_type == 0) return sigma2 * std::exp(-d / phi);
-    if (cov_type == 1) {
-        double x = std::sqrt(3.0) * d / phi;
-        return sigma2 * (1.0 + x) * std::exp(-x);
-    }
-    double x = std::sqrt(5.0) * d / phi;
-    return sigma2 * (1.0 + x + x * x / 3.0) * std::exp(-x);
+    return cov_value(d, sigma2, phi, static_cast<CovType>(cov_type));
 }
 
 // Batch-compute all NNGP conditional means, variances, and (optionally) the

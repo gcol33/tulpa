@@ -957,8 +957,8 @@ cpp_test_margin_mass_term <- function(S, T, lambda_row, lambda_col, var, start =
     .Call(`_tulpa_cpp_test_margin_mass_term`, S, T, lambda_row, lambda_col, var, start, lambda_trend)
 }
 
-cpp_test_nan_gradient_nuts <- function(plant_nan, K = 3L, n_iter = 40L, n_warmup = 20L, seed = 1L) {
-    .Call(`_tulpa_cpp_test_nan_gradient_nuts`, plant_nan, K, n_iter, n_warmup, seed)
+cpp_test_nan_gradient_nuts <- function(plant_nan, K = 3L, n_iter = 40L, n_warmup = 20L, seed = 1L, bypass_gate = TRUE) {
+    .Call(`_tulpa_cpp_test_nan_gradient_nuts`, plant_nan, K, n_iter, n_warmup, seed, bypass_gate)
 }
 
 cpp_test_nuts_gradient_throws <- function(throw_after = 30L, K = 3L, n_iter = 40L, n_warmup = 20L, seed = 1L) {
@@ -975,6 +975,14 @@ cpp_test_divergence_predicates <- function(log_prob, q, p, H0, H_new, delta_max 
 
 cpp_test_pg_nngp_conditional <- function(coords, nn_idx, nn_dist, nn_order, n_spatial, nn, w, sigma2, phi, cov_type = 0L) {
     .Call(`_tulpa_cpp_test_pg_nngp_conditional`, coords, nn_idx, nn_dist, nn_order, n_spatial, nn, w, sigma2, phi, cov_type)
+}
+
+cpp_test_st_hsgp_log_prior <- function(delta, eigenvalues, T, log_tau_st, log_sigma2_hsgp, log_lengthscale_hsgp, temporal = "rw2", temporal_cyclic = FALSE) {
+    .Call(`_tulpa_cpp_test_st_hsgp_log_prior`, delta, eigenvalues, T, log_tau_st, log_sigma2_hsgp, log_lengthscale_hsgp, temporal, temporal_cyclic)
+}
+
+cpp_test_st_trend_precision <- function(T) {
+    .Call(`_tulpa_cpp_test_st_trend_precision`, T)
 }
 
 cpp_test_st_iv_nuts <- function(y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T, family = "poisson", temporal = "rw1", temporal_cyclic = FALSE, st_parameterization = 0L, mass_matrix = "diag", n_iter = 1000L, n_warmup = 500L, max_treedepth = 10L, adapt_delta = 0.8, seed = 1L, sigma_beta = 10.0, verbose = FALSE) {

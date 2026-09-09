@@ -133,7 +133,7 @@ namespace tulpa_hmc {
 // [[Rcpp::export]]
 Rcpp::List cpp_test_nan_gradient_nuts(bool plant_nan, int K = 3,
                                        int n_iter = 40, int n_warmup = 20,
-                                       int seed = 1) {
+                                       int seed = 1, bool bypass_gate = true) {
     if (K < 1) Rcpp::stop("K must be >= 1");
 
     NormalData nd;
@@ -147,6 +147,16 @@ Rcpp::List cpp_test_nan_gradient_nuts(bool plant_nan, int K = 3,
 
     g_throw_after = -1; g_grad_calls = 0;
     g_plant_nan = plant_nan;
+    // Two things to measure, and they need opposite settings of the entry gate.
+    // bypass_gate = true asks what the chain does with a NaN raised DURING a
+    // trajectory, so it declares the gradient already verified and the planted
+    // NaN reaches the leapfrog. bypass_gate = false asks whether
+    // run_hmc_chain_cpp verifies at all -- this probe enters it directly, past
+    // both the R wrapper and the multi-chain producer, which is the entry class
+    // that used to skip the check (gcol33/tulpa#684). The scope restores the
+    // flag and the mode on return, so nothing leaks to the next fit.
+    tulpa_hmc::GradientModeFitScope grad_scope;
+    tulpa_hmc::g_gradient_verified = bypass_gate;
     tulpa_hmc::HMCResultCpp result = tulpa_hmc::run_hmc_chain_cpp(
         init, data, layout, n_iter, n_warmup, /*L=*/0, /*chain_id=*/1,
         static_cast<unsigned int>(seed), /*verbose=*/false,
@@ -206,6 +216,8 @@ void cpp_test_nuts_gradient_throws(int throw_after = 30, int K = 3,
         ~FlagReset() { g_throw_after = -1; g_grad_calls = 0; }
     } flag_reset;
 
+    tulpa_hmc::GradientModeFitScope grad_scope;
+    tulpa_hmc::g_gradient_verified = true;
     (void) tulpa_hmc::run_hmc_chain_cpp(
         init, data, layout, n_iter, n_warmup, /*L=*/0, /*chain_id=*/1,
         static_cast<unsigned int>(seed), /*verbose=*/false,

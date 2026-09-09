@@ -41,11 +41,24 @@ namespace tulpa_st {
 using tulpa::STType;
 using tulpa::TemporalType;
 
+// Does the TEMPORAL marginal alone carry a null direction the field's own sum
+// does not pin? Non-cyclic RW2 only: its kernel is {1_T, v}, and a penalty on
+// the sum reaches the constant alone. This is the whole of the RW2 fact; where
+// it applies is the two questions below.
+inline bool temporal_has_trend_null(TemporalType temporal, bool cyclic) {
+    return temporal == TemporalType::RW2 && !cyclic;
+}
+
 // Does this interaction's kernel reach past what the row and column sums pin?
 inline bool st_needs_trend_pin(STType type, TemporalType temporal, bool cyclic) {
-    if (temporal != TemporalType::RW2 || cyclic) return false;
+    if (!temporal_has_trend_null(temporal, cyclic)) return false;
     return type == STType::TYPE_IV || type == STType::TYPE_II;
 }
+
+// The HSGP-ST interaction is M INDEPENDENT temporal fields, one per spectral
+// basis function, each with its own sum pinned. There is no Kronecker margin
+// to spread the ramp across, so the answer is the temporal fact by itself --
+// the STType does not enter (gcol33/tulpa#697).
 
 // The ramp direction over T time points, centred so it is orthogonal to the
 // constant the row sums already pin.

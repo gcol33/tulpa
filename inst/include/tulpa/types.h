@@ -10,11 +10,17 @@ namespace tulpa {
 // ============================================================================
 // Spatial covariance kernel types
 // ============================================================================
+// One code per KERNEL, not per family: the smoothness of a Matern is part of
+// the code rather than a separate `nu` beside it, because a `nu` the kernel
+// dispatch does not read is a smoothness the fit silently ignores. New codes
+// append -- 0..3 are read by consumer packages that map their own `cov` string
+// onto them.
 enum class CovType : int {
     EXPONENTIAL = 0,
-    MATERN = 1,
+    MATERN32 = 1,
     GAUSSIAN = 2,
-    SPHERICAL = 3
+    SPHERICAL = 3,
+    MATERN52 = 4
 };
 
 // ============================================================================

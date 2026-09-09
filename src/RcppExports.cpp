@@ -4045,8 +4045,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_test_nan_gradient_nuts
-Rcpp::List cpp_test_nan_gradient_nuts(bool plant_nan, int K, int n_iter, int n_warmup, int seed);
-RcppExport SEXP _tulpa_cpp_test_nan_gradient_nuts(SEXP plant_nanSEXP, SEXP KSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP seedSEXP) {
+Rcpp::List cpp_test_nan_gradient_nuts(bool plant_nan, int K, int n_iter, int n_warmup, int seed, bool bypass_gate);
+RcppExport SEXP _tulpa_cpp_test_nan_gradient_nuts(SEXP plant_nanSEXP, SEXP KSEXP, SEXP n_iterSEXP, SEXP n_warmupSEXP, SEXP seedSEXP, SEXP bypass_gateSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -4055,7 +4055,8 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< int >::type n_iter(n_iterSEXP);
     Rcpp::traits::input_parameter< int >::type n_warmup(n_warmupSEXP);
     Rcpp::traits::input_parameter< int >::type seed(seedSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_test_nan_gradient_nuts(plant_nan, K, n_iter, n_warmup, seed));
+    Rcpp::traits::input_parameter< bool >::type bypass_gate(bypass_gateSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_nan_gradient_nuts(plant_nan, K, n_iter, n_warmup, seed, bypass_gate));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -4116,6 +4117,35 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
     Rcpp::traits::input_parameter< int >::type cov_type(cov_typeSEXP);
     rcpp_result_gen = Rcpp::wrap(cpp_test_pg_nngp_conditional(coords, nn_idx, nn_dist, nn_order, n_spatial, nn, w, sigma2, phi, cov_type));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_test_st_hsgp_log_prior
+double cpp_test_st_hsgp_log_prior(Rcpp::NumericVector delta, Rcpp::NumericVector eigenvalues, int T, double log_tau_st, double log_sigma2_hsgp, double log_lengthscale_hsgp, std::string temporal, bool temporal_cyclic);
+RcppExport SEXP _tulpa_cpp_test_st_hsgp_log_prior(SEXP deltaSEXP, SEXP eigenvaluesSEXP, SEXP TSEXP, SEXP log_tau_stSEXP, SEXP log_sigma2_hsgpSEXP, SEXP log_lengthscale_hsgpSEXP, SEXP temporalSEXP, SEXP temporal_cyclicSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type delta(deltaSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type eigenvalues(eigenvaluesSEXP);
+    Rcpp::traits::input_parameter< int >::type T(TSEXP);
+    Rcpp::traits::input_parameter< double >::type log_tau_st(log_tau_stSEXP);
+    Rcpp::traits::input_parameter< double >::type log_sigma2_hsgp(log_sigma2_hsgpSEXP);
+    Rcpp::traits::input_parameter< double >::type log_lengthscale_hsgp(log_lengthscale_hsgpSEXP);
+    Rcpp::traits::input_parameter< std::string >::type temporal(temporalSEXP);
+    Rcpp::traits::input_parameter< bool >::type temporal_cyclic(temporal_cyclicSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_st_hsgp_log_prior(delta, eigenvalues, T, log_tau_st, log_sigma2_hsgp, log_lengthscale_hsgp, temporal, temporal_cyclic));
+    return rcpp_result_gen;
+END_RCPP
+}
+// cpp_test_st_trend_precision
+double cpp_test_st_trend_precision(int T);
+RcppExport SEXP _tulpa_cpp_test_st_trend_precision(SEXP TSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< int >::type T(TSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_st_trend_precision(T));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -4933,11 +4963,13 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_test_lowrank_mass_apply", (DL_FUNC) &_tulpa_cpp_test_lowrank_mass_apply, 8},
     {"_tulpa_cpp_test_lowrank_mass_momentum", (DL_FUNC) &_tulpa_cpp_test_lowrank_mass_momentum, 8},
     {"_tulpa_cpp_test_margin_mass_term", (DL_FUNC) &_tulpa_cpp_test_margin_mass_term, 7},
-    {"_tulpa_cpp_test_nan_gradient_nuts", (DL_FUNC) &_tulpa_cpp_test_nan_gradient_nuts, 5},
+    {"_tulpa_cpp_test_nan_gradient_nuts", (DL_FUNC) &_tulpa_cpp_test_nan_gradient_nuts, 6},
     {"_tulpa_cpp_test_nuts_gradient_throws", (DL_FUNC) &_tulpa_cpp_test_nuts_gradient_throws, 5},
     {"_tulpa_cpp_test_nuts_progress_active", (DL_FUNC) &_tulpa_cpp_test_nuts_progress_active, 0},
     {"_tulpa_cpp_test_divergence_predicates", (DL_FUNC) &_tulpa_cpp_test_divergence_predicates, 6},
     {"_tulpa_cpp_test_pg_nngp_conditional", (DL_FUNC) &_tulpa_cpp_test_pg_nngp_conditional, 10},
+    {"_tulpa_cpp_test_st_hsgp_log_prior", (DL_FUNC) &_tulpa_cpp_test_st_hsgp_log_prior, 8},
+    {"_tulpa_cpp_test_st_trend_precision", (DL_FUNC) &_tulpa_cpp_test_st_trend_precision, 1},
     {"_tulpa_cpp_test_st_iv_nuts", (DL_FUNC) &_tulpa_cpp_test_st_iv_nuts, 20},
     {"_tulpa_cpp_test_st_iv_layout", (DL_FUNC) &_tulpa_cpp_test_st_iv_layout, 13},
     {"_tulpa_cpp_test_st_iv_gmrf_mass", (DL_FUNC) &_tulpa_cpp_test_st_iv_gmrf_mass, 15},

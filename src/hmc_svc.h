@@ -13,6 +13,7 @@
 #include "tulpa/sum_to_zero.h"  // s2z_centre_blocks
 #include "tulpa/svc_data.h"
 #include "tulpa/types.h"
+#include "tulpa/cov_kernel.h"  // the kernels themselves, shared with every other path
 #include "linalg_fast.h"  // shared small-dense Cholesky / NNGP solve core
 #include "nngp_cond.h"    // shared Vecchia conditional kernel (factor/krige/floor)
 
@@ -39,50 +40,18 @@ constexpr double kSvcVarFloor = 1e-4;
 // Covariance functions
 // -----------------------------------------------------------------------------
 
-// Exponential covariance: sigma^2 * exp(-d / phi)
-inline double cov_exponential(double d, double sigma2, double phi) {
-  return sigma2 * std::exp(-d / phi);
-}
+// The kernels themselves live in tulpa/cov_kernel.h, which the Laplace NNGP
+// scatter, the Polya-Gamma sweep and the field predictor read too, so one
+// cov_type code names one kernel on every path. The names are pulled in here
+// unchanged so existing tulpa_svc:: call sites read the same.
+using tulpa::cov_exponential;
+using tulpa::cov_matern32;
+using tulpa::cov_matern52;
+using tulpa::cov_gaussian;
+using tulpa::cov_spherical;
 
-// Matern 3/2 covariance: sigma^2 * (1 + sqrt(3)*d/phi) * exp(-sqrt(3)*d/phi)
-inline double cov_matern32(double d, double sigma2, double phi) {
-  double r = std::sqrt(3.0) * d / phi;
-  return sigma2 * (1.0 + r) * std::exp(-r);
-}
-
-// Gaussian (squared exponential) covariance: sigma^2 * exp(-(d/phi)^2)
-inline double cov_gaussian(double d, double sigma2, double phi) {
-  double r = d / phi;
-  return sigma2 * std::exp(-r * r);
-}
-
-// Spherical covariance
-inline double cov_spherical(double d, double sigma2, double phi) {
-  if (d >= phi) return 0.0;
-  double r = d / phi;
-  return sigma2 * (1.0 - 1.5 * r + 0.5 * r * r * r);
-}
-
-// Generic covariance function dispatcher.
-//
-// NOTE: CovType::MATERN is fixed at smoothness nu = 3/2 -- this dispatch has no
-// nu argument. spatial_gp(cov = "matern", nu = ) accepts any positive nu and
-// the Laplace path honours nu in {1.5, 2.5} (gp_cov_type_for_laplace), so a
-// consumer filling GPData.cov_type from a user's nu must reject anything other
-// than 1.5 rather than let it be silently rounded to 3/2 here.
 inline double compute_cov(double d, double sigma2, double phi, CovType cov_type) {
-  switch (cov_type) {
-    case CovType::EXPONENTIAL:
-      return cov_exponential(d, sigma2, phi);
-    case CovType::MATERN:
-      return cov_matern32(d, sigma2, phi);
-    case CovType::GAUSSIAN:
-      return cov_gaussian(d, sigma2, phi);
-    case CovType::SPHERICAL:
-      return cov_spherical(d, sigma2, phi);
-    default:
-      return cov_exponential(d, sigma2, phi);
-  }
+  return tulpa::cov_value(d, sigma2, phi, cov_type);
 }
 
 // -----------------------------------------------------------------------------
@@ -217,7 +186,9 @@ inline double log_prior_phi(double phi, double lower, double upper) {
 // Parse covariance type from string
 inline CovType parse_cov_type(const std::string& cov_str) {
   static const tulpa::EnumEntry<CovType> table[] = {
-    {"exponential", CovType::EXPONENTIAL}, {"matern", CovType::MATERN},
+    {"exponential", CovType::EXPONENTIAL},
+    {"matern", CovType::MATERN32}, {"matern32", CovType::MATERN32},
+    {"matern52", CovType::MATERN52},
     {"gaussian", CovType::GAUSSIAN}, {"spherical", CovType::SPHERICAL}
   };
   return tulpa::parse_enum(cov_str, table, CovType::EXPONENTIAL);
@@ -236,29 +207,7 @@ inline CovType parse_cov_type(const std::string& cov_str) {
 // polynomial's is not, so it takes sigma2 explicitly.
 inline double dcov_dphi_svc(double d, double phi, double cov_val, double sigma2,
                             CovType cov_type) {
-  if (d < 1e-10) return 0.0;
-  switch (cov_type) {
-    case CovType::EXPONENTIAL:
-      // k = s2*exp(-d/phi) -> dk/dphi = k*d/phi^2
-      return cov_val * d / (phi * phi);
-    case CovType::MATERN: {
-      // k = s2*(1+u)*exp(-u), u = sqrt(3)*d/phi -> dk/dphi = k*u^2/(phi*(1+u))
-      double u = 1.732050808 * d / phi;  // sqrt(3) * d / phi
-      return (1.0 + u > 1e-10) ? cov_val * u * u / (phi * (1.0 + u)) : 0.0;
-    }
-    case CovType::GAUSSIAN:
-      // k = s2*exp(-(d/phi)^2) -> dk/dphi = k*2*d^2/phi^3
-      return cov_val * 2.0 * d * d / (phi * phi * phi);
-    case CovType::SPHERICAL: {
-      // k = s2*(1 - 1.5r + 0.5r^3) for r = d/phi < 1, else 0 (and flat there)
-      // -> dk/dphi = s2 * 1.5 * r * (1 - r^2) / phi
-      if (d >= phi) return 0.0;
-      double r = d / phi;
-      return sigma2 * 1.5 * r * (1.0 - r * r) / phi;
-    }
-    default:
-      return cov_val * d / (phi * phi);
-  }
+  return tulpa::cov_dphi(d, phi, cov_val, sigma2, cov_type);
 }
 
 } // namespace tulpa_svc

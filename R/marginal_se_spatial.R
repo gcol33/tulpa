@@ -141,7 +141,7 @@ NULL
   ni        <- spatial$neighbor_info
   n_spatial <- spatial$n_spatial %||% nrow(spatial$unique_coords)
   nn        <- spatial$nn %||% ncol(ni$nn_idx)
-  cov_type  <- gp_cov_type_for_laplace(spatial)
+  cov_type  <- gp_cov_type(spatial)
   cov_fn    <- .nngp_cov_fn(cov_type, sigma2_gp, phi_gp)
 
   nn_idx   <- ni$nn_idx

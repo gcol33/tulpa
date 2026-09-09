@@ -882,10 +882,18 @@ family_names <- function() names(.FAMILY_OPS)
 #' [.validate_glm_design()], which is what carries it to every fitter taking a
 #' `(y, X, n_trials)` bundle.
 #'
+#' Every per-observation numeric the kernels index is checked here, not only
+#' the design and the response: `n_trials` and the offset enter eta and the
+#' likelihood the same way, and an NA in either came back as a silent all-zero
+#' coefficient vector on the Laplace door (gcol33/tulpa#665).
+#'
 #' @param X,y Design matrix and response; either may be `NULL` to skip that arm.
+#' @param n_trials,offset Per-observation binomial denominators and offset, or
+#'   `NULL` to skip that arm.
 #' @param where Caller name for the message prefix, or `NULL` for none.
 #' @keywords internal
-.assert_finite_model_inputs <- function(X, y, where = NULL) {
+.assert_finite_model_inputs <- function(X, y, n_trials = NULL, offset = NULL,
+                                        where = NULL) {
   pre <- if (is.null(where)) "" else paste0(where, ": ")
   if (!is.null(X)) {
     ok_row <- if (is.matrix(X)) .all_finite_rows(X) else is.finite(X)
@@ -906,6 +914,17 @@ family_names <- function() names(.FAMILY_OPS)
         "%sNon-finite value(s) in the response (%d, first at row %d). Remove ",
         "or impute NA/NaN/Inf in the response before fitting."),
         pre, length(bad), bad[1L]), call. = FALSE)
+    }
+  }
+  for (arm in list(list(v = n_trials, nm = "n_trials"),
+                   list(v = offset, nm = "offset"))) {
+    if (is.null(arm$v)) next
+    bad <- which(!is.finite(suppressWarnings(as.numeric(arm$v))))
+    if (length(bad)) {
+      stop(sprintf(paste0(
+        "%sNon-finite value(s) in `%s` (%d, first at row %d). Remove or ",
+        "impute NA/NaN/Inf before fitting."),
+        pre, arm$nm, length(bad), bad[1L]), call. = FALSE)
     }
   }
   invisible(TRUE)

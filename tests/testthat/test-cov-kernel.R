@@ -7,7 +7,8 @@
 # another. Checking each derivative against a numerical derivative of the value
 # it differentiates catches exactly this class of drift.
 
-COV <- c(exponential = 0L, matern32 = 1L, gaussian = 2L, spherical = 3L)
+COV <- c(exponential = 0L, matern32 = 1L, gaussian = 2L, spherical = 3L,
+         matern52 = 4L)
 
 test_that("dcov_dphi matches a numerical derivative of compute_cov", {
   h <- 1e-6
@@ -39,6 +40,9 @@ test_that("each covariance kernel matches its closed form", {
                  sigma2 * (1 + u) * exp(-u), tolerance = 1e-8)
     expect_equal(cpp_test_compute_cov(d, sigma2, phi, COV[["gaussian"]]),
                  sigma2 * exp(-(d / phi)^2), tolerance = 1e-12)
+    v <- sqrt(5) * d / phi
+    expect_equal(cpp_test_compute_cov(d, sigma2, phi, COV[["matern52"]]),
+                 sigma2 * (1 + v + v^2 / 3) * exp(-v), tolerance = 1e-8)
     r <- d / phi
     sph <- if (d >= phi) 0 else sigma2 * (1 - 1.5 * r + 0.5 * r^3)
     expect_equal(cpp_test_compute_cov(d, sigma2, phi, COV[["spherical"]]),

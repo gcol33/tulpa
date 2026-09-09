@@ -294,6 +294,18 @@ T compute_st_prior(const std::vector<T>& params, const ModelData& data,
                 (data.spatiotemporal_data.temporal_type == TemporalType::RW2)
                     ? tulpa_temporal::rw2_rank(T_st, data.spatiotemporal_data.temporal_cyclic) : T_st;
 
+            // The rank above and the operator below read the same cyclic
+            // flag: a cyclic RW2 puts rank_t = T - 1 powers of prec_j in the
+            // target, and against an ACYCLIC operator of rank T - 2 that is one
+            // power too many at every basis function (gcol33/tulpa#696, the
+            // same defect gcol33/tulpa#596 fixed in st_kronecker_temporal_quad).
+            const bool st_cyclic = data.spatiotemporal_data.temporal_cyclic;
+            // Each basis function is a standalone temporal field, so under a
+            // non-cyclic RW2 its kernel is {1_T, v} and the sum pin below
+            // reaches only the constant (gcol33/tulpa#697).
+            const bool add_trend = tulpa_st::temporal_has_trend_null(
+                data.spatiotemporal_data.temporal_type, st_cyclic);
+
             for (int j = 0; j < M; j++) {
                 double omega_sq = data.st_hsgp_data.eigenvalues[j];
                 T S_j = hsgp_spectral_density_2d(sigma2_st_hsgp,
@@ -304,19 +316,33 @@ T compute_st_prior(const std::vector<T>& params, const ModelData& data,
                 T qf = T(0.0);
                 if (data.spatiotemporal_data.temporal_type == TemporalType::RW1) {
                     qf = tulpa_temporal::rw1_quadratic_form(
-                        st_delta.data() + j * T_st, T_st, false);
+                        st_delta.data() + j * T_st, T_st, st_cyclic);
                 } else if (data.spatiotemporal_data.temporal_type == TemporalType::RW2) {
                     qf = tulpa_temporal::rw2_quadratic_form(
-                        st_delta.data() + j * T_st, T_st, false);
+                        st_delta.data() + j * T_st, T_st, st_cyclic);
                 }
                 log_post = log_post + T(0.5 * rank_t) * safe_log(prec_j)
                          - T(0.5) * prec_j * qf;
 
-                // Soft sum-to-zero per basis function (a sum over T_st terms)
+                // Soft sum-to-zero per basis function (a sum over T_st terms),
+                // plus that function's linear trend where the operator leaves
+                // one unpenalized.
                 T sum_j = T(0.0);
                 for (int t = 0; t < T_st; t++) sum_j = sum_j + st_delta[j * T_st + t];
                 log_post = log_post
                     - T(0.5) * T(tulpa::s2z_precision(T_st)) * sum_j * sum_j;
+
+                if (add_trend) {
+                    T trend_j = T(0.0);
+                    for (int t = 0; t < T_st; t++) {
+                        trend_j = trend_j
+                            + T(tulpa_st::st_trend_weight(t, T_st))
+                              * st_delta[j * T_st + t];
+                    }
+                    log_post = log_post
+                        - T(0.5) * T(tulpa_st::st_trend_precision(T_st))
+                          * trend_j * trend_j;
+                }
             }
 
         } else {

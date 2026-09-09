@@ -10,6 +10,10 @@
 
 #include <Rcpp.h>
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 #include <algorithm>
 #include <cmath>
 #include <vector>
@@ -25,6 +29,7 @@ namespace tulpa_hmc {
 // Defined here so verify_gradient_runtime can read it without pulling
 // hmc_gradients.cpp into its translation unit.
 GradientMode g_gradient_mode = GradientMode::AUTO;
+bool g_gradient_verified = false;
 
 // =====================================================================
 // Generic LikelihoodSpec gradient: central differences against
@@ -235,6 +240,39 @@ bool verify_gradient_runtime(
     return false;
   }
   return true;
+}
+
+// =====================================================================
+// The one gate every NUTS entry passes through (gcol33/tulpa#684).
+//
+// The check used to sit in two callers -- the R wrapper and the multi-chain
+// producer -- while six other production sites entered run_hmc_chain_cpp
+// directly, including the R_RegisterCCallable a LinkingTo consumer reaches for
+// backend "hmc". A consumer's hand-coded spec->gradient_fn was therefore
+// checked when it asked for several chains and unchecked when it asked for
+// one, which is the reverse of what the check is for.
+// =====================================================================
+void ensure_gradient_verified(
+    const std::vector<double>& q_init,
+    const ModelData& data,
+    const ParamLayout& layout
+) {
+#ifdef _OPENMP
+  // Inside an across-chain region the producer has already run this on the
+  // main thread, and Rcpp::warning off-thread is not safe.
+  if (omp_in_parallel()) return;
+#endif
+  if (g_gradient_verified) return;
+  g_gradient_verified = true;
+  if (g_gradient_mode == GradientMode::NUMERICAL) return;
+  if (verify_gradient_runtime(q_init, data, layout, 1e-4)) return;
+  g_gradient_mode = GradientMode::NUMERICAL;
+  Rcpp::warning(
+    "Gradient mismatch detected: active gradient function disagrees with "
+    "numerical gradients (max rel diff > 1e-4). Falling back to numerical "
+    "gradients (mode='N'). This is slower but correct. Please report this "
+    "as a bug at https://github.com/gcol33/tulpa/issues"
+  );
 }
 
 }  // namespace tulpa_hmc

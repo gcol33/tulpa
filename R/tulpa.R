@@ -192,7 +192,7 @@
       nn_order    = as.integer(ni$nn_order %||% seq_len(n_spatial)),
       n_spatial   = as.integer(n_spatial),
       nn          = as.integer(spatial$nn %||% ncol(ni$nn_idx)),
-      cov_type    = gp_cov_type_for_laplace(spatial),
+      cov_type    = gp_cov_type(spatial),
       spatial_idx = as.integer(spatial$obs_to_loc %||% seq_len(n_spatial))
     ))
   }
@@ -239,7 +239,7 @@
     nn_order         = as.integer(ni$nn_order) - 1L,
     nn_order_inv     = as.integer(ni$nn_order_inv %||% seq_len(n_loc)) - 1L,
     obs_to_loc       = as.integer(spatial$obs_to_loc) - 1L,
-    cov_type         = gp_cov_type_for_laplace(spatial),
+    cov_type         = gp_cov_type(spatial),
     nu               = as.numeric(spatial$nu %||% 1.5),
     phi_prior_U      = as.numeric(U),
     phi_prior_alpha  = 0.05,
@@ -306,7 +306,7 @@
     nn_order_regional          = as.integer(nir$nn_order) - 1L,
     nn_order_inv_regional      = as.integer(nir$nn_order_inv %||% seq_len(n_loc)) - 1L,
     obs_to_loc                = as.integer(spatial$obs_to_loc) - 1L,
-    cov_type                  = gp_cov_type_for_laplace(spatial),
+    cov_type                  = gp_cov_type(spatial),
     range_local_lower         = as.numeric(spatial$range_local[1]),
     range_local_upper         = as.numeric(spatial$range_local[2]),
     range_regional_lower      = as.numeric(spatial$range_regional[1]),
@@ -430,7 +430,7 @@
     nn_order_inv    = as.integer(ni$nn_order_inv %||% seq_len(n_obs)) - 1L,
     svc_indices     = idx,
     X_svc           = as.numeric(t(Xs)),            # row-major [n_obs x n_svc]
-    cov_type        = gp_cov_type_for_laplace(spatial),
+    cov_type        = gp_cov_type(spatial),
     phi_prior_U     = as.numeric(U),
     phi_prior_alpha = 0.05,
     # Non-centered by default, matching .gp_sampler_spec()'s
@@ -1208,7 +1208,9 @@
         cyclic           = FALSE,
         cov              = temporal$cov %||% "exponential",
         nu               = temporal$nu,
-        period           = temporal$period,
+        # The period in the kernel's own time units (validate_temporal_gp);
+        # equal to the declared one when scale_coords = FALSE.
+        period           = temporal$period_scaled %||% temporal$period,
         parameterization = temporal$parameterization %||% "noncentered"
       )
     } else if (!is.null(temporal)) {
@@ -1663,7 +1665,8 @@ tulpa <- function(formula, data,
   # response), so tulpa() must reject non-finite fitting inputs itself: unlike
   # glm()/lm() it does not drop incomplete cases, and an NA/NaN/Inf would flow
   # silently into the C++ kernels as a NaN estimate.
-  .assert_finite_model_inputs(bundle$X, bundle$y)
+  .assert_finite_model_inputs(bundle$X, bundle$y, n_trials = n_trials,
+                              offset = bundle$offset)
   if (!is.null(weights)) {
     weights <- as.numeric(weights)
     if (length(weights) != bundle$n_obs || anyNA(weights) ||
