@@ -1,4 +1,4 @@
-# tulpa 0.3.2
+# tulpa 0.4.0
 
 ## The control surface: one check per door, one home per default
 
@@ -512,6 +512,8 @@
   normalised once at the door and written back onto the spec, so every consumer
   reads the canonical spelling; `"ICAR"` and `"icar"` now give identical
   coefficients.
+
+# tulpa 0.3.2
 
 ## A placement rescue no longer deletes the checkpoint its own fit wrote
 

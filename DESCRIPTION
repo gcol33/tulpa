@@ -1,6 +1,6 @@
 Package: tulpa
 Title: Templated Unified Library for Posterior Approximation in Bayesian Hierarchical Models
-Version: 0.3.2
+Version: 0.4.0
 Authors@R: c(
     person("Gilles", "Colling", , "gilles.colling051@gmail.com", role = c("aut", "cre", "cph"),
            comment = c(ORCID = "0000-0003-3070-6066")),
