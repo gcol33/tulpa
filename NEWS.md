@@ -189,6 +189,29 @@
   `Rscript` or test-file run that draws, and `.gitignore` -- which is where it
   was listed -- is not read by `R CMD build`.
 
+* **The package could not be compiled on Windows at unoptimized flags**
+  (gcol33/tulpa#717), which is the path `devtools::load_all()` takes:
+  `pkgbuild::compile_dll(debug = TRUE)` is the default and replaces R's flags
+  with `-UNDEBUG -Wall -pedantic -g -O0`. A plain COFF object holds 32767
+  sections, gcc emits one comdat section per template instantiation and merges
+  none of them without optimization, so `nested_laplace_joint_multi.cpp`
+  assembled 50241 sections and `aghq_re.cpp` 36959 and the assembler stopped
+  with "file too big". `src/Makevars.win` now carries `-Wa,-mbig-obj`, which
+  selects the bigobj object variant, and the whole package builds, links and
+  fits at those flags. This is not a property of one file: six further
+  translation units sit between 21000 and 31000 sections there, while at R's
+  own `-O2` the largest of all 109 is 2221, 6.8% of the ceiling, so the
+  installed build only changes object format. `R CMD check` scans
+  `src/Makevars.in` and `src/Makevars` for non-portable flags and not
+  `Makevars.win`, so the flag draws no NOTE.
+
+  What made the failure look machine-specific was the repo's own `.Rprofile`,
+  which sets `options(pkg.build_extra_flags = FALSE)` and so keeps `load_all()`
+  on R's `-O2`. R reads a project `.Rprofile` only when the session STARTS in
+  the package root and startup files are not skipped, so the same clone with
+  the same toolchain built from an interactive session in the root and failed
+  from a driver launched elsewhere or under `--vanilla`.
+
 ## The outer k-hat's tail is resolved once per fit, and every backend records it
 
 * **The joint path chose its proposal at the budget-stable tail and reported a

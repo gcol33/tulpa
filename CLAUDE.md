@@ -168,6 +168,27 @@ coverage). CRAN runs tier 1 only.
 - Heavy multi-recovery files can SIGKILL (exit 137) under a background test
   harness; run decisive files individually rather than the full suite at once.
 
+**Windows objects carry `-Wa,-mbig-obj`** (`src/Makevars.win`). A plain COFF
+object holds 32767 sections, gcc emits one comdat section per template
+instantiation, and nothing merges them when the build does not optimize: at
+`-O0` `nested_laplace_joint_multi.cpp` assembles 50241 sections and
+`aghq_re.cpp` 36959, and the assembler stops with "file too big". That is the
+default path -- `pkgbuild::compile_dll(debug = TRUE)` is what
+`devtools::load_all()` goes through, and it replaces R's flags with
+`-UNDEBUG -Wall -pedantic -g -O0`. The flag selects the bigobj variant and the
+ceiling stops binding. Do not drop it and do not read it as a property of one
+file: six further translation units sit between 21000 and 31000 sections at
+those flags, while at R's own `-O2` the largest of all 109 is 2221, 6.8% of the
+ceiling. `R CMD check` scans only `src/Makevars.in` and `src/Makevars` for
+non-portable flags, so a `Makevars.win`-only flag draws no NOTE.
+
+The repo's `.Rprofile` also sets `options(pkg.build_extra_flags = FALSE)`, which
+keeps `load_all()` on R's own `-O2` -- the same flags `R CMD INSTALL` uses, and
+far faster than a `-g -O0` build whose objects run to 50 MB apiece. R reads it
+only when the session STARTS in the package root and startup files are not
+skipped, so a build driven from another directory or under `--vanilla` still
+takes the debug flags.
+
 ## A varying coefficient's level: centre a proper field, pin an intrinsic one
 
 A varying-coefficient term contributes `eta_i += x_i w(s_i)`, so `w -> w + c`
