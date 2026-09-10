@@ -2096,14 +2096,19 @@ prior_from_spec <- function(spec, data) {
   # option a caller (e.g. tulpaObs) may have set for a whole fit, so progress
   # reaches grids run through fixed-control internal paths (the EM per-block
   # nested solve) without threading the knobs through every layer.
-  has_ctrl <- !is.null(control$progress) || !is.null(control$progress.every) ||
+  # `[[` (exact) not `$` on `progress`: it is a strict prefix of the other three
+  # keys, so a `$` read returns whichever ONE of them is set (and NULL when two
+  # are, the match being ambiguous). `isTRUE()` of a file path or a cadence is
+  # FALSE, which turned asking for the heartbeat file into switching the console
+  # bar off.
+  has_ctrl <- !is.null(control[["progress"]]) || !is.null(control$progress.every) ||
               !is.null(control$progress.throttle) || !is.null(control$progress.file)
   if (!has_ctrl) {
     opt <- getOption("tulpa.nl_progress", NULL)
     if (is.list(opt)) return(opt)
   }
   list(
-    progress          = isTRUE(control$progress %||% TRUE),
+    progress          = isTRUE(control[["progress"]] %||% TRUE),
     progress_every    = as.integer(control$progress.every    %||% 0L),
     progress_throttle = as.numeric(control$progress.throttle %||% 2),
     progress_file     = as.character(control$progress.file    %||% "")

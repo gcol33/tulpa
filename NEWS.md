@@ -1,3 +1,21 @@
+# tulpa 0.4.1
+
+## Progress knobs are read by exact key
+
+* **Any single `progress.*` control knob silently switched the console progress
+  bar off** (gcol33/tulpa#719). `progress` is a strict prefix of
+  `progress.every`, `progress.throttle` and `progress.file`, and `$` on a list
+  partial-matches, so `.nl_progress_args()` reading `control$progress` got back
+  whichever one of the three was set. `isTRUE()` of a file path or a cadence is
+  `FALSE`, so asking for the heartbeat file -- the only channel that survives a
+  detached run -- turned off the bar on the same call, and `progress.every`,
+  which exists to tune the bar's cadence, switched it off instead. Setting two
+  of the three made the prefix ambiguous, `$` returned `NULL`, and the default
+  came back: the resolved setting was not monotone in how many knobs were set,
+  which is what kept it out of sight. Both reads take `control[["progress"]]`
+  now, so the two channels are independent as documented and only an explicit
+  `progress = FALSE` turns the bar off.
+
 # tulpa 0.4.0
 
 ## The control surface: one check per door, one home per default
