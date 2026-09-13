@@ -9,8 +9,9 @@ spatial_spde_custom(
   G,
   A,
   nu = 1,
-  prior_range = c(0.5, 0.5),
-  prior_sigma = c(1, 0.5)
+  prior_range = NULL,
+  prior_sigma = NULL,
+  coords = NULL
 )
 }
 \arguments{
@@ -24,9 +25,15 @@ spatial_spde_custom(
 give the exact FEM construction, fractional values the BRASIL rational SPDE
 approximation (supported by \code{fit_spde()};). Default 1.}
 
-\item{prior_range}{Prior for the spatial range. Default \code{c(0.5, 0.5)}.}
+\item{prior_range}{PC prior on the spatial range, \code{c(U, alpha)} with
+P(range < U) = alpha. \code{NULL} (the default) anchors it on \code{coords} as
+\code{\link[=spatial_spde]{spatial_spde()}} does, and needs them.}
 
-\item{prior_sigma}{Prior for the marginal standard deviation. Default \code{c(1, 0.5)}.}
+\item{prior_sigma}{PC prior on the marginal standard deviation, \code{c(U, alpha)}
+with P(sigma > U) = alpha. \code{NULL} (the default) is \code{c(3, 0.01)}.}
+
+\item{coords}{Observation coordinates (an \verb{n_obs x 2} matrix), read only to
+anchor the default range prior. Not needed when \code{prior_range} is given.}
 }
 \value{
 A \code{tulpa_spatial} object with type \code{"spde"}.

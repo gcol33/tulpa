@@ -23,24 +23,14 @@ test_that("the PC range prior integrates to one", {
   expect_equal(total, 1, tolerance = 1e-6)
 })
 
-test_that("the C++ range prior matches the R nested-path twin", {
-  # pc_prior_log_density() in fit_spde_nested.R is the independently written
-  # implementation the SPDE CCD/grid weights use. It returns the joint
-  # (range, sigma) density, so differencing at two ranges cancels the sigma
-  # half and leaves the range half alone.
-  prior_range <- c(0.3, 0.5)
-  prior_sigma <- c(0.6, 0.05)
-  sigma_fixed <- 0.8
+test_that("the C++ range prior matches its closed form", {
+  # p(r) = lambda r^-2 exp(-lambda / r), lambda = -U log(alpha), written out here
+  # rather than read from an engine helper.
+  U <- 0.3; alpha <- 0.5
   r <- c(0.05, 0.15, 0.3, 0.9, 2.5, 7.0)
-  r0 <- 1.0
-
-  r_twin <- tulpa:::pc_prior_log_density(r, sigma_fixed, prior_range, prior_sigma) -
-            tulpa:::pc_prior_log_density(r0, sigma_fixed, prior_range, prior_sigma)
-
-  cpp <- tulpa:::cpp_test_log_prior_range_pc(r, prior_range[1], prior_range[2]) -
-         tulpa:::cpp_test_log_prior_range_pc(r0, prior_range[1], prior_range[2])
-
-  expect_equal(cpp, r_twin, tolerance = 1e-12)
+  lambda <- -U * log(alpha)
+  expect_equal(tulpa:::cpp_test_log_prior_range_pc(r, U, alpha),
+               log(lambda) - 2 * log(r) - lambda / r, tolerance = 1e-12)
 })
 
 test_that("the log-range entry point agrees with the range entry point", {

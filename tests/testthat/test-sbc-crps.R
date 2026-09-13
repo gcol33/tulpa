@@ -294,9 +294,10 @@ test_that("the nested fit reproduces the exact posterior of the SBC fixture", {
     expect_lt(max(abs(mom$w - E$w)), 1e-5, label = paste(lbl, "weights"))
     expect_lt(max(abs(mom$mu - E$mu)), 1e-4, label = paste(lbl, "modes"))
     expect_lt(max(abs(mom$var - E$var)), 1e-4, label = paste(lbl, "variances"))
-    # The engine's log marginal differs from the exact one by a constant only,
-    # which is what makes the cell weights the exact posterior on sigma.
-    expect_lt(stats::sd(f$log_marginal - E$log_marg), 1e-4, label = paste(lbl, "log marginal"))
+    # The engine's marginal likelihood differs from the exact one by a constant
+    # only; `log_marginal` also carries the sigma hyperprior it folded.
+    expect_lt(stats::sd(f$log_marginal - f$log_hyperprior - E$log_marg), 1e-4,
+              label = paste(lbl, "log marginal"))
   }
 })
 

@@ -12,9 +12,9 @@ tulpa_eb(
   family = "binomial",
   phi = 1,
   phi2 = NULL,
-  prior_sigma = c(3, 0.05),
-  eta = 2,
-  hyperprior = c("flat", "pc_lkj"),
+  prior_sigma = NULL,
+  eta = NULL,
+  hyperprior = c("pc_lkj", "flat"),
   log_prior_theta = NULL,
   beta_prior = NULL,
   offset = NULL,
@@ -42,12 +42,13 @@ ignored. It is conditioned on, never estimated: \code{estimate_phi} covers \code
 alone.}
 
 \item{prior_sigma, eta}{Hyperparameters of the PC + LKJ prior used when
-\code{hyperprior = "pc_lkj"} (see \code{\link[=re_cov_pc_lkj_prior]{re_cov_pc_lkj_prior()}}). Ignored when
+\code{hyperprior = "pc_lkj"} (see \code{\link[=re_cov_pc_lkj_prior]{re_cov_pc_lkj_prior()}}); \code{NULL} (the
+defaults) is \code{c(3, 0.01)} and 2. Ignored when
 \code{hyperprior = "flat"} or \code{log_prior_theta} is supplied. When active, the
 prior is part of the maximized objective, so it regularizes the estimate:
 with few groups it is what keeps a block off the \code{sigma = 0} boundary.}
 
-\item{hyperprior}{\code{"flat"} (default) or \code{"pc_lkj"}. \code{"flat"} maximizes with
+\item{hyperprior}{\code{"pc_lkj"} (default) or \code{"flat"}. \code{"flat"} maximizes with
 \code{log_prior_theta} the zero function -- an unpenalized maximum-marginal-
 likelihood estimate, which can reach the \code{sigma = 0} boundary on small
 designs (see the \code{"lower end of the search bracket"} warning). \code{"pc_lkj"}
@@ -191,13 +192,11 @@ term is diagonal in log-SD coordinates, and a scalar \code{(1 | g)} term is the
 degenerate one-coefficient block. Both functions call the same outer
 objective and the same optimizer, so \code{tulpa_eb()$theta_hat} and
 \code{tulpa_re_cov_nested()$theta_hat} are the same estimate on the same data --
-which requires \code{hyperprior} to default the same way on both: \code{"flat"}, the
-zero function, matching the nested-Laplace convention on every other scale
-axis in the engine (icar / rw1 / rw2 / ar1's tau / iid all lack a
-hyperprior on their scale too; see \code{vignette("priors")}). Set
-\code{hyperprior = "pc_lkj"} for the weakly-informative PC + LKJ prior instead
-(see \code{\link[=re_cov_pc_lkj_prior]{re_cov_pc_lkj_prior()}}) -- the regularizer that, at small G, keeps a
-block off the \code{sigma = 0} boundary this maximizer would otherwise reach.
+which requires \code{hyperprior} to default the same way on both: \code{"pc_lkj"}, the
+PC + LKJ prior (see \code{\link[=re_cov_pc_lkj_prior]{re_cov_pc_lkj_prior()}}) at the anchor every scale axis
+of the engine defaults to, which at small G keeps a block off the
+\code{sigma = 0} boundary. \code{hyperprior = "flat"} maximizes the marginal likelihood
+alone.
 
 The reported fixed-effect covariance is the conditional one at \code{theta_hat}
 (\code{solve(H_beta)}). It does not include the hyperparameter uncertainty that

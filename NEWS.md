@@ -51,12 +51,9 @@
 * **`logLik()` summed a nested fit's per-cell marginal likelihoods without the
   cells' prior masses** (gcol33/tulpa#722), so the value grew with the node
   count: by 3.3 nats between 9 and 129 nodes on one RW1 support. It is now
-  `log sum_k exp(log_marginal_k + log_quad_k) - log sum_k exp(log_hyperprior_k +
-  log_quad_k)`, the evidence under the hyperprior the reported posterior
-  integrates, restricted to the grid's support and renormalised there. The
-  subtraction makes it independent of how `log_quad` is scaled (it is relative:
-  its sum is not 1 on a refined or atom-carrying grid) and of a hyperprior
-  density a producer folds into `log_marginal`. Every grid producer records it
+  `log sum_k exp(log_marginal_k + log_cell_k)`, where `log_marginal` carries each
+  axis's normalised hyperprior density and `log_cell` is each cell's absolute
+  volume on the integration coordinate (see the next section). Every grid producer records it
   as `fit$log_evidence` where it builds its weights (single- and multi-block,
   joint, spatiotemporal, the generic hyper-grid driver, RE-covariance and SPDE
   grids, and CILA's corrected marginals); a CCD design reports `NA` with
@@ -68,6 +65,55 @@
   every RW1 / ICAR fit integrated with equal weights whatever its node spacing,
   and reported no `axis_support`. `.nl_theta_matrix()` names the axis for every
   reader. On an evenly spaced grid the weights are unchanged.
+
+## Every outer axis carries a proper hyperprior, and the evidence reads it
+
+* **An axis with no stated prior was integrated under a flat one, so its
+  evidence depended on the range the grid covered** (gcol33/tulpa#730). The
+  automatic placement moves that range, so two fits of one model could report
+  different evidences. Every default axis now carries a proper density on its
+  integration coordinate, change of variables included, folded into
+  `log_marginal` and recorded in `log_hyperprior` / `log_hyperprior_axes`:
+  a standard deviation, variance or precision takes the PC prior
+  `P(sigma > 3) = 0.01`; a Matern range, GP lengthscale or HSGP `ell` takes the
+  range PC prior in the coordinates' dimension, `P(range < U) = 0.5` at `U` one
+  fifth of the bounding-box diagonal; a bounded axis (a BYM2 or CAR mixing
+  weight, a copy coefficient's slab) takes the uniform on its domain and AR1
+  `rho` its Beta; a negative-binomial size takes R-INLA's `pc.mgamma` density
+  with `lambda = 7`. The evidence is then `lse(log_marginal + log_cell)` with no
+  renormalisation over the grid: on an RW1 fit it agrees across 9, 33 and 129
+  nodes and a support ten times wider to 2e-3, and with a trapezoid of the
+  kernel's marginal against the density written out by hand. An axis with no
+  sourced prior declines by name (`log_evidence_declined = "improper_hyperprior"`,
+  `log_evidence_declined_axes`): beta precision and gamma shape, where I found
+  no PC prior in the literature or in R-INLA; the MCAR / MIID log-Cholesky
+  axes, whose default grid has no per-column cell measure; a range axis on a
+  block without coordinates.
+* **The scale anchor is U = 3, not the samplers' U = 1, and that was
+  measured.** On the joint copy fixture (binary donor, field SD 3) the
+  posterior mean of the field SD reads 1.46 at U = 1, 2.62 at U = 3, 3.03 at
+  U = 10 and 3.22 under the flat prior; U = 1 shrinks it enough that placement
+  never fires. The recenter fallback, `spatial_spde()`'s default `prior_sigma`,
+  `tulpa_re_cov_nested()` and `tulpa_eb()` read the same anchor, and the last
+  two now default to `hyperprior = "pc_lkj"`. `spatial_spde()` /
+  `spatial_spde_custom()` resolve `prior_range` from the coordinates
+  (`spatial_spde_custom()` takes `coords =` or errors without `prior_range`).
+* **The LKJ density omitted its normalising constant**, which a relative
+  weighting cancels and an evidence does not. `re_cov_pc_lkj_prior()` now
+  carries it (Lewandowski, Kurowicka & Joe 2009).
+* **`fit_spde()` weighted its grid and CCD cells, and scored its k-hat, with the
+  PC density on (range, sigma) while integrating in (log range, log sigma)**
+  (gcol33/tulpa#731), missing `log range + log sigma`. `.spde_log_hyperprior()`
+  is the one density behind all three.
+* **A tgmrf block's own `prior(theta)` reached the weights but not
+  `log_hyperprior`** (gcol33/tulpa#732); it is recorded now, and the kernel-side
+  part separately as `log_hyperprior_in_kernel`.
+* **CILA pooled its corrected cells without the hyperprior R folds into
+  `log_marginal`.** It divided the folded marginal back out of the grid weight
+  and multiplied the kernel's unfolded corrected marginal back in, so the AR1
+  `rho` Beta and the joint hyperpriors fell out of a corrected fit's weights,
+  and with #730 every default prior would have. The folded part stays in the
+  grid weight and is added to the adopted marginal.
 
 ## logLik() names its quantity from what the fit estimated
 

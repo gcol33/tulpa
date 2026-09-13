@@ -40,11 +40,19 @@ maximised log-likelihood, with \code{df} the number of maximised parameters.}
 }
 
 On a nested-Laplace fit the value is the log evidence of its outer grid,
-`log sum_k exp(log_marginal_k + log_quad_k) - log sum_k exp(log_hyperprior_k
-\itemize{
-\item log_quad_k)\verb{: the evidence under the hyperprior the reported posterior integrates, restricted to the grid's support and renormalised there. It does not move with the node count at a fixed support. An axis carrying the engine's default flat measure has no proper prior beyond that support, so its evidence is the evidence under a uniform prior on the support the fit integrated (}fit$axis_support\verb{), which a placement pass may have moved; compare evidences across fits whose supports are fixed, or whose hyperpriors are proper. A central-composite (CCD) design reproduces moments and carries no cell volume, so a fit integrated on one reports }NA\verb{with a}declined`
+\verb{log sum_k exp(log_marginal_k + log_cell_k)}, where \code{log_marginal} already
+carries each axis's hyperprior density on its integration coordinate and
+\code{log_cell_k} is the cell's absolute volume there. Every default outer axis
+carries a proper prior (a PC prior on each scale and range, a uniform on each
+bounded axis), so the value is the evidence under that prior and does not move
+with where the nodes were laid or how many there are, provided the grid
+covers the posterior. A fit carrying an axis with no proper prior (a flat
+random-effect covariance prior, a dispersion whose family has no PC prior yet,
+an axis on a block that does not carry its coordinates) reports \code{NA} with
+\code{declined = "improper_hyperprior"} and names the axes in a \code{declined_axes}
+attribute. A central-composite (CCD) design reproduces moments and carries no
+cell volume, so a fit integrated on one reports \code{NA} with a \code{declined}
 attribute.
-}
 
 Values with a different \code{quantity} or \code{conditioned_on} are not on one scale,
 and \code{compare_models(criterion = "loglik")} refuses such a set. Only a

@@ -12,8 +12,8 @@ spatial_spde(
   max_edge = NULL,
   cutoff = 0,
   nu = 1,
-  prior_range = c(0.5, 0.5),
-  prior_sigma = c(1, 0.5)
+  prior_range = NULL,
+  prior_sigma = NULL
 )
 }
 \arguments{
@@ -40,11 +40,14 @@ rational SPDE approximation with BRASIL best-rational coefficients
 \code{fit_spde()} (single-point and nested over range/sigma). NUTS and analytic
 marginal SEs remain integer-only. Default 1.}
 
-\item{prior_range}{Prior for the spatial range. A numeric vector \code{c(U, alpha)}
-where P(range < U) = alpha. Default \code{c(0.5, 0.5)}.}
+\item{prior_range}{PC prior on the spatial range, \code{c(U, alpha)} with
+P(range < U) = alpha. \code{NULL} (the default) anchors it on the data: \code{U} is
+a fifth of the diagonal of the coordinates' bounding box and \code{alpha = 0.5},
+so \code{U} is the prior median.}
 
-\item{prior_sigma}{Prior for the marginal standard deviation. A numeric vector
-\code{c(U, alpha)} where P(sigma > U) = alpha. Default \code{c(1, 0.5)}.}
+\item{prior_sigma}{PC prior on the marginal standard deviation, \code{c(U, alpha)}
+with P(sigma > U) = alpha. \code{NULL} (the default) is \code{c(3, 0.01)}, the
+engine's prior on every field scale.}
 }
 \value{
 A \code{tulpa_spatial} object with type \code{"spde"}.

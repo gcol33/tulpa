@@ -1,26 +1,3 @@
-# PC prior log-density on (range, sigma) for a 2D Matern SPDE field.
-# Convention (matching spatial_spde): prior_range = c(U_r, alpha_r) with
-# P(range < U_r) = alpha_r; prior_sigma = c(U_s, alpha_s) with
-# P(sigma > U_s) = alpha_s. Closed forms from Fuglstad et al. (2019):
-#   range:  exponential on r^{-d/2}, d = 2 -> rate lambda_r,
-#           p(r) = lambda_r * r^{-2} * exp(-lambda_r / r),
-#           so P(range < U_r) = exp(-lambda_r / U_r) = alpha_r gives
-#           lambda_r = -U_r * log(alpha_r).
-#   sigma:  exponential, p(s) = lambda_s * exp(-lambda_s * s),
-#           lambda_s = -log(alpha_s) / U_s.
-# C++ cpp_nested_laplace_spde returns the marginal likelihood (with the GMRF
-# prior normalizer 0.5 log|Q(theta)| folded in, so it is already interior-peaked
-# in well-identified problems); we add this PC prior here to form the joint
-# posterior the CCD / grid integrates.
-pc_prior_log_density <- function(range, sigma, prior_range, prior_sigma) {
-  U_r <- prior_range[1]; alpha_r <- prior_range[2]
-  U_s <- prior_sigma[1]; alpha_s <- prior_sigma[2]
-  lambda_r <- -U_r * log(alpha_r)
-  lambda_s <- -log(alpha_s) / U_s
-  log(lambda_r) - 2 * log(range) - lambda_r / range +
-    log(lambda_s) - lambda_s * sigma
-}
-
 # Nested-Laplace integration backends for fit_spde().
 #
 # Two methods are supported:
@@ -38,10 +15,10 @@ pc_prior_log_density <- function(range, sigma, prior_range, prior_sigma) {
 # Outer Pareto-k-hat for the SPDE (range, sigma) integration: importance-sample
 # the joint hyperparameter posterior on the log scale against the Gaussian
 # proposal (theta_hat, L_scale, both in (log_range, log_sigma) space) and
-# PSIS-smooth. The target is the SAME log_marginal + PC-prior the quadrature
-# weights use, so no extra Jacobian is needed -- the SPDE integrator already
-# works on the log scale. Both axes are positive, so the transform is
-# unambiguous. Runs with the RNG restored so the fit is unperturbed.
+# PSIS-smooth. The target is the SAME posterior the quadrature weights use, the
+# marginal plus the hyperprior carried to (log range, log sigma)
+# (`.spde_log_hyperprior()`). Runs with the RNG restored so the fit is
+# unperturbed.
 #
 # Scored through the shared candidate dispatch
 # (R/outer_pareto_candidates.R). `u_grid` / `w` are the integration nodes, which
@@ -58,7 +35,7 @@ pc_prior_log_density <- function(range, sigma, prior_range, prior_sigma) {
     lm <- tryCatch(spde_log_marginal(r, s)$log_marginal,
                    error = function(e) rep(-Inf, length(r)))
     if (length(lm) != length(r)) return(rep(-Inf, length(r)))
-    lm + pc_prior_log_density(r, s, sp$prior_range, sp$prior_sigma)
+    lm + .spde_log_hyperprior(r, s, sp)
   }
   .k_tail_cap_warn(tail_points, n_samples)
   kd <- .with_preserved_seed(
@@ -100,8 +77,7 @@ fit_spde_nested_grid <- function(spde_log_marginal, sp, n_grid, spatial,
   result <- spde_log_marginal(grid$range, grid$sigma)
 
   log_post <- result$log_marginal +
-    pc_prior_log_density(grid$range, grid$sigma,
-                         sp$prior_range, sp$prior_sigma)
+    .spde_log_hyperprior(grid$range, grid$sigma, sp)
 
   if (!any(is.finite(log_post))) {
     stop("fit_spde() nested grid: every hyperparameter cell returned a ",
@@ -145,15 +121,19 @@ fit_spde_nested_grid <- function(spde_log_marginal, sp, n_grid, spatial,
     list(theta_grid = cbind(range = grid$range, sigma = grid$sigma),
         weights = weights))
 
+  # The evidence against each cell's absolute measure in (log range,
+  # log sigma), both axes carrying their normalised density in `log_post`.
+  tg <- cbind(range = grid$range, sigma = grid$sigma)
+  ev <- .nl_attach_evidence(
+    list(log_marginal = log_post, log_hyperprior_axes = colnames(tg)), tg,
+    .joint_axis_specs_from_grid(tg, folded_axes = colnames(tg)))
+
   list(
     mode = NULL,
     log_marginal = result$log_marginal,
-    # The weights above integrate the marginal times the PC prior over an
-    # evenly log-spaced (range, sigma) grid, so the evidence normalises that
-    # prior over the same cells.
     log_hyperprior = log_post - result$log_marginal,
-    log_evidence = .nl_outer_log_evidence(log_post, NULL,
-                                          log_post - result$log_marginal),
+    log_evidence = ev$log_evidence,
+    log_evidence_declined = ev$log_evidence_declined,
     converged = all(result$n_iter > 0),
     spatial = spatial,
     pareto_k = kd$pareto_k,
@@ -212,7 +192,7 @@ fit_spde_nested_ccd <- function(spde_log_marginal,
       error = function(e) NA_real_
     )
     if (!is.finite(lm)) return(1e10)
-    lp <- pc_prior_log_density(r, s, sp$prior_range, sp$prior_sigma)
+    lp <- .spde_log_hyperprior(r, s, sp)
     if (!is.finite(lp)) return(1e10)
     -(lm + lp)
   }
@@ -292,8 +272,7 @@ fit_spde_nested_ccd <- function(spde_log_marginal,
 
   result <- spde_log_marginal(range_grid, sigma_grid)
   log_post <- result$log_marginal +
-    pc_prior_log_density(range_grid, sigma_grid,
-                         sp$prior_range, sp$prior_sigma)
+    .spde_log_hyperprior(range_grid, sigma_grid, sp)
   # CCD quadrature: node weight = design weight (Delta_k) times exp(log_post),
   # the INLA convention int ~ sum_k Delta_k pi(theta_k).
   log_max <- max(log_post)

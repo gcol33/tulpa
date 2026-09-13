@@ -4,22 +4,18 @@
 \alias{re_cov_pc_lkj_prior}
 \title{PC + LKJ hyperprior for a random-effect covariance}
 \usage{
-re_cov_pc_lkj_prior(
-  n_coefs,
-  prior_sigma = c(3, 0.05),
-  eta = 2,
-  correlated = TRUE
-)
+re_cov_pc_lkj_prior(n_coefs, prior_sigma = NULL, eta = NULL, correlated = TRUE)
 }
 \arguments{
 \item{n_coefs}{Number of coefficients \code{c} in the RE block.}
 
-\item{prior_sigma}{\code{c(U, alpha)} giving \code{P(sigma_i > U) = alpha} (default
-\code{c(3, 0.05)}), applied independently to every marginal SD.}
+\item{prior_sigma}{\code{c(U, alpha)} giving \code{P(sigma_i > U) = alpha}, applied
+independently to every marginal SD. \code{NULL} (the default) is \code{c(3, 0.01)},
+the engine's prior on every field scale.}
 
-\item{eta}{LKJ shape (default 2). \code{eta = 1} is uniform on correlation
-matrices; larger values favour weaker correlations. Ignored for a diagonal
-block.}
+\item{eta}{LKJ shape. \code{NULL} (the default) is 2. \code{eta = 1} is uniform on
+correlation matrices; larger values favour weaker correlations. Ignored for
+a diagonal block.}
 
 \item{correlated}{\code{TRUE} (default) for a full covariance block (log-Cholesky
 coordinates, LKJ prior); \code{FALSE} for a diagonal / uncorrelated block
@@ -50,10 +46,10 @@ PC prior (Simpson et al. 2017) on each marginal SD: exponential with rate
 \code{prior_sigma = c(U, alpha)} convention also used by the SPDE prior in tulpa.
 
 LKJ prior (Lewandowski et al. 2009) on the correlation matrix:
-\code{p(R)} proportional to \code{det(R)^(eta - 1)}. \code{eta = 1} is uniform over
-correlation matrices; \code{eta > 1} concentrates toward the identity. The
-normalizing constant is dropped (constant across the grid, so it cancels when
-the integration weights are renormalized).
+\code{p(R) = det(R)^(eta - 1) / c_d(eta)}. \code{eta = 1} is uniform over correlation
+matrices; \code{eta > 1} concentrates toward the identity. The normalizing
+constant is kept, so the prior is a density and a grid's evidence can be read
+under it.
 
 Jacobian (correlated block): with \code{theta} packing \verb{log L_ii} on the diagonal
 and the raw strict-lower entries of \code{L}, the change of variables from

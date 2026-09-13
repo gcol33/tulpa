@@ -13,34 +13,20 @@ test_that(".ar1_rho_beta_ab maps the prior to (a, b) shape params", {
   expect_identical(.ar1_rho_beta_ab(prior_beta(5, 2)), c(5, 2))
 })
 
-test_that("nested-Laplace outer grid reweight honours the AR1 rho prior", {
-  res <- list(theta_grid = cbind(tau = rep(1, 3), rho = c(0.0, 0.5, 0.9)),
-              log_marginal = c(-1, -2, -3))
+test_that("the nested-Laplace AR1 rho axis carries the normalised Beta prior", {
+  rho <- c(0.0, 0.5, 0.9)
+  dens <- function(p) .hp_axis_default("rho", list(type = "ar1", rho_prior = p))$fn
 
-  # Beta(1, 1) is Uniform: no reweight.
-  r0 <- .nl_apply_ar1_rho_prior(res, "ar1", list(rho_prior = prior_beta(1, 1)))
-  expect_identical(r0$log_marginal, res$log_marginal)
+  # Beta(1, 1) is the uniform on (-1, 1): density 1/2 everywhere, and a NULL
+  # prior on the block is the same default.
+  expect_equal(dens(prior_beta(1, 1))(rho), rep(log(0.5), 3), tolerance = 1e-14)
+  expect_equal(dens(NULL)(rho), rep(log(0.5), 3), tolerance = 1e-14)
 
-  # A NULL prior on the block is also a no-op (default path).
-  r_null <- .nl_apply_ar1_rho_prior(res, "ar1", list(rho_prior = NULL))
-  expect_identical(r_null$log_marginal, res$log_marginal)
-
-  # Beta(10, 1) density u^9 increases monotonically in u = (rho + 1)/2, so the
-  # reweight is monotone increasing across the rho grid and largest at rho = 0.9.
-  r1 <- .nl_apply_ar1_rho_prior(res, "ar1", list(rho_prior = prior_beta(10, 1)))
-  d1 <- r1$log_marginal - res$log_marginal
-  expect_true(all(diff(d1) > 0))
-  expect_equal(which.max(d1), 3L)
-
-  # The added term equals the exact Beta log-density (no logit Jacobian on the
-  # natural-scale grid): (a-1) log(u) + (b-1) log(1-u).
-  u <- 0.5 * (res$theta_grid[, "rho"] + 1)
-  expect_equal(d1, 9 * log(u))
-
-  # Non-AR1 blocks and grids without a rho axis are untouched.
-  expect_identical(
-    .nl_apply_ar1_rho_prior(res, "rw1", list(rho_prior = prior_beta(10, 1)))$log_marginal,
-    res$log_marginal)
+  # Beta(a, b) on u = (rho + 1)/2 carried to rho: the Beta log-density with its
+  # normalising constant, plus log(1/2).
+  u <- 0.5 * (rho + 1)
+  expect_equal(dens(prior_beta(10, 1))(rho),
+               9 * log(u) - lbeta(10, 1) + log(0.5), tolerance = 1e-12)
 })
 
 test_that("informative AR1 rho prior shifts the nested posterior toward the prior", {

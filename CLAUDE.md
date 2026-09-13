@@ -423,22 +423,54 @@ Model packages inherit via `class = c("model_fit", "tulpa_fit")`.
 ### What logLik() reports, and the linear predictor the criteria score (gcol33/tulpa#721-#726)
 
 **An outer grid's evidence is recorded where its weights are built.**
-`.nl_outer_log_evidence(log_marginal, log_measure, log_hyperprior)`
-(`R/nested_laplace.R`) is `lse(lm + lq) - lse(lh + lq)`: the evidence under the
-prior the weights define, `exp(lh + lq)` normalised over the cells. The
-subtraction is the point -- `log_quad` is relative (its sum is not 1 on a
-refined or atom-carrying grid) and a folded hyperprior need not be normalised on
-the grid's coordinate, and both scalings cancel. Every producer sets
-`fit$log_evidence` beside its `weights` and passes the density it folded into
-`log_marginal` as `log_hyperprior` (the AR1 rho Beta, the multi-block SPDE PC
-prior, the joint `hp_fn`, the RE-covariance and SPDE grid priors); a producer
-that folds a new density in and does not pass it reports a wrong evidence, not
-an error. A CCD design declines (`log_evidence_declined =
-"moment_rule_design"`), and a per-cell vector with no record reads
-`outer_measure_not_recorded`. On a flat default axis the value is the evidence
-under a uniform prior on the support the fit integrated, which placement may
-have moved; it is flat in node count at a FIXED support, and that is the only
-invariance claimed.
+`.nl_outer_log_evidence(log_marginal, log_measure)` (`R/nested_laplace.R`) is
+`lse(lm + lq_abs)`: `log_marginal` carries each axis's NORMALISED hyperprior
+density on its integration coordinate (see "Every outer axis carries a proper
+prior" below) and `lq_abs` is each cell's ABSOLUTE volume there
+(`.hyper_log_quad_weights(absolute = TRUE)`: widths, a declared slab density,
+an atom's declared probability). `.nl_attach_evidence()` is the one attach: it
+reads `.nl_evidence_uncovered()` and declines with `log_evidence_declined =
+"improper_hyperprior"` plus `log_evidence_declined_axes` wherever an integrated
+axis carries no proper prior. A CCD design declines (`"moment_rule_design"`); a
+locally CCD-refined joint grid reads `log(dnode)` plus the even base tensor's
+cell measure. The earlier form `lse(lm + lq) - lse(lh + lq)` renormalised the
+prior over the grid, which made a flat axis's evidence `-log(range)` of whatever
+support placement chose and divided a proper prior by its mass on the grid
+(gcol33/tulpa#730).
+
+### Every outer axis carries a proper prior (gcol33/tulpa#730)
+
+`R/hyperprior_default.R` binds each engine axis to a density
+(`.hp_axis_default(bare, block, family)`), all from `cpp_hyperprior_log_density()`
+(`src/hyperprior_density_export.cpp` over `pc_prior.h`), constants in
+`.NL_HYPERPRIOR` (`R/settings.R`): SD / variance / precision axes the PC prior
+`P(sigma > 3) = 0.01`; range / lengthscale / `phi_gp` / `ell` the Fuglstad range
+PC prior in dimension d (`pc_range_rate_d`), `alpha = 0.5` at
+`0.2 x` the coordinates' bounding-box diagonal (a block carries `coords`, or
+`coord_extent` / `coord_dim` where it does not -- the HSGP basis); bounded axes
+a uniform on the domain, AR1 rho its Beta normalised; the copy scale keeps its
+spec slab; `neg_binomial_2` size R-INLA's `pc.mgamma` (`nb_size_lambda = 7`,
+sourced from INLA's code, not a peer-reviewed derivation). Beta precision and
+gamma shape decline (`dispersion_prior_unsourced`), as do MCAR / MIID
+log-Cholesky axes (`logchol_design_measure`: their default grid is laid in
+(sigma, rho) and has no per-column cell measure) and a range axis on a block
+without coordinates.
+
+The density is folded into `log_marginal` where the kernel result is formed --
+the end of `.nl_dispatch()` / `.nl_dispatch_multi()` (the `theta_grid_override`
+path included), the joint `hp_fn` / `.joint_multi_add_hp()`,
+`.st_attach_outer_integration()`, `.spde_log_hyperprior()` -- and recorded in
+`log_hyperprior` / `log_hyperprior_axes` / `log_hyperprior_declined`. So every
+refit closure (placement stencils, k-hat re-evaluations, CCD mode-find, pilot)
+scores the posterior on the grid coordinate without a second fold, and a folded
+axis's spec carries no `slab_bounds` (`folded_axes`), so refinement may follow
+the posterior past the declared nodes. U = 3 rather than the sampler slots'
+U = 1 is measured: on the joint copy fixture (binary donor, field SD 3) U = 1
+reads a posterior mean of 1.46 and never fires placement, U = 3 reads 2.62,
+flat 3.22. `tulpa_re_cov_nested()` / `tulpa_eb()` default to
+`hyperprior = "pc_lkj"` at the same anchor, and the LKJ density carries its
+normalising constant (`.lkj_log_normaliser`). Tests:
+`test-hyperprior-default.R`, `test-linpred-evidence.R`.
 
 **A one-axis grid is a bare vector.** Anything keyed by axis name reads it
 through `.nl_theta_matrix()`; before it, `log_quad` and `axis_support` were NULL
@@ -561,9 +593,9 @@ knobs, RNG-restored.
 `fit_spde()` also computes the outer k-hat over `(range, sigma)` (both positive,
 log transform), via `.spde_pareto_k()` + the shared `.nested_is_pareto_k()`
 core: it reuses the mode-find's own Gaussian (`theta_hat`, `chol(post_cov)` on
-the log scale) as the importance proposal and the SAME `log_marginal` + PC-prior
-the CCD weights use (no extra Jacobian -- the SPDE integrator works on the log
-scale). Both `method = "ccd"` (Hessian proposal) and `"grid"` (grid-moment
+the log scale) as the importance proposal and the SAME posterior the CCD weights
+use: the marginal plus the PC prior carried to (log range, log sigma) by
+`.spde_log_hyperprior()` (the Jacobian was missing before gcol33/tulpa#731). Both `method = "ccd"` (Hessian proposal) and `"grid"` (grid-moment
 proposal) are covered; same `diagnose_k` / `k_samples` knobs. `.nested_is_pareto_k()`
 is the shared batched IS-PSIS primitive: proposal `N(theta_hat, L L')` in the
 integrator's own space, caller-supplied batched target. Neither the grid path

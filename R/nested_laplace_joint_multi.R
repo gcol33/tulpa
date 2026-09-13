@@ -961,33 +961,25 @@
 # whole-view call to the bit. Single source of truth for the main dispatch and
 # the Pareto-k re-evaluation.
 .joint_multi_add_hp <- function(log_marginal, joint_grid, axis_offsets, B,
-                                fn_sigma, fn_alpha, fn_phi = NULL) {
-    if (is.null(fn_sigma) && is.null(fn_alpha) && is.null(fn_phi))
-        return(log_marginal)
-    entries <- .joint_multi_hp_cols(joint_grid, axis_offsets, B,
-                                    fn_sigma, fn_alpha, fn_phi)
-    if (length(entries) == 0L) return(log_marginal)
-    hp_total <- NULL
-    for (e in entries) {
-        role <- e[["role"]]
-        view <- joint_grid[, e[["col"]], drop = FALSE]
-        # The role IS the column name `.joint_hp_vec_for_grids()` reads, except
-        # for a dispersion axis, which it finds by its own `phi_<arm>` name.
-        colnames(view) <- if (identical(role, "phi")) {
-            colnames(joint_grid)[e[["col"]]]
-        } else {
-            role
-        }
-        hp <- .joint_hp_vec_for_grids(
-            view,
-            fn_sigma = if (identical(role, "sigma")) e[["fn"]] else NULL,
-            fn_alpha = if (identical(role, "alpha")) e[["fn"]] else NULL,
-            fn_phi   = if (identical(role, "phi"))   e[["fn"]] else NULL)
-        if (is.null(hp) || length(hp) != length(log_marginal)) next
-        hp_total <- if (is.null(hp_total)) hp else hp_total + hp
-    }
-    if (!is.null(hp_total)) log_marginal <- log_marginal + hp_total
-    log_marginal
+                                fn_sigma, fn_alpha, fn_phi = NULL,
+                                blocks = NULL, families = NULL,
+                                copy_atom_mass = .TULPA_COPY_ATOM_MASS) {
+    log_marginal + .joint_multi_hyperprior(
+        joint_grid, fn_sigma, fn_alpha, fn_phi, blocks = blocks,
+        families = families, copy_atom_mass = copy_atom_mass)$lp
+}
+
+# The hyperprior record over a multi-block `joint_grid` (`.joint_hyperprior()`):
+# the caller's densities on the roles they name, and with `blocks` supplied the
+# engine's default on every other axis of each block.
+.joint_multi_hyperprior <- function(joint_grid, fn_sigma, fn_alpha, fn_phi = NULL,
+                                    blocks = NULL, families = NULL,
+                                    copy_atom_mass = .TULPA_COPY_ATOM_MASS) {
+    .joint_hyperprior(joint_grid, blocks %||% list(), families,
+                      user = list(sigma = fn_sigma, alpha = fn_alpha,
+                                  phi = fn_phi),
+                      copy_atom_mass = copy_atom_mass,
+                      defaults = !is.null(blocks))
 }
 
 # Multi-block joint outer Pareto-k-hat. Builds the re-evaluation closure
@@ -1111,7 +1103,9 @@
                                          k_bootstrap = .nl_diag("k_bootstrap"),
                                          k_tail_points = NULL,
                                          k_conf_bands = NULL,
-                                         placement_axes = character(0)) {
+                                         placement_axes = character(0),
+                                         hp_blocks = NULL, hp_families = NULL,
+                                         copy_atom_mass = .TULPA_COPY_ATOM_MASS) {
     res$pareto_k        <- NA_real_
     res$pareto_k_is_ess <- NA_real_
     res$pareto_k_scope  <- "outer (hyperparameter) Gaussian proposal"
@@ -1146,7 +1140,9 @@
             tol_             = max(knobs$tol, as.numeric(tol)),
             inner_refresh_   = knobs$refresh))
         .joint_multi_add_hp(r$log_marginal, theta_mat, axis_offsets, B,
-                            fn_sigma, fn_alpha, fn_phi)
+                            fn_sigma, fn_alpha, fn_phi,
+                            blocks = hp_blocks, families = hp_families,
+                            copy_atom_mass = copy_atom_mass)
     }
 
     if (!isTRUE(diagnose_k)) {
@@ -1296,6 +1292,9 @@
     arm_names <- names(responses) %||% paste0("arm", seq_along(responses))
 
     cp <- .resolve_copy_multi(copy, responses, prior_list)
+    hp_families <- stats::setNames(
+        vapply(arms, function(a) as.character(a$family %||% ""), character(1)),
+        arm_names)
 
     # Per-block axis grids (with copy-block parameterisation if applicable).
     B <- length(prior_list)
@@ -1452,7 +1451,9 @@
                 theta_mat, x_init = ccd_warm,
                 n_threads_outer = n_threads_outer))
             lp <- .joint_multi_add_hp(r$log_marginal, theta_mat, axis_offsets, B,
-                                      fn_sigma, fn_alpha, fn_phi)
+                                      fn_sigma, fn_alpha, fn_phi,
+                                      blocks = prepared, families = hp_families,
+                                      copy_atom_mass = copy_atom_mass)
             # Carry the inner latent modes so the CCD mode-find can advance the
             # warm start per accepted point.
             if (is.matrix(r$modes)) attr(lp, "modes") <- r$modes
@@ -1558,7 +1559,9 @@
                 n_threads_outer = n_threads_outer))
             list(log_marginal = .joint_multi_add_hp(
                      r$log_marginal, theta_mat, axis_offsets, B,
-                     fn_sigma, fn_alpha, fn_phi),
+                     fn_sigma, fn_alpha, fn_phi,
+                     blocks = prepared, families = hp_families,
+                     copy_atom_mass = copy_atom_mass),
                  modes = NULL)
         }
 
@@ -1701,9 +1704,12 @@
     # Bake the regularizing hyperprior on (sigma, alpha) into log_marginal
     #. Multi-block has no in-package refinement passes,
     # so one apply at the kernel-call boundary suffices.
-    res$log_marginal <- .joint_multi_add_hp(res$log_marginal, joint_grid,
-                                            axis_offsets, B, fn_sigma, fn_alpha,
-                                            fn_phi)
+    res <- .nl_fold_hyperprior(res, list(.joint_multi_hyperprior(
+        joint_grid, fn_sigma, fn_alpha, fn_phi, blocks = prepared,
+        families = hp_families, copy_atom_mass = copy_atom_mass)))
+    # The base tensor's absolute cell measure, read before local CCD refinement
+    # replaces cells by design-weighted clouds whose shares are relative to it.
+    base_grid <- joint_grid
 
     # Local CCD refinement: replace a few high-weight, mutually
     # non-adjacent tensor cells with small curvature-aware node clouds so a coarse
@@ -1743,7 +1749,9 @@
                     n_threads_outer = n_threads_outer))
                 list(log_marginal = .joint_multi_add_hp(
                          r$log_marginal, theta_mat, axis_offsets, B,
-                         fn_sigma, fn_alpha, fn_phi),
+                         fn_sigma, fn_alpha, fn_phi,
+                     blocks = prepared, families = hp_families,
+                     copy_atom_mass = copy_atom_mass),
                      modes = if (is.matrix(r$modes)) r$modes else NULL,
                      cov_blocks = r$cov_block_per_grid)
             }
@@ -1796,8 +1804,15 @@
     # tensor grid, the per-cell prior mass of the node each cell sits at. A CCD
     # design carries its own volume in `dnode`, so `log_quad` applies to the
     # tensor path alone.
-    multi_specs      <- .joint_axis_specs_from_grid(res$theta_grid,
-                                                    copy_slab = copy_slab)
+    hp_final <- .joint_multi_hyperprior(
+        joint_grid, fn_sigma, fn_alpha, fn_phi, blocks = prepared,
+        families = hp_families, copy_atom_mass = copy_atom_mass)
+    res$log_hyperprior          <- hp_final$lp
+    res$log_hyperprior_axes     <- hp_final$axes
+    res$log_hyperprior_declined <- hp_final$declined
+    multi_specs      <- .joint_axis_specs_from_grid(
+        res$theta_grid, copy_slab = copy_slab,
+        folded_axes = res$log_hyperprior_axes)
     multi_specs      <- lapply(multi_specs, function(sp) {
         if (!is.null(sp$atom_mass)) sp$atom_mass <- copy_atom_mass
         sp
@@ -1823,17 +1838,25 @@
     # masses on a tensor grid, the partition-of-unity design shares on a
     # locally refined one. A global CCD's design weights reproduce moments and
     # carry no volume, so no evidence is read off them.
-    res$log_hyperprior <- .joint_multi_add_hp(
-        numeric(nrow(joint_grid)), joint_grid, axis_offsets, B,
-        fn_sigma, fn_alpha, fn_phi)
     if (is_ccd) {
         res$log_evidence          <- NA_real_
         res$log_evidence_declined <- "moment_rule_design"
+    } else if (is.null(dnode)) {
+        res <- .nl_attach_evidence(res, res$theta_grid, multi_specs)
     } else {
-        res$log_evidence <- .nl_outer_log_evidence(
-            res$log_marginal,
-            if (is.null(dnode)) res$log_quad else log(pmax(dnode, 0)),
-            res$log_hyperprior)
+        # A refined cloud's design shares split the base cell it replaced, so
+        # each node's absolute measure is its share of that cell's. The base
+        # tensor is evenly spaced wherever refinement engages, so one cell's
+        # measure serves every node; an uneven base has no single value to share.
+        base_specs <- .joint_axis_specs_from_grid(
+            base_grid, copy_slab = copy_slab,
+            folded_axes = res$log_hyperprior_axes)
+        base_lq <- .hyper_log_quad_weights(base_grid, base_specs, absolute = TRUE)
+        even <- all(is.finite(base_lq)) && diff(range(base_lq)) < 1e-8
+        res <- .nl_attach_evidence(
+            res, res$theta_grid, multi_specs,
+            log_measure = if (even) log(pmax(dnode, 0)) + base_lq[1L]
+                          else rep(NA_real_, length(dnode)))
     }
     # What kind of weight each cell carries. `integration` names the integrator
     # that ran, which describes a homogeneous support: a tensor cell holds the
@@ -1913,7 +1936,10 @@
                                         k_bootstrap = k_bootstrap,
                                         k_tail_points = k_tail_points,
                                         k_conf_bands = k_conf_bands,
-                                        placement_axes = placement_axes)
+                                        placement_axes = placement_axes,
+                                        hp_blocks = prepared,
+                                        hp_families = hp_families,
+                                        copy_atom_mass = copy_atom_mass)
     res <- .nlj_multi_inner_skew_at_theta(res, call_kernel, arm_names,
                                           skew_idx, compute = diagnose_skew)
     fixed <- .joint_fixed_layout(responses)

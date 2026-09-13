@@ -680,7 +680,8 @@
 .joint_axis_specs <- function(grids, cp, user_priors = NULL,
                               copy_atom_mass = .TULPA_COPY_ATOM_MASS,
                               copy_slab = "exponential",
-                              axis_refine = NULL) {
+                              axis_refine = NULL,
+                              folded_axes = NULL) {
     copy_slab <- .hyper_check_copy_slab(copy_slab)
     axes <- .joint_spec_axis_names(grids, cp)
     lapply(axes, function(a) {
@@ -752,7 +753,10 @@
                 # copy scale is flat in log alpha over the span its declared
                 # nodes tile, the same measure sigma and phi carry.
                 spec$slab_log_density <- .hyper_copy_slab_density(max(pos))
-            } else {
+            } else if (!a %in% folded_axes) {
+                # An axis whose normalised density is folded into the marginal
+                # (`R/hyperprior_default.R`) needs no span to make its measure
+                # proper, and refinement may follow the posterior past its nodes.
                 bd <- .hyper_default_coord_bounds(.hyper_axis_coord(pos, spec))
                 spec$slab_bounds <- exp(bd)
             }
@@ -766,7 +770,8 @@
 # recovers the same metadata from the columns rather than carrying a second
 # description of the same axes.
 .joint_axis_specs_from_grid <- function(theta_grid,
-                                        copy_slab = "exponential") {
+                                        copy_slab = "exponential",
+                                        folded_axes = NULL) {
     if (is.null(theta_grid) || is.null(colnames(theta_grid))) return(NULL)
     theta_grid <- as.matrix(theta_grid)
     grids <- stats::setNames(
@@ -781,7 +786,8 @@
     # is built for them.
     grids <- grids[vapply(grids, function(g) length(g) > 1L, logical(1))]
     if (length(grids) == 0L) return(NULL)
-    .joint_axis_specs(grids, list(has_copy = TRUE), copy_slab = copy_slab)
+    .joint_axis_specs(grids, list(has_copy = TRUE), copy_slab = copy_slab,
+                      folded_axes = folded_axes)
 }
 
 # The continuum levels of one axis: its distinct finite values, with the zero

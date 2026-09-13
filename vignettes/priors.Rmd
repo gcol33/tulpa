@@ -347,18 +347,28 @@ check whether a family even has a dispersion or a temporal slot before you try
 to set it.
 
 These five slots cover the direct / conditioning paths and the ModelData
-samplers. Two backends sit outside them and follow a different convention.
-The nested-Laplace integrator's own scale axes (`icar`, `rw1`, `rw2`, `ar1`'s
-`tau`, `iid`) carry no hyperprior at all: the grid is uniform in `log(theta)`
-and the outer weights are a plain softmax of the log marginal, so the
-effective prior is flat in log-scale, everywhere, by construction of the
-integration rather than by a `tulpa_priors()` slot. [tulpa_re_cov_nested()]
-and [tulpa_eb()] match that convention by default (`hyperprior = "flat"`);
-pass `hyperprior = "pc_lkj"` to opt into the PC + LKJ prior these two
-functions can also build via [re_cov_pc_lkj_prior()]. [tulpa_re_cov_gibbs()]
-cannot go fully flat -- its `Sigma | b` step is a conjugate Inverse-Wishart
-draw, which needs a proper prior to sample from -- so it defaults to the
-weakest proper choice (`prior_df = n_coefs + 1`) instead.
+samplers. The nested-Laplace integrator states its hyperpriors on its own outer
+grid, and every default axis there carries a proper prior. A field's standard
+deviation, variance or precision (`icar`, `rw1`, `rw2`, `ar1`'s `tau`, `bym2`
+and `iid`'s `sigma`, a GP variance) takes the PC prior `P(sigma > 3) = 0.01`,
+carried to whichever of the three the axis integrates. That anchor is wider than
+the sampler slot's `P(sigma > 1) = 0.01`: on a binary response with a field of
+standard deviation 3, the tighter anchor pulled the posterior mean down to about
+1.5. A Matern range or lengthscale takes the PC range prior with
+`P(range < rho0) = 0.5`, where `rho0` is a fifth of the diagonal of the
+coordinates' bounding box. A correlation or mixing weight takes a uniform on its
+domain, and a negative-binomial size takes the PC prior on its overdispersion
+that R-INLA ships as `pc.mgamma`. [tulpa_re_cov_nested()] and [tulpa_eb()] use
+the same scale anchor through the PC + LKJ prior (`hyperprior = "pc_lkj"`, the
+default; see [re_cov_pc_lkj_prior()]); `hyperprior = "flat"` removes it, which
+for [tulpa_eb()] gives the unpenalized maximum marginal likelihood.
+
+Because these priors are proper, `logLik()` on a nested fit is the evidence under
+them and does not depend on where the grid was laid. An axis the engine has no
+proper prior for, such as a beta precision or a gamma shape, leaves the grid's
+own measure in place, and `logLik()` then reports `NA` naming that axis.
+[tulpa_re_cov_gibbs()] needs a proper prior for its conjugate Inverse-Wishart
+`Sigma | b` step and defaults to the weakest one (`prior_df = n_coefs + 1`).
 
 ## Priors on fixed effects
 

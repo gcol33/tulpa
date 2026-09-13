@@ -161,13 +161,15 @@
     joint_car_rho = list(nodes = c(0.5, 0.8, 0.95, 0.99)),
 
     # SPDE range / marginal SD on the registry (multi-block) path. Centred on
-    # the PC-prior mode and deliberately TIGHT (`mode / span` .. `mode * span`):
+    # the prior anchors and deliberately TIGHT (`mode / span` .. `mode * span`):
     # a wide rectangular Cartesian grid with no mode-find runs into a
     # small-range / large-sigma corner where a binary-occupancy field over-fits,
     # and that corner -- carrying the highest inner likelihood -- then dominates
     # the weighted field even though the PC prior disfavours it.
+    # `centre_range` places the range axis on a block that carries neither a
+    # range prior nor coordinates; its range axis then declines a density.
     spde_registry = list(data_dependent = TRUE, n = 5L, span = 1.4,
-                         prior_range = c(1, 0.5), prior_sigma = c(1, 0.5)),
+                         centre_range = 1),
 
     # SPDE range / sigma on the `fit_spde(method = "grid")` path, which scores
     # the PC prior explicitly at every cell and so can afford the wide window
@@ -178,6 +180,57 @@
     # box, or `init +/- half_width` when the block declares no bounds.
     tgmrf_axis = list(data_dependent = TRUE, n = 5L, half_width = 2)
 )
+
+# --- default hyperpriors on the outer axes ------------------------------------
+#
+# The prior every outer axis carries when the caller states none. Each is a
+# proper, normalised density, so the posterior over the grid and the evidence
+# the grid reports do not depend on where the nodes were laid (gcol33/tulpa#730).
+# The densities are pc_prior.h's; `R/hyperprior_default.R` binds each axis to one.
+#
+#   * `scale_U`, `scale_alpha` -- the PC prior on a field's standard deviation,
+#     P(sigma > scale_U) = scale_alpha, carried to a variance or a precision
+#     axis by change of variables. One anchor for every SD-type axis, the
+#     recenter fallback and the random-effect covariance included. U = 3 is the
+#     anchor the recenter fallback carried: at U = 1 a logit-scale field of SD 3
+#     read a posterior mean of 1.46 and never triggered placement, against 2.62
+#     at U = 3 and 3.22 flat (the joint auto-grid copy fixture).
+#   * `range_alpha`, `range_extent_fraction` -- the PC prior on a Matern range
+#     (Fuglstad et al. 2019), P(range < rho0) = range_alpha, with rho0 the
+#     fraction below of the coordinate extent (the diagonal of the coordinates'
+#     bounding box), so the anchor carries the data's units. At alpha = 0.5 rho0
+#     is the prior median; 0.2 of the unit square's diagonal is 0.28, the
+#     geometric centre of the `gp_lengthscale` default axis below.
+#   * `lkj_eta` -- the LKJ shape on a free correlation matrix, the value
+#     `re_cov_pc_lkj_prior()` has always defaulted to.
+#   * `nb_size_lambda` -- the rate of the PC prior on a negative-binomial
+#     overdispersion a = 1 / size against the Poisson base model, in the form
+#     R-INLA ships as `pc.mgamma` (`inla.pc.dgamma()`, rinla/R/pc-gamma.R) and
+#     Simpson writes out for the Gamma(1/a, 1/a) mixing distribution ("Priors
+#     part 4", 2022). 7 is R-INLA's `nbinomial` default. No peer-reviewed source
+#     gives this prior: Simpson et al. (2017, Section 8) state that the usual
+#     parameterisation does not separate the overdispersion from the mean.
+.NL_HYPERPRIOR <- list(
+    nb_size_lambda        = 7,
+    scale_U               = 3,
+    scale_alpha           = 0.01,
+    range_alpha           = 0.5,
+    range_extent_fraction = 0.2,
+    lkj_eta               = 2
+)
+
+.nl_hyperprior <- function(par) {
+    if (!par %in% names(.NL_HYPERPRIOR)) {
+        stop("Unknown default hyperprior setting '", par, "'.", call. = FALSE)
+    }
+    .NL_HYPERPRIOR[[par]]
+}
+
+# The PC anchor pair as `c(U, alpha)`, the shape every `prior_sigma` argument
+# takes.
+.nl_scale_anchor <- function() {
+    c(.NL_HYPERPRIOR$scale_U, .NL_HYPERPRIOR$scale_alpha)
+}
 
 # Materialise a default axis. Geometric when `lo`/`hi` are present, explicit
 # nodes otherwise, with `prepend` nodes in front. Errors on a data-dependent
@@ -642,12 +695,11 @@
     max_attempts_joint    = 2L,
     max_attempts_registry = 1L,
 
-    # Weakly-informative PC(U, alpha) prior engaged only on a second attempt,
-    # and only when the user set no `prior_sigma` of their own. `U = 3` is the
-    # retired fixed-grid ceiling, so the shrinkage is felt only PAST where the
-    # old default axis already stopped; `P(sigma > 3) = 0.01` leaves a
-    # data-identified mode essentially untouched.
-    sigma_pc_prior = list("pc.prec", c(U = 3, alpha = 0.01)),
+    # The PC prior a second attempt engages when the user set no `prior_sigma`
+    # of their own: the engine's default SD prior, so a fit that needed the
+    # second attempt integrates the same prior as one that did not.
+    sigma_pc_prior = list("pc.prec", c(U = .NL_HYPERPRIOR$scale_U,
+                                       alpha = .NL_HYPERPRIOR$scale_alpha)),
 
     # Per-axis node count of a PLACEMENT PILOT (`control$recenter_pilot = TRUE`,
     # `R/nested_laplace_pilot.R`). Placement reads two things off a grid -- the

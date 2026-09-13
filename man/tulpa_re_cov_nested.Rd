@@ -12,9 +12,9 @@ tulpa_re_cov_nested(
   family = "binomial",
   phi = 1,
   phi2 = NULL,
-  prior_sigma = c(3, 0.05),
-  eta = 2,
-  hyperprior = c("flat", "pc_lkj"),
+  prior_sigma = NULL,
+  eta = NULL,
+  hyperprior = c("pc_lkj", "flat"),
   log_prior_theta = NULL,
   beta_prior = NULL,
   offset = NULL,
@@ -47,16 +47,16 @@ covariances, not over \code{phi2}.}
 
 \item{prior_sigma, eta}{Hyperparameters of the PC + LKJ prior used when
 \code{hyperprior = "pc_lkj"} (see \code{\link[=re_cov_pc_lkj_prior]{re_cov_pc_lkj_prior()}}):
-\code{prior_sigma = c(U, alpha)} with \code{P(sigma_i > U) = alpha} (default
-\code{c(3, 0.05)}) and LKJ shape \code{eta} (default 2). Ignored when
+\code{prior_sigma = c(U, alpha)} with \code{P(sigma_i > U) = alpha} (\code{NULL}, the
+default, is \code{c(3, 0.01)}) and LKJ shape \code{eta} (\code{NULL} is 2). Ignored when
 \code{hyperprior = "flat"} or \code{log_prior_theta} is supplied.}
 
-\item{hyperprior}{\code{"flat"} (default) or \code{"pc_lkj"}. \code{"flat"} integrates with
-\code{log_prior_theta} the zero function (flat in log(theta)), matching the
-nested-Laplace convention on every other scale axis in the engine.
-\code{"pc_lkj"} builds the PC + LKJ prior from \code{prior_sigma} / \code{eta} (the
-regularizer that keeps a variance component off the \code{sigma = 0} boundary
-at small G). Ignored when \code{log_prior_theta} is supplied.}
+\item{hyperprior}{\code{"pc_lkj"} (default) or \code{"flat"}. \code{"pc_lkj"} builds the
+PC + LKJ prior from \code{prior_sigma} / \code{eta}, the proper prior every other
+scale axis of the engine carries by default. \code{"flat"} integrates with
+\code{log_prior_theta} the zero function (flat in log(theta)); that prior is
+improper, so the fit then reports no evidence. Ignored when
+\code{log_prior_theta} is supplied.}
 
 \item{log_prior_theta}{Optional \verb{function(theta)} returning a scalar log
 prior density on the full stacked parameter vector, overriding

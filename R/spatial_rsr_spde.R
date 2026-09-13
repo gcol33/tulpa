@@ -277,10 +277,13 @@ apply_rsr_projection <- function(w, P_perp) {
 #'   (Bolin & Kirchner 2020; Hofreither 2021); supported by the Laplace fitter
 #'   `fit_spde()` (single-point and nested over range/sigma). NUTS and analytic
 #' marginal SEs remain integer-only. Default 1.
-#' @param prior_range Prior for the spatial range. A numeric vector `c(U, alpha)`
-#'   where P(range < U) = alpha. Default `c(0.5, 0.5)`.
-#' @param prior_sigma Prior for the marginal standard deviation. A numeric vector
-#'   `c(U, alpha)` where P(sigma > U) = alpha. Default `c(1, 0.5)`.
+#' @param prior_range PC prior on the spatial range, `c(U, alpha)` with
+#'   P(range < U) = alpha. `NULL` (the default) anchors it on the data: `U` is
+#'   a fifth of the diagonal of the coordinates' bounding box and `alpha = 0.5`,
+#'   so `U` is the prior median.
+#' @param prior_sigma PC prior on the marginal standard deviation, `c(U, alpha)`
+#'   with P(sigma > U) = alpha. `NULL` (the default) is `c(3, 0.01)`, the
+#'   engine's prior on every field scale.
 #'
 #' @return A `tulpa_spatial` object with type `"spde"`.
 #'
@@ -294,8 +297,8 @@ apply_rsr_projection <- function(w, P_perp) {
 spatial_spde <- function(coords, data = NULL, mesh = NULL,
                          boundary = NULL, max_edge = NULL, cutoff = 0,
                          nu = 1,
-                         prior_range = c(0.5, 0.5),
-                         prior_sigma = c(1, 0.5)) {
+                         prior_range = NULL,
+                         prior_sigma = NULL) {
 
   .validate_spde_nu(nu)
 
@@ -312,6 +315,13 @@ spatial_spde <- function(coords, data = NULL, mesh = NULL,
   }
 
   if (ncol(obs_coords) != 2) stop("coords must have 2 columns", call. = FALSE)
+  prior_range <- prior_range %||% .nl_default_range_prior(obs_coords)
+  prior_sigma <- prior_sigma %||% .nl_scale_anchor()
+  if (is.null(prior_range)) {
+    stop("spatial_spde(): the coordinates span a single point, so no default ",
+         "range prior can be anchored on them; pass `prior_range = c(U, alpha)`.",
+         call. = FALSE)
+  }
 
   # Build mesh if not provided
   if (is.null(mesh)) {
@@ -367,16 +377,31 @@ spatial_spde <- function(coords, data = NULL, mesh = NULL,
 #' @param nu Matern smoothness parameter. A positive number; integer values
 #'   give the exact FEM construction, fractional values the BRASIL rational SPDE
 #' approximation (supported by `fit_spde()`;). Default 1.
-#' @param prior_range Prior for the spatial range. Default `c(0.5, 0.5)`.
-#' @param prior_sigma Prior for the marginal standard deviation. Default `c(1, 0.5)`.
+#' @param prior_range PC prior on the spatial range, `c(U, alpha)` with
+#'   P(range < U) = alpha. `NULL` (the default) anchors it on `coords` as
+#'   [spatial_spde()] does, and needs them.
+#' @param prior_sigma PC prior on the marginal standard deviation, `c(U, alpha)`
+#'   with P(sigma > U) = alpha. `NULL` (the default) is `c(3, 0.01)`.
+#' @param coords Observation coordinates (an `n_obs x 2` matrix), read only to
+#'   anchor the default range prior. Not needed when `prior_range` is given.
 #'
 #' @return A `tulpa_spatial` object with type `"spde"`.
 #'
 #' @export
 spatial_spde_custom <- function(C, G, A, nu = 1,
-                                prior_range = c(0.5, 0.5),
-                                prior_sigma = c(1, 0.5)) {
+                                prior_range = NULL,
+                                prior_sigma = NULL,
+                                coords = NULL) {
   .validate_spde_nu(nu)
+  if (is.null(prior_range)) {
+    if (!is.null(coords)) prior_range <- .nl_default_range_prior(coords)
+    if (is.null(prior_range)) {
+      stop("spatial_spde_custom() needs `prior_range = c(U, alpha)`, or the ",
+           "`coords` its default is anchored on: the FEM matrices carry no ",
+           "coordinate scale.", call. = FALSE)
+    }
+  }
+  prior_sigma <- prior_sigma %||% .nl_scale_anchor()
   if (!inherits(C, "Matrix")) C <- as(C, "CsparseMatrix")
   if (!inherits(G, "Matrix")) G <- as(G, "CsparseMatrix")
   if (!inherits(A, "Matrix")) A <- as(A, "CsparseMatrix")

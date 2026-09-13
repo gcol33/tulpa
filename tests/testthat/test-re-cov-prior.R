@@ -66,8 +66,13 @@ test_that("re_cov_pc_lkj_prior assembles PC + LKJ + Jacobian correctly", {
       L     <- tulpa:::.re_logchol_to_L(theta, c_re)
       sig   <- sqrt(rowSums(L^2))
       logdetR <- 2 * sum(log(diag(L))) - 2 * sum(log(sig))
+      # LKJ normalizing constant, Lewandowski, Kurowicka & Joe (2009) 3.2.
+      kk <- seq_len(c_re - 1L)
+      aa <- eta + (c_re - kk - 1) / 2
+      log_c <- sum((2 * eta - 2 + c_re - kk) * (c_re - kk)) * log(2) +
+        sum((c_re - kk) * lbeta(aa, aa))
       expected <- sum(log(lambda) - lambda * sig) +    # PC on each SD
-        (eta - 1) * logdetR +                          # LKJ on correlation
+        (eta - 1) * logdetR - log_c +                  # LKJ on correlation
         .analytic_logdet(theta, c_re)                  # change of variables
       expect_equal(prior(theta), expected, tolerance = 1e-10,
                    label = sprintf("c=%d rep=%d assembled prior", c_re, rep))
@@ -173,7 +178,7 @@ test_that("supplied prior_sigma / eta change the integrated posterior under hype
   expect_lt(s1_narr, s1_wide)
 })
 
-test_that("hyperprior = 'flat' is the default and ignores prior_sigma", {
+test_that("hyperprior = 'pc_lkj' is the default and 'flat' ignores prior_sigma", {
   skip_on_cran()
   set.seed(6L)
   G <- 30L; npg <- 10L; N <- G * npg
@@ -184,7 +189,13 @@ test_that("hyperprior = 'flat' is the default and ignores prior_sigma", {
   rt <- list(idx = grp, n_groups = G, n_coefs = 1L)
 
   default_fit <- tulpa_re_cov_nested(y, rep(1L, N), X, rt, family = "binomial")
-  flat_fit    <- tulpa_re_cov_nested(y, rep(1L, N), X, rt, family = "binomial",
-                                     hyperprior = "flat", prior_sigma = c(0.2, 0.05))
-  expect_identical(default_fit$theta_hat, flat_fit$theta_hat)
+  pc_fit      <- tulpa_re_cov_nested(y, rep(1L, N), X, rt, family = "binomial",
+                                     hyperprior = "pc_lkj")
+  expect_identical(default_fit$theta_hat, pc_fit$theta_hat)
+  flat_a <- tulpa_re_cov_nested(y, rep(1L, N), X, rt, family = "binomial",
+                                hyperprior = "flat")
+  flat_b <- tulpa_re_cov_nested(y, rep(1L, N), X, rt, family = "binomial",
+                                hyperprior = "flat", prior_sigma = c(0.2, 0.05))
+  expect_identical(flat_a$theta_hat, flat_b$theta_hat)
+  expect_false(isTRUE(all.equal(flat_a$theta_hat, pc_fit$theta_hat)))
 })

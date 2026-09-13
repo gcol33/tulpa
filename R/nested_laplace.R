@@ -594,10 +594,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
                             tail_points = k_tail_points)
       },
       refit_log_marginal = function(prior_i, theta_mat) {
-        o <- .nl_dispatch_multi(cargs_no_ckpt, prior_i, likelihood = likelihood,
-                                theta_grid_override = theta_mat)
-        o$log_marginal +
-          .nl_multi_spde_log_prior(o$blocks, o$axis_offsets, theta_mat)
+        .nl_dispatch_multi(cargs_no_ckpt, prior_i, likelihood = likelihood,
+                           theta_grid_override = theta_mat)$log_marginal
       },
       auto = .prov$auto, multi = TRUE,
       policy = .nl_recenter_mode(control$auto_recenter))
@@ -642,9 +640,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   tm$mark("setup")
   # Every full-grid solve of this fit -- the first one and the placement pass's
   # refit -- is screened at the same tolerance and gated the same way, so no
-  # reported grid is a pruned one whose screen ranking was unreliable. The gate
-  # reads the kernel's own log-marginal, before the AR1 rho prior is folded in,
-  # which is the quantity the cheap screen ranked.
+  # reported grid is a pruned one whose screen ranking was unreliable.
   solve_grid <- function(prior_i) {
     .nl_prune_gate(
       .nl_dispatch(type, cargs, prior_i),
@@ -653,7 +649,6 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
                               prior_i))
   }
   res <- solve_grid(prior)
-  res <- .nl_apply_ar1_rho_prior(res, type, prior)
   tm$mark("grid")
 
   # Integrate exp(log_marginal) over the outer grid. `log_marginal` is the
@@ -685,7 +680,6 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     res, type, prior,
     refit = function(prior_i) {
       r <- solve_grid(prior_i)
-      r <- .nl_apply_ar1_rho_prior(r, type, prior_i)
       r <- .nl_attach_outer_integration(r, "outer grid")
       r <- .nl_posterior_moments(r, type, within = within_cell)
       if (isTRUE(keep_grid_hessians)) r <- .nl_attach_grid_hessians(r, p_fixed)
@@ -1140,10 +1134,9 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
         # hyperparameter uncertainty.
         n_g <- as.integer(p$n_grid %||% .nl_grid_par("spde_registry", "n"))
         span <- as.numeric(p$grid_span %||% .nl_grid_par("spde_registry", "span"))
-        rng_mode <- (p$prior_range %||%
-                       .nl_grid_par("spde_registry", "prior_range"))[1]
-        sig_mode <- (p$prior_sigma %||%
-                       .nl_grid_par("spde_registry", "prior_sigma"))[1]
+        rng_mode <- (.hp_range_anchor(p)$anchor %||%
+                       .nl_grid_par("spde_registry", "centre_range"))[1]
+        sig_mode <- (p$prior_sigma %||% .nl_scale_anchor())[1]
         rg <- exp(seq(log(rng_mode / span), log(rng_mode * span), length.out = n_g))
         sg <- exp(seq(log(sig_mode / span), log(sig_mode * span), length.out = n_g))
         gr <- expand.grid(range = rg, sigma = sg)
@@ -1378,42 +1371,26 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   th  <- spec$theta(p)
   out$theta_grid  <- th$grid
   out$theta_names <- th$names
-  out
-}
-
-# Reweight the AR1 nested-Laplace outer grid by a Beta(a, b) prior on
-# u = (rho + 1)/2. The inner marginal (log_prior_ar1) carries no rho prior, so an
-# equal-weight grid implies a uniform rho; adding the Beta log-density at each
-# natural-scale grid rho makes the outer integration honor `rho_prior`. There is
-# no logit Jacobian here -- that belongs to the sampler's unconstrained
-# parameterization, not the grid. Default Beta(1, 1) is uniform and a no-op.
-.nl_apply_ar1_rho_prior <- function(res, type, prior) {
-  if (type != "ar1" || is.null(prior$rho_prior)) return(res)
-  ab <- .ar1_rho_beta_ab(prior$rho_prior)
-  if (ab[1L] == 1 && ab[2L] == 1) return(res)
-  tg <- res$theta_grid
-  if (is.null(tg) || !is.matrix(tg) || !("rho" %in% colnames(tg))) return(res)
-  u  <- pmin(pmax(0.5 * (tg[, "rho"] + 1), 1e-12), 1 - 1e-12)
-  lp <- (ab[1L] - 1) * log(u) + (ab[2L] - 1) * log1p(-u)
-  res$log_marginal   <- res$log_marginal + lp
-  res$log_hyperprior <- (res$log_hyperprior %||% 0) + lp
-  res
+  # The block's hyperprior, folded where every caller of the kernel reads it:
+  # the grid solve, the placement refit and its stencil, the k-hat refit.
+  .nl_fold_hyperprior(out, list(
+    .nl_block_log_hyperprior(p, .nl_theta_matrix(out))))
 }
 
 # The outer grid's cell measure, its weights and its log evidence, set together
-# from the grid and the log-marginals the fit carries. `log_hyperprior` is the
-# hyperprior density a producer has already folded into `log_marginal` (NULL
-# where none), which the evidence has to know to normalise the prior the weights
-# define (`.nl_outer_log_evidence()`).
+# from the grid and the log-marginals the fit carries. `log_marginal` already
+# holds the hyperprior density the dispatch folded in (`R/hyperprior_default.R`),
+# so a folded axis is measured by its cell widths alone and its support is not
+# clipped to the span the nodes were declared over.
 .nl_attach_outer_integration <- function(res, what = "outer grid") {
-  tg <- .nl_theta_matrix(res)
-  res$log_quad     <- .nl_grid_log_quad(tg)
-  res$axis_support <- .hyper_grid_supports(tg, .joint_axis_specs_from_grid(tg))
+  tg    <- .nl_theta_matrix(res)
+  specs <- .joint_axis_specs_from_grid(
+    tg, folded_axes = res$log_hyperprior_axes)
+  res$log_quad     <- .hyper_log_quad_weights(tg, specs)
+  res$axis_support <- .hyper_grid_supports(tg, specs)
   res$weights      <- .nl_normalise_weights_safe(res$log_marginal, what,
                                                  log_quad = res$log_quad)
-  res$log_evidence <- .nl_outer_log_evidence(res$log_marginal, res$log_quad,
-                                             res$log_hyperprior)
-  res
+  .nl_attach_evidence(res, tg, specs)
 }
 
 # Normalise log-marginals to integration weights summing to 1. The single
@@ -1451,50 +1428,52 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   w / sum(w)
 }
 
-# Log evidence of an outer hyperparameter grid, under the measure its weights
-# integrate.
+# Log evidence of an outer hyperparameter grid.
 #
-# The weights are `exp(log_marginal + log_measure)` normalised, where
-# `log_measure` is each cell's log prior mass on the grid (`log_quad`, plus the
-# log design weight on a partition-of-unity refined grid) and `log_marginal`
-# may already carry a hyperprior DENSITY a producer folded in (`log_hyperprior`,
-# zero where none). The prior those weights define is therefore
-# `exp(log_hyperprior + log_measure)` normalised over the cells, and the
-# evidence under it is
+# `log_marginal` carries a normalised hyperprior density on each axis's
+# integration coordinate and `log_measure` is each cell's ABSOLUTE log volume on
+# that coordinate (its widths, and a declared atom's probability), so
 #
-#   log sum_k exp(log_marginal_k + log_measure_k)
-#     - log sum_k exp(log_hyperprior_k + log_measure_k).
+#   log p(y) = log sum_k exp(log_marginal_k + log_measure_k)
 #
-# The subtraction is what makes the value independent of how either term is
-# scaled: `log_quad` is relative (its sum over a refined or atom-carrying grid
-# is not 1), and a folded density need not be normalised on the grid's
-# coordinate. Both scalings cancel, and what remains is the evidence under the
-# hyperprior RESTRICTED to the grid's support and renormalised there -- the same
-# prior the reported posterior is a posterior of. An axis whose declared density
-# puts material mass outside the grid is read conditional on the hyperparameter
-# lying inside it.
+# is the evidence under the prior itself, not under a copy of it restricted to
+# the grid and renormalised there. Where the grid covers the posterior the
+# value does not move with where the nodes were laid or how many there are.
 #
-# A cell whose inner solve failed (`log_marginal` NaN, or `+Inf` from a
-# non-PD Hessian) is left out of both sums: its likelihood is unknown, not zero,
-# so the evidence is read conditional on the cells that were solved, as the
-# weights are. A cell screened out by the pruning pass carries `-Inf`
-# deliberately and keeps its prior mass.
-.nl_outer_log_evidence <- function(log_marginal, log_measure = NULL,
-                                   log_hyperprior = NULL) {
-  n <- length(log_marginal)
-  lq <- if (is.null(log_measure)) rep(0, n) else as.numeric(log_measure)
-  lh <- if (is.null(log_hyperprior)) rep(0, n) else as.numeric(log_hyperprior)
-  if (length(lq) != n || length(lh) != n) {
+# A cell whose inner solve failed (`log_marginal` NaN, or `+Inf` from a non-PD
+# Hessian) contributes nothing: its likelihood is unknown and is not guessed.
+# A cell screened out by the pruning pass carries `-Inf` and contributes
+# nothing either, which is what screening it asserted.
+.nl_outer_log_evidence <- function(log_marginal, log_measure) {
+  lq <- as.numeric(log_measure)
+  if (length(lq) != length(log_marginal)) {
     stop(sprintf(paste0("Outer evidence: `log_marginal` has length %d but the ",
-                        "measure has %d and the hyperprior %d."),
-                 n, length(lq), length(lh)), call. = FALSE)
+                        "measure has %d."),
+                 length(log_marginal), length(lq)), call. = FALSE)
   }
-  known <- !is.na(log_marginal) & log_marginal < Inf & !is.na(lq) & !is.na(lh)
+  known <- !is.na(log_marginal) & log_marginal < Inf & !is.na(lq)
   if (!any(known)) return(NA_real_)
-  num <- .tulpa_logsumexp(log_marginal[known] + lq[known])
-  den <- .tulpa_logsumexp(lh[known] + lq[known])
-  if (!is.finite(num) || !is.finite(den)) return(NA_real_)
-  num - den
+  ev <- .tulpa_logsumexp(log_marginal[known] + lq[known])
+  if (is.finite(ev)) ev else NA_real_
+}
+
+# Record a grid's evidence on `res`, or why it has none. The evidence exists
+# only when every integrated axis carries a normalised density; otherwise it is
+# `NA` with `log_evidence_declined = "improper_hyperprior"` and
+# `log_evidence_declined_axes` naming each such axis and its reason.
+.nl_attach_evidence <- function(res, tg, specs,
+                                log_measure = .hyper_log_quad_weights(
+                                  tg, specs, absolute = TRUE)) {
+  uncovered <- .nl_evidence_uncovered(tg, specs, res)
+  res$log_evidence_declined_axes <- if (length(uncovered)) uncovered else NULL
+  if (length(uncovered)) {
+    res$log_evidence <- NA_real_
+    res$log_evidence_declined <- "improper_hyperprior"
+    return(res)
+  }
+  res$log_evidence <- .nl_outer_log_evidence(res$log_marginal, log_measure)
+  res$log_evidence_declined <- NULL
+  res
 }
 
 
@@ -1993,47 +1972,26 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   out$axis_offsets <- axis_offsets
   out$blocks       <- prepared
 
-  if (!is.null(theta_grid_override)) return(out)  # skew re-dispatch / the
-                                                  # auto-recenter FD stencil:
-                                                  # the caller adds whatever
-                                                  # tail it needs
+  # Every block's hyperprior over its own columns, folded on the override path
+  # too: a placement stencil re-evaluates the marginal through it and has to
+  # difference the target the grid integrates.
+  out <- .nl_fold_hyperprior(out, lapply(seq_along(prepared), function(b) {
+    cols <- (axis_offsets[b] + 1L):axis_offsets[b + 1L]
+    tg_b <- joint_grid[, cols, drop = FALSE]
+    colnames(tg_b) <- colnames(block_grids[[b]])
+    blk <- prepared[[b]]
+    blk$log_prior_theta_per_grid <- blocks_spec[[b]]$log_prior_theta_per_grid
+    .hp_prefix(.nl_block_log_hyperprior(blk, tg_b), paste0("b", b, "."))
+  }))
 
-  out$log_hyperprior <- .nl_multi_spde_log_prior(prepared, axis_offsets,
-                                                 joint_grid)
-  out$log_marginal   <- out$log_marginal + out$log_hyperprior
+  if (!is.null(theta_grid_override)) return(out)  # skew re-dispatch / the
+                                                  # auto-recenter FD stencil
 
   out <- .nl_attach_outer_integration(out, "multi-block outer grid")
   out <- .nl_posterior_moments_multi(out, prepared, axis_offsets, joint_grid,
                                      within = match.arg(within_cell))
   out
 }
-
-# Each SPDE block's PC prior on (range, sigma), per outer grid cell. The areal
-# / temporal / iid blocks carry their hyperprior inside the C++ block log_prior
-# (it folds into log|Q|); the SPDE factory drops the log|Q|/2 normalizer (it is
-# recovered from the Laplace Hessian log-determinant) and carries no
-# hyperprior, so the proper Matern PC prior is added on the R side -- the same
-# prior + closed form the single-Laplace SPDE path uses
-# (`pc_prior_log_density`), so both paths integrate the same posterior.
-#
-# Its own function because the auto-recenter's FD stencil re-evaluates the
-# inner marginal through `theta_grid_override`, which returns before the tail
-# above: a stencil differencing the marginal WITHOUT this term would be
-# differencing a different target than the one the grid integrates.
-.nl_multi_spde_log_prior <- function(prepared, axis_offsets, joint_grid) {
-  lp <- numeric(nrow(joint_grid))
-  for (b in seq_along(prepared)) {
-    pb <- prepared[[b]]
-    if (!identical(tolower(pb$type %||% ""), "spde")) next
-    cols <- (axis_offsets[b] + 1L):axis_offsets[b + 1L]
-    lp <- lp + pc_prior_log_density(as.numeric(joint_grid[, cols[1L]]),
-                                    as.numeric(joint_grid[, cols[2L]]),
-                                    pb$prior_range %||% c(1, 0.5),
-                                    pb$prior_sigma %||% c(1, 0.5))
-  }
-  lp
-}
-
 
 #' Build a `prior` list for [tulpa_nested_laplace()] from a tulpa spec object
 #'

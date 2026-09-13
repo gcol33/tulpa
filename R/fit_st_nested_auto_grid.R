@@ -215,7 +215,18 @@
         rho <- if ("rho" %in% axes) vals[["rho"]] else 0.0
         lm  <- .st_probe_log_marginal(kernel, kargs, spatial_type, rho_spatial_val,
                                       vals[["tau_spatial"]], vals[["tau_temporal"]], rho)
-        if (!is.finite(lm)) .Machine$double.xmax else -lm
+        # The posterior on the search coordinate: the grid's hyperprior, whose
+        # precision densities are already on log(tau), and for rho the density on
+        # the natural value carried to its logit coordinate.
+        lp <- .st_log_hyperprior(
+            matrix(vals, nrow = 1L, dimnames = list(NULL, axes)),
+            axes = axes)$lp
+        if ("rho" %in% axes) {
+            p_u <- stats::plogis(u[match("rho", axes)])
+            lp <- lp + log(2 * p_u * (1 - p_u))
+        }
+        post <- lm + lp
+        if (!is.finite(post)) .Machine$double.xmax else -post
     }
 
     opt <- .nl_lbfgsb_mode_find(par = u0, fn = objective,
@@ -356,16 +367,7 @@
         return(.nl_decline_recenter(out, "refit_failed"))
     }
 
-    refit$theta_grid  <- as.matrix(new_grid)
-    refit$theta_names <- colnames(new_grid)
-    st_specs <- .nl_st_axis_specs(refit$theta_grid)
-    refit$log_quad     <- .hyper_log_quad_weights(refit$theta_grid, st_specs)
-    refit$axis_support <- .hyper_grid_supports(refit$theta_grid, st_specs)
-    refit$weights <- .nl_normalise_weights_safe(refit$log_marginal,
-                                                "spatiotemporal grid",
-                                                log_quad = refit$log_quad)
-    refit$log_evidence <- .nl_outer_log_evidence(refit$log_marginal,
-                                                 refit$log_quad)
+    refit <- .st_attach_outer_integration(refit, new_grid)
     refit <- .joint_attach_pareto_k_regime(refit)
     refit$outer_grid_placement         <- "auto_recentered"
     refit$outer_grid_recenter_attempts <- 1L

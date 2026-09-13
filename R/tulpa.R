@@ -169,11 +169,13 @@
     }
     basis <- cpp_hsgp_basis_2d(as.matrix(cm), as.integer(spatial$m),
                                as.numeric(spatial$c))
-    return(list(
+    # The basis does not carry the coordinates, so their extent travels with
+    # the block: it anchors the lengthscale's default prior.
+    return(c(list(
       type       = "hsgp",
       phi_basis  = basis$phi_basis,
       lambda_eig = basis$lambda_eig
-    ))
+    ), .hp_coord_fields(cm)))
   }
 
   if (type %in% c("gp", "nngp")) {
@@ -846,9 +848,9 @@
         # uncertainty rather than condition on theta_hat.
         return(c(common, list(
           beta_prior   = beta_prior,
-          prior_sigma  = rp$prior_sigma %||% c(3, 0.05),
-          eta          = rp$eta %||% 2,
-          hyperprior   = rp$hyperprior %||% "flat",
+          prior_sigma  = rp$prior_sigma,
+          eta          = rp$eta,
+          hyperprior   = rp$hyperprior %||% "pc_lkj",
           n_quad       = as.integer(control$n_quad %||% 1L),
           estimate_phi = estimate_phi,
           # `[[` not `$`: the latter partial-matches, so `marginal_step` alone
@@ -867,9 +869,9 @@
                                (if (re_cov_method == "aghq") 9L else 1L))
         return(c(common, list(
           beta_prior  = beta_prior,
-          prior_sigma = rp$prior_sigma %||% c(3, 0.05),
-          eta         = rp$eta %||% 2,
-          hyperprior  = rp$hyperprior %||% "flat",
+          prior_sigma = rp$prior_sigma,
+          eta         = rp$eta,
+          hyperprior  = rp$hyperprior %||% "pc_lkj",
           n_quad      = n_quad,
           control     = .control_subset(control, .CONTROL_KEYS$re_cov_nested)
         )))

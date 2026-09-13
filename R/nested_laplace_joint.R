@@ -2003,25 +2003,23 @@ tulpa_nested_laplace_joint <- function(responses,
     }
     tm$mark("grid")
 
-    # Bake the regularizing hyperprior on (sigma, alpha) into log_marginal
-    # at the kernel-call boundary. Every cell carries the same prior
-    # contribution ratio so refinement decisions (edge scores, modal cell
-    # selection, var-of-means thresholds) all read the *regularized*
-    # posterior. New cells appended in refinement passes get the prior
-    # baked in via the same `hp_fn` closure threaded through the generic
-    # `.hyper_apply_axis_refinement`. The generic helper passes the new
-    # cells as a numeric matrix, which `.joint_hp_vec_for_grids` already
-    # accepts (see `R/nested_laplace_joint_hyperpriors.R`).
-    hp_fn <- if (is.null(fn_sigma) && is.null(fn_alpha) && is.null(fn_phi)) NULL else {
-        function(new_cells) {
-            .joint_hp_vec_for_grids(new_cells, fn_sigma, fn_alpha, fn_phi)
-        }
+    # Bake the hyperprior into log_marginal at the kernel-call boundary: the
+    # caller's density on a role it names, the engine's default on every other
+    # axis (`R/hyperprior_default.R`). Refinement decisions (edge scores, modal
+    # cell selection, var-of-means thresholds) then all read the posterior, and
+    # cells appended in refinement passes get the same prior through `hp_fn`.
+    hp_families <- stats::setNames(
+        vapply(arms, function(a) as.character(a$family %||% ""), character(1)),
+        arm_names)
+    hp_record <- function(cells) {
+        .joint_hyperprior(cells, list(c(prior, list(type = type))), hp_families,
+                          user = list(sigma = fn_sigma, alpha = fn_alpha,
+                                      phi = fn_phi),
+                          copy_atom_mass = copy_atom_mass)
     }
-    if (!is.null(hp_fn)) {
-        tg_init <- backend$theta_grid(grids, cp$has_copy)
-        hp_init <- hp_fn(tg_init)
-        if (!is.null(hp_init)) res$log_marginal <- res$log_marginal + hp_init
-    }
+    hp_fn <- function(new_cells) hp_record(new_cells)$lp
+    res <- .nl_fold_hyperprior(res, list(
+        hp_record(backend$theta_grid(grids, cp$has_copy))))
 
     # --- generic-refinement glue (Step 3) -------------------
     # Adaptive grid + var-of-means consistency are now driven by the
@@ -2042,7 +2040,8 @@ tulpa_nested_laplace_joint <- function(responses,
     specs <- .joint_axis_specs(grids, cp,
         user_priors = list(sigma = fn_sigma, alpha = fn_alpha, phi = fn_phi),
         copy_atom_mass = copy_atom_mass, copy_slab = copy_slab,
-        axis_refine = axis_refine_modes)
+        axis_refine = axis_refine_modes,
+        folded_axes = res$log_hyperprior_axes)
     kernel_fn <- .joint_make_kernel_fn(arms, prior, cp, backend, max_iter,
                                         tol, n_threads, x_init, store_Q,
                                         arm_names,
@@ -2091,9 +2090,8 @@ tulpa_nested_laplace_joint <- function(responses,
     res$axis_span    <- .joint_axis_span(theta_grid_init, res$theta_grid, specs)
     res$weights     <- .nl_normalise_weights_safe(res$log_marginal, "outer grid",
                                                   log_quad = res$log_quad)
-    res$log_hyperprior <- if (is.null(hp_fn)) NULL else hp_fn(res$theta_grid)
-    res$log_evidence   <- .nl_outer_log_evidence(res$log_marginal, res$log_quad,
-                                                 res$log_hyperprior)
+    res$log_hyperprior <- hp_fn(res$theta_grid)
+    res             <- .nl_attach_evidence(res, res$theta_grid, specs)
     res             <- .nl_posterior_moments(res, paste0("joint_", type),
                                              within = within_cell)
     res             <- .joint_recalibrate_axis_mean(res)
@@ -2134,10 +2132,8 @@ tulpa_nested_laplace_joint <- function(responses,
             res$weights     <- .nl_normalise_weights_safe(res$log_marginal,
                                                           "outer grid",
                                                           log_quad = res$log_quad)
-            res$log_hyperprior <- if (is.null(hp_fn)) NULL
-                                  else hp_fn(res$theta_grid)
-            res$log_evidence   <- .nl_outer_log_evidence(
-                res$log_marginal, res$log_quad, res$log_hyperprior)
+            res$log_hyperprior <- hp_fn(res$theta_grid)
+            res             <- .nl_attach_evidence(res, res$theta_grid, specs)
             res             <- .nl_posterior_moments(res, paste0("joint_", type),
                                                      within = within_cell)
             res             <- .joint_recalibrate_axis_mean(res)

@@ -204,8 +204,14 @@
 # `atom_mass` is the prior probability of the zero level on an axis that carries
 # one. It is declared, so it does not move when refinement changes how many
 # continuum nodes there are, and the continuum carries `1 - atom_mass`.
+#
+# `absolute = TRUE` returns each level's ABSOLUTE measure instead: its cell width
+# on the integration coordinate times the declared density there, with no
+# normalisation over the grid, and the atom at its declared probability. That is
+# the measure the evidence sums against (`.nl_outer_log_evidence()`); the
+# weights are the same up to the constant the normalisation removes.
 .hyper_axis_level_weights <- function(levels, spec, atom_mass = NULL,
-                                      close_domain = TRUE) {
+                                      close_domain = TRUE, absolute = FALSE) {
   levels <- sort(unique(as.numeric(levels)))
   K <- length(levels)
   if (K == 0L) return(numeric(0))
@@ -258,8 +264,14 @@
 
   dens <- spec$slab_log_density
   if (is.null(dens)) {
-    # Flat over the declared span: the widths themselves are the shape.
+    # Flat over the declared span: the widths themselves are the shape. As an
+    # absolute measure a declared span is a uniform prior on it, unless the axis
+    # carries a density folded into the marginal instead (`log_prior`), whose
+    # cells are measured by their widths alone.
     cw <- width
+    if (absolute && !is.null(slab) && is.null(spec$log_prior)) {
+      cw <- width / diff(bd)
+    }
   } else {
     # Declared density, carried to the coordinate the widths are measured on.
     ld <- .hyper_prior_carry(x, dens, spec$log_scale,
@@ -271,11 +283,17 @@
   # continuum holds. That is `1 - atom_mass`, declared before the fit, so the
   # shape is normalised and the split cannot move when nodes are added, when a
   # grid stops short of the density's tail, or when the density is rescaled.
-  tot <- sum(cw)
-  cw <- if (is.finite(tot) && tot > 0) cw / tot
-        else rep(1 / length(cw), length(cw))
+  if (!absolute) {
+    tot <- sum(cw)
+    cw <- if (is.finite(tot) && tot > 0) cw / tot
+          else rep(1 / length(cw), length(cw))
+  }
 
-  if (has_atom) {
+  if (has_atom && absolute) {
+    a <- as.numeric(atom_mass)
+    w[is_atom] <- a
+    w[cont]    <- (1 - a) * cw
+  } else if (has_atom) {
     a <- as.numeric(atom_mass)
     if (!is.finite(a) || a < 0 || a >= 1) {
       stop(sprintf("Axis '%s': `atom_mass` must lie in [0, 1).", spec$name),
@@ -359,7 +377,7 @@
 # quadrature weight, so its nodes stay equally weighted.
 .hyper_axis_scale <- function(bare) {
   if (startsWith(bare, "rho")) return(FALSE)
-  if (bare %in% c("sigma", "sigma2", "alpha", "tau", "range", "lengthscale",
+  if (bare %in% c("sigma", "sigma2", "alpha", "tau", "range", "lengthscale", "ell",
                   "s1", "s2", "phi", "phi_gp") ||
       startsWith(bare, "sigma") || startsWith(bare, "tau") ||
       startsWith(bare, "phi_")) return(TRUE)
@@ -430,7 +448,8 @@
 #
 # Returns a zero vector when no axis contributes, so a caller can add it
 # unconditionally.
-.hyper_log_quad_weights <- function(theta_grid, specs, close_domain = TRUE) {
+.hyper_log_quad_weights <- function(theta_grid, specs, close_domain = TRUE,
+                                    absolute = FALSE) {
   if (is.null(theta_grid) || is.null(specs)) return(NULL)
   theta_grid <- as.matrix(theta_grid)
   n <- nrow(theta_grid)
@@ -440,10 +459,15 @@
   for (spec in specs) {
     a <- spec$name
     if (!a %in% axis_names) next
-    if (isTRUE(spec$unweighted)) next
+    if (isTRUE(spec$unweighted)) {
+      # An axis with no declared coordinate has no cell width to measure it by.
+      if (absolute) out <- out + NA_real_
+      next
+    }
     v <- as.numeric(theta_grid[, a])
     lw <- .hyper_axis_level_weights(v, spec, .hyper_axis_atom_mass(spec),
-                                    close_domain = close_domain)
+                                    close_domain = close_domain,
+                                    absolute = absolute)
     levels <- sort(unique(v))
     idx <- match(v, levels)
     contrib <- log(as.numeric(lw)[idx])
@@ -478,9 +502,10 @@
 # measure.
 .nl_grid_log_quad <- function(theta_grid, specs = NULL,
                               copy_slab = "exponential",
-                              close_domain = TRUE) {
+                              close_domain = TRUE, folded_axes = NULL) {
   if (is.null(theta_grid) || is.null(colnames(theta_grid))) return(NULL)
   if (is.null(specs))
-    specs <- .joint_axis_specs_from_grid(theta_grid, copy_slab = copy_slab)
+    specs <- .joint_axis_specs_from_grid(theta_grid, copy_slab = copy_slab,
+                                         folded_axes = folded_axes)
   .hyper_log_quad_weights(theta_grid, specs, close_domain = close_domain)
 }

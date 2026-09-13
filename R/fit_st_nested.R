@@ -24,7 +24,7 @@
 # AR1 correlation evenly, so those are the coordinates their cell widths are
 # measured on and an unrefined grid carries equal weights. A recentred grid
 # keeps the same coordinates and only moves the nodes.
-.nl_st_axis_specs <- function(theta_grid) {
+.nl_st_axis_specs <- function(theta_grid, folded_axes = NULL) {
     if (is.null(theta_grid) || is.null(colnames(theta_grid))) return(NULL)
     tg <- as.matrix(theta_grid)
     lapply(colnames(tg), function(a) {
@@ -34,10 +34,37 @@
                                 bounds = if (log_scale) c(0, Inf) else NULL,
                                 refinable = FALSE)
         pos <- lv[lv > 0]
-        if (log_scale && length(pos) >= 2L)
+        if (log_scale && length(pos) >= 2L && !a %in% folded_axes)
             spec$slab_bounds <- exp(.hyper_default_coord_bounds(log(pos)))
         spec
     })
+}
+
+# The spatiotemporal grid's hyperprior (`R/hyperprior_default.R`): the PC prior
+# on both precisions and, for ar1, the uniform on the autocorrelation's domain.
+.st_log_hyperprior <- function(theta_grid, axes = NULL) {
+    tg <- as.matrix(theta_grid)
+    .hp_collect(tg, function(a) {
+        if (identical(a, "rho")) .hp_axis_default("rho", list(type = "ar1"))
+        else .hp_axis_default(a)
+    }, axes = axes %||% .hp_integrated_axes(tg))
+}
+
+# Fold the hyperprior into a spatiotemporal kernel result and attach its cell
+# measure, weights and evidence. The one tail behind the first solve and the
+# placement refit.
+.st_attach_outer_integration <- function(out, theta_grid) {
+    out$theta_grid  <- as.matrix(theta_grid)
+    out$theta_names <- colnames(out$theta_grid)
+    out <- .nl_fold_hyperprior(out, list(.st_log_hyperprior(out$theta_grid)))
+    st_specs <- .nl_st_axis_specs(out$theta_grid,
+                                  folded_axes = out$log_hyperprior_axes)
+    out$log_quad     <- .hyper_log_quad_weights(out$theta_grid, st_specs)
+    out$axis_support <- .hyper_grid_supports(out$theta_grid, st_specs)
+    out$weights <- .nl_normalise_weights_safe(out$log_marginal,
+                                              "spatiotemporal grid",
+                                              log_quad = out$log_quad)
+    .nl_attach_evidence(out, out$theta_grid, st_specs)
 }
 
 
@@ -219,17 +246,7 @@ fit_st_nested <- function(y, X, spatial_idx, adjacency, temporal_idx, n_times,
   if (spatial_type == "car_proper") {
     kargs$rho_spatial_grid <- rep(rho_spatial_val, nrow(grid))
   }
-  out <- do.call(kernel, kargs)
-
-  out$theta_grid  <- as.matrix(grid)
-  out$theta_names <- colnames(grid)
-  st_specs <- .nl_st_axis_specs(out$theta_grid)
-  out$log_quad     <- .hyper_log_quad_weights(out$theta_grid, st_specs)
-  out$axis_support <- .hyper_grid_supports(out$theta_grid, st_specs)
-  out$weights <- .nl_normalise_weights_safe(out$log_marginal,
-                                            "spatiotemporal grid",
-                                            log_quad = out$log_quad)
-  out$log_evidence <- .nl_outer_log_evidence(out$log_marginal, out$log_quad)
+  out <- .st_attach_outer_integration(do.call(kernel, kargs), grid)
   # Outer-grid collapse visibility + recenter:
   # tau_lower/tau_upper's default [0.25, 16] span (and, for ar1, the default
   # rho_lower/rho_upper) is a starting axis, not a hard ceiling, the same

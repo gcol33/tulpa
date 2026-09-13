@@ -622,16 +622,18 @@ vcov.tulpa_fit <- function(object, ...) {
 #' }
 #'
 #' On a nested-Laplace fit the value is the log evidence of its outer grid,
-#' `log sum_k exp(log_marginal_k + log_quad_k) - log sum_k exp(log_hyperprior_k
-#' + log_quad_k)`: the evidence under the hyperprior the reported posterior
-#' integrates, restricted to the grid's support and renormalised there. It does
-#' not move with the node count at a fixed support. An axis carrying the
-#' engine's default flat measure has no proper prior beyond that support, so
-#' its evidence is the evidence under a uniform prior on the support the fit
-#' integrated (`fit$axis_support`), which a placement pass may have moved;
-#' compare evidences across fits whose supports are fixed, or whose hyperpriors
-#' are proper. A central-composite (CCD) design reproduces moments and carries
-#' no cell volume, so a fit integrated on one reports `NA` with a `declined`
+#' `log sum_k exp(log_marginal_k + log_cell_k)`, where `log_marginal` already
+#' carries each axis's hyperprior density on its integration coordinate and
+#' `log_cell_k` is the cell's absolute volume there. Every default outer axis
+#' carries a proper prior (a PC prior on each scale and range, a uniform on each
+#' bounded axis), so the value is the evidence under that prior and does not move
+#' with where the nodes were laid or how many there are, provided the grid
+#' covers the posterior. A fit carrying an axis with no proper prior (a flat
+#' random-effect covariance prior, a dispersion whose family has no PC prior yet,
+#' an axis on a block that does not carry its coordinates) reports `NA` with
+#' `declined = "improper_hyperprior"` and names the axes in a `declined_axes`
+#' attribute. A central-composite (CCD) design reproduces moments and carries no
+#' cell volume, so a fit integrated on one reports `NA` with a `declined`
 #' attribute.
 #'
 #' Values with a different `quantity` or `conditioned_on` are not on one scale,
@@ -700,6 +702,9 @@ logLik.tulpa_fit <- function(object, ...) {
   attr(ll, "conditioned_on") <- if (identical(quantity, "log_marginal_likelihood"))
                                   estimated else character(0)
   if (!is.na(declined)) attr(ll, "declined") <- declined
+  if (!is.na(declined) && length(object$log_evidence_declined_axes)) {
+    attr(ll, "declined_axes") <- object$log_evidence_declined_axes
+  }
   class(ll) <- "logLik"
   ll
 }

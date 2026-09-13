@@ -57,6 +57,10 @@ test_that("fit_spde(method='ccd') returns a usable nested-Laplace result", {
 })
 
 test_that("fit_spde(method='ccd') falls back to grid on degenerate data", {
+  # Noise data leaves the likelihood nothing to identify a mode from. Under the
+  # default PC priors the posterior is then the prior and the mode-find lands
+  # inside, so the degenerate regime is reached with priors the caller has made
+  # nearly flat on both axes.
   skip_if_not_installed("fmesher")
   skip_on_cran()
 
@@ -67,7 +71,9 @@ test_that("fit_spde(method='ccd') falls back to grid on degenerate data", {
                               max.edge = c(0.15, 0.4), cutoff = 0.05)
   fem  <- fmesher::fm_fem(mesh)
   A    <- as(fmesher::fm_basis(mesh, loc = coords), "CsparseMatrix")
-  spec <- spatial_spde_custom(C = fem$c0, G = fem$g1, A = A, nu = 1)
+  spec <- spatial_spde_custom(C = fem$c0, G = fem$g1, A = A, nu = 1,
+                              prior_range = c(1e-6, 1e-6),
+                              prior_sigma = c(1e6, 0.9999))
 
   y <- rbinom(n_obs, 1, 0.4)        # noise only, no spatial structure
   X <- matrix(1, nrow = n_obs, ncol = 1)

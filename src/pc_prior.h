@@ -108,41 +108,51 @@ inline T log_prior_log_tau_pc(const T& log_tau, double U, double alpha) {
 }
 
 // ---------------------------------------------------------------------------
-// PC prior on a Matern range, d = 2.
+// PC prior on a Matern range in dimension d.
 //
 // Fuglstad et al. 2019 (JASA) "Constructing priors that penalize the
 // complexity of Gaussian random fields" places an exponential prior on
-// range^{-d/2}. For d = 2 that is
+// kappa = range^{-d/2}. Carrying Exp(lambda) on kappa to the range,
+// |d kappa / d range| = (d/2) range^{-1-d/2}, so
 //
-//   pi(range) = lambda * range^{-2} * exp(-lambda / range)
-//   lambda    = -log(alpha) * U,     so that P(range < U) = alpha
+//   pi(range) = (d/2) * lambda * range^{-1-d/2} * exp(-lambda * range^{-d/2})
+//   lambda    = -log(alpha) * U^{d/2},  so that P(range < U) = alpha
 //
-// Note the rate is -log(alpha) * U, NOT -log(alpha) / U: P(range < U) =
-// exp(-lambda / U) = alpha gives lambda = -U * log(alpha).
-//
-// Only the d = 2 form is provided, because that is the form verified against
-// the R nested path (pc_prior_log_density in fit_spde_nested.R). A 1D field
-// (a temporal GP lengthscale) needs the d = 1 density and a different rate
-// calibration; deriving it belongs with the paper open, not here.
+// since P(range < U) = P(kappa > U^{-d/2}) = exp(-lambda U^{-d/2}). At d = 2
+// the rate is -log(alpha) * U, NOT -log(alpha) / U. test-pc-prior.R integrates
+// the density to 1 and reads the anchor back off its CDF at d = 1, 2, 3.
 //
 // Both the SPDE field and the NNGP kernels this engine ships parameterize
 // distance as exp(-d / phi) (cov_exponential / cov_matern32 / cov_gaussian in
 // hmc_svc_autodiff.h), so the sampled phi is itself the range and this density
 // applies to it directly.
 
-// Exponential rate calibrated so that P(range < U) = alpha.
-inline double pc_range_rate(double U, double alpha) {
-  return -std::log(alpha) * U;
+// Exponential rate on range^{-d/2} calibrated so that P(range < U) = alpha.
+inline double pc_range_rate_d(double U, double alpha, double d) {
+  return -std::log(alpha) * std::pow(U, 0.5 * d);
 }
 
-// Density on the range, evaluated from log(range). Carries no Jacobian: the
-// caller adds the one for its own sampled coordinate.
+// The d = 2 rate.
+inline double pc_range_rate(double U, double alpha) {
+  return pc_range_rate_d(U, alpha, 2.0);
+}
+
+// Density on the range in dimension d, evaluated from log(range). Carries no
+// Jacobian: the caller adds the one for its own coordinate.
+template <typename T>
+inline T log_prior_range_pc_d_at_log(const T& log_range, double U, double alpha,
+                                     double d) {
+  const double half   = 0.5 * d;
+  const double lambda = pc_range_rate_d(U, alpha, d);
+  return T(std::log(lambda) + std::log(half))
+       - T(1.0 + half) * log_range
+       - T(lambda) * math::safe_exp(T(-half) * log_range);
+}
+
+// The d = 2 density from log(range).
 template <typename T>
 inline T log_prior_range_pc_at_log(const T& log_range, double U, double alpha) {
-  const double lambda = pc_range_rate(U, alpha);
-  return T(std::log(lambda))
-       - T(2.0) * log_range
-       - T(lambda) * math::safe_exp(-log_range);
+  return log_prior_range_pc_d_at_log(log_range, U, alpha, 2.0);
 }
 
 // Same density, from the range itself.

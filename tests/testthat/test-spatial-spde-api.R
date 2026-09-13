@@ -34,7 +34,7 @@ test_that("spatial_spde_custom works with fmesher matrices", {
   fem <- fmesher::fm_fem(mesh)
   A <- fmesher::fm_basis(mesh, loc = coords)
 
-  spec <- spatial_spde_custom(C = fem$c0, G = fem$g1, A = A)
+  spec <- spatial_spde_custom(C = fem$c0, G = fem$g1, A = A, coords = coords)
 
   expect_s3_class(spec, "tulpa_spatial")
   expect_equal(spec$type, "spde")

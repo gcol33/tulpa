@@ -228,8 +228,15 @@
     }
     # The grid's own quadrature-times-hyperprior weight, with the Laplace
     # marginal the correction replaces divided back out. Defined up to an
-    # additive constant, which the pooling's softmax removes.
-    log_q <- log(wt) - lm
+    # additive constant, which the pooling's softmax removes. The per-cell
+    # corrected marginal is the kernel's, so the hyperprior R folded into
+    # `log_marginal` stays in `log_q` and is added back to the adopted marginal.
+    lh <- .nl_log_hyperprior_folded(res, length(lm))
+    if (is.null(lh)) {
+        res$cila <- .cila_record(cfg, declined = "hyperprior_record_misaligned")
+        return(res)
+    }
+    log_q <- log(wt) - (lm - lh)
     log_q[!is.finite(log_q)] <- -Inf
 
     out <- tryCatch(redispatch(.cila_request(cfg, p_fixed)),
@@ -269,7 +276,7 @@
     # repaired grid takes. `retained_mass` is the share
     # of the ORIGINAL Laplace mass those cells carried, 1 on a complete grid, so
     # a reader tells the two apart from the fit alone.
-    lm_adopt <- as.numeric(pool$cell_log_marginal)
+    lm_adopt <- as.numeric(pool$cell_log_marginal) + lh
     lm_adopt[!is.finite(lm_adopt)] <- -Inf
     retained <- if (sum(wt, na.rm = TRUE) > 0) {
         sum(wt[pool$keep], na.rm = TRUE) / sum(wt, na.rm = TRUE)

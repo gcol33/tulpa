@@ -459,14 +459,25 @@ tulpa_hyper_grid <- function(hyper_specs, inner_fit,
     }
   }
 
+  # The caller's specs declare each axis's prior: a density folded through
+  # `log_prior`, or a uniform on a declared `slab_bounds`. An axis carrying
+  # neither has no proper prior to read an evidence under.
+  hg_declared <- unlist(lapply(specs, function(s) {
+    if (!is.null(s$log_prior) || !is.null(s$slab_bounds)) s$name
+  }))
+  hg_evidence <- .nl_attach_evidence(
+    list(log_marginal = log_marginal, log_hyperprior_axes = hg_declared),
+    theta_grid, specs)
+
   out <- list(
     theta_grid     = theta_grid,
     theta_names    = axis_names,
     log_marginal   = log_marginal,
     log_prior      = log_prior_cell,
     weights        = weights,
-    log_evidence   = .nl_outer_log_evidence(log_marginal, log_quad,
-                                            log_prior_cell),
+    log_evidence   = hg_evidence$log_evidence,
+    log_evidence_declined = hg_evidence$log_evidence_declined,
+    log_evidence_declined_axes = hg_evidence$log_evidence_declined_axes,
     theta_mean     = theta_mean,
     theta_sd       = theta_sd,
     theta_sd_source = res_partial$theta_sd_source,

@@ -160,9 +160,9 @@ test_that("EB estimates each block of a two-term model", {
 })
 
 test_that("a flat hyperprior gives the unpenalized ML-II estimate", {
-  # hyperprior defaults to "flat" (gcol33/tulpa#268); opt into "pc_lkj" for the
-  # penalized comparator, and hit the same flat objective two other ways
-  # (log_prior_theta = function(theta) 0, and simply not passing hyperprior).
+  # hyperprior defaults to "pc_lkj", the engine's proper prior on every scale
+  # (gcol33/tulpa#730); "flat" and log_prior_theta = function(theta) 0 reach the
+  # same unpenalized objective.
   d <- sim_re_pois(7L, G = 40L, per = 10L, sigma = 0.7)
   pen  <- eb_pois(d, hyperprior = "pc_lkj")
   flat <- eb_pois(d, log_prior_theta = function(theta) 0)
@@ -175,10 +175,9 @@ test_that("a flat hyperprior gives the unpenalized ML-II estimate", {
   expect_gte(flat$log_marginal, pen$log_marginal - 1e-6)
   expect_false(isTRUE(all.equal(flat$theta_hat, pen$theta_hat, tolerance = 1e-8)))
 
-  # The default (no explicit hyperprior / log_prior_theta) resolves to the
-  # same flat objective as the explicit function(theta) 0 above.
-  default <- eb_pois(d)
-  expect_identical(default$theta_hat, flat$theta_hat)
+  # The default resolves to the penalized objective; "flat" to the zero one.
+  expect_identical(eb_pois(d)$theta_hat, pen$theta_hat)
+  expect_identical(eb_pois(d, hyperprior = "flat")$theta_hat, flat$theta_hat)
 })
 
 

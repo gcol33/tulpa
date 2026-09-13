@@ -229,8 +229,11 @@ test_that("the corrected cell marginal converges to the exact one", {
                    numeric(1))
   expect_lt(max(abs(exact - coarse)), 1e-5)
 
+  # `log_marginal` carries the default sigma hyperprior; the reference is the
+  # marginal likelihood alone.
   f_lap <- cila_binom_fit(d)
-  lap_err <- mean(abs(as.numeric(f_lap$log_marginal) - exact))
+  lh <- as.numeric(f_lap$log_hyperprior)
+  lap_err <- mean(abs(as.numeric(f_lap$log_marginal) - lh - exact))
   expect_gt(lap_err, 1e-2)   # the fixture is genuinely non-Gaussian
 
   # Scored on the MEAN error over the cells, not the worst one. A QMC estimate
@@ -240,7 +243,7 @@ test_that("the corrected cell marginal converges to the exact one", {
   # converges. What has to fall is the error of the grid the fit integrates.
   errs <- vapply(c(512L, 262144L), function(M) {
     f <- cila_binom_fit(d, cila = list(n_points = M, variant = "qmc"))
-    mean(abs(as.numeric(f$cila$cell_log_marginal) - exact))
+    mean(abs(as.numeric(f$cila$cell_log_marginal) - lh - exact))
   }, numeric(1))
   expect_lt(errs[2], 0.3 * errs[1])
   expect_lt(errs[2], 0.15 * lap_err)
@@ -250,12 +253,15 @@ test_that("the corrected latent marginal moves toward the exact posterior", {
   skip_on_cran()
   d <- cila_binom_data()
   # The exact posterior of beta, pooling the sigma cells by their own exact
-  # marginals under the flat grid prior the fit uses.
+  # marginals under the hyperprior the fit folds (the cells are evenly spaced in
+  # log sigma, so they carry equal widths).
+  f_lap <- cila_binom_fit(d)
   half <- 14; ng <- 1601L
   b <- seq(-half, half, length.out = ng)
   post <- rep(0, ng)
   lm_ex <- vapply(CILA_SIGMA_GRID,
-                  function(s) cila_binom_exact_log_marg(d, s), numeric(1))
+                  function(s) cila_binom_exact_log_marg(d, s), numeric(1)) +
+    as.numeric(f_lap$log_hyperprior)
   wc <- exp(lm_ex - max(lm_ex)); wc <- wc / sum(wc)
   for (k in seq_along(CILA_SIGMA_GRID)) {
     s <- CILA_SIGMA_GRID[k]
@@ -270,7 +276,6 @@ test_that("the corrected latent marginal moves toward the exact posterior", {
   post <- post / sum(post)
   exact_mean <- sum(b * post)
 
-  f_lap <- cila_binom_fit(d)
   lap_mean <- as.numeric(.nested_fixed_moments(f_lap)$mean[1])
   f_cor <- cila_binom_fit(d, cila = list(n_points = 131072L, variant = "qmc"))
   cor_mean <- mean(f_cor$draws[, 1])

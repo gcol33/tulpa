@@ -83,73 +83,73 @@ test_that("an areal nested fit's eta draws carry its field", {
   expect_gt(stats::cor(as.numeric(by_s), u[as.integer(names(by_s))]), 0.8)
 })
 
-test_that("the outer evidence normalises the prior the weights define", {
+test_that("the outer evidence sums the marginal against the absolute cell measure", {
   lm <- c(-10, -11, -12, -13)
   lq <- log(c(0.1, 0.2, 0.3, 0.4))
-  # Flat hyperprior, a normalised measure: the plain cell-mass-weighted sum.
   expect_equal(tulpa:::.nl_outer_log_evidence(lm, lq),
                log(sum(exp(lm + lq))), tolerance = 1e-14)
-  # Rescaling the measure or the folded density leaves the value alone.
+  # The measure is absolute: scaling it scales the evidence.
   expect_equal(tulpa:::.nl_outer_log_evidence(lm, lq + 3),
-               tulpa:::.nl_outer_log_evidence(lm, lq), tolerance = 1e-13)
-  lh <- c(-1, -0.5, -0.2, -2)
-  expect_equal(tulpa:::.nl_outer_log_evidence(lm + lh, lq, lh),
-               tulpa:::.nl_outer_log_evidence(lm + lh + 5, lq, lh + 5),
-               tolerance = 1e-13)
-  # A folded density is normalised over the cells it was folded on.
-  expect_equal(tulpa:::.nl_outer_log_evidence(lm + lh, lq, lh),
-               log(sum(exp(lm + lh + lq))) - log(sum(exp(lh + lq))),
-               tolerance = 1e-14)
+               tulpa:::.nl_outer_log_evidence(lm, lq) + 3, tolerance = 1e-13)
 })
 
-test_that("a failed cell is conditioned out; a pruned cell keeps its prior mass", {
+test_that("a failed cell contributes nothing, and neither does a pruned one", {
   lm <- c(-10, -11, -12, -13)
   lq <- log(rep(0.25, 4))
-  ref <- tulpa:::.nl_outer_log_evidence(lm[1:3], lq[1:3])
-  expect_equal(tulpa:::.nl_outer_log_evidence(c(lm[1:3], NaN), lq), ref)
-  expect_equal(tulpa:::.nl_outer_log_evidence(c(lm[1:3], Inf), lq), ref)
-  expect_equal(tulpa:::.nl_outer_log_evidence(c(lm[1:3], -Inf), lq),
-               log(sum(exp(lm[1:3] + lq[1:3]))), tolerance = 1e-14)
+  ref <- log(sum(exp(lm[1:3] + lq[1:3])))
+  expect_equal(tulpa:::.nl_outer_log_evidence(c(lm[1:3], NaN), lq), ref,
+               tolerance = 1e-14)
+  expect_equal(tulpa:::.nl_outer_log_evidence(c(lm[1:3], Inf), lq), ref,
+               tolerance = 1e-14)
+  expect_equal(tulpa:::.nl_outer_log_evidence(c(lm[1:3], -Inf), lq), ref,
+               tolerance = 1e-14)
   expect_true(is.na(tulpa:::.nl_outer_log_evidence(c(NaN, NaN), c(0, 0))))
 })
 
-test_that("logLik() on a single-axis grid does not move with its node count", {
-  # The node set tiles the same log-tau support at every K, so the evidence is
-  # one integral read at increasing resolution. The unweighted log-sum-exp
-  # grows by about log(K) over the same range.
-  skip_on_cran()
-  d <- make_trend_data(20260529)
-  lo <- log(0.5); hi <- log(200)
-  ev <- vapply(c(9L, 33L, 129L), function(K) {
-    tg <- exp(lo + (hi - lo) / K * (seq_len(K) - 0.5))
-    f <- tulpa_nested_laplace(
-      y = d$df$y, n_trials = rep(1L, nrow(d$df)), X = cbind(1, d$df$x),
-      prior = list(type = "rw1", temporal_idx = as.integer(d$time),
-                   n_times = 24L, tau_grid = tg),
-      family = "binomial",
-      control = list(diagnose_k = FALSE, diagnose_skew = FALSE))
-    expect_equal(as.numeric(f$axis_support$tau), c(0.5, 200), tolerance = 1e-12)
-    expect_length(f$log_quad, K)
-    as.numeric(logLik(f))
-  }, numeric(1))
-  expect_lt(diff(range(ev)), 1e-3)
-
-  # Arbiter: a trapezoid in log tau over the same support, on a dense grid of
-  # inner marginals, written without the engine's cell measure.
-  tg <- exp(seq(lo, hi, length.out = 401L))
-  f <- tulpa_nested_laplace(
+.lev_rw1_fit <- function(d, tg) {
+  tulpa_nested_laplace(
     y = d$df$y, n_trials = rep(1L, nrow(d$df)), X = cbind(1, d$df$x),
     prior = list(type = "rw1", temporal_idx = as.integer(d$time),
                  n_times = 24L, tau_grid = tg),
     family = "binomial",
-    control = list(diagnose_k = FALSE, diagnose_skew = FALSE))
-  u <- log(tg); v <- f$log_marginal; m <- max(v)
-  trap <- m + log(sum(diff(u) * (exp(v[-1L] - m) + exp(v[-401L] - m)) / 2)) -
-    log(hi - lo)
-  expect_equal(ev[3L], trap, tolerance = 1e-4)
+    control = list(diagnose_k = FALSE, diagnose_skew = FALSE,
+                   auto_recenter = FALSE))
+}
+
+test_that("logLik() on a single-axis grid does not move with its nodes or its support", {
+  # The PC prior on tau is proper, so the evidence is one integral whatever
+  # node set reads it: the same support at three resolutions, and two supports
+  # that both cover the posterior.
+  skip_on_cran()
+  d <- make_trend_data(20260529)
+  grid_on <- function(lo, hi, K) exp(lo + (hi - lo) / K * (seq_len(K) - 0.5))
+  ev <- c(
+    vapply(c(9L, 33L, 129L), function(K) {
+      as.numeric(logLik(.lev_rw1_fit(d, grid_on(log(0.5), log(200), K))))
+    }, numeric(1)),
+    wide = as.numeric(logLik(.lev_rw1_fit(d, grid_on(log(0.05), log(2000), 129L)))))
+  expect_true(all(is.finite(ev)))
+  expect_lt(diff(range(ev)), 2e-3)
+
+  # Arbiter: a trapezoid in log tau of the kernel's own marginal against the PC
+  # density on the precision written out by hand, P(sigma > 1) = 0.01 with
+  # sigma = tau^(-1/2), on a support wide enough to hold the whole posterior.
+  tg <- exp(seq(log(0.01), log(1e4), length.out = 801L))
+  f <- .lev_rw1_fit(d, tg)
+  lam <- -log(0.01)
+  u <- log(tg)
+  lp <- log(lam / 2) - 1.5 * u - lam * exp(-u / 2) + u
+  v <- (f$log_marginal - f$log_hyperprior) + lp
+  m <- max(v)
+  trap <- m + log(sum(diff(u) * (exp(v[-1L] - m) + exp(v[-801L] - m)) / 2))
+  expect_equal(ev[["wide"]], trap, tolerance = 1e-3)
 })
 
-test_that("a two-axis grid's evidence converges in its node count at a fixed support", {
+test_that("a two-axis grid's evidence converges in its node count", {
+  # This fixture's rho posterior piles against 1 (a third or more of the weight
+  # above 0.9), and the outermost rho cell closes half way to that open
+  # boundary, so part of the posterior sits outside every resolution. What the
+  # evidence has to do is converge as the node count closes that sliver.
   skip_on_cran()
   set.seed(5)
   S <- 20L
@@ -158,13 +158,9 @@ test_that("a two-axis grid's evidence converges in its node count at a fixed sup
   site <- rep(seq_len(S), each = 15L)
   x <- rnorm(length(site))
   y <- rpois(length(site), exp(0.2 + 0.4 * x + u[site]))
-  # Both axes tile a support that does not move with K: sigma over [0.05, 5] in
-  # log, rho over [0.1, 0.9], inside its (0, 1) domain so no closure applies.
-  lse <- function(v) { m <- max(v); m + log(sum(exp(v - m))) }
-  old <- numeric(2)
-  ev <- vapply(c(12L, 24L), function(K) {
+  ev <- vapply(c(12L, 24L, 36L), function(K) {
     sg <- exp(log(0.05) + (log(5) - log(0.05)) / K * (seq_len(K) - 0.5))
-    rg <- 0.1 + 0.8 * (seq_len(K) - 0.5) / K
+    rg <- (seq_len(K) - 0.5) / K
     gr <- expand.grid(sigma = sg, rho = rg)
     f <- tulpa_nested_laplace(
       y = y, n_trials = rep(1L, length(y)), X = cbind(1, x),
@@ -175,11 +171,24 @@ test_that("a two-axis grid's evidence converges in its node count at a fixed sup
       family = "poisson",
       control = list(diagnose_k = FALSE, diagnose_skew = FALSE,
                      auto_recenter = FALSE))
-    old[K %/% 12L] <<- lse(f$log_marginal)
+    expect_setequal(f$log_hyperprior_axes, c("sigma", "rho"))
     as.numeric(logLik(f))
   }, numeric(1))
-  expect_lt(abs(diff(ev)), 0.01)
-  expect_gt(abs(diff(old)), 1)
+  expect_lt(abs(ev[3L] - ev[2L]), abs(ev[2L] - ev[1L]))
+  expect_lt(abs(ev[3L] - ev[2L]), 0.03)
+})
+
+test_that("an axis with no proper prior declines the evidence and names itself", {
+  fit <- structure(list(
+    log_marginal = c(-10, -11), log_evidence = NA_real_,
+    log_evidence_declined = "improper_hyperprior",
+    log_evidence_declined_axes = c(phi_count = "dispersion_prior_unsourced"),
+    N = 10L, n_fixed = 1L), class = "tulpa_fit")
+  ll <- logLik(fit)
+  expect_true(is.na(as.numeric(ll)))
+  expect_identical(attr(ll, "declined"), "improper_hyperprior")
+  expect_identical(attr(ll, "declined_axes"),
+                   c(phi_count = "dispersion_prior_unsourced"))
 })
 
 test_that("a fit with a per-cell vector and no recorded measure declines", {

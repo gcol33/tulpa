@@ -49,12 +49,25 @@
 # that same p(sigma | r). So the posterior of t equals the sampling law of
 # -(bhat - beta_0), and the PIT of beta_0 is exactly Uniform(0, 1) for every
 # fixed beta_0 -- provided sigma_0 really is drawn from the engine's own prior
-# on sigma, which for this grid is the discrete uniform over its cells. That is
-# the one thing the simulator must not get wrong, and `auto_recenter = FALSE` is
-# what keeps the fitted grid equal to the prior support.
+# on sigma, which on this grid is the PC prior's mass on each log cell
+# (`sbc_sigma_prior_w()`). That is the one thing the simulator must not get
+# wrong, and `auto_recenter = FALSE` is what keeps the fitted grid equal to the
+# prior support.
 # ---------------------------------------------------------------------------
 
 SBC_GRID <- exp(seq(log(0.2), log(1.5), length.out = 7))
+
+# The engine's prior mass on each cell of an evenly log-spaced sigma grid: the
+# PC prior on the SD, lambda exp(-lambda sigma), carried to log sigma by the
+# factor sigma, over cells of one width. The density is written out here; only
+# its anchor is read from the engine, so a moved anchor moves the simulator.
+sbc_sigma_prior_w <- function(grid) {
+  anchor <- tulpa:::.nl_scale_anchor()
+  lambda <- -log(anchor[2]) / anchor[1]
+  lp <- log(lambda) - lambda * grid + log(grid)
+  w <- exp(lp - max(lp))
+  w / sum(w)
+}
 # `phi` in this harness is stated in the DOOR's own convention and handed over
 # unconverted, which since `657f179` is the residual variance. 0.49 is the 0.7
 # residual SD these fixtures have always simulated at, so the model is the one
@@ -83,7 +96,7 @@ SBC_BETA <- c(-0.2, 0.7)
 sbc_sim_gaussian <- function(seed, nr = 6L, spr = 4L, phi = SBC_PHI,
                              beta = SBC_BETA, grid = SBC_GRID) {
   set.seed(seed)
-  sigma <- grid[sample.int(length(grid), 1L)]
+  sigma <- grid[sample.int(length(grid), 1L, prob = sbc_sigma_prior_w(grid))]
   N <- nr * spr
   region <- rep(seq_len(nr), each = spr)
   x <- stats::rnorm(N)
@@ -123,11 +136,12 @@ sbc_sim_gaussian <- function(seed, nr = 6L, spr = 4L, phi = SBC_PHI,
 }
 
 # The exact posterior: a Gaussian mixture over the grid for beta, and the exact
-# cell weights for sigma.
+# cell weights for sigma under its prior mass on the grid.
 sbc_exact_post <- function(d, phi = d$phi) {
   cs <- lapply(d$grid, function(s) .sbc_exact_cell(d, s, phi))
   lm <- vapply(cs, function(z) z$log_marg, numeric(1))
-  w <- exp(lm - max(lm)); w <- w / sum(w)
+  lw <- lm + log(sbc_sigma_prior_w(d$grid))
+  w <- exp(lw - max(lw)); w <- w / sum(w)
   list(mu = t(vapply(cs, function(z) z$beta, numeric(ncol(d$X)))),
        var = t(vapply(cs, function(z) diag(z$Vb), numeric(ncol(d$X)))),
        cov = lapply(cs, function(z) z$Vb),

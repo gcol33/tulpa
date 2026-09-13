@@ -37,13 +37,11 @@
 #' degenerate one-coefficient block. Both functions call the same outer
 #' objective and the same optimizer, so `tulpa_eb()$theta_hat` and
 #' `tulpa_re_cov_nested()$theta_hat` are the same estimate on the same data --
-#' which requires `hyperprior` to default the same way on both: `"flat"`, the
-#' zero function, matching the nested-Laplace convention on every other scale
-#' axis in the engine (icar / rw1 / rw2 / ar1's tau / iid all lack a
-#' hyperprior on their scale too; see `vignette("priors")`). Set
-#' `hyperprior = "pc_lkj"` for the weakly-informative PC + LKJ prior instead
-#' (see [re_cov_pc_lkj_prior()]) -- the regularizer that, at small G, keeps a
-#' block off the `sigma = 0` boundary this maximizer would otherwise reach.
+#' which requires `hyperprior` to default the same way on both: `"pc_lkj"`, the
+#' PC + LKJ prior (see [re_cov_pc_lkj_prior()]) at the anchor every scale axis
+#' of the engine defaults to, which at small G keeps a block off the
+#' `sigma = 0` boundary. `hyperprior = "flat"` maximizes the marginal likelihood
+#' alone.
 #'
 #' The reported fixed-effect covariance is the conditional one at `theta_hat`
 #' (`solve(H_beta)`). It does not include the hyperparameter uncertainty that
@@ -64,11 +62,12 @@
 #' @param re_terms Either a single random-effect term or a list of them; see
 #'   [tulpa_re_cov_nested()] for the per-term fields.
 #' @param prior_sigma,eta Hyperparameters of the PC + LKJ prior used when
-#'   `hyperprior = "pc_lkj"` (see [re_cov_pc_lkj_prior()]). Ignored when
+#'   `hyperprior = "pc_lkj"` (see [re_cov_pc_lkj_prior()]); `NULL` (the
+#'   defaults) is `c(3, 0.01)` and 2. Ignored when
 #'   `hyperprior = "flat"` or `log_prior_theta` is supplied. When active, the
 #'   prior is part of the maximized objective, so it regularizes the estimate:
 #'   with few groups it is what keeps a block off the `sigma = 0` boundary.
-#' @param hyperprior `"flat"` (default) or `"pc_lkj"`. `"flat"` maximizes with
+#' @param hyperprior `"pc_lkj"` (default) or `"flat"`. `"flat"` maximizes with
 #'   `log_prior_theta` the zero function -- an unpenalized maximum-marginal-
 #'   likelihood estimate, which can reach the `sigma = 0` boundary on small
 #'   designs (see the `"lower end of the search bracket"` warning). `"pc_lkj"`
@@ -208,8 +207,8 @@
 #' @export
 tulpa_eb <- function(y, n_trials = NULL, X, re_terms,
                      family = "binomial", phi = 1.0, phi2 = NULL,
-                     prior_sigma = c(3, 0.05), eta = 2,
-                     hyperprior = c("flat", "pc_lkj"),
+                     prior_sigma = NULL, eta = NULL,
+                     hyperprior = c("pc_lkj", "flat"),
                      log_prior_theta = NULL,
                      beta_prior = NULL, offset = NULL, n_quad = 1L,
                      marginal = FALSE,
