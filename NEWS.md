@@ -1,4 +1,4 @@
-# tulpa 0.4.2
+# tulpa 0.4.0
 
 ## A field-SD axis's decline survives a dispersion placement
 
@@ -18,8 +18,6 @@
   placed on both `sigma` and a dispersion axis reported only the latter as
   moved. The fit itself is unchanged; only the record is.
 
-# tulpa 0.4.1
-
 ## Progress knobs are read by exact key
 
 * **Any single `progress.*` control knob silently switched the console progress
@@ -35,8 +33,6 @@
   which is what kept it out of sight. Both reads take `control[["progress"]]`
   now, so the two channels are independent as documented and only an explicit
   `progress = FALSE` turns the bar off.
-
-# tulpa 0.4.0
 
 ## The control surface: one check per door, one home per default
 
