@@ -420,6 +420,50 @@ Implemented in `R/methods_generic.R` (`coef`, `confint`, `vcov`, `logLik`,
 `test_zero_inflation`, `check_model`).
 Model packages inherit via `class = c("model_fit", "tulpa_fit")`.
 
+### What logLik() reports, and the linear predictor the criteria score (gcol33/tulpa#721-#726)
+
+**An outer grid's evidence is recorded where its weights are built.**
+`.nl_outer_log_evidence(log_marginal, log_measure, log_hyperprior)`
+(`R/nested_laplace.R`) is `lse(lm + lq) - lse(lh + lq)`: the evidence under the
+prior the weights define, `exp(lh + lq)` normalised over the cells. The
+subtraction is the point -- `log_quad` is relative (its sum is not 1 on a
+refined or atom-carrying grid) and a folded hyperprior need not be normalised on
+the grid's coordinate, and both scalings cancel. Every producer sets
+`fit$log_evidence` beside its `weights` and passes the density it folded into
+`log_marginal` as `log_hyperprior` (the AR1 rho Beta, the multi-block SPDE PC
+prior, the joint `hp_fn`, the RE-covariance and SPDE grid priors); a producer
+that folds a new density in and does not pass it reports a wrong evidence, not
+an error. A CCD design declines (`log_evidence_declined =
+"moment_rule_design"`), and a per-cell vector with no record reads
+`outer_measure_not_recorded`. On a flat default axis the value is the evidence
+under a uniform prior on the support the fit integrated, which placement may
+have moved; it is flat in node count at a FIXED support, and that is the only
+invariance claimed.
+
+**A one-axis grid is a bare vector.** Anything keyed by axis name reads it
+through `.nl_theta_matrix()`; before it, `log_quad` and `axis_support` were NULL
+on every RW1 / ICAR fit.
+
+**The quantity is what the fit ESTIMATED.** A caller-supplied `phi` /
+`sigma_re` / pinned axis is part of the model, so its log marginal likelihood is
+an evidence (`vignettes/model-comparison.Rmd` compares such fits). Only an
+estimate from the same data makes it conditional
+(`.fit_estimated_hyperparameters()`: EB, `phi_estimated`); `.ML_BACKENDS`
+(`agq`) report `"log_likelihood"`, the one quantity `AIC()` / `BIC()` accept.
+
+**The in-sample eta comes from what the fit carries, never an R re-assembly of
+fields** (`.tulpa_linpred_source()`): a ModelData sampler fit re-evaluates
+`generic_eta_at()` at each draw from `fit$model_inputs`
+(`cpp_tulpa_glmm_eta_draws`); a nested fit draws from `fitted_eta` /
+`fitted_eta_var`. The joint-driver single-arm entries fill `fitted_eta` through
+`compute_eta_joint_sparse_dispatch` (`nl_attach_fitted_eta_single_arm`) but no
+`fitted_eta_var`, so their criteria carry the across-cell spread only.
+
+**Every nested entry takes `offset_nullable`**, filled by
+`TULPA_NL_ENTRY_INPUTS`; `.nl_dispatch()` passes `cargs` wholesale, so an entry
+that does not declare it is an R error at the call. The C-ABI shims pass it
+positionally.
+
 ### Convergence diagnostics (Rhat / ESS) live HERE, not in model packages
 
 `R/convergence.R` owns `mcmc_diagnostics(fit, pars, measures, probs)` ->

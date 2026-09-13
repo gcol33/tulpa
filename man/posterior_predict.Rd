@@ -23,7 +23,7 @@ posterior_predict(object, ...)
 
 \item{newdata}{Optional data frame of covariates to predict at. Population
 level (fixed effects only); \code{NULL} (default) replicates at the training
-data with random effects and offset included.}
+data with every fitted component included.}
 
 \item{ndraws}{Number of posterior draws to use. Defaults to all stored
 draws, or 400 on the draw-free Laplace tier.}
@@ -38,16 +38,33 @@ A \verb{ndraws x n_obs} numeric matrix of replicated responses.
 }
 \description{
 Draw replicated responses from the posterior predictive distribution: the
-linear predictor is rebuilt per posterior draw (fixed effects, formula
-random effects, offset, and a posterior-mean SPDE field when present) and
-pushed through the family's sampling distribution.
+in-sample linear predictor is drawn with every component the fit estimated
+-- fixed effects, formula random effects, the offset, and any spatial or
+temporal field -- and pushed through the family's sampling distribution. The
+same draws give the pointwise log-likelihood behind
+\code{compare_models(criterion = "waic")} / \code{"loo"}.
 
-Fits carrying posterior draws use them directly (fixed and random effects
-jointly per draw). The Laplace tier samples the fixed effects from the
-Gaussian approximation \code{N(coef(fit), vcov(fit))} and holds the random
-effects at their posterior mode, so its replicates understate the RE
-posterior uncertainty. At \code{newdata} the prediction is population level
-(random effects at zero), matching \code{\link[=predict.tulpa_fit]{predict.tulpa_fit()}}.
+Where the draws come from follows what the fit carries:
+\itemize{
+\item A ModelData sampler fit (\code{mode = "hmc"} and its siblings) evaluates
+the engine's own linear predictor at each draw, so a field is drawn
+jointly with everything else.
+\item A nested-Laplace fit draws from its outer grid: a replicate picks a
+cell by its weight and draws each observation from that cell's Gaussian
+for the linear predictor (\code{fitted_eta}, \code{fitted_eta_var}). The cell's
+joint covariance across observations is not retained, so observations
+within a replicate are independent given the cell. A fit without
+\code{fitted_eta_var} (\code{control$fitted_var = FALSE}, or a GP / SPDE /
+spatiotemporal field) carries the across-cell spread only.
+\item Any other fit carries its coefficients rather than its linear
+predictor. Fits with posterior draws use them (fixed and random effects
+jointly per draw); the Laplace tier samples the fixed effects from
+\code{N(coef(fit), vcov(fit))} and holds the random effects at their posterior
+mode, so its replicates understate the RE posterior uncertainty; an SPDE
+field enters at its posterior mean.
+}
+At \code{newdata} the prediction is population level (random effects at zero),
+matching \code{\link[=predict.tulpa_fit]{predict.tulpa_fit()}}.
 }
 \examples{
 \donttest{

@@ -268,6 +268,7 @@ Rcpp::List cpp_nested_laplace_icar(
     std::string checkpoint_path = "",
     bool compute_skew = false,
     Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
     double prune_tol = 0.0, int screen_iters = 2,
@@ -325,6 +326,7 @@ Rcpp::List cpp_nested_laplace_bym2(
     std::string checkpoint_path = "",
     bool compute_skew = false,
     Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
     double prune_tol = 0.0, int screen_iters = 2,
@@ -377,6 +379,7 @@ Rcpp::List cpp_nested_laplace_car_proper(
     std::string checkpoint_path = "",
     bool compute_skew = false,
     Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
     double prune_tol = 0.0, int screen_iters = 2,
@@ -568,11 +571,8 @@ Rcpp::List cpp_nested_laplace_nngp(
         /*axis_sigma2=*/0, /*axis_phi_gp=*/1, theta_grid
     ));
 
-    tulpa::NlEntryInputs in = TULPA_NL_ENTRY_INPUTS;
-    in.offset = offset_nullable;
-
     return tulpa::nl_run_joint_sparse_entry(
-        in, n_grid,
+        TULPA_NL_ENTRY_INPUTS, n_grid,
         tulpa::NlFieldIdentity("nngp")
             .nngp(n_spatial, nn, cov_type, coords, nn_idx, spatial_idx)
             .seed(),
@@ -606,6 +606,7 @@ Rcpp::List cpp_nested_laplace_hsgp(
     std::string checkpoint_path = "",
     bool compute_skew = false,
     Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
     double prune_tol = 0.0, int screen_iters = 2,
@@ -636,7 +637,8 @@ Rcpp::List cpp_nested_laplace_hsgp(
     std::vector<tulpa::JointArm> arms;
     make_single_arm(parsed, arms, X, re_idx,
                     Rcpp::IntegerVector(N, 0),  // unused for DENSE_BASIS
-                    p, n_re_groups, sigma_re, y, n, family, phi, N);
+                    p, n_re_groups, sigma_re, y, n, family, phi, N,
+                    offset_nullable);
 
     // ---- theta_grid: (log_sigma2, log_lengthscale). The factory works in log
     // space because PC priors on (sigma2, ell) are typically applied in log
@@ -1030,16 +1032,18 @@ inline Rcpp::List run_indexed_st_nested_laplace_joint(
     const tulpa::SubspaceDebiasOptions* debias = nullptr,
     const tulpa::CilaOptions* cila = nullptr,
     double prune_tol = 0.0,
-    int screen_iters = tulpa::CHEAP_SCREEN_ITERS
+    int screen_iters = tulpa::CHEAP_SCREEN_ITERS,
+    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue
 ) {
     const int n_x_after_re = p + n_re_groups;
 
     std::vector<tulpa::ParsedArm> parsed;
     std::vector<tulpa::JointArm> arms;
     make_single_arm(parsed, arms, X, re_idx, spatial_idx,
-                    p, n_re_groups, sigma_re, y, n_trials, family, phi, N);
+                    p, n_re_groups, sigma_re, y, n_trials, family, phi, N,
+                    offset_nullable);
 
-    return tulpa::run_multi_block_nested_laplace_joint(
+    Rcpp::List out = tulpa::run_multi_block_nested_laplace_joint(
         n_grid, arms, parsed, blocks, n_x_after_re,
         max_iter, tol, n_threads, /*store_modes=*/true, x_init, store_Q,
         /*prep_at_grid=*/nullptr, /*n_threads_outer=*/1,
@@ -1053,6 +1057,8 @@ inline Rcpp::List run_indexed_st_nested_laplace_joint(
         /*fixed_block=*/nullptr, debias, cila,
         /*inner_sparse_override=*/0, screen_iters
     );
+    tulpa::nl_attach_fitted_eta_single_arm(out, arms, parsed, blocks);
+    return out;
 }
 
 // Shared tail for every cpp_nested_laplace_st_<spatial> entry: stack the
@@ -1093,7 +1099,7 @@ inline Rcpp::List run_st_spatial_entry(
         in.x_init, in.store_Q, force_sparse, run.ckpt.get(),
         in.compute_skew, run.skew_idx_ptr,
         run.debias_req.ptr, run.cila_req.ptr,
-        in.prune_tol, in.screen_iters);
+        in.prune_tol, in.screen_iters, in.offset);
     tulpa::nl_attach_axes(out, out_axes);
     nl_attach_temporal_grids(out, temporal_type, tau_temporal_grid, rho_t);
     return out;
@@ -1144,6 +1150,7 @@ Rcpp::List cpp_nested_laplace_temporal(
     std::string checkpoint_path = "",
     bool compute_skew = false,
     Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
     double prune_tol = 0.0, int screen_iters = 2,
@@ -1199,6 +1206,7 @@ Rcpp::List cpp_nested_laplace_st_icar(
     std::string checkpoint_path = "",
     bool compute_skew = false,
     Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
     double prune_tol = 0.0, int screen_iters = 2,
@@ -1260,6 +1268,7 @@ Rcpp::List cpp_nested_laplace_st_car_proper(
     std::string checkpoint_path = "",
     bool compute_skew = false,
     Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
     double prune_tol = 0.0, int screen_iters = 2,
@@ -1325,6 +1334,7 @@ Rcpp::List cpp_nested_laplace_st_bym2(
     std::string checkpoint_path = "",
     bool compute_skew = false,
     Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
     double prune_tol = 0.0, int screen_iters = 2,
@@ -1389,6 +1399,7 @@ Rcpp::List cpp_nested_laplace_st_hsgp(
     std::string checkpoint_path = "",
     bool compute_skew = false,
     Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
     double prune_tol = 0.0, int screen_iters = 2,
@@ -1471,6 +1482,7 @@ Rcpp::List cpp_nested_laplace_st_nngp(
     std::string checkpoint_path = "",
     bool compute_skew = false,
     Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
     double prune_tol = 0.0, int screen_iters = 2,

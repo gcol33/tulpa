@@ -1819,6 +1819,22 @@
     # recorded rather than reconstructed.
     res$dnode        <- dnode
     is_ccd <- identical(integration_used, "ccd")
+    # The evidence is read under the same measure the weights take: the cell
+    # masses on a tensor grid, the partition-of-unity design shares on a
+    # locally refined one. A global CCD's design weights reproduce moments and
+    # carry no volume, so no evidence is read off them.
+    res$log_hyperprior <- .joint_multi_add_hp(
+        numeric(nrow(joint_grid)), joint_grid, axis_offsets, B,
+        fn_sigma, fn_alpha, fn_phi)
+    if (is_ccd) {
+        res$log_evidence          <- NA_real_
+        res$log_evidence_declined <- "moment_rule_design"
+    } else {
+        res$log_evidence <- .nl_outer_log_evidence(
+            res$log_marginal,
+            if (is.null(dnode)) res$log_quad else log(pmax(dnode, 0)),
+            res$log_hyperprior)
+    }
     # What kind of weight each cell carries. `integration` names the integrator
     # that ran, which describes a homogeneous support: a tensor cell holds the
     # mass of its own cell, a CCD node holds a design weight. A locally refined

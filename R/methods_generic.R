@@ -599,82 +599,167 @@ vcov.tulpa_fit <- function(object, ...) {
 
 #' The fit's log-scale goodness quantity
 #'
-#' What this returns depends on the tier, because the three tiers can report
-#' three different things and none of them can report the others:
+#' What this returns depends on what the fit computed, and the returned object
+#' names it in a `quantity` attribute:
 #'
 #' \describe{
-#'   \item{sampler fits}{the mean log POSTERIOR over the draws
-#'     (`quantity = "log_posterior_mean"`) -- the prior is included.}
-#'   \item{Laplace fits}{the log MARGINAL LIKELIHOOD at the fitted
-#'     hyperparameters (`"log_marginal_likelihood"`).}
-#'   \item{nested-Laplace fits}{the log EVIDENCE, the log-sum-exp over the
-#'     outer grid (`"log_evidence"`) -- the hyperparameters have already been
-#'     integrated out.}
+#'   \item{`"log_posterior_mean"`}{a sampler fit: the mean log POSTERIOR over
+#'     the draws, prior included.}
+#'   \item{`"log_evidence"`}{a deterministic fit that estimated no
+#'     hyperparameter from the data: the log marginal probability of the data
+#'     under the model as specified. A hyperparameter the fit integrated counts,
+#'     and so does one the caller supplied (a `phi`, a `sigma_re`, an outer grid
+#'     laid at one value), which is part of the model rather than an estimate. A
+#'     Laplace fit of a model with nothing to integrate reports its log marginal
+#'     likelihood here, which already is that quantity.}
+#'   \item{`"log_marginal_likelihood"`}{a deterministic fit that estimated some
+#'     hyperparameters by maximising over the same data (empirical Bayes, or
+#'     `estimate_phi = TRUE`): the log marginal likelihood at those estimates.
+#'     The `conditioned_on` attribute names them.}
+#'   \item{`"log_likelihood"`}{a fit that maximised over every parameter it
+#'     reports, with the random effects integrated out ([agq_fit()]): the
+#'     maximised log-likelihood, with `df` the number of maximised parameters.}
 #' }
 #'
-#' The returned object carries a `quantity` attribute naming which one it is.
-#' The three are on different scales and must not be ranked against each other:
-#' `compare_models(criterion = "loglik")` refuses a set of fits that disagree on
-#' it, and `criterion = "waic"` / `"loo"` score the same predictive quantity on
-#' every tier. For the same reason, `AIC()` / `BIC()` on a nested-Laplace fit
-#' penalise a value that has already integrated the hyperparameters out; read
-#' the evidence itself, or use an information criterion built on the pointwise
-#' predictive density.
+#' On a nested-Laplace fit the value is the log evidence of its outer grid,
+#' `log sum_k exp(log_marginal_k + log_quad_k) - log sum_k exp(log_hyperprior_k
+#' + log_quad_k)`: the evidence under the hyperprior the reported posterior
+#' integrates, restricted to the grid's support and renormalised there. It does
+#' not move with the node count at a fixed support. An axis carrying the
+#' engine's default flat measure has no proper prior beyond that support, so
+#' its evidence is the evidence under a uniform prior on the support the fit
+#' integrated (`fit$axis_support`), which a placement pass may have moved;
+#' compare evidences across fits whose supports are fixed, or whose hyperpriors
+#' are proper. A central-composite (CCD) design reproduces moments and carries
+#' no cell volume, so a fit integrated on one reports `NA` with a `declined`
+#' attribute.
+#'
+#' Values with a different `quantity` or `conditioned_on` are not on one scale,
+#' and `compare_models(criterion = "loglik")` refuses such a set. Only a
+#' `"log_likelihood"` is what AIC and BIC penalise, so [AIC.tulpa_fit()] and
+#' [BIC.tulpa_fit()] refuse every other quantity; compare those fits by their
+#' evidence, or by `compare_models(criterion = "waic")` / `"loo"`, which score
+#' the pointwise predictive density.
 #'
 #' @param object A `tulpa_fit` object.
 #' @param ... Ignored.
-#' @return A `logLik` object with a `quantity` attribute.
+#' @return A `logLik` object with `quantity` and `conditioned_on` attributes,
+#'   and a `declined` attribute naming the reason when no value could be read.
 #' @export
 logLik.tulpa_fit <- function(object, ...) {
-  # WHICH quantity this is. The three tiers return three different things --
-  # a mean log POSTERIOR over draws, a log MARGINAL LIKELIHOOD, and a log
-  # EVIDENCE with the hyperparameters already integrated out -- and they are not
-  # comparable with each other (gcol33/tulpa#712). The value each tier can give
-  # is still the best one available there, so it is returned; what changes is
-  # that it now says what it is, and `compare_models(criterion = "loglik")`
-  # refuses to rank two fits that disagree.
-  quantity <- if (!is.null(object$log_prob)) "log_posterior_mean"
-              else if (!is.null(object$log_marginal))
-                (if (length(object$log_marginal) > 1L) "log_evidence"
-                 else "log_marginal_likelihood")
-              else NA_character_
+  declined <- NA_character_
+  recorded <- !is.null(object$log_evidence) ||
+              !is.null(object$log_evidence_declined)
   ll <- if (!is.null(object$log_prob)) {
     mean(object$log_prob, na.rm = TRUE)
-  } else if (!is.null(object$log_marginal)) {
-    # A nested-Laplace fit stores one log-marginal per hyperparameter grid point;
-    # the integrated log evidence is the log-sum-exp over the grid. This assumes
-    # equal cell weights: exact for the tensor / uniform hyper-grid the generic
-    # driver builds (the grid is laid out uniformly in the internal log-scale
-    # parameterization the marginal is computed on), and an approximation for a
-    # design-weighted (CCD) grid. A single-point (e.g. conditional Laplace)
-    # marginal passes through unchanged. Non-finite cells (an inner Newton
-    # diverging in a grid corner returns +Inf / NaN) are dropped from the
-    # log-sum-exp, matching the finite-guarded weight grid; an unguarded max()
-    # would otherwise collapse the evidence to NaN.
-    lm <- object$log_marginal
-    lm <- lm[is.finite(lm)]
-    if (length(lm) == 0L) {
-      NA_real_
-    } else if (length(lm) > 1L) {
-      mx <- max(lm)
-      mx + log(sum(exp(lm - mx)))
-    } else {
-      lm
+  } else if (recorded) {
+    # An outer integration its producer recorded, under the measure and the
+    # hyperprior its weights took (`.nl_outer_log_evidence()`).
+    v <- as.numeric(object$log_evidence %||% NA_real_)[1L]
+    if (!is.finite(v)) {
+      declined <- as.character(object$log_evidence_declined %||% NA_character_)[1L]
+      if (is.na(declined)) declined <- "no_finite_cell"
+      v <- NA_real_
     }
+    v
+  } else if (length(object$log_marginal) == 1L) {
+    as.numeric(object$log_marginal)
+  } else if (length(object$log_marginal) > 1L) {
+    # A per-cell vector with no record of the measure its weights took. The
+    # cells' prior masses are part of the evidence, so a sum over the vector
+    # alone is not one (gcol33/tulpa#722).
+    declined <- "outer_measure_not_recorded"
+    NA_real_
   } else NA_real_
-  # Free-parameter count for the AIC / BIC penalty, from the first source the
-  # fit actually carries. NOT a `%||%` chain over `length()` calls: `length(NULL)`
-  # is 0, not NULL, so such a chain stops at the first ABSENT candidate and every
-  # later fallback is unreachable -- a fit with no `n_fixed` and no `mode` came
-  # back with df = 0, which zeroes both penalties and makes AIC and BIC
-  # identical. Take the first candidate that resolves to a positive count.
-  df_candidates <- c(object$n_fixed, length(object$mode), length(object$means))
+
+  estimated <- .fit_estimated_hyperparameters(object)
+  quantity <- if (!is.null(object$log_prob)) {
+    "log_posterior_mean"
+  } else if (!recorded && is.null(object$log_marginal)) {
+    NA_character_
+  } else if ((object$backend %||% "") %in% .ML_BACKENDS) {
+    "log_likelihood"
+  } else if (length(estimated)) {
+    "log_marginal_likelihood"
+  } else {
+    "log_evidence"
+  }
+
+  # Free-parameter count, from the first source the fit actually carries. NOT a
+  # `%||%` chain over `length()` calls: `length(NULL)` is 0, not NULL, so such a
+  # chain stops at the first ABSENT candidate and every later fallback is
+  # unreachable. Take the first candidate that resolves to a positive count. A
+  # maximised log-likelihood counts every maximised parameter, which is its
+  # `n_params`.
+  df_candidates <- c(if (identical(quantity, "log_likelihood")) object$n_params,
+                     object$n_fixed, length(object$mode), length(object$means))
   df_candidates <- df_candidates[is.finite(df_candidates) & df_candidates > 0]
   attr(ll, "df")   <- if (length(df_candidates)) as.integer(df_candidates[1L]) else 0L
   attr(ll, "nobs") <- object$N %||% NA_integer_
   attr(ll, "quantity") <- quantity
+  attr(ll, "conditioned_on") <- if (identical(quantity, "log_marginal_likelihood"))
+                                  estimated else character(0)
+  if (!is.na(declined)) attr(ll, "declined") <- declined
   class(ll) <- "logLik"
   ll
+}
+
+# Backends whose log_marginal is maximised over every parameter they report,
+# the random effects integrated out.
+.ML_BACKENDS <- c("agq")
+
+# The hyperparameters a deterministic fit estimated by maximising over the same
+# data, which makes its log marginal likelihood conditional on those estimates
+# rather than an evidence. A value the fit integrated, or one the caller
+# supplied, is part of the model and is not listed.
+#' @keywords internal
+.fit_estimated_hyperparameters <- function(object) {
+  out <- character(0)
+  if (identical(object$backend, "eb")) out <- c(out, "re_covariance")
+  if (isTRUE(object$phi_estimated)) out <- c(out, "phi")
+  out
+}
+
+#' Information criteria on a tulpa fit
+#'
+#' AIC and BIC penalise a maximised log-likelihood. [logLik.tulpa_fit()] reports
+#' one only for a fit that maximised over every parameter it reports
+#' (`quantity = "log_likelihood"`, as [agq_fit()] does); a mean log posterior, a
+#' log evidence and a conditional log marginal likelihood are not, and both
+#' criteria refuse them rather than return a number. Compare those fits by
+#' their evidence, or by `compare_models(criterion = "waic")` / `"loo"`.
+#'
+#' @param object A `tulpa_fit` object.
+#' @param ... Further fits.
+#' @param k Penalty per parameter.
+#' @return As [stats::AIC()] / [stats::BIC()] for maximised log-likelihoods;
+#'   errors otherwise.
+#' @importFrom stats AIC BIC
+#' @export
+AIC.tulpa_fit <- function(object, ..., k = 2) {
+  .check_information_criterion(list(object, ...), "AIC")
+  NextMethod()
+}
+
+#' @rdname AIC.tulpa_fit
+#' @export
+BIC.tulpa_fit <- function(object, ...) {
+  .check_information_criterion(list(object, ...), "BIC")
+  NextMethod()
+}
+
+.check_information_criterion <- function(fits, what) {
+  for (f in fits) {
+    if (!inherits(f, "tulpa_fit")) next
+    q <- attr(logLik(f), "quantity") %||% NA_character_
+    if (!identical(q, "log_likelihood")) {
+      stop(sprintf(paste0(
+        "%s() needs a maximised log-likelihood; logLik() on this fit is a %s. ",
+        "Compare fits by their evidence, or by compare_models(criterion = ",
+        "\"waic\") / \"loo\"."), what, gsub("_", " ", q)), call. = FALSE)
+    }
+  }
+  invisible(NULL)
 }
 
 # The tidy / glance generics come from `generics` (the shared broom-ecosystem
@@ -1368,7 +1453,10 @@ nobs.tulpa_fit <- function(object, ...) {
 #' training locations. The HSGP and GP/NNGP fields are marginalised over the
 #' hyperparameter grid (not plugged in at the posterior mean). Ordinary random
 #' effects are held at zero (population level); add group effects from [ranef()]
-#' when needed.
+#' when needed. An areal (ICAR / BYM2 / CAR) or temporal (RW1 / RW2 / AR1) field
+#' is held at zero in the same way, at the training design too; the in-sample
+#' linear predictor with every fitted component is what [posterior_predict()]
+#' draws and what `compare_models(criterion = "waic")` / `"loo"` score.
 #'
 #' @param object A `tulpa_fit` object.
 #' @param newdata Data frame of covariates (and, for an SPDE fit, the coordinate

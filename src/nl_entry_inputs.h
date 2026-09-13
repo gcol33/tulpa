@@ -61,8 +61,8 @@ struct NlEntryInputs {
     Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue;
     Rcpp::Nullable<Rcpp::List>          debias   = R_NilValue;
     Rcpp::Nullable<Rcpp::List>          cila     = R_NilValue;
-    // Carried only by the entries that take one. It moves every cell's mode, so
-    // it enters the checkpoint fingerprint.
+    // Per-observation offset on the linear predictor. It moves every cell's
+    // mode, so it enters the checkpoint fingerprint.
     Rcpp::Nullable<Rcpp::NumericVector> offset   = R_NilValue;
     // Outer-grid cheap-pass screening. A positive tolerance makes the driver
     // rank the lattice with a short warm-started inner Newton of
@@ -108,6 +108,48 @@ struct NlEntryRun {
     {}
 };
 
+// Per-cell linear predictor at each cell's mode, for a single-arm fit run
+// through the joint driver (nngp / hsgp / spde / the spatiotemporal entries).
+// The multi-block driver fills `fitted_eta` itself; this one reads the same
+// quantity through the joint driver's own eta accumulator, so the arm's
+// offset, every block kind and each cell's block scaling are the ones the
+// inner solve used. A cell whose block preparation fails at its coordinate
+// reports NaN rows.
+inline void nl_attach_fitted_eta_single_arm(
+    Rcpp::List& out,
+    const std::vector<JointArm>& arms,
+    const std::vector<ParsedArm>& parsed,
+    const std::vector<LatentBlock>& blocks
+) {
+    if (arms.size() != 1 || !out.containsElementNamed("modes")) return;
+    Rcpp::NumericMatrix modes = out["modes"];
+    const int ng = modes.nrow();
+    const int N  = arms[0].N;
+    const int B  = static_cast<int>(blocks.size());
+    Rcpp::NumericMatrix fitted_eta(ng, N);
+    std::vector<Rcpp::NumericVector> etas(1, Rcpp::NumericVector(N));
+    std::vector<std::vector<double>> d_eff(B, std::vector<double>(1, 0.0));
+    std::vector<double> basis_scratch;
+    std::vector<std::pair<int, double>> multi_scratch;
+    for (int k = 0; k < ng; k++) {
+        bool ok = true;
+        for (int b = 0; b < B; b++) {
+            if (blocks[b].prep && !blocks[b].prep(k)) { ok = false; break; }
+            const double s = blocks[b].arm_scale ? blocks[b].arm_scale(0, k) : 1.0;
+            d_eff[b][0] = s * blocks[b].d_fac_at(k);
+        }
+        if (!ok) {
+            for (int i = 0; i < N; i++) fitted_eta(k, i) = NA_REAL;
+            continue;
+        }
+        Rcpp::NumericVector x = modes(k, Rcpp::_);
+        compute_eta_joint_sparse_dispatch(x, etas, arms, parsed, blocks, k,
+                                          d_eff, basis_scratch, multi_scratch);
+        for (int i = 0; i < N; i++) fitted_eta(k, i) = etas[0][i];
+    }
+    out["fitted_eta"] = fitted_eta;
+}
+
 // LatentBlock outer-grid driver (icar / bym2 / car_proper / temporal).
 inline Rcpp::List nl_run_multi_block_entry(
     const NlEntryInputs& in,
@@ -129,7 +171,8 @@ inline Rcpp::List nl_run_multi_block_entry(
         /*progress=*/nullptr, run.ckpt.get(),
         in.compute_skew, run.skew_idx_ptr,
         run.debias_req.ptr, run.cila_req.ptr,
-        in.screen_iters, in.compute_fitted_var
+        in.screen_iters, in.compute_fitted_var,
+        tulpa::as_offset_vec(in.offset, in.N())
     );
     nl_attach_axes(out, out_axes);
     return out;
@@ -170,6 +213,7 @@ inline Rcpp::List nl_run_joint_sparse_entry(
         /*fixed_block=*/nullptr, run.debias_req.ptr, run.cila_req.ptr,
         in.screen_iters
     );
+    nl_attach_fitted_eta_single_arm(out, arms, parsed, blocks);
     nl_attach_axes(out, out_axes);
     return out;
 }
@@ -180,7 +224,7 @@ inline Rcpp::List nl_run_joint_sparse_entry(
 // every grid entry declares them under. Member-by-member assignment in one
 // token sequence: an entry binds its own `max_iter` to `max_iter` and has no
 // way to bind it to `n_threads`, and a member added to NlEntryInputs is filled
-// at every entry at once. `offset` is assigned by the entries that carry one.
+// at every entry at once.
 #define TULPA_NL_ENTRY_INPUTS                                              \
     ([&]() {                                                               \
         tulpa::NlEntryInputs nl_in_;                                       \
@@ -205,6 +249,7 @@ inline Rcpp::List nl_run_joint_sparse_entry(
         nl_in_.prune_tol          = prune_tol;                             \
         nl_in_.screen_iters       = screen_iters;                          \
         nl_in_.compute_fitted_var = compute_fitted_var;                    \
+        nl_in_.offset             = offset_nullable;                       \
         return nl_in_;                                                     \
     }())
 

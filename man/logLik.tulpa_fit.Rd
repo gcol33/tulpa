@@ -12,29 +12,44 @@
 \item{...}{Ignored.}
 }
 \value{
-A \code{logLik} object with a \code{quantity} attribute.
+A \code{logLik} object with \code{quantity} and \code{conditioned_on} attributes,
+and a \code{declined} attribute naming the reason when no value could be read.
 }
 \description{
-What this returns depends on the tier, because the three tiers can report
-three different things and none of them can report the others:
+What this returns depends on what the fit computed, and the returned object
+names it in a \code{quantity} attribute:
 }
 \details{
 \describe{
-\item{sampler fits}{the mean log POSTERIOR over the draws
-(\code{quantity = "log_posterior_mean"}) -- the prior is included.}
-\item{Laplace fits}{the log MARGINAL LIKELIHOOD at the fitted
-hyperparameters (\code{"log_marginal_likelihood"}).}
-\item{nested-Laplace fits}{the log EVIDENCE, the log-sum-exp over the
-outer grid (\code{"log_evidence"}) -- the hyperparameters have already been
-integrated out.}
+\item{\code{"log_posterior_mean"}}{a sampler fit: the mean log POSTERIOR over
+the draws, prior included.}
+\item{\code{"log_evidence"}}{a deterministic fit that estimated no
+hyperparameter from the data: the log marginal probability of the data
+under the model as specified. A hyperparameter the fit integrated counts,
+and so does one the caller supplied (a \code{phi}, a \code{sigma_re}, an outer grid
+laid at one value), which is part of the model rather than an estimate. A
+Laplace fit of a model with nothing to integrate reports its log marginal
+likelihood here, which already is that quantity.}
+\item{\code{"log_marginal_likelihood"}}{a deterministic fit that estimated some
+hyperparameters by maximising over the same data (empirical Bayes, or
+\code{estimate_phi = TRUE}): the log marginal likelihood at those estimates.
+The \code{conditioned_on} attribute names them.}
+\item{\code{"log_likelihood"}}{a fit that maximised over every parameter it
+reports, with the random effects integrated out (\code{\link[=agq_fit]{agq_fit()}}): the
+maximised log-likelihood, with \code{df} the number of maximised parameters.}
 }
 
-The returned object carries a \code{quantity} attribute naming which one it is.
-The three are on different scales and must not be ranked against each other:
-\code{compare_models(criterion = "loglik")} refuses a set of fits that disagree on
-it, and \code{criterion = "waic"} / \code{"loo"} score the same predictive quantity on
-every tier. For the same reason, \code{AIC()} / \code{BIC()} on a nested-Laplace fit
-penalise a value that has already integrated the hyperparameters out; read
-the evidence itself, or use an information criterion built on the pointwise
-predictive density.
+On a nested-Laplace fit the value is the log evidence of its outer grid,
+`log sum_k exp(log_marginal_k + log_quad_k) - log sum_k exp(log_hyperprior_k
+\itemize{
+\item log_quad_k)\verb{: the evidence under the hyperprior the reported posterior integrates, restricted to the grid's support and renormalised there. It does not move with the node count at a fixed support. An axis carrying the engine's default flat measure has no proper prior beyond that support, so its evidence is the evidence under a uniform prior on the support the fit integrated (}fit$axis_support\verb{), which a placement pass may have moved; compare evidences across fits whose supports are fixed, or whose hyperpriors are proper. A central-composite (CCD) design reproduces moments and carries no cell volume, so a fit integrated on one reports }NA\verb{with a}declined`
+attribute.
+}
+
+Values with a different \code{quantity} or \code{conditioned_on} are not on one scale,
+and \code{compare_models(criterion = "loglik")} refuses such a set. Only a
+\code{"log_likelihood"} is what AIC and BIC penalise, so \code{\link[=AIC.tulpa_fit]{AIC.tulpa_fit()}} and
+\code{\link[=BIC.tulpa_fit]{BIC.tulpa_fit()}} refuse every other quantity; compare those fits by their
+evidence, or by \code{compare_models(criterion = "waic")} / \code{"loo"}, which score
+the pointwise predictive density.
 }

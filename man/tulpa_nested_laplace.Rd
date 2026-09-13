@@ -16,6 +16,7 @@ tulpa_nested_laplace(
   sigma_re = 1,
   family = "binomial",
   phi = 1,
+  offset = NULL,
   likelihood = NULL,
   control = list()
 )
@@ -81,6 +82,10 @@ every door: for \code{gaussian} / \code{lognormal} this is the residual VARIANCE
 shape, \code{beta} the precision, \code{t} the scale; \code{binomial} and \code{poisson}
 ignore it. The compiled kernels parameterize the two variance families by
 the residual SD and are handed \code{sqrt(phi)} at the boundary.}
+
+\item{offset}{Optional per-observation offset added to the linear predictor
+(length \code{length(y)}), as an \code{offset()} term in a model formula. Every
+single- and multi-block kernel carries it, and \code{fitted_eta} includes it.}
 
 \item{likelihood}{Optional model-supplied likelihood, replacing the built-in
 \code{family}. Pass an external pointer to a \code{tulpa::NestedLikelihood} (built in

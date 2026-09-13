@@ -229,6 +229,7 @@ fit_st_nested <- function(y, X, spatial_idx, adjacency, temporal_idx, n_times,
   out$weights <- .nl_normalise_weights_safe(out$log_marginal,
                                             "spatiotemporal grid",
                                             log_quad = out$log_quad)
+  out$log_evidence <- .nl_outer_log_evidence(out$log_marginal, out$log_quad)
   # Outer-grid collapse visibility + recenter:
   # tau_lower/tau_upper's default [0.25, 16] span (and, for ar1, the default
   # rho_lower/rho_upper) is a starting axis, not a hard ceiling, the same

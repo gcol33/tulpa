@@ -682,7 +682,7 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
            posterior = res$log_quad,
            inner     = NULL,
            span      = if (is.null(res$log_quad)) NULL else
-                           .nl_grid_log_quad(res$theta_grid,
+                           .nl_grid_log_quad(.nl_theta_matrix(res),
                                              close_domain = FALSE))
 }
 

@@ -711,6 +711,7 @@
       sigma_re    = 1.0,
       family      = family,
       phi         = phi,
+      offset      = bundle$offset,
       # Forward only the keys the inner fitter reads: front-door-only knobs
       # (grid shape, backend selection) were consumed above and would trip
       # tulpa_nested_laplace()'s own whitelist.

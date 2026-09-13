@@ -474,7 +474,8 @@ time-specific one.
 
 Does the trend earn its place? Fit the same model without a time term and
 compare evidence. On a Laplace-tier fit `logLik()` returns the approximate log
-marginal likelihood, the quantity to compare across specifications.
+marginal likelihood, and with no hyperparameter left to integrate that is already
+the model evidence.
 
 ```{r fit-notemporal}
 m_nt <- tulpa(y ~ x, data = df, family = "binomial", mode = "laplace")
@@ -482,21 +483,18 @@ as.numeric(logLik(m_nt))
 ```
 
 A nested fit integrates over a grid of $\tau$, so its `$log_marginal` is a vector
-with one entry per grid point. The model evidence is the log of the
-grid-summed marginal likelihood, a log-sum-exp over that vector.
+with one entry per grid point. Each point also stands for a cell of the grid,
+and the cell's prior mass (`$log_quad`) is part of the integral, so the evidence
+is the log of the mass-weighted sum over the cells rather than of the plain sum.
+`logLik()` returns it, and since both fits now report a log evidence,
+`compare_models()` ranks them on it directly.
 
 ```{r evidence}
-lse <- function(v) { m <- max(v); m + log(sum(exp(v - m))) }
-evidence_temporal <- lse(fit$log_marginal)
-c(no_temporal = as.numeric(logLik(m_nt)), temporal = evidence_temporal)
+compare_models(no_temporal = m_nt, temporal = fit, criterion = "loglik")
 ```
 
 The temporal model carries substantially higher evidence, matching the fact that
-a trend really was in the data. The comparison is made on the evidence directly,
-as above. `compare_models(criterion = "loglik")` does not put these two fits in
-one table: under `logLik()` the Laplace fit reports a log marginal likelihood and
-the nested fit a log evidence, and it refuses to rank fits that report different
-quantities.
+a trend really was in the data.
 
 A word on what this comparison settles. The marginal likelihood already
 integrates over the walk and its smoothing precision, so it charges the temporal
@@ -507,9 +505,13 @@ right yardstick for nested specifications, where one model is the other with a
 structural piece added. The raw maximised likelihood cannot do this job, since it
 always rises with more parameters and would crown the temporal model even when
 the curve was only chasing noise. Predictive scores such as WAIC and LOO answer a
-related but separate question about out-of-sample accuracy; they need a pointwise
-log-likelihood the base engine does not carry, so they live in the model packages
-built on it.
+related but separate question about out-of-sample accuracy. The engine computes
+them from each fit's pointwise log-likelihood, read off its linear predictor with
+the temporal field included:
+
+```{r waic}
+compare_models(no_temporal = m_nt, temporal = fit, criterion = "waic")
+```
 
 ## A second family
 

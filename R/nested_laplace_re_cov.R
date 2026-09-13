@@ -1991,6 +1991,14 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
     theta_grid  = theta_grid,
     weights     = w,
     log_marginal = logm,
+    # The node log-marginals already carry the hyperparameter log-prior, so the
+    # evidence normalises that prior over the same nodes. A CCD's design weights
+    # reproduce moments and carry no volume, so no evidence is read off them.
+    log_hyperprior = lp_theta_nodes,
+    log_evidence = if (identical(integration, "ccd")) NA_real_
+                   else .nl_outer_log_evidence(logm, NULL, lp_theta_nodes),
+    log_evidence_declined = if (identical(integration, "ccd"))
+                              "moment_rule_design" else NA_character_,
     n_grid      = ng,
     layout      = layout,
     n_blocks    = length(layout),

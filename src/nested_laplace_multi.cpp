@@ -493,7 +493,8 @@ Rcpp::List cpp_nested_laplace_multi(
     bool compute_skew = false,
     Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue,
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
-    Rcpp::Nullable<Rcpp::List> cila = R_NilValue
+    Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
+    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue
 ) {
     int B = blocks_spec.size();
     if (axis_offsets.size() != B + 1) {
@@ -582,6 +583,7 @@ Rcpp::List cpp_nested_laplace_multi(
         // re_idx is a NumericVector; folding it at sizeof(int) covered its
         // leading half, so two assignments agreeing there matched.
         fp.fold_rvec(re_idx);
+        fp.fold_rvec_nullable(offset_nullable);
         tulpa::fold_sexp(fp, blocks_spec);
         tulpa::CellKeyBuilder kb(n_grid);
         for (int j = 0; j < total_axes; j++) kb.add_axis(&theta_grid(0, j));
@@ -605,7 +607,9 @@ Rcpp::List cpp_nested_laplace_multi(
         gp.get(), ckpt.get(),
         compute_skew, skew_idx_ptr,
         tulpa::DebiasRequest(debias).ptr,
-        tulpa::CilaRequest(cila).ptr
+        tulpa::CilaRequest(cila).ptr,
+        tulpa::CHEAP_SCREEN_ITERS, /*compute_fitted_var=*/true,
+        tulpa::as_offset_vec(offset_nullable, N)
     );
     out["theta_grid"]     = theta_grid;
     out["axis_offsets"]   = axis_offsets;

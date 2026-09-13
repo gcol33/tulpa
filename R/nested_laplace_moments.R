@@ -40,20 +40,28 @@
   .nl_attach_interval_provenance(res, qs, tg, doms)
 }
 
+# A fit's outer grid as a matrix with named axis columns. A single-axis grid is
+# stored as a bare vector and named by `theta_names`; every reader that keys an
+# axis by name (the domain registry, the cell measure `log_quad`, the reported
+# support) needs the named form, and a bare vector silently reads as a grid with
+# no axes -- which gave every single-axis fit an equal-weight measure whatever
+# its node spacing.
+.nl_theta_matrix <- function(res) {
+  tg <- res$theta_grid
+  if (is.null(tg) || is.matrix(tg)) return(tg)
+  nm <- (res$theta_names %||% "theta")[1L]
+  matrix(as.numeric(tg), ncol = 1L, dimnames = list(NULL, nm))
+}
+
 # The `.NL_DOMAIN_TRANSFORM` domain of every axis of a fit, from
 # `.joint_axis_domains()` -- the SAME per-axis registry the outer Pareto-k
 # unconstrains with, so "what support does this axis live on" keeps one
-# definition (`R/nested_laplace_joint_pareto_k.R`). Two shims and nothing else:
-# a single-axis grid is stored as a bare vector and is named by `theta_names`,
-# and the registry path knows its family as an ARGUMENT while `res$prior` is
-# only attached after the moments are taken.
+# definition (`R/nested_laplace_joint_pareto_k.R`). The registry path knows its
+# family as an ARGUMENT while `res$prior` is only attached after the moments
+# are taken.
 .nl_axis_domains <- function(res, type = NULL) {
-  tg <- res$theta_grid
+  tg <- .nl_theta_matrix(res)
   if (is.null(tg)) return(NULL)
-  if (!is.matrix(tg)) {
-    nm <- (res$theta_names %||% "theta")[1L]
-    tg <- matrix(as.numeric(tg), ncol = 1L, dimnames = list(NULL, nm))
-  }
   .joint_axis_domains(list(
     theta_grid   = tg,
     axis_offsets = res$axis_offsets,

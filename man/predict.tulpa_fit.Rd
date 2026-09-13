@@ -66,5 +66,8 @@ interpolated by the NNGP conditional mean at each new location's nearest
 training locations. The HSGP and GP/NNGP fields are marginalised over the
 hyperparameter grid (not plugged in at the posterior mean). Ordinary random
 effects are held at zero (population level); add group effects from \code{\link[=ranef]{ranef()}}
-when needed.
+when needed. An areal (ICAR / BYM2 / CAR) or temporal (RW1 / RW2 / AR1) field
+is held at zero in the same way, at the training design too; the in-sample
+linear predictor with every fitted component is what \code{\link[=posterior_predict]{posterior_predict()}}
+draws and what \code{compare_models(criterion = "waic")} / \code{"loo"} score.
 }

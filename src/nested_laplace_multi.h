@@ -257,7 +257,9 @@ inline Rcpp::List run_multi_block_nested_laplace(
     // a cell. A caller that reads only `fitted_eta` -- or only the marginal
     // summaries -- passes false and the pass is skipped outright; the returned
     // list then carries no `fitted_eta_var` element.
-    bool compute_fitted_var = true
+    bool compute_fitted_var = true,
+    // Per-observation offset on the linear predictor (empty: none).
+    const std::vector<double>& offset = std::vector<double>()
 ) {
     int n_x = p + n_re_groups;
     for (const auto& b : blocks) {
@@ -298,6 +300,13 @@ inline Rcpp::List run_multi_block_nested_laplace(
     for (int i = 0; i < N; i++)
         for (int j = 0; j < p; j++)
             proc.X_flat[(size_t)i * p + j] = X(i, j);
+    if (!offset.empty()) {
+        if ((int) offset.size() != N) {
+            Rcpp::stop("offset length (%d) must equal the number of "
+                       "observations (%d).", (int) offset.size(), N);
+        }
+        proc.offset = offset;
+    }
 
     LikelihoodSpec builtin_spec;
     std::vector<int> n_trials_vec;
@@ -611,7 +620,7 @@ inline Rcpp::List run_multi_block_nested_laplace(
                     i, p, has_re, n_re_groups, X, re_idx, blocks,
                     dfac, e_multi,
                     [&](int idx, double w) { e += w * modes(k, idx); });
-                fitted_eta(k, i) = e;
+                fitted_eta(k, i) = offset.empty() ? e : e + offset[i];
             }
         }
         out["fitted_eta"] = fitted_eta;

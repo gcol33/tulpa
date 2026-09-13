@@ -2091,6 +2091,9 @@ tulpa_nested_laplace_joint <- function(responses,
     res$axis_span    <- .joint_axis_span(theta_grid_init, res$theta_grid, specs)
     res$weights     <- .nl_normalise_weights_safe(res$log_marginal, "outer grid",
                                                   log_quad = res$log_quad)
+    res$log_hyperprior <- if (is.null(hp_fn)) NULL else hp_fn(res$theta_grid)
+    res$log_evidence   <- .nl_outer_log_evidence(res$log_marginal, res$log_quad,
+                                                 res$log_hyperprior)
     res             <- .nl_posterior_moments(res, paste0("joint_", type),
                                              within = within_cell)
     res             <- .joint_recalibrate_axis_mean(res)
@@ -2131,6 +2134,10 @@ tulpa_nested_laplace_joint <- function(responses,
             res$weights     <- .nl_normalise_weights_safe(res$log_marginal,
                                                           "outer grid",
                                                           log_quad = res$log_quad)
+            res$log_hyperprior <- if (is.null(hp_fn)) NULL
+                                  else hp_fn(res$theta_grid)
+            res$log_evidence   <- .nl_outer_log_evidence(
+                res$log_marginal, res$log_quad, res$log_hyperprior)
             res             <- .nl_posterior_moments(res, paste0("joint_", type),
                                                      within = within_cell)
             res             <- .joint_recalibrate_axis_mean(res)

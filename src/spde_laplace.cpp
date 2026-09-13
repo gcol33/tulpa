@@ -374,7 +374,6 @@ Rcpp::List cpp_nested_laplace_spde(
     // the SAME list to cpp_laplace_fit_spde(), where `n_trials` is correct.
     const Rcpp::IntegerVector& n = n_trials;
     tulpa::NlEntryInputs nl_in = TULPA_NL_ENTRY_INPUTS;
-    nl_in.offset = offset_nullable;
 
     Rcpp::List out = tulpa::nl_run_joint_sparse_entry(
         nl_in, n_grid, sfp.value(), {range_grid, sigma_grid},

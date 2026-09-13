@@ -1,5 +1,81 @@
 # tulpa 0.4.0
 
+## WAIC, LOO and posterior_predict() read the whole linear predictor
+
+* **The linear predictor behind every WAIC / LOO read and every posterior
+  predictive replicate dropped temporal, areal and GP fields**
+  (gcol33/tulpa#721). `.tulpa_eta_draws()` assembled eta in R from the fixed
+  effects, the offset, the formula random effects and an SPDE field, so a
+  `temporal_rw1()` fit was scored as a GLM: on `vignettes/temporal-models.Rmd`
+  WAIC ranked the model without the trend first. The draws now come from what
+  the fit carries. A ModelData sampler fit records the model its draws were laid
+  out on (`fit$model_inputs`) and evaluates the engine's own linear predictor at
+  each draw (`cpp_tulpa_glmm_eta_draws()`, the `generic_eta_at()` assembly the
+  sampler's observation loop reads), matching an independent assembly from the
+  draw columns to 1e-16. A nested-Laplace fit draws from its per-cell
+  `fitted_eta` / `fitted_eta_var` mixture; the single-arm fits run through the
+  joint driver (NNGP, HSGP, SPDE, the spatiotemporal entries) now return
+  `fitted_eta` too, through that driver's own eta accumulator. On the vignette's
+  data the temporal fit now leads by 66.6 elpd, where it trailed by 1.9. `predict()` stays population
+  level, as documented, and says so for areal and temporal fields.
+
+## logLik() on a nested fit is the evidence of its outer grid
+
+* **`logLik()` summed a nested fit's per-cell marginal likelihoods without the
+  cells' prior masses** (gcol33/tulpa#722), so the value grew with the node
+  count: by 3.3 nats between 9 and 129 nodes on one RW1 support. It is now
+  `log sum_k exp(log_marginal_k + log_quad_k) - log sum_k exp(log_hyperprior_k +
+  log_quad_k)`, the evidence under the hyperprior the reported posterior
+  integrates, restricted to the grid's support and renormalised there. The
+  subtraction makes it independent of how `log_quad` is scaled (it is relative:
+  its sum is not 1 on a refined or atom-carrying grid) and of a hyperprior
+  density a producer folds into `log_marginal`. Every grid producer records it
+  as `fit$log_evidence` where it builds its weights (single- and multi-block,
+  joint, spatiotemporal, the generic hyper-grid driver, RE-covariance and SPDE
+  grids, and CILA's corrected marginals); a CCD design reports `NA` with
+  `log_evidence_declined = "moment_rule_design"`. At a fixed support the value
+  is flat in the node count (to 1e-5 over 9 to 129 nodes, agreeing with an
+  independent trapezoid) and converges on a two-axis grid.
+* **A single-axis grid carried no cell measure at all.** `.nl_grid_log_quad()`
+  keys axes by column name and a one-axis `theta_grid` is a bare vector, so
+  every RW1 / ICAR fit integrated with equal weights whatever its node spacing,
+  and reported no `axis_support`. `.nl_theta_matrix()` names the axis for every
+  reader. On an evenly spaced grid the weights are unchanged.
+
+## logLik() names its quantity from what the fit estimated
+
+* **The quantity label was read off the length of `log_marginal`**
+  (gcol33/tulpa#723), which cannot tell "conditional on estimated
+  hyperparameters" from "nothing to integrate". It now reads what the fit did:
+  `"log_evidence"` for a deterministic fit that estimated no hyperparameter
+  (integrated, or supplied by the caller as part of the model),
+  `"log_marginal_likelihood"` with `conditioned_on` naming what empirical Bayes
+  or `estimate_phi` estimated from the same data, `"log_likelihood"` for a fit
+  maximised over every parameter (`agq_fit()`), and `"log_posterior_mean"` for a
+  sampler. `compare_models(criterion = "loglik")` ranks a Laplace GLM against a
+  nested model and refuses a set that differs in quantity or in
+  `conditioned_on`. `AIC()` / `BIC()` refuse every quantity but a maximised
+  log-likelihood, and count every maximised parameter for one.
+
+## The nested-Laplace route carries offset()
+
+* **`tulpa()` dropped an `offset()` term on every fit it routed to
+  `nested_laplace`** (gcol33/tulpa#726): a temporal, areal or GP field, `s()`,
+  `latent()`. The formula's offset was stored on the fit and never reached the
+  inner solve, so the coefficients were bit-identical with and without it and
+  the intercept absorbed its mean. `tulpa_nested_laplace()` gains `offset`, the
+  shared entry bundle carries it to all eleven single-block entries and the
+  multi-block entry (and into the checkpoint fingerprint), and `fitted_eta`
+  includes it. A constant offset now shifts the intercept by exactly its value
+  on every driver.
+
+## Vignettes compare fits on the evidence logLik() reports
+
+* `temporal-models` and `spatial-models` compared a nested fit through a hand
+  log-sum-exp of `$log_marginal`, the #722 sum; both now use
+  `compare_models(criterion = "loglik")`, and `temporal-models` shows the WAIC
+  comparison it had said the base engine could not make (gcol33/tulpa#724).
+
 ## A field-SD axis's decline survives a dispersion placement
 
 * **A joint fit whose field-SD rescue declined and whose dispersion rescue then

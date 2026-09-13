@@ -35,17 +35,8 @@ test_that(".nl_normalise_weights_safe returns all-NA (not NaN) when no cell is f
   expect_false(any(is.nan(w[!is.na(w)])))
 })
 
-test_that("logLik on a grid with a non-finite cell drops it instead of returning NaN", {
-  fit <- structure(
-    list(log_marginal = c(-10, -11, -12, Inf), n_fixed = 2L, N = 100L),
-    class = "tulpa_fit"
-  )
-  ll <- logLik(fit)
-  expect_true(is.finite(as.numeric(ll)))
-
-  ref <- structure(
-    list(log_marginal = c(-10, -11, -12), n_fixed = 2L, N = 100L),
-    class = "tulpa_fit"
-  )
-  expect_equal(as.numeric(ll), as.numeric(logLik(ref)))
+test_that("the outer evidence drops a non-finite cell instead of returning NaN", {
+  ev <- tulpa:::.nl_outer_log_evidence(c(-10, -11, -12, Inf), rep(0, 4))
+  expect_true(is.finite(ev))
+  expect_equal(ev, tulpa:::.nl_outer_log_evidence(c(-10, -11, -12), rep(0, 3)))
 })

@@ -364,6 +364,8 @@
     refit$weights <- .nl_normalise_weights_safe(refit$log_marginal,
                                                 "spatiotemporal grid",
                                                 log_quad = refit$log_quad)
+    refit$log_evidence <- .nl_outer_log_evidence(refit$log_marginal,
+                                                 refit$log_quad)
     refit <- .joint_attach_pareto_k_regime(refit)
     refit$outer_grid_placement         <- "auto_recentered"
     refit$outer_grid_recenter_attempts <- 1L

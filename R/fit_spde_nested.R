@@ -148,6 +148,12 @@ fit_spde_nested_grid <- function(spde_log_marginal, sp, n_grid, spatial,
   list(
     mode = NULL,
     log_marginal = result$log_marginal,
+    # The weights above integrate the marginal times the PC prior over an
+    # evenly log-spaced (range, sigma) grid, so the evidence normalises that
+    # prior over the same cells.
+    log_hyperprior = log_post - result$log_marginal,
+    log_evidence = .nl_outer_log_evidence(log_post, NULL,
+                                          log_post - result$log_marginal),
     converged = all(result$n_iter > 0),
     spatial = spatial,
     pareto_k = kd$pareto_k,
@@ -315,6 +321,10 @@ fit_spde_nested_ccd <- function(spde_log_marginal,
     spatial_effects  = fit_at_mode$spatial_effects,
     log_det_Q        = fit_at_mode$log_det_Q,
     log_marginal     = result$log_marginal,
+    # A CCD's design weights reproduce moments and carry no volume, so no
+    # evidence is read off them.
+    log_evidence     = NA_real_,
+    log_evidence_declined = "moment_rule_design",
     converged        = all(result$n_iter > 0),
     spatial          = spatial,
     range            = range_hat,

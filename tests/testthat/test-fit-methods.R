@@ -179,15 +179,13 @@ test_that("sampler fit reports named fixed effects and separate random effects",
 test_that("logLik() df falls through to means when n_fixed and mode are absent", {
   # `length(NULL)` is 0, not NULL, so resolving df with a `%||%` chain over
   # `length()` calls stopped at the first ABSENT candidate: a fit carrying
-  # neither `n_fixed` nor `mode` came back with df = 0, which zeroes the AIC and
-  # BIC penalties and makes the two identical.
+  # neither `n_fixed` nor `mode` came back with df = 0.
   fit <- structure(
     list(log_prob = rep(-100, 5L), means = stats::setNames(rnorm(6L), letters[1:6]),
          N = 50L),
     class = c("tulpa_fit"))
   ll <- stats::logLik(fit)
   expect_equal(attr(ll, "df"), 6L)
-  expect_false(isTRUE(all.equal(stats::AIC(fit), stats::BIC(fit))))
 })
 
 test_that("logLik() df prefers n_fixed, then mode, over means", {

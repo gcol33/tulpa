@@ -225,6 +225,20 @@ tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
     nm <- fixed_names %||% colnames(X) %||% paste0("beta", seq_len(ncol(X)))
   }
   res$param_names <- nm
+  # The model the draws were laid out on, as the kernel received it. A draw row
+  # is the full parameter vector of that model, so the in-sample linear
+  # predictor at a draw is read back through the same ModelData assembly
+  # (`.tulpa_eta_draws()` -> `cpp_tulpa_glmm_eta_draws()`), fields included.
+  res$model_inputs <- list(
+    y = as.numeric(y),
+    n_trials = if (is.null(n_trials)) rep(1L, N) else as.integer(n_trials),
+    X = X, family = family,
+    phi = .phi_to_kernel(family, as.numeric(phi)),
+    phi2 = phi2 %||% NA_real_,
+    sigma_beta = as.numeric(sigma_beta),
+    offset = offset, re_spec = re_spec, spatial_spec = spatial_spec,
+    temporal_spec = temporal_spec, sigma_re_scale = as.numeric(sigma_re_scale),
+    svc_spec = svc_spec, tvc_spec = tvc_spec, zi_spec = zi_spec)
   # The draws-provenance gate reads fit$backend to learn whether these draws are
   # an MCMC chain, and treats an untagged fit as one. Closing without the stamp
   # had mcmc_diagnostics() computing Rhat and ESS on SMC particles and VI draws

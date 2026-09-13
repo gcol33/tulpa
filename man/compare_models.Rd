@@ -13,8 +13,9 @@ compare_models(..., criterion = c("waic", "loo", "loglik"))
 }
 \value{
 A data frame. For \code{"loglik"}: \code{model}, \code{n_params}, \code{logLik},
-\code{quantity} (which of the three log-scale quantities the tier reports; fits
-that disagree on it are refused rather than ranked). For
+\code{quantity} and \code{conditioned_on} (which log-scale quantity \code{\link[=logLik]{logLik()}}
+reports, and the hyperparameters it holds fixed; fits that disagree on
+either are refused rather than ranked). For
 \code{"waic"} / \code{"loo"} (ranked best-first): \code{model}, \code{elpd}, \code{se_elpd},
 \code{p_eff}, \code{ic} (\code{-2 * elpd}), \code{delta} (elpd gap to the best model),
 \code{se_diff} (SE of that pointwise elpd difference), and \code{weight} (the

@@ -274,6 +274,20 @@
     retained <- if (sum(wt, na.rm = TRUE) > 0) {
         sum(wt[pool$keep], na.rm = TRUE) / sum(wt, na.rm = TRUE)
     } else NA_real_
+    # The corrected marginal replaces the Laplace one cell for cell, under the
+    # same measure and hyperprior the pooling reads out of `log_q`, so the
+    # evidence moves by the posterior-weighted mean of the per-cell ratio. Read
+    # over the cells kept, a dropped cell is taken at the kept cells' mean
+    # correction.
+    if (is.numeric(res$log_evidence) && is.finite(res$log_evidence)) {
+        kc <- seq_along(lm) %in% pool$keep & is.finite(lm_adopt) & is.finite(lm) &
+            is.finite(wt) & wt > 0
+        res$log_evidence <- if (any(kc)) {
+            d <- lm_adopt[kc] - lm[kc]
+            res$log_evidence +
+                .tulpa_logsumexp(log(wt[kc]) + d) - log(sum(wt[kc]))
+        } else NA_real_
+    }
     res$log_marginal   <- lm_adopt
     res$weights        <- pool$cell_weights
     res$weights_source <- "cila"

@@ -469,23 +469,22 @@ that flexibility buys real fit. Compare the same mean structure with and
 without the field on this scale.
 
 A nested fit reports its log marginal likelihood per grid point in
-`$log_marginal`, one value for each $\tau$ on the integration grid. The
-single integrated evidence is the log-sum-exp of that vector, which adds
-the per-grid evidences on the probability scale before taking logs again.
-The non-spatial Laplace fit has no grid and reports a scalar log marginal
-likelihood directly through `logLik()`.
+`$log_marginal`, one value for each $\tau$ on the integration grid. Each
+point stands for a cell of the grid whose prior mass (`$log_quad`) is part of
+the integral, so the evidence adds the per-point marginal likelihoods weighted
+by those masses, on the probability scale, before taking logs again.
+`logLik()` returns that sum. The non-spatial Laplace fit has no grid, and its
+scalar log marginal likelihood is already the evidence of a model with nothing
+left to integrate.
 
 ```{r compare}
 m0 <- tulpa(y ~ x, data = ds, family = "binomial", mode = "laplace")
-
-lse  <- function(z) { m <- max(z); m + log(sum(exp(z - m))) }
-ev_spatial    <- lse(fit$log_marginal)
-ev_nonspatial <- as.numeric(logLik(m0))
-c(nonspatial = ev_nonspatial, spatial = ev_spatial)
+cmp <- compare_models(nonspatial = m0, spatial = fit, criterion = "loglik")
+cmp
 ```
 
 ```{r compare-diff}
-ev_spatial - ev_nonspatial
+diff(cmp$logLik)
 ```
 
 The spatial fit carries the higher evidence by a wide margin, matching how
@@ -497,12 +496,11 @@ the field is not rewarded for free. It has to pay for its parameters
 through the integration and still come out ahead, which guards against the
 overfitting that a raw goodness-of-fit comparison would invite.
 
-`compare_models()` ranks fits by `criterion = "loglik"`, reading each fit's
-`logLik()`. On a nested fit `logLik()` returns the integrated evidence, the
-log-sum-exp of `$log_marginal` shown above, so `compare_models()` reports one row
-per model and the areal-versus-flat ranking matches the manual differencing. The
-same comparison runs for two spatial models, an ICAR against a BYM2 for instance,
-by taking the log-sum-exp of each fit's `$log_marginal` and differencing.
+`compare_models()` reads each fit's `logLik()` and reports one row per model.
+The same comparison runs for two spatial models, an ICAR against a BYM2 for
+instance, as long as both integrate their hyperparameters over grids with the
+same support: an axis on the engine's default flat measure is uniform over the
+span the fit integrated, so the evidence depends on that span.
 
 ## Practical guidance
 

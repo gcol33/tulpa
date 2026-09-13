@@ -1,9 +1,9 @@
 # posterior_predict.R
 # ------------------------------------------------------------------------------
-# Posterior-predictive replicates for tulpa_fit objects: rebuild the in-sample
-# linear predictor per posterior draw (fixed effects + formula random effects +
-# offset), push it through the family's sampling function (.FAMILY_OPS$sample),
-# and return a draws x n_obs matrix. simulate.tulpa_fit() is the base-R alias;
+# Posterior-predictive replicates for tulpa_fit objects: draw the in-sample
+# linear predictor (every component the fit estimated), push it through the
+# family's sampling function (.FAMILY_OPS$sample), and return a draws x n_obs
+# matrix. simulate.tulpa_fit() is the base-R alias;
 # pp_check() falls back to this when the fit carries no stored y_rep.
 # ------------------------------------------------------------------------------
 
@@ -54,16 +54,63 @@
   NULL
 }
 
-# Linear-predictor posterior draws (S x n_obs). Fixed effects come from the
-# fit's draws when it carries any (joint with the RE draws, so a subsample
-# keeps rows aligned), otherwise from a Gaussian draw at coef()/vcov() (the
-# Laplace / nested-moment approximation). At the training design (newdata =
-# NULL) the offset, the formula random effects, and a posterior-mean SPDE
-# field are added; at `newdata` the prediction is population-level (fixed
-# effects only), matching predict().
+# Where a fit's in-sample linear predictor comes from.
+#
+# `"sampler_model"`: a ModelData sampler fit. Each draw row is the full
+# parameter vector of the model recorded in `$model_inputs`, so eta is read
+# back through the engine's own assembly, every latent component included.
+#
+# `"grid_mixture"`: a nested-Laplace fit carrying the per-cell `fitted_eta`
+# (and `fitted_eta_var`) its inner solves assembled. What the grid defines for
+# eta_i is the mixture `sum_k w_k N(fitted_eta[k, i], fitted_eta_var[k, i])`,
+# which already holds the fields, the random effects and the offset.
+#
+# `"coefficients"`: everything else. The fit carries its fixed effects (and at
+# most the formula random effects and an SPDE field) rather than its linear
+# predictor, so eta is assembled from those.
+#' @keywords internal
+.tulpa_linpred_source <- function(object) {
+  if (is.list(object$model_inputs) && is.matrix(object$draws) &&
+      nrow(object$draws) > 0L) {
+    return("sampler_model")
+  }
+  if (is.matrix(object$fitted_eta) && !is.null(object$weights) &&
+      length(object$weights) == nrow(object$fitted_eta)) {
+    return("grid_mixture")
+  }
+  "coefficients"
+}
+
+# Linear-predictor posterior draws (S x n_obs).
+#
+# At the training design (newdata = NULL) the draws carry every component the
+# fit estimated, read from the source `.tulpa_linpred_source()` names: the
+# engine's own eta at each sampler draw, the per-cell grid mixture on a
+# nested-Laplace fit, and otherwise the fixed effects plus the offset, the
+# formula random effects and a posterior-mean SPDE field. Fixed effects on that
+# last source come from the fit's draws when it carries any (joint with the RE
+# draws, so a subsample keeps rows aligned), else from a Gaussian draw at
+# coef()/vcov(). At `newdata` the prediction is population-level (fixed effects
+# only), matching predict().
+#
+# `synth_seed` pins every randomized step RNG-neutrally: read-only callers (the
+# WAIC/LOO criteria layer) get identical draws on every call and leave the
+# session stream untouched; predictive callers leave it NULL for fresh draws.
 #' @keywords internal
 .tulpa_eta_draws <- function(object, newdata = NULL, ndraws = NULL,
                              synth_seed = NULL) {
+  if (!is.null(synth_seed)) {
+    .preserve_seed_in_frame()
+    set.seed(as.integer(synth_seed))
+  }
+  source <- if (is.null(newdata)) .tulpa_linpred_source(object) else "coefficients"
+  if (identical(source, "sampler_model")) {
+    return(.tulpa_eta_draws_sampler(object, ndraws))
+  }
+  if (identical(source, "grid_mixture")) {
+    return(.tulpa_eta_draws_grid(object, ndraws))
+  }
+
   X <- if (is.null(newdata)) object$model_matrix
        else .tulpa_fixed_design(object, newdata)
   if (is.null(X)) {
@@ -89,14 +136,6 @@
     L <- tryCatch(chol(V), error = function(e) {
       chol(V + diag(1e-10 * max(diag(V), 1), nrow(V)))
     })
-    # `synth_seed` pins the Gaussian synthesis RNG-neutrally: read-only
-    # callers (the WAIC/LOO criteria layer) get identical draws on every
-    # call and leave the session stream untouched; predictive callers leave
-    # it NULL for fresh draws.
-    if (!is.null(synth_seed)) {
-      .preserve_seed_in_frame()
-      set.seed(as.integer(synth_seed))
-    }
     beta <- matrix(rep(mu, each = S), S) +
       matrix(stats::rnorm(S * length(mu)), S) %*% L
     colnames(beta) <- names(mu)
@@ -143,20 +182,81 @@
   eta
 }
 
+# Engine eta at each sampler draw (the "sampler_model" source).
+#' @keywords internal
+.tulpa_eta_draws_sampler <- function(object, ndraws = NULL) {
+  D <- object$draws
+  S <- nrow(D)
+  if (!is.null(ndraws) && ndraws < S) D <- D[sample.int(S, ndraws), , drop = FALSE]
+  mi <- object$model_inputs
+  cpp_tulpa_glmm_eta_draws(
+    draws = D, y = mi$y, n_trials = mi$n_trials, X = mi$X,
+    family = mi$family, phi = mi$phi, sigma_beta = mi$sigma_beta,
+    offset_nullable = mi$offset, re_spec = mi$re_spec,
+    spatial_spec = mi$spatial_spec, temporal_spec = mi$temporal_spec,
+    sigma_re_scale = mi$sigma_re_scale, phi2 = mi$phi2,
+    svc_spec = mi$svc_spec, tvc_spec = mi$tvc_spec, zi_spec = mi$zi_spec)
+}
+
+# Draws from the per-cell eta mixture of a nested-Laplace fit (the
+# "grid_mixture" source). A row picks a cell by its outer weight and draws each
+# observation from that cell's Gaussian, so every row carries one hyperparameter
+# value and each column is the grid's own marginal for eta_i. Within a cell the
+# observations are drawn independently: the cell's joint eta covariance is not
+# retained, only its diagonal. A fit run with `control$fitted_var = FALSE`
+# carries no diagonal either, and its draws hold the across-cell spread only.
+#' @keywords internal
+.tulpa_eta_draws_grid <- function(object, ndraws = NULL) {
+  M <- object$fitted_eta
+  w <- as.numeric(object$weights)
+  w[!is.finite(w)] <- 0
+  if (sum(w) <= 0) {
+    stop("posterior_predict(): the outer grid carries no weight on any cell.",
+         call. = FALSE)
+  }
+  S <- as.integer(ndraws %||% 400L)
+  cells <- sample.int(nrow(M), S, replace = TRUE, prob = w)
+  eta <- M[cells, , drop = FALSE]
+  V <- object$fitted_eta_var
+  if (is.matrix(V) && identical(dim(V), dim(M))) {
+    eta <- eta + sqrt(pmax(V[cells, , drop = FALSE], 0)) *
+      matrix(stats::rnorm(length(eta)), nrow(eta))
+  }
+  dimnames(eta) <- NULL
+  eta
+}
+
 #' Posterior predictive replicates
 #'
 #' @description
 #' Draw replicated responses from the posterior predictive distribution: the
-#' linear predictor is rebuilt per posterior draw (fixed effects, formula
-#' random effects, offset, and a posterior-mean SPDE field when present) and
-#' pushed through the family's sampling distribution.
+#' in-sample linear predictor is drawn with every component the fit estimated
+#' -- fixed effects, formula random effects, the offset, and any spatial or
+#' temporal field -- and pushed through the family's sampling distribution. The
+#' same draws give the pointwise log-likelihood behind
+#' `compare_models(criterion = "waic")` / `"loo"`.
 #'
-#' Fits carrying posterior draws use them directly (fixed and random effects
-#' jointly per draw). The Laplace tier samples the fixed effects from the
-#' Gaussian approximation `N(coef(fit), vcov(fit))` and holds the random
-#' effects at their posterior mode, so its replicates understate the RE
-#' posterior uncertainty. At `newdata` the prediction is population level
-#' (random effects at zero), matching [predict.tulpa_fit()].
+#' Where the draws come from follows what the fit carries:
+#' \itemize{
+#'   \item A ModelData sampler fit (`mode = "hmc"` and its siblings) evaluates
+#'     the engine's own linear predictor at each draw, so a field is drawn
+#'     jointly with everything else.
+#'   \item A nested-Laplace fit draws from its outer grid: a replicate picks a
+#'     cell by its weight and draws each observation from that cell's Gaussian
+#'     for the linear predictor (`fitted_eta`, `fitted_eta_var`). The cell's
+#'     joint covariance across observations is not retained, so observations
+#'     within a replicate are independent given the cell. A fit without
+#'     `fitted_eta_var` (`control$fitted_var = FALSE`, or a GP / SPDE /
+#'     spatiotemporal field) carries the across-cell spread only.
+#'   \item Any other fit carries its coefficients rather than its linear
+#'     predictor. Fits with posterior draws use them (fixed and random effects
+#'     jointly per draw); the Laplace tier samples the fixed effects from
+#'     `N(coef(fit), vcov(fit))` and holds the random effects at their posterior
+#'     mode, so its replicates understate the RE posterior uncertainty; an SPDE
+#'     field enters at its posterior mean.
+#' }
+#' At `newdata` the prediction is population level (random effects at zero),
+#' matching [predict.tulpa_fit()].
 #'
 #' @param object A `tulpa_fit` object from [tulpa()].
 #' @param ... Passed to methods.
@@ -177,7 +277,7 @@ posterior_predict <- function(object, ...) {
 
 #' @param newdata Optional data frame of covariates to predict at. Population
 #'   level (fixed effects only); `NULL` (default) replicates at the training
-#'   data with random effects and offset included.
+#'   data with every fitted component included.
 #' @param ndraws Number of posterior draws to use. Defaults to all stored
 #'   draws, or 400 on the draw-free Laplace tier.
 #' @param n_trials Binomial / beta-binomial trial counts for the replicates.
