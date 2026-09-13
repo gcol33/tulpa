@@ -9,8 +9,14 @@ PKG_CPPFLAGS = -I../inst/include
 # and the assembler stops with "file too big". Any build that does not optimize
 # hits this -- pkgbuild::compile_dll(debug = TRUE) is the default and is what
 # devtools::load_all() goes through. At R's own -O2 the largest of the 109
-# translation units is 2221 sections, so at the installed build this only
-# changes the object format.
-PKG_CXXFLAGS = $(SHLIB_OPENMP_CXXFLAGS) -Wa,-mbig-obj
+# translation units is 2221 sections, 6.8% of the ceiling, so an optimizing
+# build does not need the flag and does not get it: R CMD check reports
+# -Wa,-mbig-obj as a non-portable flag whenever a compile command carries it.
+# The test is expanded when a compile rule runs, after Makeconf and any user
+# Makevars have been read, and R CMD SHLIB sets CXXFLAGS to the CXX17FLAGS the
+# rule compiles with, so it reads the flags actually in use.
+comma := ,
+BIGOBJ_FLAG = $(if $(filter -O2 -O3 -Os -Ofast,$(CXXFLAGS)),,-Wa$(comma)-mbig-obj)
+PKG_CXXFLAGS = $(SHLIB_OPENMP_CXXFLAGS) $(BIGOBJ_FLAG)
 
 PKG_LIBS = $(SHLIB_OPENMP_CXXFLAGS) $(LAPACK_LIBS) $(BLAS_LIBS) $(FLIBS)

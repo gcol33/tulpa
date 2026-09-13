@@ -235,9 +235,10 @@
   fits at those flags. This is not a property of one file: six further
   translation units sit between 21000 and 31000 sections there, while at R's
   own `-O2` the largest of all 109 is 2221, 6.8% of the ceiling, so the
-  installed build only changes object format. `R CMD check` scans
-  `src/Makevars.in` and `src/Makevars` for non-portable flags and not
-  `Makevars.win`, so the flag draws no NOTE.
+  flag is added only to a build whose `CXXFLAGS` carries no `-O2` / `-O3` /
+  `-Os` / `-Ofast` (gcol33/tulpa#725): `R CMD check` reports it as a
+  non-portable flag whenever a compile command carries it, which it did on
+  win-builder r-devel while it was unconditional.
 
   What made the failure look machine-specific was the repo's own `.Rprofile`,
   which sets `options(pkg.build_extra_flags = FALSE)` and so keeps `load_all()`
