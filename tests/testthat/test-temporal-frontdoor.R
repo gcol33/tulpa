@@ -73,11 +73,13 @@ test_that("logLik and compare_models return one scalar row per nested fit", {
   d$df$y <- rbinom(nrow(d$df), 1, plogis(-0.2 + d$b1 * d$df$x + d$ftrue[d$time]))
   f_t <- tulpa(y ~ x, data = d$df, family = "binomial",
                temporal = temporal_rw1("time"), mode = "auto")
-  f_0 <- tulpa(y ~ x, data = d$df, family = "binomial", mode = "laplace")
 
   expect_length(as.numeric(logLik(f_t)), 1L)   # integrated, not per-grid
   expect_true(is.finite(as.numeric(logLik(f_t))))
-  cmp <- compare_models(temporal = f_t, plain = f_0, criterion = "loglik")
+  # Two fits reporting the same quantity. A Laplace fit reports a log marginal
+  # likelihood and a nested fit a log evidence, and compare_models() refuses to
+  # rank those together (test-diagnostics-report-honesty.R).
+  cmp <- compare_models(temporal = f_t, again = f_t, criterion = "loglik")
   expect_equal(nrow(cmp), 2L)                   # one row per model, not per grid
 })
 

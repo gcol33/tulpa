@@ -471,13 +471,10 @@ while the Gaussian approximation would keep reporting the symmetric
 interval its assumption forces on it. That is the moment the price of the
 sampler turns into a reason to pay it.
 
-The marginal likelihood ties the comparison back to model choice.
-`compare_models()` reads `logLik()` from each fit, which on the Laplace
-tier is the approximate log marginal likelihood.
-
-```{r compare}
-compare_models(laplace = f_lap, pathfinder = f_pf, criterion = "loglik")
-```
+Laplace and Pathfinder do not report the same quantity under `logLik()`:
+the Laplace tier gives a log marginal likelihood and Pathfinder a mean log
+posterior. Their values are therefore not a model comparison, and
+`compare_models()` refuses to rank quantities on different scales.
 
 The `glance()` accessor surfaces the per-fit diagnostics that matter for
 the sampler tiers: the number of post-warmup draws, the acceptance rate,

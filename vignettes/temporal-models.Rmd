@@ -492,20 +492,11 @@ c(no_temporal = as.numeric(logLik(m_nt)), temporal = evidence_temporal)
 ```
 
 The temporal model carries substantially higher evidence, matching the fact that
-a trend really was in the data. `compare_models()` ranks fits by a shared
-criterion, reading each one's `logLik()`.
-
-```{r compare}
-cmp <- compare_models(no_temporal = m_nt,
-                      temporal = fit,
-                      criterion = "loglik")
-cmp
-```
-
-On the nested temporal fit `logLik()` returns the integrated evidence, the
-log-sum-exp of `$log_marginal` computed above, so `compare_models()` carries one
-row per model and reproduces the manual comparison alongside the non-temporal
-`logLik()`.
+a trend really was in the data. The comparison is made on the evidence directly,
+as above. `compare_models(criterion = "loglik")` does not put these two fits in
+one table: under `logLik()` the Laplace fit reports a log marginal likelihood and
+the nested fit a log evidence, and it refuses to rank fits that report different
+quantities.
 
 A word on what this comparison settles. The marginal likelihood already
 integrates over the walk and its smoothing precision, so it charges the temporal
