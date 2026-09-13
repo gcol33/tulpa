@@ -868,11 +868,13 @@
 #'      when the fit WAS recentred.
 #'   * `outer_grid_axis_declined` -- the same question PER AXIS, as a named
 #'      character vector. The slot above holds one reason for the whole fit and
-#'      is written only while the fit is unplaced, so on a fit whose field-SD
-#'      axis moved and whose dispersion axis did not it says `auto_recentered`
-#'      and nothing about the axis that stayed -- which is the axis
-#'      `grid_coarsest_axis` then names. Currently written by the per-arm
-#'      dispersion pass; absent on a fit carrying no such axis.
+#'      is written only while the fit is unplaced, so on a fit where one axis
+#'      moved and another did not it says `auto_recentered` and nothing about
+#'      the axis that stayed -- which is the axis `grid_coarsest_axis` then
+#'      names. Written by the field-SD passes for `sigma` (`b<k>.sigma` on a
+#'      copy block) and by the per-arm dispersion pass for `phi_<arm>`, and
+#'      carried across a later pass placing a different axis; absent on a fit
+#'      no pass declined an axis of.
 #'   * `outer_grid_pilot` -- present only when `control$recenter_pilot` ran: the
 #'      pilot's resolution (`n_pilot`), its cell count (`cells`), the axes it
 #'      thinned (`axes`) and those it could not (`axes_kept`), and what the

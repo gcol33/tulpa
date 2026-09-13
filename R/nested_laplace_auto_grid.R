@@ -944,7 +944,9 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 # stencil returned a curvature past one of the mode-SD bounds, so an axis laid
 # from it would be laid from a substituted spread rather than a measured one;
 # only under the declining clamp policies),
-# `"auto_recenter_disabled"` (`control$auto_recenter = FALSE`,
+# `"attempts_exhausted"` (per axis only: the axis was still railed when
+# `max_attempts` ran out on a sibling), `"auto_recenter_disabled"`
+# (`control$auto_recenter = FALSE`,
 # the way to hold ANY grid -- the engine's own default axis included -- exactly
 # where it is), `"grid_knobs_overridden"` (the spatiotemporal driver's
 # grid-construction knobs were set explicitly), `"refit_failed"` (the recentred
@@ -1165,7 +1167,10 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 # axis), or when the grid never collapsed onto the sigma axis in the first
 # place -- so this is a zero-cost, byte-stable no-op for every fit that did not
 # need it, and the reason is recorded in
-# `res$outer_grid_recenter_declined`.
+# `res$outer_grid_recenter_declined` and, per axis, in
+# `res$outer_grid_axis_declined[["sigma"]]`. The per-axis record is what
+# survives a later rescue placing a DIFFERENT axis (the dispersion rescue below),
+# which leaves the fit `auto_recentered` and the whole-fit slot empty.
 #
 # Two attempts, both reusing the mode/Hessian the outer Pareto-k diagnostic
 # already computed rather than a fresh optimization (see
@@ -1193,13 +1198,19 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
     out <- list(res = res, prior = prior, prior_sigma = prior_sigma)
     type <- tolower(prior$type %||% "")
     if (!type %in% c("bym2", "icar", "car_proper")) return(out)
+    decline <- function(r, why) {
+        if (!identical(r$outer_grid_placement, "auto_recentered")) {
+            r <- .nl_decline_axis(r, "sigma", why)
+        }
+        .nl_decline_recenter(r, why)
+    }
     if (!isTRUE(enabled)) {
-        out$res <- .nl_decline_recenter(res, "auto_recenter_disabled")
+        out$res <- decline(res, "auto_recenter_disabled")
         return(out)
     }
     if (.nl_axis_is_pinned(prior, "sigma_grid", .nl_auto_fields_at(auto),
                            type = ".joint_areal")) {
-        out$res <- .nl_decline_recenter(res, "axis_pinned")
+        out$res <- decline(res, "axis_pinned")
         return(out)
     }
 
@@ -1227,6 +1238,7 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
         res <- refit(cur_prior, cur_prior_sigma)
         res$outer_grid_placement           <- "auto_recentered"
         res$outer_grid_recenter_attempts   <- attempt
+        res$outer_grid_recenter_axes       <- "sigma"
         res$outer_grid_recenter_sd_clamp   <- stats::setNames(rc$sd_clamp, "sigma")
         res$outer_grid_recenter_sd_used    <- stats::setNames(rc$sd_used, "sigma")
         res$outer_grid_recenter_sd_raw     <- stats::setNames(rc$sd_raw, "sigma")
@@ -1235,7 +1247,7 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
             if (attempt >= 2L && prior_pinned) "prior_pinned" else NULL
         out <- list(res = res, prior = cur_prior, prior_sigma = cur_prior_sigma)
     }
-    out$res <- .nl_decline_recenter(out$res, reason)
+    out$res <- decline(out$res, reason)
     out
 }
 
@@ -1297,6 +1309,12 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 # collapsed copy block per attempt (the documented case is a single copy block;
 # a fit with several SIMULTANEOUSLY collapsed copy blocks partially improves
 # within `max_attempts` rather than looping without bound).
+#
+# Every copy block's `sigma` axis the pass left where it was records why in
+# `outer_grid_axis_declined`, whether or not a sibling block moved:
+# `"axis_pinned"`, the stencil's own reason for the block it could not place,
+# `"attempts_exhausted"` for a block still railed when `max_attempts` ran out
+# on another, and `"grid_not_collapsed"` otherwise.
 .joint_multi_sigma_grid_rescue <- function(res, prior, copy, cp, prior_sigma,
                                            refit, auto = list(), enabled = TRUE,
                                            max_attempts = .nl_recenter("max_attempts_joint")) {
@@ -1304,16 +1322,23 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
     if (!.is_multi_block_prior(prior) || is.null(cp) || !isTRUE(cp$has_copy)) {
         return(out)
     }
+    copy_b  <- cp$copy_blocks_zero + 1L
+    axis_of <- function(b) .nl_axis_alias("sigma", b, .nl_fit_n_blocks(res))[1L]
     if (!isTRUE(enabled)) {
-        out$res <- .nl_decline_recenter(res, "auto_recenter_disabled")
+        r <- res
+        for (b in copy_b) r <- .nl_decline_axis(r, axis_of(b),
+                                                "auto_recenter_disabled")
+        out$res <- .nl_decline_recenter(r, "auto_recenter_disabled")
         return(out)
     }
 
     prior_pinned    <- .nl_prior_sigma_is_pinned(prior_sigma)
     cur_prior       <- prior
     cur_prior_sigma <- .nl_strip_auto(prior_sigma)
-    attempt <- 0L
-    reason  <- "grid_not_collapsed"
+    attempt  <- 0L
+    reason   <- "grid_not_collapsed"
+    moved_b  <- integer(0)
+    failed_b <- NA_integer_
     while (attempt < max_attempts &&
            identical(res$pareto_k_regime, "collapsed_edge")) {
         target_b <- NULL
@@ -1338,16 +1363,20 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
             block_index = target_b, n_blocks = n_b,
             ref_nodes = .nl_axis_ref_nodes(res, "sigma", target_b, n_b))
         if (is.null(rc$nodes)) {
-            reason <- rc$reason
+            reason   <- rc$reason
+            failed_b <- target_b
             break
         }
         cur_prior[[target_b]]$sigma_grid <- rc$nodes
+        moved_b <- union(moved_b, target_b)
         if (attempt >= 2L && !prior_pinned) {
             cur_prior_sigma <- .nl_recenter("sigma_pc_prior")
         }
         res <- refit(cur_prior, cur_prior_sigma)
         res$outer_grid_placement           <- "auto_recentered"
         res$outer_grid_recenter_attempts   <- attempt
+        res$outer_grid_recenter_axes       <- vapply(moved_b, axis_of,
+                                                     character(1))
         res$outer_grid_recenter_sd_clamp   <- stats::setNames(
             rc$sd_clamp, .nl_axis_alias("sigma", target_b, n_b)[1L])
         res$outer_grid_recenter_sd_used    <- stats::setNames(
@@ -1358,6 +1387,22 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
         res$outer_grid_prior_declined      <-
             if (attempt >= 2L && prior_pinned) "prior_pinned" else NULL
         out <- list(res = res, prior = cur_prior, prior_sigma = cur_prior_sigma)
+    }
+    for (b in setdiff(copy_b, moved_b)) {
+        why <- if (.nl_axis_is_pinned(prior[[b]], "sigma_grid",
+                                      .nl_auto_fields_at(auto, b),
+                                      type = ".copy")) {
+            "axis_pinned"
+        } else if (isTRUE(b == failed_b)) {
+            reason
+        } else if (attempt >= max_attempts &&
+                   identical(out$res$pareto_k_regime, "collapsed_edge") &&
+                   .nl_edge_axis_hit(out$res, "sigma", b)) {
+            "attempts_exhausted"
+        } else {
+            "grid_not_collapsed"
+        }
+        out$res <- .nl_decline_axis(out$res, axis_of(b), why)
     }
     out$res <- .nl_decline_recenter(out$res, reason)
     out
@@ -1453,13 +1498,24 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 # record forward and append: the per-axis vectors merge by name, the attempt
 # counter sums (it counts extra fits), and the prior-escalation flags stay with
 # whichever rescue set them.
+#
+# The per-axis decline record is carried whatever the predecessor's placement:
+# a field-SD rescue that declined leaves an UNPLACED fit, and its reason for
+# that axis is exactly what a dispersion placement must not erase. An axis the
+# new fit moved drops its old decline.
 .nl_carry_recenter_stamps <- function(new_res, prev_res) {
-    if (!identical(prev_res$outer_grid_placement, "auto_recentered")) return(new_res)
     merge_named <- function(old, new) {
         if (is.null(old)) return(new)
         keep <- setdiff(names(old), names(new))
         c(old[keep], new)
     }
+    dec <- prev_res$outer_grid_axis_declined
+    if (length(dec)) {
+        dec <- dec[!names(dec) %in% new_res$outer_grid_recenter_axes]
+        dec <- merge_named(dec, new_res$outer_grid_axis_declined)
+        if (length(dec)) new_res$outer_grid_axis_declined <- dec
+    }
+    if (!identical(prev_res$outer_grid_placement, "auto_recentered")) return(new_res)
     for (f in c("outer_grid_recenter_sd_clamp", "outer_grid_recenter_sd_used",
                 "outer_grid_recenter_sd_raw")) {
         new_res[[f]] <- merge_named(prev_res[[f]], new_res[[f]])

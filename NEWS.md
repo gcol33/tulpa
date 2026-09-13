@@ -1,3 +1,23 @@
+# tulpa 0.4.2
+
+## A field-SD axis's decline survives a dispersion placement
+
+* **A joint fit whose field-SD rescue declined and whose dispersion rescue then
+  placed an unpinned `phi_grid` axis lost the reason `sigma` did not move**
+  (gcol33/tulpa#720). The field-SD rescues wrote their reason only to the
+  whole-fit `outer_grid_recenter_declined` slot, which is cleared by any
+  placement, and `.nl_carry_recenter_stamps()` carried nothing from an unplaced
+  predecessor. `diagnostics()` therefore gave the generic "add nodes" advice on
+  a coarsest `sigma` axis the pass had declined for a named reason such as
+  `axis_pinned`. Both field-SD rescues now write `outer_grid_axis_declined`
+  (`sigma`, or `b<k>.sigma` per copy block, with `attempts_exhausted` for a
+  block still railed when the attempts ran out on a sibling), the carry merges
+  that record whatever the predecessor's placement, and an axis a later pass
+  moved drops its old decline. The field-SD rescues also list the axes they
+  moved in `outer_grid_recenter_axes`, which they had left empty, so a fit
+  placed on both `sigma` and a dispersion axis reported only the latter as
+  moved. The fit itself is unchanged; only the record is.
+
 # tulpa 0.4.1
 
 ## Progress knobs are read by exact key

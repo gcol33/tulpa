@@ -100,6 +100,37 @@ test_that("a later rescue's record is appended to an earlier one's", {
         new)
 })
 
+test_that("a field-SD decline survives a later dispersion placement (#720)", {
+    # The stamp flow when the field-SD rescue declines and the dispersion rescue
+    # then places: the refit carries no stamps, and the predecessor is UNPLACED.
+    prev <- .nl_decline_axis(
+        list(outer_grid_placement = "fixed",
+             outer_grid_recenter_declined = "axis_pinned"),
+        "sigma", "axis_pinned")
+    new <- list(outer_grid_placement = "auto_recentered",
+                outer_grid_recenter_axes = "phi_pos")
+    res <- .nl_decline_recenter(.nl_carry_recenter_stamps(new, prev),
+                                "grid_resolves_posterior")
+    expect_identical(res$outer_grid_placement, "auto_recentered")
+    expect_null(res$outer_grid_recenter_declined)
+    expect_identical(res$outer_grid_axis_declined[["sigma"]], "axis_pinned")
+    expect_identical(.tulpa_grid_axis_lever(
+        list(coarsest = "sigma", axis_declined = res$outer_grid_axis_declined)),
+        .tulpa_grid_axis_lever(
+            list(coarsest = "sigma", axis_declined = c(sigma = "axis_pinned"))))
+
+    # The new fit's own record wins on a shared axis, and an axis the new fit
+    # moved drops the decline it carried.
+    prev2 <- list(outer_grid_placement = "auto_recentered",
+                  outer_grid_axis_declined = c(sigma = "grid_not_collapsed",
+                                               phi_pos = "no_usable_curvature"))
+    new2 <- list(outer_grid_placement = "auto_recentered",
+                 outer_grid_recenter_axes = "phi_pos",
+                 outer_grid_axis_declined = c(sigma = "axis_pinned"))
+    m <- .nl_carry_recenter_stamps(new2, prev2)
+    expect_identical(m$outer_grid_axis_declined, c(sigma = "axis_pinned"))
+})
+
 # --------------------------------------------------------------------------- #
 # Reliability + resolution reporting                                          #
 # --------------------------------------------------------------------------- #
@@ -176,7 +207,11 @@ test_that("a marked dispersion axis is placed onto its own posterior", {
 
     expect_identical(placed$outer_grid_placement, "auto_recentered")
     expect_true("phi_pos" %in% placed$outer_grid_recenter_axes)
-    expect_null(placed$outer_grid_axis_declined[["phi_pos"]])
+    expect_false("phi_pos" %in% names(placed$outer_grid_axis_declined))
+    # The field SD axis is pinned at truth and stayed put next to the moved
+    # dispersion axis; its reason is still on the fit (gcol33/tulpa#720).
+    expect_false("sigma" %in% placed$outer_grid_recenter_axes)
+    expect_identical(placed$outer_grid_axis_declined[["sigma"]], "axis_pinned")
 
     # The placement is the estimate, not only the report. On the declared span
     # the dispersion posterior sits between nodes and comes back at roughly
@@ -209,5 +244,7 @@ test_that("a fit with no dispersion axis carries no per-axis decline", {
     fit <- tulpa_nested_laplace_joint(responses = fx$responses,
                                       prior = fx$prior)
     expect_false("phi_pos" %in% colnames(fit$theta_grid))
-    expect_null(fit$outer_grid_axis_declined)
+    expect_false("phi_pos" %in% names(fit$outer_grid_axis_declined))
+    # The pinned field SD axis is the only one the placement pass spoke about.
+    expect_identical(fit$outer_grid_axis_declined, c(sigma = "axis_pinned"))
 })

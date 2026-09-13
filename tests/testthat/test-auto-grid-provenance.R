@@ -240,6 +240,8 @@ test_that("the single-block rescue guard honours a pin and passes a default", {
     expect_identical(calls$n, 1L)
     expect_gt(max(calls$grid), 3)
     expect_null(out$res$outer_grid_recenter_declined)
+    expect_identical(out$res$outer_grid_recenter_axes, "sigma")
+    expect_null(out$res$outer_grid_axis_declined)
 
     # 2. Engine default handed in unmarked -> still recenters (#293).
     calls$n <- 0L
@@ -263,6 +265,7 @@ test_that("the single-block rescue guard honours a pin and passes a default", {
         stub_res, c(icar, list(sigma_grid = c(0.1, 0.5, 1, 2, 3))), NULL, refit)
     expect_identical(out$res$outer_grid_placement, "fixed")
     expect_identical(out$res$outer_grid_recenter_declined, "axis_pinned")
+    expect_identical(out$res$outer_grid_axis_declined, c(sigma = "axis_pinned"))
     expect_identical(calls$n, 0L)
 
     # 5. A grid that never collapsed -> untouched, different reason.
@@ -272,6 +275,8 @@ test_that("the single-block rescue guard honours a pin and passes a default", {
                                      pareto_k_grid_edge_axes = character(0)))
     out <- tulpa:::.joint_sigma_grid_rescue(spread, icar, NULL, refit)
     expect_identical(out$res$outer_grid_recenter_declined, "grid_not_collapsed")
+    expect_identical(out$res$outer_grid_axis_declined,
+                     c(sigma = "grid_not_collapsed"))
     expect_identical(calls$n, 0L)
 
     # 6. Collapsed, but no curvature to recentre on -> untouched, own reason.
@@ -280,12 +285,20 @@ test_that("the single-block rescue guard honours a pin and passes a default", {
                                               pareto_k_cov_u = NULL))
     out <- tulpa:::.joint_sigma_grid_rescue(blind, icar, NULL, refit)
     expect_identical(out$res$outer_grid_recenter_declined, "no_usable_curvature")
+    expect_identical(out$res$outer_grid_axis_declined,
+                     c(sigma = "no_usable_curvature"))
     expect_identical(calls$n, 0L)
+
+    out <- tulpa:::.joint_sigma_grid_rescue(stub_res, icar, NULL, refit,
+                                            enabled = FALSE)
+    expect_identical(out$res$outer_grid_axis_declined,
+                     c(sigma = "auto_recenter_disabled"))
 
     # 7. A prior shape this rescue does not cover stamps nothing at all -- the
     #    multi-block rescue chained after it owns that fit.
     out <- tulpa:::.joint_sigma_grid_rescue(stub_res, list(icar), NULL, refit)
     expect_null(out$res$outer_grid_recenter_declined)
+    expect_null(out$res$outer_grid_axis_declined)
 })
 
 # gcol33/tulpa#297: the second attempt's regularizing PC prior was suppressed by
@@ -380,6 +393,8 @@ test_that("the multi-block rescue reports a pinned copy-block axis", {
         stub_res, list(list(type = "icar")), NULL, cp, NULL, refit)
     expect_identical(out$res$outer_grid_placement, "auto_recentered")
     expect_gt(max(out$res$.grid), 3)
+    expect_identical(out$res$outer_grid_recenter_axes, "b1.sigma")
+    expect_null(out$res$outer_grid_axis_declined)
 
     # Pinned donor axis -> untouched, reason recorded (was previously
     # indistinguishable from "did not need it").
@@ -388,6 +403,33 @@ test_that("the multi-block rescue reports a pinned copy-block axis", {
         NULL, cp, NULL, refit)
     expect_identical(out$res$outer_grid_placement, "fixed")
     expect_identical(out$res$outer_grid_recenter_declined, "axis_pinned")
+    expect_identical(out$res$outer_grid_axis_declined,
+                     c(b1.sigma = "axis_pinned"))
+
+    out <- tulpa:::.joint_multi_sigma_grid_rescue(
+        stub_res, list(list(type = "icar")), NULL, cp, NULL, refit,
+        enabled = FALSE)
+    expect_identical(out$res$outer_grid_axis_declined,
+                     c(b1.sigma = "auto_recenter_disabled"))
+
+    # Two collapsed copy blocks and one attempt: the block the pass moved is
+    # listed as moved, the one it ran out of attempts on says so.
+    two <- utils::modifyList(stub_res, list(
+        pareto_k_grid_edge_axes = c("b1.sigma", "b2.sigma"),
+        pareto_k_mode_u = c(log(3), log(3)),
+        pareto_k_cov_u = diag(c(0.25, 0.25)),
+        pareto_k_axis_tags = c("log", "log"),
+        pareto_k_axis_names = c("b1.sigma", "b2.sigma"),
+        blocks = list(list(type = "icar"), list(type = "icar"))))
+    still <- function(prior_i, prior_sigma_i) two
+    out <- tulpa:::.joint_multi_sigma_grid_rescue(
+        two, list(list(type = "icar"), list(type = "icar")), NULL,
+        list(has_copy = TRUE, copy_blocks_zero = c(0L, 1L)), NULL, still,
+        max_attempts = 1L)
+    expect_identical(out$res$outer_grid_placement, "auto_recentered")
+    expect_identical(out$res$outer_grid_recenter_axes, "b1.sigma")
+    expect_identical(out$res$outer_grid_axis_declined,
+                     c(b2.sigma = "attempts_exhausted"))
 
     # Engine default on the donor block (the shape a wrapper package writes)
     # -> recenters.

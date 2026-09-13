@@ -858,11 +858,13 @@ car_proper grid whose \code{rho_car} axis has unguessable support). Absent
 when the fit WAS recentred.
 \item \code{outer_grid_axis_declined} -- the same question PER AXIS, as a named
 character vector. The slot above holds one reason for the whole fit and
-is written only while the fit is unplaced, so on a fit whose field-SD
-axis moved and whose dispersion axis did not it says \code{auto_recentered}
-and nothing about the axis that stayed -- which is the axis
-\code{grid_coarsest_axis} then names. Currently written by the per-arm
-dispersion pass; absent on a fit carrying no such axis.
+is written only while the fit is unplaced, so on a fit where one axis
+moved and another did not it says \code{auto_recentered} and nothing about
+the axis that stayed -- which is the axis \code{grid_coarsest_axis} then
+names. Written by the field-SD passes for \code{sigma} (\verb{b<k>.sigma} on a
+copy block) and by the per-arm dispersion pass for \verb{phi_<arm>}, and
+carried across a later pass placing a different axis; absent on a fit
+no pass declined an axis of.
 \item \code{outer_grid_pilot} -- present only when \code{control$recenter_pilot} ran: the
 pilot's resolution (\code{n_pilot}), its cell count (\code{cells}), the axes it
 thinned (\code{axes}) and those it could not (\code{axes_kept}), and what the
