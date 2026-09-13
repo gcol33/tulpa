@@ -190,7 +190,10 @@ inline Rcpp::List run_multi_block_nested_laplace(
     // list then carries no `fitted_eta_var` element.
     bool compute_fitted_var = true,
     // Per-observation offset on the linear predictor (empty: none).
-    const std::vector<double>& offset = std::vector<double>()
+    const std::vector<double>& offset = std::vector<double>(),
+    // Per-cell log hyperprior + log cell measure the cheap screen ranks with
+    // (run_nested_laplace_grid); empty ranks on the log-marginal alone.
+    const std::vector<double>& screen_log_offset = std::vector<double>()
 ) {
     int n_x = p + n_re_groups;
     for (const auto& b : blocks) {
@@ -525,7 +528,7 @@ inline Rcpp::List run_multi_block_nested_laplace(
         /*tile_pilot_cells=*/std::vector<int>(),
         cheap_eval, prune_tol, progress, ckpt,
         /*x_init_per_cell=*/std::vector<double>(), screen_iters,
-        resume_refill
+        resume_refill, screen_log_offset
     );
     pattern_guard.check("the single-block nested-Laplace outer grid");
 

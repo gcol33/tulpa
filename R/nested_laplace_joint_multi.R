@@ -928,6 +928,24 @@
     if (length(out) == 0L) NULL else out
 }
 
+# The axis specs a multi-block joint grid's cell measure is built from: the
+# specs read off `grid`'s columns with the folded axes marked, the copy scale's
+# declared atom mass, and the caller's hyperprior roles
+# (`.joint_multi_hp_specs()`). The one construction behind the weights and the
+# screen that ranks the cells before any is solved.
+.joint_multi_measure_specs <- function(grid, folded_axes, joint_grid,
+                                       axis_offsets, B, fn_sigma, fn_alpha,
+                                       fn_phi, copy_slab, copy_atom_mass) {
+    specs <- .joint_axis_specs_from_grid(grid, copy_slab = copy_slab,
+                                         folded_axes = folded_axes)
+    specs <- lapply(specs, function(sp) {
+        if (!is.null(sp$atom_mass)) sp$atom_mass <- copy_atom_mass
+        sp
+    })
+    .joint_multi_hp_specs(specs, joint_grid, axis_offsets, B,
+                          fn_sigma, fn_alpha, fn_phi)
+}
+
 # Attach each hyperprior to the axis spec of the column it applies to, so the
 # axis quadrature knows what the fold below will apply to that axis. That is
 # what keeps the copy scale's declared point mass at its declared prior
@@ -1050,7 +1068,10 @@
              debias           = NULL,
              # Corrected integrated Laplace: the
              # kernel-facing request list, off by default for the same reason.
-             cila             = NULL) {
+             cila             = NULL,
+             # Per-cell log hyperprior + log cell measure a screened solve
+             # ranks with, in `theta_mat` row order.
+             screen_log_offset = NULL) {
         .cpp_joint_multi(
             arms_list           = arms,
             copy_arms           = as.integer(cp$copy_arms_zero),
@@ -1082,7 +1103,8 @@
             fixed_block_constraints = fixed_block_constraints,
             debias              = debias,
             cila                = cila,
-            inner_sparse_override = as.integer(inner_sparse_override))
+            inner_sparse_override = as.integer(inner_sparse_override),
+            screen_log_offset   = screen_log_offset)
     }
 }
 
@@ -1678,6 +1700,19 @@
         }
     }
 
+    # The regularizing hyperprior, folded into log_marginal at the kernel-call
+    # boundary below, and the base tensor's cell measure: known from the grid
+    # alone, so a screened solve ranks its cells with both.
+    hp_base <- .joint_multi_hyperprior(
+        joint_grid, fn_sigma, fn_alpha, fn_phi, blocks = prepared,
+        families = hp_families, copy_atom_mass = copy_atom_mass)
+    screen_offset <- if (as.numeric(prune_tol) > 0)
+        .nl_screen_log_offset(joint_grid, list(hp_base),
+                              specs = .joint_multi_measure_specs(
+                                  joint_grid, hp_base$axes, joint_grid,
+                                  axis_offsets, B, fn_sigma, fn_alpha, fn_phi,
+                                  copy_slab, copy_atom_mass))
+
     call_kernel_with_tol <- function(tol_prune) {
         call_kernel(
             joint_grid,
@@ -1688,7 +1723,8 @@
             n_threads_outer  = n_threads_outer,
             tile_ids         = tile_partition$tile_ids,
             tile_pilot_cells = tile_partition$tile_pilot_cells,
-            prune_tol        = tol_prune)
+            prune_tol        = tol_prune,
+            screen_log_offset = if (tol_prune > 0) screen_offset)
     }
     tm$mark("setup")
     res <- call_kernel_with_tol(prune_tol)
@@ -1704,9 +1740,7 @@
     # Bake the regularizing hyperprior on (sigma, alpha) into log_marginal
     #. Multi-block has no in-package refinement passes,
     # so one apply at the kernel-call boundary suffices.
-    res <- .nl_fold_hyperprior(res, list(.joint_multi_hyperprior(
-        joint_grid, fn_sigma, fn_alpha, fn_phi, blocks = prepared,
-        families = hp_families, copy_atom_mass = copy_atom_mass)))
+    res <- .nl_fold_hyperprior(res, list(hp_base))
     # The base tensor's absolute cell measure, read before local CCD refinement
     # replaces cells by design-weighted clouds whose shares are relative to it.
     base_grid <- joint_grid
@@ -1810,16 +1844,9 @@
     res$log_hyperprior          <- hp_final$lp
     res$log_hyperprior_axes     <- hp_final$axes
     res$log_hyperprior_declined <- hp_final$declined
-    multi_specs      <- .joint_axis_specs_from_grid(
-        res$theta_grid, copy_slab = copy_slab,
-        folded_axes = res$log_hyperprior_axes)
-    multi_specs      <- lapply(multi_specs, function(sp) {
-        if (!is.null(sp$atom_mass)) sp$atom_mass <- copy_atom_mass
-        sp
-    })
-    multi_specs      <- .joint_multi_hp_specs(multi_specs, joint_grid,
-                                              axis_offsets, B,
-                                              fn_sigma, fn_alpha, fn_phi)
+    multi_specs      <- .joint_multi_measure_specs(
+        res$theta_grid, res$log_hyperprior_axes, joint_grid, axis_offsets, B,
+        fn_sigma, fn_alpha, fn_phi, copy_slab, copy_atom_mass)
     res$log_quad     <- .hyper_log_quad_weights(res$theta_grid, multi_specs)
     res$axis_support <- .hyper_grid_supports(res$theta_grid, multi_specs)
     res$weights      <- .joint_integration_weights(res$log_marginal, dnode,

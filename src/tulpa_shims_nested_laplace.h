@@ -257,7 +257,8 @@ extern "C" void tulpa_nested_laplace_icar_impl(
                 R_NilValue /* cila */,
                 0.0 /* prune_tol */,
                 2 /* screen_iters */,
-                true /* compute_fitted_var */);
+                true /* compute_fitted_var */,
+                R_NilValue /* screen_log_offset */);
         });
     TULPA_SHIM_GUARD_END("tulpa_nested_laplace_icar")
 }
@@ -300,7 +301,8 @@ extern "C" void tulpa_nested_laplace_bym2_impl(
                 R_NilValue /* cila */,
                 0.0 /* prune_tol */,
                 2 /* screen_iters */,
-                true /* compute_fitted_var */);
+                true /* compute_fitted_var */,
+                R_NilValue /* screen_log_offset */);
         });
     TULPA_SHIM_GUARD_END("tulpa_nested_laplace_bym2")
 }
@@ -341,7 +343,8 @@ extern "C" void tulpa_nested_laplace_car_proper_impl(
                 R_NilValue /* cila */,
                 0.0 /* prune_tol */,
                 2 /* screen_iters */,
-                true /* compute_fitted_var */);
+                true /* compute_fitted_var */,
+                R_NilValue /* screen_log_offset */);
         });
     TULPA_SHIM_GUARD_END("tulpa_nested_laplace_car_proper")
 }
@@ -383,7 +386,8 @@ extern "C" void tulpa_nested_laplace_temporal_impl(
                 R_NilValue /* cila */,
                 0.0 /* prune_tol */,
                 2 /* screen_iters */,
-                true /* compute_fitted_var */);
+                true /* compute_fitted_var */,
+                R_NilValue /* screen_log_offset */);
         });
     TULPA_SHIM_GUARD_END("tulpa_nested_laplace_temporal")
 }
@@ -431,7 +435,8 @@ extern "C" void tulpa_nested_laplace_nngp_impl(
                 R_NilValue /* cila */,
                 0.0 /* prune_tol */,
                 2 /* screen_iters */,
-                true /* compute_fitted_var */);
+                true /* compute_fitted_var */,
+                R_NilValue /* screen_log_offset */);
         });
     TULPA_SHIM_GUARD_END("tulpa_nested_laplace_nngp")
 }
@@ -471,7 +476,8 @@ extern "C" void tulpa_nested_laplace_hsgp_impl(
                 R_NilValue /* cila */,
                 0.0 /* prune_tol */,
                 2 /* screen_iters */,
-                true /* compute_fitted_var */);
+                true /* compute_fitted_var */,
+                R_NilValue /* screen_log_offset */);
         });
     TULPA_SHIM_GUARD_END("tulpa_nested_laplace_hsgp")
 }
@@ -531,7 +537,8 @@ extern "C" void tulpa_nested_laplace_st_icar_impl(
                 R_NilValue /* cila */,
                 0.0 /* prune_tol */,
                 2 /* screen_iters */,
-                true /* compute_fitted_var */);
+                true /* compute_fitted_var */,
+                R_NilValue /* screen_log_offset */);
         });
     TULPA_SHIM_GUARD_END("tulpa_nested_laplace_st_icar")
 }
@@ -584,7 +591,8 @@ extern "C" void tulpa_nested_laplace_st_car_proper_impl(
                 R_NilValue /* cila */,
                 0.0 /* prune_tol */,
                 2 /* screen_iters */,
-                true /* compute_fitted_var */);
+                true /* compute_fitted_var */,
+                R_NilValue /* screen_log_offset */);
         });
     TULPA_SHIM_GUARD_END("tulpa_nested_laplace_st_car_proper")
 }
@@ -639,7 +647,8 @@ extern "C" void tulpa_nested_laplace_st_bym2_impl(
                 R_NilValue /* cila */,
                 0.0 /* prune_tol */,
                 2 /* screen_iters */,
-                true /* compute_fitted_var */);
+                true /* compute_fitted_var */,
+                R_NilValue /* screen_log_offset */);
         });
     TULPA_SHIM_GUARD_END("tulpa_nested_laplace_st_bym2")
 }
@@ -690,7 +699,8 @@ extern "C" void tulpa_nested_laplace_st_hsgp_impl(
                 R_NilValue /* cila */,
                 0.0 /* prune_tol */,
                 2 /* screen_iters */,
-                true /* compute_fitted_var */);
+                true /* compute_fitted_var */,
+                R_NilValue /* screen_log_offset */);
         });
     TULPA_SHIM_GUARD_END("tulpa_nested_laplace_st_hsgp")
 }
@@ -747,7 +757,8 @@ extern "C" void tulpa_nested_laplace_st_nngp_impl(
                 R_NilValue /* cila */,
                 0.0 /* prune_tol */,
                 2 /* screen_iters */,
-                true /* compute_fitted_var */);
+                true /* compute_fitted_var */,
+                R_NilValue /* screen_log_offset */);
         });
     TULPA_SHIM_GUARD_END("tulpa_nested_laplace_st_nngp")
 }
@@ -818,7 +829,8 @@ extern "C" void tulpa_nested_laplace_spde_impl(
                 R_NilValue /* cila */,
                 0.0 /* prune_tol: solve every cell */,
                 2 /* screen_iters */,
-                true /* compute_fitted_var */);
+                true /* compute_fitted_var */,
+                R_NilValue /* screen_log_offset */);
         });
     TULPA_SHIM_GUARD_END("tulpa_nested_laplace_spde")
 }

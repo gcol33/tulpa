@@ -32,6 +32,7 @@
   res <- .nl_attach_axis_sd(res)
   doms <- .nl_axis_domains(res, type)
   qs <- .nl_axis_quantiles(tg, res$log_marginal, res$refining_axis,
+                           log_quad = res$log_quad,
                            domains = doms, within = within)
   res$theta_median <- qs$median
   res$theta_ci_lo  <- qs$ci_lo
@@ -69,10 +70,20 @@
     prior        = if (is.null(type)) res$prior else list(type = type)))
 }
 
+# The cells an axis read may sum. A read carrying the cell measure sums every
+# cell, each holding its own box's mass. A read with no measure sums raw
+# `log_marginal`, which is a mass only where every level of an axis appears in
+# every row of the others, so it reads the base tensor (`refining == ""`) and
+# leaves the refinement slice cells out.
+.nl_axis_read_cells <- function(refining, n, measured) {
+  if (is.null(refining) || measured) return(rep(TRUE, n))
+  !nzchar(.hyper_slice_home(refining, n))
+}
+
 # Marginal log-density along a single hyperparameter axis (logsumexp over
 # the other-axis cells at each unique value). `vals` and `log_marg` are
-# length n_cells; `keep` is an optional logical mask (cartesian + same-
-# axis slice cells). Returns sorted unique axis values and the matching
+# length n_cells; `keep` is an optional logical mask
+# (`.nl_axis_read_cells()`). Returns sorted unique axis values and the matching
 # marginal log-density.
 # Weighted quantile on a discrete (value, weight) distribution. Uses
 # midpoint-of-mass cumulative probability (Type 7-like) plus linear
@@ -1049,13 +1060,14 @@
 #
 # `tg` is a vector or matrix; `log_marginal` aligns with `tg` rows;
 # `refining` is the per-cell refining-axis tag from mode-tracked
-# refinement (NULL or all-"" outside the joint path). For each axis,
-# slice cells from OTHER axes are dropped before computing the quantile
-# -- those cells pin the current axis at a single non-varying value, so
-# including them oversamples that value. Cartesian cells, same-axis
-# slice cells, and same-axis consistency cells are kept. This is the
-# same per-axis mask used by `.joint_recalibrate_axis_mean` for the
-# mean/SD path.
+# refinement (NULL or all-"" outside the joint path).
+#
+# The cell masses are the posterior measure: `weights` where the caller holds
+# them, `log_marginal + log_quad` otherwise. Every cell, slice cells included,
+# then carries its own box's mass (`.hyper_refined_log_quad()`), so an axis is
+# read off all of them. With no measure at all a cell's `log_marginal` is not a
+# mass, and only the base tensor, where every level appears in every row, can be
+# summed as one; slice cells are left out of that read (`.nl_axis_read_cells()`).
 #
 # Returns list(median = named_vec, ci_lo = named_vec, ci_hi = named_vec).
 # For scalar tg the returned vectors are length-1 with names = "value".
@@ -1081,7 +1093,7 @@
 # and box reads take their partitions off different atom sets.
 .nl_axis_quantiles <- function(tg, log_marginal, refining = NULL,
                                 probs = c(0.025, 0.5, 0.975),
-                                weights = NULL,
+                                weights = NULL, log_quad = NULL,
                                 support = .NL_SUPPORT_KINDS,
                                 domains = NULL,
                                 within = .NL_WITHIN_CELL) {
@@ -1121,11 +1133,14 @@
   # what the number means: the same rule that makes a declined placement
   # say so.
   onn <- setNames(rep(NA_character_, n_ax), nms)
-  if (is.null(refining)) refining <- rep("", nrow(tg))
+  if (!is.null(log_quad) && length(log_quad) != nrow(tg)) log_quad <- NULL
+  if (is.null(weights) && !is.null(log_quad)) {
+    log_marginal <- log_marginal + log_quad
+    log_marginal[is.na(log_marginal)] <- -Inf
+  }
+  keep <- .nl_axis_read_cells(refining, nrow(tg),
+                              measured = !is.null(weights) || !is.null(log_quad))
   for (j in seq_len(n_ax)) {
-    ax    <- nms[j]
-    keep  <- refining == "" | refining == ax |
-             refining == paste0("consistency_", ax)
     use   <- keep & is.finite(tg[, j])
     if (sum(use) == 0L) next
     # Precomputed integration weights (CCD design weights * exp(log-marginal),
@@ -1212,11 +1227,8 @@
   if (n_ax == 0L) {
     return(list(h = h, sd = sd, h_over_sd = h, declined = dec))
   }
-  if (is.null(refining)) refining <- rep("", nrow(tg))
+  keep <- .nl_axis_read_cells(refining, nrow(tg), measured = FALSE)
   for (j in seq_len(n_ax)) {
-    ax <- nms[j]
-    keep <- refining == "" | refining == ax |
-            refining == paste0("consistency_", ax)
     marg <- .nl_axis_marginal_logdensity(tg[, j], log_marginal, keep)
     v <- marg$vals
     if (length(v) < 3L) {
@@ -1508,9 +1520,10 @@
 # spatiotemporal, joint, joint multi-block -- reports one rule, and separately
 # by `tulpa_hyper_grid()`, which assembles its own moments.
 #
-# Every axis is read off its OWN marginal under the `refining` slice mask, so a
-# fit carrying refinement slices for another axis does not have them counted
-# into this one's spread. `theta_sd_source` / `theta_sd_ess` /
+# The marginal carries the fit's cell measure `log_quad`, under which every cell
+# of a refined grid holds its own box's mass, so every cell is read; a grid with
+# no measure is read off its base tensor alone (`.nl_axis_read_cells()`).
+# `theta_sd_source` / `theta_sd_ess` /
 # `theta_sd_stencil_declined` travel on the fit, so which estimator produced a
 # reported SD is a property of the fit rather than of the reader's assumption.
 .nl_attach_axis_sd <- function(res, refining = NULL) {
@@ -1521,7 +1534,8 @@
   # node weights belong in it. Without them the curvature at the mode is read
   # off the node counts instead, and moves when refinement changes the spacing.
   lm_eff <- res$log_marginal
-  if (!is.null(res$log_quad) && length(res$log_quad) == length(lm_eff)) {
+  measured <- !is.null(res$log_quad) && length(res$log_quad) == length(lm_eff)
+  if (measured) {
     lm_eff <- lm_eff + res$log_quad
     lm_eff[is.na(lm_eff)] <- -Inf
   }
@@ -1536,7 +1550,7 @@
     return(res)
   }
   if (is.null(refining)) refining <- res$refining_axis
-  if (is.null(refining)) refining <- rep("", nrow(tg))
+  keep <- .nl_axis_read_cells(refining, nrow(tg), measured = measured)
   col_names <- colnames(tg)
   if (!is.null(col_names) && !is.null(res$theta_sd)) {
     src <- stats::setNames(rep(NA_character_, length(col_names)), col_names)
@@ -1544,8 +1558,6 @@
     dec <- src
     for (col in col_names) {
       if (!col %in% names(res$theta_sd)) next
-      keep <- refining == "" | refining == col |
-              refining == paste0("consistency_", col)
       marg <- .nl_axis_marginal_logdensity(tg[, col], lm_eff, keep)
       ch <- .nl_axis_sd_choice(marg$vals, marg$log_marg,
                                stencil_ok = stencil_ok)
@@ -1565,9 +1577,6 @@
       if (is.null(axis_cols) || length(axis_cols) == 0L) next
       for (j in seq_along(axis_cols)) {
         col_ix <- axis_cols[j]
-        col_name <- if (!is.null(col_names)) col_names[col_ix] else ""
-        keep <- refining == "" | refining == col_name |
-                refining == paste0("consistency_", col_name)
         marg <- .nl_axis_marginal_logdensity(tg[, col_ix], lm_eff,
                                               keep)
         ch <- .nl_axis_sd_choice(marg$vals, marg$log_marg,
@@ -1627,7 +1636,7 @@
                                    axis_offsets = axis_offsets,
                                    blocks = prepared))
   qs <- .nl_axis_quantiles(
-    joint_grid, out$log_marginal, out$refining_axis,
+    joint_grid, out$log_marginal, out$refining_axis, log_quad = out$log_quad,
     domains = doms, within = within)
   out$theta_median <- qs$median
   out$theta_ci_lo  <- qs$ci_lo

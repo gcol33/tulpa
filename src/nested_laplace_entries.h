@@ -43,7 +43,8 @@ Rcpp::List cpp_nested_laplace_icar(
     Rcpp::Nullable<Rcpp::List> cila,
     double prune_tol,
     int screen_iters,
-    bool compute_fitted_var
+    bool compute_fitted_var,
+    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset
 );
 
 Rcpp::List cpp_nested_laplace_bym2(
@@ -76,7 +77,8 @@ Rcpp::List cpp_nested_laplace_bym2(
     Rcpp::Nullable<Rcpp::List> cila,
     double prune_tol,
     int screen_iters,
-    bool compute_fitted_var
+    bool compute_fitted_var,
+    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset
 );
 
 Rcpp::List cpp_nested_laplace_car_proper(
@@ -108,7 +110,8 @@ Rcpp::List cpp_nested_laplace_car_proper(
     Rcpp::Nullable<Rcpp::List> cila,
     double prune_tol,
     int screen_iters,
-    bool compute_fitted_var
+    bool compute_fitted_var,
+    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset
 );
 
 Rcpp::List cpp_nested_laplace_temporal(
@@ -140,7 +143,8 @@ Rcpp::List cpp_nested_laplace_temporal(
     Rcpp::Nullable<Rcpp::List> cila,
     double prune_tol,
     int screen_iters,
-    bool compute_fitted_var
+    bool compute_fitted_var,
+    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset
 );
 
 Rcpp::List cpp_nested_laplace_nngp(
@@ -175,7 +179,8 @@ Rcpp::List cpp_nested_laplace_nngp(
     Rcpp::Nullable<Rcpp::List> cila,
     double prune_tol,
     int screen_iters,
-    bool compute_fitted_var
+    bool compute_fitted_var,
+    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset
 );
 
 Rcpp::List cpp_nested_laplace_hsgp(
@@ -204,7 +209,8 @@ Rcpp::List cpp_nested_laplace_hsgp(
     Rcpp::Nullable<Rcpp::List> cila,
     double prune_tol,
     int screen_iters,
-    bool compute_fitted_var
+    bool compute_fitted_var,
+    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset
 );
 
 Rcpp::List cpp_nested_laplace_st_icar(
@@ -242,7 +248,8 @@ Rcpp::List cpp_nested_laplace_st_icar(
     Rcpp::Nullable<Rcpp::List> cila,
     double prune_tol,
     int screen_iters,
-    bool compute_fitted_var
+    bool compute_fitted_var,
+    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset
 );
 
 Rcpp::List cpp_nested_laplace_st_car_proper(
@@ -281,7 +288,8 @@ Rcpp::List cpp_nested_laplace_st_car_proper(
     Rcpp::Nullable<Rcpp::List> cila,
     double prune_tol,
     int screen_iters,
-    bool compute_fitted_var
+    bool compute_fitted_var,
+    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset
 );
 
 Rcpp::List cpp_nested_laplace_st_bym2(
@@ -321,7 +329,8 @@ Rcpp::List cpp_nested_laplace_st_bym2(
     Rcpp::Nullable<Rcpp::List> cila,
     double prune_tol,
     int screen_iters,
-    bool compute_fitted_var
+    bool compute_fitted_var,
+    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset
 );
 
 Rcpp::List cpp_nested_laplace_st_hsgp(
@@ -356,7 +365,8 @@ Rcpp::List cpp_nested_laplace_st_hsgp(
     Rcpp::Nullable<Rcpp::List> cila,
     double prune_tol,
     int screen_iters,
-    bool compute_fitted_var
+    bool compute_fitted_var,
+    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset
 );
 
 Rcpp::List cpp_nested_laplace_st_nngp(
@@ -397,7 +407,8 @@ Rcpp::List cpp_nested_laplace_st_nngp(
     Rcpp::Nullable<Rcpp::List> cila,
     double prune_tol,
     int screen_iters,
-    bool compute_fitted_var
+    bool compute_fitted_var,
+    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset
 );
 
 Rcpp::List cpp_nested_laplace_spde(
@@ -436,7 +447,8 @@ Rcpp::List cpp_nested_laplace_spde(
     Rcpp::Nullable<Rcpp::List> cila,
     double prune_tol,
     int screen_iters,
-    bool compute_fitted_var
+    bool compute_fitted_var,
+    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset
 );
 
 #endif // TULPA_NESTED_LAPLACE_ENTRIES_H

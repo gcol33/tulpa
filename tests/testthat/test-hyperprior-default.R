@@ -78,11 +78,11 @@ test_that("the LKJ normaliser makes the density integrate to one", {
 
 test_that("each engine axis resolves to its density or a named decline", {
   hp <- tulpa:::.hp_axis_default
-  expect_identical(hp("phi_arm", family = "gamma")$reason,
+  expect_identical(hp("phi_arm", family = "inverse_gaussian")$reason,
                    "dispersion_prior_unsourced")
   expect_true(is.function(hp("phi_arm", family = "gaussian")$fn))
   expect_identical(hp("phi_gp", list(type = "nngp"))$reason, "range_extent_unknown")
-  expect_identical(hp("L21", list(type = "mcar"))$reason, "logchol_design_measure")
+  expect_identical(hp("L21", list(type = "mcar"))$group, "logchol")
   expect_identical(hp("zeta", list(type = "icar"))$reason, "unclassified_axis")
   expect_true(isTRUE(hp("alpha")$spec))
 
@@ -136,6 +136,97 @@ test_that("the negative-binomial size prior is R-INLA's pc.mgamma density", {
   # Bound to the size families only; other dispersions decline by name.
   expect_true(is.function(tulpa:::.hp_axis_default("phi_c",
                                                    family = "neg_binomial_2")$fn))
-  expect_identical(tulpa:::.hp_axis_default("phi_c", family = "beta")$reason,
+  expect_identical(tulpa:::.hp_axis_default("phi_c", family = "t")$reason,
                    "dispersion_prior_unsourced")
+})
+
+test_that("a gamma shape and a beta precision carry R-INLA's exponential defaults (#736)", {
+  # loggamma(1, 0.01) on the gamma family's precision parameter and
+  # loggamma(1, 0.1) on the beta family's, i.e. Exponential(rate) on phi,
+  # carried to log phi where the axis integrates.
+  for (fam in c("gamma", "gamma_inverse", "beta")) {
+    rate <- if (startsWith(fam, "gamma")) 0.01 else 0.1
+    fn <- tulpa:::.hp_axis_default("phi_c", family = fam)$fn
+    expect_true(is.function(fn), info = fam)
+    x <- c(0.5, 3, 40, 900)
+    expect_equal(fn(x), stats::dexp(x, rate, log = TRUE) + log(x),
+                 tolerance = 1e-12, info = fam)
+    f <- function(u) exp(fn(exp(u)))
+    expect_equal(stats::integrate(f, -40, 12, rel.tol = 1e-10)$value, 1,
+                 tolerance = 1e-6, info = fam)
+  }
+})
+
+# --------------------------------------------------------------------------- #
+# Free-covariance blocks: one prior and one measure per block (#735)          #
+# --------------------------------------------------------------------------- #
+
+test_that("the two-field default grid carries PC x PC x LKJ on its own coordinates", {
+  g <- tulpa:::.mcar_default_logchol_grid(2L)
+  d <- tulpa:::.hp_logchol_design(g)
+  expect_identical(d$design, "sd_rho")
+  lp <- tulpa:::.hp_logchol_log_density(g)$lp
+  # The same PC + LKJ prior re_cov_pc_lkj_prior() puts on the log-Cholesky
+  # coordinates, carried to (log sigma_1, log sigma_2, rho) by the Jacobian of
+  # L11 = log s1, L21 = rho s2, L22 = log s2 + log(1 - rho^2) / 2, whose
+  # determinant is s2 / (1 - rho^2).
+  f <- tulpa:::.re_cov_block_logprior(2L, TRUE, tulpa:::.nl_scale_anchor(),
+                                      tulpa:::.nl_hyperprior("lkj_eta"))
+  s2 <- exp(d$coords[, 2L]); rho <- d$coords[, 3L]
+  expect_equal(lp, apply(g, 1L, f) + log(s2 / (1 - rho^2)), tolerance = 1e-12)
+
+  # A proper prior: on a tensor wide enough to hold it, the density times the
+  # absolute cell measure sums to one.
+  ls <- seq(-9, 3, length.out = 70L); r <- seq(-0.995, 0.995, length.out = 81L)
+  gg <- expand.grid(a = ls, b = ls, rho = r)
+  M <- cbind(L11 = gg$a, L21 = gg$rho * exp(gg$b),
+             L22 = gg$b + 0.5 * log1p(-gg$rho^2))
+  mass <- sum(exp(tulpa:::.hp_logchol_log_density(M)$lp +
+                  tulpa:::.hyper_logchol_log_measure(M, absolute = TRUE)))
+  expect_equal(mass, 1, tolerance = 2e-3)
+})
+
+test_that("a log-Cholesky tensor is measured by its own column widths", {
+  G1 <- matrix(seq(-9, 3, length.out = 200L), ncol = 1L,
+               dimnames = list(NULL, "L11"))
+  expect_identical(tulpa:::.hp_logchol_design(G1)$design, "logchol")
+  mass <- sum(exp(tulpa:::.hp_logchol_log_density(G1)$lp +
+                  tulpa:::.hyper_logchol_log_measure(G1, absolute = TRUE)))
+  expect_equal(mass, 1, tolerance = 2e-3)
+
+  G <- as.matrix(expand.grid(L11 = c(-1, 0, 1), L21 = c(-0.5, 0.5),
+                             L22 = c(-1, 0.5)))
+  expect_identical(tulpa:::.hp_logchol_design(G)$design, "logchol")
+  w <- function(x) { e <- c(x[1] - diff(x)[1] / 2, (x[-1] + x[-length(x)]) / 2,
+                            x[length(x)] + diff(x)[length(x) - 1] / 2); diff(e) }
+  ref <- log(w(c(-1, 0, 1)))[match(G[, 1], c(-1, 0, 1))] +
+         log(w(c(-0.5, 0.5)))[match(G[, 2], c(-0.5, 0.5))] +
+         log(w(c(-1, 0.5)))[match(G[, 3], c(-1, 0.5))]
+  expect_equal(tulpa:::.hyper_logchol_log_measure(G, absolute = TRUE), ref,
+               tolerance = 1e-12)
+})
+
+test_that("a free-covariance block the grid does not measure declines by name", {
+  g <- tulpa:::.mcar_default_logchol_grid(2L)
+  pinned <- g
+  pinned[, "L22"] <- 0
+  expect_identical(tulpa:::.hp_logchol_log_density(pinned)$reason,
+                   "logchol_partial_block")
+  set.seed(735)
+  scattered <- cbind(L11 = rnorm(12), L21 = rnorm(12), L22 = rnorm(12))
+  expect_identical(tulpa:::.hp_logchol_log_density(scattered)$reason,
+                   "logchol_design_measure")
+  tg <- scattered; colnames(tg) <- paste0("b1.", colnames(tg))
+  sp <- tulpa:::.joint_axis_specs_from_grid(tg)
+  expect_true(all(is.na(tulpa:::.hyper_log_quad_weights(tg, sp, absolute = TRUE))))
+
+  # Through the joint collector, a measured block folds once over all its axes.
+  tg <- g; colnames(tg) <- paste0("b1.", colnames(g))
+  hp <- tulpa:::.joint_hyperprior(tg, list(list(type = "mcar")))
+  expect_setequal(hp$axes, colnames(tg))
+  expect_length(hp$declined, 0L)
+  expect_equal(hp$lp, tulpa:::.hp_logchol_log_density(g)$lp)
+  sp <- tulpa:::.joint_axis_specs_from_grid(tg)
+  expect_equal(tulpa:::.hyper_log_quad_weights(tg, sp, absolute = TRUE),
+               tulpa:::.hyper_logchol_log_measure(g, absolute = TRUE))
 })

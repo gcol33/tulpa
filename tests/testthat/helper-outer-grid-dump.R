@@ -153,8 +153,8 @@ outer_grid_dump <- function(fit, file = NULL) {
          "not dumpable.", call. = FALSE)
   }
   support <- .ogd_support(fit)
-  # `refining_axis` tags the cells a mode-tracked refinement pass pinned to one
-  # axis; the per-axis read drops the foreign ones, so it is part of the state.
+  # `refining_axis` tags the cells a mode-tracked refinement pass placed on one
+  # axis; the cell measure is built from it, so it is part of the state.
   refining <- fit$refining_axis %||% rep("", nrow(tg))
   # The per-cell fixed-effect mode and marginal precision the coefficient read is
   # marginalized from. Both are O(n_fixed^2) per cell and flat in the latent
@@ -382,17 +382,14 @@ outer_grid_read_diff <- function(a, b) {
   out
 }
 
-# Which cells the per-axis read of axis `ax` uses. Mirrors the mask in
-# `.nl_axis_quantiles()`: a cell a refinement pass pinned to a FOREIGN axis holds
-# this axis at one non-varying value, so including it oversamples that value.
-# The mirror is not trusted -- `outer_grid_noise_floor()` reads every axis
-# uncoarsened as well, and the round-trip test asserts that read equals
-# `outer_grid_rebuild()`, which fails the moment the two masks drift apart.
+# Which cells the per-axis read of axis `j` uses. Mirrors `.nl_axis_quantiles()`
+# reading measured weights, which sums every cell: each carries its own box's
+# mass, refinement slice cells included. The mirror is not trusted --
+# `outer_grid_noise_floor()` reads every axis uncoarsened as well, and the
+# round-trip test asserts that read equals `outer_grid_rebuild()`, which fails
+# the moment the two reads drift apart.
 .ogd_axis_use <- function(dump, j) {
-  ax <- dump$axis_names[j]
-  keep <- dump$refining_axis == "" | dump$refining_axis == ax |
-    dump$refining_axis == paste0("consistency_", ax)
-  keep & is.finite(dump$joint_grid[, j])
+  is.finite(dump$joint_grid[, j])
 }
 
 # One axis's read off a coarsened version of its own atom set.

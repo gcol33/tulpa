@@ -995,7 +995,7 @@ test_that("the gate declines this fixture's own cell, and the read moves toward 
   # box-uniform default does not (gcol33/tulpa#399). Scoring the REFINEMENT GATE
   # against it therefore has to be done in the read that produced it, or the
   # within-cell construction -- an orthogonal choice (gcol33/tulpa#357) -- enters
-  # the number. At the default: wid(on) = 0.4706, wid(off) = 0.7313. The ordering
+  # the number. At the default: wid(on) = 0.4706, wid(off) = 0.7146. The ordering
   # this test asserts holds either way.
   #
   # That gap is NOT the box partition being mis-sized on a three-level axis.
@@ -1013,10 +1013,12 @@ test_that("the gate declines this fixture's own cell, and the read moves toward 
   on  <- lc(tulpa:::.nl_diag("gamma3_ok"))
 
   # The regime first: this fixture's candidate cell holds essentially none of the
-  # base grid's weight and scores 0.7458 on the misfit, so the gate declines it
-  # and the fit falls back to the plain tensor read.
+  # base grid's weight and scores 0.719 on the misfit, so the gate declines it
+  # and the fit falls back to the plain tensor read. The misfit is scored on the
+  # outer posterior at the design's nodes, which carries the default hyperprior
+  # since gcol33/tulpa#730; on the prior-less marginal it read 0.7458.
   expect_equal(off$local_ccd_info$n_cells_refined, 1L)
-  expect_equal(off$local_ccd_info$misfit, 0.7458, tolerance = 1e-3)
+  expect_equal(off$local_ccd_info$misfit, 0.719, tolerance = 1e-3)
   expect_lt(off$local_ccd_info$cell_share, 1e-3)
   expect_equal(on$local_ccd_info$n_cells_refined, 0L)
   expect_equal(on$local_ccd_info$n_cells_declined, 1L)
@@ -1026,7 +1028,7 @@ test_that("the gate declines this fixture's own cell, and the read moves toward 
   # And it is a correction, not only a decline. The converged m = 13 reference of
   # the SAME simulation (dev_notes/issue_316, 28561 cells, refinement off) has
   # per-axis 95% widths 0.81646 / 1.49922 / 0.81826 / 1.22962. Measured mean
-  # absolute width error against it: 0.7749 with the cloud, 0.3198 without. (The
+  # absolute width error against it: 0.7146 with the cloud, 0.2500 without. (The
   # two grids do not share axis RANGES with the reference, so a clamped endpoint
   # is not on the same support; the widths are the comparable part.)
   ref_w <- c(0.81646, 1.49922, 0.81826, 1.22962)

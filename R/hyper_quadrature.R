@@ -212,11 +212,29 @@
 # weights are the same up to the constant the normalisation removes.
 .hyper_axis_level_weights <- function(levels, spec, atom_mass = NULL,
                                       close_domain = TRUE, absolute = FALSE) {
+  .hyper_axis_measure(levels, spec, atom_mass, close_domain = close_domain,
+                      absolute = absolute)$w
+}
+
+# The level weights of one axis together with the pieces a refined fibre needs
+# to measure a node the levels do not contain: the continuum nodes and the cell
+# edges they own on the integration coordinate, and `unit(x)`, the weight a
+# unit of coordinate width carries at continuum node `x` under the same density,
+# span and normalisation the level weights were built with -- so for every
+# continuum level `w == width * unit(level)`. `unit` is NULL where the axis has
+# no continuum to extend (a single level, or an atom alone).
+.hyper_axis_measure <- function(levels, spec, atom_mass = NULL,
+                                close_domain = TRUE, absolute = FALSE) {
   levels <- sort(unique(as.numeric(levels)))
   K <- length(levels)
-  if (K == 0L) return(numeric(0))
+  none <- list(w = numeric(0), levels = levels, x = numeric(0),
+               edges = numeric(0), unit = NULL, slab = NULL)
+  if (K == 0L) return(none)
   nm <- format(levels, digits = 15)
-  if (K == 1L) return(stats::setNames(1, nm))
+  if (K == 1L) {
+    none$w <- stats::setNames(1, nm)
+    return(none)
+  }
 
   is_atom <- isTRUE(spec$log_scale) & levels == 0
   has_atom <- any(is_atom) && !is.null(atom_mass)
@@ -229,7 +247,8 @@
   cont <- !is_atom
   if (!any(cont)) {
     w[is_atom] <- 1
-    return(stats::setNames(w, nm))
+    none$w <- stats::setNames(w, nm)
+    return(none)
   }
 
   # A flat measure on a log axis is improper, so either a span or a proper
@@ -269,8 +288,10 @@
     # carries a density folded into the marginal instead (`log_prior`), whose
     # cells are measured by their widths alone.
     cw <- width
+    per_width <- function(xx) rep(1, length(xx))
     if (absolute && !is.null(slab) && is.null(spec$log_prior)) {
       cw <- width / diff(bd)
+      per_width <- function(xx) rep(1 / diff(bd), length(xx))
     }
   } else {
     # Declared density, carried to the coordinate the widths are measured on.
@@ -278,21 +299,35 @@
                              spec$slab_log_density_coord %||% "natural")
     cw <- width * exp(ld)
     cw[!is.finite(cw)] <- 0
+    per_width <- function(xx) {
+      d <- exp(.hyper_prior_carry(xx, dens, spec$log_scale,
+                                  spec$slab_log_density_coord %||% "natural"))
+      d[!is.finite(d)] <- 0
+      d
+    }
   }
   # The density shapes the continuum; it does not set how much of the axis the
   # continuum holds. That is `1 - atom_mass`, declared before the fit, so the
   # shape is normalised and the split cannot move when nodes are added, when a
   # grid stops short of the density's tail, or when the density is rescaled.
+  scale <- 1
   if (!absolute) {
     tot <- sum(cw)
-    cw <- if (is.finite(tot) && tot > 0) cw / tot
-          else rep(1 / length(cw), length(cw))
+    if (is.finite(tot) && tot > 0) {
+      cw <- cw / tot
+      scale <- 1 / tot
+    } else {
+      cw <- rep(1 / length(cw), length(cw))
+      scale <- 1 / sum(width)
+      per_width <- function(xx) rep(1, length(xx))
+    }
   }
 
   if (has_atom && absolute) {
     a <- as.numeric(atom_mass)
     w[is_atom] <- a
     w[cont]    <- (1 - a) * cw
+    scale <- (1 - a) * scale
   } else if (has_atom) {
     a <- as.numeric(atom_mass)
     if (!is.finite(a) || a < 0 || a >= 1) {
@@ -301,10 +336,13 @@
     }
     w[is_atom] <- a * .hyper_atom_fold_scale(x, cw, spec)
     w[cont]    <- (1 - a) * cw
+    scale <- (1 - a) * scale
   } else {
     w[cont] <- cw
   }
-  stats::setNames(w, nm)
+  list(w = stats::setNames(w, nm), levels = levels, x = x,
+       edges = c(bd[1L], (u[-length(u)] + u[-1L]) / 2, bd[2L]),
+       unit = function(xx) scale * per_width(xx), slab = slab)
 }
 
 # Scale the atom is weighed against the continuum on.
@@ -448,17 +486,35 @@
 #
 # Returns a zero vector when no axis contributes, so a caller can add it
 # unconditionally.
+#
+# `refining` is the per-cell tag the refinement passes leave (`""` for a cell of
+# the base tensor, `<axis>` or `consistency_<axis>` for a slice cell placed on
+# that axis). A slice cell is one point evaluation at `(pt, z*)`: a new level
+# `pt` on its axis at ONE combination `z*` of the others. The product rule above
+# is a tensor measure, correct only while every level of an axis appears in
+# every row of the others, so a grid carrying slice cells is measured cell by
+# cell instead (`.hyper_refined_log_quad()`): each cell owns a box, the boxes
+# partition what the base tensor's boxes partitioned, and a slice cell's box is
+# carved out of the base boxes of its own row. A grid with no slice cells takes
+# the product rule unchanged.
 .hyper_log_quad_weights <- function(theta_grid, specs, close_domain = TRUE,
-                                    absolute = FALSE) {
+                                    absolute = FALSE, refining = NULL) {
   if (is.null(theta_grid) || is.null(specs)) return(NULL)
   theta_grid <- as.matrix(theta_grid)
   n <- nrow(theta_grid)
   if (n == 0L) return(numeric(0))
+  home <- .hyper_slice_home(refining, n)
+  if (any(nzchar(home))) {
+    return(.hyper_refined_log_quad(theta_grid, specs, home,
+                                   close_domain = close_domain,
+                                   absolute = absolute))
+  }
   axis_names <- colnames(theta_grid)
+  groups <- .hyper_logchol_groups(specs, axis_names)
   out <- numeric(n)
   for (spec in specs) {
     a <- spec$name
-    if (!a %in% axis_names) next
+    if (!a %in% axis_names || a %in% unlist(groups)) next
     if (isTRUE(spec$unweighted)) {
       # An axis with no declared coordinate has no cell width to measure it by.
       if (absolute) out <- out + NA_real_
@@ -474,7 +530,291 @@
     contrib[!is.finite(contrib)] <- -Inf
     out <- out + contrib
   }
+  .hyper_add_logchol_measure(out, theta_grid, groups, close_domain, absolute)
+}
+
+# The free-covariance blocks among a grid's axes: each complete set of
+# log-Cholesky columns (`.hp_logchol_block_cols()`) whose specs the per-axis
+# builder left unclassified. Their cells are measured as one block, on the
+# coordinates the block's grid is a tensor in.
+.hyper_logchol_groups <- function(specs, axis_names) {
+  unw <- unlist(lapply(specs, function(s) {
+    if (isTRUE(s$unweighted) && s$name %in% axis_names) s$name
+  }))
+  cand <- unw[.hp_is_logchol_col(.hyper_axis_bare(unw))]
+  out <- list()
+  for (pre in unique(.hp_col_prefix_vec(cand))) {
+    cols <- .hp_logchol_block_cols(axis_names, pre)
+    if (!is.null(cols)) out[[length(out) + 1L]] <- cols
+  }
   out
+}
+
+# Add each free-covariance block's per-cell log measure to `out`. A block whose
+# grid is a tensor in no coordinates the engine integrates on has no measure, and
+# as an absolute measure that is NA, the same answer an unclassified axis gives.
+.hyper_add_logchol_measure <- function(out, theta_grid, groups, close_domain,
+                                       absolute) {
+  for (cols in groups) {
+    lm <- .hyper_logchol_log_measure(theta_grid[, cols, drop = FALSE],
+                                     close_domain = close_domain,
+                                     absolute = absolute)
+    if (is.null(lm)) {
+      if (absolute) out <- out + NA_real_
+    } else {
+      out <- out + lm
+    }
+  }
+  out
+}
+
+# Per-cell log measure of one free-covariance block: the product of its cell
+# widths on the coordinates its grid is a tensor in (`.hp_logchol_design()`),
+# log sigma on each standard deviation and the natural value on the correlation
+# for the two-field default, the log-Cholesky columns themselves otherwise --
+# the coordinates `.hp_logchol_log_density()` puts the prior on. NULL when the
+# block has no such coordinates.
+.hyper_logchol_log_measure <- function(M, close_domain = TRUE, absolute = FALSE) {
+  d <- .hp_logchol_design(M)
+  if (is.null(d$design)) return(NULL)
+  C <- signif(d$coords, 12L)
+  axes <- if (identical(d$design, "sd_rho")) {
+    list(list(spec = list(name = "sigma", log_scale = TRUE), nat = exp),
+         list(spec = list(name = "sigma", log_scale = TRUE), nat = exp),
+         list(spec = list(name = "logchol_rho", log_scale = FALSE,
+                          bounds = c(-1, 1)), nat = identity))
+  } else {
+    rep(list(list(spec = list(name = "logchol", log_scale = FALSE),
+                  nat = identity)), ncol(C))
+  }
+  out <- numeric(nrow(C))
+  for (j in seq_len(ncol(C))) {
+    x <- axes[[j]]$nat(C[, j])
+    lev <- sort(unique(x))
+    lw <- .hyper_axis_level_weights(lev, axes[[j]]$spec,
+                                    close_domain = close_domain,
+                                    absolute = absolute)
+    contrib <- log(as.numeric(lw)[match(x, lev)])
+    contrib[!is.finite(contrib)] <- -Inf
+    out <- out + contrib
+  }
+  out
+}
+
+# The axis each cell was placed on by a refinement pass, `""` for a base cell.
+# A `refining` vector of the wrong length describes some other grid and is an
+# error rather than a guess.
+.hyper_slice_home <- function(refining, n) {
+  if (is.null(refining)) return(rep("", n))
+  if (length(refining) != n) {
+    stop(sprintf("`refining` has %d entries for a grid of %d cells.",
+                 length(refining), n), call. = FALSE)
+  }
+  out <- sub("^consistency_", "", as.character(refining))
+  out[is.na(out)] <- ""
+  out
+}
+
+# Is a cell a base-tensor cell or a slice cell on `axis`? The cells a refinement
+# pass on `axis` may anchor at, so every slice cell's coordinates off its own
+# axis are levels of the base tensor.
+.hyper_slice_anchor_ok <- function(refining, axis, n) {
+  home <- .hyper_slice_home(refining, n)
+  !nzchar(home) | home == axis
+}
+
+# Cell-by-cell measure of a grid that carries refinement slice cells.
+#
+# The base tensor's cells own boxes, the product of their per-axis level cells.
+# Slice cells on axis j at row r (the base coordinates off j) re-tile that ONE
+# row along j: the fibre's nodes are the base levels plus the row's slice
+# points, its interior edges the midpoints between them, and its outer edges the
+# wider of the base edges and the fibre's own half-step mirror (so an extension
+# past the base span adds that row's extension region and never opens a gap).
+# In the fibre each base node keeps the part `R_j` of its base cell `B_j` its
+# refined cell still covers, and each slice node owns its refined cell, which
+# lies in one or two base cells and, past the base span, in the extension region.
+#
+# Inside the box `B` of a base cell c0 a point x lies outside `R_j` on some set
+# `T` of axes. For `T` empty it belongs to c0; for `T = {j}` to the j-slice whose
+# fibre cell covers `x_j`, the only claimant there, because a j-slice's box off j
+# is its row's base box. Where refinements on several axes meet (`|T| > 1`) each
+# of them has an equal claim, and the region is split equally between them. With
+# `f_k = |R_k| / |B_k|` the share of c0's box a j-slice piece of width `w` holds
+# is therefore
+#
+#   (w / |B_j|) * integral_0^1 prod_{k != j} (f_k + (1 - f_k) t) dt,
+#
+# and c0 keeps `prod_k f_k`; summed over the families these are the whole box, so
+# the base tensor's mass is conserved whatever is inserted. An extension piece
+# has no competitor. Along each axis a width is converted to a weight at the
+# owning node through the axis's `unit()`, the conversion its level weights were
+# built with, so a grid with no slice cells reproduces the product rule.
+#
+# Every slice cell must sit on base levels off its own axis -- the anchoring
+# rule `.hyper_slice_anchor_ok()` enforces -- or its row has no base box.
+.hyper_refined_log_quad <- function(theta_grid, specs, home, close_domain,
+                                    absolute) {
+  n <- nrow(theta_grid)
+  axis_names <- colnames(theta_grid)
+  base <- !nzchar(home)
+  if (!any(base)) {
+    stop("A refined outer grid carries no base-tensor cells to measure against.",
+         call. = FALSE)
+  }
+  unknown <- setdiff(unique(home[!base]), axis_names)
+  if (length(unknown)) {
+    stop(sprintf("Refinement slice cells name axes the grid does not carry: %s.",
+                 paste(unknown, collapse = ", ")), call. = FALSE)
+  }
+  groups <- .hyper_logchol_groups(specs, axis_names)
+  if (length(intersect(unique(home[!base]), unlist(groups)))) {
+    stop("Refinement slice cells sit on a free-covariance block's axes, which ",
+         "are measured as one block.", call. = FALSE)
+  }
+  out <- .hyper_add_logchol_measure(numeric(n), theta_grid, groups,
+                                    close_domain, absolute)
+  measures <- list()
+  for (spec in specs) {
+    a <- spec$name
+    if (!a %in% axis_names || a %in% unlist(groups)) next
+    if (isTRUE(spec$unweighted)) {
+      if (absolute) out <- out + NA_real_
+      next
+    }
+    v <- as.numeric(theta_grid[, a])
+    m <- .hyper_axis_measure(v[base], spec, .hyper_axis_atom_mass(spec),
+                             close_domain = close_domain, absolute = absolute)
+    idx <- match(v, m$levels)
+    off <- home != a & is.na(idx)
+    if (any(off)) {
+      stop(sprintf(paste0("Refinement slice cell %d sits off the base levels ",
+                          "on axis '%s'."), which(off)[1L], a), call. = FALSE)
+    }
+    contrib <- log(as.numeric(m$w)[idx])
+    contrib[home == a] <- 0
+    contrib[!is.finite(contrib)] <- -Inf
+    out <- out + contrib
+    m$spec <- spec
+    measures[[a]] <- m
+  }
+
+  key_of <- function(vals, drop) {
+    keep <- names(vals) != drop
+    paste0("row:", paste(sprintf("%.17g", vals[keep]), collapse = "|"))
+  }
+  cell_vals <- function(i) stats::setNames(as.numeric(theta_grid[i, ]),
+                                           axis_names)
+
+  # Re-tile every row that carries slice cells, per axis.
+  fib <- list()
+  slice_pieces <- vector("list", n)
+  for (a in intersect(names(measures), unique(home[!base]))) {
+    m <- measures[[a]]
+    sl <- which(home == a)
+    if (length(m$x) < 2L || is.null(m$unit)) {
+      stop(sprintf(paste0("Axis '%s' carries refinement slice cells but no ",
+                          "continuum of base levels to re-tile."), a),
+           call. = FALSE)
+    }
+    spec <- m$spec
+    xb <- m$x
+    eb <- m$edges
+    rows <- vapply(sl, function(i) key_of(cell_vals(i), a), character(1))
+    fib[[a]] <- list()
+    for (r in unique(rows)) {
+      s_idx <- sl[rows == r]
+      pts <- as.numeric(theta_grid[s_idx, a])
+      ok <- is.finite(pts) & !(isTRUE(spec$log_scale) & pts <= 0)
+      if (!is.null(m$slab)) ok <- ok & pts >= m$slab[1L] & pts <= m$slab[2L]
+      xf <- sort(unique(c(xb, pts[ok])))
+      uf <- .hyper_axis_coord(xf, spec)
+      bd <- if (!is.null(m$slab)) {
+        c(eb[1L], eb[length(eb)])
+      } else {
+        bf <- .hyper_default_coord_bounds(uf)
+        if (close_domain) bf <- .hyper_domain_clamp(bf, uf, spec)
+        c(min(eb[1L], bf[1L]), max(eb[length(eb)], bf[2L]))
+      }
+      ef <- c(bd[1L], (uf[-length(uf)] + uf[-1L]) / 2, bd[2L])
+      lo <- ef[-length(ef)]
+      hi <- ef[-1L]
+      bw <- diff(eb)
+      ib <- match(xb, xf)
+      f <- (pmin(hi[ib], eb[-1L]) - pmax(lo[ib], eb[-length(eb)])) / bw
+      f[!is.finite(f)] <- 1
+      fib[[a]][[r]] <- stats::setNames(pmin(pmax(f, 0), 1),
+                                       sprintf("%.17g", xb))
+      for (k in seq_along(s_idx)) {
+        i <- s_idx[k]
+        if (!ok[k]) {
+          slice_pieces[[i]] <- list(axis = a, in_base = numeric(0),
+                                    ext = 0, x = pts[k])
+          next
+        }
+        jf <- match(pts[k], xf)
+        ov <- pmax(0, pmin(hi[jf], eb[-1L]) - pmax(lo[jf], eb[-length(eb)]))
+        slice_pieces[[i]] <- list(
+          axis = a, x = pts[k],
+          in_base = stats::setNames(ov, sprintf("%.17g", xb)),
+          ext = max(0, (hi[jf] - lo[jf]) - sum(ov)),
+          bw = bw)
+      }
+    }
+  }
+
+  # A base coordinate's retained fraction on axis `k`: 1 unless its row along
+  # `k` was re-tiled.
+  frac <- function(vals, k) {
+    fk <- fib[[k]]
+    if (is.null(fk)) return(1)
+    rr <- fk[[key_of(vals, k)]]
+    if (is.null(rr)) return(1)
+    f <- rr[sprintf("%.17g", vals[[k]])]
+    if (length(f) != 1L || is.na(f)) 1 else as.numeric(f)
+  }
+  refined_axes <- names(fib)
+
+  for (i in which(base)) {
+    vals <- cell_vals(i)
+    for (k in refined_axes) {
+      out[i] <- out[i] + log(frac(vals, k))
+    }
+  }
+
+  for (i in which(!base)) {
+    pc <- slice_pieces[[i]]
+    a <- pc$axis
+    unit_a <- measures[[a]]$unit(pc$x)
+    total <- pc$ext
+    if (length(pc$in_base)) {
+      vals <- cell_vals(i)
+      others <- setdiff(refined_axes, a)
+      for (lev in names(pc$in_base)) {
+        w <- pc$in_base[[lev]]
+        if (w <= 0) next
+        c0 <- vals
+        c0[[a]] <- measures[[a]]$x[match(lev, sprintf("%.17g", measures[[a]]$x))]
+        fs <- vapply(others, function(k) frac(c0, k), numeric(1))
+        total <- total + w * .hyper_corner_share(fs)
+      }
+    }
+    lw <- log(total * unit_a)
+    out[i] <- out[i] + (if (is.finite(lw)) lw else -Inf)
+  }
+  out
+}
+
+# integral_0^1 prod_k (f_k + (1 - f_k) t) dt: the share of a base box's corner
+# regions a refinement on one axis holds when the other axes' refinements
+# retained fractions `f` of it, each region split equally among its claimants.
+.hyper_corner_share <- function(f) {
+  if (!length(f) || all(f == 1)) return(1)
+  coef <- 1
+  for (fk in f) {
+    coef <- c(coef * fk, 0) + c(0, coef * (1 - fk))
+  }
+  sum(coef / seq_along(coef))
 }
 
 # Accepted shapes for the copy scale's continuum measure. "exponential" is the
@@ -500,12 +840,23 @@
 # spaced grid the weights are equal and this is the rule the engine has always
 # applied, and on an uneven one it is the spacing that differs rather than the
 # measure.
+#
+# Specs rebuilt from the grid are rebuilt from its BASE cells when `refining`
+# marks slice cells: an axis's declared node set is what fixes a prior read off
+# it (the copy scale's exponential rate is set by its largest node), and a node a
+# refinement pass appended was not declared.
 .nl_grid_log_quad <- function(theta_grid, specs = NULL,
                               copy_slab = "exponential",
-                              close_domain = TRUE, folded_axes = NULL) {
+                              close_domain = TRUE, folded_axes = NULL,
+                              refining = NULL) {
   if (is.null(theta_grid) || is.null(colnames(theta_grid))) return(NULL)
-  if (is.null(specs))
-    specs <- .joint_axis_specs_from_grid(theta_grid, copy_slab = copy_slab,
+  theta_grid <- as.matrix(theta_grid)
+  if (is.null(specs)) {
+    base <- !nzchar(.hyper_slice_home(refining, nrow(theta_grid)))
+    specs <- .joint_axis_specs_from_grid(theta_grid[base, , drop = FALSE],
+                                         copy_slab = copy_slab,
                                          folded_axes = folded_axes)
-  .hyper_log_quad_weights(theta_grid, specs, close_domain = close_domain)
+  }
+  .hyper_log_quad_weights(theta_grid, specs, close_domain = close_domain,
+                          refining = refining)
 }

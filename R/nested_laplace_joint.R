@@ -363,7 +363,8 @@
 #'     boundary weight exceeds `adaptive_grid_edge_thresh`. New points are
 #'     appended on that axis (interior densification + outward log-spaced
 #'     extension) paired with the boundary cell's modal other-axis values, each
-#'     carrying a calibration term so it contributes on the marginal scale --
+#'     measured by the part of its row's base cells it takes over (a slice past
+#'     the outermost node adds that row's extension region) --
 #'     `O(n_new_points)` kernel solves, not the full cartesian product. The
 #'     edge score is `max(marginal_weight_at_boundary, exp(max_log_marginal_at
 #'     _boundary - max_log_marginal_overall))`, catching both boundary pile-up
@@ -1976,6 +1977,33 @@ tulpa_nested_laplace_joint <- function(responses,
         .joint_constraint_cols(fb_layout, fb_layout$n_x) else list()
     tm$mark("setup")
 
+    # The hyperprior folded into log_marginal at the kernel-call boundary: the
+    # caller's density on a role it names, the engine's default on every other
+    # axis (`R/hyperprior_default.R`). Refinement decisions (edge scores, modal
+    # cell selection, var-of-means thresholds) then all read the posterior, and
+    # cells appended in refinement passes get the same prior through `hp_fn`.
+    # Known from the grid alone, so a screened solve ranks its cells with it and
+    # with their measure.
+    hp_families <- stats::setNames(
+        vapply(arms, function(a) as.character(a$family %||% ""), character(1)),
+        arm_names)
+    hp_record <- function(cells) {
+        .joint_hyperprior(cells, list(c(prior, list(type = type))), hp_families,
+                          user = list(sigma = fn_sigma, alpha = fn_alpha,
+                                      phi = fn_phi),
+                          copy_atom_mass = copy_atom_mass)
+    }
+    hp_fn <- function(new_cells) hp_record(new_cells)$lp
+    theta_grid_init <- backend$theta_grid(grids, cp$has_copy)
+    hp_init <- hp_record(theta_grid_init)
+    specs <- .joint_axis_specs(grids, cp,
+        user_priors = list(sigma = fn_sigma, alpha = fn_alpha, phi = fn_phi),
+        copy_atom_mass = copy_atom_mass, copy_slab = copy_slab,
+        axis_refine = axis_refine_modes,
+        folded_axes = hp_init$axes)
+    screen_offset <- if (prune_tol_eff > 0)
+        .nl_screen_log_offset(theta_grid_init, list(hp_init), specs = specs)
+
     call_kernel_with_tol <- function(tol_prune) {
         backend$call_kernel(arms, prior, cp, grids, max_iter, tol,
                             n_threads, x_init, isTRUE(store_Q),
@@ -1989,7 +2017,8 @@ tulpa_nested_laplace_joint <- function(responses,
                             cell_coupling = cell_coupling,
                             hessian_pd_mode = hessian_pd_mode,
                             step_curvature_mode = step_curvature_mode,
-                            inner_refresh = inner_refresh)
+                            inner_refresh = inner_refresh,
+                            screen_log_offset = if (tol_prune > 0) screen_offset)
     }
     res <- call_kernel_with_tol(prune_tol_eff)
     # Safety gate: if the cheap-pass ranking is unreliable (the screen's
@@ -2003,23 +2032,7 @@ tulpa_nested_laplace_joint <- function(responses,
     }
     tm$mark("grid")
 
-    # Bake the hyperprior into log_marginal at the kernel-call boundary: the
-    # caller's density on a role it names, the engine's default on every other
-    # axis (`R/hyperprior_default.R`). Refinement decisions (edge scores, modal
-    # cell selection, var-of-means thresholds) then all read the posterior, and
-    # cells appended in refinement passes get the same prior through `hp_fn`.
-    hp_families <- stats::setNames(
-        vapply(arms, function(a) as.character(a$family %||% ""), character(1)),
-        arm_names)
-    hp_record <- function(cells) {
-        .joint_hyperprior(cells, list(c(prior, list(type = type))), hp_families,
-                          user = list(sigma = fn_sigma, alpha = fn_alpha,
-                                      phi = fn_phi),
-                          copy_atom_mass = copy_atom_mass)
-    }
-    hp_fn <- function(new_cells) hp_record(new_cells)$lp
-    res <- .nl_fold_hyperprior(res, list(
-        hp_record(backend$theta_grid(grids, cp$has_copy))))
+    res <- .nl_fold_hyperprior(res, list(hp_init))
 
     # --- generic-refinement glue (Step 3) -------------------
     # Adaptive grid + var-of-means consistency are now driven by the
@@ -2037,11 +2050,6 @@ tulpa_nested_laplace_joint <- function(responses,
     # back into `res$modes` / `res$n_iter` / `res$Q_csc_*_per_grid` so
     # downstream code (`.nl_posterior_moments`, `.nl_attach_axis_sd`,
     # the modes / Q consumers) reads the refined values unchanged.
-    specs <- .joint_axis_specs(grids, cp,
-        user_priors = list(sigma = fn_sigma, alpha = fn_alpha, phi = fn_phi),
-        copy_atom_mass = copy_atom_mass, copy_slab = copy_slab,
-        axis_refine = axis_refine_modes,
-        folded_axes = res$log_hyperprior_axes)
     kernel_fn <- .joint_make_kernel_fn(arms, prior, cp, backend, max_iter,
                                         tol, n_threads, x_init, store_Q,
                                         arm_names,
@@ -2052,10 +2060,9 @@ tulpa_nested_laplace_joint <- function(responses,
                                         hessian_pd_mode = hessian_pd_mode,
                                         step_curvature_mode = step_curvature_mode,
                                         inner_refresh = inner_refresh)
-    theta_grid_M  <- backend$theta_grid(grids, cp$has_copy)
-    # The grid as it was declared, kept so the fit can report the span it was
-    # given apart from the span refinement left it with.
-    theta_grid_init <- theta_grid_M
+    # `theta_grid_init` is the grid as it was declared, kept so the fit can
+    # report the span it was given apart from the span refinement left it with.
+    theta_grid_M  <- theta_grid_init
     log_marginal  <- res$log_marginal
     extras_list   <- .joint_init_extras_from_res(res)
     refining_axis <- rep("", length(log_marginal))
@@ -2085,7 +2092,8 @@ tulpa_nested_laplace_joint <- function(responses,
 
     res$theta_grid  <- theta_grid_M
     res$theta_names <- colnames(res$theta_grid)
-    res$log_quad     <- .hyper_log_quad_weights(res$theta_grid, specs)
+    res$log_quad     <- .hyper_log_quad_weights(res$theta_grid, specs,
+                                                refining = refining_axis)
     res$axis_support <- .hyper_grid_supports(res$theta_grid, specs)
     res$axis_span    <- .joint_axis_span(theta_grid_init, res$theta_grid, specs)
     res$weights     <- .nl_normalise_weights_safe(res$log_marginal, "outer grid",
@@ -2094,7 +2102,6 @@ tulpa_nested_laplace_joint <- function(responses,
     res             <- .nl_attach_evidence(res, res$theta_grid, specs)
     res             <- .nl_posterior_moments(res, paste0("joint_", type),
                                              within = within_cell)
-    res             <- .joint_recalibrate_axis_mean(res)
     tm$mark("postproc")
 
     # Var-of-means consistency pass. Sharply peaked axes (gaussian
@@ -2125,7 +2132,8 @@ tulpa_nested_laplace_joint <- function(responses,
                                               extras_list, refining_axis)
             res$theta_grid  <- theta_grid_M
             res$theta_names <- colnames(res$theta_grid)
-            res$log_quad     <- .hyper_log_quad_weights(res$theta_grid, specs)
+            res$log_quad     <- .hyper_log_quad_weights(res$theta_grid, specs,
+                                                        refining = refining_axis)
             res$axis_support <- .hyper_grid_supports(res$theta_grid, specs)
             res$axis_span    <- .joint_axis_span(theta_grid_init,
                                                   res$theta_grid, specs)
@@ -2136,7 +2144,6 @@ tulpa_nested_laplace_joint <- function(responses,
             res             <- .nl_attach_evidence(res, res$theta_grid, specs)
             res             <- .nl_posterior_moments(res, paste0("joint_", type),
                                                      within = within_cell)
-            res             <- .joint_recalibrate_axis_mean(res)
         }
         res$var_of_means_consistency_info <- consistency$info
         tm$mark("grid")                      # consistency-pass inner solves
@@ -2198,9 +2205,8 @@ tulpa_nested_laplace_joint <- function(responses,
         redispatch = function(req) .joint_with_quiet_opts(
             kernel_fn(res$theta_grid, cila = req)),
         p_fixed = fixed$n_fixed, beta_names = fixed$names,
-        remoments = function(r) .joint_recalibrate_axis_mean(
-            .nl_posterior_moments(r, paste0("joint_", type),
-                                  within = within_cell)))
+        remoments = function(r) .nl_posterior_moments(
+            r, paste0("joint_", type), within = within_cell))
     res$timing <- tm$timing()
     res <- .joint_attach_diagnose_cost(res, diagnose_k, diagnose_draws)
     .finalize_fit(res, backend = "nested_laplace_joint",

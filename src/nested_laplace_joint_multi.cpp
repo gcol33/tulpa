@@ -1379,7 +1379,8 @@ Rcpp::List cpp_nested_laplace_joint_multi(
     Rcpp::Nullable<Rcpp::List> debias = R_NilValue,
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
     int                 inner_sparse_override = 0,
-    int                 screen_iters = 2   // cheap-screen Newton steps per cell
+    int                 screen_iters = 2,  // cheap-screen Newton steps per cell
+    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue  // per-cell screen offset
 ) {
     // Per-cell fixed-effect covariance retention, extracted
     // inside each cell's own solve. `fixed_block_p` is the
@@ -1635,7 +1636,10 @@ Rcpp::List cpp_nested_laplace_joint_multi(
         debias_ptr,
         cila_ptr,
         inner_sparse_override,
-        screen_iters
+        screen_iters,
+        /*compute_eta_var=*/false,
+        screen_log_offset.isNull() ? std::vector<double>()
+            : Rcpp::as<std::vector<double>>(screen_log_offset)
     );
     out["theta_grid"]      = theta_grid;
     out["axis_offsets"]    = axis_offsets;
@@ -2057,7 +2061,8 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
     // and the sparse-assembly one.
     int                              inner_sparse_override,
     int                              screen_iters,
-    bool                             compute_eta_var) {
+    bool                             compute_eta_var,
+    const std::vector<double>&       screen_log_offset) {
     const int n_arms = static_cast<int>(arms.size());
     if (static_cast<int>(parsed.size()) != n_arms) {
         Rcpp::stop("parsed and arms vectors must have the same length.");
@@ -2125,7 +2130,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
             step_curvature, hessian_refresh, n_threads_outer, progress,
             checkpoint, x_init_per_cell,
             compute_skew, skew_probe_idx, fixed_block, debias, cila,
-            screen_iters, compute_eta_var
+            screen_iters, compute_eta_var, screen_log_offset
         );
     }
 
@@ -2438,7 +2443,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
         n_grid, n_x, solve_at_theta, x_init, store_modes, n_outer,
         tile_ids, tile_pilot_cells,
         cheap_eval, prune_tol, progress, checkpoint, x_init_per_cell,
-        screen_iters
+        screen_iters, tulpa::NoResumeRefill{}, screen_log_offset
     );
     pattern_guard.check("the joint nested-Laplace outer grid");
     return out;
@@ -2477,7 +2482,8 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
     const SubspaceDebiasOptions*     debias,
     const CilaOptions*               cila,
     int                              screen_iters,
-    bool                             compute_eta_var
+    bool                             compute_eta_var,
+    const std::vector<double>&       screen_log_offset
 ) {
     const int n_arms = static_cast<int>(arms.size());
     const int B      = static_cast<int>(blocks.size());
@@ -2949,7 +2955,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
         /*n_outer=*/n_outer,
         tile_ids, tile_pilot_cells,
         cheap_eval, prune_tol, progress, checkpoint, x_init_per_cell,
-        screen_iters
+        screen_iters, tulpa::NoResumeRefill{}, screen_log_offset
     );
     pattern_guard.check("the sparse joint nested-Laplace outer grid");
     // Report the outer width the solve actually ran at. It is what the memory

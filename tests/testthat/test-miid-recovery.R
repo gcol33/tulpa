@@ -152,6 +152,13 @@ test_that("miid block recovers a correlated random-slope Sigma", {
   # The cross-correlation recovers as clearly positive near the truth (0.5).
   expect_gt(rho_med, 0.2)
   expect_lt(rho_med, 0.9)
+
+  # The grid is a tensor in (log sigma_1, log sigma_2, rho), so the block
+  # carries the PC + LKJ prior and a cell measure there, and the fit reads an
+  # evidence (gcol33/tulpa#735).
+  expect_setequal(fit$log_hyperprior_axes, c("b1.L11", "b1.L21", "b1.L22"))
+  expect_true(is.finite(fit$log_evidence))
+  expect_null(fit$log_evidence_declined)
 })
 
 # --------------------------------------------------------------------------- #

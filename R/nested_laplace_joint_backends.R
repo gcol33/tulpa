@@ -41,7 +41,8 @@
              fixed_block_p = 0L,
              fixed_block_constraints = NULL,
              debias = NULL,
-             cila = NULL) {
+             cila = NULL,
+             screen_log_offset = NULL) {
         .joint_call_kernel_via_multi(backend_name, arms, prior, cp, grids,
                                       max_iter, tol, n_threads,
                                       x_init, store_Q, arm_names,
@@ -60,7 +61,8 @@
                                       fixed_block_constraints =
                                           fixed_block_constraints,
                                       debias = debias,
-                                      cila = cila)
+                                      cila = cila,
+                                      screen_log_offset = screen_log_offset)
     }
 }
 
@@ -175,7 +177,8 @@
                                           fixed_block_p = 0L,
                                           fixed_block_constraints = NULL,
                                           debias = NULL,
-                                          cila = NULL) {
+                                          cila = NULL,
+                                          screen_log_offset = NULL) {
     n_arms <- length(arms)
     blk <- prior; blk$type <- type
     .nl_check_block_fields(blk, "joint_single")
@@ -294,7 +297,8 @@
         fixed_block_p = as.integer(fixed_block_p),
         fixed_block_constraints = fixed_block_constraints,
         debias = debias,
-        cila = cila
+        cila = cila,
+        screen_log_offset = screen_log_offset
     )
     # Strip the C++-side theta_grid / axis_offsets -- the backend's
     # `theta_grid()` callback rebuilds them with the user-facing bare
@@ -352,8 +356,16 @@
     disagree <- isTRUE(res$prune_argmax_disagree)
 
     # Gap-collapse trigger. Quadrature ESS over the kept (finite-weight)
-    # cells; "collapse" = ESS below a small fraction of the kept count.
+    # cells; "collapse" = ESS below a small fraction of the kept count. The ESS
+    # is of the posterior the screen ranked: the kernel's log-marginal with the
+    # offset it screened by (hyperprior + cell measure) in place of any
+    # hyperprior already folded in.
     lm   <- res$log_marginal
+    off  <- res$prune_screen_log_offset
+    if (length(off) == length(lm)) {
+        folded <- .nl_log_hyperprior_folded(res, length(lm))
+        lm <- lm - (if (is.null(folded)) 0 else folded) + off
+    }
     kept <- is.finite(lm)
     n_kept <- sum(kept)
     gap_collapse <- FALSE

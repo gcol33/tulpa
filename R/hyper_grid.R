@@ -169,8 +169,9 @@
 #'   * `adaptive_grid` (`FALSE`) -- run the boundary / interior refinement
 #'     pass on every axis whose spec has `refinable = TRUE`. New cells are
 #'     appended along the refining axis paired with the boundary modal cell's
-#'     other-axis values, carrying a marginal-scale calibration so they
-#'     contribute on the right scale.
+#'     other-axis values. Each new cell is measured by the part of its row's
+#'     base cells it takes over, so the grid integrates the same prior measure
+#'     with a finer resolution where the mass is.
 #'   * `adaptive_grid_edge_thresh` (`0.02`) -- per-axis trigger threshold.
 #'   * `adaptive_grid_max_passes` (`1L`) -- cap on refinement passes.
 #'   * `var_of_means_consistency` (`FALSE`) -- run a post-integration
@@ -312,7 +313,8 @@ tulpa_hyper_grid <- function(hyper_specs, inner_fit,
   }
 
   # Initial weighted moments (also needed by the consistency pass).
-  log_quad <- .hyper_log_quad_weights(theta_grid, specs)
+  log_quad <- .hyper_log_quad_weights(theta_grid, specs,
+                                      refining = refining_axis)
   weights <- .nl_normalise_weights_safe(
     log_marginal, what = "hyper-grid cells", log_quad = log_quad)
   weights_for_summary <- weights
@@ -352,7 +354,8 @@ tulpa_hyper_grid <- function(hyper_specs, inner_fit,
       log_prior_cell <- if (is.null(hp_fn)) rep(0, nrow(theta_grid))
                         else hp_fn(theta_grid)
       # Re-derive weights / moments on the merged grid.
-      log_quad <- .hyper_log_quad_weights(theta_grid, specs)
+      log_quad <- .hyper_log_quad_weights(theta_grid, specs,
+                                          refining = refining_axis)
       weights <- .nl_normalise_weights_safe(
         log_marginal, what = "hyper-grid cells", log_quad = log_quad)
       weights_for_summary <- weights
@@ -367,14 +370,6 @@ tulpa_hyper_grid <- function(hyper_specs, inner_fit,
     consistency_info <- consistency$info
   }
 
-  # Per-axis mean recalibration when slice cells are present (slice cells for
-  # axis Y are pinned at modal non-Y values; including them in axis X's marginal
-  # collapses X to a point). The SD is read off the same masked marginal one
-  # step below, so only the mean is recalibrated here.
-  theta_mean <- .hyper_recalibrate_axis_mean(theta_grid, log_marginal,
-                                              refining_axis, theta_mean,
-                                              log_quad = log_quad)
-
   # The reported per-axis SD, each from the estimator its own resolution calls
   # for. Last, so it reads the final grid and the final measure.
   res_partial <- .nl_attach_axis_sd(
@@ -388,7 +383,7 @@ tulpa_hyper_grid <- function(hyper_specs, inner_fit,
   # `bounds` (and not `log_scale`) reports NA and keeps the coordinate the edge
   # rule guesses from the values.
   qs <- .nl_axis_quantiles(
-    theta_grid, log_marginal, refining_axis,
+    theta_grid, log_marginal, refining_axis, log_quad = log_quad,
     domains = vapply(specs, function(s)
       .nl_domain_of_bounds(s$bounds, s$log_scale), character(1)))
   theta_median <- qs$median
@@ -466,7 +461,8 @@ tulpa_hyper_grid <- function(hyper_specs, inner_fit,
     if (!is.null(s$log_prior) || !is.null(s$slab_bounds)) s$name
   }))
   hg_evidence <- .nl_attach_evidence(
-    list(log_marginal = log_marginal, log_hyperprior_axes = hg_declared),
+    list(log_marginal = log_marginal, log_hyperprior_axes = hg_declared,
+         refining_axis = refining_axis),
     theta_grid, specs)
 
   out <- list(

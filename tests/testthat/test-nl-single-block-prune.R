@@ -229,3 +229,25 @@ test_that("a multi-block prior refuses the knobs its entry does not declare", {
   expect_error(.nlp_fit(multi, list(screen_iters = 3L)), "single-block")
   expect_error(.nlp_fit(multi, list(fitted_var = FALSE)), "single-block")
 })
+
+test_that("the screen ranks the posterior weight the grid integrates (#734)", {
+  skip_on_cran()
+  # `log_marginal` leaves the kernel as the likelihood alone; the hyperprior is
+  # folded in R and the cell measure enters the weights. The screen runs inside
+  # the kernel, so it is handed both, fixed by the grid before any cell is
+  # solved, and ranks cells by what their weight will be.
+  f <- .nlp_fixture()
+  full <- .nlp_fit(f)
+  p <- .nlp_fit(f, list(prune = TRUE))
+  skip_if(isTRUE(p$prune_fallback_triggered),
+          "the gate replaced the screen with the full grid")
+  n <- length(full$log_marginal)
+  off <- p$prune_screen_log_offset
+  expect_length(off, n)
+  expect_equal(off, tulpa:::.nl_log_hyperprior_folded(full, n) + full$log_quad,
+               tolerance = 1e-12)
+  # The tau nodes are unevenly spaced in log, so the measure is not a constant
+  # the softmax would discard, and neither is the prior.
+  expect_gt(diff(range(full$log_quad)), 0.5)
+  expect_gt(diff(range(off)), 0.5)
+})

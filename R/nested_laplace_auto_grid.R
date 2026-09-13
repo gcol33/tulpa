@@ -683,7 +683,8 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
            inner     = NULL,
            span      = if (is.null(res$log_quad)) NULL else
                            .nl_grid_log_quad(.nl_theta_matrix(res),
-                                             close_domain = FALSE))
+                                             close_domain = FALSE,
+                                             refining = res$refining_axis))
 }
 
 # One axis's marginal over its own sorted distinct nodes, normalized.
@@ -702,11 +703,14 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
     if (is.na(j) && ncol(tg) == 1L) j <- 1L
     if (is.na(j) || length(lm) != nrow(tg)) return(NULL)
     lq <- .nl_axis_measure_quad(res, measure)
-    if (!is.null(lq) && length(lq) == length(lm)) {
+    measured <- !is.null(lq) && length(lq) == length(lm)
+    if (measured) {
         lm <- lm + lq
         lm[is.na(lm)] <- -Inf
     }
-    m <- .nl_axis_marginal_logdensity(as.numeric(tg[, j]), lm)
+    m <- .nl_axis_marginal_logdensity(
+        as.numeric(tg[, j]), lm,
+        .nl_axis_read_cells(res$refining_axis, nrow(tg), measured = measured))
     if (length(m$vals) < 2L) return(NULL)
     top <- max(m$log_marg)
     if (!is.finite(top)) return(NULL)

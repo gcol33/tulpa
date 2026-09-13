@@ -56,7 +56,7 @@
                        var_of_means_consistency = consistency))
 }
 
-test_that("prior_phi adds the PC log-density on the axis's own coordinate", {
+test_that("prior_phi replaces the default density with the PC one on the axis's own coordinate", {
     skip_on_cran()
     sim <- .simulate_joint_pp(N = 400, n_s = 30, sd_pos = 0.3, seed = 919)
     adj <- .chain_adj_pp(sim$n_s)
@@ -72,7 +72,9 @@ test_that("prior_phi adds the PC log-density on the axis's own coordinate", {
 
     expect_true("phi_pos" %in% colnames(flat$theta_grid))
     # Same grid in both fits, so the only difference in log_marginal is the
-    # added prior density at each cell's phi.
+    # prior density at each cell's phi. With no prior_phi the axis carries the
+    # engine's default, the PC prior on a residual variance
+    # (`R/hyperprior_default.R`, gcol33/tulpa#730), and prior_phi replaces it.
     expect_identical(flat$theta_grid[, "phi_pos"], pc$theta_grid[, "phi_pos"])
     # `pc.prec` is a density on phi, and `phi_pos` is integrated on log phi
     # (`.hyper_axis_scale()`), so what the fold adds is that density carried
@@ -80,7 +82,9 @@ test_that("prior_phi adds the PC log-density on the axis's own coordinate", {
     # (gcol33/tulpa#625). The phi = 1 cell is the arbiter -- log(1) is 0, so
     # it is the one cell the two readings agree on, to the bit.
     phi <- pc$theta_grid[, "phi_pos"]
-    expected_add <- log(lambda) - lambda * phi + log(phi)
+    default_lp <- tulpa:::.hp_axis_default("phi_pos", list(type = "bym2"),
+                                           "gaussian")$fn(phi)
+    expected_add <- log(lambda) - lambda * phi + log(phi) - default_lp
     delta <- pc$log_marginal - flat$log_marginal
     expect_equal(unname(delta), unname(expected_add), tolerance = 1e-9)
 })

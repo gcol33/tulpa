@@ -210,8 +210,21 @@
 #     part 4", 2022). 7 is R-INLA's `nbinomial` default. No peer-reviewed source
 #     gives this prior: Simpson et al. (2017, Section 8) state that the usual
 #     parameterisation does not separate the overdispersion from the mean.
+#   * `gamma_shape_rate`, `beta_precision_rate` -- the rate of an exponential
+#     prior on a gamma likelihood's shape and on a beta likelihood's precision,
+#     R-INLA's shipped defaults for the same two parameters: `loggamma` with
+#     `param = c(1, 0.01)` on the gamma family's "precision parameter" (hyperid
+#     58001) and `c(1, 0.1)` on the beta family's (hyperid 61001), in
+#     rinla/R/models.R. Both are Gamma(1, rate) on the parameter itself, which
+#     R-INLA names `phi` with the parameterisation tulpa's kernels use (shape
+#     `phi`, rate `phi / mu`; `Beta(mu phi, (1 - mu) phi)`). Neither is a PC
+#     prior: R-INLA ships one for the mean-one Gamma(1/a, 1/a) (`pc.gamma`,
+#     rinla/R/pc-gamma.R) but uses it on no likelihood's shape, so no rate for
+#     it is sourced there.
 .NL_HYPERPRIOR <- list(
     nb_size_lambda        = 7,
+    gamma_shape_rate      = 0.01,
+    beta_precision_rate   = 0.1,
     scale_U               = 3,
     scale_alpha           = 0.01,
     range_alpha           = 0.5,

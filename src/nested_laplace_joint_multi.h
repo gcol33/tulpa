@@ -1765,7 +1765,10 @@ Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
     // Whether every fully-solved cell reports the per-row predictive variance
     // of the linear predictor (LaplaceResult::eta_var, emitted as
     // `fitted_eta_var`). Never the cheap screen.
-    bool                             compute_eta_var = false
+    bool                             compute_eta_var = false,
+    // Per-cell log hyperprior + log cell measure the cheap screen ranks with
+    // (run_nested_laplace_grid); empty ranks on the log-marginal alone.
+    const std::vector<double>&       screen_log_offset = std::vector<double>()
 );
 
 // Outer-grid driver. n_x_after_re is the latent dimension after all per-arm
@@ -1825,7 +1828,10 @@ Rcpp::List run_multi_block_nested_laplace_joint(
     // Whether every fully-solved cell reports the per-row predictive variance
     // of the linear predictor (LaplaceResult::eta_var, emitted as
     // `fitted_eta_var`). Never the cheap screen.
-    bool                             compute_eta_var = false
+    bool                             compute_eta_var = false,
+    // Per-cell log hyperprior + log cell measure the cheap screen ranks with
+    // (run_nested_laplace_grid); empty ranks on the log-marginal alone.
+    const std::vector<double>&       screen_log_offset = std::vector<double>()
 );
 
 } // namespace tulpa

@@ -240,3 +240,57 @@ test_that("ar1's rho axis rides along with the recenter when both precision axes
     expect_true(all(fit$outer_grid_recenter_sd_clamp == "none"))
     expect_length(fit$outer_grid_recenter_sd_declined, 0L)
 })
+
+test_that("a bound declines rho alone on the spatiotemporal rescue (#738)", {
+    # Under the default prior no simulated fixture was found whose rho mode SD
+    # reaches the ceiling: the uniform prior on (-1, 1), carried to rho's logit
+    # search coordinate, contributes curvature p (1 - p) there, and the recorded
+    # spatiotemporal fixtures resolve rho at SDs of 0.49 to 1.14 against a
+    # ceiling of 3. The rescue's own kernel argument is therefore driven by a
+    # closed-form surface: sharp in both precisions, with tau_spatial's mode
+    # past the default ceiling so the pass fires, and in rho the carried prior
+    # cancelled and a quadratic of SD 10 left on the search coordinate.
+    ceiling_u <- tulpa:::.nl_recenter("max_sd_u")
+    rho_sd_u  <- 10
+    expect_gt(rho_sd_u, ceiling_u)
+    kernel <- function(...) {
+        a   <- list(...)
+        ts  <- a$tau_spatial_grid; tt <- a$tau_temporal_grid
+        rho <- a$rho_temporal_grid
+        p   <- (rho + 1) / 2
+        u   <- stats::qlogis(p)
+        lm  <- -0.5 * ((log(ts) - log(40)) / 0.3)^2 -
+               0.5 * ((log(tt) - log(2)) / 0.3)^2 -
+               log(2 * p * (1 - p)) - 0.5 * (u / rho_sd_u)^2
+        list(log_marginal = lm)
+    }
+    grid <- expand.grid(tau_spatial = tulpa:::.st_log_grid(0.25, 16, 5),
+                        tau_temporal = tulpa:::.st_log_grid(0.25, 16, 5),
+                        rho = seq(-0.8, 0.9, length.out = 5))
+    kargs <- tulpa:::.st_set_grid_args(list(), grid$tau_spatial, grid$tau_temporal,
+                                       grid$rho, "icar", 0.9)
+    out <- tulpa:::.st_attach_outer_integration(do.call(kernel, kargs), grid)
+    out$pareto_k_regime <- "collapsed_edge"
+
+    fit <- tulpa:::.st_auto_grid_rescue(out, kernel, kargs, "icar", "ar1",
+                                        n_gs = 5L, n_gt = 5L, n_grho = 5L,
+                                        tau_lo = 0.25, tau_hi = 16, control = list())
+
+    expect_identical(fit$outer_grid_placement, "auto_recentered")
+    expect_identical(unname(fit$outer_grid_recenter_sd_clamp[["rho"]]), "ceiling")
+    expect_identical(names(fit$outer_grid_recenter_sd_declined), "rho")
+    expect_identical(unname(fit$outer_grid_recenter_sd_declined[["rho"]]),
+                     "sd_ceiling_unresolved")
+    # The declined axis reports the SD the mode-find measured and no SD it was
+    # laid from, and keeps the nodes it came in with.
+    expect_gt(fit$outer_grid_recenter_sd_raw[["rho"]], ceiling_u)
+    expect_false("rho" %in% names(fit$outer_grid_recenter_sd_used))
+    expect_equal(sort(unique(fit$theta_grid[, "rho"])), sort(unique(grid$rho)))
+    # The precision axes were resolved and re-placed around their modes.
+    expect_setequal(names(fit$outer_grid_recenter_sd_used),
+                    c("tau_spatial", "tau_temporal"))
+    expect_true(all(fit$outer_grid_recenter_sd_clamp[c("tau_spatial", "tau_temporal")] ==
+                        "none"))
+    expect_gt(max(fit$theta_grid[, "tau_spatial"]), 40)
+    expect_lt(min(fit$theta_grid[, "tau_spatial"]), 40)
+})

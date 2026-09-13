@@ -1367,14 +1367,41 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   # field-name list for fields the single path would never read.
   if (!is.null(spec$cpp_fn)) .nl_check_block_fields(p, c("axis", "single"))
   p   <- spec$defaults(p, a)
-  out <- do.call(spec$cpp_fn, c(spec$pack(p), a))
   th  <- spec$theta(p)
+  tg  <- .nl_theta_matrix(list(theta_grid = th$grid, theta_names = th$names))
+  # The block's hyperprior, folded where every caller of the kernel reads it:
+  # the grid solve, the placement refit and its stencil, the k-hat refit. A
+  # screened solve ranks its cells with it too.
+  hp  <- list(.nl_block_log_hyperprior(p, tg))
+  if ((a$prune_tol %||% 0) > 0) a$screen_log_offset <- .nl_screen_log_offset(tg, hp)
+  out <- do.call(spec$cpp_fn, c(spec$pack(p), a))
   out$theta_grid  <- th$grid
   out$theta_names <- th$names
-  # The block's hyperprior, folded where every caller of the kernel reads it:
-  # the grid solve, the placement refit and its stencil, the k-hat refit.
-  .nl_fold_hyperprior(out, list(
-    .nl_block_log_hyperprior(p, .nl_theta_matrix(out))))
+  .nl_fold_hyperprior(out, hp)
+}
+
+# Per-cell log weight the cheap screen ranks with: the hyperprior R folds into
+# `log_marginal` after the kernel returns, plus the cell measure the grid's
+# weights are built with (`.nl_attach_outer_integration()`), in the grid's cell
+# order. Both are fixed by the grid before any cell is solved, and together with
+# the kernel's log-marginal they are the posterior weight a cell ends up with,
+# so the screen and the full pass rank the same quantity.
+.nl_screen_log_offset <- function(tg, hp_parts, specs = NULL) {
+  tg <- as.matrix(tg)
+  n  <- nrow(tg)
+  lp <- numeric(n)
+  axes <- character(0)
+  for (hp in hp_parts) {
+    lp <- lp + hp$lp
+    axes <- union(axes, hp$axes)
+  }
+  if (is.null(specs) && !is.null(colnames(tg))) {
+    specs <- .joint_axis_specs_from_grid(tg, folded_axes = axes)
+  }
+  lq <- .hyper_log_quad_weights(tg, specs)
+  off <- lp + (if (length(lq) == n) lq else 0)
+  off[is.na(off)] <- -Inf
+  off
 }
 
 # The outer grid's cell measure, its weights and its log evidence, set together
@@ -1463,7 +1490,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 # `log_evidence_declined_axes` naming each such axis and its reason.
 .nl_attach_evidence <- function(res, tg, specs,
                                 log_measure = .hyper_log_quad_weights(
-                                  tg, specs, absolute = TRUE)) {
+                                  tg, specs, absolute = TRUE,
+                                  refining = res$refining_axis)) {
   uncovered <- .nl_evidence_uncovered(tg, specs, res)
   res$log_evidence_declined_axes <- if (length(uncovered)) uncovered else NULL
   if (length(uncovered)) {
@@ -1933,6 +1961,19 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     .nl_block_spec_for_cpp(prepared[[b]], block_joint)
   })
 
+  # Every block's hyperprior over its own columns, folded on the override path
+  # too: a placement stencil re-evaluates the marginal through it and has to
+  # difference the target the grid integrates. A screened solve ranks with it.
+  hp_parts <- lapply(seq_along(prepared), function(b) {
+    cols <- (axis_offsets[b] + 1L):axis_offsets[b + 1L]
+    tg_b <- joint_grid[, cols, drop = FALSE]
+    colnames(tg_b) <- colnames(block_grids[[b]])
+    blk <- prepared[[b]]
+    blk$log_prior_theta_per_grid <- blocks_spec[[b]]$log_prior_theta_per_grid
+    .hp_prefix(.nl_block_log_hyperprior(blk, tg_b), paste0("b", b, "."))
+  })
+  prune_tol <- as.numeric(cargs$prune_tol %||% 0)
+
   out <- cpp_nested_laplace_multi(
     y           = cargs$y,
     n           = cargs$n,
@@ -1953,7 +1994,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     # Cheap-pass screening tolerance; 0 (the default) solves every cell. A
     # single-cell re-dispatch inherits it harmlessly -- the driver screens only
     # a grid with more than one cell.
-    prune_tol   = as.numeric(cargs$prune_tol %||% 0),
+    prune_tol   = prune_tol,
     likelihood  = likelihood,
     progress          = isTRUE(progress$progress),
     progress_every    = as.integer(progress$progress_every),
@@ -1964,7 +2005,9 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     skew_idx          = skew_idx,
     debias            = debias,
     cila              = cila,
-    offset_nullable   = cargs$offset_nullable
+    offset_nullable   = cargs$offset_nullable,
+    screen_log_offset = if (prune_tol > 0)
+                          .nl_screen_log_offset(joint_grid, hp_parts)
   )
 
   out$theta_grid   <- joint_grid
@@ -1972,17 +2015,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   out$axis_offsets <- axis_offsets
   out$blocks       <- prepared
 
-  # Every block's hyperprior over its own columns, folded on the override path
-  # too: a placement stencil re-evaluates the marginal through it and has to
-  # difference the target the grid integrates.
-  out <- .nl_fold_hyperprior(out, lapply(seq_along(prepared), function(b) {
-    cols <- (axis_offsets[b] + 1L):axis_offsets[b + 1L]
-    tg_b <- joint_grid[, cols, drop = FALSE]
-    colnames(tg_b) <- colnames(block_grids[[b]])
-    blk <- prepared[[b]]
-    blk$log_prior_theta_per_grid <- blocks_spec[[b]]$log_prior_theta_per_grid
-    .hp_prefix(.nl_block_log_hyperprior(blk, tg_b), paste0("b", b, "."))
-  }))
+  out <- .nl_fold_hyperprior(out, hp_parts)
 
   if (!is.null(theta_grid_override)) return(out)  # skew re-dispatch / the
                                                   # auto-recenter FD stencil

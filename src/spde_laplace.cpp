@@ -254,7 +254,8 @@ Rcpp::List cpp_nested_laplace_spde(
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
     double prune_tol = 0.0,
     int screen_iters = 2,
-    bool compute_fitted_var = true
+    bool compute_fitted_var = true,
+    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue
 ) {
     int N = n_obs;
     int p = X.ncol();

@@ -108,7 +108,8 @@
 # ============================================================================
 # Edge scores per axis (boundary mass + integrand-density-at-boundary).
 # ============================================================================
-.hyper_axis_edge_scores <- function(theta_grid, log_marginal, specs, axes) {
+.hyper_axis_edge_scores <- function(theta_grid, log_marginal, specs, axes,
+                                    refining_axis = NULL) {
   if (length(log_marginal) == 0L) return(list())
   # Non-finite cells (inner Newton non-convergent on consumer-package
   # joint fitters, e.g. occu_cover_joint_coupled at degenerate sigma+alpha
@@ -121,7 +122,8 @@
   weights      <- .nl_normalise_weights_safe(log_marginal,
                                               what = "adaptive_grid edge scores",
                                               log_quad = .hyper_log_quad_weights(
-                                                  theta_grid, specs))
+                                                  theta_grid, specs,
+                                                  refining = refining_axis))
   if (all(is.na(weights))) return(list())
   out <- list()
   per_level_max <- function(lm_at_lev) {
@@ -250,21 +252,28 @@
 }
 
 # ============================================================================
-# Slice-triple builder. For each new axis value the helper produces ONE row
-# at (axis = pt, other_axes = modal_at_anchor). Returns the matrix of new
-# cells plus the marginal-scale calibration term (log S_a, see math note).
+# Slice-cell builder. For each new axis value the helper produces ONE cell at
+# (axis = pt, other_axes = the modal cell at the anchor level). The cell is a
+# point evaluation like any other and is measured by the box it owns in its
+# row (`.hyper_refined_log_quad()`), so it carries no term standing in for the
+# rest of its level.
+#
+# The anchor is chosen among base-tensor cells and slice cells on the SAME axis,
+# never a slice cell placed on another one, so every slice cell sits on base
+# levels off its own axis and its row is a row of the base tensor.
 # ============================================================================
 .hyper_new_mode_tracked_triples <- function(theta_grid, log_marginal, specs,
-                                             axis_name, new_pts, anchor_lev) {
+                                             axis_name, new_pts, anchor_lev,
+                                             refining_axis = NULL) {
   if (length(new_pts) == 0L) return(NULL)
   v <- as.numeric(theta_grid[, axis_name])
-  mask <- abs(v - anchor_lev) < 1e-12 * max(1, abs(anchor_lev))
+  mask <- abs(v - anchor_lev) < 1e-12 * max(1, abs(anchor_lev)) &
+    .hyper_slice_anchor_ok(refining_axis, axis_name, length(v))
   if (!any(mask)) return(NULL)
   anchor_lm   <- log_marginal[mask]
+  if (!any(is.finite(anchor_lm))) return(NULL)
   k_map_local <- which.max(anchor_lm)
   idx_global  <- which(mask)[k_map_local]
-  L_map       <- anchor_lm[k_map_local]
-  calibration <- log(sum(exp(anchor_lm - L_map)))
 
   axis_names <- colnames(theta_grid)
   n_new <- length(new_pts)
@@ -275,21 +284,18 @@
                       else rep(as.numeric(theta_grid[idx_global, a]), n_new)
   }
   list(new_cells      = new_cells,
-       calibration    = rep(calibration, n_new),
        warm_start_idx = idx_global)
 }
 
-# Stitch slice triples from multiple (axis, side) packs into one matrix +
-# calibration vector. Drops rows whose cell already appears in `theta_grid`
-# at numerical tolerance via a stringified key.
+# Stitch slice cells from multiple (axis, side) packs into one matrix. Drops
+# rows whose cell already appears in `theta_grid` at numerical tolerance via a
+# stringified key.
 .hyper_concat_slice_triples <- function(triple_packs, theta_grid) {
   if (length(triple_packs) == 0L) return(NULL)
   axis_names <- colnames(theta_grid)
   parts <- lapply(triple_packs, `[[`, "new_cells")
   if (length(parts) == 0L) return(NULL)
   new_cells <- do.call(rbind, parts)
-  calib     <- as.numeric(unlist(lapply(triple_packs, `[[`, "calibration"),
-                                  use.names = FALSE))
   if (nrow(new_cells) == 0L) return(NULL)
   fmt <- function(m) {
     cols <- lapply(axis_names, function(a) sprintf("%.10g", m[, a]))
@@ -297,10 +303,9 @@
   }
   new_keys <- fmt(new_cells)
   old_keys <- fmt(theta_grid)
-  keep <- !new_keys %in% old_keys
+  keep <- !new_keys %in% old_keys & !duplicated(new_keys)
   if (!any(keep)) return(NULL)
-  list(new_cells   = new_cells[keep, , drop = FALSE],
-       calibration = calib[keep])
+  list(new_cells = new_cells[keep, , drop = FALSE])
 }
 
 # ============================================================================
@@ -309,7 +314,8 @@
 # levels with wide spacing) checks. Returns NULL if no trigger fires.
 # ============================================================================
 .hyper_detect_axis_refinement <- function(theta_grid, log_marginal, edge_info,
-                                          axis_name, spec, edge_thresh) {
+                                          axis_name, spec, edge_thresh,
+                                          refining_axis = NULL) {
   ei  <- edge_info
   lev <- ei$levels
   v   <- as.numeric(theta_grid[, axis_name])
@@ -348,14 +354,16 @@
     pts <- .hyper_propose_axis_extension(spec, lev, "max")
     pk  <- .hyper_new_mode_tracked_triples(theta_grid, log_marginal, NULL,
                                             axis_name, pts,
-                                            anchor_lev = lev[n_lev])
+                                            anchor_lev = lev[n_lev],
+                                            refining_axis = refining_axis)
     if (!is.null(pk)) packs[[length(packs) + 1L]] <- pk
   }
   if (tr_min) {
     pts <- .hyper_propose_axis_extension(spec, lev, "min")
     pk  <- .hyper_new_mode_tracked_triples(theta_grid, log_marginal, NULL,
                                             axis_name, pts,
-                                            anchor_lev = lev[1L])
+                                            anchor_lev = lev[1L],
+                                            refining_axis = refining_axis)
     if (!is.null(pk)) packs[[length(packs) + 1L]] <- pk
   }
   if (wide_left || wide_right) {
@@ -363,7 +371,8 @@
                                                   wide_left, wide_right)
     pk  <- .hyper_new_mode_tracked_triples(theta_grid, log_marginal, NULL,
                                             axis_name, pts,
-                                            anchor_lev = lev[mode_idx])
+                                            anchor_lev = lev[mode_idx],
+                                            refining_axis = refining_axis)
     if (!is.null(pk)) packs[[length(packs) + 1L]] <- pk
   }
   if (length(packs) == 0L) return(NULL)
@@ -385,8 +394,7 @@
     return(list(theta_grid = theta_grid, log_marginal = log_marginal,
                 extras = extras, refining_axis = refining_axis, n_new = 0L))
   }
-  new_cells   <- merged$new_cells
-  calibration <- merged$calibration
+  new_cells <- merged$new_cells
   n_new <- nrow(new_cells)
 
   warm_start <- NULL
@@ -399,7 +407,7 @@
 
   fit_out <- kernel_fn(new_cells, warm_start = warm_start,
                         store_extras = !is.null(extras))
-  new_lm  <- fit_out$log_marginal + calibration
+  new_lm  <- fit_out$log_marginal
   if (!is.null(hp_fn)) {
     hp_new <- hp_fn(new_cells)
     if (!is.null(hp_new) && length(hp_new) == n_new) {
@@ -440,12 +448,14 @@
     any_triggered <- FALSE
     triggered_this_pass <- character(0)
     for (a in axes) {
-      edge_info <- .hyper_axis_edge_scores(theta_grid, log_marginal, specs, a)
+      edge_info <- .hyper_axis_edge_scores(theta_grid, log_marginal, specs, a,
+                                           refining_axis = refining_axis)
       ei <- edge_info[[a]]
       if (is.null(ei)) next
       spec <- .hyper_spec_by_name(specs, a)
       packs <- .hyper_detect_axis_refinement(theta_grid, log_marginal, ei, a,
-                                              spec, edge_thresh)
+                                              spec, edge_thresh,
+                                              refining_axis = refining_axis)
       if (is.null(packs)) next
       step <- .hyper_apply_axis_refinement(theta_grid, log_marginal, extras,
                                             refining_axis, packs, a, specs,
@@ -501,7 +511,8 @@
     # Refinement on a previous axis grows theta_grid / log_marginal, so the
     # log quadrature weights and the mode index are recomputed each iteration to
     # stay aligned with the current grid rows.
-    log_quad <- .hyper_log_quad_weights(theta_grid, specs)
+    log_quad <- .hyper_log_quad_weights(theta_grid, specs,
+                                        refining = refining_axis)
     lm_eff <- log_marginal
     if (!is.null(log_quad) && length(log_quad) == length(lm_eff)) {
       lm_eff <- lm_eff + log_quad
@@ -521,7 +532,8 @@
 
     anchor_lev <- as.numeric(theta_grid[overall_mode_idx, axis])
     pack <- .hyper_new_mode_tracked_triples(theta_grid, log_marginal, NULL,
-                                             axis, new_pts, anchor_lev)
+                                             axis, new_pts, anchor_lev,
+                                             refining_axis = refining_axis)
     if (is.null(pack)) next
     step <- .hyper_apply_axis_refinement(theta_grid, log_marginal, extras,
                                           refining_axis, list(pack), axis,
@@ -542,38 +554,4 @@
   list(theta_grid = theta_grid, log_marginal = log_marginal,
        extras = extras, refining_axis = refining_axis, info = info,
        n_added = n_added_total)
-}
-
-# ============================================================================
-# Per-axis MEAN recalibration when slice cells are present. Weighted mean on
-# each axis over its own refinement slice (own-axis and consistency cells),
-# skipping axes with no foreign-slice contamination.
-#
-# `log_marginal` is the integrand the weights are built from, so a caller that
-# holds the grid's quadrature weights passes them as `log_quad` and the mean is
-# taken against the measure the grid integrates rather than against its node
-# counts. The SD over the same masked marginal is `.nl_attach_axis_sd()`'s, so
-# it is not computed a second time here.
-# ============================================================================
-.hyper_recalibrate_axis_mean <- function(theta_grid, log_marginal,
-                                         refining_axis, theta_mean,
-                                         log_quad = NULL) {
-  if (is.null(refining_axis) || all(refining_axis == "")) return(theta_mean)
-  if (!is.null(log_quad) && length(log_quad) == length(log_marginal)) {
-    log_marginal <- log_marginal + log_quad
-    log_marginal[is.na(log_marginal)] <- -Inf
-  }
-  cols <- colnames(theta_grid)
-  for (col in cols) {
-    keep <- refining_axis == "" | refining_axis == col |
-            refining_axis == paste0("consistency_", col)
-    if (all(keep)) next
-    lm_k <- log_marginal[keep]
-    m    <- max(lm_k)
-    if (!is.finite(m)) next
-    w    <- exp(lm_k - m); w <- w / sum(w)
-    vals <- theta_grid[keep, col]
-    theta_mean[[col]] <- .nl_wtd_mean_sd(vals, w)$mean
-  }
-  theta_mean
 }

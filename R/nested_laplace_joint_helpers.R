@@ -467,35 +467,6 @@
          field_coef_const = consts)
 }
 
-# Recalibrate per-axis posterior moments after the joint pass. Slice
-# cells from mode-tracked refinement on axis Y are pinned at modal
-# (non-Y) values; including them in axis X's marginal (X != Y) collapses
-# X to a point and shrinks Sd(X). Recompute mean/Sd for each column of
-# `theta_grid` using only cells that vary that column -- cartesian cells
-# (`refining_axis == ""`) plus same-axis slice cells.
-#
-# Joint theta_mean comes from `.nl_posterior_moments` and is left in place for
-# axes with no foreign slice cells (the recompute is a no-op there). It is
-# overwritten in place rather than augmented -- downstream callers should read
-# the axis marginal, not the cartesian-only joint moment. The SD over the same
-# mask is `.nl_attach_axis_sd()`'s, inside `.nl_posterior_moments()`.
-.joint_recalibrate_axis_mean <- function(res) {
-    if (is.null(res$refining_axis) || all(res$refining_axis == "")) return(res)
-    if (is.null(res$theta_grid) || !is.matrix(res$theta_grid)) return(res)
-    lm_eff <- res$log_marginal
-    if (!is.null(res$log_quad) && length(res$log_quad) == length(lm_eff)) {
-        lm_eff <- lm_eff + res$log_quad
-        lm_eff[is.na(lm_eff)] <- -Inf
-    }
-    res$theta_mean <- .hyper_recalibrate_axis_mean(
-        theta_grid    = res$theta_grid,
-        log_marginal  = lm_eff,
-        refining_axis = res$refining_axis,
-        theta_mean    = res$theta_mean
-    )
-    res
-}
-
 # Weighted-quantile median + 2.5/97.5 empirical CI for every hyperparameter
 # axis are produced generically by `.nl_axis_quantiles` (defined in
 # nested_laplace.R) and attached by `.nl_posterior_moments`. No alpha-
@@ -1020,8 +991,8 @@
 }
 
 # Glue refined extras + log_marginal + refining_axis back into the joint
-# kernel result. Downstream `.joint_recalibrate_axis_mean` /
-# `.nl_posterior_moments` / `.nl_attach_axis_sd` read `res$modes`,
+# kernel result. Downstream `.nl_posterior_moments` / `.nl_attach_axis_sd`
+# read `res$modes`,
 # `res$log_marginal`, `res$refining_axis` directly; this keeps them in sync
 # after refinement without touching their implementations.
 #

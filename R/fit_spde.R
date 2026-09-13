@@ -285,7 +285,11 @@ fit_spde <- function(y, X, spatial,
       offset_nullable = offset,
       debias = debias_req, cila = cila_req,
       prune_tol = prune_tol_eff, screen_iters = screen_it,
-      compute_fitted_var = fitted_var
+      compute_fitted_var = fitted_var,
+      # The grid and the CCD design weigh a cell by its marginal plus the PC
+      # prior on (log range, log sigma), so a screened solve ranks with both.
+      screen_log_offset = if (prune_tol_eff > 0)
+                            .spde_log_hyperprior(range_vec, sigma_vec, sp)
     )
     res
   }

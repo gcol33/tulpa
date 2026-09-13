@@ -201,3 +201,117 @@ test_that("log_prior_coord says which coordinate the declared prior lives on", {
   }
   expect_identical(lin("natural"), lin("integration"))
 })
+
+# --------------------------------------------------------------------------- #
+# Slice cells are measured by the box they own (gcol33/tulpa#733)             #
+# --------------------------------------------------------------------------- #
+#
+# A refinement pass adds a level on one axis at ONE combination of the others.
+# The product rule is a tensor measure, so on a grid carrying such cells every
+# cell is measured by its own box instead.
+
+SLICE_AXES <- list(sigma   = exp(seq(log(0.1), log(3), length.out = 5)),
+                   phi_pos = exp(seq(log(1),   log(60), length.out = 5)))
+SLICE_TENSOR <- as.matrix(expand.grid(SLICE_AXES))
+
+test_that("a slice cell leaves every row of the base tensor its mass", {
+  specs <- .joint_axis_specs_from_grid(SLICE_TENSOR)
+  mid <- sqrt(SLICE_AXES$phi_pos[4] * SLICE_AXES$phi_pos[5])
+  g <- rbind(SLICE_TENSOR, c(SLICE_AXES$sigma[3], mid))
+  ref <- c(rep("", 25L), "phi_pos")
+  w <- exp(.hyper_log_quad_weights(g, specs, refining = ref))
+  expect_equal(sum(w), 1, tolerance = 1e-12)
+  rows <- as.numeric(tapply(w, signif(g[, "sigma"], 6), sum))
+  expect_equal(unname(rows), rep(0.2, 5), tolerance = 1e-12)
+  # The tensor itself takes the product rule unchanged.
+  expect_identical(.hyper_log_quad_weights(SLICE_TENSOR, specs,
+                                           refining = rep("", 25L)),
+                   .hyper_log_quad_weights(SLICE_TENSOR, specs))
+})
+
+test_that("crossing refinements and an extension conserve the base area exactly", {
+  # Flat log axes with no declared span: the absolute measure is coordinate
+  # area, so the total is the tensor's area plus the one extension region.
+  sp <- list(list(name = "sigma", log_scale = TRUE),
+             list(name = "phi_pos", log_scale = TRUE))
+  ls <- log(SLICE_AXES$sigma); lp <- log(SLICE_AXES$phi_pos)
+  area0 <- prod(c(diff(range(ls)), diff(range(lp))) * 5 / 4)
+  tensor_area <- sum(exp(.hyper_log_quad_weights(SLICE_TENSOR, sp,
+                                                 absolute = TRUE)))
+  expect_equal(tensor_area, area0, tolerance = 1e-12)
+
+  ext_phi <- exp(lp[5] + (lp[5] - lp[4]))
+  g <- rbind(SLICE_TENSOR,
+             c(SLICE_AXES$sigma[3], exp((lp[4] + lp[5]) / 2)),
+             c(SLICE_AXES$sigma[3], ext_phi),
+             c(exp((ls[3] + ls[4]) / 2), SLICE_AXES$phi_pos[4]),
+             c(exp((ls[2] + ls[3]) / 2), SLICE_AXES$phi_pos[4]))
+  ref <- c(rep("", 25L), "phi_pos", "phi_pos", "sigma", "consistency_sigma")
+  w <- exp(.hyper_log_quad_weights(g, sp, refining = ref, absolute = TRUE))
+  expect_true(all(w > 0))
+  old_edge <- lp[5] + (lp[5] - lp[4]) / 2
+  new_edge <- log(ext_phi) + (log(ext_phi) - lp[5]) / 2
+  expect_equal(sum(w), area0 + (new_edge - old_edge) * (ls[2] - ls[1]),
+               tolerance = 1e-12)
+})
+
+test_that("a slice cell off the base levels of another axis is refused", {
+  specs <- .joint_axis_specs_from_grid(SLICE_TENSOR)
+  g <- rbind(SLICE_TENSOR, c(0.5, 30))
+  expect_error(.hyper_log_quad_weights(g, specs,
+                                       refining = c(rep("", 25L), "phi_pos")),
+               "off the base levels")
+})
+
+test_that("refinement never anchors a slice at a cell placed on another axis", {
+  g <- rbind(SLICE_TENSOR, c(SLICE_AXES$sigma[2], 5))
+  ref <- c(rep("", 25L), "phi_pos")
+  lm <- rep(-10, 26L); lm[26L] <- 0
+  pk <- .hyper_new_mode_tracked_triples(g, lm, NULL, "sigma", 0.2,
+                                        anchor_lev = SLICE_AXES$sigma[2],
+                                        refining_axis = ref)
+  expect_false(pk$warm_start_idx == 26L)
+  expect_true(pk$new_cells[1L, "phi_pos"] %in% SLICE_AXES$phi_pos)
+  expect_null(pk$calibration)
+})
+
+# Correlated two-axis posterior: log sigma and a location m, so a refinement on
+# sigma at the modal row is the configuration where a mask or a stand-in term
+# would move the reported m.
+two_axis_inner <- function(hypers) {
+  u <- log(as.numeric(hypers[["sigma"]])); m <- as.numeric(hypers[["m"]])
+  z1 <- (u - 0.2) / 0.35; z2 <- (m - 0.6) / 0.8
+  list(log_marginal = -0.5 * (z1^2 - 2 * 0.7 * z1 * z2 + z2^2) / (1 - 0.7^2))
+}
+fit_two_axis <- function(n_sigma, control) {
+  specs <- list(
+    hyper_axis_spec("sigma", grid = exp(seq(-1.5, 1.9, length.out = n_sigma)),
+                    log_scale = TRUE, bounds = c(0, Inf), refinable = TRUE,
+                    log_prior = function(s) 0, slab_bounds = exp(c(-1.8, 2.2))),
+    hyper_axis_spec("m", grid = seq(-3, 4, length.out = 15L),
+                    log_prior = function(x) stats::dnorm(x, 0, 3, log = TRUE)))
+  tulpa_hyper_grid(specs, two_axis_inner, combine = "none", n_draws = 0L,
+                   control = control)
+}
+
+test_that("a refined grid reports the posterior its own cell weights define", {
+  coarse  <- fit_two_axis(5L, PINNED)
+  refined <- fit_two_axis(5L, REFINE)
+  fine    <- fit_two_axis(61L, PINNED)
+  expect_gt(nrow(refined$theta_grid), nrow(coarse$theta_grid))
+  expect_true(any(nzchar(refined$refining_axis)))
+  # One posterior per fit: the reported means are the weighted means over every
+  # cell, the same cells and weights the fit's draws are taken from, on the axis
+  # that was refined and on the one that was not.
+  w <- refined$weights
+  for (ax in c("sigma", "m")) {
+    expect_equal(refined$theta_mean[[ax]], sum(w * refined$theta_grid[, ax]),
+                 tolerance = 1e-12, label = ax)
+  }
+  # The refined grid integrates the same measure at a finer resolution, so its
+  # evidence and the refined axis move towards the fine tensor's.
+  expect_lt(abs(refined$log_evidence - fine$log_evidence),
+            abs(coarse$log_evidence - fine$log_evidence))
+  expect_lt(abs(refined$theta_mean[["sigma"]] - fine$theta_mean[["sigma"]]),
+            abs(coarse$theta_mean[["sigma"]] - fine$theta_mean[["sigma"]]))
+})

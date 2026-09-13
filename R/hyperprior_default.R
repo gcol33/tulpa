@@ -28,12 +28,15 @@
   # A range axis on a block that carries neither a user range anchor nor the
   # coordinates the default anchor is read from.
   "range_extent_unknown",
-  # A per-arm dispersion whose family has no PC prior sourced yet.
+  # A per-arm dispersion whose family has no prior sourced yet.
   "dispersion_prior_unsourced",
-  # The free-covariance blocks' default grid is laid in (sigma, rho) and
-  # converted to log-Cholesky coordinates, so its cells have no product measure
-  # on the columns the grid carries.
+  # A free-covariance block's log-Cholesky columns form a tensor neither in
+  # those coordinates nor, for two fields, in (log sigma_1, log sigma_2, rho),
+  # so its cells have no measure the grid itself defines.
   "logchol_design_measure",
+  # A free-covariance block with some of its log-Cholesky columns held fixed:
+  # the joint density on Sigma is not a density on the axes that remain.
+  "logchol_partial_block",
   # An axis no table binds a density to.
   "unclassified_axis"
 )
@@ -50,6 +53,11 @@
 # Families whose dispersion `phi` is the negative-binomial SIZE, which carries
 # the PC prior on its overdispersion 1 / size (`.NL_HYPERPRIOR$nb_size_lambda`).
 .HP_NB_SIZE_DISPERSION <- c("neg_binomial_2", "truncated_neg_binomial_2")
+
+# Families whose dispersion carries an exponential prior on `phi` itself, by
+# base family, with the `.NL_HYPERPRIOR` rate it reads: R-INLA's defaults for a
+# gamma shape and a beta precision (gcol33/tulpa#736).
+.HP_EXP_DISPERSION <- c(gamma = "gamma_shape_rate", beta = "beta_precision_rate")
 
 # The columns of `tg` that are integrated: a column holding one value is a
 # fixed setting, part of the model rather than an axis of the grid.
@@ -156,8 +164,8 @@
     list(fn = function(x) .hp_log_scale_density(x, "range", ra$anchor, ra$dim))
   }
 
-  if (type %in% c("mcar", "miid")) {
-    return(list(reason = .hp_decline("logchol_design_measure")))
+  if (type %in% c("mcar", "miid") && .hp_is_logchol_col(bare)) {
+    return(list(group = "logchol"))
   }
   switch(paste(type, bare, sep = ":"),
     "spde:sigma" = return(scale(
@@ -184,6 +192,13 @@
   if (startsWith(bare, "phi_")) {
     fam <- tolower(family %||% "")
     if (fam %in% .HP_VARIANCE_DISPERSION) return(scale("variance"))
+    base <- if (nzchar(fam)) .family_base(fam) else ""
+    if (base %in% names(.HP_EXP_DISPERSION)) {
+      rate <- .nl_hyperprior(.HP_EXP_DISPERSION[[base]])
+      return(list(fn = function(x) .hyper_prior_carry(
+        x, function(v) stats::dexp(v, rate, log = TRUE),
+        log_scale = TRUE, coord = "natural")))
+    }
     if (fam %in% .HP_NB_SIZE_DISPERSION) {
       return(list(fn = function(x) suppressWarnings(cpp_hyperprior_log_density(
         log(as.numeric(x)), "nb_size", "log", 1, 0.5,
@@ -207,9 +222,13 @@
   n <- nrow(tg)
   out <- list(lp = numeric(n), lp_in_kernel = numeric(n),
               axes = character(0), declined = character(0))
+  groups <- list()
   for (a in axes) {
     r <- resolve(a)
-    if (!is.null(r$fn)) {
+    if (identical(r$group, "logchol")) {
+      pre <- .hp_col_prefix(a)
+      groups[[pre]] <- c(groups[[pre]], a)
+    } else if (!is.null(r$fn)) {
       v <- as.numeric(r$fn(as.numeric(tg[, a])))
       v[is.na(v)] <- -Inf
       out$lp   <- out$lp + v
@@ -218,7 +237,115 @@
       out$declined[[name(a)]] <- r$reason
     }
   }
+  # A free-covariance block's density is one density over all of its columns,
+  # read off the whole block at once: every column of it, the fixed ones too.
+  for (pre in names(groups)) {
+    cols <- .hp_logchol_block_cols(colnames(tg), pre)
+    d <- .hp_logchol_log_density(tg[, cols, drop = FALSE])
+    if (!is.null(d$lp)) {
+      v <- d$lp
+      v[is.na(v)] <- -Inf
+      out$lp   <- out$lp + v
+      out$axes <- c(out$axes, vapply(groups[[pre]], name, character(1)))
+    } else {
+      for (a in groups[[pre]]) out$declined[[name(a)]] <- d$reason
+    }
+  }
   out
+}
+
+# Free-covariance blocks (`mcar`, `miid`) lay their outer axes as the
+# p(p + 1) / 2 log-Cholesky coordinates of Sigma = L L', one column per entry
+# of L in column-major lower-triangle order and named `L<i><j>`: `log L_ii` on
+# the diagonal, the raw `L_ij` below it (`.re_logchol_to_L()`). Their prior and
+# their cell measure are properties of the block, not of any one column.
+.hp_is_logchol_col <- function(bare) grepl("^L[0-9][0-9]$", bare)
+
+# The block prefix of a column (`b2.` of `b2.L21`, empty when unprefixed).
+.hp_col_prefix <- function(col) {
+  m <- regmatches(col, regexpr("^b[0-9]+[.]", col))
+  if (length(m)) m else ""
+}
+
+# A block's log-Cholesky columns among `cols`, in the column-major order
+# `.re_logchol_to_L()` reads, or NULL when the set is not a complete p x p
+# triangle.
+.hp_logchol_block_cols <- function(cols, prefix) {
+  bare <- sub("^b[0-9]+[.]", "", cols)
+  mine <- cols[.hp_col_prefix_vec(cols) == prefix & .hp_is_logchol_col(bare)]
+  if (!length(mine)) return(NULL)
+  ij <- do.call(rbind, lapply(sub("^b[0-9]+[.]L", "", sub("^L", "", mine)),
+                              function(s) as.integer(strsplit(s, "")[[1L]])))
+  p <- max(ij)
+  want <- character(0)
+  for (j in seq_len(p)) for (i in j:p) want <- c(want, sprintf("%sL%d%d", prefix, i, j))
+  if (!setequal(want, mine)) return(NULL)
+  want
+}
+.hp_col_prefix_vec <- function(cols) vapply(cols, .hp_col_prefix, character(1),
+                                            USE.NAMES = FALSE)
+
+# Is a node matrix a full tensor over its columns' distinct values? Values are
+# compared at 12 significant digits, the resolution a coordinate recovered
+# through `exp` / `sqrt` keeps.
+.hp_is_tensor <- function(M) {
+  M <- signif(as.matrix(M), 12L)
+  n_lev <- vapply(seq_len(ncol(M)), function(j) length(unique(M[, j])),
+                  integer(1))
+  nrow(unique(M)) == nrow(M) && nrow(M) == prod(n_lev)
+}
+
+# The coordinates a free-covariance block's grid is a tensor in, which are the
+# coordinates it integrates on. `M` holds the block's columns in
+# `.hp_logchol_block_cols()` order. Returns `list(design, p, coords)` with
+# `design` one of
+#   "logchol"  a tensor in the log-Cholesky columns themselves;
+#   "sd_rho"   two fields laid as a tensor in (log sigma_1, log sigma_2, rho),
+#              the default grid (`.mcar_default_logchol_grid()`);
+# or `list(reason)`. The two cannot both hold on a grid whose three columns are
+# all integrated: rho levels fix the (L21, L22) pairs along s2, and s2 levels fix
+# them along rho.
+.hp_logchol_design <- function(M) {
+  M <- as.matrix(M)
+  m <- ncol(M)
+  p <- (sqrt(8 * m + 1) - 1) / 2
+  if (!m || p != round(p)) return(list(reason = .hp_decline("logchol_design_measure")))
+  varies <- vapply(seq_len(m), function(j) length(unique(M[, j])) > 1L,
+                   logical(1))
+  if (!all(varies)) return(list(reason = .hp_decline("logchol_partial_block")))
+  if (.hp_is_tensor(M)) return(list(design = "logchol", p = as.integer(p), coords = M))
+  if (p == 2) {
+    s1 <- exp(M[, 1L])
+    s2 <- sqrt(M[, 2L]^2 + exp(2 * M[, 3L]))
+    D <- cbind(log(s1), log(s2), M[, 2L] / s2)
+    if (.hp_is_tensor(D)) return(list(design = "sd_rho", p = 2L, coords = D))
+  }
+  list(reason = .hp_decline("logchol_design_measure"))
+}
+
+# Per-cell log prior density of a free-covariance block, on the coordinates its
+# grid integrates on (`.hp_logchol_design()`): independent PC priors on the
+# marginal standard deviations and an LKJ prior on the correlation, the
+# `re_cov_pc_lkj_prior()` default at the engine's anchor. On a log-Cholesky
+# tensor that is the PC + LKJ density pushed to the log-Cholesky coordinates;
+# on the two-field default it is the same prior on (log sigma_1, log sigma_2,
+# rho) directly, where the LKJ(eta) density at d = 2 is
+# (1 - rho^2)^(eta - 1) / c_2(eta).
+.hp_logchol_log_density <- function(M) {
+  d <- .hp_logchol_design(M)
+  if (is.null(d$design)) return(list(reason = d$reason))
+  anchor <- .nl_scale_anchor()
+  eta <- .nl_hyperprior("lkj_eta")
+  if (identical(d$design, "sd_rho")) {
+    rho <- d$coords[, 3L]
+    lp <- .hp_log_scale_density(exp(d$coords[, 1L]), "sd", anchor) +
+      .hp_log_scale_density(exp(d$coords[, 2L]), "sd", anchor) +
+      (eta - 1) * log1p(-rho^2) - .lkj_log_normaliser(2L, eta)
+  } else {
+    f <- .re_cov_block_logprior(d$p, TRUE, anchor, eta)
+    lp <- apply(as.matrix(M), 1L, f)
+  }
+  list(lp = as.numeric(lp))
 }
 
 # Per-cell default log hyperprior of one registry block over its own axis

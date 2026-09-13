@@ -1,5 +1,82 @@
 # tulpa 0.4.0
 
+## Free-covariance blocks and two dispersions carry a proper prior
+
+* **Every default MCAR / MIID fit reported `log_evidence = NA`**
+  (gcol33/tulpa#735). A free-covariance block lays its outer axes as the
+  log-Cholesky coordinates of Sigma, and its default two-field grid is a tensor
+  in (log sigma_1, log sigma_2, rho) converted to those columns, so no column had
+  a measure of its own and every one declined `logchol_design_measure`. The
+  block is now given one prior and one cell measure over all of its columns, on
+  the coordinates its grid is a tensor in (`.hp_logchol_design()`): the
+  two-field default carries independent PC priors on both standard deviations
+  and an LKJ prior on rho, with its cells measured in (log sigma_1,
+  log sigma_2, rho); a grid that is a tensor in the log-Cholesky columns
+  carries the same PC + LKJ prior pushed to those columns
+  (`re_cov_pc_lkj_prior()`) and their widths. The two forms agree through the
+  map's Jacobian `s2 / (1 - rho^2)` to 1e-15, and the default prior integrates
+  to one on a wide grid. A block with a fixed column declines
+  `logchol_partial_block`; one whose grid is a tensor in neither declines as
+  before. The default posterior on Sigma now carries this prior where it
+  carried none.
+* **A gamma shape and a beta precision declined `dispersion_prior_unsourced`**
+  (gcol33/tulpa#736). They now carry R-INLA's shipped defaults for the same
+  parameters, `loggamma(1, 0.01)` on the gamma family's precision parameter and
+  `loggamma(1, 0.1)` on the beta family's (rinla/R/models.R), which are
+  exponential priors on `phi` itself in the parameterisation tulpa's kernels
+  use. The rates are `.NL_HYPERPRIOR$gamma_shape_rate` and `$beta_precision_rate`.
+  Neither is a PC prior: R-INLA ships one for the mean-one Gamma(1/a, 1/a) but
+  applies it to no likelihood's shape.
+
+## The cheap screen ranks what the grid integrates
+
+* **`control$prune` ranked outer cells by the likelihood alone**
+  (gcol33/tulpa#734). The screen runs inside the kernel and softmax-normalised
+  its cheap log-marginals, while since the #730 defaults every axis's
+  hyperprior is folded into `log_marginal` in R after the kernel returns and the
+  cell measure enters only the weights. A cell its prior or its width favoured
+  could be pruned, and one they suppressed kept, and the safety gate compared two
+  prior-less argmaxes, so it could not see it. Every screened entry now receives
+  `screen_log_offset`, each cell's log hyperprior plus its log cell measure, both
+  fixed by the grid before any cell is solved (`.nl_screen_log_offset()`), and
+  ranks, cuts, restores and gates on `cheap log-marginal + offset`: the eleven
+  single-block entries through the shared entry bundle, the multi-block and
+  joint entries, and `fit_spde()`'s grid with its (log range, log sigma) prior.
+  The fit carries the offset as `prune_screen_log_offset`, the gate's ESS reads
+  the same posterior, and `prune_cheap_log_marginal` and the cheap-vs-full gap
+  stay on the kernel's scale, where the offset cancels. A fit that does not
+  screen is unchanged.
+
+## A refined outer grid is measured cell by cell
+
+* **Refinement slice cells broke the tensor measure the cell weights assumed**
+  (gcol33/tulpa#733). The adaptive and var-of-means passes add a level on one
+  axis at one combination of the others, while `.hyper_log_quad_weights()`
+  measured every axis by the widths of its global levels. Each slice cell also
+  carried a calibration term standing in for the rest of its level, and every
+  per-axis read dropped the cells another axis's pass had placed. The weights,
+  the draws and the reported moments therefore described three different
+  distributions: on the coupled `occu_cover` SBC fixture the `sigma` mean read
+  0.924 from the masked cells against 0.874 over all of them and 0.872 with
+  refinement off. A grid carrying slice cells is now measured cell by cell
+  (`.hyper_refined_log_quad()`). Every cell owns a box; a slice cell re-tiles
+  its own row of the base tensor, and where refinements on two axes meet inside
+  one base box the corner is split equally between them, so the base area is
+  conserved exactly (an extension past the outermost node adds that row's
+  extension region). The calibration term and the per-axis masks are gone, a
+  refinement pass anchors only at base cells or cells on its own axis, and a
+  read with no cell measure sums the base tensor alone. A grid with no slice
+  cells keeps the product rule bit for bit.
+* **The reported hyperparameter intervals were read without the cell
+  measure.** `.nl_posterior_moments()` handed `.nl_axis_quantiles()` the raw
+  `log_marginal`, so on an unevenly measured axis (a graded grid, a domain
+  clamp, the copy scale's atom) the median and interval weighed every node
+  alike while the mean and SD carried the widths. Both now read
+  `log_marginal + log_quad`.
+* `.nl_grid_log_quad(refining =)` rebuilds its axis specs from the base cells,
+  so a prior read off the declared nodes (the copy scale's exponential rate) is
+  not moved by a node a refinement pass appended.
+
 ## WAIC, LOO and posterior_predict() read the whole linear predictor
 
 * **The linear predictor behind every WAIC / LOO read and every posterior

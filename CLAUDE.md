@@ -450,11 +450,24 @@ PC prior in dimension d (`pc_range_rate_d`), `alpha = 0.5` at
 `coord_extent` / `coord_dim` where it does not -- the HSGP basis); bounded axes
 a uniform on the domain, AR1 rho its Beta normalised; the copy scale keeps its
 spec slab; `neg_binomial_2` size R-INLA's `pc.mgamma` (`nb_size_lambda = 7`,
-sourced from INLA's code, not a peer-reviewed derivation). Beta precision and
-gamma shape decline (`dispersion_prior_unsourced`), as do MCAR / MIID
-log-Cholesky axes (`logchol_design_measure`: their default grid is laid in
-(sigma, rho) and has no per-column cell measure) and a range axis on a block
-without coordinates.
+sourced from INLA's code, not a peer-reviewed derivation); a gamma shape and a
+beta precision R-INLA's own shipped defaults, Exponential(0.01) and
+Exponential(0.1) on `phi` (`loggamma(1, rate)`, rinla/R/models.R hyperids
+58001 / 61001, gcol33/tulpa#736). Other dispersions decline
+(`dispersion_prior_unsourced`), as does a range axis on a block without
+coordinates.
+
+**A free-covariance block is ONE prior and ONE measure over all its columns**
+(gcol33/tulpa#735). MCAR / MIID lay `L<i><j>` log-Cholesky columns, and
+`.hp_logchol_design()` is the one predicate for the coordinates the block's grid
+is a tensor in: the two-field default is a tensor in (log sigma_1, log sigma_2,
+rho) and carries PC x PC x LKJ there with its cells measured there; a
+log-Cholesky tensor carries `re_cov_pc_lkj_prior()`'s density and its column
+widths. Both the fold (`.hp_collect()`'s logchol group) and the measure
+(`.hyper_logchol_groups()` in `.hyper_log_quad_weights()`) read that predicate,
+so they cannot disagree. The two forms agree through the map's Jacobian
+`s2 / (1 - rho^2)` to 1e-15. A fixed column declines `logchol_partial_block`,
+neither tensor `logchol_design_measure`. Tests: `test-hyperprior-default.R`.
 
 The density is folded into `log_marginal` where the kernel result is formed --
 the end of `.nl_dispatch()` / `.nl_dispatch_multi()` (the `theta_grid_override`
@@ -1718,6 +1731,42 @@ Every test file reaching a flipped door with a gaussian or lognormal arm that
 `657f179` did not convert -- 33 of them -- was re-run at tier 2 afterwards, with
 no other failure in the class. Write-up `dev_notes/issue661/RESULTS661.md`.
 
+### A refined grid is measured cell by cell (gcol33/tulpa#733)
+
+The adaptive and var-of-means passes add a level on one axis at ONE combination
+of the others. The product rule `.hyper_log_quad_weights()` applies is a tensor
+measure, so a grid carrying such slice cells goes through
+`.hyper_refined_log_quad()` (keyed by `refining`, the per-cell tag): every cell
+owns a box, a slice re-tiles its own row of the base tensor (outer edge the wider
+of the base edge and the row's own mirror, so an extension adds that row's region
+and never opens a gap), and where refinements on two axes meet in one base box
+the corner is shared equally,
+`integral_0^1 prod_k (f_k + (1 - f_k) t) dt` (`.hyper_corner_share()`). The base
+area is conserved exactly, to 1e-12 with an extension and a crossing. A grid
+with no slices takes the product rule bit for bit.
+
+**A slice cell is a point evaluation, never a stand-in for its level.** It used
+to carry a calibration `log S` (the anchor level's summed marginal) in
+`log_marginal` while its weight and every per-axis mask treated it as one cell,
+so the weights, the draws and the reported moments were three different
+distributions (`occu_cover` SBC fixture: `sigma` mean 0.924 masked, 0.874 over
+all cells, 0.872 with refinement off). Expanding slices into rows under the
+mode-tracking assumption was measured too and reads 0.912, so it is not the fix.
+A pass anchors only at base cells or cells on its own axis
+(`.hyper_slice_anchor_ok()`), which is what guarantees a slice's row is a base
+row. Measured reads (`log_quad` present) sum every cell; a read with no measure
+sums the base tensor alone (`.nl_axis_read_cells()`), since raw `log_marginal`
+is a mass only where every level appears in every row.
+
+**The reported axis quantiles read the measure too.** `.nl_posterior_moments()`
+used to hand `.nl_axis_quantiles()` bare `log_marginal`, so on an unevenly
+measured axis the median and interval ignored the widths and the copy scale's
+atom and slab while the mean and SD carried them. On the tulpa#22 alpha fixture
+the no-prior median's geometric bias read +0.088 without the measure and -0.018
+with it, on the same fits. `.nl_grid_log_quad(refining =)` rebuilds specs from
+the base cells, so the copy slab's rate is not moved by an appended node.
+Tests: `test-hyper-quadrature-refinement.R`.
+
 ### One axis marginal, three measures (gcol33/tulpa#660)
 
 `53a2ef9` folded the cells' quadrature weights into `.nl_axis_marginal_w()` for
@@ -1823,6 +1872,18 @@ together, so a partial move fails loudly rather than leaving the engine with
 two defaults the way `k_samples` did. Tests: `test-nl-fitted-var-dedup.R`,
 `test-nl-single-block-prune.R`, `test-screen-depth.R`, and the cheap-screen
 block of `test-nl-entry-forwarding.R` at all eleven entries.
+
+**The screen ranks the posterior weight, not the kernel's likelihood
+(gcol33/tulpa#734).** The hyperprior is folded in R after the kernel returns and
+the cell measure enters only the weights, so a screen softmaxing its cheap
+log-marginals ranked a different quantity from the one the grid integrates.
+Every screened entry takes `screen_log_offset` (the `NlEntryInputs` member, the
+joint and multi entries' own argument), built by `.nl_screen_log_offset()` from
+the grid before any cell is solved, and `run_nested_laplace_grid` ranks, cuts,
+restores and picks the gate's full argmax on `cheap + offset`.
+`prune_cheap_log_marginal` and the cheap-vs-full gap stay on the kernel's scale.
+The fit carries the offset as `prune_screen_log_offset`; the R gate's ESS reads
+`log_marginal - folded hyperprior + offset`.
 
 ### Three posterior arbiters, and coverage is only one (gcol33/tulpa#335)
 

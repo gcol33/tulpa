@@ -73,6 +73,16 @@
 // iterations. A depth above what the ranking needs makes screening cost more
 // than the solves it saves.
 //
+// The screen ranks what the grid integrates. `screen_log_offset` (length
+// `n_grid`, or empty) is each cell's log hyperprior plus its log cell measure,
+// both fixed before any cell is solved: the driver's `log_marginal` is the
+// kernel's likelihood alone, and the posterior weight a cell ends up with is
+// `exp(log_marginal + offset)`. Ranking by the likelihood alone would prune a
+// cell the prior or its width favours and keep one they suppress. The offset
+// enters the ranking, the cut, the floor restore and the gate's full-solve
+// argmax; `prune_cheap_log_marginal` and the cheap-vs-full gap stay on the
+// kernel's own scale, where the offset cancels.
+//
 // Safety gate: after the full pass, the driver compares the cheap-screen
 // argmax (over all cells) against the full-solve argmax (over kept cells)
 // and the cheap-vs-full log-marginal gap at the full argmax cell. A
@@ -405,8 +415,19 @@ inline Rcpp::List run_nested_laplace_grid(
     // Per-cell state to reconstruct for a checkpoint-loaded cell. See
     // NoResumeRefill; the default is a no-op, so a caller keeping nothing
     // outside `LaplaceResult` is unaffected.
-    ResumeRefill resume_refill = ResumeRefill{}
+    ResumeRefill resume_refill = ResumeRefill{},
+    // Per-cell log hyperprior + log cell measure the screen ranks with; empty
+    // ranks on the kernel's log-marginal alone.
+    const std::vector<double>& screen_log_offset = std::vector<double>()
 ) {
+    if (!screen_log_offset.empty() &&
+        static_cast<int>(screen_log_offset.size()) != n_grid) {
+        Rcpp::stop("screen_log_offset has %d entries for a grid of %d cells.",
+                   static_cast<int>(screen_log_offset.size()), n_grid);
+    }
+    const auto screen_off = [&](int k) -> double {
+        return screen_log_offset.empty() ? 0.0 : screen_log_offset[k];
+    };
     // At least one step: a zero-step screen would rank every cell at the
     // warm-start it inherited rather than at its own quasi-mode.
     const int screen_steps = std::max(1, screen_iters);
@@ -800,19 +821,26 @@ inline Rcpp::List run_nested_laplace_grid(
                 raise_if_cell_failed();
             }
 
+            // The screened posterior: cheap log-marginal plus the cell's log
+            // hyperprior and log measure. A cell whose offset is -Inf carries
+            // no prior mass and is dropped with the infeasible ones.
+            std::vector<double> screen_lm(n_grid);
+            for (int k = 0; k < n_grid; k++) {
+                screen_lm[k] = cheap_lm[k] + screen_off(k);
+            }
             // Softmax over finite entries. Cells with non-finite cheap log-
             // marginal (block.prep returned infeasible) get weight 0 and are
             // pruned automatically.
             double m = -std::numeric_limits<double>::infinity();
             for (int k = 0; k < n_grid; k++) {
-                if (std::isfinite(cheap_lm[k]) && cheap_lm[k] > m) {
-                    m = cheap_lm[k];
+                if (std::isfinite(screen_lm[k]) && screen_lm[k] > m) {
+                    m = screen_lm[k];
                     cheap_argmax = k;
                 }
             }
             double Z = 0.0;
             if (std::isfinite(m)) {
-                for (double v : cheap_lm) {
+                for (double v : screen_lm) {
                     if (std::isfinite(v)) Z += std::exp(v - m);
                 }
             }
@@ -829,21 +857,21 @@ inline Rcpp::List run_nested_laplace_grid(
             for (int k = 0; k < n_grid; k++) {
                 if (k == k_pilot) continue;
                 if (ckpt_done[k]) continue;  // completed cells are never pruned
-                double w = (std::isfinite(cheap_lm[k]) && Z > 0.0)
-                           ? std::exp(cheap_lm[k] - m) / Z
+                double w = (std::isfinite(screen_lm[k]) && Z > 0.0)
+                           ? std::exp(screen_lm[k] - m) / Z
                            : 0.0;
                 bool drop;
                 if (w > 0.0) {
                     drop = (w < prune_tol);
-                } else if (std::isfinite(cheap_lm[k]) && std::isfinite(m) &&
+                } else if (std::isfinite(screen_lm[k]) && std::isfinite(m) &&
                            Z > 0.0) {
-                    // exp(cheap_lm[k] - m) underflowed to zero, which compares
+                    // exp(screen_lm[k] - m) underflowed to zero, which compares
                     // below every positive tolerance and so flattens the knob
                     // past a gap of ~745 nats. The same comparison in log space
                     // is exact there, and agrees with the weight form wherever
                     // the weight is representable, so a tolerance small enough
                     // to reach such a cell reaches it.
-                    drop = ((cheap_lm[k] - m) < (log_tol + log_Z));
+                    drop = ((screen_lm[k] - m) < (log_tol + log_Z));
                 } else {
                     drop = true;   // infeasible cell: no cheap log-marginal
                 }
@@ -878,7 +906,7 @@ inline Rcpp::List run_nested_laplace_grid(
             if (n_kept_cells < min_keep) {
                 std::vector<int> restorable;
                 for (int k = 0; k < n_grid; k++) {
-                    if (pruned[k] && std::isfinite(cheap_lm[k])) {
+                    if (pruned[k] && std::isfinite(screen_lm[k])) {
                         restorable.push_back(k);
                     }
                 }
@@ -886,8 +914,8 @@ inline Rcpp::List run_nested_laplace_grid(
                 // restored set is a function of the screen alone.
                 std::sort(restorable.begin(), restorable.end(),
                           [&](int a, int b) {
-                              if (cheap_lm[a] != cheap_lm[b]) {
-                                  return cheap_lm[a] > cheap_lm[b];
+                              if (screen_lm[a] != screen_lm[b]) {
+                                  return screen_lm[a] > screen_lm[b];
                               }
                               return a < b;
                           });
@@ -910,7 +938,7 @@ inline Rcpp::List run_nested_laplace_grid(
             {
                 double lo =  std::numeric_limits<double>::infinity();
                 double hi = -std::numeric_limits<double>::infinity();
-                for (double v : cheap_lm) {
+                for (double v : screen_lm) {
                     if (!std::isfinite(v)) continue;
                     if (v < lo) lo = v;
                     if (v > hi) hi = v;
@@ -1328,6 +1356,9 @@ inline Rcpp::List run_nested_laplace_grid(
         out["prune_n_pruned"]           = n_cells_pruned;
         out["prune_tol"]                = prune_tol;
         out["prune_screen_iters"]       = screen_steps;
+        if (!screen_log_offset.empty()) {
+            out["prune_screen_log_offset"] = Rcpp::wrap(screen_log_offset);
+        }
         // What the tolerance cut at (nats below the best cheap cell), what the
         // screened surface spans, the floor that was applied and how many cells
         // it put back. The first two are the pair a caller reads to see whether
@@ -1348,11 +1379,13 @@ inline Rcpp::List run_nested_laplace_grid(
         // the R driver decides the fallback (it owns the warning + re-solve).
         int full_argmax = -1;
         double full_max = -std::numeric_limits<double>::infinity();
+        double full_post_max = -std::numeric_limits<double>::infinity();
         for (int k = 0; k < n_grid; k++) {
             if (pruned[k]) continue;
-            double v = log_marginals[k];
-            if (std::isfinite(v) && v > full_max) {
-                full_max = v;
+            double v = log_marginals[k] + screen_off(k);
+            if (std::isfinite(v) && v > full_post_max) {
+                full_post_max = v;
+                full_max = log_marginals[k];
                 full_argmax = k;
             }
         }

@@ -73,8 +73,16 @@ struct NlEntryInputs {
     double prune_tol          = 0.0;
     int    screen_iters       = CHEAP_SCREEN_ITERS;
     bool   compute_fitted_var = true;
+    // Per-cell log hyperprior + log cell measure the screen ranks with, in the
+    // grid's cell order (see run_nested_laplace_grid); NULL ranks on the
+    // kernel's log-marginal alone.
+    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue;
 
     int N() const { return static_cast<int>(y.size()); }
+    std::vector<double> screen_offset() const {
+        if (screen_log_offset.isNull()) return std::vector<double>();
+        return Rcpp::as<std::vector<double>>(screen_log_offset);
+    }
     int p() const { return X.ncol(); }
 };
 
@@ -172,7 +180,8 @@ inline Rcpp::List nl_run_multi_block_entry(
         in.compute_skew, run.skew_idx_ptr,
         run.debias_req.ptr, run.cila_req.ptr,
         in.screen_iters, in.compute_fitted_var,
-        tulpa::as_offset_vec(in.offset, in.N())
+        tulpa::as_offset_vec(in.offset, in.N()),
+        in.screen_offset()
     );
     nl_attach_axes(out, out_axes);
     return out;
@@ -211,7 +220,7 @@ inline Rcpp::List nl_run_joint_sparse_entry(
         /*x_init_per_cell=*/std::vector<double>(),
         in.compute_skew, run.skew_idx_ptr,
         /*fixed_block=*/nullptr, run.debias_req.ptr, run.cila_req.ptr,
-        in.screen_iters, in.compute_fitted_var
+        in.screen_iters, in.compute_fitted_var, in.screen_offset()
     );
     nl_attach_fitted_eta_single_arm(out, arms, parsed, blocks);
     nl_attach_axes(out, out_axes);
@@ -249,7 +258,7 @@ inline Rcpp::List nl_run_joint_sparse_entry(
         nl_in_.prune_tol          = prune_tol;                             \
         nl_in_.screen_iters       = screen_iters;                          \
         nl_in_.compute_fitted_var = compute_fitted_var;                    \
-        nl_in_.offset             = offset_nullable;                       \
+        nl_in_.offset             = offset_nullable;                               nl_in_.screen_log_offset  = screen_log_offset;                     \
         return nl_in_;                                                     \
     }())
 
