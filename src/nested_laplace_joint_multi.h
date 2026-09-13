@@ -40,6 +40,7 @@
 #include "latent_block.h"
 #include "nested_laplace_grid.h"
 #include "nested_laplace_joint_core.h"
+#include "row_classes.h"
 #include "scatter_dense_basis.h"
 #include "scatter_indexed_cache.h"
 #include "sparse_cholesky.h"
@@ -155,6 +156,86 @@ inline double log_prior_joint_blocks(
     return lp;
 }
 
+// Row i of arm k_arm through the prior blocks: every (block, global latent
+// index, weight) entry of d eta_i / d x, in block order. The weight is the
+// block amplitude `d_eff_cache[b]` (arm_scale * d_fac at the cell) times the
+// row's design weight (block_row_weight, applied once on every kind) times the
+// block-local weight the kind carries: the obs_indices weight (INDEXED_MULTI),
+// the basis value at cell `k_grid` (DENSE_BASIS), or the paired loading / factor
+// value read off `x` (BILINEAR_FACTOR, whose eta term is the product
+// d * u * lambda). Zero-weight entries are not emitted, and `skip(b)` drops a
+// block before any of its per-row work runs.
+//
+// The one walk behind every joint consumer of a row's block loadings: the
+// coupled row scatter (collect_coupled_row_latents), the per-observation sparse
+// scatter, and the per-row predictive variance (joint_row_loadings). The eta
+// accumulators form the same sum as values rather than as a Jacobian.
+template <typename Skip, typename Emit>
+inline void for_each_row_block_latent(
+    int                                 i,
+    int                                 k_arm,
+    int                                 k_grid,
+    const std::vector<LatentBlock>&     blocks,
+    const std::vector<double>&          d_eff_cache,
+    const double*                       x,
+    std::vector<std::pair<int,double>>& multi_scratch,
+    std::vector<double>&                basis_scratch,
+    Skip&&                              skip,
+    Emit&&                              emit
+) {
+    const int B = static_cast<int>(blocks.size());
+    for (int b = 0; b < B; b++) {
+        const LatentBlock& blk = blocks[b];
+        const double d_b = d_eff_cache[b] * block_row_weight(blk, i, k_arm);
+        // A field_coef = 0 arm, a rho = 0 BYM2 component or a zero row weight
+        // contributes nothing to this row.
+        if (d_b == 0.0) continue;
+        if (skip(b)) continue;
+        switch (blk.contrib_kind) {
+        case BlockContribKind::INDEXED_SINGLE: {
+            if (!blk.idx) break;
+            const int l = blk.idx(i, k_arm);
+            if (l > 0 && l <= blk.size) emit(b, blk.start + l - 1, d_b);
+            break;
+        }
+        case BlockContribKind::INDEXED_MULTI: {
+            if (!blk.obs_indices) break;
+            blk.fill_obs_indices(i, k_arm, multi_scratch);
+            for (const auto& jw : multi_scratch) {
+                const int l = jw.first;
+                if (l <= 0 || l > blk.size) continue;
+                const double w = d_b * jw.second;
+                if (w != 0.0) emit(b, blk.start + l - 1, w);
+            }
+            break;
+        }
+        case BlockContribKind::DENSE_BASIS: {
+            if (!blk.basis_eval) break;
+            if (static_cast<int>(basis_scratch.size()) < blk.size)
+                basis_scratch.resize(blk.size);
+            blk.basis_eval(i, k_arm, k_grid, basis_scratch.data());
+            for (int j = 0; j < blk.size; j++) {
+                const double w = basis_scratch[j] * d_b;
+                if (w != 0.0) emit(b, blk.start + j, w);
+            }
+            break;
+        }
+        case BlockContribKind::BILINEAR_FACTOR: {
+            if (!blk.obs_factor_lambda || x == nullptr) break;
+            // obs_factor_lambda owns both bounds: it returns {-1, -1} for a row
+            // outside the factor's own latent range.
+            const auto slots = blk.obs_factor_lambda(i, k_arm);
+            if (slots.first < 0 || slots.second < 0) break;
+            const double w_u      = x[slots.second] * d_b;
+            const double w_lambda = x[slots.first]  * d_b;
+            if (w_u != 0.0)      emit(b, slots.first,  w_u);
+            if (w_lambda != 0.0) emit(b, slots.second, w_lambda);
+            break;
+        }
+        }
+    }
+}
+
 // Resolve the active (latent index, chain weight) entries one arm row contributes
 // through the prior blocks, for the block kinds the coupled per-cell scatter
 // supports:
@@ -190,35 +271,59 @@ inline void collect_coupled_row_latents(
     // destructor registration). The pointee intentionally leaks per thread.
     static thread_local std::vector<std::pair<int,double>>* multi_scratch_p = nullptr;
     if (!multi_scratch_p) multi_scratch_p = new std::vector<std::pair<int,double>>();
-    std::vector<std::pair<int,double>>& multi_scratch = *multi_scratch_p;
-    const int B = static_cast<int>(blocks.size());
-    for (int b = 0; b < B; b++) {
-        if (d_eff_cache[b] == 0.0) continue;
-        const LatentBlock& blk = blocks[b];
-        // Per-row SVC weight folded into the amplitude ahead of the kind
-        // split; 1.0 where the block declares none.
-        const double d_b = d_eff_cache[b] * block_row_weight(blk, i, k_arm);
-        if (blk.contrib_kind == BlockContribKind::INDEXED_MULTI) {
-            if (!blk.obs_indices) continue;
-            blk.fill_obs_indices(i, k_arm, multi_scratch);
-            for (const auto& jw : multi_scratch) {
-                const int l = jw.first;
-                if (l > 0 && l <= blk.size) {
-                    const double w = d_b * jw.second;
-                    if (w == 0.0) continue;
-                    out_idx.push_back(blk.start + l - 1);
-                    out_w.push_back(w);
-                }
+    // Never written: the two kinds that read a basis or x are skipped below.
+    std::vector<double> no_basis;
+    for_each_row_block_latent(
+        i, k_arm, /*k_grid=*/0, blocks, d_eff_cache, /*x=*/nullptr,
+        *multi_scratch_p, no_basis,
+        [&](int b) {
+            const BlockContribKind kind = blocks[b].contrib_kind;
+            return kind == BlockContribKind::DENSE_BASIS ||
+                   kind == BlockContribKind::BILINEAR_FACTOR;
+        },
+        [&](int, int latent, double w) {
+            out_idx.push_back(latent);
+            out_w.push_back(w);
+        });
+}
+
+// d eta / d x for every row of every arm at latent point `x` and outer cell
+// `k_grid`, packed arm-major into `L` (arm 0's rows first). Row r's loading
+// vector is its fixed-effect design row, its random-effect indicator and its
+// block entries (for_each_row_block_latent). `d_eff[b][k_arm]` is the block
+// amplitude at the cell. The linear predictor is linear in every coordinate but
+// a bilinear factor's, so at `x` this is the Jacobian the inner Laplace's
+// Gaussian maps to a variance.
+inline void joint_row_loadings(
+    const double*                           x,
+    const std::vector<JointArm>&            arms,
+    const std::vector<ParsedArm>&           parsed,
+    const std::vector<LatentBlock>&         blocks,
+    int                                     k_grid,
+    const std::vector<std::vector<double>>& d_eff,
+    RowLoadings&                            L
+) {
+    L.clear();
+    const int n_arms = static_cast<int>(arms.size());
+    const int B      = static_cast<int>(blocks.size());
+    std::vector<double> d_eff_arm(B, 0.0);
+    std::vector<std::pair<int,double>> multi_scratch;
+    std::vector<double> basis_scratch;
+    for (int k_arm = 0; k_arm < n_arms; k_arm++) {
+        const ParsedArm& pa = parsed[k_arm];
+        for (int b = 0; b < B; b++) d_eff_arm[b] = d_eff[b][k_arm];
+        for (int i = 0; i < arms[k_arm].N; i++) {
+            for (int j = 0; j < pa.p; j++) L.push(pa.beta_start + j, pa.X(i, j));
+            if (pa.n_re_groups > 0) {
+                const int g = static_cast<int>(pa.re_idx[i]) - 1;
+                if (g >= 0 && g < pa.n_re_groups) L.push(pa.re_start + g, 1.0);
             }
-        } else {  // INDEXED_SINGLE (the one-dof-per-row coupled-scatter kind)
-            if (!blk.idx) continue;
-            const int l_b = blk.idx(i, k_arm);
-            if (l_b > 0 && l_b <= blk.size) {
-                const double w = d_b;
-                if (w == 0.0) continue;
-                out_idx.push_back(blk.start + l_b - 1);
-                out_w.push_back(w);
-            }
+            for_each_row_block_latent(
+                i, k_arm, k_grid, blocks, d_eff_arm, x,
+                multi_scratch, basis_scratch,
+                [](int) { return false; },
+                [&](int, int latent, double w) { L.push(latent, w); });
+            L.end_row();
         }
     }
 }
@@ -1370,73 +1475,32 @@ inline void scatter_arm_obs_joint_multi_sparse(
             if (gi >= 0 && gi < n_re_k) g_re = rstart + gi;
         }
 
-        // INDEXED active dofs across all non-DENSE_BASIS blocks.
+        // Active dofs of every block this row reads: INDEXED entries into
+        // active_scratch, DENSE_BASIS entries into active_db_scratch. The basis
+        // row is resolved here only when a cross term needs it (see
+        // need_db_in_perobs); otherwise the batch helper below covers the block.
         active_scratch.clear();
-        // DENSE_BASIS active dofs — populated only when cross terms are
-        // needed; otherwise left empty so the per-obs loop costs O(p_k +
-        // n_re_k + A_idx^2) instead of O(M^2).
         active_db_scratch.clear();
-
-        for (int b = 0; b < B; b++) {
-            const LatentBlock& blk = blocks[b];
-            // The per-row SVC weight folds into the block amplitude ahead of
-            // the kind split, so every kind carries it. Unset -> 1.0, which
-            // leaves an unweighted block's amplitude bit-identical.
-            const double d_eff = d_eff_cache[b] * block_row_weight(blk, i, k_arm);
-            // Field_coef = 0 arms (or any block with arm_scale * d_fac == 0)
-            // contribute nothing to gradient or Hessian for this arm; skip
-            // the per-block resolution work entirely.
-            if (d_eff == 0.0) continue;
-
-            if (kind_cache[b] == BlockContribKind::DENSE_BASIS) {
-                const bool has_batch = static_cast<bool>(blk.dense_basis_batch);
-                if (!need_db_in_perobs && has_batch) continue;
-
-                blk.basis_eval(i, k_arm, k_grid, basis_scratch.data());
-                for (int j = 0; j < blk.size; j++) {
-                    double w = basis_scratch[j] * d_eff;
-                    if (w != 0.0) {
-                        DenseBasisActive e;
-                        e.dof       = blk.start + j;
-                        e.weight    = w;
-                        e.block_idx = b;
-                        e.has_batch = has_batch;
-                        active_db_scratch.push_back(e);
-                    }
+        for_each_row_block_latent(
+            i, k_arm, k_grid, blocks, d_eff_cache, x.begin(),
+            multi_scratch, basis_scratch,
+            [&](int b) {
+                return kind_cache[b] == BlockContribKind::DENSE_BASIS &&
+                       !need_db_in_perobs &&
+                       static_cast<bool>(blocks[b].dense_basis_batch);
+            },
+            [&](int b, int latent, double w) {
+                if (kind_cache[b] == BlockContribKind::DENSE_BASIS) {
+                    DenseBasisActive e;
+                    e.dof       = latent;
+                    e.weight    = w;
+                    e.block_idx = b;
+                    e.has_batch = static_cast<bool>(blocks[b].dense_basis_batch);
+                    active_db_scratch.push_back(e);
+                } else {
+                    active_scratch.emplace_back(latent, w);
                 }
-            } else if (kind_cache[b] == BlockContribKind::INDEXED_SINGLE) {
-                int l = blk.idx(i, k_arm);
-                if (l > 0 && l <= blk.size) {
-                    double w = d_eff * block_row_weight(blk, i, k_arm);
-                    if (w != 0.0) {
-                        active_scratch.emplace_back(blk.start + l - 1, w);
-                    }
-                }
-            } else if (kind_cache[b] == BlockContribKind::BILINEAR_FACTOR) {
-                // eta_i += d_eff * u * lambda. Gauss-Newton linearization:
-                // emit u_slot with weight (lambda * d_eff) and lambda_slot
-                // with weight (u * d_eff). Active × active fills the
-                // mixed-curvature (u, lambda) Hessian entry naturally.
-                // obs_factor_lambda owns both bounds: it returns {-1, -1}
-                // for a row outside the factor's own latent range, so a
-                // non-negative slot is in range by construction.
-                auto [u_slot, lambda_slot] = blk.obs_factor_lambda(i, k_arm);
-                if (u_slot >= 0 && lambda_slot >= 0) {
-                    const double u_val      = x[u_slot];
-                    const double lambda_val = x[lambda_slot];
-                    active_scratch.emplace_back(u_slot,      lambda_val * d_eff);
-                    active_scratch.emplace_back(lambda_slot, u_val      * d_eff);
-                }
-            } else {  // INDEXED_MULTI
-                blk.fill_obs_indices(i, k_arm, multi_scratch);
-                for (const auto& [l, w_local] : multi_scratch) {
-                    if (l > 0 && l <= blk.size) {
-                        active_scratch.emplace_back(blk.start + l - 1,
-                                                     w_local * d_eff);
-                    }
-                }
-            }
-        }
+            });
         const int A_idx = static_cast<int>(active_scratch.size());
         const int A_db  = static_cast<int>(active_db_scratch.size());
 
@@ -1695,9 +1759,13 @@ Rcpp::List run_multi_block_nested_laplace_joint_sparse_impl(
     // cell (never the cheap screen), so the corrected cell weights and
     // particles cover the whole outer grid.
     const CilaOptions*               cila = nullptr,
-    // Inner Newton steps per cell in the cheap screening sweep. Last, so a
-    // positional forward from the entry stays valid as the tail grows.
-    int                              screen_iters = CHEAP_SCREEN_ITERS
+    // Inner Newton steps per cell in the cheap screening sweep. A positional
+    // forward from the entry stays valid as the tail grows.
+    int                              screen_iters = CHEAP_SCREEN_ITERS,
+    // Whether every fully-solved cell reports the per-row predictive variance
+    // of the linear predictor (LaplaceResult::eta_var, emitted as
+    // `fitted_eta_var`). Never the cheap screen.
+    bool                             compute_eta_var = false
 );
 
 // Outer-grid driver. n_x_after_re is the latent dimension after all per-arm
@@ -1753,7 +1821,11 @@ Rcpp::List run_multi_block_nested_laplace_joint(
     // which chooses between this driver and the sparse-assembly one.
     int                              inner_sparse_override = 0,
     // Inner Newton steps per cell in the cheap screening sweep.
-    int                              screen_iters = CHEAP_SCREEN_ITERS
+    int                              screen_iters = CHEAP_SCREEN_ITERS,
+    // Whether every fully-solved cell reports the per-row predictive variance
+    // of the linear predictor (LaplaceResult::eta_var, emitted as
+    // `fitted_eta_var`). Never the cheap screen.
+    bool                             compute_eta_var = false
 );
 
 } // namespace tulpa

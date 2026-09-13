@@ -29,7 +29,9 @@
 #ifndef TULPA_JOINT_INNER_VCOV_H
 #define TULPA_JOINT_INNER_VCOV_H
 
+#include "row_classes.h"
 #include "sparse_cholesky.h"
+#include <functional>
 #include <vector>
 
 namespace tulpa {
@@ -89,6 +91,34 @@ bool extract_joint_fixed_block(
     SparseCholeskySolver& solver,
     std::vector<double>& flat_out,
     std::vector<int>& sizes_out
+);
+
+// The per-row predictive variance of the linear predictor at one cell,
+// var(eta_r | theta_k, y) = a_r' Sigma_k a_r, asked for on the inner Newton loop
+// the way the fixed-effect block is. `loadings` fills every row's loading vector
+// a_r = d eta_r / d x at the latent point it is handed (joint_row_loadings), so
+// the request carries the cell's own block amplitudes and the loop needs no
+// knowledge of the arms.
+struct JointEtaVarRequest {
+    std::function<void(const double* x, RowLoadings& out)> loadings;
+    bool active() const { return static_cast<bool>(loadings); }
+};
+
+// Sigma_k is the inverse of the precision the Laplace approximation at the cell
+// uses: the CSC `(Qp, Qi, Qx)` plus the soft sum-to-zero pins the scatter
+// registered on the side (`pin_groups`, 0-based latent indices per pin, with
+// `pin_Dinv` the row-major inverse of their k x k precision; both empty when the
+// CSC already holds every pin), folded by Woodbury (InvBlockConstraint). Rows
+// sharing a loading vector share one solve (row_classes.h). Returns false, with
+// `var_out` all NaN, when the precision does not factor; a row whose solve loses
+// positivity reads NaN on its own.
+bool extract_joint_eta_var(
+    const int* Qp, const int* Qi, const double* Qx, int n_x, int nnz,
+    const RowLoadings& L,
+    const std::vector<std::vector<int>>& pin_groups,
+    const std::vector<double>& pin_Dinv,
+    SparseCholeskySolver& solver,
+    std::vector<double>& var_out
 );
 
 } // namespace tulpa

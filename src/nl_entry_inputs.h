@@ -69,7 +69,7 @@ struct NlEntryInputs {
     // `screen_iters` steps per cell and skip the full solve on cells whose
     // screened weight falls below it; zero runs every cell. The screen skips
     // the per-row fitted-variance pass, which `compute_fitted_var` also
-    // controls for the full solve.
+    // controls for the full solve on every driver.
     double prune_tol          = 0.0;
     int    screen_iters       = CHEAP_SCREEN_ITERS;
     bool   compute_fitted_var = true;
@@ -211,7 +211,7 @@ inline Rcpp::List nl_run_joint_sparse_entry(
         /*x_init_per_cell=*/std::vector<double>(),
         in.compute_skew, run.skew_idx_ptr,
         /*fixed_block=*/nullptr, run.debias_req.ptr, run.cila_req.ptr,
-        in.screen_iters
+        in.screen_iters, in.compute_fitted_var
     );
     nl_attach_fitted_eta_single_arm(out, arms, parsed, blocks);
     nl_attach_axes(out, out_axes);

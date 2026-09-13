@@ -455,9 +455,18 @@ estimate from the same data makes it conditional
 fields** (`.tulpa_linpred_source()`): a ModelData sampler fit re-evaluates
 `generic_eta_at()` at each draw from `fit$model_inputs`
 (`cpp_tulpa_glmm_eta_draws`); a nested fit draws from `fitted_eta` /
-`fitted_eta_var`. The joint-driver single-arm entries fill `fitted_eta` through
-`compute_eta_joint_sparse_dispatch` (`nl_attach_fitted_eta_single_arm`) but no
-`fitted_eta_var`, so their criteria carry the across-cell spread only.
+`fitted_eta_var`. The joint-driver single-arm entries (NNGP, HSGP, SPDE, the ST
+entries) fill `fitted_eta` through `compute_eta_joint_sparse_dispatch`
+(`nl_attach_fitted_eta_single_arm`) and `fitted_eta_var` inside each cell's own
+solve: both joint Newton loops take a `JointEtaVarRequest`
+(`joint_inner_vcov.h`), read the precision snapshot the fixed-effect block
+reads, and fold the sum-to-zero pins the sparse scatter left off the stored H
+back in by Woodbury (`InvBlockConstraint` with `Dinv`), so the variance is of the
+precision the log-determinant was taken of. Row loadings come from
+`for_each_row_block_latent` (`nested_laplace_joint_multi.h`), the one walk
+behind the per-observation sparse scatter, the coupled row scatter and
+`joint_row_loadings`; rows share a solve through `row_classes.h`, which the
+LatentBlock driver's `nl_build_row_classes` also reads.
 
 **Every nested entry takes `offset_nullable`**, filled by
 `TULPA_NL_ENTRY_INPUTS`; `.nl_dispatch()` passes `cargs` wholesale, so an entry

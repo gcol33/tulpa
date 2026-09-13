@@ -57,6 +57,7 @@ inline std::string ckpt_serialize(const LaplaceResult& r) {
     ckpt_put_span(buf, r.Q_csc_x);
     ckpt_put_span(buf, r.re_cov_flat);
     ckpt_put_span(buf, r.re_cov_block_sizes);
+    ckpt_put_span(buf, r.eta_var);
     // Inner-Laplace skewness + location term
     ckpt_put_span(buf, r.inner_skew);
     ckpt_put_span(buf, r.inner_skew_gamma1);
@@ -108,6 +109,7 @@ inline bool ckpt_deserialize(CkptReader& rd, LaplaceResult& r) {
     r.Q_csc_x            = rd.get_span<double>();
     r.re_cov_flat        = rd.get_span<double>();
     r.re_cov_block_sizes = rd.get_span<int>();
+    r.eta_var            = rd.get_span<double>();
     r.inner_skew                 = rd.get_span<double>();
     r.inner_skew_gamma1          = rd.get_span<double>();
     r.inner_skew_gamma1_declined = rd.get_str();

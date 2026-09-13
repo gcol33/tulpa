@@ -299,9 +299,10 @@
 #'     loading vector per cell, which on a design with few repeated rows is the
 #'     dominant cost of a cell, so a caller reading only `fitted_eta` or the
 #'     coefficient summaries sets `FALSE` and the fit then carries no
-#'     `fitted_eta_var`. Declared by the single-block kernels only; a
-#'     multi-block prior refuses `FALSE` rather than accepting it and ignoring
-#'     it.
+#'     `fitted_eta_var`. Every single-block field reports it, the NNGP, HSGP,
+#'     SPDE and spatiotemporal fields included, each read off its cell's own
+#'     precision at the mode; a multi-block prior refuses `FALSE` rather than
+#'     accepting it and ignoring it.
 #'
 #' @return A list with:
 #'   * `theta_grid`: matrix or vector of grid hyperparameter values.

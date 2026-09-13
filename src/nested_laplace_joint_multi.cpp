@@ -2056,7 +2056,8 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
     // <0 dense. Orthogonal to force_sparse, which chooses between this driver
     // and the sparse-assembly one.
     int                              inner_sparse_override,
-    int                              screen_iters) {
+    int                              screen_iters,
+    bool                             compute_eta_var) {
     const int n_arms = static_cast<int>(arms.size());
     if (static_cast<int>(parsed.size()) != n_arms) {
         Rcpp::stop("parsed and arms vectors must have the same length.");
@@ -2124,7 +2125,7 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
             step_curvature, hessian_refresh, n_threads_outer, progress,
             checkpoint, x_init_per_cell,
             compute_skew, skew_probe_idx, fixed_block, debias, cila,
-            screen_iters
+            screen_iters, compute_eta_var
         );
     }
 
@@ -2146,7 +2147,8 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
     // when the driver was asked for a block.
     const bool want_fixed_block = fixed_block && fixed_block->active();
     std::vector<NewtonScratchJoint> scratch_pool(n_outer);
-    for (auto& s : scratch_pool) s.allocate(n_x, arms, want_fixed_block);
+    for (auto& s : scratch_pool)
+        s.allocate(n_x, arms, want_fixed_block || compute_eta_var);
 
     // Resolve each arm to a spec view ONCE for the whole grid: built-in family
     // arms materialize a builtin_family_spec + response, model-supplied arms
@@ -2357,6 +2359,22 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
                 cell_coupling_spec.get(), coupled_arms, cell_rows, n_cells,
                 arms, nullptr);
         }
+        JointEtaVarRequest eta_var_req;
+        if (compute_eta_var && !is_cheap) {
+            eta_var_req.loadings = [&](const double* xm, RowLoadings& L) {
+                std::vector<std::vector<double>> d_eff(
+                    B, std::vector<double>(n_arms, 0.0));
+                for (int b = 0; b < B; b++) {
+                    for (int k_arm = 0; k_arm < n_arms; k_arm++) {
+                        const double s = blocks[b].arm_scale
+                                         ? blocks[b].arm_scale(k_arm, k_grid)
+                                         : 1.0;
+                        d_eff[b][k_arm] = s * d_fac_cache[b];
+                    }
+                }
+                joint_row_loadings(xm, arms, parsed, blocks, k_grid, d_eff, L);
+            };
+        }
         return laplace_newton_solve_joint_ll(
             n_x,
             max_iter_use, tol,
@@ -2369,7 +2387,8 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint(
             is_cheap ? nullptr : debias,
             is_cheap ? nullptr : cila,
             static_cast<std::uint64_t>(k_grid) + 1ULL,
-            inner_sparse_override
+            inner_sparse_override,
+            eta_var_req.active() ? &eta_var_req : nullptr
         );
     };
 
@@ -2457,7 +2476,8 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
     const JointFixedBlockRequest*    fixed_block,
     const SubspaceDebiasOptions*     debias,
     const CilaOptions*               cila,
-    int                              screen_iters
+    int                              screen_iters,
+    bool                             compute_eta_var
 ) {
     const int n_arms = static_cast<int>(arms.size());
     const int B      = static_cast<int>(blocks.size());
@@ -2617,7 +2637,8 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
 
     const bool want_fixed_block = fixed_block && fixed_block->active();
     std::vector<NewtonScratchJointSparse> scratches(n_outer);
-    for (auto& s : scratches) s.allocate(n_x, arms, want_fixed_block);
+    for (auto& s : scratches)
+        s.allocate(n_x, arms, want_fixed_block || compute_eta_var);
 
     // Per-thread arm specs, built in place: JointArmSpecs is self-referential
     // (its views point at the owner's own storage and members), so it cannot be
@@ -2880,6 +2901,12 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
                 cell_coupling_spec.get(), coupled_arms, cell_rows, n_cells,
                 arms, coupled_phi_ptr);
         }
+        JointEtaVarRequest eta_var_req;
+        if (compute_eta_var && !use_cheap_scratch) {
+            eta_var_req.loadings = [&](const double* xm, RowLoadings& L) {
+                joint_row_loadings(xm, arms, parsed, blocks, k_grid, d_eff, L);
+            };
+        }
         return laplace_newton_solve_joint_sparse_ll(
             n_x,
             max_iter_use, tol,
@@ -2892,7 +2919,8 @@ Rcpp::List tulpa::run_multi_block_nested_laplace_joint_sparse_impl(
             use_cheap_scratch ? nullptr : fixed_block,
             use_cheap_scratch ? nullptr : debias,
             use_cheap_scratch ? nullptr : cila,
-            static_cast<std::uint64_t>(k_grid) + 1ULL
+            static_cast<std::uint64_t>(k_grid) + 1ULL,
+            eta_var_req.active() ? &eta_var_req : nullptr
         );
     };
 

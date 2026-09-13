@@ -463,8 +463,8 @@ struct NewtonScratchJoint {
     std::unique_ptr<SparseCholeskySolver> extract_solver;
 
     void allocate(int n_x, const std::vector<JointArm>& arms,
-                  bool want_fixed_block = false) {
-        if (want_fixed_block && !extract_solver) {
+                  bool want_extract = false) {
+        if (want_extract && !extract_solver) {
             extract_solver.reset(new SparseCholeskySolver());
         }
         x       = Rcpp::NumericVector(n_x, 0.0);
@@ -558,7 +558,11 @@ LaplaceResult laplace_newton_solve_joint_ll(
     // be driven through both factorization backends for an equivalence gate.
     // The Hessian is assembled densely either way; this selects only what
     // factorizes it.
-    int sparse_override = 0
+    int sparse_override = 0,
+    // Per-row predictive variance of the linear predictor, read off the same
+    // precision at the mode the fixed-effect block is (see the sparse loop's
+    // parameter of the same name).
+    const JointEtaVarRequest* eta_var = nullptr
 ) {
     LaplaceResult result;
     result.mode.assign(n_x, 0.0);
@@ -739,7 +743,15 @@ LaplaceResult laplace_newton_solve_joint_ll(
     // `converged` flag is what says why, and the R retention reads it.
     const bool want_block =
         fixed_block && fixed_block->active() && scratch.extract_solver;
-    if ((store_Q || want_block) && hessian_pd_at_mode) {
+    const bool want_eta_var =
+        eta_var && eta_var->active() && scratch.extract_solver;
+    RowLoadings loadings;
+    if (want_eta_var) {
+        eta_var->loadings(pre_center_x.data(), loadings);
+        result.eta_var.assign(static_cast<std::size_t>(loadings.n_rows()),
+                              std::numeric_limits<double>::quiet_NaN());
+    }
+    if ((store_Q || want_block || want_eta_var) && hessian_pd_at_mode) {
         std::vector<int> csc_p, csc_i;
         std::vector<double> csc_x;
         dense_to_csc_lower_drop_raw(scratch.H, n_x, SPARSE_DROP_TOL_DISPATCH,
@@ -750,6 +762,15 @@ LaplaceResult laplace_newton_solve_joint_ll(
                 static_cast<int>(csc_x.size()), *fixed_block,
                 *scratch.extract_solver,
                 result.re_cov_flat, result.re_cov_block_sizes);
+        }
+        // The dense scatter writes every sum-to-zero pin into H itself, so the
+        // stored precision is the whole one and nothing is folded on the side.
+        if (want_eta_var) {
+            extract_joint_eta_var(
+                csc_p.data(), csc_i.data(), csc_x.data(), n_x,
+                static_cast<int>(csc_x.size()), loadings,
+                /*pin_groups=*/{}, /*pin_Dinv=*/{},
+                *scratch.extract_solver, result.eta_var);
         }
         if (store_Q) {
             result.Q_csc_p = std::move(csc_p);

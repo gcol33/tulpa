@@ -10,6 +10,7 @@
 #include <Rcpp.h>
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -192,6 +193,59 @@ bool extract_joint_fixed_block(
                             &constr, InvBlockSymmetry::MirrorLower,
                             flat_out, sizes_out);
     return sizes_out.size() > before;
+}
+
+bool extract_joint_eta_var(
+    const int* Qp, const int* Qi, const double* Qx, int n_x, int nnz,
+    const RowLoadings& L,
+    const std::vector<std::vector<int>>& pin_groups,
+    const std::vector<double>& pin_Dinv,
+    SparseCholeskySolver& solver,
+    std::vector<double>& var_out
+) {
+    const int N = L.n_rows();
+    const double failed = std::numeric_limits<double>::quiet_NaN();
+    var_out.assign(N > 0 ? static_cast<std::size_t>(N) : 0, failed);
+    if (N <= 0 || n_x <= 0 || nnz <= 0) return false;
+    if (!factorize_cell(solver, Qp, Qi, Qx, n_x, nnz)) return false;
+
+    auto solve_cell = [&](const double* rhs, double* out) {
+        solver.solve(rhs, out, n_x);
+    };
+    InvBlockConstraint pins;
+    if (!pin_groups.empty()) {
+        pins.build(solve_cell, n_x, pin_groups, &pin_Dinv);
+        // A pin set whose Woodbury capacitance does not factor would leave the
+        // variance of the unpinned precision, which along the pinned direction
+        // is not the approximation's.
+        if (!pins.usable) return false;
+    }
+
+    const RowClasses classes = row_classes_from_loadings(L);
+    std::vector<double> a(n_x, 0.0), z(n_x, 0.0);
+    std::vector<double> class_var(classes.size(), failed);
+    for (std::size_t c = 0; c < classes.size(); c++) {
+        const int r = classes.class_rep[c];
+        const std::size_t first = L.off[r], last = L.off[r + 1];
+        for (std::size_t e = first; e < last; e++) a[L.idx[e]] += L.w[e];
+        const bool ok = solver.solve(a.data(), z.data(), n_x);
+        double v = 0.0;
+        if (ok) {
+            // a is sparse, so a' z reads z only where a is nonzero. A repeated
+            // index was accumulated into one entry of `a`, so it is read once.
+            for (std::size_t e = first; e < last; e++) {
+                const int j = L.idx[e];
+                if (a[j] != 0.0) { v += a[j] * z[j]; a[j] = 0.0; }
+            }
+            v -= pins.quad_correction(L.idx.data(), L.w.data(), first, last);
+        }
+        for (std::size_t e = first; e < last; e++) a[L.idx[e]] = 0.0;
+        // Sigma is positive definite, so a' Sigma a is negative only when the
+        // solve lost accuracy; a zero there would give an interval zero width.
+        class_var[c] = (ok && std::isfinite(v) && v >= 0.0) ? v : failed;
+    }
+    for (int r = 0; r < N; r++) var_out[r] = class_var[classes.row_class[r]];
+    return true;
 }
 
 } // namespace tulpa

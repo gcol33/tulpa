@@ -343,9 +343,10 @@ per-row linear predictor with. It costs one back-solve per distinct
 loading vector per cell, which on a design with few repeated rows is the
 dominant cost of a cell, so a caller reading only \code{fitted_eta} or the
 coefficient summaries sets \code{FALSE} and the fit then carries no
-\code{fitted_eta_var}. Declared by the single-block kernels only; a
-multi-block prior refuses \code{FALSE} rather than accepting it and ignoring
-it.
+\code{fitted_eta_var}. Every single-block field reports it, the NNGP, HSGP,
+SPDE and spatiotemporal fields included, each read off its cell's own
+precision at the mode; a multi-block prior refuses \code{FALSE} rather than
+accepting it and ignoring it.
 }}
 }
 \value{

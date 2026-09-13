@@ -1137,6 +1137,9 @@ inline Rcpp::List run_nested_laplace_grid(
     // -------- Merge POD results into the Rcpp output (single-threaded) --------
     bool any_Q = false;
     bool any_cov_block = false;
+    // Per-row predictive variance: the row count of the first cell that
+    // reported one. A cell that did not (pruned, or declined) reads NaN.
+    std::size_t eta_var_rows = 0;
     int skew_cell = -1;  // first grid cell (if any) that computed inner_skew
     // Subspace-debias draws are PER CELL: the correction enters the reported
     // marginal as a mixture over the outer grid, so unlike the single-cell
@@ -1190,6 +1193,7 @@ inline Rcpp::List run_nested_laplace_grid(
                 any_cov_block = true;
             }
         }
+        if (eta_var_rows == 0) eta_var_rows = res.eta_var.size();
         if (skew_cell < 0 && !res.inner_skew_idx.empty()) skew_cell = k;
         if (!res.debias_idx.empty()) {
             if (debias_cell < 0) debias_cell = k;
@@ -1254,6 +1258,17 @@ inline Rcpp::List run_nested_laplace_grid(
         out["Q_csc_n"] = n_x;
     }
     if (any_cov_block) out["cov_block_per_grid"] = cov_block_per_grid;
+    if (eta_var_rows > 0) {
+        const int n_rows = static_cast<int>(eta_var_rows);
+        Rcpp::NumericMatrix fitted_eta_var(n_grid, n_rows);
+        std::fill(fitted_eta_var.begin(), fitted_eta_var.end(), NA_REAL);
+        for (int k = 0; k < n_grid; k++) {
+            const std::vector<double>& v = cell_results[k].eta_var;
+            if (v.size() != eta_var_rows) continue;
+            for (int r = 0; r < n_rows; r++) fitted_eta_var(k, r) = v[r];
+        }
+        out["fitted_eta_var"] = fitted_eta_var;
+    }
     // Inner-Laplace skewness diagnostic (opt-in, computed on the full solve
     // of a single cell -- see the compute_skew doc on
     // run_multi_block_nested_laplace). Emits the FIRST cell that populated

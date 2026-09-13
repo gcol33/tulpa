@@ -245,9 +245,9 @@
 #'     cell by its weight and draws each observation from that cell's Gaussian
 #'     for the linear predictor (`fitted_eta`, `fitted_eta_var`). The cell's
 #'     joint covariance across observations is not retained, so observations
-#'     within a replicate are independent given the cell. A fit without
-#'     `fitted_eta_var` (`control$fitted_var = FALSE`, or a GP / SPDE /
-#'     spatiotemporal field) carries the across-cell spread only.
+#'     within a replicate are independent given the cell. A fit run with
+#'     `control$fitted_var = FALSE` carries no `fitted_eta_var`, and its
+#'     replicates hold the across-cell spread only.
 #'   \item Any other fit carries its coefficients rather than its linear
 #'     predictor. Fits with posterior draws use them (fixed and random effects
 #'     jointly per draw); the Laplace tier samples the fixed effects from

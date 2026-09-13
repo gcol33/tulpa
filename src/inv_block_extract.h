@@ -50,6 +50,15 @@ enum class InvBlockSymmetry { Average, MirrorLower };
 //
 // so the correction at latent indices (a, b) is G_a' M^{-1} G_b with
 // W = H^{-1} A' (one solve per group), M = A W, and G_a = W[a, ].
+//
+// The same algebra covers a SOFT rank-k penalty. The precision
+// H + A' D A (a sum-to-zero pin the scatter left off the stored H, D the pins'
+// k x k precision) has inverse
+//
+//   (H + A' D A)^{-1} = H^{-1} - H^{-1} A' (D^{-1} + A H^{-1} A')^{-1} A H^{-1}
+//
+// by Woodbury, which is the constrained V with M = D^{-1} + A W. The hard
+// constraint is the D^{-1} = 0 limit.
 struct InvBlockConstraint {
     int kc = 0;
     std::vector<std::vector<double>> W;   // kc columns of H^{-1} A', length n_x
@@ -57,7 +66,9 @@ struct InvBlockConstraint {
     bool usable = false;                  // false when M is not PD (degenerate)
 
     // Solve W_g and factor M. `A_cols[g]` holds group g's 0-based latent
-    // indices; out-of-range entries are ignored. An M that does not factor
+    // indices; out-of-range entries are ignored. `Dinv`, when given, is the
+    // row-major kc x kc inverse penalty precision added to M (the soft form
+    // above); nullptr imposes the hard constraint. An M that does not factor
     // leaves `usable = false`, and the caller then skips the correction rather
     // than subtracting a wrong one.
     //
@@ -69,7 +80,8 @@ struct InvBlockConstraint {
     // and with it the last bits of the correction.
     template <typename SolveFn>
     void build(SolveFn solve, int n_x,
-               const std::vector<std::vector<int>>& A_cols) {
+               const std::vector<std::vector<int>>& A_cols,
+               const std::vector<double>* Dinv = nullptr) {
         kc = static_cast<int>(A_cols.size());
         usable = false;
         W.clear();
@@ -105,6 +117,10 @@ struct InvBlockConstraint {
                 M[static_cast<std::size_t>(g1) * kc + g2] = s;
             }
         }
+        if (Dinv) {
+            if (Dinv->size() != M.size()) return;
+            for (std::size_t e = 0; e < M.size(); e++) M[e] += (*Dinv)[e];
+        }
 
         Lm.assign(static_cast<std::size_t>(kc) * kc, 0.0);
         usable = tulpa_linalg::chol_factor_lower<tulpa_linalg::TriLayout::RowMajor>(
@@ -129,6 +145,27 @@ struct InvBlockConstraint {
         if (!usable) return 0.0;
         double corr = 0.0;
         for (int g = 0; g < kc; g++) corr += W[g][latent] * y[g];
+        return corr;
+    }
+
+    // The correction to the quadratic form a' H^{-1} a for a sparse vector
+    // a = sum_s w[s] e_{idx[s]} over [first, last): G' M^{-1} G with
+    // G_g = sum_s w[s] W[g][idx[s]].
+    double quad_correction(const int* idx, const double* w,
+                           std::size_t first, std::size_t last) const {
+        if (!usable || kc <= 0) return 0.0;
+        std::vector<double> G(kc, 0.0), tmp(kc), y(kc);
+        for (int g = 0; g < kc; g++) {
+            double s = 0.0;
+            for (std::size_t e = first; e < last; e++) s += w[e] * W[g][idx[e]];
+            G[g] = s;
+        }
+        tulpa_linalg::tri_solve_lower<tulpa_linalg::TriLayout::RowMajor>(
+            Lm.data(), kc, kc, G.data(), tmp.data());
+        tulpa_linalg::tri_solve_lower_transpose<tulpa_linalg::TriLayout::RowMajor>(
+            Lm.data(), kc, kc, tmp.data(), y.data());
+        double corr = 0.0;
+        for (int g = 0; g < kc; g++) corr += G[g] * y[g];
         return corr;
     }
 };

@@ -152,6 +152,24 @@ test_that("the sparse gate matches central FD on every contribution kind", {
     }
 })
 
+test_that("the sparse gate carries a per-row block weight once", {
+    # An areal SVC block rides a per-row covariate, eta_i += w_i * u[s_i]. The
+    # per-observation sparse scatter multiplied that weight in twice on the
+    # INDEXED_SINGLE branch, so the field's gradient and curvature were those of
+    # w_i^2 * u[s_i] while eta and the objective read w_i * u[s_i]. At unit
+    # weight the two agree, which is every fixture above.
+    arms_norm <- .gk_arms(seed = 23L)
+    p_tot <- sum(vapply(arms_norm, function(a) ncol(a$X), integer(1)))
+    set.seed(3L)
+    fx <- .gk_icar(arms_norm)
+    fx$spec$svc_weight <- lapply(arms_norm, function(a)
+        runif(length(a$y), 0.3, 2.0))
+    blk <- .gk_block(fx$spec, arms_norm)
+    r <- .gk_fd_check(arms_norm, blk, p_tot + fx$n_latent, sparse = TRUE)
+    d <- .gk_eval(arms_norm, blk, r$x, sparse = FALSE)
+    expect_equal(r$grad, d$grad, tolerance = 1e-10)
+})
+
 test_that("dense and sparse agree on a pure INDEXED_SINGLE spec", {
     # The one place the two scatters can be pinned to each other. Without it a
     # divergence between them would show only as a fit-level difference.

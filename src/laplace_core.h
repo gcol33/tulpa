@@ -114,6 +114,13 @@ struct LaplaceResult {
   std::vector<double> re_cov_flat;
   std::vector<int>    re_cov_block_sizes;
 
+  // Per-row predictive variance of the linear predictor at the mode,
+  // var(eta_r | theta, y), rows arm-major. Filled by the joint Newton loops when
+  // the driver asks for it (JointEtaVarRequest); empty means "not requested",
+  // NaN where the precision at the mode is not the covariance of anything (a
+  // non-PD Hessian) or a solve failed.
+  std::vector<double> eta_var;
+
   // Inner-Laplace skewness diagnostic (Rue, Martino & Chopin 2009, JRSSB
   // 71(2) Sec 3.2.3, eq. 21's cubic term, generalized to tulpa's eta =
   // compute_eta(x) representation -- see src/inner_laplace_skew.h for the

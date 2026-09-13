@@ -73,8 +73,8 @@ struct NewtonScratchJointSparse {
     std::unique_ptr<SparseCholeskySolver> extract_solver;
 
     void allocate(int n_x, const std::vector<JointArm>& arms,
-                  bool want_fixed_block = false) {
-        if (want_fixed_block && !extract_solver) {
+                  bool want_extract = false) {
+        if (want_extract && !extract_solver) {
             extract_solver.reset(new SparseCholeskySolver());
         }
         x      = Rcpp::NumericVector(n_x, 0.0);
@@ -237,7 +237,13 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
     // which the live CHOLMOD factor supplies directly; an
     // LDL' factor has no such square root and is declined by name.
     const CilaOptions* cila = nullptr,
-    std::uint64_t cila_cell_key = 0
+    std::uint64_t cila_cell_key = 0,
+    // Per-row predictive variance of the linear predictor. Read, like the
+    // fixed-effect block, off the snapshot of the precision at the mode with
+    // its own factorization; the sum-to-zero pins the scatter registered on the
+    // side rather than in the stored H are folded in by Woodbury, so the
+    // variance is the one of the precision the log-determinant was taken of.
+    const JointEtaVarRequest* eta_var = nullptr
 ) {
     LaplaceResult result;
     result.mode.assign(n_x, 0.0);
@@ -419,8 +425,10 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
     // unconditionally rather than the export being gated on a clean factor.
     const bool want_block =
         fixed_block && fixed_block->active() && scratch.extract_solver;
+    const bool want_eta_var =
+        eta_var && eta_var->active() && scratch.extract_solver;
     std::vector<double> H_values_at_mode;
-    if (store_Q || want_block) H_values_at_mode = H_builder.values;
+    if (store_Q || want_block || want_eta_var) H_values_at_mode = H_builder.values;
 
     bool pd_conditioned = false;
     { TULPA_PROFILE_PHASE(PHASE_FACTORIZE);
@@ -528,6 +536,29 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
             static_cast<int>(H_values_at_mode.size()), *fixed_block,
             *scratch.extract_solver,
             result.re_cov_flat, result.re_cov_block_sizes);
+    }
+
+    if (want_eta_var) {
+        RowLoadings loadings;
+        eta_var->loadings(pre_center_x.data(), loadings);
+        result.eta_var.assign(static_cast<std::size_t>(loadings.n_rows()),
+                              std::numeric_limits<double>::quiet_NaN());
+        const auto& r1 = H_builder.s2z_rank1;
+        std::vector<std::vector<int>> pin_groups(r1.size());
+        for (std::size_t k = 0; k < r1.size(); k++) {
+            pin_groups[k].resize(r1[k].n);
+            for (int i = 0; i < r1[k].n; i++) pin_groups[k][i] = r1[k].node(i);
+        }
+        std::vector<double> pin_Dinv;
+        double pin_log_det = 0.0;
+        if (result.hessian_pd_at_mode &&
+            s2z_build_Dinv(r1, H_builder.s2z_coupling, pin_Dinv, pin_log_det)) {
+            extract_joint_eta_var(
+                H_builder.col_ptr.data(), H_builder.row_idx.data(),
+                H_values_at_mode.data(), n_x,
+                static_cast<int>(H_values_at_mode.size()), loadings,
+                pin_groups, pin_Dinv, *scratch.extract_solver, result.eta_var);
+        }
     }
 
     if (store_Q) {

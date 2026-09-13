@@ -31,14 +31,13 @@
 #include "laplace_spec_solve.h"           // spec_inner_solve (the unified inner solve)
 #include "latent_block.h"
 #include "nested_laplace_grid.h"
+#include "row_classes.h"                  // RowClasses, RowLoadings
 #include "sparse_cholesky.h"
 #include <Rcpp.h>
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <cstring>
 #include <limits>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -68,27 +67,27 @@ inline void nl_multi_obs_contribs(
         if (g >= 0 && g < n_re_groups) sink(p + g, 1.0);
     }
     for (std::size_t b = 0; b < blocks.size(); b++) {
+        // The per-row weight rides the block amplitude on both kinds, as it
+        // does in the inner solve's own walk (laplace_spec.cpp).
+        const double d_b = d_fac[b] * block_row_weight(blocks[b], i, /*k_arm=*/0);
         if (blocks[b].contrib_kind == BlockContribKind::INDEXED_MULTI) {
             blocks[b].fill_obs_indices(i, /*k_arm=*/0, scratch);
             for (const auto& nw : scratch) {
                 const int l = nw.first;
                 if (l > 0 && l <= blocks[b].size) {
-                    sink(blocks[b].start + l - 1, d_fac[b] * nw.second);
+                    sink(blocks[b].start + l - 1, d_b * nw.second);
                 }
             }
         } else {
             const int l = blocks[b].idx(i, /*k_arm=*/0);
             if (l > 0 && l <= blocks[b].size) {
-                const double w = blocks[b].row_weight
-                                 ? blocks[b].row_weight(i, /*k_arm=*/0)
-                                 : 1.0;
-                sink(blocks[b].start + l - 1, d_fac[b] * w);
+                sink(blocks[b].start + l - 1, d_b);
             }
         }
     }
 }
 
-// Rows sharing a loading vector, and therefore a predictive variance.
+// The design's rows grouped by loading vector (row_classes.h).
 //
 // nl_multi_obs_contribs builds row i's loading vector a_i out of the p values
 // of X(i, .), the RE group re_idx[i], and, per block, either the (index,
@@ -103,100 +102,32 @@ inline void nl_multi_obs_contribs(
 // bit-identical a_i at EVERY cell, and share the variance a_i' H_k^{-1} a_i
 // exactly. One back-solve per class then serves every member of it, at every
 // cell, for one O(N * (p + n_blocks)) pass over the design.
-struct NlRowClasses {
-    std::vector<int> row_class;  // observation -> class id in [0, n_class)
-    std::vector<int> class_rep;  // class id -> the observation solved for
-    std::size_t size() const { return class_rep.size(); }
-};
-
-// FNV-1a, folded a 64-bit word at a time. The hash only groups CANDIDATES:
-// every merge is confirmed word by word against the representative's key, so a
-// collision costs one comparison rather than fusing two distinct rows.
-inline std::uint64_t nl_row_key_mix(std::uint64_t h, std::uint64_t word) {
-    for (int byte = 0; byte < 8; byte++) {
-        h ^= (word >> (8 * byte)) & 0xFFULL;
-        h *= 1099511628211ULL;
-    }
-    return h;
-}
-
-inline NlRowClasses nl_build_row_classes(
+inline RowClasses nl_build_row_classes(
     int N, int p, bool has_re, int n_re_groups,
     const Rcpp::NumericMatrix& X, const Rcpp::NumericVector& re_idx,
     const std::vector<LatentBlock>& blocks
 ) {
-    NlRowClasses out;
-    if (N <= 0) return out;
-    out.row_class.assign(N, 0);
-
+    if (N <= 0) return RowClasses{};
     // The walk is driven at d_fac == 1 so the recorded weights carry no cell
     // dependence. Running it through nl_multi_obs_contribs itself keeps the key
     // and the loading vector one definition: a change to what a row reads
     // changes both together.
     const std::vector<double> unit_d_fac(blocks.size(), 1.0);
-
-    // Keys packed end to end, one (index, weight-bits) pair per contribution.
-    // Comparison is on exact bit patterns -- a tolerance would merge rows whose
-    // loading vectors differ, and the variance is read off the same factor for
-    // every member of a class.
-    std::vector<int> key_idx;
-    std::vector<std::uint64_t> key_w;
-    std::vector<std::size_t> key_off(static_cast<std::size_t>(N) + 1, 0);
+    RowLoadings keys;
     const std::size_t key_guess =
         static_cast<std::size_t>(N) * (static_cast<std::size_t>(p) +
                                        blocks.size() + 1);
-    key_idx.reserve(key_guess);
-    key_w.reserve(key_guess);
-
-    std::vector<std::uint64_t> row_hash(N, 0);
+    keys.idx.reserve(key_guess);
+    keys.w.reserve(key_guess);
+    keys.off.reserve(static_cast<std::size_t>(N) + 1);
     std::vector<std::pair<int, double>> scratch;
     for (int i = 0; i < N; i++) {
         nl_multi_obs_contribs(
             i, p, has_re, n_re_groups, X, re_idx, blocks, unit_d_fac, scratch,
-            [&](int idx, double w) {
-                std::uint64_t bits;
-                std::memcpy(&bits, &w, sizeof(bits));
-                key_idx.push_back(idx);
-                key_w.push_back(bits);
-            });
-        key_off[static_cast<std::size_t>(i) + 1] = key_idx.size();
-
-        std::uint64_t h = 1469598103934665603ULL;
-        for (std::size_t s = key_off[i]; s < key_off[i + 1]; s++) {
-            h = nl_row_key_mix(h, static_cast<std::uint64_t>(
-                                      static_cast<std::uint32_t>(key_idx[s])));
-            h = nl_row_key_mix(h, key_w[s]);
-        }
-        row_hash[i] = h;
+            [&](int idx, double w) { keys.push(idx, w); });
+        keys.end_row();
     }
-
-    auto key_equal = [&](int i, int j) {
-        const std::size_t oi = key_off[i], oj = key_off[j];
-        const std::size_t ni = key_off[i + 1] - oi;
-        if (ni != key_off[j + 1] - oj) return false;
-        for (std::size_t s = 0; s < ni; s++) {
-            if (key_idx[oi + s] != key_idx[oj + s]) return false;
-            if (key_w[oi + s] != key_w[oj + s]) return false;
-        }
-        return true;
-    };
-
-    std::unordered_map<std::uint64_t, std::vector<int>> buckets;
-    buckets.reserve(static_cast<std::size_t>(N));
-    for (int i = 0; i < N; i++) {
-        std::vector<int>& candidates = buckets[row_hash[i]];
-        int cls = -1;
-        for (int c : candidates) {
-            if (key_equal(i, out.class_rep[c])) { cls = c; break; }
-        }
-        if (cls < 0) {
-            cls = static_cast<int>(out.class_rep.size());
-            out.class_rep.push_back(i);
-            candidates.push_back(cls);
-        }
-        out.row_class[i] = cls;
-    }
-    return out;
+    return row_classes_from_loadings(keys);
 }
 
 // Generic outer-grid driver over a vector of LatentBlocks.
@@ -252,7 +183,7 @@ inline Rcpp::List run_multi_block_nested_laplace(
     // run_nested_laplace_grid.
     int screen_iters = CHEAP_SCREEN_ITERS,
     // Whether to fill `fitted_eta_var`. The per-row predictive variance costs
-    // one back-solve per DISTINCT loading vector per cell (see NlRowClasses
+    // one back-solve per DISTINCT loading vector per cell (see nl_build_row_classes
     // above), which on a design with few repeated rows is the dominant cost of
     // a cell. A caller that reads only `fitted_eta` -- or only the marginal
     // summaries -- passes false and the pass is skipped outright; the returned
@@ -392,10 +323,10 @@ inline Rcpp::List run_multi_block_nested_laplace(
     // Rows sharing a loading vector share the variance at every cell, so the
     // grid solves one representative per class. Built once from the design,
     // read-only inside the (possibly parallel) grid.
-    const NlRowClasses row_classes =
+    const RowClasses row_classes =
         want_fitted_var
             ? nl_build_row_classes(N, p, has_re, n_re_groups, X, re_idx, blocks)
-            : NlRowClasses{};
+            : RowClasses{};
 
     // Inner implementation: takes max_iter as a parameter so the cheap-pass
     // path can call with max_iter=1 for a one-Newton-step screen. See the

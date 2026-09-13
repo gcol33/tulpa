@@ -19,10 +19,9 @@
 #     and the grid axes. Writing a checkpoint and then re-running against the
 #     same file with one of them perturbed must be refused, which is what says
 #     the perturbed value reached the fingerprint.
-#   - One, compute_fitted_var, REMOVES a result field: the per-row predictive
-#     variance is filled by the LatentBlock driver, so the switch drops
-#     `fitted_eta_var` at the entries that report one and is inert at the
-#     entries whose driver never reported one.
+#   - One, compute_fitted_var, REMOVES a result field: every driver fills the
+#     per-row predictive variance by default, and the switch drops
+#     `fitted_eta_var`.
 #
 # n_threads is the one shared argument with no observable: the drivers are
 # required to return the same numbers at any thread count.
@@ -329,8 +328,17 @@ test_that("compute_fitted_var is the switch on the driver that fills it", {
   expect_false("fitted_eta_var" %in% names(icar_off))
   expect_equal(icar_off$log_marginal, icar_on$log_marginal)
 
-  # nngp reaches the joint-sparse driver, which reports no per-row variance at
-  # all, so the switch has nothing to remove there.
-  nngp_on <- do.call(named$nngp$fn, named$nngp$args)
-  expect_false("fitted_eta_var" %in% names(nngp_on))
+  # nngp reaches the joint-sparse driver and st_icar the joint driver, which
+  # read the variance off each cell's own precision; the same switch governs it.
+  for (nm in c("nngp", "st_icar")) {
+    on <- do.call(named[[nm]]$fn, named[[nm]]$args)
+    expect_true("fitted_eta_var" %in% names(on), info = nm)
+    expect_equal(dim(on$fitted_eta_var),
+                 c(length(on$log_marginal), length(named[[nm]]$args$y)),
+                 info = nm)
+    off <- do.call(named[[nm]]$fn, modifyList(
+      named[[nm]]$args, list(compute_fitted_var = FALSE)))
+    expect_false("fitted_eta_var" %in% names(off), info = nm)
+    expect_equal(off$log_marginal, on$log_marginal, info = nm)
+  }
 })

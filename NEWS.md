@@ -19,6 +19,33 @@
   data the temporal fit now leads by 66.6 elpd, where it trailed by 1.9. `predict()` stays population
   level, as documented, and says so for areal and temporal fields.
 
+* **The NNGP, HSGP, SPDE and spatiotemporal fits carried `fitted_eta` without
+  `fitted_eta_var`** (gcol33/tulpa#727), so their WAIC, LOO and posterior
+  predictive replicates held the spread of eta across the grid's cells and
+  none of its variance within a cell. Both joint Newton loops now read
+  `var(eta_r | theta_k, y) = a_r' Sigma_k a_r` off the snapshot of each cell's
+  precision at the mode the fixed-effect block already reads, one solve per
+  distinct loading vector. Where the sparse scatter left a large intrinsic
+  field's sum-to-zero pin off the stored precision it is folded back in by
+  Woodbury, so the variance is that of the precision the cell's log-determinant
+  was taken of: a fit forced onto the fold reproduces the stored-pin fit to
+  9e-13. Against the stored precision inverted in R the values agree to machine
+  precision on a well-conditioned NNGP fixture and to 3e-8 on an intrinsic ST
+  fit whose precision has condition number 1.2e8. `control$fitted_var = FALSE`
+  removes it on these entries as on the others, and a checkpointed grid
+  resumes it (checkpoint magic `TLPACKP7`).
+* **A block's per-row weight was applied twice by the per-observation sparse
+  joint scatter** (gcol33/tulpa#728). The INDEXED_SINGLE branch multiplied
+  `row_weight` into an amplitude that already carried it, so an areal
+  `svc_weight` block scattered the gradient and curvature of `w^2 u` against an
+  objective in `w u` wherever that path ran (a basis block alongside it, or the
+  sparse gradient gate). The row's block loadings now come from one walk,
+  `for_each_row_block_latent()`, behind that scatter, the coupled row scatter
+  and the new per-row variance.
+* **The LatentBlock driver built `fitted_eta` and `fitted_eta_var` without an
+  INDEXED_MULTI block's row weight** (gcol33/tulpa#729), which its inner solve
+  applies; the walk now folds it into the amplitude on both kinds.
+
 ## logLik() on a nested fit is the evidence of its outer grid
 
 * **`logLik()` summed a nested fit's per-cell marginal likelihoods without the
