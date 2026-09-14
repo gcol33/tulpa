@@ -315,3 +315,130 @@ test_that("a refined grid reports the posterior its own cell weights define", {
   expect_lt(abs(refined$theta_mean[["sigma"]] - fine$theta_mean[["sigma"]]),
             abs(coarse$theta_mean[["sigma"]] - fine$theta_mean[["sigma"]]))
 })
+
+# --------------------------------------------------------------------------- #
+# The support a refined grid reports is the region its measure integrates     #
+# --------------------------------------------------------------------------- #
+
+FLAT_SLICE_SPECS <- list(list(name = "sigma", log_scale = TRUE),
+                         list(name = "phi_pos", log_scale = TRUE))
+
+# The span along `spec`'s axis that `.hyper_refined_log_quad()` integrates, read
+# off the construction the measure itself uses: the base measure's outer edges
+# and the cell every admitted slice point owns in its re-tiled row.
+measure_span <- function(g, spec, ref) {
+  home <- .hyper_slice_home(ref, nrow(g))
+  v <- as.numeric(g[, spec$name])
+  m <- .hyper_axis_measure(v[!nzchar(home)], spec, .hyper_axis_atom_mass(spec))
+  m$spec <- spec
+  cells <- lapply(.hyper_slice_rows(g, home, spec$name), function(i) {
+    tl <- .hyper_fibre_tiling(m, v[i], close_domain = TRUE)
+    tl$cell[tl$ok, , drop = FALSE]
+  })
+  u <- range(c(m$edges, unlist(cells)))
+  if (isTRUE(spec$log_scale)) exp(u) else u
+}
+
+test_that("an unrefined grid reports the support of its levels", {
+  for (specs in list(FLAT_SLICE_SPECS,
+                     .joint_axis_specs_from_grid(SLICE_TENSOR))) {
+    sup <- .hyper_grid_supports(SLICE_TENSOR, specs)
+    expect_identical(.hyper_grid_supports(SLICE_TENSOR, specs,
+                                          refining = rep("", 25L)), sup)
+    for (spec in specs) {
+      expect_identical(sup[[spec$name]],
+                       .hyper_axis_support(SLICE_TENSOR[, spec$name], spec))
+    }
+    span <- .joint_axis_span(SLICE_TENSOR, SLICE_TENSOR, specs,
+                             refining = rep("", 25L))
+    for (a in names(span)) {
+      expect_identical(span[[a]]$integrated, sup[[a]])
+      expect_identical(span[[a]]$integrated, span[[a]]$declared)
+    }
+  }
+})
+
+test_that("densifying a row leaves the span the declared nodes had", {
+  lp <- log(SLICE_AXES$phi_pos); ls <- log(SLICE_AXES$sigma)
+  g <- rbind(SLICE_TENSOR,
+             c(SLICE_AXES$sigma[3], exp((lp[4] + lp[5]) / 2)),
+             c(SLICE_AXES$sigma[3], exp((3 * lp[1] + lp[2]) / 4)),
+             c(exp((ls[4] + ls[5]) / 2), SLICE_AXES$phi_pos[2]))
+  ref <- c(rep("", 25L), "phi_pos", "consistency_phi_pos", "sigma")
+  tensor <- .hyper_grid_supports(SLICE_TENSOR, FLAT_SLICE_SPECS)
+  sup <- .hyper_grid_supports(g, FLAT_SLICE_SPECS, refining = ref)
+  expect_identical(sup, tensor)
+  for (spec in FLAT_SLICE_SPECS) {
+    expect_equal(sup[[spec$name]], measure_span(g, spec, ref),
+                 tolerance = 1e-14)
+    # The half step of the joined levels is narrower than what is integrated.
+    lev <- .hyper_axis_support(g[, spec$name], spec)
+    expect_lt(diff(log(lev)), diff(log(sup[[spec$name]])))
+  }
+  # The measure integrates exactly the tensor's area over that span.
+  area <- prod(vapply(tensor, function(s) diff(log(s)), numeric(1)))
+  w <- exp(.hyper_log_quad_weights(g, FLAT_SLICE_SPECS, refining = ref,
+                                   absolute = TRUE))
+  expect_equal(sum(w), area, tolerance = 1e-12)
+
+  span <- .joint_axis_span(SLICE_TENSOR, g, FLAT_SLICE_SPECS, refining = ref)
+  expect_identical(span$phi_pos$integrated, span$phi_pos$declared)
+  expect_identical(span$sigma$integrated, sup$sigma)
+})
+
+test_that("an extension widens the span to the cell the extended row integrates", {
+  lp <- log(SLICE_AXES$phi_pos); ls <- log(SLICE_AXES$sigma)
+  tensor <- .hyper_grid_supports(SLICE_TENSOR, FLAT_SLICE_SPECS)
+  area0 <- prod(vapply(tensor, function(s) diff(log(s)), numeric(1)))
+  for (tag in c("phi_pos", "consistency_phi_pos")) {
+    x_ext <- exp(lp[5] + (lp[5] - lp[4]))
+    g <- rbind(SLICE_TENSOR, c(SLICE_AXES$sigma[3], x_ext),
+               c(SLICE_AXES$sigma[2], exp((lp[2] + lp[3]) / 2)))
+    ref <- c(rep("", 25L), tag, "phi_pos")
+    sup <- .hyper_grid_supports(g, FLAT_SLICE_SPECS, refining = ref)
+    expect_equal(sup$phi_pos,
+                 measure_span(g, FLAT_SLICE_SPECS[[2L]], ref), tolerance = 1e-14)
+    expect_identical(sup$phi_pos[1L], tensor$phi_pos[1L])
+    expect_equal(log(sup$phi_pos[2L]), log(x_ext) + (log(x_ext) - lp[5]) / 2,
+                 tolerance = 1e-14)
+    expect_identical(sup$sigma, tensor$sigma)
+    # What the widened span adds is the extension region of that one row.
+    w <- exp(.hyper_log_quad_weights(g, FLAT_SLICE_SPECS, refining = ref,
+                                     absolute = TRUE))
+    expect_equal(sum(w),
+                 area0 + (log(sup$phi_pos[2L]) - log(tensor$phi_pos[2L])) *
+                   (ls[2L] - ls[1L]),
+                 tolerance = 1e-12, label = tag)
+    span <- .joint_axis_span(SLICE_TENSOR, g, FLAT_SLICE_SPECS, refining = ref)
+    expect_identical(span$phi_pos$integrated, sup$phi_pos)
+    expect_gt(span$phi_pos$integrated[2L], span$phi_pos$declared[2L])
+  }
+})
+
+test_that("a fibre cell a base node owns past a closed edge adds no span", {
+  # On a correlation the outer cell closes inside the domain, so a densified
+  # row's half-step mirror can land past the base edge; the base node keeps
+  # only its own base cell there, and the span stays where the mass stops.
+  rho <- c(0.1, 0.4, 0.7, 0.9)
+  sg <- exp(seq(log(0.2), log(2), length.out = 4))
+  tg <- as.matrix(expand.grid(sigma = sg, rho_car = rho))
+  specs <- list(hyper_axis_spec("sigma", sg, log_scale = TRUE),
+                hyper_axis_spec("rho_car", rho))
+  tensor <- .hyper_grid_supports(tg, specs)
+  tensor_area <- sum(exp(.hyper_log_quad_weights(tg, specs, absolute = TRUE)))
+  g <- rbind(tg, c(sg[2], 0.75))
+  ref <- c(rep("", 16L), "rho_car")
+  sup <- .hyper_grid_supports(g, specs, refining = ref)
+  expect_identical(sup, tensor)
+  expect_equal(sup$rho_car, measure_span(g, specs[[2L]], ref), tolerance = 1e-14)
+  expect_gt(.hyper_axis_support(g[, "rho_car"], specs[[2L]])[2L],
+            tensor$rho_car[2L])
+  w <- exp(.hyper_log_quad_weights(g, specs, refining = ref, absolute = TRUE))
+  expect_equal(sum(w), tensor_area, tolerance = 1e-12)
+
+  # A slice point past the outermost node does extend it, inside the domain.
+  g2 <- rbind(tg, c(sg[2], 0.97))
+  sup2 <- .hyper_grid_supports(g2, specs, refining = ref)
+  expect_equal(sup2$rho_car, c(tensor$rho_car[1L], 0.985), tolerance = 1e-14)
+  expect_lt(sup2$rho_car[2L], 1)
+})

@@ -442,13 +442,11 @@ test_that("a fit reports the span it worked over on a stated axis", {
     # each end -- the only widening term left once the axis cannot be extended.
     expect_lt(sp$declared[1L], min(stated))
     expect_gt(sp$declared[2L], max(stated))
-    # Densification adds interior nodes, which narrows the outermost cells; the
-    # integrated span therefore sits inside the declared one and still contains
-    # every node.
-    expect_gte(sp$integrated[1L], sp$declared[1L])
-    expect_lte(sp$integrated[2L], sp$declared[2L])
-    expect_lte(sp$integrated[1L], min(stated))
-    expect_gte(sp$integrated[2L], max(stated))
+    # Densification adds nodes inside the stated range, each carved out of the
+    # base cells of its own row, so the measure integrates the declared span and
+    # nothing more.
+    expect_gt(sp$n_nodes[["final"]], sp$n_nodes[["initial"]])
+    expect_identical(sp$integrated, sp$declared)
     # `axis_support` is the same interval, read off the same final grid.
     expect_equal(sp$integrated, fit$axis_support[["alpha"]])
 })

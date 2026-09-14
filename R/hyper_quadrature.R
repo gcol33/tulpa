@@ -460,15 +460,27 @@
 # natural-scale intervals. Stored on the fit so a second engine reads the span
 # this fit integrated rather than rebuilding it from a grid that refinement may
 # since have extended.
-.hyper_grid_supports <- function(theta_grid, specs) {
+#
+# `refining` is the per-cell tag `.hyper_log_quad_weights()` takes. An axis
+# carrying slice cells reports the region the cell-by-cell measure integrates
+# (`.hyper_refined_axis_support()`); every other axis, and every axis of a grid
+# with no slice cells, the support of its levels. An axis with no declared
+# coordinate has no measure to read a region off and keeps the latter.
+.hyper_grid_supports <- function(theta_grid, specs, refining = NULL) {
   if (is.null(theta_grid) || is.null(specs)) return(NULL)
   theta_grid <- as.matrix(theta_grid)
   axis_names <- colnames(theta_grid)
+  home <- .hyper_slice_home(refining, nrow(theta_grid))
+  sliced <- unique(home[nzchar(home)])
   out <- list()
   for (spec in specs) {
     a <- spec$name
     if (!a %in% axis_names) next
-    sup <- .hyper_axis_support(theta_grid[, a], spec)
+    sup <- if (a %in% sliced && !isTRUE(spec$unweighted)) {
+      .hyper_refined_axis_support(theta_grid, spec, home)
+    } else {
+      .hyper_axis_support(theta_grid[, a], spec)
+    }
     if (!is.null(sup)) out[[a]] <- sup
   }
   if (length(out) == 0L) return(NULL)
@@ -629,11 +641,12 @@
 # Slice cells on axis j at row r (the base coordinates off j) re-tile that ONE
 # row along j: the fibre's nodes are the base levels plus the row's slice
 # points, its interior edges the midpoints between them, and its outer edges the
-# wider of the base edges and the fibre's own half-step mirror (so an extension
-# past the base span adds that row's extension region and never opens a gap).
-# In the fibre each base node keeps the part `R_j` of its base cell `B_j` its
-# refined cell still covers, and each slice node owns its refined cell, which
-# lies in one or two base cells and, past the base span, in the extension region.
+# wider of the base edges and the fibre's own half-step mirror
+# (`.hyper_fibre_tiling()`, which `.hyper_refined_axis_support()` reads the
+# integrated span from). In the fibre each base node keeps the part `R_j` of its
+# base cell `B_j` its refined cell still covers, and each slice node owns its
+# refined cell, which lies in one or two base cells and, past the base span, in
+# the extension region.
 #
 # Inside the box `B` of a base cell c0 a point x lies outside `R_j` on some set
 # `T` of axes. For `T` empty it belongs to c0; for `T = {j}` to the j-slice whose
@@ -699,10 +712,7 @@
     measures[[a]] <- m
   }
 
-  key_of <- function(vals, drop) {
-    keep <- names(vals) != drop
-    paste0("row:", paste(sprintf("%.17g", vals[keep]), collapse = "|"))
-  }
+  key_of <- .hyper_row_key
   cell_vals <- function(i) stats::setNames(as.numeric(theta_grid[i, ]),
                                            axis_names)
 
@@ -711,32 +721,22 @@
   slice_pieces <- vector("list", n)
   for (a in intersect(names(measures), unique(home[!base]))) {
     m <- measures[[a]]
-    sl <- which(home == a)
     if (length(m$x) < 2L || is.null(m$unit)) {
       stop(sprintf(paste0("Axis '%s' carries refinement slice cells but no ",
                           "continuum of base levels to re-tile."), a),
            call. = FALSE)
     }
-    spec <- m$spec
     xb <- m$x
     eb <- m$edges
-    rows <- vapply(sl, function(i) key_of(cell_vals(i), a), character(1))
     fib[[a]] <- list()
-    for (r in unique(rows)) {
-      s_idx <- sl[rows == r]
+    rows <- .hyper_slice_rows(theta_grid, home, a)
+    for (r in names(rows)) {
+      s_idx <- rows[[r]]
       pts <- as.numeric(theta_grid[s_idx, a])
-      ok <- is.finite(pts) & !(isTRUE(spec$log_scale) & pts <= 0)
-      if (!is.null(m$slab)) ok <- ok & pts >= m$slab[1L] & pts <= m$slab[2L]
-      xf <- sort(unique(c(xb, pts[ok])))
-      uf <- .hyper_axis_coord(xf, spec)
-      bd <- if (!is.null(m$slab)) {
-        c(eb[1L], eb[length(eb)])
-      } else {
-        bf <- .hyper_default_coord_bounds(uf)
-        if (close_domain) bf <- .hyper_domain_clamp(bf, uf, spec)
-        c(min(eb[1L], bf[1L]), max(eb[length(eb)], bf[2L]))
-      }
-      ef <- c(bd[1L], (uf[-length(uf)] + uf[-1L]) / 2, bd[2L])
+      tl <- .hyper_fibre_tiling(m, pts, close_domain)
+      ok <- tl$ok
+      xf <- tl$x
+      ef <- tl$edges
       lo <- ef[-length(ef)]
       hi <- ef[-1L]
       bw <- diff(eb)
@@ -752,12 +752,13 @@
                                     ext = 0, x = pts[k])
           next
         }
-        jf <- match(pts[k], xf)
-        ov <- pmax(0, pmin(hi[jf], eb[-1L]) - pmax(lo[jf], eb[-length(eb)]))
+        cl <- tl$cell[k, ]
+        ov <- pmax(0, pmin(cl[["hi"]], eb[-1L]) -
+                      pmax(cl[["lo"]], eb[-length(eb)]))
         slice_pieces[[i]] <- list(
           axis = a, x = pts[k],
           in_base = stats::setNames(ov, sprintf("%.17g", xb)),
-          ext = max(0, (hi[jf] - lo[jf]) - sum(ov)),
+          ext = max(0, (cl[["hi"]] - cl[["lo"]]) - sum(ov)),
           bw = bw)
       }
     }
@@ -803,6 +804,100 @@
     out[i] <- out[i] + (if (is.finite(lw)) lw else -Inf)
   }
   out
+}
+
+# The key naming a cell's row along axis `drop`: its coordinates on every other
+# axis.
+.hyper_row_key <- function(vals, drop) {
+  keep <- names(vals) != drop
+  paste0("row:", paste(sprintf("%.17g", vals[keep]), collapse = "|"))
+}
+
+# The slice cells on axis `a`, grouped by the row of the base tensor each sits
+# in, as a named list of cell indices in first-appearance order.
+.hyper_slice_rows <- function(theta_grid, home, a) {
+  sl <- which(home == a)
+  axis_names <- colnames(theta_grid)
+  keys <- vapply(sl, function(i) {
+    .hyper_row_key(stats::setNames(as.numeric(theta_grid[i, ]), axis_names), a)
+  }, character(1))
+  out <- lapply(unique(keys), function(r) sl[keys == r])
+  names(out) <- unique(keys)
+  out
+}
+
+# One row of a refined axis re-tiled: the continuum nodes of the base measure
+# `m` (`.hyper_axis_measure()`, with `m$spec` attached) joined to that row's
+# slice points `pts`, the cell edges the joined nodes own on the integration
+# coordinate, and the cell each slice point owns.
+#
+# `ok` marks the slice points the continuum admits: finite, positive on a
+# log-scale axis, inside a declared span. The interior edges are the midpoints
+# between neighbouring nodes. Under a declared span the outer edges are the
+# base measure's, which already close on it; otherwise they are the wider of the
+# base measure's outer edges and the joined nodes' own half-step mirror, closed
+# inside the axis's domain when `close_domain`.
+#
+# `cell` is a two-column matrix (`lo`, `hi`) with one row per entry of `pts`:
+# the fibre cell that point owns, NA where the point is not admitted.
+.hyper_fibre_tiling <- function(m, pts, close_domain) {
+  spec <- m$spec
+  eb <- m$edges
+  ok <- is.finite(pts) & !(isTRUE(spec$log_scale) & pts <= 0)
+  if (!is.null(m$slab)) ok <- ok & pts >= m$slab[1L] & pts <= m$slab[2L]
+  xf <- sort(unique(c(m$x, pts[ok])))
+  uf <- .hyper_axis_coord(xf, spec)
+  bd <- if (!is.null(m$slab)) {
+    c(eb[1L], eb[length(eb)])
+  } else {
+    bf <- .hyper_default_coord_bounds(uf)
+    if (close_domain) bf <- .hyper_domain_clamp(bf, uf, spec)
+    c(min(eb[1L], bf[1L]), max(eb[length(eb)], bf[2L]))
+  }
+  ef <- c(bd[1L], (uf[-length(uf)] + uf[-1L]) / 2, bd[2L])
+  jf <- match(pts, xf)
+  jf[!ok] <- NA_integer_
+  cell <- cbind(lo = ef[jf], hi = ef[jf + 1L])
+  list(ok = ok, x = xf, edges = ef, cell = cell)
+}
+
+# Natural-scale support of an axis of a refined grid: the interval spanning the
+# region its cell-by-cell measure (`.hyper_refined_log_quad()`) integrates.
+#
+# The base cells tile the support of the base levels, which is the unrefined
+# rule applied to the node set the axis was declared on; slice cells on another
+# axis sit on those levels and add nothing here. In a row re-tiled along this
+# axis (`.hyper_fibre_tiling()`) a base node keeps only the part of its fibre
+# cell inside its own base cell, so the row reaches past the base span only
+# through the cells its admitted slice points own. The support is the base
+# support widened to every such cell.
+#
+# A densified row therefore leaves the span the declared nodes had, however
+# many nodes it carries. The integrated pieces need not be contiguous: a slice
+# point more than one base step past the outermost base node owns a cell that
+# begins beyond the base edge, and the support spans the gap. NULL where the
+# base levels carry fewer than two continuum nodes.
+.hyper_refined_axis_support <- function(theta_grid, spec, home) {
+  a <- spec$name
+  v <- as.numeric(theta_grid[, a])
+  base <- !nzchar(home)
+  sup <- .hyper_axis_support(v[base], spec)
+  if (is.null(sup) || !any(home == a)) return(sup)
+  m <- .hyper_axis_measure(v[base], spec, .hyper_axis_atom_mass(spec))
+  if (length(m$x) < 2L) return(sup)
+  m$spec <- spec
+  eb <- m$edges
+  lo <- eb[1L]
+  hi <- eb[length(eb)]
+  for (s_idx in .hyper_slice_rows(theta_grid, home, a)) {
+    tl <- .hyper_fibre_tiling(m, v[s_idx], close_domain = TRUE)
+    if (!any(tl$ok)) next
+    lo <- min(lo, tl$cell[tl$ok, "lo"])
+    hi <- max(hi, tl$cell[tl$ok, "hi"])
+  }
+  nat <- function(u) if (isTRUE(spec$log_scale)) exp(u) else u
+  c(if (lo < eb[1L]) nat(lo) else sup[1L],
+    if (hi > eb[length(eb)]) nat(hi) else sup[2L])
 }
 
 # integral_0^1 prod_k (f_k + (1 - f_k) t) dt: the share of a base box's corner

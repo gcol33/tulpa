@@ -784,17 +784,22 @@
 #
 #   nodes       range of the axis's continuum nodes, before any refinement pass
 #   declared    support of that initial node set (the nodes plus the half step)
-#   integrated  support after refinement; identical to `axis_support`
+#   integrated  the region the final grid's measure integrates, read through
+#               `.hyper_grid_supports()` with the final grid's `refining` tags,
+#               so it is `axis_support`
 #   refine      the mode that governed how far refinement could move the axis
 #   n_nodes     continuum node count, initial and final
 #
 # An axis with fewer than two continuum levels has no span to report and is left
 # out, matching what `.hyper_grid_supports()` does with it.
-.joint_axis_span <- function(theta_grid_init, theta_grid_final, specs) {
+.joint_axis_span <- function(theta_grid_init, theta_grid_final, specs,
+                             refining = NULL) {
     if (is.null(theta_grid_init) || is.null(specs)) return(NULL)
     theta_grid_init  <- as.matrix(theta_grid_init)
     theta_grid_final <- if (is.null(theta_grid_final)) theta_grid_init
                         else as.matrix(theta_grid_final)
+    integrated <- .hyper_grid_supports(theta_grid_final, specs,
+                                       refining = refining)
     out <- list()
     for (spec in specs) {
         a <- spec$name
@@ -808,7 +813,7 @@
         out[[a]] <- list(
             nodes      = range(lev0),
             declared   = .hyper_axis_support(theta_grid_init[, a], spec),
-            integrated = .hyper_axis_support(theta_grid_final[, a], spec),
+            integrated = integrated[[a]],
             refine     = mode,
             n_nodes    = c(initial = length(lev0), final = length(lev1))
         )

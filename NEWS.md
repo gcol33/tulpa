@@ -101,6 +101,20 @@
 * `.nl_grid_log_quad(refining =)` rebuilds its axis specs from the base cells,
   so a prior read off the declared nodes (the copy scale's exponential rate) is
   not moved by a node a refinement pass appended.
+* **`axis_support` and `axis_span$integrated` did not report the span a refined
+  grid integrates.** Both were read off every distinct level on the axis, slice
+  points included, as if the grid were a tensor. Densifying a row shrinks the
+  half step at the ends of that node set, so a stated copy axis `c(0.2, 0.5)`
+  refined on the tulpaObs `share()` fixture reported `[0.171, 0.526]` while its
+  cells integrate `[0.126, 0.791]`; on a domain-closed axis the same rule could
+  also report past where the mass stops (0.975 against 0.95 for a `rho_car` row
+  densified at 0.75). `.hyper_grid_supports(refining =)` now reads a refined
+  axis's span from the construction the cell measure uses
+  (`.hyper_fibre_tiling()`): the support of the base levels, widened only by the
+  cells that slice points own past it. The joint driver passes its
+  `refining_axis` to both fields, so a densified axis reports the span its
+  declared nodes had and an extended one reaches the outer edge of the
+  extension's cell. A grid with no slice cells reports bit for bit what it did.
 
 ## WAIC, LOO and posterior_predict() read the whole linear predictor
 

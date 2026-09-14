@@ -847,10 +847,10 @@
 #'      those nodes plus the half node step the outermost cells own -- for `k`
 #'      equally spaced nodes that is `k / (k - 1)` times the node range on the
 #'      axis's integration coordinate, so 2x at two nodes and 1.125x at nine),
-#'      `integrated` (the support after refinement, the same interval
-#'      `axis_support` reports), `refine` (the mode refinement ran under:
-#'      `"none"` / `"densify"` / `"extend"`) and `n_nodes` (initial and final
-#'      continuum node counts).
+#'      `integrated` (the region the final grid's cell measure integrates, the
+#'      same interval `axis_support` reports), `refine` (the mode refinement
+#'      ran under: `"none"` / `"densify"` / `"extend"`) and `n_nodes` (initial
+#'      and final continuum node counts).
 #'   * `outer_grid_placement` -- `"fixed"` (the default `sigma_grid` axis was
 #'      used as-is) or `"auto_recentered"` when a `collapsed_edge` on `sigma`
 #'      triggered the mode-Hessian recenter-and-refit (see the `prior`
@@ -2094,8 +2094,10 @@ tulpa_nested_laplace_joint <- function(responses,
     res$theta_names <- colnames(res$theta_grid)
     res$log_quad     <- .hyper_log_quad_weights(res$theta_grid, specs,
                                                 refining = refining_axis)
-    res$axis_support <- .hyper_grid_supports(res$theta_grid, specs)
-    res$axis_span    <- .joint_axis_span(theta_grid_init, res$theta_grid, specs)
+    res$axis_support <- .hyper_grid_supports(res$theta_grid, specs,
+                                             refining = refining_axis)
+    res$axis_span    <- .joint_axis_span(theta_grid_init, res$theta_grid, specs,
+                                         refining = refining_axis)
     res$weights     <- .nl_normalise_weights_safe(res$log_marginal, "outer grid",
                                                   log_quad = res$log_quad)
     res$log_hyperprior <- hp_fn(res$theta_grid)
@@ -2134,9 +2136,11 @@ tulpa_nested_laplace_joint <- function(responses,
             res$theta_names <- colnames(res$theta_grid)
             res$log_quad     <- .hyper_log_quad_weights(res$theta_grid, specs,
                                                         refining = refining_axis)
-            res$axis_support <- .hyper_grid_supports(res$theta_grid, specs)
+            res$axis_support <- .hyper_grid_supports(res$theta_grid, specs,
+                                                     refining = refining_axis)
             res$axis_span    <- .joint_axis_span(theta_grid_init,
-                                                  res$theta_grid, specs)
+                                                  res$theta_grid, specs,
+                                                  refining = refining_axis)
             res$weights     <- .nl_normalise_weights_safe(res$log_marginal,
                                                           "outer grid",
                                                           log_quad = res$log_quad)

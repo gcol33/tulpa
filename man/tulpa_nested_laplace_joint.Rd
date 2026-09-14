@@ -836,10 +836,10 @@ of the axis's initial continuum nodes), \code{declared} (their support, i.e.
 those nodes plus the half node step the outermost cells own -- for \code{k}
 equally spaced nodes that is \code{k / (k - 1)} times the node range on the
 axis's integration coordinate, so 2x at two nodes and 1.125x at nine),
-\code{integrated} (the support after refinement, the same interval
-\code{axis_support} reports), \code{refine} (the mode refinement ran under:
-\code{"none"} / \code{"densify"} / \code{"extend"}) and \code{n_nodes} (initial and final
-continuum node counts).
+\code{integrated} (the region the final grid's cell measure integrates, the
+same interval \code{axis_support} reports), \code{refine} (the mode refinement
+ran under: \code{"none"} / \code{"densify"} / \code{"extend"}) and \code{n_nodes} (initial
+and final continuum node counts).
 \item \code{outer_grid_placement} -- \code{"fixed"} (the default \code{sigma_grid} axis was
 used as-is) or \code{"auto_recentered"} when a \code{collapsed_edge} on \code{sigma}
 triggered the mode-Hessian recenter-and-refit (see the \code{prior}
