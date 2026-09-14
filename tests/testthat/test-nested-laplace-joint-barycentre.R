@@ -65,11 +65,12 @@ test_that("the barycentre is the box's own first moment, on either sign of a", {
   }
   expect_setequal(unique(route), c("closed", "numeric"))
   # Measured over the 648 combinations, in u-space units: 2.36e-11 against both
-  # arbiters, which agree with each other to the same figure. The worst case is
-  # the far-tail closed form (g = -8, a = 0.05, so a local peak 640 nats up and
-  # 320 cell widths away), where `eps` times the cancellation product is 4.7e-11
-  # of the cell width -- the budget `.LCCD_BAR_CANCEL` is set to. The numeric
-  # route measures 1.55e-15. The tolerances are floating slack over those.
+  # arbiters, which agree with each other to 1.55e-15. The worst case is the
+  # far-tail closed form (g = -8, a = 0.05 on a box of width 0.5, so a local
+  # peak 640 nats up and 320 cell widths away), where the error is 4.7e-11 of
+  # the cell width against `eps` times the cancellation product of 4.5e-11 --
+  # the budget `.LCCD_BAR_CANCEL` is set to. The numeric route measures 1.55e-15.
+  # The tolerances are floating slack over those.
   expect_lt(max(e_int), 1e-9)
   expect_lt(max(e_sim), 1e-9)
   # The numeric route asks stats::integrate() for rel.tol = eps^0.75 on each of
@@ -77,8 +78,8 @@ test_that("the barycentre is the box's own first moment, on either sign of a", {
   # twice that relative, and the box half-widths here are O(1). The bound is
   # that contract with slack. What any one platform measures inside it is the
   # arithmetic it happened to do: where the adaptive subdivision lands moves
-  # with the libm, and the same grid measures 1.55e-15 on one and 2e-12 on
-  # another.
+  # with the libm, so the 1.55e-15 measured on the build above is not a figure
+  # another platform has to reproduce.
   expect_lt(max(e_sim[route == "numeric"]), 8 * .Machine$double.eps^0.75)
 
   # A barycentre is the first moment of a positive density over the box, so it
@@ -448,16 +449,18 @@ test_that("the pair is what moves both parts of the read toward the dense answer
   err <- function(d, w, g) outer_grid_read_diff(ref, outer_grid_rebuild(d, w, g))
 
   # Four levels. Measured (endpoints / widths / median):
-  #   shipped   0.4067  0.8135  0.1158
-  #   mass      0.1516  0.1656  0.2028
-  #   location  0.1224  0.2449  0.0689
-  #   pair      0.1868  0.3736  0.0730
+  #   shipped   0.2083  0.3094  0.1509
+  #   mass      0.1836  0.0954  0.1757
+  #   location  0.1081  0.2162  0.0636
+  #   pair      0.1337  0.2673  0.0617
   # The mass rule buys the interval and loses the location, which is the split
-  # the barycentre exists to close: it improves all three at once, and the pair
-  # improves all three while sitting between them on each. Over five seeds of
-  # the same fixture the direction is unanimous -- against the shipped read the
-  # mass rule wins the endpoints and widths 5 of 5 and the median 0 of 5, while
-  # the location rule and the pair win all three parts 5 of 5.
+  # the barycentre exists to close: it improves all three at once. The pair
+  # improves all three too, sitting between the two rules on the endpoints,
+  # behind both on the widths and ahead of both on the median. Over seeds 1 to
+  # 5 of the same fixture, against the shipped read, the mass rule wins the
+  # widths 5 of 5, the median 3 of 5 and the endpoints 1 of 5, while the
+  # location rule and the pair each win the median 5 of 5 and the endpoints and
+  # widths 4 of 5.
   d4 <- outer_grid_dump(ogd_fixture_fit(sim, 4L))
   w4 <- .bar_mass_w(d4); g4 <- .bar_place_g(d4)$joint_grid
   e0 <- err(d4, NULL, NULL)
@@ -477,14 +480,16 @@ test_that("the pair is what moves both parts of the read toward the dense answer
   expect_lt(em$widths, eb$widths)
 
   # Five levels, where the shipped read is already close. Measured:
-  #   shipped   0.0952  0.1904  0.0469
-  #   mass      0.1281  0.2561  0.0459
-  #   location  0.1632  0.3264  0.0145
-  #   pair      0.1215  0.2430  0.0145
-  # Each rule alone costs the interval here and only the location half reaches
-  # the median, which it does by a factor of three. Over five seeds the pair is
-  # the only candidate whose mean error falls on all three parts at this
-  # resolution (0.1217 / 0.2379 / 0.0298 against 0.1322 / 0.2644 / 0.0421).
+  #   shipped   0.0506  0.0450  0.0423
+  #   mass      0.0848  0.1632  0.0306
+  #   location  0.1653  0.3306  0.0198
+  #   pair      0.0868  0.1736  0.0198
+  # Each rule costs the interval here and each improves the median, the
+  # location half by a factor of 2.1. Over seeds 1 to 5 no candidate's mean
+  # error falls on all three parts at this resolution: every rule costs the
+  # interval on average (the pair 0.0759 / 0.1366 against the shipped 0.0647 /
+  # 0.0914) and every rule improves the median, the pair most (0.0294 against
+  # 0.0459).
   d5 <- outer_grid_dump(ogd_fixture_fit(sim, 5L))
   e0 <- err(d5, NULL, NULL)
   el <- err(d5, NULL, .bar_place_g(d5)$joint_grid)

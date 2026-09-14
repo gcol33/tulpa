@@ -29,18 +29,17 @@
 # weight ranking is already the mass-movement ranking. This file is about which
 # correction a cell already selected should get.
 #
-# Two things this file cannot see, both measured by gcol33/tulpa#331 and both
-# bounding what a favourable plane here would have licensed. A one-cell
+# Two things this file cannot see, both the subject of gcol33/tulpa#331 and
+# both bounding what a favourable plane here would have licensed. A one-cell
 # intervention cannot see an AGGREGATE effect: the gradient points toward the
 # peak in every cell, so the whole-grid barycentre moves every atom inward at
-# once and the atom set contracts, which moving one atom does not do -- that
-# rule covers `sigma_1` on 128 of 200 seeds at four levels against the shipped
-# 200 of 200. And the distance to a fine-grid read, which is the metric every
-# plane below is coloured by, does not track inferential quality on this
-# fixture: the location rule is nearer the converged width (0.3576 against the
-# shipped 0.4194) and still loses 72 seeds, because undershooting it costs and
-# overshooting it does not. Nothing here is evidence that a correction should
-# ship.
+# once and the atom set contracts, which moving one atom does not do, and a
+# contracted atom set covers `sigma_1` on fewer seeds than the shipped read.
+# And the distance to a fine-grid read, which is the metric every plane below
+# is coloured by, need not track inferential quality: a rule nearer the
+# converged width can still lose coverage, because undershooting the width
+# costs and overshooting it does not. Nothing here is evidence that a
+# correction should ship.
 
 # Both descriptors of every cell that has a centred stencil, off the engine's
 # own per-cell routines rather than a second reading of the same quadratic.
@@ -236,16 +235,16 @@ test_that("the two descriptors separate, but they are far from independent", {
   skip_on_cran()
   D <- .dp_sweep()$cells
 
-  # Measured over 1680 cells from 144 fits (8 seeds x 3 grid spreads, four- and
-  # five-level bases against a twelve-level reference): Spearman(R_M, R_L)
-  # 0.8496 pooled, 0.8822 at four levels and 0.8505 at five, per-fit median
-  # 0.9048. A binomial arm on the same layout (840 cells, 72 fits) gives 0.9072.
-  # So the truncation does separate them -- 0.3881 of cells sit off the
-  # quartile diagonal -- but the second dimension is thin, and it is thin in a
-  # specific way: `R_L` is the share of its own half-cell an atom moves and so
-  # saturates below `sqrt(d)`, while `R_M` is a log mass ratio in nats and does
-  # not. Over that sweep `R_M` spans 0.0208 to 78.2587 while `R_L` spans 0.2261
-  # to 1.6336 against a bound of 1.7321, and no cell reaches 0.99 of it.
+  # Measured over the 280 cells of `.dp_sweep()` (8 seeds, four- and five-level
+  # bases at spread 3, each against a twelve-level reference): Spearman(R_M,
+  # R_L) 0.8425 pooled, 0.8907 at four levels and 0.8413 at five, per-fit
+  # median 0.9023. So the truncation does separate them -- 0.4071 of cells sit
+  # off the quartile diagonal -- but the second dimension is thin, and it is
+  # thin in a specific way: `R_L` is the share of its own half-cell an atom
+  # moves and so saturates below `sqrt(d)`, while `R_M` is a log mass ratio in
+  # nats and does not. Over that sweep `R_M` spans 0.0416 to 41.0723 while `R_L`
+  # spans 0.3181 to 1.5764 against a bound of 1.7321, and no cell reaches 0.92
+  # of it.
   for (lv in c(4L, 5L)) {
     s <- D[D$levels == lv, ]
     rho <- stats::cor(s$R_M, s$R_L, method = "spearman")
@@ -257,9 +256,9 @@ test_that("the two descriptors separate, but they are far from independent", {
   expect_lt(max(D$R_L_max), 1)
 
   # In the A metric -- the unbounded limit, where both descriptors reduce to
-  # functions of `A^-1 g` -- the separation all but disappears (0.9495 pooled
-  # over the same sweep, 0.9830 at four levels), so what separates them IS the
-  # truncation and nothing else.
+  # functions of `A^-1 g` -- the separation largely disappears (0.9204 pooled
+  # over the same sweep, 0.9752 at four levels), so what separates them is the
+  # truncation.
   expect_gt(stats::cor(D$R_M, D$R_L_A, method = "spearman"),
             stats::cor(D$R_M, D$R_L, method = "spearman"))
 
@@ -272,13 +271,12 @@ test_that("the two base resolutions occupy the same region of the plane", {
   skip_on_cran()
   # The issue's mechanism for gcol33/tulpa#327's resolution-dependent ranking is
   # that the four- and five-level grids put their cells in DIFFERENT regions of
-  # the plane. They do not. Over the 144-fit sweep the median `R_M` is 11.7853
-  # at four levels against 10.2645 at five (Mann-Whitney p 0.1424) and the
-  # median `R_L` 1.1694 against 1.2105 (p 0.0012 on a 3.5% shift), and the
-  # quadrant occupancy is 43.2 / 2.6 / 12.8 / 41.4 percent against 41.0 / 10.3 /
-  # 7.3 / 41.5 -- the two populated quadrants hold the same share at both
-  # resolutions and only the two sparse off-diagonal ones trade. The binomial
-  # arm agrees (p 0.4213 / 0.5318).
+  # the plane. They do not. Over the sweep the median `R_M` is 11.9943 at four
+  # levels against 11.6965 at five (Mann-Whitney p 0.5986) and the median `R_L`
+  # 1.1771 against 1.2177 (p 0.1589, a 3.3% shift), and the quadrant occupancy
+  # (M+L+ / M+L- / M-L+ / M-L-) is 40.6 / 9.4 / 9.4 / 40.6 percent against
+  # 40.3 / 9.7 / 9.7 / 40.3 -- every quadrant holds the same share at both
+  # resolutions to within 0.3 points.
   D <- .dp_sweep()$cells
   d4 <- D[D$levels == 4L, ]; d5 <- D[D$levels == 5L, ]
   expect_lt(abs(stats::median(d4$R_M) / stats::median(d5$R_M) - 1), 0.25)
@@ -286,7 +284,7 @@ test_that("the two base resolutions occupy the same region of the plane", {
 
   # Where the resolutions genuinely differ is how much WEIGHT they put on the
   # steep cells, not where the cells sit: the integration-weighted mean `R_M` is
-  # 3.3417 at four levels against 1.0483 at five, a threefold gap on a
+  # 2.6993 at four levels against 1.0482 at five, a 2.6-fold gap on a
   # population whose unweighted medians agree. That is a one-dimensional
   # statement about steepness, not a region of a two-dimensional plane.
   wm <- function(s, v) sum(s[[v]] * s$w) / sum(s$w)
@@ -298,16 +296,16 @@ test_that("the two base resolutions occupy the same region of the plane", {
 # The three colour planes                                                     #
 # --------------------------------------------------------------------------- #
 
-test_that("a one-cell intervention is resolvable on the coarse grid only", {
+test_that("a one-cell intervention on the interval is resolvable on the coarse grid only", {
   skip_on_cran()
   # gcol33/tulpa#328 found the four-level grid could not resolve a whole RANKING
-  # change on the endpoints or the widths while resolving the median in 14 of
-  # 24. A one-cell intervention is the opposite way round on that grid, because
-  # a four-level base has only eight interior cells and moving one of eight is
-  # not a small perturbation: over the 144-fit sweep 64.8% / 64.1% / 94.5% of
-  # four-level cells have at least one resolvable intervention against 7.6% /
-  # 7.6% / 33.3% of five-level ones. So the plane is read where it can be read,
-  # and the five-level interval is not read at all.
+  # change on the endpoints or the widths while it could on the median. A
+  # one-cell intervention is the opposite way round on that grid, because a
+  # four-level base has only eight interior cells and moving one of eight is not
+  # a small perturbation: over the sweep 56.3% / 59.4% / 95.3% of four-level
+  # cells (endpoints / widths / median) have at least one resolvable
+  # intervention against 0.9% / 0.9% / 93.5% of five-level ones. So the
+  # interval is read at four levels only, and the median at both.
   D <- .dp_sweep()$cells
   res <- function(s, p) mean(s[[paste0("res_mass_", p)]] |
                              s[[paste0("res_loc_", p)]] |
@@ -326,27 +324,25 @@ test_that("the plane position does not select which correction a cell wants", {
   # The colour is PER PART: the three parts of the read disagreed on the winner
   # for the whole grid in gcol33/tulpa#327 and they disagree per cell here too.
   # Over the sweep the best label per quadrant buys nothing over the single best
-  # label overall: the gain is exactly +0.0000 in 8 of the 12 scored
-  # combinations (three `R_L` variants x two resolutions x the parts with enough
-  # resolved cells).
+  # label overall: the gain is exactly +0.0000 in 11 of the 12 scored
+  # combinations (three `R_L` variants x the part-by-resolution strata with at
+  # least 20 resolved cells: all three parts at four levels, the median at
+  # five).
   #
   # `gain` is scored IN SAMPLE -- the per-quadrant argmax is read off the same
-  # cells -- so its null is not 0 and it grows as the stratum shrinks: four
-  # quadrants over 29 resolved cells is ~7 cells per bin, where picking the best
-  # label in each bin buys ~0.09 from noise alone and the null's 95th percentile
-  # is 0.1724. A fixed ceiling cannot separate that from signal at one n and be
-  # meaningful at another, so each gain is scored against ITS OWN permutation
-  # null (quadrant labels shuffled, winners held). Measured: the largest gain,
-  # 0.1724 on `widths` at four levels, sits at p = 0.11, and its two siblings at
-  # p = 0.33 and 0.44 -- the plane carries nothing there. The only nominally
-  # small p is `median` at five levels (gain 0.0112, p = 0.034), which is an
-  # eighth the size of the four-level gains and does not survive twelve
-  # simultaneous tests.
+  # cells -- so its null is not 0 and it grows as the stratum shrinks and as the
+  # labels even out: on `widths` at four levels, four quadrants over 38 resolved
+  # cells, picking the best label in each bin buys 0.0176 from noise alone on
+  # average and the null's 95th percentile is 0.0789. A fixed ceiling cannot
+  # separate that from signal at one n and be meaningful at another, so each
+  # gain is scored against ITS OWN permutation null (quadrant labels shuffled,
+  # winners held). Measured: the one non-zero gain, 0.0263 on `widths` at four
+  # levels under `R_L`, sits at p = 0.40, and every other combination at p = 1.
   #
-  # What the plane does carry is a shift in the MIX -- the median plane's
-  # contingency is significant at both resolutions (p < 1e-4, Cramer V 0.2078 /
-  # 0.1882) -- but the argmax is the same in every quadrant, which is what a
-  # per-cell rule would have to move.
+  # Nor does the plane carry a shift in the MIX: the median plane's contingency
+  # is not significant at either resolution (chi-square p 0.267 / 0.391, Cramer
+  # V 0.2465 / 0.1253), and the argmax is the same label in every quadrant,
+  # which is what a per-cell rule would have to move.
   gain_at <- function(q, wins) {
     tb <- table(q, wins)
     sum(apply(tb, 1L, max)) / sum(tb) - max(table(wins)) / length(wins)
@@ -375,28 +371,30 @@ test_that("the plane position does not select which correction a cell wants", {
 
   # And the winner is dominated by one label wherever the grid resolves the
   # question at all. At four levels that label is `both` on all three parts
-  # (0.932 / 0.919 / 0.785 of resolved cells over the sweep); at five levels it
-  # is `both` on the endpoints, `loc` on the widths and `none` on the median.
+  # (0.861 / 0.579 / 0.770 of resolved cells over the sweep); at five levels the
+  # interval has two resolved cells per part and the median's label is `none`
+  # (0.738).
   s4 <- D[D$levels == 4L & D$win_endpoints != "unresolved", ]
   expect_gt(mean(s4$win_endpoints == "both"), 0.7)
 })
 
-test_that("the loc-versus-mass preference runs against the proposed partition", {
+test_that("the loc-versus-mass preference does not partition the plane", {
   skip_on_cran()
   # The partition the issue proposes is directional: large `R_L` and small `R_M`
   # should want the location correction, large `R_M` and small `R_L` the mass
   # one. The direct test of that is whether a cell's relative position between
   # the two descriptors predicts which of the two single corrections helps more.
   #
-  # It does not, and where the association is strongest it has the WRONG SIGN.
-  # Over the 144-fit sweep, Spearman(rank R_L - rank R_M, dL_loc - dL_mass) is
-  # +0.1835 / +0.0283 on the endpoints, -0.0595 / +0.1303 on the widths and
-  # +0.1230 / -0.3178 on the median at four / five levels. The largest of them
-  # is the five-level median at -0.3178 (p < 1e-4): cells with relatively more
-  # location displacement prefer the MASS correction there. The binomial arm
-  # reproduces that sign and size (-0.3057, p 0.0275). Partialling `R_M` out
-  # leaves the residual `R_L` signal with no stable sign either (+0.031, +0.063,
-  # -0.280, +0.012, +0.144, -0.269 over the six part-by-resolution cells).
+  # It does so only weakly, and not with one sign. Over the sweep, among cells
+  # where either single correction is resolved, Spearman(rank R_L - rank R_M,
+  # dL_loc - dL_mass) is +0.2051 on the endpoints (30 cells, p 0.28), -0.3769 on
+  # the widths (20 cells, p 0.10) and +0.4651 on the median (60 cells, p 2e-4)
+  # at four levels, and +0.1358 on the median at five (202 cells, p 0.054); the
+  # five-level interval has one such cell per part. The strongest, the
+  # four-level median, runs the way the partition proposes, and the widths run
+  # the other way. The rank of `R_L` with `R_M` partialled out leaves a
+  # residual signal that changes sign too (+0.216, -0.273, +0.338, +0.264 over
+  # the same four strata).
   D <- .dp_sweep()$cells
   rho <- function(s, p) {
     s <- s[s[[paste0("res_mass_", p)]] | s[[paste0("res_loc_", p)]], ]
@@ -435,12 +433,13 @@ test_that("one-cell improvements do not add up to the whole-grid improvement", {
   skip_on_cran()
   # The design correction this file is built on, measured. A weighted quantile
   # is not a sum over its atoms, so the improvements of the individual one-cell
-  # interventions have no reason to compose -- and they do not. Over the 144-fit
-  # sweep the sum of the per-cell `both` improvements exceeds the whole-grid
-  # `both` improvement by 8.48x / 33.11x on the endpoints, 9.15x / 68.58x on the
-  # widths, and 6.23x at four levels on the median, where at five levels the two
-  # carry OPPOSITE SIGNS (-0.0548 summed against +0.0040 whole-grid). The
-  # binomial arm reaches -136x and -668x on the five-level interval.
+  # interventions have no reason to compose -- and they do not. Over the sweep,
+  # averaged over seeds, the sum of the per-cell `both` improvements is 12.40x /
+  # 21.69x the whole-grid `both` improvement on the endpoints, 54.01x / 16.04x on
+  # the widths (at five levels both are losses, -0.2431 against -0.0112 and
+  # -0.8096 against -0.0505), and 8.54x at four levels on the median, where at
+  # five levels the two carry OPPOSITE SIGNS (-0.3504 summed against +0.0181
+  # whole-grid).
   #
   # So a clean per-cell partition, had there been one, still could not have been
   # applied cell by cell and read off as a grid rule.
