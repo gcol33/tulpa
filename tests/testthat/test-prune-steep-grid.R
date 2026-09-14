@@ -92,9 +92,10 @@ test_that("the driver reports the cut and the surface it was applied to", {
   # The floor, and how many cells it put back.
   expect_true(grepl("prune_min_keep", txt, fixed = TRUE))
   expect_true(grepl("prune_n_floor_restored", txt, fixed = TRUE))
-  # The spread is taken over the whole screened surface (`cheap_lm`), not over
-  # the survivors.
-  expect_true(grepl("for (double v : cheap_lm)", txt, fixed = TRUE))
+  # The spread is taken over the whole screened surface (`screen_lm`, the cheap
+  # log-marginal plus each cell's log hyperprior and log measure), not over the
+  # survivors.
+  expect_true(grepl("for (double v : screen_lm)", txt, fixed = TRUE))
 })
 
 # --- 4. the gate's threshold -------------------------------------------------
