@@ -547,11 +547,11 @@ test_that("an evenly spaced extension leaves the base node no sliver past the ed
 # Pointwise ownership of a refined grid on flat log axes, independent of the
 # closed forms: each point of a lattice whose cell boundaries carry every edge
 # of the tiling is handed to its owners, and its volume is summed into per-cell
-# measures. A point past the base span on the axes `E` is decided along `E`, a
-# point inside it along every axis; along a deciding axis it lies in the cell of
-# its nearest node in the fibre through its base cell, and it is the base
-# cell's when every deciding axis gives a base node, split equally among the
-# slice cells otherwise. A point outside its fibres' regions belongs to no cell.
+# measures. Its base cell is the one whose box, widened past the base span on
+# the side of each outermost node, contains it. Along every axis the point lies
+# in the cell of its nearest node in the fibre through that base cell; it is the
+# base cell's when every axis gives a base node, split equally among the slice
+# cells otherwise. A point outside its fibres' regions belongs to no cell.
 pointwise_measure <- function(g, ref, step) {
   U <- log(g)
   axes <- colnames(g)
@@ -610,17 +610,15 @@ pointwise_measure <- function(g, ref, step) {
   for (p in seq_len(nrow(pts))) {
     xp <- pts[p, ]
     c0 <- stats::setNames(integer(length(axes)), axes)
-    past <- logical(length(axes))
     for (k in seq_along(axes)) {
       eb <- range(bedge[[k]])
-      past[k] <- xp[k] < eb[1L] || xp[k] > eb[2L]
       c0[k] <- if (xp[k] > eb[2L]) length(lev[[k]])
                else if (xp[k] < eb[1L]) 1L
                else findInterval(xp[k], bedge[[k]], all.inside = TRUE)
     }
     owners <- integer(0)
     inside <- TRUE
-    for (k in if (any(past)) which(past) else seq_along(axes)) {
+    for (k in seq_along(axes)) {
       key <- paste(k, paste(c0, collapse = ","))
       fb <- cache[[key]]
       if (is.null(fb)) cache[[key]] <- fb <- fibre(c0, axes[k])
@@ -743,4 +741,32 @@ test_that("the corner past two base edges goes to its nearest nodes", {
   expect_equal(w[26:27] / box, rep(2 + 2 * 0.5 + 2 * 2 / 2, 2L),
                tolerance = 1e-12)
   expect_equal(sum(w) / box, 25 + 2 * 2.5 + 2.5^2, tolerance = 1e-12)
+})
+
+test_that("a slice inside the base span owns the strip past another axis's edge where it is nearest", {
+  ls <- log(SLICE_AXES$sigma)
+  lp <- log(SLICE_AXES$phi_pos)
+  box <- (ls[2L] - ls[1L]) * (lp[2L] - lp[1L])
+  # phi_pos extended two steps past its edge on the sigma[5] row, and a sigma
+  # slice at the midpoint of sigma[4] and sigma[5] on the phi_pos[5] row.
+  cg <- corner_grid(SLICE_AXES, "phi_pos", 2,
+                    extra = rbind(c(exp((ls[4L] + ls[5L]) / 2),
+                                    SLICE_AXES$phi_pos[5L])),
+                    extra_ref = "sigma")
+  w <- exp(.hyper_log_quad_weights(cg$g, FLAT_SLICE_SPECS, refining = cg$ref,
+                                   absolute = TRUE))
+  # The corner base cell keeps three quarters of its sigma cell and half a step
+  # past the phi_pos edge.
+  expect_equal(w[25L] / box, 0.75 * 1.5, tolerance = 1e-12)
+  # The sigma slice owns a quarter step in each of the two base cells it
+  # splits; in the corner base cell that quarter reaches over the whole
+  # extended phi_pos interval of 3.5 steps, alone over the node's 1.5 and half
+  # of the two the phi_pos slice owns.
+  expect_equal(w[27L] / box, 0.25 + 0.25 * (1.5 + 2 / 2), tolerance = 1e-12)
+  # The phi_pos slice owns two steps, over the node's 0.75 of the sigma cell
+  # alone and half of the sigma slice's quarter.
+  expect_equal(w[26L] / box, 2 * (0.75 + 0.25 / 2), tolerance = 1e-12)
+  expect_equal(sum(w) / box, 25 + 2.5, tolerance = 1e-12)
+  expect_pointwise(cg, FLAT_SLICE_SPECS,
+                   lapply(SLICE_AXES, function(x) diff(log(x))[1L] / 4))
 })

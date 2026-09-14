@@ -1748,16 +1748,20 @@ owns a box, and a slice re-tiles its own row of the base tensor by nearest node
 (`.hyper_fibre_tiling()`): interior edges at the midpoints between nodes, outer
 edge the wider of the base edge and the row's own mirror. A base node keeps its
 base cell inside the base span and, on a side where a slice point lies beyond
-the base edge, owns up to the midpoint towards it, so its cell carries
-`prod_k f_k + sum_k e_k / |B_k|` (`f_k` the retained fraction of its base cell,
-`e_k` the width it owns past the edge). Where refinements on two axes meet inside
-one base box the region is shared equally,
-`integral_0^1 prod_k (f_k + (1 - f_k) t) dt` (`.hyper_corner_share()`). A point
-past the base span on several axes E at once is decided along E by the same
-rule: the base node's where every axis of E gives the base node (adding
-`prod_{k in E} e_k / |B_k|` to its cell), the slice cell's where one axis gives a
-slice, split equally where several do. The measure integrates the union of the
-base cells' extended boxes, whose extent along each axis is `axis_support`. The base
+the base edge, owns up to the midpoint towards it. One ownership rule covers
+every point of a base cell's box widened past the base span: along each axis the
+row through that cell gives the point to its nearest node, and the point is the
+base cell's where every axis gives the base node, a slice cell's where one axis
+gives that slice, and split equally among the slices where several do. So the
+base cell carries `prod_k (f_k + e_k / |B_k|)` (`f_k` the retained fraction of
+its base cell, `e_k` the width it owns past the edge), a slice inside the base
+span owns the strip past another axis's edge wherever it is nearest, and the
+corner past two edges goes to the node, the slice, or half to each of two
+slices, by the same rule. A slice piece's share is
+`integral_0^1 prod_k (o_k + (l_k - o_k) t) dt` (`.hyper_corner_share()`, `o_k`
+what the node owns and `l_k` the widened interval, both in units of `|B_k|`).
+The measure integrates the union of the widened boxes, whose extent along each
+axis is `axis_support`. The base
 area is conserved exactly, to 1e-12 with an extension and a crossing. A grid
 with no slices takes the product rule bit for bit.
 
