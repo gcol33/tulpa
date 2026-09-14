@@ -37,7 +37,8 @@ test_that("the spec and joint entry families agree on log_marginal", {
   sigma_grid <- c(0.5, 1.0, 1.5)
 
   # The same ICAR model at the same grid, through both entry families: the
-  # single-block spec kernel and the one-arm joint driver.
+  # single-block spec kernel and the one-arm joint driver. The kernel returns
+  # the inner marginal alone, so the joint fit folds no hyperprior into its own.
   spec <- cpp_nested_laplace_icar(
     y = y, n = rep(1L, n), X = X,
     re_idx = rep(0, n), n_re_groups = 0L, sigma_re = 1,
@@ -55,6 +56,7 @@ test_that("the spec and joint entry families agree on log_marginal", {
                  adj_col_idx = adj$adj_col_idx,
                  n_neighbors = adj$n_neighbors,
                  sigma_grid = sigma_grid),
+    hyperprior = "flat",
     control = list(diagnose_k = FALSE, diagnose_skew = FALSE))
 
   expect_true(all(is.finite(spec$log_marginal)))
