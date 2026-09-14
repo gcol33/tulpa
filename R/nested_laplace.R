@@ -1507,6 +1507,13 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     res$log_evidence_declined <- "improper_hyperprior"
     return(res)
   }
+  n <- length(res$log_marginal)
+  if (!is.null(tg) && nrow(as.matrix(tg)) == n &&
+      !length(.hp_integrated_axes(as.matrix(tg)))) {
+    # Every axis is pinned, so each is part of the model and the grid integrates
+    # nothing: its cells are copies of one point, which together carry measure 1.
+    log_measure <- rep(-log(n), n)
+  }
   res$log_evidence <- .nl_outer_log_evidence(res$log_marginal, log_measure)
   res$log_evidence_declined <- NULL
   res

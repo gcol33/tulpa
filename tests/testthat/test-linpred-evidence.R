@@ -106,6 +106,33 @@ test_that("a failed cell contributes nothing, and neither does a pruned one", {
   expect_true(is.na(tulpa:::.nl_outer_log_evidence(c(NaN, NaN), c(0, 0))))
 })
 
+test_that("a grid with every axis pinned has its one cell's marginal as evidence", {
+  tg <- matrix(1, 1L, 1L, dimnames = list(NULL, "b1.sigma"))
+  specs <- tulpa:::.joint_axis_specs_from_grid(tg)
+  expect_null(specs)
+  ev <- tulpa:::.nl_attach_evidence(list(log_marginal = -42.5), tg, specs)
+  expect_identical(ev$log_evidence, -42.5)
+  expect_null(ev$log_evidence_declined)
+
+  tg2 <- matrix(c(1, 1, 0.3, 0.3), 2L, 2L,
+                dimnames = list(NULL, c("b1.sigma", "b1.rho")))
+  ev2 <- tulpa:::.nl_attach_evidence(list(log_marginal = c(-7, -7)), tg2,
+                                     tulpa:::.joint_axis_specs_from_grid(tg2))
+  expect_equal(ev2$log_evidence, -7, tolerance = 1e-14)
+
+  set.seed(3)
+  n <- 120L
+  x <- rnorm(n)
+  y <- rbinom(n, 1L, stats::plogis(-3.2 + 0.9 * x))
+  fit <- tulpa_nested_laplace(
+    y, rep(1L, n), cbind(`(Intercept)` = 1, x = x),
+    prior = list(list(type = "iid", n_units = 1L, sigma_grid = 1.0,
+                      obs_idx = rep(0L, n))),
+    family = "binomial",
+    control = list(diagnose_k = FALSE, progress = FALSE))
+  expect_equal(fit$log_evidence, as.numeric(fit$log_marginal), tolerance = 1e-14)
+})
+
 .lev_rw1_fit <- function(d, tg) {
   tulpa_nested_laplace(
     y = d$df$y, n_trials = rep(1L, nrow(d$df)), X = cbind(1, d$df$x),
