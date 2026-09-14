@@ -1744,11 +1744,20 @@ The adaptive and var-of-means passes add a level on one axis at ONE combination
 of the others. The product rule `.hyper_log_quad_weights()` applies is a tensor
 measure, so a grid carrying such slice cells goes through
 `.hyper_refined_log_quad()` (keyed by `refining`, the per-cell tag): every cell
-owns a box, a slice re-tiles its own row of the base tensor (outer edge the wider
-of the base edge and the row's own mirror, so an extension adds that row's region
-and never opens a gap), and where refinements on two axes meet in one base box
-the corner is shared equally,
-`integral_0^1 prod_k (f_k + (1 - f_k) t) dt` (`.hyper_corner_share()`). The base
+owns a box, and a slice re-tiles its own row of the base tensor by nearest node
+(`.hyper_fibre_tiling()`): interior edges at the midpoints between nodes, outer
+edge the wider of the base edge and the row's own mirror. A base node keeps its
+base cell inside the base span and, on a side where a slice point lies beyond
+the base edge, owns up to the midpoint towards it, so its cell carries
+`prod_k f_k + sum_k e_k / |B_k|` (`f_k` the retained fraction of its base cell,
+`e_k` the width it owns past the edge). Where refinements on two axes meet inside
+one base box the region is shared equally,
+`integral_0^1 prod_k (f_k + (1 - f_k) t) dt` (`.hyper_corner_share()`). A point
+past the base span on several axes E at once is decided along E by the same
+rule: the base node's where every axis of E gives the base node (adding
+`prod_{k in E} e_k / |B_k|` to its cell), the slice cell's where one axis gives a
+slice, split equally where several do. The measure integrates the union of the
+base cells' extended boxes, whose extent along each axis is `axis_support`. The base
 area is conserved exactly, to 1e-12 with an extension and a crossing. A grid
 with no slices takes the product rule bit for bit.
 

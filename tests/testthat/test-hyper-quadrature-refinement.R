@@ -539,3 +539,208 @@ test_that("an evenly spaced extension leaves the base node no sliver past the ed
                  sum(tl$cell[tl$ok, "hi"] - tl$cell[tl$ok, "lo"]),
                diff(tl$region), tolerance = 1e-12)
 })
+
+# --------------------------------------------------------------------------- #
+# Rows extended past the base span on several axes tile their corner (#741)    #
+# --------------------------------------------------------------------------- #
+
+# Pointwise ownership of a refined grid on flat log axes, independent of the
+# closed forms: each point of a lattice whose cell boundaries carry every edge
+# of the tiling is handed to its owners, and its volume is summed into per-cell
+# measures. A point past the base span on the axes `E` is decided along `E`, a
+# point inside it along every axis; along a deciding axis it lies in the cell of
+# its nearest node in the fibre through its base cell, and it is the base
+# cell's when every deciding axis gives a base node, split equally among the
+# slice cells otherwise. A point outside its fibres' regions belongs to no cell.
+pointwise_measure <- function(g, ref, step) {
+  U <- log(g)
+  axes <- colnames(g)
+  home <- .hyper_slice_home(ref, nrow(g))
+  base <- which(!nzchar(home))
+  lev <- lapply(stats::setNames(axes, axes),
+                function(a) sort(unique(U[base, a])))
+  mirror <- function(x) {
+    n <- length(x)
+    c(x[1L] - (x[2L] - x[1L]) / 2, (x[-n] + x[-1L]) / 2,
+      x[n] + (x[n] - x[n - 1L]) / 2)
+  }
+  bedge <- lapply(lev, mirror)
+  fibre <- function(c0, a) {
+    in_row <- which(home == a)
+    for (b in setdiff(axes, a)) {
+      in_row <- in_row[abs(U[in_row, b] - lev[[b]][c0[[b]]]) < 1e-9]
+    }
+    x <- c(lev[[a]], U[in_row, a])
+    id <- c(rep(0L, length(lev[[a]])), in_row)
+    o <- order(x)
+    x <- x[o]
+    id <- id[o]
+    ed <- mirror(x)
+    eb <- range(bedge[[a]])
+    ed[1L] <- min(ed[1L], eb[1L])
+    ed[length(ed)] <- max(ed[length(ed)], eb[2L])
+    s <- id > 0L
+    list(id = id, edges = ed,
+         region = c(min(eb[1L], ed[-length(ed)][s]), max(eb[2L], ed[-1L][s])))
+  }
+  level_of <- function(v, a) which.min(abs(lev[[a]] - v))
+  span <- lapply(stats::setNames(axes, axes), function(a) {
+    r <- range(bedge[[a]])
+    for (i in which(home == a)) {
+      c0 <- vapply(axes, function(b) level_of(U[i, b], b), integer(1))
+      r <- range(r, fibre(c0, a)$region)
+    }
+    r
+  })
+  lattice <- lapply(stats::setNames(axes, axes), function(a) {
+    o <- bedge[[a]][1L]
+    s <- step[[a]]
+    lo <- o + floor((span[[a]][1L] - o) / s + 1e-9) * s
+    hi <- o + ceiling((span[[a]][2L] - o) / s - 1e-9) * s
+    seq(lo + s / 2, hi - s / 2, by = s)
+  })
+  pts <- as.matrix(expand.grid(lattice))
+  vol <- prod(unlist(step))
+  base_key <- vapply(base, function(i) {
+    paste(vapply(axes, function(a) level_of(U[i, a], a), integer(1)),
+          collapse = ",")
+  }, character(1))
+  cache <- new.env()
+  mass <- numeric(nrow(g))
+  for (p in seq_len(nrow(pts))) {
+    xp <- pts[p, ]
+    c0 <- stats::setNames(integer(length(axes)), axes)
+    past <- logical(length(axes))
+    for (k in seq_along(axes)) {
+      eb <- range(bedge[[k]])
+      past[k] <- xp[k] < eb[1L] || xp[k] > eb[2L]
+      c0[k] <- if (xp[k] > eb[2L]) length(lev[[k]])
+               else if (xp[k] < eb[1L]) 1L
+               else findInterval(xp[k], bedge[[k]], all.inside = TRUE)
+    }
+    owners <- integer(0)
+    inside <- TRUE
+    for (k in if (any(past)) which(past) else seq_along(axes)) {
+      key <- paste(k, paste(c0, collapse = ","))
+      fb <- cache[[key]]
+      if (is.null(fb)) cache[[key]] <- fb <- fibre(c0, axes[k])
+      if (xp[k] < fb$region[1L] || xp[k] > fb$region[2L]) {
+        inside <- FALSE
+        break
+      }
+      j <- findInterval(xp[k], fb$edges, all.inside = TRUE)
+      if (fb$id[j] > 0L) owners <- c(owners, fb$id[j])
+    }
+    if (!inside) next
+    if (length(owners)) {
+      mass[owners] <- mass[owners] + vol / length(owners)
+    } else {
+      i0 <- base[base_key == paste(c0, collapse = ",")]
+      mass[i0] <- mass[i0] + vol
+    }
+  }
+  mass
+}
+
+# Flat log axes `axes` with, for each axis in `ext_axes`, one row through the
+# corner base node extended `k` steps past the maximum base edge, followed by
+# the slice cells `extra` tagged `extra_ref`.
+corner_grid <- function(axes, ext_axes, k, extra = NULL, extra_ref = NULL) {
+  T0 <- as.matrix(expand.grid(axes))
+  top <- vapply(axes, max, numeric(1))
+  rows <- lapply(ext_axes, function(a) {
+    u <- log(axes[[a]])
+    n <- length(u)
+    v <- top
+    v[[a]] <- exp(u[n] + k * (u[n] - u[n - 1L]))
+    v
+  })
+  list(g = rbind(T0, do.call(rbind, rows), extra),
+       ref = c(rep("", nrow(T0)), ext_axes, extra_ref))
+}
+
+expect_pointwise <- function(cg, specs, step) {
+  w <- exp(.hyper_log_quad_weights(cg$g, specs, refining = cg$ref,
+                                   absolute = TRUE))
+  mass <- pointwise_measure(cg$g, cg$ref, step)
+  expect_true(all(mass > 0))
+  expect_equal(w, mass, tolerance = 1e-12)
+  invisible(w)
+}
+
+test_that("one-, two- and three-axis extensions tile their region cell by cell", {
+  quarter <- lapply(SLICE_AXES, function(x) diff(log(x))[1L] / 4)
+  ls <- log(SLICE_AXES$sigma)
+  lp <- log(SLICE_AXES$phi_pos)
+  for (k in 1:3) {
+    expect_pointwise(corner_grid(SLICE_AXES, "phi_pos", k), FLAT_SLICE_SPECS,
+                     quarter)
+    expect_pointwise(corner_grid(SLICE_AXES, c("phi_pos", "sigma"), k),
+                     FLAT_SLICE_SPECS, quarter)
+    # Densified cells inside the corner base cell on both axes, and a second
+    # slice past the edge on the extended phi_pos row.
+    extra <- rbind(
+      c(SLICE_AXES$sigma[5L], exp((lp[4L] + lp[5L]) / 2)),
+      c(exp((ls[4L] + ls[5L]) / 2), SLICE_AXES$phi_pos[5L]),
+      c(SLICE_AXES$sigma[5L], exp(lp[5L] + (k + 1) * (lp[5L] - lp[4L]))))
+    expect_pointwise(corner_grid(SLICE_AXES, c("phi_pos", "sigma"), k, extra,
+                                 c("consistency_phi_pos", "sigma", "phi_pos")),
+                     FLAT_SLICE_SPECS, quarter)
+  }
+  ax3 <- list(sigma   = exp(seq(log(0.1), log(3), length.out = 4)),
+              phi_pos = exp(seq(log(1), log(60), length.out = 5)),
+              tau     = exp(seq(log(0.5), log(8), length.out = 3)))
+  sp3 <- lapply(names(ax3), function(a) list(name = a, log_scale = TRUE))
+  half <- lapply(ax3, function(x) diff(log(x))[1L] / 2)
+  for (k in 1:3) {
+    expect_pointwise(corner_grid(ax3, names(ax3), k), sp3, half)
+  }
+})
+
+test_that("rows extended along every face integrate the product of the reported spans", {
+  ls <- log(SLICE_AXES$sigma)
+  lp <- log(SLICE_AXES$phi_pos)
+  hs <- ls[2L] - ls[1L]
+  hp <- lp[2L] - lp[1L]
+  for (k in 1:3) {
+    g <- SLICE_TENSOR
+    ref <- rep("", 25L)
+    for (j in 1:5) {
+      g <- rbind(g, c(SLICE_AXES$sigma[j], exp(lp[5L] + k * hp)),
+                 c(exp(ls[5L] + k * hs), SLICE_AXES$phi_pos[j]),
+                 c(exp(ls[1L] - k * hs), SLICE_AXES$phi_pos[j]))
+      ref <- c(ref, "phi_pos", "sigma", "sigma")
+    }
+    w <- exp(.hyper_log_quad_weights(g, FLAT_SLICE_SPECS, refining = ref,
+                                     absolute = TRUE))
+    sup <- .hyper_grid_supports(g, FLAT_SLICE_SPECS, refining = ref)
+    expect_equal(sum(w),
+                 prod(vapply(sup, function(s) diff(log(s)), numeric(1))),
+                 tolerance = 1e-12, label = sprintf("k = %d", k))
+  }
+})
+
+test_that("the corner past two base edges goes to its nearest nodes", {
+  ls <- log(SLICE_AXES$sigma)
+  lp <- log(SLICE_AXES$phi_pos)
+  box <- (ls[2L] - ls[1L]) * (lp[2L] - lp[1L])
+  w_of <- function(k) {
+    cg <- corner_grid(SLICE_AXES, c("phi_pos", "sigma"), k)
+    exp(.hyper_log_quad_weights(cg$g, FLAT_SLICE_SPECS, refining = cg$ref,
+                                absolute = TRUE))
+  }
+  # k = 1: the base node owns nothing past its edges, and in the one-step
+  # corner square a slice cell is nearest along each axis, so each takes half.
+  w <- w_of(1)
+  expect_equal(w[25L] / box, 1, tolerance = 1e-12)
+  expect_equal(w[26:27] / box, c(1.5, 1.5), tolerance = 1e-12)
+  # k = 2: the base node owns half a step past each edge and with it the
+  # half-step corner square. Each slice owns two steps along its own axis: over
+  # the base cell, over the other axis's half step the base node owns, and
+  # half of the two-step square the two slices share.
+  w <- w_of(2)
+  expect_equal(w[25L] / box, 1 + 0.5 + 0.5 + 0.25, tolerance = 1e-12)
+  expect_equal(w[26:27] / box, rep(2 + 2 * 0.5 + 2 * 2 / 2, 2L),
+               tolerance = 1e-12)
+  expect_equal(sum(w) / box, 25 + 2 * 2.5 + 2.5^2, tolerance = 1e-12)
+})

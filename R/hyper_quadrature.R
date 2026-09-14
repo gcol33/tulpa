@@ -662,10 +662,32 @@
 #   (w / |B_j|) * integral_0^1 prod_{k != j} (f_k + (1 - f_k) t) dt,
 #
 # and c0 keeps `prod_k f_k`; summed over the families these are the whole box, so
-# the base tensor's mass is conserved whatever is inserted. An extension piece,
-# a base node's or a slice node's, lies outside every base box and has no
-# competitor, so c0 carries `prod_k f_k + sum_k e_k / |B_k|` with `e_k` the
-# width its node owns past the base span on axis k. Along each axis a width is
+# the base tensor's mass is conserved whatever is inserted.
+#
+# Past the base span the same nearest-node rule decides. The base node of c0
+# closes an extended row on axis k when its row along k reaches past the base
+# edge on the node's side. c0's extended box is, on each axis, `B_k` together
+# with `P_k`, the region that row reaches past the edge (`span_ext`), empty on an
+# axis where the node closes no extended row. A point of the extended box lying past the base span on a non-empty set
+# `E` of axes is decided along `E`: along each k in E it lies in the extension
+# `e_k` the node owns or in one k-slice's cell, and it is c0's when every axis
+# of E gives the node and is split equally among the slices otherwise. A slice
+# cell inside the base span on its own axis owns its row's base box off that
+# axis, so it reaches no point past the span. With `e_k` and `p_k = |P_k|` in
+# units of `|B_k|`, c0 carries
+#
+#   prod_k f_k + sum over non-empty E of prod_{k in E} e_k,
+#
+# `prod_k f_k + sum_k e_k` where one axis is extended, and a k-slice piece of
+# width `w` past the edge carries, relative to its base box off k,
+#
+#   w * integral_0^1 prod_{l != k} (1 + e_l + (p_l - e_l) t) dt.
+#
+# The corner past two edges at once is the node's where both axes give the
+# node, the slice's where one axis gives a slice, and half each where both give
+# slices. Every extended box is tiled exactly, so the measure integrates the
+# union of the base cells' extended boxes, whose extent along each axis is the
+# span `.hyper_refined_axis_support()` reports. Along each axis a width is
 # converted to a weight at the owning node through the axis's `unit()`, the
 # conversion its level weights were built with, so a grid with no slice cells
 # reproduces the product rule.
@@ -744,7 +766,8 @@
       bw <- diff(eb)
       key <- sprintf("%.17g", xb)
       fib[[a]][[r]] <- list(f = stats::setNames(tl$retained, key),
-                            e = stats::setNames(tl$base_ext / bw, key))
+                            e = stats::setNames(tl$base_ext / bw, key),
+                            p = stats::setNames(tl$span_ext / bw, key))
       for (k in seq_along(s_idx)) {
         i <- s_idx[k]
         if (!ok[k]) {
@@ -759,14 +782,17 @@
           axis = a, x = pts[k],
           in_base = stats::setNames(ov, sprintf("%.17g", xb)),
           ext = max(0, (cl[["hi"]] - cl[["lo"]]) - sum(ov)),
+          ext_node = if (cl[["hi"]] > eb[length(eb)]) xb[length(xb)] else xb[1L],
           bw = bw)
       }
     }
   }
 
-  # A base coordinate's retained fraction on axis `k` (`part = "f"`), or the
-  # extension piece its node owns past the base span in units of its base cell
-  # width (`part = "e"`): 1 and 0 unless its row along `k` was re-tiled.
+  # A base coordinate's retained fraction on axis `k` (`part = "f"`), the
+  # extension piece its node owns past the base span (`part = "e"`), or the
+  # whole of its row's region past the base edge that node closes (`part =
+  # "p"`), the last two in units of its base cell width: 1, 0 and 0 unless its
+  # row along `k` was re-tiled.
   row_part <- function(vals, k, part) {
     none <- if (identical(part, "f")) 1 else 0
     fk <- fib[[k]]
@@ -779,9 +805,9 @@
   frac <- function(vals, k) row_part(vals, k, "f")
   refined_axes <- names(fib)
 
-  # A base cell keeps `prod_k f_k` of its box and, on each axis whose row was
-  # extended past its node, the extension piece that node owns, which lies
-  # outside every base box and so has no other claimant.
+  # A base cell keeps `prod_k f_k` of its box and, for every non-empty set E of
+  # axes on which its node closes an extended row, `prod_{k in E} e_k` of the
+  # piece past the base span on all of E.
   for (i in which(base)) {
     vals <- cell_vals(i)
     es <- vapply(refined_axes, function(k) row_part(vals, k, "e"), numeric(1))
@@ -791,8 +817,21 @@
       }
     } else {
       fs <- vapply(refined_axes, function(k) frac(vals, k), numeric(1))
-      out[i] <- out[i] + log(prod(fs) + sum(es))
+      out[i] <- out[i] + log(prod(fs) + .hyper_subset_products(es))
     }
+  }
+
+  # A slice piece past the base span on its own axis `a` lies in the extended
+  # box of the base node closing that edge. Along each other axis l on which
+  # that node closes an extended row, the piece reaches over the node's own
+  # extension `e_l` alone and shares the slice cells' part `p_l - e_l`.
+  ext_share <- function(vals, a) {
+    others <- setdiff(refined_axes, a)
+    if (!length(others)) return(1)
+    ps <- vapply(others, function(l) row_part(vals, l, "p"), numeric(1))
+    if (all(ps == 0)) return(1)
+    es <- vapply(others, function(l) row_part(vals, l, "e"), numeric(1))
+    .hyper_corner_share(1 + es, ps - es)
   }
 
   for (i in which(!base)) {
@@ -800,6 +839,11 @@
     a <- pc$axis
     unit_a <- measures[[a]]$unit(pc$x)
     total <- pc$ext
+    if (total > 0) {
+      c0 <- cell_vals(i)
+      c0[[a]] <- pc$ext_node
+      total <- total * ext_share(c0, a)
+    }
     if (length(pc$in_base)) {
       vals <- cell_vals(i)
       others <- setdiff(refined_axes, a)
@@ -867,6 +911,9 @@
 #             the rounding of the edge arithmetic is zero: the midpoint towards
 #             an evenly spaced extension point and the base edge are one number
 #             reached by two computations.
+#   span_ext  per base node, the width of `region` past the base edge that node
+#             closes: its own `base_ext` together with the slice cells beyond
+#             it. Zero for a node that closes no edge.
 #   region    c(lo, hi), the interval the row integrates
 .hyper_fibre_tiling <- function(m, pts, close_domain) {
   spec <- m$spec
@@ -902,9 +949,14 @@
          pmax(0, eb[1L] - pmax(lo[ib], region[1L]))
   resolution <- 16 * .Machine$double.eps * max(abs(ef[is.finite(ef)]), 1)
   ext[ext <= resolution] <- 0
+  nb <- length(m$x)
+  span_ext <- numeric(nb)
+  span_ext[nb] <- max(0, region[2L] - eb[length(eb)])
+  span_ext[1L] <- span_ext[1L] + max(0, eb[1L] - region[1L])
 
   list(ok = ok, x = xf, edges = ef, cell = cell,
-       retained = pmin(pmax(f, 0), 1), base_ext = ext, region = region)
+       retained = pmin(pmax(f, 0), 1), base_ext = ext, span_ext = span_ext,
+       region = region)
 }
 
 # Natural-scale support of an axis of a refined grid: the interval spanning the
@@ -943,16 +995,29 @@
     if (hi > eb[length(eb)]) nat(hi) else sup[2L])
 }
 
-# integral_0^1 prod_k (f_k + (1 - f_k) t) dt: the share of a base box's corner
-# regions a refinement on one axis holds when the other axes' refinements
-# retained fractions `f` of it, each region split equally among its claimants.
-.hyper_corner_share <- function(f) {
-  if (!length(f) || all(f == 1)) return(1)
+# integral_0^1 prod_k (f_k + g_k t) dt, `g` defaulting to `1 - f`: what a slice
+# piece on one axis holds of the region it shares when, along each other axis k,
+# the base node owns a width `f_k` of that region and slice cells own `g_k`, each
+# corner piece split equally among the slices claiming it. `t^s` integrates to
+# `1 / (s + 1)`, the equal share among a slice and `s` others. With `f + g = 1`
+# it is a share of the region.
+.hyper_corner_share <- function(f, g = 1 - f) {
+  if (!length(f) || all(f == 1 & g == 0)) return(1)
   coef <- 1
-  for (fk in f) {
-    coef <- c(coef * fk, 0) + c(0, coef * (1 - fk))
+  for (k in seq_along(f)) {
+    coef <- c(coef * f[[k]], 0) + c(0, coef * g[[k]])
   }
   sum(coef / seq_along(coef))
+}
+
+# Sum over every non-empty set E of the entries of `e` of prod_{k in E} e_k: the
+# elementary symmetric sums of `e` beyond the zeroth.
+.hyper_subset_products <- function(e) {
+  coef <- 1
+  for (ek in e) {
+    coef <- c(coef, 0) + c(0, coef * ek)
+  }
+  sum(coef[-1L])
 }
 
 # Accepted shapes for the copy scale's continuum measure. "exponential" is the
