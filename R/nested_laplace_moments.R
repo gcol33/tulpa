@@ -1331,6 +1331,100 @@
   colnames(tg) %||% paste0("V", seq_len(d))
 }
 
+# One axis's marginal mass on a grid carrying refinement slice cells, collected
+# on the boxes of all its levels.
+#
+# A level's cells do not share one box along the axis there. A row whose fibre
+# carries slice cells is tiled by its own nodes (nearest node on `tr`'s
+# coordinate, the outer edges the wider of the base boxes' and the fibre's own
+# mirror); every other row keeps the base levels' boxes. Summing mass by level
+# puts the mass of every row's wide base box at a base coordinate beside a slice
+# level that holds one row's narrow box, so a read treating a level's mass as
+# spread over that level's box sees a spike at the base node. Each cell's mass is
+# instead spread uniformly over the box its row gives it and re-collected on the
+# level boxes `.nl_box_edges()` builds for the whole level set.
+#
+# `w` are the cells' masses (non-negative, any scale), `home` the per-cell
+# refinement home (`.hyper_slice_home()`). Returns the sorted levels and their
+# masses, or NULL where the boxes cannot be formed.
+.nl_axis_row_projection <- function(tg, j, w, home, tr) {
+  v <- as.numeric(tg[, j])
+  ok <- is.finite(v) & is.finite(w) & w > 0
+  if (!any(ok)) return(NULL)
+  lv <- sort(unique(v[is.finite(v)]))
+  base_lv <- sort(unique(v[is.finite(v) & !nzchar(home)]))
+  if (length(lv) < 2L || length(base_lv) < 2L) return(NULL)
+  edges_of <- function(x) {
+    ux <- tr$to(x)
+    n <- length(ux)
+    c(ux[1L] - (ux[2L] - ux[1L]) / 2, ux[-1L] / 2 + ux[-n] / 2,
+      ux[n] + (ux[n] - ux[n - 1L]) / 2)
+  }
+  base_e <- edges_of(base_lv)
+  others <- tg[, -j, drop = FALSE]
+  key <- if (ncol(others)) {
+    apply(others, 1L, function(r) paste(sprintf("%.17g", r), collapse = "|"))
+  } else rep("", nrow(tg))
+  lo <- hi <- rep(NA_real_, nrow(tg))
+  for (idx in split(which(is.finite(v)), key[is.finite(v)])) {
+    fv <- sort(unique(v[idx]))
+    if (all(base_lv %in% fv) && length(fv) > length(base_lv)) {
+      fe <- edges_of(fv)
+      fe[1L] <- min(fe[1L], base_e[1L])
+      fe[length(fe)] <- max(fe[length(fe)], base_e[length(base_e)])
+      k <- match(v[idx], fv)
+      lo[idx] <- fe[k]; hi[idx] <- fe[k + 1L]
+    } else {
+      k <- match(v[idx], base_lv)
+      in_base <- !is.na(k)
+      lo[idx[in_base]] <- base_e[k[in_base]]
+      hi[idx[in_base]] <- base_e[k[in_base] + 1L]
+    }
+  }
+  ok <- ok & is.finite(lo) & is.finite(hi) & hi > lo
+  if (!any(ok)) return(NULL)
+  le <- edges_of(lv)
+  le[1L] <- min(le[1L], lo[ok])
+  le[length(le)] <- max(le[length(le)], hi[ok])
+  if (!all(is.finite(le)) || is.unsorted(le, strictly = TRUE)) return(NULL)
+  m <- numeric(length(lv))
+  for (i in which(ok)) {
+    ov <- pmax(0, pmin(hi[i], le[-1L]) - pmax(lo[i], le[-length(le)]))
+    m <- m + w[i] * ov / (hi[i] - lo[i])
+  }
+  list(vals = lv, mass = m)
+}
+
+# The default coordinate an axis's boxes are laid on where no domain is declared:
+# log on an all-positive axis, the value itself otherwise -- the same guess
+# `.nl_laplace_at_mode_sd_axis()` makes.
+.nl_axis_default_tr <- function(v) {
+  v <- v[is.finite(v)]
+  if (length(v) && all(v > 0)) .NL_DOMAIN_TRANSFORM$positive
+  else .NL_DOMAIN_TRANSFORM$unbounded
+}
+
+# One axis's marginal as `.nl_axis_marginal_logdensity()` returns it, taken
+# through `.nl_axis_row_projection()` on a grid carrying refinement slice cells.
+# `lm_eff` is the per-cell log mass. Any other grid, or a projection that cannot
+# form its boxes, reads the level sums unchanged.
+.nl_axis_marginal_read <- function(tg, j, lm_eff, keep, home) {
+  if (is.character(j)) j <- match(j, colnames(tg))
+  if (any(nzchar(home))) {
+    m <- max(lm_eff[keep])
+    if (is.finite(m)) {
+      w <- exp(lm_eff - m)
+      w[!keep | !is.finite(w)] <- 0
+      pr <- .nl_axis_row_projection(tg, j, w, home,
+                                    .nl_axis_default_tr(tg[keep, j]))
+      if (!is.null(pr)) {
+        return(list(vals = pr$vals, log_marg = log(pr$mass)))
+      }
+    }
+  }
+  .nl_axis_marginal_logdensity(tg[, j], lm_eff, keep)
+}
+
 .nl_axis_marginal_logdensity <- function(vals, log_marg, keep = NULL) {
   if (is.null(keep)) keep <- rep(TRUE, length(vals))
   v <- vals[keep]; l <- log_marg[keep]
@@ -1391,14 +1485,26 @@
 }
 
 .nl_laplace_at_mode_sd_axis <- function(vals, log_marg, log_axis = NULL,
-                                        return_u_sd = FALSE, coord = NULL) {
+                                        return_u_sd = FALSE, coord = NULL,
+                                        mass = FALSE) {
   if (length(vals) < 3L) return(.nl_axis_sd_declined("too_few_nodes"))
+  if (is.null(log_axis)) log_axis <- all(is.finite(vals)) && all(vals > 0)
+  u <- if (!is.null(coord)) coord$to(vals) else if (log_axis) log(vals) else vals
+  if (mass) {
+    if (!all(is.finite(u))) return(.nl_axis_sd_declined("coord_not_finite"))
+    # A level's log MASS is its log density plus the log width of the box it
+    # owns on this coordinate. The parabola is a curvature of the density, so
+    # the width comes off first; on equal spacing that is a constant and the
+    # curvature does not move, on a refined axis the widths shrink toward the
+    # mode and a mass parabola reads a curvature several times too sharp.
+    lw <- .nl_level_log_width(u)
+    if (is.null(lw)) return(.nl_axis_sd_declined("stencil_degenerate"))
+    log_marg <- log_marg - lw
+  }
   ix <- which.max(log_marg)
   if (ix == 1L || ix == length(vals)) {
     return(.nl_axis_sd_declined("mode_at_edge"))
   }
-  if (is.null(log_axis)) log_axis <- all(is.finite(vals)) && all(vals > 0)
-  u <- if (!is.null(coord)) coord$to(vals) else if (log_axis) log(vals) else vals
   if (!all(is.finite(u))) return(.nl_axis_sd_declined("coord_not_finite"))
   dm <- u[ix - 1L] - u[ix]
   dp <- u[ix + 1L] - u[ix]
@@ -1418,6 +1524,20 @@
   } else {
     if (log_axis) vals[ix] * sd_u else sd_u
   }
+}
+
+# Log width of the box each sorted level owns on coordinate `u`: interior edges
+# at the midpoints, each outer box mirrored by its own half-spacing -- the level
+# partition `.nl_box_edges()` spreads a level's mass over. NULL where the boxes
+# are not all of positive finite width.
+.nl_level_log_width <- function(u) {
+  n <- length(u)
+  if (n < 2L) return(NULL)
+  e <- c(u[1L] - (u[2L] - u[1L]) / 2, u[-1L] / 2 + u[-n] / 2,
+         u[n] + (u[n] - u[n - 1L]) / 2)
+  w <- diff(e)
+  if (!all(is.finite(w)) || any(w <= 0)) return(NULL)
+  log(w)
 }
 
 # Quadrature effective sample size of one axis's marginal: `1 / sum(p^2)` over
@@ -1481,7 +1601,7 @@
 # than reporting a floor as a spread.
 .nl_axis_sd_choice <- function(vals, log_marg, log_axis = NULL, coord = NULL,
                                min_ess = .nl_diag("axis_sd_ess"),
-                               stencil_ok = TRUE) {
+                               stencil_ok = TRUE, mass = FALSE) {
   out <- list(sd = NA_real_, source = NA_character_, ess = NA_real_,
               declined = NA_character_)
   if (!length(vals)) return(out)
@@ -1503,7 +1623,7 @@
     return(out)
   }
   sd_sten <- .nl_laplace_at_mode_sd_axis(vals, log_marg, log_axis = log_axis,
-                                         coord = coord)
+                                         coord = coord, mass = mass)
   if (is.finite(sd_sten)) {
     out$sd     <- as.numeric(sd_sten)
     out$source <- "stencil"
@@ -1542,7 +1662,8 @@
   tg <- res$theta_grid
   if (!is.matrix(tg)) {
     marg <- .nl_axis_marginal_logdensity(as.numeric(tg), lm_eff)
-    ch <- .nl_axis_sd_choice(marg$vals, marg$log_marg, stencil_ok = stencil_ok)
+    ch <- .nl_axis_sd_choice(marg$vals, marg$log_marg, stencil_ok = stencil_ok,
+                             mass = measured)
     if (is.finite(ch$sd)) res$theta_sd <- ch$sd
     res$theta_sd_source <- ch$source
     res$theta_sd_ess    <- ch$ess
@@ -1551,6 +1672,8 @@
   }
   if (is.null(refining)) refining <- res$refining_axis
   keep <- .nl_axis_read_cells(refining, nrow(tg), measured = measured)
+  home <- if (measured && stencil_ok) .hyper_slice_home(refining, nrow(tg))
+          else rep("", nrow(tg))
   col_names <- colnames(tg)
   if (!is.null(col_names) && !is.null(res$theta_sd)) {
     src <- stats::setNames(rep(NA_character_, length(col_names)), col_names)
@@ -1558,9 +1681,10 @@
     dec <- src
     for (col in col_names) {
       if (!col %in% names(res$theta_sd)) next
-      marg <- .nl_axis_marginal_logdensity(tg[, col], lm_eff, keep)
+      marg <- .nl_axis_marginal_read(tg, match(col, col_names), lm_eff, keep,
+                                     home)
       ch <- .nl_axis_sd_choice(marg$vals, marg$log_marg,
-                               stencil_ok = stencil_ok)
+                               stencil_ok = stencil_ok, mass = measured)
       if (is.finite(ch$sd)) res$theta_sd[[col]] <- ch$sd
       src[[col]] <- ch$source
       ess[[col]] <- ch$ess
@@ -1577,10 +1701,9 @@
       if (is.null(axis_cols) || length(axis_cols) == 0L) next
       for (j in seq_along(axis_cols)) {
         col_ix <- axis_cols[j]
-        marg <- .nl_axis_marginal_logdensity(tg[, col_ix], lm_eff,
-                                              keep)
+        marg <- .nl_axis_marginal_read(tg, col_ix, lm_eff, keep, home)
         ch <- .nl_axis_sd_choice(marg$vals, marg$log_marg,
-                                 stencil_ok = stencil_ok)
+                                 stencil_ok = stencil_ok, mass = measured)
         if (is.finite(ch$sd)) res$block_moments[[b]]$sd[[j]] <- ch$sd
         res$block_moments[[b]]$sd_source[j] <- ch$source
       }

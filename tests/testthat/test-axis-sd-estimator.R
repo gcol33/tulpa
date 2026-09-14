@@ -197,3 +197,66 @@ test_that("every nested path reports the estimator it used", {
   expect_true(is.finite(res$theta_sd_ess))
   expect_true(is.finite(res$theta_sd))
 })
+
+# A two-axis grid refined on axis `a` in its middle row: base levels -2..2 on
+# `a`, three rows on `b`, slice points at -0.5 and 0.5 in the row b = 2. Each
+# cell's mass is `dens_int` over the box its own row gives it along `a`.
+.refined_row_grid <- function(dens_int) {
+  base <- expand.grid(a = -2:2, b = 1:3)
+  tg <- rbind(as.matrix(base), cbind(a = c(-0.5, 0.5), b = 2))
+  base_e <- c(-2.5, -1.5, -0.5, 0.5, 1.5, 2.5)
+  row_lv <- c(-2, -1, -0.5, 0, 0.5, 1, 2)
+  row_e  <- c(-2.5, -1.5, -0.75, -0.25, 0.25, 0.75, 1.5, 2.5)
+  mass <- vapply(seq_len(nrow(tg)), function(i) {
+    if (tg[i, "b"] == 2) {
+      k <- match(tg[i, "a"], row_lv); dens_int(row_e[k], row_e[k + 1L])
+    } else {
+      k <- match(tg[i, "a"], -2:2); dens_int(base_e[k], base_e[k + 1L])
+    }
+  }, numeric(1))
+  list(tg = tg, mass = mass, home = c(rep("", 15L), "a", "a"))
+}
+
+test_that("a refined axis's marginal spreads each cell over its own row's box", {
+  # Under a uniform density every level box holds mass in proportion to its
+  # width, three rows' worth: exactly what the projection returns. Summing by
+  # level instead puts two wide base boxes and one narrow one at a = 0 beside a
+  # slice level holding one narrow box, a spike the level boxes do not carry.
+  g <- .refined_row_grid(function(lo, hi) hi - lo)
+  tr <- .NL_DOMAIN_TRANSFORM$unbounded
+  pr <- .nl_axis_row_projection(g$tg, 1L, g$mass, g$home, tr)
+  expect_equal(pr$vals, c(-2, -1, -0.5, 0, 0.5, 1, 2))
+  expect_equal(pr$mass, 3 * c(1, 0.75, 0.5, 0.5, 0.5, 0.75, 1), tolerance = 1e-12)
+  expect_equal(sum(pr$mass), sum(g$mass), tolerance = 1e-12)
+  by_level <- tapply(g$mass, g$tg[, "a"], sum)
+  expect_equal(as.numeric(by_level[c("-0.5", "0")]), c(0.5, 2.5))
+
+  # A grid with no slice cells reads the level sums unchanged.
+  base <- as.matrix(expand.grid(a = -2:2, b = 1:3))
+  lm <- log(rep(1, 15))
+  keep <- rep(TRUE, 15)
+  expect_identical(.nl_axis_marginal_read(base, 1L, lm, keep, rep("", 15)),
+                   .nl_axis_marginal_logdensity(base[, 1L], lm, keep))
+})
+
+test_that("refining an axis does not shrink its reported SD (gcol33/tulpa#746)", {
+  # A Gaussian marginal of SD 0.5 on `a`, the same in every row. The refined and
+  # the unrefined grid carry the same posterior, so they report the same spread;
+  # read off the level sums, the refined one collapsed onto the base node.
+  sd_true <- 0.5
+  dens <- function(lo, hi) stats::pnorm(hi, 0, sd_true) - stats::pnorm(lo, 0, sd_true)
+  g <- .refined_row_grid(dens)
+  attach <- function(tg, mass, refining) {
+    res <- list(theta_grid = tg, log_marginal = log(mass),
+                log_quad = rep(0, nrow(tg)), refining_axis = refining,
+                theta_sd = c(a = NA_real_, b = NA_real_))
+    .nl_attach_axis_sd(res)$theta_sd[["a"]]
+  }
+  refined <- attach(g$tg, g$mass, g$home)
+  base <- as.matrix(expand.grid(a = -2:2, b = 1:3))
+  base_e <- c(-2.5, -1.5, -0.5, 0.5, 1.5, 2.5)
+  k <- match(base[, "a"], -2:2)
+  unrefined <- attach(base, dens(base_e[k], base_e[k + 1L]), rep("", 15L))
+  expect_equal(refined, unrefined, tolerance = 0.15)
+  expect_gt(refined, 0.8 * sd_true)
+})
