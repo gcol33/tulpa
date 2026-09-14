@@ -1,3 +1,32 @@
+# tulpa 0.4.1
+
+## `tulpa()` states the outer prior, under one name at every door
+
+* **`tulpa()` takes `hyperprior = c("proper", "flat")`** and forwards it to the
+  nested-Laplace path, the SPDE path, the random-slope RE-covariance redirect
+  and `mode = "eb"`. Which backends read it is declared once in the backend
+  registry; `"flat"` on any other backend, or on the SPDE NUTS route, is an
+  error naming the ones that do. `re_prior$hyperprior` is refused with a
+  pointer to the argument (#745).
+* **`tulpa_eb()` and `tulpa_re_cov_nested()` name their default `"proper"`**,
+  as the nested doors do, instead of `"pc_lkj"`. The prior itself (PC + LKJ) is
+  unchanged.
+* **`fit_spde()` and `fit_st_nested()` take the same argument.** `spatial_spde()`
+  and `spatial_spde_custom()` record which of `prior_range` / `prior_sigma` the
+  caller stated (`prior_stated`), so under `"flat"` only a stated anchor keeps
+  its density.
+
+## Fixes
+
+* A nested grid with every axis pinned (a single cell) no longer errors in the
+  evidence step: its evidence is that cell's log marginal (#742).
+* The batched species driver runs the joint loops' own Newton step tail rather
+  than a copy of it; every batched and single-species fit is bit-identical to
+  before (#743).
+
+Open at this release: #744 (the outer-grid measurement fixture fits a residual
+variance four times smaller than it simulates).
+
 # tulpa 0.4.0
 
 ## The nested-Laplace doors state their outer prior
