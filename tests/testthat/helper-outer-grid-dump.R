@@ -515,7 +515,7 @@ outer_grid_weight_report <- function(dump, weights = NULL, floor = NULL,
 # each. `family` is the arm: `"gaussian"` adds residual noise of SD 0.5 to the
 # linear predictor, `"binomial"` draws one Bernoulli trial at its inverse logit.
 ogd_fixture_sim <- function(sd_true, seed = 4242L, G = 30L, N = 600L,
-                            family = c("gaussian", "binomial")) {
+                            family = c("gaussian", "binomial"), phi = 0.25) {
   family <- match.arg(family)
   set.seed(seed)
   grp <- lapply(seq_along(sd_true), function(k) sample.int(G, N, replace = TRUE))
@@ -524,11 +524,14 @@ ogd_fixture_sim <- function(sd_true, seed = 4242L, G = 30L, N = 600L,
   for (k in seq_along(sd_true)) {
     eta <- eta + stats::rnorm(G, 0, sd_true[k])[grp[[k]]]
   }
+  # `phi` is the residual variance in the doors' own convention; the generator
+  # draws at the SD the doors hand the kernel for it, so the fit below is the
+  # model the data came from.
   y <- switch(family,
-              gaussian = eta + stats::rnorm(N, 0, 0.5),
+              gaussian = eta + stats::rnorm(N, 0, .phi_to_kernel("gaussian", phi)),
               binomial = stats::rbinom(N, 1L, stats::plogis(eta)))
   list(y = y, X = X, grp = grp, N = N, G = G, sd_true = sd_true,
-       family = family)
+       family = family, phi = if (identical(family, "gaussian")) phi else 1)
 }
 
 # `within_cell` and `hyperprior` are STATED, not inherited (gcol33/tulpa#599).
@@ -551,7 +554,7 @@ ogd_fixture_fit <- function(sim, levels, spread = 3,
   suppressWarnings(tulpa_nested_laplace_joint(
     responses = list(a = list(y = sim$y, n_trials = rep(1L, sim$N), X = sim$X,
                               family = family,
-                              phi = if (identical(family, "gaussian")) 0.0625 else 1)),
+                              phi = sim$phi)),
     prior = prior,
     hyperprior = hyperprior,
     control = list(n_threads = 1L, diagnose_k = FALSE, max_iter = 100L,

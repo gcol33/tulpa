@@ -526,7 +526,7 @@ test_that("the outside-nodes record travels on a fitted object", {
   f <- suppressWarnings(tulpa_nested_laplace(
     y = y, n_trials = rep(1L, length(idx)), X = X,
     prior = list(list(type = "iid", obs_idx = idx, n_units = n_g)),
-    family = "gaussian", phi = 0.0625,
+    family = "gaussian", phi = 0.25,
     control = list(max_iter = 100L, tol = 1e-8, n_threads = 1L,
                    progress = FALSE, diagnose_k = FALSE, diagnose_skew = FALSE)))
   expect_true("theta_ci_outside_nodes" %in% names(f))

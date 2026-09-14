@@ -1,0 +1,34 @@
+---- sweep identity ----
+build         head_sha=dd24a127e6b616e7748469782ead7ec078e939ee | overlay tests/testthat/helper-outer-grid-dump.R 9fe26103d0c54fe54628835d96f8108b4279a19b | overlay tests/testthat/test-outer-grid-dump.R ecb8a681f17da417e8359c2bed8eb353957335d9 | overlay tests/testthat/test-nested-laplace-joint-barycentre.R b425fc195db3c1464dbf737526200208a688cc7e | overlay tests/testthat/test-nested-laplace-joint-descriptor-plane.R 88b73ec3fa8d027d1f5c16d5400f9e97fbfe4dfe | overlay tests/testthat/test-nested-laplace-joint-box-mass.R 8c7b2ba645dfa3954ccc39da80ae7346b7f6e0fc | overlay dev_notes/issue_328/measure_fit_ranking.R 8748533a7e35f559ef3b87c535ec0076800b3ade | overlay dev_notes/issue744/boxmass744.R 7a2b15639a1b296757cbd8a3a308218c51dcd9ad | overlay dev_notes/issue744/ogd744.R 406a3a3995ac4859a138cf6cdd6e042eca32b941 | overlay dev_notes/issue327/bary327.R 33fbd158b90a4da6ea776bd228d122e2a014f4a6 | overlay dev_notes/issue333/plane333.R daa1e38077d9dab497298069eff7e763e98e7f46 | overlay dev_notes/issue333/analyse333.R 25da8b264c425b2399212534679a227f75c3c0f2 | overlay dev_notes/harness/load_harness.R a94ea1e37588109046f9ca9ec4d0159f68a5e096 | R/ and src/ of the install equal dd24a12 (RcppExports line endings aside) | compiled from a clean export: objects before build = 0
+tulpa_path    C:/Users/Gilles Colling/AppData/Local/Temp/claude/C--Users-Gilles-Colling-Documents-dev-tulpa/0d807e5c-4f74-4018-ab1d-308832923765/scratchpad/doc745/lib/tulpa
+tulpa_version 0.4.0
+platform      x86_64-w64-mingw32
+R             R version 4.6.1 (2026-06-24 ucrt)
+hyperprior    proper
+within_cell   box_uniform
+started       2026-09-14 17:28:40 +0200
+------------------------
+fixture residual variance 0.25 
+[nested-laplace-joint] 1/81 cells (1%) | elapsed 0s | ETA >=0s | 0.00s/cells
+[nested-laplace-joint] 81/81 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
+
+== fixed-effect read under tempering (x3) ==
+se base 0.1896 0.0215  hot 0.1963 0.0215 
+se change 0.00673 -8.62e-07 
+mean change 0.000171 -0.000264 
+grid ESS 7.0485  cells 105 
+
+== tempering against the floor ==
+endpoints diff 0.0985 floor 0.0326 above TRUE
+widths    diff 0.1750 floor 0.0546 above TRUE
+median    diff 0.0216 floor 0.0164 above TRUE
+
+== tempering exponent against the floor ==
+k 1.02 endpoints 0.0011 widths 0.0019 median 0.0003 | above FALSE/FALSE/FALSE | se1 change 3.87e-05
+k 1.05 endpoints 0.0028 widths 0.0048 median 0.0006 | above FALSE/FALSE/FALSE | se1 change 0.000101
+k 1.10 endpoints 0.0057 widths 0.0099 median 0.0013 | above FALSE/FALSE/FALSE | se1 change 0.000214
+k 1.20 endpoints 0.0119 widths 0.0206 median 0.0025 | above FALSE/FALSE/FALSE | se1 change 0.000475
+k 1.30 endpoints 0.0185 widths 0.0326 median 0.0037 | above FALSE/FALSE/FALSE | se1 change 0.000777
+k 1.50 endpoints 0.0268 widths 0.0469 median 0.0061 | above FALSE/FALSE/FALSE | se1 change 0.00147
+k 2.00 endpoints 0.0385 widths 0.0655 median 0.0122 | above TRUE/TRUE/FALSE | se1 change 0.00344
+k 3.00 endpoints 0.0985 widths 0.1750 median 0.0216 | above TRUE/TRUE/TRUE | se1 change 0.00673

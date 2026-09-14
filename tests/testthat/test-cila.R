@@ -28,7 +28,7 @@ cila_gaussian_fit <- function(cila = NULL, seed = 11L, n_group = 8L,
               force_sparse = force_sparse)
   if (!is.null(cila)) ctl$cila <- cila
   suppressWarnings(tulpa_nested_laplace_joint(
-    responses = list(list(y = y, X = X, family = "gaussian", phi = 0.0625,
+    responses = list(list(y = y, X = X, family = "gaussian", phi = 0.25,
                           beta_prior_prec = rep(0.16, 2))),
     prior = list(list(type = "iid", obs_idx = as.integer(region),
                       n_units = n_group,

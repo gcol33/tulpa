@@ -1,0 +1,16 @@
+flat          build dd24a127e6 prior flat read box_uniform rows 24
+  ep |weight - moved| summed 1.4005  floor summed 3.7812  above floor 2 of 24  weight 1.5298  moved 2.6236  moved nearer 7  moved nearer where resolved 0 of 2
+  wd |weight - moved| summed 2.7204  floor summed 5.6636  above floor 2 of 24  weight 2.8201  moved 4.7877  moved nearer 9  moved nearer where resolved 0 of 2
+  md |weight - moved| summed 0.7311  floor summed 0.8901  above floor 7 of 24  weight 0.5500  moved 1.2651  moved nearer 1  moved nearer where resolved 0 of 7
+proper        build dd24a127e6 prior proper read box_uniform rows 24
+  ep |weight - moved| summed 1.4434  floor summed 4.0150  above floor 1 of 24  weight 1.5810  moved 2.5988  moved nearer 7  moved nearer where resolved 0 of 1
+  wd |weight - moved| summed 2.7437  floor summed 5.6632  above floor 5 of 24  weight 2.9518  moved 4.8199  moved nearer 8  moved nearer where resolved 0 of 5
+  md |weight - moved| summed 0.7156  floor summed 0.8315  above floor 8 of 24  weight 0.5257  moved 1.2354  moved nearer 1  moved nearer where resolved 0 of 8
+flat_chord    build dd24a127e6 prior flat read chord rows 24
+  ep |weight - moved| summed 0.7602  floor summed 6.1914  above floor 0 of 24  weight 3.6187  moved 3.3942  moved nearer 11  moved nearer where resolved 0 of 0
+  wd |weight - moved| summed 1.7641  floor summed 12.3249  above floor 0 of 24  weight 7.1649  moved 6.4200  moved nearer 13  moved nearer where resolved 0 of 0
+  md |weight - moved| summed 0.7308  floor summed 0.3001  above floor 16 of 24  weight 0.5698  moved 1.2976  moved nearer 1  moved nearer where resolved 0 of 16
+proper_chord  build dd24a127e6 prior proper read chord rows 24
+  ep |weight - moved| summed 0.7779  floor summed 6.1919  above floor 0 of 24  weight 3.6864  moved 3.3945  moved nearer 11  moved nearer where resolved 0 of 0
+  wd |weight - moved| summed 1.8313  floor summed 12.3499  above floor 0 of 24  weight 7.3405  moved 6.4619  moved nearer 12  moved nearer where resolved 0 of 0
+  md |weight - moved| summed 0.7141  floor summed 0.2751  above floor 15 of 24  weight 0.5654  moved 1.2796  moved nearer 0  moved nearer where resolved 0 of 15

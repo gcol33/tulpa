@@ -25,7 +25,7 @@
 # Crossed iid random effects on one gaussian arm: each block contributes one
 # outer sigma axis, so the axis count is the block count and the same simulation
 # serves the d = 3 fits and the d = 4 one local CCD needs.
-.ogd_sim <- function(sd_true, seed = 4242L, G = 30L, N = 600L) {
+.ogd_sim <- function(sd_true, seed = 4242L, G = 30L, N = 600L, phi = 0.25) {
   set.seed(seed)
   grp <- lapply(seq_along(sd_true), function(k) sample.int(G, N, replace = TRUE))
   X <- cbind(1, stats::rnorm(N))
@@ -33,8 +33,8 @@
   for (k in seq_along(sd_true)) {
     eta <- eta + stats::rnorm(G, 0, sd_true[k])[grp[[k]]]
   }
-  list(y = eta + stats::rnorm(N, 0, 0.5), X = X, grp = grp,
-       N = N, G = G, sd_true = sd_true)
+  list(y = eta + stats::rnorm(N, 0, .phi_to_kernel("gaussian", phi)), X = X,
+       grp = grp, N = N, G = G, sd_true = sd_true, phi = phi)
 }
 
 .ogd_fit <- function(sim, control = list(), levels = 3L, spread = 3) {
@@ -46,7 +46,7 @@
   })
   suppressWarnings(tulpa_nested_laplace_joint(
     responses = list(a = list(y = sim$y, n_trials = rep(1L, sim$N), X = sim$X,
-                              family = "gaussian", phi = 0.0625)),
+                              family = "gaussian", phi = sim$phi)),
     prior = prior,
     control = utils::modifyList(
       list(n_threads = 1L, diagnose_k = FALSE, max_iter = 100L, tol = 1e-8),
@@ -188,16 +188,15 @@ test_that("the fixed-effect read is a function of the weights it is rebuilt unde
   expect_equal(same$cov, base$cov, tolerance = 1e-12)
 
   # Tempering the integrand concentrates the outer posterior onto fewer cells,
-  # which removes between-cell spread from the law of total covariance: the
-  # intercept's SE falls from 0.1880 to 0.1852. The slope's moves by 1.2e-06 --
-  # its conditional posterior barely depends on the RE scales the grid spans, so
-  # a reweighting of that grid has almost nothing to move it with. That split is
-  # the reason a weight experiment has to be scored on the coefficient it is
-  # about rather than on the hyperparameter axes.
+  # which changes both halves of the law of total covariance: the intercept's
+  # SE moves from 0.1896 to 0.1963 (`dev_notes/issue744/ogd744.R`). The slope's
+  # moves by 8.6e-07 -- its conditional posterior barely depends on the RE
+  # scales the grid spans, so a reweighting of that grid has almost nothing to
+  # move it with. That split is the reason a weight experiment has to be scored
+  # on the coefficient it is about rather than on the hyperparameter axes.
   hot <- outer_grid_rebuild_fixed(
     d, outer_grid_weights(d, dnode = d$dnode, log_marginal = 3 * d$log_marginal))
-  expect_lt(hot$se[[1L]], base$se[[1L]])
-  expect_gt(base$se[[1L]] - hot$se[[1L]], 1e-3)
+  expect_gt(abs(hot$se[[1L]] - base$se[[1L]]), 1e-3)
   expect_lt(abs(hot$se[[2L]] - base$se[[2L]]), 1e-4)
   expect_gt(max(abs(hot$mean - base$mean)), 0)
 })
@@ -413,17 +412,21 @@ test_that("a candidate weight rule is reported against the floor, not on its own
   expect_equal(same$diff$endpoints, 0, tolerance = 1e-12)
   expect_false(any(same$above_floor))
 
-  # This fit's base grid holds three levels per axis, and one step of coarsening
-  # moves its read by 0.105 -- so on THIS grid even a heavy re-weighting
-  # (tempering the integrand, which concentrates the posterior) moves the
-  # endpoints by 0.039 and is not resolved. Reporting that 0.039 on its own would
-  # read as a difference; against the floor it reads as a grid too coarse to
-  # tell, which is the whole point of carrying the floor.
+  # One step of coarsening moves this fit's endpoints by 0.0326. Tempering the
+  # integrand by 1.5, which concentrates the posterior, moves them by 0.0268:
+  # reported on its own that reads as a difference, against the floor it reads
+  # as a grid too coarse to tell, which is the whole point of carrying the
+  # floor. Tempering by 3 moves them by 0.0985 on the same fit and the same
+  # floor, and is resolved (`dev_notes/issue744/ogd744.R`).
+  warm <- outer_grid_weight_report(
+    d, outer_grid_weights(d, dnode = d$dnode, log_marginal = 1.5 * d$log_marginal),
+    floor = same$floor)
+  expect_gt(warm$diff$endpoints, 0)
+  expect_false(warm$above_floor[["endpoints"]])
   hot <- outer_grid_weight_report(
     d, outer_grid_weights(d, dnode = d$dnode, log_marginal = 3 * d$log_marginal),
     floor = same$floor)
-  expect_gt(hot$diff$endpoints, 0)
-  expect_false(hot$above_floor[["endpoints"]])
+  expect_true(hot$above_floor[["endpoints"]])
 
   # Where the grid does resolve the read, the same rule is reported as the
   # difference it is: at 81 levels the floor is 0.0135 and tempering moves the

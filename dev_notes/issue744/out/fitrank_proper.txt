@@ -1,0 +1,26 @@
+---- sweep identity ----
+build         head_sha=dd24a127e6b616e7748469782ead7ec078e939ee | overlay tests/testthat/helper-outer-grid-dump.R 9fe26103d0c54fe54628835d96f8108b4279a19b | overlay tests/testthat/test-outer-grid-dump.R ecb8a681f17da417e8359c2bed8eb353957335d9 | overlay tests/testthat/test-nested-laplace-joint-barycentre.R b425fc195db3c1464dbf737526200208a688cc7e | overlay tests/testthat/test-nested-laplace-joint-descriptor-plane.R 88b73ec3fa8d027d1f5c16d5400f9e97fbfe4dfe | overlay tests/testthat/test-nested-laplace-joint-box-mass.R 8c7b2ba645dfa3954ccc39da80ae7346b7f6e0fc | overlay dev_notes/issue_328/measure_fit_ranking.R 8748533a7e35f559ef3b87c535ec0076800b3ade | overlay dev_notes/issue744/boxmass744.R 7a2b15639a1b296757cbd8a3a308218c51dcd9ad | overlay dev_notes/issue744/ogd744.R 52550e26da169d510d836f9a349f3f92b70896e1 | overlay dev_notes/issue327/bary327.R 33fbd158b90a4da6ea776bd228d122e2a014f4a6 | overlay dev_notes/issue333/plane333.R daa1e38077d9dab497298069eff7e763e98e7f46 | overlay dev_notes/issue333/analyse333.R 25da8b264c425b2399212534679a227f75c3c0f2 | overlay dev_notes/harness/load_harness.R a94ea1e37588109046f9ca9ec4d0159f68a5e096 | R/ and src/ of the install equal dd24a12 (RcppExports line endings aside) | compiled from a clean export: objects before build = 0
+tulpa_path    C:/Users/Gilles Colling/AppData/Local/Temp/claude/C--Users-Gilles-Colling-Documents-dev-tulpa/0d807e5c-4f74-4018-ab1d-308832923765/scratchpad/doc745/lib/tulpa
+tulpa_version 0.4.0
+platform      x86_64-w64-mingw32
+R             R version 4.6.1 (2026-06-24 ucrt)
+hyperprior    proper
+within_cell   box_uniform
+started       2026-09-14 17:27:01 +0200
+------------------------
+seed 1 done, 12s
+seed 2 done, 14s
+seed 3 done, 15s
+seed 4 done, 13s
+seed 5 done, 9s
+seed 6 done, 9s
+seed 7 done, 9s
+seed 8 done, 9s
+
+=== totals over 24 configurations ( 8 seeds x 3 budgets ), hyperprior proper ===
+ep  base  2.8441  5-level  1.9453  weight  1.5810  mass_moved  2.5988  floor  4.0150 | arm-to-arm difference above floor in 1 of 24, mass_moved nearer in 7
+wd  base  3.5115  5-level  2.4241  weight  2.9518  mass_moved  4.8199  floor  5.6632 | arm-to-arm difference above floor in 5 of 24, mass_moved nearer in 8
+md  base  2.2927  5-level  2.0770  weight  0.5257  mass_moved  1.2354  floor  0.8315 | arm-to-arm difference above floor in 8 of 24, mass_moved nearer in 1
+ max_cells 2: identical grids 0/8
+ max_cells 4: identical grids 0/8
+ max_cells 8: identical grids 0/8

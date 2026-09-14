@@ -25,17 +25,19 @@ env <- harness_load(lib, repo)
 id <- harness_identity(lib, hyperprior, within_cell)
 harness_print_identity(id)
 
-sim <- function(seed, sd_true = c(0.8, 0.5, 0.35, 0.25), N = 900L, G = 40L) {
+sim <- function(seed, sd_true = c(0.8, 0.5, 0.35, 0.25), N = 900L, G = 40L,
+                phi = 0.25) {
   set.seed(seed)
   grp <- lapply(seq_along(sd_true), function(k) sample.int(G, N, replace = TRUE))
   X <- cbind(1, stats::rnorm(N))
   eta <- as.numeric(X %*% c(0.2, 0.6))
   for (k in seq_along(sd_true)) eta <- eta + stats::rnorm(G, 0, sd_true[k])[grp[[k]]]
-  list(y = eta + stats::rnorm(N, 0, 0.5), X = X, grp = grp, N = N, G = G,
+  list(y = eta + stats::rnorm(N, 0, tulpa:::.phi_to_kernel("gaussian", phi)), X = X,
+       grp = grp, N = N, G = G, phi = phi,
        sd_true = sd_true)
 }
 
-# Residual variance 0.0625, the residual SD of 0.25 the #328 fits used.
+# The residual variance is the one the data were simulated at (gcol33/tulpa#744).
 fit <- function(s, levels, local_ccd = NULL, spread = 3) {
   prior <- lapply(seq_along(s$grp), function(k) {
     sd <- s$sd_true[k]
@@ -45,7 +47,7 @@ fit <- function(s, levels, local_ccd = NULL, spread = 3) {
   })
   suppressWarnings(tulpa_nested_laplace_joint(
     responses = list(a = list(y = s$y, n_trials = rep(1L, s$N), X = s$X,
-                              family = "gaussian", phi = 0.0625)),
+                              family = "gaussian", phi = s$phi)),
     prior = prior, hyperprior = hyperprior,
     control = list(n_threads = 1L, diagnose_k = FALSE, max_iter = 100L,
                    tol = 1e-8, integration = "grid", progress = FALSE,
