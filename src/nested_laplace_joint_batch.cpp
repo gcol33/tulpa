@@ -314,11 +314,15 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
 
         std::vector<LaplaceResult> res(B);
         std::vector<bool> converged(B, false);
-        // Sentinel for "this species' objective has not been evaluated at the
-        // current iterate yet"; obj_valid gates every read.
-        std::vector<double> obj(B, -std::numeric_limits<double>::infinity());
-        std::vector<bool> obj_valid(B, false);
-        std::vector<NewtonConvState> conv_state(B);
+        // Each species' Newton iteration state, carried across iterations the
+        // way the single-species loop carries its own; `obj_valid` gates every
+        // read of `obj`.
+        struct SpeciesNewton {
+            double          obj = -std::numeric_limits<double>::infinity();
+            bool            obj_valid = false;
+            NewtonConvState conv_state;
+        };
+        std::vector<SpeciesNewton> nt(B);
 
         for (int iter = 0; iter < max_iter; iter++) {
             for (int s = 0; s < B; s++) {
@@ -350,16 +354,7 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
                                                    st[s].dense.chol, pd_mode);
                 }
                 if (!ok) {
-                    // The step was never solved. Move a short way along
-                    // whatever finite part of it came back, so the next
-                    // iteration starts somewhere else, and record the cell as
-                    // not converged.
-                    constexpr double kFailedStepDamping = 0.1;
-                    for (int j = 0; j < n_x; j++)
-                        if (std::isfinite(v.delta[j]))
-                            v.x[j] += kFailedStepDamping * v.delta[j];
-                    obj_valid[s] = false;
-                    converged[s] = false;
+                    newton_damped_fallback(v.x, v.delta, n_x, nt[s].obj_valid);
                     res[s].n_iter = iter + 1;
                     continue;
                 }
@@ -382,14 +377,9 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
                         },
                         v.etas_tmp);
                 };
-                if (!obj_valid[s]) { obj[s] = eval_obj(v.x); obj_valid[s] = true; }
-                double slope = newton_decrement(grad, v.delta, n_x);
-                double step = line_search_backtrack(v.x, v.delta, n_x,
-                                                    obj[s], slope, eval_obj,
-                                                    obj[s], v.x_try, nullptr,
-                                                    newton_trust_scale(conv_state[s], slope));
-                res[s].n_iter = iter + 1;
-                if (newton_converged(v.delta, grad, step, n_x, tol, conv_state[s]))
+                if (newton_step_tail(v.x, grad, v.delta, v.x_try, n_x, iter, tol,
+                                     eval_obj, nt[s].obj, nt[s].obj_valid,
+                                     nt[s].conv_state, res[s].n_iter))
                     converged[s] = true;
             }
             bool all_conv = true;

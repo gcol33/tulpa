@@ -417,17 +417,21 @@ inline void newton_damped_fallback(
 
 // Everything a Newton iteration does AFTER a successful solve: the lazy
 // objective refresh, the Newton decrement, the trust-scaled backtracking line
-// search, and the convergence test. Reads `grad` / `delta` / `x_try` off the
-// scratch, so it serves the dense and sparse containers alike -- neither is
-// touched here, only the step the solve wrote.
+// search, and the convergence test. Only the gradient, the step the solve wrote
+// and the line-search trial buffer are read, so it serves every Hessian
+// container, and a driver holding those buffers outside a scratch (the batched
+// species loop keeps one gradient per species beside its own scratch) passes
+// them directly.
 //
 // `obj_current` / `obj_valid` / `conv_state` carry across iterations, and
 // `n_iter_out` records the iteration count the caller reports. Returns true when
 // the solve has converged, which is the caller's signal to break.
-template <typename Scratch, typename EvalObj>
+template <typename EvalObj>
 inline bool newton_step_tail(
     Rcpp::NumericVector& x,
-    Scratch& scratch,
+    const std::vector<double>& grad,
+    const std::vector<double>& delta,
+    Rcpp::NumericVector& x_try,
     int n_x, int iter, double tol,
     EvalObj eval_objective,
     double& obj_current,
@@ -440,16 +444,32 @@ inline bool newton_step_tail(
         obj_valid = true;
     }
 
-    double slope = newton_decrement(scratch.grad, scratch.delta, n_x);
+    double slope = newton_decrement(grad, delta, n_x);
     double step_scale = line_search_backtrack(
-        x, scratch.delta, n_x, obj_current, slope, eval_objective,
-        obj_current, scratch.x_try, nullptr,
+        x, delta, n_x, obj_current, slope, eval_objective,
+        obj_current, x_try, nullptr,
         newton_trust_scale(conv_state, slope)
     );
 
     n_iter_out = iter + 1;
-    return newton_converged(scratch.delta, scratch.grad, step_scale, n_x, tol,
-                            conv_state);
+    return newton_converged(delta, grad, step_scale, n_x, tol, conv_state);
+}
+
+// The same tail over a scratch carrying `grad` / `delta` / `x_try`.
+template <typename Scratch, typename EvalObj>
+inline bool newton_step_tail(
+    Rcpp::NumericVector& x,
+    Scratch& scratch,
+    int n_x, int iter, double tol,
+    EvalObj eval_objective,
+    double& obj_current,
+    bool& obj_valid,
+    NewtonConvState& conv_state,
+    int& n_iter_out
+) {
+    return newton_step_tail(x, scratch.grad, scratch.delta, scratch.x_try,
+                            n_x, iter, tol, eval_objective, obj_current,
+                            obj_valid, conv_state, n_iter_out);
 }
 
 // One Newton iteration, shared by the single-arm and dense joint drivers.
