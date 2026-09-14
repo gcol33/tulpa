@@ -1,5 +1,30 @@
 # tulpa 0.4.0
 
+## The slow tier re-read under the proper default hyperpriors
+
+* **The recovery suite's residual-scale negative control had stopped being the
+  defect it names** (gcol33/tulpa#737). `recov_fit_joint_phi_crossed()` is
+  meant to fit a gaussian arm at a quarter of its simulated residual variance,
+  the gcol33/tulpa#332 crossing, and its gate asserts the slope interval
+  narrows by sqrt(2) and loses coverage. Handing the door
+  `.phi_to_kernel(cfg$phi)` at `RESID_VAR = 0.5` instead fits variance
+  sqrt(0.5), so the interval WIDENED by 0.5^(-1/4) = 1.19 and the gate read a
+  width ratio of 0.84 with equal coverage. It was red at `fa704fb` too and
+  only the slow tier runs it. The arm now hands the door
+  `.phi_to_registry(cfg$phi)`, the value whose kernel read is the generator's
+  number, and the block passes 16 of 16.
+* **The #387 and #357 calibration verdicts hold under the #730 priors.** The
+  mode-SD floor ladder, seven rows x 200 seeds: `min_sd_u = 0.15` scores a
+  summed |coverage - nominal| of 0.1614 against 0.7107 at 0.05 (304 trials
+  lost, none won), 0.2457 at 0.30 (53 lost) and 0.5164 at 0.50; declining on
+  the floor scores 0.3379. No fit reaches the ceiling, so the ceiling policies
+  are identical on this ladder. The within-cell read at the shipped placement:
+  box-uniform 0.1300 against chord 0.2933 at a fixed truth (previously 0.1233 /
+  0.2900), and 0.0252 against 0.2106 over the truth-swept fits whose placed axis
+  contained the truth (0.0361 / 0.2004). `test-hyperparameter-coverage.R`
+  passes 9 of 9, and the BYM2 rho and ICAR tau rail lifts read 2.7707 and 9.0
+  against a threshold of 2.
+
 ## Free-covariance blocks and two dispersions carry a proper prior
 
 * **Every default MCAR / MIID fit reported `log_evidence = NA`**

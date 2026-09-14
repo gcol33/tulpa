@@ -1553,18 +1553,25 @@ policies, arms differing only in this setting, summed |coverage - nominal| over
 nominal 0.95 / 0.80 / 0.50: `sd_clamp_policy = "decline"` scores 0.1393 against
 `"clamp"`'s 0.1464 and never loses a trial -- of the 35 it changes it improves 7
 and worsens none (sign test p = 0.0078) at width ratio 1.0000 -- while declining
-on the FLOOR costs 22 trials against 9. The asymmetry is the substantive result:
+on the FLOOR more than doubles the summed deviation (0.1614 -> 0.3379 on the
+seven-row ladder re-read under the proper default hyperpriors, gcol33/tulpa#737):
+its `sigma` axes cover 0.985 to 1.000 at every nominal level at twice the width.
+It wins 10 trials against 3 at the 95% level alone, which is why the verdict is
+read over all three levels. The asymmetry is the substantive result:
 a clamped floor WIDENS a too-narrow axis, the direction that cannot rail, so
 substituting there is right; a clamped ceiling lays an axis over a flatness the
 stencil could not resolve, so declining is. A third ceiling policy,
 `"relative"` (cap the re-placed span by the incoming axis's own span rather than
 by an absolute bound), scores 0.1536 and loses 7 to 1; it is kept as a
-selectable arm, not shipped.
+selectable arm, not shipped. Under the #730 priors no fit on that ladder reaches
+the ceiling (0 of 2800 axis reads), so the three ceiling arms are identical there
+and the 0.1393 / 0.1464 / 0.1536 table is the only measurement that separates
+them.
 
 **Both CONSTANTS are kept, and the ladder is why.** `min_sd_u = 0.15` is a
-minimum of its ladder in both directions (0.05 loses 374 trials and wins none;
-0.30 loses 30 and wins none) and is the bound that actually binds -- 3 of 7 rows
-and every fit of those rows, where the ceiling reaches 2 of 268 axis reads.
+minimum of its ladder in both directions (0.05 loses 304 trials and wins none;
+0.30 loses 53 and wins none; 0.50 wins 23 and loses 43) and is the bound that
+actually binds -- 3 of 7 rows and every fit of those rows.
 `max_sd_u = 3` is the best rung on calibration across a factor-of-15 ladder over
 which the summed deviation moves only 0.2843 to 0.3071.
 

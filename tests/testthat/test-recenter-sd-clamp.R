@@ -86,7 +86,8 @@ test_that("the ceiling DECLINES by default, and the floor still clamps", {
     # stencil could not resolve that direction, and laying an axis from the
     # substituted number never wins a trial and loses none when skipped (7-0
     # paired). A clamped FLOOR widens a too-narrow axis, which is the direction
-    # that cannot rail, and declining there loses 22 trials against 9.
+    # that cannot rail, and declining there more than doubles the summed
+    # |coverage - nominal| (0.1614 -> 0.3379), over-covering every level.
     expect_identical(.nl_recenter("sd_clamp_policy"), "decline")
     expect_identical(.nl_recenter("sd_floor_policy"), "clamp")
 

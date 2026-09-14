@@ -194,21 +194,23 @@ recov_fit_joint_local_ccd <- function(d, sg, family, cfg) {
   recov_fit_joint_coarse(d, sg, family, cfg, local_ccd = TRUE)
 }
 
-# The same coarse fit with the two residual-scale conventions crossed: the arm
-# is handed `cfg$phi^2`, the residual VARIANCE, where the door reads an SD. That
-# is exactly the gcol33/tulpa#332 defect, on data the corrected fixture also
-# simulates, so it is the negative control the coverage gate is scored against
-# -- a fit at the wrong residual scale must fail the gate the corrected one
-# passes, or the gate is not sensitive to the thing it grades.
-# The generator / inference convention crossing, kept runnable as the negative
-# control the coverage gate's floor is scored against. The other convention's
-# number -- the one a fit gets when the two sides disagree -- is the KERNEL's,
-# which is what `.phi_to_kernel()` returns, so this crosses in whichever
-# direction the door currently faces (gcol33/tulpa#661; it was `cfg$phi^2` while
-# the door read an SD).
+# The same coarse fit with the two residual-scale conventions crossed, kept
+# runnable as the negative control the coverage gate's floor is scored against:
+# a fit at the wrong residual scale must fail the gate the corrected one passes,
+# or the gate is not sensitive to the thing it grades.
+#
+# The crossing is the gcol33/tulpa#332 one: the KERNEL reads the generator's
+# number unconverted, so a gaussian arm simulated at residual variance `v` is
+# fitted at SD `v`, variance `v^2` -- a quarter at 0.5, which is what narrows
+# the slope's interval by sqrt(2). The door value that produces that kernel read
+# is the inverse of the door's own conversion, `.phi_to_registry()`, so the arm
+# states the defect rather than a convention. Handing the door
+# `.phi_to_kernel(cfg$phi)` instead is a different defect at 0.5 -- variance
+# sqrt(0.5), too WIDE by 0.5^(-1/4) -- which widens the slope and costs no
+# coverage.
 recov_fit_joint_phi_crossed <- function(d, sg, family, cfg) {
   recov_fit_joint_coarse(d, sg, family, cfg,
-                         phi = .phi_to_kernel(family, cfg$phi))
+                         phi = .phi_to_registry(family, cfg$phi))
 }
 
 # Fit n_seed data sets for one family; return per-coefficient mean estimate,

@@ -617,24 +617,30 @@
     # "decline" is the default because it never loses a trial: of the 35 it
     # changes it improves 7 and worsens none (sign test p = 0.0078) at the same
     # width. It is also the only arm that does not report a substituted spread
-    # as though the stencil had measured it.
+    # as though the stencil had measured it. Under the proper default
+    # hyperpriors (gcol33/tulpa#730) no fit of the seven-row ladder below reaches
+    # the ceiling -- 0 of 2800 axis reads -- so the three ceiling arms are
+    # identical there and the table above is the only one that separates them.
     sd_clamp_policy = "decline",
 
-    # The floor is the OPPOSITE answer, and it is the same table that says so:
+    # The floor is the OPPOSITE answer. Seven rows x 200 seeds under the proper
+    # default hyperpriors, "resolve" placement, paired 95%-level win/loss against
+    # 0.15:
     #
     #   floor            summed dev   won   lost
-    #   0.02 / 0.05          0.7600     0    374
-    #   0.15 (this)          0.1464     -      -
-    #   0.30                 0.2621     0     30
-    #   0.50                 0.4893    39     47
-    #   decline              0.3186     9     22
+    #   0.02 / 0.05          0.7107     0    304
+    #   0.15 (this)          0.1614     -      -
+    #   0.30                 0.2457     0     53
+    #   0.50                 0.5164    23     43
+    #   decline              0.3379    10      3
     #
     # A clamped floor WIDENS a too-narrow axis, which is the direction that
-    # cannot rail, so substituting there is the right move and declining costs
-    # 22 trials against 9. 0.15 is a minimum of the ladder in both directions --
-    # dropping it to 0.05 loses 374 trials and wins none -- and the floor is the
-    # bound that actually binds: it engages on 3 of 7 rows and on every fit of
-    # those rows, where the ceiling reaches 2 of 268 axis reads.
+    # cannot rail, so substituting there is the right move: declining wins 10
+    # trials against 3 at the 95% level and more than doubles the summed
+    # deviation, over-covering at 0.80 and 0.50. 0.15 is a minimum of the ladder
+    # in both directions -- dropping it to 0.05 loses 304 trials and wins none --
+    # and the floor is the bound that actually binds: it engages on 3 of 7 rows
+    # and on every fit of those rows.
     sd_floor_policy = "clamp",
 
     # A recentred axis must survive the map back onto its own support with at
