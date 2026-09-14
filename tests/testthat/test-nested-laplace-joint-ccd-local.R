@@ -94,6 +94,38 @@ test_that("greedy selection picks mutually non-adjacent cells", {
   }
 })
 
+test_that("the selection ranks by weight by default, or by the mass a cell misplaces", {
+  mu <- c(0.2, 0.9); s <- c(0.6, 0.5)
+  lv <- list(a = c(-1.5, -0.5, 0.5, 1.5), b = c(-1.5, -0.5, 0.5, 1.5))
+  gd <- .lccd_grid(lv, mu, s)
+  U  <- as.matrix(gd$grid)
+  nb <- tulpa:::.joint_local_ccd_neighbors(U, gd$grid, 1:2)
+  w  <- tulpa:::.joint_integration_weights(gd$lm, NULL)
+  curv <- vector("list", nrow(U)); cands <- integer(0)
+  for (c in seq_len(nrow(U))) {
+    cc <- tulpa:::.joint_local_ccd_cell_curv(c, U, gd$lm, nb$up, nb$dn)
+    if (is.null(cc)) next
+    curv[[c]] <- cc; cands <- c(cands, c)
+  }
+  expect_gt(length(cands), 1L)
+  expect_identical(tulpa:::.joint_local_ccd_rank_score("weight", cands, w, curv), w)
+  sc <- tulpa:::.joint_local_ccd_rank_score("mass_moved", cands, w, curv)
+  lbr <- vapply(cands, function(c)
+    tulpa:::.joint_local_ccd_cell_box_mass(curv[[c]])$log_box_ratio, numeric(1))
+  expect_equal(sc[cands], w[cands] * abs(expm1(lbr)), tolerance = 1e-14)
+  expect_true(all(sc[-cands] == -Inf))
+  expect_error(tulpa:::.joint_local_ccd_rank_score("size", cands, w, curv))
+
+  # The default rank is the weight ranking, bit for bit.
+  args <- list(joint_grid = gd$grid, log_marginal = gd$lm, modes = NULL,
+               dnode = NULL, latent_axes = c("a", "b"),
+               tags = c(a = "identity", b = "identity"),
+               eval_nodes = .lccd_eval(mu, s), max_cells = 2L)
+  expect_identical(do.call(tulpa:::.joint_local_ccd_refine, args),
+                   do.call(tulpa:::.joint_local_ccd_refine,
+                           c(args, list(rank = "weight"))))
+})
+
 test_that("local CCD declines on NULL tags, the engage gate, and a monotone field", {
   expect_false(tulpa:::.joint_local_ccd_engage(3L))
   expect_true(tulpa:::.joint_local_ccd_engage(4L))

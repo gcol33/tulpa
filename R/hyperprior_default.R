@@ -38,7 +38,9 @@
   # the joint density on Sigma is not a density on the axes that remain.
   "logchol_partial_block",
   # An axis no table binds a density to.
-  "unclassified_axis"
+  "unclassified_axis",
+  # The caller chose `hyperprior = "flat"` and stated no density on the axis.
+  "flat_hyperprior"
 )
 
 .hp_decline <- function(reason) {
@@ -212,6 +214,40 @@
   list(reason = .hp_decline("unclassified_axis"))
 }
 
+# The prior a front door gives every outer axis its caller states no density
+# on. `"proper"` is `.hp_axis_default()`'s per-axis set; `"flat"` adds no density
+# of the engine's own, so such an axis is integrated under its cell measure
+# alone and the evidence declines. A density the caller states is applied under
+# either: a `prior_sigma` / `prior_alpha` / `prior_phi` argument, a block's
+# `rho_prior`, `prior_range` or `prior_sigma`, the copy scale's declared slab,
+# and a tgmrf block's own prior.
+.HP_CHOICES <- c("proper", "flat")
+
+.hp_choice <- function(hyperprior) {
+  if (!is.character(hyperprior) || length(hyperprior) != 1L ||
+      !hyperprior %in% .HP_CHOICES) {
+    stop(sprintf("`hyperprior` must be one of %s.",
+                 paste0('"', .HP_CHOICES, '"', collapse = ", ")), call. = FALSE)
+  }
+  hyperprior
+}
+
+# The density of ONE axis under a hyperprior choice, in `.hp_axis_default()`'s
+# return shape. Under `"flat"` an axis keeps only a density its block states.
+.hp_axis_prior <- function(bare, block = list(), family = NULL,
+                           hyperprior = "proper") {
+  if (identical(.hp_choice(hyperprior), "proper")) {
+    return(.hp_axis_default(bare, block, family))
+  }
+  type <- tolower(block$type %||% "")
+  stated <- identical(bare, "alpha") ||
+    (identical(type, "ar1") && identical(bare, "rho") && !is.null(block$rho_prior)) ||
+    (identical(type, "spde") && identical(bare, "sigma") && !is.null(block$prior_sigma)) ||
+    (bare %in% c("range", "phi_gp", "lengthscale", "ell") && !is.null(block$prior_range))
+  if (stated) return(.hp_axis_default(bare, block, family))
+  list(reason = .hp_decline("flat_hyperprior"))
+}
+
 # Fold densities over the integrated columns of `tg` into a record: the summed
 # per-cell density, the axes it covers, the declined axes with their reasons.
 # `resolve(axis)` returns the `.hp_axis_default()` shape for a column; `name`
@@ -352,7 +388,7 @@
 # columns (bare names, natural values). A tgmrf block's own `prior(theta)` is
 # folded inside the kernel (`log_prior_theta_per_grid`), so it is recorded here
 # and not added again.
-.nl_block_log_hyperprior <- function(p, tg) {
+.nl_block_log_hyperprior <- function(p, tg, hyperprior = "proper") {
   if (identical(tolower(p$type %||% ""), "tgmrf")) {
     n <- nrow(tg)
     lpk <- p$log_prior_theta_per_grid
@@ -360,7 +396,7 @@
                 lp_in_kernel = if (length(lpk) == n) as.numeric(lpk) else numeric(n),
                 axes = .hp_integrated_axes(tg), declined = character(0)))
   }
-  .hp_collect(tg, function(a) .hp_axis_default(a, p))
+  .hp_collect(tg, function(a) .hp_axis_prior(a, p, hyperprior = hyperprior))
 }
 
 # The default-or-user hyperprior over a joint grid. `blocks` is the block list
@@ -368,13 +404,11 @@
 # passes its one block), `families` names each arm's family by the `phi_<arm>`
 # suffix, and `user` holds the caller's natural-scale densities by role
 # (`sigma`, `alpha`, `phi`), each a function or a per-block list the front door
-# parsed. A user density replaces the default on every axis of its role.
-#
-# `defaults = FALSE` folds the caller's densities alone, the regularizing-prior
-# fold as it stood before any axis carried a default.
+# parsed. A user density replaces the default on every axis of its role, and
+# `hyperprior` (`.HP_CHOICES`) sets what every other axis carries.
 .joint_hyperprior <- function(theta_grid, blocks, families = NULL,
                               user = list(), copy_atom_mass = .TULPA_COPY_ATOM_MASS,
-                              defaults = TRUE) {
+                              hyperprior = "proper") {
   tg <- as.matrix(theta_grid)
   n  <- nrow(tg)
   if (is.null(colnames(tg)) || !n) {
@@ -417,9 +451,8 @@
         lp
       }))
     }
-    if (!defaults) return(list())
     fam <- if (identical(role, "phi")) families[[sub("^phi_", "", bare)]] else NULL
-    .hp_axis_default(bare, bo$block, fam)
+    .hp_axis_prior(bare, bo$block, fam, hyperprior)
   })
 }
 

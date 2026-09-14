@@ -242,15 +242,13 @@ therefore positive and asymmetric, and correlation intervals stay inside
 \verb{(-1, 1)}. The \code{mean} and \code{sd} columns are the weighted moments under either
 layout.
 
-By default (\code{hyperprior = "flat"}) \code{log_prior_theta} is the zero function:
-flat in log(theta), the same convention the nested-Laplace spatial /
-temporal / RE-scale axes use (icar / rw1 / rw2 / ar1's tau / iid, none of
-which carry a hyperprior on their scale either -- see \code{vignette("priors")}).
-Set \code{hyperprior = "pc_lkj"} to use the weakly-informative PC + LKJ hyperprior
-instead, built per block by \code{\link[=re_cov_pc_lkj_prior]{re_cov_pc_lkj_prior()}} and summed over blocks
-(PC prior on each marginal SD via \code{prior_sigma}, LKJ prior on each correlated
-block's correlation matrix via \code{eta}), expressed in the same parameterization
-with the exact change-of-variables Jacobian. Supply a custom \code{log_prior_theta}
+By default (\code{hyperprior = "pc_lkj"}) \code{log_prior_theta} is the
+weakly-informative PC + LKJ hyperprior, built per block by
+\code{\link[=re_cov_pc_lkj_prior]{re_cov_pc_lkj_prior()}} and summed over blocks (PC prior on each marginal SD
+via \code{prior_sigma}, LKJ prior on each correlated block's correlation matrix via
+\code{eta}), expressed in the same parameterization with the exact
+change-of-variables Jacobian. \code{hyperprior = "flat"} makes it the zero
+function, flat in log(theta). Supply a custom \code{log_prior_theta}
 function to override either default (then \code{prior_sigma} / \code{eta} /
 \code{hyperprior} are ignored); it must act on the full stacked parameter vector.
 \code{\link[=tulpa_eb]{tulpa_eb()}} shares this same objective and the same default, so

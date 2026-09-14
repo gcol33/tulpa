@@ -230,3 +230,97 @@ test_that("a free-covariance block the grid does not measure declines by name", 
   expect_equal(tulpa:::.hyper_log_quad_weights(tg, sp, absolute = TRUE),
                tulpa:::.hyper_logchol_log_measure(g, absolute = TRUE))
 })
+
+# --------------------------------------------------------------------------- #
+# The `hyperprior` choice at the two nested-Laplace front doors               #
+# --------------------------------------------------------------------------- #
+
+test_that("hyperprior = \"flat\" keeps only a density the call states", {
+  flat <- function(bare, block = list(), family = NULL)
+    tulpa:::.hp_axis_prior(bare, block, family, "flat")
+  for (a in c("sigma", "sigma2", "tau", "range")) {
+    expect_identical(flat(a)$reason, "flat_hyperprior", info = a)
+  }
+  expect_identical(flat("phi_pos", family = "gaussian")$reason, "flat_hyperprior")
+  expect_identical(flat("rho", list(type = "bym2"))$reason, "flat_hyperprior")
+  expect_identical(flat("rho", list(type = "ar1"))$reason, "flat_hyperprior")
+  expect_identical(flat("L21", list(type = "mcar"))$reason, "flat_hyperprior")
+  # The copy scale's slab is declared on its axis spec under either choice.
+  expect_true(isTRUE(flat("alpha")$spec))
+  # A block that states a density keeps it.
+  x <- c(0.3, 0.9, 2.5)
+  ar1 <- list(type = "ar1", rho_prior = list(alpha = 2, beta = 3))
+  expect_identical(flat("rho", ar1)$fn(x - 1),
+                   tulpa:::.hp_axis_default("rho", ar1)$fn(x - 1))
+  spde <- list(type = "spde", prior_range = c(0.5, 0.1), prior_sigma = c(2, 0.05))
+  for (a in c("range", "sigma")) {
+    expect_identical(flat(a, spde)$fn(x), tulpa:::.hp_axis_default(a, spde)$fn(x),
+                     info = a)
+  }
+  expect_identical(tulpa:::.hp_axis_prior("sigma", hyperprior = "proper")$fn(x),
+                   tulpa:::.hp_axis_default("sigma")$fn(x))
+  expect_error(tulpa:::.hp_choice("pc_lkj"), "hyperprior")
+})
+
+test_that("a flat joint fit is the proper fit with the default density taken out", {
+  skip_on_cran()
+  sim <- ogd_fixture_sim(c(0.8, 0.5, 0.3))
+  fp <- ogd_fixture_fit(sim, 4L, hyperprior = "proper")
+  ff <- ogd_fixture_fit(sim, 4L, hyperprior = "flat")
+  expect_identical(ff$theta_grid, fp$theta_grid)
+  expect_true(all(fp$log_hyperprior != 0))
+  expect_true(all(ff$log_hyperprior == 0))
+  expect_equal(ff$log_marginal, fp$log_marginal - fp$log_hyperprior,
+               tolerance = 1e-12)
+  expect_setequal(names(ff$log_hyperprior_declined), colnames(ff$theta_grid))
+  expect_true(all(unlist(ff$log_hyperprior_declined) == "flat_hyperprior"))
+  expect_true(is.na(ff$log_evidence))
+  expect_identical(ff$log_evidence_declined, "improper_hyperprior")
+  expect_true(is.finite(fp$log_evidence))
+  expect_error(ogd_fixture_fit(sim, 4L, hyperprior = "pc_lkj"), "should be one of")
+})
+
+test_that("both doors apply a stated density under hyperprior = \"flat\"", {
+  skip_on_cran()
+  set.seed(11)
+  S <- 30L
+  nb <- lapply(seq_len(S), function(s) setdiff(c(s - 1L, s + 1L), c(0L, S + 1L)))
+  nn <- lengths(nb)
+  site <- rep(seq_len(S), each = 5L)
+  X <- cbind(1, rnorm(length(site)))
+  field <- as.numeric(scale(cumsum(rnorm(S, 0, 0.4))))
+  y <- rbinom(length(site), 1L, plogis(-0.2 + 0.6 * X[, 2] + field[site]))
+  adj <- list(n_spatial_units = S, adj_row_ptr = c(0L, cumsum(nn)),
+              adj_col_idx = unlist(nb) - 1L, n_neighbors = nn)
+
+  # Single-block door on a pinned precision axis: the flat fit folds nothing,
+  # and its marginal is the proper fit's less the PC density on tau.
+  icar <- c(list(type = "icar", spatial_idx = site,
+                 tau_grid = c(0.5, 1, 2, 4, 8)), adj)
+  np <- tulpa_nested_laplace(y, rep(1L, length(y)), X, prior = icar,
+                             family = "binomial",
+                             control = list(n_threads = 1L, diagnose_k = FALSE))
+  nf <- tulpa_nested_laplace(y, rep(1L, length(y)), X, prior = icar,
+                             family = "binomial", hyperprior = "flat",
+                             control = list(n_threads = 1L, diagnose_k = FALSE))
+  expect_identical(nf$theta_grid, np$theta_grid)
+  expect_true(all(nf$log_hyperprior == 0))
+  expect_equal(nf$log_marginal, np$log_marginal - np$log_hyperprior,
+               tolerance = 1e-12)
+  expect_identical(nf$log_evidence_declined, "improper_hyperprior")
+
+  # Joint door: a `prior_sigma` the caller states is folded under either choice.
+  arm <- list(y = y, n_trials = rep(1L, length(y)), X = X,
+              spatial_idx = as.integer(site), family = "binomial")
+  pr <- c(list(type = "icar", sigma_grid = c(0.3, 0.6, 1.2, 2.4)), adj)
+  ps <- list("pc.prec", c(1, 0.01))
+  jp <- tulpa_nested_laplace_joint(list(occ = arm), pr, prior_sigma = ps,
+                                   control = list(n_threads = 1L, diagnose_k = FALSE))
+  jf <- tulpa_nested_laplace_joint(list(occ = arm), pr, prior_sigma = ps,
+                                   hyperprior = "flat",
+                                   control = list(n_threads = 1L, diagnose_k = FALSE))
+  expect_identical(jf$theta_grid, jp$theta_grid)
+  expect_true("sigma" %in% jf$log_hyperprior_axes)
+  expect_equal(jf$log_hyperprior, jp$log_hyperprior, tolerance = 1e-12)
+  expect_equal(jf$log_marginal, jp$log_marginal, tolerance = 1e-12)
+})

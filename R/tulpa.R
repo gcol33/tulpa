@@ -1352,7 +1352,7 @@
 #'   covariance block, and any accompanying `(1 | g)` term is integrated as a 1x1
 #'   block (nothing is silently conditioned at `sigma_re = 1`). `mode = "laplace"`
 #'   routes to the nested-Laplace `Sigma` integrator ([tulpa_re_cov_nested()],
-#'   CCD design, flat-in-log hyperprior by default -- see `re_prior$hyperprior`);
+#'   CCD design, PC + LKJ hyperprior by default -- see `re_prior$hyperprior`);
 #'   `control$re_cov = "gibbs"` switches to the exact
 #'   Metropolis-within-Gibbs debias ([tulpa_re_cov_gibbs()]), and
 #'   `control$re_cov = "aghq"` keeps the nested integrator but replaces the
@@ -1444,7 +1444,7 @@
 #' @param re_prior Optional `list()` of random-effect / variance-component
 #'   hyperpriors (statistical, so they live in the signature rather than in
 #'   `control`). Recognised entries, each consumed by the backend that needs it:
-#'   `hyperprior` (`"flat"` default or `"pc_lkj"`, `mode = "laplace"` random
+#'   `hyperprior` (`"pc_lkj"` default or `"flat"`, `mode = "laplace"` random
 #'   slopes and `mode = "eb"` -- see [tulpa_re_cov_nested()]), `prior_sigma`
 #'   (PC-prior anchor `c(U, alpha)` on a free RE covariance SD, used when
 #'   `hyperprior = "pc_lkj"`), `eta` (LKJ concentration for a correlated RE

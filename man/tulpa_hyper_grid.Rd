@@ -67,8 +67,9 @@ unnamed).}
 \item \code{adaptive_grid} (\code{FALSE}) -- run the boundary / interior refinement
 pass on every axis whose spec has \code{refinable = TRUE}. New cells are
 appended along the refining axis paired with the boundary modal cell's
-other-axis values, carrying a marginal-scale calibration so they
-contribute on the right scale.
+other-axis values. Each new cell is measured by the part of its row's
+base cells it takes over, so the grid integrates the same prior measure
+with a finer resolution where the mass is.
 \item \code{adaptive_grid_edge_thresh} (\code{0.02}) -- per-axis trigger threshold.
 \item \code{adaptive_grid_max_passes} (\code{1L}) -- cap on refinement passes.
 \item \code{var_of_means_consistency} (\code{FALSE}) -- run a post-integration

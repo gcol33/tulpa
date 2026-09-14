@@ -1478,15 +1478,13 @@ re_cov_pc_lkj_prior <- function(n_coefs, prior_sigma = NULL, eta = NULL,
 #' `(-1, 1)`. The `mean` and `sd` columns are the weighted moments under either
 #' layout.
 #'
-#' By default (`hyperprior = "flat"`) `log_prior_theta` is the zero function:
-#' flat in log(theta), the same convention the nested-Laplace spatial /
-#' temporal / RE-scale axes use (icar / rw1 / rw2 / ar1's tau / iid, none of
-#' which carry a hyperprior on their scale either -- see `vignette("priors")`).
-#' Set `hyperprior = "pc_lkj"` to use the weakly-informative PC + LKJ hyperprior
-#' instead, built per block by [re_cov_pc_lkj_prior()] and summed over blocks
-#' (PC prior on each marginal SD via `prior_sigma`, LKJ prior on each correlated
-#' block's correlation matrix via `eta`), expressed in the same parameterization
-#' with the exact change-of-variables Jacobian. Supply a custom `log_prior_theta`
+#' By default (`hyperprior = "pc_lkj"`) `log_prior_theta` is the
+#' weakly-informative PC + LKJ hyperprior, built per block by
+#' [re_cov_pc_lkj_prior()] and summed over blocks (PC prior on each marginal SD
+#' via `prior_sigma`, LKJ prior on each correlated block's correlation matrix via
+#' `eta`), expressed in the same parameterization with the exact
+#' change-of-variables Jacobian. `hyperprior = "flat"` makes it the zero
+#' function, flat in log(theta). Supply a custom `log_prior_theta`
 #' function to override either default (then `prior_sigma` / `eta` /
 #' `hyperprior` are ignored); it must act on the full stacked parameter vector.
 #' [tulpa_eb()] shares this same objective and the same default, so

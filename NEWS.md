@@ -1,5 +1,24 @@
 # tulpa 0.4.0
 
+## The nested-Laplace doors state their outer prior
+
+* **`tulpa_nested_laplace_joint()` and `tulpa_nested_laplace()` take
+  `hyperprior = c("proper", "flat")`.** `"proper"`, the default, is the per-axis
+  set of #730 and leaves every fit bit-identical. `"flat"` folds no density of
+  the engine's own: each axis the call states no density for is integrated under
+  its cell measure alone, is named in `log_hyperprior_declined` as
+  `"flat_hyperprior"`, and `log_evidence` declines with `"improper_hyperprior"`.
+  A density the call states (`prior_sigma`, `prior_alpha`, `prior_phi`, a
+  block's `rho_prior` / `prior_range` / `prior_sigma`, the copy slab, a tgmrf
+  prior) applies under either. Both doors resolve it through one function,
+  `.hp_axis_prior()`. The joint door's `prior_sigma` / `prior_alpha` /
+  `prior_phi` documentation no longer describes `NULL` as flat, and the
+  `tulpa()` and `tulpa_re_cov_nested()` pages now give `"pc_lkj"` as their
+  default.
+* **`control$local_ccd$rank`** chooses what local-CCD refinement ranks its
+  candidate cells by: `"weight"` (default, unchanged) or `"mass_moved"`, the
+  weight times `|exp(log_box_ratio) - 1|`.
+
 ## A grid-batched species fit is the fit its own call returns
 
 * **Species fitted through the fused batch driver came back as bare grid

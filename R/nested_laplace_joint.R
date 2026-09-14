@@ -166,8 +166,8 @@
 #'
 #' @param prior_sigma,prior_alpha Optional regularizing hyperpriors on the
 #'   donor field amplitude \eqn{\sigma} and on the copy coefficient
-#'   \eqn{\alpha}. Each is `NULL` (flat, default) or a list of the form
-#'   `list(family, params)`:
+#'   \eqn{\alpha}. Each is `NULL` (default: the axis carries what `hyperprior`
+#'   gives it) or a list of the form `list(family, params)`:
 #'   * `list("pc.prec", c(U, alpha))` -- Penalized Complexity prior,
 #'     calibrated by `P(theta > U) = alpha`. Closed-form density
 #'     `lambda * exp(-lambda * theta)` with `lambda = -log(alpha)/U`.
@@ -238,14 +238,15 @@
 #' @param prior_phi Optional regularizing hyperprior on the per-arm
 #'   dispersion axes declared through `phi_grid` (e.g. a Beta precision on a
 #'   cover arm, a negbin dispersion, a Gaussian residual SD). Same families
-#'   as `prior_sigma` -- `NULL` (flat over the phi grid, default),
-#'   `list("pc.prec", c(U, alpha))`, or `list("half_normal", scale)`. A
-#'   single spec re-weights every `phi_<arm>` axis on the grid, the way
+#'   as `prior_sigma` -- `NULL` (default: the axis carries what `hyperprior`
+#'   gives it), `list("pc.prec", c(U, alpha))`, or `list("half_normal", scale)`.
+#'   A single spec re-weights every `phi_<arm>` axis on the grid, the way
 #'   `prior_sigma` re-weights any sigma-named axis; with no `phi_grid` it is
-#'   a no-op. Without it the phi grid carries an implicit flat prior over its
-#'   bounds. The PC scale is the dispersion's own units (a precision for
+#'   a no-op. The PC scale is the dispersion's own units (a precision for
 #'   `beta`, a size for `neg_binomial_2`), so pick `U` at the upper end of
 #'   plausible values.
+#'
+#' @template hyperprior
 #'
 #' @param cell_coupling Character scalar naming a per-cell coupled likelihood
 #'   registered against tulpa's process-global registry (see
@@ -453,7 +454,7 @@
 #'     mode-find) rather than the path the CCD was built for; `FALSE` makes
 #'     `ccd_budget` a hard cap on the whole placement.
 #'   * `local_ccd` (`NULL`) -- local CCD refinement of a multi-block tensor grid.
-#'     `TRUE` (defaults) or a `list(max_cells =, f0 =, skew_max =)` refines a few high-weight,
+#'     `TRUE` (defaults) or a `list(max_cells =, f0 =, skew_max =, rank =)` refines a few high-weight,
 #'     mutually non-adjacent interior cells, replacing each with a small
 #'     curvature-aware CCD node cloud so a coarse base grid resolves the
 #'     sharply-peaked directions without the `k^d` tensor blow-up. The local
@@ -462,7 +463,10 @@
 #'     new solves), warm-started from the cell's inner mode; each refined cell's
 #'     sub-nodes carry partition-of-unity design weights so the total integration
 #'     weight is conserved (no double-count). `max_cells` (`8L`) caps the refined
-#'     cells; `f0` (`1.1`) is the CCD radius. The design scale is shrunk per cell
+#'     cells, chosen in order of `rank`: `"weight"` (default), the cell's
+#'     integration weight, or `"mass_moved"`, the weight times
+#'     `|exp(log_box_ratio) - 1|` the box-mass rule predicts the cell's midpoint
+#'     atom misplaces; `f0` (`1.1`) is the CCD radius. The design scale is shrunk per cell
 #'     so the cloud fits the cell's Voronoi box (the local-Gaussian mass beyond it
 #'     belongs to the neighbouring cells). A cell keeps its cloud only while the
 #'     nodes' own log-marginals stay within `skew_max` (the `gamma3_ok` band,
@@ -1134,6 +1138,7 @@ tulpa_nested_laplace_joint <- function(responses,
                                        prior_sigma = NULL,
                                        prior_alpha = NULL,
                                        prior_phi = NULL,
+                                       hyperprior = c("proper", "flat"),
                                        cell_coupling = "separable",
                                        control = list()) {
     # Renamed knob first (a targeted message beats the generic whitelist one),
@@ -1145,6 +1150,7 @@ tulpa_nested_laplace_joint <- function(responses,
     }
     tulpa_check_control(control, .CONTROL_KEYS$nested_laplace_joint,
                    "tulpa_nested_laplace_joint")
+    hyperprior <- .hp_choice(match.arg(hyperprior))
     # k_quality reliability front door + escalation. The
     # single fit lives in .tulpa_nl_joint_once(); this wrapper resolves the
     # reliability intent, attaches the honest verdict (for BOTH the single- and
@@ -1253,7 +1259,8 @@ tulpa_nested_laplace_joint <- function(responses,
         attach_q(.tulpa_nl_joint_once(responses_i, prior_i, copy_i, phi_grid_i,
                                       prior_sigma_i, prior_alpha, prior_phi,
                                       cell_coupling, ctrl_i,
-                                      placement_axes = phi_movable))
+                                      placement_axes = phi_movable,
+                                      hyperprior = hyperprior))
 
     # Placement pilot (gcol33/tulpa#636). Placement reads an argmax cell and an
     # FD curvature stencil, and reads them off `log_marginal` -- not off the
@@ -1499,7 +1506,8 @@ tulpa_nested_laplace_joint <- function(responses,
             }
             res <- attach_q(.tulpa_nl_joint_once(responses, prior, copy, phi_grid,
                                                  prior_sigma, prior_alpha, prior_phi,
-                                                 cell_coupling, ctrl))
+                                                 cell_coupling, ctrl,
+                                                 hyperprior = hyperprior))
             res$k_quality_rounds <- round
             k_trace <- c(k_trace, res$pareto_k)
             if (!isTRUE(res$k_quality_reached) && !draws_round &&
@@ -1551,7 +1559,8 @@ tulpa_nested_laplace_joint <- function(responses,
                                  prior_sigma = NULL, prior_alpha = NULL,
                                  prior_phi = NULL,
                                  cell_coupling = "separable", control = list(),
-                                 placement_axes = character(0)) {
+                                 placement_axes = character(0),
+                                 hyperprior = "proper") {
     tm <- .tulpa_timer()
     # Resolve and validate the cell-coupling spec name against the C++
     # registry (separable default is auto-registered on first touch). The
@@ -1608,14 +1617,14 @@ tulpa_nested_laplace_joint <- function(responses,
     # a few high-weight, mutually non-adjacent cells, so the base grid can stay
     # coarse at moderate-to-high latent dimension where a uniformly fine tensor is
     # k^d-expensive. `control$local_ccd` is TRUE (defaults) or a list(max_cells=,
-    # f0=, skew_max=); NULL (the default) keeps the unrefined grid. Engages only on
+    # f0=, skew_max=, rank=); NULL (the default) keeps the unrefined grid. Engages only on
     # the multi-block tensor path at >= 4 transformable latent axes with no active
     # phi grid; the single-block path always integrates on the tensor grid
     # unrefined.
     local_ccd                 <- control$local_ccd
     if (!is.null(local_ccd) && !isTRUE(local_ccd) && !is.list(local_ccd)) {
         stop("`control$local_ccd` must be NULL, TRUE, or a ",
-             "list(max_cells=, f0=, skew_max=).", call. = FALSE)
+             "list(max_cells=, f0=, skew_max=, rank=).", call. = FALSE)
     }
     # Adaptive-lattice integrator tuning (integration = "grid_adaptive", the
     # low-dimensional multi-block companion to the CCD; see
@@ -1915,6 +1924,7 @@ tulpa_nested_laplace_joint <- function(responses,
             adaptive_max_frac = adaptive_max_frac,
             adaptive_min_cells = adaptive_min_cells,
             placement_axes = placement_axes,
+            hyperprior = hyperprior,
             timer = tm
         ))
     }
@@ -1991,7 +2001,8 @@ tulpa_nested_laplace_joint <- function(responses,
         .joint_hyperprior(cells, list(c(prior, list(type = type))), hp_families,
                           user = list(sigma = fn_sigma, alpha = fn_alpha,
                                       phi = fn_phi),
-                          copy_atom_mass = copy_atom_mass)
+                          copy_atom_mass = copy_atom_mass,
+                          hyperprior = hyperprior)
     }
     hp_fn <- function(new_cells) hp_record(new_cells)$lp
     theta_grid_init <- backend$theta_grid(grids, cp$has_copy)

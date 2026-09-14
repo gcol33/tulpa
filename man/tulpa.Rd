@@ -104,7 +104,7 @@ as \verb{$beta_prior}.}
 \item{re_prior}{Optional \code{list()} of random-effect / variance-component
 hyperpriors (statistical, so they live in the signature rather than in
 \code{control}). Recognised entries, each consumed by the backend that needs it:
-\code{hyperprior} (\code{"flat"} default or \code{"pc_lkj"}, \code{mode = "laplace"} random
+\code{hyperprior} (\code{"pc_lkj"} default or \code{"flat"}, \code{mode = "laplace"} random
 slopes and \code{mode = "eb"} -- see \code{\link[=tulpa_re_cov_nested]{tulpa_re_cov_nested()}}), \code{prior_sigma}
 (PC-prior anchor \code{c(U, alpha)} on a free RE covariance SD, used when
 \code{hyperprior = "pc_lkj"}), \code{eta} (LKJ concentration for a correlated RE
@@ -245,7 +245,7 @@ several terms together (\code{(1 + x | g) + (1 | h)}) -- each term becomes a
 covariance block, and any accompanying \code{(1 | g)} term is integrated as a 1x1
 block (nothing is silently conditioned at \code{sigma_re = 1}). \code{mode = "laplace"}
 routes to the nested-Laplace \code{Sigma} integrator (\code{\link[=tulpa_re_cov_nested]{tulpa_re_cov_nested()}},
-CCD design, flat-in-log hyperprior by default -- see \code{re_prior$hyperprior});
+CCD design, PC + LKJ hyperprior by default -- see \code{re_prior$hyperprior});
 \code{control$re_cov = "gibbs"} switches to the exact
 Metropolis-within-Gibbs debias (\code{\link[=tulpa_re_cov_gibbs]{tulpa_re_cov_gibbs()}}), and
 \code{control$re_cov = "aghq"} keeps the nested integrator but replaces the

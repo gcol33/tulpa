@@ -12,6 +12,7 @@ tulpa_nested_laplace_joint(
   prior_sigma = NULL,
   prior_alpha = NULL,
   prior_phi = NULL,
+  hyperprior = c("proper", "flat"),
   cell_coupling = "separable",
   control = list()
 )
@@ -156,8 +157,8 @@ as a regular hyperparameter in \code{theta_grid}, \code{theta_mean}, and
 
 \item{prior_sigma, prior_alpha}{Optional regularizing hyperpriors on the
 donor field amplitude \eqn{\sigma} and on the copy coefficient
-\eqn{\alpha}. Each is \code{NULL} (flat, default) or a list of the form
-\code{list(family, params)}:
+\eqn{\alpha}. Each is \code{NULL} (default: the axis carries what \code{hyperprior}
+gives it) or a list of the form \code{list(family, params)}:
 \itemize{
 \item \code{list("pc.prec", c(U, alpha))} -- Penalized Complexity prior,
 calibrated by \code{P(theta > U) = alpha}. Closed-form density
@@ -231,14 +232,31 @@ full escalation.}
 \item{prior_phi}{Optional regularizing hyperprior on the per-arm
 dispersion axes declared through \code{phi_grid} (e.g. a Beta precision on a
 cover arm, a negbin dispersion, a Gaussian residual SD). Same families
-as \code{prior_sigma} -- \code{NULL} (flat over the phi grid, default),
-\code{list("pc.prec", c(U, alpha))}, or \code{list("half_normal", scale)}. A
-single spec re-weights every \verb{phi_<arm>} axis on the grid, the way
+as \code{prior_sigma} -- \code{NULL} (default: the axis carries what \code{hyperprior}
+gives it), \code{list("pc.prec", c(U, alpha))}, or \code{list("half_normal", scale)}.
+A single spec re-weights every \verb{phi_<arm>} axis on the grid, the way
 \code{prior_sigma} re-weights any sigma-named axis; with no \code{phi_grid} it is
-a no-op. Without it the phi grid carries an implicit flat prior over its
-bounds. The PC scale is the dispersion's own units (a precision for
+a no-op. The PC scale is the dispersion's own units (a precision for
 \code{beta}, a size for \code{neg_binomial_2}), so pick \code{U} at the upper end of
 plausible values.}
+
+\item{hyperprior}{The prior an outer hyperparameter axis carries when the
+call states no density for it, \code{"proper"} (default) or \code{"flat"}.
+\code{"proper"} folds a normalised density on the axis's integration coordinate
+into \code{log_marginal}: the PC prior \code{P(sigma > 3) = 0.01} on a standard
+deviation, variance or precision axis, the PC range prior at 0.2 times the
+coordinates' bounding-box diagonal on a range or lengthscale axis, a uniform
+on a bounded axis, and the PC + LKJ prior over a free-covariance block. An
+axis with no sourced density is named in \code{log_hyperprior_declined}.
+\code{"flat"} folds no density of the engine's own, so such an axis is
+integrated under its cell measure alone, is named in
+\code{log_hyperprior_declined} as \code{"flat_hyperprior"}, and the fit's
+\code{log_evidence} declines with \code{"improper_hyperprior"}. A density the call
+states -- a \verb{prior_*} argument, a block's \code{rho_prior}, \code{prior_range} or
+\code{prior_sigma}, the copy coefficient's slab, a \code{\link[=tgmrf]{tgmrf()}} block's own prior --
+applies under either choice. \code{"flat"} is the same choice
+\code{\link[=tulpa_eb]{tulpa_eb()}} and \code{\link[=tulpa_re_cov_nested]{tulpa_re_cov_nested()}} offer beside their \code{"pc_lkj"}
+default.}
 
 \item{cell_coupling}{Character scalar naming a per-cell coupled likelihood
 registered against tulpa's process-global registry (see
@@ -356,7 +374,8 @@ mode-tracked 1D refinement pass triggers on any axis whose marginal
 boundary weight exceeds \code{adaptive_grid_edge_thresh}. New points are
 appended on that axis (interior densification + outward log-spaced
 extension) paired with the boundary cell's modal other-axis values, each
-carrying a calibration term so it contributes on the marginal scale --
+measured by the part of its row's base cells it takes over (a slice past
+the outermost node adds that row's extension region) --
 \code{O(n_new_points)} kernel solves, not the full cartesian product. The
 edge score is \verb{max(marginal_weight_at_boundary, exp(max_log_marginal_at _boundary - max_log_marginal_overall))}, catching both boundary pile-up
 and integrand truncation; \code{0.02} is ~4 log units of decay.
@@ -443,7 +462,7 @@ bounds the escalation (grid seed, step calibration, the 30-round rescue
 mode-find) rather than the path the CCD was built for; \code{FALSE} makes
 \code{ccd_budget} a hard cap on the whole placement.
 \item \code{local_ccd} (\code{NULL}) -- local CCD refinement of a multi-block tensor grid.
-\code{TRUE} (defaults) or a \code{list(max_cells =, f0 =, skew_max =)} refines a few high-weight,
+\code{TRUE} (defaults) or a \code{list(max_cells =, f0 =, skew_max =, rank =)} refines a few high-weight,
 mutually non-adjacent interior cells, replacing each with a small
 curvature-aware CCD node cloud so a coarse base grid resolves the
 sharply-peaked directions without the \code{k^d} tensor blow-up. The local
@@ -452,7 +471,10 @@ the cell's own grid neighbours (no mode-find; only the off-centre nodes are
 new solves), warm-started from the cell's inner mode; each refined cell's
 sub-nodes carry partition-of-unity design weights so the total integration
 weight is conserved (no double-count). \code{max_cells} (\code{8L}) caps the refined
-cells; \code{f0} (\code{1.1}) is the CCD radius. The design scale is shrunk per cell
+cells, chosen in order of \code{rank}: \code{"weight"} (default), the cell's
+integration weight, or \code{"mass_moved"}, the weight times
+\verb{|exp(log_box_ratio) - 1|} the box-mass rule predicts the cell's midpoint
+atom misplaces; \code{f0} (\code{1.1}) is the CCD radius. The design scale is shrunk per cell
 so the cloud fits the cell's Voronoi box (the local-Gaussian mass beyond it
 belongs to the neighbouring cells). A cell keeps its cloud only while the
 nodes' own log-marginals stay within \code{skew_max} (the \code{gamma3_ok} band,

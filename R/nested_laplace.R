@@ -359,6 +359,7 @@
 #'   example tulpaObs threads its marginalized single-season occupancy
 #'   likelihood (a scaled Bernoulli, with the latent occupancy state integrated
 #'   out) through this. Multi-block `prior` only. Default `NULL` (use `family`).
+#' @template hyperprior
 #'
 #' @references
 #' Rue, Martino & Chopin (2009). Approximate Bayesian inference for latent
@@ -386,9 +387,11 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
                             re_idx = NULL, n_re_groups = 0L, sigma_re = 1.0,
                             family = "binomial", phi = 1.0, offset = NULL,
                             likelihood = NULL,
+                            hyperprior = c("proper", "flat"),
                             control = list()) {
 
   tulpa_check_control(control, .CONTROL_KEYS$nested_laplace, "tulpa_nested_laplace")
+  hyperprior <- .hp_choice(match.arg(hyperprior))
   tm <- .tulpa_timer()
 
   # Perf/numerical knobs live in `control = list()` (matching tulpa()); the
@@ -530,7 +533,10 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     checkpoint_path = .ckpt$path,
     prune_tol = prune_tol_eff,
     screen_iters = screen_iters,
-    compute_fitted_var = fitted_var
+    compute_fitted_var = fitted_var,
+    # Read by the dispatchers, which fold the outer hyperprior in R; never
+    # handed to a kernel.
+    hyperprior = hyperprior
   )
 
   # cargs without the checkpoint, for the k-hat diagnostic re-evaluations, and
@@ -1366,13 +1372,15 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   # the "only supported inside a multi-block prior" message rather than a
   # field-name list for fields the single path would never read.
   if (!is.null(spec$cpp_fn)) .nl_check_block_fields(p, c("axis", "single"))
+  hyperprior <- .hp_choice(a$hyperprior)
+  a$hyperprior <- NULL
   p   <- spec$defaults(p, a)
   th  <- spec$theta(p)
   tg  <- .nl_theta_matrix(list(theta_grid = th$grid, theta_names = th$names))
   # The block's hyperprior, folded where every caller of the kernel reads it:
   # the grid solve, the placement refit and its stencil, the k-hat refit. A
   # screened solve ranks its cells with it too.
-  hp  <- list(.nl_block_log_hyperprior(p, tg))
+  hp  <- list(.nl_block_log_hyperprior(p, tg, hyperprior))
   if ((a$prune_tol %||% 0) > 0) a$screen_log_offset <- .nl_screen_log_offset(tg, hp)
   out <- do.call(spec$cpp_fn, c(spec$pack(p), a))
   out$theta_grid  <- th$grid
@@ -1970,7 +1978,8 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     colnames(tg_b) <- colnames(block_grids[[b]])
     blk <- prepared[[b]]
     blk$log_prior_theta_per_grid <- blocks_spec[[b]]$log_prior_theta_per_grid
-    .hp_prefix(.nl_block_log_hyperprior(blk, tg_b), paste0("b", b, "."))
+    .hp_prefix(.nl_block_log_hyperprior(blk, tg_b, .hp_choice(cargs$hyperprior)),
+               paste0("b", b, "."))
   })
   prune_tol <- as.numeric(cargs$prune_tol %||% 0)
 

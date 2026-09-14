@@ -18,6 +18,7 @@ tulpa_nested_laplace(
   phi = 1,
   offset = NULL,
   likelihood = NULL,
+  hyperprior = c("proper", "flat"),
   control = list()
 )
 }
@@ -96,6 +97,24 @@ packages to fit a custom response without adding a family to tulpa -- for
 example tulpaObs threads its marginalized single-season occupancy
 likelihood (a scaled Bernoulli, with the latent occupancy state integrated
 out) through this. Multi-block \code{prior} only. Default \code{NULL} (use \code{family}).}
+
+\item{hyperprior}{The prior an outer hyperparameter axis carries when the
+call states no density for it, \code{"proper"} (default) or \code{"flat"}.
+\code{"proper"} folds a normalised density on the axis's integration coordinate
+into \code{log_marginal}: the PC prior \code{P(sigma > 3) = 0.01} on a standard
+deviation, variance or precision axis, the PC range prior at 0.2 times the
+coordinates' bounding-box diagonal on a range or lengthscale axis, a uniform
+on a bounded axis, and the PC + LKJ prior over a free-covariance block. An
+axis with no sourced density is named in \code{log_hyperprior_declined}.
+\code{"flat"} folds no density of the engine's own, so such an axis is
+integrated under its cell measure alone, is named in
+\code{log_hyperprior_declined} as \code{"flat_hyperprior"}, and the fit's
+\code{log_evidence} declines with \code{"improper_hyperprior"}. A density the call
+states -- a \verb{prior_*} argument, a block's \code{rho_prior}, \code{prior_range} or
+\code{prior_sigma}, the copy coefficient's slab, a \code{\link[=tgmrf]{tgmrf()}} block's own prior --
+applies under either choice. \code{"flat"} is the same choice
+\code{\link[=tulpa_eb]{tulpa_eb()}} and \code{\link[=tulpa_re_cov_nested]{tulpa_re_cov_nested()}} offer beside their \code{"pc_lkj"}
+default.}
 
 \item{control}{Optional list of perf/numerical tuning knobs (statistical
 arguments stay top-level), following the \code{control} convention of

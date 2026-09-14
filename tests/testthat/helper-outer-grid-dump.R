@@ -507,13 +507,16 @@ outer_grid_weight_report <- function(dump, weights = NULL, floor = NULL,
 # The shared measurement fixture                                              #
 # --------------------------------------------------------------------------- #
 
-# Three crossed iid blocks on one gaussian arm, each with its own pinned
-# geometric `sigma_grid`, so the outer grid is a tensor of a size the caller
-# chooses and is identical from run to run. Every file that scores a candidate
-# read against this harness -- the box-mass rule, the barycentre place rule, the
-# descriptor plane -- fits the same model, so it is built once here rather than
-# copied into each.
-ogd_fixture_sim <- function(sd_true, seed = 4242L, G = 30L, N = 600L) {
+# Three crossed iid blocks on one arm, each with its own pinned geometric
+# `sigma_grid`, so the outer grid is a tensor of a size the caller chooses and
+# is identical from run to run. Every file that scores a candidate read against
+# this harness -- the box-mass rule, the barycentre place rule, the descriptor
+# plane -- fits the same model, so it is built once here rather than copied into
+# each. `family` is the arm: `"gaussian"` adds residual noise of SD 0.5 to the
+# linear predictor, `"binomial"` draws one Bernoulli trial at its inverse logit.
+ogd_fixture_sim <- function(sd_true, seed = 4242L, G = 30L, N = 600L,
+                            family = c("gaussian", "binomial")) {
+  family <- match.arg(family)
   set.seed(seed)
   grp <- lapply(seq_along(sd_true), function(k) sample.int(G, N, replace = TRUE))
   X <- cbind(1, stats::rnorm(N))
@@ -521,28 +524,36 @@ ogd_fixture_sim <- function(sd_true, seed = 4242L, G = 30L, N = 600L) {
   for (k in seq_along(sd_true)) {
     eta <- eta + stats::rnorm(G, 0, sd_true[k])[grp[[k]]]
   }
-  list(y = eta + stats::rnorm(N, 0, 0.5), X = X, grp = grp, N = N, G = G,
-       sd_true = sd_true)
+  y <- switch(family,
+              gaussian = eta + stats::rnorm(N, 0, 0.5),
+              binomial = stats::rbinom(N, 1L, stats::plogis(eta)))
+  list(y = y, X = X, grp = grp, N = N, G = G, sd_true = sd_true,
+       family = family)
 }
 
-# `within_cell` is STATED, not inherited (gcol33/tulpa#599). Every other input
-# to these measurements is pinned -- the seed, the grid, the integration rule --
-# and the within-cell construction is the one that was not, so a change to
-# `.NL_DIAG$within_cell` silently re-targeted what the recorded numbers measure.
-# The default here is the engine's own shipped read, so the rules are scored
-# against what a user gets; a file wanting the other read passes it and says so.
+# `within_cell` and `hyperprior` are STATED, not inherited (gcol33/tulpa#599).
+# Every other input to these measurements is pinned -- the seed, the grid, the
+# integration rule -- and a construction the engine defaults silently
+# re-targets what the recorded numbers measure when that default changes. The
+# defaults here are the engine's own, so the rules are scored against what a
+# user gets; a file whose experiment is about another read or another prior
+# passes it and says so.
 ogd_fixture_fit <- function(sim, levels, spread = 3,
-                            within_cell = "box_uniform") {
+                            within_cell = "box_uniform",
+                            hyperprior = "proper") {
   prior <- lapply(seq_along(sim$grp), function(k) {
     s <- sim$sd_true[k]
     list(type = "iid", obs_idx = list(sim$grp[[k]]), n_units = sim$G,
          sigma_grid = exp(seq(log(s / spread), log(s * spread),
                               length.out = levels)))
   })
+  family <- sim$family %||% "gaussian"
   suppressWarnings(tulpa_nested_laplace_joint(
     responses = list(a = list(y = sim$y, n_trials = rep(1L, sim$N), X = sim$X,
-                              family = "gaussian", phi = 0.0625)),
+                              family = family,
+                              phi = if (identical(family, "gaussian")) 0.0625 else 1)),
     prior = prior,
+    hyperprior = hyperprior,
     control = list(n_threads = 1L, diagnose_k = FALSE, max_iter = 100L,
                    tol = 1e-8, integration = "grid",
                    within_cell = within_cell)))
