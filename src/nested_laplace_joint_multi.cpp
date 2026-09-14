@@ -1273,6 +1273,44 @@ inline void apply_phi_overrides_multi(
     }
 }
 
+// Per-cell fixed-effect covariance retention, extracted inside each cell's own
+// solve. `fixed_block_p` is the leading latent block size; zero extracts
+// nothing. `fixed_block_constraints` is a list of 1-based latent index vectors,
+// one per field sum-to-zero group, so the retained block is the constrained
+// covariance the fit's own posterior draws are generated from.
+inline tulpa::JointFixedBlockRequest parse_joint_fixed_block_request(
+    int fixed_block_p, Rcpp::Nullable<Rcpp::List> fixed_block_constraints
+) {
+    tulpa::JointFixedBlockRequest req;
+    if (fixed_block_p > 0) {
+        req.p = fixed_block_p;
+        if (fixed_block_constraints.isNotNull()) {
+            Rcpp::List ac(fixed_block_constraints);
+            req.A_cols.resize(ac.size());
+            for (int g = 0; g < ac.size(); g++) {
+                Rcpp::IntegerVector col = ac[g];
+                req.A_cols[g].reserve(col.size());
+                for (int e = 0; e < col.size(); e++)
+                    req.A_cols[g].push_back(col[e] - 1);
+            }
+        }
+    }
+    return req;
+}
+
+// The outer-grid layout fields every joint multi-block entry attaches to a grid
+// result: the grid it was solved on, its per-block axis offsets and which
+// blocks the reported modes were centred on.
+inline void attach_joint_grid_layout(
+    Rcpp::List& out, const Rcpp::NumericMatrix& theta_grid,
+    const Rcpp::IntegerVector& axis_offsets,
+    const std::vector<tulpa::LatentBlock>& blocks
+) {
+    out["theta_grid"]      = theta_grid;
+    out["axis_offsets"]    = axis_offsets;
+    out["block_centered"]  = tulpa::block_center_flags(blocks);
+}
+
 // Resolve the parallel (copy_blocks, copy_arms) vectors into a per-block map:
 // entry b is the 0-based arm block b is copied onto, or -1 when b is not a copy
 // block. A single -1 (or an empty pair) means "no copy".
@@ -1358,26 +1396,8 @@ Rcpp::List cpp_nested_laplace_joint_multi(
     int                 screen_iters = 2,  // cheap-screen Newton steps per cell
     Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue  // per-cell screen offset
 ) {
-    // Per-cell fixed-effect covariance retention, extracted
-    // inside each cell's own solve. `fixed_block_p` is the
-    // leading latent block size; zero extracts nothing.
-    // `fixed_block_constraints` is a list of 1-based latent index vectors, one
-    // per field sum-to-zero group, so the retained block is the constrained
-    // covariance the fit's own posterior draws are generated from.
-    tulpa::JointFixedBlockRequest fixed_block_req;
-    if (fixed_block_p > 0) {
-        fixed_block_req.p = fixed_block_p;
-        if (fixed_block_constraints.isNotNull()) {
-            Rcpp::List ac(fixed_block_constraints);
-            fixed_block_req.A_cols.resize(ac.size());
-            for (int g = 0; g < ac.size(); g++) {
-                Rcpp::IntegerVector col = ac[g];
-                fixed_block_req.A_cols[g].reserve(col.size());
-                for (int e = 0; e < col.size(); e++)
-                    fixed_block_req.A_cols[g].push_back(col[e] - 1);
-            }
-        }
-    }
+    const tulpa::JointFixedBlockRequest fixed_block_req =
+        parse_joint_fixed_block_request(fixed_block_p, fixed_block_constraints);
     const tulpa::JointFixedBlockRequest* fixed_block_ptr =
         fixed_block_req.active() ? &fixed_block_req : nullptr;
 
@@ -1617,9 +1637,7 @@ Rcpp::List cpp_nested_laplace_joint_multi(
         screen_log_offset.isNull() ? std::vector<double>()
             : Rcpp::as<std::vector<double>>(screen_log_offset)
     );
-    out["theta_grid"]      = theta_grid;
-    out["axis_offsets"]    = axis_offsets;
-    out["block_centered"]  = tulpa::block_center_flags(blocks);
+    attach_joint_grid_layout(out, theta_grid, axis_offsets, blocks);
     return out;
 }
 
@@ -1632,7 +1650,11 @@ Rcpp::List cpp_nested_laplace_joint_multi(
 // axes crossed onto the outer grid: entry k is NULL (arm k keeps phi_batch) or
 // an [n_grid x B] matrix, species s's dispersion at each outer-grid cell, so
 // every species integrates its own dispersion nodes over the shared cell
-// layout. All-coupled families (occu_cover).
+// layout. hessian_pd_mode, step_curvature_mode, force_sparse, fixed_block_p and
+// fixed_block_constraints mean what they mean on the single-species entry.
+// Returns a length-B list; element s is what cpp_nested_laplace_joint_multi
+// returns for species s's responses on the same grid. All-coupled families
+// (occu_cover).
 // ==========================================================================
 
 // [[Rcpp::export]]
@@ -1650,8 +1672,15 @@ Rcpp::List cpp_nested_laplace_joint_multi_batch(
     double              tol = 1e-6,
     std::string         cell_coupling_name = "separable",
     bool                store_Q = true,
-    Rcpp::Nullable<Rcpp::List> phi_grid_per_arm = R_NilValue
+    Rcpp::Nullable<Rcpp::List> phi_grid_per_arm = R_NilValue,
+    int                 hessian_pd_mode = 0,
+    int                 step_curvature_mode = 0,
+    bool                force_sparse = false,
+    int                 fixed_block_p = 0,
+    Rcpp::Nullable<Rcpp::List> fixed_block_constraints = R_NilValue
 ) {
+    const tulpa::JointFixedBlockRequest fixed_block_req =
+        parse_joint_fixed_block_request(fixed_block_p, fixed_block_constraints);
     int n_arms = arms_list.size();
     int Bspec  = blocks_spec.size();
     if (axis_offsets.size() != Bspec + 1)
@@ -1722,13 +1751,18 @@ Rcpp::List cpp_nested_laplace_joint_multi_batch(
 
     Rcpp::List res = tulpa::run_multi_block_nested_laplace_joint_batch(
         n_grid, n_batch, arms, parsed, blocks, n_x_after_re, buf,
-        max_iter, tol, nullptr, spec, store_Q);
-
-    return Rcpp::List::create(
-        Rcpp::Named("per_species")  = res,
-        Rcpp::Named("theta_grid")   = theta_grid,
-        Rcpp::Named("axis_offsets") = axis_offsets
-    );
+        max_iter, tol, spec, store_Q,
+        (hessian_pd_mode == 1) ? tulpa::JointPDMode::PSD : tulpa::JointPDMode::LM,
+        (step_curvature_mode == 1) ? tulpa::CurvatureMode::Expected
+                                   : tulpa::CurvatureMode::Observed,
+        force_sparse,
+        fixed_block_req.active() ? &fixed_block_req : nullptr);
+    for (int s = 0; s < n_batch; s++) {
+        Rcpp::List sp = res[s];
+        attach_joint_grid_layout(sp, theta_grid, axis_offsets, blocks);
+        res[s] = sp;
+    }
+    return res;
 }
 
 // ==========================================================================

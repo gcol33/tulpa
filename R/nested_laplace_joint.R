@@ -2020,7 +2020,7 @@ tulpa_nested_laplace_joint <- function(responses,
                             inner_refresh = inner_refresh,
                             screen_log_offset = if (tol_prune > 0) screen_offset)
     }
-    res <- call_kernel_with_tol(prune_tol_eff)
+    res <- .joint_main_grid_solve(function() call_kernel_with_tol(prune_tol_eff))
     # Safety gate: if the cheap-pass ranking is unreliable (the screen's
     # argmax disagrees with the full-solve argmax, or the kept posterior
     # collapses onto a cell the screen badly mis-estimated), warn and fall
@@ -2284,8 +2284,12 @@ tulpa_nested_laplace_joint <- function(responses,
 # and the cheap-screen depth (`tulpa.nl_screen_iters`). Every backend /
 # refinement call site routes through here, so these reach the cpp entry without
 # threading scalars through the polymorphic backend interface. Options unset ->
-# progress = FALSE, no checkpoint, and the engine's own screening depth.
+# progress = FALSE, no checkpoint, and the engine's own screening depth. A fit
+# running under `tulpa_joint_grid_batch()` has its main grid solve captured or
+# served here (`.joint_grid_batch_intercept()`).
 .cpp_joint_multi <- function(...) {
+  served <- .joint_grid_batch_intercept(list(...))
+  if (!is.null(served)) return(served)
   p <- getOption("tulpa.nl_progress", NULL)
   if (is.null(p)) p <- .nl_progress_args(list(progress = FALSE))
   cp <- getOption("tulpa.nl_checkpoint", NULL)

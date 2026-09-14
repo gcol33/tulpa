@@ -980,8 +980,7 @@
 # `joint_grid`, the cell measure `log_quad` and the axis supports over
 # `res$theta_grid` from the specs that record marks, and the integration
 # weights, with `dnode` the design weights of a CCD design (NULL on a tensor
-# grid). Returns the result and the specs its measure was built from. The one
-# construction behind the multi-block driver and the batched driver.
+# grid). Returns the result and the specs its measure was built from.
 .joint_multi_attach_integration <- function(res, joint_grid, axis_offsets, B,
                                             prepared, hp_families,
                                             fn_sigma, fn_alpha, fn_phi,
@@ -1773,7 +1772,7 @@
             screen_log_offset = if (tol_prune > 0) screen_offset)
     }
     tm$mark("setup")
-    res <- call_kernel_with_tol(prune_tol)
+    res <- .joint_main_grid_solve(function() call_kernel_with_tol(prune_tol))
     # Safety gate: fall back to the full grid when the
     # cheap-pass ranking is unreliable rather than silently returning a
     # pruned answer.

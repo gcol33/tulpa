@@ -394,6 +394,247 @@ static const int CHEAP_SCREEN_ITERS = 2;
 // screening is not measured against: the cells it skips number in the hundreds.
 static const int CHEAP_SCREEN_MIN_KEEP = 5;
 
+// Pack per-cell inner-solve results into the outer-grid result list every
+// nested-Laplace grid entry returns: per-cell log-marginal and solve health,
+// modes, the stored precisions and fixed-effect blocks, and the per-cell
+// diagnostics. `n_threads_outer_realised` < 0 omits that field (an empty grid
+// reports none). The one packing behind run_nested_laplace_grid and the batched
+// joint driver, so a species of a fused solve returns the list a single-species
+// grid returns.
+inline Rcpp::List nl_pack_grid_results(
+    const std::vector<LaplaceResult>& cell_results, int n_grid, int n_x,
+    bool store_modes, int n_threads_outer_realised
+) {
+    Rcpp::NumericVector log_marginals(n_grid);
+    Rcpp::IntegerVector n_iters(n_grid);
+    // Per-cell solve health. log_det_Q and score_max are the inner solve's own
+    // log|H| and achieved joint-score residual at the returned mode; `converged`
+    // is its stopping-rule flag. Reported per cell so a grid fit can see which
+    // cells settled, and so a fixed-hyperparameter export (a 1-cell grid) can
+    // project this result onto the single-fit contract -- see
+    // nl_grid_cell_to_result_list below.
+    Rcpp::NumericVector log_det_Qs(n_grid);
+    Rcpp::NumericVector score_maxs(n_grid);
+    Rcpp::LogicalVector convergeds(n_grid);
+    // The solve never started: the penalized objective was non-finite at the
+    // latent start and no interior point was found. It is a flag rather than a
+    // throw because the solve runs inside an OpenMP region, so the R side is
+    // what turns it into an error -- and it can only do that if the grid
+    // carries it per cell. nl_grid_cell_to_result_list reads this back, which
+    // is what gives the one-cell exports (fit_spde, the GP entries) a flag to
+    // report instead of a hardcoded false.
+    Rcpp::LogicalVector start_infeasibles(n_grid);
+    // The sum-to-zero log-determinant fell back to the PD-enforced value at this
+    // cell, so its weight in the outer integration was formed from a
+    // determinant of H + lambda I rather than of the pinned matrix. Carried per
+    // cell for the same reason start_infeasible is: only the R side can report
+    // it, and only if the grid says which cells it happened at.
+    Rcpp::LogicalVector s2z_fallbacks(n_grid);
+    Rcpp::LogicalVector pd_conditioneds(n_grid);
+    int mode_rows = store_modes ? n_grid : 0;
+    Rcpp::NumericMatrix all_modes(mode_rows, store_modes ? n_x : 0);
+
+    // Per-grid Q in CSC lower-triangle. Populated only when the per-point
+    // solve returns a result with Q_csc_n > 0 (caller opted in via store_Q
+    // on its inner laplace_newton_solve call). Each Q_k may have a different
+    // nnz pattern, so we keep them as a List of three IntegerVector /
+    // NumericVector triples rather than flattening here. The Lists are
+    // *pre-allocated single-threaded*; threads only set slot k via copies
+    // out of the per-cell LaplaceResult after the parallel region.
+    Rcpp::List Q_p_per_grid(n_grid);
+    Rcpp::List Q_i_per_grid(n_grid);
+    Rcpp::List Q_x_per_grid(n_grid);
+
+    // Per-cell inverse block, when the per-point solve was asked for one (the
+    // joint tier's fixed-effect retention). O(m^2) per cell
+    // and flat in the field size, so this is what a caller keeps instead of a
+    // grid's worth of precisions. Every current requester asks for exactly one
+    // block, so slot k holds that block as an m x m matrix.
+    Rcpp::List cov_block_per_grid(n_grid);
+
+    bool any_Q = false;
+    bool any_cov_block = false;
+    // Per-row predictive variance: the row count of the first cell that
+    // reported one. A cell that did not (pruned, or declined) reads NaN.
+    std::size_t eta_var_rows = 0;
+    int skew_cell = -1;  // first grid cell (if any) that computed inner_skew
+    // Subspace-debias draws are PER CELL: the correction enters the reported
+    // marginal as a mixture over the outer grid, so unlike the single-cell
+    // diagnostics above every integrated cell contributes its own sample.
+    int debias_cell = -1;
+    Rcpp::List debias_per_grid(n_grid);
+    Rcpp::NumericVector debias_accept(n_grid, NA_REAL);
+    Rcpp::CharacterVector debias_declined(n_grid, NA_STRING);
+    // Corrected integrated Laplace (inner_cila.h) is per cell for the same
+    // reason: the corrected marginal is a reweighting of every cell's own
+    // particle set, so all of them travel out.
+    bool any_cila = false;
+    Rcpp::List cila_lw_per_grid(n_grid);
+    Rcpp::List cila_fixed_per_grid(n_grid);
+    Rcpp::NumericVector cila_log_marginal(n_grid, NA_REAL);
+    Rcpp::IntegerVector cila_n_points(n_grid, NA_INTEGER);
+    Rcpp::IntegerVector cila_variant(n_grid, NA_INTEGER);
+    Rcpp::CharacterVector cila_declined(n_grid, NA_STRING);
+    Rcpp::CharacterVector cila_fallback(n_grid, NA_STRING);
+    for (int k = 0; k < n_grid; k++) {
+        const LaplaceResult& res = cell_results[k];
+        log_marginals[k] = res.log_marginal;
+        n_iters[k] = res.n_iter;
+        log_det_Qs[k] = res.log_det_Q;
+        score_maxs[k] = res.score_max;
+        convergeds[k] = res.converged;
+        start_infeasibles[k] = res.start_infeasible;
+        s2z_fallbacks[k] = res.s2z_log_det_fallback;
+        pd_conditioneds[k] = res.pd_conditioned;
+        if (store_modes) {
+            int copy_n = std::min(n_x, static_cast<int>(res.mode.size()));
+            for (int j = 0; j < copy_n; j++) all_modes(k, j) = res.mode[j];
+            // Any remaining slots (only hit if the inner solver returned a
+            // shorter mode — should not happen) stay 0.
+        }
+        if (res.Q_csc_n > 0) {
+            any_Q = true;
+            Q_p_per_grid[k] = Rcpp::IntegerVector(
+                res.Q_csc_p.begin(), res.Q_csc_p.end());
+            Q_i_per_grid[k] = Rcpp::IntegerVector(
+                res.Q_csc_i.begin(), res.Q_csc_i.end());
+            Q_x_per_grid[k] = Rcpp::NumericVector(
+                res.Q_csc_x.begin(), res.Q_csc_x.end());
+        }
+        if (!res.re_cov_block_sizes.empty()) {
+            const int m = res.re_cov_block_sizes[0];
+            if (m > 0 && static_cast<int>(res.re_cov_flat.size()) >= m * m) {
+                Rcpp::NumericMatrix Bk(m, m);
+                for (int e = 0; e < m * m; e++) Bk[e] = res.re_cov_flat[e];
+                cov_block_per_grid[k] = Bk;
+                any_cov_block = true;
+            }
+        }
+        if (eta_var_rows == 0) eta_var_rows = res.eta_var.size();
+        if (skew_cell < 0 && !res.inner_skew_idx.empty()) skew_cell = k;
+        if (!res.debias_idx.empty()) {
+            if (debias_cell < 0) debias_cell = k;
+            debias_accept[k] = res.debias_accept;
+            const int q = static_cast<int>(res.debias_idx.size());
+            const int S = res.debias_n_kept;
+            if (S > 0 && res.debias_draws.size() ==
+                             static_cast<std::size_t>(S) * q) {
+                Rcpp::NumericMatrix dr(S, q);
+                for (std::size_t e = 0; e < res.debias_draws.size(); e++) {
+                    dr[e] = res.debias_draws[e];
+                }
+                debias_per_grid[k] = dr;
+            } else {
+                debias_declined[k] = res.debias_declined;
+            }
+        }
+        if (res.cila_requested) {
+            any_cila = true;
+            cila_log_marginal[k] = res.cila_log_marginal;
+            cila_n_points[k] = res.cila_n_points;
+            cila_variant[k] = res.cila_variant;
+            if (!res.cila_declined.empty()) cila_declined[k] = res.cila_declined;
+            if (!res.cila_fallback.empty()) cila_fallback[k] = res.cila_fallback;
+            if (!res.cila_log_w.empty()) {
+                cila_lw_per_grid[k] = Rcpp::NumericVector(
+                    res.cila_log_w.begin(), res.cila_log_w.end());
+            }
+            const int M = res.cila_n_points;
+            const int p = res.cila_n_fixed;
+            if (M > 0 && p > 0 &&
+                res.cila_fixed.size() == static_cast<std::size_t>(M) *
+                                         static_cast<std::size_t>(p)) {
+                Rcpp::NumericMatrix fx(M, p);
+                for (std::size_t e = 0; e < res.cila_fixed.size(); e++) {
+                    fx[e] = res.cila_fixed[e];
+                }
+                cila_fixed_per_grid[k] = fx;
+            }
+        }
+    }
+
+    Rcpp::List out = Rcpp::List::create(
+        Rcpp::Named("log_marginal") = log_marginals,
+        Rcpp::Named("n_iter") = n_iters,
+        Rcpp::Named("n_grid") = n_grid
+    );
+    out["log_det_Q"] = log_det_Qs;
+    out["score_max"] = score_maxs;
+    out["converged"] = convergeds;
+    out["start_infeasible"] = start_infeasibles;
+    out["s2z_log_det_fallback"] = s2z_fallbacks;
+    out["pd_conditioned"] = pd_conditioneds;
+    if (n_threads_outer_realised >= 0)
+        out["n_threads_outer_realised"] = n_threads_outer_realised;
+    if (store_modes) out["modes"] = all_modes;
+    if (any_Q) {
+        out["Q_csc_p_per_grid"] = Q_p_per_grid;
+        out["Q_csc_i_per_grid"] = Q_i_per_grid;
+        out["Q_csc_x_per_grid"] = Q_x_per_grid;
+        out["Q_csc_n"] = n_x;
+    }
+    if (any_cov_block) out["cov_block_per_grid"] = cov_block_per_grid;
+    if (eta_var_rows > 0) {
+        const int n_rows = static_cast<int>(eta_var_rows);
+        Rcpp::NumericMatrix fitted_eta_var(n_grid, n_rows);
+        std::fill(fitted_eta_var.begin(), fitted_eta_var.end(), NA_REAL);
+        for (int k = 0; k < n_grid; k++) {
+            const std::vector<double>& v = cell_results[k].eta_var;
+            if (v.size() != eta_var_rows) continue;
+            for (int r = 0; r < n_rows; r++) fitted_eta_var(k, r) = v[r];
+        }
+        out["fitted_eta_var"] = fitted_eta_var;
+    }
+    // Inner-Laplace skewness diagnostic (opt-in, computed on the full solve
+    // of a single cell -- see the compute_skew doc on
+    // run_multi_block_nested_laplace). Emits the FIRST cell that populated
+    // it; the intended caller always passes a length-1 grid when requesting
+    // this, so there is only ever one cell to report.
+    if (skew_cell >= 0) {
+        const LaplaceResult& res = cell_results[skew_cell];
+        Rcpp::IntegerVector idx_r(res.inner_skew_idx.size());
+        for (std::size_t k = 0; k < res.inner_skew_idx.size(); k++) {
+            idx_r[k] = res.inner_skew_idx[k] + 1;
+        }
+        out["inner_skew"] = res.inner_skew;
+        out["inner_skew_gamma1"] = res.inner_skew_gamma1;
+        out["inner_skew_gamma1_declined"] = res.inner_skew_gamma1_declined;
+        out["inner_skew_idx"] = idx_r;
+        out["inner_skew_dropped"] = res.inner_skew_dropped;
+        out["inner_skew_declined"] = res.inner_skew_declined;
+        if (!res.inner_skew_arms_declined.empty()) {
+            Rcpp::IntegerVector arms_r(res.inner_skew_arms_declined.size());
+            for (std::size_t k = 0; k < res.inner_skew_arms_declined.size(); k++) {
+                arms_r[k] = res.inner_skew_arms_declined[k] + 1;
+            }
+            out["inner_skew_arms_declined"] = arms_r;
+        }
+        out["inner_skew_cell"] = skew_cell + 1;
+        attach_inner_is_fields(out, res);
+    }
+    if (debias_cell >= 0) {
+        const LaplaceResult& res = cell_results[debias_cell];
+        Rcpp::IntegerVector idx_r(res.debias_idx.size());
+        for (std::size_t k = 0; k < res.debias_idx.size(); k++) {
+            idx_r[k] = res.debias_idx[k] + 1;
+        }
+        out["debias_idx"] = idx_r;
+        out["debias_draws_per_grid"] = debias_per_grid;
+        out["debias_accept"] = debias_accept;
+        out["debias_declined"] = debias_declined;
+    }
+    if (any_cila) {
+        out["cila_log_w_per_grid"]  = cila_lw_per_grid;
+        out["cila_fixed_per_grid"]  = cila_fixed_per_grid;
+        out["cila_log_marginal"]    = cila_log_marginal;
+        out["cila_n_points"]        = cila_n_points;
+        out["cila_variant"]         = cila_variant;
+        out["cila_declined"]        = cila_declined;
+        out["cila_fallback"]        = cila_fallback;
+    }
+    return out;
+}
+
 template<typename SolveAtTheta, typename CheapEval = NoCheapEval,
          typename ResumeRefill = NoResumeRefill>
 inline Rcpp::List run_nested_laplace_grid(
@@ -448,67 +689,9 @@ inline Rcpp::List run_nested_laplace_grid(
         }
     }
 
-    Rcpp::NumericVector log_marginals(n_grid);
-    Rcpp::IntegerVector n_iters(n_grid);
-    // Per-cell solve health. log_det_Q and score_max are the inner solve's own
-    // log|H| and achieved joint-score residual at the returned mode; `converged`
-    // is its stopping-rule flag. Reported per cell so a grid fit can see which
-    // cells settled, and so a fixed-hyperparameter export (a 1-cell grid) can
-    // project this result onto the single-fit contract -- see
-    // nl_grid_cell_to_result_list below.
-    Rcpp::NumericVector log_det_Qs(n_grid);
-    Rcpp::NumericVector score_maxs(n_grid);
-    Rcpp::LogicalVector convergeds(n_grid);
-    // The solve never started: the penalized objective was non-finite at the
-    // latent start and no interior point was found. It is a flag rather than a
-    // throw because the solve runs inside an OpenMP region, so the R side is
-    // what turns it into an error -- and it can only do that if the grid
-    // carries it per cell. nl_grid_cell_to_result_list reads this back, which
-    // is what gives the one-cell exports (fit_spde, the GP entries) a flag to
-    // report instead of a hardcoded false.
-    Rcpp::LogicalVector start_infeasibles(n_grid);
-    // The sum-to-zero log-determinant fell back to the PD-enforced value at this
-    // cell, so its weight in the outer integration was formed from a
-    // determinant of H + lambda I rather than of the pinned matrix. Carried per
-    // cell for the same reason start_infeasible is: only the R side can report
-    // it, and only if the grid says which cells it happened at.
-    Rcpp::LogicalVector s2z_fallbacks(n_grid);
-    Rcpp::LogicalVector pd_conditioneds(n_grid);
-    int mode_rows = store_modes ? n_grid : 0;
-    Rcpp::NumericMatrix all_modes(mode_rows, store_modes ? n_x : 0);
-
-    // Per-grid Q in CSC lower-triangle. Populated only when the per-point
-    // solve returns a result with Q_csc_n > 0 (caller opted in via store_Q
-    // on its inner laplace_newton_solve call). Each Q_k may have a different
-    // nnz pattern, so we keep them as a List of three IntegerVector /
-    // NumericVector triples rather than flattening here. The Lists are
-    // *pre-allocated single-threaded*; threads only set slot k via copies
-    // out of the per-cell LaplaceResult after the parallel region.
-    Rcpp::List Q_p_per_grid(n_grid);
-    Rcpp::List Q_i_per_grid(n_grid);
-    Rcpp::List Q_x_per_grid(n_grid);
-
-    // Per-cell inverse block, when the per-point solve was asked for one (the
-    // joint tier's fixed-effect retention). O(m^2) per cell
-    // and flat in the field size, so this is what a caller keeps instead of a
-    // grid's worth of precisions. Every current requester asks for exactly one
-    // block, so slot k holds that block as an m x m matrix.
-    Rcpp::List cov_block_per_grid(n_grid);
-
     if (n_grid <= 0) {
-        Rcpp::List out = Rcpp::List::create(
-            Rcpp::Named("log_marginal") = log_marginals,
-            Rcpp::Named("n_iter") = n_iters,
-            Rcpp::Named("n_grid") = n_grid
-        );
-        out["log_det_Q"] = log_det_Qs;
-        out["score_max"] = score_maxs;
-        out["converged"] = convergeds;
-        out["start_infeasible"] = start_infeasibles;
-        out["s2z_log_det_fallback"] = s2z_fallbacks;
-        out["pd_conditioned"] = pd_conditioneds;
-        if (store_modes) out["modes"] = all_modes;
-        return out;
+        return nl_pack_grid_results(std::vector<LaplaceResult>(), 0, n_x,
+                                    store_modes, -1);
     }
 
     // Clamp the outer width to the environment (OMP_NUM_THREADS via
@@ -1162,188 +1345,13 @@ inline Rcpp::List run_nested_laplace_grid(
         raise_if_cell_failed();
     }
 
-    // -------- Merge POD results into the Rcpp output (single-threaded) --------
-    bool any_Q = false;
-    bool any_cov_block = false;
-    // Per-row predictive variance: the row count of the first cell that
-    // reported one. A cell that did not (pruned, or declined) reads NaN.
-    std::size_t eta_var_rows = 0;
-    int skew_cell = -1;  // first grid cell (if any) that computed inner_skew
-    // Subspace-debias draws are PER CELL: the correction enters the reported
-    // marginal as a mixture over the outer grid, so unlike the single-cell
-    // diagnostics above every integrated cell contributes its own sample.
-    int debias_cell = -1;
-    Rcpp::List debias_per_grid(n_grid);
-    Rcpp::NumericVector debias_accept(n_grid, NA_REAL);
-    Rcpp::CharacterVector debias_declined(n_grid, NA_STRING);
-    // Corrected integrated Laplace (inner_cila.h) is per cell for the same
-    // reason: the corrected marginal is a reweighting of every cell's own
-    // particle set, so all of them travel out.
-    bool any_cila = false;
-    Rcpp::List cila_lw_per_grid(n_grid);
-    Rcpp::List cila_fixed_per_grid(n_grid);
-    Rcpp::NumericVector cila_log_marginal(n_grid, NA_REAL);
-    Rcpp::IntegerVector cila_n_points(n_grid, NA_INTEGER);
-    Rcpp::IntegerVector cila_variant(n_grid, NA_INTEGER);
-    Rcpp::CharacterVector cila_declined(n_grid, NA_STRING);
-    Rcpp::CharacterVector cila_fallback(n_grid, NA_STRING);
-    for (int k = 0; k < n_grid; k++) {
-        const LaplaceResult& res = cell_results[k];
-        log_marginals[k] = res.log_marginal;
-        n_iters[k] = res.n_iter;
-        log_det_Qs[k] = res.log_det_Q;
-        score_maxs[k] = res.score_max;
-        convergeds[k] = res.converged;
-        start_infeasibles[k] = res.start_infeasible;
-        s2z_fallbacks[k] = res.s2z_log_det_fallback;
-        pd_conditioneds[k] = res.pd_conditioned;
-        if (store_modes) {
-            int copy_n = std::min(n_x, static_cast<int>(res.mode.size()));
-            for (int j = 0; j < copy_n; j++) all_modes(k, j) = res.mode[j];
-            // Any remaining slots (only hit if the inner solver returned a
-            // shorter mode — should not happen) stay 0.
-        }
-        if (res.Q_csc_n > 0) {
-            any_Q = true;
-            Q_p_per_grid[k] = Rcpp::IntegerVector(
-                res.Q_csc_p.begin(), res.Q_csc_p.end());
-            Q_i_per_grid[k] = Rcpp::IntegerVector(
-                res.Q_csc_i.begin(), res.Q_csc_i.end());
-            Q_x_per_grid[k] = Rcpp::NumericVector(
-                res.Q_csc_x.begin(), res.Q_csc_x.end());
-        }
-        if (!res.re_cov_block_sizes.empty()) {
-            const int m = res.re_cov_block_sizes[0];
-            if (m > 0 && static_cast<int>(res.re_cov_flat.size()) >= m * m) {
-                Rcpp::NumericMatrix Bk(m, m);
-                for (int e = 0; e < m * m; e++) Bk[e] = res.re_cov_flat[e];
-                cov_block_per_grid[k] = Bk;
-                any_cov_block = true;
-            }
-        }
-        if (eta_var_rows == 0) eta_var_rows = res.eta_var.size();
-        if (skew_cell < 0 && !res.inner_skew_idx.empty()) skew_cell = k;
-        if (!res.debias_idx.empty()) {
-            if (debias_cell < 0) debias_cell = k;
-            debias_accept[k] = res.debias_accept;
-            const int q = static_cast<int>(res.debias_idx.size());
-            const int S = res.debias_n_kept;
-            if (S > 0 && res.debias_draws.size() ==
-                             static_cast<std::size_t>(S) * q) {
-                Rcpp::NumericMatrix dr(S, q);
-                for (std::size_t e = 0; e < res.debias_draws.size(); e++) {
-                    dr[e] = res.debias_draws[e];
-                }
-                debias_per_grid[k] = dr;
-            } else {
-                debias_declined[k] = res.debias_declined;
-            }
-        }
-        if (res.cila_requested) {
-            any_cila = true;
-            cila_log_marginal[k] = res.cila_log_marginal;
-            cila_n_points[k] = res.cila_n_points;
-            cila_variant[k] = res.cila_variant;
-            if (!res.cila_declined.empty()) cila_declined[k] = res.cila_declined;
-            if (!res.cila_fallback.empty()) cila_fallback[k] = res.cila_fallback;
-            if (!res.cila_log_w.empty()) {
-                cila_lw_per_grid[k] = Rcpp::NumericVector(
-                    res.cila_log_w.begin(), res.cila_log_w.end());
-            }
-            const int M = res.cila_n_points;
-            const int p = res.cila_n_fixed;
-            if (M > 0 && p > 0 &&
-                res.cila_fixed.size() == static_cast<std::size_t>(M) *
-                                         static_cast<std::size_t>(p)) {
-                Rcpp::NumericMatrix fx(M, p);
-                for (std::size_t e = 0; e < res.cila_fixed.size(); e++) {
-                    fx[e] = res.cila_fixed[e];
-                }
-                cila_fixed_per_grid[k] = fx;
-            }
-        }
-    }
-
     if (progress) progress->finish();
 
-    Rcpp::List out = Rcpp::List::create(
-        Rcpp::Named("log_marginal") = log_marginals,
-        Rcpp::Named("n_iter") = n_iters,
-        Rcpp::Named("n_grid") = n_grid
-    );
-    out["log_det_Q"] = log_det_Qs;
-    out["score_max"] = score_maxs;
-    out["converged"] = convergeds;
-    out["start_infeasible"] = start_infeasibles;
-    out["s2z_log_det_fallback"] = s2z_fallbacks;
-    out["pd_conditioned"] = pd_conditioneds;
-    out["n_threads_outer_realised"] = n_threads_outer_realised;
-    if (store_modes) out["modes"] = all_modes;
-    if (any_Q) {
-        out["Q_csc_p_per_grid"] = Q_p_per_grid;
-        out["Q_csc_i_per_grid"] = Q_i_per_grid;
-        out["Q_csc_x_per_grid"] = Q_x_per_grid;
-        out["Q_csc_n"] = n_x;
-    }
-    if (any_cov_block) out["cov_block_per_grid"] = cov_block_per_grid;
-    if (eta_var_rows > 0) {
-        const int n_rows = static_cast<int>(eta_var_rows);
-        Rcpp::NumericMatrix fitted_eta_var(n_grid, n_rows);
-        std::fill(fitted_eta_var.begin(), fitted_eta_var.end(), NA_REAL);
-        for (int k = 0; k < n_grid; k++) {
-            const std::vector<double>& v = cell_results[k].eta_var;
-            if (v.size() != eta_var_rows) continue;
-            for (int r = 0; r < n_rows; r++) fitted_eta_var(k, r) = v[r];
-        }
-        out["fitted_eta_var"] = fitted_eta_var;
-    }
-    // Inner-Laplace skewness diagnostic (opt-in, computed on the full solve
-    // of a single cell -- see the compute_skew doc on
-    // run_multi_block_nested_laplace). Emits the FIRST cell that populated
-    // it; the intended caller always passes a length-1 grid when requesting
-    // this, so there is only ever one cell to report.
-    if (skew_cell >= 0) {
-        const LaplaceResult& res = cell_results[skew_cell];
-        Rcpp::IntegerVector idx_r(res.inner_skew_idx.size());
-        for (std::size_t k = 0; k < res.inner_skew_idx.size(); k++) {
-            idx_r[k] = res.inner_skew_idx[k] + 1;
-        }
-        out["inner_skew"] = res.inner_skew;
-        out["inner_skew_gamma1"] = res.inner_skew_gamma1;
-        out["inner_skew_gamma1_declined"] = res.inner_skew_gamma1_declined;
-        out["inner_skew_idx"] = idx_r;
-        out["inner_skew_dropped"] = res.inner_skew_dropped;
-        out["inner_skew_declined"] = res.inner_skew_declined;
-        if (!res.inner_skew_arms_declined.empty()) {
-            Rcpp::IntegerVector arms_r(res.inner_skew_arms_declined.size());
-            for (std::size_t k = 0; k < res.inner_skew_arms_declined.size(); k++) {
-                arms_r[k] = res.inner_skew_arms_declined[k] + 1;
-            }
-            out["inner_skew_arms_declined"] = arms_r;
-        }
-        out["inner_skew_cell"] = skew_cell + 1;
-        attach_inner_is_fields(out, res);
-    }
-    if (debias_cell >= 0) {
-        const LaplaceResult& res = cell_results[debias_cell];
-        Rcpp::IntegerVector idx_r(res.debias_idx.size());
-        for (std::size_t k = 0; k < res.debias_idx.size(); k++) {
-            idx_r[k] = res.debias_idx[k] + 1;
-        }
-        out["debias_idx"] = idx_r;
-        out["debias_draws_per_grid"] = debias_per_grid;
-        out["debias_accept"] = debias_accept;
-        out["debias_declined"] = debias_declined;
-    }
-    if (any_cila) {
-        out["cila_log_w_per_grid"]  = cila_lw_per_grid;
-        out["cila_fixed_per_grid"]  = cila_fixed_per_grid;
-        out["cila_log_marginal"]    = cila_log_marginal;
-        out["cila_n_points"]        = cila_n_points;
-        out["cila_variant"]         = cila_variant;
-        out["cila_declined"]        = cila_declined;
-        out["cila_fallback"]        = cila_fallback;
-    }
+    Rcpp::List out = nl_pack_grid_results(cell_results, n_grid, n_x,
+                                          store_modes,
+                                          n_threads_outer_realised);
+    Rcpp::NumericVector log_marginals = out["log_marginal"];
+
     if (prune_active) {
         Rcpp::NumericVector cheap_lm_out(n_grid);
         Rcpp::LogicalVector pruned_out(n_grid);

@@ -1,5 +1,38 @@
 # tulpa 0.4.0
 
+## A grid-batched species fit is the fit its own call returns
+
+* **Species fitted through the fused batch driver came back as bare grid
+  results.** `cpp_nested_laplace_joint_multi_batch()` returned per-species
+  log-marginals and modes that a consumer assembled into a fit by hand, so the
+  object lacked the class, fields and post-processing of an ordinary
+  `tulpa_nested_laplace_joint()` fit, and draws, prediction and `fitted()` on it
+  failed. `tulpa_joint_grid_batch(fits)` now takes one zero-argument function
+  per species, each performing an ordinary fit. Each fit runs to its main outer
+  grid solve and hands the kernel request over; one fused solve answers every
+  request; each fit is then replayed with that solve served from the fused
+  result, so every species is built by the code that builds it alone. The
+  requests must agree on everything except arm responses, arm dispersions and
+  dispersion-axis nodes, and a setting the fused driver does not carry
+  (pruning, a warm start, outer threads, tiles, checkpoints, debias, CILA, the
+  inner skew probe) refuses the batch with a `tulpa_grid_batch_ineligible`
+  error rather than solving something else; a replay whose request differs
+  from its capture is refused the same way, and the random number state is put
+  back to where the batch was called before the error leaves. The fused entry
+  gained the single-species driver's `hessian_pd_mode`,
+  `step_curvature_mode`, `force_sparse` and fixed-effect block request, runs
+  the single-species final pass at each species' mode
+  (`joint_newton_finalize_dense()` / `_sparse()`, extracted from the two joint
+  Newton loops) and packs each species through `nl_pack_grid_results()`,
+  extracted from `run_nested_laplace_grid()`. `tulpa_nl_joint_batch()` now
+  returns, per species, the list `cpp_nested_laplace_joint_multi()` returns for
+  that species alone; the hyperprior fold and weights it used to attach are
+  built by the replayed fit. On the coupled occupancy fixture
+  a batched species equals its front-door fit bit for bit, on a fixed grid and
+  on the engine defaults (placement, refinement, outer k-hat): every field,
+  `coef()`, `vcov()`, `confint()` and posterior draws at one seed, with the
+  random number stream left where the sequential fits leave it.
+
 ## The batched joint driver weights its grid the way the multi-block driver does
 
 * **`tulpa_nl_joint_batch()` returned a plain softmax of the kernel's

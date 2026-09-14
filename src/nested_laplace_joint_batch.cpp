@@ -7,26 +7,26 @@
 // bit-identical to its independent single-species fit while the
 // bandwidth-bound per-cell evaluate is amortised across species.
 //
-// Both scatter paths are live and selected by the latent dimension, as in the
-// single-species driver: below SPARSE_THRESHOLD each species carries an n_x by
-// n_x DenseMat and the fused scatter runs through
-// scatter_cell_coupling_batch_dense; at or above it each species carries a
-// SparseHessianBuilder seeded from one fit-level joint pattern and the scatter
-// runs through scatter_cell_coupling_batch_sparse, whose SparseScatterPolicy
-// resolves the (row, col) -> flat-slot caches once per cell for all B species.
+// Both scatter paths are live and selected as the single-species driver selects
+// them (force_sparse, the latent dimension against SPARSE_THRESHOLD, or a block
+// that only scatters sparsely): the dense path carries an n_x by n_x DenseMat
+// per species and scatters through scatter_cell_coupling_batch_dense; the sparse
+// path carries a SparseHessianBuilder per species seeded from one fit-level
+// joint pattern and scatters through scatter_cell_coupling_batch_sparse, whose
+// SparseScatterPolicy resolves the (row, col) -> flat-slot caches once per cell
+// for all B species.
 //
 // Cell-coupling families with ALL arms coupled (occu_cover) only; plain
-// outer-grid sweep with per-species warm-start chaining. An arm dispersion axis
-// crossed onto the grid is loaded per species at each cell (the species' own
-// nodes over the shared cell layout), as the single-species driver's
-// prep_at_grid loads it onto the arm. Returns per-species
-// { log_marginal, modes, n_iter, score_max, converged,
-// Q_csc_*_per_grid } so R unpacks each through the existing single-species
-// post-processing (including .joint_inner_vcov_block for SDs; store_Q stores
-// the converged-mode observed Hessian per grid in CSC lower-triangle,
-// mirroring the single-species path exactly).
+// outer-grid sweep with per-species warm-start chaining, as the single-species
+// serial grid chains. An arm dispersion axis crossed onto the grid is loaded
+// per species at each cell (the species' own nodes over the shared cell
+// layout). The final pass at each species' mode is the single-species loop's
+// own (joint_newton_finalize_dense / _sparse), and each species' cells are packed
+// by nl_pack_grid_results, so a species returns the list the single-species
+// entry returns for its own responses.
 
 #include "nested_laplace_joint_batch.h"
+#include "nested_laplace_grid.h"
 #include "nested_laplace_joint_core.h"
 #include "nested_laplace_joint_multi.h"
 #include "joint_hessian_pattern.h"
@@ -49,42 +49,40 @@ using namespace tulpa;
 
 namespace {
 
-// Per-species inner-solve state: per-arm eta vectors + the scratch the
-// per-species Newton uses. The Hessian container itself lives at driver scope
-// (dense DenseMat or sparse SparseHessianBuilder, by path) so the fused scatter
-// can write all B species in one pass. Allocated once, reused across grid cells.
+// Per-species inner-solve state: the single-species Newton scratch of the path
+// the fit takes, plus the species' own CHOLMOD solver. The Hessian container
+// itself lives at driver scope (dense DenseMat or sparse SparseHessianBuilder,
+// by path) so the fused scatter can write all B species in one pass. Allocated
+// once, reused across grid cells.
 struct SpeciesState {
-    Rcpp::NumericVector x;        // n_x latent
-    Rcpp::NumericVector x_try;    // line-search trial
-    std::vector<Rcpp::NumericVector> etas;      // per-arm, N_k each (species view)
-    std::vector<Rcpp::NumericVector> etas_tmp;  // line-search buffer
-    DenseVec grad;
-    DenseVec delta;
-    DenseCholeskyScratch chol;
-    SparseCholeskySolver sparse;
-    // Pattern-invariant cache for this species' final-pass s2z log-determinant,
-    // reused across all grid cells. All B species share one pattern, but each
-    // owns its own builder + solver, so the cache is per-species. Built lazily
-    // on first use. See S2ZLogDetCache.
-    S2ZLogDetCache s2z_log_det_cache;
+    NewtonScratchJoint       dense;
+    NewtonScratchJointSparse sparse;
+    SparseCholeskySolver     solver;
 
-    // Pattern-invariant cache for the block-Schur inner step + log-determinant on
-    // the s2z large-field path (per species: own A_FF builder + symbolic factor).
-    S2ZBlockSchurCache s2z_block_schur_cache;
-
-    void allocate(int n_x, const std::vector<JointArm>& arms, bool use_sparse) {
-        x = Rcpp::NumericVector(n_x, 0.0);
-        x_try = Rcpp::NumericVector(n_x, 0.0);
-        etas.clear(); etas_tmp.clear();
-        for (const JointArm& a : arms) {
-            etas.emplace_back(a.N, 0.0);
-            etas_tmp.emplace_back(a.N, 0.0);
-        }
-        grad.assign(n_x, 0.0);
-        delta.assign(n_x, 0.0);
-        chol.ensure(use_sparse ? 0 : n_x);
+    void allocate(int n_x, const std::vector<JointArm>& arms, bool use_sparse,
+                  bool want_extract) {
+        if (use_sparse) sparse.allocate(n_x, arms, want_extract);
+        else            dense.allocate(n_x, arms, want_extract);
     }
 };
+
+// The iterate, line-search trial, eta buffers and step of one species, read off
+// whichever scratch its path allocated.
+struct SpeciesView {
+    Rcpp::NumericVector&              x;
+    Rcpp::NumericVector&              x_try;
+    std::vector<Rcpp::NumericVector>& etas;
+    std::vector<Rcpp::NumericVector>& etas_tmp;
+    std::vector<double>&              delta;
+};
+
+inline SpeciesView species_view(SpeciesState& st, bool use_sparse) {
+    if (use_sparse)
+        return SpeciesView{st.sparse.x, st.sparse.x_try, st.sparse.etas,
+                           st.sparse.etas_tmp, st.sparse.delta};
+    return SpeciesView{st.dense.x, st.dense.x_try, st.dense.etas,
+                       st.dense.etas_tmp, st.dense.delta};
+}
 
 // Compute species s's per-arm eta from x into `etas_out` (single-species
 // vectors). Identical to the single-species compute_eta_joint inner body.
@@ -160,37 +158,9 @@ inline double species_cell_loglik(
         });
 }
 
-// Penalised per-species log-posterior at x (for the line search): cell-coupling
-// log-lik + block log-priors + per-arm RE/beta log-prior.
-inline double species_penalized_logpost(
-    const Rcpp::NumericVector& x,
-    std::vector<Rcpp::NumericVector>& etas_tmp,
-    const CellCouplingSpec& spec,
-    const std::vector<int>& coupled_arms,
-    const std::vector<std::vector<std::vector<int>>>& cell_rows,
-    int n_cells,
-    const std::vector<JointArm>& arms,
-    const std::vector<ParsedArm>& parsed,
-    const std::vector<LatentBlock>& blocks,
-    int k_grid,
-    const std::vector<double>& d_fac_cache,
-    const BatchArmBuffers& buf,
-    int s
-) {
-    compute_eta_species(x, etas_tmp, arms, parsed, blocks, k_grid, d_fac_cache);
-    double ll = species_cell_loglik(spec, coupled_arms, cell_rows, n_cells,
-                                    arms, etas_tmp, buf, s);
-    double lp = log_prior_per_arm_re(x, parsed);
-    for (const auto& b : blocks) if (b.log_prior) lp += b.log_prior(x, k_grid);
-    return ll + lp;
-}
-
 // Add the block priors + per-arm beta/RE priors into a freshly-scattered sparse
-// Hessian, then the base ridge. Mirrors the single-species sparse oracle's
-// `scatter_joint_sparse` tail (block add_prior_sparse + per-arm priors +
-// LAPLACE_UNIFORM_RIDGE), so the assembled H and its registered s2z rank-1
-// penalties match the oracle. The s2z penalties are (re)registered by each
-// block's add_prior_sparse on the fresh (zeroed) builder.
+// Hessian: the tail of the single-species sparse scatter, which loads the base
+// ridge separately (the Newton step and the final pass each load it).
 inline void add_species_priors_sparse(
     SparseHessianBuilder&            H,
     DenseVec&                        grad,
@@ -203,33 +173,15 @@ inline void add_species_priors_sparse(
         if (b.add_prior_sparse) b.add_prior_sparse(H, grad, x, k_grid);
     }
     add_per_arm_beta_re_priors_sparse(grad, H, x, parsed);
-    H.add_uniform_ridge(LAPLACE_UNIFORM_RIDGE);
-}
-
-// One sparse Newton step for one species: the exact block-Schur step on the
-// sum-to-zero large-field path (true Newton, quadratic convergence), else the LM
-// escalating-ridge step + Woodbury. Identical step to the single-species sparse
-// oracle (both route through s2z_newton_step). Returns the success flag.
-inline bool species_sparse_step(
-    SparseHessianBuilder&  H,
-    SparseCholeskySolver&  solver,
-    int                    n_x,
-    const DenseVec&        grad,
-    DenseVec&              delta,
-    S2ZBlockSchurCache&    bs_cache
-) {
-    bool used_block_schur = false;
-    return s2z_newton_step(H, solver, n_x, JointPDMode::LM,
-                           grad.data(), delta.data(), used_block_schur, &bs_cache);
 }
 
 } // anonymous namespace
 
 namespace tulpa {
 
-// Batched outer-grid driver (dense). Returns an Rcpp::List of length B; element
-// s is a List(log_marginal[n_grid], modes[n_grid x n_x],
-// n_iter[n_grid]). All-coupled cell-coupling families only.
+// Batched outer-grid driver. Returns an Rcpp::List of length B; element s is
+// the nl_pack_grid_results list of species s. All-coupled cell-coupling
+// families only.
 Rcpp::List run_multi_block_nested_laplace_joint_batch(
     int                              n_grid,
     int                              n_batch,
@@ -240,9 +192,12 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
     const BatchArmBuffers&           buf,
     int                              max_iter,
     double                           tol,
-    std::function<void(int)>         prep_at_grid,
     std::shared_ptr<CellCouplingSpec> spec,
-    bool                             store_Q
+    bool                             store_Q,
+    JointPDMode                      pd_mode,
+    CurvatureMode                    step_curvature,
+    bool                             force_sparse,
+    const JointFixedBlockRequest*    fixed_block
 ) {
     const int n_arms = (int) arms.size();
     const int B = n_batch;
@@ -254,7 +209,6 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
         Rcpp::stop("batched joint path requires a cell-coupling spec with "
                    "coupled arms (occu_cover); none registered.");
     }
-    // All arms must be coupled in this first cut.
     for (int k = 0; k < n_arms; k++) {
         bool found = false;
         for (int c : coupled_arms) if (c == k) { found = true; break; }
@@ -269,64 +223,27 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
 
     int n_x = n_x_after_re;
     for (const auto& b : blocks) n_x = std::max(n_x, b.start + b.size);
-    const bool use_sparse = (n_x >= SPARSE_THRESHOLD);
+    const bool use_sparse = force_sparse || (n_x >= SPARSE_THRESHOLD) ||
+                            blocks_require_sparse(blocks);
+    // The dense single-species loop's own factorization choice, which below the
+    // threshold is the dense Cholesky.
+    const bool dense_factor_sparse = (n_x >= SPARSE_THRESHOLD);
+    const bool want_fixed_block = fixed_block && fixed_block->active();
 
-    // Per-species states + persistent etas buffers (species-major) for the
-    // fused scatter. On the sparse path each species owns a SparseHessianBuilder
-    // initialized with the joint structural pattern -- the same pattern the
-    // single-species sparse oracle factors -- so the assembled Hessian has the
-    // same nonzero structure (and hence the same stored Q) cell-for-cell. The
-    // pattern is fit-level (independent of the outer-grid index), so it is built
-    // once into slot 0 and shared by value into every species' builder.
     std::vector<SpeciesState> st(B);
-    for (int s = 0; s < B; s++) st[s].allocate(n_x, arms, use_sparse);
+    for (int s = 0; s < B; s++)
+        st[s].allocate(n_x, arms, use_sparse, want_fixed_block);
 
     BatchArmBuffers wbuf = buf;  // working copy carries etas (species-major)
-    // Per-species accumulators.
-    std::vector<std::vector<double>> log_marg(B, std::vector<double>(n_grid,
-                                       -std::numeric_limits<double>::infinity()));
-    std::vector<std::vector<double>> modes_flat(B,
-        std::vector<double>((std::size_t) n_grid * n_x, 0.0));
-    std::vector<std::vector<int>> n_iter(B, std::vector<int>(n_grid, 0));
-    // Achieved residual per (species, grid cell); see LaplaceResult::score_max.
-    std::vector<std::vector<double>> score_mx(B, std::vector<double>(n_grid, 0.0));
-    // Whether each (species, grid cell) inner Newton met the convergence test.
-    // n_iter alone cannot say: the failed-solve path takes a damped step and
-    // moves on, so a cell can end with a small n_iter and a step that was never
-    // solved. Reported alongside log_marginal so a caller can tell a converged
-    // cell from one that exhausted max_iter before it is integrated.
-    std::vector<std::vector<int>> converged_at(B, std::vector<int>(n_grid, 0));
-    std::vector<std::vector<double>> prev_mode(B, std::vector<double>(n_x, 0.0));
-    std::vector<bool> have_prev(B, false);
+    std::vector<std::vector<LaplaceResult>> cell_results(
+        B, std::vector<LaplaceResult>(n_grid));
+    // The warm start each species' next cell takes: the previous cell's
+    // reported mode, as the single-species serial grid chains it.
+    std::vector<std::vector<double>> prev_mode(B);
 
-    // Per-species per-grid inner covariance precision Q (the converged-mode
-    // observed Hessian, ridge included) in CSC lower-triangle, mirroring the
-    // single-species store_Q path so the SD post-processing
-    // (.joint_inner_vcov_block) is bit-identical. Lists pre-allocated per
-    // species; slot kg filled in the final mode-pass below.
-    std::vector<Rcpp::List> Q_p_per_sp, Q_i_per_sp, Q_x_per_sp;
-    if (store_Q) {
-        Q_p_per_sp.resize(B); Q_i_per_sp.resize(B); Q_x_per_sp.resize(B);
-        for (int s = 0; s < B; s++) {
-            Q_p_per_sp[s] = Rcpp::List(n_grid);
-            Q_i_per_sp[s] = Rcpp::List(n_grid);
-            Q_x_per_sp[s] = Rcpp::List(n_grid);
-        }
-    }
-
-    // Per-species Hessian containers. Dense path: an n_x x n_x DenseMat per
-    // species. Sparse-native path: a SparseHessianBuilder per species, each
-    // initialized with the joint structural pattern (built once at fit level,
-    // shared by value) so the assembled Hessian matches the single-species
-    // sparse oracle's nonzero structure cell-for-cell.
     std::vector<DenseVec> grad_per_sp(B);
     std::vector<DenseMat> H_per_sp;
     std::vector<SparseHessianBuilder> H_sparse_per_sp;
-    // Sparse scatter policy: owns the per-cell (row, col) -> flat-slot caches.
-    // Allocated once here so the slot lookups (resolved against the shared
-    // pattern) and their backing buffers persist across all grid points and
-    // Newton iterations -- one lookup per cell entry per fit, shared across
-    // every species.
     SparseScatterPolicy sparse_policy;
     if (use_sparse) {
         SparseHessianBuilder pattern;
@@ -337,86 +254,100 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
         H_per_sp.assign(B, DenseMat());
     }
 
+    auto fused_scatter = [&](int kg, CurvatureMode curvature) {
+        for (int s = 0; s < B; s++) grad_per_sp[s].assign(n_x, 0.0);
+        if (use_sparse) {
+            for (int s = 0; s < B; s++) H_sparse_per_sp[s].zero();
+            scatter_cell_coupling_batch_sparse(
+                *spec, coupled_arms, cell_rows, n_cells, arms, parsed, blocks,
+                kg, wbuf, grad_per_sp, H_sparse_per_sp, sparse_policy,
+                curvature, false);
+        } else {
+            for (int s = 0; s < B; s++)
+                H_per_sp[s].assign(n_x, DenseVec(n_x, 0.0));
+            scatter_cell_coupling_batch_dense(
+                *spec, coupled_arms, cell_rows, n_cells, arms, parsed, blocks,
+                kg, wbuf, grad_per_sp, H_per_sp, curvature, false);
+        }
+    };
+
+    auto load_species_etas = [&](int s, const std::vector<Rcpp::NumericVector>& etas) {
+        for (int k = 0; k < n_arms; k++) {
+            const int N_k = arms[k].N;
+            double* dst = wbuf.etas[k].data() + (std::size_t) s * N_k;
+            const double* src = REAL(etas[k]);
+            for (int i = 0; i < N_k; i++) dst[i] = src[i];
+        }
+    };
+
     for (int kg = 0; kg < n_grid; kg++) {
         wbuf.load_grid_cell(kg);
-        if (prep_at_grid) prep_at_grid(kg);
         bool feasible = true;
         for (const auto& b : blocks) {
             if (b.prep && !b.prep(kg)) { feasible = false; break; }
         }
-        if (!feasible) continue;  // -inf log_marginal stays
+        if (!feasible) {
+            for (int s = 0; s < B; s++) {
+                LaplaceResult bad;
+                bad.mode = (static_cast<int>(prev_mode[s].size()) == n_x)
+                           ? prev_mode[s] : std::vector<double>(n_x, 0.0);
+                bad.log_marginal = -std::numeric_limits<double>::infinity();
+                bad.n_iter = 0;
+                bad.converged = false;
+                bad.log_det_Q = 0.0;
+                cell_results[s][kg] = bad;
+                prev_mode[s] = cell_results[s][kg].mode;
+            }
+            continue;
+        }
 
         std::vector<double> d_fac_cache((int) blocks.size());
         for (int b = 0; b < (int) blocks.size(); b++) d_fac_cache[b] = blocks[b].d_fac_at(kg);
 
-        // Warm starts.
         for (int s = 0; s < B; s++) {
-            if (have_prev[s]) for (int j = 0; j < n_x; j++) st[s].x[j] = prev_mode[s][j];
-            else              for (int j = 0; j < n_x; j++) st[s].x[j] = 0.0;
+            SpeciesView v = species_view(st[s], use_sparse);
+            if (static_cast<int>(prev_mode[s].size()) == n_x)
+                for (int j = 0; j < n_x; j++) v.x[j] = prev_mode[s][j];
+            else
+                for (int j = 0; j < n_x; j++) v.x[j] = 0.0;
         }
 
+        std::vector<LaplaceResult> res(B);
         std::vector<bool> converged(B, false);
         // Sentinel for "this species' objective has not been evaluated at the
-        // current iterate yet"; obj_valid gates every read, so the value is
-        // never used, and -inf loses to any real objective if one ever slipped
-        // through.
+        // current iterate yet"; obj_valid gates every read.
         std::vector<double> obj(B, -std::numeric_limits<double>::infinity());
         std::vector<bool> obj_valid(B, false);
         std::vector<NewtonConvState> conv_state(B);
 
         for (int iter = 0; iter < max_iter; iter++) {
-            // 1. compute per-species etas into wbuf (species-major).
             for (int s = 0; s < B; s++) {
                 if (converged[s]) continue;
-                compute_eta_species(st[s].x, st[s].etas, arms, parsed, blocks,
-                                    kg, d_fac_cache);
-                for (int k = 0; k < n_arms; k++) {
-                    const int N_k = arms[k].N;
-                    double* dst = wbuf.etas[k].data() + (std::size_t) s * N_k;
-                    const double* src = REAL(st[s].etas[k]);
-                    for (int i = 0; i < N_k; i++) dst[i] = src[i];
-                }
+                SpeciesView v = species_view(st[s], use_sparse);
+                compute_eta_species(v.x, v.etas, arms, parsed, blocks, kg, d_fac_cache);
+                load_species_etas(s, v.etas);
             }
-            // 2. zero per-species grad/H, fused scatter (one design pass over
-            // cells, every species scattered into its own grad/H).
-            for (int s = 0; s < B; s++) grad_per_sp[s].assign(n_x, 0.0);
-            if (use_sparse) {
-                for (int s = 0; s < B; s++) H_sparse_per_sp[s].zero();
-                scatter_cell_coupling_batch_sparse(
-                    *spec, coupled_arms, cell_rows, n_cells, arms, parsed, blocks,
-                    kg, wbuf, grad_per_sp, H_sparse_per_sp, sparse_policy,
-                    CurvatureMode::Observed, false);
-            } else {
-                for (int s = 0; s < B; s++)
-                    H_per_sp[s].assign(n_x, DenseVec(n_x, 0.0));
-                scatter_cell_coupling_batch_dense(
-                    *spec, coupled_arms, cell_rows, n_cells, arms, parsed, blocks,
-                    kg, wbuf, grad_per_sp, H_per_sp, CurvatureMode::Observed, false);
-            }
-            // 3. per-species priors + solve + line search + convergence.
+            fused_scatter(kg, step_curvature);
             for (int s = 0; s < B; s++) {
                 if (converged[s]) continue;
+                SpeciesView v = species_view(st[s], use_sparse);
                 DenseVec& grad = grad_per_sp[s];
                 bool ok;
                 if (use_sparse) {
                     SparseHessianBuilder& H = H_sparse_per_sp[s];
-                    add_species_priors_sparse(H, grad, st[s].x, blocks, parsed, kg);
-                    ok = species_sparse_step(H, st[s].sparse, n_x, grad, st[s].delta,
-                                             st[s].s2z_block_schur_cache);
+                    add_species_priors_sparse(H, grad, v.x, blocks, parsed, kg);
+                    H.add_uniform_ridge(LAPLACE_UNIFORM_RIDGE);
+                    bool used_block_schur = false;
+                    ok = s2z_newton_step(H, st[s].solver, n_x, pd_mode, grad.data(),
+                                         v.delta.data(), used_block_schur,
+                                         &st[s].sparse.s2z_block_schur_cache);
                 } else {
                     DenseMat& H = H_per_sp[s];
-                    for (const auto& b : blocks) if (b.add_prior) b.add_prior(grad, H, st[s].x, kg);
-                    add_per_arm_beta_re_priors(grad, H, st[s].x, parsed);
-                    // PD-enforcing solve: the occupancy mixture's dark-cell
-                    // term is not concave everywhere, so a fixed-ridge-only
-                    // solve (dispatch_factor_solve) can hand back a non-finite
-                    // step at an indefinite iterate. The single-species dense
-                    // joint loop escalates via joint_pd_step_solve_dense and
-                    // the sparse branch above via joint_pd_step_solve; this
-                    // mirrors both.
-                    ok = joint_pd_step_solve_dense(H, grad, st[s].delta, n_x,
-                                                   st[s].sparse, use_sparse,
-                                                   st[s].chol, JointPDMode::LM);
+                    for (const auto& b : blocks) if (b.add_prior) b.add_prior(grad, H, v.x, kg);
+                    add_per_arm_beta_re_priors(grad, H, v.x, parsed);
+                    ok = joint_pd_step_solve_dense(H, grad, v.delta, n_x,
+                                                   st[s].solver, dense_factor_sparse,
+                                                   st[s].dense.chol, pd_mode);
                 }
                 if (!ok) {
                     // The step was never solved. Move a short way along
@@ -425,168 +356,114 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
                     // not converged.
                     constexpr double kFailedStepDamping = 0.1;
                     for (int j = 0; j < n_x; j++)
-                        if (std::isfinite(st[s].delta[j]))
-                            st[s].x[j] += kFailedStepDamping * st[s].delta[j];
+                        if (std::isfinite(v.delta[j]))
+                            v.x[j] += kFailedStepDamping * v.delta[j];
                     obj_valid[s] = false;
                     converged[s] = false;
-                    n_iter[s][kg] = iter + 1;
+                    res[s].n_iter = iter + 1;
                     continue;
                 }
                 auto eval_obj = [&](const Rcpp::NumericVector& xv) -> double {
-                    return species_penalized_logpost(
-                        xv, st[s].etas_tmp, *spec, coupled_arms, cell_rows, n_cells,
-                        arms, parsed, blocks, kg, d_fac_cache, wbuf, s);
+                    return eval_penalized_log_lik_joint_ll(
+                        xv,
+                        [&](const Rcpp::NumericVector& xe,
+                            std::vector<Rcpp::NumericVector>& e) {
+                            compute_eta_species(xe, e, arms, parsed, blocks, kg,
+                                                d_fac_cache);
+                        },
+                        [&](const Rcpp::NumericVector& xe,
+                            const std::vector<Rcpp::NumericVector>&) {
+                            return log_prior_joint_blocks(xe, blocks, parsed, kg);
+                        },
+                        [&](const std::vector<Rcpp::NumericVector>& e) {
+                            return species_cell_loglik(*spec, coupled_arms,
+                                                       cell_rows, n_cells, arms,
+                                                       e, wbuf, s);
+                        },
+                        v.etas_tmp);
                 };
-                if (!obj_valid[s]) { obj[s] = eval_obj(st[s].x); obj_valid[s] = true; }
-                double slope = newton_decrement(grad, st[s].delta, n_x);
-                double step = line_search_backtrack(st[s].x, st[s].delta, n_x,
+                if (!obj_valid[s]) { obj[s] = eval_obj(v.x); obj_valid[s] = true; }
+                double slope = newton_decrement(grad, v.delta, n_x);
+                double step = line_search_backtrack(v.x, v.delta, n_x,
                                                     obj[s], slope, eval_obj,
-                                                    obj[s], st[s].x_try, nullptr,
+                                                    obj[s], v.x_try, nullptr,
                                                     newton_trust_scale(conv_state[s], slope));
-                n_iter[s][kg] = iter + 1;
-                if (newton_converged(st[s].delta, grad, step, n_x, tol, conv_state[s]))
+                res[s].n_iter = iter + 1;
+                if (newton_converged(v.delta, grad, step, n_x, tol, conv_state[s]))
                     converged[s] = true;
             }
             bool all_conv = true;
             for (int s = 0; s < B; s++) if (!converged[s]) { all_conv = false; break; }
             if (all_conv) break;
         }
-        for (int s = 0; s < B; s++) converged_at[s][kg] = converged[s] ? 1 : 0;
 
-        // Final mode-pass per species: observed Hessian -> log_det -> log_marginal.
+        // Final pass at each species' mode: the fused observed-curvature
+        // scatter, the priors, then the single-species loop's own final pass.
         for (int s = 0; s < B; s++) {
-            compute_eta_species(st[s].x, st[s].etas, arms, parsed, blocks, kg, d_fac_cache);
-            for (int k = 0; k < n_arms; k++) {
-                const int N_k = arms[k].N;
-                double* dst = wbuf.etas[k].data() + (std::size_t) s * N_k;
-                const double* src = REAL(st[s].etas[k]);
-                for (int i = 0; i < N_k; i++) dst[i] = src[i];
-            }
+            SpeciesView v = species_view(st[s], use_sparse);
+            compute_eta_species(v.x, v.etas, arms, parsed, blocks, kg, d_fac_cache);
+            load_species_etas(s, v.etas);
         }
-        for (int s = 0; s < B; s++) grad_per_sp[s].assign(n_x, 0.0);
-        if (use_sparse) {
-            for (int s = 0; s < B; s++) H_sparse_per_sp[s].zero();
-            scatter_cell_coupling_batch_sparse(*spec, coupled_arms, cell_rows,
-                n_cells, arms, parsed, blocks, kg, wbuf, grad_per_sp,
-                H_sparse_per_sp, sparse_policy, CurvatureMode::Observed, false);
-        } else {
-            for (int s = 0; s < B; s++)
-                H_per_sp[s].assign(n_x, DenseVec(n_x, 0.0));
-            scatter_cell_coupling_batch_dense(*spec, coupled_arms, cell_rows,
-                n_cells, arms, parsed, blocks, kg, wbuf, grad_per_sp, H_per_sp,
-                CurvatureMode::Observed, false);
-        }
+        fused_scatter(kg, CurvatureMode::Observed);
         for (int s = 0; s < B; s++) {
+            SpeciesView v = species_view(st[s], use_sparse);
+            LaplaceResult& r = res[s];
+            r.mode.assign(n_x, 0.0);
+            r.converged = converged[s];
+            auto compute_eta = [&](const Rcpp::NumericVector& xe,
+                                   std::vector<Rcpp::NumericVector>& e) {
+                compute_eta_species(xe, e, arms, parsed, blocks, kg, d_fac_cache);
+            };
+            auto center = [&](Rcpp::NumericVector& xc) {
+                center_joint_blocks(xc, blocks, parsed, n_arms, kg,
+                                    [&](int b) { return d_fac_cache[b]; });
+            };
+            auto log_prior = [&](const Rcpp::NumericVector& xe,
+                                 const std::vector<Rcpp::NumericVector>&) {
+                return log_prior_joint_blocks(xe, blocks, parsed, kg);
+            };
+            auto log_lik = [&](const std::vector<Rcpp::NumericVector>& e) {
+                return species_cell_loglik(*spec, coupled_arms, cell_rows,
+                                           n_cells, arms, e, wbuf, s);
+            };
+            auto eval_objective = [&](const Rcpp::NumericVector& xv) -> double {
+                return eval_penalized_log_lik_joint_ll(xv, compute_eta, log_prior,
+                                                       log_lik, v.etas_tmp);
+            };
             DenseVec& grad = grad_per_sp[s];
-            double log_det = 0.0;
             if (use_sparse) {
                 SparseHessianBuilder& H = H_sparse_per_sp[s];
-                add_species_priors_sparse(H, grad, st[s].x, blocks, parsed, kg);
-                // Sum-to-zero rank-1 fields: read log|H + sum_k coef_k 1_k 1_k'|
-                // from a direct factor of the well-conditioned matrix BEFORE
-                // joint_pd_step_solve escalates the ridge (cancellation-free;
-                // matches the dense full-1 1' path and the single-species
-                // oracle). The PD-enforced factor below provides the fallback
-                // log-det when no rank-1 is registered (densified small field).
-                const double S2Z_NA = std::numeric_limits<double>::quiet_NaN();
-                double s2z_log_det = S2Z_NA;
-                if (!H.s2z_rank1.empty()) {
-                    s2z_log_det = s2z_log_det_block_schur(H, H.s2z_rank1, S2Z_NA,
-                                                          &st[s].s2z_block_schur_cache);
-                    if (!std::isfinite(s2z_log_det))
-                        s2z_log_det = s2z_log_det_direct(H, H.s2z_rank1, S2Z_NA,
-                                                         &st[s].s2z_log_det_cache);
-                }
-                // Read before joint_pd_step_solve, which consumes grad.
-                score_mx[s][kg] = max_abs(grad);
-                joint_pd_step_solve(H, st[s].sparse, n_x, JointPDMode::LM,
-                                    grad.data(), st[s].delta.data(), &log_det);
-                if (!H.s2z_rank1.empty() && std::isfinite(s2z_log_det))
-                    log_det = s2z_log_det;
-                if (store_Q) {
-                    Q_p_per_sp[s][kg] = Rcpp::IntegerVector(H.col_ptr.begin(),
-                                                            H.col_ptr.end());
-                    Q_i_per_sp[s][kg] = Rcpp::IntegerVector(H.row_idx.begin(),
-                                                            H.row_idx.end());
-                    Q_x_per_sp[s][kg] = Rcpp::NumericVector(H.values.begin(),
-                                                            H.values.end());
-                }
+                add_species_priors_sparse(H, grad, v.x, blocks, parsed, kg);
+                joint_newton_finalize_sparse(
+                    r, n_x, st[s].sparse, H, grad, st[s].solver,
+                    compute_eta, center, log_prior, log_lik, eval_objective,
+                    store_Q, pd_mode, false, nullptr, nullptr, fixed_block,
+                    nullptr, nullptr, static_cast<std::uint64_t>(kg) + 1ULL,
+                    nullptr);
             } else {
                 DenseMat& H = H_per_sp[s];
-                for (const auto& b : blocks) if (b.add_prior) b.add_prior(grad, H, st[s].x, kg);
-                add_per_arm_beta_re_priors(grad, H, st[s].x, parsed);
-                score_mx[s][kg] = max_abs(grad);
-                // The base ridge is loaded ONCE onto this assembly, and both the
-                // log-determinant and the escalating solve read the same loaded
-                // matrix; letting each entry apply its own would start the
-                // escalation ladder at twice the documented base.
-                add_uniform_ridge_dense(H, n_x, LAPLACE_UNIFORM_RIDGE);
-                const bool pd_at_mode = dispatch_factor_log_det_ridged(
-                    H, n_x, st[s].sparse, use_sparse, st[s].chol, log_det);
-                // Mirrors the single-species dense joint driver's post-loop
-                // fallback (laplace_newton_joint.h): a non-finite log_det means
-                // the Hessian at the returned mode is not PD under the plain
-                // ridge alone. Escalate via the same PD-enforcing solve used
-                // for the per-iteration step above, rather than letting the NaN
-                // propagate into log_marginal.
-                if (!pd_at_mode) {
-                    joint_pd_step_solve_dense_ridged(H, grad, st[s].delta, n_x,
-                                                     st[s].sparse, use_sparse,
-                                                     st[s].chol,
-                                                     JointPDMode::LM, &log_det);
-                }
-                if (store_Q) {
-                    std::vector<int> qp, qi; std::vector<double> qx;
-                    dense_to_csc_lower_drop_raw(H, n_x, SPARSE_DROP_TOL_DISPATCH,
-                                                qp, qi, qx);
-                    Q_p_per_sp[s][kg] = Rcpp::IntegerVector(qp.begin(), qp.end());
-                    Q_i_per_sp[s][kg] = Rcpp::IntegerVector(qi.begin(), qi.end());
-                    Q_x_per_sp[s][kg] = Rcpp::NumericVector(qx.begin(), qx.end());
-                }
+                for (const auto& b : blocks) if (b.add_prior) b.add_prior(grad, H, v.x, kg);
+                add_per_arm_beta_re_priors(grad, H, v.x, parsed);
+                joint_newton_finalize_dense(
+                    r, n_x, st[s].dense, H, grad, st[s].solver,
+                    dense_factor_sparse, compute_eta, center, log_prior,
+                    log_lik, eval_objective, store_Q, pd_mode, false, nullptr,
+                    nullptr, fixed_block, nullptr, nullptr,
+                    static_cast<std::uint64_t>(kg) + 1ULL, nullptr);
             }
-            double ll = species_cell_loglik(*spec, coupled_arms, cell_rows, n_cells,
-                                            arms, st[s].etas, wbuf, s);
-            double lp = log_prior_per_arm_re(st[s].x, parsed);
-            for (const auto& b : blocks) if (b.log_prior) lp += b.log_prior(st[s].x, kg);
-            log_marg[s][kg] = finalize_log_marginal(ll, lp, log_det, n_x);
-
-            // Center (sum-to-zero) with per-arm intercept compensation, then store.
-            center_joint_blocks(st[s].x, blocks, parsed, n_arms, kg,
-                                [&](int b) { return d_fac_cache[b]; });
-            double* mr = modes_flat[s].data() + (std::size_t) kg * n_x;
-            for (int j = 0; j < n_x; j++) mr[j] = st[s].x[j];
-            for (int j = 0; j < n_x; j++) prev_mode[s][j] = st[s].x[j];
-            have_prev[s] = true;
+            cell_results[s][kg] = std::move(r);
+            prev_mode[s] = cell_results[s][kg].mode;
         }
     }
 
-    // Pack per-species results: modes as [n_grid x n_x] row-major matrix.
     Rcpp::List out(B);
     for (int s = 0; s < B; s++) {
-        Rcpp::NumericVector lm(n_grid);
-        Rcpp::IntegerVector ni(n_grid);
-        Rcpp::NumericVector sm(n_grid);
-        Rcpp::LogicalVector cv(n_grid);
-        for (int k = 0; k < n_grid; k++) { lm[k] = log_marg[s][k]; ni[k] = n_iter[s][k];
-                                           sm[k] = score_mx[s][k];
-                                           cv[k] = (converged_at[s][k] != 0); }
-        Rcpp::NumericMatrix md(n_grid, n_x);
-        for (int k = 0; k < n_grid; k++)
-            for (int j = 0; j < n_x; j++)
-                md(k, j) = modes_flat[s][(std::size_t) k * n_x + j];
-        Rcpp::List sp = Rcpp::List::create(
-            Rcpp::Named("log_marginal") = lm,
-            Rcpp::Named("modes")        = md,
-            Rcpp::Named("n_iter")       = ni,
-            Rcpp::Named("score_max")    = sm,
-            Rcpp::Named("converged")    = cv
-        );
-        if (store_Q) {
-            sp["Q_csc_p_per_grid"] = Q_p_per_sp[s];
-            sp["Q_csc_i_per_grid"] = Q_i_per_sp[s];
-            sp["Q_csc_x_per_grid"] = Q_x_per_sp[s];
-            sp["Q_csc_n"]          = n_x;
-        }
+        Rcpp::List sp = nl_pack_grid_results(cell_results[s], n_grid, n_x,
+                                             /*store_modes=*/true,
+                                             /*n_threads_outer_realised=*/1);
+        // The sparse single-species grid reports the outer width its scatter
+        // partition ran at; every species here ran serially.
+        if (use_sparse) sp["n_outer"] = 1;
         out[s] = sp;
     }
     pattern_guard.check("the batched joint nested-Laplace grid");

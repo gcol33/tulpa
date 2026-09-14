@@ -177,6 +177,224 @@ inline bool s2z_newton_step(
     return ok;
 }
 
+// The final pass of the sparse joint Newton solve, from the gradient and the
+// Hessian builder the likelihood + prior scatter filled at the returned iterate
+// `scratch.x` (etas already at that point, no base ridge loaded): the
+// conditioned log-determinant (the sum-to-zero direct factor where one is
+// registered), the log-marginal, the inner-layer probes, the centred mode, the
+// precision snapshot at the mode and the fixed-effect block. `result` arrives
+// with the iteration's `converged` and `n_iter`. The one final pass behind the
+// single-species loop and each species of the batched driver.
+template<typename ComputeEtaJoint, typename CenterEffects,
+         typename ComputeLogPriorJoint, typename JointLogLik,
+         typename EvalObjective>
+inline void joint_newton_finalize_sparse(
+    LaplaceResult& result, int n_x, NewtonScratchJointSparse& scratch,
+    SparseHessianBuilder& H_builder, DenseVec& grad,
+    SparseCholeskySolver& solver,
+    ComputeEtaJoint& compute_eta_joint, CenterEffects& center_effects_fn,
+    ComputeLogPriorJoint& compute_log_prior_joint, JointLogLik& log_lik_fn,
+    EvalObjective& eval_objective,
+    bool store_Q, JointPDMode pd_mode,
+    bool compute_skew, const std::vector<int>* skew_probe_idx,
+    const JointCurvature3Oracles* curvature3_fns,
+    const JointFixedBlockRequest* fixed_block,
+    const SubspaceDebiasOptions* debias, const CilaOptions* cila,
+    std::uint64_t cila_cell_key, const JointEtaVarRequest* eta_var
+) {
+    Rcpp::NumericVector& x = scratch.x;
+    // Read before joint_pd_step_solve below, which consumes grad.
+    result.score_max = max_abs(grad);
+    H_builder.add_uniform_ridge(LAPLACE_UNIFORM_RIDGE);
+
+    // PD-enforced final factorize so log_det is defined even when the mode sits
+    // at an indefinite point (the delta is discarded here; we only need the
+    // conditioned log-determinant for the log-marginal).
+    //
+    // Sum-to-zero rank-1 fields take the direct route: log|H + sum_k coef_k 1_k
+    // 1_k'| is read from a factor of that well-conditioned matrix (the constant
+    // direction is pinned by the rank-1 block, so it is PD on the base ridge and
+    // never triggers LM ridge escalation). This must be computed from the
+    // freshly-scattered base-ridge H, BEFORE joint_pd_step_solve mutates the
+    // diagonal: with the rank-1 left off the stored H, the constant direction of
+    // H is unpinned and joint_pd_step_solve escalates the ridge to factor it,
+    // which would inflate the determinant. Factoring H + 1 1' directly matches
+    // the dense full-1 1' path. LM only (the PSD path densifies the small
+    // Hessian and registers no rank-1).
+    const bool s2z_direct =
+        (pd_mode == JointPDMode::LM) && !H_builder.s2z_rank1.empty();
+    const double S2Z_NA = std::numeric_limits<double>::quiet_NaN();
+    double s2z_log_det = S2Z_NA;
+    if (s2z_direct) {
+        TULPA_PROFILE_PHASE(PHASE_LOG_DET);
+        s2z_log_det = s2z_log_det_block_schur(H_builder, H_builder.s2z_rank1,
+                                              /*fallback=*/S2Z_NA,
+                                              &scratch.s2z_block_schur_cache);
+        if (!std::isfinite(s2z_log_det))
+            s2z_log_det = s2z_log_det_direct(H_builder, H_builder.s2z_rank1,
+                                             /*fallback=*/S2Z_NA,
+                                             &scratch.s2z_log_det_cache);
+        // Neither reader could form a factor of the pinned matrix, so the
+        // PD-enforced value below stands in for it.
+        result.s2z_log_det_fallback = !std::isfinite(s2z_log_det);
+    }
+    // The values as the scatter left them, plus the base ridge. joint_pd_step_solve
+    // below loads the diagonal further on every failed factorization and never
+    // takes the load back off, so the builder afterwards holds H + lambda I --
+    // not the precision at the mode. A covariance read off that is smaller than
+    // the one read off H, so the block and the exported precision are both taken
+    // from this snapshot instead. On the sum-to-zero path the escalation is the
+    // normal case rather than the exception, which is why the snapshot is taken
+    // unconditionally rather than the export being gated on a clean factor.
+    const bool want_block =
+        fixed_block && fixed_block->active() && scratch.extract_solver;
+    const bool want_eta_var =
+        eta_var && eta_var->active() && scratch.extract_solver;
+    std::vector<double> H_values_at_mode;
+    if (store_Q || want_block || want_eta_var) H_values_at_mode = H_builder.values;
+
+    bool pd_conditioned = false;
+    { TULPA_PROFILE_PHASE(PHASE_FACTORIZE);
+      joint_pd_step_solve(H_builder, solver, n_x, pd_mode,
+                          grad.data(), scratch.delta.data(),
+                          &result.log_det_Q, &pd_conditioned); }
+    // Prefer the cancellation-free direct factor; keep the PD-enforced value only
+    // if the direct factor was non-PD (NaN fallback).
+    if (s2z_direct && std::isfinite(s2z_log_det)) result.log_det_Q = s2z_log_det;
+
+    // Whether the Hessian at the returned point is the PD matrix the expansion
+    // needs. On the sum-to-zero path the escalation `pd_conditioned` reports is
+    // an artefact of the rank-1 pins being left off the STORED H, so the reading
+    // there is the direct factor of the pinned matrix, which is the true one.
+    result.pd_conditioned = pd_conditioned;
+    result.hessian_pd_at_mode =
+        s2z_direct ? std::isfinite(s2z_log_det) : !pd_conditioned;
+
+    double log_lik, log_prior;
+    { TULPA_PROFILE_PHASE(PHASE_LOG_LIK_PRIOR);
+      log_lik   = log_lik_fn(scratch.etas);
+      log_prior = compute_log_prior_joint(x, scratch.etas); }
+
+    result.log_marginal = finalize_log_marginal(log_lik, log_prior,
+                                                  result.log_det_Q, n_x);
+
+    // The three inner-layer probes read the live CHOLMOD factor directly, so
+    // each condition below is a way for that factor to hold a different matrix
+    // than the one the solve stepped with. They are separated rather than
+    // collapsed into one flag so a declined fit says WHICH: a probe that never
+    // ran because the solve stalled sends a reader to a different question than
+    // one blocked by the PD mode this fit was configured with.
+    const char* factor_declined = nullptr;
+    if (!result.converged)                    factor_declined = "not_converged";
+    else if (pd_mode != JointPDMode::LM)      factor_declined = "pd_eigen_clamp";
+    else if (!H_builder.s2z_rank1.empty())    factor_declined = "s2z_rank1_factor";
+    else if (!solver.factored())              factor_declined = "factor_unavailable";
+    const bool skew_factor_valid = (factor_declined == nullptr);
+
+    std::vector<double> pre_center_x(n_x);
+    for (int j = 0; j < n_x; j++) pre_center_x[j] = x[j];
+    DenseCholeskyScratch unused_dense_chol;  // sparse-only path never reads it
+    if (compute_skew) {
+        std::vector<int> all_idx;
+        const std::vector<int>& probe =
+            inner_probe_indices(n_x, skew_probe_idx, all_idx);
+        if (!skew_factor_valid) {
+            inner_probe_decline(result, probe, factor_declined);
+        } else if (curvature3_fns) {
+            InnerSkewOutcome sk = compute_inner_skew_gamma3_joint(
+                n_x, pre_center_x, unused_dense_chol, solver, /*use_sparse=*/true,
+                compute_eta_joint, x, scratch.etas, scratch.etas_tmp,
+                *curvature3_fns, probe
+            );
+            result.inner_skew = std::move(sk.gamma3);
+            result.inner_skew_gamma1 = std::move(sk.gamma1);
+            result.inner_skew_gamma1_declined = sk.gamma1_declined;
+            result.inner_skew_idx = probe;
+            result.inner_skew_dropped = sk.n_nonfinite_dropped;
+            result.inner_skew_declined = sk.declined;
+            result.inner_skew_arms_declined = sk.arms_declined;
+        } else {
+            result.inner_skew.assign(probe.size(),
+                                     std::numeric_limits<double>::quiet_NaN());
+            result.inner_skew_idx = probe;
+            result.inner_skew_declined = "curvature3_unavailable";
+            result.inner_skew_gamma1_declined = "curvature3_unavailable";
+        }
+
+        // The likelihood-agnostic inner k-hat over the same probed subspace.
+        if (skew_factor_valid) {
+            InnerISOutcome is_out = compute_inner_is_curve(
+                n_x, pre_center_x, unused_dense_chol, solver, /*use_sparse=*/true,
+                eval_objective, x, probe
+            );
+            result.inner_is_z         = std::move(is_out.z);
+            result.inner_is_log_joint = std::move(is_out.log_joint);
+            result.inner_is_sigma     = std::move(is_out.sigma);
+            result.inner_is_declined  = is_out.declined;
+        }
+    }
+
+    run_subspace_debias(result, n_x, pre_center_x, unused_dense_chol,
+                        solver, /*use_sparse=*/true,
+                        eval_objective, x, debias,
+                        result.converged ? factor_declined : nullptr);
+
+    run_inner_cila(result, n_x, pre_center_x, unused_dense_chol, solver,
+                   /*use_sparse=*/true, eval_objective,
+                   [&](Rcpp::NumericVector& xv) { center_effects_fn(xv); },
+                   x, cila, cila_cell_key);
+
+    { TULPA_PROFILE_PHASE(PHASE_LOG_LIK_PRIOR);
+      center_effects_fn(x); }
+    for (int j = 0; j < n_x; j++) result.mode[j] = x[j];
+
+    // Both read the snapshot taken before the PD-enforced factorize, so the
+    // precision the caller gets is the one the scatter built and the block is a
+    // covariance of that rather than of a ridge-inflated matrix. The pattern is
+    // fit-level and untouched by the escalation, so only the values are held.
+    if (want_block) {
+        extract_joint_fixed_block(
+            H_builder.col_ptr.data(), H_builder.row_idx.data(),
+            H_values_at_mode.data(), n_x,
+            static_cast<int>(H_values_at_mode.size()), *fixed_block,
+            *scratch.extract_solver,
+            result.re_cov_flat, result.re_cov_block_sizes);
+    }
+
+    if (want_eta_var) {
+        RowLoadings loadings;
+        eta_var->loadings(pre_center_x.data(), loadings);
+        result.eta_var.assign(static_cast<std::size_t>(loadings.n_rows()),
+                              std::numeric_limits<double>::quiet_NaN());
+        const auto& r1 = H_builder.s2z_rank1;
+        std::vector<std::vector<int>> pin_groups(r1.size());
+        for (std::size_t k = 0; k < r1.size(); k++) {
+            pin_groups[k].resize(r1[k].n);
+            for (int i = 0; i < r1[k].n; i++) pin_groups[k][i] = r1[k].node(i);
+        }
+        std::vector<double> pin_Dinv;
+        double pin_log_det = 0.0;
+        if (result.hessian_pd_at_mode &&
+            s2z_build_Dinv(r1, H_builder.s2z_coupling, pin_Dinv, pin_log_det)) {
+            extract_joint_eta_var(
+                H_builder.col_ptr.data(), H_builder.row_idx.data(),
+                H_values_at_mode.data(), n_x,
+                static_cast<int>(H_values_at_mode.size()), loadings,
+                pin_groups, pin_Dinv, *scratch.extract_solver, result.eta_var);
+        }
+    }
+
+    if (store_Q) {
+        // Copy the CSC arrays out so the caller doesn't depend on H_builder
+        // staying alive.
+        result.Q_csc_p = H_builder.col_ptr;
+        result.Q_csc_i = H_builder.row_idx;
+        result.Q_csc_x = std::move(H_values_at_mode);
+        result.Q_csc_n = n_x;
+    }
+
+}
+
 // Sparse-H joint Newton solver. Compositional skeleton mirrors
 // laplace_newton_solve_joint_ll exactly; differences are isolated to the H
 // container (SparseHessianBuilder vs DenseMat) and the factor/solve path
@@ -380,195 +598,12 @@ LaplaceResult laplace_newton_solve_joint_sparse_ll(
     { TULPA_PROFILE_PHASE(PHASE_SCATTER);
       scatter_joint_sparse(x, scratch.etas, scratch.grad, H_builder,
                            /*finalize=*/true, /*grad_only=*/false); }
-    // Read before joint_pd_step_solve below, which consumes scratch.grad.
-    result.score_max = max_abs(scratch.grad);
-    H_builder.add_uniform_ridge(LAPLACE_UNIFORM_RIDGE);
-
-    // PD-enforced final factorize so log_det is defined even when the mode sits
-    // at an indefinite point (the delta is discarded here; we only need the
-    // conditioned log-determinant for the log-marginal).
-    //
-    // Sum-to-zero rank-1 fields take the direct route: log|H + sum_k coef_k 1_k
-    // 1_k'| is read from a factor of that well-conditioned matrix (the constant
-    // direction is pinned by the rank-1 block, so it is PD on the base ridge and
-    // never triggers LM ridge escalation). This must be computed from the
-    // freshly-scattered base-ridge H, BEFORE joint_pd_step_solve mutates the
-    // diagonal: with the rank-1 left off the stored H, the constant direction of
-    // H is unpinned and joint_pd_step_solve escalates the ridge to factor it,
-    // which would inflate the determinant. Factoring H + 1 1' directly matches
-    // the dense full-1 1' path. LM only (the PSD path densifies the small
-    // Hessian and registers no rank-1).
-    const bool s2z_direct =
-        (pd_mode == JointPDMode::LM) && !H_builder.s2z_rank1.empty();
-    const double S2Z_NA = std::numeric_limits<double>::quiet_NaN();
-    double s2z_log_det = S2Z_NA;
-    if (s2z_direct) {
-        TULPA_PROFILE_PHASE(PHASE_LOG_DET);
-        s2z_log_det = s2z_log_det_block_schur(H_builder, H_builder.s2z_rank1,
-                                              /*fallback=*/S2Z_NA,
-                                              &scratch.s2z_block_schur_cache);
-        if (!std::isfinite(s2z_log_det))
-            s2z_log_det = s2z_log_det_direct(H_builder, H_builder.s2z_rank1,
-                                             /*fallback=*/S2Z_NA,
-                                             &scratch.s2z_log_det_cache);
-        // Neither reader could form a factor of the pinned matrix, so the
-        // PD-enforced value below stands in for it.
-        result.s2z_log_det_fallback = !std::isfinite(s2z_log_det);
-    }
-    // The values as the scatter left them, plus the base ridge. joint_pd_step_solve
-    // below loads the diagonal further on every failed factorization and never
-    // takes the load back off, so the builder afterwards holds H + lambda I --
-    // not the precision at the mode. A covariance read off that is smaller than
-    // the one read off H, so the block and the exported precision are both taken
-    // from this snapshot instead. On the sum-to-zero path the escalation is the
-    // normal case rather than the exception, which is why the snapshot is taken
-    // unconditionally rather than the export being gated on a clean factor.
-    const bool want_block =
-        fixed_block && fixed_block->active() && scratch.extract_solver;
-    const bool want_eta_var =
-        eta_var && eta_var->active() && scratch.extract_solver;
-    std::vector<double> H_values_at_mode;
-    if (store_Q || want_block || want_eta_var) H_values_at_mode = H_builder.values;
-
-    bool pd_conditioned = false;
-    { TULPA_PROFILE_PHASE(PHASE_FACTORIZE);
-      joint_pd_step_solve(H_builder, solver, n_x, pd_mode,
-                          scratch.grad.data(), scratch.delta.data(),
-                          &result.log_det_Q, &pd_conditioned); }
-    // Prefer the cancellation-free direct factor; keep the PD-enforced value only
-    // if the direct factor was non-PD (NaN fallback).
-    if (s2z_direct && std::isfinite(s2z_log_det)) result.log_det_Q = s2z_log_det;
-
-    // Whether the Hessian at the returned point is the PD matrix the expansion
-    // needs. On the sum-to-zero path the escalation `pd_conditioned` reports is
-    // an artefact of the rank-1 pins being left off the STORED H, so the reading
-    // there is the direct factor of the pinned matrix, which is the true one.
-    result.pd_conditioned = pd_conditioned;
-    result.hessian_pd_at_mode =
-        s2z_direct ? std::isfinite(s2z_log_det) : !pd_conditioned;
-
-    double log_lik, log_prior;
-    { TULPA_PROFILE_PHASE(PHASE_LOG_LIK_PRIOR);
-      log_lik   = log_lik_fn(scratch.etas);
-      log_prior = compute_log_prior_joint(x, scratch.etas); }
-
-    result.log_marginal = finalize_log_marginal(log_lik, log_prior,
-                                                  result.log_det_Q, n_x);
-
-    // The three inner-layer probes read the live CHOLMOD factor directly, so
-    // each condition below is a way for that factor to hold a different matrix
-    // than the one the solve stepped with. They are separated rather than
-    // collapsed into one flag so a declined fit says WHICH: a probe that never
-    // ran because the solve stalled sends a reader to a different question than
-    // one blocked by the PD mode this fit was configured with.
-    const char* factor_declined = nullptr;
-    if (!result.converged)                    factor_declined = "not_converged";
-    else if (pd_mode != JointPDMode::LM)      factor_declined = "pd_eigen_clamp";
-    else if (!H_builder.s2z_rank1.empty())    factor_declined = "s2z_rank1_factor";
-    else if (!solver.factored())              factor_declined = "factor_unavailable";
-    const bool skew_factor_valid = (factor_declined == nullptr);
-
-    std::vector<double> pre_center_x(n_x);
-    for (int j = 0; j < n_x; j++) pre_center_x[j] = x[j];
-    DenseCholeskyScratch unused_dense_chol;  // sparse-only path never reads it
-    if (compute_skew) {
-        std::vector<int> all_idx;
-        const std::vector<int>& probe =
-            inner_probe_indices(n_x, skew_probe_idx, all_idx);
-        if (!skew_factor_valid) {
-            inner_probe_decline(result, probe, factor_declined);
-        } else if (curvature3_fns) {
-            InnerSkewOutcome sk = compute_inner_skew_gamma3_joint(
-                n_x, pre_center_x, unused_dense_chol, solver, /*use_sparse=*/true,
-                compute_eta_joint, x, scratch.etas, scratch.etas_tmp,
-                *curvature3_fns, probe
-            );
-            result.inner_skew = std::move(sk.gamma3);
-            result.inner_skew_gamma1 = std::move(sk.gamma1);
-            result.inner_skew_gamma1_declined = sk.gamma1_declined;
-            result.inner_skew_idx = probe;
-            result.inner_skew_dropped = sk.n_nonfinite_dropped;
-            result.inner_skew_declined = sk.declined;
-            result.inner_skew_arms_declined = sk.arms_declined;
-        } else {
-            result.inner_skew.assign(probe.size(),
-                                     std::numeric_limits<double>::quiet_NaN());
-            result.inner_skew_idx = probe;
-            result.inner_skew_declined = "curvature3_unavailable";
-            result.inner_skew_gamma1_declined = "curvature3_unavailable";
-        }
-
-        // The likelihood-agnostic inner k-hat over the same probed subspace.
-        if (skew_factor_valid) {
-            InnerISOutcome is_out = compute_inner_is_curve(
-                n_x, pre_center_x, unused_dense_chol, solver, /*use_sparse=*/true,
-                eval_objective, x, probe
-            );
-            result.inner_is_z         = std::move(is_out.z);
-            result.inner_is_log_joint = std::move(is_out.log_joint);
-            result.inner_is_sigma     = std::move(is_out.sigma);
-            result.inner_is_declined  = is_out.declined;
-        }
-    }
-
-    run_subspace_debias(result, n_x, pre_center_x, unused_dense_chol,
-                        solver, /*use_sparse=*/true,
-                        eval_objective, x, debias,
-                        result.converged ? factor_declined : nullptr);
-
-    run_inner_cila(result, n_x, pre_center_x, unused_dense_chol, solver,
-                   /*use_sparse=*/true, eval_objective,
-                   [&](Rcpp::NumericVector& xv) { center_effects_fn(xv); },
-                   x, cila, cila_cell_key);
-
-    { TULPA_PROFILE_PHASE(PHASE_LOG_LIK_PRIOR);
-      center_effects_fn(x); }
-    for (int j = 0; j < n_x; j++) result.mode[j] = x[j];
-
-    // Both read the snapshot taken before the PD-enforced factorize, so the
-    // precision the caller gets is the one the scatter built and the block is a
-    // covariance of that rather than of a ridge-inflated matrix. The pattern is
-    // fit-level and untouched by the escalation, so only the values are held.
-    if (want_block) {
-        extract_joint_fixed_block(
-            H_builder.col_ptr.data(), H_builder.row_idx.data(),
-            H_values_at_mode.data(), n_x,
-            static_cast<int>(H_values_at_mode.size()), *fixed_block,
-            *scratch.extract_solver,
-            result.re_cov_flat, result.re_cov_block_sizes);
-    }
-
-    if (want_eta_var) {
-        RowLoadings loadings;
-        eta_var->loadings(pre_center_x.data(), loadings);
-        result.eta_var.assign(static_cast<std::size_t>(loadings.n_rows()),
-                              std::numeric_limits<double>::quiet_NaN());
-        const auto& r1 = H_builder.s2z_rank1;
-        std::vector<std::vector<int>> pin_groups(r1.size());
-        for (std::size_t k = 0; k < r1.size(); k++) {
-            pin_groups[k].resize(r1[k].n);
-            for (int i = 0; i < r1[k].n; i++) pin_groups[k][i] = r1[k].node(i);
-        }
-        std::vector<double> pin_Dinv;
-        double pin_log_det = 0.0;
-        if (result.hessian_pd_at_mode &&
-            s2z_build_Dinv(r1, H_builder.s2z_coupling, pin_Dinv, pin_log_det)) {
-            extract_joint_eta_var(
-                H_builder.col_ptr.data(), H_builder.row_idx.data(),
-                H_values_at_mode.data(), n_x,
-                static_cast<int>(H_values_at_mode.size()), loadings,
-                pin_groups, pin_Dinv, *scratch.extract_solver, result.eta_var);
-        }
-    }
-
-    if (store_Q) {
-        // Copy the CSC arrays out so the caller doesn't depend on H_builder
-        // staying alive.
-        result.Q_csc_p = H_builder.col_ptr;
-        result.Q_csc_i = H_builder.row_idx;
-        result.Q_csc_x = std::move(H_values_at_mode);
-        result.Q_csc_n = n_x;
-    }
+    joint_newton_finalize_sparse(
+        result, n_x, scratch, H_builder, scratch.grad, solver,
+        compute_eta_joint, center_effects_fn, compute_log_prior_joint,
+        log_lik_fn, eval_objective, store_Q, pd_mode, compute_skew,
+        skew_probe_idx, curvature3_fns, fixed_block, debias, cila,
+        cila_cell_key, eta_var);
 
     return result;
 }

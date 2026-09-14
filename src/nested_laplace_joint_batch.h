@@ -622,8 +622,10 @@ inline void scatter_cell_coupling_batch_sparse(
 }
 
 // Batched outer-grid driver. Defined in nested_laplace_joint_batch.cpp.
-// Returns an Rcpp::List of length n_batch; element s is
-// List(log_marginal[n_grid], modes[n_grid x n_x], n_iter, score_max, converged).
+// Returns an Rcpp::List of length n_batch; element s is species s's outer-grid
+// result as nl_pack_grid_results packs it, the list the single-species joint
+// grid returns for that species' responses. `pd_mode`, `step_curvature`,
+// `force_sparse` and `fixed_block` carry the single-species driver's meaning.
 // All-coupled cell-coupling families only (occu_cover); errors otherwise.
 Rcpp::List run_multi_block_nested_laplace_joint_batch(
     int                              n_grid,
@@ -635,9 +637,12 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
     const BatchArmBuffers&           buf,
     int                              max_iter,
     double                           tol,
-    std::function<void(int)>         prep_at_grid,
     std::shared_ptr<CellCouplingSpec> spec,
-    bool                             store_Q = true
+    bool                             store_Q,
+    JointPDMode                      pd_mode,
+    CurvatureMode                    step_curvature,
+    bool                             force_sparse,
+    const JointFixedBlockRequest*    fixed_block
 );
 
 } // namespace tulpa

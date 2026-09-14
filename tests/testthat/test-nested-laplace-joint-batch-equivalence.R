@@ -5,9 +5,10 @@
 # design, one sparsity pattern and one fused cell-coupling scatter. What the
 # sharing is allowed to buy is bandwidth: each species' trajectory is the
 # trajectory of its own independent single-species fit, so the whole stack is
-# verifiable against `tulpa_nl_joint_single()`, which marshals the same
-# `responses` / `prior` through `.tulpa_nl_joint_marshal()` and therefore lands
-# on a byte-identical outer grid.
+# verifiable against `tulpa_nl_joint_single()`, which builds the same request
+# through `.tulpa_nl_joint_request()` and therefore lands on a byte-identical
+# outer grid. Each species' grid result is the single-species kernel's list,
+# field for field; `tulpa_joint_grid_batch()` carries that up to whole fits.
 #
 # Two fixtures, both driven by a coupled spec because the batched entry accepts
 # only families whose every data arm is cell-coupled:
@@ -147,16 +148,9 @@
 # Shared assertions                                                            #
 # --------------------------------------------------------------------------- #
 
-# The oracle is the raw kernel solve; the batched driver folds the regularizing
-# hyperprior into each species' log-marginal on top of it, so the oracle's
-# log-marginal is compared with that fold added.
-.nlb_single_folded <- function(sp, single) {
-  as.numeric(single$log_marginal) + as.numeric(sp$log_hyperprior)
-}
-
 .nlb_expect_numeric_match <- function(sp, single, label,
                                       lm_tol = 1e-8, mode_tol = 1e-7) {
-  expect_equal(as.numeric(sp$log_marginal), .nlb_single_folded(sp, single),
+  expect_equal(as.numeric(sp$log_marginal), as.numeric(single$log_marginal),
                tolerance = lm_tol, info = paste(label, "log_marginal"))
   expect_equal(dim(sp$modes), dim(single$modes),
                info = paste(label, "mode shape"))
@@ -167,8 +161,12 @@
 # The header's claim: the fused scatter changes the cost of a species' solve and
 # nothing else, so every number and the iteration count itself are reproduced.
 .nlb_expect_exact_match <- function(sp, single, label) {
+  expect_identical(names(sp), names(single),
+                   info = paste(label, "the grid result carries the same fields"))
+  expect_identical(sp, single,
+                   info = paste(label, "the grid result is identical"))
   expect_identical(as.numeric(sp$log_marginal),
-                   .nlb_single_folded(sp, single),
+                   as.numeric(single$log_marginal),
                    info = paste(label, "log_marginal is bit-identical"))
   expect_identical(as.numeric(sp$modes), as.numeric(single$modes),
                    info = paste(label, "modes are bit-identical"))
@@ -356,45 +354,135 @@ test_that("the batched entry refuses a family whose arms are not cell-coupled", 
 })
 
 # --------------------------------------------------------------------------- #
-# (5) The weights: the multi-block driver's, on the same grid                  #
+# (7) Whole fits: a fused species is the fit its own front-door call returns   #
 # --------------------------------------------------------------------------- #
 
-# Each species' weights must be the ones the multi-block driver reports when it
-# fits that species alone on the same fixed grid: the hyperprior folded into the
-# log-marginal and the cell measure applied, not a softmax of the kernel's
-# log-marginal. The sigma nodes are unevenly spaced on log sigma, so the cell
-# measure is not constant and a plain softmax cannot match.
-test_that("batched weights are the multi-block driver's weights on the same grid", {
+# The fit fields that record wall-clock time, which no two runs share.
+.nlb_timing_fields <- c("timing", "diagnose_cost_ratio")
+
+.nlb_max_abs_diff <- function(a, b) {
+  a <- suppressWarnings(as.numeric(unlist(a)))
+  b <- suppressWarnings(as.numeric(unlist(b)))
+  ok <- is.finite(a) & is.finite(b)
+  if (!any(ok)) return(0)
+  max(abs(a[ok] - b[ok]))
+}
+
+# Every field of the two fits, then the quantities a user reads off them: the
+# log-marginal, the weights, the fixed-effect estimates and standard errors, and
+# posterior draws at one seed. The fused scatter reorganises the same arithmetic
+# on these coupled specs, so all of it is required bit for bit (tolerance 0),
+# and the measured largest difference is carried in the failure message.
+.nlb_expect_same_fit <- function(fb, fi, label) {
+  expect_identical(class(fb), class(fi), info = paste(label, "class"))
+  keep_b <- setdiff(names(fb), .nlb_timing_fields)
+  keep_i <- setdiff(names(fi), .nlb_timing_fields)
+  expect_identical(keep_b, keep_i, info = paste(label, "fields"))
+  for (nm in keep_i) {
+    expect_identical(fb[[nm]], fi[[nm]], info = paste(label, nm))
+  }
+  ci_b <- confint(fb); ci_i <- confint(fi)
+  set.seed(4401L); d_b <- tulpa_posterior_draws(fb, n = 200L)
+  set.seed(4401L); d_i <- tulpa_posterior_draws(fi, n = 200L)
+  reads <- list(
+    log_marginal = list(fb$log_marginal, fi$log_marginal),
+    weights      = list(fb$weights, fi$weights),
+    coef         = list(coef(fb), coef(fi)),
+    std_error    = list(sqrt(diag(as.matrix(vcov(fb)))),
+                        sqrt(diag(as.matrix(vcov(fi))))),
+    confint      = list(ci_b, ci_i),
+    draws        = list(d_b, d_i))
+  for (nm in names(reads)) {
+    d <- .nlb_max_abs_diff(reads[[nm]][[1L]], reads[[nm]][[2L]])
+    expect_identical(reads[[nm]][[1L]], reads[[nm]][[2L]],
+                     info = sprintf("%s %s (max abs diff %.3g)", label, nm, d))
+  }
+}
+
+.nlb_occ_front_door <- function(sim, s, sigma_grid) {
+  suppressWarnings(tulpa_nested_laplace_joint(
+    responses = coupled_occ_arms(sim$d[[s]]),
+    prior     = .nlb_occ_prior(sim, sigma_grid),
+    cell_coupling = "test_occupancy_mixture",
+    control = list(max_iter = 60L, tol = 1e-8, integration = "grid",
+                   prune = FALSE, diagnose_k = FALSE, k_quality = "none",
+                   adaptive_grid = FALSE, var_of_means_consistency = FALSE,
+                   auto_recenter = FALSE, store_Q = TRUE)))
+}
+
+test_that("a grid-batched fit is the fit its front-door call returns", {
   skip_on_cran()
   coupled_occ_register()
 
   sim <- .nlb_occ_sim(seed = 7102L, n_batch = 2L, n_cells = 40L, n_visits = 3L)
   sigma_grid <- c(0.4, 0.6, 1.5)
-  res <- .nlb_occ_batch(sim, sigma_grid)
+  fits <- tulpa_joint_grid_batch(lapply(seq_len(sim$n_batch), function(s)
+    function() .nlb_occ_front_door(sim, s, sigma_grid)))
 
+  expect_length(fits, sim$n_batch)
   for (s in seq_len(sim$n_batch)) {
-    sp <- res$per_species[[s]]
-    looped <- suppressWarnings(tulpa_nested_laplace_joint(
-      responses = coupled_occ_arms(sim$d[[s]]),
-      prior     = .nlb_occ_prior(sim, sigma_grid),
-      cell_coupling = "test_occupancy_mixture",
-      control = list(max_iter = 60L, tol = 1e-8, integration = "grid",
-                     prune = FALSE, diagnose_k = FALSE, k_quality = "none",
-                     adaptive_grid = FALSE, var_of_means_consistency = FALSE,
-                     auto_recenter = FALSE, store_Q = FALSE)))
-    key <- function(tg) apply(signif(as.matrix(tg), 12L), 1L, paste,
-                              collapse = "|")
-    idx <- match(key(res$theta_grid), key(looped$theta_grid))
-    expect_false(anyNA(idx), info = paste("species", s, "grid cells"))
-    expect_equal(as.numeric(sp$weights), as.numeric(looped$weights[idx]),
-                 tolerance = 1e-8, info = paste("species", s, "weights"))
-    expect_equal(as.numeric(sp$log_quad), as.numeric(looped$log_quad[idx]),
-                 tolerance = 1e-12, info = paste("species", s, "log_quad"))
-
-    lm <- as.numeric(sp$log_marginal)
-    soft <- exp(lm - max(lm)); soft <- soft / sum(soft)
-    expect_gt(max(abs(soft - as.numeric(sp$weights))), 1e-6)
+    .nlb_expect_same_fit(fits[[s]], .nlb_occ_front_door(sim, s, sigma_grid),
+                         paste("species", s))
   }
+  expect_false(isTRUE(all.equal(fits[[1L]]$log_marginal, fits[[2L]]$log_marginal)))
+})
+
+# The engine's own defaults, with the per-cell precision kept for the draws:
+# placement, refinement and the outer k-hat all run kernel calls of their own
+# after the main grid solve, and the k-hat draws from the random number stream. Every species replays those calls itself, so the
+# batch returns the fits, and leaves the stream where, the same calls made in
+# sequence return and leave them.
+test_that("a grid batch on the engine defaults is the fits called in sequence", {
+  skip_on_cran()
+  coupled_occ_register()
+
+  sim <- .nlb_occ_sim(seed = 7104L, n_batch = 2L, n_cells = 40L, n_visits = 3L)
+  sigma_grid <- c(0.3, 0.6, 1.2, 2.4)
+  one <- function(s) suppressWarnings(tulpa_nested_laplace_joint(
+    responses = coupled_occ_arms(sim$d[[s]]),
+    prior     = .nlb_occ_prior(sim, sigma_grid),
+    cell_coupling = "test_occupancy_mixture",
+    control = list(max_iter = 60L, tol = 1e-8, n_threads = 1L,
+                   store_Q = TRUE)))
+
+  set.seed(5501L)
+  fits <- tulpa_joint_grid_batch(lapply(seq_len(sim$n_batch), function(s)
+    function() one(s)))
+  seed_batch <- .Random.seed
+
+  set.seed(5501L)
+  seq_fits <- lapply(seq_len(sim$n_batch), one)
+  expect_identical(seed_batch, .Random.seed)
+  for (s in seq_len(sim$n_batch)) {
+    .nlb_expect_same_fit(fits[[s]], seq_fits[[s]],
+                         paste("default-control species", s))
+  }
+})
+
+test_that("a refused grid batch leaves the random number stream where it was called", {
+  coupled_occ_register()
+  sim <- .nlb_occ_sim(seed = 7105L, n_batch = 2L, n_cells = 12L, n_visits = 2L)
+  set.seed(6601L)
+  before <- .Random.seed
+  expect_error(
+    tulpa_joint_grid_batch(list(
+      function() { stats::runif(3L); .nlb_occ_front_door(sim, 1L, c(0.5, 1.0)) },
+      function() { stats::runif(3L); .nlb_occ_front_door(sim, 2L, c(0.5, 1.2)) })),
+    class = "tulpa_grid_batch_ineligible")
+  expect_identical(.Random.seed, before)
+})
+
+test_that("a grid batch refuses fits that do not share a design", {
+  coupled_occ_register()
+  sim <- .nlb_occ_sim(seed = 7103L, n_batch = 2L, n_cells = 12L, n_visits = 2L)
+  expect_error(
+    tulpa_joint_grid_batch(list(
+      function() .nlb_occ_front_door(sim, 1L, c(0.5, 1.0)),
+      function() .nlb_occ_front_door(sim, 2L, c(0.5, 1.2)))),
+    class = "tulpa_grid_batch_ineligible")
+  expect_error(
+    tulpa_joint_grid_batch(list(function() 1)),
+    class = "tulpa_grid_batch_ineligible")
 })
 
 # --------------------------------------------------------------------------- #
@@ -481,10 +569,6 @@ test_that("a per-species dispersion axis reproduces each species' single fit exa
     sp <- res$per_species[[s]]
     single <- .nlb_wg_single(sim, s, tau_grid)
     expect_length(sp$log_marginal, n_cells)
-    # The species' grid carries its own dispersion nodes, and no other's.
-    pg <- .nlb_wg_phi_grid(s)
-    expect_setequal(unique(sp$theta_grid[, "phi_a"]), pg$a)
-    expect_setequal(unique(sp$theta_grid[, "phi_b"]), pg$b)
     .nlb_expect_numeric_match(sp, single, paste0("phi-axis species ", s))
     .nlb_expect_exact_match(sp, single, paste0("phi-axis species ", s))
   }
@@ -494,35 +578,34 @@ test_that("a per-species dispersion axis reproduces each species' single fit exa
                                 res$per_species[[2L]]$log_marginal)))
 })
 
-test_that("per-species dispersion-axis weights are the multi-block driver's weights", {
+.nlb_wg_front_door <- function(sim, s, tau_grid) {
+  cpp_register_test_weighted_gaussian_coupling(c(0L, 1L))
+  suppressWarnings(tulpa_nested_laplace_joint(
+    responses = .nlb_wg_arms(sim, s),
+    prior     = .nlb_wg_prior(sim, tau_grid),
+    phi_grid  = .nlb_wg_phi_grid(s),
+    cell_coupling = "test_weighted_gaussian",
+    control = list(max_iter = 60L, tol = 1e-8, integration = "grid",
+                   prune = FALSE, diagnose_k = FALSE, k_quality = "none",
+                   adaptive_grid = FALSE, var_of_means_consistency = FALSE,
+                   auto_recenter = FALSE, store_Q = TRUE)))
+}
+
+test_that("a grid-batched fit with a per-species dispersion axis is its front-door fit", {
   skip_on_cran()
   sim <- .nlb_wg_sim(seed = 7202L, n_batch = 2L, n_s = 10L, n_per_unit = 3L)
   tau_grid <- c(0.45, 2.8, 6.2)
-  res <- .nlb_wg_batch(sim, tau_grid)
+  fits <- tulpa_joint_grid_batch(lapply(seq_len(sim$n_batch), function(s)
+    function() .nlb_wg_front_door(sim, s, tau_grid)))
 
-  key <- function(tg) apply(signif(as.matrix(tg), 12L), 1L, paste,
-                            collapse = "|")
   for (s in seq_len(sim$n_batch)) {
-    sp <- res$per_species[[s]]
-    looped <- suppressWarnings(tulpa_nested_laplace_joint(
-      responses = .nlb_wg_arms(sim, s),
-      prior     = .nlb_wg_prior(sim, tau_grid),
-      phi_grid  = .nlb_wg_phi_grid(s),
-      cell_coupling = "test_weighted_gaussian",
-      control = list(max_iter = 60L, tol = 1e-8, integration = "grid",
-                     prune = FALSE, diagnose_k = FALSE, k_quality = "none",
-                     adaptive_grid = FALSE, var_of_means_consistency = FALSE,
-                     auto_recenter = FALSE, store_Q = FALSE)))
-    expect_identical(colnames(sp$theta_grid), colnames(looped$theta_grid))
-    idx <- match(key(sp$theta_grid), key(looped$theta_grid))
-    expect_false(anyNA(idx), info = paste("species", s, "grid cells"))
-    expect_equal(as.numeric(sp$log_marginal),
-                 as.numeric(looped$log_marginal[idx]),
-                 tolerance = 1e-8, info = paste("species", s, "log_marginal"))
-    expect_equal(as.numeric(sp$weights), as.numeric(looped$weights[idx]),
-                 tolerance = 1e-8, info = paste("species", s, "weights"))
-    expect_equal(as.numeric(sp$log_quad), as.numeric(looped$log_quad[idx]),
-                 tolerance = 1e-12, info = paste("species", s, "log_quad"))
+    fb <- fits[[s]]
+    # The species' grid carries its own dispersion nodes, and no other's.
+    pg <- .nlb_wg_phi_grid(s)
+    expect_setequal(unique(fb$theta_grid[, "phi_a"]), pg$a)
+    expect_setequal(unique(fb$theta_grid[, "phi_b"]), pg$b)
+    .nlb_expect_same_fit(fb, .nlb_wg_front_door(sim, s, tau_grid),
+                         paste("phi-axis species", s))
   }
 })
 
@@ -538,5 +621,5 @@ test_that("the batched entry refuses per-species dispersion axes of different sh
       phi_batch = matrix(1, nrow = 2L, ncol = sim$n_batch),
       phi_grid_batch = list(list(a = c(0.2, 0.5)), list(a = c(0.2, 0.5, 0.9))),
       cell_coupling = "test_weighted_gaussian", store_Q = FALSE),
-    "same node count")
+    class = "tulpa_grid_batch_ineligible")
 })
