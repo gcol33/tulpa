@@ -442,3 +442,100 @@ test_that("a fibre cell a base node owns past a closed edge adds no span", {
   expect_equal(sup2$rho_car, c(tensor$rho_car[1L], 0.985), tolerance = 1e-14)
   expect_lt(sup2$rho_car[2L], 1)
 })
+
+# --------------------------------------------------------------------------- #
+# A row reaching past the base span is tiled without a gap (gcol33/tulpa#740)  #
+# --------------------------------------------------------------------------- #
+
+# The pieces a re-tiled row's nodes own, on the integration coordinate: each
+# base node's retained part of its base cell and its extension past the base
+# span, and each admitted slice point's cell.
+row_pieces <- function(g, spec, ref, row_value, row_axis) {
+  home <- .hyper_slice_home(ref, nrow(g))
+  v <- as.numeric(g[, spec$name])
+  m <- .hyper_axis_measure(v[!nzchar(home)], spec, .hyper_axis_atom_mass(spec))
+  m$spec <- spec
+  in_row <- which(home == spec$name & g[, row_axis] == row_value)
+  tl <- .hyper_fibre_tiling(m, v[in_row], close_domain = TRUE)
+  list(tl = tl, owned = sum(tl$retained * diff(m$edges)) + sum(tl$base_ext) +
+         sum(tl$cell[tl$ok, "hi"] - tl$cell[tl$ok, "lo"]),
+       base_edges = range(m$edges))
+}
+
+# Absolute flat measure of a grid with one re-tiled phi_pos row at sigma[3]:
+# the tensor's area plus that row's region past the base span, times the row's
+# sigma cell width, and the row itself carrying its region times that width.
+expect_row_conserved <- function(g, ref) {
+  sp <- FLAT_SLICE_SPECS
+  ls <- log(SLICE_AXES$sigma)
+  sw <- ls[2L] - ls[1L]
+  tensor <- .hyper_grid_supports(SLICE_TENSOR, sp)
+  area0 <- prod(vapply(tensor, function(s) diff(log(s)), numeric(1)))
+  pc <- row_pieces(g, sp[[2L]], ref, SLICE_AXES$sigma[3L], "sigma")
+  region <- pc$tl$region
+  expect_equal(pc$owned, diff(region), tolerance = 1e-12)
+  sup <- .hyper_grid_supports(g, sp, refining = ref)
+  expect_equal(log(sup$phi_pos), region, tolerance = 1e-14)
+  w <- exp(.hyper_log_quad_weights(g, sp, refining = ref, absolute = TRUE))
+  expect_equal(sum(w), area0 + (diff(region) - diff(pc$base_edges)) * sw,
+               tolerance = 1e-12)
+  expect_equal(sum(w[g[, "sigma"] == SLICE_AXES$sigma[3L]]), diff(region) * sw,
+               tolerance = 1e-12)
+  invisible(pc)
+}
+
+test_that("an extension k base steps out integrates its row without a gap", {
+  lp <- log(SLICE_AXES$phi_pos)
+  h <- lp[5L] - lp[4L]
+  for (k in c(2, 3)) {
+    g <- rbind(SLICE_TENSOR, c(SLICE_AXES$sigma[3L], exp(lp[5L] + k * h)))
+    ref <- c(rep("", 25L), "phi_pos")
+    pc <- expect_row_conserved(g, ref)
+    # The outermost base node owns up to the midpoint towards the slice point,
+    # (k - 1) / 2 steps past the base edge; the slice point owns the rest.
+    expect_equal(pc$tl$base_ext[5L], (k - 1) / 2 * h, tolerance = 1e-12,
+                 label = sprintf("k = %g", k))
+    expect_equal(unname(pc$tl$cell[1L, "lo"]), lp[5L] + k * h / 2,
+                 tolerance = 1e-12)
+    # Both sides at once, with a densified cell inside the base span.
+    g2 <- rbind(g, c(SLICE_AXES$sigma[3L], exp(lp[1L] - k * h)),
+                c(SLICE_AXES$sigma[3L], exp((lp[2L] + lp[3L]) / 2)))
+    ref2 <- c(ref, "phi_pos", "consistency_phi_pos")
+    pc2 <- expect_row_conserved(g2, ref2)
+    expect_equal(pc2$tl$base_ext[c(1L, 5L)], rep((k - 1) / 2 * h, 2L),
+                 tolerance = 1e-12)
+  }
+})
+
+test_that("a consistency point more than a step out is integrated without a gap", {
+  lp <- log(SLICE_AXES$phi_pos)
+  h <- lp[5L] - lp[4L]
+  spec <- hyper_axis_spec("phi_pos", SLICE_AXES$phi_pos, log_scale = TRUE,
+                          refinable = TRUE)
+  mu <- SLICE_AXES$phi_pos[5L]
+  pts <- .hyper_propose_consistency_points(spec, mu, sd = 1.6 * h * mu,
+                                           lev = SLICE_AXES$phi_pos)
+  expect_gt(max(log(pts)) - lp[5L], h)
+  g <- rbind(SLICE_TENSOR, cbind(sigma = SLICE_AXES$sigma[3L], phi_pos = pts))
+  ref <- c(rep("", 25L), rep("consistency_phi_pos", length(pts)))
+  pc <- expect_row_conserved(g, ref)
+  expect_gt(pc$tl$base_ext[5L], 0)
+})
+
+test_that("an evenly spaced extension leaves the base node no sliver past the edge", {
+  # These levels put the midpoint towards the extension point one ulp away from
+  # the base edge, the two being one number computed two ways.
+  lev <- c(0.07, 0.19, 0.5, 1.3, 2.9)
+  spec <- list(name = "sigma", log_scale = TRUE)
+  m <- .hyper_axis_measure(lev, spec)
+  m$spec <- spec
+  p <- .hyper_propose_axis_extension(hyper_axis_spec("sigma", lev,
+                                                     log_scale = TRUE),
+                                     lev, "min")
+  p <- p[p < min(lev)]
+  tl <- .hyper_fibre_tiling(m, p, close_domain = TRUE)
+  expect_true(all(tl$base_ext == 0))
+  expect_equal(sum(tl$retained * diff(m$edges)) +
+                 sum(tl$cell[tl$ok, "hi"] - tl$cell[tl$ok, "lo"]),
+               diff(tl$region), tolerance = 1e-12)
+})

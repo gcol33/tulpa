@@ -134,6 +134,20 @@
   `refining_axis` to both fields, so a densified axis reports the span its
   declared nodes had and an extended one reaches the outer edge of the
   extension's cell. A grid with no slice cells reports bit for bit what it did.
+* **An extension more than one base step out left part of its row unmeasured**
+  (gcol33/tulpa#740). The outermost base node kept only its own base cell, and
+  the slice point's cell starts at the midpoint between the two, so a point `k`
+  steps past the outermost node left `(k - 1) / 2` steps of its row with no
+  owner. Every node of a re-tiled row now owns its nearest-node cell inside the
+  row's region (the base span together with the slice points' cells), a base
+  node held to its base cell inside the base span; the outermost base node owns
+  the stretch past the base edge up to the midpoint, and its base cell carries
+  `prod_k f_k + sum_k e_k / |B_k|`. On the 5 x 5 flat fixture that cell's
+  absolute measure goes from 0.870 to 1.306 at `k = 2` and to 1.741 at `k = 3`,
+  and the row integrates its region to 1e-12. Unrefined grids, densified rows
+  and the refine pass's evenly spaced extensions keep their weights bit for bit.
+  Two rows extended past the same base corner on two axes still leave the
+  product of their extensions outside every cell.
 
 ## WAIC, LOO and posterior_predict() read the whole linear predictor
 
