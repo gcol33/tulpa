@@ -946,6 +946,42 @@
                           fn_sigma, fn_alpha, fn_phi)
 }
 
+# The hyperprior family of each arm, keyed by arm name, as the default
+# hyperprior reads it.
+.joint_multi_hp_families <- function(arms, arm_names) {
+    stats::setNames(
+        vapply(arms, function(a) as.character(a$family %||% ""), character(1)),
+        arm_names)
+}
+
+# The outer integration of a multi-block joint result whose `log_marginal`
+# already carries the folded hyperprior: the hyperprior record over
+# `joint_grid`, the cell measure `log_quad` and the axis supports over
+# `res$theta_grid` from the specs that record marks, and the integration
+# weights, with `dnode` the design weights of a CCD design (NULL on a tensor
+# grid). Returns the result and the specs its measure was built from. The one
+# construction behind the multi-block driver and the batched driver.
+.joint_multi_attach_integration <- function(res, joint_grid, axis_offsets, B,
+                                            prepared, hp_families,
+                                            fn_sigma, fn_alpha, fn_phi,
+                                            copy_slab, copy_atom_mass,
+                                            dnode = NULL) {
+    hp <- .joint_multi_hyperprior(
+        joint_grid, fn_sigma, fn_alpha, fn_phi, blocks = prepared,
+        families = hp_families, copy_atom_mass = copy_atom_mass)
+    res$log_hyperprior          <- hp$lp
+    res$log_hyperprior_axes     <- hp$axes
+    res$log_hyperprior_declined <- hp$declined
+    specs <- .joint_multi_measure_specs(
+        res$theta_grid, hp$axes, joint_grid, axis_offsets, B,
+        fn_sigma, fn_alpha, fn_phi, copy_slab, copy_atom_mass)
+    res$log_quad     <- .hyper_log_quad_weights(res$theta_grid, specs)
+    res$axis_support <- .hyper_grid_supports(res$theta_grid, specs)
+    res$weights      <- .joint_integration_weights(res$log_marginal, dnode,
+                                                   log_quad = res$log_quad)
+    list(res = res, specs = specs)
+}
+
 # Attach each hyperprior to the axis spec of the column it applies to, so the
 # axis quadrature knows what the fold below will apply to that axis. That is
 # what keeps the copy scale's declared point mass at its declared prior
@@ -1314,9 +1350,7 @@
     arm_names <- names(responses) %||% paste0("arm", seq_along(responses))
 
     cp <- .resolve_copy_multi(copy, responses, prior_list)
-    hp_families <- stats::setNames(
-        vapply(arms, function(a) as.character(a$family %||% ""), character(1)),
-        arm_names)
+    hp_families <- .joint_multi_hp_families(arms, arm_names)
 
     # Per-block axis grids (with copy-block parameterisation if applicable).
     B <- length(prior_list)
@@ -1838,19 +1872,11 @@
     # tensor grid, the per-cell prior mass of the node each cell sits at. A CCD
     # design carries its own volume in `dnode`, so `log_quad` applies to the
     # tensor path alone.
-    hp_final <- .joint_multi_hyperprior(
-        joint_grid, fn_sigma, fn_alpha, fn_phi, blocks = prepared,
-        families = hp_families, copy_atom_mass = copy_atom_mass)
-    res$log_hyperprior          <- hp_final$lp
-    res$log_hyperprior_axes     <- hp_final$axes
-    res$log_hyperprior_declined <- hp_final$declined
-    multi_specs      <- .joint_multi_measure_specs(
-        res$theta_grid, res$log_hyperprior_axes, joint_grid, axis_offsets, B,
-        fn_sigma, fn_alpha, fn_phi, copy_slab, copy_atom_mass)
-    res$log_quad     <- .hyper_log_quad_weights(res$theta_grid, multi_specs)
-    res$axis_support <- .hyper_grid_supports(res$theta_grid, multi_specs)
-    res$weights      <- .joint_integration_weights(res$log_marginal, dnode,
-                                                   log_quad = res$log_quad)
+    integ <- .joint_multi_attach_integration(
+        res, joint_grid, axis_offsets, B, prepared, hp_families,
+        fn_sigma, fn_alpha, fn_phi, copy_slab, copy_atom_mass, dnode = dnode)
+    res         <- integ$res
+    multi_specs <- integ$specs
     # The outer design weight each cell carries, kept beside the integration
     # weight it was folded into: absent on a tensor base (uniform cell weight),
     # the CCD design weights on a global CCD, the partition-of-unity shares of

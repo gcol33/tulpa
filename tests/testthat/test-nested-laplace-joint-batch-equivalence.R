@@ -147,34 +147,28 @@
 # Shared assertions                                                            #
 # --------------------------------------------------------------------------- #
 
-# The weights the driver reports are softmax over the finite log-marginals,
-# recomputed here from the oracle's log-marginals rather than read back.
-.nlb_softmax <- function(lm) {
-  w <- rep(0, length(lm))
-  fin <- is.finite(lm)
-  if (!any(fin)) return(w)
-  w[fin] <- exp(lm[fin] - max(lm[fin]))
-  w / sum(w)
+# The oracle is the raw kernel solve; the batched driver folds the regularizing
+# hyperprior into each species' log-marginal on top of it, so the oracle's
+# log-marginal is compared with that fold added.
+.nlb_single_folded <- function(sp, single) {
+  as.numeric(single$log_marginal) + as.numeric(sp$log_hyperprior)
 }
 
 .nlb_expect_numeric_match <- function(sp, single, label,
                                       lm_tol = 1e-8, mode_tol = 1e-7) {
-  expect_equal(as.numeric(sp$log_marginal), as.numeric(single$log_marginal),
+  expect_equal(as.numeric(sp$log_marginal), .nlb_single_folded(sp, single),
                tolerance = lm_tol, info = paste(label, "log_marginal"))
   expect_equal(dim(sp$modes), dim(single$modes),
                info = paste(label, "mode shape"))
   expect_equal(as.numeric(sp$modes), as.numeric(single$modes),
                tolerance = mode_tol, info = paste(label, "modes"))
-  expect_equal(as.numeric(sp$weights),
-               .nlb_softmax(as.numeric(single$log_marginal)),
-               tolerance = lm_tol, info = paste(label, "weights"))
 }
 
 # The header's claim: the fused scatter changes the cost of a species' solve and
 # nothing else, so every number and the iteration count itself are reproduced.
 .nlb_expect_exact_match <- function(sp, single, label) {
   expect_identical(as.numeric(sp$log_marginal),
-                   as.numeric(single$log_marginal),
+                   .nlb_single_folded(sp, single),
                    info = paste(label, "log_marginal is bit-identical"))
   expect_identical(as.numeric(sp$modes), as.numeric(single$modes),
                    info = paste(label, "modes are bit-identical"))
@@ -359,4 +353,46 @@ test_that("the batched entry refuses a family whose arms are not cell-coupled", 
       phi_batch = matrix(1, nrow = 1L, ncol = sim$n_batch),
       cell_coupling = "separable"),
     "cell-coupling spec")
+})
+
+# --------------------------------------------------------------------------- #
+# (5) The weights: the multi-block driver's, on the same grid                  #
+# --------------------------------------------------------------------------- #
+
+# Each species' weights must be the ones the multi-block driver reports when it
+# fits that species alone on the same fixed grid: the hyperprior folded into the
+# log-marginal and the cell measure applied, not a softmax of the kernel's
+# log-marginal. The sigma nodes are unevenly spaced on log sigma, so the cell
+# measure is not constant and a plain softmax cannot match.
+test_that("batched weights are the multi-block driver's weights on the same grid", {
+  skip_on_cran()
+  coupled_occ_register()
+
+  sim <- .nlb_occ_sim(seed = 7102L, n_batch = 2L, n_cells = 40L, n_visits = 3L)
+  sigma_grid <- c(0.4, 0.6, 1.5)
+  res <- .nlb_occ_batch(sim, sigma_grid)
+
+  for (s in seq_len(sim$n_batch)) {
+    sp <- res$per_species[[s]]
+    looped <- suppressWarnings(tulpa_nested_laplace_joint(
+      responses = coupled_occ_arms(sim$d[[s]]),
+      prior     = .nlb_occ_prior(sim, sigma_grid),
+      cell_coupling = "test_occupancy_mixture",
+      control = list(max_iter = 60L, tol = 1e-8, integration = "grid",
+                     prune = FALSE, diagnose_k = FALSE, k_quality = "none",
+                     adaptive_grid = FALSE, var_of_means_consistency = FALSE,
+                     auto_recenter = FALSE, store_Q = FALSE)))
+    key <- function(tg) apply(signif(as.matrix(tg), 12L), 1L, paste,
+                              collapse = "|")
+    idx <- match(key(res$theta_grid), key(looped$theta_grid))
+    expect_false(anyNA(idx), info = paste("species", s, "grid cells"))
+    expect_equal(as.numeric(sp$weights), as.numeric(looped$weights[idx]),
+                 tolerance = 1e-8, info = paste("species", s, "weights"))
+    expect_equal(as.numeric(sp$log_quad), as.numeric(looped$log_quad[idx]),
+                 tolerance = 1e-12, info = paste("species", s, "log_quad"))
+
+    lm <- as.numeric(sp$log_marginal)
+    soft <- exp(lm - max(lm)); soft <- soft / sum(soft)
+    expect_gt(max(abs(soft - as.numeric(sp$weights))), 1e-6)
+  }
 })

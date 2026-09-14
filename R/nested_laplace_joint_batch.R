@@ -2,12 +2,16 @@
 #
 # Marshals `responses` + a list-or-single block `prior` to the batched C++ entry
 # `cpp_nested_laplace_joint_multi_batch`, mirroring `.joint_dispatch_multi`'s
-# arm / block-spec / grid construction. First cut: dense tensor grid only (no
-# CCD, no phi-grid axis -- per-arm per-species dispersion is supplied fixed via
-# `phi_batch`), all-coupled cell-coupling families (occu_cover). Returns the C++
-# result: `per_species` (length n_batch; each list(log_marginal, weights, modes,
-# n_iter, score_max, converged, and -- when store_Q --
-# Q_csc_{p,i,x}_per_grid + Q_csc_n)), `theta_grid`, `axis_offsets`.
+# arm / block-spec / grid construction. Dense tensor grid only (no CCD, no
+# phi-grid axis -- per-arm per-species dispersion is supplied fixed via
+# `phi_batch`), all-coupled cell-coupling families (occu_cover). Returns
+# `per_species` (length n_batch; each list(log_marginal, modes, n_iter,
+# score_max, converged, -- when store_Q -- Q_csc_{p,i,x}_per_grid + Q_csc_n,
+# and the outer integration `.joint_multi_attach_integration()` attaches:
+# log_hyperprior*, log_quad, axis_support, weights)), `theta_grid`,
+# `axis_offsets`. Each species' `log_marginal` carries the folded hyperprior and
+# its weights take the cell measure, exactly as the multi-block driver builds
+# them on the same grid.
 #
 # `y_batch`  : length n_arms list; element k is a [N_k x n_batch] response matrix
 #              (species columns) for a data arm, or NULL for a no-data arm (psi).
@@ -53,7 +57,31 @@
 
   list(arms = arms, cp = cp, blocks_spec = blocks_spec,
        axis_offsets = axis_offsets, cpp_grid = cpp_grid,
-       prepared = prepared, joint_grid = joint_grid)
+       prepared = prepared, joint_grid = joint_grid, B = B,
+       multi_block = .is_multi_block_prior(prior),
+       arm_names = names(responses) %||% paste0("arm", seq_along(responses)))
+}
+
+# The outer integration of one species' kernel result on the marshalled grid:
+# the regularizing hyperprior folded into `log_marginal`, then the cell measure
+# and weights, through the same two steps the multi-block driver takes.
+.tulpa_nl_joint_integrate <- function(r, m, prior_sigma = NULL,
+                                      prior_alpha = NULL, prior_phi = NULL,
+                                      copy_atom_mass = .TULPA_COPY_ATOM_MASS,
+                                      copy_slab = "exponential") {
+  fn_sigma <- .joint_parse_hyperprior(prior_sigma, "prior_sigma", m$multi_block)
+  fn_alpha <- .joint_parse_hyperprior(prior_alpha, "prior_alpha", m$multi_block)
+  fn_phi   <- .joint_parse_sigma_prior(prior_phi, "prior_phi")
+  copy_slab <- .hyper_check_copy_slab(copy_slab)
+  families  <- .joint_multi_hp_families(m$arms, m$arm_names)
+  hp <- .joint_multi_hyperprior(m$joint_grid, fn_sigma, fn_alpha, fn_phi,
+                                blocks = m$prepared, families = families,
+                                copy_atom_mass = copy_atom_mass)
+  r <- .nl_fold_hyperprior(r, list(hp))
+  r$theta_grid <- m$joint_grid
+  .joint_multi_attach_integration(
+    r, m$joint_grid, m$axis_offsets, m$B, m$prepared, families,
+    fn_sigma, fn_alpha, fn_phi, copy_slab, copy_atom_mass)$res
 }
 
 # @keywords internal
@@ -61,7 +89,11 @@ tulpa_nl_joint_batch <- function(responses, prior, copy = NULL,
                                  n_batch, y_batch, phi_batch,
                                  max_iter = 200L, tol = 1e-6,
                                  cell_coupling = "separable",
-                                 store_Q = TRUE) {
+                                 store_Q = TRUE,
+                                 prior_sigma = NULL, prior_alpha = NULL,
+                                 prior_phi = NULL,
+                                 copy_atom_mass = .TULPA_COPY_ATOM_MASS,
+                                 copy_slab = "exponential") {
   m <- .tulpa_nl_joint_marshal(responses, prior, copy)
   ka <- .joint_phi_args_to_kernel(list(arms_list = m$arms,
                                        phi_batch = phi_batch))
@@ -84,6 +116,11 @@ tulpa_nl_joint_batch <- function(responses, prior, copy = NULL,
   # invariant): the latent-vector layout and the user-facing (sigma, alpha, ...)
   # outer grid with colnames. A consumer reshapes each per_species slice +
   # these into a single-species engine-fit for post-processing.
+  res$per_species <- lapply(res$per_species, .tulpa_nl_joint_integrate, m = m,
+                            prior_sigma = prior_sigma, prior_alpha = prior_alpha,
+                            prior_phi = prior_phi,
+                            copy_atom_mass = copy_atom_mass,
+                            copy_slab = copy_slab)
   res$arm_layout <- .joint_multi_layout(m$arms, m$prepared)
   res$theta_grid <- m$joint_grid
   res

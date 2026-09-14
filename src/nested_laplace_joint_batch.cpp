@@ -17,7 +17,7 @@
 //
 // Cell-coupling families with ALL arms coupled (occu_cover) only; plain
 // outer-grid sweep with per-species warm-start chaining. Returns per-species
-// { log_marginal, weights, modes, n_iter, score_max, converged,
+// { log_marginal, modes, n_iter, score_max, converged,
 // Q_csc_*_per_grid } so R unpacks each through the existing single-species
 // post-processing (including .joint_inner_vcov_block for SDs; store_Q stores
 // the converged-mode observed Hessian per grid in CSC lower-triangle,
@@ -225,7 +225,7 @@ inline bool species_sparse_step(
 namespace tulpa {
 
 // Batched outer-grid driver (dense). Returns an Rcpp::List of length B; element
-// s is a List(log_marginal[n_grid], modes[n_grid x n_x], weights[n_grid],
+// s is a List(log_marginal[n_grid], modes[n_grid x n_x],
 // n_iter[n_grid]). All-coupled cell-coupling families only.
 Rcpp::List run_multi_block_nested_laplace_joint_batch(
     int                              n_grid,
@@ -563,23 +563,15 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
         Rcpp::IntegerVector ni(n_grid);
         Rcpp::NumericVector sm(n_grid);
         Rcpp::LogicalVector cv(n_grid);
-        double mx = -std::numeric_limits<double>::infinity();
         for (int k = 0; k < n_grid; k++) { lm[k] = log_marg[s][k]; ni[k] = n_iter[s][k];
                                            sm[k] = score_mx[s][k];
-                                           cv[k] = (converged_at[s][k] != 0);
-                                           if (std::isfinite(lm[k]) && lm[k] > mx) mx = lm[k]; }
-        Rcpp::NumericVector w(n_grid, 0.0);
-        double wsum = 0.0;
-        for (int k = 0; k < n_grid; k++)
-            if (std::isfinite(lm[k])) { w[k] = std::exp(lm[k] - mx); wsum += w[k]; }
-        if (wsum > 0) for (int k = 0; k < n_grid; k++) w[k] /= wsum;
+                                           cv[k] = (converged_at[s][k] != 0); }
         Rcpp::NumericMatrix md(n_grid, n_x);
         for (int k = 0; k < n_grid; k++)
             for (int j = 0; j < n_x; j++)
                 md(k, j) = modes_flat[s][(std::size_t) k * n_x + j];
         Rcpp::List sp = Rcpp::List::create(
             Rcpp::Named("log_marginal") = lm,
-            Rcpp::Named("weights")      = w,
             Rcpp::Named("modes")        = md,
             Rcpp::Named("n_iter")       = ni,
             Rcpp::Named("score_max")    = sm,

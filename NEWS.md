@@ -1,5 +1,24 @@
 # tulpa 0.4.0
 
+## The batched joint driver weights its grid the way the multi-block driver does
+
+* **`tulpa_nl_joint_batch()` returned a plain softmax of the kernel's
+  log-marginals as each species' weights.** No hyperprior was folded in and no
+  cell measure applied, so a fused batch fit was weighted against a different
+  posterior from the one the multi-block driver reports for the same species on
+  the same grid. On the two-arm occupancy fixture with sigma nodes
+  `c(0.4, 0.6, 1.5)` the two differed by up to 0.10 per cell. The C++ batch
+  entry now returns log-marginals only, and each species goes through
+  `.joint_multi_attach_integration()`, extracted from `.joint_dispatch_multi()`
+  so both drivers take one construction: the regularizing hyperprior folded
+  into `log_marginal`, then `log_quad`, `axis_support` and the weights. The
+  batch entry takes the multi-block driver's `prior_sigma`, `prior_alpha`,
+  `prior_phi`, `copy_atom_mass` and `copy_slab`.
+  `test-nested-laplace-joint-batch-equivalence.R` checks each species' weights
+  and `log_quad` against `tulpa_nested_laplace_joint()` fitted alone on the same
+  fixed grid, and compares the single-species oracle's log-marginal with the
+  fold added.
+
 ## The slow tier re-read under the proper default hyperpriors
 
 * **The recovery suite's residual-scale negative control had stopped being the
