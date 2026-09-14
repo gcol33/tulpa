@@ -56,6 +56,20 @@ test_that("the range PC prior is a density with its anchor in every dimension", 
                tulpa:::cpp_test_log_prior_range_pc(r, 0.3, 0.5), tolerance = 1e-12)
 })
 
+test_that("the range prior's dimension is the one the coordinates span", {
+  set.seed(8)
+  x <- runif(40)
+  ex <- function(co) tulpa:::.hp_block_extent(list(coords = co))
+  expect_identical(ex(cbind(x))$dim, 1L)
+  # A constant or collinear column adds no direction, and leaves the extent
+  # bit-identical, so a field over the same points carries the same prior.
+  expect_identical(ex(cbind(x, 0)), ex(cbind(x)))
+  expect_identical(ex(cbind(x, 1e6))$dim, 1L)
+  expect_identical(ex(cbind(x, 2 * x))$dim, 1L)
+  expect_identical(ex(cbind(x, runif(40)))$dim, 2L)
+  expect_identical(ex(cbind(x, runif(40), 3.5))$dim, 2L)
+})
+
 test_that("the LKJ normaliser makes the density integrate to one", {
   # d = 2: p(r) = (1 - r^2)^(eta - 1) / c_2.
   for (eta in c(1, 2, 3.5)) {

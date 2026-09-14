@@ -90,7 +90,10 @@
   } else if (is.matrix(p$coords) && nrow(p$coords) >= 2L) {
     rng <- apply(p$coords, 2L, range)
     ext <- sqrt(sum((rng[2L, ] - rng[1L, ])^2))
-    dim <- ncol(p$coords)
+    # The dimension the points span, not the column count: a coordinate column
+    # that is constant, or a column a linear combination of the others, adds no
+    # direction the field varies over.
+    dim <- qr(sweep(p$coords, 2L, colMeans(p$coords)))$rank
   } else {
     return(NULL)
   }
