@@ -18,6 +18,18 @@
 * **`control$local_ccd$rank`** chooses what local-CCD refinement ranks its
   candidate cells by: `"weight"` (default, unchanged) or `"mass_moved"`, the
   weight times `|exp(log_box_ratio) - 1|`.
+* **The outer-grid research measurements are reproducible and state their
+  prior.** `dev_notes/issue327/bary327.R`, `dev_notes/issue331/coverage331.R`,
+  `dev_notes/issue333/plane333.R` + `analyse333.R`,
+  `dev_notes/issue_328/measure_fit_ranking.R` (which now selects the ranking
+  through `rank` instead of replacing a package internal) and
+  `dev_notes/issue730/re_cov_ccd_interval.R` produce every figure the
+  barycentre, descriptor-plane, #331 recovery and RE-covariance tests quote,
+  each stamping the build, prior and within-cell read into its output. Under
+  `hyperprior = "flat"` the #331 table reproduces to the digit, and under flat
+  with the `chord` read so do the #327 four-arm tables and #328's 14 of 24.
+  The measurement fixtures state `hyperprior = "flat"`; the files record both
+  priors side by side.
 
 ## A grid-batched species fit is the fit its own call returns
 

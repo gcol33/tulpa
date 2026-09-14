@@ -1,0 +1,18 @@
+---- sweep identity ----
+tulpa_version 0.4.0
+platform      x86_64-w64-mingw32
+R             R version 4.6.1 (2026-06-24 ucrt)
+hyperprior    flat
+within_cell   moment rule (CCD)
+started       2026-09-14 16:13:29 +0200
+------------------------
+flat   nodes [-0.32935, 0.26114]  interval [-0.33464, 0.26504]  |interval - (m +- z s)| 5.55e-17
+---- sweep identity ----
+tulpa_version 0.4.0
+platform      x86_64-w64-mingw32
+R             R version 4.6.1 (2026-06-24 ucrt)
+hyperprior    pc_lkj
+within_cell   moment rule (CCD)
+started       2026-09-14 16:13:30 +0200
+------------------------
+pc_lkj nodes [-0.33816, 0.24291]  interval [-0.34293, 0.24240]  |interval - (m +- z s)| 1.11e-16

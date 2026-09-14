@@ -1,0 +1,15 @@
+head_sha=85a3161111a9057aed9040b47f51fa250e4b65a2
+overlay R/hyperprior_default.R 9f31fa162d1dc50c2e64fa44aaec3167e5230eaa
+overlay R/nested_laplace_joint_ccd_local.R 2d5d0dc700e79f0def230630b0dd82eb52364f25
+overlay R/nested_laplace.R 6efe21ce1ca20349ca236f3197895d87a0a4ee74
+overlay R/nested_laplace_joint.R 914b9b5cda5c87bb669f03b13e6212239ddfdee9
+overlay R/nested_laplace_joint_multi.R d07bc868f5f36eeac01e196d1a388823f0b8c56f
+overlay R/nested_laplace_re_cov.R f6a281f096d721647c803309192ae64fe4e85941
+overlay R/tulpa.R a6c2962f0e9800ca9ad19ee117d696bfdcebd2ff
+overlay man-roxygen/hyperprior.R 30361fdbb5f72673ed5aae62a6057767607a8bcf
+overlay tests/testthat/helper-outer-grid-dump.R 56ffbfd9356cdc34c21a21932ba7ddaa0dfe647d
+overlay tests/testthat/test-nested-laplace-joint-barycentre.R 7ca65a16b4a946443c89534f0b08f43e825ed95d
+overlay tests/testthat/test-nested-laplace-joint-descriptor-plane.R 105e0b9bc1bc2c61b8e1ea8081b31354f4e1f836
+overlay tests/testthat/test-re-cov-nested.R d70e452e3989277db24b40d5d19554724825f754
+overlay diff lines touching the batch capture (must be 0):
+compiled from a clean export: objects before build = 0

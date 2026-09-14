@@ -171,10 +171,11 @@ recov_fit_joint_ccd <- function(d, sg, family, cfg) {
 # and `sg` itself at seven. `phi` is the arm's residual scale, which the joint
 # door reads as the gaussian residual VARIANCE -- passing something other than
 # `cfg$phi` is what lets a fit be scored against a twin whose assumed residual
-# scale is not the simulator's.
+# scale is not the simulator's. `hyperprior` is the outer prior the fit states.
 recov_fit_joint_coarse <- function(d, sg, family, cfg, local_ccd = NULL,
                                    phi = cfg$phi, levels = 4L,
-                                   diagnose_k = FALSE, within_cell = NULL) {
+                                   diagnose_k = FALSE, within_cell = NULL,
+                                   hyperprior = "proper") {
   sgc <- if (levels >= length(sg)) sg else
     exp(seq(log(min(sg)), log(max(sg)), length.out = levels))
   suppressWarnings(tulpa_nested_laplace_joint(
@@ -183,6 +184,7 @@ recov_fit_joint_coarse <- function(d, sg, family, cfg, local_ccd = NULL,
                               family = family, phi = phi)),
     prior = lapply(d$regions, function(g)
       list(type = "iid", obs_idx = list(g), n_units = d$nr, sigma_grid = sgc)),
+    hyperprior = hyperprior,
     control = c(list(max_iter = 100L, tol = 1e-8, n_threads = 1L,
                      diagnose_k = diagnose_k, integration = "grid",
                      local_ccd = local_ccd, skew_correct = TRUE),
@@ -929,7 +931,8 @@ lccd_arm_read <- function(dm, arm, z = 1.96) {
 # All four arms over `n_seed` seeds at one base-grid resolution: per-arm sigma_1
 # coverage and mean width, and the same pair for each coefficient. One fit per
 # seed serves every arm.
-lccd_arm_sweep <- function(levels, n_seed, seed_off = 8100L) {
+lccd_arm_sweep <- function(levels, n_seed, seed_off = 8100L,
+                           hyperprior = "flat") {
   sg   <- exp(seq(log(0.2), log(1.5), length.out = 7))
   arms <- c("shipped", "mass", "location", "pair")
   p    <- length(LCCD_CFG$beta)
@@ -941,7 +944,8 @@ lccd_arm_sweep <- function(levels, n_seed, seed_off = 8100L) {
     d  <- LCCD_SIM(seed_off + s, "gaussian", LCCD_CFG$nr, LCCD_CFG$spr,
                    LCCD_CFG$ntr, LCCD_CFG$beta, LCCD_CFG$su, LCCD_CFG$phi)
     dm <- outer_grid_dump(recov_fit_joint_coarse(d, sg, "gaussian", LCCD_CFG,
-                                                 levels = levels))
+                                                 levels = levels,
+                                                 hyperprior = hyperprior))
     # The four arms are OUTER WEIGHT and PLACEMENT rules, and every number
     # below is a comparison between them. The within-cell read is held at
     # `chord` -- not the engine default since 0.0.188 (gcol33/tulpa#357) -- so
@@ -1020,9 +1024,11 @@ test_that("a weight rule and a placement rule reach different halves of the read
 })
 
 # MEASURED, 200 seeds (seed offset 8100, seeds 1-200), one fit per seed per
-# resolution, all four arms read off that fit. sigma_1 is the fit's own 95%
-# interval on block 1's SD, true value 0.7; the coefficients are read at 1.96
-# mixture SDs, nominal 0.95. Coverage counts of 200 and mean interval width:
+# resolution, all four arms read off that fit, under a flat outer prior
+# (`dev_notes/issue331/coverage331.R`, which also runs the proper one).
+# sigma_1 is the fit's own 95% interval on block 1's SD, true value 0.7; the
+# coefficients are read at 1.96 mixture SDs, nominal 0.95. Coverage counts of
+# 200 and mean interval width:
 #
 #                  4 levels (256)    5 levels (625)    6 levels (1296)
 #   sigma_1
@@ -1036,6 +1042,11 @@ test_that("a weight rule and a placement rule reach different halves of the read
 #   slope
 #     shipped      191   0.08533     191   0.08534     191   0.08534
 #     mass         191   0.08540     191   0.08538     191   0.08535
+#
+# Under the proper default prior every coverage count is unchanged except
+# location (128 / 128 / 115) and pair (172 / 175 / 150), and the sigma_1 widths
+# are shipped 1.0592 / 0.8763 / 0.6352, mass 1.1039 / 0.9091 / 0.6932, location
+# 0.5071 / 0.5221 / 0.2915 and pair 0.4692 / 0.4752 / 0.3421.
 #
 # COVERAGE ALONE IS THE WRONG STATISTIC HERE and the table is read two-sided:
 # the shipped arm is at or above nominal everywhere, so an arm earns promotion

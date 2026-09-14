@@ -70,7 +70,8 @@ test_that("the barycentre is the box's own first moment, on either sign of a", {
   # peak 640 nats up and 320 cell widths away), where the error is 4.7e-11 of
   # the cell width against `eps` times the cancellation product of 4.5e-11 --
   # the budget `.LCCD_BAR_CANCEL` is set to. The numeric route measures 1.55e-15.
-  # The tolerances are floating slack over those.
+  # Measured on x86_64-w64-mingw32 by `dev_notes/issue327/bary327.R`. The
+  # tolerances are floating slack over those.
   expect_lt(max(e_int), 1e-9)
   expect_lt(max(e_sim), 1e-9)
   # The numeric route asks stats::integrate() for rel.tol = eps^0.75 on each of
@@ -78,8 +79,9 @@ test_that("the barycentre is the box's own first moment, on either sign of a", {
   # twice that relative, and the box half-widths here are O(1). The bound is
   # that contract with slack. What any one platform measures inside it is the
   # arithmetic it happened to do: where the adaptive subdivision lands moves
-  # with the libm, so the 1.55e-15 measured on the build above is not a figure
-  # another platform has to reproduce.
+  # with the libm, and the same grid measures 1.55e-15 on x86_64-w64-mingw32
+  # and 2e-12 on aarch64-apple-darwin23 (GitHub Actions run 32475678231, image
+  # macos-26-arm64, R 4.6.1).
   expect_lt(max(e_sim[route == "numeric"]), 8 * .Machine$double.eps^0.75)
 
   # A barycentre is the first moment of a positive density over the box, so it
@@ -360,6 +362,13 @@ test_that("a refined cell records its barycentre shift beside its box mass", {
   base <- if (is.null(d$dnode)) rep(1, nrow(d$joint_grid)) else d$dnode
   outer_grid_weights(d, dnode = base * exp(bm$log_box_ratio))
 }
+
+# The rules correct how a coarse grid integrates the marginal likelihood, so the
+# measurements state a flat outer prior. `dev_notes/issue327/bary327.R` measures
+# every figure below under a stated prior and within-cell read; where a figure is
+# quoted under both priors it is written flat / proper.
+.BAR_HYPERPRIOR <- "flat"
+
 .bar_place_g <- function(d)
   tulpa:::.joint_local_ccd_barycentre(d$joint_grid, d$log_marginal,
                                       d$axis_names, d$axis_tags)
@@ -369,7 +378,8 @@ test_that("a rebuild at its own coordinates returns the read the fit shipped", {
   # The round trip the coordinate argument has to satisfy before any candidate
   # placement measured through it means anything: own coordinates plus own
   # weights is the shipped read. Measured at 0 on every reported number.
-  d <- outer_grid_dump(ogd_fixture_fit(ogd_fixture_sim(c(0.8, 0.5, 0.3)), 5L))
+  d <- outer_grid_dump(ogd_fixture_fit(ogd_fixture_sim(c(0.8, 0.5, 0.3)), 5L,
+                                       hyperprior = .BAR_HYPERPRIOR))
   rb <- outer_grid_rebuild(d, d$weights, d$joint_grid)
   expect_equal(rb$median, d$reported$median, tolerance = 1e-12)
   expect_equal(rb$ci_lo, d$reported$ci_lo, tolerance = 1e-12)
@@ -391,7 +401,7 @@ test_that("the barycentre's read is reported against what this grid can resolve"
 
   # Four levels, where a cell carries whole nats of gradient and the atom moves
   # most of the way to its own edge (largest shift 0.887 of a half-cell).
-  d4 <- outer_grid_dump(ogd_fixture_fit(sim, 4L))
+  d4 <- outer_grid_dump(ogd_fixture_fit(sim, 4L, hyperprior = .BAR_HYPERPRIOR))
   bc4 <- .bar_place_g(d4)
   expect_identical(sum(bc4$computed), 8L)
   expect_identical(bc4$n_axes_declined, 0L)
@@ -402,11 +412,12 @@ test_that("the barycentre's read is reported against what this grid can resolve"
 
   r4 <- outer_grid_weight_report(d4, joint_grid = bc4$joint_grid)
   # Measured under the read the engine ships (see `ogd_fixture_fit()`, which
-  # states it rather than inheriting it -- gcol33/tulpa#599). Endpoints 0.2628
-  # against a floor of 0.2041 and widths 0.5256 against 0.3359: the placement
+  # states it rather than inheriting it -- gcol33/tulpa#599). Endpoints 0.2679
+  # against a floor of 0.1909 and widths 0.5357 against 0.3060: the placement
   # moves the interval by more than one step of coarsening moves it. The median
-  # moves 0.0988 against a floor of 0.1032, the same size, so this grid does not
-  # separate the two and no verdict on the location is read off it. What it does
+  # moves 0.0910 against a floor of 0.0886, the same size, so this grid does not
+  # separate the two and no verdict on the location is read off it. Under the
+  # proper prior: 0.2628 / 0.2041, 0.5256 / 0.3359, 0.0988 / 0.1032. What it does
   # show is the ordering: the placement reaches the interval and not the centre.
   expect_true(r4$above_floor[["endpoints"]])
   expect_true(r4$above_floor[["widths"]])
@@ -416,23 +427,21 @@ test_that("the barycentre's read is reported against what this grid can resolve"
 
   # Five levels, where the same grid already places its atoms close enough that
   # the interval barely notices.
-  d5 <- outer_grid_dump(ogd_fixture_fit(sim, 5L))
+  d5 <- outer_grid_dump(ogd_fixture_fit(sim, 5L, hyperprior = .BAR_HYPERPRIOR))
   bc5 <- .bar_place_g(d5)
   expect_identical(sum(bc5$computed), 27L)
   r5 <- outer_grid_weight_report(d5, joint_grid = bc5$joint_grid)
-  # Measured: the margins say which part the placement reaches -- widths 0.2856
-  # against 0.1475, 1.94x the resolution, against 1.70x on the median, while
-  # the endpoints move 0.1428 against a floor of 0.1475 and are not resolved.
-  expect_true(r5$above_floor[["widths"]])
-  expect_true(r5$above_floor[["median"]])
-  expect_gt(r5$diff$widths / r5$floor$widths,
-            r5$diff$median / r5$floor$median)
-  expect_gt(r5$diff$widths / r5$floor$widths,
-            r5$diff$endpoints / r5$floor$endpoints)
+  # Measured: all three parts above the floor, and the margins say which one the
+  # placement reaches -- widths 0.2746 against 0.0699, 3.9 times the
+  # resolution, against 1.34x on the median and 1.09x on the endpoints. Under
+  # the proper prior the endpoints are not resolved (0.1428 against 0.1475) and
+  # the widths clear theirs 1.94x (0.2856 against 0.1475), the median 1.70x.
+  expect_true(all(r5$above_floor))
+  expect_gt(r5$diff$widths, 2.5 * r5$floor$widths)
   # Which part carries the margin is a property of the within-cell read, not of
   # the placement. Under `chord` the same fit answers the other way round: the
-  # median clears its floor 11x (0.0539 against 0.0048) while the endpoints and
-  # widths clear theirs 1.7x. Both reads put the same mass in the same cells and
+  # median clears its floor 9.2x (0.0521 against 0.0057) while the endpoints and
+  # widths clear theirs 2.6x; 11.2x and 1.7x under the proper prior. Both reads put the same mass in the same cells and
   # differ by half a cell in where inside one they place it, which on a grid
   # this coarse is the scale the median is resolved at.
 })
@@ -445,14 +454,15 @@ test_that("the pair is what moves both parts of the read toward the dense answer
   # cells -- against which the shipped read and all three candidate rules are
   # scored on the coarse grid.
   sim <- ogd_fixture_sim(c(0.8, 0.5, 0.3))
-  ref <- outer_grid_rebuild(outer_grid_dump(ogd_fixture_fit(sim, 12L)))
+  ref <- outer_grid_rebuild(outer_grid_dump(
+    ogd_fixture_fit(sim, 12L, hyperprior = .BAR_HYPERPRIOR)))
   err <- function(d, w, g) outer_grid_read_diff(ref, outer_grid_rebuild(d, w, g))
 
-  # Four levels. Measured (endpoints / widths / median):
-  #   shipped   0.2083  0.3094  0.1509
-  #   mass      0.1836  0.0954  0.1757
-  #   location  0.1081  0.2162  0.0636
-  #   pair      0.1337  0.2673  0.0617
+  # Four levels. Measured (endpoints / widths / median), flat | proper:
+  #   shipped   0.2014  0.3153  0.1540 | 0.2083  0.3094  0.1509
+  #   mass      0.1838  0.0955  0.1761 | 0.1836  0.0954  0.1757
+  #   location  0.1102  0.2204  0.0640 | 0.1081  0.2162  0.0636
+  #   pair      0.1399  0.2799  0.0624 | 0.1337  0.2673  0.0617
   # The mass rule buys the interval and loses the location, which is the split
   # the barycentre exists to close: it improves all three at once. The pair
   # improves all three too, sitting between the two rules on the endpoints,
@@ -460,8 +470,16 @@ test_that("the pair is what moves both parts of the read toward the dense answer
   # 5 of the same fixture, against the shipped read, the mass rule wins the
   # widths 5 of 5, the median 3 of 5 and the endpoints 1 of 5, while the
   # location rule and the pair each win the median 5 of 5 and the endpoints and
-  # widths 4 of 5.
-  d4 <- outer_grid_dump(ogd_fixture_fit(sim, 4L))
+  # widths 4 of 5, under either prior.
+  #
+  # The table was first measured under the `chord` read, and under `chord` with
+  # the flat prior it is reproduced to the digit: shipped 0.4067 / 0.8135 /
+  # 0.1158, mass 0.1516 / 0.1656 / 0.2028, location 0.1224 / 0.2449 / 0.0689,
+  # pair 0.1868 / 0.3736 / 0.0730. Over the five seeds there the mass rule wins
+  # the endpoints and widths 5 of 5 and the median 1 of 5, the location rule
+  # all three 5 of 5, and the pair the endpoints and widths 5 of 5 and the
+  # median 4 of 5.
+  d4 <- outer_grid_dump(ogd_fixture_fit(sim, 4L, hyperprior = .BAR_HYPERPRIOR))
   w4 <- .bar_mass_w(d4); g4 <- .bar_place_g(d4)$joint_grid
   e0 <- err(d4, NULL, NULL)
   em <- err(d4, w4, NULL)
@@ -479,18 +497,25 @@ test_that("the pair is what moves both parts of the read toward the dense answer
   # good as the mass rule alone.
   expect_lt(em$widths, eb$widths)
 
-  # Five levels, where the shipped read is already close. Measured:
-  #   shipped   0.0506  0.0450  0.0423
-  #   mass      0.0848  0.1632  0.0306
-  #   location  0.1653  0.3306  0.0198
-  #   pair      0.0868  0.1736  0.0198
+  # Five levels, where the shipped read is already close. Measured, flat |
+  # proper:
+  #   shipped   0.0319  0.0536  0.0431 | 0.0506  0.0450  0.0423
+  #   mass      0.0824  0.1609  0.0308 | 0.0848  0.1632  0.0306
+  #   location  0.1313  0.2627  0.0195 | 0.1653  0.3306  0.0198
+  #   pair      0.0896  0.1792  0.0195 | 0.0868  0.1736  0.0198
   # Each rule costs the interval here and each improves the median, the
-  # location half by a factor of 2.1. Over seeds 1 to 5 no candidate's mean
-  # error falls on all three parts at this resolution: every rule costs the
-  # interval on average (the pair 0.0759 / 0.1366 against the shipped 0.0647 /
-  # 0.0914) and every rule improves the median, the pair most (0.0294 against
-  # 0.0459).
-  d5 <- outer_grid_dump(ogd_fixture_fit(sim, 5L))
+  # location half by a factor of 2.2 / 2.1. Over seeds 1 to 5 no candidate's
+  # mean error falls on all three parts at this resolution: every rule costs the
+  # interval on average (the pair 0.0765 / 0.1391 against the shipped 0.0627 /
+  # 0.0951 flat, 0.0759 / 0.1366 against 0.0647 / 0.0914 proper) and every rule
+  # improves the median, the pair most (0.0297 against 0.0459 flat, 0.0294
+  # against 0.0459 proper). Under `chord` with the flat prior the table is again
+  # the one first measured -- shipped 0.0952 / 0.1904 / 0.0469, mass 0.1281 /
+  # 0.2561 / 0.0459, location 0.1632 / 0.3264 / 0.0145, pair 0.1215 / 0.2430 /
+  # 0.0145, the location half taking the median down 3.2x -- and over the five
+  # seeds the pair is the only candidate whose mean error falls on all three
+  # parts (0.0993 / 0.1914 / 0.0294 against 0.1373 / 0.2747 / 0.0369).
+  d5 <- outer_grid_dump(ogd_fixture_fit(sim, 5L, hyperprior = .BAR_HYPERPRIOR))
   e0 <- err(d5, NULL, NULL)
   el <- err(d5, NULL, .bar_place_g(d5)$joint_grid)
   expect_lt(el$median, e0$median / 2)

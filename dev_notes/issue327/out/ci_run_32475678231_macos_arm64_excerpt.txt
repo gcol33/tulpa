@@ -1,0 +1,21 @@
+2026-08-21T11:18:10.1576850Z * checking for unstated dependencies in ‘tests’ ... OK
+2026-08-21T11:18:10.5255560Z * checking tests ...
+2026-08-21T11:19:36.6065360Z   Running ‘testthat.R’ [85s/86s]
+2026-08-21T11:19:36.6470710Z  [85s/86s] ERROR
+2026-08-21T11:19:36.6542710Z Running the tests in ‘tests/testthat.R’ failed.
+2026-08-21T11:19:36.6545080Z Last 13 lines of output:
+2026-08-21T11:19:36.6550390Z     'test-zi-random-effects.R:376:3', 'test-zi-random-effects.R:764:3',
+2026-08-21T11:19:36.6552140Z     'test-zi-random-effects.R:793:3'
+2026-08-21T11:19:36.6554010Z   • package sources not available (3): 'test-mode-find.R:146:3',
+2026-08-21T11:19:36.6556470Z     'test-settings.R:241:5', 'test-settings.R:259:5'
+2026-08-21T11:19:37.6707250Z   
+2026-08-21T11:19:37.6709590Z   ══ Failed tests ════════════════════════════════════════════════════════════════
+2026-08-21T11:19:37.6711530Z   ── Failure ('test-nested-laplace-joint-barycentre.R:75:3'): the barycentre is the box's own first moment, on either sign of a ──
+2026-08-21T11:19:37.6712510Z   Expected `max(e_sim[route == "numeric"])` < 1e-12.
+2026-08-21T11:19:37.6712940Z   Actual comparison: 0.000000000002 >= 0.000000000001
+2026-08-21T11:19:37.6713400Z   Difference: 0.000000000001 >= 0
+2026-08-21T11:19:37.6713660Z   
+2026-08-21T11:19:37.6714000Z   [ FAIL 1 | WARN 15 | SKIP 950 | PASS 14718 ]
+2026-08-21T11:19:37.6714870Z   Error:
+2026-08-21T11:19:37.6715090Z   ! Test failures.
+2026-08-21T11:19:37.6715400Z   Execution halted

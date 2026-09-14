@@ -1,0 +1,97 @@
+---- sweep identity ----
+build         head_sha=85a3161111a9057aed9040b47f51fa250e4b65a2 | overlay R/hyperprior_default.R 9f31fa162d1dc50c2e64fa44aaec3167e5230eaa | overlay R/nested_laplace_joint_ccd_local.R 2d5d0dc700e79f0def230630b0dd82eb52364f25 | overlay R/nested_laplace.R 6efe21ce1ca20349ca236f3197895d87a0a4ee74 | overlay R/nested_laplace_joint.R 914b9b5cda5c87bb669f03b13e6212239ddfdee9 | overlay R/nested_laplace_joint_multi.R d07bc868f5f36eeac01e196d1a388823f0b8c56f | overlay R/nested_laplace_re_cov.R f6a281f096d721647c803309192ae64fe4e85941 | overlay R/tulpa.R a6c2962f0e9800ca9ad19ee117d696bfdcebd2ff | overlay man-roxygen/hyperprior.R 30361fdbb5f72673ed5aae62a6057767607a8bcf | overlay tests/testthat/helper-outer-grid-dump.R 56ffbfd9356cdc34c21a21932ba7ddaa0dfe647d | overlay tests/testthat/test-nested-laplace-joint-barycentre.R 7ca65a16b4a946443c89534f0b08f43e825ed95d | overlay tests/testthat/test-nested-laplace-joint-descriptor-plane.R 105e0b9bc1bc2c61b8e1ea8081b31354f4e1f836 | overlay tests/testthat/test-re-cov-nested.R d70e452e3989277db24b40d5d19554724825f754 | overlay diff lines touching the batch capture (must be 0): | compiled from a clean export: objects before build = 0
+tulpa_path    C:/Users/Gilles Colling/AppData/Local/Temp/claude/C--Users-Gilles-Colling-Documents-dev-tulpa/487c34db-e676-401e-8bc4-e13bb5c9104e/scratchpad/flat/lib_hp/tulpa
+tulpa_version 0.4.0
+platform      x86_64-w64-mingw32
+R             R version 4.6.1 (2026-06-24 ucrt)
+hyperprior    proper
+within_cell   box_uniform
+started       2026-09-14 15:47:06 +0200
+family        gaussian
+seeds         1 | 2 | 3 | 4 | 5 | 6 | 7 | 8
+spreads       2 | 3 | 4
+------------------------
+hyperprior proper  family gaussian  spreads 2,3,4  seeds 1-8
+cells 840  fits 72  coarse fits 48 
+
+== separation ==
+rho(R_M,R_L) pooled 0.9028  L4 0.9060  L5 0.9078 
+per-fit median 0.9512 
+off quartile diagonal 0.3226 
+R_M range 0.0127 78.7378  R_L range 0.2187 1.6343  bound 1.7321  max R_L/bound 0.9435  max R_L_max 0.9621 
+rho(R_M,R_L_A) pooled 0.9487  L4 0.9765  L5 0.9571 
+
+== resolutions ==
+median R_M 8.4191 7.1215  MW p 0.4677 
+median R_L 1.1229 1.1592  MW p 0.0902  shift 0.0323 
+q
+M+L+ M+L- M-L+ M-L- 
+43.2  6.8  6.8 43.2 
+q
+M+L+ M+L- M-L+ M-L- 
+43.5  6.5  6.5 43.5 
+weighted R_M 3.1117 1.2425  ratio 2.5044  weighted R_L 0.7838 0.6863 
+
+== resolvable ==
+endpoints  L4 0.4010  L5 0.0247 
+widths  L4 0.4271  L5 0.0556 
+median  L4 0.8802  L5 0.8179 
+
+== quadrant gain against its permutation null (seed 327, 999 shuffles) ==
+endpoints 5 n resolved 16 (not scored)
+      part lv      rl   n   gain      p null_mean null_q95
+ endpoints  4     R_L  77 0.0000 1.0000    0.0000   0.0000
+ endpoints  4 R_L_max  77 0.0000 1.0000    0.0000   0.0000
+ endpoints  4   R_L_A  77 0.0000 1.0000    0.0009   0.0000
+    widths  4     R_L  82 0.0000 1.0000    0.0016   0.0122
+    widths  4 R_L_max  82 0.0000 1.0000    0.0019   0.0122
+    widths  4   R_L_A  82 0.0000 1.0000    0.0041   0.0244
+    widths  5     R_L  36 0.0000 1.0000    0.0044   0.0278
+    widths  5 R_L_max  36 0.0278 0.5465    0.0183   0.0556
+    widths  5   R_L_A  36 0.0000 1.0000    0.0192   0.0556
+    median  4     R_L 169 0.0473 0.0000    0.0013   0.0118
+    median  4 R_L_max 169 0.0473 0.0000    0.0019   0.0118
+    median  4   R_L_A 169 0.0592 0.0000    0.0024   0.0118
+    median  5     R_L 530 0.0000 1.0000    0.0000   0.0000
+    median  5 R_L_max 530 0.0000 1.0000    0.0000   0.0000
+    median  5   R_L_A 530 0.0000 1.0000    0.0000   0.0000
+scored 15  gain exactly 0 in 11 
+median contingency L 4  n 169  p 1.09e-08  V 0.3301 
+      
+       both loc mass none
+  M-L-   27   7    8   33
+  M-L+    4   0    0    6
+  M+L-    9   0    0    1
+  M+L+   66   2    2    4
+argmax per quadrant: M-L- none; M-L+ none; M+L- both; M+L+ both 
+median contingency L 5  n 530  p 0.000586  V 0.1357 
+      
+       both loc mass none
+  M-L-   23  13    2  189
+  M-L+    4   6    0   28
+  M+L-    5   0    2   31
+  M+L+   35  37    3  152
+argmax per quadrant: M-L- none; M-L+ none; M+L- none; M+L+ none 
+labels L 4 endpoints  n 77 : both 0.831 loc 0.013 mass 0.052 none 0.104 
+labels L 4 widths  n 82 : both 0.683 loc 0.012 mass 0.195 none 0.11 
+labels L 4 median  n 169 : both 0.627 loc 0.053 mass 0.059 none 0.26 
+labels L 5 endpoints  n 16 : both 0.5 loc 0.062 none 0.438 
+labels L 5 widths  n 36 : both 0.194 loc 0.028 mass 0.111 none 0.667 
+labels L 5 median  n 530 : both 0.126 loc 0.106 mass 0.013 none 0.755 
+
+== loc versus mass ==
+L4 endpoints n=58 rho=+0.2918 p=0.0263 partial(R_L | R_M)=+0.247  [scored by the test]
+L4 widths    n=37 rho=+0.1246 p=0.462 partial(R_L | R_M)=-0.030  [scored by the test]
+L4 median    n=164 rho=+0.3816 p=4.6e-07 partial(R_L | R_M)=+0.347  [scored by the test]
+L5 endpoints n=12 rho=+0.3258 p=0.301 partial(R_L | R_M)=+0.481
+L5 widths    n=31 rho=+0.2821 p=0.124 partial(R_L | R_M)=+0.379  [scored by the test]
+L5 median    n=528 rho=+0.0866 p=0.0468 partial(R_L | R_M)=+0.157  [scored by the test]
+test-scored strata 5  max |rho| 0.3816  median |rho| 0.2821 
+
+== composition (per-seed means of summed one-cell against whole-grid) ==
+endpoints L4 per +0.6280 whole +0.0507 ratio 12.38
+endpoints L5 per -0.1781 whole -0.0203 ratio 8.77
+widths    L4 per +1.0930 whole +0.0466 ratio 23.45
+widths    L5 per -0.3936 whole -0.0613 ratio 6.42
+median    L4 per +0.5823 whole +0.0810 ratio 7.19
+median    L5 per -0.3696 whole +0.0055 ratio -67.82

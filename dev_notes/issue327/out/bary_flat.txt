@@ -1,0 +1,106 @@
+---- sweep identity ----
+build         head_sha=85a3161111a9057aed9040b47f51fa250e4b65a2 | overlay R/hyperprior_default.R 9f31fa162d1dc50c2e64fa44aaec3167e5230eaa | overlay R/nested_laplace_joint_ccd_local.R 2d5d0dc700e79f0def230630b0dd82eb52364f25 | overlay R/nested_laplace.R 6efe21ce1ca20349ca236f3197895d87a0a4ee74 | overlay R/nested_laplace_joint.R 914b9b5cda5c87bb669f03b13e6212239ddfdee9 | overlay R/nested_laplace_joint_multi.R d07bc868f5f36eeac01e196d1a388823f0b8c56f | overlay R/nested_laplace_re_cov.R f6a281f096d721647c803309192ae64fe4e85941 | overlay R/tulpa.R a6c2962f0e9800ca9ad19ee117d696bfdcebd2ff | overlay man-roxygen/hyperprior.R 30361fdbb5f72673ed5aae62a6057767607a8bcf | overlay tests/testthat/helper-outer-grid-dump.R 56ffbfd9356cdc34c21a21932ba7ddaa0dfe647d | overlay tests/testthat/test-nested-laplace-joint-barycentre.R 7ca65a16b4a946443c89534f0b08f43e825ed95d | overlay tests/testthat/test-nested-laplace-joint-descriptor-plane.R 105e0b9bc1bc2c61b8e1ea8081b31354f4e1f836 | overlay tests/testthat/test-re-cov-nested.R d70e452e3989277db24b40d5d19554724825f754 | overlay diff lines touching the batch capture (must be 0): | compiled from a clean export: objects before build = 0
+tulpa_path    C:/Users/Gilles Colling/AppData/Local/Temp/claude/C--Users-Gilles-Colling-Documents-dev-tulpa/487c34db-e676-401e-8bc4-e13bb5c9104e/scratchpad/flat/lib_hp/tulpa
+tulpa_version 0.4.0
+platform      x86_64-w64-mingw32
+R             R version 4.6.1 (2026-06-24 ucrt)
+hyperprior    flat
+within_cell   box_uniform
+started       2026-09-14 15:50:44 +0200
+------------------------
+
+== closed form against quadrature, 648 combinations ==
+platform x86_64-w64-mingw32 
+max e_int 2.36e-11  max e_sim 2.36e-11  max |integrate - simpson| 1.55e-15 
+worst e_int at g -8 a 0.05 h 0.25 0.25 route closed  err/width 4.71e-11  eps * cancellation product 4.55e-11 
+numeric route: max e_sim 1.55e-15  max e_int 0  bound 8 eps^0.75 1.46e-11 
+
+== round trip, five levels ==
+[nested-laplace-joint] 1/125 cells (1%) | elapsed 0s | ETA >=0s | 0.00s/cells
+[nested-laplace-joint] 125/125 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
+max |rebuild - reported| 0 
+
+== placement against the grid's own resolution ==
+[nested-laplace-joint] 1/64 cells (2%) | elapsed 0s | ETA >=0s | 0.00s/cells
+[nested-laplace-joint] 64/64 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
+box_uniform L4 computed 8  max shift 0.8872 | endpoints 0.2679 / floor 0.1909 (1.40x) widths 0.5357 / floor 0.3060 (1.75x) median 0.0910 / floor 0.0886 (1.03x)
+[nested-laplace-joint] 1/125 cells (1%) | elapsed 0s | ETA >=0s | 0.00s/cells
+[nested-laplace-joint] 125/125 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
+box_uniform L5 computed 27  max shift 0.9236 | endpoints 0.1373 / floor 0.1262 (1.09x) widths 0.2746 / floor 0.0699 (3.93x) median 0.0372 / floor 0.0278 (1.34x)
+[nested-laplace-joint] 1/64 cells (2%) | elapsed 0s | ETA >=0s | 0.00s/cells
+[nested-laplace-joint] 64/64 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
+chord       L4 computed 8  max shift 0.8872 | endpoints 0.5292 / floor 0.1355 (3.90x) widths 1.0583 / floor 0.2703 (3.92x) median 0.0623 / floor 0.0492 (1.27x)
+[nested-laplace-joint] 1/125 cells (1%) | elapsed 0s | ETA >=0s | 0.00s/cells
+[nested-laplace-joint] 125/125 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
+chord       L5 computed 27  max shift 0.9236 | endpoints 0.2584 / floor 0.1005 (2.57x) widths 0.5169 / floor 0.1981 (2.61x) median 0.0521 / floor 0.0057 (9.21x)
+
+== the four arms against a twelve-level reference, seed 4242 ==
+[nested-laplace-joint] 1/1728 cells (0%) | elapsed 0s | ETA >=2s | 0.00s/cells
+[nested-laplace-joint] 1728/1728 cells (100%) | elapsed 1s | ETA done | 0.00s/cells
+[nested-laplace-joint] 1/64 cells (2%) | elapsed 0s | ETA >=0s | 0.00s/cells
+[nested-laplace-joint] 64/64 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
+[nested-laplace-joint] 1/125 cells (1%) | elapsed 0s | ETA >=0s | 0.00s/cells
+[nested-laplace-joint] 125/125 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
+four levels
+         endpoints widths median
+shipped     0.2014 0.3153 0.1540
+mass        0.1838 0.0955 0.1761
+location    0.1102 0.2204 0.0640
+pair        0.1399 0.2799 0.0624
+five levels
+         endpoints widths median
+shipped     0.0319 0.0536 0.0431
+mass        0.0824 0.1609 0.0308
+location    0.1313 0.2627 0.0195
+pair        0.0896 0.1792 0.0195
+five levels: shipped / location median 2.2159 
+
+== seeds 1 to 5 ==
+[nested-laplace-joint] 1/1728 cells (0%) | elapsed 0s | ETA >=1s | 0.00s/cells
+[nested-laplace-joint] 1728/1728 cells (100%) | elapsed 1s | ETA done | 0.00s/cells
+[nested-laplace-joint] 1/64 cells (2%) | elapsed 0s | ETA >=0s | 0.00s/cells
+[nested-laplace-joint] 64/64 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
+[nested-laplace-joint] 1/125 cells (1%) | elapsed 0s | ETA >=0s | 0.00s/cells
+[nested-laplace-joint] 125/125 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
+[nested-laplace-joint] 1/1728 cells (0%) | elapsed 0s | ETA >=2s | 0.00s/cells
+[nested-laplace-joint] 1728/1728 cells (100%) | elapsed 1s | ETA done | 0.00s/cells
+[nested-laplace-joint] 1/64 cells (2%) | elapsed 0s | ETA >=0s | 0.00s/cells
+[nested-laplace-joint] 64/64 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
+[nested-laplace-joint] 1/125 cells (1%) | elapsed 0s | ETA >=0s | 0.00s/cells
+[nested-laplace-joint] 125/125 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
+[nested-laplace-joint] 1/1728 cells (0%) | elapsed 0s | ETA >=1s | 0.00s/cells
+[nested-laplace-joint] 1728/1728 cells (100%) | elapsed 1s | ETA done | 0.00s/cells
+[nested-laplace-joint] 1/64 cells (2%) | elapsed 0s | ETA >=0s | 0.00s/cells
+[nested-laplace-joint] 64/64 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
+[nested-laplace-joint] 1/125 cells (1%) | elapsed 0s | ETA >=0s | 0.00s/cells
+[nested-laplace-joint] 125/125 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
+[nested-laplace-joint] 1/1728 cells (0%) | elapsed 0s | ETA >=3s | 0.00s/cells
+[nested-laplace-joint] 1728/1728 cells (100%) | elapsed 1s | ETA done | 0.00s/cells
+[nested-laplace-joint] 1/64 cells (2%) | elapsed 0s | ETA >=0s | 0.00s/cells
+[nested-laplace-joint] 64/64 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
+[nested-laplace-joint] 1/125 cells (1%) | elapsed 0s | ETA >=0s | 0.00s/cells
+[nested-laplace-joint] 125/125 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
+[nested-laplace-joint] 1/1728 cells (0%) | elapsed 0s | ETA >=1s | 0.00s/cells
+[nested-laplace-joint] 1728/1728 cells (100%) | elapsed 1s | ETA done | 0.00s/cells
+[nested-laplace-joint] 1/64 cells (2%) | elapsed 0s | ETA >=0s | 0.00s/cells
+[nested-laplace-joint] 64/64 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
+[nested-laplace-joint] 1/125 cells (1%) | elapsed 0s | ETA >=0s | 0.00s/cells
+[nested-laplace-joint] 125/125 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
+L4 mass     wins against shipped: endpoints 1  widths 5  median 3 of 5
+L5 mass     wins against shipped: endpoints 1  widths 0  median 4 of 5
+L4 location wins against shipped: endpoints 4  widths 4  median 5 of 5
+L5 location wins against shipped: endpoints 0  widths 0  median 5 of 5
+L4 pair     wins against shipped: endpoints 4  widths 4  median 5 of 5
+L5 pair     wins against shipped: endpoints 0  widths 0  median 5 of 5
+four-level means
+         endpoints widths median
+shipped     0.1753 0.2807 0.1385
+mass        0.1596 0.0842 0.1366
+location    0.1169 0.2205 0.0716
+pair        0.1302 0.2437 0.0706
+five-level means
+         endpoints widths median
+shipped     0.0627 0.0951 0.0459
+mass        0.0754 0.1364 0.0357
+location    0.1398 0.2796 0.0310
+pair        0.0765 0.1391 0.0297

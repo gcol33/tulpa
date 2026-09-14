@@ -387,21 +387,29 @@ test_that("a CCD fit reports a scale interval that is not the node extent", {
   skip_on_cran()
   d <- sim_corr_recov(77L, G = 60L, npg = 12L)
   rt <- list(idx = d$grp, n_groups = d$G, n_coefs = 2L, Z = d$Z)
+  # The design this reads is the one the marginal likelihood alone places, so
+  # the prior is stated flat.
   res <- tulpa_re_cov_nested(d$y, rep(1L, d$N), d$X, rt, family = "binomial",
+                             hyperprior = "flat",
                              control = list(diagnose_k = FALSE))
   # theta axis 1 is log(L_11) = log(sigma_1), so the design's extent on sigma_1
-  # is exp(range(theta_grid[, 1])). The reported interval is the Gaussian of
-  # the design-weighted moments of log(sigma_1), m +- z s, so where it ends is
-  # set by how the weights spread the nodes, not by the outermost node.
+  # is exp(range(theta_grid[, 1])). The reported interval covers strictly more.
+  # Measured on log(sigma_1): nodes [-0.32935, 0.26114], interval [-0.33464,
+  # 0.26504]. Under the default pc_lkj prior the same data give nodes
+  # [-0.33816, 0.24291] and interval [-0.34293, 0.24240], whose upper end sits
+  # inside the outermost node (`dev_notes/issue730/re_cov_ccd_interval.R`). Under
+  # either prior the interval is the Gaussian of the design-weighted moments of
+  # log(sigma_1), m +- z s.
   th  <- as.numeric(res$theta_grid[, 1L])
   ax  <- range(th)
   w   <- res$weights / sum(res$weights)
   m   <- sum(w * th)
   s   <- sqrt(sum(w * th^2) - m^2)
   row <- res$posterior[res$posterior$parameter == "sigma_1", ]
+  expect_lt(log(row$ci_lo), ax[1L])
+  expect_gt(log(row$ci_hi), ax[2L])
   expect_equal(log(c(row$ci_lo, row$ci_hi)), m + stats::qnorm(c(0.025, 0.975)) * s,
                tolerance = 1e-10)
-  expect_false(isTRUE(all.equal(log(c(row$ci_lo, row$ci_hi)), ax)))
   expect_gt(row$ci_lo, 0)
   # A correlation interval stays inside (-1, 1).
   rr <- res$posterior[res$posterior$parameter == "rho_12", ]

@@ -1,0 +1,26 @@
+---- sweep identity ----
+build         head_sha=85a3161111a9057aed9040b47f51fa250e4b65a2 | overlay R/hyperprior_default.R 9f31fa162d1dc50c2e64fa44aaec3167e5230eaa | overlay R/nested_laplace_joint_ccd_local.R 2d5d0dc700e79f0def230630b0dd82eb52364f25 | overlay R/nested_laplace.R 6efe21ce1ca20349ca236f3197895d87a0a4ee74 | overlay R/nested_laplace_joint.R 914b9b5cda5c87bb669f03b13e6212239ddfdee9 | overlay R/nested_laplace_joint_multi.R d07bc868f5f36eeac01e196d1a388823f0b8c56f | overlay R/nested_laplace_re_cov.R f6a281f096d721647c803309192ae64fe4e85941 | overlay R/tulpa.R a6c2962f0e9800ca9ad19ee117d696bfdcebd2ff | overlay man-roxygen/hyperprior.R 30361fdbb5f72673ed5aae62a6057767607a8bcf | overlay tests/testthat/helper-outer-grid-dump.R 56ffbfd9356cdc34c21a21932ba7ddaa0dfe647d | overlay tests/testthat/test-nested-laplace-joint-barycentre.R 7ca65a16b4a946443c89534f0b08f43e825ed95d | overlay tests/testthat/test-nested-laplace-joint-descriptor-plane.R 105e0b9bc1bc2c61b8e1ea8081b31354f4e1f836 | overlay tests/testthat/test-re-cov-nested.R d70e452e3989277db24b40d5d19554724825f754 | overlay diff lines touching the batch capture (must be 0): | compiled from a clean export: objects before build = 0
+tulpa_path    C:/Users/Gilles Colling/AppData/Local/Temp/claude/C--Users-Gilles-Colling-Documents-dev-tulpa/487c34db-e676-401e-8bc4-e13bb5c9104e/scratchpad/flat/lib_hp/tulpa
+tulpa_version 0.4.0
+platform      x86_64-w64-mingw32
+R             R version 4.6.1 (2026-06-24 ucrt)
+hyperprior    flat
+within_cell   chord
+started       2026-09-14 16:03:50 +0200
+------------------------
+seed 1 done, 11s
+seed 2 done, 11s
+seed 3 done, 10s
+seed 4 done, 10s
+seed 5 done, 10s
+seed 6 done, 10s
+seed 7 done, 10s
+seed 8 done, 10s
+
+=== totals over 24 configurations ( 8 seeds x 3 budgets ), hyperprior flat ===
+ep  base  4.7791  5-level  2.0373  weight  4.1333  mass_moved  3.7465  floor  7.4125 | arm-to-arm difference above floor in 0 of 24, mass_moved nearer in 10
+wd  base  8.9002  5-level  2.2031  weight  8.2445  mass_moved  7.2527  floor 14.8003 | arm-to-arm difference above floor in 0 of 24, mass_moved nearer in 10
+md  base  2.0391  5-level  2.1027  weight  0.5772  mass_moved  1.4059  floor  0.2381 | arm-to-arm difference above floor in 14 of 24, mass_moved nearer in 0
+ max_cells 2: identical grids 0/8
+ max_cells 4: identical grids 0/8
+ max_cells 8: identical grids 0/8
