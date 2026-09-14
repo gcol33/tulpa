@@ -54,10 +54,25 @@ struct BatchArmBuffers {
     // `n_trials_batch` input alongside `y_batch` and a stride here, which
     // changes the exported signature.
     std::vector<std::vector<int>> n_trials;
-    // phi[k * B + s]: per-species dispersion for arm k. Built once / per grid.
+    // phi[k * B + s]: per-species dispersion for arm k. Built once; an arm with
+    // a dispersion axis has it rewritten at every outer-grid cell from
+    // `phi_grid` (load_grid_cell).
     std::vector<double> phi;
+    // Per-arm dispersion axes on the outer grid, one column per species
+    // (n_cols == B). An arm with no axis has an empty entry and keeps `phi`.
+    ArmGridTable phi_grid;
     std::vector<int> N;          // per-arm row count N_k
     int n_arms = 0;
+
+    // Load every species' dispersion at outer-grid cell kg for each arm that
+    // carries an axis. Every reader of `phi` (the fused scatter and the
+    // per-species objective) then sees the cell's dispersion.
+    void load_grid_cell(int kg) {
+        for (int k = 0; k < n_arms; k++) {
+            if (phi_grid.active(k))
+                phi_grid.load_cell(k, kg, phi.data() + (std::size_t) k * B);
+        }
+    }
 
     void allocate(const std::vector<JointArm>& arms, int B_) {
         B = B_;
@@ -606,9 +621,9 @@ inline void scatter_cell_coupling_batch_sparse(
         buf, grad_per_sp, H_per_sp, policy, curvature, grad_only);
 }
 
-// Batched outer-grid driver (dense). Defined in nested_laplace_joint_batch.cpp.
+// Batched outer-grid driver. Defined in nested_laplace_joint_batch.cpp.
 // Returns an Rcpp::List of length n_batch; element s is
-// List(log_marginal[n_grid], weights[n_grid], modes[n_grid x n_x], n_iter).
+// List(log_marginal[n_grid], modes[n_grid x n_x], n_iter, score_max, converged).
 // All-coupled cell-coupling families only (occu_cover); errors otherwise.
 Rcpp::List run_multi_block_nested_laplace_joint_batch(
     int                              n_grid,

@@ -16,7 +16,10 @@
 // resolves the (row, col) -> flat-slot caches once per cell for all B species.
 //
 // Cell-coupling families with ALL arms coupled (occu_cover) only; plain
-// outer-grid sweep with per-species warm-start chaining. Returns per-species
+// outer-grid sweep with per-species warm-start chaining. An arm dispersion axis
+// crossed onto the grid is loaded per species at each cell (the species' own
+// nodes over the shared cell layout), as the single-species driver's
+// prep_at_grid loads it onto the arm. Returns per-species
 // { log_marginal, modes, n_iter, score_max, converged,
 // Q_csc_*_per_grid } so R unpacks each through the existing single-species
 // post-processing (including .joint_inner_vcov_block for SDs; store_Q stores
@@ -335,6 +338,7 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
     }
 
     for (int kg = 0; kg < n_grid; kg++) {
+        wbuf.load_grid_cell(kg);
         if (prep_at_grid) prep_at_grid(kg);
         bool feasible = true;
         for (const auto& b : blocks) {

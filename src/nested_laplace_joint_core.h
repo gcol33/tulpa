@@ -427,6 +427,71 @@ inline double log_prior_per_arm_re(const Rcpp::NumericVector& x,
     return lp;
 }
 
+// Per-arm values that vary over the outer grid beyond the latent-block axes: an
+// arm's dispersion crossed onto the grid as its own axis. Entry k is empty when
+// arm k carries no such axis, else n_grid * n_cols values laid cell-major, cell
+// kg and column s at kg * n_cols + s. One column is one fitted response: the
+// single-species driver reads one, the batched driver one per species, so each
+// species' axis sits at its own nodes over the cell layout the batch shares.
+struct ArmGridTable {
+    int n_grid = 0;
+    int n_cols = 1;
+    std::vector<std::vector<double>> values;
+
+    bool active(int k) const {
+        return k < static_cast<int>(values.size()) && !values[k].empty();
+    }
+
+    bool any() const {
+        for (const auto& v : values) if (!v.empty()) return true;
+        return false;
+    }
+
+    // Arm k's n_cols values at cell kg, written to dst[0], ..., dst[n_cols - 1].
+    void load_cell(int k, int kg, double* dst) const {
+        const double* row = values[k].data() + static_cast<std::size_t>(kg) * n_cols;
+        for (int s = 0; s < n_cols; s++) dst[s] = row[s];
+    }
+};
+
+// Parse an optional per-arm list into an ArmGridTable. Entry k is NULL or
+// length 0 (no axis), a length-n_grid vector when n_cols == 1, or an
+// [n_grid x n_cols] matrix (rows are outer-grid cells, columns responses).
+inline ArmGridTable parse_arm_grid_table(
+    Rcpp::Nullable<Rcpp::List> per_arm, int n_arms, int n_grid, int n_cols,
+    const char* arg_name
+) {
+    ArmGridTable out;
+    out.n_grid = n_grid;
+    out.n_cols = n_cols;
+    out.values.assign(n_arms, std::vector<double>());
+    if (per_arm.isNull()) return out;
+    Rcpp::List lst(per_arm);
+    if (static_cast<int>(lst.size()) != n_arms) {
+        Rcpp::stop("%s must have length n_arms (%d).", arg_name, n_arms);
+    }
+    for (int k = 0; k < n_arms; k++) {
+        if (Rf_isNull(lst[k])) continue;
+        Rcpp::NumericVector v = Rcpp::as<Rcpp::NumericVector>(lst[k]);
+        if (v.size() == 0) continue;
+        const bool dims_ok = v.hasAttribute("dim")
+            ? (Rf_nrows(v) == n_grid && Rf_ncols(v) == n_cols)
+            : (n_cols == 1 && static_cast<int>(v.size()) == n_grid);
+        if (!dims_ok) {
+            Rcpp::stop("%s[[%d]] must have length 0 or be [n_grid x %d] with "
+                       "n_grid = %d (the flat outer-grid size).",
+                       arg_name, k + 1, n_cols, n_grid);
+        }
+        std::vector<double>& dst = out.values[k];
+        dst.resize(static_cast<std::size_t>(n_grid) * n_cols);
+        for (int s = 0; s < n_cols; s++)
+            for (int kg = 0; kg < n_grid; kg++)
+                dst[static_cast<std::size_t>(kg) * n_cols + s] =
+                    v[static_cast<std::size_t>(s) * n_grid + kg];
+    }
+    return out;
+}
+
 } // namespace tulpa
 
 #endif // TULPA_NESTED_LAPLACE_JOINT_CORE_H

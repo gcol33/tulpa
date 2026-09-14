@@ -1259,40 +1259,16 @@ int build_joint_blocks_from_spec(
     return latent_offset;
 }
 
-// Parse the optional phi_grid_per_arm Rcpp::List. Reuses the convention from
-// the legacy joint kernels: list of length n_arms; entry k is either NULL
-// (no override) or a NumericVector of length n_grid (per outer-grid phi).
-std::vector<Rcpp::NumericVector> parse_phi_overrides_multi(
-    Rcpp::Nullable<Rcpp::List> phi_grid_per_arm, int n_arms, int n_grid
-) {
-    std::vector<Rcpp::NumericVector> out(n_arms);
-    if (phi_grid_per_arm.isNull()) return out;
-    Rcpp::List phi_list(phi_grid_per_arm);
-    if (static_cast<int>(phi_list.size()) != n_arms) {
-        Rcpp::stop("phi_grid_per_arm must have length n_arms (%d).", n_arms);
-    }
-    for (int k = 0; k < n_arms; k++) {
-        if (Rf_isNull(phi_list[k])) continue;
-        Rcpp::NumericVector v = Rcpp::as<Rcpp::NumericVector>(phi_list[k]);
-        if (v.size() == 0) continue;
-        if (static_cast<int>(v.size()) != n_grid) {
-            Rcpp::stop("phi_grid_per_arm[[%d]] must have length 0 or %d "
-                       "(matching the flat outer-grid size).",
-                       k + 1, n_grid);
-        }
-        out[k] = v;
-    }
-    return out;
-}
-
+// Load each arm's per-cell dispersion for outer-grid cell `k_grid` onto the
+// arm itself, the single-species driver's one column of `phi_table`.
 inline void apply_phi_overrides_multi(
     std::vector<tulpa::JointArm>& arms,
-    const std::vector<Rcpp::NumericVector>& phi_overrides,
+    const tulpa::ArmGridTable& phi_table,
     int k_grid
 ) {
     for (size_t k = 0; k < arms.size(); k++) {
-        if (phi_overrides[k].size() > 0) {
-            arms[k].phi = phi_overrides[k][k_grid];
+        if (phi_table.active(static_cast<int>(k))) {
+            phi_table.load_cell(static_cast<int>(k), k_grid, &arms[k].phi);
         }
     }
 }
@@ -1424,8 +1400,8 @@ Rcpp::List cpp_nested_laplace_joint_multi(
     std::vector<tulpa::ParsedArm> parsed;
     std::vector<tulpa::JointArm>  arms;
     int n_x_after_re = tulpa::parse_joint_arms(arms_list, parsed, arms);
-    std::vector<Rcpp::NumericVector> phi_overrides =
-        parse_phi_overrides_multi(phi_grid_per_arm, n_arms, n_grid);
+    const tulpa::ArmGridTable phi_overrides = tulpa::parse_arm_grid_table(
+        phi_grid_per_arm, n_arms, n_grid, 1, "phi_grid_per_arm");
 
     // Detect any per-arm constant `field_coef != 1` so the non-copy block
     // factories know whether to install the per-arm multiplier `arm_scale`
@@ -1598,8 +1574,8 @@ Rcpp::List cpp_nested_laplace_joint_multi(
         for (int j = 0; j < total_axes; j++)
             kb.add_axis(theta_grid.begin() + (std::size_t)j * n_grid);
         for (int a = 0; a < n_arms; a++)
-            if (phi_overrides[a].size() > 0)
-                kb.add_axis(phi_overrides[a].begin());
+            if (phi_overrides.active(a))
+                kb.add_axis(phi_overrides.values[a].data());
         ckpt.reset(new tulpa::GridCheckpoint(checkpoint_path, fp.value(),
                                              kb.take()));
     }
@@ -1652,7 +1628,11 @@ Rcpp::List cpp_nested_laplace_joint_multi(
 // (reusing parse_joint_arms + build_joint_blocks_from_spec, both in this TU)
 // then routes to the fused batched driver. y_batch[[k]] is a [N_k x B] matrix
 // (species columns) for data arms, R_NilValue for no-data arms (psi);
-// phi_batch is [n_arms x B]. Dense path, all-coupled families (occu_cover).
+// phi_batch is [n_arms x B]. phi_grid_per_arm carries the per-arm dispersion
+// axes crossed onto the outer grid: entry k is NULL (arm k keeps phi_batch) or
+// an [n_grid x B] matrix, species s's dispersion at each outer-grid cell, so
+// every species integrates its own dispersion nodes over the shared cell
+// layout. All-coupled families (occu_cover).
 // ==========================================================================
 
 // [[Rcpp::export]]
@@ -1669,7 +1649,8 @@ Rcpp::List cpp_nested_laplace_joint_multi_batch(
     int                 max_iter = 200,
     double              tol = 1e-6,
     std::string         cell_coupling_name = "separable",
-    bool                store_Q = true
+    bool                store_Q = true,
+    Rcpp::Nullable<Rcpp::List> phi_grid_per_arm = R_NilValue
 ) {
     int n_arms = arms_list.size();
     int Bspec  = blocks_spec.size();
@@ -1730,6 +1711,8 @@ Rcpp::List cpp_nested_laplace_joint_multi_batch(
         buf.n_trials[k].assign(arms[k].n_trials.begin(),
                                arms[k].n_trials.end());
     }
+    buf.phi_grid = tulpa::parse_arm_grid_table(
+        phi_grid_per_arm, n_arms, n_grid, n_batch, "phi_grid_per_arm");
 
     std::shared_ptr<tulpa::CellCouplingSpec> spec =
         tulpa::lookup_cell_coupling(cell_coupling_name);

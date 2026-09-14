@@ -722,6 +722,27 @@
     cpp_grid
 }
 
+# Cross the active per-arm dispersion axes of `phi_axes` (the
+# `.normalise_phi_grid()` list) onto a latent outer grid as a Cartesian product:
+# every latent row repeated once per dispersion cell, latent rows varying
+# fastest, the dispersion columns appended as `phi_<arm>`. Returns the crossed
+# grid and `latent_row`, the latent row each crossed cell repeats. The cell
+# layout depends only on the latent row count and each axis's node count, so
+# two responses whose axes share node counts share it, whatever the nodes are.
+.joint_multi_cross_phi <- function(joint_grid, phi_axes, axis_names) {
+    active <- phi_axes[vapply(phi_axes, length, integer(1)) > 0L]
+    phi_extra <- do.call(expand.grid,
+                          c(active, list(KEEP.OUT.ATTRS = FALSE,
+                                          stringsAsFactors = FALSE)))
+    joint_idx <- expand.grid(joint = seq_len(nrow(joint_grid)),
+                               phi   = seq_len(nrow(phi_extra)),
+                               KEEP.OUT.ATTRS = FALSE)
+    grid <- cbind(joint_grid[joint_idx$joint, , drop = FALSE],
+                  as.matrix(phi_extra[joint_idx$phi, , drop = FALSE]))
+    colnames(grid) <- c(axis_names, paste0("phi_", names(active)))
+    list(grid = grid, latent_row = joint_idx$joint)
+}
+
 # Extract the per-arm dispersion override list from a `joint_grid` carrying
 # `phi_<arm>` columns. Returns NULL when no such column exists (the kernel
 # then uses each arm's parse-time scalar phi); otherwise a length-n_arms list
@@ -1678,23 +1699,14 @@
     # exactly as on the dense path. A phi axis tied to a latent-block axis is
     # not expressible here; fold it into the relevant block's own axis grid.
     if (has_phi && !use_adaptive) {
-        active <- phi_axes[vapply(phi_axes, length, integer(1)) > 0L]
-        phi_extra <- do.call(expand.grid,
-                              c(active, list(KEEP.OUT.ATTRS = FALSE,
-                                              stringsAsFactors = FALSE)))
-        joint_idx <- expand.grid(joint = seq_len(nrow(joint_grid)),
-                                   phi   = seq_len(nrow(phi_extra)),
-                                   KEEP.OUT.ATTRS = FALSE)
-        joint_grid <- cbind(joint_grid[joint_idx$joint, , drop = FALSE],
-                              as.matrix(phi_extra[joint_idx$phi, , drop = FALSE]))
-        phi_cols <- paste0("phi_", names(active))
-        colnames(joint_grid) <- c(axis_names, phi_cols)
+        crossed    <- .joint_multi_cross_phi(joint_grid, phi_axes, axis_names)
+        joint_grid <- crossed$grid
         # phi columns don't belong to any latent block; the C++ entry consumes
         # them via phi_grid_per_arm, not the block axes.
         phi_grid_per_arm_list <- .joint_multi_phi_per_arm(joint_grid, arm_names)
         # Replicate the CCD design weights across the crossed phi cells (NULL on
         # the dense path, where weights are the uniform-cell softmax).
-        if (!is.null(dnode)) dnode <- dnode[joint_idx$joint]
+        if (!is.null(dnode)) dnode <- dnode[crossed$latent_row]
     }
 
     # Announce the engaged outer integrator at selection time:

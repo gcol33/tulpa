@@ -396,3 +396,147 @@ test_that("batched weights are the multi-block driver's weights on the same grid
     expect_gt(max(abs(soft - as.numeric(sp$weights))), 1e-6)
   }
 })
+
+# --------------------------------------------------------------------------- #
+# (6) A dispersion axis carried per species                                    #
+# --------------------------------------------------------------------------- #
+
+# Two coupled gaussian arms (`test_weighted_gaussian`, whose density reads the
+# per-species dispersion), B species, each arm integrating its dispersion as an
+# outer axis crossed onto the field grid. Every species sits at its OWN nodes
+# over one shared cell layout, and the two arms carry different node counts, so
+# a cell / species / arm slip in the per-cell dispersion table reads another
+# value rather than the same one.
+.nlb_wg_sim <- function(seed, n_batch, n_s, n_per_unit) {
+  set.seed(seed)
+  N <- n_s * n_per_unit
+  spatial_idx <- as.integer(rep(seq_len(n_s), each = n_per_unit))
+  x <- stats::rnorm(N)
+  draw <- function(mult) {
+    matrix(vapply(seq_len(n_batch), function(s) {
+      field <- stats::rnorm(n_s, 0, 0.5)
+      as.numeric(mult * (0.2 * s) + 0.5 * x + field[spatial_idx] +
+                   stats::rnorm(N, 0, 0.3 + 0.2 * s))
+    }, numeric(N)), nrow = N, ncol = n_batch)
+  }
+  list(n_s = n_s, N = N, n_batch = n_batch,
+       X = cbind(intercept = 1, x = x), spatial_idx = spatial_idx,
+       y_a = draw(1), y_b = draw(-1), adj = .nlb_chain_adj(n_s))
+}
+
+.nlb_wg_arms <- function(sim, s) {
+  arm <- function(y) list(y = as.numeric(y), n_trials = rep(1L, sim$N),
+                          X = sim$X, spatial_idx = sim$spatial_idx,
+                          family = "gaussian", phi = 1, coupled = TRUE,
+                          cell_obs_map = seq_len(sim$N))
+  list(a = arm(sim$y_a[, s]), b = arm(sim$y_b[, s]))
+}
+
+.nlb_wg_prior <- function(sim, tau_grid) {
+  list(c(list(type = "icar", tau_grid = tau_grid,
+              spatial_idx = list(sim$spatial_idx, sim$spatial_idx)), sim$adj))
+}
+
+# Species s's dispersion nodes (residual variances): arm a three nodes, arm b
+# two, both scaled per species.
+.nlb_wg_phi_grid <- function(s) {
+  list(a = c(0.10, 0.25, 0.60) * (1 + 0.5 * s),
+       b = c(0.20, 0.55) * (1 + 0.3 * s))
+}
+
+.nlb_wg_batch <- function(sim, tau_grid) {
+  cpp_register_test_weighted_gaussian_coupling(c(0L, 1L))
+  tulpa_nl_joint_batch(
+    responses = .nlb_wg_arms(sim, 1L),
+    prior     = .nlb_wg_prior(sim, tau_grid),
+    n_batch   = sim$n_batch,
+    y_batch   = list(sim$y_a, sim$y_b),
+    phi_batch = matrix(1, nrow = 2L, ncol = sim$n_batch),
+    phi_grid_batch = lapply(seq_len(sim$n_batch), .nlb_wg_phi_grid),
+    max_iter  = 60L, tol = 1e-8,
+    cell_coupling = "test_weighted_gaussian",
+    store_Q   = FALSE)
+}
+
+.nlb_wg_single <- function(sim, s, tau_grid) {
+  cpp_register_test_weighted_gaussian_coupling(c(0L, 1L))
+  tulpa_nl_joint_single(
+    responses = .nlb_wg_arms(sim, s),
+    prior     = .nlb_wg_prior(sim, tau_grid),
+    phi_grid  = .nlb_wg_phi_grid(s),
+    max_iter  = 60L, tol = 1e-8,
+    cell_coupling = "test_weighted_gaussian",
+    store_Q   = FALSE)
+}
+
+test_that("a per-species dispersion axis reproduces each species' single fit exactly", {
+  skip_on_cran()
+  sim <- .nlb_wg_sim(seed = 7201L, n_batch = 3L, n_s = 10L, n_per_unit = 3L)
+  tau_grid <- c(0.6, 1.6, 6.0)
+  res <- .nlb_wg_batch(sim, tau_grid)
+
+  n_cells <- length(tau_grid) * 3L * 2L
+  expect_length(res$per_species, sim$n_batch)
+  for (s in seq_len(sim$n_batch)) {
+    sp <- res$per_species[[s]]
+    single <- .nlb_wg_single(sim, s, tau_grid)
+    expect_length(sp$log_marginal, n_cells)
+    # The species' grid carries its own dispersion nodes, and no other's.
+    pg <- .nlb_wg_phi_grid(s)
+    expect_setequal(unique(sp$theta_grid[, "phi_a"]), pg$a)
+    expect_setequal(unique(sp$theta_grid[, "phi_b"]), pg$b)
+    .nlb_expect_numeric_match(sp, single, paste0("phi-axis species ", s))
+    .nlb_expect_exact_match(sp, single, paste0("phi-axis species ", s))
+  }
+  # The axis is live: species differing only in their dispersion nodes would
+  # otherwise coincide cell for cell.
+  expect_false(isTRUE(all.equal(res$per_species[[1L]]$log_marginal,
+                                res$per_species[[2L]]$log_marginal)))
+})
+
+test_that("per-species dispersion-axis weights are the multi-block driver's weights", {
+  skip_on_cran()
+  sim <- .nlb_wg_sim(seed = 7202L, n_batch = 2L, n_s = 10L, n_per_unit = 3L)
+  tau_grid <- c(0.45, 2.8, 6.2)
+  res <- .nlb_wg_batch(sim, tau_grid)
+
+  key <- function(tg) apply(signif(as.matrix(tg), 12L), 1L, paste,
+                            collapse = "|")
+  for (s in seq_len(sim$n_batch)) {
+    sp <- res$per_species[[s]]
+    looped <- suppressWarnings(tulpa_nested_laplace_joint(
+      responses = .nlb_wg_arms(sim, s),
+      prior     = .nlb_wg_prior(sim, tau_grid),
+      phi_grid  = .nlb_wg_phi_grid(s),
+      cell_coupling = "test_weighted_gaussian",
+      control = list(max_iter = 60L, tol = 1e-8, integration = "grid",
+                     prune = FALSE, diagnose_k = FALSE, k_quality = "none",
+                     adaptive_grid = FALSE, var_of_means_consistency = FALSE,
+                     auto_recenter = FALSE, store_Q = FALSE)))
+    expect_identical(colnames(sp$theta_grid), colnames(looped$theta_grid))
+    idx <- match(key(sp$theta_grid), key(looped$theta_grid))
+    expect_false(anyNA(idx), info = paste("species", s, "grid cells"))
+    expect_equal(as.numeric(sp$log_marginal),
+                 as.numeric(looped$log_marginal[idx]),
+                 tolerance = 1e-8, info = paste("species", s, "log_marginal"))
+    expect_equal(as.numeric(sp$weights), as.numeric(looped$weights[idx]),
+                 tolerance = 1e-8, info = paste("species", s, "weights"))
+    expect_equal(as.numeric(sp$log_quad), as.numeric(looped$log_quad[idx]),
+                 tolerance = 1e-12, info = paste("species", s, "log_quad"))
+  }
+})
+
+test_that("the batched entry refuses per-species dispersion axes of different shape", {
+  sim <- .nlb_wg_sim(seed = 7203L, n_batch = 2L, n_s = 6L, n_per_unit = 2L)
+  cpp_register_test_weighted_gaussian_coupling(c(0L, 1L))
+  expect_error(
+    tulpa_nl_joint_batch(
+      responses = .nlb_wg_arms(sim, 1L),
+      prior     = .nlb_wg_prior(sim, c(1.0, 4.0)),
+      n_batch   = sim$n_batch,
+      y_batch   = list(sim$y_a, sim$y_b),
+      phi_batch = matrix(1, nrow = 2L, ncol = sim$n_batch),
+      phi_grid_batch = list(list(a = c(0.2, 0.5)), list(a = c(0.2, 0.5, 0.9))),
+      cell_coupling = "test_weighted_gaussian", store_Q = FALSE),
+    "same node count")
+})
