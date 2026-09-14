@@ -256,13 +256,18 @@ test_that("multi-scale HSGP (two blocks) composes via the multi-block prior", {
         lengthscale_grid = g_short$ell
     )
 
+    # Four outer axes put `integration = "auto"` on a CCD design around the
+    # joint mode; the composition under test is the tensor grid, so it is
+    # stated.
     fit_multi <- tulpa_nested_laplace_joint(
         responses = list(occ = arms$a1, pos = arms$a2),
         prior = list(block_long, block_short),
         copy = NULL,
-        control = list(max_iter = 40L, tol = 1e-7, n_threads = 1L, verbose = FALSE)
+        control = list(max_iter = 40L, tol = 1e-7, n_threads = 1L, verbose = FALSE,
+                       integration = "grid")
     )
     expect_s3_class(fit_multi, "tulpa_nested_laplace_joint")
+    expect_identical(fit_multi$integration, "grid")
     expect_true(all(is.finite(fit_multi$log_marginal)))
     expect_equal(sum(fit_multi$weights), 1.0, tolerance = 1e-6)
     # Cartesian product of two 4-cell blocks = 16 cells.

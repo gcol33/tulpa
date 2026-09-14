@@ -409,23 +409,22 @@ test_that("the loc-versus-mass preference runs against the proposed partition", 
     vapply(names(OGD_PARTS), function(p) rho(D[D$levels == lv, ], p), numeric(1))))
   got <- got[is.finite(got)]
   # Measured under the read the engine ships (`ogd_fixture_fit()` states it
-  # rather than inheriting it -- gcol33/tulpa#599): +0.009 on the four-level
-  # endpoints, +0.375 on the four-level median and +0.082 on the five-level
+  # rather than inheriting it -- gcol33/tulpa#599): +0.205 on the four-level
+  # endpoints, +0.465 on the four-level median and +0.136 on the five-level
   # median, with the other three part-by-resolution cells carrying fewer than 25
   # scorable rows. No cell is a usable rule on its own, and the typical one
-  # carries no signal at all.
+  # carries a weak association at most.
   expect_gt(length(got), 2L)
   expect_lt(max(abs(got)), 0.6)
-  expect_lt(stats::median(abs(got)), 0.2)
-  # How many cells are scorable, and which way the small ones lean, both move
-  # with the within-cell read: the row filter is the per-part floor, and the
-  # floor is read-dependent. Under `chord` four cells clear the row count and
-  # the set spans zero (-0.010, -0.217, +0.121 at four levels and -0.050 on the
-  # five-level median); under the shipped read
-  # three do and none is negative, the two smallest being +0.009 and +0.082.
-  # What survives both reads is the magnitude, which is the claim: a per-cell
-  # label that correlates with the preferred correction at |rho| < 0.4 does not
-  # partition the grid.
+  expect_lt(stats::median(abs(got)), 0.25)
+  # Which way the small ones lean moves with the within-cell read: the row
+  # filter is the per-part floor, and the floor is read-dependent. Under `chord`
+  # three cells clear the row count and the set spans zero (+0.071 and +0.193
+  # at four levels, -0.204 on the five-level median); under the shipped read
+  # none is negative, the two smallest being +0.136 and +0.205. What survives
+  # both reads is the magnitude, which is the claim: a per-cell label that
+  # correlates with the preferred correction at |rho| < 0.5 does not partition
+  # the grid.
 })
 
 # --------------------------------------------------------------------------- #

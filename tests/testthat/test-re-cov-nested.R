@@ -390,11 +390,18 @@ test_that("a CCD fit reports a scale interval that is not the node extent", {
   res <- tulpa_re_cov_nested(d$y, rep(1L, d$N), d$X, rt, family = "binomial",
                              control = list(diagnose_k = FALSE))
   # theta axis 1 is log(L_11) = log(sigma_1), so the design's extent on sigma_1
-  # is exp(range(theta_grid[, 1])). The reported interval covers strictly more.
-  ax  <- range(as.numeric(res$theta_grid[, 1L]))
+  # is exp(range(theta_grid[, 1])). The reported interval is the Gaussian of
+  # the design-weighted moments of log(sigma_1), m +- z s, so where it ends is
+  # set by how the weights spread the nodes, not by the outermost node.
+  th  <- as.numeric(res$theta_grid[, 1L])
+  ax  <- range(th)
+  w   <- res$weights / sum(res$weights)
+  m   <- sum(w * th)
+  s   <- sqrt(sum(w * th^2) - m^2)
   row <- res$posterior[res$posterior$parameter == "sigma_1", ]
-  expect_lt(log(row$ci_lo), ax[1L])
-  expect_gt(log(row$ci_hi), ax[2L])
+  expect_equal(log(c(row$ci_lo, row$ci_hi)), m + stats::qnorm(c(0.025, 0.975)) * s,
+               tolerance = 1e-10)
+  expect_false(isTRUE(all.equal(log(c(row$ci_lo, row$ci_hi)), ax)))
   expect_gt(row$ci_lo, 0)
   # A correlation interval stays inside (-1, 1).
   rr <- res$posterior[res$posterior$parameter == "rho_12", ]
