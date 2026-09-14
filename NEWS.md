@@ -1,3 +1,33 @@
+# tulpa 0.4.2
+
+## A refined axis's SD reads each cell over its own row's box
+
+* **The per-axis posterior SD on an adaptively refined outer grid read 2x to 6x
+  below the posterior's** (gcol33/tulpa#746). `.nl_attach_axis_sd()` summed
+  cell mass by level, so a refinement slice level held one row's narrow box
+  while the base level held every other row's wide one, and the axis marginal
+  carried a spike at the base node that both the weighted SD and the 3-point
+  parabola read. `.nl_axis_row_projection()` now spreads each cell's mass over
+  the box its row gives it and collects it on the level boxes, and the parabola
+  takes the density rather than the log mass. Against the same fit on a dense
+  33-node axis with refinement off, mean |log(sd / dense sd)| goes 1.188 ->
+  0.058 on a refined 9-node base and 0.552 -> 0.327 on a refined 5-node base.
+  The per-axis mean, the interval read and every unrefined fit are unchanged.
+
+## The default range prior's dimension is the one the coordinates span
+
+* **A constant coordinate column moved the default PC range prior from d = 1
+  to d = 2** while leaving the geometry unchanged, so the fit's log marginal
+  differed from the one-column fit. `.hp_block_extent()` now takes the
+  dimension as the rank of the centred coordinates; full-rank coordinates are
+  unchanged.
+
+## Tests
+
+* The outer-grid measurement fixture fits the residual variance it simulates
+  (it passed `phi = 0.0625`, SD 0.25, against data drawn at SD 0.5), and every
+  figure read off it is re-measured (gcol33/tulpa#744).
+
 # tulpa 0.4.1
 
 ## `tulpa()` states the outer prior, under one name at every door
