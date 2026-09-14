@@ -53,7 +53,7 @@ test_that("H_theta matches an independently differenced Hessian", {
   f1 <- tulpa_eb(d$y, NULL, d$X, d$re, family = "poisson", marginal = TRUE)
   skip_if(is.null(f1$H_theta), "correction did not form on this seed")
 
-  # f1 fits under tulpa_eb()'s default hyperprior = "pc_lkj" at the engine's
+  # f1 fits under tulpa_eb()'s default hyperprior = "proper" at the engine's
   # scale anchor (gcol33/tulpa#730), and core must target the same objective
   # for H_theta to match: log_prior_theta = NULL with prior_sigma and eta NULL
   # resolves to that same PC + LKJ prior.

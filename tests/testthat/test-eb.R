@@ -160,11 +160,11 @@ test_that("EB estimates each block of a two-term model", {
 })
 
 test_that("a flat hyperprior gives the unpenalized ML-II estimate", {
-  # hyperprior defaults to "pc_lkj", the engine's proper prior on every scale
+  # hyperprior defaults to "proper", the engine's proper prior on every scale
   # (gcol33/tulpa#730); "flat" and log_prior_theta = function(theta) 0 reach the
   # same unpenalized objective.
   d <- sim_re_pois(7L, G = 40L, per = 10L, sigma = 0.7)
-  pen  <- eb_pois(d, hyperprior = "pc_lkj")
+  pen  <- eb_pois(d, hyperprior = "proper")
   flat <- eb_pois(d, log_prior_theta = function(theta) 0)
 
   # With a flat prior the objective IS the log marginal, so its maximizer must

@@ -37,7 +37,7 @@
 #' degenerate one-coefficient block. Both functions call the same outer
 #' objective and the same optimizer, so `tulpa_eb()$theta_hat` and
 #' `tulpa_re_cov_nested()$theta_hat` are the same estimate on the same data --
-#' which requires `hyperprior` to default the same way on both: `"pc_lkj"`, the
+#' which requires `hyperprior` to default the same way on both: `"proper"`, the
 #' PC + LKJ prior (see [re_cov_pc_lkj_prior()]) at the anchor every scale axis
 #' of the engine defaults to, which at small G keeps a block off the
 #' `sigma = 0` boundary. `hyperprior = "flat"` maximizes the marginal likelihood
@@ -62,15 +62,15 @@
 #' @param re_terms Either a single random-effect term or a list of them; see
 #'   [tulpa_re_cov_nested()] for the per-term fields.
 #' @param prior_sigma,eta Hyperparameters of the PC + LKJ prior used when
-#'   `hyperprior = "pc_lkj"` (see [re_cov_pc_lkj_prior()]); `NULL` (the
+#'   `hyperprior = "proper"` (see [re_cov_pc_lkj_prior()]); `NULL` (the
 #'   defaults) is `c(3, 0.01)` and 2. Ignored when
 #'   `hyperprior = "flat"` or `log_prior_theta` is supplied. When active, the
 #'   prior is part of the maximized objective, so it regularizes the estimate:
 #'   with few groups it is what keeps a block off the `sigma = 0` boundary.
-#' @param hyperprior `"pc_lkj"` (default) or `"flat"`. `"flat"` maximizes with
+#' @param hyperprior `"proper"` (default) or `"flat"`. `"flat"` maximizes with
 #'   `log_prior_theta` the zero function -- an unpenalized maximum-marginal-
 #'   likelihood estimate, which can reach the `sigma = 0` boundary on small
-#'   designs (see the `"lower end of the search bracket"` warning). `"pc_lkj"`
+#'   designs (see the `"lower end of the search bracket"` warning). `"proper"`
 #'   builds the PC + LKJ prior from `prior_sigma` / `eta`, regularizing the
 #'   estimate away from that boundary. Ignored when `log_prior_theta` is
 #'   supplied. Must match `hyperprior` on the paired [tulpa_re_cov_nested()]
@@ -208,7 +208,7 @@
 tulpa_eb <- function(y, n_trials = NULL, X, re_terms,
                      family = "binomial", phi = 1.0, phi2 = NULL,
                      prior_sigma = NULL, eta = NULL,
-                     hyperprior = c("pc_lkj", "flat"),
+                     hyperprior = c("proper", "flat"),
                      log_prior_theta = NULL,
                      beta_prior = NULL, offset = NULL, n_quad = 1L,
                      marginal = FALSE,
@@ -216,7 +216,7 @@ tulpa_eb <- function(y, n_trials = NULL, X, re_terms,
                      X_zi = NULL, zi_prior_sd = 2.5,
                      control = list()) {
   tulpa_check_control(control, .CONTROL_KEYS$eb, "tulpa_eb")
-  hyperprior <- match.arg(hyperprior)
+  hyperprior <- .hp_choice(match.arg(hyperprior))
   log_prior_theta <- .re_cov_resolve_hyperprior(hyperprior, log_prior_theta)
   max_iter    <- as.integer(control$max_iter %||% 100L)
   tol         <- control$tol %||% 1e-8

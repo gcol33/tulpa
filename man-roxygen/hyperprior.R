@@ -12,6 +12,6 @@
 #'   `log_evidence` declines with `"improper_hyperprior"`. A density the call
 #'   states -- a `prior_*` argument, a block's `rho_prior`, `prior_range` or
 #'   `prior_sigma`, the copy coefficient's slab, a [tgmrf()] block's own prior --
-#'   applies under either choice. `"flat"` is the same choice
-#'   [tulpa_eb()] and [tulpa_re_cov_nested()] offer beside their `"pc_lkj"`
-#'   default.
+#'   applies under either choice. The same two choices, under the same names,
+#'   are offered by [tulpa()], [tulpa_eb()], [tulpa_re_cov_nested()] and
+#'   [fit_spde()].

@@ -130,6 +130,9 @@ TIER_META <- list(
 #' * `cabi`     -- the registered C-ABI callable backing the backend (the symbol
 #'     a model package reaches via `LinkingTo: tulpa`, and the one an R wrapper
 #'     would call), or `NULL`.
+#' * `hyperprior` -- `TRUE` when the backend's fitter takes the outer
+#'     `hyperprior = c("proper", "flat")` choice `tulpa()` forwards; absent
+#'     otherwise.
 #' * `note`     -- optional human-readable note.
 #'
 #' Family identity (for `families`) is checked against `family$name`,
@@ -232,7 +235,7 @@ BACKEND_REGISTRY <- list(
   re_cov_nested = list(
     emits = "iid",
     tier = "structured", input = "design", fitter = "tulpa_re_cov_nested",
-    families = NULL, cabi = NULL,
+    families = NULL, cabi = NULL, hyperprior = TRUE,
     note = paste("Correlated random-slope term (1 + x | g): nested-Laplace",
                  "integration over the RE covariance Sigma (CCD design + PC/LKJ",
                  "prior). Auto-selected from the Laplace path for a single",
@@ -260,7 +263,7 @@ BACKEND_REGISTRY <- list(
   eb = list(
     emits = "iid",
     tier = "structured", input = "design", fitter = "tulpa_eb",
-    families = NULL, cabi = NULL,
+    families = NULL, cabi = NULL, hyperprior = TRUE,
     note = paste("Empirical Bayes over the random-effect covariances: the mode",
                  "of the same outer objective re_cov_nested integrates, with",
                  "the fixed effects reported conditional on it. Tier 2 because",
@@ -271,13 +274,13 @@ BACKEND_REGISTRY <- list(
   nested_laplace = list(
     emits = "iid",
     tier = "structured", input = "nested", fitter = "tulpa_nested_laplace",
-    families = NULL, cabi = "cpp_nested_laplace_multi",
+    families = NULL, cabi = "cpp_nested_laplace_multi", hyperprior = TRUE,
     note = "Single-arm nested Laplace; integrates latent-block hyperparameters"
   ),
   nested_laplace_joint = list(
     emits = "iid",
     tier = "structured", input = "nested", fitter = "tulpa_nested_laplace_joint",
-    families = NULL, cabi = "cpp_nested_laplace_joint_multi",
+    families = NULL, cabi = "cpp_nested_laplace_joint_multi", hyperprior = TRUE,
     note = paste("Joint multi-arm nested Laplace; driven by model packages, not the",
                  "single-response tulpa() formula (cannot express multiple arms)")
   ),
@@ -285,7 +288,7 @@ BACKEND_REGISTRY <- list(
     emits = "iid",
     tier = "structured", input = "spde", fitter = "fit_spde",
     families = c("binomial", "poisson", "neg_binomial_2", "gaussian"),
-    cabi = "cpp_nested_laplace_spde",
+    cabi = "cpp_nested_laplace_spde", hyperprior = TRUE,
     note = paste("Continuous Matern SPDE field; nested-Laplace integration over",
                  "(range, sigma) via fit_spde(). Uses its own CCD / grid",
                  "hyperparameter engine (the FEM Q-builder rebuilds the precision",
@@ -307,6 +310,11 @@ BACKEND_REGISTRY <- list(
 #' @keywords internal
 .tier_backends <- function(tier_key) {
   names(Filter(function(e) e$tier == tier_key, BACKEND_REGISTRY))
+}
+
+# Backend names whose fitter takes the outer `hyperprior` choice.
+.hyperprior_backends <- function() {
+  names(Filter(function(e) isTRUE(e$hyperprior), BACKEND_REGISTRY))
 }
 
 

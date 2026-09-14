@@ -112,9 +112,9 @@ integrated under its cell measure alone, is named in
 \code{log_evidence} declines with \code{"improper_hyperprior"}. A density the call
 states -- a \verb{prior_*} argument, a block's \code{rho_prior}, \code{prior_range} or
 \code{prior_sigma}, the copy coefficient's slab, a \code{\link[=tgmrf]{tgmrf()}} block's own prior --
-applies under either choice. \code{"flat"} is the same choice
-\code{\link[=tulpa_eb]{tulpa_eb()}} and \code{\link[=tulpa_re_cov_nested]{tulpa_re_cov_nested()}} offer beside their \code{"pc_lkj"}
-default.}
+applies under either choice. The same two choices, under the same names,
+are offered by \code{\link[=tulpa]{tulpa()}}, \code{\link[=tulpa_eb]{tulpa_eb()}}, \code{\link[=tulpa_re_cov_nested]{tulpa_re_cov_nested()}} and
+\code{\link[=fit_spde]{fit_spde()}}.}
 
 \item{control}{Optional list of perf/numerical tuning knobs (statistical
 arguments stay top-level), following the \code{control} convention of

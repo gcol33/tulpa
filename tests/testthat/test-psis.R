@@ -388,10 +388,9 @@ test_that("outer k-hat declines (NA) for a multi-block nested fit", {
 test_that("a tiny-binary RE-covariance k-hat is a proposal scale, not a skewed posterior", {
   skip_on_cran()
 
-  # hyperprior = "pc_lkj" opted in explicitly (default is "flat", gcol33/
-  # tulpa#268): this test calibrates the k-hat SEPARATION between a
-  # well-identified and a pathological fit, which is the PC prior's shrinkage
-  # behavior at small G, not the flat-in-log default's.
+  # hyperprior = "proper" stated explicitly: this test calibrates the k-hat
+  # SEPARATION between a well-identified and a pathological fit, which is the PC
+  # prior's shrinkage behavior at small G, not a flat-in-log prior's.
   #
   # This test used to assert that the two regimes separate by orders of
   # magnitude, on the reading that a small-group binary variance-component
@@ -414,7 +413,7 @@ test_that("a tiny-binary RE-covariance k-hat is a proposal scale, not a skewed p
     rt  <- list(idx = grp, n_groups = G, n_coefs = 2L, Z = cbind(1, x),
                 correlated = TRUE)
     tulpa_re_cov_nested(y, rep(1L, n), cbind(1, x), rt, family = "gaussian",
-                        phi = 0.25, hyperprior = "pc_lkj",
+                        phi = 0.25, hyperprior = "proper",
                         control = list(diagnose_k = TRUE, k_samples = 150L))
   }
   # (b) Tiny binary groups: 25 groups x 3 binary obs each. The proposal as
@@ -427,7 +426,7 @@ test_that("a tiny-binary RE-covariance k-hat is a proposal scale, not a skewed p
     rt  <- list(idx = grp, n_groups = G, n_coefs = 2L, Z = cbind(1, x),
                 correlated = TRUE)
     tulpa_re_cov_nested(y, rep(1L, n), cbind(1, x), rt, family = "binomial",
-                        hyperprior = "pc_lkj",
+                        hyperprior = "proper",
                         control = list(diagnose_k = TRUE, k_samples = 150L))
   }
 

@@ -49,6 +49,9 @@ for an unrestricted backend.
 \item \code{cabi}     -- the registered C-ABI callable backing the backend (the symbol
 a model package reaches via \code{LinkingTo: tulpa}, and the one an R wrapper
 would call), or \code{NULL}.
+\item \code{hyperprior} -- \code{TRUE} when the backend's fitter takes the outer
+\code{hyperprior = c("proper", "flat")} choice \code{tulpa()} forwards; absent
+otherwise.
 \item \code{note}     -- optional human-readable note.
 }
 

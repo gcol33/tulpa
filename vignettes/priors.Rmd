@@ -359,7 +359,7 @@ standard deviation 3, the tighter anchor pulled the posterior mean down to about
 coordinates' bounding box. A correlation or mixing weight takes a uniform on its
 domain, and a negative-binomial size takes the PC prior on its overdispersion
 that R-INLA ships as `pc.mgamma`. [tulpa_re_cov_nested()] and [tulpa_eb()] use
-the same scale anchor through the PC + LKJ prior (`hyperprior = "pc_lkj"`, the
+the same scale anchor through the PC + LKJ prior (`hyperprior = "proper"`, the
 default; see [re_cov_pc_lkj_prior()]); `hyperprior = "flat"` removes it, which
 for [tulpa_eb()] gives the unpenalized maximum marginal likelihood.
 

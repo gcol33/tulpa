@@ -33,6 +33,13 @@
 #'   fixed, the Matern hyperparameters). `mode = "nuts"` does not support an
 #'   `offset` or a random-effect term, and its sampler knobs pass via `control`
 #'   (see [tulpa_nuts_spde()]); it returns that sampler's draws object.
+#' @param hyperprior `"proper"` (default) or `"flat"`, the prior the nested
+#'   integration puts on `(range, sigma)`. `"proper"` carries the spec's PC
+#'   range and PC sigma priors. `"flat"` keeps only the anchors the spec was
+#'   given explicitly (`prior_range` / `prior_sigma` passed to
+#'   [spatial_spde()]); an axis whose anchor was defaulted carries no density,
+#'   is named in `log_hyperprior_declined` as `"flat_hyperprior"`, and the
+#'   evidence declines. Not read by `mode = "nuts"`, where `"flat"` errors.
 #' @param control A named list of numerical / tuning knobs (statistical
 #'   arguments stay in the signature above). Recognized entries:
 #'   \itemize{
@@ -127,9 +134,15 @@ fit_spde <- function(y, X, spatial,
                      phi = 1.0, offset = NULL,
                      re_idx = NULL, n_re_groups = 0L, sigma_re = 1.0,
                      mode = c("laplace", "nuts"),
+                     hyperprior = c("proper", "flat"),
                      control = list()) {
 
   mode <- match.arg(mode)
+  hyperprior <- .hp_choice(match.arg(hyperprior))
+  if (mode == "nuts" && identical(hyperprior, "flat")) {
+    stop("`hyperprior = \"flat\"` is not read by mode = 'nuts', which samples ",
+         "(range, sigma) under the spec's PC priors.", call. = FALSE)
+  }
   if (!inherits(spatial, "tulpa_spatial") || spatial$type != "spde") {
     stop("spatial must be an SPDE tulpa_spatial object", call. = FALSE)
   }
@@ -289,7 +302,8 @@ fit_spde <- function(y, X, spatial,
       # The grid and the CCD design weigh a cell by its marginal plus the PC
       # prior on (log range, log sigma), so a screened solve ranks with both.
       screen_log_offset = if (prune_tol_eff > 0)
-                            .spde_log_hyperprior(range_vec, sigma_vec, sp)
+                            .spde_log_hyperprior(range_vec, sigma_vec, sp,
+                                                 hyperprior)
     )
     res
   }
@@ -298,7 +312,8 @@ fit_spde <- function(y, X, spatial,
     if (method == "grid") {
       fit_spde_nested_grid(spde_log_marginal, sp, n_grid, spatial,
                            diagnose_k = diagnose_k, k_samples = k_samples,
-                           k_tail_points = k_tail_pts)
+                           k_tail_points = k_tail_pts,
+                           hyperprior = hyperprior)
     } else {
       fit_spde_nested_ccd(spde_log_marginal,
                                  fit_spde_single = function(r, s) {
@@ -316,7 +331,8 @@ fit_spde <- function(y, X, spatial,
                                  sp = sp, spatial = spatial,
                           diagnose_k = diagnose_k, k_samples = k_samples,
                           k_tail_points = k_tail_pts,
-                          mode_find = mode_find)
+                          mode_find = mode_find,
+                          hyperprior = hyperprior)
     }
   } else {
     # --- Single-point Laplace at fixed hyperparameters ---

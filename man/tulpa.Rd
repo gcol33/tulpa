@@ -17,6 +17,7 @@ tulpa(
   phi2 = NULL,
   beta_prior = NULL,
   re_prior = NULL,
+  hyperprior = c("proper", "flat"),
   ziformula = NULL,
   zi_prior = NULL,
   warm_start = NULL,
@@ -104,14 +105,25 @@ as \verb{$beta_prior}.}
 \item{re_prior}{Optional \code{list()} of random-effect / variance-component
 hyperpriors (statistical, so they live in the signature rather than in
 \code{control}). Recognised entries, each consumed by the backend that needs it:
-\code{hyperprior} (\code{"pc_lkj"} default or \code{"flat"}, \code{mode = "laplace"} random
-slopes and \code{mode = "eb"} -- see \code{\link[=tulpa_re_cov_nested]{tulpa_re_cov_nested()}}), \code{prior_sigma}
-(PC-prior anchor \code{c(U, alpha)} on a free RE covariance SD, used when
-\code{hyperprior = "pc_lkj"}), \code{eta} (LKJ concentration for a correlated RE
-covariance, same condition), \code{prior_df} / \code{prior_scale} (inverse-Wishart
-on the RE covariance, \code{control$re_cov = "gibbs"}), \code{prior_sigma_scale}
-(half-Cauchy scale on the RE SD for \code{mode = "gibbs"}), and \code{sigma_re_scale}
-(half-Cauchy scale on the RE / BYM2 SD for the ModelData samplers).}
+\code{prior_sigma} (PC-prior anchor \code{c(U, alpha)} on a free RE covariance SD,
+used when \code{hyperprior = "proper"}), \code{eta} (LKJ concentration for a
+correlated RE covariance, same condition), \code{prior_df} / \code{prior_scale}
+(inverse-Wishart on the RE covariance, \code{control$re_cov = "gibbs"}),
+\code{prior_sigma_scale} (half-Cauchy scale on the RE SD for \code{mode = "gibbs"}),
+and \code{sigma_re_scale} (half-Cauchy scale on the RE / BYM2 SD for the
+ModelData samplers).}
+
+\item{hyperprior}{The outer hyperparameter prior, \code{"proper"} (default) or
+\code{"flat"}, forwarded to every route that integrates or maximizes over
+hyperparameters: the nested-Laplace path (see \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}}),
+the SPDE path (\code{\link[=fit_spde]{fit_spde()}}), and the random-effect covariance routes
+(\code{mode = "laplace"} with random slopes, \code{\link[=tulpa_re_cov_nested]{tulpa_re_cov_nested()}};
+\code{mode = "eb"}, \code{\link[=tulpa_eb]{tulpa_eb()}}). \code{"proper"} is each route's normalised default
+(the PC prior on a scale, the PC range prior, PC + LKJ over a free
+covariance); \code{"flat"} folds none of the engine's own, so the fit reports no
+evidence. A density the call states applies under either. Every other
+backend carries priors of its own, and \code{"flat"} there is an error rather
+than a choice that silently does nothing.}
 
 \item{ziformula}{Optional one-sided formula for the zero-inflation
 probability, e.g. \code{~ 1} for a constant structural-zero rate or \code{~ x} to
@@ -245,7 +257,7 @@ several terms together (\code{(1 + x | g) + (1 | h)}) -- each term becomes a
 covariance block, and any accompanying \code{(1 | g)} term is integrated as a 1x1
 block (nothing is silently conditioned at \code{sigma_re = 1}). \code{mode = "laplace"}
 routes to the nested-Laplace \code{Sigma} integrator (\code{\link[=tulpa_re_cov_nested]{tulpa_re_cov_nested()}},
-CCD design, PC + LKJ hyperprior by default -- see \code{re_prior$hyperprior});
+CCD design, PC + LKJ hyperprior by default -- see \code{hyperprior});
 \code{control$re_cov = "gibbs"} switches to the exact
 Metropolis-within-Gibbs debias (\code{\link[=tulpa_re_cov_gibbs]{tulpa_re_cov_gibbs()}}), and
 \code{control$re_cov = "aghq"} keeps the nested integrator but replaces the

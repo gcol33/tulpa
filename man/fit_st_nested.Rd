@@ -20,6 +20,7 @@ fit_st_nested(
   re_idx = NULL,
   n_re_groups = 0L,
   sigma_re = 1,
+  hyperprior = c("proper", "flat"),
   control = list()
 )
 }
@@ -56,6 +57,24 @@ the residual SD and are handed \code{sqrt(phi)} at the boundary.}
 \item{re_idx, n_re_groups, sigma_re}{Optional single iid random-intercept term
 alongside the fields (conditioned on \code{sigma_re}); \code{n_re_groups = 0} (default)
 is no RE term.}
+
+\item{hyperprior}{The prior an outer hyperparameter axis carries when the
+call states no density for it, \code{"proper"} (default) or \code{"flat"}.
+\code{"proper"} folds a normalised density on the axis's integration coordinate
+into \code{log_marginal}: the PC prior \code{P(sigma > 3) = 0.01} on a standard
+deviation, variance or precision axis, the PC range prior at 0.2 times the
+coordinates' bounding-box diagonal on a range or lengthscale axis, a uniform
+on a bounded axis, and the PC + LKJ prior over a free-covariance block. An
+axis with no sourced density is named in \code{log_hyperprior_declined}.
+\code{"flat"} folds no density of the engine's own, so such an axis is
+integrated under its cell measure alone, is named in
+\code{log_hyperprior_declined} as \code{"flat_hyperprior"}, and the fit's
+\code{log_evidence} declines with \code{"improper_hyperprior"}. A density the call
+states -- a \verb{prior_*} argument, a block's \code{rho_prior}, \code{prior_range} or
+\code{prior_sigma}, the copy coefficient's slab, a \code{\link[=tgmrf]{tgmrf()}} block's own prior --
+applies under either choice. The same two choices, under the same names,
+are offered by \code{\link[=tulpa]{tulpa()}}, \code{\link[=tulpa_eb]{tulpa_eb()}}, \code{\link[=tulpa_re_cov_nested]{tulpa_re_cov_nested()}} and
+\code{\link[=fit_spde]{fit_spde()}}.}
 
 \item{control}{A list of numerical / grid knobs: \code{n_grid_spatial},
 \code{n_grid_temporal} (default 4 each), \code{n_grid_rho} (ar1 only, default 3),

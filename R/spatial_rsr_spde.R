@@ -315,6 +315,7 @@ spatial_spde <- function(coords, data = NULL, mesh = NULL,
   }
 
   if (ncol(obs_coords) != 2) stop("coords must have 2 columns", call. = FALSE)
+  prior_stated <- c(range = !is.null(prior_range), sigma = !is.null(prior_sigma))
   prior_range <- prior_range %||% .nl_default_range_prior(obs_coords)
   prior_sigma <- prior_sigma %||% .nl_scale_anchor()
   if (is.null(prior_range)) {
@@ -353,6 +354,7 @@ spatial_spde <- function(coords, data = NULL, mesh = NULL,
       nu = nu,
       prior_range = prior_range,
       prior_sigma = prior_sigma,
+      prior_stated = prior_stated,
       # FEM matrices (sparse)
       C = fem$C,
       G = fem$G,
@@ -393,6 +395,7 @@ spatial_spde_custom <- function(C, G, A, nu = 1,
                                 prior_sigma = NULL,
                                 coords = NULL) {
   .validate_spde_nu(nu)
+  prior_stated <- c(range = !is.null(prior_range), sigma = !is.null(prior_sigma))
   if (is.null(prior_range)) {
     if (!is.null(coords)) prior_range <- .nl_default_range_prior(coords)
     if (is.null(prior_range)) {
@@ -425,6 +428,7 @@ spatial_spde_custom <- function(C, G, A, nu = 1,
       nu = nu,
       prior_range = prior_range,
       prior_sigma = prior_sigma,
+      prior_stated = prior_stated,
       C = C, G = G, A = A,
       A_x = A_csc@x, A_i = A_csc@i, A_p = A_csc@p,
       C0_diag = C0_diag,

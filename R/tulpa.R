@@ -561,8 +561,15 @@
                                temporal = NULL, weights = NULL,
                                phi2 = NULL, smoothers = list(),
                                re_prior = NULL, zi_prior = NULL,
+                               hyperprior = "proper",
                                warm_start = NULL, estimate_phi = FALSE,
                                beta_prior_default = NULL) {
+  if (identical(hyperprior, "flat") && !backend %in% .hyperprior_backends()) {
+    stop(sprintf(paste0(
+      "`hyperprior = \"flat\"` is not read by backend '%s', which carries ",
+      "priors of its own. It applies to: %s."),
+      backend, paste(.hyperprior_backends(), collapse = ", ")), call. = FALSE)
+  }
   # Scalar prior SD on the beta_zi block; the engine default when unset. Read
   # once here so every ZI-carrying backend receives the same number.
   zi_prior_sd <- .normalize_zi_prior(zi_prior)
@@ -714,6 +721,7 @@
       family      = family,
       phi         = phi,
       offset      = bundle$offset,
+      hyperprior  = hyperprior,
       # Forward only the keys the inner fitter reads: front-door-only knobs
       # (grid shape, backend selection) were consumed above and would trip
       # tulpa_nested_laplace()'s own whitelist.
@@ -783,6 +791,7 @@
       re_idx         = spde_re_idx,
       n_re_groups    = spde_re_n,
       sigma_re       = spde_sigma_re,
+      hyperprior     = hyperprior,
       control        = .control_subset(control, .CONTROL_KEYS$spde)
     ))
   }
@@ -850,7 +859,7 @@
           beta_prior   = beta_prior,
           prior_sigma  = rp$prior_sigma,
           eta          = rp$eta,
-          hyperprior   = rp$hyperprior %||% "pc_lkj",
+          hyperprior   = hyperprior,
           n_quad       = as.integer(control$n_quad %||% 1L),
           estimate_phi = estimate_phi,
           # `[[` not `$`: the latter partial-matches, so `marginal_step` alone
@@ -871,7 +880,7 @@
           beta_prior  = beta_prior,
           prior_sigma = rp$prior_sigma,
           eta         = rp$eta,
-          hyperprior  = rp$hyperprior %||% "pc_lkj",
+          hyperprior  = hyperprior,
           n_quad      = n_quad,
           control     = .control_subset(control, .CONTROL_KEYS$re_cov_nested)
         )))
@@ -1352,7 +1361,7 @@
 #'   covariance block, and any accompanying `(1 | g)` term is integrated as a 1x1
 #'   block (nothing is silently conditioned at `sigma_re = 1`). `mode = "laplace"`
 #'   routes to the nested-Laplace `Sigma` integrator ([tulpa_re_cov_nested()],
-#'   CCD design, PC + LKJ hyperprior by default -- see `re_prior$hyperprior`);
+#'   CCD design, PC + LKJ hyperprior by default -- see `hyperprior`);
 #'   `control$re_cov = "gibbs"` switches to the exact
 #'   Metropolis-within-Gibbs debias ([tulpa_re_cov_gibbs()]), and
 #'   `control$re_cov = "aghq"` keeps the nested integrator but replaces the
@@ -1444,14 +1453,24 @@
 #' @param re_prior Optional `list()` of random-effect / variance-component
 #'   hyperpriors (statistical, so they live in the signature rather than in
 #'   `control`). Recognised entries, each consumed by the backend that needs it:
-#'   `hyperprior` (`"pc_lkj"` default or `"flat"`, `mode = "laplace"` random
-#'   slopes and `mode = "eb"` -- see [tulpa_re_cov_nested()]), `prior_sigma`
-#'   (PC-prior anchor `c(U, alpha)` on a free RE covariance SD, used when
-#'   `hyperprior = "pc_lkj"`), `eta` (LKJ concentration for a correlated RE
-#'   covariance, same condition), `prior_df` / `prior_scale` (inverse-Wishart
-#'   on the RE covariance, `control$re_cov = "gibbs"`), `prior_sigma_scale`
-#'   (half-Cauchy scale on the RE SD for `mode = "gibbs"`), and `sigma_re_scale`
-#'   (half-Cauchy scale on the RE / BYM2 SD for the ModelData samplers).
+#'   `prior_sigma` (PC-prior anchor `c(U, alpha)` on a free RE covariance SD,
+#'   used when `hyperprior = "proper"`), `eta` (LKJ concentration for a
+#'   correlated RE covariance, same condition), `prior_df` / `prior_scale`
+#'   (inverse-Wishart on the RE covariance, `control$re_cov = "gibbs"`),
+#'   `prior_sigma_scale` (half-Cauchy scale on the RE SD for `mode = "gibbs"`),
+#'   and `sigma_re_scale` (half-Cauchy scale on the RE / BYM2 SD for the
+#'   ModelData samplers).
+#' @param hyperprior The outer hyperparameter prior, `"proper"` (default) or
+#'   `"flat"`, forwarded to every route that integrates or maximizes over
+#'   hyperparameters: the nested-Laplace path (see [tulpa_nested_laplace()]),
+#'   the SPDE path ([fit_spde()]), and the random-effect covariance routes
+#'   (`mode = "laplace"` with random slopes, [tulpa_re_cov_nested()];
+#'   `mode = "eb"`, [tulpa_eb()]). `"proper"` is each route's normalised default
+#'   (the PC prior on a scale, the PC range prior, PC + LKJ over a free
+#'   covariance); `"flat"` folds none of the engine's own, so the fit reports no
+#'   evidence. A density the call states applies under either. Every other
+#'   backend carries priors of its own, and `"flat"` there is an error rather
+#'   than a choice that silently does nothing.
 #' @param ziformula Optional one-sided formula for the zero-inflation
 #'   probability, e.g. `~ 1` for a constant structural-zero rate or `~ x` to
 #'   model it. The response becomes a mixture: with probability
@@ -1582,6 +1601,7 @@ tulpa <- function(formula, data,
                   phi2 = NULL,
                   beta_prior = NULL,
                   re_prior = NULL,
+                  hyperprior = c("proper", "flat"),
                   ziformula = NULL,
                   zi_prior = NULL,
                   warm_start = NULL,
@@ -1609,7 +1629,12 @@ tulpa <- function(formula, data,
          "residual VARIANCE) instead.", call. = FALSE)
   }
   tulpa_check_control(control, .CONTROL_KEYS$tulpa, "tulpa")
+  if ("hyperprior" %in% names(re_prior)) {
+    stop("`re_prior$hyperprior` is the `hyperprior` argument of tulpa(). Pass ",
+         "`hyperprior = \"proper\"` or `\"flat\"` there.", call. = FALSE)
+  }
   tulpa_check_control(re_prior, .RE_PRIOR_KEYS, "tulpa (re_prior)")
+  hyperprior <- .hp_choice(match.arg(hyperprior))
   if (!is.logical(estimate_phi) || length(estimate_phi) != 1L ||
       is.na(estimate_phi)) {
     stop("`estimate_phi` must be TRUE or FALSE.", call. = FALSE)
@@ -2256,6 +2281,11 @@ tulpa <- function(formula, data,
            "not supported; use mode = 'laplace' / 'auto' (which support one ",
            "`(1 | g)` term), or drop the RE term.", call. = FALSE)
     }
+    if (identical(hyperprior, "flat")) {
+      stop("`hyperprior = \"flat\"` is not read by the SPDE NUTS engine, which ",
+           "samples (range, sigma) under the field's PC priors. Use ",
+           "mode = 'laplace' / 'auto' for the nested SPDE path.", call. = FALSE)
+    }
     fit <- fit_spde(
       y = bundle$y, X = bundle$X, spatial = spatial_spec, family = family,
       n_trials = n_trials, mode = "nuts",
@@ -2349,6 +2379,7 @@ tulpa <- function(formula, data,
                              weights = weights, phi2 = phi2,
                              smoothers = lapply(smooth_specs, `[[`, "block"),
                              re_prior = re_prior, zi_prior = zi_prior,
+                             hyperprior = hyperprior,
                              warm_start = warm_start,
                              estimate_phi = estimate_phi,
                              beta_prior_default = beta_prior_resolved)

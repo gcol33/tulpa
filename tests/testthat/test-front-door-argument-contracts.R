@@ -14,15 +14,13 @@ d  <- data.frame(
   yp = rpois(n, exp(0.3 + 0.4 * x + u[g]))
 )
 
-test_that("re_prior$hyperprior is accepted", {
-  # gcol33/tulpa#667: documented in ?tulpa and read by the front door, and
-  # missing from .RE_PRIOR_KEYS -- and tulpa_check_control() runs first, so the
-  # documented key was rejected as unknown.
-  expect_true("hyperprior" %in% tulpa:::.RE_PRIOR_KEYS)
-  skip_on_cran()
-  fit <- tulpa(yb ~ x + (1 + x | g), data = d, family = "binomial",
-               mode = "laplace", re_prior = list(hyperprior = "pc_lkj"))
-  expect_s3_class(fit, "tulpa_fit")
+test_that("the outer prior is the hyperprior argument, not a re_prior entry", {
+  expect_false("hyperprior" %in% tulpa:::.RE_PRIOR_KEYS)
+  expect_error(tulpa(yb ~ x + (1 + x | g), data = d, family = "binomial",
+                     mode = "laplace", re_prior = list(hyperprior = "flat")),
+               "hyperprior` argument")
+  expect_error(tulpa(yb ~ x + (1 | g), data = d, family = "binomial",
+                     hyperprior = "pc_lkj"), "should be one of")
 })
 
 test_that("control$re_cov is validated and honoured on any RE model", {

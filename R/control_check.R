@@ -238,4 +238,4 @@ tulpa_check_control <- function(control, allowed, where) {
 # tulpa_check_control() -- which runs first -- rejected the documented key
 # (gcol33/tulpa#667).
 .RE_PRIOR_KEYS <- c("prior_sigma", "eta", "prior_df", "prior_scale",
-                    "prior_sigma_scale", "sigma_re_scale", "hyperprior")
+                    "prior_sigma_scale", "sigma_re_scale")

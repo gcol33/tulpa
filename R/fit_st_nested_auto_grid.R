@@ -175,7 +175,7 @@
 # net rather than a substantive constraint.
 .st_auto_grid_rescue <- function(out, kernel, kargs, spatial_type, temporal_type,
                                  n_gs, n_gt, n_grho, tau_lo, tau_hi, control,
-                                 rho_spatial_val = 0.9) {
+                                 rho_spatial_val = 0.9, hyperprior = "proper") {
     if (is.character(control$auto_recenter)) {
         stop("control$auto_recenter = \"",
              paste(control$auto_recenter, collapse = "\", \""),
@@ -220,7 +220,7 @@
         # the natural value carried to its logit coordinate.
         lp <- .st_log_hyperprior(
             matrix(vals, nrow = 1L, dimnames = list(NULL, axes)),
-            axes = axes)$lp
+            axes = axes, hyperprior = hyperprior)$lp
         if ("rho" %in% axes) {
             p_u <- stats::plogis(u[match("rho", axes)])
             lp <- lp + log(2 * p_u * (1 - p_u))
@@ -367,7 +367,7 @@
         return(.nl_decline_recenter(out, "refit_failed"))
     }
 
-    refit <- .st_attach_outer_integration(refit, new_grid)
+    refit <- .st_attach_outer_integration(refit, new_grid, hyperprior)
     refit <- .joint_attach_pareto_k_regime(refit)
     refit$outer_grid_placement         <- "auto_recentered"
     refit$outer_grid_recenter_attempts <- 1L

@@ -29,13 +29,13 @@
 .spde_pareto_k <- function(theta_hat, L_scale, spde_log_marginal, sp, n_samples,
                            u_grid = NULL, w = NULL,
                            proposal_source = "mode_hessian",
-                           tail_points = NULL) {
+                           tail_points = NULL, hyperprior = "proper") {
   lt <- function(U) {
     r <- exp(U[, 1L]); s <- exp(U[, 2L])
     lm <- tryCatch(spde_log_marginal(r, s)$log_marginal,
                    error = function(e) rep(-Inf, length(r)))
     if (length(lm) != length(r)) return(rep(-Inf, length(r)))
-    lm + .spde_log_hyperprior(r, s, sp)
+    lm + .spde_log_hyperprior(r, s, sp, hyperprior)
   }
   .k_tail_cap_warn(tail_points, n_samples)
   kd <- .with_preserved_seed(
@@ -62,7 +62,8 @@
 fit_spde_nested_grid <- function(spde_log_marginal, sp, n_grid, spatial,
                                  diagnose_k = TRUE,
                                  k_samples = .nl_diag("k_samples"),
-                                 k_tail_points = NULL) {
+                                 k_tail_points = NULL,
+                                 hyperprior = "proper") {
   range_mode <- sp$prior_range[1]
   sigma_mode <- sp$prior_sigma[1]
 
@@ -76,8 +77,8 @@ fit_spde_nested_grid <- function(spde_log_marginal, sp, n_grid, spatial,
   grid <- expand.grid(range = range_grid, sigma = sigma_grid)
   result <- spde_log_marginal(grid$range, grid$sigma)
 
-  log_post <- result$log_marginal +
-    .spde_log_hyperprior(grid$range, grid$sigma, sp)
+  hp <- .spde_hyperprior_record(grid$range, grid$sigma, sp, hyperprior)
+  log_post <- result$log_marginal + hp$lp
 
   if (!any(is.finite(log_post))) {
     stop("fit_spde() nested grid: every hyperparameter cell returned a ",
@@ -107,7 +108,7 @@ fit_spde_nested_grid <- function(spde_log_marginal, sp, n_grid, spatial,
     } else .spde_pareto_k(u_hat, Lk, spde_log_marginal, sp, k_samples,
                           u_grid = u_grid, w = weights,
                           proposal_source = "grid_moment",
-                          tail_points = k_tail_points)
+                          tail_points = k_tail_points, hyperprior = hyperprior)
   }
 
   # Outer-grid collapse visibility. This span is
@@ -122,11 +123,12 @@ fit_spde_nested_grid <- function(spde_log_marginal, sp, n_grid, spatial,
         weights = weights))
 
   # The evidence against each cell's absolute measure in (log range,
-  # log sigma), both axes carrying their normalised density in `log_post`.
+  # log sigma), over the axes whose normalised density `log_post` carries.
   tg <- cbind(range = grid$range, sigma = grid$sigma)
   ev <- .nl_attach_evidence(
-    list(log_marginal = log_post, log_hyperprior_axes = colnames(tg)), tg,
-    .joint_axis_specs_from_grid(tg, folded_axes = colnames(tg)))
+    list(log_marginal = log_post, log_hyperprior_axes = hp$axes,
+         log_hyperprior_declined = hp$declined), tg,
+    .joint_axis_specs_from_grid(tg, folded_axes = hp$axes))
 
   list(
     mode = NULL,
@@ -134,6 +136,7 @@ fit_spde_nested_grid <- function(spde_log_marginal, sp, n_grid, spatial,
     log_hyperprior = log_post - result$log_marginal,
     log_evidence = ev$log_evidence,
     log_evidence_declined = ev$log_evidence_declined,
+    log_hyperprior_declined = if (length(hp$declined)) hp$declined,
     converged = all(result$n_iter > 0),
     spatial = spatial,
     pareto_k = kd$pareto_k,
@@ -175,7 +178,8 @@ fit_spde_nested_ccd <- function(spde_log_marginal,
                                 diagnose_k = TRUE,
                                 k_samples = .nl_diag("k_samples"),
                                 k_tail_points = NULL,
-                                mode_find = .nl_mode_find_tuning("spde")) {
+                                mode_find = .nl_mode_find_tuning("spde"),
+                                hyperprior = "proper") {
   range_mode <- sp$prior_range[1]
   sigma_mode <- sp$prior_sigma[1]
 
@@ -192,7 +196,7 @@ fit_spde_nested_ccd <- function(spde_log_marginal,
       error = function(e) NA_real_
     )
     if (!is.finite(lm)) return(1e10)
-    lp <- .spde_log_hyperprior(r, s, sp)
+    lp <- .spde_log_hyperprior(r, s, sp, hyperprior)
     if (!is.finite(lp)) return(1e10)
     -(lm + lp)
   }
@@ -219,7 +223,8 @@ fit_spde_nested_ccd <- function(spde_log_marginal,
             "rectangular grid.")
     return(fit_spde_nested_grid(spde_log_marginal, sp, n_grid = 5L, spatial,
                                 diagnose_k = diagnose_k, k_samples = k_samples,
-                                k_tail_points = k_tail_points))
+                                k_tail_points = k_tail_points,
+                                hyperprior = hyperprior))
   }
   theta_hat <- op$par
   range_hat <- exp(theta_hat[1])
@@ -243,7 +248,8 @@ fit_spde_nested_ccd <- function(spde_log_marginal,
             "(condition unfit for CCD); falling back to the rectangular grid.")
     return(fit_spde_nested_grid(spde_log_marginal, sp, n_grid = 5L, spatial,
                                 diagnose_k = diagnose_k, k_samples = k_samples,
-                                k_tail_points = k_tail_points))
+                                k_tail_points = k_tail_points,
+                                hyperprior = hyperprior))
   }
   sigma_post <- tryCatch(solve(prec), error = function(e) NULL)
   if (is.null(sigma_post)) {
@@ -251,7 +257,8 @@ fit_spde_nested_ccd <- function(spde_log_marginal,
             "falling back to the rectangular grid.")
     return(fit_spde_nested_grid(spde_log_marginal, sp, n_grid = 5L, spatial,
                                 diagnose_k = diagnose_k, k_samples = k_samples,
-                                k_tail_points = k_tail_points))
+                                k_tail_points = k_tail_points,
+                                hyperprior = hyperprior))
   }
   L <- t(chol(sigma_post))   # sigma_post = L L^T
 
@@ -271,8 +278,8 @@ fit_spde_nested_ccd <- function(spde_log_marginal,
   sigma_grid <- exp(theta_grid[, 2])
 
   result <- spde_log_marginal(range_grid, sigma_grid)
-  log_post <- result$log_marginal +
-    .spde_log_hyperprior(range_grid, sigma_grid, sp)
+  hp <- .spde_hyperprior_record(range_grid, sigma_grid, sp, hyperprior)
+  log_post <- result$log_marginal + hp$lp
   # CCD quadrature: node weight = design weight (Delta_k) times exp(log_post),
   # the INLA convention int ~ sum_k Delta_k pi(theta_k).
   log_max <- max(log_post)
@@ -290,7 +297,7 @@ fit_spde_nested_ccd <- function(spde_log_marginal,
   # Gaussian the CCD design is oriented by.
   kd <- if (isTRUE(diagnose_k)) {
     .spde_pareto_k(theta_hat, L, spde_log_marginal, sp, k_samples,
-                   tail_points = k_tail_points)
+                   tail_points = k_tail_points, hyperprior = hyperprior)
   } else list(pareto_k = NA_real_, is_ess = NA_real_,
               declined = .k_decline_label(.k_decline("not_requested")))
 
@@ -304,6 +311,7 @@ fit_spde_nested_ccd <- function(spde_log_marginal,
     # evidence is read off them.
     log_evidence     = NA_real_,
     log_evidence_declined = "moment_rule_design",
+    log_hyperprior_declined = if (length(hp$declined)) hp$declined,
     converged        = all(result$n_iter > 0),
     spatial          = spatial,
     range            = range_hat,

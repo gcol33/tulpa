@@ -119,11 +119,24 @@
 # The SPDE field's hyperprior on (range, sigma) at natural values, as a density
 # on (log range, log sigma): the coordinates every SPDE outer integrator works
 # in, grid, CCD and k-hat alike (gcol33/tulpa#731).
-.spde_log_hyperprior <- function(range, sigma, sp) {
-  block <- list(type = "spde", prior_range = sp$prior_range,
-                prior_sigma = sp$prior_sigma)
-  .hp_axis_default("range", block)$fn(range) +
-    .hp_axis_default("sigma", block)$fn(sigma)
+.spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
+  .spde_hyperprior_record(range, sigma, sp, hyperprior)$lp
+}
+
+# The same density as a `.hp_collect()` record over (range, sigma). The spec
+# carries an anchor for both axes whether the caller stated it or the
+# constructor defaulted it (the grid is placed on it either way), so
+# `sp$prior_stated` is what says which were stated: under `"flat"` only those
+# keep their density.
+.spde_hyperprior_record <- function(range, sigma, sp, hyperprior = "proper") {
+  flat <- identical(.hp_choice(hyperprior), "flat")
+  stated <- sp$prior_stated %||% c(range = TRUE, sigma = TRUE)
+  block <- list(type = "spde",
+                prior_range = if (!flat || stated[["range"]]) sp$prior_range,
+                prior_sigma = if (!flat || stated[["sigma"]]) sp$prior_sigma)
+  tg <- cbind(range = as.numeric(range), sigma = as.numeric(sigma))
+  .hp_collect(tg, function(a) .hp_axis_prior(a, block, hyperprior = hyperprior),
+              axes = colnames(tg))
 }
 
 # The range PC anchor `c(U, alpha)` and dimension for a block: the caller's

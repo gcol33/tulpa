@@ -14,7 +14,7 @@ tulpa_re_cov_nested(
   phi2 = NULL,
   prior_sigma = NULL,
   eta = NULL,
-  hyperprior = c("pc_lkj", "flat"),
+  hyperprior = c("proper", "flat"),
   log_prior_theta = NULL,
   beta_prior = NULL,
   offset = NULL,
@@ -46,12 +46,12 @@ ignored. It is conditioned on: the integration is over the random-effect
 covariances, not over \code{phi2}.}
 
 \item{prior_sigma, eta}{Hyperparameters of the PC + LKJ prior used when
-\code{hyperprior = "pc_lkj"} (see \code{\link[=re_cov_pc_lkj_prior]{re_cov_pc_lkj_prior()}}):
+\code{hyperprior = "proper"} (see \code{\link[=re_cov_pc_lkj_prior]{re_cov_pc_lkj_prior()}}):
 \code{prior_sigma = c(U, alpha)} with \code{P(sigma_i > U) = alpha} (\code{NULL}, the
 default, is \code{c(3, 0.01)}) and LKJ shape \code{eta} (\code{NULL} is 2). Ignored when
 \code{hyperprior = "flat"} or \code{log_prior_theta} is supplied.}
 
-\item{hyperprior}{\code{"pc_lkj"} (default) or \code{"flat"}. \code{"pc_lkj"} builds the
+\item{hyperprior}{\code{"proper"} (default) or \code{"flat"}. \code{"proper"} builds the
 PC + LKJ prior from \code{prior_sigma} / \code{eta}, the proper prior every other
 scale axis of the engine carries by default. \code{"flat"} integrates with
 \code{log_prior_theta} the zero function (flat in log(theta)); that prior is
@@ -242,7 +242,7 @@ therefore positive and asymmetric, and correlation intervals stay inside
 \verb{(-1, 1)}. The \code{mean} and \code{sd} columns are the weighted moments under either
 layout.
 
-By default (\code{hyperprior = "pc_lkj"}) \code{log_prior_theta} is the
+By default (\code{hyperprior = "proper"}) \code{log_prior_theta} is the
 weakly-informative PC + LKJ hyperprior, built per block by
 \code{\link[=re_cov_pc_lkj_prior]{re_cov_pc_lkj_prior()}} and summed over blocks (PC prior on each marginal SD
 via \code{prior_sigma}, LKJ prior on each correlated block's correlation matrix via

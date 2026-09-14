@@ -152,12 +152,11 @@ test_that("the joint multi-block prior sums independent per-block priors", {
 })
 
 
-test_that("supplied prior_sigma / eta change the integrated posterior under hyperprior = 'pc_lkj'", {
+test_that("supplied prior_sigma / eta change the integrated posterior under hyperprior = 'proper'", {
   skip_on_cran()
-  # End-to-end: with hyperprior = "pc_lkj" opted in, a tighter PC prior shrinks
-  # the variance-component summaries. hyperprior defaults to "flat" (gcol33/
-  # tulpa#268), under which prior_sigma / eta are ignored, so this test opts in
-  # explicitly rather than relying on the default.
+  # End-to-end: under hyperprior = "proper" a tighter PC prior shrinks the
+  # variance-component summaries. Under "flat" prior_sigma / eta are ignored, so
+  # the choice is stated rather than left to the default.
   set.seed(5L)
   G <- 30L; npg <- 10L; N <- G * npg
   grp <- rep(seq_len(G), each = npg)
@@ -169,9 +168,9 @@ test_that("supplied prior_sigma / eta change the integrated posterior under hype
   rt <- list(idx = grp, n_groups = G, n_coefs = 2L, Z = Z)
 
   wide   <- tulpa_re_cov_nested(y, rep(1L, N), X, rt, family = "binomial",
-                                hyperprior = "pc_lkj", prior_sigma = c(5, 0.05))
+                                hyperprior = "proper", prior_sigma = c(5, 0.05))
   narrow <- tulpa_re_cov_nested(y, rep(1L, N), X, rt, family = "binomial",
-                                hyperprior = "pc_lkj",
+                                hyperprior = "proper",
                                 prior_sigma = c(0.6, 0.05))   # strong shrinkage
   s1_wide <- wide$posterior$median[wide$posterior$parameter == "sigma_1"]
   s1_narr <- narrow$posterior$median[narrow$posterior$parameter == "sigma_1"]
@@ -190,7 +189,7 @@ test_that("hyperprior = 'pc_lkj' is the default and 'flat' ignores prior_sigma",
 
   default_fit <- tulpa_re_cov_nested(y, rep(1L, N), X, rt, family = "binomial")
   pc_fit      <- tulpa_re_cov_nested(y, rep(1L, N), X, rt, family = "binomial",
-                                     hyperprior = "pc_lkj")
+                                     hyperprior = "proper")
   expect_identical(default_fit$theta_hat, pc_fit$theta_hat)
   flat_a <- tulpa_re_cov_nested(y, rep(1L, N), X, rt, family = "binomial",
                                 hyperprior = "flat")

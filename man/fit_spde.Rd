@@ -19,6 +19,7 @@ fit_spde(
   n_re_groups = 0L,
   sigma_re = 1,
   mode = c("laplace", "nuts"),
+  hyperprior = c("proper", "flat"),
   control = list()
 )
 }
@@ -68,6 +69,14 @@ for exact HMC over the field (and, unless both \code{range} and \code{sigma} are
 fixed, the Matern hyperparameters). \code{mode = "nuts"} does not support an
 \code{offset} or a random-effect term, and its sampler knobs pass via \code{control}
 (see \code{\link[=tulpa_nuts_spde]{tulpa_nuts_spde()}}); it returns that sampler's draws object.}
+
+\item{hyperprior}{\code{"proper"} (default) or \code{"flat"}, the prior the nested
+integration puts on \verb{(range, sigma)}. \code{"proper"} carries the spec's PC
+range and PC sigma priors. \code{"flat"} keeps only the anchors the spec was
+given explicitly (\code{prior_range} / \code{prior_sigma} passed to
+\code{\link[=spatial_spde]{spatial_spde()}}); an axis whose anchor was defaulted carries no density,
+is named in \code{log_hyperprior_declined} as \code{"flat_hyperprior"}, and the
+evidence declines. Not read by \code{mode = "nuts"}, where \code{"flat"} errors.}
 
 \item{control}{A named list of numerical / tuning knobs (statistical
 arguments stay in the signature above). Recognized entries:
