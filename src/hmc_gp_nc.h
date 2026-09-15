@@ -456,7 +456,7 @@ inline void nngp_nc_backward(
                               c_eigen(nn_), dc_eigen(nn_), rhs_eigen(nn_),
                               dalpha_eigen(nn_), alpha_eigen(nn_), dC_alpha(nn_) {}
     };
-    std::vector<BackwardWS> bws_vec(n_threads, BackwardWS(nn));
+    std::vector<BackwardWS> bws_vec = tulpa_thread_workspaces<BackwardWS>(n_threads, nn);
 
     // One row's hyperparameter contribution, written once and driven from both
     // routes. The workspace slot and the three accumulators are parameters

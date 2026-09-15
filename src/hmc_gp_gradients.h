@@ -89,7 +89,7 @@ inline void gp_nngp_gradients(
     ThreadWS(int nn_) : C_eigen(nn_, nn_), c_eigen(nn_), dc_eigen(nn_),
                         w_nb_eigen(nn_), llt(nn_), nb_idx(nn_) {}
   };
-  std::vector<ThreadWS> ws_vec(n_threads, ThreadWS(nn));
+  std::vector<ThreadWS> ws_vec = tulpa_thread_workspaces<ThreadWS>(n_threads, nn);
 
   // The rows are cut into `n_threads` contiguous chunks HERE, by index
   // arithmetic, and each chunk accumulates left to right into its own slot, so

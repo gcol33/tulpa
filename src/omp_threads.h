@@ -144,3 +144,17 @@ inline double tulpa_parallel_sum(int team, int n, Body&& body) {
     for (int i = 0; i < n; i++) acc += body(i);
     return acc;
 }
+
+// One workspace per chunk, each constructed in place from `args`.
+//
+// Filling a vector from a prototype copy-constructs every element, and a
+// workspace member whose state is written only by its first use is then read
+// before it is written: an Eigen LLT leaves its ComputationInfo unset until
+// compute() runs (gcol33/tulpa#747).
+template <typename WS, typename... Args>
+inline std::vector<WS> tulpa_thread_workspaces(int team, const Args&... args) {
+    std::vector<WS> out;
+    out.reserve(static_cast<std::size_t>(team > 0 ? team : 0));
+    for (int t = 0; t < team; t++) out.emplace_back(args...);
+    return out;
+}

@@ -1,3 +1,17 @@
+# tulpa 0.4.3
+
+## Per-thread workspaces are built in place
+
+* **Two Eigen Cholesky objects were copied before they had been computed**
+  (gcol33/tulpa#747), flagged by CRAN's gcc-UBSAN check on 0.2.0 as a load of
+  an invalid `ComputationInfo`. Eigen's `LLT` leaves that field unset until
+  `compute()` runs. The NNGP gradient kernels filled their per-thread
+  workspaces by copying one prototype; they now construct each in place through
+  `tulpa_thread_workspaces()` (`src/omp_threads.h`). The low-rank mass term's
+  factor is moved into the metric before it is factorized, and now starts from
+  a computed empty matrix. No result changes: the field was always written
+  before tulpa read it.
+
 # tulpa 0.4.2
 
 ## A refined axis's SD reads each cell over its own row's box

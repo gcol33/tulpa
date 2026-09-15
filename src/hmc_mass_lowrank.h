@@ -74,7 +74,10 @@ struct LowRankMassTerm {
   std::vector<int> coord_ptr;   // transpose of the CSR: groups per coordinate
   std::vector<int> coord_grp;
   std::vector<double> coord_w;
-  Eigen::LLT<Eigen::MatrixXd> K_llt;   // Lambda^-1 + U' D^-1 U
+  // Lambda^-1 + U' D^-1 U. Computed over an empty matrix at construction, so a
+  // term moved before factorize() carries a set ComputationInfo; Eigen's
+  // default LLT leaves it unset (gcol33/tulpa#747). `ready` still gates use.
+  Eigen::LLT<Eigen::MatrixXd> K_llt{Eigen::MatrixXd()};
   bool ready = false;
 
   // Per-step scratch of length k. The metric object is per chain, so a mutable
