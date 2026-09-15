@@ -171,3 +171,27 @@ test_that("spatial() recovers the intercept and slope CAR fields", {
   sm <- summary(fit)
   expect_true(is.data.frame(sm) || is.matrix(sm))
 })
+
+test_that("inline spatial() fit's $y is the response vector, not the joint driver's per-arm list, so diagnostics run (gcol33/tulpa#796)", {
+  skip_on_cran()
+  set.seed(1)
+  W <- adjacency(expand.grid(x = 1:6, y = 1:6), x_coord = "x", y_coord = "y",
+                 type = "rook")$adjacency
+  d <- data.frame(region = rep(1:36, each = 4), x = rnorm(144))
+  u <- rnorm(36, 0, .7)
+  d$y <- rpois(144, exp(0.3 + 0.5 * d$x + u[d$region]))
+  fi <- suppressWarnings(tulpa(
+    y ~ x + spatial(graph = W, formula = ~ 1 || region),
+    data = d, family = "poisson"))
+
+  expect_true(is.numeric(fi$y))
+  expect_false(is.list(fi$y))
+  expect_identical(fi$y, d$y)
+  expect_false(is.null(fi$n_trials))
+
+  expect_no_error(residuals(fi))
+  expect_no_error(pit_residuals(fi))
+  expect_no_error(test_dispersion(fi))
+  expect_no_error(check_model(fi))
+  expect_no_error(pp_check(fi))
+})

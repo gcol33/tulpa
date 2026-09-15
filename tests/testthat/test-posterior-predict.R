@@ -166,3 +166,40 @@ test_that("posterior_predict rejects fits without a builtin family", {
   bad <- structure(list(family = list(name = "custom")), class = "tulpa_fit")
   expect_error(posterior_predict(bad), "single built-in family")
 })
+
+test_that("the in-sample eta carries the spatial field on conditional-Laplace, Gibbs and inline-field icar fits (gcol33/tulpa#795)", {
+  skip_on_cran()
+  set.seed(1)
+  W <- adjacency(expand.grid(x = 1:6, y = 1:6), x_coord = "x", y_coord = "y",
+                 type = "rook")$adjacency
+  d <- data.frame(region = rep(1:36, each = 4), x = rnorm(144))
+  u <- rnorm(36, 0, .7)
+  d$y <- rpois(144, exp(0.3 + 0.5 * d$x + u[d$region]))
+  sp <- list(type = "icar", adjacency = W)
+
+  field_cor <- function(f) {
+    e <- colMeans(tulpa:::.tulpa_eta_draws(f, ndraws = 200, synth_seed = 1)) -
+      as.numeric(cbind(1, d$x) %*% coef(f)[c("(Intercept)", "x")])
+    cor(e, u[d$region])
+  }
+
+  fL <- suppressWarnings(tulpa(y ~ x + spatial(region), data = d,
+                               family = "poisson", mode = "laplace", spatial = sp))
+  expect_gt(field_cor(fL), 0.6)
+
+  fi <- suppressWarnings(tulpa(
+    y ~ x + spatial(graph = W, formula = ~ 1 || region),
+    data = d, family = "poisson"))
+  expect_gt(field_cor(fi), 0.6)
+
+  set.seed(4)
+  u2 <- rnorm(36, 0, .7)
+  d2 <- data.frame(region = rep(1:36, each = 4), x = rnorm(144))
+  d2$y <- rbinom(144, 10, plogis(0.3 + 0.5 * d2$x + u2[d2$region]))
+  fG <- suppressWarnings(tulpa(
+    cbind(y, 10 - y) ~ x + spatial(region), data = d2, family = "binomial",
+    mode = "gibbs", spatial = sp))
+  e2 <- colMeans(tulpa:::.tulpa_eta_draws(fG, ndraws = 200, synth_seed = 1)) -
+    as.numeric(cbind(1, d2$x) %*% coef(fG)[c("(Intercept)", "x")])
+  expect_gt(cor(e2, u2[d2$region]), 0.6)
+})

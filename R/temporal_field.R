@@ -164,28 +164,16 @@
          sigma = h$sigma, rho = h$rho))
   names(temporal_field_hypers) <- block_names
 
-  layout <- .tulpa_param_layout(bundle)
-  fit <- jfit
-  fit$draws <- core$beta_draws
-  fit$draws_kind <- "iid"
-  fit$means <- colMeans(core$beta_draws)
-  fit$param_names <- colnames(bundle$X)
+  fit <- .bar_field_fit_finalize(
+    jfit, core = core, bundle = bundle, phi = phi, n_trials = n_trials,
+    family = family, formula = formula, call = call,
+    backend = "temporal_field_nested_laplace",
+    selection_reason = paste(
+      "inline temporal() varying-coefficient field(s); nested Laplace over",
+      "the temporal precisions"))
   fit$temporal_fields <- core$fields
   fit$temporal_field_names <- block_names
   fit$temporal_field_hypers <- temporal_field_hypers
-  fit$inference_mode <- "laplace"
-  fit$inference_tier <- 2L
-  fit$backend <- "temporal_field_nested_laplace"
-  fit$selection_reason <-
-    "inline temporal() varying-coefficient field(s); nested Laplace over the temporal precisions"
-  fit$formula <- formula
-  fit$family <- family
-  fit$call <- call
-  fit$n_fixed <- layout$n_fixed
-  fit$fixed_names <- layout$fixed_names
-  fit$re_layout <- layout$re_layout
-  fit$N <- bundle$n_obs
-  fit$model_matrix <- bundle$X
   class(fit) <- c("tulpa_temporal_field_fit", "tulpa_fit", oldClass(fit))
   fit
 }

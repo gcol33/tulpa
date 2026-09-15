@@ -1,6 +1,45 @@
-# tulpa 0.4.5
+# tulpa 0.4.6
 
-## Four audit findings: auto picking backends that refuse the call, a silently ignored control surface, an internal error on an empty RE-covariance model, a crashing diagnostic plot
+## Four audit findings: a continuous field + RE combination auto could not carry, the field missing from every non-nested spatial fit's linear predictor, an inline field fit's response stored as a list, and a singular MCAR fixed-effect covariance
+
+* **`spatial_gp()` (nngp / hsgp) with a `(1 | g)` term could not be fitted by
+  `mode = "auto"` or `mode = "nested_laplace"`** (gcol33/tulpa#794): the RE term
+  turns the fit into a multi-block prior, and the multi-block converter behind
+  `nested_laplace` (`.nl_block_spec_for_cpp()`) has no `gp` / `nngp` / `hsgp`
+  arm, so both errored ("Block type '...' is not supported in multi-block
+  priors") after building the full outer grid. `auto_select_mode()` now
+  refuses `nested_laplace` for this combination and falls back to the exact
+  ModelData NUTS sampler (`hmc`), which threads the field directly; an
+  explicit `mode = "nested_laplace"` now refuses up front with a message
+  naming `mode = "laplace"` / `mode = "exact"` instead of reaching the deep
+  C++ error. An areal field (icar / bym2 / car_proper) + RE is unaffected.
+* **`posterior_predict()`, `simulate()`, WAIC and LOO omitted the field**
+  on conditional-Laplace spatial fits (icar / car / car_proper / bym2),
+  Polya-Gamma Gibbs fits, and inline `spatial()` / `temporal()` field fits
+  (gcol33/tulpa#795): the in-sample linear predictor fell back to a
+  fixed-effects-only assembly, so replicates and pointwise log-likelihoods
+  understated the model by its whole spatial/temporal structure --
+  `compare_models()` ranked the same model fitted two ways 153 elpd units
+  apart. `.tulpa_eta_draws()` now reads the field's posterior-mean
+  contribution off a conditional-Laplace fit's own mode (the same
+  `(n_field, Z_field)` design each `.marginal_H_beta_*` areal helper already
+  builds), the field's own sampled `phi_spatial[k]` / `theta_spatial[k]`
+  draws off a Gibbs fit, and the field's weighted-mode posterior mean
+  (computed at fit time) off an inline joint field fit.
+* **An inline `spatial()` / `temporal()` field fit's `$y` was the joint
+  driver's per-arm response LIST, not the response vector** (gcol33/tulpa#796):
+  every diagnostic reading `fit$y` (`residuals()`, `pit_residuals()`,
+  `moran_i()`, `test_dispersion()`, `check_model()`, `pp_check()`, ...) errored
+  with a coercion failure, and `fit$n_trials` was always `NULL`. Both
+  constructors now overwrite `$y` / `$n_trials` / `$phi` from the bundle the
+  fit was actually built from, in one shared finalizer the two share.
+* **An inline correlated (MCAR) field's fixed-effect standard errors read
+  ~75** where the uncorrelated (`||`) fit of the same data read 0.08, and
+  `coef()` moved between identical calls (gcol33/tulpa#797): the sum-to-zero
+  constraint treated a `p`-field MCAR block's `p * n_units` latent as ONE
+  group instead of `p` groups of `n_units`, leaving one of the block's `p`
+  near-null constant directions unconstrained. `.joint_constraint_cols()` now
+  emits one group per field for an `mcar` block.
 
 * **`mode = "auto"` still selected backends that refused the very call that
   selected them** (gcol33/tulpa#769): a `ziformula` sent the default MALA arm,

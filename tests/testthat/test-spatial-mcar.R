@@ -166,3 +166,25 @@ test_that("MCAR fit print reports the Sigma cross-covariance (rho)", {
   expect_match(out, "MCAR")
   expect_match(out, "rho_12")
 })
+
+test_that("MCAR fixed-effect SEs match the uncorrelated (||) fit, not the singular one-group constraint (gcol33/tulpa#797)", {
+  skip_on_cran()
+  set.seed(1)
+  W <- adjacency(expand.grid(x = 1:6, y = 1:6), x_coord = "x", y_coord = "y",
+                 type = "rook")$adjacency
+  d <- data.frame(region = rep(1:36, each = 4), x = rnorm(144))
+  u <- rnorm(36, 0, .7)
+  d$y <- rpois(144, exp(0.3 + 0.5 * d$x + u[d$region]))
+
+  fm_mcar <- y ~ x + spatial(graph = W, formula = ~ 1 + x | region)
+  fm_iid  <- y ~ x + spatial(graph = W, formula = ~ 1 + x || region)
+  f_mcar  <- suppressWarnings(tulpa(fm_mcar, data = d, family = "poisson"))
+  f_iid   <- suppressWarnings(tulpa(fm_iid, data = d, family = "poisson"))
+
+  se_mcar <- summary(f_mcar)$std.error
+  se_iid  <- summary(f_iid)$std.error
+  # A one-group-over-both-fields constraint left ~75; the correct per-field
+  # constraint should read within a small multiple of the uncorrelated fit's SE.
+  expect_true(all(se_mcar < 5 * se_iid))
+  expect_true(all(se_mcar < 1))
+})

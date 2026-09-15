@@ -2155,6 +2155,25 @@ tulpa <- function(formula, data,
       sel$backend, mode), call. = FALSE)
   }
 
+  # A continuous spatial field (gp / nngp / hsgp) plus a formula RE term turns
+  # the nested fit into a multi-block prior, and the multi-block converter
+  # behind nested_laplace (.nl_block_spec_for_cpp(), R/nested_laplace.R) has no
+  # gp / nngp / hsgp arm -- only icar / bym2 / car_proper / rw1 / rw2 / ar1 /
+  # iid / spde / tgmrf. `auto` already routes around this (feat$continuous_spatial_re
+  # in auto_select_mode()); an EXPLICIT mode = "nested_laplace" bypasses that
+  # selector entirely (it is itself a backend name), so it needs its own
+  # front-door refusal here rather than the deep, post-125-cell-grid C++ error
+  # this used to reach (gcol33/tulpa#794).
+  if (identical(sel$backend, "nested_laplace") && has_re &&
+      tolower(spatial_type %||% "") %in% .NL_FRONTDOOR_CONTINUOUS) {
+    stop(sprintf(paste0(
+      "spatial_gp() (%s) with a random-intercept term is not supported by ",
+      "mode = 'nested_laplace': its multi-block converter carries no %s ",
+      "arm. Use mode = 'laplace' (conditions the RE at `sigma_re`) or ",
+      "mode = 'exact' (samples the RE jointly via the ModelData NUTS ",
+      "sampler)."), spatial_type, spatial_type), call. = FALSE)
+  }
+
   # Latent prior blocks are consumed only by the nested-Laplace path. If the
   # user forced a non-nested backend (e.g. mode = "laplace" / "mala" / "exact"),
   # the blocks would otherwise be silently dropped -- fail loudly, and before

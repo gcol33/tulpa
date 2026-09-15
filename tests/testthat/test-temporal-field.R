@@ -145,3 +145,21 @@ test_that("ar1 temporal field fits and reports rho", {
   expect_match(out, "rho")
   expect_match(out, "AR1")
 })
+
+test_that("inline temporal() fit's $y is the response vector, so diagnostics run (gcol33/tulpa#796)", {
+  skip_on_cran()
+  set.seed(1)
+  n_t <- 30L
+  d <- data.frame(tidx = rep(1:n_t, each = 5), x = rnorm(150))
+  u <- cumsum(rnorm(n_t, 0, .3))
+  d$y <- rpois(150, exp(0.2 + 0.4 * d$x + u[d$tidx]))
+  ft <- suppressWarnings(tulpa(
+    y ~ x + temporal(formula = ~ 1 || tidx, structure = "rw1"),
+    data = d, family = "poisson"))
+
+  expect_true(is.numeric(ft$y))
+  expect_false(is.list(ft$y))
+  expect_identical(ft$y, d$y)
+  expect_false(is.null(ft$n_trials))
+  expect_no_error(residuals(ft))
+})

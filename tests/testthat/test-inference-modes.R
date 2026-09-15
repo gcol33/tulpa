@@ -34,3 +34,32 @@ test_that("the unknown-mode message names every mode the registry defines", {
     expect_true(grepl(m, msg, fixed = TRUE), info = m)
   }
 })
+
+test_that("auto routes a continuous spatial field + (1 | g) to hmc, and explicit nested_laplace refuses it up front (gcol33/tulpa#794)", {
+  skip_on_cran()
+  set.seed(2)
+  L <- cbind(lon = runif(60, 0, 10), lat = runif(60, 0, 10))
+  g <- data.frame(L, x = rnorm(60), g = rep(1:5, 12))
+  g$y <- rpois(60, exp(0.3 + 0.5 * g$x))
+
+  fA <- suppressWarnings(tulpa(
+    y ~ x + (1 | g), data = g, family = "poisson",
+    spatial = spatial_gp(~ lon + lat, nn = 6)))
+  expect_identical(fA$backend, "hmc")
+
+  expect_error(
+    tulpa(y ~ x + (1 | g), data = g, family = "poisson", mode = "nested_laplace",
+          spatial = spatial_gp(~ lon + lat, nn = 6)),
+    "nested_laplace")
+
+  # An areal field + RE is unaffected -- it stays single-block-prior handling.
+  W <- adjacency(expand.grid(x = 1:4, y = 1:4), x_coord = "x", y_coord = "y",
+                 type = "rook")$adjacency
+  d <- data.frame(region = rep(1:16, each = 4), g2 = rep(1:4, each = 16),
+                  x = rnorm(64))
+  d$y <- rpois(64, exp(0.3 + 0.5 * d$x))
+  fI <- suppressWarnings(tulpa(
+    y ~ x + (1 | g2) + spatial(region), data = d, family = "poisson",
+    mode = "nested_laplace", spatial = list(type = "icar", adjacency = W)))
+  expect_identical(fI$backend, "nested_laplace")
+})

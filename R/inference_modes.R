@@ -278,6 +278,14 @@ BACKEND_REGISTRY <- list(
     emits = "iid",
     tier = "structured", input = "nested", fitter = "tulpa_nested_laplace",
     families = NULL, cabi = "cpp_nested_laplace_multi", hyperprior = TRUE,
+    # The multi-block converter behind cpp_nested_laplace_multi
+    # (.nl_block_spec_for_cpp(), R/nested_laplace.R) has no gp / nngp / hsgp
+    # arm -- only icar / bym2 / car_proper / rw1 / rw2 / ar1 / iid / spde /
+    # tgmrf -- so a continuous field's own (1 | g) turning the fit into a
+    # multi-block prior reaches a refusal deep in that dispatch rather than at
+    # the front door (gcol33/tulpa#794). A continuous field with no RE term
+    # stays single-block and is unaffected.
+    carries_continuous_spatial_re = FALSE,
     note = "Single-arm nested Laplace; integrates latent-block hyperparameters"
   ),
   nested_laplace_joint = list(
@@ -812,6 +820,11 @@ auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_laten
   # .auto_backend_ok(). The `spatial` flag is set from has_spatial so a caller
   # cannot pass the two inconsistently.
   feat$spatial <- isTRUE(has_spatial)
+  # A continuous spatial field (gp / nngp / hsgp) plus a formula RE term is a
+  # feature nested_laplace's multi-block converter cannot carry (gcol33/tulpa#794);
+  # an areal field + RE stays single-block prior handling and is unaffected.
+  feat$continuous_spatial_re <- isTRUE(has_re) && isTRUE(has_spatial) &&
+    tolower(spatial_type %||% "") %in% .NL_FRONTDOOR_CONTINUOUS
 
   # Latent prior blocks (`latent(tgmrf(...))`) integrate their hyperparameters
   # via nested Laplace -- the designed Tier 2 hot path for latent Gaussian
@@ -1057,6 +1070,8 @@ auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_laten
   if (is.null(reg)) return(FALSE)
   on <- function(k) isTRUE(feat[[k]])
   if (on("offset") && identical(reg$carries_offset, FALSE)) return(FALSE)
+  if (on("continuous_spatial_re") &&
+      identical(reg$carries_continuous_spatial_re, FALSE)) return(FALSE)
   if (on("ziformula") && !backend %in% .zi_backends()) return(FALSE)
   if (on("phi2") && !backend %in% .phi2_backends()) return(FALSE)
   # Weights run through a log-posterior sampler, or through the non-spatial

@@ -65,6 +65,65 @@
 # eta_i is the mixture `sum_k w_k N(fitted_eta[k, i], fitted_eta_var[k, i])`,
 # which already holds the fields, the random effects and the offset.
 #
+# The (n_field, Z_field) design mapping an intrinsic/proper-CAR or BYM2 areal
+# field's own raw latent to its eta contribution -- the same map each
+# `.marginal_H_beta_*` areal helper builds for its Schur correction
+# (`R/marginal_se_spatial.R`), reused here (not duplicated) because it is
+# exactly the map a conditional-Laplace fit's mode assembled eta through.
+# BYM2's `d_fac` scaling (`sigma * sqrt(rho) * scale_factor` for the
+# structured component, `sigma * sqrt(1 - rho)` for the unstructured one) is
+# folded in at the fixed `sigma = 1`, `rho = 0.5` the conditional kernel
+# hardcodes. NULL for any other spatial type (gp / hsgp / spde), which are not
+# reached by this design.
+#' @keywords internal
+.areal_field_design <- function(spatial, n_obs) {
+  type <- tolower(spatial$type %||% "")
+  if (!type %in% c("icar", "car", "car_proper", "bym2")) return(NULL)
+  n_units <- nrow(as.matrix(spatial$adjacency))
+  if (type == "bym2") {
+    scale_factor <- spatial$scale_factor %||% 1.0
+    d_phi   <- sqrt(0.5 + 1e-10) * scale_factor
+    d_theta <- sqrt(1 - 0.5 + 1e-10)
+    Z_ind   <- .field_design_Z(spatial$spatial_idx, n_units, n_obs)
+    return(list(n_field = 2L * n_units, Z_field = cbind(d_phi * Z_ind, d_theta * Z_ind)))
+  }
+  list(n_field = n_units,
+       Z_field = .field_design_Z(spatial$spatial_idx, n_units, n_obs))
+}
+
+# Per-draw eta contribution of a Polya-Gamma Gibbs field, read off the
+# `phi_spatial[k]` (icar / car) or `phi_spatial[k]` + `theta_spatial[k]`
+# (bym2) columns `.pg_as_chain()` (`R/fit_gibbs.R`) already stores in
+# `$draws` alongside the fixed effects -- the kernel's own scaled field
+# state, so no `d_fac` is reapplied. `keep` subsets rows to match whatever
+# subsample `.fixed_coef_draws()` took of the same chain. NULL for any
+# spatial type the Gibbs sampler does not carry a field column for (gp /
+# multiscale_gp are sampled but not covered here; the caller adds nothing).
+#' @keywords internal
+.gibbs_field_eta_contrib <- function(object, keep, n_obs) {
+  spatial <- object$spatial
+  if (is.null(spatial)) return(NULL)
+  type <- tolower(spatial$type %||% "")
+  dn <- colnames(object$draws)
+  if (!type %in% c("icar", "car", "bym2") || is.null(dn)) return(NULL)
+
+  phi_cols <- grep("^phi_spatial\\[", dn)
+  if (!length(phi_cols)) return(NULL)
+  n_units <- length(phi_cols)
+  Z <- .field_design_Z(spatial$spatial_idx, n_units, n_obs)
+  U <- object$draws[keep, phi_cols, drop = FALSE]
+
+  if (type == "bym2") {
+    th_cols <- grep("^theta_spatial\\[", dn)
+    if (length(th_cols) != n_units) return(NULL)
+    U <- U + object$draws[keep, th_cols, drop = FALSE]
+  }
+  # Coerce back to a base matrix: Matrix is an Imports, not attached for a
+  # caller of the package, and `eta` downstream (and every plain colMeans() /
+  # arithmetic a user runs on a posterior_predict() draws matrix) expects one.
+  as.matrix(U %*% Matrix::t(Z))
+}
+
 # `"coefficients"`: everything else. The fit carries its fixed effects (and at
 # most the formula random effects and an SPDE field) rather than its linear
 # predictor, so eta is assembled from those.
@@ -194,6 +253,33 @@
         !is.null(object$spatial_effects) && !is.null(object$spatial$A)) {
       eta <- sweep(eta, 2,
                    as.numeric(object$spatial$A %*% object$spatial_effects), "+")
+    } else if (!is.null(object$spatial) && !is.null(object$mode)) {
+      # Conditional-Laplace areal fit (icar / car / car_proper / bym2): the
+      # field's raw latent is the TAIL of the fit's own mode (`[beta, re,
+      # field]`, matching every `.marginal_H_beta_*` areal helper's own
+      # layout, `R/marginal_se_spatial.R`), so it is read off exactly as it
+      # entered eta at the mode -- a posterior-mean field, like the SPDE
+      # branch above (gcol33/tulpa#795).
+      fd <- .areal_field_design(object$spatial, nrow(D$X))
+      if (!is.null(fd) && length(object$mode) >= fd$n_field) {
+        u <- object$mode[(length(object$mode) - fd$n_field + 1L):length(object$mode)]
+        eta <- sweep(eta, 2, as.numeric(fd$Z_field %*% u), "+")
+      }
+    } else if (is.matrix(object$draws) && !is.null(object$spatial)) {
+      # Polya-Gamma Gibbs fit: the field is actually SAMPLED (a
+      # `phi_spatial[k]` / `theta_spatial[k]` column per unit alongside the
+      # fixed effects in `$draws`), so every draw gets its own field value
+      # instead of a posterior mean (gcol33/tulpa#795).
+      fc <- .gibbs_field_eta_contrib(object, keep %||% seq_len(nrow(object$draws)),
+                                     nrow(D$X))
+      if (!is.null(fc)) eta <- eta + fc
+    } else if (!is.null(object$field_eta_contrib)) {
+      # Inline spatial() / temporal() joint field fit: the field's own
+      # weighted-mode posterior mean, read back per observation at fit time
+      # (`.bar_field_fit_core()`, `R/spatial_field.R`), since the joint
+      # multi-block driver behind these fits carries no single-cell
+      # `fitted_eta` for `.tulpa_linpred_source()` to read (gcol33/tulpa#795).
+      eta <- sweep(eta, 2, object$field_eta_contrib, "+")
     }
   }
 

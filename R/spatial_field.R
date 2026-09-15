@@ -508,6 +508,49 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
 # axis, and (when present) the second axis `b<b>.rho` -- which the caller labels
 # rho_car (CAR) or the AR1 rho (temporal). Each is a derived quantity evaluated
 # per grid cell then weighted-quantiled, never a plug-in of the modal value.
+# Fields common to both inline bar-field wrappers (spatial and temporal),
+# set on the joint-fit object they both start from before either adds its own
+# field-specific summaries (spatial_fields / temporal_fields, ...). `jfit`'s
+# own `$y` is the joint driver's per-arm response list, not the response
+# vector every generic diagnostic (`residuals()`, `pit_residuals()`,
+# `moran_i()`, ...) expects, so it and its siblings are overwritten from the
+# bundle / arm inputs the fit was actually built from (gcol33/tulpa#796).
+.bar_field_fit_finalize <- function(fit, core, bundle, phi, n_trials, family,
+                                    formula, call, backend, selection_reason) {
+  layout <- .tulpa_param_layout(bundle)
+  fit$y <- bundle$y
+  fit$n_trials <- n_trials %||% rep(1L, bundle$n_obs)
+  fit$phi <- phi
+  fit$draws <- core$beta_draws
+  fit$draws_kind <- "iid"
+  fit$means <- colMeans(core$beta_draws)
+  fit$param_names <- colnames(bundle$X)
+  fit$inference_mode <- "laplace"
+  fit$inference_tier <- 2L
+  fit$backend <- backend
+  fit$selection_reason <- selection_reason
+  fit$formula <- formula
+  fit$family <- family
+  fit$call <- call
+  fit$n_fixed <- layout$n_fixed
+  fit$fixed_names <- layout$fixed_names
+  fit$re_layout <- layout$re_layout
+  fit$N <- bundle$n_obs
+  fit$model_matrix <- bundle$X
+  fit$field_eta_contrib <- core$field_eta_contrib
+  fit
+}
+
+# Shared fit engine for an inline bar field (spatial or temporal). Given the
+# already-built block list (icar / car_proper / rw1 / rw2 / ar1, each optionally
+# carrying a per-row svc_weight), fit the one-arm joint nested-Laplace model and
+# return the pieces both wrappers assemble into a tulpa_fit: the joint fit, the
+# per-field weighted-mode posterior means, the per-field hyperparameter
+# summaries, and the fixed-effect draws. The hyperparameter summaries are
+# generic over the outer-grid axes: sigma = 1/sqrt(tau) from the `b<b>.tau`
+# axis, and (when present) the second axis `b<b>.rho` -- which the caller labels
+# rho_car (CAR) or the AR1 rho (temporal). Each is a derived quantity evaluated
+# per grid cell then weighted-quantiled, never a plug-in of the modal value.
 .bar_field_fit_core <- function(blocks, block_names, bundle, parsed, family,
                                 phi, n_trials, sigma_re, control,
                                 arm_spatial_idx = NULL) {
@@ -600,6 +643,34 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
   })
   names(fields) <- block_names
 
+  # The same weighted-mode field means, read back per OBSERVATION rather than
+  # per unit -- the posterior-mean field contribution to eta, so
+  # posterior_predict() / simulate() / WAIC / LOO see it instead of a
+  # fixed-effects-only linear predictor (gcol33/tulpa#795). Field-major MCAR
+  # sums every field's own per-row design weight; every other block type has
+  # one field with an intercept (all-ones) or SVC (`svc_weight`) design.
+  field_eta_contrib <- numeric(N)
+  for (b in seq_along(blocks)) {
+    blk <- blocks[[b]]
+    n_u <- blk$n_spatial_units %||% blk$n_times
+    if (is.null(n_u)) next
+    idx <- (blk$spatial_idx %||% blk$temporal_idx %||% list(NULL))[[1L]]
+    if (is.null(idx)) next
+    if (identical(blk$type, "mcar")) {
+      for (a in seq_len(blk$n_fields)) {
+        cols   <- field_starts[b] + (a - 1L) * n_u + seq_len(n_u)
+        mean_a <- as.numeric(crossprod(w, jfit$modes[, cols, drop = FALSE]))
+        wt     <- blk$field_weight[[a]][[1L]]
+        field_eta_contrib <- field_eta_contrib + wt * mean_a[idx]
+      }
+    } else {
+      cols   <- field_starts[b] + seq_len(n_u)
+      mean_b <- as.numeric(crossprod(w, jfit$modes[, cols, drop = FALSE]))
+      wt     <- if (!is.null(blk$svc_weight)) blk$svc_weight[[1L]] else rep(1, N)
+      field_eta_contrib <- field_eta_contrib + wt * mean_b[idx]
+    }
+  }
+
   tg <- jfit$theta_grid
   # Which outer integrator actually ran decides how a median and interval are
   # read off the nodes: a tensor grid's uniform cells discretize the density, so
@@ -640,7 +711,8 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
   beta_draws <- draws_full[, beta_cols, drop = FALSE]
   colnames(beta_draws) <- colnames(bundle$X)
 
-  list(jfit = jfit, fields = fields, hypers = hypers, beta_draws = beta_draws)
+  list(jfit = jfit, fields = fields, hypers = hypers, beta_draws = beta_draws,
+       field_eta_contrib = field_eta_contrib)
 }
 
 
@@ -728,30 +800,18 @@ tulpa_bar_field_replicate <- function(adjacency, node, by) {
     mcar_summary <- NULL
   }
 
-  layout <- .tulpa_param_layout(bundle)
-  fit <- jfit
-  fit$draws <- core$beta_draws
-  fit$draws_kind <- "iid"
-  fit$means <- colMeans(core$beta_draws)
-  fit$param_names <- colnames(bundle$X)
+  fit <- .bar_field_fit_finalize(
+    jfit, core = core, bundle = bundle, phi = phi, n_trials = n_trials,
+    family = family, formula = formula, call = call,
+    backend = "spatial_field_nested_laplace",
+    selection_reason = paste(
+      "inline spatial() varying-coefficient field(s); nested Laplace over",
+      "the CAR precisions"))
   fit$spatial_fields <- spatial_fields
   fit$spatial_field_names <- block_names
   fit$spatial_field_hypers <- spatial_field_hypers
   fit$mcar_summary <- mcar_summary
   fit$correlated <- is_mcar
-  fit$inference_mode <- "laplace"
-  fit$inference_tier <- 2L
-  fit$backend <- "spatial_field_nested_laplace"
-  fit$selection_reason <-
-    "inline spatial() varying-coefficient field(s); nested Laplace over the CAR precisions"
-  fit$formula <- formula
-  fit$family <- family
-  fit$call <- call
-  fit$n_fixed <- layout$n_fixed
-  fit$fixed_names <- layout$fixed_names
-  fit$re_layout <- layout$re_layout
-  fit$N <- bundle$n_obs
-  fit$model_matrix <- bundle$X
   class(fit) <- c("tulpa_spatial_field_fit", "tulpa_fit", oldClass(fit))
   fit
 }

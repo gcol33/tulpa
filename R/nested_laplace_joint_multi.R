@@ -2163,6 +2163,7 @@
     # sub-block start. `phi_start` (back-compat) is field_starts[1].
     field_starts      <- integer(0)
     field_block_types <- character(0)
+    field_n_fields    <- integer(0)
     for (b in seq_len(B)) {
         block_start[b] <- cur
         type <- tolower(prepared[[b]]$type %||% "")
@@ -2181,6 +2182,7 @@
             block_size[b] <- 2L * n_units
             field_starts      <- c(field_starts, cur)
             field_block_types <- c(field_block_types, "bym2")
+            field_n_fields    <- c(field_n_fields, 1L)
             if (is.null(phi_start)) {
                 phi_start   <- cur
                 theta_start <- cur + n_units
@@ -2199,6 +2201,7 @@
             block_size[b]     <- as.integer(prepared[[b]]$n_fields) * n_units
             field_starts      <- c(field_starts, cur)
             field_block_types <- c(field_block_types, "mcar")
+            field_n_fields    <- c(field_n_fields, as.integer(prepared[[b]]$n_fields))
             if (is.null(phi_start)) phi_start <- cur
         } else if (type == "miid") {
             # Multivariate IID stores p coupled per-group coefficient fields
@@ -2211,6 +2214,7 @@
             if (type %in% c("icar", "car_proper")) {
                 field_starts      <- c(field_starts, cur)
                 field_block_types <- c(field_block_types, type)
+                field_n_fields    <- c(field_n_fields, 1L)
                 if (is.null(phi_start)) {
                     phi_start <- cur
                 }
@@ -2235,6 +2239,7 @@
     if (length(field_starts) > 0L) {
         out$field_starts      <- field_starts
         out$field_block_types <- field_block_types
+        out$field_n_fields    <- field_n_fields
     }
     out
 }
