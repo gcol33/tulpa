@@ -7,6 +7,7 @@
 #include <Rcpp.h>
 #include <cmath>
 #include <algorithm>
+#include <utility>
 #include <vector>
 
 #include "pg_binomial.h"   // update_beta, update_re
@@ -622,6 +623,85 @@ inline double pg_log_icar(const double* phi, const PgAdjacency& adj, double tau,
   return lp;
 }
 
+// The NNGP joint density of a scale's field at its (sigma2, phi), the PC prior
+// on sigma2 (on the variance, the scale it is sampled on) and the uniform prior
+// on phi over [lower, upper]. Reads `sc.fac`, which pg_nngp_scale_update leaves
+// at the current phi.
+inline double pg_log_nngp_scale(const PgNngpScale& sc, double prior_sigma_U,
+                                double prior_sigma_alpha,
+                                double prior_phi_lower, double prior_phi_upper) {
+  if (!(sc.sigma2 > 0.0)) return R_NegInf;
+  if (!(sc.phi >= prior_phi_lower && sc.phi <= prior_phi_upper)) return R_NegInf;
+  double lp = 0.0;
+  for (int i = 0; i < sc.top.n; i++) {
+    const double v = sc.sigma2 * sc.fac.F[i];
+    const double r = sc.w[sc.top.orig[i]] - pg_nngp_parent_mean(sc.top, sc.fac, sc.w, i);
+    lp += -0.5 * (PG_LOG_2PI + std::log(v)) - 0.5 * r * r / v;
+  }
+  return lp + pg_log_prior_sigma2_pc(sc.sigma2, prior_sigma_U, prior_sigma_alpha) -
+         std::log(prior_phi_upper - prior_phi_lower);
+}
+
+// ============================================================================
+// The level a PROPER field shares with the intercept
+//
+// With an all-ones intercept column, beta0 -> beta0 + c together with
+// x -> x - c 1 leaves eta unchanged. A proper prior on x (an iid block, an NNGP
+// field) and the intercept's N(0, sd^2) both score that move, so the direction
+// is held by the priors alone and is weakly identified when the field is
+// diffuse. The update along it is the Gibbs step for beta0 in the coordinates
+// (beta0, u = x + beta0 1): u is held and beta0 drawn from its full
+// conditional, a linear change of variables with unit Jacobian. The likelihood
+// does not depend on c, and both priors are Gaussian in c, so the conditional is
+// Gaussian:
+//
+//   log p(c | .) = const - 0.5 (1 / sd^2 + prec_field) c^2
+//                        + (-beta0 / sd^2 + lin_field) c,
+//
+// where the field prior contributes log p(x - c 1) = const
+// - 0.5 prec_field c^2 + lin_field c. Subtracting the field's mean into the
+// intercept instead is a projection, not a draw, and leaves no stated target
+// invariant (gcol33/tulpa#761). An INTRINSIC field's constant direction carries
+// no prior, so there the level is removed rather than drawn.
+// ============================================================================
+inline double pg_draw_intercept_level(double beta0, double prior_beta_sd,
+                                      double prec_field, double lin_field) {
+  const double prec_beta = 1.0 / (prior_beta_sd * prior_beta_sd);
+  const double prec = prec_beta + prec_field;
+  const double num = -beta0 * prec_beta + lin_field;
+  return R::rnorm(num / prec, 1.0 / std::sqrt(prec));
+}
+
+// The iid N(0, sigma^2) block's terms along the constant direction.
+inline void pg_iid_level_terms(const double* x, int n, double sigma,
+                               double& prec_field, double& lin_field) {
+  const double inv_s2 = 1.0 / (sigma * sigma);
+  double sum = 0.0;
+  for (int j = 0; j < n; j++) sum += x[j];
+  prec_field = n * inv_s2;
+  lin_field = sum * inv_s2;
+}
+
+// The NNGP field's terms along the constant direction. With the sequential
+// residual r_i = w_i - B_i' w_N(i) and e_i = 1 - sum_t B_i[t] its value at the
+// constant field, the shifted residual is r_i - c e_i. Reads `sc.fac` at the
+// current phi.
+inline void pg_nngp_level_terms(const PgNngpScale& sc, double& prec_field,
+                                double& lin_field) {
+  const int nn = sc.top.nn;
+  prec_field = 0.0;
+  lin_field = 0.0;
+  for (int i = 0; i < sc.top.n; i++) {
+    double e = 1.0;
+    const size_t base = static_cast<size_t>(i) * nn;
+    for (int t = 0; t < sc.top.cnt[i]; t++) e -= sc.fac.B[base + t];
+    const double r = sc.w[sc.top.orig[i]] - pg_nngp_parent_mean(sc.top, sc.fac, sc.w, i);
+    const double inv_v = 1.0 / (sc.sigma2 * sc.fac.F[i]);
+    prec_field += e * e * inv_v;
+    lin_field += r * e * inv_v;
+  }
+}
+
 // Draw from N(mean, sd^2) truncated to (0, inf) (Robert 1995). Used for the
 // Gaussian full conditional of a positive scale parameter.
 inline double rtruncnorm_pos(double mean, double sd) {
@@ -962,6 +1042,8 @@ inline void pg_nngp_scale_update(
     const double log_ratio = ll_prop - ll_curr + std::log(phi_prop / sc.phi);
     if (std::isfinite(log_ratio) && std::log(R::runif(0, 1)) < log_ratio) {
       sc.phi = phi_prop;
+      // The factors of the accepted phi, so `sc.fac` is always the current one.
+      std::swap(sc.fac, sc.fac_prop);
     }
   }
 }

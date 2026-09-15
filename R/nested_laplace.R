@@ -1386,12 +1386,12 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   # rows written onto `p` vary a column the fit holds fixed or hold one it
   # integrates at a single value (gcol33/tulpa#760).
   dth <- spec$theta(spec$defaults(declared, a))
-  hp_axes <- .hp_integrated_axes(
+  hp_declared <- .hp_declare(
     .nl_theta_matrix(list(theta_grid = dth$grid, theta_names = dth$names)))
   # The block's hyperprior, folded where every caller of the kernel reads it:
   # the grid solve, the placement refit and its stencil, the k-hat refit. A
   # screened solve ranks its cells with it too.
-  hp  <- list(.nl_block_log_hyperprior(p, tg, hyperprior, axes = hp_axes))
+  hp  <- list(.nl_block_log_hyperprior(p, tg, hyperprior, declared = hp_declared))
   if ((a$prune_tol %||% 0) > 0) a$screen_log_offset <- .nl_screen_log_offset(tg, hp)
   out <- do.call(spec$cpp_fn, c(spec$pack(p), a))
   out$theta_grid  <- th$grid
@@ -2000,7 +2000,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     blk <- prepared[[b]]
     blk$log_prior_theta_per_grid <- blocks_spec[[b]]$log_prior_theta_per_grid
     .hp_prefix(.nl_block_log_hyperprior(blk, tg_b, .hp_choice(cargs$hyperprior),
-                                        axes = .hp_integrated_axes(block_grids[[b]])),
+                                        declared = .hp_declare(block_grids[[b]])),
                paste0("b", b, "."))
   })
   prune_tol <- as.numeric(cargs$prune_tol %||% 0)

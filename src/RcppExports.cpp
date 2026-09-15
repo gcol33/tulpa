@@ -4185,8 +4185,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_test_st_hsgp_log_prior
-double cpp_test_st_hsgp_log_prior(Rcpp::NumericVector delta, Rcpp::NumericVector eigenvalues, int T, double log_tau_st, double log_sigma2_hsgp, double log_lengthscale_hsgp, std::string temporal, bool temporal_cyclic, double logit_rho_st);
-RcppExport SEXP _tulpa_cpp_test_st_hsgp_log_prior(SEXP deltaSEXP, SEXP eigenvaluesSEXP, SEXP TSEXP, SEXP log_tau_stSEXP, SEXP log_sigma2_hsgpSEXP, SEXP log_lengthscale_hsgpSEXP, SEXP temporalSEXP, SEXP temporal_cyclicSEXP, SEXP logit_rho_stSEXP) {
+double cpp_test_st_hsgp_log_prior(Rcpp::NumericVector delta, Rcpp::NumericVector eigenvalues, int T, double log_tau_st, double log_sigma2_hsgp, double log_lengthscale_hsgp, std::string temporal, bool temporal_cyclic, double logit_rho_st, int st_parameterization);
+RcppExport SEXP _tulpa_cpp_test_st_hsgp_log_prior(SEXP deltaSEXP, SEXP eigenvaluesSEXP, SEXP TSEXP, SEXP log_tau_stSEXP, SEXP log_sigma2_hsgpSEXP, SEXP log_lengthscale_hsgpSEXP, SEXP temporalSEXP, SEXP temporal_cyclicSEXP, SEXP logit_rho_stSEXP, SEXP st_parameterizationSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -4199,7 +4199,8 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< std::string >::type temporal(temporalSEXP);
     Rcpp::traits::input_parameter< bool >::type temporal_cyclic(temporal_cyclicSEXP);
     Rcpp::traits::input_parameter< double >::type logit_rho_st(logit_rho_stSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_test_st_hsgp_log_prior(delta, eigenvalues, T, log_tau_st, log_sigma2_hsgp, log_lengthscale_hsgp, temporal, temporal_cyclic, logit_rho_st));
+    Rcpp::traits::input_parameter< int >::type st_parameterization(st_parameterizationSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_st_hsgp_log_prior(delta, eigenvalues, T, log_tau_st, log_sigma2_hsgp, log_lengthscale_hsgp, temporal, temporal_cyclic, logit_rho_st, st_parameterization));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -5116,7 +5117,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_test_nuts_progress_active", (DL_FUNC) &_tulpa_cpp_test_nuts_progress_active, 0},
     {"_tulpa_cpp_test_divergence_predicates", (DL_FUNC) &_tulpa_cpp_test_divergence_predicates, 6},
     {"_tulpa_cpp_test_pg_nngp_conditional", (DL_FUNC) &_tulpa_cpp_test_pg_nngp_conditional, 10},
-    {"_tulpa_cpp_test_st_hsgp_log_prior", (DL_FUNC) &_tulpa_cpp_test_st_hsgp_log_prior, 9},
+    {"_tulpa_cpp_test_st_hsgp_log_prior", (DL_FUNC) &_tulpa_cpp_test_st_hsgp_log_prior, 10},
     {"_tulpa_cpp_test_st_trend_precision", (DL_FUNC) &_tulpa_cpp_test_st_trend_precision, 1},
     {"_tulpa_cpp_test_st_iv_nuts", (DL_FUNC) &_tulpa_cpp_test_st_iv_nuts, 21},
     {"_tulpa_cpp_test_st_iv_layout", (DL_FUNC) &_tulpa_cpp_test_st_iv_layout, 14},

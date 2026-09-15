@@ -68,25 +68,6 @@ SigmaReState update_sigma_re_negbin_hc(
 }
 
 
-// Center random effects (soft sum-to-zero constraint)
-// This prevents RE from absorbing intercept and inflating sigma_re
-void center_random_effects(NumericVector& re, NumericVector& beta) {
-  int J = re.size();
-  double re_mean = 0.0;
-  for (int j = 0; j < J; j++) {
-    re_mean += re[j];
-  }
-  re_mean /= J;
-
-  // Absorb RE mean into intercept
-  beta[0] += re_mean;
-
-  // Center RE
-  for (int j = 0; j < J; j++) {
-    re[j] -= re_mean;
-  }
-}
-
 // The PG-NB augmentation samples beta / eta on the Zhou (2012) log-odds scale,
 // where the mean is mu = r * exp(eta). tulpa's neg_binomial_2 family is the NB2
 // mean scale mu = exp(eta_nb2) (R/family_loglik.R, .mean_log), shared by the
@@ -349,7 +330,7 @@ List pg_negbin_gibbs(
   }
   if (n_groups < 0) Rcpp::stop("`n_groups` must be >= 0; got %d.", n_groups);
   if (n_groups > 0) pg_check_index(group, N, n_groups, "group");
-  // The random-effect centring, the moment initializer and the compensating
+  // The random-effect level move, the moment initializer and the compensating
   // (r, beta_0) move all write beta[0] as the intercept.
   pg_require_intercept(X, "negative-binomial");
   const int n_save = tulpa::pg_n_save(n_iter, n_warmup, thin);
@@ -472,9 +453,16 @@ List pg_negbin_gibbs(
         re = re_new;
       }
 
-      // Center random effects to prevent absorbing intercept
-      // This is critical for correct sigma_re estimation
-      center_random_effects(re, beta);
+      // The block's level shared with the intercept, drawn from its
+      // conditional (the iid prior is proper, so it is not removed).
+      {
+        double prec_field = 0.0, lin_field = 0.0;
+        pg_iid_level_terms(re.begin(), n_groups, sigma_re, prec_field, lin_field);
+        const double c = pg_draw_intercept_level(beta[0], prior_beta_sd,
+                                                 prec_field, lin_field);
+        beta[0] += c;
+        for (int g = 0; g < n_groups; g++) re[g] -= c;
+      }
 
       // Recompute X_beta since beta[0] may have changed
       tulpa_parallel_for(team, N, [&](int i) {
@@ -533,12 +521,14 @@ List pg_negbin_gibbs(
       }
       sigma_draws[save_idx] = sigma_re;
       r_draws[save_idx] = r;
-      if (n_groups == 0) {
-        log_prob_draws[save_idx] =
-            negbin_log_lik_family(y, eta, r) +
-            pg_log_normal_iid(beta.begin(), p, prior_beta_sd) +
-            negbin_log_prior_r(r, prior_r_shape, prior_r_rate);
-      }
+      log_prob_draws[save_idx] =
+          negbin_log_lik_family(y, eta, r) +
+          pg_log_normal_iid(beta.begin(), p, prior_beta_sd) +
+          negbin_log_prior_r(r, prior_r_shape, prior_r_rate) +
+          (n_groups > 0
+               ? pg_log_normal_iid(re.begin(), n_groups, sigma_re) +
+                 pg_log_halfcauchy(sigma_re, prior_sigma_scale)
+               : 0.0);
 
       if (store_eta) {
         const double log_r = std::log(r);
@@ -568,12 +558,7 @@ List pg_negbin_gibbs(
     Named("r") = r_draws,
     Named("eta") = eta_draws
   );
-  // With an iid block the kernel recentres it and absorbs the level into the
-  // intercept every sweep. That block's prior is proper, so the recentring
-  // moves the state along a direction the prior penalizes while the sigma_re
-  // and beta conditionals score the uncentred model: no joint density is the
-  // one this chain leaves invariant, and none is recorded.
-  if (n_groups == 0) out["log_prob"] = log_prob_draws;
+  out["log_prob"] = log_prob_draws;
   return out;
 }
 
@@ -776,10 +761,9 @@ List pg_negbin_gibbs_spatial(
       spatial[s] = R::rnorm(post_mean, post_sd);
     }
 
-    // Center spatial effects (sum-to-zero constraint along the ICAR's
-    // improper direction), absorbing the mean into the intercept so eta is
-    // unchanged and the move is exactly posterior-invariant — the same
-    // convention center_random_effects uses for the iid RE block.
+    // Center spatial effects along the ICAR's improper direction, absorbing
+    // the mean into the intercept so eta is unchanged. The iid block beside it
+    // is proper and is not centred.
     double spatial_mean = 0.0;
     for (int s = 0; s < n_spatial_units; s++) {
       spatial_mean += spatial[s];

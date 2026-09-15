@@ -65,7 +65,11 @@ test_that("binomial NNGP GP Gibbs recovers intercept, field, and sigma2", {
   # variance. The range phi is weakly identified from data, so it is not asserted.
   expect_lt(abs(mean(fit$beta[, 1]) - b0), 0.5)
   expect_gt(stats::cor(colMeans(fit$gp), f), 0.8)
-  expect_lt(abs(mean(fit$gp)), 1e-6)                # field anchored sum-to-zero
+  # The field is proper, so its level is drawn with the intercept rather than
+  # removed into it (gcol33/tulpa#761): the level moves, and what the data
+  # identify is the sum.
+  expect_gt(stats::sd(rowMeans(fit$gp)), 0.05)
+  expect_lt(abs(mean(fit$beta[, 1] + rowMeans(fit$gp)) - (b0 + mean(f))), 0.25)
   expect_gt(mean(fit$sigma2_gp), 0.3)               # not railed
   expect_lt(mean(fit$sigma2_gp), 6)
 })

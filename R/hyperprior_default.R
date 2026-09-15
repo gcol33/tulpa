@@ -270,8 +270,11 @@
 # maps a column to the name it is reported under; `axes` are the columns read.
 # The caller states `axes` from the grid it declared, never from `tg`: a batch
 # of cells (a placement stencil, a single probe row, a refinement slice) holds
-# columns constant that the fit integrates (gcol33/tulpa#760).
-.hp_collect <- function(tg, resolve, name = identity, axes) {
+# columns constant that the fit integrates (gcol33/tulpa#760). `logchol` is the
+# same declaration for the free-covariance blocks among `axes`, each block's
+# design keyed by its column prefix (`.hp_logchol_designs()`): a batch of a
+# block's rows is a tensor in no coordinates at all.
+.hp_collect <- function(tg, resolve, name = identity, axes, logchol = list()) {
   n <- nrow(tg)
   out <- list(lp = numeric(n), lp_in_kernel = numeric(n),
               axes = character(0), declined = character(0))
@@ -279,8 +282,8 @@
   for (a in axes) {
     r <- resolve(a)
     if (identical(r$group, "logchol")) {
-      pre <- .hp_col_prefix(a)
-      groups[[pre]] <- c(groups[[pre]], a)
+      key <- .hp_logchol_key(.hp_col_prefix(a))
+      groups[[key]] <- c(groups[[key]], a)
     } else if (!is.null(r$fn)) {
       v <- as.numeric(r$fn(as.numeric(tg[, a])))
       v[is.na(v)] <- -Inf
@@ -291,17 +294,25 @@
     }
   }
   # A free-covariance block's density is one density over all of its columns,
-  # read off the whole block at once: every column of it, the fixed ones too.
-  for (pre in names(groups)) {
+  # evaluated at each row in the coordinates its declared design names.
+  for (key in names(groups)) {
+    pre <- .hp_logchol_key_pre(key)
+    design <- logchol[[key]]
+    if (is.null(design)) {
+      stop(sprintf(paste0("The free-covariance block '%s' has no declared ",
+                          "design; resolve it off the declared grid with ",
+                          "`.hp_declare()`."), pre), call. = FALSE)
+    }
     cols <- .hp_logchol_block_cols(colnames(tg), pre)
-    d <- .hp_logchol_log_density(tg[, cols, drop = FALSE])
+    d <- if (is.null(cols)) list(reason = .hp_decline("logchol_partial_block"))
+         else .hp_logchol_log_density(tg[, cols, drop = FALSE], design)
     if (!is.null(d$lp)) {
       v <- d$lp
       v[is.na(v)] <- -Inf
       out$lp   <- out$lp + v
-      out$axes <- c(out$axes, vapply(groups[[pre]], name, character(1)))
+      out$axes <- c(out$axes, vapply(groups[[key]], name, character(1)))
     } else {
-      for (a in groups[[pre]]) out$declined[[name(a)]] <- d$reason
+      for (a in groups[[key]]) out$declined[[name(a)]] <- d$reason
     }
   }
   out
@@ -348,10 +359,17 @@
   nrow(unique(M)) == nrow(M) && nrow(M) == prod(n_lev)
 }
 
+# Lists keyed by a free-covariance block's column prefix. An unprefixed
+# single-block grid has the empty prefix, which is not a usable list name.
+.hp_logchol_key <- function(pre) paste0("<", pre, ">")
+.hp_logchol_key_pre <- function(key) sub("^<(.*)>$", "\\1", key)
+
 # The coordinates a free-covariance block's grid is a tensor in, which are the
 # coordinates it integrates on. `M` holds the block's columns in
-# `.hp_logchol_block_cols()` order. Returns `list(design, p, coords)` with
-# `design` one of
+# `.hp_logchol_block_cols()` order. The design is a property of the block's
+# grid, so it is read off the block's DISTINCT rows: a joint grid repeats them
+# once per row of every other block, and that is still the block's own tensor.
+# Returns `list(design, p)` with `design` one of
 #   "logchol"  a tensor in the log-Cholesky columns themselves;
 #   "sd_rho"   two fields laid as a tensor in (log sigma_1, log sigma_2, rho),
 #              the default grid (`.mcar_default_logchol_grid()`);
@@ -363,39 +381,84 @@
   m <- ncol(M)
   p <- (sqrt(8 * m + 1) - 1) / 2
   if (!m || p != round(p)) return(list(reason = .hp_decline("logchol_design_measure")))
+  M <- M[!duplicated(signif(M, 12L)), , drop = FALSE]
   varies <- vapply(seq_len(m), function(j) length(unique(M[, j])) > 1L,
                    logical(1))
   if (!all(varies)) return(list(reason = .hp_decline("logchol_partial_block")))
-  if (.hp_is_tensor(M)) return(list(design = "logchol", p = as.integer(p), coords = M))
+  if (.hp_is_tensor(M)) return(list(design = "logchol", p = as.integer(p)))
   if (p == 2) {
-    s1 <- exp(M[, 1L])
-    s2 <- sqrt(M[, 2L]^2 + exp(2 * M[, 3L]))
-    D <- cbind(log(s1), log(s2), M[, 2L] / s2)
-    if (.hp_is_tensor(D)) return(list(design = "sd_rho", p = 2L, coords = D))
+    sd_rho <- list(design = "sd_rho", p = 2L)
+    if (.hp_is_tensor(.hp_logchol_coords(M, sd_rho))) return(sd_rho)
   }
   list(reason = .hp_decline("logchol_design_measure"))
 }
 
-# Per-cell log prior density of a free-covariance block, on the coordinates its
-# grid integrates on (`.hp_logchol_design()`): independent PC priors on the
-# marginal standard deviations and an LKJ prior on the correlation, the
-# `re_cov_pc_lkj_prior()` default at the engine's anchor. On a log-Cholesky
-# tensor that is the PC + LKJ density pushed to the log-Cholesky coordinates;
-# on the two-field default it is the same prior on (log sigma_1, log sigma_2,
-# rho) directly, where the LKJ(eta) density at d = 2 is
-# (1 - rho^2)^(eta - 1) / c_2(eta).
-.hp_logchol_log_density <- function(M) {
-  d <- .hp_logchol_design(M)
-  if (is.null(d$design)) return(list(reason = d$reason))
+# A block's rows in the coordinates of `design`: the log-Cholesky columns
+# themselves, or (log sigma_1, log sigma_2, rho) for "sd_rho". Both are
+# pointwise maps, so they carry any rows, not only the design's own nodes.
+.hp_logchol_coords <- function(M, design) {
+  M <- as.matrix(M)
+  if (identical(design$design, "logchol")) return(M)
+  s1 <- exp(M[, 1L])
+  s2 <- sqrt(M[, 2L]^2 + exp(2 * M[, 3L]))
+  cbind(log(s1), log(s2), M[, 2L] / s2)
+}
+
+# Each free-covariance block among `axes` with the design its grid declares,
+# keyed by `.hp_logchol_key()`. `grid` is the grid the fit declared -- a block's
+# own grid or a joint tensor over it -- never a batch evaluated from it.
+.hp_logchol_designs <- function(grid, axes = colnames(grid)) {
+  out <- list()
+  lc <- axes[.hp_is_logchol_col(sub("^b[0-9]+[.]", "", axes))]
+  for (pre in unique(.hp_col_prefix_vec(lc))) {
+    cols <- .hp_logchol_block_cols(colnames(grid), pre)
+    out[[.hp_logchol_key(pre)]] <-
+      if (is.null(cols)) list(reason = .hp_decline("logchol_partial_block"))
+      else .hp_logchol_design(grid[, cols, drop = FALSE])
+  }
+  out
+}
+
+# What a declared grid fixes for every batch evaluated from it: the columns it
+# integrates and each free-covariance block's design.
+.hp_declare <- function(grid, axes = .hp_integrated_axes(grid)) {
+  list(axes = axes, logchol = .hp_logchol_designs(grid, axes))
+}
+
+# The declaration for points laid in the grid's COLUMN coordinates -- a CCD
+# design and its mode-find, importance draws on the identity transform a
+# free-covariance axis takes: every block with a design takes the log-Cholesky
+# one. On a two-field block that is the "sd_rho" density carried by the map's
+# Jacobian, so the density over those points is a density in the coordinates
+# they were laid in.
+.hp_declare_on_columns <- function(declared) {
+  declared$logchol <- lapply(declared$logchol, function(d) {
+    if (!is.null(d$design)) d$design <- "logchol"
+    d
+  })
+  declared
+}
+
+# Per-cell log prior density of a free-covariance block at the rows of `M`, in
+# the coordinates of `design` (a `.hp_logchol_design()` record): independent PC
+# priors on the marginal standard deviations and an LKJ prior on the
+# correlation, the `re_cov_pc_lkj_prior()` default at the engine's anchor. On a
+# log-Cholesky design that is the PC + LKJ density pushed to the log-Cholesky
+# coordinates; on the two-field default it is the same prior on
+# (log sigma_1, log sigma_2, rho) directly, where the LKJ(eta) density at d = 2
+# is (1 - rho^2)^(eta - 1) / c_2(eta).
+.hp_logchol_log_density <- function(M, design) {
+  if (is.null(design$design)) return(list(reason = design$reason))
   anchor <- .nl_scale_anchor()
   eta <- .nl_hyperprior("lkj_eta")
-  if (identical(d$design, "sd_rho")) {
-    rho <- d$coords[, 3L]
-    lp <- .hp_log_scale_density(exp(d$coords[, 1L]), "sd", anchor) +
-      .hp_log_scale_density(exp(d$coords[, 2L]), "sd", anchor) +
+  if (identical(design$design, "sd_rho")) {
+    C <- .hp_logchol_coords(M, design)
+    rho <- C[, 3L]
+    lp <- .hp_log_scale_density(exp(C[, 1L]), "sd", anchor) +
+      .hp_log_scale_density(exp(C[, 2L]), "sd", anchor) +
       (eta - 1) * log1p(-rho^2) - .lkj_log_normaliser(2L, eta)
   } else {
-    f <- .re_cov_block_logprior(d$p, TRUE, anchor, eta)
+    f <- .re_cov_block_logprior(design$p, TRUE, anchor, eta)
     lp <- apply(as.matrix(M), 1L, f)
   }
   list(lp = as.numeric(lp))
@@ -404,10 +467,10 @@
 # Per-cell default log hyperprior of one registry block over its own axis
 # columns (bare names, natural values). A tgmrf block's own `prior(theta)` is
 # folded inside the kernel (`log_prior_theta_per_grid`), so it is recorded here
-# and not added again. `axes` are the block's integrated columns, read off its
+# and not added again. `declared` is the `.hp_declare()` record of the block's
 # declared grid.
-.nl_block_log_hyperprior <- function(p, tg, hyperprior = "proper", axes) {
-  axes <- intersect(axes, colnames(tg))
+.nl_block_log_hyperprior <- function(p, tg, hyperprior = "proper", declared) {
+  axes <- intersect(declared$axes, colnames(tg))
   if (identical(tolower(p$type %||% ""), "tgmrf")) {
     n <- nrow(tg)
     lpk <- p$log_prior_theta_per_grid
@@ -416,7 +479,7 @@
                 axes = axes, declined = character(0)))
   }
   .hp_collect(tg, function(a) .hp_axis_prior(a, p, hyperprior = hyperprior),
-              axes = axes)
+              axes = axes, logchol = declared$logchol)
 }
 
 # The default-or-user hyperprior over a joint grid. `blocks` is the block list
@@ -427,16 +490,17 @@
 # parsed. A user density replaces the default on every axis of its role, and
 # `hyperprior` (`.HP_CHOICES`) sets what every other axis carries.
 #
-# `axes` are the columns the fit integrates, read once off the grid the caller
-# declared (`.hp_integrated_axes()` of the whole grid, or
-# `.joint_multi_integrated_axes()`), and never off `theta_grid` itself. The
+# `declared` holds the columns the fit integrates and each free-covariance
+# block's design, read once off the grid the caller declared (`.hp_declare()` of
+# the whole grid, or `.joint_multi_declared_axes()`), and never off `theta_grid`
+# itself. The
 # drivers evaluate the record over batches -- refinement slices, CCD and
 # mode-find points, importance draws -- whose cells share coordinates on axes
 # the fit integrates, and a column constant in a batch is not a fixed setting of
 # the model (gcol33/tulpa#760).
 .joint_hyperprior <- function(theta_grid, blocks, families = NULL,
                               user = list(), copy_atom_mass = .TULPA_COPY_ATOM_MASS,
-                              hyperprior = "proper", axes) {
+                              hyperprior = "proper", declared) {
   tg <- as.matrix(theta_grid)
   n  <- nrow(tg)
   if (is.null(colnames(tg)) || !n) {
@@ -481,7 +545,7 @@
     }
     fam <- if (identical(role, "phi")) families[[sub("^phi_", "", bare)]] else NULL
     .hp_axis_prior(bare, bo$block, fam, hyperprior)
-  }, axes = intersect(axes, colnames(tg)))
+  }, axes = intersect(declared$axes, colnames(tg)), logchol = declared$logchol)
 }
 
 # Fold one or more hyperprior records into a kernel result. Each record's axis

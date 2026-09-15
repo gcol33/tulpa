@@ -112,17 +112,14 @@ Rcpp::List cpp_pg_binomial_gibbs_gp(
         prior_sigma_gp_U, prior_sigma_gp_alpha,
         prior_phi_lower, prior_phi_upper);
 
-    // Anchor the field level: the overall GP mean and the intercept are
-    // confounded (both shift eta by a constant), and under the NNGP sequential
-    // update that level is only weakly identified, so the pair drifts. Centre
-    // the field and absorb the removed mean into the intercept -- eta is
-    // unchanged and the field/intercept no longer diverge.
+    // The field level shared with the intercept, drawn from its conditional.
     {
-      double w_mean = 0.0;
-      for (int s = 0; s < n_spatial; s++) w_mean += gp.w[s];
-      w_mean /= n_spatial;
-      for (int s = 0; s < n_spatial; s++) gp.w[s] -= w_mean;
-      C.absorb_level(w_mean);
+      double prec_field = 0.0, lin_field = 0.0;
+      tulpa::pg_nngp_level_terms(gp, prec_field, lin_field);
+      const double c = tulpa::pg_draw_intercept_level(C.beta[0], prior_beta_sd,
+                                                      prec_field, lin_field);
+      for (int s = 0; s < n_spatial; s++) gp.w[s] -= c;
+      C.absorb_level(c);
     }
 
     // Update GP contributions
@@ -138,25 +135,25 @@ Rcpp::List cpp_pg_binomial_gibbs_gp(
       }
       sigma2_gp_draws[save_idx] = gp.sigma2;
       phi_gp_draws[save_idx] = gp.phi;
+      C.log_prob_draws[save_idx] =
+          C.log_joint_common(y, n, gp_contrib.begin(), prior_beta_sd,
+                             prior_sigma_re_scale) +
+          tulpa::pg_log_nngp_scale(gp, prior_sigma_gp_U, prior_sigma_gp_alpha,
+                                   prior_phi_lower, prior_phi_upper);
       save_idx++;
     }
 
     if ((iter + 1) % 100 == 0) Rcpp::checkUserInterrupt();
   }
 
-  // No log_prob is recorded. The NNGP field is proper, and the sweep recentres
-  // it and absorbs its level into the intercept, moving the state along a
-  // direction the NNGP density penalizes; the scale and range steps score the
-  // uncentred density, whose restriction to mean-zero fields would carry a
-  // (sigma2, phi)-dependent normalizer they never see. No joint density is the
-  // one this chain leaves invariant.
   Rcpp::List result = Rcpp::List::create(
     Rcpp::Named("beta") = C.beta_draws,
     Rcpp::Named("re") = C.re_draws,
     Rcpp::Named("sigma_re") = C.sigma_re_draws,
     Rcpp::Named("gp") = gp_draws,
     Rcpp::Named("sigma2_gp") = sigma2_gp_draws,
-    Rcpp::Named("phi_gp") = phi_gp_draws
+    Rcpp::Named("phi_gp") = phi_gp_draws,
+    Rcpp::Named("log_prob") = C.log_prob_draws
   );
 
   if (store_eta) {

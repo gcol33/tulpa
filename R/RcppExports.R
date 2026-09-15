@@ -985,8 +985,8 @@ cpp_test_pg_nngp_conditional <- function(coords, nn_idx, nn_dist, nn_order, n_sp
     .Call(`_tulpa_cpp_test_pg_nngp_conditional`, coords, nn_idx, nn_dist, nn_order, n_spatial, nn, w, sigma2, phi, cov_type)
 }
 
-cpp_test_st_hsgp_log_prior <- function(delta, eigenvalues, T, log_tau_st, log_sigma2_hsgp, log_lengthscale_hsgp, temporal = "rw2", temporal_cyclic = FALSE, logit_rho_st = 0.0) {
-    .Call(`_tulpa_cpp_test_st_hsgp_log_prior`, delta, eigenvalues, T, log_tau_st, log_sigma2_hsgp, log_lengthscale_hsgp, temporal, temporal_cyclic, logit_rho_st)
+cpp_test_st_hsgp_log_prior <- function(delta, eigenvalues, T, log_tau_st, log_sigma2_hsgp, log_lengthscale_hsgp, temporal = "rw2", temporal_cyclic = FALSE, logit_rho_st = 0.0, st_parameterization = 0L) {
+    .Call(`_tulpa_cpp_test_st_hsgp_log_prior`, delta, eigenvalues, T, log_tau_st, log_sigma2_hsgp, log_lengthscale_hsgp, temporal, temporal_cyclic, logit_rho_st, st_parameterization)
 }
 
 cpp_test_st_trend_precision <- function(T) {

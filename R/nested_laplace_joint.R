@@ -1998,13 +1998,13 @@ tulpa_nested_laplace_joint <- function(responses,
         vapply(arms, function(a) as.character(a$family %||% ""), character(1)),
         arm_names)
     theta_grid_init <- backend$theta_grid(grids, cp$has_copy)
-    hp_axes <- .hp_integrated_axes(theta_grid_init)
+    hp_declared <- .hp_declare(theta_grid_init)
     hp_record <- function(cells) {
         .joint_hyperprior(cells, list(c(prior, list(type = type))), hp_families,
                           user = list(sigma = fn_sigma, alpha = fn_alpha,
                                       phi = fn_phi),
                           copy_atom_mass = copy_atom_mass,
-                          hyperprior = hyperprior, axes = hp_axes)
+                          hyperprior = hyperprior, declared = hp_declared)
     }
     hp_fn <- function(new_cells) hp_record(new_cells)$lp
     hp_init <- hp_record(theta_grid_init)

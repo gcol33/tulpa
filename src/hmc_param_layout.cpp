@@ -64,7 +64,15 @@ void require_spatial_partition(const ModelData& data) {
 // (Type II, Type IV, HSGP-ST) contributes no quadratic form, so the field would
 // be flat along time.
 static void check_st_interaction_supported(const SpatiotemporalData& st,
-                                           bool is_hsgp) {
+                                           bool is_hsgp,
+                                           int parameterization) {
+  if (is_hsgp && parameterization == 1) {
+    Rcpp::stop("tulpa: the HSGP-ST interaction has no non-centered form "
+               "(st_parameterization = 1). Its coordinates are basis weights "
+               "at a per-basis precision tau / S_j; the non-centered transform "
+               "is the Knorr-Held Type IV Kronecker one. Use "
+               "st_parameterization = 0.");
+  }
   if (st.type == STType::SEPARABLE || st.type == STType::NONSEP_GP) {
     Rcpp::stop("tulpa: the %s spatiotemporal interaction has no density in "
                "the engine (no space-time covariance kernel or NNGP "
@@ -525,7 +533,8 @@ ParamLayout compute_param_layout(const ModelData& data) {
 
   if (layout.has_spatiotemporal && data.spatiotemporal_data.type != STType::NONE) {
     const auto& st = data.spatiotemporal_data;
-    check_st_interaction_supported(st, data.st_is_hsgp);
+    check_st_interaction_supported(st, data.st_is_hsgp,
+                                   data.st_parameterization);
     const bool reads_time_margin =
         tulpa_st::st_reads_time_margin(st.type, data.st_is_hsgp);
 

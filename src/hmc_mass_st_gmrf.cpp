@@ -201,7 +201,8 @@ StGmrfMassResult st_gmrf_inv_mass(
   // Centered: delta is sampled, the prior carries tau, likelihood and penalty
   // read delta directly. Non-centered: z is sampled with delta = z/sqrt(tau),
   // so the prior is tau-free and the other two pick up 1/tau.
-  const bool nc = (data.st_parameterization == 1);
+  const bool nc = tulpa_st::st_non_centered(st.type, data.st_parameterization,
+                                            data.st_is_hsgp);
   const double kron_scale = nc ? 1.0 : tau;
   const double outer_scale = nc ? (1.0 / tau) : 1.0;
 

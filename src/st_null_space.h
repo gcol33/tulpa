@@ -52,6 +52,15 @@ inline bool st_reads_time_margin(STType type, bool is_hsgp) {
     return is_hsgp || type == STType::TYPE_II || type == STType::TYPE_IV;
 }
 
+// Is the interaction sampled on the non-centered scale z = delta sqrt(tau)?
+// The transform and its tau-free prior are the Kronecker Type IV form. The
+// HSGP-ST interaction's coordinates are basis weights at a per-basis precision
+// tau / S_j(sigma2, lengthscale), a different operator with no such map, so
+// compute_param_layout refuses the flag there and this reads false for it.
+inline bool st_non_centered(STType type, int parameterization, bool is_hsgp) {
+    return parameterization == 1 && type == STType::TYPE_IV && !is_hsgp;
+}
+
 // The temporal margins the interaction density defines: the intrinsic RW1 and
 // RW2 precisions and the stationary AR1 one.
 inline bool st_time_margin_supported(TemporalType temporal) {

@@ -149,14 +149,14 @@ Rcpp::List cpp_pg_binomial_gibbs_multiscale_gp(
         local, cov_type, coords, nn_dist_local, sum_omega_sc, sum_resid_sc,
         prior_sigma_local_U, prior_sigma_local_alpha,
         prior_phi_local_lower, prior_phi_local_upper);
-    // Anchor the local field level into the intercept (both scales share the
-    // constant direction with the intercept; leaving it free lets them drift).
+    // Each scale's level shared with the intercept, drawn from its conditional.
     {
-      double m = 0.0;
-      for (int s = 0; s < n_spatial; s++) m += local.w[s];
-      m /= n_spatial;
-      for (int s = 0; s < n_spatial; s++) local.w[s] -= m;
-      C.absorb_level(m);
+      double prec_field = 0.0, lin_field = 0.0;
+      tulpa::pg_nngp_level_terms(local, prec_field, lin_field);
+      const double c = tulpa::pg_draw_intercept_level(C.beta[0], prior_beta_sd,
+                                                      prec_field, lin_field);
+      for (int s = 0; s < n_spatial; s++) local.w[s] -= c;
+      C.absorb_level(c);
     }
     for (int i = 0; i < n_spatial; i++) local_contrib[i] = local.w[i];
 
@@ -173,11 +173,12 @@ Rcpp::List cpp_pg_binomial_gibbs_multiscale_gp(
         sum_resid_sc, prior_sigma_regional_U, prior_sigma_regional_alpha,
         prior_phi_regional_lower, prior_phi_regional_upper);
     {
-      double m = 0.0;
-      for (int s = 0; s < n_spatial; s++) m += regional.w[s];
-      m /= n_spatial;
-      for (int s = 0; s < n_spatial; s++) regional.w[s] -= m;
-      C.absorb_level(m);
+      double prec_field = 0.0, lin_field = 0.0;
+      tulpa::pg_nngp_level_terms(regional, prec_field, lin_field);
+      const double c = tulpa::pg_draw_intercept_level(C.beta[0], prior_beta_sd,
+                                                      prec_field, lin_field);
+      for (int s = 0; s < n_spatial; s++) regional.w[s] -= c;
+      C.absorb_level(c);
     }
     for (int i = 0; i < n_spatial; i++) regional_contrib[i] = regional.w[i];
 
@@ -192,18 +193,25 @@ Rcpp::List cpp_pg_binomial_gibbs_multiscale_gp(
       phi_local_draws[save_idx] = local.phi;
       sigma2_regional_draws[save_idx] = regional.sigma2;
       phi_regional_draws[save_idx] = regional.phi;
+      for (int i = 0; i < N; i++) {
+        combined_contrib[i] = local_contrib[i] + regional_contrib[i];
+      }
+      C.log_prob_draws[save_idx] =
+          C.log_joint_common(y, n, combined_contrib.begin(), prior_beta_sd,
+                             prior_sigma_re_scale) +
+          tulpa::pg_log_nngp_scale(local, prior_sigma_local_U,
+                                   prior_sigma_local_alpha,
+                                   prior_phi_local_lower, prior_phi_local_upper) +
+          tulpa::pg_log_nngp_scale(regional, prior_sigma_regional_U,
+                                   prior_sigma_regional_alpha,
+                                   prior_phi_regional_lower,
+                                   prior_phi_regional_upper);
       save_idx++;
     }
 
     if ((iter + 1) % 100 == 0) Rcpp::checkUserInterrupt();
   }
 
-  // No log_prob is recorded. The NNGP field is proper, and the sweep recentres
-  // it and absorbs its level into the intercept, moving the state along a
-  // direction the NNGP density penalizes; the scale and range steps score the
-  // uncentred density, whose restriction to mean-zero fields would carry a
-  // (sigma2, phi)-dependent normalizer they never see. No joint density is the
-  // one this chain leaves invariant.
   Rcpp::List result = Rcpp::List::create(
     Rcpp::Named("beta") = C.beta_draws,
     Rcpp::Named("re") = C.re_draws,
@@ -213,7 +221,8 @@ Rcpp::List cpp_pg_binomial_gibbs_multiscale_gp(
     Rcpp::Named("sigma2_local") = sigma2_local_draws,
     Rcpp::Named("phi_local") = phi_local_draws,
     Rcpp::Named("sigma2_regional") = sigma2_regional_draws,
-    Rcpp::Named("phi_regional") = phi_regional_draws
+    Rcpp::Named("phi_regional") = phi_regional_draws,
+    Rcpp::Named("log_prob") = C.log_prob_draws
   );
 
   if (store_eta) {

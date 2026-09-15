@@ -95,3 +95,18 @@ test_that("a field the operator and both pins annihilate is free", {
                  sum((a * T_st)^2),
                tolerance = 1e-10)
 })
+
+test_that("the non-centered flag is refused on the HSGP-ST interaction", {
+  # gcol33/tulpa#759: st_parameterization = 1 with st_is_hsgp took the Kronecker
+  # branch, which reads neither HSGP hyperparameter and treats basis weights as
+  # sites. The layout refuses the combination rather than silently centering.
+  expect_error(
+    do.call(cpp_test_st_hsgp_log_prior,
+            c(list(delta = numeric(M * T_st), eigenvalues = EIG, T = T_st,
+                   temporal = "rw1", st_parameterization = 1L), HYP)),
+    "no non-centered form")
+  expect_true(is.finite(
+    do.call(cpp_test_st_hsgp_log_prior,
+            c(list(delta = numeric(M * T_st), eigenvalues = EIG, T = T_st,
+                   temporal = "rw1", st_parameterization = 0L), HYP))))
+})

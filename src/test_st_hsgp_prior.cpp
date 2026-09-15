@@ -44,6 +44,7 @@ void build_st_hsgp_model(
     const std::string& temporal,
     bool temporal_cyclic,
     const std::vector<double>& eigenvalues,
+    int st_parameterization,
     StHsgpData& sd,
     tulpa::LikelihoodSpec& spec,
     ModelData& data,
@@ -80,7 +81,7 @@ void build_st_hsgp_model(
     data.oi_prior_sd = 1.0;
 
     data.has_spatiotemporal = true;
-    data.st_parameterization = 0;
+    data.st_parameterization = st_parameterization;
     data.st_is_hsgp = true;
     data.st_sigma2_prior_U = 1.0;
     data.st_sigma2_prior_alpha = 0.01;
@@ -118,7 +119,8 @@ double cpp_test_st_hsgp_log_prior(
     double log_lengthscale_hsgp,
     std::string temporal = "rw2",
     bool temporal_cyclic = false,
-    double logit_rho_st = 0.0
+    double logit_rho_st = 0.0,
+    int st_parameterization = 0
 ) {
     const int M = eigenvalues.size();
     StHsgpData sd;
@@ -127,7 +129,7 @@ double cpp_test_st_hsgp_log_prior(
     ParamLayout layout;
     build_st_hsgp_model(M, T, temporal, temporal_cyclic,
                         std::vector<double>(eigenvalues.begin(), eigenvalues.end()),
-                        sd, spec, data, layout);
+                        st_parameterization, sd, spec, data, layout);
 
     if ((int)delta.size() != M * T) {
         Rcpp::stop("delta has %d entries; the layout holds %d",

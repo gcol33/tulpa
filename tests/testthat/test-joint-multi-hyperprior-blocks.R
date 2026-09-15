@@ -206,7 +206,7 @@ test_that("one spec on two copy blocks folds BOTH alpha axes", {
     lm0 <- numeric(nrow(fx$grid))
     got <- tulpa:::.joint_multi_add_hp(lm0, fx$grid, fx$axis_offsets, fx$B,
                                        fn_sigma = NULL, fn_alpha = fn,
-        axes = colnames(fx$grid))
+        declared = tulpa:::.hp_declare(fx$grid, colnames(fx$grid)))
 
     c1 <- hpb_pc_contrib(fx$grid[, "b1.alpha"], 4, 0.01, atom = TRUE)
     c2 <- hpb_pc_contrib(fx$grid[, "b2.alpha"], 4, 0.01, atom = TRUE)
@@ -227,7 +227,7 @@ test_that("a per-block spec folds each named block's own density", {
     lm0 <- numeric(nrow(fx$grid))
     got <- tulpa:::.joint_multi_add_hp(lm0, fx$grid, fx$axis_offsets, fx$B,
                                        fn_sigma = NULL, fn_alpha = fn,
-        axes = colnames(fx$grid))
+        declared = tulpa:::.hp_declare(fx$grid, colnames(fx$grid)))
     c1 <- hpb_pc_contrib(fx$grid[, "b1.alpha"], 4, 0.01, atom = TRUE)
     c2 <- hpb_pc_contrib(fx$grid[, "b2.alpha"], 1, 0.05, atom = TRUE)
     expect_equal(got, unname(c1 + c2))
@@ -238,7 +238,7 @@ test_that("a per-block spec folds each named block's own density", {
         "prior_alpha", multi_block = TRUE)
     got1 <- tulpa:::.joint_multi_add_hp(lm0, fx$grid, fx$axis_offsets, fx$B,
                                         fn_sigma = NULL, fn_alpha = fn1,
-        axes = colnames(fx$grid))
+        declared = tulpa:::.hp_declare(fx$grid, colnames(fx$grid)))
     expect_equal(got1, unname(c2))
 })
 
@@ -252,7 +252,7 @@ test_that("each block's copy-scale atom is read on its own axis", {
     got <- tulpa:::.joint_multi_add_hp(numeric(nrow(fx$grid)), fx$grid,
                                        fx$axis_offsets, fx$B,
                                        fn_sigma = NULL, fn_alpha = fn,
-        axes = colnames(fx$grid))
+        declared = tulpa:::.hp_declare(fx$grid, colnames(fx$grid)))
     both_zero <- fx$grid[, "b1.alpha"] == 0 & fx$grid[, "b2.alpha"] == 0
     expect_true(any(both_zero))
     expect_true(all(got[both_zero] == 0))
@@ -275,7 +275,7 @@ test_that("a grid carrying one axis of a role folds what the whole view did", {
 
     got <- tulpa:::.joint_multi_add_hp(lm0, fx$grid, fx$axis_offsets, fx$B,
                                        fn_sigma = fs, fn_alpha = fa,
-        axes = colnames(fx$grid))
+        declared = tulpa:::.hp_declare(fx$grid, colnames(fx$grid)))
     expect_identical(got, ref)
 
     # The block-2 tau axis is named by neither role and stays flat.
@@ -283,7 +283,7 @@ test_that("a grid carrying one axis of a role folds what the whole view did", {
     fx2$grid[, "b2.tau"] <- fx$grid[, "b2.tau"] * 10
     got2 <- tulpa:::.joint_multi_add_hp(lm0, fx2$grid, fx$axis_offsets, fx$B,
                                         fn_sigma = fs, fn_alpha = fa,
-        axes = colnames(fx2$grid))
+        declared = tulpa:::.hp_declare(fx2$grid, colnames(fx2$grid)))
     expect_identical(got2, got)
 })
 
@@ -293,7 +293,7 @@ test_that("no hyperprior leaves log_marginal untouched", {
     expect_identical(
         tulpa:::.joint_multi_add_hp(lm0, fx$grid, fx$axis_offsets, fx$B,
                                     fn_sigma = NULL, fn_alpha = NULL,
-        axes = colnames(fx$grid)),
+        declared = tulpa:::.hp_declare(fx$grid, colnames(fx$grid))),
         lm0)
     # A prior whose role no block carries reaches nothing.
     fs <- tulpa:::.joint_parse_hyperprior(hpb_pc(3, 0.01), "prior_sigma",
@@ -302,7 +302,7 @@ test_that("no hyperprior leaves log_marginal untouched", {
     expect_identical(
         tulpa:::.joint_multi_add_hp(lm0, g, c(0L, 1L, 2L), 2L,
                                     fn_sigma = fs, fn_alpha = NULL,
-        axes = colnames(g)),
+        declared = tulpa:::.hp_declare(g, colnames(g))),
         lm0)
 })
 

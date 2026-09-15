@@ -179,14 +179,15 @@ test_that("the two-field default grid carries PC x PC x LKJ on its own coordinat
   g <- tulpa:::.mcar_default_logchol_grid(2L)
   d <- tulpa:::.hp_logchol_design(g)
   expect_identical(d$design, "sd_rho")
-  lp <- tulpa:::.hp_logchol_log_density(g)$lp
+  lp <- tulpa:::.hp_logchol_log_density(g, d)$lp
   # The same PC + LKJ prior re_cov_pc_lkj_prior() puts on the log-Cholesky
   # coordinates, carried to (log sigma_1, log sigma_2, rho) by the Jacobian of
   # L11 = log s1, L21 = rho s2, L22 = log s2 + log(1 - rho^2) / 2, whose
   # determinant is s2 / (1 - rho^2).
   f <- tulpa:::.re_cov_block_logprior(2L, TRUE, tulpa:::.nl_scale_anchor(),
                                       tulpa:::.nl_hyperprior("lkj_eta"))
-  s2 <- exp(d$coords[, 2L]); rho <- d$coords[, 3L]
+  C <- tulpa:::.hp_logchol_coords(g, d)
+  s2 <- exp(C[, 2L]); rho <- C[, 3L]
   expect_equal(lp, apply(g, 1L, f) + log(s2 / (1 - rho^2)), tolerance = 1e-12)
 
   # A proper prior: on a tensor wide enough to hold it, the density times the
@@ -195,28 +196,31 @@ test_that("the two-field default grid carries PC x PC x LKJ on its own coordinat
   gg <- expand.grid(a = ls, b = ls, rho = r)
   M <- cbind(L11 = gg$a, L21 = gg$rho * exp(gg$b),
              L22 = gg$b + 0.5 * log1p(-gg$rho^2))
-  mass <- sum(exp(tulpa:::.hp_logchol_log_density(M)$lp +
-                  tulpa:::.hyper_logchol_log_measure(M, absolute = TRUE)))
+  dM <- tulpa:::.hp_logchol_design(M)
+  mass <- sum(exp(tulpa:::.hp_logchol_log_density(M, dM)$lp +
+                  tulpa:::.hyper_logchol_log_measure(M, dM, absolute = TRUE)))
   expect_equal(mass, 1, tolerance = 2e-3)
 })
 
 test_that("a log-Cholesky tensor is measured by its own column widths", {
   G1 <- matrix(seq(-9, 3, length.out = 200L), ncol = 1L,
                dimnames = list(NULL, "L11"))
-  expect_identical(tulpa:::.hp_logchol_design(G1)$design, "logchol")
-  mass <- sum(exp(tulpa:::.hp_logchol_log_density(G1)$lp +
-                  tulpa:::.hyper_logchol_log_measure(G1, absolute = TRUE)))
+  d1 <- tulpa:::.hp_logchol_design(G1)
+  expect_identical(d1$design, "logchol")
+  mass <- sum(exp(tulpa:::.hp_logchol_log_density(G1, d1)$lp +
+                  tulpa:::.hyper_logchol_log_measure(G1, d1, absolute = TRUE)))
   expect_equal(mass, 1, tolerance = 2e-3)
 
   G <- as.matrix(expand.grid(L11 = c(-1, 0, 1), L21 = c(-0.5, 0.5),
                              L22 = c(-1, 0.5)))
-  expect_identical(tulpa:::.hp_logchol_design(G)$design, "logchol")
+  dG <- tulpa:::.hp_logchol_design(G)
+  expect_identical(dG$design, "logchol")
   w <- function(x) { e <- c(x[1] - diff(x)[1] / 2, (x[-1] + x[-length(x)]) / 2,
                             x[length(x)] + diff(x)[length(x) - 1] / 2); diff(e) }
   ref <- log(w(c(-1, 0, 1)))[match(G[, 1], c(-1, 0, 1))] +
          log(w(c(-0.5, 0.5)))[match(G[, 2], c(-0.5, 0.5))] +
          log(w(c(-1, 0.5)))[match(G[, 3], c(-1, 0.5))]
-  expect_equal(tulpa:::.hyper_logchol_log_measure(G, absolute = TRUE), ref,
+  expect_equal(tulpa:::.hyper_logchol_log_measure(G, dG, absolute = TRUE), ref,
                tolerance = 1e-12)
 })
 
@@ -224,11 +228,11 @@ test_that("a free-covariance block the grid does not measure declines by name", 
   g <- tulpa:::.mcar_default_logchol_grid(2L)
   pinned <- g
   pinned[, "L22"] <- 0
-  expect_identical(tulpa:::.hp_logchol_log_density(pinned)$reason,
+  expect_identical(tulpa:::.hp_logchol_design(pinned)$reason,
                    "logchol_partial_block")
   set.seed(735)
   scattered <- cbind(L11 = rnorm(12), L21 = rnorm(12), L22 = rnorm(12))
-  expect_identical(tulpa:::.hp_logchol_log_density(scattered)$reason,
+  expect_identical(tulpa:::.hp_logchol_design(scattered)$reason,
                    "logchol_design_measure")
   tg <- scattered; colnames(tg) <- paste0("b1.", colnames(tg))
   sp <- tulpa:::.joint_axis_specs_from_grid(tg)
@@ -237,13 +241,105 @@ test_that("a free-covariance block the grid does not measure declines by name", 
   # Through the joint collector, a measured block folds once over all its axes.
   tg <- g; colnames(tg) <- paste0("b1.", colnames(g))
   hp <- tulpa:::.joint_hyperprior(tg, list(list(type = "mcar")),
-                                  axes = tulpa:::.hp_integrated_axes(tg))
+                                  declared = tulpa:::.hp_declare(tg))
   expect_setequal(hp$axes, colnames(tg))
   expect_length(hp$declined, 0L)
-  expect_equal(hp$lp, tulpa:::.hp_logchol_log_density(g)$lp)
+  dg <- tulpa:::.hp_logchol_design(g)
+  expect_equal(hp$lp, tulpa:::.hp_logchol_log_density(g, dg)$lp)
   sp <- tulpa:::.joint_axis_specs_from_grid(tg)
   expect_equal(tulpa:::.hyper_log_quad_weights(tg, sp, absolute = TRUE),
-               tulpa:::.hyper_logchol_log_measure(g, absolute = TRUE))
+               tulpa:::.hyper_logchol_log_measure(g, dg, absolute = TRUE))
+})
+
+test_that("a batch of a free-covariance block's rows reads the declared design", {
+  # gcol33/tulpa#762: the design was inferred from the rows handed to the fold,
+  # so a batch of rows of a tensor grid -- importance draws, adaptive seeds, a
+  # local-CCD cloud -- is a tensor in no coordinates and lost the Sigma prior.
+  g <- tulpa:::.mcar_default_logchol_grid(2L)
+  colnames(g) <- paste0("b1.", colnames(g))
+  bl <- list(list(type = "mcar"))
+  declared <- tulpa:::.hp_declare(g)
+  whole <- tulpa:::.joint_hyperprior(g, bl, declared = declared)
+  set.seed(762)
+  for (rows in list(sample(nrow(g), 7L), 5L, c(1L, nrow(g)))) {
+    part <- tulpa:::.joint_hyperprior(g[rows, , drop = FALSE], bl,
+                                      declared = declared)
+    expect_equal(part$lp, whole$lp[rows], tolerance = 0)
+    expect_setequal(unname(part$axes), unname(whole$axes))
+    expect_length(part$declined, 0L)
+  }
+
+  # A fold handed no declaration for the block refuses rather than inferring one.
+  expect_error(
+    tulpa:::.joint_hyperprior(g[1:3, , drop = FALSE], bl,
+                              declared = list(axes = colnames(g))),
+    "no declared design")
+})
+
+test_that("a joint tensor with a free-covariance block beside another folds and measures it", {
+  # gcol33/tulpa#762: the joint grid repeats the block's rows once per row of the
+  # other block, which is still the block's tensor.
+  g <- tulpa:::.mcar_default_logchol_grid(2L)
+  colnames(g) <- paste0("b1.", colnames(g))
+  tg <- cbind(g[rep(seq_len(nrow(g)), 2L), ],
+              b2.sigma = rep(c(0.5, 1), each = nrow(g)))
+  blocks <- list(list(type = "mcar"), list(type = "icar"))
+  hp <- tulpa:::.joint_hyperprior(tg, blocks, declared = tulpa:::.hp_declare(tg))
+  expect_setequal(hp$axes, colnames(tg))
+  expect_length(hp$declined, 0L)
+
+  dg <- tulpa:::.hp_logchol_design(g)
+  expect_identical(dg$design, "sd_rho")
+  lp_block <- tulpa:::.hp_logchol_log_density(g, dg)$lp
+  lp_sigma <- tulpa:::.joint_hyperprior(
+    tg[, "b2.sigma", drop = FALSE], blocks[2L],
+    declared = list(axes = "b2.sigma"))$lp
+  expect_equal(hp$lp, rep(lp_block, 2L) + lp_sigma, tolerance = 1e-12)
+
+  sp <- tulpa:::.joint_axis_specs_from_grid(tg, folded_axes = hp$axes)
+  lq <- tulpa:::.hyper_log_quad_weights(tg, sp, absolute = TRUE)
+  expect_true(all(is.finite(lq)))
+  # What is left after the block's own measure is the sigma axis's cell width,
+  # one value per sigma level.
+  rest <- lq - rep(tulpa:::.hyper_logchol_log_measure(g, dg, absolute = TRUE), 2L)
+  expect_equal(as.numeric(tapply(rest, tg[, "b2.sigma"], function(v) diff(range(v)))),
+               c(0, 0), tolerance = 1e-12)
+})
+
+test_that("a subset of the declared tensor is measured under the declared design", {
+  # An adaptive lattice keeps a subset of the dense tensor. Its rows are a tensor
+  # in no coordinates, and the measure reads the design the fit declared.
+  g <- tulpa:::.mcar_default_logchol_grid(2L)
+  colnames(g) <- paste0("b1.", colnames(g))
+  declared <- tulpa:::.hp_declare(g)
+  keep <- setdiff(seq_len(nrow(g)), c(1L, 7L, 30L))
+  sub <- g[keep, , drop = FALSE]
+  expect_identical(tulpa:::.hp_logchol_designs(sub)[[1L]]$reason,
+                   "logchol_design_measure")
+  sp <- tulpa:::.joint_axis_specs_from_grid(sub, logchol = declared$logchol)
+  lq <- tulpa:::.hyper_log_quad_weights(sub, sp, absolute = TRUE)
+  # Every level survives the three dropped cells, so each kept cell keeps the
+  # measure it has on the whole grid.
+  whole <- tulpa:::.hyper_log_quad_weights(
+    g, tulpa:::.joint_axis_specs_from_grid(g), absolute = TRUE)
+  expect_equal(lq, whole[keep], tolerance = 1e-12)
+})
+
+test_that("points laid in column coordinates read the density carried by the Jacobian", {
+  # A CCD design and importance draws are laid in the log-Cholesky columns; the
+  # column declaration is the sd_rho density plus log|d(sd_rho)/dL|, so a density
+  # over those points is one in the coordinates they were laid in.
+  g <- tulpa:::.mcar_default_logchol_grid(2L)
+  colnames(g) <- paste0("b1.", colnames(g))
+  bl <- list(list(type = "mcar"))
+  declared <- tulpa:::.hp_declare(g)
+  cols <- tulpa:::.hp_declare_on_columns(declared)
+  set.seed(7621)
+  pts <- cbind(b1.L11 = rnorm(9), b1.L21 = rnorm(9), b1.L22 = rnorm(9))
+  a <- tulpa:::.joint_hyperprior(pts, bl, declared = declared)$lp
+  b <- tulpa:::.joint_hyperprior(pts, bl, declared = cols)$lp
+  C <- tulpa:::.hp_logchol_coords(pts, list(design = "sd_rho"))
+  expect_equal(b, a - log(exp(C[, 2L]) / (1 - C[, 3L]^2)), tolerance = 1e-10)
 })
 
 test_that("a batch of cells reads the prior on the fit's axes, not on its own spread", {
@@ -255,15 +351,15 @@ test_that("a batch of cells reads the prior on the fit's axes, not on its own sp
                               phi_pos = c(5, 20, 40), KEEP.OUT.ATTRS = FALSE))
   blocks <- list(list(type = "icar"))
   fam <- c(occ = "bernoulli", pos = "beta")
-  axes <- tulpa:::.hp_integrated_axes(tg)
-  whole <- tulpa:::.joint_hyperprior(tg, blocks, fam, axes = axes)
+  axes <- tulpa:::.hp_declare(tg)
+  whole <- tulpa:::.joint_hyperprior(tg, blocks, fam, declared = axes)
   expect_setequal(whole$axes, c("sigma", "phi_pos"))
 
   slice <- which(tg[, "sigma"] == 0.7 & tg[, "phi_pos"] == 20)
   one <- which(tg[, "sigma"] == 1.5 & tg[, "alpha"] == 0.5 & tg[, "phi_pos"] == 40)
   for (rows in list(slice, one)) {
     part <- tulpa:::.joint_hyperprior(tg[rows, , drop = FALSE], blocks, fam,
-                                      axes = axes)
+                                      declared = axes)
     expect_equal(part$lp, whole$lp[rows])
     expect_setequal(part$axes, whole$axes)
   }
@@ -271,7 +367,7 @@ test_that("a batch of cells reads the prior on the fit's axes, not on its own sp
   # Reading the axes off the batch drops every density a batch holds constant,
   # which is exactly the difference the fix removes.
   own <- tulpa:::.joint_hyperprior(tg[slice, , drop = FALSE], blocks, fam,
-                                   axes = tulpa:::.hp_integrated_axes(tg[slice, , drop = FALSE]))
+                                   declared = tulpa:::.hp_declare(tg[slice, , drop = FALSE]))
   expect_length(own$axes, 0L)
   expect_equal(own$lp, rep(0, length(slice)))
   expect_true(all(whole$lp[slice] != 0))

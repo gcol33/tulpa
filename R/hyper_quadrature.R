@@ -523,10 +523,11 @@
   }
   axis_names <- colnames(theta_grid)
   groups <- .hyper_logchol_groups(specs, axis_names)
+  group_cols <- .hyper_logchol_group_cols(groups)
   out <- numeric(n)
   for (spec in specs) {
     a <- spec$name
-    if (!a %in% axis_names || a %in% unlist(groups)) next
+    if (!a %in% axis_names || a %in% group_cols) next
     if (isTRUE(spec$unweighted)) {
       # An axis with no declared coordinate has no cell width to measure it by.
       if (absolute) out <- out + NA_real_
@@ -547,28 +548,37 @@
 
 # The free-covariance blocks among a grid's axes: each complete set of
 # log-Cholesky columns (`.hp_logchol_block_cols()`) whose specs the per-axis
-# builder left unclassified. Their cells are measured as one block, on the
-# coordinates the block's grid is a tensor in.
+# builder left unclassified, with the design its specs declare
+# (`logchol_design`, stamped by `.joint_axis_specs_from_grid()`). Their cells are
+# measured as one block, on the coordinates that design names.
 .hyper_logchol_groups <- function(specs, axis_names) {
-  unw <- unlist(lapply(specs, function(s) {
-    if (isTRUE(s$unweighted) && s$name %in% axis_names) s$name
-  }))
-  cand <- unw[.hp_is_logchol_col(.hyper_axis_bare(unw))]
+  unw <- Filter(function(s) isTRUE(s$unweighted) && s$name %in% axis_names,
+                specs)
+  names_unw <- vapply(unw, function(s) s$name, character(1))
+  cand <- names_unw[.hp_is_logchol_col(.hyper_axis_bare(names_unw))]
   out <- list()
   for (pre in unique(.hp_col_prefix_vec(cand))) {
     cols <- .hp_logchol_block_cols(axis_names, pre)
-    if (!is.null(cols)) out[[length(out) + 1L]] <- cols
+    if (is.null(cols)) next
+    design <- unw[[match(cols[1L], names_unw)]]$logchol_design
+    out[[length(out) + 1L]] <- list(cols = cols, design = design)
   }
   out
 }
 
+.hyper_logchol_group_cols <- function(groups) {
+  unlist(lapply(groups, function(g) g$cols))
+}
+
 # Add each free-covariance block's per-cell log measure to `out`. A block whose
-# grid is a tensor in no coordinates the engine integrates on has no measure, and
-# as an absolute measure that is NA, the same answer an unclassified axis gives.
+# declared grid is a tensor in no coordinates the engine integrates on has no
+# measure, and as an absolute measure that is NA, the same answer an
+# unclassified axis gives.
 .hyper_add_logchol_measure <- function(out, theta_grid, groups, close_domain,
                                        absolute) {
-  for (cols in groups) {
-    lm <- .hyper_logchol_log_measure(theta_grid[, cols, drop = FALSE],
+  for (g in groups) {
+    lm <- .hyper_logchol_log_measure(theta_grid[, g$cols, drop = FALSE],
+                                     g$design,
                                      close_domain = close_domain,
                                      absolute = absolute)
     if (is.null(lm)) {
@@ -581,16 +591,18 @@
 }
 
 # Per-cell log measure of one free-covariance block: the product of its cell
-# widths on the coordinates its grid is a tensor in (`.hp_logchol_design()`),
+# widths in the coordinates of its declared `design` (`.hp_logchol_design()`),
 # log sigma on each standard deviation and the natural value on the correlation
 # for the two-field default, the log-Cholesky columns themselves otherwise --
-# the coordinates `.hp_logchol_log_density()` puts the prior on. NULL when the
-# block has no such coordinates.
-.hyper_logchol_log_measure <- function(M, close_domain = TRUE, absolute = FALSE) {
-  d <- .hp_logchol_design(M)
-  if (is.null(d$design)) return(NULL)
-  C <- signif(d$coords, 12L)
-  axes <- if (identical(d$design, "sd_rho")) {
+# the coordinates `.hp_logchol_log_density()` puts the prior on. The widths are
+# read off the levels the rows of `M` take in those coordinates, so a subset of
+# the declared tensor is measured on its own levels as every other axis is.
+# NULL when the block has no design.
+.hyper_logchol_log_measure <- function(M, design, close_domain = TRUE,
+                                       absolute = FALSE) {
+  if (is.null(design$design)) return(NULL)
+  C <- signif(.hp_logchol_coords(M, design), 12L)
+  axes <- if (identical(design$design, "sd_rho")) {
     list(list(spec = list(name = "sigma", log_scale = TRUE), nat = exp),
          list(spec = list(name = "sigma", log_scale = TRUE), nat = exp),
          list(spec = list(name = "logchol_rho", log_scale = FALSE,
@@ -710,7 +722,8 @@
                  paste(unknown, collapse = ", ")), call. = FALSE)
   }
   groups <- .hyper_logchol_groups(specs, axis_names)
-  if (length(intersect(unique(home[!base]), unlist(groups)))) {
+  group_cols <- .hyper_logchol_group_cols(groups)
+  if (length(intersect(unique(home[!base]), group_cols))) {
     stop("Refinement slice cells sit on a free-covariance block's axes, which ",
          "are measured as one block.", call. = FALSE)
   }
@@ -719,7 +732,7 @@
   measures <- list()
   for (spec in specs) {
     a <- spec$name
-    if (!a %in% axis_names || a %in% unlist(groups)) next
+    if (!a %in% axis_names || a %in% group_cols) next
     if (isTRUE(spec$unweighted)) {
       if (absolute) out <- out + NA_real_
       next

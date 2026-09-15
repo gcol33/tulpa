@@ -215,8 +215,9 @@ T compute_st_prior(const std::vector<T>& params, const ModelData& data,
         int T_st = data.spatiotemporal_data.n_times;
 
         // NC reparameterization for Type IV
-        const bool st_use_nc = (data.st_parameterization == 1 &&
-                                data.spatiotemporal_data.type == STType::TYPE_IV);
+        const bool st_use_nc = tulpa_st::st_non_centered(
+            data.spatiotemporal_data.type, data.st_parameterization,
+            data.st_is_hsgp);
 
         if (st_use_nc) {
             // Forward transform: delta = z / sqrt(tau_st)

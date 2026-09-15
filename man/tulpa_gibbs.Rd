@@ -98,11 +98,15 @@ updated by a random-walk Metropolis-Hastings step on \code{log(r)} whose
 stationary support is bounded to \code{r} in \verb{[0.1, 500]}; data favouring a
 dispersion outside that range pile up at the boundary.
 
-Every sampler that centres a latent effect -- the negative-binomial
-kernels, and the binomial kernels carrying a \code{spatial} or \code{temporal}
-field -- adds the removed level to the first coefficient, which leaves
-\code{eta} unchanged only when the first column of \code{X} is an all-ones
-intercept. Those routes error on a design without one.
+Every sampler that moves a latent effect's level through the first
+coefficient -- the negative-binomial kernels, and the binomial kernels
+carrying a \code{spatial} or \code{temporal} field -- leaves \code{eta} unchanged only
+when the first column of \code{X} is an all-ones intercept, and those routes
+error on a design without one. An intrinsic field (ICAR, RW1, RW2) has its
+level removed into the intercept, since its prior does not see that
+direction; a proper one (the negative-binomial iid block, an NNGP field)
+has the level it shares with the intercept drawn from its full
+conditional, which both priors define.
 }
 \examples{
 set.seed(1)

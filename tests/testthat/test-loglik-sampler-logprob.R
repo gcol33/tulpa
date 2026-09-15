@@ -309,7 +309,7 @@ test_that("PG negative-binomial ICAR route records its joint density", {
   expect_lt(abs(res$log_prob[k] - ref), 1e-8)
 })
 
-test_that("PG negative-binomial route records a density only with no iid block", {
+test_that("PG negative-binomial route records its joint density, with and without an iid block", {
   d <- pg_areal()
   set.seed(10)
   yc <- as.integer(rnbinom(d$N, size = 4, mu = exp(0.5 + 0.3 * d$X[, 2])))
@@ -327,38 +327,104 @@ test_that("PG negative-binomial route records a density only with no iid block",
     nb_r_log_prior(r, 1.2, 0.3)
   expect_lt(abs(res0$log_prob[k] - ref), 1e-8)
 
-  # The iid block is recentred every sweep: no density is recorded.
+  # The iid block's level is drawn rather than removed (gcol33/tulpa#761), so
+  # the chain has a stated target and records it.
   res1 <- cpp_pg_negbin_gibbs(yc, d$X, d$grp, 4L, PG_ITER, PG_WARM, 1L,
                               prior_beta_sd = 3, prior_sigma_scale = 2,
                               prior_r_shape = 1.2, prior_r_rate = 0.3,
                               r_init = 5, store_eta = FALSE, verbose = FALSE,
                               n_threads = 1L)
-  expect_null(res1$log_prob)
+  k <- nrow(res1$beta)
+  r <- res1$r[k]
+  beta_nb2 <- res1$beta[k, ]; re <- res1$re[k, ]; s_re <- res1$sigma_re[k]
+  ref <- sum(dnbinom(yc, size = r,
+                     mu = exp(as.numeric(d$X %*% beta_nb2) + re[d$grp]),
+                     log = TRUE)) +
+    sum(dnorm(beta_nb2 - c(log(r), 0), 0, 3, log = TRUE)) +
+    sum(dnorm(re, 0, s_re, log = TRUE)) + ref_log_hc(s_re, 2) +
+    nb_r_log_prior(r, 1.2, 0.3)
+  expect_lt(abs(res1$log_prob[k] - ref), 1e-8)
+  # The block is no longer forced to mean zero.
+  expect_gt(max(abs(rowMeans(res1$re))), 1e-6)
 })
 
-test_that("PG NNGP routes record no density, and logLik() declines on them", {
-  set.seed(12)
-  n <- 20L
+# A one-neighbour sequential NNGP over a 1-D ordering: position i's parent is
+# position i - 1, which is what the kernel's `nn_idx` encodes 1-based.
+pg_nngp_chain <- function(seed, n) {
+  set.seed(seed)
   coords <- cbind(runif(n), runif(n))
   ord <- order(coords[, 1])
   nn_idx <- matrix(c(0L, seq_len(n - 1L)), ncol = 1L)
   d1 <- c(0, sqrt(rowSums((coords[ord[-1], , drop = FALSE] -
                            coords[ord[-n], , drop = FALSE])^2)))
+  list(coords = coords, ord = ord, nn_idx = nn_idx, nn_dist = matrix(d1, ncol = 1L))
+}
+
+# The sequential NNGP density at unit-variance kriging weights, with the
+# engine's diagonal nugget in the neighbour correlation, times the PC prior on
+# sigma2 and the uniform prior on phi.
+ref_log_nngp_chain <- function(w, s2, phi, g, U, alpha, lo, hi) {
+  nug <- 1e-8
+  o <- g$ord
+  lp <- dnorm(w[o[1]], 0, sqrt(s2), log = TRUE)
+  for (i in 2:length(o)) {
+    rho <- exp(-g$nn_dist[i, 1] / phi)
+    B <- rho / (1 + nug)
+    F <- max(1 - rho^2 / (1 + nug), 1e-10)
+    lp <- lp + dnorm(w[o[i]], B * w[o[i - 1]], sqrt(s2 * F), log = TRUE)
+  }
+  lam <- -log(alpha) / U
+  s <- sqrt(s2)
+  lp + log(lam) - lam * s - log(2 * s) - log(hi - lo)
+}
+
+test_that("PG NNGP route records its joint density, and logLik() reads it", {
+  # gcol33/tulpa#761: the field's level is drawn from its conditional rather
+  # than removed into the intercept, so the chain's target is the model's.
+  n <- 20L
+  g <- pg_nngp_chain(12L, n)
   X <- cbind(1, rnorm(n))
   y <- as.integer(rbinom(n, 5L, 0.4))
   res <- cpp_pg_binomial_gibbs_gp(
-    y, rep(5L, n), X, rep(1L, n), 0L, coords, nn_idx, matrix(d1, ncol = 1L),
-    as.integer(ord - 1L), n, 1L, 1.0, 0.5, 0L, PG_ITER, PG_WARM, 1L,
-    verbose = FALSE)
-  expect_null(res$log_prob)
+    y, rep(5L, n), X, rep(1L, n), 0L, g$coords, g$nn_idx, g$nn_dist,
+    as.integer(g$ord - 1L), n, 1L, 1.0, 0.5, 0L, PG_ITER, PG_WARM, 1L,
+    prior_beta_sd = 3, prior_sigma_gp_U = 1.5, prior_sigma_gp_alpha = 0.05,
+    prior_phi_lower = 0.02, prior_phi_upper = 4, verbose = FALSE)
+  k <- nrow(res$beta)
+  beta <- res$beta[k, ]; w <- res$gp[k, ]
+  ref <- sum(dbinom(y, 5L, plogis(as.numeric(X %*% beta) + w), log = TRUE)) +
+    sum(dnorm(beta, 0, 3, log = TRUE)) +
+    ref_log_nngp_chain(w, res$sigma2_gp[k], res$phi_gp[k], g, 1.5, 0.05, 0.02, 4)
+  expect_lt(abs(res$log_prob[k] - ref), 1e-8)
+  expect_gt(max(abs(rowMeans(res$gp))), 1e-6)
 
   chain <- tulpa:::.pg_as_chain(res, "gp", X)
-  expect_null(chain$log_prob)
+  expect_false(is.null(chain$log_prob))
   fit <- tulpa:::.finalize_fit(chain, backend = "gibbs", n_fixed = 2L,
                                fixed_names = chain$param_names[1:2])
-  ll <- logLik(fit)
-  expect_true(is.na(as.numeric(ll)))
-  expect_identical(attr(ll, "declined"), "no_log_posterior_recorded")
+  expect_log_posterior_mean(fit)
+})
+
+test_that("PG multiscale NNGP route records its joint density", {
+  n <- 20L
+  g <- pg_nngp_chain(13L, n)
+  X <- cbind(1, rnorm(n))
+  y <- as.integer(rbinom(n, 5L, 0.4))
+  res <- cpp_pg_binomial_gibbs_multiscale_gp(
+    y, rep(5L, n), X, rep(1L, n), 0L, g$coords,
+    g$nn_idx, g$nn_dist, as.integer(g$ord - 1L), 1L,
+    g$nn_idx, g$nn_dist, as.integer(g$ord - 1L), 1L,
+    n, 0.5, 0.2, 0.8, 2.0, 0L, PG_ITER, PG_WARM, 1L,
+    prior_beta_sd = 3, verbose = FALSE)
+  k <- nrow(res$beta)
+  beta <- res$beta[k, ]; wl <- res$w_local[k, ]; wr <- res$w_regional[k, ]
+  ref <- sum(dbinom(y, 5L, plogis(as.numeric(X %*% beta) + wl + wr), log = TRUE)) +
+    sum(dnorm(beta, 0, 3, log = TRUE)) +
+    ref_log_nngp_chain(wl, res$sigma2_local[k], res$phi_local[k], g,
+                       1, 0.01, 0.01, 5) +
+    ref_log_nngp_chain(wr, res$sigma2_regional[k], res$phi_regional[k], g,
+                       1, 0.01, 0.1, 20)
+  expect_lt(abs(res$log_prob[k] - ref), 1e-8)
 })
 
 test_that("a Polya-Gamma fit carries log_prob through the chain assembly", {

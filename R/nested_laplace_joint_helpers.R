@@ -739,10 +739,15 @@
 # Axis specs for a grid that is already assembled, keyed off its column names.
 # The multi-block driver builds its grid before any spec list exists, so it
 # recovers the same metadata from the columns rather than carrying a second
-# description of the same axes.
+# description of the same axes. `logchol` is each free-covariance block's
+# declared design (`.hp_logchol_designs()`), stamped on the block's specs as
+# `logchol_design`; it defaults to the design `theta_grid` itself declares, and a
+# caller measuring a grid it did not declare -- a subset of the declared tensor
+# -- passes the declaration it folded the hyperprior under.
 .joint_axis_specs_from_grid <- function(theta_grid,
                                         copy_slab = "exponential",
-                                        folded_axes = NULL) {
+                                        folded_axes = NULL,
+                                        logchol = .hp_logchol_designs(theta_grid)) {
     if (is.null(theta_grid) || is.null(colnames(theta_grid))) return(NULL)
     theta_grid <- as.matrix(theta_grid)
     grids <- stats::setNames(
@@ -757,8 +762,14 @@
     # is built for them.
     grids <- grids[vapply(grids, function(g) length(g) > 1L, logical(1))]
     if (length(grids) == 0L) return(NULL)
-    .joint_axis_specs(grids, list(has_copy = TRUE), copy_slab = copy_slab,
-                      folded_axes = folded_axes)
+    specs <- .joint_axis_specs(grids, list(has_copy = TRUE), copy_slab = copy_slab,
+                               folded_axes = folded_axes)
+    lapply(specs, function(sp) {
+        if (.hp_is_logchol_col(.hyper_axis_bare(sp$name))) {
+            sp$logchol_design <- logchol[[.hp_logchol_key(.hp_col_prefix(sp$name))]]
+        }
+        sp
+    })
 }
 
 # The continuum levels of one axis: its distinct finite values, with the zero

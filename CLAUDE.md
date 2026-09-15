@@ -463,9 +463,20 @@ coordinates.
 is a tensor in: the two-field default is a tensor in (log sigma_1, log sigma_2,
 rho) and carries PC x PC x LKJ there with its cells measured there; a
 log-Cholesky tensor carries `re_cov_pc_lkj_prior()`'s density and its column
-widths. Both the fold (`.hp_collect()`'s logchol group) and the measure
-(`.hyper_logchol_groups()` in `.hyper_log_quad_weights()`) read that predicate,
-so they cannot disagree. The two forms agree through the map's Jacobian
+widths. The design is DECLARED off the grid the fit declared (gcol33/tulpa#762),
+never inferred from the rows being evaluated: `.hp_declare()` (or
+`.joint_multi_declared_axes()` over the per-block grids) resolves the integrated
+axes and each block's design once, the fold (`.hp_collect(logchol =)`) evaluates
+the density pointwise at any batch in that design's coordinates, and the measure
+(`.hyper_logchol_groups()` in `.hyper_log_quad_weights()`) reads the same design
+stamped on the axis specs (`.joint_axis_specs_from_grid(logchol =)`), so they
+cannot disagree. A batch of a tensor's rows is a tensor in no coordinates, and a
+joint grid repeats a block's rows once per row of the other blocks, so inferring
+the design dropped the Sigma prior on every importance draw and on every
+multi-block tensor. Points laid in the grid's COLUMN coordinates (a CCD design
+and its mode-find, the outer k-hat's draws on the identity transform) read
+`.hp_declare_on_columns()`: the log-Cholesky form, which is the two-field
+density carried by the map's Jacobian. The two forms agree through the map's Jacobian
 `s2 / (1 - rho^2)` to 1e-15. A fixed column declines `logchol_partial_block`,
 neither tensor `logchol_design_measure`. Tests: `test-hyperprior-default.R`.
 

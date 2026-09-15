@@ -1,5 +1,54 @@
 # tulpa 0.4.3
 
+## Three Polya-Gamma Gibbs routes sample their stated posterior
+
+* **The negative-binomial iid, NNGP and multiscale NNGP Gibbs kernels removed
+  a proper field's mean into the intercept every sweep** (gcol33/tulpa#761).
+  That projection moves the state along a direction the field's prior and the
+  intercept's prior both score, while the scale conditionals read the
+  un-centred model, so no joint density was the one the chain left invariant.
+  The level a proper field shares with the intercept is now drawn from its full
+  conditional, a Gibbs step for the intercept with the sum `intercept + field`
+  held, which is Gaussian because both priors are and does not involve the
+  likelihood. An intrinsic field (ICAR, RW1, RW2) keeps its level removed. Each
+  route records `log_prob`, and `logLik()` reads it.
+  Scored against an adaptive random-walk Metropolis chain on the same log
+  density: on a 6-group negative-binomial fixture the posterior median of
+  `sigma_re` was 0.535 against 0.635 and the intercept's 90% interval 0.321
+  wide against 1.023; it is now 0.634 and 1.025. On a 10-location binomial
+  NNGP fixture the median of `sigma2` was 0.0044 against 0.448, and is now 0.400
+  (batch-means standard errors 0.026 and 0.020) with its 5% quantile at 0.008
+  against 0.036; the intercept, slope and range quantiles agree to within 0.041.
+  Scripts: `dev_notes/issue761/`.
+
+## A free-covariance block's prior design is declared, not inferred
+
+* **An MCAR / MIID block read its prior coordinates off the rows being
+  evaluated** (gcol33/tulpa#762), so a batch of a tensor grid's rows (importance
+  draws, adaptive-grid seeds, a local-CCD cloud) is a tensor in no coordinates
+  and lost the Sigma prior: 7 rows of the default two-field grid read 2.39 to
+  4.12 nats above the whole grid. A joint grid repeats a block's rows once per
+  row of the other blocks, so an MCAR block beside any other integrated block
+  folded no Sigma prior at all and measured its cells as `NA`. The design is now
+  resolved once off the declared per-block grid (`.hp_declare()`,
+  `.joint_multi_declared_axes()`), the fold evaluates the density at any rows in
+  that design's coordinates, and the cell measure reads the same declared
+  design, so an adaptive subset of the tensor is measured on its own levels.
+  Points laid in the grid's log-Cholesky columns (a CCD design and its
+  mode-find, the outer k-hat's importance draws) read the log-Cholesky form of
+  the prior, which is the two-field density carried by the map's Jacobian;
+  a CCD-integrated MCAR fit, which had declined the prior on the design, now
+  carries it.
+
+## The HSGP-ST interaction refuses the non-centred flag
+
+* **`st_parameterization = 1` on an HSGP-ST interaction ran the Knorr-Held
+  Type IV Kronecker branch** (gcol33/tulpa#759), which reads neither HSGP
+  hyperparameter and treats basis weights as sites. The non-centred transform is
+  the Kronecker form's, and one predicate (`st_non_centered()`) now decides it
+  for the density and the mass override; the layout refuses the combination by
+  name. Reached only through a `ModelData` built by a linking package.
+
 ## Output accessors follow their contracts
 
 An output-contract sweep over every `tulpa()` backend (34 fits) found the
@@ -31,10 +80,9 @@ passed now fails, and every remaining refusal names the fit class and reason.
   SGHMC, SGLD, MCLMC, SMC and VI return a per-draw `log_prob` evaluated by the
   NUTS kernel's own log posterior (agreement 2.8e-14), and the RE-covariance
   Gibbs sweep (the default route for a Poisson random-intercept model) and the
-  Polya-Gamma Gibbs routes record the joint density of the target they sample.
-  Three Polya-Gamma routes whose sweep leaves no stated density invariant
-  (gcol33/tulpa#761) keep `log_prob` absent, and `logLik()` declines there with
-  `"no_log_posterior_recorded"`.
+  Polya-Gamma Gibbs routes record the joint density of the target they sample,
+  including the negative-binomial iid, NNGP and multiscale NNGP routes once
+  they sample a stated target (gcol33/tulpa#761, below).
 * **`mode = "gibbs"` fits carry their chain** (gcol33/tulpa#751) as
   `draws` / `chain_id` / `n_chains` with the column names the HMC sampler uses,
   so `diagnostics()`, `as_draws_df()` and `loo()` read it. The kernels already
