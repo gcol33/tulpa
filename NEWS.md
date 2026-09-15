@@ -1,5 +1,22 @@
 # tulpa 0.4.3
 
+## Refinement slices carry the whole default hyperprior
+
+* **A cell evaluated as part of a batch lost the hyperprior on every axis the
+  batch held constant** (gcol33/tulpa#760). The joint drivers read which axes
+  carry a density off the matrix they were evaluating, so the adaptive-grid and
+  var-of-means slices (which share their off-axis coordinates), and in the
+  multi-block driver the CCD, adaptive-grid, local-CCD and Pareto-k batches,
+  folded no density on those axes. Each slice's `log_marginal` was too high by
+  the missing log densities: 1.0 to 3.1 nats on a coupled `occu_cover` fit,
+  enough to put 0.52 of the posterior on the row the slices sit in against 0.21
+  on the unrefined grid. The integrated axes are now read once off the declared
+  grid (`.hp_integrated_axes()` of the initial grid,
+  `.joint_multi_integrated_axes()` of the per-block grids) and passed to every
+  evaluation. Fits whose refinement passes add no cells, and grids without
+  refinement, are unchanged. Present in every tag since v0.4.1, which first
+  carried the default hyperprior (#730).
+
 ## Per-thread workspaces are built in place
 
 * **Two Eigen Cholesky objects were copied before they had been computed**

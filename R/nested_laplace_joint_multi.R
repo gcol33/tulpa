@@ -986,11 +986,11 @@
                                             fn_sigma, fn_alpha, fn_phi,
                                             copy_slab, copy_atom_mass,
                                             dnode = NULL,
-                                            hyperprior = "proper") {
+                                            hyperprior = "proper", hp_axes) {
     hp <- .joint_multi_hyperprior(
         joint_grid, fn_sigma, fn_alpha, fn_phi, blocks = prepared,
         families = hp_families, copy_atom_mass = copy_atom_mass,
-        hyperprior = hyperprior)
+        hyperprior = hyperprior, axes = hp_axes)
     res$log_hyperprior          <- hp$lp
     res$log_hyperprior_axes     <- hp$axes
     res$log_hyperprior_declined <- hp$declined
@@ -1040,25 +1040,48 @@
                                 fn_sigma, fn_alpha, fn_phi = NULL,
                                 blocks = NULL, families = NULL,
                                 copy_atom_mass = .TULPA_COPY_ATOM_MASS,
-                                hyperprior = "proper") {
+                                hyperprior = "proper", axes) {
     log_marginal + .joint_multi_hyperprior(
         joint_grid, fn_sigma, fn_alpha, fn_phi, blocks = blocks,
         families = families, copy_atom_mass = copy_atom_mass,
-        hyperprior = hyperprior)$lp
+        hyperprior = hyperprior, axes = axes)$lp
 }
 
 # The hyperprior record over a multi-block `joint_grid` (`.joint_hyperprior()`):
 # the caller's densities on the roles they name, and with `blocks` supplied what
-# `hyperprior` gives every other axis of each block.
+# `hyperprior` gives every other axis of each block. `axes` are the columns the
+# fit integrates (`.joint_multi_integrated_axes()`).
 .joint_multi_hyperprior <- function(joint_grid, fn_sigma, fn_alpha, fn_phi = NULL,
                                     blocks = NULL, families = NULL,
                                     copy_atom_mass = .TULPA_COPY_ATOM_MASS,
-                                    hyperprior = "proper") {
+                                    hyperprior = "proper", axes) {
     .joint_hyperprior(joint_grid, blocks %||% list(), families,
                       user = list(sigma = fn_sigma, alpha = fn_alpha,
                                   phi = fn_phi),
                       copy_atom_mass = copy_atom_mass,
-                      hyperprior = if (is.null(blocks)) "flat" else hyperprior)
+                      hyperprior = if (is.null(blocks)) "flat" else hyperprior,
+                      axes = axes)
+}
+
+# The columns a multi-block joint grid integrates: each block axis declared on
+# more than one node, and each per-arm dispersion axis carrying a grid, named as
+# the joint grid names them. Read off the declared per-block grids rather than
+# any evaluated grid, so the tensor, a CCD design and every batch the driver
+# evaluates share one answer.
+.joint_multi_integrated_axes <- function(block_grids, axis_names,
+                                         phi_axes = NULL) {
+    varies <- unlist(lapply(block_grids, function(g) {
+        vapply(seq_len(ncol(g)), function(j) {
+            v <- g[, j]
+            length(unique(v[is.finite(v)])) > 1L
+        }, logical(1))
+    }))
+    latent <- as.character(axis_names)[as.logical(varies)]
+    phi <- if (length(phi_axes)) {
+        active <- vapply(phi_axes, function(v) length(unique(v)) > 1L, logical(1))
+        paste0("phi_", names(phi_axes)[active])
+    }
+    c(latent, phi)
 }
 
 # Multi-block joint outer Pareto-k-hat. Builds the re-evaluation closure
@@ -1189,7 +1212,7 @@
                                          placement_axes = character(0),
                                          hp_blocks = NULL, hp_families = NULL,
                                          copy_atom_mass = .TULPA_COPY_ATOM_MASS,
-                                         hyperprior = "proper") {
+                                         hyperprior = "proper", hp_axes) {
     res$pareto_k        <- NA_real_
     res$pareto_k_is_ess <- NA_real_
     res$pareto_k_scope  <- "outer (hyperparameter) Gaussian proposal"
@@ -1227,7 +1250,7 @@
                             fn_sigma, fn_alpha, fn_phi,
                             blocks = hp_blocks, families = hp_families,
                             copy_atom_mass = copy_atom_mass,
-                            hyperprior = hyperprior)
+                            hyperprior = hyperprior, axes = hp_axes)
     }
 
     if (!isTRUE(diagnose_k)) {
@@ -1468,6 +1491,7 @@
     phi_axes <- .normalise_phi_grid(phi_grid, arm_names)
     has_phi  <- !is.null(phi_axes) &&
                 any(vapply(phi_axes, length, integer(1)) > 0L)
+    hp_axes  <- .joint_multi_integrated_axes(block_grids, axis_names, phi_axes)
 
     # Node placement for the LATENT axes. CCD integrates on a
     # central composite design around the joint hyperparameter mode; it declines
@@ -1538,7 +1562,7 @@
                                       fn_sigma, fn_alpha, fn_phi,
                                       blocks = prepared, families = hp_families,
                                       copy_atom_mass = copy_atom_mass,
-                                      hyperprior = hyperprior)
+                                      hyperprior = hyperprior, axes = hp_axes)
             # Carry the inner latent modes so the CCD mode-find can advance the
             # warm start per accepted point.
             if (is.matrix(r$modes)) attr(lp, "modes") <- r$modes
@@ -1647,7 +1671,7 @@
                      fn_sigma, fn_alpha, fn_phi,
                      blocks = prepared, families = hp_families,
                      copy_atom_mass = copy_atom_mass,
-                     hyperprior = hyperprior),
+                     hyperprior = hyperprior, axes = hp_axes),
                  modes = NULL)
         }
 
@@ -1761,7 +1785,7 @@
     hp_base <- .joint_multi_hyperprior(
         joint_grid, fn_sigma, fn_alpha, fn_phi, blocks = prepared,
         families = hp_families, copy_atom_mass = copy_atom_mass,
-        hyperprior = hyperprior)
+        hyperprior = hyperprior, axes = hp_axes)
     screen_offset <- if (as.numeric(prune_tol) > 0)
         .nl_screen_log_offset(joint_grid, list(hp_base),
                               specs = .joint_multi_measure_specs(
@@ -1843,7 +1867,7 @@
                          fn_sigma, fn_alpha, fn_phi,
                      blocks = prepared, families = hp_families,
                      copy_atom_mass = copy_atom_mass,
-                     hyperprior = hyperprior),
+                     hyperprior = hyperprior, axes = hp_axes),
                      modes = if (is.matrix(r$modes)) r$modes else NULL,
                      cov_blocks = r$cov_block_per_grid)
             }
@@ -1899,7 +1923,7 @@
     integ <- .joint_multi_attach_integration(
         res, joint_grid, axis_offsets, B, prepared, hp_families,
         fn_sigma, fn_alpha, fn_phi, copy_slab, copy_atom_mass, dnode = dnode,
-        hyperprior = hyperprior)
+        hyperprior = hyperprior, hp_axes = hp_axes)
     res         <- integ$res
     multi_specs <- integ$specs
     # The outer design weight each cell carries, kept beside the integration
@@ -2018,7 +2042,8 @@
                                         hp_blocks = prepared,
                                         hp_families = hp_families,
                                         copy_atom_mass = copy_atom_mass,
-                                        hyperprior = hyperprior)
+                                        hyperprior = hyperprior,
+                                        hp_axes = hp_axes)
     res <- .nlj_multi_inner_skew_at_theta(res, call_kernel, arm_names,
                                           skew_idx, compute = diagnose_skew)
     fixed <- .joint_fixed_layout(responses)

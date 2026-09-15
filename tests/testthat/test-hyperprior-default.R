@@ -236,13 +236,45 @@ test_that("a free-covariance block the grid does not measure declines by name", 
 
   # Through the joint collector, a measured block folds once over all its axes.
   tg <- g; colnames(tg) <- paste0("b1.", colnames(g))
-  hp <- tulpa:::.joint_hyperprior(tg, list(list(type = "mcar")))
+  hp <- tulpa:::.joint_hyperprior(tg, list(list(type = "mcar")),
+                                  axes = tulpa:::.hp_integrated_axes(tg))
   expect_setequal(hp$axes, colnames(tg))
   expect_length(hp$declined, 0L)
   expect_equal(hp$lp, tulpa:::.hp_logchol_log_density(g)$lp)
   sp <- tulpa:::.joint_axis_specs_from_grid(tg)
   expect_equal(tulpa:::.hyper_log_quad_weights(tg, sp, absolute = TRUE),
                tulpa:::.hyper_logchol_log_measure(g, absolute = TRUE))
+})
+
+test_that("a batch of cells reads the prior on the fit's axes, not on its own spread", {
+  # Refinement slices, CCD points and importance draws are evaluated as batches
+  # that share coordinates on axes the fit integrates. Each cell's prior is a
+  # property of the cell and the fit, so a batch must read what the whole grid
+  # reads at those rows (gcol33/tulpa#760).
+  tg <- as.matrix(expand.grid(sigma = c(0.3, 0.7, 1.5), alpha = c(0, 0.5, 1.2),
+                              phi_pos = c(5, 20, 40), KEEP.OUT.ATTRS = FALSE))
+  blocks <- list(list(type = "icar"))
+  fam <- c(occ = "bernoulli", pos = "beta")
+  axes <- tulpa:::.hp_integrated_axes(tg)
+  whole <- tulpa:::.joint_hyperprior(tg, blocks, fam, axes = axes)
+  expect_setequal(whole$axes, c("sigma", "phi_pos"))
+
+  slice <- which(tg[, "sigma"] == 0.7 & tg[, "phi_pos"] == 20)
+  one <- which(tg[, "sigma"] == 1.5 & tg[, "alpha"] == 0.5 & tg[, "phi_pos"] == 40)
+  for (rows in list(slice, one)) {
+    part <- tulpa:::.joint_hyperprior(tg[rows, , drop = FALSE], blocks, fam,
+                                      axes = axes)
+    expect_equal(part$lp, whole$lp[rows])
+    expect_setequal(part$axes, whole$axes)
+  }
+
+  # Reading the axes off the batch drops every density a batch holds constant,
+  # which is exactly the difference the fix removes.
+  own <- tulpa:::.joint_hyperprior(tg[slice, , drop = FALSE], blocks, fam,
+                                   axes = tulpa:::.hp_integrated_axes(tg[slice, , drop = FALSE]))
+  expect_length(own$axes, 0L)
+  expect_equal(own$lp, rep(0, length(slice)))
+  expect_true(all(whole$lp[slice] != 0))
 })
 
 # --------------------------------------------------------------------------- #

@@ -422,9 +422,17 @@
 # (`sigma`, `alpha`, `phi`), each a function or a per-block list the front door
 # parsed. A user density replaces the default on every axis of its role, and
 # `hyperprior` (`.HP_CHOICES`) sets what every other axis carries.
+#
+# `axes` are the columns the fit integrates, read once off the grid the caller
+# declared (`.hp_integrated_axes()` of the whole grid, or
+# `.joint_multi_integrated_axes()`), and never off `theta_grid` itself. The
+# drivers evaluate the record over batches -- refinement slices, CCD and
+# mode-find points, importance draws -- whose cells share coordinates on axes
+# the fit integrates, and a column constant in a batch is not a fixed setting of
+# the model (gcol33/tulpa#760).
 .joint_hyperprior <- function(theta_grid, blocks, families = NULL,
                               user = list(), copy_atom_mass = .TULPA_COPY_ATOM_MASS,
-                              hyperprior = "proper") {
+                              hyperprior = "proper", axes) {
   tg <- as.matrix(theta_grid)
   n  <- nrow(tg)
   if (is.null(colnames(tg)) || !n) {
@@ -469,7 +477,7 @@
     }
     fam <- if (identical(role, "phi")) families[[sub("^phi_", "", bare)]] else NULL
     .hp_axis_prior(bare, bo$block, fam, hyperprior)
-  })
+  }, axes = intersect(axes, colnames(tg)))
 }
 
 # Fold one or more hyperprior records into a kernel result. Each record's axis

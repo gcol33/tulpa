@@ -450,3 +450,29 @@ test_that("a fit reports the span it worked over on a stated axis", {
     # `axis_support` is the same interval, read off the same final grid.
     expect_equal(sp$integrated, fit$axis_support[["alpha"]])
 })
+
+
+test_that("a refinement slice carries the log marginal a tensor cell does", {
+    # A slice cell is a point evaluation like any other, so its log marginal --
+    # the kernel's marginal plus the hyperprior -- is the value a tensor holding
+    # the same coordinates reads there. The slice batch holds `sigma` constant,
+    # and reading the prior's axes off the batch dropped `sigma`'s density from
+    # every slice (gcol33/tulpa#760).
+    skip_on_cran()
+    sim <- .axr_sim()
+    fit <- .axr_fit(sim, c(0.2, 0.4, 0.6))
+    tag <- fit$refining_axis
+    expect_true(any(nzchar(tag)))
+
+    tensor <- .axr_fit(sim, sort(unique(as.numeric(fit$theta_grid[, "alpha"]))),
+                       control = list(adaptive_grid = FALSE,
+                                      axis_refine = c(alpha = "none")))
+    expect_false(any(nzchar(tensor$refining_axis %||% "")))
+    key <- function(g) sprintf("%.12g|%.12g", g[, "sigma"], g[, "alpha"])
+    m <- match(key(fit$theta_grid), key(tensor$theta_grid))
+    expect_false(anyNA(m))
+    expect_equal(fit$log_marginal[nzchar(tag)],
+                 tensor$log_marginal[m][nzchar(tag)], tolerance = 1e-6)
+    expect_equal(fit$log_marginal[!nzchar(tag)],
+                 tensor$log_marginal[m][!nzchar(tag)], tolerance = 1e-6)
+})
