@@ -24,6 +24,8 @@ void update_spatial_icar(
     const IntegerVector& group,
     const PgAdjacency& adj,
     double tau,
+    double beta0,
+    double prior_beta_sd,
     NumericVector& phi,
     double& removed_mean
 ) {
@@ -33,6 +35,7 @@ void update_spatial_icar(
   std::vector<double> sum_omega(J, 0.0), sum_resid(J, 0.0);
   pg_accumulate_stats(N, group.begin(), J, omega.begin(), kappa.begin(),
                       offset.begin(), sum_omega.data(), sum_resid.data());
+  PgInterceptLevel level(beta0, 0.0, prior_beta_sd, 1.0, phi.begin(), J);
 
   // Single-site sweep. Each neighbour sum reads the current phi, so a
   // neighbour the sweep has already reached contributes its new value and one
@@ -53,12 +56,16 @@ void update_spatial_icar(
         prec = sum_omega[j] + PG_ICAR_ISOLATED_PREC;
         mean_num = sum_resid[j];
       } else {
+        level.moved(phi[j], 0.0);
         phi[j] = 0.0;
         continue;
       }
     }
+    level.add(phi[j], prec, mean_num);
 
-    phi[j] = R::rnorm(mean_num / prec, std::sqrt(1.0 / prec));
+    const double x_new = R::rnorm(mean_num / prec, std::sqrt(1.0 / prec));
+    level.moved(phi[j], x_new);
+    phi[j] = x_new;
   }
 
   // Component-level block update. Shifting every unit of one graph component
@@ -151,6 +158,8 @@ void update_spatial_bym2(
     double sigma_spatial,
     double rho,
     double scale_factor,
+    double beta0,
+    double prior_beta_sd,
     NumericVector& u,
     double& removed_mean
 ) {
@@ -175,6 +184,9 @@ void update_spatial_bym2(
 
   // Update phi_scaled (structured component with ICAR prior). phi_scaled has
   // unit marginal variance, so the ICAR precision is 1.
+  const double coef = sigma_spatial * sqrt_rho * scale_factor;
+  PgInterceptLevel level(beta0, 0.0, prior_beta_sd, coef,
+                         phi_scaled.begin(), J);
   for (int j = 0; j < J; j++) {
     const int n_j = adj.degree(j);
 
@@ -183,14 +195,17 @@ void update_spatial_bym2(
       neighbor_sum += phi_scaled[adj.col_idx[e]];
     }
 
-    const double coef = sigma_spatial * sqrt_rho * scale_factor;
     const double prior_prec = (n_j > 0) ? n_j : PG_ICAR_ISOLATED_PREC;
     const double data_prec = sum_omega[j] * coef * coef;
 
-    const double post_prec = prior_prec + data_prec;
-    const double post_mean_num = neighbor_sum + sum_resid[j] * coef;
+    double post_prec = prior_prec + data_prec;
+    double post_mean_num = neighbor_sum + sum_resid[j] * coef;
+    level.add(phi_scaled[j], post_prec, post_mean_num);
 
-    phi_scaled[j] = R::rnorm(post_mean_num / post_prec, std::sqrt(1.0 / post_prec));
+    const double x_new =
+        R::rnorm(post_mean_num / post_prec, std::sqrt(1.0 / post_prec));
+    level.moved(phi_scaled[j], x_new);
+    phi_scaled[j] = x_new;
   }
 
   // Centre phi_scaled (sum-to-zero on the structured component) and report the

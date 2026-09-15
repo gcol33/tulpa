@@ -3896,8 +3896,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_test_update_spatial_icar
-Rcpp::List cpp_test_update_spatial_icar(Rcpp::NumericVector kappa, Rcpp::NumericVector omega, Rcpp::NumericVector offset, Rcpp::IntegerVector group, Rcpp::List adj_list, Rcpp::IntegerVector n_neighbors, int n_units, double tau, Rcpp::NumericVector phi);
-RcppExport SEXP _tulpa_cpp_test_update_spatial_icar(SEXP kappaSEXP, SEXP omegaSEXP, SEXP offsetSEXP, SEXP groupSEXP, SEXP adj_listSEXP, SEXP n_neighborsSEXP, SEXP n_unitsSEXP, SEXP tauSEXP, SEXP phiSEXP) {
+Rcpp::List cpp_test_update_spatial_icar(Rcpp::NumericVector kappa, Rcpp::NumericVector omega, Rcpp::NumericVector offset, Rcpp::IntegerVector group, Rcpp::List adj_list, Rcpp::IntegerVector n_neighbors, int n_units, double tau, Rcpp::NumericVector phi, double beta0, double prior_beta_sd);
+RcppExport SEXP _tulpa_cpp_test_update_spatial_icar(SEXP kappaSEXP, SEXP omegaSEXP, SEXP offsetSEXP, SEXP groupSEXP, SEXP adj_listSEXP, SEXP n_neighborsSEXP, SEXP n_unitsSEXP, SEXP tauSEXP, SEXP phiSEXP, SEXP beta0SEXP, SEXP prior_beta_sdSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -3910,7 +3910,9 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< int >::type n_units(n_unitsSEXP);
     Rcpp::traits::input_parameter< double >::type tau(tauSEXP);
     Rcpp::traits::input_parameter< Rcpp::NumericVector >::type phi(phiSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_test_update_spatial_icar(kappa, omega, offset, group, adj_list, n_neighbors, n_units, tau, phi));
+    Rcpp::traits::input_parameter< double >::type beta0(beta0SEXP);
+    Rcpp::traits::input_parameter< double >::type prior_beta_sd(prior_beta_sdSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_test_update_spatial_icar(kappa, omega, offset, group, adj_list, n_neighbors, n_units, tau, phi, beta0, prior_beta_sd));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -5097,7 +5099,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_test_nngp_prior_scatter", (DL_FUNC) &_tulpa_cpp_test_nngp_prior_scatter, 10},
     {"_tulpa_cpp_test_lse_guard", (DL_FUNC) &_tulpa_cpp_test_lse_guard, 2},
     {"_tulpa_cpp_test_scalar_guard", (DL_FUNC) &_tulpa_cpp_test_scalar_guard, 3},
-    {"_tulpa_cpp_test_update_spatial_icar", (DL_FUNC) &_tulpa_cpp_test_update_spatial_icar, 9},
+    {"_tulpa_cpp_test_update_spatial_icar", (DL_FUNC) &_tulpa_cpp_test_update_spatial_icar, 11},
     {"_tulpa_cpp_test_spde_nc_transform_Q", (DL_FUNC) &_tulpa_cpp_test_spde_nc_transform_Q, 8},
     {"_tulpa_cpp_test_tgmrf_block_spec", (DL_FUNC) &_tulpa_cpp_test_tgmrf_block_spec, 1},
     {"_tulpa_cpp_test_tgmrf_block_pattern", (DL_FUNC) &_tulpa_cpp_test_tgmrf_block_pattern, 1},

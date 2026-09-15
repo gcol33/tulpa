@@ -37,7 +37,10 @@
 
 # `zero_field = TRUE` is the pre-fix behaviour: build the output from zeros and
 # read neighbours off it.
-.icar_replica <- function(fx, tau, phi_in, isolated_prec, zero_field = FALSE) {
+# `beta0` / `beta_sd`: the intercept prior every site sees through the field
+# mean (gcol33/tulpa#763).
+.icar_replica <- function(fx, tau, phi_in, isolated_prec, zero_field = FALSE,
+                          beta0 = ICAR_BETA0, beta_sd = ICAR_BETA_SD) {
   J <- fx$J
   sum_omega <- numeric(J); sum_resid <- numeric(J)
   for (i in seq_along(fx$kappa)) {
@@ -61,6 +64,10 @@
         next
       }
     }
+    g <- 1 / J
+    base <- beta0 + g * (sum(phi) - phi[j])
+    prec <- prec + g^2 / beta_sd^2
+    mean_num <- mean_num - g * base / beta_sd^2
     phi[j] <- rnorm(1, mean_num / prec, sqrt(1 / prec))
   }
 
@@ -88,11 +95,16 @@
   list(phi = phi - mean_phi, removed_mean = mean_phi)
 }
 
-.icar_sweep <- function(fx, tau, phi_in) {
+ICAR_BETA0 <- 0.8
+ICAR_BETA_SD <- 0.6
+
+.icar_sweep <- function(fx, tau, phi_in, beta0 = ICAR_BETA0,
+                        beta_sd = ICAR_BETA_SD) {
   tulpa:::cpp_test_update_spatial_icar(
     kappa = fx$kappa, omega = fx$omega, offset = fx$offset,
     group = fx$group, adj_list = fx$adj_list, n_neighbors = fx$n_neighbors,
-    n_units = fx$J, tau = tau, phi = phi_in)
+    n_units = fx$J, tau = tau, phi = phi_in, beta0 = beta0,
+    prior_beta_sd = beta_sd)
 }
 
 # A chain 1-2-3-4-5-6, so unit 3 has one lower and one higher neighbour, and
@@ -168,8 +180,11 @@ test_that("the leading unit's draw matches its closed-form conditional", {
 
   sum_omega <- tapply(fx$omega, fx$group, sum)
   sum_resid <- tapply(fx$kappa - fx$omega * fx$offset, fx$group, sum)
-  prec <- tau * fx$n_neighbors[1] + sum_omega[[1]]
-  mu   <- (tau * phi_in[2] + sum_resid[[1]]) / prec
+  # The intercept prior the unit sees through the field mean (gcol33/tulpa#763).
+  g <- 1 / fx$J
+  base <- ICAR_BETA0 + g * sum(phi_in[-1])
+  prec <- tau * fx$n_neighbors[1] + sum_omega[[1]] + g^2 / ICAR_BETA_SD^2
+  mu   <- (tau * phi_in[2] + sum_resid[[1]] - g * base / ICAR_BETA_SD^2) / prec
   sdev <- sqrt(1 / prec)
 
   set.seed(77)

@@ -258,7 +258,8 @@ Rcpp::List cpp_pg_binomial_gibbs_spatial(
     });
     double icar_mean = 0.0;
     tulpa::update_spatial_icar(C.kappa, C.omega, C.offset, spatial_group,
-                               adj, tau, phi, icar_mean);
+                               adj, tau, C.beta[0], prior_beta_sd, phi,
+                               icar_mean);
     C.absorb_level(icar_mean);
 
     // 7. Update tau (spatial precision)

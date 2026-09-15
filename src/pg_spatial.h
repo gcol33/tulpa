@@ -46,6 +46,9 @@ constexpr double PG_ICAR_ISOLATED_PREC = 1e-3;
 // @param group 1-based spatial unit of each observation
 // @param adj Validated adjacency (CSR + component labels)
 // @param tau Spatial precision parameter
+// @param beta0,prior_beta_sd The intercept and its prior SD: the field's level
+//   is the intercept's, so each site conditional carries that prior through the
+//   field mean (PgInterceptLevel).
 void update_spatial_icar(
     const Rcpp::NumericVector& kappa,
     const Rcpp::NumericVector& omega,
@@ -53,6 +56,8 @@ void update_spatial_icar(
     const Rcpp::IntegerVector& group,
     const PgAdjacency& adj,
     double tau,
+    double beta0,
+    double prior_beta_sd,
     Rcpp::NumericVector& phi,
     double& removed_mean
 );
@@ -90,6 +95,8 @@ void update_spatial_bym2(
     double sigma_spatial,             // Total spatial SD
     double rho,                       // Proportion of variance from structured component
     double scale_factor,              // BYM2 scaling factor (from eigenvalues)
+    double beta0,                     // intercept the structured level shares
+    double prior_beta_sd,             // its prior SD (PgInterceptLevel)
     Rcpp::NumericVector& u,           // out: combined spatial effect
     double& removed_mean              // out: field level removed by centering phi
 );

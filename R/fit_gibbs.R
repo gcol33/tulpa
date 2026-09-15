@@ -453,11 +453,12 @@ glmm_weights <- function(eta, family, n_trials = NULL, phi = 1.0, phi2 = NULL) {
 #'   coefficient -- the negative-binomial kernels, and the binomial kernels
 #'   carrying a `spatial` or `temporal` field -- leaves `eta` unchanged only
 #'   when the first column of `X` is an all-ones intercept, and those routes
-#'   error on a design without one. An intrinsic field (ICAR, RW1, RW2) has its
-#'   level removed into the intercept, since its prior does not see that
-#'   direction; a proper one (the negative-binomial iid block, an NNGP field)
-#'   has the level it shares with the intercept drawn from its full
-#'   conditional, which both priors define.
+#'   error on a design without one. An intrinsic field (ICAR, the structured
+#'   BYM2 part, RW1) is reported centred with its level in the intercept, and
+#'   its sweep carries the intercept's prior through the field mean; a proper
+#'   one (the negative-binomial iid block, an NNGP field) has the level it
+#'   shares with the intercept drawn from its full conditional, which both
+#'   priors define.
 #'
 #' @param spatial Optional spatial spec. When supplied the fit routes to the
 #'   matching spatial Polya-Gamma Gibbs sampler via [dispatch_gibbs_spatial()];

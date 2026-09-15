@@ -93,7 +93,8 @@ Rcpp::List cpp_pg_binomial_gibbs_bym2(
     double bym2_removed = 0.0;
     tulpa::update_spatial_bym2(C.kappa, C.omega, C.offset, spatial_group, adj,
                                phi_scaled, theta, sigma_spatial, rho,
-                               scale_factor, u, bym2_removed);
+                               scale_factor, C.beta[0], prior_beta_sd, u,
+                               bym2_removed);
     // Absorb the field level removed by centering phi into the intercept so eta
     // is unchanged (posterior-invariant), and refresh the cached X_beta /
     // offset that the sigma and rho conditionals below read.

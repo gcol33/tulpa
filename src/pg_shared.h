@@ -661,8 +661,10 @@ inline double pg_log_nngp_scale(const PgNngpScale& sc, double prior_sigma_U,
 // where the field prior contributes log p(x - c 1) = const
 // - 0.5 prec_field c^2 + lin_field c. Subtracting the field's mean into the
 // intercept instead is a projection, not a draw, and leaves no stated target
-// invariant (gcol33/tulpa#761). An INTRINSIC field's constant direction carries
-// no prior, so there the level is removed rather than drawn.
+// invariant (gcol33/tulpa#761). An INTRINSIC field's prior does not see the
+// constant direction, so there the level is removed by a map onto a
+// representative and the site sweep carries the intercept prior instead
+// (PgInterceptLevel below).
 // ============================================================================
 inline double pg_draw_intercept_level(double beta0, double prior_beta_sd,
                                       double prec_field, double lin_field) {
@@ -670,6 +672,55 @@ inline double pg_draw_intercept_level(double beta0, double prior_beta_sd,
   const double prec = prec_beta + prec_field;
   const double num = -beta0 * prec_beta + lin_field;
   return R::rnorm(num / prec, 1.0 / std::sqrt(prec));
+}
+
+// ============================================================================
+// The intercept prior an INTRINSIC field's single-site sweep has to see
+//
+// A kernel that centres an intrinsic field and absorbs its mean into the
+// intercept records the sum-to-zero model: the intercept at N(0, sd^2), the
+// field's prior on the centred field. In the sampler's own coordinates, with
+// eta = b + load * x, that model is the quotient of
+//
+//   pi_u(b, x) ∝ L(b + load x) p(x) N(b + other + load mean(x); 0, sd^2)
+//
+// under (b + load c, x - c), which leaves pi_u exactly invariant, so the
+// centring is a map onto a representative rather than a move. That holds only
+// while every step leaves pi_u invariant, and the site conditional of x_j then
+// carries the Gaussian factor through mean(x). With g = load / n and
+// base = b + other + g S_{-j} it adds g^2 / sd^2 to the precision and
+// -g base / sd^2 to the precision-weighted mean. `other` is the level of any
+// further intrinsic arm sharing the intercept. Without the factor the sweep
+// gives the level a flat prior (gcol33/tulpa#763).
+// ============================================================================
+struct PgInterceptLevel {
+  double base0;    // b + other
+  double g;        // load / n
+  double inv_sd2;  // 1 / sd^2
+  double sum;      // running sum of the field
+
+  PgInterceptLevel(double beta0, double other, double prior_beta_sd,
+                   double load, const double* x, int n)
+    : base0(beta0 + other), g(load / n),
+      inv_sd2(1.0 / (prior_beta_sd * prior_beta_sd)), sum(0.0) {
+    for (int j = 0; j < n; j++) sum += x[j];
+  }
+
+  // Add site j's factor to its conditional (precision, precision-weighted
+  // mean), at its current value `x_old`.
+  void add(double x_old, double& prec, double& mean_num) const {
+    const double base = base0 + g * (sum - x_old);
+    prec += g * g * inv_sd2;
+    mean_num -= g * base * inv_sd2;
+  }
+
+  void moved(double x_old, double x_new) { sum += x_new - x_old; }
+};
+
+inline double pg_mean(const double* x, int n) {
+  double s = 0.0;
+  for (int j = 0; j < n; j++) s += x[j];
+  return n > 0 ? s / n : 0.0;
 }
 
 // The iid N(0, sigma^2) block's terms along the constant direction.

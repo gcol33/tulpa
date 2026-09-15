@@ -1,6 +1,6 @@
 # tulpa 0.4.3
 
-## Three Polya-Gamma Gibbs routes sample their stated posterior
+## Polya-Gamma Gibbs routes sample their stated posterior
 
 * **The negative-binomial iid, NNGP and multiscale NNGP Gibbs kernels removed
   a proper field's mean into the intercept every sweep** (gcol33/tulpa#761).
@@ -20,6 +20,17 @@
   (batch-means standard errors 0.026 and 0.020) with its 5% quantile at 0.008
   against 0.036; the intercept, slope and range quantiles agree to within 0.041.
   Scripts: `dev_notes/issue761/`.
+* **An intrinsic field's sweep ignored the intercept prior its level carries**
+  (gcol33/tulpa#763): binomial ICAR, BYM2's structured part, the
+  negative-binomial ICAR route, and the temporal RW1 trend and cyclic RW1
+  seasonal arms. The centring these kernels apply is a map onto a
+  representative of a target that is invariant under the intercept/level
+  translation, which is exact only if the field's site conditionals include
+  `N(intercept + level; 0, sd^2)`. They left it out, so the level took a flat
+  prior. Each site now carries that factor through a running field sum
+  (`PgInterceptLevel`). On a 3x3 ICAR fixture with `prior_beta_sd = 0.7`, the
+  intercept median was 2.157 against the recorded model's 2.073 and `tau` was
+  1.208 against 1.322; it is now 2.0725 and 1.321.
 
 ## A free-covariance block's prior design is declared, not inferred
 

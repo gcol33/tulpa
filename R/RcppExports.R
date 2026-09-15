@@ -905,8 +905,8 @@ cpp_test_scalar_guard <- function(fn, x, p = 2.0) {
     .Call(`_tulpa_cpp_test_scalar_guard`, fn, x, p)
 }
 
-cpp_test_update_spatial_icar <- function(kappa, omega, offset, group, adj_list, n_neighbors, n_units, tau, phi) {
-    .Call(`_tulpa_cpp_test_update_spatial_icar`, kappa, omega, offset, group, adj_list, n_neighbors, n_units, tau, phi)
+cpp_test_update_spatial_icar <- function(kappa, omega, offset, group, adj_list, n_neighbors, n_units, tau, phi, beta0, prior_beta_sd) {
+    .Call(`_tulpa_cpp_test_update_spatial_icar`, kappa, omega, offset, group, adj_list, n_neighbors, n_units, tau, phi, beta0, prior_beta_sd)
 }
 
 cpp_test_spde_nc_transform_Q <- function(C0_diag, G1_x, G1_i, G1_p, log_kappa_val, log_tau_val, poles_nullable = NULL, weights_nullable = NULL) {

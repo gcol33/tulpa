@@ -148,6 +148,11 @@ Rcpp::List cpp_pg_binomial_gibbs_temporal(
                                  sum_omega_t.data(), sum_resid_t.data());
 
       const double tau_trend = 1.0 / (sigma_trend.sigma * sigma_trend.sigma);
+      // Both intrinsic arms share the intercept's level.
+      tulpa::PgInterceptLevel level(
+          C.beta[0],
+          n_seasonal > 0 ? tulpa::pg_mean(seasonal.begin(), n_seasonal) : 0.0,
+          prior_beta_sd, 1.0, trend.begin(), n_trend);
       for (int t = 0; t < n_trend; t++) {
         double tau_prior, mean_prior;
         if (t == 0) {
@@ -161,9 +166,12 @@ Rcpp::List cpp_pg_binomial_gibbs_temporal(
           mean_prior = 0.5 * (trend[t - 1] + trend[t + 1]);
         }
 
-        const double tau_post = tau_prior + sum_omega_t[t];
-        const double mean_post = (tau_prior * mean_prior + sum_resid_t[t]) / tau_post;
-        trend[t] = R::rnorm(mean_post, 1.0 / std::sqrt(tau_post));
+        double tau_post = tau_prior + sum_omega_t[t];
+        double mean_num = tau_prior * mean_prior + sum_resid_t[t];
+        level.add(trend[t], tau_post, mean_num);
+        const double x_new = R::rnorm(mean_num / tau_post, 1.0 / std::sqrt(tau_post));
+        level.moved(trend[t], x_new);
+        trend[t] = x_new;
       }
 
       // RW1 on n_trend levels has n_trend - 1 independent increments, so that
@@ -193,6 +201,9 @@ Rcpp::List cpp_pg_binomial_gibbs_temporal(
 
       const double tau_seasonal_val =
           1.0 / (sigma_seasonal.sigma * sigma_seasonal.sigma);
+      tulpa::PgInterceptLevel level(
+          C.beta[0], n_trend > 0 ? tulpa::pg_mean(trend.begin(), n_trend) : 0.0,
+          prior_beta_sd, 1.0, seasonal.begin(), n_seasonal);
       for (int s = 0; s < n_seasonal; s++) {
         const int s_prev = (s == 0) ? n_seasonal - 1 : s - 1;
         const int s_next = (s == n_seasonal - 1) ? 0 : s + 1;
@@ -200,9 +211,12 @@ Rcpp::List cpp_pg_binomial_gibbs_temporal(
         const double tau_prior = 2.0 * tau_seasonal_val;
         const double mean_prior = 0.5 * (seasonal[s_prev] + seasonal[s_next]);
 
-        const double tau_post = tau_prior + sum_omega_s[s];
-        const double mean_post = (tau_prior * mean_prior + sum_resid_s[s]) / tau_post;
-        seasonal[s] = R::rnorm(mean_post, 1.0 / std::sqrt(tau_post));
+        double tau_post = tau_prior + sum_omega_s[s];
+        double mean_num = tau_prior * mean_prior + sum_resid_s[s];
+        level.add(seasonal[s], tau_post, mean_num);
+        const double x_new = R::rnorm(mean_num / tau_post, 1.0 / std::sqrt(tau_post));
+        level.moved(seasonal[s], x_new);
+        seasonal[s] = x_new;
       }
 
       double ss = 0.0;

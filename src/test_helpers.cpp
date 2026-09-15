@@ -2185,7 +2185,9 @@ Rcpp::List cpp_test_update_spatial_icar(
     Rcpp::IntegerVector n_neighbors,
     int n_units,
     double tau,
-    Rcpp::NumericVector phi
+    Rcpp::NumericVector phi,
+    double beta0,
+    double prior_beta_sd
 ) {
   const tulpa::PgAdjacency adj =
       tulpa::pg_build_adjacency(adj_list, n_neighbors, n_units);
@@ -2195,8 +2197,8 @@ Rcpp::List cpp_test_update_spatial_icar(
   }
   Rcpp::NumericVector phi_out = Rcpp::clone(phi);
   double removed_mean = 0.0;
-  tulpa::update_spatial_icar(kappa, omega, offset, group, adj, tau,
-                             phi_out, removed_mean);
+  tulpa::update_spatial_icar(kappa, omega, offset, group, adj, tau, beta0,
+                             prior_beta_sd, phi_out, removed_mean);
   return Rcpp::List::create(
     Rcpp::_["phi"]          = phi_out,
     Rcpp::_["removed_mean"] = removed_mean,

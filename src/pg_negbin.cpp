@@ -737,7 +737,10 @@ List pg_negbin_gibbs_spatial(
                         omega.begin(), kappa.begin(), offset_spatial.begin(),
                         sum_omega_s.begin(), sum_resid_s.begin());
 
-    // Sample spatial effects with ICAR prior
+    // Sample spatial effects with ICAR prior. The field's level is the
+    // intercept's, so each site carries that prior through the field mean.
+    PgInterceptLevel level(beta[0], 0.0, prior_beta_sd, 1.0, spatial.begin(),
+                           n_spatial_units);
     for (int s = 0; s < n_spatial_units; s++) {
       // ICAR: phi_s | phi_{-s} ~ N(mean of neighbors, 1/(tau * n_neighbors))
       const int e0 = adj.row_ptr[s];
@@ -755,10 +758,13 @@ List pg_negbin_gibbs_spatial(
       // Combine ICAR prior with data likelihood
       double prior_prec_s = tau * n_neigh;
       double post_prec = sum_omega_s[s] + prior_prec_s;
-      double post_mean = (sum_resid_s[s] + prior_prec_s * neighbor_mean) / post_prec;
-      double post_sd = 1.0 / std::sqrt(post_prec);
+      double post_mean_num = sum_resid_s[s] + prior_prec_s * neighbor_mean;
+      level.add(spatial[s], post_prec, post_mean_num);
 
-      spatial[s] = R::rnorm(post_mean, post_sd);
+      const double x_new =
+          R::rnorm(post_mean_num / post_prec, 1.0 / std::sqrt(post_prec));
+      level.moved(spatial[s], x_new);
+      spatial[s] = x_new;
     }
 
     // Center spatial effects along the ICAR's improper direction, absorbing
