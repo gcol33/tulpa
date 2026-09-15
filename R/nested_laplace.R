@@ -649,10 +649,10 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   # reported grid is a pruned one whose screen ranking was unreliable.
   solve_grid <- function(prior_i) {
     .nl_prune_gate(
-      .nl_dispatch(type, cargs, prior_i),
+      .nl_dispatch(type, cargs, prior_i, prior_i),
       prune_tol_eff,
       function() .nl_dispatch(type, utils::modifyList(cargs, list(prune_tol = 0)),
-                              prior_i))
+                              prior_i, prior_i))
   }
   res <- solve_grid(prior)
   tm$mark("grid")
@@ -696,7 +696,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     refit_log_marginal = function(prior_i, theta_mat) {
       blk2 <- .nl_registry_write_theta(
         list(prior_i), theta_mat, colnames(theta_mat))[[1L]]
-      .nl_dispatch(type, cargs_no_ckpt, blk2)$log_marginal
+      .nl_dispatch(type, cargs_no_ckpt, blk2, prior_i)$log_marginal
     },
     auto = .prov$auto,
     policy = .nl_recenter_mode(control$auto_recenter))
@@ -711,12 +711,12 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   res <- .nl_subspace_debias_attach(
     res, sd_cfg,
     redispatch = function(req) .nl_dispatch(
-      type, utils::modifyList(cargs_no_ckpt, list(debias = req)), prior),
+      type, utils::modifyList(cargs_no_ckpt, list(debias = req)), prior, prior),
     p_fixed = p_fixed, beta_names = colnames(X))
   res <- .nl_cila_attach(
     res, cila_cfg,
     redispatch = function(req) .nl_dispatch(
-      type, utils::modifyList(cargs_no_ckpt, list(cila = req)), prior),
+      type, utils::modifyList(cargs_no_ckpt, list(cila = req)), prior, prior),
     p_fixed = p_fixed, beta_names = colnames(X),
     remoments = function(r) .nl_posterior_moments(r, type, within = within_cell))
   tm$mark("diagnostics")
@@ -833,14 +833,17 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   # chose, so it runs with the internal-batch flag set: the cell-count advice
   # would name a number `control$k_samples` sets and offer a remedy that does
   # not reach it (gcol33/tulpa#614).
+  # Both dispatches read the integrated axes off the fit's own block, the
+  # multi-block one with the draws as its grid, so the draws are scored against
+  # the hyperprior the grid carries.
   refit <- function(theta_mat) {
     blk2 <- blk; blk2[[gfs]] <- as.numeric(theta_mat[, 1L])
-    prior2 <- if (is.list(prior) && is.null(prior$type)) list(blk2) else blk2
     lm <- tryCatch(
       .nl_with_internal_batch(
         if (dispatch_kind == "multi")
-          .nl_dispatch_multi(cargs, prior2, likelihood = likelihood)$log_marginal
-        else .nl_dispatch(type, cargs, prior2)$log_marginal),
+          .nl_dispatch_multi(cargs, list(blk), likelihood = likelihood,
+                             theta_grid_override = theta_mat)$log_marginal
+        else .nl_dispatch(type, cargs, blk2, blk)$log_marginal),
       error = function(e) rep(-Inf, nrow(theta_mat)))
     if (length(lm) != nrow(theta_mat)) rep(-Inf, nrow(theta_mat)) else lm
   }
@@ -1361,7 +1364,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   )
 )
 
-.nl_dispatch <- function(type, a, p) {
+.nl_dispatch <- function(type, a, p, declared) {
   spec <- .NL_REGISTRY[[type]]
   if (is.null(spec)) {
     stop("Unknown prior type: ", type,
@@ -1377,10 +1380,18 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   p   <- spec$defaults(p, a)
   th  <- spec$theta(p)
   tg  <- .nl_theta_matrix(list(theta_grid = th$grid, theta_names = th$names))
+  # `declared` is the block whose grid the fit integrates: `p` itself for a grid
+  # solve, the fit's block when `p` carries a stencil or a probe row written onto
+  # its grid fields. The integrated columns are read off that grid, since the
+  # rows written onto `p` vary a column the fit holds fixed or hold one it
+  # integrates at a single value (gcol33/tulpa#760).
+  dth <- spec$theta(spec$defaults(declared, a))
+  hp_axes <- .hp_integrated_axes(
+    .nl_theta_matrix(list(theta_grid = dth$grid, theta_names = dth$names)))
   # The block's hyperprior, folded where every caller of the kernel reads it:
   # the grid solve, the placement refit and its stencil, the k-hat refit. A
   # screened solve ranks its cells with it too.
-  hp  <- list(.nl_block_log_hyperprior(p, tg, hyperprior))
+  hp  <- list(.nl_block_log_hyperprior(p, tg, hyperprior, axes = hp_axes))
   if ((a$prune_tol %||% 0) > 0) a$screen_log_offset <- .nl_screen_log_offset(tg, hp)
   out <- do.call(spec$cpp_fn, c(spec$pack(p), a))
   out$theta_grid  <- th$grid
@@ -1979,13 +1990,17 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   # Every block's hyperprior over its own columns, folded on the override path
   # too: a placement stencil re-evaluates the marginal through it and has to
   # difference the target the grid integrates. A screened solve ranks with it.
+  # The integrated columns are read off the block's declared grid, never off the
+  # override, whose rows hold a fixed axis at other values or an integrated one
+  # at a single value (gcol33/tulpa#760).
   hp_parts <- lapply(seq_along(prepared), function(b) {
     cols <- (axis_offsets[b] + 1L):axis_offsets[b + 1L]
     tg_b <- joint_grid[, cols, drop = FALSE]
     colnames(tg_b) <- colnames(block_grids[[b]])
     blk <- prepared[[b]]
     blk$log_prior_theta_per_grid <- blocks_spec[[b]]$log_prior_theta_per_grid
-    .hp_prefix(.nl_block_log_hyperprior(blk, tg_b, .hp_choice(cargs$hyperprior)),
+    .hp_prefix(.nl_block_log_hyperprior(blk, tg_b, .hp_choice(cargs$hyperprior),
+                                        axes = .hp_integrated_axes(block_grids[[b]])),
                paste0("b", b, "."))
   })
   prune_tol <- as.numeric(cargs$prune_tol %||% 0)

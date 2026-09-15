@@ -267,10 +267,11 @@
 # Fold densities over the integrated columns of `tg` into a record: the summed
 # per-cell density, the axes it covers, the declined axes with their reasons.
 # `resolve(axis)` returns the `.hp_axis_default()` shape for a column; `name`
-# maps a column to the name it is reported under; `axes` are the columns read,
-# the integrated ones unless a caller scores a single point.
-.hp_collect <- function(tg, resolve, name = identity,
-                        axes = .hp_integrated_axes(tg)) {
+# maps a column to the name it is reported under; `axes` are the columns read.
+# The caller states `axes` from the grid it declared, never from `tg`: a batch
+# of cells (a placement stencil, a single probe row, a refinement slice) holds
+# columns constant that the fit integrates (gcol33/tulpa#760).
+.hp_collect <- function(tg, resolve, name = identity, axes) {
   n <- nrow(tg)
   out <- list(lp = numeric(n), lp_in_kernel = numeric(n),
               axes = character(0), declined = character(0))
@@ -403,16 +404,19 @@
 # Per-cell default log hyperprior of one registry block over its own axis
 # columns (bare names, natural values). A tgmrf block's own `prior(theta)` is
 # folded inside the kernel (`log_prior_theta_per_grid`), so it is recorded here
-# and not added again.
-.nl_block_log_hyperprior <- function(p, tg, hyperprior = "proper") {
+# and not added again. `axes` are the block's integrated columns, read off its
+# declared grid.
+.nl_block_log_hyperprior <- function(p, tg, hyperprior = "proper", axes) {
+  axes <- intersect(axes, colnames(tg))
   if (identical(tolower(p$type %||% ""), "tgmrf")) {
     n <- nrow(tg)
     lpk <- p$log_prior_theta_per_grid
     return(list(lp = numeric(n),
                 lp_in_kernel = if (length(lpk) == n) as.numeric(lpk) else numeric(n),
-                axes = .hp_integrated_axes(tg), declined = character(0)))
+                axes = axes, declined = character(0)))
   }
-  .hp_collect(tg, function(a) .hp_axis_prior(a, p, hyperprior = hyperprior))
+  .hp_collect(tg, function(a) .hp_axis_prior(a, p, hyperprior = hyperprior),
+              axes = axes)
 }
 
 # The default-or-user hyperprior over a joint grid. `blocks` is the block list

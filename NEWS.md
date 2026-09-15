@@ -86,6 +86,21 @@ passed now fails, and every remaining refusal names the fit class and reason.
   refinement, are unchanged. Present in every tag since v0.4.1, which first
   carried the default hyperprior (#730).
 
+* **The `tulpa_nested_laplace()` placement stencil and inner-skew probe read
+  the prior off the rows they evaluated** (gcol33/tulpa#760). Both write their
+  rows onto the block (or hand them to the multi-block dispatch as an override),
+  so a stencil that moves a column the grid holds at one value folded that
+  column's density, and the one-row probe folded none. On a 40-region BYM2 fit
+  with `sigma` held at 0.8 the stencil's centre row read 1.02 nats below the
+  grid cell it sits on, and with `rho` held at 0.5 the probe row read 1.01 nats
+  above it; the stencil's `sigma` variance moved from 0.0408 to 0.0430. The
+  probe's marginal is not reported, so only the placement pass changes.
+  `.nl_dispatch()` now takes the block whose grid the fit declared, the
+  multi-block dispatch reads each block's axes off its declared grid (the k-hat
+  draws reach it as an override of the fit's own prior), and `.hp_collect()`,
+  `.nl_block_log_hyperprior()` and `.st_log_hyperprior()` take `axes` with no
+  default, so no caller infers them from the matrix it evaluates.
+
 ## Per-thread workspaces are built in place
 
 * **Two Eigen Cholesky objects were copied before they had been computed**

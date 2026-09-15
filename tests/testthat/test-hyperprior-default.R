@@ -277,6 +277,67 @@ test_that("a batch of cells reads the prior on the fit's axes, not on its own sp
   expect_true(all(whole$lp[slice] != 0))
 })
 
+test_that("a stencil or a probe row on a registry block reads the prior of its grid", {
+  # The placement stencil writes its rows onto a block's grid fields, and the
+  # inner-skew probe narrows them to the modal row. Both are scored against the
+  # hyperprior of the grid the fit integrates: a stencil that moves a column the
+  # grid holds fixed adds no density on it, and a single row keeps the density of
+  # every column the grid integrates (gcol33/tulpa#760).
+  S <- 30L
+  set.seed(760)
+  idx <- rep(seq_len(S), each = 5L)
+  X <- cbind(1, rnorm(length(idx)))
+  eff <- as.numeric(scale(cumsum(rnorm(S, 0, 0.4)), scale = FALSE))
+  y <- as.numeric(X %*% c(-0.2, 0.7)) + eff[idx] + rnorm(length(idx), 0, 0.7)
+  nbr <- lapply(seq_len(S), function(s) setdiff(c(s - 1L, s + 1L), c(0L, S + 1L)))
+  nn <- lengths(nbr)
+  graph <- list(adj_row_ptr = as.integer(c(0L, cumsum(nn))),
+                adj_col_idx = as.integer(unlist(nbr)) - 1L,
+                n_neighbors = as.integer(nn))
+  a <- list(y = y, n = rep(1L, length(y)), offset_nullable = NULL, X = X,
+            re_idx = rep(0, length(y)), n_re_groups = 0L, sigma_re = 1,
+            family = "gaussian", phi = tulpa:::.phi_to_kernel("gaussian", 0.5),
+            max_iter = 200L, tol = 1e-9, n_threads = 1L, x_init_nullable = NULL,
+            store_Q = FALSE, checkpoint_path = "", prune_tol = 0,
+            screen_iters = tulpa:::.nl_screen("iters"), compute_fitted_var = FALSE,
+            hyperprior = "proper")
+  bym2 <- function(sigma, rho)
+    c(list(type = "bym2", n_spatial_units = S, spatial_idx = idx,
+           scale_factor = 1, sigma_grid = sigma, rho_grid = rho), graph)
+  rows_at <- function(blk, i) bym2(blk$sigma_grid[i], blk$rho_grid[i])
+
+  # sigma held at one value, rho integrated: the stencil moves sigma too.
+  rg <- c(0.2, 0.4, 0.6, 0.8, 0.95)
+  held_sigma <- bym2(rep(0.8, 5L), rg)
+  grid <- tulpa:::.nl_dispatch("bym2", a, held_sigma, held_sigma)
+  expect_identical(grid$log_hyperprior_axes, "rho")
+  m <- which.max(grid$log_marginal)
+  stencil <- bym2(0.8 * exp(c(0, 0.1, -0.1)), rep(rg[m], 3L))
+  st <- tulpa:::.nl_dispatch("bym2", a, stencil, held_sigma)
+  expect_equal(st$log_marginal[1L], grid$log_marginal[m], tolerance = 1e-8)
+  expect_identical(st$log_hyperprior_axes, "rho")
+
+  # rho held at one value, sigma integrated: the probe row holds sigma constant.
+  sg <- c(0.3, 0.6, 1, 1.6, 2.5)
+  held_rho <- bym2(sg, rep(0.5, 5L))
+  grid <- tulpa:::.nl_dispatch("bym2", a, held_rho, held_rho)
+  m <- which.max(grid$log_marginal)
+  probe <- tulpa:::.nl_dispatch("bym2", a, rows_at(held_rho, m), held_rho)
+  expect_equal(probe$log_marginal, grid$log_marginal[m], tolerance = 1e-8)
+  expect_identical(probe$log_hyperprior_axes, "sigma")
+
+  # The multi-block dispatch evaluates an override against the prior it is handed.
+  multi <- tulpa:::.nl_dispatch_multi(a, list(held_rho))
+  tm <- multi$theta_grid[m, , drop = FALSE]
+  one <- tulpa:::.nl_dispatch_multi(a, list(held_rho), theta_grid_override = tm)
+  expect_equal(one$log_marginal, multi$log_marginal[m], tolerance = 1e-8)
+  multi <- tulpa:::.nl_dispatch_multi(a, list(held_sigma))
+  m <- which.max(multi$log_marginal)
+  ov <- cbind(0.8 * exp(c(0, 0.1, -0.1)), rep(rg[m], 3L))
+  st <- tulpa:::.nl_dispatch_multi(a, list(held_sigma), theta_grid_override = ov)
+  expect_equal(st$log_marginal[1L], multi$log_marginal[m], tolerance = 1e-8)
+})
+
 # --------------------------------------------------------------------------- #
 # The `hyperprior` choice at the two nested-Laplace front doors               #
 # --------------------------------------------------------------------------- #

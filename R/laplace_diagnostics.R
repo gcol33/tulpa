@@ -657,7 +657,7 @@
       for (f in gfs) blk2[[f]] <- blk[[f]][map_idx]
       cargs2 <- utils::modifyList(cargs_no_ckpt,
                                   list(compute_skew = TRUE, skew_idx = probe_idx))
-      .nl_dispatch(type, cargs2, blk2)
+      .nl_dispatch(type, cargs2, blk2, blk)
     } else {
       NULL
     }

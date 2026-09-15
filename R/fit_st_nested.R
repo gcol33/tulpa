@@ -43,13 +43,13 @@
 # The spatiotemporal grid's hyperprior (`R/hyperprior_default.R`): under
 # `"proper"` the PC prior on both precisions and, for ar1, the uniform on the
 # autocorrelation's domain; under `"flat"` none of them.
-.st_log_hyperprior <- function(theta_grid, axes = NULL, hyperprior = "proper") {
+.st_log_hyperprior <- function(theta_grid, axes, hyperprior = "proper") {
     tg <- as.matrix(theta_grid)
     .hp_collect(tg, function(a) {
         if (identical(a, "rho")) {
             .hp_axis_prior("rho", list(type = "ar1"), hyperprior = hyperprior)
         } else .hp_axis_prior(a, hyperprior = hyperprior)
-    }, axes = axes %||% .hp_integrated_axes(tg))
+    }, axes = axes)
 }
 
 # Fold the hyperprior into a spatiotemporal kernel result and attach its cell
@@ -59,7 +59,9 @@
     out$theta_grid  <- as.matrix(theta_grid)
     out$theta_names <- colnames(out$theta_grid)
     out <- .nl_fold_hyperprior(
-        out, list(.st_log_hyperprior(out$theta_grid, hyperprior = hyperprior)))
+        out, list(.st_log_hyperprior(out$theta_grid,
+                                     axes = .hp_integrated_axes(out$theta_grid),
+                                     hyperprior = hyperprior)))
     st_specs <- .nl_st_axis_specs(out$theta_grid,
                                   folded_axes = out$log_hyperprior_axes)
     out$log_quad     <- .hyper_log_quad_weights(out$theta_grid, st_specs)
