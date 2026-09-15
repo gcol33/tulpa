@@ -17,7 +17,10 @@
 # once, rather than aliased per fitter.
 #
 # Names the target fitter already accepts are never rewritten, so a fitter that
-# genuinely reads `n_warmup` keeps receiving it.
+# genuinely reads `n_warmup` keeps receiving it. The pair is SYMMETRIC: a
+# fitter wanting either spelling can be reached from a caller using the other
+# (gcol33/tulpa#767 -- a one-directional alias silently dropped `warmup` on
+# `nuts_spde` / `nuts_beta`, which list `n_warmup` only).
 #' @keywords internal
 .CONTROL_ALIASES <- c(n_warmup = "warmup")
 
@@ -33,10 +36,14 @@
     to <- .CONTROL_ALIASES[[from]]
     # Rewrite only when the target fitter wants the other spelling, and only
     # when it has not been given explicitly -- an explicit value wins over one
-    # arriving under an alias.
+    # arriving under an alias. Tried in both directions, since either spelling
+    # may be the one a given fitter reads.
     if (from %in% nm && !(from %in% allowed) &&
         to %in% allowed && !(to %in% nm)) {
       nm[nm == from] <- to
+    } else if (to %in% nm && !(to %in% allowed) &&
+               from %in% allowed && !(from %in% nm)) {
+      nm[nm == to] <- from
     }
   }
   names(control) <- nm

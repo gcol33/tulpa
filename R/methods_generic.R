@@ -100,7 +100,8 @@
   if (!is.list(mi)) return(NULL)
   cpp_tulpa_glmm_layout(
     y = mi$y, n_trials = mi$n_trials, X = mi$X, family = mi$family,
-    phi = mi$phi, sigma_beta = mi$sigma_beta, offset_nullable = mi$offset,
+    phi = mi$phi, phi2 = mi$phi2 %||% NA_real_, sigma_beta = mi$sigma_beta,
+    offset_nullable = mi$offset,
     re_spec = mi$re_spec, spatial_spec = mi$spatial_spec,
     temporal_spec = mi$temporal_spec, sigma_re_scale = mi$sigma_re_scale,
     svc_spec = mi$svc_spec, tvc_spec = mi$tvc_spec, zi_spec = mi$zi_spec)

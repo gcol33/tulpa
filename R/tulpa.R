@@ -963,6 +963,14 @@
           paste0("'", gibbs_fams, "'", collapse = ", "), family),
           call. = FALSE)
       }
+      # An offset changes the model, so it is refused here rather than dropped:
+      # the Polya-Gamma kernels (plain, spatial and temporal alike) carry no
+      # offset term in their linear predictor at all.
+      if (!is.null(bundle$offset) && any(bundle$offset != 0)) {
+        stop("`offset()` is not supported by the gibbs (Polya-Gamma) backend. ",
+             "Use mode = 'laplace', 're_cov_nested' or a logpost backend ",
+             "(mode = 'mala'), which thread the offset through.", call. = FALSE)
+      }
       # tulpa_gibbs enforces a mean-zero fixed-effect prior (the Polya-Gamma
       # sampler is built for it); a non-zero beta_prior$mean errors there.
       # One `(1 | g)` -> that grouping; none -> a degenerate 0-group block that
@@ -1027,6 +1035,7 @@
         n_trials   = n_trials,
         sigma_eps  = if (!is.null(phi)) sqrt(phi) else 1.0,
         n_quad     = control$n_quad,
+        offset     = bundle$offset,
         beta_init  = control$beta_init,
         sigma_init = control$sigma_init,
         max_iter   = control$max_iter,
@@ -1053,6 +1062,7 @@
         phi        = phi %||% 1.0,
         n_trials   = n_trials,
         beta_prior = beta_prior_default,
+        offset     = bundle$offset,
         control    = .control_subset(control, .CONTROL_KEYS$ep)
       ))
     }
@@ -2241,17 +2251,24 @@ tulpa <- function(formula, data,
   # temporal yet), mirroring and superseding the spatial-field redirect above
   # when both fields are present. An explicitly chosen ModelData sampler backend
   # (hmc / ess / sghmc / sgld / mclmc / smc / vi) consumes the temporal field
-  # directly, so it keeps its selection rather than being
-  # redirected. Recorded but not warned about (notify = FALSE): the conditional
-  # Laplace path carries no temporal kernel, so the nested one is the documented
-  # route for the structure rather than a capability taken away.
+  # directly, so it keeps its selection rather than being redirected.
+  #
+  # `notify` follows whether a TIER was lost, not just a backend name: a
+  # Tier-2 request (mode = "laplace") loses nothing here -- the conditional
+  # Laplace path carries no temporal kernel, so nested_laplace is the
+  # documented route for the structure rather than a capability taken away,
+  # and stays silent. An explicit Tier-1 request (gibbs, mala, imh_laplace,
+  # pathfinder, ...) DOES lose its tier -- it is redirected to a Tier-2
+  # approximation instead of the exact sampler it asked for -- and that is
+  # exactly the case the front door's override contract warns about
+  # (gcol33/tulpa#768).
   if (has_temporal && BACKEND_REGISTRY[[sel$backend]]$input != "modeldata") {
     sel <- .sel_redirect(sel, "nested_laplace", if (has_spatial) {
       sprintf("%s spatial field + temporal %s field; joint nested-Laplace integration",
               spatial_type, temporal_spec$type)
     } else {
       sprintf("temporal %s field; nested-Laplace integration", temporal_spec$type)
-    }, notify = FALSE)
+    }, notify = isTRUE(sel$tier == 1L))
   }
 
   # Covariate smoothers are temporal-shaped blocks and integrate through the
@@ -2286,6 +2303,31 @@ tulpa <- function(formula, data,
            "samples (range, sigma) under the field's PC priors. Use ",
            "mode = 'laplace' / 'auto' for the nested SPDE path.", call. = FALSE)
     }
+    # The SPDE NUTS engine runs one chain; a caller-supplied n_chains is
+    # refused rather than silently ignored (`.control_subset()` below would
+    # otherwise drop it, since it is not in the nuts_spde key set at all).
+    if (!is.null(control$n_chains) && as.integer(control$n_chains) != 1L) {
+      stop("`control$n_chains` is not supported on the SPDE Tier-1 (exact ",
+           "NUTS) route -- it runs a single chain. Drop it, or run several ",
+           "fits at different seeds and combine the draws.", call. = FALSE)
+    }
+    # This branch reaches ANY explicit Tier-1 backend under an SPDE field
+    # (gibbs, mala, ess, ...), not only the natural mode = 'exact' / 'hmc'
+    # route that maps to it -- so an explicit request for one of the others is
+    # an override, recorded and warned about like every other one
+    # (gcol33/tulpa#768). The natural route is not, since nothing was lost:
+    # it is the same exact-NUTS tier reaching its own field-specific engine.
+    sel <- .sel_redirect(sel, "spde",
+      "SPDE field, Tier-1 mode: exact NUTS over the Matern field + hyperparameters",
+      notify = !identical(sel$backend, "hmc"))
+    if (!is.null(sel$overridden) && isTRUE(sel$overridden$notify)) {
+      warning(sprintf(paste0(
+        "mode = '%s' was overridden: fitted with backend 'spde' instead of ",
+        "'%s' -- %s. Pass mode = 'exact' to request the SPDE NUTS engine ",
+        "directly, or mode = 'auto' to fit without asking for a mode."),
+        sel$overridden$requested, sel$overridden$backend, sel$reason),
+        call. = FALSE)
+    }
     fit <- fit_spde(
       y = bundle$y, X = bundle$X, spatial = spatial_spec, family = family,
       n_trials = n_trials, mode = "nuts",
@@ -2297,6 +2339,7 @@ tulpa <- function(formula, data,
     fit$inference_tier <- 1L
     fit$selection_reason <-
       "SPDE field, Tier-1 mode: exact NUTS over the Matern field + hyperparameters"
+    fit$mode_overridden <- sel$overridden
     fit$N <- fit$N %||% bundle$n_obs
     fit$model_matrix <- fit$model_matrix %||% bundle$X
     fit$y <- fit$y %||% bundle$y

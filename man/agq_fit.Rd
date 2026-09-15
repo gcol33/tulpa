@@ -13,6 +13,7 @@ agq_fit(
   n_trials = NULL,
   sigma_eps = 1,
   n_quad = 7L,
+  offset = NULL,
   beta_init = NULL,
   sigma_init = 1,
   max_iter = 200L,
@@ -39,6 +40,9 @@ set it to a known / pre-estimated residual SD rather than the default.}
 
 \item{n_quad}{Number of Gauss-Hermite quadrature nodes per cluster.
 \code{1} recovers Laplace; common choices are \code{5} or \code{7}. Default \code{7}.}
+
+\item{offset}{Optional fixed per-observation offset added to eta
+(default all zero, i.e. none).}
 
 \item{beta_init}{Initial fixed-effects (default zeros).}
 

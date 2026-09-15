@@ -2538,8 +2538,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_glmm_oracle_make
-SEXP cpp_glmm_oracle_make(std::string family, double phi, NumericVector y, NumericVector n_trials, NumericMatrix X, NumericMatrix Z, IntegerVector idx, int n_groups);
-RcppExport SEXP _tulpa_cpp_glmm_oracle_make(SEXP familySEXP, SEXP phiSEXP, SEXP ySEXP, SEXP n_trialsSEXP, SEXP XSEXP, SEXP ZSEXP, SEXP idxSEXP, SEXP n_groupsSEXP) {
+SEXP cpp_glmm_oracle_make(std::string family, double phi, NumericVector y, NumericVector n_trials, NumericMatrix X, NumericMatrix Z, IntegerVector idx, int n_groups, NumericVector offset);
+RcppExport SEXP _tulpa_cpp_glmm_oracle_make(SEXP familySEXP, SEXP phiSEXP, SEXP ySEXP, SEXP n_trialsSEXP, SEXP XSEXP, SEXP ZSEXP, SEXP idxSEXP, SEXP n_groupsSEXP, SEXP offsetSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -2551,7 +2551,8 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< NumericMatrix >::type Z(ZSEXP);
     Rcpp::traits::input_parameter< IntegerVector >::type idx(idxSEXP);
     Rcpp::traits::input_parameter< int >::type n_groups(n_groupsSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_glmm_oracle_make(family, phi, y, n_trials, X, Z, idx, n_groups));
+    Rcpp::traits::input_parameter< NumericVector >::type offset(offsetSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_glmm_oracle_make(family, phi, y, n_trials, X, Z, idx, n_groups, offset));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -4634,8 +4635,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // cpp_tulpa_glmm_layout
-Rcpp::List cpp_tulpa_glmm_layout(Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericMatrix X, std::string family, double phi, double sigma_beta, Rcpp::Nullable<Rcpp::NumericVector> offset_nullable, Rcpp::Nullable<Rcpp::List> re_spec, Rcpp::Nullable<Rcpp::List> spatial_spec, Rcpp::Nullable<Rcpp::List> temporal_spec, double sigma_re_scale, Rcpp::Nullable<Rcpp::CharacterVector> fixed_names, Rcpp::Nullable<Rcpp::List> svc_spec, Rcpp::Nullable<Rcpp::List> tvc_spec, Rcpp::Nullable<Rcpp::List> zi_spec);
-RcppExport SEXP _tulpa_cpp_tulpa_glmm_layout(SEXP ySEXP, SEXP n_trialsSEXP, SEXP XSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP sigma_betaSEXP, SEXP offset_nullableSEXP, SEXP re_specSEXP, SEXP spatial_specSEXP, SEXP temporal_specSEXP, SEXP sigma_re_scaleSEXP, SEXP fixed_namesSEXP, SEXP svc_specSEXP, SEXP tvc_specSEXP, SEXP zi_specSEXP) {
+Rcpp::List cpp_tulpa_glmm_layout(Rcpp::NumericVector y, Rcpp::IntegerVector n_trials, Rcpp::NumericMatrix X, std::string family, double phi, double phi2, double sigma_beta, Rcpp::Nullable<Rcpp::NumericVector> offset_nullable, Rcpp::Nullable<Rcpp::List> re_spec, Rcpp::Nullable<Rcpp::List> spatial_spec, Rcpp::Nullable<Rcpp::List> temporal_spec, double sigma_re_scale, Rcpp::Nullable<Rcpp::CharacterVector> fixed_names, Rcpp::Nullable<Rcpp::List> svc_spec, Rcpp::Nullable<Rcpp::List> tvc_spec, Rcpp::Nullable<Rcpp::List> zi_spec);
+RcppExport SEXP _tulpa_cpp_tulpa_glmm_layout(SEXP ySEXP, SEXP n_trialsSEXP, SEXP XSEXP, SEXP familySEXP, SEXP phiSEXP, SEXP phi2SEXP, SEXP sigma_betaSEXP, SEXP offset_nullableSEXP, SEXP re_specSEXP, SEXP spatial_specSEXP, SEXP temporal_specSEXP, SEXP sigma_re_scaleSEXP, SEXP fixed_namesSEXP, SEXP svc_specSEXP, SEXP tvc_specSEXP, SEXP zi_specSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -4644,6 +4645,7 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< Rcpp::NumericMatrix >::type X(XSEXP);
     Rcpp::traits::input_parameter< std::string >::type family(familySEXP);
     Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< double >::type phi2(phi2SEXP);
     Rcpp::traits::input_parameter< double >::type sigma_beta(sigma_betaSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::NumericVector> >::type offset_nullable(offset_nullableSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type re_spec(re_specSEXP);
@@ -4654,7 +4656,7 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type svc_spec(svc_specSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type tvc_spec(tvc_specSEXP);
     Rcpp::traits::input_parameter< Rcpp::Nullable<Rcpp::List> >::type zi_spec(zi_specSEXP);
-    rcpp_result_gen = Rcpp::wrap(cpp_tulpa_glmm_layout(y, n_trials, X, family, phi, sigma_beta, offset_nullable, re_spec, spatial_spec, temporal_spec, sigma_re_scale, fixed_names, svc_spec, tvc_spec, zi_spec));
+    rcpp_result_gen = Rcpp::wrap(cpp_tulpa_glmm_layout(y, n_trials, X, family, phi, phi2, sigma_beta, offset_nullable, re_spec, spatial_spec, temporal_spec, sigma_re_scale, fixed_names, svc_spec, tvc_spec, zi_spec));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -5002,7 +5004,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_tulpa_psis", (DL_FUNC) &_tulpa_cpp_tulpa_psis, 2},
     {"_tulpa_cpp_psis_loo_pit", (DL_FUNC) &_tulpa_cpp_psis_loo_pit, 5},
     {"_tulpa_cpp_tulpa_pit", (DL_FUNC) &_tulpa_cpp_tulpa_pit, 4},
-    {"_tulpa_cpp_glmm_oracle_make", (DL_FUNC) &_tulpa_cpp_glmm_oracle_make, 8},
+    {"_tulpa_cpp_glmm_oracle_make", (DL_FUNC) &_tulpa_cpp_glmm_oracle_make, 9},
     {"_tulpa_cpp_re_cov_gibbs_sweep", (DL_FUNC) &_tulpa_cpp_re_cov_gibbs_sweep, 13},
     {"_tulpa_cpp_recov_block_grad", (DL_FUNC) &_tulpa_cpp_recov_block_grad, 4},
     {"_tulpa_tulpa_set_integrator_cpp", (DL_FUNC) &_tulpa_tulpa_set_integrator_cpp, 2},
@@ -5141,7 +5143,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_test_c_abi_chains_roundtrip", (DL_FUNC) &_tulpa_cpp_test_c_abi_chains_roundtrip, 10},
     {"_tulpa_cpp_tulpa_glmm_eta_draws", (DL_FUNC) &_tulpa_cpp_tulpa_glmm_eta_draws, 16},
     {"_tulpa_cpp_tulpa_glmm_log_prob_draws", (DL_FUNC) &_tulpa_cpp_tulpa_glmm_log_prob_draws, 16},
-    {"_tulpa_cpp_tulpa_glmm_layout", (DL_FUNC) &_tulpa_cpp_tulpa_glmm_layout, 15},
+    {"_tulpa_cpp_tulpa_glmm_layout", (DL_FUNC) &_tulpa_cpp_tulpa_glmm_layout, 16},
     {"_tulpa_cpp_vi_elbo_grad", (DL_FUNC) &_tulpa_cpp_vi_elbo_grad, 12},
     {"_tulpa_cpp_tulpa_sample_glmm", (DL_FUNC) &_tulpa_cpp_tulpa_sample_glmm, 44},
     {"_tulpa_cpp_spde_layout_probe", (DL_FUNC) &_tulpa_cpp_spde_layout_probe, 4},

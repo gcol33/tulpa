@@ -170,6 +170,7 @@ BACKEND_REGISTRY <- list(
     max_re_terms = 1L,
     tier = "exact", input = "design", fitter = "tulpa_gibbs",
     families = c("binomial", "neg_binomial_2"),
+    carries_offset = FALSE,
     cabi = NULL,
     note = paste("Polya-Gamma Gibbs (binomial / negbin) via tulpa_gibbs();",
                  "base plus spatial (icar/bym2/rsr/gp/multiscale_gp) and temporal",
@@ -250,12 +251,14 @@ BACKEND_REGISTRY <- list(
     emits = "iid",
     tier = "structured", input = "design", fitter = "agq_fit",
     families = c("binomial", "poisson", "gaussian"), cabi = NULL,
+    carries_offset = TRUE,
     note = "Intercept-only adaptive Gauss-Hermite (the shared GLMM oracle)"
   ),
   ep = list(
     emits = "iid",
     tier = "structured", input = "design", fitter = "ep_fit",
     families = NULL, cabi = NULL,
+    carries_offset = TRUE,
     note = paste("Expectation Propagation over a fixed-effect GLM with a",
                  "mean-zero Gaussian coefficient prior; matches marginal moments",
                  "(exact for a Gaussian likelihood), no random effects / fields")

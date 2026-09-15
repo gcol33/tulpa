@@ -22,19 +22,35 @@ using namespace tulpa;
 // so its inner solve shares the one compiled family density. Z is the stacked
 // RE design (n x sum_block n_coefs); the block split lives in the objective's
 // Sigma packing, not the oracle.
+// `offset` is the fixed per-observation offset() term (length n, or length 0
+// for none): added into eta alongside X beta at construction. It is a
+// SEPARATE channel from set_offset()/the `offset` member the multi-block
+// Gibbs sweep overwrites each step for cross-block RE coupling (push_offset()
+// in re_cov_gibbs_sweep.h) -- that caller never supplies one here, so the two
+// uses never collide.
 // [[Rcpp::export]]
 SEXP cpp_glmm_oracle_make(std::string family, double phi,
                           NumericVector y, NumericVector n_trials,
                           NumericMatrix X, NumericMatrix Z,
-                          IntegerVector idx, int n_groups) {
+                          IntegerVector idx, int n_groups,
+                          NumericVector offset = NumericVector::create()) {
     const GLMMFamily fam = glmm_family_from_string(family);
     Eigen::MatrixXd Xe = as<Eigen::MatrixXd>(X);
     Eigen::MatrixXd Ze = as<Eigen::MatrixXd>(Z);
     Eigen::VectorXi ix = as<Eigen::VectorXi>(idx);
     Eigen::VectorXd ye = as<Eigen::VectorXd>(y);
     Eigen::VectorXd nt = as<Eigen::VectorXd>(n_trials);
-    return XPtr<REGroupOracle>(
-        new SingleArmGLMMOracle(fam, phi, Xe, Ze, ix, n_groups, ye, nt), true);
+    auto orc = std::make_unique<SingleArmGLMMOracle>(
+        fam, phi, Xe, Ze, ix, n_groups, ye, nt);
+    if (offset.size() > 0) {
+        if (offset.size() != Xe.rows()) {
+            stop("cpp_glmm_oracle_make: `offset` has length %d, expected %d "
+                 "(nrow(X)).", (int)offset.size(), (int)Xe.rows());
+        }
+        Eigen::VectorXd off = as<Eigen::VectorXd>(offset);
+        orc->set_offset(off.data());
+    }
+    return XPtr<REGroupOracle>(orc.release(), true);
 }
 
 // Shape check for one block-spec field. `rows`/`cols` are what arrived,

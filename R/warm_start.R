@@ -388,6 +388,7 @@
     X = args$X,
     family = args$family,
     phi = as.numeric(args$phi),
+    phi2 = if (is.null(args$phi2)) NA_real_ else as.numeric(args$phi2),
     sigma_beta = as.numeric(args$sigma_beta),
     offset_nullable = args$offset,
     re_spec = args$re_spec,

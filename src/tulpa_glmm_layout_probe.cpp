@@ -58,6 +58,7 @@ Rcpp::List cpp_tulpa_glmm_layout(
     Rcpp::NumericMatrix X,
     std::string family,
     double phi = 1.0,
+    double phi2 = NA_REAL,
     double sigma_beta = 10.0,
     Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
     Rcpp::Nullable<Rcpp::List> re_spec = R_NilValue,
@@ -74,7 +75,7 @@ Rcpp::List cpp_tulpa_glmm_layout(
     tulpa::SamplerModelInputs in;
     std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, N);
     tulpa::build_sampler_model_inputs(
-        in, y, n_trials, X, family, phi, /*phi2=*/NA_REAL, sigma_beta, offset,
+        in, y, n_trials, X, family, phi, phi2, sigma_beta, offset,
         sigma_re_scale,
         re_spec, spatial_spec, temporal_spec, svc_spec, tvc_spec, zi_spec);
 

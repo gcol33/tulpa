@@ -1,3 +1,62 @@
+# tulpa 0.4.4
+
+## Five audit findings: dropped offsets, EP quadrature, tweedie accessors, SPDE NUTS
+
+* **`offset()` was silently dropped by `agq`, `ep` and `gibbs`, including when
+  `mode = "auto"` routed a binomial areal model to `gibbs`** (gcol33/tulpa#764).
+  `agq_fit()` now threads the offset into the shared compiled GLMM oracle
+  (`cpp_glmm_oracle_make()` takes an `offset` argument); `ep_fit()` /
+  `tulpa_ep()` fold it into each site's cavity before matching tilted moments
+  and un-fold it from the site update, so the fitted posterior is over the
+  fixed effects alone. The Polya-Gamma kernels behind `gibbs` carry no offset
+  term at all, so it is refused there (as `re_cov_gibbs` already did) rather
+  than dropped, and `carries_offset` is now declared on `agq` (`TRUE`), `ep`
+  (`TRUE`) and `gibbs` (`FALSE`) so `mode = "auto"` steers away from `gibbs`
+  under an offset instead of silently fitting the wrong model.
+* **`mode = "ep"` returned wrong coefficients with `converged = TRUE` on
+  inverse_gaussian, neg_binomial_1 and large-count poisson** (gcol33/tulpa#765).
+  The per-site tilted moments were Gauss-Hermite quadrature with the nodes
+  placed on the cavity; when the likelihood in eta is much narrower than the
+  cavity (a large count) or flat over part of it (inverse_gaussian, log link),
+  the fixed cavity-centred rule misplaces or misses the mass and a site's
+  variance can collapse to its numerical floor. `.ep_tilted_moments()` now
+  finds each site's own tilted mode and curvature and lays the quadrature
+  there instead (self-normalized importance reweighting against that Gaussian
+  proposal, exact for any placement -- the old cavity-centred rule is the
+  special case where the proposal equals the cavity). A site whose mode search
+  ran into its bracket, or whose variance still floors, is recorded
+  (`n_site_not_converged`, `n_site_floored`) and turns `converged` `FALSE`
+  rather than reporting a silently unresolved site as a success.
+* **Every accessor on a `family = "tweedie"` ModelData sampler fit errored**
+  `family 'tweedie' needs phi2 ...` (gcol33/tulpa#766): the fit records `phi2`
+  in `$model_inputs`, but the sampler-layout probe (`cpp_tulpa_glmm_layout()`,
+  behind `coef()`, `summary()`, `confint()`, `vcov()`, `fitted()`, `print()`,
+  and the warm-start layout) hardcoded it to `NA_REAL`. `phi2` is now a real
+  argument threaded from `mi$phi2` / `args$phi2`.
+* **The SPDE Tier-1 NUTS route (`fit_spde(mode = "nuts")` /
+  `tulpa_nuts_spde()`) crashed with an internal `vector::_M_default_append`
+  when `n_iter <= n_warmup`, silently dropped `control$warmup` (the
+  `tulpa()`-wide spelling), and silently ignored `control$n_chains`**
+  (gcol33/tulpa#767). `tulpa_nuts_spde()` now validates `0 <= n_warmup <
+  n_iter` at entry; `.control_subset()`'s `n_warmup`/`warmup` alias is now
+  symmetric (it used to rewrite only `n_warmup -> warmup`, never the reverse,
+  so a fitter listing `n_warmup` alone silently lost a `warmup` argument); an
+  explicit `n_chains != 1` on this single-chain route is now refused rather
+  than ignored.
+* **An explicit `mode` was replaced by a different backend with no override
+  recorded, in two places** (gcol33/tulpa#768). An SPDE field under any
+  explicit Tier-1 backend other than the natural `mode = "exact"` / `"hmc"`
+  route (e.g. `mode = "gibbs"`) is fitted by the SPDE NUTS engine without going
+  through `.sel_redirect()`, so the override was invisible on the fit and
+  never warned about; it now is, via the same `sel$overridden` / `notify`
+  mechanism every other backend redirect uses. An areal + temporal field
+  redirected every non-ModelData selection to `nested_laplace` with
+  `notify = FALSE`, which is right for a Tier-2 `mode = "laplace"` request
+  (nothing is lost) but wrong for an explicit Tier-1 request (`gibbs`, `mala`,
+  `imh_laplace`, ...), which loses its exact-sampler tier to a Tier-2
+  approximation; `notify` now follows whether the ORIGINAL selection was
+  Tier-1, not just whether the backend name changed.
+
 # tulpa 0.4.3
 
 ## Polya-Gamma Gibbs routes sample their stated posterior

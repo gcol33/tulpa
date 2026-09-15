@@ -517,8 +517,8 @@ cpp_tulpa_pit <- function(cdf_upper, cdf_lower, has_lower, jitter) {
     .Call(`_tulpa_cpp_tulpa_pit`, cdf_upper, cdf_lower, has_lower, jitter)
 }
 
-cpp_glmm_oracle_make <- function(family, phi, y, n_trials, X, Z, idx, n_groups) {
-    .Call(`_tulpa_cpp_glmm_oracle_make`, family, phi, y, n_trials, X, Z, idx, n_groups)
+cpp_glmm_oracle_make <- function(family, phi, y, n_trials, X, Z, idx, n_groups, offset = as.numeric( c())) {
+    .Call(`_tulpa_cpp_glmm_oracle_make`, family, phi, y, n_trials, X, Z, idx, n_groups, offset)
 }
 
 cpp_re_cov_gibbs_sweep <- function(family, phi, y, n_trials, X, blocks, beta0, L_beta, n_iter, n_burnin, thin, beta_prior_mean, beta_prior_sd) {
@@ -1073,8 +1073,8 @@ cpp_tulpa_glmm_log_prob_draws <- function(draws, y, n_trials, X, family, phi = 1
     .Call(`_tulpa_cpp_tulpa_glmm_log_prob_draws`, draws, y, n_trials, X, family, phi, sigma_beta, offset_nullable, re_spec, spatial_spec, temporal_spec, sigma_re_scale, phi2, svc_spec, tvc_spec, zi_spec)
 }
 
-cpp_tulpa_glmm_layout <- function(y, n_trials, X, family, phi = 1.0, sigma_beta = 10.0, offset_nullable = NULL, re_spec = NULL, spatial_spec = NULL, temporal_spec = NULL, sigma_re_scale = 2.5, fixed_names = NULL, svc_spec = NULL, tvc_spec = NULL, zi_spec = NULL) {
-    .Call(`_tulpa_cpp_tulpa_glmm_layout`, y, n_trials, X, family, phi, sigma_beta, offset_nullable, re_spec, spatial_spec, temporal_spec, sigma_re_scale, fixed_names, svc_spec, tvc_spec, zi_spec)
+cpp_tulpa_glmm_layout <- function(y, n_trials, X, family, phi = 1.0, phi2 = NA_real_, sigma_beta = 10.0, offset_nullable = NULL, re_spec = NULL, spatial_spec = NULL, temporal_spec = NULL, sigma_re_scale = 2.5, fixed_names = NULL, svc_spec = NULL, tvc_spec = NULL, zi_spec = NULL) {
+    .Call(`_tulpa_cpp_tulpa_glmm_layout`, y, n_trials, X, family, phi, phi2, sigma_beta, offset_nullable, re_spec, spatial_spec, temporal_spec, sigma_re_scale, fixed_names, svc_spec, tvc_spec, zi_spec)
 }
 
 cpp_vi_elbo_grad <- function(y, n_trials, X, family, variant, mc_samples, seed, rank = 2L, x = NULL, phi = 1.0, sigma_beta = 10.0, offset_nullable = NULL) {
