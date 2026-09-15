@@ -1,3 +1,42 @@
+# tulpa 0.4.5
+
+## Four audit findings: auto picking backends that refuse the call, a silently ignored control surface, an internal error on an empty RE-covariance model, a crashing diagnostic plot
+
+* **`mode = "auto"` still selected backends that refused the very call that
+  selected them** (gcol33/tulpa#769): a `ziformula` sent the default MALA arm,
+  the latent/spatial nested arm, and a temporal-only model (no arm existed for
+  one at all) to a backend without a zero-inflation channel, and the slope
+  redirect applied after selection ignored the call's features entirely (a
+  `(1 + x | g)` model with `weights` picked MALA, then was force-redirected to
+  `re_cov_gibbs`, which also refuses weights). Every arm in `auto_select_mode()`
+  now consults `.auto_backend_ok()` and falls back to the exact ModelData NUTS
+  sampler (`hmc`) where it carries the call and nested Laplace does not (areal
+  icar/bym2/car_proper and continuous gp/nngp/hsgp fields; not SPDE or plain
+  intrinsic `car`, which `hmc` does not thread); the slope redirect re-checks
+  both RE-covariance integrators before redirecting and refuses, naming the
+  conflicting feature, when neither carries the call. The `spatial_multiscale
+  (approx = "hsgp")` advice text no longer recommends a nested-Laplace mode,
+  which refuses multi-scale fields entirely.
+* **A `control` knob only some OTHER backend reads passed `tulpa()`'s union
+  check and was then silently ignored** (gcol33/tulpa#770): `control$seed` on
+  `mode = "mala"` / `"imh_laplace"` / `"pathfinder"` did nothing (two runs with
+  the same seed gave different draws), `mala`'s `n_chains` / `thin` were
+  dropped, and `mode = "agq"` accepted `n_iter` / `seed` / `n_chains` / `thin`
+  with no effect (`agq_fit()` is a marginal-likelihood maximizer with no
+  sampler knobs at all). `mala()`, `imh_laplace()` and `pathfinder()` now take
+  a scoped `seed` argument; `tulpa()` re-validates `control` against the
+  selected backend's own key set once the backend is fixed, so an unread knob
+  now errors naming what is actually allowed instead of doing nothing.
+* **`mode = "re_cov_gibbs"` on a model with no random-effect term failed with
+  the internal C++ message `` `blocks` must hold at least one block ``**
+  instead of the plain refusal `re_cov_nested` already gives for the same call
+  (gcol33/tulpa#771). `tulpa_re_cov_gibbs()` now refuses before the pilot solve.
+* **`plot_diagnostics()` errored `argument is of length zero` on any fit with
+  no posterior draws** (`mode = "laplace"`, `fit_spde()`, `tulpa_eb()`, ...)
+  instead of the same draws-provenance message `plot_rhat()` / `plot_ess()`
+  give (gcol33/tulpa#772). It now gates on `.tulpa_is_chain()` like its
+  siblings.
+
 # tulpa 0.4.4
 
 ## Five audit findings: dropped offsets, EP quadrature, tweedie accessors, SPDE NUTS

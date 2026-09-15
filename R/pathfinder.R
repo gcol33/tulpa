@@ -30,6 +30,9 @@
 #' @param max_iter L-BFGS iteration cap (default 100).
 #' @param tol Gradient-norm tolerance for L-BFGS convergence
 #'   (default 1e-6).
+#' @param seed Optional integer RNG seed. Scoped to this call: the caller's
+#'   `.Random.seed` is restored on exit, so two calls with the same `seed`
+#'   give identical draws regardless of the surrounding RNG stream.
 #' @param verbose Print L-BFGS / ELBO summary at end (default FALSE).
 #'
 #' @return A list with class `tulpa_fit` carrying:
@@ -71,12 +74,14 @@ pathfinder <- function(log_posterior,
                        n_draws = 1000L,
                        max_iter = 100L,
                        tol = 1e-6,
+                       seed = NULL,
                        verbose = FALSE) {
 
   if (!is.function(log_posterior)) {
     stop("`log_posterior` must be a function(theta) -> numeric.",
          call. = FALSE)
   }
+  .seed_scoped(seed)
   d <- length(init)
   if (n_draws < 2L) stop("`n_draws` must be >= 2.", call. = FALSE)
 

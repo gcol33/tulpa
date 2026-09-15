@@ -183,7 +183,17 @@ tulpa_check_control <- function(control, allowed, where) {
                     # prefix.
                     "ess_adapt_during_warmup",
                     "ess_adapt_interval", "ess_joint_sigma_re",
-                    "ess_joint_proposal_sd")
+                    "ess_joint_proposal_sd"),
+    # The three R log-posterior samplers (gcol33/tulpa#770): each takes its
+    # tuning knobs as plain formals, not a `control` list, so tulpa() is the
+    # only place that can validate what it forwards. `mala()` / `imh_laplace()`
+    # both have a `thin` formal; `pathfinder()` has none.
+    mala        = c("n_iter", "warmup", "epsilon", "thin", "seed", "verbose"),
+    imh_laplace = c("n_iter", "warmup", "scale", "thin", "seed", "verbose"),
+    pathfinder  = c("n_draws", "max_iter", "tol", "seed", "verbose"),
+    # agq_fit() is a marginal-likelihood maximizer: no sampler knobs
+    # (n_iter / warmup / seed / n_chains / thin) do anything there.
+    agq = c("n_quad", "beta_init", "sigma_init", "max_iter", "tol", "verbose")
   )
   # tulpa() dispatches across the nested / spde / re_cov / gibbs / agq /
   # sampler backends and forwards `control` wholesale on the nested and
@@ -208,6 +218,7 @@ tulpa_check_control <- function(control, allowed, where) {
     keys$nested_laplace, keys$nested_laplace_joint, keys$spde,
     keys$re_cov_nested, keys$re_cov_gibbs, keys$eb,
     keys$sample_glmm, keys$ep, keys$nuts_spde,
+    keys$mala, keys$imh_laplace, keys$pathfinder, keys$agq,
     c("re_cov", "n_quad", "sigma_init", "beta_init",
       "scale", "method")
   ), .tulpa_hyperprior_keys)))

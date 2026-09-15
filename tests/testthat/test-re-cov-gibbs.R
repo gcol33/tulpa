@@ -194,3 +194,20 @@ test_that("Gibbs lifts the under-dispersed nested sigma toward truth (small bina
   expect_gt(mean(gb_sig), mean(nl_sig))
   expect_lt(abs(mean(gb_sig) - sigma_true), abs(mean(nl_sig) - sigma_true))
 })
+
+# A fixed-effect-only model has no covariance block for the sweep to update:
+# tulpa_re_cov_gibbs() used to build an empty `layout` and reach the C++ sweep
+# with it, failing with the internal message "`blocks` must hold at least one
+# block" instead of the plain refusal tulpa_re_cov_nested() already gives
+# (gcol33/tulpa#771). Fast (no pilot solve reached), so no skip_if_not_slow().
+test_that("tulpa_re_cov_gibbs() refuses a model with no random-effect term", {
+  set.seed(13); n <- 60
+  d <- data.frame(x = rnorm(n)); d$y <- rbinom(n, 1, plogis(0.2 + 0.5 * d$x))
+  expect_error(
+    tulpa_re_cov_gibbs(d$y, rep(1L, n), cbind(1, d$x), list(),
+                       family = "binomial"),
+    "no random-effect terms")
+  expect_error(
+    tulpa(y ~ x, data = d, family = "binomial", mode = "re_cov_gibbs"),
+    "no random-effect terms")
+})

@@ -38,6 +38,9 @@
 #'   spread.
 #' @param init Optional starting parameter vector (default = `mode`).
 #' @param thin Keep every `thin`-th post-warmup sample (default 1).
+#' @param seed Optional integer RNG seed. Scoped to this call: the caller's
+#'   `.Random.seed` is restored on exit, so two calls with the same `seed`
+#'   give identical draws regardless of the surrounding RNG stream.
 #' @param verbose Print acceptance rate at end (default `FALSE`).
 #'
 #' @return A list with class `tulpa_fit` carrying:
@@ -86,12 +89,14 @@ imh_laplace <- function(log_posterior,
                         scale = 1.0,
                         init = NULL,
                         thin = 1L,
+                        seed = NULL,
                         verbose = FALSE) {
 
   if (!is.function(log_posterior)) {
     stop("`log_posterior` must be a function(theta) -> numeric.",
          call. = FALSE)
   }
+  .seed_scoped(seed)
   d <- length(mode)
   if (!is.matrix(hessian) || any(dim(hessian) != d)) {
     stop(sprintf("`hessian` must be a %d x %d matrix.", d, d),

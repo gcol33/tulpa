@@ -41,6 +41,9 @@
 #'   dimensions, set this to (an estimate of) the posterior variances,
 #'   i.e. the squared posterior SDs.
 #' @param thin Keep every `thin`-th post-warmup sample (default 1).
+#' @param seed Optional integer RNG seed. Scoped to this call: the caller's
+#'   `.Random.seed` is restored on exit, so two calls with the same `seed`
+#'   give identical draws regardless of the surrounding RNG stream.
 #' @param verbose Print acceptance + step-size summary at end (default
 #'   FALSE).
 #'
@@ -80,12 +83,14 @@ mala <- function(log_posterior,
                  target_accept = 0.574,
                  mass_diag = NULL,
                  thin = 1L,
+                 seed = NULL,
                  verbose = FALSE) {
 
   if (!is.function(log_posterior) || !is.function(grad_log_posterior)) {
     stop("`log_posterior` and `grad_log_posterior` must be functions.",
          call. = FALSE)
   }
+  .seed_scoped(seed)
   d <- length(init)
   if (n_iter < 2L || warmup < 0L || warmup >= n_iter) {
     stop("Need 0 <= warmup < n_iter and n_iter >= 2.", call. = FALSE)

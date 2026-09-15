@@ -261,6 +261,11 @@ tulpa_re_cov_gibbs <- function(y, n_trials = NULL, X, re_terms,
          call. = FALSE)
   }
   layout <- .re_cov_block_layout(re_terms, n_obs)
+  if (length(layout) == 0L) {
+    stop("tulpa_re_cov_gibbs(): no random-effect terms. The Gibbs sweep is ",
+         "over the random-effect covariances, so there is nothing to fit; ",
+         "use tulpa_laplace() for a fixed-effect-only model.", call. = FALSE)
+  }
   M      <- length(layout)
 
   # A user-supplied `prior_scale` applies to the block(s) whose covariance

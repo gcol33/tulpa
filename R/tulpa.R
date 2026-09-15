@@ -1000,6 +1000,11 @@
       # n_quad = 1 is the joint Laplace; higher quadrature reduces the
       # small-cluster variance attenuation. agq_fit() optimizes the marginal
       # likelihood and estimates the RE sd, so no sigma_re is conditioned on.
+      # agq_fit() is a marginal-likelihood maximizer with no `control` list of
+      # its own (plain formals), so sampler knobs like `n_iter` / `seed` /
+      # `n_chains` / `thin` passed tulpa()'s union check and did nothing
+      # (gcol33/tulpa#770); reject them here instead.
+      tulpa_check_control(control, .CONTROL_KEYS$agq, "tulpa[mode = 'agq']")
       re <- bundle$re_terms %||% list()
       if (length(re) != 1L || !.is_scalar_re_intercept(re[[1]])) {
         stop("AGQ (mode = 'agq') supports exactly one random-intercept term ",
@@ -1072,6 +1077,15 @@
   }
 
   if (input == "logpost") {
+    # `mala()` / `pathfinder()` / `imh_laplace()` take their tuning knobs as
+    # plain formals rather than a `control` list, so they cannot self-validate
+    # the way `tulpa_gibbs()` / `tulpa_ep()` / `tulpa_sample_glmm()` do; a knob
+    # only some OTHER backend reads (e.g. `n_chains`, or `agq`'s `n_quad`)
+    # passed tulpa()'s union check upstream and was then silently dropped
+    # rather than forwarded (gcol33/tulpa#770). Re-validate here, against the
+    # selected backend's own key set, now that the backend is fixed.
+    tulpa_check_control(control, .CONTROL_KEYS[[backend]],
+                        sprintf("tulpa[mode = '%s']", backend))
     m <- build_glmm_logpost(bundle, family, sigma_re = sigma_re,
                             n_trials = n_trials, phi = phi,
                             beta_prior = beta_prior_default,
@@ -1088,7 +1102,10 @@
         init = m$init,
         n_iter = control$n_iter,
         warmup = control$warmup,
-        epsilon = control$epsilon
+        epsilon = control$epsilon,
+        thin = control$thin,
+        seed = control$seed,
+        verbose = control$verbose
       )))
     }
     if (backend == "pathfinder") {
@@ -1096,7 +1113,11 @@
         log_posterior = m$log_posterior,
         init = m$init,
         grad_log_posterior = m$grad_log_posterior,
-        n_draws = control$n_draws
+        n_draws = control$n_draws,
+        max_iter = control$max_iter,
+        tol = control$tol,
+        seed = control$seed,
+        verbose = control$verbose
       )))
     }
     if (backend == "imh_laplace") {
@@ -1108,7 +1129,10 @@
         hessian = mp$precision,
         n_iter = control$n_iter,
         warmup = control$warmup,
-        scale = control$scale
+        scale = control$scale,
+        thin = control$thin,
+        seed = control$seed,
+        verbose = control$verbose
       )))
     }
     stop(sprintf(paste0(
@@ -1163,7 +1187,9 @@
         stop(sprintf(paste0(
           "Backend '%s' samples the multi-scale field via NNGP; ",
           "spatial_multiscale(approx = \"hsgp\") is not threaded through this ",
-          "path. Use approx = \"nngp\", or a nested-Laplace mode."), backend),
+          "path, or through nested-Laplace (the multi-scale field has no ",
+          "nested-Laplace kernel at all -- see .FRONTDOOR_MULTISCALE). Use ",
+          "approx = \"nngp\"."), backend),
           call. = FALSE)
       }
       spatial_spec_arg <- .msgp_sampler_spec(spatial)
@@ -2093,20 +2119,23 @@ tulpa <- function(formula, data,
   has_re <- length(re_terms) > 0L
 
   fam_obj <- list(name = family, distribution = family)
+  # The per-call features a backend can refuse at dispatch. Without them the
+  # auto selector picked backends that then errored on the very call that
+  # selected them (gcol33/tulpa#666, #681, #769). Kept in a variable (not just
+  # inlined into the call below) so the slope redirect further down can
+  # re-check the SAME features against its own redirect target.
+  call_feat <- list(
+    offset     = !is.null(bundle$offset) && any(bundle$offset != 0),
+    weights    = !is.null(weights),
+    ziformula  = !is.null(bundle$X_zi),
+    phi2       = !is.null(phi2),
+    n_re_terms = length(re_terms)
+  )
   sel <- select_inference_mode(
     mode, family = fam_obj, n_obs = bundle$n_obs,
     has_spatial = has_spatial, has_temporal = has_temporal, has_latent = has_latent,
     spatial_type = spatial_type, temporal = temporal_spec, has_re = has_re,
-    # The per-call features a backend can refuse at dispatch. Without them the
-    # auto selector picked backends that then errored on the very call that
-    # selected them (gcol33/tulpa#666, #681).
-    feat = list(
-      offset     = !is.null(bundle$offset) && any(bundle$offset != 0),
-      weights    = !is.null(weights),
-      ziformula  = !is.null(bundle$X_zi),
-      phi2       = !is.null(phi2),
-      n_re_terms = length(re_terms)
-    )
+    feat = call_feat
   )
 
   # Spatially- / temporally-varying coefficients are sampled only by the
@@ -2196,6 +2225,34 @@ tulpa <- function(formula, data,
     default_re_cov <- if (sel$backend == "laplace") "nested" else "gibbs"
     re_cov_method <- .re_cov_method(control, default_re_cov)
     backend <- if (re_cov_method == "gibbs") "re_cov_gibbs" else "re_cov_nested"
+    # An auto-driven redirect (not a caller NAMING control$re_cov) picked
+    # `backend` from sel$backend's shape alone, ignoring the call's features --
+    # auto's own RE arm (auto_select_mode()) already tried BOTH covariance
+    # integrators against these features and fell through to a scalar backend
+    # only because neither carries the call (e.g. weights, which neither
+    # re_cov_gibbs nor re_cov_nested threads). Redirecting there anyway just
+    # traded the scalar backend's silent sigma_re = 1 conditioning for that
+    # backend's own confusing refusal (gcol33/tulpa#769). Try the other
+    # integrator, and only if it also refuses does this refuse -- naming both,
+    # since a slope term categorically cannot fit through mala / laplace /
+    # pathfinder / imh_laplace either.
+    if (has_slope && !isTRUE(sel$explicit) &&
+        !.auto_backend_ok(backend, fam_obj, call_feat)) {
+      other <- if (backend == "re_cov_gibbs") "re_cov_nested" else "re_cov_gibbs"
+      if (.auto_backend_ok(other, fam_obj, call_feat)) {
+        backend <- other
+        re_cov_method <- if (other == "re_cov_gibbs") "gibbs" else "nested"
+      } else {
+        conflicting <- names(call_feat)[vapply(call_feat, isTRUE, logical(1))]
+        stop(sprintf(paste0(
+          "auto: this random-slope term has no scalar `sigma_re` to condition ",
+          "on, so its covariance must be integrated via re_cov_gibbs or ",
+          "re_cov_nested -- but neither carries this call's feature(s) (%s). ",
+          "Use an explicit mode naming a backend that carries it, or drop the ",
+          "conflicting feature."), paste(conflicting, collapse = ", ")),
+          call. = FALSE)
+      }
+    }
     # notify = FALSE: a slope term has no scalar `sigma_re` for the requested
     # conditional mode to condition on, so this is the documented route for the
     # structure rather than a capability taken away. Recorded on the fit, not

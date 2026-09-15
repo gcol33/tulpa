@@ -1385,6 +1385,11 @@ plot_diagnostics <- function(fit, pars = NULL) {
     stop("fit must be a tulpa_fit object", call. = FALSE)
   }
 
+  if (!.tulpa_is_chain(fit)) {
+    message(.tulpa_non_chain_msg(fit))
+    return(invisible(NULL))
+  }
+
   # Check for required packages
   if (!requireNamespace("ggplot2", quietly = TRUE)) {
     message("plot_diagnostics() requires ggplot2. Using individual plot functions instead.")
@@ -1423,7 +1428,7 @@ plot_diagnostics <- function(fit, pars = NULL) {
 
   # Create trace plot
   draws_array <- get_draws_array(fit)$draws
-  if (worst_par %in% dimnames(draws_array)[[3]]) {
+  if (length(worst_par) && worst_par %in% dimnames(draws_array)[[3]]) {
     trace_data <- data.frame(
       iteration = seq_len(dim(draws_array)[1]),
       value = draws_array[, 1, worst_par]

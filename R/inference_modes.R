@@ -397,6 +397,17 @@ ALL_BACKENDS <- names(BACKEND_REGISTRY)
 .NL_FRONTDOOR_NESTED <- c(.NL_FRONTDOOR_AREAL, .NL_FRONTDOOR_CONTINUOUS,
                           .NL_FRONTDOOR_SPDE)
 
+# The subset of .NL_FRONTDOOR_NESTED the exact ModelData NUTS sampler (`hmc`
+# and its siblings) also threads directly -- read off dispatch_glmm_modeldata()
+# (R/tulpa.R): icar / bym2 / car_proper via the areal spec, gp / nngp / hsgp via
+# .gp_sampler_spec() / .hsgp_sampler_spec(). Plain intrinsic 'car' and 'spde'
+# are NOT in this set -- the modeldata dispatch refuses 'car' by name (areal
+# there is icar/bym2 only) and has no SPDE spec builder at all -- so auto must
+# not offer either as a fallback when nested_laplace cannot carry a call
+# (gcol33/tulpa#769).
+.NL_FRONTDOOR_HMC_SPATIAL <- c("icar", "bym2", "car_proper",
+                               .NL_FRONTDOOR_CONTINUOUS)
+
 
 #' Test whether a backend supports the given family.
 #' @keywords internal
@@ -846,6 +857,36 @@ auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_laten
     ))
   }
 
+  # A plain temporal field (rw1 / rw2 / ar1; gp / multiscale are the sampler-
+  # path-only arm just above) integrates through the nested-Laplace temporal
+  # kernel, same as an areal spatial field below. With no arm here, auto fell
+  # through unconditionally to the gradient-sampler default (picked on family
+  # and dataset size alone) and relied on a redirect further downstream in
+  # tulpa() to move a temporal-only model to nested_laplace -- but a ziformula
+  # / weights / phi2 the default backend could not carry then errored at the
+  # front door's feature guards BEFORE that redirect ever ran (gcol33/tulpa#769).
+  # Deciding it here means the call's actual features are visible before a
+  # backend is picked at all, and the fallback mirrors the spatial arm below:
+  # the exact ModelData sampler consumes a temporal field directly and carries
+  # ziformula / phi2 where the nested kernel does not.
+  if (has_temporal && !has_spatial) {
+    if (.auto_backend_ok("nested_laplace", family, feat)) {
+      return(list(
+        mode = "structured", backend = "nested_laplace", tier = 2L,
+        tier_name = "Structured",
+        reason = sprintf("temporal %s field; nested-Laplace integration", t_type)
+      ))
+    }
+    if (.auto_backend_ok("hmc", family, feat)) {
+      return(list(
+        mode = "exact", backend = "hmc", tier = 1L, tier_name = "Exact",
+        reason = sprintf(paste0(
+          "temporal %s field; nested-Laplace cannot carry this call, exact ",
+          "ModelData NUTS instead"), t_type)
+      ))
+    }
+  }
+
   # The multi-scale (local + regional) field is carried only by the exact
   # ModelData NUTS backend too: it has no nested-Laplace kernel, and
   # dispatch_laplace_spatial() rejects it, so the same rule applies -- pick the
@@ -890,6 +931,25 @@ auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_laten
       ))
     }
     if (spatial_type %in% .NL_FRONTDOOR_NESTED) {
+      # The generic nested-Laplace converter carries no ziformula / (rarely)
+      # other feature the call needs (gcol33/tulpa#769: an icar field +
+      # ziformula picked this backend and then errored at the front door's
+      # zero-inflation guard). The exact ModelData NUTS sampler threads areal
+      # (icar/bym2/car_proper) and continuous (gp/nngp/hsgp) fields directly
+      # and DOES carry ziformula/phi2 -- but not SPDE or plain intrinsic 'car'
+      # (.NL_FRONTDOOR_HMC_SPATIAL), so only that subset gets the fallback;
+      # elsewhere this keeps returning nested_laplace exactly as before and the
+      # downstream guard produces its usual (unchanged) refusal.
+      if (!.auto_backend_ok("nested_laplace", family, feat) &&
+          spatial_type %in% .NL_FRONTDOOR_HMC_SPATIAL &&
+          .auto_backend_ok("hmc", family, feat)) {
+        return(list(
+          mode = "exact", backend = "hmc", tier = 1L, tier_name = "Exact",
+          reason = sprintf(paste0(
+            "%s spatial field; nested-Laplace cannot carry this call, exact ",
+            "ModelData NUTS instead"), spatial_type)
+        ))
+      }
       return(list(
         mode = "structured", backend = "nested_laplace", tier = 2L,
         tier_name = "Structured",
@@ -950,10 +1010,30 @@ auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_laten
   # tulpa_sample_glmm) are reachable from the R front door; auto keeps MALA
   # as the default gradient sampler for its lower per-iteration cost on the
   # plain-GLM designs that reach this branch. mode = "exact" selects NUTS.
-  return(list(
-    mode = "exact", backend = "mala", tier = 1L, tier_name = "Exact",
-    reason = "default (MALA gradient sampler; mode = 'exact' selects NUTS)"
-  ))
+  #
+  # MALA carries no ziformula (gcol33/tulpa#769: `tulpa(y ~ x, ..., ziformula =
+  # ~ 1)` picked this branch unconditionally and errored at the front door's
+  # zero-inflation guard on the very call that picked it). Gate on
+  # .auto_backend_ok() and fall back to the exact ModelData sampler, which
+  # carries ziformula / phi2 / offset / weights all at once, before refusing.
+  if (.auto_backend_ok("mala", family, feat)) {
+    return(list(
+      mode = "exact", backend = "mala", tier = 1L, tier_name = "Exact",
+      reason = "default (MALA gradient sampler; mode = 'exact' selects NUTS)"
+    ))
+  }
+  if (.auto_backend_ok("hmc", family, feat)) {
+    return(list(
+      mode = "exact", backend = "hmc", tier = 1L, tier_name = "Exact",
+      reason = "MALA cannot carry this call; exact ModelData NUTS instead"
+    ))
+  }
+  stop(sprintf(paste0(
+    "auto: no backend fits this call's feature combination (%s). Use an ",
+    "explicit mode naming a backend that carries it, or drop the ",
+    "conflicting feature."),
+    paste(names(feat)[vapply(feat, isTRUE, logical(1))], collapse = ", ")),
+    call. = FALSE)
 }
 
 

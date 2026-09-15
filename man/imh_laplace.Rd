@@ -13,6 +13,7 @@ imh_laplace(
   scale = 1,
   init = NULL,
   thin = 1L,
+  seed = NULL,
   verbose = FALSE
 )
 }
@@ -40,6 +41,10 @@ spread.}
 \item{init}{Optional starting parameter vector (default = \code{mode}).}
 
 \item{thin}{Keep every \code{thin}-th post-warmup sample (default 1).}
+
+\item{seed}{Optional integer RNG seed. Scoped to this call: the caller's
+\code{.Random.seed} is restored on exit, so two calls with the same \code{seed}
+give identical draws regardless of the surrounding RNG stream.}
 
 \item{verbose}{Print acceptance rate at end (default \code{FALSE}).}
 }

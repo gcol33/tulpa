@@ -72,3 +72,52 @@ test_that("a fit still honours a knob the caller does set", {
                control = list(n_iter = 300L, warmup = 100L, seed = 1L))
   expect_identical(nrow(fit$draws), 200L)
 })
+
+# gcol33/tulpa#770 -- mala() / imh_laplace() / pathfinder() take their tuning
+# knobs as plain formals, not a `control` list, so a knob only some OTHER
+# backend reads (seed via re_cov_gibbs/ep/..., n_chains via sample_glmm,
+# agq's n_quad) passed tulpa()'s union check and was then silently dropped
+# rather than forwarded or refused.
+test_that("control$seed makes mala / imh_laplace / pathfinder reproducible", {
+  skip_on_cran()
+  set.seed(12); n <- 100
+  d <- data.frame(x = rnorm(n)); d$y <- rpois(n, exp(0.4 + 0.4 * d$x))
+  for (m in c("mala", "imh_laplace", "pathfinder")) {
+    ctl <- if (m == "pathfinder") list(n_draws = 200L, seed = 7L)
+           else list(n_iter = 200L, warmup = 100L, seed = 7L)
+    a <- tulpa(y ~ x, data = d, family = "poisson", mode = m, control = ctl)
+    b <- tulpa(y ~ x, data = d, family = "poisson", mode = m, control = ctl)
+    expect_identical(a$draws, b$draws, info = m)
+  }
+})
+
+test_that("control$thin is forwarded to mala / imh_laplace", {
+  skip_on_cran()
+  set.seed(12); n <- 100
+  d <- data.frame(x = rnorm(n)); d$y <- rpois(n, exp(0.4 + 0.4 * d$x))
+  a <- tulpa(y ~ x, data = d, family = "poisson", mode = "mala",
+             control = list(n_iter = 400L, warmup = 0L))
+  b <- tulpa(y ~ x, data = d, family = "poisson", mode = "mala",
+             control = list(n_iter = 400L, warmup = 0L, thin = 4L))
+  expect_identical(nrow(a$draws), 400L)
+  expect_identical(nrow(b$draws), 100L)
+})
+
+test_that("a knob only some OTHER backend reads is refused, not ignored", {
+  skip_on_cran()
+  set.seed(12); n <- 100
+  d <- data.frame(x = rnorm(n)); d$y <- rpois(n, exp(0.4 + 0.4 * d$x))
+  # n_chains is a sample_glmm (hmc/ess/...) knob; mala returns one chain.
+  expect_error(
+    tulpa(y ~ x, data = d, family = "poisson", mode = "mala",
+          control = list(n_iter = 200L, warmup = 100L, n_chains = 4L)),
+    "n_chains")
+
+  dg <- data.frame(x = rnorm(n), g = factor(sample(1:8, n, TRUE)))
+  dg$y <- rpois(n, exp(0.4 + 0.4 * dg$x))
+  # agq_fit() is a marginal-likelihood maximizer with no sampler knobs at all.
+  expect_error(
+    tulpa(y ~ x + (1 | g), data = dg, family = "poisson", mode = "agq",
+          control = list(n_iter = 5L, seed = 1L, n_chains = 3L, thin = 2L)),
+    "Unknown control knob")
+})

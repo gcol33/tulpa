@@ -14,6 +14,7 @@ mala(
   target_accept = 0.574,
   mass_diag = NULL,
   thin = 1L,
+  seed = NULL,
   verbose = FALSE
 )
 }
@@ -48,6 +49,10 @@ dimensions, set this to (an estimate of) the posterior variances,
 i.e. the squared posterior SDs.}
 
 \item{thin}{Keep every \code{thin}-th post-warmup sample (default 1).}
+
+\item{seed}{Optional integer RNG seed. Scoped to this call: the caller's
+\code{.Random.seed} is restored on exit, so two calls with the same \code{seed}
+give identical draws regardless of the surrounding RNG stream.}
 
 \item{verbose}{Print acceptance + step-size summary at end (default
 FALSE).}

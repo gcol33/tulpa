@@ -97,3 +97,82 @@ test_that("auto routes a temporal GP to the sampler that fits it", {
     n_obs = n, has_temporal = TRUE, temporal = list(type = "rw1"))
   expect_false(identical(sel3$backend, "hmc"))
 })
+
+# gcol33/tulpa#769 -- auto still picked backends that then refused the very
+# call that selected them: the default MALA arm, the latent and spatial
+# nested arms, the multiscale arm, and the slope redirect applied after
+# selection did not consult .auto_backend_ok(), and there was no temporal arm
+# at all (a comment referred to one "below" that did not exist).
+
+test_that("auto's default arm routes ziformula off MALA instead of erroring", {
+  fam <- list(name = "poisson", distribution = "poisson")
+  sel <- tulpa:::select_inference_mode(
+    "auto", family = fam, n_obs = n, feat = list(ziformula = TRUE))
+  expect_identical(sel$backend, "hmc")
+
+  # Unaffected: no zi, still the plain default.
+  sel2 <- tulpa:::select_inference_mode("auto", family = fam, n_obs = n)
+  expect_identical(sel2$backend, "mala")
+})
+
+test_that("auto fits a ziformula model that used to error at the front door", {
+  skip_on_cran()
+  set.seed(2)
+  n2 <- 160
+  dq <- data.frame(x = rnorm(n2)); dq$y <- rpois(n2, exp(0.5 + 0.5 * dq$x))
+  dq$y[runif(n2) < .3] <- 0
+  f <- tulpa(y ~ x, data = dq, family = "poisson", ziformula = ~ 1,
+             control = list(n_iter = 100L, warmup = 50L, seed = 1L))
+  expect_identical(f$backend, "hmc")
+})
+
+test_that("auto's spatial-nested arm falls back to hmc when nested_laplace refuses the call", {
+  fam <- list(name = "poisson", distribution = "poisson")
+  sel <- tulpa:::select_inference_mode(
+    "auto", family = fam, n_obs = n, has_spatial = TRUE, spatial_type = "icar",
+    feat = list(ziformula = TRUE))
+  expect_identical(sel$backend, "hmc")
+
+  # SPDE has no hmc route (dispatch_glmm_modeldata() has no SPDE spec
+  # builder), so it keeps returning nested_laplace even though that backend
+  # also refuses ziformula -- no fallback is offered for a call nothing carries.
+  sel2 <- tulpa:::select_inference_mode(
+    "auto", family = fam, n_obs = n, has_spatial = TRUE, spatial_type = "spde",
+    feat = list(ziformula = TRUE))
+  expect_identical(sel2$backend, "nested_laplace")
+
+  # Unaffected: no zi, still the designed nested route.
+  sel3 <- tulpa:::select_inference_mode(
+    "auto", family = fam, n_obs = n, has_spatial = TRUE, spatial_type = "icar")
+  expect_identical(sel3$backend, "nested_laplace")
+})
+
+test_that("auto adds a temporal arm that sees ziformula before picking a backend", {
+  fam <- list(name = "poisson", distribution = "poisson")
+  sel <- tulpa:::select_inference_mode(
+    "auto", family = fam, n_obs = n, has_temporal = TRUE,
+    temporal = list(type = "rw1"), feat = list(ziformula = TRUE))
+  expect_identical(sel$backend, "hmc")
+
+  # Unaffected: no zi, still nested Laplace (matches the pre-existing
+  # downstream-redirect outcome, reached one step earlier now).
+  sel2 <- tulpa:::select_inference_mode(
+    "auto", family = fam, n_obs = n, has_temporal = TRUE,
+    temporal = list(type = "rw1"))
+  expect_identical(sel2$backend, "nested_laplace")
+})
+
+test_that("the slope redirect re-checks features instead of blindly redirecting", {
+  skip_on_cran()
+  set.seed(3)
+  dg <- data.frame(x = rnorm(n), g = factor(sample(1:12, n, TRUE)))
+  dg$y <- 1 + 0.5 * dg$x + rnorm(12)[dg$g] + rnorm(n)
+  w <- rep(1:2, n / 2)
+  # Neither re_cov_gibbs nor re_cov_nested carries weights, so there is no
+  # backend that can integrate this slope's covariance under this call --
+  # this now refuses with a message naming the feature, instead of blindly
+  # redirecting to re_cov_gibbs and surfacing ITS unrelated refusal.
+  expect_error(
+    tulpa(y ~ x + (1 + x | g), data = dg, weights = w),
+    "weights")
+})

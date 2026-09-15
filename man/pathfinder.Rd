@@ -11,6 +11,7 @@ pathfinder(
   n_draws = 1000L,
   max_iter = 100L,
   tol = 1e-06,
+  seed = NULL,
   verbose = FALSE
 )
 }
@@ -31,6 +32,10 @@ numerically via \link[stats:optim]{stats::optim}'s built-in finite differences.}
 
 \item{tol}{Gradient-norm tolerance for L-BFGS convergence
 (default 1e-6).}
+
+\item{seed}{Optional integer RNG seed. Scoped to this call: the caller's
+\code{.Random.seed} is restored on exit, so two calls with the same \code{seed}
+give identical draws regardless of the surrounding RNG stream.}
 
 \item{verbose}{Print L-BFGS / ELBO summary at end (default FALSE).}
 }
