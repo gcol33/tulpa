@@ -32,18 +32,22 @@ test_that("tulpa_gibbs(temporal = rw1 trend) recovers the slope on simulated dat
     control = list(n_iter = 3000L, warmup = 1500L)
   )
 
-  expect_true(all(c("beta", "trend", "sigma_trend") %in% names(fit)))
-  expect_equal(ncol(fit$trend), Tt)
-  expect_true(all(is.finite(fit$sigma_trend)))
+  expect_equal(ncol(draws_block(fit, "trend")), Tt)
+  expect_true(all(is.finite(draws_block(fit, "log_sigma2_trend"))))
+  # short_term = "none" and no seasonal period: those components carry no
+  # columns, and no AR1 correlation is reported.
+  expect_equal(ncol(draws_block(fit, "short_term")), 0L)
+  expect_false(any(c("log_sigma2_short", "log_sigma2_seasonal",
+                     "logit_rho_short") %in% colnames(fit$draws)))
 
   # Every stored draw is centred exactly, not on average: the level is removed
   # inside the sweep rather than being left for the summary to subtract.
-  expect_lt(max(abs(rowMeans(fit$trend))), 1e-8)
+  expect_lt(max(abs(rowMeans(draws_block(fit, "trend")))), 1e-8)
 
   # Both fixed effects recover. The intercept is the one the un-centred kernel
   # could not identify: discarding the removed mean each sweep let the field
   # level wander against it, so only the slope was assertable.
-  beta_hat <- colMeans(fit$beta)
+  beta_hat <- colMeans(fixed_draws(fit))
   expect_lt(abs(beta_hat[2] - beta_true[2]), 0.25)
   expect_lt(abs(beta_hat[1] - beta_true[1]), 0.2)
 })

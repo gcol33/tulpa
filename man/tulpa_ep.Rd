@@ -45,8 +45,10 @@ coefficient prior, so a non-zero \code{mean} errors -- use a sampler
 \code{n_draws} (default 2000), \code{seed}.}
 }
 \value{
-A \code{tulpa_fit} (subclass \code{tulpa_ep}) with \code{coefficients} (posterior
-mean), \code{vcov}, \code{draws}, \code{log_marginal} (the EP approximation), \code{converged}.
+A \code{tulpa_fit} (subclass \code{tulpa_ep}) with \code{means} (posterior mean) and
+\code{cov} (posterior covariance) of the EP Gaussian, which is the posterior
+\code{\link[=coef]{coef()}}, \code{\link[=vcov]{vcov()}}, \code{\link[=summary]{summary()}} and \code{\link[=confint]{confint()}} report; \code{draws} sampled
+from that Gaussian; \code{log_marginal} (the EP approximation); \code{converged}.
 }
 \description{
 Fits a generalized linear model with a Gaussian coefficient prior by

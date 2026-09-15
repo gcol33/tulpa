@@ -167,6 +167,6 @@ pathfinder <- function(log_posterior,
     inference_tier = 2L,
     backend = "pathfinder"
   )
-  class(fit) <- c("tulpa_pathfinder_fit", "tulpa_fit")
-  fit
+  .finalize_fit(fit, param_names = names(init),
+                extra_class = "tulpa_pathfinder_fit")
 }

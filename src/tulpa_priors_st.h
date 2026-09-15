@@ -46,32 +46,69 @@ inline int st_spatial_rank(const ModelData& data, int S) {
     return S - k_s;
 }
 
+// The interaction's temporal margin Q_t at unit precision, as the three
+// quantities every branch of the density reads: the bilinear form a' Q_t b,
+// the rank that multiplies log(precision) in the normalizer, and the part of
+// log|Q_t|_+ that moves with a sampled hyperparameter.
+//
+// RW1 and RW2 are intrinsic: their rank is the operator's own (the cyclic flag
+// selects both the operator and its rank), and their pseudo-determinant is a
+// constant dropped with the other constants. AR1 is stationary and proper: rank
+// T, and log|Q_AR1| = log(1 - rho^2) moves with the correlation, so it stays in
+// the target. Every temporal type outside st_time_margin_supported() is refused
+// at compute_param_layout, so the fall-through arms are unreachable.
+template<typename T>
+inline T st_time_cross_form(const T* a, const T* b, int T_st,
+                            const SpatiotemporalData& st, const T& rho)
+{
+    switch (st.temporal_type) {
+    case TemporalType::RW1:
+        return tulpa_temporal::rw1_cross_form(a, b, T_st, st.temporal_cyclic);
+    case TemporalType::RW2:
+        return tulpa_temporal::rw2_cross_form(a, b, T_st, st.temporal_cyclic);
+    case TemporalType::AR1:
+        return tulpa_temporal::ar1_cross_form(a, b, T_st, rho);
+    default:
+        return T(0.0);
+    }
+}
+
+inline int st_time_rank(const SpatiotemporalData& st, int T_st) {
+    switch (st.temporal_type) {
+    case TemporalType::RW1: return tulpa_temporal::rw1_rank(T_st, st.temporal_cyclic);
+    case TemporalType::RW2: return tulpa_temporal::rw2_rank(T_st, st.temporal_cyclic);
+    case TemporalType::AR1: return T_st;
+    default:                return 0;
+    }
+}
+
+template<typename T>
+inline T st_time_log_det(const SpatiotemporalData& st, const T& rho) {
+    if (st.temporal_type == TemporalType::AR1) {
+        return safe_log(tulpa_temporal::ar1_one_minus_rho2(rho));
+    }
+    return T(0.0);
+}
+
 // Kronecker (Q_s (x) Q_t) quadratic form for a Type-IV interaction:
 // sum_s n_neigh[s] * q_t(delta_s) - 2 * sum_{s<s2 adjacent} q_t(delta_s, delta_s2)
-// where q_t is the RW1/RW2 temporal (cross) quadratic form. Shared by the
-// non-centered (tau-free, on z) and centered (on delta) Type-IV paths.
+// where q_t is the temporal margin's (cross) form. Shared by the non-centered
+// (tau-free, on z) and centered (on delta) Type-IV paths.
 //
 // SpatiotemporalData::temporal_cyclic selects Q_t, in the diagonal and the
 // cross term alike: a cyclic Q_t carries the wrap-around edge in both, and the
-// rank the normalizer beside this reads (rw2_rank) is the rank of the operator
-// the flag selects.
+// rank the normalizer beside this reads (st_time_rank) is the rank of the
+// operator the flag selects.
 template<typename T>
 T st_kronecker_temporal_quad(const std::vector<T>& delta, const ModelData& data,
-                             int S, int T_st)
+                             int S, int T_st, const T& rho)
 {
     const auto& st = data.spatiotemporal_data;
-    const bool cyclic = st.temporal_cyclic;
     T total = T(0.0);
     for (int s = 0; s < S; s++) {
         const T* d_s = delta.data() + s * T_st;
-        T quad_s = T(0.0);
-        if (st.temporal_type == TemporalType::RW1) {
-            quad_s = tulpa_temporal::rw1_quadratic_form(d_s, T_st, cyclic);
-        } else if (st.temporal_type == TemporalType::RW2) {
-            quad_s = tulpa_temporal::rw2_quadratic_form(d_s, T_st, cyclic);
-        }
         int n_neigh = st.n_neighbors.empty() ? 0 : st.n_neighbors[s];
-        total = total + T(n_neigh) * quad_s;
+        total = total + T(n_neigh) * st_time_cross_form(d_s, d_s, T_st, st, rho);
 
         if (!st.adj_row_ptr.empty()) {
             int row_start_s = st.adj_row_ptr[s];
@@ -80,15 +117,8 @@ T st_kronecker_temporal_quad(const std::vector<T>& delta, const ModelData& data,
                 int s2 = st.adj_col_idx[jj] - 1;
                 if (s2 > s) {
                     const T* d_s2 = delta.data() + s2 * T_st;
-                    T cross = T(0.0);
-                    if (st.temporal_type == TemporalType::RW1) {
-                        cross = tulpa_temporal::rw1_cross_form(d_s, d_s2, T_st,
-                                                               cyclic);
-                    } else if (st.temporal_type == TemporalType::RW2) {
-                        cross = tulpa_temporal::rw2_cross_form(d_s, d_s2, T_st,
-                                                               cyclic);
-                    }
-                    total = total - T(2.0) * cross;
+                    total = total - T(2.0) *
+                        st_time_cross_form(d_s, d_s2, T_st, st, rho);
                 }
             }
         }
@@ -161,7 +191,8 @@ T compute_st_prior(const std::vector<T>& params, const ModelData& data,
         log_post = log_post + log_prior_log_tau_pc(
             log_tau_st, data.st_sigma2_prior_U, data.st_sigma2_prior_alpha);
 
-        // AR1 rho parameter
+        // AR1 correlation of the temporal margin, laid out only where the
+        // density reads one (st_reads_time_margin). Unread by RW1 / RW2.
         T rho_st = T(0.0);
         if (layout.logit_rho_st_idx >= 0) {
             T logit_rho_st = params[layout.logit_rho_st_idx];
@@ -171,42 +202,6 @@ T compute_st_prior(const std::vector<T>& params, const ModelData& data,
             // Uniform(-1, 1) prior on rho
             // Jacobian for logit((rho+1)/2) transform
             log_post = log_post + safe_log(u_st) + safe_log(T(1.0) - u_st);
-        }
-
-        // GP range parameters
-        T phi_st_space = T(1.0);
-        T phi_st_time = T(1.0);
-        if (layout.is_st_gp) {
-            T log_phi_space = params[layout.log_phi_st_space_idx];
-            T log_phi_time = params[layout.log_phi_st_time_idx];
-            phi_st_space = safe_exp(log_phi_space);
-            phi_st_time = safe_exp(log_phi_time);
-
-            // PC priors on the two ranges + Jacobians. Both are sampled
-            // unconstrained on the log scale: the PC density is proper on
-            // (0, inf) and penalizes short ranges, so it needs no bounding box.
-            // Each axis anchors at its OWN declared lower bound --
-            // P(range < st_phi_*_prior_lower) = st_phi_*_prior_alpha -- which is
-            // what a user declaring that bound is expressing (ranges below it
-            // are implausible for this axis), and it is carried by the prior's
-            // mass rather than by a wall.
-            //
-            // A hard `return -INFINITY` outside a box fails here twice over: the
-            // rejection sits inside an autodiff log-posterior, so a step outside
-            // the box yields no usable gradient and NUTS books it as a
-            // divergence rather than a rejection; and with a density flat in
-            // log_phi the `+ log_phi` Jacobian makes it a Uniform on phi itself,
-            // whose prior mean is the arithmetic centre of the box and has
-            // nothing to do with the domain.
-            log_post = log_post + log_prior_range_pc_at_log(
-                log_phi_space, data.st_phi_space_prior_lower,
-                data.st_phi_space_prior_alpha);
-            log_post = log_post + log_phi_space;  // Jacobian
-
-            log_post = log_post + log_prior_range_pc_at_log(
-                log_phi_time, data.st_phi_time_prior_lower,
-                data.st_phi_time_prior_alpha);
-            log_post = log_post + log_phi_time;  // Jacobian
         }
 
         // Extract delta parameters
@@ -231,20 +226,22 @@ T compute_st_prior(const std::vector<T>& params, const ModelData& data,
                 st_delta_nc[k] = st_delta[k] * inv_scale;
             }
 
-            // NC prior: -0.5 * z^T (Q_s ⊗ Q_t) z  (tau-free GMRF)
+            // NC prior: -0.5 * z^T (Q_s (x) Q_t) z  (tau-free GMRF)
             // Type IV Kronecker quadratic form on z (with tau=1)
-            T nc_quad = st_kronecker_temporal_quad(st_delta, data, S, T_st);
+            T nc_quad = st_kronecker_temporal_quad(st_delta, data, S, T_st, rho_st);
             log_post = log_post - T(0.5) * nc_quad;
 
-            // Rank term with actual tau and Jacobian correction
+            // Rank term with actual tau and Jacobian correction. The
+            // hyperparameter-dependent part of log|Q_s (x) Q_t|_+ is
+            // rank_space * log|Q_t|, the Kronecker pseudo-determinant's time
+            // factor; the delta = z / sqrt(tau) Jacobian does not touch it.
             int rank_space = st_spatial_rank(data, S);
-            int rank_time =
-                (data.spatiotemporal_data.temporal_type == TemporalType::RW1)
-                    ? tulpa_temporal::rw1_rank(T_st, data.spatiotemporal_data.temporal_cyclic)
-                    : tulpa_temporal::rw2_rank(T_st, data.spatiotemporal_data.temporal_cyclic);
-            int total_rank = rank_space * rank_time;
+            int total_rank =
+                rank_space * st_time_rank(data.spatiotemporal_data, T_st);
             int ST_total = S * T_st;
-            log_post = log_post + T(0.5 * (total_rank - ST_total)) * safe_log(tau_st);
+            log_post = log_post + T(0.5 * (total_rank - ST_total)) * safe_log(tau_st)
+                     + T(0.5 * rank_space) *
+                       st_time_log_det(data.spatiotemporal_data, rho_st);
 
             // Sum-to-zero on reconstructed delta
             log_post = log_post + st_sum_to_zero_penalty(
@@ -288,11 +285,9 @@ T compute_st_prior(const std::vector<T>& params, const ModelData& data,
             log_post = log_post - T(0.5) * log_ls_st * log_ls_st;
 
             // Per-basis-function temporal GMRF prior
-            int rank_t =
-                (data.spatiotemporal_data.temporal_type == TemporalType::RW1)
-                    ? tulpa_temporal::rw1_rank(T_st, data.spatiotemporal_data.temporal_cyclic) :
-                (data.spatiotemporal_data.temporal_type == TemporalType::RW2)
-                    ? tulpa_temporal::rw2_rank(T_st, data.spatiotemporal_data.temporal_cyclic) : T_st;
+            const auto& st = data.spatiotemporal_data;
+            int rank_t = st_time_rank(st, T_st);
+            const T log_det_t = st_time_log_det(st, rho_st);
 
             // The rank above and the operator below read the same cyclic
             // flag: a cyclic RW2 puts rank_t = T - 1 powers of prec_j in the
@@ -313,15 +308,10 @@ T compute_st_prior(const std::vector<T>& params, const ModelData& data,
                 T prec_j = tau_st / safe_max(S_j, T(1e-10));
 
                 // GMRF quadratic form: -0.5 * prec_j * delta_j' Q_t delta_j
-                T qf = T(0.0);
-                if (data.spatiotemporal_data.temporal_type == TemporalType::RW1) {
-                    qf = tulpa_temporal::rw1_quadratic_form(
-                        st_delta.data() + j * T_st, T_st, st_cyclic);
-                } else if (data.spatiotemporal_data.temporal_type == TemporalType::RW2) {
-                    qf = tulpa_temporal::rw2_quadratic_form(
-                        st_delta.data() + j * T_st, T_st, st_cyclic);
-                }
+                const T* d_j = st_delta.data() + j * T_st;
+                T qf = st_time_cross_form(d_j, d_j, T_st, st, rho_st);
                 log_post = log_post + T(0.5 * rank_t) * safe_log(prec_j)
+                         + T(0.5) * log_det_t
                          - T(0.5) * prec_j * qf;
 
                 // Soft sum-to-zero per basis function (a sum over T_st terms),
@@ -357,22 +347,16 @@ T compute_st_prior(const std::vector<T>& params, const ModelData& data,
                          - T(0.5) * tau_st * quad;
 
             } else if (data.spatiotemporal_data.type == STType::TYPE_II) {
-                // Structured time at each location
-                bool st_cyclic = data.spatiotemporal_data.temporal_cyclic;
+                // Structured time at each location: I_S (x) Q_t.
+                const auto& st = data.spatiotemporal_data;
+                const int rank_t = st_time_rank(st, T_st);
+                const T log_det_t = st_time_log_det(st, rho_st);
                 for (int s = 0; s < S; s++) {
-                    if (data.spatiotemporal_data.temporal_type == TemporalType::RW1) {
-                        T quad = tulpa_temporal::rw1_quadratic_form(
-                            st_delta.data() + s * T_st, T_st, st_cyclic);
-                        int rank = tulpa_temporal::rw1_rank(T_st, st_cyclic);
-                        log_post = log_post + T(0.5 * rank) * safe_log(tau_st)
-                                 - T(0.5) * tau_st * quad;
-                    } else if (data.spatiotemporal_data.temporal_type == TemporalType::RW2) {
-                        T quad = tulpa_temporal::rw2_quadratic_form(
-                            st_delta.data() + s * T_st, T_st, st_cyclic);
-                        int rank = tulpa_temporal::rw2_rank(T_st, st_cyclic);
-                        log_post = log_post + T(0.5 * rank) * safe_log(tau_st)
-                                 - T(0.5) * tau_st * quad;
-                    }
+                    const T* d_s = st_delta.data() + s * T_st;
+                    T quad = st_time_cross_form(d_s, d_s, T_st, st, rho_st);
+                    log_post = log_post + T(0.5 * rank_t) * safe_log(tau_st)
+                             + T(0.5) * log_det_t
+                             - T(0.5) * tau_st * quad;
                 }
 
             } else if (data.spatiotemporal_data.type == STType::TYPE_III) {
@@ -403,17 +387,17 @@ T compute_st_prior(const std::vector<T>& params, const ModelData& data,
                 }
 
             } else if (data.spatiotemporal_data.type == STType::TYPE_IV) {
-                // Kronecker: Q_delta = Q_s ⊗ Q_t
-                T kron_quad = st_kronecker_temporal_quad(st_delta, data, S, T_st);
+                // Kronecker: Q_delta = Q_s (x) Q_t
+                T kron_quad = st_kronecker_temporal_quad(st_delta, data, S, T_st, rho_st);
                 log_post = log_post - T(0.5) * tau_st * kron_quad;
-                // Rank terms.
+                // |Q_s (x) Q_t|_+ = |Q_s|_+^rank_t |Q_t|_+^rank_s: the rank
+                // terms, and the time factor where it moves with rho.
                 int rank_space = st_spatial_rank(data, S);
-                int rank_time =
-                    (data.spatiotemporal_data.temporal_type == TemporalType::RW1)
-                        ? tulpa_temporal::rw1_rank(T_st, data.spatiotemporal_data.temporal_cyclic)
-                        : tulpa_temporal::rw2_rank(T_st, data.spatiotemporal_data.temporal_cyclic);
-                int total_rank = rank_space * rank_time;
-                log_post = log_post + T(0.5 * total_rank) * safe_log(tau_st);
+                int total_rank =
+                    rank_space * st_time_rank(data.spatiotemporal_data, T_st);
+                log_post = log_post + T(0.5 * total_rank) * safe_log(tau_st)
+                         + T(0.5 * rank_space) *
+                           st_time_log_det(data.spatiotemporal_data, rho_st);
             }
 
             // Soft sum-to-zero constraint

@@ -38,7 +38,7 @@ test_that("correlated (1 + x | g) routes to re_cov_nested under mode='laplace'",
   # coherent fixed-effect accessors (process_info => coef returns the 2 betas)
   cf <- coef(fit)
   expect_length(cf, 2L)
-  expect_true(all(c("2.5%", "97.5%") %in% colnames(confint(fit))))
+  expect_true(all(c("2.5 %", "97.5 %") %in% colnames(confint(fit))))
   expect_equal(dim(vcov(fit)), c(2L, 2L))
   expect_equal(nrow(fit$draws), 800L)
 

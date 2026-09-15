@@ -35,6 +35,110 @@ adjacency_to_list_tulpa <- function(adj) {
   )
 }
 
+# Draw columns for the blocks a Polya-Gamma kernel returns, in the parameter
+# naming the ModelData samplers give the same quantity (sampler_param_names() in
+# src/sampler_model_data.h), so a Gibbs chain and an HMC chain on one model are
+# read by the same accessors. Each layout names the kernel blocks one route adds,
+# with the stem of their columns and the map from the kernel's scale to the
+# sampler coordinate: a standard deviation, precision, variance, range or size on
+# the log scale, a standard deviation reported as a variance through log(sd^2),
+# a mixing weight on its logit, an AR1 correlation on (-1, 1) through
+# logit((rho + 1) / 2). A matrix block becomes `stem[k]` columns, a vector block
+# one `stem` column. `with` names the field a scalar scales: a kernel stores a
+# scale for every component it supports, and one whose field has no columns was
+# never sampled, so it contributes no column.
+#
+# A kernel block absent from its route's layouts (the BYM2 combined field, the
+# RSR field before projection, the linear predictor) is a deterministic function
+# of the columns kept and is not part of the sampled state.
+.PG_DRAW_LAYOUT <- list(
+  re = list(
+    sigma_re = list(stem = "log_sigma_re", map = log, with = "re"),
+    re       = list(stem = "re")
+  ),
+  icar = list(
+    tau     = list(stem = "log_tau_spatial", map = log),
+    spatial = list(stem = "phi_spatial")
+  ),
+  bym2 = list(
+    sigma_spatial = list(stem = "log_sigma_spatial", map = log),
+    rho           = list(stem = "logit_rho_bym2", map = stats::qlogis),
+    phi_scaled    = list(stem = "phi_spatial"),
+    theta         = list(stem = "theta_spatial")
+  ),
+  gp = list(
+    sigma2_gp = list(stem = "log_sigma2_gp", map = log),
+    phi_gp    = list(stem = "log_phi_gp", map = log),
+    gp        = list(stem = "gp_w")
+  ),
+  multiscale_gp = list(
+    sigma2_local    = list(stem = "log_sigma2_gp_local", map = log),
+    phi_local       = list(stem = "log_phi_gp_local", map = log),
+    w_local         = list(stem = "gp_local"),
+    sigma2_regional = list(stem = "log_sigma2_gp_regional", map = log),
+    phi_regional    = list(stem = "log_phi_gp_regional", map = log),
+    w_regional      = list(stem = "gp_regional")
+  ),
+  temporal = list(
+    sigma_trend    = list(stem = "log_sigma2_trend",
+                          map = function(s) 2 * log(s), with = "trend"),
+    trend          = list(stem = "trend"),
+    sigma_seasonal = list(stem = "log_sigma2_seasonal",
+                          map = function(s) 2 * log(s), with = "seasonal"),
+    seasonal       = list(stem = "seasonal"),
+    sigma_short    = list(stem = "log_sigma2_short",
+                          map = function(s) 2 * log(s), with = "short_term"),
+    short_term     = list(stem = "short_term")
+  ),
+  ar1_short = list(
+    rho_short = list(stem = "logit_rho_short",
+                     map = function(r) stats::qlogis((r + 1) / 2))
+  ),
+  negbin = list(
+    r = list(stem = "log_phi", map = log)
+  )
+)
+
+# One MCMC chain from a Polya-Gamma kernel's per-block draw storage: the
+# `[n_saved x n_param]` draws matrix with the fixed effects first, then the
+# random-intercept block and every block the route's `layout` keys name, plus the
+# chain bookkeeping the chain accessors read (`chain_id`, `n_chains`) and the
+# column means.
+.pg_as_chain <- function(res, layout, X) {
+  X <- as.matrix(X)
+  fixed_names <- colnames(X) %||% paste0("beta[", seq_len(ncol(X)), "]")
+  spec <- do.call(c, unname(.PG_DRAW_LAYOUT[c("re", layout)]))
+
+  cols   <- list(as.matrix(res[["beta"]]))
+  labels <- list(fixed_names)
+  for (b in names(spec)) {
+    s <- spec[[b]]
+    v <- res[[b]]
+    if (is.null(v)) {
+      stop("The Polya-Gamma kernel returned no '", b, "' block for layout ",
+           paste(layout, collapse = " + "), ".", call. = FALSE)
+    }
+    if (!is.null(s$with) && NCOL(res[[s$with]]) == 0L) next
+    m <- as.matrix(v)
+    if (ncol(m) == 0L) next
+    if (!is.null(s$map)) m[] <- s$map(as.numeric(m))
+    cols   <- c(cols, list(m))
+    labels <- c(labels, list(if (is.matrix(v))
+      sprintf("%s[%d]", s$stem, seq_len(ncol(m))) else s$stem))
+  }
+  draws <- do.call(cbind, cols)
+  dimnames(draws) <- list(NULL, unlist(labels))
+  out <- list(draws = draws, means = colMeans(draws),
+              chain_id = rep(1L, nrow(draws)), n_chains = 1L,
+              n_samples = nrow(draws), n_params = ncol(draws),
+              param_names = colnames(draws))
+  # The kernel's log joint density at each retained state, on the scale it
+  # samples each quantity on. A kernel whose chain leaves no written density
+  # invariant returns none, and the fit then carries none.
+  if (!is.null(res[["log_prob"]])) out$log_prob <- as.numeric(res[["log_prob"]])
+  out
+}
+
 # Pull the (nn_idx, nn_dist, nn_order, nn) tuple a Polya-Gamma NNGP Gibbs
 # sampler consumes out of a validated GP spec's `neighbor_info`. nn_order is
 # stored 1-based (ordered-position -> original location index); the C++ kernels
@@ -94,6 +198,7 @@ adjacency_to_list_tulpa <- function(adj) {
 #' augmentation backs the full areal (icar/bym2/rsr) + continuous (gp/nngp/
 #' multiscale_gp) family; `neg_binomial_2` is backed by the single areal ICAR
 #' negbin sampler (`cpp_pg_negbin_gibbs_spatial`), the only negbin spatial kernel.
+#' @return The one-chain list [tulpa_gibbs()] finalizes (see its Value).
 #' @keywords internal
 dispatch_gibbs_spatial <- function(y, n_trials, X, re_group, n_re_groups,
                                    spatial, family,
@@ -138,7 +243,7 @@ dispatch_gibbs_spatial <- function(y, n_trials, X, re_group, n_re_groups,
            "only; got '", spatial_type, "'. Use family = 'binomial' for ",
            "bym2 / rsr / gp fields, or mode = 'laplace'.", call. = FALSE)
     }
-    return(cpp_pg_negbin_gibbs_spatial(
+    return(.pg_as_chain(cpp_pg_negbin_gibbs_spatial(
       y = as.integer(y), X = X,
       re_group = as.integer(re_group), n_re_groups = as.integer(n_re_groups),
       spatial_group = areal$spatial_group, n_spatial_units = areal$n_spatial_units,
@@ -152,7 +257,7 @@ dispatch_gibbs_spatial <- function(y, n_trials, X, re_group, n_re_groups,
       prior_r_rate    = spatial$prior_r_rate  %||% 0.1,
       r_init          = spatial$r_init %||% 5.0,
       store_eta = FALSE, verbose = verbose, n_threads = as.integer(n_threads)
-    ))
+    ), c("icar", "negbin"), X))
   }
 
   # Binomial spatial Gibbs: the full areal + continuous sampler family. The
@@ -163,17 +268,17 @@ dispatch_gibbs_spatial <- function(y, n_trials, X, re_group, n_re_groups,
   )
 
   if (spatial_type == "icar") {
-    do.call(cpp_pg_binomial_gibbs_spatial, c(common, areal, list(
+    .pg_as_chain(do.call(cpp_pg_binomial_gibbs_spatial, c(common, areal, list(
       prior_tau_shape = spatial$prior_tau_shape %||% 1.0,
       prior_tau_rate  = spatial$prior_tau_rate  %||% 0.01
-    )))
+    ))), "icar", X)
   } else if (spatial_type == "bym2") {
-    do.call(cpp_pg_binomial_gibbs_bym2, c(common, areal, list(
+    .pg_as_chain(do.call(cpp_pg_binomial_gibbs_bym2, c(common, areal, list(
       scale_factor              = spatial$scale_factor %||% 1.0,
       prior_sigma_spatial_scale = spatial$prior_sigma_spatial_scale %||% 2.5,
       prior_rho_alpha           = spatial$prior_rho_alpha %||% 0.5,
       prior_rho_beta            = spatial$prior_rho_beta  %||% 0.5
-    )))
+    ))), "bym2", X)
   } else if (spatial_type == "rsr") {
     # Restricted spatial regression: an ICAR field projected orthogonal to the
     # covariates each sweep. Reuse a caller-supplied projector if validate_rsr()
@@ -186,14 +291,14 @@ dispatch_gibbs_spatial <- function(y, n_trials, X, re_group, n_re_groups,
            " but must be ", rsr_n, "x", rsr_n, " (one row/col per spatial unit).",
            call. = FALSE)
     }
-    do.call(cpp_pg_binomial_gibbs_rsr, c(common, areal, list(
+    .pg_as_chain(do.call(cpp_pg_binomial_gibbs_rsr, c(common, areal, list(
       # Row-major flatten for the C++ `rsr_projection[s * rsr_n + k]` indexing;
       # P_perp is symmetric so t() is a no-op but keeps the convention explicit.
       rsr_projection  = as.numeric(t(P_perp)),
       rsr_n           = as.integer(rsr_n),
       prior_tau_shape = spatial$prior_tau_shape %||% 1.0,
       prior_tau_rate  = spatial$prior_tau_rate  %||% 0.01
-    )))
+    ))), "icar", X)
   } else if (spatial_type %in% c("gp", "nngp")) {
     if (is.null(spatial$neighbor_info)) {
       stop("Spatial Gibbs (", spatial_type, ") needs a validated spatial_gp() ",
@@ -202,7 +307,7 @@ dispatch_gibbs_spatial <- function(y, n_trials, X, re_group, n_re_groups,
     }
     n_spatial <- .gp_gibbs_require_one_obs_per_loc(spatial, length(y), spatial_type)
     nn_in     <- .gp_gibbs_nn_inputs(spatial$neighbor_info, n_spatial)
-    do.call(cpp_pg_binomial_gibbs_gp, c(common, list(
+    .pg_as_chain(do.call(cpp_pg_binomial_gibbs_gp, c(common, list(
       coords         = as.matrix(spatial$unique_coords),
       nn_idx         = nn_in$nn_idx,
       nn_dist        = nn_in$nn_dist,
@@ -212,7 +317,7 @@ dispatch_gibbs_spatial <- function(y, n_trials, X, re_group, n_re_groups,
       sigma2_gp_init = spatial$sigma2_gp %||% 1.0,
       phi_gp_init    = spatial$phi_gp %||% 1.0,
       cov_type       = gp_cov_type(spatial)
-    )))
+    ))), "gp", X)
   } else if (spatial_type %in% c("multiscale", "multiscale_gp")) {
     # Both scales reuse the shared NNGP kriging conditional
     # (tulpa::pg_nngp_conditional), so cov_type (exponential / Matern 3/2 / 5/2)
@@ -229,7 +334,7 @@ dispatch_gibbs_spatial <- function(y, n_trials, X, re_group, n_re_groups,
     reg <- .gp_gibbs_nn_inputs(spatial$neighbor_info_regional, n_spatial)
     rl  <- spatial$range_local    %||% c(0.01, 1)
     rr  <- spatial$range_regional %||% c(1, 10)
-    do.call(cpp_pg_binomial_gibbs_multiscale_gp, c(common, list(
+    .pg_as_chain(do.call(cpp_pg_binomial_gibbs_multiscale_gp, c(common, list(
       coords               = as.matrix(spatial$unique_coords),
       nn_idx_local         = loc$nn_idx,
       nn_dist_local        = loc$nn_dist,
@@ -247,7 +352,7 @@ dispatch_gibbs_spatial <- function(y, n_trials, X, re_group, n_re_groups,
       cov_type             = gp_cov_type(spatial),
       prior_phi_local_lower    = rl[1], prior_phi_local_upper    = rl[2],
       prior_phi_regional_lower = rr[1], prior_phi_regional_upper = rr[2]
-    )))
+    ))), "multiscale_gp", X)
   } else {
     stop("Spatial Gibbs not wired for type '", spatial_type, "'. Supported: ",
          "icar, bym2, rsr, gp/nngp, multiscale_gp.", call. = FALSE)
@@ -263,6 +368,7 @@ dispatch_gibbs_spatial <- function(y, n_trials, X, re_group, n_re_groups,
 #' RW1 trend + cyclic-RW1 seasonal + AR1/IID short-term decomposition. Binomial
 #' only. The C++ kernel implements an RW1 trend (rw2 is rejected here rather than
 #' silently downgraded).
+#' @return The one-chain list [tulpa_gibbs()] finalizes (see its Value).
 #' @keywords internal
 dispatch_gibbs_temporal <- function(y, n_trials, X, re_group, n_re_groups,
                                     temporal, family,
@@ -296,13 +402,13 @@ dispatch_gibbs_temporal <- function(y, n_trials, X, re_group, n_re_groups,
     y, n_trials, X, re_group, n_re_groups, iter, warmup, thin,
     prior_beta_sd, prior_sigma_re_scale, verbose, n_threads
   )
-  do.call(cpp_pg_binomial_gibbs_temporal, c(common, list(
+  .pg_as_chain(do.call(cpp_pg_binomial_gibbs_temporal, c(common, list(
     time_idx        = as.integer(temporal$time_index),
     n_times         = as.integer(temporal$n_times),
     seasonal_period = as.integer(temporal$seasonal %||% 0L),
     trend_type      = trend_type,
     short_type      = short_type
-  )))
+  ))), c("temporal", if (short_type == 1L) "ar1_short"), X)
 }
 
 
@@ -376,8 +482,22 @@ glmm_weights <- function(eta, family, n_trials = NULL, phi = 1.0, phi2 = NULL) {
 #'   RNG; the Polya-Gamma kernels use R's RNG, so a seed makes the fit
 #'   reproducible), `verbose` (default FALSE), `n_threads` (default 1).
 #'
-#' @return List with beta draws, RE draws, sigma_re draws (plus the spatial
-#'   field draws when `spatial` is supplied)
+#' @return A `tulpa_fit` holding one MCMC chain: `draws`, the
+#'   `[n_saved x n_param]` matrix of retained draws, with `chain_id`,
+#'   `n_chains`, `means` (column means) and `param_names`. Columns follow the
+#'   parameter naming of the ModelData samplers: the fixed effects (the column
+#'   names of `X`, else `beta[j]`), `log_sigma_re` and `re[g]` for the
+#'   random-intercept block, then the route's own blocks -- `log_phi` (the
+#'   negative-binomial size); `log_tau_spatial` and `phi_spatial[u]` (ICAR, and
+#'   RSR's projected field); `log_sigma_spatial`, `logit_rho_bym2`,
+#'   `phi_spatial[u]` and `theta_spatial[u]` (BYM2); `log_sigma2_gp`,
+#'   `log_phi_gp` and `gp_w[u]` (GP); the `_local` / `_regional` counterparts
+#'   with `gp_local[u]` / `gp_regional[u]` (multiscale GP); `log_sigma2_trend`,
+#'   `trend[t]`, `log_sigma2_seasonal`, `seasonal[s]`, `log_sigma2_short`,
+#'   `short_term[t]` and, for an AR1 short-term component, `logit_rho_short`
+#'   (temporal). Scales are stored on the log scale and correlations on the
+#'   logit scale, as the samplers store them; a component the model does not
+#'   carry has no column.
 #'
 #' @examples
 #' set.seed(1)
@@ -389,7 +509,8 @@ glmm_weights <- function(eta, family, n_trials = NULL, phi = 1.0, phi2 = NULL) {
 #' \donttest{
 #' fit <- tulpa_gibbs(y, rep(1L, n), X, grp, G, family = "binomial",
 #'                    control = list(n_iter = 500L, warmup = 250L))
-#' colMeans(fit$beta)
+#' coef(fit)
+#' diagnostics(fit)
 #' }
 #' @export
 tulpa_gibbs <- function(y, n_trials, X, group, n_groups,
@@ -457,7 +578,7 @@ tulpa_gibbs <- function(y, n_trials, X, group, n_groups,
       verbose = verbose, n_threads = n_threads
     )
   } else if (family == "binomial") {
-    cpp_pg_binomial_gibbs(
+    .pg_as_chain(cpp_pg_binomial_gibbs(
       y = as.numeric(y), n = as.integer(vd$n_trials), X = X,
       group = as.integer(group), n_groups = as.integer(n_groups),
       n_iter = as.integer(n_iter), n_warmup = as.integer(warmup),
@@ -466,9 +587,9 @@ tulpa_gibbs <- function(y, n_trials, X, group, n_groups,
       prior_sigma_scale = prior_sigma_scale,
       store_eta = FALSE, verbose = verbose,
       n_threads = as.integer(n_threads)
-    )
+    ), character(0), X)
   } else if (identical(family, "neg_binomial_2")) {
-    cpp_pg_negbin_gibbs(
+    .pg_as_chain(cpp_pg_negbin_gibbs(
       y = as.numeric(y), X = X,
       group = as.integer(group), n_groups = as.integer(n_groups),
       n_iter = as.integer(n_iter), n_warmup = as.integer(warmup),
@@ -478,7 +599,7 @@ tulpa_gibbs <- function(y, n_trials, X, group, n_groups,
       prior_r_shape = 1.0, prior_r_rate = 0.1, r_init = 5.0,
       store_eta = FALSE, verbose = verbose,
       n_threads = as.integer(n_threads)
-    )
+    ), "negbin", X)
   } else {
     stop(sprintf(
       "Gibbs not available for family '%s'. Supported: %s.",
@@ -490,6 +611,6 @@ tulpa_gibbs <- function(y, n_trials, X, group, n_groups,
   # Finalize so direct callers get a real tulpa_fit (print/coef/summary
   # dispatch) instead of the raw draw list; tulpa_dispatch re-finalizing the
   # routed path is a no-op (every field fills with %||%).
-  .finalize_fit(res, backend = "gibbs",
-                n_fixed = ncol(X), fixed_names = colnames(X))
+  .finalize_fit(res, backend = "gibbs", n_fixed = ncol(X),
+                fixed_names = res$param_names[seq_len(ncol(X))])
 }

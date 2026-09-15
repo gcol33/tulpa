@@ -21,8 +21,13 @@ names it in a \code{quantity} attribute:
 }
 \details{
 \describe{
-\item{\code{"log_posterior_mean"}}{a sampler fit: the mean log POSTERIOR over
-the draws, prior included.}
+\item{\code{"log_posterior_mean"}}{a sampler fit: the mean over the draws of
+the log joint posterior density, prior included, in that backend's own
+parameterization: the unconstrained coordinates with their Jacobians
+for the ModelData samplers (\code{hmc}, \code{ess}, \code{sghmc}, \code{sgld}, \code{mclmc},
+\code{smc}, \code{vi}), and the natural scale each quantity is sampled on for the
+RE-covariance and Polya-Gamma Gibbs samplers. Values are therefore
+comparable across fits of the same backend only.}
 \item{\code{"log_evidence"}}{a deterministic fit that estimated no
 hyperparameter from the data: the log marginal probability of the data
 under the model as specified. A hyperparameter the fit integrated counts,
@@ -53,6 +58,15 @@ an axis on a block that does not carry its coordinates) reports \code{NA} with
 attribute. A central-composite (CCD) design reproduces moments and carries no
 cell volume, so a fit integrated on one reports \code{NA} with a \code{declined}
 attribute.
+
+A sampler fit whose producer kept no per-draw log posterior reports \code{NA}
+with \code{quantity = "log_posterior_mean"} and
+\code{declined = "no_log_posterior_recorded"}. The Polya-Gamma Gibbs routes that
+recentre a proper field every sweep (the NNGP and multiscale-GP fields, and
+the negative-binomial kernel's iid random-effect block) leave no written
+density invariant and record none; a fit carrying neither draws
+nor a log marginal declines with \code{"no_goodness_quantity_recorded"}. A value
+of \code{NA} always carries a \code{declined} attribute.
 
 Values with a different \code{quantity} or \code{conditioned_on} are not on one scale,
 and \code{compare_models(criterion = "loglik")} refuses such a set. Only a

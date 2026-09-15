@@ -60,6 +60,14 @@ built to move the axis.}
 \code{grid_placement_declined}, \code{grid_placement_note}}{whether the outer grid
 was re-centred, on which axes, and -- when it was not -- why.}
 \item{\code{scope}}{the outer diagnostic's scope string.}
+\item{\code{scope_backend}, \code{scope_title}, \code{scope_layers}, \code{scope_text}}{what
+the table describes: the backend it was read for, the header title,
+the reliability layers that backend has (\code{c("outer", "inner")} for a
+nested-Laplace fit, empty for a backend with neither), and the scope
+sentence -- for a nested fit what its outer layer integrates over, for
+any other backend what its draws are and which reliability quantity
+it computes. A backend without the two layers has no whole-fit
+verdict, and its \code{reliability} is \code{NA}.}
 \item{\code{inner_skew_max}}{the largest \verb{|gamma_3|} among the scored latent
 indices (\code{NA} if \code{control$diagnose_skew = FALSE} or nothing scored).}
 \item{\code{inner_skew_band}}{\code{"good"} / \code{"ok"} / \code{"unreliable"} / \code{NA}, banded

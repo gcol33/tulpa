@@ -4,30 +4,46 @@
 \alias{criteria_doors}
 \alias{dic}
 \alias{dic.default}
+\alias{dic.tulpa_fit}
 \alias{cpo}
 \alias{cpo.default}
-\title{DIC and CPO}
+\alias{cpo.tulpa_fit}
+\alias{waic.tulpa_fit}
+\alias{loo.tulpa_fit}
+\title{DIC, CPO, WAIC and PSIS-LOO on a fit}
 \usage{
 dic(object, ...)
 
 \method{dic}{default}(object, loglik_at_mean = NULL, ...)
 
+\method{dic}{tulpa_fit}(object, ...)
+
 cpo(object, ...)
 
 \method{cpo}{default}(object, ...)
+
+\method{cpo}{tulpa_fit}(object, ...)
+
+\method{waic}{tulpa_fit}(x, ...)
+
+\method{loo}{tulpa_fit}(x, ...)
 }
 \arguments{
-\item{object}{A pointwise log-likelihood matrix (draws x observations), or a
-fitted model object a method is registered for.}
+\item{object, x}{A pointwise log-likelihood matrix (draws x observations), or
+a fitted model object a method is registered for, such as a \code{tulpa_fit}.}
 
-\item{...}{Passed to \code{\link[=tulpa_criteria]{tulpa_criteria()}} (e.g. \code{group}, \code{chunk_size}).}
+\item{...}{For \code{dic()} and \code{cpo()}, passed to \code{\link[=tulpa_criteria]{tulpa_criteria()}} (e.g.
+\code{group}, \code{chunk_size}). For \code{waic()} and \code{loo()}, passed to \pkg{loo}'s
+matrix methods (e.g. \code{cores}, \code{save_psis}).}
 
 \item{loglik_at_mean}{Length-\code{n_obs} vector of pointwise log-likelihoods at
 the posterior mean of the parameters. Required for DIC's plug-in deviance;
 without it the DIC fields are \code{NA}.}
 }
 \value{
-A \code{tulpa_criteria} object.
+\code{dic()} and \code{cpo()} return a \code{tulpa_criteria} object. \code{waic()}
+returns a \pkg{loo} \code{waic} object and \code{loo()} a \pkg{loo} \code{psis_loo}
+object.
 }
 \description{
 Generic front doors onto the two criteria \code{\link[=tulpa_criteria]{tulpa_criteria()}} computes that
@@ -40,6 +56,27 @@ The default methods take a draws x observations pointwise log-likelihood
 matrix, the same input \code{\link[=tulpa_criteria]{tulpa_criteria()}} takes. A model package registers a
 method taking its own fit object, builds the matrix from the posterior, and
 delegates here.
+
+The \code{tulpa_fit} methods build that matrix from the fit itself, from the same
+source \code{compare_models(criterion = "waic")} reads: a \code{log_lik} the backend
+stored with its draws, else the family density evaluated at posterior draws
+of the in-sample linear predictor (sampler draws, the outer-grid mixture of a
+nested-Laplace fit, or Gaussian draws at the fixed-effect mode and
+covariance). The draws are pinned to a fixed internal seed, so repeated
+calls return the same numbers and leave the session RNG untouched.
+\code{dic()} plugs in the posterior mean of the linear predictor, so its
+\code{p_dic} counts effective parameters in the linear predictor's
+parameterization; where the fit stored its \code{log_lik} and carries no linear
+predictor draws, the DIC fields are \code{NA} and \code{dbar} is still reported.
+A fit with no pointwise log-likelihood (no stored response, a family that is
+not one built-in family name, or a linear predictor the fit cannot
+reproduce) is refused with an error naming the fit's class and the reason.
+
+\code{loo::waic()} and \code{loo::loo()} dispatch to the \code{tulpa_fit} methods once
+\pkg{loo} is loaded, and return \pkg{loo}'s own \code{waic} / \code{psis_loo} objects,
+so \code{\link[loo:loo_compare]{loo::loo_compare()}} reads them. On an MCMC chain fit \code{loo()} passes
+relative effective sample sizes computed over the fit's chains; on an i.i.d.
+or approximation fit the draws are independent and \code{r_eff} is 1.
 }
 \examples{
 set.seed(1)
@@ -47,8 +84,16 @@ y  <- rnorm(40)
 mu <- matrix(rnorm(200 * 40, sd = 0.2), 200, 40)
 ll <- dnorm(matrix(y, 200, 40, byrow = TRUE), mean = mu, log = TRUE)
 cpo(ll)
+\donttest{
+d <- data.frame(x = rnorm(120))
+d$y <- rpois(120, exp(0.4 + 0.6 * d$x))
+fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace")
+dic(fit)
+cpo(fit)$lpml
+if (requireNamespace("loo", quietly = TRUE)) loo::waic(fit)
+}
 }
 \seealso{
 \code{\link[=tulpa_criteria]{tulpa_criteria()}} for every criterion at once and for what the LOO
-unit means.
+unit means; \code{\link[=compare_models]{compare_models()}} to rank several fits.
 }

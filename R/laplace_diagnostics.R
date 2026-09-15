@@ -1499,6 +1499,113 @@
                                 dimnames = list(NULL, "x")))[0L, , drop = FALSE]
 }
 
+# What the approximation-reliability table describes, per backend: the header
+# `title`, the reliability `layers` the backend has, and the `scope` sentence.
+# A backend with both layers -- an outer hyperparameter integration scored by
+# PSIS k-hat and grid quadrature ESS, around an inner Gaussian Laplace scored by
+# gamma_3 and the inner importance k-hat -- names in `scope` what its outer layer
+# integrates over. A backend with no such layers describes literally what its
+# draws are and which reliability quantity, if any, it computes. Every registry
+# backend that emits i.i.d. draws has an entry, as does each fitter that stamps
+# its own i.i.d. backend name.
+.NL_LAYERS <- c("outer", "inner")
+.APPROX_SCOPE <- list(
+  nested_laplace = list(
+    title = "Nested-Laplace", layers = .NL_LAYERS,
+    scope = "the outer hyperparameter-grid integration"),
+  nested_laplace_joint = list(
+    title = "Nested-Laplace", layers = .NL_LAYERS,
+    scope = "the outer hyperparameter-grid integration"),
+  spatial_field_nested_laplace = list(
+    title = "Nested-Laplace", layers = .NL_LAYERS,
+    scope = "the outer hyperparameter-grid integration"),
+  temporal_field_nested_laplace = list(
+    title = "Nested-Laplace", layers = .NL_LAYERS,
+    scope = "the outer hyperparameter-grid integration"),
+  spde = list(
+    title = "SPDE nested-Laplace", layers = .NL_LAYERS,
+    scope = "the outer (range, sigma) integration"),
+  re_cov_nested = list(
+    title = "RE-covariance nested-Laplace", layers = .NL_LAYERS,
+    scope = "the outer integration over the random-effect covariance Sigma"),
+  smc = list(
+    title = "Sequential Monte Carlo", layers = character(0),
+    scope = paste(
+      "the draws are the particle population after the final tempering stage,",
+      "resampled to equal weights and moved by MCMC mutation steps; no",
+      "pareto_k or other reliability quantity is computed for this backend.")),
+  vi = list(
+    title = "Variational inference", layers = character(0),
+    scope = paste(
+      "the draws are sampled from the fitted variational approximation; the",
+      "VI kernel does not compute the PSIS pareto_k of that approximation,",
+      "so no reliability quantity is computed for this backend.")),
+  pathfinder = list(
+    title = "Pathfinder", layers = character(0),
+    scope = paste(
+      "single-path: the draws are sampled from the Gaussian at the L-BFGS",
+      "mode with the inverse-Hessian covariance, whose ELBO is recorded in",
+      "`$elbo`; no pareto_k is computed for this backend.")),
+  tgmrf_vi = list(
+    title = "tgmrf variational inference", layers = character(0),
+    scope = paste(
+      "single-path Pathfinder over the block hyperparameters: the draws are",
+      "sampled from the Gaussian at the L-BFGS mode of the log marginal, whose",
+      "ELBO is recorded in `$elbo`; no pareto_k is computed for this backend.")),
+  ep = list(
+    title = "Expectation propagation", layers = character(0),
+    scope = paste(
+      "the draws are sampled from the EP Gaussian approximation; no",
+      "reliability quantity is computed for this backend.")),
+  agq = list(
+    title = "Adaptive Gauss-Hermite quadrature", layers = character(0),
+    scope = paste(
+      "the marginal-likelihood optimum over the fixed effects and the",
+      "random-effect SD, with its inverse-Hessian covariance; no reliability",
+      "quantity is computed for this backend.")),
+  laplace = list(
+    title = "Laplace", layers = character(0),
+    scope = paste(
+      "the Gaussian approximation at the posterior mode; no reliability",
+      "quantity is computed for this backend.")),
+  eb = list(
+    title = "Empirical Bayes", layers = character(0),
+    scope = paste(
+      "the fixed effects conditional on the mode of the random-effect",
+      "covariances; no reliability quantity is computed for this backend.")),
+  multinomial_laplace = list(
+    title = "Multinomial Laplace", layers = character(0),
+    scope = paste(
+      "the draws are sampled from the Laplace Gaussian at the posterior mode;",
+      "no reliability quantity is computed for this backend.")),
+  ordinal_laplace = list(
+    title = "Ordinal Laplace", layers = character(0),
+    scope = paste(
+      "the draws are sampled from the Laplace Gaussian at the optimum, with",
+      "the cutpoint block mapped to ordered cutpoints; no reliability quantity",
+      "is computed for this backend."))
+)
+
+# The `.APPROX_SCOPE` entry describing `fit`, keyed by the fit's own backend,
+# then by the backend of the nested fit it wraps (`$joint_fit`). A fit whose
+# backend has no entry is described by the layers it carries: an outer
+# integration (grid weights, or an outer k-hat with its scope) makes it a
+# two-layer nested fit, anything else a fit with no recorded scope.
+.tulpa_approx_scope <- function(fit, grid, psis) {
+  keys <- c(fit$backend, fit$joint_fit$backend)
+  hit <- keys[keys %in% names(.APPROX_SCOPE)]
+  if (length(hit)) return(c(list(backend = hit[1L]), .APPROX_SCOPE[[hit[1L]]]))
+  backend <- if (length(keys)) keys[1L] else NA_character_
+  if (!is.null(grid) || !is.na(psis$pareto_k_scope)) {
+    return(c(list(backend = backend), .APPROX_SCOPE$nested_laplace))
+  }
+  list(backend = backend, title = "Approximation", layers = character(0),
+       scope = sprintf(
+         paste("no scope is registered for backend '%s'; the lines below are",
+               "the reliability quantities the fit records."),
+         if (is.na(backend)) "?" else backend))
+}
+
 # Approximation-reliability table for an i.i.d. deterministic fit. The
 # provenance gate lives in `diagnostics()`; this builds the table and attaches
 # the PSIS / grid-quadrature headline as attributes. Documented user-side under
@@ -1527,6 +1634,7 @@
   iread <- .tulpa_interval_read(fit)
   resolution <- .tulpa_grid_resolution(fit)
   k          <- psis$pareto_k
+  scope      <- .tulpa_approx_scope(fit, grid, psis)
 
   draws <- .fit_draws(fit)
   tab <- if (is.null(draws)) NULL else
@@ -1560,6 +1668,10 @@
   attr(tab, "pareto_k_band")   <- outer_band
   attr(tab, "pareto_k_is_ess") <- psis$pareto_k_is_ess
   attr(tab, "scope")           <- psis$pareto_k_scope
+  attr(tab, "scope_backend")   <- scope$backend
+  attr(tab, "scope_title")     <- scope$title
+  attr(tab, "scope_layers")    <- scope$layers
+  attr(tab, "scope_text")      <- scope$scope
   # Which proposal family produced the number, and what the backend's own
   # placement scored before any rescue. The GAP between the two is the
   # actionable reading -- a large one says the nodes are badly scaled around the
@@ -1649,11 +1761,13 @@
   }
   inner_declined <- if (is.null(inner)) NA_character_ else inner$declined
   inner_k_declined <- if (is.null(inner_k)) NA_character_ else inner_k$declined
-  reliability <- .tulpa_combined_reliability(outer_band, inner_band,
-                                            inner_declined,
-                                            psis$pareto_k_declined,
-                                            inner_k_band,
-                                            inner_k_declined)
+  # The whole-fit verdict combines the outer and inner layers, so a backend
+  # without them has no verdict to state.
+  reliability <- if (length(scope$layers)) {
+    .tulpa_combined_reliability(outer_band, inner_band, inner_declined,
+                                psis$pareto_k_declined, inner_k_band,
+                                inner_k_declined)
+  } else NA_character_
   attr(tab, "reliability") <- reliability
 
   summary_row <- data.frame(
@@ -1859,6 +1973,14 @@
 #'       `grid_placement_declined`, `grid_placement_note`}{whether the outer grid
 #'       was re-centred, on which axes, and -- when it was not -- why.}
 #'     \item{`scope`}{the outer diagnostic's scope string.}
+#'     \item{`scope_backend`, `scope_title`, `scope_layers`, `scope_text`}{what
+#'       the table describes: the backend it was read for, the header title,
+#'       the reliability layers that backend has (`c("outer", "inner")` for a
+#'       nested-Laplace fit, empty for a backend with neither), and the scope
+#'       sentence -- for a nested fit what its outer layer integrates over, for
+#'       any other backend what its draws are and which reliability quantity
+#'       it computes. A backend without the two layers has no whole-fit
+#'       verdict, and its `reliability` is `NA`.}
 #'     \item{`inner_skew_max`}{the largest `|gamma_3|` among the scored latent
 #'       indices (`NA` if `control$diagnose_skew = FALSE` or nothing scored).}
 #'     \item{`inner_skew_band`}{`"good"` / `"ok"` / `"unreliable"` / `NA`, banded
@@ -1949,22 +2071,32 @@ print.laplace_diagnostics <- function(x, ...) {
     # cubic term's decline as though nothing were known.
     inner_note <- NULL
   }
-  if (has_inner) {
-    cat("Nested-Laplace WHOLE-FIT reliability (i.i.d. draws)\n")
-    cat("  two layers: the outer hyperparameter-grid integration, and the",
-        "inner Gaussian Laplace on the latent field\n")
+  title  <- attr(x, "scope_title") %||% .APPROX_SCOPE$nested_laplace$title
+  layers <- attr(x, "scope_layers") %||% .APPROX_SCOPE$nested_laplace$layers
+  scope  <- attr(x, "scope_text") %||% .APPROX_SCOPE$nested_laplace$scope
+  layered <- length(layers) > 0L
+  wrap <- function(...) {
+    cat(strwrap(paste0(...), width = 78, indent = 2, exdent = 4), sep = "\n")
+  }
+  if (!layered) {
+    cat(title, " approximation reliability (i.i.d. draws)\n", sep = "")
+    wrap("scope: ", scope)
+  } else if (has_inner) {
+    cat(title, " WHOLE-FIT reliability (i.i.d. draws)\n", sep = "")
+    wrap("two layers: ", scope,
+         ", and the inner Gaussian Laplace on the latent field")
   } else {
     # The inner layer is unscored -- say WHY. Attributing a
     # structural impossibility to `control$diagnose_skew` sent readers looking
     # for a knob they never touched.
-    cat("Nested-Laplace OUTER-integration reliability (i.i.d. draws)\n")
-    cat("  scope: the outer hyperparameter-grid integration; the latent-field\n",
-        "  Laplace is a separate, unscored layer",
-        if (!is.null(inner_note)) paste0(":\n    ", inner_note, "\n") else ".\n",
-        sep = "")
+    cat(title, " OUTER-integration reliability (i.i.d. draws)\n", sep = "")
+    wrap("scope: ", scope, "; the latent-field Laplace is a separate, ",
+         "unscored layer", if (is.null(inner_note)) "." else ":")
+    if (!is.null(inner_note)) cat("    ", inner_note, "\n", sep = "")
   }
   if (is.finite(k)) {
-    cat(sprintf("  outer PSIS pareto_k = %.3f (%s); IS-ESS = %.1f\n",
+    cat(sprintf("  %s pareto_k = %.3f (%s); IS-ESS = %.1f\n",
+                if (layered) "outer PSIS" else "PSIS",
                 k, band, attr(x, "pareto_k_is_ess")))
     # Which proposal family the number came from, and what the backend's own
     # placement scored before any rescue. A large gap says the NODES are badly
@@ -1979,7 +2111,7 @@ print.laplace_diagnostics <- function(x, ...) {
                             fp, .tulpa_khat_band(fp))
                   else ""))
     }
-  } else {
+  } else if (layered) {
     # Every decline path says which one it was instead of
     # the old "not run or proposal degenerate" disjunction.
     knote <- attr(x, "pareto_k_declined_note")
@@ -2038,7 +2170,7 @@ print.laplace_diagnostics <- function(x, ...) {
       cat("  inner Laplace importance pareto_k = NA:\n    ", knote, "\n", sep = "")
     }
   }
-  if (!is.null(attr(x, "reliability"))) {
+  if (!is.null(attr(x, "reliability")) && !is.na(attr(x, "reliability"))) {
     cat(sprintf("  whole-fit verdict: %s\n", attr(x, "reliability")))
   }
   # The reliability band above scores THIS fit's internal approximation; the SBC

@@ -104,6 +104,33 @@ static inline void store_beta_nb2(Rcpp::NumericMatrix& beta_draws, int row,
   for (int j = 1; j < p; j++) beta_draws(row, j) = beta[j];
 }
 
+// The dispersion's support: both r updates reject a proposal outside it, so the
+// Gamma(shape, rate) prior on r is truncated to [PG_NB_R_LOWER, PG_NB_R_UPPER].
+constexpr double PG_NB_R_LOWER = 0.1;
+constexpr double PG_NB_R_UPPER = 500.0;
+
+// log p(r) under that truncated Gamma, normalized on the support.
+static double negbin_log_prior_r(double r, double shape, double rate) {
+  if (r < PG_NB_R_LOWER || r > PG_NB_R_UPPER) return R_NegInf;
+  const double scale = 1.0 / rate;
+  const double mass = R::pgamma(PG_NB_R_UPPER, shape, scale, 1, 0) -
+                      R::pgamma(PG_NB_R_LOWER, shape, scale, 1, 0);
+  return pg_log_gamma(r, shape, rate) - std::log(mass);
+}
+
+// The NB log-likelihood through the shared GLMM family density. The kernel's
+// eta is on the Zhou log-odds scale, mu = r exp(eta), so the NB2 log-mean the
+// family density reads is eta + log(r).
+static double negbin_log_lik_family(const IntegerVector& y,
+                                    const NumericVector& eta, double r) {
+  const double log_r = std::log(r);
+  double ll = 0.0;
+  for (int i = 0; i < y.size(); i++) {
+    ll += glmm_elt(GLMMFamily::NegBin, eta[i] + log_r, y[i], 0.0, r).l;
+  }
+  return ll;
+}
+
 // Log-likelihood of the NB given eta (linear predictor) and r.
 //
 // In Zhou's logit parameterization mu = r exp(eta), so the failure probability
@@ -180,7 +207,7 @@ JointRBeta0Result update_r_beta0_joint(
   // beta_0 carries no bound: the Gibbs step that draws it does not either, so
   // a box here would leave this move rejecting from a state it calls
   // off-support.
-  if (r_prop < 0.1 || r_prop > 500.0) {
+  if (r_prop < PG_NB_R_LOWER || r_prop > PG_NB_R_UPPER) {
     return result;
   }
 
@@ -238,7 +265,7 @@ double update_r_negbin(
   double log_r_prop = R::rnorm(log_r_current, proposal_sd);
   double r_prop = std::exp(log_r_prop);
 
-  if (r_prop < 0.1 || r_prop > 500.0) {
+  if (r_prop < PG_NB_R_LOWER || r_prop > PG_NB_R_UPPER) {
     return r_current;
   }
 
@@ -333,6 +360,7 @@ List pg_negbin_gibbs(
   NumericMatrix re_draws(n_save, n_groups);
   NumericVector sigma_draws(n_save);
   NumericVector r_draws(n_save);
+  NumericVector log_prob_draws(n_save);
   NumericMatrix eta_draws;
   if (store_eta) {
     eta_draws = NumericMatrix(n_save, N);
@@ -505,6 +533,12 @@ List pg_negbin_gibbs(
       }
       sigma_draws[save_idx] = sigma_re;
       r_draws[save_idx] = r;
+      if (n_groups == 0) {
+        log_prob_draws[save_idx] =
+            negbin_log_lik_family(y, eta, r) +
+            pg_log_normal_iid(beta.begin(), p, prior_beta_sd) +
+            negbin_log_prior_r(r, prior_r_shape, prior_r_rate);
+      }
 
       if (store_eta) {
         const double log_r = std::log(r);
@@ -527,13 +561,20 @@ List pg_negbin_gibbs(
     }
   }
 
-  return List::create(
+  List out = List::create(
     Named("beta") = beta_draws,
     Named("re") = re_draws,
     Named("sigma_re") = sigma_draws,
     Named("r") = r_draws,
     Named("eta") = eta_draws
   );
+  // With an iid block the kernel recentres it and absorbs the level into the
+  // intercept every sweep. That block's prior is proper, so the recentring
+  // moves the state along a direction the prior penalizes while the sigma_re
+  // and beta conditionals score the uncentred model: no joint density is the
+  // one this chain leaves invariant, and none is recorded.
+  if (n_groups == 0) out["log_prob"] = log_prob_draws;
+  return out;
 }
 
 // ---------------------------------------------------------------------
@@ -596,6 +637,7 @@ List pg_negbin_gibbs_spatial(
   NumericVector sigma_re_draws(n_save);
   NumericVector tau_draws(n_save);
   NumericVector r_draws(n_save);
+  NumericVector log_prob_draws(n_save);
   NumericMatrix eta_draws;
   if (store_eta) {
     eta_draws = NumericMatrix(n_save, N);
@@ -797,6 +839,16 @@ List pg_negbin_gibbs_spatial(
       sigma_re_draws[save_idx] = sigma_re;
       tau_draws[save_idx] = tau;
       r_draws[save_idx] = r;
+      log_prob_draws[save_idx] =
+          negbin_log_lik_family(y, eta, r) +
+          pg_log_normal_iid(beta.begin(), p, prior_beta_sd) +
+          (n_re_groups > 0
+               ? pg_log_normal_iid(re.begin(), n_re_groups, sigma_re) +
+                 pg_log_halfcauchy(sigma_re, prior_sigma_re_scale)
+               : 0.0) +
+          pg_log_icar(spatial.begin(), adj, tau, 0.0) +
+          pg_log_gamma(tau, prior_tau_shape, prior_tau_rate) +
+          negbin_log_prior_r(r, prior_r_shape, prior_r_rate);
 
       if (store_eta) {
         const double log_r = std::log(r);
@@ -825,7 +877,8 @@ List pg_negbin_gibbs_spatial(
     Named("sigma_re") = sigma_re_draws,
     Named("tau") = tau_draws,
     Named("r") = r_draws,
-    Named("eta") = eta_draws
+    Named("eta") = eta_draws,
+    Named("log_prob") = log_prob_draws
   );
 }
 

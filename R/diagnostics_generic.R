@@ -25,7 +25,7 @@
 # A fit's [n_draws x n_obs] pointwise log-likelihood, or NULL when it carries
 # none (a deterministic / point fit). Wraps the erroring extractor.
 .compare_fit_loglik <- function(fit) {
-  tryCatch(.tulpa_fit_loglik(fit), error = function(e) NULL)
+  tryCatch(.tulpa_pointwise_loglik(fit), error = function(e) NULL)
 }
 
 # Per-model criterion summary (elpd, its SE, the effective number of parameters,

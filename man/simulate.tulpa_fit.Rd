@@ -17,9 +17,13 @@
 }
 \value{
 A data frame with \code{nsim} columns (\code{sim_1}, ...), one row per
-observation, following the \code{\link[stats:simulate]{stats::simulate()}} convention.
+observation, following the \code{\link[stats:simulate]{stats::simulate()}} convention: its \code{"seed"}
+attribute is the value of \code{seed} (with the RNG kind as attribute \code{"kind"})
+when one was given, else the state of \code{.Random.seed} before simulation.
 }
 \description{
 Base-R alias for \code{\link[=posterior_predict]{posterior_predict()}}: each simulation is one posterior
-predictive replicate at the training data.
+predictive replicate at the training data. A categorical fit
+(\code{\link[=tulpa_multinomial]{tulpa_multinomial()}}, \code{\link[=tulpa_ordinal]{tulpa_ordinal()}}) simulates factor columns carrying
+the response levels.
 }

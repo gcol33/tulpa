@@ -1,5 +1,74 @@
 # tulpa 0.4.3
 
+## Output accessors follow their contracts
+
+An output-contract sweep over every `tulpa()` backend (34 fits) found the
+accessors below returning shapes, names or values their generics do not
+specify. Re-run on this release: 82 checks that failed now pass, none that
+passed now fails, and every remaining refusal names the fit class and reason.
+
+* **Zero-inflated fits predict** (gcol33/tulpa#749). `predict()`,
+  `simulate()` and `posterior_predict()` rebuild the `ziformula` design, and
+  every response-scale read uses the structural-zero mixture: `fitted()` and
+  `predict(type = "response")` return `(1 - pi) mu` (previously `fitted()`
+  returned the count mean), simulation draws the zero indicator first, and the
+  pointwise log-likelihood behind `cpo()` / `dic()` / `waic()` / `loo()` /
+  `kfold()` is the mixture density. `coef()` / `vcov()` / `summary()` locate
+  the `zi_` columns through the engine layout, which on a sampler fit with
+  random effects places them after the random-effect block; `coef()` there had
+  reported `log_sigma_re` as `zi_(Intercept)`. Held-out `kfold()` scoring and
+  `posterior_predict(newdata)` now include the offset.
+* **Multinomial and ordinal fits record `y` and `N`** (gcol33/tulpa#753) and
+  gain `fitted()` (N x K class probabilities), per-class `residuals()`,
+  `predict()` on the link and response scales, `posterior_predict()` /
+  `simulate()` of class labels, and `cpo()` / `dic()` / `waic()` / `loo()` on
+  `log P(observed class)`. The scalar-response checks (`pit_residuals()`,
+  `test_dispersion()`, `check_model()`, ...) refuse on them by name. Joint
+  nested-Laplace fits record their observations, so `nobs()` works; their
+  observation-level accessors refuse, since the fit keeps no per-arm linear
+  predictor.
+* **`logLik()` reports a value or names why not** (gcol33/tulpa#750). ESS,
+  SGHMC, SGLD, MCLMC, SMC and VI return a per-draw `log_prob` evaluated by the
+  NUTS kernel's own log posterior (agreement 2.8e-14), and the RE-covariance
+  Gibbs sweep (the default route for a Poisson random-intercept model) and the
+  Polya-Gamma Gibbs routes record the joint density of the target they sample.
+  Three Polya-Gamma routes whose sweep leaves no stated density invariant
+  (gcol33/tulpa#761) keep `log_prob` absent, and `logLik()` declines there with
+  `"no_log_posterior_recorded"`.
+* **`mode = "gibbs"` fits carry their chain** (gcol33/tulpa#751) as
+  `draws` / `chain_id` / `n_chains` with the column names the HMC sampler uses,
+  so `diagnostics()`, `as_draws_df()` and `loo()` read it. The kernels already
+  returned every retained sample; the wrapper had kept them as separate blocks.
+* **One read per fit on EP and multinomial fits** (gcol33/tulpa#752). A fit
+  reporting a closed-form Gaussian posterior is summarized from it, so `coef()`
+  / `vcov()` / `summary()` / `tidy()` / `confint()` agree exactly; the
+  class-specific `coef` / `vcov` methods are removed. `coef()` on an ordinal
+  fit now reads the same table as `summary()` and still omits the cutpoints.
+* **`cpo()` and `dic()` have `tulpa_fit` methods, and `loo::waic()` /
+  `loo::loo()` dispatch on a `tulpa_fit`** (gcol33/tulpa#754), returning loo's
+  own objects. The two pointwise log-likelihood extractors behind `kfold()` and
+  `compare_models()` are one function; repeated calls on a nested fit now return
+  the same matrix.
+* **`print(diagnostics())` describes the backend that produced the fit**
+  (gcol33/tulpa#755); the outer-grid / inner-Laplace wording appears only on
+  nested fits.
+* **Interval columns are named as `stats::confint()` names them**, `"2.5 %"`
+  (gcol33/tulpa#756). **`simulate()` sets the `"seed"` attribute**
+  (gcol33/tulpa#757). **`fit$means` is named by parameter** on `mala`,
+  `imh_laplace` and `pathfinder` fits (gcol33/tulpa#758).
+
+## The spatiotemporal interaction reads its AR1 time margin
+
+* **An AR1 temporal margin on the ST interaction was laid out and never used**
+  (gcol33/tulpa#748). The layout sampled `logit_rho_st` while the density had
+  RW1 and RW2 forms only, so an AR1 margin contributed no quadratic form and the
+  RW2 rank. Type II, Type IV (centred and non-centred) and HSGP-ST now carry
+  `R(rho)` and its log-determinant, matching a dense reference to 1e-14, and the
+  Type-IV mass override emits the AR1 rows. The separable and non-separable GP
+  interaction types, for which the engine has no space-time kernel, are refused
+  when the layout is built instead of sampling two unread ranges. Reached only
+  through a `ModelData` built by a linking package.
+
 ## Refinement slices carry the whole default hyperprior
 
 * **A cell evaluated as part of a batch lost the hyperprior on every axis the

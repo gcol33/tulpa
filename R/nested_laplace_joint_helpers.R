@@ -1187,6 +1187,15 @@
   switch(x, auto = 0L, sparse = 1L, dense = -1L)
 }
 
+# The observations a joint fit is scored on: every arm's response, named by
+# arm, and their total count -- the number of likelihood terms the arms
+# contribute together, which is what nobs() and logLik() report.
+.joint_attach_observations <- function(res, responses) {
+    res$y <- lapply(responses, function(r) r$y)
+    res$N <- sum(lengths(res$y))
+    res
+}
+
 # Compute per-arm latent offsets so callers can decode `modes` back into
 # per-arm (beta, re) blocks plus the shared spatial block(s). For BYM2 the
 # spatial block is two sub-blocks (phi, theta); for ICAR/CAR_proper it's

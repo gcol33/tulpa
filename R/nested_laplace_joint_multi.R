@@ -2012,6 +2012,7 @@
     res$blocks        <- prepared
     res$prior         <- prior_list
     res$responses     <- responses
+    res               <- .joint_attach_observations(res, responses)
     res$copy          <- copy
     res$cell_coupling <- cell_coupling
     res$local_ccd_info <- local_ccd_info

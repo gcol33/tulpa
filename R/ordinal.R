@@ -12,6 +12,19 @@
 # c_1 = g_1, c_k = c_{k-1} + exp(g_k).
 # ------------------------------------------------------------------------------
 
+# The cumulative link CDF of a link name.
+.ordinal_link_cdf <- function(link) {
+  if (identical(link, "probit")) stats::pnorm else stats::plogis
+}
+
+# Class probabilities [n x K] of the cumulative-link model at location `eta`
+# and ordered cutpoints `cuts`: P(y = j) = F(c_j - eta) - F(c_{j-1} - eta),
+# with c_0 = -Inf and c_K = Inf.
+.ordinal_class_probs <- function(eta, cuts, pfun) {
+  Fmat <- pfun(outer(-eta, cuts, "+"))            # [n x K1], F_{ij} = F(c_j - eta_i)
+  cbind(Fmat, 1) - cbind(0, Fmat)
+}
+
 # Negative log-posterior in the unconstrained (beta, gamma) parameterization.
 # `pfun` is the cumulative link CDF (plogis / pnorm).
 .ordinal_nll <- function(par, X, cls, K, tau_b, tau_c, pfun) {
@@ -20,11 +33,8 @@
   gam  <- par[(p + 1L):(p + K1)]
   cuts <- cumsum(c(gam[1L], exp(gam[-1L])))       # ordered cutpoints
   eta  <- as.numeric(X %*% beta)
-  Fmat <- pfun(outer(-eta, cuts, "+"))            # [n x K1], F_{ij} = F(c_j - eta_i)
-  Fhi  <- cbind(Fmat, 1)
-  Flo  <- cbind(0, Fmat)
   n    <- length(eta)
-  pobs <- Fhi[cbind(seq_len(n), cls)] - Flo[cbind(seq_len(n), cls)]
+  pobs <- .ordinal_class_probs(eta, cuts, pfun)[cbind(seq_len(n), cls)]
   pobs <- pmax(pobs, 1e-12)
   -(sum(log(pobs)) - 0.5 * tau_b * sum(beta^2) - 0.5 * tau_c * sum(gam^2))
 }
@@ -51,8 +61,11 @@
 #' @param control List of numerical knobs: `max_iter` (default 200), `n_draws`
 #'   (default 2000), `seed`.
 #'
-#' @return A `tulpa_fit` (subclass `tulpa_ordinal`) with `coef` (covariate
-#'   effects), `cutpoints`, `vcov`, `draws`, `log_marginal`, `levels`.
+#' @return A `tulpa_fit` (subclass `tulpa_ordinal`) with `coefficients`
+#'   (covariate effects) and `cutpoints` at the posterior mode, `draws` (the
+#'   Laplace Gaussian mapped to ordered cutpoints), `log_marginal`, `levels`.
+#'   The draws are the posterior [coef()], [vcov()], [summary()] and
+#'   [confint()] report; [coef()] omits the cutpoints, as `MASS::polr` does.
 #'
 #' @seealso [tulpa_multinomial()] for the nominal (unordered) case.
 #' @examples
@@ -73,7 +86,7 @@ tulpa_ordinal <- function(formula, data, link = c("logit", "probit"),
   link <- match.arg(link)
   tulpa_check_control(control, .CONTROL_KEYS$ordinal, "tulpa_ordinal")
   beta_prior_sd <- .beta_prior_ridge_sd(beta_prior, .tulpa_prior_sd("ordinal"))
-  pfun <- if (link == "probit") stats::pnorm else stats::plogis
+  pfun <- .ordinal_link_cdf(link)
   qfun <- if (link == "probit") stats::qnorm else stats::qlogis
   max_iter <- as.integer(control$max_iter %||% 200L)
   n_draws  <- as.integer(control$n_draws %||% 2000L)
@@ -126,40 +139,53 @@ tulpa_ordinal <- function(formula, data, link = c("logit", "probit"),
   draws <- .ps_rmvnorm(n_draws, setNames(par, pn), V)
 
   # The optimizer works in the unconstrained (c1, log-increment) space; map the
-  # cutpoint block of every draw to ordered cutpoints so the draws, means, and
-  # covariance the coefficient methods read are labelled in cutpoint space.
+  # cutpoint block of every draw to ordered cutpoints so the draws the
+  # coefficient methods read are labelled in cutpoint space. The map is
+  # nonlinear, so the cutpoint posterior is not Gaussian and the draws, not a
+  # closed-form Gaussian, are what this fit reports.
   cut_cols <- (p + 1L):(p + K1)
   draws[, cut_cols] <- t(apply(draws[, cut_cols, drop = FALSE], 1L,
                                function(g) cumsum(c(g[1L], exp(g[-1L])))))
   means <- setNames(c(beta, cuts), pn)
-  V_cut <- stats::cov(draws)
-  dimnames(V_cut) <- list(pn, pn)
 
   fit <- list(
-    coefficients = beta, cutpoints = cuts, vcov = V_cut, draws = draws,
+    coefficients = beta, cutpoints = cuts, draws = draws,
     means = means, param_names = pn,
     log_marginal = log_marginal, converged = opt$convergence == 0,
     levels = levels(y), n_classes = K, link = link,
     family = if (link == "probit") "ordinal_probit" else "ordinal",
-    formula = formula, backend = "ordinal_laplace",
+    formula = formula, model_matrix = X, y = y, N = length(y),
+    backend = "ordinal_laplace",
     inference_tier = 2L, inference_mode = "structured", draws_kind = "iid"
   )
-  class(fit) <- c("tulpa_ordinal", "tulpa_fit")
+  class(fit) <- c("tulpa_ordinal", "tulpa_categorical", "tulpa_fit")
   fit
 }
 
+# The covariate effects of the fixed-effect table, cutpoints omitted as
+# MASS::polr's coef() omits its zeta; vcov() and summary() keep the cutpoints.
 #' @export
-vcov.tulpa_ordinal <- function(object, ...) object$vcov
+coef.tulpa_ordinal <- function(object, ...) {
+  .ordinal_table_split(object)$coefficients
+}
 
-#' @export
-coef.tulpa_ordinal <- function(object, ...) object$coefficients
+# The fixed-effect table's estimates split into covariate effects and
+# cutpoints, so coef() and print() read the posterior summary() reports.
+#' @keywords internal
+.ordinal_table_split <- function(object) {
+  tab <- .fit_fixed_table(object)
+  est <- stats::setNames(tab$estimate, tab$term)
+  cut <- names(object$cutpoints)
+  list(coefficients = est[setdiff(names(est), cut)], cutpoints = est[cut])
+}
 
 #' @export
 print.tulpa_ordinal <- function(x, ...) {
   cat(sprintf("Ordinal cumulative %s (%d ordered levels), Laplace fit\n",
               x$link %||% "logit", x$n_classes))
   cat(sprintf("log marginal: %.2f\n\nCoefficients:\n", x$log_marginal))
-  print(round(x$coefficients, 4))
-  cat("\nCutpoints:\n"); print(round(x$cutpoints, 4))
+  sp <- .ordinal_table_split(x)
+  print(round(sp$coefficients, 4))
+  cat("\nCutpoints:\n"); print(round(sp$cutpoints, 4))
   invisible(x)
 }

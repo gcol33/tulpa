@@ -21,6 +21,9 @@ dispatch_gibbs_spatial(
   n_threads = 1L
 )
 }
+\value{
+The one-chain list \code{\link[=tulpa_gibbs]{tulpa_gibbs()}} finalizes (see its Value).
+}
 \description{
 The Gibbs analogue of \code{\link[=dispatch_laplace_spatial]{dispatch_laplace_spatial()}}: routes on \code{spatial$type}
 to the matching \verb{cpp_pg_<family>_gibbs_<structure>} sampler, building the

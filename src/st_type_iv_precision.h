@@ -18,11 +18,13 @@
 #ifndef TULPA_ST_TYPE_IV_PRECISION_H
 #define TULPA_ST_TYPE_IV_PRECISION_H
 
+#include <cmath>
 #include <cstddef>
 #include <vector>
 
 #include <Eigen/SparseCore>
 
+#include "hmc_temporal.h"             // ar1_one_minus_rho2
 #include "tulpa/model_data.h"
 #include "st_null_space.h"
 #include "tulpa/soft_sum_to_zero.h"
@@ -43,9 +45,10 @@ inline std::size_t st_type_iv_triplet_count(const ModelData& data, int S, int T)
     const std::size_t Sz = (std::size_t)S, Tz = (std::size_t)T;
 
     // Entries st_add_qt_entries emits for one S-block: 4 per first difference
-    // (RW1), 9 per second difference (RW2). An acyclic Q_t has T - 1 first
-    // differences (T - 2 second), a cyclic one adds the wrap rows to reach
-    // exactly T (T), so the counts below bound both settings.
+    // (RW1, and AR1's innovations), 9 per second difference (RW2). An acyclic
+    // Q_t has T - 1 first differences (T - 2 second), a cyclic one adds the
+    // wrap rows to reach exactly T (T), and AR1's one-entry leading row keeps
+    // it under 4 T, so the counts below bound every setting.
     const std::size_t qt_emit =
         (st.temporal_type == TemporalType::RW2) ? (Tz * 9) : (Tz * 4);
 
@@ -68,15 +71,16 @@ inline std::size_t st_type_iv_triplet_count(const ModelData& data, int S, int T)
          + trend_emit;              // lambda_trend * (I_S (x) v v')
 }
 
-// Q_t on pattern: the RW1 / RW2 precision D' D. `cyclic` selects the same
-// operator SpatiotemporalData::temporal_cyclic selects in the density, adding
-// the wrap-around difference rows, so the matrix and the evaluated quadratic
-// form are the same Q_t.
+// Q_t on pattern: the RW1 / RW2 / AR1 precision D' D. `cyclic` selects the
+// same operator SpatiotemporalData::temporal_cyclic selects in the density,
+// adding the wrap-around difference rows, so the matrix and the evaluated
+// quadratic form are the same Q_t. `rho` is the AR1 correlation, unread by the
+// random walks.
 //
 // Each difference row is emitted as its own outer product, which is why the
 // wrap rows need no separate code path: they are the same stencil read at
 // indices that wrap.
-inline void st_add_qt_entries(TemporalType type, int T, bool cyclic,
+inline void st_add_qt_entries(TemporalType type, int T, bool cyclic, double rho,
                               std::vector<Eigen::Triplet<double>>& out,
                               int row_base, int col_base, double scale) {
     // One difference row d = sum_k w[k] x[idx[k]] contributes
@@ -116,6 +120,17 @@ inline void st_add_qt_entries(TemporalType type, int T, bool cyclic,
             emit_row(wrap1, w, 3);
             emit_row(wrap2, w, 3);
         }
+    } else if (type == TemporalType::AR1) {
+        // ar1_cross_form's factor: sqrt(1 - rho^2) x_0, then x_t - rho x_{t-1}.
+        if (T < 1) return;
+        const int idx0[1] = {0};
+        const double w0[1] = {std::sqrt(tulpa_temporal::ar1_one_minus_rho2(rho))};
+        emit_row(idx0, w0, 1);
+        const double w[2] = {-rho, 1.0};        // offsets t-1, t
+        for (int t = 1; t < T; t++) {
+            const int idx[2] = {t - 1, t};
+            emit_row(idx, w, 2);
+        }
     }
 }
 
@@ -140,11 +155,12 @@ inline void st_add_qt_entries(TemporalType type, int T, bool cyclic,
 // chain rule twice, so (1, 1/tau, 1/tau).
 //
 // `h_lik` is the per-coordinate eta-space likelihood curvature; empty means a
-// prior-only precision. Returns false without touching `Q` when the assembly
-// would exceed `max_triplets`.
+// prior-only precision. `rho` is the AR1 margin's correlation. Returns false
+// without touching `Q` when the assembly would exceed `max_triplets`.
 inline bool st_type_iv_precision(
     const ModelData& data,
     int S, int T,
+    double rho,
     double kron_scale,
     double h_scale,
     const std::vector<double>& h_lik,
@@ -168,14 +184,14 @@ inline bool st_type_iv_precision(
     for (int s = 0; s < S; s++) {
         const int deg = st.n_neighbors.empty() ? 0 : st.n_neighbors[s];
         if (deg != 0) {
-            st_add_qt_entries(st.temporal_type, T, st.temporal_cyclic, trip,
+            st_add_qt_entries(st.temporal_type, T, st.temporal_cyclic, rho, trip,
                               s * T, s * T, kron_scale * (double)deg);
         }
         if (st.adj_row_ptr.empty()) continue;
         for (int jj = st.adj_row_ptr[s]; jj < st.adj_row_ptr[s + 1]; jj++) {
             const int s2 = st.adj_col_idx[jj] - 1;   // stored 1-based
             if (s2 < 0 || s2 >= S) continue;
-            st_add_qt_entries(st.temporal_type, T, st.temporal_cyclic, trip,
+            st_add_qt_entries(st.temporal_type, T, st.temporal_cyclic, rho, trip,
                               s * T, s2 * T, -kron_scale);
         }
     }

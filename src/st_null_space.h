@@ -29,7 +29,8 @@
 //
 // CYCLIC RW2 is NOT affected: a linear ramp is not periodic, so rw2_rank
 // reports T - 1 there and the kernel is the constants alone. Nothing is added
-// for it.
+// for it. Nor is AR1: its precision is full rank, so null(Q_s (x) Q_t) is
+// null(Q_s) (x) R^T, already spanned by the column sums.
 #ifndef TULPA_ST_NULL_SPACE_H
 #define TULPA_ST_NULL_SPACE_H
 
@@ -40,6 +41,23 @@ namespace tulpa_st {
 
 using tulpa::STType;
 using tulpa::TemporalType;
+
+// Does the interaction's density read a temporal margin Q_t at all? Type II
+// applies Q_t within each spatial unit, Type IV carries it as a Kronecker
+// margin, and the HSGP-ST interaction applies it per spectral basis function.
+// Type I is iid over the whole grid and Type III's time margin is unstructured,
+// so neither reads SpatiotemporalData::temporal_type, and a correlation for it
+// would be a parameter nothing scores.
+inline bool st_reads_time_margin(STType type, bool is_hsgp) {
+    return is_hsgp || type == STType::TYPE_II || type == STType::TYPE_IV;
+}
+
+// The temporal margins the interaction density defines: the intrinsic RW1 and
+// RW2 precisions and the stationary AR1 one.
+inline bool st_time_margin_supported(TemporalType temporal) {
+    return temporal == TemporalType::RW1 || temporal == TemporalType::RW2 ||
+           temporal == TemporalType::AR1;
+}
 
 // Does the TEMPORAL marginal alone carry a null direction the field's own sum
 // does not pin? Non-cyclic RW2 only: its kernel is {1_T, v}, and a penalty on

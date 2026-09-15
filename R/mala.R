@@ -199,6 +199,5 @@ mala <- function(log_posterior,
     inference_tier = 1L,
     backend = "mala"
   )
-  class(fit) <- c("tulpa_mala_fit", "tulpa_fit")
-  fit
+  .finalize_fit(fit, param_names = names(init), extra_class = "tulpa_mala_fit")
 }

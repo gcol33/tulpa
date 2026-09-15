@@ -39,17 +39,16 @@ test_that("tulpa_gibbs(spatial = icar) recovers fixed effects on simulated data"
 
   # Wiring: the ICAR sampler returns its universal + spatial draws.
   expect_true(is.list(fit))
-  expect_true(all(c("beta", "spatial", "tau", "sigma_re") %in% names(fit)))
-  expect_equal(ncol(fit$spatial), n_units)
-  expect_true(all(is.finite(fit$tau)))
+  expect_equal(ncol(draws_block(fit, "phi_spatial")), n_units)
+  expect_true(all(is.finite(draws_block(fit, "log_tau_spatial"))))
 
   # Recovery: posterior-mean fixed effects near truth, and the posterior-mean
   # field tracks the simulated field (the identifiable within-mean structure;
   # tau itself is graph-scaled so the field correlation is the truth check).
-  beta_hat <- colMeans(fit$beta)
+  beta_hat <- colMeans(fixed_draws(fit))
   expect_lt(abs(beta_hat[1] - beta_true[1]), 0.45)   # intercept
   expect_lt(abs(beta_hat[2] - beta_true[2]), 0.30)   # slope
-  field_hat <- colMeans(fit$spatial)
+  field_hat <- colMeans(draws_block(fit, "phi_spatial"))
   expect_gt(stats::cor(field_hat, phi_true - mean(phi_true)), 0.6)
 })
 
@@ -87,25 +86,24 @@ test_that("tulpa_gibbs(spatial = icar, neg_binomial_2) recovers fixed effects", 
 
   # Wiring: the negbin ICAR sampler returns its universal + spatial + r draws.
   expect_true(is.list(fit))
-  expect_true(all(c("beta", "spatial", "tau", "sigma_re", "r") %in% names(fit)))
-  expect_equal(ncol(fit$spatial), n_units)
-  expect_true(all(is.finite(fit$r)))
+  expect_equal(ncol(draws_block(fit, "phi_spatial")), n_units)
+  expect_true(all(is.finite(draws_block(fit, "log_phi"))))
 
   # Recovery: the slope is identified separately from the field; the ICAR
   # field is improper (constant null space) and the kernel re-centers it to
   # mean-zero each sweep, so the intercept and the field's overall level are
   # confounded. Assert the identifiable combination (intercept + mean field)
   # against truth + the simulated field's mean, as the GP case does.
-  beta_hat <- colMeans(fit$beta)
+  beta_hat <- colMeans(fixed_draws(fit))
   expect_lt(abs(beta_hat[2] - beta_true[2]), 0.25)   # slope
-  level_hat  <- beta_hat[1] + mean(colMeans(fit$spatial))
+  level_hat  <- beta_hat[1] + mean(colMeans(draws_block(fit, "phi_spatial")))
   level_true <- beta_true[1] + mean(phi_true)
   expect_lt(abs(level_hat - level_true), 0.45)
   # The centered field tracks the simulated field, and the dispersion
   # posterior brackets the truth (r_true = 5) rather than merely staying sane.
-  field_hat <- colMeans(fit$spatial)
+  field_hat <- colMeans(draws_block(fit, "phi_spatial"))
   expect_gt(stats::cor(field_hat, phi_true - mean(phi_true)), 0.5)
-  expect_lt(abs(mean(fit$r) - r_true) / r_true, 0.6)
+  expect_lt(abs(mean(exp(draws_block(fit, "log_phi"))) - r_true) / r_true, 0.6)
 })
 
 test_that("negbin spatial Gibbs is wired for the areal ICAR field only", {
@@ -142,13 +140,12 @@ test_that("tulpa_gibbs(spatial = rsr) recovers fixed effects on simulated data",
     control = list(n_iter = 3000L, warmup = 1500L)
   )
 
-  # Wiring: the RSR sampler returns raw + projected field draws plus tau.
-  expect_true(all(c("beta", "spatial", "spatial_raw", "tau") %in% names(fit)))
-  expect_equal(ncol(fit$spatial), n)
-  expect_true(all(is.finite(fit$tau)))
+  # Wiring: the RSR sampler returns the projected field draws plus tau.
+  expect_equal(ncol(draws_block(fit, "phi_spatial")), n)
+  expect_true(all(is.finite(draws_block(fit, "log_tau_spatial"))))
 
   # Recovery: RSR orthogonalises the field to X, so beta is uncontaminated.
-  beta_hat <- colMeans(fit$beta)
+  beta_hat <- colMeans(fixed_draws(fit))
   expect_lt(abs(beta_hat[1] - beta_true[1]), 0.45)
   expect_lt(abs(beta_hat[2] - beta_true[2]), 0.30)
 })
@@ -184,16 +181,16 @@ test_that("tulpa_gibbs(spatial = gp) recovers fixed effects (one obs per locatio
     control = list(n_iter = 3000L, warmup = 1500L)
   )
 
-  expect_true(all(c("beta", "gp", "sigma2_gp", "phi_gp") %in% names(fit)))
-  expect_equal(ncol(fit$gp), n)
-  expect_true(all(is.finite(fit$sigma2_gp)))
-  beta_hat <- colMeans(fit$beta)
+  expect_true(all(c("log_sigma2_gp", "log_phi_gp") %in% colnames(fit$draws)))
+  expect_equal(ncol(draws_block(fit, "gp_w")), n)
+  expect_true(all(is.finite(draws_block(fit, "log_sigma2_gp"))))
+  beta_hat <- colMeans(fixed_draws(fit))
   # The slope is identified separately from the field; the intercept and the GP
   # surface's overall level are confounded (the smooth field can absorb a global
   # offset), so assert the identifiable combination -- intercept + mean field --
   # against the truth + the simulated field's own mean, not the bare intercept.
   expect_lt(abs(beta_hat[2] - beta_true[2]), 0.30)
-  level_hat  <- beta_hat[1] + mean(colMeans(fit$gp))
+  level_hat  <- beta_hat[1] + mean(colMeans(draws_block(fit, "gp_w")))
   level_true <- beta_true[1] + mean(w_true)
   expect_lt(abs(level_hat - level_true), 0.45)
 })
@@ -229,17 +226,18 @@ test_that("tulpa_gibbs(spatial = multiscale_gp) recovers fixed effects", {
     control = list(n_iter = 3000L, warmup = 1500L)
   )
 
-  expect_true(all(c("beta", "w_local", "w_regional",
-                    "sigma2_local", "sigma2_regional") %in% names(fit)))
-  expect_equal(ncol(fit$w_local), n)
-  expect_true(all(is.finite(colMeans(fit$w_local))))
-  beta_hat <- colMeans(fit$beta)
+  expect_true(all(c("log_sigma2_gp_local", "log_sigma2_gp_regional") %in%
+                  colnames(fit$draws)))
+  expect_equal(ncol(draws_block(fit, "gp_local")), n)
+  expect_equal(ncol(draws_block(fit, "gp_regional")), n)
+  expect_true(all(is.finite(colMeans(draws_block(fit, "gp_local")))))
+  beta_hat <- colMeans(fixed_draws(fit))
   # As in the single-scale GP case the slope is identified; the intercept and the
   # two additive field levels are confounded, so assert the identifiable
   # combination (intercept + both field means).
   expect_lt(abs(beta_hat[2] - beta_true[2]), 0.35)
-  level_hat  <- beta_hat[1] + mean(colMeans(fit$w_local)) +
-                mean(colMeans(fit$w_regional))
+  level_hat  <- beta_hat[1] + mean(colMeans(draws_block(fit, "gp_local"))) +
+                mean(colMeans(draws_block(fit, "gp_regional")))
   level_true <- beta_true[1] + mean(w_true)
   expect_lt(abs(level_hat - level_true), 0.50)
 })
@@ -296,14 +294,14 @@ test_that("negbin areal ICAR Gibbs runs and returns the draw blocks", {
     spatial = list(type = "icar", adjacency = adj, spatial_idx = site),
     family = "neg_binomial_2",
     iter = 200L, warmup = 100L)
-  expect_true(all(c("beta", "spatial", "tau", "r") %in% names(fit)))
-  expect_equal(nrow(fit$beta), 100L)
-  expect_equal(ncol(fit$spatial), n_units)
-  expect_true(all(is.finite(fit$beta)))
+  expect_true(all(c("log_tau_spatial", "log_phi") %in% colnames(fit$draws)))
+  expect_equal(nrow(fit$draws), 100L)
+  expect_equal(ncol(draws_block(fit, "phi_spatial")), n_units)
+  expect_true(all(is.finite(fit$draws)))
 
   # Loose recovery on the simulated truth (beta = (1, 0.3)); the tight
   # multi-seed gate is the slow-tier ICAR negbin test above.
-  beta_hat <- colMeans(fit$beta)
+  beta_hat <- colMeans(fit$draws[, 1:2])
   expect_lt(abs(beta_hat[1] - 1.0), 0.5)
   expect_lt(abs(beta_hat[2] - 0.3), 0.4)
 })

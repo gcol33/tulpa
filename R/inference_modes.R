@@ -589,7 +589,7 @@ tulpa_dispatch <- function(mode,
 #'
 #' The dispatch layer and the fitters that return generic-accessor-facing
 #' objects route their return value through this helper (some special-purpose
-#' fitters -- the logpost samplers, tulpa_ep, the categorical drivers -- still
+#' fitters -- tulpa_ep, the categorical drivers -- still
 #' stamp their class by hand), so a directly-called fitter and a
 #' `tulpa()`-dispatched one yield the same
 #' enriched object: the `tulpa_fit` class (so the generic S3 methods --
@@ -612,7 +612,8 @@ tulpa_dispatch <- function(mode,
 #' @param draws_kind Explicit `"chain"` / `"iid"` / `"point"` tag; used when the
 #'   backend is absent from `BACKEND_REGISTRY` or to override the registry.
 #' @param n_fixed,fixed_names,param_names Fixed-effect layout, each filled only
-#'   when the fitter left it unset.
+#'   when the fitter left it unset. An unnamed `means` vector of the matching
+#'   length is named by `param_names`.
 #' @param extra_class Subclass(es) to prepend before `tulpa_fit`.
 #' @return The enriched fit, classed `c(extra_class, ..., "tulpa_fit")`.
 #' @keywords internal
@@ -633,11 +634,27 @@ tulpa_dispatch <- function(mode,
   if (!is.null(n_fixed))     fit$n_fixed     <- fit$n_fixed     %||% n_fixed
   if (!is.null(fixed_names)) fit$fixed_names <- fit$fixed_names %||% fixed_names
   if (!is.null(param_names)) fit$param_names <- fit$param_names %||% param_names
+  fit <- .name_means_by_parameter(fit)
 
   cls <- oldClass(fit)
   if (!is.null(extra_class)) cls <- c(setdiff(extra_class, cls), cls)
   if (!("tulpa_fit" %in% cls)) cls <- c(cls, "tulpa_fit")
   class(fit) <- cls
+  fit
+}
+
+
+# Name the fit's `means` by `param_names`, the full-parameter vector both are
+# laid out in. A producer that samples a bare numeric vector (the log-posterior
+# samplers) cannot name it itself, so the names arrive with the layout. A vector
+# already named, or of another length, is left as it is.
+#' @keywords internal
+.name_means_by_parameter <- function(fit) {
+  pn <- fit$param_names
+  if (is.character(pn) && length(pn) && is.numeric(fit$means) &&
+      is.null(names(fit$means)) && length(fit$means) == length(pn)) {
+    names(fit$means) <- pn
+  }
   fit
 }
 

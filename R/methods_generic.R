@@ -90,16 +90,57 @@
 }
 
 
+# The engine's parameter layout for a ModelData sampler fit: the positions
+# `cpp_tulpa_glmm_layout()` assigns when handed the inputs recorded in
+# `$model_inputs`, which are the inputs the sampler received. NULL on a fit that
+# records none.
+#' @keywords internal
+.tulpa_sampler_layout <- function(object) {
+  mi <- object$model_inputs
+  if (!is.list(mi)) return(NULL)
+  cpp_tulpa_glmm_layout(
+    y = mi$y, n_trials = mi$n_trials, X = mi$X, family = mi$family,
+    phi = mi$phi, sigma_beta = mi$sigma_beta, offset_nullable = mi$offset,
+    re_spec = mi$re_spec, spatial_spec = mi$spatial_spec,
+    temporal_spec = mi$temporal_spec, sigma_re_scale = mi$sigma_re_scale,
+    svc_spec = mi$svc_spec, tvc_spec = mi$tvc_spec, zi_spec = mi$zi_spec)
+}
+
+# Draw columns (1-based) of one `[start, end]` span of a sampler layout; none
+# for an absent span.
+#' @keywords internal
+.layout_span_cols <- function(span) {
+  if (length(span) != 2L || span[2L] < span[1L]) return(integer(0))
+  seq.int(span[1L], span[2L])
+}
+
+# Draw columns holding the fixed effects, in `fixed_names` order: the count
+# coefficients, then the zero-inflation coefficients. On a ModelData sampler fit
+# they are where the engine layout puts them -- the zero-inflation block sits
+# after the random effects and the variance components, not beside the count
+# coefficients -- and on every other draw-carrying fit they lead the draws.
+#' @keywords internal
+.fixed_draw_cols <- function(object) {
+  nc <- ncol(object$draws)
+  layout <- if (.tulpa_linpred_source(object) == "sampler_model") {
+    .tulpa_sampler_layout(object)
+  }
+  if (is.null(layout)) {
+    return(seq_len(min(object$n_fixed %||% nc, nc)))
+  }
+  c(unlist(lapply(layout$beta, .layout_span_cols), use.names = FALSE),
+    .layout_span_cols(layout$beta_zi))
+}
+
 # Fixed-effect posterior draws (n_samples x n_fixed), normalized across sampler
-# shapes: the generic `$draws` matrix (columns [fixed, random]) restricted to
-# the fixed block, or the Gibbs `$beta` matrix (fixed effects only). NULL on the
-# Laplace tier, which carries no draws.
+# shapes: the generic `$draws` matrix restricted to its fixed-effect columns
+# (`.fixed_draw_cols()`), or the Gibbs `$beta` matrix (fixed effects only). NULL
+# on the Laplace tier, which carries no draws.
 #' @keywords internal
 .fixed_draws_mat <- function(object) {
   if (is.matrix(object$draws) && nrow(object$draws) >= 1L &&
       ncol(object$draws) >= 1L) {
-    p <- min(object$n_fixed %||% ncol(object$draws), ncol(object$draws))
-    return(object$draws[, seq_len(p), drop = FALSE])
+    return(object$draws[, .fixed_draw_cols(object), drop = FALSE])
   }
   if (is.matrix(object$beta) && ncol(object$beta) >= 1L) return(object$beta)
   NULL
@@ -119,20 +160,57 @@
 # fixed block, or the Gibbs `$re` matrix. NULL when none.
 #' @keywords internal
 .re_draws_mat <- function(object) {
-  nf <- object$n_fixed %||% 0L
   # A 0-row draws matrix carries no posterior at all; handing its tail back as
   # RE draws gave colMeans() of nothing, i.e. NaN estimates (gcol33/tulpa#710).
-  if (is.matrix(object$draws) && nrow(object$draws) > 0L &&
-      ncol(object$draws) > nf) {
-    return(object$draws[, (nf + 1L):ncol(object$draws), drop = FALSE])
+  if (is.matrix(object$draws) && nrow(object$draws) > 0L) {
+    rest <- setdiff(seq_len(ncol(object$draws)), .fixed_draw_cols(object))
+    if (length(rest)) return(object$draws[, rest, drop = FALSE])
   }
   if (is.matrix(object$re) && ncol(object$re) >= 1L) return(object$re)
   NULL
 }
 
+# The random-effect COEFFICIENT draws of `.re_draws_mat()`. A named sampler
+# tail is [latent (field + RE), hyperparameters], and its RE coefficients are
+# exactly the `re[...]`-named columns, so the field / `log_sigma_re` / `L_re`
+# columns are dropped. A tail naming no `re[...]` column is returned as it is
+# (an unnamed `$re` matrix); callers check its width against the RE layout.
+#' @keywords internal
+.re_coef_draws <- function(object) {
+  re <- .re_draws_mat(object)
+  if (is.null(re)) return(NULL)
+  re_cols <- .re_col_idx(colnames(re))
+  if (length(re_cols)) re[, re_cols, drop = FALSE] else re
+}
+
+# Positions of the random-effect coefficient columns (`re[...]`) in a vector of
+# sampler parameter names; empty for NULL names.
+#' @keywords internal
+.re_col_idx <- function(names) grep("^re\\[", names %||% character(0))
+
 # TRUE when the fit carries posterior draws of the fixed effects (sampler tier).
 #' @keywords internal
 .has_draws <- function(object) !is.null(.fixed_draws_mat(object))
+
+# TRUE when the posterior a fit reports is a Gaussian it states in closed form:
+# `reported_posterior = "gaussian"`, with the mean in `mode` (or `means`) and
+# the covariance in `cov`. Expectation propagation and a Laplace fit with no
+# hyperparameter to integrate report such a Gaussian; the draws they also carry
+# are samples FROM it, so moments and quantiles read off the draws would restate
+# the stated Gaussian with Monte-Carlo error added.
+#' @keywords internal
+.reports_gaussian_posterior <- function(object) {
+  identical(object$reported_posterior, "gaussian")
+}
+
+# The fixed-effect draws the coefficient summaries read: the fit's draws, except
+# on a fit reporting a closed-form Gaussian, where the draws serve sampling only
+# and the summaries read that Gaussian.
+#' @keywords internal
+.summary_draws_mat <- function(object) {
+  if (.reports_gaussian_posterior(object)) return(NULL)
+  .fixed_draws_mat(object)
+}
 
 
 # Grid-marginalized fixed-effect posterior for a nested-Laplace fit.
@@ -273,7 +351,7 @@
 .fit_fixed_table <- function(object, level = 0.95) {
   a <- (1 - level) / 2
 
-  fd <- .fixed_draws_mat(object)
+  fd <- .summary_draws_mat(object)
   if (!is.null(fd)) {
     idx <- seq_len(ncol(fd))
     nm  <- (object$fixed_names %||% object$param_names %||%
@@ -374,9 +452,10 @@
     ))
   }
 
-  # Gaussian fit carrying the full-parameter covariance directly (e.g. AGQ,
-  # whose inverse observed information is $cov rather than a precision $H_beta):
-  # the fixed-effect block of $cov gives real SEs without draws or H_beta.
+  # Gaussian fit carrying the full-parameter covariance directly (AGQ, whose
+  # inverse observed information is $cov rather than a precision $H_beta, and
+  # every fit reporting a closed-form Gaussian): the fixed-effect block of $cov
+  # gives the SEs, and the bounds are that Gaussian's quantiles.
   est_all <- object$mode %||% object$means
   if (!is.null(est_all) && is.matrix(object$cov) && !anyNA(object$cov)) {
     p   <- object$n_fixed %||% length(est_all)
@@ -465,14 +544,28 @@ print.tulpa_fit <- function(x, ...) {
   invisible(x)
 }
 
+# Labels of the lower and upper interval columns at `level`, in the layout
+# `stats::confint.default()` gives them ("2.5 %", "97.5 %", "5 %"), so an
+# interval read by column name reads a tulpa fit as it reads an lm or glm fit.
+#' @keywords internal
+.interval_colnames <- function(level) {
+  a <- (1 - level) / 2
+  paste(format(100 * c(a, 1 - a), trim = TRUE, scientific = FALSE, digits = 3),
+        "%")
+}
+
 #' Posterior summary of the fixed effects
 #'
 #' @param object A `tulpa_fit` object.
 #' @param level Credible-interval level (default 0.95).
 #' @param ... Ignored.
 #' @return Data frame: estimate, std.error, and lower/upper credible bounds, one
-#'   row per fixed effect. Sampler tiers report empirical quantiles; the Laplace
-#'   tier reports the Gaussian approximation.
+#'   row per fixed effect, the bound columns labelled as [confint.tulpa_fit()]
+#'   labels them. Sampler tiers report empirical quantiles; the Laplace
+#'   tier reports the Gaussian approximation, and so does any fit whose reported
+#'   posterior is a closed-form Gaussian (expectation propagation, the
+#'   multinomial Laplace fit), whose draws are then samples from that Gaussian
+#'   and are not what the summary reads.
 #'
 #'   On a nested-Laplace fit the estimate and standard error are the
 #'   hyperparameter-grid-marginalized moments, and the bounds invert the Gaussian
@@ -514,7 +607,6 @@ print.tulpa_fit <- function(x, ...) {
 #' @export
 summary.tulpa_fit <- function(object, level = 0.95, ...) {
   tab <- .fit_fixed_table(object, level = level)
-  a <- (1 - level) / 2
   out <- data.frame(
     estimate  = tab$estimate,
     std.error = tab$std.error,
@@ -522,7 +614,7 @@ summary.tulpa_fit <- function(object, level = 0.95, ...) {
     `conf.high` = tab$conf.high,
     row.names = tab$term, check.names = FALSE
   )
-  names(out)[3:4] <- sprintf("%.1f%%", 100 * c(a, 1 - a))
+  names(out)[3:4] <- .interval_colnames(level)
   attr(out, "skew_applied")      <- attr(tab, "skew_applied")
   attr(out, "interval_source")   <- attr(tab, "interval_source")
   attr(out, "interval_declined") <- attr(tab, "interval_declined")
@@ -538,7 +630,9 @@ summary.tulpa_fit <- function(object, level = 0.95, ...) {
 #' @param parm Parameter names or indices (default: all fixed effects).
 #' @param level Interval level (default 0.95).
 #' @param ... Ignored.
-#' @return Matrix with lower and upper columns. A nested-Laplace fit carries
+#' @return Matrix with lower and upper columns, labelled as
+#'   [stats::confint.default()] labels them (`"2.5 %"` and `"97.5 %"` at the
+#'   default level). A nested-Laplace fit carries
 #'   `interval_source` / `interval_declined` (which read produced the bounds --
 #'   by default the grid's Gaussian-mixture CDF), `retained_mass` (the share of
 #'   the grid weight the bounds are conditional on), and `skew_applied`, one
@@ -547,10 +641,9 @@ summary.tulpa_fit <- function(object, level = 0.95, ...) {
 #' @export
 confint.tulpa_fit <- function(object, parm = NULL, level = 0.95, ...) {
   tab <- .fit_fixed_table(object, level = level)
-  a <- (1 - level) / 2
   ci <- as.matrix(tab[, c("conf.low", "conf.high")])
   rownames(ci) <- tab$term
-  colnames(ci) <- sprintf("%.1f%%", 100 * c(a, 1 - a))
+  colnames(ci) <- .interval_colnames(level)
   sa <- attr(tab, "skew_applied")
   if (!is.null(parm)) {
     ci <- ci[parm, , drop = FALSE]
@@ -568,10 +661,11 @@ confint.tulpa_fit <- function(object, parm = NULL, level = 0.95, ...) {
 #' @param object A `tulpa_fit` object.
 #' @param ... Ignored.
 #' @return Fixed-effect variance-covariance matrix (empirical for sampler tiers,
-#'   `H_beta^-1` for the Laplace tier).
+#'   `H_beta^-1` for the Laplace tier, the stated covariance on a fit whose
+#'   reported posterior is a closed-form Gaussian).
 #' @export
 vcov.tulpa_fit <- function(object, ...) {
-  fd  <- .fixed_draws_mat(object)
+  fd  <- .summary_draws_mat(object)
   mom <- .nested_fixed_moments(object)
   if (!is.null(fd)) {
     V <- stats::cov(fd)
@@ -603,8 +697,13 @@ vcov.tulpa_fit <- function(object, ...) {
 #' names it in a `quantity` attribute:
 #'
 #' \describe{
-#'   \item{`"log_posterior_mean"`}{a sampler fit: the mean log POSTERIOR over
-#'     the draws, prior included.}
+#'   \item{`"log_posterior_mean"`}{a sampler fit: the mean over the draws of
+#'     the log joint posterior density, prior included, in that backend's own
+#'     parameterization: the unconstrained coordinates with their Jacobians
+#'     for the ModelData samplers (`hmc`, `ess`, `sghmc`, `sgld`, `mclmc`,
+#'     `smc`, `vi`), and the natural scale each quantity is sampled on for the
+#'     RE-covariance and Polya-Gamma Gibbs samplers. Values are therefore
+#'     comparable across fits of the same backend only.}
 #'   \item{`"log_evidence"`}{a deterministic fit that estimated no
 #'     hyperparameter from the data: the log marginal probability of the data
 #'     under the model as specified. A hyperparameter the fit integrated counts,
@@ -636,6 +735,15 @@ vcov.tulpa_fit <- function(object, ...) {
 #' cell volume, so a fit integrated on one reports `NA` with a `declined`
 #' attribute.
 #'
+#' A sampler fit whose producer kept no per-draw log posterior reports `NA`
+#' with `quantity = "log_posterior_mean"` and
+#' `declined = "no_log_posterior_recorded"`. The Polya-Gamma Gibbs routes that
+#' recentre a proper field every sweep (the NNGP and multiscale-GP fields, and
+#' the negative-binomial kernel's iid random-effect block) leave no written
+#' density invariant and record none; a fit carrying neither draws
+#' nor a log marginal declines with `"no_goodness_quantity_recorded"`. A value
+#' of `NA` always carries a `declined` attribute.
+#'
 #' Values with a different `quantity` or `conditioned_on` are not on one scale,
 #' and `compare_models(criterion = "loglik")` refuses such a set. Only a
 #' `"log_likelihood"` is what AIC and BIC penalise, so [AIC.tulpa_fit()] and
@@ -660,7 +768,7 @@ logLik.tulpa_fit <- function(object, ...) {
     v <- as.numeric(object$log_evidence %||% NA_real_)[1L]
     if (!is.finite(v)) {
       declined <- as.character(object$log_evidence_declined %||% NA_character_)[1L]
-      if (is.na(declined)) declined <- "no_finite_cell"
+      if (is.na(declined)) declined <- .loglik_decline("no_finite_cell")
       v <- NA_real_
     }
     v
@@ -669,13 +777,23 @@ logLik.tulpa_fit <- function(object, ...) {
   } else if (length(object$log_marginal) > 1L) {
     # A per-cell vector with no record of the measure its weights took. The
     # cells' prior masses are part of the evidence, so a sum over the vector
-    # alone is not one (gcol33/tulpa#722).
-    declined <- "outer_measure_not_recorded"
+    # alone is not one.
+    declined <- .loglik_decline("outer_measure_not_recorded")
     NA_real_
-  } else NA_real_
+  } else if (.has_draws(object)) {
+    # A sampler whose producer kept no per-draw log posterior: the quantity a
+    # draw-based fit reports cannot be formed from the draws alone.
+    declined <- .loglik_decline("no_log_posterior_recorded")
+    NA_real_
+  } else {
+    declined <- .loglik_decline("no_goodness_quantity_recorded")
+    NA_real_
+  }
 
   estimated <- .fit_estimated_hyperparameters(object)
-  quantity <- if (!is.null(object$log_prob)) {
+  quantity <- if (!is.null(object$log_prob) ||
+                  (!recorded && is.null(object$log_marginal) &&
+                   .has_draws(object))) {
     "log_posterior_mean"
   } else if (!recorded && is.null(object$log_marginal)) {
     NA_character_
@@ -712,6 +830,24 @@ logLik.tulpa_fit <- function(object, ...) {
 # Backends whose log_marginal is maximised over every parameter they report,
 # the random effects integrated out.
 .ML_BACKENDS <- c("agq")
+
+# Why logLik() reports no value, where the reason is logLik()'s own rather than
+# one the producer recorded in `log_evidence_declined`.
+.LOGLIK_DECLINE_REASONS <- c(
+  # An outer integration was recorded but no cell produced a finite value.
+  "no_finite_cell",
+  # A per-cell log-marginal vector with no record of the cells' measure.
+  "outer_measure_not_recorded",
+  # A draw-based fit whose producer kept no per-draw log posterior.
+  "no_log_posterior_recorded",
+  # A fit carrying neither draws nor any log marginal.
+  "no_goodness_quantity_recorded"
+)
+
+.loglik_decline <- function(reason) {
+  stopifnot(reason %in% .LOGLIK_DECLINE_REASONS)
+  reason
+}
 
 # The hyperparameters a deterministic fit estimated by maximising over the same
 # data, which makes its log marginal likelihood conditional on those estimates
@@ -756,12 +892,19 @@ BIC.tulpa_fit <- function(object, ...) {
 .check_information_criterion <- function(fits, what) {
   for (f in fits) {
     if (!inherits(f, "tulpa_fit")) next
-    q <- attr(logLik(f), "quantity") %||% NA_character_
+    ll <- logLik(f)
+    q  <- attr(ll, "quantity") %||% NA_character_
     if (!identical(q, "log_likelihood")) {
+      reads <- if (is.na(q)) {
+        sprintf("reports no quantity (declined: %s)",
+                attr(ll, "declined") %||% "unrecorded")
+      } else {
+        paste("is a", gsub("_", " ", q))
+      }
       stop(sprintf(paste0(
-        "%s() needs a maximised log-likelihood; logLik() on this fit is a %s. ",
+        "%s() needs a maximised log-likelihood; logLik() on this fit %s. ",
         "Compare fits by their evidence, or by compare_models(criterion = ",
-        "\"waic\") / \"loo\"."), what, gsub("_", " ", q)), call. = FALSE)
+        "\"waic\") / \"loo\"."), what, reads), call. = FALSE)
     }
   }
   invisible(NULL)
@@ -959,16 +1102,10 @@ ranef.tulpa_fit <- function(object, ...) {
          object$ranef_unavailable, call. = FALSE)
   }
 
-  re <- .re_draws_mat(object)
+  re <- .re_coef_draws(object)
   if (!is.null(re)) {
-    # Sampler-tier draws are [fixed, latent (field + RE), hyperparameters]; the
-    # RE coefficients are exactly the `re[...]`-named columns, so select those
-    # and drop the field / `log_sigma_re` / `L_re` columns that are not REs.
-    cn <- colnames(re)
-    re_cols <- if (!is.null(cn)) grep("^re\\[", cn) else integer(0)
-    if (length(re_cols)) {
-      re <- re[, re_cols, drop = FALSE]
-    } else if (ncol(re) != length(re_names)) {
+    if (!length(.re_col_idx(colnames(re))) &&
+        ncol(re) != length(re_names)) {
       # No `re[`-named columns and the tail width does not match the RE layout:
       # this is the field / hyperparameter latent tail, not identifiable random
       # effects. Do not emit it mislabeled as ranef. (An unnamed matrix whose
@@ -1131,6 +1268,69 @@ plot.tulpa_fit <- function(x, type = c("density", "trace", "pairs", "smooth"),
   X  <- stats::model.matrix(tt, mf)
   attr(X, "offset") <- stats::model.offset(mf)
   X
+}
+
+# Stop an observation-level accessor on a fit that does not carry what the
+# accessor reads, naming the fit's class and the missing piece.
+#' @keywords internal
+.accessor_unavailable <- function(accessor, object, what) {
+  stop(sprintf("%s() is not available for a %s fit: it does not carry %s.",
+               accessor, class(object)[1L], what), call. = FALSE)
+}
+
+# The designs the observation-level accessors evaluate the linear predictors
+# at: the training designs the fit stored (`newdata = NULL`), or the ones
+# rebuilt from the fit's formulas at `newdata`. `X_zi` is the zero-inflation
+# design (NULL on a fit without one) and `offset` the observation offset --
+# the stored one, or the formula's offset() term evaluated on `newdata`.
+#' @keywords internal
+.tulpa_designs <- function(object, newdata, accessor) {
+  if (is.null(newdata)) {
+    if (is.null(object$model_matrix)) {
+      .accessor_unavailable(accessor, object,
+                            "the fixed-effect design ($model_matrix)")
+    }
+    return(list(X = object$model_matrix, X_zi = object$zi_model_matrix,
+                offset = object$offset %||% 0))
+  }
+  if (is.null(object$formula)) {
+    .accessor_unavailable(accessor, object,
+                          "the model formula that rebuilds the design at `newdata`")
+  }
+  X <- .tulpa_fixed_design(object, newdata)
+  X_zi <- if (!is.null(object$ziformula)) {
+    .zi_design(object$ziformula, newdata, nrow(X))
+  }
+  list(X = X, X_zi = X_zi, offset = attr(X, "offset") %||% 0)
+}
+
+# Point linear predictors at the coefficient estimates: the count predictor
+# `eta` (offset included) and, on a zero-inflated fit, the structural-zero logit
+# `X_zi beta_zi`. The zero-inflation block of coef() is named by the columns of
+# the zero-inflation design; every other coefficient is read against the count
+# design. `X` / `X_zi` come back restricted to, and ordered by, the coefficients
+# they multiply.
+#' @keywords internal
+.tulpa_point_linpred <- function(object, newdata, accessor) {
+  D     <- .tulpa_designs(object, newdata, accessor)
+  beta  <- coef(object)
+  zi_nm <- colnames(D$X_zi)
+  miss  <- setdiff(names(beta), c(colnames(D$X), zi_nm))
+  if (length(miss)) {
+    stop(if (is.null(newdata)) "the stored design" else "newdata",
+         " cannot reproduce fixed-effect column(s): ",
+         paste(miss, collapse = ", "), call. = FALSE)
+  }
+  count_nm <- setdiff(names(beta), zi_nm)
+  X <- D$X[, count_nm, drop = FALSE]
+  out <- list(eta = as.numeric(X %*% beta[count_nm]) + D$offset,
+              logit_zi = NULL, X = X, X_zi = NULL, offset = D$offset,
+              count_names = count_nm, zi_names = zi_nm)
+  if (!is.null(zi_nm)) {
+    out$X_zi     <- D$X_zi[, zi_nm, drop = FALSE]
+    out$logit_zi <- as.numeric(out$X_zi %*% beta[zi_nm])
+  }
+  out
 }
 
 # FEM projector from the fitted SPDE mesh to arbitrary coordinates. Requires a
@@ -1369,22 +1569,19 @@ plot.tulpa_fit <- function(x, type = c("density", "trace", "pairs", "smooth"),
 #' (`E[y] = g^{-1}(X beta + offset)`, trial-scaled for binomial). Random
 #' effects are held at their prior mean of zero; group-level effects are in
 #' [ranef()]. `y - fitted(object)` equals
-#' `residuals(object, type = "response")`.
+#' `residuals(object, type = "response")`. On a zero-inflated fit
+#' (`ziformula`) the mean is the mixture's, `(1 - pi) E[y | eta]` with
+#' `pi = plogis(X_zi beta_zi)`; over a zero-truncated family that is the hurdle
+#' mean.
 #'
 #' @param object A `tulpa_fit` object (must carry `$model_matrix`).
 #' @param ... Ignored.
 #' @return Numeric vector of fitted mean responses, length `nobs`.
 #' @export
 fitted.tulpa_fit <- function(object, ...) {
-  X <- object$model_matrix
-  if (is.null(X)) {
-    stop("fitted() needs the fixed-effect design ($model_matrix); refit with ",
-         "tulpa().", call. = FALSE)
-  }
-  beta <- coef(object)
-  eta  <- as.numeric(X %*% beta[colnames(X)]) + (object$offset %||% 0)
-  family_response_mean(eta, object$family, n_trials = object$n_trials,
-                       phi = object$phi %||% 1.0)
+  lp <- .tulpa_point_linpred(object, NULL, "fitted")
+  .response_mean(lp$eta, lp$logit_zi, object$family,
+                 n_trials = object$n_trials, phi = object$phi %||% 1.0)
 }
 
 #' Residuals from a tulpa fit
@@ -1394,7 +1591,8 @@ fitted.tulpa_fit <- function(object, ...) {
 #' is `y - E[y | eta]` on the response scale (trial-scaled for binomial,
 #' offset included); `"pearson"` additionally scales by the family standard
 #' deviation `sqrt(Var(y | eta))` at the fitted linear predictor. Random
-#' effects are held at zero, matching [fitted()].
+#' effects are held at zero, matching [fitted()]. On a zero-inflated fit both
+#' the mean and the variance are the mixture's.
 #'
 #' @param object A `tulpa_fit` object carrying `$y` and `$model_matrix`.
 #' @param type `"pearson"` (default) or `"response"`.
@@ -1404,23 +1602,16 @@ fitted.tulpa_fit <- function(object, ...) {
 residuals.tulpa_fit <- function(object, type = c("pearson", "response"), ...) {
   type <- match.arg(type)
   y <- object$y
-  if (is.null(y)) {
-    stop("residuals() needs the response ($y); refit with tulpa().",
-         call. = FALSE)
-  }
-  X <- object$model_matrix
-  if (is.null(X)) {
-    stop("residuals() needs the fixed-effect design ($model_matrix); refit ",
-         "with tulpa().", call. = FALSE)
-  }
-  beta <- coef(object)
-  eta  <- as.numeric(X %*% beta[colnames(X)]) + (object$offset %||% 0)
-  mu   <- family_response_mean(eta, object$family, n_trials = object$n_trials,
-                               phi = object$phi %||% 1.0)
+  if (is.null(y)) .accessor_unavailable("residuals", object, "the response ($y)")
+  lp  <- .tulpa_point_linpred(object, NULL, "residuals")
+  phi <- object$phi %||% 1.0
+  mu  <- .response_mean(lp$eta, lp$logit_zi, object$family,
+                        n_trials = object$n_trials, phi = phi)
   r <- as.numeric(y) - mu
   if (type == "pearson") {
-    v <- family_variance(eta, object$family, n_trials = object$n_trials,
-                         phi = object$phi %||% 1.0, phi2 = object$phi2)
+    v <- .response_variance(lp$eta, lp$logit_zi, object$family,
+                            n_trials = object$n_trials, phi = phi,
+                            phi2 = object$phi2)
     r <- r / sqrt(pmax(v, .Machine$double.eps))
   }
   r
@@ -1467,18 +1658,24 @@ nobs.tulpa_fit <- function(object, ...) {
 #' @param newdata Data frame of covariates (and, for an SPDE fit, the coordinate
 #'   columns named in the spec's coordinate formula). If `NULL`, predicts at the
 #'   training design (requires `$model_matrix`).
-#' @param type `"link"` (linear predictor) or `"response"` (mean scale). For a
-#'   binomial fit the `"response"` scale here is the per-trial success
-#'   probability `g^{-1}(eta)` (there is no `n_trials` at `newdata`); this
-#'   differs from [fitted()], which returns the trial-scaled expected count at
-#'   the training design.
+#' @param type `"link"` (linear predictor) or `"response"` (mean scale,
+#'   `E[y]`). For a binomial fit the `"response"` scale here is the per-trial
+#'   success probability `g^{-1}(eta)` (there is no `n_trials` at `newdata`);
+#'   this differs from [fitted()], which returns the trial-scaled expected
+#'   count at the training design. On a zero-inflated fit (`ziformula`) the
+#'   `"link"` scale is the count predictor and the `"response"` scale is the
+#'   mixture mean `(1 - pi) E[y | eta]`, `pi = plogis(X_zi beta_zi)`, with the
+#'   zero-inflation design rebuilt from the fit's `ziformula` at `newdata`.
 #' @param se.fit If `TRUE`, also return the link-scale standard error and
 #'   credible bounds. With an included SPDE field the SE propagates the joint
 #'   (fixed-effect, field) posterior precision at the fitted hyperparameters
 #'   -- including the cross term -- conditional on `(range, sigma)` (a nested
 #'   fit's hyperparameter-grid spread is not propagated, so the bound is
 #'   mildly optimistic when that posterior is wide). Integer-nu, no-RE SPDE
-#'   fits only; other layouts decline with an explanation.
+#'   fits only; other layouts decline with an explanation. On a zero-inflated
+#'   fit `se.fit` is the count predictor's, and the response-scale bounds are
+#'   quantiles of the mixture mean over draws of the count and zero-inflation
+#'   coefficients jointly (pinned, so repeated calls agree).
 #' @param level Credible-interval level (default 0.95).
 #' @param include_field For a continuous-spatial fit (SPDE, HSGP, or GP/NNGP),
 #'   add the kriged field to the prediction (default `TRUE`). `FALSE` gives the
@@ -1496,24 +1693,11 @@ predict.tulpa_fit <- function(object, newdata = NULL,
                               se.fit = FALSE, level = 0.95,
                               include_field = TRUE, ...) {
   type <- match.arg(type)
-  beta <- coef(object)
-
-  X <- if (is.null(newdata)) object$model_matrix else .tulpa_fixed_design(object, newdata)
-  if (is.null(X)) {
-    stop("predict() needs `newdata` (or a fit carrying $model_matrix).",
-         call. = FALSE)
-  }
-  # Observation offset, matching fitted()/residuals(): the fit's stored offset at
-  # the training design, or the offset() term re-evaluated on newdata.
-  off <- if (is.null(newdata)) (object$offset %||% 0) else (attr(X, "offset") %||% 0)
-  miss <- setdiff(names(beta), colnames(X))
-  if (length(miss)) {
-    stop("newdata cannot reproduce fixed-effect column(s): ",
-         paste(miss, collapse = ", "), call. = FALSE)
-  }
-  X <- X[, names(beta), drop = FALSE]
-
-  eta <- as.numeric(X %*% beta) + off
+  # Count design and linear predictor (offset included, matching
+  # fitted()/residuals()), plus the structural-zero logit on a zero-inflated fit.
+  lp  <- .tulpa_point_linpred(object, newdata, "predict")
+  X   <- lp$X
+  eta <- lp$eta
 
   # Kriged SPDE field. At training data (newdata = NULL) reuse the fitted
   # projector; at new coordinates re-project the mesh-node field through the
@@ -1552,26 +1736,58 @@ predict.tulpa_fit <- function(object, newdata = NULL,
     if (!is.null(gp_fld)) eta <- eta + gp_fld
   }
 
+  ph <- object$phi %||% 1.0
+  response_mean <- function(e, z) .response_mean(e, z, object$family, phi = ph)
   if (!se.fit) {
-    return(if (type == "response") {
-      family_mean(eta, object$family, phi = object$phi %||% 1.0)
-    } else eta)
+    return(if (type == "response") response_mean(eta, lp$logit_zi) else eta)
   }
 
   se <- if (!is.null(spde_se)) {
     spde_se
   } else {
-    V <- vcov(object)
+    V <- vcov(object)[lp$count_names, lp$count_names, drop = FALSE]
     sqrt(pmax(rowSums((X %*% V) * X), 0))
   }
   z  <- stats::qnorm(1 - (1 - level) / 2)
   lo <- eta - z * se
   hi <- eta + z * se
   if (type == "response") {
-    ph  <- object$phi %||% 1.0
-    eta <- family_mean(eta, object$family, phi = ph)
-    lo  <- family_mean(lo, object$family, phi = ph)   # monotone inverse links: endpoints map through
-    hi  <- family_mean(hi, object$family, phi = ph)
+    if (is.null(lp$logit_zi)) {
+      # One predictor through a monotone mean: the endpoints map through.
+      m_lo <- response_mean(lo, NULL)
+      m_hi <- response_mean(hi, NULL)
+      lo <- pmin(m_lo, m_hi)
+      hi <- pmax(m_lo, m_hi)
+    } else {
+      # The mixture mean moves with two predictors at once, so no endpoint map
+      # exists; its quantiles are read over pinned, RNG-neutral draws of the
+      # fixed block, the count and zero-inflation coefficients jointly.
+      q <- .predict_zi_mean_quantiles(object, lp, eta - lp$eta + lp$offset,
+                                      level)
+      lo <- q$lower
+      hi <- q$upper
+    }
+    eta <- response_mean(eta, lp$logit_zi)
   }
   data.frame(fit = eta, se.fit = se, lower = lo, upper = hi)
+}
+
+# Credible bounds for the zero-inflated mixture mean at the prediction design.
+# `shift` is everything predict() adds to the fixed-effect count predictor (the
+# offset, a kriged field), held at its point value across draws. The fixed block
+# is drawn RNG-neutrally from a pinned seed, so predict() returns the same
+# interval on every call and leaves the session stream untouched.
+#' @keywords internal
+.predict_zi_mean_quantiles <- function(object, lp, shift, level) {
+  .preserve_seed_in_frame()
+  set.seed(.PREDICT_ZI$seed)
+  beta <- .fixed_coef_draws(object, .PREDICT_ZI$ndraws)$beta
+  eta  <- sweep(beta[, lp$count_names, drop = FALSE] %*% t(lp$X), 2,
+                rep_len(shift, nrow(lp$X)), "+")
+  zlog <- beta[, lp$zi_names, drop = FALSE] %*% t(lp$X_zi)
+  m <- matrix(.response_mean(eta, zlog, object$family, phi = object$phi %||% 1.0),
+              nrow(eta))
+  a <- (1 - level) / 2
+  list(lower = apply(m, 2, stats::quantile, probs = a, names = FALSE),
+       upper = apply(m, 2, stats::quantile, probs = 1 - a, names = FALSE))
 }

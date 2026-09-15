@@ -78,10 +78,6 @@ static std::vector<std::pair<int,int>> detect_mass_blocks(
       block_specs.push_back({layout.log_sigma2_svc_start, 2});
     }
   }
-  if (layout.is_st_gp && layout.log_phi_st_space_idx >= 0 &&
-      layout.log_phi_st_time_idx == layout.log_phi_st_space_idx + 1) {
-    block_specs.push_back({layout.log_phi_st_space_idx, 2});
-  }
   if (layout.has_multiscale_temporal) {
     // Multiscale temporal hyperparams form a natural block (3-4 params):
     // log_sigma2_trend, log_sigma2_seasonal, log_sigma2_short [, logit_rho_short]

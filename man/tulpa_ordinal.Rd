@@ -33,8 +33,11 @@ parameters (default 10).}
 (default 2000), \code{seed}.}
 }
 \value{
-A \code{tulpa_fit} (subclass \code{tulpa_ordinal}) with \code{coef} (covariate
-effects), \code{cutpoints}, \code{vcov}, \code{draws}, \code{log_marginal}, \code{levels}.
+A \code{tulpa_fit} (subclass \code{tulpa_ordinal}) with \code{coefficients}
+(covariate effects) and \code{cutpoints} at the posterior mode, \code{draws} (the
+Laplace Gaussian mapped to ordered cutpoints), \code{log_marginal}, \code{levels}.
+The draws are the posterior \code{\link[=coef]{coef()}}, \code{\link[=vcov]{vcov()}}, \code{\link[=summary]{summary()}} and
+\code{\link[=confint]{confint()}} report; \code{\link[=coef]{coef()}} omits the cutpoints, as \code{MASS::polr} does.
 }
 \description{
 Fits a proportional-odds cumulative-logit model for an ordered factor

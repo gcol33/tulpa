@@ -178,7 +178,7 @@ test_that("sparse path matches dense on joint CAR_proper", {
                  tolerance = tol, info = "fixed-effect estimates")
     expect_equal(as.numeric(ss_$std.error), as.numeric(sd_$std.error),
                  tolerance = tol, info = "fixed-effect standard errors")
-    expect_equal(as.numeric(ss_[["2.5%"]]), as.numeric(sd_[["2.5%"]]),
+    expect_equal(as.numeric(ss_[["2.5 %"]]), as.numeric(sd_[["2.5 %"]]),
                  tolerance = tol, info = "lower bounds")
 
     # The retained per-cell fixed-effect precisions, which is what the summary

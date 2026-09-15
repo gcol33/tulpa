@@ -43,11 +43,10 @@ test_that("tulpa(spatial = icar, mode = gibbs) recovers beta end-to-end", {
   expect_equal(fit$backend, "gibbs")
   expect_equal(fit$inference_tier, 1L)
   expect_true(inherits(fit, "tulpa_fit"))
-  expect_true(all(c("beta", "spatial", "tau") %in% names(fit)))
-  expect_equal(ncol(fit$spatial), s$n_units)
-  expect_true(all(is.finite(fit$tau)))
+  expect_equal(ncol(draws_block(fit, "phi_spatial")), s$n_units)
+  expect_true(all(is.finite(draws_block(fit, "log_tau_spatial"))))
   # Recovery: posterior-mean fixed effects near truth.
-  beta_hat <- colMeans(fit$beta)
+  beta_hat <- colMeans(fixed_draws(fit))
   expect_lt(abs(beta_hat[1] - s$beta[1]), 0.45)   # intercept
   expect_lt(abs(beta_hat[2] - s$beta[2]), 0.30)   # slope
 })
@@ -77,8 +76,9 @@ test_that("tulpa(spatial = bym2, mode = gibbs) wires through and returns field d
     control = list(n_iter = 1500L, warmup = 750L)
   )
   expect_equal(fit$backend, "gibbs")
-  expect_equal(ncol(fit$spatial), s$n_units)
-  expect_true(all(is.finite(colMeans(fit$beta))))
+  expect_equal(ncol(draws_block(fit, "phi_spatial")), s$n_units)
+  expect_equal(ncol(draws_block(fit, "theta_spatial")), s$n_units)
+  expect_true(all(is.finite(colMeans(fixed_draws(fit)))))
 })
 
 test_that("mode = laplace routes a spatial field through tulpa_laplace", {
@@ -192,10 +192,10 @@ test_that("tulpa() routes an RSR field to the binomial Gibbs sampler (auto)", {
   # Routing: auto picked the (Tier 1) RSR Polya-Gamma sampler, not nested/plain.
   expect_equal(fit$backend, "gibbs")
   expect_equal(fit$inference_mode, "exact")
-  expect_true(all(c("beta", "spatial", "spatial_raw", "tau") %in% names(fit)))
-  expect_equal(ncol(fit$spatial), s$n_units)
+  expect_true("log_tau_spatial" %in% colnames(fit$draws))
+  expect_equal(ncol(draws_block(fit, "phi_spatial")), s$n_units)
   # Recovery: RSR orthogonalises the field to x, so the slope is uncontaminated.
-  beta_hat <- colMeans(fit$beta)
+  beta_hat <- colMeans(fixed_draws(fit))
   expect_lt(abs(beta_hat[2] - s$beta[2]), 0.30)
 })
 

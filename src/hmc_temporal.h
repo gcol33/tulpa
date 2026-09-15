@@ -152,6 +152,27 @@ inline T gmrf_log_norm(int rank, const T& log_tau) {
   return T(0.5 * rank) * (log_tau - T(kLogTwoPi));
 }
 
+// a' Q_AR1 b for the stationary AR1 precision at unit conditional precision,
+// written through its triangular factor: Q_AR1 = D' D with D's first row
+// sqrt(1 - rho^2) e_0 and row t >= 1 the innovation x_t - rho x_{t-1}, so
+//
+//   a' Q_AR1 b = (1 - rho^2) a_0 b_0 + sum_{t>=1} (a_t - rho a_{t-1})(b_t - rho b_{t-1}),
+//   |Q_AR1|    = 1 - rho^2.
+//
+// With a == b it is the quadratic form the scalar density evaluates; with
+// a != b it is the off-diagonal temporal term of a Kronecker (Q_s (x) Q_AR1)
+// prior. The floored factor enters both the form and |Q_AR1|, so the
+// determinant stays exactly that of the matrix the form contracts.
+template <typename T>
+inline T ar1_cross_form(const T* a, const T* b, int T_len, const T& rho) {
+  if (T_len < 1) return T(0.0);
+  T quad = ar1_one_minus_rho2(rho) * a[0] * b[0];
+  for (int t = 1; t < T_len; t++) {
+    quad = quad + (a[t] - rho * a[t - 1]) * (b[t] - rho * b[t - 1]);
+  }
+  return quad;
+}
+
 // Log-density of a stationary AR1 of length T_len:
 //   phi[0]            ~ N(0, sigma^2 / (1 - rho^2))
 //   phi[t] | phi[t-1] ~ N(rho * phi[t-1], sigma^2),   sigma^2 = 1 / tau
@@ -168,17 +189,9 @@ inline T ar1_log_density(
 ) {
   if (T_len < 1) return T(0.0);
 
-  const T omr2 = ar1_one_minus_rho2(rho);
-
-  T quad = omr2 * phi[0] * phi[0];
-  for (int t = 1; t < T_len; t++) {
-    const T resid = phi[t] - rho * phi[t - 1];
-    quad = quad + resid * resid;
-  }
-
   return gmrf_log_norm(T_len, safe_log(tau))
-       + T(0.5) * safe_log(omr2)
-       - T(0.5) * tau * quad;
+       + T(0.5) * safe_log(ar1_one_minus_rho2(rho))
+       - T(0.5) * tau * ar1_cross_form(phi, phi, T_len, rho);
 }
 
 // =====================================================================

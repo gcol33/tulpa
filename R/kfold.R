@@ -170,22 +170,28 @@ tulpa_kfold <- function(object, data, K = 10L, folds = NULL,
 .cv_heldout_lpd <- function(fit_k, data, test, y, nt, fam, phi, label,
                             phi2 = NULL) {
   beta <- stats::coef(fit_k)
-  Xte  <- .tulpa_fixed_design(fit_k, data[test, , drop = FALSE])
-  miss <- setdiff(names(beta), colnames(Xte))
+  D    <- .tulpa_designs(fit_k, data[test, , drop = FALSE], label)
+  zi_nm <- colnames(D$X_zi)
+  miss <- setdiff(names(beta), c(colnames(D$X), zi_nm))
   if (length(miss)) {
     stop(label, ": held-out data cannot reproduce fixed-effect column(s): ",
          paste(miss, collapse = ", "), call. = FALSE)
   }
-  Xte <- Xte[, names(beta), drop = FALSE]
+  count_nm <- setdiff(names(beta), zi_nm)
 
   # Posterior draws of the fixed effects on the training refit; fall back to
   # the point estimate (a single-draw plug-in) when a fit carries no draws.
   B <- .kfold_fixed_draws(fit_k, names(beta))
-  eta <- Xte %*% t(B)                          # [n_test x S]
+  eta <- D$X[, count_nm, drop = FALSE] %*% t(B[, count_nm, drop = FALSE]) +
+    D$offset                                   # [n_test x S]
+  logit_zi <- if (!is.null(zi_nm)) {
+    D$X_zi[, zi_nm, drop = FALSE] %*% t(B[, zi_nm, drop = FALSE])
+  }
 
   yte <- y[test]; ntte <- nt[test]
   ll <- vapply(seq_len(ncol(eta)), function(s) {
-    family_loglik(eta[, s], yte, fam, n_trials = ntte, phi = phi, phi2 = phi2)
+    .response_loglik(eta[, s], if (!is.null(logit_zi)) logit_zi[, s], yte, fam,
+                     n_trials = ntte, phi = phi, phi2 = phi2)
   }, numeric(length(test)))                    # [n_test x S]
   if (is.null(dim(ll))) ll <- matrix(ll, nrow = length(test))
 
@@ -201,27 +207,6 @@ tulpa_kfold <- function(object, data, K = 10L, folds = NULL,
   }
   matrix(stats::coef(fit)[bnm], nrow = 1L,
          dimnames = list(NULL, bnm))
-}
-
-# Pointwise log-likelihood [S x n_obs] for a front-door fit, from the per-draw
-# linear predictor (.tulpa_eta_draws) and the stored y / n_trials / phi. The
-# input tulpa_criteria() wants when the backend did not store $draws$log_lik.
-#' @keywords internal
-.tulpa_pointwise_loglik <- function(object, ndraws = NULL) {
-  y <- object$y
-  if (is.null(y)) {
-    stop("The fit stores no `$y`; cannot build the pointwise log-likelihood.",
-         call. = FALSE)
-  }
-  eta <- .tulpa_eta_draws(object, ndraws = ndraws)
-  nt  <- object$n_trials
-  phi <- object$phi %||% 1.0
-  ll  <- matrix(NA_real_, nrow(eta), ncol(eta))
-  for (s in seq_len(nrow(eta))) {
-    ll[s, ] <- family_loglik(eta[s, ], y, object$family,
-                             n_trials = nt, phi = phi, phi2 = object$phi2)
-  }
-  ll
 }
 
 #' Selective refit of high-Pareto-k observations (reloo)
@@ -271,7 +256,8 @@ tulpa_reloo <- function(object, data, k_threshold = .nl_diag("k_usable"),
   fam <- su$fam; phi <- su$phi; y <- su$y; nt <- su$nt
 
   # PSIS-LOO baseline from the fit's own pointwise log-likelihood.
-  ll  <- .tulpa_pointwise_loglik(object, ndraws = ndraws)
+  ll  <- .tulpa_pointwise_loglik(object, ndraws = ndraws,
+                                 caller = "tulpa_reloo()")
   cr  <- tulpa_criteria(ll, criteria = "loo", pointwise = TRUE)
   pointwise <- cr$pointwise$elpd_loo
   pareto_k  <- cr$pointwise$pareto_k

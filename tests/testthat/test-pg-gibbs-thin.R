@@ -61,12 +61,12 @@ test_that("thin = 3 over 50 post-warmup iterations saves 17 rows, not 16", {
 
   for (nm in names(routes)) {
     fit <- suppressWarnings(routes[[nm]]())
-    expect_equal(nrow(fit$beta), 17L, info = nm)
+    expect_equal(nrow(fit$draws), 17L, info = nm)
     # The overflowing write used to land on row 0 of the next column, so the
     # first saved draw of every column but the first was replaced by the last
     # saved draw of its predecessor.
-    expect_true(all(is.finite(fit$beta)), info = nm)
-    expect_equal(anyDuplicated(round(fit$beta, 12)), 0L, info = nm)
+    expect_true(all(is.finite(fixed_draws(fit))), info = nm)
+    expect_equal(anyDuplicated(round(fixed_draws(fit), 12)), 0L, info = nm)
   }
 })
 
@@ -76,7 +76,7 @@ test_that("a thin that does divide the run is unaffected", {
                      family = "binomial",
                      control = list(n_iter = 100L, warmup = 50L, thin = 5L,
                                     seed = 5L))
-  expect_equal(nrow(fit$beta), 10L)
+  expect_equal(nrow(fit$draws), 10L)
   expect_equal(.thin_expected(100L, 50L, 5L), 10L)
 })
 
@@ -89,10 +89,10 @@ test_that("thin reaches the spatial route rather than being dropped", {
   f5 <- suppressWarnings(tulpa_gibbs(
     fx$y_binom, fx$n_trials, fx$X, fx$grp, fx$n_groups, family = "binomial",
     spatial = .thin_spatial(fx$n), control = c(base, list(thin = 5L))))
-  expect_equal(nrow(f1$beta), 50L)
-  expect_equal(nrow(f5$beta), 10L)
+  expect_equal(nrow(f1$draws), 50L)
+  expect_equal(nrow(f5$draws), 10L)
   # Same chain, same seed: the thinned run is the every-fifth subsequence.
-  expect_equal(f5$beta, f1$beta[seq(1L, 50L, by = 5L), , drop = FALSE])
+  expect_equal(f5$draws, f1$draws[seq(1L, 50L, by = 5L), , drop = FALSE])
 })
 
 test_that("a thin below 1 is refused rather than reaching the modulus", {

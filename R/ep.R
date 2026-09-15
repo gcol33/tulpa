@@ -87,8 +87,10 @@
 #'   `damping` (default 0.8), `n_quad` (Gauss-Hermite nodes, default 20),
 #'   `n_draws` (default 2000), `seed`.
 #'
-#' @return A `tulpa_fit` (subclass `tulpa_ep`) with `coefficients` (posterior
-#'   mean), `vcov`, `draws`, `log_marginal` (the EP approximation), `converged`.
+#' @return A `tulpa_fit` (subclass `tulpa_ep`) with `means` (posterior mean) and
+#'   `cov` (posterior covariance) of the EP Gaussian, which is the posterior
+#'   [coef()], [vcov()], [summary()] and [confint()] report; `draws` sampled
+#'   from that Gaussian; `log_marginal` (the EP approximation); `converged`.
 #'
 #' @references Minka (2001). Expectation Propagation for approximate Bayesian
 #'   inference. UAI. Rasmussen & Williams (2006). Gaussian Processes for Machine
@@ -223,9 +225,11 @@ ep_fit <- function(y, X, family = "binomial", phi = 1.0, phi2 = NULL,
   .seed_scoped(control$seed)
   draws <- .ps_rmvnorm(n_draws, m, V)
 
+  # The EP Gaussian N(m, V) is the posterior this fit reports; the draws are
+  # samples from it for the draw-consuming accessors.
   fit <- list(
-    coefficients = m, vcov = V, draws = draws, means = m, param_names = pn,
-    n_fixed = p, fixed_names = pn,
+    means = m, cov = V, reported_posterior = "gaussian", draws = draws,
+    param_names = pn, n_fixed = p, fixed_names = pn,
     log_marginal = log_marginal, converged = converged, n_sweeps = sweep,
     family = family, model_matrix = X,
     backend = "ep", inference_tier = 2L, inference_mode = "structured",
@@ -234,9 +238,3 @@ ep_fit <- function(y, X, family = "binomial", phi = 1.0, phi2 = NULL,
   class(fit) <- c("tulpa_ep", "tulpa_fit")
   fit
 }
-
-#' @export
-vcov.tulpa_ep <- function(object, ...) object$vcov
-
-#' @export
-coef.tulpa_ep <- function(object, ...) object$coefficients

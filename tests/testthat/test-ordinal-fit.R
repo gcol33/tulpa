@@ -65,8 +65,8 @@ test_that("categorical families route through the tulpa() front door", {
   yo <- ordered(vapply(seq_len(n),
                        function(i) sample.int(4L, 1L, prob = P[i, ]), integer(1)))
   d <- data.frame(y = yo, x = x)
-  f1 <- tulpa(y ~ x, data = d, family = "ordinal")
-  f2 <- tulpa_ordinal(y ~ x, data = d)
+  f1 <- tulpa(y ~ x, data = d, family = "ordinal", control = list(seed = 1L))
+  f2 <- tulpa_ordinal(y ~ x, data = d, control = list(seed = 1L))
   expect_s3_class(f1, "tulpa_ordinal")
   expect_equal(coef(f1), coef(f2))
   f3 <- tulpa(y ~ x, data = d, family = "ordinal_probit")

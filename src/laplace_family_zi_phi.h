@@ -194,8 +194,6 @@ inline MixturePhiDeriv mixture_phi_deriv(
 
     const double pi_z = pi_from_logit(logit_zi);
     const double q  = 1.0 - pi_z;
-    const double pq = pi_z * q;
-    const double m1 = 1.0 - 2.0 * pi_z;
 
     // B[m][k] = d^(m+k) P0 / deta^m dphi^k, P0 = exp(Lam). Raised one derivative
     // at a time by Leibniz on dP0 = P0 dLam, which is the multivariate Bell

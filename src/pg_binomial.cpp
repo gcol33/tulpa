@@ -141,6 +141,8 @@ List pg_binomial_gibbs_impl(
 
     if (iter >= n_warmup && (iter - n_warmup) % thin == 0) {
       C.save(save_idx);
+      C.log_prob_draws[save_idx] = C.log_joint_common(
+          y, n, nullptr, prior_beta_sd, prior_sigma_scale);
       save_idx++;
     }
 
@@ -155,7 +157,8 @@ List pg_binomial_gibbs_impl(
   List result = List::create(
     Named("beta") = C.beta_draws,
     Named("re") = C.re_draws,
-    Named("sigma_re") = C.sigma_re_draws
+    Named("sigma_re") = C.sigma_re_draws,
+    Named("log_prob") = C.log_prob_draws
   );
   if (store_eta) {
     result["eta"] = C.eta_draws;
@@ -268,6 +271,15 @@ Rcpp::List cpp_pg_binomial_gibbs_spatial(
         spatial_draws(save_idx, s) = phi[s];
       }
       tau_draws[save_idx] = tau;
+      for (int i = 0; i < N; i++) {
+        spatial_contrib[i] = phi[spatial_group[i] - 1];
+      }
+      C.log_prob_draws[save_idx] =
+          C.log_joint_common(y, n, spatial_contrib.begin(), prior_beta_sd,
+                             prior_sigma_re_scale) +
+          tulpa::pg_log_icar(phi.begin(), adj, tau,
+                             tulpa::PG_ICAR_ISOLATED_PREC) +
+          tulpa::pg_log_gamma(tau, prior_tau_shape, prior_tau_rate);
       save_idx++;
     }
 
@@ -287,7 +299,8 @@ Rcpp::List cpp_pg_binomial_gibbs_spatial(
     Rcpp::Named("re") = C.re_draws,
     Rcpp::Named("sigma_re") = C.sigma_re_draws,
     Rcpp::Named("spatial") = spatial_draws,
-    Rcpp::Named("tau") = tau_draws
+    Rcpp::Named("tau") = tau_draws,
+    Rcpp::Named("log_prob") = C.log_prob_draws
   );
 
   if (store_eta) {

@@ -169,8 +169,7 @@ as_draws_rvars.tulpa_fit <- function(x, n_draws = NULL, seed = NULL, ...) {
 # repaired matrix.
 .synth_gaussian_draws <- function(x, n_draws, seed, shape) {
   if (is.null(n_draws)) {
-    stop("This fit carries no posterior draws (backend '", x$backend %||% "?",
-         "' reports a mode and a precision, not a sample), so ", shape,
+    stop(.tulpa_no_draws_note(x, shape), " So ", shape,
          "() has nothing to convert. Pass `n_draws` to draw that many samples ",
          "from the fixed-effect Gaussian approximation N(coef, vcov) instead -- ",
          "note that those are draws from the approximation, not from the ",

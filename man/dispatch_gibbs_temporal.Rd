@@ -21,6 +21,9 @@ dispatch_gibbs_temporal(
   n_threads = 1L
 )
 }
+\value{
+The one-chain list \code{\link[=tulpa_gibbs]{tulpa_gibbs()}} finalizes (see its Value).
+}
 \description{
 The temporal analogue of \code{\link[=dispatch_gibbs_spatial]{dispatch_gibbs_spatial()}}: maps a validated
 \code{\link[=temporal_multiscale]{temporal_multiscale()}} spec onto the multiscale temporal Polya-Gamma

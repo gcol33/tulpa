@@ -32,9 +32,11 @@
 #' @param control List of numerical knobs: `max_iter` (default 100), `tol`
 #'   (default 1e-8), `n_draws` (posterior draws, default 2000), `seed`.
 #'
-#' @return A `tulpa_fit` (subclass `tulpa_multinomial`) with `coef` (named
-#'   `class:term`), `vcov`, `draws`, `log_marginal`, `classes`, `baseline`, and
-#'   the standard generic-method support.
+#' @return A `tulpa_fit` (subclass `tulpa_multinomial`) with `means` (the
+#'   posterior mode, named `class:term`) and `cov` of the Laplace Gaussian, which
+#'   is the posterior [coef()], [vcov()], [summary()] and [confint()] report;
+#'   `draws` sampled from that Gaussian; `log_marginal`, `classes`, `baseline`,
+#'   and the standard generic-method support.
 #'
 #' @seealso [tulpa()] for single-process GLMMs.
 #' @examples
@@ -124,31 +126,39 @@ tulpa_multinomial <- function(formula, data,
   .seed_scoped(control$seed)
   draws <- .ps_rmvnorm(n_draws, bhat, V)     # reuse the Cholesky sampler
 
+  # The Laplace Gaussian N(bhat, V) is the posterior this fit reports; the
+  # draws are samples from it for the draw-consuming accessors.
   fit <- list(
-    coefficients = bhat, vcov = V, draws = draws,
-    means = bhat, param_names = pn,
+    means = bhat, cov = V, reported_posterior = "gaussian", draws = draws,
+    param_names = pn,
     log_marginal = log_marginal, converged = it < max_iter,
     classes = lev, baseline = lev[K], n_classes = K,
     family = "multinomial", formula = formula,
-    model_matrix = X, backend = "multinomial_laplace",
+    model_matrix = X, y = y, N = n, backend = "multinomial_laplace",
     inference_tier = 2L, inference_mode = "structured",
     draws_kind = "iid"
   )
-  class(fit) <- c("tulpa_multinomial", "tulpa_fit")
+  class(fit) <- c("tulpa_multinomial", "tulpa_categorical", "tulpa_fit")
   fit
 }
 
-#' @export
-vcov.tulpa_multinomial <- function(object, ...) object$vcov
-
-#' @export
-coef.tulpa_multinomial <- function(object, ...) object$coefficients
+# Class probabilities [n x K] of the baseline-category logit at the K - 1
+# class logits `eta` [n x (K - 1)]; the baseline is the last column. Each row
+# is shifted by its largest logit (the baseline's 0 included) before
+# exponentiating, which leaves the probabilities unchanged and keeps exp()
+# finite.
+.multinomial_class_probs <- function(eta) {
+  E <- cbind(eta, 0)
+  E <- E - apply(E, 1L, max)
+  P <- exp(E)
+  P / rowSums(P)
+}
 
 #' @export
 print.tulpa_multinomial <- function(x, ...) {
   cat(sprintf("Multinomial logit (%d classes, baseline '%s'), Laplace fit\n",
               x$n_classes, x$baseline))
   cat(sprintf("log marginal: %.2f\n\n", x$log_marginal))
-  print(round(x$coefficients, 4))
+  print(round(stats::coef(x), 4))
   invisible(x)
 }

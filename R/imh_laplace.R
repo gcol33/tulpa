@@ -189,6 +189,5 @@ imh_laplace <- function(log_posterior,
     backend = "imh_laplace",
     proposal = list(mode = mode, cov = prop_cov, scale = scale)
   )
-  class(fit) <- c("tulpa_imh_fit", "tulpa_fit")
-  fit
+  .finalize_fit(fit, param_names = names(mode), extra_class = "tulpa_imh_fit")
 }

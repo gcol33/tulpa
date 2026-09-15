@@ -2415,7 +2415,7 @@ tulpa <- function(formula, data,
     layout <- .tulpa_param_layout(bundle)
     fit$n_fixed     <- layout$n_fixed
     fit$fixed_names <- layout$fixed_names
-    fit$param_names <- fit$param_names %||% layout$param_names
+    fit <- .finalize_fit(fit, param_names = layout$param_names)
     fit$re_layout   <- layout$re_layout
     # Nested path only: the RE terms were carried as `iid` latent blocks whose SD
     # the outer grid integrated, so VarCorr() reads those blocks' posterior and
@@ -2429,6 +2429,10 @@ tulpa <- function(formula, data,
     # push it through the family sampler: offset, response, trials, dispersion,
     # and the per-term RE row design (group index + slope columns).
     fit$model_matrix <- bundle$X
+    # The zero-inflation predictor's design and the formula that rebuilds it
+    # at `newdata`; both absent on a fit without `ziformula`.
+    fit$ziformula        <- if (!is.null(bundle$X_zi)) ziformula
+    fit$zi_model_matrix  <- bundle$X_zi
     fit$offset       <- fit$offset %||% bundle$offset
     fit$y            <- fit$y %||% bundle$y
     fit$n_trials     <- fit$n_trials %||% n_trials

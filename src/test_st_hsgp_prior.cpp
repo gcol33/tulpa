@@ -19,6 +19,7 @@
 #include "tulpa/likelihood.h"
 #include "tulpa/autodiff_arena.h"
 #include "tulpa_priors_st.h"
+#include "test_st_fixture_parse.h"
 
 using tulpa_hmc::ModelData;
 using tulpa_hmc::ParamLayout;
@@ -94,8 +95,7 @@ void build_st_hsgp_model(
     st.n_spatial = M;
     st.n_times = T_st;
     st.n_params = M * T_st;
-    st.temporal_type = (temporal == "rw2") ? tulpa::TemporalType::RW2
-                                           : tulpa::TemporalType::RW1;
+    st.temporal_type = tulpa_test_st::parse_temporal(temporal);
     st.temporal_cyclic = temporal_cyclic;
 
     layout = tulpa_hmc::compute_param_layout(data);
@@ -117,7 +117,8 @@ double cpp_test_st_hsgp_log_prior(
     double log_sigma2_hsgp,
     double log_lengthscale_hsgp,
     std::string temporal = "rw2",
-    bool temporal_cyclic = false
+    bool temporal_cyclic = false,
+    double logit_rho_st = 0.0
 ) {
     const int M = eigenvalues.size();
     StHsgpData sd;
@@ -137,6 +138,9 @@ double cpp_test_st_hsgp_log_prior(
     params[layout.log_tau_st_idx] = log_tau_st;
     params[layout.log_sigma2_st_hsgp_idx] = log_sigma2_hsgp;
     params[layout.log_lengthscale_st_hsgp_idx] = log_lengthscale_hsgp;
+    if (layout.logit_rho_st_idx >= 0) {
+        params[layout.logit_rho_st_idx] = logit_rho_st;
+    }
     for (int k = 0; k < M * T; k++) {
         params[layout.st_delta_start + k] = delta[k];
     }

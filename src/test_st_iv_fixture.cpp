@@ -19,6 +19,10 @@
 //   poisson  - Knorr-Held's own setting (areal disease counts). The
 //              approximation is a Laplace one and the working weights move
 //              with the position. The arm that says whether it is useful.
+//
+// `st_type` and `temporal` select the other Knorr-Held types and the AR1 time
+// margin on the same adjacency and response, so the density branches they
+// reach are scored by the same fixture (test-st-ar1-gp-density.R).
 
 #include <Rcpp.h>
 
@@ -32,6 +36,8 @@
 #include "tulpa/autodiff_arena.h"
 #include "tulpa/autodiff_fwd.h"
 #include "tulpa/likelihood.h"
+#include "tulpa_priors_st.h"
+#include "test_st_fixture_parse.h"
 
 using tulpa_hmc::ModelData;
 using tulpa_hmc::ParamLayout;
@@ -137,6 +143,7 @@ void build_st_iv_model(
     bool temporal_cyclic,
     int st_parameterization,
     double sigma_beta,
+    const std::string& st_type,
     StIvData& sd,
     tulpa::LikelihoodSpec& spec,
     ModelData& data,
@@ -197,13 +204,12 @@ void build_st_iv_model(
   data.st_sigma2_prior_alpha = 0.01;
 
   auto& st = data.spatiotemporal_data;
-  st.type = tulpa::STType::TYPE_IV;
+  st.type = tulpa_test_st::parse_st_type(st_type);
   st.shared = true;
   st.n_spatial = S;
   st.n_times = T;
   st.n_params = S * T;
-  st.temporal_type = (temporal == "rw2") ? tulpa::TemporalType::RW2
-                                         : tulpa::TemporalType::RW1;
+  st.temporal_type = tulpa_test_st::parse_temporal(temporal);
   st.temporal_cyclic = temporal_cyclic;
 
   st.s_idx.assign(s_idx_r.begin(), s_idx_r.end());
@@ -256,7 +262,8 @@ Rcpp::List cpp_test_st_iv_nuts(
     double adapt_delta = 0.8,
     int seed = 1,
     double sigma_beta = 10.0,
-    bool verbose = false
+    bool verbose = false,
+    std::string st_type = "iv"
 ) {
   StIvData sd;
   tulpa::LikelihoodSpec spec;
@@ -264,7 +271,7 @@ Rcpp::List cpp_test_st_iv_nuts(
   ParamLayout layout;
   build_st_iv_model(y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T,
                     family, temporal, temporal_cyclic,
-                    st_parameterization, sigma_beta,
+                    st_parameterization, sigma_beta, st_type,
                     sd, spec, data, layout);
 
   const int n_params = layout.total_params;
@@ -320,7 +327,8 @@ Rcpp::List cpp_test_st_iv_layout(
     std::string temporal = "rw1",
     bool temporal_cyclic = false,
     int st_parameterization = 0,
-    double sigma_beta = 10.0
+    double sigma_beta = 10.0,
+    std::string st_type = "iv"
 ) {
   StIvData sd;
   tulpa::LikelihoodSpec spec;
@@ -328,13 +336,14 @@ Rcpp::List cpp_test_st_iv_layout(
   ParamLayout layout;
   build_st_iv_model(y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T,
                     family, temporal, temporal_cyclic,
-                    st_parameterization, sigma_beta,
+                    st_parameterization, sigma_beta, st_type,
                     sd, spec, data, layout);
   return Rcpp::List::create(
       Rcpp::Named("n_params") = layout.total_params,
       Rcpp::Named("st_delta_start") = layout.st_delta_start,
       Rcpp::Named("st_delta_end") = layout.st_delta_end,
       Rcpp::Named("log_tau_st_idx") = layout.log_tau_st_idx,
+      Rcpp::Named("logit_rho_st_idx") = layout.logit_rho_st_idx,
       Rcpp::Named("extra_offset") = layout.extra_offset);
 }
 
@@ -358,7 +367,8 @@ Rcpp::List cpp_test_st_iv_gmrf_mass(
     bool temporal_cyclic = false,
     int st_parameterization = 0,
     double sigma_beta = 10.0,
-    bool with_eta_weights = true
+    bool with_eta_weights = true,
+    std::string st_type = "iv"
 ) {
   StIvData sd;
   tulpa::LikelihoodSpec spec;
@@ -366,7 +376,7 @@ Rcpp::List cpp_test_st_iv_gmrf_mass(
   ParamLayout layout;
   build_st_iv_model(y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T,
                     family, temporal, temporal_cyclic,
-                    st_parameterization, sigma_beta,
+                    st_parameterization, sigma_beta, st_type,
                     sd, spec, data, layout);
   // A spec shipping no IRLS callback is the decline path the generic
   // interface has to handle, so the fixture can drop it on request.
@@ -396,6 +406,7 @@ Rcpp::List cpp_test_st_iv_gmrf_mass(
       Rcpp::Named("st_delta_start") = layout.st_delta_start,
       Rcpp::Named("st_delta_end") = layout.st_delta_end,
       Rcpp::Named("log_tau_st_idx") = layout.log_tau_st_idx,
+      Rcpp::Named("logit_rho_st_idx") = layout.logit_rho_st_idx,
       Rcpp::Named("n_params") = layout.total_params);
 }
 
@@ -418,7 +429,8 @@ double cpp_test_st_iv_log_post(
     std::string temporal = "rw1",
     bool temporal_cyclic = false,
     int st_parameterization = 0,
-    double sigma_beta = 10.0
+    double sigma_beta = 10.0,
+    std::string st_type = "iv"
 ) {
   StIvData sd;
   tulpa::LikelihoodSpec spec;
@@ -426,7 +438,7 @@ double cpp_test_st_iv_log_post(
   ParamLayout layout;
   build_st_iv_model(y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T,
                     family, temporal, temporal_cyclic,
-                    st_parameterization, sigma_beta,
+                    st_parameterization, sigma_beta, st_type,
                     sd, spec, data, layout);
   if ((int)q.size() != layout.total_params) {
     Rcpp::stop("q has %d entries; the layout has %d parameters",
@@ -434,4 +446,42 @@ double cpp_test_st_iv_log_post(
   }
   const std::vector<double> qv(q.begin(), q.end());
   return tulpa::compute_log_post_generic_spec_double(qv, data, layout);
+}
+
+// The interaction prior alone at q -- tulpa::priors::compute_st_prior, the term
+// the log-posterior above adds -- so a density identity can be scored without
+// the likelihood moving with the field.
+// [[Rcpp::export]]
+double cpp_test_st_iv_log_prior(
+    Rcpp::NumericVector y,
+    Rcpp::NumericMatrix X,
+    Rcpp::IntegerVector s_idx,
+    Rcpp::IntegerVector t_idx,
+    Rcpp::IntegerVector adj_row_ptr,
+    Rcpp::IntegerVector adj_col_idx,
+    int S,
+    int T,
+    Rcpp::NumericVector q,
+    std::string family = "poisson",
+    std::string temporal = "rw1",
+    bool temporal_cyclic = false,
+    int st_parameterization = 0,
+    double sigma_beta = 10.0,
+    std::string st_type = "iv"
+) {
+  StIvData sd;
+  tulpa::LikelihoodSpec spec;
+  ModelData data;
+  ParamLayout layout;
+  build_st_iv_model(y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T,
+                    family, temporal, temporal_cyclic,
+                    st_parameterization, sigma_beta, st_type,
+                    sd, spec, data, layout);
+  if ((int)q.size() != layout.total_params) {
+    Rcpp::stop("q has %d entries; the layout has %d parameters",
+               (int)q.size(), layout.total_params);
+  }
+  const std::vector<double> qv(q.begin(), q.end());
+  std::vector<double> st_delta;
+  return tulpa::priors::compute_st_prior(qv, data, layout, st_delta);
 }

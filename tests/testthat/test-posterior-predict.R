@@ -164,5 +164,5 @@ test_that("pp_check falls back to posterior_predict when no y_rep is stored", {
 
 test_that("posterior_predict rejects fits without a builtin family", {
   bad <- structure(list(family = list(name = "custom")), class = "tulpa_fit")
-  expect_error(posterior_predict(bad), "builtin character family")
+  expect_error(posterior_predict(bad), "single built-in family")
 })

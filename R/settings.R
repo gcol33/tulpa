@@ -1352,6 +1352,19 @@
     beta_sd = 2.5
 )
 
+# --- response-scale prediction intervals read over draws ---------------------
+#
+# `predict(type = "response", se.fit = TRUE)` on a zero-inflated fit reads its
+# bounds as quantiles of the mixture mean over draws of the fixed block, because
+# the mean moves with the count and the zero-inflation predictors at once and no
+# endpoint map exists. The seed is pinned (and restored afterwards) so the
+# interval is a function of the fit alone; `ndraws` bounds the Monte Carlo error
+# of a 2.5% quantile at roughly 0.25 percentage points of tail probability.
+.PREDICT_ZI <- list(
+    seed   = 285603L,
+    ndraws = 4000L
+)
+
 # Which setting each front door reads. A fitter names itself here rather than
 # restating a number, so a backend that genuinely needs a different scale
 # becomes a visible entry in this table instead of a literal in its own

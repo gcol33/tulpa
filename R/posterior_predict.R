@@ -81,43 +81,13 @@
   "coefficients"
 }
 
-# Linear-predictor posterior draws (S x n_obs).
-#
-# At the training design (newdata = NULL) the draws carry every component the
-# fit estimated, read from the source `.tulpa_linpred_source()` names: the
-# engine's own eta at each sampler draw, the per-cell grid mixture on a
-# nested-Laplace fit, and otherwise the fixed effects plus the offset, the
-# formula random effects and a posterior-mean SPDE field. Fixed effects on that
-# last source come from the fit's draws when it carries any (joint with the RE
-# draws, so a subsample keeps rows aligned), else from a Gaussian draw at
-# coef()/vcov(). At `newdata` the prediction is population-level (fixed effects
-# only), matching predict().
-#
-# `synth_seed` pins every randomized step RNG-neutrally: read-only callers (the
-# WAIC/LOO criteria layer) get identical draws on every call and leave the
-# session stream untouched; predictive callers leave it NULL for fresh draws.
+# Fixed-effect coefficient draws (S x p), zero-inflation coefficients included,
+# columns named by the fit's fixed block. The fit's own draws when it carries
+# any, else a Gaussian draw at coef() / vcov(). `keep` indexes the stored draw
+# rows taken (NULL for a Gaussian draw), so the random-effect draws can be read
+# off the same rows.
 #' @keywords internal
-.tulpa_eta_draws <- function(object, newdata = NULL, ndraws = NULL,
-                             synth_seed = NULL) {
-  if (!is.null(synth_seed)) {
-    .preserve_seed_in_frame()
-    set.seed(as.integer(synth_seed))
-  }
-  source <- if (is.null(newdata)) .tulpa_linpred_source(object) else "coefficients"
-  if (identical(source, "sampler_model")) {
-    return(.tulpa_eta_draws_sampler(object, ndraws))
-  }
-  if (identical(source, "grid_mixture")) {
-    return(.tulpa_eta_draws_grid(object, ndraws))
-  }
-
-  X <- if (is.null(newdata)) object$model_matrix
-       else .tulpa_fixed_design(object, newdata)
-  if (is.null(X)) {
-    stop("posterior_predict() needs the fixed-effect design ($model_matrix); ",
-         "refit with tulpa().", call. = FALSE)
-  }
-
+.fixed_coef_draws <- function(object, ndraws = NULL) {
   fd   <- .fixed_draws_mat(object)
   keep <- NULL
   if (!is.null(fd)) {
@@ -140,24 +110,72 @@
       matrix(stats::rnorm(S * length(mu)), S) %*% L
     colnames(beta) <- names(mu)
   }
+  nm <- object$fixed_names
+  if (!is.null(nm) && length(nm) == ncol(beta)) colnames(beta) <- nm
+  list(beta = beta, keep = keep)
+}
 
-  nm <- object$fixed_names %||% colnames(beta)
-  if (!is.null(nm) && all(nm %in% colnames(X))) {
-    X <- X[, nm, drop = FALSE]
-  } else if (ncol(X) != ncol(beta)) {
+# Linear-predictor posterior draws (S x n_obs).
+#
+# At the training design (newdata = NULL) the draws carry every component the
+# fit estimated, read from the source `.tulpa_linpred_source()` names: the
+# engine's own eta at each sampler draw, the per-cell grid mixture on a
+# nested-Laplace fit, and otherwise the fixed effects plus the offset, the
+# formula random effects and a posterior-mean SPDE field. Fixed effects on that
+# last source come from `.fixed_coef_draws()`. At `newdata` the prediction is
+# population-level (fixed effects and the offset only), matching predict().
+#
+# On a zero-inflated fit the structural-zero logit is drawn from the same rows
+# and returned as the `"logit_zi"` attribute (S x n_obs), so the two predictors
+# of one replicate come from one posterior draw. The logit is `X_zi beta_zi`,
+# with no offset and no random effect, which is how the engine assembles it.
+#
+# `synth_seed` pins every randomized step RNG-neutrally: read-only callers (the
+# WAIC/LOO criteria layer) get identical draws on every call and leave the
+# session stream untouched; predictive callers leave it NULL for fresh draws.
+#' @keywords internal
+.tulpa_eta_draws <- function(object, newdata = NULL, ndraws = NULL,
+                             synth_seed = NULL) {
+  if (!is.null(synth_seed)) {
+    .preserve_seed_in_frame()
+    set.seed(as.integer(synth_seed))
+  }
+  source <- if (is.null(newdata)) .tulpa_linpred_source(object) else "coefficients"
+  if (identical(source, "sampler_model")) {
+    return(.tulpa_eta_draws_sampler(object, ndraws))
+  }
+  if (identical(source, "grid_mixture")) {
+    if (!is.null(object$zi_model_matrix)) {
+      stop("posterior_predict(): a nested-Laplace grid carries no ",
+           "zero-inflation predictor to draw.", call. = FALSE)
+    }
+    return(.tulpa_eta_draws_grid(object, ndraws))
+  }
+
+  D  <- .tulpa_designs(object, newdata, "posterior_predict")
+  cd <- .fixed_coef_draws(object, ndraws)
+  beta <- cd$beta
+  keep <- cd$keep
+
+  zi_nm    <- colnames(D$X_zi)
+  count_nm <- setdiff(colnames(beta), zi_nm)
+  if (!is.null(colnames(beta)) && all(count_nm %in% colnames(D$X)) &&
+      all(zi_nm %in% colnames(beta))) {
+    eta <- beta[, count_nm, drop = FALSE] %*% t(D$X[, count_nm, drop = FALSE])
+  } else if (is.null(zi_nm) && ncol(D$X) == ncol(beta)) {
+    eta <- beta %*% t(D$X)
+  } else {
     stop("posterior_predict(): design columns do not match the fixed-effect ",
          "draws.", call. = FALSE)
   }
-  eta <- beta %*% t(X)
+  if (any(D$offset != 0)) {
+    eta <- sweep(eta, 2, rep_len(D$offset, ncol(eta)), "+")
+  }
 
   if (is.null(newdata)) {
-    if (!is.null(object$offset)) {
-      eta <- sweep(eta, 2, object$offset, "+")
-    }
-
     M <- .tulpa_re_map(object)
     if (!is.null(M)) {
-      rd <- .re_draws_mat(object)
+      rd <- .re_coef_draws(object)
       if (!is.null(rd) && ncol(rd) == nrow(M)) {
         if (!is.null(keep)) rd <- rd[keep, , drop = FALSE]
         eta <- eta + as.matrix(rd %*% M)
@@ -179,23 +197,35 @@
     }
   }
 
+  if (!is.null(zi_nm)) {
+    attr(eta, "logit_zi") <- beta[, zi_nm, drop = FALSE] %*%
+      t(D$X_zi[, zi_nm, drop = FALSE])
+  }
   eta
 }
 
-# Engine eta at each sampler draw (the "sampler_model" source).
+# Engine eta at each sampler draw (the "sampler_model" source). The
+# zero-inflation coefficients sit wherever the engine's parameter layout puts
+# them, so their span is asked of the layout built from the same inputs rather
+# than assumed to follow the count coefficients.
 #' @keywords internal
 .tulpa_eta_draws_sampler <- function(object, ndraws = NULL) {
   D <- object$draws
   S <- nrow(D)
   if (!is.null(ndraws) && ndraws < S) D <- D[sample.int(S, ndraws), , drop = FALSE]
   mi <- object$model_inputs
-  cpp_tulpa_glmm_eta_draws(
+  eta <- cpp_tulpa_glmm_eta_draws(
     draws = D, y = mi$y, n_trials = mi$n_trials, X = mi$X,
     family = mi$family, phi = mi$phi, sigma_beta = mi$sigma_beta,
     offset_nullable = mi$offset, re_spec = mi$re_spec,
     spatial_spec = mi$spatial_spec, temporal_spec = mi$temporal_spec,
     sigma_re_scale = mi$sigma_re_scale, phi2 = mi$phi2,
     svc_spec = mi$svc_spec, tvc_spec = mi$tvc_spec, zi_spec = mi$zi_spec)
+  if (!is.null(mi$zi_spec)) {
+    zi_cols <- .layout_span_cols(.tulpa_sampler_layout(object)$beta_zi)
+    attr(eta, "logit_zi") <- D[, zi_cols, drop = FALSE] %*% t(mi$zi_spec$X)
+  }
+  eta
 }
 
 # Draws from the per-cell eta mixture of a nested-Laplace fit (the
@@ -258,6 +288,11 @@
 #' At `newdata` the prediction is population level (random effects at zero),
 #' matching [predict.tulpa_fit()].
 #'
+#' A zero-inflated fit (`ziformula`) draws the structural-zero logit from the
+#' same posterior draw as the count predictor; each replicate observation is a
+#' structural zero with probability `plogis(X_zi beta_zi)` and otherwise a draw
+#' from the family (a zero-truncated family gives the hurdle model).
+#'
 #' @param object A `tulpa_fit` object from [tulpa()].
 #' @param ... Passed to methods.
 #' @return A `ndraws x n_obs` numeric matrix of replicated responses.
@@ -288,12 +323,13 @@ posterior_predict <- function(object, ...) {
 posterior_predict.tulpa_fit <- function(object, newdata = NULL, ndraws = NULL,
                                         n_trials = NULL, seed = NULL, ...) {
   if (!is.character(object$family) || length(object$family) != 1L) {
-    stop("posterior_predict() supports fits with a builtin character family; ",
-         "model packages provide their own methods.", call. = FALSE)
+    .accessor_unavailable("posterior_predict", object,
+                          "a single built-in family to sample the response from")
   }
   .seed_scoped(seed)
 
   eta <- .tulpa_eta_draws(object, newdata = newdata, ndraws = ndraws)
+  logit_zi <- attr(eta, "logit_zi")
   if (is.null(n_trials)) {
     n_trials <- if (is.null(newdata)) object$n_trials else NULL
   }
@@ -301,9 +337,10 @@ posterior_predict.tulpa_fit <- function(object, newdata = NULL, ndraws = NULL,
 
   yrep <- matrix(NA_real_, nrow(eta), ncol(eta))
   for (s in seq_len(nrow(eta))) {
-    yrep[s, ] <- family_sample(eta[s, ], object$family,
-                               n_trials = n_trials, phi = phi,
-                               phi2 = object$phi2)
+    yrep[s, ] <- .response_sample(eta[s, ],
+                                  if (!is.null(logit_zi)) logit_zi[s, ],
+                                  object$family, n_trials = n_trials,
+                                  phi = phi, phi2 = object$phi2)
   }
   yrep
 }
@@ -312,20 +349,38 @@ posterior_predict.tulpa_fit <- function(object, newdata = NULL, ndraws = NULL,
 #'
 #' @description
 #' Base-R alias for [posterior_predict()]: each simulation is one posterior
-#' predictive replicate at the training data.
+#' predictive replicate at the training data. A categorical fit
+#' ([tulpa_multinomial()], [tulpa_ordinal()]) simulates factor columns carrying
+#' the response levels.
 #'
 #' @param object A `tulpa_fit` object.
 #' @param nsim Number of simulated datasets (default 1).
 #' @param seed Optional integer seed (RNG state is restored on exit).
 #' @param ... Ignored.
 #' @return A data frame with `nsim` columns (`sim_1`, ...), one row per
-#'   observation, following the [stats::simulate()] convention.
+#'   observation, following the [stats::simulate()] convention: its `"seed"`
+#'   attribute is the value of `seed` (with the RNG kind as attribute `"kind"`)
+#'   when one was given, else the state of `.Random.seed` before simulation.
 #' @export
 simulate.tulpa_fit <- function(object, nsim = 1, seed = NULL, ...) {
+  if (!exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)) {
+    stats::runif(1)
+  }
+  rng_state <- if (is.null(seed)) get(".Random.seed", envir = .GlobalEnv)
+               else structure(seed, kind = as.list(RNGkind()))
+
   yrep <- posterior_predict(object, ndraws = nsim, seed = seed)
+  levels_rep  <- attr(yrep, "levels")
+  ordered_rep <- isTRUE(attr(yrep, "ordered"))
   if (nrow(yrep) > nsim) yrep <- yrep[seq_len(nsim), , drop = FALSE]
   out <- as.data.frame(t(yrep))
+  if (!is.null(levels_rep)) {
+    out[] <- lapply(out, function(code) {
+      factor(levels_rep[code], levels = levels_rep, ordered = ordered_rep)
+    })
+  }
   names(out) <- paste0("sim_", seq_len(ncol(out)))
   rownames(out) <- NULL
+  attr(out, "seed") <- rng_state
   out
 }

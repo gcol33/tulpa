@@ -144,6 +144,12 @@ Rcpp::List cpp_pg_binomial_gibbs_gp(
     if ((iter + 1) % 100 == 0) Rcpp::checkUserInterrupt();
   }
 
+  // No log_prob is recorded. The NNGP field is proper, and the sweep recentres
+  // it and absorbs its level into the intercept, moving the state along a
+  // direction the NNGP density penalizes; the scale and range steps score the
+  // uncentred density, whose restriction to mean-zero fields would carry a
+  // (sigma2, phi)-dependent normalizer they never see. No joint density is the
+  // one this chain leaves invariant.
   Rcpp::List result = Rcpp::List::create(
     Rcpp::Named("beta") = C.beta_draws,
     Rcpp::Named("re") = C.re_draws,

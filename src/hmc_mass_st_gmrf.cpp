@@ -28,7 +28,7 @@ namespace {
 constexpr const char* kNotSpatiotemporal = "not_spatiotemporal";
 constexpr const char* kNotTypeIv         = "not_type_iv";
 constexpr const char* kHsgpInteraction   = "hsgp_interaction";
-constexpr const char* kTemporalNotRw     = "temporal_not_rw";
+constexpr const char* kTemporalUnsupported = "temporal_unsupported";
 constexpr const char* kLayoutMismatch    = "layout_mismatch";
 constexpr const char* kNoEtaWeightsFn    = "no_eta_weights_fn";
 constexpr const char* kBudgetExceeded    = "budget_exceeded";
@@ -61,11 +61,14 @@ const char* st_gmrf_precondition(const ModelData& data, const ParamLayout& layou
   // times Q_t, not Q_s (x) Q_t, and its coordinates are basis weights rather
   // than a spatial field. A different operator, not a wider case of this one.
   if (data.st_is_hsgp) return kHsgpInteraction;
-  // st_kronecker_temporal_quad contributes nothing for any other temporal
-  // type, so there is no Kronecker operator to invert.
-  if (st.temporal_type != tulpa::TemporalType::RW1 &&
-      st.temporal_type != tulpa::TemporalType::RW2) {
-    return kTemporalNotRw;
+  // The margins the density defines; compute_param_layout refuses the rest,
+  // so this is reached only by a layout built some other way.
+  if (!tulpa_st::st_time_margin_supported(st.temporal_type)) {
+    return kTemporalUnsupported;
+  }
+  if (st.temporal_type == tulpa::TemporalType::AR1 &&
+      layout.logit_rho_st_idx < 0) {
+    return kLayoutMismatch;
   }
 
   const int S = st.n_spatial, T = st.n_times;
@@ -209,8 +212,14 @@ StGmrfMassResult st_gmrf_inv_mass(
           ? outer_scale * tulpa_st::st_trend_precision(T)
           : 0.0;
 
+  // The AR1 margin's correlation, read through the density's own map.
+  const double rho =
+      (layout.logit_rho_st_idx >= 0)
+          ? 2.0 * tulpa::math::inv_logit(q[layout.logit_rho_st_idx]) - 1.0
+          : 0.0;
+
   Eigen::SparseMatrix<double> Q;
-  if (!tulpa_st::st_type_iv_precision(data, S, T, kron_scale, outer_scale,
+  if (!tulpa_st::st_type_iv_precision(data, S, T, rho, kron_scale, outer_scale,
                                       h_lik, outer_scale, /*ridge=*/0.0,
                                       kMaxTriplets, Q)) {
     res.reason = kBudgetExceeded;

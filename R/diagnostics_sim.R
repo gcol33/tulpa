@@ -13,6 +13,21 @@
 #' @name tulpa_diagnostics
 NULL
 
+# The simulation diagnostics order, count and take variances of a scalar
+# response against its replicates. A categorical fit's response is a class
+# label: an unordered label has no order, variance or zero to compare, so these
+# statistics are not defined for it.
+.require_scalar_response <- function(object, caller) {
+  if (inherits(object, "tulpa_categorical")) {
+    stop(sprintf(paste0(
+      "%s compares a scalar response with its simulated replicates; a %s fit ",
+      "models a categorical response. Use posterior_predict() for class ",
+      "replicates and fitted() for the class probabilities."),
+      caller, class(object)[1L]), call. = FALSE)
+  }
+  invisible(NULL)
+}
+
 # Resolve the observed response from an explicit argument or the fit object,
 # erroring clearly when it cannot be found (rather than letting a NULL fall
 # through to sum(NULL == 0) == 0 or an opaque var(NULL) error downstream).
@@ -64,6 +79,7 @@ pit_residuals.default <- function(object, observed = NULL, nsim = 250L,
     if (is.null(observed)) stop("observed required when object is a matrix", call. = FALSE)
     obs <- observed
   } else {
+    .require_scalar_response(object, "pit_residuals()")
     sims <- as.matrix(simulate(object, nsim = nsim, seed = seed))
     obs <- observed %||% object$y %||% object$.internal$fit_args$y
     if (is.null(obs)) {
@@ -168,6 +184,7 @@ test_dispersion.default <- function(object, observed = NULL, nsim = 250L,
                                     alternative = c("two.sided", "greater",
                                                     "less"), ...) {
   alternative <- match.arg(alternative)
+  .require_scalar_response(object, "test_dispersion()")
 
   sims <- as.matrix(simulate(object, nsim = nsim, seed = seed))
   obs <- .resolve_obs(object, observed)
@@ -224,7 +241,7 @@ test_outliers <- function(object, ...) {
 #' @export
 test_outliers.default <- function(object, observed = NULL, nsim = 250L,
                                   seed = 123L, ...) {
-
+  .require_scalar_response(object, "test_outliers()")
   sims <- as.matrix(simulate(object, nsim = nsim, seed = seed))
   obs <- observed %||% object$y %||% object$.internal$fit_args$y
   N <- length(obs)
@@ -268,7 +285,7 @@ test_zero_inflation <- function(object, ...) {
 #' @export
 test_zero_inflation.default <- function(object, observed = NULL, nsim = 250L,
                                         seed = 123L, ...) {
-
+  .require_scalar_response(object, "test_zero_inflation()")
   sims <- as.matrix(simulate(object, nsim = nsim, seed = seed))
   obs <- .resolve_obs(object, observed)
 
@@ -557,7 +574,7 @@ check_model <- function(object, ...) {
 #' @export
 check_model.default <- function(object, coords = NULL, nsim = 250L,
                                 seed = 123L, ...) {
-
+  .require_scalar_response(object, "check_model()")
   sims <- as.matrix(simulate(object, nsim = nsim, seed = seed))
   obs <- .resolve_obs(object)
   pit <- pit_residuals(sims, observed = obs, nsim = nsim, seed = seed)

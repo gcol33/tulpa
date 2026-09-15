@@ -15,6 +15,7 @@
 #include "omp_threads.h"   // tulpa_omp_team_size_req, tulpa_parallel_for
 #include "pc_prior.h"      // tulpa::log_prior_sigma2_pc
 #include "tulpa/cov_kernel.h"  // cov_value: the one kernel per cov_type code
+#include "glmm_family_elt.h"     // glmm_elt: the one GLMM family density
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -544,6 +545,83 @@ inline double pg_log_prior_sigma2_pc(double sigma2, double U, double alpha) {
   return log_prior_sigma2_pc<double>(sigma2, U, alpha);
 }
 
+// ============================================================================
+// Log joint density of a Polya-Gamma sampler's target
+//
+// What a kernel records per retained draw as `log_prob`: the log density of
+// the model whose full conditionals its update steps sample, at the retained
+// state and on the scale each quantity is sampled on (a standard deviation, a
+// precision, a variance). The Polya-Gamma weights and the half-Cauchy
+// auxiliary variables are marginalized out, which is what their augmentations
+// were built to leave. Normalizing constants are kept, except an intrinsic
+// field's pseudo-determinant, which carries no hyperparameter.
+// ============================================================================
+
+inline constexpr double PG_LOG_2PI = 1.8378770664093454835606594728112;
+
+inline double pg_log_normal_iid(const double* x, int n, double sd) {
+  if (n <= 0) return 0.0;
+  if (!(sd > 0.0)) return R_NegInf;
+  double ss = 0.0;
+  for (int j = 0; j < n; j++) ss += x[j] * x[j];
+  return -0.5 * n * PG_LOG_2PI - n * std::log(sd) - 0.5 * ss / (sd * sd);
+}
+
+// Half-Cauchy(0, scale) on sigma > 0: the prior pg_update_scale_halfcauchy's
+// scale mixture marginalizes to.
+inline double pg_log_halfcauchy(double sigma, double scale) {
+  if (!(sigma > 0.0)) return R_NegInf;
+  const double z = sigma / scale;
+  return std::log(2.0) - std::log(M_PI * scale) - std::log1p(z * z);
+}
+
+// Half-normal N+(0, scale^2) on sigma > 0.
+inline double pg_log_halfnormal(double sigma, double scale) {
+  if (!(sigma > 0.0)) return R_NegInf;
+  return std::log(2.0) + R::dnorm(sigma, 0.0, scale, 1);
+}
+
+// Gamma(shape, rate) on x > 0.
+inline double pg_log_gamma(double x, double shape, double rate) {
+  if (!(x > 0.0)) return R_NegInf;
+  return R::dgamma(x, shape, 1.0 / rate, 1);
+}
+
+// A Gaussian field of precision tau * Q0 with rank(Q0) = rank, given its
+// quadratic form quad = x' Q0 x.
+inline double pg_log_gmrf(double quad, int rank, double tau) {
+  if (!(tau > 0.0)) return R_NegInf;
+  return 0.5 * rank * (std::log(tau) - PG_LOG_2PI) - 0.5 * tau * quad;
+}
+
+// phi' Q phi for the ICAR precision Q = diag(degree) - A.
+inline double pg_icar_quad_form(const double* phi, const PgAdjacency& adj) {
+  double quad_form = 0.0;
+  for (int i = 0; i < adj.n; i++) {
+    quad_form += adj.degree(i) * phi[i] * phi[i];
+    for (int e = adj.row_ptr[i]; e < adj.row_ptr[i + 1]; e++) {
+      const int j = adj.col_idx[e];
+      if (j > i) quad_form -= 2.0 * phi[i] * phi[j];
+    }
+  }
+  return quad_form;
+}
+
+// ICAR(tau) at rank J - k, plus the exchangeable N(0, 1 / isolated_prec) prior a
+// kernel places on a unit with no neighbours (isolated_prec = 0: none).
+inline double pg_log_icar(const double* phi, const PgAdjacency& adj, double tau,
+                          double isolated_prec) {
+  double lp = pg_log_gmrf(pg_icar_quad_form(phi, adj),
+                          adj.n - adj.n_components, tau);
+  if (isolated_prec > 0.0) {
+    const double sd = 1.0 / std::sqrt(isolated_prec);
+    for (int j = 0; j < adj.n; j++) {
+      if (adj.degree(j) == 0) lp += pg_log_normal_iid(&phi[j], 1, sd);
+    }
+  }
+  return lp;
+}
+
 // Draw from N(mean, sd^2) truncated to (0, inf) (Robert 1995). Used for the
 // Gaussian full conditional of a positive scale parameter.
 inline double rtruncnorm_pos(double mean, double sd) {
@@ -698,6 +776,9 @@ struct PgGibbsCommon {
   Rcpp::NumericMatrix beta_draws, re_draws;
   Rcpp::NumericVector sigma_re_draws;
   Rcpp::NumericMatrix eta_draws;
+  // Log joint density per retained draw; filled only by a kernel whose target
+  // is written down.
+  Rcpp::NumericVector log_prob_draws;
 
   PgGibbsCommon(const Rcpp::IntegerVector& y,
                 const Rcpp::IntegerVector& n_trials,
@@ -723,7 +804,8 @@ struct PgGibbsCommon {
       beta_draws(n_save_, X.ncol()),
       re_draws(n_save_, n_re_groups_),
       sigma_re_draws(n_save_),
-      eta_draws(store_eta_ ? n_save_ : 0, store_eta_ ? y.size() : 0)
+      eta_draws(store_eta_ ? n_save_ : 0, store_eta_ ? y.size() : 0),
+      log_prob_draws(n_save_)
   {
     if (N < 1) Rcpp::stop("`y` is empty.");
     if (n_trials.size() != N) {
@@ -762,6 +844,30 @@ struct PgGibbsCommon {
     if (level == 0.0) return;
     beta[0] += level;
     for (int i = 0; i < N; i++) X_beta[i] += level;
+  }
+
+  // The terms every binomial Polya-Gamma target shares, at the current state:
+  // the binomial log-likelihood at eta = X beta + re + field_contrib, the
+  // Gaussian fixed-effect prior, and -- when the kernel carries an iid block --
+  // its Gaussian density and the half-Cauchy on its SD. `field_contrib` is the
+  // per-observation structured contribution (nullptr: none).
+  double log_joint_common(const Rcpp::IntegerVector& y,
+                          const Rcpp::IntegerVector& n_trials,
+                          const double* field_contrib,
+                          double prior_beta_sd,
+                          double prior_sigma_re_scale) const {
+    double lp = 0.0;
+    for (int i = 0; i < N; i++) {
+      const double e = X_beta[i] + re_contrib[i] +
+                       (field_contrib ? field_contrib[i] : 0.0);
+      lp += glmm_elt(GLMMFamily::Binomial, e, y[i], n_trials[i], 0.0).l;
+    }
+    lp += pg_log_normal_iid(beta.begin(), p, prior_beta_sd);
+    if (n_re_groups > 0) {
+      lp += pg_log_normal_iid(re.begin(), n_re_groups, sigma_re.sigma) +
+            pg_log_halfcauchy(sigma_re.sigma, prior_sigma_re_scale);
+    }
+    return lp;
   }
 
   // Save common per-iteration draws. Caller is responsible for invoking this

@@ -2178,6 +2178,7 @@ tulpa_nested_laplace_joint <- function(responses,
     res$arm_layout  <- backend$layout(arms, prior)
     res$prior       <- prior
     res$responses   <- responses
+    res             <- .joint_attach_observations(res, responses)
     res$copy        <- copy
     res$cell_coupling      <- cell_coupling
     res$adaptive_grid_info <- refine_info

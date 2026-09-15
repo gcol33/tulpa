@@ -36,6 +36,7 @@
 #include "vi_meanfield.h"          // compute_meanfield_elbo_grad + entropy grad
 #include "vi_lowrank.h"            // compute_lowrank_elbo_grad + entropy grad
 #include "vi_fullrank.h"           // compute_fullrank_elbo_grad + entropy grad
+#include "sampler_log_prob.h"       // tulpa::sampler_log_prob_rows
 
 using tulpa_hmc::ModelData;
 using tulpa_hmc::ParamLayout;
@@ -451,6 +452,8 @@ Rcpp::List cpp_tulpa_sample_glmm(
             Rcpp::Named("means") = col_means(draws),
             Rcpp::Named("n_samples") = draws.nrow(),
             Rcpp::Named("n_params") = D,
+            Rcpp::Named("log_prob") = tulpa::sampler_log_prob_rows(draws, in.data, in.layout),
+            Rcpp::Named("log_prob_kernel") = Rcpp::wrap(res.log_lik),
             Rcpp::Named("avg_slice_evals") = res.avg_slice_evals,
             Rcpp::Named("n_slice_exhausted") = res.n_slice_exhausted,
             Rcpp::Named("n_degenerate_scale") = res.n_degenerate_scale,
@@ -478,6 +481,8 @@ Rcpp::List cpp_tulpa_sample_glmm(
         out = Rcpp::List::create(
             Rcpp::Named("draws") = draws, Rcpp::Named("means") = col_means(draws),
             Rcpp::Named("n_samples") = draws.nrow(), Rcpp::Named("n_params") = D,
+            Rcpp::Named("log_prob") = tulpa::sampler_log_prob_rows(draws, in.data, in.layout),
+            Rcpp::Named("log_prob_kernel") = Rcpp::wrap(res.log_lik),
             Rcpp::Named("final_epsilon") = res.epsilon_history.empty() ? 0.0
                                             : res.epsilon_history.back(),
             Rcpp::Named("sampler") = "sghmc");
@@ -501,6 +506,8 @@ Rcpp::List cpp_tulpa_sample_glmm(
         out = Rcpp::List::create(
             Rcpp::Named("draws") = draws, Rcpp::Named("means") = col_means(draws),
             Rcpp::Named("n_samples") = draws.nrow(), Rcpp::Named("n_params") = D,
+            Rcpp::Named("log_prob") = tulpa::sampler_log_prob_rows(draws, in.data, in.layout),
+            Rcpp::Named("log_prob_kernel") = Rcpp::wrap(res.log_lik),
             Rcpp::Named("sampler") = "sgld");
         return out;
     }
@@ -518,6 +525,8 @@ Rcpp::List cpp_tulpa_sample_glmm(
         out = Rcpp::List::create(
             Rcpp::Named("draws") = draws, Rcpp::Named("means") = col_means(draws),
             Rcpp::Named("n_samples") = draws.nrow(), Rcpp::Named("n_params") = D,
+            Rcpp::Named("log_prob") = tulpa::sampler_log_prob_rows(draws, in.data, in.layout),
+            Rcpp::Named("log_prob_kernel") = Rcpp::wrap(res.log_lik),
             Rcpp::Named("sampler") = mclmc_adjusted ? "mamclmc" : "mclmc");
         return out;
     }
@@ -538,6 +547,9 @@ Rcpp::List cpp_tulpa_sample_glmm(
         out = Rcpp::List::create(
             Rcpp::Named("draws") = draws, Rcpp::Named("means") = col_means(draws),
             Rcpp::Named("n_samples") = M, Rcpp::Named("n_params") = D,
+            // The final particle set is resampled and equally weighted
+            // (smc_sampler.h), so a plain mean of these is the posterior mean.
+            Rcpp::Named("log_prob") = tulpa::sampler_log_prob_rows(draws, in.data, in.layout),
             Rcpp::Named("log_weights") = Rcpp::wrap(res.log_weights),
             Rcpp::Named("log_evidence") =
                 res.log_evidence_valid ? res.log_evidence : NA_REAL,
@@ -570,6 +582,7 @@ Rcpp::List cpp_tulpa_sample_glmm(
         out = Rcpp::List::create(
             Rcpp::Named("draws") = draws, Rcpp::Named("means") = col_means(draws),
             Rcpp::Named("n_samples") = draws.nrow(), Rcpp::Named("n_params") = D,
+            Rcpp::Named("log_prob") = tulpa::sampler_log_prob_rows(draws, in.data, in.layout),
             Rcpp::Named("elbo") = res.final_elbo,
             // -1 is the kernel's "not computed" sentinel (vi_types.h), and it
             // is FINITE: passed through, .tulpa_khat_band() read it as a k-hat

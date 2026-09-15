@@ -24,7 +24,8 @@
 backend is absent from \code{BACKEND_REGISTRY} or to override the registry.}
 
 \item{n_fixed, fixed_names, param_names}{Fixed-effect layout, each filled only
-when the fitter left it unset.}
+when the fitter left it unset. An unnamed \code{means} vector of the matching
+length is named by \code{param_names}.}
 
 \item{extra_class}{Subclass(es) to prepend before \code{tulpa_fit}.}
 }
@@ -34,7 +35,7 @@ The enriched fit, classed \code{c(extra_class, ..., "tulpa_fit")}.
 \description{
 The dispatch layer and the fitters that return generic-accessor-facing
 objects route their return value through this helper (some special-purpose
-fitters -- the logpost samplers, tulpa_ep, the categorical drivers -- still
+fitters -- tulpa_ep, the categorical drivers -- still
 stamp their class by hand), so a directly-called fitter and a
 \code{tulpa()}-dispatched one yield the same
 enriched object: the \code{tulpa_fit} class (so the generic S3 methods --

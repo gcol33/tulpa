@@ -8,6 +8,7 @@
 #include <Rcpp.h>
 #include <vector>
 
+#include "bym2_mixing.h"  // bym2_log_rho / bym2_log1m_rho
 #include "pg_shared.h"   // PgAdjacency
 
 namespace tulpa {
@@ -92,6 +93,23 @@ void update_spatial_bym2(
     Rcpp::NumericVector& u,           // out: combined spatial effect
     double& removed_mean              // out: field level removed by centering phi
 );
+
+// The BYM2 mixing weight is drawn on a fixed grid of cell midpoints over
+// (0, 1), so its prior is the Beta(alpha, beta) density restricted to those
+// nodes and renormalized there.
+constexpr int PG_BYM2_RHO_GRID = 20;
+
+inline double pg_bym2_rho_node(int k) {
+  return (k + 0.5) / PG_BYM2_RHO_GRID;
+}
+
+// Unnormalized Beta(alpha, beta) log kernel at rho.
+inline double pg_bym2_rho_log_kernel(double rho, double alpha, double beta) {
+  return (alpha - 1.0) * bym2_log_rho(rho) + (beta - 1.0) * bym2_log1m_rho(rho);
+}
+
+// Log prior mass of a grid node rho under that restricted Beta.
+double pg_bym2_rho_log_prior(double rho, double alpha, double beta);
 
 // Update rho (mixing proportion) with beta prior
 // Uses grid search approach

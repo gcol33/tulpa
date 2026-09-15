@@ -119,16 +119,7 @@ double update_tau_icar(
     double prior_rate
 ) {
   const int J = adj.n;
-
-  // phi' Q phi = sum_i n_i phi_i^2 - 2 sum_{i ~ j, j > i} phi_i phi_j
-  double quad_form = 0.0;
-  for (int i = 0; i < J; i++) {
-    quad_form += adj.degree(i) * phi[i] * phi[i];
-    for (int e = adj.row_ptr[i]; e < adj.row_ptr[i + 1]; e++) {
-      const int j = adj.col_idx[e];
-      if (j > i) quad_form -= 2.0 * phi[i] * phi[j];
-    }
-  }
+  const double quad_form = pg_icar_quad_form(phi.begin(), adj);
 
   const double post_shape = prior_shape + (J - adj.n_components) / 2.0;
   const double post_rate = prior_rate + quad_form / 2.0;
@@ -253,12 +244,12 @@ double update_rho_bym2(
   int J = phi_scaled.size();
 
   // Evaluate the log-posterior on a grid over rho in (0, 1) and sample.
-  int n_grid = 20;
+  const int n_grid = PG_BYM2_RHO_GRID;
   NumericVector log_probs(n_grid);
   NumericVector rho_vals(n_grid);
 
   for (int k = 0; k < n_grid; k++) {
-    double rho = (k + 0.5) / n_grid;  // Avoid exact 0 and 1
+    double rho = pg_bym2_rho_node(k);
     rho_vals[k] = rho;
 
     double sqrt_rho = bym2_sd_structured(rho);
@@ -275,8 +266,7 @@ double update_rho_bym2(
       log_lik += -0.5 * sum_omega[j] * u_j * u_j + sum_resid[j] * u_j;
     }
 
-    // Beta prior: (alpha-1)*log(rho) + (beta-1)*log(1-rho)
-    double log_prior = (alpha - 1.0) * bym2_log_rho(rho) + (beta - 1.0) * bym2_log1m_rho(rho);
+    double log_prior = pg_bym2_rho_log_kernel(rho, alpha, beta);
 
     log_probs[k] = log_lik + log_prior;
   }
@@ -305,6 +295,15 @@ double update_rho_bym2(
   }
 
   return rho_vals[n_grid - 1];
+}
+
+double pg_bym2_rho_log_prior(double rho, double alpha, double beta) {
+  double m = R_NegInf;
+  for (int k = 0; k < PG_BYM2_RHO_GRID; k++) {
+    const double v = pg_bym2_rho_log_kernel(pg_bym2_rho_node(k), alpha, beta);
+    m = (m == R_NegInf) ? v : std::max(m, v) + std::log1p(std::exp(-std::abs(m - v)));
+  }
+  return pg_bym2_rho_log_kernel(rho, alpha, beta) - m;
 }
 
 // Update sigma_spatial from its Polya-Gamma full conditional given the

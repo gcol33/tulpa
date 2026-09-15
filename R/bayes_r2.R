@@ -56,16 +56,18 @@ bayes_R2.tulpa_fit <- function(object, ndraws = NULL, summary = TRUE,
   .seed_scoped(seed)
 
   eta <- .tulpa_eta_draws(object, ndraws = ndraws)
+  logit_zi <- attr(eta, "logit_zi")
   n_trials <- object$n_trials
   phi <- object$phi %||% 1.0
   fam <- object$family
 
   r2 <- vapply(seq_len(nrow(eta)), function(s) {
     e <- eta[s, ]
-    mu <- family_response_mean(e, fam, n_trials = n_trials, phi = phi)
+    z <- if (!is.null(logit_zi)) logit_zi[s, ]
+    mu <- .response_mean(e, z, fam, n_trials = n_trials, phi = phi)
     var_fit <- stats::var(mu)
-    var_res <- mean(family_variance(e, fam, n_trials = n_trials, phi = phi,
-                                    phi2 = object$phi2))
+    var_res <- mean(.response_variance(e, z, fam, n_trials = n_trials,
+                                       phi = phi, phi2 = object$phi2))
     var_fit / (var_fit + var_res)
   }, numeric(1))
 

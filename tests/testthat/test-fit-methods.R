@@ -135,7 +135,7 @@ test_that("mode = 'auto' selects an R-reachable backend on a plain model", {
   expect_named(coef(fit), c("(Intercept)", "x"))
 })
 
-test_that("Gibbs fit (draws in $beta/$re) supports the contract", {
+test_that("Gibbs fit (one chain in $draws) supports the contract", {
   skip_if_not_slow()
   d <- make_re_data(17)
   eta <- -0.3 + 1.0 * d$df$x + d$u[d$df$g]

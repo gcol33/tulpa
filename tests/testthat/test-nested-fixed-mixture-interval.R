@@ -91,7 +91,7 @@ test_that("the requested level reaches the mixture read", {
   ref <- tulpa:::.nl_gauss_mixture_summary(mx_mu, mx_vr, mx_w,
                                            probs = c(0.10, 0.90))
   expect_equal(mx_q(fit, level = 0.80), unname(ref$quantiles), tolerance = 1e-12)
-  expect_identical(colnames(ci), c("10.0%", "90.0%"))
+  expect_identical(colnames(ci), c("10 %", "90 %"))
 })
 
 # --------------------------------------------------------------------------- #

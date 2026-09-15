@@ -985,28 +985,32 @@ cpp_test_pg_nngp_conditional <- function(coords, nn_idx, nn_dist, nn_order, n_sp
     .Call(`_tulpa_cpp_test_pg_nngp_conditional`, coords, nn_idx, nn_dist, nn_order, n_spatial, nn, w, sigma2, phi, cov_type)
 }
 
-cpp_test_st_hsgp_log_prior <- function(delta, eigenvalues, T, log_tau_st, log_sigma2_hsgp, log_lengthscale_hsgp, temporal = "rw2", temporal_cyclic = FALSE) {
-    .Call(`_tulpa_cpp_test_st_hsgp_log_prior`, delta, eigenvalues, T, log_tau_st, log_sigma2_hsgp, log_lengthscale_hsgp, temporal, temporal_cyclic)
+cpp_test_st_hsgp_log_prior <- function(delta, eigenvalues, T, log_tau_st, log_sigma2_hsgp, log_lengthscale_hsgp, temporal = "rw2", temporal_cyclic = FALSE, logit_rho_st = 0.0) {
+    .Call(`_tulpa_cpp_test_st_hsgp_log_prior`, delta, eigenvalues, T, log_tau_st, log_sigma2_hsgp, log_lengthscale_hsgp, temporal, temporal_cyclic, logit_rho_st)
 }
 
 cpp_test_st_trend_precision <- function(T) {
     .Call(`_tulpa_cpp_test_st_trend_precision`, T)
 }
 
-cpp_test_st_iv_nuts <- function(y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T, family = "poisson", temporal = "rw1", temporal_cyclic = FALSE, st_parameterization = 0L, mass_matrix = "diag", n_iter = 1000L, n_warmup = 500L, max_treedepth = 10L, adapt_delta = 0.8, seed = 1L, sigma_beta = 10.0, verbose = FALSE) {
-    .Call(`_tulpa_cpp_test_st_iv_nuts`, y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T, family, temporal, temporal_cyclic, st_parameterization, mass_matrix, n_iter, n_warmup, max_treedepth, adapt_delta, seed, sigma_beta, verbose)
+cpp_test_st_iv_nuts <- function(y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T, family = "poisson", temporal = "rw1", temporal_cyclic = FALSE, st_parameterization = 0L, mass_matrix = "diag", n_iter = 1000L, n_warmup = 500L, max_treedepth = 10L, adapt_delta = 0.8, seed = 1L, sigma_beta = 10.0, verbose = FALSE, st_type = "iv") {
+    .Call(`_tulpa_cpp_test_st_iv_nuts`, y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T, family, temporal, temporal_cyclic, st_parameterization, mass_matrix, n_iter, n_warmup, max_treedepth, adapt_delta, seed, sigma_beta, verbose, st_type)
 }
 
-cpp_test_st_iv_layout <- function(y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T, family = "poisson", temporal = "rw1", temporal_cyclic = FALSE, st_parameterization = 0L, sigma_beta = 10.0) {
-    .Call(`_tulpa_cpp_test_st_iv_layout`, y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T, family, temporal, temporal_cyclic, st_parameterization, sigma_beta)
+cpp_test_st_iv_layout <- function(y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T, family = "poisson", temporal = "rw1", temporal_cyclic = FALSE, st_parameterization = 0L, sigma_beta = 10.0, st_type = "iv") {
+    .Call(`_tulpa_cpp_test_st_iv_layout`, y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T, family, temporal, temporal_cyclic, st_parameterization, sigma_beta, st_type)
 }
 
-cpp_test_st_iv_gmrf_mass <- function(y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T, q, family = "poisson", temporal = "rw1", temporal_cyclic = FALSE, st_parameterization = 0L, sigma_beta = 10.0, with_eta_weights = TRUE) {
-    .Call(`_tulpa_cpp_test_st_iv_gmrf_mass`, y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T, q, family, temporal, temporal_cyclic, st_parameterization, sigma_beta, with_eta_weights)
+cpp_test_st_iv_gmrf_mass <- function(y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T, q, family = "poisson", temporal = "rw1", temporal_cyclic = FALSE, st_parameterization = 0L, sigma_beta = 10.0, with_eta_weights = TRUE, st_type = "iv") {
+    .Call(`_tulpa_cpp_test_st_iv_gmrf_mass`, y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T, q, family, temporal, temporal_cyclic, st_parameterization, sigma_beta, with_eta_weights, st_type)
 }
 
-cpp_test_st_iv_log_post <- function(y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T, q, family = "poisson", temporal = "rw1", temporal_cyclic = FALSE, st_parameterization = 0L, sigma_beta = 10.0) {
-    .Call(`_tulpa_cpp_test_st_iv_log_post`, y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T, q, family, temporal, temporal_cyclic, st_parameterization, sigma_beta)
+cpp_test_st_iv_log_post <- function(y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T, q, family = "poisson", temporal = "rw1", temporal_cyclic = FALSE, st_parameterization = 0L, sigma_beta = 10.0, st_type = "iv") {
+    .Call(`_tulpa_cpp_test_st_iv_log_post`, y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T, q, family, temporal, temporal_cyclic, st_parameterization, sigma_beta, st_type)
+}
+
+cpp_test_st_iv_log_prior <- function(y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T, q, family = "poisson", temporal = "rw1", temporal_cyclic = FALSE, st_parameterization = 0L, sigma_beta = 10.0, st_type = "iv") {
+    .Call(`_tulpa_cpp_test_st_iv_log_prior`, y, X, s_idx, t_idx, adj_row_ptr, adj_col_idx, S, T, q, family, temporal, temporal_cyclic, st_parameterization, sigma_beta, st_type)
 }
 
 cpp_test_temporal_gp_density <- function(times, n_groups, field, log_sigma2, logit_phi, parameterization, phi_lower = 0.01, phi_upper = 10.0) {
@@ -1063,6 +1067,10 @@ cpp_test_c_abi_chains_roundtrip <- function(y_r, X_r, n_chains = 3L, n_iter = 60
 
 cpp_tulpa_glmm_eta_draws <- function(draws, y, n_trials, X, family, phi = 1.0, sigma_beta = 10.0, offset_nullable = NULL, re_spec = NULL, spatial_spec = NULL, temporal_spec = NULL, sigma_re_scale = 2.5, phi2 = NA_real_, svc_spec = NULL, tvc_spec = NULL, zi_spec = NULL) {
     .Call(`_tulpa_cpp_tulpa_glmm_eta_draws`, draws, y, n_trials, X, family, phi, sigma_beta, offset_nullable, re_spec, spatial_spec, temporal_spec, sigma_re_scale, phi2, svc_spec, tvc_spec, zi_spec)
+}
+
+cpp_tulpa_glmm_log_prob_draws <- function(draws, y, n_trials, X, family, phi = 1.0, sigma_beta = 10.0, offset_nullable = NULL, re_spec = NULL, spatial_spec = NULL, temporal_spec = NULL, sigma_re_scale = 2.5, phi2 = NA_real_, svc_spec = NULL, tvc_spec = NULL, zi_spec = NULL) {
+    .Call(`_tulpa_cpp_tulpa_glmm_log_prob_draws`, draws, y, n_trials, X, family, phi, sigma_beta, offset_nullable, re_spec, spatial_spec, temporal_spec, sigma_re_scale, phi2, svc_spec, tvc_spec, zi_spec)
 }
 
 cpp_tulpa_glmm_layout <- function(y, n_trials, X, family, phi = 1.0, sigma_beta = 10.0, offset_nullable = NULL, re_spec = NULL, spatial_spec = NULL, temporal_spec = NULL, sigma_re_scale = 2.5, fixed_names = NULL, svc_spec = NULL, tvc_spec = NULL, zi_spec = NULL) {

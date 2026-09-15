@@ -26,9 +26,11 @@ under separation.}
 (default 1e-8), \code{n_draws} (posterior draws, default 2000), \code{seed}.}
 }
 \value{
-A \code{tulpa_fit} (subclass \code{tulpa_multinomial}) with \code{coef} (named
-\code{class:term}), \code{vcov}, \code{draws}, \code{log_marginal}, \code{classes}, \code{baseline}, and
-the standard generic-method support.
+A \code{tulpa_fit} (subclass \code{tulpa_multinomial}) with \code{means} (the
+posterior mode, named \code{class:term}) and \code{cov} of the Laplace Gaussian, which
+is the posterior \code{\link[=coef]{coef()}}, \code{\link[=vcov]{vcov()}}, \code{\link[=summary]{summary()}} and \code{\link[=confint]{confint()}} report;
+\code{draws} sampled from that Gaussian; \code{log_marginal}, \code{classes}, \code{baseline},
+and the standard generic-method support.
 }
 \description{
 Fits a baseline-category multinomial logit model: for a K-level unordered

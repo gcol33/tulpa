@@ -16,7 +16,9 @@
 \item{...}{Ignored.}
 }
 \value{
-Matrix with lower and upper columns. A nested-Laplace fit carries
+Matrix with lower and upper columns, labelled as
+\code{\link[stats:confint.default]{stats::confint.default()}} labels them (\code{"2.5 \%"} and \code{"97.5 \%"} at the
+default level). A nested-Laplace fit carries
 \code{interval_source} / \code{interval_declined} (which read produced the bounds --
 by default the grid's Gaussian-mixture CDF), \code{retained_mass} (the share of
 the grid weight the bounds are conditional on), and \code{skew_applied}, one

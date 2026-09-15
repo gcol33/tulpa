@@ -176,15 +176,10 @@ test_that("laplace_diagnostics returns one finite row per parameter on a small j
   rel <- laplace_diagnostics(fit)
   expect_s3_class(rel, "laplace_diagnostics")
   expect_equal(nrow(rel), 4L)
-  expect_setequal(names(rel),
-                  c("parameter", "mean", "sd", "ess_bulk", "ess_tail", "rhat"))
+  # i.i.d. draws carry no chain, so the table withholds rhat / ESS.
+  expect_setequal(names(rel), c("parameter", "mean", "sd"))
   expect_true(all(is.finite(rel$mean)))
   expect_true(all(is.finite(rel$sd)))
-  expect_true(all(is.finite(rel$rhat)))
-
-  # i.i.d.-draw Monte-Carlo diagnostics: rhat ~ 1, ESS ~ n_draws.
-  expect_true(all(abs(rel$rhat - 1) < 0.1))
-  expect_true(all(rel$ess_bulk > 0.5 * 800))
 
   # The headline k-hat is finite (the pinned-alpha fit no longer declines) and
   # carries a band; grid quadrature reliability is attached.

@@ -404,6 +404,9 @@ tulpa_re_cov_gibbs <- function(y, n_trials = NULL, X, re_terms,
     # (.re_draws_mat), so ranef() / posterior_predict() see the sampled b
     # without either of them learning anything about this backend.
     re          = re_draws,
+    # log p(y, beta, b, Sigma) at each retained sweep, Sigma on its natural
+    # scale: the joint density this sampler draws from, row-aligned with draws.
+    log_prob    = out$log_prob,
     means       = beta_mean,
     param_names = beta_names,
     process_info = list(list(name = "fixed_effects", p = p,

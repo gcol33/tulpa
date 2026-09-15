@@ -120,6 +120,63 @@ inline Eigen::MatrixXd draw_block_sigma(const Eigen::MatrixXd& B_m,
 }
 
 // ---------------------------------------------------------------------------
+// Log densities of the joint target the sweep samples, on the natural Sigma
+// scale the conjugate draw above targets. Normalizing constants included, so a
+// recorded value is the log joint density itself rather than a difference.
+// ---------------------------------------------------------------------------
+
+// log IW(S; nu, Lambda) = (nu/2) log|Lambda| - (nu p / 2) log 2 - log Gamma_p(nu/2)
+//                         - ((nu + p + 1)/2) log|S| - tr(Lambda S^-1) / 2.
+inline double log_invwishart_density(const Eigen::MatrixXd& S, double nu,
+                                     const Eigen::MatrixXd& Lambda) {
+    const int p = static_cast<int>(S.rows());
+    Eigen::LLT<Eigen::MatrixXd> lS(0.5 * (S + S.transpose()));
+    Eigen::LLT<Eigen::MatrixXd> lL(0.5 * (Lambda + Lambda.transpose()));
+    if (lS.info() != Eigen::Success || lL.info() != Eigen::Success)
+        return -std::numeric_limits<double>::infinity();
+    double logdet_S = 0.0, logdet_L = 0.0;
+    for (int i = 0; i < p; ++i) {
+        logdet_S += 2.0 * std::log(lS.matrixLLT()(i, i));
+        logdet_L += 2.0 * std::log(lL.matrixLLT()(i, i));
+    }
+    double log_gamma_p = 0.25 * p * (p - 1) * std::log(M_PI);
+    for (int j = 1; j <= p; ++j) log_gamma_p += R::lgammafn(0.5 * (nu + 1 - j));
+    const double tr = (lS.solve(Lambda)).trace();
+    return 0.5 * nu * logdet_L - 0.5 * nu * p * M_LN2 - log_gamma_p
+         - 0.5 * (nu + p + 1) * logdet_S - 0.5 * tr;
+}
+
+// The prior draw_block_sigma is conjugate to: one matrix inverse-Wishart for a
+// full block, nc independent scalar inverse-Wisharts on the diagonal otherwise.
+inline double log_block_sigma_prior(const Eigen::MatrixXd& Sigma,
+                                    const CovBlock& bl) {
+    if (bl.full) return log_invwishart_density(Sigma, bl.nu0, bl.Lambda0);
+    double lp = 0.0;
+    for (int i = 0; i < bl.nc; ++i) {
+        lp += log_invwishart_density(Eigen::MatrixXd::Constant(1, 1, Sigma(i, i)),
+                                     bl.nu0,
+                                     Eigen::MatrixXd::Constant(1, 1, bl.lambda0(i)));
+    }
+    return lp;
+}
+
+// sum_g log N(b_g; 0, Sigma) over the rows of B (G x nc).
+inline double log_re_gaussian(const Eigen::MatrixXd& B, const Eigen::MatrixXd& Sigma) {
+    const int nc = static_cast<int>(Sigma.rows());
+    Eigen::LLT<Eigen::MatrixXd> llt(0.5 * (Sigma + Sigma.transpose()));
+    if (llt.info() != Eigen::Success) return -std::numeric_limits<double>::infinity();
+    double half_logdet = 0.0;
+    for (int i = 0; i < nc; ++i) half_logdet += std::log(llt.matrixLLT()(i, i));
+    double lp = 0.0;
+    for (int g = 0; g < B.rows(); ++g) {
+        const Eigen::VectorXd w =
+            llt.matrixL().solve(Eigen::VectorXd(B.row(g).transpose()));
+        lp += -0.5 * nc * std::log(2.0 * M_PI) - half_logdet - 0.5 * w.squaredNorm();
+    }
+    return lp;
+}
+
+// ---------------------------------------------------------------------------
 // Sweep configuration / recorded output.
 // ---------------------------------------------------------------------------
 struct GibbsConfig {
@@ -140,6 +197,10 @@ struct GibbsOutput {
     // coefficient) throughout. Row-aligned with beta_draws: a row is one joint
     // (beta, b) state of the sweep, which is the exact per-group posterior.
     Eigen::MatrixXd re_draws;
+    // log p(y, beta, {b_m}, {Sigma_m}) at each recorded state: the data
+    // log-likelihood, the Gaussian beta prior, the Gaussian RE densities and
+    // the conjugate Sigma prior, with Sigma on its natural scale.
+    Eigen::VectorXd log_joint;
     double accept_beta = 0.0;
     double accept_b    = 0.0;
 };
@@ -212,6 +273,7 @@ inline GibbsOutput run_glmm_gibbs(
     out.beta_draws.resize(n_kept, p);
     out.Sigma_draws.assign(n_kept, std::vector<Eigen::MatrixXd>(M));
     out.re_draws.resize(n_kept, n_re);
+    out.log_joint.resize(n_kept);
 
     long acc_beta_rec = 0, acc_b_rec = 0, n_b_rec = 0;
     int kept = 0;
@@ -309,6 +371,20 @@ inline GibbsOutput run_glmm_gibbs(
                     for (int c = 0; c < blocks[m].nc; ++c)
                         out.re_draws(kept, col++) = B[m](g, c);
             }
+            push_offset(0);
+            double lj = 0.0, ll_g = 0.0;
+            for (int g = 0; g < blocks[0].n_groups; ++g) {
+                Eigen::VectorXd bg = B[0].row(g).transpose();
+                oracles[0]->node_ll(g, bg.data(), 1, &ll_g);
+                lj += ll_g;
+            }
+            for (int j = 0; j < p; ++j)
+                lj += R::dnorm(beta(j), cfg.beta_prior_mean(j), cfg.beta_prior_sd(j), 1);
+            for (int m = 0; m < M; ++m) {
+                lj += log_re_gaussian(B[m], Sigma_cur[m])
+                    + log_block_sigma_prior(Sigma_cur[m], blocks[m]);
+            }
+            out.log_joint(kept) = lj;
             acc_beta_rec += acc_beta ? 1 : 0;
             acc_b_rec    += n_acc_b;
             n_b_rec      += n_prop_b;

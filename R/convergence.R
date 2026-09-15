@@ -354,8 +354,13 @@ posterior_sample <- function(fit) {
   if (is.null(carries)) {
     carries <- "no posterior representation this accessor can read"
   }
-  sprintf("%s(): %s carries no posterior draws. It carries %s.",
-          caller, who, carries)
+  # A chain-stamped fit is a sampler's output, so an absent sample there is a
+  # sample that was not kept rather than a representation without one.
+  chain <- is.list(fit) && identical(fit[["draws_kind"]], "chain")
+  sprintf("%s(): %s carries no posterior draws.%s It carries %s.",
+          caller, who,
+          if (chain) " It is stamped as an MCMC chain, which it did not retain." else "",
+          carries)
 }
 
 # The one place a fit's posterior draws are read off the object.
@@ -368,7 +373,10 @@ posterior_sample <- function(fit) {
 #' @keywords internal
 .fit_draws <- function(fit) {
   if (!is.list(fit)) return(NULL)
-  fit[["draws"]] %||% fit[["samples"]]
+  draws <- fit[["draws"]] %||% fit[["samples"]]
+  # A zero-row draws matrix holds no sample, so it is read as none.
+  if (!is.null(draws) && NROW(draws) == 0L) return(NULL)
+  draws
 }
 
 #' MCMC chain draws from a fit
@@ -430,18 +438,23 @@ mcmc_draws <- function(fit) {
   }
 
   draws <- as.matrix(draws)
-  cid <- fit$chain_id
-  nch <- fit$n_chains %||% 1L
-  if (!is.null(cid) && length(cid) == nrow(draws)) {
-    ks <- sort(unique(cid))
-    lapply(ks, function(k) draws[cid == k, , drop = FALSE])
-  } else if (nch > 1L && nrow(draws) %% nch == 0L) {
-    per <- nrow(draws) %/% nch
-    lapply(seq_len(nch), function(k)
-      draws[((k - 1L) * per + 1L):(k * per), , drop = FALSE])
-  } else {
-    list(draws)
+  cid <- .tulpa_chain_id(fit, nrow(draws))
+  lapply(sort(unique(cid)), function(k) draws[cid == k, , drop = FALSE])
+}
+
+# Chain index (1..n_chains) of each of `n_rows` pooled draw rows: the fit's
+# `chain_id` row map when it covers every row, else contiguous chain-major
+# blocks of an `n_chains` count that divides the rows, else one chain.
+.tulpa_chain_id <- function(fit, n_rows) {
+  cid <- fit[["chain_id"]]
+  nch <- fit[["n_chains"]] %||% 1L
+  if (!is.null(cid) && length(cid) == n_rows) {
+    return(as.integer(factor(cid)))
   }
+  if (nch > 1L && n_rows %% nch == 0L) {
+    return(rep(seq_len(nch), each = n_rows %/% nch))
+  }
+  rep(1L, n_rows)
 }
 
 #' Posterior draws as a 3D array

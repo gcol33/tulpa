@@ -271,38 +271,3 @@ plot.tulpa_prior_predict <- function(x, process = 1L, max_draws = 50L, ...) {
                                      x$process_names[process]))
   }
 }
-
-# Extract the [n_draws x n_obs] pointwise log-likelihood from a tulpa_fit:
-# the combined `log_lik`, the sum of the two-process num/denom components, or
-# -- for engine fits with a builtin character family and a stored response --
-# computed from the linear-predictor posterior draws and the family registry.
-.tulpa_fit_loglik <- function(x) {
-  if (is.list(x$draws) && !is.matrix(x$draws)) {
-    ll <- x$draws$log_lik
-    if (!is.null(ll)) return(ll)
-    ll_num <- x$draws$log_lik_num
-    ll_denom <- x$draws$log_lik_denom
-    if (!is.null(ll_num) && !is.null(ll_denom)) return(ll_num + ll_denom)
-    if (!is.null(ll_num)) return(ll_num)
-    if (!is.null(ll_denom)) return(ll_denom)
-  }
-  if (!is.null(x$y) && is.character(x$family) && length(x$family) == 1L) {
-    # Fixed synth_seed: a criteria read (WAIC/LOO/model weights) must return
-    # the same numbers on every call and leave the session RNG untouched,
-    # even when the Gaussian-synthesis draw branch is taken.
-    eta <- tryCatch(.tulpa_eta_draws(x, synth_seed = 285603L),
-                    error = function(e) NULL)
-    if (!is.null(eta)) {
-      n_obs <- ncol(eta)
-      S <- nrow(eta)
-      Y <- matrix(as.numeric(x$y), S, n_obs, byrow = TRUE)
-      nt <- x$n_trials %||% 1
-      NT <- matrix(as.numeric(nt), S, n_obs, byrow = TRUE)
-      ll <- family_loglik(eta, Y, x$family, n_trials = NT,
-                          phi = x$phi %||% 1.0, phi2 = x$phi2)
-      dim(ll) <- dim(eta)
-      return(ll)
-    }
-  }
-  stop("Log-likelihood not found in model output.", call. = FALSE)
-}

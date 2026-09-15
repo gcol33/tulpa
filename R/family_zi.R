@@ -264,3 +264,50 @@ zi_sample <- function(eta, logit_zi, family, n_trials = NULL, phi = 1.0,
   out[structural] <- 0
   out
 }
+
+
+# The response distribution of a fitted observation given its linear
+# predictors: the base family when `logit_zi` is NULL, the structural-zero
+# mixture over it otherwise. Every observation-level accessor (fitted,
+# residuals, predict, posterior_predict, the pointwise log-likelihood) reads the
+# response through these four, so a zero-inflated fit cannot be scored by one
+# accessor as a mixture and by another as its base family.
+#' @keywords internal
+.response_mean <- function(eta, logit_zi, family, n_trials = NULL, phi = 1.0) {
+  if (is.null(logit_zi)) {
+    return(family_response_mean(eta, family, n_trials = n_trials, phi = phi))
+  }
+  zi_response_mean(eta, logit_zi, family, n_trials = n_trials, phi = phi)
+}
+
+#' @keywords internal
+.response_variance <- function(eta, logit_zi, family, n_trials = NULL,
+                               phi = 1.0, phi2 = NULL) {
+  if (is.null(logit_zi)) {
+    return(family_variance(eta, family, n_trials = n_trials, phi = phi,
+                           phi2 = phi2))
+  }
+  zi_variance(eta, logit_zi, family, n_trials = n_trials, phi = phi,
+              phi2 = phi2)
+}
+
+#' @keywords internal
+.response_sample <- function(eta, logit_zi, family, n_trials = NULL,
+                             phi = 1.0, phi2 = NULL) {
+  if (is.null(logit_zi)) {
+    return(family_sample(eta, family, n_trials = n_trials, phi = phi,
+                         phi2 = phi2))
+  }
+  zi_sample(eta, logit_zi, family, n_trials = n_trials, phi = phi, phi2 = phi2)
+}
+
+#' @keywords internal
+.response_loglik <- function(eta, logit_zi, y, family, n_trials = NULL,
+                             phi = 1.0, phi2 = NULL) {
+  if (is.null(logit_zi)) {
+    return(family_loglik(eta, y, family, n_trials = n_trials, phi = phi,
+                         phi2 = phi2))
+  }
+  zi_loglik(eta, logit_zi, y, family, n_trials = n_trials, phi = phi,
+            phi2 = phi2)
+}

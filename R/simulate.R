@@ -462,7 +462,7 @@ theta_from_fit <- function(fit, sim_index, built, family) {
                    length(row), b1$n_fixed), call. = FALSE)
     }
     beta1 <- as.numeric(row[seq_len(b1$n_fixed)])
-    re_cols <- if (!is.null(cn)) grep("^re\\[", cn) else integer(0)
+    re_cols <- .re_col_idx(cn)
     re_vals <- if (length(re_cols)) as.numeric(row[re_cols]) else numeric(0)
     u_blocks <- vector("list", length(b1$re_terms))
     pos <- 0L

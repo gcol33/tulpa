@@ -21,5 +21,6 @@ Population-level residuals from the fixed-effect fitted mean: \code{"response"}
 is \code{y - E[y | eta]} on the response scale (trial-scaled for binomial,
 offset included); \code{"pearson"} additionally scales by the family standard
 deviation \code{sqrt(Var(y | eta))} at the fitted linear predictor. Random
-effects are held at zero, matching \code{\link[=fitted]{fitted()}}.
+effects are held at zero, matching \code{\link[=fitted]{fitted()}}. On a zero-inflated fit both
+the mean and the variance are the mixture's.
 }

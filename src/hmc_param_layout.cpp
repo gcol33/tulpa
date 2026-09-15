@@ -8,6 +8,7 @@
 #include "hmc_sampler.h"
 #include "tulpa/likelihood.h"
 #include "pc_prior.h"
+#include "st_null_space.h"
 
 namespace tulpa_hmc {
 
@@ -46,6 +47,38 @@ void require_spatial_partition(const ModelData& data) {
              "`n_spatial_components` from it, rather than assigning the CSR "
              "arrays on their own.",
              have, data.n_spatial_units);
+}
+
+// The spatiotemporal interactions the density defines. Anything else would be
+// laid out with parameters no density term reads and sampled under a prior that
+// is not the one declared, so it is refused here, once, before any buffer is
+// sized.
+//
+// SEPARABLE / NONSEP_GP: the engine carries no space-time covariance family
+// and no NNGP scan over SpatiotemporalData's neighbour structure (nn_idx,
+// nn_dist_space, nn_dist_time, nn_order, coords, time_values are read by no
+// density), so the two ranges would be sampled from their priors alone while
+// the interaction field has no GP structure at all.
+//
+// A temporal margin outside RW1 / RW2 / AR1 on an interaction that reads one
+// (Type II, Type IV, HSGP-ST) contributes no quadratic form, so the field would
+// be flat along time.
+static void check_st_interaction_supported(const SpatiotemporalData& st,
+                                           bool is_hsgp) {
+  if (st.type == STType::SEPARABLE || st.type == STType::NONSEP_GP) {
+    Rcpp::stop("tulpa: the %s spatiotemporal interaction has no density in "
+               "the engine (no space-time covariance kernel or NNGP "
+               "neighbour scan is defined for it). Use a Knorr-Held Type I-IV "
+               "interaction or the HSGP-ST interaction.",
+               st.type == STType::SEPARABLE ? "SEPARABLE" : "NONSEP_GP");
+  }
+  if (tulpa_st::st_reads_time_margin(st.type, is_hsgp) &&
+      !tulpa_st::st_time_margin_supported(st.temporal_type)) {
+    Rcpp::stop("tulpa: the spatiotemporal interaction's temporal margin "
+               "(TemporalType code %d) has no density; the interaction "
+               "supports RW1, RW2 and AR1 time margins.",
+               static_cast<int>(st.temporal_type));
+  }
 }
 
 // A ModelData vector the RE layout indexes by term must be at least as long as
@@ -488,32 +521,29 @@ ParamLayout compute_param_layout(const ModelData& data) {
 
   // Spatiotemporal interaction
   layout.has_spatiotemporal = data.has_spatiotemporal;
-  layout.is_st_gp = (data.has_spatiotemporal &&
-                     (data.spatiotemporal_data.type == STType::SEPARABLE ||
-                      data.spatiotemporal_data.type == STType::NONSEP_GP));
+  layout.is_st_gp = false;
 
   if (layout.has_spatiotemporal && data.spatiotemporal_data.type != STType::NONE) {
+    const auto& st = data.spatiotemporal_data;
+    check_st_interaction_supported(st, data.st_is_hsgp);
+    const bool reads_time_margin =
+        tulpa_st::st_reads_time_margin(st.type, data.st_is_hsgp);
+
     // log_tau for interaction precision
     layout.log_tau_st_idx = idx++;
 
     // Second precision removed for Type IV (single tau suffices)
     layout.log_tau_st2_idx = -1;
 
-    // AR1 rho if temporal uses AR1
-    if (data.spatiotemporal_data.temporal_type == TemporalType::AR1) {
+    // AR1 correlation, where the density reads a temporal margin
+    if (reads_time_margin && st.temporal_type == TemporalType::AR1) {
       layout.logit_rho_st_idx = idx++;
     } else {
       layout.logit_rho_st_idx = -1;
     }
 
-    // GP range parameters (for separable/non-separable GP)
-    if (layout.is_st_gp) {
-      layout.log_phi_st_space_idx = idx++;
-      layout.log_phi_st_time_idx = idx++;
-    } else {
-      layout.log_phi_st_space_idx = -1;
-      layout.log_phi_st_time_idx = -1;
-    }
+    layout.log_phi_st_space_idx = -1;
+    layout.log_phi_st_time_idx = -1;
 
     // HSGP-ST: separate sigma2 and lengthscale for spectral basis interaction
     layout.is_st_hsgp = data.st_is_hsgp;

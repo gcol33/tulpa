@@ -23,8 +23,13 @@
 # `what`    the reliability question the kind's table answers, for messages
 .tulpa_diag_registry <- list(
   chain = list(
-    fn      = function(fit, pars, measures, probs)
-                .tulpa_chain_diag_table(fit, pars, measures, probs),
+    fn      = function(fit, pars, measures, probs) {
+                if (is.null(.fit_draws(fit))) {
+                  message(.tulpa_no_draws_note(fit, "diagnostics"))
+                  return(NULL)
+                }
+                .tulpa_chain_diag_table(fit, pars, measures, probs)
+              },
     honours = c("pars", "measures", "probs"),
     what    = "chain mixing (Rhat / ESS / MCSE)"
   ),
@@ -32,9 +37,8 @@
     fn      = function(fit, pars, measures, probs)
                 .tulpa_approx_diag_table(fit, pars),
     honours = "pars",
-    what    = paste("approximation reliability (outer PSIS k-hat / grid",
-                    "quadrature ESS, plus inner-Laplace skewness -- gamma_3",
-                    "-- when control$diagnose_skew computed it)")
+    what    = paste("approximation reliability, scoped per backend by",
+                    ".APPROX_SCOPE (laplace_diagnostics.R)")
   ),
   point = list(
     fn      = function(fit, pars, measures, probs) {

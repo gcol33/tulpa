@@ -24,6 +24,7 @@
 #include "laplace_spec_fit.h"      // as_offset_vec
 #include "log_post_impl.h"         // GenericLogPostState, generic_eta_at
 #include "sampler_model_data.h"    // build_sampler_model_inputs
+#include "sampler_log_prob.h"      // sampler_log_prob_rows
 
 // [[Rcpp::export]]
 Rcpp::NumericMatrix cpp_tulpa_glmm_eta_draws(
@@ -81,4 +82,37 @@ Rcpp::NumericMatrix cpp_tulpa_glmm_eta_draws(
         }
     }
     return out;
+}
+
+// The per-draw log posterior of a ModelData sampler fit, from the same helper
+// every non-NUTS backend reports its `log_prob` through, on the model built from
+// the arguments the sampler received. Evaluated on a NUTS fit's draws it is
+// what that fit's own recorded log_prob has to reproduce.
+// [[Rcpp::export]]
+Rcpp::NumericVector cpp_tulpa_glmm_log_prob_draws(
+    Rcpp::NumericMatrix draws,
+    Rcpp::NumericVector y,
+    Rcpp::IntegerVector n_trials,
+    Rcpp::NumericMatrix X,
+    std::string family,
+    double phi = 1.0,
+    double sigma_beta = 10.0,
+    Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> re_spec = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> spatial_spec = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> temporal_spec = R_NilValue,
+    double sigma_re_scale = 2.5,
+    double phi2 = NA_REAL,
+    Rcpp::Nullable<Rcpp::List> svc_spec = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> tvc_spec = R_NilValue,
+    Rcpp::Nullable<Rcpp::List> zi_spec = R_NilValue
+) {
+    const int N = y.size();
+    tulpa::SamplerModelInputs in;
+    std::vector<double> offset = tulpa::as_offset_vec(offset_nullable, N);
+    tulpa::build_sampler_model_inputs(
+        in, y, n_trials, X, family, phi, phi2, sigma_beta, offset,
+        sigma_re_scale, re_spec, spatial_spec, temporal_spec, svc_spec,
+        tvc_spec, zi_spec);
+    return tulpa::sampler_log_prob_rows(draws, in.data, in.layout);
 }

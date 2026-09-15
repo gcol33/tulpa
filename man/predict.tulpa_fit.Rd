@@ -21,11 +21,14 @@
 columns named in the spec's coordinate formula). If \code{NULL}, predicts at the
 training design (requires \verb{$model_matrix}).}
 
-\item{type}{\code{"link"} (linear predictor) or \code{"response"} (mean scale). For a
-binomial fit the \code{"response"} scale here is the per-trial success
-probability \code{g^{-1}(eta)} (there is no \code{n_trials} at \code{newdata}); this
-differs from \code{\link[=fitted]{fitted()}}, which returns the trial-scaled expected count at
-the training design.}
+\item{type}{\code{"link"} (linear predictor) or \code{"response"} (mean scale,
+\code{E[y]}). For a binomial fit the \code{"response"} scale here is the per-trial
+success probability \code{g^{-1}(eta)} (there is no \code{n_trials} at \code{newdata});
+this differs from \code{\link[=fitted]{fitted()}}, which returns the trial-scaled expected
+count at the training design. On a zero-inflated fit (\code{ziformula}) the
+\code{"link"} scale is the count predictor and the \code{"response"} scale is the
+mixture mean \verb{(1 - pi) E[y | eta]}, \verb{pi = plogis(X_zi beta_zi)}, with the
+zero-inflation design rebuilt from the fit's \code{ziformula} at \code{newdata}.}
 
 \item{se.fit}{If \code{TRUE}, also return the link-scale standard error and
 credible bounds. With an included SPDE field the SE propagates the joint
@@ -33,7 +36,10 @@ credible bounds. With an included SPDE field the SE propagates the joint
 -- including the cross term -- conditional on \verb{(range, sigma)} (a nested
 fit's hyperparameter-grid spread is not propagated, so the bound is
 mildly optimistic when that posterior is wide). Integer-nu, no-RE SPDE
-fits only; other layouts decline with an explanation.}
+fits only; other layouts decline with an explanation. On a zero-inflated
+fit \code{se.fit} is the count predictor's, and the response-scale bounds are
+quantiles of the mixture mean over draws of the count and zero-inflation
+coefficients jointly (pinned, so repeated calls agree).}
 
 \item{level}{Credible-interval level (default 0.95).}
 

@@ -65,6 +65,11 @@ field enters at its posterior mean.
 }
 At \code{newdata} the prediction is population level (random effects at zero),
 matching \code{\link[=predict.tulpa_fit]{predict.tulpa_fit()}}.
+
+A zero-inflated fit (\code{ziformula}) draws the structural-zero logit from the
+same posterior draw as the count predictor; each replicate observation is a
+structural zero with probability \verb{plogis(X_zi beta_zi)} and otherwise a draw
+from the family (a zero-truncated family gives the hurdle model).
 }
 \examples{
 \donttest{

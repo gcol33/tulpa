@@ -72,6 +72,69 @@ test_that("an unrecognised provenance kind fails loudly", {
   expect_error(diagnostics(fit), "Unknown draws provenance")
 })
 
+test_that("a chain-stamped fit with no draws says so instead of returning NULL silently", {
+  fit <- structure(list(backend = "gibbs", draws_kind = "chain"),
+                   class = "tulpa_fit")
+  expect_message(res <- diagnostics(fit), "stamped as an MCMC chain")
+  expect_null(res)
+})
+
+# --------------------------------------------------------------------------- #
+# What the reliability table says it describes                                 #
+# --------------------------------------------------------------------------- #
+
+test_that("every backend emitting i.i.d. draws has a reliability scope entry", {
+  iid <- names(Filter(function(e) identical(e$emits, "iid"), BACKEND_REGISTRY))
+  expect_true(all(iid %in% names(.APPROX_SCOPE)),
+              info = paste(setdiff(iid, names(.APPROX_SCOPE)), collapse = ", "))
+  for (nm in names(.APPROX_SCOPE)) {
+    e <- .APPROX_SCOPE[[nm]]
+    expect_true(is.character(e$title) && nzchar(e$title), info = nm)
+    expect_true(is.character(e$scope) && nzchar(e$scope), info = nm)
+    expect_true(all(e$layers %in% c("outer", "inner")), info = nm)
+  }
+})
+
+test_that("the header and scope follow the backend, not a nested-Laplace default", {
+  set.seed(14)
+  draws <- matrix(rnorm(400), ncol = 2, dimnames = list(NULL, c("b0", "b1")))
+  shell <- function(backend, ...) {
+    structure(list(draws = draws, draws_kind = "iid", backend = backend, ...),
+              class = "tulpa_fit")
+  }
+  for (b in c("smc", "vi", "pathfinder", "ep")) {
+    tab <- diagnostics(shell(b))
+    out <- paste(capture.output(print(tab)), collapse = "\n")
+    expect_match(out, .APPROX_SCOPE[[b]]$title, fixed = TRUE, info = b)
+    expect_no_match(out, "Nested-Laplace|OUTER-integration|latent-field|outer PSIS",
+                    info = b)
+    expect_identical(attr(tab, "scope_backend"), b)
+    expect_length(attr(tab, "scope_layers"), 0L)
+    expect_true(is.na(attr(tab, "reliability")))
+  }
+
+  nested <- diagnostics(shell("re_cov_nested", weights = rep(0.25, 4),
+                              pareto_k = 0.3, pareto_k_is_ess = 300,
+                              pareto_k_scope = "outer"))
+  out <- paste(capture.output(print(nested)), collapse = "\n")
+  expect_match(out, "RE-covariance nested-Laplace OUTER-integration", fixed = TRUE)
+  expect_match(out, "random-effect covariance Sigma", fixed = TRUE)
+  expect_match(attr(nested, "reliability"), "outer integration good")
+
+  # A fit with no registered backend is described by the layers it carries.
+  expect_output(print(diagnostics(.diag_iid_fit())), "Nested-Laplace OUTER")
+})
+
+test_that("a zero-row draws matrix is read as no draws", {
+  fit <- structure(list(draws = matrix(numeric(0), 0L, 2L,
+                                       dimnames = list(NULL, c("a", "b"))),
+                        draws_kind = "iid", backend = "agq",
+                        means = c(a = 0, b = 1)),
+                   class = "tulpa_fit")
+  expect_message(res <- diagnostics(fit), "carries no posterior draws")
+  expect_null(res)
+})
+
 # --------------------------------------------------------------------------- #
 # Argument pass-through                                                        #
 # --------------------------------------------------------------------------- #

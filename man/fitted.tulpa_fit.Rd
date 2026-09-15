@@ -19,5 +19,8 @@ In-sample mean response from the fixed effects and the observation offset
 (\verb{E[y] = g^\{-1\}(X beta + offset)}, trial-scaled for binomial). Random
 effects are held at their prior mean of zero; group-level effects are in
 \code{\link[=ranef]{ranef()}}. \code{y - fitted(object)} equals
-\code{residuals(object, type = "response")}.
+\code{residuals(object, type = "response")}. On a zero-inflated fit
+(\code{ziformula}) the mean is the mixture's, \verb{(1 - pi) E[y | eta]} with
+\verb{pi = plogis(X_zi beta_zi)}; over a zero-truncated family that is the hurdle
+mean.
 }
