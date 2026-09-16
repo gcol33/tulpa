@@ -221,6 +221,11 @@ compare_models <- function(..., criterion = c("waic", "loo", "loglik")) {
 # strip a log/logit link.
 .hyper_nat <- list(
   range_from_lengthscale = function(v) 3 * v,   # exp(-d/ell) ~ 0.05 at d ~= 3*ell
+  # The HSGP / HSGP-SVC basis approximates a SQUARED-EXPONENTIAL kernel,
+  # k(d) = sigma^2 exp(-d^2 / (2 ell^2)) (src/hsgp_spectral.h), a different
+  # decay convention from the exponential kernel range_from_lengthscale()
+  # calibrates: exp(-d^2/(2 ell^2)) = 0.05 at d = ell * sqrt(-2 log(0.05)).
+  range_from_se_lengthscale = function(v) sqrt(-2 * log(0.05)) * v,
   sigma_from_var         = function(v) sqrt(v),
   sigma_from_precision   = function(v) 1 / sqrt(v),
   identity               = function(v) v
@@ -345,6 +350,17 @@ spatial_range <- function(object, probs = c(0.025, 0.975)) {
       if (!is.null(s)) return(s)
     }
   }
+  # fit_spde()'s CCD / grid path (the "auto"/nested SPDE backend) carries its
+  # own (range, sigma) outer-grid posterior in $nested rather than a generic
+  # $theta_grid or draw columns: R/fit_spde_nested.R stores $range / $sigma on
+  # the fit as the single anchor point the fixed effects were refit at, so
+  # reading those instead of $nested would report a point, not a posterior.
+  if (!is.null(object$nested) && !is.null(object$nested$range_grid) &&
+      !is.null(object$nested$sigma_grid) && !is.null(object$nested$weights)) {
+    return(.wtd_grid_summary(
+      list(range = object$nested$range_grid, sigma = object$nested$sigma_grid),
+      object$nested$weights, probs))
+  }
   patterns <- c(
     range = "^(log_phi_gp|log_phi_gp_local|phi_gp)$",
     sigma = "^(log_sigma2_gp|log_sigma_bym2|log_tau_spatial)$",
@@ -352,10 +368,28 @@ spatial_range <- function(object, probs = c(0.025, 0.975)) {
     sigma_local  = "^(log_sigma2_gp_local)$",
     sigma_regional = "^(log_sigma2_gp_regional)$",
     range_local  = "^(log_phi_gp_local)$",
-    range_regional = "^(log_phi_gp_regional)$"
+    range_regional = "^(log_phi_gp_regional)$",
+    # HSGP squared-exponential basis: src/tulpa_priors_hsgp.h.
+    sigma_hsgp = "^log_sigma2_hsgp$",
+    range_hsgp = "^log_lengthscale_hsgp$",
+    # SVC: src/tulpa_priors_svc.h. The NNGP approximation's phi is a direct
+    # exponential-kernel range like log_phi_gp; the HSGP approximation's is a
+    # squared-exponential lengthscale like log_lengthscale_hsgp above -- same
+    # draw-column name, different kernel, so the transform below reads
+    # object$spatial$approx (spatial_svc()'s own spec, carried on every SVC
+    # fit regardless of inference mode) to pick the right one.
+    sigma_svc = "^log_sigma2_svc\\[[0-9]+\\]$",
+    range_svc = "^log_phi_svc\\[[0-9]+\\]$"
   )
   transform_fn <- function(nm, raw, label) {
-    if (grepl("^log_phi_gp", label)) {
+    if (grepl("^log_lengthscale_hsgp$", label)) {
+      list(vals = .hyper_nat$range_from_se_lengthscale(exp(raw)), row = "range")
+    } else if (grepl("^log_phi_svc", label)) {
+      se <- identical(tolower(object$spatial$approx %||% "nngp"), "hsgp")
+      fn <- if (se) .hyper_nat$range_from_se_lengthscale
+            else .hyper_nat$range_from_lengthscale
+      list(vals = fn(exp(raw)), row = sub("phi", "range", nm))
+    } else if (grepl("^log_phi_gp", label)) {
       # phi is the range: every kernel is exp(-d / phi), so correlation decays
       # to ~0.05 at d = -phi * log(0.05) ~= 3 * phi.
       list(vals = .hyper_nat$range_from_lengthscale(exp(raw)),
@@ -408,6 +442,35 @@ spatial_range <- function(object, probs = c(0.025, 0.975)) {
   do.call(rbind, rows)
 }
 
+# Weighted quantile by interpolated ECDF, for a weighted outer-grid posterior
+# that carries no density/volume of its own (a CCD moment-rule design), so the
+# grid-cell machinery `.nl_summary_quantile()` reads is not applicable. `v` and
+# `w` are the grid's own points and (already-normalized) weights.
+.ps_wtd_quantile <- function(v, w, probs) {
+  ord <- order(v)
+  v <- v[ord]; w <- w[ord]
+  cw <- cumsum(w) / sum(w)
+  stats::approx(cw, v, xout = probs, rule = 2, ties = "ordered")$y
+}
+
+# Weighted mean / sd / `probs`-quantile summary row for a named [range, sigma,
+# ...] list of outer-grid quantities sharing one weight vector `w` -- the SPDE
+# `$nested` CCD/grid representation, which carries neither `$theta_grid`
+# (the generic nested-Laplace multi-block grid) nor draw columns.
+.wtd_grid_summary <- function(named_vals, w, probs) {
+  w <- w / sum(w)
+  rows <- lapply(names(named_vals), function(nm) {
+    v  <- named_vals[[nm]]
+    m  <- sum(w * v)
+    qs <- .ps_wtd_quantile(v, w, probs)
+    out <- data.frame(mean = m, sd = sqrt(max(0, sum(w * v^2) - m^2)),
+                      row.names = nm, stringsAsFactors = FALSE)
+    out[.quantile_colnames(probs)] <- as.list(qs)
+    out
+  })
+  do.call(rbind, rows)
+}
+
 
 #' Extract temporal correlation parameters from a fitted model
 #'
@@ -429,12 +492,27 @@ temporal_corr <- function(object, probs = c(0.025, 0.975)) {
                                  keep_types = .TEMPORAL_NL_TYPES)
       if (!is.null(s)) return(s)
     }
+    # latent(temporal_ar2()) / latent(temporal_ar()): a user-defined tgmrf
+    # block tagged tulpa_temporal_latent_block (R/temporal_ar2.R) rather than
+    # one of the built-in temporal block types above, so it never appears in
+    # .TEMPORAL_NL_TYPES and .nested_block_types() reads its generic
+    # type = "tgmrf".
+    s <- .nl_ar_p_hyper_summary(object, probs)
+    if (!is.null(s)) return(s)
   }
   patterns <- c(
     tau   = "^log_tau_temporal$",
     rho   = "^logit_rho_ar1$",
     sigma = "^log_sigma2_temporal_gp$",
-    lengthscale = "^logit_phi_temporal_gp$"
+    lengthscale = "^logit_phi_temporal_gp$",
+    # temporal_multiscale(): src/tulpa_priors_mstemporal.h.
+    sigma_trend    = "^log_sigma2_trend$",
+    sigma_seasonal = "^log_sigma2_seasonal$",
+    sigma_short    = "^log_sigma2_short$",
+    rho_short      = "^logit_rho_short$",
+    # temporal_tvc(): src/tulpa_priors_tvc.h.
+    tau_tvc = "^log_tau_tvc\\[[0-9]+\\]$",
+    rho_tvc = "^logit_rho_tvc\\[[0-9]+\\]$"
   )
   transform_fn <- function(nm, raw, label) {
     if (nm == "tau") {
@@ -445,12 +523,68 @@ temporal_corr <- function(object, probs = c(0.025, 0.975)) {
       list(vals = .hyper_nat$sigma_from_var(exp(raw)), row = "sigma_temporal")
     } else if (nm == "lengthscale") {
       list(vals = 1 / (1 + exp(-raw)), row = "lengthscale")
+    } else if (grepl("^log_sigma2_(trend|seasonal|short)$", label)) {
+      list(vals = .hyper_nat$sigma_from_var(exp(raw)), row = nm)
+    } else if (nm == "rho_short") {
+      # rho = 2 * invlogit(logit_rho_short) - 1, mapped to (-1, 1)
+      # (src/tulpa_priors_mstemporal.h), not the (0, 1) of logit_rho_ar1 above.
+      list(vals = 2 / (1 + exp(-raw)) - 1, row = "rho_short")
+    } else if (grepl("^log_tau_tvc", label)) {
+      list(vals = exp(raw), row = nm)                   # log_tau -> tau (precision)
+    } else if (grepl("^logit_rho_tvc", label)) {
+      list(vals = 2 / (1 + exp(-raw)) - 1, row = nm)     # (-1, 1), like rho_short
     } else {
       list(vals = raw, row = nm)
     }
   }
   .hyperparam_summary(.fit_draws(object), patterns, transform_fn, probs,
                       "No temporal hyperparameters found. Is this a temporal model?")
+}
+
+# spatial_range()/temporal_corr()'s draw-column table and .SPATIAL_NL_TYPES /
+# .TEMPORAL_NL_TYPES both key off a block's string `type`; a latent(temporal_ar2()
+# / temporal_ar()) block is a generic tgmrf() (type = "tgmrf") rather than one of
+# the named built-in types, so it matches neither and is found instead via its
+# class tag (R/temporal_ar2.R, the same tag temporal.tulpa_fit() uses through
+# .nl_temporal_latent_block(), R/temporal_rtr_posteriors.R). Its grid axes are on
+# the block's own unconstrained scale (log_tau, atanh_psi1..atanh_psi<p>) rather
+# than the natural scale the built-in temporal blocks lay their grid on, so the
+# transform composes exp() / tanh() with the natural-quantity map instead of
+# reading .TEMPORAL_HYPER_TRANSFORM's identity entries.
+.nl_ar_p_hyper_summary <- function(object, probs) {
+  blocks <- object$blocks
+  tg <- object$theta_grid
+  w  <- object$weights
+  if (!is.list(blocks) || !length(blocks) || is.null(tg) || is.null(w)) {
+    return(NULL)
+  }
+  k <- which(vapply(blocks, inherits, logical(1),
+                    what = "tulpa_temporal_latent_block"))
+  if (!length(k)) return(NULL)
+  k <- k[1L]
+  if (!is.matrix(tg)) {
+    tg <- matrix(tg, ncol = 1L,
+                 dimnames = list(NULL, object$theta_names %||% "theta"))
+  }
+  axes <- colnames(tg) %||% paste0("theta", seq_len(ncol(tg)))
+  sel  <- grepl(sprintf("^b%d\\.", k), axes)
+  if (!any(sel)) return(NULL)
+  bare <- sub(sprintf("^b%d\\.", k), "", axes[sel])
+  cols <- which(sel)
+  w    <- w / sum(w)
+  rows <- lapply(seq_along(bare), function(j) {
+    raw <- tg[, cols[j]]
+    if (identical(bare[j], "log_tau")) {
+      list(vals = exp(raw), row = "precision")
+    } else if (grepl("^atanh_psi[0-9]+$", bare[j])) {
+      list(vals = tanh(raw), row = sub("^atanh_", "", bare[j]))
+    } else {
+      list(vals = raw, row = bare[j])
+    }
+  })
+  .wtd_grid_summary(stats::setNames(lapply(rows, `[[`, "vals"),
+                                    vapply(rows, `[[`, character(1), "row")),
+                    w, probs)
 }
 
 

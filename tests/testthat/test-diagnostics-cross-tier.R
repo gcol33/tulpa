@@ -72,3 +72,67 @@ test_that("nested temporal_corr maps its grid axes to the sampler labels (#199)"
   expect_identical(rownames(tc), "precision")
   expect_equal(tc["precision", "mean"], sum(c(0.2, 0.5, 0.3) * c(0.5, 1, 2)))
 })
+
+# gcol33/tulpa#800: spatial_range() / temporal_corr() matched only a fixed
+# name table, so HSGP, SVC, SPDE, temporal_multiscale, temporal_tvc and a
+# latent(temporal_ar2()) block all errored "No .../ hyperparameters found"
+# despite the fit carrying exactly those hyperparameters.
+test_that("spatial_range covers hsgp, svc and spde", {
+  skip_on_cran()
+  set.seed(2)
+  L <- cbind(lon = runif(80, 0, 10), lat = runif(80, 0, 10))
+  g <- data.frame(L, x = rnorm(80)); g$y <- rpois(80, exp(0.3 + 0.5 * g$x))
+  ctl <- list(n_iter = 200, warmup = 100, n_chains = 2, seed = 1)
+
+  fit_hsgp <- tulpa(y ~ x, data = g, family = "poisson", mode = "hmc",
+                    spatial = spatial_gp(~ lon + lat, approx = "hsgp"),
+                    control = ctl)
+  sr_hsgp <- spatial_range(fit_hsgp)
+  expect_setequal(rownames(sr_hsgp), c("sigma_hsgp", "range"))
+  expect_true(all(is.finite(as.matrix(sr_hsgp))))
+  expect_true(sr_hsgp["range", "mean"] > 0)
+
+  fit_spde <- tulpa(y ~ x, data = g, family = "poisson",
+                    spatial = spatial_spde(~ lon + lat, data = g))
+  sr_spde <- spatial_range(fit_spde)
+  expect_setequal(rownames(sr_spde), c("range", "sigma"))
+  expect_true(all(is.finite(as.matrix(sr_spde))))
+
+  fit_svc <- tulpa(y ~ x, data = g, family = "poisson", mode = "hmc",
+                   spatial = spatial_svc(~ lon + lat, terms = "x"), control = ctl)
+  sr_svc <- spatial_range(fit_svc)
+  expect_setequal(rownames(sr_svc), c("sigma_svc", "range_svc"))
+  expect_true(all(is.finite(as.matrix(sr_svc))))
+  # Default approx = "nngp": phi_svc is a direct exponential-kernel range, the
+  # same convention log_phi_gp uses, not the HSGP squared-exponential one.
+  expect_identical(fit_svc$spatial$approx, "nngp")
+})
+
+test_that("temporal_corr covers multiscale, tvc and a latent AR(p) block", {
+  skip_on_cran()
+  set.seed(3)
+  Tm <- data.frame(tidx = rep(1:40, each = 4), x = rnorm(160))
+  Tm$y <- rpois(160, exp(0.3 + 0.5 * Tm$x))
+  ctl <- list(n_iter = 200, warmup = 100, n_chains = 2, seed = 1)
+
+  fit_ms <- tulpa(y ~ x, data = Tm, family = "poisson", control = ctl,
+                  temporal = temporal_multiscale("tidx", trend = "rw2",
+                                                 seasonal = 12, short_term = "ar1"))
+  tc_ms <- temporal_corr(fit_ms)
+  expect_setequal(rownames(tc_ms),
+                  c("sigma_trend", "sigma_seasonal", "sigma_short", "rho_short"))
+  expect_true(all(is.finite(as.matrix(tc_ms))))
+  expect_true(tc_ms["rho_short", "mean"] >= -1 && tc_ms["rho_short", "mean"] <= 1)
+
+  fit_tvc <- tulpa(y ~ x, data = Tm, family = "poisson", mode = "hmc", control = ctl,
+                   temporal = temporal_tvc("tidx", terms = "x", structure = "rw1"))
+  tc_tvc <- temporal_corr(fit_tvc)
+  expect_identical(rownames(tc_tvc), "tau_tvc")
+  expect_true(is.finite(tc_tvc["tau_tvc", "mean"]))
+
+  fit_ar2 <- tulpa(y ~ x + latent(temporal_ar2(Tm$tidx)), data = Tm, family = "poisson")
+  tc_ar2 <- temporal_corr(fit_ar2)
+  expect_setequal(rownames(tc_ar2), c("precision", "psi1", "psi2"))
+  expect_true(all(is.finite(as.matrix(tc_ar2))))
+  expect_true(all(abs(tc_ar2[c("psi1", "psi2"), "mean"]) <= 1))
+})
