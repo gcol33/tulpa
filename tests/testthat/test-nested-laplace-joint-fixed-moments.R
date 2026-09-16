@@ -400,6 +400,21 @@ test_that("the in-loop block is the stored-precision block, entry for entry", {
   expect_gt(max(abs(V_unc[[1L]] - V[[1L]])), 1e-6)
 })
 
+test_that("tulpa_joint_inner_vcov_blocks() is an exported door onto the same kernel (gcol33/tulpa#827)", {
+  skip_on_cran()
+  expect_true("tulpa_joint_inner_vcov_blocks" %in% getNamespaceExports("tulpa"))
+  d <- .j305_icar_data()
+  fq <- .j305_icar_fit(d, store_Q = TRUE)
+  ref <- .j307_reference_blocks(fq)
+  n_x <- as.integer(fq$Q_csc_n)
+  got <- tulpa_joint_inner_vcov_blocks(
+    fq$Q_csc_p_per_grid, fq$Q_csc_i_per_grid, fq$Q_csc_x_per_grid,
+    n_x = n_x, idx = seq_len(fq$n_fixed), n_dense = fq$n_fixed,
+    A_cols_list = tulpa:::.joint_constraint_cols(fq$arm_layout, n_x),
+    field_marginal = FALSE, n_threads = 1L)
+  expect_identical(got, ref)
+})
+
 test_that("a coupled multi-block joint fit extracts the same block in the loop", {
   skip_on_cran()
   coupled_occ_register()

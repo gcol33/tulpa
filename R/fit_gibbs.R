@@ -3,6 +3,25 @@
 # assembly, per-structure input marshalling, the spatial / temporal dispatchers,
 # and the tulpa_gibbs() front door.
 
+#' Draw Polya-Gamma random variates
+#'
+#' Vectorized `PG(b, z)` draws via the Polson, Scott & Windle (2013) sampler
+#' (`tulpa::rpg_vec()`), the kernel every Polya-Gamma Gibbs fitter in this
+#' package draws its auxiliary weights from. Exposed as a door for consumer
+#' packages fitting their own Polya-Gamma Gibbs models, which cannot reach an
+#' RNG through `LinkingTo` the way a likelihood kernel would.
+#'
+#' @param b Integer vector of PG shape parameters (trial counts); one draw
+#'   per element.
+#' @param z Numeric vector of tilting parameters, the same length as `b`.
+#' @return A numeric vector of `PG(b, z)` draws, the same length as `b`.
+#' @export
+#' @examples
+#' tulpa_rpg(rep(1L, 5), rnorm(5))
+tulpa_rpg <- function(b, z) {
+  cpp_rpg(as.integer(b), as.numeric(z))
+}
+
 # Neighbor-list form of an adjacency matrix for the Polya-Gamma Gibbs spatial
 # samplers. They take `adj_list` as an R list whose j-th element is the 1-based
 # neighbor indices of unit j (the C++ subtracts 1 internally), plus the
