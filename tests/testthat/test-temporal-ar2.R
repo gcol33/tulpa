@@ -139,3 +139,23 @@ test_that("temporal_ar2() recovers the AR(2) coefficients through nested Laplace
   expect_gt(phi[["phi2"]], -0.1)
   expect_lt(phi[["phi2"]], 0.6)
 })
+
+test_that("the ?temporal_ar2 default fit does not warn about its own default grid (gcol33/tulpa#820)", {
+  skip_on_cran()
+  set.seed(1)
+  Tt <- 120L
+  w <- numeric(Tt); w[1:2] <- rnorm(2)
+  for (t in 3:Tt) w[t] <- 0.5 * w[t - 1] + 0.3 * w[t - 2] + rnorm(1, 0, 0.4)
+  d <- data.frame(t = seq_len(Tt), y = w + rnorm(Tt, 0, 0.3))
+
+  # The default AR2 grid is 125 cells (>.NL_MULTI_GRID_WARN's old 50-cell
+  # threshold), so this used to warn "Joint multi-block grid has 125 cells
+  # (>50) ... CCD integration is a follow-up." on the documented example. The
+  # engine's own default grid should never trigger a "this is slow" warning
+  # by itself: the fit is well under the wall-clock threshold.
+  expect_no_warning(
+    fit <- tulpa(y ~ latent(temporal_ar2(d$t)), data = d, family = "gaussian",
+                mode = "nested_laplace")
+  )
+  expect_gt(nrow(fit$theta_grid), 50L)
+})

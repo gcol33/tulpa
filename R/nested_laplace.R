@@ -1830,13 +1830,35 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   list(grid = grid, names = colnames(grid), prepared = p)
 }
 
-# Soft cap on joint-grid cell count. CCD integration around a pilot mode is
-# the standard fix for k >= 3 blocks (see R/ccd_grid.R); the multi-block driver
-# uses the Cartesian outer integration, which is correct but scales
-# multiplicatively in the block count, so warn past the soft cap and proceed.
-.NL_MULTI_GRID_WARN <- 50L
-# Hard cap on the same count, and the default value of `control$max_grid_cells`.
+# Hard cap on the joint-grid cell count, and the default value of
+# `control$max_grid_cells`.
 .NL_MULTI_GRID_HARD_CAP <- 2048L
+
+# Wall-clock threshold, in seconds, above which a multi-block outer-grid
+# solve gets a "this was slow" warning. Cell count alone does not predict
+# solve time -- a family/likelihood pair, N, or a block's own per-cell cost
+# (gcol33/tulpa#638) can make the same cell count cheap or expensive, and the
+# engine's own default per-block grids already exceed any static cell-count
+# threshold that fires on genuinely slow custom grids (gcol33/tulpa#820) --
+# so the trigger is measured cost, read off the "grid" bucket both multi-block
+# dispatchers already mark with `.tulpa_timer()`.
+.NL_MULTI_GRID_WARN_SECONDS <- 2
+
+# Shared by the single-response multi-block dispatch (`tulpa_nested_laplace()`
+# in this file) and the joint multi-block dispatch
+# (`R/nested_laplace_joint_multi.R`): both solve their outer grid in one call
+# and mark its elapsed time as the "grid" timing bucket, so both warn off that
+# measurement through this one function rather than keeping two copies of the
+# same message.
+.nl_multi_grid_warn <- function(elapsed, n_cells, remedy) {
+  if (isTRUE(elapsed > .NL_MULTI_GRID_WARN_SECONDS) && !.nl_internal_batch()) {
+    warning(sprintf(
+      "Multi-block outer grid (%d cells) took %s to solve. %s",
+      n_cells, .format_duration(elapsed), remedy
+    ), call. = FALSE)
+  }
+  invisible(NULL)
+}
 
 # Whether the dispatch currently running is an INTERNAL batch rather than the
 # grid the caller asked for. The soft-cap warning above is advice addressed to
@@ -1950,6 +1972,12 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     paste0("b", b, ".", colnames(block_grids[[b]]))
   }))
 
+  # Set only on the Cartesian-product branch below, so the post-solve timing
+  # check (which reads these) is a no-op on a single-cell override re-dispatch
+  # (skew / k-hat / recenter probes -- already never the caller's own grid).
+  n_cells <- NA_integer_
+  grid_warn_remedy <- NULL
+
   if (!is.null(theta_grid_override)) {
     joint_grid <- as.matrix(theta_grid_override)
     total_axes <- axis_offsets[length(axis_offsets)]
@@ -1960,19 +1988,14 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     }
     colnames(joint_grid) <- axis_names
   } else {
-    # Cartesian product of per-block row indices.
+    # Cartesian product of per-block row indices. This path has no CCD
+    # alternative (unlike the joint multi-block dispatch), so the only
+    # remedy for a slow or oversized grid is a smaller one.
     row_counts <- vapply(block_grids, nrow, integer(1))
     idx <- do.call(expand.grid, lapply(row_counts, seq_len))
     n_cells <- nrow(idx)
-    .nl_check_grid_cap(
-      n_cells, .nl_max_grid_cells(),
-      "Reduce per-block grid sizes or wait for CCD integration support.")
-    if (n_cells > .NL_MULTI_GRID_WARN && !.nl_internal_batch()) {
-      warning(sprintf(
-        "Joint multi-block grid has %d cells (>%d). Each cell costs one inner Newton solve; reduce per-block grid sizes if this is slow. CCD integration is a follow-up.",
-        n_cells, .NL_MULTI_GRID_WARN
-      ), call. = FALSE)
-    }
+    grid_warn_remedy <- "Reduce per-block grid sizes."
+    .nl_check_grid_cap(n_cells, .nl_max_grid_cells(), grid_warn_remedy)
 
     # Concatenate per-block axis grids into the joint theta_grid.
     joint_grid <- do.call(cbind, lapply(seq_along(block_grids), function(b) {
@@ -2005,6 +2028,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   })
   prune_tol <- as.numeric(cargs$prune_tol %||% 0)
 
+  grid_solve_start <- proc.time()[["elapsed"]]
   out <- cpp_nested_laplace_multi(
     y           = cargs$y,
     n           = cargs$n,
@@ -2040,6 +2064,10 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     screen_log_offset = if (prune_tol > 0)
                           .nl_screen_log_offset(joint_grid, hp_parts)
   )
+  if (!is.null(grid_warn_remedy)) {
+    .nl_multi_grid_warn(proc.time()[["elapsed"]] - grid_solve_start,
+                        n_cells, grid_warn_remedy)
+  }
 
   out$theta_grid   <- joint_grid
   out$theta_names  <- axis_names

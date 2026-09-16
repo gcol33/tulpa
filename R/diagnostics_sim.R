@@ -243,7 +243,7 @@ test_outliers.default <- function(object, observed = NULL, nsim = 250L,
                                   seed = 123L, ...) {
   .require_scalar_response(object, "test_outliers()")
   sims <- as.matrix(simulate(object, nsim = nsim, seed = seed))
-  obs <- observed %||% object$y %||% object$.internal$fit_args$y
+  obs <- .resolve_obs(object, observed)
   N <- length(obs)
 
   sim_min <- apply(sims, 1, min)

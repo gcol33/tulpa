@@ -1547,6 +1547,11 @@
     # a zero, which would read as a placement that was free.
     ccd_cost <- NULL
     use_ccd <- ccd_requested
+    # Set only on the Cartesian-product branch below (CCD and the adaptive
+    # grid do not build a dense tensor, so the "reduce the grid" remedy the
+    # post-solve timing check reports does not apply to them).
+    n_cells <- NA_integer_
+    grid_warn_remedy <- NULL
     if (use_ccd) {
         axis_values <- latent_axis_values
 
@@ -1720,17 +1725,11 @@
         # available. Once this fit has already declined one, advising the caller
         # to set the option they set is noise, so the advice
         # names the decline instead.
-        remedy <- if (is.na(integration_declined))
+        grid_warn_remedy <- if (is.na(integration_declined))
             "Reduce per-block grid sizes or set control$integration = \"ccd\"." else
             sprintf("Reduce per-block grid sizes; CCD integration declined (%s).",
                     integration_declined)
-        .nl_check_grid_cap(n_cells, .nl_max_grid_cells(), remedy)
-        if (n_cells > .NL_MULTI_GRID_WARN && !.nl_internal_batch()) {
-            warning(sprintf(
-                "Joint multi-block grid has %d cells (>%d). Each cell costs one inner Newton solve. %s",
-                n_cells, .NL_MULTI_GRID_WARN, remedy
-            ), call. = FALSE)
-        }
+        .nl_check_grid_cap(n_cells, .nl_max_grid_cells(), grid_warn_remedy)
 
         joint_grid <- do.call(cbind, lapply(seq_along(block_grids), function(b) {
             block_grids[[b]][idx[[b]], , drop = FALSE]
@@ -1827,6 +1826,7 @@
             screen_log_offset = if (tol_prune > 0) screen_offset)
     }
     tm$mark("setup")
+    grid_solve_start <- proc.time()[["elapsed"]]
     res <- .joint_main_grid_solve(function() call_kernel_with_tol(prune_tol))
     # Safety gate: fall back to the full grid when the
     # cheap-pass ranking is unreliable rather than silently returning a
@@ -1834,6 +1834,10 @@
     if (as.numeric(prune_tol) > 0) {
         res <- .joint_prune_safety_gate(
             res, resolve_full = function() call_kernel_with_tol(0.0))
+    }
+    if (!is.null(grid_warn_remedy)) {
+        .nl_multi_grid_warn(proc.time()[["elapsed"]] - grid_solve_start,
+                            n_cells, grid_warn_remedy)
     }
     tm$mark("grid")
 

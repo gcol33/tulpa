@@ -85,3 +85,17 @@ test_that("pit_residuals() reads an n_obs x nsim simulation matrix", {
   expect_s3_class(h, "htest")
   expect_true(h$p.value >= 0 && h$p.value <= 1)
 })
+
+test_that("test_outliers() refuses a fit with no extractable response, like its siblings", {
+  skip_on_cran()
+  set.seed(6)
+  d <- data.frame(x = rnorm(80))
+  d$y <- rbinom(80, 1, plogis(-0.3 + 0.8 * d$x))
+  fit <- tulpa_ep(y ~ x, data = d, family = "binomial")
+  expect_null(fit$y)
+
+  expect_error(test_outliers(fit), "Cannot extract the observed response from the fit")
+  expect_error(test_dispersion(fit), "Cannot extract the observed response from the fit")
+
+  expect_s3_class(test_outliers(fit, observed = d$y, nsim = 20L), "htest")
+})
