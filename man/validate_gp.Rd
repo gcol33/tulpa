@@ -2,19 +2,26 @@
 % Please edit documentation in R/spatial_gp.R
 \name{validate_gp}
 \alias{validate_gp}
-\title{Validate GP spatial specification against data}
+\title{Validate a GP spatial specification against data}
 \usage{
 validate_gp(gp, data)
 }
 \arguments{
-\item{gp}{tulpa_gp or tulpa_multiscale object}
+\item{gp}{A \code{\link[=spatial_gp]{spatial_gp()}} or \code{\link[=spatial_multiscale]{spatial_multiscale()}} object.}
 
-\item{data}{Data frame}
+\item{data}{Data frame containing the coordinate columns named in \code{gp}.}
 }
 \value{
-Updated spatial object with computed neighbor structure
+Updated spatial object with computed neighbor structure.
 }
 \description{
-Validate GP spatial specification against data
+Fills in the neighbor structure (\code{\link[=spatial_gp]{spatial_gp()}}) or structures
+(\code{\link[=spatial_multiscale]{spatial_multiscale()}}) that \code{\link[=tulpa_gibbs]{tulpa_gibbs()}} and \code{\link[=tulpa_laplace]{tulpa_laplace()}} need
+from a \verb{spatial =} spec, since those design-matrix doors take no \code{data}
+argument to validate one themselves. \code{\link[=tulpa]{tulpa()}} calls this internally, so it
+only needs to be called directly when fitting through a design-matrix door.
 }
-\keyword{internal}
+\seealso{
+\code{\link[=validate_temporal_multiscale]{validate_temporal_multiscale()}}, \code{\link[=spatial_gp]{spatial_gp()}},
+\code{\link[=spatial_multiscale]{spatial_multiscale()}}
+}

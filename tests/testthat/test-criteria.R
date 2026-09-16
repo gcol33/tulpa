@@ -146,6 +146,34 @@ test_that("randomized PIT interpolates between the CDF limits", {
   expect_true(all(pit <= colMeans(Fu) + 1e-9))
 })
 
+test_that("tulpa_pit(log_lik =) matches the leave-one-out PSIS reference", {
+  old_loo <- function(ll, Fl, Fu) {
+    Nn <- ncol(ll); Ss <- nrow(ll); fl <- numeric(Nn); fu <- numeric(Nn)
+    for (i in seq_len(Nn)) {
+      ps <- tulpa_psis(-ll[, i]); lw <- ps$log_weights
+      w <- if (length(lw) == Ss) exp(lw) else rep(1 / Ss, Ss)
+      fl[i] <- sum(w * Fl[, i]); fu[i] <- sum(w * Fu[, i])
+    }
+    u <- stats::runif(Nn); pmin(1, pmax(0, fl + u * (fu - fl)))
+  }
+  set.seed(3); S <- 200L; N <- 80L
+  ll <- matrix(stats::rnorm(S * N, -2, 1), S, N)
+  Fl <- matrix(stats::runif(S * N, 0, 0.4), S, N)
+  Fu <- Fl + matrix(stats::runif(S * N, 0, 0.6), S, N)
+  set.seed(11); ref <- old_loo(ll, Fl, Fu)
+  set.seed(11); got <- tulpa_pit(Fu, cdf_lower = Fl, log_lik = ll)
+  expect_equal(got, ref, tolerance = 1e-12)
+  expect_true(all(got >= 0 & got <= 1))
+})
+
+test_that("tulpa_pit(log_lik =) needs the log-lik and cdf shapes to agree", {
+  ll <- matrix(stats::rnorm(20 * 5), 20, 5)
+  Fu <- matrix(stats::runif(20 * 4), 20, 4)
+  expect_error(tulpa_pit(Fu, log_lik = ll), "numbers of observations")
+  expect_error(tulpa_pit(matrix(stats::runif(10 * 5), 10, 5), log_lik = ll),
+               "draws \\(rows\\)")
+})
+
 test_that("compare_models computes native WAIC / LOO from a fit's pointwise log-lik", {
   skip_if_not_installed("loo")
   d1 <- make_loglik(seed = 1L)

@@ -148,13 +148,21 @@ print.tulpa_temporal_multiscale <- function(x, ...) {
 }
 
 
-#' Validate multi-scale temporal specification
+#' Validate a multi-scale temporal specification against data
 #'
-#' @param temporal tulpa_temporal_multiscale object
-#' @param data Data frame
+#' Fills in the time index and point count that [tulpa_gibbs()] needs from a
+#' `temporal =` spec built with [temporal_multiscale()], since that
+#' design-matrix door takes no `data` argument to validate one itself.
+#' [tulpa()] calls this internally, so it only needs to be called directly
+#' when fitting through a design-matrix door.
 #'
-#' @return Updated object with indices computed
-#' @keywords internal
+#' @param temporal A [temporal_multiscale()] object (or a single-component
+#'   temporal spec, dispatched to [validate_temporal()]).
+#' @param data Data frame containing the time column named in `temporal`.
+#'
+#' @return Updated object with indices computed.
+#' @seealso [validate_gp()], [temporal_multiscale()]
+#' @export
 validate_temporal_multiscale <- function(temporal, data) {
   if (is.null(temporal)) return(NULL)
   if (!inherits(temporal, "tulpa_temporal_multiscale")) {

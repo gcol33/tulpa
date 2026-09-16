@@ -165,8 +165,9 @@ adjacency_to_list_tulpa <- function(adj) {
     stop("The binomial ", label, " Gibbs sampler maps observation i directly to ",
          "location i (it carries no observation->location index), so it needs ",
          "one observation per unique location in coordinate order. Got ", n_obs,
-         " observation(s) for ", n_spatial, " location(s). Use mode = 'nested' ",
-         "or 'laplace' for repeated-location designs.", call. = FALSE)
+         " observation(s) for ", n_spatial, " location(s). Use mode = ",
+         "'nested_laplace' or 'laplace' for repeated-location designs.",
+         call. = FALSE)
   }
   as.integer(n_spatial)
 }

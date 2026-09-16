@@ -124,7 +124,7 @@ arguments stay top-level), following the \code{control} convention of
 tolerance.
 \item \code{n_threads} (\code{1L}) -- inner-loop OpenMP threads.
 \item \code{x_init} (\code{NULL}) -- warm-start for the first grid point's inner solve.
-\item \code{keep_grid_hessians} (\code{FALSE}) -- when \code{TRUE}, retain per-grid-point
+\item \code{keep_grid_hessians} (\code{TRUE}) -- when \code{TRUE}, retain per-grid-point
 fixed-effects marginal Hessian \eqn{H_\beta} and mode \eqn{\hat{\beta}}
 on the return list as \verb{$grid_hessians} (list of dense \eqn{p\times p}
 matrices) and \verb{$grid_modes} (list of length-\eqn{p} vectors). Used

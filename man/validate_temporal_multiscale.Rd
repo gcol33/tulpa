@@ -2,19 +2,26 @@
 % Please edit documentation in R/temporal_gp.R
 \name{validate_temporal_multiscale}
 \alias{validate_temporal_multiscale}
-\title{Validate multi-scale temporal specification}
+\title{Validate a multi-scale temporal specification against data}
 \usage{
 validate_temporal_multiscale(temporal, data)
 }
 \arguments{
-\item{temporal}{tulpa_temporal_multiscale object}
+\item{temporal}{A \code{\link[=temporal_multiscale]{temporal_multiscale()}} object (or a single-component
+temporal spec, dispatched to \code{\link[=validate_temporal]{validate_temporal()}}).}
 
-\item{data}{Data frame}
+\item{data}{Data frame containing the time column named in \code{temporal}.}
 }
 \value{
-Updated object with indices computed
+Updated object with indices computed.
 }
 \description{
-Validate multi-scale temporal specification
+Fills in the time index and point count that \code{\link[=tulpa_gibbs]{tulpa_gibbs()}} needs from a
+\verb{temporal =} spec built with \code{\link[=temporal_multiscale]{temporal_multiscale()}}, since that
+design-matrix door takes no \code{data} argument to validate one itself.
+\code{\link[=tulpa]{tulpa()}} calls this internally, so it only needs to be called directly
+when fitting through a design-matrix door.
 }
-\keyword{internal}
+\seealso{
+\code{\link[=validate_gp]{validate_gp()}}, \code{\link[=temporal_multiscale]{temporal_multiscale()}}
+}

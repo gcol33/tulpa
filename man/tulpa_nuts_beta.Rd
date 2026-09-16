@@ -36,10 +36,10 @@ arguments stay in the signature): \code{n_iter} (default 2000), \code{n_warmup}
 \code{seed} (\code{NULL} draws from the session RNG), \code{verbose} (default FALSE).}
 }
 \value{
-A list with:
+A \code{tulpa_fit} object with:
 \itemize{
 \item \code{draws} -- \verb{n_samples x (p + 1)} matrix of post-warmup draws,
-columns \verb{beta[1] ... beta[p], log_phi}.
+columns named from \code{colnames(X)} (falling back to \verb{beta[1] ... beta[p]}) then \code{log_phi}.
 \item \code{means} -- posterior means.
 \item \code{phi_summary} -- posterior mean / median / quantiles of
 \code{phi = exp(log_phi)}.

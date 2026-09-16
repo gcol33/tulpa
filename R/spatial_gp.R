@@ -492,13 +492,21 @@ print.tulpa_multiscale <- function(x, ...) {
 }
 
 
-#' Validate GP spatial specification against data
+#' Validate a GP spatial specification against data
 #'
-#' @param gp tulpa_gp or tulpa_multiscale object
-#' @param data Data frame
+#' Fills in the neighbor structure ([spatial_gp()]) or structures
+#' ([spatial_multiscale()]) that [tulpa_gibbs()] and [tulpa_laplace()] need
+#' from a `spatial =` spec, since those design-matrix doors take no `data`
+#' argument to validate one themselves. [tulpa()] calls this internally, so it
+#' only needs to be called directly when fitting through a design-matrix door.
 #'
-#' @return Updated spatial object with computed neighbor structure
-#' @keywords internal
+#' @param gp A [spatial_gp()] or [spatial_multiscale()] object.
+#' @param data Data frame containing the coordinate columns named in `gp`.
+#'
+#' @return Updated spatial object with computed neighbor structure.
+#' @seealso [validate_temporal_multiscale()], [spatial_gp()],
+#'   [spatial_multiscale()]
+#' @export
 validate_gp <- function(gp, data) {
   if (is.null(gp)) return(NULL)
   if (!inherits(gp, c("tulpa_gp", "tulpa_multiscale"))) return(gp)

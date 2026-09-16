@@ -350,6 +350,14 @@ print.tulpa_criteria <- function(x, digits = 1, ...) {
 #' model. With `cdf_lower = NULL` the response is treated as continuous and the
 #' PIT is the draw-averaged CDF.
 #'
+#' Supplying `log_lik` switches to the **leave-one-out** PIT (as in INLA's
+#' `cpo$pit` or `loo::psis_loo()`'s LOO-PIT): each observation's CDF limits are
+#' averaged over draws with PSIS leave-one-out weights (from that
+#' observation's own pointwise log-likelihood) instead of equal weights, so
+#' the PIT does not use the observation to predict itself. A column whose
+#' importance ratio is not all finite falls back to the equal-weight average
+#' for that observation.
+#'
 #' @param cdf Posterior-predictive CDF at the observed value, `P(Y <= y)`. A
 #'   `[n_draws x n_obs]` matrix (averaged over draws here) or an `[n_obs]`
 #'   vector.
@@ -358,15 +366,50 @@ print.tulpa_criteria <- function(x, digits = 1, ...) {
 #' @param jitter If `TRUE` (default) and `cdf_lower` is `NULL`, add a tiny
 #'   uniform jitter to break ties from a discretized CDF; ignored when
 #'   `cdf_lower` is supplied (the interpolation already randomizes).
+#' @param log_lik Optional `[n_draws x n_obs]` matrix of the pointwise
+#'   log-likelihood at each draw. When supplied, the PIT is the
+#'   **leave-one-out** PIT: `cdf` / `cdf_lower` are reweighted by that
+#'   observation's PSIS leave-one-out weights instead of being column-averaged.
+#' @param tail_points Optional override for the PSIS tail size used by the
+#'   leave-one-out weighting (see [tulpa_psis()]); `NULL` uses the automatic
+#'   rule. Ignored unless `log_lik` is supplied.
+#' @param n_threads Number of threads for the leave-one-out weighting (one
+#'   observation per thread). Ignored unless `log_lik` is supplied.
 #' @return Numeric vector of length `n_obs` of PIT values in `[0, 1]`.
-#' @seealso [tulpa_criteria()]
+#' @seealso [tulpa_criteria()], [tulpa_psis()]
 #' @export
-tulpa_pit <- function(cdf, cdf_lower = NULL, jitter = TRUE) {
+tulpa_pit <- function(cdf, cdf_lower = NULL, jitter = TRUE, log_lik = NULL,
+                       tail_points = NULL, n_threads = 1L) {
   # A vector CDF is one draw; treat it as a 1-row matrix so the kernel's
   # column-mean recovers it. The randomization (runif) runs in cpp_tulpa_pit in
   # the same index order, so results are unchanged under a fixed seed.
   as_mat <- function(z) if (is.matrix(z)) z else matrix(as.numeric(z), 1L)
   cdfm <- as_mat(cdf)
+
+  if (!is.null(log_lik)) {
+    llm <- as_mat(log_lik)
+    if (nrow(llm) != nrow(cdfm)) {
+      stop("`log_lik` and `cdf` must have the same number of draws (rows).",
+           call. = FALSE)
+    }
+    if (ncol(llm) != ncol(cdfm)) {
+      stop("`log_lik` and `cdf` imply different numbers of observations.",
+           call. = FALSE)
+    }
+    clm <- if (is.null(cdf_lower)) cdfm else as_mat(cdf_lower)
+    if (ncol(clm) != ncol(cdfm)) {
+      stop("`cdf_lower` and `cdf` imply different numbers of observations.",
+           call. = FALSE)
+    }
+    tail_len <- .psis_tail_len(nrow(llm), tail_points)
+    pit <- cpp_psis_loo_pit(llm, clm, cdfm, as.integer(tail_len),
+                             as.integer(n_threads))
+    if (is.null(cdf_lower) && isTRUE(jitter)) {
+      pit <- pmin(1, pmax(0, pit + stats::runif(length(pit), 0, 1e-6)))
+    }
+    return(pit)
+  }
+
   if (!is.null(cdf_lower)) {
     clm <- as_mat(cdf_lower)
     if (ncol(clm) != ncol(cdfm)) {

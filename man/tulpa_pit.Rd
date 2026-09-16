@@ -4,7 +4,14 @@
 \alias{tulpa_pit}
 \title{Probability integral transform from a predictive CDF}
 \usage{
-tulpa_pit(cdf, cdf_lower = NULL, jitter = TRUE)
+tulpa_pit(
+  cdf,
+  cdf_lower = NULL,
+  jitter = TRUE,
+  log_lik = NULL,
+  tail_points = NULL,
+  n_threads = 1L
+)
 }
 \arguments{
 \item{cdf}{Posterior-predictive CDF at the observed value, \code{P(Y <= y)}. A
@@ -17,6 +24,18 @@ the randomized PIT of a discrete / mixed response.}
 \item{jitter}{If \code{TRUE} (default) and \code{cdf_lower} is \code{NULL}, add a tiny
 uniform jitter to break ties from a discretized CDF; ignored when
 \code{cdf_lower} is supplied (the interpolation already randomizes).}
+
+\item{log_lik}{Optional \verb{[n_draws x n_obs]} matrix of the pointwise
+log-likelihood at each draw. When supplied, the PIT is the
+\strong{leave-one-out} PIT: \code{cdf} / \code{cdf_lower} are reweighted by that
+observation's PSIS leave-one-out weights instead of being column-averaged.}
+
+\item{tail_points}{Optional override for the PSIS tail size used by the
+leave-one-out weighting (see \code{\link[=tulpa_psis]{tulpa_psis()}}); \code{NULL} uses the automatic
+rule. Ignored unless \code{log_lik} is supplied.}
+
+\item{n_threads}{Number of threads for the leave-one-out weighting (one
+observation per thread). Ignored unless \code{log_lik} is supplied.}
 }
 \value{
 Numeric vector of length \code{n_obs} of PIT values in \verb{[0, 1]}.
@@ -32,6 +51,15 @@ interpolates \verb{F(y^-) + U (F(y) - F(y^-))}, which is uniform under a correct
 model. With \code{cdf_lower = NULL} the response is treated as continuous and the
 PIT is the draw-averaged CDF.
 }
+\details{
+Supplying \code{log_lik} switches to the \strong{leave-one-out} PIT (as in INLA's
+\code{cpo$pit} or \code{loo::psis_loo()}'s LOO-PIT): each observation's CDF limits are
+averaged over draws with PSIS leave-one-out weights (from that
+observation's own pointwise log-likelihood) instead of equal weights, so
+the PIT does not use the observation to predict itself. A column whose
+importance ratio is not all finite falls back to the equal-weight average
+for that observation.
+}
 \seealso{
-\code{\link[=tulpa_criteria]{tulpa_criteria()}}
+\code{\link[=tulpa_criteria]{tulpa_criteria()}}, \code{\link[=tulpa_psis]{tulpa_psis()}}
 }
