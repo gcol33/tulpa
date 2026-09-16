@@ -1,5 +1,5 @@
 # Approximation-reliability diagnostics for deterministic (i.i.d.-draw)
-# nested-Laplace fits: laplace_diagnostics() and the mcmc_diagnostics() dispatch.
+# nested-Laplace fits: the diagnostics() dispatch to the reliability table.
 #
 # The reliability headline is a PSIS Pareto-k-hat (Vehtari et al. 2024) of the
 # importance ratio log p_target - log q_proposal, scoring whether the
@@ -163,7 +163,7 @@ test_that("a pinned (zero-variance) axis yields the same finite k-hat as the var
 # (3) Shape / plumbing on a real small nested-Laplace fit.                     #
 # --------------------------------------------------------------------------- #
 
-test_that("laplace_diagnostics returns one finite row per parameter on a small joint fit", {
+test_that("diagnostics() returns one finite row per parameter on a small joint fit", {
   skip_if_not_slow()
   sim   <- .rel_sim(seed = 41)
   fit   <- tulpa_nested_laplace_joint(
@@ -173,7 +173,7 @@ test_that("laplace_diagnostics returns one finite row per parameter on a small j
   fit$draws      <- tulpa_posterior_draws(fit, idx = 1:4, n = 800)
   fit$draws_kind <- "iid"
 
-  rel <- laplace_diagnostics(fit)
+  rel <- diagnostics(fit)
   expect_s3_class(rel, "laplace_diagnostics")
   expect_equal(nrow(rel), 4L)
   # i.i.d. draws carry no chain, so the table withholds rhat / ESS.

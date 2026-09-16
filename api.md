@@ -154,12 +154,12 @@ the diagnostic that applies: Rhat / ESS / MCSE for a chain fit, the
 approximation-reliability table for an i.i.d. one, `NULL` for a point fit.
 `diagnostics(fit, sbc = )` reads the fit and a calibration result together.
 
-Convergence (native, no `posterior`/`coda` dep): `mcmc_diagnostics()`,
-`select_main_params()`, `check_diagnostics()`, `diagnostic_summary()`,
-`n_divergent()`, `geweke_test()`.
-Approximation reliability: `laplace_diagnostics()` -- the outer Pareto-k-hat,
-the inner skewness estimate `gamma_3`, the inner importance k-hat, and the
-combined whole-fit band.
+Convergence (native, no `posterior`/`coda` dep): `select_main_params()`,
+`check_diagnostics()`, `diagnostic_summary()`, `n_divergent()`,
+`geweke_test()`.
+Approximation reliability: the `diagnostics(fit)` table for an i.i.d. fit --
+the outer Pareto-k-hat, the inner skewness estimate `gamma_3`, the inner
+importance k-hat, and the combined whole-fit band.
 Plots: `plot_rhat()`, `plot_ess()`, `plot_acf()`, `plot_energy()`,
 `plot_divergences()`, `plot_pairs()`, `plot_diagnostics()`, `plot_map()`,
 `plot_map_panel()`.

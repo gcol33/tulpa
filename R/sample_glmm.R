@@ -241,7 +241,7 @@ tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
     svc_spec = svc_spec, tvc_spec = tvc_spec, zi_spec = zi_spec)
   # The draws-provenance gate reads fit$backend to learn whether these draws are
   # an MCMC chain, and treats an untagged fit as one. Closing without the stamp
-  # had mcmc_diagnostics() computing Rhat and ESS on SMC particles and VI draws
+  # had diagnostics() computing Rhat and ESS on SMC particles and VI draws
   # (gcol33/tulpa#693) -- the quantities the gate exists to withhold.
   .finalize_fit(res, backend = backend,
                 param_names = nm,

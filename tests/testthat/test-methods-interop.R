@@ -228,8 +228,8 @@ test_that("the draws accessors still find real draws", {
   expect_equal(dim(tulpa_draws_array(fit))[3L], length(fit$param_names))
 })
 
-test_that("laplace_diagnostics() reports the absence of draws", {
+test_that("diagnostics() reports the absence of draws on an approximation fit", {
   fit <- approx_fit()
-  expect_message(res <- laplace_diagnostics(fit), "no posterior draws")
+  expect_message(res <- diagnostics(fit), "no posterior draws")
   expect_null(res)
 })

@@ -5,7 +5,6 @@
 #' @useDynLib tulpa, .registration = TRUE
 #' @importFrom Rcpp sourceCpp
 #' @importFrom Matrix sparseMatrix
-#' @importFrom lifecycle deprecated
 #' @importFrom grDevices adjustcolor colorRampPalette rgb
 #' @importFrom graphics abline hist lines pairs par polygon
 #' @importFrom methods as

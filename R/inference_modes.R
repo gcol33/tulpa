@@ -155,13 +155,6 @@ BACKEND_REGISTRY <- list(
     tier = "exact", input = "modeldata", fitter = "tulpa_sample_glmm",
     families = NULL, cabi = "tulpa_run_ess_sampler"
   ),
-  pg = list(
-    emits = "chain",
-    tier = "exact", input = "design", fitter = NULL,
-    families = c("binomial", "beta_binomial", "beta_binomial_fixed",
-                 "neg_binomial_2"),
-    cabi = "tulpa_pg_binomial_gibbs"
-  ),
   gibbs = list(
     emits = "chain",
     # The Polya-Gamma spatial sweep updates ONE random-intercept block
@@ -171,11 +164,13 @@ BACKEND_REGISTRY <- list(
     tier = "exact", input = "design", fitter = "tulpa_gibbs",
     families = c("binomial", "neg_binomial_2"),
     carries_offset = FALSE,
-    cabi = NULL,
-    note = paste("Polya-Gamma Gibbs (binomial / negbin) via tulpa_gibbs();",
+    cabi = c("tulpa_pg_binomial_gibbs", "tulpa_pg_negbin_gibbs",
+             "tulpa_pg_negbin_spatial_gibbs"),
+    note = paste("Polya-Gamma (PG) Gibbs (binomial / negbin) via tulpa_gibbs();",
                  "base plus spatial (icar/bym2/rsr/gp/multiscale_gp) and temporal",
                  "dispatch through the cpp_pg_binomial_gibbs* / cpp_pg_negbin_gibbs",
-                 "kernels")
+                 "kernels, also reachable from model packages through the C ABI",
+                 "symbols above")
   ),
   re_cov_gibbs = list(
     emits = "chain",
@@ -713,7 +708,7 @@ get_mode_backends <- function(mode) {
 #'
 #' @description
 #' Implements the mode selection logic for tulpa. Accepts either tier names
-#' (auto, exact, structured, optimized) or backend names (hmc, ess, pg, laplace, vi).
+#' (auto, exact, structured, optimized) or backend names (hmc, ess, gibbs, laplace, vi).
 #'
 #' When mode is "auto", selects between Tier 1 (Exact) and Tier 2 (Structured)
 #' based on model characteristics. Never selects Tier 3 (Optimized) automatically.

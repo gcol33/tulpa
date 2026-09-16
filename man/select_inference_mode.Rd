@@ -45,7 +45,7 @@ List with:
 }
 \description{
 Implements the mode selection logic for tulpa. Accepts either tier names
-(auto, exact, structured, optimized) or backend names (hmc, ess, pg, laplace, vi).
+(auto, exact, structured, optimized) or backend names (hmc, ess, gibbs, laplace, vi).
 
 When mode is "auto", selects between Tier 1 (Exact) and Tier 2 (Structured)
 based on model characteristics. Never selects Tier 3 (Optimized) automatically.

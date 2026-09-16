@@ -442,7 +442,7 @@ acceptance rate is the signal to switch to NUTS. The NUTS fit reports
 `$mean_accept` plus `$tree_depth` per draw and the adapted `$epsilon`;
 draws repeatedly hitting `max_depth` indicate a step size that is too
 small for the posterior geometry. Both produce a `$draws` matrix you can
-feed to `mcmc_diagnostics(fit)` for Rhat and effective sample size, or to
+feed to `diagnostics(fit)` for Rhat and effective sample size, or to
 `check_diagnostics(fit)` for a pass/fail summary. The cleanest single
 check is to run the structured-tier fit, read its Pareto-$\hat{k}$, and
 only reach for the MCMC tiers when the diagnostic says the Gaussian

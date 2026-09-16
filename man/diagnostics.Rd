@@ -46,8 +46,8 @@ verdict is attached to the returned table.}
 For a chain fit, a data frame with a \code{parameter} column followed by
 one column per requested measure; entries are \code{NA} for parameters that are
 constant or have too few draws. For an i.i.d. approximation fit, the
-\code{laplace_diagnostics} table (see that function for its attributes). For a
-point fit, \code{NULL}.
+\code{laplace_diagnostics} table (see the "Approximation-reliability table
+columns" section below for its attributes). For a point fit, \code{NULL}.
 }
 \description{
 The diagnostic front door for any tulpa fit. What a fit's posterior draws
@@ -67,9 +67,9 @@ OUTER hyperparameter-grid integration layer), the inner-Laplace
 skewness diagnostic \code{gamma_3} when computed (the INNER Gaussian
 approximation to the latent field, a separate layer \code{pareto_k} does not
 cover), a combined whole-fit verdict naming which layer degrades when
-one does, and a per-parameter posterior summary. See
-\code{\link[=laplace_diagnostics]{laplace_diagnostics()}} for the full description of this table and its
-attributes.}
+one does, and a per-parameter posterior summary. See the
+"Approximation reliability" sections below for the full description of
+this table and its attributes.}
 \item{point summaries}{no sample to diagnose; returns \code{NULL} with a
 message naming the backend.}
 }
@@ -101,6 +101,225 @@ underneath it; \code{diagnostics()} called on the \code{sbc} result itself retur
 report table.
 }
 
+\section{Approximation reliability (i.i.d. draws)}{
+
+Per-parameter reliability diagnostics for a fit whose posterior draws are
+i.i.d. samples from a deterministic approximation (the nested-Laplace
+grid-mixture posterior \verb{sum_k w_k N(mode_k, V_k)}), where the between-chain
+Gelman-Rubin Rhat reported for a chain fit does not apply. This is the
+table that plays Rhat's role for the deterministic engine: it answers "did
+the approximation work", not "did the chains mix".
+
+The headline is a Pareto-smoothed importance-sampling (PSIS) reliability
+diagnostic for the OUTER hyperparameter-grid integration. The nested
+integrator scores its hyperparameter grid against the exact inner-Laplace
+marginal posterior with a generalized-Pareto fit to the upper tail of the
+importance ratios \verb{log p_target(theta) - log q_proposal(theta)}
+(see \code{\link[=tulpa_psis]{tulpa_psis()}}); the resulting tail-shape \code{pareto_k} is the "did the
+outer integration work" number -- \code{k-hat < 0.5} good, \code{0.5-0.7} usable,
+\verb{>= 0.7} unreliable (Vehtari et al. 2024; Yao et al. 2018). It is computed at
+fit time and read back here; a fit that did not run the diagnostic, or whose
+grid proposal degenerated, reports it as \code{NA} and is assessed on the grid
+quadrature reliability instead.
+
+\code{pareto_k} scores the outer integration only. A high \code{pareto_k} on a fit
+whose grid quadrature is healthy (\code{ess_grid} well above 1, largest cell
+weight modest) flags outer-integration (CI-width) calibration in the
+right-skewed hyperparameter tail and does not by itself invalidate the
+point estimates, which the grid quadrature governs.
+
+\code{outer_regime} qualifies what a high \code{pareto_k} means, and is the reason a
+bare threshold on \code{pareto_k} is not a reliability verdict. A sharp
+hyperparameter posterior collapses the grid onto ~1 cell (\code{ess_grid} near
+1); the outer integration has then degenerated to a point evaluation at the
+modal hyperparameter, so \code{pareto_k} is scoring how well a Gaussian at that
+mode stands in for the hyperparameter marginal, not how well a grid
+integrated it. Where the dominant cell is INTERIOR to the grid the collapse
+is benign -- the grid bracketed the mode, the estimate is empirical Bayes
+there, and only integrated hyperparameter uncertainty is missing. Where it
+sits at a grid BOUNDARY the grid may simply be too narrow: \code{grid_edge_axes}
+/ \code{grid_edge_sides} name the axes to widen. On a fit whose \code{pareto_k}
+cleared the good band, the outer diagnostic also fits a skew-normal proposal
+and reports the marginal's estimated skewness as \code{outer_skew_max}, so an
+inflated k-hat that was purely the symmetric proposal's mismatch with a
+skewed variance-component marginal is both corrected and explained. A
+skew-normal has Gaussian tails, so this can never mask a genuinely
+heavy-tailed target.
+
+The grid quadrature reliability -- the effective sample size
+\code{ess_grid = 1 / sum(w_k^2)} of the outer integration weights and the largest
+single cell weight -- is always computed from the stored grid: a grid that
+collapses onto one cell (\code{ess_grid} near 1) integrates no hyperparameter
+uncertainty, while a spread grid does.
+
+A SEPARATE layer -- the inner Gaussian Laplace approximation to the
+latent-field conditional posterior \code{pi(x | theta, y)}, which \code{pareto_k}
+does not cover -- is scored by \code{inner_skew}: the leading-order Edgeworth
+skewness estimate \code{gamma_3} (Rue, Martino & Chopin 2009 Sec 3.2.3) at the
+fitted MAP grid cell, computed when \code{control$diagnose_skew = TRUE} (the
+default) on the fitting call. Reading a high \code{pareto_k} alone as "the fit
+is broken" conflates the two layers: an occu_cover batch flagged 42/78
+species "unreliable" on outer k-hat alone when their point estimates,
+governed by the healthy inner layer, were fine -- the
+\code{reliability} attribute is the combined verdict that names which layer
+degrades, if either does.
+
+Each parameter row also carries the rank-normalized split-Rhat and bulk /
+tail effective sample size of the draws (Vehtari et al. 2021). On i.i.d.
+draws these sit at \code{~1.00} and \code{~n_draws} by construction; they are reported,
+clearly as i.i.d.-draw Monte-Carlo diagnostics and not chain mixing, to
+document that the reported posterior summaries are not Monte-Carlo-limited.
+
+A posterior sample is what those per-parameter rows are computed from, and
+nothing else here needs one: every reliability quantity above is read off the
+fit. So a fit that carries no draws -- a default single-block nested-Laplace
+fit, whose posterior is the retained outer-grid mixture rather than a sample
+-- reports the full band with an empty per-parameter body and \code{n_draws = NA},
+and records why in the \code{param_table_declined} attribute.
+\code{\link[=tulpa_posterior_draws]{tulpa_posterior_draws()}} samples that mixture where the rows are wanted.
+The one case that still returns \code{NULL} is a fit with neither draws nor any
+reliability quantity, such as a plain Laplace fit with no outer grid to
+score.
+}
+
+\section{Approximation-reliability scope}{
+
+The PSIS \code{pareto_k} diagnoses the OUTER (hyperparameter) integration: whether
+the Gaussian-proposal-over-grid approximation of the marginal hyperparameter
+posterior \code{p(theta | data)} can be importance-corrected to the exact inner
+marginal. This is the dominant approximation in nested Laplace and the one
+with an exactly evaluable target. A full latent-space PSIS against the exact
+joint posterior \code{pi(x)} is not computed: the latent prior marginal
+\verb{p(x) = integral p(x | theta) p(theta) dtheta} has no closed form, and for
+the marginalized-occupancy / cover-hurdle likelihoods the exact joint density
+is evaluable only inside the C++ kernel, so a stored fit cannot reconstruct
+it. The grid quadrature reliability is the complementary stored-fit number.
+
+The inner layer carries a SECOND score, \code{inner_pareto_k}, which needs no
+likelihood derivative at all and therefore answers where \code{inner_skew}
+declines. The inner Gaussian at the fitted hyperparameter is an importance
+proposal for the exact conditional posterior, and the joint density is the
+target, so PSIS on that ratio scores the inner approximation directly. It is
+computed on the same probed indices along the same conditional-mean curve,
+one dimension per index, since importance sampling degrades with dimension
+and a k-hat over the whole latent field would report \code{n_x} rather than the
+approximation. A Pareto shape index is scale-free, so it is banded only on
+indices whose realized importance efficiency shows a correction worth
+describing; \code{inner_pareto_k_uniform} records that none did, which is what a
+well-approximated inner layer looks like.
+
+\code{inner_skew} diagnoses the INNER (latent-field) Laplace: whether the
+Gaussian approximation to \code{pi(x_i | theta, y)} is itself a good fit, at
+each scored latent index \code{i}. \code{gamma_3} is exact for a gaussian-family
+coefficient (the log-likelihood is exactly quadratic in eta) and
+declines to \code{NA} -- never a silently-wrong \code{0} ("perfectly Gaussian") --
+whenever no per-observation third-derivative oracle is available: a
+coupled multi-process likelihood (e.g. tulpaObs's \code{occu_cover}, whose
+arms combine non-separably through a \code{CellCouplingSpec}) or a family with
+no registered third derivative. Only the requested latent indices are
+scored (every arm's fixed-effects coefficients by default -- see
+\code{control$skew_idx}), since each index costs one extra linear solve; the
+full latent field is not scored by default on a large spatial field.
+}
+
+\section{Approximation-reliability table columns}{
+
+The table has one row per parameter -- \code{parameter}, \code{mean}, \code{sd}, \code{n_draws},
+\code{mcse_mean} -- carrying attributes. There is deliberately no \code{rhat} /
+\verb{ess_*} column: those are what the draws-provenance gate withholds on a
+non-chain fit, and this table is where it dispatches instead.
+\describe{
+\item{\code{pareto_k}}{the outer PSIS reliability k-hat (\code{NA} if not computed).}
+\item{\code{pareto_k_band}}{\code{"good"} / \code{"ok"} / \code{"unreliable"} / \code{NA}.}
+\item{\code{pareto_k_declined}, \code{pareto_k_declined_note}}{when \code{pareto_k} is
+\code{NA}, WHY: \code{"not_requested"}, \code{"not_applicable"},
+\code{"unguessable_axis"} (naming the axis -- a permanent limitation of that
+family, so read \code{ess_grid} instead), \code{"draws_too_few"},
+\code{"grid_too_small"}, \code{"no_varying_axis"}, \code{"degenerate_proposal"}, or
+\code{"internal_inconsistency"} (an engine bug worth reporting), plus a
+one-line reading of it.}
+\item{\code{pareto_k_is_ess}}{importance-sampling ESS on the smoothed weights.}
+\item{\code{ess_grid}, \code{n_grid}, \code{rel_ess_grid}, \code{max_weight}}{grid quadrature
+reliability. \code{n_grid} counts the cells SOLVED, so a posterior sharp
+enough to underflow all but one of them reads \verb{ess_grid = 1.00 of 124 cells} rather than of one, and \code{rel_ess_grid} is the share of the
+solved grid the quadrature actually uses.}
+\item{\code{outer_regime}}{\code{"spread"} / \code{"collapsed_interior"} /
+\code{"collapsed_edge"} -- whether the outer grid integrated hyperparameter
+uncertainty at all, and if not whether its dominant cell is interior
+(empirical Bayes at the mode: point estimates sound, hyperparameter
+uncertainty not integrated) or against a grid boundary (widen it).}
+\item{\code{grid_edge_axes}, \code{grid_edge_sides}}{for an edge collapse, the axes
+the dominant cell sits against and on which side.}
+\item{\code{grid_edge_mass_axes}}{axes holding material weight on one of
+their own boundary nodes, as \code{axis:side} --
+that axis truncates its own marginal there whether or not its mode sits
+on the node, which is the weaker and more common statement
+\code{grid_railed_axes} cannot make. Read in every regime, a spread grid
+included.}
+\item{\code{outer_skew_max}}{largest estimated |skewness| of the hyperparameter
+marginal, computed only when the k-hat triggered the skew-normal
+proposal rescue (\code{NA} means the Gaussian proposal already fit, not
+"symmetric and unchecked").}
+\item{\code{outer_regime_note}}{a one-line reading of a collapsed regime or of
+boundary mass on an axis, absent on a spread grid carrying neither.}
+\item{\code{grid_railed_axes}}{outer axes whose OWN marginal is maximal at one
+of their own endpoints, as \code{axis:side} -- the span does not contain that
+axis's posterior mode, so its marginal is a truncated tail at any
+spacing. Reported whether or not the engine was allowed to, able to, or
+built to move the axis.}
+\item{\code{grid_placement}, \code{grid_recentred_axes},
+\code{grid_placement_declined}, \code{grid_placement_note}}{whether the outer grid
+was re-centred, on which axes, and -- when it was not -- why.}
+\item{\code{scope}}{the outer diagnostic's scope string.}
+\item{\code{scope_backend}, \code{scope_title}, \code{scope_layers}, \code{scope_text}}{what
+the table describes: the backend it was read for, the header title,
+the reliability layers that backend has (\code{c("outer", "inner")} for a
+nested-Laplace fit, empty for a backend with neither), and the scope
+sentence -- for a nested fit what its outer layer integrates over, for
+any other backend what its draws are and which reliability quantity
+it computes. A backend without the two layers has no whole-fit
+verdict, and its \code{reliability} is \code{NA}.}
+\item{\code{inner_skew_max}}{the largest \verb{|gamma_3|} among the scored latent
+indices (\code{NA} if \code{control$diagnose_skew = FALSE} or nothing scored).}
+\item{\code{inner_skew_band}}{\code{"good"} / \code{"ok"} / \code{"unreliable"} / \code{NA}, banded
+on \code{inner_skew_max} by the general skewness-magnitude convention
+(Bulmer 1979) -- not a Rue-Martino-Chopin-specific cutoff.}
+\item{\code{inner_skew_scored}, \code{inner_skew_probed}}{how many of the probed
+latent indices returned a finite \code{gamma_3} vs how many were probed.}
+\item{\code{inner_skew_declined}, \code{inner_skew_arms_declined},
+\code{inner_skew_declined_note}}{when nothing was scored, WHY:
+\code{"coupled_arm"} (STRUCTURAL -- the coupled arms have neither a
+per-observation sum nor a cell third-derivative tensor to read, so the
+outer k-hat is the only reliability number this fit has),
+\code{"curvature3_unavailable"}, \code{"no_finite_contribution"},
+\code{"no_probe_indices"}, \code{"not_requested"}, \code{"backend_unsupported"},
+\code{"solve_failed"}, or \code{"not_converged"} (the probe re-solve stopped
+short of a mode, so neither inner score has a point to read); the arms
+(1-based) a joint fit had no oracle for, which is also set on a
+PARTIALLY scored fit; and a one-line reading.} \item{\code{inner_pareto_k},
+\code{inner_pareto_k_band}}{the inner-Laplace importance k-hat over the
+probed subspace, and its band on the same convention as the outer
+k-hat. Available wherever a mode was found, including a fit \code{gamma_3}
+cannot score.} \item{\code{inner_pareto_k_rel_ess},
+\code{inner_pareto_k_is_ess}}{the smallest realized importance efficiency
+and effective sample size across the probed indices -- how much
+correcting the inner Gaussian actually needs, which is what makes the
+scale-free shape above readable.}
+\item{\code{inner_pareto_k_uniform}}{\code{TRUE} when no probed index carried a
+material correction, i.e. the inner Gaussian reproduces the
+conditional posterior over the sampled region.}
+\item{\code{inner_pareto_k_scored}, \code{inner_pareto_k_probed}}{how many
+probed indices returned a finite k-hat vs how many were probed.}
+\item{\code{inner_pareto_k_declined}, \code{inner_pareto_k_declined_note}}{when
+it is \code{NA}, WHY, from the same closed vocabulary the outer k-hat
+uses.} \item{\code{reliability}}{the combined whole-fit verdict:
+\code{"reliable"} only when both layers are good; otherwise names which
+layer is scoped or flags both as unreliable. The inner layer enters
+through the worse of its two scores, so a fit whose cubic term
+declined is still assessed.} } and a trailing \code{summary} attribute (a
+one-row data frame of the headline numbers) for printing.
+}
+
 \examples{
 \donttest{
 set.seed(1)
@@ -125,10 +344,17 @@ MCMC. \emph{Bayesian Analysis} 16(2):667-718.
 
 Vehtari, Simpson, Gelman, Yao & Gabry (2024). Pareto smoothed importance
 sampling. \emph{JMLR} 25(72):1-58.
+
+Yao, Vehtari, Simpson & Gelman (2018). Yes, but did it work?: Evaluating
+variational inference. \emph{ICML}, PMLR 80:5581-5590.
+
+Rue, Martino & Chopin (2009). Approximate Bayesian inference for latent
+Gaussian models by using integrated nested Laplace approximations.
+\emph{JRSS-B} 71(2):319-392.
 }
 \seealso{
-\code{\link[=sbc]{sbc()}} for calibration, \code{\link[=laplace_diagnostics]{laplace_diagnostics()}} for the
-approximation-reliability table in full, \code{\link[=tulpa_draws_array]{tulpa_draws_array()}},
-\code{\link[=plot_rhat]{plot_rhat()}}, \code{\link[=plot_ess]{plot_ess()}}, \code{\link[=diagnostic_summary]{diagnostic_summary()}},
-\code{\link[=check_diagnostics]{check_diagnostics()}}
+\code{\link[=sbc]{sbc()}} for calibration, the approximation-reliability sections
+above for the i.i.d.-fit table in full, \code{\link[=tulpa_draws_array]{tulpa_draws_array()}},
+\code{\link[=tulpa_posterior_draws]{tulpa_posterior_draws()}}, \code{\link[=tulpa_psis]{tulpa_psis()}}, \code{\link[=plot_rhat]{plot_rhat()}}, \code{\link[=plot_ess]{plot_ess()}},
+\code{\link[=diagnostic_summary]{diagnostic_summary()}}, \code{\link[=check_diagnostics]{check_diagnostics()}}
 }

@@ -369,10 +369,10 @@ arm2_beta | ... ]` latent layout carried on `fit$arm_layout`); `diagnose_skew
 - `tulpa_psis()` is the native Pareto-smoothed importance-sampling core the
   diagnostic is built on, callable directly on a vector of log importance
   ratios.
-- `mcmc_diagnostics()` is the chain-fit counterpart, the Rhat and ESS surface
-  for sampled fits.
-- `?laplace_diagnostics` documents `gamma_3` and the combined whole-fit
-  verdict `diagnostics()` reports when a fit carries posterior draws.
+- `diagnostics()` routes a chain fit to the Rhat and ESS surface for sampled
+  fits, and an i.i.d. approximation fit to this reliability table; see its
+  "Approximation reliability" sections for `gamma_3` and the combined
+  whole-fit verdict.
 - The inference-modes vignette runs the reliability ladder from a Laplace fit
   through an exact debias, and shows the k-hat on a random-effect covariance
   fit.

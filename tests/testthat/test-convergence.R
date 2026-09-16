@@ -29,7 +29,7 @@ pool_chain_major <- function(arr) {
 }
 
 
-test_that("mcmc_diagnostics reproduces posterior rhat / ess / mcse", {
+test_that("diagnostics() reproduces posterior rhat / ess / mcse", {
   skip_if_not_installed("posterior")
   arr <- make_draws_array()
   fit <- structure(list(draws = arr), class = "tulpa_fit")
@@ -87,7 +87,7 @@ test_that("rhat takes the max of bulk and folded split-Rhat", {
 })
 
 
-test_that("default mcmc_diagnostics columns are stable", {
+test_that("default diagnostics() columns are stable", {
   arr <- make_draws_array(niter = 200L, nchain = 2L, npar = 2L)
   fit <- structure(list(draws = arr), class = "tulpa_fit")
   diag <- diagnostics(fit)

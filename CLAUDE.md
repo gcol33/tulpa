@@ -531,8 +531,10 @@ positionally.
 
 ### Convergence diagnostics (Rhat / ESS) live HERE, not in model packages
 
-`R/convergence.R` owns `mcmc_diagnostics(fit, pars, measures, probs)` ->
-data.frame(parameter, <selected measures>) and `select_main_params()`. The
+`R/convergence.R` owns the chain-diagnostics table builder
+`.tulpa_chain_diag_table(fit, pars, measures, probs)` ->
+data.frame(parameter, <selected measures>) and `select_main_params()`, reached
+through the front door `diagnostics()` (`R/diagnostics.R`). The
 default measures are `rhat, ess_bulk, ess_tail`; the full surface adds
 `rhat_bulk`, `rhat_fold`, `ess_mean`, `ess_sd`, `mcse_mean`, `mcse_sd`, and
 per-probability `ess_quantile` / `mcse_quantile`. `rhat` is the improved
@@ -545,7 +547,7 @@ one-liner. It reads `fit$draws` plus a chain structure (`fit$chain_id`,
 `fit$n_chains`, or a 3D `[iter, chain, param]` array) -- the same layouts
 `tulpa_draws_array()` (the `as_draws_array()`-style accessor) emits -- so it
 works for any `tulpa_fit` subclass; downstream packages (tulpaObs, tulpaRatio)
-call `tulpa::mcmc_diagnostics()` rather than re-deriving Rhat/ESS. The plotting
+call `tulpa::diagnostics()` rather than re-deriving Rhat/ESS. The plotting
 / summary layer (`plot_rhat`, `plot_ess`, `diagnostic_summary`,
 `check_diagnostics`, `n_divergent`) is built on it.
 
@@ -555,9 +557,9 @@ the registry `emits` property (`"chain"` / `"iid"` / `"point"`), orthogonal to
 `tier` (Tier-1 SMC emits `"iid"`; Tier-2 nested Laplace emits `"iid"`; Tier-3
 VI emits `"iid"`). `tulpa_dispatch()` stamps it onto `fit$draws_kind`, and
 `.tulpa_is_chain()` reads tag-then-registry, treating unknown as chain so
-untagged fits still work. On a non-chain fit `mcmc_diagnostics()` withholds
+untagged fits still work. On a non-chain fit `diagnostics()` withholds
 Rhat/ESS (vacuous there: ESS = n_draws by construction) and dispatches to the
-approximation-reliability table (`laplace_diagnostics()`, the PSIS/quad-ESS
+approximation-reliability table (`.tulpa_approx_diag_table()`, the PSIS/quad-ESS
 view) — a point fit gets `NULL` with a message; `mcmc_draws()` is the
 chain-only view (`NULL` on any non-chain fit); `check_diagnostics()` returns
 `NA` ("not applicable"), and the plot/summary layer withholds the panels
@@ -650,7 +652,7 @@ multi-chain producer (`run_hmc_parallel_chains_cpp`, exposed via
 `cpp_tulpa_fit_generic_chains`) emits the `(draws, chain_id, n_chains)` layout
 `.tulpa_chain_list()` reads, verified end-to-end against `posterior` in
 `tests/testthat/test-convergence.R` and on a native multi-chain fit in
-`tests/testthat/test-generic-sampler.R` ("mcmc_diagnostics consumes a native
+`tests/testthat/test-generic-sampler.R` ("diagnostics() consumes a native
 multi-chain fit").
 
 ### What an outer k-hat measures, and which lever moves it (gcol33/tulpa#629)

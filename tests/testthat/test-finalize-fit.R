@@ -4,8 +4,8 @@
 # (draws_kind) the chain-vs-iid diagnostic gate reads. Before the shared
 # .finalize_fit() helper, a directly-called fitter returned a bare/under-tagged
 # list: generic S3 fell through to the base default, and an iid fit was treated
-# as a chain so mcmc_diagnostics() reported a vacuous Rhat ~ 1 (a false
-# convergence pass).
+# as a chain so diagnostics() reported a vacuous Rhat ~ 1 (a false convergence
+# pass).
 
 test_that(".finalize_fit attaches class, layout, and provenance", {
   # Bare list gains the tulpa_fit class and a registry-derived draws_kind.
@@ -99,5 +99,5 @@ test_that("directly-called VI fit does not fake a convergence pass", {
   expect_s3_class(fit, "tulpa_fit")
   expect_equal(fit$draws_kind, "iid")
   # An iid VI fit routes to the reliability table, not a chain Rhat pass.
-  expect_s3_class(suppressMessages(mcmc_diagnostics(fit)), "laplace_diagnostics")
+  expect_s3_class(suppressMessages(diagnostics(fit)), "laplace_diagnostics")
 })

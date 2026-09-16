@@ -38,23 +38,22 @@ test_that("get_backend_tier preserves its shape and errors on unknown", {
   expect_error(get_backend_tier("nope"), "Unknown backend")
 })
 
-test_that("reachability reflects whether an R fitter exists", {
-  # The ModelData sampler kernels are now reachable through tulpa_sample_glmm
-  # (gcol33/tulpa#54, #55). `pg` remains C-ABI-only (reached via tulpa_gibbs).
-  reachable <- c("gibbs", "imh_laplace", "mala", "laplace", "pathfinder", "agq",
-                 "hmc", "ess", "sghmc", "sgld", "mclmc", "smc", "vi")
-  cabi_only <- c("pg")
-  for (b in reachable) expect_true(backend_is_reachable(b), info = b)
-  for (b in cabi_only) expect_false(backend_is_reachable(b), info = b)
+test_that("every registered backend is reachable from R", {
+  # The ModelData sampler kernels are reachable through tulpa_sample_glmm
+  # (gcol33/tulpa#54, #55); the Polya-Gamma kernels are reachable through
+  # tulpa_gibbs() under the `gibbs` backend (gcol33/tulpa#774) -- there is no
+  # longer a registry entry with a NULL fitter. assert_backend_reachable()'s
+  # no-fitter branch stays in place for a future C-ABI-only kernel.
+  for (b in names(BACKEND_REGISTRY)) {
+    expect_true(backend_is_reachable(b), info = b)
+  }
 })
 
-test_that("selecting a C-ABI-only backend fails loudly, naming the kernel", {
-  err <- expect_error(assert_backend_reachable("pg"))
-  expect_match(conditionMessage(err), "no R-level fitter")
-  expect_match(conditionMessage(err), "tulpa_pg_binomial_gibbs")
-
-  err2 <- expect_error(tulpa_dispatch("pg", fitter_args = list()))
-  expect_match(conditionMessage(err2), "tulpa_pg_binomial_gibbs")
+test_that("the gibbs backend's C-ABI symbols name the Polya-Gamma kernels", {
+  cabi <- BACKEND_REGISTRY$gibbs$cabi
+  expect_true(all(c("tulpa_pg_binomial_gibbs", "tulpa_pg_negbin_gibbs",
+                    "tulpa_pg_negbin_spatial_gibbs") %in% cabi))
+  expect_setequal(BACKEND_REGISTRY$gibbs$families, c("binomial", "neg_binomial_2"))
 })
 
 test_that("resolve_backend_fitter returns the real function for reachable backends", {

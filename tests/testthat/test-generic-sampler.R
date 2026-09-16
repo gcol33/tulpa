@@ -226,7 +226,7 @@ test_that("multi-chain fit is reproducible for a fixed seed (tulpa#30)", {
   expect_equal(a$final_position, b$final_position, tolerance = 1e-10)
 })
 
-test_that("mcmc_diagnostics consumes a native multi-chain fit (tulpa#26 via #30)", {
+test_that("diagnostics() consumes a native multi-chain fit (tulpa#26 via #30)", {
   skip_if_not_slow()
 
   set.seed(25)
@@ -244,7 +244,7 @@ test_that("mcmc_diagnostics consumes a native multi-chain fit (tulpa#26 via #30)
 
   # The returned (draws, chain_id, n_chains) is exactly the layout
   # .tulpa_chain_list() expects — no R-side reshaping needed.
-  diag <- tulpa::mcmc_diagnostics(
+  diag <- tulpa::diagnostics(
     list(draws = fit$draws, chain_id = fit$chain_id, n_chains = fit$n_chains),
     measures = c("rhat", "ess_bulk", "ess_tail")
   )
@@ -378,7 +378,7 @@ test_that("C ABI resume continues a chain from inv_metric_out + final_position (
 # init / inv_metric_diag, allocates a NUTSResult[n_chains] output buffer,
 # and returns the per-chain resume fields plus draws stacked chain-major
 # with a chain_id vector — the (draws, chain_id, n_chains) layout
-# mcmc_diagnostics() consumes.
+# diagnostics() consumes.
 
 test_that("C ABI tulpa_run_nuts_chains returns chain-major draws + per-chain state (tulpa#30)", {
   skip_if_not_slow()
@@ -423,7 +423,7 @@ test_that("C ABI tulpa_run_nuts_chains returns chain-major draws + per-chain sta
   }
 })
 
-test_that("C ABI multi-chain output feeds mcmc_diagnostics directly (tulpa#30 -> #26)", {
+test_that("C ABI multi-chain output feeds diagnostics() directly (tulpa#30 -> #26)", {
   skip_if_not_slow()
 
   set.seed(32)
@@ -441,7 +441,7 @@ test_that("C ABI multi-chain output feeds mcmc_diagnostics directly (tulpa#30 ->
 
   # No R-side reshaping: the C-ABI multi-chain output is already the
   # (draws, chain_id, n_chains) layout .tulpa_chain_list() expects.
-  diag <- tulpa::mcmc_diagnostics(
+  diag <- tulpa::diagnostics(
     list(draws = abi$draws, chain_id = abi$chain_id, n_chains = abi$n_chains),
     measures = c("rhat", "ess_bulk", "ess_tail")
   )

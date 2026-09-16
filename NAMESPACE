@@ -153,12 +153,10 @@ export(hyper_axis_spec)
 export(imh_laplace)
 export(inference_mode_info)
 export(is_auto_grid)
-export(laplace_diagnostics)
 export(latent)
 export(latent_factor)
 export(latent_factors)
 export(mala)
-export(mcmc_diagnostics)
 export(mcmc_draws)
 export(model_average)
 export(moran_i)
@@ -308,7 +306,6 @@ importFrom(graphics,
   par,
   polygon
 )
-importFrom(lifecycle,deprecated)
 importFrom(methods,as)
 importFrom(stats,
   AIC,

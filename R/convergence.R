@@ -550,27 +550,6 @@ get_draws_array <- function(fit) list(draws = tulpa_draws_array(fit))
              stringsAsFactors = FALSE, row.names = NULL)
 }
 
-#' MCMC convergence diagnostics
-#'
-#' @description
-#' `r lifecycle::badge("deprecated")`
-#'
-#' Use [diagnostics()], which reads a fit's draws provenance and returns the
-#' diagnostic that applies -- chain mixing for MCMC draws, approximation
-#' reliability for deterministic fits. The name `mcmc_diagnostics()` described
-#' only one of the two branches it already routed between.
-#'
-#' @inheritParams diagnostics
-#' @return The value of [diagnostics()] for `fit`.
-#' @keywords internal
-#' @export
-mcmc_diagnostics <- function(fit, pars = NULL,
-                             measures = c("rhat", "ess_bulk", "ess_tail"),
-                             probs = c(0.05, 0.95)) {
-  lifecycle::deprecate_warn("0.0.95", "mcmc_diagnostics()", "diagnostics()")
-  diagnostics(fit, pars = pars, measures = measures, probs = probs)
-}
-
 #' Select the "main" model parameters for diagnostic display
 #'
 #' Drops per-element latent-field entries (names ending in a bracketed index,

@@ -71,17 +71,17 @@ test_that("draws_kind contract holds through tulpa(mode = ...)", {
                      control = list(n_iter = 1000L, warmup = 500L, n_chains = 3L))
   expect_equal(fit_chain$draws_kind, "chain")
   expect_equal(fit_chain$n_chains, 3L)
-  dd <- mcmc_diagnostics(fit_chain)
+  dd <- diagnostics(fit_chain)
   expect_true(is.data.frame(dd))
   expect_true(all(is.finite(dd$rhat)))
 
   fit_iid <- tulpa(y ~ x, d, family = "binomial", mode = "smc",
                    control = list(n_particles = 1500L))
   expect_equal(fit_iid$draws_kind, "iid")
-  # Non-chain fits withhold the chain-only view; mcmc_diagnostics dispatches
+  # Non-chain fits withhold the chain-only view; diagnostics() dispatches
   # to the approximation-reliability table instead of vacuous Rhat/ESS.
   expect_null(mcmc_draws(fit_iid))
-  expect_false(is.null(mcmc_diagnostics(fit_iid)))
+  expect_false(is.null(diagnostics(fit_iid)))
 })
 
 # Random-effect models now thread through the ModelData samplers (gcol33/tulpa#75)

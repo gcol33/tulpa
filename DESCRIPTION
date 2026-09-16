@@ -38,7 +38,6 @@ Imports:
     Matrix,
     tulpaMesh (>= 0.1.3),
     generics,
-    lifecycle,
     stats,
     tools,
     utils,

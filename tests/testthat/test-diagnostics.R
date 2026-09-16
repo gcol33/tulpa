@@ -1,6 +1,5 @@
 # The diagnostics() front door: draws provenance selects which reliability
-# question a fit is asked, and the two superseded entry points keep returning
-# exactly what they always did.
+# question a fit is asked.
 #
 # The routing is the contract worth pinning. A fit whose draws are i.i.d. must
 # NOT come back with a chain-mixing verdict: split-Rhat sits at ~1 and ESS ~
@@ -151,33 +150,4 @@ test_that("pars restricts both routes", {
   expect_equal(diagnostics(.diag_chain_fit(p = 3L), pars = "b")$parameter, "b")
   expect_equal(diagnostics(.diag_iid_fit(), pars = c("a", "c"))$parameter,
                c("a", "c"))
-})
-
-# --------------------------------------------------------------------------- #
-# Superseded entry points                                                      #
-# --------------------------------------------------------------------------- #
-
-test_that("both deprecated names warn", {
-  # "warning" defeats deprecate_warn()'s once-per-session throttle, so the
-  # signal is asserted rather than depending on test execution order.
-  old <- options(lifecycle_verbosity = "warning")
-  on.exit(options(old), add = TRUE)
-  expect_warning(mcmc_diagnostics(.diag_chain_fit()), "deprecated")
-  expect_warning(laplace_diagnostics(.diag_iid_fit()), "deprecated")
-})
-
-test_that("both deprecated names return exactly the diagnostics() value", {
-  old <- options(lifecycle_verbosity = "quiet")
-  on.exit(options(old), add = TRUE)
-  ch <- .diag_chain_fit(); ap <- .diag_iid_fit()
-  expect_equal(mcmc_diagnostics(ch), diagnostics(ch))
-  expect_equal(laplace_diagnostics(ap), diagnostics(ap))
-})
-
-test_that("the deprecated names still route by provenance, not by their name", {
-  old <- options(lifecycle_verbosity = "quiet")
-  on.exit(options(old), add = TRUE)
-  # mcmc_diagnostics() on an i.i.d. fit must still yield the reliability table,
-  # which is the behaviour that made the old name wrong in the first place.
-  expect_s3_class(mcmc_diagnostics(.diag_iid_fit()), "laplace_diagnostics")
 })
