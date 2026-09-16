@@ -951,8 +951,11 @@ auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_laten
     fam_nm <- family$name %||% family$distribution %||% ""
     # A temporal field routes through the joint nested-Laplace path in tulpa()
     # (the design-input Gibbs backend is redirected there), so Gibbs is reachable
-    # from auto only when there is no temporal field.
-    if (spatial_type %in% c("icar", "bym2", "rsr") && identical(fam_nm, "binomial") &&
+    # from auto only when there is no temporal field. spatial_car()'s exported
+    # "car" is the same intrinsic ICAR field dispatch_gibbs_spatial() dispatches
+    # under "icar" (gcol33/tulpa#819).
+    if (.areal_gibbs_type(spatial_type) %in% c("icar", "bym2", "rsr") &&
+        identical(fam_nm, "binomial") &&
         !has_temporal && .auto_backend_ok("gibbs", family, feat)) {
       return(list(
         mode = "exact", backend = "gibbs", tier = 1L, tier_name = "Exact",

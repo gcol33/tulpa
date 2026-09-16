@@ -213,7 +213,9 @@ dispatch_gibbs_spatial <- function(y, n_trials, X, re_group, n_re_groups,
   }
   # RSR keeps the underlying areal $type (icar/car) and flags $rsr; normalise it
   # to the "rsr" route so the projection is applied rather than a plain areal fit.
-  spatial_type <- tolower(spatial$type %||% "")
+  # spatial_car()'s exported "car" is the same intrinsic ICAR field the nested
+  # path already treats it as (gcol33/tulpa#819).
+  spatial_type <- .areal_gibbs_type(tolower(spatial$type %||% ""))
   if (isTRUE(spatial$rsr)) spatial_type <- "rsr"
 
   # Areal samplers (icar / bym2 / rsr) share the neighbour-list block; the negbin

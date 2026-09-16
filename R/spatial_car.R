@@ -76,6 +76,20 @@ spatial_car <- function(adjacency, level = c("group", "obs"),
 }
 
 
+# The nested-Laplace path (.spatial_spec_to_nl_prior(), .NL_FRONTDOOR_AREAL)
+# already treats type = "car" as the intrinsic ICAR field -- spatial_car()'s
+# own doc calls the untyped default "the improper CAR / ICAR". The Polya-Gamma
+# Gibbs dispatch (dispatch_gibbs_spatial()) and auto's Gibbs-eligibility check
+# (auto_select_mode()) matched only the literal "icar", so a spatial_car()
+# spec was refused by mode = "gibbs" and routed to nested Laplace under auto
+# where the identical bare list `type = "icar"` reached Gibbs (gcol33/tulpa#819).
+# One alias, read by both.
+#' @keywords internal
+.areal_gibbs_type <- function(spatial_type) {
+  if (identical(spatial_type, "car")) "icar" else spatial_type
+}
+
+
 #' Proper CAR spatial structure
 #'
 #' @description
