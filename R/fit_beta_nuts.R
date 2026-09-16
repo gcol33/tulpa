@@ -97,5 +97,7 @@ tulpa_nuts_beta <- function(y, X,
 
   .finalize_fit(res, backend = "hmc_beta_nuts", draws_kind = "chain",
                n_fixed = p, fixed_names = colnames(res$draws)[seq_len(p)],
-               param_names = colnames(res$draws))
+               param_names = colnames(res$draws),
+               data = list(y = y, model_matrix = X, family = "beta",
+                          phi = unname(res$phi_summary["mean"])))
 }

@@ -620,5 +620,7 @@ tulpa_gibbs <- function(y, n_trials, X, group, n_groups,
   # dispatch) instead of the raw draw list; tulpa_dispatch re-finalizing the
   # routed path is a no-op (every field fills with %||%).
   .finalize_fit(res, backend = "gibbs", n_fixed = ncol(X),
-                fixed_names = res$param_names[seq_len(ncol(X))])
+                fixed_names = res$param_names[seq_len(ncol(X))],
+                data = list(y = y, n_trials = vd$n_trials,
+                           model_matrix = X, family = family))
 }

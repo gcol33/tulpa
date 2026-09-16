@@ -302,5 +302,7 @@
   )
   .finalize_fit(fit, draws_kind = "chain", extra_class = "tulpa_tgmrf",
                 n_fixed = p, fixed_names = beta_names,
-                param_names = param_names)
+                param_names = param_names,
+                data = list(y = y, n_trials = n_trials, model_matrix = X,
+                           family = family, phi = phi))
 }

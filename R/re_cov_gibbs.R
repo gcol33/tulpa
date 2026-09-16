@@ -425,5 +425,7 @@ tulpa_re_cov_gibbs <- function(y, n_trials = NULL, X, re_terms,
     n_blocks    = M,
     n_coefs     = vapply(layout, `[[`, integer(1), "nc"),
     prior       = priors
-  ), backend = "re_cov_gibbs", n_fixed = p, fixed_names = beta_names)
+  ), backend = "re_cov_gibbs", n_fixed = p, fixed_names = beta_names,
+     data = list(y = y, n_trials = n_trials, model_matrix = X,
+                family = family, phi = phi))
 }

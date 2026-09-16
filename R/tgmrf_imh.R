@@ -247,5 +247,7 @@ tulpa_tgmrf <- function(y, n_trials, X, block,
     inference_tier = 1L,
     backend        = "tgmrf_imh"
   )
-  .finalize_fit(fit, draws_kind = "chain", extra_class = "tulpa_tgmrf")
+  .finalize_fit(fit, draws_kind = "chain", extra_class = "tulpa_tgmrf",
+               data = list(y = y, n_trials = n_trials, model_matrix = X,
+                          family = family, phi = phi))
 }

@@ -2037,5 +2037,7 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
       closure = sd_cfg$closure,
       n_iter = sd_cfg$n_iter, warmup = sd_cfg$warmup, thin = sd_cfg$thin,
       accept = debias_accept)
-  ), backend = "re_cov_nested", n_fixed = p_fix, fixed_names = beta_names)
+  ), backend = "re_cov_nested", n_fixed = p_fix, fixed_names = beta_names,
+     data = list(y = y, n_trials = n_trials, model_matrix = X,
+                family = family, offset = offset, phi = phi, phi2 = phi2))
 }

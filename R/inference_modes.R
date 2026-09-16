@@ -658,17 +658,36 @@ tulpa_dispatch <- function(mode,
 #' @param n_fixed,fixed_names,param_names Fixed-effect layout, each filled only
 #'   when the fitter left it unset. An unnamed `means` vector of the matching
 #'   length is named by `param_names`.
+#' @param data Observation-level fields the fitter was called with --
+#'   `list(y=, n_trials=, model_matrix=, family=, offset=, phi=, phi2=)` --
+#'   stamped onto the fit so a directly-called fitter carries the same
+#'   `nobs()` / `fitted()` / `predict()` / `posterior_predict()` surface a
+#'   `tulpa()`-dispatched one does (gcol33/tulpa#781). Any subset may be
+#'   supplied; each entry fills only when the fitter did not already set the
+#'   matching field, so a fitter that already stamped a richer value (e.g. the
+#'   full design bundle `tulpa()` attaches post-dispatch) wins.
 #' @param extra_class Subclass(es) to prepend before `tulpa_fit`.
 #' @return The enriched fit, classed `c(extra_class, ..., "tulpa_fit")`.
 #' @keywords internal
 .finalize_fit <- function(fit, backend = NULL, draws_kind = NULL,
                           n_fixed = NULL, fixed_names = NULL,
-                          param_names = NULL, extra_class = NULL) {
+                          param_names = NULL, extra_class = NULL,
+                          data = NULL) {
   if (!is.list(fit)) return(fit)
 
   if (!is.null(backend)) fit$backend <- fit$backend %||% backend
   reg <- if (!is.null(fit$backend)) BACKEND_REGISTRY[[fit$backend]] else NULL
   fit$draws_kind <- fit$draws_kind %||% draws_kind %||% reg$emits
+
+  if (!is.null(data)) {
+    fit$y            <- fit$y %||% data$y
+    fit$n_trials     <- fit$n_trials %||% data$n_trials
+    fit$model_matrix <- fit$model_matrix %||% data$model_matrix
+    fit$family       <- fit$family %||% data$family
+    fit$offset       <- fit$offset %||% data$offset
+    fit$phi          <- fit$phi %||% data$phi
+    fit$phi2         <- fit$phi2 %||% data$phi2
+  }
 
   # Axis fields the fit's own path could not read, published
   # for the duration of the fit by the nested-Laplace front doors.

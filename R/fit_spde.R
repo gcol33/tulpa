@@ -409,5 +409,7 @@ fit_spde <- function(y, X, spatial,
   }
 
   .finalize_fit(fit, backend = "spde",
-                n_fixed = ncol(X), fixed_names = colnames(X))
+                n_fixed = ncol(X), fixed_names = colnames(X),
+                data = list(y = y, n_trials = n_trials, model_matrix = X,
+                           family = family, offset = offset, phi = phi))
 }

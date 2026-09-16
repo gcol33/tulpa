@@ -223,8 +223,10 @@ agq_fit <- function(y, X, group,
       "effects. Use mode = 're_cov_gibbs' or 're_cov_nested' for ranef()."),
     n_fixed = p
   )
-  class(fit) <- c("tulpa_agq_fit", "tulpa_fit")
-  fit
+  .finalize_fit(fit, extra_class = "tulpa_agq_fit",
+               data = list(y = y, n_trials = n_trials, model_matrix = X,
+                          family = family, offset = offset,
+                          phi = if (identical(family, "gaussian")) sigma_eps^2 else NULL))
 }
 
 

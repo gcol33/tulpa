@@ -136,5 +136,7 @@
     inference_tier = 2L,
     backend        = "tgmrf_vi"
   )
-  .finalize_fit(fit, draws_kind = "iid", extra_class = "tulpa_tgmrf")
+  .finalize_fit(fit, draws_kind = "iid", extra_class = "tulpa_tgmrf",
+               data = list(y = y, n_trials = n_trials, model_matrix = X,
+                          family = family, phi = phi))
 }

@@ -326,6 +326,8 @@ ep_fit <- function(y, X, family = "binomial", phi = 1.0, phi2 = NULL,
     log_marginal = log_marginal, converged = converged, n_sweeps = sweep,
     n_site_not_converged = n_site_not_converged, n_site_floored = n_site_floored,
     family = family, model_matrix = X,
+    y = y, n_trials = nt, offset = off, phi = phi, phi2 = phi2,
+    N = n,
     backend = "ep", inference_tier = 2L, inference_mode = "structured",
     draws_kind = "iid"
   )

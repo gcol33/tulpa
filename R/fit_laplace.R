@@ -483,7 +483,10 @@ tulpa_laplace <- function(y, n_trials, X,
     colnames(X_zi) %||% paste0("zi_", seq_len(p_zi))
   .finalize_fit(result, backend = "laplace",
                 n_fixed = n_fixed + p_zi,
-                fixed_names = c(colnames(X), zi_names))
+                fixed_names = c(colnames(X), zi_names),
+                data = list(y = y, n_trials = n_trials, model_matrix = X,
+                           family = family, offset = offset,
+                           phi = phi, phi2 = phi2))
 }
 
 

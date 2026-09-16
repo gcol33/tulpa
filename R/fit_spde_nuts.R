@@ -402,5 +402,10 @@ tulpa_nuts_spde <- function(y, X, spatial,
 
   .finalize_fit(res, backend = "hmc_spde_nuts", draws_kind = "chain",
                n_fixed = p, fixed_names = colnames(res$draws)[seq_len(p)],
-               param_names = colnames(res$draws))
+               param_names = colnames(res$draws),
+               data = list(y = y, n_trials = n_trials, model_matrix = X,
+                          family = family,
+                          phi = if (!is.null(res$phi_summary)) {
+                            unname(res$phi_summary["mean"])
+                          } else NULL))
 }
