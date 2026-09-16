@@ -20,7 +20,10 @@ spatiotemporal_effects(
 )
 }
 \arguments{
-\item{object}{A \code{tulpa_fit} object fitted with \code{spatiotemporal} argument}
+\item{object}{A \code{tulpa_fit} object carrying a \verb{$spatiotemporal} Knorr-Held
+interaction block. \code{tulpa()} itself has no \verb{spatiotemporal =} argument;
+such a block comes from a model package's own fitter (see
+\code{\link[=spatiotemporal]{spatiotemporal()}} for what the engine itself fits).}
 
 \item{format}{Output format: \code{"array"} (default, S x T x draws), \code{"long"}
 (data frame with s, t, draw, value columns), or \code{"summary"} (posterior summaries).}

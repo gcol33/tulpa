@@ -109,12 +109,18 @@ spatiotemporal <- function(spatial,
                            temporal,
                            type = c("I", "II", "III", "IV", "iid", "separable"),
                            shared = NULL) {
+  # gcol33/tulpa#812: tulpa()'s formula front door routes spatial + temporal
+  # jointly for an areal spatial field only; a continuous one is not yet
+  # routed there (though fit_st_nested() fits it directly).
   stop("Spatiotemporal interaction terms are not fitted by any tulpa backend: ",
        "no solver carries a Knorr-Held type I-IV interaction, and tulpa() has ",
        "no `spatiotemporal =` argument. The additive space-time model ",
-       "`X beta + u_spatial + v_temporal` is fitted by tulpa(spatial = , ",
-       "temporal = ) through the joint nested-Laplace path, or directly by ",
-       "fit_st_nested().", call. = FALSE)
+       "`X beta + u_spatial + v_temporal` is fitted directly by ",
+       "fit_st_nested(); tulpa(spatial = , temporal = ) reaches the same ",
+       "joint nested-Laplace path only for an AREAL spatial field ",
+       "(icar/bym2/car_proper) -- a continuous one (hsgp/nngp) is not yet ",
+       "routed through tulpa()'s formula front door.",
+       call. = FALSE)
 }
 
 
@@ -125,7 +131,10 @@ spatiotemporal <- function(spatial,
 #' Extract posterior distributions of spatiotemporal interaction effects
 #' from a fitted tulpa model.
 #'
-#' @param object A `tulpa_fit` object fitted with `spatiotemporal` argument
+#' @param object A `tulpa_fit` object carrying a `$spatiotemporal` Knorr-Held
+#'   interaction block. `tulpa()` itself has no `spatiotemporal =` argument;
+#'   such a block comes from a model package's own fitter (see
+#'   [spatiotemporal()] for what the engine itself fits).
 #' @param format Output format: `"array"` (default, S x T x draws), `"long"`
 #'   (data frame with s, t, draw, value columns), or `"summary"` (posterior summaries).
 #' @param probs Quantiles to compute if `format = "summary"`.
@@ -162,9 +171,10 @@ spatiotemporal_effects.tulpa_fit <- function(object,
 
   # Check if model has spatiotemporal effects
   if (is.null(object$spatiotemporal)) {
-    stop("Model was not fitted with spatiotemporal interaction.\n",
-         "Use `spatiotemporal` argument in tulpa() to specify interaction.",
-         call. = FALSE)
+    stop("Model carries no $spatiotemporal Knorr-Held interaction block. ",
+         "tulpa() has no `spatiotemporal =` argument (see ?spatiotemporal); ",
+         "such a block is attached by a model package's own interaction ",
+         "fitter.", call. = FALSE)
   }
 
   st_info <- object$spatiotemporal
@@ -372,8 +382,11 @@ plot.tulpa_st_summary <- function(x, type = "heatmap", ...) {
 #' non-separable models allow for direct space-time interaction in the covariance.
 #'
 #' No tulpa backend fits a joint space-time covariance, so this constructor
-#' errors. A spatial GP alongside a temporal field is fitted by
-#' `tulpa(spatial = spatial_gp(...), temporal = ...)`.
+#' errors. A spatial GP alongside a temporal field is fitted directly by
+#' [fit_st_nested()] (`spatial_type = "hsgp"` or `"nngp"`); `tulpa()`'s
+#' formula front door does not yet route a continuous spatial field together
+#' with a temporal field (it does for an areal one -- icar/bym2/car_proper --
+#' via `tulpa(spatial = , temporal = )`; gcol33/tulpa#812).
 #'
 #' @param coords A one-sided formula specifying coordinate columns (e.g.,
 #'   `~ lon + lat`), or a character vector of length 2.
@@ -421,9 +434,12 @@ spatiotemporal_gp <- function(coords,
                               nonsep_type = c("product", "sum", "gneiting", "cressie_huang"),
                               nn = 15,
                               shared = NULL) {
+  # gcol33/tulpa#812: same front-door gap as spatiotemporal() above.
   stop("Non-separable spatiotemporal GP fields are not fitted by any tulpa ",
        "backend: no solver carries a joint space-time covariance, and tulpa() ",
        "has no `spatiotemporal =` argument. A spatial GP alongside a temporal ",
-       "field is fitted by tulpa(spatial = spatial_gp(...), temporal = ...).",
-       call. = FALSE)
+       "field is fitted directly by fit_st_nested(spatial_type = 'hsgp' or ",
+       "'nngp', ...); tulpa()'s formula front door routes spatial + temporal ",
+       "jointly only for an areal spatial field (icar/bym2/car_proper) via ",
+       "tulpa(spatial = , temporal = ).", call. = FALSE)
 }

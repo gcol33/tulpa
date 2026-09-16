@@ -1,15 +1,17 @@
 # fit_st_nested.R
 # ------------------------------------------------------------------------------
 # Front-door driver for the additive spatiotemporal nested-Laplace kernels
-# (cpp_nested_laplace_st_{icar,bym2,car_proper}). Each kernel fits a GLM with an
-# additive areal spatial field + a temporal field (rw1 / rw2 / ar1), integrating
-# jointly over the spatial precision, the temporal precision, and (for ar1) the
-# temporal autocorrelation on a hyperparameter grid. The kernels return the
+# (cpp_nested_laplace_st_{icar,bym2,car_proper,hsgp,nngp}). Each kernel fits a
+# GLM with an additive spatial field (areal: icar/bym2/car_proper; continuous:
+# hsgp/nngp) + a temporal field (rw1 / rw2 / ar1), integrating jointly over the
+# spatial hyperparameter(s), the temporal precision, and (for ar1) the temporal
+# autocorrelation on a hyperparameter grid. The kernels return the
 # per-cell log-marginal + latent modes + the per-cell precision (Q_csc), the same
 # output shape the areal single-block path emits, so this driver reuses the
 # shared nested-Laplace post-processing (weight normalisation, grid-Hessian
 # extraction for the fixed-effect marginal SE) and the generic tulpa_fit
 # accessors. Previously these kernels were reachable only from consumer packages
+# (gcol33/tulpa#807 wired hsgp / nngp through this same door).
 
 # ------------------------------------------------------------------------------
 
@@ -31,8 +33,13 @@
         lv <- sort(unique(as.numeric(tg[, a])))
         # bym2's spatial axis is `sigma_spatial` (an SD), not a precision, but
         # it is the same positive log-scale coordinate as `tau_spatial` /
-        # `tau_temporal` (gcol33/tulpa#776).
-        log_scale <- startsWith(a, "tau") || startsWith(a, "sigma")
+        # `tau_temporal` (gcol33/tulpa#776). hsgp's `lengthscale` and nngp's
+        # `phi_gp` are the same positive log-scale coordinate too (matching the
+        # single-field registry's `range` / `phi_gp` / `lengthscale` axes,
+        # gcol33/tulpa#807); `sigma2` (hsgp/nngp's field variance) is covered by
+        # the `sigma` prefix already.
+        log_scale <- startsWith(a, "tau") || startsWith(a, "sigma") ||
+          a %in% c("lengthscale", "phi_gp")
         spec <- hyper_axis_spec(name = a, grid = lv, log_scale = log_scale,
                                 bounds = if (log_scale) c(0, Inf) else NULL,
                                 refinable = FALSE)
@@ -50,27 +57,35 @@
 # spatial mixing weight is a distinct column, `rho_spatial`, routed to the
 # same `bym2:rho` Uniform(0, 1) density `tulpa_nested_laplace(type = "bym2")`
 # gives it (gcol33/tulpa#776).
-.st_log_hyperprior <- function(theta_grid, axes, hyperprior = "proper") {
+#
+# `block` carries the coordinate context a continuous (hsgp/nngp) field's
+# `lengthscale` / `phi_gp` range axis needs to anchor its PC prior
+# (`.hp_range_anchor()` reads `block$coords`, matching what
+# `.spatial_spec_to_nl_prior()` attaches to the single-field prior block);
+# areal fields pass none and get the same `range_extent_unknown` decline any
+# other anchor-less range axis would.
+.st_log_hyperprior <- function(theta_grid, axes, hyperprior = "proper", block = list()) {
     tg <- as.matrix(theta_grid)
     .hp_collect(tg, function(a) {
         if (identical(a, "rho")) {
             .hp_axis_prior("rho", list(type = "ar1"), hyperprior = hyperprior)
         } else if (identical(a, "rho_spatial")) {
             .hp_axis_prior("rho", list(type = "bym2"), hyperprior = hyperprior)
-        } else .hp_axis_prior(a, hyperprior = hyperprior)
+        } else .hp_axis_prior(a, block, hyperprior = hyperprior)
     }, axes = axes)
 }
 
 # Fold the hyperprior into a spatiotemporal kernel result and attach its cell
 # measure, weights and evidence. The one tail behind the first solve and the
 # placement refit.
-.st_attach_outer_integration <- function(out, theta_grid, hyperprior = "proper") {
+.st_attach_outer_integration <- function(out, theta_grid, hyperprior = "proper",
+                                         block = list()) {
     out$theta_grid  <- as.matrix(theta_grid)
     out$theta_names <- colnames(out$theta_grid)
     out <- .nl_fold_hyperprior(
         out, list(.st_log_hyperprior(out$theta_grid,
                                      axes = .hp_integrated_axes(out$theta_grid),
-                                     hyperprior = hyperprior)))
+                                     hyperprior = hyperprior, block = block)))
     st_specs <- .nl_st_axis_specs(out$theta_grid,
                                   folded_axes = out$log_hyperprior_axes)
     out$log_quad     <- .hyper_log_quad_weights(out$theta_grid, st_specs)
@@ -85,10 +100,11 @@
 #' Fit an additive spatiotemporal GLM by nested Laplace
 #'
 #' @description
-#' Fits `y ~ X beta + u_spatial[s] + v_temporal[t]` with an areal spatial field
-#' (`icar` / `bym2` / `car_proper`) and a temporal field (`rw1` / `rw2` / `ar1`),
-#' integrating the spatial precision, temporal precision, and (for `ar1`) the
-#' temporal autocorrelation over a hyperparameter grid via the
+#' Fits `y ~ X beta + u_spatial[s] + v_temporal[t]` with a spatial field --
+#' areal (`icar` / `bym2` / `car_proper`) or continuous (`hsgp` / `nngp`) --
+#' and a temporal field (`rw1` / `rw2` / `ar1`), integrating the spatial
+#' hyperparameter(s), temporal precision, and (for `ar1`) the temporal
+#' autocorrelation over a hyperparameter grid via the
 #' `cpp_nested_laplace_st_*` kernels. The fixed-effect posterior is the
 #' grid-marginalised mixture; the spatial and temporal field posterior means are
 #' the grid-weighted latent modes.
@@ -96,10 +112,17 @@
 #' @param y Response vector.
 #' @param X Fixed-effects design matrix (`nrow(X) == length(y)`).
 #' @param spatial_idx Integer per-observation spatial-unit index (1-based).
+#'   For `spatial_type = "icar"/"bym2"/"car_proper"`, an areal unit in
+#'   `[1, nrow(adjacency)]`; for `"nngp"`, a location in `[1, nrow(coords)]`.
+#'   Ignored for `"hsgp"` (the field is evaluated directly at each
+#'   observation's own coordinates); pass any placeholder (e.g. `seq_len(N)`).
 #' @param adjacency Spatial adjacency (a symmetric 0/1 matrix or `sparseMatrix`).
+#'   Required for `spatial_type = "icar"/"bym2"/"car_proper"`; ignored (pass
+#'   `NULL`) for `"hsgp"`/`"nngp"`, which take `coords` instead.
 #' @param temporal_idx Integer per-observation time index (1-based).
 #' @param n_times Number of distinct time points.
-#' @param spatial_type `"icar"` (default), `"bym2"`, or `"car_proper"`.
+#' @param spatial_type `"icar"` (default), `"bym2"`, `"car_proper"`, `"hsgp"`
+#'   (Hilbert-space GP basis), or `"nngp"` (nearest-neighbour GP).
 #' @param temporal_type `"ar1"` (default), `"rw1"`, or `"rw2"`.
 #' @param family Response family (see [family_names()]).
 #' @param n_trials Binomial denominators, or `NULL` (= 1).
@@ -109,6 +132,20 @@
 #'   alongside the fields (conditioned on `sigma_re`); `n_re_groups = 0` (default)
 #'   is no RE term.
 #' @template hyperprior
+#' @param coords Coordinate matrix for a continuous spatial field, required
+#'   when `spatial_type` is `"hsgp"` or `"nngp"` (ignored otherwise). For
+#'   `"hsgp"`, an `N x 2` matrix (one row per observation, matching
+#'   `spatial_gp(approx = "hsgp")`'s basis convention -- the basis is built by
+#'   `cpp_hsgp_basis_2d()`, 2D only). For `"nngp"`, an `n_spatial x d` matrix
+#'   of unique locations that `spatial_idx` indexes into (any `d`, matching
+#'   [spatial_gp()]'s NNGP convention).
+#' @param nn Number of nearest neighbours per location, `spatial_type = "nngp"`
+#'   only. Default 10 (clamped to `nrow(coords) - 1`).
+#' @param cov_type Integer NNGP covariance code (`spatial_type = "nngp"` only):
+#'   0 = exponential, 1 = Matern 3/2, 2 = Matern 5/2 (default), 3 = Gaussian.
+#' @param hsgp_m,hsgp_c Hilbert-space GP basis size (per dimension, default 6)
+#'   and boundary factor (default 1.5), `spatial_type = "hsgp"` only -- the
+#'   same parameterisation and defaults as `spatial_gp(approx = "hsgp")`.
 #' @param control A list of numerical / grid knobs: `n_grid_spatial`,
 #'   `n_grid_temporal` (default 4 each), `n_grid_rho` (ar1 only, default 3),
 #'   `tau_lower` / `tau_upper` (icar / car_proper precision grid bounds,
@@ -122,13 +159,22 @@
 #'   [tulpa_nested_laplace()] takes are refused here with an error, since this
 #'   driver recentres on the grid's collapsed-edge regime rather than on a
 #'   per-axis rail; declines outright for `spatial_type = "bym2"`, whose
-#'   (sigma, rho) spatial axes this recenter has no transform for yet),
-#'   `rho_spatial` (the proper-CAR mixing value the `car_proper` axis is held
+#'   (sigma, rho) spatial axes this recenter has no transform for yet, and for
+#'   `"hsgp"`/`"nngp"`, same reason), `rho_spatial` (the proper-CAR mixing
+#'   value the `car_proper` axis is held
 #'   at, default `.NL_ST_GRID$rho_spatial`; unrelated to bym2's own integrated
 #'   `rho_spatial` grid axis) and `within_cell` (`"box_uniform"` / `"chord"`,
 #'   the within-cell construction the reported per-axis intervals are read
 #'   with; defaults to
 #'   `.NL_DIAG$within_cell`, as on every other nested door).
+#'
+#'   For `spatial_type = "hsgp"`/`"nngp"`, the spatial axes are the field
+#'   variance (`sigma2`) paired with the lengthscale (`lengthscale`) or NNGP
+#'   range (`phi_gp`), read off the same shared default bounds the
+#'   single-field `spatial_gp()` path uses (`gp_var` / `gp_lengthscale`,
+#'   `R/settings.R`) -- there is no separate `sigma2_lower`/`upper` knob here,
+#'   only `n_grid_spatial`, which sizes the pair as it does for the areal
+#'   families.
 #'
 #'   The `(tau_lower, tau_upper)` span (and, for `ar1`, `(rho_lower,
 #'   rho_upper)`) is a starting axis, not a hard ceiling:
@@ -155,7 +201,10 @@
 #' @return A `tulpa_fit` (subclass `tulpa_nested_laplace`) carrying the
 #'   fixed-effect posterior (`draws` via the grid mixture), `spatial_effects`,
 #'   `temporal_effects`, `log_marginal`, `weights`, `theta_grid` over
-#'   `(tau_spatial, tau_temporal, rho)`, and `family` / `n_trials` / `phi` (the
+#'   `(tau_spatial, tau_temporal, rho)` for an areal spatial field or
+#'   `(sigma2, lengthscale, tau_temporal, rho)` / `(sigma2, phi_gp,
+#'   tau_temporal, rho)` for `"hsgp"` / `"nngp"`, and `family` / `n_trials` /
+#'   `phi` (the
 #'   R-level convention), which is what [fitted()], [residuals()],
 #'   [posterior_predict()] and [simulate()] read the response family from.
 #'   Also carries `pareto_k_regime`
@@ -192,13 +241,16 @@
 #' }
 #' @export
 fit_st_nested <- function(y, X, spatial_idx, adjacency, temporal_idx, n_times,
-                          spatial_type = c("icar", "bym2", "car_proper"),
+                          spatial_type = c("icar", "bym2", "car_proper",
+                                          "hsgp", "nngp"),
                           temporal_type = c("ar1", "rw1", "rw2"),
                           family = "binomial", n_trials = NULL, phi = 1.0,
                           cyclic = FALSE,
                           re_idx = NULL, n_re_groups = 0L, sigma_re = 1.0,
                           hyperprior = c("proper", "flat"),
-                          control = list()) {
+                          control = list(),
+                          coords = NULL, nn = 10L, cov_type = 2L,
+                          hsgp_m = 6L, hsgp_c = 1.5) {
   # Every other nested door checks its control keys; this one did not, so a
   # misspelling (`rho_spatail`, `n_thread`) was accepted in silence and the fit
   # ran at the default (gcol33/tulpa#673).
@@ -214,23 +266,71 @@ fit_st_nested <- function(y, X, spatial_idx, adjacency, temporal_idx, n_times,
   n_trials <- vd$n_trials
   y <- as.numeric(y)
 
-  if (length(spatial_idx) != N || length(temporal_idx) != N) {
-    stop("`spatial_idx` / `temporal_idx` must have length length(y).",
-         call. = FALSE)
-  }
-  csr <- adjacency_to_csr_tulpa(adjacency)
-  n_s <- nrow(as.matrix(adjacency))
-  if (max(spatial_idx) > n_s || min(spatial_idx) < 1L) {
-    stop("`spatial_idx` must be 1-based indices in [1, nrow(adjacency)].",
-         call. = FALSE)
+  # Areal (icar/bym2/car_proper) is addressed by adjacency + a per-obs unit
+  # index; nngp by a coordinate matrix of unique locations + the same kind of
+  # per-obs unit index; hsgp evaluates its basis directly at each
+  # observation's own coordinates, so it carries no unit index at all
+  # (gcol33/tulpa#807).
+  is_areal <- spatial_type %in% c("icar", "bym2", "car_proper")
+
+  if (length(temporal_idx) != N) {
+    stop("`temporal_idx` must have length length(y).", call. = FALSE)
   }
   if (max(temporal_idx) > n_times || min(temporal_idx) < 1L) {
     stop("`temporal_idx` must be 1-based indices in [1, n_times].", call. = FALSE)
   }
   if (is.null(re_idx)) re_idx <- rep(0, N)
 
-  # Hyperparameter grid: spatial (precision, or for bym2 SD x mixing weight)
-  # x temporal precision x (ar1) rho.
+  basis <- NULL
+  if (is_areal) {
+    if (length(spatial_idx) != N) {
+      stop("`spatial_idx` must have length length(y).", call. = FALSE)
+    }
+    csr <- adjacency_to_csr_tulpa(adjacency)
+    n_s <- nrow(as.matrix(adjacency))
+    if (max(spatial_idx) > n_s || min(spatial_idx) < 1L) {
+      stop("`spatial_idx` must be 1-based indices in [1, nrow(adjacency)].",
+           call. = FALSE)
+    }
+  } else if (spatial_type == "nngp") {
+    if (is.null(coords)) {
+      stop("`coords` is required for spatial_type = 'nngp' (an n_spatial x d ",
+           "matrix of unique locations `spatial_idx` indexes into).",
+           call. = FALSE)
+    }
+    if (length(spatial_idx) != N) {
+      stop("`spatial_idx` must have length length(y).", call. = FALSE)
+    }
+    coords <- as.matrix(coords)
+    storage.mode(coords) <- "double"
+    n_s <- nrow(coords)
+    if (max(spatial_idx) > n_s || min(spatial_idx) < 1L) {
+      stop("`spatial_idx` must be 1-based indices in [1, nrow(coords)].",
+           call. = FALSE)
+    }
+    nn <- min(as.integer(nn), n_s - 1L)
+    ni <- compute_nngp_neighbors(coords, nn)
+  } else {
+    # hsgp
+    if (is.null(coords)) {
+      stop("`coords` is required for spatial_type = 'hsgp' (an N x 2 matrix, ",
+           "one row per observation).", call. = FALSE)
+    }
+    coords <- .coords_2col(as.matrix(coords),
+                           "fit_st_nested(spatial_type = 'hsgp')")
+    if (nrow(coords) != N) {
+      stop("`coords` must have one row per observation (", N, ") for ",
+           "spatial_type = 'hsgp'; got ", nrow(coords), " row(s).",
+           call. = FALSE)
+    }
+    # Laplacian basis built by cpp_hsgp_basis_2d (setup_hsgp_2d, the single
+    # source of truth) -- the same call `.spatial_spec_to_nl_prior()` makes for
+    # the single-field HSGP path.
+    basis <- cpp_hsgp_basis_2d(coords, as.integer(hsgp_m), as.numeric(hsgp_c))
+  }
+
+  # Hyperparameter grid: spatial (family-specific) x temporal precision x
+  # (ar1) rho.
   n_gs   <- as.integer(control$n_grid_spatial  %||% .nl_st_default("n_spatial"))
   n_gt   <- as.integer(control$n_grid_temporal %||% .nl_st_default("n_temporal"))
   n_grho <- if (temporal_type == "ar1") as.integer(control$n_grid_rho %||% .nl_st_default("n_rho")) else 1L
@@ -247,13 +347,28 @@ fit_st_nested <- function(y, X, spatial_idx, adjacency, temporal_idx, n_times,
   # same (sigma, rho) reparameterisation the single-field bym2 nested-Laplace
   # path integrates, not a precision (gcol33/tulpa#776). car_proper's spatial
   # mixing weight stays a single PINNED value (`rho_spatial_grid` repeated
-  # across the grid), unchanged from before.
+  # across the grid), unchanged from before. hsgp / nngp pair the field
+  # variance with the lengthscale / NNGP range over the SAME shared default
+  # bounds (`gp_var` / `gp_lengthscale`) the single-field `spatial_gp()` path
+  # reads, matching the paired (not crossed) convention the ST kernels expect
+  # (one theta_grid row per grid row, as for every other spatial axis pair
+  # here).
   if (spatial_type == "bym2") {
     sigma_lo <- control$sigma_lower %||% .nl_st_default("sigma_lower")
     sigma_hi <- control$sigma_upper %||% .nl_st_default("sigma_upper")
     sigma_axis <- .st_log_grid(sigma_lo, sigma_hi, n_gs)
     rho_spatial_axis <- .nl_grid_axis("bym2_rho")
     grid <- expand.grid(sigma_spatial = sigma_axis, rho_spatial = rho_spatial_axis,
+                        tau_temporal = tt_axis, rho = rho_axis)
+  } else if (spatial_type == "hsgp") {
+    sg_axis <- .nl_grid_axis("gp_var", n = n_gs)
+    ls_axis <- .nl_grid_axis("gp_lengthscale", n = n_gs)
+    grid <- expand.grid(sigma2 = sg_axis, lengthscale = ls_axis,
+                        tau_temporal = tt_axis, rho = rho_axis)
+  } else if (spatial_type == "nngp") {
+    sg_axis <- .nl_grid_axis("gp_var", n = n_gs)
+    pg_axis <- .nl_grid_axis("gp_lengthscale", n = n_gs)
+    grid <- expand.grid(sigma2 = sg_axis, phi_gp = pg_axis,
                         tau_temporal = tt_axis, rho = rho_axis)
   } else {
     ts_axis <- .st_log_grid(tau_lo, tau_hi, n_gs)
@@ -263,15 +378,14 @@ fit_st_nested <- function(y, X, spatial_idx, adjacency, temporal_idx, n_times,
   kernel <- switch(spatial_type,
                    icar        = cpp_nested_laplace_st_icar,
                    bym2        = cpp_nested_laplace_st_bym2,
-                   car_proper  = cpp_nested_laplace_st_car_proper)
+                   car_proper  = cpp_nested_laplace_st_car_proper,
+                   hsgp        = cpp_nested_laplace_st_hsgp,
+                   nngp        = cpp_nested_laplace_st_nngp)
 
   kargs <- list(
     y = y, n = n_trials, X = X,
     re_idx = as.numeric(re_idx), n_re_groups = as.integer(n_re_groups),
     sigma_re = as.numeric(sigma_re),
-    spatial_idx = as.integer(spatial_idx), n_spatial_units = as.integer(n_s),
-    adj_row_ptr = as.integer(csr$row_ptr), adj_col_idx = as.integer(csr$col_idx),
-    n_neighbors = as.integer(csr$n_neighbors),
     temporal_idx = as.integer(temporal_idx), n_times = as.integer(n_times),
     temporal_type = temporal_type,
     tau_temporal_grid = as.numeric(grid$tau_temporal),
@@ -288,17 +402,53 @@ fit_st_nested <- function(y, X, spatial_idx, adjacency, temporal_idx, n_times,
   # The default is one registry entry, not a literal here: a selector gets one
   # default, in one place (gcol33/tulpa#673).
   rho_spatial_val <- control$rho_spatial %||% .nl_st_default("rho_spatial")
-  if (spatial_type == "bym2") {
-    kargs$scale_factor       <- compute_bym2_scale(adjacency)
-    kargs$sigma_spatial_grid <- as.numeric(grid$sigma_spatial)
-    kargs$rho_spatial_grid   <- as.numeric(grid$rho_spatial)
-  } else {
-    kargs$tau_spatial_grid <- as.numeric(grid$tau_spatial)
-    if (spatial_type == "car_proper") {
-      kargs$rho_spatial_grid <- rep(rho_spatial_val, nrow(grid))
+  # A continuous field's range/lengthscale axis needs the coordinate extent to
+  # anchor its PC prior (`.hp_range_anchor()` reads `block$coords`); an areal
+  # field passes none, matching every other anchor-less family here.
+  hp_block <- list()
+  if (is_areal) {
+    kargs$spatial_idx <- as.integer(spatial_idx)
+    kargs$n_spatial_units <- as.integer(n_s)
+    kargs$adj_row_ptr <- as.integer(csr$row_ptr)
+    kargs$adj_col_idx <- as.integer(csr$col_idx)
+    kargs$n_neighbors <- as.integer(csr$n_neighbors)
+    if (spatial_type == "bym2") {
+      kargs$scale_factor       <- compute_bym2_scale(adjacency)
+      kargs$sigma_spatial_grid <- as.numeric(grid$sigma_spatial)
+      kargs$rho_spatial_grid   <- as.numeric(grid$rho_spatial)
+    } else {
+      kargs$tau_spatial_grid <- as.numeric(grid$tau_spatial)
+      if (spatial_type == "car_proper") {
+        kargs$rho_spatial_grid <- rep(rho_spatial_val, nrow(grid))
+      }
     }
+  } else if (spatial_type == "hsgp") {
+    kargs$phi_basis  <- as.matrix(basis$phi_basis)
+    kargs$lambda_eig <- as.numeric(basis$lambda_eig)
+    kargs$sigma2_spatial_grid      <- as.numeric(grid$sigma2)
+    kargs$lengthscale_spatial_grid <- as.numeric(grid$lengthscale)
+    hp_block <- list(coords = coords)
+  } else {
+    # nngp: coords in ORIGINAL unique-location order, nn_idx/nn_dist as
+    # compute_nngp_neighbors() returns them (1-based ordering positions), and
+    # a 0-based nn_order -- the exact convention
+    # `.spatial_spec_to_nl_prior()` + the single-field `nngp` registry pack()
+    # already ship for `cpp_nested_laplace_nngp` (batch_nngp_scatter reads
+    # `coords(nn_order[i])`).
+    kargs$spatial_idx <- as.integer(spatial_idx)
+    kargs$n_spatial    <- as.integer(n_s)
+    kargs$coords       <- coords
+    kargs$nn_idx       <- as.matrix(ni$nn_idx)
+    kargs$nn_dist      <- as.matrix(ni$nn_dist)
+    kargs$nn_order     <- as.integer(ni$nn_order) - 1L
+    kargs$nn           <- as.integer(ncol(ni$nn_idx))
+    kargs$cov_type     <- as.integer(cov_type)
+    kargs$sigma2_spatial_grid <- as.numeric(grid$sigma2)
+    kargs$phi_gp_spatial_grid <- as.numeric(grid$phi_gp)
+    hp_block <- list(coords = coords)
   }
-  out <- .st_attach_outer_integration(do.call(kernel, kargs), grid, hyperprior)
+  out <- .st_attach_outer_integration(do.call(kernel, kargs), grid, hyperprior,
+                                      block = hp_block)
   # Outer-grid collapse visibility + recenter:
   # tau_lower/tau_upper's default [0.25, 16] span (and, for ar1, the default
   # rho_lower/rho_upper) is a starting axis, not a hard ceiling, the same
@@ -307,6 +457,9 @@ fit_st_nested <- function(y, X, spatial_idx, adjacency, temporal_idx, n_times,
   # collapses onto a boundary (`pareto_k_regime = "collapsed_edge"`) and no
   # grid knob was explicitly overridden; see `.st_auto_grid_rescue()`
   # (R/fit_st_nested_auto_grid.R) for the optim()-based mode-find it uses.
+  # (hsgp / nngp decline this rescue outright -- see the bym2-style guard at
+  # its top -- since their axes are not the tau_spatial/tau_temporal/rho pair
+  # it knows how to transform.)
   out <- .joint_attach_pareto_k_regime(out)
   out <- .st_auto_grid_rescue(out, kernel, kargs, spatial_type, temporal_type,
                               n_gs, n_gt, n_grho, tau_lo, tau_hi, control,
@@ -320,12 +473,17 @@ fit_st_nested <- function(y, X, spatial_idx, adjacency, temporal_idx, n_times,
   out <- .nl_attach_grid_hessians(out, ncol(X))
 
   # Grid-marginalised field posterior means: the latent block after the fixed
-  # effects is [spatial (n_s), temporal (n_times)] for icar / car_proper, or
-  # [structured (n_s), unstructured (n_s), temporal (n_times)] for bym2 --
-  # its spatial contribution to eta is the sigma/rho-weighted MIX of the two
-  # raw (standardized) sub-fields, not either one alone (gcol33/tulpa#776;
-  # see bym2_mixing.h for the same `sigma * (sqrt(rho) * scale_factor * phi +
-  # sqrt(1 - rho) * theta)` combination the kernel's own d_fac applies).
+  # effects is [spatial (n_s), temporal (n_times)] for icar / car_proper /
+  # nngp, [structured (n_s), unstructured (n_s), temporal (n_times)] for
+  # bym2 -- its spatial contribution to eta is the sigma/rho-weighted MIX of
+  # the two raw (standardized) sub-fields, not either one alone
+  # (gcol33/tulpa#776; see bym2_mixing.h for the same `sigma * (sqrt(rho) *
+  # scale_factor * phi + sqrt(1 - rho) * theta)` combination the kernel's own
+  # d_fac applies) -- or [basis weights (M), temporal (n_times)] for hsgp,
+  # whose field has no per-location layout: the reported `spatial_effects` is
+  # the per-observation field `phi_basis %*% beta_bar`, projecting the
+  # weight-averaged basis coefficients through the same basis every
+  # observation shares.
   p <- ncol(X)
   w <- out$weights
   if (spatial_type == "bym2") {
@@ -338,6 +496,12 @@ fit_st_nested <- function(y, X, spatial_idx, adjacency, temporal_idx, n_times,
       (sigma_k * sqrt(rho_k) * kargs$scale_factor) +
       out$modes[, theta_cols, drop = FALSE] * (sigma_k * sqrt(1 - rho_k))
     out$spatial_effects <- as.numeric(crossprod(w, combined))
+  } else if (spatial_type == "hsgp") {
+    m_basis <- ncol(basis$phi_basis)
+    sp_cols <- p + seq_len(m_basis)
+    te_cols <- p + m_basis + seq_len(n_times)
+    beta_bar <- as.numeric(crossprod(w, out$modes[, sp_cols, drop = FALSE]))
+    out$spatial_effects <- as.numeric(basis$phi_basis %*% beta_bar)
   } else {
     sp_cols <- p + seq_len(n_s)
     te_cols <- p + n_s + seq_len(n_times)

@@ -2090,13 +2090,18 @@ tulpa <- function(formula, data,
            call. = FALSE)
     }
     if (has_spatial && !tolower(spatial_type %||% "") %in% .NL_FRONTDOOR_AREAL) {
+      # gcol33/tulpa#812: the front-door gap named below.
       stop("A temporal field can accompany an areal (icar/car/bym2/car_proper) ",
-           "spatial field through the joint nested-Laplace path; the '",
-           spatial_type, "' field is fit by its own integrator (continuous ",
-           "gp/nngp/hsgp and SPDE space-time kernels exist but are not front-door ",
-           "wired yet; RSR is sampler-only) and cannot host a temporal block ",
-           "through tulpa() yet. Fit one field at a time, or use an areal field ",
-           "for space-time.", call. = FALSE)
+           "spatial field through tulpa()'s joint nested-Laplace path; the '",
+           spatial_type, "' field is fit by its own integrator through this ",
+           "front door (continuous gp/nngp/hsgp and SPDE fields are each fit ",
+           "one at a time here; RSR is sampler-only) and cannot host a ",
+           "temporal block through tulpa() yet. A continuous (hsgp/nngp) ",
+           "spatial field plus a temporal field IS fitted, directly, by ",
+           "fit_st_nested(spatial_type = 'hsgp' or 'nngp', ...) -- it is not ",
+           "yet routed through this formula front door. ",
+           "Fit one field at a time here, use an areal field for space-time ",
+           "through tulpa(), or call fit_st_nested() directly.", call. = FALSE)
     }
     # The multiscale validator is the superset: it resolves a
     # temporal_multiscale() spec and delegates every other spec to
