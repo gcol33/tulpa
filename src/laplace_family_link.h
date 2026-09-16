@@ -47,6 +47,12 @@ constexpr double kTweedieMuFloor = 1e-10;
 // the log-sum-exp at double precision.
 constexpr double kTweedieSeriesNats = 37.0;
 
+// Hard cap on the tweedie event-count series' term count, belt-and-suspenders
+// against the loop below: the finiteness guards on lam/b/la/lb already stop a
+// non-finite mu from reaching the series at all, so a well-posed input never
+// approaches this many terms.
+constexpr int kTweedieSeriesMaxTerms = 100000;
+
 // Curvature floor on the censored / truncated gaussian arms. Both cores are
 // log-concave in eta, so a non-positive reading is roundoff at a flat tail; the
 // floor is what keeps the Newton Hessian PD there.
@@ -581,11 +587,18 @@ inline double log_lik_mu(double y, double mu, double phi, const std::string& fam
 // below the running peak. Mirrors .tweedie_loglik in R/family_loglik.R.
 inline double log_lik_tweedie(double y, double mu, double phi, double p) {
     mu = std::max(mu, kTweedieMuFloor);
+    // A NaN mu (a NaN eta upstream) survives std::max unchanged, and an
+    // overflowed mu (exp(eta) at an extreme proposal) makes lam/b below
+    // infinite -- either way the density at this point is unreachable, so
+    // decline before the series rather than let Inf - Inf turn every term
+    // NaN and the loop below run forever (gcol33/tulpa#789).
+    if (!std::isfinite(mu)) return R_NegInf;
     const double lam = std::pow(mu, 2.0 - p) / (phi * (2.0 - p));
     if (y < 0.0) return R_NegInf;
-    if (y <= 0.0) return -lam;
+    if (y <= 0.0) return std::isfinite(lam) ? -lam : R_NegInf;
     const double a  = (2.0 - p) / (p - 1.0);
     const double b  = std::pow(mu, 1.0 - p) / (phi * (p - 1.0));
+    if (!std::isfinite(lam) || !(b > 0.0) || !std::isfinite(b)) return R_NegInf;
     const double la = std::log(lam), lb = std::log(b), ly = std::log(y);
     auto logterm = [&](double n) {
         return n * la - tulpa::math::portable_lgamma(n + 1.0) + n * a * lb
@@ -595,15 +608,18 @@ inline double log_lik_tweedie(double y, double mu, double phi, double p) {
     const int n0 = std::max(1, (int)std::lround(jmax));
     std::vector<double> terms;
     double lmax = logterm((double)n0);
+    if (!std::isfinite(lmax)) return R_NegInf;
     terms.push_back(lmax);
-    for (int n = n0 + 1; ; ++n) {
+    for (int n = n0 + 1; n < n0 + kTweedieSeriesMaxTerms; ++n) {
         const double lt = logterm((double)n);
+        if (!std::isfinite(lt)) break;
         terms.push_back(lt);
         if (lt > lmax) lmax = lt;
         if (lt < lmax - kTweedieSeriesNats) break;
     }
-    for (int n = n0 - 1; n >= 1; --n) {
+    for (int n = n0 - 1; n >= 1 && n > n0 - kTweedieSeriesMaxTerms; --n) {
         const double lt = logterm((double)n);
+        if (!std::isfinite(lt)) break;
         terms.push_back(lt);
         if (lt > lmax) lmax = lt;
         if (lt < lmax - kTweedieSeriesNats) break;
