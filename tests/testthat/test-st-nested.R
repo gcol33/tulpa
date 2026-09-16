@@ -51,6 +51,32 @@ test_that("fit_st_nested supports ar1 temporal and the generic accessors", {
   expect_true("rho" %in% fit$theta_names)
 })
 
+test_that("fit_st_nested stamps family/n_trials/phi so the observation-level accessors work (#777)", {
+  skip_on_cran()
+  d <- sim_st(seed = 5L)
+  # Fully named design: the blank-column-name crash is a separate defect (#780).
+  colnames(d$X) <- c("(Intercept)", "x")
+  fit <- fit_st_nested(d$y, d$X, d$s, d$adj, d$tt, d$n_t,
+                       spatial_type = "icar", temporal_type = "rw1",
+                       family = "binomial")
+  expect_identical(fit$family, "binomial")
+  expect_identical(fit$n_trials, rep(1L, length(d$y)))
+  expect_identical(fit$phi, 1.0)
+
+  fv <- fitted(fit)
+  expect_length(fv, length(d$y))
+  expect_true(all(is.finite(fv)))
+  rv <- residuals(fit)
+  expect_length(rv, length(d$y))
+  expect_true(all(is.finite(rv)))
+
+  pp <- posterior_predict(fit, ndraws = 5)
+  expect_equal(dim(pp), c(5L, length(d$y)))
+  sim <- simulate(fit, nsim = 2)
+  expect_equal(dim(sim), c(length(d$y), 2L))
+  expect_error(test_dispersion(fit), NA)
+})
+
 test_that("fit_st_nested validates its indices", {
   d <- sim_st(N = 40L, n_s = 10L, n_t = 5L)
   expect_error(

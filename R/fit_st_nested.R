@@ -138,8 +138,11 @@
 #'
 #' @return A `tulpa_fit` (subclass `tulpa_nested_laplace`) carrying the
 #'   fixed-effect posterior (`draws` via the grid mixture), `spatial_effects`,
-#'   `temporal_effects`, `log_marginal`, `weights`, and `theta_grid` over
-#'   `(tau_spatial, tau_temporal, rho)`. Also carries `pareto_k_regime`
+#'   `temporal_effects`, `log_marginal`, `weights`, `theta_grid` over
+#'   `(tau_spatial, tau_temporal, rho)`, and `family` / `n_trials` / `phi` (the
+#'   R-level convention), which is what [fitted()], [residuals()],
+#'   [posterior_predict()] and [simulate()] read the response family from.
+#'   Also carries `pareto_k_regime`
 #'   (`"spread"` / `"collapsed_interior"` / `"collapsed_edge"`, see
 #'   [tulpa_nested_laplace_joint()]'s return docs for the definition) and
 #'   `outer_grid_placement` (`"fixed"` or `"auto_recentered"`) plus, on a
@@ -187,6 +190,8 @@ fit_st_nested <- function(y, X, spatial_idx, adjacency, temporal_idx, n_times,
   spatial_type  <- match.arg(spatial_type)
   temporal_type <- match.arg(temporal_type)
   hyperprior    <- .hp_choice(match.arg(hyperprior))
+  family <- .canonical_family(family)
+  .family_or_stop(family)
   X <- as.matrix(X)
   vd <- .validate_glm_design(y, X, n_trials, "fit_st_nested")
   N  <- vd$N
@@ -288,6 +293,13 @@ fit_st_nested <- function(y, X, spatial_idx, adjacency, temporal_idx, n_times,
   out$N <- N
   out$y <- y
   out$model_matrix <- X
+  # Observation-level accessors (fitted/residuals/posterior_predict/simulate,
+  # the simulation-based tests) read these off the fit the way tulpa()'s own
+  # fits carry them; `phi` is the R-level convention, not the kernel's
+  # (gcol33/tulpa#777).
+  out$family   <- family
+  out$n_trials <- n_trials
+  out$phi      <- phi
 
   .finalize_fit(out, backend = "nested_laplace",
                 n_fixed = p, fixed_names = colnames(X),
