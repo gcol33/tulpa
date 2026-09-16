@@ -127,6 +127,20 @@ test_that("the joint engine cannot be driven from a single-response formula", {
     tulpa(y ~ x + latent(blk), d, family = "poisson",
           mode = "nested_laplace_joint"))
   expect_match(conditionMessage(err), "multiple response arms")
+  # The redirect must name the REAL fitter (gcol33/tulpa#786): the function
+  # does not exist under the bare backend name.
+  expect_match(conditionMessage(err), "Call tulpa_nested_laplace_joint\\(\\) directly")
+  expect_false(exists("nested_laplace_joint", envir = asNamespace("tulpa")))
+})
+
+test_that("inference_mode_info() does not claim nested_laplace_joint dispatches via tulpa(mode =) (#786)", {
+  expect_false(isTRUE(BACKEND_REGISTRY$nested_laplace_joint$dispatchable))
+  out <- capture.output(inference_mode_info())
+  line <- grep("^\\s*\\[", out, value = TRUE)
+  line <- grep("nested_laplace_joint", line, value = TRUE)
+  expect_length(line, 1L)
+  expect_match(line, "^\\s*\\[direct\\]")
+  expect_match(line, "tulpa_nested_laplace_joint\\(\\)")
 })
 
 test_that("more than one random-intercept term alongside a block each become their own iid block", {

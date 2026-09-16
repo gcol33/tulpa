@@ -287,6 +287,13 @@ BACKEND_REGISTRY <- list(
     emits = "iid",
     tier = "structured", input = "nested", fitter = "tulpa_nested_laplace_joint",
     families = NULL, cabi = "cpp_nested_laplace_joint_multi", hyperprior = TRUE,
+    # Has an R-level fitter (reachable, callable directly) but is NOT one
+    # `tulpa(mode =)` can dispatch to: it needs multiple response arms, which
+    # a single tulpa() formula cannot express (gcol33/tulpa#786). Read by the
+    # `input == "nested"` dispatch in tulpa() and by inference_mode_info()'s
+    # printed backend list, so the two cannot drift apart the way the
+    # hardcoded `backend != "nested_laplace"` check and the `[R]` tag did.
+    dispatchable = FALSE,
     note = paste("Joint multi-arm nested Laplace; driven by model packages, not the",
                  "single-response tulpa() formula (cannot express multiple arms)")
   ),
@@ -1266,13 +1273,25 @@ inference_mode_info <- function() {
   cat("  tulpa(..., mode = 'structured') # Tier 2\n")
   cat("  tulpa(..., mode = 'optimized')  # Tier 3 (explicit opt-in)\n\n")
 
-  cat("Backends ([R] = callable from R, [C-ABI] = model-package kernel only):\n")
+  cat(paste0(
+    "Backends ([R] = tulpa(mode =) dispatch, [direct] = has an R fitter but ",
+    "tulpa(mode =) refuses it -- call the fitter itself, [C-ABI] = ",
+    "model-package kernel only):\n"))
   for (tk in c("exact", "structured", "optimized")) {
     for (b in .tier_backends(tk)) {
       entry <- BACKEND_REGISTRY[[b]]
-      tag <- if (is.null(entry$fitter)) "[C-ABI]" else "[R]    "
-      cat(sprintf("  %s mode = '%-11s # Tier %d (%s)\n",
-                  tag, paste0(b, "'"), TIER_META[[tk]]$tier, TIER_META[[tk]]$name))
+      if (is.null(entry$fitter)) {
+        tag <- "[C-ABI]"
+        usage <- sprintf("mode = '%s'", b)
+      } else if (isTRUE(entry$dispatchable %||% TRUE)) {
+        tag <- "[R]    "
+        usage <- sprintf("mode = '%s'", b)
+      } else {
+        tag <- "[direct]"
+        usage <- sprintf("%s()", entry$fitter)
+      }
+      cat(sprintf("  %s %-26s # Tier %d (%s)\n",
+                  tag, usage, TIER_META[[tk]]$tier, TIER_META[[tk]]$name))
     }
   }
 
