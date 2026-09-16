@@ -224,3 +224,26 @@ posterior_predict.tulpa_categorical <- function(object, newdata = NULL,
   attr(out, "ordered") <- inherits(object, "tulpa_ordinal")
   out
 }
+
+#' @rdname categorical_accessors
+#' @export
+pp_check.tulpa_categorical <- function(object, ndraws = 50, ...) {
+  if (!requireNamespace("bayesplot", quietly = TRUE)) {
+    stop("Package 'bayesplot' is required for pp_check. Install with:\n",
+         "  install.packages('bayesplot')", call. = FALSE)
+  }
+  y <- object$y
+  if (is.null(y)) {
+    stop("pp_check() needs the observed response; this fit stores no $y.",
+         call. = FALSE)
+  }
+  yrep <- posterior_predict(object, ndraws = max(ndraws, 100L))
+  lev  <- .categorical_levels(object)
+  y_int <- as.integer(factor(y, levels = lev))
+  if (nrow(yrep) > ndraws) {
+    yrep <- yrep[sample.int(nrow(yrep), ndraws), , drop = FALSE]
+  }
+  bayesplot::ppc_bars(y_int, yrep, ...) +
+    ggplot2::ggtitle("Posterior predictive check") +
+    ggplot2::xlab(paste(lev, collapse = " / "))
+}

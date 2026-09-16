@@ -2235,17 +2235,22 @@ prior_from_spec <- function(spec, data) {
   )
 }
 
-# Resolve the grid-cell checkpoint spec to a normalized
-# `list(path, resume)`. `control$checkpoint = list(path = , resume = TRUE)`
-# enables it; `resume = FALSE` starts over (the front door removes any prior
-# file before the first kernel call). Like `.nl_progress_args`, an absent
-# control key falls back to the scoped `tulpa.nl_checkpoint` option so the
-# checkpoint reaches grids run through fixed-control internal paths.
-.nl_checkpoint_args <- function(control) {
+# Resolve a checkpoint spec to a normalized `list(path, resume)`.
+# `control$checkpoint = list(path = , resume = TRUE)` enables it; `resume =
+# FALSE` starts over (the caller removes any prior file before the first
+# kernel call). Like `.nl_progress_args`, an absent control key falls back to
+# the scoped `tulpa.nl_checkpoint` option (when `use_option`, the default) so
+# the checkpoint reaches grids run through fixed-control internal paths;
+# `tulpa_sample_glmm()`'s per-chain checkpoint is a distinct namespace from
+# the nested-Laplace grid-cell one this option serves, so it reads
+# `use_option = FALSE` and ignores it.
+.nl_checkpoint_args <- function(control, use_option = TRUE) {
   cp <- control$checkpoint
   if (is.null(cp)) {
-    opt <- getOption("tulpa.nl_checkpoint", NULL)
-    if (is.list(opt)) return(opt)
+    if (use_option) {
+      opt <- getOption("tulpa.nl_checkpoint", NULL)
+      if (is.list(opt)) return(opt)
+    }
     return(list(path = "", resume = TRUE))
   }
   if (!is.list(cp) || is.null(cp$path) || !is.character(cp$path) ||

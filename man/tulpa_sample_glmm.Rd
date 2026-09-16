@@ -81,7 +81,16 @@ any other backend errors rather than sampling from the default start.}
 \code{sigma_beta}, \code{n_chains}, \code{max_treedepth}, \code{adapt_delta}, \code{epsilon}, \code{L},
 \code{batch_size}, \code{alpha}, \code{n_particles}, \code{n_mcmc_steps}, \code{ess_threshold},
 \code{vi_variant}, \code{vi_mc_samples}, \code{vi_max_iter}, \code{vi_max_grad_norm},
-\code{n_draws}, \code{verbose}, \code{mass_matrix}).
+\code{n_draws}, \code{verbose}, \code{mass_matrix}, \code{checkpoint}).
+
+\code{checkpoint = list(path =, resume =)} is per-chain checkpoint/resume on
+the NUTS/HMC kernel only (a chain is the checkpoint unit, deterministic
+in seed + chain id + data + settings, so a resumed chain is bit-for-bit
+identical to the uninterrupted one): every chain appends its finished
+result to \code{path}, and \code{resume = TRUE} (the default) loads any finished
+chains from a prior run and fits only the rest; \code{resume = FALSE} starts
+over, removing any stale file first. Other backends refuse this key
+rather than silently drop it.
 
 \code{mass_matrix} selects the NUTS/HMC metric: \code{"diag"} (the default),
 \code{"dense"}, \code{"block_diag"}, or \code{"auto"}. Under \code{"auto"} the kernel reads the

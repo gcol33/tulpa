@@ -6,6 +6,7 @@
 \alias{residuals.tulpa_categorical}
 \alias{predict.tulpa_categorical}
 \alias{posterior_predict.tulpa_categorical}
+\alias{pp_check.tulpa_categorical}
 \title{Observation-level accessors for categorical fits}
 \usage{
 \method{fitted}{tulpa_categorical}(object, ...)
@@ -22,6 +23,8 @@
 )
 
 \method{posterior_predict}{tulpa_categorical}(object, newdata = NULL, ndraws = NULL, seed = NULL, ...)
+
+\method{pp_check}{tulpa_categorical}(object, ndraws = 50, ...)
 }
 \arguments{
 \item{object}{A \code{tulpa_multinomial} or \code{tulpa_ordinal} fit.}

@@ -2513,8 +2513,13 @@ R surface: `control$checkpoint = list(path =, resume =)` on the nested-Laplace
 fitters (`.nl_checkpoint_args()` parses it; the front door fresh-deletes on
 `resume = FALSE` so within-fit calls append, and the k-hat diagnostic
 re-evaluations run with it stripped so they do not pollute the file); a
-`checkpoint = ` arg on `fit_spde()` / `tulpa_re_cov_nested()`; a
-`checkpoint_path = ` arg on the NUTS producer. Tests:
+`checkpoint = ` arg on `fit_spde()` / `tulpa_re_cov_nested()`; the same
+`control$checkpoint = list(path =, resume =)` shape on `tulpa(mode = "hmc")`
+/ `tulpa_sample_glmm()`, the NUTS producer (`.nl_checkpoint_args(control,
+use_option = FALSE)` -- a distinct namespace from the nested-Laplace
+grid-cell option, since a sampler fit and a nested-Laplace fit are never the
+same call; refused on every non-NUTS sampler backend rather than silently
+dropped, gcol33/tulpa#808). Tests:
 `test-nested-laplace-joint-checkpoint.R` (joint) and
 `test-checkpoint-universal.R` (single-block, RE-cov, per-chain NUTS:
 equivalence, resume-loads-nothing, torn-tail re-solve, fingerprint mismatch).

@@ -58,7 +58,16 @@
 #'   `sigma_beta`, `n_chains`, `max_treedepth`, `adapt_delta`, `epsilon`, `L`,
 #'   `batch_size`, `alpha`, `n_particles`, `n_mcmc_steps`, `ess_threshold`,
 #'   `vi_variant`, `vi_mc_samples`, `vi_max_iter`, `vi_max_grad_norm`,
-#'   `n_draws`, `verbose`, `mass_matrix`).
+#'   `n_draws`, `verbose`, `mass_matrix`, `checkpoint`).
+#'
+#'   `checkpoint = list(path =, resume =)` is per-chain checkpoint/resume on
+#'   the NUTS/HMC kernel only (a chain is the checkpoint unit, deterministic
+#'   in seed + chain id + data + settings, so a resumed chain is bit-for-bit
+#'   identical to the uninterrupted one): every chain appends its finished
+#'   result to `path`, and `resume = TRUE` (the default) loads any finished
+#'   chains from a prior run and fits only the rest; `resume = FALSE` starts
+#'   over, removing any stale file first. Other backends refuse this key
+#'   rather than silently drop it.
 #'
 #'   `mass_matrix` selects the NUTS/HMC metric: `"diag"` (the default),
 #'   `"dense"`, `"block_diag"`, or `"auto"`. Under `"auto"` the kernel reads the
@@ -145,6 +154,19 @@ tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
          backend, "' returns a single set of draws. Drop it, or use ",
          "backend = 'hmc'.", call. = FALSE)
   }
+  # Per-chain checkpoint/resume: NUTS/HMC only (a chain is the checkpoint unit),
+  # same shape and helper the nested-Laplace fitters use (gcol33/tulpa#808). A
+  # fresh (resume = FALSE) run removes any stale file once here, before the
+  # C++ kernel opens it.
+  if (!is.null(control$checkpoint) && !backend %in% c("nuts", "hmc")) {
+    stop("`control$checkpoint` is only read by the NUTS/HMC kernel; backend '",
+         backend, "' has no per-chain state to checkpoint. Drop it, or use ",
+         "backend = 'hmc'.", call. = FALSE)
+  }
+  .ckpt <- .nl_checkpoint_args(control, use_option = FALSE)
+  if (nzchar(.ckpt$path) && !isTRUE(.ckpt$resume) && file.exists(.ckpt$path)) {
+    file.remove(.ckpt$path)
+  }
 
   n_iter  <- control$n_iter %||% 2000L
   warmup  <- control$warmup %||% (n_iter %/% 2L)
@@ -213,7 +235,8 @@ tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
     # -1 keeps the layout-driven rule (on whenever an RE term is present).
     ess_joint_sigma_re = if (is.null(control$ess_joint_sigma_re)) -1L
                          else as.integer(isTRUE(control$ess_joint_sigma_re)),
-    ess_joint_proposal_sd = as.numeric(control$ess_joint_proposal_sd %||% 0.1)
+    ess_joint_proposal_sd = as.numeric(control$ess_joint_proposal_sd %||% 0.1),
+    checkpoint_path = .ckpt$path
   )
 
   # The C++ kernel names every column of the full parameter vector (fixed effects

@@ -184,7 +184,11 @@ tulpa_check_control <- function(control, allowed, where) {
                     # prefix.
                     "ess_adapt_during_warmup",
                     "ess_adapt_interval", "ess_joint_sigma_re",
-                    "ess_joint_proposal_sd"),
+                    "ess_joint_proposal_sd",
+                    # Per-chain checkpoint/resume (NUTS/HMC only; gcol33/tulpa#808).
+                    # Same `list(path =, resume =)` shape the nested-Laplace
+                    # fitters take, parsed by the same `.nl_checkpoint_args()`.
+                    "checkpoint"),
     # The three R log-posterior samplers (gcol33/tulpa#770): each takes its
     # tuning knobs as plain formals, not a `control` list, so tulpa() is the
     # only place that can validate what it forwards. `mala()` / `imh_laplace()`

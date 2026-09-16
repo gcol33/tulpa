@@ -182,6 +182,63 @@ test_that("per-chain NUTS checkpoint reproduces draws and resumes after a crash"
     "fingerprint")
 })
 
+# --- per-chain NUTS, reached from the R door (gcol33/tulpa#808) -------------
+#
+# The block above exercises the checkpoint mechanism through the unexported
+# Gaussian test entry cpp_tulpa_fit_generic_chains(); this block exercises the
+# same mechanism through the user-reachable route -- tulpa(mode = "hmc") /
+# tulpa_sample_glmm() -- which previously accepted control$checkpoint and
+# dropped it silently.
+
+test_that("tulpa(mode = 'hmc') checkpoint reproduces draws and resumes", {
+  set.seed(8L)
+  n <- 100L
+  d <- data.frame(x = rnorm(n))
+  d$y <- rpois(n, exp(0.3 + 0.5 * d$x))
+  path <- tempfile(fileext = ".ckpt"); on.exit(unlink(path), add = TRUE)
+
+  run <- function(ck = NULL) {
+    ctrl <- list(n_iter = 200L, warmup = 100L, n_chains = 2L, seed = 1L)
+    if (!is.null(ck)) ctrl$checkpoint <- list(path = ck, resume = TRUE)
+    tulpa(y ~ x, data = d, family = "poisson", mode = "hmc", control = ctrl)
+  }
+
+  f_plain <- run()
+  f_ck    <- run(path)
+  expect_true(file.exists(path))
+  expect_equal(f_ck$draws, f_plain$draws, tolerance = 1e-10)
+
+  # Resume: the file already holds every finished chain, so a second call
+  # against the same path reproduces the draws without appending.
+  sz <- file.size(path)
+  f_re <- run(path)
+  expect_equal(file.size(path), sz)
+  expect_equal(f_re$draws, f_plain$draws, tolerance = 1e-10)
+
+  # resume = FALSE removes the stale file before the kernel opens it, so a
+  # fresh run against different data does not inherit the old chains.
+  d2 <- data.frame(x = rnorm(n))
+  d2$y <- rpois(n, exp(-0.2 + 0.1 * d2$x))
+  f_fresh <- tulpa(y ~ x, data = d2, family = "poisson", mode = "hmc",
+                   control = list(n_iter = 200L, warmup = 100L, n_chains = 2L,
+                                  seed = 1L,
+                                  checkpoint = list(path = path, resume = FALSE)))
+  expect_false(isTRUE(all.equal(unname(f_fresh$draws), unname(f_plain$draws))))
+})
+
+test_that("control$checkpoint is refused on a non-NUTS sampler backend", {
+  set.seed(9L)
+  n <- 60L
+  d <- data.frame(x = rnorm(n))
+  d$y <- rpois(n, exp(0.2 + 0.3 * d$x))
+  path <- tempfile(fileext = ".ckpt"); on.exit(unlink(path), add = TRUE)
+  expect_error(
+    tulpa(y ~ x, data = d, family = "poisson", mode = "vi",
+         control = list(checkpoint = list(path = path))),
+    "only read by the NUTS/HMC kernel")
+  expect_false(file.exists(path))
+})
+
 # --- gcol33/tulpa#442 -------------------------------------------------------
 #
 # A resumed cell has to be indistinguishable from a freshly solved one in EVERY

@@ -172,3 +172,32 @@ test_that("simulate() carries the stats::simulate seed attribute", {
   assign(".Random.seed", attr(s0, "seed"), envir = globalenv())
   expect_identical(simulate(fit, nsim = 2), s0)
 })
+
+test_that("bayes_R2() and test_dispersion() refuse a categorical fit with the same message", {
+  skip_if_fast()
+  d <- cat_data()
+  fit_m <- tulpa(ycat ~ x, d, family = "multinomial")
+  fit_o <- tulpa(yord ~ x, d, family = "ordinal")
+  for (fit in list(fit_m, fit_o)) {
+    err_r2 <- tryCatch(bayes_R2(fit), error = conditionMessage)
+    err_td <- tryCatch(test_dispersion(fit), error = conditionMessage)
+    expect_match(err_r2, "categorical response")
+    expect_match(err_td, "categorical response")
+  }
+})
+
+test_that("pp_check() on a categorical fit plots class-replicate bars instead of erroring", {
+  skip_if_fast()
+  skip_if_not_installed("bayesplot")
+  d <- cat_data()
+  fit_m <- tulpa(ycat ~ x, d, family = "multinomial")
+  fit_o <- tulpa(yord ~ x, d, family = "ordinal")
+  for (fit in list(fit_m, fit_o)) {
+    p <- pp_check(fit, ndraws = 20)
+    expect_s3_class(p, "ggplot")
+  }
+  expect_identical(
+    utils::getS3method("pp_check", "tulpa_categorical", envir = asNamespace("tulpa")),
+    pp_check.tulpa_categorical
+  )
+})

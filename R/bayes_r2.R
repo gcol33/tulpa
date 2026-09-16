@@ -53,6 +53,7 @@ bayes_R2.tulpa_fit <- function(object, ndraws = NULL, summary = TRUE,
     stop("bayes_R2() supports fits with a builtin character family.",
          call. = FALSE)
   }
+  .require_scalar_response(object, "bayes_R2()")
   .seed_scoped(seed)
 
   eta <- .tulpa_eta_draws(object, ndraws = ndraws)
