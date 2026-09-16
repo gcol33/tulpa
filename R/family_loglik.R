@@ -633,7 +633,13 @@
 
 
 #' Supported R-level family names.
-#' @keywords internal
+#'
+#' The response families `family = ` accepts on the engine's front doors, in
+#' their canonical (default-link) spelling. A family's `*_<link>` variants
+#' (e.g. `"gamma_inverse"`) are listed separately by [linked_family_names()].
+#'
+#' @return A character vector of family names.
+#' @export
 family_names <- function() names(.FAMILY_OPS)
 
 

@@ -789,7 +789,7 @@ select_inference_mode <- function(mode,
 
   # Explicit tier mode: select best backend within that tier
   backend <- select_backend_for_mode(mode, family, n_obs, has_spatial, has_temporal,
-                                     has_latent, spatial_type)
+                                     has_latent, spatial_type, has_re = has_re, feat = feat)
   tier_info <- get_backend_tier(backend)
 
   return(list(
@@ -1106,7 +1106,8 @@ auto_select_mode <- function(family, n_obs, has_spatial, has_temporal, has_laten
 #' Select best backend within a mode
 #' @keywords internal
 select_backend_for_mode <- function(mode, family, n_obs, has_spatial, has_temporal,
-                                    has_latent = FALSE, spatial_type = NULL) {
+                                    has_latent = FALSE, spatial_type = NULL,
+                                    has_re = FALSE, feat = list()) {
 
   if (mode == "exact") {
     # HMC is the default for Exact - most general
@@ -1128,6 +1129,18 @@ select_backend_for_mode <- function(mode, family, n_obs, has_spatial, has_tempor
     if (has_latent) return("nested_laplace")
     if (has_spatial && !is.null(spatial_type) && spatial_type %in% .NL_FRONTDOOR_NESTED) {
       return("nested_laplace")
+    }
+    # A random-effect term has no dataset-implied scalar sigma_re to condition
+    # on within the Structured tier either -- auto's own RE arm already
+    # integrates it via re_cov_nested / re_cov_gibbs (see auto_select_mode()),
+    # and the Structured tier carries the deterministic (nested-Laplace) half
+    # of that pair. Conditioning at sigma_re = 1 is the explicit
+    # mode = "laplace" (gcol33/tulpa#787). Guarded on !has_spatial: a spatial
+    # field reaching here is one of the non-nested types (multiscale, plain
+    # 'car', ...) that the Structured tier deliberately keeps on conditional
+    # Laplace -- re_cov_nested carries no spatial field at all.
+    if (!has_spatial && has_re && .auto_backend_ok("re_cov_nested", family, feat)) {
+      return("re_cov_nested")
     }
     return("laplace")
   }
