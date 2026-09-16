@@ -310,6 +310,28 @@ fit_spde <- function(y, X, spatial,
     res
   }
 
+  # Analytic (log range, log sigma) gradient of the log-marginal, for the CCD
+  # outer mode-find's L-BFGS-B (fit_spde_nested_ccd() -> .nl_lbfgsb_mode_find()).
+  # cpp_spde_laplace_gradient() implements exactly the alpha = 2 (nu = 1)
+  # operator with no offset and no random-effect term (gcol33/tulpa#809);
+  # outside that scope the mode-find keeps its central-difference gradient.
+  spde_log_marginal_grad <- if (!is_frac && isTRUE(all.equal(sp$nu, 1)) &&
+                                is.null(offset) && !has_re) {
+    function(log_range, log_sigma) {
+      g <- cpp_spde_laplace_gradient(
+        y = y, n_trials = n_trials, X = X,
+        A_x = sp$A_x, A_i = sp$A_i, A_p = sp$A_p,
+        n_obs = n_obs, n_mesh = sp$n_mesh,
+        C0_diag = sp$C0_diag,
+        G1_x = sp$G1_x, G1_i = sp$G1_i, G1_p = sp$G1_p,
+        log_range = log_range, log_sigma = log_sigma,
+        nu = sp$nu, family = family, phi = .phi_to_kernel(family, phi),
+        max_iter = max_iter, tol = tol, n_threads = n_threads
+      )
+      c(g$grad_log_range, g$grad_log_sigma)
+    }
+  } else NULL
+
   fit <- if (nested_laplace && (is.null(range) || is.null(sigma))) {
     if (method == "grid") {
       fit_spde_nested_grid(spde_log_marginal, sp, n_grid, spatial,
@@ -334,7 +356,8 @@ fit_spde <- function(y, X, spatial,
                           diagnose_k = diagnose_k, k_samples = k_samples,
                           k_tail_points = k_tail_pts,
                           mode_find = mode_find,
-                          hyperprior = hyperprior)
+                          hyperprior = hyperprior,
+                          spde_log_marginal_grad = spde_log_marginal_grad)
     }
   } else {
     # --- Single-point Laplace at fixed hyperparameters ---

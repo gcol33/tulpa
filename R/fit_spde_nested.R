@@ -179,7 +179,8 @@ fit_spde_nested_ccd <- function(spde_log_marginal,
                                 k_samples = .nl_diag("k_samples"),
                                 k_tail_points = NULL,
                                 mode_find = .nl_mode_find_tuning("spde"),
-                                hyperprior = "proper") {
+                                hyperprior = "proper",
+                                spde_log_marginal_grad = NULL) {
   range_mode <- sp$prior_range[1]
   sigma_mode <- sp$prior_sigma[1]
 
@@ -200,10 +201,44 @@ fit_spde_nested_ccd <- function(spde_log_marginal,
     if (!is.finite(lp)) return(1e10)
     -(lm + lp)
   }
+  # `spde_log_marginal_grad(log_range, log_sigma)` is the ANALYTIC (implicit-
+  # differentiation) gradient of the log-marginal term alone (gcol33/tulpa#809);
+  # the hyperprior term is a closed-form density with no compiled Newton solve
+  # behind it, so a plain central difference of it costs nothing next to the
+  # inner Laplace solve the marginal gradient replaces. Any failure (a Q that is
+  # not PD at this theta, an unconverged inner solve) falls back to a central
+  # difference of `obj` itself at that point, so `gr` never disagrees with what
+  # `optim()`'s own numerical gradient would have produced there.
+  gr <- if (is.null(spde_log_marginal_grad)) {
+    NULL
+  } else {
+    function(theta) {
+      out <- tryCatch({
+        dlm <- spde_log_marginal_grad(theta[1], theta[2])
+        if (!all(is.finite(dlm))) stop("non-finite marginal gradient")
+        r <- exp(theta[1]); s <- exp(theta[2])
+        eps <- 1e-6
+        lp0 <- .spde_log_hyperprior(r, s, sp, hyperprior)
+        lp_r <- .spde_log_hyperprior(exp(theta[1] + eps), s, sp, hyperprior)
+        lp_s <- .spde_log_hyperprior(r, exp(theta[2] + eps), sp, hyperprior)
+        if (!all(is.finite(c(lp0, lp_r, lp_s)))) stop("non-finite hyperprior")
+        dlp <- c((lp_r - lp0) / eps, (lp_s - lp0) / eps)
+        -(dlm + dlp)
+      }, error = function(e) NULL)
+      if (!is.null(out)) return(out)
+      fd_step <- 1e-4
+      vapply(seq_along(theta), function(j) {
+        h <- fd_step * pmax(abs(theta[j]), 1)
+        tp <- theta; tp[j] <- tp[j] + h
+        tm <- theta; tm[j] <- tm[j] - h
+        (obj(tp) - obj(tm)) / (2 * h)
+      }, numeric(1))
+    }
+  }
   init  <- c(log(range_mode), log(sigma_mode))
   lower <- init - log(100)
   upper <- init + log(100)
-  op <- .nl_lbfgsb_mode_find(par = init, fn = obj,
+  op <- .nl_lbfgsb_mode_find(par = init, fn = obj, gr = gr,
                              lower = lower, upper = upper,
                              tuning = mode_find)
 

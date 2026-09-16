@@ -52,14 +52,17 @@
   tune
 }
 
-# Box-constrained L-BFGS-B with a numerical gradient. Returns the `optim()`
-# result, or NULL if the call errored -- callers decide what an absent mode
-# means for them.
+# Box-constrained L-BFGS-B, with a numerical gradient by default. `gr`, when
+# supplied, is an analytic gradient of `fn` (see fit_spde.R's
+# spde_log_marginal_grad for the one caller that has one); `optim()`'s own
+# central-difference step (tuned by `ndeps`) is what runs otherwise, exactly as
+# before. Returns the `optim()` result, or NULL if the call errored -- callers
+# decide what an absent mode means for them.
 #' @keywords internal
 .nl_lbfgsb_mode_find <- function(par, fn, lower, upper, tuning,
-                                 hessian = FALSE) {
+                                 hessian = FALSE, gr = NULL) {
   tryCatch(
-    stats::optim(par = par, fn = fn,
+    stats::optim(par = par, fn = fn, gr = gr,
                  method = "L-BFGS-B", lower = lower, upper = upper,
                  hessian = hessian,
                  control = list(factr = tuning$factr,
