@@ -210,11 +210,17 @@ temporal_ar <- function(time_idx, p = 2L, n_times = NULL,
   init <- c(0, atanh(psi_init))
   names(init) <- c("log_tau", paste0("atanh_psi", seq_len(p)))
 
-  tgmrf(
+  blk <- tgmrf(
     Q       = Q_fun,
     prior   = prior_fun,
     init    = init,
     obs_idx = time_idx,
     name    = name %||% paste0("ar", p)
   )
+  # Tagged so temporal() (R/temporal_rtr_posteriors.R) can find this block among
+  # `object$blocks` and read it as a temporal field -- an AR(p) block built here
+  # is always temporal (one time index, no spatial graph), unlike a bare tgmrf().
+  class(blk) <- c("tulpa_temporal_latent_block", class(blk))
+  blk$n_times <- n_times
+  blk
 }

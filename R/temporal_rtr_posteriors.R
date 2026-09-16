@@ -114,19 +114,86 @@ temporal <- function(object, component = "all", summary = FALSE,
 }
 
 
+# A nested-Laplace fit carries no phi_temporal draws: the field lives in the
+# tail of each outer-grid cell's latent mode (`object$modes`, one row per
+# cell), weighted by `object$weights`. `.nl_attach_grid_hessians()` retains a
+# per-cell precision for the FIXED block only, so there is no per-cell field
+# covariance to draw from -- the same limit `ranef()`'s "mode" source has on a
+# nested fit. Resampling the cell modes by grid weight (rather than reporting
+# one weighted-average point) is what lets print/summary/plot reuse the exact
+# machinery a sampler's real draws go through, at the cost of carrying only
+# the between-cell spread and none of the within-cell curvature.
+.NL_TEMPORAL_DRAW_N <- 2000L
+
+.nl_field_mixture_draws <- function(object, offset, width) {
+  M <- object$modes
+  w <- object$weights
+  if (!is.matrix(M) || is.null(w) || length(w) != nrow(M)) return(NULL)
+  if (!is.finite(width) || width <= 0L || offset + width > ncol(M)) return(NULL)
+  field <- M[, (offset + 1L):(offset + width), drop = FALSE]
+  w <- w / sum(w)
+  keep <- is.finite(w) & w > 0
+  if (!any(keep)) return(NULL)
+  field <- field[keep, , drop = FALSE]
+  idx <- sample.int(nrow(field), size = .NL_TEMPORAL_DRAW_N, replace = TRUE,
+                     prob = w[keep])
+  field[idx, , drop = FALSE]
+}
+
+# Column offset + width of the `temporal =` field in a nested fit's `$modes`:
+# the fixed block is first (`.nl_attach_grid_hessians()`'s own convention), and
+# a fit reaching `temporal =` alone carries no other latent block, so the
+# field is exactly the tail of that width.
+.nl_temporal_field_loc <- function(object, info) {
+  list(offset = object$n_fixed %||% 0L,
+       width = (info$n_times %||% 0L) * max(info$n_groups %||% 1L, 1L))
+}
+
+# `latent(temporal_ar2(...))` / `latent(temporal_ar(...))` build a `tgmrf`
+# block tagged `tulpa_temporal_latent_block` (R/temporal_ar2.R) rather than
+# filling `object$temporal`, so this is the second place a nested fit's field
+# is found: the first such block in `object$blocks`, offset by the fixed block
+# plus every earlier block's own width (blocks are laid out left to right after
+# the fixed effects). Returns NULL when the fit carries no such block.
+.nl_temporal_latent_block <- function(object) {
+  blocks <- object$blocks
+  if (!is.list(blocks) || !length(blocks)) return(NULL)
+  is_temporal <- vapply(blocks, inherits, logical(1),
+                         what = "tulpa_temporal_latent_block")
+  if (!any(is_temporal)) return(NULL)
+  k <- which(is_temporal)[1L]
+  earlier <- if (k > 1L) {
+    sum(vapply(blocks[seq_len(k - 1L)], function(b) b$n_latent %||% 0L, numeric(1)))
+  } else 0
+  blk <- blocks[[k]]
+  list(
+    info = structure(
+      list(n_times = blk$n_times %||% blk$n_latent, n_groups = 1L,
+           type = blk$name %||% "ar", time_levels = NULL),
+      class = "tulpa_temporal"
+    ),
+    offset = as.integer((object$n_fixed %||% 0L) + earlier),
+    width  = as.integer(blk$n_latent %||% 0L)
+  )
+}
+
+
 #' @rdname temporal
 #' @export
 temporal.tulpa_fit <- function(object, component = "all", summary = FALSE,
                                 probs = c(0.025, 0.5, 0.975), ...) {
 
-  # Check if model has temporal effects
+  latent_blk <- NULL
   if (is.null(object$temporal)) {
-    stop("Model was not fitted with temporal effects.\n",
-         "Pass `temporal = temporal_rw1() / temporal_rw2() / temporal_ar1() / ",
-         "temporal_multiscale(...)` to tulpa().", call. = FALSE)
+    latent_blk <- .nl_temporal_latent_block(object)
+    if (is.null(latent_blk)) {
+      stop("Model was not fitted with temporal effects.\n",
+           "Pass `temporal = temporal_rw1() / temporal_rw2() / temporal_ar1() / ",
+           "temporal_multiscale(...)` to tulpa().", call. = FALSE)
+    }
   }
 
-  temp_info <- object$temporal
+  temp_info <- if (!is.null(latent_blk)) latent_blk$info else object$temporal
 
   # A TVC spec rides the same `temporal =` slot, and carries varying
   # coefficients rather than a temporal field, so it has no phi_temporal to
@@ -141,6 +208,14 @@ temporal.tulpa_fit <- function(object, component = "all", summary = FALSE,
   temp_draws <- object$.internal$temporal_draws
   if (is.null(temp_draws)) {
     temp_draws <- .temporal_draws_from_fit(object, temp_info)
+  }
+
+  # No phi_temporal draws: on a nested-Laplace fit the field is read off the
+  # grid modes instead, either as the sole latent block behind `temporal =`
+  # or as the tagged `latent(temporal_ar*())` block located above.
+  if (is.null(temp_draws) && !inherits(temp_info, "tulpa_temporal_multiscale")) {
+    loc <- if (!is.null(latent_blk)) latent_blk else .nl_temporal_field_loc(object, temp_info)
+    temp_draws <- .nl_field_mixture_draws(object, loc$offset, loc$width)
   }
 
   if (is.null(temp_draws)) {
