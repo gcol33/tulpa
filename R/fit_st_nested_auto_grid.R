@@ -186,6 +186,13 @@
     if (isFALSE(control$auto_recenter)) {
         return(.nl_decline_recenter(out, "auto_recenter_disabled"))
     }
+    # bym2's spatial axes are `sigma_spatial` / `rho_spatial` (gcol33/tulpa#776),
+    # not `tau_spatial` -- this rescue has no forward/inverse transform or grid
+    # layout for that pair yet, so it declines explicitly rather than silently
+    # reporting "no usable curvature" for an axis set it never looked at.
+    if (identical(spatial_type, "bym2")) {
+        return(.nl_decline_recenter(out, "bym2_axes_not_recenterable"))
+    }
     axes   <- .st_grid_axes(temporal_type)
     pinned <- intersect(.st_pinned_axes(control), axes)
     free   <- setdiff(axes, pinned)

@@ -77,6 +77,52 @@ test_that("fit_st_nested stamps family/n_trials/phi so the observation-level acc
   expect_error(test_dispersion(fit), NA)
 })
 
+# bym2's kernel (cpp_nested_laplace_st_bym2) integrates a (sigma_spatial,
+# rho_spatial) grid + a `scale_factor` computed from the adjacency, not the
+# `tau_spatial_grid` every other spatial type shares -- fit_st_nested() used
+# to build the icar-shaped argument list for every kernel, so this cell was
+# unreachable ("unused argument (tau_spatial_grid = ...)") on all three
+# temporal types (gcol33/tulpa#776).
+sim_st_bym2 <- function(seed = 11L, n_s = 20L, n_t = 10L, N = 600L, rho = 0.7) {
+  set.seed(seed)
+  adj <- matrix(0, n_s, n_s)
+  for (i in 1:(n_s - 1)) adj[i, i + 1] <- adj[i + 1, i] <- 1
+  sf <- compute_bym2_scale(adj)
+  phi   <- as.numeric(scale(cumsum(rnorm(n_s))))
+  theta <- rnorm(n_s)
+  us <- 0.9 * sf * (sqrt(rho) * phi + sqrt(1 - rho) * theta)
+  vt <- as.numeric(scale(cumsum(rnorm(n_t)))) * 0.8
+  s <- sample(n_s, N, TRUE); tt <- sample(n_t, N, TRUE); x <- rnorm(N)
+  y <- rbinom(N, 1, plogis(0.2 + 0.6 * x + us[s] + vt[tt]))
+  list(y = y, X = cbind(1, x), s = s, tt = tt, adj = adj, n_t = n_t,
+       us = us, vt = vt)
+}
+
+test_that("fit_st_nested reaches bym2 x every temporal type (gcol33/tulpa#776)", {
+  skip_on_cran()
+  for (tty in c("ar1", "rw1", "rw2")) {
+    d <- sim_st_bym2(seed = switch(tty, ar1 = 11L, rw1 = 12L, rw2 = 13L))
+    fit <- fit_st_nested(d$y, d$X, d$s, d$adj, d$tt, d$n_t,
+                         spatial_type = "bym2", temporal_type = tty,
+                         family = "binomial")
+    expect_s3_class(fit, "tulpa_nested_laplace")
+    expect_identical(fit$spatial_type, "bym2")
+    expect_lt(abs(coef(fit)[2] - 0.6), 0.25)
+    expect_length(fit$spatial_effects, 20L)
+    expect_length(fit$temporal_effects, d$n_t)
+    cs <- cor(fit$spatial_effects - mean(fit$spatial_effects),
+              d$us - mean(d$us))
+    ct <- cor(fit$temporal_effects - mean(fit$temporal_effects),
+              d$vt - mean(d$vt))
+    expect_gt(cs, 0.6)
+    expect_gt(ct, 0.6)
+    expect_equal(sum(fit$weights), 1, tolerance = 1e-8)
+    expect_true(all(is.finite(fit$log_marginal)))
+    expect_true(all(c("sigma_spatial", "rho_spatial") %in% fit$theta_names))
+    if (identical(tty, "ar1")) expect_true("rho" %in% fit$theta_names)
+  }
+})
+
 test_that("fit_st_nested validates its indices", {
   d <- sim_st(N = 40L, n_s = 10L, n_t = 5L)
   expect_error(

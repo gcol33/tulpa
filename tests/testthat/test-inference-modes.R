@@ -25,6 +25,26 @@ test_that("auto mode never selects a Tier 3 (VI / approximate) backend", {
 })
 
 
+test_that("every non-NULL registry $cabi name resolves as a registered C-ABI callable (gcol33/tulpa#775)", {
+  # $cabi is documented as "the registered C-ABI callable backing the
+  # backend" -- an R_RegisterCCallable() name, not merely an Rcpp export (an
+  # R-level entry point with no such registration). Wrong values are metadata
+  # today (assert_backend_reachable() is the only reader, and it only fires
+  # for a backend with no R fitter, which none currently are), so nothing
+  # catches drift without this test.
+  reg <- tulpa:::BACKEND_REGISTRY
+  for (backend in names(reg)) {
+    cabi <- reg[[backend]]$cabi
+    if (is.null(cabi)) next
+    for (nm in cabi) {
+      resolved <- isTRUE(tryCatch(tulpa:::cpp_test_ccallable_resolves(nm),
+                                   error = function(e) FALSE))
+      expect_true(resolved, info = sprintf("%s: cabi '%s'", backend, nm))
+    }
+  }
+})
+
+
 test_that("the unknown-mode message names every mode the registry defines", {
   # The message and the sibling that validates the same names both have to come
   # off INFERENCE_TIERS; a restated list goes stale the moment a tier is added.

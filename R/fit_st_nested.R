@@ -29,7 +29,10 @@
     tg <- as.matrix(theta_grid)
     lapply(colnames(tg), function(a) {
         lv <- sort(unique(as.numeric(tg[, a])))
-        log_scale <- startsWith(a, "tau")
+        # bym2's spatial axis is `sigma_spatial` (an SD), not a precision, but
+        # it is the same positive log-scale coordinate as `tau_spatial` /
+        # `tau_temporal` (gcol33/tulpa#776).
+        log_scale <- startsWith(a, "tau") || startsWith(a, "sigma")
         spec <- hyper_axis_spec(name = a, grid = lv, log_scale = log_scale,
                                 bounds = if (log_scale) c(0, Inf) else NULL,
                                 refinable = FALSE)
@@ -42,12 +45,18 @@
 
 # The spatiotemporal grid's hyperprior (`R/hyperprior_default.R`): under
 # `"proper"` the PC prior on both precisions and, for ar1, the uniform on the
-# autocorrelation's domain; under `"flat"` none of them.
+# autocorrelation's domain; under `"flat"` none of them. `rho` is always the
+# TEMPORAL ar1 autocorrelation (see `fit_st_nested()`'s grid columns); bym2's
+# spatial mixing weight is a distinct column, `rho_spatial`, routed to the
+# same `bym2:rho` Uniform(0, 1) density `tulpa_nested_laplace(type = "bym2")`
+# gives it (gcol33/tulpa#776).
 .st_log_hyperprior <- function(theta_grid, axes, hyperprior = "proper") {
     tg <- as.matrix(theta_grid)
     .hp_collect(tg, function(a) {
         if (identical(a, "rho")) {
             .hp_axis_prior("rho", list(type = "ar1"), hyperprior = hyperprior)
+        } else if (identical(a, "rho_spatial")) {
+            .hp_axis_prior("rho", list(type = "bym2"), hyperprior = hyperprior)
         } else .hp_axis_prior(a, hyperprior = hyperprior)
     }, axes = axes)
 }
@@ -102,16 +111,23 @@
 #' @template hyperprior
 #' @param control A list of numerical / grid knobs: `n_grid_spatial`,
 #'   `n_grid_temporal` (default 4 each), `n_grid_rho` (ar1 only, default 3),
-#'   `tau_lower` / `tau_upper` (precision grid bounds, default 0.25 / 16),
-#'   `rho_lower` / `rho_upper` (ar1 grid, default 0.1 / 0.9), `max_iter`, `tol`,
-#'   `n_threads`, `auto_recenter` (default `TRUE`; `FALSE` holds the grid
-#'   exactly as specified -- the per-axis policy names
+#'   `tau_lower` / `tau_upper` (icar / car_proper precision grid bounds,
+#'   default 0.25 / 16), `sigma_lower` / `sigma_upper` (bym2's spatial SD grid
+#'   bounds in place of `tau_lower` / `tau_upper`, default 0.1 / 3 --
+#'   `n_grid_spatial` sizes this axis too; its mixing-weight axis
+#'   `rho_spatial` is always the fixed default node set and is not a `control`
+#'   knob), `rho_lower` / `rho_upper` (ar1 grid, default 0.1 / 0.9), `max_iter`,
+#'   `tol`, `n_threads`, `auto_recenter` (default `TRUE`; `FALSE` holds the
+#'   grid exactly as specified -- the per-axis policy names
 #'   [tulpa_nested_laplace()] takes are refused here with an error, since this
 #'   driver recentres on the grid's collapsed-edge regime rather than on a
-#'   per-axis rail), `rho_spatial` (the proper-CAR mixing value the
-#'   `car_proper` axis is held at, default `.NL_ST_GRID$rho_spatial`) and
-#'   `within_cell` (`"box_uniform"` / `"chord"`, the within-cell construction
-#'   the reported per-axis intervals are read with; defaults to
+#'   per-axis rail; declines outright for `spatial_type = "bym2"`, whose
+#'   (sigma, rho) spatial axes this recenter has no transform for yet),
+#'   `rho_spatial` (the proper-CAR mixing value the `car_proper` axis is held
+#'   at, default `.NL_ST_GRID$rho_spatial`; unrelated to bym2's own integrated
+#'   `rho_spatial` grid axis) and `within_cell` (`"box_uniform"` / `"chord"`,
+#'   the within-cell construction the reported per-axis intervals are read
+#'   with; defaults to
 #'   `.NL_DIAG$within_cell`, as on every other nested door).
 #'
 #'   The `(tau_lower, tau_upper)` span (and, for `ar1`, `(rho_lower,
@@ -213,19 +229,36 @@ fit_st_nested <- function(y, X, spatial_idx, adjacency, temporal_idx, n_times,
   }
   if (is.null(re_idx)) re_idx <- rep(0, N)
 
-  # Hyperparameter grid: spatial precision x temporal precision x (ar1) rho.
+  # Hyperparameter grid: spatial (precision, or for bym2 SD x mixing weight)
+  # x temporal precision x (ar1) rho.
   n_gs   <- as.integer(control$n_grid_spatial  %||% .nl_st_default("n_spatial"))
   n_gt   <- as.integer(control$n_grid_temporal %||% .nl_st_default("n_temporal"))
   n_grho <- if (temporal_type == "ar1") as.integer(control$n_grid_rho %||% .nl_st_default("n_rho")) else 1L
   tau_lo <- control$tau_lower %||% .nl_st_default("tau_lower")
   tau_hi <- control$tau_upper %||% .nl_st_default("tau_upper")
-  ts_axis  <- .st_log_grid(tau_lo, tau_hi, n_gs)
   tt_axis  <- .st_log_grid(tau_lo, tau_hi, n_gt)
   rho_axis <- if (temporal_type == "ar1") {
     seq(control$rho_lower %||% .nl_st_default("rho_lower"),
         control$rho_upper %||% .nl_st_default("rho_upper"), length.out = n_grho)
   } else 0.0
-  grid <- expand.grid(tau_spatial = ts_axis, tau_temporal = tt_axis, rho = rho_axis)
+
+  # bym2's kernel (cpp_nested_laplace_st_bym2) takes `scale_factor` +
+  # `sigma_spatial_grid` + `rho_spatial_grid`, not `tau_spatial_grid` -- the
+  # same (sigma, rho) reparameterisation the single-field bym2 nested-Laplace
+  # path integrates, not a precision (gcol33/tulpa#776). car_proper's spatial
+  # mixing weight stays a single PINNED value (`rho_spatial_grid` repeated
+  # across the grid), unchanged from before.
+  if (spatial_type == "bym2") {
+    sigma_lo <- control$sigma_lower %||% .nl_st_default("sigma_lower")
+    sigma_hi <- control$sigma_upper %||% .nl_st_default("sigma_upper")
+    sigma_axis <- .st_log_grid(sigma_lo, sigma_hi, n_gs)
+    rho_spatial_axis <- .nl_grid_axis("bym2_rho")
+    grid <- expand.grid(sigma_spatial = sigma_axis, rho_spatial = rho_spatial_axis,
+                        tau_temporal = tt_axis, rho = rho_axis)
+  } else {
+    ts_axis <- .st_log_grid(tau_lo, tau_hi, n_gs)
+    grid <- expand.grid(tau_spatial = ts_axis, tau_temporal = tt_axis, rho = rho_axis)
+  }
 
   kernel <- switch(spatial_type,
                    icar        = cpp_nested_laplace_st_icar,
@@ -240,7 +273,6 @@ fit_st_nested <- function(y, X, spatial_idx, adjacency, temporal_idx, n_times,
     adj_row_ptr = as.integer(csr$row_ptr), adj_col_idx = as.integer(csr$col_idx),
     n_neighbors = as.integer(csr$n_neighbors),
     temporal_idx = as.integer(temporal_idx), n_times = as.integer(n_times),
-    tau_spatial_grid = as.numeric(grid$tau_spatial),
     temporal_type = temporal_type,
     tau_temporal_grid = as.numeric(grid$tau_temporal),
     rho_temporal_grid = as.numeric(grid$rho),
@@ -256,8 +288,15 @@ fit_st_nested <- function(y, X, spatial_idx, adjacency, temporal_idx, n_times,
   # The default is one registry entry, not a literal here: a selector gets one
   # default, in one place (gcol33/tulpa#673).
   rho_spatial_val <- control$rho_spatial %||% .nl_st_default("rho_spatial")
-  if (spatial_type == "car_proper") {
-    kargs$rho_spatial_grid <- rep(rho_spatial_val, nrow(grid))
+  if (spatial_type == "bym2") {
+    kargs$scale_factor       <- compute_bym2_scale(adjacency)
+    kargs$sigma_spatial_grid <- as.numeric(grid$sigma_spatial)
+    kargs$rho_spatial_grid   <- as.numeric(grid$rho_spatial)
+  } else {
+    kargs$tau_spatial_grid <- as.numeric(grid$tau_spatial)
+    if (spatial_type == "car_proper") {
+      kargs$rho_spatial_grid <- rep(rho_spatial_val, nrow(grid))
+    }
   }
   out <- .st_attach_outer_integration(do.call(kernel, kargs), grid, hyperprior)
   # Outer-grid collapse visibility + recenter:
@@ -281,12 +320,29 @@ fit_st_nested <- function(y, X, spatial_idx, adjacency, temporal_idx, n_times,
   out <- .nl_attach_grid_hessians(out, ncol(X))
 
   # Grid-marginalised field posterior means: the latent block after the fixed
-  # effects is [spatial (n_s), temporal (n_times)].
+  # effects is [spatial (n_s), temporal (n_times)] for icar / car_proper, or
+  # [structured (n_s), unstructured (n_s), temporal (n_times)] for bym2 --
+  # its spatial contribution to eta is the sigma/rho-weighted MIX of the two
+  # raw (standardized) sub-fields, not either one alone (gcol33/tulpa#776;
+  # see bym2_mixing.h for the same `sigma * (sqrt(rho) * scale_factor * phi +
+  # sqrt(1 - rho) * theta)` combination the kernel's own d_fac applies).
   p <- ncol(X)
   w <- out$weights
-  sp_cols <- p + seq_len(n_s)
-  te_cols <- p + n_s + seq_len(n_times)
-  out$spatial_effects  <- as.numeric(crossprod(w, out$modes[, sp_cols, drop = FALSE]))
+  if (spatial_type == "bym2") {
+    phi_cols   <- p + seq_len(n_s)
+    theta_cols <- p + n_s + seq_len(n_s)
+    te_cols    <- p + 2L * n_s + seq_len(n_times)
+    sigma_k <- out$theta_grid[, "sigma_spatial"]
+    rho_k   <- out$theta_grid[, "rho_spatial"]
+    combined <- out$modes[, phi_cols, drop = FALSE] *
+      (sigma_k * sqrt(rho_k) * kargs$scale_factor) +
+      out$modes[, theta_cols, drop = FALSE] * (sigma_k * sqrt(1 - rho_k))
+    out$spatial_effects <- as.numeric(crossprod(w, combined))
+  } else {
+    sp_cols <- p + seq_len(n_s)
+    te_cols <- p + n_s + seq_len(n_times)
+    out$spatial_effects <- as.numeric(crossprod(w, out$modes[, sp_cols, drop = FALSE]))
+  }
   out$temporal_effects <- as.numeric(crossprod(w, out$modes[, te_cols, drop = FALSE]))
   out$spatial_type  <- spatial_type
   out$temporal_type <- temporal_type

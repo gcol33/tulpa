@@ -762,7 +762,14 @@
     # a one-point axis on this driver, so the value is part of the model. It was
     # an inline literal in fit_st_nested() (gcol33/tulpa#673); a selector gets
     # one default, in one place.
-    rho_spatial = 0.9
+    rho_spatial = 0.9,
+    # bym2's spatial axis is a field SD (`sigma_spatial`), not a precision --
+    # same span as the single-field default `field_sd` axis (gcol33/tulpa#776).
+    # Its mixing-weight axis (`rho_spatial`, integrated rather than pinned)
+    # reuses the fixed `bym2_rho` node set directly, so it has no lower/upper
+    # knob here.
+    sigma_lower = 0.1,
+    sigma_upper = 3
 )
 
 .nl_st_default <- function(par) {

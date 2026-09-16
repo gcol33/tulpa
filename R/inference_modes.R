@@ -146,7 +146,12 @@ BACKEND_REGISTRY <- list(
     emits = "chain",
     tier = "exact", input = "modeldata", fitter = "tulpa_sample_glmm",
     families = NULL,
-    cabi = "tulpa_run_nuts_generic",
+    # tulpa_sample_glmm() always runs run_hmc_parallel_chains_cpp (n_chains
+    # defaults to 4, but the call shape is the same at n_chains = 1), which is
+    # what "tulpa_run_nuts_chains" is registered against; "tulpa_run_nuts_generic"
+    # is the single-chain callable a model package reaches on its own and this
+    # R door never calls (gcol33/tulpa#775).
+    cabi = "tulpa_run_nuts_chains",
     note = paste("Generic NUTS over a fixed-effect GLM (tulpa_sample_glmm);",
                  "model packages also drive NUTS through the C ABI")
   ),
@@ -272,7 +277,15 @@ BACKEND_REGISTRY <- list(
   nested_laplace = list(
     emits = "iid",
     tier = "structured", input = "nested", fitter = "tulpa_nested_laplace",
-    families = NULL, cabi = "cpp_nested_laplace_multi", hyperprior = TRUE,
+    families = NULL,
+    # cpp_nested_laplace_multi is an Rcpp export (an R-level entry point), not
+    # a registered C-ABI callable -- a model package reaches this driver's
+    # per-field kernels individually instead, through the six symbols below
+    # (gcol33/tulpa#775).
+    cabi = c("tulpa_nested_laplace_icar", "tulpa_nested_laplace_bym2",
+             "tulpa_nested_laplace_car_proper", "tulpa_nested_laplace_temporal",
+             "tulpa_nested_laplace_nngp", "tulpa_nested_laplace_hsgp"),
+    hyperprior = TRUE,
     # The multi-block converter behind cpp_nested_laplace_multi
     # (.nl_block_spec_for_cpp(), R/nested_laplace.R) has no gp / nngp / hsgp
     # arm -- only icar / bym2 / car_proper / rw1 / rw2 / ar1 / iid / spde /
@@ -286,7 +299,11 @@ BACKEND_REGISTRY <- list(
   nested_laplace_joint = list(
     emits = "iid",
     tier = "structured", input = "nested", fitter = "tulpa_nested_laplace_joint",
-    families = NULL, cabi = "cpp_nested_laplace_joint_multi", hyperprior = TRUE,
+    families = NULL,
+    # cpp_nested_laplace_joint_multi is an Rcpp export, not a registered C-ABI
+    # callable, and no callable backs the joint multi-block driver at all
+    # (gcol33/tulpa#775).
+    cabi = NULL, hyperprior = TRUE,
     # Has an R-level fitter (reachable, callable directly) but is NOT one
     # `tulpa(mode =)` can dispatch to: it needs multiple response arms, which
     # a single tulpa() formula cannot express (gcol33/tulpa#786). Read by the
@@ -301,7 +318,10 @@ BACKEND_REGISTRY <- list(
     emits = "iid",
     tier = "structured", input = "spde", fitter = "fit_spde",
     families = c("binomial", "poisson", "neg_binomial_2", "gaussian"),
-    cabi = "cpp_nested_laplace_spde", hyperprior = TRUE,
+    # cpp_nested_laplace_spde is the Rcpp export fit_spde() calls; the
+    # registered C-ABI symbol a model package reaches is
+    # "tulpa_nested_laplace_spde" (gcol33/tulpa#775).
+    cabi = "tulpa_nested_laplace_spde", hyperprior = TRUE,
     note = paste("Continuous Matern SPDE field; nested-Laplace integration over",
                  "(range, sigma) via fit_spde(). Uses its own CCD / grid",
                  "hyperparameter engine (the FEM Q-builder rebuilds the precision",
@@ -536,7 +556,7 @@ assert_backend_reachable <- function(backend) {
   }
   if (is.null(entry$fitter)) {
     meta <- TIER_META[[entry$tier]]
-    cabi <- entry$cabi %||% "(none)"
+    cabi <- paste(entry$cabi %||% "(none)", collapse = ", ")
     stop(sprintf(paste0(
       "Backend '%s' is registered (Tier %d, %s) but has no R-level fitter.\n",
       "Its C++ kernel is reachable from model packages through the C ABI\n",

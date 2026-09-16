@@ -78,16 +78,23 @@ are offered by \code{\link[=tulpa]{tulpa()}}, \code{\link[=tulpa_eb]{tulpa_eb()}
 
 \item{control}{A list of numerical / grid knobs: \code{n_grid_spatial},
 \code{n_grid_temporal} (default 4 each), \code{n_grid_rho} (ar1 only, default 3),
-\code{tau_lower} / \code{tau_upper} (precision grid bounds, default 0.25 / 16),
-\code{rho_lower} / \code{rho_upper} (ar1 grid, default 0.1 / 0.9), \code{max_iter}, \code{tol},
-\code{n_threads}, \code{auto_recenter} (default \code{TRUE}; \code{FALSE} holds the grid
-exactly as specified -- the per-axis policy names
+\code{tau_lower} / \code{tau_upper} (icar / car_proper precision grid bounds,
+default 0.25 / 16), \code{sigma_lower} / \code{sigma_upper} (bym2's spatial SD grid
+bounds in place of \code{tau_lower} / \code{tau_upper}, default 0.1 / 3 --
+\code{n_grid_spatial} sizes this axis too; its mixing-weight axis
+\code{rho_spatial} is always the fixed default node set and is not a \code{control}
+knob), \code{rho_lower} / \code{rho_upper} (ar1 grid, default 0.1 / 0.9), \code{max_iter},
+\code{tol}, \code{n_threads}, \code{auto_recenter} (default \code{TRUE}; \code{FALSE} holds the
+grid exactly as specified -- the per-axis policy names
 \code{\link[=tulpa_nested_laplace]{tulpa_nested_laplace()}} takes are refused here with an error, since this
 driver recentres on the grid's collapsed-edge regime rather than on a
-per-axis rail), \code{rho_spatial} (the proper-CAR mixing value the
-\code{car_proper} axis is held at, default \code{.NL_ST_GRID$rho_spatial}) and
-\code{within_cell} (\code{"box_uniform"} / \code{"chord"}, the within-cell construction
-the reported per-axis intervals are read with; defaults to
+per-axis rail; declines outright for \code{spatial_type = "bym2"}, whose
+(sigma, rho) spatial axes this recenter has no transform for yet),
+\code{rho_spatial} (the proper-CAR mixing value the \code{car_proper} axis is held
+at, default \code{.NL_ST_GRID$rho_spatial}; unrelated to bym2's own integrated
+\code{rho_spatial} grid axis) and \code{within_cell} (\code{"box_uniform"} / \code{"chord"},
+the within-cell construction the reported per-axis intervals are read
+with; defaults to
 \code{.NL_DIAG$within_cell}, as on every other nested door).
 
 The \verb{(tau_lower, tau_upper)} span (and, for \code{ar1}, \verb{(rho_lower, rho_upper)}) is a starting axis, not a hard ceiling:
@@ -114,8 +121,11 @@ pinned the recenter declines outright and
 \value{
 A \code{tulpa_fit} (subclass \code{tulpa_nested_laplace}) carrying the
 fixed-effect posterior (\code{draws} via the grid mixture), \code{spatial_effects},
-\code{temporal_effects}, \code{log_marginal}, \code{weights}, and \code{theta_grid} over
-\verb{(tau_spatial, tau_temporal, rho)}. Also carries \code{pareto_k_regime}
+\code{temporal_effects}, \code{log_marginal}, \code{weights}, \code{theta_grid} over
+\verb{(tau_spatial, tau_temporal, rho)}, and \code{family} / \code{n_trials} / \code{phi} (the
+R-level convention), which is what \code{\link[=fitted]{fitted()}}, \code{\link[=residuals]{residuals()}},
+\code{\link[=posterior_predict]{posterior_predict()}} and \code{\link[=simulate]{simulate()}} read the response family from.
+Also carries \code{pareto_k_regime}
 (\code{"spread"} / \code{"collapsed_interior"} / \code{"collapsed_edge"}, see
 \code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}}'s return docs for the definition) and
 \code{outer_grid_placement} (\code{"fixed"} or \code{"auto_recentered"}) plus, on a
