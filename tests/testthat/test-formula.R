@@ -421,6 +421,24 @@ test_that("the strippers still remove what they own, transform beside it", {
                quote(y ~ x + log(z, base = 2)))
 })
 
+test_that("finders treat a zero-argument call as a leaf instead of erroring (#816)", {
+  expect_null(find_special_terms(quote(x + f()), "spatial"))
+  expect_null(findbars(quote(x + f())))
+  expect_null(find_latent_terms(quote(x + g(f()))))
+  expect_null(findbars(quote(x + I(Sys.Date() > 0))))
+
+  expect_equal(findbars(quote(x + (1 | g) + f())), list(quote(1 | g)))
+  expect_equal(find_latent_terms(quote(x + latent(blk) + f())), list(quote(latent(blk))))
+  expect_equal(find_special_terms(quote(x + spatial(s) + f()), "spatial"),
+               list(quote(spatial(s))))
+})
+
+test_that("tulpa_parse_formula handles a zero-argument call on the RHS (#816)", {
+  parsed <- tulpa_parse_formula(y ~ x + I(Sys.Date() > 0))
+  expect_s3_class(parsed$fixed_formula, "formula")
+  expect_equal(parsed$fixed_formula, y ~ x + I(Sys.Date() > 0))
+})
+
 test_that("a raw polynomial is fitted raw, not orthogonal", {
   set.seed(1L)
   n <- 200L

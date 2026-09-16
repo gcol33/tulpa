@@ -46,6 +46,10 @@ findbars <- function(term) {
     return(list(term))
   }
 
+  if (!is.call(term)) return(NULL)
+  op <- term[[1]]
+  if (!is.name(op) || !(as.character(op) %in% .FORMULA_OPS)) return(NULL)
+
   if (length(term) == 2) {
     return(findbars(term[[2]]))
   }
@@ -145,6 +149,10 @@ find_latent_terms <- function(term) {
     return(find_latent_terms(term[[2]]))
   }
 
+  if (!is.call(term)) return(NULL)
+  op <- term[[1]]
+  if (!is.name(op) || !(as.character(op) %in% .FORMULA_OPS)) return(NULL)
+
   if (length(term) == 2L) {
     return(find_latent_terms(term[[2]]))
   }
@@ -191,6 +199,9 @@ find_special_terms <- function(term, fname, pred = NULL) {
     return(NULL)
   }
   if (identical(term[[1]], as.name("("))) return(find_special_terms(term[[2]], fname, pred))
+  if (!is.call(term)) return(NULL)
+  op <- term[[1]]
+  if (!is.name(op) || !(as.character(op) %in% .FORMULA_OPS)) return(NULL)
   if (length(term) == 2L) return(find_special_terms(term[[2]], fname, pred))
   c(find_special_terms(term[[2]], fname, pred),
     find_special_terms(term[[3]], fname, pred))
