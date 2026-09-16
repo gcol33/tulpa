@@ -10,6 +10,7 @@
   result.n_leapfrog.resize(n_sample, L);
   result.divergent.resize(n_sample, 0);
   result.treedepth.resize(n_sample, 0);
+  result.energy.resize(n_sample, NA_REAL);
   result.n_warmup = n_warmup;
   result.n_sample = n_sample;
   result.chain_id = chain_id;

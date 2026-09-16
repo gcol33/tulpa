@@ -41,6 +41,7 @@ inline std::string ckpt_serialize(const HMCResultCpp& r) {
     ckpt_put_span(buf, r.n_leapfrog);
     ckpt_put_span(buf, r.divergent);
     ckpt_put_span(buf, r.treedepth);
+    ckpt_put_span(buf, r.energy);
     ckpt_put(buf, r.epsilon);
     ckpt_put<std::int32_t>(buf, r.n_warmup);
     ckpt_put<std::int32_t>(buf, r.n_sample);
@@ -68,6 +69,7 @@ inline bool ckpt_deserialize(CkptReader& rd, HMCResultCpp& r) {
     r.n_leapfrog      = rd.get_span<int>();
     r.divergent       = rd.get_span<int>();
     r.treedepth       = rd.get_span<int>();
+    r.energy          = rd.get_span<double>();
     r.epsilon         = rd.get<double>();
     r.n_warmup        = rd.get<std::int32_t>();
     r.n_sample        = rd.get<std::int32_t>();

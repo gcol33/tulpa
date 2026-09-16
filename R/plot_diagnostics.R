@@ -506,7 +506,7 @@ plot_pairs <- function(fit, pars = NULL, highlight_divergent = TRUE,
   # Add divergence indicator if available
   has_divergent <- FALSE
   if (highlight_divergent && (fit$backend %||% "") == "hmc") {
-    div_idx <- fit$diagnostics$divergent_idx
+    div_idx <- .tulpa_divergent_idx(fit)
     if (!is.null(div_idx) && length(div_idx) > 0) {
       draws_subset$divergent <- FALSE
       draws_subset$divergent[div_idx] <- TRUE
@@ -544,10 +544,52 @@ plot_pairs <- function(fit, pars = NULL, highlight_divergent = TRUE,
 }
 
 
+# Divergent-transition row indices, read off the top-level `$divergent`
+# vector every sampler writes (row-aligned with `$log_prob` / `$chain_id`),
+# rather than the never-populated `$diagnostics$divergent_idx`
+# (gcol33/tulpa#783). NULL when the fit carries no such vector.
+.tulpa_divergent_idx <- function(fit) {
+  if (is.null(fit$divergent)) return(NULL)
+  which(as.logical(fit$divergent))
+}
+
+
+# Per-chain E-BFMI (Betancourt): the variance of the within-chain energy
+# TRANSITION over the variance of the marginal energy, read off the
+# top-level `$energy` vector every HMC/NUTS sampler writes (gcol33/tulpa#783).
+# Diffing across a chain boundary would compare unrelated trajectories, so
+# each chain's energy is diffed separately (`$chain_id`, defaulting to one
+# chain when absent) and the WORST chain is reported -- one badly-exploring
+# chain is enough to distrust the fit. Returns a list(value=, energy_diff=)
+# with `value = NA_real_` when there is nothing to compute (fewer than two
+# samples in every chain), `energy_diff` the pooled within-chain transitions
+# (for plotting).
+.tulpa_energy_bfmi <- function(fit) {
+  energy <- fit$energy
+  if (is.null(energy) || length(energy) < 10) {
+    return(list(value = NA_real_, energy_diff = numeric(0)))
+  }
+  cid <- fit$chain_id
+  if (is.null(cid) || length(cid) != length(energy)) cid <- rep(1L, length(energy))
+  by_chain <- split(energy, cid)
+  diffs <- lapply(by_chain, function(e) if (length(e) > 1L) diff(e) else numeric(0))
+  bfmi_per_chain <- vapply(seq_along(by_chain), function(i) {
+    e <- by_chain[[i]]; ed <- diffs[[i]]
+    if (length(ed) < 1L || !is.finite(stats::var(e)) || stats::var(e) == 0) {
+      return(NA_real_)
+    }
+    stats::var(ed) / stats::var(e)
+  }, numeric(1))
+  bfmi_val <- if (all(is.na(bfmi_per_chain))) NA_real_ else min(bfmi_per_chain, na.rm = TRUE)
+  list(value = bfmi_val, energy_diff = unlist(diffs, use.names = FALSE))
+}
+
+
 # Build a bayesplot `np`-style data frame flagging divergent transitions, keyed
 # by (Iteration, Chain) to align with an [iter, chain, param] draws array.
-# Divergence row indices in `fit$diagnostics$divergent_idx` are mapped from the
-# pooled chain-major draws onto the per-chain (iteration, chain) grid.
+# Divergence row indices come from the top-level `fit$divergent` vector every
+# sampler writes, mapped from the pooled chain-major draws onto the per-chain
+# (iteration, chain) grid.
 .tulpa_divergent_np <- function(fit, n_iter, n_chain) {
   np <- data.frame(
     Iteration = rep(seq_len(n_iter), times = n_chain),
@@ -555,7 +597,7 @@ plot_pairs <- function(fit, pars = NULL, highlight_divergent = TRUE,
     Parameter = factor("divergent__"),
     Value     = 0
   )
-  div_idx <- fit$diagnostics$divergent_idx
+  div_idx <- .tulpa_divergent_idx(fit)
   if (is.null(div_idx) || length(div_idx) == 0L) return(np)
 
   cid <- fit$chain_id
@@ -663,7 +705,7 @@ plot_divergences <- function(fit, pars = NULL, type = c("parcoord", "scatter")) 
     return(invisible(NULL))
   }
 
-  div_idx <- fit$diagnostics$divergent_idx
+  div_idx <- .tulpa_divergent_idx(fit)
   if (is.null(div_idx) || length(div_idx) == 0) {
     message("Divergent indices not available")
     return(invisible(NULL))
@@ -865,27 +907,29 @@ plot_energy <- function(fit) {
     return(invisible(NULL))
   }
 
-  # Try to get energy from diagnostics
-  diag <- fit$diagnostics
-  energy <- diag$energy
+  energy <- fit$energy
   if (is.null(energy) || length(energy) < 10) {
     message("Energy values not available in fit object")
     return(invisible(NULL))
   }
 
-  # Compute E-BFMI
-  energy_diff <- diff(energy)
-  e_bfmi <- var(energy_diff) / var(energy)
+  # E-BFMI, per chain (a cross-chain diff would compare unrelated
+  # trajectories); .tulpa_energy_bfmi() reports the worst chain.
+  bfmi <- .tulpa_energy_bfmi(fit)
+  e_bfmi <- bfmi$value
+  energy_diff <- bfmi$energy_diff
 
   # Create data for plotting
   n <- length(energy)
+  nd <- length(energy_diff)
   plot_data <- data.frame(
     value = c(energy, energy_diff),
-    type = rep(c("Marginal E", "E transition"), c(n, n - 1))
+    type = rep(c("Marginal E", "E transition"), c(n, nd))
   )
 
   # Status message
-  status <- if (e_bfmi < 0.3) "WARNING: Low E-BFMI" else "OK"
+  status <- if (is.na(e_bfmi)) "E-BFMI unavailable" else
+    if (e_bfmi < 0.3) "WARNING: Low E-BFMI" else "OK"
 
   if (requireNamespace("ggplot2", quietly = TRUE)) {
     p <- ggplot2::ggplot(plot_data, ggplot2::aes(x = .data$value, fill = .data$type)) +
@@ -1086,10 +1130,9 @@ diagnostic_summary <- function(fit, quiet = FALSE) {
     }
 
     # E-BFMI
-    energy <- fit$diagnostics$energy
-    if (!is.null(energy) && length(energy) > 10) {
-      energy_diff <- diff(energy)
-      result$e_bfmi <- var(energy_diff) / var(energy)
+    bfmi <- .tulpa_energy_bfmi(fit)
+    if (!is.na(bfmi$value)) {
+      result$e_bfmi <- bfmi$value
 
       if (result$e_bfmi < 0.3) {
         status <- if (status == "FAIL") "FAIL" else "WARN"
@@ -1460,7 +1503,7 @@ plot_diagnostics <- function(fit, pars = NULL) {
   }
 
   # Bottom right: Energy or ACF
-  if (fit$backend == "hmc" && !is.null(fit$diagnostics$energy)) {
+  if (fit$backend == "hmc" && !is.null(fit$energy)) {
     p_br <- plot_energy(fit)
   } else {
     p_br <- plot_acf(fit, n_pars = 1)

@@ -228,12 +228,14 @@
   tree_depth <- integer(n_iter)
   alpha_all  <- numeric(n_iter)
   divergent_all <- logical(n_iter)
+  energy_all <- numeric(n_iter)
 
   log_eps <- log(epsilon)
 
   for (t in seq_len(n_iter)) {
     r0 <- rnorm(d) * sqrt_M
     H0 <- H_at(log_post_curr, r0)
+    energy_all[t] <- H0
     log_u <- -H0 + log(stats::runif(1L))
 
     theta_minus <- theta_plus <- theta_curr
@@ -309,6 +311,7 @@
     tree_depth    = tree_depth[keep],
     divergent     = divergent_all[keep],
     n_divergent   = sum(divergent_all[keep]),
+    energy        = energy_all[keep],
     epsilon       = exp(log_eps),
     pilot         = pilot,
     mode_theta    = theta_init,

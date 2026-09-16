@@ -37,6 +37,10 @@ struct HMCResultCpp {
   std::vector<int> n_leapfrog;
   std::vector<int> divergent;
   std::vector<int> treedepth;    // Actual tree depth per iteration (NUTS only)
+  // The Hamiltonian (-log_post + kinetic energy) at each iteration's sampled
+  // momentum, Stan's energy__ -- read by plot_energy() and the E-BFMI check
+  // (gcol33/tulpa#783). Row-aligned with log_prob/divergent/treedepth.
+  std::vector<double> energy;
   double epsilon;
   int n_warmup;
   int n_sample;

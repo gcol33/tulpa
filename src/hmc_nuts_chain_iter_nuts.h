@@ -5,6 +5,11 @@
     bool divergent = false;
     int iter_n_leapfrog = L;
     int iter_treedepth = 0;
+    // Starting Hamiltonian of this iteration's trajectory (-log_post +
+    // kinetic energy at the sampled momentum), Stan's energy__ -- read by
+    // plot_energy() / the E-BFMI check, stored once per iteration alongside
+    // log_prob / accept_prob / divergent / treedepth (gcol33/tulpa#783).
+    double iter_H0 = 0.0;
 
     if (use_nuts && !(use_lbfgs && !lbfgs_warmup_done)) {
       // -----------------------------------------------------------------
@@ -29,6 +34,7 @@
       double H0 = nuts_compute_hamiltonian_fast(
         log_prob_current, p.data(), mass, n_params
       );
+      iter_H0 = H0;
       double delta_max = 1000.0;
 
       // Load current state into workspace persistent slots
@@ -304,6 +310,7 @@
             // rescued from one that was not.
             if (!retry_divergent) {
               iter_treedepth = retry_treedepth;
+              iter_H0 = H0_retry;
               softabs_successes++;
               result.n_softabs_rescued++;
               alpha = (total_leapfrog > 0) ? (sum_accept_prob / total_leapfrog) : 0.0;

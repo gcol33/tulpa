@@ -30,6 +30,7 @@ struct StackedChains {
   Rcpp::NumericVector accept_prob;
   Rcpp::IntegerVector divergent;
   Rcpp::IntegerVector treedepth;
+  Rcpp::NumericVector energy;
   Rcpp::NumericVector epsilon;
   Rcpp::NumericMatrix inv_metric;
   Rcpp::NumericMatrix final_position;
@@ -52,6 +53,7 @@ inline int usable_chain_samples(const HMCResultCpp& ch, int n_params) {
   if (ch.accept_prob.size() < need) ns = std::min<int>(ns, static_cast<int>(ch.accept_prob.size()));
   if (ch.divergent.size() < need) ns = std::min<int>(ns, static_cast<int>(ch.divergent.size()));
   if (ch.treedepth.size() < need) ns = std::min<int>(ns, static_cast<int>(ch.treedepth.size()));
+  if (ch.energy.size() < need) ns = std::min<int>(ns, static_cast<int>(ch.energy.size()));
   const int stride = ch.n_params_stored;
   if (stride < n_params) return 0;
   const int rows_stored = (stride > 0)
@@ -89,6 +91,7 @@ inline StackedChains stack_hmc_chains(
   out.accept_prob = Rcpp::NumericVector(n_total);
   out.divergent = Rcpp::IntegerVector(n_total);
   out.treedepth = Rcpp::IntegerVector(n_total);
+  out.energy = Rcpp::NumericVector(n_total);
   out.epsilon = Rcpp::NumericVector(n_chains);
   out.inv_metric = Rcpp::NumericMatrix(n_chains, n_params);
   out.final_position = Rcpp::NumericMatrix(n_chains, n_params);
@@ -104,6 +107,7 @@ inline StackedChains stack_hmc_chains(
       out.accept_prob[r] = ch.accept_prob[s];
       out.divergent[r] = ch.divergent[s];
       out.treedepth[r] = ch.treedepth[s];
+      out.energy[r] = ch.energy[s];
       r++;
     }
     out.epsilon[c] = ch.epsilon;

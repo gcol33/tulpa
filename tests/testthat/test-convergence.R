@@ -165,15 +165,20 @@ test_that("plotting and summary layer runs end-to-end on a multi-chain fit", {
   arr <- make_draws_array(niter = 400L, nchain = 4L, npar = 3L)
   pooled <- pool_chain_major(arr)
   n_total <- nrow(pooled)
+  # Divergence / energy are read off the top-level fields every sampler
+  # writes (row-aligned with `draws` / `chain_id`), not a synthesized
+  # `$diagnostics$*` -- nothing in the engine has ever populated that
+  # (gcol33/tulpa#783). idx 5 and 120 land in chain 1 under 400-iter chains.
+  divergent <- integer(n_total)
+  divergent[c(5L, 120L)] <- 1L
   fit <- structure(
     list(
       draws = pooled,
       n_chains = 4L,
+      chain_id = rep(seq_len(4L), each = 400L),
       backend = "hmc",
-      diagnostics = list(
-        divergent_idx = c(5L, 120L),
-        energy = rnorm(n_total, mean = 100, sd = 5)
-      )
+      divergent = divergent,
+      energy = rnorm(n_total, mean = 100, sd = 5)
     ),
     class = "tulpa_fit"
   )

@@ -95,6 +95,7 @@
       result.n_leapfrog[sample_idx] = iter_n_leapfrog;
       result.divergent[sample_idx] = divergent ? 1 : 0;
       result.treedepth[sample_idx] = iter_treedepth;
+      result.energy[sample_idx] = iter_H0;
 
 
       sample_idx++;

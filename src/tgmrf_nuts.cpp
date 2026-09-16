@@ -803,6 +803,7 @@ Rcpp::List cpp_tgmrf_nuts_joint(
     Rcpp::NumericVector accept_prob(n_iter);
     Rcpp::IntegerVector divergent(n_iter);
     Rcpp::NumericVector log_post_iter(n_iter);
+    Rcpp::NumericVector energy(n_iter);
 
     std::mt19937 rng((unsigned)seed);
     std::normal_distribution<double> rnorm(0.0, 1.0);
@@ -877,6 +878,7 @@ Rcpp::List cpp_tgmrf_nuts_joint(
         accept_prob[t] = alpha_mean;
         divergent[t] = diverged ? 1 : 0;
         log_post_iter[t] = log_post;
+        energy[t] = H0;
 
         // Dual averaging
         if (t < n_warmup) {
@@ -917,6 +919,7 @@ Rcpp::List cpp_tgmrf_nuts_joint(
         Rcpp::Named("accept_prob") = accept_prob,
         Rcpp::Named("divergent")   = divergent,
         Rcpp::Named("log_post")    = log_post_iter,
+        Rcpp::Named("energy")      = energy,
         Rcpp::Named("epsilon")     = std::exp(log_eps),
         Rcpp::Named("gradient_check") = gradient_check
     );

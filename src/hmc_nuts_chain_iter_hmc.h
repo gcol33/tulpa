@@ -25,6 +25,7 @@
       };
       double kinetic_current = kinetic_energy_of(p);
       double H_current = -log_prob_current + kinetic_current;
+      iter_H0 = H_current;
 
       // Leapfrog integration
       std::vector<double> q_prop = q;

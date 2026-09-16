@@ -412,6 +412,7 @@ Rcpp::List cpp_tulpa_sample_glmm(
             Rcpp::Named("accept_prob") = st.accept_prob,
             Rcpp::Named("divergent") = st.divergent,
             Rcpp::Named("treedepth") = st.treedepth,
+            Rcpp::Named("energy") = st.energy,
             // Post-warmup saturations, summed over chains: written and
             // checkpointed but read by nothing until gcol33/tulpa#703.
             Rcpp::Named("n_max_treedepth") = st.n_max_treedepth,

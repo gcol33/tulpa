@@ -462,6 +462,7 @@ Rcpp::List cpp_tulpa_fit_generic(
         Rcpp::Named("accept_prob") = Rcpp::wrap(result.accept_prob),
         Rcpp::Named("divergent") = Rcpp::wrap(result.divergent),
         Rcpp::Named("treedepth") = Rcpp::wrap(result.treedepth),
+        Rcpp::Named("energy") = Rcpp::wrap(result.energy),
         // Post-warmup saturation count. Written and checkpointed but read by
         // nothing until gcol33/tulpa#703.
         Rcpp::Named("n_max_treedepth") = result.n_max_treedepth,
@@ -569,6 +570,7 @@ Rcpp::List cpp_tulpa_fit_generic_chains(
         Rcpp::Named("accept_prob") = st.accept_prob,
         Rcpp::Named("divergent") = st.divergent,
         Rcpp::Named("treedepth") = st.treedepth,
+        Rcpp::Named("energy") = st.energy,
         Rcpp::Named("sampler") = chains[0].sampler.empty() ? "nuts" : chains[0].sampler,
         Rcpp::Named("epsilon") = st.epsilon,
         // Per-chain warm-start / resume outputs

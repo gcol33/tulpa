@@ -242,6 +242,7 @@ Rcpp::List cpp_tulpa_fit_beta_nuts(
         Rcpp::Named("accept_prob") = Rcpp::wrap(result.accept_prob),
         Rcpp::Named("divergent")   = Rcpp::wrap(result.divergent),
         Rcpp::Named("treedepth")   = Rcpp::wrap(result.treedepth),
+        Rcpp::Named("energy")     = Rcpp::wrap(result.energy),
         Rcpp::Named("sampler")     = result.sampler.empty() ? "nuts" : result.sampler,
         Rcpp::Named("epsilon")     = result.epsilon
     );
