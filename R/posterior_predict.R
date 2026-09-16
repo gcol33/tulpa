@@ -290,6 +290,39 @@
   eta
 }
 
+# The NUTS store (`src/hmc_nuts_chain_iter_store.h`) overwrites each
+# non-centered GP / SVC / multiscale-GP block's stored slice with the
+# reconstructed field `w` before the draw is written out (`q` itself stays
+# `z` for sampling) -- no other ModelData kernel does this, so a "hmc" fit's
+# stored draws already hold `w` where every other backend's still hold `z`.
+# Re-running such a draw through `initialize_generic_state()` at the spec's
+# own `gp_parameterization` / `svc_parameterization` / `msgp_parameterization`
+# therefore applies the non-centered forward transform a SECOND time, to a
+# slice that is no longer `z` (gcol33/tulpa#822). Reading the stored draws
+# back as centered undoes exactly that: the forward transform is the
+# identity on an already-centered field, matching what the store wrote.
+#' @keywords internal
+.stored_draw_field_specs <- function(object, mi) {
+  spatial_spec <- mi$spatial_spec
+  svc_spec     <- mi$svc_spec
+  if (!identical(object$backend, "hmc")) {
+    return(list(spatial_spec = spatial_spec, svc_spec = svc_spec))
+  }
+  if (!is.null(spatial_spec$gp_parameterization) &&
+      spatial_spec$gp_parameterization == 1L) {
+    spatial_spec$gp_parameterization <- 0L
+  }
+  if (!is.null(spatial_spec$msgp_parameterization) &&
+      spatial_spec$msgp_parameterization == 1L) {
+    spatial_spec$msgp_parameterization <- 0L
+  }
+  if (!is.null(svc_spec$svc_parameterization) &&
+      svc_spec$svc_parameterization == 1L) {
+    svc_spec$svc_parameterization <- 0L
+  }
+  list(spatial_spec = spatial_spec, svc_spec = svc_spec)
+}
+
 # Engine eta at each sampler draw (the "sampler_model" source). The
 # zero-inflation coefficients sit wherever the engine's parameter layout puts
 # them, so their span is asked of the layout built from the same inputs rather
@@ -300,13 +333,14 @@
   S <- nrow(D)
   if (!is.null(ndraws) && ndraws < S) D <- D[sample.int(S, ndraws), , drop = FALSE]
   mi <- object$model_inputs
+  fs <- .stored_draw_field_specs(object, mi)
   eta <- cpp_tulpa_glmm_eta_draws(
     draws = D, y = mi$y, n_trials = mi$n_trials, X = mi$X,
     family = mi$family, phi = mi$phi, sigma_beta = mi$sigma_beta,
     offset_nullable = mi$offset, re_spec = mi$re_spec,
-    spatial_spec = mi$spatial_spec, temporal_spec = mi$temporal_spec,
+    spatial_spec = fs$spatial_spec, temporal_spec = mi$temporal_spec,
     sigma_re_scale = mi$sigma_re_scale, phi2 = mi$phi2,
-    svc_spec = mi$svc_spec, tvc_spec = mi$tvc_spec, zi_spec = mi$zi_spec)
+    svc_spec = fs$svc_spec, tvc_spec = mi$tvc_spec, zi_spec = mi$zi_spec)
   if (!is.null(mi$zi_spec)) {
     zi_cols <- .layout_span_cols(.tulpa_sampler_layout(object)$beta_zi)
     attr(eta, "logit_zi") <- D[, zi_cols, drop = FALSE] %*% t(mi$zi_spec$X)
