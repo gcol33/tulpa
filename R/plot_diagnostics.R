@@ -460,9 +460,10 @@ plot_pairs <- function(fit, pars = NULL, highlight_divergent = TRUE,
   }
 
   # Get draws
-  draws <- fit$draws
+  draws <- .fit_draws(fit)
   if (is.null(draws)) {
-    stop("No draws available in fit object", call. = FALSE)
+    message(.tulpa_no_draws_note(fit, "plot_pairs"))
+    return(invisible(NULL))
   }
 
   # Select parameters
@@ -660,7 +661,11 @@ plot_divergences <- function(fit, pars = NULL, type = c("parcoord", "scatter")) 
   }
 
   # Get draws
-  draws <- fit$draws
+  draws <- .fit_draws(fit)
+  if (is.null(draws)) {
+    message(.tulpa_no_draws_note(fit, "plot_divergences"))
+    return(invisible(NULL))
+  }
 
   # Select parameters
   if (is.null(pars)) {
