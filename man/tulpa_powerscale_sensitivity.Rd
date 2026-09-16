@@ -6,7 +6,6 @@
 \usage{
 tulpa_powerscale_sensitivity(
   fit,
-  data,
   prior = NULL,
   lower_alpha = 0.99,
   upper_alpha = 1.01,
@@ -15,9 +14,8 @@ tulpa_powerscale_sensitivity(
 }
 \arguments{
 \item{fit}{A \code{tulpa_fit} fitted through \code{\link[=tulpa]{tulpa()}} (fixed-effect / GLMM;
-spatial / temporal-field fits are rejected).}
-
-\item{data}{The data frame the model was fit to.}
+spatial / temporal-field fits and nested-Laplace outer-grid mixture fits,
+e.g. a \code{latent()} block or a random-slope redirect, are rejected).}
 
 \item{prior}{The Gaussian fixed-effect prior the fit used, as
 \code{list(mean =, sd =)} (scalars recycled). Required for the prior component;
@@ -58,7 +56,7 @@ d <- data.frame(x = rnorm(150))
 d$y <- rpois(150, exp(0.5 + 0.7 * d$x))
 fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace",
              beta_prior = list(mean = 0, sd = 5))
-tulpa_powerscale_sensitivity(fit, data = d, prior = list(mean = 0, sd = 5))
+tulpa_powerscale_sensitivity(fit, prior = list(mean = 0, sd = 5))
 }
 }
 \references{

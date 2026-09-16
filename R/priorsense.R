@@ -11,12 +11,24 @@
 # Nguyen & Vreeken 2015; and R/powerscale_gradients.R for the gradient).
 #
 # Scope: the fixed-effect prior (a Gaussian `prior = list(mean, sd)` the fit
-# used), the observation likelihood on the fixed-effect linear predictor, and
-# -- when the fit stores per-draw hyperparameter log-prior values
+# used), the observation likelihood the fit's own linear predictor carries
+# (fixed effects, formula random effects, the offset, n_trials, phi2, and any
+# field folded into eta at fit time through .tulpa_eta_draws()), and -- when
+# the fit stores per-draw hyperparameter log-prior values
 # ($hyper_log_prior_draws, recorded at draw-synthesis time by the
 # nested-Laplace mixture paths) -- the hyperparameter prior via the same
-# reweighting.
+# reweighting. A nested-Laplace outer-grid mixture fit (fitted_eta + weights)
+# has no fixed-effect-only decomposition of eta and is refused outright, as is
+# any fit carrying an inline spatial/temporal field.
 # ------------------------------------------------------------------------------
+
+# Seed and default draw count for every RNG-consuming step this file takes,
+# pinned to one value so .ps_fixed_draws()'s beta and .ps_component_loglik()'s
+# eta -- two separate calls into .fixed_coef_draws() / .tulpa_eta_draws(), each
+# resetting to this seed -- reproduce the identical draw sequence and stay
+# row-aligned without threading beta through the log-likelihood call.
+.PS_SEED    <- 285703L
+.PS_NDRAWS  <- 4000L
 
 # Cumulative Jensen-Shannon divergence CJS(P || Q) for two weighted ECDFs of the
 # SAME sorted draws (the power-scaling case: x == y, only the weights differ).
@@ -72,32 +84,31 @@
   out
 }
 
-# Fixed-effect posterior draws [S x p] with columns ordered by `bnm`. Uses a
-# fit's genuine draws when present (genuine = TRUE, rows aligned with any
-# per-draw quantities the fit stores); otherwise synthesizes from the
-# (Laplace / Gaussian) fixed-effect posterior N(coef, vcov).
-.ps_fixed_draws <- function(fit, bnm, n_draws = 4000L) {
-  dr <- tryCatch(.fit_draws(fit), error = function(e) NULL)
-  if (is.matrix(dr) && all(bnm %in% colnames(dr)) && nrow(dr) > 1L) {
-    return(list(B = dr[, bnm, drop = FALSE], genuine = TRUE))
-  }
-  mu <- stats::coef(fit)[bnm]
-  V  <- stats::vcov(fit)
-  if (is.null(V) || !all(bnm %in% rownames(V))) {
+# Fixed-effect posterior draws [S x p] with columns ordered by `bnm`, from the
+# same source .tulpa_eta_draws() reads: .fixed_coef_draws() -- a fit's genuine
+# draws when present (genuine = TRUE), otherwise a synthesized draw from the
+# (Laplace / Gaussian) fixed-effect posterior N(coef, vcov). Seeded so a
+# synthesized draw here is bit-for-bit the one .ps_component_loglik()'s own
+# .tulpa_eta_draws() call reproduces from the same seed.
+.ps_fixed_draws <- function(fit, bnm) {
+  .preserve_seed_in_frame()
+  set.seed(.PS_SEED)
+  cd <- .fixed_coef_draws(fit, .PS_NDRAWS)
+  if (!all(bnm %in% colnames(cd$beta))) {
     stop("Power-scaling needs the fixed-effect posterior: the fit exposes ",
          "neither draws nor a usable coef()/vcov().", call. = FALSE)
   }
-  list(B = .ps_rmvnorm(n_draws, mu, V[bnm, bnm, drop = FALSE]),
-       genuine = FALSE)
+  list(B = cd$beta[, bnm, drop = FALSE], genuine = !is.null(.fixed_draws_mat(fit)))
 }
 
-# Per-draw total log-likelihood on the fixed-effect linear predictor.
-.ps_component_loglik <- function(fit, data, B, bnm) {
-  X <- .tulpa_fixed_design(fit, data)[, bnm, drop = FALSE]
-  y <- eval(fit$formula[[2L]], envir = data)
-  eta <- X %*% t(B)                                  # [n x S]
-  phi <- fit$phi %||% 1.0
-  apply(eta, 2L, function(e) sum(family_loglik(e, y, fit$family, phi = phi)))
+# Per-draw total log-likelihood the fit's own linear predictor carries: fixed
+# effects, formula random effects, the offset, n_trials and phi2 -- the same
+# .tulpa_eta_draws() / .tulpa_eta_loglik() assembly .tulpa_loglik_parts() reads
+# for waic() / loo() -- rather than the fixed-effect predictor alone. Seeded to
+# reproduce, row for row, the fixed-effect draws .ps_fixed_draws() returns.
+.ps_component_loglik <- function(fit) {
+  eta <- .tulpa_eta_draws(fit, ndraws = .PS_NDRAWS, synth_seed = .PS_SEED)
+  rowSums(.tulpa_eta_loglik(fit, eta))
 }
 
 # Per-draw fixed-effect Gaussian log-prior at prior = list(mean, sd).
@@ -136,8 +147,8 @@
 #' of the hyperparameter prior by the same reweighting; `NA` otherwise.
 #'
 #' @param fit A `tulpa_fit` fitted through [tulpa()] (fixed-effect / GLMM;
-#'   spatial / temporal-field fits are rejected).
-#' @param data The data frame the model was fit to.
+#'   spatial / temporal-field fits and nested-Laplace outer-grid mixture fits,
+#'   e.g. a `latent()` block or a random-slope redirect, are rejected).
 #' @param prior The Gaussian fixed-effect prior the fit used, as
 #'   `list(mean =, sd =)` (scalars recycled). Required for the prior component;
 #'   omit to compute the likelihood component only.
@@ -160,19 +171,32 @@
 #' d$y <- rpois(150, exp(0.5 + 0.7 * d$x))
 #' fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace",
 #'              beta_prior = list(mean = 0, sd = 5))
-#' tulpa_powerscale_sensitivity(fit, data = d, prior = list(mean = 0, sd = 5))
+#' tulpa_powerscale_sensitivity(fit, prior = list(mean = 0, sd = 5))
 #' }
 #' @export
-tulpa_powerscale_sensitivity <- function(fit, data, prior = NULL,
+tulpa_powerscale_sensitivity <- function(fit, prior = NULL,
                                          lower_alpha = 0.99, upper_alpha = 1.01,
                                          threshold = 0.05) {
   if (!inherits(fit, "tulpa_fit")) {
     stop("`fit` must be a tulpa_fit.", call. = FALSE)
   }
   if (!is.null(fit$spatial) || !is.null(fit$temporal) ||
-      !is.null(fit$temporal_field)) {
+      !is.null(fit$temporal_field) || !is.null(fit$spatial_fields) ||
+      !is.null(fit$temporal_fields) || !is.null(fit$field_eta_contrib) ||
+      identical(.tulpa_linpred_source(fit), "grid_mixture")) {
     stop("Power-scaling sensitivity is not supported for spatial / ",
-         "temporal-field fits.", call. = FALSE)
+         "temporal-field fits, or a nested-Laplace outer-grid mixture fit ",
+         "(e.g. a `latent()` block or a random-slope redirect).",
+         call. = FALSE)
+  }
+  if (is.null(fit$formula)) {
+    stop("Power-scaling sensitivity needs the fit's engine formula, which ",
+         "this fit's class does not carry (e.g. a tulpaObs fit).",
+         call. = FALSE)
+  }
+  if (!is.character(fit$family) || length(fit$family) != 1L) {
+    stop("Power-scaling sensitivity needs a single built-in family name; ",
+         "this fit's family is not one.", call. = FALSE)
   }
   bnm <- names(stats::coef(fit))
   fd  <- .ps_fixed_draws(fit, bnm)
@@ -193,7 +217,7 @@ tulpa_powerscale_sensitivity <- function(fit, data, prior = NULL,
     }, numeric(1))
   }
 
-  lik  <- .ps_component_loglik(fit, data, B, bnm)
+  lik  <- .ps_component_loglik(fit)
   lik_s <- grad_for(lik)
 
   if (!is.null(prior)) {

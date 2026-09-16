@@ -11,7 +11,8 @@
   n_fixed = NULL,
   fixed_names = NULL,
   param_names = NULL,
-  extra_class = NULL
+  extra_class = NULL,
+  data = NULL
 )
 }
 \arguments{
@@ -28,6 +29,15 @@ when the fitter left it unset. An unnamed \code{means} vector of the matching
 length is named by \code{param_names}.}
 
 \item{extra_class}{Subclass(es) to prepend before \code{tulpa_fit}.}
+
+\item{data}{Observation-level fields the fitter was called with --
+\code{list(y=, n_trials=, model_matrix=, family=, offset=, phi=, phi2=)} --
+stamped onto the fit so a directly-called fitter carries the same
+\code{nobs()} / \code{fitted()} / \code{predict()} / \code{posterior_predict()} surface a
+\code{tulpa()}-dispatched one does (gcol33/tulpa#781). Any subset may be
+supplied; each entry fills only when the fitter did not already set the
+matching field, so a fitter that already stamped a richer value (e.g. the
+full design bundle \code{tulpa()} attaches post-dispatch) wins.}
 }
 \value{
 The enriched fit, classed \code{c(extra_class, ..., "tulpa_fit")}.
