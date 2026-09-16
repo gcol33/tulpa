@@ -675,9 +675,50 @@ tulpa_dispatch <- function(mode,
   fit$axis_fields_dropped <- fit$axis_fields_dropped %||%
     getOption("tulpa.nl_axis_dropped", NULL)
 
-  if (!is.null(n_fixed))     fit$n_fixed     <- fit$n_fixed     %||% n_fixed
-  if (!is.null(fixed_names)) fit$fixed_names <- fit$fixed_names %||% fixed_names
-  if (!is.null(param_names)) fit$param_names <- fit$param_names %||% param_names
+  # A zero-length name vector (`character(0)`, from `colnames(X) %||%
+  # positional` when `X` has NULL colnames) is not information -- treat it
+  # the same as NULL rather than latching it in, which previously left
+  # `fixed_names` at `character(0)` and turned `fixed_names[idx]` into NA for
+  # every coefficient (gcol33/tulpa#780). `%||%` only substitutes for NULL, so
+  # both sides of the assignment are length-checked instead: an already-set
+  # `character(0)` (from a prior finalize pass, or a fitter that pre-set the
+  # field) does not block a later, real name vector either.
+  if (!is.null(n_fixed) && is.null(fit$n_fixed)) fit$n_fixed <- n_fixed
+  if (length(fixed_names) && !length(fit$fixed_names)) fit$fixed_names <- fixed_names
+  if (length(param_names) && !length(fit$param_names)) fit$param_names <- param_names
+
+  # A blank ("") name survives every length/NULL check above but is refused
+  # by R's OWN `[.matrix` when later used to select a column -- `m[, ""]`
+  # errors "subscript out of bounds" even when a column is literally named
+  # "" (`cbind(1, x)` names its first column ""), which is what
+  # `.tulpa_point_linpred()` does with `names(coef(fit))` at predict time
+  # (gcol33/tulpa#780). Repaired positionally as soon as `fixed_names` holds
+  # SOME real content; a fit carrying no names at all (mala(), pathfinder(),
+  # a raw `logpost` sampler with no fixed/random split) is left alone here --
+  # synthesizing a placeholder for those would block the later, real name a
+  # front door adds through a SECOND `.finalize_fit()` call (mode = "mala"
+  # wrapped by tulpa()); this only ever narrows an already-nonempty vector.
+  if (!is.null(fit$n_fixed) && length(fit$fixed_names)) {
+    fit$fixed_names <- .tulpa_fill_names(fit$fixed_names, fit$n_fixed, "beta")
+  }
+  # The design a standalone fitter stores verbatim (`$model_matrix <- X`) is
+  # what predict() / fitted() / residuals() later index BY NAME against
+  # `names(coef(fit))`; if `X` itself had no or blank column names, stamp the
+  # SAME repaired names onto its leading `fixed_names` columns so the two
+  # stay in lock-step rather than one saying "beta1" and the other "".
+  # `tulpa()`'s own dispatch overwrites `$model_matrix` unconditionally with
+  # the (always fully-named) design bundle afterward, so this never fights a
+  # later real design.
+  if (length(fit$fixed_names) && is.matrix(fit$model_matrix) &&
+      ncol(fit$model_matrix) >= length(fit$fixed_names)) {
+    mmcn <- colnames(fit$model_matrix)
+    p <- length(fit$fixed_names)
+    if (is.null(mmcn)) mmcn <- rep("", ncol(fit$model_matrix))
+    if (!identical(mmcn[seq_len(p)], fit$fixed_names)) {
+      mmcn[seq_len(p)] <- fit$fixed_names
+      colnames(fit$model_matrix) <- mmcn
+    }
+  }
   fit <- .name_means_by_parameter(fit)
 
   cls <- oldClass(fit)
@@ -685,6 +726,32 @@ tulpa_dispatch <- function(mode,
   if (!("tulpa_fit" %in% cls)) cls <- c(cls, "tulpa_fit")
   class(fit) <- cls
   fit
+}
+
+
+# Fill NULL, blank ("") or short/absent names positionally with `<prefix><i>`.
+# The one place a name vector reaching a boundary that cannot tolerate NA, "",
+# or a length mismatch is repaired -- `row.names<-` (print/summary), a
+# `draws[, ""]` subset (the per-parameter plots), and `dimnames<-` on an
+# unnamed array all error opaquely on such a vector rather than reporting "no
+# name" (gcol33/tulpa#780). Deliberately NOT written back onto the fit: a
+# fitter's raw result is often re-finalized by a front door that supplies the
+# real names afterward (`tulpa()` re-finalizing a backend's own fit with the
+# design's own `param_names`), and persisting a synthesized "param3" would
+# block that later, authoritative assignment the same way a stale
+# `character(0)` used to. Every reader that needs a complete name vector
+# (`.tulpa_draw_names()`, `.tulpa_pooled_draws()`) calls this at read time
+# instead, off whatever the fit carries at that moment.
+#' @keywords internal
+.tulpa_fill_names <- function(nm, n, prefix = "param") {
+  out <- rep(NA_character_, n)
+  if (!is.null(nm) && length(nm)) {
+    k <- min(length(nm), n)
+    out[seq_len(k)] <- as.character(nm)[seq_len(k)]
+  }
+  blank <- is.na(out) | !nzchar(out)
+  if (any(blank)) out[blank] <- paste0(prefix, which(blank))
+  out
 }
 
 

@@ -81,9 +81,15 @@
 #'
 #' @return A list with class `c("tulpa_tgmrf_nuts_joint", "tulpa_fit")`:
 #'   \itemize{
-#'     \item `draws_beta`, `draws_z`, `draws_theta` -- post-warmup draws.
+#'     \item `draws`, `means`, `param_names`, `n_fixed`, `fixed_names` --
+#'       the pooled post-warmup draws (fixed effects, then `z`, then
+#'       `theta`, in that column order) and layout the generic accessors
+#'       (`summary()`, `coef()`, `diagnostics()`, the trace and pairs
+#'       plots) read.
+#'     \item `draws_beta`, `draws_z`, `draws_theta` -- the same draws,
+#'       split back into their per-block matrices.
 #'     \item `means_beta`, `means_z`, `means_theta`,
-#'       `sds_beta`, `sds_z`, `sds_theta` -- column-wise moments.
+#'       `sds_beta`, `sds_z`, `sds_theta` -- per-block column-wise moments.
 #'     \item `mean_accept`, `tree_depth`, `divergent`, `epsilon` --
 #'       sampler diagnostics.
 #'     \item `gradient_check` -- the analytic-vs-central-difference comparison
@@ -248,12 +254,28 @@
   colnames(draws_theta) <- theta_names
 
   n_keep <- nrow(draws_theta)
-  keep <- seq_len(n_keep)
   tree_depth_keep <- raw$tree_depth[(warmup + 1L):length(raw$tree_depth)]
   accept_keep     <- raw$accept_prob[(warmup + 1L):length(raw$accept_prob)]
   divergent_keep  <- raw$divergent[(warmup + 1L):length(raw$divergent)]
 
+  # Fixed effects first, matching the column layout `mode = "nuts"` and
+  # every other chain producer report through the generic accessors
+  # (`summary()` / `coef()` / `diagnostics()` / the trace and pairs plots),
+  # none of which read the per-block `draws_beta` / `draws_z` / `draws_theta`
+  # matrices directly.
+  draws <- cbind(draws_beta, draws_z, draws_theta)
+  param_names <- c(beta_names, z_names, theta_names)
+
   fit <- list(
+    draws          = draws,
+    means          = colMeans(draws),
+    param_names    = param_names,
+    n_fixed        = p,
+    fixed_names    = beta_names,
+    n_params       = ncol(draws),
+    n_samples      = n_keep,
+    chain_id       = rep(1L, n_keep),
+    n_chains       = 1L,
     draws_beta     = draws_beta,
     draws_z        = draws_z,
     draws_theta    = draws_theta,
@@ -263,7 +285,6 @@
     sds_beta       = apply(draws_beta,  2L, stats::sd),
     sds_z          = apply(draws_z,     2L, stats::sd),
     sds_theta      = apply(draws_theta, 2L, stats::sd),
-    n_samples      = n_keep,
     mean_accept    = mean(accept_keep),
     tree_depth     = tree_depth_keep,
     divergent      = divergent_keep,
@@ -279,5 +300,7 @@
     inference_tier = 1L,
     backend        = "tgmrf_nuts_joint"
   )
-  .finalize_fit(fit, draws_kind = "chain", extra_class = "tulpa_tgmrf")
+  .finalize_fit(fit, draws_kind = "chain", extra_class = "tulpa_tgmrf",
+                n_fixed = p, fixed_names = beta_names,
+                param_names = param_names)
 }

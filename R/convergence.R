@@ -414,6 +414,8 @@ mcmc_draws <- function(fit) {
     colnames(m) <- pn
     return(m)
   }
+  cn <- .tulpa_draw_names(colnames(draws), fit, ncol(draws))
+  if (!identical(colnames(draws), cn)) colnames(draws) <- cn
   draws
 }
 
@@ -489,10 +491,9 @@ tulpa_draws_array <- function(fit) {
 # (gcol33/tulpa#714).
 #' @keywords internal
 .tulpa_draw_names <- function(nm, fit, p) {
-  if (!is.null(nm) && length(nm) == p) return(nm)
-  pn <- fit$param_names
-  if (!is.null(pn) && length(pn) >= p) return(as.character(pn)[seq_len(p)])
-  paste0("param", seq_len(p))
+  if (!is.null(nm) && length(nm) == p && all(nzchar(nm))) return(nm)
+  base <- if (!is.null(nm) && length(nm) == p) nm else fit$param_names
+  .tulpa_fill_names(base, p, "param")
 }
 
 # The array assembly without the user-facing note, for the internal callers that

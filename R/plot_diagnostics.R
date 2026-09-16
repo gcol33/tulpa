@@ -459,8 +459,9 @@ plot_pairs <- function(fit, pars = NULL, highlight_divergent = TRUE,
     stop("fit must be a tulpa_fit object", call. = FALSE)
   }
 
-  # Get draws
-  draws <- .fit_draws(fit)
+  # Get draws (pooled 2-D with colnames; handles a 3-D [iter, chain, param] fit
+  # and fills any NULL/blank parameter name positionally, gcol33/tulpa#780)
+  draws <- .tulpa_pooled_draws(fit)
   if (is.null(draws)) {
     message(.tulpa_no_draws_note(fit, "plot_pairs"))
     return(invisible(NULL))
@@ -471,11 +472,19 @@ plot_pairs <- function(fit, pars = NULL, highlight_divergent = TRUE,
     # Select variance parameters and key fixed effects
     all_pars <- colnames(draws)
     var_pars <- grep("^(sigma|phi|tau|rho)", all_pars, value = TRUE)
-    # Fixed effects: the fit's canonical fixed-effect names (every tulpa_fit sets
-    # $fixed_names), so this works for any model package. Fall back to a generic
-    # beta / intercept pattern -- covering ratio's beta_num / beta_denom -- when
-    # the names are unavailable or do not line up with the draws columns.
-    beta_pars <- intersect(fit$fixed_names %||% character(0), all_pars)
+    # Fixed effects are always the leading columns of `draws` by convention
+    # (`.pg_as_chain`, the tgmrf joint samplers, tulpa()'s own layout), so
+    # position is tried first: a NULL or blank fixed name that
+    # `.tulpa_pooled_draws()` has since filled in positionally (e.g. "param1")
+    # no longer name-matches `fit$fixed_names` itself (gcol33/tulpa#780). Fall
+    # back to the name match, then a generic beta / intercept pattern --
+    # covering ratio's beta_num / beta_denom -- when `n_fixed` is absent.
+    beta_pars <- if (!is.null(fit$n_fixed) && fit$n_fixed >= 1L &&
+                     fit$n_fixed <= length(all_pars)) {
+      all_pars[seq_len(fit$n_fixed)]
+    } else {
+      intersect(fit$fixed_names %||% character(0), all_pars)
+    }
     if (!length(beta_pars)) {
       beta_pars <- grep("^(beta[_[]|\\(Intercept\\))", all_pars, value = TRUE)
     }
