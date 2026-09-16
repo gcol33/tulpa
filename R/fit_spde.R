@@ -138,6 +138,8 @@ fit_spde <- function(y, X, spatial,
                      control = list()) {
 
   mode <- match.arg(mode)
+  family <- .canonical_family(family)
+  .family_or_stop(family)
   hyperprior <- .hp_choice(match.arg(hyperprior))
   if (mode == "nuts" && identical(hyperprior, "flat")) {
     stop("`hyperprior = \"flat\"` is not read by mode = 'nuts', which samples ",

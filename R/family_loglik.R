@@ -1005,6 +1005,15 @@ family_names <- function() names(.FAMILY_OPS)
 #' unrecognized, which reaches `.family_or_stop()` and errors there against the
 #' canonical list.
 #'
+#' Case is normalized as a last resort, after the exact spelling and the alias
+#' table both miss: `stats::Gamma()$family` is `"Gamma"`, capitalized, and
+#' `.family_object_to_name()` lowercases it for the `family = Gamma(...)`
+#' object form, so the equivalent string form (`family = "Gamma"`) has to reach
+#' the same registry entry rather than being refused as unknown
+#' (gcol33/tulpa#806). Applied to a `<family>_<link>` code too
+#' (`"Gamma_log"` -> `"gamma_log"`), never to a name that is already
+#' recognized as it stands -- so a registry name that happens to collide
+#' case-insensitively with another spelling is never silently rewritten.
 #' @param family Family identifier as supplied by the caller.
 #' @keywords internal
 .canonical_family <- function(family) {
@@ -1013,6 +1022,14 @@ family_names <- function() names(.FAMILY_OPS)
   }
   hit <- unname(.FAMILY_ALIASES[family])
   if (!is.na(hit)) return(hit)
+  if (!is.null(.FAMILY_OPS[[family]]) || !is.null(.linked_family_ops(family))) {
+    return(family)
+  }
+  lower <- tolower(family)
+  if (!identical(lower, family) &&
+      (!is.null(.FAMILY_OPS[[lower]]) || !is.null(.linked_family_ops(lower)))) {
+    return(lower)
+  }
   family
 }
 

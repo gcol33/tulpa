@@ -1679,6 +1679,8 @@ tulpa_re_cov_nested <- function(y, n_trials = NULL, X, re_terms,
   # Perf/numerical knobs live in `control = list()` (matching tulpa() /
   # tulpa_nested_laplace()); the signature carries only statistical arguments.
   tulpa_check_control(control, .CONTROL_KEYS$re_cov_nested, "tulpa_re_cov_nested")
+  family <- .canonical_family(family)
+  .family_or_stop(family)
   hyperprior <- .hp_choice(match.arg(hyperprior))
   prior_proper <- !is.null(log_prior_theta) || identical(hyperprior, "proper")
   log_prior_theta <- .re_cov_resolve_hyperprior(hyperprior, log_prior_theta)
