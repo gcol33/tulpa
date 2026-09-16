@@ -61,7 +61,7 @@
 #'     tolerance.
 #'   * `n_threads` (`1L`) -- inner-loop OpenMP threads.
 #'   * `x_init` (`NULL`) -- warm-start for the first grid point's inner solve.
-#'   * `keep_grid_hessians` (`FALSE`) -- when `TRUE`, retain per-grid-point
+#'   * `keep_grid_hessians` (`TRUE`) -- when `TRUE`, retain per-grid-point
 #'     fixed-effects marginal Hessian \eqn{H_\beta} and mode \eqn{\hat{\beta}}
 #'     on the return list as `$grid_hessians` (list of dense \eqn{p\times p}
 #'     matrices) and `$grid_modes` (list of length-\eqn{p} vectors). Used
@@ -426,7 +426,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   # Same shape as the subspace one: a second pass over the settled grid whose
   # per-cell particles are pooled into the reported draws.
   cila_cfg           <- .cila_config(control$cila)
-  keep_grid_hessians <- isTRUE(control$keep_grid_hessians) || !is.null(sd_cfg)
+  keep_grid_hessians <- isTRUE(control$keep_grid_hessians %||% TRUE) || !is.null(sd_cfg)
   diagnose_k         <- isTRUE(control$diagnose_k %||% TRUE)
   k_samples          <- as.integer(control$k_samples %||% .nl_diag("k_samples"))
   k_tail_points      <- control$k_tail_points

@@ -114,6 +114,27 @@ test_that("EP front door rejects random effects and a non-zero prior mean", {
   )
 })
 
+test_that("EP front door forwards phi2 to ep_fit() (gcol33/tulpa#785)", {
+  skip_on_cran()
+  set.seed(1)
+  n <- 160L; G <- 12L
+  x <- rnorm(n); g <- factor(sample(seq_len(G), n, replace = TRUE))
+  b0 <- rnorm(G, 0, 0.5); b1 <- rnorm(G, 0, 0.3)
+  d <- data.frame(x = x, g = g,
+                  y = 0.5 + x + b0[g] + b1[g] * x + 0.7 * rt(n, 4))
+
+  direct <- tulpa_ep(y ~ x, data = d, family = "t", phi = 0.7, phi2 = 30)
+  front  <- tulpa(y ~ x, data = d, family = "t", phi = 0.7, phi2 = 30,
+                  mode = "ep")
+  expect_equal(unname(coef(front)), unname(coef(direct)), tolerance = 1e-8)
+
+  # phi2 actually moves the fit relative to the family's default.
+  default <- tulpa_ep(y ~ x, data = d, family = "t", phi = 0.7)
+  expect_true(any(abs(unname(coef(direct)) - unname(coef(default))) > 1e-3))
+
+  expect_true("ep" %in% tulpa:::.phi2_backends())
+})
+
 test_that("EP recovers logistic-GLM coefficients", {
   skip_on_cran()
   set.seed(2)

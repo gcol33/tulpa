@@ -253,7 +253,7 @@ BACKEND_REGISTRY <- list(
     emits = "iid",
     tier = "structured", input = "design", fitter = "ep_fit",
     families = NULL, cabi = NULL,
-    carries_offset = TRUE,
+    carries_offset = TRUE, phi2 = TRUE,
     note = paste("Expectation Propagation over a fixed-effect GLM with a",
                  "mean-zero Gaussian coefficient prior; matches marginal moments",
                  "(exact for a Gaussian likelihood), no random effects / fields")

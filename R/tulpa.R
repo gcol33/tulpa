@@ -723,11 +723,6 @@
     # multi-block-only, which holds here: the length-0 check above already
     # required a field / smoother / latent block, so RE blocks are never alone.
     prior <- if (length(all_blocks) == 1L) all_blocks[[1L]] else all_blocks
-    # Retain the per-grid fixed-effect Hessians by default so summary()/vcov()
-    # can report the grid-marginalized fixed-effect SE (the within-grid Laplace
-    # covariance is needed for it). Cheap for the small fixed-effect block;
-    # users can switch it off via control$keep_grid_hessians = FALSE.
-    control$keep_grid_hessians <- control$keep_grid_hessians %||% TRUE
     out <- list(
       y           = bundle$y,
       n_trials    = n_trials %||% rep(1L, bundle$n_obs),
@@ -1084,6 +1079,7 @@
         X          = bundle$X,
         family     = family,
         phi        = phi %||% 1.0,
+        phi2       = phi2,
         n_trials   = n_trials,
         beta_prior = beta_prior_default,
         offset     = bundle$offset,

@@ -1103,7 +1103,7 @@ family_names <- function() names(.FAMILY_OPS)
   c("laplace", "eb", "re_cov_nested",
     names(BACKEND_REGISTRY)[vapply(
       BACKEND_REGISTRY,
-      function(b) isTRUE(b$input %in% c("logpost", "modeldata")),
+      function(b) isTRUE(b$input %in% c("logpost", "modeldata")) || isTRUE(b$phi2),
       logical(1))])
 }
 

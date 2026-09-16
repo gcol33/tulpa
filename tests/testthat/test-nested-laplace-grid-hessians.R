@@ -60,7 +60,29 @@ test_that("keep_grid_hessians exposes per-grid H_beta and modes", {
   expect_null(result$Q_csc_x_per_grid)
 })
 
-test_that("default keep_grid_hessians = FALSE leaves return list unchanged", {
+test_that("default keep_grid_hessians = TRUE retains per-grid H_beta and modes", {
+  skip_on_cran()
+  adj <- make_grid_adjacency(5, 5)
+  dat <- simulate_spatial_data(
+    n_sites = 25, n_obs_per_site = 10,
+    beta0 = -0.5, tau_spatial = 3.0, adj = adj
+  )
+  tau_grid <- exp(seq(log(0.5), log(20), length.out = 5))
+  prior <- icar_prior(adj, 25L, tau_grid = tau_grid)
+  prior$spatial_idx <- dat$spatial_idx
+
+  result <- tulpa_nested_laplace(
+    y = dat$y, n_trials = dat$n_trials, X = dat$X,
+    prior = prior, family = "binomial"
+  )
+
+  expect_type(result$grid_hessians, "list")
+  expect_type(result$grid_modes, "list")
+  expect_length(result$grid_hessians, length(tau_grid))
+  expect_length(result$grid_modes, length(tau_grid))
+})
+
+test_that("keep_grid_hessians = FALSE leaves return list unchanged", {
   skip_on_cran()
   adj <- make_grid_adjacency(5, 5)
   dat <- simulate_spatial_data(
@@ -73,7 +95,8 @@ test_that("default keep_grid_hessians = FALSE leaves return list unchanged", {
 
   result <- tulpa_nested_laplace(
     y = dat$y, n_trials = dat$n_trials, X = dat$X,
-    prior = prior, family = "binomial"
+    prior = prior, family = "binomial",
+    control = list(keep_grid_hessians = FALSE)
   )
 
   expect_null(result$grid_hessians)
