@@ -162,7 +162,7 @@ test_that("the inner importance weights are uniform for a gaussian fit (the Lapl
   n <- 300L
   x <- rnorm(n)
   y <- 1 + 0.5 * x + rnorm(n, 0, 1)
-  fit <- tulpa:::cpp_laplace_fit(
+  fit <- ref_laplace_fit_single(
     y = as.numeric(y), n = rep(1L, n), X = cbind(1, x),
     re_idx = numeric(0), n_re_groups = 0L, sigma_re = 1.0,
     family = "gaussian", compute_skew = TRUE, skew_idx = as.integer(1:2))
@@ -198,7 +198,7 @@ test_that("the inner k-hat tracks gamma_3 across a binomial-intercept skewness l
   got <- lapply(cases, function(cs) {
     N <- cs[["N"]]; S <- cs[["S"]]
     y <- c(rep(1, S), rep(0, N - S))
-    fit <- tulpa:::cpp_laplace_fit(
+    fit <- ref_laplace_fit_single(
       y = as.numeric(y), n = rep(1L, N), X = matrix(1, N, 1),
       re_idx = numeric(0), n_re_groups = 0L, sigma_re = 1.0,
       family = "binomial", compute_skew = TRUE, skew_idx = 1L)

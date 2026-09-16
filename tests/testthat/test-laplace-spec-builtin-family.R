@@ -1,18 +1,19 @@
 # Built-in family path through the unified single-point Laplace export
-# (cpp_laplace_fit). builtin_family_spec() routes each family's per-observation
-# likelihood through grad_hess_for_family / log_lik_for_family, and the spec
-# solver (laplace_mode_spec_dense_solve) is now the only inner Newton (B2-live
-# retired the family-enum bodies). The weak default prior (sigma_beta = 100,
-# tau = 1e-4) is effectively flat at these sample sizes, so the MAP coincides
-# with the GLM MLE for every family stats::glm fits natively -- an independent
-# reference. Broader multi-family parameter recovery + CI coverage lives in
-# test-nested-laplace-recovery.R.
+# (cpp_laplace_fit_multi_re, reached here through ref_laplace_fit_single(),
+# see helper-laplace-fit-single.R). builtin_family_spec() routes each family's
+# per-observation likelihood through grad_hess_for_family / log_lik_for_family,
+# and the spec solver (laplace_mode_spec_dense_solve) is now the only inner
+# Newton (B2-live retired the family-enum bodies). The weak default prior
+# (sigma_beta = 100, tau = 1e-4) is effectively flat at these sample sizes, so
+# the MAP coincides with the GLM MLE for every family stats::glm fits natively
+# -- an independent reference. Broader multi-family parameter recovery + CI
+# coverage lives in test-nested-laplace-recovery.R.
 
-# cpp_laplace_fit MAP beta (the leading p of the mode) vs stats::glm MLE.
+# ref_laplace_fit_single MAP beta (the leading p of the mode) vs stats::glm MLE.
 expect_glm_match <- function(family, glm_family, y, n_trials, X, phi,
                              tol = 1e-2) {
   p <- ncol(X)
-  fit <- tulpa:::cpp_laplace_fit(
+  fit <- ref_laplace_fit_single(
     y = y, n = n_trials, X = X,
     re_idx = numeric(0), n_re_groups = 0L, sigma_re = 1.0,
     family = family, phi = phi,
@@ -30,7 +31,7 @@ expect_glm_match <- function(family, glm_family, y, n_trials, X, phi,
                info = paste0(family, ": MAP == glm MLE"))
 }
 
-test_that("cpp_laplace_fit MAP matches the glm MLE for GLM-native families", {
+test_that("ref_laplace_fit_single MAP matches the glm MLE for GLM-native families", {
   set.seed(2026L)
   N <- 400L
   p <- 3L
@@ -49,7 +50,7 @@ test_that("cpp_laplace_fit MAP matches the glm MLE for GLM-native families", {
                    rgamma(N, shape = 2, rate = 2 / exp(eta)), ones, X, phi = 2.0)
 })
 
-test_that("cpp_laplace_fit converges to a finite mode for every built-in family", {
+test_that("ref_laplace_fit_single converges to a finite mode for every built-in family", {
   set.seed(2026L)
   N <- 300L
   p <- 3L
@@ -71,7 +72,7 @@ test_that("cpp_laplace_fit converges to a finite mode for every built-in family"
     list(f = "inverse_gaussian", y = exp(eta) * exp(rnorm(N, 0, 0.3)),    n = ones, phi = 1.0)
   )
   for (cs in cases) {
-    fit <- tulpa:::cpp_laplace_fit(
+    fit <- ref_laplace_fit_single(
       y = cs$y, n = cs$n, X = X,
       re_idx = numeric(0), n_re_groups = 0L, sigma_re = 1.0,
       family = cs$f, phi = cs$phi, max_iter = 300L, tol = 1e-10, n_threads = 1L
@@ -82,12 +83,14 @@ test_that("cpp_laplace_fit converges to a finite mode for every built-in family"
   }
 })
 
-test_that("cpp_laplace_fit agrees with cpp_laplace_fit_multi_re on a single iid RE", {
-  # Two independent marshalling paths into the one spec solver (the basic
-  # single-RE setup vs the multi-term builder); their modes must coincide.
+# ref_laplace_fit_single() is itself a thin wrapper over cpp_laplace_fit_multi_re
+# (see helper-laplace-fit-single.R), so a same-vs-same equivalence check no
+# longer says anything; the two-marshalling-paths agreement it used to assert
+# (single-RE builder vs the multi-term one, both into the one spec solver) is
+# recorded in the helper's own header comment instead.
+test_that("ref_laplace_fit_single with one RE term matches cpp_laplace_fit_multi_re directly", {
   set.seed(7L)
   N <- 300L
-  p <- 2L
   n_re_groups <- 12L
   sigma_re <- 0.5
   X <- cbind(1, rnorm(N))
@@ -99,7 +102,7 @@ test_that("cpp_laplace_fit agrees with cpp_laplace_fit_multi_re on a single iid 
   for (fam in c("poisson", "binomial")) {
     nt <- if (fam == "binomial") rep(8L, N) else rep(1L, N)
     y  <- if (fam == "binomial") rbinom(N, 8L, plogis(eta)) else rpois(N, exp(eta))
-    basic <- tulpa:::cpp_laplace_fit(
+    single <- ref_laplace_fit_single(
       y = y, n = nt, X = X, re_idx = as.numeric(re_idx),
       n_re_groups = n_re_groups, sigma_re = sigma_re, family = fam, phi = 1.0,
       max_iter = 300L, tol = 1e-11, n_threads = 1L
@@ -111,7 +114,7 @@ test_that("cpp_laplace_fit agrees with cpp_laplace_fit_multi_re on a single iid 
       re_sigma_list = list(sigma_re),
       family = fam, phi = 1.0, max_iter = 300L, tol = 1e-11, n_threads = 1L
     )
-    expect_equal(basic$mode, multi$mode, tolerance = 1e-6,
-                 info = paste0(fam, ": basic vs multi_re mode"))
+    expect_identical(single$mode, multi$mode,
+                     info = paste0(fam, ": single-term wrapper vs direct multi_re call"))
   }
 })

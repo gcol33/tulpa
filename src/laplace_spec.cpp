@@ -1233,7 +1233,7 @@ LaplaceResult spec_inner_solve(
 // beta_prior overrides the scalar sigma_beta ridge with a full per-coef Gaussian.
 // The void laplace_mode_spec_dense_impl (the cross-package shim entry) is a thin
 // wrapper over this; the standalone single-point Laplace R exports
-// (cpp_laplace_fit{,_multi_re,_spatial,_bym2}) call it directly.
+// (cpp_laplace_fit_multi_re{,_spatial,_bym2}) call it directly.
 LaplaceResult laplace_mode_spec_dense_solve(
     const ModelData& data,
     const ParamLayout& layout,
@@ -1568,7 +1568,7 @@ Rcpp::List cpp_laplace_spec_test_gaussian(
         &n_iter, &converged, &log_det_Q, &log_marginal
     );
 
-    // Return mode + diagnostics in the same shape as cpp_laplace_fit's list.
+    // Return mode + diagnostics in the same shape as cpp_laplace_fit_multi_re's list.
     Rcpp::NumericVector mode(p + (has_re ? n_re_groups : 0));
     for (int j = 0; j < p; j++) mode[j] = params[j];
     if (has_re) {

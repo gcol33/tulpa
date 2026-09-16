@@ -81,7 +81,7 @@ LaplaceResult spec_inner_solve(
 // the per-(term,group) marginal covariance blocks (LaplaceResult.re_cov_flat)
 // the EM M-step consumes. beta_prior overrides the scalar data.sigma_beta ridge
 // with a full per-coef Gaussian. This is the entry the standalone single-point
-// Laplace R exports (cpp_laplace_fit{,_multi_re,_spatial,_bym2}) route through.
+// Laplace R exports (cpp_laplace_fit_multi_re{,_spatial,_bym2}) route through.
 LaplaceResult laplace_mode_spec_dense_solve(
     const ModelData& data,
     const ParamLayout& layout,

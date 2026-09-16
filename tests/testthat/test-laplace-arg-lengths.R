@@ -2,18 +2,21 @@
 # index by another argument's length (gcol33/tulpa#469).
 #
 # `Rcpp::Vector::operator[]`, `Matrix::operator()` and `List::operator[]` are
-# unchecked. Both entries size their loops from `y` (or from `K`, the RE term
-# count read off `re_ngroups`) and then index arguments the caller supplies
+# unchecked. The entry sizes its loops from `y` (and from `K`, the RE term
+# count read off `re_ngroups`) and then indexes arguments the caller supplies
 # separately, so a short one is read past the end of its allocation. Nothing
 # crashes: the read lands inside the R heap and returns a finite double, the
 # solve converges, and the result carries no sign of which numbers came from
 # the data -- the same failure mode as the NNGP coordinate read in
 # gcol33/tulpa#389.
 #
-# `cpp_laplace_fit` reaches its checks through `as_re_group_vec` and
-# `build_spec_family_inputs`; `cpp_laplace_fit_multi_re` marshals ModelData by
-# hand and carries its own. Both use the one `check_arg_length`, so the
-# assertions below are on the message it raises.
+# `cpp_laplace_fit_multi_re` marshals ModelData by hand and carries its own
+# checks through the one `check_arg_length`, so the assertions below are on
+# the message it raises. `as_re_group_vec` / `build_spec_family_inputs` guard
+# the same way on the other single-RE entries that still use them
+# (`cpp_laplace_fit_spatial`, the nested-Laplace single-arm entries); the
+# narrow fixed-effects-plus-one-RE entry that used to exercise them here
+# (`cpp_laplace_fit`) was deleted as a production dead end (gcol33/tulpa#811).
 
 skip_on_cran()
 
@@ -98,26 +101,4 @@ test_that("cpp_laplace_fit_multi_re still takes every argument at its own length
   full <- do.call(tulpa:::cpp_laplace_fit_multi_re, c(args, ok))
   base <- do.call(tulpa:::cpp_laplace_fit_multi_re, args)
   expect_equal(full$mode, base$mode, tolerance = 1e-10)
-})
-
-test_that("cpp_laplace_fit rejects a short re_idx, n or X", {
-  d <- .lal_data()
-  args <- list(y = d$y, n = d$n, X = d$X,
-               re_idx = as.numeric(d$idx[[1]]),
-               n_re_groups = d$n_re[1], sigma_re = 0.5,
-               family = "poisson", phi = 1.0,
-               max_iter = 20L, tol = 1e-6, n_threads = 1L)
-  expect_true(all(is.finite(do.call(tulpa:::cpp_laplace_fit, args)$mode)))
-
-  short <- list(
-    re_idx = as.numeric(d$idx[[1]])[seq_len(d$N - 1L)],
-    n      = d$n[seq_len(d$N - 1L)],
-    X      = d$X[seq_len(d$N - 1L), , drop = FALSE]
-  )
-  for (nm in names(short)) {
-    a <- args; a[[nm]] <- short[[nm]]
-    expect_error(do.call(tulpa:::cpp_laplace_fit, a),
-                 "must equal",
-                 info = paste("short", nm, "was not refused"))
-  }
 })

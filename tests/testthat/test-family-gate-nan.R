@@ -93,7 +93,7 @@ test_that("an unregistered family is an R error at more than one thread", {
     y <- as.numeric(rpois(N, 2))
     for (nt in c(1L, 4L)) {
         expect_error(
-            tulpa:::cpp_laplace_fit(
+            ref_laplace_fit_single(
                 y = y, n = rep(1L, N), X = X, re_idx = rep(0, N),
                 n_re_groups = 0L, sigma_re = 1.0,
                 family = "not_a_family", phi = 1.0,
@@ -113,7 +113,7 @@ test_that("tweedie without its variance power is refused before any solve", {
     y <- abs(rnorm(N)) + 0.1
     for (nt in c(1L, 4L)) {
         expect_error(
-            tulpa:::cpp_laplace_fit(
+            ref_laplace_fit_single(
                 y = y, n = rep(1L, N), X = X, re_idx = rep(0, N),
                 n_re_groups = 0L, sigma_re = 1.0,
                 family = "tweedie", phi = 1.0,

@@ -1,7 +1,7 @@
 # LikelihoodSpec-driven Laplace path. cpp_laplace_spec_test_gaussian drives the
 # spec solver with a hand-written Gaussian LikelihoodSpec (a stand-in for a
 # downstream package's custom likelihood, NOT the built-in family adapter);
-# cross-checking it against cpp_laplace_fit (family = "gaussian", the built-in
+# cross-checking it against ref_laplace_fit_single() (family = "gaussian", the built-in
 # adapter) proves an arbitrary user spec lands on the same posterior mode as the
 # shipped family math. The multi-RE blocks below check the spec solver against a
 # closed-form Gaussian posterior; the np == 2 fixtures exercise the multi-process
@@ -22,10 +22,10 @@ test_that("custom Gaussian spec matches the built-in family path for Gaussian + 
   eta <- as.numeric(X %*% beta_true) + u_true[re_idx]
   y <- eta + rnorm(N, sd = phi)
 
-  # Reference: the built-in Gaussian family through cpp_laplace_fit (identity
+  # Reference: the built-in Gaussian family through ref_laplace_fit_single() (identity
   # link), itself spec-driven since B2-live -- so this pins a custom user spec
   # against the shipped family closed form.
-  ref <- tulpa:::cpp_laplace_fit(
+  ref <- ref_laplace_fit_single(
     y         = y,
     n         = rep(1L, N),
     X         = X,
@@ -71,7 +71,7 @@ test_that("spec-driven Laplace works without RE", {
   X <- cbind(1, rnorm(N))
   y <- as.numeric(X %*% beta_true) + rnorm(N, sd = 0.5)
 
-  ref <- tulpa:::cpp_laplace_fit(
+  ref <- ref_laplace_fit_single(
     y         = y,
     n         = rep(1L, N),
     X         = X,

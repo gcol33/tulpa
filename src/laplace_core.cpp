@@ -5,7 +5,6 @@
 // template in laplace_newton.h.
 
 #include "laplace_core.h"
-#include "laplace_cholesky.h"
 #include "laplace_newton.h"
 #include "laplace_re_priors.h"
 #include "laplace_spec_fit.h"     // spec-solver marshalling for the single-point fits
@@ -31,41 +30,6 @@ using namespace Rcpp;
 // =====================================================================
 // R exports
 // =====================================================================
-
-// [[Rcpp::export]]
-Rcpp::List cpp_laplace_fit(
-    Rcpp::NumericVector y, Rcpp::IntegerVector n,
-    Rcpp::NumericMatrix X, Rcpp::NumericVector re_idx,
-    int n_re_groups, double sigma_re,
-    std::string family, double phi = 1.0,
-    int max_iter = 100, double tol = 1e-6, int n_threads = 1,
-    bool compute_skew = false,
-    Rcpp::Nullable<Rcpp::IntegerVector> skew_idx = R_NilValue
-) {
-    // Fixed effects + optional single iid RE, through the unified spec solver.
-    // sigma_beta = 100 is the weak ridge tau_beta = 1e-4 = DEFAULT_TAU_BETA.
-    const int N = y.size();
-    std::vector<int> re_group =
-        tulpa::as_re_group_vec(re_idx, n_re_groups, N);
-    tulpa::SpecFamilyInputs in;
-    tulpa::build_spec_family_inputs(
-        in, y, n, X, re_group, n_re_groups, sigma_re, family, phi,
-        /*sigma_beta=*/100.0, /*n_block_latent=*/0);
-    std::vector<double> params(in.layout.total_params, 0.0);
-    if (in.layout.has_re) {
-        tulpa::nl_check_positive("sigma_re", sigma_re);
-        params[in.layout.log_sigma_re_idx] = std::log(sigma_re);
-    }
-    std::vector<int> skew_idx_vec;
-    const std::vector<int>* skew_idx_ptr =
-        tulpa::unwrap_skew_idx(compute_skew, skew_idx, skew_idx_vec);
-    tulpa::LaplaceResult res = tulpa::laplace_mode_spec_dense_solve(
-        in.data, in.layout, params, in.re_group, max_iter, tol, n_threads,
-        /*blocks=*/nullptr, /*k_grid=*/0, /*beta_prior=*/nullptr,
-        /*return_re_cov=*/false, /*sparse_override=*/0, /*store_Q=*/false,
-        compute_skew, skew_idx_ptr);
-    return tulpa::laplace_result_to_list(res);
-}
 
 // `debias` is the subspace-debias request: a list carrying
 // `idx` (the 1-based latent index set to correct by Metropolis along the
@@ -386,46 +350,6 @@ Rcpp::List cpp_laplace_fit_multi_re(
         /*sparse_override=*/0, return_joint_hessian,
         compute_skew, skew_idx_ptr, db_ptr);
     return tulpa::laplace_result_to_list(res);
-}
-
-// [[Rcpp::export]]
-Rcpp::NumericMatrix cpp_laplace_sample(
-    Rcpp::NumericVector mode, Rcpp::NumericMatrix H, int n_samples
-) {
-    int n_x = mode.size();
-    Rcpp::NumericMatrix samples(n_samples, n_x);
-
-    // Cholesky of H + ridge*I. The same uniform upstream regularization
-    // every Laplace solve uses (see LAPLACE_UNIFORM_RIDGE in
-    // laplace_cholesky.h); guarantees PD on rank-deficient priors so the
-    // sampler never hits a non-positive pivot.
-    //
-    // The ridge goes on a clone. Rcpp binds a REALSXP argument without
-    // duplicating it, so ridging `H` in place writes the ridge into the R
-    // matrix the caller still holds, and a second call on the same matrix
-    // samples from a precision carrying the ridge twice.
-    Rcpp::NumericMatrix Hr = Rcpp::clone(H);
-    for (int j = 0; j < n_x; j++) Hr(j, j) += tulpa::LAPLACE_UNIFORM_RIDGE;
-    Rcpp::NumericMatrix L(n_x, n_x);
-    double log_det;
-    tulpa::dense_cholesky_factorize(Hr, n_x, L, log_det);
-
-    // Sample: z ~ N(0, I), x = mode + L^{-T} z
-    for (int s = 0; s < n_samples; s++) {
-        Rcpp::NumericVector z(n_x);
-        for (int j = 0; j < n_x; j++) z[j] = R::rnorm(0.0, 1.0);
-
-        // Solve L' x_centered = z (back substitution)
-        Rcpp::NumericVector x_centered(n_x);
-        for (int j = n_x - 1; j >= 0; j--) {
-            double sum = z[j];
-            for (int k = j + 1; k < n_x; k++) sum -= L(k, j) * x_centered[k];
-            x_centered[j] = sum / L(j, j);
-        }
-
-        for (int j = 0; j < n_x; j++) samples(s, j) = mode[j] + x_centered[j];
-    }
-    return samples;
 }
 
 // Spatial / BYM2 / RSR mode finders and their R exports live in

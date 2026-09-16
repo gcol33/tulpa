@@ -245,16 +245,8 @@ cpp_joint_inner_vcov_blocks <- function(Q_p_per_grid, Q_i_per_grid, Q_x_per_grid
     .Call(`_tulpa_cpp_joint_inner_vcov_blocks`, Q_p_per_grid, Q_i_per_grid, Q_x_per_grid, n_x, idx, n_dense, A_cols_list, field_marginal, n_threads)
 }
 
-cpp_laplace_fit <- function(y, n, X, re_idx, n_re_groups, sigma_re, family, phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L, compute_skew = FALSE, skew_idx = NULL) {
-    .Call(`_tulpa_cpp_laplace_fit`, y, n, X, re_idx, n_re_groups, sigma_re, family, phi, max_iter, tol, n_threads, compute_skew, skew_idx)
-}
-
 cpp_laplace_fit_multi_re <- function(y, n, X, re_idx_list, re_ngroups, re_sigma_list, family, phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L, re_Z_list = NULL, re_ncoefs = NULL, weights = NULL, offset = NULL, x_init = NULL, beta_prior_mean = NULL, beta_prior_sd = NULL, return_re_cov = FALSE, phi2 = NA_real_, X_zi = NULL, zi_prior_sd = 2.5, return_joint_hessian = FALSE, compute_skew = FALSE, skew_idx = NULL, debias = NULL) {
     .Call(`_tulpa_cpp_laplace_fit_multi_re`, y, n, X, re_idx_list, re_ngroups, re_sigma_list, family, phi, max_iter, tol, n_threads, re_Z_list, re_ncoefs, weights, offset, x_init, beta_prior_mean, beta_prior_sd, return_re_cov, phi2, X_zi, zi_prior_sd, return_joint_hessian, compute_skew, skew_idx, debias)
-}
-
-cpp_laplace_sample <- function(mode, H, n_samples) {
-    .Call(`_tulpa_cpp_laplace_sample`, mode, H, n_samples)
 }
 
 cpp_laplace_fit_gp <- function(y, n, X, re_idx, n_re_groups, sigma_re, coords, nn_idx, nn_dist, nn_order, n_spatial, nn, sigma2_gp, phi_gp, cov_type, family, phi = 1.0, max_iter = 100L, tol = 1e-6, n_threads = 1L, offset_nullable = NULL, obs_to_loc_nullable = NULL, compute_skew = FALSE, skew_idx = NULL, weights_nullable = NULL) {
@@ -927,6 +919,10 @@ cpp_test_tgmrf_block_pattern <- function(bs) {
 
 cpp_test_hsgp_warm_start <- function(has_hsgp, n_basis = 4L, n_spatial = 6L) {
     .Call(`_tulpa_cpp_test_hsgp_warm_start`, has_hsgp, n_basis, n_spatial)
+}
+
+cpp_test_laplace_sample <- function(mode, H, n_samples) {
+    .Call(`_tulpa_cpp_test_laplace_sample`, mode, H, n_samples)
 }
 
 cpp_test_lkj_build_L <- function(raw, n) {

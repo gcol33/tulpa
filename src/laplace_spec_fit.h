@@ -2,7 +2,7 @@
 // Marshalling from the standalone single-point Laplace R-export inputs into the
 // spec solver (laplace_mode_spec_dense_solve, laplace_spec.cpp). Single source
 // of truth for the ModelData / ParamLayout the family-enum single-point fitters
-// used to build inline: cpp_laplace_fit / _spatial / _bym2 all share the
+// used to build inline: cpp_laplace_fit_spatial / _bym2 share the
 // single-process built-in-family + optional single iid RE setup here, then add
 // their own GMRF blocks. cpp_laplace_fit_multi_re's multi-term marshalling lives
 // in laplace_core.cpp (its only caller); the correlated-covariance conversion it

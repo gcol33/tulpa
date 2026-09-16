@@ -234,7 +234,7 @@ test_that("a fit with no skew_correction record reports Gaussian quantiles", {
 # gamma_3 at the probed intercept.
 .skew_intercept_fit <- function(N, S) {
   y <- c(rep(1, S), rep(0, N - S))
-  f <- tulpa:::cpp_laplace_fit(
+  f <- ref_laplace_fit_single(
     y = as.numeric(y), n = rep(1L, N), X = matrix(1, N, 1),
     re_idx = numeric(0), n_re_groups = 0L, sigma_re = 1.0,
     family = "binomial", compute_skew = TRUE, skew_idx = 1L)
@@ -289,7 +289,7 @@ test_that("the correction is inert where the inner Laplace is already exact", {
   n <- 300L
   x <- rnorm(n)
   y <- 1 + 0.5 * x + rnorm(n, 0, 1)
-  f <- tulpa:::cpp_laplace_fit(
+  f <- ref_laplace_fit_single(
     y = as.numeric(y), n = rep(1L, n), X = cbind(1, x),
     re_idx = numeric(0), n_re_groups = 0L, sigma_re = 1.0,
     family = "gaussian", compute_skew = TRUE, skew_idx = as.integer(1:2))

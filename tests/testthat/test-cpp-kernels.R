@@ -227,7 +227,7 @@ test_that("the Laplace sampler draws from the Gaussian its Hessian defines", {
   set.seed(23)
   H <- matrix(c(4, 1, 1, 2), 2, 2)
   mode <- c(-1, 3)
-  d <- cpp_laplace_sample(mode, H, 20000L)
+  d <- cpp_test_laplace_sample(mode, H, 20000L)
   expect_equal(dim(d), c(20000L, 2L))
   expect_equal(colMeans(d), mode, tolerance = 0.05)
   expect_equal(cov(d), solve(H), tolerance = 0.05, ignore_attr = TRUE)
