@@ -614,6 +614,25 @@
       backend, paste(.phi2_backends(), collapse = ", ")), call. = FALSE)
   }
 
+  # Zero inflation. `.zi_backends()` (checked upstream, before `spatial` is in
+  # scope there) lists `laplace` unconditionally -- it reaches the mixture
+  # through the non-spatial two-process spec (X_zi + a beta_zi block); the
+  # spatial solvers (icar/car/bym2/car_proper/gp/nngp/hsgp/spde) have no
+  # zero-inflation channel, and tulpa_laplace() itself refuses `X_zi` together
+  # with `spatial`. Un-qualified, the spatial branch below built its argument
+  # list with no `X_zi` at all, so the mixture was silently never fit while
+  # `coef()` still reported a `zi_(Intercept)` from the parsed formula
+  # (gcol33/tulpa#793). Same "non-spatially" qualification as `weights` and
+  # `phi2` above.
+  zi_carried <- !(backend == "laplace" && !is.null(spatial))
+  if (!is.null(bundle$X_zi) && backend %in% .zi_backends() && !zi_carried) {
+    stop(sprintf(paste0(
+      "`ziformula` is not threaded through backend '%s' with a spatial ",
+      "field: the spatial Laplace solvers have no zero-inflation channel. ",
+      "Drop `ziformula` or `spatial`, or use a non-spatial mode."), backend),
+      call. = FALSE)
+  }
+
   if (input == "nested") {
     if (backend != "nested_laplace") {
       stop(sprintf(paste0(
@@ -2155,6 +2174,25 @@ tulpa <- function(formula, data,
       sel$backend, mode), call. = FALSE)
   }
 
+  # spatial_rsr()'s projection is applied only inside the binomial Polya-Gamma
+  # Gibbs sampler (cpp_pg_binomial_gibbs_rsr(), which reads $rsr_projection):
+  # the spec keeps its underlying areal $type ('icar' / 'car') for every other
+  # consumer, so nested_laplace / laplace / hmc / the other backends would read
+  # that type and fit the PLAIN (unprojected) areal field while still reporting
+  # $spatial$rsr = TRUE -- silently dropping the projection rather than fitting
+  # it (gcol33/tulpa#792). Fail loudly instead; only an explicit or
+  # auto-selected gibbs backend carries the projection.
+  is_rsr_fit <- identical(tolower(spatial_type %||% ""), "rsr")
+  if (is_rsr_fit && !identical(sel$backend, "gibbs")) {
+    stop(sprintf(paste0(
+      "spatial_rsr() is fit only by the binomial Polya-Gamma Gibbs sampler: ",
+      "every other backend reads the underlying areal $type ('%s') and would ",
+      "fit the plain, unprojected field. The selected backend '%s' ",
+      "(mode = '%s') does not carry the RSR projection. Use mode = 'gibbs' ",
+      "or 'auto'."),
+      spatial_spec$type, sel$backend, mode), call. = FALSE)
+  }
+
   # A continuous spatial field (gp / nngp / hsgp) plus a formula RE term turns
   # the nested fit into a multi-block prior, and the multi-block converter
   # behind nested_laplace (.nl_block_spec_for_cpp(), R/nested_laplace.R) has no
@@ -2300,6 +2338,21 @@ tulpa <- function(formula, data,
       "`sigma_re` is ignored for mode = '%s': the RE scale is %s, not ",
       "conditioned on a scalar SD. Drop `sigma_re`, or use mode = 'laplace' to ",
       "condition on it."), sel$backend, verb), call. = FALSE)
+  }
+
+  # The exact-logpost backends (mala / pathfinder / imh_laplace) build their
+  # target from build_glmm_logpost(), a fixed-effect + scalar-RE log-posterior
+  # with no spatial term: a spatial field reaching one of them is silently
+  # absent from eta rather than refused (gcol33/tulpa#791). Redirect to
+  # nested-Laplace the same way a temporal field is redirected below, so the
+  # field is fit rather than dropped; the SVC guard above has already refused
+  # an svc field on these backends, and the SPDE / multi-block checks that
+  # follow still apply to the redirected selection.
+  if (has_spatial &&
+      identical(BACKEND_REGISTRY[[sel$backend]]$input %||% "", "logpost")) {
+    sel <- .sel_redirect(sel, "nested_laplace", sprintf(
+      "%s spatial field; nested-Laplace integration (mode = '%s' carries no spatial term)",
+      spatial_type, mode), notify = TRUE)
   }
 
   # SPDE carries its own nested-Laplace integration engine: fit_spde() rebuilds

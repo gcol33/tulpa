@@ -2,6 +2,9 @@
 % Please edit documentation in R/criteria.R
 \name{criteria_doors}
 \alias{criteria_doors}
+\alias{pointwise_loglik}
+\alias{pointwise_loglik.default}
+\alias{pointwise_loglik.tulpa_fit}
 \alias{dic}
 \alias{dic.default}
 \alias{dic.tulpa_fit}
@@ -12,6 +15,12 @@
 \alias{loo.tulpa_fit}
 \title{DIC, CPO, WAIC and PSIS-LOO on a fit}
 \usage{
+pointwise_loglik(object, ...)
+
+\method{pointwise_loglik}{default}(object, ...)
+
+\method{pointwise_loglik}{tulpa_fit}(object, ndraws = NULL, ...)
+
 dic(object, ...)
 
 \method{dic}{default}(object, loglik_at_mean = NULL, ...)
@@ -52,6 +61,13 @@ the \pkg{loo} package owns no generic for. WAIC and PSIS-LOO have theirs
 those rather than on new names that would mask them.
 }
 \details{
+\code{pointwise_loglik()} is the one door onto the \verb{[n_draws x n_obs]} matrix
+itself, the input every criterion above is computed from. \code{\link[=compare_models]{compare_models()}}
+and \code{\link[=model_average]{model_average()}} call it (through an internal wrapper) rather than
+assuming the engine's own fit layout, so a model package that registers
+\verb{pointwise_loglik.<its fit class>()} -- alongside its own \code{waic()} / \code{loo()}
+/ \code{dic()} / \code{cpo()} methods -- reaches model comparison and averaging too.
+
 The default methods take a draws x observations pointwise log-likelihood
 matrix, the same input \code{\link[=tulpa_criteria]{tulpa_criteria()}} takes. A model package registers a
 method taking its own fit object, builds the matrix from the posterior, and

@@ -391,6 +391,13 @@ tulpa_pit <- function(cdf, cdf_lower = NULL, jitter = TRUE) {
 #' (`loo::waic()`, `loo::loo()`), so a model package registers methods on
 #' those rather than on new names that would mask them.
 #'
+#' `pointwise_loglik()` is the one door onto the `[n_draws x n_obs]` matrix
+#' itself, the input every criterion above is computed from. [compare_models()]
+#' and [model_average()] call it (through an internal wrapper) rather than
+#' assuming the engine's own fit layout, so a model package that registers
+#' `pointwise_loglik.<its fit class>()` -- alongside its own `waic()` / `loo()`
+#' / `dic()` / `cpo()` methods -- reaches model comparison and averaging too.
+#'
 #' The default methods take a draws x observations pointwise log-likelihood
 #' matrix, the same input [tulpa_criteria()] takes. A model package registers a
 #' method taking its own fit object, builds the matrix from the posterior, and
@@ -446,6 +453,28 @@ tulpa_pit <- function(cdf, cdf_lower = NULL, jitter = TRUE) {
 #' }
 #' @name criteria_doors
 NULL
+
+#' @rdname criteria_doors
+#' @export
+pointwise_loglik <- function(object, ...) {
+  UseMethod("pointwise_loglik")
+}
+
+#' @rdname criteria_doors
+#' @export
+pointwise_loglik.default <- function(object, ...) {
+  stop(sprintf(paste0("pointwise_loglik(): no method for an object of ",
+                      "class %s; a model package registers ",
+                      "pointwise_loglik.<its fit class>()."),
+               paste(class(object), collapse = "/")), call. = FALSE)
+}
+
+#' @rdname criteria_doors
+#' @export
+pointwise_loglik.tulpa_fit <- function(object, ndraws = NULL, ...) {
+  .tulpa_pointwise_loglik(object, ndraws = ndraws,
+                          caller = "pointwise_loglik()")
+}
 
 #' @rdname criteria_doors
 #' @export
