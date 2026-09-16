@@ -3,7 +3,7 @@
 # The shared fit progress reporter appends "| N threads" to its console line
 # when the outer grid runs N cells at once, so "ran on N cores" is a property
 # of the log itself. Two reporters mirror the same wire format:
-#   * the R-side `.tulpa_iter_progress()` (counted R loops, e.g. EM-Laplace),
+#   * the R-side `tulpa_iter_progress()` (counted R loops, e.g. EM-Laplace),
 #     which takes the count via its `threads` argument;
 #   * the C++ `tulpa_progress::GridProgress` (the outer nested-Laplace grid and
 #     the parallel NUTS sampler), which derives it from the realised outer
@@ -15,13 +15,13 @@
 # 1. R-side reporter: optional threads field                                  #
 # --------------------------------------------------------------------------- #
 
-test_that(".tulpa_iter_progress appends the threads field when threads > 1", {
+test_that("tulpa_iter_progress appends the threads field when threads > 1", {
   old <- options(tulpa.nl_progress = list(progress = TRUE,
                                           progress_every = 1L,
                                           progress_throttle = 0))
   on.exit(options(old), add = TRUE)
   out <- capture.output({
-    prg <- tulpa:::.tulpa_iter_progress("test", total = 3L,
+    prg <- tulpa_iter_progress("test", total = 3L,
                                         unit = "cells", threads = 8L)
     prg$tick(); prg$tick(); prg$tick(); prg$finish()
   })
@@ -31,13 +31,13 @@ test_that(".tulpa_iter_progress appends the threads field when threads > 1", {
                         out)))
 })
 
-test_that(".tulpa_iter_progress omits the threads field when serial", {
+test_that("tulpa_iter_progress omits the threads field when serial", {
   old <- options(tulpa.nl_progress = list(progress = TRUE,
                                           progress_every = 1L,
                                           progress_throttle = 0))
   on.exit(options(old), add = TRUE)
   out <- capture.output({
-    prg <- tulpa:::.tulpa_iter_progress("test", total = 3L, unit = "cells")
+    prg <- tulpa_iter_progress("test", total = 3L, unit = "cells")
     prg$tick(); prg$tick(); prg$tick(); prg$finish()
   })
   expect_false(any(grepl("threads", out)))

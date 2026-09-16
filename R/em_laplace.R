@@ -609,7 +609,7 @@ tulpa_em_laplace <- function(e_step, m_step_encode,
   # Outer-grid-style progress + ETA for the EM iterations.
   # ON by default; reads the scoped `tulpa.nl_progress` option. ETA is the
   # upper bound to max_iter and is finalised by .prog$finish() on convergence.
-  .prog <- .tulpa_iter_progress("em-laplace", max_iter, unit = "iter")
+  .prog <- tulpa_iter_progress("em-laplace", max_iter, unit = "iter")
 
   for (iter in seq_len(max_iter)) {
     # ---- E-step ----
