@@ -39,8 +39,8 @@ test_that("tulpa_nuts_beta recovers parameters on simulated data", {
   )
 
   draws <- fit$draws
-  beta1_post <- mean(draws[, "beta[1]"])
-  beta2_post <- mean(draws[, "beta[2]"])
+  beta1_post <- mean(draws[, "(Intercept)"])
+  beta2_post <- mean(draws[, "x"])
   phi_post   <- fit$phi_summary[["mean"]]
 
   expect_lt(abs(beta1_post - beta_true[1]), 0.1)
@@ -68,7 +68,7 @@ test_that("tulpa_nuts_beta agrees with tulpa_laplace_beta in mean", {
                            control = list(n_iter = 1500L, n_warmup = 750L, seed = 11L))
 
   beta_l <- fit_l$mode[1:2]
-  beta_n <- colMeans(fit_n$draws[, c("beta[1]", "beta[2]")])
+  beta_n <- colMeans(fit_n$draws[, c("(Intercept)", "x")])
 
   # Posterior means under a weak prior should be close to the Laplace mode
   # for a well-identified GLM. Allow a generous slack to avoid flake on the

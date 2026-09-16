@@ -29,9 +29,10 @@
 #'   (default 1000), `max_treedepth` (default 10), `adapt_delta` (default 0.8),
 #'   `seed` (`NULL` draws from the session RNG), `verbose` (default FALSE).
 #'
-#' @return A list with:
+#' @return A `tulpa_fit` object with:
 #'   * `draws` -- `n_samples x (p + 1)` matrix of post-warmup draws,
-#'     columns `beta[1] ... beta[p], log_phi`.
+#'     columns named from `colnames(X)` (falling back to `beta[1] ...
+#'     beta[p]`) then `log_phi`.
 #'   * `means` -- posterior means.
 #'   * `phi_summary` -- posterior mean / median / quantiles of
 #'     `phi = exp(log_phi)`.
@@ -82,6 +83,9 @@ tulpa_nuts_beta <- function(y, X,
     verbose          = isTRUE(control$verbose)
   )
 
+  p <- ncol(X)
+  res <- .nuts_name_fixed_effects(res, colnames(X), p)
+
   log_phi_draws <- res$draws[, "log_phi"]
   phi_draws     <- exp(log_phi_draws)
   res$phi_summary <- c(
@@ -91,5 +95,7 @@ tulpa_nuts_beta <- function(y, X,
     q95    = unname(stats::quantile(phi_draws, 0.95))
   )
 
-  res
+  .finalize_fit(res, backend = "hmc_beta_nuts", draws_kind = "chain",
+               n_fixed = p, fixed_names = colnames(res$draws)[seq_len(p)],
+               param_names = colnames(res$draws))
 }

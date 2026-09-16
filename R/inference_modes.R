@@ -676,6 +676,27 @@ tulpa_dispatch <- function(mode,
 }
 
 
+# Rename the first `p` columns of a NUTS producer's `draws` matrix (and
+# `means`, if named in step) from the C++ kernel's positional `beta[j]` to the
+# design matrix's own column names -- the same names the Laplace path reports
+# coefficients under. Declines (leaves `beta[j]`) rather than renaming under a
+# duplicated or blank name.
+#' @keywords internal
+.nuts_name_fixed_effects <- function(res, X_names, p) {
+  if (is.null(X_names) || length(X_names) != p ||
+      anyDuplicated(X_names) || !all(nzchar(X_names))) {
+    return(res)
+  }
+  dn <- colnames(res$draws)
+  dn[seq_len(p)] <- X_names
+  colnames(res$draws) <- dn
+  if (!is.null(names(res$means)) && length(res$means) == length(dn)) {
+    names(res$means)[seq_len(p)] <- X_names
+  }
+  res
+}
+
+
 #' Map mode to valid backends
 #' @param mode Character: "auto", "exact", "structured", or "optimized"
 #' @return Character vector of valid backends for this mode

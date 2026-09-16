@@ -335,6 +335,9 @@ tulpa_nuts_spde <- function(y, X, spatial,
     mass_matrix       = mass_matrix
   )
 
+  p <- ncol(X)
+  res <- .nuts_name_fixed_effects(res, colnames(X), p)
+
   res$range   <- range
   res$sigma   <- sigma
   res$spatial <- spatial
@@ -397,5 +400,7 @@ tulpa_nuts_spde <- function(y, X, spatial,
     )
   }
 
-  res
+  .finalize_fit(res, backend = "hmc_spde_nuts", draws_kind = "chain",
+               n_fixed = p, fixed_names = colnames(res$draws)[seq_len(p)],
+               param_names = colnames(res$draws))
 }

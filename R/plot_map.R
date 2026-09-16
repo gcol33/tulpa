@@ -296,6 +296,23 @@ extract_coords_from_fit <- function(fit) {
     return(extract_coords(fit$coords))
   }
 
+  # Continuous-field spatial specs (gp, hsgp, multiscale, svc, spde) carry
+  # per-observation point coordinates on the validated spec itself:
+  # `coords_matrix` for gp/hsgp/multiscale/svc, `obs_coords` for spde, and
+  # `unique_coords[obs_to_loc, ]` as the gp fallback when only the
+  # deduplicated locations were kept.
+  sp <- fit$spatial
+  if (!is.null(sp)) {
+    sp_coords <- sp$coords_matrix %||% sp$obs_coords %||%
+      (if (!is.null(sp$unique_coords) && !is.null(sp$obs_to_loc)) {
+        sp$unique_coords[sp$obs_to_loc, , drop = FALSE]
+      })
+    if (!is.null(sp_coords)) {
+      coords <- tryCatch(extract_coords(sp_coords), error = function(e) NULL)
+      if (!is.null(coords)) return(coords)
+    }
+  }
+
   if (!is.null(fit$data)) {
     coords <- tryCatch(
       extract_coords(fit$data),
