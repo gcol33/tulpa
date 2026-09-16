@@ -1,3 +1,68 @@
+# tulpa 0.4.7
+
+## `tulpa_posterior_draws()` sampled hyperparameters as bare grid-node atoms
+
+* **A draw's hyperparameter value was the chosen cell's grid coordinate, with
+  no within-cell spread at all** (gcol33/tulpa#823). The latent half of a draw
+  gets a genuine within-cell Gaussian (`.nl_mixture_draw()`'s `draw_cell()`);
+  the hyperparameter half had nothing, so every consumer read
+  `theta_grid[attr(draws, "cells"), col]` and a fit integrating a 5-node
+  `sigma` axis produced draws taking 5 distinct values on it whatever the
+  sample size. That is the object gcol33/tulpa#337 described -- "the read
+  collapses each box to its midpoint" -- which #337 and #353 fixed for the
+  reported interval (`.nl_summary_quantile()`) and nowhere else.
+
+  `tulpa_hyper_draws(fit, cells)` is the new door, and
+  `tulpa_posterior_draws()` attaches it as `attr(., "theta")` so a consumer
+  reading the attribute is correct by default. **It is not a new
+  construction.** Each within-cell read the engine ships already defines a
+  density on an axis and each is a per-cell mixture with a closed-form
+  component, so what a draw samples is that component conditional on its own
+  cell: `Uniform(e_c, e_{c+1})` over the cell's own box under `box_uniform`,
+  and an equal mixture of `Uniform(v_{c-1}, v_c)` / `Uniform(v_c, v_{c+1})`
+  under `chord`. Summed over cells each reproduces the read it came from
+  exactly, so the draws' own quantiles reproduce the fit's `theta_ci_lo` /
+  `theta_median` / `theta_ci_hi` -- measured to 5e-3 at 4e5 draws on a two-axis
+  fixture and to 2e-3 on an end-to-end BYM2 fit, against numbers produced by
+  CDF inversion in a separate code path. Neither conditional reads the
+  weights, so the continuization cannot disagree with the sampler that chose
+  the cell.
+
+  The attachment runs with the RNG restored: the latent draws are formed
+  before it and are bit-for-bit what they were, and an existing `set.seed()`
+  script's downstream numbers do not shift because an extra attribute appeared.
+  An explicit `tulpa_hyper_draws()` call consumes the stream, as a draw should.
+
+  An axis whose support does not admit the box read falls back to `chord` and
+  one that reaches no CDF at all (a CCD moment rule) keeps its node value, both
+  recorded per axis in `attr(., "within_cell")` /
+  `attr(., "within_cell_declined")` from the vocabulary
+  `.nl_summary_quantile_read()` already uses.
+
+* **What the atom actually costs, measured against an exact posterior.** On a
+  scalar-hyperparameter fixture whose grid `log_marginal` is the analytic
+  log-likelihood plus prior -- so the outer read is the only thing under test
+  and the exact posterior CDF is available as a reference arm -- 400
+  prior-predictive replicates at 5 nodes: the node-atom PIT takes 185 distinct
+  values against 400 for the exact posterior, and its uniformity test is
+  rejected outright (KS p = 0.0000 against 0.92 exact); the continuized PIT
+  takes 357 and reads 0.34. The rate at which the atom pins the PIT to exactly
+  0 or 1 EQUALS the rate at which the truth falls outside the node range
+  (0.015 / 0.035 / 0.022 over three configurations, to the digit); the box
+  read's outer half-cell takes it to 0.005 / 0.000 / 0.007 against the exact
+  arm's 0.005 / 0.002 / 0.000. At 15 nodes the atom is nearly harmless
+  (KS p 0.092), which is the sense in which this is a coarse-grid defect.
+
+  **A truth-correlated PIT is not on its own evidence of this defect**, which
+  #823's own reading assumed. The same measurement with an exact-posterior arm
+  gives Spearman `cor(truth, pit)` of +0.490 exact against +0.472 atom at
+  n = 5, +0.281 against +0.286 at n = 20, and -0.029 against -0.036 at
+  n = 200: the correlation is a property of how informative the data are about
+  the hyperparameter, and a weakly identified one produces it under the EXACT
+  posterior too. What the atom provably breaks is uniformity. Any re-read of
+  the occu_cover SBC evidence needs a reference arm before a quartile-bucketed
+  rate is scored against a flat 0.10.
+
 # tulpa 0.4.6
 
 ## Four audit findings: a continuous field + RE combination auto could not carry, the field missing from every non-nested spatial fit's linear predictor, an inline field fit's response stored as a list, and a singular MCAR fixed-effect covariance

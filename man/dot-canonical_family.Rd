@@ -14,4 +14,15 @@ A no-op for a canonical name, for a \verb{<family>_<link>} code, and for anythin
 unrecognized, which reaches \code{.family_or_stop()} and errors there against the
 canonical list.
 }
+\details{
+Case is normalized as a last resort, after the exact spelling and the alias
+table both miss: \code{stats::Gamma()$family} is \code{"Gamma"}, capitalized, and
+\code{.family_object_to_name()} lowercases it for the \code{family = Gamma(...)}
+object form, so the equivalent string form (\code{family = "Gamma"}) has to reach
+the same registry entry rather than being refused as unknown
+(gcol33/tulpa#806). Applied to a \verb{<family>_<link>} code too
+(\code{"Gamma_log"} -> \code{"gamma_log"}), never to a name that is already
+recognized as it stands -- so a registry name that happens to collide
+case-insensitively with another spelling is never silently rewritten.
+}
 \keyword{internal}

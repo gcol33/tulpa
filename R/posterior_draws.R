@@ -56,10 +56,14 @@
 #'   `attr(., "draws_kind") = "iid"` (consistent with the draws-provenance
 #'   gate), `attr(., "cells")` -- the outer-grid cell index each row was drawn
 #'   from -- and `attr(., "scope")`, which of the two representations above the
-#'   columns are.
+#'   columns are. `attr(., "theta")` is the HYPERPARAMETER half of the same
+#'   rows, one column per outer-grid axis, continuized within each row's own
+#'   cell by [tulpa_hyper_draws()]; reading `fit$theta_grid[attr(., "cells"), ]`
+#'   instead returns the bare node coordinate, which is an atom rather than a
+#'   marginal.
 #'
-#' @seealso [tulpa_nested_laplace()], [tulpa_nested_laplace_joint()],
-#'   [posterior_sample()]
+#' @seealso [tulpa_hyper_draws()], [tulpa_nested_laplace()],
+#'   [tulpa_nested_laplace_joint()], [posterior_sample()]
 #' @export
 tulpa_posterior_draws <- function(fit, idx = NULL, n = 1000, ...) {
     UseMethod("tulpa_posterior_draws")
@@ -139,7 +143,7 @@ tulpa_posterior_draws.tulpa_nested_laplace <- function(fit, idx = NULL,
     # remain, and `retained_mass` below 1 is how a reader tells that apart from a
     # complete grid.
     attr(out, "retained_mass") <- mom$mass
-    out
+    .nl_attach_hyper_draws(out, fit)
 }
 
 # Shared draw allocator for an outer-grid Gaussian mixture. `w` are the
@@ -150,20 +154,30 @@ tulpa_posterior_draws.tulpa_nested_laplace <- function(fit, idx = NULL,
 # categorical per draw, so a component's block is sampled in a single vectorized
 # call.
 .nl_mixture_draw <- function(w, cell_id, n, p, draw_cell) {
-    counts <- as.integer(stats::rmultinom(1L, size = n, prob = w))
+    al <- .nl_mixture_cells(w, cell_id, n)
     out <- matrix(0.0, n, p)
-    row_cells <- integer(n)
     pos <- 0L
     for (i in seq_along(w)) {
-        n_i <- counts[i]
+        n_i <- al$counts[i]
         if (n_i == 0L) next
         rows <- (pos + 1L):(pos + n_i)
         out[rows, ] <- draw_cell(i, n_i)
-        row_cells[rows] <- cell_id[i]
         pos <- pos + n_i
     }
-    attr(out, "cells") <- row_cells
+    attr(out, "cells") <- al$row_cells
     out
+}
+
+# The allocation itself, separated from the per-component sampling so the
+# hyperparameter draws (`tulpa_hyper_draws()`) and the latent draws are
+# allocated across cells by ONE rule: a caller that holds a row-to-cell vector
+# already gets its hyperparameters conditional on the same cells its latent
+# rows came from, and a caller that holds none allocates its own here rather
+# than writing a second categorical. Rows are filled component by component in
+# order, so the row-to-cell map is `rep(cell_id, counts)`.
+.nl_mixture_cells <- function(w, cell_id, n) {
+    counts <- as.integer(stats::rmultinom(1L, size = n, prob = w))
+    list(counts = counts, row_cells = rep(cell_id, counts))
 }
 
 # Upper-triangular Cholesky factor R of a dense component covariance (so

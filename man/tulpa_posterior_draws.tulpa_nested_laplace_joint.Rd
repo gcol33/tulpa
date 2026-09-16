@@ -25,8 +25,9 @@ use \code{fit$arm_layout} (\code{beta_start}, \code{re_start}, \code{phi_start} 
 A numeric matrix \verb{[n x length(idx)]} of latent draws, one row per
 draw, columns named \verb{x<idx>}. Carries \code{attr(., "draws_kind") = "iid"}
 (consistent with the draws-provenance gate), \code{attr(., "cells")} -- the
-outer-grid cell index each row was drawn from -- and
-\code{attr(., "scope") = "latent"}.
+outer-grid cell index each row was drawn from -- \code{attr(., "theta")}, the
+hyperparameter half of the same rows continuized within each row's own cell
+(\code{\link[=tulpa_hyper_draws]{tulpa_hyper_draws()}}) -- and \code{attr(., "scope") = "latent"}.
 }
 \description{
 The \code{\link[=tulpa_posterior_draws]{tulpa_posterior_draws()}} method for a joint nested-Laplace fit

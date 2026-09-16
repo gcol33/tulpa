@@ -41,8 +41,9 @@
 #' @return A numeric matrix `[n x length(idx)]` of latent draws, one row per
 #'   draw, columns named `x<idx>`. Carries `attr(., "draws_kind") = "iid"`
 #'   (consistent with the draws-provenance gate), `attr(., "cells")` -- the
-#'   outer-grid cell index each row was drawn from -- and
-#'   `attr(., "scope") = "latent"`.
+#'   outer-grid cell index each row was drawn from -- `attr(., "theta")`, the
+#'   hyperparameter half of the same rows continuized within each row's own cell
+#'   ([tulpa_hyper_draws()]) -- and `attr(., "scope") = "latent"`.
 #'
 #' @details
 #' The constrained draw at cell `k` uses the sparse Cholesky of the stored
@@ -150,7 +151,7 @@ tulpa_posterior_draws.tulpa_nested_laplace_joint <- function(fit, idx = NULL,
     colnames(out) <- paste0("x", idx)
     attr(out, "draws_kind") <- "iid"
     attr(out, "scope") <- "latent"
-    out
+    .nl_attach_hyper_draws(out, fit)
 }
 
 # Field sum-to-zero constraint columns for a joint latent layout. Returns a
