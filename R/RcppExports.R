@@ -57,6 +57,10 @@ cpp_test_dcov_dphi <- function(d, sigma2, phi, cov_type) {
     .Call(`_tulpa_cpp_test_dcov_dphi`, d, sigma2, phi, cov_type)
 }
 
+cpp_gp_cov_value <- function(d, sigma2, phi, cov_type) {
+    .Call(`_tulpa_cpp_gp_cov_value`, d, sigma2, phi, cov_type)
+}
+
 cpp_sample_crt <- function(y, r) {
     .Call(`_tulpa_cpp_sample_crt`, y, r)
 }

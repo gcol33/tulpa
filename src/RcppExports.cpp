@@ -211,6 +211,20 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_gp_cov_value
+Rcpp::NumericVector cpp_gp_cov_value(Rcpp::NumericVector d, double sigma2, double phi, int cov_type);
+RcppExport SEXP _tulpa_cpp_gp_cov_value(SEXP dSEXP, SEXP sigma2SEXP, SEXP phiSEXP, SEXP cov_typeSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector >::type d(dSEXP);
+    Rcpp::traits::input_parameter< double >::type sigma2(sigma2SEXP);
+    Rcpp::traits::input_parameter< double >::type phi(phiSEXP);
+    Rcpp::traits::input_parameter< int >::type cov_type(cov_typeSEXP);
+    rcpp_result_gen = Rcpp::wrap(cpp_gp_cov_value(d, sigma2, phi, cov_type));
+    return rcpp_result_gen;
+END_RCPP
+}
 // cpp_sample_crt
 Rcpp::IntegerVector cpp_sample_crt(Rcpp::IntegerVector y, double r);
 RcppExport SEXP _tulpa_cpp_sample_crt(SEXP ySEXP, SEXP rSEXP) {
@@ -4889,6 +4903,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_tulpa_cpp_cornish_fisher_bands", (DL_FUNC) &_tulpa_cpp_cornish_fisher_bands, 4},
     {"_tulpa_cpp_test_compute_cov", (DL_FUNC) &_tulpa_cpp_test_compute_cov, 4},
     {"_tulpa_cpp_test_dcov_dphi", (DL_FUNC) &_tulpa_cpp_test_dcov_dphi, 4},
+    {"_tulpa_cpp_gp_cov_value", (DL_FUNC) &_tulpa_cpp_gp_cov_value, 4},
     {"_tulpa_cpp_sample_crt", (DL_FUNC) &_tulpa_cpp_sample_crt, 2},
     {"_tulpa_cpp_sample_crt_sum", (DL_FUNC) &_tulpa_cpp_sample_crt_sum, 2},
     {"_tulpa_cpp_crt_mean", (DL_FUNC) &_tulpa_cpp_crt_mean, 2},

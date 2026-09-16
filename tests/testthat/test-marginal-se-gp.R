@@ -89,3 +89,32 @@ test_that("NNGP marginal H_beta matches the exact dense-GP Schur (#225)", {
   # (b) marginalization matches the dense Schur (jitter 1e-8 is the only gap).
   expect_lt(max(abs(fit$H_beta - ref$H_beta)) / max(abs(ref$H_beta)), 1e-4)
 })
+
+test_that(".nngp_cov_fn reads the compiled kernel at every CovType code (#798)", {
+  # tulpa::CovType: 0 = exponential, 1 = matern32, 2 = gaussian, 4 = matern52.
+  # .nngp_cov_fn() used to restate these formulas by hand with the PRE-#686
+  # numbering (0/1/2 = exponential/matern32/matern52), so gp_cov_type()'s
+  # code 4 for Matern nu = 2.5 was rejected outright and code 2 would have
+  # silently evaluated Matern 5/2 where the engine means Gaussian. Pinning
+  # against the closed forms keeps the R side from drifting from
+  # inst/include/tulpa/cov_kernel.h again.
+  d <- 1; sigma2 <- 1; phi <- 1
+  x32 <- sqrt(3) * d / phi
+  x52 <- sqrt(5) * d / phi
+  closed <- c(
+    `0` = sigma2 * exp(-d / phi),                                    # exponential
+    `1` = sigma2 * (1 + x32) * exp(-x32),                            # matern32
+    `2` = sigma2 * exp(-(d / phi)^2),                                # gaussian
+    `4` = sigma2 * (1 + x52 + x52 * x52 / 3) * exp(-x52)             # matern52
+  )
+  for (code in c(0L, 1L, 2L, 4L)) {
+    fn <- tulpa:::.nngp_cov_fn(code, sigma2, phi)
+    expect_equal(fn(d), unname(closed[[as.character(code)]]), tolerance = 1e-12)
+  }
+  # matrix input keeps its shape (the NNGP scatter passes a distance matrix).
+  D <- matrix(c(0, 1, 1, 0), 2, 2)
+  fn52 <- tulpa:::.nngp_cov_fn(4L, sigma2, phi)
+  out <- fn52(D)
+  expect_equal(dim(out), dim(D))
+  expect_equal(diag(out), c(sigma2, sigma2))
+})

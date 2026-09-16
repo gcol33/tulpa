@@ -106,20 +106,10 @@ NULL
 
 #' @keywords internal
 .nngp_cov_fn <- function(cov_type, sigma2, phi_gp) {
-  if (cov_type == 0L) {
-    function(d) sigma2 * exp(-d / phi_gp)
-  } else if (cov_type == 1L) {
-    function(d) {
-      x <- sqrt(3) * d / phi_gp
-      sigma2 * (1 + x) * exp(-x)
-    }
-  } else if (cov_type == 2L) {
-    function(d) {
-      x <- sqrt(5) * d / phi_gp
-      sigma2 * (1 + x + x * x / 3) * exp(-x)
-    }
-  } else {
-    stop("Unknown cov_type ", cov_type, call. = FALSE)
+  function(d) {
+    out <- cpp_gp_cov_value(as.numeric(d), sigma2, phi_gp, cov_type)
+    dim(out) <- dim(d)
+    out
   }
 }
 
