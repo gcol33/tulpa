@@ -40,7 +40,7 @@ fit$posterior          # the random-effect covariance, marginalized to sigma / r
 #>      rho_12  -0.145  0.206   -0.156  -0.523   0.254   # correlation  (truth 0)
 ```
 
-`mode = "auto"` picks a backend and records the reason on the fit — the dial neither INLA nor Stan hands you on a single object. The random-effect covariance is not a plug-in point estimate: `sigma_1`, `sigma_2`, and `rho_12` are read off the joint posterior with full credible intervals. The result is a `tulpa_fit` with the usual accessors (`coef`, `confint`, `vcov`, `summary`, `tidy`, `glance`, `ranef`) and a full diagnostics surface (`diagnostics`, `check_model`, `pp_check`).
+`mode = "auto"` picks a backend and records the reason on the fit. The random-effect covariance is not a plug-in point estimate: `sigma_1`, `sigma_2`, and `rho_12` are read off the joint posterior with full credible intervals. The result is a `tulpa_fit` with the usual accessors (`coef`, `confint`, `vcov`, `summary`, `tidy`, `glance`, `ranef`) and a full diagnostics surface (`diagnostics`, `check_model`, `pp_check`).
 
 ## One front door, every backend
 
