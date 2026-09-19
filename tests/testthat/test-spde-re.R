@@ -64,8 +64,13 @@ test_that("tulpa(mode = 'exact') routes an SPDE field to NUTS (Tier 1)", {
   expect_equal(fit$inference_tier, 1L)
   expect_identical(fit$draws_kind, "chain")
   expect_false(is.null(fit$draws))
-  # The slope is recovered by the exact sampler.
-  expect_lt(abs(mean(fit$draws[, "beta[2]"]) - 0.8), 0.3)
+  # The slope is recovered by the exact sampler. The column is read by the
+  # RESOLVED fixed-effect name the fit carries -- the same one `param_names`,
+  # `coef()` and `mode = "hmc"` give, and what
+  # `.finalize_fit(fixed_names = colnames(X))` produces. Asking for `beta[2]`
+  # errored on the subscript, so this comparison never ran (gcol33/tulpa#846).
+  expect_true("x" %in% colnames(fit$draws))
+  expect_lt(abs(mean(fit$draws[, "x"]) - 0.8), 0.3)
 })
 
 test_that("tulpa() routes (1 | g) + an SPDE field to the spde backend", {

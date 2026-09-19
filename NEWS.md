@@ -47,6 +47,15 @@
   run that stopped far short of its budget can be told from one that used it.
   `converged = TRUE` alone could not express the difference.
 
+## A tier-2 test read a draw column by a name the fit stopped using
+
+* **`test-spde-re.R:68` errored on `fit$draws[, "beta[2]"]`** and had been
+  erroring since the fixed-effect names became the resolved ones
+  (gcol33/tulpa#846). The assertion that subscript guards is the slope
+  recovery for the exact SPDE sampler, so it had not run at all. Read by the
+  name the fit carries it passes: `mean(draws[, "x"]) = 0.9467` against a
+  truth of 0.8, well inside the 0.3 gate.
+
 ## The R family registry had no test tying it to the compiled kernels
 
 * **Added `test-family-registry-compiled.R`, covering every entry of
