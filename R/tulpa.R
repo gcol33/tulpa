@@ -403,30 +403,58 @@
 }
 
 
-# Pack a validated tulpa_svc (NNGP spatially-varying coefficients) spec into the
-# ModelData sampler's svc_spec (mode = "exact" only). Each SVC term j carries an
-# NNGP field w_j(s); the generic log-post adds eta_i += sum_j X_svc[i,j] w_j(s_i).
+# Pack a validated tulpa_svc spatially-varying coefficients spec into the
+# ModelData sampler's svc_spec (mode = "exact" only). Each SVC term j carries a
+# spatial field w_j(s); the generic log-post adds eta_i += sum_j X_svc[i,j] w_j(s_i).
 # X_svc is the design subset (the varying coefficients' columns) in row-major
-# [n_obs x n_svc]. NNGP conventions match the GP field (coords row-major; nn_idx
-# 1-based; nn_order 0-based); the SVC kernel derives neighbour-pair distances
-# from coords, so no nn_neighbor_dist. The PC range anchor spatial_svc() does not
-# expose is derived from the median nearest-neighbour spacing.
+# [n_obs x n_svc], built identically on either branch. Two field
+# representations (spatial_svc(approx=)):
+#  * NNGP: coords row-major; nn_idx 1-based; nn_order 0-based; the SVC kernel
+#    derives neighbour-pair distances from coords, so no nn_neighbor_dist. The
+#    PC range anchor spatial_svc() does not expose is derived from the median
+#    nearest-neighbour spacing.
+#  * HSGP: the field is a sum of Laplacian basis functions evaluated at every
+#    observation (same construction as .hsgp_sampler_spec() for a plain
+#    spatial field), so only per-observation coords + (m, c_boundary) cross
+#    the boundary -- build_sampler_model_inputs() builds the shared basis via
+#    setup_hsgp_2d() and keys the block on `data.svc_is_hsgp`
+#    (gcol33/tulpa#813). There is no obs->location map and no NNGP range
+#    anchor (the HSGP path puts LogNormal(0, 1) on the log-lengthscale
+#    directly; see compute_svc_prior()).
 #' @keywords internal
 .svc_sampler_spec <- function(spatial, X) {
-  ni <- spatial$neighbor_info
-  if (is.null(ni) || is.null(spatial$coords_matrix) || is.null(spatial$svc_indices)) {
-    stop("SVC spec is unvalidated (neighbor_info / coords_matrix / svc_indices ",
-         "NULL). tulpa() validates it via validate_svc().", call. = FALSE)
+  idx <- as.integer(spatial$svc_indices)
+  if (is.null(spatial$coords_matrix) || is.null(idx)) {
+    stop("SVC spec is unvalidated (coords_matrix / svc_indices NULL). ",
+         "tulpa() validates it via validate_svc().", call. = FALSE)
   }
-  cm    <- as.matrix(spatial$coords_matrix)
+  cm <- as.matrix(spatial$coords_matrix)
+  Xs <- as.matrix(X)[, idx, drop = FALSE]           # [n_obs x n_svc]
+
+  if (identical(tolower(spatial$approx %||% "nngp"), "hsgp")) {
+    return(list(
+      approx      = "hsgp",
+      coords      = .coords_2col(cm, "svc(approx = 'hsgp') under a sampler mode"),
+      n_svc       = length(idx),
+      svc_indices = idx,
+      X_svc       = as.numeric(t(Xs)),               # row-major [n_obs x n_svc]
+      m           = as.integer(spatial$m),
+      c           = as.numeric(spatial$c_boundary)
+    ))
+  }
+
+  ni <- spatial$neighbor_info
+  if (is.null(ni)) {
+    stop("SVC spec is unvalidated (neighbor_info NULL). tulpa() validates ",
+         "it via validate_svc().", call. = FALSE)
+  }
   n_obs <- nrow(cm)
   nn    <- as.integer(spatial$nn %||% ncol(ni$nn_idx))
-  idx   <- as.integer(spatial$svc_indices)
-  Xs    <- as.matrix(X)[, idx, drop = FALSE]        # [n_obs x n_svc]
   pos_d <- ni$nn_dist[is.finite(ni$nn_dist) & ni$nn_dist > 0]
   U     <- if (length(pos_d)) stats::median(pos_d) else 0.1
   if (!is.finite(U) || U <= 0) U <- 0.1
   list(
+    approx          = "nngp",
     coords          = .coords_2col(cm, "svc() under a sampler mode"),
     n_svc           = length(idx),
     nn              = nn,
@@ -1937,10 +1965,6 @@ tulpa <- function(formula, data,
       if (!inherits(spatial_spec, "tulpa_svc")) {
         stop("A spatially-varying-coefficient field must be a ",
              "spatial_svc(~ lon + lat, terms = ...) spec object.", call. = FALSE)
-      }
-      if (identical(tolower(spatial_spec$approx %||% "nngp"), "hsgp")) {
-        stop("HSGP-approximated SVC is not front-door wired yet; use ",
-             "spatial_svc(~ lon + lat, approx = 'nngp').", call. = FALSE)
       }
       spatial_spec <- validate_svc(spatial_spec, data, bundle$X)
     } else if (sp_lc %in% c(.NL_FRONTDOOR_CONTINUOUS, .NL_FRONTDOOR_SPDE,

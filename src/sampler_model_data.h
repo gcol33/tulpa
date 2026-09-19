@@ -720,13 +720,14 @@ inline void build_sampler_model_inputs(
                         "'gp').", ttype.c_str());
     }
 
-    // --- Spatially-varying coefficients (NNGP). compute_param_layout keys the
-    //     SVC block on data.has_svc, allocating log_sigma2_svc / log_phi_svc /
-    //     the [n_svc x n_obs] fields; the generic log-post adds
-    //     eta_i += sum_j X_svc[i,j] * w_j(s_i). NNGP conventions match the GP
-    //     field (coords row-major; nn_idx 1-based; nn_order 0-based); the SVC
-    //     kernel derives neighbour-pair distances from coords, so no
-    //     nn_neighbor_dist is needed. ---
+    // --- Spatially-varying coefficients. compute_param_layout keys the SVC
+    //     block on data.has_svc, allocating log_sigma2_svc / log_phi_svc / the
+    //     field coefficients (an [n_svc x n_obs] NNGP field, or [n_svc x
+    //     m_total] HSGP basis coefficients); the generic log-post adds
+    //     eta_i += sum_j X_svc[i,j] * w_j(s_i). X_svc (row-major [n_obs x
+    //     n_svc]) and n_svc/n_obs are read identically on both branches --
+    //     compute_svc_prior()'s HSGP arm reads data.svc_data.n_svc/n_obs same
+    //     as the NNGP arm.
     if (svc_spec.isNotNull()) {
         Rcpp::List sv = Rcpp::as<Rcpp::List>(svc_spec);
         auto& s = in.data.svc_data;
@@ -740,48 +741,67 @@ inline void build_sampler_model_inputs(
         }
         s.n_obs = n_obs;
         s.n_svc = n_svc;
-        s.nn = Rcpp::as<int>(sv["nn"]);
         s.coords.resize(2 * (std::size_t)n_obs);
         for (int i = 0; i < n_obs; ++i) {
             s.coords[2 * (std::size_t)i]     = coords(i, 0);
             s.coords[2 * (std::size_t)i + 1] = coords(i, 1);
         }
-        Rcpp::IntegerMatrix nnix = Rcpp::as<Rcpp::IntegerMatrix>(sv["nn_idx"]);
-        Rcpp::NumericMatrix nnd  = Rcpp::as<Rcpp::NumericMatrix>(sv["nn_dist"]);
-        check_nn_tables(nnix, nnd, n_obs, s.nn, SVC_WHO);
-        s.nn_idx.resize((std::size_t)n_obs * s.nn);
-        s.nn_dist.resize((std::size_t)n_obs * s.nn);
-        for (int i = 0; i < n_obs; ++i)
-            for (int j = 0; j < s.nn; ++j) {
-                s.nn_idx[(std::size_t)i * s.nn + j]  = nnix(i, j);
-                s.nn_dist[(std::size_t)i * s.nn + j] = nnd(i, j);
-            }
-        Rcpp::IntegerVector nord = Rcpp::as<Rcpp::IntegerVector>(sv["nn_order"]);
-        check_nn_order(nord, n_obs, SVC_WHO, "nn_order");
-        s.nn_order.assign(nord.begin(), nord.end());
-        Rcpp::IntegerVector nordi = Rcpp::as<Rcpp::IntegerVector>(sv["nn_order_inv"]);
-        check_nn_order(nordi, n_obs, SVC_WHO, "nn_order_inv");
-        s.nn_order_inv.assign(nordi.begin(), nordi.end());
         Rcpp::IntegerVector svci = Rcpp::as<Rcpp::IntegerVector>(sv["svc_indices"]);
         check_vec_len(svci.size(), n_svc, SVC_WHO, "svc_indices");
         s.svc_indices.assign(svci.begin(), svci.end());
         Rcpp::NumericVector xsvc = Rcpp::as<Rcpp::NumericVector>(sv["X_svc"]);
         check_vec_len(xsvc.size(), (R_xlen_t)n_obs * n_svc, SVC_WHO, "X_svc");
         s.X_svc.assign(xsvc.begin(), xsvc.end());   // row-major [n_obs x n_svc]
-        s.cov_type = static_cast<CovType>(Rcpp::as<int>(sv["cov_type"]));
         in.data.has_svc = true;
-        in.data.svc_is_hsgp = false;
-        read_pc_anchors(sv, "phi_prior_U", "phi_prior_alpha",
-                        in.data.svc_phi_prior_U, in.data.svc_phi_prior_alpha,
-                        "spatial_svc() range");
+
+        const std::string svc_approx = sv.containsElementNamed("approx")
+            ? Rcpp::as<std::string>(sv["approx"]) : "nngp";
+        if (svc_approx == "hsgp") {
+            // Hilbert-space GP: one shared Laplacian basis (all SVC terms sit
+            // at the same coordinates; only each term's own sigma2/lengthscale
+            // scales the spectral density -- see compute_svc_prior()'s HSGP
+            // arm), built by setup_hsgp_2d() -- the single source of truth
+            // every HSGP path (spatial field, SVC) uses (gcol33/tulpa#813).
+            in.data.svc_is_hsgp = true;
+            const int m     = Rcpp::as<int>(sv["m"]);
+            const double cc = Rcpp::as<double>(sv["c"]);
+            in.data.svc_hsgp_m_per_dim = m;
+            in.data.svc_hsgp_boundary_factor = cc;
+            tulpa_hsgp::setup_hsgp_2d(s.coords, n_obs, m, cc, /*shared=*/true,
+                                      in.data.svc_hsgp_data);
+        } else {
+            in.data.svc_is_hsgp = false;
+            s.nn = Rcpp::as<int>(sv["nn"]);
+            Rcpp::IntegerMatrix nnix = Rcpp::as<Rcpp::IntegerMatrix>(sv["nn_idx"]);
+            Rcpp::NumericMatrix nnd  = Rcpp::as<Rcpp::NumericMatrix>(sv["nn_dist"]);
+            check_nn_tables(nnix, nnd, n_obs, s.nn, SVC_WHO);
+            s.nn_idx.resize((std::size_t)n_obs * s.nn);
+            s.nn_dist.resize((std::size_t)n_obs * s.nn);
+            for (int i = 0; i < n_obs; ++i)
+                for (int j = 0; j < s.nn; ++j) {
+                    s.nn_idx[(std::size_t)i * s.nn + j]  = nnix(i, j);
+                    s.nn_dist[(std::size_t)i * s.nn + j] = nnd(i, j);
+                }
+            Rcpp::IntegerVector nord = Rcpp::as<Rcpp::IntegerVector>(sv["nn_order"]);
+            check_nn_order(nord, n_obs, SVC_WHO, "nn_order");
+            s.nn_order.assign(nord.begin(), nord.end());
+            Rcpp::IntegerVector nordi = Rcpp::as<Rcpp::IntegerVector>(sv["nn_order_inv"]);
+            check_nn_order(nordi, n_obs, SVC_WHO, "nn_order_inv");
+            s.nn_order_inv.assign(nordi.begin(), nordi.end());
+            s.cov_type = static_cast<CovType>(Rcpp::as<int>(sv["cov_type"]));
+            read_pc_anchors(sv, "phi_prior_U", "phi_prior_alpha",
+                            in.data.svc_phi_prior_U, in.data.svc_phi_prior_alpha,
+                            "spatial_svc() range");
+        }
         if (sv.containsElementNamed("sigma2_prior_scale"))
             in.data.svc_sigma2_prior_scale = Rcpp::as<double>(sv["sigma2_prior_scale"]);
         // svc_parameterization defaults to 1 (non-centered), matching the
-        // spatial_svc() front door: each term's field is reconstructed as
+        // spatial_svc() front door: each NNGP term's field is reconstructed as
         // w_j = f(z_j, sigma2_j, phi_j) and the stored draws are transformed
         // back on the way out. This removes the funnel that attenuates a weakly
         // identified field's amplitude, which is the regime consumer packages
-        // (occupancy, ...) fit in.
+        // (occupancy, ...) fit in. Ignored on the HSGP branch (already
+        // non-centered by construction).
         in.data.svc_parameterization =
             sv.containsElementNamed("svc_parameterization")
                 ? Rcpp::as<int>(sv["svc_parameterization"]) : 1;

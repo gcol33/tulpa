@@ -119,3 +119,74 @@ test_that("svc exact NUTS is divergence-free and recovers the field scale (#144/
   sigma_svc <- mean(exp(0.5 * fit$draws[, "log_sigma2_svc[1]"]))
   expect_true(is.finite(sigma_svc) && sigma_svc > 0.1)
 })
+
+# HSGP-approximated SVC (gcol33/tulpa#813): the same front door, a Hilbert-
+# space basis field instead of an NNGP one. compute_param_layout keys the field
+# size on data.svc_hsgp_data.m_total (m^2, shared across terms) rather than
+# n_obs, so the stored svc_w[] columns are basis coefficients (beta), not
+# per-observation field values -- reconstructing the surface needs the same
+# cpp_hsgp_field_predict() krige the HSGP spatial-field predict path uses
+# (R/methods_generic.R:.hsgp_field_at), treating each posterior draw as its own
+# equally-weighted grid cell.
+.hsgp_svc_field_from_draws <- function(fit, spatial, term = 1L) {
+  m    <- as.integer(spatial$m)
+  Mtot <- m * m
+  wcol <- grep("^svc_w\\[", colnames(fit$draws))
+  beta_grid <- fit$draws[, wcol[seq((term - 1L) * Mtot + 1L, term * Mtot)],
+                        drop = FALSE]
+  sigma2_grid     <- exp(fit$draws[, sprintf("log_sigma2_svc[%d]", term)])
+  lengthscale_grid <- exp(fit$draws[, sprintf("log_phi_svc[%d]", term)])
+  n_draws <- nrow(fit$draws)
+  cm <- as.matrix(spatial$coords_matrix)
+  as.numeric(cpp_hsgp_field_predict(
+    cm, cm, m, as.numeric(spatial$c_boundary),
+    beta_grid, sigma2_grid, lengthscale_grid, rep(1 / n_draws, n_draws)))
+}
+
+test_that("hsgp svc requires an exact mode (nested/laplace refuse)", {
+  s <- make_svc_pois(n = 30L)
+  expect_error(
+    tulpa(y ~ x, data = s$d, family = "poisson",
+          spatial = spatial_svc(~ lon + lat, terms = ~ x - 1, approx = "hsgp"),
+          mode = "structured"),
+    "Spatially-varying"
+  )
+})
+
+test_that("hsgp svc fits under the default (auto) mode without erroring", {
+  skip_if_not_slow()
+  s <- make_svc_pois(n = 40L)
+  fit <- tulpa(y ~ x, data = s$d, family = "poisson",
+               spatial = spatial_svc(~ lon + lat, terms = ~ x - 1,
+                                     approx = "hsgp", m = 5L),
+               control = list(n_iter = 120L, n_warmup = 60L, seed = 1L))
+  expect_true(any(grepl("^svc_w\\[", colnames(fit$draws))))
+})
+
+test_that("hsgp svc exact NUTS allocates m^2 basis coefficients, not n_obs (structural)", {
+  skip_if_not_slow()
+  s <- make_svc_pois(n = 40L)
+  m <- 5L
+  fit <- tulpa(y ~ x, data = s$d, family = "poisson",
+               spatial = spatial_svc(~ lon + lat, terms = ~ x - 1,
+                                     approx = "hsgp", m = m),
+               mode = "exact",
+               control = list(n_iter = 120L, n_warmup = 60L, seed = 1L))
+  pn <- colnames(fit$draws)
+  expect_true(all(c("log_sigma2_svc[1]", "log_phi_svc[1]") %in% pn))
+  expect_equal(sum(grepl("^svc_w\\[", pn)), m^2)   # m^2 basis coefficients, one term
+  expect_equal(ncol(fit$draws), 4L + m^2)          # 2 fixed + 2 hypers + basis
+})
+
+test_that("hsgp svc exact NUTS recovers the varying-coefficient surface", {
+  skip_if_not_slow()
+  s <- make_svc_pois()
+  spatial <- spatial_svc(~ lon + lat, terms = ~ x - 1, approx = "hsgp", m = 8L)
+  fit <- tulpa(y ~ x, data = s$d, family = "poisson",
+               spatial = spatial, mode = "exact",
+               control = list(n_iter = 350L, n_warmup = 175L, seed = 5L))
+  expect_lte(n_divergent(fit), ceiling(0.05 * nrow(fit$draws)))
+  spatial <- validate_svc(spatial, s$d, model.matrix(~x, s$d))
+  fm <- .hsgp_svc_field_from_draws(fit, spatial)
+  expect_gt(cor(fm - mean(fm), s$bsurf - mean(s$bsurf)), 0.8)
+})
