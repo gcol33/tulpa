@@ -28,10 +28,25 @@
 # identifiability fix, not a regression, so the contrast this test used to
 # assert (non-centered beats centered because centered is funnel-attenuated)
 # no longer holds by construction -- the funnel it detected is gone. Both
-# parameterizations are now checked against the same band instead. Centered
-# reading *above* non-centered's own recovery on this fixture (measured
-# 1.35-1.6 against non-centered's 1.0-1.3) is tracked separately in #842 --
-# open question, not asserted here either way.
+# parameterizations are now checked against the same band instead.
+#
+# Centered then read ABOVE non-centered's own recovery here, and #842 measured
+# what that is: a convergence failure, not a second identification defect. The
+# two parameterizations are one model, pinned deterministically in
+# test-svc-parameterization-equivalence.R, and on a well-identified fixture
+# they agree to -0.002 (paired, 5 seeds, p = 0.64). On this weakly identified
+# one the gap is systematic (8/8 seeds, +0.313, p = 0.006) but it is not better
+# recovery: correlation with the truth is unchanged (0.511 against 0.515) while
+# RMSE is worse (0.892 against 1.022), and sigma2 roughly doubles on the
+# centered path on every seed. At 5x this budget Rhat on the centered sigma2
+# falls to 1.04, the correlations become equal, and the gap collapses from
+# +0.602 to +0.153. It is the ordinary centered funnel between the field and
+# its own variance -- which is why non-centered is the default.
+#
+# So the centered band below is read off a chain that has NOT mixed in sigma2
+# at this budget (Rhat 1.25 on the seed pinned here, against 1.02 non-centered).
+# It is a regression guard on one seed, not a calibration statement, and the
+# convergence cost itself is asserted rather than left implicit.
 
 sim_svc_bernoulli <- function(n = 150L, sigma2 = 1.0, phi = 0.30,
                               a0 = 0.0, x_sd = 0.6, seed = 1L) {
@@ -60,6 +75,15 @@ svc_sd_ratio <- function(fit, w_true) {
   sd(colMeans(fit$draws[, wcol, drop = FALSE])) / sd(w_true)
 }
 
+# Rhat on the field's own variance, through the shipped diagnostic rather than
+# a second copy of the estimator. It is the hyperparameter the centered path
+# fails to mix in, so it is the one that tells an amplitude read apart from a
+# chain that has not settled.
+svc_sigma2_rhat <- function(fit) {
+  d <- diagnostics(fit, pars = "log_sigma2_svc[1]", measures = "rhat")
+  d$rhat[[1L]]
+}
+
 test_that("non-centered SVC NUTS recovers a weakly identified field's amplitude", {
   skip_if_not_slow()
   d <- sim_svc_bernoulli(n = 150L, seed = 1L)
@@ -74,6 +98,9 @@ test_that("non-centered SVC NUTS recovers a weakly identified field's amplitude"
   # The geometry fix should also leave the chain clean; the pre-#245
   # non-centered path ran at 24% divergent on the identified fixture.
   expect_lte(mean(fit$divergent), 0.05)
+  # And this arm DOES mix in the field's variance at this budget (measured
+  # 1.02), which is what makes its amplitude read a posterior summary.
+  expect_lt(svc_sigma2_rhat(fit), 1.1)
 })
 
 test_that("centered SVC NUTS also recovers a weakly identified field's amplitude", {
@@ -83,13 +110,17 @@ test_that("centered SVC NUTS also recovers a weakly identified field's amplitude
 
   ratio <- svc_sd_ratio(fit, d$w_true)
   # Same band as the non-centered test above, now that 34c9cb5b (#841) has
-  # removed the funnel that used to attenuate this branch to ~0.33. The
-  # upper bound is wider here: centered has measured 1.35-1.6 on this
-  # fixture (#842, open), against non-centered's 1.0-1.3 -- not yet
-  # established as correct or as an overshoot, so this only catches the
-  # funnel coming back (too small) or a runaway (far too large), not the
-  # narrower question #842 tracks.
+  # removed the funnel that used to attenuate this branch to ~0.33. The upper
+  # bound is wider because this arm reads high on an unconverged sigma2 (#842,
+  # measured): it catches the level funnel coming back (too small) or a runaway
+  # (far too large), and nothing finer -- across seeds this band is left on
+  # both sides, so it is a guard on the pinned seed, not a calibration.
   expect_gt(ratio, 0.55)
   expect_lt(ratio, 2.2)
   expect_lte(mean(fit$divergent), 0.05)
+  # The measured cost of the centered funnel, recorded as a bound rather than
+  # left implicit: sigma2 reaches 1.25 here against non-centered's 1.02 at the
+  # same budget, and 1.04 at 5x. Widening past 1.4 means the centered path has
+  # got materially worse, not that a threshold was picked generously.
+  expect_lt(svc_sigma2_rhat(fit), 1.4)
 })
