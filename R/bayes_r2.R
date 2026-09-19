@@ -49,26 +49,25 @@ bayes_R2 <- function(object, ...) {
 #' @export
 bayes_R2.tulpa_fit <- function(object, ndraws = NULL, summary = TRUE,
                                probs = c(0.025, 0.975), seed = NULL, ...) {
-  if (!is.character(object$family) || length(object$family) != 1L) {
-    stop("bayes_R2() supports fits with a builtin character family.",
-         call. = FALSE)
-  }
+  proc <- .tulpa_response_process(object, "bayes_R2")
   .require_scalar_response(object, "bayes_R2()")
   .seed_scoped(seed)
 
   eta <- .tulpa_eta_draws(object, ndraws = ndraws)
   logit_zi <- attr(eta, "logit_zi")
-  n_trials <- object$n_trials
-  phi <- object$phi %||% 1.0
-  fam <- object$family
+  n_trials <- proc$n_trials
+  # Per replicate, so an integrated dispersion axis enters the residual
+  # variance it belongs in (gcol33/tulpa#825).
+  phi <- .tulpa_phi_draws(object, proc, attr(eta, "cells"), nrow(eta))
+  fam <- proc$family
 
   r2 <- vapply(seq_len(nrow(eta)), function(s) {
     e <- eta[s, ]
     z <- if (!is.null(logit_zi)) logit_zi[s, ]
-    mu <- .response_mean(e, z, fam, n_trials = n_trials, phi = phi)
+    mu <- .response_mean(e, z, fam, n_trials = n_trials, phi = phi[s])
     var_fit <- stats::var(mu)
     var_res <- mean(.response_variance(e, z, fam, n_trials = n_trials,
-                                       phi = phi, phi2 = object$phi2))
+                                       phi = phi[s], phi2 = proc$phi2))
     var_fit / (var_fit + var_res)
   }, numeric(1))
 

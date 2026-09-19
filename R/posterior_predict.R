@@ -124,6 +124,79 @@
   as.matrix(U %*% Matrix::t(Z))
 }
 
+# The response process a fit samples from: the family, the trial counts and the
+# dispersion that turn a linear predictor into a distribution over y. A
+# `tulpa()` fit carries them flat. A joint nested-Laplace fit carries one set
+# PER ARM, so it has a single response process exactly when it has one arm --
+# and then the arm's own fields ARE that process. `arm` names it, which is what
+# locates a `phi_<arm>` dispersion axis on the outer grid.
+#
+# Errors through `.accessor_unavailable()` where there is no single process,
+# naming how many arms there are rather than only that a family is missing.
+#' @keywords internal
+.tulpa_response_process <- function(object, accessor) {
+  arms <- object$responses
+  if (is.character(object$family) && length(object$family) == 1L) {
+    return(list(family = object$family, n_trials = object$n_trials,
+                phi = object$phi, phi2 = object$phi2, y = object$y, arm = NULL))
+  }
+  if (is.list(arms) && length(arms) == 1L &&
+      is.character(arms[[1L]]$family) && length(arms[[1L]]$family) == 1L) {
+    a <- arms[[1L]]
+    nm <- names(arms)[1L]
+    return(list(family = a$family, n_trials = a$n_trials,
+                phi = a$phi, phi2 = a$phi2, y = a$y,
+                arm = if (is.character(nm) && nzchar(nm)) nm else NULL))
+  }
+  what <- if (is.list(arms) && length(arms) > 1L) {
+    sprintf(paste0("a single response process to sample from: it has %d arms, ",
+                   "each with its own family and dispersion"), length(arms))
+  } else {
+    "a single built-in family to sample the response from"
+  }
+  .accessor_unavailable(accessor, object, what)
+}
+
+
+# The dispersion at each of `S` replicates.
+#
+# Where the fit INTEGRATED the dispersion -- a `phi_<arm>` column of the outer
+# grid, from `tulpa_nested_laplace_joint(phi_grid =)` -- each replicate takes
+# the value of the cell it was drawn in, continuized within that cell by
+# `tulpa_hyper_draws()` (gcol33/tulpa#823) rather than read as the grid node it
+# sits on. Sampling every replicate at one scalar instead dropped an axis the
+# fit had already paid to integrate (gcol33/tulpa#825).
+#
+# `cells` is the outer cell each replicate came from, which only the grid
+# mixture has; everything else carries a single dispersion and is returned as
+# `S` copies of it, so the caller indexes `phi[s]` on one code path.
+#
+# The axis is in the R-level convention -- `phi` is the residual VARIANCE for
+# gaussian and lognormal at every R-level door, converted to the kernel's SD
+# inside `.phi_to_kernel()` -- which is the convention the scalar it replaces
+# is in, so no seam is crossed here. Measured against a gaussian fit with
+# residual SD 0.45: the axis posterior concentrates at 0.1975 against a truth
+# of 0.45^2 = 0.2025 (`test-posterior-predict-phi-axis.R`).
+#' @keywords internal
+.tulpa_phi_draws <- function(object, proc, cells, S) {
+  # `.validate_family_phi()` admits only a positive finite scalar at every
+  # door, so the no-axis answer is S copies of one number and the callers'
+  # `phi[s]` is the scalar expression it replaces, value for value.
+  scalar <- rep(as.numeric(proc$phi %||% 1.0)[1L], S)
+  if (is.null(cells) || is.null(proc$arm)) return(scalar)
+  tg <- object$theta_grid
+  col <- paste0("phi_", proc$arm)
+  if (!is.matrix(tg) || !(col %in% colnames(tg))) return(scalar)
+  if (length(unique(tg[, col])) < 2L) return(scalar)   # pinned: part of the model
+  hd <- tryCatch(tulpa_hyper_draws(object, cells = cells),
+                 error = function(e) NULL)
+  if (is.null(hd) || !(col %in% colnames(hd)) || nrow(hd) != S) {
+    return(as.numeric(tg[cells, col]))
+  }
+  as.numeric(hd[, col])
+}
+
+
 # `"coefficients"`: everything else. The fit carries its fixed effects (and at
 # most the formula random effects and an SPDE field) rather than its linear
 # predictor, so eta is assembled from those.
@@ -373,6 +446,11 @@
       matrix(stats::rnorm(length(eta)), nrow(eta))
   }
   dimnames(eta) <- NULL
+  # The cell each row was drawn in travels with the rows, so a caller needing
+  # the hyperparameter value that row was drawn UNDER -- the dispersion, in
+  # `.tulpa_phi_draws()` -- reads it off the same draw rather than re-sampling
+  # the mixture and getting a different one (gcol33/tulpa#825).
+  attr(eta, "cells") <- cells
   eta
 }
 
@@ -442,25 +520,24 @@ posterior_predict <- function(object, ...) {
 #' @export
 posterior_predict.tulpa_fit <- function(object, newdata = NULL, ndraws = NULL,
                                         n_trials = NULL, seed = NULL, ...) {
-  if (!is.character(object$family) || length(object$family) != 1L) {
-    .accessor_unavailable("posterior_predict", object,
-                          "a single built-in family to sample the response from")
-  }
+  proc <- .tulpa_response_process(object, "posterior_predict")
   .seed_scoped(seed)
 
   eta <- .tulpa_eta_draws(object, newdata = newdata, ndraws = ndraws)
   logit_zi <- attr(eta, "logit_zi")
   if (is.null(n_trials)) {
-    n_trials <- if (is.null(newdata)) object$n_trials else NULL
+    n_trials <- if (is.null(newdata)) proc$n_trials else NULL
   }
-  phi <- object$phi %||% 1.0
+  # One dispersion per replicate: the cell's own where the fit integrated a
+  # dispersion axis, the fit's scalar repeated otherwise.
+  phi <- .tulpa_phi_draws(object, proc, attr(eta, "cells"), nrow(eta))
 
   yrep <- matrix(NA_real_, nrow(eta), ncol(eta))
   for (s in seq_len(nrow(eta))) {
     yrep[s, ] <- .response_sample(eta[s, ],
                                   if (!is.null(logit_zi)) logit_zi[s, ],
-                                  object$family, n_trials = n_trials,
-                                  phi = phi, phi2 = object$phi2)
+                                  proc$family, n_trials = n_trials,
+                                  phi = phi[s], phi2 = proc$phi2)
   }
   yrep
 }

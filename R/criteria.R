@@ -673,11 +673,17 @@ loo.tulpa_fit <- function(x, ...) {
 .tulpa_eta_loglik <- function(object, eta, logit_zi = attr(eta, "logit_zi")) {
   S <- nrow(eta)
   n <- ncol(eta)
+  proc <- .tulpa_response_process(object, "pointwise log-likelihood")
   Y  <- matrix(as.numeric(object[["y"]]), S, n, byrow = TRUE)
-  NT <- matrix(as.numeric(object[["n_trials"]] %||% 1), S, n, byrow = TRUE)
-  ll <- .response_loglik(eta, logit_zi, Y, object[["family"]], n_trials = NT,
-                         phi = object[["phi"]] %||% 1.0,
-                         phi2 = object[["phi2"]])
+  NT <- matrix(as.numeric(proc$n_trials %||% 1), S, n, byrow = TRUE)
+  # The same per-replicate dispersion posterior_predict() samples at, so a fit
+  # that integrated a dispersion axis scores its draws under the value each one
+  # was drawn at rather than under one scalar (gcol33/tulpa#825). A fit with no
+  # such axis gets its scalar back and the density is evaluated unchanged.
+  phi <- .tulpa_phi_draws(object, proc, attr(eta, "cells"), S)
+  PHI <- if (length(unique(phi)) == 1L) phi[1L] else matrix(phi, S, n)
+  ll <- .response_loglik(eta, logit_zi, Y, proc$family, n_trials = NT,
+                         phi = PHI, phi2 = proc$phi2)
   dim(ll) <- dim(eta)
   ll
 }
