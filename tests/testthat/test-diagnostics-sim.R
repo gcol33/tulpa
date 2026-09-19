@@ -92,6 +92,12 @@ test_that("test_outliers() refuses a fit with no extractable response, like its 
   d <- data.frame(x = rnorm(80))
   d$y <- rbinom(80, 1, plogis(-0.3 + 0.8 * d$x))
   fit <- tulpa_ep(y ~ x, data = d, family = "binomial")
+  # gcol33/tulpa#781 stamps `$y` (and `.internal$fit_args$y`) on every
+  # standalone fitter including tulpa_ep(), so a fit with no extractable
+  # response no longer occurs naturally here; strip both fields .resolve_obs()
+  # reads to exercise its refusal path directly.
+  fit$y <- NULL
+  fit$.internal$fit_args$y <- NULL
   expect_null(fit$y)
 
   expect_error(test_outliers(fit), "Cannot extract the observed response from the fit")

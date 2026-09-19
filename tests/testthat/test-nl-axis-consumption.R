@@ -120,6 +120,16 @@ test_that("icar tau = 1 / sigma^2 is the engine's own conversion", {
     # `tau_grid = 1 / s^2` must reproduce the single-block fit at
     # `sigma_grid = s` cell by cell. This is what makes rewriting a fixture's
     # `sigma_grid` into `tau_grid` preserve the grid it meant to pin.
+    #
+    # `hyperprior = "flat"` isolates that kernel-level claim: under the
+    # default "proper" hyperprior, `.hp_axis_default()` folds a DIFFERENT
+    # default PC-prior density depending on whether the axis is named `tau`
+    # or `sigma` -- individually correct Jacobian-derived densities on their
+    # own coordinate, but not equal to each other at corresponding
+    # `(sigma, tau = 1/sigma^2)` points (they differ by exactly `log(2)`,
+    # gcol33/tulpa#835). That is a separate, undecided question about which
+    # default prior a `tau_grid`-labelled axis should get, not about whether
+    # the field/kernel itself treats `tau = 1/sigma^2` as the same model.
     sim <- .axc_sim(seed = 21L)
     s <- c(0.4, 0.7, 1.3)
     arm <- .axc_arm(sim)
@@ -127,12 +137,14 @@ test_that("icar tau = 1 / sigma^2 is the engine's own conversion", {
     fit_sd <- tulpa_nested_laplace_joint(
         responses = list(occ = arm),
         prior = .axc_icar_block(sim, sigma_grid = s),
+        hyperprior = "flat",
         control = list(diagnose_k = FALSE))
 
     fit_prec <- tulpa_nested_laplace_joint(
         responses = list(occ = arm),
         prior = list(.axc_icar_block(sim, tau_grid = 1 / s^2,
                                      spatial_idx = list(sim$sidx))),
+        hyperprior = "flat",
         control = list(diagnose_k = FALSE))
 
     expect_length(fit_prec$log_marginal, length(s))
