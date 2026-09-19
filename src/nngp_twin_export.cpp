@@ -144,6 +144,9 @@ static Rcpp::List nngp_nc_grad_probe(const tulpa_gp::NNGPNCView& view, int N,
   double g_log_phi_fd = (pp - pm) / (2.0 * fd_eps);
 
   return Rcpp::List::create(
+    // The forward transform's own output, so a caller can evaluate the
+    // centered branch's density at the field the non-centered branch builds.
+    Rcpp::_["w"]                 = Rcpp::NumericVector(ws.w.begin(), ws.w.begin() + N),
     Rcpp::_["grad_z"]            = Rcpp::NumericVector(grad_z.begin(), grad_z.end()),
     Rcpp::_["grad_z_fd"]         = Rcpp::NumericVector(grad_z_fd.begin(), grad_z_fd.end()),
     Rcpp::_["grad_log_sigma2"]   = g_log_sigma2,

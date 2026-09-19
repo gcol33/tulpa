@@ -273,15 +273,15 @@ static T initialize_generic_state(
 
         // Non-centered NNGP: compute_svc_prior added each term's N(0, I) z
         // prior and left state.svc_eta empty; reconstruct every term's field
-        // w_j = f(z_j, sigma2_j, phi_j), apply the sum-to-zero penalty on the
-        // reconstructed w (not z -- the penalty pins the field's own level,
-        // same as the centered path), and compute svc_eta from it. SVC has no
-        // per-field equivalent of the GP block's plain "leave gp_w for a
-        // downstream lookup" because compute_svc_eta / the sum-to-zero
-        // penalty are deterministic post-processing SVC needs done once, up
-        // front, in T -- not per-observation -- so they run here rather than
-        // inside compute_svc_prior. Dispatch is statically resolved on T, same
-        // as the GP block above.
+        // w_j = f(z_j, sigma2_j, phi_j), centre it, and compute svc_eta from
+        // it -- the centring acts on the reconstructed w, not on z, because it
+        // is the field's own level that aliases with beta_j, same as the
+        // centered path. SVC has no per-field equivalent of the GP block's
+        // plain "leave gp_w for a downstream lookup" because the centring and
+        // compute_svc_eta are deterministic post-processing SVC needs done
+        // once, up front, in T -- not per-observation -- so they run here
+        // rather than inside compute_svc_prior. Dispatch is statically
+        // resolved on T, same as the GP block above.
         if (data.svc_parameterization == 1 && !data.svc_is_hsgp &&
             data.svc_data.n_svc > 0) {
             std::vector<T> svc_w_flat;
