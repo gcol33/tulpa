@@ -97,12 +97,12 @@ test_that(".ranef_overlay_sampled() replaces only the named rows and stamps the 
 
 # --- tier 2: the fit itself --------------------------------------------------
 
-rsd_data <- function(seed = 21L, G = 14L, per = 4L) {
+rsd_data <- function(seed = 21L, G = 14L, per = 4L, b0 = -2.5, sd_re = 0.7) {
   set.seed(seed)
   n <- G * per
   grp <- rep(seq_len(G), each = per)
   x <- rnorm(n)
-  data.frame(y = rbinom(n, 1L, plogis(-2.5 + 0.8 * x + rnorm(G, 0, 0.7)[grp])),
+  data.frame(y = rbinom(n, 1L, plogis(b0 + 0.8 * x + rnorm(G, 0, sd_re)[grp])),
              x = x, g = factor(grp))
 }
 
@@ -111,14 +111,22 @@ test_that("ranef() reports a sampled random effect empirically and says so per r
   skip_on_cran()
   G <- 14L
   d <- rsd_data(G = G)
+  # S is DECLARED here, not selected from the inner bands: what this test is
+  # about is how `ranef()` reports rows that were sampled beside rows that were
+  # not, and reaching that through the selector made it depend on where a
+  # fixture's diagnostics land relative to the materiality gate -- which on this
+  # fixture was a 5e-6 margin (gcol33/tulpa#836). Whether the BAND selector can
+  # reach a random effect is its own claim, measured in the next test.
+  # `idx = c(1, 3, 5, 8)` is the intercept plus RE coordinates 3, 5, 8, i.e.
+  # groups 1, 3 and 6 sampled and the other eleven left as the mixture.
   fit <- tulpa(y ~ x + (1 | g), data = d, family = "binomial",
                mode = "re_cov_nested",
                control = list(seed = 3L,
-                              subspace_debias = list(probe = seq_len(2L + G))))
+                              subspace_debias = list(idx = c(1L, 3L, 5L, 8L))))
 
-  # The selector has to fire on a random effect, or the rest of this is vacuous.
+  expect_equal(fit$re_debias_idx, c(1L, 3L, 6L))
+  # Both provenances are exercised: some groups sampled, most not.
   expect_gt(length(fit$re_debias_idx), 0L)
-  # ... and it must NOT take every one, so both provenances are exercised.
   expect_lt(length(fit$re_debias_idx), G)
   expect_equal(ncol(fit$re_debias_draws), length(fit$re_debias_idx))
 
@@ -145,6 +153,51 @@ test_that("ranef() reports a sampled random effect empirically and says so per r
   expect_equal(r$estimate[rest], mx$mean[rest])
   expect_equal(r$sd[rest], mx$sd[rest])
   expect_equal(r$conf.low[rest], mx$quantiles[rest, 1L])
+})
+
+
+test_that("the band selector reaches a random-effect coordinate", {
+  skip_on_cran()
+  # A one-seed guard, and sized as one. A random-effect coordinate is banded off
+  # its inner k-hat only where the importance correction is MATERIAL
+  # (`rel_ess < inner_k_material_ess`, 0.995); above that floor the k-hat is
+  # residual wiggle and the coordinate falls back to its cubic term, which for a
+  # small binomial GLMM is comfortably inside `gamma3_ok`. So whether the
+  # selector reaches an RE coordinate at all is decided by the materiality gate,
+  # and a fixture has to clear it with room.
+  #
+  # Measured across seeds 21-28 on this shape: the margin below the gate is
+  # 0.036 / 0.007 at seeds 21 / 22 and NEGATIVE at the other six, where no RE
+  # coordinate is selected. Nothing may be sized on that -- the assertion here
+  # is a regression guard on one seed, not a statement about how often the
+  # selector fires. It fails on the MARGIN first, so a numerical change upstream
+  # of the inner diagnostics is caught before it silently empties the selection:
+  # gcol33/tulpa#836 was this test's predecessor sitting 5e-6 from the gate.
+  G <- 14L
+  gate <- tulpa:::.nl_diag("inner_k_material_ess")
+  d <- rsd_data(seed = 21L, G = G, per = 3L, b0 = -3.5, sd_re = 1.5)
+  fit <- tulpa(y ~ x + (1 | g), data = d, family = "binomial",
+               mode = "re_cov_nested",
+               control = list(seed = 3L,
+                              subspace_debias = list(probe = seq_len(2L + G))))
+
+  bands <- fit$subspace_debias$bands
+  re <- bands[bands$idx > 2L, , drop = FALSE]
+  expect_equal(nrow(re), G)
+  # The gate is cleared with room, by nearly every coordinate.
+  expect_lt(min(re$rel_ess), gate - 0.02)
+  expect_gte(sum(re$rel_ess < gate), G - 2L)
+  # The selection is k-driven, not cubic-driven: no coordinate leaves gamma3_ok.
+  expect_lt(max(abs(re$gamma3)), tulpa:::.nl_diag("gamma3_ok"))
+
+  expect_gt(length(fit$re_debias_idx), 0L)
+  expect_lt(length(fit$re_debias_idx), G)
+  expect_equal(ncol(fit$re_debias_draws), length(fit$re_debias_idx))
+  # The RE columns of S are exactly the RE coordinates the bands selected.
+  expect_equal(fit$re_debias_idx,
+               sort(fit$subspace_debias$idx[fit$subspace_debias$idx > 2L]) - 2L)
+  expect_equal(sort(ranef(fit)$source[fit$re_debias_idx]),
+               rep("sampled", length(fit$re_debias_idx)))
 })
 
 

@@ -315,19 +315,59 @@ test_that("fit_spde: aperture reproduces the reported k-hat", {
 
 # --- cross-check against the reference implementation -----------------------
 
+.kcap_loo_k <- function(lr) suppressWarnings(
+    loo::psis(matrix(lr, ncol = 1), r_eff = NA)$diagnostics$pareto_k)
+
+.kcap_t_refit <- function(tm) {
+    u <- log(tm[, "sigma"]); stats::dt(u, df = 2, log = TRUE) - u
+}
+
 test_that("loo::psis on the published ratios lands on the reported k-hat", {
     skip_on_cran()
     skip_if_not_installed("loo")
-    res   <- .kcap_joint_res(sd_w = 1.0)
-    refit <- function(tm) {
-        u <- log(tm[, "sigma"]); stats::dt(u, df = 2, log = TRUE) - u
-    }
-    set.seed(102)
-    k <- .kcap_run(function()
-        tulpa:::.joint_pareto_k(res, refit, n_samples = 4000L))
-    k_loo <- suppressWarnings(
-        loo::psis(matrix(k$lr, ncol = 1), r_eff = NA)$diagnostics$pareto_k)
     # The external check is the whole point of the aperture: an independent GPD
     # fit on the published ratios must land on the number the fit reports.
-    expect_equal(k_loo, k$value$pareto_k, tolerance = 1e-6)
+    #
+    # At the DEFAULT budget that is the published Vehtari et al. rule -- the
+    # outer diagnostic's held tail fraction IS that rule evaluated at
+    # `.nl_diag("k_samples")`, so `.k_outer_tail_points()` returns NULL and
+    # nothing is overridden (gcol33/tulpa#631).
+    res <- .kcap_joint_res(sd_w = 1.0)
+    budget <- as.integer(tulpa:::.nl_diag("k_samples"))
+    set.seed(102)
+    k <- .kcap_run(function()
+        tulpa:::.joint_pareto_k(res, .kcap_t_refit, n_samples = budget))
+    expect_null(k$tail_points)
+    expect_equal(.kcap_loo_k(k$lr), k$value$pareto_k, tolerance = 1e-6)
+})
+
+test_that("a raised budget reports the held fraction, and publishes enough to see both", {
+    skip_on_cran()
+    skip_if_not_installed("loo")
+    # Above the default budget the two rules part company ON PURPOSE. The
+    # published rule fits the deepest `3 sqrt(S)` points, so raising `k_samples`
+    # -- a COST knob -- would move the reported shape to a deeper quantile and
+    # change the estimand; gcol33/tulpa#631 holds the tail FRACTION the shipped
+    # budget implies instead, and only the precision moves. So at S = 4000 the
+    # fit reports the held-fraction shape and `loo::psis()`, which has no tail
+    # argument, necessarily reports the published-rule one. Neither is wrong,
+    # and the aperture is what makes the difference auditable: ONE published
+    # ratio vector reproduces both numbers exactly.
+    res <- .kcap_joint_res(sd_w = 1.0)
+    set.seed(102)
+    k <- .kcap_run(function()
+        tulpa:::.joint_pareto_k(res, .kcap_t_refit, n_samples = 4000L))
+    S <- length(k$lr)
+
+    # The captured tail size IS the held fraction, not the published rule.
+    ref <- as.integer(tulpa:::.nl_diag("k_samples"))
+    expect_equal(k$tail_points,
+                 as.integer(floor(S * (tulpa:::.psis_tail_len(ref) / ref))))
+    expect_gt(k$tail_points, tulpa:::.psis_tail_len(S))
+
+    # Both reads come off the published ratios, to the bit.
+    expect_equal(tulpa_psis(k$lr, tail_points = k$tail_points)$pareto_k,
+                 k$value$pareto_k, tolerance = 1e-12)
+    expect_equal(tulpa_psis(k$lr)$pareto_k, .kcap_loo_k(k$lr),
+                 tolerance = 1e-10)
 })
