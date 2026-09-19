@@ -376,6 +376,22 @@
 # al. 2017). The rate is read off the grid the caller declared, by putting 5 % of
 # the prior mass above its largest node, so the prior is fixed before the fit and
 # is weakly informative relative to the range the caller thought plausible.
+#' The copy-scale axis's PC-prior density
+#'
+#' The proper density tulpa uses for the copy scale's continuum: an
+#' exponential, the penalized-complexity prior for a scale parameter with its
+#' base model at zero (Simpson et al. 2017). The rate is set by putting 5% of
+#' the prior mass above `upper`, so a caller that reads this off a fit's own
+#' declared grid gets the exact rate the outer integration used -- rather
+#' than restating a PC-prior rate that could silently drift from it.
+#'
+#' @param upper The largest declared node of the copy-scale axis.
+#' @return A function `log p(x) = log(lambda) - lambda * x`, or `NULL` if
+#'   `upper` is not a finite positive number.
+#' @seealso [tulpa_hyper_check_copy_slab()], [tulpa_joint_axis_specs_from_grid()]
+#' @export
+tulpa_hyper_copy_slab_density <- function(upper) .hyper_copy_slab_density(upper)
+
 .hyper_copy_slab_density <- function(upper) {
   upper <- as.numeric(upper)
   if (!is.finite(upper) || upper <= 0) return(NULL)
@@ -466,6 +482,30 @@
 # (`.hyper_refined_axis_support()`); every other axis, and every axis of a grid
 # with no slice cells, the support of its levels. An axis with no declared
 # coordinate has no measure to read a region off and keeps the latter.
+#' Per-axis integrated support of an outer grid
+#'
+#' The natural-scale support of every axis in `specs` that carries one, as a
+#' named list of intervals -- the region each axis's outer-grid measure
+#' actually integrates, accounting for refinement slice cells. Intended for
+#' recovering an axis's integrated span from a settled grid, e.g. so a
+#' sampled-hyperparameter prior can be derived from what the outer
+#' integration used rather than restated alongside it.
+#'
+#' @param theta_grid A named `[n_cells x n_axes]` matrix (see
+#'   [tulpa_theta_matrix()]).
+#' @param specs Per-axis spec list, e.g. from
+#'   [tulpa_joint_axis_specs_from_grid()].
+#' @param refining Optional per-cell refinement-slice tag vector (see
+#'   [tulpa_hyper_slice_home()]).
+#' @return A named list of natural-scale `c(lo, hi)` intervals, one per axis
+#'   in `specs` that carries a declared coordinate, or `NULL` if `theta_grid`
+#'   or `specs` is `NULL`.
+#' @seealso [tulpa_joint_axis_specs_from_grid()], [tulpa_hyper_slice_home()]
+#' @export
+tulpa_hyper_grid_supports <- function(theta_grid, specs, refining = NULL) {
+  .hyper_grid_supports(theta_grid, specs, refining = refining)
+}
+
 .hyper_grid_supports <- function(theta_grid, specs, refining = NULL) {
   if (is.null(theta_grid) || is.null(specs)) return(NULL)
   theta_grid <- as.matrix(theta_grid)
@@ -628,6 +668,24 @@
 # The axis each cell was placed on by a refinement pass, `""` for a base cell.
 # A `refining` vector of the wrong length describes some other grid and is an
 # error rather than a guess.
+#' Per-cell refinement-slice tag of an outer grid
+#'
+#' The axis each cell of a nested-Laplace outer grid was placed on by a
+#' refinement pass, `""` for a base (unrefined) tensor cell. Used to tell a
+#' base grid apart from its refinement slices wherever a reader needs to
+#' restrict to one or the other, e.g. rebuilding axis specs from a grid's
+#' declared nodes only (see [tulpa_joint_axis_specs_from_grid()]).
+#'
+#' @param refining The `refining` tag vector stored on a fit (`NULL` for a
+#'   grid with no refinement).
+#' @param n Number of grid cells; `refining`, if not `NULL`, must have this
+#'   length.
+#' @return A character vector of length `n`: `""` for a base cell, the axis
+#'   name for a refinement-slice cell.
+#' @seealso [tulpa_hyper_grid_supports()], [tulpa_joint_axis_specs_from_grid()]
+#' @export
+tulpa_hyper_slice_home <- function(refining, n) .hyper_slice_home(refining, n)
+
 .hyper_slice_home <- function(refining, n) {
   if (is.null(refining)) return(rep("", n))
   if (length(refining) != n) {
@@ -1024,6 +1082,21 @@
 # over the declared span, the measure the other log-scale axes carry.
 .TULPA_COPY_SLAB_CHOICES <- c("exponential", "flat")
 
+#' Validate/default a copy-scale slab measure choice
+#'
+#' Validates a `copy_slab` argument -- `"exponential"` (the default) or
+#' `"flat"`, the two continuum measures tulpa supports for a copy scale's
+#' non-atom mass -- defaulting `NULL` to `"exponential"` and erroring on
+#' anything else. Intended so a consumer package's own `copy_slab` argument
+#' stays in sync with tulpa's own accepted choices rather than restating
+#' them.
+#'
+#' @param x A `copy_slab` value: `NULL`, `"exponential"`, or `"flat"`.
+#' @return `x`, defaulted to `"exponential"` when `NULL`.
+#' @seealso [tulpa_hyper_copy_slab_density()]
+#' @export
+tulpa_hyper_check_copy_slab <- function(x) .hyper_check_copy_slab(x)
+
 .hyper_check_copy_slab <- function(x) {
   if (is.null(x)) return("exponential")
   if (!is.character(x) || length(x) != 1L || is.na(x) ||
@@ -1047,6 +1120,44 @@
 # marks slice cells: an axis's declared node set is what fixes a prior read off
 # it (the copy scale's exponential rate is set by its largest node), and a node a
 # refinement pass appended was not declared.
+#' Per-cell log quadrature weight of an outer grid
+#'
+#' The per-cell log quadrature weight (prior mass) of a nested-Laplace outer
+#' grid: every path that turns a fit's `log_marginal` into posterior cell
+#' weights goes through this one rule, so the prior mass a cell carries is
+#' decided in one place. Rebuilds axis specs from the grid's own columns when
+#' `specs` is not supplied. Intended for reconstructing a fit's outer-grid
+#' posterior weights (with [tulpa_theta_matrix()] and
+#' [tulpa_normalise_weights_safe()]) when the fit doesn't already carry
+#' `fit$log_quad`.
+#'
+#' @param theta_grid A named `[n_cells x n_axes]` matrix (see
+#'   [tulpa_theta_matrix()]).
+#' @param specs Optional pre-built per-axis spec list; `NULL` rebuilds it
+#'   from `theta_grid`'s columns via [tulpa_joint_axis_specs_from_grid()].
+#' @param copy_slab `"exponential"` or `"flat"`; the copy-scale axis's
+#'   continuum measure (see `?tulpa_joint_axis_specs_from_grid`).
+#' @param close_domain Whether an unbounded axis's outer cells are closed at
+#'   the grid's own edge rather than left open to infinity.
+#' @param folded_axes Optional names of axes folded onto `[0, Inf)` (e.g. a
+#'   correlation axis reflected at 0).
+#' @param refining Optional refinement-slice tag vector (see
+#'   [tulpa_hyper_slice_home()]); when supplied, specs are rebuilt from the
+#'   grid's base (non-slice) cells only.
+#' @return Numeric vector of per-cell log quadrature weights, length
+#'   `nrow(theta_grid)`, or `NULL` if `theta_grid` has no axis names.
+#' @seealso [tulpa_theta_matrix()], [tulpa_normalise_weights_safe()],
+#'   [tulpa_joint_axis_specs_from_grid()]
+#' @export
+tulpa_grid_log_quad <- function(theta_grid, specs = NULL,
+                                 copy_slab = "exponential",
+                                 close_domain = TRUE, folded_axes = NULL,
+                                 refining = NULL) {
+  .nl_grid_log_quad(theta_grid, specs = specs, copy_slab = copy_slab,
+                    close_domain = close_domain, folded_axes = folded_axes,
+                    refining = refining)
+}
+
 .nl_grid_log_quad <- function(theta_grid, specs = NULL,
                               copy_slab = "exponential",
                               close_domain = TRUE, folded_axes = NULL,

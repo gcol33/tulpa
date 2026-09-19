@@ -258,6 +258,31 @@
 # integrated rather than how well. `n` counts the SLAB nodes, so the returned
 # length is `n + length(prepend)`. An axis declared as explicit `nodes` has no
 # resolution to vary and refuses.
+#' Read a default nested-Laplace outer-grid axis
+#'
+#' Materialises one of tulpa's own default outer-grid axes -- the values a
+#' `*_grid` argument (e.g. `sigma_grid`, `range_grid`) takes when a caller
+#' does not supply one. Geometric axes are returned as `exp(seq(log(lo),
+#' log(hi), length.out = n))`; axes declared as explicit nodes are returned
+#' as-is. A default is a decision tulpa makes internally and can change
+#' between releases (gcol33/tulpa#633), so a caller that needs to know the
+#' current default -- rather than restate it -- should read it here instead
+#' of duplicating tulpa's own grid table.
+#'
+#' @param key Name of a default axis, e.g. `"field_sd"`, `"copy_alpha"`,
+#'   `"bym2_rho"`, `"gp_var"`, `"gp_lengthscale"`. Unknown keys error.
+#' @param n Optional resolution override: same `lo` / `hi` bounds (and the
+#'   same `prepend` atom, if any) at a different node count. `NULL` uses the
+#'   axis's own declared `n`. Errors for an axis declared as explicit nodes
+#'   (no resolution to vary) or for a data-dependent axis (its shape depends
+#'   on arguments the table does not hold).
+#' @return Numeric vector of grid nodes.
+#' @examples
+#' tulpa_grid_axis("field_sd")
+#' tulpa_grid_axis("copy_alpha", n = 9)
+#' @export
+tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
+
 .nl_grid_axis <- function(key, n = NULL) {
     spec <- .NL_GRID[[key]]
     if (is.null(spec)) {

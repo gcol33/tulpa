@@ -1457,6 +1457,31 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
 # rather than likelihood alone. Callers integrating over a hyperparameter grid
 # pass it; callers weighting something that is not a quadrature rule leave it
 # NULL.
+#' Normalise outer-grid log-marginals to posterior cell weights
+#'
+#' The single weight normaliser for every outer hyperparameter grid: softmax
+#' of `lm` (optionally plus a per-cell log quadrature weight) into weights
+#' summing to 1. Non-finite nodes (an inner Newton diverging in a grid
+#' corner) are dropped from the max-shift and zeroed before renormalising
+#' over the finite cells; an all-non-finite grid returns all-`NA` with a
+#' warning rather than `NaN`. Intended for reconstructing a fit's outer-grid
+#' posterior weights (with [tulpa_theta_matrix()] and
+#' [tulpa_grid_log_quad()]) when the fit doesn't already carry `fit$weights`.
+#'
+#' @param lm Numeric vector of per-cell log-marginal-likelihood values.
+#' @param what Label for the grid, used only in the degenerate-case warning.
+#' @param log_quad Optional per-cell log quadrature weight (prior mass) of
+#'   the outer grid, e.g. from [tulpa_grid_log_quad()]; `NULL` normalises the
+#'   likelihood alone.
+#' @return Numeric vector of posterior cell weights summing to 1, the same
+#'   length as `lm`, or all-`NA` if no cell carries finite mass.
+#' @seealso [tulpa_theta_matrix()], [tulpa_grid_log_quad()]
+#' @export
+tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
+                                          log_quad = NULL) {
+  .nl_normalise_weights_safe(lm, what = what, log_quad = log_quad)
+}
+
 .nl_normalise_weights_safe <- function(lm, what = "grids / data",
                                        log_quad = NULL) {
   if (!is.null(log_quad)) {

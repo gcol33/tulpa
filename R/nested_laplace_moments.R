@@ -47,6 +47,24 @@
 # support) needs the named form, and a bare vector silently reads as a grid with
 # no axes -- which gave every single-axis fit an equal-weight measure whatever
 # its node spacing.
+#' A fit's outer grid as a named matrix
+#'
+#' Coerces a nested-Laplace fit's `theta_grid` to matrix form with named axis
+#' columns. A single-axis grid is stored on the fit as a bare vector named by
+#' `theta_names`; every downstream reader that keys an axis by name needs the
+#' named matrix form, so this is the one place that coercion happens.
+#' Intended for reconstructing a fit's outer-grid posterior cell weights (see
+#' [tulpa_grid_log_quad()], [tulpa_normalise_weights_safe()]) for a fit or
+#' path whose driver doesn't already carry `fit$log_quad`.
+#'
+#' @param res A `tulpa_fit` object (or any list carrying `theta_grid` and
+#'   `theta_names`).
+#' @return `res$theta_grid` as an `[n_cells x n_axes]` matrix with axis names
+#'   as column names, or `NULL` if the fit has no grid.
+#' @seealso [tulpa_grid_log_quad()], [tulpa_normalise_weights_safe()]
+#' @export
+tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
+
 .nl_theta_matrix <- function(res) {
   tg <- res$theta_grid
   if (is.null(tg) || is.matrix(tg)) return(tg)

@@ -48,6 +48,29 @@ NULL
 
 # --- SPDE precision rebuild (mirrors src/spde_qbuilder.h) -----------------
 
+#' Rebuild the SPDE/Matern field precision matrix
+#'
+#' Rebuilds the sparse precision matrix `Q(kappa, tau)` of an SPDE/Matern
+#' field from its mesh geometry and a `(kappa, tau)` hyperparameter pair,
+#' mirroring the compiled builder (`src/spde_qbuilder.h`) that
+#' `tulpa_nuts_spde()` and `fit_spde()` use internally. Intended for a caller
+#' running its own outer-grid loop over `(range, sigma)` around a coupled
+#' model tulpa's own SPDE front doors (`fit_spde()`, `spatial_spde()`) do not
+#' fit directly -- e.g. a per-species community layer sharing one spatial
+#' field.
+#'
+#' @param spatial A `spatial_spde()` / `spatial_spde_custom()` spec, carrying
+#'   `n_mesh`, `C0_diag`, `G` and `nu`.
+#' @param kappa Spatial frequency `kappa = sqrt(8*nu) / range`.
+#' @param tau_spde SPDE precision scale (see [tulpa_spde_log_hyperprior()]'s
+#'   `(range, sigma)` -> `(kappa, tau)` mapping via `.spde_kappa_tau()`).
+#' @return A sparse `n_mesh x n_mesh` precision matrix.
+#' @seealso [tulpa_spde_log_hyperprior()], [fit_spde()], [spatial_spde()]
+#' @export
+tulpa_spde_precision_Q <- function(spatial, kappa, tau_spde) {
+  .spde_precision_Q(spatial, kappa, tau_spde)
+}
+
 #' @keywords internal
 .spde_precision_Q <- function(spatial, kappa, tau_spde) {
   n_mesh <- spatial$n_mesh

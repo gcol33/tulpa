@@ -122,6 +122,27 @@
 # The SPDE field's hyperprior on (range, sigma) at natural values, as a density
 # on (log range, log sigma): the coordinates every SPDE outer integrator works
 # in, grid, CCD and k-hat alike (gcol33/tulpa#731).
+#' SPDE field hyperprior log density on (range, sigma)
+#'
+#' The SPDE field's hyperprior on `(range, sigma)`, evaluated as a density on
+#' `(log range, log sigma)` -- the coordinates every SPDE outer integrator
+#' works in (grid, CCD and k-hat alike, gcol33/tulpa#731). Intended for a
+#' caller running its own outer-grid loop over `(range, sigma)` around a
+#' coupled model tulpa's own SPDE front doors do not fit directly.
+#'
+#' @param range,sigma Numeric vectors of range / marginal-SD nodes (natural
+#'   scale, recycled against each other).
+#' @param sp A `spatial_spde()` / `spatial_spde_custom()` spec, carrying the
+#'   declared or defaulted `prior_range` / `prior_sigma` anchors.
+#' @param hyperprior `"proper"` (default) or `"flat"`; see `?spatial_spde`.
+#' @return Numeric vector of log-density values, one per `(range, sigma)`
+#'   pair.
+#' @seealso [tulpa_spde_precision_Q()], [spatial_spde()]
+#' @export
+tulpa_spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
+  .spde_log_hyperprior(range, sigma, sp, hyperprior)
+}
+
 .spde_log_hyperprior <- function(range, sigma, sp, hyperprior = "proper") {
   .spde_hyperprior_record(range, sigma, sp, hyperprior)$lp
 }

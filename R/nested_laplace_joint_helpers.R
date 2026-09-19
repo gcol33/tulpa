@@ -744,6 +744,37 @@
 # `logchol_design`; it defaults to the design `theta_grid` itself declares, and a
 # caller measuring a grid it did not declare -- a subset of the declared tensor
 # -- passes the declaration it folded the hyperprior under.
+#' Rebuild axis specs from an already-assembled outer grid
+#'
+#' Rebuilds each axis's declared spec (support, log/linear coordinate,
+#' prior) from a `theta_grid`'s columns, keyed off column names -- the same
+#' metadata the multi-block joint driver recovers rather than carrying a
+#' second description of the axes it already assembled. A column holding one
+#' value across every cell is treated as a fixed setting rather than an axis
+#' (e.g. a fixed NB-size node) and dropped. Intended for a caller that needs
+#' an axis's declared span, coordinate or prior off a settled grid without
+#' restating tulpa's own hyperprior declarations alongside it.
+#'
+#' @param theta_grid A named `[n_cells x n_axes]` matrix (see
+#'   [tulpa_theta_matrix()]).
+#' @param copy_slab `"exponential"` or `"flat"`; the copy-scale axis's
+#'   continuum measure (see [tulpa_hyper_check_copy_slab()]).
+#' @param folded_axes Optional names of axes folded onto `[0, Inf)`.
+#' @param logchol Free-covariance block design(s) as returned by
+#'   `.hp_logchol_designs()`; defaults to the design `theta_grid` itself
+#'   declares.
+#' @return A named list of per-axis spec lists, or `NULL` if `theta_grid` has
+#'   no axis names.
+#' @seealso [tulpa_theta_matrix()], [tulpa_grid_log_quad()],
+#'   [tulpa_hyper_grid_supports()]
+#' @export
+tulpa_joint_axis_specs_from_grid <- function(
+    theta_grid, copy_slab = "exponential", folded_axes = NULL,
+    logchol = .hp_logchol_designs(theta_grid)) {
+  .joint_axis_specs_from_grid(theta_grid, copy_slab = copy_slab,
+                              folded_axes = folded_axes, logchol = logchol)
+}
+
 .joint_axis_specs_from_grid <- function(theta_grid,
                                         copy_slab = "exponential",
                                         folded_axes = NULL,
