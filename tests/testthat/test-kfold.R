@@ -48,6 +48,37 @@ test_that("tulpa_kfold's elpd tracks the in-sample log predictive density", {
   expect_lt(mean_elpd, 0)
 })
 
+test_that("a refit injects n_trials only where the family reads one", {
+  skip_on_cran()
+  # Every fit carries a `$n_trials` field since gcol33/tulpa#781 -- the design
+  # bundle defaults it to rep(1, n) whatever the family -- so the presence of
+  # the field says nothing about whether the model uses one. Reading it as the
+  # signal injected `n_trials =` into a poisson refit, which tulpa() refuses
+  # (gcol33/tulpa#837). The signal is the family.
+  set.seed(3)
+  n <- 120L
+  d <- data.frame(x = rnorm(n))
+  d$y <- rpois(n, exp(0.4 + 0.8 * d$x))
+  fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace")
+
+  expect_false(is.null(fit$n_trials))          # the field is there ...
+  expect_false(tulpa:::.family_reads_trials(fit$family))   # ... and means nothing
+  cv <- tulpa_kfold(fit, data = d, folds = rep(seq_len(4L), length.out = n))
+  expect_true(is.finite(cv$elpd_kfold))
+
+  # A binomial fit with real denominators still gets the training rows' own
+  # counts, so the refit is scored against the model that was fitted.
+  set.seed(5)
+  db <- data.frame(x = rnorm(n), nt = sample(2:8, n, replace = TRUE))
+  db$y <- rbinom(n, db$nt, plogis(-0.3 + 0.7 * db$x))
+  fitb <- tulpa(y ~ x, data = db, family = "binomial", n_trials = db$nt,
+                mode = "laplace")
+  expect_true(tulpa:::.family_reads_trials(fitb$family))
+  cvb <- tulpa_kfold(fitb, data = db, folds = rep(seq_len(4L), length.out = n))
+  expect_true(is.finite(cvb$elpd_kfold))
+  expect_false(anyNA(cvb$pointwise))
+})
+
 test_that("tulpa_kfold rejects spatial / temporal-field fits and callless fits", {
   spatial_fit <- structure(
     list(spatial = list(type = "icar"), call = quote(tulpa()),

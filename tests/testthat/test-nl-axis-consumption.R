@@ -121,15 +121,45 @@ test_that("icar tau = 1 / sigma^2 is the engine's own conversion", {
     # `sigma_grid = s` cell by cell. This is what makes rewriting a fixture's
     # `sigma_grid` into `tau_grid` preserve the grid it meant to pin.
     #
-    # `hyperprior = "flat"` isolates that kernel-level claim: under the
-    # default "proper" hyperprior, `.hp_axis_default()` folds a DIFFERENT
-    # default PC-prior density depending on whether the axis is named `tau`
-    # or `sigma` -- individually correct Jacobian-derived densities on their
-    # own coordinate, but not equal to each other at corresponding
-    # `(sigma, tau = 1/sigma^2)` points (they differ by exactly `log(2)`,
-    # gcol33/tulpa#835). That is a separate, undecided question about which
-    # default prior a `tau_grid`-labelled axis should get, not about whether
-    # the field/kernel itself treats `tau = 1/sigma^2` as the same model.
+    # `hyperprior = "flat"` isolates that kernel-level claim: nothing is folded,
+    # so the two fits agree cell by cell on the number the kernel produced.
+    sim <- .axc_sim(seed = 21L)
+    s <- c(0.4, 0.7, 1.3)
+    arm <- .axc_arm(sim)
+
+    axc_fit <- function(hp) list(
+        sd = tulpa_nested_laplace_joint(
+            responses = list(occ = arm),
+            prior = .axc_icar_block(sim, sigma_grid = s),
+            hyperprior = hp, control = list(diagnose_k = FALSE)),
+        prec = tulpa_nested_laplace_joint(
+            responses = list(occ = arm),
+            prior = list(.axc_icar_block(sim, tau_grid = 1 / s^2,
+                                         spatial_idx = list(sim$sidx))),
+            hyperprior = hp, control = list(diagnose_k = FALSE)))
+
+    f <- axc_fit("flat")
+    expect_length(f$prec$log_marginal, length(s))
+    expect_lt(max(abs(as.numeric(f$sd$log_marginal) -
+                          as.numeric(f$prec$log_marginal))), 1e-8)
+    expect_lt(max(abs(as.numeric(f$sd$weights) -
+                          as.numeric(f$prec$weights))), 1e-10)
+})
+
+test_that("the default hyperprior is one belief recorded on two coordinates", {
+    skip_on_cran()
+    # `log_marginal` is a density on the axis's own INTEGRATION coordinate
+    # (`R/hyperprior_default.R`'s convention header), so declaring the same
+    # icar field as `sigma_grid = s` or as `tau_grid = 1 / s^2` must move it by
+    # the log-Jacobian |d log sigma / d log tau| = 1/2 and by nothing else --
+    # while every coordinate-free quantity stays put, because the cell's
+    # absolute measure carries the same factor the other way.
+    #
+    # gcol33/tulpa#835 read the log(2) as `.hp_axis_default()` folding a
+    # DIFFERENT prior belief for a `tau`-named axis than for a `sigma`-named
+    # one. It is not: the sd / variance / precision densities are the one sigma
+    # PC prior carried to three coordinates, which is what the last block here
+    # pins directly.
     sim <- .axc_sim(seed = 21L)
     s <- c(0.4, 0.7, 1.3)
     arm <- .axc_arm(sim)
@@ -137,21 +167,34 @@ test_that("icar tau = 1 / sigma^2 is the engine's own conversion", {
     fit_sd <- tulpa_nested_laplace_joint(
         responses = list(occ = arm),
         prior = .axc_icar_block(sim, sigma_grid = s),
-        hyperprior = "flat",
-        control = list(diagnose_k = FALSE))
-
+        hyperprior = "proper", control = list(diagnose_k = FALSE))
     fit_prec <- tulpa_nested_laplace_joint(
         responses = list(occ = arm),
         prior = list(.axc_icar_block(sim, tau_grid = 1 / s^2,
                                      spatial_idx = list(sim$sidx))),
-        hyperprior = "flat",
-        control = list(diagnose_k = FALSE))
+        hyperprior = "proper", control = list(diagnose_k = FALSE))
 
-    expect_length(fit_prec$log_marginal, length(s))
+    # The record moves by the Jacobian, at every cell.
     expect_lt(max(abs(as.numeric(fit_sd$log_marginal) -
-                          as.numeric(fit_prec$log_marginal))), 1e-8)
+                          as.numeric(fit_prec$log_marginal) - log(2))), 1e-8)
+    expect_lt(max(abs(as.numeric(fit_sd$log_hyperprior) -
+                          as.numeric(fit_prec$log_hyperprior) - log(2))), 1e-8)
+    # The model does not: the evidence integrates the density against the cell
+    # measure on the same coordinate, so the factor cancels.
+    expect_lt(abs(as.numeric(fit_sd$log_evidence) -
+                      as.numeric(fit_prec$log_evidence)), 1e-8)
     expect_lt(max(abs(as.numeric(fit_sd$weights) -
                           as.numeric(fit_prec$weights))), 1e-10)
+
+    # And the same identity at the density itself, for all three scale
+    # coordinates the default table binds: sd, variance, precision.
+    sig <- c(0.3, 0.8, 2.1)
+    a <- tulpa:::.nl_scale_anchor()
+    d_sd  <- tulpa:::.hp_log_scale_density(sig,       "sd",        a)
+    d_var <- tulpa:::.hp_log_scale_density(sig^2,     "variance",  a)
+    d_prc <- tulpa:::.hp_log_scale_density(1 / sig^2, "precision", a)
+    expect_equal(d_sd - d_var, rep(log(2), length(sig)), tolerance = 1e-10)
+    expect_equal(d_sd - d_prc, rep(log(2), length(sig)), tolerance = 1e-10)
 })
 
 # --------------------------------------------------------------------------- #

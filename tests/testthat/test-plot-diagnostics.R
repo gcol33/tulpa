@@ -70,3 +70,38 @@ test_that("plot_divergences() reads draws through .fit_draws() past its hmc gate
   expect_message(res <- plot_divergences(fake), "carries no posterior draws")
   expect_null(res)
 })
+
+test_that("the divergence count and the divergent rows come from one record", {
+  # plot_divergences() asks for the count and then for the indices. Reading
+  # them off different fields let it believe divergences exist while reporting
+  # their indices unavailable (gcol33/tulpa#840), so both go through
+  # .tulpa_divergence_record(): on any fit that records divergences at all,
+  # n_divergent() equals the length of the rows the plot would mark.
+  shapes <- list(
+    flat        = list(divergent = c(FALSE, TRUE, FALSE, TRUE)),
+    diag_flags  = list(diagnostics = list(divergent = c(TRUE, FALSE, TRUE))),
+    diag_idx    = list(diagnostics = list(divergent_idx = c(2L, 5L))),
+    diag_count  = list(diagnostics = list(n_divergent = 3L)),
+    flat_count  = list(n_divergent = 7L),
+    none        = list()
+  )
+  expected <- c(flat = 2L, diag_flags = 2L, diag_idx = 2L,
+                diag_count = 3L, flat_count = 7L, none = 0L)
+  has_idx <- c(flat = TRUE, diag_flags = TRUE, diag_idx = TRUE,
+               diag_count = FALSE, flat_count = FALSE, none = FALSE)
+
+  for (nm in names(shapes)) {
+    fit <- structure(c(list(backend = "hmc"), shapes[[nm]]), class = "tulpa_fit")
+    idx <- tulpa:::.tulpa_divergent_idx(fit)
+    expect_equal(tulpa:::n_divergent(fit), expected[[nm]], info = nm)
+    expect_equal(!is.null(idx), has_idx[[nm]], info = nm)
+    # Where indices exist at all, they account for every counted divergence.
+    if (!is.null(idx)) expect_length(idx, expected[[nm]])
+  }
+
+  # And a fit whose indices are locatable never reports them unavailable.
+  fit <- structure(list(backend = "hmc", divergent = c(FALSE, TRUE),
+                        draws = matrix(0, 2, 1, dimnames = list(NULL, "a"))),
+                   class = "tulpa_fit")
+  expect_equal(tulpa:::.tulpa_divergent_idx(fit), 2L)
+})

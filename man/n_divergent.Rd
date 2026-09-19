@@ -14,9 +14,11 @@ Integer count of divergent transitions (0 if none are recorded).
 }
 \description{
 Counts divergent transitions recorded by an HMC/NUTS fit, reading whichever
-field the backend populated (\verb{$diagnostics$n_divergent},
-\verb{$diagnostics$divergent_idx}, \verb{$diagnostics$divergent}, or the top-level
-\verb{$n_divergent} / \verb{$divergent}).
+field the backend populated (the top-level \verb{$divergent} flag vector every
+sampler in this package writes, or \verb{$diagnostics$divergent},
+\verb{$diagnostics$divergent_idx}, \verb{$diagnostics$n_divergent}, \verb{$n_divergent}).
+It reads the same record \code{\link[=plot_divergences]{plot_divergences()}} locates the divergent rows
+from, so the two always agree on one fit.
 }
 \seealso{
 \code{\link[=plot_divergences]{plot_divergences()}}, \code{\link[=check_diagnostics]{check_diagnostics()}}

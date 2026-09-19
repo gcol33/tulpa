@@ -71,7 +71,7 @@ tulpa_kfold <- function(object, data, K = 10L, folds = NULL,
   K <- length(fold_ids)
 
   refit_env <- parent.frame()
-  inject_trials <- !is.null(cl$n_trials) || !is.null(object$n_trials)
+  inject_trials <- .family_reads_trials(fam)
   pointwise <- rep(NA_real_, n)
 
   for (k in fold_ids) {
@@ -150,6 +150,15 @@ tulpa_kfold <- function(object, data, K = 10L, folds = NULL,
 # trial counts and observation weights are injected as literals so a stored
 # `n_trials = <expr>` / `weights = <expr>` argument (which would evaluate to
 # the full-length vector) cannot misalign against the subset data.
+#
+# `inject_trials` is decided from the FAMILY (`.family_reads_trials()`), not
+# from whether the fit carries a `$n_trials` field: every fit carries one since
+# gcol33/tulpa#781, so reading the field injected an `n_trials =` argument into
+# a poisson / gaussian refit, which tulpa() refuses (gcol33/tulpa#837). For a
+# binomial family the resolved counts default to 1 where the call supplied
+# none, so injecting them unconditionally restates what the call already meant.
+# A cbind(successes, failures) response never reaches here -- it evaluates to a
+# two-column matrix, which `.cv_refit_setup()`'s length check refuses.
 .cv_refit <- function(cl, data, train, nt, inject_trials, env, label,
                       obs_w = NULL) {
   ccl <- cl
@@ -264,7 +273,7 @@ tulpa_reloo <- function(object, data, k_threshold = .nl_diag("k_usable"),
 
   flagged <- which(is.finite(pareto_k) & pareto_k > k_threshold)
   refit_env <- parent.frame()
-  inject_trials <- !is.null(cl$n_trials) || !is.null(object$n_trials)
+  inject_trials <- .family_reads_trials(fam)
 
   for (i in flagged) {
     fit_i <- .cv_refit(cl, data, setdiff(seq_len(n), i), nt, inject_trials,

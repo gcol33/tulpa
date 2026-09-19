@@ -134,9 +134,14 @@ test_that("a tier mode reports both the mode asked for and the backend it resolv
   res <- fit_quietly(y ~ s(x, k = 8) + (1 | site), data = d, family = "poisson",
                      mode = "structured")
   expect_equal(res$fit$mode_overridden$requested, "structured")
-  expect_equal(res$fit$mode_overridden$backend, "laplace")
+  # The Structured tier integrates an RE scale rather than conditioning on an
+  # unsupplied one, for a scalar (1 | g) as much as for a random slope
+  # (gcol33/tulpa#787), so the backend the tier resolved to before the
+  # smoother's own redirect is `re_cov_nested`. Conditioning at sigma_re = 1 is
+  # the explicit mode = "laplace", a different door (gcol33/tulpa#838).
+  expect_equal(res$fit$mode_overridden$backend, "re_cov_nested")
   expect_match(res$fit$selection_reason,
-               "mode = 'structured' \\(backend 'laplace'\\)")
+               "mode = 'structured' \\(backend 're_cov_nested'\\)")
 })
 
 

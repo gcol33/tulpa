@@ -408,7 +408,12 @@ redirects to `re_cov_nested` (default) or `re_cov_gibbs`
 (`control$re_cov = "gibbs"`) and treats **every** RE term as a covariance block
 -- correlated, uncorrelated `(... || g)`, multiple terms, and any accompanying
 `(1 | g)` (a 1x1 block); nothing is silently conditioned at `sigma_re = 1`.
-Plain random-intercept-only models keep the scalar-`sigma_re` design path.
+Under `mode = "laplace"` a plain random-intercept-only model keeps the
+scalar-`sigma_re` design path: that mode is the one door that means "condition
+on the scale I supplied". The TIER modes do not -- `mode = "structured"` and
+`mode = "auto"` integrate an unsupplied RE scale for a scalar `(1 | g)` as much
+as for a slope (gcol33/tulpa#787), because neither has a dataset-implied
+`sigma_re` to condition on.
 
 ### Generic S3 Methods and Diagnostics
 

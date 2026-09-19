@@ -1846,7 +1846,7 @@ tulpa <- function(formula, data,
   # would be two answers to the same question, so both are refused rather than
   # silently resolved in favour of one.
   if (!is.null(bundle$n_trials)) {
-    if (!.family_base(family) %in% c("binomial", "beta_binomial")) {
+    if (!.family_reads_trials(family)) {
       stop(sprintf(paste0(
         "A cbind(successes, failures) response is the binomial idiom; ",
         "family = '%s' takes a single-column response."), family),
@@ -1867,7 +1867,7 @@ tulpa <- function(formula, data,
   # a non-binomial family was read by nothing at all -- no signal for a user who
   # meant a binomial and typed poisson.
   if (!is.null(n_trials)) {
-    if (!.family_base(family) %in% c("binomial", "beta_binomial")) {
+    if (!.family_reads_trials(family)) {
       stop(sprintf(paste0(
         "`n_trials` is the binomial denominator and is not read by ",
         "family = '%s'. Drop it, or use family = 'binomial'."), family),

@@ -747,6 +747,16 @@ family_names <- function() names(.FAMILY_OPS)
   family
 }
 
+# Does `family` read a per-observation trial count? The binomial families do;
+# every other family ignores `n_trials` entirely. The one predicate for that
+# question: a fit's `$n_trials` field is not the answer, because the design
+# bundle carries a `rep(1, n)` default for every family and `.finalize_fit()`
+# stamps it on every fit (gcol33/tulpa#781), so a non-NULL `$n_trials` says
+# nothing about whether the model uses one (gcol33/tulpa#837).
+.family_reads_trials <- function(family) {
+  .family_base(family) %in% c("binomial", "beta_binomial")
+}
+
 #' Validate the dispersion parameter `phi` for a family.
 #'
 #' Errors when `family` carries a dispersion / precision parameter and `phi` is

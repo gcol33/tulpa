@@ -544,13 +544,39 @@ plot_pairs <- function(fit, pars = NULL, highlight_divergent = TRUE,
 }
 
 
-# Divergent-transition row indices, read off the top-level `$divergent`
-# vector every sampler writes (row-aligned with `$log_prob` / `$chain_id`),
-# rather than the never-populated `$diagnostics$divergent_idx`
-# (gcol33/tulpa#783). NULL when the fit carries no such vector.
+# The one read of a fit's divergence record, so the count and the row indices
+# cannot disagree on the same object: `plot_divergences()` calls both in
+# sequence and used to be able to believe divergences exist while reporting
+# their indices unavailable (gcol33/tulpa#840).
+#
+# Returns `n` (0 when nothing is recorded) and `idx`, the row indices where the
+# record is a per-draw flag vector or an index vector, NULL where it is only a
+# count. Every sampler in this package writes the top-level `$divergent`
+# vector, row-aligned with `$log_prob` / `$chain_id` (gcol33/tulpa#783); the
+# `$diagnostics$*` shapes are the ones a consumer package may assemble instead.
+# A vector-shaped record is preferred over a count because it answers both
+# questions; among vectors the engine's own field is read first.
+.tulpa_divergence_record <- function(fit) {
+  d <- fit$diagnostics
+  flags <- function(v) {
+    i <- which(as.logical(v))
+    list(n = length(i), idx = i)
+  }
+  if (!is.null(fit$divergent))   return(flags(fit$divergent))
+  if (!is.null(d$divergent))     return(flags(d$divergent))
+  if (!is.null(d$divergent_idx)) {
+    i <- as.integer(d$divergent_idx)
+    return(list(n = length(i), idx = i))
+  }
+  if (!is.null(d$n_divergent))   return(list(n = as.integer(d$n_divergent), idx = NULL))
+  if (!is.null(fit$n_divergent)) return(list(n = as.integer(fit$n_divergent), idx = NULL))
+  list(n = 0L, idx = NULL)
+}
+
+
+# Divergent-transition row indices, or NULL when the fit records only a count.
 .tulpa_divergent_idx <- function(fit) {
-  if (is.null(fit$divergent)) return(NULL)
-  which(as.logical(fit$divergent))
+  .tulpa_divergence_record(fit)$idx
 }
 
 
@@ -1686,22 +1712,18 @@ grep_params <- function(pattern, names) {
 #' Number of divergent transitions
 #'
 #' Counts divergent transitions recorded by an HMC/NUTS fit, reading whichever
-#' field the backend populated (`$diagnostics$n_divergent`,
-#' `$diagnostics$divergent_idx`, `$diagnostics$divergent`, or the top-level
-#' `$n_divergent` / `$divergent`).
+#' field the backend populated (the top-level `$divergent` flag vector every
+#' sampler in this package writes, or `$diagnostics$divergent`,
+#' `$diagnostics$divergent_idx`, `$diagnostics$n_divergent`, `$n_divergent`).
+#' It reads the same record [plot_divergences()] locates the divergent rows
+#' from, so the two always agree on one fit.
 #'
 #' @param fit A `tulpa_fit` object.
 #' @return Integer count of divergent transitions (0 if none are recorded).
 #' @seealso [plot_divergences()], [check_diagnostics()]
 #' @export
 n_divergent <- function(fit) {
-  d <- fit$diagnostics
-  if (!is.null(d$n_divergent))   return(as.integer(d$n_divergent))
-  if (!is.null(d$divergent_idx)) return(length(d$divergent_idx))
-  if (!is.null(d$divergent))     return(sum(as.logical(d$divergent), na.rm = TRUE))
-  if (!is.null(fit$n_divergent)) return(as.integer(fit$n_divergent))
-  if (!is.null(fit$divergent))   return(sum(as.logical(fit$divergent), na.rm = TRUE))
-  0L
+  .tulpa_divergence_record(fit)$n
 }
 
 
