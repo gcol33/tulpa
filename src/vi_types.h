@@ -525,6 +525,10 @@ struct VIResult {
   double final_elbo;
   int iterations;
   bool converged;
+  // Which rule ended the loop: "gradient_norm", "patience", or empty when the
+  // iteration budget ran out. `converged` alone cannot tell a run that reached
+  // its optimum from one the stopping rule cut short (gcol33/tulpa#821).
+  std::string converged_reason;
   std::vector<double> elbo_history;
 
   // Posterior samples for diagnostics
@@ -559,6 +563,7 @@ inline Rcpp::List vi_result_to_list(const VIResult& result) {
     Rcpp::Named("elbo") = result.final_elbo,
     Rcpp::Named("iterations") = result.iterations,
     Rcpp::Named("converged") = result.converged,
+    Rcpp::Named("converged_reason") = result.converged_reason,
     Rcpp::Named("elbo_history") = result.elbo_history,
     Rcpp::Named("samples") = result.samples,
     Rcpp::Named("psis_k") = result.psis_k

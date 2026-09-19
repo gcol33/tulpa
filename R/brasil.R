@@ -179,7 +179,19 @@
 #
 # `spectrum_ratio` = l_min / l_max of CiL (the generalized eigenvalues); the
 # approximation interval is [spectrum_ratio, 1] on the L / l_max-normalized axis.
+#
+# The fitted path is the compiled search (`src/brasil.h`): the outer integrator
+# visits one spectrum interval per (range, sigma) cell -- 1102 of them for a
+# single n = 40 fit, essentially all distinct -- so this runs once per cell and
+# at R speed costs ~0.55 s apiece, the whole run time of a fractional fit
+# (gcol33/tulpa#818). `.spde_rational_roots_r()` below is the reference oracle
+# the port reproduces; test-brasil-cpp-oracle.R pins them together.
 .spde_rational_roots <- function(order, beta, spectrum_ratio, tol = 1e-7) {
+  cpp_spde_rational_roots(as.integer(order), as.numeric(beta),
+                          as.numeric(spectrum_ratio), as.numeric(tol))
+}
+
+.spde_rational_roots_r <- function(order, beta, spectrum_ratio, tol = 1e-7) {
   if (order < 1L) stop("rational order must be >= 1.", call. = FALSE)
   if (!(spectrum_ratio > 0 && spectrum_ratio < 1)) {
     stop("spectrum_ratio must be in (0, 1).", call. = FALSE)

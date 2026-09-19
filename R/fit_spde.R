@@ -425,7 +425,8 @@ fit_spde <- function(y, X, spatial,
         family = family, phi = phi,
         n_trials = n_trials, offset = offset,
         range_val = range_hy, sigma_val = sigma_hy,
-        re_idx = no_re_idx, n_re_groups = no_re_n_groups, sigma_re = no_re_sigma
+        re_idx = no_re_idx, n_re_groups = no_re_n_groups, sigma_re = no_re_sigma,
+        y = y
       ),
       error = function(e) NULL
     )

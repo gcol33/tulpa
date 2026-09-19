@@ -328,7 +328,7 @@ tulpa_spde_precision_Q <- function(spatial, kappa, tau_spde) {
 .marginal_H_beta_field <- function(mode, X, family, phi, n_trials,
                                    weights, offset,
                                    n_field, Z_field, Q_field,
-                                   re_idx, n_re_groups, sigma_re) {
+                                   re_idx, n_re_groups, sigma_re, y) {
   p     <- ncol(X)
   n_obs <- nrow(X)
 
@@ -339,7 +339,7 @@ tulpa_spde_precision_Q <- function(spatial, kappa, tau_spde) {
   D    <- cbind(D_re, Z_field)
 
   eta <- as.numeric(X %*% beta) + (offset %||% 0) + as.numeric(D %*% u)
-  W   <- glmm_weights(eta, family, n_trials, phi)
+  W   <- glmm_weights(eta, family, n_trials, phi, y = y)
   if (!is.null(weights)) W <- W * weights
 
   tau_re   <- 1 / (sigma_re^2 + 1e-10)
@@ -357,7 +357,7 @@ tulpa_spde_precision_Q <- function(spatial, kappa, tau_spde) {
                                 n_trials, weights = NULL, offset = NULL,
                                 sigma2_gp, phi_gp,
                                 re_idx = NULL, n_re_groups = 0L,
-                                sigma_re = 1.0) {
+                                sigma_re = 1.0, y) {
   n_spatial <- spatial$n_spatial %||% nrow(spatial$unique_coords)
 
   .marginal_H_beta_field(
@@ -365,7 +365,7 @@ tulpa_spde_precision_Q <- function(spatial, kappa, tau_spde) {
     n_field = n_spatial,
     Z_field = .field_design_Z(spatial$obs_to_loc, n_spatial, nrow(X)),
     Q_field = .nngp_precision_Q(spatial, sigma2_gp, phi_gp),
-    re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re
+    re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re, y = y
   )
 }
 
@@ -375,7 +375,7 @@ tulpa_spde_precision_Q <- function(spatial, kappa, tau_spde) {
                                   n_trials, weights = NULL, offset = NULL,
                                   range_val, sigma_val,
                                   re_idx = NULL, n_re_groups = 0L,
-                                  sigma_re = 1.0) {
+                                  sigma_re = 1.0, y) {
   p      <- ncol(X)
   n_obs  <- nrow(X)
   n_mesh <- spatial$n_mesh
@@ -398,7 +398,7 @@ tulpa_spde_precision_Q <- function(spatial, kappa, tau_spde) {
     eta <- as.numeric(X %*% beta) + (offset %||% 0) +
            (if (n_re_groups > 0L) as.numeric(D_re %*% u_re) else 0) +
            as.numeric(A_full %*% field_full)
-    W <- glmm_weights(eta, family, n_trials, phi)
+    W <- glmm_weights(eta, family, n_trials, phi, y = y)
     if (!is.null(weights)) W <- W * weights
     Q_latent <- Matrix::bdiag(Matrix::Diagonal(n_re_groups, x = tau_re), asm$Q)
     D        <- cbind(D_re, asm$A_eff)
@@ -413,7 +413,7 @@ tulpa_spde_precision_Q <- function(spatial, kappa, tau_spde) {
     n_field = n_mesh,
     Z_field = as(spatial$A, "CsparseMatrix"),
     Q_field = .spde_precision_Q(spatial, .kt$kappa, .kt$tau_spde),
-    re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re
+    re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re, y = y
   )
 }
 
@@ -440,7 +440,7 @@ tulpa_spde_precision_Q <- function(spatial, kappa, tau_spde) {
                                         n_trials, weights = NULL, offset = NULL,
                                         tau, rho,
                                         re_idx = NULL, n_re_groups = 0L,
-                                        sigma_re = 1.0) {
+                                        sigma_re = 1.0, y) {
   n_units <- nrow(as.matrix(spatial$adjacency))
 
   .marginal_H_beta_field(
@@ -448,7 +448,7 @@ tulpa_spde_precision_Q <- function(spatial, kappa, tau_spde) {
     n_field = n_units,
     Z_field = .field_design_Z(spatial$spatial_idx, n_units, nrow(X)),
     Q_field = .car_proper_precision_Q(spatial, tau, rho),
-    re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re
+    re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re, y = y
   )
 }
 
@@ -546,7 +546,7 @@ tulpa_spde_precision_Q <- function(spatial, kappa, tau_spde) {
 .marginal_H_beta_icar <- function(mode, X, spatial, family, phi,
                                   n_trials, weights = NULL, offset = NULL,
                                   re_idx = NULL, n_re_groups = 0L,
-                                  sigma_re = 1.0) {
+                                  sigma_re = 1.0, y) {
   n_units <- nrow(as.matrix(spatial$adjacency))
 
   .marginal_H_beta_field(
@@ -554,7 +554,7 @@ tulpa_spde_precision_Q <- function(spatial, kappa, tau_spde) {
     n_field = n_units,
     Z_field = .field_design_Z(spatial$spatial_idx, n_units, nrow(X)),  # d_fac = 1
     Q_field = .icar_precision_Q(spatial),
-    re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re
+    re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re, y = y
   )
 }
 
@@ -572,7 +572,7 @@ tulpa_spde_precision_Q <- function(spatial, kappa, tau_spde) {
                                   n_trials, weights = NULL, offset = NULL,
                                   sigma_spatial = 1.0, rho = 0.5,
                                   re_idx = NULL, n_re_groups = 0L,
-                                  sigma_re = 1.0) {
+                                  sigma_re = 1.0, y) {
   n_units      <- nrow(as.matrix(spatial$adjacency))
   scale_factor <- spatial$scale_factor %||% 1.0
 
@@ -590,7 +590,7 @@ tulpa_spde_precision_Q <- function(spatial, kappa, tau_spde) {
       .icar_precision_Q(spatial),          # phi: augmented ICAR structure
       Matrix::Diagonal(n_units, x = 1.0)   # theta: iid
     ),
-    re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re
+    re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re, y = y
   )
 }
 
@@ -602,7 +602,7 @@ tulpa_spde_precision_Q <- function(spatial, kappa, tau_spde) {
                                   n_trials, weights = NULL, offset = NULL,
                                   phi_basis, lambda_eig, sigma2, lengthscale,
                                   re_idx = NULL, n_re_groups = 0L,
-                                  sigma_re = 1.0) {
+                                  sigma_re = 1.0, y) {
   M <- ncol(phi_basis)
 
   # The latent coefficients carry an N(0, I) prior; the spectral density
@@ -618,6 +618,6 @@ tulpa_spde_precision_Q <- function(spatial, kappa, tau_spde) {
     n_field = M,
     Z_field = Matrix::Matrix(PhiS, sparse = TRUE),
     Q_field = Matrix::Diagonal(M, x = 1.0),
-    re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re
+    re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re, y = y
   )
 }

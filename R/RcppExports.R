@@ -25,6 +25,14 @@ cpp_flatten_3d_rowmajor <- function(arr, d1, d2, d3) {
     .Call(`_tulpa_cpp_flatten_3d_rowmajor`, arr, d1, d2, d3)
 }
 
+cpp_spde_rational_roots <- function(order, beta, spectrum_ratio, tol = 1e-7) {
+    .Call(`_tulpa_cpp_spde_rational_roots`, order, beta, spectrum_ratio, tol)
+}
+
+cpp_brasil_approx <- function(x, a, b, m, f_exp, tol = 1e-7) {
+    .Call(`_tulpa_cpp_brasil_approx`, x, a, b, m, f_exp, tol)
+}
+
 cpp_cell_coupling_evaluate <- function(name, eta, y, family, phi, n_trials = NULL, cell_idx = 0L, grad_only = FALSE) {
     .Call(`_tulpa_cpp_cell_coupling_evaluate`, name, eta, y, family, phi, n_trials, cell_idx, grad_only)
 }
@@ -79,6 +87,10 @@ cpp_family_terms <- function(y, n_trials, eta, family, phi, phi2 = NA_real_) {
 
 cpp_family_obs_terms <- function(y, n_trials, eta, family, phi, phi2 = NA_real_) {
     .Call(`_tulpa_cpp_family_obs_terms`, y, n_trials, eta, family, phi, phi2)
+}
+
+cpp_family_obs_weight <- function(y, n_trials, eta, family, phi, phi2 = NA_real_) {
+    .Call(`_tulpa_cpp_family_obs_weight`, y, n_trials, eta, family, phi, phi2)
 }
 
 cpp_family_curvature_deta <- function(y, n_trials, eta, family, phi, phi2 = NA_real_) {
@@ -1081,8 +1093,8 @@ cpp_vi_elbo_grad <- function(y, n_trials, X, family, variant, mc_samples, seed, 
     .Call(`_tulpa_cpp_vi_elbo_grad`, y, n_trials, X, family, variant, mc_samples, seed, rank, x, phi, sigma_beta, offset_nullable)
 }
 
-cpp_tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0, sigma_beta = 10.0, n_iter = 2000L, n_warmup = 1000L, seed = 42L, verbose = FALSE, n_chains = 4L, max_treedepth = 10L, adapt_delta = 0.8, epsilon = 0.0, L = 10L, batch_size = 0L, alpha = 0.1, mclmc_adjusted = 0L, n_particles = 1000L, n_mcmc_steps = 5L, ess_threshold = 0.5, vi_variant = 3L, vi_mc_samples = 10L, vi_max_iter = 10000L, vi_n_draws = 2000L, vi_max_grad_norm = 10.0, offset_nullable = NULL, re_spec = NULL, spatial_spec = NULL, temporal_spec = NULL, sigma_re_scale = 2.5, fixed_names = NULL, phi2 = NA_real_, svc_spec = NULL, tvc_spec = NULL, zi_spec = NULL, init_nullable = NULL, inv_metric_diag_nullable = NULL, mass_matrix = "diag", ess_adapt_during_warmup = FALSE, ess_adapt_interval = 50L, ess_joint_sigma_re = -1L, ess_joint_proposal_sd = 0.1, checkpoint_path = "") {
-    .Call(`_tulpa_cpp_tulpa_sample_glmm`, y, n_trials, X, family, backend, phi, sigma_beta, n_iter, n_warmup, seed, verbose, n_chains, max_treedepth, adapt_delta, epsilon, L, batch_size, alpha, mclmc_adjusted, n_particles, n_mcmc_steps, ess_threshold, vi_variant, vi_mc_samples, vi_max_iter, vi_n_draws, vi_max_grad_norm, offset_nullable, re_spec, spatial_spec, temporal_spec, sigma_re_scale, fixed_names, phi2, svc_spec, tvc_spec, zi_spec, init_nullable, inv_metric_diag_nullable, mass_matrix, ess_adapt_during_warmup, ess_adapt_interval, ess_joint_sigma_re, ess_joint_proposal_sd, checkpoint_path)
+cpp_tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0, sigma_beta = 10.0, n_iter = 2000L, n_warmup = 1000L, seed = 42L, verbose = FALSE, n_chains = 4L, max_treedepth = 10L, adapt_delta = 0.8, epsilon = 0.0, L = 10L, batch_size = 0L, alpha = 0.1, mclmc_adjusted = 0L, n_particles = 1000L, n_mcmc_steps = 5L, ess_threshold = 0.5, vi_variant = 3L, vi_mc_samples = 10L, vi_max_iter = 10000L, vi_n_draws = 2000L, vi_max_grad_norm = 10.0, vi_tol_grad = 1e-4, vi_tol_rel_elbo = 0.01, vi_patience = 50L, offset_nullable = NULL, re_spec = NULL, spatial_spec = NULL, temporal_spec = NULL, sigma_re_scale = 2.5, fixed_names = NULL, phi2 = NA_real_, svc_spec = NULL, tvc_spec = NULL, zi_spec = NULL, init_nullable = NULL, inv_metric_diag_nullable = NULL, mass_matrix = "diag", ess_adapt_during_warmup = FALSE, ess_adapt_interval = 50L, ess_joint_sigma_re = -1L, ess_joint_proposal_sd = 0.1, checkpoint_path = "") {
+    .Call(`_tulpa_cpp_tulpa_sample_glmm`, y, n_trials, X, family, backend, phi, sigma_beta, n_iter, n_warmup, seed, verbose, n_chains, max_treedepth, adapt_delta, epsilon, L, batch_size, alpha, mclmc_adjusted, n_particles, n_mcmc_steps, ess_threshold, vi_variant, vi_mc_samples, vi_max_iter, vi_n_draws, vi_max_grad_norm, vi_tol_grad, vi_tol_rel_elbo, vi_patience, offset_nullable, re_spec, spatial_spec, temporal_spec, sigma_re_scale, fixed_names, phi2, svc_spec, tvc_spec, zi_spec, init_nullable, inv_metric_diag_nullable, mass_matrix, ess_adapt_during_warmup, ess_adapt_interval, ess_joint_sigma_re, ess_joint_proposal_sd, checkpoint_path)
 }
 
 cpp_spde_layout_probe <- function(n_mesh, p, joint_hypers, n_extra_params = 0L) {
@@ -1107,5 +1119,9 @@ cpp_tulpa_fit_spde_nuts <- function(y_r, n_trials_r, X_r, A_x, A_i, A_p, n_obs, 
 
 cpp_test_funnel_nuts <- function(K = 9L, gamma = 3.0, n_iter = 3000L, n_warmup = 1000L, max_treedepth = 10L, adapt_delta = 0.8, seed = 1L, riemannian = 0L, verbose = FALSE) {
     .Call(`_tulpa_cpp_test_funnel_nuts`, K, gamma, n_iter, n_warmup, max_treedepth, adapt_delta, seed, riemannian, verbose)
+}
+
+cpp_vi_convergence_replay <- function(elbo, grad_norm = 1.0, tol_grad = 1e-4, tol_rel_elbo = 0.01, patience = 50L) {
+    .Call(`_tulpa_cpp_vi_convergence_replay`, elbo, grad_norm, tol_grad, tol_rel_elbo, patience)
 }
 

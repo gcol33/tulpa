@@ -436,15 +436,50 @@ dispatch_gibbs_temporal <- function(y, n_trials, X, re_group, n_re_groups,
 
 #' Compute GLM working weights for Laplace Hessian
 #'
-#' Thin wrapper over the family-ops registry ([family_weight()]) so the weight
-#' formulas live in exactly one place (`R/family_loglik.R`).
+#' Thin wrapper over the family-ops registry so the weight formulas live in
+#' exactly one place (`R/family_loglik.R`). This is the weight the ENGINE's
+#' Laplace Hessian carries, which is what every caller here rebuilds `H` from,
+#' so which of the two curvatures it returns is decided by the compiled
+#' dispatch rather than chosen independently: `cpp_family_working_weight_is_observed()`
+#' names the families whose compiled working weight IS the observed curvature,
+#' and for those the y-free expected form is a different function
+#' (gcol33/tulpa#824).
+#'
+#' `neg_binomial_2` is the one family where that bites: its compiled branch
+#' returns `(y + phi) phi mu / (mu + phi)^2` while the registry's y-free
+#' `weight` is the expected `mu phi / (mu + phi)`, which at a response away
+#' from the mean differ by tens of percent. Every other family either has no
+#' separate observed form or is one the compiled side answers with the expected
+#' weight, so `y` changes nothing and may be omitted.
 #' @keywords internal
-glmm_weights <- function(eta, family, n_trials = NULL, phi = 1.0, phi2 = NULL) {
+glmm_weights <- function(eta, family, n_trials = NULL, phi = 1.0, phi2 = NULL,
+                         y = NULL) {
   # Resolution (including the `<family>_<link>` forms) belongs to .family_ops();
   # duplicating the lookup here is what made a suffixed family fit in the engine
   # and then fail on the R-side Hessian.
   .family_or_stop(family)
-  as.numeric(family_weight(eta, family, n_trials, phi, phi2))
+  if (!.glmm_weight_needs_y(family)) {
+    return(as.numeric(family_weight(eta, family, n_trials, phi, phi2)))
+  }
+  if (is.null(y)) {
+    stop(sprintf(paste0("Family '%s' has an observed working weight, so the ",
+                        "Laplace Hessian depends on the response; pass `y`."),
+                 family), call. = FALSE)
+  }
+  as.numeric(.family_obs_weight(eta, y, family, n_trials, phi, phi2))
+}
+
+# A family whose compiled working weight IS the observed curvature AND whose
+# observed curvature is a different FUNCTION from the expected one (it carries
+# y). Only then does the registry's y-free weight fail to reproduce the Hessian
+# the engine's Laplace actually used -- for poisson, binomial or a
+# canonical-link family the two coincide identically, so nothing is needed.
+#' @keywords internal
+.glmm_weight_needs_y <- function(family) {
+  ops <- .family_ops(family)
+  !is.null(ops$obs_weight) &&
+    isTRUE(tryCatch(cpp_family_working_weight_is_observed(family),
+                    error = function(e) FALSE))
 }
 
 

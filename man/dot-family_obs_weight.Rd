@@ -7,9 +7,20 @@
 .family_obs_weight(eta, y, family, n_trials = NULL, phi = 1, phi2 = NULL)
 }
 \description{
-Falls back to the y-free \code{weight} for families whose curvature carries no
-\code{y} -- those where the response enters the log-likelihood linearly in \code{eta}
-(Poisson, binomial, and the zero-truncated Poisson), for which the observed
-and expected curvature coincide identically rather than only in expectation.
+One path, the compiled dispatch (\code{obs_grad_hess_for_family}), for every
+family. It used to answer from the registry's \code{obs_weight} closure where a
+family registered one and substitute the y-free EXPECTED weight where none
+was registered. That substitution is exact only where the response enters
+the log-likelihood linearly in \code{eta} (Poisson, binomial, the zero-truncated
+Poisson); for beta, gamma, inverse_gaussian, beta_binomial, tweedie and t it
+is a different function, and can carry the opposite sign -- at \code{y = 12},
+\code{eta = -0.9} the beta_binomial observed curvature is \code{-0.125} against an
+expected weight of \code{+0.658}. beta_binomial is in \code{.ZI_FAMILIES}, so the
+zero-inflation mixture in \code{R/family_zi.R} differentiated through the wrong
+one (gcol33/tulpa#824).
+}
+\details{
+The registry's three \code{obs_weight} closures stay as the R oracle the compiled
+dispatch is pinned against in \code{test-family-registry-compiled.R}.
 }
 \keyword{internal}

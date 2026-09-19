@@ -1,3 +1,88 @@
+# tulpa 0.4.8
+
+## Fractional-nu SPDE took minutes where integer nu takes seconds
+
+* **The BRASIL rational-approximation search ran once per outer grid cell, in
+  R** (gcol33/tulpa#818). The fractional path assembles its own rational
+  operator per `(range, sigma)` cell, and each assembly ran
+  `.spde_rational_roots()` from scratch on that cell's own spectrum interval.
+  Measured on the issue's fixture: **1102 calls for a single n = 40 fit, 1049
+  of them at distinct spectrum ratios**, at ~0.55 s apiece -- 606 s of the
+  616 s the fit took. Caching cannot help (the ratios are distinct), and
+  sharing one wide interval across the grid is not free either: at order 2 the
+  minimax error of `x^{-beta}` is 7.2e-07 on `[0.5, 1]` but 1.6e-02 on
+  `[0.01, 1]`, and the fit visits ratios down to 2.9e-06.
+
+  The search is now compiled (`src/brasil.h`), 49x faster per call, with
+  `R/brasil.R` kept as the reference oracle and pinned to it by
+  `test-brasil-cpp-oracle.R`. **n = 120, the issue's headline case: `nu = 1.5`
+  647 s -> 45.9 s, `nu = 0.5` 600 s -> 51.0 s; n = 40 `nu = 1.5` 321 s ->
+  32.2 s.** The fitted coefficients are unchanged (n = 40, `nu = 1.5`: 0.313,
+  0.630, the values the issue logged), and the two implementations agree on
+  the roots to 1.5e-07 relative across orders 1-4, five `beta`, four spectrum
+  ratios.
+
+## The VI stopping rule was scaled by a quantity with no scale
+
+* **`vi_max_iter` was almost never what ended a VI run** (gcol33/tulpa#821).
+  The loop stopped on a patience rule that counted an iteration as "no
+  improvement" when its ELBO gain was below `tol_rel_elbo * |ELBO|`. An ELBO
+  carries an arbitrary additive constant -- the normalizing terms of the
+  likelihood and the prior -- so `|ELBO|` is not the scale of anything, and at
+  ELBO ~ -742 the 1% default made any gain under **7.4 nats per iteration**
+  count as no progress. Fifty of those stopped the run. Testing each iteration
+  separately also let the rule discard up to `patience` times its own
+  tolerance.
+
+  The rule now compares the ELBO gain ACROSS the patience window -- the mean
+  of its second half minus the mean of its first -- against
+  `tol_rel_elbo * (best - worst)`, the span the run has covered. Both sides
+  are differences, so the additive constant cancels;
+  `test-vi-stopping-rule.R` pins that the stop does not move when a whole run
+  is shifted by up to 1e5 or rescaled by 100x.
+
+* **The three tolerances are now `control` knobs** -- `vi_tol_grad`,
+  `vi_tol_rel_elbo`, `vi_patience` -- and a VI fit reports `vi_iterations` and
+  `converged_reason` (`"patience"`, `"gradient_norm"` or `"max_iter"`), so a
+  run that stopped far short of its budget can be told from one that used it.
+  `converged = TRUE` alone could not express the difference.
+
+## The R family registry had no test tying it to the compiled kernels
+
+* **Added `test-family-registry-compiled.R`, covering every entry of
+  `family_names()`** (gcol33/tulpa#824). `mala()` / `pathfinder()` /
+  `imh_laplace()` build their target from the R registry through
+  `build_glmm_logpost()`, and `glmm_weights()` rebuilds the Laplace Hessian
+  from it for the post-fit marginal SEs on GP / NNGP / HSGP / SPDE fits, while
+  every other backend runs the compiled kernels. The existing cross-checks
+  reached 7 non-canonical families; plain gaussian, poisson, binomial,
+  neg_binomial_2, gamma and beta had none. The log-likelihood and score agree
+  across all 14 to machine precision. The curvature did not:
+
+* **`glmm_weights()` returned the expected weight where the engine's Laplace
+  Hessian carries the observed one.** The compiled `neg_binomial_2` branch
+  deliberately returns `(y + phi) phi mu / (mu + phi)^2` -- and
+  `working_weight_is_observed()` names it -- while the registry's y-free
+  `weight` is the expected `mu phi / (mu + phi)`. At `phi = 1.7`, `eta = 1.3`,
+  `y = 9` those are 2.315 and 1.162. Every `vcov()` / `confint()` that
+  reconstructs `H = D'WD + Q` on a neg_binomial_2 spatial fit used a different
+  curvature from the fit. `glmm_weights()` now takes `y` and routes through
+  the compiled predicate, so the weight it returns is the one the fit used for
+  every family; `y` is required exactly where it changes the answer.
+
+* **`.family_obs_weight()` substituted the expected weight for six
+  families.** It answered from the registry's `obs_weight` closure where one
+  was registered and fell back to the y-free `weight` where none was -- exact
+  only where the response enters the log-likelihood linearly in `eta`. For
+  beta, gamma, inverse_gaussian, beta_binomial, tweedie and t it is a
+  different function and can carry the **opposite sign**: at `y = 12`,
+  `eta = -0.9` the beta_binomial observed curvature is -0.125 against an
+  expected weight of +0.658. `beta_binomial` is in `.ZI_FAMILIES`, so the
+  zero-inflation mixture in `R/family_zi.R` differentiated through the wrong
+  one. It is now one compiled path (`cpp_family_obs_weight()`) for every
+  family, with the three registry closures kept as the R oracle it is pinned
+  against.
+
 # tulpa 0.4.7
 
 ## `tulpa_posterior_draws()` sampled hyperparameters as bare grid-node atoms

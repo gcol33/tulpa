@@ -126,9 +126,17 @@ test_that("glmm_weights is unchanged by the registry refactor", {
   }
   expect_equal(glmm_weights(eta, "binomial", n_trials = n), ref_binom, tolerance = 1e-12)
   expect_equal(glmm_weights(eta, "poisson"), ref_pois, tolerance = 1e-12)
-  expect_equal(glmm_weights(eta, "neg_binomial_2", phi = 2), ref_nb, tolerance = 1e-12)
   expect_equal(glmm_weights(eta, "gaussian"), rep(1, length(eta)))
   expect_equal(glmm_weights(eta, "beta", phi = 5), ref_beta, tolerance = 1e-12)
+  # neg_binomial_2 is no longer among these. glmm_weights() returns the weight
+  # the ENGINE's Laplace Hessian carries, and the compiled neg_binomial_2
+  # branch carries the OBSERVED curvature, not the expected `ref_nb` form
+  # (gcol33/tulpa#824); the expected form is still what family_weight() gives.
+  expect_equal(family_weight(eta, "neg_binomial_2", phi = 2), ref_nb,
+               tolerance = 1e-12)
+  expect_equal(glmm_weights(eta, "neg_binomial_2", phi = 2, y = rep(3, length(eta))),
+               { mu <- pmax(exp(eta), 1e-8); (3 + 2) * 2 * mu / (mu + 2)^2 },
+               tolerance = 1e-12)
 })
 
 test_that("family helpers validate names; glmm_weights errors on unknown family", {

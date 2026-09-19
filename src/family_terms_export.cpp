@@ -86,6 +86,34 @@ Rcpp::NumericVector cpp_family_obs_terms(double y, int n_trials, double eta,
       Rcpp::_["neg_hess"] = gh.neg_hess);
 }
 
+// The same observed curvature over a whole vector, which is what
+// .family_obs_weight() in R now returns for EVERY family. It used to answer
+// from the registry where a family registered an `obs_weight` closure and fall
+// back to the EXPECTED weight where none was registered -- a different
+// function, and for beta / gamma / inverse_gaussian / beta_binomial / tweedie /
+// t one that can even carry the opposite sign (at y = 12, eta = -0.9 the
+// beta_binomial observed curvature is -0.125 where the expected weight is
+// +0.658). beta_binomial is in .ZI_FAMILIES, so the zero-inflation mixture
+// differentiated through the wrong one (gcol33/tulpa#824).
+// [[Rcpp::export]]
+Rcpp::NumericVector cpp_family_obs_weight(const Rcpp::NumericVector& y,
+                                          const Rcpp::IntegerVector& n_trials,
+                                          const Rcpp::NumericVector& eta,
+                                          std::string family, double phi,
+                                          double phi2 = NA_REAL) {
+  const R_xlen_t n = eta.size();
+  if (y.size() != n || n_trials.size() != n) {
+    Rcpp::stop("cpp_family_obs_weight(): y, n_trials and eta must have "
+               "the same length.");
+  }
+  Rcpp::NumericVector out(n);
+  for (R_xlen_t i = 0; i < n; ++i) {
+    out[i] = tulpa::obs_grad_hess_for_family(y[i], n_trials[i], eta[i],
+                                             family, phi, phi2).neg_hess;
+  }
+  return out;
+}
+
 // d(neg_hess)/d eta from laplace_family_curvature.h, with the gate that says
 // whether it is exact for this family. The exact Laplace gradient differentiates
 // log|H|, and H carries the weight cpp_family_terms reports as `neg_hess`, so

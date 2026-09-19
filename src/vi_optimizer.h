@@ -6,6 +6,8 @@
 #define TULPA_VI_OPTIMIZER_H
 
 #include <Rcpp.h>
+#include <deque>
+#include <string>
 #include <vector>
 #include <cmath>
 #include <RcppEigen.h>
@@ -104,15 +106,38 @@ public:
 // Convergence Checker
 // ---------------------------------------------------------------------
 
+// The ELBO carries an arbitrary additive constant -- the normalizing terms of
+// the likelihood and the prior -- so |ELBO| is not the scale of anything, and a
+// stopping rule that divides an improvement by it is offset-dependent rather
+// than scale-free. At ELBO ~ -742 a 1% rule counts any gain below 7.4 nats per
+// iteration as no improvement, which is the optimizer still moving fast; the
+// TVC fixture in gcol33/tulpa#821 stopped at iteration 109 with the field
+// collapsed, and raising `vi_max_iter` from 400 to 3000 changed nothing
+// because the budget was never what bound.
+//
+// Both the quantity tested and its threshold are therefore built from ELBO
+// DIFFERENCES, which the additive constant cancels out of:
+//
+//   stop when  mean(2nd half of window) - mean(1st half)  <=  tol_rel_elbo *
+//                                                             (best - worst)
+//
+// i.e. when the last `patience` iterations improved by a small fraction of
+// what the run has improved altogether. Comparing half-window means rather
+// than single iterations averages over the Monte-Carlo noise in the ELBO
+// estimate, and testing the WINDOW rather than each iteration separately
+// bounds what the rule can discard: the per-iteration form tolerated
+// `patience` consecutive gains each just under the threshold, so up to 50x
+// the tolerance in total.
 class ConvergenceChecker {
 public:
   double tol_grad;         // Gradient norm tolerance
-  double tol_rel_elbo;     // Relative ELBO change tolerance
-  int patience;            // Patience for early stopping
+  double tol_rel_elbo;     // Window ELBO gain, as a fraction of the run's span
+  int patience;            // Width of the window the gain is measured over
 
   // Internal state
-  int no_improvement_count;
+  std::deque<double> window;   // the last `patience` ELBO values
   double best_elbo;
+  double worst_elbo;
   bool has_best;           // false until the first ELBO has been recorded
 
   ConvergenceChecker(double tol_grad_ = 1e-4,
@@ -120,14 +145,15 @@ public:
                      int patience_ = 50)
     : tol_grad(tol_grad_),
       tol_rel_elbo(tol_rel_elbo_),
-      patience(patience_),
-      no_improvement_count(0),
+      patience(patience_ < 2 ? 2 : patience_),
       best_elbo(-std::numeric_limits<double>::infinity()),
+      worst_elbo(std::numeric_limits<double>::infinity()),
       has_best(false) {}
 
   void reset() {
-    no_improvement_count = 0;
+    window.clear();
     best_elbo = -std::numeric_limits<double>::infinity();
+    worst_elbo = std::numeric_limits<double>::infinity();
     has_best = false;
   }
 
@@ -138,28 +164,26 @@ public:
       return "gradient_norm";
     }
 
-    // Check relative ELBO improvement
-    if (elbo > best_elbo) {
-      if (!has_best) {
-        // Nothing to improve on yet.
-        no_improvement_count = 0;
-      } else if (best_elbo == 0.0) {
-        // Any improvement over zero is unbounded relative to it, so it counts
-        // as a large one.
-        no_improvement_count = 0;
-      } else if ((elbo - best_elbo) / std::abs(best_elbo) < tol_rel_elbo) {
-        no_improvement_count++;
-      } else {
-        no_improvement_count = 0;
-      }
-      best_elbo = elbo;
-      has_best = true;
-    } else {
-      no_improvement_count++;
-    }
+    // A non-finite ELBO carries no information about the plateau; it neither
+    // extends the run's span nor enters the window.
+    if (!std::isfinite(elbo)) return "";
 
-    // Check patience
-    if (no_improvement_count >= patience) {
+    if (!has_best || elbo > best_elbo)  best_elbo = elbo;
+    if (!has_best || elbo < worst_elbo) worst_elbo = elbo;
+    has_best = true;
+
+    window.push_back(elbo);
+    if (static_cast<int>(window.size()) > patience) window.pop_front();
+    if (static_cast<int>(window.size()) < patience) return "";
+
+    const int h = patience / 2;
+    double first = 0.0, second = 0.0;
+    for (int i = 0; i < h; ++i) first += window[i];
+    for (int i = patience - h; i < patience; ++i) second += window[i];
+    const double gain = (second - first) / h;
+    const double span = best_elbo - worst_elbo;
+
+    if (gain <= tol_rel_elbo * span) {
       return "patience";
     }
 
@@ -201,6 +225,7 @@ inline bool vi_adam_step(Params& params,
   std::string converged = checker.check(elbo, grad_norm);
   if (!converged.empty()) {
     result.converged = true;
+    result.converged_reason = converged;
     result.iterations = iter + 1;
     if (config.verbose) {
       Rcpp::Rcout << "Converged at iteration " << iter + 1

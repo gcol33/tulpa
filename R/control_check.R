@@ -178,6 +178,10 @@ tulpa_check_control <- function(control, allowed, where) {
                     "n_particles", "n_mcmc_steps", "mclmc_adjusted",
                     "vi_variant", "vi_mc_samples", "vi_max_iter",
                     "vi_max_grad_norm",
+                    # The VI stopping rule. `vi_max_iter` is a ceiling the run
+                    # rarely reaches; these three are what decide where it
+                    # actually stops (gcol33/tulpa#821).
+                    "vi_tol_grad", "vi_tol_rel_elbo", "vi_patience",
                     # Elliptical-slice kernel. Note `ess_threshold` above is
                     # SMC's resampling threshold, not one of these -- the two
                     # unrelated meanings of "ess" are why these carry the

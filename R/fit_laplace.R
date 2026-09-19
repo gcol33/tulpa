@@ -382,7 +382,8 @@ tulpa_laplace <- function(y, n_trials, X,
           family = family, phi = phi,
           n_trials = n_trials, weights = weights, offset = offset,
           range_val = range_val, sigma_val = sigma_val,
-          re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re
+          re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re,
+          y = y
         ),
         error = function(e) {
           warning("Marginal H_beta (SPDE Schur) failed: ", conditionMessage(e),
@@ -399,7 +400,8 @@ tulpa_laplace <- function(y, n_trials, X,
           family = family, phi = phi,
           n_trials = n_trials, weights = weights, offset = offset,
           sigma2_gp = sigma2_val, phi_gp = phi_gp_val,
-          re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re
+          re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re,
+          y = y
         ),
         error = function(e) {
           warning("Marginal H_beta (NNGP Schur) failed: ", conditionMessage(e),
@@ -414,7 +416,8 @@ tulpa_laplace <- function(y, n_trials, X,
           family = family, phi = phi,
           n_trials = n_trials, weights = weights, offset = offset,
           tau = result$tau %||% 1.0, rho = result$rho %||% 0.5,
-          re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re
+          re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re,
+          y = y
         ),
         error = function(e) {
           warning("Marginal H_beta (CAR_proper Schur) failed: ",
@@ -428,7 +431,8 @@ tulpa_laplace <- function(y, n_trials, X,
           mode = result$mode, X = X, spatial = spatial,
           family = family, phi = phi,
           n_trials = n_trials, weights = weights, offset = offset,
-          re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re
+          re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re,
+          y = y
         ),
         error = function(e) {
           warning("Marginal H_beta (ICAR/CAR Schur) failed: ",
@@ -445,7 +449,8 @@ tulpa_laplace <- function(y, n_trials, X,
           family = family, phi = phi,
           n_trials = n_trials, weights = weights, offset = offset,
           sigma_spatial = 1.0, rho = 0.5,
-          re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re
+          re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re,
+          y = y
         ),
         error = function(e) {
           warning("Marginal H_beta (BYM2 Schur) failed: ",
@@ -462,7 +467,8 @@ tulpa_laplace <- function(y, n_trials, X,
           phi_basis = result$phi_basis, lambda_eig = result$lambda_eig,
           sigma2 = result$sigma2 %||% 1.0,
           lengthscale = result$lengthscale %||% 1.0,
-          re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re
+          re_idx = re_idx, n_re_groups = n_re_groups, sigma_re = sigma_re,
+          y = y
         ),
         error = function(e) {
           warning("Marginal H_beta (HSGP Schur) failed: ", conditionMessage(e),

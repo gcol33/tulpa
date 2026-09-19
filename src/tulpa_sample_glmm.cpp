@@ -281,6 +281,9 @@ Rcpp::List cpp_tulpa_sample_glmm(
     int vi_max_iter = 10000,
     int vi_n_draws = 2000,
     double vi_max_grad_norm = 10.0,
+    double vi_tol_grad = 1e-4,
+    double vi_tol_rel_elbo = 0.01,
+    int vi_patience = 50,
     Rcpp::Nullable<Rcpp::NumericVector> offset_nullable = R_NilValue,
     Rcpp::Nullable<Rcpp::List> re_spec = R_NilValue,
     Rcpp::Nullable<Rcpp::List> spatial_spec = R_NilValue,
@@ -308,7 +311,10 @@ Rcpp::List cpp_tulpa_sample_glmm(
     //       mclmc_adjusted
     //   SMC:   n_particles, n_mcmc_steps, ess_threshold
     //   VI:    vi_variant (0=meanfield,1=lowrank,2=fullrank,3=auto),
-    //       vi_mc_samples, vi_max_iter, vi_n_draws, vi_max_grad_norm
+    //       vi_mc_samples, vi_max_iter, vi_n_draws, vi_max_grad_norm,
+    //       vi_tol_grad / vi_tol_rel_elbo / vi_patience (the stopping rule --
+    //       the budget is rarely what binds, so these are the knobs that
+    //       decide where a VI fit actually stops)
     //   Structure: re_spec / spatial_spec / temporal_spec (null => absent),
     //       sigma_re_scale (half-Cauchy scale on the RE / BYM2 SDs).
     const int N = y.size();
@@ -572,6 +578,8 @@ Rcpp::List cpp_tulpa_sample_glmm(
         cfg.variant = static_cast<tulpa::vi::VIVariant>(vi_variant);
         cfg.max_iter = vi_max_iter; cfg.mc_samples = vi_mc_samples;
         cfg.max_grad_norm = vi_max_grad_norm;
+        cfg.tol_grad = vi_tol_grad; cfg.tol_rel_elbo = vi_tol_rel_elbo;
+        cfg.patience = vi_patience;
         cfg.seed = (unsigned int)seed; cfg.verbose = verbose;
         tulpa::vi::validate_vi_config(cfg);
         tulpa::vi::VIResult res = tulpa::vi::fit_vi(in.data, in.layout, D, cfg, nullptr);
@@ -603,6 +611,13 @@ Rcpp::List cpp_tulpa_sample_glmm(
             Rcpp::Named("pareto_k") =
                 (res.psis_k < 0.0) ? NA_REAL : res.psis_k,
             Rcpp::Named("converged") = res.converged,
+            // What the run actually did, not just that it stopped: the
+            // iteration it stopped at and the rule that stopped it. Without
+            // these a stop far short of the budget is indistinguishable from
+            // one that used it (gcol33/tulpa#821).
+            Rcpp::Named("vi_iterations") = res.iterations,
+            Rcpp::Named("converged_reason") =
+                res.converged_reason.empty() ? "max_iter" : res.converged_reason,
             Rcpp::Named("sampler") = "vi");
         return out;
     }

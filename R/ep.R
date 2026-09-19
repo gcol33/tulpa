@@ -33,12 +33,11 @@
 # + loglik(eta; y) in eta, for laying adaptive Gauss-Hermite nodes at the
 # tilted distribution rather than at the cavity. `stats::optimize()` (a
 # derivative-free, bracketed golden-section search) is used rather than a hand
-# Newton loop: the observed curvature the engine's own `obs_weight` registers
-# is EXPECTED (Fisher) information for some families (inverse_gaussian has no
-# registered `obs_weight`, so `.family_obs_weight()` falls back to it), so a
-# Newton step built from it is only approximately right -- fine for placing
-# nodes (the importance-reweighting below corrects for a mis-scaled proposal),
-# but not something to trust for a step-size-sensitive root find. The bracket
+# Newton loop: the tilted mode is a root find on a log-density whose curvature
+# can be small or negative away from the mode, so a Newton step is not reliably
+# a descent step whatever curvature it is built from. Node placement does not
+# need one (the importance-reweighting below corrects for a mis-scaled
+# proposal), and a bracketed search cannot leave the interval. The bracket
 # widens (up to 3 times) when the optimum lands on its edge, which happens
 # when the likelihood pulls the tilted mode well outside the cavity's own
 # range (e.g. a large Poisson count against a wide cavity).

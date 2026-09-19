@@ -1532,7 +1532,7 @@ plot.tulpa_fit <- function(x, type = c("density", "trace", "pairs", "smooth"),
   eta  <- as.numeric(X %*% beta) + as.numeric(A %*% w) +
     (object$offset %||% 0)
   W <- glmm_weights(eta, object$family, object$n_trials,
-                    .spde_phi_variance(object))
+                    .spde_phi_variance(object), y = object$y)
 
   .kt      <- .spde_kappa_tau(range_val, sigma_val, sp$nu)
   kappa    <- .kt$kappa

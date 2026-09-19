@@ -58,6 +58,7 @@
 #'   `sigma_beta`, `n_chains`, `max_treedepth`, `adapt_delta`, `epsilon`, `L`,
 #'   `batch_size`, `alpha`, `n_particles`, `n_mcmc_steps`, `ess_threshold`,
 #'   `vi_variant`, `vi_mc_samples`, `vi_max_iter`, `vi_max_grad_norm`,
+#'   `vi_tol_grad`, `vi_tol_rel_elbo`, `vi_patience`,
 #'   `n_draws`, `verbose`, `mass_matrix`, `checkpoint`).
 #'
 #'   `checkpoint = list(path =, resume =)` is per-chain checkpoint/resume on
@@ -85,6 +86,19 @@
 #'   record, and the reparameterisation average every gradient divides by -- so
 #'   values below 1 are rejected. `vi_max_grad_norm` (default 10) is the
 #'   gradient-norm clip applied before every Adam step.
+#'
+#'   `vi_max_iter` is a ceiling; what ends a VI run is usually the stopping
+#'   rule, which `vi_patience` (default 50), `vi_tol_rel_elbo` (default 0.01)
+#'   and `vi_tol_grad` (default 1e-4) control. The loop stops when the ELBO
+#'   gain across the last `vi_patience` iterations -- the mean of the window's
+#'   second half minus the mean of its first -- falls to `vi_tol_rel_elbo`
+#'   times the ELBO span the run has covered, or when the gradient norm falls
+#'   below `vi_tol_grad`. Both the gain and its threshold are ELBO
+#'   DIFFERENCES, so the arbitrary additive constant in an ELBO cancels.
+#'   Setting `vi_tol_rel_elbo = 0` stops only on a window that is flat or
+#'   falling. The fit reports `vi_iterations` and `converged_reason`
+#'   (`"patience"`, `"gradient_norm"` or `"max_iter"`) so a run that stopped
+#'   short of its budget can be told from one that used it.
 #'
 #'   `epsilon` pins the step size on the stochastic-gradient backends: `"sghmc"`
 #'   runs its warmup step-size adapter only when no `epsilon` is supplied, and
@@ -180,6 +194,26 @@ tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
     stop("`control$vi_mc_samples` must be at least 1; got ",
          format(control$vi_mc_samples), ".", call. = FALSE)
   }
+  # The stopping rule, not the budget, is what usually ends a VI run, so its
+  # three knobs are reachable from `control` (gcol33/tulpa#821). `vi_patience`
+  # is the width of the window the ELBO gain is measured over and needs two
+  # halves to compare; `vi_tol_rel_elbo` is that gain as a fraction of the
+  # run's own ELBO span, so 0 stops only on a flat or falling window.
+  vi_patience     <- as.integer(control$vi_patience %||% 50L)
+  vi_tol_rel_elbo <- as.numeric(control$vi_tol_rel_elbo %||% 0.01)
+  vi_tol_grad     <- as.numeric(control$vi_tol_grad %||% 1e-4)
+  if (is.na(vi_patience) || vi_patience < 2L) {
+    stop("`control$vi_patience` must be at least 2; got ",
+         format(control$vi_patience), ".", call. = FALSE)
+  }
+  if (is.na(vi_tol_rel_elbo) || vi_tol_rel_elbo < 0) {
+    stop("`control$vi_tol_rel_elbo` must be non-negative; got ",
+         format(control$vi_tol_rel_elbo), ".", call. = FALSE)
+  }
+  if (is.na(vi_tol_grad) || vi_tol_grad < 0) {
+    stop("`control$vi_tol_grad` must be non-negative; got ",
+         format(control$vi_tol_grad), ".", call. = FALSE)
+  }
 
   res <- cpp_tulpa_sample_glmm(
     y          = as.numeric(y),
@@ -209,6 +243,9 @@ tulpa_sample_glmm <- function(y, n_trials, X, family, backend, phi = 1.0,
     vi_max_iter   = vi_max_iter,
     vi_n_draws    = as.integer(control$n_draws %||% 2000L),
     vi_max_grad_norm = as.numeric(control$vi_max_grad_norm %||% 10.0),
+    vi_tol_grad     = vi_tol_grad,
+    vi_tol_rel_elbo = vi_tol_rel_elbo,
+    vi_patience     = vi_patience,
     offset_nullable = offset,
     re_spec       = re_spec,
     spatial_spec  = spatial_spec,
