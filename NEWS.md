@@ -1,3 +1,55 @@
+# tulpa 0.4.9
+
+## An SPDE field beside a random intercept pinned the RE SD at 1
+
+* **`tulpa(y ~ x + (1 | g), spatial = spatial_spde(...))` conditioned the
+  random-effect SD instead of integrating it**, under `mode = "auto"`,
+  `"structured"` and an explicit `"nested_laplace"` alike
+  (gcol33/tulpa#817). All three resolve to the `spde` backend, whose outer
+  grid is `(range, sigma)` and whose `sigma_re` is a scalar it conditions on,
+  so on the path whose whole point is integrating the hyperparameters the RE
+  was the one variance component never estimated -- held at the default of 1,
+  a number the data never produced.
+
+  The generic nested driver already carries an `spde` block type, so the field
+  now goes there as a block beside the RE term's own `iid` block and both SDs
+  sit on one outer grid. `theta_grid` gains a third axis, and
+  `tulpa_hyper_draws()` reports a posterior for it. Measured over
+  `sd_re` in {0.2, 0.8, 2.0} x 8 seeds, the integrated posterior mean comes out
+  **0.268 / 1.175 / 2.727** -- monotone in the truth and the right order of
+  magnitude, against the flat 1 the conditioned path used whatever the data
+  said. The fixed-effect slope barely moves (mean |error| 0.063 vs 0.076 at
+  `sd_re = 0.2`, 0.072 vs 0.092 at 2.0, inside a seed-to-seed spread of ~0.07),
+  so this is about the variance component being estimated at all.
+
+* Supplying `sigma_re` still conditions, as the degenerate one-node case of
+  the same axis rather than a second route. An SPDE field with no RE term
+  still reaches `fit_spde()` -- the redirect is narrowed, not removed. Integer
+  `nu` only: fractional `nu` is the operator-based rational construction
+  `fit_spde()` owns, and it refuses a random effect regardless.
+
+## Two constructors took arguments that no backend could fit
+
+* **`temporal_tvc(structure = "gp")` was documented and accepted, and refused
+  by every mode** (gcol33/tulpa#814): the sampler entry has no GP branch and
+  the Laplace-family modes carry no TVC field at all. Worse, the Laplace-mode
+  refusal recommended `mode = "exact"` without checking the structure, so for
+  `"gp"` it pointed at a mode that also refuses. `structure` now takes the
+  three the TVC block's density has a branch for, `"gp"` is named explicitly
+  with a pointer to the wiring issue (gcol33/tulpa#847), and the wrong-mode
+  message only recommends `mode = "exact"` when that mode would in fact take
+  the spec -- one predicate, `.tvc_structure_or_stop()`, asked by both.
+
+* **`spatial_rsr(spatial_gp(...))`, the `?spatial_rsr` example, could not be
+  fitted by any mode** (gcol33/tulpa#815). The projection is applied by one
+  kernel, `cpp_pg_binomial_gibbs_rsr()`, which conditions on an areal
+  neighbour list; `tulpa()` re-typed every `$rsr` spec as areal, then demanded
+  a `spatial(col)` term and failed on the missing adjacency with "non-numeric
+  matrix extent" -- a message about neither the spec nor the argument. A
+  non-areal spec is now refused at construction, where the argument that
+  caused it is still in hand, and the `@param` and the opening example use an
+  areal field. The capability for continuous fields is gcol33/tulpa#848.
+
 # tulpa 0.4.8
 
 ## Fractional-nu SPDE took minutes where integer nu takes seconds

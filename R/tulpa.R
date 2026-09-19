@@ -199,9 +199,42 @@
     ))
   }
 
-  # SPDE never reaches the generic converter -- tulpa() redirects an SPDE field
-  # to the dedicated `spde` backend (fit_spde) before .tulpa_fitter_args builds a
-  # nested prior. Any other type is genuinely unsupported on this path.
+  if (type == "spde") {
+    # An SPDE field normally reaches its own integrator (fit_spde), whose outer
+    # grid is (range, sigma) and whose `sigma_re` is a scalar it conditions on.
+    # This converter is the route taken when the formula ALSO carries a random
+    # intercept: as a block here, the field is integrated beside the RE term's
+    # own `iid` block, so the RE SD becomes an outer axis instead of being
+    # pinned at 1 (gcol33/tulpa#817).
+    #
+    # Integer nu only. Fractional nu in fit_spde() is the operator-based
+    # rational construction (`.spde_rational_assemble()`), not the shifted-alpha
+    # precision `make_spde_block` builds, and fit_spde() refuses a random
+    # effect alongside it anyway -- so there is no fractional + RE fit for this
+    # route to take over, and it does not claim one.
+    if (.spde_nu_is_fractional(spatial$nu)) {
+      stop("A random-effect term alongside a fractional-nu SPDE field is not ",
+           "supported yet; use an integer nu, or drop the random-effect term.",
+           call. = FALSE)
+    }
+    return(list(
+      type    = "spde",
+      n_mesh  = as.integer(spatial$n_mesh),
+      # The single-arm converter reads a scalar `n_obs` (the joint one a
+      # per-arm vector). A is n_obs x n_mesh, so the projector states it.
+      n_obs   = as.integer(nrow(spatial$A)),
+      A_x     = as.numeric(spatial$A_x),
+      A_i     = as.integer(spatial$A_i),
+      A_p     = as.integer(spatial$A_p),
+      C0_diag = as.numeric(spatial$C0_diag),
+      G1_x    = as.numeric(spatial$G1_x),
+      G1_i    = as.integer(spatial$G1_i),
+      G1_p    = as.integer(spatial$G1_p),
+      nu      = as.numeric(spatial$nu)
+    ))
+  }
+
+  # Any other type is genuinely unsupported on this path.
   stop(sprintf(paste0(
     "The generic nested-Laplace converter supports areal (%s) and continuous\n",
     "(%s) spatial fields; '%s' is not routed here. Use one of those, or\n",
@@ -479,17 +512,33 @@
 }
 
 
+# The structures the TVC block's density actually has a branch for
+# (`tvc_log_prior()` in src/hmc_tvc.h dispatches on TemporalType). One
+# predicate, asked by the sampler spec below and by the front door's
+# wrong-mode message, so the two cannot disagree about what is fittable.
+#' @keywords internal
+.TVC_STRUCTURES <- c("rw1", "rw2", "ar1")
+
+#' @keywords internal
+.tvc_structure_or_stop <- function(structure) {
+  st <- tolower(structure %||% "rw1")
+  if (!st %in% .TVC_STRUCTURES) {
+    stop(sprintf(paste0(
+      "A temporally-varying coefficient evolves as %s; got '%s'. A GP TVC ",
+      "needs a per-coefficient lengthscale the TVC block does not carry ",
+      "(gcol33/tulpa#847)."),
+      paste(shQuote(.TVC_STRUCTURES), collapse = " / "), st), call. = FALSE)
+  }
+  st
+}
+
 # Pack a validated tulpa_tvc (RW1 / RW2 / AR1 temporally-varying coefficients)
 # spec into the ModelData sampler's tvc_spec (mode = "exact" only). Each TVC term
 # j carries a temporal field w_j(g, t); the generic log-post adds
 # eta_i += sum_j X_tvc[i,j] w_j(g_i, t_i). X_tvc is row-major [n_obs x n_tvc].
 #' @keywords internal
 .tvc_sampler_spec <- function(temporal, X) {
-  st <- tolower(temporal$structure %||% "rw1")
-  if (!st %in% c("rw1", "rw2", "ar1")) {
-    stop("TVC exact NUTS supports structure 'rw1' / 'rw2' / 'ar1'; got '", st,
-         "'. The 'gp' temporal structure is not front-door wired.", call. = FALSE)
-  }
+  st <- .tvc_structure_or_stop(temporal$structure)
   idx <- as.integer(temporal$tvc_indices)
   Xt  <- as.matrix(X)[, idx, drop = FALSE]          # [n_obs x n_tvc]
   n_groups <- as.integer(temporal$n_groups %||% 1L)
@@ -2191,12 +2240,23 @@ tulpa <- function(formula, data,
     identical(tolower(temporal_spec$type %||% ""), "tvc")
   if ((is_svc_fit || is_tvc_fit) &&
       (BACKEND_REGISTRY[[sel$backend]]$input %||% "") != "modeldata") {
+    # Only recommend `mode = "exact"` when it would in fact take this spec.
+    # The structure check the sampler entry applies is the same one
+    # `.tvc_sampler_spec()` / `.svc_sampler_spec()` make, so ask it here rather
+    # than pointing the user at a mode that refuses for a second reason
+    # (gcol33/tulpa#814).
+    hint <- tryCatch({
+      if (is_tvc_fit) .tvc_structure_or_stop(temporal_spec$structure)
+      "Use mode = 'exact'."
+    }, error = function(e) {
+      paste0("mode = 'exact' does not take it either: ", conditionMessage(e))
+    })
     stop(sprintf(paste0(
       "%s coefficients are sampled by the exact ModelData NUTS backend; the\n",
       "selected backend '%s' (mode = '%s') does not carry the varying-coefficient\n",
-      "field. Use mode = 'exact'."),
+      "field. %s"),
       if (is_svc_fit) "Spatially-varying" else "Temporally-varying",
-      sel$backend, mode), call. = FALSE)
+      sel$backend, mode, hint), call. = FALSE)
   }
 
   # spatial_rsr()'s projection is applied only inside the binomial Polya-Gamma
@@ -2388,8 +2448,21 @@ tulpa <- function(formula, data,
   # nested_laplace backend for a spatial field; redirect that to the dedicated
   # `spde` backend so the SPDE field reaches its own integrator. The conditional
   # mode = "laplace" stays on the fixed-hyperparameter tulpa_laplace path.
+  #
+  # ... EXCEPT with a random-effect term. fit_spde()'s grid has no RE-SD axis;
+  # it takes a scalar `sigma_re` and conditions on it, which at the default of
+  # 1 makes the RE the one variance component a nested fit never estimates --
+  # a number the data never produced, on the path whose whole point is
+  # integrating the hyperparameters (gcol33/tulpa#817). The generic nested
+  # driver already carries an `spde` block type, so the field goes there as a
+  # block beside the RE's own `iid` block and both SDs are integrated on one
+  # outer grid. Integer nu only: fractional nu is the operator-based rational
+  # construction fit_spde() owns, and it refuses an RE term regardless.
+  spde_re_integrated <- isTRUE(has_re) &&
+    !.spde_nu_is_fractional(spatial_spec$nu %||% 1)
   if (sel$backend == "nested_laplace" &&
-      identical(tolower(spatial_type %||% ""), "spde")) {
+      identical(tolower(spatial_type %||% ""), "spde") &&
+      !spde_re_integrated) {
     # notify = FALSE: same mode and tier, reaching the engine that carries the FEM
     # precision. Nothing the caller asked for is lost.
     sel <- .sel_redirect(

@@ -7,7 +7,7 @@
 temporal_tvc(
   time_var,
   terms = 1,
-  structure = c("rw1", "rw2", "ar1", "gp"),
+  structure = c("rw1", "rw2", "ar1"),
   group_var = NULL,
   shared = NULL,
   sigma_prior_U = 1,
@@ -22,7 +22,10 @@ of design-matrix column indices, or a character vector of term names.
 Default \code{1} (the intercept).}
 
 \item{structure}{Temporal prior governing how the coefficients evolve. One of
-\code{"rw1"}, \code{"rw2"}, \code{"ar1"}, or \code{"gp"}.}
+\code{"rw1"}, \code{"rw2"} or \code{"ar1"} -- the three the TVC block's density carries.
+A GP-evolving coefficient needs a per-coefficient lengthscale that block
+has no slot for; it is tracked as gcol33/tulpa#847. \code{"gp"} used to be
+accepted here and then refused by every mode (gcol33/tulpa#814).}
 
 \item{group_var}{Optional character string naming a grouping variable for
 group-specific time-varying coefficients.}
@@ -43,7 +46,7 @@ A \code{tulpa_tvc} object.
 \description{
 Specify a time-varying coefficient (TVC): one or more fixed-effect
 coefficients are allowed to evolve over time, with the evolution governed by
-a temporal prior (\code{rw1}, \code{rw2}, \code{ar1}, or a GP).
+a temporal prior (\code{rw1}, \code{rw2} or \code{ar1}).
 }
 \examples{
 # Intercept that drifts as a first-order random walk over year

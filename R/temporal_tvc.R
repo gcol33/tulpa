@@ -3,14 +3,17 @@
 #' @description
 #' Specify a time-varying coefficient (TVC): one or more fixed-effect
 #' coefficients are allowed to evolve over time, with the evolution governed by
-#' a temporal prior (`rw1`, `rw2`, `ar1`, or a GP).
+#' a temporal prior (`rw1`, `rw2` or `ar1`).
 #'
 #' @param time_var Single character string naming the time variable in the data.
 #' @param terms Which coefficients vary over time. A formula, an integer vector
 #'   of design-matrix column indices, or a character vector of term names.
 #'   Default `1` (the intercept).
 #' @param structure Temporal prior governing how the coefficients evolve. One of
-#'   `"rw1"`, `"rw2"`, `"ar1"`, or `"gp"`.
+#'   `"rw1"`, `"rw2"` or `"ar1"` -- the three the TVC block's density carries.
+#'   A GP-evolving coefficient needs a per-coefficient lengthscale that block
+#'   has no slot for; it is tracked as gcol33/tulpa#847. `"gp"` used to be
+#'   accepted here and then refused by every mode (gcol33/tulpa#814).
 #' @param group_var Optional character string naming a grouping variable for
 #'   group-specific time-varying coefficients.
 #' @param shared Whether the effect is shared across processes in a
@@ -34,12 +37,25 @@
 #' @export
 temporal_tvc <- function(time_var,
                          terms = 1,
-                         structure = c("rw1", "rw2", "ar1", "gp"),
+                         structure = c("rw1", "rw2", "ar1"),
                          group_var = NULL,
                          shared = NULL,
                          sigma_prior_U = 1,
                          sigma_prior_alpha = 0.01) {
 
+  # `"gp"` was accepted here and then refused by every mode -- the sampler
+  # entry has no GP branch and the Laplace-family modes carry no TVC field at
+  # all (gcol33/tulpa#814). It is named explicitly rather than left to
+  # match.arg's "'arg' should be one of ...", so a caller who wrote what the
+  # docs used to promise is told why it went.
+  if (is.character(structure) && length(structure) == 1L &&
+      identical(tolower(structure), "gp")) {
+    stop("`structure = \"gp\"` is not fitted by any mode. A GP-evolving ",
+         "coefficient needs a per-coefficient lengthscale the TVC block has ",
+         "no parameter slot for; it is tracked as gcol33/tulpa#847. Use ",
+         "\"rw1\", \"rw2\" or \"ar1\", or temporal_gp() for a GP over time ",
+         "that is not a varying coefficient.", call. = FALSE)
+  }
   structure_type <- match.arg(structure)
   .check_pc_anchors(sigma_prior_U, sigma_prior_alpha,
                     "sigma_prior_U", "sigma_prior_alpha", "temporal_tvc()")

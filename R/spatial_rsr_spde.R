@@ -72,7 +72,11 @@ validate_spatial <- function(spatial, data) {
 #' variables, elevation) because the spatial random effect can "steal"
 #' variance from these covariates, leading to biased coefficient estimates.
 #'
-#' @param spatial A spatial specification (`spatial_gp`, `spatial_car`, etc.)
+#' @param spatial An AREAL spatial specification -- `spatial_car()`,
+#'   `spatial_icar()`, `spatial_bym2()` or a proper-CAR spec. The projection is
+#'   applied by the binomial Polya-Gamma Gibbs sampler, which conditions on a
+#'   neighbour list, so a continuous field (`spatial_gp()`, `spatial_spde()`)
+#'   is refused at construction rather than accepted and then unfittable.
 #' @param restrict_to Formula specifying which covariates to orthogonalize
 #'   against (e.g., `~ depth + temp`). The spatial effect will be constrained
 #'   to be orthogonal to the column space of these covariates.
@@ -98,10 +102,15 @@ validate_spatial <- function(spatial, data) {
 #' - Spatial effect is the primary quantity of interest
 #' - Prediction is the main goal (not causal inference)
 #'
+#' RSR fits are binomial, through `mode = "gibbs"` (which `mode = "auto"`
+#' selects for it).
+#'
 #' @examples
-#' # Create RSR spatial structure
+#' # Create RSR spatial structure on an areal field
+#' W <- matrix(0, 4, 4)
+#' for (i in 1:3) W[i, i + 1] <- W[i + 1, i] <- 1
 #' rsr <- spatial_rsr(
-#'   spatial_gp(~ lon + lat),
+#'   spatial_car(W, level = "obs"),
 #'   restrict_to = ~ depth + temp
 #' )
 #' print(rsr)
@@ -149,6 +158,26 @@ spatial_rsr <- function(spatial, restrict_to) {
 
   if (!inherits(restrict_to, "formula")) {
     stop("`restrict_to` must be a formula", call. = FALSE)
+  }
+
+  # The projection is applied by one kernel, `cpp_pg_binomial_gibbs_rsr()`,
+  # which takes an areal neighbour list. A continuous spec carries no
+  # adjacency, so an RSR field built on one could not be fitted by any mode:
+  # `tulpa()` re-typed it as areal, then demanded a `spatial(col)` term and
+  # failed on the missing adjacency with "non-numeric matrix extent"
+  # (gcol33/tulpa#815). Refused here, where the argument that caused it is
+  # still in hand.
+  sp_type <- tolower(spatial$type %||% "")
+  if (!sp_type %in% .NL_FRONTDOOR_AREAL) {
+    stop(sprintf(paste0(
+      "spatial_rsr() restricts an AREAL field (%s); got '%s'.\n",
+      "The projection is applied by the binomial Polya-Gamma Gibbs sampler, ",
+      "which conditions on a neighbour list, and a continuous field carries ",
+      "none. Build the RSR field on spatial_car() / spatial_icar() / ",
+      "spatial_bym2(), or drop spatial_rsr() and fit the continuous field ",
+      "directly."),
+      paste(.NL_FRONTDOOR_AREAL, collapse = ", "), spatial$type %||% "<none>"),
+      call. = FALSE)
   }
 
   # Store RSR information in the spatial object

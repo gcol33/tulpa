@@ -73,9 +73,16 @@ test_that("tulpa(mode = 'exact') routes an SPDE field to NUTS (Tier 1)", {
   expect_lt(abs(mean(fit$draws[, "x"]) - 0.8), 0.3)
 })
 
-test_that("tulpa() routes (1 | g) + an SPDE field to the spde backend", {
+test_that("tulpa() routes (1 | g) + an SPDE field to the nested driver", {
   skip_if_not_installed("fmesher")
   skip_on_cran()
+  # This used to assert backend "spde". fit_spde()'s grid has no RE-SD axis and
+  # conditions on a scalar `sigma_re`, so on the path whose point is
+  # integrating the hyperparameters the RE was the one variance component never
+  # estimated; the field now goes to the generic nested driver as an `spde`
+  # block beside the RE's own `iid` block (gcol33/tulpa#817). Recovery of the
+  # slope is asserted unchanged, and the axis itself in
+  # test-spde-re-integrated.R.
   d  <- make_spde_re()
   df <- data.frame(y = d$y, x = d$x, g = factor(d$grp))
   sp <- spatial_spde(coords = d$coords, nu = 1,
@@ -83,10 +90,10 @@ test_that("tulpa() routes (1 | g) + an SPDE field to the spde backend", {
   fit <- suppressWarnings(
     tulpa(y ~ x + (1 | g), data = df, family = "poisson",
           spatial = sp, sigma_re = 0.7))
-  expect_identical(fit$backend, "spde")
+  expect_identical(fit$backend, "nested_laplace")
   expect_lt(abs(coef(fit)[["x"]] - 0.8), 0.25)
 
-  # beta_prior stays unsupported on the SPDE path.
+  # beta_prior stays unsupported on either SPDE route.
   expect_error(
     tulpa(y ~ x + (1 | g), data = df, family = "poisson", spatial = sp,
           beta_prior = list(mean = 0, sd = 5)),

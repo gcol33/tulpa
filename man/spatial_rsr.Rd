@@ -7,7 +7,11 @@
 spatial_rsr(spatial, restrict_to)
 }
 \arguments{
-\item{spatial}{A spatial specification (\code{spatial_gp}, \code{spatial_car}, etc.)}
+\item{spatial}{An AREAL spatial specification -- \code{spatial_car()},
+\code{spatial_icar()}, \code{spatial_bym2()} or a proper-CAR spec. The projection is
+applied by the binomial Polya-Gamma Gibbs sampler, which conditions on a
+neighbour list, so a continuous field (\code{spatial_gp()}, \code{spatial_spde()})
+is refused at construction rather than accepted and then unfittable.}
 
 \item{restrict_to}{Formula specifying which covariates to orthogonalize
 against (e.g., \code{~ depth + temp}). The spatial effect will be constrained
@@ -47,11 +51,16 @@ space of X.
 \item Spatial effect is the primary quantity of interest
 \item Prediction is the main goal (not causal inference)
 }
+
+RSR fits are binomial, through \code{mode = "gibbs"} (which \code{mode = "auto"}
+selects for it).
 }
 \examples{
-# Create RSR spatial structure
+# Create RSR spatial structure on an areal field
+W <- matrix(0, 4, 4)
+for (i in 1:3) W[i, i + 1] <- W[i + 1, i] <- 1
 rsr <- spatial_rsr(
-  spatial_gp(~ lon + lat),
+  spatial_car(W, level = "obs"),
   restrict_to = ~ depth + temp
 )
 print(rsr)
