@@ -915,59 +915,79 @@ inline void build_sampler_model_inputs(
 // starting a regional range of a few units at 1 wastes warmup walking there. A
 // caller-supplied init is left alone: an explicit starting position is the
 // caller's choice, including for a resumed chain.
-// A GP TVC's lengthscale starts at a FRACTION of the spread of its own time
-// instants rather than at the midpoint of the declared support. The default
-// support is (0.01, 10) and the time values are standardized, so the midpoint
-// is a lengthscale five times the data's own spread: every pair is then
-// correlated to within rounding, the dense T x T covariance is numerically
-// rank-one, and its Cholesky jitter binds at the starting point.
+// A continuous-time GP's lengthscale starts at a FRACTION of the spread of its
+// own time instants rather than at the midpoint of the declared support. The
+// default support is (0.01, 10) and both GP doors standardize their time
+// values, so the midpoint is a lengthscale five times the data's own spread:
+// every pair of instants is then correlated to within rounding, the dense
+// T x T covariance is numerically rank-one, and its Cholesky jitter binds at
+// the starting point.
 //
 // Measured on a 24-instant irregular fixture, deviation of the runtime
 // gradient check on the lengthscale against the starting ratio
 // lengthscale / sd(time): Matern 5/2 clean at 0.1 / 0.25 / 0.5 / 1.0, then
 // 9.3e-04 at 2.0 and 2.4e-03 at 5.0; Gaussian clean at 0.1 / 0.25, then
 // 1.2e-03 at 0.5, 3.2e-03 at 1.0, 6.5e-03 at 2.0 and 8.3e-03 at 5.0 -- the
-// smoothness ladder of a floor binding, not a wrong derivative (the same
-// numbers come back from temporal_gp(parameterization = "centered"), which
-// reaches the same density). The fraction is read against the SD, which is
-// what those ratios are stated in, and 0.2 clears the smoothest kernel's
-// threshold of 0.25 with margin.
-constexpr double kTvcGpPhiInitFraction = 0.2;
+// smoothness ladder of a floor binding, not a wrong derivative. The fraction
+// is read against the SD, which is what those ratios are stated in, and 0.2
+// clears the smoothest kernel's threshold of 0.25 with margin.
+//
+// Only the CENTERED parameterization evaluates that log-determinant in the
+// target, so only it fell back to numerical gradients; the non-centered
+// default reaches the Cholesky through `f = L z` alone. Both start here, since
+// a lengthscale five times the spread is not a place either wants to begin
+// (gcol33/tulpa#847, gcol33/tulpa#851).
+constexpr double kGpPhiInitFraction = 0.2;
 
-inline void init_tvc_gp_lengthscale(std::vector<double>& q,
-                                    const ModelData& data,
-                                    const ParamLayout& layout) {
-    if (layout.logit_phi_tvc_gp_start < 0) return;
-    const std::vector<double>& tv = data.tvc_data.time_values;
-    if (tv.size() < 2) return;
+// The logit of `fraction * sd(time_values)` on the support (lower, upper),
+// or NA when the instants carry no spread or the bounds are not an interval.
+inline double gp_phi_logit_init(const std::vector<double>& time_values,
+                                double b_lo, double b_hi) {
+    if (time_values.size() < 2 || !(b_lo < b_hi)) return NA_REAL;
     double mean = 0.0;
-    for (double v : tv) mean += v;
-    mean /= static_cast<double>(tv.size());
+    for (double v : time_values) mean += v;
+    mean /= static_cast<double>(time_values.size());
     double ss = 0.0;
-    for (double v : tv) ss += (v - mean) * (v - mean);
-    const double spread = std::sqrt(ss / static_cast<double>(tv.size() - 1));
-    if (!(spread > 0.0)) return;
+    for (double v : time_values) ss += (v - mean) * (v - mean);
+    const double spread =
+        std::sqrt(ss / static_cast<double>(time_values.size() - 1));
+    if (!(spread > 0.0)) return NA_REAL;
 
-    const double b_lo = data.tvc_gp_phi_prior_lower;
-    const double b_hi = data.tvc_gp_phi_prior_upper;
-    if (!(b_lo < b_hi)) return;
     // Held off both ends of the support: the logit of an endpoint is infinite.
     const double pad = 1e-3 * (b_hi - b_lo);
-    double phi0 = kTvcGpPhiInitFraction * spread;
+    double phi0 = kGpPhiInitFraction * spread;
     phi0 = std::min(std::max(phi0, b_lo + pad), b_hi - pad);
-
     const double u = (phi0 - b_lo) / (b_hi - b_lo);
-    const double logit0 = std::log(u / (1.0 - u));
-    for (int j = layout.logit_phi_tvc_gp_start;
-         j < layout.logit_phi_tvc_gp_end; j++) {
-        q[j] = logit0;
+    return std::log(u / (1.0 - u));
+}
+
+inline void init_gp_lengthscales(std::vector<double>& q,
+                                 const ModelData& data,
+                                 const ParamLayout& layout) {
+    if (layout.logit_phi_tvc_gp_start >= 0) {
+        const double l0 = gp_phi_logit_init(data.tvc_data.time_values,
+                                            data.tvc_gp_phi_prior_lower,
+                                            data.tvc_gp_phi_prior_upper);
+        if (R_finite(l0)) {
+            for (int j = layout.logit_phi_tvc_gp_start;
+                 j < layout.logit_phi_tvc_gp_end; j++) {
+                q[j] = l0;
+            }
+        }
+    }
+    if (layout.is_temporal_gp && layout.logit_phi_temporal_gp_idx >= 0) {
+        const double l0 =
+            gp_phi_logit_init(data.temporal_gp_data.time_values,
+                              data.temporal_gp_phi_prior_lower,
+                              data.temporal_gp_phi_prior_upper);
+        if (R_finite(l0)) q[layout.logit_phi_temporal_gp_idx] = l0;
     }
 }
 
 inline void init_bounded_support_params(std::vector<double>& q,
                                         const ModelData& data,
                                         const ParamLayout& layout) {
-    init_tvc_gp_lengthscale(q, data, layout);
+    init_gp_lengthscales(q, data, layout);
 
     if (!layout.is_multiscale_gp || !data.has_multiscale_gp || data.msgp_is_hsgp) {
         return;

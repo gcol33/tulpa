@@ -76,3 +76,46 @@ test_that("the identity holds over several independent groups", {
   shift <- tgp_log_det_shift(times, 3L, p$nc$sigma2, p$nc$phi)
   expect_equal(p$nc$log_post - p$centered$log_post, shift, tolerance = 1e-10)
 })
+
+
+test_that("the lengthscale starts below the data's own spread, on both doors", {
+  skip_on_cran()
+  # A bounded lengthscale used to start at the midpoint of its (0.01, 10)
+  # support. Both GP doors standardize their time values, so that is a
+  # lengthscale five times the data's spread: the dense T x T covariance is
+  # then numerically rank-one and its Cholesky jitter binds, and the runtime
+  # gradient check deviates on the lengthscale by an amount ordered by kernel
+  # smoothness -- a floor binding, not a wrong derivative (gcol33/tulpa#851).
+  # It starts at 0.2 * sd(time) now, and no arm falls back.
+  set.seed(4)
+  n_t <- 20L; reps <- 8L
+  tt <- sort(cumsum(stats::rexp(n_t, rate = 1 / 4)))
+  tt <- (tt - min(tt)) / diff(range(tt)) * 100
+  f <- as.numeric(scale(sin(2 * pi * tt / 70)))
+  day <- rep(tt, each = reps); idx <- rep(seq_len(n_t), each = reps)
+  x <- stats::rnorm(length(day))
+  d <- data.frame(day = day, x = x,
+                  y = stats::rpois(length(day), exp(0.4 + 0.8 * x + f[idx])))
+
+  fell_back <- function(temporal) {
+    msgs <- character(0)
+    withCallingHandlers(
+      tulpa(y ~ x, data = d, family = "poisson", temporal = temporal,
+            mode = "exact",
+            control = list(n_iter = 20L, n_warmup = 10L, seed = 3L,
+                           n_chains = 1L)),
+      warning = function(w) {
+        msgs <<- c(msgs, conditionMessage(w)); invokeRestart("muffleWarning")
+      })
+    any(grepl("Gradient mismatch", msgs))
+  }
+
+  for (cv in list(c("matern", "2.5"), c("gaussian", "1.5"))) {
+    for (par in c("noncentered", "centered")) {
+      expect_false(
+        fell_back(temporal_gp("day", cov = cv[1], nu = as.numeric(cv[2]),
+                              parameterization = par)),
+        label = paste0("gradient fallback for ", cv[1], " ", par))
+    }
+  }
+})

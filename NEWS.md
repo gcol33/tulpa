@@ -1,5 +1,28 @@
 # tulpa 0.4.12
 
+## A GP lengthscale started five times the spread of its own data
+
+* **Both continuous-time GP doors start their lengthscale at
+  `0.2 * sd(time)`** (gcol33/tulpa#851). It started at the midpoint of the
+  `(0.01, 10)` support, and both doors standardize their time values, so that
+  is a lengthscale five times the data's own spread: every pair of instants is
+  correlated to within rounding, the dense `T x T` covariance is numerically
+  rank-one, and its Cholesky jitter binds at the starting point. The runtime
+  gradient check then deviated on the LENGTHSCALE by an amount ordered by
+  kernel smoothness, and `temporal_gp(parameterization = "centered")` **fell
+  back to numerical gradients for the whole run**. Measured deviation against
+  the starting ratio lengthscale / sd(time): Matern 5/2 clean to 1.0 then
+  9.3e-04 at 2.0 and 2.4e-03 at 5.0; Gaussian clean to 0.25 then 1.2e-03 at
+  0.5, 6.5e-03 at 2.0 and 8.3e-03 at 5.0. That ladder is a floor binding, not
+  a wrong derivative -- the jitter is protecting a genuinely singular
+  factorization and is untouched.
+
+  Only the centered parameterization evaluates that log-determinant in the
+  target, which is why the non-centered default never showed it: there the
+  Cholesky enters only through `f = L z`. Both arms of both doors now pass the
+  check. `init_gp_lengthscales()` is the one starter, shared with the GP TVC
+  gcol33/tulpa#847 added it for.
+
 ## Restricted spatial regression on a continuous field
 
 * **`spatial_rsr(spatial_gp(...))` is fitted** (gcol33/tulpa#848). RSR exists

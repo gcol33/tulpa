@@ -327,16 +327,17 @@ coordinates the additive field samples its pair on, and the field is PROPER so
 `tvc_center_eta` removes its level with no augmentation.
 
 **A GP lengthscale starts at `0.2 * sd(time)`, not at its support's midpoint**
-(`init_tvc_gp_lengthscale`, `sampler_model_data.h`). The support defaults to
-(0.01, 10) and the time values are standardized, so the midpoint is a
-lengthscale five times the data's own spread: the dense T x T covariance is
-then numerically rank-one and its Cholesky jitter binds at the starting point.
-The runtime gradient check's deviation on the lengthscale then orders itself by
-kernel smoothness -- Matern 5/2 clean to a ratio of 1.0 then 9.3e-04 at 2.0;
-Gaussian clean to 0.25 then 1.2e-03 at 0.5 and 8.3e-03 at 5.0 -- which is a
-floor binding, not a wrong derivative. `temporal_gp(parameterization =
-"centered")` still starts at the midpoint and reproduces those numbers exactly
-(gcol33/tulpa#851).
+(`init_gp_lengthscales`, `sampler_model_data.h`, for BOTH doors). The support
+defaults to (0.01, 10) and both doors standardize their time values, so the
+midpoint is a lengthscale five times the data's own spread: the dense T x T
+covariance is then numerically rank-one and its Cholesky jitter binds at the
+starting point. The runtime gradient check's deviation on the lengthscale then
+orders itself by kernel smoothness -- Matern 5/2 clean to a ratio of 1.0 then
+9.3e-04 at 2.0; Gaussian clean to 0.25 then 1.2e-03 at 0.5 and 8.3e-03 at 5.0
+-- which is a floor binding, not a wrong derivative. Only the CENTERED
+parameterization evaluates that log-determinant in the target, so only it fell
+back to numerical gradients; the non-centered default reaches the Cholesky
+through `f = L z` alone (gcol33/tulpa#851).
 - ZI/OI parameter-layout hooks only (`ZIType` enum, `has_zi` / `has_oi`); the distribution-specific ZI likelihood math lives in model packages
 - Censoring/truncation KERNELS only: `interval_gaussian` / `truncated_gaussian` are generic per-observation likelihood arms that model packages compose. General censored / survival responses (right-censored gaussian/lognormal, Weibull/exponential AFT with a censoring indicator) are an observation process and belong to tulpaObs via `LikelihoodSpec`; the engine does not grow a censoring-indicator front door (decided 2026-07-07, closes the recurring todo item)
 - Generic S3 methods operating on posterior draws: coef, confint, vcov, logLik, summary
