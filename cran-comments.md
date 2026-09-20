@@ -31,15 +31,16 @@ change. The Title now expands the package name.
 
 ## R CMD check results
 
-0 errors | 0 warnings | 1 note
+0 errors | 0 warnings | 0 notes locally.
 
-* Days since last update: 11 (explained above).
+The expected NOTE on the incoming check is "Days since last update: 11",
+explained above.
 
 ## Test environments
 
 * local: Windows 11, R 4.6.1, `R CMD check --as-cran` including the PDF manual
-* win-builder: R-devel and R-release (4.6.1), 1 NOTE each
-  (days since last update)
+  (Status: OK)
+* win-builder: R-devel and R-release (4.6.1)
 * GitHub Actions, on every push: ubuntu-latest (R-release and R-devel),
   macos-latest (R-release), windows-latest (R-release and R-devel)
 * Ubuntu 24.04 (WSL), gcc 13, `-fsanitize=undefined`
