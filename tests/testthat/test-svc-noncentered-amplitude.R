@@ -47,6 +47,16 @@
 # at this budget (Rhat 1.25 on the seed pinned here, against 1.02 non-centered).
 # It is a regression guard on one seed, not a calibration statement, and the
 # convergence cost itself is asserted rather than left implicit.
+#
+# BOTH bands are one-seed guards, and both are left on both sides across seeds
+# (non-centered on five of eight, centered on three of eight; the readings are
+# recorded at each test). Sizing anything on them would repeat tulpaObs#299.
+# A calibration statement about either parameterization is not available from
+# this fixture at all -- one-trial binomial at n = 150 gives `sd_ratio` a wide
+# sampling distribution by construction, and a paired comparison is what
+# cancels that: the two parameterizations are one model, pinned analytically
+# in test-svc-parameterization-equivalence.R, and their gap on this fixture is
+# measured and attributed in #842.
 
 sim_svc_bernoulli <- function(n = 150L, sigma2 = 1.0, phi = 0.30,
                               a0 = 0.0, x_sd = 0.6, seed = 1L) {
@@ -62,12 +72,22 @@ sim_svc_bernoulli <- function(n = 150L, sigma2 = 1.0, phi = 0.30,
   data.frame(lon = lon, lat = lat, x = x, y = y, w_true = w)
 }
 
+# The budget every band below was measured at. Named because the gates are
+# tied to it: the centered path's divergence rate GROWS with the budget
+# (gcol33/tulpa#843), so raising this silently would turn a passing guard into
+# a failing one for a reason that has nothing to do with a regression. Each
+# test asserts the draw count it got, so a change here fails on the budget and
+# points at this comment rather than on the band.
+.SVC_AMP_ITER <- 500L
+.SVC_AMP_WARMUP <- 400L
+
 fit_svc_amp <- function(d, parameterization) {
   tulpa(y ~ x, data = d, family = "binomial",
         spatial = spatial_svc(~ lon + lat, terms = ~ x - 1, nn = 10L,
                               parameterization = parameterization),
         mode = "exact",
-        control = list(n_iter = 500L, n_warmup = 400L, seed = 7L))
+        control = list(n_iter = .SVC_AMP_ITER, n_warmup = .SVC_AMP_WARMUP,
+                       seed = 7L))
 }
 
 svc_sd_ratio <- function(fit, w_true) {
@@ -89,14 +109,28 @@ test_that("non-centered SVC NUTS recovers a weakly identified field's amplitude"
   d <- sim_svc_bernoulli(n = 150L, seed = 1L)
   fit <- fit_svc_amp(d, "noncentered")   # the default
 
+  expect_equal(length(fit$divergent) / length(unique(fit$chain_id)),
+               .SVC_AMP_ITER - .SVC_AMP_WARMUP)
+
   ratio <- svc_sd_ratio(fit, d$w_true)
   # Two-sided, same reasoning as test-gp-noncentered-amplitude.R: too small
   # flags the funnel surviving, too large flags an erroneously re-added
   # z -> w Jacobian inflating the amplitude.
+  #
+  # A guard on the pinned seed, like the centered one below, and for the same
+  # reason: the fixture is deliberately weakly identified, so `sd_ratio` has a
+  # genuinely wide sampling distribution. Measured across seeds 1-8
+  # (gcol33/tulpa#843) this band is left on FIVE of eight -- 0.999, 1.081,
+  # 0.356, 2.017, 0.317, 0.493, 0.495, 0.778 -- more often than the centered
+  # band below. Nothing about either parameterization's calibration may be
+  # read off it; that claim is the analytic equivalence in
+  # test-svc-parameterization-equivalence.R.
   expect_gt(ratio, 0.55)
   expect_lt(ratio, 1.8)
   # The geometry fix should also leave the chain clean; the pre-#245
-  # non-centered path ran at 24% divergent on the identified fixture.
+  # non-centered path ran at 24% divergent on the identified fixture. This arm
+  # is at 0.00% at both this budget and 5x it, so unlike the centered gate
+  # below it is not budget-tied.
   expect_lte(mean(fit$divergent), 0.05)
   # And this arm DOES mix in the field's variance at this budget (measured
   # 1.02), which is what makes its amplitude read a posterior summary.
@@ -108,15 +142,28 @@ test_that("centered SVC NUTS also recovers a weakly identified field's amplitude
   d <- sim_svc_bernoulli(n = 150L, seed = 1L)
   fit <- fit_svc_amp(d, "centered")
 
+  expect_equal(length(fit$divergent) / length(unique(fit$chain_id)),
+               .SVC_AMP_ITER - .SVC_AMP_WARMUP)
+
   ratio <- svc_sd_ratio(fit, d$w_true)
   # Same band as the non-centered test above, now that 34c9cb5b (#841) has
   # removed the funnel that used to attenuate this branch to ~0.33. The upper
   # bound is wider because this arm reads high on an unconverged sigma2 (#842,
   # measured): it catches the level funnel coming back (too small) or a runaway
-  # (far too large), and nothing finer -- across seeds this band is left on
-  # both sides, so it is a guard on the pinned seed, not a calibration.
+  # (far too large), and nothing finer -- across seeds 1-8 this band is left on
+  # THREE of eight (1.601, 1.097, 0.440, 2.451, 0.435, 0.748, 0.949, 1.324),
+  # so it is a guard on the pinned seed, not a calibration.
   expect_gt(ratio, 0.55)
   expect_lt(ratio, 2.2)
+  # BUDGET-TIED, and the direction is the surprising one: the centered path's
+  # divergence rate GROWS with the budget, 2.75% here against 6.63% at
+  # 2500/1500 (gcol33/tulpa#843), while non-centered stays at 0.00% at both.
+  # That is consistent with the sampler reaching the funnel's neck once it
+  # stops being stuck rather than with a step-size artefact -- the same longer
+  # run is what takes sigma2's Rhat from 1.25 to 1.04. So raising
+  # `.SVC_AMP_ITER` to fix the Rhat below trades an unconverged chain for a
+  # divergent one and breaks THIS gate, not a regression. The draw-count
+  # assertion above is what makes that arrive as a budget failure.
   expect_lte(mean(fit$divergent), 0.05)
   # The measured cost of the centered funnel, recorded as a bound rather than
   # left implicit: sigma2 reaches 1.25 here against non-centered's 1.02 at the
