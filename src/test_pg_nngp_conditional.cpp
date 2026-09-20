@@ -63,9 +63,25 @@ Rcpp::List cpp_test_pg_nngp_conditional(
     Rcpp::NumericVector B(fac.B.begin(), fac.B.end());
     Rcpp::NumericVector F(fac.F.begin(), fac.F.end());
 
+    // The same prior, assembled densely: what a projected field's dense
+    // conditional is built on (`pg_nngp_precision_dense`, the restricted NNGP
+    // Gibbs kernel). Returned beside the sparse conditional's moment pair so a
+    // test can assert the two describe ONE precision -- row i of this matrix
+    // has to be `prec[i]` on the diagonal and reproduce `mean_num[i]` off it.
+    // Row-major, indexed by original location.
+    std::vector<double> Lambda;
+    tulpa::pg_nngp_precision_dense(top, fac, sigma2, Lambda);
+    Rcpp::NumericMatrix Lambda_r(n_spatial, n_spatial);
+    for (int a = 0; a < n_spatial; a++) {
+        for (int b = 0; b < n_spatial; b++) {
+            Lambda_r(a, b) = Lambda[static_cast<size_t>(a) * n_spatial + b];
+        }
+    }
+
     return Rcpp::List::create(
         Rcpp::_["prec"]        = prec,
         Rcpp::_["mean_num"]    = mean_num,
+        Rcpp::_["Lambda"]      = Lambda_r,
         Rcpp::_["orig"]        = orig,
         Rcpp::_["cnt"]         = cnt,
         Rcpp::_["parent_pos"]  = parent_pos,

@@ -242,6 +242,53 @@ inline void pg_require_intercept(const Rcpp::NumericMatrix& X,
 }
 
 // ============================================================================
+// Restricted spatial regression: the projector both RSR kernels are handed
+// ============================================================================
+
+// `P_perp = I - P_X`, flattened row-major. It must be symmetric, because the
+// buffer is read in both orientations, and idempotent up to the tolerance a
+// projector formed from a QR is.
+//
+// `require_constant` additionally asks that it annihilate the constant vector,
+// which is what makes an INTRINSIC field's level free: the areal kernel's ICAR
+// prior carries no precision on that direction, so the field level has to be
+// outside the likelihood for the draw to be proper. A proper field (an NNGP
+// one) identifies its own level from its prior, so the requirement does not
+// apply there -- a restricted design without an intercept is then a choice the
+// caller is entitled to make, not an under-determined model.
+inline void pg_check_rsr_projector(const Rcpp::NumericVector& P, int J,
+                                   bool require_constant) {
+  if (P.size() != static_cast<R_xlen_t>(J) * J) {
+    Rcpp::stop("`rsr_projection` has %d element(s) but must have %d "
+               "(a %d x %d matrix).", static_cast<int>(P.size()), J * J, J, J);
+  }
+  double max_asym = 0.0;
+  for (int a = 0; a < J; a++) {
+    for (int b = a + 1; b < J; b++) {
+      max_asym = std::max(max_asym,
+          std::abs(P[static_cast<size_t>(a) * J + b] -
+                   P[static_cast<size_t>(b) * J + a]));
+    }
+  }
+  if (max_asym > 1e-8) {
+    Rcpp::stop("`rsr_projection` is not symmetric (largest asymmetry %g); an "
+               "orthogonal projector must be.", max_asym);
+  }
+  if (!require_constant) return;
+  double max_row = 0.0;
+  for (int a = 0; a < J; a++) {
+    double s = 0.0;
+    for (int b = 0; b < J; b++) s += P[static_cast<size_t>(a) * J + b];
+    max_row = std::max(max_row, std::abs(s));
+  }
+  if (max_row > 1e-8) {
+    Rcpp::stop("`rsr_projection` does not annihilate the constant vector "
+               "(largest row sum %g). Orthogonalise the field against a design "
+               "that includes an intercept.", max_row);
+  }
+}
+
+// ============================================================================
 // Sequential NNGP topology and regression weights
 // ============================================================================
 
@@ -1034,18 +1081,20 @@ struct PgGibbsCommon {
 // [lower, upper] and a log-random-walk Metropolis step on the NNGP density.
 // Both read the same factor pass, since B is scale-free and F scales linearly.
 // ============================================================================
-inline void pg_nngp_scale_update(
-    PgNngpScale& sc, int cov_type,
-    const Rcpp::NumericMatrix& coords, const Rcpp::NumericMatrix& nn_dist,
-    const std::vector<double>& sum_omega, const std::vector<double>& sum_resid,
-    double prior_sigma_U, double prior_sigma_alpha,
-    double prior_phi_lower, double prior_phi_upper
-) {
+// One single-site Gibbs sweep over the field, at the current factors: each
+// location from its own full conditional under the NNGP prior plus the
+// Polya-Gamma data term. Valid because the prior precision is SPARSE, so a
+// location's conditional reads only its parents and children.
+//
+// A field whose contribution to eta is projected (restricted spatial
+// regression) has no such conditional -- the projector couples every pair --
+// and takes the dense draw `pg_nngp_precision_dense()` builds the precision
+// for instead.
+inline void pg_nngp_field_sweep(PgNngpScale& sc,
+                                const std::vector<double>& sum_omega,
+                                const std::vector<double>& sum_resid) {
   const PgNngpTopology& top = sc.top;
-  const int n = top.n;
-  pg_nngp_factors(sc.phi, cov_type, coords, nn_dist, top, sc.fac);
-
-  for (int i = 0; i < n; i++) {
+  for (int i = 0; i < top.n; i++) {
     const int obs_i = top.orig[i];
 
     const PgNngpCond pr =
@@ -1057,6 +1106,61 @@ inline void pg_nngp_scale_update(
 
     sc.w[obs_i] = R::rnorm(mean_num / tau_post, 1.0 / std::sqrt(tau_post));
   }
+}
+
+// The NNGP prior precision as a dense n x n matrix, row-major and indexed by
+// ORIGINAL location id (the indexing `sc.w` and every per-location statistic
+// use).
+//
+// Lambda = (I - A)' D^-1 (I - A) / sigma2, the same matrix
+// `pg_nngp_field_conditional()` reads one row of: row j of (I - A) carries 1 at
+// location `orig[j]` and -B[j][t] at each parent, and D_jj = sigma2 F_j. Built
+// by accumulating each factor's rank-one outer product, so the assembled matrix
+// and the sweep's conditionals cannot disagree about what the prior is.
+//
+// Only a caller that needs the JOINT precision assembles this -- a projected
+// field, whose full conditional is dense -- so the sparse sweep pays nothing.
+inline void pg_nngp_precision_dense(const PgNngpTopology& top,
+                                    const PgNngpFactors& fac, double sigma2,
+                                    std::vector<double>& Lambda) {
+  const int n = top.n;
+  Lambda.assign(static_cast<size_t>(n) * n, 0.0);
+  std::vector<int> idx;
+  std::vector<double> val;
+  idx.reserve(top.nn + 1);
+  val.reserve(top.nn + 1);
+  for (int j = 0; j < n; j++) {
+    const size_t jb = static_cast<size_t>(j) * top.nn;
+    idx.clear();
+    val.clear();
+    idx.push_back(top.orig[j]);
+    val.push_back(1.0);
+    for (int t = 0; t < top.cnt[j]; t++) {
+      idx.push_back(top.parent_orig[jb + t]);
+      val.push_back(-fac.B[jb + t]);
+    }
+    const double d = 1.0 / (sigma2 * fac.F[j]);
+    for (size_t a = 0; a < idx.size(); a++) {
+      const size_t ra = static_cast<size_t>(idx[a]) * n;
+      for (size_t b = 0; b < idx.size(); b++) {
+        Lambda[ra + idx[b]] += d * val[a] * val[b];
+      }
+    }
+  }
+}
+
+// The marginal variance and the range, given the field. Metropolis on both, on
+// the log scale; reads `sc.w` and `sc.fac` and leaves `sc.fac` at the accepted
+// phi. Shared by the sparse-sweep kernels and the projected one, which differ
+// only in how the field itself was drawn.
+inline void pg_nngp_hyper_update(
+    PgNngpScale& sc, int cov_type,
+    const Rcpp::NumericMatrix& coords, const Rcpp::NumericMatrix& nn_dist,
+    double prior_sigma_U, double prior_sigma_alpha,
+    double prior_phi_lower, double prior_phi_upper
+) {
+  const PgNngpTopology& top = sc.top;
+  const int n = top.n;
 
   // sigma2 | w, phi: the NNGP density contributes
   // -0.5 n log sigma2 - 0.5 Q0 / sigma2, the PC prior -lambda sqrt(sigma2),
@@ -1097,6 +1201,22 @@ inline void pg_nngp_scale_update(
       std::swap(sc.fac, sc.fac_prop);
     }
   }
+}
+
+// The whole scale update for a field whose conditional is sparse: refresh the
+// factors at the current range, sweep the field, then move the hyperparameters.
+inline void pg_nngp_scale_update(
+    PgNngpScale& sc, int cov_type,
+    const Rcpp::NumericMatrix& coords, const Rcpp::NumericMatrix& nn_dist,
+    const std::vector<double>& sum_omega, const std::vector<double>& sum_resid,
+    double prior_sigma_U, double prior_sigma_alpha,
+    double prior_phi_lower, double prior_phi_upper
+) {
+  pg_nngp_factors(sc.phi, cov_type, coords, nn_dist, sc.top, sc.fac);
+  pg_nngp_field_sweep(sc, sum_omega, sum_resid);
+  pg_nngp_hyper_update(sc, cov_type, coords, nn_dist,
+                       prior_sigma_U, prior_sigma_alpha,
+                       prior_phi_lower, prior_phi_upper);
 }
 
 } // namespace tulpa

@@ -398,6 +398,17 @@ ALL_BACKENDS <- names(BACKEND_REGISTRY)
 # Laplacian basis built by cpp_hsgp_basis_2d).
 .NL_FRONTDOOR_CONTINUOUS <- c("gp", "nngp", "hsgp")
 
+# Field shapes a restricted-spatial-regression projection can be applied to:
+# the ones a Polya-Gamma Gibbs kernel carries the field's own prior precision
+# for. Areal goes to `cpp_pg_binomial_gibbs_rsr()` (an adjacency), the NNGP
+# spellings to `cpp_pg_binomial_gibbs_gp_rsr()` (Vecchia factors at the current
+# range). An HSGP basis and an SPDE mesh have neither and are refused at
+# `spatial_rsr()` (gcol33/tulpa#815, gcol33/tulpa#848).
+.RSR_FIELDS <- c(.NL_FRONTDOOR_AREAL, "gp", "nngp")
+
+# Of those, the ones whose projection is applied on the CONTINUOUS kernel.
+.RSR_CONTINUOUS <- c("gp", "nngp")
+
 # SPDE is also coordinate-addressed (no spatial(col) term) and nested-integrated,
 # but it carries its OWN nested engine -- fit_spde() rebuilds the Matern precision
 # Q(range, sigma) per node via the FEM Q-builder and integrates (range, sigma)

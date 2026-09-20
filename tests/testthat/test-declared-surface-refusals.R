@@ -42,20 +42,23 @@ test_that("a Laplace-family mode does not recommend a mode that also refuses", {
     "Use mode = 'exact'", fixed = TRUE)
 })
 
-test_that("spatial_rsr() refuses a field its kernel cannot project", {
-  # The projection lives in cpp_pg_binomial_gibbs_rsr(), which conditions on an
-  # areal neighbour list. A continuous spec carries none, so tulpa() re-typed
-  # it as areal and then failed on the missing adjacency with "non-numeric
-  # matrix extent" -- a message about neither the spec nor the argument
-  # (gcol33/tulpa#815). The capability is gcol33/tulpa#848.
-  expect_error(spatial_rsr(spatial_gp(~ lon + lat), restrict_to = ~ x),
-               "AREAL")
+test_that("spatial_rsr() refuses a field its kernels cannot project", {
+  # The projection lives in two Polya-Gamma kernels, one carrying an areal
+  # neighbour list and one an NNGP field (gcol33/tulpa#848). A spec that is
+  # neither used to be re-typed as areal by tulpa(), which then failed on the
+  # missing adjacency with "non-numeric matrix extent" -- a message about
+  # neither the spec nor the argument (gcol33/tulpa#815). Refused at
+  # construction instead, where the argument that caused it is still in hand.
   expect_error(spatial_rsr(spatial_gp(~ lon + lat, approx = "hsgp"),
                            restrict_to = ~ x),
-               "AREAL")
+               "areal or NNGP")
   # The message names what to build it on instead.
-  expect_error(spatial_rsr(spatial_gp(~ lon + lat), restrict_to = ~ x),
+  expect_error(spatial_rsr(spatial_gp(~ lon + lat, approx = "hsgp"),
+                           restrict_to = ~ x),
                "spatial_car")
+  # An NNGP field IS projectable, and is taken.
+  expect_s3_class(spatial_rsr(spatial_gp(~ lon + lat), restrict_to = ~ x),
+                  "tulpa_rsr")
 })
 
 test_that("spatial_rsr() still takes every areal field", {

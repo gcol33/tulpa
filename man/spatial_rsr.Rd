@@ -7,11 +7,13 @@
 spatial_rsr(spatial, restrict_to)
 }
 \arguments{
-\item{spatial}{An AREAL spatial specification -- \code{spatial_car()},
-\code{spatial_icar()}, \code{spatial_bym2()} or a proper-CAR spec. The projection is
-applied by the binomial Polya-Gamma Gibbs sampler, which conditions on a
-neighbour list, so a continuous field (\code{spatial_gp()}, \code{spatial_spde()})
-is refused at construction rather than accepted and then unfittable.}
+\item{spatial}{An areal specification -- \code{spatial_car()}, \code{spatial_icar()},
+\code{spatial_bym2()} or a proper-CAR spec -- or an NNGP one, \code{spatial_gp()}.
+The projection is applied by the binomial Polya-Gamma Gibbs sampler, which
+carries the field's own prior precision as an adjacency or as Vecchia
+factors; an HSGP basis (\code{spatial_gp(approx = "hsgp")}) and an SPDE mesh
+(\code{spatial_spde()}) are neither, and are refused at construction rather
+than accepted and then unfittable.}
 
 \item{restrict_to}{Formula specifying which covariates to orthogonalize
 against (e.g., \code{~ depth + temp}). The spatial effect will be constrained
@@ -36,12 +38,34 @@ spatial random effect to be orthogonal to the fixed effect design matrix:
 \deqn{w_{RSR} = (I - P_X) w}
 
 where \eqn{P_X = X(X'X)^{-1}X'} is the projection matrix onto the column
-space of X.
+space of X. The projector is built at the FIELD's own resolution: one row
+per areal unit, or one per unique location for an NNGP field, with the
+restricted design averaged over the observations at each.
+
+\strong{What RSR estimates.} The restriction puts no part of the shared, smooth
+signal in the field, so the fixed effect takes all of it: RSR targets the
+MARGINAL association between the covariate and the response, where the
+unrestricted spatial model targets the association conditional on the
+field. The two differ by exactly the covariate's projection onto the field,
+so they are different estimands rather than a biased and an unbiased
+version of one (Bradley, 2024). Measured on a confounded continuous
+fixture (5 seeds, conditional slope 1.0, marginal 1.71): the restricted fit
+averaged 0.06 from the marginal value and 0.74 from the conditional one,
+the unrestricted fit 0.10 and 0.63.
+
+\strong{The restriction is not free.} In the geostatistical setting Hanks et al.
+(2015) measured POORER coverage under RSR than under the spatial model that
+does not restrict, and credible intervals that can be inappropriately
+narrow under model misspecification; Khan and Calder (2022) report the same
+on areal structure, with a non-spatial model competitive on coverage and
+higher Type-S error rates under RSR. Read an RSR interval as an interval
+for the marginal association under a correctly specified model, and prefer
+a posterior-predictive check (Hanks et al., 2015) where that is in doubt.
 
 \strong{When to use RSR:}
 \itemize{
 \item Covariates are spatially smooth (environmental gradients)
-\item Interested in causal interpretation of covariate effects
+\item The marginal association is the quantity of interest
 \item Coefficients appear attenuated toward zero
 }
 
@@ -49,7 +73,8 @@ space of X.
 \itemize{
 \item Covariates are spatially uncorrelated
 \item Spatial effect is the primary quantity of interest
-\item Prediction is the main goal (not causal inference)
+\item Prediction is the main goal
+\item Interval coverage matters more than the point estimate
 }
 
 RSR fits are binomial, through \code{mode = "gibbs"} (which \code{mode = "auto"}
@@ -86,6 +111,24 @@ fit <- tulpa(
   control = list(n_iter = 500L, warmup = 250L)
 )
 summary(fit)
+
+# The same modifier on a continuous field: one observation per location,
+# the projector built at the unique coordinates.
+set.seed(7)
+n <- 80
+pts <- data.frame(lon = runif(n), lat = runif(n))
+pts$x <- as.numeric(scale(pts$lon + pts$lat + rnorm(n, 0, 0.3)))
+pts$y <- rbinom(n, 25, plogis(-0.2 + pts$x))
+fit_gp <- tulpa(
+  y ~ x,
+  data = pts,
+  family = "binomial",
+  n_trials = rep(25L, n),
+  spatial = spatial_rsr(spatial_gp(~ lon + lat), restrict_to = ~ x),
+  mode = "gibbs",
+  control = list(n_iter = 500L, warmup = 250L)
+)
+summary(fit_gp)
 }
 
 }
@@ -97,6 +140,19 @@ Biometrics, 62(4), 1197-1206.
 Hodges, J. S., & Reich, B. J. (2010). Adding spatially-correlated errors
 can mess up the fixed effect you love. The American Statistician, 64(4),
 325-334.
+
+Hanks, E. M., Schliep, E. M., Hooten, M. B., & Hoeting, J. A. (2015).
+Restricted spatial regression in practice: geostatistical models,
+confounding, and robustness under model misspecification. Environmetrics,
+26(4), 243-254.
+
+Khan, K., & Calder, C. A. (2022). Restricted spatial regression methods:
+implications for inference. Journal of the American Statistical
+Association, 117(537), 482-494.
+
+Bradley, J. R. (2024). Restricted spatial regression is reasonable
+statistical practice: clarifications, interpretations, and new
+developments. arXiv:2408.05106.
 }
 \seealso{
 \code{\link[=spatial_gp]{spatial_gp()}}, \code{\link[=spatial_car]{spatial_car()}}

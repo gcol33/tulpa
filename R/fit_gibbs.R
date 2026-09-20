@@ -191,23 +191,48 @@ adjacency_to_list_tulpa <- function(adj) {
   as.integer(n_spatial)
 }
 
-# Unit-level RSR projector P_perp = I - Q Q', orthogonalising the spatial field
-# against the (unit-aggregated) fixed-effect design so the field cannot absorb
-# covariate signal (Reich et al. 2006). X is per observation; collapse it to one
-# row per spatial unit (mean over each unit's observations -- the identity for
-# the canonical one-observation-per-unit areal design) before projecting.
-.rsr_unit_projection <- function(X, spatial_group, n_units) {
+# RSR projector P_perp = I - Q Q' at the FIELD's own resolution, orthogonalising
+# the spatial field against the aggregated fixed-effect design so the field
+# cannot absorb covariate signal (Reich et al. 2006). X is per observation;
+# collapse it to one row per field coordinate (mean over that coordinate's
+# observations -- the identity for the canonical one-observation-per-coordinate
+# design) before projecting.
+#
+# `obs_to_field` is the 1-based observation -> field-coordinate map, which is
+# `spatial_idx` for an areal field and `obs_to_loc` for a continuous one, and
+# `n_field` the number of coordinates. The projector is the same construction
+# either way; only the map differs (gcol33/tulpa#848).
+.rsr_unit_projection <- function(X, obs_to_field, n_field) {
   X <- as.matrix(X)
-  X_unit <- matrix(0.0, n_units, ncol(X))
-  cnt    <- integer(n_units)
+  X_unit <- matrix(0.0, n_field, ncol(X))
+  cnt    <- integer(n_field)
   for (i in seq_len(nrow(X))) {
-    u <- spatial_group[i]
+    u <- obs_to_field[i]
     X_unit[u, ] <- X_unit[u, ] + X[i, ]
     cnt[u]      <- cnt[u] + 1L
   }
   pos <- cnt > 0
   X_unit[pos, ] <- X_unit[pos, ] / cnt[pos]
   compute_rsr_projection(X_unit)
+}
+
+# The projection `spatial_rsr()` declares, attached to the spec at the field's
+# own resolution. One builder for both field shapes: the RSR modifier is
+# binomial-Gibbs-only whichever field it restricts, and `restrict_to` is the
+# design it orthogonalises against -- the spec's own formula, not the full model
+# design.
+.attach_rsr_projection <- function(spatial_spec, data, family,
+                                   obs_to_field, n_field) {
+  if (!identical(family, "binomial")) {
+    stop("An RSR spatial field is fit by the binomial Polya-Gamma Gibbs ",
+         "sampler; `family` must be 'binomial' (got '", family, "').",
+         call. = FALSE)
+  }
+  if (is.null(spatial_spec$rsr_formula)) return(spatial_spec)
+  X_rsr <- stats::model.matrix(spatial_spec$rsr_formula, data = data)
+  spatial_spec$rsr_projection <-
+    .rsr_unit_projection(X_rsr, obs_to_field, n_field)
+  spatial_spec
 }
 
 #' Dispatch a spatial Polya-Gamma Gibbs fit to the correct sampler
@@ -231,12 +256,16 @@ dispatch_gibbs_spatial <- function(y, n_trials, X, re_group, n_re_groups,
          family, "'. Use mode = 'laplace' for other families under a spatial field.",
          call. = FALSE)
   }
-  # RSR keeps the underlying areal $type (icar/car) and flags $rsr; normalise it
-  # to the "rsr" route so the projection is applied rather than a plain areal fit.
+  # RSR keeps the underlying $type and flags $rsr; normalise it to the route
+  # that applies the projection rather than to a plain fit that would drop it.
+  # Which route depends on the field it restricts: an areal one goes to the
+  # adjacency kernel, a continuous one to the NNGP kernel (gcol33/tulpa#848).
   # spatial_car()'s exported "car" is the same intrinsic ICAR field the nested
   # path already treats it as (gcol33/tulpa#819).
   spatial_type <- .areal_gibbs_type(tolower(spatial$type %||% ""))
-  if (isTRUE(spatial$rsr)) spatial_type <- "rsr"
+  if (isTRUE(spatial$rsr)) {
+    spatial_type <- if (spatial_type %in% .RSR_CONTINUOUS) "gp_rsr" else "rsr"
+  }
 
   # Areal samplers (icar / bym2 / rsr) share the neighbour-list block; the negbin
   # areal kernel below reuses the same block.
@@ -321,7 +350,7 @@ dispatch_gibbs_spatial <- function(y, n_trials, X, re_group, n_re_groups,
       prior_tau_shape = spatial$prior_tau_shape %||% 1.0,
       prior_tau_rate  = spatial$prior_tau_rate  %||% 0.01
     ))), "icar", X)
-  } else if (spatial_type %in% c("gp", "nngp")) {
+  } else if (spatial_type %in% c("gp", "nngp", "gp_rsr")) {
     if (is.null(spatial$neighbor_info)) {
       stop("Spatial Gibbs (", spatial_type, ") needs a validated spatial_gp() ",
            "spec (neighbor_info is NULL). Call validate_gp(spatial, data) first, ",
@@ -329,7 +358,7 @@ dispatch_gibbs_spatial <- function(y, n_trials, X, re_group, n_re_groups,
     }
     n_spatial <- .gp_gibbs_require_one_obs_per_loc(spatial, length(y), spatial_type)
     nn_in     <- .gp_gibbs_nn_inputs(spatial$neighbor_info, n_spatial)
-    .pg_as_chain(do.call(cpp_pg_binomial_gibbs_gp, c(common, list(
+    gp_args <- c(common, list(
       coords         = as.matrix(spatial$unique_coords),
       nn_idx         = nn_in$nn_idx,
       nn_dist        = nn_in$nn_dist,
@@ -339,7 +368,31 @@ dispatch_gibbs_spatial <- function(y, n_trials, X, re_group, n_re_groups,
       sigma2_gp_init = spatial$sigma2_gp %||% 1.0,
       phi_gp_init    = spatial$phi_gp %||% 1.0,
       cov_type       = gp_cov_type(spatial)
-    ))), "gp", X)
+    ))
+    if (spatial_type == "gp_rsr") {
+      # Restricted continuous field. The projector is at the field's own
+      # resolution -- one row per unique location -- which is the same
+      # `.rsr_unit_projection()` the areal route builds, over `obs_to_loc`
+      # instead of `spatial_idx`.
+      P_perp <- spatial$rsr_projection %||%
+        .rsr_unit_projection(X, as.integer(spatial$obs_to_loc %||%
+                                             seq_len(nrow(as.matrix(X)))),
+                             n_spatial)
+      if (nrow(P_perp) != n_spatial || ncol(P_perp) != n_spatial) {
+        stop("RSR projection matrix is ", nrow(P_perp), "x", ncol(P_perp),
+             " but must be ", n_spatial, "x", n_spatial,
+             " (one row/col per spatial location).", call. = FALSE)
+      }
+      .pg_as_chain(do.call(cpp_pg_binomial_gibbs_gp_rsr, c(gp_args, list(
+        # Row-major flatten for the C++ `rsr_projection[s * rsr_n + k]`
+        # indexing; P_perp is symmetric so t() is a no-op but keeps the
+        # convention explicit.
+        rsr_projection = as.numeric(t(P_perp)),
+        rsr_n          = as.integer(n_spatial)
+      ))), "gp", X)
+    } else {
+      .pg_as_chain(do.call(cpp_pg_binomial_gibbs_gp, gp_args), "gp", X)
+    }
   } else if (spatial_type %in% c("multiscale", "multiscale_gp")) {
     # Both scales reuse the shared NNGP kriging conditional
     # (tulpa::pg_nngp_conditional), so cov_type (exponential / Matern 3/2 / 5/2)
@@ -377,7 +430,8 @@ dispatch_gibbs_spatial <- function(y, n_trials, X, re_group, n_re_groups,
     ))), "multiscale_gp", X)
   } else {
     stop("Spatial Gibbs not wired for type '", spatial_type, "'. Supported: ",
-         "icar, bym2, rsr, gp/nngp, multiscale_gp.", call. = FALSE)
+         "icar, bym2, rsr, gp/nngp (restricted or not), multiscale_gp.",
+         call. = FALSE)
   }
 }
 

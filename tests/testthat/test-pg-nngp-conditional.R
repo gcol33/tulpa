@@ -55,6 +55,30 @@ test_that("the field conditional is a row of the NNGP joint precision", {
   }
 })
 
+test_that("the engine's assembled precision is that same matrix", {
+  # A field whose contribution to eta is PROJECTED has no sparse conditional --
+  # the projector couples every pair of locations -- so the restricted NNGP
+  # Gibbs kernel assembles the prior precision whole instead of reading one row
+  # of it (`pg_nngp_precision_dense`, gcol33/tulpa#848). The arbiter is the same
+  # definition the rows are checked against above, not a second traversal.
+  #
+  # The engine indexes by ORIGINAL location and the probe's B / F by ordered
+  # position, so the comparison permutes.
+  for (cov_type in 0:2) {
+    r   <- .pgnngp_probe(cov_type = as.integer(cov_type))
+    Lam <- .pgnngp_lambda(r)               # ordered coordinates
+    loc <- r$orig + 1L
+    Lam_loc <- matrix(0, r$N, r$N)
+    Lam_loc[loc, loc] <- Lam               # original-location coordinates
+    expect_equal(r$Lambda, Lam_loc, tolerance = 1e-10,
+                 info = paste("dense precision, cov_type", cov_type))
+  }
+  # And it scales with sigma2 the way the factorization says, like the rows.
+  a <- .pgnngp_probe(sigma2 = 0.7)
+  b <- .pgnngp_probe(sigma2 = 2.8)
+  expect_equal(b$Lambda * 4, a$Lambda, tolerance = 1e-10)
+})
+
 test_that("the child terms are most of the field, not an edge case", {
   # The negative control: without them the precision is the own factor alone.
   # Under a nearest-neighbour ordering nearly every location is somebody's

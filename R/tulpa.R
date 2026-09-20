@@ -2014,13 +2014,21 @@ tulpa <- function(formula, data,
         .validate_adjacency_arg(spatial_spec$adjacency, "spatial$adjacency")
     }
     sp_lc <- spatial_type
-    # RSR is an areal field (icar/car) carrying a projection modifier: the spec
-    # keeps the underlying $type but flags $rsr (spatial_rsr()). Route it as its
-    # own gibbs-only areal type so it reaches the RSR Polya-Gamma sampler instead
-    # of the plain areal / nested path, which would silently drop the projection.
+    # RSR is a MODIFIER on a field, not a field type: the spec keeps its own
+    # `$type` and flags `$rsr` (spatial_rsr()). The backend selector sees "rsr"
+    # so the fit reaches a Polya-Gamma sampler that applies the projection
+    # rather than a plain path that would silently drop it, while `sp_lc` keeps
+    # the underlying type so the spec still validates as the field it is -- an
+    # areal one against its adjacency, a continuous one against its coordinates
+    # (gcol33/tulpa#848). A bare `type = "rsr"` predates the modifier and has
+    # always meant an areal field.
     if (isTRUE(spatial_spec$rsr) || identical(sp_lc, "rsr")) {
+      if (identical(sp_lc, "rsr")) {
+        sp_lc <- "icar"
+        spatial_spec$type <- "icar"
+        spatial_spec$rsr  <- TRUE
+      }
       spatial_type <- "rsr"
-      sp_lc <- "rsr"
     }
     if (sp_lc == "svc") {
       # Spatially-varying coefficients: coordinate-addressed (coords from the
@@ -2078,6 +2086,16 @@ tulpa <- function(formula, data,
         }
         spatial_spec <- validate_gp(spatial_spec, data)
       }
+      if (isTRUE(spatial_spec$rsr)) {
+        # A restricted continuous field: the projector is built at the unique
+        # locations the field is indexed by, which validate_gp() has just
+        # resolved (gcol33/tulpa#848).
+        spatial_spec <- .attach_rsr_projection(
+          spatial_spec, data, family,
+          obs_to_field = as.integer(spatial_spec$obs_to_loc),
+          n_field = as.integer(spatial_spec$n_spatial %||%
+                                 nrow(spatial_spec$unique_coords)))
+      }
     } else if (sp_lc %in% c(.NL_FRONTDOOR_AREAL, "rsr")) {
       # Areal field: spatial(col) names the per-observation unit. RSR is areal
       # too (it carries an adjacency), and gibbs-only.
@@ -2095,22 +2113,14 @@ tulpa <- function(formula, data,
       } else NULL
       spatial_spec$spatial_idx <-
         .resolve_unit_index(data[[parsed$spatial_var]], parsed$spatial_var, n_units)
-      if (sp_lc == "rsr") {
-        # RSR is routed only through the binomial Polya-Gamma Gibbs sampler.
-        if (family != "binomial") {
-          stop("RSR spatial fields are fit by the binomial Polya-Gamma Gibbs ",
-               "sampler; `family` must be 'binomial' (got '", family, "').",
-               call. = FALSE)
-        }
-        # Build the unit-level projector orthogonal to the restrict_to design --
-        # the whole point of the modifier. Honour the spec's restrict_to formula
-        # rather than the full model design; dispatch_gibbs_spatial() consumes
-        # the precomputed n_units x n_units projection.
-        if (!is.null(spatial_spec$rsr_formula)) {
-          X_rsr <- stats::model.matrix(spatial_spec$rsr_formula, data = data)
-          spatial_spec$rsr_projection <-
-            .rsr_unit_projection(X_rsr, spatial_spec$spatial_idx, n_units)
-        }
+      if (isTRUE(spatial_spec$rsr)) {
+        # The unit-level projector orthogonal to the restrict_to design -- the
+        # whole point of the modifier. dispatch_gibbs_spatial() consumes the
+        # precomputed n_units x n_units projection.
+        spatial_spec <- .attach_rsr_projection(
+          spatial_spec, data, family,
+          obs_to_field = spatial_spec$spatial_idx,
+          n_field = n_units)
       }
     } else {
       stop("Unknown spatial type '", spatial_type, "'. `spatial$type` must be one ",
@@ -2280,11 +2290,12 @@ tulpa <- function(formula, data,
       sel$backend, mode, hint), call. = FALSE)
   }
 
-  # spatial_rsr()'s projection is applied only inside the binomial Polya-Gamma
-  # Gibbs sampler (cpp_pg_binomial_gibbs_rsr(), which reads $rsr_projection):
-  # the spec keeps its underlying areal $type ('icar' / 'car') for every other
+  # spatial_rsr()'s projection is applied only inside the two binomial
+  # Polya-Gamma Gibbs kernels that read $rsr_projection
+  # (cpp_pg_binomial_gibbs_rsr() on an adjacency, cpp_pg_binomial_gibbs_gp_rsr()
+  # on an NNGP field): the spec keeps its underlying $type for every other
   # consumer, so nested_laplace / laplace / hmc / the other backends would read
-  # that type and fit the PLAIN (unprojected) areal field while still reporting
+  # that type and fit the PLAIN (unprojected) field while still reporting
   # $spatial$rsr = TRUE -- silently dropping the projection rather than fitting
   # it (gcol33/tulpa#792). Fail loudly instead; only an explicit or
   # auto-selected gibbs backend carries the projection.
@@ -2292,8 +2303,8 @@ tulpa <- function(formula, data,
   if (is_rsr_fit && !identical(sel$backend, "gibbs")) {
     stop(sprintf(paste0(
       "spatial_rsr() is fit only by the binomial Polya-Gamma Gibbs sampler: ",
-      "every other backend reads the underlying areal $type ('%s') and would ",
-      "fit the plain, unprojected field. The selected backend '%s' ",
+      "every other backend reads the underlying field's $type ('%s') and ",
+      "would fit the plain, unprojected field. The selected backend '%s' ",
       "(mode = '%s') does not carry the RSR projection. Use mode = 'gibbs' ",
       "or 'auto'."),
       spatial_spec$type, sel$backend, mode), call. = FALSE)

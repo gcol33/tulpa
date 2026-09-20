@@ -196,6 +196,36 @@ only when the session STARTS in the package root and startup files are not
 skipped, so a build driven from another directory or under `--vanilla` still
 takes the debug flags.
 
+## Restricted spatial regression is a MODIFIER, and it changes the estimand
+
+`spatial_rsr()` flags `$rsr` on a field's own spec; the field keeps its `$type`
+so it still validates as the field it is (an areal one against its adjacency, a
+continuous one against its coordinates), and only the backend selector sees
+`"rsr"`. Two kernels apply it, `cpp_pg_binomial_gibbs_rsr` on an adjacency and
+`cpp_pg_binomial_gibbs_gp_rsr` on an NNGP field, and `.RSR_FIELDS` is the one
+list of shapes either can carry — an HSGP basis and an SPDE mesh are neither
+and are refused at construction (gcol33/tulpa#815, gcol33/tulpa#848).
+
+A projected field's full conditional is DENSE whatever its prior: the projector
+couples every pair of coordinates, so the sparse single-site sweep is not
+available and both kernels pay an O(J^3) solve. `pg_nngp_precision_dense()` is
+the NNGP prior assembled whole for that solve, checked against the same
+`Lambda = (I - A)' D^-1 (I - A)` the sparse conditional is
+(`test-pg-nngp-conditional.R`). The NNGP prior is PROPER, so unlike the ICAR
+kernel nothing is supplied on the constant direction and no centring follows;
+and there is no level step, because the projector annihilates the restricted
+design's column space, which carries the intercept.
+
+**The restriction targets the MARGINAL association**, where the unrestricted
+model targets the one conditional on the field: the two differ by exactly the
+covariate's projection onto the field, so they are different estimands rather
+than a biased and an unbiased reading of one (Bradley 2024). Measured over 5
+seeds at a conditional slope of 1.0 and a marginal one of 1.71, mean |error|:
+restricted 0.06 marginal / 0.74 conditional, unrestricted 0.10 / 0.63,
+non-spatial 0.055 / 0.71. Hanks et al. (2015) measured POORER coverage under
+RSR than under the unrestricted spatial model in the geostatistical setting;
+that caveat is on `?spatial_rsr` and belongs in anything written about it.
+
 ## A varying coefficient's level: centre a proper field, pin an intrinsic one
 
 A varying-coefficient term contributes `eta_i += x_i w(s_i)`, so `w -> w + c`

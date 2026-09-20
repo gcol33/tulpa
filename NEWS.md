@@ -1,3 +1,41 @@
+# tulpa 0.4.12
+
+## Restricted spatial regression on a continuous field
+
+* **`spatial_rsr(spatial_gp(...))` is fitted** (gcol33/tulpa#848). RSR exists
+  for spatially smooth covariates -- a climate surface, elevation -- and those
+  are exactly where a continuous field is the natural prior and an areal one a
+  discretisation of convenience, so the mitigation was available only on the
+  field shape that needs it least. `cpp_pg_binomial_gibbs_gp_rsr()` is the
+  counterpart of the areal kernel: the same projection, applied each sweep to
+  an NNGP field whose prior precision is assembled from its Vecchia factors at
+  the current range rather than read off a fixed adjacency.
+
+  Measured on a confounded fixture (150 points, binomial, 5 seeds): the
+  reported field is orthogonal to the restricted design to `6.2e-15` of its own
+  scale, where an unrestricted fit's is `14.3`.
+
+* **One projector, over the observation -> field map.**
+  `.rsr_unit_projection()` was already almost map-agnostic; it now takes that
+  map by name, so the areal route passes `spatial_idx` and the continuous one
+  `obs_to_loc` and the two differ in nothing else. `tulpa()` no longer re-types
+  every `$rsr` spec as areal: the modifier keeps the field's own `$type` for
+  validation -- which is what made a continuous RSR spec demand a
+  `spatial(col)` term it has no use for -- and only the backend selector sees
+  `"rsr"`. `pg_nngp_scale_update()` is split into the sparse field sweep and
+  the hyperparameter update, so the projected kernel reuses the second without
+  the first, which its dense conditional replaces.
+
+* **What the restriction buys is the MARGINAL association**, not a less biased
+  version of the slope conditional on the field. `?spatial_rsr` now says so,
+  with the measurement (5 seeds, conditional slope 1.0, marginal 1.71:
+  restricted fit 0.06 from the marginal value and 0.74 from the conditional,
+  unrestricted 0.10 and 0.63) and with the coverage caveat the method carries:
+  Hanks et al. (2015) measured poorer coverage under RSR than under the
+  unrestricted spatial model in the geostatistical setting, and Khan and Calder
+  (2022) report the same areally. Those references are on the page now; the
+  capability is offered with them rather than without.
+
 # tulpa 0.4.11
 
 ## A coefficient can evolve as a continuous-time GP
