@@ -28,6 +28,7 @@
 ^src/.*\.dll$
 ^src/.*\.so$
 ^todo\.md$
+^ENGINEERING_HISTORY\.md$
 ^cran-comments\.md$
 ^vendor_simp\.sh$
 ^tgmrf\.html$
