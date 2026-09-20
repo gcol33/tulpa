@@ -348,8 +348,11 @@ tulpa_eb <- function(y, n_trials = NULL, X, re_terms,
   # `phi` is cleared alongside the provenance stamps: fit_hat carries the value
   # its inner solve ran at, and the list below sets the reported one. Leaving
   # both would duplicate the name and answer with whichever came first.
+  # `phi_estimated` goes with it for exactly that reason: the inner solve
+  # CONDITIONED on a phi and is stamped FALSE, so leaving its copy in would
+  # answer FALSE on the one door that does estimate one (gcol33/tulpa#849).
   fit_hat[c("backend", "draws_kind", "inference_mode", "inference_tier",
-            "selection_reason", "log_marginal", "phi")] <- NULL
+            "selection_reason", "log_marginal", "phi", "phi_estimated")] <- NULL
 
   .finalize_fit(c(fit_hat, list(
     map          = map,

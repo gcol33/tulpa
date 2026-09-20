@@ -1737,6 +1737,9 @@ tulpa <- function(formula, data,
                   temporal = NULL,
                   control = list(),
                   ...) {
+  # Whether the DISPERSION was the caller's or the signature's, recorded before
+  # anything can overwrite `phi` (gcol33/tulpa#849).
+  phi_supplied <- !missing(phi)
   # `...` exists so future statistical arguments can be added without a
   # signature break; nothing is read from it today, so a stray entry is a
   # misspelled or misplaced argument (e.g. `familly =`, or a tuning knob that
@@ -2636,6 +2639,22 @@ tulpa <- function(formula, data,
       stop(sprintf("`sigma_re` must have length 1 or %d (one per RE term).", K),
            call. = FALSE)
     }
+  }
+
+  # The same sentence for the DISPERSION, which had none (gcol33/tulpa#849).
+  # An unsupplied `phi` conditions at the signature's 1.0, which for a gaussian
+  # is a residual variance the data usually contradicts -- measured 1 against a
+  # truth of 0.2025 -- and `posterior_predict()` / `bayes_R2()` / WAIC all read
+  # it. A caller who did not pass `phi` did not choose 1; nothing said there was
+  # a choice. Raised only for the families that READ a dispersion, so binomial
+  # and poisson stay quiet, and not when `estimate_phi` is on, where the value
+  # is a starting point rather than a conditioning one.
+  if (!phi_supplied && !isTRUE(estimate_phi) &&
+      .family_base(family) %in% .PHI_FAMILIES) {
+    warning("tulpa(): `phi` not supplied; conditioning on phi = 1 for ",
+            "family = '", family, "'. Pass `phi` to override, or ",
+            "`estimate_phi = TRUE` with mode = 'eb' to estimate it.",
+            call. = FALSE)
   }
 
   # Resolved before backend dispatch; `beta_prior` itself stays as supplied, so

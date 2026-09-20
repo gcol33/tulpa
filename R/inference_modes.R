@@ -687,6 +687,15 @@ tulpa_dispatch <- function(mode,
     fit$offset       <- fit$offset %||% data$offset
     fit$phi          <- fit$phi %||% data$phi
     fit$phi2         <- fit$phi2 %||% data$phi2
+    # Was that `phi` estimated or conditioned on? Only `tulpa_eb()` set the
+    # field, so on every other door a consumer could not tell a fitted
+    # dispersion from the default (gcol33/tulpa#849). FALSE is the answer
+    # everywhere else, and it is set only for the families that read a
+    # dispersion at all -- elsewhere there is no quantity to have estimated.
+    if (is.null(fit$phi_estimated) &&
+        .family_base(fit$family) %in% .PHI_FAMILIES) {
+      fit$phi_estimated <- FALSE
+    }
   }
 
   # Axis fields the fit's own path could not read, published

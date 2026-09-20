@@ -27,7 +27,12 @@ every door: for \code{gaussian} / \code{lognormal} this is the residual VARIANCE
 (the SD is \code{sqrt(phi)}), for \code{neg_binomial_2} the size, \code{gamma} the
 shape, \code{beta} the precision, \code{t} the scale; \code{binomial} and \code{poisson}
 ignore it. The compiled kernels parameterize the two variance families by
-the residual SD and are handed \code{sqrt(phi)} at the boundary.}
+the residual SD and are handed \code{sqrt(phi)} at the boundary.
+
+Defaulted, it conditions at 1 and says so with a warning, since for a
+family that reads a dispersion that is a modelling choice rather than a
+neutral value. \code{fit$phi_estimated} records whether the value on the fit
+was estimated or conditioned on.}
 
 \item{phi2}{Optional second dispersion (Student-t degrees of freedom for
 \code{family = "t"}; default 4 when \code{NULL}).}
