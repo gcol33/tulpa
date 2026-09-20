@@ -224,6 +224,20 @@ so the centring and the eta it feeds are one function and no path can build eta
 from an uncentred field. The stored draws are centred to match
 (`hmc_nuts_chain_iter_store.h`), under either parameterization.
 
+**The TVC block takes the same construction**, per (group, term) block:
+`tvc_center_eta` (`hmc_tvc.h`) is the one door into `tvc_eta`, and
+`tvc_log_prior` adds the augmentation and its one extra rank for the INTRINSIC
+structures (`rw1`, `rw2`) and not for the proper one (`ar1`), the split
+`tvc_structure_is_intrinsic` names. The stored draws are centred to match.
+It was the last block still on `tvc_sum_to_zero_penalty` (deleted), and the
+cost was measured under VI rather than under a sampler, which is the asymmetry
+to expect: a stiff aliased direction is something a sampler traverses and a
+diagonal-ish variational family cannot. On a poisson rw1 TVC at T = 40, the VI
+fit read cor 0.344 / field sd 0.040 against a truth of 0.472 and an `rw1`
+comparator at 0.842 / 0.460; after the change it reads 0.842 / 0.460, the
+comparator's own numbers. The reported ELBO stopped inverting with run length
+in the same move (gcol33/tulpa#844).
+
 **The non-centered path is where this is load-bearing, and the centered path is
 where it was NOT the defect.** On `w = L z` a penalty on the sum becomes
 `-0.5 lambda (v'z)^2` with `v = L'1`, whose stiffness rides the Vecchia cascade

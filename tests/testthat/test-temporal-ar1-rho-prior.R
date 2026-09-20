@@ -42,11 +42,15 @@ test_that("informative AR1 rho prior shifts the nested posterior toward the prio
   y <- rpois(Tn, exp(0.2 + 0.3 * x + z))
   d <- data.frame(y = y, x = x, t = seq_len(Tn))
 
-  fit_flat <- tulpa(y ~ x + temporal_ar1(~ t), data = d, family = "poisson")
+  # `temporal_ar1()` builds a spec for the `temporal =` argument; it is not an
+  # inline formula term, and writing it as one reached model.frame() with a
+  # list. The claim being tested is about the prior, not the call form.
+  fit_flat <- tulpa(y ~ x, data = d, family = "poisson",
+                    temporal = temporal_ar1(~ t))
   # A prior concentrated on strong positive autocorrelation should pull the rho
   # posterior above the flat-prior fit on this short, weakly-identified series.
-  fit_hi <- tulpa(y ~ x + temporal_ar1(~ t, rho_prior = prior_beta(12, 2)),
-                  data = d, family = "poisson")
+  fit_hi <- tulpa(y ~ x, data = d, family = "poisson",
+                  temporal = temporal_ar1(~ t, rho_prior = prior_beta(12, 2)))
   rho_flat <- temporal_corr(fit_flat)["rho_ar1", "mean"]
   rho_hi   <- temporal_corr(fit_hi)["rho_ar1", "mean"]
   expect_true(is.finite(rho_flat) && is.finite(rho_hi))

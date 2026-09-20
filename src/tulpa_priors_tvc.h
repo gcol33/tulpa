@@ -68,19 +68,17 @@ T compute_tvc_prior(const std::vector<T>& params, const ModelData& data,
             tvc_w_flat[k] = params[layout.tvc_w_start + k];
         }
 
-        // TVC temporal prior (RW1, RW2, or AR1)
+        // TVC temporal prior (RW1, RW2, or AR1), carrying the sum-to-zero
+        // AUGMENTATION for the intrinsic structures.
         log_post = log_post + tulpa_tvc::tvc_log_prior(
             tvc_w_flat, data.tvc_data, tvc_tau, tvc_rho
         );
 
-        // Soft sum-to-zero constraint for identifiability
-        log_post = log_post + tulpa_tvc::tvc_sum_to_zero_penalty(
-            tvc_w_flat, data.tvc_data
-        );
-
-        // Precompute TVC contribution to linear predictor
+        // Each block's level is removed from eta by centring, the other half
+        // of that construction. The soft penalty this replaced left the level
+        // in the likelihood and stiffened it instead (gcol33/tulpa#844).
         tvc_eta.resize(n_obs, T(0.0));
-        tulpa_tvc::compute_tvc_eta(tvc_w_flat, data.tvc_data, tvc_eta);
+        tulpa_tvc::tvc_center_eta(tvc_w_flat, data.tvc_data, tvc_eta);
     }
 
     return log_post;

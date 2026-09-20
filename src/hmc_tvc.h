@@ -12,7 +12,7 @@
 #include "pc_prior.h"      // single-source PC prior on every sampled scale
 
 // Use canonical type definitions from exported headers
-#include "tulpa/soft_sum_to_zero.h"  // s2z_precision
+#include "tulpa/sum_to_zero.h"  // s2z_aug_quad / s2z_centre_blocks
 #include "tulpa/tvc_data.h"
 #include "tulpa/types.h"
 
@@ -26,10 +26,28 @@ using tulpa::math::safe_log;
 // TVC log-prior
 // -----------------------------------------------------------------------------
 
+// Does this structure's precision annihilate a block's constant direction?
+// RW1 and RW2 do, so that direction carries no prior and one has to be
+// supplied. AR1 is PROPER -- its constant direction already carries precision
+// 1' Q 1 -- so nothing is supplied there, only removed from eta.
+inline bool tvc_structure_is_intrinsic(TemporalType s) {
+  return s == TemporalType::RW1 || s == TemporalType::RW2;
+}
+
 // Compute log-prior for all TVC terms
 // w_flat: all TVC values (n_groups * n_tvc * n_times, flattened)
 // tau: vector of precisions (length n_tvc)
 // rho: vector of AR1 correlations (length n_tvc, only for AR1)
+//
+// An intrinsic block is AUGMENTED, not penalised: Q_aug = Q + 1 1'/n_times
+// carries the block's own precision tau on its constant direction, which takes
+// the rank to rank(Q) + 1 and makes the direction a free N(0, 1/tau) draw that
+// integrates out once tvc_center_eta() has removed it from the likelihood. The
+// soft penalty this replaced instead stiffened that direction at a precision
+// of its own (s2z_precision(n_times)) which the field never has to traverse
+// under a sampler but a diagonal variational family does -- see
+// tulpa/sum_to_zero.h, and the same construction on the SVC path in
+// hmc_svc_autodiff.h.
 template <typename T>
 inline T tvc_log_prior(
     const std::vector<T>& w_flat,
@@ -40,6 +58,7 @@ inline T tvc_log_prior(
   int n_times = tvc_data.n_times;
   int n_tvc = tvc_data.n_tvc;
   int n_groups = tvc_data.n_groups;
+  const bool intrinsic = tvc_structure_is_intrinsic(tvc_data.structure);
 
   T log_prior = T(0.0);
 
@@ -50,6 +69,14 @@ inline T tvc_log_prior(
       T rho_j = (tvc_data.structure == TemporalType::AR1) ? rho[j] : T(0.0);
       log_prior = log_prior + tulpa_temporal::log_prior_temporal(
           w_jg, n_times, tvc_data.structure, tau[j], rho_j, tvc_data.cyclic);
+      if (intrinsic) {
+        // The augmentation and the ONE rank it fills, per pinned block.
+        // gmrf_log_norm is linear in the rank, so the +1 is added here rather
+        // than threaded through log_prior_temporal's own normalizer.
+        log_prior = log_prior
+            + tulpa_temporal::gmrf_log_norm(1, safe_log(tau[j]))
+            - T(0.5) * tulpa::s2z_aug_quad(w_jg, 0, n_times, tau[j]);
+      }
     }
   }
 
@@ -133,36 +160,31 @@ inline void compute_tvc_eta(
 }
 
 // -----------------------------------------------------------------------------
-// Sum-to-zero constraint for identifiability
+// Identification of each (group, term) block's level
 // -----------------------------------------------------------------------------
 
-// Apply soft sum-to-zero constraint to TVC (for each term and group). Each
-// pinned sum runs over the n_times coefficients of one (group, term), so the
-// precision is s2z_precision(n_times); it is derived here rather than taken
-// from the caller so no call site can pass a kappa where a precision is meant.
+// beta_j and the level of w_{j,g} are not separately identifiable: the term
+// contributes eta_i += X_tvc[i,j] * w_{j,g(i)}(t_i), so w -> w + c together
+// with beta_j -> beta_j - c leaves eta exactly unchanged whatever the
+// covariate. That direction has to go before the field reaches eta, and
+// CENTRING is what removes it -- a penalty on the sum leaves it in the
+// likelihood and stiffens it instead.
+//
+// Unconditional, for both field kinds, and paired with the augmentation
+// tvc_log_prior() adds for the intrinsic ones: augmenting a path that does not
+// centre leaves the level freer than the penalty did (tulpa/sum_to_zero.h).
+// The centring and the eta it feeds are one function so no path can build
+// tvc_eta from an uncentred field, exactly as svc_center_eta does for SVC.
 template <typename T>
-inline T tvc_sum_to_zero_penalty(
-    const std::vector<T>& w_flat,
-    const TVCData& tvc_data
+inline void tvc_center_eta(
+    std::vector<T>& w_flat,          // centred in place, per (group, term)
+    const TVCData& tvc_data,
+    std::vector<T>& eta_tvc          // Output: length n_obs
 ) {
-  int n_times = tvc_data.n_times;
-  int n_tvc = tvc_data.n_tvc;
-  int n_groups = tvc_data.n_groups;
-
-  const double lambda = tulpa::s2z_precision(n_times);
-  T penalty = T(0.0);
-
-  for (int g = 0; g < n_groups; g++) {
-    for (int j = 0; j < n_tvc; j++) {
-      T sum = T(0.0);
-      for (int t = 0; t < n_times; t++) {
-        sum = sum + w_flat[(g * n_tvc + j) * n_times + t];
-      }
-      penalty = penalty - T(0.5 * lambda) * sum * sum;
-    }
-  }
-
-  return penalty;
+  tulpa::s2z_centre_blocks(w_flat.data(),
+                           tvc_data.n_groups * tvc_data.n_tvc,
+                           tvc_data.n_times);
+  compute_tvc_eta(w_flat, tvc_data, eta_tvc);
 }
 
 } // namespace tulpa_tvc
