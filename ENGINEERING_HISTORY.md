@@ -6,6 +6,80 @@ a regression. Extracted from CLAUDE.md on 2026-09-17 to keep that file
 under the auto-load size limit — this file is reference material Claude
 reads on demand (grep by issue number or topic), not auto-loaded context.
 
+### The hyperparameter continuization, and what a grid-route read is limited by (gcol33/tulpa#853)
+
+**Coupling the axes inside a cell is free to choose and cannot repair a
+marginal.** #853 reported that `tulpa_hyper_draws()`'s per-axis within-cell
+continuization (#823, `69f12d94`) trades one `occu_cover` SBC failure for three
+on the HP760 arms, named independence across axes as the mechanism -- "a ratio
+of two independent draws is a standard way to manufacture excess variance" --
+and asked for either a joint within-cell continuization informed by the cell's
+own covariance, or a scoping of composite reads back to the grid-node atom.
+Both were measured against an exact reference posterior and neither is
+supported (`dev_notes/issue853/RESULTS.md`).
+
+The fixture is two scale hyperparameters correlated through a shared arm
+(`y ~ N(0, s1^2)`, `z ~ N(0, s1^2 + s2^2)`, log-normal priors), so the outer
+log-posterior is closed form and the reference is a fine 2-D quadrature over
+it; `alpha = s2 / s1` stands in for the ratio the issue names. 300 replicates
+per configuration, six configurations crossing an adapted against a fixed grid.
+
+* The continuization is at or below the atom's KS on EVERY quantity in every
+  configuration, the ratio included (`alpha` 0.048 / 0.057 / 0.066 against the
+  atom's 0.121 / 0.106 / 0.064 on the adapted grids, where the exact arm reads
+  0.061 / 0.053 / 0.037).
+* A Gaussian copula at the grid's OWN weighted correlation of the log axes --
+  the issue's first remedy -- is indistinguishable from the shipped independent
+  jitter to three decimals (`alpha` 0.0467 / 0.0587 / 0.0682 / 0.0722 / 0.1790
+  / 0.1182 against 0.0477 / 0.0574 / 0.0661 / 0.0688 / 0.1793 / 0.1221).
+* One uniform shared by both axes reproduces the ATOM exactly where the grid's
+  correlation is ~0 (0.5026 against the atom's 0.5026, 0.3166 against 0.3166):
+  a ratio of two comonotone draws cancels the jitter. The issue's fallback is
+  the same object as its baseline, and the worse arm.
+
+The reason is structural, and `test-hyper-draws.R` section 5 pins it: the
+within-cell read is AFFINE in its uniform, so every way of tying the axes'
+uniforms together carries the same per-axis marginal and differs only in the
+joint. Coupling cannot move a marginal, and the measurement above is what says
+it does not move the ratio either.
+
+**What a grid-route read is limited by is grid EXTENT, not the within-cell
+construction.** Two sweeps at 300 replicates (`probe853_resolution.R`), the
+node count at constant extent and the span at constant cell width. The share of
+replicates whose PIT pins at exactly 0 or 1 tracks the outermost cell's mass
+monotonically across both (edge 0.520 -> pinned 0.373, 0.237 -> 0.153, 0.153 ->
+0.087, 0.035 -> 0.047, 0.000 -> 0.000), which is mechanical: mass past the
+outermost node is mass no draw can place, so a truth out there has no draw on
+its far side. The grid's own weighted SD is NOT usable as the statistic -- it
+collapses toward zero exactly when the grid stops resolving the axis, so an
+sd-over-cell-width reading saturates; `outer_grid_h_over_sd` carries the
+inverse ratio, which diverges instead, and that is the usable direction.
+
+**The engine already names all of it, and `grid_resolved = 1` is deliberate.**
+Running the shipped `.tulpa_grid_resolution()` over the same eight
+configurations (`probe853_diagnostic.R`), the note speaks on every replicate of
+every one -- including the two whose PIT is indistinguishable from the exact
+posterior. That is the documented design, not a defect: `R/settings.R` sizes
+`grid_resolved = 1` as the point below which the `box_uniform` and `chord`
+constructions converge rather than as a calibration cutoff, and records a
+34-configuration census of the engine's own default axes putting every one above
+it (minimum 1.01, median 4.25, maximum 18.06), concluding that an unresolved
+axis "is the ordinary case and is worth reporting rather than warning about".
+This sweep reproduces that census independently: median h/sd 3.91 to 4.28 on
+the extent arms. At h/sd held near 4 the four extent configurations run from a
+read that tracks the exact posterior to one at three times its KS, and the two
+conditions that move with it -- the railed-axis test and the outermost cell's
+mass -- are already recorded on the fit and already reported, the first by
+`.tulpa_grid_resolution()` and both by `.tulpa_grid_placement()`, which is split
+from it for exactly this reason (`R/laplace_diagnostics.R`, the two "disagree
+exactly where a crossed grid hides one railed axis behind another axis's
+spread").
+
+The HP760 arms are not reproducible from this repository. What is established
+is that the mechanism #853 names does not produce the effect it is named for,
+that neither remedy it proposes would move it, and that the conditions which do
+predict a miscalibrated grid-route read are already surfaced.
+
 ### What logLik() reports, and the linear predictor the criteria score (gcol33/tulpa#721-#726)
 
 **An outer grid's evidence is recorded where its weights are built.**

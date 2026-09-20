@@ -283,7 +283,79 @@ test_that("the continuized PIT is uniform where the node atom's is not", {
 })
 
 
-# ---- 5. The occu_cover-shaped joint fit, end to end -------------------------
+# ---- 5. Coupling across axes, and what does move a grid-route read ----------
+
+test_that("coupling the axes inside a cell cannot move any axis's marginal", {
+  # gcol33/tulpa#853 asks for the two axes of a cell to be continuized JOINTLY,
+  # on the reading that independently jittered marginals manufacture variance
+  # in a ratio built from them. The within-cell read is affine in its uniform,
+  # so every way of tying the axes' uniforms together -- independent, a copula
+  # at the cell's own correlation, or one uniform shared outright -- carries
+  # the SAME per-axis marginal and differs only in the joint. Coupling is
+  # therefore free to choose and cannot repair a marginal.
+  #
+  # What it does to the ratio was measured rather than assumed
+  # (`dev_notes/issue853/RESULTS.md` section 2, 300 replicates against an exact
+  # posterior): a copula at the grid's own correlation is indistinguishable
+  # from the shipped jitter to three decimals, and a shared uniform reproduces
+  # the grid-node atom's own failure, because a ratio of two comonotone draws
+  # cancels the jitter. This pins the half of that which is cheap to assert.
+  fit <- hd_two_axis()
+  set.seed(853)
+  # Allocated by WEIGHT, so the draws are the fit's own mixture and their
+  # quantiles are comparable to the interval it reports.
+  cells <- tulpa:::.nl_mixture_cells(fit$weights, seq_along(fit$weights),
+                                     4e5L)$row_cells
+  th <- tulpa_hyper_draws(fit, cells = cells)
+
+  u <- stats::runif(length(cells))          # ONE uniform, shared by both axes
+  for (ax in c("tau", "rho")) {
+    uv <- sort(unique(fit$theta_grid[, ax]))
+    e <- tulpa:::.nl_box_edges(uv, if (identical(ax, "tau")) "positive" else "unit")
+    k <- match(fit$theta_grid[cells, ax], uv)
+    comono <- e[k] + u * (e[k + 1L] - e[k])
+    probs <- c(0.025, 0.5, 0.975)
+    scale <- diff(range(fit$theta_grid[, ax]))
+    rep_q <- c(fit$theta_ci_lo[[ax]], fit$theta_median[[ax]],
+               fit$theta_ci_hi[[ax]])
+    if (!all(is.finite(rep_q))) next
+    # Both constructions reproduce the fit's OWN reported interval, so neither
+    # can be the one that fixes it.
+    expect_lt(max(abs(unname(stats::quantile(th[, ax], probs)) - rep_q)) / scale,
+              0.05)
+    expect_lt(max(abs(unname(stats::quantile(comono, probs)) - rep_q)) / scale,
+              0.05)
+  }
+})
+
+test_that("a grid that does not contain its own mode is named as such", {
+  # The conditions that DO move with a miscalibrated grid-route read are grid
+  # extent -- mass in the outermost cell, and an axis whose nodes do not reach
+  # its own posterior mode -- not the within-cell construction
+  # (`dev_notes/issue853/RESULTS.md` sections 3 and 4: at cell-width / posterior-SD
+  # held near 4, the read runs from tracking the exact posterior to three times
+  # its KS as the edge mass goes 0.000 -> 0.803). Both are already recorded on
+  # the fit and both are already branches of the note; this holds them there.
+  railed <- hd_fit(
+    list(tau = exp(seq(log(0.2), log(3), length.out = 7)),
+         rho = seq(0.1, 0.9, length.out = 5)),
+    # Monotone in tau over the whole axis: the modal mass sits on the top node.
+    function(tg) 4 * log(tg[, "tau"]) -
+                 0.5 * (tg[, "rho"] - 0.55)^2 / 0.2^2)
+  rs <- tulpa:::.tulpa_grid_resolution(railed)
+  expect_false(is.null(rs))
+  expect_true("tau" %in% c(rs$railed, rs$unscored))
+  note <- tulpa:::.tulpa_grid_resolution_note(rs)
+  expect_true(any(grepl("tau", note, fixed = TRUE)))
+
+  # The same shape with the mass inside the axis keeps that branch quiet.
+  inside <- hd_two_axis()
+  rs2 <- tulpa:::.tulpa_grid_resolution(inside)
+  expect_length(rs2$railed, 0L)
+})
+
+
+# ---- 6. The occu_cover-shaped joint fit, end to end -------------------------
 
 test_that("a joint fit's draws carry a continuized sigma and alpha", {
   skip_on_cran()
