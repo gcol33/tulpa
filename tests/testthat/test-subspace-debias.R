@@ -124,6 +124,7 @@ test_that("an empty or absent index set leaves the solve bit-for-bit unchanged",
 
 
 test_that("the front door records S and leaves an empty S bit-for-bit identical", {
+  skip_on_cran()
   d <- sd_fixture()
   f0 <- tulpa_re_cov_nested(d$y, d$n_trials, d$X, d$rt, family = "binomial",
                             control = list(seed = 1L))

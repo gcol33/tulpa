@@ -81,6 +81,7 @@
 # Student-t-heavy pair.
 
 test_that(".joint_pareto_k is low when the proposal covers the target", {
+  skip_on_cran()
     set.seed(101)
     sg <- exp(seq(-3, 3, length.out = 61))
     sd_prop <- 1.2
@@ -100,6 +101,7 @@ test_that(".joint_pareto_k is low when the proposal covers the target", {
 })
 
 test_that(".joint_pareto_k rises when the target is heavier than the proposal", {
+  skip_on_cran()
     set.seed(102)
     sg <- exp(seq(-3, 3, length.out = 61))
     lw <- stats::dnorm(log(sg), 0, 1.0, log = TRUE)
@@ -514,6 +516,7 @@ test_that(".k_band_b / .within_one_band_b use (-Inf,0.5] (0.5,0.7] (0.7,Inf)", {
 })
 
 test_that("bootstrap SE recovers the across-batch SD of the k-hat", {
+  skip_on_cran()
     # Heavy-tailed importance ratios (proposal N(0,1), target ~ N(0,2^2)):
     # log w = 0.375 x^2, x ~ proposal -> a heavy right tail, so k > 0.
     set.seed(127)

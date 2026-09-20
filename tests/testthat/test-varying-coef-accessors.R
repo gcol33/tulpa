@@ -47,7 +47,7 @@ plain_fixture <- function(n = 40L, seed = 2L) {
 
 
 test_that("tulpa() attaches the validated temporal spec to the fit (#608)", {
-  skip_if_fast()
+  skip_on_cran()
   fit <- tvc_fixture()
   expect_s3_class(fit$temporal, "tulpa_tvc")
   expect_identical(fit$temporal$time_var, "year")
@@ -57,7 +57,7 @@ test_that("tulpa() attaches the validated temporal spec to the fit (#608)", {
 
 
 test_that("svc() reads a front-door SVC fit, unit for unit (#607)", {
-  skip_if_fast()
+  skip_on_cran()
   fit <- svc_fixture()
   post <- svc(fit)
 
@@ -83,7 +83,7 @@ test_that("svc() reads a front-door SVC fit, unit for unit (#607)", {
 
 
 test_that("tvc() reads a front-door TVC fit, time point for time point (#608)", {
-  skip_if_fast()
+  skip_on_cran()
   fit <- tvc_fixture()
   post <- tvc(fit)
 
@@ -106,7 +106,7 @@ test_that("tvc() reads a front-door TVC fit, time point for time point (#608)", 
 
 
 test_that("temporal() reads a multi-scale fit and selects a component (#609)", {
-  skip_if_fast()
+  skip_on_cran()
   set.seed(131)
   d <- data.frame(year = 1:40, x = rnorm(40))
   d$count <- rpois(40, exp(1 + 0.2 * d$x))
@@ -138,7 +138,7 @@ test_that("temporal() reads a multi-scale fit and selects a component (#609)", {
 
 
 test_that("temporal() reads a single-component field (#609)", {
-  skip_if_fast()
+  skip_on_cran()
   set.seed(7)
   d <- data.frame(t = 1:30, x = rnorm(30))
   d$y <- rpois(30, exp(0.5 + 0.3 * d$x))
@@ -156,7 +156,7 @@ test_that("temporal() reads a single-component field (#609)", {
 
 
 test_that("temporal() reads a nested-Laplace fit's field as a grid mixture (gcol33/tulpa#799)", {
-  skip_if_fast()
+  skip_on_cran()
   set.seed(3)
   d <- data.frame(tidx = rep(1:40, each = 4L), x = rnorm(160))
   d$y <- rpois(160, exp(0.3 + 0.5 * d$x))
@@ -188,7 +188,7 @@ test_that("temporal() reads a nested-Laplace fit's field as a grid mixture (gcol
 
 
 test_that("temporal() reads a latent(temporal_ar2()) fit (gcol33/tulpa#799)", {
-  skip_if_fast()
+  skip_on_cran()
   set.seed(3)
   d <- data.frame(tidx = rep(1:40, each = 4L), x = rnorm(160))
   d$y <- rpois(160, exp(0.3 + 0.5 * d$x))
@@ -209,7 +209,7 @@ test_that("temporal() reads a latent(temporal_ar2()) fit (gcol33/tulpa#799)", {
 
 
 test_that("the accessors refuse a fit that carries no such field", {
-  skip_if_fast()
+  skip_on_cran()
   plain <- plain_fixture()
   expect_error(svc(plain), "spatially-varying")
   expect_error(tvc(plain), "temporally-varying")

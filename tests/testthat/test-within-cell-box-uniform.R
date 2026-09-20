@@ -211,6 +211,7 @@ test_that("a bounded axis's boxes stay inside its support", {
 })
 
 test_that("the interior bisector is byte-identical to the sum form it replaced", {
+  skip_on_cran()
   # gcol33/tulpa#378 changed HOW the interior midpoint is formed, and the whole
   # claim is that it changes no number any axis actually carries. `a / 2 + b / 2`
   # and `(a + b) / 2` are not the same expression -- the first rounds twice --

@@ -126,7 +126,7 @@ test_that("a sampler fit reads the zero-inflation block from the engine layout",
 })
 
 test_that("the pointwise log-likelihood of a zero-inflated fit is the mixture density", {
-  skip_if_fast()
+  skip_on_cran()
   d <- zi_predict_data()
   fit <- tulpa(y ~ x, d, family = "poisson", mode = "laplace", ziformula = ~ z)
   ll <- tulpa:::.tulpa_pointwise_loglik(fit)

@@ -40,13 +40,10 @@
 # The closed form                                                             #
 # --------------------------------------------------------------------------- #
 
-test_that("the barycentre is the box's own first moment, on either sign of a", {
-  # Unequal half-widths on both sides, since a cell's Voronoi box need not be
-  # symmetric, and curvatures spanning concave / flat / convex, since the first
-  # moment over a BOUNDED box is finite at either sign.
-  gr <- expand.grid(g = c(0, 0.25, 1, 2, 4.44, -3, 10, -8),
-                    a = c(-2, -0.5, -0.05, 0, 0.05, 0.5, 1, 3, 20),
-                    h_lo = c(0.25, 1, 2), h_hi = c(0.25, 1, 2))
+# The reading a grid of (gradient, curvature, box) combinations is held to. The
+# CRAN-visible case and the full sweep below both come through here, so the two
+# are one set of assertions over two grids rather than two copies.
+.bary_check_grid <- function(gr) {
   e_int <- numeric(nrow(gr)); e_sim <- numeric(nrow(gr))
   route <- character(nrow(gr)); inbox <- logical(nrow(gr))
   for (i in seq_len(nrow(gr))) {
@@ -88,6 +85,26 @@ test_that("the barycentre is the box's own first moment, on either sign of a", {
   # is a convex combination of points in the box and cannot leave it. The
   # assertion is on the arithmetic, not on the integral.
   expect_true(all(inbox))
+  invisible(gr)
+}
+
+test_that("the barycentre is the box's own first moment, on either sign of a", {
+  # Both routes, both signs of the curvature, and half-widths unequal on the two
+  # sides, since a cell's Voronoi box need not be symmetric. `g = -8, a = 0.05`
+  # on the narrow box is the far-tail case the closed form hands to quadrature,
+  # so the route split is exercised here and not only in the sweep below.
+  .bary_check_grid(expand.grid(g = c(0, 4.44, -8), a = c(-2, 0, 0.05, 3),
+                               h_lo = c(0.25, 2), h_hi = c(0.25, 2)))
+})
+
+test_that("the barycentre holds over the full curvature and box grid", {
+  skip_on_cran()
+  # The same assertions over 648 combinations: curvatures from concave through
+  # flat to strongly convex, gradients out to the far tail, and every pairing of
+  # the three half-widths.
+  .bary_check_grid(expand.grid(g = c(0, 0.25, 1, 2, 4.44, -3, 10, -8),
+                               a = c(-2, -0.5, -0.05, 0, 0.05, 0.5, 1, 3, 20),
+                               h_lo = c(0.25, 1, 2), h_hi = c(0.25, 1, 2)))
 })
 
 test_that("a symmetric cell with no gradient keeps its own coordinate", {

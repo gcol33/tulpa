@@ -44,6 +44,7 @@ test_that("every registered family has a case in the cross-check", {
 })
 
 test_that("the R family registry agrees with the compiled kernels", {
+  skip_on_cran()
   for (fam in family_names()) {
     cs <- .registry_cases[[fam]]
     # R-side phi is the residual VARIANCE for gaussian / lognormal and the SD
@@ -65,6 +66,7 @@ test_that("the R family registry agrees with the compiled kernels", {
 })
 
 test_that("the R working weight is the one the compiled Hessian carries", {
+  skip_on_cran()
   # Two curvatures exist per family and the compiled dispatch picks one:
   # cpp_family_working_weight_is_observed() reports which. Where it says
   # observed, the registry's y-free `weight` is a DIFFERENT function and only

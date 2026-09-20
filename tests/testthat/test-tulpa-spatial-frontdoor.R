@@ -247,6 +247,7 @@ test_that("mode = nested_laplace integrates an areal field through tulpa()", {
 })
 
 test_that("the nested spatial route is numerically identical to a direct call", {
+  skip_on_cran()
   s <- sim_areal_binomial(reps = 3L)
   via <- tulpa(
     y ~ x + spatial(region), data = s$data, family = "binomial",

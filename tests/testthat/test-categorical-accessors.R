@@ -13,7 +13,7 @@ cat_data <- function(n = 240, seed = 1) {
 }
 
 test_that("multinomial fitted / residuals / predict read the softmax by hand", {
-  skip_if_fast()
+  skip_on_cran()
   d <- cat_data()
   fit <- tulpa(ycat ~ x, d, family = "multinomial")
   expect_identical(nobs(fit), nrow(d))
@@ -46,7 +46,7 @@ test_that("multinomial fitted / residuals / predict read the softmax by hand", {
 })
 
 test_that("ordinal fitted / residuals / predict read the cumulative logit by hand", {
-  skip_if_fast()
+  skip_on_cran()
   d <- cat_data()
   fit <- tulpa(yord ~ x, d, family = "ordinal")
   expect_identical(nobs(fit), nrow(d))
@@ -64,7 +64,7 @@ test_that("ordinal fitted / residuals / predict read the cumulative logit by han
 })
 
 test_that("categorical replicates are class draws, simulated as factors", {
-  skip_if_fast()
+  skip_on_cran()
   d <- cat_data()
   for (fam in c("multinomial", "ordinal")) {
     f <- if (fam == "multinomial") ycat ~ x else yord ~ x
@@ -89,7 +89,7 @@ test_that("categorical replicates are class draws, simulated as factors", {
 })
 
 test_that("criteria on categorical fits score the log probability of each observed class", {
-  skip_if_fast()
+  skip_on_cran()
   skip_if_not_installed("loo")
   d <- cat_data()
   for (fam in c("multinomial", "ordinal")) {
@@ -126,7 +126,7 @@ test_that("criteria on categorical fits score the log probability of each observ
 })
 
 test_that("a joint fit records its observations and refuses by class", {
-  skip_if_fast()
+  skip_on_cran()
   S <- 16L
   adj <- matrix(0L, S, S)
   for (i in seq_len(S - 1L)) adj[i, i + 1L] <- adj[i + 1L, i] <- 1L
@@ -154,7 +154,7 @@ test_that("a joint fit records its observations and refuses by class", {
 })
 
 test_that("simulate() carries the stats::simulate seed attribute", {
-  skip_if_fast()
+  skip_on_cran()
   set.seed(2)
   d <- data.frame(x = stats::rnorm(80))
   d$y <- stats::rpois(80, exp(0.3 + 0.4 * d$x))
@@ -174,7 +174,7 @@ test_that("simulate() carries the stats::simulate seed attribute", {
 })
 
 test_that("bayes_R2() and test_dispersion() refuse a categorical fit with the same message", {
-  skip_if_fast()
+  skip_on_cran()
   d <- cat_data()
   fit_m <- tulpa(ycat ~ x, d, family = "multinomial")
   fit_o <- tulpa(yord ~ x, d, family = "ordinal")
@@ -187,7 +187,7 @@ test_that("bayes_R2() and test_dispersion() refuse a categorical fit with the sa
 })
 
 test_that("pp_check() on a categorical fit plots class-replicate bars instead of erroring", {
-  skip_if_fast()
+  skip_on_cran()
   skip_if_not_installed("bayesplot")
   d <- cat_data()
   fit_m <- tulpa(ycat ~ x, d, family = "multinomial")

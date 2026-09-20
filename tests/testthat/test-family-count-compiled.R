@@ -129,6 +129,7 @@ test_that("the observed curvature the ZI mixture reads is positive", {
 
 
 test_that("the compiled path recovers each family's generating parameters", {
+  skip_on_cran()
   specs <- list(
     list(fam = "neg_binomial_1",           beta = c(1.4, 0.5), phi = 2),
     list(fam = "truncated_poisson",        beta = c(0.7, 0.4), phi = 1),

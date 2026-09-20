@@ -109,6 +109,7 @@ test_that("the AR1 rho gradient stays finite at the stationarity boundary", {
 # gradient together here, and a gradient that dropped the augmentation's
 # constant, or normalized at the unaugmented rank, fails on that arm alone.
 test_that("each multiscale value function is differentiated by its own gradient", {
+  skip_on_cran()
   set.seed(23)
   rho <- 0.6
   val <- function(field, w, sigma2, aug) {

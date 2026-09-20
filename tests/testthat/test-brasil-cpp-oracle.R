@@ -14,6 +14,7 @@
 # the roots up to order), so the comparison sorts the roots.
 
 test_that("the compiled rational roots match the R oracle", {
+  skip_on_cran()
   for (order in 1:4) {
     for (beta in c(0.375, 0.625, 0.875, 1.25, 1.75)) {
       for (s in c(0.4, 0.1, 0.01, 1e-3)) {
@@ -50,6 +51,7 @@ test_that("the compiled search equioscillates to its tolerance", {
 })
 
 test_that("the approximation the port defines is the R oracle's function", {
+  skip_on_cran()
   # Roots and weights carry invariances; the approximating FUNCTION does not.
   # This reads both implementations at the same points.
   for (s in c(0.3, 0.02)) {

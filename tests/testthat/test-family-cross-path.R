@@ -95,6 +95,7 @@ test_that("neg_binomial_2: every kernel agrees, and phi is the size everywhere",
 })
 
 test_that("binomial: every kernel agrees and keeps the lchoose normalizer", {
+  skip_on_cran()
   for (n in c(1L, 5L, 20L)) {
     for (y in unique(c(0L, 1L, n %/% 2L, n))) {
       for (eta in c(-2.0, -0.3, 0.0, 1.1)) {

@@ -217,6 +217,7 @@ test_that("multi-block (BYM2 + AR1 + IID) recovers hyperparameters", {
 # Cheap smoke test that runs by default. Single seed, single fit, just check
 # the dispatch wiring and structural recovery (signs / orders of magnitude).
 test_that("multi-block (BYM2 + AR1 + IID) runs end-to-end and roughly recovers", {
+  skip_on_cran()
   d <- sim_one_seed(1001L)
   res <- fit_one_seed(d)
   expect_s3_class(res, "tulpa_nested_laplace")

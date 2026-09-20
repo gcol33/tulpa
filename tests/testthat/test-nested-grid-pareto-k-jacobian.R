@@ -64,6 +64,7 @@ test_that(".nested_grid_pareto_k target carries no change-of-variables Jacobian"
 })
 
 test_that("joint outer Pareto-k target carries no log-axis Jacobian (#221)", {
+  skip_on_cran()
   # Same fix on the joint path (.joint_pareto_inv). Ground truth is
   # target-agnostic: PSIS the grid-node importance ratios log(w_k) - log q(u_k)
   # for a geometric log axis (w_k proportional to p(u_k), so this is the true

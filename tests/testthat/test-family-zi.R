@@ -24,6 +24,18 @@ grid_eta <- c(-1, 0, 1.5)
 grid_z   <- c(-1.5, 0, 0.8)
 grid_phi <- c(0.5, 2, 8)
 
+# Every identity below reads the same (eta, z, phi) grid, and summing a
+# heavy-tailed mixture out to ymax is what it costs. The identities are tier 1,
+# so CRAN keeps all of them and reads them at the corners: the two signs of each
+# predictor against the heaviest and lightest tail, which is where a wrong
+# mixture constant or a dropped cross term shows first. ymax is untouched --
+# the tail mass is the check.
+if (cran_fixture()) {
+  grid_eta <- c(-1, 1.5)
+  grid_z   <- c(-1.5, 0.8)
+  grid_phi <- c(0.5, 8)
+}
+
 untruncated <- c("poisson", "neg_binomial_2", "neg_binomial_1")
 truncated   <- c("truncated_poisson", "truncated_neg_binomial_2")
 

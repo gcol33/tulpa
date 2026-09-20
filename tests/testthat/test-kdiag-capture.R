@@ -151,6 +151,7 @@ test_that("repeated scoring passes leave the aperture untouched", {
 # --- joint backend ----------------------------------------------------------
 
 test_that("the joint driver publishes the SELECTED proposal's ratios", {
+  skip_on_cran()
     # Heavy-tailed target: the grid-moment pass reads above the usable band, so
     # the moment-matching loop runs a second pass which scores WORSE and loses.
     # Pre-#356 that losing pass was the last thing written to the aperture.
@@ -170,6 +171,7 @@ test_that("the joint driver publishes the SELECTED proposal's ratios", {
 })
 
 test_that("the joint driver publishes a moment-matched proposal's ratios", {
+  skip_on_cran()
     # A skewed target the refinement loop DOES improve on: the reported k-hat
     # comes from a later pass than the first. Same aperture contract.
     res   <- .kcap_joint_res(sd_w = 1.0)
@@ -200,6 +202,7 @@ test_that("a declining joint fit publishes nothing rather than stale ratios", {
 })
 
 test_that("per-arm scoring does not overwrite the joint fit's own ratios", {
+  skip_on_cran()
     # The per-arm k-hats are scored AFTER the joint k and are reported on their
     # own fields; the aperture belongs to `pareto_k`, so those passes publish
     # nothing.

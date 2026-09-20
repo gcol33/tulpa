@@ -92,8 +92,15 @@ test_that("the SVC transform's Jacobian closes the change of variables", {
     determinant(J, logarithm = TRUE)$modulus[[1]]
   }
 
-  grid <- expand.grid(sigma2 = c(0.3, 1.0, 4.0), phi = c(0.1, 0.4, 1.5),
-                      cov_type = 0:1)
+  # The constant is asserted to be one number across the whole grid, so what the
+  # grid has to carry is both kernels and the range of each hyperparameter. CRAN
+  # reads the corners; the dev loop fills in the interior points.
+  grid <- if (cran_fixture()) {
+    expand.grid(sigma2 = c(0.3, 4.0), phi = c(0.1, 1.5), cov_type = 0:1)
+  } else {
+    expand.grid(sigma2 = c(0.3, 1.0, 4.0), phi = c(0.1, 0.4, 1.5),
+                cov_type = 0:1)
+  }
   const <- vapply(seq_len(nrow(grid)), function(i) {
     p <- grid[i, ]
     svc_eq_g(d, z, p$sigma2, p$phi, p$cov_type) +

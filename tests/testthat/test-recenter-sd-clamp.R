@@ -47,6 +47,7 @@ test_that("the clamp reports which bound it hit, and the SD it measured", {
 })
 
 test_that("the clamp policy lays exactly the axis the pre-#387 formula did", {
+  skip_on_cran()
     # `"clamp"` IS `min(max(sd, lo), hi)`, so the arm the measurement compared
     # against is the pre-#387 engine exactly. (It is no longer the DEFAULT --
     # see the ceiling block below -- but it remains what a fit gets on the

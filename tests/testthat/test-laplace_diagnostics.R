@@ -84,6 +84,7 @@
 # --------------------------------------------------------------------------- #
 
 test_that("reliability k-hat is small when the proposal covers the target (good case)", {
+  skip_on_cran()
   set.seed(101)
   # The reliability headline reads the outer PSIS k-hat of
   # log p_target(theta) - log q_proposal(theta). A Gaussian target covered by a
@@ -107,6 +108,7 @@ test_that("reliability k-hat is small when the proposal covers the target (good 
 })
 
 test_that("reliability k-hat is large when the target is heavier than the proposal (bad case)", {
+  skip_on_cran()
   set.seed(203)
   # The grid proposal is concentrated (sd 0.5 on the log scale) but the target
   # is a wide Gaussian (sd 3): the proposal cannot cover the target's spread, so
@@ -135,6 +137,7 @@ test_that("reliability k-hat is large when the target is heavier than the propos
 # --------------------------------------------------------------------------- #
 
 test_that("a pinned (zero-variance) axis yields the same finite k-hat as the varying-axis fit", {
+  skip_on_cran()
   set.seed(101)
   sg <- exp(seq(-3, 3, length.out = 41))
   refit_cover <- function(tm) { u <- log(tm[, "sigma"]); -0.5 * (u / 0.8)^2 - u }

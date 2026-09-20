@@ -288,6 +288,7 @@ test_that("the grid-mixture proposal beats the single Gaussian on a skewed grid"
 })
 
 test_that("a grid-width deficiency stays unreliable: the reported k is never the moment-matched Gaussian (gcol33/tulpa#130)", {
+  skip_on_cran()
     # The dispatcher's load-bearing #130 invariant, pinned DIRECTLY rather than
     # only via expect_gte(pareto_k, 0.7). Construction: a spread grid (-3..3, 61
     # cells) whose integration weights are a NARROW Gaussian (sd 0.5 in log-sigma)

@@ -34,6 +34,7 @@
 }
 
 test_that("cpp_tulpa_psis reproduces the R PSIS core (k, is_ess, log-weights)", {
+  skip_on_cran()
   set.seed(61)
   wk <- wi <- ww <- 0
   for (rep in 1:150) {

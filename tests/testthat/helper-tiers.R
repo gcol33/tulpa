@@ -46,6 +46,13 @@
 # exercises them. Fast mode rides the tier-2 / tier-3 gates, so a new fit placed
 # behind skip_on_cran() / skip_if_not_slow() is collapsed by TULPA_FAST=1 with no
 # extra wiring.
+#
+# A tier-1 block is sub-second, and a structural identity swept over a large
+# parameter grid is not. That is a fixture size rather than a tier: size the grid
+# through cran_fixture() (below) instead of gating the block, so CRAN keeps
+# reading the identity on a small grid and the dev loop keeps sweeping the whole
+# one. Reach for a tier gate only when the block's cost is a fit or an
+# equivalence, which are tier 2 whatever the grid.
 
 # Fast smoke gate. Set TULPA_FAST=1 to keep only the ungated tier-1 structural
 # tests; everything that fits a model or samples a chain skips.
@@ -77,12 +84,28 @@ skip_on_cran <- function() {
   testthat::skip_on_cran()
 }
 
+# Tier-1 fixture size. A structural identity read over a grid of parameter
+# combinations -- a closed form against quadrature, a score against finite
+# differences, a normalizer summed over its support -- is tier 1 by nature, and
+# what makes it cost seconds rather than milliseconds is the size of the grid,
+# not the kind of work. Such a block reads the small grid where TRUE and the
+# full one otherwise, so the identity is checked everywhere and the dev loop
+# still sweeps every combination. Keyed on the same NOT_CRAN the tier-2 gate
+# reads, so one environment decides both.
+#
+# This is the remedy for an oversized tier-1 block. A block whose cost is a FIT
+# or an EQUIVALENCE takes a tier gate instead -- shrinking those would leave
+# CRAN running a weaker version of a check that belongs to tier 2.
+cran_fixture <- function() {
+  !identical(Sys.getenv("NOT_CRAN"), "true")
+}
+
 # Publish the gates into the global environment. This is what makes the
 # skip_on_cran() above take precedence over the identically named testthat
 # builtin when a test file calls it bare: globalenv is searched ahead of the
 # attached testthat package, whereas a helper-scoped binding is not. Mirrors the
 # namespace-aliasing in helper-internal.R.
-for (.nm in c("skip_if_fast", "skip_if_not_slow", "skip_on_cran")) {
+for (.nm in c("skip_if_fast", "skip_if_not_slow", "skip_on_cran", "cran_fixture")) {
   assign(.nm, get(.nm), envir = globalenv())
 }
 rm(.nm)

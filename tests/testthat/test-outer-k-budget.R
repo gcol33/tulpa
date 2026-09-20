@@ -116,6 +116,7 @@ test_that("away from the default the tail FRACTION is held, not the rule", {
 })
 
 test_that("the held fraction is what makes the budget a precision knob", {
+  skip_on_cran()
     # The measurement of gcol33/tulpa#631, re-read through the shipped helper
     # rather than through a hand-passed tail size: the same heavy-tailed target,
     # the same draws, scored under the automatic rule and under the resolved
