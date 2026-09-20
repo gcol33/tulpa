@@ -303,9 +303,12 @@ test_that("coupling the axes inside a cell cannot move any axis's marginal", {
   fit <- hd_two_axis()
   set.seed(853)
   # Allocated by WEIGHT, so the draws are the fit's own mixture and their
-  # quantiles are comparable to the interval it reports.
+  # quantiles are comparable to the interval it reports. The identity is
+  # structural and the draw count is only Monte Carlo error on it, so CRAN
+  # reads it at a size that stays sub-second.
+  n_draw <- if (cran_fixture()) 4e4L else 4e5L
   cells <- tulpa:::.nl_mixture_cells(fit$weights, seq_along(fit$weights),
-                                     4e5L)$row_cells
+                                     n_draw)$row_cells
   th <- tulpa_hyper_draws(fit, cells = cells)
 
   u <- stats::runif(length(cells))          # ONE uniform, shared by both axes
