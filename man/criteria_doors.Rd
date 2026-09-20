@@ -45,6 +45,12 @@ a fitted model object a method is registered for, such as a \code{tulpa_fit}.}
 \code{group}, \code{chunk_size}). For \code{waic()} and \code{loo()}, passed to \pkg{loo}'s
 matrix methods (e.g. \code{cores}, \code{save_psis}).}
 
+\item{ndraws}{Number of posterior draws the matrix is evaluated at. Defaults
+to all stored draws, or 400 on the draw-free Laplace tier; a smaller
+number subsamples the stored ones. Read by the \code{tulpa_fit} method of
+\code{pointwise_loglik()}, which is the door the criteria below reach the
+matrix through.}
+
 \item{loglik_at_mean}{Length-\code{n_obs} vector of pointwise log-likelihoods at
 the posterior mean of the parameters. Required for DIC's plug-in deviance;
 without it the DIC fields are \code{NA}.}

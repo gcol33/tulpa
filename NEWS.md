@@ -1,3 +1,11 @@
+# tulpa 0.5.1
+
+* **`pointwise_loglik()`'s `ndraws` is documented.** Its `tulpa_fit` method
+  takes the argument and the shared Rd page did not describe it, which is an
+  `R CMD check` WARNING ("Undocumented arguments in Rd file
+  'criteria_doors.Rd'"), found running the check for 0.5.0 with the reference
+  manual built.
+
 # tulpa 0.5.0
 
 ## The batched joint driver returned 15 of the 17 fields it promises

@@ -472,6 +472,11 @@ tulpa_pit <- function(cdf, cdf_lower = NULL, jitter = TRUE, log_lik = NULL,
 #' @param loglik_at_mean Length-`n_obs` vector of pointwise log-likelihoods at
 #'   the posterior mean of the parameters. Required for DIC's plug-in deviance;
 #'   without it the DIC fields are `NA`.
+#' @param ndraws Number of posterior draws the matrix is evaluated at. Defaults
+#'   to all stored draws, or 400 on the draw-free Laplace tier; a smaller
+#'   number subsamples the stored ones. Read by the `tulpa_fit` method of
+#'   `pointwise_loglik()`, which is the door the criteria below reach the
+#'   matrix through.
 #' @param ... For `dic()` and `cpo()`, passed to [tulpa_criteria()] (e.g.
 #'   `group`, `chunk_size`). For `waic()` and `loo()`, passed to \pkg{loo}'s
 #'   matrix methods (e.g. `cores`, `save_psis`).
