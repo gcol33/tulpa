@@ -890,10 +890,16 @@ but the caller's pinned \code{prior_sigma} held that prior back.
 recenter did not run: \code{"grid_not_collapsed"} (the grid already brackets
 the mode -- the common case, no refit needed), \code{"axis_pinned"} (the
 caller pinned \code{sigma_grid}; mark it with \code{\link[=auto_grid]{auto_grid()}} if it is a
-default rather than a choice), or \code{"no_usable_curvature"} (the
-mode-Hessian the recenter needs was unavailable or degenerate, e.g. a
-car_proper grid whose \code{rho_car} axis has unguessable support). Absent
-when the fit WAS recentred.
+default rather than a choice), \code{"default_axis_pinned"} (a wrapper
+package declared the nodes with \code{auto_grid(place = FALSE)} and asked
+for them as written -- nothing you pinned), or \code{"no_usable_curvature"}
+(the mode-Hessian the recenter needs was unavailable or degenerate,
+e.g. a car_proper grid whose \code{rho_car} axis has unguessable support).
+Absent when the fit WAS recentred. A joint fit's field SD and its
+per-arm dispersion are placed by different passes over the same grid,
+and this slot reduces over them rather than holding the last to speak:
+an axis held because it was declared does not stand as the fit's answer
+while a pass with a movable axis has one.
 \item \code{outer_grid_axis_declined} -- the same question PER AXIS, as a named
 character vector. The slot above holds one reason for the whole fit and
 is written only while the fit is unplaced, so on a fit where one axis

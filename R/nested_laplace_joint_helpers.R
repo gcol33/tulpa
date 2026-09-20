@@ -343,8 +343,10 @@
         # wrapper package declaring these nodes a default of its own rather than
         # a user's choice -- is read off the value before it is coerced and
         # carried on the resolved axis, where the refinement provenance rule
-        # reads it.
-        gr_auto <- is_auto_grid(gr)
+        # reads it. A declaration asking for the nodes AS WRITTEN
+        # (`auto_grid(place = FALSE)`) is a statement about where the fit
+        # integrates like a pin is, so refinement treats it as one.
+        gr_auto <- is_auto_grid(gr) && auto_grid_place(gr)
         if (!is.null(gr)) {
             gr <- as.numeric(gr)
             if (length(gr) == 0L || any(!is.finite(gr)) || any(gr < 0)) {
@@ -521,12 +523,14 @@
 # resolves it more finely and does not leave it; an axis the engine placed
 # carries no such statement. Three things count as engine-placed, matching the
 # provenance vocabulary the recentring pass already uses
-# (`.nl_axis_is_pinned()`): no nodes given at all (the copy axis resolved from
+# (`.nl_axis_hold()`): no nodes given at all (the copy axis resolved from
 # `alpha_n`, or from the engine default), nodes marked with `auto_grid()` by a
 # wrapper package that computed a default of its own, and nodes that ARE the
-# engine's own default axis, which carry nothing a statement would add.
+# engine's own default axis, which carry nothing a statement would add. A
+# package default marked `auto_grid(place = FALSE)` is NOT among them: asking
+# for the nodes as written is the statement, whoever made it.
 .joint_axis_is_stated <- function(axis, arms, phi_grid = NULL,
-                                  arm_names = NULL) {
+                                  arm_names = NULL, phi_auto = NULL) {
     if (identical(axis, "alpha")) {
         for (a in arms) {
             fc <- a$field_coef_axis
@@ -539,9 +543,15 @@
         return(FALSE)
     }
     if (startsWith(axis, "phi_")) {
-        v <- .joint_phi_grid_entry(phi_grid, sub("^phi_", "", axis), arm_names)
+        arm <- sub("^phi_", "", axis)
+        v <- .joint_phi_grid_entry(phi_grid, arm, arm_names)
         if (is.null(v) || length(v) < 2L) return(FALSE)
-        return(!is_auto_grid(v))
+        # The front door's record first: it is taken before the markers are
+        # stripped, so it is the only reading available once they are gone. A
+        # caller reaching this with the marked value itself is read off the
+        # value.
+        if (!is.null(phi_auto)) return(!is.null(.nl_phi_axis_hold(arm, phi_auto)))
+        return(!is_auto_grid(v) || !auto_grid_place(v))
     }
     FALSE
 }
@@ -551,12 +561,14 @@
 # default; everything else takes "none". `user` -- the caller's
 # `control$axis_refine`, already validated -- overrides per axis.
 .joint_axis_refine_modes <- function(grids, cp, arms, phi_grid = NULL,
-                                     arm_names = NULL, user = NULL) {
+                                     arm_names = NULL, user = NULL,
+                                     phi_auto = NULL) {
     axes <- .joint_spec_axis_names(grids, cp)
     out  <- stats::setNames(rep("none", length(axes)), axes)
     for (a in axes) {
         if (!.joint_axis_refine_eligible(a)) next
-        out[[a]] <- if (.joint_axis_is_stated(a, arms, phi_grid, arm_names))
+        out[[a]] <- if (.joint_axis_is_stated(a, arms, phi_grid, arm_names,
+                                              phi_auto))
             .nl_axis_refine("stated") else .nl_axis_refine("placed")
     }
     if (!is.null(user)) {

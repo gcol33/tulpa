@@ -15,7 +15,7 @@
 test_that("phi provenance reads auto_grid() marks by arm and strips them", {
     named <- list(pos = auto_grid(c(1, 2, 4)), occ = c(0.5, 1))
     p <- .nl_phi_provenance(named, c("occ", "pos"))
-    expect_identical(p$auto, "pos")
+    expect_identical(p$auto, c(pos = TRUE))
     expect_false(is_auto_grid(p$phi_grid$pos))
     expect_identical(as.numeric(p$phi_grid$pos), c(1, 2, 4))
     expect_identical(as.numeric(p$phi_grid$occ), c(0.5, 1))
@@ -24,22 +24,126 @@ test_that("phi provenance reads auto_grid() marks by arm and strips them", {
     # either way.
     pos <- .nl_phi_provenance(list(NULL, auto_grid(c(1, 2, 4))),
                               c("occ", "pos"))
-    expect_identical(pos$auto, "pos")
+    expect_identical(pos$auto, c(pos = TRUE))
     # `attr<-`(NULL, ...) DELETES a list element, which would renumber every
     # arm after it -- a NULL entry has to survive the strip untouched.
     expect_length(pos$phi_grid, 2L)
     expect_null(pos$phi_grid[[1L]])
 
-    expect_identical(.nl_phi_provenance(NULL, "pos")$auto, character(0))
+    expect_identical(.nl_phi_provenance(NULL, "pos")$auto, logical(0))
+
+    # A declaration asking for its nodes as written carries both halves.
+    held <- .nl_phi_provenance(list(pos = auto_grid(c(1, 2, 4), place = FALSE)),
+                               "pos")
+    expect_identical(held$auto, c(pos = FALSE))
+    expect_null(attributes(held$phi_grid$pos))
 })
 
 test_that("a dispersion axis is a pin unless the caller marked it", {
-    # `.nl_axis_is_pinned()`'s "equal to the engine's own default" branch has no
+    # `.nl_axis_hold()`'s "equal to the engine's own default" branch has no
     # counterpart: the engine has no default dispersion axis, so every axis that
     # exists was written by a caller and only the marker separates the two.
-    expect_false(.nl_phi_axis_is_pinned("pos", "pos"))
-    expect_true(.nl_phi_axis_is_pinned("pos", character(0)))
-    expect_true(.nl_phi_axis_is_pinned("pos", "occ"))
+    expect_null(.nl_phi_axis_hold("pos", c(pos = TRUE)))
+    expect_identical(.nl_phi_axis_hold("pos", logical(0)), "axis_pinned")
+    expect_identical(.nl_phi_axis_hold("pos", c(occ = TRUE)), "axis_pinned")
+    # Declared by the package that built the fit, and asked for as written: the
+    # pass leaves it either way, and the fit says which it was.
+    expect_identical(.nl_phi_axis_hold("pos", c(pos = FALSE)),
+                     "default_axis_pinned")
+})
+
+# gcol33/tulpaObs#361. A joint fit's field SD and its per-arm dispersion are
+# placed by two passes over one grid, so the whole-fit slot had two writers and
+# kept the second: a fit whose DEFAULTED sigma axis simply needed no placement
+# came back saying the caller had pinned an axis.
+test_that("a held dispersion axis does not speak for the whole fit", {
+    res <- list(theta_grid = matrix(
+        0, 2, 2, dimnames = list(NULL, c("sigma", "phi_pos"))),
+        outer_grid_placement = "fixed")
+    # What the field-SD pass said first, on an axis it could have moved.
+    res <- .nl_decline_axis(res, "sigma", "grid_not_collapsed")
+    res <- .nl_decline_recenter(res, "grid_not_collapsed")
+
+    out <- .joint_phi_grid_rescue(res, list(pos = c(1, 2, 4)),
+                                  refit = function(pg) stop("no refit"),
+                                  auto = logical(0))
+    expect_identical(out$res$outer_grid_axis_declined[["phi_pos"]],
+                     "axis_pinned")
+    expect_identical(out$res$outer_grid_recenter_declined, "grid_not_collapsed")
+
+    # With nothing else on the fit, the held axis IS the fit's answer, and says
+    # whose declaration held it.
+    bare <- list(theta_grid = res$theta_grid, outer_grid_placement = "fixed")
+    pin <- .joint_phi_grid_rescue(bare, list(pos = c(1, 2, 4)),
+                                  refit = function(pg) stop("no refit"),
+                                  auto = logical(0))
+    expect_identical(pin$res$outer_grid_recenter_declined, "axis_pinned")
+    dflt <- .joint_phi_grid_rescue(bare, list(pos = c(1, 2, 4)),
+                                   refit = function(pg) stop("no refit"),
+                                   auto = c(pos = FALSE))
+    expect_identical(dflt$res$outer_grid_recenter_declined,
+                     "default_axis_pinned")
+    expect_identical(dflt$res$outer_grid_axis_declined[["phi_pos"]],
+                     "default_axis_pinned")
+})
+
+test_that("the whole-fit decline reduces over the passes that wrote it", {
+    fixed <- list(outer_grid_placement = "fixed")
+    weak_then_strong <- .nl_decline_recenter(
+        .nl_decline_recenter(fixed, "axis_pinned"), "no_usable_curvature")
+    expect_identical(weak_then_strong$outer_grid_recenter_declined,
+                     "no_usable_curvature")
+    strong_then_weak <- .nl_decline_recenter(
+        .nl_decline_recenter(fixed, "grid_not_collapsed"),
+        "default_axis_pinned")
+    expect_identical(strong_then_weak$outer_grid_recenter_declined,
+                     "grid_not_collapsed")
+    # Two axis-scoped answers still reduce to one, and a user's own pin is the
+    # statement they can act on -- in either order, which is what the field-SD
+    # pass running before the dispersion pass makes a live question.
+    expect_identical(
+        .nl_decline_recenter(.nl_decline_recenter(fixed, "default_axis_pinned"),
+                             "axis_pinned")$outer_grid_recenter_declined,
+        "axis_pinned")
+    expect_identical(
+        .nl_decline_recenter(.nl_decline_recenter(fixed, "axis_pinned"),
+                             "default_axis_pinned")$outer_grid_recenter_declined,
+        "axis_pinned")
+    expect_identical(.nl_reduce_decline(list("default_axis_pinned",
+                                             "axis_pinned")), "axis_pinned")
+    expect_identical(.nl_reduce_decline(list("default_axis_pinned")),
+                     "default_axis_pinned")
+    # A placed fit records no decline at all, whichever pass placed it.
+    placed <- list(outer_grid_placement = "auto_recentered")
+    expect_null(.nl_decline_recenter(placed, "axis_pinned")$outer_grid_recenter_declined)
+})
+
+test_that("a held default axis is refined as a statement, not as a placement", {
+    stated <- function(v) .joint_axis_is_stated(
+        "phi_pos", list(), list(pos = v), "pos")
+    expect_true(stated(c(1, 2, 4)))
+    expect_false(stated(auto_grid(c(1, 2, 4))))
+    expect_true(stated(auto_grid(c(1, 2, 4), place = FALSE)))
+
+    # And off the front door's RECORD, which is the only reading left once the
+    # markers are stripped -- as they are before the first fit. Reading the
+    # stripped grid instead made every dispersion axis "stated" whoever wrote
+    # it, so a declared default was densified where it should be followed out.
+    rec <- function(auto) .joint_axis_is_stated(
+        "phi_pos", list(), list(pos = c(1, 2, 4)), "pos", phi_auto = auto)
+    expect_true(rec(logical(0)))
+    expect_false(rec(c(pos = TRUE)))
+    expect_true(rec(c(pos = FALSE)))
+
+    modes <- function(auto) .joint_axis_refine_modes(
+        list(phi_pos = c(1, 2, 4)), list(has_copy = FALSE), list(),
+        phi_grid = list(pos = c(1, 2, 4)), arm_names = "pos", phi_auto = auto)
+    expect_identical(modes(c(pos = TRUE))[["phi_pos"]],
+                     tulpa:::.nl_axis_refine("placed"))
+    expect_identical(modes(c(pos = FALSE))[["phi_pos"]],
+                     tulpa:::.nl_axis_refine("stated"))
+    expect_identical(modes(logical(0))[["phi_pos"]],
+                     tulpa:::.nl_axis_refine("stated"))
 })
 
 test_that("phi slots are read off the fit's grid, not the argument", {
@@ -158,6 +262,16 @@ test_that("the coarsest axis reports the lever it actually has", {
         list(coarsest = "phi_pos",
              axis_declined = c(phi_pos = "auto_recenter_disabled")))
     expect_match(off, "auto_recenter", fixed = TRUE)
+
+    # An axis the wrapper package declared, not the reader: the lever is that
+    # package's own argument, and telling them to unpin is telling them to undo
+    # something they never did.
+    dflt <- .tulpa_grid_axis_lever(
+        list(coarsest = "phi_pos",
+             axis_declined = c(phi_pos = "default_axis_pinned")))
+    expect_match(dflt, "DEFAULT", fixed = TRUE)
+    expect_match(dflt, "auto_grid", fixed = TRUE)
+    expect_false(grepl("PINNED", dflt, fixed = TRUE))
 
     # An axis the placement pass never spoke about keeps the generic advice.
     expect_null(.tulpa_grid_axis_lever(

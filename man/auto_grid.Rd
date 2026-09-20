@@ -4,11 +4,15 @@
 \alias{auto_grid}
 \title{Mark an outer-grid setting as a default rather than a pin}
 \usage{
-auto_grid(x)
+auto_grid(x, place = TRUE)
 }
 \arguments{
 \item{x}{Numeric vector or matrix of grid nodes, a numeric scalar knob, or a
 prior-specification list.}
+
+\item{place}{May the auto-placement pass move this axis onto its own
+posterior? \code{TRUE} (default) declares a default the engine may re-place;
+\code{FALSE} declares one it must integrate as written.}
 }
 \value{
 \code{x} carrying the marker attribute. Numeric input is coerced to
@@ -50,11 +54,33 @@ default of its own to recognise it against.
 The mark is an attribute, so it is dropped by \code{sort()}, \code{[}, \code{c()} and
 \code{as.numeric()}: build the value first, mark it last.
 }
+\section{Declaring a default the engine must integrate as written}{
+
+\code{place = FALSE} separates the two questions the mark otherwise answers at
+once. Provenance -- whose choice these nodes are -- and placement policy --
+whether the pass may move them -- are different questions, and a package that
+measured its own default as the one to integrate has an answer to the second
+that is not "the user pinned it". Such an axis is treated exactly as a pin
+everywhere the engine ACTS on it (the placement pass leaves it, refinement
+densifies within its span rather than following the posterior past the end
+nodes, and no curvature is computed for it), and differs only in what the fit
+REPORTS: \code{"default_axis_pinned"} rather than \code{"axis_pinned"}, so a reader is
+not told they pinned an axis they never wrote down. Leaving the mark off
+instead buys the same integration and says the wrong thing about it.
+
+\code{place} is read wherever the engine would otherwise RE-PLACE the setting: a
+grid axis, and a scalar grid-construction knob. A \code{prior_sigma}
+specification is not re-placed but replaced, by the engine's own
+regularizer, and carries no \code{place}.
+}
+
 \examples{
 prior <- list(type = "icar", sigma_grid = auto_grid(c(0.1, 0.5, 1, 2, 3)))
 is_auto_grid(prior$sigma_grid)
 is_auto_grid(auto_grid(list("pc.prec", c(U = 3, alpha = 0.01))))
+auto_grid_place(auto_grid(c(0.5, 1, 2), place = FALSE))
 }
 \seealso{
-\code{\link[=is_auto_grid]{is_auto_grid()}}, \code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}}, \code{\link[=fit_st_nested]{fit_st_nested()}}
+\code{\link[=is_auto_grid]{is_auto_grid()}}, \code{\link[=auto_grid_place]{auto_grid_place()}},
+\code{\link[=tulpa_nested_laplace_joint]{tulpa_nested_laplace_joint()}}, \code{\link[=fit_st_nested]{fit_st_nested()}}
 }

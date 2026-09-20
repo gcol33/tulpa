@@ -50,7 +50,7 @@ test_that("a marked matrix axis survives every consumer of the mark", {
 
     # (a) the provenance record names the field and hands back a bare matrix.
     prov <- tulpa:::.nl_grid_provenance(blk)
-    expect_identical(prov$auto, "logchol_grid")
+    expect_identical(prov$auto, c(logchol_grid = TRUE))
     expect_true(is.matrix(prov$prior$logchol_grid))
     expect_identical(dim(prov$prior$logchol_grid), dim(lc))
     expect_false(is_auto_grid(prov$prior$logchol_grid))
@@ -124,22 +124,62 @@ test_that("provenance strips markers and records them per block", {
     single <- list(type = "icar", sigma_grid = auto_grid(c(1, 2, 3)),
                    rho_grid = c(0.2, 0.9))
     pv <- tulpa:::.nl_grid_provenance(single)
-    expect_identical(pv$auto, "sigma_grid")
+    expect_identical(pv$auto, c(sigma_grid = TRUE))
     expect_false(is_auto_grid(pv$prior$sigma_grid))
     expect_identical(pv$prior$sigma_grid, c(1, 2, 3))
-    expect_identical(tulpa:::.nl_auto_fields_at(pv$auto), "sigma_grid")
+    expect_identical(tulpa:::.nl_auto_fields_at(pv$auto), c(sigma_grid = TRUE))
 
     multi <- list(list(type = "icar", sigma_grid = auto_grid(c(1, 2))),
                   list(type = "iid",  sigma_grid = c(0.3, 0.6)))
     pvm <- tulpa:::.nl_grid_provenance(multi)
-    expect_identical(pvm$auto[[1L]], "sigma_grid")
-    expect_identical(pvm$auto[[2L]], character(0))
+    expect_identical(pvm$auto[[1L]], c(sigma_grid = TRUE))
+    expect_identical(pvm$auto[[2L]], logical(0))
     expect_false(is_auto_grid(pvm$prior[[1L]]$sigma_grid))
-    expect_identical(tulpa:::.nl_auto_fields_at(pvm$auto, 1L), "sigma_grid")
-    expect_identical(tulpa:::.nl_auto_fields_at(pvm$auto, 2L), character(0))
+    expect_identical(tulpa:::.nl_auto_fields_at(pvm$auto, 1L),
+                     c(sigma_grid = TRUE))
+    expect_identical(tulpa:::.nl_auto_fields_at(pvm$auto, 2L), logical(0))
     # Out-of-range / absent records read as "nothing declared", never an error.
-    expect_identical(tulpa:::.nl_auto_fields_at(pvm$auto, 9L), character(0))
-    expect_identical(tulpa:::.nl_auto_fields_at(NULL, 1L), character(0))
+    expect_identical(tulpa:::.nl_auto_fields_at(pvm$auto, 9L), logical(0))
+    expect_identical(tulpa:::.nl_auto_fields_at(NULL, 1L), logical(0))
+    # A bare character vector of declared fields is the placeable default.
+    expect_identical(tulpa:::.nl_auto_fields_at("sigma_grid"),
+                     c(sigma_grid = TRUE))
+})
+
+# gcol33/tulpaObs#361: PROVENANCE (whose nodes these are) and PLACEMENT POLICY
+# (may the pass move them) are different questions, and a package with its own
+# measured answer to the second had only the user's pin to express it with --
+# which is then what the fit reports back to a user who pinned nothing.
+test_that("a declared default can ask to be integrated as written", {
+    held  <- auto_grid(c(0.5, 1, 2), place = FALSE)
+    place <- auto_grid(c(0.5, 1, 2))
+    expect_true(is_auto_grid(held))
+    expect_false(auto_grid_place(held))
+    expect_true(auto_grid_place(place))
+    # An unmarked value is held because it reads as a pin, not because it asked.
+    expect_true(auto_grid_place(c(0.5, 1, 2)))
+    expect_identical(as.numeric(held), c(0.5, 1, 2))
+    expect_error(auto_grid(c(1, 2), place = NA), "TRUE or FALSE")
+    expect_error(auto_grid(c(1, 2), place = "no"), "TRUE or FALSE")
+
+    # Both halves survive the record, and neither attribute survives the strip.
+    blk <- list(type = "icar", sigma_grid = held)
+    pv  <- tulpa:::.nl_grid_provenance(blk)
+    expect_identical(pv$auto, c(sigma_grid = FALSE))
+    expect_null(attributes(pv$prior$sigma_grid))
+
+    # Three answers, and the engine ACTS the same on the last two.
+    hold <- function(b, auto = logical(0))
+        tulpa:::.nl_axis_hold(b, "sigma_grid", auto, type = ".joint_areal")
+    expect_null(hold(list(type = "icar", sigma_grid = place)))
+    expect_identical(hold(pv$prior, pv$auto), "default_axis_pinned")
+    expect_identical(hold(list(type = "icar", sigma_grid = c(0.3, 0.9, 2))),
+                     "axis_pinned")
+    expect_true(tulpa:::.nl_axis_is_pinned(pv$prior, "sigma_grid", pv$auto,
+                                           type = ".joint_areal"))
+    # Read off the value as well as off the record, since a call site may hold
+    # the axis before the front door strips it.
+    expect_identical(hold(blk), "default_axis_pinned")
 })
 
 test_that("axis aliases cover the bare, block-prefixed and coerced spellings", {

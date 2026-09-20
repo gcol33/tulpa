@@ -10,7 +10,10 @@ is_auto_grid(x)
 \item{x}{Any object.}
 }
 \value{
-\code{TRUE} when \code{x} carries the \code{\link[=auto_grid]{auto_grid()}} marker.
+\code{TRUE} when \code{x} carries the \code{\link[=auto_grid]{auto_grid()}} marker. This is the
+PROVENANCE question -- whose choice the nodes are -- and is \code{TRUE} whether
+or not the mark also asked for them to be integrated as written; that is
+\code{\link[=auto_grid_place]{auto_grid_place()}}.
 }
 \description{
 Is an outer-grid setting marked as a default?
@@ -20,5 +23,5 @@ is_auto_grid(auto_grid(c(0.5, 1, 2)))
 is_auto_grid(c(0.5, 1, 2))
 }
 \seealso{
-\code{\link[=auto_grid]{auto_grid()}}
+\code{\link[=auto_grid]{auto_grid()}}, \code{\link[=auto_grid_place]{auto_grid_place()}}
 }

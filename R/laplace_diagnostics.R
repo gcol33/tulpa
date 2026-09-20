@@ -1323,6 +1323,11 @@
       "exactly where it was declared: mark it with `auto_grid()` (or drop it ",
       "and let the engine place it) to have the pass size it to the posterior ",
       "instead of adding nodes by hand"),
+    default_axis_pinned = paste0(
+      "that axis is a DEFAULT of the package that built this fit, declared to ",
+      "be integrated as written, so the auto-placement pass left it there: ",
+      "state your own nodes for it through that package's argument, wrapped ",
+      "in `auto_grid()`, to have the pass size it to the posterior instead"),
     auto_recenter_disabled = paste0(
       "`control$auto_recenter = FALSE` holds every axis where it was ",
       "declared, this one included"),

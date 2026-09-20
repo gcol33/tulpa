@@ -77,7 +77,7 @@
 .st_knob_is_pinned <- function(control, knob) {
     v <- control[[knob]]
     if (is.null(v)) return(FALSE)
-    if (is_auto_grid(v)) return(FALSE)
+    if (is_auto_grid(v)) return(!auto_grid_place(v))
     if (length(v) != 1L) return(TRUE)
     v <- suppressWarnings(as.numeric(v))
     if (!is.finite(v)) return(TRUE)

@@ -196,19 +196,45 @@
 #' The mark is an attribute, so it is dropped by `sort()`, `[`, `c()` and
 #' `as.numeric()`: build the value first, mark it last.
 #'
+#' @section Declaring a default the engine must integrate as written:
+#' `place = FALSE` separates the two questions the mark otherwise answers at
+#' once. Provenance -- whose choice these nodes are -- and placement policy --
+#' whether the pass may move them -- are different questions, and a package that
+#' measured its own default as the one to integrate has an answer to the second
+#' that is not "the user pinned it". Such an axis is treated exactly as a pin
+#' everywhere the engine ACTS on it (the placement pass leaves it, refinement
+#' densifies within its span rather than following the posterior past the end
+#' nodes, and no curvature is computed for it), and differs only in what the fit
+#' REPORTS: `"default_axis_pinned"` rather than `"axis_pinned"`, so a reader is
+#' not told they pinned an axis they never wrote down. Leaving the mark off
+#' instead buys the same integration and says the wrong thing about it.
+#'
+#' `place` is read wherever the engine would otherwise RE-PLACE the setting: a
+#' grid axis, and a scalar grid-construction knob. A `prior_sigma`
+#' specification is not re-placed but replaced, by the engine's own
+#' regularizer, and carries no `place`.
+#'
 #' @param x Numeric vector or matrix of grid nodes, a numeric scalar knob, or a
 #'   prior-specification list.
+#' @param place May the auto-placement pass move this axis onto its own
+#'   posterior? `TRUE` (default) declares a default the engine may re-place;
+#'   `FALSE` declares one it must integrate as written.
 #' @return `x` carrying the marker attribute. Numeric input is coerced to
 #'   double IN PLACE, so everything else it carries -- `dim()` and `dimnames()`
 #'   above all -- survives the mark; a list is returned unchanged apart from
 #'   the attribute.
-#' @seealso [is_auto_grid()], [tulpa_nested_laplace_joint()], [fit_st_nested()]
+#' @seealso [is_auto_grid()], [auto_grid_place()],
+#'   [tulpa_nested_laplace_joint()], [fit_st_nested()]
 #' @examples
 #' prior <- list(type = "icar", sigma_grid = auto_grid(c(0.1, 0.5, 1, 2, 3)))
 #' is_auto_grid(prior$sigma_grid)
 #' is_auto_grid(auto_grid(list("pc.prec", c(U = 3, alpha = 0.01))))
+#' auto_grid_place(auto_grid(c(0.5, 1, 2), place = FALSE))
 #' @export
-auto_grid <- function(x) {
+auto_grid <- function(x, place = TRUE) {
+    if (!is.logical(place) || length(place) != 1L || is.na(place)) {
+        stop("`auto_grid(place = )` takes TRUE or FALSE.", call. = FALSE)
+    }
     if (is.list(x)) {
         if (!length(x)) {
             stop("`auto_grid()` takes a non-empty prior specification.",
@@ -226,19 +252,44 @@ auto_grid <- function(x) {
         }
     }
     attr(x, "tulpa_auto_grid") <- TRUE
+    # Only the non-default state is carried, so a placeable mark is the byte it
+    # always was and `auto_grid_place()` answers for an unmarked value too.
+    attr(x, "tulpa_auto_place") <- if (place) NULL else FALSE
     x
 }
 
 #' Is an outer-grid setting marked as a default?
 #'
 #' @param x Any object.
-#' @return `TRUE` when `x` carries the [auto_grid()] marker.
-#' @seealso [auto_grid()]
+#' @return `TRUE` when `x` carries the [auto_grid()] marker. This is the
+#'   PROVENANCE question -- whose choice the nodes are -- and is `TRUE` whether
+#'   or not the mark also asked for them to be integrated as written; that is
+#'   [auto_grid_place()].
+#' @seealso [auto_grid()], [auto_grid_place()]
 #' @examples
 #' is_auto_grid(auto_grid(c(0.5, 1, 2)))
 #' is_auto_grid(c(0.5, 1, 2))
 #' @export
 is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
+
+#' May the placement pass move a marked outer-grid axis?
+#'
+#' Reads back what [auto_grid()]'s `place` argument recorded, so a wrapper that
+#' rebuilds a value (`as.numeric()` drops every attribute) can re-apply both
+#' halves of the declaration rather than only the provenance half.
+#'
+#' @param x Any object.
+#' @return `FALSE` when `x` was marked `auto_grid(place = FALSE)`, `TRUE`
+#'   otherwise -- including for a value carrying no mark at all, which the
+#'   engine holds because it reads as a pin rather than because it asked to be
+#'   held.
+#' @seealso [auto_grid()], [is_auto_grid()]
+#' @examples
+#' auto_grid_place(auto_grid(c(0.5, 1, 2)))
+#' auto_grid_place(auto_grid(c(0.5, 1, 2), place = FALSE))
+#' @export
+auto_grid_place <- function(x)
+    !isFALSE(attr(x, "tulpa_auto_place", exact = TRUE))
 
 # Is a supplied `prior_sigma` a PIN? The prior-spec counterpart of
 # `.nl_axis_is_pinned()`. The second recenter attempt exists
@@ -252,15 +303,17 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
     if (is.null(prior_sigma)) return(FALSE)
     if (is_auto_grid(prior_sigma)) return(FALSE)
     d <- .nl_recenter("sigma_pc_prior")
-    p <- prior_sigma
-    attr(p, "tulpa_auto_grid") <- NULL
-    !isTRUE(all.equal(d, p, check.attributes = FALSE))
+    !isTRUE(all.equal(d, .nl_strip_auto(prior_sigma), check.attributes = FALSE))
 }
 
 # Drop the marker so nothing downstream of the rescue sees an attributed
-# object (a prior spec is passed on to `.joint_parse_sigma_prior()`).
+# object (a prior spec is passed on to `.joint_parse_sigma_prior()`). Both
+# halves of the declaration go: `auto_grid()` writes two attributes and a value
+# that kept one of them would still reach `expand.grid()` / `cbind()` / C++
+# attributed.
 .nl_strip_auto <- function(x) {
-    attr(x, "tulpa_auto_grid") <- NULL
+    attr(x, "tulpa_auto_grid")  <- NULL
+    attr(x, "tulpa_auto_place") <- NULL
     x
 }
 
@@ -295,18 +348,23 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
     FALSE
 }
 
-# Names of the grid fields on ONE block that carry the `auto_grid()` marker.
+# The grid fields on ONE block that carry the `auto_grid()` marker, as a NAMED
+# LOGICAL: the names are the declared fields, and each value is whether that
+# declaration also lets the placement pass move the axis
+# (`auto_grid(place = )`). One record carries both halves, so no call site can
+# read the provenance half and miss the policy half.
 .nl_block_auto_fields <- function(block) {
-    if (!is.list(block) || !length(block)) return(character(0))
+    if (!is.list(block) || !length(block)) return(logical(0))
     nm <- names(block) %||% character(0)
-    if (!length(nm)) return(character(0))
-    marked <- vapply(block, is_auto_grid, logical(1))
-    nm[marked & nzchar(nm)]
+    if (!length(nm)) return(logical(0))
+    keep <- vapply(block, is_auto_grid, logical(1)) & nzchar(nm)
+    if (!any(keep)) return(logical(0))
+    stats::setNames(vapply(block[keep], auto_grid_place, logical(1)), nm[keep])
 }
 
 .nl_block_strip_auto <- function(block) {
-    for (f in .nl_block_auto_fields(block)) {
-        attr(block[[f]], "tulpa_auto_grid") <- NULL
+    for (f in names(.nl_block_auto_fields(block))) {
+        block[[f]] <- .nl_strip_auto(block[[f]])
     }
     block
 }
@@ -314,8 +372,8 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 # Record which axes a prior declared as defaults, and hand back the prior with
 # the markers removed, so nothing downstream of the front door ever sees an
 # attributed numeric (grid values reach C++, `expand.grid()` and `cbind()`
-# unchanged). `auto` is a character vector for a single-block prior and a
-# per-block list for a multi-block one -- read it back with
+# unchanged). `auto` is a named logical for a single-block prior and a
+# per-block list of them for a multi-block one -- read it back with
 # `.nl_auto_fields_at()`.
 .nl_grid_provenance <- function(prior) {
     if (.is_multi_block_prior(prior)) {
@@ -323,25 +381,39 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
         prior <- lapply(prior, .nl_block_strip_auto)
         return(list(prior = prior, auto = auto))
     }
-    if (!is.list(prior)) return(list(prior = prior, auto = character(0)))
+    if (!is.list(prior)) return(list(prior = prior, auto = logical(0)))
     list(prior = .nl_block_strip_auto(prior), auto = .nl_block_auto_fields(prior))
 }
 
 .nl_auto_fields_at <- function(auto, block_index = NULL) {
-    if (is.null(auto)) return(character(0))
-    if (is.null(block_index)) {
-        if (is.list(auto)) return(character(0))
-        return(as.character(auto))
+    if (is.null(auto)) return(logical(0))
+    at <- if (is.null(block_index)) {
+        if (is.list(auto)) return(logical(0))
+        auto
+    } else {
+        if (!is.list(auto) || block_index > length(auto)) return(logical(0))
+        auto[[block_index]] %||% logical(0)
     }
-    if (!is.list(auto) || block_index > length(auto)) return(character(0))
-    as.character(auto[[block_index]] %||% character(0))
+    # A plain character vector names the declared fields and says nothing about
+    # placement, which is the placeable default.
+    if (is.character(at)) return(stats::setNames(rep(TRUE, length(at)), at))
+    at
 }
 
-# THE provenance predicate every rescue guards on. `block` is the prior block
-# carrying the axis, `field` its grid field, `auto_fields` the marker record
-# `.nl_grid_provenance()` took for that block. An absent axis, a marked one,
-# and one whose nodes are the engine's own default are all defaults; anything
-# else is a pin the rescue must leave alone.
+# THE provenance predicate every rescue guards on: why must the placement pass
+# leave this axis exactly as declared, and NULL when it may move it. `block` is
+# the prior block carrying the axis, `field` its grid field, `auto_fields` the
+# marker record `.nl_grid_provenance()` took for that block. An absent axis, a
+# marked one, and one whose nodes are the engine's own default are all defaults;
+# anything else is a pin.
+#
+# Two answers hold the axis, and the engine ACTS identically on both -- the pass
+# leaves it, refinement densifies within its span (`.NL_AXIS_REFINE`), and no
+# curvature is computed for it. They differ in WHOSE declaration it was, which
+# is the whole of what a reader can act on: `"axis_pinned"` is the caller's own
+# nodes, `"default_axis_pinned"` a default the package that built the fit asked
+# to have integrated as written (`auto_grid(place = FALSE)`). Reporting the
+# second as the first tells a user they pinned an axis they never wrote down.
 #
 # `type` narrows the default comparison to the axis that ONE path-and-family
 # lays on the field, and must be passed EXPLICITLY -- it is deliberately not
@@ -352,13 +424,25 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 # `sigma_grid` at all. Inferring would silently answer "pinned" there, reading
 # an engine default as a user pin. Unnarrowed (`NULL`) compares against
 # every family's binding for the field, which errs toward recognising a default.
-.nl_axis_is_pinned <- function(block, field, auto_fields = character(0),
-                               type = NULL) {
+.nl_axis_hold <- function(block, field, auto_fields = logical(0), type = NULL) {
     g <- if (is.list(block)) block[[field]] else NULL
-    if (is.null(g)) return(FALSE)
-    if (field %in% auto_fields) return(FALSE)
-    if (is_auto_grid(g)) return(FALSE)
-    !.nl_axis_matches_default(g, field, type)
+    if (is.null(g)) return(NULL)
+    auto_fields <- .nl_auto_fields_at(auto_fields)
+    i <- match(field, names(auto_fields) %||% character(0))
+    # The record is taken with the markers stripped; a call site holding the
+    # value before that reads the same declaration off the value itself.
+    declared <- !is.na(i) || is_auto_grid(g)
+    if (declared) {
+        place <- if (!is.na(i)) isTRUE(auto_fields[[i]]) else auto_grid_place(g)
+        return(if (place) NULL else "default_axis_pinned")
+    }
+    if (.nl_axis_matches_default(g, field, type)) return(NULL)
+    "axis_pinned"
+}
+
+.nl_axis_is_pinned <- function(block, field, auto_fields = logical(0),
+                               type = NULL) {
+    !is.null(.nl_axis_hold(block, field, auto_fields, type = type))
 }
 
 # --- axis consumption --------------------------------------
@@ -935,7 +1019,9 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 # --- decline reasons ---------------------------------------------------------
 #
 # `res$outer_grid_recenter_declined` records why an applicable auto-recenter did
-# not run: `"axis_pinned"` (the caller pinned the axis), `"grid_not_collapsed"`
+# not run: `"axis_pinned"` (the caller pinned the axis),
+# `"default_axis_pinned"` (a wrapper package declared the nodes and asked for
+# them as written, `auto_grid(place = FALSE)`), `"grid_not_collapsed"`
 # (the grid already brackets the mode, the common no-op, on the rescues whose
 # trigger is the whole grid's collapse), `"no_axis_railed"` (its per-axis
 # counterpart on the registry rescue under `control$auto_recenter = "rail"`: no
@@ -958,8 +1044,19 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 # (the registry rescue covers no axis of this family, which is what returning
 # UNSTAMPED used to look like). Absent on a fit that WAS
 # recentred, and never stamped by
-# a rescue whose prior shape it does not apply to -- a fit carries the reason
-# from the one rescue that could have run, not a tally of the others declining.
+# a rescue whose prior shape it does not apply to.
+#
+# SEVERAL rescues can speak on one fit -- a joint fit's field SD and its per-arm
+# dispersion are placed by different passes over the same grid -- so the slot is
+# a REDUCTION over what they said, not the last one to say it. The two
+# axis-scoped reasons are properties of ONE axis's declaration rather than of
+# the fit's grid, its curvature or a control knob, so a pass whose every axis
+# was declared has not answered the question the slot asks; it yields to any
+# pass that had an axis it could have moved and did not need to. Without that,
+# a fit whose defaulted field SD simply needed no placement reported
+# `"axis_pinned"` because a dispersion axis beside it was declared -- which
+# reads as the caller having pinned the axis they did not pin
+# (gcol33/tulpaObs#361). The per-axis record answers per axis either way.
 #
 # `outer_grid_recenter_declined_pruned` says whether the fit the decline was
 # read off had been cheap-pass screened. The two are different events with the
@@ -969,8 +1066,31 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
 # when the posterior is concentrated, and concentration is what collapses the
 # kept set. Recorded on every decline, TRUE or FALSE, so a reader tells them
 # apart from the fit rather than from the absence of a field.
+.NL_AXIS_SCOPED_DECLINE <- c("axis_pinned", "default_axis_pinned")
+
+.nl_decline_is_axis_scoped <- function(reason)
+    length(reason) == 1L && !is.na(reason) &&
+        reason %in% .NL_AXIS_SCOPED_DECLINE
+
+# One reason for a set of per-axis holds. A user's own pin is the statement a
+# reader can act on, so it stands for the set whenever one is in it.
+.nl_reduce_decline <- function(held) {
+    held <- unlist(held, use.names = FALSE)
+    if (!length(held)) return("axis_pinned")
+    if ("axis_pinned" %in% held) "axis_pinned" else held[[1L]]
+}
+
 .nl_decline_recenter <- function(res, reason) {
     if (identical(res$outer_grid_placement, "auto_recentered")) return(res)
+    prev <- res$outer_grid_recenter_declined
+    if (!is.null(prev) && .nl_decline_is_axis_scoped(reason)) {
+        # A pass whose every axis was DECLARED has not answered the question
+        # the slot asks, so it yields to one that had an axis it could have
+        # moved; against another axis-scoped answer the two reduce by the same
+        # rule the per-pass one does.
+        if (!.nl_decline_is_axis_scoped(prev)) return(res)
+        reason <- .nl_reduce_decline(list(prev, reason))
+    }
     res$outer_grid_recenter_declined <- reason
     res$outer_grid_recenter_declined_pruned <-
         isTRUE(any(as.logical(res$prune_mask), na.rm = TRUE))
@@ -1212,9 +1332,10 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
         out$res <- decline(res, "auto_recenter_disabled")
         return(out)
     }
-    if (.nl_axis_is_pinned(prior, "sigma_grid", .nl_auto_fields_at(auto),
-                           type = ".joint_areal")) {
-        out$res <- decline(res, "axis_pinned")
+    hold <- .nl_axis_hold(prior, "sigma_grid", .nl_auto_fields_at(auto),
+                          type = ".joint_areal")
+    if (!is.null(hold)) {
+        out$res <- decline(res, hold)
         return(out)
     }
 
@@ -1349,10 +1470,10 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
         for (b0 in cp$copy_blocks_zero) {
             b <- b0 + 1L
             if (!.nl_edge_axis_hit(res, "sigma", b)) next
-            if (.nl_axis_is_pinned(cur_prior[[b]], "sigma_grid",
-                                   .nl_auto_fields_at(auto, b),
-                                   type = ".copy")) {
-                reason <- "axis_pinned"
+            hold <- .nl_axis_hold(cur_prior[[b]], "sigma_grid",
+                                  .nl_auto_fields_at(auto, b), type = ".copy")
+            if (!is.null(hold)) {
+                reason <- hold
                 next
             }
             target_b <- b
@@ -1393,10 +1514,10 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
         out <- list(res = res, prior = cur_prior, prior_sigma = cur_prior_sigma)
     }
     for (b in setdiff(copy_b, moved_b)) {
-        why <- if (.nl_axis_is_pinned(prior[[b]], "sigma_grid",
-                                      .nl_auto_fields_at(auto, b),
-                                      type = ".copy")) {
-            "axis_pinned"
+        held <- .nl_axis_hold(prior[[b]], "sigma_grid",
+                              .nl_auto_fields_at(auto, b), type = ".copy")
+        why <- if (!is.null(held)) {
+            held
         } else if (isTRUE(b == failed_b)) {
             reason
         } else if (attempt >= max_attempts &&
@@ -1439,34 +1560,43 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
         list(arm = arms[i], axis = nm[i]))
 }
 
-# The provenance predicate for a dispersion axis. `.nl_axis_is_pinned()`'s third
-# branch -- nodes equal to the engine's own default read as a default -- has no
-# counterpart here ON PURPOSE: the engine has no default dispersion axis. An arm
-# with no `phi_grid` entry carries the parse-time scalar `phi` and no axis at
-# all, so every axis that exists was written by a caller, and the ONLY thing
-# separating a wrapper's computed default from a user's pin is whether that
-# caller said so with `auto_grid()`.
-.nl_phi_axis_is_pinned <- function(arm, auto_arms) !(arm %in% auto_arms)
+# The provenance predicate for a dispersion axis, in the vocabulary
+# `.nl_axis_hold()` answers in. That helper's third branch -- nodes equal to the
+# engine's own default read as a default -- has no counterpart here ON PURPOSE:
+# the engine has no default dispersion axis. An arm with no `phi_grid` entry
+# carries the parse-time scalar `phi` and no axis at all, so every axis that
+# exists was written by a caller, and the ONLY thing separating a wrapper's
+# computed default from a user's pin is whether that caller said so with
+# `auto_grid()`.
+.nl_phi_axis_hold <- function(arm, auto_arms) {
+    auto_arms <- .nl_auto_fields_at(auto_arms)
+    i <- match(arm, names(auto_arms) %||% character(0))
+    if (is.na(i)) return("axis_pinned")
+    if (isTRUE(auto_arms[[i]])) return(NULL)
+    "default_axis_pinned"
+}
 
-# Which arms of a `phi_grid` argument carry the `auto_grid()` marker, and the
-# argument with the markers removed. Read at the front door, BEFORE
-# `.normalise_phi_grid()` -- that helper coerces each entry with `as.numeric()`,
-# which drops the attribute the marker lives in. A positional list is keyed
-# through `arm_names` so the record is by arm either way.
+# Which arms of a `phi_grid` argument carry the `auto_grid()` marker and whether
+# each let the pass place its axis, plus the argument with the markers removed.
+# Read at the front door, BEFORE `.normalise_phi_grid()` -- that helper coerces
+# each entry with `as.numeric()`, which drops the attributes the marker lives
+# in. A positional list is keyed through `arm_names` so the record is by arm
+# either way.
 .nl_phi_provenance <- function(phi_grid, arm_names) {
     if (!is.list(phi_grid) || !length(phi_grid)) {
-        return(list(phi_grid = phi_grid, auto = character(0)))
+        return(list(phi_grid = phi_grid, auto = logical(0)))
     }
     nm <- names(phi_grid)
     keys <- if (!is.null(nm)) nm else
         arm_names[seq_len(min(length(phi_grid), length(arm_names)))]
-    auto <- character(0)
+    auto <- logical(0)
     for (k in seq_along(phi_grid)) {
         v <- phi_grid[[k]]
         if (is.null(v)) next            # `attr<-`(NULL, ...) DELETES the element
-        if (k <= length(keys) && is_auto_grid(v)) auto <- c(auto, keys[k])
-        attr(v, "tulpa_auto_grid") <- NULL
-        phi_grid[[k]] <- v
+        if (k <= length(keys) && is_auto_grid(v)) {
+            auto[keys[k]] <- auto_grid_place(v)
+        }
+        phi_grid[[k]] <- .nl_strip_auto(v)
     }
     list(phi_grid = phi_grid, auto = auto)
 }
@@ -1584,12 +1714,12 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
         out$res <- mark(res, "auto_recenter_disabled")
         return(out)
     }
-    pinned <- vapply(slots, function(s) .nl_phi_axis_is_pinned(s$arm, auto),
-                     logical(1))
+    held <- lapply(slots, function(s) .nl_phi_axis_hold(s$arm, auto))
+    pinned <- !vapply(held, is.null, logical(1))
     if (all(pinned)) {
-        for (s in slots) out$res <- .nl_decline_axis(out$res, axis_of(s),
-                                                     "axis_pinned")
-        out$res <- .nl_decline_recenter(out$res, "axis_pinned")
+        for (i in seq_along(slots)) out$res <- .nl_decline_axis(
+            out$res, axis_of(slots[[i]]), held[[i]])
+        out$res <- .nl_decline_recenter(out$res, .nl_reduce_decline(held))
         return(out)
     }
 
@@ -1659,7 +1789,7 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
         if (axis_of(slots[[i]]) %in% placed) next
         out$res <- .nl_decline_axis(
             out$res, axis_of(slots[[i]]),
-            if (pinned[i]) "axis_pinned" else reason)
+            if (pinned[i]) held[[i]] else reason)
     }
     out$res <- .nl_decline_recenter(out$res, reason)
     out
@@ -1881,11 +2011,12 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
     # A prior that pins EVERY axis the table lists leaves the rescue nothing to
     # move whatever the fit did, which is the answer the joint path gives and
     # the one a caller holding their own grid expects.
-    pinned <- vapply(slots, function(s) .nl_axis_is_pinned(
+    held <- lapply(slots, function(s) .nl_axis_hold(
         blocks[[s$block]], s$field, .nl_auto_fields_at(auto, bidx(s)),
-        type = s$type), logical(1))
+        type = s$type))
+    pinned <- !vapply(held, is.null, logical(1))
     if (all(pinned)) {
-        out$res <- .nl_decline_recenter(out$res, "axis_pinned")
+        out$res <- .nl_decline_recenter(out$res, .nl_reduce_decline(held))
         return(out)
     }
 
@@ -1926,7 +2057,7 @@ is_auto_grid <- function(x) isTRUE(attr(x, "tulpa_auto_grid", exact = TRUE))
         sel <- if (identical(policy, "rail")) which(railed) else seq_along(slots)
         movable <- sel[!pinned[sel]]
         if (!length(movable)) {
-            reason <- "axis_pinned"
+            reason <- .nl_reduce_decline(held[sel])
             break
         }
 

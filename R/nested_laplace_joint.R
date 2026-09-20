@@ -883,10 +883,16 @@
 #'      recenter did not run: `"grid_not_collapsed"` (the grid already brackets
 #'      the mode -- the common case, no refit needed), `"axis_pinned"` (the
 #'      caller pinned `sigma_grid`; mark it with [auto_grid()] if it is a
-#'      default rather than a choice), or `"no_usable_curvature"` (the
-#'      mode-Hessian the recenter needs was unavailable or degenerate, e.g. a
-#'      car_proper grid whose `rho_car` axis has unguessable support). Absent
-#'      when the fit WAS recentred.
+#'      default rather than a choice), `"default_axis_pinned"` (a wrapper
+#'      package declared the nodes with `auto_grid(place = FALSE)` and asked
+#'      for them as written -- nothing you pinned), or `"no_usable_curvature"`
+#'      (the mode-Hessian the recenter needs was unavailable or degenerate,
+#'      e.g. a car_proper grid whose `rho_car` axis has unguessable support).
+#'      Absent when the fit WAS recentred. A joint fit's field SD and its
+#'      per-arm dispersion are placed by different passes over the same grid,
+#'      and this slot reduces over them rather than holding the last to speak:
+#'      an axis held because it was declared does not stand as the fit's answer
+#'      while a pass with a movable axis has one.
 #'   * `outer_grid_axis_declined` -- the same question PER AXIS, as a named
 #'      character vector. The slot above holds one reason for the whole fit and
 #'      is written only while the fit is unplaced, so on a fit where one axis
@@ -1251,10 +1257,12 @@ tulpa_nested_laplace_joint <- function(responses,
     # The dispersion axes `.joint_phi_grid_rescue()` is allowed to move, named
     # as the grid names them. Handed to every fit so the placement stencil knows
     # to compute a curvature for them on a grid that concentrated without
-    # railing; empty when the caller pinned every one, which is the gate that
-    # keeps a pinned fit paying nothing for a pass that could not run.
+    # railing; empty when every one is held -- pinned by the caller or declared
+    # as-written with `auto_grid(place = FALSE)` -- which is the gate that keeps
+    # such a fit paying nothing for a pass that could not run.
     phi_movable <- if (!auto_recenter) character(0) else
-        paste0("phi_", intersect(phi_prov$auto, names(phi_grid) %||% character(0)))
+        paste0("phi_", intersect(names(which(phi_prov$auto)),
+                                 names(phi_grid) %||% character(0)))
 
     # Grid-cell checkpoint. `resume = FALSE` starts THIS FIT over, so any prior
     # file is removed once, here, before the first solve. An outer-grid
@@ -1276,7 +1284,8 @@ tulpa_nested_laplace_joint <- function(responses,
                                       prior_sigma_i, prior_alpha, prior_phi,
                                       cell_coupling, ctrl_i,
                                       placement_axes = phi_movable,
-                                      hyperprior = hyperprior))
+                                      hyperprior = hyperprior,
+                                      phi_auto = phi_prov$auto))
 
     # Placement pilot (gcol33/tulpa#636). Placement reads an argmax cell and an
     # FD curvature stencil, and reads them off `log_marginal` -- not off the
@@ -1576,7 +1585,8 @@ tulpa_nested_laplace_joint <- function(responses,
                                  prior_phi = NULL,
                                  cell_coupling = "separable", control = list(),
                                  placement_axes = character(0),
-                                 hyperprior = "proper") {
+                                 hyperprior = "proper",
+                                 phi_auto = NULL) {
     tm <- .tulpa_timer()
     # Resolve and validate the cell-coupling spec name against the C++
     # registry (separable default is auto-registered on first touch). The
@@ -1990,8 +2000,15 @@ tulpa_nested_laplace_joint <- function(responses,
     # `control$axis_refine` overrides either, per axis. Resolved here, before the
     # first kernel call, so a mis-named axis is refused rather than reported
     # after the grid has been solved.
+    #
+    # A dispersion axis's provenance travels as the front door's `phi_auto`
+    # record, NOT on the grid: the front door strips the markers before the
+    # first fit (`.nl_phi_provenance()`, so nothing downstream sees an
+    # attributed numeric), which left every `phi_<arm>` axis reading as stated
+    # here whoever wrote it.
     axis_refine_modes <- .joint_axis_refine_modes(
         grids, cp, arms, phi_grid = phi_grid, arm_names = arm_names,
+        phi_auto = phi_auto,
         user = .joint_check_axis_refine(axis_refine,
                                         .joint_spec_axis_names(grids, cp)))
     force_sparse <- .resolve_force_sparse(force_sparse, function() {

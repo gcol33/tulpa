@@ -1,3 +1,41 @@
+# tulpa 0.4.13
+
+## A default axis had only the user's pin to declare itself with
+
+* **`auto_grid(x, place = FALSE)` declares a default the engine must integrate
+  as written** (gcol33/tulpaObs#361). Provenance -- whose nodes these are --
+  and placement policy -- whether the auto-placement pass may move them -- are
+  different questions, and the marker answered both at once: a wrapper package
+  that had MEASURED its own default as the one to integrate could only get that
+  by leaving the mark off, which says the user pinned the axis. The engine then
+  reported exactly that back to a user who had pinned nothing. Such an axis is
+  now treated as a pin everywhere the engine acts on it (the pass leaves it, no
+  curvature is computed for it, and refinement densifies within its span rather
+  than following the posterior past the end nodes) and reported as
+  `"default_axis_pinned"`, with `?tulpa_nested_laplace_joint`'s own lever
+  advice pointing at the package's argument rather than at a pin the reader did
+  not write. `auto_grid_place()` reads the declaration back, for a wrapper
+  rebuilding a value that `as.numeric()` stripped.
+
+* **`outer_grid_recenter_declined` reduces over the passes that wrote it.** A
+  joint fit's field SD and its per-arm dispersion are placed by two passes over
+  one grid, and the slot held whichever spoke last. An axis-scoped reason --
+  one that is a property of a single axis's declaration rather than of the
+  fit's grid, its curvature or a control knob -- no longer stands as the fit's
+  answer while a pass that had a movable axis has one. The measured case:
+  `occu_cover()` fits whose sigma axis was defaulted and simply needed no
+  placement came back `"axis_pinned"`, from the dispersion axis beside it. The
+  per-axis `outer_grid_axis_declined` record is unchanged and still answers per
+  axis.
+
+* **A dispersion axis's refinement rung follows its provenance again.** The
+  joint front door strips the `auto_grid()` markers before the first fit, so
+  nothing downstream sees an attributed numeric -- and `phi_<arm>`'s refinement
+  mode was read off that stripped grid, which made every dispersion axis read
+  as stated whoever wrote it. It now travels as the front door's own record, so
+  a marked axis is refined as placed (`"extend"`) and a pinned or held one as
+  stated (`"densify"`).
+
 # tulpa 0.4.12
 
 ## A GP lengthscale started five times the spread of its own data
