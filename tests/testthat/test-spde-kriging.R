@@ -105,7 +105,11 @@ test_that("a custom (mesh-less) SPDE spec cannot krige to new coordinates", {
   mesh <- fmesher::fm_mesh_2d(loc = coords, max.edge = c(0.2, 0.5), cutoff = 0.06)
   fem  <- fmesher::fm_fem(mesh)
   A    <- as(fmesher::fm_basis(mesh, loc = coords), "CsparseMatrix")
-  spec <- spatial_spde_custom(C = fem$c0, G = fem$g1, A = A, nu = 1)
+  # `prior_range` is stated rather than anchored on `coords`: the FEM matrices
+  # carry no coordinate scale, and handing the spec coordinates is the one
+  # thing that would give it the re-projection this test asserts it lacks.
+  spec <- spatial_spde_custom(C = fem$c0, G = fem$g1, A = A, nu = 1,
+                              prior_range = c(0.28, 0.5))
   w <- as.numeric(rnorm(spec$n_mesh, 0, 0.5)); w <- w - mean(w)
   x <- rnorm(n)
   d <- data.frame(y = 1 + 0.4 * x + as.numeric(spec$A %*% w) + rnorm(n, 0, 0.3),

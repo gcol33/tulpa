@@ -160,6 +160,21 @@ rational_spde_coefficients <- function(nu, m = 4L, lambda_range = c(1e-4, 1e4)) 
 #' is what the nested `(range, sigma)` integration needs (an inconsistent solver
 #' breaks the cross-grid marginal). The probe matrix is fixed across calls for a
 #' deterministic, grid-smooth normalization.
+#'
+#' Returns `list(value, singular)`. `singular` is TRUE where the factorization
+#' could not be completed -- `Q` is not merely ill-conditioned but numerically
+#' SINGULAR, so `Q^-1` has no value and neither does the trace this estimates.
+#' CHOLMOD reports that as a "not positive definite" warning and then recovers
+#' on its own terms, which is a decision about the model taken by a library
+#' (gcol33/tulpa#845): the warning is caught here and turned into a flag the
+#' caller acts on, instead of reaching the user as a raw message from a
+#' probe they did not ask for.
+#'
+#' It happens far outside the range a fit integrates. Measured on the issue's
+#' n = 120, nu = 1.5 fixture: `rcond(Q)` is already 2.4e-17 at range 40 on a
+#' domain of extent 13.8, and every warning came from the MODE SEARCH at its
+#' own box corner, `range = 100 * range_init ~ 275.6`. The CCD grid the fit
+#' then integrates topped out at range 1.53 and carried no weight above 100.
 #' @keywords internal
 .spde_mean_marginal_var <- function(Q, Pr, C0, n_probe = .SPDE_VARNORM_NPROBE) {
   n <- length(C0)
@@ -167,11 +182,24 @@ rational_spde_coefficients <- function(nu, m = 4L, lambda_range = c(1e-4, 1e4)) 
     set.seed(.SPDE_VARNORM_SEED)
     matrix(stats::rnorm(n * n_probe), n, n_probe)
   })
-  Achol <- Matrix::Cholesky(Q, LDL = FALSE, perm = TRUE)
-  Aprz  <- Matrix::crossprod(Pr, Z)            # a = Pr' z  (n x n_probe)
-  V     <- Matrix::solve(Achol, Aprz)          # Q v = a
-  quad  <- colSums(as.matrix(Aprz) * as.matrix(V))   # a' v per probe
-  mean(quad) / n
+  Aprz <- Matrix::crossprod(Pr, Z)             # a = Pr' z  (n x n_probe)
+  singular <- FALSE
+  V <- withCallingHandlers(
+    tryCatch({
+      Achol <- Matrix::Cholesky(Q, LDL = FALSE, perm = TRUE)
+      Matrix::solve(Achol, Aprz)               # Q v = a
+    }, error = function(e) { singular <<- TRUE; NULL }),
+    warning = function(w) {
+      if (grepl("not positive definite", conditionMessage(w), fixed = TRUE)) {
+        singular <<- TRUE
+        invokeRestart("muffleWarning")
+      }
+    })
+  if (is.null(V)) return(list(value = NA_real_, singular = TRUE))
+  quad <- colSums(as.matrix(Aprz) * as.matrix(V))   # a' v per probe
+  mv   <- mean(quad) / n
+  if (!is.finite(mv) || mv <= 0) singular <- TRUE
+  list(value = mv, singular = singular)
 }
 
 #' Assemble the fractional rSPDE precision and obs map at a given (range, sigma)
@@ -223,7 +251,12 @@ rational_spde_coefficients <- function(nu, m = 4L, lambda_range = c(1e-4, 1e4)) 
     kappa = kappa, tau = 1, nu = nu, order = as.integer(order), d = 2
   )
 
-  mean_var  <- .spde_mean_marginal_var(asm$Q, asm$Pr, C0k)
+  # A coordinate whose `Q` is numerically singular has no variance
+  # normalization, and therefore no field scale. `var_norm_singular` carries
+  # that out so the caller can decline the coordinate explicitly rather than
+  # normalize by whatever CHOLMOD's own recovery produced (gcol33/tulpa#845).
+  mv        <- .spde_mean_marginal_var(asm$Q, asm$Pr, C0k)
+  mean_var  <- mv$value
   var_scale <- sigma / sqrt(mean_var)
   Pr        <- as(var_scale * asm$Pr, "CsparseMatrix")
 
@@ -240,7 +273,8 @@ rational_spde_coefficients <- function(nu, m = 4L, lambda_range = c(1e-4, 1e4)) 
     Q = as(asm$Q, "CsparseMatrix"), Pr = Pr, A_eff = A_eff,
     Pl = as(asm$Pl, "CsparseMatrix"),
     keep = keep, n_mesh_full = n_full,
-    kappa = kappa, var_scale = var_scale, l_max = asm$l_max, logdet_Q = logdet_Q
+    kappa = kappa, var_scale = var_scale, l_max = asm$l_max,
+    logdet_Q = logdet_Q, var_norm_singular = mv$singular
   )
 }
 
@@ -266,6 +300,17 @@ rational_spde_coefficients <- function(nu, m = 4L, lambda_range = c(1e-4, 1e4)) 
   phi_kernel <- .phi_to_kernel(family, phi)
   asm   <- .spde_assemble_at(spatial, range, sigma, order = order)
   n_sub <- length(asm$keep)
+
+  # A coordinate whose variance normalization has no value carries no model to
+  # evaluate a marginal for, so it takes the same -Inf this function already
+  # gives a failed inner fit: zero nested weight, by a stated decision rather
+  # than by whatever CHOLMOD recovered from a singular `Q` (gcol33/tulpa#845).
+  # It is the MODE SEARCH that reaches such coordinates -- at its own box
+  # corner, 100x the initial range -- so declining them also steers the
+  # optimizer away from a region where the objective is not defined.
+  if (isTRUE(asm$var_norm_singular)) {
+    return(list(log_marginal = -Inf, n_iter = 0L, converged = FALSE, asm = asm))
+  }
 
   # Non-gaussian needs the Laplace mode (beta, auxiliary weights x); gaussian is
   # the exact conjugate marginal and needs none. A failed inner fit / factor gives
