@@ -117,7 +117,7 @@ tulpa_check_control <- function(control, allowed, where) {
       "force_sparse", "inner_factorization",
       "inner_refresh", "integration", "local_ccd", "tile_warm",
       "ccd_budget", "ccd_budget_floor",
-      "prune", "prune_tol", "prune_log_gap", "screen_iters",
+      "prune", "prune_tol", "prune_log_gap", "screen_iters", "fitted_var",
       "adaptive_grid", "adaptive_grid_cutoff", "adaptive_grid_edge_thresh",
       "adaptive_grid_max_frac", "adaptive_grid_max_passes",
       "adaptive_grid_min_cells", "adaptive_grid_stride", "axis_refine",

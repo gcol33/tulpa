@@ -1,3 +1,51 @@
+# tulpa 0.4.10
+
+## A joint fit integrated a dispersion it could not predict with
+
+* **A `tulpa_nested_laplace_joint()` fit stored no linear predictor, so the
+  dispersion axis it had paid to integrate reached no predictive read**
+  (gcol33/tulpa#850). gcol33/tulpa#825 taught `posterior_predict()`,
+  `bayes_R2()` and the pointwise log-likelihood to sample at the cell's own
+  `phi_<arm>` value, and the two halves never met: a fit that CARRIES such an
+  axis comes from the joint driver, which left `modes` behind and no per-cell
+  eta, while a fit that REACHES the grid-mixture draw comes from the `tulpa()`
+  front door, where `phi_grid` is not an argument. The contract was implemented
+  and untestable on a real fit.
+
+  `cpp_nested_laplace_joint_multi()` now attaches `fitted_eta` by replaying the
+  driver's own eta accumulator at each cell's stored mode, so the arm's offset,
+  every block kind and each cell's block scaling are the ones the inner solve
+  used. A cell the cheap screen pruned reads `NA` rather than a predictor
+  evaluated at the zero row the grid runner left it -- the predicate is the
+  cell's own `log_marginal`, not the mode row's contents. `fitted_eta_var`, the
+  within-cell spread a replicate is drawn with, follows `control$fitted_var`
+  (new on this front door, `TRUE` by default) rather than being pinned off, and
+  is requested only at one arm, where the mean it belongs to is stored.
+
+* **The per-cell side data now travels through refinement from one table.**
+  Three sites listed which fields a refinement pass carries cell for cell --
+  slice the initial result, slice a pass's result, glue the merged list back --
+  and a field added to one and not the others indexes the grid the fit had
+  BEFORE refinement. They read one `.JOINT_CELL_FIELDS` table. Local-CCD
+  refinement rebuilds the grid from its own node solves and carries neither, so
+  it drops the predictor rather than leaving it to be read against cells that
+  are no longer the fit's.
+
+* **A one-arm joint fit resolves its response, design and offset off the arm.**
+  A joint fit carries a family, a dispersion, a response and a design PER ARM,
+  and `$y` is a per-arm list, so `fitted()`, `residuals()`, the criteria layer
+  and `.resolve_obs()` were reading flat fields a joint fit does not have --
+  `fitted()` failed on the missing `$model_matrix` and the criteria read
+  refused for a missing family. One predicate, `.tulpa_single_arm()`, answers
+  it for all of them, and the resolved design carries the fit's own
+  `$fixed_names`, which is that arm's column naming by construction.
+
+* `test-posterior-predict-phi-axis.R`'s third claim runs on a real fit instead
+  of a hand-built grid standing in for one: the dispersion contrast is the same
+  fit with one grid column pinned, so the per-cell predictor, the within-cell
+  variance, the weights and the cells each replicate is drawn in are identical
+  and only the dispersion moves.
+
 # tulpa 0.4.9
 
 ## An SPDE field beside a random intercept pinned the RE SD at 1

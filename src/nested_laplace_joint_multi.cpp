@@ -66,6 +66,7 @@
 #include "nested_laplace_checkpoint.h"
 #include "nested_laplace_joint_core.h"
 #include "nested_laplace_joint_multi.h"
+#include "nl_entry_inputs.h"        // nl_attach_fitted_eta_single_arm
 #include "unit_precision_block.h"
 #include "car_proper_block.h"
 #include "nested_laplace_joint_batch.h"   // fused batched scatter
@@ -1394,7 +1395,8 @@ Rcpp::List cpp_nested_laplace_joint_multi(
     Rcpp::Nullable<Rcpp::List> cila = R_NilValue,
     int                 inner_sparse_override = 0,
     int                 screen_iters = 2,  // cheap-screen Newton steps per cell
-    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue  // per-cell screen offset
+    Rcpp::Nullable<Rcpp::NumericVector> screen_log_offset = R_NilValue,  // per-cell screen offset
+    bool                compute_fitted_var = true  // per-cell predictive variance of eta; see want_eta_var below
 ) {
     const tulpa::JointFixedBlockRequest fixed_block_req =
         parse_joint_fixed_block_request(fixed_block_p, fixed_block_constraints);
@@ -1609,6 +1611,15 @@ Rcpp::List cpp_nested_laplace_joint_multi(
     tulpa::CilaOptions cila_opts;
     const tulpa::CilaOptions* cila_ptr = tulpa::unwrap_cila(cila, cila_opts);
 
+    // The per-cell linear predictor and its within-cell variance are the pair a
+    // predictive read draws a replicate from (`.tulpa_eta_draws_grid()`), and
+    // the predictor is attachable only at ONE arm -- a multi-arm fit has one
+    // eta per arm and no single [n_grid x N] matrix to carry them in. So the
+    // variance, a real per-cell solve sweep, is asked for exactly where the
+    // mean it belongs to is stored, and `control$fitted_var` can still decline
+    // it (gcol33/tulpa#850).
+    const bool want_eta_var = compute_fitted_var && arms.size() == 1u;
+
     Rcpp::List out = tulpa::run_multi_block_nested_laplace_joint(
         n_grid, arms, parsed, blocks, n_x_after_re,
         max_iter, tol, n_threads,
@@ -1633,10 +1644,19 @@ Rcpp::List cpp_nested_laplace_joint_multi(
         cila_ptr,
         inner_sparse_override,
         screen_iters,
-        /*compute_eta_var=*/false,
+        want_eta_var,
         screen_log_offset.isNull() ? std::vector<double>()
             : Rcpp::as<std::vector<double>>(screen_log_offset)
     );
+    // Per-cell eta at each cell's own mode. The driver leaves `modes` behind
+    // but no linear predictor, so a fit through this entry carried nothing for
+    // the grid-mixture predictive read to draw from (gcol33/tulpa#850). The
+    // helper replays the driver's own eta accumulator, which reads the arm's
+    // offset, `X`, the latent mode and each block's per-cell scaling -- not
+    // `arm.phi`, the only thing the grid-level `prep` above rewrites, so the
+    // per-block `prep` the helper runs is the whole contract it needs and the
+    // driver populates those on this path exactly as on the sparse entry.
+    tulpa::nl_attach_fitted_eta_single_arm(out, arms, parsed, blocks);
     attach_joint_grid_layout(out, theta_grid, axis_offsets, blocks);
     return out;
 }

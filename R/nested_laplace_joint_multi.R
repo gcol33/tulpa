@@ -1915,6 +1915,14 @@
                 # precision is not carried, which is why refinement engages only
                 # when store_Q is off -- the gate above.
                 res$cov_block_per_grid <- ref$cov_blocks
+                # The per-cell linear predictor is not carried either, and
+                # unlike the precision it is not gated: it still indexes the
+                # grid the fit had BEFORE this pass. Dropped rather than read
+                # against the new cells, so the grid-mixture predictive read
+                # falls back to the fit's coefficients instead of drawing from
+                # cells that are no longer the fit's (gcol33/tulpa#850).
+                res$fitted_eta     <- NULL
+                res$fitted_eta_var <- NULL
             }
         }
         tm$mark("grid")

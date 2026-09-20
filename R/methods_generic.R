@@ -1284,15 +1284,32 @@ plot.tulpa_fit <- function(x, type = c("density", "trace", "pairs", "smooth"),
 # rebuilt from the fit's formulas at `newdata`. `X_zi` is the zero-inflation
 # design (NULL on a fit without one) and `offset` the observation offset --
 # the stored one, or the formula's offset() term evaluated on `newdata`.
+#
+# A joint nested-Laplace fit carries its design and offset on the arm rather
+# than flat, so a one-arm fit resolves them there -- the same resolution
+# `.tulpa_response_process()` makes for the family and the dispersion
+# (gcol33/tulpa#850).
 #' @keywords internal
 .tulpa_designs <- function(object, newdata, accessor) {
   if (is.null(newdata)) {
-    if (is.null(object$model_matrix)) {
+    arm <- .tulpa_single_arm(object)$spec
+    X   <- object$model_matrix
+    if (!is.matrix(X) && is.matrix(arm$X)) {
+      X <- arm$X
+      # The joint layout names a fixed effect `<arm>.<column>`, one name per
+      # column of that arm's design in its own order (`.joint_fixed_layout()`),
+      # so on a one-arm fit `$fixed_names` IS this design's column naming and
+      # the coefficient-to-column match below is by name as everywhere else.
+      if (length(object$fixed_names) == ncol(X)) {
+        colnames(X) <- object$fixed_names
+      }
+    }
+    if (!is.matrix(X)) {
       .accessor_unavailable(accessor, object,
                             "the fixed-effect design ($model_matrix)")
     }
-    return(list(X = object$model_matrix, X_zi = object$zi_model_matrix,
-                offset = object$offset %||% 0))
+    return(list(X = X, X_zi = object$zi_model_matrix,
+                offset = object$offset %||% arm$offset %||% 0))
   }
   if (is.null(object$formula)) {
     .accessor_unavailable(accessor, object,
@@ -1580,9 +1597,10 @@ plot.tulpa_fit <- function(x, type = c("density", "trace", "pairs", "smooth"),
 #' @return Numeric vector of fitted mean responses, length `nobs`.
 #' @export
 fitted.tulpa_fit <- function(object, ...) {
+  proc <- .tulpa_response_process(object, "fitted")
   lp <- .tulpa_point_linpred(object, NULL, "fitted")
-  .response_mean(lp$eta, lp$logit_zi, object$family,
-                 n_trials = object$n_trials, phi = object$phi %||% 1.0)
+  .response_mean(lp$eta, lp$logit_zi, proc$family,
+                 n_trials = proc$n_trials, phi = proc$phi %||% 1.0)
 }
 
 #' Residuals from a tulpa fit
@@ -1602,17 +1620,18 @@ fitted.tulpa_fit <- function(object, ...) {
 #' @export
 residuals.tulpa_fit <- function(object, type = c("pearson", "response"), ...) {
   type <- match.arg(type)
-  y <- object$y
+  proc <- .tulpa_response_process(object, "residuals")
+  y <- proc$y
   if (is.null(y)) .accessor_unavailable("residuals", object, "the response ($y)")
   lp  <- .tulpa_point_linpred(object, NULL, "residuals")
-  phi <- object$phi %||% 1.0
-  mu  <- .response_mean(lp$eta, lp$logit_zi, object$family,
-                        n_trials = object$n_trials, phi = phi)
+  phi <- proc$phi %||% 1.0
+  mu  <- .response_mean(lp$eta, lp$logit_zi, proc$family,
+                        n_trials = proc$n_trials, phi = phi)
   r <- as.numeric(y) - mu
   if (type == "pearson") {
-    v <- .response_variance(lp$eta, lp$logit_zi, object$family,
-                            n_trials = object$n_trials, phi = phi,
-                            phi2 = object$phi2)
+    v <- .response_variance(lp$eta, lp$logit_zi, proc$family,
+                            n_trials = proc$n_trials, phi = phi,
+                            phi2 = proc$phi2)
     r <- r / sqrt(pmax(v, .Machine$double.eps))
   }
   r

@@ -877,8 +877,8 @@ tulpa_joint_axis_specs_from_grid <- function(
 
 # Build the generic `kernel_fn(new_cells, warm_start, store_extras)` closure
 # refinement passes around `backend$call_kernel`. Packs the joint kernel's
-# per-cell modes + n_iter + Q_csc_* into a list of per-cell `extras` so the
-# generic helpers can carry them along across refinement appends (and the
+# per-cell side data (`.JOINT_CELL_FIELDS`) into a list of per-cell `extras` so
+# the generic helpers can carry them along across refinement appends (and the
 # warm-start chain still reads `extras[[idx0]]$mode`).
 .joint_make_kernel_fn <- function(arms, prior, cp, backend, max_iter, tol,
                                   n_threads, x_init_default, store_Q,
@@ -954,24 +954,7 @@ tulpa_joint_axis_specs_from_grid <- function(
                                       cila = cila)
         extras <- NULL
         if (isTRUE(store_extras)) {
-            n <- nrow(new_cells)
-            extras <- vector("list", n)
-            modes_mat  <- res_x$modes
-            n_iter_vec <- res_x$n_iter
-            Qp <- res_x$Q_csc_p_per_grid
-            Qi <- res_x$Q_csc_i_per_grid
-            Qx <- res_x$Q_csc_x_per_grid
-            CB <- res_x$cov_block_per_grid
-            for (k in seq_len(n)) {
-                e <- list()
-                if (!is.null(modes_mat))  e$mode   <- as.numeric(modes_mat[k, ])
-                if (!is.null(n_iter_vec)) e$n_iter <- as.integer(n_iter_vec[k])
-                if (!is.null(Qp))         e$Q_csc_p <- Qp[[k]]
-                if (!is.null(Qi))         e$Q_csc_i <- Qi[[k]]
-                if (!is.null(Qx))         e$Q_csc_x <- Qx[[k]]
-                if (!is.null(CB))         e$cov_block <- CB[[k]]
-                extras[[k]] <- e
-            }
+            extras <- .joint_extras_from_res(res_x, nrow(new_cells))
         }
         list(log_marginal = res_x$log_marginal, extras = extras,
              inner_skew = res_x$inner_skew,
@@ -998,29 +981,59 @@ tulpa_joint_axis_specs_from_grid <- function(
     }
 }
 
+# The per-cell side data a joint kernel result carries: one entry per cell of
+# the outer grid, in the grid's own cell order. Refinement extends the grid cell
+# by cell, so every one of these has to travel out through `extras` and back --
+# a list left behind indexes the grid the fit had BEFORE refinement. The three
+# passes that move them (slice the initial result, slice a refinement pass's
+# result, glue the merged list back on) read this one table, so a field added to
+# the kernel's output is added once rather than at three sites that then drift.
+#
+# `kind` is how a cell is taken out of a result and put back:
+#   "row" -- an [n_grid x m] matrix; cell k is row k, a cell without one is NA
+#   "int" -- a length-n_grid integer vector
+#   "elt" -- a length-n_grid list; cell k is element k
+.JOINT_CELL_FIELDS <- list(
+    list(res = "modes",             extra = "mode",      kind = "row"),
+    # The per-cell linear predictor and its within-cell variance: the pair a
+    # grid-mixture predictive read draws a replicate from
+    # (`.tulpa_eta_draws_grid()`, gcol33/tulpa#850). Present on a single-arm fit
+    # only, the variance additionally only under `control$fitted_var`.
+    list(res = "fitted_eta",        extra = "eta",       kind = "row"),
+    list(res = "fitted_eta_var",    extra = "eta_var",   kind = "row"),
+    list(res = "n_iter",            extra = "n_iter",    kind = "int"),
+    list(res = "Q_csc_p_per_grid",  extra = "Q_csc_p",   kind = "elt"),
+    list(res = "Q_csc_i_per_grid",  extra = "Q_csc_i",   kind = "elt"),
+    list(res = "Q_csc_x_per_grid",  extra = "Q_csc_x",   kind = "elt"),
+    list(res = "cov_block_per_grid", extra = "cov_block", kind = "elt")
+)
+
+# Per-cell extras for the first `n` cells of a joint kernel result: the fields
+# it actually carries, under their `extras` names. Built for the initial
+# cartesian pass (`.joint_init_extras_from_res`) and for every refinement
+# append (`.joint_make_kernel_fn`) through the same walk.
+.joint_extras_from_res <- function(res, n) {
+    if (n == 0L) return(vector("list", 0L))
+    lapply(seq_len(n), function(k) {
+        e <- list()
+        for (f in .JOINT_CELL_FIELDS) {
+            v <- res[[f$res]]
+            if (is.null(v)) next
+            e[[f$extra]] <- switch(f$kind,
+                                   row = as.numeric(v[k, ]),
+                                   int = as.integer(v[k]),
+                                   elt = v[[k]])
+        }
+        e
+    })
+}
+
 # Build the initial per-cell extras list from the initial joint kernel result,
 # matching what `.joint_make_kernel_fn` would have produced for the cartesian
 # pass. Refinement extends this list; `.joint_glue_extras_to_res` puts the
 # refined extras back into `res` once integration is done.
 .joint_init_extras_from_res <- function(res) {
-    n <- length(res$log_marginal)
-    if (n == 0L) return(vector("list", 0L))
-    modes_mat  <- res$modes
-    n_iter_vec <- res$n_iter
-    Qp <- res$Q_csc_p_per_grid
-    Qi <- res$Q_csc_i_per_grid
-    Qx <- res$Q_csc_x_per_grid
-    CB <- res$cov_block_per_grid
-    lapply(seq_len(n), function(k) {
-        e <- list()
-        if (!is.null(modes_mat))  e$mode   <- as.numeric(modes_mat[k, ])
-        if (!is.null(n_iter_vec)) e$n_iter <- as.integer(n_iter_vec[k])
-        if (!is.null(Qp))         e$Q_csc_p <- Qp[[k]]
-        if (!is.null(Qi))         e$Q_csc_i <- Qi[[k]]
-        if (!is.null(Qx))         e$Q_csc_x <- Qx[[k]]
-        if (!is.null(CB))         e$cov_block <- CB[[k]]
-        e
-    })
+    .joint_extras_from_res(res, length(res$log_marginal))
 }
 
 # The first cell carrying `field`, or 0 when none does.
@@ -1054,25 +1067,23 @@ tulpa_joint_axis_specs_from_grid <- function(
     res$n_grid        <- nrow(theta_grid_matrix)
     res$refining_axis <- refining_axis
     if (is.null(extras) || length(extras) == 0L) return(res)
-    k_mode <- .joint_extras_first_with(extras, "mode")
-    if (k_mode > 0L) {
-        n_x <- length(extras[[k_mode]]$mode)
-        res$modes <- do.call(rbind, lapply(extras, function(e) {
-            if (is.null(e$mode)) rep(NA_real_, n_x) else as.numeric(e$mode)
-        }))
-    }
-    if (.joint_extras_first_with(extras, "n_iter") > 0L) {
-        res$n_iter <- vapply(extras, function(e) {
-            if (is.null(e$n_iter)) NA_integer_ else as.integer(e$n_iter)
-        }, integer(1))
-    }
-    if (.joint_extras_first_with(extras, "Q_csc_p") > 0L) {
-        res$Q_csc_p_per_grid <- lapply(extras, `[[`, "Q_csc_p")
-        res$Q_csc_i_per_grid <- lapply(extras, `[[`, "Q_csc_i")
-        res$Q_csc_x_per_grid <- lapply(extras, `[[`, "Q_csc_x")
-    }
-    if (.joint_extras_first_with(extras, "cov_block") > 0L) {
-        res$cov_block_per_grid <- lapply(extras, `[[`, "cov_block")
+    for (f in .JOINT_CELL_FIELDS) {
+        k0 <- .joint_extras_first_with(extras, f$extra)
+        if (k0 == 0L) next
+        res[[f$res]] <- switch(
+            f$kind,
+            row = {
+                m <- length(extras[[k0]][[f$extra]])
+                do.call(rbind, lapply(extras, function(e) {
+                    v <- e[[f$extra]]
+                    if (is.null(v)) rep(NA_real_, m) else as.numeric(v)
+                }))
+            },
+            int = vapply(extras, function(e) {
+                v <- e[[f$extra]]
+                if (is.null(v)) NA_integer_ else as.integer(v)
+            }, integer(1)),
+            elt = lapply(extras, `[[`, f$extra))
     }
     res
 }

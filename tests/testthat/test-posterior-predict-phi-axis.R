@@ -16,6 +16,10 @@
 #      falls back to the fit's scalar wherever there is no axis.
 #   3. THE EFFECT -- the replicates' residual spread is the axis's, not one
 #      cell's; and a fit with no axis is unchanged.
+#
+# The joint driver stores the per-cell linear predictor the mixture draws from
+# since gcol33/tulpa#850, so claim 3 runs on a real fit rather than on a
+# hand-built grid standing in for one.
 
 .ppa_sim <- function(seed = 11L, n_s = 25L, N = 300L, sd_true = 0.45) {
   set.seed(seed)
@@ -32,7 +36,7 @@
        sidx = sidx, X = X, y = y, N = N, n_s = n_s, sd_true = sd_true)
 }
 
-.ppa_fit <- function(sim, phi_axis, phi0 = 0.2) {
+.ppa_fit <- function(sim, phi_axis, phi0 = 0.2, control = list()) {
   arm <- list(y = sim$y, n_trials = rep(1L, sim$N), X = sim$X,
               spatial_idx = as.integer(sim$sidx), re_idx = rep(0, sim$N),
               n_re_groups = 0L, sigma_re = 1.0, family = "gaussian", phi = phi0)
@@ -40,7 +44,7 @@
               adj_row_ptr = sim$adj_row_ptr, adj_col_idx = sim$adj_col_idx,
               n_neighbors = sim$n_neighbors, sigma_grid = c(0.4, 0.6, 0.9))
   args <- list(responses = list(obs = arm), prior = blk,
-               control = list(diagnose_k = FALSE))
+               control = utils::modifyList(list(diagnose_k = FALSE), control))
   if (!is.null(phi_axis)) args$phi_grid <- list(obs = phi_axis)
   do.call(tulpa_nested_laplace_joint, args)
 }
@@ -100,51 +104,73 @@ test_that(".tulpa_phi_draws resolves the cell's dispersion, or the scalar", {
 
 
 test_that("the dispersion axis reaches the replicates and the log-likelihood", {
-  # A grid fit carrying both halves: the per-cell linear predictor a mixture
-  # draws from, and an integrated dispersion axis. The joint driver stores no
-  # `fitted_eta`, so nothing in the package yet carries both (tracked
-  # separately); the contract the readers implement is asserted here.
-  K <- 6L
-  nobs <- 400L
-  axis <- c(0.05, 0.10, 0.15, 0.25, 0.35, 0.45)
-  set.seed(1)
-  M <- matrix(rep(rnorm(nobs, 0, 0.2), each = K), K, nobs)
-  mk <- function(tg) structure(
-    list(backend = "nested_laplace", weights = rep(1 / K, K),
-         theta_grid = tg, fitted_eta = M,
-         y = M[1L, ],
-         responses = list(obs = list(family = "gaussian", phi = 0.25,
-                                     n_trials = NULL, y = M[1L, ]))),
-    class = c("tulpa_nested_laplace", "tulpa_fit"))
+  skip_on_cran()
+  # A fit carrying both halves: the per-cell linear predictor a mixture draws
+  # from, and an integrated dispersion axis. The joint driver stores the
+  # predictor since gcol33/tulpa#850, so this runs on a REAL fit rather than on
+  # a hand-built grid standing in for one.
+  sim  <- .ppa_sim()
+  axis <- c(0.10, 0.16, 0.2025, 0.25, 0.35)
+  fit  <- .ppa_fit(sim, axis, phi0 = 0.2)
 
-  f_axis   <- mk(cbind(phi_obs = axis))
-  f_pinned <- mk(cbind(phi_obs = rep(0.25, K)))
+  expect_true(is.matrix(fit$fitted_eta))
+  expect_equal(dim(fit$fitted_eta), c(nrow(fit$theta_grid), sim$N))
+  expect_equal(dim(fit$fitted_eta_var), dim(fit$fitted_eta))
+  expect_equal(length(fit$weights), nrow(fit$fitted_eta))
+  expect_identical(tulpa:::.tulpa_linpred_source(fit), "grid_mixture")
 
-  set.seed(8); y_axis   <- posterior_predict(f_axis,   ndraws = 4000L)
-  set.seed(8); y_pinned <- posterior_predict(f_pinned, ndraws = 4000L)
-  set.seed(8); eta      <- tulpa:::.tulpa_eta_draws(f_axis, ndraws = 4000L)
+  # The same fit with its dispersion PINNED: one grid column and the arm's own
+  # scalar, and NOTHING else -- the same per-cell predictor, the same
+  # within-cell variance, the same weights, so the same cells and the same eta
+  # at one seed. The replicates' residual spread then follows the dispersion
+  # alone.
+  pin    <- 0.9
+  pinned <- fit
+  pinned$theta_grid[, "phi_obs"] <- pin
+  pinned$responses$obs$phi       <- pin
+
+  S <- 3000L
+  set.seed(8); eta   <- tulpa:::.tulpa_eta_draws(fit, ndraws = S)
+  set.seed(8); y_ax  <- posterior_predict(fit,    ndraws = S)
+  set.seed(8); y_pin <- posterior_predict(pinned, ndraws = S)
 
   # Each replicate carries its own cell's residual variance, so the pooled
-  # residual variance is the axis's mean and not the pin's value.
-  expect_equal(var(as.numeric(y_axis) - as.numeric(eta)), mean(axis),
-               tolerance = 0.05)
-  expect_equal(var(as.numeric(y_pinned) - as.numeric(eta)), 0.25,
-               tolerance = 0.05)
+  # residual variance is the axis's posterior mean and not the pin's value.
+  phi_bar <- sum(as.numeric(fit$weights) * fit$theta_grid[, "phi_obs"])
+  expect_equal(var(as.numeric(y_ax)  - as.numeric(eta)), phi_bar,
+               tolerance = 0.1)
+  expect_equal(var(as.numeric(y_pin) - as.numeric(eta)), pin, tolerance = 0.1)
 
   # The same resolution reaches the pointwise log-likelihood WAIC / LOO read,
   # so the density scores each draw at the dispersion it was drawn under.
-  ll_axis   <- tulpa:::.tulpa_eta_loglik(f_axis, eta)
-  ll_pinned <- tulpa:::.tulpa_eta_loglik(f_pinned, eta)
+  ll_axis   <- tulpa:::.tulpa_eta_loglik(fit,    eta)
+  ll_pinned <- tulpa:::.tulpa_eta_loglik(pinned, eta)
   expect_equal(dim(ll_axis), dim(eta))
   expect_false(isTRUE(all.equal(ll_axis, ll_pinned)))
-  # Rows drawn in the SAME cell as the pin score identically under both.
-  same <- which(abs(tulpa:::.tulpa_phi_draws(
-    f_axis, tulpa:::.tulpa_response_process(f_axis, "t"),
-    attr(eta, "cells"), nrow(eta)) - 0.25) < 1e-12)
-  if (length(same)) {
-    expect_equal(ll_axis[same, , drop = FALSE],
-                 ll_pinned[same, , drop = FALSE])
-  }
+  expect_true(all(is.finite(ll_axis)))
+
+  # And the criteria / diagnostic doors read the arm's response and design
+  # rather than the per-arm list a joint fit carries at `$y`.
+  expect_equal(dim(tulpa:::.tulpa_pointwise_loglik(fit, ndraws = 40L)),
+               c(40L, sim$N))
+  expect_true(all(is.finite(bayes_R2(fit)$estimate)))
+  expect_length(as.numeric(fitted(fit)), sim$N)
+  expect_length(as.numeric(residuals(fit, type = "response")), sim$N)
+})
+
+
+test_that("control$fitted_var declines the within-cell spread, not the predictor", {
+  skip_on_cran()
+  # The per-row predictive variance is a real per-cell cost, so it is
+  # declinable; the per-cell predictor is not the same quantity and stays
+  # (gcol33/tulpa#850). A fit without it draws the across-cell spread only.
+  sim <- .ppa_sim()
+  fit <- .ppa_fit(sim, c(0.16, 0.2025, 0.25), control = list(fitted_var = FALSE))
+
+  expect_true(is.matrix(fit$fitted_eta))
+  expect_null(fit$fitted_eta_var)
+  expect_identical(tulpa:::.tulpa_linpred_source(fit), "grid_mixture")
+  expect_equal(dim(posterior_predict(fit, ndraws = 50L)), c(50L, sim$N))
 })
 
 

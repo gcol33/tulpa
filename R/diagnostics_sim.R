@@ -32,7 +32,13 @@ NULL
 # erroring clearly when it cannot be found (rather than letting a NULL fall
 # through to sum(NULL == 0) == 0 or an opaque var(NULL) error downstream).
 .resolve_obs <- function(object, observed = NULL) {
-  obs <- observed %||% object$y %||% object$.internal$fit_args$y
+  # A joint nested-Laplace fit carries its response on the arm and a LIST of
+  # per-arm responses at `$y`, so the response process resolves it first; a
+  # fit with no single one falls through to the flat fields unchanged
+  # (gcol33/tulpa#850).
+  arm_y <- tryCatch(.tulpa_response_process(object, "the observed response")$y,
+                    error = function(e) NULL)
+  obs <- observed %||% arm_y %||% object$y %||% object$.internal$fit_args$y
   if (is.null(obs)) {
     stop("Cannot extract the observed response from the fit. ",
          "Provide the `observed` argument.", call. = FALSE)

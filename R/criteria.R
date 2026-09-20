@@ -613,8 +613,14 @@ loo.tulpa_fit <- function(x, ...) {
     if (!is.null(ll)) return(list(loglik = as.matrix(ll), loglik_at_mean = NULL))
   }
 
-  y <- object[["y"]]
-  family <- object[["family"]]
+  # The response and the family, resolved the one way the predictive readers
+  # resolve them: flat on a `tulpa()` fit, on the arm of a one-arm joint fit
+  # (gcol33/tulpa#850). A fit with no single response process resolves neither
+  # and falls through to the refusals below, which name what is missing.
+  proc   <- tryCatch(.tulpa_response_process(object, caller),
+                     error = function(e) NULL)
+  y      <- proc$y      %||% object[["y"]]
+  family <- proc$family %||% object[["family"]]
   if (is.null(y)) refuse("it stores no response `$y`")
   if (inherits(object, "tulpa_categorical")) {
     # The class probabilities are a function of the parameter vector through
@@ -674,7 +680,7 @@ loo.tulpa_fit <- function(x, ...) {
   S <- nrow(eta)
   n <- ncol(eta)
   proc <- .tulpa_response_process(object, "pointwise log-likelihood")
-  Y  <- matrix(as.numeric(object[["y"]]), S, n, byrow = TRUE)
+  Y  <- matrix(as.numeric(proc$y), S, n, byrow = TRUE)
   NT <- matrix(as.numeric(proc$n_trials %||% 1), S, n, byrow = TRUE)
   # The same per-replicate dispersion posterior_predict() samples at, so a fit
   # that integrated a dispersion axis scores its draws under the value each one

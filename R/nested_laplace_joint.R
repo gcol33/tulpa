@@ -343,6 +343,15 @@
 #'     the screen keeps and then solves in full, so a depth above what the
 #'     ranking needs makes screening cost more than the solves it avoids. Must
 #'     be a single integer `>= 1`.
+#'   * `fitted_var` (`TRUE`) -- also fill `fitted_eta_var`, the per-cell,
+#'     per-observation predictive variance of the linear predictor. It is the
+#'     WITHIN-cell spread a grid-mixture replicate is drawn with
+#'     ([posterior_predict()]); the per-cell predictor `fitted_eta` itself is
+#'     stored either way. Computed by a per-cell solve sweep on top of the inner
+#'     Newton, so a fit that will not be predicted from can decline it; the
+#'     replicates of a fit run without it then carry the across-cell spread
+#'     only. Read on a single-arm fit, which is the one that carries a single
+#'     linear predictor to report.
 #'   * `x_init` (`NULL`) -- warm-start for the first grid point's inner solve.
 #'   * `verbose` (`FALSE`) -- when `TRUE`, announce the engaged outer integrator
 #'     for a multi-block prior in one line at selection time (see `integration`),
@@ -794,6 +803,13 @@
 #'      tail away from the bulk and `mean +/- 1.96 sd` mis-states the
 #'      uncertainty.
 #'   * `modes` -- `[n_grid x n_x]` matrix of inner modes.
+#'   * `fitted_eta` -- `[n_grid x N]` matrix of the linear predictor at each
+#'      cell's own mode, offset and latent field included. Present on a
+#'      single-arm fit, which is the one that has a single linear predictor to
+#'      report; a cell that was pruned or whose block preparation failed reads
+#'      `NA`. `fitted_eta_var` is its per-cell within-cell variance, present
+#'      under `control$fitted_var` (the default). Together these are the
+#'      per-cell Gaussian [posterior_predict()] draws a replicate from.
 #'   * `n_iter` -- inner Newton iterations per grid point.
 #'   * `arm_layout` -- list with per-arm `beta_start`, `re_start`,
 #'      spatial offset(s) and `n_x` for decoding modes.
@@ -1879,6 +1895,14 @@ tulpa_nested_laplace_joint <- function(responses,
     .op_screen <- options(tulpa.nl_screen_iters = screen_iters)
     on.exit(options(.op_screen), add = TRUE)
 
+    # The per-row predictive variance of the linear predictor rides the same
+    # transport. It is what a grid-mixture replicate draws its WITHIN-cell
+    # spread from (`posterior_predict()`), and a real per-cell solve sweep, so
+    # a fit that will not be predicted from can decline it.
+    .op_fitted_var <- options(
+        tulpa.nl_fitted_var = isTRUE(control$fitted_var %||% TRUE))
+    on.exit(options(.op_fitted_var), add = TRUE)
+
     # The override reaches the dense inner Newton through the multi-block
     # driver's call factory only. Refusing it elsewhere is what keeps it from
     # reading as a setting that was applied.
@@ -2293,13 +2317,14 @@ tulpa_nested_laplace_joint <- function(responses,
 
 # Thin wrapper over cpp_nested_laplace_joint_multi that injects the fit-scoped
 # knobs set by tulpa_nested_laplace_joint: the outer-grid progress reporter
-# (`tulpa.nl_progress`), the grid-cell checkpoint file (`tulpa.nl_checkpoint`)
-# and the cheap-screen depth (`tulpa.nl_screen_iters`). Every backend /
-# refinement call site routes through here, so these reach the cpp entry without
-# threading scalars through the polymorphic backend interface. Options unset ->
-# progress = FALSE, no checkpoint, and the engine's own screening depth. A fit
-# running under `tulpa_joint_grid_batch()` has its main grid solve captured or
-# served here (`.joint_grid_batch_intercept()`).
+# (`tulpa.nl_progress`), the grid-cell checkpoint file (`tulpa.nl_checkpoint`),
+# the cheap-screen depth (`tulpa.nl_screen_iters`) and the per-row predictive
+# variance switch (`tulpa.nl_fitted_var`). Every backend / refinement call site
+# routes through here, so these reach the cpp entry without threading scalars
+# through the polymorphic backend interface. Options unset -> progress = FALSE,
+# no checkpoint, the engine's own screening depth, and the per-row variance on.
+# A fit running under `tulpa_joint_grid_batch()` has its main grid solve
+# captured or served here (`.joint_grid_batch_intercept()`).
 .cpp_joint_multi <- function(...) {
   served <- .joint_grid_batch_intercept(list(...))
   if (!is.null(served)) return(served)
@@ -2316,5 +2341,7 @@ tulpa_nested_laplace_joint <- function(responses,
                  progress_throttle = as.numeric(p$progress_throttle),
                  progress_file     = as.character(p$progress_file),
                  checkpoint_path   = checkpoint_path,
-                 screen_iters      = as.integer(si))))
+                 screen_iters      = as.integer(si),
+                 compute_fitted_var =
+                   isTRUE(getOption("tulpa.nl_fitted_var", TRUE)))))
 }

@@ -124,12 +124,28 @@
   as.matrix(U %*% Matrix::t(Z))
 }
 
+# The one arm of a joint nested-Laplace fit, or NULL.
+#
+# A joint fit carries a response process, a design and a response PER ARM, so
+# each of those is resolvable exactly when the fit has one arm -- and then that
+# arm's own fields ARE the fit's. One predicate, so the family, the dispersion,
+# the response and the design are read off the same place rather than each
+# accessor deciding for itself what a one-arm fit is. `arm` is the name the arm
+# was given, which is what locates a `phi_<arm>` dispersion axis on the outer
+# grid (gcol33/tulpa#850).
+#' @keywords internal
+.tulpa_single_arm <- function(object) {
+  arms <- object$responses
+  if (!is.list(arms) || length(arms) != 1L || !is.list(arms[[1L]])) return(NULL)
+  nm <- names(arms)[1L]
+  list(spec = arms[[1L]],
+       arm  = if (is.character(nm) && nzchar(nm)) nm else NULL)
+}
+
 # The response process a fit samples from: the family, the trial counts and the
-# dispersion that turn a linear predictor into a distribution over y. A
-# `tulpa()` fit carries them flat. A joint nested-Laplace fit carries one set
-# PER ARM, so it has a single response process exactly when it has one arm --
-# and then the arm's own fields ARE that process. `arm` names it, which is what
-# locates a `phi_<arm>` dispersion axis on the outer grid.
+# dispersion that turn a linear predictor into a distribution over y, plus the
+# response itself. A `tulpa()` fit carries them flat; a joint fit carries them
+# on its arm (`.tulpa_single_arm()`).
 #
 # Errors through `.accessor_unavailable()` where there is no single process,
 # naming how many arms there are rather than only that a family is missing.
@@ -140,13 +156,12 @@
     return(list(family = object$family, n_trials = object$n_trials,
                 phi = object$phi, phi2 = object$phi2, y = object$y, arm = NULL))
   }
-  if (is.list(arms) && length(arms) == 1L &&
-      is.character(arms[[1L]]$family) && length(arms[[1L]]$family) == 1L) {
-    a <- arms[[1L]]
-    nm <- names(arms)[1L]
+  one <- .tulpa_single_arm(object)
+  if (!is.null(one) && is.character(one$spec$family) &&
+      length(one$spec$family) == 1L) {
+    a <- one$spec
     return(list(family = a$family, n_trials = a$n_trials,
-                phi = a$phi, phi2 = a$phi2, y = a$y,
-                arm = if (is.character(nm) && nzchar(nm)) nm else NULL))
+                phi = a$phi, phi2 = a$phi2, y = a$y, arm = one$arm))
   }
   what <- if (is.list(arms) && length(arms) > 1L) {
     sprintf(paste0("a single response process to sample from: it has %d arms, ",

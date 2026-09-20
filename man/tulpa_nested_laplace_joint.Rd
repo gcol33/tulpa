@@ -353,6 +353,15 @@ steps. Every step is paid on every cell of the grid, including the cells
 the screen keeps and then solves in full, so a depth above what the
 ranking needs makes screening cost more than the solves it avoids. Must
 be a single integer \verb{>= 1}.
+\item \code{fitted_var} (\code{TRUE}) -- also fill \code{fitted_eta_var}, the per-cell,
+per-observation predictive variance of the linear predictor. It is the
+WITHIN-cell spread a grid-mixture replicate is drawn with
+(\code{\link[=posterior_predict]{posterior_predict()}}); the per-cell predictor \code{fitted_eta} itself is
+stored either way. Computed by a per-cell solve sweep on top of the inner
+Newton, so a fit that will not be predicted from can decline it; the
+replicates of a fit run without it then carry the across-cell spread
+only. Read on a single-arm fit, which is the one that carries a single
+linear predictor to report.
 \item \code{x_init} (\code{NULL}) -- warm-start for the first grid point's inner solve.
 \item \code{verbose} (\code{FALSE}) -- when \code{TRUE}, announce the engaged outer integrator
 for a multi-block prior in one line at selection time (see \code{integration}),
@@ -801,6 +810,13 @@ a boundary), where the posterior mean is pulled by the right
 tail away from the bulk and \verb{mean +/- 1.96 sd} mis-states the
 uncertainty.
 \item \code{modes} -- \verb{[n_grid x n_x]} matrix of inner modes.
+\item \code{fitted_eta} -- \verb{[n_grid x N]} matrix of the linear predictor at each
+cell's own mode, offset and latent field included. Present on a
+single-arm fit, which is the one that has a single linear predictor to
+report; a cell that was pruned or whose block preparation failed reads
+\code{NA}. \code{fitted_eta_var} is its per-cell within-cell variance, present
+under \code{control$fitted_var} (the default). Together these are the
+per-cell Gaussian \code{\link[=posterior_predict]{posterior_predict()}} draws a replicate from.
 \item \code{n_iter} -- inner Newton iterations per grid point.
 \item \code{arm_layout} -- list with per-arm \code{beta_start}, \code{re_start},
 spatial offset(s) and \code{n_x} for decoding modes.
