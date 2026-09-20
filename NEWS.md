@@ -1,3 +1,59 @@
+# tulpa 0.4.11
+
+## A coefficient can evolve as a continuous-time GP
+
+* **`temporal_tvc(structure = "gp")` is fitted** (gcol33/tulpa#847). `rw1`,
+  `rw2` and `ar1` read the time index as a position on a grid, so a ten-fold
+  gap and a unit gap are penalised alike; `gp` is the continuous-time
+  structure, a Gaussian process over the distinct time VALUES. It is not a
+  second spelling of [temporal_gp()]: that is a GP over time entering the
+  linear predictor additively (`eta_i += f(t_i)`), where this one IS the
+  coefficient (`eta_i += x_i w(t_i)`).
+
+  Measured on 24 irregularly-spaced instants (exponential gaps, poisson,
+  n = 288) against a smooth true trajectory: the GP recovers it at
+  **cor 0.999 / RMSE 0.042**, the `rw1` that assumes the spacing away at
+  **0.989 / 0.114**. `temporal_tvc()` gains `cov` / `nu` / `period` /
+  `scale_coords`, and `sigma_prior_U` / `sigma_prior_alpha` are read on this
+  structure too -- the same anchor pair, whether the field samples a
+  log-precision or a log-variance.
+
+* **One kernel, read by both doors.** The Ornstein-Uhlenbeck chain that makes
+  the exponential kernel `O(T)` was written inline in
+  `compute_temporal_prior()`; it is now `ou_chain()` / `ou_log_density()` /
+  `ou_forward()` in `src/temporal_gp_kernel.h`, which both densities call, so
+  the transform's scale and the centered conditional variance stay one number
+  and the correlation floor binds at one place. The kernel's own validation is
+  likewise one `read_temporal_gp_kernel()` at the C++ spec boundary and one
+  `.check_temporal_gp_kernel()` in R.
+
+* `TULPA_ABI_VERSION` 43 -> 44. `TVCData` gained the distinct `time_values`
+  and the kernel fields the GP structure reads, `ModelData` the lengthscale
+  bounds, and `ParamLayout` the per-coefficient `log_sigma2_tvc_gp` /
+  `logit_phi_tvc_gp` spans. A model package linking against tulpa rebuilds.
+
+## A GP lengthscale started five times the spread of its own data
+
+* **A bounded lengthscale started at the midpoint of its support, which is not
+  a place any fit wants to begin.** The support defaults to `(0.01, 10)` and
+  the time values are standardized, so the start is a lengthscale five times
+  the data's own spread: every pair of instants is correlated to within
+  rounding, the dense `T x T` covariance is numerically rank-one, and its
+  Cholesky jitter binds. The runtime gradient check then deviates on the
+  LENGTHSCALE, ordered by kernel smoothness -- Matern 5/2 clean up to a ratio
+  of 1.0 then 9.3e-04 at 2.0; Gaussian clean up to 0.25 then 1.2e-03 at 0.5
+  and 8.3e-03 at 5.0. That ladder is a floor binding, not a wrong derivative.
+
+  A GP TVC now starts at `0.2 * sd(time)` (`init_tvc_gp_lengthscale()`), and
+  all four kernels pass the check. `temporal_gp(parameterization =
+  "centered")` starts at the midpoint still and reproduces those deviations to
+  the last digit, which is what attributes them; it is gcol33/tulpa#851.
+
+* `temporal_corr()` reported a GP lengthscale as the logit's position in the
+  unit interval rather than as the lengthscale it maps to, and now reports the
+  lengthscale. It also reports a GP TVC's own amplitude and lengthscale, which
+  it carried no pattern for.
+
 # tulpa 0.4.10
 
 ## A joint fit integrated a dispersion it could not predict with

@@ -230,6 +230,22 @@ compare_models <- function(..., criterion = c("waic", "loo", "loglik")) {
   sigma_from_precision   = function(v) 1 / sqrt(v),
   identity               = function(v) v
 )
+
+# A continuous-time GP's lengthscale is sampled as a logit onto a declared
+# interval, so the draw column is a position in that interval and not the
+# lengthscale. These are the engine's own defaults
+# (`temporal_gp_phi_prior_lower` / `_upper` and the TVC pair beside them in
+# `inst/include/tulpa/model_data.h`), which is the support both GP doors run on:
+# neither exposes the bounds from R, and the C++ reader takes them off the spec
+# only for a consumer building one by hand.
+.GP_PHI_PRIOR_BOUNDS <- c(lower = 0.01, upper = 10)
+
+#' @keywords internal
+.gp_phi_from_logit <- function(raw) {
+  lo <- .GP_PHI_PRIOR_BOUNDS[["lower"]]
+  hi <- .GP_PHI_PRIOR_BOUNDS[["upper"]]
+  lo + (hi - lo) / (1 + exp(-raw))
+}
 #
 # A transformed entry also names the DOMAIN of the quantity it produces, which
 # is what a moment-matched interval is formed on when the grid is a quadrature
@@ -510,9 +526,13 @@ temporal_corr <- function(object, probs = c(0.025, 0.975)) {
     sigma_seasonal = "^log_sigma2_seasonal$",
     sigma_short    = "^log_sigma2_short$",
     rho_short      = "^logit_rho_short$",
-    # temporal_tvc(): src/tulpa_priors_tvc.h.
+    # temporal_tvc(): src/tulpa_priors_tvc.h. The discrete structures sample a
+    # log-precision (+ AR1's correlation); a GP-evolving coefficient samples an
+    # amplitude and a lengthscale per coefficient instead (gcol33/tulpa#847).
     tau_tvc = "^log_tau_tvc\\[[0-9]+\\]$",
-    rho_tvc = "^logit_rho_tvc\\[[0-9]+\\]$"
+    rho_tvc = "^logit_rho_tvc\\[[0-9]+\\]$",
+    sigma_tvc_gp       = "^log_sigma2_tvc_gp\\[[0-9]+\\]$",
+    lengthscale_tvc_gp = "^logit_phi_tvc_gp\\[[0-9]+\\]$"
   )
   transform_fn <- function(nm, raw, label) {
     if (nm == "tau") {
@@ -522,7 +542,11 @@ temporal_corr <- function(object, probs = c(0.025, 0.975)) {
     } else if (nm == "sigma") {
       list(vals = .hyper_nat$sigma_from_var(exp(raw)), row = "sigma_temporal")
     } else if (nm == "lengthscale") {
-      list(vals = 1 / (1 + exp(-raw)), row = "lengthscale")
+      list(vals = .gp_phi_from_logit(raw), row = "lengthscale")
+    } else if (grepl("^log_sigma2_tvc_gp", label)) {
+      list(vals = .hyper_nat$sigma_from_var(exp(raw)), row = nm)
+    } else if (grepl("^logit_phi_tvc_gp", label)) {
+      list(vals = .gp_phi_from_logit(raw), row = nm)
     } else if (grepl("^log_sigma2_(trend|seasonal|short)$", label)) {
       list(vals = .hyper_nat$sigma_from_var(exp(raw)), row = nm)
     } else if (nm == "rho_short") {

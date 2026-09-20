@@ -623,28 +623,48 @@ ParamLayout compute_param_layout(const ModelData& data) {
   // TVC (Temporally-Varying Coefficients) parameters
   layout.has_tvc = data.has_tvc;
   if (layout.has_tvc && data.tvc_data.n_tvc > 0) {
-    // Log precision per TVC term
-    layout.log_tau_tvc_start = idx;
-    idx += data.tvc_data.n_tvc;
-    layout.log_tau_tvc_end = idx;
+    const int n_tvc_terms = data.tvc_data.n_tvc;
+    const bool tvc_is_gp =
+        data.tvc_data.structure == tulpa_temporal::TemporalType::GP;
+    layout.log_tau_tvc_start = layout.log_tau_tvc_end = -1;
+    layout.logit_rho_tvc_start = layout.logit_rho_tvc_end = -1;
+    layout.log_sigma2_tvc_gp_start = layout.log_sigma2_tvc_gp_end = -1;
+    layout.logit_phi_tvc_gp_start = layout.logit_phi_tvc_gp_end = -1;
 
-    // AR1 rho parameters (only if structure is AR1)
-    if (data.tvc_data.structure == tulpa_temporal::TemporalType::AR1) {
-      layout.logit_rho_tvc_start = idx;
-      idx += data.tvc_data.n_tvc;
-      layout.logit_rho_tvc_end = idx;
+    if (tvc_is_gp) {
+      // A continuous-time GP coefficient: an amplitude and a lengthscale per
+      // term, the pair its covariance is built from.
+      layout.log_sigma2_tvc_gp_start = idx;
+      idx += n_tvc_terms;
+      layout.log_sigma2_tvc_gp_end = idx;
+
+      layout.logit_phi_tvc_gp_start = idx;
+      idx += n_tvc_terms;
+      layout.logit_phi_tvc_gp_end = idx;
     } else {
-      layout.logit_rho_tvc_start = layout.logit_rho_tvc_end = -1;
+      // Log precision per TVC term
+      layout.log_tau_tvc_start = idx;
+      idx += n_tvc_terms;
+      layout.log_tau_tvc_end = idx;
+
+      // AR1 rho parameters (only if structure is AR1)
+      if (data.tvc_data.structure == tulpa_temporal::TemporalType::AR1) {
+        layout.logit_rho_tvc_start = idx;
+        idx += n_tvc_terms;
+        layout.logit_rho_tvc_end = idx;
+      }
     }
 
     // TVC values: w[g, j, t] for g in groups, j in tvc terms, t in times
     // Layout: w_flat[g * n_tvc * n_times + j * n_times + t]
     layout.tvc_w_start = idx;
-    idx += data.tvc_data.n_groups * data.tvc_data.n_tvc * data.tvc_data.n_times;
+    idx += data.tvc_data.n_groups * n_tvc_terms * data.tvc_data.n_times;
     layout.tvc_w_end = idx;
   } else {
     layout.log_tau_tvc_start = layout.log_tau_tvc_end = -1;
     layout.logit_rho_tvc_start = layout.logit_rho_tvc_end = -1;
+    layout.log_sigma2_tvc_gp_start = layout.log_sigma2_tvc_gp_end = -1;
+    layout.logit_phi_tvc_gp_start = layout.logit_phi_tvc_gp_end = -1;
     layout.tvc_w_start = layout.tvc_w_end = -1;
   }
 

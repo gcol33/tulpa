@@ -270,6 +270,41 @@ validate_temporal_multiscale <- function(temporal, data) {
 # Gaussian Process Temporal Structure
 # =============================================================================
 
+# The kernel choices a continuous-time temporal GP has a closed form for,
+# checked at construction.
+#
+# Matern is evaluated from its closed form, which exists at nu in {1/2, 3/2,
+# 5/2}; general nu needs a Bessel function of the second kind and there is no
+# autodiff-friendly form of it here. Rejecting is the point: an unsupported nu
+# used to be accepted and then run as exponential (gcol33/tulpa#288).
+#
+# One check, asked by `temporal_gp()` and by `temporal_tvc(structure = "gp")`,
+# which reach the same `src/temporal_gp_kernel.h`; the C++ spec reader
+# (`read_temporal_gp_kernel`) is the same check at the other boundary, for a
+# consumer package building the spec by hand. `who` names the door.
+#' @keywords internal
+.check_temporal_gp_kernel <- function(cov, nu, period, who) {
+  if (identical(cov, "matern")) {
+    if (!is.numeric(nu) || length(nu) != 1 || nu <= 0) {
+      stop("`", who, "`: `nu` must be a positive number for Matern covariance.",
+           call. = FALSE)
+    }
+    if (!any(abs(nu - c(0.5, 1.5, 2.5)) < 1e-12)) {
+      stop("`", who, "`: `nu` must be 0.5, 1.5 or 2.5 for Matern covariance; ",
+           "smoothnesses between them have no closed form here. Got ", nu, ".",
+           call. = FALSE)
+    }
+  }
+  if (identical(cov, "periodic")) {
+    if (is.null(period) || !is.numeric(period) || length(period) != 1 ||
+        period <= 0) {
+      stop("`", who, "`: `period` must be a positive number when using ",
+           "periodic covariance.", call. = FALSE)
+    }
+  }
+  invisible(NULL)
+}
+
 #' Gaussian Process temporal structure
 #'
 #' @description
@@ -390,29 +425,7 @@ temporal_gp <- function(time_var,
     }
   }
 
-  # Validate nu for Matern. The kernel is evaluated from its closed form, which
-  # exists at nu in {1/2, 3/2, 5/2}; general nu needs a Bessel function of the
-  # second kind and there is no autodiff-friendly form of it here. Rejecting is
-  # the point: an unsupported nu used to be accepted and then run as
-  # exponential.
-  if (cov == "matern") {
-    if (!is.numeric(nu) || length(nu) != 1 || nu <= 0) {
-      stop("`nu` must be a positive number for Matern covariance", call. = FALSE)
-    }
-    if (!any(abs(nu - c(0.5, 1.5, 2.5)) < 1e-12)) {
-      stop("`nu` must be 0.5, 1.5 or 2.5 for Matern covariance; ",
-           "smoothnesses between them have no closed form here. Got ", nu, ".",
-           call. = FALSE)
-    }
-  }
-
-  # Validate period for periodic covariance
-  if (cov == "periodic") {
-    if (is.null(period) || !is.numeric(period) || length(period) != 1 || period <= 0) {
-      stop("`period` must be a positive number when using periodic covariance",
-           call. = FALSE)
-    }
-  }
+  .check_temporal_gp_kernel(cov, nu, period, "temporal_gp()")
 
   if (isFALSE(shared)) .warn_nonshared("temporal GP effects")
 

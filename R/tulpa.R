@@ -513,36 +513,40 @@
 
 
 # The structures the TVC block's density actually has a branch for
-# (`tvc_log_prior()` in src/hmc_tvc.h dispatches on TemporalType). One
-# predicate, asked by the sampler spec below and by the front door's
-# wrong-mode message, so the two cannot disagree about what is fittable.
+# (`tvc_log_prior()` / `tvc_log_prior_gp()` in src/hmc_tvc.h dispatch on
+# TemporalType). One predicate, asked by the sampler spec below and by the
+# front door's wrong-mode message, so the two cannot disagree about what is
+# fittable.
 #' @keywords internal
-.TVC_STRUCTURES <- c("rw1", "rw2", "ar1")
+.TVC_STRUCTURES <- c("rw1", "rw2", "ar1", "gp")
 
 #' @keywords internal
 .tvc_structure_or_stop <- function(structure) {
   st <- tolower(structure %||% "rw1")
   if (!st %in% .TVC_STRUCTURES) {
-    stop(sprintf(paste0(
-      "A temporally-varying coefficient evolves as %s; got '%s'. A GP TVC ",
-      "needs a per-coefficient lengthscale the TVC block does not carry ",
-      "(gcol33/tulpa#847)."),
+    stop(sprintf(
+      "A temporally-varying coefficient evolves as %s; got '%s'.",
       paste(shQuote(.TVC_STRUCTURES), collapse = " / "), st), call. = FALSE)
   }
   st
 }
 
-# Pack a validated tulpa_tvc (RW1 / RW2 / AR1 temporally-varying coefficients)
-# spec into the ModelData sampler's tvc_spec (mode = "exact" only). Each TVC term
-# j carries a temporal field w_j(g, t); the generic log-post adds
-# eta_i += sum_j X_tvc[i,j] w_j(g_i, t_i). X_tvc is row-major [n_obs x n_tvc].
+# Pack a validated tulpa_tvc spec into the ModelData sampler's tvc_spec
+# (mode = "exact" only). Each TVC term j carries a temporal field w_j(g, t); the
+# generic log-post adds eta_i += sum_j X_tvc[i,j] w_j(g_i, t_i). X_tvc is
+# row-major [n_obs x n_tvc].
+#
+# `rw1` / `rw2` / `ar1` read the time index as a position on a grid and send
+# nothing further. `gp` is the continuous-time structure: it additionally sends
+# where the distinct instants SIT and the kernel its covariance is built from,
+# the same three fields temporal_gp() sends (gcol33/tulpa#847).
 #' @keywords internal
 .tvc_sampler_spec <- function(temporal, X) {
   st <- .tvc_structure_or_stop(temporal$structure)
   idx <- as.integer(temporal$tvc_indices)
   Xt  <- as.matrix(X)[, idx, drop = FALSE]          # [n_obs x n_tvc]
   n_groups <- as.integer(temporal$n_groups %||% 1L)
-  list(
+  spec <- list(
     n_times     = as.integer(temporal$n_times),
     n_tvc       = length(idx),
     n_groups    = n_groups,
@@ -555,6 +559,20 @@
     sigma_prior_U     = as.numeric(temporal$sigma_prior_U %||% 1),
     sigma_prior_alpha = as.numeric(temporal$sigma_prior_alpha %||% 0.01)
   )
+  if (identical(st, "gp")) {
+    if (!is.numeric(temporal$time_values) ||
+        length(temporal$time_values) != spec$n_times) {
+      stop("Internal: a GP TVC spec is unvalidated (time_values missing). ",
+           "tulpa() validates it via validate_tvc().", call. = FALSE)
+    }
+    spec$time_values <- as.numeric(temporal$time_values)
+    spec$cov         <- as.character(temporal$cov %||% "exponential")
+    spec$nu          <- temporal$nu
+    # The period in the units `time_values` now carries, which is what the
+    # kernel measures its lag in.
+    spec$period      <- temporal$period_scaled %||% temporal$period
+  }
+  spec
 }
 
 

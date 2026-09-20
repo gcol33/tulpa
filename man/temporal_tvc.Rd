@@ -7,25 +7,36 @@
 temporal_tvc(
   time_var,
   terms = 1,
-  structure = c("rw1", "rw2", "ar1"),
+  structure = c("rw1", "rw2", "ar1", "gp"),
+  cov = c("exponential", "matern", "gaussian", "periodic"),
+  nu = 1.5,
+  period = NULL,
   group_var = NULL,
   shared = NULL,
   sigma_prior_U = 1,
-  sigma_prior_alpha = 0.01
+  sigma_prior_alpha = 0.01,
+  scale_coords = TRUE
 )
 }
 \arguments{
-\item{time_var}{Single character string naming the time variable in the data.}
+\item{time_var}{Single character string naming the time variable in the data.
+\code{structure = "gp"} needs it numeric: a factor states an ordering with no
+spacing for the kernel to measure.}
 
 \item{terms}{Which coefficients vary over time. A formula, an integer vector
 of design-matrix column indices, or a character vector of term names.
 Default \code{1} (the intercept).}
 
 \item{structure}{Temporal prior governing how the coefficients evolve. One of
-\code{"rw1"}, \code{"rw2"} or \code{"ar1"} -- the three the TVC block's density carries.
-A GP-evolving coefficient needs a per-coefficient lengthscale that block
-has no slot for; it is tracked as gcol33/tulpa#847. \code{"gp"} used to be
-accepted here and then refused by every mode (gcol33/tulpa#814).}
+\code{"rw1"}, \code{"rw2"}, \code{"ar1"} or \code{"gp"}.}
+
+\item{cov, nu, period}{Covariance kernel for \code{structure = "gp"}, ignored
+otherwise. \code{cov} is one of \code{"exponential"} (the default), \code{"matern"},
+\code{"gaussian"} or \code{"periodic"}; \code{nu} is the Matern smoothness, closed-form at
+\code{0.5}, \code{1.5} and \code{2.5} only (\code{0.5} IS the exponential kernel); \code{period} is
+the periodic kernel's period. Exponential and Matern \code{nu = 0.5} evaluate in
+\code{O(T)} through the Ornstein-Uhlenbeck factorization; the rest take a dense
+\verb{T x T} Cholesky per coefficient per gradient evaluation.}
 
 \item{group_var}{Optional character string naming a grouping variable for
 group-specific time-varying coefficients.}
@@ -38,7 +49,14 @@ process-specific effects and emits a warning.}
 varying coefficient's marginal standard deviation, calibrated so that
 \code{P(sigma > sigma_prior_U) = sigma_prior_alpha}. Defaults to
 \code{P(sigma > 1) = 0.01}. \code{sigma_prior_U} must be positive and
-\code{sigma_prior_alpha} must lie in \verb{(0, 1)}.}
+\code{sigma_prior_alpha} must lie in \verb{(0, 1)}. Read on every structure: it is
+the same anchor pair whether the field samples a log-precision (\code{rw1} /
+\code{rw2} / \code{ar1}) or a log-variance (\code{gp}).}
+
+\item{scale_coords}{Logical, \code{structure = "gp"} only: standardize the time
+values before fitting (default \code{TRUE}), which puts the lengthscale on the
+same universal support \code{\link[=temporal_gp]{temporal_gp()}} uses. \code{period} is stated in the raw
+time units and makes the same trip.}
 }
 \value{
 A \code{tulpa_tvc} object.
@@ -46,14 +64,25 @@ A \code{tulpa_tvc} object.
 \description{
 Specify a time-varying coefficient (TVC): one or more fixed-effect
 coefficients are allowed to evolve over time, with the evolution governed by
-a temporal prior (\code{rw1}, \code{rw2} or \code{ar1}).
+a temporal prior (\code{rw1}, \code{rw2}, \code{ar1} or \code{gp}).
+
+\code{rw1}, \code{rw2} and \code{ar1} read the time index as a position on a grid, so
+consecutive instants are one step apart whatever the data says. \code{gp} is the
+continuous-time structure: the coefficient is a Gaussian process over the
+distinct time VALUES, which is what irregular spacing needs. It is distinct
+from \code{\link[=temporal_gp]{temporal_gp()}}, a GP over time entering the linear predictor additively
+(\verb{eta_i += f(t_i)}); here the GP IS a coefficient (\verb{eta_i += x_i w(t_i)}).
 }
 \examples{
 # Intercept that drifts as a first-order random walk over year
 temporal_tvc("year", structure = "rw1")
 
+# A slope evolving as a continuous-time GP over irregularly-spaced visits
+temporal_tvc("day", terms = ~ x - 1, structure = "gp", cov = "matern")
+
 }
 \seealso{
 \code{\link[=temporal_rw1]{temporal_rw1()}}, \code{\link[=temporal_rw2]{temporal_rw2()}}, \code{\link[=temporal_ar1]{temporal_ar1()}} for the
-underlying temporal priors.
+underlying temporal priors; \code{\link[=temporal_gp]{temporal_gp()}} for a GP over time that is not
+a varying coefficient.
 }

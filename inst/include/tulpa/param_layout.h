@@ -203,8 +203,16 @@ struct ParamLayout {
     // TVC
     // ================================================================
     bool has_tvc = false;
+    // RW1 / RW2 / AR1: a log-precision per coefficient, plus AR1's correlation.
     int log_tau_tvc_start = -1, log_tau_tvc_end = -1;
     int logit_rho_tvc_start = -1, logit_rho_tvc_end = -1;
+    // GP: an amplitude and a lengthscale per coefficient, on the same
+    // coordinates the single temporal GP samples them on (a log-variance and a
+    // logit onto the declared bounds). Named apart from the tau / rho pair
+    // above rather than reusing it, because a `log_tau_tvc[j]` holding a
+    // log-variance is a parameter whose name does not say what it is.
+    int log_sigma2_tvc_gp_start = -1, log_sigma2_tvc_gp_end = -1;
+    int logit_phi_tvc_gp_start = -1, logit_phi_tvc_gp_end = -1;
     int tvc_w_start = -1, tvc_w_end = -1;
 };
 

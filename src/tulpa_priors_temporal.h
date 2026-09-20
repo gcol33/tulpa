@@ -127,28 +127,18 @@ T compute_temporal_prior(const std::vector<T>& params, const ModelData& data,
                 return log_post;
             }
 
-            // Precompute shared rho[t] and derived quantities once (same dt for all groups)
-                std::vector<T> rho_shared(T_times > 1 ? T_times - 1 : 0);
-                std::vector<T> omr2_shared(T_times > 1 ? T_times - 1 : 0);
-                std::vector<T> a_shared(T_times > 1 ? T_times - 1 : 0);
-                T sigma_t = safe_sqrt(sigma2_temporal_gp_out);
-                for (int t = 1; t < T_times; t++) {
-                    double dt = data.temporal_gp_data.time_values[t] - data.temporal_gp_data.time_values[t - 1];
-                    rho_shared[t - 1] = safe_exp(T(-dt) / phi_temporal_gp_out);
-                    // The guard is on the correlation factor 1 - rho^2, the
-                    // shared AR1 floor: it is the factor that degenerates when
-                    // a long lengthscale meets a fine time grid, and flooring
-                    // it leaves the amplitude alone, so a genuinely small
-                    // sigma^2 keeps the conditional variance the model asks for
-                    // instead of being lifted to the floor. Both branches read
-                    // this one value, so the non-centered transform's scale a_t
-                    // and the centered branch's conditional variance are the
-                    // same number and the two parameterizations target the same
-                    // posterior.
-                    omr2_shared[t - 1] =
-                        tulpa_temporal::ar1_one_minus_rho2(rho_shared[t - 1]);
-                    a_shared[t - 1] = sigma_t * safe_sqrt(omr2_shared[t - 1]);
-                }
+            // The OU transitions, built once: the chain depends on
+            // (time_values, phi) alone, so every group reads the same rho[t]
+            // and 1 - rho[t]^2. Both parameterizations read that one pair --
+            // the transform's scale a_t and the centered conditional variance
+            // are the same number, and the floor binds at the same place on
+            // both (temporal_gp_kernel.h).
+            std::vector<T> rho_shared, omr2_shared, a_shared;
+            T sigma_t = safe_sqrt(sigma2_temporal_gp_out);
+            tulpa_temporal_gp::ou_chain(data.temporal_gp_data.time_values,
+                                        T_times, phi_temporal_gp_out,
+                                        rho_shared, omr2_shared);
+            tulpa_temporal_gp::ou_forward_scale(sigma_t, omr2_shared, a_shared);
 
             if (use_nc) {
                 // Non-centered: params store z ~ N(0,1)
@@ -165,38 +155,21 @@ T compute_temporal_prior(const std::vector<T>& params, const ModelData& data,
                 // log|det(df/dz)| = T*log(sigma) + 0.5*sum log(1 - rho_t^2) here
                 // would inflate the GP amplitude by sigma^(G*T) and shrink the
                 // lengthscale.
-
-                // Forward transform z -> f: overwrite phi_temporal for use in obs loop
-                // f[0] = sigma * z[0]
-                // f[t] = rho_t * f[t-1] + a_t * z[t]
                 std::vector<T> f_reconstructed(n_temporal);
                 for (int g = 0; g < data.n_temporal_groups; g++) {
-                    int off = g * T_times;
-                    f_reconstructed[off] = sigma_t * phi_temporal[off];
-                    for (int t = 1; t < T_times; t++) {
-                        f_reconstructed[off + t] = rho_shared[t - 1] * f_reconstructed[off + t - 1] + a_shared[t - 1] * phi_temporal[off + t];
-                    }
+                    const int off = g * T_times;
+                    tulpa_temporal_gp::ou_forward(
+                        phi_temporal.data() + off, T_times, sigma_t,
+                        rho_shared, a_shared, f_reconstructed.data() + off);
                 }
                 // Replace phi_temporal with reconstructed f for observation loop
                 phi_temporal = std::move(f_reconstructed);
             } else {
                 // Centered: GP log-likelihood using state-space representation
                 for (int g = 0; g < data.n_temporal_groups; g++) {
-                    T f0 = phi_temporal[g * T_times];
-                    log_post = log_post - T(0.5) * safe_log(T(2.0 * M_PI) * sigma2_temporal_gp_out);
-                    log_post = log_post - T(0.5) * f0 * f0 / sigma2_temporal_gp_out;
-
-                    for (int t = 1; t < T_times; t++) {
-                        T f_prev = phi_temporal[g * T_times + t - 1];
-                        T f_curr = phi_temporal[g * T_times + t];
-
-                        T cond_var = sigma2_temporal_gp_out * omr2_shared[t - 1];
-                        T cond_mean = rho_shared[t - 1] * f_prev;
-                        T resid = f_curr - cond_mean;
-
-                        log_post = log_post - T(0.5) * safe_log(T(2.0 * M_PI) * cond_var);
-                        log_post = log_post - T(0.5) * resid * resid / cond_var;
-                    }
+                    log_post = log_post + tulpa_temporal_gp::ou_log_density(
+                        phi_temporal.data() + g * T_times, T_times,
+                        sigma2_temporal_gp_out, rho_shared, omr2_shared);
                 }
             }
         } else {

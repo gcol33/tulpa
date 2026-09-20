@@ -6,30 +6,28 @@
 # refuses it for a second reason. The refusal now happens where the argument
 # that caused it is still in hand (gcol33/tulpa#814, gcol33/tulpa#815).
 
-test_that("temporal_tvc() refuses the structure no mode fits", {
-  # `"gp"` was in the documented set and in match.arg's choices; the sampler
-  # entry has no GP branch and the Laplace-family modes carry no TVC field at
-  # all, so it could not be fitted under any mode (gcol33/tulpa#814). The
-  # wiring is gcol33/tulpa#847.
-  expect_error(temporal_tvc("tidx", structure = "gp"), "not fitted by any mode")
-  expect_error(temporal_tvc("tidx", structure = "gp"), "847")
-  # The message names the alternatives rather than only what is gone.
-  expect_error(temporal_tvc("tidx", structure = "gp"), "temporal_gp")
-})
-
-test_that("temporal_tvc() still takes the structures the block carries", {
+test_that("temporal_tvc() takes the structures the block carries", {
+  # `"gp"` was documented and accepted here while no mode could fit it
+  # (gcol33/tulpa#814); the constructor then took the three the block's density
+  # had a branch for, and the GP branch was wired at gcol33/tulpa#847. The
+  # declared set and the fittable set are the same set again.
   for (st in .TVC_STRUCTURES) {
     spec <- temporal_tvc("tidx", structure = st)
     expect_s3_class(spec, "tulpa_tvc")
     expect_identical(spec$structure, st)
   }
+  expect_setequal(.TVC_STRUCTURES, c("rw1", "rw2", "ar1", "gp"))
 })
 
 test_that("the TVC structure predicate is the one the sampler entry asks", {
   # One predicate, so the front door's wrong-mode message and the sampler spec
   # cannot disagree about what is fittable.
   for (st in .TVC_STRUCTURES) expect_identical(.tvc_structure_or_stop(st), st)
-  expect_error(.tvc_structure_or_stop("gp"), "lengthscale")
+  # The refusal names the whole declared set, which is the fittable set.
+  err <- tryCatch(.tvc_structure_or_stop("multiscale"),
+                  error = conditionMessage)
+  for (st in .TVC_STRUCTURES) expect_match(err, st, fixed = TRUE)
+  expect_match(err, "multiscale", fixed = TRUE)
 })
 
 test_that("a Laplace-family mode does not recommend a mode that also refuses", {

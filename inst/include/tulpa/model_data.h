@@ -145,8 +145,16 @@ namespace tulpa {
 // exp(-(d/phi)^2) and a Matern-5/2 fit predicted with it too. A consumer
 // passing a raw cov_type integer must re-read it against the enum; the bump is
 // what makes that a "rebuild required" rather than a silently different kernel.
+//
+// 43 -> 44: a temporally-varying coefficient can evolve as a continuous-time
+// GP (gcol33/tulpa#847). TVCData gained the distinct `time_values` and the
+// kernel fields (`cov_type`, `nu`, `period`) that structure reads, ModelData
+// gained the lengthscale bounds `tvc_gp_phi_prior_lower` / `_upper`, and
+// ParamLayout gained the per-coefficient `log_sigma2_tvc_gp` /
+// `logit_phi_tvc_gp` spans it samples them on. Three exported struct layouts
+// change, so a model package linking against tulpa rebuilds.
 // ============================================================================
-constexpr int TULPA_ABI_VERSION = 43;
+constexpr int TULPA_ABI_VERSION = 44;
 
 // ============================================================================
 // Per-process design matrix and fixed effects (generic multi-process interface)
@@ -478,6 +486,15 @@ struct ModelData {
     // tvc_sigma_prior_alpha. Default is the previously hardcoded (1, 0.01).
     double tvc_sigma_prior_U = 1.0;
     double tvc_sigma_prior_alpha = 0.01;
+    // A GP-evolving coefficient's lengthscale support. The amplitude reads the
+    // SAME (U, alpha) anchor pair above -- "P(sigma > U) = alpha" means the
+    // same thing on the log-variance coordinate the GP samples as on the
+    // log-precision the discrete structures sample, and pc_prior.h provides
+    // both parameterizations of that one prior. The lengthscale has no PC
+    // density here (pc_prior.h deliberately provides none in d = 1), so it is
+    // uniform on these bounds through a logit map, exactly as temporal_gp()'s.
+    double tvc_gp_phi_prior_lower = 0.01;
+    double tvc_gp_phi_prior_upper = 10.0;
 
     // ================================================================
     // ZERO-INFLATION

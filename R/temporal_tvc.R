@@ -3,17 +3,30 @@
 #' @description
 #' Specify a time-varying coefficient (TVC): one or more fixed-effect
 #' coefficients are allowed to evolve over time, with the evolution governed by
-#' a temporal prior (`rw1`, `rw2` or `ar1`).
+#' a temporal prior (`rw1`, `rw2`, `ar1` or `gp`).
+#'
+#' `rw1`, `rw2` and `ar1` read the time index as a position on a grid, so
+#' consecutive instants are one step apart whatever the data says. `gp` is the
+#' continuous-time structure: the coefficient is a Gaussian process over the
+#' distinct time VALUES, which is what irregular spacing needs. It is distinct
+#' from [temporal_gp()], a GP over time entering the linear predictor additively
+#' (`eta_i += f(t_i)`); here the GP IS a coefficient (`eta_i += x_i w(t_i)`).
 #'
 #' @param time_var Single character string naming the time variable in the data.
+#'   `structure = "gp"` needs it numeric: a factor states an ordering with no
+#'   spacing for the kernel to measure.
 #' @param terms Which coefficients vary over time. A formula, an integer vector
 #'   of design-matrix column indices, or a character vector of term names.
 #'   Default `1` (the intercept).
 #' @param structure Temporal prior governing how the coefficients evolve. One of
-#'   `"rw1"`, `"rw2"` or `"ar1"` -- the three the TVC block's density carries.
-#'   A GP-evolving coefficient needs a per-coefficient lengthscale that block
-#'   has no slot for; it is tracked as gcol33/tulpa#847. `"gp"` used to be
-#'   accepted here and then refused by every mode (gcol33/tulpa#814).
+#'   `"rw1"`, `"rw2"`, `"ar1"` or `"gp"`.
+#' @param cov,nu,period Covariance kernel for `structure = "gp"`, ignored
+#'   otherwise. `cov` is one of `"exponential"` (the default), `"matern"`,
+#'   `"gaussian"` or `"periodic"`; `nu` is the Matern smoothness, closed-form at
+#'   `0.5`, `1.5` and `2.5` only (`0.5` IS the exponential kernel); `period` is
+#'   the periodic kernel's period. Exponential and Matern `nu = 0.5` evaluate in
+#'   `O(T)` through the Ornstein-Uhlenbeck factorization; the rest take a dense
+#'   `T x T` Cholesky per coefficient per gradient evaluation.
 #' @param group_var Optional character string naming a grouping variable for
 #'   group-specific time-varying coefficients.
 #' @param shared Whether the effect is shared across processes in a
@@ -23,42 +36,51 @@
 #'   varying coefficient's marginal standard deviation, calibrated so that
 #'   `P(sigma > sigma_prior_U) = sigma_prior_alpha`. Defaults to
 #'   `P(sigma > 1) = 0.01`. `sigma_prior_U` must be positive and
-#'   `sigma_prior_alpha` must lie in `(0, 1)`.
+#'   `sigma_prior_alpha` must lie in `(0, 1)`. Read on every structure: it is
+#'   the same anchor pair whether the field samples a log-precision (`rw1` /
+#'   `rw2` / `ar1`) or a log-variance (`gp`).
+#' @param scale_coords Logical, `structure = "gp"` only: standardize the time
+#'   values before fitting (default `TRUE`), which puts the lengthscale on the
+#'   same universal support [temporal_gp()] uses. `period` is stated in the raw
+#'   time units and makes the same trip.
 #'
 #' @return A `tulpa_tvc` object.
 #'
 #' @seealso [temporal_rw1()], [temporal_rw2()], [temporal_ar1()] for the
-#'   underlying temporal priors.
+#'   underlying temporal priors; [temporal_gp()] for a GP over time that is not
+#'   a varying coefficient.
 #'
 #' @examples
 #' # Intercept that drifts as a first-order random walk over year
 #' temporal_tvc("year", structure = "rw1")
 #'
+#' # A slope evolving as a continuous-time GP over irregularly-spaced visits
+#' temporal_tvc("day", terms = ~ x - 1, structure = "gp", cov = "matern")
+#'
 #' @export
 temporal_tvc <- function(time_var,
                          terms = 1,
-                         structure = c("rw1", "rw2", "ar1"),
+                         structure = c("rw1", "rw2", "ar1", "gp"),
+                         cov = c("exponential", "matern", "gaussian", "periodic"),
+                         nu = 1.5,
+                         period = NULL,
                          group_var = NULL,
                          shared = NULL,
                          sigma_prior_U = 1,
-                         sigma_prior_alpha = 0.01) {
+                         sigma_prior_alpha = 0.01,
+                         scale_coords = TRUE) {
 
-  # `"gp"` was accepted here and then refused by every mode -- the sampler
-  # entry has no GP branch and the Laplace-family modes carry no TVC field at
-  # all (gcol33/tulpa#814). It is named explicitly rather than left to
-  # match.arg's "'arg' should be one of ...", so a caller who wrote what the
-  # docs used to promise is told why it went.
-  if (is.character(structure) && length(structure) == 1L &&
-      identical(tolower(structure), "gp")) {
-    stop("`structure = \"gp\"` is not fitted by any mode. A GP-evolving ",
-         "coefficient needs a per-coefficient lengthscale the TVC block has ",
-         "no parameter slot for; it is tracked as gcol33/tulpa#847. Use ",
-         "\"rw1\", \"rw2\" or \"ar1\", or temporal_gp() for a GP over time ",
-         "that is not a varying coefficient.", call. = FALSE)
-  }
   structure_type <- match.arg(structure)
   .check_pc_anchors(sigma_prior_U, sigma_prior_alpha,
                     "sigma_prior_U", "sigma_prior_alpha", "temporal_tvc()")
+  cov_type <- match.arg(cov)
+  # The kernel a continuous-time temporal GP is built from, validated once for
+  # both doors that offer one: the Matern smoothnesses with a closed form and
+  # the periodic kernel's period (gcol33/tulpa#288 was those choices being
+  # accepted and then silently run as exponential).
+  if (identical(structure_type, "gp")) {
+    .check_temporal_gp_kernel(cov_type, nu, period, "temporal_tvc()")
+  }
 
   if (!is.character(time_var) || length(time_var) != 1) {
     stop("`time_var` must be a single character string", call. = FALSE)
@@ -94,7 +116,17 @@ temporal_tvc <- function(time_var,
       shared = shared,
       sigma_prior_U = as.numeric(sigma_prior_U),
       sigma_prior_alpha = as.numeric(sigma_prior_alpha),
+      # GP kernel; NULL on every other structure, which reads the time index as
+      # a grid position and has no kernel.
+      cov = if (identical(structure_type, "gp")) cov_type else NULL,
+      nu = if (identical(structure_type, "gp") && cov_type == "matern") nu else NULL,
+      period = if (identical(structure_type, "gp") && cov_type == "periodic")
+                 period else NULL,
+      scale_coords = isTRUE(scale_coords),
       # Filled in during validation
+      time_values = NULL,
+      time_scale = NULL,
+      period_scaled = NULL,
       n_times = NULL,
       n_groups = NULL,
       n_tvc = NULL,
@@ -130,9 +162,17 @@ print.tulpa_tvc <- function(x, ...) {
     rw1 = "RW1 (first-order random walk)",
     rw2 = "RW2 (second-order random walk)",
     ar1 = "AR(1) (autoregressive)",
-    gp = "GP (Gaussian process)"
+    gp = "GP (Gaussian process over the distinct times)"
   )
   cat("Structure:", struct_name, "\n")
+  if (identical(x$structure, "gp")) {
+    cov_str <- x$cov
+    if (identical(x$cov, "matern")) cov_str <- paste0("matern (nu = ", x$nu, ")")
+    if (identical(x$cov, "periodic")) {
+      cov_str <- paste0("periodic (period = ", x$period, ")")
+    }
+    cat("Covariance:", cov_str, "\n")
+  }
   cat("Shared:", if (!isFALSE(x$shared)) "Yes (enters both processes)" else "No", "\n")
 
   if (!is.null(x$n_tvc)) {
@@ -182,6 +222,7 @@ validate_tvc <- function(tvc, data, X) {
 
   # Get time values and create indices
   time_vals <- data[[tvc$time_var]]
+  unique_times <- NULL
   if (is.factor(time_vals)) {
     time_factor <- time_vals
   } else {
@@ -192,6 +233,42 @@ validate_tvc <- function(tvc, data, X) {
   tvc$n_times <- nlevels(time_factor)
   tvc$time_index <- as.integer(time_factor)
   tvc$time_levels <- levels(time_factor)
+
+  # A GP-evolving coefficient is a continuous-time field over the distinct
+  # instants, so it needs WHERE they sit and not only their order --
+  # `rw1` / `rw2` / `ar1` read the index as a position on a grid and carry
+  # nothing here. A factor time variable states an ordering and no spacing, so
+  # it has no lag for a kernel to measure (gcol33/tulpa#847).
+  if (identical(tvc$structure, "gp")) {
+    if (is.null(unique_times)) {
+      stop("`temporal_tvc(structure = \"gp\")` needs a numeric time variable: ",
+           "the coefficient evolves as a continuous-time GP, and a factor '",
+           tvc$time_var, "' states an ordering with no spacing for the kernel ",
+           "to measure. Use a numeric time, or \"rw1\" / \"rw2\" / \"ar1\", ",
+           "which read the index as a position on a grid.", call. = FALSE)
+    }
+    tvals <- as.numeric(unique_times)
+    if (anyNA(tvals)) {
+      stop("`temporal_tvc(structure = \"gp\")`: time variable '", tvc$time_var,
+           "' has missing values.", call. = FALSE)
+    }
+    # Scaled the way temporal_gp() scales its own: the lengthscale then lives on
+    # one support whatever units the time variable is measured in. `period` is a
+    # LAG stated in the raw units and makes the same trip; centring cancels in a
+    # lag, the divisor does not (gcol33/tulpa#687).
+    tvc$time_scale <- 1
+    if (isTRUE(tvc$scale_coords) && length(tvals) > 1L) {
+      obs_num <- as.numeric(time_vals)   # Date / POSIXt reach numeric here too
+      s <- stats::sd(obs_num)
+      if (is.finite(s) && s > 0) {
+        tvc$time_scale <- s
+        tvals <- (tvals - mean(obs_num)) / s
+      }
+    }
+    tvc$time_values <- tvals
+    tvc$period_scaled <- if (is.null(tvc$period)) NULL else
+      as.numeric(tvc$period) / tvc$time_scale
+  }
 
   # Handle grouping
   if (!is.null(tvc$group_var)) {

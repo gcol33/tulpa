@@ -208,7 +208,7 @@ which instrument removes it depends on whether the field's own prior is proper
   direction carries no prior at all, so one has to be supplied. That is
   `sum_to_zero.h`'s augment-and-centre, and `soft_sum_to_zero.h`'s
   `s2z_precision(n)` is the soft form it replaced.
-- **Proper** (an NNGP / GP field, a TVC AR1, a TYPE_I interaction): the constant
+- **Proper** (an NNGP / GP field, a TVC AR1 or GP, a TYPE_I interaction): the constant
   direction already carries a prior, precision `1' Sigma^-1 1`. Nothing needs
   supplying; the direction needs REMOVING from the likelihood, which is what
   centring the field on its way into eta does. `s2z_centre_blocks` is the whole
@@ -227,7 +227,7 @@ from an uncentred field. The stored draws are centred to match
 **The TVC block takes the same construction**, per (group, term) block:
 `tvc_center_eta` (`hmc_tvc.h`) is the one door into `tvc_eta`, and
 `tvc_log_prior` adds the augmentation and its one extra rank for the INTRINSIC
-structures (`rw1`, `rw2`) and not for the proper one (`ar1`), the split
+structures (`rw1`, `rw2`) and not for the proper ones (`ar1`, `gp`), the split
 `tvc_structure_is_intrinsic` names. The stored draws are centred to match.
 It was the last block still on `tvc_sum_to_zero_penalty` (deleted), and the
 cost was measured under VI rather than under a sampler, which is the asymmetry
@@ -283,6 +283,30 @@ first-order Markov chain and evaluates in O(T) with no matrix; Matern 3/2 and
 a dense T x T Cholesky. Matern is closed-form at `nu` in {0.5, 1.5, 2.5} only
 and R rejects the rest at construction (gcol33/tulpa#288 was those choices being
 accepted and then silently run as exponential).
+
+**`temporal_tvc(structure = "gp")` is the same kernel on a COEFFICIENT**
+(gcol33/tulpa#847): `eta_i += x_i w(t_i)` where `temporal_gp()` is
+`eta_i += f(t_i)`, so it is the TVC structure for irregular spacing rather than
+a second spelling of the additive field. Both doors read one
+`src/temporal_gp_kernel.h` -- the OU chain (`ou_chain` / `ou_log_density` /
+`ou_forward`) and the dense factorization -- one `read_temporal_gp_kernel()` at
+the C++ spec boundary and one `.check_temporal_gp_kernel()` in R, so neither can
+come to accept a kernel or a smoothness the other refuses. The coefficient
+samples `log_sigma2_tvc_gp[j]` / `logit_phi_tvc_gp[j]` per term, on the same
+coordinates the additive field samples its pair on, and the field is PROPER so
+`tvc_center_eta` removes its level with no augmentation.
+
+**A GP lengthscale starts at `0.2 * sd(time)`, not at its support's midpoint**
+(`init_tvc_gp_lengthscale`, `sampler_model_data.h`). The support defaults to
+(0.01, 10) and the time values are standardized, so the midpoint is a
+lengthscale five times the data's own spread: the dense T x T covariance is
+then numerically rank-one and its Cholesky jitter binds at the starting point.
+The runtime gradient check's deviation on the lengthscale then orders itself by
+kernel smoothness -- Matern 5/2 clean to a ratio of 1.0 then 9.3e-04 at 2.0;
+Gaussian clean to 0.25 then 1.2e-03 at 0.5 and 8.3e-03 at 5.0 -- which is a
+floor binding, not a wrong derivative. `temporal_gp(parameterization =
+"centered")` still starts at the midpoint and reproduces those numbers exactly
+(gcol33/tulpa#851).
 - ZI/OI parameter-layout hooks only (`ZIType` enum, `has_zi` / `has_oi`); the distribution-specific ZI likelihood math lives in model packages
 - Censoring/truncation KERNELS only: `interval_gaussian` / `truncated_gaussian` are generic per-observation likelihood arms that model packages compose. General censored / survival responses (right-censored gaussian/lognormal, Weibull/exponential AFT with a censoring indicator) are an observation process and belong to tulpaObs via `LikelihoodSpec`; the engine does not grow a censoring-indicator front door (decided 2026-07-07, closes the recurring todo item)
 - Generic S3 methods operating on posterior draws: coef, confint, vcov, logLik, summary

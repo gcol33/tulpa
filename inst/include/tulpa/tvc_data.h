@@ -22,6 +22,18 @@ struct TVCData {
     bool shared = false;                // shared across processes
     bool cyclic = false;                // Cyclic temporal structure
 
+    // Continuous-time GP structure (TemporalType::GP) only. `time_index`
+    // addresses these instants, so this is the one structure that reads where
+    // they SIT rather than treating the index as a position on a grid; the
+    // discrete structures leave the vector empty. The kernel fields are the
+    // same three temporal_gp() carries, read by the same
+    // temporal_gp_kernel.h: `nu` is the Matern smoothness (closed form at
+    // 0.5 / 1.5 / 2.5 only) and `period` the periodic kernel's period.
+    std::vector<double> time_values;
+    TemporalCovType cov_type = TemporalCovType::EXPONENTIAL;
+    double nu = 0.5;
+    double period = 1.0;
+
     // Workspace (engine-allocated, not set by model packages)
     mutable std::vector<double> tau_ws;
     mutable std::vector<double> rho_ws;
