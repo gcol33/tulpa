@@ -1,4 +1,20 @@
-# tulpa 0.4.13
+# tulpa 0.5.0
+
+## The batched joint driver returned 15 of the 17 fields it promises
+
+* **A batched species carries the per-cell predictor again**
+  (gcol33/tulpa#852). `cpp_nested_laplace_joint_multi_batch()` documents each
+  element of its result as what `cpp_nested_laplace_joint_multi()` returns for
+  that species on the same grid, and since 0.4.12 it returned neither
+  `fitted_eta` nor `fitted_eta_var`: the single-species entry attached the
+  predictor and asked the inner solve for its variance, and the batch loop did
+  neither. The solve itself was never wrong -- log-marginal, mode shape and
+  modes agreed species for species -- so what was missing was the result, which
+  is what a grid-mixture predictive read draws from. Both are attached per
+  species now, under the same one-arm gate the single entry uses, and the
+  switch `control$fitted_var` sets is read in ONE place
+  (`.nl_want_fitted_var()`) so a fused species cannot integrate under a
+  different answer from the fit it reproduces.
 
 ## A default axis had only the user's pin to declare itself with
 

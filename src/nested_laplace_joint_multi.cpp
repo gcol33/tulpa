@@ -1697,7 +1697,8 @@ Rcpp::List cpp_nested_laplace_joint_multi_batch(
     int                 step_curvature_mode = 0,
     bool                force_sparse = false,
     int                 fixed_block_p = 0,
-    Rcpp::Nullable<Rcpp::List> fixed_block_constraints = R_NilValue
+    Rcpp::Nullable<Rcpp::List> fixed_block_constraints = R_NilValue,
+    bool                compute_fitted_var = true
 ) {
     const tulpa::JointFixedBlockRequest fixed_block_req =
         parse_joint_fixed_block_request(fixed_block_p, fixed_block_constraints);
@@ -1776,9 +1777,17 @@ Rcpp::List cpp_nested_laplace_joint_multi_batch(
         (step_curvature_mode == 1) ? tulpa::CurvatureMode::Expected
                                    : tulpa::CurvatureMode::Observed,
         force_sparse,
-        fixed_block_req.active() ? &fixed_block_req : nullptr);
+        fixed_block_req.active() ? &fixed_block_req : nullptr,
+        compute_fitted_var);
     for (int s = 0; s < n_batch; s++) {
         Rcpp::List sp = res[s];
+        // The same per-cell predictor the single-species entry attaches, per
+        // species. The helper replays the driver's own eta accumulator off that
+        // species' `modes`, and reads the design, the offsets and each cell's
+        // block scaling -- all shared across the batch -- so one call per
+        // species is the whole difference. Without it this entry returned 15 of
+        // the 17 fields it promises to reproduce (gcol33/tulpa#852).
+        tulpa::nl_attach_fitted_eta_single_arm(sp, arms, parsed, blocks);
         attach_joint_grid_layout(sp, theta_grid, axis_offsets, blocks);
         res[s] = sp;
     }

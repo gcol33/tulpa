@@ -2332,6 +2332,13 @@ tulpa_nested_laplace_joint <- function(responses,
     .inner_skew_attach_probe(res, out)
 }
 
+# Does a one-arm joint fit fill `fitted_eta_var`? The switch
+# `tulpa_nested_laplace_joint(control$fitted_var)` sets, read in ONE place: the
+# single-species kernel call below and the fused batch (`.cpp_joint_multi_batch()`)
+# both reach it here, so a batched species cannot integrate under a different
+# answer from the single-species fit it reproduces.
+.nl_want_fitted_var <- function() isTRUE(getOption("tulpa.nl_fitted_var", TRUE))
+
 # Thin wrapper over cpp_nested_laplace_joint_multi that injects the fit-scoped
 # knobs set by tulpa_nested_laplace_joint: the outer-grid progress reporter
 # (`tulpa.nl_progress`), the grid-cell checkpoint file (`tulpa.nl_checkpoint`),
@@ -2359,6 +2366,5 @@ tulpa_nested_laplace_joint <- function(responses,
                  progress_file     = as.character(p$progress_file),
                  checkpoint_path   = checkpoint_path,
                  screen_iters      = as.integer(si),
-                 compute_fitted_var =
-                   isTRUE(getOption("tulpa.nl_fitted_var", TRUE)))))
+                 compute_fitted_var = .nl_want_fitted_var())))
 }

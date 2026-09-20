@@ -295,7 +295,12 @@ tulpa_joint_grid_batch <- function(fits) {
     step_curvature_mode = as.integer(req1$step_curvature_mode %||% 0L),
     force_sparse       = isTRUE(req1$force_sparse),
     fixed_block_p      = as.integer(req1$fixed_block_p %||% 0L),
-    fixed_block_constraints = req1$fixed_block_constraints)
+    fixed_block_constraints = req1$fixed_block_constraints,
+    # Read where the single-species kernel call reads it: the switch is added at
+    # the kernel call rather than captured on the request, so a batched species
+    # that read it anywhere else could integrate under a different answer from
+    # the fit it reproduces.
+    compute_fitted_var = .nl_want_fitted_var())
 }
 
 # Shared marshaling for the kernel-level entries below: responses + prior ->

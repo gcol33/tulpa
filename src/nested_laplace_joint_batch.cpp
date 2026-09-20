@@ -197,7 +197,8 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
     JointPDMode                      pd_mode,
     CurvatureMode                    step_curvature,
     bool                             force_sparse,
-    const JointFixedBlockRequest*    fixed_block
+    const JointFixedBlockRequest*    fixed_block,
+    bool                             compute_fitted_var
 ) {
     const int n_arms = (int) arms.size();
     const int B = n_batch;
@@ -229,10 +230,15 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
     // threshold is the dense Cholesky.
     const bool dense_factor_sparse = (n_x >= SPARSE_THRESHOLD);
     const bool want_fixed_block = fixed_block && fixed_block->active();
+    // Same gate as the single-species entry: the per-row predictive variance of
+    // eta is a statement about the one linear predictor a one-arm fit has, so a
+    // coupled multi-arm batch reports none -- and neither does its oracle.
+    const bool want_eta_var = compute_fitted_var && arms.size() == 1u;
 
     std::vector<SpeciesState> st(B);
     for (int s = 0; s < B; s++)
-        st[s].allocate(n_x, arms, use_sparse, want_fixed_block);
+        st[s].allocate(n_x, arms, use_sparse,
+                       want_fixed_block || want_eta_var);
 
     BatchArmBuffers wbuf = buf;  // working copy carries etas (species-major)
     std::vector<std::vector<LaplaceResult>> cell_results(
@@ -303,6 +309,29 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
 
         std::vector<double> d_fac_cache((int) blocks.size());
         for (int b = 0; b < (int) blocks.size(); b++) d_fac_cache[b] = blocks[b].d_fac_at(kg);
+
+        // The loading vectors a_r = d eta_r / d x at this cell, the same request
+        // the single-species entry builds: the design and the block amplitudes
+        // it reads are shared across the batch, so one request serves every
+        // species and each fills its OWN `eta_var` off its own factor.
+        JointEtaVarRequest eta_var_req;
+        if (want_eta_var) {
+            eta_var_req.loadings = [&](const double* xm, RowLoadings& L) {
+                std::vector<std::vector<double>> d_eff(
+                    blocks.size(), std::vector<double>(n_arms, 0.0));
+                for (int b = 0; b < (int) blocks.size(); b++) {
+                    for (int k_arm = 0; k_arm < n_arms; k_arm++) {
+                        const double sc = blocks[b].arm_scale
+                                          ? blocks[b].arm_scale(k_arm, kg)
+                                          : 1.0;
+                        d_eff[b][k_arm] = sc * d_fac_cache[b];
+                    }
+                }
+                joint_row_loadings(xm, arms, parsed, blocks, kg, d_eff, L);
+            };
+        }
+        const JointEtaVarRequest* eta_var_ptr =
+            want_eta_var ? &eta_var_req : nullptr;
 
         for (int s = 0; s < B; s++) {
             SpeciesView v = species_view(st[s], use_sparse);
@@ -429,7 +458,7 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
                     compute_eta, center, log_prior, log_lik, eval_objective,
                     store_Q, pd_mode, false, nullptr, nullptr, fixed_block,
                     nullptr, nullptr, static_cast<std::uint64_t>(kg) + 1ULL,
-                    nullptr);
+                    eta_var_ptr);
             } else {
                 DenseMat& H = H_per_sp[s];
                 for (const auto& b : blocks) if (b.add_prior) b.add_prior(grad, H, v.x, kg);
@@ -439,7 +468,7 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
                     dense_factor_sparse, compute_eta, center, log_prior,
                     log_lik, eval_objective, store_Q, pd_mode, false, nullptr,
                     nullptr, fixed_block, nullptr, nullptr,
-                    static_cast<std::uint64_t>(kg) + 1ULL, nullptr);
+                    static_cast<std::uint64_t>(kg) + 1ULL, eta_var_ptr);
             }
             cell_results[s][kg] = std::move(r);
             prev_mode[s] = cell_results[s][kg].mode;

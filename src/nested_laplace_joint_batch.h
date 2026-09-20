@@ -625,7 +625,10 @@ inline void scatter_cell_coupling_batch_sparse(
 // Returns an Rcpp::List of length n_batch; element s is species s's outer-grid
 // result as nl_pack_grid_results packs it, the list the single-species joint
 // grid returns for that species' responses. `pd_mode`, `step_curvature`,
-// `force_sparse` and `fixed_block` carry the single-species driver's meaning.
+// `force_sparse`, `fixed_block` and `compute_fitted_var` carry the
+// single-species driver's meaning -- the last of them gated on a ONE-ARM fit
+// there and here alike, since a per-row predictive variance of eta is a
+// statement about the one predictor such a fit has.
 // All-coupled cell-coupling families only (occu_cover); errors otherwise.
 Rcpp::List run_multi_block_nested_laplace_joint_batch(
     int                              n_grid,
@@ -642,7 +645,8 @@ Rcpp::List run_multi_block_nested_laplace_joint_batch(
     JointPDMode                      pd_mode,
     CurvatureMode                    step_curvature,
     bool                             force_sparse,
-    const JointFixedBlockRequest*    fixed_block
+    const JointFixedBlockRequest*    fixed_block,
+    bool                             compute_fitted_var = true
 );
 
 } // namespace tulpa

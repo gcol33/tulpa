@@ -261,6 +261,52 @@ test_that("n_batch = 1 reproduces the single-species path exactly", {
 })
 
 # --------------------------------------------------------------------------- #
+# (3b) The per-cell predictor, named rather than only compared                 #
+# --------------------------------------------------------------------------- #
+
+# `.nlb_expect_exact_match()` compares the two paths and cannot see a field that
+# leaves BOTH of them, which is how the batched entry came to return 15 of the
+# 17 fields it promises: `fitted_eta` and `fitted_eta_var` were attached on the
+# single-species entry alone (gcol33/tulpa#852). These name them, and assert the
+# per-cell predictor is the arm's own rather than a matrix of the right shape.
+test_that("a one-arm batch carries the per-cell predictor and its variance", {
+  skip_on_cran()
+  cpp_register_test_separable_bernoulli_coupling()
+  skip_if_not(cpp_cell_coupling_registry_has("test_separable_bernoulli"),
+              "test_separable_bernoulli coupling spec not registered")
+
+  sim <- .nlb_bern_sim(seed = 4024L, n_batch = 2L, n_s = 18L, n_per_unit = 4L)
+  sigma_grid <- c(0.6, 1.1)
+  res <- .nlb_bern_batch(sim, sigma_grid)
+
+  for (s in seq_len(sim$n_batch)) {
+    sp <- res$per_species[[s]]
+    expect_true(all(c("fitted_eta", "fitted_eta_var") %in% names(sp)))
+    expect_identical(dim(sp$fitted_eta), c(sp$n_grid, sim$N))
+    expect_identical(dim(sp$fitted_eta_var), c(sp$n_grid, sim$N))
+    expect_true(all(is.finite(sp$fitted_eta)))
+    # A variance, so non-negative wherever it was read at all.
+    expect_true(all(sp$fitted_eta_var[is.finite(sp$fitted_eta_var)] >= 0))
+
+    # The predictor is this SPECIES' own: rebuilt from its own mode at each
+    # cell, X beta + the field at that row's unit.
+    n_beta <- ncol(sim$X)
+    for (k in seq_len(sp$n_grid)) {
+      x <- sp$modes[k, ]
+      eta <- as.numeric(sim$X %*% x[seq_len(n_beta)]) +
+        x[n_beta + sim$spatial_idx]
+      expect_equal(as.numeric(sp$fitted_eta[k, ]), eta,
+                   tolerance = 1e-10,
+                   info = paste0("species ", s, " cell ", k))
+    }
+  }
+
+  # And two species with different responses do not share one predictor.
+  expect_false(isTRUE(all.equal(res$per_species[[1L]]$fitted_eta,
+                                res$per_species[[2L]]$fitted_eta)))
+})
+
+# --------------------------------------------------------------------------- #
 # (4) Cross-arm coupling and a no-data arm                                     #
 # --------------------------------------------------------------------------- #
 
