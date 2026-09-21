@@ -153,9 +153,21 @@ test_that("the ?temporal_ar2 default fit does not warn about its own default gri
   # (>50) ... CCD integration is a follow-up." on the documented example. The
   # engine's own default grid should never trigger a "this is slow" warning
   # by itself: the fit is well under the wall-clock threshold.
-  expect_no_warning(
-    fit <- tulpa(y ~ latent(temporal_ar2(d$t)), data = d, family = "gaussian",
-                mode = "nested_laplace")
-  )
+  #
+  # Scoped to THAT warning rather than to the absence of every warning
+  # (gcol33/tulpa#856). `expect_no_warning()` was wider than the guard it
+  # stands for, and since gcol33/tulpa#849 the same call also announces the
+  # dispersion it is conditioning on -- deliberate, and a different statement
+  # about the fit from "this grid is large".
+  w <- character(0)
+  fit <- withCallingHandlers(
+    tulpa(y ~ latent(temporal_ar2(d$t)), data = d, family = "gaussian",
+          mode = "nested_laplace"),
+    warning = function(cnd) {
+      w <<- c(w, conditionMessage(cnd))
+      invokeRestart("muffleWarning")
+    })
+  expect_false(any(grepl("grid has", w, fixed = TRUE)))
+  expect_false(any(grepl("cells (>", w, fixed = TRUE)))
   expect_gt(nrow(fit$theta_grid), 50L)
 })

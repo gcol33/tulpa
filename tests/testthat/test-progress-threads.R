@@ -105,11 +105,25 @@ test_that("tulpa_iter_progress omits the threads field when serial", {
 
 test_that("nested-laplace-joint progress line shows the outer-thread count", {
   skip_on_cran()
+  # The count is the REALISED outer width, which is what this file's own header
+  # says the C++ reporter derives it from -- and the width the engine is free to
+  # resolve below the request: the memory clamp lowers it, and
+  # `_R_CHECK_LIMIT_CORES_` caps the team at two, which `src/omp_threads.h` and
+  # `cran-comments.md` both state as intended. Measured on this fixture at a
+  # request of 4: `| 4 threads` unset, `| 2 threads` with the variable set. So
+  # the requested number is not the assertion; the field carrying a parallel
+  # width is (gcol33/tulpa#855).
   n_out <- 4L
   out <- .fit_joint_88(n_threads_outer = n_out)
   joint_lines <- grep("^\\[nested-laplace-joint\\]", out, value = TRUE)
   expect_gt(length(joint_lines), 0L)
-  expect_true(any(grepl(sprintf("\\| %d threads$", n_out), joint_lines)))
+  thr <- regmatches(joint_lines,
+                    regexpr("\\| [0-9]+ threads$", joint_lines))
+  expect_gt(length(thr), 0L)
+  n_shown <- unique(as.integer(sub("\\| ([0-9]+) threads$", "\\1", thr)))
+  expect_length(n_shown, 1L)
+  expect_gt(n_shown, 1L)
+  expect_lte(n_shown, n_out)
 })
 
 test_that("serial nested-laplace-joint fit omits the threads field", {
