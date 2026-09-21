@@ -1,3 +1,24 @@
+# tulpa 0.5.1
+
+## A random-effect term's prior is an exported header
+
+* **`<tulpa/re_term_prior.h>`** carries the prior of one random-effect term
+  and the effect values it implies: a half-Cauchy on each SD, the
+  partial-correlation Cholesky factor with its LKJ(2) density for a correlated
+  term, and the non-centered `z`. `re_term_scales()`, `re_term_group_effect()`
+  and `re_term_log_prior_add()` are what the engine's random-effect block now
+  evaluates, and what a consumer package calls for a random effect it carries
+  among its own extra parameters (tulpaObs's random effects over visit rows),
+  so the two put one density on one parameter vector. The scalar math they are
+  written in (`<tulpa/ad_scalar_math.h>`: `safe_exp`, `safe_log`, `safe_sqrt`,
+  `safe_max`, `inv_logit`, `safe_tanh`, `log_prior_half_cauchy`, for double,
+  forward-mode and arena reverse-mode scalars) and the Cholesky map
+  (`<tulpa/lkj_chol.h>`: `build_L_from_raw()`, `lkj_cholesky_log_density_add()`)
+  moved out of `src/` with them.
+* The move is value-preserving: a correlated random-slope and a random-intercept
+  NUTS fit return bit-identical draws before and after it. No struct layout
+  changed, so the ABI version is unchanged.
+
 # tulpa 0.5.0
 
 ## A copy amplitude was reported, and drawn, below zero
