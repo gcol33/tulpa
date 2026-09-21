@@ -125,10 +125,10 @@ families.
 
 The \verb{(tau_lower, tau_upper)} span (and, for \code{ar1}, \verb{(rho_lower, rho_upper)}) is a starting axis, not a hard ceiling:
 when the fitted precision (or, for \code{ar1}, autocorrelation) posterior
-mode rails a boundary node (\code{pareto_k_regime = "collapsed_edge"}, see
-below), the driver fits a mode-Hessian via a derivative-free \code{optim()}
-over the collapsed grid and refits a grid re-centred on it (one
-attempt).
+mode rails a boundary node (that axis's own marginal is maximal there,
+or the whole grid collapsed onto it: \code{pareto_k_regime = "collapsed_edge"}, see below), the driver fits a mode-Hessian via a
+derivative-free \code{optim()} over the grid and refits a grid re-centred on
+it (one attempt).
 
 A grid knob PINS the axes it shapes, and a pin always wins -- but
 pinning is decided by value, not by presence: a knob

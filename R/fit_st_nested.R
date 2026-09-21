@@ -179,10 +179,11 @@
 #'   The `(tau_lower, tau_upper)` span (and, for `ar1`, `(rho_lower,
 #'   rho_upper)`) is a starting axis, not a hard ceiling:
 #'   when the fitted precision (or, for `ar1`, autocorrelation) posterior
-#'   mode rails a boundary node (`pareto_k_regime = "collapsed_edge"`, see
-#'   below), the driver fits a mode-Hessian via a derivative-free `optim()`
-#'   over the collapsed grid and refits a grid re-centred on it (one
-#'   attempt).
+#'   mode rails a boundary node (that axis's own marginal is maximal there,
+#'   or the whole grid collapsed onto it: `pareto_k_regime =
+#'   "collapsed_edge"`, see below), the driver fits a mode-Hessian via a
+#'   derivative-free `optim()` over the grid and refits a grid re-centred on
+#'   it (one attempt).
 #'
 #'   A grid knob PINS the axes it shapes, and a pin always wins -- but
 #'   pinning is decided by value, not by presence: a knob
@@ -453,9 +454,8 @@ fit_st_nested <- function(y, X, spatial_idx, adjacency, temporal_idx, n_times,
   # tau_lower/tau_upper's default [0.25, 16] span (and, for ar1, the default
   # rho_lower/rho_upper) is a starting axis, not a hard ceiling, the same
   # contract every other nested-Laplace family's default grid carries. A
-  # from-scratch mode-Hessian recenter-and-refit engages when the grid
-  # collapses onto a boundary (`pareto_k_regime = "collapsed_edge"`) and no
-  # grid knob was explicitly overridden; see `.st_auto_grid_rescue()`
+  # from-scratch mode-Hessian recenter-and-refit engages when a free axis
+  # rails (`.nl_axis_railed()`) and no grid knob was explicitly overridden; see `.st_auto_grid_rescue()`
   # (R/fit_st_nested_auto_grid.R) for the optim()-based mode-find it uses.
   # (hsgp / nngp decline this rescue outright -- see the bym2-style guard at
   # its top -- since their axes are not the tau_spatial/tau_temporal/rho pair

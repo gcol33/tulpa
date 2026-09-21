@@ -204,7 +204,10 @@
     if (!length(free)) {
         return(.nl_decline_recenter(out, "grid_knobs_overridden"))
     }
-    if (!identical(out$pareto_k_regime, "collapsed_edge")) {
+    # Read per axis (`.nl_axis_railed()`), as every other rescue does: a crossed
+    # grid whose weight spreads along one axis clears the whole-grid collapse
+    # threshold while another axis sits on its own boundary (gcol33/tulpa#858).
+    if (!any(vapply(free, function(a) .nl_axis_railed(out, a), logical(1)))) {
         return(.nl_decline_recenter(out, "grid_not_collapsed"))
     }
 

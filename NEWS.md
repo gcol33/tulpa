@@ -30,7 +30,10 @@
   grid's `collapsed_edge` regime, a `sigma` carrying 0.91 of its mass on its
   ceiling went unplaced once the consistency pass had resolved a dispersion
   axis beside it, because the grid ESS then read 5.9 against a collapse
-  threshold of 2.
+  threshold of 2. The spatiotemporal rescue (`fit_st_nested()`) reads
+  the same predicate over its free axes; on the ten rescue calls the ST test
+  fixtures make, every placement decision is unchanged (7 recentred, 2
+  `grid_not_collapsed`, 1 `grid_knobs_overridden`).
 
 ## A random-effect term's prior is an exported header
 
