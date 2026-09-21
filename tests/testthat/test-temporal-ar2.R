@@ -154,20 +154,16 @@ test_that("the ?temporal_ar2 default fit does not warn about its own default gri
   # engine's own default grid should never trigger a "this is slow" warning
   # by itself: the fit is well under the wall-clock threshold.
   #
-  # Scoped to THAT warning rather than to the absence of every warning
-  # (gcol33/tulpa#856). `expect_no_warning()` was wider than the guard it
-  # stands for, and since gcol33/tulpa#849 the same call also announces the
-  # dispersion it is conditioning on -- deliberate, and a different statement
-  # about the fit from "this grid is large".
-  w <- character(0)
-  fit <- withCallingHandlers(
-    tulpa(y ~ latent(temporal_ar2(d$t)), data = d, family = "gaussian",
-          mode = "nested_laplace"),
-    warning = function(cnd) {
-      w <<- c(w, conditionMessage(cnd))
-      invokeRestart("muffleWarning")
-    })
-  expect_false(any(grepl("grid has", w, fixed = TRUE)))
-  expect_false(any(grepl("cells (>", w, fixed = TRUE)))
+  # The call MIRRORS `?temporal_ar2`'s own example, `phi` included, which is
+  # what makes this a statement about the documented default rather than about
+  # a call only the suite makes (gcol33/tulpa#856). `phi` is the gaussian
+  # residual variance and the example now supplies the 0.3 it simulated with;
+  # left unsupplied the fit conditions on 1 -- a variance 11x the truth -- and
+  # announces that it did (gcol33/tulpa#849), which is the warning this block
+  # used to catch instead of the grid one it stands for.
+  expect_no_warning(
+    fit <- tulpa(y ~ latent(temporal_ar2(d$t)), data = d, family = "gaussian",
+                 phi = 0.3^2, mode = "nested_laplace")
+  )
   expect_gt(nrow(fit$theta_grid), 50L)
 })
