@@ -336,7 +336,8 @@ compare_models <- function(..., criterion = c("waic", "loo", "loglik")) {
     }
     m  <- sum(w * v)
     s  <- sqrt(max(0, sum(w * v^2) - m^2))
-    qs <- .nl_summary_quantile(v, w, probs, dm, support, within, at)
+    qs <- .nl_summary_quantile(v, w, probs, dm, support, within, at,
+                               .nl_axis_cell_rows(tg, j, object$refining_axis))
     out <- data.frame(mean = m, sd = s, row.names = nm,
                       stringsAsFactors = FALSE)
     out[.quantile_colnames(probs)] <- as.list(qs)

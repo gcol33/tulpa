@@ -60,13 +60,36 @@
 # itself, which both reads already turn into the level exactly -- the same
 # degenerate interval a `clamp` support's extreme cell takes above, reached
 # from the other direction.
+#
+# On an axis a refinement pass re-tiled (`rows`, `.nl_axis_cell_rows()`) a
+# cell's box depends on its row as well as its value, so the box-uniform
+# geometry is PER CELL: `values` is the axis coordinate of every cell and
+# `lo` / `hi` the box that cell owns (`.nl_cell_boxes()`), flagged `per_cell`.
 .nl_hyper_axis_geometry <- function(v, w, domain, within, outside,
-                                    atom = NA_real_) {
+                                    atom = NA_real_, rows = NULL) {
   none <- function(declined) {
     list(kind = "none", values = numeric(0), lo = numeric(0),
          hi = numeric(0), declined = declined)
   }
   if (is.na(outside)) return(none("support_moment_rule"))
+
+  if (!is.null(rows) && !identical(within, "chord")) {
+    ia <- length(atom) == 1L && is.finite(atom) && any(v == atom) &&
+          !any(v < atom, na.rm = TRUE)
+    cont <- if (ia) is.na(v) | v != atom else rep(TRUE, length(v))
+    rc <- list(row = rows$row[cont], base = rows$base[cont])
+    bx <- .nl_cell_boxes(v[cont], domain, rc)
+    if (is.null(bx)) {
+      g <- .nl_hyper_axis_geometry(v, w, domain, "chord", outside, atom)
+      g$declined <- "boxes_do_not_tile"
+      return(g)
+    }
+    lo <- hi <- v
+    lo[cont] <- bx$lo
+    hi[cont] <- bx$hi
+    return(list(kind = "box_uniform", per_cell = TRUE, values = v,
+                lo = lo, hi = hi, declined = NA_character_))
+  }
 
   # A declared point mass is not a cell: its box is its own coordinate, so a
   # draw landing in it IS the level and the continuum's partition is laid over
@@ -122,10 +145,10 @@
 # own geometry. A draw whose cell value is not one of the geometry's
 # coordinates -- reachable only where the draws were allocated over a cell set
 # the axis read filtered out -- keeps its node value rather than being matched
-# to a neighbouring box.
-.nl_hyper_axis_draw <- function(geom, v_cell) {
+# to a neighbouring box. A per-cell geometry is indexed by the draw's `cells`.
+.nl_hyper_axis_draw <- function(geom, v_cell, cells = NULL) {
   if (identical(geom$kind, "none")) return(v_cell)
-  k <- match(v_cell, geom$values)
+  k <- if (isTRUE(geom$per_cell)) cells else match(v_cell, geom$values)
   n <- length(v_cell)
   u <- stats::runif(n)
   out <- if (identical(geom$kind, "box_uniform")) {
@@ -234,8 +257,9 @@ tulpa_hyper_draws <- function(fit, cells = NULL, n = 1000, within = NULL) {
   for (j in seq_len(ncol(tg))) {
     dm <- if (length(doms) < j) NA_character_ else doms[[j]]
     at <- if (length(atoms) < j) NA_real_ else atoms[[j]]
-    g <- .nl_hyper_axis_geometry(as.numeric(tg[, j]), w, dm, req, outside, at)
-    out[, j] <- .nl_hyper_axis_draw(g, as.numeric(tg[cells, j]))
+    g <- .nl_hyper_axis_geometry(as.numeric(tg[, j]), w, dm, req, outside, at,
+                                 .nl_axis_cell_rows(tg, j, fit$refining_axis))
+    out[, j] <- .nl_hyper_axis_draw(g, as.numeric(tg[cells, j]), cells)
     used[j] <- if (identical(g$kind, "none")) NA_character_ else g$kind
     decl[j] <- if (is.na(g$declined)) fell else g$declined
   }

@@ -578,6 +578,154 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
   e
 }
 
+# The rows of one axis a refinement pass re-tiled, as the partition each cell's
+# box is read from. A refined grid is measured cell by cell
+# (`.hyper_refined_log_quad()`): slice points on axis `j` re-tile only the row
+# of the base tensor they were placed in, and every other row keeps the base
+# levels' cells. So a cell's box is not the box of its value in one partition
+# laid over every distinct value the axis carries; in a row the pass never
+# touched that partition would hand a base cell the narrow box of a slice point's
+# neighbour while the cell still holds its whole base box's mass.
+#
+# `row` is 0 for a cell whose row along `j` was not re-tiled and the index of its
+# re-tiled row otherwise (cells sharing their coordinates off `j`); `base` marks
+# the cells on the axis's declared levels, everything but its slice cells. NULL
+# when no slice cell sits on `j`, where the one partition over the axis's
+# coordinates IS every cell's box.
+.nl_axis_cell_rows <- function(tg, j, refining) {
+  if (is.null(refining) || is.null(dim(tg))) return(NULL)
+  n <- nrow(tg)
+  slice <- .hyper_slice_home(refining, n) == colnames(tg)[j]
+  if (!any(slice)) return(NULL)
+  others <- tg[, -j, drop = FALSE]
+  key <- if (ncol(others) == 0L) rep("", n) else
+    do.call(paste, c(lapply(seq_len(ncol(others)),
+                            function(k) sprintf("%.17g", others[, k])),
+                     sep = "|"))
+  retiled <- unique(key[slice])
+  row <- match(key, retiled)
+  row[is.na(row)] <- 0L
+  list(row = as.integer(row), base = !slice)
+}
+
+# The cells of `rows` (`.nl_axis_cell_rows()`) that `keep` selects, NULL when
+# the selection holds no slice cell and so no re-tiled row.
+.nl_cell_rows_subset <- function(rows, keep) {
+  if (is.null(rows) || all(rows$base[keep])) return(NULL)
+  list(row = rows$row[keep], base = rows$base[keep])
+}
+
+# The box each cell owns on one axis, per cell on the natural scale, under the
+# partition its row carries. A row the refinement never re-tiled is tiled by the
+# declared levels (`.nl_box_edges()` on the base levels); a re-tiled row by the
+# declared levels joined to its own slice points, with its outer edges no
+# narrower than the declared levels' -- the fibre `.hyper_fibre_tiling()`
+# measures, whose outer edges are the wider of the base edges and the fibre's
+# own mirror. With every cell in unrefined rows this is `.nl_box_edges()` on the
+# axis's coordinates.
+#
+# `v` is the axis's continuum: a declared point mass is not a cell and is split
+# off by the caller. NULL where a partition does not tile, for the caller to
+# decline on as `.nl_box_edges_from()` does. `coord` / `declined` are the
+# declared levels' partition's, the edges every unrefined row is read on.
+.nl_cell_boxes <- function(v, domain = NA_character_, rows) {
+  fin <- is.finite(v)
+  base_lev <- sort(unique(v[fin & rows$base]))
+  if (length(base_lev) < 2L) return(NULL)
+  pt <- .nl_cell_partition(base_lev, domain)
+  eb <- .nl_box_edges_from(pt, base_lev)
+  if (is.null(eb)) return(NULL)
+  lo <- hi <- rep(NA_real_, length(v))
+  place <- function(sel, lev, e) {
+    k <- match(v[sel], lev)
+    lo[sel] <<- e[k]
+    hi[sel] <<- e[k + 1L]
+  }
+  place(fin & rows$row == 0L, base_lev, eb)
+  for (r in setdiff(unique(rows$row[fin]), 0L)) {
+    sel <- fin & rows$row == r
+    lev <- sort(unique(c(base_lev, v[sel])))
+    e <- .nl_box_edges_from(.nl_cell_partition(lev, domain), lev)
+    if (is.null(e)) return(NULL)
+    e[1L] <- min(e[1L], eb[1L])
+    e[length(e)] <- max(e[length(e)], eb[length(eb)])
+    place(sel, lev, e)
+  }
+  list(lo = lo, hi = hi, coord = pt$coord, declined = pt$declined)
+}
+
+# Quantiles of a piecewise-uniform density on a tiling: box `k` owns
+# `[e_k, e_{k+1}]` and holds mass `m_k`, the masses summing to one.
+#
+# `cumsum(m)` can round ABOVE 1, and a grid whose trailing cells hold no mass
+# carries that same value on every entry from the last positive cell onward.
+# Forcing only the LAST entry to 1 then makes `cf` DECREASE there, and
+# `findInterval()` refuses a `vec` that is not non-decreasing -- so the read
+# errored on exactly the node sets this construction exists to handle, a grid
+# whose outermost cells' softmax weight underflowed to zero. `pmin` with a
+# constant preserves the order `cumsum` already has, so the tail is clamped
+# rather than one entry contradicted.
+.nl_box_cdf_quantile <- function(e, m, probs) {
+  cf <- c(0, pmin(cumsum(m), 1))
+  cf[length(cf)] <- 1
+  n_box <- length(m)
+  vapply(probs, function(p) {
+    if (p <= 0) return(e[1L])
+    if (p >= 1) return(e[n_box + 1L])
+    k <- findInterval(p, cf, rightmost.closed = TRUE, all.inside = TRUE)
+    while (k < n_box && m[k] <= 0) k <- k + 1L
+    if (m[k] <= 0) return(e[k])
+    e[k] + (p - cf[k]) / m[k] * (e[k + 1L] - e[k])
+  }, numeric(1))
+}
+
+# The box read of an axis whose boxes overlap across rows (`.nl_cell_boxes()`):
+# each cell's mass uniform on its own box. The union of every box edge tiles
+# the axis finer than any one row does, each cell's mass splits across the fine
+# segments its box covers in proportion to their widths, and the quantile is
+# the tiled read on that tiling -- so the density is the sum of the cells'
+# uniforms exactly, and the one-partition read is the case where every box is
+# one segment.
+.nl_box_quantile_rows <- function(v, w, probs, domain, atom, rows) {
+  fin <- is.finite(v)
+  wpos <- fin & is.finite(w) & w > 0
+  tot <- sum(w[wpos])
+  lev <- if (length(atom) == 1L && is.finite(atom) && any(v[fin] == atom) &&
+             !any(v[fin] < atom)) atom else NA_real_
+  if (!is.na(lev)) {
+    ia <- fin & v == lev
+    mass <- sum(w[wpos & ia]) / tot
+    if (mass >= 1) {
+      return(list(q = rep(lev, length(probs)), declined = "single_node"))
+    }
+    bx <- .nl_box_quantile_rows(v[!ia], w[!ia],
+                                .nl_atom_rescale(probs, mass), domain,
+                                NA_real_, .nl_cell_rows_subset(rows, !ia))
+    if (!is.null(bx$q)) bx$q[probs <= mass] <- lev
+    return(bx)
+  }
+  bx <- .nl_cell_boxes(v, domain, rows)
+  if (is.null(bx)) return(list(q = NULL, declined = "boxes_do_not_tile"))
+  ok <- wpos & is.finite(bx$lo) & is.finite(bx$hi)
+  if (!any(ok)) {
+    return(list(q = rep(NA_real_, length(probs)), declined = "no_usable_node"))
+  }
+  br <- sort(unique(c(bx$lo[fin], bx$hi[fin])))
+  i0 <- match(bx$lo[ok], br)
+  i1 <- match(bx$hi[ok], br) - 1L
+  wc <- w[ok] / sum(w[ok])
+  span <- bx$hi[ok] - bx$lo[ok]
+  seg <- unlist(Map(seq.int, i0, i1), use.names = FALSE)
+  cell <- rep(seq_along(i0), i1 - i0 + 1L)
+  share <- wc[cell] * (br[seg + 1L] - br[seg]) / span[cell]
+  m <- as.numeric(tapply(share, factor(seg, levels = seq_len(length(br) - 1L)),
+                         sum))
+  m[is.na(m)] <- 0
+  m <- m / sum(m)
+  list(q = .nl_box_cdf_quantile(br, m, probs), declined = NA_character_,
+       edge_coord = bx$coord, edge_declined = bx$declined)
+}
+
 # The BOX-UNIFORM within-cell read: each cell's shipped mass spread uniformly
 # across its own box instead of
 # placed at its coordinate.
@@ -612,14 +760,21 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
 # `declined` is why the box read did not run, from a closed vocabulary, and is
 # NA when it did. The caller falls back to the chord read on any decline, so an
 # axis the partition could not be built for still reports an interval.
+#
+# `rows` (`.nl_axis_cell_rows()`) is the row structure of a refined axis, NULL
+# for one no refinement re-tiled: each cell then reads the box its own row's
+# partition gives it (`.nl_box_quantile_rows()`).
 .nl_box_quantile <- function(values, weights, probs, domain = NA_character_,
-                             atom = NA_real_) {
+                             atom = NA_real_, rows = NULL) {
   v <- as.numeric(values)
   w <- as.numeric(weights)
   fin  <- is.finite(v)
   wpos <- fin & is.finite(w) & w > 0
   if (!any(wpos)) {
     return(list(q = rep(NA_real_, length(probs)), declined = "no_usable_node"))
+  }
+  if (!is.null(rows)) {
+    return(.nl_box_quantile_rows(v, w, probs, domain, atom, rows))
   }
   uv <- sort(unique(v[fin]))
   m <- as.numeric(tapply(w[wpos], factor(match(v[wpos], uv),
@@ -651,26 +806,7 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
   pt <- .nl_cell_partition(uv, domain)
   e <- .nl_box_edges_from(pt, uv)
   if (is.null(e)) return(list(q = NULL, declined = "boxes_do_not_tile"))
-  # `cumsum(m)` can round ABOVE 1, and a grid whose trailing cells hold no mass
-  # carries that same value on every entry from the last positive cell onward.
-  # Forcing only the LAST entry to 1 then makes `cf` DECREASE there, and
-  # `findInterval()` refuses a `vec` that is not non-decreasing -- so the read
-  # errored on exactly the node sets this construction exists to handle, a grid
-  # whose outermost cells' softmax weight underflowed to zero. `pmin` with a
-  # constant preserves the order `cumsum` already has, so the tail is clamped
-  # rather than one entry contradicted.
-  cf <- c(0, pmin(cumsum(m), 1))
-  cf[length(cf)] <- 1
-  n_box <- length(m)
-  q <- vapply(probs, function(p) {
-    if (p <= 0) return(e[1L])
-    if (p >= 1) return(e[n_box + 1L])
-    k <- findInterval(p, cf, rightmost.closed = TRUE, all.inside = TRUE)
-    while (k < n_box && m[k] <= 0) k <- k + 1L
-    if (m[k] <= 0) return(e[k])
-    e[k] + (p - cf[k]) / m[k] * (e[k + 1L] - e[k])
-  }, numeric(1))
-  list(q = q, declined = NA_character_,
+  list(q = .nl_box_cdf_quantile(e, m, probs), declined = NA_character_,
        edge_coord = pt$coord, edge_declined = pt$declined)
 }
 
@@ -890,9 +1026,9 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
                                  domain = NA_character_,
                                  support = .NL_SUPPORT_KINDS,
                                  within = .NL_WITHIN_CELL,
-                                 atom = NA_real_) {
+                                 atom = NA_real_, rows = NULL) {
   .nl_summary_quantile_read(values, weights, probs, domain, support, within,
-                            atom)$q
+                            atom, rows)$q
 }
 
 # The same dispatch, returning what actually RAN alongside the numbers: the
@@ -904,7 +1040,7 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
                                       domain = NA_character_,
                                       support = .NL_SUPPORT_KINDS,
                                       within = .NL_WITHIN_CELL,
-                                      atom = NA_real_) {
+                                      atom = NA_real_, rows = NULL) {
   support <- match.arg(support)
   within  <- match.arg(within)
   chord <- function(declined = NA_character_) {
@@ -934,7 +1070,7 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
   if (!within %in% .NL_SUPPORT[[support]]$within) {
     return(chord(paste0("support_", support)))
   }
-  bx <- .nl_box_quantile(values, weights, probs, domain, atom)
+  bx <- .nl_box_quantile(values, weights, probs, domain, atom, rows)
   if (is.na(bx$declined)) {
     return(list(q = bx$q, within = within, declined = NA_character_,
                 edge_coord    = bx$edge_coord    %||% NA_character_,
@@ -1279,8 +1415,9 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
     }
     dm <- if (length(domains) < j) NA_character_ else domains[[j]]
     at <- if (length(atoms) < j) NA_real_ else atoms[[j]]
+    rows <- .nl_cell_rows_subset(.nl_axis_cell_rows(tg, j, refining), use)
     rd <- .nl_summary_quantile_read(as.numeric(tg[use, j]), ws, probs, dm,
-                                    support, within, at)
+                                    support, within, at, rows)
     qs <- rd$q
     lo[j]  <- qs[1L]
     med[j] <- qs[2L]

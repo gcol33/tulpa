@@ -530,3 +530,105 @@ test_that("the resolution of an axis with a point mass is its continuum's", {
   expect_equal(h, stats::median(diff(log(pos))))
   expect_true(is.na(fit$outer_grid_resolution_declined[["alpha"]]))
 })
+
+
+# ---- 6. A refined axis: each cell reads its own row's box -------------------
+#
+# A refinement pass places slice points on one axis in ONE row of the others,
+# and the quadrature measures that row alone re-tiled (`.hyper_refined_log_quad()`)
+# while every other row keeps the declared levels' cells. The read and the draws
+# have to take the same boxes; a single partition over every distinct value
+# handed the unrefined rows' base cells the narrow box of a slice point's
+# neighbour while they still held their whole base box's mass
+# (gcol33/tulpa#858).
+
+hd_refined <- function(within = "box_uniform") {
+  axes <- list(tau = exp(seq(log(0.2), log(3), length.out = 7)),
+               rho = seq(0.1, 0.9, length.out = 5))
+  lmf <- function(tg) -0.5 * (log(tg[, "tau"]) - log(0.8))^2 / 0.3^2 -
+                      0.5 * (tg[, "rho"] - 0.55)^2 / 0.2^2
+  base <- as.matrix(expand.grid(axes))
+  tau <- axes$tau
+  pts <- sqrt(tau[3:5] * tau[4:6])
+  slice <- cbind(tau = pts, rho = axes$rho[3L])
+  tg <- rbind(base, slice)
+  refining <- c(rep("", nrow(base)), rep("consistency_tau", nrow(slice)))
+  specs <- tulpa:::.joint_axis_specs_from_grid(base)
+  lq <- tulpa:::.hyper_log_quad_weights(tg, specs, refining = refining)
+  lm <- lmf(tg)
+  res <- list(theta_grid = tg, log_marginal = lm, log_quad = lq,
+              refining_axis = refining, integration = "grid",
+              prior = list(type = "bym2"), blocks = NULL, axis_offsets = NULL)
+  res$weights <- tulpa:::.nl_normalise_weights_safe(lm, "outer grid",
+                                                    log_quad = lq)
+  res <- tulpa:::.nl_posterior_moments(res, "bym2", within = within)
+  res$within_cell_requested <- within
+  structure(res, class = c("tulpa_nested_laplace", "list", "tulpa_fit"))
+}
+
+test_that("an unrefined row keeps the declared levels' boxes", {
+  fit <- hd_refined()
+  tg <- fit$theta_grid
+  rows <- tulpa:::.nl_axis_cell_rows(tg, 1L, fit$refining_axis)
+  expect_identical(sort(unique(rows$row)), 0:1)
+  expect_true(all(rows$row[tg[, "rho"] != tg[36L, "rho"]] == 0L))
+
+  bx <- tulpa:::.nl_cell_boxes(as.numeric(tg[, "tau"]), "positive", rows)
+  base_lev <- sort(unique(tg[rows$base, "tau"]))
+  eb <- tulpa:::.nl_box_edges(base_lev, "positive")
+  off <- rows$row == 0L
+  k <- match(tg[off, "tau"], base_lev)
+  expect_equal(bx$lo[off], eb[k])
+  expect_equal(bx$hi[off], eb[k + 1L])
+
+  # The re-tiled row tiles the declared span with its slice points joined in,
+  # its interior edges the quadrature fibre's.
+  on <- rows$row == 1L
+  o <- order(tg[on, "tau"])
+  lo <- bx$lo[on][o]
+  hi <- bx$hi[on][o]
+  expect_equal(lo[-1L], hi[-length(hi)])
+  expect_equal(c(lo[1L], hi[length(hi)]), c(eb[1L], eb[length(eb)]))
+  spec <- tulpa:::.hyper_spec_by_name(
+    tulpa:::.joint_axis_specs_from_grid(tg[rows$base, ]), "tau")
+  m <- tulpa:::.hyper_axis_measure(tg[rows$base, "tau"], spec,
+                                   tulpa:::.hyper_axis_atom_mass(spec))
+  m$spec <- spec
+  tl <- tulpa:::.hyper_fibre_tiling(m, tg[rows$row == 1L & !rows$base, "tau"],
+                                    close_domain = TRUE)
+  inner <- tl$edges[-c(1L, length(tl$edges))]
+  expect_equal(log(lo[-1L]), inner)
+})
+
+test_that("draws on a refined axis reproduce the fit's own interval", {
+  skip_on_cran()
+  fit <- hd_refined()
+  set.seed(858)
+  th <- tulpa_hyper_draws(fit, n = 4e5L)
+  expect_identical(unname(attr(th, "within_cell")), rep("box_uniform", 2L))
+  for (ax in colnames(th)) {
+    q <- unname(stats::quantile(th[, ax], c(0.025, 0.5, 0.975)))
+    rep_q <- c(fit$theta_ci_lo[[ax]], fit$theta_median[[ax]],
+               fit$theta_ci_hi[[ax]])
+    expect_lt(max(abs(q - rep_q)), 5e-3)
+  }
+})
+
+test_that("a refined-axis draw stays in the box its own row gives its cell", {
+  fit <- hd_refined()
+  tg <- fit$theta_grid
+  set.seed(3)
+  cells <- rep(seq_len(nrow(tg)), each = 40L)
+  th <- tulpa_hyper_draws(fit, cells = cells)
+  rows <- tulpa:::.nl_axis_cell_rows(tg, 1L, fit$refining_axis)
+  bx <- tulpa:::.nl_cell_boxes(as.numeric(tg[, "tau"]), "positive", rows)
+  expect_true(all(th[, "tau"] >= bx$lo[cells] & th[, "tau"] <= bx$hi[cells]))
+  # A base cell outside the re-tiled row fills its whole declared box, about
+  # exp(+-0.226) around its level, which the one-partition geometry cut to
+  # exp(+-0.113) between the slice points either side of it.
+  lev <- sort(unique(tg[rows$base, "tau"]))[4L]
+  i <- which(rows$row == 0L & tg[, "tau"] == lev)[1L]
+  d <- th[cells == i, "tau"]
+  expect_gt(max(d), lev * 1.15)
+  expect_lt(min(d), lev / 1.15)
+})

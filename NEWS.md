@@ -1,3 +1,20 @@
+# tulpa 0.5.2
+
+## A refined axis reads each cell's box from its own row
+
+* On an outer axis a refinement pass placed slice points on, the box-uniform
+  interval read and `tulpa_hyper_draws()` (and so the `"theta"` attribute of
+  `tulpa_posterior_draws()`) give every cell the box the quadrature measured
+  it with. A slice point re-tiles only the row it was placed in
+  (`.hyper_refined_log_quad()`); every other row keeps the declared levels'
+  cells. Both reads used to lay one partition over every distinct value the
+  axis carried, so a base cell in an untouched row was drawn on the narrow box
+  between the slice points beside its level while it held its whole base
+  box's mass. On the cover-glaser HP760 J = 10 reference fit the `phi_pos`
+  draws' interquartile range held 0.453 of the fit's own measure instead of
+  0.5; the J = 3 fit, with no consistency slices on that axis, held 0.497
+  (#858). An axis no pass refined is read exactly as before.
+
 # tulpa 0.5.1
 
 ## The copy axis is declared at nine slab nodes, and the consistency pass bisects where the mass is
