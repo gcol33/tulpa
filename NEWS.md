@@ -1,5 +1,37 @@
 # tulpa 0.5.1
 
+## The copy axis is declared at nine slab nodes, and the consistency pass bisects where the mass is
+
+* The copy coefficient's default outer axis (`tulpa_grid_axis("copy_alpha")`)
+  is the atom at 0 plus **nine** log-spaced nodes on [0.1, 3], a node ratio of
+  1.53, the resolution the other outer axes of a copy fit run at. With five
+  (ratio 2.34) a posterior over alpha sat on two adjacent nodes; an SBC on the
+  cover-glaser HP760 fixture (occu_cover beta arm, n_sim = 300) had 9/11 and
+  7/11 parameters inside the family-wise band at J = 3 / 10 with five nodes
+  and 11/11 at both with nine (#858).
+* The var-of-means consistency pass places its nodes by the axis marginal's
+  mass: it bisects, on the axis's integration coordinate, every gap between
+  adjacent nodes that together carry at least `1 / axis_sd_ess` of the
+  continuum's mass, re-reads the axis ESS, and repeats until the axis reaches
+  the floor or has taken `.nl_diag("axis_refine_nodes")` (8) new nodes. It used
+  to place four points once at `mu * exp(+-{0.7, 1.5} * sd / mu)`, `sd` the
+  modal parabola, which on a marginal sitting on two nodes reads the grid
+  spacing and put all four points inside the one gap between them. A copy
+  axis's point mass is excluded from the ESS the pass reads and from the gaps
+  it bisects, since no continuum node changes the share it holds.
+  `var_of_means_consistency_info` reports `ess_after` beside `ess_before` and
+  no longer carries `sd_laplace`. A marginal peaking on an outermost level is
+  left to the placement rescues: the span truncates it, and bisecting towards
+  that level only shrinks its box.
+* The two joint field-SD rescues (single-block and multi-block copy) fire on a
+  railed `sigma` axis read per axis (`.nl_axis_railed()`: the collapsed grid's
+  dominant cell on its node, or its own marginal maximal at an endpoint), the
+  trigger the registry and dispersion rescues already used. Gated on the whole
+  grid's `collapsed_edge` regime, a `sigma` carrying 0.91 of its mass on its
+  ceiling went unplaced once the consistency pass had resolved a dispersion
+  axis beside it, because the grid ESS then read 5.9 against a collapse
+  threshold of 2.
+
 ## A random-effect term's prior is an exported header
 
 * **`<tulpa/re_term_prior.h>`** carries the prior of one random-effect term

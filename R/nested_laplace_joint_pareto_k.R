@@ -1305,9 +1305,10 @@
 # (irrelevant here -- no importance draws are taken), so a fixed floor value
 # is enough. A no-op (returns `res` unchanged) unless the grid has actually
 # collapsed onto a boundary (`pareto_k_regime == "collapsed_edge"`, already
-# attached by `.joint_attach_pareto_k_regime()` regardless of `diagnose_k`) --
-# so this is zero extra cost for the common fit whose grid already brackets
-# the mode.
+# attached by `.joint_attach_pareto_k_regime()` regardless of `diagnose_k`) or
+# a field-SD axis is railed on its own marginal (`.nl_sigma_axis_railed()`, the
+# sigma rescues' trigger) -- so this is zero extra cost for the common fit whose
+# grid already brackets the mode.
 #
 # `extra_axes` names axes whose OWN placement pass may want the curvature on a
 # grid that did not rail -- the per-arm dispersion axes a
@@ -1321,6 +1322,7 @@
                                              proposal = NULL,
                                              extra_axes = character(0)) {
     if (!identical(res$pareto_k_regime, "collapsed_edge") &&
+        !.nl_sigma_axis_railed(res) &&
         !.nl_placement_axis_wanted(res, extra_axes)) return(res)
     prep <- .joint_pareto_prepare(res, refit_log_marginal, .PSIS_MIN_EVAL, proposal)
     if (.k_is_decline(prep)) return(res)

@@ -74,14 +74,17 @@ in \verb{[0.1, 3]}).
 }
 
 \code{sigma_grid}'s default is a starting axis, not a hard ceiling: when the
-fitted field-SD posterior mode rails the top node (\code{pareto_k_regime = "collapsed_edge"}, see below), the driver re-centres the axis on a
+fitted field-SD posterior mode rails the top node (the axis's own
+marginal is maximal there, or the whole grid collapsed onto it:
+\code{pareto_k_regime = "collapsed_edge"}, see below), the driver re-centres
+the axis on a
 mode-Hessian and refits (up to two attempts, the second adding a light
 default PC(U=3, alpha=0.01) prior on sigma unless \code{prior_sigma} was pinned
 -- see there), so a sparse or strongly-identified species is not silently
 truncated at 3.0. This engages whether or not \code{control$diagnose_k}
 computed the full outer Pareto-k diagnostic: the mode-Hessian is reused
 from the diagnostic when it ran, or computed on its own (one extra batched
-finite-difference solve, only when the grid actually collapsed) when it
+finite-difference solve, only when the axis actually railed) when it
 did not -- so \code{diagnose_k = FALSE}, the default, does not leave a railed
 axis stuck. A \code{sigma_grid} the caller PINNED always wins: auto-recenter
 engages when the field is left \code{NULL}, when it is marked with
@@ -879,7 +882,7 @@ same interval \code{axis_support} reports), \code{refine} (the mode refinement
 ran under: \code{"none"} / \code{"densify"} / \code{"extend"}) and \code{n_nodes} (initial
 and final continuum node counts).
 \item \code{outer_grid_placement} -- \code{"fixed"} (the default \code{sigma_grid} axis was
-used as-is) or \code{"auto_recentered"} when a \code{collapsed_edge} on \code{sigma}
+used as-is) or \code{"auto_recentered"} when a railed \code{sigma} axis
 triggered the mode-Hessian recenter-and-refit (see the \code{prior}
 argument above). \code{outer_grid_recenter_attempts} (integer)
 and \code{outer_grid_prior_added} (logical: whether the light default

@@ -314,7 +314,8 @@ test_that("a marked dispersion axis is placed onto its own posterior", {
     fx <- .pgp_fixture()
     pinned <- tulpa_nested_laplace_joint(
         responses = fx$responses, prior = fx$prior,
-        phi_grid = list(pos = .PGP_COARSE))
+        phi_grid = list(pos = .PGP_COARSE),
+        control = list(var_of_means_consistency = FALSE))
     placed <- tulpa_nested_laplace_joint(
         responses = fx$responses, prior = fx$prior,
         phi_grid = list(pos = auto_grid(.PGP_COARSE)))
@@ -338,6 +339,23 @@ test_that("a marked dispersion axis is placed onto its own posterior", {
     # And the span it was placed on is orders narrower than the declared one.
     span <- function(f) diff(range(log(f$theta_grid[, "phi_pos"])))
     expect_lt(span(placed), 0.25 * span(pinned))
+})
+
+test_that("the consistency pass resolves a pinned axis whose posterior sits between nodes", {
+    skip_on_cran()
+    # The same pinned span, consistency pass on (the default). The mass sits on
+    # the node above the posterior and the pass bisects its way down to it,
+    # where points placed around the modal node stay beside it
+    # (gcol33/tulpa#858).
+    fx <- .pgp_fixture()
+    fit <- tulpa_nested_laplace_joint(
+        responses = fx$responses, prior = fx$prior,
+        phi_grid = list(pos = .PGP_COARSE))
+    expect_identical(fit$var_of_means_consistency_info$axes, "phi_pos")
+    added <- setdiff(fit$theta_grid[, "phi_pos"], .PGP_COARSE)
+    expect_true(any(added < fx$truth_phi))
+    expect_lt(abs(fit$theta_mean[["phi_pos"]] - fx$truth_phi) / fx$truth_phi,
+              0.15)
 })
 
 test_that("auto_recenter = FALSE holds a marked dispersion axis too", {

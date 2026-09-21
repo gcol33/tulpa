@@ -92,7 +92,7 @@ test_that("the default axes are exactly these values", {
     # `prepend` puts the exact no-transfer node in the copy axis, at the front.
     alpha <- tulpa:::.nl_grid_axis("copy_alpha")
     expect_identical(alpha[1L], 0)
-    expect_equal(alpha, c(0, exp(seq(log(0.1), log(3), length.out = 5))))
+    expect_equal(alpha, c(0, exp(seq(log(0.1), log(3), length.out = 9))))
 
     # Shape parameters of the data-dependent axes.
     expect_identical(tulpa:::.nl_grid_par("car_rho", "n"), 5L)

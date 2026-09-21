@@ -138,28 +138,22 @@ test_that("a bounded axis is densified inside its span and never past it", {
 })
 
 
-test_that("consistency points are clipped to a bounded axis's span", {
+test_that("consistency points stay inside a bounded axis's span", {
     lev <- c(0.5, 1, 2)
     mk <- function(extend) {
         hyper_axis_spec("phi_y", grid = lev, log_scale = TRUE,
                         bounds = c(0, Inf), refinable = TRUE, extend = extend)
     }
 
-    # A spread this narrow places every point inside the span, so the clip must
-    # not touch them: a bounded axis is still refined, only not widened.
-    inside_e <- tulpa:::.hyper_propose_consistency_points(mk(TRUE), 1, 0.35, lev)
-    inside_b <- tulpa:::.hyper_propose_consistency_points(mk(FALSE), 1, 0.35, lev)
-    expect_gt(length(inside_b), 0L)
-    expect_equal(inside_b, inside_e)
-    expect_true(all(inside_b >= 0.5 & inside_b <= 2))
-
-    # A wide one places them all outside; the extendable axis takes them and the
-    # bounded one takes none.
-    wide_e <- tulpa:::.hyper_propose_consistency_points(mk(TRUE), 1, 1, lev)
-    wide_b <- tulpa:::.hyper_propose_consistency_points(mk(FALSE), 1, 1, lev)
-    expect_true(any(wide_e > 2))
-    expect_true(any(wide_e < 0.5))
-    expect_length(wide_b, 0L)
+    # The points bisect gaps between existing levels, so a bounded axis is
+    # refined exactly as an extendable one is, and neither is widened.
+    for (lm in list(c(-3, 0, -3), c(-1, 0, -0.5), c(-0.5, 0, -2))) {
+        e <- tulpa:::.hyper_propose_mass_bisection(mk(TRUE), lev, lm)
+        b <- tulpa:::.hyper_propose_mass_bisection(mk(FALSE), lev, lm)
+        expect_gt(length(b), 0L)
+        expect_equal(b, e)
+        expect_true(all(b > 0.5 & b < 2))
+    }
 })
 
 

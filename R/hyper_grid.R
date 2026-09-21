@@ -176,9 +176,10 @@
 #'   * `adaptive_grid_max_passes` (`1L`) -- cap on refinement passes.
 #'   * `var_of_means_consistency` (`FALSE`) -- run a post-integration
 #'     consistency pass: for refinable axes whose marginal has collapsed onto
-#'     too few nodes to carry a spread, append Laplace-guided slice points at
-#'     `theta_mean +/- {0.7, 1.5} * sd` pinned at the modal cell, `sd` being
-#'     the parabola at the modal node. One kernel call per axis.
+#'     too few nodes to carry a spread, bisect the gaps between adjacent nodes
+#'     that carry the axis's mass, with slice points in the modal cell's row,
+#'     and repeat until the axis reaches `var_of_means_min_ess` or has taken
+#'     `.nl_diag("axis_refine_nodes")` new nodes. One kernel call per round.
 #'   * `var_of_means_min_ess` (`.nl_diag("axis_sd_ess")`) -- the quadrature
 #'     effective sample size an axis marginal has to reach for the pass to
 #'     leave it alone. Read off the weights, so the trigger is not one SD
@@ -312,7 +313,7 @@ tulpa_hyper_grid <- function(hyper_specs, inner_fit,
                       else hp_fn(theta_grid)
   }
 
-  # Initial weighted moments (also needed by the consistency pass).
+  # Initial weighted moments.
   log_quad <- .hyper_log_quad_weights(theta_grid, specs,
                                       refining = refining_axis)
   weights <- .nl_normalise_weights_safe(
@@ -337,11 +338,9 @@ tulpa_hyper_grid <- function(hyper_specs, inner_fit,
       extras        = extras_list,
       refining_axis = refining_axis,
       specs         = specs,
-      theta_mean    = theta_mean,
       kernel_fn     = kernel_fn,
       min_ess       = var_of_means_min_ess,
-      hp_fn         = hp_fn,
-      weights       = weights_for_summary
+      hp_fn         = hp_fn
     )
     if (consistency$n_added > 0L) {
       theta_grid    <- consistency$theta_grid

@@ -85,15 +85,17 @@
 #'     (default `c(0.5, 0.8, 0.95, 0.99)`).
 #'
 #'   `sigma_grid`'s default is a starting axis, not a hard ceiling: when the
-#'   fitted field-SD posterior mode rails the top node (`pareto_k_regime =
-#'   "collapsed_edge"`, see below), the driver re-centres the axis on a
+#'   fitted field-SD posterior mode rails the top node (the axis's own
+#'   marginal is maximal there, or the whole grid collapsed onto it:
+#'   `pareto_k_regime = "collapsed_edge"`, see below), the driver re-centres
+#'   the axis on a
 #'   mode-Hessian and refits (up to two attempts, the second adding a light
 #'   default PC(U=3, alpha=0.01) prior on sigma unless `prior_sigma` was pinned
 #'   -- see there), so a sparse or strongly-identified species is not silently
 #'   truncated at 3.0. This engages whether or not `control$diagnose_k`
 #'   computed the full outer Pareto-k diagnostic: the mode-Hessian is reused
 #'   from the diagnostic when it ran, or computed on its own (one extra batched
-#'   finite-difference solve, only when the grid actually collapsed) when it
+#'   finite-difference solve, only when the axis actually railed) when it
 #'   did not -- so `diagnose_k = FALSE`, the default, does not leave a railed
 #'   axis stuck. A `sigma_grid` the caller PINNED always wins: auto-recenter
 #'   engages when the field is left `NULL`, when it is marked with
@@ -872,7 +874,7 @@
 #'      ran under: `"none"` / `"densify"` / `"extend"`) and `n_nodes` (initial
 #'      and final continuum node counts).
 #'   * `outer_grid_placement` -- `"fixed"` (the default `sigma_grid` axis was
-#'      used as-is) or `"auto_recentered"` when a `collapsed_edge` on `sigma`
+#'      used as-is) or `"auto_recentered"` when a railed `sigma` axis
 #'      triggered the mode-Hessian recenter-and-refit (see the `prior`
 #'      argument above). `outer_grid_recenter_attempts` (integer)
 #'      and `outer_grid_prior_added` (logical: whether the light default
@@ -2162,10 +2164,10 @@ tulpa_nested_laplace_joint <- function(responses,
     # Var-of-means consistency pass. Sharply peaked axes (gaussian
     # noise SD, beta phi at high n_pos) collapse joint weight onto a
     # single grid cell, so `sum(w*x^2) - mean^2` on that axis is a floor at
-    # zero rather than a spread. Add slice points at `mu +/- k * sd` around
-    # the modal cell -- `sd` the parabola at the modal node, the estimator
-    # that is right in exactly that regime -- so the merged grid carries the
-    # support the spread is read off.
+    # zero rather than a spread. Bisect the gaps the axis's mass sits across,
+    # with slice points in the modal cell's row, until the axis marginal's ESS
+    # reaches the floor, so the merged grid carries the support the spread is
+    # read off.
     if (isTRUE(var_of_means_consistency)) {
         consistency <- .hyper_consistency_pass(
             theta_grid    = theta_grid_M,
@@ -2173,10 +2175,8 @@ tulpa_nested_laplace_joint <- function(responses,
             extras        = extras_list,
             refining_axis = refining_axis,
             specs         = specs,
-            theta_mean    = res$theta_mean,
             kernel_fn     = kernel_fn,
-            hp_fn         = hp_fn,
-            weights       = res$weights
+            hp_fn         = hp_fn
         )
         if (consistency$n_added > 0L) {
             theta_grid_M  <- consistency$theta_grid

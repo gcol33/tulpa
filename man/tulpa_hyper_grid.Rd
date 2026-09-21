@@ -74,9 +74,10 @@ with a finer resolution where the mass is.
 \item \code{adaptive_grid_max_passes} (\code{1L}) -- cap on refinement passes.
 \item \code{var_of_means_consistency} (\code{FALSE}) -- run a post-integration
 consistency pass: for refinable axes whose marginal has collapsed onto
-too few nodes to carry a spread, append Laplace-guided slice points at
-\verb{theta_mean +/- \{0.7, 1.5\} * sd} pinned at the modal cell, \code{sd} being
-the parabola at the modal node. One kernel call per axis.
+too few nodes to carry a spread, bisect the gaps between adjacent nodes
+that carry the axis's mass, with slice points in the modal cell's row,
+and repeat until the axis reaches \code{var_of_means_min_ess} or has taken
+\code{.nl_diag("axis_refine_nodes")} new nodes. One kernel call per round.
 \item \code{var_of_means_min_ess} (\code{.nl_diag("axis_sd_ess")}) -- the quadrature
 effective sample size an axis marginal has to reach for the pass to
 leave it alone. Read off the weights, so the trigger is not one SD

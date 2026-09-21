@@ -311,10 +311,8 @@ test_that("adaptive_grid skips non-refinable axes", {
 test_that("var_of_means_consistency adds slice points on a sharp posterior", {
   # Gaussian in log-sigma at 0 (sigma=1) with SD 0.2 on the log axis. A coarse
   # 5-point grid at log_sigma = (-1, -0.5, 0, 0.5, 1) collapses var-of-means
-  # SD onto two adjacent cells -- well below the Laplace-at-mode SD -- so the
-  # consistency pass fires and adds Laplace-guided slice points at
-  # `mu +/- {0.7, 1.5} * sd_lap` on the log axis (the 0.05 log-tolerance dedup
-  # in .hyper_propose_consistency_points keeps them).
+  # SD onto two adjacent cells, so the consistency pass fires and bisects the
+  # gaps that mass sits across.
   inner_fit <- function(hypers) {
     s <- as.numeric(hypers["sigma"])
     list(log_marginal = -0.5 * (log(s) - log(1.0))^2 / 0.1^2)

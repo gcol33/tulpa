@@ -100,7 +100,15 @@
     # Copy coefficient (the scale at which one arm's field is transferred to
     # another). Exact 0 is prepended so the no-transfer base model is IN the
     # grid rather than a limit of it.
-    copy_alpha     = list(lo = 0.1,  hi = 3,    n = 5L, prepend = 0),
+    #
+    # Nine slab nodes put a node ratio of 1.53 on [0.1, 3], the resolution the
+    # other outer axes of a copy fit run at (phi_pos at 1.51 and 1.23 on the
+    # cover-glaser HP760 fixture); five gave 2.34, where a posterior over alpha
+    # sat on two adjacent nodes. Measured by SBC on that fixture (occu_cover
+    # beta arm, n_sim = 300, family-wise 95% band): 9/11 and 7/11 parameters
+    # inside at J = 3 / 10 with five nodes, 11/11 at both with nine, and 11/11
+    # again with 21 at twice the wall time (gcol33/tulpa#858).
+    copy_alpha     = list(lo = 0.1,  hi = 3,    n = 9L, prepend = 0),
 
     # BYM2 mixing weight: proportion of the field variance that is spatially
     # structured. Nodes placed at interpretable proportions, weighted toward
@@ -1257,6 +1265,12 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
 # `ess >= 3` the weighted read spans 0.974 to 1.074 of the truth while the
 # parabola spans 0.080 to 0.642, which is the grid dependence gcol33/tulpa#621
 # reports as a factor of two on a copy axis.
+#
+# `axis_refine_nodes` caps the nodes the consistency pass
+# (`.hyper_consistency_pass()`) adds to one axis while bisecting it towards
+# `axis_sd_ess`. It is a cost cap, one slice cell per node: 8 is one bisection
+# of every gap of a declared 9-node slab, the resolution the default outer axes
+# are declared at.
 # `edge_mass_lift` is how far above a FLAT marginal an outer axis's boundary
 # node has to sit before the axis is NAMED as holding boundary mass
 # (`.nl_axis_edge_mass()`, `$outer_grid_edge_mass_axes`). Same currency as the
@@ -1296,6 +1310,7 @@ tulpa_grid_axis <- function(key, n = NULL) .nl_grid_axis(key, n)
     within_cell          = "box_uniform",
     grid_resolved        = 1,
     axis_sd_ess          = 3,
+    axis_refine_nodes    = 8L,
     edge_mass_lift       = 1,
     k_usable             = 0.7,
     k_samples            = 500L,

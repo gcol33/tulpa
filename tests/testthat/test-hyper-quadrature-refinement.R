@@ -509,14 +509,10 @@ test_that("an extension k base steps out integrates its row without a gap", {
   }
 })
 
-test_that("a consistency point more than a step out is integrated without a gap", {
+test_that("a slice point more than a step out is integrated without a gap", {
   lp <- log(SLICE_AXES$phi_pos)
   h <- lp[5L] - lp[4L]
-  spec <- hyper_axis_spec("phi_pos", SLICE_AXES$phi_pos, log_scale = TRUE,
-                          refinable = TRUE)
-  mu <- SLICE_AXES$phi_pos[5L]
-  pts <- .hyper_propose_consistency_points(spec, mu, sd = 1.6 * h * mu,
-                                           lev = SLICE_AXES$phi_pos)
+  pts <- exp(lp[5L] + c(-2.4, -1.12, 1.12, 2.4) * h)
   expect_gt(max(log(pts)) - lp[5L], h)
   g <- rbind(SLICE_TENSOR, cbind(sigma = SLICE_AXES$sigma[3L], phi_pos = pts))
   ref <- c(rep("", 25L), rep("consistency_phi_pos", length(pts)))

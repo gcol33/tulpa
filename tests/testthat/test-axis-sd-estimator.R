@@ -147,7 +147,7 @@ test_that("the consistency pass fires on the ESS, not on an SD comparison", {
   out <- .hyper_consistency_pass(
     theta_grid = tg, log_marginal = lm, extras = NULL,
     refining_axis = rep("", nrow(tg)), specs = specs,
-    theta_mean = c(sigma = 1), kernel_fn = kernel_fn)
+    kernel_fn = kernel_fn)
   expect_gt(out$n_added, 0L)
   expect_identical(out$info$axes, "sigma")
   expect_lt(out$info$ess_before, .nl_diag("axis_sd_ess"))
@@ -158,7 +158,7 @@ test_that("the consistency pass fires on the ESS, not on an SD comparison", {
   out2 <- .hyper_consistency_pass(
     theta_grid = tg, log_marginal = lm_wide, extras = NULL,
     refining_axis = rep("", nrow(tg)), specs = specs,
-    theta_mean = c(sigma = 1), kernel_fn = kernel_fn)
+    kernel_fn = kernel_fn)
   expect_identical(out2$n_added, 0L)
   expect_null(out2$info)
   expect_identical(called, 0L)

@@ -13,9 +13,9 @@
 # mode-Hessian a fit already computed for its outer Pareto-k diagnostic (see
 # `R/nested_laplace_joint_pareto_k.R`) rather than re-optimizing -- it lays a
 # new log-spaced grid centred at the mode. This is placement, not a second
-# optimizer: callers detect the collapse (the `pareto_k_regime` diagnostic
-# every family already attaches), recentre once, and
-# refit; a second attempt composes a light default PC(U, alpha) prior
+# optimizer: callers detect the rail (`.nl_axis_railed()`: the collapsed
+# grid's dominant cell on the axis's node, or the axis's own marginal maximal at
+# an endpoint), recentre once, and refit; a second attempt composes a light default PC(U, alpha) prior
 # (`.NL_RECENTER$sigma_pc_prior`, R/settings.R) for genuinely unidentified
 # cases where the mode itself keeps running rather than settling on finite
 # curvature.
@@ -31,7 +31,7 @@
 #   * AXIS NAMING -- one axis is named three ways depending on the grid it
 #     landed in (`sigma`, `b<k>.sigma`, `theta`); `.nl_axis_alias()` resolves
 #     all three so a rescue matches the axis it is looking for
-#     (`.nl_edge_axis_hit()` / `.nl_axis_index()`).
+#     (`.nl_axis_railed()` / `.nl_axis_index()`).
 #   * DECLINE REASONS -- a rescue that does not run says why
 #     (`res$outer_grid_recenter_declined`), so an inert auto-recenter is
 #     visible in the fit instead of indistinguishable from one that was never
@@ -552,7 +552,7 @@ auto_grid_place <- function(x)
 # Why the resolution knob has to exist: the alpha axis is the one outer axis a
 # copy fit cannot raise. Measured engine-side on an ICAR chain with a gaussian
 # copy arm, raising the donor `sigma_grid` from 13 to 29 nodes leaves the alpha
-# axis at its declared 6 at every setting and the grid ESS at 1.7 / 3.1 / 4.3,
+# axis at the 6 nodes it was declared at in that probe, at every setting and the grid ESS at 1.7 / 3.1 / 4.3,
 # while supplying the alpha nodes explicitly takes it to 2.5 / 7.6 / 14.4. The
 # saturation is in the PLACEMENT, not in the prune: `prune = TRUE` reproduces
 # the same node counts and the same ESS to the digit
@@ -849,6 +849,29 @@ auto_grid_place <- function(x)
     if (!is.finite(lift) || lift < edge_mult) return(NULL)
     list(side = if (k == 1L) "lower" else "upper",
          mass = mw$w[k], lift = lift, node = mw$vals[k])
+}
+
+# Is `axis` railed on this fit? The one trigger every placement rescue reads: the
+# collapsed grid's dominant cell on the axis's node (`.nl_edge_axis_hit()`), or
+# the axis's own marginal maximal at an endpoint (`.nl_axis_rail()`). The second
+# is what keeps the answer from depending on OTHER axes: a grid whose weight is
+# spread along a dispersion axis the consistency pass resolved has an `ess_grid`
+# past the collapse threshold while its field SD sits on its ceiling
+# (gcol33/tulpa#858).
+.nl_axis_railed <- function(res, axis, block_index = NULL,
+                            n_blocks = .nl_fit_n_blocks(res)) {
+    if (.nl_edge_axis_hit(res, axis, block_index)) return(TRUE)
+    nm <- .nl_axis_colname(res, .nl_axis_alias(axis, block_index, n_blocks))
+    !is.na(nm) && !is.null(.nl_axis_rail(res, nm))
+}
+
+# Is a field-SD axis one of the two sigma rescues moves railed? Every block's,
+# under the spelling its grid gives it.
+.nl_sigma_axis_railed <- function(res) {
+    n_b <- .nl_fit_n_blocks(res)
+    if (n_b <= 1L && .nl_axis_railed(res, "sigma")) return(TRUE)
+    for (b in seq_len(n_b)) if (.nl_axis_railed(res, "sigma", b)) return(TRUE)
+    FALSE
 }
 
 # Does the axis's own grid RESOLVE its own marginal? `h / sd` is the median node
@@ -1288,8 +1311,8 @@ auto_grid_place <- function(x)
 # top-level `$type` and fall through here harmlessly, unstamped), when the
 # `sigma_grid` axis is PINNED (`.nl_axis_is_pinned()`: named by the caller and
 # neither marked with `auto_grid()` nor equal to the engine's own default
-# axis), or when the grid never collapsed onto the sigma axis in the first
-# place -- so this is a zero-cost, byte-stable no-op for every fit that did not
+# axis), or when the sigma axis never railed in the first place
+# (`.nl_axis_railed()`) -- so this is a zero-cost, byte-stable no-op for every fit that did not
 # need it, and the reason is recorded in
 # `res$outer_grid_recenter_declined` and, per axis, in
 # `res$outer_grid_axis_declined[["sigma"]]`. The per-axis record is what
@@ -1300,7 +1323,7 @@ auto_grid_place <- function(x)
 # already computed rather than a fresh optimization (see
 # `.nl_axis_recenter_from_fit()`):
 #   1. Recentre `sigma_grid` alone.
-#   2. If STILL `collapsed_edge` (a genuinely unidentified / near-separation
+#   2. If STILL railed (a genuinely unidentified / near-separation
 #      case whose mode has no finite curvature to settle on), additionally
 #      apply the light default PC(U=3, alpha=0.01) prior (only if the caller
 #      PINNED no `prior_sigma` of their own -- `.nl_prior_sigma_is_pinned()`,
@@ -1344,9 +1367,7 @@ auto_grid_place <- function(x)
     cur_prior_sigma <- .nl_strip_auto(prior_sigma)
     attempt <- 0L
     reason  <- "grid_not_collapsed"
-    while (attempt < max_attempts &&
-           identical(res$pareto_k_regime, "collapsed_edge") &&
-           .nl_edge_axis_hit(res, "sigma")) {
+    while (attempt < max_attempts && .nl_axis_railed(res, "sigma")) {
         attempt <- attempt + 1L
         rc <- .nl_axis_recenter_from_fit_full(
             res$pareto_k_mode_u, res$pareto_k_cov_u,
@@ -1464,12 +1485,11 @@ auto_grid_place <- function(x)
     reason   <- "grid_not_collapsed"
     moved_b  <- integer(0)
     failed_b <- NA_integer_
-    while (attempt < max_attempts &&
-           identical(res$pareto_k_regime, "collapsed_edge")) {
+    while (attempt < max_attempts && .nl_sigma_axis_railed(res)) {
         target_b <- NULL
         for (b0 in cp$copy_blocks_zero) {
             b <- b0 + 1L
-            if (!.nl_edge_axis_hit(res, "sigma", b)) next
+            if (!.nl_axis_railed(res, "sigma", b)) next
             hold <- .nl_axis_hold(cur_prior[[b]], "sigma_grid",
                                   .nl_auto_fields_at(auto, b), type = ".copy")
             if (!is.null(hold)) {
@@ -1521,8 +1541,7 @@ auto_grid_place <- function(x)
         } else if (isTRUE(b == failed_b)) {
             reason
         } else if (attempt >= max_attempts &&
-                   identical(out$res$pareto_k_regime, "collapsed_edge") &&
-                   .nl_edge_axis_hit(out$res, "sigma", b)) {
+                   .nl_axis_railed(out$res, "sigma", b)) {
             "attempts_exhausted"
         } else {
             "grid_not_collapsed"
@@ -1606,8 +1625,8 @@ auto_grid_place <- function(x)
 #
 # The diagnose_k-independent placement stencil
 # (`.joint_attach_pareto_k_placement()`) exists for the two sigma rescues, whose
-# own trigger is the whole grid's `collapsed_edge` regime -- so it only computes
-# a mode and Hessian on such a grid. A dispersion axis is crossed onto the
+# own trigger is a railed field SD -- so it only computes a mode and Hessian on
+# such a grid. A dispersion axis is crossed onto the
 # tensor independently of the field's geometry and fires on its OWN sizing, and
 # `collapsed_interior` (weight concentrated, but the modal cell interior on every
 # axis) is precisely the regime the reported case sat in: the field SD axis had
@@ -1618,8 +1637,7 @@ auto_grid_place <- function(x)
     if (!length(axes)) return(FALSE)
     cn <- colnames(res$theta_grid) %||% character(0)
     for (a in intersect(axes, cn)) {
-        if (.nl_edge_axis_hit(res, a)) return(TRUE)
-        if (!is.null(.nl_axis_rail(res, a))) return(TRUE)
+        if (.nl_axis_railed(res, a)) return(TRUE)
         hs <- .nl_axis_h_over_sd(res, a, "log")
         if (!is.finite(hs) || hs > .nl_recenter("resolve_mult")) return(TRUE)
     }
@@ -1688,10 +1706,9 @@ auto_grid_place <- function(x)
 # the arm-name record `.nl_phi_provenance()` took at the front door.
 #
 # Trigger is per axis and matches the registry path's `"resolve"` policy rather
-# than the two sigma rescues' whole-grid `collapsed_edge` regime: a dispersion
-# axis is crossed onto the tensor independently of the field's own geometry, so
-# whether the field's grid collapsed says nothing about whether this axis is
-# sized to its own posterior. It fires on an axis that RAILS (its own marginal
+# than the two sigma rescues' rail-only one: a dispersion axis is crossed onto
+# the tensor independently of the field's own geometry, so whether the field SD
+# railed says nothing about whether this axis is sized to its own posterior. It fires on an axis that RAILS (its own marginal
 # maximal at one of its own endpoints) or that does not RESOLVE its own
 # posterior (`h / sd` past `.NL_RECENTER$resolve_mult`), and moves every
 # unpinned dispersion axis when either does -- the mode/Hessian stencil and the
@@ -1729,8 +1746,7 @@ auto_grid_place <- function(x)
     reason  <- "grid_resolves_posterior"
     while (attempt < max_attempts) {
         fire <- vapply(slots, function(s) {
-            if (.nl_edge_axis_hit(res, s$axis)) return(TRUE)
-            if (!is.null(.nl_axis_rail(res, s$axis))) return(TRUE)
+            if (.nl_axis_railed(res, s$axis)) return(TRUE)
             hs <- .nl_axis_h_over_sd(res, s$axis, "log")
             !is.finite(hs) || hs > .nl_recenter("resolve_mult")
         }, logical(1))
@@ -2038,8 +2054,7 @@ auto_grid_place <- function(x)
         #              whether the FIT's grid is worth re-placing at all.
         #   "always"   fire unconditionally, and move all of them.
         railed <- vapply(slots, function(s) {
-            .nl_edge_axis_hit(res, s$axis, bidx(s)) ||
-                !is.null(.nl_axis_rail(res, .nl_axis_colname(res, alias_of(s))))
+            .nl_axis_railed(res, s$axis, bidx(s), n_blocks)
         }, logical(1))
         coarse <- if (!identical(policy, "resolve")) rep(FALSE, length(slots)) else
             vapply(slots, function(s) {

@@ -19,7 +19,7 @@
 test_that("a resolution override keeps the axis's declared shape", {
     base <- tulpa:::.nl_grid_axis("copy_alpha")
     expect_identical(base[1L], 0)                 # the atom
-    expect_length(base, 6L)                       # atom + 5 slab nodes
+    expect_length(base, 10L)                      # atom + 9 slab nodes
 
     for (n in c(5L, 12L, 28L)) {
         ax <- tulpa:::.nl_grid_axis("copy_alpha", n = n)

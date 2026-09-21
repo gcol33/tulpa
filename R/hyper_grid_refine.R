@@ -218,37 +218,62 @@
   pts[keep]
 }
 
-.hyper_propose_consistency_points <- function(spec, mu, sd, lev) {
-  if (!is.finite(mu) || !is.finite(sd) || sd <= 0) return(numeric(0))
-  is_log <- .hyper_axis_is_log_scale(spec)
-  if (is_log) {
-    if (mu <= 0) return(numeric(0))
-    log_mu <- log(mu); log_sd <- sd / mu
-    if (!is.finite(log_sd) || log_sd <= 0) return(numeric(0))
-    pts <- exp(log_mu + c(-1.5, -0.7, 0.7, 1.5) * log_sd)
-  } else {
-    pts <- mu + c(-1.5, -0.7, 0.7, 1.5) * sd
-  }
-  # The consistency pass places its points at a multiple of the modal SD, which
-  # reaches past the declared span whenever the marginal is wide relative to it.
-  pts <- .hyper_clip_to_node_limit(pts, spec)
-  bounds <- .hyper_axis_bounds(spec)
-  if (!is.null(bounds)) {
-    pts <- pts[pts > bounds[1L] & pts < bounds[2L]]
-  }
-  # The declared prior support is fixed, so a node outside it would carry zero
-  # weight and only cost an inner solve -- the same clip the extension proposals
-  # take.
-  slab <- spec$slab_bounds
-  if (!is.null(slab)) {
-    pts <- pts[pts >= slab[1L] & pts <= slab[2L]]
-  }
-  if (length(pts) == 0L) return(numeric(0))
-  keep <- vapply(pts, function(p) {
-    if (is_log) !any(abs(log(lev) - log(p)) < 0.05)
-    else        !any(abs(lev - p) < 0.05 * max(abs(lev), 1))
-  }, logical(1))
-  pts[keep]
+# Points bisecting the gaps an axis marginal's mass sits across.
+#
+# `vals` / `log_mass` are the axis's levels and their log masses, the quadrature
+# weight already folded in. Only the continuum is bisected: a declared point
+# mass is a level of the model rather than a node of the rule, so it neither
+# bounds a gap nor enters the shares. A gap between adjacent continuum levels is
+# bisected on the axis's integration coordinate when the two levels bounding it
+# together carry at least `1 / min_ess` of the continuum's mass, the share one
+# level holds on an axis spread evenly at the ESS floor. The heaviest gap is
+# always bisected, so a round under the floor never proposes nothing.
+#
+# The points are placed by where the mass IS rather than at a multiple of a
+# modal SD: a marginal whose mass sits on two adjacent nodes has its modal
+# parabola read the grid's spacing, and points placed at a fraction of that
+# around the mean land inside the gap and leave both heavy nodes' outer sides
+# as coarse as before (gcol33/tulpa#858).
+#
+# Nothing is proposed where the density peaks on an outermost continuum level.
+#
+# Every point is a midpoint between two existing levels, so it lies inside the
+# span, the bounds and the slab whatever the axis declares; no clip is needed.
+# Points come back heaviest gap first, so a caller spending a node budget
+# spends it where the mass is.
+.hyper_propose_mass_bisection <- function(spec, vals, log_mass,
+                                          min_ess = .nl_diag("axis_sd_ess")) {
+  vals <- as.numeric(vals)
+  keep <- is.finite(vals) & !.hyper_is_atom_level(vals, spec)
+  if (.hyper_axis_is_log_scale(spec)) keep <- keep & vals > 0
+  v  <- vals[keep]
+  lm <- as.numeric(log_mass)[keep]
+  o  <- order(v); v <- v[o]; lm <- lm[o]
+  if (length(v) < 2L) return(numeric(0))
+  m <- max(lm)
+  if (!is.finite(m)) return(numeric(0))
+  p <- exp(lm - m)
+  p[!is.finite(p)] <- 0
+  p <- p / sum(p)
+  u <- .hyper_axis_coord(v, spec)
+  # A marginal whose density peaks on an outermost level is truncated by the
+  # span, not under-resolved inside it: bisecting towards that level only
+  # shrinks its box, and the extension that would serve it belongs to the
+  # adaptive pass. The density is the mass less the level's own box width, so
+  # a level made heavy by the width it owns does not read as the mode.
+  lw <- .nl_level_log_width(u)
+  ld <- if (is.null(lw)) lm else lm - lw
+  if (which.max(ld) %in% c(1L, length(ld))) return(numeric(0))
+  gap <- p[-1L] + p[-length(p)]
+  width <- diff(u)
+  ok <- is.finite(width) & width > 1e-8 * pmax(1, abs(u[-1L]))
+  if (!any(ok)) return(numeric(0))
+  pick <- ok & gap >= 1 / min_ess
+  pick[which(ok)[which.max(gap[ok])]] <- TRUE
+  idx <- which(pick)
+  idx <- idx[order(-gap[idx])]
+  u_mid <- 0.5 * (u[idx] + u[idx + 1L])
+  if (.hyper_axis_is_log_scale(spec)) exp(u_mid) else u_mid
 }
 
 # ============================================================================
@@ -479,38 +504,41 @@
 }
 
 # Repopulate an axis whose marginal has collapsed onto too few nodes to carry a
-# spread, by appending slice points at `mu +/- {0.7, 1.5} * sd` around the modal
-# cell.
+# spread, by bisecting the gaps its mass sits across
+# (`.hyper_propose_mass_bisection()`) with slice points in the modal cell's row.
 #
 # The trigger is the axis's own quadrature effective sample size, read off the
-# weights the fit integrates with. It used to be the weighted SD compared
-# against the parabola at the modal node, which is one SD estimator judging the
-# other: with the reported SD now the weighted one wherever the axis is resolved
-# (gcol33/tulpa#621), that comparison would have been the estimator against
-# itself and the pass would never fire. The ESS answers the question the pass is
-# actually asking -- how many nodes the marginal spreads over -- and the parabola
-# stays as the SCALE the new points are placed at, which is the regime it is
-# right in.
+# weights the fit integrates with, over the axis's continuum: a declared point
+# mass is part of the model, and no node placed in the continuum changes the
+# share it holds. It used to be the weighted SD compared against the parabola at
+# the modal node, which is one SD estimator judging the other: with the reported
+# SD now the weighted one wherever the axis is resolved (gcol33/tulpa#621), that
+# comparison would have been the estimator against itself and the pass would
+# never fire. The ESS answers the question the pass is actually asking -- how
+# many nodes the marginal spreads over.
+#
+# The pass re-reads the ESS after every round and bisects again until the axis
+# reaches `min_ess` or has taken `max_nodes` new nodes. A single round cannot
+# certify what it produced: bisecting two heavy nodes can leave the mass on the
+# new midpoint and one of them, and a marginal is only resolved once the ESS it
+# ends on says so (gcol33/tulpa#858).
 .hyper_consistency_pass <- function(theta_grid, log_marginal, extras,
-                                    refining_axis, specs, theta_mean,
-                                    kernel_fn,
+                                    refining_axis, specs, kernel_fn,
                                     min_ess = .nl_diag("axis_sd_ess"),
-                                    hp_fn = NULL, weights = NULL) {
+                                    max_nodes = .nl_diag("axis_refine_nodes"),
+                                    hp_fn = NULL) {
   refinable <- .hyper_refinable_names(specs)
   info <- list(axes = character(0), n_added = integer(0),
-               ess_before = numeric(0), sd_laplace = numeric(0))
+               ess_before = numeric(0), ess_after = numeric(0))
   n_added_total <- 0L
   if (length(refinable) == 0L) {
     return(list(theta_grid = theta_grid, log_marginal = log_marginal,
                 extras = extras, refining_axis = refining_axis,
                 info = NULL, n_added = 0L))
   }
-  for (axis in refinable) {
-    mu <- theta_mean[[axis]] %||% NA_real_
-    if (!is.finite(mu)) next
-    # Refinement on a previous axis grows theta_grid / log_marginal, so the
-    # log quadrature weights and the mode index are recomputed each iteration to
-    # stay aligned with the current grid rows.
+  axis_ess <- function(axis, spec) {
+    # Refinement grows theta_grid / log_marginal, so the log quadrature weights
+    # are recomputed on every read to stay aligned with the current grid rows.
     log_quad <- .hyper_log_quad_weights(theta_grid, specs,
                                         refining = refining_axis)
     lm_eff <- log_marginal
@@ -518,37 +546,46 @@
       lm_eff <- lm_eff + log_quad
       lm_eff[is.na(lm_eff)] <- -Inf
     }
-    overall_mode_idx <- which.max(log_marginal)
     marg <- .nl_axis_marginal_logdensity(as.numeric(theta_grid[, axis]), lm_eff)
-    ess  <- .nl_axis_quad_ess(marg$log_marg)
-    if (is.finite(ess) && ess >= min_ess) next
-    sd_lap <- as.numeric(.nl_laplace_at_mode_sd_axis(marg$vals, marg$log_marg))
-    if (!is.finite(sd_lap) || sd_lap <= 0) next
-
-    lev  <- sort(unique(as.numeric(theta_grid[, axis])))
+    cont <- !.hyper_is_atom_level(marg$vals, spec)
+    list(marg = marg, ess = .nl_axis_quad_ess(marg$log_marg[cont]))
+  }
+  for (axis in refinable) {
     spec <- .hyper_spec_by_name(specs, axis)
-    new_pts <- .hyper_propose_consistency_points(spec, mu, sd_lap, lev)
-    if (length(new_pts) == 0L) next
-
-    anchor_lev <- as.numeric(theta_grid[overall_mode_idx, axis])
-    pack <- .hyper_new_mode_tracked_triples(theta_grid, log_marginal, NULL,
-                                             axis, new_pts, anchor_lev,
-                                             refining_axis = refining_axis)
-    if (is.null(pack)) next
-    step <- .hyper_apply_axis_refinement(theta_grid, log_marginal, extras,
-                                          refining_axis, list(pack), axis,
-                                          specs, kernel_fn, hp_fn = hp_fn,
-                                          consistency_tag = TRUE)
-    if (step$n_new == 0L) next
-    theta_grid    <- step$theta_grid
-    log_marginal  <- step$log_marginal
-    extras        <- step$extras
-    refining_axis <- step$refining_axis
-    info$axes        <- c(info$axes, axis)
-    info$n_added     <- c(info$n_added, step$n_new)
-    info$ess_before  <- c(info$ess_before, ess)
-    info$sd_laplace  <- c(info$sd_laplace, sd_lap)
-    n_added_total    <- n_added_total + step$n_new
+    rd <- axis_ess(axis, spec)
+    ess_before <- rd$ess
+    if (!is.finite(ess_before) || ess_before >= min_ess) next
+    # Every round anchors in the same row, the modal cell's, so the slice
+    # points of one axis re-tile one fibre rather than scattering across rows.
+    anchor_lev <- as.numeric(theta_grid[which.max(log_marginal), axis])
+    added <- 0L
+    while (added < max_nodes && is.finite(rd$ess) && rd$ess < min_ess) {
+      new_pts <- .hyper_propose_mass_bisection(spec, rd$marg$vals,
+                                               rd$marg$log_marg, min_ess)
+      if (length(new_pts) == 0L) break
+      new_pts <- utils::head(new_pts, max_nodes - added)
+      pack <- .hyper_new_mode_tracked_triples(theta_grid, log_marginal, NULL,
+                                               axis, new_pts, anchor_lev,
+                                               refining_axis = refining_axis)
+      if (is.null(pack)) break
+      step <- .hyper_apply_axis_refinement(theta_grid, log_marginal, extras,
+                                            refining_axis, list(pack), axis,
+                                            specs, kernel_fn, hp_fn = hp_fn,
+                                            consistency_tag = TRUE)
+      if (step$n_new == 0L) break
+      theta_grid    <- step$theta_grid
+      log_marginal  <- step$log_marginal
+      extras        <- step$extras
+      refining_axis <- step$refining_axis
+      added <- added + step$n_new
+      rd <- axis_ess(axis, spec)
+    }
+    if (added == 0L) next
+    info$axes       <- c(info$axes, axis)
+    info$n_added    <- c(info$n_added, added)
+    info$ess_before <- c(info$ess_before, ess_before)
+    info$ess_after  <- c(info$ess_after, rd$ess)
+    n_added_total   <- n_added_total + added
   }
   if (length(info$axes) == 0L) info <- NULL
   list(theta_grid = theta_grid, log_marginal = log_marginal,
