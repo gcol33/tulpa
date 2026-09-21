@@ -323,11 +323,14 @@ The Gibbs backend is the Polya-Gamma sampler for binomial and negative
 binomial responses, including the binomial areal spatial models that
 `mode = "auto"` selects it for. It samples the random-effect standard
 deviation rather than conditioning on a fixed `sigma_re`, which is why the
-spatial fit earlier reported a Gibbs backend. Its output carries the fixed
-effects in `$beta` and the field and variance components alongside.
+spatial fit earlier reported a Gibbs backend. It returns posterior draws, so
+the fixed effects come through `coef()` and the field and its precision are
+columns of the same draws matrix, named in `param_names`.
 
 ```{r gibbs-fields}
-round(fit_auto$beta, 3)
+round(coef(fit_auto), 3)
+tail(fit_auto$param_names, 3)
+round(fit_auto$means[c("log_tau_spatial", "phi_spatial[1]")], 3)
 ```
 
 Gibbs is the right call when the family is conjugate-friendly under the
