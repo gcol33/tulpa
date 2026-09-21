@@ -122,6 +122,7 @@
 
 
 test_that("the exact gradient matches a difference of tulpa's own marginal", {
+  skip_on_cran()
   for (cs in list(list(fam = "poisson",  th = log(0.7)),
                   list(fam = "binomial", th = log(0.7)),
                   list(fam = "poisson",  th = log(1.6)))) {
@@ -143,6 +144,7 @@ test_that("the exact gradient matches for a correlated block", {
 })
 
 test_that("the closed-form Hessian matches a difference of the analytic gradient", {
+  skip_on_cran()
   for (cs in list(list(fam = "poisson",  th = log(0.7)),
                   list(fam = "binomial", th = log(0.7)),
                   list(fam = "poisson",  th = log(1.6)))) {
@@ -238,6 +240,7 @@ test_that("the observed-curvature correction is exact at both derivative rungs",
 })
 
 test_that("H_theta from the gradient stencil agrees with the objective's curvature", {
+  skip_on_cran()
   # The stencil is what any family without a closed second-derivative route
   # falls back to, so it has to be right on its own terms. Checked on the two
   # families whose working weight is NOT the observed curvature -- the case that
@@ -274,6 +277,7 @@ test_that("H_theta from the gradient stencil agrees with the objective's curvatu
 })
 
 test_that("the analytic mode Jacobian equals the differenced true inner mode", {
+  skip_on_cran()
   # J = dx_hat/dtheta from true score stationarity carries the observed
   # curvature; the check differences tulpa's own inner mode, catching a
   # working-weight Jacobian directly rather than only through the Hessian.
@@ -563,6 +567,7 @@ test_that("the gradient-driven outer fit lands where the derivative-free one doe
 })
 
 test_that("the closed, exact-stencil and finite-difference corrections agree", {
+  skip_on_cran()
   d <- .exg_sim(seed = 3L, G = 20L, per = 8L)
   re <- list(idx = d$grp, n_groups = d$G, n_coefs = 1L)
   # Default route: the closed-form outer Hessian, no differencing of any solve.

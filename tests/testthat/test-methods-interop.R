@@ -1,22 +1,37 @@
 # lme4- / posterior-facing accessors: fixef(), as_draws() and the S3 registration
 # that makes lme4::fixef() and posterior::as_draws() dispatch on a tulpa_fit.
 
+# One fit per (shape, seed), shared by every block: what these blocks check is
+# dispatch and field access on a fit, so the fit is a fixture and its cost is
+# paid once rather than once per block.
+.mi_fits <- new.env(parent = emptyenv())
+.mi_memo <- function(key, make) {
+  if (!exists(key, envir = .mi_fits, inherits = FALSE)) {
+    assign(key, make(), envir = .mi_fits)
+  }
+  get(key, envir = .mi_fits, inherits = FALSE)
+}
+
 sampler_fit <- function(seed = 1L) {
-  set.seed(seed)
-  df <- data.frame(x = rnorm(120))
-  df$y <- rpois(120, exp(0.5 + 0.4 * df$x))
-  tulpa(y ~ x, data = df, family = "poisson", mode = "exact",
-        control = list(n_iter = 400, warmup = 200, seed = seed))
+  .mi_memo(paste0("sampler.", seed), function() {
+    set.seed(seed)
+    df <- data.frame(x = rnorm(120))
+    df$y <- rpois(120, exp(0.5 + 0.4 * df$x))
+    tulpa(y ~ x, data = df, family = "poisson", mode = "exact",
+          control = list(n_iter = 400, warmup = 200, seed = seed))
+  })
 }
 
 approx_fit <- function(seed = 2L) {
-  set.seed(seed)
-  n <- 200L
-  g <- rep(seq_len(25L), each = 8L)
-  df <- data.frame(x = rnorm(n), g = factor(g))
-  df$y <- rpois(n, exp(0.4 + 0.6 * df$x + rnorm(25L, 0, 0.7)[g]))
-  suppressMessages(
-    tulpa(y ~ x + (1 | g), data = df, family = "poisson", mode = "laplace"))
+  .mi_memo(paste0("approx.", seed), function() {
+    set.seed(seed)
+    n <- 200L
+    g <- rep(seq_len(25L), each = 8L)
+    df <- data.frame(x = rnorm(n), g = factor(g))
+    df$y <- rpois(n, exp(0.4 + 0.6 * df$x + rnorm(25L, 0, 0.7)[g]))
+    suppressMessages(
+      tulpa(y ~ x + (1 | g), data = df, family = "poisson", mode = "laplace"))
+  })
 }
 
 

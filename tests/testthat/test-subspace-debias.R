@@ -23,6 +23,7 @@ sd_laplace <- function(d, ...) {
 
 
 test_that("the band table resolves gamma_3 and the inner k-hat per probed index", {
+  skip_on_cran()
   d <- sd_fixture()
   f <- sd_laplace(d, compute_skew = TRUE, skew_idx = 1:2)
   b <- tulpa:::.subspace_bands(f)
@@ -75,6 +76,7 @@ test_that("a fit with no inner-layer material bands nothing", {
 
 
 test_that("the sampler reproduces the exact conditional when the target IS Gaussian", {
+  skip_on_cran()
   # A gaussian response makes the joint log density exactly quadratic in the
   # latent field, so the Gaussian-conditional-mean surface carries exactly
   # N(0, Sigma_SS) and the Metropolis draws must reproduce it. This is the

@@ -136,6 +136,7 @@ test_that("inverse gaussian with the 1/mu^2 link reproduces the glm MLE", {
 })
 
 test_that("the inverse-link estimator is unbiased across seeds", {
+  skip_on_cran()
   # Reference agreement on one dataset says the solver finds the MLE. This says
   # the MLE it finds is centred on the truth, which is the claim a single fit
   # cannot support.

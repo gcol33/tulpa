@@ -5,30 +5,13 @@
 # arm carrying a copy coefficient -- and two fixtures drifting apart is how one
 # of them stops testing the shape it was written for.
 
-make_grid_adjacency <- function(nr, nc) {
-    n <- nr * nc
-    adj <- vector("list", n)
-    idx <- function(r, c) (r - 1L) * nc + c
-    for (r in seq_len(nr)) {
-        for (c in seq_len(nc)) {
-            nb <- integer(0)
-            if (r > 1L)  nb <- c(nb, idx(r - 1L, c))
-            if (r < nr)  nb <- c(nb, idx(r + 1L, c))
-            if (c > 1L)  nb <- c(nb, idx(r, c - 1L))
-            if (c < nc)  nb <- c(nb, idx(r, c + 1L))
-            adj[[idx(r, c)]] <- sort(nb)
-        }
-    }
-    adj
-}
-
 # Build a small two-arm ICAR joint fit (binomial occupancy + gaussian cover,
 # copy coefficient on the cover arm). store_Q is on so the sampler has the
 # per-grid precision. `sigma_grid` length controls the outer-grid size.
 build_icar_joint_fit <- function(nr = 4L, nc = 4L, sigma_grid = c(0.5, 1.0),
                                  alpha_grid = c(0.4, 0.8), seed = 11L) {
     set.seed(seed)
-    adj_list <- make_grid_adjacency(nr, nc)
+    adj_list <- lapply(grid_neighbours(nr, nc), sort)
     n_s <- length(adj_list)
     n_neighbors <- vapply(adj_list, length, integer(1))
     adj_row_ptr <- c(0L, cumsum(n_neighbors))

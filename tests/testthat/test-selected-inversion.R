@@ -35,8 +35,8 @@ test_that("selected inversion matches dense solve for small matrix", {
 })
 
 test_that("selected inversion works for ICAR-like precision", {
+  skip_on_cran()
   # Build ICAR precision on a 5x5 grid
-  source(test_path("test-sparse-cholesky.R"), local = TRUE)
   adj <- make_grid_adjacency(5, 5)
   n <- 25
 

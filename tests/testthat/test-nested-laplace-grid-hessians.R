@@ -3,8 +3,6 @@
 # exposed in the return list and match what tulpa_laplace() produces at the
 # same theta value.
 
-source(test_path("test-sparse-cholesky.R"), local = TRUE)
-
 icar_prior <- function(adj, n_sites, tau_grid = NULL) {
   list(
     type = "icar",

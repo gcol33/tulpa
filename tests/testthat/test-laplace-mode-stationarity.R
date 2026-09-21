@@ -187,6 +187,7 @@ test_that("the near-mode trust factor damps only a decrement that grew", {
 
 
 test_that("the exact dispersion gradient holds at a large neg_binomial_1 phi", {
+  skip_on_cran()
   # The regression the issue reports: at phi = 4 the assembled dm/dlog_phi was
   # 1.0e-04 away from a central difference of tulpa's own log_marginal, against
   # 1e-10 at phi <= 3. Nothing was wrong with the derivative; the mode it was

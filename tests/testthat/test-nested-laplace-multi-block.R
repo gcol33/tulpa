@@ -35,8 +35,6 @@
 # multi-block fits *run end-to-end and produce calibrated CIs*; the next
 # plan tightens the bias.
 
-source(test_path("test-sparse-cholesky.R"), local = TRUE)
-
 # Build CSR adjacency for a 5x5 grid (n_sites = 25). Borrowed from the
 # spatial helpers used elsewhere in the suite.
 adj <- make_grid_adjacency(5, 5)

@@ -272,6 +272,7 @@ test_that("the nested spatial route is numerically identical to a direct call", 
 })
 
 test_that("mode = structured routes an areal field to nested_laplace", {
+  skip_on_cran()
   s <- sim_areal_binomial(reps = 2L)
   fit <- tulpa(
     y ~ x + spatial(region), data = s$data, family = "binomial",
@@ -284,6 +285,7 @@ test_that("mode = structured routes an areal field to nested_laplace", {
 })
 
 test_that("auto integrates a non-binomial areal field via nested Laplace", {
+  skip_on_cran()
   # A non-binomial areal field is not the binomial Gibbs case, so auto picks
   # the nested-Laplace Tier 2 path (not the conditional Laplace at fixed tau,
   # and not HMC). y in 0..5 are valid Poisson counts.
@@ -298,6 +300,7 @@ test_that("auto integrates a non-binomial areal field via nested Laplace", {
 })
 
 test_that("nested_laplace bym2 packs the scale factor and wires through", {
+  skip_on_cran()
   s <- sim_areal_binomial(reps = 2L)
   fit <- tulpa(
     y ~ x + spatial(region), data = s$data, family = "binomial",

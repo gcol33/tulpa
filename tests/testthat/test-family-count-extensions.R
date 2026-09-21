@@ -9,14 +9,14 @@
 # test-family-count-compiled.R.
 
 support_sum <- function(family, eta, phi, ymin) {
-  yy <- ymin:20000
+  yy <- ymin:SUPPORT_YMAX
   sum(exp(family_loglik(rep(eta, length(yy)), yy, family, phi = phi)))
 }
 
 # Exact moments and expected curvature, taken over the support under the
 # family's own density rather than assumed in closed form.
 support_moments <- function(family, eta, phi, ymin) {
-  yy <- ymin:20000
+  yy <- ymin:SUPPORT_YMAX
   pr <- exp(family_loglik(rep(eta, length(yy)), yy, family, phi = phi))
   m <- sum(pr * yy)
   h <- 1e-4
@@ -100,7 +100,7 @@ test_that("neg_binomial_1 registers the moment weight, under the exact informati
       expect_equal(w, mu / (1 + phi), tolerance = 1e-12)
 
       r <- mu / phi
-      yy <- 0:60000
+      yy <- 0:SUPPORT_YMAX
       pr <- stats::dnbinom(yy, size = r, mu = mu)
       exact <- r^2 * (trigamma(r) - sum(pr * trigamma(yy + r)))
       expect_equal(support_moments("neg_binomial_1", eta, phi, 0)$fisher,

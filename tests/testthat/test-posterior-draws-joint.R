@@ -4,7 +4,7 @@
 test_that("store_Q = FALSE gives a clear error", {
     skip_on_cran()
     set.seed(1)
-    adj_list <- make_grid_adjacency(3L, 3L)
+    adj_list <- lapply(grid_neighbours(3L, 3L), sort)
     n_s <- length(adj_list)
     nb <- vapply(adj_list, length, integer(1))
     X <- cbind(1, rnorm(n_s))
@@ -56,7 +56,7 @@ test_that("constrained field draws satisfy the sum-to-zero constraint", {
     # single-cell grid (sigma length 1, no copy) => degenerate ESS = 1 mixture,
     # which isolates the kriging constraint from between-cell mode spread.
     set.seed(7)
-    adj_list <- make_grid_adjacency(4L, 4L)
+    adj_list <- lapply(grid_neighbours(4L, 4L), sort)
     n_s <- length(adj_list)
     nb <- vapply(adj_list, length, integer(1))
     X <- cbind(1, rnorm(n_s))
@@ -114,7 +114,7 @@ test_that("idx = NULL returns the full latent vector", {
 test_that("BYM2 draws constrain the structured phi but not the unstructured theta", {
     skip_on_cran()
     set.seed(21)
-    adj_list <- make_grid_adjacency(5L, 5L)
+    adj_list <- lapply(grid_neighbours(5L, 5L), sort)
     n_s <- length(adj_list)
     nb <- vapply(adj_list, length, integer(1))
     X <- cbind(1, rnorm(n_s))
@@ -149,7 +149,7 @@ test_that("BYM2 draws constrain the structured phi but not the unstructured thet
 test_that("multi-block joint fit samples through inherited dispatch", {
     skip_on_cran()
     set.seed(202)
-    adj_list <- make_grid_adjacency(5L, 5L)
+    adj_list <- lapply(grid_neighbours(5L, 5L), sort)
     n_s <- length(adj_list)
     nb <- vapply(adj_list, length, integer(1))
     X1 <- cbind(1, rnorm(n_s)); X2 <- cbind(1, rnorm(n_s))

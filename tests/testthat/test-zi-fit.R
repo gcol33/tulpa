@@ -34,6 +34,7 @@ test_that("ziformula reaches the kernel and is labelled in the fit", {
 
 
 test_that("a zero-inflated Poisson recovers its generating parameters", {
+  skip_on_cran()
   beta <- c(1.2, 0.5); gamma <- c(-0.4, 0.8)
   est <- t(vapply(1:12, function(s) {
     d <- sim_zip(3000, beta, gamma, seed = 100 + s)
@@ -63,6 +64,7 @@ test_that("ignoring zero inflation biases the count intercept downward", {
 
 
 test_that("a zero-inflated negative binomial recovers its parameters", {
+  skip_on_cran()
   beta <- c(1.0, 0.4); gamma <- c(-0.3, 0.0); phi <- 3
   est <- t(vapply(1:10, function(s) {
     set.seed(500 + s)
@@ -81,6 +83,7 @@ test_that("a zero-inflated negative binomial recovers its parameters", {
 
 
 test_that("zero inflation composes with a random intercept", {
+  skip_on_cran()
   # Averaged over seeds: the per-fit SD of the zi intercept here is ~0.07, so a
   # single fit lands within ~0.15 of truth routinely and a one-seed assertion
   # would either be flaky or too loose to detect real bias.

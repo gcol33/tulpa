@@ -17,12 +17,15 @@
 
 test_that("analytic grad / neg_hess match central differences", {
     h <- 1e-5
-    grid <- expand.grid(
+    ax <- list(
         y     = c(-3.0, -1.2, -0.2, -0.02),  # response = log-cover scale, y <= u
         eta   = c(-3.0, -1.0, -0.2, 0.1),
         sigma = c(0.4, 0.7, 1.2),
         u     = c(0, log(2))
     )
+    # CRAN reads each axis at its two ends; the dev loop reads the whole grid.
+    if (cran_fixture()) ax <- lapply(ax, range)
+    grid <- expand.grid(ax)
     for (r in seq_len(nrow(grid))) {
         y <- grid$y[r]; eta <- grid$eta[r]; sg <- grid$sigma[r]; u <- grid$u[r]
         out <- tulpa:::cpp_truncated_gaussian_terms(y, u, eta, sg)

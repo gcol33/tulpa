@@ -15,8 +15,6 @@
 #     posterior moments (block_moments populated, log_marginal finite,
 #     alpha posterior in a plausible range).
 
-source(test_path("test-sparse-cholesky.R"), local = TRUE)
-
 # Reuse the chain adjacency helper from the single-block joint test.
 .chain_adj_jm <- function(n_s) {
     nbr <- lapply(seq_len(n_s),

@@ -167,6 +167,7 @@ test_that("estimating the dispersion beats conditioning on a wrong one", {
 
 
 test_that("estimate_phi is refused where the derivative is not registered", {
+  skip_on_cran()
   d <- eb_disp_data("gaussian", 1.0, G = 12L, per = 6L)
 
   # No free dispersion at all.

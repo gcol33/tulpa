@@ -359,6 +359,7 @@ test_that("zero inflation is refused where the backend cannot carry it", {
 })
 
 test_that("`marginal` reaches EB through the front door but not through control", {
+  skip_on_cran()
   d <- zi_re_sim(42L, "poisson", G = 20L, per = 10L)
   expect_error(
     tulpa_eb(d$y, NULL, d$X, d$re, family = "poisson",
@@ -399,6 +400,7 @@ test_that("EB and the nested integrator share one objective under a mixture", {
 # converges, to the maximizer of a different objective.
 
 test_that("the hurdle's phi gradient matches a difference of the log-marginal", {
+  skip_on_cran()
   d <- zi_re_sim(51L, "truncated_neg_binomial_2", G = 30L, per = 14L)
   layout <- tulpa:::.re_cov_block_layout(d$re, d$n)
   at <- log(0.7)
@@ -464,6 +466,7 @@ test_that("the closed outer Hessian carries a hurdle", {
 
 
 test_that("the closed Hessian carries a hurdle whose Newton weight is not observed", {
+  skip_on_cran()
   # truncated_neg_binomial_2 builds H from Var(y | y > 0), which is not its
   # observed curvature, so the assembly has to differentiate u on the
   # observed-curvature inverse rather than the working one. That is a
@@ -547,6 +550,7 @@ test_that("the mixture's fourth-order fields agree along every route to them", {
 
 
 test_that("the closed Hessian carries genuine zero inflation", {
+  skip_on_cran()
   # The untruncated y = 0 branch couples both predictors through
   # D = pi + (1 - pi) P(Y = 0), so this needs the full five-field tensor rather
   # than the two a hurdle leaves standing.
@@ -718,6 +722,7 @@ test_that("the engine contributes nothing where the base registry already applie
 
 
 test_that("the phi gradient and closed Hessian are exact under genuine ZI", {
+  skip_on_cran()
   d <- zi_re_sim(4L, "neg_binomial_2", G = 30L, per = 14L, sigma = 0.8, phi = 2.5)
   layout <- tulpa:::.re_cov_block_layout(d$re, d$n)
   nt <- rep(1L, d$n)

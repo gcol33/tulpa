@@ -4,6 +4,7 @@
 # The GPU is optional — CPU fallback is always used if CUDA unavailable.
 
 test_that("NNGP GP Laplace kernel fits a small binary spatial problem", {
+  skip_on_cran()
   # Exercises the Vecchia (nearest-neighbour) GP Laplace path end to end on a
   # 100-location binary problem: the marginal is finite, the mode has the
   # fixed-effect + per-location field length, and the inner Newton makes progress.

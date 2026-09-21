@@ -133,6 +133,7 @@ test_that("make_group reproduces make_site on a correlated random slope (d = 2)"
 })
 
 test_that("make_site / make_group are mutually exclusive", {
+  skip_on_cran()
   re_terms <- list(list(idx = rep(1:2, each = 3), n_groups = 2L, n_coefs = 1L))
   Sigma0 <- list(matrix(1, 1, 1))
   expect_error(

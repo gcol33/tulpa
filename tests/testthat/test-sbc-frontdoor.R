@@ -104,6 +104,7 @@ test_that("the five predictive shapes are exported and the verb is the only one"
 # ---------------------------------------------------------------------------
 
 test_that("the front door reproduces the driver bit for bit", {
+  skip_on_cran()
   res <- sbc("prior_predictive", simulator = fd_sim, fitter = fd_fitter,
              n_sim = 40L, seed = 11L)
   expect_s3_class(res, "sbc")
@@ -117,6 +118,7 @@ test_that("the front door reproduces the driver bit for bit", {
 })
 
 test_that("the exact arm calibrates and the known-bad control does not", {
+  skip_on_cran()
   res <- sbc("prior_predictive", simulator = fd_sim, fitter = fd_fitter,
              n_sim = 120L, seed = 5000L)
   r <- res$report

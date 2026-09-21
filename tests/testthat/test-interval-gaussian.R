@@ -23,11 +23,12 @@
 
 test_that("analytic grad / neg_hess match central differences (finite interval)", {
     h <- 1e-5
-    grid <- expand.grid(
-        eta   = c(-2.0, -0.5, 0.3, 1.4),
-        sigma = c(0.4, 0.85, 1.6),
-        band  = c("low", "mid", "high")
-    )
+    ax <- list(eta = c(-2.0, -0.5, 0.3, 1.4), sigma = c(0.4, 0.85, 1.6))
+    # CRAN reads eta and sigma at their two ends, every band; the dev loop reads
+    # the whole grid.
+    if (cran_fixture()) ax <- lapply(ax, range)
+    grid <- expand.grid(eta = ax$eta, sigma = ax$sigma,
+                        band = c("low", "mid", "high"))
     bounds <- list(low = c(-1.5, -0.7), mid = c(-0.2, 0.6), high = c(0.9, 2.1))
     for (r in seq_len(nrow(grid))) {
         b   <- bounds[[as.character(grid$band[r])]]

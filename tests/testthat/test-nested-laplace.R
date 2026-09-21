@@ -1,9 +1,6 @@
 # test-nested-laplace.R
 # Tests for nested Laplace approximation (Feature 3a) and hot-start (Feature 5)
 
-# Reuse helpers from sparse-cholesky tests
-source(test_path("test-sparse-cholesky.R"), local = TRUE)
-
 # =====================================================================
 # Test: Hot-start reduces Newton iterations
 # =====================================================================

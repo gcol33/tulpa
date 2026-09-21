@@ -50,6 +50,7 @@
 # --------------------------------------------------------------------------- #
 
 test_that("every path binding resolves to real fields of real families", {
+    skip_on_cran()
     known <- tulpa:::.nl_known_axis_fields()
     for (path in names(tulpa:::.NL_PATH_AXES)) {
         expect_true(path %in% names(tulpa:::.NL_AXIS_PATH_LABEL), info = path)

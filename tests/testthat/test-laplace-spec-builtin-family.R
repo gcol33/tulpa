@@ -32,6 +32,7 @@ expect_glm_match <- function(family, glm_family, y, n_trials, X, phi,
 }
 
 test_that("ref_laplace_fit_single MAP matches the glm MLE for GLM-native families", {
+  skip_on_cran()
   set.seed(2026L)
   N <- 400L
   p <- 3L
@@ -51,6 +52,7 @@ test_that("ref_laplace_fit_single MAP matches the glm MLE for GLM-native familie
 })
 
 test_that("ref_laplace_fit_single converges to a finite mode for every built-in family", {
+  skip_on_cran()
   set.seed(2026L)
   N <- 300L
   p <- 3L

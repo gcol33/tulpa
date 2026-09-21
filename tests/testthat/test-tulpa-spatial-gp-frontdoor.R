@@ -93,6 +93,7 @@ test_that("mode = laplace fits a GP field alongside a (1 | g) RE term (issue #74
 })
 
 test_that("the NNGP marginal H_beta is built when locations carry replicates", {
+  skip_on_cran()
   # 150 observations over 50 locations. The Schur builder read the obs -> unit
   # map from `spatial_idx`, which an areal spec carries and a GP spec does not;
   # the GP spec calls it `obs_to_loc`. The missing field defaulted the map to
@@ -134,6 +135,7 @@ test_that("structured and auto route an NNGP field to nested_laplace", {
 })
 
 test_that("the NNGP front-door route is numerically identical to a direct call", {
+  skip_on_cran()
   s <- sim_gp_binomial(n_loc = 40L, reps = 2L)
   spec <- spatial_gp(~ lon + lat, nn = 6L)
   via <- suppressMessages(tulpa(
@@ -254,6 +256,7 @@ test_that("structured and auto route an HSGP field to nested_laplace", {
 })
 
 test_that("the HSGP front-door route is numerically identical to a direct call", {
+  skip_on_cran()
   s <- sim_gp_binomial(n_loc = 40L, reps = 2L)
   spec <- spatial_gp(approx = "hsgp", ~ lon + lat, m = 6L)
   via <- suppressMessages(tulpa(

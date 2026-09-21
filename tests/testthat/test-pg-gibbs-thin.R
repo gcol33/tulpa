@@ -39,6 +39,7 @@
 }
 
 test_that("thin = 3 over 50 post-warmup iterations saves 17 rows, not 16", {
+  skip_on_cran()
   expect_equal(.thin_expected(100L, 50L, 3L), 17L)
 
   fx <- .thin_fixture()

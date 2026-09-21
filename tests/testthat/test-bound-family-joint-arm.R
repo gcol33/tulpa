@@ -35,6 +35,7 @@ trunc_y <- function(n) -abs(stats::rnorm(n, 0.4, 0.5))   # log-cover, ceiling 0
 
 
 test_that("a truncated_gaussian arm carrying its ceiling fits", {
+  skip_on_cran()
   set.seed(3L)
   y <- trunc_y(24L)
   fit <- bound_arm_fit(list(trunc_upper = rep(0, 24L)), "truncated_gaussian", y)
@@ -44,6 +45,7 @@ test_that("a truncated_gaussian arm carrying its ceiling fits", {
 
 
 test_that("an interval_gaussian arm carrying its bounds fits", {
+  skip_on_cran()
   set.seed(3L)
   lo <- rep(c(-Inf, -1, 0), length.out = 24L)
   hi <- rep(c(-1, 0, Inf), length.out = 24L)
@@ -55,6 +57,7 @@ test_that("an interval_gaussian arm carrying its bounds fits", {
 
 
 test_that("a bound-reading family with no bound names the bound it needs", {
+  skip_on_cran()
   set.seed(3L)
   expect_error(
     bound_arm_fit(list(), "truncated_gaussian", trunc_y(24L)),

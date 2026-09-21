@@ -61,6 +61,7 @@ make_m_step_encode <- function(fx, family = "poisson") {
 }
 
 test_that("m_step_extra fires once per iteration and mutations persist", {
+  skip_on_cran()
   fx <- make_fixture()
   fake_laplace <- make_fake_laplace()
 
@@ -117,6 +118,7 @@ test_that("m_step_extra fires once per iteration and mutations persist", {
 })
 
 test_that("m_step_extra = NULL is identical to omitting the argument", {
+  skip_on_cran()
   fx <- make_fixture()
   fake_laplace <- make_fake_laplace()
 

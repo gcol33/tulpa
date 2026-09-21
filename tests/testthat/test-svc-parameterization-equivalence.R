@@ -60,9 +60,13 @@ test_that("the non-centered SVC transform inverts the centered density exactly",
   d <- svc_eq_inputs()
   zs <- lapply(1:6, function(r) { set.seed(200L + r); rnorm(d$N) })
 
+  s2_grid <- c(0.3, 1.0, 4.0); phi_grid <- c(0.1, 0.4, 1.5)
+  # CRAN reads sigma2 and phi at their two ends for both kernels; the dev loop
+  # reads the whole grid.
+  if (cran_fixture()) { s2_grid <- range(s2_grid); phi_grid <- range(phi_grid) }
   for (cov_type in 0:1) {                 # exponential, matern 3/2
-    for (sigma2 in c(0.3, 1.0, 4.0)) {
-      for (phi in c(0.1, 0.4, 1.5)) {
+    for (sigma2 in s2_grid) {
+      for (phi in phi_grid) {
         g <- vapply(zs, svc_eq_g, 0, d = d, sigma2 = sigma2, phi = phi,
                     cov_type = cov_type)
         lbl <- paste("cov:", cov_type, "sigma2:", sigma2, "phi:", phi)

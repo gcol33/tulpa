@@ -1,8 +1,6 @@
 # test-nested-laplace-bym2.R
 # Tests for BYM2 nested Laplace (2D grid over sigma_spatial, rho)
 
-source(test_path("test-sparse-cholesky.R"), local = TRUE)
-
 test_that("BYM2 nested Laplace runs with 2D grid", {
   adj <- make_grid_adjacency(5, 5)  # 25 sites
   dat <- simulate_spatial_data(

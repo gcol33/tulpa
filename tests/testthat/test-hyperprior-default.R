@@ -191,8 +191,12 @@ test_that("the two-field default grid carries PC x PC x LKJ on its own coordinat
   expect_equal(lp, apply(g, 1L, f) + log(s2 / (1 - rho^2)), tolerance = 1e-12)
 
   # A proper prior: on a tensor wide enough to hold it, the density times the
-  # absolute cell measure sums to one.
-  ls <- seq(-9, 3, length.out = 70L); r <- seq(-0.995, 0.995, length.out = 81L)
+  # absolute cell measure sums to one. The resolution only sets the quadrature
+  # error, measured at 5.0e-4 on 70 x 70 x 81 and 6.1e-4 on the 50 x 50 x 61 CRAN
+  # reads, both inside the 2e-3 the identity is held to.
+  n_ls <- if (cran_fixture()) 50L else 70L
+  n_r  <- if (cran_fixture()) 61L else 81L
+  ls <- seq(-9, 3, length.out = n_ls); r <- seq(-0.995, 0.995, length.out = n_r)
   gg <- expand.grid(a = ls, b = ls, rho = r)
   M <- cbind(L11 = gg$a, L21 = gg$rho * exp(gg$b),
              L22 = gg$b + 0.5 * log1p(-gg$rho^2))
@@ -374,6 +378,7 @@ test_that("a batch of cells reads the prior on the fit's axes, not on its own sp
 })
 
 test_that("a stencil or a probe row on a registry block reads the prior of its grid", {
+  skip_on_cran()
   # The placement stencil writes its rows onto a block's grid fields, and the
   # inner-skew probe narrows them to the modal row. Both are scored against the
   # hyperprior of the grid the fit integrates: a stencil that moves a column the

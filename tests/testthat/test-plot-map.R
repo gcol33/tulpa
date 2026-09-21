@@ -4,6 +4,7 @@
 # ratio() accessor (gcol33/tulpa#152).
 
 test_that("plot_map and plot_map_panel build maps from a spatial fit", {
+  skip_on_cran()
   skip_if_not_installed("ggplot2")
 
   set.seed(123)

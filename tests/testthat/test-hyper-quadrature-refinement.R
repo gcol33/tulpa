@@ -59,6 +59,7 @@ REFINE <- list(adaptive_grid = TRUE, adaptive_grid_edge_thresh = 1e-6,
 PINNED <- list(adaptive_grid = FALSE, var_of_means_consistency = FALSE)
 
 test_that("refinement moves the answer towards the measure, not away from it", {
+  skip_on_cran()
   set.seed(620)
   y <- stats::rnorm(60, 0, 1.3)
   ref <- reference_moments(y)
@@ -91,6 +92,7 @@ test_that("two grids that resolve the measure agree on the posterior", {
 })
 
 test_that("a finer grid integrates the declared measure more accurately", {
+  skip_on_cran()
   set.seed(6201)
   y <- stats::rnorm(40, 0, 0.8)
   ref <- reference_moments(y)

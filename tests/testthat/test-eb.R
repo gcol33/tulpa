@@ -31,6 +31,7 @@ eb_pois <- function(d, ...) {
 # --- 1. EB and the nested integrator share one objective ---------------------
 
 test_that("tulpa_eb() and tulpa_re_cov_nested() find the same theta_hat", {
+  skip_on_cran()
   d <- sim_re_pois(11L, G = 25L, per = 8L)
   eb <- eb_pois(d)
   nl <- tulpa_re_cov_nested(d$y, NULL, d$X, scalar_term(d), family = "poisson",
@@ -41,6 +42,7 @@ test_that("tulpa_eb() and tulpa_re_cov_nested() find the same theta_hat", {
 })
 
 test_that("EB reports the nested integrator's plug-in summary, not its marginal", {
+  skip_on_cran()
   d <- sim_re_pois(12L, G = 25L, per = 8L)
   eb <- eb_pois(d)
   nl <- tulpa_re_cov_nested(d$y, NULL, d$X, scalar_term(d), family = "poisson",
@@ -160,6 +162,7 @@ test_that("EB estimates each block of a two-term model", {
 })
 
 test_that("a flat hyperprior gives the unpenalized ML-II estimate", {
+  skip_on_cran()
   # hyperprior defaults to "proper", the engine's proper prior on every scale
   # (gcol33/tulpa#730); "flat" and log_prior_theta = function(theta) 0 reach the
   # same unpenalized objective.
@@ -196,6 +199,7 @@ sim_offset <- function(seed = 9L, G = 30L, per = 10L) {
 }
 
 test_that("EB honours an offset instead of silently dropping it", {
+  skip_on_cran()
   d <- sim_offset()
   term <- list(idx = d$grp, n_groups = d$G, n_coefs = 1L)
   with_off <- tulpa_eb(d$y, NULL, d$X, term, family = "poisson", offset = d$off)
@@ -209,6 +213,7 @@ test_that("EB honours an offset instead of silently dropping it", {
 })
 
 test_that("the nested integrator honours an offset too", {
+  skip_on_cran()
   d <- sim_offset(10L)
   term <- list(idx = d$grp, n_groups = d$G, n_coefs = 1L)
   fit <- tulpa_re_cov_nested(d$y, NULL, d$X, term, family = "poisson",
@@ -218,6 +223,7 @@ test_that("the nested integrator honours an offset too", {
 })
 
 test_that("offset() reaches the EB backend through tulpa()", {
+  skip_on_cran()
   d <- sim_offset(11L)
   fit <- tulpa(y ~ x + offset(log(E)) + (1 | g), data = d$data,
                family = "poisson", mode = "eb")
@@ -225,6 +231,7 @@ test_that("offset() reaches the EB backend through tulpa()", {
 })
 
 test_that("an offset the inner solve cannot carry errors rather than dropping", {
+  skip_on_cran()
   d <- sim_offset(12L)
   term <- list(idx = d$grp, n_groups = d$G, n_coefs = 1L)
   # The AGHQ inner marginal runs on the compiled per-group oracle, which carries
@@ -247,6 +254,7 @@ test_that("an offset the inner solve cannot carry errors rather than dropping", 
 # --- 4. Fit object and accessors ---------------------------------------------
 
 test_that("an EB fit carries the shape the generic accessors read", {
+  skip_on_cran()
   d <- sim_re_pois(21L, G = 25L, per = 8L)
   fit <- eb_pois(d)
   expect_s3_class(fit, "tulpa_fit")
@@ -282,6 +290,7 @@ test_that("EB reports the outer optimizer's convergence code", {
 })
 
 test_that("a non-converging outer optimization warns rather than passing silently", {
+  skip_on_cran()
   d <- sim_re_pois(25L, G = 25L, per = 8L)
   two_blocks <- list(
     list(idx = d$grp, n_groups = d$G, n_coefs = 1L, label = "a"),
@@ -303,6 +312,7 @@ test_that("a non-converging outer optimization warns rather than passing silentl
 })
 
 test_that("a variance component pinned at the bracket is flagged, not reported", {
+  skip_on_cran()
   # Brent returns convergence code 0 at a bracket endpoint, so the code alone
   # cannot tell a pinned value from a fitted one. The objective is
   # log_marginal + log_prior, so a hyperprior linear in log(sigma) drives the
@@ -328,11 +338,13 @@ test_that("a variance component pinned at the bracket is flagged, not reported",
 })
 
 test_that("a well-identified variance component draws no boundary warning", {
+  skip_on_cran()
   d <- sim_re_pois(27L, G = 40L, per = 10L, sigma = 0.7)
   expect_silent(eb_pois(d))
 })
 
 test_that("outer_maxit reaches the nested integrator too", {
+  skip_on_cran()
   d <- sim_re_pois(26L, G = 25L, per = 8L)
   expect_warning(
     tulpa_re_cov_nested(
@@ -356,6 +368,7 @@ test_that("EB reports no posterior draws rather than a bogus array", {
 # --- 5. Front-door wiring ----------------------------------------------------
 
 test_that("mode = 'eb' reaches the EB backend through tulpa()", {
+  skip_on_cran()
   d <- sim_re_pois(31L, G = 25L, per = 8L)
   fit <- tulpa(y ~ x + (1 | g), data = d$data, family = "poisson", mode = "eb")
   expect_identical(fit$backend, "eb")

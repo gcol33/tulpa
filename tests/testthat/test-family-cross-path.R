@@ -73,9 +73,12 @@ test_that("poisson: every kernel agrees at a shared eta", {
 
 test_that("neg_binomial_2: every kernel agrees, and phi is the size everywhere", {
   # A mu/size vs mu/dispersion split between copies would show up here.
-  for (y in c(0L, 3L, 12L)) {
-    for (eta in c(-0.5, 0.0, 1.4)) {
-      for (size in c(0.7, 2.0, 10.0)) {
+  ys <- c(0L, 3L, 12L); etas <- c(-0.5, 0.0, 1.4); sizes <- c(0.7, 2.0, 10.0)
+  # CRAN reads each axis at its two ends; the dev loop reads the whole grid.
+  if (cran_fixture()) { ys <- range(ys); etas <- range(etas); sizes <- range(sizes) }
+  for (y in ys) {
+    for (eta in etas) {
+      for (size in sizes) {
         link <- cpp_family_terms(y, 1L, eta, "neg_binomial_2", size)
         expl <- cpp_test_laplace_negbin(y, eta, size)
         orac <- cpp_glmm_elt_terms("neg_binomial_2", eta, y, 1, size)

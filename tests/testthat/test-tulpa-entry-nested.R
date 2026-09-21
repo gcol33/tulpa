@@ -144,6 +144,7 @@ test_that("inference_mode_info() does not claim nested_laplace_joint dispatches 
 })
 
 test_that("more than one random-intercept term alongside a block each become their own iid block", {
+  skip_on_cran()
   set.seed(107)
   n  <- 60L
   g  <- factor(rep(seq_len(6), each = 10))

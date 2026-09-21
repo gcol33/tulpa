@@ -3,6 +3,7 @@
 # tulpa()'s reserved `...` errors instead of swallowing misspelled arguments.
 
 test_that("tulpa() errors on stray ... arguments instead of ignoring them", {
+  skip_on_cran()
   d <- data.frame(y = rpois(40, 3), x = rnorm(40))
   expect_error(
     tulpa(y ~ x, data = d, familly = "poisson"),

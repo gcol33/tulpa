@@ -9,8 +9,6 @@
 # sqrt(1 - rho) to NaN, which reached the inner Newton through eta and returned
 # a NaN cell rather than an error.
 
-source(test_path("test-sparse-cholesky.R"), local = TRUE)
-
 .axis_fixture <- function(n_side = 4L, seed = 7L) {
   adj <- make_grid_adjacency(n_side, n_side)
   set.seed(seed)

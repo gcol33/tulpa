@@ -1,4 +1,5 @@
 test_that("every registry entry accepts a complete block and names each missing field", {
+  skip_on_cran()
   reg <- tulpa:::.NL_REGISTRY
   checked <- 0L
   for (nm in names(reg)) {
@@ -118,6 +119,7 @@ test_that("the joint converter names the missing field too", {
 }
 
 test_that("each converter branch reads only declared or defensively-read fields", {
+  skip_on_cran()
   reg <- tulpa:::.NL_REGISTRY
   types <- names(reg)
   # Fields deliberately left undeclared, with the reason they cannot be a flat

@@ -25,6 +25,7 @@ test_that("an unrecognised metric name is rejected rather than defaulted", {
 })
 
 test_that("every accepted metric name reaches the kernel", {
+  skip_on_cran()
   d <- .mm_binom(120L)
   for (mm in c("diag", "dense", "block_diag", "auto")) {
     fit <- tulpa_sample_glmm(
@@ -38,6 +39,7 @@ test_that("every accepted metric name reaches the kernel", {
 })
 
 test_that("the default metric is diag, and naming it changes nothing", {
+  skip_on_cran()
   d <- .mm_binom(150L)
   ctrl <- list(n_iter = 300L, warmup = 150L, n_chains = 2L, seed = 21L)
   a <- tulpa_sample_glmm(d$y, NULL, d$X, "binomial", "hmc", control = ctrl)
@@ -47,6 +49,7 @@ test_that("the default metric is diag, and naming it changes nothing", {
 })
 
 test_that("a backend with no mass matrix refuses a non-default metric", {
+  skip_on_cran()
   d <- .mm_binom(80L)
   for (backend in c("ess", "vi")) {
     expect_error(

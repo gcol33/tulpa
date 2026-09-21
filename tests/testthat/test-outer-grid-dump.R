@@ -511,6 +511,7 @@ test_that("every part the read is compared in carries a verdict", {
 })
 
 test_that("the shared fixture states the read the engine ships", {
+  skip_on_cran()
   # `ogd_fixture_fit()` pins `within_cell` instead of inheriting it, so a change
   # to the engine default cannot silently re-target the numbers recorded against
   # it (gcol33/tulpa#599). The pin is only the SHIPPED read while the two agree,

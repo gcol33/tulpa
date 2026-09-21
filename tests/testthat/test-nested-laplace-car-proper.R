@@ -1,7 +1,5 @@
 # Nested Laplace dispatch through the proper-CAR backend (2D grid over (tau, rho)).
 
-source(test_path("test-sparse-cholesky.R"), local = TRUE)
-
 test_that("proper-CAR nested Laplace runs on a 2D grid", {
   skip_on_cran()
   adj <- make_grid_adjacency(5, 5)  # 25 sites

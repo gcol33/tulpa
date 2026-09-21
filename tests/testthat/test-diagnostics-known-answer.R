@@ -45,6 +45,7 @@ test_that("moran_i sign tracks the spatial pattern", {
 })
 
 test_that("moran_i agrees with spdep::moran where available", {
+  skip_on_cran()
   skip_if_not_installed("spdep")
   set.seed(5)
   coords <- as.matrix(expand.grid(x = 1:6, y = 1:6))

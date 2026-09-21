@@ -189,6 +189,7 @@ test_that("spatial() and spatial_car() accept a tulpa_adjacency object", {
 })
 
 test_that("adjacency.sf builds polygon contiguity", {
+  skip_on_cran()
   skip_if_not_installed("sf")
   mk <- function(x0, y0) {
     sf::st_polygon(list(rbind(c(x0, y0), c(x0 + 1, y0), c(x0 + 1, y0 + 1),
@@ -214,6 +215,7 @@ test_that("adjacency.sf builds polygon contiguity", {
 })
 
 test_that("adjacency.SpatRaster builds lattice contiguity over non-NA cells", {
+  skip_on_cran()
   skip_if_not_installed("terra")
   r <- terra::rast(nrows = 3, ncols = 3, xmin = 0, xmax = 3,
                    ymin = 0, ymax = 3)
@@ -233,6 +235,7 @@ test_that("adjacency.SpatRaster builds lattice contiguity over non-NA cells", {
 })
 
 test_that("adjacency.stars builds lattice contiguity over a raster", {
+  skip_on_cran()
   skip_if_not_installed("stars")
   skip_if_not_installed("sf")
   s <- stars::st_as_stars(matrix(1:9, nrow = 3, ncol = 3))

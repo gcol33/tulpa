@@ -144,6 +144,7 @@ test_that("svc exact NUTS is divergence-free and recovers the field scale (#144/
 }
 
 test_that("hsgp svc requires an exact mode (nested/laplace refuse)", {
+  skip_on_cran()
   s <- make_svc_pois(n = 30L)
   expect_error(
     tulpa(y ~ x, data = s$d, family = "poisson",

@@ -134,6 +134,7 @@ test_that("gradient points in correct direction (finite difference check)", {
                     c(log(0.6), log(0.5)), c(log(0.6), log(1.1)))
 
 test_that("the implicit-diff marginal is the same number the nested SPDE grid reports", {
+  skip_on_cran()
   skip_if_not_installed("fmesher")
   f <- .impl_fixture()
   for (cell in .IMPL_CELLS) {

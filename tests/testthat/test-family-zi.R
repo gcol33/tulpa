@@ -8,12 +8,12 @@
 # the hurdle model, and the general mixture code must reproduce the two-part
 # closed form without any truncated-specific branch.
 
-zi_support_sum <- function(family, eta, z, phi, ymax = 20000) {
+zi_support_sum <- function(family, eta, z, phi, ymax = SUPPORT_YMAX) {
   yy <- 0:ymax
   sum(exp(zi_loglik(rep(eta, length(yy)), z, yy, family, phi = phi)))
 }
 
-zi_support_moments <- function(family, eta, z, phi, ymax = 20000) {
+zi_support_moments <- function(family, eta, z, phi, ymax = SUPPORT_YMAX) {
   yy <- 0:ymax
   pr <- exp(zi_loglik(rep(eta, length(yy)), z, yy, family, phi = phi))
   m  <- sum(pr * yy)
@@ -28,8 +28,8 @@ grid_phi <- c(0.5, 2, 8)
 # heavy-tailed mixture out to ymax is what it costs. The identities are tier 1,
 # so CRAN keeps all of them and reads them at the corners: the two signs of each
 # predictor against the heaviest and lightest tail, which is where a wrong
-# mixture constant or a dropped cross term shows first. ymax is untouched --
-# the tail mass is the check.
+# mixture constant or a dropped cross term shows first. The support bound is
+# not part of that trade: see SUPPORT_YMAX.
 if (cran_fixture()) {
   grid_eta <- c(-1, 1.5)
   grid_z   <- c(-1.5, 0.8)
@@ -68,7 +68,7 @@ test_that("observed curvature averages to the registered weight for nb2", {
   # test-family-count-extensions.R -- so it is deliberately excluded here.
   for (eta in grid_eta) {
     for (phi in grid_phi) {
-      yy <- 0:60000
+      yy <- 0:SUPPORT_YMAX
       pr <- stats::dnbinom(yy, size = phi, mu = exp(eta))
       avg <- sum(pr * .family_obs_weight(rep(eta, length(yy)), yy,
                                          "neg_binomial_2", phi = phi))

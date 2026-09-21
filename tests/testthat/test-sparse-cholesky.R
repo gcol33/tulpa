@@ -4,82 +4,6 @@
 # Results are compared against a small-grid dense-path baseline to verify
 # numerical agreement of the shared Newton loop.
 
-# Helper: create a regular grid adjacency structure (4-connected)
-make_grid_adjacency <- function(nrow, ncol) {
-  n <- nrow * ncol
-  neighbors <- vector("list", n)
-  for (i in seq_len(n)) {
-    r <- (i - 1) %/% ncol + 1
-    c <- (i - 1) %% ncol + 1
-    nb <- integer(0)
-    if (r > 1)    nb <- c(nb, i - ncol)
-    if (r < nrow) nb <- c(nb, i + ncol)
-    if (c > 1)    nb <- c(nb, i - 1)
-    if (c < ncol) nb <- c(nb, i + 1)
-    neighbors[[i]] <- nb
-  }
-
-  # Convert to CSR (row_ptr, col_idx)
-  n_neighbors <- vapply(neighbors, length, integer(1))
-  col_idx <- unlist(neighbors) - 1L  # 0-based
-  row_ptr <- c(0L, cumsum(n_neighbors))
-
-  list(
-    n = n,
-    adj_row_ptr = as.integer(row_ptr),
-    adj_col_idx = as.integer(col_idx),
-    n_neighbors = as.integer(n_neighbors)
-  )
-}
-
-# Helper: simulate binomial spatial data on a grid
-simulate_spatial_data <- function(n_sites, n_obs_per_site, beta0, tau_spatial, adj) {
-  set.seed(42)
-  n_obs <- n_sites * n_obs_per_site
-
-  # Simulate ICAR spatial effects (approximate: draw from N(0, 1/tau) then smooth)
-  spatial_raw <- rnorm(n_sites, 0, 1 / sqrt(tau_spatial))
-
-  # Simple spatial smoothing via neighbor averaging (2 passes)
-  for (pass in 1:2) {
-    smoothed <- numeric(n_sites)
-    for (s in seq_len(n_sites)) {
-      start <- adj$adj_row_ptr[s] + 1L
-      end <- adj$adj_row_ptr[s + 1]
-      if (end >= start) {
-        nb_idx <- adj$adj_col_idx[start:end] + 1L  # back to 1-based
-        smoothed[s] <- mean(spatial_raw[nb_idx])
-      }
-    }
-    spatial_raw <- smoothed
-  }
-  spatial_raw <- spatial_raw - mean(spatial_raw)
-
-  # Design: intercept only
-  X <- matrix(1, nrow = n_obs, ncol = 1)
-
-  # Site assignments (1-based)
-  spatial_idx <- rep(seq_len(n_sites), each = n_obs_per_site)
-
-  # Linear predictor
-  eta <- beta0 + spatial_raw[spatial_idx]
-  p <- plogis(eta)
-
-  # Binomial response
-  n_trials <- rep(1L, n_obs)
-  y <- rbinom(n_obs, size = n_trials, prob = p)
-
-  list(
-    y = as.integer(y),
-    n_trials = as.integer(n_trials),
-    X = X,
-    spatial_idx = as.integer(spatial_idx),
-    eta_true = eta,
-    spatial_true = spatial_raw
-  )
-}
-
-
 # =====================================================================
 # Test: ICAR spatial with n=300 sites (triggers sparse solver)
 # =====================================================================
@@ -181,6 +105,7 @@ test_that("BYM2 Laplace works with sparse Cholesky (225 sites)", {
 # (not bitwise identical due to different algorithms, but same structure).
 
 test_that("sparse and dense paths produce consistent ICAR results", {
+  skip_on_cran()
   # Small problem (dense path, n_x = 1 + 25 = 26)
   adj_small <- make_grid_adjacency(5, 5)
   dat_small <- simulate_spatial_data(
@@ -306,6 +231,7 @@ test_that("ICAR single-response: dense and sparse agree byte-level on identical 
 })
 
 test_that("BYM2 single-response: dense and sparse agree byte-level on identical data", {
+  skip_on_cran()
   adj <- make_grid_adjacency(15, 15)  # 225 sites -> n_x = 451 (auto-sparse)
   dat <- simulate_spatial_data(
     n_sites = 225, n_obs_per_site = 4,

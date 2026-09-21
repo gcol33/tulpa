@@ -20,7 +20,7 @@ zi_hand_linpred <- function(fit, d) {
 }
 
 test_that("fitted and predict read the mixture mean at the training and new data", {
-  skip_if_fast()
+  skip_on_cran()
   d <- zi_predict_data()
   fit <- tulpa(y ~ x, d, family = "poisson", mode = "laplace", ziformula = ~ z)
   h <- zi_hand_linpred(fit, d)
@@ -37,7 +37,7 @@ test_that("fitted and predict read the mixture mean at the training and new data
 })
 
 test_that("residuals use the mixture mean and variance", {
-  skip_if_fast()
+  skip_on_cran()
   d <- zi_predict_data()
   fit <- tulpa(y ~ x, d, family = "poisson", mode = "laplace", ziformula = ~ z)
   h <- zi_hand_linpred(fit, d)
@@ -49,7 +49,7 @@ test_that("residuals use the mixture mean and variance", {
 })
 
 test_that("response-scale bounds of a zero-inflated prediction are pinned", {
-  skip_if_fast()
+  skip_on_cran()
   d <- zi_predict_data()
   fit <- tulpa(y ~ x, d, family = "poisson", mode = "laplace", ziformula = ~ z)
   nd <- d[1:10, ]
@@ -66,7 +66,7 @@ test_that("response-scale bounds of a zero-inflated prediction are pinned", {
 })
 
 test_that("posterior_predict and simulate draw the structural zeros", {
-  skip_if_fast()
+  skip_on_cran()
   d <- zi_predict_data(n = 400)
   fit <- tulpa(y ~ x, d, family = "poisson", mode = "laplace", ziformula = ~ z)
   yrep <- posterior_predict(fit, ndraws = 400, seed = 3)
@@ -87,7 +87,7 @@ test_that("posterior_predict and simulate draw the structural zeros", {
 })
 
 test_that("a hurdle fit predicts the truncated mean times the non-zero probability", {
-  skip_if_fast()
+  skip_on_cran()
   set.seed(5)
   n <- 300
   d <- data.frame(x = stats::rnorm(n))
@@ -107,7 +107,7 @@ test_that("a hurdle fit predicts the truncated mean times the non-zero probabili
 })
 
 test_that("a sampler fit reads the zero-inflation block from the engine layout", {
-  skip_if_fast()
+  skip_on_cran()
   d <- zi_predict_data(n = 200)
   fit <- tulpa(y ~ x, d, family = "poisson", mode = "hmc", ziformula = ~ z,
                control = list(n_iter = 150L, warmup = 75L, n_chains = 1L,

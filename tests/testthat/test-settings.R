@@ -37,6 +37,7 @@ test_that("every grid axis materialises to a usable vector", {
 })
 
 test_that("every family binding resolves to a declared axis", {
+    skip_on_cran()
     for (fam in names(tulpa:::.NL_FAMILY_AXES)) {
         bind <- tulpa:::.NL_FAMILY_AXES[[fam]]
         expect_true(length(bind) > 0L, info = fam)
@@ -271,6 +272,7 @@ test_that("default grid axes are not written inline outside the settings file", 
 })
 
 test_that("the reported Pareto-k threshold is read, never restated", {
+    skip_on_cran()
     r_dir <- test_path("..", "..", "R")
     skip_if_not(dir.exists(r_dir), "package sources not available")
     files <- setdiff(list.files(r_dir, pattern = "\\.R$", full.names = TRUE),
@@ -357,6 +359,7 @@ test_that("the reported Pareto-k threshold is read, never restated", {
 })
 
 test_that("no user-facing text tells the caller to set a knob that hard-errors", {
+    skip_on_cran()
     r_dir <- test_path("..", "..", "R")
     skip_if_not(dir.exists(r_dir), "package sources not available")
 

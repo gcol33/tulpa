@@ -66,6 +66,7 @@ test_that("the spec and joint entry families agree on log_marginal", {
 })
 
 test_that("every nested-Laplace grid entry takes the shared control knobs", {
+  skip_on_cran()
   # The bundle exists so a knob added to a driver is added in one place. An
   # entry outside it silently ignores whatever the others gained.
   ns <- asNamespace("tulpa")

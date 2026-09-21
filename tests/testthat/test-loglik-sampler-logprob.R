@@ -49,6 +49,7 @@ expect_log_posterior_mean <- function(fit) {
 # ---------------------------------------------------------------------------
 
 test_that("the per-draw helper reproduces the log_prob NUTS records", {
+  skip_on_cran()
   d <- lp_poisson_fixture()
   fit <- lp_sample(d, "hmc", list(n_iter = 200L, warmup = 100L, n_chains = 1L,
                                   seed = 3L))
@@ -69,6 +70,7 @@ for (backend in names(backend_controls)) {
   local({
     b <- backend
     test_that(sprintf("backend '%s' reports the helper's log posterior", b), {
+      skip_on_cran()
       d <- lp_poisson_fixture()
       fit <- lp_sample(d, b, backend_controls[[b]])
       expect_log_posterior_mean(fit)
@@ -105,6 +107,7 @@ ref_log_mvn0 <- function(B, S) {
 }
 
 test_that("re_cov_gibbs records its joint density at each retained sweep", {
+  skip_on_cran()
   set.seed(11)
   G <- 15L; npg <- 6L; N <- G * npg
   g <- rep(seq_len(G), each = npg)
@@ -287,6 +290,7 @@ nb_r_log_prior <- function(r, a, b) {
 }
 
 test_that("PG negative-binomial ICAR route records its joint density", {
+  skip_on_cran()
   d <- pg_areal()
   set.seed(9)
   yc <- as.integer(rnbinom(d$N, size = 4, mu = exp(0.5 + 0.3 * d$X[, 2])))
@@ -310,6 +314,7 @@ test_that("PG negative-binomial ICAR route records its joint density", {
 })
 
 test_that("PG negative-binomial route records its joint density, with and without an iid block", {
+  skip_on_cran()
   d <- pg_areal()
   set.seed(10)
   yc <- as.integer(rnbinom(d$N, size = 4, mu = exp(0.5 + 0.3 * d$X[, 2])))

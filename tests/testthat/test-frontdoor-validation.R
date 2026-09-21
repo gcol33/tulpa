@@ -3,6 +3,7 @@
 # on every profile.
 
 test_that("flagship drivers reject a mismatched design (#156f)", {
+  skip_on_cran()
   y <- rbinom(20, 1, 0.5)
   region <- rep(1:5, length.out = 20)
   prior <- list(list(type = "iid", obs_idx = region, n_units = 5L,
@@ -41,6 +42,7 @@ test_that("tulpa_em_laplace hard-errors on the ignored spatial/re_list (#156g)",
 })
 
 test_that("statistical hyperpriors ride re_prior, not control (#156b)", {
+  skip_on_cran()
   set.seed(1)
   d <- data.frame(y = rbinom(120, 1, 0.5), x = rnorm(120),
                   g = factor(rep(1:12, 10)))
@@ -216,6 +218,7 @@ test_that("a bare-list adjacency passes the same graph check as a constructor", 
 })
 
 test_that("the graph is reported once, not once per gate", {
+  skip_on_cran()
   d <- .sp_frontdoor_data()
   seen <- character(0)
   withCallingHandlers(

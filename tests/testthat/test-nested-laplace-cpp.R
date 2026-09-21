@@ -1,8 +1,6 @@
 # test-nested-laplace-cpp.R
 # Tests for C++ nested Laplace grid loop (Feature 3b)
 
-source(test_path("test-sparse-cholesky.R"), local = TRUE)
-
 # =====================================================================
 # Test: C++ grid loop produces valid results
 # =====================================================================
@@ -86,6 +84,7 @@ test_that("C++ grid loop matches R single-point calls", {
 # =====================================================================
 
 test_that("cpp_nested_laplace_icar works with sparse Cholesky (300 sites)", {
+  skip_on_cran()
   adj <- make_grid_adjacency(15, 20)  # 300 sites
   dat <- simulate_spatial_data(
     n_sites = 300, n_obs_per_site = 3,

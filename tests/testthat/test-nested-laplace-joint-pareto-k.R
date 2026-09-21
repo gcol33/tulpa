@@ -831,6 +831,7 @@ test_that("refinement goes first, and a precision miss survives its exhaustion (
 })
 
 test_that("k_quality_k_trace records the chase round by round (gcol33/tulpa#131)", {
+    skip_on_cran()
     sim <- .jpk_sim(seed = 95)
     adj <- .jpk_chain_adj(sim$n_s)
     prior <- list(type = "icar", n_spatial_units = adj$n_spatial_units,

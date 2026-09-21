@@ -134,7 +134,10 @@ test_that("each one-dimensional projection is an elementary-interval net", {
   # 2^m - 1 points fill intervals 1 .. 2^m - 1 once each and leave interval 0
   # empty. Any error in the direction numbers or in the Gray-code index breaks
   # this immediately.
-  for (m in c(4L, 6L, 8L, 10L, 12L)) {
+  # CRAN reads the lowest and highest m -- the first and the last direction
+  # number bits a net of that size depends on; the dev loop reads every m.
+  ms <- if (cran_fixture()) c(4L, 12L) else c(4L, 6L, 8L, 10L, 12L)
+  for (m in ms) {
     n <- 2L^m - 1L
     P <- sob(n, 32L)
     cell <- floor(P * 2^m)
@@ -171,6 +174,10 @@ test_that("integration error decays faster than Monte Carlo", {
 
   cfg <- list(list(d = 1L, pw = 6:13), list(d = 2L, pw = 6:13),
               list(d = 14L, pw = 10:16), list(d = 18L, pw = 12:17))
+  # The rate is the same statement at every d; the high-d ladders are what the
+  # comparison costs (n to 2^17, times the Monte Carlo replicates), so CRAN reads
+  # it at d = 1 and 2 and the dev loop keeps the whole ladder.
+  if (cran_fixture()) cfg <- cfg[1:2]
 
   for (cc in cfg) {
     d <- cc$d

@@ -54,6 +54,7 @@ test_that("the layout probe reports the sampler's own parameter vector", {
 
 
 test_that("the warm start places the source fit's estimates in the right slots", {
+  skip_on_cran()
   d <- ws_data()
   lay <- ws_layout(d)
   re_terms <- list(list(idx = as.integer(d$g), n_groups = nlevels(d$g),
@@ -86,6 +87,7 @@ test_that("the warm start places the source fit's estimates in the right slots",
 
 
 test_that("the inverse-mass diagonal is withheld unless asked for", {
+  skip_on_cran()
   d <- ws_data()
   lay <- ws_layout(d)
   re_terms <- list(list(idx = as.integer(d$g), n_groups = nlevels(d$g),
@@ -159,6 +161,7 @@ test_that("a warm-started chain finds the same posterior as a cold one", {
 
 
 test_that("a warm start is refused where it cannot be honoured", {
+  skip_on_cran()
   d <- ws_data()
 
   # Backends other than NUTS take neither an init nor an inverse mass.
@@ -201,6 +204,7 @@ test_that("a fit from a backend with no mode is refused as a warm-start source",
 
 
 test_that("a source fit for a different model is refused", {
+  skip_on_cran()
   d <- ws_data()
   lay <- ws_layout(d)
   X <- stats::model.matrix(~ x, d)
