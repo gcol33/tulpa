@@ -1,5 +1,20 @@
 # CRAN comments
 
+## Resubmission
+
+This replaces the tulpa 0.5.0 upload of 2026-09-20, which the incoming check
+archived on "Overall checktime 12 min > 10 min". Uwe Ligges has since triggered
+further checks on it; I have asked for that upload to be dropped in favour of
+this one.
+
+* It fixes a bug found after that upload, listed below with the others: a
+  copy-scale amplitude was reported, and drawn, below zero.
+* The check time is reduced. The tests CRAN runs now leave out model fits and
+  sampler runs, which belong to the package's own recovery tier and run in CI,
+  and read the structural identity checks on smaller grids. win-builder
+  r-devel reports a check time of 491s (Status: OK), against 724s for the
+  archived upload.
+
 ## Update
 
 This is an update of tulpa 0.2.0, published on 2026-09-09.
@@ -38,7 +53,7 @@ change. The Title now expands the package name.
 
 0 errors | 0 warnings | 0 notes locally.
 
-The expected NOTE on the incoming check is "Days since last update: 11",
+The expected NOTE on the incoming check is "Days since last update: 12",
 explained above.
 
 ## Test environments
