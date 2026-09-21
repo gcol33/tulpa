@@ -81,6 +81,18 @@
   })
 }
 
+# A two-arm copy fit: `alpha` carries the declared "no coupling" point mass at
+# zero beside its log continuum, so this is the fixture whose axis state is not
+# a plain continuum and the one a harness reading the geometry off the values
+# alone gets wrong.
+.ogd_fit_copy <- function() {
+  .ogd_memo("copy", function() {
+    build_icar_joint_fit(nr = 5L, nc = 5L,
+                         sigma_grid = c(0.4, 0.7, 1.0, 1.5),
+                         alpha_grid = c(0, 0.25, 0.5, 1.0))
+  })
+}
+
 # The one fit that declines the per-cell fixed-effect retention. Its axis state
 # is the tensor grid's, so what it isolates is the absence of the blocks.
 .ogd_fit_nofixed <- function() {
@@ -102,7 +114,12 @@
 
 test_that("a dump rebuilt with its own weights returns the read the fit shipped", {
   skip_on_cran()
-  for (fit in list(.ogd_fit_grid(), .ogd_fit_ccd(), .ogd_fit_local())) {
+  # The copy fit is in the list because it is the one whose axes are not all
+  # ordinary continua: `alpha = 0` is a declared point mass, and a harness
+  # reading the axis without it reproduces the pre-gcol33/tulpa#854 numbers --
+  # a round trip that agrees with itself and not with the fit.
+  for (fit in list(.ogd_fit_grid(), .ogd_fit_ccd(), .ogd_fit_local(),
+                   .ogd_fit_copy())) {
     d <- outer_grid_dump(fit)
     # The regime is asserted before the agreement: a read that is all NA would
     # round-trip perfectly and mean nothing.
@@ -250,7 +267,12 @@ test_that("the dump carries the grid state each node set actually left", {
   expect_null(g$dnode)                                  # uniform tensor cells
   expect_identical(unique(g$weight_kind), "mass")
   expect_identical(g$support, "density")
-  expect_null(g$axis_domains)
+  # The reporting geometry is carried whatever the support, because every
+  # driver passes it whatever the support: a density read mirrors its outer
+  # cell edges in the axis's own coordinate with it. Withholding it here read
+  # a geometry the fit never used (gcol33/tulpa#854).
+  expect_identical(g$axis_domains, rep("positive", ncol(g$joint_grid)))
+  expect_identical(g$axis_atoms, rep(0, ncol(g$joint_grid)))
   expect_null(g$local_ccd_info)
   expect_length(g$log_marginal, nrow(g$joint_grid))
   expect_length(g$weights, nrow(g$joint_grid))

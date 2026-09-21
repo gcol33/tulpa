@@ -1179,10 +1179,11 @@ test_that("the four-axis crossed fixture is where the box read is weakest", {
     d <- LCCD_SIM(8100L + s, "gaussian", LCCD_CFG$nr, LCCD_CFG$spr,
                   LCCD_CFG$ntr, LCCD_CFG$beta, LCCD_CFG$su, LCCD_CFG$phi)
     f <- recov_fit_joint_coarse(d, sg, "gaussian", LCCD_CFG, levels = 4L)
-    dm <- .nl_axis_domains(f)
+    geo <- .nl_axis_geometry(f)
     for (a in rownames(cov)) {
       q <- .nl_axis_quantiles(f$theta_grid, f$log_marginal, f$refining_axis,
-                              probs = probs, domains = dm, within = a)
+                              probs = probs, domains = geo$domain,
+                              atoms = geo$atom, within = a)
       lo <- vapply(seq_along(truth), function(j) as.numeric(q$ci_lo[[j]]),
                    numeric(1))
       hi <- vapply(seq_along(truth), function(j) as.numeric(q$ci_hi[[j]]),

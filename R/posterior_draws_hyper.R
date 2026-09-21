@@ -55,12 +55,37 @@
 # there is none) under `chord`. `declined` is why the requested construction did
 # not run, from the vocabulary `.nl_summary_quantile_read()` already uses, plus
 # the two this path adds for a support that reaches no CDF at all.
-.nl_hyper_axis_geometry <- function(v, w, domain, within, outside) {
+#
+# A DECLARED POINT MASS is a coordinate whose `lo` and `hi` are the coordinate
+# itself, which both reads already turn into the level exactly -- the same
+# degenerate interval a `clamp` support's extreme cell takes above, reached
+# from the other direction.
+.nl_hyper_axis_geometry <- function(v, w, domain, within, outside,
+                                    atom = NA_real_) {
   none <- function(declined) {
     list(kind = "none", values = numeric(0), lo = numeric(0),
          hi = numeric(0), declined = declined)
   }
   if (is.na(outside)) return(none("support_moment_rule"))
+
+  # A declared point mass is not a cell: its box is its own coordinate, so a
+  # draw landing in it IS the level and the continuum's partition is laid over
+  # what is left. Prepended rather than special-cased in the draw, because
+  # `lo == hi == value` already makes both within-cell reads return the level
+  # exactly -- and because the continuum's own partition is then built on a node
+  # set the axis's declared support contains, which is what stops it reaching
+  # half a spacing below zero (gcol33/tulpa#854).
+  ia <- length(atom) == 1L && is.finite(atom) && any(v == atom) &&
+        !any(v < atom, na.rm = TRUE)
+  if (ia) {
+    keep <- v != atom
+    g <- .nl_hyper_axis_geometry(v[keep], w[keep], domain, within, outside)
+    if (identical(g$kind, "none")) return(g)
+    g$values <- c(atom, g$values)
+    g$lo     <- c(atom, g$lo)
+    g$hi     <- c(atom, g$hi)
+    return(g)
+  }
 
   chord <- function(declined = NA_character_) {
     # The chord read's knots ARE the positive-weight coordinates, so its
@@ -126,6 +151,14 @@
 #' within-cell read, so the columns are a continuous marginal rather than the
 #' handful of grid-node values `fit$theta_grid[cells, ]` returns.
 #'
+#' An axis carrying a declared POINT MASS -- the copy scale's `alpha = 0`, the
+#' "no coupling" model whose prior probability is stated rather than read off a
+#' node count -- keeps it: draws in that cell are exactly the level, in the
+#' proportion the fit reports as `fit$copy_atom$posterior_mass`, and the
+#' continuum above it is continuized on its own partition. The level is a model
+#' and not a cell representative, so spreading it over a box would both put mass
+#' where the axis has none and leave none on the level itself.
+#'
 #' Reading the node coordinate directly is what
 #' [tulpa_posterior_draws()] consumers used to do, and on a 5- to 15-node axis
 #' it makes every draw an atom: a truth between two nodes, or past the
@@ -190,7 +223,9 @@ tulpa_hyper_draws <- function(fit, cells = NULL, n = 1000, within = NULL) {
   # outer edge in the coordinate the guess picks, exactly as the interval read
   # does; a fit the registry cannot read at all leaves every axis undeclared
   # rather than taking the draw down.
-  doms <- tryCatch(.nl_axis_domains(fit), error = function(e) NULL)
+  geo <- tryCatch(.nl_axis_geometry(fit), error = function(e) NULL)
+  doms <- geo$domain
+  atoms <- geo$atom
 
   nms <- .nl_axis_names(tg)
   out <- matrix(0.0, length(cells), ncol(tg), dimnames = list(NULL, nms))
@@ -198,7 +233,8 @@ tulpa_hyper_draws <- function(fit, cells = NULL, n = 1000, within = NULL) {
   decl <- stats::setNames(rep(NA_character_, ncol(tg)), nms)
   for (j in seq_len(ncol(tg))) {
     dm <- if (length(doms) < j) NA_character_ else doms[[j]]
-    g <- .nl_hyper_axis_geometry(as.numeric(tg[, j]), w, dm, req, outside)
+    at <- if (length(atoms) < j) NA_real_ else atoms[[j]]
+    g <- .nl_hyper_axis_geometry(as.numeric(tg[, j]), w, dm, req, outside, at)
     out[, j] <- .nl_hyper_axis_draw(g, as.numeric(tg[cells, j]))
     used[j] <- if (identical(g$kind, "none")) NA_character_ else g$kind
     decl[j] <- if (is.na(g$declined)) fell else g$declined

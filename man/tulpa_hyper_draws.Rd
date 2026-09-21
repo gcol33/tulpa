@@ -36,6 +36,14 @@ sampled from the within-cell density its cell carries under the fit's own
 within-cell read, so the columns are a continuous marginal rather than the
 handful of grid-node values \code{fit$theta_grid[cells, ]} returns.
 
+An axis carrying a declared POINT MASS -- the copy scale's \code{alpha = 0}, the
+"no coupling" model whose prior probability is stated rather than read off a
+node count -- keeps it: draws in that cell are exactly the level, in the
+proportion the fit reports as \code{fit$copy_atom$posterior_mass}, and the
+continuum above it is continuized on its own partition. The level is a model
+and not a cell representative, so spreading it over a box would both put mass
+where the axis has none and leave none on the level itself.
+
 Reading the node coordinate directly is what
 \code{\link[=tulpa_posterior_draws]{tulpa_posterior_draws()}} consumers used to do, and on a 5- to 15-node axis
 it makes every draw an atom: a truth between two nodes, or past the

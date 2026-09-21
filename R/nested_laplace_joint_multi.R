@@ -2318,16 +2318,16 @@
     # Supplied whatever the support: a moment rule needs the domain to form its
     # interval at all, and a density read needs it to place its outer cell edges
     # inside the quantity's own support.
-    domains <- .joint_axis_domains(list(theta_grid = joint_grid,
-                                        axis_offsets = axis_offsets,
-                                        blocks = prepared))
+    geo <- .joint_axis_geometry(list(theta_grid = joint_grid,
+                                     axis_offsets = axis_offsets,
+                                     blocks = prepared))
     qs <- .nl_axis_quantiles(joint_grid, res$log_marginal,
                               res$refining_axis, weights = int_weights,
-                              support = support, domains = domains,
-                              within = within)
+                              support = support, domains = geo$domain,
+                              within = within, atoms = geo$atom)
     res$theta_median <- qs$median
     res$theta_ci_lo  <- qs$ci_lo
     res$theta_ci_hi  <- qs$ci_hi
     res$within_cell_requested <- within
-    .nl_attach_interval_provenance(res, qs, joint_grid, domains)
+    .nl_attach_interval_provenance(res, qs, joint_grid, geo$domain, geo$atom)
 }

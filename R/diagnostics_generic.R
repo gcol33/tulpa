@@ -315,7 +315,7 @@ compare_models <- function(..., criterion = c("waic", "loo", "loglik")) {
   # Supplied whatever the support: a moment rule needs the domain to form its
   # interval at all, and a density read needs it to place its outer cell edges
   # inside the quantity's own support.
-  doms <- .joint_axis_domains(object)
+  geo <- .joint_axis_geometry(object)
   # And the WITHIN-CELL construction the fit's own reported intervals were read
   # with, so a derived-axis summary and `theta_ci_lo` /
   # `theta_ci_hi` on the same fit cannot be built two different ways.
@@ -324,15 +324,19 @@ compare_models <- function(..., criterion = c("waic", "loo", "loglik")) {
     v   <- tg[, j]
     tr  <- if (!is.null(transform)) transform[[bare_axes[j]]] else NULL
     nm  <- bare_axes[j]
-    dm  <- if (length(doms) < j) NA_character_ else doms[[j]]
+    dm  <- if (length(geo$domain) < j) NA_character_ else geo$domain[[j]]
+    at  <- if (length(geo$atom) < j) NA_real_ else geo$atom[[j]]
     if (!is.null(tr)) {                                 # marginalize derived
       v  <- tr$fn(v)
       nm <- tr$name
       if (!is.null(tr$domain)) dm <- tr$domain
+      # A declared point mass is a LEVEL of the axis, so it maps with it -- the
+      # same rule the cell values take.
+      if (is.finite(at)) at <- tr$fn(at)
     }
     m  <- sum(w * v)
     s  <- sqrt(max(0, sum(w * v^2) - m^2))
-    qs <- .nl_summary_quantile(v, w, probs, dm, support, within)
+    qs <- .nl_summary_quantile(v, w, probs, dm, support, within, at)
     out <- data.frame(mean = m, sd = s, row.names = nm,
                       stringsAsFactors = FALSE)
     out[.quantile_colnames(probs)] <- as.list(qs)

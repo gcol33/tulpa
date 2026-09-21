@@ -391,3 +391,142 @@ test_that("a joint fit's draws carry a continuized sigma and alpha", {
     }
   }
 })
+
+
+# ---- 7. An axis carrying a declared point mass (gcol33/tulpa#854) -----------
+#
+# The copy scale is not a continuum. It is the declared "no coupling" model at
+# `alpha = 0`, carrying `.TULPA_COPY_ATOM_MASS` whatever the node count, plus a
+# log continuum on (0, Inf) -- and three readers already split it there on the
+# one rule `.hyper_axis_scale()` states: the measure that integrates the axis
+# (`.hyper_axis_measure()`), the support it reports (`.hyper_axis_support()`)
+# and the prior that weighs the level (`.hyper_is_atom_level()`). The reporting
+# partition was the fourth reader and the only one that did not, because it
+# took the axis's support from the outer Pareto-k PROPOSAL's tag (`identity`,
+# which a proposal needs in order to reach zero at all).
+#
+# So the level got a cell, half a node spacing wide, reaching BELOW the axis's
+# own support -- and the two failures the issue measured follow from one
+# geometry: the level's posterior mass is reproduced by no draw, and draws leave
+# the support. The arbiter here is the same one section 1 uses, the read and the
+# draws being one construction, applied to the axis where they were two.
+
+hd_copy <- function(within = "box_uniform", lp_alpha = NULL) {
+  lp_alpha <- lp_alpha %||% function(a) -0.5 * (a - 0.5)^2 / 0.3^2
+  hd_fit(
+    list(alpha = c(0, 0.25, 0.5, 1.0),
+         sigma = exp(seq(log(0.4), log(1.5), length.out = 4))),
+    function(tg) -0.5 * (log(tg[, "sigma"]) - log(0.9))^2 / 0.4^2 +
+                  lp_alpha(tg[, "alpha"]),
+    within = within)
+}
+
+test_that("a declared point mass is named as one, and its continuum is positive", {
+  fit <- hd_copy()
+  geo <- tulpa:::.nl_axis_geometry(fit)
+  nms <- colnames(tulpa:::.nl_theta_matrix(fit))
+  # Both axes are log-scale, so both declare the level; only `alpha` carries a
+  # grid node on it. The copy axis's PROPOSAL coordinate stays `identity` --
+  # that tag has to reach zero -- and is a separate statement from its support.
+  expect_identical(geo$domain, rep("positive", length(nms)))
+  expect_identical(geo$atom, rep(0, length(nms)))
+  expect_identical(
+    unname(tulpa:::.joint_axis_tags_raw(list(theta_grid = fit$theta_grid,
+                                             prior = list(type = "bym2")))),
+    c("identity", "log"))
+})
+
+test_that("a level the grid does not carry leaves the read byte-identical", {
+  # The no-op half: `sigma` declares the same level and has no node on it, so
+  # every read has to return exactly what it returned with nothing declared.
+  fit <- hd_copy()
+  v <- as.numeric(fit$theta_grid[, "sigma"])
+  w <- fit$weights / sum(fit$weights)
+  p <- c(0.025, 0.5, 0.975)
+  for (wc in c("box_uniform", "chord")) {
+    expect_identical(
+      tulpa:::.nl_summary_quantile(v, w, p, "positive", "density", wc, 0),
+      tulpa:::.nl_summary_quantile(v, w, p, "positive", "density", wc,
+                                   NA_real_))
+  }
+})
+
+test_that("the level keeps its own coordinate, and nothing is drawn below it", {
+  for (wc in c("box_uniform", "chord")) {
+    fit <- hd_copy(wc)
+    av <- as.numeric(fit$theta_grid[, "alpha"])
+    w  <- fit$weights / sum(fit$weights)
+    mass <- sum(w[av == 0])
+    # The fixture puts the level's posterior mass between the 2.5% the interval
+    # asks for and the 50% the median does, so the reported bound is the level
+    # and the median is above it -- the composition read at a point on either
+    # side of the level.
+    expect_gt(mass, 0.025)
+    expect_lt(mass, 0.5)
+
+    set.seed(854)
+    n <- if (cran_fixture()) 2e4L else 2e5L
+    a <- as.numeric(tulpa_hyper_draws(fit, n = n)[, "alpha"])
+    # Three readings of one geometry. The mass the fit reports on the level is
+    # the mass the draws put there; nothing is drawn below the axis's support;
+    # and the level is the 2.5% bound rather than a point inside a box that
+    # reaches past it.
+    expect_lt(abs(mean(a == 0) - mass), 5 / sqrt(n))
+    expect_gte(min(a), 0)
+    expect_identical(unname(fit$theta_ci_lo[["alpha"]]), 0)
+    expect_gt(fit$theta_median[["alpha"]], 0)
+    # And the continuum's cells were mirrored in the coordinate it is laid out
+    # in, not in the value.
+    expect_identical(unname(fit$theta_cell_edge_coord[["alpha"]]), "positive")
+    expect_true(is.na(fit$theta_cell_edge_declined[["alpha"]]))
+  }
+})
+
+test_that("a level holding more than half the posterior IS the median", {
+  # The other side of the composition. Under a marginal decreasing across the
+  # copy axis the level takes 0.70 of the posterior, so every probability below
+  # that reads the level -- including the median, which a read spreading the
+  # level over a box would have placed inside that box instead.
+  for (wc in c("box_uniform", "chord")) {
+    fit <- hd_copy(wc, lp_alpha = function(a) -2 * a)
+    av <- as.numeric(fit$theta_grid[, "alpha"])
+    w  <- fit$weights / sum(fit$weights)
+    expect_gt(sum(w[av == 0]), 0.5)
+    expect_identical(unname(fit$theta_ci_lo[["alpha"]]), 0)
+    expect_identical(unname(fit$theta_median[["alpha"]]), 0)
+    expect_gt(fit$theta_ci_hi[["alpha"]], 0)
+    set.seed(854)
+    a <- as.numeric(tulpa_hyper_draws(fit, n = 2e4L)[, "alpha"])
+    expect_identical(unname(stats::quantile(a, 0.025)), 0)
+    expect_identical(unname(stats::quantile(a, 0.5)), 0)
+  }
+})
+
+test_that("the draws still reproduce the fit's own interval on the level's axis", {
+  skip_on_cran()
+  # Section 1's arbiter, on the axis that carries a point mass: the read
+  # inverts a CDF with an atom in it and the draws sample the same one, so a
+  # composition that placed the level differently in either would show up here.
+  for (wc in c("box_uniform", "chord")) {
+    fit <- hd_copy(wc)
+    set.seed(854)
+    a <- as.numeric(tulpa_hyper_draws(fit, n = 2e5L)[, "alpha"])
+    q <- unname(stats::quantile(a, c(0.025, 0.5, 0.975)))
+    rep_q <- c(fit$theta_ci_lo[["alpha"]], fit$theta_median[["alpha"]],
+               fit$theta_ci_hi[["alpha"]])
+    expect_lt(max(abs(q - rep_q)), 5e-3)
+  }
+})
+
+test_that("the resolution of an axis with a point mass is its continuum's", {
+  # `h` is a cell width and the level owns no cell, so the ratio is read off
+  # the continuum alone -- in log, the coordinate the continuum is laid out and
+  # integrated in (`.hyper_axis_measure()`). Keeping the level in measured the
+  # spacing of a partition the axis is not integrated on.
+  fit <- hd_copy()
+  h <- fit$outer_grid_cell_width[["alpha"]]
+  pos <- sort(unique(as.numeric(fit$theta_grid[, "alpha"])))
+  pos <- pos[pos > 0]
+  expect_equal(h, stats::median(diff(log(pos))))
+  expect_true(is.na(fit$outer_grid_resolution_declined[["alpha"]]))
+})

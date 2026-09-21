@@ -86,14 +86,18 @@ OGD_PARTS <- list(
   tulpa:::.nl_within_cell_mode(fit$within_cell_requested)
 }
 
-# `domains` is consumed only by a `moment_rule` support (a central-composite
-# design's interval comes from its moments on the axis's own coordinate), and the
-# driver passes NULL otherwise. Mirrored here so the dump carries the argument the
-# fit passed, not a superset of it.
-.ogd_domains <- function(fit, support) {
-  if (!identical(support, "moment_rule")) return(NULL)
-  tulpa:::.joint_axis_domains(fit)
-}
+# The per-axis reporting geometry the fit's own read was taken with: the domain
+# each axis's continuum is partitioned on, and the coordinate of a declared
+# point mass that is not part of it (`.joint_axis_geometry()`).
+#
+# Carried WHATEVER the support, because every driver passes it whatever the
+# support: a moment rule needs it to form its interval at all, and a density
+# read needs it to mirror its outer cell edges in the axis's own coordinate.
+# Withholding it on a density grid made the round trip read a geometry the fit
+# never used -- on a copy fit with a zero `alpha` node the rebuild reproduced
+# the pre-gcol33/tulpa#854 numbers (ci_lo -0.111425 against the fit's 0) and so
+# would have certified that fix as absent.
+.ogd_geometry <- function(fit) tulpa:::.joint_axis_geometry(fit)
 
 # A per-cell list off the fit, held to describing the SAME grid the rest of the
 # dump does. NULL passes through rather than erroring: the per-cell fixed-effect
@@ -153,6 +157,7 @@ outer_grid_dump <- function(fit, file = NULL) {
          "not dumpable.", call. = FALSE)
   }
   support <- .ogd_support(fit)
+  geom    <- .ogd_geometry(fit)
   # `refining_axis` tags the cells a mode-tracked refinement pass placed on one
   # axis; the cell measure is built from it, so it is part of the state.
   refining <- fit$refining_axis %||% rep("", nrow(tg))
@@ -172,7 +177,8 @@ outer_grid_dump <- function(fit, file = NULL) {
     refining_axis = as.character(refining),
     axis_names   = colnames(tg),
     axis_tags    = tulpa:::.joint_axis_tags_raw(fit),
-    axis_domains = .ogd_domains(fit, support),
+    axis_domains = geom$domain,
+    axis_atoms   = geom$atom,
     support      = support,
     within       = .ogd_within(fit),
     probs        = OGD_PROBS,
@@ -253,6 +259,7 @@ outer_grid_rebuild <- function(dump, weights = NULL, joint_grid = NULL) {
     .ogd_coords(dump, joint_grid), dump$log_marginal, dump$refining_axis,
     probs = dump$probs, weights = as.numeric(w),
     support = dump$support, domains = dump$axis_domains,
+    atoms = dump$axis_atoms,
     within = dump$within %||% tulpa:::.nl_within_cell_mode(NULL))
 }
 
@@ -422,8 +429,10 @@ outer_grid_read_diff <- function(a, b) {
     ws <- ws / sum(ws)
   }
   dm <- if (length(dump$axis_domains) < j) NA_character_ else dump$axis_domains[[j]]
+  at <- if (length(dump$axis_atoms) < j) NA_real_ else dump$axis_atoms[[j]]
   tulpa:::.nl_summary_quantile(v, ws, dump$probs, dm, dump$support,
-                               dump$within %||% tulpa:::.nl_within_cell_mode(NULL))
+                               dump$within %||% tulpa:::.nl_within_cell_mode(NULL),
+                               at)
 }
 
 # Every axis at one coarsening, in the shape `outer_grid_rebuild()` returns.

@@ -21,6 +21,11 @@ results without an error, all fixed here:
   dimensions returned the earlier fit's draws, because the checkpoint
   fingerprint covered only the dimensions.
 * An `offset()` term was dropped on the nested-Laplace route.
+* A copy amplitude's posterior was reported, and drawn, below zero. The copy
+  scale carries a declared point mass at zero beside a continuum on the
+  positive half-line; the reporting geometry gave that level an ordinary cell
+  and mirrored its edge half a node step below it, so the reported 2.5% bound
+  and a fifth of the draws left the parameter's support.
 
 The version is 0.5.0 rather than 0.2.1 because development continued after
 0.2.0 was submitted; NEWS.md carries an entry for each version in between.

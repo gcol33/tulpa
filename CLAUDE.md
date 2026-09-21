@@ -116,6 +116,22 @@ same convention for a scale or precision that reaches a logarithm — `sigma_re`
 `tau_grid`, `sigma2_grid`, a lengthscale axis — checked at the entry point, the
 counterpart of `nl_grid_axis_unit_interval` for the BYM2 mixing weight.
 
+**A declared POINT MASS is not a cell, and a proposal tag is not a support.**
+The copy scale is an atom at `alpha = 0` — the "no coupling" model carrying
+`.TULPA_COPY_ATOM_MASS` whatever the node count — plus a log continuum on
+(0, Inf), and the rule identifying it is one: a zero level on a log-scale axis
+(`.hyper_axis_scale()`). Everything that partitions the axis has to take that
+split — the measure (`.hyper_axis_measure()`), the reported support
+(`.hyper_axis_support()`), the CCD's design coordinate
+(`.joint_ccd_coord_tags()`), and the reporting geometry
+(`.joint_axis_geometry()` -> `.nl_atom_split()` / `.nl_atom_compose()`, which
+put the level on `[0, mass]` and the continuum's own read on what is left).
+`.JOINT_AXIS_DOMAIN` maps the outer Pareto-k PROPOSAL tag, and a copy scale's
+is `identity` because a proposal has to reach zero; reading that as the axis's
+support gave the level a cell, mirrored its edge half a node spacing below
+zero, and both lost the level's mass and left the support
+(gcol33/tulpa#854 — see `ENGINEERING_HISTORY.md`).
+
 The HSGP, HSGP-ST and TVC scale priors hardcoded `P(sigma > 1) = 0.01` inline;
 they now read `ModelData` fields defaulted to exactly that, settable through
 `spatial_gp(approx = "hsgp", sigma_prior_U =, sigma_prior_alpha =)` and

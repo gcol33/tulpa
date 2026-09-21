@@ -1,5 +1,46 @@
 # tulpa 0.5.0
 
+## A copy amplitude was reported, and drawn, below zero
+
+* **The copy scale's "no coupling" level keeps its own coordinate**
+  (gcol33/tulpa#854). `alpha = 0` is not a point of the copy scale's continuum;
+  it is a model in its own right, carrying a declared prior probability that
+  the grid's node count cannot move. Three readers already split the axis
+  there, all on the one rule `.hyper_axis_scale()` states -- a zero level on a
+  log-scale axis: the measure that integrates the axis weighs the level at its
+  declared probability and lays its cell widths over the continuum in log, the
+  support the fit reports covers the continuum alone, and the hyperprior folds
+  against the same predicate. The reporting geometry was the fourth reader and
+  the only one that did not split, because it took the axis's support from the
+  outer Pareto-k PROPOSAL's coordinate -- `identity`, which a proposal needs in
+  order to reach zero at all, and which says the axis is unbounded.
+
+  So the level was given a cell, half a node spacing wide, reaching below the
+  axis's own support, and two things followed from that one geometry: the
+  level's posterior mass was reproduced by no draw, and draws left the support.
+  On a 25-cell ICAR joint fit whose `alpha` nodes are 0, 0.25, 0.5 and 1, with
+  0.460 of the posterior on the level, `tulpa_hyper_draws()` put 0.000 of
+  50000 draws on it and 22.8% of them below zero, down to -0.125; the fit's own
+  reported 2.5% bound for the amplitude was -0.111. Each now reads 0.461, 0,
+  and 0.
+
+  The split is one declaration, so every read takes it: the reported interval
+  (`theta_ci_lo` / `theta_median` / `theta_ci_hi`) under either within-cell
+  construction, the moment-matched interval a CCD design is summarized with,
+  `tulpa_hyper_draws()` and the `"theta"` attribute of
+  `tulpa_posterior_draws()`, and the per-axis hyperparameter summaries. The
+  copy axis's reported resolution (`outer_grid_cell_width` /
+  `outer_grid_h_over_sd`) is now its continuum's, measured in the coordinate
+  the continuum is laid out in; the level owns no cell and so contributes no
+  width. Downstream, a consumer deriving a field SD as `alpha * sigma` no
+  longer receives a negative one.
+
+  A copy fit whose `alpha` grid carries no zero node also moves, by the same
+  correction and in the third decimal: its outermost cells are now closed half
+  a node step out in log, the coordinate the axis is spaced and integrated in,
+  rather than in the value. Nothing inside the outermost nodes changes, and no
+  axis that was already reported on its own coordinate moves at all.
+
 ## The batched joint driver returned 15 of the 17 fields it promises
 
 * **A batched species carries the per-cell predictor again**

@@ -6,6 +6,77 @@ a regression. Extracted from CLAUDE.md on 2026-09-17 to keep that file
 under the auto-load size limit — this file is reference material Claude
 reads on demand (grep by issue number or topic), not auto-loaded context.
 
+### The copy scale's point mass, and the fourth reader that did not split on it (gcol33/tulpa#854)
+
+**Two failures, one geometry, and the geometry came from the wrong question.**
+The copy scale is a declared point mass at `alpha = 0` -- the "no coupling"
+model carrying `.TULPA_COPY_ATOM_MASS = 1/2` whatever the node count -- plus a
+log continuum on (0, Inf). Three readers already split it there, all on the one
+rule `.hyper_axis_scale()` states, a zero level on a log-scale axis:
+
+* `.hyper_axis_measure()` weighs the level at its declared probability
+  (`is_atom <- isTRUE(spec$log_scale) & levels == 0`) and lays its cell widths
+  over the continuum's LOG coordinates alone, clamped inside the declared
+  domain;
+* `.hyper_axis_support()` reports `levels[levels > 0]`'s span, the continuum's;
+* `.hyper_is_atom_level()` is what a hyperprior folds against, and
+  `.joint_ccd_coord_tags()` says the same in the design layer -- "an affine
+  design on the identity coordinate puts nodes at negative alpha, which is
+  outside the model's support."
+
+The reporting geometry (`.nl_cell_partition()` and everything reading it) was
+the fourth, and took the axis's support from `.JOINT_AXIS_DOMAIN`, which maps
+the outer Pareto-k PROPOSAL tag. That tag is `identity` for a copy scale
+because a proposal has to be able to REACH zero and no log transform does; read
+as a support it says the axis is unbounded. So the level got a cell, the linear
+mirror put its lower edge half a node spacing below it, and the partition left
+the axis's support.
+
+Measured on a 25-cell ICAR joint fit, `alpha` nodes 0 / 0.25 / 0.5 / 1, with
+0.4604 of the posterior on the level (`fit$copy_atom$posterior_mass`):
+
+| quantity | before | after |
+|---|---|---|
+| draws exactly at the level (n = 50000) | 0.00000 | 0.46136 |
+| draws below zero | 0.22834 | 0 |
+| smallest draw | -0.125 | 0 |
+| `theta_ci_lo["alpha"]` | -0.111425 | 0 |
+| `theta_cell_edge_coord["alpha"]` | unbounded | positive |
+
+`-0.125` is exactly half the 0.25 node spacing, and the reported 2.5% bound was
+already out of support before any draw was taken -- which is why the fix is in
+the geometry and not in `tulpa_hyper_draws()`: the draws were faithfully
+reproducing the read, which is the contract `R/posterior_draws_hyper.R` states,
+and only the read's own partition was wrong. `sigma`, an axis on the same fit
+with no level, is unmoved to every printed digit (`ci_lo` 0.341024, median
+1.0124348).
+
+**The split is one declaration, composed once.** `.joint_axis_geometry()`
+returns the pair (continuum domain, level coordinate) per axis and
+`.nl_atom_split()` / `.nl_atom_rescale()` / `.nl_atom_compose()` are where the
+level is placed: the level holds `[0, mass]`, the continuum's own read holds
+what is left rescaled onto `(0, 1]`. The chord read, the box read, the
+moment-matched read a CCD design is summarized with and the draw geometry all
+take it, so none of them can come to place the same level differently.
+`mass == 0` makes the composition the identity, which is what keeps every axis
+declaring no level bit-identical -- pinned directly in `test-hyper-draws.R`
+section 7, where `sigma` declares the same level, carries no node on it, and
+`expect_identical`s the read with the declaration against the read without it.
+
+**The statement the tag was being asked for.** A log-scale axis is a positive
+one, and that claim AGREES with the tag on every axis carrying both (`log`
+already maps to `positive`), so the only axis it moves is the copy scale, whose
+tag speaks for the proposal instead. The MCAR log-Cholesky coordinates stay
+`unbounded`: they are named `L11` / `L21`, which `.hyper_axis_scale()` does not
+classify, and they genuinely are unconstrained on all of R.
+
+Knock-on, deliberate: `.nl_axis_resolution()` reads the copy axis's `h` off the
+continuum in log (`median(diff(log(pos)))`) rather than off the raw values with
+the level in, because `h` is a cell width and the level owns no cell. And
+downstream, a consumer deriving a field SD as `alpha * sigma` (tulpaObs's
+`occu_cover` cover arm) no longer receives a negative one -- the 1.18% of
+negative `sigma_pos_field` the issue measured on the cover-glaser SBC fixture.
+
 ### The hyperparameter continuization, and what a grid-route read is limited by (gcol33/tulpa#853)
 
 **Coupling the axes inside a cell is free to choose and cannot repair a

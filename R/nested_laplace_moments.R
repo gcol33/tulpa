@@ -30,15 +30,16 @@
   # Here rather than at each driver, so one rule serves every nested path and a
   # fit says which estimator produced its number.
   res <- .nl_attach_axis_sd(res)
-  doms <- .nl_axis_domains(res, type)
+  geo <- .nl_axis_geometry(res, type)
   qs <- .nl_axis_quantiles(tg, res$log_marginal, res$refining_axis,
                            log_quad = res$log_quad,
-                           domains = doms, within = within)
+                           domains = geo$domain, within = within,
+                           atoms = geo$atom)
   res$theta_median <- qs$median
   res$theta_ci_lo  <- qs$ci_lo
   res$theta_ci_hi  <- qs$ci_hi
   res$within_cell_requested <- within
-  .nl_attach_interval_provenance(res, qs, tg, doms)
+  .nl_attach_interval_provenance(res, qs, tg, geo$domain, geo$atom)
 }
 
 # A fit's outer grid as a matrix with named axis columns. A single-axis grid is
@@ -72,20 +73,72 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
   matrix(as.numeric(tg), ncol = 1L, dimnames = list(NULL, nm))
 }
 
-# The `.NL_DOMAIN_TRANSFORM` domain of every axis of a fit, from
-# `.joint_axis_domains()` -- the SAME per-axis registry the outer Pareto-k
-# unconstrains with, so "what support does this axis live on" keeps one
-# definition (`R/nested_laplace_joint_pareto_k.R`). The registry path knows its
-# family as an ARGUMENT while `res$prior` is only attached after the moments
-# are taken.
-.nl_axis_domains <- function(res, type = NULL) {
+# The reporting geometry of every axis of a fit, from `.joint_axis_geometry()`
+# -- the `.NL_DOMAIN_TRANSFORM` domain its continuum is partitioned on, and the
+# coordinate of a declared point mass that is not part of that continuum. The
+# SAME per-axis registry the outer Pareto-k unconstrains with, so "what support
+# does this axis live on" keeps one definition
+# (`R/nested_laplace_joint_pareto_k.R`). The registry path knows its family as
+# an ARGUMENT while `res$prior` is only attached after the moments are taken.
+#
+# The two travel together because they are one statement about the axis and a
+# reader needs both: a partition laid on a domain the point mass is not in is
+# the defect gcol33/tulpa#854 was.
+.nl_axis_geometry <- function(res, type = NULL) {
   tg <- .nl_theta_matrix(res)
   if (is.null(tg)) return(NULL)
-  .joint_axis_domains(list(
+  .joint_axis_geometry(list(
     theta_grid   = tg,
     axis_offsets = res$axis_offsets,
     blocks       = res$blocks,
     prior        = if (is.null(type)) res$prior else list(type = type)))
+}
+
+# One axis's coordinates and masses split into its declared POINT MASS and its
+# continuum.
+#
+# `atom` is the coordinate that level sits on (`.nl_axis_geometry()`), NA on an
+# axis declaring none, and the split is a match on it rather than a rule
+# re-derived here -- so the interval read, the box read and the draw geometry
+# cannot come to disagree with each other or with the measure that integrated
+# the axis (`.hyper_axis_measure()`) about which level is the point mass.
+#
+# THE LEVEL IS THE AXIS'S LOWER BOUNDARY, not an interior coordinate: it is zero
+# on a continuum the same declaration puts on the positive half-line, so every
+# continuum coordinate is above it. That is what lets each read compose a point
+# mass with a continuum read of the rest instead of splitting the continuum in
+# two, and a set where it does not hold is not one this engine builds -- such a
+# set reports no point mass and is read whole, which is what it had before.
+#
+# `mass` is 0 and `value` NA where there is none, so the composition each caller
+# writes is the identity there and an axis without one is read bit-for-bit as it
+# was.
+.nl_atom_split <- function(v, w, atom) {
+  none <- list(value = NA_real_, mass = 0, v = v, w = w)
+  if (length(atom) != 1L || !is.finite(atom)) return(none)
+  k <- which(v == atom)
+  if (length(k) != 1L || any(v < v[k])) return(none)
+  list(value = v[k], mass = w[k], v = v[-k], w = w[-k])
+}
+
+# The probability the CONTINUUM carries, for a probability of the whole axis:
+# the point mass holds `[0, mass]`, so what is left is `(mass, 1]` stretched
+# back onto `(0, 1]`. Written once, so the three reads compose the same level
+# the same way.
+.nl_atom_rescale <- function(probs, mass) (probs - mass) / (1 - mass)
+
+# A point mass composed with a continuum read of the rest: the level itself on
+# the probabilities it holds, `read`'s answer on the rest. `read(v, w, p)`
+# returns one value per `p`. An axis declaring no point mass has `mass == 0`
+# and `v` the whole axis, so this is `read(v, w, probs)` and nothing moves.
+.nl_atom_compose <- function(sp, probs, read) {
+  if (sp$mass <= 0) return(read(sp$v, sp$w, probs))
+  q <- rep(sp$value, length(probs))
+  up <- probs > sp$mass
+  if (any(up) && length(sp$v) > 0L && sp$mass < 1) {
+    q[up] <- read(sp$v, sp$w, .nl_atom_rescale(probs[up], sp$mass))
+  }
+  q
 }
 
 # The cells an axis read may sum. A read carrying the cell measure sums every
@@ -152,11 +205,21 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
 # design does deliver.
 .nl_wtd_quantile <- function(values, weights, probs,
                              outside = c("clamp", "extend", "na"),
-                             domain = NA_character_) {
+                             domain = NA_character_, atom = NA_real_) {
   outside <- match.arg(outside)
   a <- .nl_axis_atoms(values, weights)
   if (is.null(a)) return(rep(NA_real_, length(probs)))
   v <- a$v; w <- a$w
+  # A declared point mass is not a cell of the continuum: its whole mass sits on
+  # its own coordinate, so the CDF is flat in value across `[0, mass]` and the
+  # continuum is read on what is left, rescaled onto `(mass, 1]`. Giving it a
+  # cell instead is what spread it over a box reaching half a node spacing below
+  # the axis's own support (gcol33/tulpa#854).
+  sp <- .nl_atom_split(v, w, atom)
+  if (sp$mass > 0) {
+    return(.nl_atom_compose(sp, probs, function(vv, ww, pp)
+      .nl_wtd_quantile(vv, ww, pp, outside = outside, domain = domain)))
+  }
   if (length(v) == 1L) return(rep(v[1L], length(probs)))
   p <- cumsum(w) - w / 2
   # The outer half-cells are two more knots: mass 0 at the lower edge and the
@@ -424,10 +487,13 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
 # on the same inputs, so the reported coordinate cannot describe a partition
 # other than the one the numbers came out of. NULL when there is no partition to
 # report: no usable atom, or one, where no edge is formed at all.
-.nl_extend_partition <- function(values, weights, domain = NA_character_) {
+.nl_extend_partition <- function(values, weights, domain = NA_character_,
+                                 atom = NA_real_) {
   a <- .nl_axis_atoms(values, weights)
-  if (is.null(a) || length(a$v) < 2L) return(NULL)
-  .nl_cell_partition(a$v, domain)
+  if (is.null(a)) return(NULL)
+  sp <- .nl_atom_split(a$v, a$w, atom)
+  if (length(sp$v) < 2L) return(NULL)
+  .nl_cell_partition(sp$v, domain)
 }
 
 # The full tiling of an axis by the cell partition its coordinates represent:
@@ -546,7 +612,8 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
 # `declined` is why the box read did not run, from a closed vocabulary, and is
 # NA when it did. The caller falls back to the chord read on any decline, so an
 # axis the partition could not be built for still reports an interval.
-.nl_box_quantile <- function(values, weights, probs, domain = NA_character_) {
+.nl_box_quantile <- function(values, weights, probs, domain = NA_character_,
+                             atom = NA_real_) {
   v <- as.numeric(values)
   w <- as.numeric(weights)
   fin  <- is.finite(v)
@@ -555,12 +622,6 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
     return(list(q = rep(NA_real_, length(probs)), declined = "no_usable_node"))
   }
   uv <- sort(unique(v[fin]))
-  if (length(uv) < 2L) {
-    return(list(q = rep(uv[1L], length(probs)), declined = "single_node"))
-  }
-  pt <- .nl_cell_partition(uv, domain)
-  e <- .nl_box_edges_from(pt, uv)
-  if (is.null(e)) return(list(q = NULL, declined = "boxes_do_not_tile"))
   m <- as.numeric(tapply(w[wpos], factor(match(v[wpos], uv),
                                          levels = seq_along(uv)), sum))
   m[is.na(m)] <- 0
@@ -569,6 +630,27 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
     return(list(q = rep(NA_real_, length(probs)), declined = "no_usable_node"))
   }
   m <- m / tot
+  # A declared point mass has no box: its mass sits on its own coordinate, and
+  # the boxes are laid over the continuum alone, rescaled onto `(mass, 1]`.
+  # Unlike the chord read the coordinates here are NOT weight-filtered -- a
+  # zero-mass cell still fixes its neighbour's edge -- so the split is taken on
+  # the coordinate set, and at a declared mass of zero it leaves every
+  # probability above 0 on the continuum's own read (gcol33/tulpa#854).
+  sp <- .nl_atom_split(uv, m, atom)
+  if (!is.na(sp$value)) {
+    if (length(sp$v) < 1L || sp$mass >= 1) {
+      return(list(q = rep(sp$value, length(probs)), declined = "single_node"))
+    }
+    bx <- .nl_box_quantile(sp$v, sp$w, .nl_atom_rescale(probs, sp$mass), domain)
+    if (!is.null(bx$q)) bx$q[probs <= sp$mass] <- sp$value
+    return(bx)
+  }
+  if (length(uv) < 2L) {
+    return(list(q = rep(uv[1L], length(probs)), declined = "single_node"))
+  }
+  pt <- .nl_cell_partition(uv, domain)
+  e <- .nl_box_edges_from(pt, uv)
+  if (is.null(e)) return(list(q = NULL, declined = "boxes_do_not_tile"))
   # `cumsum(m)` can round ABOVE 1, and a grid whose trailing cells hold no mass
   # carries that same value on every entry from the last positive cell onward.
   # Forcing only the LAST entry to 1 then makes `cf` DECREASE there, and
@@ -655,7 +737,8 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
 # Returns NA for every requested probability when no node carries usable weight,
 # or when any weighted node falls outside the domain: dropping such a node would
 # evaluate the moment rule on a design other than the one that was integrated.
-.nl_moment_quantile <- function(values, weights, probs, domain = "unbounded") {
+.nl_moment_quantile <- function(values, weights, probs, domain = "unbounded",
+                                atom = NA_real_) {
   tr <- .NL_DOMAIN_TRANSFORM[[domain]]
   if (is.null(tr)) {
     stop("unknown derived-quantity domain '", domain, "'.", call. = FALSE)
@@ -663,11 +746,25 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
   use <- is.finite(weights) & weights > 0 & is.finite(values)
   if (!any(use)) return(rep(NA_real_, length(probs)))
   v <- as.numeric(values)[use]
+  w <- as.numeric(weights)[use]
+  w <- w / sum(w)
+  # A declared point mass is not a node of the design: `.joint_ccd_component()`
+  # gives it a mixture component of its own, holding the copy axes at zero, and
+  # the design nodes that remain sit on the continuum's coordinate. Taking the
+  # moments across both would take them on a coordinate the level is not in the
+  # domain of (`.joint_ccd_coord_tags()`: a copy scale is DESIGNED in log alpha)
+  # and report NA for the whole axis.
+  a <- .nl_axis_atoms(v, w)
+  if (!is.null(a)) {
+    sp <- .nl_atom_split(a$v, a$w, atom)
+    if (sp$mass > 0) {
+      return(.nl_atom_compose(sp, probs, function(vv, ww, pp)
+        .nl_moment_quantile(vv, ww, pp, domain)))
+    }
+  }
   if (!all(tr$in_domain(v))) return(rep(NA_real_, length(probs)))
   u <- tr$to(v)
   if (!all(is.finite(u))) return(rep(NA_real_, length(probs)))
-  w <- as.numeric(weights)[use]
-  w <- w / sum(w)
   m <- sum(w * u)
   s <- sqrt(max(0, sum(w * u^2) - m^2))
   tr$from(m + stats::qnorm(probs) * s)
@@ -792,8 +889,10 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
 .nl_summary_quantile <- function(values, weights, probs,
                                  domain = NA_character_,
                                  support = .NL_SUPPORT_KINDS,
-                                 within = .NL_WITHIN_CELL) {
-  .nl_summary_quantile_read(values, weights, probs, domain, support, within)$q
+                                 within = .NL_WITHIN_CELL,
+                                 atom = NA_real_) {
+  .nl_summary_quantile_read(values, weights, probs, domain, support, within,
+                            atom)$q
 }
 
 # The same dispatch, returning what actually RAN alongside the numbers: the
@@ -804,7 +903,8 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
 .nl_summary_quantile_read <- function(values, weights, probs,
                                       domain = NA_character_,
                                       support = .NL_SUPPORT_KINDS,
-                                      within = .NL_WITHIN_CELL) {
+                                      within = .NL_WITHIN_CELL,
+                                      atom = NA_real_) {
   support <- match.arg(support)
   within  <- match.arg(within)
   chord <- function(declined = NA_character_) {
@@ -817,14 +917,14 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
       # support. A `clamp` support never forms an edge and
       # ignores it.
       if (identical(outside, "extend")) {
-        ep <- .nl_extend_partition(values, weights, domain)
+        ep <- .nl_extend_partition(values, weights, domain, atom)
       }
       .nl_wtd_quantile(values, weights, probs, outside = outside,
-                       domain = domain)
+                       domain = domain, atom = atom)
     } else if (length(domain) != 1L || is.na(domain)) {
-      .nl_wtd_quantile(values, weights, probs, outside = "na")
+      .nl_wtd_quantile(values, weights, probs, outside = "na", atom = atom)
     } else {
-      .nl_moment_quantile(values, weights, probs, domain)
+      .nl_moment_quantile(values, weights, probs, domain, atom)
     }
     list(q = q, within = "chord", declined = declined,
          edge_coord    = ep$coord    %||% NA_character_,
@@ -834,7 +934,7 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
   if (!within %in% .NL_SUPPORT[[support]]$within) {
     return(chord(paste0("support_", support)))
   }
-  bx <- .nl_box_quantile(values, weights, probs, domain)
+  bx <- .nl_box_quantile(values, weights, probs, domain, atom)
   if (is.na(bx$declined)) {
     return(list(q = bx$q, within = within, declined = NA_character_,
                 edge_coord    = bx$edge_coord    %||% NA_character_,
@@ -1114,7 +1214,8 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
                                 weights = NULL, log_quad = NULL,
                                 support = .NL_SUPPORT_KINDS,
                                 domains = NULL,
-                                within = .NL_WITHIN_CELL) {
+                                within = .NL_WITHIN_CELL,
+                                atoms = NULL) {
   support <- match.arg(support)
   within  <- match.arg(within)
   if (is.null(dim(tg))) {
@@ -1177,8 +1278,9 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
       ws    <- exp(lm_u - m); ws <- ws / sum(ws)
     }
     dm <- if (length(domains) < j) NA_character_ else domains[[j]]
+    at <- if (length(atoms) < j) NA_real_ else atoms[[j]]
     rd <- .nl_summary_quantile_read(as.numeric(tg[use, j]), ws, probs, dm,
-                                    support, within)
+                                    support, within, at)
     qs <- rd$q
     lo[j]  <- qs[1L]
     med[j] <- qs[2L]
@@ -1233,7 +1335,7 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
 # `too_few_nodes` is an axis too short to fit a parabola on. Reported per axis
 # rather than folded into the NA, because the reader's next move differs.
 .nl_axis_resolution <- function(tg, log_marginal, refining = NULL,
-                                domains = NULL) {
+                                domains = NULL, atoms = NULL) {
   if (is.null(dim(tg))) {
     tg <- matrix(as.numeric(tg), ncol = 1L, dimnames = list(NULL, "value"))
   }
@@ -1248,7 +1350,19 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
   keep <- .nl_axis_read_cells(refining, nrow(tg), measured = FALSE)
   for (j in seq_len(n_ax)) {
     marg <- .nl_axis_marginal_logdensity(tg[, j], log_marginal, keep)
-    v <- marg$vals
+    v  <- marg$vals
+    lm <- marg$log_marg
+    # A declared point mass owns no cell, so it has no width to contribute and
+    # no curvature to fit: the resolution of an axis carrying one is the
+    # resolution of its CONTINUUM, measured in the coordinate that continuum is
+    # laid out in. Keeping the level in would have measured the spacing of a
+    # partition the axis is not integrated on (gcol33/tulpa#854).
+    at <- if (length(atoms) < j) NA_real_ else atoms[[j]]
+    if (length(at) == 1L && is.finite(at) && any(v == at)) {
+      kp <- v != at
+      v  <- v[kp]
+      lm <- lm[kp]
+    }
     if (length(v) < 3L) {
       dec[j] <- "too_few_nodes"
       next
@@ -1268,7 +1382,7 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
     h[j]  <- stats::median(du)
     # The reason rides on the NA as an attribute, which assignment into `sd`
     # would drop, so it is read off the return before that.
-    s <- .nl_laplace_at_mode_sd_axis(v, marg$log_marg, coord = part$tr,
+    s <- .nl_laplace_at_mode_sd_axis(v, lm, coord = part$tr,
                                      return_u_sd = TRUE)
     sd[j]  <- as.numeric(s)
     dec[j] <- .nl_axis_sd_reason(s)
@@ -1296,7 +1410,8 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
 # clouds sit inside one base cell, and a sample's values are draws. The SD side
 # is the same 3-point lattice profile `.nl_attach_axis_sd()` is skipped
 # for on a design-weighted grid, for the same reason.
-.nl_attach_interval_provenance <- function(res, qs, tg, domains = NULL) {
+.nl_attach_interval_provenance <- function(res, qs, tg, domains = NULL,
+                                           atoms = NULL) {
   prov <- .nl_interval_provenance(res$integration, res$weight_kind,
                                   res$weights)
   res$theta_interval_read <- res$theta_interval_read %||% prov$read
@@ -1308,7 +1423,8 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
   res$theta_cell_edge_coord      <- qs$edge_coord
   res$theta_cell_edge_declined   <- qs$edge_declined
   if (identical(res$theta_interval_read, "density")) {
-    rs <- .nl_axis_resolution(tg, res$log_marginal, res$refining_axis, domains)
+    rs <- .nl_axis_resolution(tg, res$log_marginal, res$refining_axis, domains,
+                              atoms)
     res$outer_grid_cell_width <- rs$h
     res$outer_grid_axis_sd    <- rs$sd
     res$outer_grid_h_over_sd  <- rs$h_over_sd
@@ -1773,15 +1889,15 @@ tulpa_theta_matrix <- function(res) .nl_theta_matrix(res)
 
   # Weighted-quantile median + 2.5/97.5 CI per axis (calibrated summary
   # for right-skewed scale-like hyperparameters; see `.nl_axis_quantiles`).
-  doms <- .joint_axis_domains(list(theta_grid = joint_grid,
+  geo <- .joint_axis_geometry(list(theta_grid = joint_grid,
                                    axis_offsets = axis_offsets,
                                    blocks = prepared))
   qs <- .nl_axis_quantiles(
     joint_grid, out$log_marginal, out$refining_axis, log_quad = out$log_quad,
-    domains = doms, within = within)
+    domains = geo$domain, within = within, atoms = geo$atom)
   out$theta_median <- qs$median
   out$theta_ci_lo  <- qs$ci_lo
   out$theta_ci_hi  <- qs$ci_hi
   out$within_cell_requested <- within
-  .nl_attach_interval_provenance(out, qs, joint_grid, doms)
+  .nl_attach_interval_provenance(out, qs, joint_grid, geo$domain, geo$atom)
 }

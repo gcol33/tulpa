@@ -497,12 +497,48 @@
 # is withheld rather than guessed.
 .JOINT_AXIS_DOMAIN <- c(log = "positive", logit01 = "unit", identity = "unbounded")
 
-.joint_axis_domains <- function(res) {
+# The REPORTING geometry of every joint-grid axis: the domain its continuum is
+# partitioned on, and the coordinate of a declared point mass that is not part
+# of that continuum (NA on an axis carrying none).
+#
+# A tag is the PROPOSAL's coordinate, and on one axis that is not the axis's
+# support. The copy scale is tagged `identity` because the proposal has to reach
+# zero and no log transform does -- but zero is that axis's POINT MASS, the
+# declared "no coupling" model carrying `.TULPA_COPY_ATOM_MASS`, and what is
+# left once it is set aside is a positive scale. Three readers already take that
+# split, all on the one rule `.hyper_axis_scale()` states -- a zero level on a
+# log-scale axis: `.hyper_axis_measure()` weighs the level at its declared
+# probability and lays its cell widths over the continuum in log,
+# `.hyper_axis_support()` reports the continuum's span alone, and
+# `.hyper_is_atom_level()` is what a hyperprior folds against.
+#
+# Reading the tag as the support made the reporting partition the fourth reader
+# and the only one that did not split. It put the point mass in a cell and
+# mirrored half a node spacing BELOW it, off the axis's support entirely: on a
+# 25-cell ICAR joint fit whose `alpha` nodes are 0, 0.25, 0.5, 1 the fit
+# reported a 2.5% bound of -0.111 for a copy amplitude, and
+# `tulpa_hyper_draws()` put 22.8% of its draws below zero and none on the level
+# holding 46% of the posterior (gcol33/tulpa#854).
+.joint_axis_geometry <- function(res) {
     d <- if (is.matrix(res$theta_grid)) ncol(res$theta_grid) else 0L
     tags <- .joint_axis_tags_raw(res)
-    if (.k_is_decline(tags)) return(rep(NA_character_, d))
-    unname(.JOINT_AXIS_DOMAIN[tags])
+    if (.k_is_decline(tags)) {
+        return(list(domain = rep(NA_character_, d), atom = rep(NA_real_, d)))
+    }
+    doms <- unname(.JOINT_AXIS_DOMAIN[tags])
+    cn <- colnames(res$theta_grid) %||% rep("", d)
+    # A log-scale axis is a positive one and may carry a zero level. The claim
+    # agrees with the tag on every axis that has both -- `log` already maps to
+    # `positive` -- so the only axis it moves is the one whose tag speaks for
+    # the proposal instead.
+    scl <- vapply(.hyper_axis_bare(cn),
+                  function(b) isTRUE(.hyper_axis_scale(b)), logical(1),
+                  USE.NAMES = FALSE)
+    doms[scl] <- "positive"
+    list(domain = doms, atom = ifelse(scl, 0, NA_real_))
 }
+
+.joint_axis_domains <- function(res) .joint_axis_geometry(res)$domain
 
 # Forward (constrained -> unconstrained) transform for one axis.
 .joint_pareto_fwd <- function(tag, theta) {
