@@ -1,3 +1,40 @@
+# tulpa 0.5.4
+
+## The hyperparameter copula holds on coarse grids and curved posteriors
+
+* The within-cell copula of `tulpa_hyper_draws()` no longer falls back to
+  independent draws on a coarse grid under a strong correlation. The quadratic
+  that sets its target is fitted to the grid's log density with each cell
+  weighted by its mass, and the off-ridge cells' masses (about 1e-130 at
+  3 x 3 nodes, log correlation -0.97) fell below the fit's rank test, so it
+  read as rank-deficient and returned the identity. Those weights are now
+  floored where the rank test sees them, a factor 1e-10 of the modal cell,
+  which leaves every grid with all cells above that fitted exactly as before.
+  On two log scales at log correlation -0.97 and 3 x 3 nodes, the log
+  product's sd goes from 0.580 to 0.182 against an exact 0.122. At -0.99 on
+  4 x 4 and 5 x 5 nodes it goes from 0.398 / 0.302 to 0.109 / 0.086 against
+  0.071 (gcol33/tulpa#860).
+* A pair's within-cell coupling no longer takes a conditional dependence of the
+  opposite sign from the posterior's. Where the cells' means already correlate
+  more strongly than the target, the pairwise solve asked for one, and a
+  curved posterior with log correlation -0.76 was coupled at +0.55 inside the
+  cell: the log product read 19.6% wide at 5 x 5 nodes and 6.4% wide at 7 x 7.
+  Such a pair is now conditionally independent inside the cell, and the same
+  two read 1.8% and 1.1% wide. The sign held is the partial correlation's:
+  with three axes one pair's marginal within-cell coupling can legitimately
+  oppose its target (gcol33/tulpa#861).
+* Every configuration of a Gaussian, two skewed and one curved posterior at
+  3 to 9 nodes per axis that neither change touches reads the same copula
+  and the same log-product sd to four digits.
+  The skewed posteriors keep the target's known bias: the log product of two
+  anticorrelated skewed scales reads up to 5.4% narrow at 4 to 9 nodes. The
+  two alternative targets measured against it (the mass-weighted mean of the
+  cells' finite-difference curvatures, and the law of total covariance over
+  the box partition) are exact on a Gaussian too, and read the same product
+  13-60% and up to 30% wide. On a curved posterior at 3 x 3 nodes, which the
+  grid does not resolve, the now-coupled draws read 16% narrow where the
+  identity read 65% wide.
+
 # tulpa 0.5.3
 
 ## Hyperparameter draws keep the posterior's correlation between axes

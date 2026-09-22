@@ -439,6 +439,201 @@ test_that("an uncorrelated grid, and an axis that does not spread, stay uncouple
   expect_equal(unname(cop1), diag(2))
 })
 
+test_that("a correlation of either sign is carried with its own sign", {
+  for (rho in c(-0.9, 0.9)) {
+    fit <- hd_ridge(rho, 7L)
+    set.seed(8592)
+    th <- tulpa_hyper_draws(fit, n = if (cran_fixture()) 2e4L else 1e5L)
+    expect_identical(sign(attr(th, "within_cell_copula")[1L, 2L]), sign(rho))
+    expect_lt(abs(stats::cor(log(th))[1L, 2L] - rho), 0.02)
+  }
+})
+
+test_that("a grid that cannot identify the orientation stays uncoupled", {
+  # Two nodes per axis: four cells against the six coefficients of the
+  # quadratic.
+  cop <- attr(tulpa_hyper_draws(hd_ridge(-0.9, 2L), n = 50L),
+              "within_cell_copula")
+  expect_equal(unname(cop), diag(2))
+  # A saddle: the fitted curvature is not negative definite, so there is no
+  # local Gaussian to take an orientation from.
+  saddle <- hd_fit(
+    list(sigma = exp(seq(-1, 1, length.out = 5)),
+         tau   = exp(seq(-1, 1, length.out = 5))),
+    function(tg) {
+      x <- log(tg)
+      0.5 * x[, 1L]^2 - 2 * x[, 2L]^2 + x[, 1L] * x[, 2L]
+    })
+  cop <- attr(tulpa_hyper_draws(saddle, n = 50L), "within_cell_copula")
+  expect_equal(unname(cop), diag(2))
+})
+
+# Two log scales whose joint is NOT Gaussian, with the exact moments of their
+# log sum taken by fine quadrature. `x1` is the log of a gamma(3) variable,
+# skewed, and `x2` follows it down a line; `skew2` puts the gamma shape on the
+# difference of the logs and a narrow Gaussian on their sum.
+hd_skewed <- list(
+  skew  = function(x1, x2) {
+    3 * x1 - exp(x1) - 0.5 * (x2 + 0.9 * (x1 - 0.92))^2 / 0.25^2
+  },
+  skew2 = function(x1, x2) {
+    2 * (x1 - x2) - exp(x1 - x2) - 0.5 * (x1 + x2)^2 / 0.15^2
+  })
+
+hd_exact_log_moments <- function(f) {
+  g <- seq(-6, 6, length.out = 1201L)
+  x <- expand.grid(x1 = g, x2 = g)
+  lp <- f(x$x1, x$x2)
+  p <- exp(lp - max(lp))
+  p <- p / sum(p)
+  m <- c(sum(p * x$x1), sum(p * x$x2))
+  list(m = m,
+       sd = sqrt(c(sum(p * (x$x1 - m[1L])^2), sum(p * (x$x2 - m[2L])^2))),
+       sd_sum = sqrt(sum(p * (x$x1 + x$x2 - sum(m))^2)))
+}
+
+test_that("a skewed posterior's product keeps its exact spread", {
+  # The target orientation comes from a quadratic fitted to the grid's log
+  # density, so it is exact on a Gaussian and an approximation on anything
+  # else. Measured on these two shapes the coupled box read sits within
+  # -5.3% / +3.1% of the exact spread of the log product at K = 5, 7, 9, where
+  # the independent jitter runs 24% to 66% wide.
+  n_draw <- if (cran_fixture()) 2e4L else 1e5L
+  for (nm in names(hd_skewed)) {
+    f <- hd_skewed[[nm]]
+    ex <- hd_exact_log_moments(f)
+    for (K in c(5L, 7L, 9L)) {
+      axes <- lapply(1:2, function(i) {
+        exp(seq(ex$m[i] - 3 * ex$sd[i], ex$m[i] + 3 * ex$sd[i], length.out = K))
+      })
+      names(axes) <- c("sigma", "tau")
+      fit <- hd_fit(axes, function(tg) {
+        x <- log(tg)
+        f(x[, 1L], x[, 2L]) - rowSums(x)
+      })
+      set.seed(8593)
+      th <- tulpa_hyper_draws(fit, n = n_draw)
+      ind <- hd_indep_draws(fit, attr(th, "cells"))
+      sd_cop <- stats::sd(rowSums(log(th)))
+      sd_ind <- stats::sd(rowSums(log(ind)))
+      expect_gt(sd_cop / ex$sd_sum, 0.93)
+      expect_lt(sd_cop / ex$sd_sum, 1.06)
+      expect_lt(abs(sd_cop - ex$sd_sum), abs(sd_ind - ex$sd_sum))
+    }
+  }
+})
+
+test_that("a coarse grid under a strong correlation is still coupled (#860)", {
+  # The off-ridge cells' masses sit far below `lm.wfit()`'s rank tolerance
+  # (about 1e-130 at K = 3, rho = -0.97), so fitted at their raw masses the
+  # quadratic read as rank-deficient and the draws fell back to independent
+  # jitter: a log-product sd of 0.58 against an exact 0.122 at K = 3.
+  n_draw <- if (cran_fixture()) 2e4L else 1e5L
+  cases <- list(c(rho = -0.97, K = 3, bound = 0.20),
+                c(rho = -0.99, K = 4, bound = 0.13),
+                c(rho = -0.99, K = 5, bound = 0.10))
+  for (cs in cases) {
+    fit <- hd_ridge(cs[["rho"]], as.integer(cs[["K"]]))
+    set.seed(860)
+    th <- tulpa_hyper_draws(fit, n = n_draw)
+    expect_lt(attr(th, "within_cell_copula")[1L, 2L], -0.9)
+    ind <- hd_indep_draws(fit, attr(th, "cells"))
+    sd_cop <- stats::sd(rowSums(log(th)))
+    expect_lt(sd_cop, cs[["bound"]])
+    expect_lt(sd_cop, 0.5 * stats::sd(rowSums(log(ind))))
+  }
+})
+
+test_that("the within-cell coupling never takes the sign opposite the target (#861)", {
+  # A curved posterior on a coarse grid: the quadratic's target correlation
+  # there is weaker than the one the cells' means already carry, and solving
+  # for it asked for POSITIVE coupling inside the cell under a negative
+  # posterior correlation -- a within-cell dependence the posterior does not
+  # have, which read the log product 19.6% wide at K = 5 against 1.8% with the
+  # coupling stopped at none.
+  banana <- function(x1, x2) {
+    -0.5 * x1^2 / 0.5^2 - 0.5 * (x2 + 0.8 * x1 - 0.8 * (x1^2 - 0.25))^2 / 0.2^2
+  }
+  ex <- hd_exact_log_moments(banana)
+  n_draw <- if (cran_fixture()) 2e4L else 1e5L
+  for (K in c(5L, 7L)) {
+    axes <- lapply(1:2, function(i) {
+      exp(seq(ex$m[i] - 3 * ex$sd[i], ex$m[i] + 3 * ex$sd[i], length.out = K))
+    })
+    names(axes) <- c("sigma", "tau")
+    fit <- hd_fit(axes, function(tg) {
+      x <- log(tg)
+      banana(x[, 1L], x[, 2L]) - rowSums(x)
+    })
+    set.seed(861)
+    th <- tulpa_hyper_draws(fit, n = n_draw)
+    expect_lte(attr(th, "within_cell_copula")[1L, 2L], 0)
+    expect_lt(abs(stats::sd(rowSums(log(th))) / ex$sd_sum - 1), 0.05)
+  }
+})
+
+test_that("three correlated axes are coupled pairwise into one valid copula", {
+  # Pairwise solves need not be jointly positive definite; the first
+  # configuration is one where they are not at K = 5 and the eigenvalue clip
+  # is what makes the matrix a correlation matrix.
+  n_draw <- if (cran_fixture()) 2e4L else 1e5L
+  s <- 0.5
+  for (C in list(c(-0.9, 0.8, -0.6), c(-0.6, -0.6, -0.2))) {
+    Rm <- diag(3)
+    Rm[upper.tri(Rm)] <- C
+    Rm[lower.tri(Rm)] <- t(Rm)[lower.tri(Rm)]
+    P <- solve(Rm * s^2)
+    for (K in c(5L, 7L)) {
+      axes <- rep(list(exp(seq(-3 * s, 3 * s, length.out = K))), 3L)
+      names(axes) <- c("sigma", "tau", "phi")
+      fit <- hd_fit(axes, function(tg) {
+        x <- log(tg)
+        -0.5 * rowSums((x %*% P) * x) - rowSums(x)
+      })
+      set.seed(8594)
+      th <- tulpa_hyper_draws(fit, n = n_draw)
+      cop <- attr(th, "within_cell_copula")
+      expect_equal(dim(cop), c(3L, 3L))
+      expect_equal(cop, t(cop))
+      expect_equal(unname(diag(cop)), rep(1, 3))
+      expect_gt(min(eigen(cop, symmetric = TRUE, only.values = TRUE)$values), 0)
+      expect_lt(max(abs(stats::cor(log(th)) - Rm)), 0.03)
+      # Every pairwise log product, and the three-way one, at its exact spread.
+      lt <- log(th)
+      pairs <- utils::combn(3L, 2L)
+      sd_pair <- apply(pairs, 2L, function(p) stats::sd(lt[, p[1L]] + lt[, p[2L]]))
+      ex_pair <- apply(pairs, 2L, function(p) s * sqrt(2 + 2 * Rm[p[1L], p[2L]]))
+      expect_lt(max(abs(sd_pair / ex_pair - 1)), 0.05)
+      expect_lt(abs(stats::sd(rowSums(lt)) / sqrt(sum(Rm * s^2)) - 1), 0.05)
+      for (ax in colnames(th)) {
+        q <- unname(stats::quantile(th[, ax], c(0.025, 0.5, 0.975)))
+        rep_q <- c(fit$theta_ci_lo[[ax]], fit$theta_median[[ax]],
+                   fit$theta_ci_hi[[ax]])
+        expect_lt(max(abs(q - rep_q)) / diff(range(fit$theta_grid[, ax])), 0.02)
+      }
+    }
+  }
+})
+
+test_that("the copula stays cheap on a large grid", {
+  skip_on_cran()
+  # Four axes at 15 nodes: 50625 cells, each read at 32 quadrature points per
+  # axis for its within-cell moments. Measured 0.2 s.
+  axes <- rep(list(exp(seq(-1.5, 1.5, length.out = 15L))), 4L)
+  names(axes) <- c("sigma", "tau", "phi", "range")
+  Rm <- matrix(-0.3, 4L, 4L)
+  diag(Rm) <- 1
+  P <- solve(Rm * 0.25)
+  fit <- hd_fit(axes, function(tg) {
+    x <- log(tg)
+    -0.5 * rowSums((x %*% P) * x) - rowSums(x)
+  })
+  el <- system.time(th <- tulpa_hyper_draws(fit, n = 1000L))[["elapsed"]]
+  expect_false(isTRUE(all.equal(unname(attr(th, "within_cell_copula")),
+                                diag(4))))
+  expect_lt(el, 5)
+})
+
 
 # ---- 6. The occu_cover-shaped joint fit, end to end -------------------------
 
@@ -600,6 +795,47 @@ test_that("the draws still reproduce the fit's own interval on the level's axis"
   }
 })
 
+test_that("a point mass keeps its mass when its continuum is coupled", {
+  # The level's cells carry an infinite log coordinate and drop out of the
+  # quadratic, so the orientation is the continuum's; the level's share of the
+  # draws is the fit's, whatever uniform the other axis draws alongside it.
+  la0 <- log(0.6)
+  ls0 <- log(0.9)
+  fit_of <- function(wc) {
+    hd_fit(
+      list(alpha = c(0, exp(seq(log(0.15), log(2.5), length.out = 7))),
+           sigma = exp(seq(log(0.3), log(2.5), length.out = 7))),
+      function(tg) {
+        ls <- log(tg[, "sigma"]) - ls0
+        la <- log(pmax(tg[, "alpha"], 1e-300)) - la0
+        cont <- -0.5 * (la^2 + ls^2 + 1.7 * la * ls) / (0.35^2 * (1 - 0.85^2)) -
+                la - ls
+        ifelse(tg[, "alpha"] == 0, -0.5 * ls^2 / 0.35^2 - ls - 1, cont)
+      },
+      within = wc)
+  }
+  n <- if (cran_fixture()) 2e4L else 2e5L
+  for (wc in c("box_uniform", "chord")) {
+    fit <- fit_of(wc)
+    w <- fit$weights / sum(fit$weights)
+    mass <- sum(w[fit$theta_grid[, "alpha"] == 0])
+    set.seed(8595)
+    th <- tulpa_hyper_draws(fit, n = n)
+    a <- th[, "alpha"]
+    expect_lt(attr(th, "within_cell_copula")[1L, 2L], -0.5)
+    expect_lt(abs(mean(a == 0) - mass), 5 / sqrt(n))
+    expect_gte(min(a), 0)
+    pos <- a > 0
+    expect_lt(stats::cor(log(a[pos]), log(th[pos, "sigma"])), -0.75)
+    for (ax in colnames(th)) {
+      q <- unname(stats::quantile(th[, ax], c(0.025, 0.5, 0.975)))
+      rep_q <- c(fit$theta_ci_lo[[ax]], fit$theta_median[[ax]],
+                 fit$theta_ci_hi[[ax]])
+      expect_lt(max(abs(q - rep_q)), 0.02)
+    }
+  }
+})
+
 test_that("the resolution of an axis with a point mass is its continuum's", {
   # `h` is a cell width and the level owns no cell, so the ratio is read off
   # the continuum alone -- in log, the coordinate the continuum is laid out and
@@ -624,11 +860,14 @@ test_that("the resolution of an axis with a point mass is its continuum's", {
 # neighbour while they still held their whole base box's mass
 # (gcol33/tulpa#858).
 
-hd_refined <- function(within = "box_uniform") {
+hd_refined <- function(within = "box_uniform", r = 0) {
   axes <- list(tau = exp(seq(log(0.2), log(3), length.out = 7)),
                rho = seq(0.1, 0.9, length.out = 5))
-  lmf <- function(tg) -0.5 * (log(tg[, "tau"]) - log(0.8))^2 / 0.3^2 -
-                      0.5 * (tg[, "rho"] - 0.55)^2 / 0.2^2
+  lmf <- function(tg) {
+    z1 <- (log(tg[, "tau"]) - log(0.8)) / 0.3
+    z2 <- (tg[, "rho"] - 0.55) / 0.2
+    -0.5 * (z1^2 + z2^2 - 2 * r * z1 * z2) / (1 - r^2)
+  }
   base <- as.matrix(expand.grid(axes))
   tau <- axes$tau
   pts <- sqrt(tau[3:5] * tau[4:6])
@@ -713,4 +952,27 @@ test_that("a refined-axis draw stays in the box its own row gives its cell", {
   d <- th[cells == i, "tau"]
   expect_gt(max(d), lev * 1.15)
   expect_lt(min(d), lev / 1.15)
+})
+
+test_that("a refined axis's coupled draws stay in their own row's boxes", {
+  # The copula reads each cell's within-cell moments off the same per-row
+  # geometry the draw inverts, so coupling moves no draw out of its box and no
+  # axis off the interval the fit reports.
+  fit <- hd_refined(r = -0.8)
+  tg <- fit$theta_grid
+  set.seed(8596)
+  n <- if (cran_fixture()) 2e4L else 4e5L
+  th <- tulpa_hyper_draws(fit, n = n)
+  cells <- attr(th, "cells")
+  expect_lt(attr(th, "within_cell_copula")[1L, 2L], -0.3)
+  rows <- tulpa:::.nl_axis_cell_rows(tg, 1L, fit$refining_axis)
+  bx <- tulpa:::.nl_cell_boxes(as.numeric(tg[, "tau"]), "positive", rows)
+  expect_true(all(th[, "tau"] >= bx$lo[cells] & th[, "tau"] <= bx$hi[cells]))
+  expect_lt(stats::cor(log(th[, "tau"]), stats::qlogis(th[, "rho"])), -0.6)
+  for (ax in colnames(th)) {
+    q <- unname(stats::quantile(th[, ax], c(0.025, 0.5, 0.975)))
+    rep_q <- c(fit$theta_ci_lo[[ax]], fit$theta_median[[ax]],
+               fit$theta_ci_hi[[ax]])
+    expect_lt(max(abs(q - rep_q)), 1e-2)
+  }
 })

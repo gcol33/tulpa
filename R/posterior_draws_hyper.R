@@ -260,6 +260,18 @@
 # No coupling (the identity) is returned where the orientation is not
 # identified: fewer than two continuized axes, fewer cells than the quadratic
 # has coefficients, or a fitted curvature that is not negative definite.
+#
+# The quadratic is exact on a Gaussian and an approximation elsewhere. Two
+# alternatives were measured against it on skewed and curved posteriors with
+# exact reference moments (gcol33/tulpa#861): the mass-weighted mean of the
+# cells' own finite-difference curvatures, and the law of total covariance over
+# the box partition with each box shaped by its local quadratic. Both are
+# exact on a Gaussian too, and both read the log product of two anticorrelated
+# skewed scales 13-60% (respectively up to 30%) wide at K = 4 .. 9, where the
+# global quadratic stays within -5% / +3%. The moment form is also unstable
+# on a grid that does not resolve the posterior: a box's local quadratic
+# extrapolated to its corners can outweigh the grid's own mass by orders of
+# magnitude.
 .nl_hyper_copula <- function(tg, w, geoms, domains) {
   p <- ncol(tg)
   R <- diag(p)
@@ -297,7 +309,17 @@
   z <- sweep(sweep(tt, 2L, ctr), 2L, sc, "/")
   pr <- which(upper.tri(diag(q), diag = TRUE), arr.ind = TRUE)
   X <- cbind(1, z, z[, pr[, 1L], drop = FALSE] * z[, pr[, 2L], drop = FALSE])
-  fitq <- stats::lm.wfit(X, ld[use], ww)
+  # The fit's weights are floored where `lm.wfit()`'s rank test (tolerance
+  # `tol` on the sqrt-weighted columns) can still see a cell, a factor 100
+  # above it. Under a strong correlation on a coarse grid the off-ridge cells
+  # carry masses far below that (about 1e-130 at K = 3, rho = -0.97), and at
+  # their raw masses the design reads as rank 3 of 6 although every cell's log
+  # density is finite and, on a Gaussian, exactly quadratic. A floored cell
+  # still weighs at most 1e-10 of the modal one, so a grid whose cells are all
+  # above the floor is fitted exactly as before (gcol33/tulpa#860).
+  tol <- 1e-7
+  wfit <- pmax(ww, (100 * tol)^2 * max(ww))
+  fitq <- stats::lm.wfit(X, ld[use], wfit, tol = tol)
   if (fitq$rank < ncol(X)) return(R)
   b <- fitq$coefficients[-(seq_len(1L + q))]
   H <- matrix(0, q, q)
@@ -322,14 +344,43 @@
     ru <- min(max(ru, -1), 1)
     Ru[a, c] <- Ru[c, a] <- 2 * sin(pi * ru / 6)
   }
-  ev <- eigen(Ru, symmetric = TRUE)
-  if (min(ev$values) < 1e-8) {
-    Ru <- ev$vectors %*% (pmax(ev$values, 1e-8) * t(ev$vectors))
-    d <- sqrt(diag(Ru))
-    Ru <- Ru / outer(d, d)
+  Ru <- .nl_nearest_correlation(Ru)
+
+  # The within-cell coupling carries the posterior's LOCAL dependence, and the
+  # sign of each pair's conditional dependence given the other axes is the
+  # sign of the posterior precision's entry. Where the cells' means already
+  # correlate more strongly than the target, a pairwise solve can ask for a
+  # conditional dependence of the opposite sign inside the cell: a dependence
+  # the posterior does not have, which on a curved posterior read the log
+  # product 19.6% wide instead of 1.8% (gcol33/tulpa#861). Such a pair is made
+  # conditionally independent inside the cell. The CONDITIONAL sign is the one
+  # to hold: with three axes a pair's marginal within-cell coupling can
+  # legitimately oppose the target's (-0.6, -0.6, -0.2 couples the last pair at
+  # +0.94), and it is its partial correlation that agrees.
+  Qu <- solve(Ru)
+  flip <- Qu * P < 0
+  diag(flip) <- FALSE
+  if (any(flip)) {
+    Qu[flip] <- 0
+    Qu <- .nl_nearest_correlation(Qu, cor = FALSE)
+    Ru <- .nl_nearest_correlation(stats::cov2cor(solve(Qu)))
   }
   R[act, act] <- Ru
   R
+}
+
+# The nearest positive-definite matrix to a symmetric one by clipping its
+# eigenvalues at `floor`, rescaled to a unit diagonal when `cor` is TRUE.
+.nl_nearest_correlation <- function(M, floor = 1e-8, cor = TRUE) {
+  ev <- eigen(M, symmetric = TRUE)
+  if (min(ev$values) < floor) {
+    M <- ev$vectors %*% (pmax(ev$values, floor) * t(ev$vectors))
+  }
+  if (cor) {
+    d <- sqrt(diag(M))
+    M <- M / outer(d, d)
+  }
+  M
 }
 
 #' Hyperparameter draws from a nested-Laplace fit
