@@ -1,3 +1,26 @@
+# tulpa 0.5.3
+
+## Hyperparameter draws keep the posterior's correlation between axes
+
+* `tulpa_hyper_draws()` (and so the `"theta"` attribute of
+  `tulpa_posterior_draws()`) ties the within-cell draws of the outer axes
+  together through a Gaussian copula. Each axis's marginal is unchanged: every
+  cell-conditional is still reached by its own inverse CDF, so the draws
+  reproduce `theta_ci_lo` / `theta_median` / `theta_ci_hi` exactly as before.
+  The joint follows the posterior's orientation. The copula correlation is
+  solved so the draws' total correlation between two axes equals that of the
+  local Gaussian fitted to the grid's log density on each axis's unconstrained
+  coordinate. Independent jitter added the full box variance of both axes in
+  the direction a strongly correlated posterior pins down, so a product of
+  anticorrelated scales came out too wide: `sigma_pos_field` on the
+  cover-glaser HP760 J = 10 fit, where log sigma and log alpha correlate at
+  -0.936 (gcol33/tulpa#859). On an analytic two-scale posterior with log
+  correlation -0.9 (exact log-product sd 0.224) and a 7 x 7 box grid, the
+  draws' log correlation goes from -0.852 to -0.900 and the log product's sd
+  from 0.281 to 0.232. On a 5 x 5 grid it goes from 0.309 to 0.239, where the
+  node weights' own correlation would give 0.072. The copula matrix is returned
+  as `attr(., "within_cell_copula")`.
+
 # tulpa 0.5.2
 
 ## A refined axis reads each cell's box from its own row

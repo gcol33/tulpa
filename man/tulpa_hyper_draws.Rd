@@ -27,7 +27,11 @@ A numeric matrix \verb{[n x n_axes]} with the outer grid's axis names as
 columns, or \code{NULL} when the fit carries no outer-grid axis. Carries
 \code{attr(., "cells")} -- the cell each row's coordinates were drawn in --
 plus \code{attr(., "within_cell")} and \code{attr(., "within_cell_declined")}, the
-per-axis construction that ran and why a requested one did not.
+per-axis construction that ran and why a requested one did not, and
+\code{attr(., "within_cell_copula")}, the Gaussian-copula correlation matrix
+that ties the axes' within-cell draws together so the draws keep the
+grid's own correlation between axes (the identity where the grid's axes
+are uncorrelated). Each axis's marginal is the same whatever the copula.
 }
 \description{
 The hyperparameter half of a draw from the outer-grid mixture: one row per

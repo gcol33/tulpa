@@ -357,6 +357,88 @@ test_that("a grid that does not contain its own mode is named as such", {
   expect_length(rs2$railed, 0L)
 })
 
+# Two scales whose logs are bivariate normal with correlation `rho` (sd 0.5
+# each), on a K x K log-spaced grid spanning +/- 3 sd. The quantity
+# gcol33/tulpa#859 measured is log(sigma * tau), whose exact sd is
+# sqrt(s1^2 + s2^2 + 2 rho s1 s2).
+hd_ridge <- function(rho, K = 7L, within = "box_uniform", s = 0.5) {
+  P <- solve(matrix(c(1, rho, rho, 1) * s^2, 2))
+  hd_fit(list(sigma = exp(seq(-3 * s, 3 * s, length.out = K)),
+              tau   = exp(seq(-3 * s, 3 * s, length.out = K))),
+         function(tg) {
+           x <- log(tg)
+           -0.5 * rowSums((x %*% P) * x) - rowSums(x)
+         }, within = within)
+}
+
+# The same draws with each axis jittered on its own uniform: the construction
+# #859 measured against.
+hd_indep_draws <- function(fit, cells) {
+  geo <- tulpa:::.nl_axis_geometry(fit)
+  sapply(seq_len(ncol(fit$theta_grid)), function(j) {
+    g <- tulpa:::.nl_hyper_axis_geometry(
+      fit$theta_grid[, j], fit$weights, geo$domain[[j]],
+      fit$within_cell_requested, "extend", NA_real_)
+    tulpa:::.nl_hyper_axis_draw(g, fit$theta_grid[cells, j], cells)
+  })
+}
+
+test_that("a product of anticorrelated axes keeps the posterior's spread (#859)", {
+  exact <- 0.5 * sqrt(2 * (1 - 0.9))
+  n_draw <- if (cran_fixture()) 2e4L else 1e5L
+  for (K in c(5L, 7L, 9L)) {
+    for (wc in c("box_uniform", "chord")) {
+      fit <- hd_ridge(-0.9, K, wc)
+      set.seed(859)
+      th <- tulpa_hyper_draws(fit, n = n_draw)
+      lsum <- log(th[, "sigma"]) + log(th[, "tau"])
+      ind <- hd_indep_draws(fit, attr(th, "cells"))
+      lsum_ind <- log(ind[, 1L]) + log(ind[, 2L])
+      # The coupled draws carry the posterior's own correlation between the
+      # log axes, where the independent jitter dilutes it towards zero.
+      expect_lt(abs(stats::cor(log(th))[1L, 2L] + 0.9), 0.02)
+      # And the product's spread with it: exactly what the draws' own
+      # marginals give at the posterior's correlation. What separates that from
+      # the exact 0.224 is each axis's within-cell read widening its marginal
+      # (the chord at K = 5 by 29%), which no coupling reaches; measured, the
+      # coupled product sits at 0.227-0.285 against 0.268-0.611 independent.
+      sd1 <- stats::sd(log(th[, "sigma"]))
+      sd2 <- stats::sd(log(th[, "tau"]))
+      implied <- sqrt(sd1^2 + sd2^2 - 2 * 0.9 * sd1 * sd2)
+      expect_lt(abs(stats::sd(lsum) / implied - 1), 0.05)
+      expect_lt(abs(stats::sd(lsum) - exact),
+                abs(stats::sd(lsum_ind) - exact))
+    }
+  }
+})
+
+test_that("the copula leaves every marginal where the fit reports it", {
+  skip_on_cran()
+  fit <- hd_ridge(-0.9, 7L)
+  set.seed(8591)
+  th <- tulpa_hyper_draws(fit, n = 4e5L)
+  expect_lt(attr(th, "within_cell_copula")[1L, 2L], -0.3)
+  for (ax in colnames(th)) {
+    q <- unname(stats::quantile(th[, ax], c(0.025, 0.5, 0.975)))
+    rep_q <- c(fit$theta_ci_lo[[ax]], fit$theta_median[[ax]],
+               fit$theta_ci_hi[[ax]])
+    expect_lt(max(abs(q - rep_q) / diff(range(fit$theta_grid[, ax]))), 5e-3)
+  }
+})
+
+test_that("an uncorrelated grid, and an axis that does not spread, stay uncoupled", {
+  cop <- attr(tulpa_hyper_draws(hd_ridge(0, 7L), n = 50L), "within_cell_copula")
+  expect_lt(abs(cop[1L, 2L]), 0.02)
+  expect_equal(dim(cop), c(2L, 2L))
+  expect_identical(rownames(cop), c("sigma", "tau"))
+
+  fit <- hd_fit(list(tau = exp(seq(log(0.2), log(3), length.out = 5)),
+                     rho = 0.5),
+                function(tg) -0.5 * (log(tg[, "tau"]))^2)
+  cop1 <- attr(tulpa_hyper_draws(fit, n = 50L), "within_cell_copula")
+  expect_equal(unname(cop1), diag(2))
+})
+
 
 # ---- 6. The occu_cover-shaped joint fit, end to end -------------------------
 
