@@ -1,0 +1,3 @@
+tag	role	J	sigma_nodes	phi_nodes	refine	n_sim	alpha_n
+HP760_860_REFON_J10_s21	acceptance	10	21	21	on	300	0
+HP760_860_REFON_J3_s13	acceptance	3	13	11	on	300	0
