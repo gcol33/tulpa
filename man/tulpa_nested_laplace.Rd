@@ -239,8 +239,11 @@ overrides \code{band}
 (the inner-reliability floor a coordinate is selected at, default
 \code{"ok"}), \code{idx} (pin the corrected set explicitly, skipping the selector),
 \code{closure} / \code{closure_max} (grow the set by strongly coupled
-precision-graph neighbours -- declined on this backend, which retains no
-joint precision), the sampler budget \code{n_iter} / \code{warmup} / \code{thin}, and
+precision-graph neighbours: a coordinate strongly coupled to a member of
+the corrected set and left out of it is carried linearly, which is the
+error the correction removes, so requesting the closure also retains the
+modal cell's joint precision for the selector to read), the sampler
+budget \code{n_iter} / \code{warmup} / \code{thin}, and
 \code{n_draws}. The selector reads the per-index bands \code{diagnose_skew} already
 attached, so it costs no extra solve; the correction itself re-runs the
 settled grid once with the sampler on, and the fit then reports \verb{$draws}
