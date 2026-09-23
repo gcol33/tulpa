@@ -301,15 +301,35 @@ test_that("the joint backend's corrected interval moves toward exact quadrature"
 # (4) Settings and declines                                                    #
 # --------------------------------------------------------------------------- #
 
-test_that("the coupling closure declines on a grid fit rather than silently finding nothing", {
+test_that("the coupling closure runs on a grid fit, off the modal cell's precision", {
   skip_on_cran()
   d <- .sd306_rare_data()
   set.seed(202)
   fit <- .sd306_rare_fit(d, list(subspace_debias = list(closure = TRUE)))
-  # A grid fit retains no joint precision, so the precision-graph neighbours the
-  # closure grows S by cannot be read. That is recorded, not passed over.
-  expect_identical(fit$subspace_debias$declined, "closure_needs_joint_hessian")
-  expect_identical(fit$subspace_debias$closure_added, integer(0))
+  # A grid fit used to retain no joint precision, so the precision-graph
+  # neighbours the closure grows S by could not be read and the closure
+  # recorded `closure_needs_joint_hessian` on every such fit. It now reads the
+  # MODAL cell's precision, assembled by `.nl_modal_joint_precision()` from the
+  # CSC scratch the inner solves already return -- one cell, because the
+  # closure is a selection decision made once (gcol33/tulpa#862).
+  expect_true(is.na(fit$subspace_debias$declined))
+  expect_false(is.null(fit$H_joint))
+  expect_identical(nrow(fit$H_joint), ncol(fit$H_joint))
+  # The selection is still a superset of what the bands alone would give, and
+  # `closure_added` is now a real answer rather than a placeholder for an
+  # unavailable one.
+  expect_false(is.null(fit$subspace_debias$closure_added))
+})
+
+test_that("a fit that did not ask for the closure retains no joint precision", {
+  skip_on_cran()
+  d <- .sd306_rare_data()
+  set.seed(202)
+  # The retention rides the closure request: the correction without it, and the
+  # plain path, both leave the fit carrying nothing extra.
+  fit <- .sd306_rare_fit(d, list(subspace_debias = TRUE))
+  expect_null(fit$H_joint)
+  expect_null(.sd306_rare_fit(d, list())$H_joint)
 })
 
 test_that("control$subspace_debias is validated on the grid front doors", {
