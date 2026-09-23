@@ -24,6 +24,7 @@ kernel hardcodes `sigma = 1`, `rho = 0.5`.
   rho = 0.5,
   re_idx = NULL,
   n_re_groups = 0L,
-  sigma_re = 1
+  sigma_re = 1,
+  y
 )
 ```

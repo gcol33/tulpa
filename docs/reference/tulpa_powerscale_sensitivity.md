@@ -27,7 +27,6 @@ reweighting; `NA` otherwise.
 ``` r
 tulpa_powerscale_sensitivity(
   fit,
-  data,
   prior = NULL,
   lower_alpha = 0.99,
   upper_alpha = 1.01,
@@ -41,11 +40,10 @@ tulpa_powerscale_sensitivity(
 
   A `tulpa_fit` fitted through
   [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md)
-  (fixed-effect / GLMM; spatial / temporal-field fits are rejected).
-
-- data:
-
-  The data frame the model was fit to.
+  (fixed-effect / GLMM; spatial / temporal-field fits and nested-Laplace
+  outer-grid mixture fits, e.g. a
+  [`latent()`](https://gillescolling.com/tulpa/reference/latent.md)
+  block or a random-slope redirect, are rejected).
 
 - prior:
 
@@ -88,6 +86,9 @@ d <- data.frame(x = rnorm(150))
 d$y <- rpois(150, exp(0.5 + 0.7 * d$x))
 fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace",
              beta_prior = list(mean = 0, sd = 5))
-tulpa_powerscale_sensitivity(fit, data = d, prior = list(mean = 0, sd = 5))
+tulpa_powerscale_sensitivity(fit, prior = list(mean = 0, sd = 5))
+#>      variable        prior hyperparameter likelihood diagnosis
+#> 1 (Intercept) 0.0001082344             NA 0.08144299         -
+#> 2           x 0.0001187752             NA 0.08331296         -
 # }
 ```

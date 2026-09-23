@@ -22,7 +22,7 @@ convergence metrics, divergence information, and actionable recommendations."><s
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.6.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -110,6 +110,16 @@ convergence metrics, divergence information, and actionable recommendations.</p>
 <dd><p>approximation fits only: the outer PSIS k-hat,
 or the grid quadrature ESS when no k-hat was produced</p></dd>
 
+<dt>hyper_share_min, hyper_share_max</dt>
+<dd><p>approximation fits only: the range
+over coefficients of the share of the fixed-effect marginal variance the
+hyperparameter integration contributed, <code>between / (within + between)</code>
+under the law of total variance over the outer grid. Near zero means the
+reported interval is what conditioning on a single hyperparameter point
+would have given. Reported without a threshold and never scored: a small
+share is not by itself a miscalibrated interval. <code>NA</code> when the fit
+retains no per-cell pieces to decompose</p></dd>
+
 <dt>pareto_k_declined</dt>
 <dd><p>approximation fits only, and only when there is no
 k-hat: WHY – <code>"not_requested"</code> and
@@ -142,17 +152,60 @@ integrated instead. Absent whenever every supplied axis was used</p></dd>
 
     <div class="section level2">
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="co"># \donttest{</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">123</span><span class="op">)</span></span>
-<span><span class="va">df</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>x <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fl">60</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="va">df</span><span class="op">$</span><span class="va">y</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Poisson.html" class="external-link">rpois</a></span><span class="op">(</span><span class="fl">60</span>, <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="fl">0.5</span> <span class="op">+</span> <span class="fl">0.3</span> <span class="op">*</span> <span class="va">df</span><span class="op">$</span><span class="va">x</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">df</span>, family <span class="op">=</span> <span class="st">"poisson"</span>, mode <span class="op">=</span> <span class="st">"hmc"</span>,</span>
-<span>             control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_iter <span class="op">=</span> <span class="fl">500L</span>, warmup <span class="op">=</span> <span class="fl">250L</span>, n_chains <span class="op">=</span> <span class="fl">2L</span>,</span>
-<span>                            seed <span class="op">=</span> <span class="fl">1L</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="va">ds</span> <span class="op">&lt;-</span> <span class="fu">diagnostic_summary</span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">ds</span><span class="op">)</span></span>
-<span><span class="co"># }</span></span>
-<span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="co"># \donttest{</span></span></span>
+<span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">123</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">df</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>x <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fl">60</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">df</span><span class="op">$</span><span class="va">y</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Poisson.html" class="external-link">rpois</a></span><span class="op">(</span><span class="fl">60</span>, <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="fl">0.5</span> <span class="op">+</span> <span class="fl">0.3</span> <span class="op">*</span> <span class="va">df</span><span class="op">$</span><span class="va">x</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">df</span>, family <span class="op">=</span> <span class="st">"poisson"</span>, mode <span class="op">=</span> <span class="st">"hmc"</span>,</span></span>
+<span class="r-in"><span>             control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_iter <span class="op">=</span> <span class="fl">500L</span>, warmup <span class="op">=</span> <span class="fl">250L</span>, n_chains <span class="op">=</span> <span class="fl">2L</span>,</span></span>
+<span class="r-in"><span>                            seed <span class="op">=</span> <span class="fl">1L</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">ds</span> <span class="op">&lt;-</span> <span class="fu">diagnostic_summary</span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> === tulpa Diagnostic Summary ===</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Backend: hmc </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Status: <span style="color: #BBBB00;">WARN</span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Divergent transitions: 0</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> E-BFMI: 1.151 (OK)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Parameters with Rhat &gt; 1.01:</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>    parameter  rhat</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  (Intercept) 1.015</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Parameters with ESS &lt; 400:</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>    parameter ess_bulk ess_tail</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>            x      175      198</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  (Intercept)      183      174</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Recommendations:</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   - Rhat &gt; 1.01: Run more iterations or chains </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   - ESS &lt; 400: Run more iterations or use thinning </span>
+<span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">ds</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> === tulpa Diagnostic Summary ===</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Backend: hmc </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Status: <span style="color: #BBBB00;">WARN</span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Divergent transitions: 0</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> E-BFMI: 1.151 (OK)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Parameters with Rhat &gt; 1.01:</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>    parameter  rhat</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  (Intercept) 1.015</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Parameters with ESS &lt; 400:</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>    parameter ess_bulk ess_tail</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>            x      175      198</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  (Intercept)      183      174</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Recommendations:</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   - Rhat &gt; 1.01: Run more iterations or chains </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   - ESS &lt; 400: Run more iterations or use thinning </span>
+<span class="r-in"><span><span class="co"># }</span></span></span>
+<span class="r-in"><span></span></span>
+</code></pre></div>
     </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>

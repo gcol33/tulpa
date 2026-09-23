@@ -53,8 +53,15 @@ tulpa_ordinal(
 
 ## Value
 
-A `tulpa_fit` (subclass `tulpa_ordinal`) with `coef` (covariate
-effects), `cutpoints`, `vcov`, `draws`, `log_marginal`, `levels`.
+A `tulpa_fit` (subclass `tulpa_ordinal`) with `coefficients` (covariate
+effects) and `cutpoints` at the posterior mode, `draws` (the Laplace
+Gaussian mapped to ordered cutpoints), `log_marginal`, `levels`. The
+draws are the posterior [`coef()`](https://rdrr.io/r/stats/coef.html),
+[`vcov()`](https://rdrr.io/r/stats/vcov.html),
+[`summary()`](https://rdrr.io/r/base/summary.html) and
+[`confint()`](https://rdrr.io/r/stats/confint.html) report;
+[`coef()`](https://rdrr.io/r/stats/coef.html) omits the cutpoints, as
+[`MASS::polr`](https://rdrr.io/pkg/MASS/man/polr.html) does.
 
 ## See also
 
@@ -72,5 +79,9 @@ Fm <- plogis(outer(-eta, cuts, "+")); P <- cbind(Fm, 1) - cbind(0, Fm)
 y <- ordered(apply(P, 1, function(pr) sample.int(4L, 1L, prob = pr)))
 fit <- tulpa_ordinal(y ~ x, data = data.frame(y = y, x = x))
 fit$coefficients; fit$cutpoints
+#>         x 
+#> 0.8391392 
+#>        1|2        2|3        3|4 
+#> -1.0608612  0.4512822  1.9829574 
 # }
 ```

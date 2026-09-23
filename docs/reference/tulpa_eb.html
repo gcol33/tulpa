@@ -28,7 +28,7 @@ Sigma instead of fixing it at the maximizer.'><script>
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.6.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -88,9 +88,9 @@ empirical-Bayes) counterpart of <code><a href="tulpa_re_cov_nested.html">tulpa_r
 <span>  family <span class="op">=</span> <span class="st">"binomial"</span>,</span>
 <span>  phi <span class="op">=</span> <span class="fl">1</span>,</span>
 <span>  phi2 <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  prior_sigma <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">3</span>, <span class="fl">0.05</span><span class="op">)</span>,</span>
-<span>  eta <span class="op">=</span> <span class="fl">2</span>,</span>
-<span>  hyperprior <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"flat"</span>, <span class="st">"pc_lkj"</span><span class="op">)</span>,</span>
+<span>  prior_sigma <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  eta <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  hyperprior <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"proper"</span>, <span class="st">"flat"</span><span class="op">)</span>,</span>
 <span>  log_prior_theta <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  beta_prior <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  offset <span class="op">=</span> <span class="cn">NULL</span>,</span>
@@ -129,17 +129,18 @@ alone.</p></dd>
 
 <dt id="arg-prior-sigma-eta">prior_sigma, eta<a class="anchor" aria-label="anchor" href="#arg-prior-sigma-eta"></a></dt>
 <dd><p>Hyperparameters of the PC + LKJ prior used when
-<code>hyperprior = "pc_lkj"</code> (see <code><a href="re_cov_pc_lkj_prior.html">re_cov_pc_lkj_prior()</a></code>). Ignored when
+<code>hyperprior = "proper"</code> (see <code><a href="re_cov_pc_lkj_prior.html">re_cov_pc_lkj_prior()</a></code>); <code>NULL</code> (the
+defaults) is <code>c(3, 0.01)</code> and 2. Ignored when
 <code>hyperprior = "flat"</code> or <code>log_prior_theta</code> is supplied. When active, the
 prior is part of the maximized objective, so it regularizes the estimate:
 with few groups it is what keeps a block off the <code>sigma = 0</code> boundary.</p></dd>
 
 
 <dt id="arg-hyperprior">hyperprior<a class="anchor" aria-label="anchor" href="#arg-hyperprior"></a></dt>
-<dd><p><code>"flat"</code> (default) or <code>"pc_lkj"</code>. <code>"flat"</code> maximizes with
+<dd><p><code>"proper"</code> (default) or <code>"flat"</code>. <code>"flat"</code> maximizes with
 <code>log_prior_theta</code> the zero function – an unpenalized maximum-marginal-
 likelihood estimate, which can reach the <code>sigma = 0</code> boundary on small
-designs (see the <code>"lower end of the search bracket"</code> warning). <code>"pc_lkj"</code>
+designs (see the <code>"lower end of the search bracket"</code> warning). <code>"proper"</code>
 builds the PC + LKJ prior from <code>prior_sigma</code> / <code>eta</code>, regularizing the
 estimate away from that boundary. Ignored when <code>log_prior_theta</code> is
 supplied. Must match <code>hyperprior</code> on the paired <code><a href="tulpa_re_cov_nested.html">tulpa_re_cov_nested()</a></code>
@@ -288,13 +289,11 @@ term is diagonal in log-SD coordinates, and a scalar <code>(1 | g)</code> term i
 degenerate one-coefficient block. Both functions call the same outer
 objective and the same optimizer, so <code>tulpa_eb()$theta_hat</code> and
 <code>tulpa_re_cov_nested()$theta_hat</code> are the same estimate on the same data –
-which requires <code>hyperprior</code> to default the same way on both: <code>"flat"</code>, the
-zero function, matching the nested-Laplace convention on every other scale
-axis in the engine (icar / rw1 / rw2 / ar1's tau / iid all lack a
-hyperprior on their scale too; see <code><a href="../articles/priors.html">vignette("priors")</a></code>). Set
-<code>hyperprior = "pc_lkj"</code> for the weakly-informative PC + LKJ prior instead
-(see <code><a href="re_cov_pc_lkj_prior.html">re_cov_pc_lkj_prior()</a></code>) – the regularizer that, at small G, keeps a
-block off the <code>sigma = 0</code> boundary this maximizer would otherwise reach.</p>
+which requires <code>hyperprior</code> to default the same way on both: <code>"proper"</code>, the
+PC + LKJ prior (see <code><a href="re_cov_pc_lkj_prior.html">re_cov_pc_lkj_prior()</a></code>) at the anchor every scale axis
+of the engine defaults to, which at small G keeps a block off the
+<code>sigma = 0</code> boundary. <code>hyperprior = "flat"</code> maximizes the marginal likelihood
+alone.</p>
 <p>The reported fixed-effect covariance is the conditional one at <code>theta_hat</code>
 (<code>solve(H_beta)</code>). It does not include the hyperparameter uncertainty that
 <code><a href="tulpa_re_cov_nested.html">tulpa_re_cov_nested()</a></code> integrates over, so EB intervals are narrower –
@@ -318,16 +317,18 @@ Gaussian models by using integrated nested Laplace approximations.
 
     <div class="section level2">
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="co"># \donttest{</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span>
-<span><span class="va">G</span> <span class="op">&lt;-</span> <span class="fl">30L</span>; <span class="va">per</span> <span class="op">&lt;-</span> <span class="fl">10L</span>; <span class="va">n</span> <span class="op">&lt;-</span> <span class="va">G</span> <span class="op">*</span> <span class="va">per</span></span>
-<span><span class="va">grp</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">G</span><span class="op">)</span>, each <span class="op">=</span> <span class="va">per</span><span class="op">)</span>; <span class="va">x</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span></span>
-<span><span class="va">b</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">G</span>, <span class="fl">0</span>, <span class="fl">0.8</span><span class="op">)</span></span>
-<span><span class="va">y</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Poisson.html" class="external-link">rpois</a></span><span class="op">(</span><span class="va">n</span>, <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="fl">0.3</span> <span class="op">+</span> <span class="fl">0.5</span> <span class="op">*</span> <span class="va">x</span> <span class="op">+</span> <span class="va">b</span><span class="op">[</span><span class="va">grp</span><span class="op">]</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="va">re_term</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>idx <span class="op">=</span> <span class="va">grp</span>, n_groups <span class="op">=</span> <span class="va">G</span>, n_coefs <span class="op">=</span> <span class="fl">1L</span><span class="op">)</span></span>
-<span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu">tulpa_eb</span><span class="op">(</span><span class="va">y</span>, <span class="cn">NULL</span>, <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span><span class="fl">1</span>, <span class="va">x</span><span class="op">)</span>, <span class="va">re_term</span>, family <span class="op">=</span> <span class="st">"poisson"</span><span class="op">)</span></span>
-<span><span class="va">fit</span><span class="op">$</span><span class="va">map</span><span class="op">$</span><span class="va">sigma</span>          <span class="co"># empirical-Bayes RE standard deviation</span></span>
-<span><span class="co"># }</span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="co"># \donttest{</span></span></span>
+<span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">G</span> <span class="op">&lt;-</span> <span class="fl">30L</span>; <span class="va">per</span> <span class="op">&lt;-</span> <span class="fl">10L</span>; <span class="va">n</span> <span class="op">&lt;-</span> <span class="va">G</span> <span class="op">*</span> <span class="va">per</span></span></span>
+<span class="r-in"><span><span class="va">grp</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">G</span><span class="op">)</span>, each <span class="op">=</span> <span class="va">per</span><span class="op">)</span>; <span class="va">x</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">b</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">G</span>, <span class="fl">0</span>, <span class="fl">0.8</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">y</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Poisson.html" class="external-link">rpois</a></span><span class="op">(</span><span class="va">n</span>, <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="fl">0.3</span> <span class="op">+</span> <span class="fl">0.5</span> <span class="op">*</span> <span class="va">x</span> <span class="op">+</span> <span class="va">b</span><span class="op">[</span><span class="va">grp</span><span class="op">]</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">re_term</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>idx <span class="op">=</span> <span class="va">grp</span>, n_groups <span class="op">=</span> <span class="va">G</span>, n_coefs <span class="op">=</span> <span class="fl">1L</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu">tulpa_eb</span><span class="op">(</span><span class="va">y</span>, <span class="cn">NULL</span>, <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span><span class="fl">1</span>, <span class="va">x</span><span class="op">)</span>, <span class="va">re_term</span>, family <span class="op">=</span> <span class="st">"poisson"</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">fit</span><span class="op">$</span><span class="va">map</span><span class="op">$</span><span class="va">sigma</span>          <span class="co"># empirical-Bayes RE standard deviation</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> [1] 0.7649598</span>
+<span class="r-in"><span><span class="co"># }</span></span></span>
+</code></pre></div>
     </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>

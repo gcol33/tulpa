@@ -57,6 +57,11 @@ Fields:
   a model package reaches via `LinkingTo: tulpa`, and the one an R
   wrapper would call), or `NULL`.
 
+- `hyperprior` – `TRUE` when the backend's fitter takes the outer
+  `hyperprior = c("proper", "flat")` choice
+  [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md)
+  forwards; absent otherwise.
+
 - `note` – optional human-readable note.
 
 Family identity (for `families`) is checked against `family$name`,

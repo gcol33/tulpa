@@ -46,6 +46,11 @@ tulpa_ep(
   it. The compiled kernels parameterize the two variance families by the
   residual SD and are handed `sqrt(phi)` at the boundary.
 
+  Defaulted, it conditions at 1 and says so with a warning, since for a
+  family that reads a dispersion that is a modelling choice rather than
+  a neutral value. `fit$phi_estimated` records whether the value on the
+  fit was estimated or conditioned on.
+
 - phi2:
 
   Optional second dispersion (Student-t degrees of freedom for
@@ -69,11 +74,24 @@ tulpa_ep(
   (default 0.8), `n_quad` (Gauss-Hermite nodes, default 20), `n_draws`
   (default 2000), `seed`.
 
+  An `offset(...)` term in `formula` is honoured: it shifts each
+  observation's linear predictor before the likelihood is evaluated, and
+  is not itself part of the fitted posterior.
+
 ## Value
 
-A `tulpa_fit` (subclass `tulpa_ep`) with `coefficients` (posterior
-mean), `vcov`, `draws`, `log_marginal` (the EP approximation),
-`converged`.
+A `tulpa_fit` (subclass `tulpa_ep`) with `means` (posterior mean) and
+`cov` (posterior covariance) of the EP Gaussian, which is the posterior
+[`coef()`](https://rdrr.io/r/stats/coef.html),
+[`vcov()`](https://rdrr.io/r/stats/vcov.html),
+[`summary()`](https://rdrr.io/r/base/summary.html) and
+[`confint()`](https://rdrr.io/r/stats/confint.html) report; `draws`
+sampled from that Gaussian; `log_marginal` (the EP approximation);
+`converged` (the sweep tolerance was met AND every site's adaptive
+quadrature mode search converged AND no site's tilted variance floored –
+a site that is not well resolved by the quadrature turns this `FALSE`
+even when the outer sweep loop itself settled); `n_site_not_converged`,
+`n_site_floored`.
 
 ## References
 
@@ -97,5 +115,7 @@ d <- data.frame(x = rnorm(200))
 d$y <- rbinom(200, 1, plogis(-0.3 + 0.8 * d$x))
 fit <- tulpa_ep(y ~ x, data = d, family = "binomial")
 coef(fit)
+#> (Intercept)           x 
+#>  -0.4432535   0.4887355 
 # }
 ```

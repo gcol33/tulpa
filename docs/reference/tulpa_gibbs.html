@@ -22,7 +22,7 @@ binomial and negative binomial GLMMs."><script>
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.6.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -162,8 +162,22 @@ reproducible), <code>verbose</code> (default FALSE), <code>n_threads</code> (def
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
-    <p>List with beta draws, RE draws, sigma_re draws (plus the spatial
-field draws when <code>spatial</code> is supplied)</p>
+    <p>A <code>tulpa_fit</code> holding one MCMC chain: <code>draws</code>, the
+<code>[n_saved x n_param]</code> matrix of retained draws, with <code>chain_id</code>,
+<code>n_chains</code>, <code>means</code> (column means) and <code>param_names</code>. Columns follow the
+parameter naming of the ModelData samplers: the fixed effects (the column
+names of <code>X</code>, else <code>beta[j]</code>), <code>log_sigma_re</code> and <code>re[g]</code> for the
+random-intercept block, then the route's own blocks – <code>log_phi</code> (the
+negative-binomial size); <code>log_tau_spatial</code> and <code>phi_spatial[u]</code> (ICAR, and
+RSR's projected field); <code>log_sigma_spatial</code>, <code>logit_rho_bym2</code>,
+<code>phi_spatial[u]</code> and <code>theta_spatial[u]</code> (BYM2); <code>log_sigma2_gp</code>,
+<code>log_phi_gp</code> and <code>gp_w[u]</code> (GP); the <code>_local</code> / <code>_regional</code> counterparts
+with <code>gp_local[u]</code> / <code>gp_regional[u]</code> (multiscale GP); <code>log_sigma2_trend</code>,
+<code>trend[t]</code>, <code>log_sigma2_seasonal</code>, <code>seasonal[s]</code>, <code>log_sigma2_short</code>,
+<code>short_term[t]</code> and, for an AR1 short-term component, <code>logit_rho_short</code>
+(temporal). Scales are stored on the log scale and correlations on the
+logit scale, as the samplers store them; a component the model does not
+carry has no column.</p>
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
@@ -172,26 +186,59 @@ at the exact real shape <code>PG(y + r, eta)</code> and the dispersion <code>r</
 updated by a random-walk Metropolis-Hastings step on <code>log(r)</code> whose
 stationary support is bounded to <code>r</code> in <code>[0.1, 500]</code>; data favouring a
 dispersion outside that range pile up at the boundary.</p>
-<p>Every sampler that centres a latent effect – the negative-binomial
-kernels, and the binomial kernels carrying a <code>spatial</code> or <code>temporal</code>
-field – adds the removed level to the first coefficient, which leaves
-<code>eta</code> unchanged only when the first column of <code>X</code> is an all-ones
-intercept. Those routes error on a design without one.</p>
+<p>Every sampler that moves a latent effect's level through the first
+coefficient – the negative-binomial kernels, and the binomial kernels
+carrying a <code>spatial</code> or <code>temporal</code> field – leaves <code>eta</code> unchanged only
+when the first column of <code>X</code> is an all-ones intercept, and those routes
+error on a design without one. An intrinsic field (ICAR, the structured
+BYM2 part, RW1) is reported centred with its level in the intercept, and
+its sweep carries the intercept's prior through the field mean; a proper
+one (the negative-binomial iid block, an NNGP field) has the level it
+shares with the intercept drawn from its full conditional, which both
+priors define.</p>
     </div>
 
     <div class="section level2">
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span>
-<span><span class="va">G</span> <span class="op">&lt;-</span> <span class="fl">20L</span>; <span class="va">npg</span> <span class="op">&lt;-</span> <span class="fl">15L</span>; <span class="va">n</span> <span class="op">&lt;-</span> <span class="va">G</span> <span class="op">*</span> <span class="va">npg</span></span>
-<span><span class="va">grp</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">G</span><span class="op">)</span>, each <span class="op">=</span> <span class="va">npg</span><span class="op">)</span></span>
-<span><span class="va">X</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span><span class="fl">1</span>, <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="va">b</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">G</span>, <span class="fl">0</span>, <span class="fl">0.6</span><span class="op">)</span></span>
-<span><span class="va">y</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Binomial.html" class="external-link">rbinom</a></span><span class="op">(</span><span class="va">n</span>, <span class="fl">1</span>, <span class="fu"><a href="https://rdrr.io/r/stats/Logistic.html" class="external-link">plogis</a></span><span class="op">(</span><span class="va">X</span> <span class="op"><a href="https://rdrr.io/r/base/matmult.html" class="external-link">%*%</a></span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="op">-</span><span class="fl">0.2</span>, <span class="fl">0.5</span><span class="op">)</span> <span class="op">+</span> <span class="va">b</span><span class="op">[</span><span class="va">grp</span><span class="op">]</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="co"># \donttest{</span></span>
-<span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu">tulpa_gibbs</span><span class="op">(</span><span class="va">y</span>, <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fl">1L</span>, <span class="va">n</span><span class="op">)</span>, <span class="va">X</span>, <span class="va">grp</span>, <span class="va">G</span>, family <span class="op">=</span> <span class="st">"binomial"</span>,</span>
-<span>                   control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_iter <span class="op">=</span> <span class="fl">500L</span>, warmup <span class="op">=</span> <span class="fl">250L</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/colSums.html" class="external-link">colMeans</a></span><span class="op">(</span><span class="va">fit</span><span class="op">$</span><span class="va">beta</span><span class="op">)</span></span>
-<span><span class="co"># }</span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">G</span> <span class="op">&lt;-</span> <span class="fl">20L</span>; <span class="va">npg</span> <span class="op">&lt;-</span> <span class="fl">15L</span>; <span class="va">n</span> <span class="op">&lt;-</span> <span class="va">G</span> <span class="op">*</span> <span class="va">npg</span></span></span>
+<span class="r-in"><span><span class="va">grp</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">G</span><span class="op">)</span>, each <span class="op">=</span> <span class="va">npg</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">X</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span><span class="fl">1</span>, <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">b</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">G</span>, <span class="fl">0</span>, <span class="fl">0.6</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">y</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Binomial.html" class="external-link">rbinom</a></span><span class="op">(</span><span class="va">n</span>, <span class="fl">1</span>, <span class="fu"><a href="https://rdrr.io/r/stats/Logistic.html" class="external-link">plogis</a></span><span class="op">(</span><span class="va">X</span> <span class="op"><a href="https://rdrr.io/r/base/matmult.html" class="external-link">%*%</a></span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="op">-</span><span class="fl">0.2</span>, <span class="fl">0.5</span><span class="op">)</span> <span class="op">+</span> <span class="va">b</span><span class="op">[</span><span class="va">grp</span><span class="op">]</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="co"># \donttest{</span></span></span>
+<span class="r-in"><span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu">tulpa_gibbs</span><span class="op">(</span><span class="va">y</span>, <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fl">1L</span>, <span class="va">n</span><span class="op">)</span>, <span class="va">X</span>, <span class="va">grp</span>, <span class="va">G</span>, family <span class="op">=</span> <span class="st">"binomial"</span>,</span></span>
+<span class="r-in"><span>                   control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_iter <span class="op">=</span> <span class="fl">500L</span>, warmup <span class="op">=</span> <span class="fl">250L</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>    beta[1]    beta[2] </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 0.05113498 0.47895299 </span>
+<span class="r-in"><span><span class="fu"><a href="diagnostics.html">diagnostics</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>       parameter      rhat  ess_bulk  ess_tail</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1       beta[1] 0.9994892 174.67795 171.50405</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 2       beta[2] 1.0079899 195.29629 222.99091</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 3  log_sigma_re 1.0189955  30.08361  44.55205</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 4         re[1] 0.9981450 248.67134 205.65889</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 5         re[2] 1.0103747 159.72752 169.70804</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 6         re[3] 1.0014289  62.42346 180.58399</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 7         re[4] 0.9999902  86.58332 183.94880</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 8         re[5] 1.0055948 258.88968  98.48576</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 9         re[6] 1.0006344  78.93758 157.76480</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 10        re[7] 1.0067015 160.72260 190.56408</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 11        re[8] 1.0035467 217.12126 240.08551</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 12        re[9] 1.0114679 129.51291 138.50106</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 13       re[10] 1.0020908 155.25306 216.15668</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 14       re[11] 1.0002456 230.14582 232.21690</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 15       re[12] 1.0077990 261.31527 187.34137</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 16       re[13] 1.0043439 208.37927 234.64435</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 17       re[14] 0.9994984 217.48683 260.27161</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 18       re[15] 0.9997324 228.78774 208.60393</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 19       re[16] 0.9967272 171.25306 165.00215</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 20       re[17] 0.9971519 187.42189 181.37760</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 21       re[18] 1.0030375 228.04636 182.03745</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 22       re[19] 1.0121462 135.01159 202.01066</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 23       re[20] 1.0050720 233.24839 190.52853</span>
+<span class="r-in"><span><span class="co"># }</span></span></span>
+</code></pre></div>
     </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>

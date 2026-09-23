@@ -24,7 +24,7 @@ bootstrap confidence intervals."><script>
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.6.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -126,15 +126,22 @@ bootstrap confidence intervals.</p>
 
     <div class="section level2">
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="co"># Explore drivers of per-site estimates after fitting a model.</span></span>
-<span><span class="va">site</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
-<span>  psi_hat <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.2</span>, <span class="fl">0.5</span>, <span class="fl">0.8</span>, <span class="fl">0.4</span>, <span class="fl">0.6</span>, <span class="fl">0.3</span><span class="op">)</span>,</span>
-<span>  se      <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.05</span>, <span class="fl">0.04</span>, <span class="fl">0.06</span>, <span class="fl">0.05</span>, <span class="fl">0.03</span>, <span class="fl">0.05</span><span class="op">)</span>,</span>
-<span>  trait   <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">1.0</span>, <span class="fl">2.5</span>, <span class="fl">3.8</span>, <span class="fl">1.9</span>, <span class="fl">3.1</span>, <span class="fl">1.2</span><span class="op">)</span></span>
-<span><span class="op">)</span></span>
-<span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu">post_hoc_lm</span><span class="op">(</span><span class="va">psi_hat</span> <span class="op">~</span> <span class="va">trait</span>, data <span class="op">=</span> <span class="va">site</span>,</span>
-<span>                   weights <span class="op">=</span> <span class="fl">1</span> <span class="op">/</span> <span class="va">site</span><span class="op">$</span><span class="va">se</span><span class="op">^</span><span class="fl">2</span>, n_boot <span class="op">=</span> <span class="fl">200L</span><span class="op">)</span></span>
-<span><span class="va">fit</span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="co"># Explore drivers of per-site estimates after fitting a model.</span></span></span>
+<span class="r-in"><span><span class="va">site</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span></span>
+<span class="r-in"><span>  psi_hat <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.2</span>, <span class="fl">0.5</span>, <span class="fl">0.8</span>, <span class="fl">0.4</span>, <span class="fl">0.6</span>, <span class="fl">0.3</span><span class="op">)</span>,</span></span>
+<span class="r-in"><span>  se      <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.05</span>, <span class="fl">0.04</span>, <span class="fl">0.06</span>, <span class="fl">0.05</span>, <span class="fl">0.03</span>, <span class="fl">0.05</span><span class="op">)</span>,</span></span>
+<span class="r-in"><span>  trait   <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">1.0</span>, <span class="fl">2.5</span>, <span class="fl">3.8</span>, <span class="fl">1.9</span>, <span class="fl">3.1</span>, <span class="fl">1.2</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu">post_hoc_lm</span><span class="op">(</span><span class="va">psi_hat</span> <span class="op">~</span> <span class="va">trait</span>, data <span class="op">=</span> <span class="va">site</span>,</span></span>
+<span class="r-in"><span>                   weights <span class="op">=</span> <span class="fl">1</span> <span class="op">/</span> <span class="va">site</span><span class="op">$</span><span class="va">se</span><span class="op">^</span><span class="fl">2</span>, n_boot <span class="op">=</span> <span class="fl">200L</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">fit</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Post-hoc linear model</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> R-squared: 0.979</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>         term   estimate  std.error statistic      p.value    conf.low conf.high</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  (Intercept) 0.03719919 0.03517469  1.057556 0.3498961569 -0.02738938 0.1066280</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>        trait 0.18719050 0.01375560 13.608312 0.0001688337  0.15826786 0.2128769</span>
+</code></pre></div>
     </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>

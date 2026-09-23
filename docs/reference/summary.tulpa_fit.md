@@ -26,8 +26,13 @@ summary(object, level = 0.95, ...)
 ## Value
 
 Data frame: estimate, std.error, and lower/upper credible bounds, one
-row per fixed effect. Sampler tiers report empirical quantiles; the
-Laplace tier reports the Gaussian approximation.
+row per fixed effect, the bound columns labelled as
+[`confint.tulpa_fit()`](https://gillescolling.com/tulpa/reference/confint.tulpa_fit.md)
+labels them. Sampler tiers report empirical quantiles; the Laplace tier
+reports the Gaussian approximation, and so does any fit whose reported
+posterior is a closed-form Gaussian (expectation propagation, the
+multinomial Laplace fit), whose draws are then samples from that
+Gaussian and are not what the summary reads.
 
 On a nested-Laplace fit the estimate and standard error are the
 hyperparameter-grid-marginalized moments, and the bounds invert the

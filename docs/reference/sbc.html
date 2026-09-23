@@ -30,7 +30,7 @@ Uniform(0, 1), so the entire ECDF is the measurement (Talts et al. 2018)."><scri
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.6.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -329,21 +329,50 @@ residuals (a different quantity).</p></div>
 
     <div class="section level2">
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="co"># A conjugate normal-normal model, whose posterior is exact, so its PIT must</span></span>
-<span><span class="co"># be uniform: the harness scoring itself.</span></span>
-<span><span class="va">sim</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">seed</span><span class="op">)</span> <span class="op">{</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="va">seed</span><span class="op">)</span></span>
-<span>  <span class="va">mu</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>y <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fl">10L</span>, <span class="va">mu</span>, <span class="fl">1</span><span class="op">)</span>, theta <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>mu <span class="op">=</span> <span class="va">mu</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="op">}</span></span>
-<span><span class="va">fitter</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">d</span><span class="op">)</span> <span class="op">{</span></span>
-<span>  <span class="va">v</span> <span class="op">&lt;-</span> <span class="fl">1</span> <span class="op">/</span> <span class="op">(</span><span class="fl">1</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">d</span><span class="op">$</span><span class="va">y</span><span class="op">)</span><span class="op">)</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>exact  <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>mu <span class="op">=</span> <span class="fu"><a href="sbc_predictive.html">sbc_normal</a></span><span class="op">(</span><span class="va">v</span> <span class="op">*</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">d</span><span class="op">$</span><span class="va">y</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/MathFun.html" class="external-link">sqrt</a></span><span class="op">(</span><span class="va">v</span><span class="op">)</span><span class="op">)</span><span class="op">)</span>,</span>
-<span>       narrow <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>mu <span class="op">=</span> <span class="fu"><a href="sbc_predictive.html">sbc_normal</a></span><span class="op">(</span><span class="va">v</span> <span class="op">*</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">d</span><span class="op">$</span><span class="va">y</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/MathFun.html" class="external-link">sqrt</a></span><span class="op">(</span><span class="va">v</span><span class="op">)</span> <span class="op">/</span> <span class="fl">2</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="op">}</span></span>
-<span><span class="va">res</span> <span class="op">&lt;-</span> <span class="fu">sbc</span><span class="op">(</span><span class="st">"prior_predictive"</span>, simulator <span class="op">=</span> <span class="va">sim</span>, fitter <span class="op">=</span> <span class="va">fitter</span>, n_sim <span class="op">=</span> <span class="fl">60L</span><span class="op">)</span></span>
-<span><span class="va">res</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">res</span>, baseline <span class="op">=</span> <span class="st">"exact"</span><span class="op">)</span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="co"># A conjugate normal-normal model, whose posterior is exact, so its PIT must</span></span></span>
+<span class="r-in"><span><span class="co"># be uniform: the harness scoring itself.</span></span></span>
+<span class="r-in"><span><span class="va">sim</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">seed</span><span class="op">)</span> <span class="op">{</span></span></span>
+<span class="r-in"><span>  <span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="va">seed</span><span class="op">)</span></span></span>
+<span class="r-in"><span>  <span class="va">mu</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span></span>
+<span class="r-in"><span>  <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>y <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fl">10L</span>, <span class="va">mu</span>, <span class="fl">1</span><span class="op">)</span>, theta <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>mu <span class="op">=</span> <span class="va">mu</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="op">}</span></span></span>
+<span class="r-in"><span><span class="va">fitter</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">d</span><span class="op">)</span> <span class="op">{</span></span></span>
+<span class="r-in"><span>  <span class="va">v</span> <span class="op">&lt;-</span> <span class="fl">1</span> <span class="op">/</span> <span class="op">(</span><span class="fl">1</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">d</span><span class="op">$</span><span class="va">y</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span>  <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>exact  <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>mu <span class="op">=</span> <span class="fu"><a href="sbc_predictive.html">sbc_normal</a></span><span class="op">(</span><span class="va">v</span> <span class="op">*</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">d</span><span class="op">$</span><span class="va">y</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/MathFun.html" class="external-link">sqrt</a></span><span class="op">(</span><span class="va">v</span><span class="op">)</span><span class="op">)</span><span class="op">)</span>,</span></span>
+<span class="r-in"><span>       narrow <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>mu <span class="op">=</span> <span class="fu"><a href="sbc_predictive.html">sbc_normal</a></span><span class="op">(</span><span class="va">v</span> <span class="op">*</span> <span class="fu"><a href="https://rdrr.io/r/base/sum.html" class="external-link">sum</a></span><span class="op">(</span><span class="va">d</span><span class="op">$</span><span class="va">y</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/MathFun.html" class="external-link">sqrt</a></span><span class="op">(</span><span class="va">v</span><span class="op">)</span> <span class="op">/</span> <span class="fl">2</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="op">}</span></span></span>
+<span class="r-in"><span><span class="va">res</span> <span class="op">&lt;-</span> <span class="fu">sbc</span><span class="op">(</span><span class="st">"prior_predictive"</span>, simulator <span class="op">=</span> <span class="va">sim</span>, fitter <span class="op">=</span> <span class="va">fitter</span>, n_sim <span class="op">=</span> <span class="fl">60L</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">res</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Simulation-based calibration -- prior_predictive, 60 simulations</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   band: 0.95 simultaneous (equal local levels, exact crossing probability)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   CRPS: proper posterior score</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   proper prior: verified over 10 probed simulations</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>     arm quantity  n     ks inside   p_unif inside_folded p_folded    crps</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   exact       mu 60 0.1239   TRUE 1.72e-01          TRUE    0.466 0.19496</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  narrow       mu 60 0.2662  FALSE 1.22e-15         FALSE    0.000 0.21762</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  crps_se</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   0.0166</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   0.0215</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1 of 2 (arm, quantity) reads inside the band; outside the band: narrow/mu.</span>
+<span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">res</span>, baseline <span class="op">=</span> <span class="st">"exact"</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Simulation-based calibration -- prior_predictive, 60 simulations</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   CRPS: proper posterior score</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>     arm quantity  n     ks inside   p_unif inside_folded p_folded    crps</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   exact       mu 60 0.1239   TRUE 1.72e-01          TRUE    0.466 0.19496</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  narrow       mu 60 0.2662  FALSE 1.22e-15         FALSE    0.000 0.21762</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  crps_se</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   0.0166</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   0.0215</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Paired CRPS against arm 'exact' (negative delta = better)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>  quantity    arm  n   delta   t worse_frac p_sign</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>        mu narrow 60 0.02267 4.3      0.633 0.0519</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   delta with its t is the proper-score verdict; p_sign is a more</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   powerful detector of a difference but is not itself proper.</span>
+</code></pre></div>
     </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>

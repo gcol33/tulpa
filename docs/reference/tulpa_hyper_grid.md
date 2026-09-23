@@ -108,8 +108,9 @@ tulpa_hyper_grid(
   - `adaptive_grid` (`FALSE`) – run the boundary / interior refinement
     pass on every axis whose spec has `refinable = TRUE`. New cells are
     appended along the refining axis paired with the boundary modal
-    cell's other-axis values, carrying a marginal-scale calibration so
-    they contribute on the right scale.
+    cell's other-axis values. Each new cell is measured by the part of
+    its row's base cells it takes over, so the grid integrates the same
+    prior measure with a finer resolution where the mass is.
 
   - `adaptive_grid_edge_thresh` (`0.02`) – per-axis trigger threshold.
 
@@ -117,9 +118,11 @@ tulpa_hyper_grid(
 
   - `var_of_means_consistency` (`FALSE`) – run a post-integration
     consistency pass: for refinable axes whose marginal has collapsed
-    onto too few nodes to carry a spread, append Laplace-guided slice
-    points at `theta_mean +/- {0.7, 1.5} * sd` pinned at the modal cell,
-    `sd` being the parabola at the modal node. One kernel call per axis.
+    onto too few nodes to carry a spread, bisect the gaps between
+    adjacent nodes that carry the axis's mass, with slice points in the
+    modal cell's row, and repeat until the axis reaches
+    `var_of_means_min_ess` or has taken `.nl_diag("axis_refine_nodes")`
+    new nodes. One kernel call per round.
 
   - `var_of_means_min_ess` (`.nl_diag("axis_sd_ess")`) – the quadrature
     effective sample size an axis marginal has to reach for the pass to

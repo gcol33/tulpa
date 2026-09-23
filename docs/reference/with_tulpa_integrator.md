@@ -40,5 +40,7 @@ The value of `expr`.
 
 ``` r
 with_tulpa_integrator("yoshida4", tulpa_integrator())
+#> [1] "yoshida4"
 tulpa_integrator()   # unchanged
+#> [1] "leapfrog"
 ```

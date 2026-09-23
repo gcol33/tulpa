@@ -2,9 +2,8 @@
 
 The dispatch layer and the fitters that return generic-accessor-facing
 objects route their return value through this helper (some
-special-purpose fitters – the logpost samplers, tulpa_ep, the
-categorical drivers – still stamp their class by hand), so a
-directly-called fitter and a
+special-purpose fitters – tulpa_ep, the categorical drivers – still
+stamp their class by hand), so a directly-called fitter and a
 [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md)-dispatched
 one yield the same enriched object: the `tulpa_fit` class (so the
 generic S3 methods – `coef` / `summary` / `vcov` / `confint` / `tidy` /
@@ -27,7 +26,8 @@ idempotent under
   n_fixed = NULL,
   fixed_names = NULL,
   param_names = NULL,
-  extra_class = NULL
+  extra_class = NULL,
+  data = NULL
 )
 ```
 
@@ -50,10 +50,29 @@ idempotent under
 - n_fixed, fixed_names, param_names:
 
   Fixed-effect layout, each filled only when the fitter left it unset.
+  An unnamed `means` vector of the matching length is named by
+  `param_names`.
 
 - extra_class:
 
   Subclass(es) to prepend before `tulpa_fit`.
+
+- data:
+
+  Observation-level fields the fitter was called with –
+  `list(y=, n_trials=, model_matrix=, family=, offset=, phi=, phi2=)` –
+  stamped onto the fit so a directly-called fitter carries the same
+  [`nobs()`](https://rdrr.io/r/stats/nobs.html) /
+  [`fitted()`](https://rdrr.io/r/stats/fitted.values.html) /
+  [`predict()`](https://rdrr.io/r/stats/predict.html) /
+  [`posterior_predict()`](https://gillescolling.com/tulpa/reference/posterior_predict.md)
+  surface a
+  [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md)-dispatched
+  one does (gcol33/tulpa#781). Any subset may be supplied; each entry
+  fills only when the fitter did not already set the matching field, so
+  a fitter that already stamped a richer value (e.g. the full design
+  bundle [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md)
+  attaches post-dispatch) wins.
 
 ## Value
 

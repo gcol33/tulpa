@@ -35,7 +35,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.6.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -45,7 +45,7 @@
     <div id="navbar" class="collapse navbar-collapse ms-3">
       <ul class="navbar-nav me-auto">
 <li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
-<li class="nav-item dropdown">
+<li class="active nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
 <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpoint and resume long fits</a></li>
@@ -143,14 +143,7 @@ joint posterior, so a skewed component is not collapsed to its mode.</p>
 <div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="op">(</span><span class="fl">1</span> <span class="op">+</span> <span class="va">x</span> <span class="op">|</span> <span class="va">g</span><span class="op">)</span>, data <span class="op">=</span> <span class="va">d</span>, family <span class="op">=</span> <span class="st">"poisson"</span>,</span>
 <span>             mode <span class="op">=</span> <span class="st">"laplace"</span><span class="op">)</span></span>
-<span><span class="va">fit</span><span class="op">$</span><span class="va">posterior</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"parameter"</span>, <span class="st">"median"</span>, <span class="st">"ci_lo"</span>, <span class="st">"ci_hi"</span><span class="op">)</span><span class="op">]</span></span>
-<span><span class="co">#&gt;   parameter    median       ci_lo     ci_hi</span></span>
-<span><span class="co">#&gt; 1   sigma_1 0.6681515  0.53609933 0.8327308</span></span>
-<span><span class="co">#&gt; 2   sigma_2 0.5463997  0.43509673 0.6861753</span></span>
-<span><span class="co">#&gt; 3    rho_12 0.2867315 -0.04083365 0.5586434</span></span>
-<span><span class="co">#&gt; 4  Sigma_11 0.4464264  0.28740249 0.6934405</span></span>
-<span><span class="co">#&gt; 5  Sigma_12 0.1031378 -0.01325100 0.2195266</span></span>
-<span><span class="co">#&gt; 6  Sigma_22 0.2985526  0.18930917 0.4708366</span></span></code></pre></div>
+<span><span class="va">fit</span><span class="op">$</span><span class="va">posterior</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"parameter"</span>, <span class="st">"median"</span>, <span class="st">"ci_lo"</span>, <span class="st">"ci_hi"</span><span class="op">)</span><span class="op">]</span></span></code></pre></div>
 <p>The posterior medians track the truth (<code>sigma_1 = 0.7</code>,
 <code>sigma_2 = 0.5</code>, <code>rho_12 = 0.4</code>), each with a
 credible interval rather than a bare number.</p>

@@ -78,15 +78,10 @@ fit <- tulpa_nested_laplace_joint(
   responses = resp,
   prior     = prior,
   control   = list(k_samples = 400L))
-#> [nested-laplace-joint] 1/7 cells (14%) | elapsed 0s | ETA >=0s | 0.00s/cells
-#> [nested-laplace-joint] 7/7 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
 
 c(pareto_k = round(fit$pareto_k, 3),
   is_ess   = round(fit$pareto_k_is_ess, 1))
-#> pareto_k   is_ess 
-#>   -1.752  366.900
 fit$pareto_k_scope
-#> [1] "outer (hyperparameter) Gaussian proposal"
 ```
 
 The scope string names what was scored: the Gaussian proposal the
@@ -124,8 +119,6 @@ the first thing to read.
 band <- cut(fit$pareto_k, c(-Inf, 0.5, 0.7, Inf),
             labels = c("good", "ok", "unreliable"))
 band
-#> [1] good
-#> Levels: good ok unreliable
 ```
 
 A negative k-hat, as in this fit, sits in the good band with room to
@@ -152,13 +145,6 @@ rule applies directly.
 k_usable <- function(S) pmin(1 - 1 / log10(S), 0.7)
 S_grid   <- c(100, 200, 400, 1000, 2154, 4000)
 data.frame(draws = S_grid, usable_boundary = round(k_usable(S_grid), 3))
-#>   draws usable_boundary
-#> 1   100           0.500
-#> 2   200           0.565
-#> 3   400           0.616
-#> 4  1000           0.667
-#> 5  2154           0.700
-#> 6  4000           0.700
 ```
 
 A few hundred draws place the boundary nearer `0.6` than `0.7`, and it
@@ -194,10 +180,7 @@ inside a single reliability band.
 c(k       = round(fit$pareto_k, 3),
   ci_low  = round(fit$pareto_k_ci_low, 3),
   ci_high = round(fit$pareto_k_ci_high, 3))
-#>       k  ci_low ci_high 
-#>  -1.752  -2.079  -1.348
 fit$pareto_k_band_confident
-#> [1] TRUE
 ```
 
 `pareto_k_band_confident` is the number to act on, not the point
@@ -227,15 +210,11 @@ fit_hi <- tulpa_nested_laplace_joint(
   responses = resp,
   prior     = prior,
   control   = list(k_samples = 1500L))
-#> [nested-laplace-joint] 1/7 cells (14%) | elapsed 0s | ETA >=0s | 0.00s/cells
-#> [nested-laplace-joint] 7/7 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
 
 c(k              = round(fit_hi$pareto_k, 3),
   ci_low         = round(fit_hi$pareto_k_ci_low, 3),
   ci_high        = round(fit_hi$pareto_k_ci_high, 3),
   band_confident = fit_hi$pareto_k_band_confident)
-#>              k         ci_low        ci_high band_confident 
-#>         -1.698         -1.960         -1.434          1.000
 ```
 
 Raising `k_samples` is the lever for both halves of the reading at once.
@@ -295,17 +274,12 @@ fit_q <- tulpa_nested_laplace_joint(
   responses = resp,
   prior     = prior,
   control   = list(k_quality = "good"))
-#> [nested-laplace-joint] 1/7 cells (14%) | elapsed 0s | ETA >=0s | 0.00s/cells
-#> [nested-laplace-joint] 7/7 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
 
 c(requested = fit_q$k_quality_requested,
   reached   = fit_q$k_quality_reached,
   best      = fit_q$k_quality_best,
   draws     = fit_q$diagnose_draws)
-#> requested   reached      best     draws 
-#>    "good"    "TRUE"    "good"    "2000"
 fit_q$k_quality_reason
-#> [1] "requested band reached"
 ```
 
 `k_quality = "good"` requires the k-hat interval to sit confidently in
@@ -353,9 +327,7 @@ fixed-effects coefficients.
 ``` r
 
 fit$inner_skew
-#> [1]  2.186345e-02  1.040060e-01  1.061096e-05 -9.710510e-06
 fit$inner_skew_idx
-#> [1] 1 2 3 4
 ```
 
 The two occupancy-arm coefficients (indices 1-2, binomial) carry a small
@@ -371,8 +343,6 @@ k-hat uses:
 
 cut(abs(fit$inner_skew), c(-Inf, 0.5, 1.0, Inf),
     labels = c("good", "ok", "unreliable"))
-#> [1] good good good good
-#> Levels: good ok unreliable
 ```
 
 Reading the two numbers together is the point. An outer k-hat past its
@@ -404,13 +374,11 @@ probed indices past the default fixed-effects set (1-based, into the
 - [`tulpa_psis()`](https://gillescolling.com/tulpa/reference/tulpa_psis.md)
   is the native Pareto-smoothed importance-sampling core the diagnostic
   is built on, callable directly on a vector of log importance ratios.
-- [`mcmc_diagnostics()`](https://gillescolling.com/tulpa/reference/mcmc_diagnostics.md)
-  is the chain-fit counterpart, the Rhat and ESS surface for sampled
-  fits.
-- [`?laplace_diagnostics`](https://gillescolling.com/tulpa/reference/laplace_diagnostics.md)
-  documents `gamma_3` and the combined whole-fit verdict
-  [`diagnostics()`](https://gillescolling.com/tulpa/reference/diagnostics.md)
-  reports when a fit carries posterior draws.
+- [`diagnostics()`](https://gillescolling.com/tulpa/reference/diagnostics.md)
+  routes a chain fit to the Rhat and ESS surface for sampled fits, and
+  an i.i.d. approximation fit to this reliability table; see its
+  “Approximation reliability” sections for `gamma_3` and the combined
+  whole-fit verdict.
 - The inference-modes vignette runs the reliability ladder from a
   Laplace fit through an exact debias, and shows the k-hat on a
   random-effect covariance fit.

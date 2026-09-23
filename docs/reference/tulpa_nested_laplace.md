@@ -35,7 +35,9 @@ tulpa_nested_laplace(
   sigma_re = 1,
   family = "binomial",
   phi = 1,
+  offset = NULL,
   likelihood = NULL,
+  hyperprior = c("proper", "flat"),
   control = list()
 )
 ```
@@ -135,6 +137,18 @@ tulpa_nested_laplace(
   it. The compiled kernels parameterize the two variance families by the
   residual SD and are handed `sqrt(phi)` at the boundary.
 
+  Defaulted, it conditions at 1 and says so with a warning, since for a
+  family that reads a dispersion that is a modelling choice rather than
+  a neutral value. `fit$phi_estimated` records whether the value on the
+  fit was estimated or conditioned on.
+
+- offset:
+
+  Optional per-observation offset added to the linear predictor (length
+  `length(y)`), as an [`offset()`](https://rdrr.io/r/stats/offset.html)
+  term in a model formula. Every single- and multi-block kernel carries
+  it, and `fitted_eta` includes it.
+
 - likelihood:
 
   Optional model-supplied likelihood, replacing the built-in `family`.
@@ -147,6 +161,31 @@ tulpa_nested_laplace(
   marginalized single-season occupancy likelihood (a scaled Bernoulli,
   with the latent occupancy state integrated out) through this.
   Multi-block `prior` only. Default `NULL` (use `family`).
+
+- hyperprior:
+
+  The prior an outer hyperparameter axis carries when the call states no
+  density for it, `"proper"` (default) or `"flat"`. `"proper"` folds a
+  normalised density on the axis's integration coordinate into
+  `log_marginal`: the PC prior `P(sigma > 3) = 0.01` on a standard
+  deviation, variance or precision axis, the PC range prior at 0.2 times
+  the coordinates' bounding-box diagonal on a range or lengthscale axis,
+  a uniform on a bounded axis, and the PC + LKJ prior over a
+  free-covariance block. An axis with no sourced density is named in
+  `log_hyperprior_declined`. `"flat"` folds no density of the engine's
+  own, so such an axis is integrated under its cell measure alone, is
+  named in `log_hyperprior_declined` as `"flat_hyperprior"`, and the
+  fit's `log_evidence` declines with `"improper_hyperprior"`. A density
+  the call states – a `prior_*` argument, a block's `rho_prior`,
+  `prior_range` or `prior_sigma`, the copy coefficient's slab, a
+  [`tgmrf()`](https://gillescolling.com/tulpa/reference/tgmrf.md)
+  block's own prior – applies under either choice. The same two choices,
+  under the same names, are offered by
+  [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md),
+  [`tulpa_eb()`](https://gillescolling.com/tulpa/reference/tulpa_eb.md),
+  [`tulpa_re_cov_nested()`](https://gillescolling.com/tulpa/reference/tulpa_re_cov_nested.md)
+  and
+  [`fit_spde()`](https://gillescolling.com/tulpa/reference/fit_spde.md).
 
 - control:
 
@@ -163,7 +202,7 @@ tulpa_nested_laplace(
   - `x_init` (`NULL`) – warm-start for the first grid point's inner
     solve.
 
-  - `keep_grid_hessians` (`FALSE`) – when `TRUE`, retain per-grid-point
+  - `keep_grid_hessians` (`TRUE`) – when `TRUE`, retain per-grid-point
     fixed-effects marginal Hessian \\H\_\beta\\ and mode \\\hat{\beta}\\
     on the return list as `$grid_hessians` (list of dense \\p\times p\\
     matrices) and `$grid_modes` (list of length-\\p\\ vectors). Used
@@ -291,19 +330,22 @@ tulpa_nested_laplace(
     list overrides `band` (the inner-reliability floor a coordinate is
     selected at, default `"ok"`), `idx` (pin the corrected set
     explicitly, skipping the selector), `closure` / `closure_max` (grow
-    the set by strongly coupled precision-graph neighbours – declined on
-    this backend, which retains no joint precision), the sampler budget
-    `n_iter` / `warmup` / `thin`, and `n_draws`. The selector reads the
-    per-index bands `diagnose_skew` already attached, so it costs no
-    extra solve; the correction itself re-runs the settled grid once
-    with the sampler on, and the fit then reports `$draws` – the
-    per-cell Metropolis sample for the selected coordinates, the rest
-    from the Gaussian conditional given them – instead of the
-    Gaussian-mixture moments. An EMPTY selection leaves the fit
-    bit-for-bit identical to the plain path. `$subspace_debias` records
-    what was selected, the bands it was read from, and the per-cell
-    acceptance rate. Requesting it turns `keep_grid_hessians` on, since
-    the recombination reads exactly those per-cell pieces.
+    the set by strongly coupled precision-graph neighbours: a coordinate
+    strongly coupled to a member of the corrected set and left out of it
+    is carried linearly, which is the error the correction removes, so
+    requesting the closure also retains the modal cell's joint precision
+    for the selector to read), the sampler budget `n_iter` / `warmup` /
+    `thin`, and `n_draws`. The selector reads the per-index bands
+    `diagnose_skew` already attached, so it costs no extra solve; the
+    correction itself re-runs the settled grid once with the sampler on,
+    and the fit then reports `$draws` – the per-cell Metropolis sample
+    for the selected coordinates, the rest from the Gaussian conditional
+    given them – instead of the Gaussian-mixture moments. An EMPTY
+    selection leaves the fit bit-for-bit identical to the plain path.
+    `$subspace_debias` records what was selected, the bands it was read
+    from, and the per-cell acceptance rate. Requesting it turns
+    `keep_grid_hessians` on, since the recombination reads exactly those
+    per-cell pieces.
 
   - `cila` (`FALSE`) – corrected integrated Laplace, the second
     inner-layer debias (after Lai, Margossian and Sheldon,
@@ -372,11 +414,24 @@ tulpa_nested_laplace(
     tensor reference grid (4 axes at 7 levels is 2401 cells) raises it
     here.
 
-  - `prune` (`FALSE`), `prune_tol` (`1e-3`), `screen_iters` (`5L`) –
-    opt-in cheap-pass screening of the outer grid. When `prune = TRUE`,
-    the driver first sweeps the lattice running a `screen_iters`-step
-    inner Newton per cell, each warm-started from the previous screened
-    cell's quasi-mode, computes a screening Laplace log-marginal,
+  - `checkpoint` (`list(path =, resume =)`) – grid-cell checkpoint /
+    resume. Each solved outer cell is appended to `path`, keyed by its
+    hyperparameter coordinate; `resume = TRUE` loads the finished cells
+    and solves only the rest, and a fingerprint mismatch (different
+    data, settings or grid) errors rather than resuming onto a stale
+    result. See `?tulpa_nested_laplace` "Checkpoint / resume".
+
+  - `progress`, `progress.every`, `progress.file`, `progress.throttle` –
+    the outer-grid progress reporter: whether to print, how often (in
+    cells), where to, and the minimum seconds between lines.
+
+  - `prune` (`FALSE`), `prune_tol` (`1e-3`), `screen_iters`
+    (`.NL_SCREEN$iters`, 2 – the doc said 5 while the engine read 2,
+    which is what gcol33/tulpa#640 measured the depth down to) – opt-in
+    cheap-pass screening of the outer grid. When `prune = TRUE`, the
+    driver first sweeps the lattice running a `screen_iters`-step inner
+    Newton per cell, each warm-started from the previous screened cell's
+    quasi-mode, computes a screening Laplace log-marginal,
     softmax-normalises it, and skips the full inner Newton on every cell
     whose screened weight is below `prune_tol`. The neighbour warm-start
     keeps each cheap mode near its cell's own mode, so the cheap ranking
@@ -423,9 +478,11 @@ tulpa_nested_laplace(
     back-solve per distinct loading vector per cell, which on a design
     with few repeated rows is the dominant cost of a cell, so a caller
     reading only `fitted_eta` or the coefficient summaries sets `FALSE`
-    and the fit then carries no `fitted_eta_var`. Declared by the
-    single-block kernels only; a multi-block prior refuses `FALSE`
-    rather than accepting it and ignoring it.
+    and the fit then carries no `fitted_eta_var`. Every single-block
+    field reports it, the NNGP, HSGP, SPDE and spatiotemporal fields
+    included, each read off its cell's own precision at the mode; a
+    multi-block prior refuses `FALSE` rather than accepting it and
+    ignoring it.
 
 ## Value
 
@@ -507,5 +564,6 @@ prior <- list(type = "icar", n_spatial_units = S, spatial_idx = idx,
 fit <- tulpa_nested_laplace(y, rep(1L, n), cbind(1, x), prior = prior,
                             family = "binomial")
 fit$theta_mean        # marginalized ICAR precision
+#> [1] 5.597209
 # }
 ```

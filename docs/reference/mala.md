@@ -24,6 +24,7 @@ mala(
   target_accept = 0.574,
   mass_diag = NULL,
   thin = 1L,
+  seed = NULL,
   verbose = FALSE
 )
 ```
@@ -77,6 +78,12 @@ mala(
 
   Keep every `thin`-th post-warmup sample (default 1).
 
+- seed:
+
+  Optional integer RNG seed. Scoped to this call: the caller's
+  `.Random.seed` is restored on exit, so two calls with the same `seed`
+  give identical draws regardless of the surrounding RNG stream.
+
 - verbose:
 
   Print acceptance + step-size summary at end (default FALSE).
@@ -124,5 +131,7 @@ log_post <- function(t) -0.5 * sum((t - c(1, 2))^2)
 grad <- function(t) -(t - c(1, 2))
 fit <- mala(log_post, grad, init = c(0, 0), n_iter = 1000)
 colMeans(fit$draws)  # near c(1, 2)
+#> [1] 1.018460 2.046022
 fit$mean_accept      # should adapt toward 0.574
+#> [1] 0.66
 ```

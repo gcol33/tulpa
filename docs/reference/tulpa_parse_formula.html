@@ -24,7 +24,7 @@ pattern matching on bar terms – no string manipulation."><script>
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.6.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -101,10 +101,14 @@ original formula. Empty list when no <code>latent(...)</code> terms are present.
 
     <div class="section level2">
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="va">pf</span> <span class="op">&lt;-</span> <span class="fu">tulpa_parse_formula</span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x1</span> <span class="op">+</span> <span class="va">x2</span> <span class="op">+</span> <span class="op">(</span><span class="fl">1</span> <span class="op">|</span> <span class="va">group</span><span class="op">)</span> <span class="op">+</span> <span class="op">(</span><span class="va">x1</span> <span class="op">||</span> <span class="va">site</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="va">pf</span><span class="op">$</span><span class="va">response</span>        <span class="co"># "y"</span></span>
-<span><span class="va">pf</span><span class="op">$</span><span class="va">fixed_formula</span>   <span class="co"># y ~ x1 + x2</span></span>
-<span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="va">pf</span> <span class="op">&lt;-</span> <span class="fu">tulpa_parse_formula</span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x1</span> <span class="op">+</span> <span class="va">x2</span> <span class="op">+</span> <span class="op">(</span><span class="fl">1</span> <span class="op">|</span> <span class="va">group</span><span class="op">)</span> <span class="op">+</span> <span class="op">(</span><span class="va">x1</span> <span class="op">||</span> <span class="va">site</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">pf</span><span class="op">$</span><span class="va">response</span>        <span class="co"># "y"</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> [1] "y"</span>
+<span class="r-in"><span><span class="va">pf</span><span class="op">$</span><span class="va">fixed_formula</span>   <span class="co"># y ~ x1 + x2</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> y ~ x1 + x2</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> &lt;environment: 0x000002090fa28858&gt;</span>
+<span class="r-in"><span></span></span>
+</code></pre></div>
     </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>

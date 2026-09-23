@@ -13,7 +13,14 @@ response is treated as continuous and the PIT is the draw-averaged CDF.
 ## Usage
 
 ``` r
-tulpa_pit(cdf, cdf_lower = NULL, jitter = TRUE)
+tulpa_pit(
+  cdf,
+  cdf_lower = NULL,
+  jitter = TRUE,
+  log_lik = NULL,
+  tail_points = NULL,
+  n_threads = 1L
+)
 ```
 
 ## Arguments
@@ -35,10 +42,40 @@ tulpa_pit(cdf, cdf_lower = NULL, jitter = TRUE)
   jitter to break ties from a discretized CDF; ignored when `cdf_lower`
   is supplied (the interpolation already randomizes).
 
+- log_lik:
+
+  Optional `[n_draws x n_obs]` matrix of the pointwise log-likelihood at
+  each draw. When supplied, the PIT is the **leave-one-out** PIT: `cdf`
+  / `cdf_lower` are reweighted by that observation's PSIS leave-one-out
+  weights instead of being column-averaged.
+
+- tail_points:
+
+  Optional override for the PSIS tail size used by the leave-one-out
+  weighting (see
+  [`tulpa_psis()`](https://gillescolling.com/tulpa/reference/tulpa_psis.md));
+  `NULL` uses the automatic rule. Ignored unless `log_lik` is supplied.
+
+- n_threads:
+
+  Number of threads for the leave-one-out weighting (one observation per
+  thread). Ignored unless `log_lik` is supplied.
+
 ## Value
 
 Numeric vector of length `n_obs` of PIT values in `[0, 1]`.
 
+## Details
+
+Supplying `log_lik` switches to the **leave-one-out** PIT (as in INLA's
+`cpo$pit` or `loo::psis_loo()`'s LOO-PIT): each observation's CDF limits
+are averaged over draws with PSIS leave-one-out weights (from that
+observation's own pointwise log-likelihood) instead of equal weights, so
+the PIT does not use the observation to predict itself. A column whose
+importance ratio is not all finite falls back to the equal-weight
+average for that observation.
+
 ## See also
 
-[`tulpa_criteria()`](https://gillescolling.com/tulpa/reference/tulpa_criteria.md)
+[`tulpa_criteria()`](https://gillescolling.com/tulpa/reference/tulpa_criteria.md),
+[`tulpa_psis()`](https://gillescolling.com/tulpa/reference/tulpa_psis.md)

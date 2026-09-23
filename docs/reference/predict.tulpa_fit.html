@@ -13,7 +13,10 @@ interpolated by the NNGP conditional mean at each new location's nearest
 training locations. The HSGP and GP/NNGP fields are marginalised over the
 hyperparameter grid (not plugged in at the posterior mean). Ordinary random
 effects are held at zero (population level); add group effects from ranef()
-when needed."><meta property="og:description" content="Prediction of the linear predictor at newdata, on the link or response
+when needed. An areal (ICAR / BYM2 / CAR) or temporal (RW1 / RW2 / AR1) field
+is held at zero in the same way, at the training design too; the in-sample
+linear predictor with every fitted component is what posterior_predict()
+draws and what compare_models(criterion = &quot;waic&quot;) / &quot;loo&quot; score."><meta property="og:description" content="Prediction of the linear predictor at newdata, on the link or response
 scale. The fixed-effect part is X beta with credible bounds from the
 fixed-effect covariance (vcov()). For a fit carrying a continuous spatial
 field, the posterior-mean field is interpolated (kriged) to the newdata
@@ -27,7 +30,10 @@ interpolated by the NNGP conditional mean at each new location's nearest
 training locations. The HSGP and GP/NNGP fields are marginalised over the
 hyperparameter grid (not plugged in at the posterior mean). Ordinary random
 effects are held at zero (population level); add group effects from ranef()
-when needed."><script>
+when needed. An areal (ICAR / BYM2 / CAR) or temporal (RW1 / RW2 / AR1) field
+is held at zero in the same way, at the training design too; the in-sample
+linear predictor with every fitted component is what posterior_predict()
+draws and what compare_models(criterion = &quot;waic&quot;) / &quot;loo&quot; score."><script>
 (function () {
   var D = String.fromCharCode(36);
   window.MathJax = {
@@ -48,7 +54,7 @@ when needed."><script>
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.6.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -105,7 +111,10 @@ interpolated by the NNGP conditional mean at each new location's nearest
 training locations. The HSGP and GP/NNGP fields are marginalised over the
 hyperparameter grid (not plugged in at the posterior mean). Ordinary random
 effects are held at zero (population level); add group effects from <code><a href="ranef.html">ranef()</a></code>
-when needed.</p>
+when needed. An areal (ICAR / BYM2 / CAR) or temporal (RW1 / RW2 / AR1) field
+is held at zero in the same way, at the training design too; the in-sample
+linear predictor with every fitted component is what <code><a href="posterior_predict.html">posterior_predict()</a></code>
+draws and what <code>compare_models(criterion = "waic")</code> / <code>"loo"</code> score.</p>
     </div>
 
     <div class="section level2">
@@ -137,11 +146,14 @@ training design (requires <code>$model_matrix</code>).</p></dd>
 
 
 <dt id="arg-type">type<a class="anchor" aria-label="anchor" href="#arg-type"></a></dt>
-<dd><p><code>"link"</code> (linear predictor) or <code>"response"</code> (mean scale). For a
-binomial fit the <code>"response"</code> scale here is the per-trial success
-probability <code>g^{-1}(eta)</code> (there is no <code>n_trials</code> at <code>newdata</code>); this
-differs from <code><a href="https://rdrr.io/r/stats/fitted.values.html" class="external-link">fitted()</a></code>, which returns the trial-scaled expected count at
-the training design.</p></dd>
+<dd><p><code>"link"</code> (linear predictor) or <code>"response"</code> (mean scale,
+<code>E[y]</code>). For a binomial fit the <code>"response"</code> scale here is the per-trial
+success probability <code>g^{-1}(eta)</code> (there is no <code>n_trials</code> at <code>newdata</code>);
+this differs from <code><a href="https://rdrr.io/r/stats/fitted.values.html" class="external-link">fitted()</a></code>, which returns the trial-scaled expected
+count at the training design. On a zero-inflated fit (<code>ziformula</code>) the
+<code>"link"</code> scale is the count predictor and the <code>"response"</code> scale is the
+mixture mean <code>(1 - pi) E[y | eta]</code>, <code>pi = plogis(X_zi beta_zi)</code>, with the
+zero-inflation design rebuilt from the fit's <code>ziformula</code> at <code>newdata</code>.</p></dd>
 
 
 <dt id="arg-se-fit">se.fit<a class="anchor" aria-label="anchor" href="#arg-se-fit"></a></dt>
@@ -151,7 +163,10 @@ credible bounds. With an included SPDE field the SE propagates the joint
 – including the cross term – conditional on <code>(range, sigma)</code> (a nested
 fit's hyperparameter-grid spread is not propagated, so the bound is
 mildly optimistic when that posterior is wide). Integer-nu, no-RE SPDE
-fits only; other layouts decline with an explanation.</p></dd>
+fits only; other layouts decline with an explanation. On a zero-inflated
+fit <code>se.fit</code> is the count predictor's, and the response-scale bounds are
+quantiles of the mixture mean over draws of the count and zero-inflation
+coefficients jointly (pinned, so repeated calls agree).</p></dd>
 
 
 <dt id="arg-level">level<a class="anchor" aria-label="anchor" href="#arg-level"></a></dt>

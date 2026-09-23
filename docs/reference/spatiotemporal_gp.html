@@ -3,13 +3,19 @@
 Unlike separable models where the covariance factors as \(C_s \otimes C_t\),
 non-separable models allow for direct space-time interaction in the covariance.
 No tulpa backend fits a joint space-time covariance, so this constructor
-errors. A spatial GP alongside a temporal field is fitted by
-tulpa(spatial = spatial_gp(...), temporal = ...)."><meta property="og:description" content="Specify a non-separable Gaussian Process for spatiotemporal effects.
+errors. A spatial GP alongside a temporal field is fitted directly by
+fit_st_nested() (spatial_type = &quot;hsgp&quot; or &quot;nngp&quot;); tulpa()'s
+formula front door does not yet route a continuous spatial field together
+with a temporal field (it does for an areal one – icar/bym2/car_proper –
+via tulpa(spatial = , temporal = ); gcol33/tulpa#812)."><meta property="og:description" content="Specify a non-separable Gaussian Process for spatiotemporal effects.
 Unlike separable models where the covariance factors as \(C_s \otimes C_t\),
 non-separable models allow for direct space-time interaction in the covariance.
 No tulpa backend fits a joint space-time covariance, so this constructor
-errors. A spatial GP alongside a temporal field is fitted by
-tulpa(spatial = spatial_gp(...), temporal = ...)."><script>
+errors. A spatial GP alongside a temporal field is fitted directly by
+fit_st_nested() (spatial_type = &quot;hsgp&quot; or &quot;nngp&quot;); tulpa()'s
+formula front door does not yet route a continuous spatial field together
+with a temporal field (it does for an areal one – icar/bym2/car_proper –
+via tulpa(spatial = , temporal = ); gcol33/tulpa#812)."><script>
 (function () {
   var D = String.fromCharCode(36);
   window.MathJax = {
@@ -30,7 +36,7 @@ tulpa(spatial = spatial_gp(...), temporal = ...)."><script>
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.6.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -77,8 +83,11 @@ tulpa(spatial = spatial_gp(...), temporal = ...)."><script>
 Unlike separable models where the covariance factors as \(C_s \otimes C_t\),
 non-separable models allow for direct space-time interaction in the covariance.</p>
 <p>No tulpa backend fits a joint space-time covariance, so this constructor
-errors. A spatial GP alongside a temporal field is fitted by
-<code>tulpa(spatial = spatial_gp(...), temporal = ...)</code>.</p>
+errors. A spatial GP alongside a temporal field is fitted directly by
+<code><a href="fit_st_nested.html">fit_st_nested()</a></code> (<code>spatial_type = "hsgp"</code> or <code>"nngp"</code>); <code><a href="tulpa.html">tulpa()</a></code>'s
+formula front door does not yet route a continuous spatial field together
+with a temporal field (it does for an areal one – icar/bym2/car_proper –
+via <code>tulpa(spatial = , temporal = )</code>; gcol33/tulpa#812).</p>
     </div>
 
     <div class="section level2">

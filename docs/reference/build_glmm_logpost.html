@@ -20,7 +20,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.6.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -108,7 +108,11 @@ every door: for <code>gaussian</code> / <code>lognormal</code> this is the resid
 (the SD is <code>sqrt(phi)</code>), for <code>neg_binomial_2</code> the size, <code>gamma</code> the
 shape, <code>beta</code> the precision, <code>t</code> the scale; <code>binomial</code> and <code>poisson</code>
 ignore it. The compiled kernels parameterize the two variance families by
-the residual SD and are handed <code>sqrt(phi)</code> at the boundary.</p></dd>
+the residual SD and are handed <code>sqrt(phi)</code> at the boundary.</p>
+<p>Defaulted, it conditions at 1 and says so with a warning, since for a
+family that reads a dispersion that is a modelling choice rather than a
+neutral value. <code>fit$phi_estimated</code> records whether the value on the fit
+was estimated or conditioned on.</p></dd>
 
 
 <dt id="arg-beta-prior">beta_prior<a class="anchor" aria-label="anchor" href="#arg-beta-prior"></a></dt>

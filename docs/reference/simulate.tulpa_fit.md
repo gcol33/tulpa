@@ -3,7 +3,10 @@
 Base-R alias for
 [`posterior_predict()`](https://gillescolling.com/tulpa/reference/posterior_predict.md):
 each simulation is one posterior predictive replicate at the training
-data.
+data. A categorical fit
+([`tulpa_multinomial()`](https://gillescolling.com/tulpa/reference/tulpa_multinomial.md),
+[`tulpa_ordinal()`](https://gillescolling.com/tulpa/reference/tulpa_ordinal.md))
+simulates factor columns carrying the response levels.
 
 ## Usage
 
@@ -34,4 +37,7 @@ simulate(object, nsim = 1, seed = NULL, ...)
 
 A data frame with `nsim` columns (`sim_1`, ...), one row per
 observation, following the
-[`stats::simulate()`](https://rdrr.io/r/stats/simulate.html) convention.
+[`stats::simulate()`](https://rdrr.io/r/stats/simulate.html) convention:
+its `"seed"` attribute is the value of `seed` (with the RNG kind as
+attribute `"kind"`) when one was given, else the state of `.Random.seed`
+before simulation.

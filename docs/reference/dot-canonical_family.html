@@ -24,7 +24,7 @@ canonical list."><script>
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.6.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -85,6 +85,18 @@ canonical list.</p>
 <dd><p>Family identifier as supplied by the caller.</p></dd>
 
 </dl></div>
+    <div class="section level2">
+    <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
+    <p>Case is normalized as a last resort, after the exact spelling and the alias
+table both miss: <code>stats::Gamma()$family</code> is <code>"Gamma"</code>, capitalized, and
+<code>.family_object_to_name()</code> lowercases it for the <code>family = Gamma(...)</code>
+object form, so the equivalent string form (<code>family = "Gamma"</code>) has to reach
+the same registry entry rather than being refused as unknown
+(gcol33/tulpa#806). Applied to a <code>&lt;family&gt;_&lt;link&gt;</code> code too
+(<code>"Gamma_log"</code> -&gt; <code>"gamma_log"</code>), never to a name that is already
+recognized as it stands – so a registry name that happens to collide
+case-insensitively with another spelling is never silently rewritten.</p>
+    </div>
 
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>

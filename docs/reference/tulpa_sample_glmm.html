@@ -30,7 +30,7 @@ single-point Laplace fit uses, so no likelihood / link logic is duplicated."><sc
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.6.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -137,7 +137,11 @@ every door: for <code>gaussian</code> / <code>lognormal</code> this is the resid
 (the SD is <code>sqrt(phi)</code>), for <code>neg_binomial_2</code> the size, <code>gamma</code> the
 shape, <code>beta</code> the precision, <code>t</code> the scale; <code>binomial</code> and <code>poisson</code>
 ignore it. The compiled kernels parameterize the two variance families by
-the residual SD and are handed <code>sqrt(phi)</code> at the boundary.</p></dd>
+the residual SD and are handed <code>sqrt(phi)</code> at the boundary.</p>
+<p>Defaulted, it conditions at 1 and says so with a warning, since for a
+family that reads a dispersion that is a modelling choice rather than a
+neutral value. <code>fit$phi_estimated</code> records whether the value on the fit
+was estimated or conditioned on.</p></dd>
 
 
 <dt id="arg-phi-">phi2<a class="anchor" aria-label="anchor" href="#arg-phi-"></a></dt>
@@ -193,7 +197,16 @@ any other backend errors rather than sampling from the default start.</p></dd>
 <code>sigma_beta</code>, <code>n_chains</code>, <code>max_treedepth</code>, <code>adapt_delta</code>, <code>epsilon</code>, <code>L</code>,
 <code>batch_size</code>, <code>alpha</code>, <code>n_particles</code>, <code>n_mcmc_steps</code>, <code>ess_threshold</code>,
 <code>vi_variant</code>, <code>vi_mc_samples</code>, <code>vi_max_iter</code>, <code>vi_max_grad_norm</code>,
-<code>n_draws</code>, <code>verbose</code>, <code>mass_matrix</code>).</p>
+<code>vi_tol_grad</code>, <code>vi_tol_rel_elbo</code>, <code>vi_patience</code>,
+<code>n_draws</code>, <code>verbose</code>, <code>mass_matrix</code>, <code>checkpoint</code>).</p>
+<p><code>checkpoint = list(path =, resume =)</code> is per-chain checkpoint/resume on
+the NUTS/HMC kernel only (a chain is the checkpoint unit, deterministic
+in seed + chain id + data + settings, so a resumed chain is bit-for-bit
+identical to the uninterrupted one): every chain appends its finished
+result to <code>path</code>, and <code>resume = TRUE</code> (the default) loads any finished
+chains from a prior run and fits only the rest; <code>resume = FALSE</code> starts
+over, removing any stale file first. Other backends refuse this key
+rather than silently drop it.</p>
 <p><code>mass_matrix</code> selects the NUTS/HMC metric: <code>"diag"</code> (the default),
 <code>"dense"</code>, <code>"block_diag"</code>, or <code>"auto"</code>. Under <code>"auto"</code> the kernel reads the
 parameter layout and gives each correlated hyperparameter group its own
@@ -209,6 +222,18 @@ least once – the optimisation loop whose ELBO history is the fit's only
 record, and the reparameterisation average every gradient divides by – so
 values below 1 are rejected. <code>vi_max_grad_norm</code> (default 10) is the
 gradient-norm clip applied before every Adam step.</p>
+<p><code>vi_max_iter</code> is a ceiling; what ends a VI run is usually the stopping
+rule, which <code>vi_patience</code> (default 50), <code>vi_tol_rel_elbo</code> (default 0.01)
+and <code>vi_tol_grad</code> (default 1e-4) control. The loop stops when the ELBO
+gain across the last <code>vi_patience</code> iterations – the mean of the window's
+second half minus the mean of its first – falls to <code>vi_tol_rel_elbo</code>
+times the ELBO span the run has covered, or when the gradient norm falls
+below <code>vi_tol_grad</code>. Both the gain and its threshold are ELBO
+DIFFERENCES, so the arbitrary additive constant in an ELBO cancels.
+Setting <code>vi_tol_rel_elbo = 0</code> stops only on a window that is flat or
+falling. The fit reports <code>vi_iterations</code> and <code>converged_reason</code>
+(<code>"patience"</code>, <code>"gradient_norm"</code> or <code>"max_iter"</code>) so a run that stopped
+short of its budget can be told from one that used it.</p>
 <p><code>epsilon</code> pins the step size on the stochastic-gradient backends: <code>"sghmc"</code>
 runs its warmup step-size adapter only when no <code>epsilon</code> is supplied, and
 <code>"sgld"</code> runs its polynomial decay <code>a * (b + t)^-gamma</code> only then, so a

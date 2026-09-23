@@ -20,7 +20,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.6.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -94,7 +94,9 @@
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
-    <p>Matrix with lower and upper columns. A nested-Laplace fit carries
+    <p>Matrix with lower and upper columns, labelled as
+<code><a href="https://rdrr.io/r/stats/confint.html" class="external-link">stats::confint.default()</a></code> labels them (<code>"2.5 %"</code> and <code>"97.5 %"</code> at the
+default level). A nested-Laplace fit carries
 <code>interval_source</code> / <code>interval_declined</code> (which read produced the bounds –
 by default the grid's Gaussian-mixture CDF), <code>retained_mass</code> (the share of
 the grid weight the bounds are conditional on), and <code>skew_applied</code>, one

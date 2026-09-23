@@ -66,5 +66,6 @@ fit <- tulpa(y ~ x + (1 | site), data = df, family = "poisson",
 if (requireNamespace("bayesplot", quietly = TRUE)) {
   pp_check(fit, type = "dens_overlay")
 }
+
 # }
 ```

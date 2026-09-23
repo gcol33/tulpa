@@ -58,7 +58,20 @@ needed.
 ``` r
 # Create temporal AR1 specification
 temporal_ar1("year")
+#> tulpa temporal specification
+#> ============================
+#> 
+#> Type: AR1 (First-order Autoregressive) 
+#> Time variable: year 
+#> Shared: Yes (enters both processes) 
 temporal_ar1("year", group = "site")
+#> tulpa temporal specification
+#> ============================
+#> 
+#> Type: AR1 (First-order Autoregressive) 
+#> Time variable: year 
+#> Group variable: site 
+#> Shared: Yes (enters both processes) 
 
 # \donttest{
 # AR1 temporal correlation
@@ -78,5 +91,8 @@ fit <- tulpa(
   mode = "auto"
 )
 summary(fit)
+#>              estimate  std.error      2.5 %    97.5 %
+#> (Intercept) 1.1133192 0.49660115 0.07923634 2.0258771
+#> x           0.3297074 0.07602842 0.18287279 0.4808987
 # }
 ```

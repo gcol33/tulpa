@@ -24,7 +24,7 @@ that enter both linear predictors when shared = TRUE (default)."><script>
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.6.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -186,23 +186,68 @@ single-response in-formula latent Gaussian block</p></div>
 
     <div class="section level2">
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="co"># Basic latent factor (single shared factor)</span></span>
-<span><span class="fu">latent_factor</span><span class="op">(</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Two latent factors</span></span>
-<span><span class="fu">latent_factor</span><span class="op">(</span>n_factors <span class="op">=</span> <span class="fl">2</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Custom prior (more regularization)</span></span>
-<span><span class="fu">latent_factor</span><span class="op">(</span>n_factors <span class="op">=</span> <span class="fl">1</span>, prior <span class="op">=</span> <span class="fu"><a href="prior_pc.html">prior_pc</a></span><span class="op">(</span>U <span class="op">=</span> <span class="fl">0.5</span>, alpha <span class="op">=</span> <span class="fl">0.01</span><span class="op">)</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Numerator-only factor (not shared)</span></span>
-<span><span class="fu">latent_factor</span><span class="op">(</span>n_factors <span class="op">=</span> <span class="fl">1</span>, shared <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># The spec is consumed by a ratio / multi-arm model package (tulpaRatio owns</span></span>
-<span><span class="co"># the two-arm `species | total ~ ...` formula and the negbin/negbin ratio</span></span>
-<span><span class="co"># family); it is that package's fitter, not the single-response tulpa() front</span></span>
-<span><span class="co"># door, that reads the `latent_factor()` object.</span></span>
-<span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="co"># Basic latent factor (single shared factor)</span></span></span>
+<span class="r-in"><span><span class="fu">latent_factor</span><span class="op">(</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Latent factor specification</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> ===========================</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Number of factors: 1 </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Shared: Yes (enters all processes) </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Constraint: sum_to_zero </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Scale: Yes </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Factor SD prior:</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   PC prior: P(x &gt; 1.00) = 0.010</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>     =&gt; Exponential(4.605)</span>
+<span class="r-in"><span></span></span>
+<span class="r-in"><span><span class="co"># Two latent factors</span></span></span>
+<span class="r-in"><span><span class="fu">latent_factor</span><span class="op">(</span>n_factors <span class="op">=</span> <span class="fl">2</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Latent factor specification</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> ===========================</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Number of factors: 2 </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Shared: Yes (enters all processes) </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Constraint: sum_to_zero </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Scale: Yes </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Factor SD prior:</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   PC prior: P(x &gt; 1.00) = 0.010</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>     =&gt; Exponential(4.605)</span>
+<span class="r-in"><span></span></span>
+<span class="r-in"><span><span class="co"># Custom prior (more regularization)</span></span></span>
+<span class="r-in"><span><span class="fu">latent_factor</span><span class="op">(</span>n_factors <span class="op">=</span> <span class="fl">1</span>, prior <span class="op">=</span> <span class="fu"><a href="prior_pc.html">prior_pc</a></span><span class="op">(</span>U <span class="op">=</span> <span class="fl">0.5</span>, alpha <span class="op">=</span> <span class="fl">0.01</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Latent factor specification</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> ===========================</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Number of factors: 1 </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Shared: Yes (enters all processes) </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Constraint: sum_to_zero </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Scale: Yes </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Factor SD prior:</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   PC prior: P(x &gt; 0.50) = 0.010</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>     =&gt; Exponential(9.210)</span>
+<span class="r-in"><span></span></span>
+<span class="r-in"><span><span class="co"># Numerator-only factor (not shared)</span></span></span>
+<span class="r-in"><span><span class="fu">latent_factor</span><span class="op">(</span>n_factors <span class="op">=</span> <span class="fl">1</span>, shared <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Latent factor specification</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> ===========================</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Number of factors: 1 </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Shared: No (first process only) </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Constraint: sum_to_zero </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Scale: Yes </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Factor SD prior:</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   PC prior: P(x &gt; 1.00) = 0.010</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>     =&gt; Exponential(4.605)</span>
+<span class="r-in"><span></span></span>
+<span class="r-in"><span><span class="co"># The spec is consumed by a ratio / multi-arm model package (tulpaRatio owns</span></span></span>
+<span class="r-in"><span><span class="co"># the two-arm `species | total ~ ...` formula and the negbin/negbin ratio</span></span></span>
+<span class="r-in"><span><span class="co"># family); it is that package's fitter, not the single-response tulpa() front</span></span></span>
+<span class="r-in"><span><span class="co"># door, that reads the `latent_factor()` object.</span></span></span>
+<span class="r-in"><span></span></span>
+</code></pre></div>
     </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>

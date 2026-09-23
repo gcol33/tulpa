@@ -60,5 +60,7 @@ d <- data.frame(y = rpois(n, exp(0.3 + 0.5 * x + b[grp])), x = x,
                 g = factor(grp))
 fit <- tulpa(y ~ x + (1 | g), data = d, family = "poisson", mode = "eb")
 VarCorr(fit)
+#>   term        coef        sd    source
+#> 1    g (Intercept) 0.7649598 estimated
 # }
 ```

@@ -46,7 +46,12 @@ A numeric matrix `[n x length(idx)]`, one row per draw. Carries
 `attr(., "draws_kind") = "iid"` (consistent with the draws-provenance
 gate), `attr(., "cells")` – the outer-grid cell index each row was drawn
 from – and `attr(., "scope")`, which of the two representations above
-the columns are.
+the columns are. `attr(., "theta")` is the HYPERPARAMETER half of the
+same rows, one column per outer-grid axis, continuized within each row's
+own cell by
+[`tulpa_hyper_draws()`](https://gillescolling.com/tulpa/reference/tulpa_hyper_draws.md);
+reading `fit$theta_grid[attr(., "cells"), ]` instead returns the bare
+node coordinate, which is an atom rather than a marginal.
 
 ## What a draw covers
 
@@ -69,6 +74,7 @@ returned matrix says so in its `scope` attribute.
 
 ## See also
 
+[`tulpa_hyper_draws()`](https://gillescolling.com/tulpa/reference/tulpa_hyper_draws.md),
 [`tulpa_nested_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace.md),
 [`tulpa_nested_laplace_joint()`](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace_joint.md),
 [`posterior_sample()`](https://gillescolling.com/tulpa/reference/posterior_sample.md)

@@ -22,7 +22,7 @@ model with temporal specification."><script>
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.6.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -137,25 +137,212 @@ covariate column. <code>structure</code> is one of <code>"rw1"</code> (default),
 
     <div class="section level2">
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="co"># \donttest{</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">131</span><span class="op">)</span></span>
-<span><span class="va">df</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>year <span class="op">=</span> <span class="fl">1</span><span class="op">:</span><span class="fl">40</span>, x <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fl">40</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="va">df</span><span class="op">$</span><span class="va">count</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Poisson.html" class="external-link">rpois</a></span><span class="op">(</span><span class="fl">40</span>, <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="fl">1</span> <span class="op">+</span> <span class="fl">0.2</span> <span class="op">*</span> <span class="va">df</span><span class="op">$</span><span class="va">x</span><span class="op">)</span><span class="op">)</span></span>
-<span></span>
-<span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="tulpa.html">tulpa</a></span><span class="op">(</span></span>
-<span>  <span class="va">count</span> <span class="op">~</span> <span class="va">x</span>,</span>
-<span>  data <span class="op">=</span> <span class="va">df</span>,</span>
-<span>  family <span class="op">=</span> <span class="st">"poisson"</span>,</span>
-<span>  temporal <span class="op">=</span> <span class="fu"><a href="temporal_multiscale.html">temporal_multiscale</a></span><span class="op">(</span><span class="st">"year"</span>, trend <span class="op">=</span> <span class="st">"rw2"</span>, seasonal <span class="op">=</span> <span class="fl">12</span><span class="op">)</span>,</span>
-<span>  mode <span class="op">=</span> <span class="st">"exact"</span>,</span>
-<span>  control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_iter <span class="op">=</span> <span class="fl">200L</span>, n_warmup <span class="op">=</span> <span class="fl">100L</span>, seed <span class="op">=</span> <span class="fl">1L</span><span class="op">)</span></span>
-<span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Extract all temporal effects</span></span>
-<span><span class="va">temp_post</span> <span class="op">&lt;-</span> <span class="fu">temporal</span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">temp_post</span><span class="op">)</span></span>
-<span><span class="co"># }</span></span>
-<span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="co"># \donttest{</span></span></span>
+<span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">131</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">df</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>year <span class="op">=</span> <span class="fl">1</span><span class="op">:</span><span class="fl">40</span>, x <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fl">40</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">df</span><span class="op">$</span><span class="va">count</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Poisson.html" class="external-link">rpois</a></span><span class="op">(</span><span class="fl">40</span>, <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="fl">1</span> <span class="op">+</span> <span class="fl">0.2</span> <span class="op">*</span> <span class="va">df</span><span class="op">$</span><span class="va">x</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span></span></span>
+<span class="r-in"><span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="tulpa.html">tulpa</a></span><span class="op">(</span></span></span>
+<span class="r-in"><span>  <span class="va">count</span> <span class="op">~</span> <span class="va">x</span>,</span></span>
+<span class="r-in"><span>  data <span class="op">=</span> <span class="va">df</span>,</span></span>
+<span class="r-in"><span>  family <span class="op">=</span> <span class="st">"poisson"</span>,</span></span>
+<span class="r-in"><span>  temporal <span class="op">=</span> <span class="fu"><a href="temporal_multiscale.html">temporal_multiscale</a></span><span class="op">(</span><span class="st">"year"</span>, trend <span class="op">=</span> <span class="st">"rw2"</span>, seasonal <span class="op">=</span> <span class="fl">12</span><span class="op">)</span>,</span></span>
+<span class="r-in"><span>  mode <span class="op">=</span> <span class="st">"exact"</span>,</span></span>
+<span class="r-in"><span>  control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_iter <span class="op">=</span> <span class="fl">200L</span>, n_warmup <span class="op">=</span> <span class="fl">100L</span>, seed <span class="op">=</span> <span class="fl">1L</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="op">)</span></span></span>
+<span class="r-in"><span></span></span>
+<span class="r-in"><span><span class="co"># Extract all temporal effects</span></span></span>
+<span class="r-in"><span><span class="va">temp_post</span> <span class="op">&lt;-</span> <span class="fu">temporal</span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">temp_post</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>                component time_idx time          mean         sd       q2.5</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.1            trend        1    1  0.1315250833 0.36912178 -0.6253769</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.2            trend        2    2  0.1367559885 0.30676160 -0.5034162</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.3            trend        3    3  0.1405048919 0.26232826 -0.3578965</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.4            trend        4    4  0.1401805074 0.24336981 -0.3045232</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.5            trend        5    5  0.1418707252 0.23347180 -0.2893082</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.6            trend        6    6  0.1480515082 0.23216564 -0.2269157</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.7            trend        7    7  0.1496883474 0.22612918 -0.2499520</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.8            trend        8    8  0.1456235848 0.22289475 -0.2507725</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.9            trend        9    9  0.1360479994 0.21330804 -0.2424844</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.10           trend       10   10  0.1124125895 0.20434191 -0.2536351</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.11           trend       11   11  0.0832975218 0.19606087 -0.2492744</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.12           trend       12   12  0.0515403073 0.19507183 -0.3866162</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.13           trend       13   13  0.0258297429 0.19907755 -0.4131636</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.14           trend       14   14  0.0101520268 0.20756972 -0.4217511</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.15           trend       15   15  0.0044792399 0.20950047 -0.4219453</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.16           trend       16   16  0.0024423875 0.20705403 -0.4177316</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.17           trend       17   17  0.0029306889 0.20849929 -0.3982797</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.18           trend       18   18 -0.0009766135 0.20278699 -0.3813533</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.19           trend       19   19 -0.0102332414 0.18784881 -0.3627997</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.20           trend       20   20 -0.0271579726 0.16161480 -0.3241738</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.21           trend       21   21 -0.0541999787 0.14770667 -0.3388493</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.22           trend       22   22 -0.0901969265 0.15594909 -0.4341414</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.23           trend       23   23 -0.1193543156 0.16993189 -0.4998363</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.24           trend       24   24 -0.1359528722 0.18223538 -0.6063157</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.25           trend       25   25 -0.1333669777 0.17878541 -0.5390132</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.26           trend       26   26 -0.1204754897 0.17896620 -0.5102293</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.27           trend       27   27 -0.1033176359 0.18495144 -0.4831815</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.28           trend       28   28 -0.0927707828 0.18871882 -0.4500081</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.29           trend       29   29 -0.0834852167 0.19250026 -0.4133748</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.30           trend       30   30 -0.0745611765 0.19451116 -0.4168467</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.31           trend       31   31 -0.0594525218 0.20399649 -0.4028734</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.32           trend       32   32 -0.0503802280 0.20239859 -0.3957232</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.33           trend       33   33 -0.0437789076 0.20057373 -0.3868288</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.34           trend       34   34 -0.0416238265 0.19702467 -0.3952232</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.35           trend       35   35 -0.0416363560 0.19847654 -0.4282408</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.36           trend       36   36 -0.0434408473 0.21238891 -0.4679533</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.37           trend       37   37 -0.0445223409 0.23164062 -0.5200859</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.38           trend       38   38 -0.0529334206 0.25932659 -0.5769705</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.39           trend       39   39 -0.0605806035 0.30323370 -0.6457186</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.40           trend       40   40 -0.0672816282 0.36836492 -0.7871853</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> seasonal.1      seasonal        1    1 -0.0692684837 0.14181173 -0.3842013</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> seasonal.2      seasonal        2    2 -0.0054242909 0.13467000 -0.2797523</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> seasonal.3      seasonal        3    3 -0.0134204751 0.14144859 -0.3419568</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> seasonal.4      seasonal        4    4 -0.0296986278 0.13738220 -0.4911207</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> seasonal.5      seasonal        5    5 -0.0090010395 0.13954669 -0.4096045</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> seasonal.6      seasonal        6    6  0.0159044163 0.13402794 -0.2833790</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> seasonal.7      seasonal        7    7  0.0355339763 0.13172347 -0.2066154</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> seasonal.8      seasonal        8    8  0.0412370699 0.14800599 -0.2764745</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> seasonal.9      seasonal        9    9  0.0622905356 0.13138128 -0.1536269</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> seasonal.10     seasonal       10   10  0.0401882386 0.12740791 -0.1545659</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> seasonal.11     seasonal       11   11 -0.0193782195 0.12719348 -0.2605118</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> seasonal.12     seasonal       12   12 -0.0485023548 0.15781783 -0.5080513</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.1  short_term        1    1 -0.0178611239 0.12265664 -0.2766201</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.2  short_term        2    2 -0.0048306966 0.11533045 -0.2727345</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.3  short_term        3    3 -0.0018118253 0.11068560 -0.2512452</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.4  short_term        4    4 -0.0053063652 0.12666033 -0.2573274</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.5  short_term        5    5 -0.0059150454 0.11855249 -0.2954149</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.6  short_term        6    6  0.0069929294 0.08461974 -0.1750743</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.7  short_term        7    7  0.0004047846 0.09081725 -0.1873992</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.8  short_term        8    8 -0.0189028686 0.10342680 -0.2384530</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.9  short_term        9    9 -0.0076987695 0.08209326 -0.1936042</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.10 short_term       10   10  0.0097525338 0.10050762 -0.2308859</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.11 short_term       11   11  0.0003433959 0.12443233 -0.2561923</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.12 short_term       12   12  0.0039461508 0.10149179 -0.2056944</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.13 short_term       13   13 -0.0336763850 0.12324033 -0.3262242</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.14 short_term       14   14 -0.0183655073 0.13005229 -0.3421551</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.15 short_term       15   15  0.0019874558 0.10679801 -0.2273036</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.16 short_term       16   16 -0.0325305331 0.09805160 -0.2748021</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.17 short_term       17   17  0.0211179182 0.12850227 -0.2284328</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.18 short_term       18   18  0.0018242815 0.12148225 -0.2506478</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.19 short_term       19   19 -0.0038680223 0.12180855 -0.3218901</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.20 short_term       20   20  0.0273140410 0.11932144 -0.1489153</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.21 short_term       21   21  0.0196258335 0.10391246 -0.1834510</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.22 short_term       22   22  0.0132605580 0.12363200 -0.2175994</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.23 short_term       23   23 -0.0210283526 0.12524507 -0.2795702</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.24 short_term       24   24  0.0042118019 0.10502216 -0.2246769</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.25 short_term       25   25  0.0068570144 0.09800001 -0.2456611</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.26 short_term       26   26  0.0281189509 0.10318411 -0.1546435</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.27 short_term       27   27  0.0365683974 0.12383560 -0.1790908</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.28 short_term       28   28  0.0113643322 0.10694800 -0.2010556</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.29 short_term       29   29  0.0152338656 0.11100303 -0.2003467</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.30 short_term       30   30 -0.0112763957 0.13978751 -0.3569973</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.31 short_term       31   31  0.0294432405 0.12138390 -0.1371820</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.32 short_term       32   32 -0.0069525703 0.10483273 -0.2164303</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.33 short_term       33   33  0.0058608206 0.10429880 -0.2081015</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.34 short_term       34   34  0.0079754931 0.09943901 -0.1840873</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.35 short_term       35   35  0.0104082924 0.09071412 -0.1640140</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.36 short_term       36   36 -0.0141383491 0.10727761 -0.2010742</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.37 short_term       37   37 -0.0045208139 0.10917214 -0.3006743</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.38 short_term       38   38  0.0273927256 0.10168007 -0.1621104</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.39 short_term       39   39  0.0004488582 0.09470251 -0.1540653</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.40 short_term       40   40  0.0183731354 0.12050576 -0.2036794</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>                         q50     q97.5</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.1        0.1508967735 0.7001982</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.2        0.1595124037 0.6002750</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.3        0.1554359641 0.5689047</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.4        0.1309831504 0.5804315</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.5        0.1150570340 0.5808469</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.6        0.1300276707 0.5705494</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.7        0.1224668096 0.5890060</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.8        0.1231138349 0.5841503</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.9        0.1294237328 0.5304859</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.10       0.0959037105 0.4855918</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.11       0.0586961995 0.4416225</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.12       0.0589034182 0.3803301</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.13       0.0568539894 0.3514518</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.14       0.0391365966 0.3402618</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.15       0.0265895623 0.3609055</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.16       0.0197697729 0.4181711</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.17       0.0043080015 0.4385041</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.18       0.0103176588 0.3632333</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.19       0.0099777182 0.3224554</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.20      -0.0092009310 0.2495218</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.21      -0.0456760267 0.2319309</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.22      -0.0809726702 0.1927367</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.23      -0.1003471371 0.1491730</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.24      -0.1182133481 0.1629943</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.25      -0.1140606797 0.1696075</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.26      -0.1039785778 0.1783066</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.27      -0.0850027517 0.2321738</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.28      -0.0854800260 0.2548827</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.29      -0.0961990075 0.3224378</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.30      -0.0742119894 0.3216213</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.31      -0.0582236821 0.3700438</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.32      -0.0570335916 0.3265971</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.33      -0.0405349290 0.3660819</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.34      -0.0369922907 0.3255255</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.35      -0.0305408465 0.3165731</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.36      -0.0204010356 0.3202590</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.37      -0.0422441303 0.3655846</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.38      -0.0431554771 0.3895360</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.39      -0.0492509416 0.5386227</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> trend.40      -0.0634784941 0.6132115</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> seasonal.1    -0.0499171489 0.1862380</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> seasonal.2    -0.0097649147 0.3345025</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> seasonal.3    -0.0014721583 0.2477063</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> seasonal.4    -0.0022490268 0.1568992</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> seasonal.5     0.0083912058 0.2028665</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> seasonal.6     0.0227194051 0.2606615</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> seasonal.7     0.0185038073 0.3564788</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> seasonal.8     0.0201642475 0.3851814</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> seasonal.9     0.0399021633 0.4097533</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> seasonal.10    0.0171470454 0.3552288</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> seasonal.11   -0.0245111143 0.2997327</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> seasonal.12   -0.0356427192 0.2646616</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.1  -0.0109589547 0.2450598</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.2   0.0014788696 0.2314283</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.3  -0.0065433799 0.2085323</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.4  -0.0040548127 0.2341165</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.5  -0.0001699464 0.2288440</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.6   0.0062283399 0.1648837</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.7  -0.0023305206 0.2159489</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.8  -0.0054970837 0.1782616</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.9  -0.0016444934 0.1379902</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.10  0.0043882979 0.2774947</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.11 -0.0023888434 0.3233048</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.12  0.0041030819 0.2117443</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.13 -0.0126688045 0.2083748</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.14 -0.0065907609 0.3200452</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.15 -0.0010226230 0.2143636</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.16 -0.0190564571 0.1454632</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.17  0.0138475659 0.2470589</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.18  0.0018994721 0.2163323</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.19  0.0030164505 0.2716315</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.20  0.0086747314 0.3875990</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.21  0.0065121910 0.2989246</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.22  0.0037624371 0.3650234</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.23 -0.0083115111 0.1671735</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.24  0.0024997762 0.2421644</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.25  0.0115150388 0.2149884</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.26  0.0148674571 0.2845745</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.27  0.0130872082 0.3898667</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.28  0.0017208214 0.2403034</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.29  0.0052713416 0.2951364</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.30 -0.0024573238 0.2384549</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.31  0.0149126579 0.3238060</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.32 -0.0043722622 0.2496742</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.33  0.0021567956 0.2252785</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.34 -0.0009832965 0.2555872</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.35  0.0046054386 0.2249410</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.36 -0.0089596644 0.2080296</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.37 -0.0006215643 0.2569414</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.38  0.0166631429 0.2529769</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.39 -0.0054464506 0.2444554</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> short_term.40  0.0091148724 0.3809265</span>
+<span class="r-in"><span><span class="co"># }</span></span></span>
+<span class="r-in"><span></span></span>
+</code></pre></div>
     </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>

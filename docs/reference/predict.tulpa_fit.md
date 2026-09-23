@@ -20,7 +20,11 @@ training locations. The HSGP and GP/NNGP fields are marginalised over
 the hyperparameter grid (not plugged in at the posterior mean). Ordinary
 random effects are held at zero (population level); add group effects
 from [`ranef()`](https://gillescolling.com/tulpa/reference/ranef.md)
-when needed.
+when needed. An areal (ICAR / BYM2 / CAR) or temporal (RW1 / RW2 / AR1)
+field is held at zero in the same way, at the training design too; the
+in-sample linear predictor with every fitted component is what
+[`posterior_predict()`](https://gillescolling.com/tulpa/reference/posterior_predict.md)
+draws and what `compare_models(criterion = "waic")` / `"loo"` score.
 
 ## Usage
 
@@ -51,11 +55,15 @@ predict(
 
 - type:
 
-  `"link"` (linear predictor) or `"response"` (mean scale). For a
-  binomial fit the `"response"` scale here is the per-trial success
+  `"link"` (linear predictor) or `"response"` (mean scale, `E[y]`). For
+  a binomial fit the `"response"` scale here is the per-trial success
   probability `g^{-1}(eta)` (there is no `n_trials` at `newdata`); this
   differs from [`fitted()`](https://rdrr.io/r/stats/fitted.values.html),
   which returns the trial-scaled expected count at the training design.
+  On a zero-inflated fit (`ziformula`) the `"link"` scale is the count
+  predictor and the `"response"` scale is the mixture mean
+  `(1 - pi) E[y | eta]`, `pi = plogis(X_zi beta_zi)`, with the
+  zero-inflation design rebuilt from the fit's `ziformula` at `newdata`.
 
 - se.fit:
 
@@ -66,7 +74,10 @@ predict(
   `(range, sigma)` (a nested fit's hyperparameter-grid spread is not
   propagated, so the bound is mildly optimistic when that posterior is
   wide). Integer-nu, no-RE SPDE fits only; other layouts decline with an
-  explanation.
+  explanation. On a zero-inflated fit `se.fit` is the count predictor's,
+  and the response-scale bounds are quantiles of the mixture mean over
+  draws of the count and zero-inflation coefficients jointly (pinned, so
+  repeated calls agree).
 
 - level:
 

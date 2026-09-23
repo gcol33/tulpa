@@ -63,10 +63,11 @@ tulpa_nuts_beta(
 
 ## Value
 
-A list with:
+A `tulpa_fit` object with:
 
 - `draws` – `n_samples x (p + 1)` matrix of post-warmup draws, columns
-  `beta[1] ... beta[p], log_phi`.
+  named from `colnames(X)` (falling back to `beta[1] ... beta[p]`) then
+  `log_phi`.
 
 - `means` – posterior means.
 
@@ -94,5 +95,7 @@ y <- rbeta(n, mu * phi, (1 - mu) * phi)
 # \donttest{
 fit <- tulpa_nuts_beta(y, X, control = list(n_iter = 500L, n_warmup = 250L))
 colMeans(fit$draws)
+#>    beta[1]    beta[2]    log_phi 
+#> 0.08856396 0.66671059 2.16537679 
 # }
 ```

@@ -29,6 +29,7 @@ agq_fit(
   n_trials = NULL,
   sigma_eps = 1,
   n_quad = 7L,
+  offset = NULL,
   beta_init = NULL,
   sigma_init = 1,
   max_iter = 200L,
@@ -73,6 +74,11 @@ agq_fit(
 
   Number of Gauss-Hermite quadrature nodes per cluster. `1` recovers
   Laplace; common choices are `5` or `7`. Default `7`.
+
+- offset:
+
+  Optional fixed per-observation offset added to eta (default all zero,
+  i.e. none).
 
 - beta_init:
 
@@ -158,4 +164,5 @@ y <- rbinom(n, 1, plogis(eta))
 fit_lap <- agq_fit(y, X, group, family = "binomial", n_quad = 1)
 fit_agq <- agq_fit(y, X, group, family = "binomial", n_quad = 7)
 c(fit_lap$log_marginal, fit_agq$log_marginal)
+#> [1] -58.97319 -58.96228
 ```

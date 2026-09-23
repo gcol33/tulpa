@@ -23,9 +23,9 @@ tulpa_re_cov_nested(
   family = "binomial",
   phi = 1,
   phi2 = NULL,
-  prior_sigma = c(3, 0.05),
-  eta = 2,
-  hyperprior = c("flat", "pc_lkj"),
+  prior_sigma = NULL,
+  eta = NULL,
+  hyperprior = c("proper", "flat"),
   log_prior_theta = NULL,
   beta_prior = NULL,
   offset = NULL,
@@ -70,20 +70,20 @@ tulpa_re_cov_nested(
 - prior_sigma, eta:
 
   Hyperparameters of the PC + LKJ prior used when
-  `hyperprior = "pc_lkj"` (see
+  `hyperprior = "proper"` (see
   [`re_cov_pc_lkj_prior()`](https://gillescolling.com/tulpa/reference/re_cov_pc_lkj_prior.md)):
-  `prior_sigma = c(U, alpha)` with `P(sigma_i > U) = alpha` (default
-  `c(3, 0.05)`) and LKJ shape `eta` (default 2). Ignored when
-  `hyperprior = "flat"` or `log_prior_theta` is supplied.
+  `prior_sigma = c(U, alpha)` with `P(sigma_i > U) = alpha` (`NULL`, the
+  default, is `c(3, 0.01)`) and LKJ shape `eta` (`NULL` is 2). Ignored
+  when `hyperprior = "flat"` or `log_prior_theta` is supplied.
 
 - hyperprior:
 
-  `"flat"` (default) or `"pc_lkj"`. `"flat"` integrates with
-  `log_prior_theta` the zero function (flat in log(theta)), matching the
-  nested-Laplace convention on every other scale axis in the engine.
-  `"pc_lkj"` builds the PC + LKJ prior from `prior_sigma` / `eta` (the
-  regularizer that keeps a variance component off the `sigma = 0`
-  boundary at small G). Ignored when `log_prior_theta` is supplied.
+  `"proper"` (default) or `"flat"`. `"proper"` builds the PC + LKJ prior
+  from `prior_sigma` / `eta`, the proper prior every other scale axis of
+  the engine carries by default. `"flat"` integrates with
+  `log_prior_theta` the zero function (flat in log(theta)); that prior
+  is improper, so the fit then reports no evidence. Ignored when
+  `log_prior_theta` is supplied.
 
 - log_prior_theta:
 
@@ -306,18 +306,14 @@ are mapped back. Scale intervals are therefore positive and asymmetric,
 and correlation intervals stay inside `(-1, 1)`. The `mean` and `sd`
 columns are the weighted moments under either layout.
 
-By default (`hyperprior = "flat"`) `log_prior_theta` is the zero
-function: flat in log(theta), the same convention the nested-Laplace
-spatial / temporal / RE-scale axes use (icar / rw1 / rw2 / ar1's tau /
-iid, none of which carry a hyperprior on their scale either – see
-[`vignette("priors")`](https://gillescolling.com/tulpa/articles/priors.md)).
-Set `hyperprior = "pc_lkj"` to use the weakly-informative PC + LKJ
-hyperprior instead, built per block by
+By default (`hyperprior = "proper"`) `log_prior_theta` is the
+weakly-informative PC + LKJ hyperprior, built per block by
 [`re_cov_pc_lkj_prior()`](https://gillescolling.com/tulpa/reference/re_cov_pc_lkj_prior.md)
 and summed over blocks (PC prior on each marginal SD via `prior_sigma`,
 LKJ prior on each correlated block's correlation matrix via `eta`),
 expressed in the same parameterization with the exact
-change-of-variables Jacobian. Supply a custom `log_prior_theta` function
+change-of-variables Jacobian. `hyperprior = "flat"` makes it the zero
+function, flat in log(theta). Supply a custom `log_prior_theta` function
 to override either default (then `prior_sigma` / `eta` / `hyperprior`
 are ignored); it must act on the full stacked parameter vector.
 [`tulpa_eb()`](https://gillescolling.com/tulpa/reference/tulpa_eb.md)
@@ -356,5 +352,8 @@ re_term <- list(idx = grp, n_groups = G, n_coefs = 2L, Z = cbind(1, x),
 fit <- tulpa_re_cov_nested(y, rep(1L, n), cbind(1, x), re_term,
                            family = "binomial")
 fit$Sigma_mean        # marginalized RE covariance
+#>             [,1]        [,2]
+#> [1,]  0.45590235 -0.04201789
+#> [2,] -0.04201789  0.25672717
 # }
 ```

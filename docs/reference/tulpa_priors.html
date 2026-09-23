@@ -22,7 +22,7 @@ priors for variance components and standard distributions for other parameters."
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.6.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -130,21 +130,116 @@ constructing priors. Statistical Science, 32(1), 1-28.</p>
 
     <div class="section level2">
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="co"># Default priors</span></span>
-<span><span class="fu">tulpa_priors</span><span class="op">(</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Custom fixed effect prior</span></span>
-<span><span class="fu">tulpa_priors</span><span class="op">(</span>beta <span class="op">=</span> <span class="fu"><a href="prior_normal.html">prior_normal</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">1</span><span class="op">)</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Tighter random effect prior</span></span>
-<span><span class="fu">tulpa_priors</span><span class="op">(</span>sigma <span class="op">=</span> <span class="fu"><a href="prior_pc.html">prior_pc</a></span><span class="op">(</span>U <span class="op">=</span> <span class="fl">0.5</span>, alpha <span class="op">=</span> <span class="fl">0.01</span><span class="op">)</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Half-Cauchy for random effect SD</span></span>
-<span><span class="fu">tulpa_priors</span><span class="op">(</span>sigma <span class="op">=</span> <span class="fu"><a href="prior_half_cauchy.html">prior_half_cauchy</a></span><span class="op">(</span><span class="fl">2.5</span><span class="op">)</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Informative prior for temporal correlation</span></span>
-<span><span class="fu">tulpa_priors</span><span class="op">(</span>rho_temporal <span class="op">=</span> <span class="fu"><a href="prior_beta.html">prior_beta</a></span><span class="op">(</span><span class="fl">5</span>, <span class="fl">2</span><span class="op">)</span><span class="op">)</span>  <span class="co"># Prior mode at ~0.8</span></span>
-<span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="co"># Default priors</span></span></span>
+<span class="r-in"><span><span class="fu">tulpa_priors</span><span class="op">(</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> tulpa prior specification</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> =========================</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Fixed effects (beta):</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Normal(0.00, 2.50)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Random effect SD (sigma):</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   PC prior: P(x &gt; 1.00) = 0.010</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>     =&gt; Exponential(4.605)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Overdispersion (phi):</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   PC prior: P(x &gt; 10.00) = 0.010</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>     =&gt; Exponential(0.461)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Temporal autocorrelation (rho_temporal):</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Beta(2.00, 2.00)  [mean = 0.50]</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Spatial proportion (rho_spatial):</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Beta(1.00, 1.00)  [mean = 0.50]</span>
+<span class="r-in"><span></span></span>
+<span class="r-in"><span><span class="co"># Custom fixed effect prior</span></span></span>
+<span class="r-in"><span><span class="fu">tulpa_priors</span><span class="op">(</span>beta <span class="op">=</span> <span class="fu"><a href="prior_normal.html">prior_normal</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">1</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> tulpa prior specification</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> =========================</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Fixed effects (beta):</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Normal(0.00, 1.00)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Random effect SD (sigma):</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   PC prior: P(x &gt; 1.00) = 0.010</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>     =&gt; Exponential(4.605)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Overdispersion (phi):</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   PC prior: P(x &gt; 10.00) = 0.010</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>     =&gt; Exponential(0.461)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Temporal autocorrelation (rho_temporal):</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Beta(2.00, 2.00)  [mean = 0.50]</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Spatial proportion (rho_spatial):</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Beta(1.00, 1.00)  [mean = 0.50]</span>
+<span class="r-in"><span></span></span>
+<span class="r-in"><span><span class="co"># Tighter random effect prior</span></span></span>
+<span class="r-in"><span><span class="fu">tulpa_priors</span><span class="op">(</span>sigma <span class="op">=</span> <span class="fu"><a href="prior_pc.html">prior_pc</a></span><span class="op">(</span>U <span class="op">=</span> <span class="fl">0.5</span>, alpha <span class="op">=</span> <span class="fl">0.01</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> tulpa prior specification</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> =========================</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Fixed effects (beta):</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Normal(0.00, 2.50)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Random effect SD (sigma):</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   PC prior: P(x &gt; 0.50) = 0.010</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>     =&gt; Exponential(9.210)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Overdispersion (phi):</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   PC prior: P(x &gt; 10.00) = 0.010</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>     =&gt; Exponential(0.461)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Temporal autocorrelation (rho_temporal):</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Beta(2.00, 2.00)  [mean = 0.50]</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Spatial proportion (rho_spatial):</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Beta(1.00, 1.00)  [mean = 0.50]</span>
+<span class="r-in"><span></span></span>
+<span class="r-in"><span><span class="co"># Half-Cauchy for random effect SD</span></span></span>
+<span class="r-in"><span><span class="fu">tulpa_priors</span><span class="op">(</span>sigma <span class="op">=</span> <span class="fu"><a href="prior_half_cauchy.html">prior_half_cauchy</a></span><span class="op">(</span><span class="fl">2.5</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> tulpa prior specification</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> =========================</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Fixed effects (beta):</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Normal(0.00, 2.50)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Random effect SD (sigma):</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Half-Cauchy(2.50)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Overdispersion (phi):</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   PC prior: P(x &gt; 10.00) = 0.010</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>     =&gt; Exponential(0.461)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Temporal autocorrelation (rho_temporal):</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Beta(2.00, 2.00)  [mean = 0.50]</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Spatial proportion (rho_spatial):</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Beta(1.00, 1.00)  [mean = 0.50]</span>
+<span class="r-in"><span></span></span>
+<span class="r-in"><span><span class="co"># Informative prior for temporal correlation</span></span></span>
+<span class="r-in"><span><span class="fu">tulpa_priors</span><span class="op">(</span>rho_temporal <span class="op">=</span> <span class="fu"><a href="prior_beta.html">prior_beta</a></span><span class="op">(</span><span class="fl">5</span>, <span class="fl">2</span><span class="op">)</span><span class="op">)</span>  <span class="co"># Prior mode at ~0.8</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> tulpa prior specification</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> =========================</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Fixed effects (beta):</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Normal(0.00, 2.50)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Random effect SD (sigma):</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   PC prior: P(x &gt; 1.00) = 0.010</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>     =&gt; Exponential(4.605)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Overdispersion (phi):</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   PC prior: P(x &gt; 10.00) = 0.010</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>     =&gt; Exponential(0.461)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Temporal autocorrelation (rho_temporal):</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Beta(5.00, 2.00)  [mean = 0.71]</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Spatial proportion (rho_spatial):</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Beta(1.00, 1.00)  [mean = 0.50]</span>
+<span class="r-in"><span></span></span>
+</code></pre></div>
     </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>

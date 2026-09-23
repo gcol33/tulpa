@@ -36,7 +36,7 @@ headline summary should be the marginalized median, not the mode.'><script>
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.6.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -100,9 +100,9 @@ headline summary should be the marginalized median, not the mode.</p>
 <span>  family <span class="op">=</span> <span class="st">"binomial"</span>,</span>
 <span>  phi <span class="op">=</span> <span class="fl">1</span>,</span>
 <span>  phi2 <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  prior_sigma <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">3</span>, <span class="fl">0.05</span><span class="op">)</span>,</span>
-<span>  eta <span class="op">=</span> <span class="fl">2</span>,</span>
-<span>  hyperprior <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"flat"</span>, <span class="st">"pc_lkj"</span><span class="op">)</span>,</span>
+<span>  prior_sigma <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  eta <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  hyperprior <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"proper"</span>, <span class="st">"flat"</span><span class="op">)</span>,</span>
 <span>  log_prior_theta <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  beta_prior <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  offset <span class="op">=</span> <span class="cn">NULL</span>,</span>
@@ -145,19 +145,19 @@ covariances, not over <code>phi2</code>.</p></dd>
 
 <dt id="arg-prior-sigma-eta">prior_sigma, eta<a class="anchor" aria-label="anchor" href="#arg-prior-sigma-eta"></a></dt>
 <dd><p>Hyperparameters of the PC + LKJ prior used when
-<code>hyperprior = "pc_lkj"</code> (see <code><a href="re_cov_pc_lkj_prior.html">re_cov_pc_lkj_prior()</a></code>):
-<code>prior_sigma = c(U, alpha)</code> with <code>P(sigma_i &gt; U) = alpha</code> (default
-<code>c(3, 0.05)</code>) and LKJ shape <code>eta</code> (default 2). Ignored when
+<code>hyperprior = "proper"</code> (see <code><a href="re_cov_pc_lkj_prior.html">re_cov_pc_lkj_prior()</a></code>):
+<code>prior_sigma = c(U, alpha)</code> with <code>P(sigma_i &gt; U) = alpha</code> (<code>NULL</code>, the
+default, is <code>c(3, 0.01)</code>) and LKJ shape <code>eta</code> (<code>NULL</code> is 2). Ignored when
 <code>hyperprior = "flat"</code> or <code>log_prior_theta</code> is supplied.</p></dd>
 
 
 <dt id="arg-hyperprior">hyperprior<a class="anchor" aria-label="anchor" href="#arg-hyperprior"></a></dt>
-<dd><p><code>"flat"</code> (default) or <code>"pc_lkj"</code>. <code>"flat"</code> integrates with
-<code>log_prior_theta</code> the zero function (flat in log(theta)), matching the
-nested-Laplace convention on every other scale axis in the engine.
-<code>"pc_lkj"</code> builds the PC + LKJ prior from <code>prior_sigma</code> / <code>eta</code> (the
-regularizer that keeps a variance component off the <code>sigma = 0</code> boundary
-at small G). Ignored when <code>log_prior_theta</code> is supplied.</p></dd>
+<dd><p><code>"proper"</code> (default) or <code>"flat"</code>. <code>"proper"</code> builds the
+PC + LKJ prior from <code>prior_sigma</code> / <code>eta</code>, the proper prior every other
+scale axis of the engine carries by default. <code>"flat"</code> integrates with
+<code>log_prior_theta</code> the zero function (flat in log(theta)); that prior is
+improper, so the fit then reports no evidence. Ignored when
+<code>log_prior_theta</code> is supplied.</p></dd>
 
 
 <dt id="arg-log-prior-theta">log_prior_theta<a class="anchor" aria-label="anchor" href="#arg-log-prior-theta"></a></dt>
@@ -337,15 +337,13 @@ define a Gaussian there whose quantiles are mapped back. Scale intervals are
 therefore positive and asymmetric, and correlation intervals stay inside
 <code>(-1, 1)</code>. The <code>mean</code> and <code>sd</code> columns are the weighted moments under either
 layout.</p>
-<p>By default (<code>hyperprior = "flat"</code>) <code>log_prior_theta</code> is the zero function:
-flat in log(theta), the same convention the nested-Laplace spatial /
-temporal / RE-scale axes use (icar / rw1 / rw2 / ar1's tau / iid, none of
-which carry a hyperprior on their scale either – see <code><a href="../articles/priors.html">vignette("priors")</a></code>).
-Set <code>hyperprior = "pc_lkj"</code> to use the weakly-informative PC + LKJ hyperprior
-instead, built per block by <code><a href="re_cov_pc_lkj_prior.html">re_cov_pc_lkj_prior()</a></code> and summed over blocks
-(PC prior on each marginal SD via <code>prior_sigma</code>, LKJ prior on each correlated
-block's correlation matrix via <code>eta</code>), expressed in the same parameterization
-with the exact change-of-variables Jacobian. Supply a custom <code>log_prior_theta</code>
+<p>By default (<code>hyperprior = "proper"</code>) <code>log_prior_theta</code> is the
+weakly-informative PC + LKJ hyperprior, built per block by
+<code><a href="re_cov_pc_lkj_prior.html">re_cov_pc_lkj_prior()</a></code> and summed over blocks (PC prior on each marginal SD
+via <code>prior_sigma</code>, LKJ prior on each correlated block's correlation matrix via
+<code>eta</code>), expressed in the same parameterization with the exact
+change-of-variables Jacobian. <code>hyperprior = "flat"</code> makes it the zero
+function, flat in log(theta). Supply a custom <code>log_prior_theta</code>
 function to override either default (then <code>prior_sigma</code> / <code>eta</code> /
 <code>hyperprior</code> are ignored); it must act on the full stacked parameter vector.
 <code><a href="tulpa_eb.html">tulpa_eb()</a></code> shares this same objective and the same default, so
@@ -370,19 +368,23 @@ hyperparameters.</p></div>
 
     <div class="section level2">
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="co"># \donttest{</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span>
-<span><span class="va">G</span> <span class="op">&lt;-</span> <span class="fl">20L</span>; <span class="va">per</span> <span class="op">&lt;-</span> <span class="fl">12L</span>; <span class="va">n</span> <span class="op">&lt;-</span> <span class="va">G</span> <span class="op">*</span> <span class="va">per</span></span>
-<span><span class="va">grp</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">G</span><span class="op">)</span>, each <span class="op">=</span> <span class="va">per</span><span class="op">)</span>; <span class="va">x</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span></span>
-<span><span class="va">b</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">G</span>, <span class="fl">0</span>, <span class="fl">0.7</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">G</span>, <span class="fl">0</span>, <span class="fl">0.5</span><span class="op">)</span><span class="op">)</span>     <span class="co"># random intercept + slope</span></span>
-<span><span class="va">eta</span> <span class="op">&lt;-</span> <span class="op">-</span><span class="fl">0.2</span> <span class="op">+</span> <span class="fl">0.5</span> <span class="op">*</span> <span class="va">x</span> <span class="op">+</span> <span class="va">b</span><span class="op">[</span><span class="va">grp</span>, <span class="fl">1</span><span class="op">]</span> <span class="op">+</span> <span class="va">b</span><span class="op">[</span><span class="va">grp</span>, <span class="fl">2</span><span class="op">]</span> <span class="op">*</span> <span class="va">x</span></span>
-<span><span class="va">y</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Binomial.html" class="external-link">rbinom</a></span><span class="op">(</span><span class="va">n</span>, <span class="fl">1L</span>, <span class="fu"><a href="https://rdrr.io/r/stats/Logistic.html" class="external-link">plogis</a></span><span class="op">(</span><span class="va">eta</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="va">re_term</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>idx <span class="op">=</span> <span class="va">grp</span>, n_groups <span class="op">=</span> <span class="va">G</span>, n_coefs <span class="op">=</span> <span class="fl">2L</span>, Z <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span><span class="fl">1</span>, <span class="va">x</span><span class="op">)</span>,</span>
-<span>                correlated <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
-<span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu">tulpa_re_cov_nested</span><span class="op">(</span><span class="va">y</span>, <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fl">1L</span>, <span class="va">n</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span><span class="fl">1</span>, <span class="va">x</span><span class="op">)</span>, <span class="va">re_term</span>,</span>
-<span>                           family <span class="op">=</span> <span class="st">"binomial"</span><span class="op">)</span></span>
-<span><span class="va">fit</span><span class="op">$</span><span class="va">Sigma_mean</span>        <span class="co"># marginalized RE covariance</span></span>
-<span><span class="co"># }</span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="co"># \donttest{</span></span></span>
+<span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">G</span> <span class="op">&lt;-</span> <span class="fl">20L</span>; <span class="va">per</span> <span class="op">&lt;-</span> <span class="fl">12L</span>; <span class="va">n</span> <span class="op">&lt;-</span> <span class="va">G</span> <span class="op">*</span> <span class="va">per</span></span></span>
+<span class="r-in"><span><span class="va">grp</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">G</span><span class="op">)</span>, each <span class="op">=</span> <span class="va">per</span><span class="op">)</span>; <span class="va">x</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">b</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">G</span>, <span class="fl">0</span>, <span class="fl">0.7</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">G</span>, <span class="fl">0</span>, <span class="fl">0.5</span><span class="op">)</span><span class="op">)</span>     <span class="co"># random intercept + slope</span></span></span>
+<span class="r-in"><span><span class="va">eta</span> <span class="op">&lt;-</span> <span class="op">-</span><span class="fl">0.2</span> <span class="op">+</span> <span class="fl">0.5</span> <span class="op">*</span> <span class="va">x</span> <span class="op">+</span> <span class="va">b</span><span class="op">[</span><span class="va">grp</span>, <span class="fl">1</span><span class="op">]</span> <span class="op">+</span> <span class="va">b</span><span class="op">[</span><span class="va">grp</span>, <span class="fl">2</span><span class="op">]</span> <span class="op">*</span> <span class="va">x</span></span></span>
+<span class="r-in"><span><span class="va">y</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Binomial.html" class="external-link">rbinom</a></span><span class="op">(</span><span class="va">n</span>, <span class="fl">1L</span>, <span class="fu"><a href="https://rdrr.io/r/stats/Logistic.html" class="external-link">plogis</a></span><span class="op">(</span><span class="va">eta</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">re_term</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>idx <span class="op">=</span> <span class="va">grp</span>, n_groups <span class="op">=</span> <span class="va">G</span>, n_coefs <span class="op">=</span> <span class="fl">2L</span>, Z <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span><span class="fl">1</span>, <span class="va">x</span><span class="op">)</span>,</span></span>
+<span class="r-in"><span>                correlated <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu">tulpa_re_cov_nested</span><span class="op">(</span><span class="va">y</span>, <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fl">1L</span>, <span class="va">n</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span><span class="fl">1</span>, <span class="va">x</span><span class="op">)</span>, <span class="va">re_term</span>,</span></span>
+<span class="r-in"><span>                           family <span class="op">=</span> <span class="st">"binomial"</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">fit</span><span class="op">$</span><span class="va">Sigma_mean</span>        <span class="co"># marginalized RE covariance</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>             [,1]        [,2]</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> [1,]  0.45590235 -0.04201789</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> [2,] -0.04201789  0.25672717</span>
+<span class="r-in"><span><span class="co"># }</span></span></span>
+</code></pre></div>
     </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>

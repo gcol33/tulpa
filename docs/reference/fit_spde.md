@@ -22,6 +22,7 @@ fit_spde(
   n_re_groups = 0L,
   sigma_re = 1,
   mode = c("laplace", "nuts"),
+  hyperprior = c("proper", "flat"),
   control = list()
 )
 ```
@@ -76,6 +77,11 @@ fit_spde(
   it. The compiled kernels parameterize the two variance families by the
   residual SD and are handed `sqrt(phi)` at the boundary.
 
+  Defaulted, it conditions at 1 and says so with a warning, since for a
+  family that reads a dispersion that is a modelling choice rather than
+  a neutral value. `fit$phi_estimated` records whether the value on the
+  fit was estimated or conditioned on.
+
 - offset:
 
   Optional fixed additive term on the linear predictor
@@ -103,6 +109,17 @@ fit_spde(
   `control` (see
   [`tulpa_nuts_spde()`](https://gillescolling.com/tulpa/reference/tulpa_nuts_spde.md));
   it returns that sampler's draws object.
+
+- hyperprior:
+
+  `"proper"` (default) or `"flat"`, the prior the nested integration
+  puts on `(range, sigma)`. `"proper"` carries the spec's PC range and
+  PC sigma priors. `"flat"` keeps only the anchors the spec was given
+  explicitly (`prior_range` / `prior_sigma` passed to
+  [`spatial_spde()`](https://gillescolling.com/tulpa/reference/spatial_spde.md));
+  an axis whose anchor was defaulted carries no density, is named in
+  `log_hyperprior_declined` as `"flat_hyperprior"`, and the evidence
+  declines. Not read by `mode = "nuts"`, where `"flat"` errors.
 
 - control:
 
@@ -214,5 +231,6 @@ if (requireNamespace("fmesher", quietly = TRUE)) {
   fit <- fit_spde(y = y, X = cbind(1, x), spatial = spec, family = "poisson")
   fit$nested$range_mean
 }
+#> [1] 0.07370861
 # }
 ```

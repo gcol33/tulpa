@@ -48,8 +48,11 @@ tulpa_posterior_draws(fit, idx = NULL, n = 1000, ...)
 A numeric matrix `[n x length(idx)]` of latent draws, one row per draw,
 columns named `x<idx>`. Carries `attr(., "draws_kind") = "iid"`
 (consistent with the draws-provenance gate), `attr(., "cells")` – the
-outer-grid cell index each row was drawn from – and
-`attr(., "scope") = "latent"`.
+outer-grid cell index each row was drawn from – `attr(., "theta")`, the
+hyperparameter half of the same rows continuized within each row's own
+cell
+([`tulpa_hyper_draws()`](https://gillescolling.com/tulpa/reference/tulpa_hyper_draws.md))
+– and `attr(., "scope") = "latent"`.
 
 ## Details
 

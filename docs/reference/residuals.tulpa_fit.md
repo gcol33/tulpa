@@ -5,7 +5,8 @@ Population-level residuals from the fixed-effect fitted mean:
 binomial, offset included); `"pearson"` additionally scales by the
 family standard deviation `sqrt(Var(y | eta))` at the fitted linear
 predictor. Random effects are held at zero, matching
-[`fitted()`](https://rdrr.io/r/stats/fitted.values.html).
+[`fitted()`](https://rdrr.io/r/stats/fitted.values.html). On a
+zero-inflated fit both the mean and the variance are the mixture's.
 
 ## Usage
 

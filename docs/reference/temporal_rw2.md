@@ -53,6 +53,12 @@ The precision matrix is rank T-2 (two constraints needed).
 ``` r
 # Create temporal RW2 specification
 temporal_rw2("year")
+#> tulpa temporal specification
+#> ============================
+#> 
+#> Type: RW2 (Second-order Random Walk) 
+#> Time variable: year 
+#> Shared: Yes (enters both processes) 
 
 # \donttest{
 # Smooth temporal trend
@@ -72,5 +78,8 @@ fit <- tulpa(
   mode = "auto"
 )
 summary(fit)
+#>              estimate  std.error     2.5 %    97.5 %
+#> (Intercept) 1.6643323 0.05315891 1.5524855 1.7608646
+#> x           0.2954175 0.05308721 0.1915263 0.3996244
 # }
 ```

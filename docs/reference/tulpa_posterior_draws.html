@@ -36,7 +36,7 @@ multimodal-over-grid posteriors."><script>
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.6.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -123,7 +123,11 @@ covers for this backend (see above); <code>NULL</code> (default) returns all of 
 <code>attr(., "draws_kind") = "iid"</code> (consistent with the draws-provenance
 gate), <code>attr(., "cells")</code> – the outer-grid cell index each row was drawn
 from – and <code>attr(., "scope")</code>, which of the two representations above the
-columns are.</p>
+columns are. <code>attr(., "theta")</code> is the HYPERPARAMETER half of the same
+rows, one column per outer-grid axis, continuized within each row's own
+cell by <code><a href="tulpa_hyper_draws.html">tulpa_hyper_draws()</a></code>; reading <code>fit$theta_grid[attr(., "cells"), ]</code>
+instead returns the bare node coordinate, which is an atom rather than a
+marginal.</p>
     </div>
     <div class="section level2">
     <h2 id="what-a-draw-covers">What a draw covers<a class="anchor" aria-label="anchor" href="#what-a-draw-covers"></a></h2>
@@ -146,8 +150,8 @@ of the retained per-cell Gaussian and cannot be sampled from the fit.
 </dl></div>
     <div class="section level2">
     <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>
-    <div class="dont-index"><p><code><a href="tulpa_nested_laplace.html">tulpa_nested_laplace()</a></code>, <code><a href="tulpa_nested_laplace_joint.html">tulpa_nested_laplace_joint()</a></code>,
-<code><a href="posterior_sample.html">posterior_sample()</a></code></p></div>
+    <div class="dont-index"><p><code><a href="tulpa_hyper_draws.html">tulpa_hyper_draws()</a></code>, <code><a href="tulpa_nested_laplace.html">tulpa_nested_laplace()</a></code>,
+<code><a href="tulpa_nested_laplace_joint.html">tulpa_nested_laplace_joint()</a></code>, <code><a href="posterior_sample.html">posterior_sample()</a></code></p></div>
     </div>
 
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

@@ -30,3 +30,9 @@ dispatch_gibbs_temporal(
   n_threads = 1L
 )
 ```
+
+## Value
+
+The one-chain list
+[`tulpa_gibbs()`](https://gillescolling.com/tulpa/reference/tulpa_gibbs.md)
+finalizes (see its Value).

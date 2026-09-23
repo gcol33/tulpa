@@ -4,11 +4,13 @@ default the caller computed, not a choice the user made. The auto-recenter
 pass (outer_grid_placement) leaves a user-pinned
 setting exactly as given, and re-centres (or, for a prior, engages its own
 regularizer over) a marked one when the fit rails against its ceiling.
-Three kinds of setting take the mark:
+Four kinds of setting take the mark:
 a grid axis on a nested-Laplace prior block (sigma_grid,
 tau_grid, ...) – a numeric vector of nodes, or the [n_cells x k]
 matrix of pre-paired coordinates the families whose axis is a matrix
 take (mcar / miid's logchol_grid, tgmrf's theta_grid_built);
+an entry of tulpa_nested_laplace_joint()'s phi_grid – one arm's
+dispersion axis;
 a scalar grid-construction knob in control, for a driver that
 builds its axes rather than taking them (fit_st_nested()'s
 n_grid_spatial, tau_upper, ...);
@@ -22,18 +24,21 @@ several blocks, or exposes its own argument with a default – would
 otherwise be indistinguishable from a user who pinned that setting
 deliberately. Mark it and the rescue stays live. A setting whose value is
 exactly the engine's own default is recognised without a mark; anything else
-needs one.
+needs one – and a dispersion axis ALWAYS needs one, since the engine has no
+default of its own to recognise it against.
 The mark is an attribute, so it is dropped by sort(), [, c() and
 as.numeric(): build the value first, mark it last."><meta property="og:description" content="Declares that a setting shaping the outer hyperparameter grid carries a
 default the caller computed, not a choice the user made. The auto-recenter
 pass (outer_grid_placement) leaves a user-pinned
 setting exactly as given, and re-centres (or, for a prior, engages its own
 regularizer over) a marked one when the fit rails against its ceiling.
-Three kinds of setting take the mark:
+Four kinds of setting take the mark:
 a grid axis on a nested-Laplace prior block (sigma_grid,
 tau_grid, ...) – a numeric vector of nodes, or the [n_cells x k]
 matrix of pre-paired coordinates the families whose axis is a matrix
 take (mcar / miid's logchol_grid, tgmrf's theta_grid_built);
+an entry of tulpa_nested_laplace_joint()'s phi_grid – one arm's
+dispersion axis;
 a scalar grid-construction knob in control, for a driver that
 builds its axes rather than taking them (fit_st_nested()'s
 n_grid_spatial, tau_upper, ...);
@@ -47,7 +52,8 @@ several blocks, or exposes its own argument with a default – would
 otherwise be indistinguishable from a user who pinned that setting
 deliberately. Mark it and the rescue stays live. A setting whose value is
 exactly the engine's own default is recognised without a mark; anything else
-needs one.
+needs one – and a dispersion axis ALWAYS needs one, since the engine has no
+default of its own to recognise it against.
 The mark is an attribute, so it is dropped by sort(), [, c() and
 as.numeric(): build the value first, mark it last."><script>
 (function () {
@@ -70,7 +76,7 @@ as.numeric(): build the value first, mark it last."><script>
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.6.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -118,10 +124,12 @@ as.numeric(): build the value first, mark it last."><script>
 pass (<code>outer_grid_placement</code>) leaves a user-pinned
 setting exactly as given, and re-centres (or, for a prior, engages its own
 regularizer over) a marked one when the fit rails against its ceiling.</p>
-<p>Three kinds of setting take the mark:</p><ul><li><p>a grid axis on a nested-Laplace <code>prior</code> block (<code>sigma_grid</code>,
+<p>Four kinds of setting take the mark:</p><ul><li><p>a grid axis on a nested-Laplace <code>prior</code> block (<code>sigma_grid</code>,
 <code>tau_grid</code>, ...) – a numeric vector of nodes, or the <code>[n_cells x k]</code>
 matrix of pre-paired coordinates the families whose axis is a matrix
 take (<code>mcar</code> / <code>miid</code>'s <code>logchol_grid</code>, <code>tgmrf</code>'s <code>theta_grid_built</code>);</p></li>
+<li><p>an entry of <code><a href="tulpa_nested_laplace_joint.html">tulpa_nested_laplace_joint()</a></code>'s <code>phi_grid</code> – one arm's
+dispersion axis;</p></li>
 <li><p>a scalar grid-construction knob in <code>control</code>, for a driver that
 builds its axes rather than taking them (<code><a href="fit_st_nested.html">fit_st_nested()</a></code>'s
 <code>n_grid_spatial</code>, <code>tau_upper</code>, ...);</p></li>
@@ -133,14 +141,15 @@ several blocks, or exposes its own argument with a default – would
 otherwise be indistinguishable from a user who pinned that setting
 deliberately. Mark it and the rescue stays live. A setting whose value is
 exactly the engine's own default is recognised without a mark; anything else
-needs one.</p>
+needs one – and a dispersion axis ALWAYS needs one, since the engine has no
+default of its own to recognise it against.</p>
 <p>The mark is an attribute, so it is dropped by <code><a href="https://rdrr.io/r/base/sort.html" class="external-link">sort()</a></code>, <code>[</code>, <code><a href="https://rdrr.io/r/base/c.html" class="external-link">c()</a></code> and
 <code><a href="https://rdrr.io/r/base/numeric.html" class="external-link">as.numeric()</a></code>: build the value first, mark it last.</p>
     </div>
 
     <div class="section level2">
     <h2 id="ref-usage">Usage<a class="anchor" aria-label="anchor" href="#ref-usage"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">auto_grid</span><span class="op">(</span><span class="va">x</span><span class="op">)</span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">auto_grid</span><span class="op">(</span><span class="va">x</span>, place <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span></code></pre></div>
     </div>
 
     <div class="section level2">
@@ -151,6 +160,12 @@ needs one.</p>
 <dd><p>Numeric vector or matrix of grid nodes, a numeric scalar knob, or a
 prior-specification list.</p></dd>
 
+
+<dt id="arg-place">place<a class="anchor" aria-label="anchor" href="#arg-place"></a></dt>
+<dd><p>May the auto-placement pass move this axis onto its own
+posterior? <code>TRUE</code> (default) declares a default the engine may re-place;
+<code>FALSE</code> declares one it must integrate as written.</p></dd>
+
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
@@ -160,15 +175,41 @@ above all – survives the mark; a list is returned unchanged apart from
 the attribute.</p>
     </div>
     <div class="section level2">
+    <h2 id="declaring-a-default-the-engine-must-integrate-as-written">Declaring a default the engine must integrate as written<a class="anchor" aria-label="anchor" href="#declaring-a-default-the-engine-must-integrate-as-written"></a></h2>
+
+
+<p><code>place = FALSE</code> separates the two questions the mark otherwise answers at
+once. Provenance – whose choice these nodes are – and placement policy –
+whether the pass may move them – are different questions, and a package that
+measured its own default as the one to integrate has an answer to the second
+that is not "the user pinned it". Such an axis is treated exactly as a pin
+everywhere the engine ACTS on it (the placement pass leaves it, refinement
+densifies within its span rather than following the posterior past the end
+nodes, and no curvature is computed for it), and differs only in what the fit
+REPORTS: <code>"default_axis_pinned"</code> rather than <code>"axis_pinned"</code>, so a reader is
+not told they pinned an axis they never wrote down. Leaving the mark off
+instead buys the same integration and says the wrong thing about it.</p>
+<p><code>place</code> is read wherever the engine would otherwise RE-PLACE the setting: a
+grid axis, and a scalar grid-construction knob. A <code>prior_sigma</code>
+specification is not re-placed but replaced, by the engine's own
+regularizer, and carries no <code>place</code>.</p>
+    </div>
+    <div class="section level2">
     <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>
-    <div class="dont-index"><p><code><a href="is_auto_grid.html">is_auto_grid()</a></code>, <code><a href="tulpa_nested_laplace_joint.html">tulpa_nested_laplace_joint()</a></code>, <code><a href="fit_st_nested.html">fit_st_nested()</a></code></p></div>
+    <div class="dont-index"><p><code><a href="is_auto_grid.html">is_auto_grid()</a></code>, <code><a href="auto_grid_place.html">auto_grid_place()</a></code>,
+<code><a href="tulpa_nested_laplace_joint.html">tulpa_nested_laplace_joint()</a></code>, <code><a href="fit_st_nested.html">fit_st_nested()</a></code></p></div>
     </div>
 
     <div class="section level2">
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="va">prior</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>type <span class="op">=</span> <span class="st">"icar"</span>, sigma_grid <span class="op">=</span> <span class="fu">auto_grid</span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.1</span>, <span class="fl">0.5</span>, <span class="fl">1</span>, <span class="fl">2</span>, <span class="fl">3</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="fu"><a href="is_auto_grid.html">is_auto_grid</a></span><span class="op">(</span><span class="va">prior</span><span class="op">$</span><span class="va">sigma_grid</span><span class="op">)</span></span>
-<span><span class="fu"><a href="is_auto_grid.html">is_auto_grid</a></span><span class="op">(</span><span class="fu">auto_grid</span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="st">"pc.prec"</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>U <span class="op">=</span> <span class="fl">3</span>, alpha <span class="op">=</span> <span class="fl">0.01</span><span class="op">)</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="va">prior</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>type <span class="op">=</span> <span class="st">"icar"</span>, sigma_grid <span class="op">=</span> <span class="fu">auto_grid</span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.1</span>, <span class="fl">0.5</span>, <span class="fl">1</span>, <span class="fl">2</span>, <span class="fl">3</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="fu"><a href="is_auto_grid.html">is_auto_grid</a></span><span class="op">(</span><span class="va">prior</span><span class="op">$</span><span class="va">sigma_grid</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> [1] TRUE</span>
+<span class="r-in"><span><span class="fu"><a href="is_auto_grid.html">is_auto_grid</a></span><span class="op">(</span><span class="fu">auto_grid</span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="st">"pc.prec"</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>U <span class="op">=</span> <span class="fl">3</span>, alpha <span class="op">=</span> <span class="fl">0.01</span><span class="op">)</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> [1] TRUE</span>
+<span class="r-in"><span><span class="fu"><a href="auto_grid_place.html">auto_grid_place</a></span><span class="op">(</span><span class="fu">auto_grid</span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.5</span>, <span class="fl">1</span>, <span class="fl">2</span><span class="op">)</span>, place <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> [1] FALSE</span>
+</code></pre></div>
     </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>

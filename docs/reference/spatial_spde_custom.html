@@ -22,7 +22,7 @@ matrices. Use this with meshes from fmesher, rSPDE, or any other source."><scrip
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.6.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -76,8 +76,9 @@ matrices. Use this with meshes from fmesher, rSPDE, or any other source.</p>
 <span>  <span class="va">G</span>,</span>
 <span>  <span class="va">A</span>,</span>
 <span>  nu <span class="op">=</span> <span class="fl">1</span>,</span>
-<span>  prior_range <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.5</span>, <span class="fl">0.5</span><span class="op">)</span>,</span>
-<span>  prior_sigma <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">1</span>, <span class="fl">0.5</span><span class="op">)</span></span>
+<span>  prior_range <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  prior_sigma <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  coords <span class="op">=</span> <span class="cn">NULL</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -94,7 +95,7 @@ matrices. Use this with meshes from fmesher, rSPDE, or any other source.</p>
 
 
 <dt id="arg-a">A<a class="anchor" aria-label="anchor" href="#arg-a"></a></dt>
-<dd><p>Projection matrix (n_obs x n_mesh sparse matrix, e.g. from <code>fmesher::fm_basis()</code>).</p></dd>
+<dd><p>Projection matrix (n_obs x n_mesh sparse matrix, e.g. from <code><a href="https://inlabru-org.github.io/fmesher/reference/fm_basis.html" class="external-link">fmesher::fm_basis()</a></code>).</p></dd>
 
 
 <dt id="arg-nu">nu<a class="anchor" aria-label="anchor" href="#arg-nu"></a></dt>
@@ -104,11 +105,19 @@ approximation (supported by <code><a href="fit_spde.html">fit_spde()</a></code>;
 
 
 <dt id="arg-prior-range">prior_range<a class="anchor" aria-label="anchor" href="#arg-prior-range"></a></dt>
-<dd><p>Prior for the spatial range. Default <code>c(0.5, 0.5)</code>.</p></dd>
+<dd><p>PC prior on the spatial range, <code>c(U, alpha)</code> with
+P(range &lt; U) = alpha. <code>NULL</code> (the default) anchors it on <code>coords</code> as
+<code><a href="spatial_spde.html">spatial_spde()</a></code> does, and needs them.</p></dd>
 
 
 <dt id="arg-prior-sigma">prior_sigma<a class="anchor" aria-label="anchor" href="#arg-prior-sigma"></a></dt>
-<dd><p>Prior for the marginal standard deviation. Default <code>c(1, 0.5)</code>.</p></dd>
+<dd><p>PC prior on the marginal standard deviation, <code>c(U, alpha)</code>
+with P(sigma &gt; U) = alpha. <code>NULL</code> (the default) is <code>c(3, 0.01)</code>.</p></dd>
+
+
+<dt id="arg-coords">coords<a class="anchor" aria-label="anchor" href="#arg-coords"></a></dt>
+<dd><p>Observation coordinates (an <code>n_obs x 2</code> matrix), read only to
+anchor the default range prior. Not needed when <code>prior_range</code> is given.</p></dd>
 
 </dl></div>
     <div class="section level2">

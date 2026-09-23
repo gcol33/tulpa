@@ -46,7 +46,7 @@ per-cell inner fit and get the outer integration for free."><script>
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.6.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -181,15 +181,17 @@ unnamed).</p></dd>
 <dd><p>Optional list of refinement / tuning knobs:</p><ul><li><p><code>adaptive_grid</code> (<code>FALSE</code>) – run the boundary / interior refinement
 pass on every axis whose spec has <code>refinable = TRUE</code>. New cells are
 appended along the refining axis paired with the boundary modal cell's
-other-axis values, carrying a marginal-scale calibration so they
-contribute on the right scale.</p></li>
+other-axis values. Each new cell is measured by the part of its row's
+base cells it takes over, so the grid integrates the same prior measure
+with a finer resolution where the mass is.</p></li>
 <li><p><code>adaptive_grid_edge_thresh</code> (<code>0.02</code>) – per-axis trigger threshold.</p></li>
 <li><p><code>adaptive_grid_max_passes</code> (<code>1L</code>) – cap on refinement passes.</p></li>
 <li><p><code>var_of_means_consistency</code> (<code>FALSE</code>) – run a post-integration
 consistency pass: for refinable axes whose marginal has collapsed onto
-too few nodes to carry a spread, append Laplace-guided slice points at
-<code>theta_mean +/- {0.7, 1.5} * sd</code> pinned at the modal cell, <code>sd</code> being
-the parabola at the modal node. One kernel call per axis.</p></li>
+too few nodes to carry a spread, bisect the gaps between adjacent nodes
+that carry the axis's mass, with slice points in the modal cell's row,
+and repeat until the axis reaches <code>var_of_means_min_ess</code> or has taken
+<code>.nl_diag("axis_refine_nodes")</code> new nodes. One kernel call per round.</p></li>
 <li><p><code>var_of_means_min_ess</code> (<code>.nl_diag("axis_sd_ess")</code>) – the quadrature
 effective sample size an axis marginal has to reach for the pass to
 leave it alone. Read off the weights, so the trigger is not one SD
@@ -247,12 +249,13 @@ driver that this helper generalises.</p></div>
 
     <div class="section level2">
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="kw">if</span> <span class="op">(</span><span class="cn">FALSE</span><span class="op">)</span> <span class="op">{</span> <span class="co"># \dontrun{</span></span>
-<span><span class="co"># Integrate an inner fit over a hyperparameter grid: inner_fit(theta) returns</span></span>
-<span><span class="co"># a per-cell fit and hyper_specs names the axes. tulpa_nested_laplace() is the</span></span>
-<span><span class="co"># packaged driver built on this.</span></span>
-<span><span class="va">res</span> <span class="op">&lt;-</span> <span class="fu">tulpa_hyper_grid</span><span class="op">(</span><span class="va">hyper_specs</span>, <span class="va">inner_fit</span><span class="op">)</span></span>
-<span><span class="op">}</span> <span class="co"># }</span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="kw">if</span> <span class="op">(</span><span class="cn">FALSE</span><span class="op">)</span> <span class="op">{</span> <span class="co"># \dontrun{</span></span></span>
+<span class="r-in"><span><span class="co"># Integrate an inner fit over a hyperparameter grid: inner_fit(theta) returns</span></span></span>
+<span class="r-in"><span><span class="co"># a per-cell fit and hyper_specs names the axes. tulpa_nested_laplace() is the</span></span></span>
+<span class="r-in"><span><span class="co"># packaged driver built on this.</span></span></span>
+<span class="r-in"><span><span class="va">res</span> <span class="op">&lt;-</span> <span class="fu">tulpa_hyper_grid</span><span class="op">(</span><span class="va">hyper_specs</span>, <span class="va">inner_fit</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="op">}</span> <span class="co"># }</span></span></span>
+</code></pre></div>
     </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>

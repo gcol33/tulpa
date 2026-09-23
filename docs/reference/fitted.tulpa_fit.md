@@ -4,7 +4,10 @@ In-sample mean response from the fixed effects and the observation
 offset (`E[y] = g^{-1}(X beta + offset)`, trial-scaled for binomial).
 Random effects are held at their prior mean of zero; group-level effects
 are in [`ranef()`](https://gillescolling.com/tulpa/reference/ranef.md).
-`y - fitted(object)` equals `residuals(object, type = "response")`.
+`y - fitted(object)` equals `residuals(object, type = "response")`. On a
+zero-inflated fit (`ziformula`) the mean is the mixture's,
+`(1 - pi) E[y | eta]` with `pi = plogis(X_zi beta_zi)`; over a
+zero-truncated family that is the hurdle mean.
 
 ## Usage
 

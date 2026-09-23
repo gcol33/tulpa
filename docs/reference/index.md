@@ -230,9 +230,12 @@ The prior surface and the individual prior builders.
 
 - [`tulpa_criteria()`](https://gillescolling.com/tulpa/reference/tulpa_criteria.md)
   : Model criteria from a pointwise log-likelihood
-- [`dic()`](https://gillescolling.com/tulpa/reference/criteria_doors.md)
+- [`pointwise_loglik()`](https://gillescolling.com/tulpa/reference/criteria_doors.md)
+  [`dic()`](https://gillescolling.com/tulpa/reference/criteria_doors.md)
   [`cpo()`](https://gillescolling.com/tulpa/reference/criteria_doors.md)
-  : DIC and CPO
+  [`waic(`*`<tulpa_fit>`*`)`](https://gillescolling.com/tulpa/reference/criteria_doors.md)
+  [`loo(`*`<tulpa_fit>`*`)`](https://gillescolling.com/tulpa/reference/criteria_doors.md)
+  : DIC, CPO, WAIC and PSIS-LOO on a fit
 - [`tulpa_kfold()`](https://gillescolling.com/tulpa/reference/tulpa_kfold.md)
   : K-fold cross-validation for a tulpa fit
 - [`tulpa_reloo()`](https://gillescolling.com/tulpa/reference/tulpa_reloo.md)
@@ -303,11 +306,6 @@ share.
 
 - [`diagnostics()`](https://gillescolling.com/tulpa/reference/diagnostics.md)
   : Posterior diagnostics for a fitted model
-- [`mcmc_diagnostics()`](https://gillescolling.com/tulpa/reference/mcmc_diagnostics.md)
-  **\[deprecated\]** : MCMC convergence diagnostics
-- [`laplace_diagnostics()`](https://gillescolling.com/tulpa/reference/laplace_diagnostics.md)
-  **\[deprecated\]** : Approximation-reliability diagnostics for a
-  deterministic nested-Laplace fit
 - [`check_diagnostics()`](https://gillescolling.com/tulpa/reference/check_diagnostics.md)
   : Quick convergence check
 - [`diagnostic_summary()`](https://gillescolling.com/tulpa/reference/diagnostic_summary.md)

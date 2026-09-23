@@ -37,7 +37,7 @@
 
     <a class="navbar-brand me-2" href="index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.6.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -113,7 +113,7 @@
 <span><span class="co">#&gt;     sigma_1   0.688  0.102    0.678   0.516   0.918   # intercept SD (truth 0.7)</span></span>
 <span><span class="co">#&gt;     sigma_2   0.469  0.074    0.461   0.345   0.636   # slope SD     (truth 0.4)</span></span>
 <span><span class="co">#&gt;      rho_12  -0.145  0.206   -0.156  -0.523   0.254   # correlation  (truth 0)</span></span></code></pre></div>
-<p><code>mode = "auto"</code> picks a backend and records the reason on the fit — the dial neither INLA nor Stan hands you on a single object. The random-effect covariance is not a plug-in point estimate: <code>sigma_1</code>, <code>sigma_2</code>, and <code>rho_12</code> are read off the joint posterior with full credible intervals. The result is a <code>tulpa_fit</code> with the usual accessors (<code>coef</code>, <code>confint</code>, <code>vcov</code>, <code>summary</code>, <code>tidy</code>, <code>glance</code>, <code>ranef</code>) and a full diagnostics surface (<code>mcmc_diagnostics</code>, <code>check_model</code>, <code>pp_check</code>).</p>
+<p><code>mode = "auto"</code> picks a backend and records the reason on the fit. The random-effect covariance is not a plug-in point estimate: <code>sigma_1</code>, <code>sigma_2</code>, and <code>rho_12</code> are read off the joint posterior with full credible intervals. The result is a <code>tulpa_fit</code> with the usual accessors (<code>coef</code>, <code>confint</code>, <code>vcov</code>, <code>summary</code>, <code>tidy</code>, <code>glance</code>, <code>ranef</code>) and a full diagnostics surface (<code>diagnostics</code>, <code>check_model</code>, <code>pp_check</code>).</p>
 <div class="section level2">
 <h2 id="one-front-door-every-backend">One front door, every backend<a class="anchor" aria-label="anchor" href="#one-front-door-every-backend"></a>
 </h2>
@@ -282,12 +282,12 @@
 <div class="section level2">
 <h2 id="diagnostics">Diagnostics<a class="anchor" aria-label="anchor" href="#diagnostics"></a>
 </h2>
-<p>Rhat (improved rank-normalised / folded split-Rhat, Vehtari et al. 2021), bulk/tail ESS, and MCSE are implemented natively and reproduce <code>posterior</code> to ~1e-12, so downstream packages call <code><a href="reference/mcmc_diagnostics.html">tulpa::mcmc_diagnostics()</a></code> directly. For deterministic (non-chain) fits the engine reports Pareto-k̂ — the accuracy counterpart to Rhat — instead of withholding a vacuous convergence pass.</p>
+<p>Rhat (improved rank-normalised / folded split-Rhat, Vehtari et al. 2021), bulk/tail ESS, and MCSE are implemented natively and reproduce <code>posterior</code> to ~1e-12, so downstream packages call <code><a href="reference/diagnostics.html">tulpa::diagnostics()</a></code> directly. For deterministic (non-chain) fits the engine reports Pareto-k̂ — the accuracy counterpart to Rhat — instead of withholding a vacuous convergence pass.</p>
 <div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
 <span><span class="fu"><a href="reference/ranef.html">ranef</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
-<span><span class="fu"><a href="reference/mcmc_diagnostics.html">mcmc_diagnostics</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span>          <span class="co"># Rhat, bulk/tail ESS</span></span>
+<span><span class="fu"><a href="reference/diagnostics.html">diagnostics</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span>               <span class="co"># Rhat, bulk/tail ESS</span></span>
 <span><span class="fu"><a href="reference/check_model.html">check_model</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span>               <span class="co"># posterior-predictive + residual diagnostics</span></span></code></pre></div>
 <p>Posterior-predictive checks (<code>pp_check</code>, <code>check_model</code>), residual tests (<code>pit_residuals</code>, <code>test_dispersion</code>, <code>test_zero_inflation</code>), and spatial/temporal diagnostics (<code>moran_i</code>, <code>durbin_watson</code>, <code>tulpa_variogram</code>) round out the surface.</p>
 </div>
@@ -364,12 +364,17 @@
 <h2 id="installation">Installation<a class="anchor" aria-label="anchor" href="#installation"></a>
 </h2>
 <div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="co"># Development version from GitHub</span></span>
+<code class="sourceCode R"><span><span class="co"># Current release, built for Windows and macOS</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span><span class="st">"tulpa"</span>,</span>
+<span>                 repos <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"https://gcol33.r-universe.dev"</span>,</span>
+<span>                           <span class="st">"https://cloud.r-project.org"</span><span class="op">)</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># Development version from GitHub</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span><span class="st">"pak"</span><span class="op">)</span></span>
 <span><span class="fu">pak</span><span class="fu">::</span><span class="fu"><a href="https://pak.r-lib.org/reference/pak.html" class="external-link">pak</a></span><span class="op">(</span><span class="st">"gcol33/tulpa"</span><span class="op">)</span></span>
 <span></span>
 <span><span class="co"># Pin a release</span></span>
-<span><span class="fu">pak</span><span class="fu">::</span><span class="fu"><a href="https://pak.r-lib.org/reference/pak.html" class="external-link">pak</a></span><span class="op">(</span><span class="st">"gcol33/tulpa@v0.3.0"</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu">pak</span><span class="fu">::</span><span class="fu"><a href="https://pak.r-lib.org/reference/pak.html" class="external-link">pak</a></span><span class="op">(</span><span class="st">"gcol33/tulpa@v0.6.0"</span><span class="op">)</span></span></code></pre></div>
 <p><code>pak</code> resolves the dependency tree, including <code>tulpaMesh</code> (on CRAN, used for SPDE mesh construction). <code>tulpa</code> compiles its C++ backend on first install, so a C++17 toolchain is required: Rtools on Windows, Xcode CLI tools on macOS, <code>r-base-dev</code> on Linux.</p>
 </div>
 <div class="section level2">
@@ -429,7 +434,7 @@
 <span id="cb10-2"><a href="#cb10-2" tabindex="-1"></a>  <span class="dt">author</span> = {Colling, Gilles},</span>
 <span id="cb10-3"><a href="#cb10-3" tabindex="-1"></a>  <span class="dt">title</span>  = {tulpa: Templated Unified Library for Posterior Approximation in Bayesian Hierarchical Models},</span>
 <span id="cb10-4"><a href="#cb10-4" tabindex="-1"></a>  <span class="dt">year</span>   = {2026},</span>
-<span id="cb10-5"><a href="#cb10-5" tabindex="-1"></a>  <span class="dt">note</span>   = {R package version 0.3.0},</span>
+<span id="cb10-5"><a href="#cb10-5" tabindex="-1"></a>  <span class="dt">note</span>   = {R package version 0.6.0},</span>
 <span id="cb10-6"><a href="#cb10-6" tabindex="-1"></a>  <span class="dt">url</span>    = {https://github.com/gcol33/tulpa}</span>
 <span id="cb10-7"><a href="#cb10-7" tabindex="-1"></a>}</span></code></pre></div>
 </div>
@@ -437,6 +442,7 @@
   </main><aside class="col-md-3"><div class="links">
 <h2 data-toc-skip>Links</h2>
 <ul class="list-unstyled">
+<li><a href="https://cloud.r-project.org/package=tulpa" class="external-link">View on CRAN</a></li>
 <li><a href="https://github.com/gcol33/tulpa/" class="external-link">Browse source code</a></li>
 <li><a href="https://github.com/gcol33/tulpa/issues" class="external-link">Report a bug</a></li>
 </ul>

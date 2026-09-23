@@ -37,6 +37,9 @@ for an unrestricted backend.
 cabi     – the registered C-ABI callable backing the backend (the symbol
 a model package reaches via LinkingTo: tulpa, and the one an R wrapper
 would call), or NULL.
+hyperprior – TRUE when the backend's fitter takes the outer
+hyperprior = c(&quot;proper&quot;, &quot;flat&quot;) choice tulpa() forwards; absent
+otherwise.
 note     – optional human-readable note.
 
 
@@ -80,6 +83,9 @@ for an unrestricted backend.
 cabi     – the registered C-ABI callable backing the backend (the symbol
 a model package reaches via LinkingTo: tulpa, and the one an R wrapper
 would call), or NULL.
+hyperprior – TRUE when the backend's fitter takes the outer
+hyperprior = c(&quot;proper&quot;, &quot;flat&quot;) choice tulpa() forwards; absent
+otherwise.
 note     – optional human-readable note.
 
 
@@ -106,7 +112,7 @@ ratio families nest a per-process distribution)."><script>
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.6.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -184,6 +190,9 @@ for an unrestricted backend.</p></li>
 <li><p><code>cabi</code>     – the registered C-ABI callable backing the backend (the symbol
 a model package reaches via <code>LinkingTo: tulpa</code>, and the one an R wrapper
 would call), or <code>NULL</code>.</p></li>
+<li><p><code>hyperprior</code> – <code>TRUE</code> when the backend's fitter takes the outer
+<code>hyperprior = c("proper", "flat")</code> choice <code><a href="tulpa.html">tulpa()</a></code> forwards; absent
+otherwise.</p></li>
 <li><p><code>note</code>     – optional human-readable note.</p></li>
 </ul><p>Family identity (for <code>families</code>) is checked against <code>family$name</code>,
 <code>family$distribution</code>, and <code>family$numerator$distribution</code> (tulpaRatio-style

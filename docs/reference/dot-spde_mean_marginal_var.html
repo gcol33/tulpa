@@ -36,7 +36,7 @@ deterministic, grid-smooth normalization."><script>
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.6.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -95,8 +95,25 @@ deterministic, grid-smooth normalization.</p>
     <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">.spde_mean_marginal_var</span><span class="op">(</span><span class="va">Q</span>, <span class="va">Pr</span>, <span class="va">C0</span>, n_probe <span class="op">=</span> <span class="va">.SPDE_VARNORM_NPROBE</span><span class="op">)</span></span></code></pre></div>
     </div>
 
+    <div class="section level2">
+    <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
+    <p>Returns <code>list(value, singular)</code>. <code>singular</code> is TRUE where the factorization
+could not be completed – <code>Q</code> is not merely ill-conditioned but numerically
+SINGULAR, so <code>Q^-1</code> has no value and neither does the trace this estimates.
+CHOLMOD reports that as a "not positive definite" warning and then recovers
+on its own terms, which is a decision about the model taken by a library
+(gcol33/tulpa#845): the warning is caught here and turned into a flag the
+caller acts on, instead of reaching the user as a raw message from a
+probe they did not ask for.</p>
+<p>It happens far outside the range a fit integrates. Measured on the issue's
+n = 120, nu = 1.5 fixture: <code>rcond(Q)</code> is already 2.4e-17 at range 40 on a
+domain of extent 13.8, and every warning came from the MODE SEARCH at its
+own box corner, <code>range = 100 * range_init ~ 275.6</code>. The CCD grid the fit
+then integrates topped out at range 1.53 and carried no weight above 100.</p>
+    </div>
 
-  </main></div>
+  </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
+    </nav></aside></div>
 
 
     <footer><div class="pkgdown-footer-left">

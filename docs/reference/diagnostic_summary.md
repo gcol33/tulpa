@@ -53,6 +53,17 @@ A list with class `tulpa_diagnostic_summary` containing:
   approximation fits only: the outer PSIS k-hat, or the grid quadrature
   ESS when no k-hat was produced
 
+- hyper_share_min, hyper_share_max:
+
+  approximation fits only: the range over coefficients of the share of
+  the fixed-effect marginal variance the hyperparameter integration
+  contributed, `between / (within + between)` under the law of total
+  variance over the outer grid. Near zero means the reported interval is
+  what conditioning on a single hyperparameter point would have given.
+  Reported without a threshold and never scored: a small share is not by
+  itself a miscalibrated interval. `NA` when the fit retains no per-cell
+  pieces to decompose
+
 - pareto_k_declined:
 
   approximation fits only, and only when there is no k-hat: WHY –
@@ -95,6 +106,48 @@ fit <- tulpa(y ~ x, data = df, family = "poisson", mode = "hmc",
              control = list(n_iter = 500L, warmup = 250L, n_chains = 2L,
                             seed = 1L))
 ds <- diagnostic_summary(fit)
+#> 
+#> === tulpa Diagnostic Summary ===
+#> 
+#> Backend: hmc 
+#> Status: WARN
+#> 
+#> Divergent transitions: 0
+#> E-BFMI: 1.151 (OK)
+#> 
+#> Parameters with Rhat > 1.01:
+#>    parameter  rhat
+#>  (Intercept) 1.015
+#> 
+#> Parameters with ESS < 400:
+#>    parameter ess_bulk ess_tail
+#>            x      175      198
+#>  (Intercept)      183      174
+#> 
+#> Recommendations:
+#>   - Rhat > 1.01: Run more iterations or chains 
+#>   - ESS < 400: Run more iterations or use thinning 
 print(ds)
+#> 
+#> === tulpa Diagnostic Summary ===
+#> 
+#> Backend: hmc 
+#> Status: WARN
+#> 
+#> Divergent transitions: 0
+#> E-BFMI: 1.151 (OK)
+#> 
+#> Parameters with Rhat > 1.01:
+#>    parameter  rhat
+#>  (Intercept) 1.015
+#> 
+#> Parameters with ESS < 400:
+#>    parameter ess_bulk ess_tail
+#>            x      175      198
+#>  (Intercept)      183      174
+#> 
+#> Recommendations:
+#>   - Rhat > 1.01: Run more iterations or chains 
+#>   - ESS < 400: Run more iterations or use thinning 
 # }
 ```

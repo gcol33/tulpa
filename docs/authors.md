@@ -17,13 +17,13 @@ Source:
 [`inst/CITATION`](https://github.com/gcol33/tulpa/blob/HEAD/inst/CITATION)
 
 Colling, G. (2026). tulpa: Templated Unified Library for Posterior
-Approximation in Bayesian Hierarchical Models. R package version 0.3.0.
+Approximation in Bayesian Hierarchical Models. R package version 0.6.0.
 https://github.com/gcol33/tulpa
 
     @Manual{,
       title = {{tulpa}: Templated Unified Library for Posterior Approximation in Bayesian Hierarchical Models},
       author = {Gilles Colling},
       year = {2026},
-      note = {R package version 0.3.0},
+      note = {R package version 0.6.0},
       url = {https://github.com/gcol33/tulpa},
     }

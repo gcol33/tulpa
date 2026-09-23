@@ -22,4 +22,5 @@ vcov(object, ...)
 ## Value
 
 Fixed-effect variance-covariance matrix (empirical for sampler tiers,
-`H_beta^-1` for the Laplace tier).
+`H_beta^-1` for the Laplace tier, the stated covariance on a fit whose
+reported posterior is a closed-form Gaussian).

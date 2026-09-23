@@ -22,7 +22,7 @@ from a fitted tulpa model with TVC specification."><script>
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.6.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -115,29 +115,42 @@ full posterior draws.</p></dd>
 
     <div class="section level2">
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="co"># \donttest{</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">160</span><span class="op">)</span></span>
-<span><span class="va">n_t</span> <span class="op">&lt;-</span> <span class="fl">10L</span>; <span class="va">reps</span> <span class="op">&lt;-</span> <span class="fl">5L</span></span>
-<span><span class="va">walk</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/cumsum.html" class="external-link">cumsum</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">n_t</span>, <span class="fl">0</span>, <span class="fl">0.35</span><span class="op">)</span><span class="op">)</span>; <span class="va">walk</span> <span class="op">&lt;-</span> <span class="va">walk</span> <span class="op">-</span> <span class="fu"><a href="https://rdrr.io/r/base/mean.html" class="external-link">mean</a></span><span class="op">(</span><span class="va">walk</span><span class="op">)</span></span>
-<span><span class="va">year</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">n_t</span><span class="op">)</span>, each <span class="op">=</span> <span class="va">reps</span><span class="op">)</span></span>
-<span><span class="va">df</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>year <span class="op">=</span> <span class="va">year</span>, x <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">year</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="va">df</span><span class="op">$</span><span class="va">count</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Poisson.html" class="external-link">rpois</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">df</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="fl">0.3</span> <span class="op">+</span> <span class="op">(</span><span class="fl">0.5</span> <span class="op">+</span> <span class="va">walk</span><span class="op">[</span><span class="va">year</span><span class="op">]</span><span class="op">)</span> <span class="op">*</span> <span class="va">df</span><span class="op">$</span><span class="va">x</span><span class="op">)</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># The slope on `x` walks in time; TVC is exact-mode only.</span></span>
-<span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="tulpa.html">tulpa</a></span><span class="op">(</span></span>
-<span>  <span class="va">count</span> <span class="op">~</span> <span class="va">x</span>,</span>
-<span>  data <span class="op">=</span> <span class="va">df</span>,</span>
-<span>  family <span class="op">=</span> <span class="st">"poisson"</span>,</span>
-<span>  temporal <span class="op">=</span> <span class="fu"><a href="temporal_tvc.html">temporal_tvc</a></span><span class="op">(</span><span class="st">"year"</span>, terms <span class="op">=</span> <span class="op">~</span> <span class="va">x</span> <span class="op">-</span> <span class="fl">1</span>, structure <span class="op">=</span> <span class="st">"rw1"</span><span class="op">)</span>,</span>
-<span>  mode <span class="op">=</span> <span class="st">"exact"</span>,</span>
-<span>  control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_iter <span class="op">=</span> <span class="fl">200L</span>, n_warmup <span class="op">=</span> <span class="fl">100L</span>, seed <span class="op">=</span> <span class="fl">1L</span><span class="op">)</span></span>
-<span><span class="op">)</span></span>
-<span></span>
-<span><span class="va">tvc_post</span> <span class="op">&lt;-</span> <span class="fu">tvc</span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">tvc_post</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/graphics/plot.default.html" class="external-link">plot</a></span><span class="op">(</span><span class="va">tvc_post</span>, <span class="st">"x"</span><span class="op">)</span></span>
-<span><span class="co"># }</span></span>
-<span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="co"># \donttest{</span></span></span>
+<span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">160</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">n_t</span> <span class="op">&lt;-</span> <span class="fl">10L</span>; <span class="va">reps</span> <span class="op">&lt;-</span> <span class="fl">5L</span></span></span>
+<span class="r-in"><span><span class="va">walk</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/cumsum.html" class="external-link">cumsum</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">n_t</span>, <span class="fl">0</span>, <span class="fl">0.35</span><span class="op">)</span><span class="op">)</span>; <span class="va">walk</span> <span class="op">&lt;-</span> <span class="va">walk</span> <span class="op">-</span> <span class="fu"><a href="https://rdrr.io/r/base/mean.html" class="external-link">mean</a></span><span class="op">(</span><span class="va">walk</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">year</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">n_t</span><span class="op">)</span>, each <span class="op">=</span> <span class="va">reps</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">df</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>year <span class="op">=</span> <span class="va">year</span>, x <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">year</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">df</span><span class="op">$</span><span class="va">count</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Poisson.html" class="external-link">rpois</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">df</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="fl">0.3</span> <span class="op">+</span> <span class="op">(</span><span class="fl">0.5</span> <span class="op">+</span> <span class="va">walk</span><span class="op">[</span><span class="va">year</span><span class="op">]</span><span class="op">)</span> <span class="op">*</span> <span class="va">df</span><span class="op">$</span><span class="va">x</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span></span></span>
+<span class="r-in"><span><span class="co"># The slope on `x` walks in time; TVC is exact-mode only.</span></span></span>
+<span class="r-in"><span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="tulpa.html">tulpa</a></span><span class="op">(</span></span></span>
+<span class="r-in"><span>  <span class="va">count</span> <span class="op">~</span> <span class="va">x</span>,</span></span>
+<span class="r-in"><span>  data <span class="op">=</span> <span class="va">df</span>,</span></span>
+<span class="r-in"><span>  family <span class="op">=</span> <span class="st">"poisson"</span>,</span></span>
+<span class="r-in"><span>  temporal <span class="op">=</span> <span class="fu"><a href="temporal_tvc.html">temporal_tvc</a></span><span class="op">(</span><span class="st">"year"</span>, terms <span class="op">=</span> <span class="op">~</span> <span class="va">x</span> <span class="op">-</span> <span class="fl">1</span>, structure <span class="op">=</span> <span class="st">"rw1"</span><span class="op">)</span>,</span></span>
+<span class="r-in"><span>  mode <span class="op">=</span> <span class="st">"exact"</span>,</span></span>
+<span class="r-in"><span>  control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_iter <span class="op">=</span> <span class="fl">200L</span>, n_warmup <span class="op">=</span> <span class="fl">100L</span>, seed <span class="op">=</span> <span class="fl">1L</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="op">)</span></span></span>
+<span class="r-in"><span></span></span>
+<span class="r-in"><span><span class="va">tvc_post</span> <span class="op">&lt;-</span> <span class="fu">tvc</span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">tvc_post</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>    time_idx time term        mean        sd        q2.5         q50     q97.5</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1         1    1    x -0.51812356 0.3438930 -1.26815867 -0.48358081 0.1138761</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 2         2    2    x -0.43151069 0.3186817 -1.08518130 -0.39639008 0.1291343</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 3         3    3    x -0.17678201 0.1581185 -0.48672751 -0.17809841 0.1306088</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 4         4    4    x -0.04903702 0.2429977 -0.52076934 -0.06248125 0.4830875</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 5         5    5    x  0.25799312 0.2008314 -0.17772448  0.26136132 0.6231688</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 6         6    6    x  0.71976261 0.1672618  0.39749237  0.70680250 1.0518190</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 7         7    7    x  0.35624069 0.2307417 -0.08571445  0.36628699 0.8236376</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 8         8    8    x  0.17305269 0.2655832 -0.29044750  0.16995112 0.7065457</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 9         9    9    x -0.13007529 0.2739828 -0.61089948 -0.13256620 0.3671592</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 10       10   10    x -0.20152056 0.3324161 -0.84936798 -0.20867196 0.4724814</span>
+<span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/graphics/plot.default.html" class="external-link">plot</a></span><span class="op">(</span><span class="va">tvc_post</span>, <span class="st">"x"</span><span class="op">)</span></span></span>
+<span class="r-plt img"><img src="tvc-1.png" alt="" width="700" height="433"></span>
+<span class="r-in"><span><span class="co"># }</span></span></span>
+<span class="r-in"><span></span></span>
+</code></pre></div>
     </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>

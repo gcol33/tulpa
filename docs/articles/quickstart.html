@@ -35,7 +35,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.6.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -45,7 +45,7 @@
     <div id="navbar" class="collapse navbar-collapse ms-3">
       <ul class="navbar-nav me-auto">
 <li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
-<li class="nav-item dropdown">
+<li class="active nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
 <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpoint and resume long fits</a></li>
@@ -180,9 +180,7 @@ and no Monte Carlo error.</p>
 <div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">df</span>, family <span class="op">=</span> <span class="st">"gaussian"</span>,</span>
 <span>             mode <span class="op">=</span> <span class="st">"laplace"</span>, phi <span class="op">=</span> <span class="fl">0.8</span><span class="op">^</span><span class="fl">2</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
-<span><span class="co">#&gt; (Intercept)           x </span></span>
-<span><span class="co">#&gt;   0.4956826   1.1717667</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span></code></pre></div>
 <p>The coefficients land near the truth. <code><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef()</a></code> reports the
 posterior mean of each fixed effect, the same point estimate you would
 read off a frequentist fit, but here it is a posterior summary rather
@@ -197,10 +195,7 @@ margin”. Read the standard error as the posterior spread of the
 coefficient and the bounds as the interval the coefficient falls in with
 95% posterior probability.</p>
 <div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
-<span><span class="co">#&gt;              estimate  std.error     2.5%     97.5%</span></span>
-<span><span class="co">#&gt; (Intercept) 0.4956826 0.04000155 0.417281 0.5740842</span></span>
-<span><span class="co">#&gt; x           1.1717667 0.04087976 1.091644 1.2518896</span></span></code></pre></div>
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span></code></pre></div>
 <p>The credible bounds bracket the true values, which is the second
 recovery check. <code><a href="https://rdrr.io/r/stats/confint.html" class="external-link">confint()</a></code> returns the same bounds as a
 matrix, handy when you want to program against them rather than read
@@ -210,10 +205,7 @@ slope. Both read the fixed-effect block of the Hessian the Laplace fit
 already computed, so neither triggers an extra sampling step; they are
 deterministic functions of a fit that has already run.</p>
 <div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/stats/confint.html" class="external-link">confint</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
-<span><span class="co">#&gt;                 2.5%     97.5%</span></span>
-<span><span class="co">#&gt; (Intercept) 0.417281 0.5740842</span></span>
-<span><span class="co">#&gt; x           1.091644 1.2518896</span></span></code></pre></div>
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/stats/confint.html" class="external-link">confint</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span></code></pre></div>
 <p>The <code>phi</code> argument is the family’s dispersion parameter,
 and its meaning depends on the family. For <code>gaussian</code> it is
 the residual variance, for <code>neg_binomial_2</code> the size
@@ -271,9 +263,7 @@ before, so the only new ingredient is the group effect.</p>
 <span></span>
 <span><span class="va">fit_re</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="op">(</span><span class="fl">1</span> <span class="op">|</span> <span class="va">g</span><span class="op">)</span>, data <span class="op">=</span> <span class="va">df</span>, family <span class="op">=</span> <span class="st">"gaussian"</span>,</span>
 <span>                mode <span class="op">=</span> <span class="st">"laplace"</span>, sigma_re <span class="op">=</span> <span class="fl">0.6</span>, phi <span class="op">=</span> <span class="fl">0.8</span><span class="op">^</span><span class="fl">2</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_re</span><span class="op">)</span></span>
-<span><span class="co">#&gt; (Intercept)           x </span></span>
-<span><span class="co">#&gt;   0.3719796   1.1491057</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_re</span><span class="op">)</span></span></code></pre></div>
 <p><code><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef()</a></code> reports the fixed effects, which are unchanged in
 meaning: the intercept and slope read against a background that now
 accounts for the group structure. The group-level offsets themselves
@@ -283,12 +273,7 @@ package calls the BLUP (best linear unbiased predictor). These are the
 estimated departures of each group from the population mean, shrunk
 toward zero by the random-effect variance.</p>
 <div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="fu"><a href="../reference/ranef.html">ranef</a></span><span class="op">(</span><span class="va">fit_re</span><span class="op">)</span>, <span class="fl">4</span><span class="op">)</span></span>
-<span><span class="co">#&gt;   term   estimate sd conf.low conf.high source</span></span>
-<span><span class="co">#&gt; 1 g[1] -1.1846742 NA       NA        NA   mode</span></span>
-<span><span class="co">#&gt; 2 g[2] -0.6793481 NA       NA        NA   mode</span></span>
-<span><span class="co">#&gt; 3 g[3] -0.8067578 NA       NA        NA   mode</span></span>
-<span><span class="co">#&gt; 4 g[4] -0.4506177 NA       NA        NA   mode</span></span></code></pre></div>
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="fu"><a href="../reference/ranef.html">ranef</a></span><span class="op">(</span><span class="va">fit_re</span><span class="op">)</span>, <span class="fl">4</span><span class="op">)</span></span></code></pre></div>
 <p>This fit conditions on <code>sigma_re</code> rather than estimating
 it: you pass the random-effect standard deviation and the engine fits
 everything else given that value. Passing one number applies it to the
@@ -348,11 +333,7 @@ differing only in the formula.</p>
 <span><span class="va">m1</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span>,     data <span class="op">=</span> <span class="va">df</span>, family <span class="op">=</span> <span class="st">"gaussian"</span>, mode <span class="op">=</span> <span class="st">"laplace"</span>, phi <span class="op">=</span> <span class="fl">0.8</span><span class="op">^</span><span class="fl">2</span><span class="op">)</span></span>
 <span><span class="va">m2</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="op">(</span><span class="fl">1</span> <span class="op">|</span> <span class="va">g</span><span class="op">)</span>, data <span class="op">=</span> <span class="va">df</span>, family <span class="op">=</span> <span class="st">"gaussian"</span>,</span>
 <span>            mode <span class="op">=</span> <span class="st">"laplace"</span>, sigma_re <span class="op">=</span> <span class="fl">0.6</span>, phi <span class="op">=</span> <span class="fl">0.8</span><span class="op">^</span><span class="fl">2</span><span class="op">)</span></span>
-<span><span class="fu"><a href="../reference/compare_models.html">compare_models</a></span><span class="op">(</span>intercept <span class="op">=</span> <span class="va">m0</span>, slope <span class="op">=</span> <span class="va">m1</span>, slope_re <span class="op">=</span> <span class="va">m2</span>, criterion <span class="op">=</span> <span class="st">"loglik"</span><span class="op">)</span></span>
-<span><span class="co">#&gt;       model n_params     logLik</span></span>
-<span><span class="co">#&gt; 1 intercept        1 -1059.0421</span></span>
-<span><span class="co">#&gt; 2     slope        2  -672.4025</span></span>
-<span><span class="co">#&gt; 3  slope_re        2  -496.2809</span></span></code></pre></div>
+<span><span class="fu"><a href="../reference/compare_models.html">compare_models</a></span><span class="op">(</span>intercept <span class="op">=</span> <span class="va">m0</span>, slope <span class="op">=</span> <span class="va">m1</span>, slope_re <span class="op">=</span> <span class="va">m2</span>, criterion <span class="op">=</span> <span class="st">"loglik"</span><span class="op">)</span></span></code></pre></div>
 <p>The table reports each model’s name (taken straight from the argument
 labels, so label them as a ladder), its fixed-effect parameter count,
 and its log marginal likelihood. Adding the slope lifts the evidence
@@ -392,11 +373,7 @@ prediction inherits the uncertainty in the coefficients.</p>
 <div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">nd</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>x <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq</a></span><span class="op">(</span><span class="op">-</span><span class="fl">2</span>, <span class="fl">2</span>, length.out <span class="op">=</span> <span class="fl">50</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="va">pr</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict</a></span><span class="op">(</span><span class="va">fit_re</span>, newdata <span class="op">=</span> <span class="va">nd</span>, se.fit <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">pr</span>, <span class="fl">3</span><span class="op">)</span></span>
-<span><span class="co">#&gt;         fit    se.fit     lower     upper</span></span>
-<span><span class="co">#&gt; 1 -1.926232 0.1962305 -2.310836 -1.541627</span></span>
-<span><span class="co">#&gt; 2 -1.832427 0.1948400 -2.214307 -1.450548</span></span>
-<span><span class="co">#&gt; 3 -1.738623 0.1934976 -2.117871 -1.359374</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">pr</span>, <span class="fl">3</span><span class="op">)</span></span></code></pre></div>
 <p>The return value carries the prediction in <code>fit</code> and the
 bounds in <code>lower</code> and <code>upper</code>, one row per row of
 <code>newdata</code>. Plotting the trend with its credible band turns
@@ -412,7 +389,6 @@ credible region around it.</p>
 <span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/labs.html" class="external-link">labs</a></span><span class="op">(</span>x <span class="op">=</span> <span class="st">"x"</span>, y <span class="op">=</span> <span class="st">"predicted y"</span><span class="op">)</span> <span class="op">+</span></span>
 <span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/theme.html" class="external-link">theme</a></span><span class="op">(</span>panel.background <span class="op">=</span> <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/element.html" class="external-link">element_rect</a></span><span class="op">(</span>fill <span class="op">=</span> <span class="st">"transparent"</span><span class="op">)</span>,</span>
 <span>        plot.background  <span class="op">=</span> <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/element.html" class="external-link">element_rect</a></span><span class="op">(</span>fill <span class="op">=</span> <span class="st">"transparent"</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
-<p><img src="quickstart_files/figure-html/predict-plot-1.png" class="r-plt" alt="Predicted response across x with a 95 percent credible band" width="576"></p>
 <p>The band is narrow in the middle of the covariate range and flares at
 the edges, which is the signature of a linear fit: the prediction is
 most certain near the bulk of the data and least certain where you
@@ -438,15 +414,11 @@ above it is family-blind.</p>
 <code class="sourceCode R"><span><span class="co"># Poisson counts</span></span>
 <span><span class="va">dp</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>y <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/Poisson.html" class="external-link">rpois</a></span><span class="op">(</span><span class="va">n</span>, <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="fl">0.2</span> <span class="op">+</span> <span class="fl">0.6</span> <span class="op">*</span> <span class="va">x</span><span class="op">)</span><span class="op">)</span>, x <span class="op">=</span> <span class="va">x</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">dp</span>, family <span class="op">=</span> <span class="st">"poisson"</span>, mode <span class="op">=</span> <span class="st">"laplace"</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="co">#&gt; (Intercept)           x </span></span>
-<span><span class="co">#&gt;   0.2170233   0.5695186</span></span>
 <span></span>
 <span><span class="co"># Beta proportions in (0, 1), precision phi</span></span>
 <span><span class="va">mu</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Logistic.html" class="external-link">plogis</a></span><span class="op">(</span><span class="fl">0.1</span> <span class="op">+</span> <span class="fl">0.8</span> <span class="op">*</span> <span class="va">x</span><span class="op">)</span></span>
 <span><span class="va">db</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>y <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/Beta.html" class="external-link">rbeta</a></span><span class="op">(</span><span class="va">n</span>, <span class="va">mu</span> <span class="op">*</span> <span class="fl">8</span>, <span class="op">(</span><span class="fl">1</span> <span class="op">-</span> <span class="va">mu</span><span class="op">)</span> <span class="op">*</span> <span class="fl">8</span><span class="op">)</span>, x <span class="op">=</span> <span class="va">x</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">db</span>, family <span class="op">=</span> <span class="st">"beta"</span>, mode <span class="op">=</span> <span class="st">"laplace"</span>, phi <span class="op">=</span> <span class="fl">8</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="co">#&gt; (Intercept)           x </span></span>
-<span><span class="co">#&gt;   0.1752357   0.8561175</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">db</span>, family <span class="op">=</span> <span class="st">"beta"</span>, mode <span class="op">=</span> <span class="st">"laplace"</span>, phi <span class="op">=</span> <span class="fl">8</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
 <p>The Poisson slope recovers the 0.6 it was built from and the beta
 slope recovers its 0.8, each on its own link scale: log for the Poisson
 rate, logit for the beta mean. Counts go through <code>poisson</code>
@@ -505,10 +477,7 @@ guarantee you pay for when the posterior is not Gaussian.</p>
 <span>  term    <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_lap</span><span class="op">)</span><span class="op">)</span>,</span>
 <span>  laplace <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_lap</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span>,</span>
 <span>  mala    <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_mala</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span></span>
-<span><span class="op">)</span></span>
-<span><span class="co">#&gt;                    term laplace   mala</span></span>
-<span><span class="co">#&gt; (Intercept) (Intercept)  -0.472 -0.613</span></span>
-<span><span class="co">#&gt; x                     x   1.089  1.091</span></span></code></pre></div>
+<span><span class="op">)</span></span></code></pre></div>
 <p>The agreement here is itself a signal that Laplace was safe for this
 model. Every fit records which backend ran and at which tier, through
 the <code>backend</code> and <code>inference_tier</code> fields, and
@@ -516,9 +485,7 @@ the <code>backend</code> and <code>inference_tier</code> fields, and
 chose what it did, so you are never left guessing which engine produced
 a number.</p>
 <div class="sourceCode" id="cb15"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>backend <span class="op">=</span> <span class="va">fit_mala</span><span class="op">$</span><span class="va">backend</span>, tier <span class="op">=</span> <span class="va">fit_mala</span><span class="op">$</span><span class="va">inference_tier</span><span class="op">)</span></span>
-<span><span class="co">#&gt; backend    tier </span></span>
-<span><span class="co">#&gt;  "mala"     "1"</span></span></code></pre></div>
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>backend <span class="op">=</span> <span class="va">fit_mala</span><span class="op">$</span><span class="va">backend</span>, tier <span class="op">=</span> <span class="va">fit_mala</span><span class="op">$</span><span class="va">inference_tier</span><span class="op">)</span></span></code></pre></div>
 <p>The tiers encode an epistemic guarantee that goes beyond the speed
 trade-off. Tier 1 intervals are posterior uncertainty you can quote
 without an asterisk. Tier 2 intervals are correct conditional on the
@@ -579,7 +546,6 @@ draws for the leading fixed effects; a healthy chain looks like a fuzzy
 horizontal band with no drift or sticking.</p>
 <div class="sourceCode" id="cb16"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/graphics/plot.default.html" class="external-link">plot</a></span><span class="op">(</span><span class="va">fit_mala</span>, type <span class="op">=</span> <span class="st">"trace"</span><span class="op">)</span></span></code></pre></div>
-<p><img src="quickstart_files/figure-html/trace-plot-1.png" class="r-plt" alt="Trace of the MALA chain for the fixed effects" width="576"></p>
 <p>The agreement between the tiers here is the typical case for a latent
 Gaussian model with enough data, and it is also the case where the cheap
 method is the right one. The interesting models are the ones where the
@@ -626,9 +592,7 @@ regional effect around the loop.</p>
 <span><span class="va">fit_sp</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="fu"><a href="../reference/spatial.html">spatial</a></span><span class="op">(</span><span class="va">region</span><span class="op">)</span>, data <span class="op">=</span> <span class="va">ds</span>, family <span class="op">=</span> <span class="st">"binomial"</span>,</span>
 <span>                spatial <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>type <span class="op">=</span> <span class="st">"icar"</span>, adjacency <span class="op">=</span> <span class="va">W</span><span class="op">)</span>,</span>
 <span>                mode <span class="op">=</span> <span class="st">"laplace"</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_sp</span><span class="op">)</span></span>
-<span><span class="co">#&gt;  (Intercept)            x </span></span>
-<span><span class="co">#&gt; -0.008787351  0.751041095</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_sp</span><span class="op">)</span></span></code></pre></div>
 <p>The slope recovers near its true 0.7 while the ICAR field absorbs the
 regional structure. Plot the per-region field effect around the ring to
 see the wave the fit pulled out of binary data: the mode at each
@@ -643,7 +607,6 @@ explain.</p>
 <span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/labs.html" class="external-link">labs</a></span><span class="op">(</span>x <span class="op">=</span> <span class="st">"region"</span>, y <span class="op">=</span> <span class="st">"field effect"</span><span class="op">)</span> <span class="op">+</span></span>
 <span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/theme.html" class="external-link">theme</a></span><span class="op">(</span>panel.background <span class="op">=</span> <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/element.html" class="external-link">element_rect</a></span><span class="op">(</span>fill <span class="op">=</span> <span class="st">"transparent"</span><span class="op">)</span>,</span>
 <span>        plot.background  <span class="op">=</span> <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/element.html" class="external-link">element_rect</a></span><span class="op">(</span>fill <span class="op">=</span> <span class="st">"transparent"</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
-<p><img src="quickstart_files/figure-html/spatial-plot-1.png" class="r-plt" alt="Estimated spatial field effect per region around the ring" width="576"></p>
 <p>The field absorbs the regional signal so the slope does not have to.
 Without the field, a covariate that happens to vary across the ring the
 same way the latent wave does would soak up part of that wave and report
@@ -688,9 +651,7 @@ random-walk trend in place.</p>
 <span></span>
 <span><span class="va">fit_t</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/tulpa.html">tulpa</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, data <span class="op">=</span> <span class="va">dt</span>, family <span class="op">=</span> <span class="st">"poisson"</span>,</span>
 <span>               temporal <span class="op">=</span> <span class="fu"><a href="../reference/temporal_rw1.html">temporal_rw1</a></span><span class="op">(</span><span class="st">"time"</span><span class="op">)</span>, mode <span class="op">=</span> <span class="st">"auto"</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_t</span><span class="op">)</span></span>
-<span><span class="co">#&gt; (Intercept)           x </span></span>
-<span><span class="co">#&gt;   0.3301573   0.5502579</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit_t</span><span class="op">)</span></span></code></pre></div>
 <p>The slope lands near its true 0.5 with the trend absorbed into the
 field rather than the coefficient. <code>mode = "auto"</code> routes the
 temporal field to the nested-Laplace backend, which carries the per-grid
@@ -713,7 +674,6 @@ walk against the truth.</p>
 <span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/labs.html" class="external-link">labs</a></span><span class="op">(</span>x <span class="op">=</span> <span class="st">"time"</span>, y <span class="op">=</span> <span class="st">"trend (centred)"</span><span class="op">)</span> <span class="op">+</span></span>
 <span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/theme.html" class="external-link">theme</a></span><span class="op">(</span>panel.background <span class="op">=</span> <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/element.html" class="external-link">element_rect</a></span><span class="op">(</span>fill <span class="op">=</span> <span class="st">"transparent"</span><span class="op">)</span>,</span>
 <span>        plot.background  <span class="op">=</span> <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/element.html" class="external-link">element_rect</a></span><span class="op">(</span>fill <span class="op">=</span> <span class="st">"transparent"</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
-<p><img src="quickstart_files/figure-html/temporal-plot-1.png" class="r-plt" alt="Estimated temporal random-walk trend against the simulated truth" width="576"></p>
 <p>The estimated walk follows the wave, centred to remove the level the
 sum-to-zero handling leaves free. The front door carries
 <code><a href="../reference/temporal_rw1.html">temporal_rw1()</a></code> today; the second-order walk, the AR(1)
@@ -745,13 +705,7 @@ produce.</p>
 <span><span class="op">)</span></span>
 <span><span class="va">pp</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/prior_predict.html">prior_predict</a></span><span class="op">(</span><span class="va">y</span> <span class="op">~</span> <span class="va">x</span>, family <span class="op">=</span> <span class="va">fam</span>, data <span class="op">=</span> <span class="va">dp</span>, n_draws <span class="op">=</span> <span class="fl">50</span>,</span>
 <span>                    priors <span class="op">=</span> <span class="fu"><a href="../reference/tulpa_priors.html">tulpa_priors</a></span><span class="op">(</span>beta <span class="op">=</span> <span class="fu"><a href="../reference/prior_normal.html">prior_normal</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">1</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="va">pp</span></span>
-<span><span class="co">#&gt; tulpa prior predictive draws</span></span>
-<span><span class="co">#&gt; ============================</span></span>
-<span><span class="co">#&gt; Family:     poisson </span></span>
-<span><span class="co">#&gt; Processes:  y </span></span>
-<span><span class="co">#&gt; Draws:      50 </span></span>
-<span><span class="co">#&gt; Obs:        400</span></span></code></pre></div>
+<span><span class="va">pp</span></span></code></pre></div>
 <p><code>pp$y</code> holds one simulated dataset per prior draw. Overlay
 their densities to see the range the prior expects, then tighten the
 prior if it covers ranges the response could never take.</p>
@@ -765,7 +719,6 @@ prior if it covers ranges the response could never take.</p>
 <span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/labs.html" class="external-link">labs</a></span><span class="op">(</span>x <span class="op">=</span> <span class="st">"simulated y"</span>, y <span class="op">=</span> <span class="st">"density"</span><span class="op">)</span> <span class="op">+</span></span>
 <span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/theme.html" class="external-link">theme</a></span><span class="op">(</span>panel.background <span class="op">=</span> <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/element.html" class="external-link">element_rect</a></span><span class="op">(</span>fill <span class="op">=</span> <span class="st">"transparent"</span><span class="op">)</span>,</span>
 <span>        plot.background  <span class="op">=</span> <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/element.html" class="external-link">element_rect</a></span><span class="op">(</span>fill <span class="op">=</span> <span class="st">"transparent"</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
-<p><img src="quickstart_files/figure-html/prior-plot-1.png" class="r-plt" alt="Prior predictive densities of the simulated response under the chosen priors" width="576"></p>
 <p>A wide prior predictive that spills past the plausible range says the
 priors are too vague; tightening <code>prior_normal(0, 2.5)</code>
 toward <code>prior_normal(0, 1)</code> pulls it in. The priors vignette
@@ -789,7 +742,7 @@ everything from the Newton system up.</p>
 nodes, the same structure the temporal path builds internally, but
 written by hand to show the contract.</p>
 <div class="sourceCode" id="cb23"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://Matrix.R-forge.R-project.org" class="external-link">Matrix</a></span><span class="op">)</span></span>
+<code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://codeberg.org/jaganmn/Matrix" class="external-link">Matrix</a></span><span class="op">)</span></span>
 <span><span class="va">m</span> <span class="op">&lt;-</span> <span class="fl">20</span></span>
 <span><span class="va">D2</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/diff.html" class="external-link">diff</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/diag.html" class="external-link">diag</a></span><span class="op">(</span><span class="va">m</span><span class="op">)</span>, differences <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
 <span><span class="va">R</span>  <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/pkg/Matrix/man/matmult-methods.html" class="external-link">crossprod</a></span><span class="op">(</span><span class="va">D2</span><span class="op">)</span>               <span class="co"># RW1 structure matrix</span></span>
@@ -798,13 +751,7 @@ written by hand to show the contract.</p>
 <span>  prior <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">theta</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/stats/GammaDist.html" class="external-link">dgamma</a></span><span class="op">(</span><span class="va">theta</span><span class="op">[</span><span class="fl">1</span><span class="op">]</span>, <span class="fl">2</span>, <span class="fl">1</span>, log <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span>,</span>
 <span>  init  <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>tau <span class="op">=</span> <span class="fl">1</span><span class="op">)</span></span>
 <span><span class="op">)</span></span>
-<span><span class="va">blk</span></span>
-<span><span class="co">#&gt; &lt;tgmrf&gt;</span></span>
-<span><span class="co">#&gt;   n_latent : 20</span></span>
-<span><span class="co">#&gt;   theta    : 1 dim (tau)</span></span>
-<span><span class="co">#&gt;   init     : 1</span></span>
-<span><span class="co">#&gt;   Q nnz    : 58 (14.5% of dense)</span></span>
-<span><span class="co">#&gt;   backend  : r</span></span></code></pre></div>
+<span><span class="va">blk</span></span></code></pre></div>
 <p>The constructor evaluates <code>Q(init)</code> once to catch errors
 early, infer the field length, and capture the sparsity pattern the
 inner solver reuses at every grid point. The returned block carries the
@@ -820,7 +767,6 @@ what it found.</p>
 <span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/labs.html" class="external-link">labs</a></span><span class="op">(</span>x <span class="op">=</span> <span class="st">"column"</span>, y <span class="op">=</span> <span class="st">"row"</span><span class="op">)</span> <span class="op">+</span></span>
 <span>  <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/theme.html" class="external-link">theme</a></span><span class="op">(</span>panel.background <span class="op">=</span> <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/element.html" class="external-link">element_rect</a></span><span class="op">(</span>fill <span class="op">=</span> <span class="st">"transparent"</span><span class="op">)</span>,</span>
 <span>        plot.background  <span class="op">=</span> <span class="fu"><a href="https://ggplot2.tidyverse.org/reference/element.html" class="external-link">element_rect</a></span><span class="op">(</span>fill <span class="op">=</span> <span class="st">"transparent"</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
-<p><img src="quickstart_files/figure-html/tgmrf-plot-1.png" class="r-plt" alt="Sparsity pattern of the user-defined RW1 precision matrix" width="576"></p>
 <p>The tridiagonal pattern is the Markov property written as a matrix:
 each node is conditionally independent of every non-neighbour given its
 neighbours, and that independence is exactly a zero off the three
@@ -892,10 +838,7 @@ convention: one row per term, with the estimate, standard error, and
 credible bounds in named columns, ready to feed a table or a coefficient
 plot.</p>
 <div class="sourceCode" id="cb25"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://generics.r-lib.org/reference/tidy.html" class="external-link">tidy</a></span><span class="op">(</span><span class="va">fit_re</span><span class="op">)</span></span>
-<span><span class="co">#&gt;          term  estimate  std.error  conf.low conf.high</span></span>
-<span><span class="co">#&gt; 1 (Intercept) 0.3719796 0.17794627 0.0232113 0.7207478</span></span>
-<span><span class="co">#&gt; 2           x 1.1491057 0.04110041 1.0685504 1.2296610</span></span></code></pre></div>
+<code class="sourceCode R"><span><span class="fu"><a href="https://generics.r-lib.org/reference/tidy.html" class="external-link">tidy</a></span><span class="op">(</span><span class="va">fit_re</span><span class="op">)</span></span></code></pre></div>
 <p><code><a href="https://generics.r-lib.org/reference/glance.html" class="external-link">glance()</a></code> returns a single-row model summary carrying the
 fixed-effect count, the number of draws, the log-likelihood, the
 divergence count, the mean acceptance rate, and the convergence flag. On
@@ -903,9 +846,7 @@ a Laplace fit the sampler-only fields read <code>NA</code>, which is the
 honest report; on a sampler fit they carry the diagnostics that say
 whether the chain mixed.</p>
 <div class="sourceCode" id="cb26"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://generics.r-lib.org/reference/glance.html" class="external-link">glance</a></span><span class="op">(</span><span class="va">fit_mala</span><span class="op">)</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"n_samples"</span>, <span class="st">"logLik"</span>, <span class="st">"mean_accept"</span>, <span class="st">"n_divergent"</span><span class="op">)</span><span class="op">]</span></span>
-<span><span class="co">#&gt;   n_samples    logLik mean_accept n_divergent</span></span>
-<span><span class="co">#&gt; 1       375 -233.4807   0.5733333          NA</span></span></code></pre></div>
+<code class="sourceCode R"><span><span class="fu"><a href="https://generics.r-lib.org/reference/glance.html" class="external-link">glance</a></span><span class="op">(</span><span class="va">fit_mala</span><span class="op">)</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"n_samples"</span>, <span class="st">"logLik"</span>, <span class="st">"mean_accept"</span>, <span class="st">"n_divergent"</span><span class="op">)</span><span class="op">]</span></span></code></pre></div>
 <p><code><a href="https://rdrr.io/r/graphics/plot.default.html" class="external-link">plot()</a></code> defaults to the fixed-effect densities, a quick
 visual of where each coefficient sits and how wide its posterior is. On
 a sampler fit <code>type = "trace"</code> shows the chains instead, as

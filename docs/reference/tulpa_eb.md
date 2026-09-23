@@ -18,9 +18,9 @@ tulpa_eb(
   family = "binomial",
   phi = 1,
   phi2 = NULL,
-  prior_sigma = c(3, 0.05),
-  eta = 2,
-  hyperprior = c("flat", "pc_lkj"),
+  prior_sigma = NULL,
+  eta = NULL,
+  hyperprior = c("proper", "flat"),
   log_prior_theta = NULL,
   beta_prior = NULL,
   offset = NULL,
@@ -62,20 +62,21 @@ tulpa_eb(
 - prior_sigma, eta:
 
   Hyperparameters of the PC + LKJ prior used when
-  `hyperprior = "pc_lkj"` (see
-  [`re_cov_pc_lkj_prior()`](https://gillescolling.com/tulpa/reference/re_cov_pc_lkj_prior.md)).
-  Ignored when `hyperprior = "flat"` or `log_prior_theta` is supplied.
-  When active, the prior is part of the maximized objective, so it
-  regularizes the estimate: with few groups it is what keeps a block off
-  the `sigma = 0` boundary.
+  `hyperprior = "proper"` (see
+  [`re_cov_pc_lkj_prior()`](https://gillescolling.com/tulpa/reference/re_cov_pc_lkj_prior.md));
+  `NULL` (the defaults) is `c(3, 0.01)` and 2. Ignored when
+  `hyperprior = "flat"` or `log_prior_theta` is supplied. When active,
+  the prior is part of the maximized objective, so it regularizes the
+  estimate: with few groups it is what keeps a block off the `sigma = 0`
+  boundary.
 
 - hyperprior:
 
-  `"flat"` (default) or `"pc_lkj"`. `"flat"` maximizes with
+  `"proper"` (default) or `"flat"`. `"flat"` maximizes with
   `log_prior_theta` the zero function – an unpenalized maximum-marginal-
   likelihood estimate, which can reach the `sigma = 0` boundary on small
   designs (see the `"lower end of the search bracket"` warning).
-  `"pc_lkj"` builds the PC + LKJ prior from `prior_sigma` / `eta`,
+  `"proper"` builds the PC + LKJ prior from `prior_sigma` / `eta`,
   regularizing the estimate away from that boundary. Ignored when
   `log_prior_theta` is supplied. Must match `hyperprior` on the paired
   [`tulpa_re_cov_nested()`](https://gillescolling.com/tulpa/reference/tulpa_re_cov_nested.md)
@@ -248,16 +249,12 @@ diagonal in log-SD coordinates, and a scalar `(1 | g)` term is the
 degenerate one-coefficient block. Both functions call the same outer
 objective and the same optimizer, so `tulpa_eb()$theta_hat` and
 `tulpa_re_cov_nested()$theta_hat` are the same estimate on the same data
-– which requires `hyperprior` to default the same way on both: `"flat"`,
-the zero function, matching the nested-Laplace convention on every other
-scale axis in the engine (icar / rw1 / rw2 / ar1's tau / iid all lack a
-hyperprior on their scale too; see
-[`vignette("priors")`](https://gillescolling.com/tulpa/articles/priors.md)).
-Set `hyperprior = "pc_lkj"` for the weakly-informative PC + LKJ prior
-instead (see
+– which requires `hyperprior` to default the same way on both:
+`"proper"`, the PC + LKJ prior (see
 [`re_cov_pc_lkj_prior()`](https://gillescolling.com/tulpa/reference/re_cov_pc_lkj_prior.md))
-– the regularizer that, at small G, keeps a block off the `sigma = 0`
-boundary this maximizer would otherwise reach.
+at the anchor every scale axis of the engine defaults to, which at small
+G keeps a block off the `sigma = 0` boundary. `hyperprior = "flat"`
+maximizes the marginal likelihood alone.
 
 The reported fixed-effect covariance is the conditional one at
 `theta_hat` (`solve(H_beta)`). It does not include the hyperparameter
@@ -294,5 +291,6 @@ y <- rpois(n, exp(0.3 + 0.5 * x + b[grp]))
 re_term <- list(idx = grp, n_groups = G, n_coefs = 1L)
 fit <- tulpa_eb(y, NULL, cbind(1, x), re_term, family = "poisson")
 fit$map$sigma          # empirical-Bayes RE standard deviation
+#> [1] 0.7649598
 # }
 ```

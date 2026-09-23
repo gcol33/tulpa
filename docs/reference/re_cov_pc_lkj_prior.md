@@ -11,12 +11,7 @@ block's integration coordinates.
 ## Usage
 
 ``` r
-re_cov_pc_lkj_prior(
-  n_coefs,
-  prior_sigma = c(3, 0.05),
-  eta = 2,
-  correlated = TRUE
-)
+re_cov_pc_lkj_prior(n_coefs, prior_sigma = NULL, eta = NULL, correlated = TRUE)
 ```
 
 ## Arguments
@@ -27,14 +22,15 @@ re_cov_pc_lkj_prior(
 
 - prior_sigma:
 
-  `c(U, alpha)` giving `P(sigma_i > U) = alpha` (default `c(3, 0.05)`),
-  applied independently to every marginal SD.
+  `c(U, alpha)` giving `P(sigma_i > U) = alpha`, applied independently
+  to every marginal SD. `NULL` (the default) is `c(3, 0.01)`, the
+  engine's prior on every field scale.
 
 - eta:
 
-  LKJ shape (default 2). `eta = 1` is uniform on correlation matrices;
-  larger values favour weaker correlations. Ignored for a diagonal
-  block.
+  LKJ shape. `NULL` (the default) is 2. `eta = 1` is uniform on
+  correlation matrices; larger values favour weaker correlations.
+  Ignored for a diagonal block.
 
 - correlated:
 
@@ -64,11 +60,11 @@ rate `lambda = -log(alpha) / U`, so `P(sigma_i > U) = alpha` – the
 `prior_sigma = c(U, alpha)` convention also used by the SPDE prior in
 tulpa.
 
-LKJ prior (Lewandowski et al. 2009) on the correlation matrix: `p(R)`
-proportional to `det(R)^(eta - 1)`. `eta = 1` is uniform over
+LKJ prior (Lewandowski et al. 2009) on the correlation matrix:
+`p(R) = det(R)^(eta - 1) / c_d(eta)`. `eta = 1` is uniform over
 correlation matrices; `eta > 1` concentrates toward the identity. The
-normalizing constant is dropped (constant across the grid, so it cancels
-when the integration weights are renormalized).
+normalizing constant is kept, so the prior is a density and a grid's
+evidence can be read under it.
 
 Jacobian (correlated block): with `theta` packing `log L_ii` on the
 diagonal and the raw strict-lower entries of `L`, the change of

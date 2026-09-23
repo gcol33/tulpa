@@ -30,6 +30,7 @@ imh_laplace(
   scale = 1,
   init = NULL,
   thin = 1L,
+  seed = NULL,
   verbose = FALSE
 )
 ```
@@ -73,6 +74,12 @@ imh_laplace(
 - thin:
 
   Keep every `thin`-th post-warmup sample (default 1).
+
+- seed:
+
+  Optional integer RNG seed. Scoped to this call: the caller's
+  `.Random.seed` is restored on exit, so two calls with the same `seed`
+  give identical draws regardless of the surrounding RNG stream.
 
 - verbose:
 
@@ -134,5 +141,7 @@ log_post <- function(beta) {
 fit <- imh_laplace(log_post, mode = lap$mode[1:2],
                    hessian = lap$H_beta, n_iter = 1000)
 fit$mean_accept
+#> [1] 0.898
 colMeans(fit$draws)
+#> [1] 0.4232243 1.2244703
 ```

@@ -67,6 +67,11 @@ tulpa_sample_glmm(
   it. The compiled kernels parameterize the two variance families by the
   residual SD and are handed `sqrt(phi)` at the boundary.
 
+  Defaulted, it conditions at 1 and says so with a warning, since for a
+  family that reads a dispersion that is a modelling choice rather than
+  a neutral value. `fit$phi_estimated` records whether the value on the
+  fit was estimated or conditioned on.
+
 - phi2:
 
   Optional second dispersion: the Student-t degrees of freedom
@@ -123,7 +128,17 @@ tulpa_sample_glmm(
   `n_chains`, `max_treedepth`, `adapt_delta`, `epsilon`, `L`,
   `batch_size`, `alpha`, `n_particles`, `n_mcmc_steps`, `ess_threshold`,
   `vi_variant`, `vi_mc_samples`, `vi_max_iter`, `vi_max_grad_norm`,
-  `n_draws`, `verbose`, `mass_matrix`).
+  `vi_tol_grad`, `vi_tol_rel_elbo`, `vi_patience`, `n_draws`, `verbose`,
+  `mass_matrix`, `checkpoint`).
+
+  `checkpoint = list(path =, resume =)` is per-chain checkpoint/resume
+  on the NUTS/HMC kernel only (a chain is the checkpoint unit,
+  deterministic in seed + chain id + data + settings, so a resumed chain
+  is bit-for-bit identical to the uninterrupted one): every chain
+  appends its finished result to `path`, and `resume = TRUE` (the
+  default) loads any finished chains from a prior run and fits only the
+  rest; `resume = FALSE` starts over, removing any stale file first.
+  Other backends refuse this key rather than silently drop it.
 
   `mass_matrix` selects the NUTS/HMC metric: `"diag"` (the default),
   `"dense"`, `"block_diag"`, or `"auto"`. Under `"auto"` the kernel
@@ -141,6 +156,20 @@ tulpa_sample_glmm(
   only record, and the reparameterisation average every gradient divides
   by – so values below 1 are rejected. `vi_max_grad_norm` (default 10)
   is the gradient-norm clip applied before every Adam step.
+
+  `vi_max_iter` is a ceiling; what ends a VI run is usually the stopping
+  rule, which `vi_patience` (default 50), `vi_tol_rel_elbo` (default
+  0.01) and `vi_tol_grad` (default 1e-4) control. The loop stops when
+  the ELBO gain across the last `vi_patience` iterations – the mean of
+  the window's second half minus the mean of its first – falls to
+  `vi_tol_rel_elbo` times the ELBO span the run has covered, or when the
+  gradient norm falls below `vi_tol_grad`. Both the gain and its
+  threshold are ELBO DIFFERENCES, so the arbitrary additive constant in
+  an ELBO cancels. Setting `vi_tol_rel_elbo = 0` stops only on a window
+  that is flat or falling. The fit reports `vi_iterations` and
+  `converged_reason` (`"patience"`, `"gradient_norm"` or `"max_iter"`)
+  so a run that stopped short of its budget can be told from one that
+  used it.
 
   `epsilon` pins the step size on the stochastic-gradient backends:
   `"sghmc"` runs its warmup step-size adapter only when no `epsilon` is

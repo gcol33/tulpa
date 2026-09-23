@@ -12,6 +12,8 @@ select_backend_for_mode(
   has_spatial,
   has_temporal,
   has_latent = FALSE,
-  spatial_type = NULL
+  spatial_type = NULL,
+  has_re = FALSE,
+  feat = list()
 )
 ```

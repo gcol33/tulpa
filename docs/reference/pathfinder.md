@@ -23,6 +23,7 @@ pathfinder(
   n_draws = 1000L,
   max_iter = 100L,
   tol = 1e-06,
+  seed = NULL,
   verbose = FALSE
 )
 ```
@@ -57,6 +58,12 @@ pathfinder(
 - tol:
 
   Gradient-norm tolerance for L-BFGS convergence (default 1e-6).
+
+- seed:
+
+  Optional integer RNG seed. Scoped to this call: the caller's
+  `.Random.seed` is restored on exit, so two calls with the same `seed`
+  give identical draws regardless of the surrounding RNG stream.
 
 - verbose:
 
@@ -119,5 +126,7 @@ log_post <- function(t) {
 }
 pf <- pathfinder(log_post, init = c(0, 0), n_draws = 2000)
 pf$mode      # near c(0.45, -0.64)
+#> [1]  0.4545455 -0.6363636
 pf$elbo
+#> [1] -4.269409
 ```

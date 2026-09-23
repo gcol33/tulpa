@@ -50,7 +50,7 @@ entry, rebuilds Q via SPDE Q-builder).
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.6.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -122,7 +122,9 @@ entry, rebuilds Q via SPDE Q-builder).</p></li>
 <span>  sigma_re <span class="op">=</span> <span class="fl">1</span>,</span>
 <span>  family <span class="op">=</span> <span class="st">"binomial"</span>,</span>
 <span>  phi <span class="op">=</span> <span class="fl">1</span>,</span>
+<span>  offset <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  likelihood <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  hyperprior <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"proper"</span>, <span class="st">"flat"</span><span class="op">)</span>,</span>
 <span>  control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="op">)</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
@@ -203,7 +205,17 @@ every door: for <code>gaussian</code> / <code>lognormal</code> this is the resid
 (the SD is <code>sqrt(phi)</code>), for <code>neg_binomial_2</code> the size, <code>gamma</code> the
 shape, <code>beta</code> the precision, <code>t</code> the scale; <code>binomial</code> and <code>poisson</code>
 ignore it. The compiled kernels parameterize the two variance families by
-the residual SD and are handed <code>sqrt(phi)</code> at the boundary.</p></dd>
+the residual SD and are handed <code>sqrt(phi)</code> at the boundary.</p>
+<p>Defaulted, it conditions at 1 and says so with a warning, since for a
+family that reads a dispersion that is a modelling choice rather than a
+neutral value. <code>fit$phi_estimated</code> records whether the value on the fit
+was estimated or conditioned on.</p></dd>
+
+
+<dt id="arg-offset">offset<a class="anchor" aria-label="anchor" href="#arg-offset"></a></dt>
+<dd><p>Optional per-observation offset added to the linear predictor
+(length <code>length(y)</code>), as an <code><a href="https://rdrr.io/r/stats/offset.html" class="external-link">offset()</a></code> term in a model formula. Every
+single- and multi-block kernel carries it, and <code>fitted_eta</code> includes it.</p></dd>
 
 
 <dt id="arg-likelihood">likelihood<a class="anchor" aria-label="anchor" href="#arg-likelihood"></a></dt>
@@ -218,6 +230,26 @@ likelihood (a scaled Bernoulli, with the latent occupancy state integrated
 out) through this. Multi-block <code>prior</code> only. Default <code>NULL</code> (use <code>family</code>).</p></dd>
 
 
+<dt id="arg-hyperprior">hyperprior<a class="anchor" aria-label="anchor" href="#arg-hyperprior"></a></dt>
+<dd><p>The prior an outer hyperparameter axis carries when the
+call states no density for it, <code>"proper"</code> (default) or <code>"flat"</code>.
+<code>"proper"</code> folds a normalised density on the axis's integration coordinate
+into <code>log_marginal</code>: the PC prior <code>P(sigma &gt; 3) = 0.01</code> on a standard
+deviation, variance or precision axis, the PC range prior at 0.2 times the
+coordinates' bounding-box diagonal on a range or lengthscale axis, a uniform
+on a bounded axis, and the PC + LKJ prior over a free-covariance block. An
+axis with no sourced density is named in <code>log_hyperprior_declined</code>.
+<code>"flat"</code> folds no density of the engine's own, so such an axis is
+integrated under its cell measure alone, is named in
+<code>log_hyperprior_declined</code> as <code>"flat_hyperprior"</code>, and the fit's
+<code>log_evidence</code> declines with <code>"improper_hyperprior"</code>. A density the call
+states – a <code>prior_*</code> argument, a block's <code>rho_prior</code>, <code>prior_range</code> or
+<code>prior_sigma</code>, the copy coefficient's slab, a <code><a href="tgmrf.html">tgmrf()</a></code> block's own prior –
+applies under either choice. The same two choices, under the same names,
+are offered by <code><a href="tulpa.html">tulpa()</a></code>, <code><a href="tulpa_eb.html">tulpa_eb()</a></code>, <code><a href="tulpa_re_cov_nested.html">tulpa_re_cov_nested()</a></code> and
+<code><a href="fit_spde.html">fit_spde()</a></code>.</p></dd>
+
+
 <dt id="arg-control">control<a class="anchor" aria-label="anchor" href="#arg-control"></a></dt>
 <dd><p>Optional list of perf/numerical tuning knobs (statistical
 arguments stay top-level), following the <code>control</code> convention of
@@ -225,7 +257,7 @@ arguments stay top-level), following the <code>control</code> convention of
 tolerance.</p></li>
 <li><p><code>n_threads</code> (<code>1L</code>) – inner-loop OpenMP threads.</p></li>
 <li><p><code>x_init</code> (<code>NULL</code>) – warm-start for the first grid point's inner solve.</p></li>
-<li><p><code>keep_grid_hessians</code> (<code>FALSE</code>) – when <code>TRUE</code>, retain per-grid-point
+<li><p><code>keep_grid_hessians</code> (<code>TRUE</code>) – when <code>TRUE</code>, retain per-grid-point
 fixed-effects marginal Hessian \(H_\beta\) and mode \(\hat{\beta}\)
 on the return list as <code>$grid_hessians</code> (list of dense \(p\times p\)
 matrices) and <code>$grid_modes</code> (list of length-\(p\) vectors). Used
@@ -333,8 +365,11 @@ overrides <code>band</code>
 (the inner-reliability floor a coordinate is selected at, default
 <code>"ok"</code>), <code>idx</code> (pin the corrected set explicitly, skipping the selector),
 <code>closure</code> / <code>closure_max</code> (grow the set by strongly coupled
-precision-graph neighbours – declined on this backend, which retains no
-joint precision), the sampler budget <code>n_iter</code> / <code>warmup</code> / <code>thin</code>, and
+precision-graph neighbours: a coordinate strongly coupled to a member of
+the corrected set and left out of it is carried linearly, which is the
+error the correction removes, so requesting the closure also retains the
+modal cell's joint precision for the selector to read), the sampler
+budget <code>n_iter</code> / <code>warmup</code> / <code>thin</code>, and
 <code>n_draws</code>. The selector reads the per-index bands <code>diagnose_skew</code> already
 attached, so it costs no extra solve; the correction itself re-runs the
 settled grid once with the sampler on, and the fit then reports <code>$draws</code>
@@ -401,7 +436,18 @@ grid, refused with an error above it. Each cell is one inner Newton
 solve, so the default catches a per-block grid that multiplied out to a
 run nobody asked for; a deliberate converged tensor reference grid (4
 axes at 7 levels is 2401 cells) raises it here.</p></li>
-<li><p><code>prune</code> (<code>FALSE</code>), <code>prune_tol</code> (<code>1e-3</code>), <code>screen_iters</code> (<code>5L</code>) –
+<li><p><code>checkpoint</code> (<code>list(path =, resume =)</code>) – grid-cell checkpoint /
+resume. Each solved outer cell is appended to <code>path</code>, keyed by its
+hyperparameter coordinate; <code>resume = TRUE</code> loads the finished cells and
+solves only the rest, and a fingerprint mismatch (different data,
+settings or grid) errors rather than resuming onto a stale result. See
+<code>?tulpa_nested_laplace</code> "Checkpoint / resume".</p></li>
+<li><p><code>progress</code>, <code>progress.every</code>, <code>progress.file</code>, <code>progress.throttle</code> –
+the outer-grid progress reporter: whether to print, how often (in
+cells), where to, and the minimum seconds between lines.</p></li>
+<li><p><code>prune</code> (<code>FALSE</code>), <code>prune_tol</code> (<code>1e-3</code>), <code>screen_iters</code>
+(<code>.NL_SCREEN$iters</code>, 2 – the doc said 5 while the engine read 2, which
+is what gcol33/tulpa#640 measured the depth down to) –
 opt-in cheap-pass screening of the outer grid. When <code>prune = TRUE</code>, the
 driver first sweeps the lattice running a <code>screen_iters</code>-step inner
 Newton per cell, each warm-started from the previous screened cell's
@@ -447,9 +493,10 @@ per-row linear predictor with. It costs one back-solve per distinct
 loading vector per cell, which on a design with few repeated rows is the
 dominant cost of a cell, so a caller reading only <code>fitted_eta</code> or the
 coefficient summaries sets <code>FALSE</code> and the fit then carries no
-<code>fitted_eta_var</code>. Declared by the single-block kernels only; a
-multi-block prior refuses <code>FALSE</code> rather than accepting it and ignoring
-it.</p></li>
+<code>fitted_eta_var</code>. Every single-block field reports it, the NNGP, HSGP,
+SPDE and spatiotemporal fields included, each read off its cell's own
+precision at the mode; a multi-block prior refuses <code>FALSE</code> rather than
+accepting it and ignoring it.</p></li>
 </ul></dd>
 
 </dl></div>
@@ -502,21 +549,23 @@ Gaussian models by using integrated nested Laplace approximations.
 
     <div class="section level2">
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="co"># \donttest{</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span>
-<span><span class="va">S</span> <span class="op">&lt;-</span> <span class="fl">30L</span>                                   <span class="co"># spatial units arranged in a chain</span></span>
-<span><span class="va">nb</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">lapply</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">S</span><span class="op">)</span>, <span class="kw">function</span><span class="op">(</span><span class="va">s</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/sets.html" class="external-link">setdiff</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">s</span> <span class="op">-</span> <span class="fl">1L</span>, <span class="va">s</span> <span class="op">+</span> <span class="fl">1L</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0L</span>, <span class="va">S</span> <span class="op">+</span> <span class="fl">1L</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="va">nn</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/lengths.html" class="external-link">lengths</a></span><span class="op">(</span><span class="va">nb</span><span class="op">)</span></span>
-<span><span class="va">field</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">as.numeric</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/scale.html" class="external-link">scale</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/cumsum.html" class="external-link">cumsum</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">S</span>, <span class="fl">0</span>, <span class="fl">0.4</span><span class="op">)</span><span class="op">)</span><span class="op">)</span><span class="op">)</span>   <span class="co"># smooth spatial field</span></span>
-<span><span class="va">idx</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">S</span><span class="op">)</span>, each <span class="op">=</span> <span class="fl">6L</span><span class="op">)</span>; <span class="va">n</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">idx</span><span class="op">)</span>; <span class="va">x</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span></span>
-<span><span class="va">y</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Binomial.html" class="external-link">rbinom</a></span><span class="op">(</span><span class="va">n</span>, <span class="fl">1L</span>, <span class="fu"><a href="https://rdrr.io/r/stats/Logistic.html" class="external-link">plogis</a></span><span class="op">(</span><span class="op">-</span><span class="fl">0.2</span> <span class="op">+</span> <span class="fl">0.6</span> <span class="op">*</span> <span class="va">x</span> <span class="op">+</span> <span class="va">field</span><span class="op">[</span><span class="va">idx</span><span class="op">]</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="va">prior</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>type <span class="op">=</span> <span class="st">"icar"</span>, n_spatial_units <span class="op">=</span> <span class="va">S</span>, spatial_idx <span class="op">=</span> <span class="va">idx</span>,</span>
-<span>              adj_row_ptr <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0L</span>, <span class="fu"><a href="https://rdrr.io/r/base/cumsum.html" class="external-link">cumsum</a></span><span class="op">(</span><span class="va">nn</span><span class="op">)</span><span class="op">)</span>, adj_col_idx <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/unlist.html" class="external-link">unlist</a></span><span class="op">(</span><span class="va">nb</span><span class="op">)</span> <span class="op">-</span> <span class="fl">1L</span>,</span>
-<span>              n_neighbors <span class="op">=</span> <span class="va">nn</span>, tau_grid <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.5</span>, <span class="fl">1</span>, <span class="fl">2</span>, <span class="fl">4</span>, <span class="fl">8</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu">tulpa_nested_laplace</span><span class="op">(</span><span class="va">y</span>, <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fl">1L</span>, <span class="va">n</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span><span class="fl">1</span>, <span class="va">x</span><span class="op">)</span>, prior <span class="op">=</span> <span class="va">prior</span>,</span>
-<span>                            family <span class="op">=</span> <span class="st">"binomial"</span><span class="op">)</span></span>
-<span><span class="va">fit</span><span class="op">$</span><span class="va">theta_mean</span>        <span class="co"># marginalized ICAR precision</span></span>
-<span><span class="co"># }</span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="co"># \donttest{</span></span></span>
+<span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">S</span> <span class="op">&lt;-</span> <span class="fl">30L</span>                                   <span class="co"># spatial units arranged in a chain</span></span></span>
+<span class="r-in"><span><span class="va">nb</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">lapply</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">S</span><span class="op">)</span>, <span class="kw">function</span><span class="op">(</span><span class="va">s</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/sets.html" class="external-link">setdiff</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="va">s</span> <span class="op">-</span> <span class="fl">1L</span>, <span class="va">s</span> <span class="op">+</span> <span class="fl">1L</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0L</span>, <span class="va">S</span> <span class="op">+</span> <span class="fl">1L</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">nn</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/lengths.html" class="external-link">lengths</a></span><span class="op">(</span><span class="va">nb</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">field</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">as.numeric</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/scale.html" class="external-link">scale</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/cumsum.html" class="external-link">cumsum</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">S</span>, <span class="fl">0</span>, <span class="fl">0.4</span><span class="op">)</span><span class="op">)</span><span class="op">)</span><span class="op">)</span>   <span class="co"># smooth spatial field</span></span></span>
+<span class="r-in"><span><span class="va">idx</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="va">S</span><span class="op">)</span>, each <span class="op">=</span> <span class="fl">6L</span><span class="op">)</span>; <span class="va">n</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">idx</span><span class="op">)</span>; <span class="va">x</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">y</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Binomial.html" class="external-link">rbinom</a></span><span class="op">(</span><span class="va">n</span>, <span class="fl">1L</span>, <span class="fu"><a href="https://rdrr.io/r/stats/Logistic.html" class="external-link">plogis</a></span><span class="op">(</span><span class="op">-</span><span class="fl">0.2</span> <span class="op">+</span> <span class="fl">0.6</span> <span class="op">*</span> <span class="va">x</span> <span class="op">+</span> <span class="va">field</span><span class="op">[</span><span class="va">idx</span><span class="op">]</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">prior</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>type <span class="op">=</span> <span class="st">"icar"</span>, n_spatial_units <span class="op">=</span> <span class="va">S</span>, spatial_idx <span class="op">=</span> <span class="va">idx</span>,</span></span>
+<span class="r-in"><span>              adj_row_ptr <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0L</span>, <span class="fu"><a href="https://rdrr.io/r/base/cumsum.html" class="external-link">cumsum</a></span><span class="op">(</span><span class="va">nn</span><span class="op">)</span><span class="op">)</span>, adj_col_idx <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/unlist.html" class="external-link">unlist</a></span><span class="op">(</span><span class="va">nb</span><span class="op">)</span> <span class="op">-</span> <span class="fl">1L</span>,</span></span>
+<span class="r-in"><span>              n_neighbors <span class="op">=</span> <span class="va">nn</span>, tau_grid <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.5</span>, <span class="fl">1</span>, <span class="fl">2</span>, <span class="fl">4</span>, <span class="fl">8</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu">tulpa_nested_laplace</span><span class="op">(</span><span class="va">y</span>, <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fl">1L</span>, <span class="va">n</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span><span class="fl">1</span>, <span class="va">x</span><span class="op">)</span>, prior <span class="op">=</span> <span class="va">prior</span>,</span></span>
+<span class="r-in"><span>                            family <span class="op">=</span> <span class="st">"binomial"</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">fit</span><span class="op">$</span><span class="va">theta_mean</span>        <span class="co"># marginalized ICAR precision</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> [1] 5.597209</span>
+<span class="r-in"><span><span class="co"># }</span></span></span>
+</code></pre></div>
     </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>

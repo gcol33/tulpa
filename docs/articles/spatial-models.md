@@ -238,7 +238,6 @@ fit <- tulpa(y ~ x + spatial(region), data = ds, family = "binomial",
              spatial = list(type = "icar", adjacency = W),
              mode = "nested_laplace")
 fit$backend
-#> [1] "nested_laplace"
 ```
 
 `mode = "nested_laplace"` runs the Tier-2 path that integrates the
@@ -268,8 +267,6 @@ The fixed effects come back from
 ``` r
 
 coef(fit)
-#> (Intercept)           x 
-#>  -0.3184731   0.8181402
 ```
 
 The slope lands near the simulated $`0.8`$. With the regional wave
@@ -293,9 +290,6 @@ knowing how smooth the surface is.
 ``` r
 
 summary(fit)
-#>               estimate  std.error       2.5%       97.5%
-#> (Intercept) -0.3184731 0.13111212 -0.5828865 -0.06893647
-#> x            0.8181402 0.09488012  0.6512063  1.02312957
 ```
 
 ### Extracting the field per region
@@ -322,7 +316,6 @@ nf    <- fit$n_fixed
 field_hat <- vapply(seq_len(K), function(u) sum(w * fit$modes[, nf + u]),
                     numeric(1))
 round(head(field_hat), 3)
-#> [1] 0.272 0.375 0.804 0.776 1.495 1.495
 ```
 
 That recipe is the same one the temporal path uses for a random-walk
@@ -349,13 +342,9 @@ plot(field_true - mean(field_true),
 abline(0, 1, lwd = 2, col = "grey40")
 ```
 
-![Estimated spatial field per region against the simulated truth, near
-the identity line](spatial-models_files/figure-html/field-plot-1.png)
-
 ``` r
 
 cor(field_true, field_hat)
-#> [1] 0.9812883
 ```
 
 The points fall along the identity line and the correlation is high. The
@@ -378,8 +367,6 @@ posterior mean over the grid, on the natural precision scale, and
 
 c(tau_mean = fit$theta_mean,
   lo = fit$theta_ci_lo, hi = fit$theta_ci_hi)
-#>  tau_mean  lo.value  hi.value 
-#>  4.991525  1.567037 12.004982
 ```
 
 A larger $`\tau`$ would mean a stiffer penalty on neighbour differences
@@ -408,18 +395,6 @@ the fixed-effect covariance.
 ``` r
 
 confint(fit)
-#>                   2.5%       97.5%
-#> (Intercept) -0.5828865 -0.06893647
-#> x            0.6512063  1.02312957
-#> attr(,"skew_applied")
-#> (Intercept)           x 
-#>        TRUE        TRUE 
-#> attr(,"interval_source")
-#> [1] "skew_map_cell"
-#> attr(,"interval_declined")
-#> [1] "skew_correct: gamma_3 is retained at the MAP cell only, so the mixture components carry no per-cell skew to compose; the coefficients it declines keep the read they would have had"
-#> attr(,"retained_mass")
-#> [1] 1
 ```
 
 The second point is the intercept, and it follows directly from the
@@ -438,7 +413,6 @@ nuisance level rather than a quantity to interpret.
 ``` r
 
 summary(fit)["(Intercept)", "std.error"]
-#> [1] 0.1311121
 ```
 
 The wide value here is by design, not a fitting failure. A proper CAR or
@@ -467,10 +441,6 @@ grid-marginalised fixed-effect covariance the summary uses.
 nd <- data.frame(x = seq(-2.5, 2.5, length.out = 50))
 pr <- predict(fit, newdata = nd, type = "link", se.fit = TRUE)
 head(pr, 3)
-#>         fit    se.fit     lower     upper
-#> 1 -2.363824 0.2778939 -2.908486 -1.819162
-#> 2 -2.280340 0.2693917 -2.808338 -1.752342
-#> 3 -2.196856 0.2609716 -2.708351 -1.685361
 ```
 
 Plot the trend on the link scale with its credible band.
@@ -482,9 +452,6 @@ polygon(c(nd$x, rev(nd$x)), c(pr$lower, rev(pr$upper)),
         col = adjustcolor("steelblue", 0.25), border = NA)
 lines(nd$x, pr$fit, lwd = 2)
 ```
-
-![Predicted logit response across x with a 95 percent credible
-band](spatial-models_files/figure-html/predict-plot-1.png)
 
 For a probability instead of a logit, pass `type = "response"`; the
 prediction and its bounds then pass through the inverse-logit and stay
@@ -508,28 +475,24 @@ the same mean structure with and without the field on this scale.
 
 A nested fit reports its log marginal likelihood per grid point in
 `$log_marginal`, one value for each $`\tau`$ on the integration grid.
-The single integrated evidence is the log-sum-exp of that vector, which
-adds the per-grid evidences on the probability scale before taking logs
-again. The non-spatial Laplace fit has no grid and reports a scalar log
-marginal likelihood directly through
-[`logLik()`](https://rdrr.io/r/stats/logLik.html).
+Each point stands for a cell of the grid whose prior mass (`$log_quad`)
+is part of the integral, so the evidence adds the per-point marginal
+likelihoods weighted by those masses, on the probability scale, before
+taking logs again. [`logLik()`](https://rdrr.io/r/stats/logLik.html)
+returns that sum. The non-spatial Laplace fit has no grid, and its
+scalar log marginal likelihood is already the evidence of a model with
+nothing left to integrate.
 
 ``` r
 
 m0 <- tulpa(y ~ x, data = ds, family = "binomial", mode = "laplace")
-
-lse  <- function(z) { m <- max(z); m + log(sum(exp(z - m))) }
-ev_spatial    <- lse(fit$log_marginal)
-ev_nonspatial <- as.numeric(logLik(m0))
-c(nonspatial = ev_nonspatial, spatial = ev_spatial)
-#> nonspatial    spatial 
-#>  -518.8611  -463.8058
+cmp <- compare_models(nonspatial = m0, spatial = fit, criterion = "loglik")
+cmp
 ```
 
 ``` r
 
-ev_spatial - ev_nonspatial
-#> [1] 55.05533
+diff(cmp$logLik)
 ```
 
 The spatial fit carries the higher evidence by a wide margin, matching
@@ -543,15 +506,12 @@ which guards against the overfitting that a raw goodness-of-fit
 comparison would invite.
 
 [`compare_models()`](https://gillescolling.com/tulpa/reference/compare_models.md)
-ranks fits by `criterion = "loglik"`, reading each fit’s
-[`logLik()`](https://rdrr.io/r/stats/logLik.html). On a nested fit
-[`logLik()`](https://rdrr.io/r/stats/logLik.html) returns the integrated
-evidence, the log-sum-exp of `$log_marginal` shown above, so
-[`compare_models()`](https://gillescolling.com/tulpa/reference/compare_models.md)
-reports one row per model and the areal-versus-flat ranking matches the
-manual differencing. The same comparison runs for two spatial models, an
-ICAR against a BYM2 for instance, by taking the log-sum-exp of each
-fit’s `$log_marginal` and differencing.
+reads each fit’s [`logLik()`](https://rdrr.io/r/stats/logLik.html) and
+reports one row per model. The same comparison runs for two spatial
+models, an ICAR against a BYM2 for instance, as long as both integrate
+their hyperparameters over grids with the same support: an axis on the
+engine’s default flat measure is uniform over the span the fit
+integrated, so the evidence depends on that span.
 
 ## Practical guidance
 
@@ -626,7 +586,6 @@ no `spatial(col)` term and no adjacency to build:
 
 gp_spec <- spatial_gp(~ lon + lat)
 gp_spec$type
-#> [1] "gp"
 ```
 
 The call shape mirrors the areal path: pass the spec through `spatial=`,
@@ -662,7 +621,6 @@ spde <- spatial_spde(~ lon + lat, data = coords, max_edge = c(0.2, 0.5))
 fit  <- fit_spde(y = y, X = model.matrix(~ xcov), spatial = spde,
                  family = "poisson", range = 0.4, sigma = 0.9)
 round(fit$beta, 3)
-#> [1] 0.988 0.540
 ```
 
 The fixed-effect estimates land on the generating intercept and slope;

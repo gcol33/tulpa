@@ -24,7 +24,7 @@ hyperparameter integration."><script>
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.6.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -89,6 +89,7 @@ hyperparameter integration.</p>
 <span>  n_re_groups <span class="op">=</span> <span class="fl">0L</span>,</span>
 <span>  sigma_re <span class="op">=</span> <span class="fl">1</span>,</span>
 <span>  mode <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"laplace"</span>, <span class="st">"nuts"</span><span class="op">)</span>,</span>
+<span>  hyperprior <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"proper"</span>, <span class="st">"flat"</span><span class="op">)</span>,</span>
 <span>  control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="op">)</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
@@ -140,7 +141,11 @@ every door: for <code>gaussian</code> / <code>lognormal</code> this is the resid
 (the SD is <code>sqrt(phi)</code>), for <code>neg_binomial_2</code> the size, <code>gamma</code> the
 shape, <code>beta</code> the precision, <code>t</code> the scale; <code>binomial</code> and <code>poisson</code>
 ignore it. The compiled kernels parameterize the two variance families by
-the residual SD and are handed <code>sqrt(phi)</code> at the boundary.</p></dd>
+the residual SD and are handed <code>sqrt(phi)</code> at the boundary.</p>
+<p>Defaulted, it conditions at 1 and says so with a warning, since for a
+family that reads a dispersion that is a modelling choice rather than a
+neutral value. <code>fit$phi_estimated</code> records whether the value on the fit
+was estimated or conditioned on.</p></dd>
 
 
 <dt id="arg-offset">offset<a class="anchor" aria-label="anchor" href="#arg-offset"></a></dt>
@@ -165,6 +170,16 @@ for exact HMC over the field (and, unless both <code>range</code> and <code>sigm
 fixed, the Matern hyperparameters). <code>mode = "nuts"</code> does not support an
 <code>offset</code> or a random-effect term, and its sampler knobs pass via <code>control</code>
 (see <code><a href="tulpa_nuts_spde.html">tulpa_nuts_spde()</a></code>); it returns that sampler's draws object.</p></dd>
+
+
+<dt id="arg-hyperprior">hyperprior<a class="anchor" aria-label="anchor" href="#arg-hyperprior"></a></dt>
+<dd><p><code>"proper"</code> (default) or <code>"flat"</code>, the prior the nested
+integration puts on <code>(range, sigma)</code>. <code>"proper"</code> carries the spec's PC
+range and PC sigma priors. <code>"flat"</code> keeps only the anchors the spec was
+given explicitly (<code>prior_range</code> / <code>prior_sigma</code> passed to
+<code><a href="spatial_spde.html">spatial_spde()</a></code>); an axis whose anchor was defaulted carries no density,
+is named in <code>log_hyperprior_declined</code> as <code>"flat_hyperprior"</code>, and the
+evidence declines. Not read by <code>mode = "nuts"</code>, where <code>"flat"</code> errors.</p></dd>
 
 
 <dt id="arg-control">control<a class="anchor" aria-label="anchor" href="#arg-control"></a></dt>
@@ -239,23 +254,25 @@ Gaussian models by using integrated nested Laplace approximations.
 
     <div class="section level2">
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="co"># \donttest{</span></span>
-<span><span class="kw">if</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/ns-load.html" class="external-link">requireNamespace</a></span><span class="op">(</span><span class="st">"fmesher"</span>, quietly <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span><span class="op">)</span> <span class="op">{</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span>
-<span>  <span class="va">n</span> <span class="op">&lt;-</span> <span class="fl">200L</span></span>
-<span>  <span class="va">coords</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/Uniform.html" class="external-link">runif</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/stats/Uniform.html" class="external-link">runif</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span><span class="op">)</span></span>
-<span>  <span class="va">mesh</span> <span class="op">&lt;-</span> <span class="fu">fmesher</span><span class="fu">::</span><span class="fu">fm_mesh_2d</span><span class="op">(</span>loc <span class="op">=</span> <span class="va">coords</span>, max.edge <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.15</span>, <span class="fl">0.4</span><span class="op">)</span>, cutoff <span class="op">=</span> <span class="fl">0.05</span><span class="op">)</span></span>
-<span>  <span class="va">fem</span>  <span class="op">&lt;-</span> <span class="fu">fmesher</span><span class="fu">::</span><span class="fu">fm_fem</span><span class="op">(</span><span class="va">mesh</span><span class="op">)</span></span>
-<span>  <span class="va">A</span>    <span class="op">&lt;-</span> <span class="fu">as</span><span class="op">(</span><span class="fu">fmesher</span><span class="fu">::</span><span class="fu">fm_basis</span><span class="op">(</span><span class="va">mesh</span>, loc <span class="op">=</span> <span class="va">coords</span><span class="op">)</span>, <span class="st">"CsparseMatrix"</span><span class="op">)</span></span>
-<span>  <span class="va">spec</span> <span class="op">&lt;-</span> <span class="fu"><a href="spatial_spde_custom.html">spatial_spde_custom</a></span><span class="op">(</span>C <span class="op">=</span> <span class="va">fem</span><span class="op">$</span><span class="va">c0</span>, G <span class="op">=</span> <span class="va">fem</span><span class="op">$</span><span class="va">g1</span>, A <span class="op">=</span> <span class="va">A</span>, nu <span class="op">=</span> <span class="fl">1</span>,</span>
-<span>                              prior_range <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.3</span>, <span class="fl">0.5</span><span class="op">)</span>, prior_sigma <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.6</span>, <span class="fl">0.05</span><span class="op">)</span><span class="op">)</span></span>
-<span>  <span class="va">w</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">as.numeric</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">spec</span><span class="op">$</span><span class="va">n_mesh</span>, <span class="fl">0</span>, <span class="fl">0.6</span><span class="op">)</span><span class="op">)</span>; <span class="va">w</span> <span class="op">&lt;-</span> <span class="va">w</span> <span class="op">-</span> <span class="fu"><a href="https://rdrr.io/r/base/mean.html" class="external-link">mean</a></span><span class="op">(</span><span class="va">w</span><span class="op">)</span></span>
-<span>  <span class="va">x</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span></span>
-<span>  <span class="va">y</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Poisson.html" class="external-link">rpois</a></span><span class="op">(</span><span class="va">n</span>, <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="fl">2.0</span> <span class="op">+</span> <span class="fl">0.5</span> <span class="op">*</span> <span class="va">x</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">as.numeric</a></span><span class="op">(</span><span class="va">spec</span><span class="op">$</span><span class="va">A</span> <span class="op"><a href="https://rdrr.io/r/base/matmult.html" class="external-link">%*%</a></span> <span class="va">w</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
-<span>  <span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu">fit_spde</span><span class="op">(</span>y <span class="op">=</span> <span class="va">y</span>, X <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span><span class="fl">1</span>, <span class="va">x</span><span class="op">)</span>, spatial <span class="op">=</span> <span class="va">spec</span>, family <span class="op">=</span> <span class="st">"poisson"</span><span class="op">)</span></span>
-<span>  <span class="va">fit</span><span class="op">$</span><span class="va">nested</span><span class="op">$</span><span class="va">range_mean</span></span>
-<span><span class="op">}</span></span>
-<span><span class="co"># }</span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="co"># \donttest{</span></span></span>
+<span class="r-in"><span><span class="kw">if</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/ns-load.html" class="external-link">requireNamespace</a></span><span class="op">(</span><span class="st">"fmesher"</span>, quietly <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span><span class="op">)</span> <span class="op">{</span></span></span>
+<span class="r-in"><span>  <span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">1</span><span class="op">)</span></span></span>
+<span class="r-in"><span>  <span class="va">n</span> <span class="op">&lt;-</span> <span class="fl">200L</span></span></span>
+<span class="r-in"><span>  <span class="va">coords</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/Uniform.html" class="external-link">runif</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/stats/Uniform.html" class="external-link">runif</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span>  <span class="va">mesh</span> <span class="op">&lt;-</span> <span class="fu">fmesher</span><span class="fu">::</span><span class="fu"><a href="https://inlabru-org.github.io/fmesher/reference/fm_mesh_2d.html" class="external-link">fm_mesh_2d</a></span><span class="op">(</span>loc <span class="op">=</span> <span class="va">coords</span>, max.edge <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.15</span>, <span class="fl">0.4</span><span class="op">)</span>, cutoff <span class="op">=</span> <span class="fl">0.05</span><span class="op">)</span></span></span>
+<span class="r-in"><span>  <span class="va">fem</span>  <span class="op">&lt;-</span> <span class="fu">fmesher</span><span class="fu">::</span><span class="fu"><a href="https://inlabru-org.github.io/fmesher/reference/fm_fem.html" class="external-link">fm_fem</a></span><span class="op">(</span><span class="va">mesh</span><span class="op">)</span></span></span>
+<span class="r-in"><span>  <span class="va">A</span>    <span class="op">&lt;-</span> <span class="fu">as</span><span class="op">(</span><span class="fu">fmesher</span><span class="fu">::</span><span class="fu"><a href="https://inlabru-org.github.io/fmesher/reference/fm_basis.html" class="external-link">fm_basis</a></span><span class="op">(</span><span class="va">mesh</span>, loc <span class="op">=</span> <span class="va">coords</span><span class="op">)</span>, <span class="st">"CsparseMatrix"</span><span class="op">)</span></span></span>
+<span class="r-in"><span>  <span class="va">spec</span> <span class="op">&lt;-</span> <span class="fu"><a href="spatial_spde_custom.html">spatial_spde_custom</a></span><span class="op">(</span>C <span class="op">=</span> <span class="va">fem</span><span class="op">$</span><span class="va">c0</span>, G <span class="op">=</span> <span class="va">fem</span><span class="op">$</span><span class="va">g1</span>, A <span class="op">=</span> <span class="va">A</span>, nu <span class="op">=</span> <span class="fl">1</span>,</span></span>
+<span class="r-in"><span>                              prior_range <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.3</span>, <span class="fl">0.5</span><span class="op">)</span>, prior_sigma <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">0.6</span>, <span class="fl">0.05</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span>  <span class="va">w</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">as.numeric</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">spec</span><span class="op">$</span><span class="va">n_mesh</span>, <span class="fl">0</span>, <span class="fl">0.6</span><span class="op">)</span><span class="op">)</span>; <span class="va">w</span> <span class="op">&lt;-</span> <span class="va">w</span> <span class="op">-</span> <span class="fu"><a href="https://rdrr.io/r/base/mean.html" class="external-link">mean</a></span><span class="op">(</span><span class="va">w</span><span class="op">)</span></span></span>
+<span class="r-in"><span>  <span class="va">x</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span></span></span>
+<span class="r-in"><span>  <span class="va">y</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Poisson.html" class="external-link">rpois</a></span><span class="op">(</span><span class="va">n</span>, <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="fl">2.0</span> <span class="op">+</span> <span class="fl">0.5</span> <span class="op">*</span> <span class="va">x</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">as.numeric</a></span><span class="op">(</span><span class="va">spec</span><span class="op">$</span><span class="va">A</span> <span class="op"><a href="https://rdrr.io/r/base/matmult.html" class="external-link">%*%</a></span> <span class="va">w</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span>  <span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu">fit_spde</span><span class="op">(</span>y <span class="op">=</span> <span class="va">y</span>, X <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/cbind.html" class="external-link">cbind</a></span><span class="op">(</span><span class="fl">1</span>, <span class="va">x</span><span class="op">)</span>, spatial <span class="op">=</span> <span class="va">spec</span>, family <span class="op">=</span> <span class="st">"poisson"</span><span class="op">)</span></span></span>
+<span class="r-in"><span>  <span class="va">fit</span><span class="op">$</span><span class="va">nested</span><span class="op">$</span><span class="va">range_mean</span></span></span>
+<span class="r-in"><span><span class="op">}</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> [1] 0.07370861</span>
+<span class="r-in"><span><span class="co"># }</span></span></span>
+</code></pre></div>
     </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>

@@ -30,7 +30,7 @@ variance from these covariates, leading to biased coefficient estimates.'><scrip
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.6.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -91,7 +91,13 @@ variance from these covariates, leading to biased coefficient estimates.</p>
 
 
 <dl><dt id="arg-spatial">spatial<a class="anchor" aria-label="anchor" href="#arg-spatial"></a></dt>
-<dd><p>A spatial specification (<code>spatial_gp</code>, <code>spatial_car</code>, etc.)</p></dd>
+<dd><p>An areal specification – <code><a href="spatial_car.html">spatial_car()</a></code>, <code>spatial_icar()</code>,
+<code><a href="spatial_bym2.html">spatial_bym2()</a></code> or a proper-CAR spec – or an NNGP one, <code><a href="spatial_gp.html">spatial_gp()</a></code>.
+The projection is applied by the binomial Polya-Gamma Gibbs sampler, which
+carries the field's own prior precision as an adjacency or as Vecchia
+factors; an HSGP basis (<code>spatial_gp(approx = "hsgp")</code>) and an SPDE mesh
+(<code><a href="spatial_spde.html">spatial_spde()</a></code>) are neither, and are refused at construction rather
+than accepted and then unfittable.</p></dd>
 
 
 <dt id="arg-restrict-to">restrict_to<a class="anchor" aria-label="anchor" href="#arg-restrict-to"></a></dt>
@@ -110,14 +116,37 @@ to be orthogonal to the column space of these covariates.</p></dd>
 spatial random effect to be orthogonal to the fixed effect design matrix:</p>
 <p>$$w_{RSR} = (I - P_X) w$$</p>
 <p>where \(P_X = X(X'X)^{-1}X'\) is the projection matrix onto the column
-space of X.</p>
+space of X. The projector is built at the FIELD's own resolution: one row
+per areal unit, or one per unique location for an NNGP field, with the
+restricted design averaged over the observations at each.</p>
+<p><strong>What RSR estimates.</strong> The restriction puts no part of the shared, smooth
+signal in the field, so the fixed effect takes all of it: RSR targets the
+MARGINAL association between the covariate and the response, where the
+unrestricted spatial model targets the association conditional on the
+field. The two differ by exactly the covariate's projection onto the field,
+so they are different estimands rather than a biased and an unbiased
+version of one (Bradley, 2024). Measured on a confounded continuous
+fixture (5 seeds, conditional slope 1.0, marginal 1.71): the restricted fit
+averaged 0.06 from the marginal value and 0.74 from the conditional one,
+the unrestricted fit 0.10 and 0.63.</p>
+<p><strong>The restriction is not free.</strong> In the geostatistical setting Hanks et al.
+(2015) measured POORER coverage under RSR than under the spatial model that
+does not restrict, and credible intervals that can be inappropriately
+narrow under model misspecification; Khan and Calder (2022) report the same
+on areal structure, with a non-spatial model competitive on coverage and
+higher Type-S error rates under RSR. Read an RSR interval as an interval
+for the marginal association under a correctly specified model, and prefer
+a posterior-predictive check (Hanks et al., 2015) where that is in doubt.</p>
 <p><strong>When to use RSR:</strong></p><ul><li><p>Covariates are spatially smooth (environmental gradients)</p></li>
-<li><p>Interested in causal interpretation of covariate effects</p></li>
+<li><p>The marginal association is the quantity of interest</p></li>
 <li><p>Coefficients appear attenuated toward zero</p></li>
 </ul><p><strong>When NOT to use RSR:</strong></p><ul><li><p>Covariates are spatially uncorrelated</p></li>
 <li><p>Spatial effect is the primary quantity of interest</p></li>
-<li><p>Prediction is the main goal (not causal inference)</p></li>
-</ul></div>
+<li><p>Prediction is the main goal</p></li>
+<li><p>Interval coverage matters more than the point estimate</p></li>
+</ul><p>RSR fits are binomial, through <code>mode = "gibbs"</code> (which <code>mode = "auto"</code>
+selects for it).</p>
+    </div>
     <div class="section level2">
     <h2 id="references">References<a class="anchor" aria-label="anchor" href="#references"></a></h2>
     <p>Reich, B. J., Hodges, J. S., &amp; Zadnik, V. (2006). Effects of residual
@@ -126,6 +155,16 @@ Biometrics, 62(4), 1197-1206.</p>
 <p>Hodges, J. S., &amp; Reich, B. J. (2010). Adding spatially-correlated errors
 can mess up the fixed effect you love. The American Statistician, 64(4),
 325-334.</p>
+<p>Hanks, E. M., Schliep, E. M., Hooten, M. B., &amp; Hoeting, J. A. (2015).
+Restricted spatial regression in practice: geostatistical models,
+confounding, and robustness under model misspecification. Environmetrics,
+26(4), 243-254.</p>
+<p>Khan, K., &amp; Calder, C. A. (2022). Restricted spatial regression methods:
+implications for inference. Journal of the American Statistical
+Association, 117(537), 482-494.</p>
+<p>Bradley, J. R. (2024). Restricted spatial regression is reasonable
+statistical practice: clarifications, interpretations, and new
+developments. arXiv:2408.05106.</p>
     </div>
     <div class="section level2">
     <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>
@@ -134,36 +173,75 @@ can mess up the fixed effect you love. The American Statistician, 64(4),
 
     <div class="section level2">
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="co"># Create RSR spatial structure</span></span>
-<span><span class="va">rsr</span> <span class="op">&lt;-</span> <span class="fu">spatial_rsr</span><span class="op">(</span></span>
-<span>  <span class="fu"><a href="spatial_gp.html">spatial_gp</a></span><span class="op">(</span><span class="op">~</span> <span class="va">lon</span> <span class="op">+</span> <span class="va">lat</span><span class="op">)</span>,</span>
-<span>  restrict_to <span class="op">=</span> <span class="op">~</span> <span class="va">depth</span> <span class="op">+</span> <span class="va">temp</span></span>
-<span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">rsr</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># \donttest{</span></span>
-<span><span class="co"># Areal binomial data on a chain of regions, covariate spatially confounded</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">404</span><span class="op">)</span></span>
-<span><span class="va">n_regions</span> <span class="op">&lt;-</span> <span class="fl">12</span></span>
-<span><span class="va">W</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fl">0</span>, <span class="va">n_regions</span>, <span class="va">n_regions</span><span class="op">)</span></span>
-<span><span class="kw">for</span> <span class="op">(</span><span class="va">i</span> <span class="kw">in</span> <span class="fl">1</span><span class="op">:</span><span class="op">(</span><span class="va">n_regions</span> <span class="op">-</span> <span class="fl">1</span><span class="op">)</span><span class="op">)</span> <span class="va">W</span><span class="op">[</span><span class="va">i</span>, <span class="va">i</span> <span class="op">+</span> <span class="fl">1</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="va">W</span><span class="op">[</span><span class="va">i</span> <span class="op">+</span> <span class="fl">1</span>, <span class="va">i</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="fl">1</span></span>
-<span><span class="va">df</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>region <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/factor.html" class="external-link">factor</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fl">1</span><span class="op">:</span><span class="va">n_regions</span>, each <span class="op">=</span> <span class="fl">5</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="va">df</span><span class="op">$</span><span class="va">x</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/integer.html" class="external-link">as.integer</a></span><span class="op">(</span><span class="va">df</span><span class="op">$</span><span class="va">region</span><span class="op">)</span> <span class="op">/</span> <span class="fl">4</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">df</span><span class="op">)</span>, <span class="fl">0</span>, <span class="fl">0.5</span><span class="op">)</span></span>
-<span><span class="va">df</span><span class="op">$</span><span class="va">y</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Binomial.html" class="external-link">rbinom</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">df</span><span class="op">)</span>, <span class="fl">20</span>, <span class="fu"><a href="https://rdrr.io/r/stats/Logistic.html" class="external-link">plogis</a></span><span class="op">(</span><span class="op">-</span><span class="fl">0.5</span> <span class="op">+</span> <span class="fl">0.6</span> <span class="op">*</span> <span class="va">df</span><span class="op">$</span><span class="va">x</span><span class="op">)</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># RSR orthogonalises the spatial field to x, protecting its coefficient</span></span>
-<span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="tulpa.html">tulpa</a></span><span class="op">(</span></span>
-<span>  <span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="fu"><a href="spatial.html">spatial</a></span><span class="op">(</span><span class="va">region</span><span class="op">)</span>,</span>
-<span>  data <span class="op">=</span> <span class="va">df</span>,</span>
-<span>  family <span class="op">=</span> <span class="st">"binomial"</span>,</span>
-<span>  n_trials <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fl">20L</span>, <span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">df</span><span class="op">)</span><span class="op">)</span>,</span>
-<span>  spatial <span class="op">=</span> <span class="fu">spatial_rsr</span><span class="op">(</span><span class="fu"><a href="spatial_car.html">spatial_car</a></span><span class="op">(</span><span class="va">W</span>, level <span class="op">=</span> <span class="st">"obs"</span><span class="op">)</span>, restrict_to <span class="op">=</span> <span class="op">~</span> <span class="va">x</span><span class="op">)</span>,</span>
-<span>  mode <span class="op">=</span> <span class="st">"auto"</span>,</span>
-<span>  control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_iter <span class="op">=</span> <span class="fl">500L</span>, warmup <span class="op">=</span> <span class="fl">250L</span><span class="op">)</span></span>
-<span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
-<span><span class="co"># }</span></span>
-<span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="co"># Create RSR spatial structure on an areal field</span></span></span>
+<span class="r-in"><span><span class="va">W</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">4</span>, <span class="fl">4</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="kw">for</span> <span class="op">(</span><span class="va">i</span> <span class="kw">in</span> <span class="fl">1</span><span class="op">:</span><span class="fl">3</span><span class="op">)</span> <span class="va">W</span><span class="op">[</span><span class="va">i</span>, <span class="va">i</span> <span class="op">+</span> <span class="fl">1</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="va">W</span><span class="op">[</span><span class="va">i</span> <span class="op">+</span> <span class="fl">1</span>, <span class="va">i</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="fl">1</span></span></span>
+<span class="r-in"><span><span class="va">rsr</span> <span class="op">&lt;-</span> <span class="fu">spatial_rsr</span><span class="op">(</span></span></span>
+<span class="r-in"><span>  <span class="fu"><a href="spatial_car.html">spatial_car</a></span><span class="op">(</span><span class="va">W</span>, level <span class="op">=</span> <span class="st">"obs"</span><span class="op">)</span>,</span></span>
+<span class="r-in"><span>  restrict_to <span class="op">=</span> <span class="op">~</span> <span class="va">depth</span> <span class="op">+</span> <span class="va">temp</span></span></span>
+<span class="r-in"><span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">rsr</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> tulpa spatial specification</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> ===========================</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Type: ICAR (Intrinsic CAR) </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Level: obs </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Spatial units: 4 </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Shared: Yes (enters both processes) </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   (rho fixed at 1, sum-to-zero constraint applied)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Restricted Spatial Regression (RSR):</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Orthogonal to: ~depth + temp </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   (Spatial effect constrained to be orthogonal to covariate space)</span>
+<span class="r-in"><span></span></span>
+<span class="r-in"><span><span class="co"># \donttest{</span></span></span>
+<span class="r-in"><span><span class="co"># Areal binomial data on a chain of regions, covariate spatially confounded</span></span></span>
+<span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">404</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">n_regions</span> <span class="op">&lt;-</span> <span class="fl">12</span></span></span>
+<span class="r-in"><span><span class="va">W</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/matrix.html" class="external-link">matrix</a></span><span class="op">(</span><span class="fl">0</span>, <span class="va">n_regions</span>, <span class="va">n_regions</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="kw">for</span> <span class="op">(</span><span class="va">i</span> <span class="kw">in</span> <span class="fl">1</span><span class="op">:</span><span class="op">(</span><span class="va">n_regions</span> <span class="op">-</span> <span class="fl">1</span><span class="op">)</span><span class="op">)</span> <span class="va">W</span><span class="op">[</span><span class="va">i</span>, <span class="va">i</span> <span class="op">+</span> <span class="fl">1</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="va">W</span><span class="op">[</span><span class="va">i</span> <span class="op">+</span> <span class="fl">1</span>, <span class="va">i</span><span class="op">]</span> <span class="op">&lt;-</span> <span class="fl">1</span></span></span>
+<span class="r-in"><span><span class="va">df</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>region <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/factor.html" class="external-link">factor</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fl">1</span><span class="op">:</span><span class="va">n_regions</span>, each <span class="op">=</span> <span class="fl">5</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">df</span><span class="op">$</span><span class="va">x</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/integer.html" class="external-link">as.integer</a></span><span class="op">(</span><span class="va">df</span><span class="op">$</span><span class="va">region</span><span class="op">)</span> <span class="op">/</span> <span class="fl">4</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">df</span><span class="op">)</span>, <span class="fl">0</span>, <span class="fl">0.5</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">df</span><span class="op">$</span><span class="va">y</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Binomial.html" class="external-link">rbinom</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">df</span><span class="op">)</span>, <span class="fl">20</span>, <span class="fu"><a href="https://rdrr.io/r/stats/Logistic.html" class="external-link">plogis</a></span><span class="op">(</span><span class="op">-</span><span class="fl">0.5</span> <span class="op">+</span> <span class="fl">0.6</span> <span class="op">*</span> <span class="va">df</span><span class="op">$</span><span class="va">x</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span></span></span>
+<span class="r-in"><span><span class="co"># RSR orthogonalises the spatial field to x, protecting its coefficient</span></span></span>
+<span class="r-in"><span><span class="va">fit</span> <span class="op">&lt;-</span> <span class="fu"><a href="tulpa.html">tulpa</a></span><span class="op">(</span></span></span>
+<span class="r-in"><span>  <span class="va">y</span> <span class="op">~</span> <span class="va">x</span> <span class="op">+</span> <span class="fu"><a href="spatial.html">spatial</a></span><span class="op">(</span><span class="va">region</span><span class="op">)</span>,</span></span>
+<span class="r-in"><span>  data <span class="op">=</span> <span class="va">df</span>,</span></span>
+<span class="r-in"><span>  family <span class="op">=</span> <span class="st">"binomial"</span>,</span></span>
+<span class="r-in"><span>  n_trials <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fl">20L</span>, <span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">df</span><span class="op">)</span><span class="op">)</span>,</span></span>
+<span class="r-in"><span>  spatial <span class="op">=</span> <span class="fu">spatial_rsr</span><span class="op">(</span><span class="fu"><a href="spatial_car.html">spatial_car</a></span><span class="op">(</span><span class="va">W</span>, level <span class="op">=</span> <span class="st">"obs"</span><span class="op">)</span>, restrict_to <span class="op">=</span> <span class="op">~</span> <span class="va">x</span><span class="op">)</span>,</span></span>
+<span class="r-in"><span>  mode <span class="op">=</span> <span class="st">"auto"</span>,</span></span>
+<span class="r-in"><span>  control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_iter <span class="op">=</span> <span class="fl">500L</span>, warmup <span class="op">=</span> <span class="fl">250L</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>               estimate  std.error      2.5 %      97.5 %</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> (Intercept) -0.3172248 0.11295433 -0.5502363 -0.09914267</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> x            0.5278281 0.06516213  0.4022617  0.65216922</span>
+<span class="r-in"><span></span></span>
+<span class="r-in"><span><span class="co"># The same modifier on a continuous field: one observation per location,</span></span></span>
+<span class="r-in"><span><span class="co"># the projector built at the unique coordinates.</span></span></span>
+<span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/base/Random.html" class="external-link">set.seed</a></span><span class="op">(</span><span class="fl">7</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">n</span> <span class="op">&lt;-</span> <span class="fl">80</span></span></span>
+<span class="r-in"><span><span class="va">pts</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>lon <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/Uniform.html" class="external-link">runif</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span>, lat <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/stats/Uniform.html" class="external-link">runif</a></span><span class="op">(</span><span class="va">n</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">pts</span><span class="op">$</span><span class="va">x</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">as.numeric</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/scale.html" class="external-link">scale</a></span><span class="op">(</span><span class="va">pts</span><span class="op">$</span><span class="va">lon</span> <span class="op">+</span> <span class="va">pts</span><span class="op">$</span><span class="va">lat</span> <span class="op">+</span> <span class="fu"><a href="https://rdrr.io/r/stats/Normal.html" class="external-link">rnorm</a></span><span class="op">(</span><span class="va">n</span>, <span class="fl">0</span>, <span class="fl">0.3</span><span class="op">)</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">pts</span><span class="op">$</span><span class="va">y</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/stats/Binomial.html" class="external-link">rbinom</a></span><span class="op">(</span><span class="va">n</span>, <span class="fl">25</span>, <span class="fu"><a href="https://rdrr.io/r/stats/Logistic.html" class="external-link">plogis</a></span><span class="op">(</span><span class="op">-</span><span class="fl">0.2</span> <span class="op">+</span> <span class="va">pts</span><span class="op">$</span><span class="va">x</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">fit_gp</span> <span class="op">&lt;-</span> <span class="fu"><a href="tulpa.html">tulpa</a></span><span class="op">(</span></span></span>
+<span class="r-in"><span>  <span class="va">y</span> <span class="op">~</span> <span class="va">x</span>,</span></span>
+<span class="r-in"><span>  data <span class="op">=</span> <span class="va">pts</span>,</span></span>
+<span class="r-in"><span>  family <span class="op">=</span> <span class="st">"binomial"</span>,</span></span>
+<span class="r-in"><span>  n_trials <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fl">25L</span>, <span class="va">n</span><span class="op">)</span>,</span></span>
+<span class="r-in"><span>  spatial <span class="op">=</span> <span class="fu">spatial_rsr</span><span class="op">(</span><span class="fu"><a href="spatial_gp.html">spatial_gp</a></span><span class="op">(</span><span class="op">~</span> <span class="va">lon</span> <span class="op">+</span> <span class="va">lat</span><span class="op">)</span>, restrict_to <span class="op">=</span> <span class="op">~</span> <span class="va">x</span><span class="op">)</span>,</span></span>
+<span class="r-in"><span>  mode <span class="op">=</span> <span class="st">"gibbs"</span>,</span></span>
+<span class="r-in"><span>  control <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>n_iter <span class="op">=</span> <span class="fl">500L</span>, warmup <span class="op">=</span> <span class="fl">250L</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="fu"><a href="https://rdrr.io/r/base/summary.html" class="external-link">summary</a></span><span class="op">(</span><span class="va">fit_gp</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>               estimate  std.error      2.5 %      97.5 %</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> (Intercept) -0.1682499 0.05011257 -0.2674313 -0.07419048</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> x            0.9771012 0.05916971  0.8525881  1.08864375</span>
+<span class="r-in"><span><span class="co"># }</span></span></span>
+<span class="r-in"><span></span></span>
+</code></pre></div>
     </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>

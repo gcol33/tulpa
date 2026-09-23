@@ -16,8 +16,8 @@ spatial_spde(
   max_edge = NULL,
   cutoff = 0,
   nu = 1,
-  prior_range = c(0.5, 0.5),
-  prior_sigma = c(1, 0.5)
+  prior_range = NULL,
+  prior_sigma = NULL
 )
 ```
 
@@ -64,13 +64,16 @@ spatial_spde(
 
 - prior_range:
 
-  Prior for the spatial range. A numeric vector `c(U, alpha)` where
-  P(range \< U) = alpha. Default `c(0.5, 0.5)`.
+  PC prior on the spatial range, `c(U, alpha)` with P(range \< U) =
+  alpha. `NULL` (the default) anchors it on the data: `U` is a fifth of
+  the diagonal of the coordinates' bounding box and `alpha = 0.5`, so
+  `U` is the prior median.
 
 - prior_sigma:
 
-  Prior for the marginal standard deviation. A numeric vector
-  `c(U, alpha)` where P(sigma \> U) = alpha. Default `c(1, 0.5)`.
+  PC prior on the marginal standard deviation, `c(U, alpha)` with
+  P(sigma \> U) = alpha. `NULL` (the default) is `c(3, 0.01)`, the
+  engine's prior on every field scale.
 
 ## Value
 
@@ -83,4 +86,10 @@ set.seed(42)
 coords <- cbind(runif(50), runif(50))
 spec <- spatial_spde(coords)
 print(spec)
+#> tulpa_spatial: SPDE (Matern, nu = 1 )
+#>   Mesh nodes: 63 
+#>   Triangles:  111 
+#>   Observations: 50 
+#>   Prior range: P(range < 0.2782498 ) = 0.5 
+#>   Prior sigma: P(sigma > 3 ) = 0.01 
 ```

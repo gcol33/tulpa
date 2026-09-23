@@ -1,9 +1,12 @@
 # Number of divergent transitions
 
 Counts divergent transitions recorded by an HMC/NUTS fit, reading
-whichever field the backend populated (`$diagnostics$n_divergent`,
-`$diagnostics$divergent_idx`, `$diagnostics$divergent`, or the top-level
-`$n_divergent` / `$divergent`).
+whichever field the backend populated (the top-level `$divergent` flag
+vector every sampler in this package writes, or
+`$diagnostics$divergent`, `$diagnostics$divergent_idx`,
+`$diagnostics$n_divergent`, `$n_divergent`). It reads the same record
+[`plot_divergences()`](https://gillescolling.com/tulpa/reference/plot_divergences.md)
+locates the divergent rows from, so the two always agree on one fit.
 
 ## Usage
 

@@ -58,14 +58,12 @@ fit$posterior          # the random-effect covariance, marginalized to sigma / r
 #>      rho_12  -0.145  0.206   -0.156  -0.523   0.254   # correlation  (truth 0)
 ```
 
-`mode = "auto"` picks a backend and records the reason on the fit — the
-dial neither INLA nor Stan hands you on a single object. The
+`mode = "auto"` picks a backend and records the reason on the fit. The
 random-effect covariance is not a plug-in point estimate: `sigma_1`,
 `sigma_2`, and `rho_12` are read off the joint posterior with full
 credible intervals. The result is a `tulpa_fit` with the usual accessors
 (`coef`, `confint`, `vcov`, `summary`, `tidy`, `glance`, `ranef`) and a
-full diagnostics surface (`mcmc_diagnostics`, `check_model`,
-`pp_check`).
+full diagnostics surface (`diagnostics`, `check_model`, `pp_check`).
 
 ## One front door, every backend
 
@@ -255,7 +253,7 @@ nothing is silently conditioned at a fixed variance.
 Rhat (improved rank-normalised / folded split-Rhat, Vehtari et
 al. 2021), bulk/tail ESS, and MCSE are implemented natively and
 reproduce `posterior` to ~1e-12, so downstream packages call
-[`tulpa::mcmc_diagnostics()`](https://gillescolling.com/tulpa/reference/mcmc_diagnostics.md)
+[`tulpa::diagnostics()`](https://gillescolling.com/tulpa/reference/diagnostics.md)
 directly. For deterministic (non-chain) fits the engine reports Pareto-k̂
 — the accuracy counterpart to Rhat — instead of withholding a vacuous
 convergence pass.
@@ -265,7 +263,7 @@ convergence pass.
 summary(fit)
 coef(fit)
 ranef(fit)
-mcmc_diagnostics(fit)          # Rhat, bulk/tail ESS
+diagnostics(fit)               # Rhat, bulk/tail ESS
 check_model(fit)               # posterior-predictive + residual diagnostics
 ```
 
@@ -348,12 +346,17 @@ or codegen
 
 ``` r
 
+# Current release, built for Windows and macOS
+install.packages("tulpa",
+                 repos = c("https://gcol33.r-universe.dev",
+                           "https://cloud.r-project.org"))
+
 # Development version from GitHub
 install.packages("pak")
 pak::pak("gcol33/tulpa")
 
 # Pin a release
-pak::pak("gcol33/tulpa@v0.3.0")
+pak::pak("gcol33/tulpa@v0.6.0")
 ```
 
 `pak` resolves the dependency tree, including `tulpaMesh` (on CRAN, used
@@ -436,7 +439,7 @@ MIT (see the LICENSE file).
   author = {Colling, Gilles},
   title  = {tulpa: Templated Unified Library for Posterior Approximation in Bayesian Hierarchical Models},
   year   = {2026},
-  note   = {R package version 0.3.0},
+  note   = {R package version 0.6.0},
   url    = {https://github.com/gcol33/tulpa}
 }
 ```

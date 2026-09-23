@@ -101,8 +101,6 @@ immediately, with no iteration and no Monte Carlo error.
 fit <- tulpa(y ~ x, data = df, family = "gaussian",
              mode = "laplace", phi = 0.8^2)
 coef(fit)
-#> (Intercept)           x 
-#>   0.4956826   1.1717667
 ```
 
 The coefficients land near the truth.
@@ -125,9 +123,6 @@ probability.
 ``` r
 
 summary(fit)
-#>              estimate  std.error     2.5%     97.5%
-#> (Intercept) 0.4956826 0.04000155 0.417281 0.5740842
-#> x           1.1717667 0.04087976 1.091644 1.2518896
 ```
 
 The credible bounds bracket the true values, which is the second
@@ -144,9 +139,6 @@ already run.
 ``` r
 
 confint(fit)
-#>                 2.5%     97.5%
-#> (Intercept) 0.417281 0.5740842
-#> x           1.091644 1.2518896
 ```
 
 The `phi` argument is the family’s dispersion parameter, and its meaning
@@ -216,8 +208,6 @@ df$g <- g
 fit_re <- tulpa(y ~ x + (1 | g), data = df, family = "gaussian",
                 mode = "laplace", sigma_re = 0.6, phi = 0.8^2)
 coef(fit_re)
-#> (Intercept)           x 
-#>   0.3719796   1.1491057
 ```
 
 [`coef()`](https://rdrr.io/r/stats/coef.html) reports the fixed effects,
@@ -234,11 +224,6 @@ variance.
 ``` r
 
 head(ranef(fit_re), 4)
-#>   term   estimate sd conf.low conf.high source
-#> 1 g[1] -1.1846742 NA       NA        NA   mode
-#> 2 g[2] -0.6793481 NA       NA        NA   mode
-#> 3 g[3] -0.8067578 NA       NA        NA   mode
-#> 4 g[4] -0.4506177 NA       NA        NA   mode
 ```
 
 This fit conditions on `sigma_re` rather than estimating it: you pass
@@ -307,10 +292,6 @@ m1 <- tulpa(y ~ x,     data = df, family = "gaussian", mode = "laplace", phi = 0
 m2 <- tulpa(y ~ x + (1 | g), data = df, family = "gaussian",
             mode = "laplace", sigma_re = 0.6, phi = 0.8^2)
 compare_models(intercept = m0, slope = m1, slope_re = m2, criterion = "loglik")
-#>       model n_params     logLik
-#> 1 intercept        1 -1059.0421
-#> 2     slope        2  -672.4025
-#> 3  slope_re        2  -496.2809
 ```
 
 The table reports each model’s name (taken straight from the argument
@@ -355,10 +336,6 @@ band on the prediction inherits the uncertainty in the coefficients.
 nd <- data.frame(x = seq(-2, 2, length.out = 50))
 pr <- predict(fit_re, newdata = nd, se.fit = TRUE)
 head(pr, 3)
-#>         fit    se.fit     lower     upper
-#> 1 -1.926232 0.1962305 -2.310836 -1.541627
-#> 2 -1.832427 0.1948400 -2.214307 -1.450548
-#> 3 -1.738623 0.1934976 -2.117871 -1.359374
 ```
 
 The return value carries the prediction in `fit` and the bounds in
@@ -378,9 +355,6 @@ ggplot(data.frame(x = nd$x, fit = pr$fit, lo = pr$lower, hi = pr$upper),
   theme(panel.background = element_rect(fill = "transparent"),
         plot.background  = element_rect(fill = "transparent"))
 ```
-
-![Predicted response across x with a 95 percent credible
-band](quickstart_files/figure-html/predict-plot-1.png)
 
 The band is narrow in the middle of the covariate range and flares at
 the edges, which is the signature of a linear fit: the prediction is
@@ -408,15 +382,11 @@ pluggable component and everything above it is family-blind.
 # Poisson counts
 dp <- data.frame(y = rpois(n, exp(0.2 + 0.6 * x)), x = x)
 coef(tulpa(y ~ x, data = dp, family = "poisson", mode = "laplace"))
-#> (Intercept)           x 
-#>   0.2170233   0.5695186
 
 # Beta proportions in (0, 1), precision phi
 mu <- plogis(0.1 + 0.8 * x)
 db <- data.frame(y = rbeta(n, mu * 8, (1 - mu) * 8), x = x)
 coef(tulpa(y ~ x, data = db, family = "beta", mode = "laplace", phi = 8))
-#> (Intercept)           x 
-#>   0.1752357   0.8561175
 ```
 
 The Poisson slope recovers the 0.6 it was built from and the beta slope
@@ -487,9 +457,6 @@ data.frame(
   laplace = round(coef(fit_lap), 3),
   mala    = round(coef(fit_mala), 3)
 )
-#>                    term laplace   mala
-#> (Intercept) (Intercept)  -0.472 -0.613
-#> x                     x   1.089  1.091
 ```
 
 The agreement here is itself a signal that Laplace was safe for this
@@ -501,8 +468,6 @@ guessing which engine produced a number.
 ``` r
 
 c(backend = fit_mala$backend, tier = fit_mala$inference_tier)
-#> backend    tier 
-#>  "mala"     "1"
 ```
 
 The tiers encode an epistemic guarantee that goes beyond the speed
@@ -531,9 +496,6 @@ band with no drift or sticking.
 
 plot(fit_mala, type = "trace")
 ```
-
-![Trace of the MALA chain for the fixed
-effects](quickstart_files/figure-html/trace-plot-1.png)
 
 The agreement between the tiers here is the typical case for a latent
 Gaussian model with enough data, and it is also the case where the cheap
@@ -585,8 +547,6 @@ fit_sp <- tulpa(y ~ x + spatial(region), data = ds, family = "binomial",
                 spatial = list(type = "icar", adjacency = W),
                 mode = "laplace")
 coef(fit_sp)
-#>  (Intercept)            x 
-#> -0.008787351  0.751041095
 ```
 
 The slope recovers near its true 0.7 while the ICAR field absorbs the
@@ -606,9 +566,6 @@ ggplot(data.frame(region = seq_len(K), effect = fe), aes(region, effect)) +
   theme(panel.background = element_rect(fill = "transparent"),
         plot.background  = element_rect(fill = "transparent"))
 ```
-
-![Estimated spatial field effect per region around the
-ring](quickstart_files/figure-html/spatial-plot-1.png)
 
 The field absorbs the regional signal so the slope does not have to.
 Without the field, a covariate that happens to vary across the ring the
@@ -659,8 +616,6 @@ dt    <- data.frame(y = rpois(n, exp(0.4 + 0.5 * xt + trend[time])),
 fit_t <- tulpa(y ~ x, data = dt, family = "poisson",
                temporal = temporal_rw1("time"), mode = "auto")
 coef(fit_t)
-#> (Intercept)           x 
-#>   0.3301573   0.5502579
 ```
 
 The slope lands near its true 0.5 with the trend absorbed into the field
@@ -687,9 +642,6 @@ ggplot(data.frame(time = seq_len(Tt),
   theme(panel.background = element_rect(fill = "transparent"),
         plot.background  = element_rect(fill = "transparent"))
 ```
-
-![Estimated temporal random-walk trend against the simulated
-truth](quickstart_files/figure-html/temporal-plot-1.png)
 
 The estimated walk follows the wave, centred to remove the level the
 sum-to-zero handling leaves free. The front door carries
@@ -726,12 +678,6 @@ fam <- tulpa_family(
 pp <- prior_predict(y ~ x, family = fam, data = dp, n_draws = 50,
                     priors = tulpa_priors(beta = prior_normal(0, 1)))
 pp
-#> tulpa prior predictive draws
-#> ============================
-#> Family:     poisson 
-#> Processes:  y 
-#> Draws:      50 
-#> Obs:        400
 ```
 
 `pp$y` holds one simulated dataset per prior draw. Overlay their
@@ -750,9 +696,6 @@ ggplot(sims, aes(value, group = draw)) +
   theme(panel.background = element_rect(fill = "transparent"),
         plot.background  = element_rect(fill = "transparent"))
 ```
-
-![Prior predictive densities of the simulated response under the chosen
-priors](quickstart_files/figure-html/prior-plot-1.png)
 
 A wide prior predictive that spills past the plausible range says the
 priors are too vague; tightening `prior_normal(0, 2.5)` toward
@@ -790,12 +733,6 @@ blk <- tgmrf(
   init  = c(tau = 1)
 )
 blk
-#> <tgmrf>
-#>   n_latent : 20
-#>   theta    : 1 dim (tau)
-#>   init     : 1
-#>   Q nnz    : 58 (14.5% of dense)
-#>   backend  : r
 ```
 
 The constructor evaluates `Q(init)` once to catch errors early, infer
@@ -816,9 +753,6 @@ ggplot(data.frame(row = ix[, 1], col = ix[, 2]), aes(col, row)) +
   theme(panel.background = element_rect(fill = "transparent"),
         plot.background  = element_rect(fill = "transparent"))
 ```
-
-![Sparsity pattern of the user-defined RW1 precision
-matrix](quickstart_files/figure-html/tgmrf-plot-1.png)
 
 The tridiagonal pattern is the Markov property written as a matrix: each
 node is conditionally independent of every non-neighbour given its
@@ -858,9 +792,6 @@ feed a table or a coefficient plot.
 ``` r
 
 tidy(fit_re)
-#>          term  estimate  std.error  conf.low conf.high
-#> 1 (Intercept) 0.3719796 0.17794627 0.0232113 0.7207478
-#> 2           x 1.1491057 0.04110041 1.0685504 1.2296610
 ```
 
 [`glance()`](https://generics.r-lib.org/reference/glance.html) returns a
@@ -873,8 +804,6 @@ diagnostics that say whether the chain mixed.
 ``` r
 
 glance(fit_mala)[c("n_samples", "logLik", "mean_accept", "n_divergent")]
-#>   n_samples    logLik mean_accept n_divergent
-#> 1       375 -233.4807   0.5733333          NA
 ```
 
 [`plot()`](https://rdrr.io/r/graphics/plot.default.html) defaults to the

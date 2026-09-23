@@ -1,17 +1,42 @@
 # Posterior predictive replicates
 
 Draw replicated responses from the posterior predictive distribution:
-the linear predictor is rebuilt per posterior draw (fixed effects,
-formula random effects, offset, and a posterior-mean SPDE field when
-present) and pushed through the family's sampling distribution.
+the in-sample linear predictor is drawn with every component the fit
+estimated – fixed effects, formula random effects, the offset, and any
+spatial or temporal field – and pushed through the family's sampling
+distribution. The same draws give the pointwise log-likelihood behind
+`compare_models(criterion = "waic")` / `"loo"`.
 
-Fits carrying posterior draws use them directly (fixed and random
-effects jointly per draw). The Laplace tier samples the fixed effects
-from the Gaussian approximation `N(coef(fit), vcov(fit))` and holds the
-random effects at their posterior mode, so its replicates understate the
-RE posterior uncertainty. At `newdata` the prediction is population
-level (random effects at zero), matching
+Where the draws come from follows what the fit carries:
+
+- A ModelData sampler fit (`mode = "hmc"` and its siblings) evaluates
+  the engine's own linear predictor at each draw, so a field is drawn
+  jointly with everything else.
+
+- A nested-Laplace fit draws from its outer grid: a replicate picks a
+  cell by its weight and draws each observation from that cell's
+  Gaussian for the linear predictor (`fitted_eta`, `fitted_eta_var`).
+  The cell's joint covariance across observations is not retained, so
+  observations within a replicate are independent given the cell. A fit
+  run with `control$fitted_var = FALSE` carries no `fitted_eta_var`, and
+  its replicates hold the across-cell spread only.
+
+- Any other fit carries its coefficients rather than its linear
+  predictor. Fits with posterior draws use them (fixed and random
+  effects jointly per draw); the Laplace tier samples the fixed effects
+  from `N(coef(fit), vcov(fit))` and holds the random effects at their
+  posterior mode, so its replicates understate the RE posterior
+  uncertainty; an SPDE field enters at its posterior mean.
+
+At `newdata` the prediction is population level (random effects at
+zero), matching
 [`predict.tulpa_fit()`](https://gillescolling.com/tulpa/reference/predict.tulpa_fit.md).
+
+A zero-inflated fit (`ziformula`) draws the structural-zero logit from
+the same posterior draw as the count predictor; each replicate
+observation is a structural zero with probability `plogis(X_zi beta_zi)`
+and otherwise a draw from the family (a zero-truncated family gives the
+hurdle model).
 
 ## Usage
 
@@ -44,7 +69,7 @@ posterior_predict(
 
   Optional data frame of covariates to predict at. Population level
   (fixed effects only); `NULL` (default) replicates at the training data
-  with random effects and offset included.
+  with every fitted component included.
 
 - ndraws:
 
@@ -79,5 +104,6 @@ d <- data.frame(y = rpois(100, 4), x = rnorm(100))
 fit <- tulpa(y ~ x, data = d, family = "poisson", mode = "laplace")
 yrep <- posterior_predict(fit, ndraws = 100)
 dim(yrep)  # 100 x 100
+#> [1] 100 100
 # }
 ```

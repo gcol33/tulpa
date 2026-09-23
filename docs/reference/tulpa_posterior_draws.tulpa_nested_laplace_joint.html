@@ -32,7 +32,7 @@ are i.i.d. samples from sum_k weights_k * N(m_k, V_k)."><script>
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.6.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -121,8 +121,9 @@ use <code>fit$arm_layout</code> (<code>beta_start</code>, <code>re_start</code>,
     <p>A numeric matrix <code>[n x length(idx)]</code> of latent draws, one row per
 draw, columns named <code>x&lt;idx&gt;</code>. Carries <code>attr(., "draws_kind") = "iid"</code>
 (consistent with the draws-provenance gate), <code>attr(., "cells")</code> – the
-outer-grid cell index each row was drawn from – and
-<code>attr(., "scope") = "latent"</code>.</p>
+outer-grid cell index each row was drawn from – <code>attr(., "theta")</code>, the
+hyperparameter half of the same rows continuized within each row's own cell
+(<code><a href="tulpa_hyper_draws.html">tulpa_hyper_draws()</a></code>) – and <code>attr(., "scope") = "latent"</code>.</p>
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>

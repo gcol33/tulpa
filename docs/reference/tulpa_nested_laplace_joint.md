@@ -29,6 +29,7 @@ tulpa_nested_laplace_joint(
   prior_sigma = NULL,
   prior_alpha = NULL,
   prior_phi = NULL,
+  hyperprior = c("proper", "flat"),
   cell_coupling = "separable",
   control = list()
 )
@@ -100,8 +101,9 @@ tulpa_nested_laplace_joint(
     `c(0.5, 0.8, 0.95, 0.99)`).
 
   `sigma_grid`'s default is a starting axis, not a hard ceiling: when
-  the fitted field-SD posterior mode rails the top node
-  (`pareto_k_regime = "collapsed_edge"`, see below), the driver
+  the fitted field-SD posterior mode rails the top node (the axis's own
+  marginal is maximal there, or the whole grid collapsed onto it:
+  `pareto_k_regime = "collapsed_edge"`, see below), the driver
   re-centres the axis on a mode-Hessian and refits (up to two attempts,
   the second adding a light default PC(U=3, alpha=0.01) prior on sigma
   unless `prior_sigma` was pinned – see there), so a sparse or
@@ -109,8 +111,8 @@ tulpa_nested_laplace_joint(
   engages whether or not `control$diagnose_k` computed the full outer
   Pareto-k diagnostic: the mode-Hessian is reused from the diagnostic
   when it ran, or computed on its own (one extra batched
-  finite-difference solve, only when the grid actually collapsed) when
-  it did not – so `diagnose_k = FALSE`, the default, does not leave a
+  finite-difference solve, only when the axis actually railed) when it
+  did not – so `diagnose_k = FALSE`, the default, does not leave a
   railed axis stuck. A `sigma_grid` the caller PINNED always wins:
   auto-recenter engages when the field is left `NULL`, when it is marked
   with
@@ -181,6 +183,17 @@ tulpa_nested_laplace_joint(
 
   - `binomial`, `poisson` – ignored.
 
+  A dispersion axis is PLACED like a prior block's scale axis when the
+  caller declares it a default with
+  [`auto_grid()`](https://gillescolling.com/tulpa/reference/auto_grid.md)
+  – `phi_grid = list(pos = auto_grid(nodes))`. The engine has no default
+  dispersion axis of its own, so an unmarked vector is read as a pin and
+  integrated exactly as written; the fit records that per axis in
+  `outer_grid_axis_declined`. Marked, the axis is re-laid on
+  `mode +/- span * sd` from the same mode/Hessian stencil the field-SD
+  axes are placed from, which on a span wide enough to hold no node near
+  the posterior is the difference between an estimate and an endpoint.
+
   Each `phi_<arm>` axis is appended to the Cartesian product and varies
   slowest (within-spatial warm starts hold). The axis appears as a
   regular hyperparameter in `theta_grid`, `theta_mean`, and `theta_sd`,
@@ -190,7 +203,8 @@ tulpa_nested_laplace_joint(
 
   Optional regularizing hyperpriors on the donor field amplitude
   \\\sigma\\ and on the copy coefficient \\\alpha\\. Each is `NULL`
-  (flat, default) or a list of the form `list(family, params)`:
+  (default: the axis carries what `hyperprior` gives it) or a list of
+  the form `list(family, params)`:
 
   - `list("pc.prec", c(U, alpha))` – Penalized Complexity prior,
     calibrated by `P(theta > U) = alpha`. Closed-form density
@@ -266,14 +280,38 @@ tulpa_nested_laplace_joint(
   Optional regularizing hyperprior on the per-arm dispersion axes
   declared through `phi_grid` (e.g. a Beta precision on a cover arm, a
   negbin dispersion, a Gaussian residual SD). Same families as
-  `prior_sigma` – `NULL` (flat over the phi grid, default),
-  `list("pc.prec", c(U, alpha))`, or `list("half_normal", scale)`. A
-  single spec re-weights every `phi_<arm>` axis on the grid, the way
-  `prior_sigma` re-weights any sigma-named axis; with no `phi_grid` it
-  is a no-op. Without it the phi grid carries an implicit flat prior
-  over its bounds. The PC scale is the dispersion's own units (a
-  precision for `beta`, a size for `neg_binomial_2`), so pick `U` at the
-  upper end of plausible values.
+  `prior_sigma` – `NULL` (default: the axis carries what `hyperprior`
+  gives it), `list("pc.prec", c(U, alpha))`, or
+  `list("half_normal", scale)`. A single spec re-weights every
+  `phi_<arm>` axis on the grid, the way `prior_sigma` re-weights any
+  sigma-named axis; with no `phi_grid` it is a no-op. The PC scale is
+  the dispersion's own units (a precision for `beta`, a size for
+  `neg_binomial_2`), so pick `U` at the upper end of plausible values.
+
+- hyperprior:
+
+  The prior an outer hyperparameter axis carries when the call states no
+  density for it, `"proper"` (default) or `"flat"`. `"proper"` folds a
+  normalised density on the axis's integration coordinate into
+  `log_marginal`: the PC prior `P(sigma > 3) = 0.01` on a standard
+  deviation, variance or precision axis, the PC range prior at 0.2 times
+  the coordinates' bounding-box diagonal on a range or lengthscale axis,
+  a uniform on a bounded axis, and the PC + LKJ prior over a
+  free-covariance block. An axis with no sourced density is named in
+  `log_hyperprior_declined`. `"flat"` folds no density of the engine's
+  own, so such an axis is integrated under its cell measure alone, is
+  named in `log_hyperprior_declined` as `"flat_hyperprior"`, and the
+  fit's `log_evidence` declines with `"improper_hyperprior"`. A density
+  the call states – a `prior_*` argument, a block's `rho_prior`,
+  `prior_range` or `prior_sigma`, the copy coefficient's slab, a
+  [`tgmrf()`](https://gillescolling.com/tulpa/reference/tgmrf.md)
+  block's own prior – applies under either choice. The same two choices,
+  under the same names, are offered by
+  [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md),
+  [`tulpa_eb()`](https://gillescolling.com/tulpa/reference/tulpa_eb.md),
+  [`tulpa_re_cov_nested()`](https://gillescolling.com/tulpa/reference/tulpa_re_cov_nested.md)
+  and
+  [`fit_spde()`](https://gillescolling.com/tulpa/reference/fit_spde.md).
 
 - cell_coupling:
 
@@ -387,6 +425,17 @@ tulpa_nested_laplace_joint(
     depth above what the ranking needs makes screening cost more than
     the solves it avoids. Must be a single integer `>= 1`.
 
+  - `fitted_var` (`TRUE`) – also fill `fitted_eta_var`, the per-cell,
+    per-observation predictive variance of the linear predictor. It is
+    the WITHIN-cell spread a grid-mixture replicate is drawn with
+    ([`posterior_predict()`](https://gillescolling.com/tulpa/reference/posterior_predict.md));
+    the per-cell predictor `fitted_eta` itself is stored either way.
+    Computed by a per-cell solve sweep on top of the inner Newton, so a
+    fit that will not be predicted from can decline it; the replicates
+    of a fit run without it then carry the across-cell spread only. Read
+    on a single-arm fit, which is the one that carries a single linear
+    predictor to report.
+
   - `x_init` (`NULL`) – warm-start for the first grid point's inner
     solve.
 
@@ -417,9 +466,10 @@ tulpa_nested_laplace_joint(
     boundary weight exceeds `adaptive_grid_edge_thresh`. New points are
     appended on that axis (interior densification + outward log-spaced
     extension) paired with the boundary cell's modal other-axis values,
-    each carrying a calibration term so it contributes on the marginal
-    scale – `O(n_new_points)` kernel solves, not the full cartesian
-    product. The edge score is
+    each measured by the part of its row's base cells it takes over (a
+    slice past the outermost node adds that row's extension region) –
+    `O(n_new_points)` kernel solves, not the full cartesian product. The
+    edge score is
     `max(marginal_weight_at_boundary, exp(max_log_marginal_at _boundary - max_log_marginal_overall))`,
     catching both boundary pile-up and integrand truncation; `0.02` is
     ~4 log units of decay. `adaptive_grid_max_passes` caps the passes
@@ -522,19 +572,23 @@ tulpa_nested_laplace_joint(
     `ccd_budget` a hard cap on the whole placement.
 
   - `local_ccd` (`NULL`) – local CCD refinement of a multi-block tensor
-    grid. `TRUE` (defaults) or a `list(max_cells =, f0 =, skew_max =)`
-    refines a few high-weight, mutually non-adjacent interior cells,
-    replacing each with a small curvature-aware CCD node cloud so a
-    coarse base grid resolves the sharply-peaked directions without the
-    `k^d` tensor blow-up. The local curvature is a diagonal finite
-    difference of the outer log-marginal over the cell's own grid
-    neighbours (no mode-find; only the off-centre nodes are new solves),
-    warm-started from the cell's inner mode; each refined cell's
-    sub-nodes carry partition-of-unity design weights so the total
-    integration weight is conserved (no double-count). `max_cells`
-    (`8L`) caps the refined cells; `f0` (`1.1`) is the CCD radius. The
-    design scale is shrunk per cell so the cloud fits the cell's Voronoi
-    box (the local-Gaussian mass beyond it belongs to the neighbouring
+    grid. `TRUE` (defaults) or a
+    `list(max_cells =, f0 =, skew_max =, rank =)` refines a few
+    high-weight, mutually non-adjacent interior cells, replacing each
+    with a small curvature-aware CCD node cloud so a coarse base grid
+    resolves the sharply-peaked directions without the `k^d` tensor
+    blow-up. The local curvature is a diagonal finite difference of the
+    outer log-marginal over the cell's own grid neighbours (no
+    mode-find; only the off-centre nodes are new solves), warm-started
+    from the cell's inner mode; each refined cell's sub-nodes carry
+    partition-of-unity design weights so the total integration weight is
+    conserved (no double-count). `max_cells` (`8L`) caps the refined
+    cells, chosen in order of `rank`: `"weight"` (default), the cell's
+    integration weight, or `"mass_moved"`, the weight times
+    `|exp(log_box_ratio) - 1|` the box-mass rule predicts the cell's
+    midpoint atom misplaces; `f0` (`1.1`) is the CCD radius. The design
+    scale is shrunk per cell so the cloud fits the cell's Voronoi box
+    (the local-Gaussian mass beyond it belongs to the neighbouring
     cells). A cell keeps its cloud only while the nodes' own
     log-marginals stay within `skew_max` (the `gamma3_ok` band, `0.5`)
     of the quadratic the cloud was placed from, measured as a
@@ -829,11 +883,16 @@ tulpa_nested_laplace_joint(
     node. `FALSE` integrates over the grid exactly as given, whatever it
     is, and records
     `outer_grid_recenter_declined = "auto_recenter_disabled"`. The joint
-    rescues trigger on the whole grid's collapsed-edge regime rather
-    than on a per-axis rail, so the per-axis policy names
+    FIELD rescues trigger on the whole grid's collapsed-edge regime
+    rather than on a per-axis rail, so the per-axis policy names
     [`tulpa_nested_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace.md)
     takes (`"rail"`, `"resolve"`, `"always"`) are refused here with an
-    error rather than accepted and ignored.
+    error rather than accepted and ignored. A per-arm dispersion axis
+    (`phi_grid`) is the exception and fires on its own sizing: it is
+    crossed onto the tensor independently of the field's geometry, so
+    whether the field's grid collapsed says nothing about whether the
+    dispersion axis brackets its own posterior. `FALSE` holds that axis
+    too.
 
   - `recenter_pilot` (`FALSE`) – detect the placement above on a THINNED
     grid rather than on the full one. Placement reads two things, the
@@ -910,6 +969,16 @@ A list of class
 
 - `modes` – `[n_grid x n_x]` matrix of inner modes.
 
+- `fitted_eta` – `[n_grid x N]` matrix of the linear predictor at each
+  cell's own mode, offset and latent field included. Present on a
+  single-arm fit, which is the one that has a single linear predictor to
+  report; a cell that was pruned or whose block preparation failed reads
+  `NA`. `fitted_eta_var` is its per-cell within-cell variance, present
+  under `control$fitted_var` (the default). Together these are the
+  per-cell Gaussian
+  [`posterior_predict()`](https://gillescolling.com/tulpa/reference/posterior_predict.md)
+  draws a replicate from.
+
 - `n_iter` – inner Newton iterations per grid point.
 
 - `arm_layout` – list with per-arm `beta_start`, `re_start`, spatial
@@ -976,13 +1045,13 @@ A list of class
   i.e. those nodes plus the half node step the outermost cells own – for
   `k` equally spaced nodes that is `k / (k - 1)` times the node range on
   the axis's integration coordinate, so 2x at two nodes and 1.125x at
-  nine), `integrated` (the support after refinement, the same interval
-  `axis_support` reports), `refine` (the mode refinement ran under:
-  `"none"` / `"densify"` / `"extend"`) and `n_nodes` (initial and final
-  continuum node counts).
+  nine), `integrated` (the region the final grid's cell measure
+  integrates, the same interval `axis_support` reports), `refine` (the
+  mode refinement ran under: `"none"` / `"densify"` / `"extend"`) and
+  `n_nodes` (initial and final continuum node counts).
 
 - `outer_grid_placement` – `"fixed"` (the default `sigma_grid` axis was
-  used as-is) or `"auto_recentered"` when a `collapsed_edge` on `sigma`
+  used as-is) or `"auto_recentered"` when a railed `sigma` axis
   triggered the mode-Hessian recenter-and-refit (see the `prior`
   argument above). `outer_grid_recenter_attempts` (integer) and
   `outer_grid_prior_added` (logical: whether the light default PC(U=3,
@@ -995,10 +1064,27 @@ A list of class
   brackets the mode – the common case, no refit needed), `"axis_pinned"`
   (the caller pinned `sigma_grid`; mark it with
   [`auto_grid()`](https://gillescolling.com/tulpa/reference/auto_grid.md)
-  if it is a default rather than a choice), or `"no_usable_curvature"`
-  (the mode-Hessian the recenter needs was unavailable or degenerate,
-  e.g. a car_proper grid whose `rho_car` axis has unguessable support).
-  Absent when the fit WAS recentred.
+  if it is a default rather than a choice), `"default_axis_pinned"` (a
+  wrapper package declared the nodes with `auto_grid(place = FALSE)` and
+  asked for them as written – nothing you pinned), or
+  `"no_usable_curvature"` (the mode-Hessian the recenter needs was
+  unavailable or degenerate, e.g. a car_proper grid whose `rho_car` axis
+  has unguessable support). Absent when the fit WAS recentred. A joint
+  fit's field SD and its per-arm dispersion are placed by different
+  passes over the same grid, and this slot reduces over them rather than
+  holding the last to speak: an axis held because it was declared does
+  not stand as the fit's answer while a pass with a movable axis has
+  one.
+
+- `outer_grid_axis_declined` – the same question PER AXIS, as a named
+  character vector. The slot above holds one reason for the whole fit
+  and is written only while the fit is unplaced, so on a fit where one
+  axis moved and another did not it says `auto_recentered` and nothing
+  about the axis that stayed – which is the axis `grid_coarsest_axis`
+  then names. Written by the field-SD passes for `sigma` (`b<k>.sigma`
+  on a copy block) and by the per-arm dispersion pass for `phi_<arm>`,
+  and carried across a later pass placing a different axis; absent on a
+  fit no pass declined an axis of.
 
 - `outer_grid_pilot` – present only when `control$recenter_pilot` ran:
   the pilot's resolution (`n_pilot`), its cell count (`cells`), the axes
@@ -1294,6 +1380,10 @@ prior <- list(type = "icar", n_spatial_units = S,
 fit <- tulpa_nested_laplace_joint(
   responses = list(occ = mk_arm(200L, "binomial"), pos = mk_arm(200L, "gaussian")),
   prior = prior)
+#> [nested-laplace-joint] 1/3 cells (33%) | elapsed 0s | ETA >=0s | 0.00s/cells
+#> [nested-laplace-joint] 3/3 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
 fit$theta_mean        # shared field amplitude, integrated across both arms
+#>     sigma 
+#> 0.3064725 
 # }
 ```

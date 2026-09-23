@@ -26,7 +26,13 @@ spatiotemporal_effects(
 
 - object:
 
-  A `tulpa_fit` object fitted with `spatiotemporal` argument
+  A `tulpa_fit` object carrying a `$spatiotemporal` Knorr-Held
+  interaction block.
+  [`tulpa()`](https://gillescolling.com/tulpa/reference/tulpa.md) itself
+  has no `spatiotemporal =` argument; such a block comes from a model
+  package's own fitter (see
+  [`spatiotemporal()`](https://gillescolling.com/tulpa/reference/spatiotemporal.md)
+  for what the engine itself fits).
 
 - format:
 

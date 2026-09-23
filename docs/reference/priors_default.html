@@ -24,7 +24,7 @@ and as a starting point for customization."><script>
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.6.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -122,24 +122,120 @@ prior preference for structured vs. unstructured spatial variation.</p></li>
 
     <div class="section level2">
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="co"># Defaults for all families (no family argument)</span></span>
-<span><span class="fu">priors_default</span><span class="op">(</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Family-specific defaults take a tulpa_family object. Model packages</span></span>
-<span><span class="co"># (e.g. tulpaRatio) register rich families; a minimal one is enough here.</span></span>
-<span><span class="va">fam</span> <span class="op">&lt;-</span> <span class="fu"><a href="tulpa_family.html">tulpa_family</a></span><span class="op">(</span></span>
-<span>  name <span class="op">=</span> <span class="st">"poisson_gamma"</span>,</span>
-<span>  simulate_fn <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">eta</span>, <span class="va">params</span>, <span class="va">n_obs</span>, <span class="va">...</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/stats/Poisson.html" class="external-link">rpois</a></span><span class="op">(</span><span class="va">n_obs</span>, <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="va">eta</span><span class="op">[[</span><span class="fl">1</span><span class="op">]</span><span class="op">]</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="op">)</span></span>
-<span><span class="fu">priors_default</span><span class="op">(</span><span class="va">fam</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Including spatial parameters</span></span>
-<span><span class="fu">priors_default</span><span class="op">(</span><span class="va">fam</span>, spatial <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
-<span></span>
-<span><span class="co"># Use as a starting point for customization</span></span>
-<span><span class="va">my_priors</span> <span class="op">&lt;-</span> <span class="fu">priors_default</span><span class="op">(</span><span class="va">fam</span><span class="op">)</span></span>
-<span><span class="va">my_priors</span><span class="op">$</span><span class="va">beta</span> <span class="op">&lt;-</span> <span class="fu"><a href="prior_normal.html">prior_normal</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">1</span><span class="op">)</span>  <span class="co"># Tighter prior on fixed effects</span></span>
-<span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="co"># Defaults for all families (no family argument)</span></span></span>
+<span class="r-in"><span><span class="fu">priors_default</span><span class="op">(</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Default priors for tulpa models</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> ================================</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> These defaults apply to all families unless overridden.</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Fixed effects (beta):</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Normal(0, 2.5)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Interpretation: Coefficients roughly in [-5, 5] on link scale</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Customization: prior_normal(mean, sd)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Random effect SD (sigma):</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   PC prior: P(sigma &gt; 1) = 0.01</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Interpretation: Favors smaller variance components</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Customization: prior_pc(U, alpha) or prior_half_normal(sd)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Overdispersion (phi) [negbin/poisson_gamma only]:</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   PC prior: P(phi &gt; 10) = 0.01</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Interpretation: NB2 size; keeps phi finite (allows overdispersion),</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>                   phi -&gt; Inf is the Poisson limit</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Customization: prior_pc(U, alpha) or prior_gamma(shape, rate)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Family-specific notes:</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   negbin_negbin: Uses phi for both processes</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   binomial: No overdispersion parameter (unless beta_binomial)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   poisson_gamma: Uses phi for gamma shape parameter</span>
+<span class="r-in"><span></span></span>
+<span class="r-in"><span><span class="co"># Family-specific defaults take a tulpa_family object. Model packages</span></span></span>
+<span class="r-in"><span><span class="co"># (e.g. tulpaRatio) register rich families; a minimal one is enough here.</span></span></span>
+<span class="r-in"><span><span class="va">fam</span> <span class="op">&lt;-</span> <span class="fu"><a href="tulpa_family.html">tulpa_family</a></span><span class="op">(</span></span></span>
+<span class="r-in"><span>  name <span class="op">=</span> <span class="st">"poisson_gamma"</span>,</span></span>
+<span class="r-in"><span>  simulate_fn <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">eta</span>, <span class="va">params</span>, <span class="va">n_obs</span>, <span class="va">...</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/stats/Poisson.html" class="external-link">rpois</a></span><span class="op">(</span><span class="va">n_obs</span>, <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">exp</a></span><span class="op">(</span><span class="va">eta</span><span class="op">[[</span><span class="fl">1</span><span class="op">]</span><span class="op">]</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="fu">priors_default</span><span class="op">(</span><span class="va">fam</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Default priors for poisson_gamma family</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> ===================================== </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Fixed effects (beta):</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Normal(0.00, 2.50)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Used for: All regression coefficients in all processes</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Random effect SD (sigma):</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   PC prior: P(x &gt; 1.00) = 0.010</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>     =&gt; Exponential(4.605)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Used for: Standard deviation of group-level effects</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Overdispersion (phi):</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   PC prior: P(x &gt; 10.00) = 0.010</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>     =&gt; Exponential(0.461)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Used for: Gamma shape parameter for effort/exposure</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> To customize, use tulpa_priors():</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   priors &lt;- tulpa_priors(</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>     beta = prior_normal(0, 1),</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>     sigma = prior_pc(U = 0.5, alpha = 0.01)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   )</span>
+<span class="r-in"><span></span></span>
+<span class="r-in"><span><span class="co"># Including spatial parameters</span></span></span>
+<span class="r-in"><span><span class="fu">priors_default</span><span class="op">(</span><span class="va">fam</span>, spatial <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Default priors for poisson_gamma family</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> ===================================== </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Fixed effects (beta):</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Normal(0.00, 2.50)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Used for: All regression coefficients in all processes</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Random effect SD (sigma):</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   PC prior: P(x &gt; 1.00) = 0.010</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>     =&gt; Exponential(4.605)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Used for: Standard deviation of group-level effects</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Overdispersion (phi):</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   PC prior: P(x &gt; 10.00) = 0.010</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>     =&gt; Exponential(0.461)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Used for: Gamma shape parameter for effort/exposure</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Spatial mixing (rho_spatial):</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Beta(1.00, 1.00)  [mean = 0.50]</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Used for: BYM2 mixing proportion (structured vs. unstructured)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> To customize, use tulpa_priors():</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   priors &lt;- tulpa_priors(</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>     beta = prior_normal(0, 1),</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>     sigma = prior_pc(U = 0.5, alpha = 0.01)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   )</span>
+<span class="r-in"><span></span></span>
+<span class="r-in"><span><span class="co"># Use as a starting point for customization</span></span></span>
+<span class="r-in"><span><span class="va">my_priors</span> <span class="op">&lt;-</span> <span class="fu">priors_default</span><span class="op">(</span><span class="va">fam</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Default priors for poisson_gamma family</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> ===================================== </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Fixed effects (beta):</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Normal(0.00, 2.50)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Used for: All regression coefficients in all processes</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Random effect SD (sigma):</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   PC prior: P(x &gt; 1.00) = 0.010</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>     =&gt; Exponential(4.605)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Used for: Standard deviation of group-level effects</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> Overdispersion (phi):</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   PC prior: P(x &gt; 10.00) = 0.010</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>     =&gt; Exponential(0.461)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Used for: Gamma shape parameter for effort/exposure</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> To customize, use tulpa_priors():</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   priors &lt;- tulpa_priors(</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>     beta = prior_normal(0, 1),</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>     sigma = prior_pc(U = 0.5, alpha = 0.01)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   )</span>
+<span class="r-in"><span><span class="va">my_priors</span><span class="op">$</span><span class="va">beta</span> <span class="op">&lt;-</span> <span class="fu"><a href="prior_normal.html">prior_normal</a></span><span class="op">(</span><span class="fl">0</span>, <span class="fl">1</span><span class="op">)</span>  <span class="co"># Tighter prior on fixed effects</span></span></span>
+<span class="r-in"><span></span></span>
+</code></pre></div>
     </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>

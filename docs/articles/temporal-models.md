@@ -259,8 +259,6 @@ tspec <- temporal_rw1("time")
 fit <- tulpa(y ~ x, data = df, family = "binomial",
              temporal = tspec, mode = "auto")
 coef(fit)
-#> (Intercept)           x 
-#>  -0.2132393   0.8881760
 ```
 
 The slope lands near the true $`0.9`$. The intercept reads near zero
@@ -270,10 +268,7 @@ below. How was the fit routed?
 ``` r
 
 c(backend = fit$backend, tier = fit$inference_tier)
-#>          backend             tier 
-#> "nested_laplace"              "2"
 fit$selection_reason
-#> [1] "temporal rw1 field; nested-Laplace integration"
 ```
 
 `mode = "auto"` recognised the temporal field, turned the RW1 into its
@@ -300,9 +295,6 @@ bounds.
 ``` r
 
 summary(fit)
-#>               estimate  std.error       2.5%       97.5%
-#> (Intercept) -0.2132393 0.10488702 -0.4227211 -0.01157154
-#> x            0.8881760 0.08880567  0.7320449  1.08015672
 ```
 
 [`confint()`](https://rdrr.io/r/stats/confint.html) returns the same
@@ -311,18 +303,6 @@ bounds as a matrix.
 ``` r
 
 confint(fit)
-#>                   2.5%       97.5%
-#> (Intercept) -0.4227211 -0.01157154
-#> x            0.7320449  1.08015672
-#> attr(,"skew_applied")
-#> (Intercept)           x 
-#>        TRUE        TRUE 
-#> attr(,"interval_source")
-#> [1] "skew_map_cell"
-#> attr(,"interval_declined")
-#> [1] "skew_correct: gamma_3 is retained at the MAP cell only, so the mixture components carry no per-cell skew to compose; the coefficients it declines keep the read they would have had"
-#> attr(,"retained_mass")
-#> [1] 1
 ```
 
 ### Extracting the temporal trend
@@ -343,7 +323,6 @@ phi_hat <- vapply(seq_len(T_pts),
                   function(u) sum(w * fit$modes[, nf + u]),
                   numeric(1))
 round(head(phi_hat), 3)
-#> [1] 0.247 0.604 0.822 0.976 1.259 1.373
 ```
 
 The offset `nf + u` skips the `nf` fixed-effect columns and lands on the
@@ -379,9 +358,6 @@ legend("topright", c("truth", "estimate"),
        col = c("black", "darkorange"), lwd = 2, bty = "n")
 ```
 
-![Estimated RW1 trend across time points overlaid on the true simulated
-trend](temporal-models_files/figure-html/trend-plot-1.png)
-
 The estimate tracks the sine wave it was built from, smoothed a touch
 where the prior pulls neighbours together. The correlation between the
 two confirms it.
@@ -389,7 +365,6 @@ two confirms it.
 ``` r
 
 round(cor(phi_hat, trend), 3)
-#> [1] 0.971
 ```
 
 The smoothing precision $`\tau`$ controls how tightly the walk hugs a
@@ -402,8 +377,6 @@ straight line, and the fit reports its posterior summary directly.
 c(mean = fit$theta_mean,
   lower = fit$theta_ci_lo,
   upper = fit$theta_ci_hi)
-#>        mean lower.value upper.value 
-#>    8.687384    2.811919   21.330535
 ```
 
 A larger $`\tau`$ means a stiffer walk. Here the interval excludes the
@@ -460,8 +433,6 @@ error sits at roughly the prior width.
 ``` r
 
 summary(fit)["(Intercept)", c("estimate", "std.error")]
-#>               estimate std.error
-#> (Intercept) -0.2132393  0.104887
 ```
 
 That large standard error is a feature of the parameterisation, not a
@@ -497,9 +468,6 @@ uncertainty.
 nd <- data.frame(x = seq(-2, 2, length.out = 50))
 pr <- predict(fit, newdata = nd, type = "link", se.fit = TRUE)
 round(head(pr, 2), 3)
-#>      fit se.fit  lower  upper
-#> 1 -1.990  0.210 -2.401 -1.578
-#> 2 -1.917  0.204 -2.316 -1.518
 ```
 
 The informative quantity is how the prediction *changes* with $`x`$,
@@ -519,9 +487,6 @@ polygon(c(nd$x, rev(nd$x)),
         col = adjustcolor("steelblue", 0.25), border = NA)
 lines(nd$x, ctr, lwd = 2)
 ```
-
-![Centred link-scale prediction across x with the covariate slope and
-its credible band](temporal-models_files/figure-html/predict-plot-1.png)
 
 The band is narrow because the slope is well identified, even though the
 line’s absolute position is not. Centring is the right move precisely
@@ -547,52 +512,32 @@ relationship rather than a time-specific one.
 Does the trend earn its place? Fit the same model without a time term
 and compare evidence. On a Laplace-tier fit
 [`logLik()`](https://rdrr.io/r/stats/logLik.html) returns the
-approximate log marginal likelihood, the quantity to compare across
-specifications.
+approximate log marginal likelihood, and with no hyperparameter left to
+integrate that is already the model evidence.
 
 ``` r
 
 m_nt <- tulpa(y ~ x, data = df, family = "binomial", mode = "laplace")
 as.numeric(logLik(m_nt))
-#> [1] -576.4314
 ```
 
 A nested fit integrates over a grid of $`\tau`$, so its `$log_marginal`
-is a vector with one entry per grid point. The model evidence is the log
-of the grid-summed marginal likelihood, a log-sum-exp over that vector.
+is a vector with one entry per grid point. Each point also stands for a
+cell of the grid, and the cell’s prior mass (`$log_quad`) is part of the
+integral, so the evidence is the log of the mass-weighted sum over the
+cells rather than of the plain sum.
+[`logLik()`](https://rdrr.io/r/stats/logLik.html) returns it, and since
+both fits now report a log evidence,
+[`compare_models()`](https://gillescolling.com/tulpa/reference/compare_models.md)
+ranks them on it directly.
 
 ``` r
 
-lse <- function(v) { m <- max(v); m + log(sum(exp(v - m))) }
-evidence_temporal <- lse(fit$log_marginal)
-c(no_temporal = as.numeric(logLik(m_nt)), temporal = evidence_temporal)
-#> no_temporal    temporal 
-#>   -576.4314   -514.8424
+compare_models(no_temporal = m_nt, temporal = fit, criterion = "loglik")
 ```
 
 The temporal model carries substantially higher evidence, matching the
 fact that a trend really was in the data.
-[`compare_models()`](https://gillescolling.com/tulpa/reference/compare_models.md)
-ranks fits by a shared criterion, reading each one’s
-[`logLik()`](https://rdrr.io/r/stats/logLik.html).
-
-``` r
-
-cmp <- compare_models(no_temporal = m_nt,
-                      temporal = fit,
-                      criterion = "loglik")
-cmp
-#>         model n_params    logLik
-#> 1 no_temporal        2 -576.4314
-#> 2    temporal        2 -514.8424
-```
-
-On the nested temporal fit
-[`logLik()`](https://rdrr.io/r/stats/logLik.html) returns the integrated
-evidence, the log-sum-exp of `$log_marginal` computed above, so
-[`compare_models()`](https://gillescolling.com/tulpa/reference/compare_models.md)
-carries one row per model and reproduces the manual comparison alongside
-the non-temporal [`logLik()`](https://rdrr.io/r/stats/logLik.html).
 
 A word on what this comparison settles. The marginal likelihood already
 integrates over the walk and its smoothing precision, so it charges the
@@ -604,9 +549,14 @@ specifications, where one model is the other with a structural piece
 added. The raw maximised likelihood cannot do this job, since it always
 rises with more parameters and would crown the temporal model even when
 the curve was only chasing noise. Predictive scores such as WAIC and LOO
-answer a related but separate question about out-of-sample accuracy;
-they need a pointwise log-likelihood the base engine does not carry, so
-they live in the model packages built on it.
+answer a related but separate question about out-of-sample accuracy. The
+engine computes them from each fit’s pointwise log-likelihood, read off
+its linear predictor with the temporal field included:
+
+``` r
+
+compare_models(no_temporal = m_nt, temporal = fit, criterion = "waic")
+```
 
 ## A second family
 
@@ -622,8 +572,6 @@ dfg <- data.frame(y = yg, x = x, time = time)
 fitg <- tulpa(y ~ x, data = dfg, family = "gaussian",
               temporal = tspec, mode = "auto", phi = 0.5)
 coef(fitg)["x"]
-#>         x 
-#> 0.9227363
 ```
 
 The slope again recovers near $`0.9`$, and the same field-extraction
@@ -687,8 +635,6 @@ penalizes second differences for a smoother trend than RW1:
 fit_rw2 <- tulpa(y ~ x, data = df, family = "binomial",
                  temporal = temporal_rw2("time"), mode = "auto")
 coef(fit_rw2)
-#> (Intercept)           x 
-#>  -0.2127041   0.8958525
 ```
 
 [`temporal_ar1()`](https://gillescolling.com/tulpa/reference/temporal_ar1.md)

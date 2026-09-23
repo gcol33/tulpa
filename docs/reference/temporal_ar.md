@@ -78,5 +78,8 @@ for (t in 4:Tt) w[t] <- 0.4 * w[t-1] + 0.2 * w[t-2] - 0.2 * w[t-3] + rnorm(1, 0,
 d <- data.frame(t = seq_len(Tt), y = w + rnorm(Tt, 0, 0.3))
 fit <- tulpa(y ~ latent(temporal_ar(d$t, p = 3)), data = d,
              family = "gaussian", mode = "nested_laplace")
+#> Warning: tulpa(): `phi` not supplied; conditioning on phi = 1 for family = 'gaussian'. Pass `phi` to override, or `estimate_phi = TRUE` with mode = 'eb' to estimate it.
+#> [nested-laplace] 1/625 cells (0%) | elapsed 0s | ETA >=1s | 0.00s/cells
+#> [nested-laplace] 625/625 cells (100%) | elapsed 1s | ETA done | 0.00s/cells
 # }
 ```

@@ -35,7 +35,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">tulpa</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.0</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.6.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -45,7 +45,7 @@
     <div id="navbar" class="collapse navbar-collapse ms-3">
       <ul class="navbar-nav me-auto">
 <li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
-<li class="nav-item dropdown">
+<li class="active nav-item dropdown">
   <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
   <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
 <li><a class="dropdown-item" href="../articles/checkpoint.html">Checkpoint and resume long fits</a></li>
@@ -163,15 +163,10 @@ k-hat comes back on the fitted object with no extra request.</p>
 <span>  responses <span class="op">=</span> <span class="va">resp</span>,</span>
 <span>  prior     <span class="op">=</span> <span class="va">prior</span>,</span>
 <span>  control   <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>k_samples <span class="op">=</span> <span class="fl">400L</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="co">#&gt; [nested-laplace-joint] 1/7 cells (14%) | elapsed 0s | ETA &gt;=0s | 0.00s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace-joint] 7/7 cells (100%) | elapsed 0s | ETA done | 0.00s/cells</span></span>
 <span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>pareto_k <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">fit</span><span class="op">$</span><span class="va">pareto_k</span>, <span class="fl">3</span><span class="op">)</span>,</span>
 <span>  is_ess   <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">fit</span><span class="op">$</span><span class="va">pareto_k_is_ess</span>, <span class="fl">1</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="co">#&gt; pareto_k   is_ess </span></span>
-<span><span class="co">#&gt;   -1.752  366.900</span></span>
-<span><span class="va">fit</span><span class="op">$</span><span class="va">pareto_k_scope</span></span>
-<span><span class="co">#&gt; [1] "outer (hyperparameter) Gaussian proposal"</span></span></code></pre></div>
+<span><span class="va">fit</span><span class="op">$</span><span class="va">pareto_k_scope</span></span></code></pre></div>
 <p>The scope string names what was scored: the Gaussian proposal the
 integrator placed over the joint hyperparameter posterior. The k-hat
 reads below the boundaries discussed next, so the integration over the
@@ -211,9 +206,7 @@ the first thing to read.</p>
 <div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">band</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/cut.html" class="external-link">cut</a></span><span class="op">(</span><span class="va">fit</span><span class="op">$</span><span class="va">pareto_k</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="op">-</span><span class="cn">Inf</span>, <span class="fl">0.5</span>, <span class="fl">0.7</span>, <span class="cn">Inf</span><span class="op">)</span>,</span>
 <span>            labels <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"good"</span>, <span class="st">"ok"</span>, <span class="st">"unreliable"</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="va">band</span></span>
-<span><span class="co">#&gt; [1] good</span></span>
-<span><span class="co">#&gt; Levels: good ok unreliable</span></span></code></pre></div>
+<span><span class="va">band</span></span></code></pre></div>
 <p>A negative k-hat, as in this fit, sits in the good band with room to
 spare: the weights have an even lighter tail than finite variance
 requires, which is the easy case a well-resolved grid over a
@@ -237,14 +230,7 @@ directly.</p>
 <div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">k_usable</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">S</span><span class="op">)</span> <span class="fu"><a href="https://rdrr.io/r/base/Extremes.html" class="external-link">pmin</a></span><span class="op">(</span><span class="fl">1</span> <span class="op">-</span> <span class="fl">1</span> <span class="op">/</span> <span class="fu"><a href="https://rdrr.io/r/base/Log.html" class="external-link">log10</a></span><span class="op">(</span><span class="va">S</span><span class="op">)</span>, <span class="fl">0.7</span><span class="op">)</span></span>
 <span><span class="va">S_grid</span>   <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">100</span>, <span class="fl">200</span>, <span class="fl">400</span>, <span class="fl">1000</span>, <span class="fl">2154</span>, <span class="fl">4000</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>draws <span class="op">=</span> <span class="va">S_grid</span>, usable_boundary <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu">k_usable</span><span class="op">(</span><span class="va">S_grid</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="co">#&gt;   draws usable_boundary</span></span>
-<span><span class="co">#&gt; 1   100           0.500</span></span>
-<span><span class="co">#&gt; 2   200           0.565</span></span>
-<span><span class="co">#&gt; 3   400           0.616</span></span>
-<span><span class="co">#&gt; 4  1000           0.667</span></span>
-<span><span class="co">#&gt; 5  2154           0.700</span></span>
-<span><span class="co">#&gt; 6  4000           0.700</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span>draws <span class="op">=</span> <span class="va">S_grid</span>, usable_boundary <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="fu">k_usable</span><span class="op">(</span><span class="va">S_grid</span><span class="op">)</span>, <span class="fl">3</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
 <p>A few hundred draws place the boundary nearer <code>0.6</code> than
 <code>0.7</code>, and it reaches the familiar <code>0.7</code> only past
 roughly two thousand draws. The engine applies this by default:
@@ -278,10 +264,7 @@ interval stays inside a single reliability band.</p>
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>k       <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">fit</span><span class="op">$</span><span class="va">pareto_k</span>, <span class="fl">3</span><span class="op">)</span>,</span>
 <span>  ci_low  <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">fit</span><span class="op">$</span><span class="va">pareto_k_ci_low</span>, <span class="fl">3</span><span class="op">)</span>,</span>
 <span>  ci_high <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">fit</span><span class="op">$</span><span class="va">pareto_k_ci_high</span>, <span class="fl">3</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="co">#&gt;       k  ci_low ci_high </span></span>
-<span><span class="co">#&gt;  -1.752  -2.079  -1.348</span></span>
-<span><span class="va">fit</span><span class="op">$</span><span class="va">pareto_k_band_confident</span></span>
-<span><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
+<span><span class="va">fit</span><span class="op">$</span><span class="va">pareto_k_band_confident</span></span></code></pre></div>
 <p><code>pareto_k_band_confident</code> is the number to act on, not the
 point estimate. It is <code>TRUE</code> only when the whole interval
 sits in one band, so it answers the question you actually have: not
@@ -308,15 +291,11 @@ draws and read the interval again.</p>
 <span>  responses <span class="op">=</span> <span class="va">resp</span>,</span>
 <span>  prior     <span class="op">=</span> <span class="va">prior</span>,</span>
 <span>  control   <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>k_samples <span class="op">=</span> <span class="fl">1500L</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="co">#&gt; [nested-laplace-joint] 1/7 cells (14%) | elapsed 0s | ETA &gt;=0s | 0.00s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace-joint] 7/7 cells (100%) | elapsed 0s | ETA done | 0.00s/cells</span></span>
 <span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>k              <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">fit_hi</span><span class="op">$</span><span class="va">pareto_k</span>, <span class="fl">3</span><span class="op">)</span>,</span>
 <span>  ci_low         <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">fit_hi</span><span class="op">$</span><span class="va">pareto_k_ci_low</span>, <span class="fl">3</span><span class="op">)</span>,</span>
 <span>  ci_high        <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/Round.html" class="external-link">round</a></span><span class="op">(</span><span class="va">fit_hi</span><span class="op">$</span><span class="va">pareto_k_ci_high</span>, <span class="fl">3</span><span class="op">)</span>,</span>
-<span>  band_confident <span class="op">=</span> <span class="va">fit_hi</span><span class="op">$</span><span class="va">pareto_k_band_confident</span><span class="op">)</span></span>
-<span><span class="co">#&gt;              k         ci_low        ci_high band_confident </span></span>
-<span><span class="co">#&gt;         -1.698         -1.960         -1.434          1.000</span></span></code></pre></div>
+<span>  band_confident <span class="op">=</span> <span class="va">fit_hi</span><span class="op">$</span><span class="va">pareto_k_band_confident</span><span class="op">)</span></span></code></pre></div>
 <p>Raising <code>k_samples</code> is the lever for both halves of the
 reading at once. It tightens the interval around the estimate, and
 because the usable boundary itself relaxes toward <code>0.7</code> as
@@ -380,17 +359,12 @@ fit carries an honest verdict.</p>
 <span>  responses <span class="op">=</span> <span class="va">resp</span>,</span>
 <span>  prior     <span class="op">=</span> <span class="va">prior</span>,</span>
 <span>  control   <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>k_quality <span class="op">=</span> <span class="st">"good"</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="co">#&gt; [nested-laplace-joint] 1/7 cells (14%) | elapsed 0s | ETA &gt;=0s | 0.00s/cells</span></span>
-<span><span class="co">#&gt; [nested-laplace-joint] 7/7 cells (100%) | elapsed 0s | ETA done | 0.00s/cells</span></span>
 <span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span>requested <span class="op">=</span> <span class="va">fit_q</span><span class="op">$</span><span class="va">k_quality_requested</span>,</span>
 <span>  reached   <span class="op">=</span> <span class="va">fit_q</span><span class="op">$</span><span class="va">k_quality_reached</span>,</span>
 <span>  best      <span class="op">=</span> <span class="va">fit_q</span><span class="op">$</span><span class="va">k_quality_best</span>,</span>
 <span>  draws     <span class="op">=</span> <span class="va">fit_q</span><span class="op">$</span><span class="va">diagnose_draws</span><span class="op">)</span></span>
-<span><span class="co">#&gt; requested   reached      best     draws </span></span>
-<span><span class="co">#&gt;    "good"    "TRUE"    "good"    "2000"</span></span>
-<span><span class="va">fit_q</span><span class="op">$</span><span class="va">k_quality_reason</span></span>
-<span><span class="co">#&gt; [1] "requested band reached"</span></span></code></pre></div>
+<span><span class="va">fit_q</span><span class="op">$</span><span class="va">k_quality_reason</span></span></code></pre></div>
 <p><code>k_quality = "good"</code> requires the k-hat interval to sit
 confidently in the good band and raises the default
 <code>k_samples</code> so the bootstrap CI can resolve it;
@@ -437,9 +411,7 @@ alongside the outer diagnostic, scored at the fitted MAP grid cell for
 each arm’s fixed-effects coefficients.</p>
 <div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">fit</span><span class="op">$</span><span class="va">inner_skew</span></span>
-<span><span class="co">#&gt; [1]  2.186345e-02  1.040060e-01  1.061096e-05 -9.710510e-06</span></span>
-<span><span class="va">fit</span><span class="op">$</span><span class="va">inner_skew_idx</span></span>
-<span><span class="co">#&gt; [1] 1 2 3 4</span></span></code></pre></div>
+<span><span class="va">fit</span><span class="op">$</span><span class="va">inner_skew_idx</span></span></code></pre></div>
 <p>The two occupancy-arm coefficients (indices 1-2, binomial) carry a
 small non-zero skew; the two positive-value coefficients (indices 3-4,
 gaussian) read exactly zero. That is not a numerical accident: a
@@ -450,9 +422,7 @@ and it grows toward the same “good / ok / unreliable” bands the outer
 k-hat uses:</p>
 <div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/cut.html" class="external-link">cut</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/MathFun.html" class="external-link">abs</a></span><span class="op">(</span><span class="va">fit</span><span class="op">$</span><span class="va">inner_skew</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="op">-</span><span class="cn">Inf</span>, <span class="fl">0.5</span>, <span class="fl">1.0</span>, <span class="cn">Inf</span><span class="op">)</span>,</span>
-<span>    labels <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"good"</span>, <span class="st">"ok"</span>, <span class="st">"unreliable"</span><span class="op">)</span><span class="op">)</span></span>
-<span><span class="co">#&gt; [1] good good good good</span></span>
-<span><span class="co">#&gt; Levels: good ok unreliable</span></span></code></pre></div>
+<span>    labels <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"good"</span>, <span class="st">"ok"</span>, <span class="st">"unreliable"</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
 <p>Reading the two numbers together is the point. An outer k-hat past
 its boundary with a healthy inner skew says the hyperparameter grid
 needs work, not the fit’s point estimates – follow the ladder above. A
@@ -491,12 +461,10 @@ layout carried on <code>fit$arm_layout</code>);
 importance-sampling core the diagnostic is built on, callable directly
 on a vector of log importance ratios.</li>
 <li>
-<code><a href="../reference/mcmc_diagnostics.html">mcmc_diagnostics()</a></code> is the chain-fit counterpart, the
-Rhat and ESS surface for sampled fits.</li>
-<li>
-<code><a href="../reference/laplace_diagnostics.html">?laplace_diagnostics</a></code> documents <code>gamma_3</code> and
-the combined whole-fit verdict <code><a href="../reference/diagnostics.html">diagnostics()</a></code> reports when a
-fit carries posterior draws.</li>
+<code><a href="../reference/diagnostics.html">diagnostics()</a></code> routes a chain fit to the Rhat and ESS
+surface for sampled fits, and an i.i.d. approximation fit to this
+reliability table; see its “Approximation reliability” sections for
+<code>gamma_3</code> and the combined whole-fit verdict.</li>
 <li>The inference-modes vignette runs the reliability ladder from a
 Laplace fit through an exact debias, and shows the k-hat on a
 random-effect covariance fit.</li>

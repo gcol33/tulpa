@@ -27,6 +27,7 @@ tulpa(
   phi2 = NULL,
   beta_prior = NULL,
   re_prior = NULL,
+  hyperprior = c("proper", "flat"),
   ziformula = NULL,
   zi_prior = NULL,
   warm_start = NULL,
@@ -75,9 +76,11 @@ tulpa(
 - sigma_re:
 
   Random-effect SDs to condition on: length 1 (recycled) or one per RE
-  term. Defaults to 1 per term with a message. Ignored by the backends
-  that determine the covariance themselves (`"eb"`, `re_cov_nested`,
-  `re_cov_gibbs`, `gibbs`, `agq`), which warn if it is supplied anyway.
+  term. Defaults to 1 per term with a warning. Ignored by every backend
+  that DETERMINES the RE scale itself – by integrating it
+  (`re_cov_nested`, `re_cov_gibbs`), sampling it (`gibbs` and the
+  ModelData samplers, which carry `log_sigma_re` in the latent vector)
+  or maximizing over it (`eb`, `agq`) – and supplying it there warns.
 
 - n_trials:
 
@@ -101,6 +104,11 @@ tulpa(
   `beta` the precision, `t` the scale; `binomial` and `poisson` ignore
   it. The compiled kernels parameterize the two variance families by the
   residual SD and are handed `sqrt(phi)` at the boundary.
+
+  Defaulted, it conditions at 1 and says so with a warning, since for a
+  family that reads a dispersion that is a modelling choice rather than
+  a neutral value. `fit$phi_estimated` records whether the value on the
+  fit was estimated or conditioned on.
 
 - estimate_phi:
 
@@ -146,16 +154,34 @@ tulpa(
   Optional [`list()`](https://rdrr.io/r/base/list.html) of random-effect
   / variance-component hyperpriors (statistical, so they live in the
   signature rather than in `control`). Recognised entries, each consumed
-  by the backend that needs it: `hyperprior` (`"flat"` default or
-  `"pc_lkj"`, `mode = "laplace"` random slopes and `mode = "eb"` – see
-  [`tulpa_re_cov_nested()`](https://gillescolling.com/tulpa/reference/tulpa_re_cov_nested.md)),
-  `prior_sigma` (PC-prior anchor `c(U, alpha)` on a free RE covariance
-  SD, used when `hyperprior = "pc_lkj"`), `eta` (LKJ concentration for a
-  correlated RE covariance, same condition), `prior_df` / `prior_scale`
+  by the backend that needs it: `prior_sigma` (PC-prior anchor
+  `c(U, alpha)` on a free RE covariance SD, used when
+  `hyperprior = "proper"`), `eta` (LKJ concentration for a correlated RE
+  covariance, same condition), `prior_df` / `prior_scale`
   (inverse-Wishart on the RE covariance, `control$re_cov = "gibbs"`),
   `prior_sigma_scale` (half-Cauchy scale on the RE SD for
   `mode = "gibbs"`), and `sigma_re_scale` (half-Cauchy scale on the RE /
   BYM2 SD for the ModelData samplers).
+
+- hyperprior:
+
+  The outer hyperparameter prior, `"proper"` (default) or `"flat"`,
+  forwarded to every route that integrates or maximizes over
+  hyperparameters: the nested-Laplace path (see
+  [`tulpa_nested_laplace()`](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace.md)),
+  the SPDE path
+  ([`fit_spde()`](https://gillescolling.com/tulpa/reference/fit_spde.md)),
+  and the random-effect covariance routes (`mode = "laplace"` with
+  random slopes,
+  [`tulpa_re_cov_nested()`](https://gillescolling.com/tulpa/reference/tulpa_re_cov_nested.md);
+  `mode = "eb"`,
+  [`tulpa_eb()`](https://gillescolling.com/tulpa/reference/tulpa_eb.md)).
+  `"proper"` is each route's normalised default (the PC prior on a
+  scale, the PC range prior, PC + LKJ over a free covariance); `"flat"`
+  folds none of the engine's own, so the fit reports no evidence. A
+  density the call states applies under either. Every other backend
+  carries priors of its own, and `"flat"` there is an error rather than
+  a choice that silently does nothing.
 
 - ziformula:
 
@@ -241,20 +267,43 @@ tulpa(
 
 - temporal:
 
-  Optional temporal field spec
-  ([`temporal_rw1()`](https://gillescolling.com/tulpa/reference/temporal_rw1.md),
+  Optional temporal field spec, integrated by nested Laplace for the
+  discrete walks and sampled for the continuous ones:
+  [`temporal_rw1()`](https://gillescolling.com/tulpa/reference/temporal_rw1.md),
   [`temporal_rw2()`](https://gillescolling.com/tulpa/reference/temporal_rw2.md),
-  or
-  [`temporal_ar1()`](https://gillescolling.com/tulpa/reference/temporal_ar1.md)),
-  integrated by nested Laplace. A plain field routes the single-block
-  temporal kernel; a `group_var` panel spec fits a separate walk per
-  group sharing one hyperparameter; combined with an areal `spatial`
-  field it forms an additive space-time joint prior.
+  [`temporal_ar1()`](https://gillescolling.com/tulpa/reference/temporal_ar1.md)
+  (nested Laplace);
+  [`temporal_gp()`](https://gillescolling.com/tulpa/reference/temporal_gp.md)
+  and
+  [`temporal_multiscale()`](https://gillescolling.com/tulpa/reference/temporal_multiscale.md),
+  which are sampler-path only – their hyperparameters are sampled
+  jointly with the field, so `mode = "auto"` routes them to the exact
+  ModelData sampler. A plain field routes the single-block temporal
+  kernel; a `group_var` panel spec fits a separate walk per group
+  sharing one hyperparameter; combined with an areal `spatial` field it
+  forms an additive space-time joint prior.
 
 - control:
 
-  Optional list of backend tuning arguments (e.g. `n_iter`, `warmup`,
-  `epsilon` for `mala`; `n_draws` for `pathfinder`).
+  Optional list of backend tuning arguments. Each backend accepts its
+  own set, checked at the door: `n_iter` / `warmup` / `epsilon`
+  (`mala`), `n_draws` (`pathfinder`), `n_chains` / `max_treedepth` /
+  `adapt_delta` / `mass_matrix` (`hmc`), the outer-grid knobs
+  [`?tulpa_nested_laplace`](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace.md)
+  documents (`n_per_axis`, `prune`, `screen_iters`, `diagnose_k`,
+  `within_cell`, `checkpoint`, the `progress*` family, ...), and
+  `re_cov` (`"nested"` / `"gibbs"` / `"aghq"`), which selects the
+  RE-covariance integrator on any random-effect model.
+
+  One statistical knob lives here rather than in the signature:
+  `marginal` (`mode = "eb"` only) turns on the marginal-Laplace
+  covariance correction, which widens the reported intervals to account
+  for the hyperparameter uncertainty EB conditions on. It is a formal
+  argument of
+  [`tulpa_eb()`](https://gillescolling.com/tulpa/reference/tulpa_eb.md)
+  and is forwarded from `control` by `tulpa()` alone, so it has no
+  meaning on any other backend and is refused there. See
+  [`tulpa_eb()`](https://gillescolling.com/tulpa/reference/tulpa_eb.md).
 
 - ...:
 
@@ -291,9 +340,9 @@ draws matrix on engine fits, while model-package fits may carry a list
   is silently conditioned at `sigma_re = 1`). `mode = "laplace"` routes
   to the nested-Laplace `Sigma` integrator
   ([`tulpa_re_cov_nested()`](https://gillescolling.com/tulpa/reference/tulpa_re_cov_nested.md),
-  CCD design, flat-in-log hyperprior by default – see
-  `re_prior$hyperprior`); `control$re_cov = "gibbs"` switches to the
-  exact Metropolis-within-Gibbs debias
+  CCD design, PC + LKJ hyperprior by default – see `hyperprior`);
+  `control$re_cov = "gibbs"` switches to the exact
+  Metropolis-within-Gibbs debias
   ([`tulpa_re_cov_gibbs()`](https://gillescolling.com/tulpa/reference/tulpa_re_cov_gibbs.md)),
   and `control$re_cov = "aghq"` keeps the nested integrator but replaces
   the inner joint-Laplace marginal with adaptive Gauss-Hermite
@@ -310,10 +359,11 @@ draws matrix on engine fits, while model-package fits may carry a list
   nested-Laplace path (Tier 2), which integrates over the block
   hyperparameters. `mode = "auto"` and `"structured"` select it
   automatically when latent blocks are present;
-  `mode = "nested_laplace"` forces it. At most one random-intercept
-  `(1 | g)` term may accompany the blocks (model richer grouping as an
-  `iid` block). Joint multi-arm nested models cannot be expressed by a
-  single-response formula – call
+  `mode = "nested_laplace"` forces it. Several random-intercept
+  `(1 | g)` terms may accompany the blocks; the one-term restriction
+  belongs to the Polya-Gamma spatial Gibbs sampler (`mode = "gibbs"`),
+  which updates one RE block alongside the field. Joint multi-arm nested
+  models cannot be expressed by a single-response formula – call
   [`tulpa_nested_laplace_joint()`](https://gillescolling.com/tulpa/reference/tulpa_nested_laplace_joint.md)
   directly.
 
@@ -357,7 +407,13 @@ d <- data.frame(
 )
 # Random-intercept logistic GLMM, Laplace tier.
 fit <- tulpa(y ~ x + (1 | g), data = d, family = "binomial", mode = "laplace")
+#> Warning: tulpa(): `sigma_re` not supplied; conditioning on sigma_re = 1 for each of the 1 RE term(s). Pass `sigma_re` to override.
 coef(fit)
+#> (Intercept)           x 
+#>  -0.4031451   0.1952674 
 summary(fit)
+#>               estimate std.error       2.5 %    97.5 %
+#> (Intercept) -0.4031451 0.3251204 -1.04036939 0.2340792
+#> x            0.1952674 0.1382947 -0.07578526 0.4663201
 # }
 ```

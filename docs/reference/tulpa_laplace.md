@@ -93,6 +93,11 @@ tulpa_laplace(
   it. The compiled kernels parameterize the two variance families by the
   residual SD and are handed `sqrt(phi)` at the boundary.
 
+  Defaulted, it conditions at 1 and says so with a warning, since for a
+  family that reads a dispersion that is a modelling choice rather than
+  a neutral value. `fit$phi_estimated` records whether the value on the
+  fit was estimated or conditioned on.
+
 - phi2:
 
   Optional second dispersion: the Student-t degrees of freedom
@@ -239,4 +244,5 @@ eta <- X %*% c(-0.3, 0.8)
 y <- rbinom(n, 1, plogis(eta))
 fit <- tulpa_laplace(y, rep(1L, n), X, family = "binomial")
 fit$mode          # posterior mode of the fixed effects
+#> [1] -0.4406277  0.4822831
 ```

@@ -65,7 +65,11 @@ Tt <- 120L
 w <- numeric(Tt); w[1:2] <- rnorm(2)
 for (t in 3:Tt) w[t] <- 0.5 * w[t-1] + 0.3 * w[t-2] + rnorm(1, 0, 0.4)
 d <- data.frame(t = seq_len(Tt), y = w + rnorm(Tt, 0, 0.3))
+# `phi` is the gaussian residual VARIANCE, here the 0.3 the series was
+# simulated with. Left unsupplied the fit conditions on 1 and says so.
 fit <- tulpa(y ~ latent(temporal_ar2(d$t)), data = d, family = "gaussian",
-             mode = "nested_laplace")
+             phi = 0.3^2, mode = "nested_laplace")
+#> [nested-laplace] 1/125 cells (1%) | elapsed 0s | ETA >=0s | 0.00s/cells
+#> [nested-laplace] 125/125 cells (100%) | elapsed 0s | ETA done | 0.00s/cells
 # }
 ```
