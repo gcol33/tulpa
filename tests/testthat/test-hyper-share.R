@@ -72,3 +72,34 @@ test_that("a fit with no retained grid pieces reports no share rather than a wro
     expect_null(.tulpa_hyper_share(fit))
     expect_null(attr(diagnostics(fit), "hyper_share"))
 })
+
+test_that("diagnostic_summary() carries the share too, and agrees with diagnostics()", {
+    skip_on_cran()
+    sim <- .sparse_icar_arm()
+    fit <- tulpa_nested_laplace_joint(responses = list(occ = sim$arm),
+                                      prior = .sparse_icar_pinned_prior(sim),
+                                      control = list(diagnose_k = FALSE))
+
+    # The share reached `attr(diagnostics(fit), "summary")` from 0.6.0 and not
+    # `diagnostic_summary()`, so the one number that quantifies this issue's
+    # symptom was reachable from one reporting door and not the other. Both
+    # read `.tulpa_hyper_share()`, so the assertion is that they cannot drift.
+    srow <- attr(diagnostics(fit), "summary")
+    ds   <- diagnostic_summary(fit, quiet = TRUE)
+
+    expect_true(is.finite(ds$hyper_share_min))
+    expect_true(is.finite(ds$hyper_share_max))
+    expect_equal(ds$hyper_share_min, srow$hyper_share_min)
+    expect_equal(ds$hyper_share_max, srow$hyper_share_max)
+    expect_lte(ds$hyper_share_min, ds$hyper_share_max)
+    expect_gte(ds$hyper_share_min, 0)
+    expect_lte(ds$hyper_share_max, 1)
+
+    # Stated, never scored: a small share is not by itself a bad interval, so
+    # it must not move the verdict.
+    expect_true(any(grepl("Hyperparameter integration contributes",
+                          ds$recommendations, fixed = TRUE)))
+
+    out <- paste(utils::capture.output(print(ds)), collapse = "\n")
+    expect_match(out, "Hyperparameter share of the fixed-effect marginal")
+})

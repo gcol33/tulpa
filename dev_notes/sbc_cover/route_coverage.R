@@ -182,6 +182,26 @@ for (sg in SIGMAS) for (s in seeds) {
     row[[paste0(r, "_field_sd")]]    <- fs[1]
     row[[paste0(r, "_field_sd_sd")]] <- fs[2]
 
+    # Convergence, so "the sampler's interval is wider" is a statement about a
+    # RESOLVED posterior rather than about a chain that did not mix. A seed
+    # whose chains disagree is excluded downstream rather than pooled.
+    if (identical(r, "nuts")) {
+      cv <- fit$convergence
+      row$nuts_rhat_max <- suppressWarnings(max(cv$rhat, na.rm = TRUE))
+      row$nuts_ess_min  <- suppressWarnings(min(cv$ess_bulk, na.rm = TRUE))
+    } else {
+      ds <- try(tulpa::diagnostic_summary(fit), silent = TRUE)
+      if (!inherits(ds, "try-error") && !is.null(ds)) {
+        row$grid_regime      <- ds$outer_regime      %||% NA_character_
+        row$grid_ess         <- ds$ess_grid          %||% NA_real_
+        row$grid_max_weight  <- ds$max_weight        %||% NA_real_
+        row$grid_hyper_min   <- ds$hyper_share_min   %||% NA_real_
+        row$grid_hyper_max   <- ds$hyper_share_max   %||% NA_real_
+        row$grid_inner_skew  <- ds$inner_skew_max    %||% NA_real_
+        row$grid_inner_band  <- ds$inner_skew_band   %||% NA_character_
+      }
+    }
+
     iv <- read_interval(fit)
     if (!is.null(iv)) {
       keep <- iv$term %in% names(truth_vec)
@@ -205,10 +225,11 @@ for (sg in SIGMAS) for (s in seeds) {
   pick <- function(d, col) if (is.null(d)) NA else
     d[[col]][match("psi_(Intercept)", d$term)]
   cat(sprintf(
-    "sigma %.1f seed %3d | det %2d | grid fs %6.3f psi w %6.3f cov %-5s | nuts fs %6.3f psi w %6.3f cov %-5s\n",
+    "sigma %.1f seed %3d | det %2d | grid fs %6.3f psi w %6.3f cov %-5s | nuts fs %6.3f psi w %6.3f cov %-5s rhat %5.3f\n",
     sg, s, row$n_det_sites,
     row$nested_laplace_field_sd %||% NA_real_, pick(gci, "width"), pick(gci, "cov"),
-    row$nuts_field_sd %||% NA_real_, pick(nci, "width"), pick(nci, "cov")))
+    row$nuts_field_sd %||% NA_real_, pick(nci, "width"), pick(nci, "cov"),
+    row$nuts_rhat_max %||% NA_real_))
   flush.console()
 }
 # One marker per LEVEL. The three levels run as separate processes against one

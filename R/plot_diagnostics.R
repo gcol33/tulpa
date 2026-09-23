@@ -1038,6 +1038,14 @@ plot_energy_base <- function(energy, energy_diff, e_bfmi, status) {
 #'   \item{e_bfmi}{E-BFMI value (HMC only)}
 #'   \item{pareto_k, quad_ess}{approximation fits only: the outer PSIS k-hat,
 #'     or the grid quadrature ESS when no k-hat was produced}
+#'   \item{hyper_share_min, hyper_share_max}{approximation fits only: the range
+#'     over coefficients of the share of the fixed-effect marginal variance the
+#'     hyperparameter integration contributed, `between / (within + between)`
+#'     under the law of total variance over the outer grid. Near zero means the
+#'     reported interval is what conditioning on a single hyperparameter point
+#'     would have given. Reported without a threshold and never scored: a small
+#'     share is not by itself a miscalibrated interval. `NA` when the fit
+#'     retains no per-cell pieces to decompose}
 #'   \item{pareto_k_declined}{approximation fits only, and only when there is no
 #'     k-hat: WHY -- `"not_requested"` and
 #'     `"unguessable_axis: <axis>"` are benign or permanent,
@@ -1092,6 +1100,8 @@ diagnostic_summary <- function(fit, quiet = FALSE) {
     interval_read = NA_character_,
     interval_design_mass = NA_real_,
     quad_ess = NA_real_,
+    hyper_share_min = NA_real_,
+    hyper_share_max = NA_real_,
     recommendations = character(0),
     status = "PASS"
   )
@@ -1258,6 +1268,29 @@ diagnostic_summary <- function(fit, quiet = FALSE) {
           paste("Approximation fit: Rhat/ESS are not convergence diagnostics here.",
                 "Validate with the debias step (IMH/Gibbs) or coverage/recovery checks."))
       }
+
+      # How much of a fixed-effect marginal the hyperparameter integration
+      # carried. `attr(diagnostics(fit), "summary")` reported this from 0.6.0
+      # and this door did not, so the one number that quantifies
+      # gcol33/tulpa#862's symptom was reachable from one reporting path and
+      # not the other. Same helper, so the two cannot disagree.
+      #
+      # Stated, never scored: what counts as too little share depends on the
+      # model, so this carries no threshold and never moves `status` -- a fit
+      # whose marginal rides almost entirely on the within-cell Gaussian may be
+      # perfectly calibrated, which is what the coverage gate in
+      # `test-spatial-beta-coverage.R` measures. Absent rather than zero when
+      # the per-cell pieces were not retained.
+      hs <- .tulpa_hyper_share(fit)
+      if (!is.null(hs) && is.finite(hs$min_share)) {
+        result$hyper_share_min <- hs$min_share
+        result$hyper_share_max <- hs$max_share
+        recommendations <- c(recommendations, sprintf(
+          paste("Hyperparameter integration contributes %.1f-%.1f%% of the",
+                "fixed-effect marginal variance (law of total variance over the",
+                "outer grid); the rest is the within-cell Gaussian."),
+          100 * hs$min_share, 100 * hs$max_share))
+      }
     }
 
     # The inner (latent-field) Laplace layer, and why it went unscored when it
@@ -1412,6 +1445,11 @@ print.tulpa_diagnostic_summary <- function(x, ...) {
     cat(sprintf("Pareto k-hat: %.3f (%s)\n\n", x$pareto_k, khat_status))
   } else if (!is.null(x$quad_ess) && is.finite(x$quad_ess)) {
     cat(sprintf("Quadrature ESS: %.1f\n\n", x$quad_ess))
+  }
+
+  if (!is.null(x$hyper_share_min) && is.finite(x$hyper_share_min)) {
+    cat(sprintf("Hyperparameter share of the fixed-effect marginal: %.1f-%.1f%%\n\n",
+                100 * x$hyper_share_min, 100 * x$hyper_share_max))
   }
 
   # Worst Rhat

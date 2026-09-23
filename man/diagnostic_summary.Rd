@@ -22,6 +22,14 @@ A list with class \code{tulpa_diagnostic_summary} containing:
 \item{e_bfmi}{E-BFMI value (HMC only)}
 \item{pareto_k, quad_ess}{approximation fits only: the outer PSIS k-hat,
 or the grid quadrature ESS when no k-hat was produced}
+\item{hyper_share_min, hyper_share_max}{approximation fits only: the range
+over coefficients of the share of the fixed-effect marginal variance the
+hyperparameter integration contributed, \code{between / (within + between)}
+under the law of total variance over the outer grid. Near zero means the
+reported interval is what conditioning on a single hyperparameter point
+would have given. Reported without a threshold and never scored: a small
+share is not by itself a miscalibrated interval. \code{NA} when the fit
+retains no per-cell pieces to decompose}
 \item{pareto_k_declined}{approximation fits only, and only when there is no
 k-hat: WHY -- \code{"not_requested"} and
 \code{"unguessable_axis: <axis>"} are benign or permanent,

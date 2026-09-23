@@ -86,6 +86,39 @@ for (sg in sort(unique(fsd$sigma_true))) {
   }
 }
 
+# The sharp reading of "insensitive to the data". An interval whose width does
+# not track how informative a dataset is would be too wide on the informative
+# half and too narrow on the uninformative half, so its coverage would SPLIT
+# even where the pooled rate looks nominal. A pooled rate alone cannot tell the
+# two apart.
+cat("\n=== coverage by information (split on detected sites), psi_(Intercept) ===\n")
+psi2 <- df[df$term == "psi_(Intercept)" & is.finite(df$n_det), ]
+if (nrow(psi2) >= 8) {
+  cut_at <- stats::median(psi2$n_det)
+  psi2$half <- ifelse(psi2$n_det <= cut_at, "low_info", "high_info")
+  for (h in c("low_info", "high_info")) {
+    for (rt in c("nested_laplace", "nuts")) {
+      s <- psi2[psi2$half == h & psi2$route == rt, ]
+      if (!nrow(s)) next
+      cat(sprintf("%-9s %-15s n %2d  cov %5.1f%%  mean width %6.3f  mean det %4.1f\n",
+                  h, rt, nrow(s), 100 * mean(s$cov, na.rm = TRUE),
+                  mean(s$width, na.rm = TRUE), mean(s$n_det)))
+    }
+  }
+}
+
+# Efficiency: a route that covers at the nominal rate with a narrower interval
+# is strictly better, so width is only readable NEXT TO the coverage it bought.
+cat("\n=== efficiency: mean width among the seeds that covered ===\n")
+for (tmn in unique(df$term)) {
+  w <- sapply(c("nested_laplace", "nuts"), function(rt) {
+    s <- df[df$term == tmn & df$route == rt & df$cov %in% TRUE, ]
+    if (!nrow(s)) NA_real_ else mean(s$width, na.rm = TRUE)
+  })
+  cat(sprintf("%-18s grid %6.3f  nuts %6.3f  nuts/grid %5.2fx\n",
+              tmn, w[[1]], w[[2]], w[[2]] / w[[1]]))
+}
+
 cat("\n=== width spread across seeds (does the interval track the data?) ===\n")
 for (tmn in c("psi_(Intercept)", "psi_occ_cov1", "p_(Intercept)")) {
   for (rt in c("nested_laplace", "nuts")) {
