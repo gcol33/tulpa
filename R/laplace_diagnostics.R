@@ -1636,6 +1636,10 @@
   inner <- .tulpa_inner_skew_reliability(fit)
   inner_k <- .tulpa_inner_k_reliability(fit)
   regime <- .tulpa_outer_regime(fit)
+  # Computed once: it is both an attribute on the table and a column on the
+  # summary row, and a consumer reading the summary is the one that cannot
+  # reach the printed form.
+  regime_note <- .tulpa_outer_regime_note(regime)
   placement <- .tulpa_grid_placement(fit)
   iread <- .tulpa_interval_read(fit)
   resolution <- .tulpa_grid_resolution(fit)
@@ -1717,7 +1721,7 @@
       paste0(regime$edge_mass_axes, ":", regime$edge_mass_sides) else
       character(0)
     attr(tab, "outer_skew_max")  <- regime$outer_skew_max
-    attr(tab, "outer_regime_note") <- .tulpa_outer_regime_note(regime)
+    attr(tab, "outer_regime_note") <- regime_note
   }
   if (!is.null(placement)) {
     attr(tab, "grid_placement")        <- placement$placement
@@ -1780,6 +1784,11 @@
     pareto_k        = k,
     pareto_k_band   = outer_band,
     outer_regime    = if (is.null(regime)) NA_character_ else regime$regime,
+    # The regime CODE without its reading leaves a consumer to re-derive what
+    # a collapse means and which axis to widen, which is how an
+    # `ess_grid >= 2 && max_weight <= 0.9` rule ends up written again in every
+    # consumer (gcol33/tulpa#863).
+    outer_regime_note = regime_note %||% NA_character_,
     outer_skew_max  = if (is.null(regime)) NA_real_ else regime$outer_skew_max,
     ess_grid        = if (is.null(grid)) NA_real_ else grid$ess_grid,
     n_grid          = if (is.null(grid)) NA_integer_ else grid$n_grid,

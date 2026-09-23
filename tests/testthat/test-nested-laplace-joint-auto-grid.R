@@ -18,34 +18,8 @@
 # placement-only mode-Hessian (`.joint_attach_pareto_k_placement()`) supplies
 # the same curvature without the full diagnostic ever running.
 
-.chain_adj_ag <- function(n_s) {
-    nbr <- lapply(seq_len(n_s),
-                  function(s) setdiff(c(s - 1L, s + 1L), c(0L, n_s + 1L)))
-    nn <- vapply(nbr, length, integer(1))
-    list(adj_row_ptr = as.integer(c(0L, cumsum(nn))),
-         adj_col_idx = as.integer(unlist(nbr)) - 1L,
-         n_neighbors = as.integer(nn),
-         n_spatial_units = n_s)
-}
-
-# A sparse, strongly separated occurrence pattern -- a few units almost
-# always positive, the rest almost always negative -- the "sparse,
-# weakly-identified species" regime gcol33/tulpa#289 targets: the field-SD
-# posterior wants to sit well past the old fixed ceiling of 3.0.
-.sparse_icar_arm <- function(n_s = 20L, n_per = 6L, seed = 11) {
-    set.seed(seed)
-    spatial_idx <- rep(seq_len(n_s), each = n_per)
-    base_p <- rep(0.02, n_s); base_p[1:5] <- 0.95
-    y <- rbinom(length(spatial_idx), 1, base_p[spatial_idx])
-    X <- cbind(1, rnorm(length(y), 0, 0.05))
-    list(
-        arm = list(y = as.numeric(y), n_trials = rep(1L, length(y)),
-                  X = X, spatial_idx = as.integer(spatial_idx),
-                  re_idx = rep(0, length(y)), n_re_groups = 0L, sigma_re = 1.0,
-                  family = "binomial", phi = 1.0),
-        adj = .chain_adj_ag(n_s)
-    )
-}
+# The fixture and its pinned-axis prior live in `helper-sparse-icar-arm.R`,
+# shared with `test-outer-grid-collapse-reporting.R`.
 
 test_that("auto-recenter resolves a sigma-axis edge collapse and stays spread", {
     skip_on_cran()
