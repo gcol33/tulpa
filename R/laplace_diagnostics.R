@@ -912,7 +912,8 @@
 # The correction's state on a fit, defaulted for a fit that predates it or a
 # backend that does not attach one.
 .nl_skew_correction <- function(object, p) {
-  sc <- object[["skew_correction"]]
+  jf <- if (!is.null(object$joint_fit)) object$joint_fit else object
+  sc <- jf[["skew_correction"]]
   if (is.null(sc)) {
     return(list(enabled = FALSE, gamma3 = rep(NA_real_, p),
                 gamma1 = rep(NA_real_, p),
