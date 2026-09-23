@@ -1,3 +1,55 @@
+# tulpa 0.6.0
+
+## A flagged inner layer names the correction it did not run
+
+* A fit whose inner Gaussian bands `unreliable` reports the marginal read off
+  that same Gaussian, and the engine ships two corrections for exactly that
+  condition -- `control$subspace_debias` (exact Metropolis on the flagged
+  coordinates, the rest carried at their Gaussian conditional) and
+  `control$cila` (the whole inner Gaussian reweighted by the exact joint
+  density). Both are off by default and nothing in the reporting said they
+  existed, so the measured misfit and its remedy never met. `diagnostics()`
+  now carries the remedy as `inner_debias_note`, prints it with the other
+  notes, and `diagnostic_summary()` lists it last in `recommendations`, after
+  the bands that motivate it rather than before them. It is silent on a fit
+  that already ran a correction, which would otherwise read as though the
+  correction had not taken (gcol33/tulpa#862).
+
+## The subspace-debias coupling closure works on a grid fit
+
+* `control$subspace_debias$closure` grows the corrected set over strongly
+  coupled precision-graph neighbours, because a coordinate coupled to a member
+  of the set and left out of it is carried linearly -- precisely the error the
+  correction exists to remove. It needs the joint precision, and a grid or
+  joint fit computed one per cell and then discarded it, so the closure
+  declined with `closure_needs_joint_hessian` on every such fit.
+  `.nl_modal_joint_precision()` assembles the MODAL cell's copy from the CSC
+  scratch the inner solves already return, and both drivers read that one
+  assembler, so they cannot disagree about which cell the coupling came from.
+  One cell, not `n_grid`: the closure is a selection decision made once. The
+  retention rides the closure request, so a fit that did not ask for one
+  retains nothing extra; the joint driver turns `store_Q` on for it and hands
+  back only the assembled precision, not the per-cell scratch. Measured on a
+  sparse ICAR fit banding both inner scores `unreliable`, the corrected set
+  grows 1 -> 2 -> 3 -> 5 -> 9 as the coupling threshold loosens where it
+  previously could not grow at all (gcol33/tulpa#862).
+
+## A collapsed outer grid carries its reading, not only its code
+
+* `attr(diagnostics(fit), "summary")` -- the one-row frame a consumer writes to
+  a reliability CSV -- carried `outer_regime` without the note saying what a
+  collapse means and which axis to widen, so the reading was reachable only
+  from the printed form and each consumer re-derived an
+  `ess_grid >= 2 && max_weight <= 0.9` rule of its own. It now carries
+  `outer_regime_note` beside the code. The classification itself was already
+  correct and independent of the opt-in k-hat: the quadrature numbers come from
+  the stored weights unconditionally and the regime is attached before the
+  `diagnose_k` branch, so a collapse is reported whether or not `pareto_k` ran.
+  Nothing asserted that end to end, which is how an occu_cover batch shipped
+  `ess_grid = 1.0000067` of 27 cells at `max_weight = 0.99999` with its
+  consumer reporting nothing; `test-outer-grid-collapse-reporting.R` now pins
+  all four doors (gcol33/tulpa#863).
+
 # tulpa 0.5.4
 
 ## The hyperparameter copula holds on coarse grids and curved posteriors
