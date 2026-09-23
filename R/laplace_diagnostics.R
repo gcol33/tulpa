@@ -1041,6 +1041,30 @@
        outer_skew_max  = sk)
 }
 
+# A fit whose INNER layer bands `unreliable` is reporting a marginal the engine
+# has measured as misfit, and the engine ships two corrections for exactly that
+# -- both off by default, so nothing said they existed. Naming the remedy beside
+# the band is the difference between a diagnostic and an instruction
+# (gcol33/tulpa#862).
+#
+# NULL when nothing is flagged, and NULL when a correction already ran: a fit
+# carrying `$subspace_debias` or `$cila` has already been told, and repeating it
+# on the corrected fit would read as though the correction had not taken.
+.tulpa_inner_debias_note <- function(fit, inner, inner_k) {
+  flagged <- c(if (!is.null(inner)) inner$band else NULL,
+               if (!is.null(inner_k)) inner_k$band else NULL)
+  if (!any(flagged == "unreliable", na.rm = TRUE)) return(NULL)
+  jf <- if (!is.null(fit$joint_fit)) fit$joint_fit else fit
+  if (!is.null(jf$subspace_debias) || !is.null(jf$cila)) return(NULL)
+  paste(
+    "the inner Gaussian is the approximation this band scores, and it is the",
+    "one the reported marginal is read from: `control$subspace_debias = TRUE`",
+    "corrects the flagged coordinates by exact Metropolis and leaves the rest",
+    "at their Gaussian conditional, `control$cila = TRUE` reweights the whole",
+    "inner Gaussian by the exact joint density. Both are off by default, so a",
+    "flagged fit reports the uncorrected marginal until one is asked for")
+}
+
 # One-line reading of an outer regime, for `print` and `diagnostic_summary()`.
 # Returns NULL for a spread grid carrying no boundary mass (nothing to explain)
 # or an unknown regime.
@@ -1779,6 +1803,7 @@
                                 inner_k_declined)
   } else NA_character_
   attr(tab, "reliability") <- reliability
+  attr(tab, "inner_debias_note") <- .tulpa_inner_debias_note(fit, inner, inner_k)
 
   summary_row <- data.frame(
     pareto_k        = k,
@@ -1891,7 +1916,8 @@ print.laplace_diagnostics <- function(x, ...) {
   pnote <- attr(x, "grid_placement_note")
   if (!is.null(pnote)) cat("  note: ", pnote, "\n", sep = "")
   for (rnote in c(attr(x, "interval_read_note"),
-                  attr(x, "grid_resolution_note"))) {
+                  attr(x, "grid_resolution_note"),
+                  attr(x, "inner_debias_note"))) {
     cat("  note: ", rnote, "\n", sep = "")
   }
   if (has_skew) {

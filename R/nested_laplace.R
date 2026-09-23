@@ -171,8 +171,11 @@
 #'     (the inner-reliability floor a coordinate is selected at, default
 #'     `"ok"`), `idx` (pin the corrected set explicitly, skipping the selector),
 #'     `closure` / `closure_max` (grow the set by strongly coupled
-#'     precision-graph neighbours -- declined on this backend, which retains no
-#'     joint precision), the sampler budget `n_iter` / `warmup` / `thin`, and
+#'     precision-graph neighbours: a coordinate strongly coupled to a member of
+#'     the corrected set and left out of it is carried linearly, which is the
+#'     error the correction removes, so requesting the closure also retains the
+#'     modal cell's joint precision for the selector to read), the sampler
+#'     budget `n_iter` / `warmup` / `thin`, and
 #'     `n_draws`. The selector reads the per-index bands `diagnose_skew` already
 #'     attached, so it costs no extra solve; the correction itself re-runs the
 #'     settled grid once with the sampler on, and the fit then reports `$draws`
@@ -427,6 +430,9 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   # per-cell particles are pooled into the reported draws.
   cila_cfg           <- .cila_config(control$cila)
   keep_grid_hessians <- isTRUE(control$keep_grid_hessians %||% TRUE) || !is.null(sd_cfg)
+  # Retaining the modal cell's joint precision is what makes the debias closure
+  # available on a grid fit; nothing else reads it, so it rides the request.
+  keep_joint_prec    <- !is.null(sd_cfg) && !identical(sd_cfg$closure, FALSE)
   diagnose_k         <- isTRUE(control$diagnose_k %||% TRUE)
   k_samples          <- as.integer(control$k_samples %||% .nl_diag("k_samples"))
   k_tail_points      <- control$k_tail_points
@@ -578,7 +584,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
     res <- solve_grid_multi(prior)
     tm$mark("grid")
     if (isTRUE(keep_grid_hessians)) {
-      res <- .nl_attach_grid_hessians(res, p_fixed)
+      res <- .nl_attach_grid_hessians(res, p_fixed, keep_joint_prec)
     }
     tm$mark("postproc")
     res <- .nl_attach_pareto_k(res, prior, cargs_no_ckpt, "multi", NULL,
@@ -594,7 +600,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
       res, NULL, prior,
       refit = function(prior_i) {
         r <- solve_grid_multi(prior_i)
-        if (isTRUE(keep_grid_hessians)) r <- .nl_attach_grid_hessians(r, p_fixed)
+        if (isTRUE(keep_grid_hessians)) r <- .nl_attach_grid_hessians(r, p_fixed, keep_joint_prec)
         .nl_attach_pareto_k(r, prior_i, cargs_no_ckpt, "multi", NULL,
                             likelihood, k_samples, compute = diagnose_k,
                             tail_points = k_tail_points)
@@ -670,7 +676,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
   res <- .nl_attach_outer_integration(res, "outer grid")
   res <- .nl_posterior_moments(res, type, within = within_cell)
   if (isTRUE(keep_grid_hessians)) {
-    res <- .nl_attach_grid_hessians(res, p_fixed)
+    res <- .nl_attach_grid_hessians(res, p_fixed, keep_joint_prec)
   }
   tm$mark("postproc")
   res <- .nl_attach_pareto_k(res, prior, cargs_no_ckpt, "single", type, NULL,
@@ -691,7 +697,7 @@ tulpa_nested_laplace <- function(y, n_trials, X, prior = NULL,
       r <- solve_grid(prior_i)
       r <- .nl_attach_outer_integration(r, "outer grid")
       r <- .nl_posterior_moments(r, type, within = within_cell)
-      if (isTRUE(keep_grid_hessians)) r <- .nl_attach_grid_hessians(r, p_fixed)
+      if (isTRUE(keep_grid_hessians)) r <- .nl_attach_grid_hessians(r, p_fixed, keep_joint_prec)
       .nl_attach_pareto_k(r, prior_i, cargs_no_ckpt, "single", type, NULL,
                           k_samples, compute = diagnose_k,
                           tail_points = k_tail_points)
@@ -1581,7 +1587,42 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
 # already required for the integrated log-marginal -- so adding it here is
 # essentially free.
 # ----------------------------------------------------------------------------
-.nl_attach_grid_hessians <- function(res, p_fixed) {
+# `keep_joint` additionally retains the MODAL cell's joint precision as
+# `res$H_joint`, which is what the subspace-debias coupling closure reads to
+# grow the corrected set over strongly coupled neighbours
+# (`.subspace_closure()`). One cell, not `n_grid`: the closure is a SELECTION
+# decision, and the selection is made once. Off by default, so a fit that did
+# not ask for closure retains nothing extra (gcol33/tulpa#862).
+# The MODAL cell's joint posterior precision, assembled from the per-cell CSC
+# scratch the inner solves return under `store_Q`. This is what the
+# subspace-debias coupling closure reads (`.subspace_closure()`): a coordinate
+# strongly coupled to a member of the corrected set and left OUT of it is being
+# carried linearly, which is precisely the error the correction removes, so the
+# closure needs the precision graph to find it.
+#
+# ONE cell, not `n_grid`. The closure is a selection decision made once, and
+# the modal cell is the one the reported mixture is centred on. Both drivers
+# read this -- the single/multi-block grid through
+# `.nl_attach_grid_hessians()`, the joint through `.joint_finalize_grid_fixed()`
+# -- so the two cannot disagree about which cell the coupling came from
+# (gcol33/tulpa#862). NULL when the fit retained no precision, which the caller
+# records as a declined closure rather than as "no neighbours found".
+.nl_modal_joint_precision <- function(res) {
+  Q_p <- res$Q_csc_p_per_grid
+  Q_i <- res$Q_csc_i_per_grid
+  Q_x <- res$Q_csc_x_per_grid
+  n_x <- res$Q_csc_n
+  if (is.null(Q_p) || is.null(Q_i) || is.null(Q_x) || is.null(n_x)) return(NULL)
+  lm <- res$log_marginal
+  if (is.null(lm) || !any(is.finite(lm))) return(NULL)
+  k <- which.max(replace(lm, !is.finite(lm), -Inf))
+  if (k > length(Q_p) || length(Q_p[[k]]) != n_x + 1L) return(NULL)
+  L <- Matrix::sparseMatrix(i = Q_i[[k]], p = Q_p[[k]], x = Q_x[[k]],
+                            dims = c(n_x, n_x), index1 = FALSE)
+  L + Matrix::t(L) - Matrix::Diagonal(n_x, Matrix::diag(L))
+}
+
+.nl_attach_grid_hessians <- function(res, p_fixed, keep_joint = FALSE) {
   Q_p <- res$Q_csc_p_per_grid
   Q_i <- res$Q_csc_i_per_grid
   Q_x <- res$Q_csc_x_per_grid
@@ -1645,6 +1686,7 @@ tulpa_normalise_weights_safe <- function(lm, what = "grids / data",
 
   res$grid_hessians <- grid_hessians
   res$grid_modes    <- grid_modes
+  if (isTRUE(keep_joint)) res$H_joint <- .nl_modal_joint_precision(res)
   # Strip the verbose CSC scratch fields once Hessians are assembled.
   res$Q_csc_p_per_grid <- NULL
   res$Q_csc_i_per_grid <- NULL

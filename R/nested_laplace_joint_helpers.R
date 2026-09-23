@@ -1259,13 +1259,17 @@ tulpa_joint_inner_vcov_blocks <- function(Q_p_per_grid, Q_i_per_grid, Q_x_per_gr
 # marginalization. The per-cell blocks are already on the result; this turns
 # them into the `$grid_modes` / `$grid_hessians` pair the marginalizer reads,
 # and drops the raw blocks afterwards.
-.joint_finalize_grid_fixed <- function(res, n_fixed, keep_grid_hessians) {
+.joint_finalize_grid_fixed <- function(res, n_fixed, keep_grid_hessians,
+                                       keep_joint = FALSE) {
     res <- if (isTRUE(keep_grid_hessians)) {
         .joint_attach_grid_fixed(res, n_fixed)
     } else {
         res$grid_fixed_declined <- "not_requested"
         res
     }
+    # Same assembler the single/multi-block driver uses, so the two paths
+    # cannot disagree about which cell the closure's coupling came from.
+    if (isTRUE(keep_joint)) res$H_joint <- .nl_modal_joint_precision(res)
     res$cov_block_per_grid <- NULL
     res
 }

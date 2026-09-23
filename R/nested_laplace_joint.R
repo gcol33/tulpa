@@ -1630,6 +1630,15 @@ tulpa_nested_laplace_joint <- function(responses,
     verbose                   <- control$verbose %||% FALSE
     store_Q                   <- control$store_Q %||% FALSE
     keep_grid_hessians        <- isTRUE(control$keep_grid_hessians %||% TRUE)
+    # The subspace-debias coupling closure reads the modal cell's joint
+    # precision, which only `store_Q` produces. Requesting the closure
+    # therefore requests the precision, the same way requesting the debias
+    # already turns `keep_grid_hessians` on (gcol33/tulpa#862).
+    keep_joint_prec <- {
+      sd_cfg <- .subspace_debias_config(control$subspace_debias)
+      !is.null(sd_cfg) && !identical(sd_cfg$closure, FALSE)
+    }
+    if (keep_joint_prec) store_Q <- TRUE
     adaptive_grid             <- control$adaptive_grid %||% FALSE
     adaptive_grid_edge_thresh <- control$adaptive_grid_edge_thresh %||% 0.02
     adaptive_grid_max_passes  <- control$adaptive_grid_max_passes %||% 1L
@@ -2247,7 +2256,17 @@ tulpa_nested_laplace_joint <- function(responses,
     # Per-cell fixed-effect mode + precision for the grid marginalization,
     # taken after every refinement pass has settled the grid so the cells it
     # reads are the cells the weights describe.
-    res <- .joint_finalize_grid_fixed(res, fixed$n_fixed, keep_grid_hessians)
+    res <- .joint_finalize_grid_fixed(res, fixed$n_fixed, keep_grid_hessians,
+                                      keep_joint_prec)
+    # `store_Q` was turned on for the closure, not by the caller: hand back the
+    # one assembled precision, not the per-cell CSC scratch the caller never
+    # asked for and would have to carry through every downstream object.
+    if (keep_joint_prec && !isTRUE(control$store_Q)) {
+      res$Q_csc_p_per_grid <- NULL
+      res$Q_csc_i_per_grid <- NULL
+      res$Q_csc_x_per_grid <- NULL
+      res$Q_csc_n          <- NULL
+    }
     # Subspace debias, after the per-cell fixed-effect pieces
     # are in place: the correction reports draws recombined from them, so it has
     # to see the settled grid the weights describe.

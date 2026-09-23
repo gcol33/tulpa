@@ -1337,6 +1337,18 @@ diagnostic_summary <- function(fit, quiet = FALSE) {
     recommendations <- c(recommendations, .tulpa_axis_dropped_note(axis_dropped))
   }
 
+  # The inner layer's remedy, appended LAST so it follows the bands that
+  # motivate it rather than leading them. Same helper the diagnostics table
+  # prints, so the two doors cannot say different things about what is
+  # available, and it is silent on a fit that already ran a correction.
+  idn <- .tulpa_inner_debias_note(fit, .tulpa_inner_skew_reliability(fit),
+                                  .tulpa_inner_k_reliability(fit))
+  if (!is.null(idn)) {
+    recommendations <- c(recommendations,
+                         paste0(toupper(substring(idn, 1, 1)),
+                                substring(idn, 2), "."))
+  }
+
   result$recommendations <- recommendations
   result$status <- status
 
