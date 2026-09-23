@@ -16,7 +16,8 @@
 # The restore runs from a function's `on.exit`, not at top level. `on.exit()`
 # called at top level in `Rscript` registers against no frame and never fires.
 
-INTERNAL_MD <- c("CLAUDE.md", "AGENTS.md", "api.md", "todo.md")
+INTERNAL_MD <- c("CLAUDE.md", "AGENTS.md", "api.md", "todo.md",
+                 "ENGINEERING_HISTORY.md")
 
 build_site_without_internal_md <- function(root = ".",
                                            internal = INTERNAL_MD) {

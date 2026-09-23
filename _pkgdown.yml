@@ -160,8 +160,6 @@ reference:
     ones, and the residual / goodness-of-fit surface both share.
   contents:
   - diagnostics
-  - mcmc_diagnostics
-  - laplace_diagnostics
   - check_diagnostics
   - diagnostic_summary
   - select_main_params

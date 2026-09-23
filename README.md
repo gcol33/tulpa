@@ -219,12 +219,17 @@ User-supplied templated C++ snippets compile against `tulpa`'s autodiff types (`
 ## Installation
 
 ```r
+# Current release, built for Windows and macOS
+install.packages("tulpa",
+                 repos = c("https://gcol33.r-universe.dev",
+                           "https://cloud.r-project.org"))
+
 # Development version from GitHub
 install.packages("pak")
 pak::pak("gcol33/tulpa")
 
 # Pin a release
-pak::pak("gcol33/tulpa@v0.3.0")
+pak::pak("gcol33/tulpa@v0.6.0")
 ```
 
 `pak` resolves the dependency tree, including `tulpaMesh` (on CRAN, used for SPDE mesh construction). `tulpa` compiles its C++ backend on first install, so a C++17 toolchain is required: Rtools on Windows, Xcode CLI tools on macOS, `r-base-dev` on Linux.
@@ -283,7 +288,7 @@ MIT (see the LICENSE file).
   author = {Colling, Gilles},
   title  = {tulpa: Templated Unified Library for Posterior Approximation in Bayesian Hierarchical Models},
   year   = {2026},
-  note   = {R package version 0.3.0},
+  note   = {R package version 0.6.0},
   url    = {https://github.com/gcol33/tulpa}
 }
 ```
