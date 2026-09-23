@@ -1,59 +1,65 @@
 # CRAN comments
 
-## Resubmission
-
-This replaces the tulpa 0.5.0 upload of 2026-09-20, which the incoming check
-archived on "Overall checktime 12 min > 10 min". Uwe Ligges has since triggered
-further checks on it; I have asked for that upload to be dropped in favour of
-this one.
-
-* It fixes a bug found after that upload, listed below with the others: a
-  copy-scale amplitude was reported, and drawn, below zero.
-* The check time is reduced. The tests CRAN runs now leave out model fits and
-  sampler runs, which belong to the package's own recovery tier and run in CI,
-  and read the structural identity checks on smaller grids. win-builder
-  r-devel reports a check time of 491s (Status: OK), against 724s for the
-  archived upload.
-
 ## Update
 
-This is an update of tulpa 0.2.0, published on 2026-09-09.
+This is an update of tulpa 0.5.0, published on 2026-09-21. It comes two days
+later because 0.5.0 returns wrong numbers, without an error, in the reported
+hyperparameter posterior. Every item below is a correctness fix; there is no
+new user-facing surface.
 
-It fixes the gcc-UBSAN issue shown on the 0.2.0 check page: an Eigen LLT object
-was copied before its first factorization, so `LLT.h:66` loaded an
-uninitialized `ComputationInfo` ("load of value 32119, which is not a valid
-value for type 'ComputationInfo'"). Per-thread workspaces are now constructed
-in place. Checked under gcc with `-fsanitize=undefined
--ftrivial-auto-var-init=pattern`, which reproduces the report on the code
-before the fix and reports nothing after it.
+* A refined outer axis read the wrong box for a cell in a row it had not
+  refined. A slice point re-tiles only its own row, but the box-uniform
+  interval and `tulpa_hyper_draws()` laid one partition over every distinct
+  value on the axis, so an untouched cell was drawn on the narrow box beside
+  the slice points while holding its whole base box's mass. On a reference
+  fit the `phi_pos` draws' interquartile range held 0.453 of the fit's own
+  measure instead of 0.5 (gcol33/tulpa#858).
 
-The update also comes early because 0.2.0 carries defects that return wrong
-results without an error, all fixed here:
+* The copy coefficient's default outer axis carried five nodes, a node ratio
+  of 2.34, so a posterior over the amplitude sat on two adjacent nodes. It is
+  now declared at nine, the resolution the other outer axes of such a fit run
+  at: simulation-based calibration on the reference fixture goes from 9 of 11
+  and 7 of 11 parameters inside the family-wise band to 11 of 11 at both
+  configurations (gcol33/tulpa#858).
 
-* Matern 5/2 spatial fields were fitted with the squared-exponential kernel in
-  every sampler mode (a covariance code read under two numberings).
-* Resuming a checkpointed MCMC fit on a different data set of the same
-  dimensions returned the earlier fit's draws, because the checkpoint
-  fingerprint covered only the dimensions.
-* An `offset()` term was dropped on the nested-Laplace route.
-* A copy amplitude's posterior was reported, and drawn, below zero. The copy
-  scale carries a declared point mass at zero beside a continuum on the
-  positive half-line; the reporting geometry gave that level an ordinary cell
-  and mirrored its edge half a node step below it, so the reported 2.5% bound
-  and a fifth of the draws left the parameter's support.
+* Hyperparameter draws lost the posterior's correlation between outer axes.
+  Independent within-cell jitter added the full box variance of both axes in
+  the direction a strongly correlated posterior pins down, so a product of
+  anticorrelated scales came out too wide. On an analytic two-scale posterior
+  with log correlation -0.9 (exact log-product sd 0.224) the draws' sd goes
+  from 0.281 to 0.232 (gcol33/tulpa#859).
 
-The version is 0.5.0 rather than 0.2.1 because development continued after
-0.2.0 was submitted; NEWS.md carries an entry for each version in between.
+* That coupling fell back to independent draws on a coarse grid under a strong
+  correlation, because the off-ridge cells' masses fell below the rank test of
+  the quadratic that sets its target. At 3 x 3 nodes and log correlation
+  -0.97 the log product's sd goes from 0.580 to 0.182 against an exact 0.122
+  (gcol33/tulpa#860).
 
-Default hyperpriors on the outer integration grid changed to proper priors, so
-the same call can return different numbers from 0.2.0; NEWS.md documents each
-change. The Title now expands the package name.
+* A pair's within-cell coupling could take a conditional dependence of the
+  opposite sign from the posterior's: a curved posterior at log correlation
+  -0.76 was coupled at +0.55 inside the cell, and the log product read 19.6%
+  wide at 5 x 5 nodes. Such a pair is now conditionally independent inside the
+  cell and reads 1.8% wide (gcol33/tulpa#861).
+
+* The subspace-debias closure declined on every grid or joint fit. It grows the
+  corrected set over strongly coupled coordinates, because a coordinate coupled
+  to a member of the set and left out of it is carried linearly -- the error
+  the correction exists to remove -- and it needs the joint precision, which
+  those drivers computed per cell and discarded. The modal cell's copy is now
+  assembled from the scratch the inner solves already return
+  (gcol33/tulpa#862).
+
+Reporting added in the same cycle: a nested fit carries the share of each
+fixed-effect marginal that the integrated hyperparameter contributed, the
+collapsed-grid regime carries its reading beside its code, and a flagged inner
+layer names the correction it did not run. These are new columns on
+`diagnostics()`, not changes to any estimate.
 
 ## R CMD check results
 
 0 errors | 0 warnings | 0 notes locally.
 
-The expected NOTE on the incoming check is "Days since last update: 12",
+The expected NOTE on the incoming check is "Days since last update: 2",
 explained above.
 
 ## Test environments
