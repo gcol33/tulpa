@@ -1,0 +1,54 @@
+﻿cells: 90 | timings: grid 24s nuts 122s per fit
+
+=== 95% interval coverage against simulated truth ===
+term               route               n    cov    rate 95% CI           mean_w    med_w
+psi_(Intercept)    nested_laplace     90     87   96.7% [0.91, 0.99]    1.323    1.236
+psi_(Intercept)    nuts               90     86   95.6% [0.89, 0.99]    2.673    2.009
+psi_occ_cov1       nested_laplace     90     83   92.2% [0.85, 0.97]    1.328    1.264
+psi_occ_cov1       nuts               90     81   90.0% [0.82, 0.95]    2.164    1.821
+p_(Intercept)      nested_laplace     90     84   93.3% [0.86, 0.98]    1.149    1.127
+p_(Intercept)      nuts               90     81   90.0% [0.82, 0.95]    1.296    1.267
+p_det_cov1         nested_laplace     90     87   96.7% [0.91, 0.99]    1.029    0.994
+p_det_cov1         nuts               90     87   96.7% [0.91, 0.99]    1.051    1.015
+pos_(Intercept)    nested_laplace     90     85   94.4% [0.88, 0.98]    0.676    0.539
+pos_(Intercept)    nuts               90     87   96.7% [0.91, 0.99]    0.872    0.707
+pos_pos_cov1       nested_laplace     90     88   97.8% [0.92, 1.00]    0.383    0.370
+pos_pos_cov1       nuts               90     86   95.6% [0.89, 0.99]    0.377    0.374
+
+=== by true field scale, psi_(Intercept) ===
+sigma 0.3  nested_laplace  n 30  cov 100.0%  mean width  1.323  mean |bias|  0.251
+sigma 0.3  nuts            n 30  cov 100.0%  mean width  2.762  mean |bias|  0.513
+sigma 0.7  nested_laplace  n 30  cov  93.3%  mean width  1.350  mean |bias|  0.277
+sigma 0.7  nuts            n 30  cov  90.0%  mean width  2.670  mean |bias|  0.557
+sigma 1.5  nested_laplace  n 30  cov  96.7%  mean width  1.297  mean |bias|  0.228
+sigma 1.5  nuts            n 30  cov  96.7%  mean width  2.588  mean |bias|  0.483
+
+=== field_sd recovery (mean estimate / realized field SD) ===
+sigma 0.3  nested_laplace  n 30  est  0.411  realized  0.302  ratio  1.36
+sigma 0.3  nuts            n 30  est  0.641  realized  0.302  ratio  2.13
+sigma 0.7  nested_laplace  n 30  est  0.652  realized  0.704  ratio  0.93
+sigma 0.7  nuts            n 30  est  1.204  realized  0.704  ratio  1.71
+sigma 1.5  nested_laplace  n 30  est  1.024  realized  1.509  ratio  0.68
+sigma 1.5  nuts            n 30  est  1.915  realized  1.509  ratio  1.27
+
+=== coverage by information (split on detected sites), psi_(Intercept) ===
+low_info  nested_laplace  n 48  cov  97.9%  mean width  1.307  mean det 21.0
+low_info  nuts            n 48  cov  97.9%  mean width  2.305  mean det 21.0
+high_info nested_laplace  n 42  cov  95.2%  mean width  1.342  mean det 26.4
+high_info nuts            n 42  cov  92.9%  mean width  3.094  mean det 26.4
+
+=== efficiency: mean width among the seeds that covered ===
+psi_(Intercept)    grid  1.324  nuts  2.581  nuts/grid  1.95x
+psi_occ_cov1       grid  1.328  nuts  2.085  nuts/grid  1.57x
+p_(Intercept)      grid  1.142  nuts  1.284  nuts/grid  1.12x
+p_det_cov1         grid  1.024  nuts  1.046  nuts/grid  1.02x
+pos_(Intercept)    grid  0.677  nuts  0.884  nuts/grid  1.31x
+pos_pos_cov1       grid  0.387  nuts  0.380  nuts/grid  0.98x
+
+=== width spread across seeds (does the interval track the data?) ===
+psi_(Intercept)    nested_laplace  width min  1.088 max  3.855  span  3.54x
+psi_(Intercept)    nuts            width min  1.109 max 10.609  span  9.57x
+psi_occ_cov1       nested_laplace  width min  0.905 max  3.843  span  4.25x
+psi_occ_cov1       nuts            width min  1.110 max  7.848  span  7.07x
+p_(Intercept)      nested_laplace  width min  0.920 max  1.675  span  1.82x
+p_(Intercept)      nuts            width min  0.977 max  1.859  span  1.90x
