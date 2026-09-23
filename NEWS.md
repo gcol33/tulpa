@@ -1,5 +1,26 @@
 # tulpa 0.6.0
 
+## The hyperparameter share reaches both reporting doors
+
+* `hyper_share` reached `attr(diagnostics(fit), "summary")` but not
+  `diagnostic_summary()`, which already carries the other outer-grid facts
+  (`quad_ess`, `outer_regime`, `interval_read`). `diagnostic_summary()` now
+  reports `hyper_share_min` / `hyper_share_max` and prints the range. Both
+  doors read one helper, so they cannot drift. It carries no threshold and
+  never moves `status`: a marginal that rides almost entirely on the
+  within-cell Gaussian may be perfectly calibrated, which is what the new
+  coverage gate measures (gcol33/tulpa#862).
+
+## The fixed-effect interval is gated with a spatial field present
+
+* Coverage of the nested-Laplace fixed-effect interval was gated only on an
+  IID region-grouped random-effect block; the spatial recovery tests gate the
+  hyperparameters and never the coefficients. `test-spatial-beta-coverage.R`
+  closes that gap, measuring `confint()` against a simulated truth on an ICAR
+  lattice in a well-identified and a weakly identified regime: 0.981 pooled
+  over 160 trials. Tier 3, so it runs on the release gate
+  (gcol33/tulpa#862).
+
 ## A nested fit reports how much of its marginal the hyperparameter carried
 
 * The nested fixed-effect marginal is `within + between` under the law of total
