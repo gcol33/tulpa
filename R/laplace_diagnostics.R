@@ -1041,6 +1041,46 @@
        outer_skew_max  = sk)
 }
 
+# How much of the reported fixed-effect variance the HYPERPARAMETER integration
+# actually contributes.
+#
+# The nested marginal is the law of total variance over the outer grid,
+# `within + between` with `within = sum_k w_k V_k` and
+# `between = sum_k w_k (mu_k - mu)^2`. `between` is the part that exists
+# BECAUSE the hyperparameter was integrated rather than fixed: at `between = 0`
+# the reported interval is what conditioning on a single hyperparameter point
+# would have given.
+#
+# The engine could not say this before, and a fit whose marginal barely moves
+# when its hyperparameter posterior does looks identical to one that integrated
+# properly (gcol33/tulpa#862). Measured on an occu_cover fixture the share was
+# 3.4%, and varying the hyperprior across four settings moved the field scale
+# by 80% while the reported marginal moved under 6% -- visible here, invisible
+# everywhere else.
+#
+# Reported as a number, with no threshold attached: what counts as too little
+# depends on the model and is the reader's call, not a cutoff to invent.
+# NULL when the fit retains no per-cell pieces to decompose.
+.tulpa_hyper_share <- function(fit) {
+  jf <- if (!is.null(fit$joint_fit)) fit$joint_fit else fit
+  mom <- tryCatch(.nested_fixed_moments(jf), error = function(e) NULL)
+  if (is.null(mom) || is.null(mom$mu) || is.null(mom$var) || is.null(mom$w)) {
+    return(NULL)
+  }
+  w <- mom$w
+  if (!length(w) || !any(is.finite(w) & w > 0)) return(NULL)
+  # Per coefficient, then summed: the shares of the individual coordinates are
+  # what a reader compares, and the total is what the interval rides on.
+  within  <- colSums(mom$var * w)
+  mu_bar  <- colSums(mom$mu * w)
+  between <- colSums(sweep(mom$mu, 2L, mu_bar, "-")^2 * w)
+  total   <- within + between
+  share   <- ifelse(total > 0, between / total, NA_real_)
+  list(within = within, between = between, total = total, share = share,
+       min_share = suppressWarnings(min(share, na.rm = TRUE)),
+       max_share = suppressWarnings(max(share, na.rm = TRUE)))
+}
+
 # A fit whose INNER layer bands `unreliable` is reporting a marginal the engine
 # has measured as misfit, and the engine ships two corrections for exactly that
 # -- both off by default, so nothing said they existed. Naming the remedy beside
@@ -1804,6 +1844,12 @@
   } else NA_character_
   attr(tab, "reliability") <- reliability
   attr(tab, "inner_debias_note") <- .tulpa_inner_debias_note(fit, inner, inner_k)
+  hshare <- .tulpa_hyper_share(fit)
+  if (!is.null(hshare)) {
+    attr(tab, "hyper_share")     <- hshare$share
+    attr(tab, "hyper_share_min") <- hshare$min_share
+    attr(tab, "hyper_share_max") <- hshare$max_share
+  }
 
   summary_row <- data.frame(
     pareto_k        = k,
@@ -1815,6 +1861,13 @@
     # consumer (gcol33/tulpa#863).
     outer_regime_note = regime_note %||% NA_character_,
     outer_skew_max  = if (is.null(regime)) NA_real_ else regime$outer_skew_max,
+    # Share of the fixed-effect marginal variance the hyperparameter
+    # integration contributes: between / (within + between) under the law of
+    # total variance over the grid. Near zero means the reported interval is
+    # what conditioning on one hyperparameter point would have given
+    # (gcol33/tulpa#862).
+    hyper_share_min = if (is.null(hshare)) NA_real_ else hshare$min_share,
+    hyper_share_max = if (is.null(hshare)) NA_real_ else hshare$max_share,
     ess_grid        = if (is.null(grid)) NA_real_ else grid$ess_grid,
     n_grid          = if (is.null(grid)) NA_integer_ else grid$n_grid,
     max_weight      = if (is.null(grid)) NA_real_ else grid$max_weight,
@@ -1906,6 +1959,12 @@ print.laplace_diagnostics <- function(x, ...) {
   if (!is.null(attr(x, "ess_grid"))) {
     cat(sprintf("  outer grid quadrature ESS = %.2f of %d cells (max weight %.3f)\n",
                 attr(x, "ess_grid"), attr(x, "n_grid"), attr(x, "max_weight")))
+  }
+  hs <- attr(x, "hyper_share_min")
+  if (!is.null(hs) && is.finite(hs)) {
+    cat(sprintf("  hyperparameter integration contributes %.1f-%.1f%% of the fixed-effect marginal variance
+",
+                100 * hs, 100 * attr(x, "hyper_share_max")))
   }
   osk <- attr(x, "outer_skew_max")
   if (!is.null(osk) && is.finite(osk)) {

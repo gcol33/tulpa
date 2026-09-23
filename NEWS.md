@@ -1,5 +1,24 @@
 # tulpa 0.6.0
 
+## A nested fit reports how much of its marginal the hyperparameter carried
+
+* The nested fixed-effect marginal is `within + between` under the law of total
+  variance over the outer grid, and `between` is the part that exists BECAUSE
+  the hyperparameter was integrated rather than held at a point. Nothing
+  reported that split, so a fit whose marginal barely moves when its
+  hyperparameter posterior does looked identical to one that integrated
+  properly. `diagnostics()` now carries `hyper_share` per coefficient with
+  `hyper_share_min` / `hyper_share_max` beside it, prints the range, and the
+  summary row a consumer writes to a reliability CSV carries the two bounds.
+  On the occu_cover fixture behind gcol33/tulpa#862 the affected coefficient
+  reads 3.4% -- its interval is almost entirely the within-cell Gaussian --
+  while another coefficient on the same fit reads 25%, so the number
+  discriminates rather than restating the grid size. Reported without a
+  threshold: what counts as too little depends on the model. A fit that
+  retained no per-cell pieces reports the share as ABSENT rather than zero,
+  since zero would be a claim about the fit rather than about the record
+  (gcol33/tulpa#862).
+
 ## A flagged inner layer names the correction it did not run
 
 * A fit whose inner Gaussian bands `unreliable` reports the marginal read off
