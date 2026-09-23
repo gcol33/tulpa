@@ -2,7 +2,7 @@
 
 ## Update
 
-This is an update of tulpa 0.5.0, published on 2026-09-21. It comes two days
+This is an update of tulpa 0.5.0, published on 2026-09-21. It comes three days
 later because 0.5.0 returns wrong numbers, without an error, in the reported
 hyperparameter posterior. Every item below is a correctness fix; there is no
 new user-facing surface.
@@ -59,7 +59,7 @@ layer names the correction it did not run. These are new columns on
 
 0 errors | 0 warnings | 0 notes locally.
 
-The expected NOTE on the incoming check is "Days since last update: 2",
+The expected NOTE on the incoming check is "Days since last update: 3",
 explained above.
 
 ## Test environments
