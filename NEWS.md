@@ -1,3 +1,24 @@
+# tulpa 0.6.1
+
+## ranef() on a sampler fit reports the random effects, not their z
+
+* A ModelData sampler fit (`mode = "hmc"`, `"vi"`, `"ess"`, ...) samples its
+  random effects non-centered and stores the standardized `z`, where the
+  effects are `b = sigma * L z`. `ranef()` summarized `z` as though it were `b`,
+  off by `1 / sigma` on a scalar term and mixing a correlated term's slope
+  effect with its intercept, while `pointwise_loglik()` and
+  `posterior_predict()` on the same fit used `b`. `ranef()` now applies the
+  same map the density does, and the reconstructed effects reproduce the
+  engine's own linear predictor exactly (gcol33/tulpa#866).
+
+## VarCorr() reports the correlation a sampler fit sampled
+
+* On a sampler fit with a correlated `(1 + x | g)` term, `VarCorr()` ignored
+  the sampled correlation Cholesky factor (`L_re`) and returned a diagonal
+  covariance, reporting a correlation of exactly zero. It now reports the
+  posterior mean of the per-draw correlation `L L'`, with the posterior-mean
+  SDs on the diagonal as before (gcol33/tulpa#867).
+
 # tulpa 0.6.0
 
 ## The hyperparameter share reaches both reporting doors

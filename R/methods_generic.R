@@ -177,11 +177,93 @@
 # columns are dropped. A tail naming no `re[...]` column is returned as it is
 # (an unnamed `$re` matrix); callers check its width against the RE layout.
 #' @keywords internal
+#
+# A ModelData sampler fit (`$model_inputs`, `cpp_tulpa_sample_glmm()`) stores
+# its `re[...]` columns NON-CENTERED -- the standardized `z` the kernel samples,
+# not the effects -- so they are carried to `b = sigma * L z` here, the map
+# `re_term_group_effect()` applies inside the density. Reading them raw put
+# `z` in ranef() (off by 1 / sigma, and a correlated term's slope effect mixed
+# with its intercept) while pointwise_loglik() on the same fit used `b`
+# (gcol33/tulpa#866). Every other backend's `$re` / `re[...]` is `b` already.
+#' @keywords internal
 .re_coef_draws <- function(object) {
   re <- .re_draws_mat(object)
   if (is.null(re)) return(NULL)
   re_cols <- .re_col_idx(colnames(re))
-  if (length(re_cols)) re[, re_cols, drop = FALSE] else re
+  if (!length(re_cols)) return(re)
+  if (is.list(object$model_inputs)) return(.re_noncentered_effects(re))
+  re[, re_cols, drop = FALSE]
+}
+
+# The correlation Cholesky factor of a correlated term at every draw, from the
+# term's raw block (S x n(n-1)/2, the `L_re[t.k]` columns): the R twin of
+# `build_L_from_raw()` (`inst/include/tulpa/lkj_chol.h`), same raw order, same
+# tanh / stick-breaking construction. Returns an S x n x n array, L[s, , ]
+# lower-triangular with unit-norm rows.
+#' @keywords internal
+.re_chol_from_raw <- function(raw, n) {
+  raw <- as.matrix(raw)
+  S <- nrow(raw)
+  L <- array(0, c(S, n, n))
+  L[, 1L, 1L] <- 1
+  idx <- 0L
+  for (i in seq_len(n)[-1L]) {
+    s <- rep(1, S)
+    for (j in seq_len(i - 1L)) {
+      idx <- idx + 1L
+      z <- tanh(raw[, idx])
+      L[, i, j] <- z * sqrt(s)
+      s <- s * (1 - z^2)
+    }
+    L[, i, i] <- sqrt(s)
+  }
+  L
+}
+
+# `b` draws from a ModelData sampler tail holding `z`. Column names carry the
+# layout (`sampler_model_data.h`): a lone term is `re[g]` / `log_sigma_re`;
+# several scalar terms `re[tT.gG]` / `log_sigma_re[tT]`; a model with slopes
+# `re[tT.gG.cC]` / `log_sigma_re[tT.cC]`, plus `L_re[tT.k]` for a correlated
+# term. b[g, c] = sigma[c] * sum_{k <= c} L[c, k] z[g, k], or sigma[c] z[g, c]
+# for an uncorrelated term. NULL when a column the map needs is absent, rather
+# than handing back `z` under the effects' name.
+#' @keywords internal
+.re_noncentered_effects <- function(tail) {
+  nm <- colnames(tail)
+  re_cols <- .re_col_idx(nm)
+  rn <- nm[re_cols]
+  multi <- grepl("^re\\[t[0-9]+\\.", rn)
+  slope <- grepl("\\.c[0-9]+\\]$", rn)
+  term  <- ifelse(multi, sub("^re\\[t([0-9]+)\\..*$", "\\1", rn), "1")
+  grp   <- ifelse(multi, sub("^re\\[t[0-9]+\\.g([0-9]+).*$", "\\1", rn),
+                  sub("^re\\[([0-9]+)\\]$", "\\1", rn))
+  cf    <- ifelse(slope, sub("^.*\\.c([0-9]+)\\]$", "\\1", rn), "1")
+  sig_nm <- ifelse(slope, sprintf("log_sigma_re[t%s.c%s]", term, cf),
+                   ifelse(multi, sprintf("log_sigma_re[t%s]", term),
+                          "log_sigma_re"))
+  if (!all(sig_nm %in% nm)) return(NULL)
+
+  z <- tail[, re_cols, drop = FALSE]
+  sig <- exp(tail[, sig_nm, drop = FALSE])
+  out <- z * sig
+  for (t in unique(term[slope])) {
+    L_cols <- grep(sprintf("^L_re\\[t%s\\.", t), nm)
+    if (!length(L_cols)) next
+    in_t <- which(term == t)
+    q <- max(as.integer(cf[in_t]))
+    if (length(L_cols) != q * (q - 1L) / 2L) return(NULL)
+    L <- .re_chol_from_raw(tail[, L_cols, drop = FALSE], q)
+    for (g in unique(grp[in_t])) {
+      zc <- match(sprintf("re[t%s.g%s.c%d]", t, g, seq_len(q)), rn)
+      if (anyNA(zc)) return(NULL)
+      for (c in seq_len(q)) {
+        Lz <- 0
+        for (k in seq_len(c)) Lz <- Lz + L[, c, k] * z[, zc[k]]
+        out[, zc[c]] <- sig[, zc[c]] * Lz
+      }
+    }
+  }
+  out
 }
 
 # Positions of the random-effect coefficient columns (`re[...]`) in a vector of

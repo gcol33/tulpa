@@ -136,6 +136,14 @@ VarCorr <- function(x, sigma = 1, ...) UseMethod("VarCorr")
 # the log SDs; averaging exp() of the draws is the posterior mean SD, which is
 # not exp(mean(log sigma)) -- the difference is the whole reason to average on
 # the SD scale rather than the log one.
+#
+# A correlated term also carries its sampled correlation Cholesky factor as the
+# raw `L_re[tM.k]` block. Its correlation is the posterior mean of the per-draw
+# `R = L L'` -- an average of correlation matrices, so itself one -- and the
+# covariance is `diag(s) R diag(s)` at the posterior-mean SDs `s`, which keeps
+# the reported `sd` the posterior mean SD. Returning `diag(s^2)` there reported
+# an exact zero correlation for a term whose correlation was sampled
+# (gcol33/tulpa#867).
 #' @keywords internal
 .varcorr_from_draws <- function(object, layout) {
   dm <- tryCatch(.re_draws_mat(object), error = function(e) NULL)
@@ -150,9 +158,23 @@ VarCorr <- function(x, sigma = 1, ...) UseMethod("VarCorr")
   pos <- 0L
   out <- vector("list", length(layout))
   for (m in seq_along(layout)) {
-    s <- sds[pos + seq_len(nc_all[m])]
-    pos <- pos + nc_all[m]
-    out[[m]] <- diag(s^2, nrow = length(s))
+    q <- nc_all[m]
+    s <- sds[pos + seq_len(q)]
+    pos <- pos + q
+    R <- diag(q)
+    L_cols <- grep(sprintf("^L_re\\[t%d\\.", m), colnames(dm))
+    if (q > 1L && length(L_cols)) {
+      if (length(L_cols) != q * (q - 1L) / 2L) return(NULL)
+      L <- .re_chol_from_raw(dm[, L_cols, drop = FALSE], q)
+      for (i in seq_len(q)) for (j in seq_len(q)) {
+        if (i != j) {
+          k <- seq_len(min(i, j))
+          R[i, j] <- mean(rowSums(L[, i, k, drop = FALSE] *
+                                  L[, j, k, drop = FALSE]))
+        }
+      }
+    }
+    out[[m]] <- diag(s, nrow = q) %*% R %*% diag(s, nrow = q)
   }
   out
 }
