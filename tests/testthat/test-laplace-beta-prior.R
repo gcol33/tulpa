@@ -166,7 +166,7 @@ test_that("the prior penalty reaches H_beta when random effects are present", {
           sigma_re = 0.5))
   fit_weak <- suppressMessages(
     tulpa(y ~ x + (1 | g), data = d, family = "poisson", mode = "laplace",
-          sigma_re = 0.5, beta_prior = list(mean = 0, sd = 100)))
+          sigma_re = 0.5, beta_prior = list(mean = 0, sd = 2.5)))
   fit_tight <- suppressMessages(
     tulpa(y ~ x + (1 | g), data = d, family = "poisson", mode = "laplace",
           sigma_re = 0.5, beta_prior = list(mean = 0, sd = 0.05)))
@@ -174,8 +174,9 @@ test_that("the prior penalty reaches H_beta when random effects are present", {
   expect_true(is.matrix(fit_weak$H_beta))
   expect_identical(dim(fit_weak$H_beta), c(2L, 2L))
 
-  # Spelling out the built-in ridge gives the same fit and the same curvature,
-  # so the default fit's SE carries the penalty its mode was found under.
+  # Spelling out the front door's default prior, N(0, 2.5), gives the same fit
+  # and the same curvature, so the default fit's SE carries the penalty its
+  # mode was found under (gcol33/tulpa#869).
   expect_equal(coef(fit_weak), coef(fit_none), tolerance = 1e-8)
   expect_lt(max(abs(fit_weak$H_beta - fit_none$H_beta)), 1e-8)
 

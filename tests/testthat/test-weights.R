@@ -51,9 +51,10 @@ test_that("weighted gaussian Laplace MAP equals analytic penalized WLS", {
   fit <- tulpa(y ~ x, data = d, family = "gaussian", mode = "laplace",
                phi = phi, weights = w)
 
-  # MAP of the penalized weighted least squares with the built-in weak prior
-  # beta ~ N(0, 100^2): (X'WX/phi + I/100^2)^{-1} X'W y / phi.
-  A <- crossprod(X, w * X) / phi + diag(1e-4, 2)
+  # MAP of the penalized weighted least squares under the front door's default
+  # prior beta ~ N(0, 2.5^2) (gcol33/tulpa#869):
+  # (X'WX/phi + I/2.5^2)^{-1} X'W y / phi.
+  A <- crossprod(X, w * X) / phi + diag(1 / 2.5^2, 2)
   b <- crossprod(X, w * y) / phi
   beta_exact <- as.numeric(solve(A, b))
 

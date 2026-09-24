@@ -47,11 +47,12 @@ test_that("the ZI prior does not depend on whether beta_prior was supplied", {
 
   fit_default <- tulpa(y ~ x, data = d, family = "poisson",
                        ziformula = ~1, mode = "laplace")
-  # sd = 100 IS the built-in default fixed-effect prior, so this changes
-  # nothing about the count block and must change nothing at all.
+  # sd = 2.5 IS the front door's default fixed-effect prior
+  # (gcol33/tulpa#869), so this changes nothing about the count block and must
+  # change nothing at all.
   fit_bp <- tulpa(y ~ x, data = d, family = "poisson",
                   ziformula = ~1, mode = "laplace",
-                  beta_prior = list(mean = 0, sd = 100))
+                  beta_prior = list(mean = 0, sd = 2.5))
 
   expect_equal(fit_default$mode, fit_bp$mode, tolerance = 1e-10)
 })

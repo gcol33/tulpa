@@ -444,7 +444,9 @@ test_that("a raw polynomial is fitted raw, not orthogonal", {
   n <- 200L
   d <- data.frame(x = rnorm(n))
   d$yn <- 1 + 0.5 * d$x + rnorm(n, sd = 0.3)
-  fit <- tulpa(yn ~ poly(x, 2, raw = TRUE), data = d, mode = "laplace")
+  # A diffuse prior so the reference is the unpenalized least-squares fit.
+  fit <- tulpa(yn ~ poly(x, 2, raw = TRUE), data = d, mode = "laplace",
+               beta_prior = list(mean = 0, sd = 100))
   ref <- coef(lm(yn ~ poly(x, 2, raw = TRUE), data = d))
   expect_equal(unname(coef(fit)), unname(ref), tolerance = 1e-3)
   expect_equal(names(coef(fit)), names(ref))

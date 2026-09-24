@@ -965,7 +965,7 @@
         # has no other way to request intervals that carry the hyperparameter
         # uncertainty rather than condition on theta_hat.
         return(c(common, list(
-          beta_prior   = beta_prior,
+          beta_prior   = beta_prior_default,
           prior_sigma  = rp$prior_sigma,
           eta          = rp$eta,
           hyperprior   = hyperprior,
@@ -986,7 +986,7 @@
         n_quad <- as.integer(control$n_quad %||%
                                (if (re_cov_method == "aghq") 9L else 1L))
         return(c(common, list(
-          beta_prior  = beta_prior,
+          beta_prior  = beta_prior_default,
           prior_sigma = rp$prior_sigma,
           eta         = rp$eta,
           hyperprior  = hyperprior,
@@ -1034,7 +1034,7 @@
         y = bundle$y, n_trials = n_trials, X = bundle$X,
         re_list = .bundle_to_re_list(bundle, sigma_re),
         family = family, phi = phi, phi2 = phi2,
-        offset = bundle$offset, beta_prior = beta_prior,
+        offset = bundle$offset, beta_prior = beta_prior_default,
         weights = weights, X_zi = bundle$X_zi,
         zi_prior_sd = zi_prior_sd
       ))
@@ -1469,7 +1469,7 @@
         args        = sampler_args,
         re_terms    = .bundle_to_re_list(bundle, sigma_re),
         sigma_re    = sigma_re,
-        beta_prior  = beta_prior,
+        beta_prior  = beta_prior_default,
         n_chains    = as.integer(sampler_args$control$n_chains %||% 4L))
     }
 
@@ -2653,6 +2653,11 @@ tulpa <- function(formula, data,
   # A `warning()`, not a `message()`, so a script that promotes warnings (or a
   # chunk that traps them) actually sees that a variance component was fixed
   # rather than estimated.
+  # The resolved SDs are kept for the fit (`$sigma_re_conditioned`), so
+  # VarCorr() / print() report the value the fit conditioned on rather than
+  # re-evaluating the call in a frame that is not the caller's
+  # (gcol33/tulpa#868).
+  sigma_re_conditioned <- NULL
   if (K > 0L &&
       !sel$backend %in% c("gibbs", "re_cov_nested", "re_cov_gibbs", "eb", "agq",
                           "nested_laplace") &&
@@ -2668,6 +2673,12 @@ tulpa <- function(formula, data,
       stop(sprintf("`sigma_re` must have length 1 or %d (one per RE term).", K),
            call. = FALSE)
     }
+    sigma_re_conditioned <- sigma_re
+  } else if (K > 0L && identical(sel$backend, "nested_laplace") &&
+             !is.null(sigma_re)) {
+    # An explicit sigma_re conditions the nested path too (a one-point grid).
+    sigma_re_conditioned <- if (length(sigma_re) == 1L) rep(sigma_re, K)
+                            else sigma_re
   }
 
   # The same sentence for the DISPERSION, which had none (gcol33/tulpa#849).
@@ -2725,6 +2736,7 @@ tulpa <- function(formula, data,
     fit$formula <- formula
     fit$family <- family
     fit$beta_prior <- .beta_prior_applied(args, beta_prior_resolved)
+    fit$sigma_re_conditioned <- sigma_re_conditioned
     fit$call <- match.call()
 
     # Canonical parameter layout for the S3 accessors: the fixed-effect count and

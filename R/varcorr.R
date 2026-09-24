@@ -180,21 +180,19 @@ VarCorr <- function(x, sigma = 1, ...) UseMethod("VarCorr")
 }
 
 
-# The SDs a conditioning fit was given. Recovered from the call rather than
-# guessed: a fit that conditioned on the default reports that default, which is
-# the case most worth labelling.
+# The SDs a conditioning fit was given, read off the fit: the front door stores
+# the resolved value (`$sigma_re_conditioned`), default included, which is the
+# case most worth labelling. It is never recovered by re-evaluating the call:
+# that ran in this function's frame rather than the caller's, so a `sigma_re`
+# passed through a variable fell back to 1 or picked up an unrelated global of
+# the same name (gcol33/tulpa#868). A fit built outside the front door that
+# carries neither field reports nothing rather than a guess.
 #' @keywords internal
 .varcorr_from_conditioned <- function(object, layout) {
-  s <- object$sigma_re
-  if (is.null(s)) {
-    cl <- object$call
-    if (!is.null(cl) && !is.null(cl$sigma_re)) {
-      s <- tryCatch(eval(cl$sigma_re, parent.frame()), error = function(e) NULL)
-    }
-  }
+  s <- object$sigma_re_conditioned %||% object$sigma_re
+  if (is.null(s)) return(NULL)
   nc_all <- vapply(layout, function(rt) as.integer(rt$n_coefs %||% 1L),
                    integer(1))
-  if (is.null(s)) s <- 1
   s <- as.numeric(s)
   # One value per TERM is the front door's contract; recycle it across a term's
   # coefficients.

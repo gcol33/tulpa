@@ -59,13 +59,14 @@ test_that("Laplace t fit with phi2 matches an optim reference and differs from d
                  phi = 0.8, phi2 = 10)
   fit4  <- tulpa(y ~ x, data = d, family = "t", mode = "laplace", phi = 0.8)
 
-  # Reference: penalized MAP of the same posterior (weak builtin prior
-  # beta ~ N(0, 100^2)) via optim.
+  # Reference: penalized MAP of the same posterior (the front door's default
+  # prior beta ~ N(0, 2.5^2), gcol33/tulpa#869) via optim.
   nlp <- function(b, nu) {
     -sum(stats::dt((y - X %*% b) / 0.8, df = nu, log = TRUE) - log(0.8)) +
-      sum(b^2) / (2 * 100^2)
+      sum(b^2) / (2 * 2.5^2)
   }
-  ref10 <- stats::optim(c(0, 0), nlp, nu = 10, method = "BFGS")$par
+  ref10 <- stats::optim(c(0, 0), nlp, nu = 10, method = "BFGS",
+                        control = list(reltol = 1e-12))$par
   expect_equal(unname(coef(fit10)), ref10, tolerance = 1e-4)
   expect_false(isTRUE(all.equal(unname(coef(fit10)), unname(coef(fit4)),
                                 tolerance = 1e-6)))

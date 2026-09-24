@@ -115,3 +115,44 @@ test_that("the backend mode = auto picks does not change the prior", {
   expect_equal(fixed$beta_prior$sd, tulpa:::.TULPA_PRIOR$beta_sd)
   expect_equal(re$beta_prior$sd, tulpa:::.TULPA_PRIOR$beta_sd)
 })
+
+test_that("laplace, eb and re_cov_nested fit under the default prior too (#869)", {
+  skip_on_cran()
+  # Closed form: the posterior mode under N(0, 2.5) on a tiny poisson fit
+  # differs from the flat-ish N(0, 100) one in the third decimal.
+  set.seed(1)
+  n <- 6
+  d <- data.frame(x = rnorm(n))
+  d$y <- rpois(n, exp(0.5 + 0.8 * d$x))
+  X <- cbind(1, d$x)
+  lp <- function(b, s) sum(dpois(d$y, exp(X %*% b), log = TRUE)) +
+    sum(dnorm(b, 0, s, log = TRUE))
+  mode_25 <- optim(c(0, 0), function(b) -lp(b, 2.5), method = "BFGS",
+                   control = list(reltol = 1e-12))$par
+
+  f <- tulpa(y ~ x, d, family = "poisson", mode = "laplace")
+  expect_equal(f$beta_prior$sd, tulpa:::.TULPA_PRIOR$beta_sd)
+  expect_equal(unname(coef(f)), mode_25, tolerance = 1e-4)
+  expect_equal(attr(summary(f), "beta_prior")$sd,
+               tulpa:::.TULPA_PRIOR$beta_sd)
+
+  # Separation: the default prior is what keeps the slope finite.
+  set.seed(1)
+  d2 <- data.frame(x = rnorm(200))
+  d2$ysep <- as.integer(d2$x > 0)
+  sep <- tulpa(ysep ~ x, d2, family = "binomial", mode = "laplace")
+  sep_25 <- tulpa(ysep ~ x, d2, family = "binomial", mode = "laplace",
+                  beta_prior = list(mean = 0, sd = 2.5))
+  expect_equal(coef(sep), coef(sep_25), tolerance = 1e-8)
+  expect_lt(abs(unname(coef(sep)[2])), 20)
+
+  set.seed(3)
+  G <- 12
+  dg <- data.frame(x = rnorm(120), g = factor(rep(seq_len(G), each = 10)))
+  dg$y <- rpois(120, exp(0.3 + 0.5 * dg$x + rnorm(G, 0, 0.5)[dg$g]))
+  for (m in c("eb", "re_cov_nested")) {
+    fm <- suppressWarnings(tulpa(y ~ x + (1 | g), dg, family = "poisson",
+                                 mode = m))
+    expect_equal(fm$beta_prior$sd, tulpa:::.TULPA_PRIOR$beta_sd, info = m)
+  }
+})

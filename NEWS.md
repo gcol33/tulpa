@@ -1,3 +1,26 @@
+# tulpa 0.6.2
+
+## The default fixed-effect prior reaches the Laplace-family backends
+
+* `mode = "laplace"`, `"eb"` and `"re_cov_nested"` (and the Laplace / EB
+  source fit behind `warm_start`) passed the raw `beta_prior` to their fitter.
+  When none was supplied, that meant `tulpa_laplace()`'s own N(0, 100^2)
+  rather than the documented engine default `prior_normal(0, 2.5)`, and
+  `fit$beta_prior` read `NULL`. Under separation the slope ran to 131 where
+  the default prior holds it near 9. These backends now fit under the same
+  resolved prior as every other backend, and report it
+  (gcol33/tulpa#869, a regression of gcol33/tulpa#408). The spatial Laplace
+  path carries no fixed-effect prior channel and still reports `NULL`.
+
+## VarCorr() reports the sigma_re a conditioning fit actually used
+
+* A conditioning fit did not store its `sigma_re`, and `VarCorr()` / `print()`
+  recovered it by re-evaluating the call in the wrong frame: a `sigma_re`
+  passed through a variable fell back to 1 or picked up an unrelated global
+  of the same name. The front door now stores the resolved value as
+  `fit$sigma_re_conditioned`, default included, and `VarCorr()` reads it
+  (gcol33/tulpa#868).
+
 # tulpa 0.6.1
 
 ## ranef() on a sampler fit reports the random effects, not their z

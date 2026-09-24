@@ -59,9 +59,13 @@ test_that("the RE-covariance redirect and EB take the same choice", {
   terms <- list(idx = as.integer(d$g), n_groups = 16L, n_coefs = 1L,
                 correlated = FALSE)
   X <- cbind(1, d$x)
-  ep <- tulpa_eb(d$yb, rep(1L, n), X, "binomial", re_terms = terms)
+  # The front door resolves the default fixed-effect prior before calling
+  # tulpa_eb(), so the direct calls spell it out (gcol33/tulpa#869).
+  bp <- tulpa:::.tulpa_default_beta_prior()
+  ep <- tulpa_eb(d$yb, rep(1L, n), X, "binomial", re_terms = terms,
+                 beta_prior = bp)
   ef <- tulpa_eb(d$yb, rep(1L, n), X, "binomial", re_terms = terms,
-                 hyperprior = "flat")
+                 hyperprior = "flat", beta_prior = bp)
   gp <- tulpa(yb ~ x + (1 | g), data = d, family = "binomial", mode = "eb")
   gf <- tulpa(yb ~ x + (1 | g), data = d, family = "binomial", mode = "eb",
               hyperprior = "flat")

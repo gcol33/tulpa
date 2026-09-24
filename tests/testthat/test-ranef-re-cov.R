@@ -12,9 +12,12 @@
 #
 # What is NOT asserted, and why: per-group coverage of the simulated b_g. The RE
 # design columns here are a subset of the fixed design's, so the stationarity
-# conditions of the penalized mode force sum_g b_g = 0 exactly (summing the b
-# score equations leaves sum_g [Sigma^-1 b_g] = 0, the data term having been
-# cancelled by the beta equations). One simulated draw of G groups has a non-zero
+# conditions of the penalized mode force sum_g [Sigma^-1 b_g] = Lambda beta
+# (summing the b score equations, the data term having been cancelled by the
+# beta equations, leaves only the fixed-effect prior precision Lambda). Under a
+# diffuse fixed-effect prior that is sum_g b_g = 0 to the Newton tolerance; under
+# the default N(0, 2.5) it is ~1e-3 off (gcol33/tulpa#869), so the identity is
+# asserted on a fit given the diffuse prior. One simulated draw of G groups has a non-zero
 # group mean, and that direction is absorbed by the intercept -- it is not
 # identified from the data. Correlation with the truth is invariant to that
 # shift, so it is the recovery statistic used throughout; the group-mean
@@ -164,11 +167,15 @@ test_that("ranef() on a re_cov_nested fit reports the grid-marginalized group po
   expect_equal(dim(fit$re_var_nodes), c(fit$n_grid, 2L * sim$G))
   expect_true(all(is.finite(fit$re_var_nodes) & fit$re_var_nodes > 0))
 
-  # The identity the Details of this file open with: the mode pins the group mean
-  # of each coefficient at zero, to the Newton tolerance.
-  expect_equal(mean(r$estimate[grepl("^site\\[", r$term)]), 0,
+  # The identity the Details of this file open with: under a diffuse
+  # fixed-effect prior the mode pins the group mean of each coefficient at zero,
+  # to the Newton tolerance.
+  r0 <- ranef(tulpa(y ~ x + (1 + x | site), data = sim$d, family = "poisson",
+                    mode = "re_cov_nested",
+                    beta_prior = list(mean = 0, sd = 100)))
+  expect_equal(mean(r0$estimate[grepl("^site\\[", r0$term)]), 0,
                tolerance = 1e-4)
-  expect_equal(mean(r$estimate[grepl("^site\\.x\\[", r$term)]), 0,
+  expect_equal(mean(r0$estimate[grepl("^site\\.x\\[", r0$term)]), 0,
                tolerance = 1e-4)
 })
 

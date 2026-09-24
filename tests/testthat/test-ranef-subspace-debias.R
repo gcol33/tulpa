@@ -176,8 +176,13 @@ test_that("the band selector reaches a random-effect coordinate", {
   G <- 14L
   gate <- tulpa:::.nl_diag("inner_k_material_ess")
   d <- rsd_data(seed = 21L, G = G, per = 3L, b0 = -3.5, sd_re = 1.5)
+  # The margins above were measured under a diffuse fixed-effect prior; the
+  # front door's N(0, 2.5) default (gcol33/tulpa#869) pulls the b0 = -3.5
+  # intercept in and halves the margin, so the fixture keeps the prior it was
+  # sized under.
   fit <- tulpa(y ~ x + (1 | g), data = d, family = "binomial",
                mode = "re_cov_nested",
+               beta_prior = list(mean = 0, sd = 100),
                control = list(seed = 3L,
                               subspace_debias = list(probe = seq_len(2L + G))))
 
