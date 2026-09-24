@@ -155,6 +155,12 @@ the identity, including at a configuration where the floor binds at every step.
 keeps counting past 9: `0.1.9` -> `0.1.10` -> `0.1.11`. A CRAN resubmission
 bumps the patch; a release adding user-visible surface bumps the minor.
 
+## Git workflow
+
+Commit and push directly to `main`. Do not create feature branches or open
+pull requests unless asked -- this overrides any session-assigned
+`claude/...` branch.
+
 ## Building
 
 ```r
